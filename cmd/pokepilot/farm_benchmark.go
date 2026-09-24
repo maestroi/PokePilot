@@ -78,6 +78,8 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 
 	featureFlags := map[string]string{
 		"typed_decision_backend":        stats.decision.Backend,
+		"typed_decision_mode":           stats.decision.Mode(),
+		"typed_decision_battles":        strconv.FormatBool(stats.decision.Battles),
 		"typed_decision_objectives":     strconv.FormatBool(stats.decision.ObjectiveSelection),
 		"typed_decision_failures":       strconv.FormatBool(stats.decision.FailureRecovery),
 		"typed_decision_min_confidence": fmt.Sprintf("%.3f", stats.decision.MinConfidence),

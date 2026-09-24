@@ -48,15 +48,19 @@ const form = reactive<RunSpec>({
 // Off sends no selection at all, so the run keeps the runner default.
 const decision = reactive<Required<DecisionEngineSpec>>({
   backend: 'off',
+  mode: 'shadow',
+  battles: true,
   objectives: false,
   failures: true,
   min_confidence: 0.65
 })
-const decisionEnabled = computed(() => decision.backend !== 'off')
+const decisionEnabled = computed(() => decision.backend !== 'off' && decision.mode !== 'off')
+const decisionShadow = computed(() => decision.mode === 'shadow')
 
 function decisionRequest(): DecisionEngineSpec | undefined {
   if (!isLLM.value || !decisionEnabled.value) return undefined
-  return { ...decision }
+  // Battle decisions are observational only; active runs never send them.
+  return { ...decision, battles: decisionShadow.value && decision.battles }
 }
 
 const { data: modelsData } = usePollingResource(
@@ -294,9 +298,23 @@ async function submit(): Promise<void> {
           <span class="mt-1 block text-[11px] text-slate-600">Separate from the strategist. Jev uses the runner's TYPESAFE_API_KEY; the key is never stored on the run.</span>
         </label>
 
+        <label v-if="isLLM && decision.backend !== 'off'" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
+          <select v-model="decision.mode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="off">Off</option>
+            <option value="shadow">Shadow</option>
+            <option value="active">Active</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.</span>
+        </label>
+
         <fieldset v-if="isLLM && decisionEnabled" class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Decision engine decides</span>
-          <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ decisionShadow ? 'Decision engine observes' : 'Decision engine decides' }}</span>
+          <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
+            <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
+            Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
+          </label>
+          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
             <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
             Objective selection
           </label>

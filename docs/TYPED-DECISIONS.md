@@ -40,13 +40,27 @@ typed-decision telemetry.
 
 On the farm the backend is chosen per run, the same way the strategist
 deployment is: the PokeWall launch form has a **Fast decision engine** field
-(Off / TypeSafe Jev / Local System-1) with objective-selection and
-failure-recovery toggles and a minimum confidence. The choice travels on the
-run as `decision_engine`:
+(Off / TypeSafe Jev / Local System-1), a **Mode** (Off / Shadow / Active),
+battle, objective-selection and failure-recovery toggles, and a minimum
+confidence. The choice travels on the run as `decision_engine`:
 
 ```json
-{"decision_engine": {"backend": "jev", "objectives": true, "failures": true, "min_confidence": 0.65}}
+{"decision_engine": {"backend": "jev", "mode": "shadow", "battles": true, "objectives": true, "failures": true, "min_confidence": 0.65}}
 ```
+
+- `shadow` asks the backend at every enabled decision point and records its
+  answer, confidence and whether it agreed with what actually executed
+  (`shadow`, `executed`, `agreed` on each decision record; run-level
+  `decision_mode`, `decision_agreements`, `decision_disagreements`). The
+  strategist still picks objectives and deterministic recovery policy still
+  handles failures; a shadow `pause`/`impossible` never stops the run.
+- `active` lets accepted answers steer objective selection and tighten
+  failure recovery, as before. A selection without `mode` is active, so
+  older specs are unchanged.
+- `off` is the same as backend `off`.
+- `battles` is shadow-only (the wall answers 400 for active battles). The
+  run carries it to the runner as `DecisionSettings.Battles`; the live battle
+  consumer that records per-turn shadow choices is #1456.
 
 Every runner uses the same image. `deploy/farm.yml` gives every runner
 `TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
@@ -67,6 +81,8 @@ Feature switches:
 - `POKEPILOT_DECISION_OBJECTIVES` defaults to off. Set it to `1` to let the
   typed backend choose from the already-valid objective menu before falling
   back to the existing planner.
+- `POKEPILOT_DECISION_MODE` is the runner default mode (`active` when unset;
+  `shadow` or `off`). `POKEPILOT_DECISION_BATTLES=1` applies only in shadow.
 - `POKEPILOT_DECISION_MIN_CONFIDENCE` defaults to `0.65`. A lower-confidence
   answer is recorded and falls back to the existing deterministic/generative
   path.

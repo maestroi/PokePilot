@@ -30,6 +30,26 @@ func TestDecisionEngineSpecNormalized(t *testing.T) {
 	}
 }
 
+func TestDecisionEngineSpecMode(t *testing.T) {
+	got, err := (&DecisionEngineSpec{Backend: "jev", Objectives: true}).Normalized()
+	if err != nil || got.Mode != DecisionModeActive || got.Shadow() {
+		t.Fatalf("legacy selection = %+v, %v; want active", got, err)
+	}
+	got, err = (&DecisionEngineSpec{Backend: "jev", Mode: " Shadow ", Battles: true}).Normalized()
+	if err != nil || got.Mode != DecisionModeShadow || !got.Battles || !got.Shadow() {
+		t.Fatalf("shadow = %+v, %v", got, err)
+	}
+	got, err = (&DecisionEngineSpec{Backend: "jev", Mode: "off", Objectives: true, Battles: true, MinConfidence: 0.8}).Normalized()
+	if err != nil || *got != (DecisionEngineSpec{Backend: DecisionBackendOff, Mode: DecisionModeOff}) || got.Enabled() {
+		t.Fatalf("mode off = %+v, %v", got, err)
+	}
+	for _, bad := range []DecisionEngineSpec{{Backend: "jev", Mode: "yolo"}, {Backend: "jev", Mode: "active", Battles: true}, {Backend: "jev", Battles: true}} {
+		if _, err := bad.Normalized(); err == nil || !strings.Contains(err.Error(), "decision_engine") {
+			t.Errorf("Normalized(%+v) err = %v", bad, err)
+		}
+	}
+}
+
 func TestSpecDecisionEngineIsOptionalOnTheWire(t *testing.T) {
 	b, err := json.Marshal(Spec{RunID: "old"})
 	if err != nil {

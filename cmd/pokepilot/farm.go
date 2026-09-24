@@ -996,10 +996,17 @@ func decisionSelectionFor(spec *farm.DecisionEngineSpec) agent.DecisionSelection
 		// resolution fails loudly rather than falling back to the env default.
 		backend = spec.Backend
 	}
+	mode := farm.NormalizeDecisionMode(spec.Mode)
+	if mode == "" {
+		// Same as an unknown backend: fail resolution loudly.
+		mode = spec.Mode
+	}
 	return agent.DecisionSelection{
 		Backend:            backend,
+		Mode:               mode,
 		ObjectiveSelection: spec.Objectives,
 		FailureRecovery:    spec.Failures,
+		Battles:            spec.Battles,
 		MinConfidence:      spec.MinConfidence,
 	}
 }

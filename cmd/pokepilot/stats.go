@@ -200,6 +200,9 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 	}
 	offered = s.applyRunPolicy(obs, offered)
 	if retry == nil && s.decision.Engine != nil && s.decision.ObjectiveSelection {
+		if s.decision.Shadow {
+			return s.shadowObjective(obs, offered)
+		}
 		if objective, ok := s.typedObjective(obs, offered); ok {
 			return objective, nil
 		}
@@ -211,10 +214,37 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 }
 
 func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, bool) {
+	objective, _, err := s.consultObjective(obs, offered)
+	if err != nil {
+		return agent.Objective{}, false
+	}
+	s.recordTypedObjectiveChoice(obs, objective)
+	return objective, true
+}
+
+// shadowObjective asks the typed backend, then lets the existing planner
+// choose exactly as it would with the backend off. The backend's answer is
+// recorded with whether it agreed; it never reaches the returned objective.
+func (s *statsPlanner) shadowObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	shadow, record, shadowErr := s.consultObjective(obs, offered)
+	objective, err := s.router.Next(obs, offered)
+	if err == nil {
+		var agreed *bool
+		if shadowErr == nil {
+			same := shadow.String() == objective.String()
+			agreed = &same
+		}
+		s.markShadowDecision(record, objective.String(), agreed)
+	}
+	return objective, err
+}
+
+// consultObjective asks the backend to pick from the offered menu and records
+// the call. It returns the record index (-1 when dropped).
+func (s *statsPlanner) consultObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, int, error) {
 	req, err := agent.ObjectiveDecisionRequest(obs, offered, s.inner.Goal)
 	if err != nil {
-		s.recordDecision(req, agent.DecisionResponse{}, err, true)
-		return agent.Objective{}, false
+		return agent.Objective{}, s.recordDecision(req, agent.DecisionResponse{}, err, true), err
 	}
 	resp, err := agent.DecideChecked(context.Background(), s.decision.Engine, req)
 	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
@@ -224,13 +254,25 @@ func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Obj
 	if err == nil {
 		objective, err = agent.Chosen(offered, resp.Choice)
 	}
-	fallback := err != nil
-	s.recordDecision(req, resp, err, fallback)
-	if err != nil {
-		return agent.Objective{}, false
+	record := s.recordDecision(req, resp, err, err != nil)
+	return objective, record, err
+}
+
+// markShadowDecision annotates a recorded shadow call with what the existing
+// policy executed and whether the backend agreed.
+func (s *statsPlanner) markShadowDecision(record int, executed string, agreed *bool) {
+	if agreed != nil {
+		if *agreed {
+			s.stats.DecisionAgreements++
+		} else {
+			s.stats.DecisionDisagreements++
+		}
 	}
-	s.recordTypedObjectiveChoice(obs, objective)
-	return objective, true
+	if record >= 0 && record < len(s.stats.DecisionRecords) {
+		r := &s.stats.DecisionRecords[record]
+		r.Shadow, r.Executed, r.Agreed = true, executed, agreed
+	}
+	s.publish()
 }
 
 // DecideFailure implements agent.FailureDecisionPlanner. Run calls it only for
@@ -250,7 +292,20 @@ func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Decisi
 	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
 		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
 	}
-	s.recordDecision(req, resp, err, err != nil)
+	record := s.recordDecision(req, resp, err, err != nil)
+	if s.decision.Shadow {
+		// Deterministic policy already chose to continue through recovery;
+		// the backend agrees unless it asked to stop the run.
+		var agreed *bool
+		if err == nil {
+			if stop, mapErr := agent.FailureDecisionStops(resp.Choice); mapErr == nil {
+				same := !stop
+				agreed = &same
+			}
+		}
+		s.markShadowDecision(record, "continue", agreed)
+		return agent.DecisionResponse{}, fmt.Errorf("%w: shadow mode observes only", agent.ErrDecisionDisabled)
+	}
 	return resp, err
 }
 
@@ -285,7 +340,9 @@ func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
 	return out
 }
 
-func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, fallback bool) {
+// recordDecision records one backend call and returns its index in
+// DecisionRecords, or -1 when the bounded record list is full.
+func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, fallback bool) int {
 	s.benchmarkDecisionCalls = append(s.benchmarkDecisionCalls, benchmark.DecisionCall{
 		Kind: req.Kind, Duration: resp.Duration, PromptTokens: resp.Usage.PromptTokens,
 		CompletionTokens: resp.Usage.CompletionTokens, Backend: benchmarkDecisionBackend(resp.Backend, s.decision.Backend),
@@ -313,6 +370,7 @@ func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.Deci
 		s.stats.DecisionModel = resp.Model
 	}
 	s.stats.DecisionKind = req.Kind
+	s.stats.DecisionMode = s.decision.Mode()
 	s.stats.DecisionChoice = resp.Choice
 	s.stats.DecisionConfidence = resp.Confidence
 	s.stats.DecisionProbabilities = cloneDecisionProbabilities(resp.Probabilities)
@@ -339,12 +397,15 @@ func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.Deci
 		record.Error = err.Error()
 	}
 	const maxDecisionRecords = 128
+	index := -1
 	if len(s.stats.DecisionRecords) < maxDecisionRecords {
+		index = len(s.stats.DecisionRecords)
 		s.stats.DecisionRecords = append(s.stats.DecisionRecords, record)
 	} else {
 		s.stats.DecisionRecordsDropped++
 	}
 	s.publish()
+	return index
 }
 
 func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {

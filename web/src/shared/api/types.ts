@@ -92,6 +92,11 @@ export interface DashboardStats {
 // on the runner; only the choice travels with the run.
 export interface DecisionEngineSpec {
   backend: 'off' | 'jev' | 'system-one'
+  // Shadow records the backend's answers without acting on them; omitted
+  // means active, which is how selections made before modes behaved.
+  mode?: 'off' | 'shadow' | 'active'
+  // Battle turns are observed only, so battles requires shadow mode.
+  battles?: boolean
   objectives?: boolean
   failures?: boolean
   min_confidence?: number

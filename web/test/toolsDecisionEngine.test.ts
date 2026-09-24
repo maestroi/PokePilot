@@ -24,6 +24,16 @@ test('tools run form selects TypeSafe Jev independently of the strategist', () =
   assert.match(toolsSource, /decision_engine: decisionRequest\(\)/)
 })
 
+test('tools run form selects decision mode and shadow-only battles', () => {
+  assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*mode\?: 'off' \| 'shadow' \| 'active'/)
+  assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*battles\?: boolean/)
+  assert.match(toolsSource, /v-model="decision\.mode"/)
+  assert.match(toolsSource, /<option value="shadow">Shadow<\/option>/)
+  assert.match(toolsSource, /v-model="decision\.battles" type="checkbox" :disabled="!decisionShadow"/)
+  // Active runs never send battle decisions; the wall would reject them.
+  assert.match(toolsSource, /battles: decisionShadow\.value && decision\.battles/)
+})
+
 test('live and archive views show the run decision engine', () => {
   assert.match(liveSource, /\['decision engine', decisionEngineLabel\(run\)\]/)
   assert.match(archiveSource, /decisionEngineLabel\(run\)/)

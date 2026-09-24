@@ -25,6 +25,8 @@ func TestWallRejectsUnknownDecisionEngine(t *testing.T) {
 	for _, body := range []string{
 		`{"run_id":"bad-backend","planner":"llm","decision_engine":{"backend":"gpt"}}`,
 		`{"run_id":"bad-confidence","planner":"llm","decision_engine":{"backend":"jev","min_confidence":1.5}}`,
+		`{"run_id":"bad-mode","planner":"llm","decision_engine":{"backend":"jev","mode":"yolo"}}`,
+		`{"run_id":"active-battles","planner":"llm","decision_engine":{"backend":"jev","mode":"active","battles":true}}`,
 	} {
 		if res := postSpec(t, h, body); res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "decision_engine") {
 			t.Fatalf("POST %s = %d %s, want 400 naming decision_engine", body, res.Code, res.Body.String())
@@ -39,12 +41,12 @@ func TestDecisionEngineSelectionFlowsThroughWall(t *testing.T) {
 	w1 := NewWall("")
 	w1.SetStatePath(stateFile)
 	srv1 := httptest.NewServer(w1.Handler())
-	if res := postSpec(t, w1.Handler(), `{"run_id":"jev-run","planner":"llm","decision_engine":{"backend":"TypeSafe","objectives":true,"failures":true,"min_confidence":0.7}}`); res.Code != http.StatusOK {
+	if res := postSpec(t, w1.Handler(), `{"run_id":"jev-run","planner":"llm","decision_engine":{"backend":"TypeSafe","mode":"shadow","objectives":true,"failures":true,"battles":true,"min_confidence":0.7}}`); res.Code != http.StatusOK {
 		t.Fatalf("enqueue = %d %s", res.Code, res.Body.String())
 	}
 	enqueueViaHTTP(t, srv1.URL, farm.Spec{RunID: "plain-run", Planner: "llm"})
 
-	want := farm.DecisionEngineSpec{Backend: farm.DecisionBackendJev, Objectives: true, Failures: true, MinConfidence: 0.7}
+	want := farm.DecisionEngineSpec{Backend: farm.DecisionBackendJev, Mode: farm.DecisionModeShadow, Objectives: true, Failures: true, Battles: true, MinConfidence: 0.7}
 	client := farm.NewClient(srv1.URL)
 	leased := map[string]*farm.Spec{}
 	for range 2 {

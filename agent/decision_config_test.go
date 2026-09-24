@@ -106,3 +106,28 @@ func TestDecisionSettingsForRunSelection(t *testing.T) {
 		t.Fatalf("unknown backend err = %v", err)
 	}
 }
+
+func TestDecisionSettingsForRunMode(t *testing.T) {
+	t.Setenv("POKEPILOT_DECISION_BACKEND", "")
+	t.Setenv("TYPESAFE_API_KEY", "test-key")
+
+	settings, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "shadow", ObjectiveSelection: true, Battles: true})
+	if err != nil || !settings.Shadow || !settings.Battles || settings.Mode() != "shadow" {
+		t.Fatalf("shadow = %+v, %v", settings, err)
+	}
+	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "jev", ObjectiveSelection: true})
+	if err != nil || settings.Shadow || settings.Mode() != "active" {
+		t.Fatalf("legacy selection must stay active: %+v, %v", settings, err)
+	}
+	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "off", ObjectiveSelection: true})
+	if err != nil || settings.Engine != nil || settings.Mode() != "off" {
+		t.Fatalf("mode off = %+v, %v", settings, err)
+	}
+	// Battle decisions are observational only.
+	if _, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "active", Battles: true}); !errors.Is(err, ErrDecisionDisabled) {
+		t.Fatalf("active battles err = %v", err)
+	}
+	if _, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "yolo"}); !errors.Is(err, ErrDecisionDisabled) {
+		t.Fatalf("unknown mode err = %v", err)
+	}
+}

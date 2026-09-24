@@ -17,7 +17,25 @@ type DecisionSettings struct {
 	Backend            string
 	ObjectiveSelection bool
 	FailureRecovery    bool
-	MinConfidence      float64
+	// Battles asks the engine at battle turns; battle answers are only ever
+	// observed, never executed.
+	Battles       bool
+	MinConfidence float64
+	// Shadow consults the engine at every enabled decision point and records
+	// its answer and agreement, but the existing policy keeps deciding.
+	Shadow bool
+}
+
+// Mode names the settings' decision mode for run identity and telemetry.
+func (s DecisionSettings) Mode() string {
+	switch {
+	case s.Engine == nil:
+		return "off"
+	case s.Shadow:
+		return "shadow"
+	default:
+		return "active"
+	}
 }
 
 // defaultDecisionMinConfidence is the confidence floor when neither the run
@@ -33,9 +51,12 @@ var ErrDecisionCredentialsMissing = errors.New("agent: typed decision backend cr
 // DecisionSelection is a run's own typed-decision choice. Endpoints and
 // credentials are never part of it; they come from the runner environment.
 type DecisionSelection struct {
-	Backend            string
+	Backend string
+	// Mode is off, shadow or active; empty means active.
+	Mode               string
 	ObjectiveSelection bool
 	FailureRecovery    bool
+	Battles            bool
 	MinConfidence      float64
 }
 
@@ -55,6 +76,13 @@ func DecisionSettingsFromEnv() DecisionSettings {
 	settings.Backend = name
 	settings.FailureRecovery = decisionEnvBool("POKEPILOT_DECISION_FAILURES", true)
 	settings.ObjectiveSelection = decisionEnvBool("POKEPILOT_DECISION_OBJECTIVES", false)
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_MODE"))) {
+	case "shadow":
+		settings.Shadow = true
+		settings.Battles = decisionEnvBool("POKEPILOT_DECISION_BATTLES", false)
+	case "off":
+		return DecisionSettings{Backend: "off", MinConfidence: settings.MinConfidence}
+	}
 	return settings
 }
 
@@ -72,8 +100,22 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 		minConfidence = envDecisionMinConfidence()
 	}
 	settings := DecisionSettings{Backend: backend, MinConfidence: minConfidence}
+	var shadow bool
+	switch strings.ToLower(strings.TrimSpace(sel.Mode)) {
+	case "", "active":
+	case "shadow":
+		shadow = true
+	case "off":
+		backend = "off"
+		settings.Backend = backend
+	default:
+		return settings, fmt.Errorf("%w: unknown mode %q", ErrDecisionDisabled, sel.Mode)
+	}
 	if backend == "off" {
 		return settings, nil
+	}
+	if sel.Battles && !shadow {
+		return settings, fmt.Errorf("%w: battle decisions support only shadow mode", ErrDecisionDisabled)
 	}
 	engine, name := newDecisionEngineFromEnv(backend)
 	if engine == nil {
@@ -86,6 +128,8 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 	settings.Backend = name
 	settings.ObjectiveSelection = sel.ObjectiveSelection
 	settings.FailureRecovery = sel.FailureRecovery
+	settings.Battles = sel.Battles
+	settings.Shadow = shadow
 	return settings, nil
 }
 
