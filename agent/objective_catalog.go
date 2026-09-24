@@ -16,9 +16,9 @@ type ObjectiveCatalog struct {
 	Challenges        []CatalogChallenge
 	ChallengeProfiles []CatalogChallengeProfile
 	LocalEncounters   []CatalogEncounter
-	Shop            *CatalogShop
-	Interactables   []CatalogInteractable
-	CurrentCenter   bool
+	Shop              *CatalogShop
+	Interactables     []CatalogInteractable
+	CurrentCenter     bool
 }
 
 type CatalogStarter struct {
@@ -69,8 +69,8 @@ type CatalogChallenge struct {
 }
 
 type CatalogChallengeProfile struct {
-	Objective  ObjectiveKey
-	Readiness  ChallengeReadinessProfile
+	Objective ObjectiveKey
+	Readiness ChallengeReadinessProfile
 }
 
 type CatalogEncounter struct {
