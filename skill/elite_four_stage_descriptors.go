@@ -193,6 +193,14 @@ func earliestIncompleteLeagueStage(facts state.StoryFacts) (leagueStageDescripto
 // semantic completion/predecessor checks, room recovery, member-specific fight,
 // and positive completion verification. The descriptor's Fight hook is the only
 // stage-specific mechanics seam.
+func runLeagueStageByID(m *emu.Emu, romData []byte, policy MovePolicy, id gameruntime.ProgressID) error {
+	stage, ok := leagueStageForID(id)
+	if !ok {
+		return fmt.Errorf("skill: League stage %q is not declared", id)
+	}
+	return runLeagueStage(m, romData, policy, stage)
+}
+
 func runLeagueStage(m *emu.Emu, romData []byte, policy MovePolicy, stage leagueStageDescriptor) error {
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete || stage.Done(facts) {
