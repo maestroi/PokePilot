@@ -33,6 +33,7 @@ type statsPlanner struct {
 	// llm_profile chooses inference routing; these fields choose orthogonal
 	// gameplay policy. They intentionally remain independent knobs.
 	playStyle      agent.PlayStyleProfile
+	runPurpose     string
 	riskTolerance  string
 	wildEncounters string
 	decision       agent.DecisionSettings
@@ -67,7 +68,7 @@ type statsPlanner struct {
 // by value, so a process handling two runs can never leak one run's policy
 // into the other. Empty values keep the historical compatibility defaults.
 func newStatsPlannerWithRunPolicy(policy farm.RunPolicy, llmProfile, reasoningEffort string, inference *farm.InferenceIdentity, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	playStyle, riskTolerance, wildEncounters := policy.PlayStyle, policy.RiskTolerance, policy.WildEncounters
+	playStyle, runPurpose, riskTolerance, wildEncounters := policy.PlayStyle, policy.Purpose, policy.RiskTolerance, policy.WildEncounters
 	goal := policy.Goal
 	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(llmProfile), agent.NormalizeReasoningEffort(reasoningEffort))
 	// The run's inference identity is its own copy. Adopting a model the live
@@ -107,11 +108,12 @@ func newStatsPlannerWithRunPolicy(policy farm.RunPolicy, llmProfile, reasoningEf
 		push:             push,
 		snap:             snap,
 		playStyle:        agent.PlayStyle(playStyle),
+		runPurpose:       agent.NormalizeRunPurpose(runPurpose),
 		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
 		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
 		decision:         agent.DecisionSettingsFromEnv(),
 		counts:           map[string]int{},
-		baseExtraSystem:  appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
+		baseExtraSystem:  appendSystemNote(appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)), agent.RunPurposeSystemNote(runPurpose)),
 		lastTelemetrySeq: currentLLMTelemetrySeq(),
 	}
 	s.router = agent.NewFailoverPlanner(inner, fallback)
@@ -150,7 +152,8 @@ func (s *statsPlanner) RoutePriority() agent.RoutePriority {
 
 func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	offered = agent.ApplyRunPolicy(obs, offered, s.riskTolerance, s.wildEncounters)
-	return agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	return agent.AnnotateRunPurpose(obs, offered, s.runPurpose)
 }
 
 // boundRiskPlan keeps persistent planning from skipping the safety decision
