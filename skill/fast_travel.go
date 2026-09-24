@@ -384,8 +384,8 @@ func openPartyFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
 	if !state.Controllable(&mem) {
 		return fmt.Errorf("player is not controllable")
 	}
-	wantMax, pokemonIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, pokemonIndex-1, wantMax); err != nil {
+	_, pokemonIndex := startMenuShape(&mem)
+	if err := openStartMenuEntry(m, pokemonIndex-1); err != nil {
 		return fmt.Errorf("open POKEMON: %w", err)
 	}
 	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {

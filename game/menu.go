@@ -13,12 +13,23 @@ type TwoOptionState struct {
 	Current int
 }
 
+// StartMenuState is the semantic state needed by the reusable START-menu
+// opener. Concrete profiles decide how a START menu is identified, when it is
+// ready for input, and whether the current gameplay state forbids opening it.
+type StartMenuState struct {
+	Visible  bool
+	Ready    bool
+	InBattle bool
+	Cursor   MenuCursorState
+}
+
 // MenuDecoder is the optional semantic capability used by generic menu
-// navigation. Concrete game profiles own RAM addresses, cursor glyphs and
-// prompt-liveness rules.
+// navigation. Concrete game profiles own RAM addresses, cursor glyphs,
+// prompt-liveness rules, and START-menu identification.
 type MenuDecoder interface {
 	DecodeMenuCursor(MemoryReader) MenuCursorState
 	DecodeTwoOption(MemoryReader) (TwoOptionState, bool)
+	DecodeStartMenu(MemoryReader) StartMenuState
 }
 
 // MenuProfile is a game profile that exposes semantic menu decoding.

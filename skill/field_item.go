@@ -139,8 +139,8 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 		return fmt.Errorf("skill: UseFieldItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex, wantMax); err != nil {
+	_, itemIndex := startMenuShape(&mem)
+	if err := openStartMenuEntry(m, itemIndex); err != nil {
 		return fmt.Errorf("skill: UseFieldItem: open ITEM: %w", err)
 	}
 

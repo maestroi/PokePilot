@@ -101,8 +101,8 @@ func selectFieldMoveUser(m *emu.Emu, index int) error {
 	return nil
 }
 
-func openStartMenuEntry(m *emu.Emu, entry, wantMax int) error {
-	if err := waitForStartMenu(m, wantMax); err != nil {
+func openStartMenuEntry(m *emu.Emu, entry int) error {
+	if err := waitForStartMenu(m); err != nil {
 		return err
 	}
 	return SelectMenuItem(m, entry)
