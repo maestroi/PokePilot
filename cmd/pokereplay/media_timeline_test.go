@@ -83,3 +83,41 @@ func TestMediaTimelineRejectsRunMismatch(t *testing.T) {
 		t.Fatal("expected run mismatch")
 	}
 }
+
+
+func TestMediaTimelineAttemptUsesMatchingArtifactGeneration(t *testing.T) {
+	artifact, err := farm.NewMediaTimelineArtifact(farm.MediaTimeline{
+		Run:     farm.MediaRunSummary{RunID: "run-resume"},
+		Attempt: 2,
+		EndFrame: 120,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("attempt") != "2" {
+			t.Fatalf("attempt query=%q, want 2 for %s", r.URL.Query().Get("attempt"), r.URL.Path)
+		}
+		switch r.URL.Path {
+		case "/v1/runs/run-resume/artifacts":
+			_ = json.NewEncoder(w).Encode(artifactList{
+				RunID: "run-resume", Attempt: 2,
+				Artifacts: []artifactRef{{Name: artifact.Name, MediaType: artifact.MediaType, SHA256: artifact.SHA256, Inline: true}},
+			})
+		case "/v1/runs/run-resume/artifacts/media-timeline.json/content":
+			_, _ = w.Write(artifact.Data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer wall.Close()
+
+	server := newReplayServer(wall.URL, "", "", nil)
+	timeline, err := server.mediaTimelineAttempt(context.Background(), "run-resume", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timeline.Attempt != 2 {
+		t.Fatalf("timeline attempt=%d, want 2", timeline.Attempt)
+	}
+}
