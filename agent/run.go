@@ -423,9 +423,21 @@ func progressOf(obs Observation, k *Knowledge, coverage *coverageTracker, round 
 }
 
 func noteObservation(k *Knowledge, obs Observation) {
-	k.SawLocation(observationLocation(obs, k))
+	location := observationLocation(obs, k)
+	k.SawLocation(location)
 	k.SawDialogue(obs.RecentDialogue, obs.MapName, obs.X, obs.Y)
 	rememberTrainingArea(k, obs)
+	catalog := objectiveCatalogForObservation(obs)
+	for _, destination := range catalog.Destinations {
+		if destination.Center && destination.Location == location {
+			k.rememberRecoveryCheckpoint(destination.Place, destination.Location, false)
+		}
+	}
+	if obs.RecoveryCheckpoint != "" {
+		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok && destination.Center {
+			k.rememberRecoveryCheckpoint(obs.RecoveryCheckpoint, destination.Location, true)
+		}
+	}
 }
 
 func sameProgress(a, b Observation) bool {
