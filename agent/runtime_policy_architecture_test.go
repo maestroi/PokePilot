@@ -8,14 +8,19 @@ import (
 	"testing"
 )
 
-// TestRuntimePolicyDependencies protects the policy half of agent from
-// accidentally reaching back into the Red/controller implementation. Adapter
-// and execution files may import these packages; run/recovery policy may not.
+// TestRuntimePolicyDependencies protects the generic objective/runtime half of
+// agent from accidentally reaching back into the Red/controller implementation.
+// Concrete bindings are isolated in red_* / gen1_* adapter files; planner,
+// recovery, transaction lifecycle, and portable result verification stay clean.
 func TestRuntimePolicyDependencies(t *testing.T) {
 	files := []string{
+		"game_adapter.go",
+		"execute_structured.go",
+		"objective_result.go",
 		"run_engine_policy.go",
 		"run_engine_boundary.go",
 		"recovery.go",
+		"prerequisite_recovery.go",
 		"plan.go",
 		"failure_identity.go",
 		"normalized_failure.go",
@@ -38,7 +43,7 @@ func TestRuntimePolicyDependencies(t *testing.T) {
 			}
 			for _, prefix := range forbidden {
 				if strings.HasPrefix(path, prefix) {
-					t.Errorf("%s imports concrete game/controller package %q; keep runtime policy portable", name, path)
+					t.Errorf("%s imports concrete game/controller package %q; keep generic objective/runtime code adapter-only", name, path)
 				}
 			}
 		}
