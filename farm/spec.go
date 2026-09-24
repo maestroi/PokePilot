@@ -23,6 +23,19 @@ func (p RecoveryProfile) Resilient() bool {
 	return p == RecoveryProfileResilient
 }
 
+// RunPurpose describes why the run exists independently from how it plays and
+// what terminal goal it pursues. Empty is the backwards-compatible normal run.
+type RunPurpose string
+
+const (
+	RunPurposeNormal        RunPurpose = "normal"
+	RunPurposeDebugCoverage RunPurpose = "debug_coverage"
+)
+
+func (p RunPurpose) Valid() bool {
+	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage
+}
+
 // Spec is one run's configuration, filled either by CLI flags (today) or
 // by a lease from the wall (farm mode). Field names mirror the flags in
 // cmd/pokepilot/main.go one for one.
@@ -51,9 +64,10 @@ type Spec struct {
 	// fully described by its own wire payload, and so two runs can coexist
 	// in one process without cross-talk. Empty intentionally means "use the
 	// historical compatibility default", not a specific profile.
-	PlayStyle      string `json:"play_style,omitempty"`
-	RiskTolerance  string `json:"risk_tolerance,omitempty"`
-	WildEncounters string `json:"wild_encounters,omitempty"`
+	PlayStyle      string     `json:"play_style,omitempty"`
+	Purpose        RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance  string     `json:"risk_tolerance,omitempty"`
+	WildEncounters string     `json:"wild_encounters,omitempty"`
 	LLMProfile     string `json:"llm_profile,omitempty"`
 	// LLMDeployment is the first-class deployment selection. LLMProfile is
 	// retained only as a compatibility adapter for older queued runs/runners.
@@ -92,15 +106,16 @@ type Spec struct {
 	RandomSeed bool `json:"random_seed,omitempty"`
 }
 
-// RunPolicy is the subset of a Spec that selects planner behavior: the goal
-// and the three orthogonal gameplay policy knobs. Run wiring passes it by
-// value so a consumer reads one run's behavior without reaching back into the
-// Spec or into any process-global lease state.
+// RunPolicy is the subset of a Spec that selects planner behavior. Goal says
+// what ends the run, PlayStyle says how it plays, and Purpose says why the run
+// exists (normal gameplay versus deliberate debug coverage). Run wiring passes
+// it by value so one run never reaches into process-global policy state.
 type RunPolicy struct {
-	Goal           string `json:"goal,omitempty"`
-	PlayStyle      string `json:"play_style,omitempty"`
-	RiskTolerance  string `json:"risk_tolerance,omitempty"`
-	WildEncounters string `json:"wild_encounters,omitempty"`
+	Goal           string     `json:"goal,omitempty"`
+	PlayStyle      string     `json:"play_style,omitempty"`
+	Purpose        RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance  string     `json:"risk_tolerance,omitempty"`
+	WildEncounters string     `json:"wild_encounters,omitempty"`
 }
 
 // RunPolicyFor extracts the behavior policy from a run's Spec.
@@ -108,6 +123,7 @@ func RunPolicyFor(spec Spec) RunPolicy {
 	return RunPolicy{
 		Goal:           spec.Goal.String(),
 		PlayStyle:      spec.PlayStyle,
+		Purpose:        spec.Purpose,
 		RiskTolerance:  spec.RiskTolerance,
 		WildEncounters: spec.WildEncounters,
 	}
