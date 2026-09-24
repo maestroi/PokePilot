@@ -50,6 +50,7 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 		Goal:            farm.GoalFrom(source.Goal),
 		Dest:            source.Dest,
 		PlayStyle:       source.PlayStyle,
+		Purpose:         source.Purpose,
 		RiskTolerance:   source.RiskTolerance,
 		WildEncounters:  source.WildEncounters,
 		LLMProfile:      source.LLMProfile,
