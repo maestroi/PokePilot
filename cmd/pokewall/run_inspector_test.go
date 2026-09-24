@@ -126,7 +126,6 @@ func TestRunInspectorCanReadDumpAfterHistoryRowWasDeleted(t *testing.T) {
 	}
 }
 
-
 func TestRunInspectorCanBrowseSpecificAttemptArtifacts(t *testing.T) {
 	dir := t.TempDir()
 	w := NewWall(dir)
@@ -152,7 +151,7 @@ func TestRunInspectorCanBrowseSpecificAttemptArtifacts(t *testing.T) {
 		},
 	}
 	for path, report := range map[string]farm.FinishReport{
-		filepath.Join(dir, safeDumpName("multi-run")):           first,
+		filepath.Join(dir, safeDumpName("multi-run")):  first,
 		filepath.Join(dir, "multi-run-attempt-2.json"): second,
 	} {
 		data, err := json.Marshal(report)
