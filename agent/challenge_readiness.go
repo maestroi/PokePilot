@@ -157,7 +157,7 @@ func challengeKnownCenter(obs Observation, known *Knowledge) bool {
 }
 
 func challengeCanRestockRecovery(obs Observation) bool {
-	for _, raw := range obs.MartStock {
+	for _, raw := range append(append([]string(nil), obs.MartStock...), obs.RestockStock...) {
 		name := strings.ToLower(strings.TrimSpace(raw))
 		if _, ok := hpHealingItems[name]; ok {
 			return true

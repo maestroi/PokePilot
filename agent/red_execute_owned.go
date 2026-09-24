@@ -293,6 +293,12 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			}
 			return result, nil
 		}
+		if o.Intent == combatRecoverySupplyIntent {
+			if _, err := skill.EnsureItemStock(m, romData, skill.StatAwareMove(romData), item, o.Qty, 1); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		}
 		if err := skill.Buy(m, item, o.Qty); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}

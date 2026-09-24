@@ -37,6 +37,10 @@ var standardMartRecoveryTargets = []standardMartRecoveryTarget{
 	{name: "fuchsia mart", mapID: 0x98},
 	{name: "cinnabar mart", mapID: 0xAC},
 	{name: "saffron mart", mapID: 0xB4},
+	// The League lobby shop shares the ordinary counter geometry, and it is
+	// the only shop reachable from the post-loss Indigo checkpoint without
+	// backtracking through Victory Road.
+	{name: "indigo plateau mart", mapID: 0xAE},
 }
 
 func itemCount(mem *state.Mem, item uint8) int {
@@ -57,16 +61,21 @@ func martStocksItem(romData []byte, mapID, item uint8) bool {
 	return false
 }
 
-func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartRecoveryTarget, bool, error) {
-	g, err := world.BuildGraph(romData)
+// reachableStockMarts returns the recovery marts GoTo can route to right now,
+// with their map-hop distance. Reachability applies the same capability gates
+// travel enforces (e.g. the League rooms cannot be left mid-challenge), so a
+// restock is never offered from a place the route will then refuse.
+func reachableStockMarts(romData []byte, mem *state.Mem) (map[standardMartRecoveryTarget]int, error) {
+	g, err := cachedRouteGraph(romData)
 	if err != nil {
-		return standardMartRecoveryTarget{}, false, err
+		return nil, err
 	}
-
-	from := mem.U8(sym.CurMap)
-	bestLen := int(^uint(0) >> 1)
-	var best standardMartRecoveryTarget
-	found := false
+	if g, err = withAsleepRoute16Snorlax(g, romData, mem); err != nil {
+		return nil, err
+	}
+	prereqs := redRoutePrerequisites(g, romData, mem)
+	from, x, y := mem.U8(sym.CurMap), int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord))
+	out := map[standardMartRecoveryTarget]int{}
 	for _, target := range standardMartRecoveryTargets {
 		// Before Oak receives the parcel the Viridian clerk is a story NPC,
 		// not a usable shop. Do not route a recovery there just to learn that
@@ -74,20 +83,67 @@ func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartR
 		if target.mapID == viridianMartMap && !state.HasEvent(mem, state.EventOakGotParcel) {
 			continue
 		}
-		if !martStocksItem(romData, target.mapID, item) {
+		if target.mapID == from {
+			out[target] = 0
 			continue
 		}
-		route, err := world.FindRoute(g, from, target.mapID)
-		if err != nil {
+		route, err := world.FindRoutePlanAtDestinationWithCapabilities(g, from, target.mapID, x, y, -1, -1, nil, prereqs)
+		if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
 			continue
 		}
-		if !found || len(route) < bestLen {
-			bestLen = len(route)
-			best = target
-			found = true
+		out[target] = len(route)
+	}
+	return out, nil
+}
+
+func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartRecoveryTarget, bool, error) {
+	marts, err := reachableStockMarts(romData, mem)
+	if err != nil {
+		return standardMartRecoveryTarget{}, false, err
+	}
+	bestLen := int(^uint(0) >> 1)
+	var best standardMartRecoveryTarget
+	found := false
+	for _, target := range standardMartRecoveryTargets {
+		hops, ok := marts[target]
+		if !ok || !martStocksItem(romData, target.mapID, item) {
+			continue
+		}
+		if !found || hops < bestLen {
+			bestLen, best, found = hops, target, true
 		}
 	}
 	return best, found, nil
+}
+
+// ReachableMartStock lists every item a recovery mart reachable from the live
+// state stocks. It lets planners offer "travel and buy" work (EnsureItemStock)
+// when the player is not standing in a shop.
+func ReachableMartStock(m *emu.Emu, romData []byte) []uint8 {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	marts, err := reachableStockMarts(romData, &mem)
+	if err != nil {
+		return nil
+	}
+	seen := map[uint8]bool{}
+	var out []uint8
+	for _, target := range standardMartRecoveryTargets {
+		if _, ok := marts[target]; !ok {
+			continue
+		}
+		items, err := rom.MartItems(romData, target.mapID)
+		if err != nil {
+			continue
+		}
+		for _, item := range items {
+			if !seen[item] {
+				seen[item] = true
+				out = append(out, item)
+			}
+		}
+	}
+	return out
 }
 
 // EnsureItemStock restores a deterministic reserve before a skill consumes an

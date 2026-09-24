@@ -327,7 +327,7 @@ func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamil
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	out := repelUseObjectives(ctx.obs)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{Candidates: out}
+		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -357,6 +357,36 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 		}
 	}
 	return objectiveProviderResult{Candidates: out}
+}
+
+// restockHealingObjectives offers a travel-and-buy HP healing purchase when a
+// typed combat loss left the bag with no healing and no shop is on this map.
+// Without it the only buy offer required already standing in a shop, so a
+// challenge lost far from one (the League's chained fights) retried forever
+// with an empty bag.
+func restockHealingObjectives(obs Observation) []Objective {
+	if len(obs.RestockStock) == 0 || !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
+		return nil
+	}
+	obs.MartStock = obs.RestockStock
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return nil
+	}
+	for _, advice := range economy.Purchases {
+		if _, heal := hpHealingItems[advice.Item]; !heal || !advice.ShouldBuy || advice.SuggestedQty <= 0 {
+			continue
+		}
+		item, ok := ItemByName(advice.Item)
+		if !ok {
+			continue
+		}
+		return []Objective{{
+			Kind: KindBuy, Item: item, Qty: advice.SuggestedQty, Intent: combatRecoverySupplyIntent,
+			Note: "(combat recovery supply: travel to the nearest reachable shop and restock HP healing before retrying)",
+		}}
+	}
+	return nil
 }
 
 type explorationObjectiveProvider struct{}
