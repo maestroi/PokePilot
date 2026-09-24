@@ -55,6 +55,15 @@ type fastTravelChoice struct {
 	Cost    int
 }
 
+// TravelCostEstimate is a read-only route estimate for adapter-owned planning.
+// Cost uses the same units as Travel/GoTo route selection. FastTravel is true
+// only when a currently legal shortcut is strictly cheaper than walking.
+type TravelCostEstimate struct {
+	Cost       int
+	FastTravel bool
+	Method     string
+}
+
 type emergencyEgressMethod uint8
 
 const (
@@ -279,6 +288,68 @@ func chooseFastTravelByCost(
 		}
 	}
 	return best
+}
+
+func fastTravelKindName(kind fastTravelKind) string {
+	switch kind {
+	case fastTravelFly:
+		return "fly"
+	case fastTravelDig:
+		return "dig"
+	case fastTravelEscapeRope:
+		return "escape_rope"
+	default:
+		return "walk"
+	}
+}
+
+// EstimateTravelCost prices a destination from the current settled state
+// without sending controller input. It includes only shortcuts that are legal
+// right now, so callers can compare walking and Fly/Dig/Escape Rope without
+// manufacturing missing prerequisites.
+func EstimateTravelCost(m *emu.Emu, romData []byte, dest Destination) (TravelCostEstimate, bool) {
+	if m == nil {
+		return TravelCostEstimate{}, false
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return TravelCostEstimate{}, false
+	}
+	planner, err := NewRoutePlanner(m, romData)
+	if err != nil {
+		return TravelCostEstimate{}, false
+	}
+	from := Destination{Map: planner.cur, X: planner.x, Y: planner.y}
+	walkCost, walkOK := routeCostFrom(m, planner, from, dest)
+
+	bestCost := int(^uint(0) >> 1)
+	bestKind := fastTravelNone
+	ok := false
+	if walkOK {
+		bestCost = walkCost
+		ok = true
+	}
+	for _, option := range legalFastTravelOptions(&mem) {
+		onward, onwardOK := routeCostFrom(m, planner, option.Landing, dest)
+		if !onwardOK {
+			continue
+		}
+		total := option.ActionCost + onward
+		if !ok || total < bestCost {
+			bestCost = total
+			bestKind = option.Kind
+			ok = true
+		}
+	}
+	if !ok {
+		return TravelCostEstimate{}, false
+	}
+	return TravelCostEstimate{
+		Cost:       bestCost,
+		FastTravel: bestKind != fastTravelNone,
+		Method:     fastTravelKindName(bestKind),
+	}, true
 }
 
 // chooseFastTravel turns legal Red shortcuts into route-cost alternatives.

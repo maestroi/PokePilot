@@ -32,6 +32,15 @@ type CatalogDestination struct {
 	X, Y     uint8
 	Area     skill.DestinationBounds
 	Center   bool
+
+	// Dynamic route estimates are adapter-owned and intentionally not
+	// persisted. Checked distinguishes "no route exists in the live state"
+	// from adapters/tests that do not provide route pricing.
+	TravelCostChecked bool
+	TravelCostKnown   bool
+	TravelCost        int
+	FastTravel        bool
+	FastTravelMethod  string
 }
 
 func (d CatalogDestination) reached(location LocationID, x, y uint8) bool {

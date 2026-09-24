@@ -22,44 +22,10 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
-// preferredRecoveryCenters ranks the Centers a hurt party may heal at, most
-// preferred first. It returns a list rather than one name because the live
-// router can reject the best candidate: the cartridge's active blackout
-// checkpoint is the strongest preference, but it is not usable when the player
-// is standing behind a gate that the checkpoint sits on the far side of. The
-// caller takes the first candidate the router accepts.
+// preferredRecoveryCenters is the candidate-only compatibility projection of
+// the structured recovery checkpoint scorer.
 func preferredRecoveryCenters(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) []PlaceID {
-	ranked := make([]PlaceID, 0, 2)
-	if obs.RecoveryCheckpoint != "" {
-		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok && destination.Center {
-			// The cartridge's active blackout checkpoint is stronger evidence than
-			// planner visitation: the player necessarily activated this nurse.
-			ranked = append(ranked, obs.RecoveryCheckpoint)
-		}
-	}
-	if name, ok := nearestKnownCenter(obs, known, knownLocations, catalog); ok && name != obs.RecoveryCheckpoint {
-		ranked = append(ranked, name)
-	}
-	return ranked
-}
-
-func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
-	current := observationLocation(obs, known)
-	dist := mapHops(known.Adjacency, current)
-	best, bestDist := PlaceID(""), 0
-	for _, destination := range catalog.Destinations {
-		if !destination.Center || destination.Location == "" || destination.Location == current || !knownLocations[destination.Location] {
-			continue
-		}
-		hops, reachable := dist[destination.Location]
-		if !reachable {
-			continue
-		}
-		if best == "" || hops < bestDist || (hops == bestDist && destination.Place < best) {
-			best, bestDist = destination.Place, hops
-		}
-	}
-	return best, best != ""
+	return recoveryCheckpointPlaces(rankRecoveryCheckpoints(obs, known, knownLocations, catalog, nil))
 }
 
 // firstRoutableRecoveryCenter returns the most preferred Center whose live
