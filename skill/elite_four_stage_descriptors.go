@@ -147,11 +147,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 	},
 	{
-		Name:         "Champion",
-		Operation:    "LeagueDefeatChampion",
-		ID:           leagueProgressChampionDefeated,
-		Predecessor:  leagueProgressLanceDefeated,
-		RoomMap:      championsRoomMap,
+		Name:        "Champion",
+		Operation:   "LeagueDefeatChampion",
+		ID:          leagueProgressChampionDefeated,
+		Predecessor: leagueProgressLanceDefeated,
+		RoomMap:     championsRoomMap,
 		PredecessorDone: func(f state.StoryFacts) bool {
 			return f.LeagueLanceDefeated
 		},
