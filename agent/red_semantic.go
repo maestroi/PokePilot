@@ -28,6 +28,7 @@ const (
 	redProgressPostSurgeLavenderReached   ProgressID = redprofile.ProgressPostSurgeLavenderReached
 	redProgressPostSurgeCeladonReady      ProgressID = redprofile.ProgressPostSurgeCeladonReady
 	redProgressRainbowBadge               ProgressID = redprofile.ProgressRainbowBadge
+	redProgressMarshBadge                 ProgressID = redprofile.ProgressMarshBadge
 	redProgressSilphScopeAcquired         ProgressID = redprofile.ProgressSilphScopeAcquired
 	redProgressPokeFluteAcquired          ProgressID = redprofile.ProgressPokeFluteAcquired
 	redProgressFuchsiaProgressionComplete ProgressID = redprofile.ProgressFuchsiaProgressionComplete
