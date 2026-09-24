@@ -23,8 +23,9 @@ type RunContext struct {
 	Goal            string `json:"goal,omitempty"`
 	LLMProfile      string `json:"llm_profile,omitempty"`
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	PlayStyle       string `json:"play_style,omitempty"`
-	RiskTolerance   string `json:"risk_tolerance,omitempty"`
+	PlayStyle       string     `json:"play_style,omitempty"`
+	Purpose         RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance   string     `json:"risk_tolerance,omitempty"`
 	WildEncounters  string `json:"wild_encounters,omitempty"`
 	Seed            int64  `json:"seed"`
 }
@@ -41,6 +42,7 @@ func RunContextForSpec(spec Spec) RunContext {
 		LLMProfile:      spec.LLMProfile,
 		ReasoningEffort: spec.ReasoningEffort,
 		PlayStyle:       spec.PlayStyle,
+		Purpose:         spec.Purpose,
 		RiskTolerance:   spec.RiskTolerance,
 		WildEncounters:  spec.WildEncounters,
 		Seed:            spec.Seed,
