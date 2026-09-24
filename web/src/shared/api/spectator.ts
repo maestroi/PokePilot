@@ -53,6 +53,7 @@ export interface SpectatorRun {
   fps?: number
   llm_profile?: string
   play_style?: string
+  purpose?: string
   risk_tolerance?: string
   wild_encounters?: string
   queued_at?: number
