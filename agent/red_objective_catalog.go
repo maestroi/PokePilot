@@ -26,7 +26,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
 		ChallengeProfiles: redProgressionChallengeProfiles(),
-		CurrentCenter:      isCenter(obs.MapName),
+		CurrentCenter:     isCenter(obs.MapName),
 	}
 
 	for _, name := range skill.PlaceNames() {
