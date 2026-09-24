@@ -34,7 +34,9 @@ func TestJevDecisionEngineReturnsValidatedDistribution(t *testing.T) {
 		Token:   "secret",
 		Client:  server.Client(),
 	}
-	resp, err := DecideChecked(t.Context(), engine, testDecisionRequest())
+	req := testDecisionRequest()
+	req.State = json.RawMessage(`{"badge":2}`)
+	resp, err := DecideChecked(t.Context(), engine, req)
 	if err != nil {
 		t.Fatalf("DecideChecked: %v", err)
 	}
@@ -49,6 +51,10 @@ func TestJevDecisionEngineReturnsValidatedDistribution(t *testing.T) {
 	}
 	if seen.Model != "jev-latest" {
 		t.Fatalf("model = %q, want jev-latest", seen.Model)
+	}
+	state, ok := seen.State.(map[string]any)
+	if !ok || state["badge"] != float64(2) {
+		t.Fatalf("state = %#v, want badge=2", seen.State)
 	}
 	q, ok := seen.Questions[jevDecisionQuestionName]
 	if !ok || q.Type != "choice" || q.Criteria["a"] != "alpha" || q.Criteria["b"] != "beta" {
