@@ -35,13 +35,13 @@ func TestPewterExitCapabilityLinksToBoulderProgression(t *testing.T) {
 
 func TestPrerequisiteRecoveryChoosesBrockForPewterExit(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_leave_pewter_east"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_leave_pewter_east"}}
 
 	obs := Observation{
 		Story: ProgressState{{ID: redProgressPokedexAcquired, Complete: true}},
 		RouteBlockages: []RouteBlockage{{
 			Destination: "route 3",
-			Missing:     []CapabilityID{"can_leave_pewter_east"},
+			Missing:     []Prerequisite{{Capability: "can_leave_pewter_east"}},
 			Prerequisites: []RoutePrerequisiteLink{{
 				Capability: "can_leave_pewter_east",
 				Badge:      state.BadgeBoulder.String(),
