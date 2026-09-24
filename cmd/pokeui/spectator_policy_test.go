@@ -15,6 +15,7 @@ func TestSpectatorPresentationPolicyCrossesPublicBoundary(t *testing.T) {
 			"status":"running",
 			"fps":240,
 			"play_style":"adventure",
+			"purpose":"debug_coverage",
 			"risk_tolerance":"cautious",
 			"wild_encounters":"fight",
 			"decision":"Explore Route 3",
@@ -40,6 +41,7 @@ func TestSpectatorPresentationPolicyCrossesPublicBoundary(t *testing.T) {
 	for _, want := range []string{
 		`"fps":240`,
 		`"play_style":"adventure"`,
+		`"purpose":"debug_coverage"`,
 		`"risk_tolerance":"cautious"`,
 		`"wild_encounters":"fight"`,
 		`"decision":"Explore Route 3"`,
