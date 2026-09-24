@@ -172,6 +172,26 @@ func combatPreparationFor(k *Knowledge, obs Observation) combatPreparationState 
 	return state
 }
 
+// hasCombatLossEvidence reports any typed combat loss not yet cleared by a win,
+// including losses already promoted to retry-ready. Done() clears both modes.
+func (k *Knowledge) hasCombatLossEvidence() bool {
+	if k == nil {
+		return false
+	}
+	for storage := range k.Failures {
+		_, mode, ok := parseFailureStorageKey(storage)
+		if !ok {
+			continue
+		}
+		switch mode {
+		case failureModeCombatLoss, failureModeCombatRetry,
+			legacyFailureModeTrainerLoss, legacyFailureModeGymLoss, legacyFailureModeGymRetry:
+			return true
+		}
+	}
+	return false
+}
+
 func combatPreparationNote(k *Knowledge, obs Observation) string {
 	state := combatPreparationFor(k, obs)
 	if !state.Active {
@@ -225,6 +245,16 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 	if partyHurt(obs) || leadOutOfPP(obs) {
 		for _, o := range offered {
 			if o.Kind == KindHeal {
+				return o, true
+			}
+		}
+	}
+	// A loss with zero HP-healing stock is a logistics gap training cannot
+	// fix: chained fights (no Center between them) can only heal from the bag.
+	// Economy offers a bounded healing buy only while stock is below target.
+	if emergencyHealStock(obs) == 0 {
+		for _, o := range offered {
+			if _, ok := hpHealingItems[string(o.Item)]; ok && o.Kind == KindBuy {
 				return o, true
 			}
 		}

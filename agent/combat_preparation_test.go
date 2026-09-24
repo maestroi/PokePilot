@@ -174,3 +174,32 @@ func TestCombatPreparationReadinessPersistsInCheckpointMemory(t *testing.T) {
 		t.Fatalf("restored preparation failure = %+v, want readiness 160 -> 180 and one loss", failure)
 	}
 }
+
+func TestCombatPreparationRestocksHealingBeforeTraining(t *testing.T) {
+	known := NewKnowledge(nil)
+	obj := Objective{Kind: KindProgress, Progress: ProgressID("main_story_complete")}
+	obs := combatPreparationTestObservation(40)
+	recordStructuredCombatLoss(t, known, obj, obs)
+	if !known.hasCombatLossEvidence() {
+		t.Fatal("typed combat loss not reported as loss evidence")
+	}
+
+	buy := Objective{Kind: KindBuy, Item: ItemID("super potion"), Qty: 3}
+	offered := []Objective{{Kind: KindTrain, Level: 42}, buy}
+	got, ok := combatPreparationObjective(obs, offered, known)
+	if !ok || got.Kind != KindBuy {
+		t.Fatalf("empty-bag preparation choice = %+v, %v; want healing restock first", got, ok)
+	}
+
+	stocked := obs
+	stocked.Bag = []Item{{Name: "potion", Quantity: 1}}
+	got, ok = combatPreparationObjective(stocked, offered, known)
+	if !ok || got.Kind != KindTrain {
+		t.Fatalf("stocked preparation choice = %+v, %v; want training once healing stock exists", got, ok)
+	}
+
+	known.Done(obj)
+	if known.hasCombatLossEvidence() {
+		t.Fatal("combat loss evidence survived the challenge win")
+	}
+}

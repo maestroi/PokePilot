@@ -42,14 +42,17 @@ type Observation struct {
 	Story              ProgressState
 	BlackedOut         bool
 
-	LeadMoves           []Move
-	LeadPP              []uint8
-	RepelSteps          int
-	Bag                 []Item
-	FieldCapabilities   []FieldCapability
-	RecentDialogue      []string
-	History             []RoundRecord
-	Failures            []Failure
+	LeadMoves         []Move
+	LeadPP            []uint8
+	RepelSteps        int
+	Bag               []Item
+	FieldCapabilities []FieldCapability
+	RecentDialogue    []string
+	History           []RoundRecord
+	Failures          []Failure
+	// CombatLossRecorded is typed evidence of an unresolved combat loss, so
+	// economy policy never infers "boss failure" from objective names.
+	CombatLossRecorded  bool                           `json:"combat_loss_recorded,omitempty"`
 	ChallengeReadiness  []ChallengeReadiness           `json:"challenge_readiness,omitempty"`
 	RecoveryCheckpoints []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
 	TrainingAreaChoices []TrainingAreaAssessment       `json:"training_areas,omitempty"`
