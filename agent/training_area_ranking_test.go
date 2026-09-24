@@ -99,7 +99,7 @@ func TestBestKnownTrainingPlaceUsesDynamicSelectedAssessment(t *testing.T) {
 	}
 	obs := Observation{
 		Location: PlaceID(current),
-		Party: []PartyMon{{Species: "testmon", Level: 20, HP: 50, MaxHP: 50}},
+		Party:    []PartyMon{{Species: "testmon", Level: 20, HP: 50, MaxHP: 50}},
 		TrainingAreaChoices: []TrainingAreaAssessment{{
 			Place: "exact best", Location: exactBest, Selected: true, Routable: true,
 			TravelCost: 100, RecoveryCost: 100, TotalCost: 450, Estimate: estimate,
@@ -117,7 +117,7 @@ func TestBestKnownTrainingPlaceUsesDynamicSelectedAssessment(t *testing.T) {
 func TestTrainingAreaTargetTracksCombatReadinessGap(t *testing.T) {
 	obs := Observation{
 		PartyCount: 1,
-		Party: []PartyMon{{Species: "testmon", Level: 20, HP: 50, MaxHP: 50}},
+		Party:      []PartyMon{{Species: "testmon", Level: 20, HP: 50, MaxHP: 50}},
 	}
 	known := NewKnowledge(nil)
 	challenge := Objective{Kind: KindGym, Place: "test gym"}
