@@ -241,3 +241,41 @@ func TestCombatPreparationRestocksHealingAfterReadinessTargetMet(t *testing.T) {
 		t.Fatalf("stocked party with met target was still forced into %+v", got)
 	}
 }
+
+// A city cannot train and every learned habitat is outside the bounded session
+// budget: preparation has no reachable path to its target, so the locked fight
+// must become retryable instead of leaving the planner to wander between towns.
+func TestCombatPreparationReleasesWhenNoTrainingPathExists(t *testing.T) {
+	obj := Objective{Kind: KindProgress, Progress: ProgressID("main_story_complete")}
+	unusable := TrainingAreaAssessment{
+		Place: "route 3", Location: "route 3", Routable: true,
+		Estimate: TrainingEstimate{Viability: TrainingOutsideBudget, XPPerEncounter: 51},
+	}
+	usable := unusable
+	usable.Place, usable.Location, usable.Selected = "route 23", "route 23", true
+	usable.Estimate.Viability = TrainingViable
+
+	for _, tc := range []struct {
+		name    string
+		choices []TrainingAreaAssessment
+		release bool
+	}{
+		{"no usable area", []TrainingAreaAssessment{unusable}, true},
+		{"usable area known", []TrainingAreaAssessment{unusable, usable}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			known := NewKnowledge(nil)
+			obs := combatPreparationTestObservation(36, 89, 27, 37)
+			recordStructuredCombatLoss(t, known, obj, obs)
+			obs.TrainingAreaChoices = tc.choices
+
+			OfferWithEvidence(obs, known)
+			if got := !combatLossRecorded(known, obj); got != tc.release {
+				t.Fatalf("gate released = %v, want %v", got, tc.release)
+			}
+			if got := combatRetryKeys(known)[combatRecoveryObjective(obj).Key()]; got != tc.release {
+				t.Fatalf("retry due = %v, want %v", got, tc.release)
+			}
+		})
+	}
+}
