@@ -249,16 +249,24 @@ func normalizedFailureKey(result ObjectiveResult) string {
 	failure := normalizedFailure(result)
 	context := append([]string(nil), failure.Context...)
 	sort.Strings(context)
+	prerequisites := append([]Prerequisite(nil), failure.Prerequisites...)
+	sort.Slice(prerequisites, func(i, j int) bool {
+		left := string(prerequisites[i].Progress) + "|" + string(prerequisites[i].Capability)
+		right := string(prerequisites[j].Progress) + "|" + string(prerequisites[j].Capability)
+		return left < right
+	})
 	data, _ := json.Marshal(struct {
-		Phase   string   `json:"phase,omitempty"`
-		Class   string   `json:"class,omitempty"`
-		Cause   string   `json:"cause,omitempty"`
-		Context []string `json:"context,omitempty"`
+		Phase         string         `json:"phase,omitempty"`
+		Class         string         `json:"class,omitempty"`
+		Cause         string         `json:"cause,omitempty"`
+		Context       []string       `json:"context,omitempty"`
+		Prerequisites []Prerequisite `json:"prerequisites,omitempty"`
 	}{
-		Phase:   string(failure.Phase),
-		Class:   string(failure.Class),
-		Cause:   failure.Cause,
-		Context: context,
+		Phase:         string(failure.Phase),
+		Class:         string(failure.Class),
+		Cause:         failure.Cause,
+		Context:       context,
+		Prerequisites: prerequisites,
 	})
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum[:8])
@@ -307,26 +315,31 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	scope := recoveryStateScopeFor(result)
 	f.pendingPrerequisites = nil
 	failure := normalizedFailure(result)
-	switch {
-	case failureCauseIs(result, "route_prerequisite_missing"):
-		seen := map[CapabilityID]bool{}
-		for _, raw := range failure.Context {
-			capability := CapabilityID(raw)
-			if capability == "" || seen[capability] {
+	if len(failure.Prerequisites) != 0 {
+		seen := map[Prerequisite]bool{}
+		for _, prerequisite := range failure.Prerequisites {
+			if (prerequisite.Progress == "" && prerequisite.Capability == "") || seen[prerequisite] {
 				continue
 			}
-			seen[capability] = true
-			f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Capability: capability})
+			seen[prerequisite] = true
+			f.pendingPrerequisites = append(f.pendingPrerequisites, prerequisite)
 		}
-	case failureCauseIs(result, "progression_prerequisite_missing"):
-		seen := map[ProgressID]bool{}
-		for _, raw := range failure.Context {
-			progress := ProgressID(raw)
-			if progress == "" || seen[progress] {
-				continue
+	} else {
+		// Compatibility fallback for older normalized failures/checkpoints that
+		// predate structured prerequisite evidence.
+		switch {
+		case failureCauseIs(result, "route_prerequisite_missing"):
+			for _, raw := range failure.Context {
+				if capability := CapabilityID(raw); capability != "" {
+					f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Capability: capability})
+				}
 			}
-			seen[progress] = true
-			f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Progress: progress})
+		case failureCauseIs(result, "progression_prerequisite_missing"):
+			for _, raw := range failure.Context {
+				if progress := ProgressID(raw); progress != "" {
+					f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Progress: progress})
+				}
+			}
 		}
 	}
 	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
