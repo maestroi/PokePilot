@@ -291,7 +291,7 @@ func TestMCPRunRecoveryAuditKeepsOlderRecoveryAndResolvedTriage(t *testing.T) {
 				"finish": map[string]any{
 					"attempt": 1, "reason": "done", "runner_version": "old-revision",
 				},
-				"summary": map[string]any{"progress_known": true, "progressed": true},
+				"summary":  map[string]any{"progress_known": true, "progressed": true},
 				"timeline": timeline,
 			})
 		case "/v1/triage":
