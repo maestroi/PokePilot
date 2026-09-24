@@ -10,9 +10,12 @@ import (
 )
 
 func returnToLeagueCheckpoint(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	switch m.Peek8(sym.CurMap) {
-	case indigoPlateauMap, indigoPlateauLobbyMap,
-		loreleiRoomMap, brunoRoomMap, agathaRoomMap, lanceRoomMap, championsRoomMap:
+	currentMap := m.Peek8(sym.CurMap)
+	switch currentMap {
+	case indigoPlateauMap, indigoPlateauLobbyMap:
+		return nil
+	}
+	if _, ok := leagueStageForRoom(currentMap); ok {
 		return nil
 	}
 	nurse, err := indigoLobbyNurseDestination(romData)
