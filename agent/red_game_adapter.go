@@ -126,6 +126,9 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if missing := redMissingProgressionPrerequisites(o, obs); len(missing) != 0 {
 		return progressionPrerequisiteError(missing)
 	}
+	if missing := redMissingFieldCapabilityPrerequisites(o, obs); len(missing) != 0 {
+		return fieldCapabilityPrerequisiteError(missing)
+	}
 	return nil
 }
 
