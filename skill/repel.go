@@ -53,8 +53,7 @@ func UseRepel(m *emu.Emu, item uint8) error {
 		return fmt.Errorf("skill: UseRepel: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	_, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex); err != nil {
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
 		return fmt.Errorf("skill: UseRepel: open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
