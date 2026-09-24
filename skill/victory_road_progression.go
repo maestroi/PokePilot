@@ -338,8 +338,15 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return prepareIndigoLobby(m, romData, policy)
 	}
 
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadProgression: prepare Surf + Strength: %w", err)
+	missingField := make([]gameruntime.CapabilityID, 0, 2)
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		missingField = append(missingField, "surf")
+	}
+	if !FieldCapabilityFor(&mem, FieldStrength).Usable {
+		missingField = append(missingField, "strength")
+	}
+	if len(missingField) != 0 {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing(missingField...)
 	}
 
 	cur := m.Peek8(sym.CurMap)
