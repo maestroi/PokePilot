@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -180,5 +181,61 @@ printf 'fake-mp4' > "$out"
 	res.Body.Close()
 	if res.StatusCode != http.StatusPartialContent || string(body) != "fake" || !strings.HasPrefix(res.Header.Get("Content-Range"), "bytes 0-3") {
 		t.Fatalf("video status=%d range=%q body=%q", res.StatusCode, res.Header.Get("Content-Range"), body)
+	}
+}
+
+func TestReplayRecordingsIncludeAllRunAttempts(t *testing.T) {
+	recording := func(attempt int) artifactList {
+		return artifactList{
+			RunID: "multi-run", Attempt: attempt,
+			Artifacts: []artifactRef{{
+				Name: "run.gbrun", MediaType: "application/octet-stream",
+				SHA256: strings.Repeat(string(rune('a'+attempt-1)), 64),
+				Store:  "s3", Bucket: "pokepilot",
+				ObjectKey: "runs/multi-run/attempt-" + strconv.Itoa(attempt) + "/run.gbrun",
+				Size:      int64(100 * attempt), Replayable: true,
+			}},
+		}
+	}
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/runs/multi-run/artifacts" {
+			http.NotFound(w, r)
+			return
+		}
+		attempt := 2
+		if raw := r.URL.Query().Get("attempt"); raw != "" {
+			var err error
+			attempt, err = strconv.Atoi(raw)
+			if err != nil || attempt < 1 || attempt > 2 {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		_ = json.NewEncoder(w).Encode(recording(attempt))
+	}))
+	defer wall.Close()
+
+	replay := newReplayServer(wall.URL, "", "", nil)
+	recordings, err := replay.recordings(context.Background(), "multi-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recordings) != 2 {
+		t.Fatalf("recordings=%+v, want two attempts", recordings)
+	}
+	for i, got := range recordings {
+		wantAttempt := i + 1
+		wantKey := "runs/multi-run/attempt-" + strconv.Itoa(wantAttempt) + "/run.gbrun"
+		if got.Attempt != wantAttempt || got.Artifact.ObjectKey != wantKey {
+			t.Fatalf("recording %d=%+v, want attempt=%d key=%q", i, got, wantAttempt, wantKey)
+		}
+	}
+
+	cacheKey := replaySetCacheKey("multi-run", recordings)
+	if !strings.HasPrefix(cacheKey, "runs/multi-run/replay-full-") || !strings.HasSuffix(cacheKey, ".mp4") {
+		t.Fatalf("multi-attempt cache key=%q", cacheKey)
+	}
+	if got, want := replaySetCacheKey("multi-run", recordings[:1]), replayCacheKey("multi-run", recordings[0].Artifact); got != want {
+		t.Fatalf("single-attempt cache key changed: got %q want %q", got, want)
 	}
 }
