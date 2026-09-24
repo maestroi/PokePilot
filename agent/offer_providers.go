@@ -30,6 +30,7 @@ type ObjectiveBlockEvidence struct {
 type ObjectiveOffer struct {
 	Candidates []Objective              `json:"candidates"`
 	Blocked    []ObjectiveBlockEvidence `json:"blocked,omitempty"`
+	Readiness  []ChallengeReadiness     `json:"readiness,omitempty"`
 }
 
 type objectiveProvider interface {
@@ -142,7 +143,9 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		starterOnly := (starterObjectiveProvider{}).Provide(ctx)
 		if len(starterOnly.Candidates) > 0 {
 			candidates := annotate(starterOnly.Candidates, known)
-			return ObjectiveOffer{Candidates: candidates, Blocked: starterOnly.Blocked}
+			offer := ObjectiveOffer{Candidates: candidates, Blocked: starterOnly.Blocked}
+			offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+			return offer
 		}
 	}
 
@@ -168,7 +171,9 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	candidates := append(local, journeys...)
 	candidates = filterCombatRecoveryBlocked(candidates, known)
 	candidates = annotate(candidates, known)
-	return ObjectiveOffer{Candidates: candidates, Blocked: blocked}
+	offer := ObjectiveOffer{Candidates: candidates, Blocked: blocked}
+	offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+	return offer
 }
 
 type starterObjectiveProvider struct{}
