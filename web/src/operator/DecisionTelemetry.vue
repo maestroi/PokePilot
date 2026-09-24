@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { DashboardStats } from '../shared/api/types'
+import type { DashboardStats, DecisionEngineSpec } from '../shared/api/types'
 import {
   decisionCalibration,
   decisionFeed,
+  decisionIdleNote,
   decisionKindRows,
   latency,
   percent
@@ -11,20 +12,26 @@ import {
 
 // Per-run typed-decision telemetry: the stored summary (every call, fixed
 // size) plus, when showFeed is set, the live feed of the most recent calls,
-// which is never stored.
+// which is never stored. engine is the run's selection, used to explain an
+// empty panel before the first call.
 const props = withDefaults(defineProps<{
   stats?: DashboardStats
+  engine?: DecisionEngineSpec
   showFeed?: boolean
 }>(), {
   stats: undefined,
+  engine: undefined,
   showFeed: true
 })
 
 const rows = computed(() => decisionKindRows(props.stats))
 const feed = computed(() => (props.showFeed ? decisionFeed(props.stats) : []))
 const totalCalls = computed(() => rows.value.reduce((sum, row) => sum + row.calls, 0))
-const mode = computed(() => String(props.stats?.decision_mode || ''))
-const model = computed(() => [props.stats?.decision_model, props.stats?.decision_backend].filter(Boolean).join(' · '))
+const mode = computed(() => String(props.stats?.decision_mode || props.engine?.mode || ''))
+const model = computed(() => [
+  props.stats?.decision_model || props.engine?.inference?.label || props.engine?.deployment,
+  props.stats?.decision_backend || props.engine?.backend
+].filter(Boolean).join(' · '))
 
 // Calibration is shown for one kind at a time; default to the busiest kind
 // that has shadow verdicts.
@@ -54,7 +61,9 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
       </span>
     </div>
 
-    <div class="overflow-x-auto">
+    <p v-if="!rows.length" class="text-[11px] text-[var(--poke-muted)]">{{ decisionIdleNote(engine) }}</p>
+
+    <div v-else class="overflow-x-auto">
       <table class="w-full min-w-[30rem] text-[11px]">
         <thead>
           <tr class="text-left text-[9px] text-[var(--poke-muted)] uppercase">

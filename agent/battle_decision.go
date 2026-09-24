@@ -78,3 +78,31 @@ func battleActionLabel(s game.BattleDecisionState, a game.BattleAction) string {
 	}
 	return a.ID()
 }
+
+// BattleTurnObserver is an optional run-level seam, like
+// FailureDecisionPlanner. Run hands it to the game adapter, which reports each
+// battle turn it can describe portably together with the action its own
+// battle policy executed on that turn. It observes only: nothing it does
+// reaches execution, so a shadow backend can be scored on live battles
+// without changing a single input.
+type BattleTurnObserver interface {
+	ObserveBattleTurn(s game.BattleDecisionState, executed game.BattleAction)
+}
+
+// BattleTurnObservingAdapter is implemented by game adapters that can report
+// battle turns. An adapter without it simply reports none.
+type BattleTurnObservingAdapter interface {
+	ObserveBattleTurns(BattleTurnObserver)
+}
+
+// bindBattleTurnObserver attaches the planner's observer, if it has one, to
+// the adapter executing the next objective.
+func bindBattleTurnObserver(a ObjectiveGameAdapter, p Planner) {
+	observer, ok := p.(BattleTurnObserver)
+	if !ok {
+		return
+	}
+	if target, ok := a.(BattleTurnObservingAdapter); ok {
+		target.ObserveBattleTurns(observer)
+	}
+}

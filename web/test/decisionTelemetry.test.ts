@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { decisionCalibration, decisionFeed, decisionKindRows, hasDecisionTelemetry, latency, percent } from '../src/operator/decisionTelemetry.ts'
+import { decisionCalibration, decisionFeed, decisionIdleNote, decisionKindRows, hasDecisionTelemetry, latency, percent, showDecisionTelemetry } from '../src/operator/decisionTelemetry.ts'
 import type { DashboardStats, DecisionKindSummary } from '../src/shared/api/types.ts'
 
 function kind(partial: Partial<DecisionKindSummary>): DecisionKindSummary {
@@ -61,6 +61,25 @@ test('live feed is newest first with a verdict per call', () => {
 test('live view streams the feed and the archive shows only the stored summary', () => {
   const live = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
   const archive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
-  assert.match(live, /<DecisionTelemetry :stats="selectedRun\.stats" \/>/)
-  assert.match(archive, /<DecisionTelemetry :stats="run\.stats" :show-feed="false" \/>/)
+  assert.match(live, /<DecisionTelemetry :stats="selectedRun\.stats" :engine="selectedRun\.decision_engine" \/>/)
+  assert.match(archive, /<DecisionTelemetry :stats="run\.stats" :engine="run\.decision_engine" :show-feed="false" \/>/)
+})
+
+test('a run with a selected engine shows the panel before its first call', () => {
+  const jev = { backend: 'jev' as const, mode: 'shadow' as const, battles: true, failures: true }
+  assert.equal(showDecisionTelemetry(undefined, jev), true)
+  assert.equal(showDecisionTelemetry(undefined, { ...jev, backend: 'off' }), false)
+  assert.equal(showDecisionTelemetry(undefined, { ...jev, mode: 'off' }), false)
+  assert.equal(showDecisionTelemetry(undefined, undefined), false)
+  assert.equal(showDecisionTelemetry(stats, undefined), true)
+  assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move, recoverable failures.')
+  assert.equal(decisionIdleNote({ backend: 'jev', mode: 'shadow' }), 'No decision points enabled, so the engine is never asked.')
+})
+
+test('the live and archive views gate the panel on the run selection too', () => {
+  for (const view of ['LiveView.vue', 'RunArchiveView.vue']) {
+    const source = readFileSync(new URL(`../src/operator/${view}`, import.meta.url), 'utf8')
+    assert.match(source, /showDecisionTelemetry\(\w+\.stats, \w+\.decision_engine\)/, view)
+    assert.match(source, /:engine="\w+\.decision_engine"/, view)
+  }
 })

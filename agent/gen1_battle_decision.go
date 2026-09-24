@@ -72,3 +72,20 @@ func (d *BattleMoveDecider) decide(b state.BattleState) (int, error) {
 	}
 	return action.Slot, nil
 }
+
+// gen1MoveObserver reports each Gen I move turn to a portable
+// BattleTurnObserver as the same move-only state BattleMoveDecider asks
+// about, paired with the slot the deterministic policy chose. Turns the
+// adapter cannot describe (Safari Zone, the Old Man demo) are not reported.
+func gen1MoveObserver(romData []byte, observer BattleTurnObserver) skill.MoveObserver {
+	if observer == nil {
+		return nil
+	}
+	return func(b state.BattleState, executed int) {
+		s, err := skill.MoveOnlyBattleDecisionState(romData, b)
+		if err != nil {
+			return
+		}
+		observer.ObserveBattleTurn(s, game.BattleAction{Kind: game.BattleActionMove, Slot: executed})
+	}
+}

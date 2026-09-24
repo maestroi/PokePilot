@@ -273,6 +273,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: policy returned slot %d, usable %v",
 					m.Peek8(sym.CurMap), x, y, bs, slot, usable)
 			}
+			observeMove(m, *bs, slot)
 			if err := SelectMenuItem(m, slot+1); err != nil {
 				return menuError(m, "select move", err)
 			}
