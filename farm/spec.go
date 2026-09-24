@@ -59,7 +59,7 @@ type Spec struct {
 	// serialized Spec still distinguishes Free play (provided, empty) from
 	// an unset goal. See RunGoal.
 	Goal RunGoal `json:"goal,omitzero"`
-	// PlayStyle, RiskTolerance, and WildEncounters are the orthogonal
+	// PlayStyle, Purpose, RiskTolerance, and WildEncounters are orthogonal
 	// gameplay policy knobs. They live on the Spec so one run's behavior is
 	// fully described by its own wire payload, and so two runs can coexist
 	// in one process without cross-talk. Empty intentionally means "use the
