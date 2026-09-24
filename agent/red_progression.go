@@ -215,8 +215,9 @@ func redProgressionObjectives(obs Observation) []Objective {
 		// ready and the Poke Flute makes the Route 16 detour reversible, offer
 		// Fly alongside the mandatory story step instead of replacing it.
 		if !obs.Story.Has(redProgressFlyReady) &&
-			obs.Story.Has(redProgressPostSurgeCeladonReady) &&
-			obs.Story.Has(redProgressPokeFluteAcquired) {
+			((obs.Story.Has(redProgressPostSurgeCeladonReady) &&
+				obs.Story.Has(redProgressPokeFluteAcquired)) ||
+				redFlyFieldUnlocked(obs)) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,
