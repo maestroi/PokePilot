@@ -20,6 +20,7 @@ func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	k.Done(Objective{Kind: KindTalk, X: 6, Y: 3})
 	k.TalkedTo(0x28, 6, 3)
 	k.TalkedTo(0x36, 7, 10)
+	k.rememberRecoveryCheckpoint("viridian pokemon center", legacyLocationID(0x02), true)
 	k.SawDialogue([]string{
 		"You can pass here\nonly if you have\nthe CASCADEBADGE!",
 		"I'm raising #MON too!",
@@ -89,6 +90,10 @@ func TestMemoryRoundTrip(t *testing.T) {
 	talked36 := legacyLocationID(0x36)
 	if len(got.Knowledge.Talked[talked36]) != 1 || !got.Knowledge.Talked[talked36][[2]uint8{7, 10}] {
 		t.Errorf("Talked[%q] = %v, want (7,10)", talked36, got.Knowledge.Talked[talked36])
+	}
+	checkpoint, ok := got.Knowledge.RecoveryCheckpoints["viridian pokemon center"]
+	if !ok || checkpoint.Location != legacyLocationID(0x02) || !checkpoint.Successful {
+		t.Errorf("RecoveryCheckpoints = %+v, want persisted successful Viridian checkpoint", got.Knowledge.RecoveryCheckpoints)
 	}
 	if got.Intent != intent || got.IntentAge != age {
 		t.Errorf("Intent/Age = (%q, %d), want (%q, %d)", got.Intent, got.IntentAge, intent, age)
