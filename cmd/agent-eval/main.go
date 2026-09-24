@@ -38,7 +38,7 @@ func run() int {
 	backend := flag.String("backend", "llm", "planner backend: llm, decision, or jev")
 	model := flag.String("model", "", "override the selected backend model for this run")
 	baseURL := flag.String("url", "", "override the selected backend URL for this run")
-	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for -backend decision, reject choices below this 0..1 confidence; 0 scores every valid decision")
+	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for typed backends, reject choices below this 0..1 confidence; 0 scores every valid decision")
 	flag.Parse()
 
 	if *minScore < 0 || *minScore > 1 {
@@ -134,6 +134,9 @@ func run() int {
 	started := time.Now()
 	report := agent.EvaluatePlanner(planner, cases)
 	elapsed := time.Since(started)
+	if decisionPlanner != nil && decisionPlanner.Last.Model != "" {
+		modelName = decisionPlanner.Last.Model
+	}
 	promptTokens, completionTokens := 0, 0
 	if usage, ok := planner.(agent.UsagePlanner); ok {
 		promptTokens, completionTokens = usage.Usage()
