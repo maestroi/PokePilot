@@ -14,7 +14,6 @@ export const GOAL_OPTIONS = [
 
 export function nextGoalForPlayStyle(currentGoal: string, playStyle: string, explicitlySelected: boolean): string {
   if (explicitlySelected) return currentGoal
-  return String(playStyle || '').trim().toLowerCase() === 'completionist'
-    ? 'Complete the obtainable Pokédex.'
-    : 'Beat the Elite Four and Champion.'
+  void playStyle
+  return 'Beat the Elite Four and Champion.'
 }
