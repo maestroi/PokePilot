@@ -105,7 +105,8 @@ func CinnabarGymOpen(mem *state.Mem) bool {
 
 // CinnabarProgression is the final #35 executor. It resumes from the Mansion,
 // Cinnabar Island, or the Gym, opens only the remaining quiz gates, delegates
-// combat to Gym/Battle, and returns only after the Volcano Badge is present.
+// combat to Gym/Battle, and returns after a won Blaine battle. The Volcano
+// Badge itself is the objective runtime's postcondition, not this skill's.
 func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: CinnabarProgression: nil policy")
@@ -140,10 +141,8 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err := RequireTrainerBattleWin("gym:blaine", outcome); err != nil {
 		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeVolcano) {
-		return fmt.Errorf("skill: CinnabarProgression: Blaine win returned without Volcano Badge")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }
 
