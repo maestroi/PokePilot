@@ -306,8 +306,9 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	fingerprint := fingerprintRecoverableFailure(result.Objective, result)
 	scope := recoveryStateScopeFor(result)
 	f.pendingPrerequisites = nil
-	if failureCauseIs(result, "route_prerequisite_missing") {
-		failure := normalizedFailure(result)
+	failure := normalizedFailure(result)
+	switch {
+	case failureCauseIs(result, "route_prerequisite_missing"):
 		seen := map[CapabilityID]bool{}
 		for _, raw := range failure.Context {
 			capability := CapabilityID(raw)
@@ -315,7 +316,17 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 				continue
 			}
 			seen[capability] = true
-			f.pendingPrerequisites = append(f.pendingPrerequisites, capability)
+			f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Capability: capability})
+		}
+	case failureCauseIs(result, "progression_prerequisite_missing"):
+		seen := map[ProgressID]bool{}
+		for _, raw := range failure.Context {
+			progress := ProgressID(raw)
+			if progress == "" || seen[progress] {
+				continue
+			}
+			seen[progress] = true
+			f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Progress: progress})
 		}
 	}
 	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
