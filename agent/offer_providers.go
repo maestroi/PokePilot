@@ -28,10 +28,10 @@ type ObjectiveBlockEvidence struct {
 }
 
 type ObjectiveOffer struct {
-	Candidates []Objective                     `json:"candidates"`
-	Blocked    []ObjectiveBlockEvidence        `json:"blocked,omitempty"`
-	Readiness  []ChallengeReadiness            `json:"readiness,omitempty"`
-	Recovery   []RecoveryCheckpointAssessment  `json:"recovery_checkpoints,omitempty"`
+	Candidates []Objective                    `json:"candidates"`
+	Blocked    []ObjectiveBlockEvidence       `json:"blocked,omitempty"`
+	Readiness  []ChallengeReadiness           `json:"readiness,omitempty"`
+	Recovery   []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
 }
 
 type objectiveProvider interface {
