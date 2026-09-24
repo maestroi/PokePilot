@@ -450,7 +450,7 @@ func (c *mcpControl) getRunRecoveryAudit(ctx context.Context, _ *mcp.CallToolReq
 	}
 	if run, ok := debug["run"].(map[string]any); ok {
 		out["run"] = compactRecoveryAuditRecord(run, []string{
-			"run_id", "status", "planner", "starter", "goal", "play_style", "risk_tolerance",
+			"run_id", "status", "planner", "starter", "goal", "play_style", "purpose", "risk_tolerance",
 			"wild_encounters", "llm_profile", "reasoning_effort", "seed", "attempts",
 			"error_attempts", "loss_recoveries", "recovery_profile", "recovery_attempts",
 			"recovery_badges", "recovery_events", "recovery_maps", "reason", "detail",
