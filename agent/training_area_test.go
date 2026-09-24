@@ -153,7 +153,7 @@ func TestCombatPreparationTravelsToBestKnownTrainingArea(t *testing.T) {
 		current:  {training},
 		training: {current},
 	}})
-	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 14, MaxLevel: 16}
+	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 13, MaxLevel: 15}
 	lost := Objective{Kind: KindGym, Place: "pewter gym"}
 	known.Failures[combatLossFailureKey(lost)] = Failure{
 		Objective: lost.String(), Times: 1, ReadinessBaseline: 48, ReadinessTarget: 68,
