@@ -108,6 +108,7 @@ func (w *Wall) handleQueueRepro(res http.ResponseWriter, req *http.Request) {
 		Goal:           farm.GoalFrom(run.Goal),
 		Dest:           run.Dest,
 		PlayStyle:      run.PlayStyle,
+		Purpose:        run.Purpose,
 		RiskTolerance:  run.RiskTolerance,
 		WildEncounters: run.WildEncounters,
 		LLMProfile:     run.LLMProfile,
