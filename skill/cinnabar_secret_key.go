@@ -103,6 +103,9 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	if missing := CinnabarSecretKeyPrerequisites(&mem); len(missing) != 0 {
 		return gameruntime.NewProgressionPrerequisiteMissing(missing...)
 	}
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
+	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
 		// The supported story corridor is Pallet -> Route 21 -> Cinnabar.
@@ -115,20 +118,11 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		// those port/band defects, so restore the original #190 contract rather
 		// than teaching this milestone to solve Seafoam.
 		//
-		// Make Fly usable first so a resumed late-game save can deterministically
-		// return to Pallet instead of asking the walking graph to choose between
-		// Diglett's Cave and the same Seafoam detour. By this stage Thunder,
-		// Poké Flute and Cut are already progression prerequisites, so Fly setup
-		// is an idempotent repair of an intended speedrun capability.
-		state.Snapshot(m, &mem)
-		if !FieldCapabilityFor(&mem, FieldFly).Usable {
-			if err := PrepareFlyFastTravel(m, romData, policy); err != nil {
-				return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Fly for Route 21 approach: %w", err)
-			}
-		}
-		if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldFly}); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare Surf/Fly carriers: %w", err)
-		}
+		// Surf is a declared correctness prerequisite of the progression
+		// objective and is repaired by generic prerequisite recovery before this
+		// skill runs. Fly is only a speed preference: TravelFlee may use it when
+		// already usable, but inability to prepare Fly must never block the
+		// Route 21 correctness path.
 
 		pallet := Destination{Map: semanticPalletTownMap, X: 5, Y: 6}
 		if _, err := TravelFlee(m, romData, pallet, policy, mansionTravelBattles); err != nil {

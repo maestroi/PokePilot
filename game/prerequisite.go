@@ -10,12 +10,17 @@ import (
 // topology and story-stage ordering share recovery plumbing without becoming
 // the same kind of fact.
 type Prerequisite struct {
-	Capability CapabilityID `json:"capability,omitempty"`
-	Progress   ProgressID   `json:"progress,omitempty"`
+	Capability      CapabilityID `json:"capability,omitempty"`
+	FieldCapability CapabilityID `json:"field_capability,omitempty"`
+	Progress        ProgressID   `json:"progress,omitempty"`
 }
 
 func CapabilityPrerequisite(id CapabilityID) Prerequisite {
 	return Prerequisite{Capability: id}
+}
+
+func FieldCapabilityPrerequisite(id CapabilityID) Prerequisite {
+	return Prerequisite{FieldCapability: id}
 }
 
 func ProgressionPrerequisite(id ProgressID) Prerequisite {
@@ -38,6 +43,8 @@ func (e *PrerequisiteMissingError) Error() string {
 		switch {
 		case prerequisite.Progress != "":
 			parts = append(parts, "progress:"+string(prerequisite.Progress))
+		case prerequisite.FieldCapability != "":
+			parts = append(parts, "field_capability:"+string(prerequisite.FieldCapability))
 		case prerequisite.Capability != "":
 			parts = append(parts, "capability:"+string(prerequisite.Capability))
 		default:
@@ -45,6 +52,16 @@ func (e *PrerequisiteMissingError) Error() string {
 		}
 	}
 	return fmt.Sprintf("game: semantic prerequisites missing [%s]", strings.Join(parts, ", "))
+}
+
+func NewFieldCapabilityPrerequisiteMissing(ids ...CapabilityID) error {
+	missing := make([]Prerequisite, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			missing = append(missing, FieldCapabilityPrerequisite(id))
+		}
+	}
+	return &PrerequisiteMissingError{Missing: missing}
 }
 
 func NewProgressionPrerequisiteMissing(ids ...ProgressID) error {

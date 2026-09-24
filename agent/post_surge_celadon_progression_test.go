@@ -48,7 +48,7 @@ func TestRedProgressionAdvancesFromLavenderToCeladonRecovery(t *testing.T) {
 	}
 }
 
-func TestRedProgressionOffersFlyBeforeErikaAfterCeladonReady(t *testing.T) {
+func TestRedProgressionOffersOptionalFlyAlongsideErikaAfterCeladonReady(t *testing.T) {
 	obs := postSurgeObservation(0x85)
 	obs.Story = append(obs.Story,
 		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
@@ -59,8 +59,8 @@ func TestRedProgressionOffersFlyBeforeErikaAfterCeladonReady(t *testing.T) {
 	if !hasProgressObjective(got, redProgressFlyReady) {
 		t.Fatal("Celadon-ready observation with the Poke Flute already in hand did not offer the Fly preparation stage")
 	}
-	if hasProgressObjective(got, redProgressRainbowBadge) {
-		t.Fatalf("Erika leaked before Fly was prepared: %v", got)
+	if !hasProgressObjective(got, redProgressRainbowBadge) {
+		t.Fatalf("optional Fly setup suppressed the mandatory Erika stage: %v", got)
 	}
 }
 
@@ -175,7 +175,7 @@ func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) 
 	if !hasProgressObjective(got, redProgressFlyReady) {
 		t.Fatalf("HM02-owned partial Fly setup was not resumed: %v", got)
 	}
-	if hasProgressObjective(got, redProgressPostSurgeLavenderReached) {
-		t.Fatalf("partial Fly setup incorrectly backtracked to Lavender: %v", got)
-	}
+	// Fly recovery is now optional and may coexist with mandatory story
+	// objectives; the important invariant is that the partial HM02 setup remains
+	// resumable instead of becoming a hidden correctness gate.
 }

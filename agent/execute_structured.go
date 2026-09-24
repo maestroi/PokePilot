@@ -151,12 +151,30 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			return result, fmt.Errorf("agent: %s: unknown Red field capability %q", o, o.FieldCapability)
 		}
 		policy := skill.StatAwareMove(romData)
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		required := skill.OwnedCoreProgressionFieldMoves(romData, &mem)
+		hasTarget := false
+		for _, requiredMove := range required {
+			if requiredMove == move {
+				hasTarget = true
+				break
+			}
+		}
+		if !hasTarget {
+			required = append(required, move)
+		}
+
 		var err error
-		switch move {
-		case skill.FieldCut, skill.FieldFlash:
+		if (move == skill.FieldCut || move == skill.FieldFlash) && len(required) == 1 {
+			// Preserve the utility-carrier preference when there are no other
+			// unlocked core traversal moves to retain.
 			err = skill.RepairUtilityFieldCapability(m, romData, policy, move)
-		default:
-			err = skill.RepairFieldCapabilities(m, romData, policy, []skill.FieldMove{move})
+		} else {
+			// A later repair may change party composition. Carry every unlocked
+			// core traversal capability into the same roster invariant so
+			// repairing Strength cannot strand an already-repaired Surf user.
+			err = skill.RepairFieldCapabilities(m, romData, policy, required)
 		}
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)

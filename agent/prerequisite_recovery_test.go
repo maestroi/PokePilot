@@ -178,3 +178,36 @@ func TestNonPrerequisiteFailureClearsPendingRouteRecovery(t *testing.T) {
 		t.Fatalf("non-prerequisite failure retained stale recovery: %v", policy.pendingPrerequisites)
 	}
 }
+
+func TestPrerequisiteRecoveryChainsDeclaredFieldCapabilities(t *testing.T) {
+	policy := newRunFailurePolicy(3)
+	policy.pendingPrerequisites = []Prerequisite{
+		{FieldCapability: "surf"},
+		{FieldCapability: "strength"},
+	}
+	obs := Observation{FieldCapabilities: []FieldCapability{
+		{Name: "surf", BadgeOwned: true, HMOwned: true},
+		{Name: "strength", BadgeOwned: true, HMOwned: true},
+	}}
+
+	first, repaired, ok := policy.prerequisiteRecovery(obs, nil)
+	if !ok || first.Kind != KindRepairFieldCapability || first.FieldCapability != "surf" {
+		t.Fatalf("first field recovery = %+v repaired=%+v ok=%v, want Surf repair", first, repaired, ok)
+	}
+	if !reflect.DeepEqual(repaired, []Prerequisite{{FieldCapability: "surf"}}) {
+		t.Fatalf("first repaired prerequisites = %+v", repaired)
+	}
+
+	obs.FieldCapabilities[0].Usable = true
+	policy.success()
+	second, repaired, ok := policy.prerequisiteRecovery(obs, nil)
+	if !ok || second.Kind != KindRepairFieldCapability || second.FieldCapability != "strength" {
+		t.Fatalf("second field recovery = %+v repaired=%+v ok=%v, want Strength repair", second, repaired, ok)
+	}
+
+	obs.FieldCapabilities[1].Usable = true
+	policy.success()
+	if got, repaired, ok := policy.prerequisiteRecovery(obs, nil); ok {
+		t.Fatalf("completed field requirement chain retained recovery %+v via %+v", got, repaired)
+	}
+}

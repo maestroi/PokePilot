@@ -188,17 +188,20 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	var semanticPrerequisite *gameruntime.PrerequisiteMissingError
 	if errors.As(err, &semanticPrerequisite) {
 		context := make([]string, 0, len(semanticPrerequisite.Missing))
-		hasProgress := false
+		hasObjectivePrerequisite := false
 		for _, prerequisite := range semanticPrerequisite.Missing {
 			switch {
 			case prerequisite.Progress != "":
-				hasProgress = true
+				hasObjectivePrerequisite = true
 				context = append(context, string(prerequisite.Progress))
+			case prerequisite.FieldCapability != "":
+				hasObjectivePrerequisite = true
+				context = append(context, string(prerequisite.FieldCapability))
 			case prerequisite.Capability != "":
 				context = append(context, string(prerequisite.Capability))
 			}
 		}
-		if hasProgress {
+		if hasObjectivePrerequisite {
 			return "progression_prerequisite_missing", context
 		}
 		return "route_prerequisite_missing", context

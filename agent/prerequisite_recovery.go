@@ -31,12 +31,17 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 		return Objective{}, nil, false
 	}
 
-	// Prune story prerequisites satisfied by the previous recovery transaction.
-	// Capability prerequisites retain historical lifetime semantics and are
-	// cleared by success().
+	// Prune prerequisites satisfied by the previous recovery transaction.
+	// Direct field-capability requirements, like progression facts, survive a
+	// successful recovery objective long enough to be re-observed here. Route
+	// capability prerequisites retain their historical lifetime semantics and
+	// are cleared by success().
 	pending := f.pendingPrerequisites[:0]
 	for _, prerequisite := range f.pendingPrerequisites {
 		if prerequisite.Progress != "" && obs.Story.Has(prerequisite.Progress) {
+			continue
+		}
+		if prerequisite.FieldCapability != "" && fieldCapabilityUsable(obs, prerequisite.FieldCapability) {
 			continue
 		}
 		pending = append(pending, prerequisite)
@@ -91,6 +96,16 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 			continue
 		}
 
+		if prerequisite.FieldCapability != "" {
+			if fieldCapabilityRepairReady(obs, prerequisite.FieldCapability) {
+				return Objective{
+					Kind:            KindRepairFieldCapability,
+					FieldCapability: prerequisite.FieldCapability,
+				}, []Prerequisite{prerequisite}, true
+			}
+			continue
+		}
+
 		if prerequisite.Capability == "" {
 			continue
 		}
@@ -119,6 +134,15 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 	}
 
 	return Objective{}, nil, false
+}
+
+func fieldCapabilityUsable(obs Observation, capability CapabilityID) bool {
+	for _, field := range obs.FieldCapabilities {
+		if field.Name == capability {
+			return field.Usable
+		}
+	}
+	return false
 }
 
 func fieldCapabilityRepairReady(obs Observation, capability CapabilityID) bool {

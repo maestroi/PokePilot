@@ -189,3 +189,72 @@ func TestVictoryRoadOrderingIsStructuredAtAdapterBoundary(t *testing.T) {
 		t.Fatalf("Victory Road prerequisites = %+v, want %+v", missing.Missing, want)
 	}
 }
+
+func TestVictoryRoadValidationReportsStructuredFieldRequirements(t *testing.T) {
+	adapter := &redObjectiveAdapter{}
+	obs := Observation{
+		Story: ProgressState{{ID: ProgressRoute23BadgeChecks, Complete: true}},
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", BadgeOwned: true, HMOwned: true},
+			{Name: "strength", BadgeOwned: true, HMOwned: true},
+		},
+	}
+	err := adapter.Validate(Objective{Kind: KindProgress, Progress: redProgressVictoryRoadCleared}, obs)
+	var missing *gameruntime.PrerequisiteMissingError
+	if !errors.As(err, &missing) {
+		t.Fatalf("Victory Road field validation error = %v, want typed prerequisite error", err)
+	}
+	want := []gameruntime.Prerequisite{
+		gameruntime.FieldCapabilityPrerequisite("surf"),
+		gameruntime.FieldCapabilityPrerequisite("strength"),
+	}
+	if !reflect.DeepEqual(missing.Missing, want) {
+		t.Fatalf("Victory Road field prerequisites = %+v, want %+v", missing.Missing, want)
+	}
+}
+
+func TestCinnabarFlyPreferenceNeverBlocksSurfReadyProgression(t *testing.T) {
+	adapter := &redObjectiveAdapter{}
+	obs := Observation{
+		Story: ProgressState{
+			{ID: redProgressFuchsiaProgressionComplete, Complete: true},
+			{ID: redProgressSilphRescueComplete, Complete: true},
+			{ID: redProgressMarshBadge, Complete: true},
+		},
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+			{Name: "fly", BadgeOwned: true, HMOwned: false, Learned: false, Usable: false},
+		},
+	}
+	requirements := redProgressionFieldCapabilityRequirements(
+		Objective{Kind: KindProgress, Progress: ProgressSecretKeyOwned},
+		obs,
+	)
+	if !reflect.DeepEqual(requirements.Required, []CapabilityID{"surf"}) {
+		t.Fatalf("Cinnabar required field capabilities = %v, want [surf]", requirements.Required)
+	}
+	if !reflect.DeepEqual(requirements.Preferred, []CapabilityID{"fly"}) {
+		t.Fatalf("Cinnabar preferred field capabilities = %v, want [fly]", requirements.Preferred)
+	}
+	if err := adapter.Validate(Objective{Kind: KindProgress, Progress: ProgressSecretKeyOwned}, obs); err != nil {
+		t.Fatalf("Surf-ready Cinnabar progression was blocked by optional Fly: %v", err)
+	}
+}
+
+func TestFlyProgressionRequirementSwitchesFromCutToFlyAfterHM02(t *testing.T) {
+	obj := Objective{Kind: KindProgress, Progress: redProgressFlyReady}
+	before := Observation{FieldCapabilities: []FieldCapability{
+		{Name: "cut", BadgeOwned: true, HMOwned: true, Usable: true},
+		{Name: "fly", BadgeOwned: true, HMOwned: false},
+	}}
+	if got := redProgressionFieldCapabilityRequirements(obj, before).Required; !reflect.DeepEqual(got, []CapabilityID{"cut"}) {
+		t.Fatalf("Fly requirements before HM02 = %v, want [cut]", got)
+	}
+
+	after := before
+	after.FieldCapabilities = append([]FieldCapability(nil), before.FieldCapabilities...)
+	after.FieldCapabilities[1].HMOwned = true
+	if got := redProgressionFieldCapabilityRequirements(obj, after).Required; !reflect.DeepEqual(got, []CapabilityID{"fly"}) {
+		t.Fatalf("Fly requirements after HM02 = %v, want [fly]", got)
+	}
+}

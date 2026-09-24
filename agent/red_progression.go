@@ -191,17 +191,11 @@ func redProgressionObjectives(obs Observation) []Objective {
 	}
 	if hasBadge(obs, state.BadgeThunder) {
 		switch {
-		case !obs.Story.Has(redProgressFlyReady) && redFlyFieldUnlocked(obs):
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressFlyReady,
-				Note:     "(HM02 Fly is already owned; finish preparing a compatible current-party Fly user and return recovered to Celadon so later Travel can fast-travel instead of walking across Kanto)",
-			})
 		case !obs.Story.Has(redProgressRainbowBadge) && !obs.Story.Has(redProgressPostSurgeLavenderReached):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressPostSurgeLavenderReached,
-				Note:     "(repair or retain a Cut carrier, travel through Cerulean and Route 9, then cross Rock Tunnel to the Lavender checkpoint; Flash is optional for ROM-driven navigation)",
+				Note:     "(with the declared Cut prerequisite usable, travel through Cerulean and Route 9, then cross Rock Tunnel to the Lavender checkpoint; Flash is optional for ROM-driven navigation)",
 			})
 		case !obs.Story.Has(redProgressRainbowBadge) && !obs.Story.Has(redProgressPostSurgeCeladonReady):
 			out = append(out, Objective{
@@ -209,26 +203,25 @@ func redProgressionObjectives(obs Observation) []Objective {
 				Progress: redProgressPostSurgeCeladonReady,
 				Note:     "(from Lavender or later, continue through Route 8/7's Underground Path to the Celadon Pokemon Center and fully recover the party before Erika)",
 			})
-		case !obs.Story.Has(redProgressFlyReady) && obs.Story.Has(redProgressPostSurgeCeladonReady) &&
-			obs.Story.Has(redProgressPokeFluteAcquired):
-			// The Route 16 Fly house is a one-way trip past the sleeping Snorlax:
-			// PrepareFlyFastTravel (skill/route16_fly.go) refuses to commit to it
-			// without the Poke Flute already in hand, since the only way back is
-			// through Snorlax again. Offering this stage before the Flute exists
-			// used to hand the strategist a plan step that could never succeed,
-			// burning the run's one-shot same-failure escalation on the first
-			// repeat (farm-issue:1486, run-mir8dcxt9sei). Fall through to Erika
-			// instead; Silph Scope/Poke Flute are independently offered below.
-			out = append(out, Objective{
-				Kind:     KindProgress,
-				Progress: redProgressFlyReady,
-				Note:     "(take the short Route 16 Cut detour, receive HM02 Fly, prepare a compatible current-party Fly user, then return recovered to Celadon)",
-			})
 		case !obs.Story.Has(redProgressRainbowBadge):
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressRainbowBadge,
-				Note:     "(from a recovered Celadon state with Fly prepared, revalidate the Cut carrier, take the short gym approach, defeat Erika, and verify the Rainbow Badge)",
+				Note:     "(from a recovered Celadon state with the declared Cut prerequisite usable, take the short gym approach, defeat Erika, and verify the Rainbow Badge)",
+			})
+		}
+
+		// Fly is a speed optimization, not a correctness gate. Once Celadon is
+		// ready and the Poke Flute makes the Route 16 detour reversible, offer
+		// Fly alongside the mandatory story step instead of replacing it.
+		if !obs.Story.Has(redProgressFlyReady) &&
+			((obs.Story.Has(redProgressPostSurgeCeladonReady) &&
+				obs.Story.Has(redProgressPokeFluteAcquired)) ||
+				redFlyFieldUnlocked(obs)) {
+			out = append(out, Objective{
+				Kind:     KindProgress,
+				Progress: redProgressFlyReady,
+				Note:     "(optional fast-travel setup: use the declared Cut/Fly prerequisites around the Route 16 HM02 handoff; skip this optimization if roster recovery is not worthwhile)",
 			})
 		}
 	}

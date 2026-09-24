@@ -332,13 +332,13 @@ func (f *runFailurePolicy) success() {
 	f.lastFailKey = ""
 	f.retreatStreak, f.lastRetreatLevel = 0, 0
 	// Route-capability recovery is tied to the failed journey and is cleared by
-	// any successful objective, matching historical behavior. Progression
-	// prerequisites survive the prerequisite objective itself so the next round
-	// can re-observe, prune the fact that just became true, and repair another
-	// missing story fact from the same structured failure.
+	// any successful objective, matching historical behavior. Progression facts
+	// and direct field-capability requirements survive the prerequisite objective
+	// itself so the next round can re-observe, prune what just became true, and
+	// repair another item from the same structured requirement set.
 	kept := f.pendingPrerequisites[:0]
 	for _, prerequisite := range f.pendingPrerequisites {
-		if prerequisite.Progress != "" {
+		if prerequisite.Progress != "" || prerequisite.FieldCapability != "" {
 			kept = append(kept, prerequisite)
 		}
 	}

@@ -251,8 +251,8 @@ func normalizedFailureKey(result ObjectiveResult) string {
 	sort.Strings(context)
 	prerequisites := append([]Prerequisite(nil), failure.Prerequisites...)
 	sort.Slice(prerequisites, func(i, j int) bool {
-		left := string(prerequisites[i].Progress) + "|" + string(prerequisites[i].Capability)
-		right := string(prerequisites[j].Progress) + "|" + string(prerequisites[j].Capability)
+		left := string(prerequisites[i].Progress) + "|" + string(prerequisites[i].FieldCapability) + "|" + string(prerequisites[i].Capability)
+		right := string(prerequisites[j].Progress) + "|" + string(prerequisites[j].FieldCapability) + "|" + string(prerequisites[j].Capability)
 		return left < right
 	})
 	data, _ := json.Marshal(struct {
@@ -318,7 +318,7 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	if len(failure.Prerequisites) != 0 {
 		seen := map[Prerequisite]bool{}
 		for _, prerequisite := range failure.Prerequisites {
-			if (prerequisite.Progress == "" && prerequisite.Capability == "") || seen[prerequisite] {
+			if (prerequisite.Progress == "" && prerequisite.FieldCapability == "" && prerequisite.Capability == "") || seen[prerequisite] {
 				continue
 			}
 			seen[prerequisite] = true
