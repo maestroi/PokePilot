@@ -176,6 +176,7 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	candidates = annotate(candidates, known)
 	offer := ObjectiveOffer{Candidates: candidates, Blocked: blocked}
 	offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+	offer = withChallengeHealingSupply(obs, offer)
 	offer.Recovery = rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
 	return offer
 }
@@ -365,28 +366,72 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 // challenge lost far from one (the League's chained fights) retried forever
 // with an empty bag.
 func restockHealingObjectives(obs Observation) []Objective {
-	if len(obs.RestockStock) == 0 || !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
+	if !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
 		return nil
 	}
-	obs.MartStock = obs.RestockStock
-	economy := EconomyContext(obs)
-	if economy == nil {
-		return nil
-	}
-	for _, advice := range economy.Purchases {
-		if _, heal := hpHealingItems[advice.Item]; !heal || !advice.ShouldBuy || advice.SuggestedQty <= 0 {
-			continue
-		}
-		item, ok := ItemByName(advice.Item)
-		if !ok {
-			continue
-		}
-		return []Objective{{
-			Kind: KindBuy, Item: item, Qty: advice.SuggestedQty, Intent: combatRecoverySupplyIntent,
-			Note: "(combat recovery supply: travel to the nearest reachable shop and restock HP healing before retrying)",
-		}}
+	if buy, ok := challengeHealingPurchase(obs, targetEmergencyHeals); ok {
+		return []Objective{buy}
 	}
 	return nil
+}
+
+// challengeHealingPurchase sizes one HP healing purchase that brings the bag
+// up to target heals at the nearest reachable shop (RestockStock). It always
+// travels to the counter first — a no-op when already there — because mixed
+// service rooms like the League lobby leave the player away from the clerk.
+// The item is the cheapest stocked medicine strong enough for the party;
+// quantity is bounded by spendable money after reservations and bag space.
+func challengeHealingPurchase(obs Observation, target int) (Objective, bool) {
+	heals := emergencyHealStock(obs)
+	if heals >= target || len(obs.RestockStock) == 0 {
+		return Objective{}, false
+	}
+	view := obs
+	view.MartStock = obs.RestockStock
+	economy := EconomyContext(view)
+	if economy == nil {
+		return Objective{}, false
+	}
+	name := preferredHealingPurchase(view, economy.SpendableMoney)
+	spec, known := ItemEconomy(name)
+	if name == "" || !known || (bagQuantity(obs, name) == 0 && economy.BagSlotsFree == 0) {
+		return Objective{}, false
+	}
+	qty := boundedAffordableQty(target-heals, economy.SpendableMoney, spec.UnitPrice)
+	item, ok := ItemByName(name)
+	if qty <= 0 || !ok {
+		return Objective{}, false
+	}
+	return Objective{
+		Kind: KindBuy, Item: item, Qty: qty, Intent: combatRecoverySupplyIntent,
+		Note: "(challenge supply: stock HP healing at the nearest shop before committing)",
+	}, true
+}
+
+// withChallengeHealingSupply turns a readiness "restock to the profile's
+// healing target" recommendation into the one purchase that satisfies it,
+// replacing the economy's smaller generic healing buy. Readiness is computed
+// from the finished offer, so this runs after it rather than as a provider.
+func withChallengeHealingSupply(obs Observation, offer ObjectiveOffer) ObjectiveOffer {
+	target := 0
+	for _, readiness := range offer.Readiness {
+		if readiness.Action == ChallengeRestock && readiness.HealingTarget > target {
+			target = readiness.HealingTarget
+		}
+	}
+	buy, ok := challengeHealingPurchase(obs, target)
+	if !ok {
+		return offer
+	}
+	out := make([]Objective, 0, len(offer.Candidates)+1)
+	for _, o := range offer.Candidates {
+		if _, heal := hpHealingItems[string(o.Item)]; o.Kind == KindBuy && heal {
+			continue
+		}
+		out = append(out, o)
+	}
+	offer.Candidates = append(out, buy)
+	return offer
 }
 
 type explorationObjectiveProvider struct{}

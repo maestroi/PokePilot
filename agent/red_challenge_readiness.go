@@ -6,6 +6,11 @@ import "github.com/maestroi/pokepilot/red/state"
 // tables (pokered/data/trainers/parties.asm). Generic readiness never knows
 // these names or values; the adapter translates the game's documented challenge
 // facts into the portable weighted party-readiness scale.
+// redLeagueHealingStock is the HP healing carried into the Elite Four: two per
+// chained fight is roughly one top-up per battle for the lead plus a spare.
+// Money bounds what is actually bought.
+const redLeagueHealingStock = 10
+
 func redReadinessFloor(maxEnemyLevel int) int {
 	if maxEnemyLevel <= 0 {
 		return 0
@@ -57,12 +62,19 @@ func redProgressionChallengeProfiles() []CatalogChallengeProfile {
 		{Objective{Kind: KindProgress, Progress: redProgressLeagueLanceDefeated}, 62},
 		{Objective{Kind: KindProgress, Progress: ProgressLeagueChampionDefeated}, 65},
 	}
-	out := make([]CatalogChallengeProfile, 0, len(specs))
+	out := make([]CatalogChallengeProfile, 0, len(specs)+1)
 	for _, spec := range specs {
 		out = append(out, CatalogChallengeProfile{
 			Objective: spec.objective.Key(),
 			Readiness: ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(spec.maxLevel)},
 		})
 	}
+	// Committing to the League enters five chained fights with no way back to
+	// the lobby Center, so the bag is the only healing. The lobby shop sits
+	// right beside the commit point.
+	out = append(out, CatalogChallengeProfile{
+		Objective: Objective{Kind: KindProgress, Progress: ProgressLeagueChallengeStarted}.Key(),
+		Readiness: ChallengeReadinessProfile{MinimumHealingStock: redLeagueHealingStock},
+	})
 	return out
 }

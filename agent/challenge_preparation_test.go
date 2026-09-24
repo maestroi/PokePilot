@@ -175,3 +175,63 @@ func TestRedLeagueProfileUsesChampionCeiling(t *testing.T) {
 	}
 	t.Fatal("Champion challenge profile missing")
 }
+
+// The League commits to five chained fights with no Center, so the lobby shop
+// right beside the commit point must stock the bag first — no prior loss
+// required.
+func TestLeagueCommitStocksHealingFirst(t *testing.T) {
+	challenge := Objective{Kind: KindProgress, Progress: ProgressLeagueChallengeStarted}
+	profile := ChallengeReadinessProfile{}
+	for _, candidate := range redProgressionChallengeProfiles() {
+		if candidate.Objective == challenge.Key() {
+			profile = candidate.Readiness
+		}
+	}
+	if profile.MinimumHealingStock == 0 {
+		t.Fatal("Red League commit profile carries no healing-stock target")
+	}
+
+	obs := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "venusaur", Level: 89, HP: 314, MaxHP: 314}},
+		Money:      15994,
+		Bag:        []Item{{Name: "pokeball", Quantity: 9}},
+		// Standing outside the lobby: no shop on this map, the lobby is nearest.
+		RestockStock: []string{"ultra ball", "great ball", "full restore", "max potion", "full heal", "revive", "max repel"},
+	}
+	readiness := EvaluateChallengeReadiness(obs, NewKnowledge(nil), challenge, profile)
+	if readiness.Action != ChallengeRestock || readiness.HealingTarget != profile.MinimumHealingStock {
+		t.Fatalf("readiness = %+v, want restock to the League healing target", readiness)
+	}
+
+	offer := withChallengeHealingSupply(obs, ObjectiveOffer{
+		Candidates: []Objective{challenge, {Kind: KindBuy, Item: "potion", Qty: 2}},
+		Readiness:  []ChallengeReadiness{readiness},
+	})
+	var buy Objective
+	for _, o := range offer.Candidates {
+		if o.Kind == KindBuy {
+			if buy.Kind == KindBuy {
+				t.Fatalf("offer kept two healing buys: %+v", offer.Candidates)
+			}
+			buy = o
+		}
+	}
+	// 15994 / 2500 = 6 MAX POTION, the cheapest lobby medicine that covers
+	// half of a 314 HP lead.
+	if buy.Item != "max potion" || buy.Qty != 6 || buy.Intent != combatRecoverySupplyIntent {
+		t.Fatalf("League supply buy = %+v, want 6 MAX POTION travel-and-buy", buy)
+	}
+	got, _, ok := proactiveChallengePreparationObjective(obs, offer.Candidates, offer.Readiness, NewKnowledge(nil))
+	if !ok || got.Key() != buy.Key() {
+		t.Fatalf("preparation = %+v ok=%v, want the League healing supply before committing", got, ok)
+	}
+
+	// Once money no longer covers another unit, the League is ready to commit.
+	stocked := obs
+	stocked.Money = 994
+	stocked.Bag = append(stocked.Bag, Item{Name: "max potion", Quantity: 6})
+	if got := EvaluateChallengeReadiness(stocked, NewKnowledge(nil), challenge, profile); got.Action != ChallengeReady {
+		t.Fatalf("stocked readiness = %+v, want ready", got)
+	}
+}

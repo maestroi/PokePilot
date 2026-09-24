@@ -71,9 +71,8 @@ type Observation struct {
 	HasGrass  bool
 	Training  *TrainingEstimate `json:"training,omitempty"`
 	MartStock []string
-	// RestockStock lists items a shop reachable by travel sells. The adapter
-	// fills it only when the bag holds no HP healing, the one case the
-	// economy offers a travel-and-buy recovery purchase.
+	// RestockStock lists what the nearest shop reachable by travel sells, for
+	// travel-and-buy healing purchases (challengeHealingPurchase).
 	RestockStock []string `json:"restock_stock,omitempty"`
 	MapObjects   []MapObject
 

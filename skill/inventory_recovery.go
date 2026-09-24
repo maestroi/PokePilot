@@ -116,34 +116,49 @@ func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartR
 	return best, found, nil
 }
 
-// ReachableMartStock lists every item a recovery mart reachable from the live
-// state stocks. It lets planners offer "travel and buy" work (EnsureItemStock)
-// when the player is not standing in a shop.
-func ReachableMartStock(m *emu.Emu, romData []byte) []uint8 {
+// NearestMartStock lists what the nearest recovery mart reachable from the
+// live state stocks. It lets planners offer "travel and buy" work (RestockItem)
+// without standing in a shop, and keeps that offer on the closest counter —
+// from the Indigo Plateau checkpoint that is the League lobby shop.
+func NearestMartStock(m *emu.Emu, romData []byte) []uint8 {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	marts, err := reachableStockMarts(romData, &mem)
 	if err != nil {
 		return nil
 	}
-	seen := map[uint8]bool{}
-	var out []uint8
+	best, bestHops := standardMartRecoveryTarget{}, -1
 	for _, target := range standardMartRecoveryTargets {
-		if _, ok := marts[target]; !ok {
-			continue
-		}
-		items, err := rom.MartItems(romData, target.mapID)
-		if err != nil {
-			continue
-		}
-		for _, item := range items {
-			if !seen[item] {
-				seen[item] = true
-				out = append(out, item)
-			}
+		if hops, ok := marts[target]; ok && (bestHops < 0 || hops < bestHops) {
+			best, bestHops = target, hops
 		}
 	}
-	return out
+	if bestHops < 0 {
+		return nil
+	}
+	items, err := rom.MartItems(romData, best.mapID)
+	if err != nil {
+		return nil
+	}
+	return items
+}
+
+// RestockItem buys qty more of item at the nearest reachable mart that stocks
+// it. EnsureItemStock owns travel, bag space, purchase and the bag-count
+// postcondition; at least one unit must be added.
+func RestockItem(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, qty int) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	have := itemCount(&mem, item)
+	target := have + qty
+	if target > 99 {
+		target = 99
+	}
+	if target <= have {
+		return fmt.Errorf("skill: RestockItem: item %#02x already at %d", item, have)
+	}
+	_, err := EnsureItemStock(m, romData, policy, item, target, have+1)
+	return err
 }
 
 // EnsureItemStock restores a deterministic reserve before a skill consumes an

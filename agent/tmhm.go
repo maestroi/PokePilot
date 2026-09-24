@@ -69,6 +69,7 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = prioritizeDexCleanupObjectives(obs, known, out)
 	offer.Candidates = annotateCombatPreparation(obs, known, out)
 	offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+	offer = withChallengeHealingSupply(obs, offer)
 	offer.TrainingAreas = append([]TrainingAreaAssessment(nil), obs.TrainingAreaChoices...)
 	return offer
 }

@@ -26,6 +26,9 @@ type ChallengeReadinessProfile struct {
 	MinimumReadiness   int      `json:"minimum_readiness,omitempty"`
 	MinimumUsableMons  int      `json:"minimum_usable_mons,omitempty"`
 	PreferredMoveTypes []string `json:"preferred_move_types,omitempty"`
+	// MinimumHealingStock is the HP healing items to carry before committing
+	// to a challenge that chains fights with no Center between them.
+	MinimumHealingStock int `json:"minimum_healing_stock,omitempty"`
 }
 
 // ChallengeReadiness is the structured planner-facing assessment for one
@@ -42,6 +45,7 @@ type ChallengeReadiness struct {
 	UsableParty       int                      `json:"usable_party,omitempty"`
 	RecoveryAvailable bool                     `json:"recovery_available,omitempty"`
 	EmergencyHeals    int                      `json:"emergency_heals,omitempty"`
+	HealingTarget     int                      `json:"healing_target,omitempty"`
 	Reasons           []string                 `json:"reasons,omitempty"`
 }
 
@@ -94,7 +98,8 @@ func challengeProfileFor(obs Observation, challenge Objective) ChallengeReadines
 }
 
 func challengeProfileKnown(profile ChallengeReadinessProfile) bool {
-	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0
+	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0 ||
+		profile.MinimumHealingStock > 0
 }
 
 func challengeUsableParty(obs Observation) int {
@@ -271,6 +276,17 @@ func EvaluateChallengeReadiness(obs Observation, known *Knowledge, challenge Obj
 		result.Action = ChallengeRestock
 		result.Reasons = []string{"recent challenge loss and zero emergency healing stock"}
 		return result
+	}
+
+	// A chained challenge can only heal from the bag once committed. Stock up
+	// first, even without a prior loss, while a purchase is still possible.
+	if target := profile.MinimumHealingStock; target > 0 {
+		if _, ok := challengeHealingPurchase(obs, target); ok {
+			result.Action = ChallengeRestock
+			result.HealingTarget = target
+			result.Reasons = []string{"challenge chains fights without a Center; stock HP healing before committing"}
+			return result
+		}
 	}
 
 	if target > 0 && preparation.Current < target {

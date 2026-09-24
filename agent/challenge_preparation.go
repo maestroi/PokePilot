@@ -18,9 +18,9 @@ func proactiveChallengePreparationObjective(
 			continue
 		}
 		// Ordinary trainer telemetry with no adapter floor remains advisory.
-		// Proactive interception is reserved for a known major boundary or a
-		// typed prior loss (whose reactive path normally handles it first).
-		if assessment.TargetReadiness == 0 && assessment.Losses == 0 {
+		// Proactive interception is reserved for a known major boundary (a
+		// readiness floor or healing-stock target) or a typed prior loss (whose reactive path normally handles it first).
+		if assessment.TargetReadiness == 0 && assessment.Losses == 0 && assessment.HealingTarget == 0 {
 			continue
 		}
 		if _, ok := resolveObjectiveKey(offered, assessment.Objective); !ok {

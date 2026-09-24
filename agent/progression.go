@@ -84,7 +84,7 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	combined = append(combined, base.Candidates[journeyAt:]...)
 	base.Candidates = combined
 	base.Readiness = challengeReadinessForOffer(obs, known, base)
-	return base
+	return withChallengeHealingSupply(obs, base)
 }
 
 // OfferWithProgression is the presentation-compatible candidate-only API.
