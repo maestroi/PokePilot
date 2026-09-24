@@ -417,8 +417,34 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 			placeNames = routable
 		}
 	}
+	seekTrainingArea := trainingUnviableHere(obs)
+	if preparation := combatPreparationFor(known, obs); preparation.Active && !obs.HasGrass {
+		seekTrainingArea = true
+	}
+	trainingChoice, hasTrainingChoice := trainingAreaChoice{}, false
+	if seekTrainingArea {
+		trainingChoice, hasTrainingChoice = bestKnownTrainingPlace(obs, known, placeNames, ctx.catalog)
+	}
 	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
 		placeNames = selectJourneyPlaces(placeNames, known, ctx.hops, ctx.catalog)
+		if hasTrainingChoice {
+			wanted := string(trainingChoice.Area.Place)
+			found := false
+			for _, name := range placeNames {
+				if name == wanted {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if len(placeNames) >= journeyPlaceLimit {
+					placeNames[len(placeNames)-1] = wanted
+				} else {
+					placeNames = append(placeNames, wanted)
+				}
+				sort.Strings(placeNames)
+			}
+		}
 	}
 	out := make([]Objective, 0, 2*len(placeNames))
 	for _, name := range placeNames {
@@ -431,6 +457,11 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		if ctx.adjacentLocations[destination.Location] && !known.Visited[destination.Location] {
 			plain.Note = "(unvisited adjacent map)"
 			flee.Note = "(unvisited adjacent map)"
+		}
+		if hasTrainingChoice && destination.Place == trainingChoice.Area.Place {
+			note := trainingAreaJourneyNote(trainingChoice)
+			plain = appendObjectiveNote(plain, note)
+			flee = appendObjectiveNote(flee, note)
 		}
 		out = append(out, plain, flee)
 	}

@@ -62,16 +62,17 @@ type storedFailure struct {
 // memoryFile is the v6 serialised form. Adjacency and native-map translation
 // are rebuilt from the active adapter/ROM on resume and are never persisted.
 type memoryFile struct {
-	Version      int                `json:"version"`
-	Visited      []LocationID       `json:"visited"`
-	Places       []string           `json:"places"`
-	Completed    []storedCompletion `json:"completed"`
-	Talked       []talkedKey        `json:"talked"`
-	Requirements []Requirement      `json:"requirements,omitempty"`
-	Failures     []storedFailure    `json:"failures,omitempty"`
-	Intent       string             `json:"intent,omitempty"`
-	IntentAge    int                `json:"intent_age,omitempty"`
-	Plan         Plan               `json:"plan,omitempty"`
+	Version       int                     `json:"version"`
+	Visited       []LocationID            `json:"visited"`
+	Places        []string                `json:"places"`
+	Completed     []storedCompletion      `json:"completed"`
+	Talked        []talkedKey             `json:"talked"`
+	Requirements  []Requirement           `json:"requirements,omitempty"`
+	Failures      []storedFailure         `json:"failures,omitempty"`
+	TrainingAreas []TrainingAreaKnowledge `json:"training_areas,omitempty"`
+	Intent        string                  `json:"intent,omitempty"`
+	IntentAge     int                     `json:"intent_age,omitempty"`
+	Plan          Plan                    `json:"plan,omitempty"`
 }
 
 type talkedKey struct {
@@ -148,6 +149,19 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	})
 
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
+
+	trainingLocations := make([]LocationID, 0, len(k.TrainingAreas))
+	for location := range k.TrainingAreas {
+		trainingLocations = append(trainingLocations, location)
+	}
+	sort.Slice(trainingLocations, func(i, j int) bool { return trainingLocations[i] < trainingLocations[j] })
+	for _, location := range trainingLocations {
+		area := k.TrainingAreas[location]
+		if area.Location == "" {
+			area.Location = location
+		}
+		mem.TrainingAreas = append(mem.TrainingAreas, area)
+	}
 
 	failureKeys := make([]string, 0, len(k.Failures))
 	for storage := range k.Failures {
