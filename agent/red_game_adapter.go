@@ -17,6 +17,9 @@ type redObjectiveAdapter struct {
 	m             *emu.Emu
 	romData       []byte
 	routePriority RoutePriority
+	// battleTurns, when set, is told about every move turn skill.Battle
+	// presses while this adapter executes an objective.
+	battleTurns BattleTurnObserver
 	// gameID is set only on instances bound at registration. Execution helpers
 	// build from an emulator and ROM and never need it: the caller already
 	// selected this adapter through the per-game registry lookup.
@@ -177,7 +180,14 @@ func (a *redObjectiveAdapter) NormalizeBoundary() error {
 	return normalizeObjectiveBoundary(a.m)
 }
 
+// ObserveBattleTurns implements BattleTurnObservingAdapter.
+func (a *redObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver) {
+	a.battleTurns = observer
+}
+
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
+	restoreMoveObserver := skill.WithMoveObserver(a.m, gen1MoveObserver(a.romData, a.battleTurns))
+	defer restoreMoveObserver()
 	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
 	return normalizeRedOwnedExecutionResult(o, result, err)
 }

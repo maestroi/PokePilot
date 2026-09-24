@@ -13,6 +13,7 @@ import (
 	"github.com/maestroi/pokepilot/benchmark"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 )
 
 type (
@@ -60,6 +61,13 @@ type statsPlanner struct {
 
 	benchmarkCalls         []agent.LLMCall
 	benchmarkDecisionCalls []benchmark.DecisionCall
+
+	// battleShadowFailures counts consecutive failed battle-turn calls;
+	// battleShadowSuspended stops asking for the rest of the run once the
+	// backend has proven unreachable, so a dead endpoint cannot add its
+	// timeout to every remaining battle turn.
+	battleShadowFailures  int
+	battleShadowSuspended bool
 }
 
 // newStatsPlannerWithRunPolicy builds the planner for one run from the policy
@@ -298,6 +306,54 @@ func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Decisi
 	}
 	s.recordDecision(req, resp, err, nil)
 	return resp, err
+}
+
+// Battle-turn shadow calls block the battle loop (never the emulator's
+// frames), so they get a tighter deadline than the backend's default and stop
+// after a few consecutive failures.
+const (
+	battleShadowTimeout     = 15 * time.Second
+	battleShadowMaxFailures = 3
+)
+
+// ObserveBattleTurn implements agent.BattleTurnObserver. With battle
+// decisions enabled (shadow only), it asks the typed backend about the turn
+// the adapter just reported and records whether the backend's legal answer
+// matches the move the deterministic policy is pressing. The answer never
+// reaches execution.
+func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow || s.battleShadowSuspended {
+		return
+	}
+	req, err := agent.BattleDecisionRequest(turn)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), battleShadowTimeout)
+	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
+	cancel()
+	transportErr := err
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	outcome := &shadowOutcome{executed: decisionChoiceLabel(req, executed.ID())}
+	if outcome.executed == "" {
+		outcome.executed = executed.ID()
+	}
+	if err == nil {
+		var action game.BattleAction
+		if action, err = agent.ResolveBattleDecision(turn, resp); err == nil {
+			same := action == executed
+			outcome.agreed = &same
+		}
+	}
+	if transportErr != nil {
+		s.battleShadowFailures++
+		s.battleShadowSuspended = s.battleShadowFailures >= battleShadowMaxFailures
+	} else {
+		s.battleShadowFailures = 0
+	}
+	s.recordDecision(req, resp, err, outcome)
 }
 
 func (s *statsPlanner) recordTypedObjectiveChoice(obs agent.Observation, objective agent.Objective) {

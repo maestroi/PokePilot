@@ -86,8 +86,8 @@ Modes:
   older specs are unchanged.
 - `off` is the same as backend `off`.
 - `battles` is shadow-only (the wall answers 400 for active battles). The
-  run carries it to the runner as `DecisionSettings.Battles`; the live battle
-  consumer that records per-turn shadow choices is #1456.
+  run carries it to the runner as `DecisionSettings.Battles`, and every move
+  turn a battle presses is scored live (see "Live battle shadow" below).
 
 Every runner uses the same image. `deploy/farm.yml` gives every runner
 `TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
@@ -172,8 +172,31 @@ This PR only defines the contract. Execution stays with `skill.Battle`,
 `SwitchActive` and `UseBattleMedicine`, and ordinary runs are unchanged:
 `agent.BattleMoveDecider` adapts a `DecisionEngine` to the existing
 `skill.MovePolicy` seam (move-only, falls back to the deterministic policy on
-any error or low confidence) but nothing installs it yet. Live consumers
-belong to #1456 (shadow mode).
+any error or low confidence) but nothing installs it yet: battle answers are
+never executed.
+
+### Live battle shadow (#1456)
+
+A run with `battles` in shadow mode is asked about every move turn:
+
+- `skill.WithMoveObserver` scopes a `skill.MoveObserver` to one emulator.
+  `skill.Battle` calls it with the decoded turn and the slot the
+  deterministic `MovePolicy` chose, just before pressing it. The observer
+  gets a copy of the turn and no emulator, and no frame is stepped while it
+  runs, so an observed battle presses the same inputs on the same frames
+  (the RNG mixes in the cycle count).
+- `agent.BattleTurnObserver` is the portable run-level seam. `Run` binds the
+  planner to the objective's adapter (`BattleTurnObservingAdapter`); the
+  Gen I adapter reports each turn as the same move-only
+  `game.BattleDecisionState` `BattleMoveDecider` uses, paired with the
+  executed `game.BattleAction`.
+- The runner asks the backend, re-checks the answer through
+  `ResolveBattleDecision`, and records it as a `battle_turn` decision with
+  agreement against the executed move. Calls get a 15s deadline; after three
+  consecutive transport failures the run stops asking for battle turns, so
+  a dead endpoint cannot add its timeout to every remaining turn.
+
+Shadow calls do add their latency to each battle turn's wall time.
 
 The battle suite is its own evaluation mode, separate from the planner suite
 and from live runs:

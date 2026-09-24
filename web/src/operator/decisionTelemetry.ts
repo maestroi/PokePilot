@@ -1,4 +1,4 @@
-import type { DashboardStats, DecisionKindSummary, TypedDecisionRecord } from '../shared/api/types'
+import type { DashboardStats, DecisionEngineSpec, DecisionKindSummary, TypedDecisionRecord } from '../shared/api/types'
 
 // Typed-decision telemetry is two things: a fixed-size per-run summary that
 // is stored with the run, and a short live feed of the most recent calls that
@@ -124,6 +124,30 @@ export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow
 export function hasDecisionTelemetry(stats: DashboardStats | undefined): boolean {
   return Boolean(stats?.decision_summary?.kinds && Object.keys(stats.decision_summary.kinds).length)
     || Boolean(stats?.decision_records?.length)
+}
+
+// decisionEngineSelected is true when the run's spec asks a fast decision
+// engine anything. Such a run shows the panel before its first call, so an
+// idle engine reads as idle instead of as a missing panel.
+export function decisionEngineSelected(engine: DecisionEngineSpec | undefined): boolean {
+  return Boolean(engine && engine.backend !== 'off' && engine.mode !== 'off')
+}
+
+export function showDecisionTelemetry(stats: DashboardStats | undefined, engine: DecisionEngineSpec | undefined): boolean {
+  return hasDecisionTelemetry(stats) || decisionEngineSelected(engine)
+}
+
+// decisionIdleNote says when a selected engine will first be asked, for the
+// panel of a run that has made no calls yet.
+export function decisionIdleNote(engine: DecisionEngineSpec | undefined): string {
+  if (!decisionEngineSelected(engine)) return 'No fast decision engine selected.'
+  const points = [
+    engine?.objectives ? 'every objective choice' : '',
+    engine?.battles && engine?.mode === 'shadow' ? 'every battle move' : '',
+    engine?.failures ? 'recoverable failures' : ''
+  ].filter(Boolean)
+  if (!points.length) return 'No decision points enabled, so the engine is never asked.'
+  return `No calls yet. The engine is asked on ${points.join(', ')}.`
 }
 
 export function percent(value: number | null): string {

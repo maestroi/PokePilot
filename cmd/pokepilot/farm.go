@@ -881,6 +881,12 @@ func (p reportingPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Dec
 	return agent.DecisionResponse{}, agent.ErrDecisionDisabled
 }
 
+func (p reportingPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if o, ok := p.inner.(agent.BattleTurnObserver); ok {
+		o.ObserveBattleTurn(turn, executed)
+	}
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
