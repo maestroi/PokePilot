@@ -205,3 +205,31 @@ func TestTrainingAreaKnowledgePersistsInMemory(t *testing.T) {
 		t.Fatalf("restored training areas = %+v", restored.TrainingAreas)
 	}
 }
+
+// run-37cujg278a7w8s2dlpbnqu2jb: the fleeing journey to "route 10" landed on
+// the Lavender-side segment with no reachable grass. Keeping the learned area
+// made combat preparation choose the same journey forever from every grassless
+// map (Indigo -> Route 10 south -> Indigo ...).
+func TestCompletedJourneyWithoutReachableGrassForgetsTrainingArea(t *testing.T) {
+	training := LocationID("kanto/route/route-10")
+	other := LocationID("kanto/route/route-9")
+	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{training: {other}, other: {training}}})
+	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 11, MaxLevel: 17}
+	known.TrainingAreas[other] = TrainingAreaKnowledge{Location: other, Place: "route 9", MinLevel: 11, MaxLevel: 17}
+	journey := Objective{Kind: KindGoTo, Place: "route 10", Flee: true}
+	arrived := Observation{Location: PlaceID(training), HasGrass: false}
+
+	forgetUnreachedTrainingArea(known, Objective{Kind: KindHeal, Place: "route 10"}, arrived)
+	forgetUnreachedTrainingArea(known, journey, Observation{Location: PlaceID(training), HasGrass: true})
+	if _, ok := known.TrainingAreas[training]; !ok {
+		t.Fatal("area forgotten without a grassless journey arrival")
+	}
+
+	forgetUnreachedTrainingArea(known, journey, arrived)
+	if _, ok := known.TrainingAreas[training]; ok {
+		t.Fatalf("grassless arrival kept training area: %+v", known.TrainingAreas)
+	}
+	if _, ok := known.TrainingAreas[other]; !ok {
+		t.Fatal("unrelated training area was forgotten")
+	}
+}

@@ -355,6 +355,7 @@ runLoop:
 		}
 		notifyPlanning(p, engine.planning.snapshot())
 		known.Done(obj)
+		forgetUnreachedTrainingArea(known, obj, last)
 		known.notePartyCombatResult(before, last, objectiveResult)
 		if obj.Kind == KindTalk {
 			known.TalkedAt(observationLocation(before, known), obj.X, obj.Y)
