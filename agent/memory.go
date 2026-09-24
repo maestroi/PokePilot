@@ -11,12 +11,13 @@ import (
 	"strings"
 )
 
-// Version 6 replaces native uint8 map identity with semantic LocationID for
-// durable visited/talked evidence. v5 and v4 remain explicitly migratable: v5
+// Version 7 persists learned recovery checkpoints in addition to the v6
+// semantic geography. v6, v5 and v4 remain explicitly migratable: v5
 // already carries ObjectiveKey records, while v4 may still use presentation
 // strings for objective identity.
 const (
-	memoryVersion             = 6
+	memoryVersion             = 7
+	legacyRecoveryVersion     = 6
 	legacyObjectiveKeyVersion = 5
 	legacyPresentationVersion = 4
 )
@@ -69,7 +70,8 @@ type memoryFile struct {
 	Talked        []talkedKey             `json:"talked"`
 	Requirements  []Requirement           `json:"requirements,omitempty"`
 	Failures      []storedFailure         `json:"failures,omitempty"`
-	TrainingAreas []TrainingAreaKnowledge `json:"training_areas,omitempty"`
+	TrainingAreas      []TrainingAreaKnowledge      `json:"training_areas,omitempty"`
+	RecoveryCheckpoints []RecoveryCheckpointKnowledge `json:"recovery_checkpoints,omitempty"`
 	Intent        string                  `json:"intent,omitempty"`
 	IntentAge     int                     `json:"intent_age,omitempty"`
 	Plan          Plan                    `json:"plan,omitempty"`
@@ -155,6 +157,19 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 		trainingLocations = append(trainingLocations, location)
 	}
 	sort.Slice(trainingLocations, func(i, j int) bool { return trainingLocations[i] < trainingLocations[j] })
+	recoveryPlaces := make([]PlaceID, 0, len(k.RecoveryCheckpoints))
+	for place := range k.RecoveryCheckpoints {
+		recoveryPlaces = append(recoveryPlaces, place)
+	}
+	sort.Slice(recoveryPlaces, func(i, j int) bool { return recoveryPlaces[i] < recoveryPlaces[j] })
+	for _, place := range recoveryPlaces {
+		checkpoint := k.RecoveryCheckpoints[place]
+		if checkpoint.Place == "" {
+			checkpoint.Place = place
+		}
+		mem.RecoveryCheckpoints = append(mem.RecoveryCheckpoints, checkpoint)
+	}
+
 	for _, location := range trainingLocations {
 		area := k.TrainingAreas[location]
 		if area.Location == "" {
@@ -246,7 +261,7 @@ func LoadCheckpointMemory(statePath string, topology any, log io.Writer) Resumed
 	data, err := os.ReadFile(path)
 	version := memoryVersion
 	if errors.Is(err, os.ErrNotExist) {
-		for _, legacyVersion := range []int{legacyObjectiveKeyVersion, legacyPresentationVersion} {
+		for _, legacyVersion := range []int{legacyRecoveryVersion, legacyObjectiveKeyVersion, legacyPresentationVersion} {
 			legacyPath := knowledgePathForStateVersion(statePath, legacyVersion)
 			legacy, legacyErr := os.ReadFile(legacyPath)
 			if legacyErr == nil {
@@ -262,15 +277,16 @@ func LoadCheckpointMemory(statePath string, topology any, log io.Writer) Resumed
 
 	k := NewKnowledge(topology)
 	var mem memoryFile
-	if version == memoryVersion {
+	if version == memoryVersion || version == legacyRecoveryVersion {
 		if err := json.Unmarshal(data, &mem); err != nil {
 			logMemory(log, "knowledge file beside %s is unreadable (%v); starting with empty knowledge", statePath, err)
 			return empty
 		}
-		if mem.Version != memoryVersion {
-			logMemory(log, "knowledge file %s is version %d, want %d; starting with empty knowledge", path, mem.Version, memoryVersion)
+		if mem.Version != version {
+			logMemory(log, "knowledge file %s is version %d, want %d; starting with empty knowledge", path, mem.Version, version)
 			return empty
 		}
+		mem.Version = memoryVersion
 	} else {
 		var legacy legacyMemoryFile
 		if err := json.Unmarshal(data, &legacy); err != nil {
