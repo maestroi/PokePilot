@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // completionistCoverageSignal turns Completionist from a broad preference for
 // optional work into an explicit novelty/coverage policy. Every objective that
