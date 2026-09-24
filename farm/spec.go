@@ -68,7 +68,7 @@ type Spec struct {
 	Purpose        RunPurpose `json:"purpose,omitempty"`
 	RiskTolerance  string     `json:"risk_tolerance,omitempty"`
 	WildEncounters string     `json:"wild_encounters,omitempty"`
-	LLMProfile     string `json:"llm_profile,omitempty"`
+	LLMProfile     string     `json:"llm_profile,omitempty"`
 	// LLMDeployment is the first-class deployment selection. LLMProfile is
 	// retained only as a compatibility adapter for older queued runs/runners.
 	LLMDeployment string             `json:"llm_deployment,omitempty"`
