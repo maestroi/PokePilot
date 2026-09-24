@@ -92,7 +92,7 @@ func TestReplayRenderCachesMP4AndServesRanges(t *testing.T) {
 			RunID: "run-1", Attempt: 1,
 			Artifacts: []artifactRef{{
 				Name: "run.gbrun", MediaType: "application/octet-stream", SHA256: recordingSHA,
-				Store:  "s3", Bucket: "pokepilot", ObjectKey: "runs/run-1/attempt-1/run.gbrun",
+				Store: "s3", Bucket: "pokepilot", ObjectKey: "runs/run-1/attempt-1/run.gbrun",
 				Size: int64(len(recordingBytes)), Replayable: true,
 			}},
 		})
@@ -191,7 +191,7 @@ func TestReplayRecordingsIncludeAllRunAttempts(t *testing.T) {
 			Artifacts: []artifactRef{{
 				Name: "run.gbrun", MediaType: "application/octet-stream",
 				SHA256: strings.Repeat(string(rune('a'+attempt-1)), 64),
-				Store: "s3", Bucket: "pokepilot",
+				Store:  "s3", Bucket: "pokepilot",
 				ObjectKey: "runs/multi-run/attempt-" + strconv.Itoa(attempt) + "/run.gbrun",
 				Size:      int64(100 * attempt), Replayable: true,
 			}},
