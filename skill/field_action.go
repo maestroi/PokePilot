@@ -379,8 +379,8 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 	}
 	state.Snapshot(m, &mem)
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex-1, wantMax); err != nil {
+	_, itemIndex := startMenuShape(&mem)
+	if err := openStartMenuEntry(m, itemIndex-1); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: open POKEMON: %w", spec.Name, err)
 	}
 	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
