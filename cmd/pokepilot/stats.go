@@ -434,6 +434,9 @@ func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent
 }
 
 func appendSystemNote(base, note string) string {
+	if note == "" {
+		return base
+	}
 	if base == "" {
 		return note
 	}
