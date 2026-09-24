@@ -15,6 +15,7 @@ func TestSpecCarriesRunPolicyAsOwnFields(t *testing.T) {
 		Planner:        "llm",
 		Goal:           GoalFrom("badges:1"),
 		PlayStyle:      "adventure",
+		Purpose:        RunPurposeDebugCoverage,
 		RiskTolerance:  "balanced",
 		WildEncounters: "fight",
 	}
@@ -24,6 +25,7 @@ func TestSpecCarriesRunPolicyAsOwnFields(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"play_style":"adventure"`,
+		`"purpose":"debug_coverage"`,
 		`"risk_tolerance":"balanced"`,
 		`"wild_encounters":"fight"`,
 	} {
@@ -72,7 +74,7 @@ func TestLegacySpecHasNoRunPolicyAndStaysCompatible(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, field := range []string{"play_style", "risk_tolerance", "wild_encounters"} {
+	for _, field := range []string{"play_style", "purpose", "risk_tolerance", "wild_encounters"} {
 		if strings.Contains(string(b), field) {
 			t.Fatalf("legacy spec unexpectedly gained %s: %s", field, b)
 		}
