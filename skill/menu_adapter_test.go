@@ -12,6 +12,9 @@ const (
 	fakeMenuMax
 	fakePromptOpen
 	fakeSelected
+	fakeStartVisible
+	fakeStartReady
+	fakeInBattle
 )
 
 type fakeGen2MenuDecoder struct{}
@@ -30,8 +33,20 @@ func (fakeGen2MenuDecoder) DecodeTwoOption(r game.MemoryReader) (game.TwoOptionS
 	return game.TwoOptionState{Current: int(r.Peek8(fakeMenuCurrent))}, true
 }
 
+func (fakeGen2MenuDecoder) DecodeStartMenu(r game.MemoryReader) game.StartMenuState {
+	return game.StartMenuState{
+		Visible:  r.Peek8(fakeStartVisible) != 0,
+		Ready:    r.Peek8(fakeStartReady) != 0,
+		InBattle: r.Peek8(fakeInBattle) != 0,
+		Cursor: game.MenuCursorState{
+			Current: int(r.Peek8(fakeMenuCurrent)),
+			Max:     int(r.Peek8(fakeMenuMax)),
+		},
+	}
+}
+
 type fakeMenuMachine struct {
-	mem [8]byte
+	mem [16]byte
 }
 
 func (m *fakeMenuMachine) Peek8(addr uint16) byte { return m.mem[addr] }
@@ -58,6 +73,11 @@ func (m *fakeMenuMachine) Tap(btn emu.Button, _, _ int) {
 		m.mem[fakeSelected] = m.mem[fakeMenuCurrent] + 1
 		if m.mem[fakePromptOpen] != 0 {
 			m.mem[fakePromptOpen] = 0
+		}
+	case emu.Start:
+		if m.mem[fakeInBattle] == 0 {
+			m.mem[fakeStartVisible] = 1
+			m.mem[fakeStartReady] = 1
 		}
 	}
 }
@@ -92,5 +112,33 @@ func TestGenericTwoOptionUsesSemanticDecoderAndVerifiesConsumed(t *testing.T) {
 	}
 	if got := m.mem[fakeSelected]; got != 2 {
 		t.Fatalf("selected marker = %d, want option 1 marker 2", got)
+	}
+}
+
+func TestGenericStartMenuOpenUsesSemanticDecoder(t *testing.T) {
+	m := &fakeMenuMachine{}
+	m.mem[fakeMenuMax] = 8 // deliberately not a Gen-I menu shape
+
+	if err := waitForStartMenuWithDecoder(m, fakeGen2MenuDecoder{}); err != nil {
+		t.Fatalf("open fake Gen-II start menu: %v", err)
+	}
+	state := (fakeGen2MenuDecoder{}).DecodeStartMenu(m)
+	if !state.Ready || !state.Visible {
+		t.Fatalf("start menu state = %+v, want visible and ready", state)
+	}
+	if state.Cursor.Max != 8 {
+		t.Fatalf("start menu max = %d, want fake Gen-II shape 8", state.Cursor.Max)
+	}
+}
+
+func TestGenericStartMenuRefusesBattle(t *testing.T) {
+	m := &fakeMenuMachine{}
+	m.mem[fakeInBattle] = 1
+
+	if err := waitForStartMenuWithDecoder(m, fakeGen2MenuDecoder{}); err == nil {
+		t.Fatal("start menu opened during battle")
+	}
+	if m.mem[fakeStartVisible] != 0 || m.mem[fakeStartReady] != 0 {
+		t.Fatal("battle refusal changed start-menu state")
 	}
 }
