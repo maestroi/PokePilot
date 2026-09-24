@@ -101,10 +101,10 @@ func victoryRoadReachEntryFromCurrentState(m *emu.Emu, romData []byte, policy Mo
 	return nil
 }
 
-// VictoryRoadReachCave owns Route 23: it requires the final rival fact, repairs
-// Surf, crosses the three water bands and all seven badge checks, and ends at
-// the Victory Road 1F entry. Its semantic postcondition is the existing
-// route_23_badge_checks fact (7/7).
+// VictoryRoadReachCave owns Route 23 after the objective runtime has satisfied
+// its declared Surf prerequisite. It crosses the three water bands and all
+// seven badge checks, ending at the Victory Road 1F entry. Its semantic
+// postcondition is the existing route_23_badge_checks fact (7/7).
 func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	_, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
@@ -116,9 +116,6 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !facts.Route22RivalResolved {
 		return gameruntime.NewProgressionPrerequisiteMissing("route_22_rival_resolved")
 	}
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadReachCave: prepare Surf: %w", err)
-	}
 	if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadReachCave: %w", err)
 	}
@@ -129,10 +126,11 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
-// VictoryRoadClearCave owns the live Strength puzzle chain only. On the normal
-// path it starts at 1F from VictoryRoadReachCave; on a resumed/backtracked run
-// it can re-establish the entry first. Completion is the final 2F east switch
-// or a verified post-cave position before the Route 23 reset can erase it.
+// VictoryRoadClearCave owns the live Strength puzzle chain only, after the
+// objective runtime has satisfied its declared Surf+Strength prerequisites. On
+// the normal path it starts at 1F from VictoryRoadReachCave; on a resumed/
+// backtracked run it can re-establish the entry first. Completion is the final
+// 2F east switch or a verified post-cave position before Route 23 can reset it.
 func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
@@ -143,9 +141,6 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	if !facts.Route23BadgeChecksComplete {
 		return gameruntime.NewProgressionPrerequisiteMissing("route_23_badge_checks")
-	}
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadClearCave: prepare Surf + Strength: %w", err)
 	}
 	if !inVictoryRoad(m.Peek8(sym.CurMap)) {
 		if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
