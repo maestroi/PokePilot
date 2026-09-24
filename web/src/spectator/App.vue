@@ -45,6 +45,7 @@ import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
+import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
 type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
@@ -630,6 +631,15 @@ function activityTimeAgo(item: ActivityItem): string {
               </div>
             </div>
 
+            <div class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
+              <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover" />
+              <div class="spectator-art-banner-glow" />
+              <div class="spectator-art-banner-caption">
+                <span>Road to the League</span>
+                <strong>{{ currentLocation }}</strong>
+              </div>
+            </div>
+
             <div class="mt-5">
               <p class="text-sm leading-6 text-slate-300">{{ objectiveLabel(selectedRun) }}</p>
             </div>
@@ -864,6 +874,11 @@ function activityTimeAgo(item: ActivityItem): string {
           </section>
 
           <section class="milestone-card overflow-hidden rounded-2xl border p-4">
+            <div class="final-stretch-art mb-4 overflow-hidden rounded-xl border" aria-hidden="true">
+              <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover object-[72%_54%]" />
+              <div class="final-stretch-art-shade" />
+              <SparklesIcon class="final-stretch-art-sparkle size-5" />
+            </div>
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">{{ leagueGoal ? 'Final stretch' : 'Main story' }}</div>
@@ -1161,8 +1176,9 @@ function activityTimeAgo(item: ActivityItem): string {
   position: relative;
   border-radius: 1.5rem;
   background:
-    linear-gradient(180deg, rgba(6, 11, 21, .72), rgba(6, 11, 21, .92)),
-    var(--spectator-art) center bottom / cover no-repeat;
+    linear-gradient(180deg, rgba(6, 11, 21, .48), rgba(6, 11, 21, .82)),
+    var(--spectator-art) center 72% / cover no-repeat;
+  box-shadow: 0 26px 80px rgba(0,0,0,.18);
 }
 
 .spectator-theme::before {
@@ -1184,11 +1200,92 @@ function activityTimeAgo(item: ActivityItem): string {
   backdrop-filter: blur(14px);
 }
 
+.spectator-art-banner {
+  position: relative;
+  height: 5.5rem;
+  border-color: rgba(103,232,249,.16);
+  background: #07101d;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 10px 24px rgba(0,0,0,.18);
+}
+
+.spectator-art-banner img {
+  opacity: .94;
+  filter: saturate(1.08) contrast(1.03);
+}
+
+.spectator-art-banner-glow {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(6,12,24,.08), rgba(6,12,24,.04) 55%, rgba(6,12,24,.16)),
+    linear-gradient(180deg, transparent 38%, rgba(4,8,16,.72));
+}
+
+.spectator-art-banner-caption {
+  position: absolute;
+  right: .65rem;
+  bottom: .55rem;
+  left: .65rem;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: .5rem;
+  text-shadow: 0 1px 8px rgba(0,0,0,.8);
+}
+
+.spectator-art-banner-caption span {
+  color: rgb(165 243 252 / .72);
+  font-size: .48rem;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.spectator-art-banner-caption strong {
+  max-width: 62%;
+  overflow: hidden;
+  color: rgba(248,250,252,.9);
+  font-size: .55rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-stretch-art {
+  position: relative;
+  height: 5rem;
+  border-color: rgba(103,232,249,.15);
+  background: #07101d;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.final-stretch-art img {
+  opacity: .9;
+  filter: saturate(1.12) contrast(1.04);
+}
+
+.final-stretch-art-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 82% 38%, rgba(103,232,249,.02), rgba(2,6,23,.06) 42%, rgba(2,6,23,.62)),
+    linear-gradient(180deg, transparent 22%, rgba(3,7,18,.62));
+}
+
+.final-stretch-art-sparkle {
+  position: absolute;
+  top: .7rem;
+  right: .8rem;
+  color: rgb(207 250 254 / .9);
+  filter: drop-shadow(0 0 10px rgba(103,232,249,.5));
+}
+
 .spectator-hero-card {
   border-color: var(--mode-border);
   background:
-    linear-gradient(180deg, rgba(13, 23, 40, .82), rgba(6, 12, 24, .94)),
-    var(--spectator-art) 28% 78% / 68rem auto no-repeat;
+    linear-gradient(180deg, rgba(13, 23, 40, .74), rgba(6, 12, 24, .91)),
+    var(--spectator-art) 24% 70% / 52rem auto no-repeat;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.04),
     0 18px 44px rgba(0,0,0,.22);
@@ -1348,8 +1445,8 @@ function activityTimeAgo(item: ActivityItem): string {
 
 .milestone-card {
   background:
-    linear-gradient(180deg, rgba(13, 23, 40, .88), rgba(6, 12, 24, .95)),
-    var(--spectator-art) 78% 80% / 60rem auto no-repeat;
+    linear-gradient(180deg, rgba(13, 23, 40, .80), rgba(6, 12, 24, .93)),
+    var(--spectator-art) 80% 68% / 48rem auto no-repeat;
 }
 
 
