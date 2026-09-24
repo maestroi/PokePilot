@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -173,6 +174,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
 		"pokepilot_get_run_debug",
+		"pokepilot_get_run_recovery_audit",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
@@ -214,6 +216,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}{
 		{"pokepilot_get_run", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_debug", map[string]any{"run_id": runID}},
+		{"pokepilot_get_run_recovery_audit", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_artifacts", map[string]any{"run_id": runID}},
 		{"pokepilot_get_triage", map[string]any{}},
 		{"pokepilot_investigate_failure", map[string]any{"key": "deadbeef"}},
@@ -252,6 +255,89 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}
 	if string(decoded) != "checkpoint-bytes" {
 		t.Fatalf("artifact content = %q, want %q", decoded, "checkpoint-bytes")
+	}
+}
+
+func TestMCPRunRecoveryAuditKeepsOlderRecoveryAndResolvedTriage(t *testing.T) {
+	timeline := make([]map[string]any, 0, mcpMaxEvents+12)
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "system", "kind": "attempt_start", "attempt": 1,
+		"detail": "runner old-revision", "message": "Attempt 1 started",
+	})
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "recovery", "kind": "retry", "attempt": 1,
+		"recovery_attempt": 1, "message": "Old recovery still matters",
+	})
+	for i := 0; i < mcpMaxEvents+5; i++ {
+		timeline = append(timeline, map[string]any{
+			"type": "activity", "source": "llm", "kind": "decision", "attempt": 1,
+			"message": fmt.Sprintf("decision-%d", i),
+		})
+	}
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "recovery", "kind": "circuit", "attempt": 1,
+		"recovery_attempt": 2, "message": "Newest recovery",
+	})
+
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/v1/runs/run-audit/debug":
+			json.NewEncoder(res).Encode(map[string]any{ //nolint:errcheck
+				"run": map[string]any{
+					"run_id": "run-audit", "status": "done", "attempts": 1,
+					"recovery_attempts": 2, "question": strings.Repeat("q", 5000),
+				},
+				"finish": map[string]any{
+					"attempt": 1, "reason": "done", "runner_version": "old-revision",
+				},
+				"summary": map[string]any{"progress_known": true, "progressed": true},
+				"timeline": timeline,
+			})
+		case "/v1/triage":
+			json.NewEncoder(res).Encode([]map[string]any{{ //nolint:errcheck
+				"key": "fixed-key", "fingerprint": "sha256:abc", "run_ids": []string{"run-audit"},
+				"issue": map[string]any{
+					"issue_number": 77, "status": "closed", "resolution": "fixed", "fixed_revision": "fix-revision",
+				},
+			}})
+		default:
+			http.NotFound(res, req)
+		}
+	}))
+	t.Cleanup(wall.Close)
+
+	control := &mcpControl{wallBase: wall.URL, artifactBase: wall.URL, http: wall.Client()}
+	_, got, err := control.getRunRecoveryAudit(context.Background(), nil, mcpRunInput{RunID: "run-audit"})
+	if err != nil {
+		t.Fatalf("getRunRecoveryAudit: %v", err)
+	}
+	if got["recovery_event_count"] != 2 {
+		t.Fatalf("recovery_event_count = %#v, want 2", got["recovery_event_count"])
+	}
+	events, ok := got["recovery_events"].([]map[string]any)
+	if !ok || len(events) != 2 {
+		t.Fatalf("recovery_events = %#v", got["recovery_events"])
+	}
+	if events[0]["message"] != "Old recovery still matters" {
+		t.Fatalf("old recovery was lost: %#v", events)
+	}
+	if events[0]["runner_version"] != "old-revision" {
+		t.Fatalf("runner revision annotation = %#v", events[0]["runner_version"])
+	}
+	related, ok := got["related_triage"].([]map[string]any)
+	if !ok || len(related) != 1 {
+		t.Fatalf("related_triage = %#v", got["related_triage"])
+	}
+	if related[0]["actionable"] != false || related[0]["fixed_revision"] != "fix-revision" {
+		t.Fatalf("resolved triage metadata = %#v", related[0])
+	}
+	run, ok := got["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("run = %#v", got["run"])
+	}
+	if _, leaked := run["question"]; leaked {
+		t.Fatalf("audit packet leaked large planner question: %#v", run)
 	}
 }
 
