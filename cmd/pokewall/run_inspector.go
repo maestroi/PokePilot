@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -113,6 +114,16 @@ func (w *Wall) handleRunArtifacts(res http.ResponseWriter, req *http.Request) {
 		writeRunInspectError(res, err)
 		return
 	}
+	if requested, ok, parseErr := requestedArtifactAttempt(req); parseErr != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": parseErr.Error()})
+		return
+	} else if ok {
+		report, err = w.loadFinishReport(run.RunID, requested)
+		if err != nil {
+			writeRunInspectError(res, err)
+			return
+		}
+	}
 	artifacts := []runArtifactView{}
 	attempt := run.Attempts
 	if report != nil {
@@ -154,10 +165,20 @@ func (w *Wall) handleRunDebug(res http.ResponseWriter, req *http.Request) {
 func (w *Wall) handleInlineArtifactContent(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	name := req.PathValue("name")
-	_, report, err := w.loadRunInspection(id)
+	run, report, err := w.loadRunInspection(id)
 	if err != nil {
 		writeRunInspectError(res, err)
 		return
+	}
+	if requested, ok, parseErr := requestedArtifactAttempt(req); parseErr != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": parseErr.Error()})
+		return
+	} else if ok {
+		report, err = w.loadFinishReport(run.RunID, requested)
+		if err != nil {
+			writeRunInspectError(res, err)
+			return
+		}
 	}
 	if report == nil {
 		writeJSON(res, http.StatusNotFound, map[string]string{"error": "run has no finish artifacts"})
@@ -188,6 +209,67 @@ func (w *Wall) handleInlineArtifactContent(res http.ResponseWriter, req *http.Re
 		return
 	}
 	writeJSON(res, http.StatusNotFound, map[string]string{"error": "artifact not found"})
+}
+
+func requestedArtifactAttempt(req *http.Request) (int, bool, error) {
+	raw := strings.TrimSpace(req.URL.Query().Get("attempt"))
+	if raw == "" {
+		return 0, false, nil
+	}
+	attempt, err := strconv.Atoi(raw)
+	if err != nil || attempt < 1 {
+		return 0, false, fmt.Errorf("invalid attempt %q: want a positive integer", raw)
+	}
+	return attempt, true, nil
+}
+
+func (w *Wall) loadFinishReport(runID string, attempt int) (*farm.FinishReport, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" || attempt < 1 {
+		return nil, fs.ErrNotExist
+	}
+	if cp := controlPlaneFor(w); cp != nil {
+		return cp.finishReport(runID, attempt)
+	}
+	if w.dumpsDir == "" {
+		return nil, fs.ErrNotExist
+	}
+	paths := []string{filepath.Join(w.dumpsDir, fmt.Sprintf("%s-attempt-%d.json", safeBase(runID), attempt))}
+	if attempt == 1 {
+		paths = append(paths, filepath.Join(w.dumpsDir, safeDumpName(runID)))
+	}
+	for _, path := range uniqueStrings(paths) {
+		info, err := os.Stat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if info.Size() > maxRunDumpBytes {
+			return nil, fmt.Errorf("finish dump %s exceeds %d bytes", filepath.Base(path), maxRunDumpBytes)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var report farm.FinishReport
+		if err := json.Unmarshal(data, &report); err != nil {
+			return nil, fmt.Errorf("decode finish dump %s: %w", filepath.Base(path), err)
+		}
+		reportAttempt := report.Attempt
+		if reportAttempt < 1 {
+			reportAttempt = 1
+		}
+		if report.RunID != runID || reportAttempt != attempt {
+			continue
+		}
+		return &report, nil
+	}
+	return nil, fs.ErrNotExist
 }
 
 func (w *Wall) loadRunInspection(runID string) (tileRow, *farm.FinishReport, error) {
