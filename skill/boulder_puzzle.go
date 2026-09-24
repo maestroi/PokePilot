@@ -215,59 +215,14 @@ func settleBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.Push) erro
 		boulderPuzzleEventComplete(&last, spec))
 }
 
-// resolveBoulderWalkInterruption handles only interruption cleanup and then
-// asks the outer solver to re-plan. It never resumes a stale planned path.
-func resolveBoulderWalkInterruption(m *emu.Emu, policy MovePolicy, err error) error {
-	// A nil policy means the caller owns interruptions (plain GoTo). Preserve
-	// the movement contract instead of silently fighting from inside pathing.
-	// Travel and story progression pass a policy and keep the historical
-	// self-contained recovery behavior.
-	if policy == nil {
-		return err
-	}
-	switch {
-	case errors.Is(err, ErrBattleInterrupted):
-		resolution, battleErr := fleeThenFight(m, policy, guaranteedWildFleeAttempts)()
-		if battleErr != nil {
-			return fmt.Errorf("skill: boulder puzzle resolve battle: %w", battleErr)
-		}
-		if resolution.outcome == state.ResultLost {
-			return battleBlackoutError(resolution)
-		}
-		return nil
-	case errors.Is(err, ErrDialogueInterrupted):
-		recovery := RecoverDialogue(m, dialogueRecoveryBudget)
-		switch recovery.Stop {
-		case DialogueRecovered:
-			return nil
-		case DialogueUnexpectedMode:
-			resolution, battleErr := fleeThenFight(m, policy, guaranteedWildFleeAttempts)()
-			if battleErr != nil {
-				return fmt.Errorf("skill: boulder puzzle resolve dialogue-led battle: %w", battleErr)
-			}
-			if resolution.outcome == state.ResultLost {
-				return battleBlackoutError(resolution)
-			}
-			return nil
-		case DialogueChoiceRequired:
-			return fmt.Errorf("skill: boulder puzzle dialogue requires an unanswered choice: %q", recovery.Text)
-		case DialogueMenuOpen:
-			return fmt.Errorf("skill: boulder puzzle dialogue recovery found an open menu: %q", recovery.Text)
-		default:
-			return fmt.Errorf("skill: boulder puzzle dialogue did not recover within budget: %q", recovery.Text)
-		}
-	default:
-		return err
-	}
-}
-
-func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MovePolicy, push world.Push) (bool, error) {
+// executeObservedBoulderPush performs one planned push from live state. It
+// never resolves a battle or text box itself: an interruption is returned
+// as-is so SolveBoulderPuzzle's shared interruption runner can resolve it and
+// re-enter the solver, which re-observes and re-plans before any further push.
+func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.Push) (bool, error) {
 	if err := WalkPath(m, push.Walk); err != nil {
 		if errors.Is(err, ErrBattleInterrupted) || errors.Is(err, ErrDialogueInterrupted) {
-			if err := resolveBoulderWalkInterruption(m, policy, err); err != nil {
-				return false, err
-			}
-			return false, nil // world changed while walking: re-plan before pushing
+			return false, err
 		}
 		var blocked *ErrBlocked
 		if errors.As(err, &blocked) {
@@ -292,7 +247,7 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 
 	if err := Face(m, uint8(push.From.X), uint8(push.From.Y)); err != nil {
 		if errors.Is(err, ErrBattle) {
-			return false, nil // the solver loop resolves the battle, then re-plans
+			return false, fmt.Errorf("%w: facing slot %d at (%d,%d): %v", ErrBattleInterrupted, push.MovableID, push.From.X, push.From.Y, err)
 		}
 		return false, fmt.Errorf("skill: boulder puzzle face slot %d at (%d,%d): %w", push.MovableID, push.From.X, push.From.Y, err)
 	}
@@ -313,13 +268,7 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 	// see the still-live battle and escalate the otherwise recoverable encounter
 	// into stabilization_failed/objective_boundary_dirty (#1742, #1745).
 	if interruptErr := movementInterruption(m); interruptErr != nil {
-		if errors.Is(interruptErr, ErrBattleInterrupted) || errors.Is(interruptErr, ErrDialogueInterrupted) {
-			if err := resolveBoulderWalkInterruption(m, policy, interruptErr); err != nil {
-				return false, err
-			}
-			return false, nil // push/world may have changed: observe and re-plan
-		}
-		return false, interruptErr
+		return false, interruptErr // push/world may have changed: resolve, observe and re-plan
 	}
 	if stepErr != nil {
 		var blocked *ErrBlocked
@@ -485,27 +434,47 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 		replanLimit = defaultBoulderPuzzleReplanLimit
 	}
 
+	// The solver is the interruptible action. A wild encounter can roll on
+	// any step (walking to a stand, the push itself, or just before Face) and
+	// a sighted trainer or sign can open a box. The shared runner resolves
+	// that interruption and re-enters the solver, which re-observes the
+	// puzzle and re-plans from live state; it never resumes a stale push.
+	// Counters live in result, so push/replan limits span re-entries.
 	result := BoulderPuzzleResult{}
+	_, err := RunInterruptible(m, policy, InterruptibleAction{
+		Name:           "boulder puzzle",
+		MaxEngagements: boulderPuzzleMaxEngagements,
+		Run: func() error {
+			return solveBoulderPuzzleFromLive(m, romData, spec, pushLimit, replanLimit, &result)
+		},
+	})
+	return result, err
+}
+
+// boulderPuzzleMaxEngagements bounds battles resolved during one puzzle. It
+// matches the replan limit, which bounded interruption handling before the
+// solver moved onto the shared runner.
+const boulderPuzzleMaxEngagements = defaultBoulderPuzzleReplanLimit
+
+// solveBoulderPuzzleFromLive runs the observe/plan/push loop from the current
+// live state until the puzzle's positive goal holds, a limit is reached, or
+// an interruption must be resolved by the caller.
+func solveBoulderPuzzleFromLive(m *emu.Emu, romData []byte, spec BoulderPuzzleSpec, pushLimit, replanLimit int, result *BoulderPuzzleResult) error {
 	for result.Pushes < pushLimit && result.Replans < replanLimit {
-		// A wild encounter can roll on any step: walking to a stand, the
-		// push itself, or just before Face. Every push path returns to this
-		// loop, so resolve a live battle here before observing the puzzle.
 		if m.Peek8(sym.IsInBattle) != 0 {
-			if err := resolveBoulderWalkInterruption(m, policy, ErrBattleInterrupted); err != nil {
-				return result, err
-			}
+			return ErrBattleInterrupted
 		}
 		puzzle, mem, err := currentBoulderPuzzle(m, romData, spec)
 		if err != nil {
-			return result, err
+			return err
 		}
 		if boulderPuzzleEventComplete(mem, spec) {
-			return result, nil
+			return nil
 		}
 
 		plan, err := world.PlanPushPuzzle(puzzle)
 		if err != nil {
-			return result, fmt.Errorf("skill: boulder puzzle map %#02x from player (%d,%d), boulders=%v: %w", spec.Map, puzzle.Player.X, puzzle.Player.Y, puzzle.Movables, err)
+			return fmt.Errorf("skill: boulder puzzle map %#02x from player (%d,%d), boulders=%v: %w", spec.Map, puzzle.Player.X, puzzle.Player.Y, puzzle.Movables, err)
 		}
 		result.Replans++
 		result.Explored += plan.Explored
@@ -517,30 +486,30 @@ func SolveBoulderPuzzle(m *emu.Emu, romData []byte, policy MovePolicy, spec Boul
 				for spent := 0; spent < boulderPushObserveBudget; spent += 10 {
 					state.Snapshot(m, mem)
 					if boulderPuzzleEventComplete(mem, spec) {
-						return result, nil
+						return nil
 					}
 					m.StepFrames(10)
 				}
-				return result, fmt.Errorf("skill: boulder puzzle geometry goal is satisfied but completion event %d is not set", spec.CompleteEvent)
+				return fmt.Errorf("skill: boulder puzzle geometry goal is satisfied but completion event %d is not set", spec.CompleteEvent)
 			}
-			return result, nil
+			return nil
 		}
 
-		pushed, err := executeObservedBoulderPush(m, spec, policy, plan.Pushes[0])
+		pushed, err := executeObservedBoulderPush(m, spec, plan.Pushes[0])
 		if err != nil {
-			return result, err
+			return err
 		}
 		if pushed {
 			result.Pushes++
 		}
-		// Whether a push happened or an interruption was resolved, the next
-		// iteration observes the world again and solves from that truth.
+		// The next iteration observes the world again and solves from that
+		// truth, whether or not the planned push landed.
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if result.Replans >= replanLimit {
-		return result, fmt.Errorf("%w: map %#02x after %d replans and %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzleReplanLimit, spec.Map, result.Replans, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
+		return fmt.Errorf("%w: map %#02x after %d replans and %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzleReplanLimit, spec.Map, result.Replans, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
 	}
-	return result, fmt.Errorf("%w: map %#02x after %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzlePushLimit, spec.Map, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
+	return fmt.Errorf("%w: map %#02x after %d verified pushes, player=(%d,%d), boulders=%v", ErrBoulderPuzzlePushLimit, spec.Map, result.Pushes, mem.U8(sym.XCoord), mem.U8(sym.YCoord), state.DecodeBoulders(&mem))
 }

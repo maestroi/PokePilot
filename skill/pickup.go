@@ -50,32 +50,19 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 
 const pickupFaceRecoveryAttempts = 3
 
-// pickupInterruptionForTravel translates the movement layer's battle sentinel
-// into the one Travel's resolver owns. Dialogue already uses the same sentinel
-// on both layers.
-func pickupInterruptionForTravel(err error) error {
-	if errors.Is(err, ErrBattleInterrupted) {
-		return ErrBattle
-	}
-	return err
-}
-
 // recoverPickupInteractionInterruption owns the tiny race after an approach
 // has finished but before Pickup presses A. A sighted trainer (or an ordinary
 // wild encounter that lands on the last approach step) can take control in
 // exactly that window: Face then times out because direction input is ignored.
-// Run the same bounded dialogue/battle resolver used by TravelFlee, then let
-// Pickup re-approach the ball and try the interaction again.
+// The shared interruption runner resolves whatever live battle/dialogue owns
+// the screen; Pickup then re-approaches the ball from the new live position
+// and tries the interaction again.
 func recoverPickupInteractionInterruption(m *emu.Emu, policy MovePolicy) error {
-	_, err := travel(
-		m,
-		policy,
-		4,
-		func() error { return pickupInterruptionForTravel(movementInterruption(m)) },
-		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
-		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
-	)
+	_, err := RunInterruptible(m, policy, InterruptibleAction{
+		Name:           "Pickup interaction",
+		MaxEngagements: 4,
+		Run:            func() error { return movementInterruption(m) },
+	})
 	return err
 }
 

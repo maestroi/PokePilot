@@ -395,17 +395,35 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 	return res, err
 }
 
-// travel is the retry loop: walk, resolve what interrupted the walk, walk
-// again. goTo, recoverBox and blackout are the resolvers; Travel wires them
-// to GoTo/Cut recovery, RecoverDialogue and the wStatusFlags4 blackout bit,
-// and the tests drive the loop with fakes instead of an emulator.
+// travel is Travel's instance of the shared interruption loop: goTo is the
+// resumable action, and recoverBox/blackout/resolveBattle are the resolvers.
+// Travel wires them to GoTo/Cut recovery, RecoverDialogue and the
+// wStatusFlags4 blackout bit, and the tests drive the loop with fakes instead
+// of an emulator.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
+	return runInterruptions(m, maxBattles, goTo, interruptionResolvers{
+		recoverBox:    recoverBox,
+		blackout:      blackout,
+		resolveBattle: resolveBattle,
+	})
+}
+
+// runInterruptions is the one retry loop behind Travel and RunInterruptible:
+// run the action, resolve what interrupted it, run the action again. The
+// action is re-entered from scratch after every resolution, so it must
+// re-observe the world and re-plan rather than resume stale local geometry.
+func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interruptionResolvers) (TravelResult, error) {
+	r = r.withWorldDefaults(m)
 	var res TravelResult
+	label := r.label
+	if label == "" {
+		label = "Travel"
+	}
 	var lastBoxText string
 	var lastBoxFrame uint64
 	var sameBoxRepeats int
 	for {
-		err := goTo()
+		err := normalizeInterruption(action())
 		if err == nil {
 			return res, nil
 		}
@@ -422,21 +440,21 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 			// long the walk may be interrupted, whatever the policy does with each
 			// encounter.
 			if res.Battles+res.Flees >= maxBattles {
-				return res, fmt.Errorf("skill: Travel: still interrupted after %d engagement(s) (maxBattles): %w: %v",
-					maxBattles, ErrEngagementsExhausted, err)
+				return res, fmt.Errorf("skill: %s: still interrupted after %d engagement(s) (maxBattles): %w: %v",
+					label, maxBattles, ErrEngagementsExhausted, err)
 			}
-			pre := currentWorld(m)
-			r, berr := resolveBattle()
+			pre := r.observe()
+			br, berr := r.resolveBattle()
 			if berr != nil {
-				return res, fmt.Errorf("skill: Travel: battle %d: %w", res.Battles+res.Flees+1, berr)
+				return res, fmt.Errorf("skill: %s: battle %d: %w", label, res.Battles+res.Flees+1, berr)
 			}
-			if r.fled {
+			if br.fled {
 				res.Flees++
 			} else {
 				res.Battles++
 			}
-			lost := r.outcome == state.ResultLost
-			res.Replans = append(res.Replans, settleWorld(m, pre, lost))
+			lost := br.outcome == state.ResultLost
+			res.Replans = append(res.Replans, r.settle(pre, lost))
 			if lost {
 				// A blackout ends the journey. Losing was once a silent
 				// continue — "the next pass re-plans from the Pokemon
@@ -450,15 +468,15 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// respawn spot is still the right move, but it is the
 				// caller's decision, made with the knowledge that the party
 				// lost. Trainer losses preserve that narrower cause too.
-				return res, recordTravelBattleDefeat(&res, r)
+				return res, recordTravelBattleDefeat(&res, br)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
 			if res.Dialogues >= maxDialogueRecoveries {
-				return res, fmt.Errorf("skill: Travel: still interrupted by a text box after %d recoveries: %v",
-					maxDialogueRecoveries, err)
+				return res, fmt.Errorf("skill: %s: still interrupted by a text box after %d recoveries: %v",
+					label, maxDialogueRecoveries, err)
 			}
 			res.Dialogues++
-			rec := recoverBox()
+			rec := r.recoverBox()
 			switch rec.Stop {
 			case DialogueChoiceRequired, DialogueMenuOpen:
 				// The choice is unanswered, or a menu is up that this layer
@@ -476,7 +494,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				if rec.Stop == DialogueChoiceRequired && routeGateChoiceText(rec.Text) && m != nil {
 					answered, aerr := AnswerKnownRouteGate(m)
 					if aerr != nil {
-						return res, fmt.Errorf("skill: Travel: %w", aerr)
+						return res, fmt.Errorf("skill: %s: %w", label, aerr)
 					}
 					if answered {
 						continue
@@ -487,7 +505,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// The box did not clear within the budget and is still up,
 				// so retrying would only meet it again. Report it with the
 				// text that was on screen.
-				return res, fmt.Errorf("skill: Travel: text box did not clear within the recovery budget: %q", rec.Text)
+				return res, fmt.Errorf("skill: %s: text box did not clear within the recovery budget: %q", label, rec.Text)
 			case DialogueRecovered:
 				if knownClosedRouteGateText(rec.LastText) {
 					// The guard's notice already closed (it is never a
@@ -498,7 +516,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 					// recoveries on "still interrupted by a text box".
 					return res, &ErrRouteGateClosed{Text: rec.LastText}
 				}
-				if blk := blackout(); blk {
+				if blk := r.blackout(); blk {
 					// The box that just closed was the blackout's own text:
 					// poison fainted the last mon out of it while walking.
 					// That is not a battle — ErrBattle never fired — it
@@ -533,8 +551,8 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 					}
 					lastBoxFrame = now
 					if sameBoxRepeats >= maxSameBoxRepeats {
-						return res, fmt.Errorf("skill: Travel: looping on the same text box after %d repeats: %q",
-							sameBoxRepeats, t)
+						return res, fmt.Errorf("skill: %s: looping on the same text box after %d repeats: %q",
+							label, sameBoxRepeats, t)
 					}
 				}
 				// recovered: the box is closed; the next pass re-plans from

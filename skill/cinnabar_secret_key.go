@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -162,23 +161,15 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	return nil
 }
 
-func runMansionFleeRecovery(m *emu.Emu, policy MovePolicy, action func() error) error {
-	_, err := travel(
-		m,
-		policy,
-		mansionTravelBattles,
-		action,
-		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
-		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
-	)
-	return err
-}
-
-func mansionInterruptionForTravel(err error) error {
-	if errors.Is(err, ErrBattleInterrupted) {
-		return ErrBattle
-	}
+// runMansionFleeRecovery runs one resumable Mansion story action through the
+// shared interruption runner: incidental wilds are fled, trainers fought, and
+// the action is re-entered from live state after each recovery.
+func runMansionFleeRecovery(m *emu.Emu, policy MovePolicy, name string, action func() error) error {
+	_, err := RunInterruptible(m, policy, InterruptibleAction{
+		Name:           name,
+		MaxEngagements: mansionTravelBattles,
+		Run:            action,
+	})
 	return err
 }
 
@@ -209,7 +200,7 @@ func enterPokemonMansion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// collision is walkable, so pathfinding must explicitly avoid it until
 	// SECRET_KEY is owned; otherwise the script interrupts every retry.
 	avoid := map[[2]int]bool{{int(cinnabarGymGateX), int(cinnabarGymGateY)}: true}
-	if err := runMansionFleeRecovery(m, policy, func() error {
+	if err := runMansionFleeRecovery(m, policy, "Mansion entrance", func() error {
 		switch got := m.Peek8(sym.CurMap); got {
 		case pokemonMansion1FMap:
 			// A recovered interruption may let an already-started warp finish
@@ -360,11 +351,11 @@ func dropMansion3FTo1F(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// stepped 1200 frames and reported a bare "did not change map", which the
 	// agent normalized as unknown_failure (#1635, with later recurrences).
 	//
-	// Run the whole resumable drop attempt through Travel's interruption
-	// resolver. After a recovered battle/dialogue we recompute live reachability
+	// Run the whole resumable drop attempt through the shared interruption
+	// runner. After a recovered battle/dialogue we recompute live reachability
 	// and approach the hole again; if recovery itself let the pending dungeon
 	// warp finish, observing Mansion 1F is already the positive postcondition.
-	if err := runMansionFleeRecovery(m, policy, func() error {
+	if err := runMansionFleeRecovery(m, policy, "Mansion 3F drop", func() error {
 		switch got := m.Peek8(sym.CurMap); got {
 		case pokemonMansion1FMap:
 			return nil
@@ -440,7 +431,7 @@ func dropMansion3FTo1FOnce(m *emu.Emu, romData []byte, policy MovePolicy) error 
 			crossed = true
 			break
 		}
-		if err := mansionInterruptionForTravel(movementInterruption(m)); err != nil {
+		if err := movementInterruption(m); err != nil {
 			return err
 		}
 		m.StepFrame()
@@ -560,7 +551,7 @@ func setMansionSwitch(m *emu.Emu, romData []byte, sw mansionSwitchSpec, want boo
 	}
 	// Flee an encounter rolled by the step onto the stand, then turn again;
 	// fleeing leaves the player on the stand.
-	if err := runMansionFleeRecovery(m, policy, func() error { return Face(m, sw.TargetX, sw.TargetY) }); err != nil {
+	if err := runMansionFleeRecovery(m, policy, "Mansion switch face", func() error { return Face(m, sw.TargetX, sw.TargetY) }); err != nil {
 		return fmt.Errorf("face Mansion switch (%d,%d): %w", sw.TargetX, sw.TargetY, err)
 	}
 	return driveMansionSwitchInteraction(m, sw, want)
