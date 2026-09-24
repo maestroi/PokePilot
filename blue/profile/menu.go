@@ -15,3 +15,7 @@ func (p *Profile) DecodeTwoOption(r game.MemoryReader) (game.TwoOptionState, boo
 func (p *Profile) DecodeStartMenu(r game.MemoryReader) game.StartMenuState {
 	return p.engine.DecodeStartMenu(r)
 }
+
+func (p *Profile) StartMenuEntryIndex(r game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	return p.engine.StartMenuEntryIndex(r, entry)
+}
