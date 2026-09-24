@@ -52,7 +52,6 @@ func TestRuntimePolicyDependencies(t *testing.T) {
 	}
 }
 
-
 func TestGenericRunLoopDoesNotImportRedImplementation(t *testing.T) {
 	for _, name := range []string{"run.go", "objective_adapter_registry.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
