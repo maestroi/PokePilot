@@ -124,7 +124,7 @@ printf 'fake-mp4' > "$out"
 	srv := httptest.NewServer(replay.handler())
 	defer srv.Close()
 
-	res, err := http.Post(srv.URL+"/v1/runs/run-1/replay/render", "application/json", nil)
+	res, err := http.Post(srv.URL+"/v1/runs/run-1/replay/render?mode=raw", "application/json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ printf 'fake-mp4' > "$out"
 
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		res, err = http.Get(srv.URL + "/v1/runs/run-1/replay/status")
+		res, err = http.Get(srv.URL + "/v1/runs/run-1/replay/status?mode=raw")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +168,7 @@ printf 'fake-mp4' > "$out"
 		t.Fatalf("cached bytes=%q", gotCache)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/v1/runs/run-1/replay/video", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/v1/runs/run-1/replay/video?mode=raw", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
