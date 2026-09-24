@@ -179,7 +179,6 @@ func TestNonPrerequisiteFailureClearsPendingRouteRecovery(t *testing.T) {
 	}
 }
 
-
 func TestPrerequisiteRecoveryChainsDeclaredFieldCapabilities(t *testing.T) {
 	policy := newRunFailurePolicy(3)
 	policy.pendingPrerequisites = []Prerequisite{
