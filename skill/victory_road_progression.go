@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -331,7 +332,7 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return nil
 	}
 	if state.DecodeProgress(&mem).BadgeCount != 8 {
-		return fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("earth_badge")
 	}
 	if mem.U8(sym.CurMap) == indigoPlateauLobbyMap || mem.U8(sym.CurMap) == indigoPlateauMap {
 		return prepareIndigoLobby(m, romData, policy)
