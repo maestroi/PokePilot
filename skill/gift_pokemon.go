@@ -67,13 +67,9 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 	want := []uint8{spec.Species}
 	wantDex := wantedDexNumbers(romData, want)
 
-	if err := talkBeside(m, romData, spec.X, spec.Y, policy); err != nil {
-		return CatchResult{}, fmt.Errorf("skill: %s: approach gift: %w", spec.Name, err)
+	if err := openGiftText(m, romData, policy, spec); err != nil {
+		return CatchResult{}, err
 	}
-	if err := Face(m, spec.X, spec.Y); err != nil {
-		return CatchResult{}, fmt.Errorf("skill: %s: face gift: %w", spec.Name, err)
-	}
-	m.Tap(emu.A, 3, 7)
 
 	res := CatchResult{}
 	confirmed := !spec.ConfirmChoice
@@ -124,4 +120,37 @@ func receiveGiftPokemonAt(m *emu.Emu, romData []byte, policy MovePolicy, spec gi
 	}
 
 	return res, fmt.Errorf("skill: %s: gift script did not settle within %d frames", spec.Name, giftPokemonBudget)
+}
+
+// openGiftText approaches the gift's map object at its live sprite tile and
+// presses A until its script opens text. The ROM home is only the object's
+// identity: a wandering giver such as the Cinnabar fossil scientist can stand
+// beside it, and A on the vacated home tile runs no script at all.
+func openGiftText(m *emu.Emu, romData []byte, policy MovePolicy, spec giftPokemonSpec) error {
+	h, objectID, err := mapObjectSlot(m, romData, spec.X, spec.Y)
+	if err != nil {
+		return fmt.Errorf("skill: %s: %w", spec.Name, err)
+	}
+	const attempts = 4
+	for attempt := 1; attempt <= attempts; attempt++ {
+		_, _, facing, err := faceLiveMapObject(m, romData, h, objectID, spec.X, spec.Y, policy)
+		if err != nil {
+			return fmt.Errorf("skill: %s: approach gift: %w", spec.Name, err)
+		}
+		if !facing {
+			m.StepFrames(npcWaitFrames)
+			continue
+		}
+		m.Tap(emu.A, 3, 7)
+		if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
+			return m.Peek8(sym.FontLoaded) != 0
+		}); err == nil {
+			return nil
+		}
+		if m.Peek8(sym.IsInBattle) != 0 {
+			return fmt.Errorf("skill: %s: open gift text: %w", spec.Name, ErrTalkStartedBattle)
+		}
+		m.StepFrames(npcWaitFrames)
+	}
+	return fmt.Errorf("skill: %s: gift object %d opened no text after %d approaches", spec.Name, objectID, attempts)
 }
