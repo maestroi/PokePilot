@@ -69,6 +69,21 @@ func rememberTrainingArea(k *Knowledge, obs Observation) {
 	}
 }
 
+// forgetUnreachedTrainingArea drops a learned habitat when a completed journey
+// to its travel place ended without reachable grass. The place's arrival point
+// is then cut off from the encounter tiles (for example a map segment split by
+// a cave), so selecting that journey again for training could only ping-pong.
+// Walking into the grass segment later re-learns the area from fresh evidence.
+func forgetUnreachedTrainingArea(k *Knowledge, o Objective, obs Observation) {
+	if k == nil || o.Kind != KindGoTo || obs.HasGrass {
+		return
+	}
+	location := observationLocation(obs, k)
+	if area, ok := k.TrainingAreas[location]; ok && area.Place == o.Place {
+		delete(k.TrainingAreas, location)
+	}
+}
+
 func wildLevelBand(wild []WildSpecies) (uint8, uint8, bool) {
 	var minLevel, maxLevel uint8
 	for _, encounter := range wild {
