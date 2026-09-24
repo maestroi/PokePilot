@@ -227,7 +227,7 @@ func resolveBoulderWalkInterruption(m *emu.Emu, policy MovePolicy, err error) er
 	}
 	switch {
 	case errors.Is(err, ErrBattleInterrupted):
-		resolution, battleErr := fleeThenFight(m, policy, 3)()
+		resolution, battleErr := fleeThenFight(m, policy, guaranteedWildFleeAttempts)()
 		if battleErr != nil {
 			return fmt.Errorf("skill: boulder puzzle resolve battle: %w", battleErr)
 		}
@@ -241,7 +241,7 @@ func resolveBoulderWalkInterruption(m *emu.Emu, policy MovePolicy, err error) er
 		case DialogueRecovered:
 			return nil
 		case DialogueUnexpectedMode:
-			resolution, battleErr := fleeThenFight(m, policy, 3)()
+			resolution, battleErr := fleeThenFight(m, policy, guaranteedWildFleeAttempts)()
 			if battleErr != nil {
 				return fmt.Errorf("skill: boulder puzzle resolve dialogue-led battle: %w", battleErr)
 			}
