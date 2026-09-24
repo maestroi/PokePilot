@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 import {
   ArrowPathIcon,
   ArrowsPointingOutIcon,
-  BoltIcon,
-  BugAntIcon,
-  GlobeAltIcon,
+  BanknotesIcon,
+  BookOpenIcon,
+  CheckCircleIcon,
+  ClockIcon,
+  FlagIcon,
   LinkIcon,
+  MapIcon,
+  MapPinIcon,
   PlayIcon,
-  QueueListIcon,
   SignalIcon,
   SparklesIcon,
-  TrophyIcon
+  TrophyIcon,
+  UserGroupIcon
 } from '@heroicons/vue/20/solid'
 import { getSpectatorSnapshot } from '../shared/api/spectator-client'
 import type { SpectatorRun } from '../shared/api/spectator'
@@ -40,6 +44,7 @@ import PublicHome from './PublicHome.vue'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
+import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 
 type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
@@ -141,26 +146,153 @@ const runtimeLabel = computed(() => {
   const seconds = elapsedRunSeconds(run)
   return seconds > 0 ? formatDuration(seconds) : 'Just started'
 })
-const nextMilestone = computed(() => {
+const sceneStyle = computed(() => ({
+  '--spectator-art': `url("${spectatorNightscapeUrl}")`
+}))
+
+const goalPercent = computed(() => {
   const run = selectedRun.value
-  if (!run) return null
+  return run ? goalProgress(run) : 0
+})
+
+const leagueGoal = computed(() => {
+  const run = selectedRun.value
+  if (!run) return false
+  const text = [run.goal, run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
+  return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
+})
+
+const goalProgressCopy = computed(() => {
+  const run = selectedRun.value
+  if (!run) return { label: 'Waiting for goal', detail: 'Run objective is loading.' }
+
   const badges = run.player?.badges?.length || 0
-  if (badges < 8) {
-    const badgeName = GYM_BADGES[badges] || 'Next'
+  const stats = run.stats
+  if (stats?.goal_complete) {
     return {
-      eyebrow: 'Next milestone',
-      title: badgeName + ' Badge',
-      detail: (8 - badges) + ' gym badge' + (8 - badges === 1 ? '' : 's') + ' remain before the Indigo Plateau.',
-      progress: badges + 1 + ' of 8 badges'
+      label: 'Goal complete',
+      detail: stats.goal_summary || 'The run objective is complete.'
     }
   }
+
+  if (leagueGoal.value && badges >= 8) {
+    return {
+      label: '8/8 badges earned',
+      detail: 'Next: Elite Four, Champion & Hall of Fame'
+    }
+  }
+
+  if (leagueGoal.value && badges < 8) {
+    const badgeName = GYM_BADGES[badges] || 'Next'
+    return {
+      label: `${badges}/8 badges earned`,
+      detail: `Next: ${badgeName} Badge`
+    }
+  }
+
+  const current = Number(stats?.goal_current || 0)
+  const target = Number(stats?.goal_target || 0)
   return {
-    eyebrow: 'Final stretch',
-    title: 'Elite Four & Hall of Fame',
-    detail: 'All gym badges are earned. The next major public milestone is entering the Hall of Fame.',
-    progress: 'All 8 badges earned'
+    label: target > 0 ? `${current}/${target} goal progress` : 'Goal in progress',
+    detail: stats?.goal_summary || objectiveLabel(run)
   }
 })
+
+type StatTone = 'cyan' | 'violet' | 'emerald' | 'amber'
+
+interface PremiumStat {
+  key: string
+  label: string
+  value: string
+  hint: string
+  icon: Component
+  tone: StatTone
+}
+
+const statCards = computed<PremiumStat[]>(() => {
+  const run = selectedRun.value
+  if (!run) return []
+  return [
+    { key: 'maps', label: 'Maps visited', value: mapsLabel.value, hint: 'World', icon: MapIcon, tone: 'cyan' },
+    { key: 'party', label: 'Party', value: `${run.player?.party?.length || 0}/6`, hint: 'Team', icon: UserGroupIcon, tone: 'violet' },
+    { key: 'runtime', label: 'Runtime', value: runtimeLabel.value, hint: 'Live', icon: ClockIcon, tone: 'emerald' },
+    { key: 'money', label: 'Money', value: moneyLabel(run), hint: 'Funds', icon: BanknotesIcon, tone: 'amber' }
+  ]
+})
+
+type StretchState = 'done' | 'active' | 'todo'
+
+interface StretchStep {
+  key: string
+  title: string
+  detail: string
+  value?: string
+  state: StretchState
+  icon: Component
+}
+
+const finalStretchSteps = computed<StretchStep[]>(() => {
+  const run = selectedRun.value
+  if (!run) return []
+
+  const badges = run.player?.badges?.length || 0
+  const location = currentLocation.value.toLowerCase()
+  const milestones = (run.player?.milestones || []).map((value) => value.toLowerCase())
+  const hasMilestone = (...needles: string[]) => milestones.some((value) => needles.some((needle) => value.includes(needle)))
+
+  const hallOfFameDone = Boolean(run.stats?.goal_complete) || hasMilestone('hall of fame', 'main story complete')
+  const championDone = hallOfFameDone || hasMilestone('champion defeated', 'league champion', 'champion')
+  const eliteFourDone = championDone || hasMilestone('elite four')
+  const plateauReached = eliteFourDone || championDone || hallOfFameDone || location.includes('indigo plateau')
+  const victoryRoadActive = location.includes('victory road')
+
+  return [
+    {
+      key: 'badges',
+      title: 'Gym Badges',
+      detail: badges >= 8 ? 'All eight badges are earned.' : `${8 - badges} badge${8 - badges === 1 ? '' : 's'} remain.`,
+      value: `${badges}/8`,
+      state: badges >= 8 ? 'done' : 'active',
+      icon: CheckCircleIcon
+    },
+    {
+      key: 'victory-road',
+      title: 'Victory Road',
+      detail: plateauReached ? 'Route to Indigo Plateau cleared.' : 'Navigate the final cave and reach Indigo Plateau.',
+      state: plateauReached ? 'done' : badges >= 8 || victoryRoadActive ? 'active' : 'todo',
+      icon: MapPinIcon
+    },
+    {
+      key: 'elite-four',
+      title: 'Elite Four',
+      detail: 'Defeat all four members in sequence.',
+      state: eliteFourDone ? 'done' : plateauReached ? 'active' : 'todo',
+      icon: FlagIcon
+    },
+    {
+      key: 'champion',
+      title: 'Champion',
+      detail: 'Win the final Champion battle.',
+      state: championDone ? 'done' : eliteFourDone ? 'active' : 'todo',
+      icon: TrophyIcon
+    },
+    {
+      key: 'hall-of-fame',
+      title: 'Hall of Fame',
+      detail: 'The full speedrun objective finishes here.',
+      state: hallOfFameDone ? 'done' : championDone ? 'active' : 'todo',
+      icon: SparklesIcon
+    }
+  ]
+})
+
+function statToneClass(tone: StatTone): string {
+  return `stat-tone-${tone}`
+}
+
+function stretchToneClass(state: StretchState): string {
+  return `stretch-step-${state}`
+}
 
 watch([selectedRun, selectionPinned], ([run, pinned]) => {
   if (run && !pinned) selectedRunID.value = run.run_id
@@ -245,11 +377,11 @@ function pushActivity(runID: string, kind: ActivityKind, label: string, detail: 
 function activityIcon(kind: ActivityKind) {
   switch (kind) {
     case 'decision': return SparklesIcon
-    case 'area': return GlobeAltIcon
+    case 'area': return MapPinIcon
     case 'badge': return TrophyIcon
-    case 'party': return QueueListIcon
-    case 'dex': return BugAntIcon
-    case 'milestone': return BoltIcon
+    case 'party': return UserGroupIcon
+    case 'dex': return BookOpenIcon
+    case 'milestone': return FlagIcon
     default: return SignalIcon
   }
 }
@@ -454,7 +586,7 @@ function activityTimeAgo(item: ActivityItem): string {
       </div>
     </div>
 
-    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass]">
+    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass]" :style="sceneStyle">
       <div v-if="state === 'stale'" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-xs text-amber-100" role="status">
         <span><strong>Connection lost.</strong> Showing the last known run state while reconnecting automatically.</span>
         <span class="flex items-center gap-2 text-amber-200/70">
@@ -474,7 +606,7 @@ function activityTimeAgo(item: ActivityItem): string {
 
       <div v-if="selectionPinned" class="spectator-stage grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)_21rem]">
         <aside class="space-y-3">
-          <section class="spectator-card overflow-hidden rounded-2xl border p-4 shadow-xl shadow-black/20">
+          <section class="spectator-card spectator-hero-card overflow-hidden rounded-2xl border p-4 shadow-xl shadow-black/20">
             <div class="flex flex-wrap items-center gap-2">
               <span v-if="isLiveRun(selectedRun)" class="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2.5 py-1 text-[10px] font-black tracking-[0.11em] text-red-300 uppercase ring-1 ring-red-400/20">
                 <span class="size-1.5 animate-pulse rounded-full bg-red-400" />
@@ -485,29 +617,47 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
 
             <div class="mt-4 flex items-start gap-3">
-              <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10">
-                <span class="text-2xl" aria-hidden="true">◉</span>
+              <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10" aria-hidden="true">
+                <span class="pokeball-mark" />
               </div>
               <div class="min-w-0">
                 <h1 class="text-2xl font-black tracking-tight text-white">Pokémon Red</h1>
                 <p class="mt-0.5 truncate text-sm text-slate-400">{{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}</p>
-                <p class="mt-1 truncate text-[11px] text-slate-600">{{ currentLocation }}</p>
+                <p class="mt-1 flex items-center gap-1.5 truncate text-[11px] text-slate-500">
+                  <MapPinIcon class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
+                  {{ currentLocation }}
+                </p>
               </div>
             </div>
 
             <div class="mt-5">
               <p class="text-sm leading-6 text-slate-300">{{ objectiveLabel(selectedRun) }}</p>
-              <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/8">
-                <div class="mode-progress h-full rounded-full transition-[width]" :style="{ width: goalProgress(selectedRun) + '%' }" />
+            </div>
+
+            <div class="goal-progress-card mt-4 rounded-xl border p-3">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-1.5 text-[9px] font-black tracking-[0.11em] text-[var(--mode-accent)] uppercase">
+                    <FlagIcon class="size-3.5" aria-hidden="true" />
+                    Goal progress
+                  </div>
+                  <div class="mt-1 truncate text-[11px] text-slate-400">{{ goalProgressCopy.detail }}</div>
+                </div>
+                <div class="shrink-0 text-right">
+                  <strong class="block font-mono text-lg text-white">{{ goalPercent.toFixed(0) }}%</strong>
+                  <span class="text-[9px] text-slate-500">{{ goalProgressCopy.label }}</span>
+                </div>
               </div>
-              <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] text-slate-500">
-                <span>{{ selectedRun.player?.badges?.length || 0 }} / 8 badges</span>
-                <span>{{ goalProgress(selectedRun).toFixed(0) }}%</span>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/8 ring-1 ring-white/5">
+                <div class="mode-progress goal-progress-fill h-full rounded-full transition-[width]" :style="{ width: goalPercent + '%' }" />
               </div>
             </div>
 
             <div class="mt-5">
-              <div class="mb-2 text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
+                <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
+              </div>
               <div class="grid grid-cols-8 gap-1.5">
                 <div
                   v-for="slot in 8"
@@ -528,25 +678,19 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
 
             <div class="mt-5 grid grid-cols-2 gap-2">
-              <div class="audience-stat rounded-xl border border-white/8 p-3">
-                <GlobeAltIcon class="size-4 text-cyan-200/80" aria-hidden="true" />
-                <strong class="mt-2 block font-mono text-base text-white">{{ mapsLabel }}</strong>
-                <span class="text-[10px] text-slate-500">Maps visited</span>
-              </div>
-              <div class="audience-stat rounded-xl border border-white/8 p-3">
-                <QueueListIcon class="size-4 text-violet-200/80" aria-hidden="true" />
-                <strong class="mt-2 block font-mono text-base text-white">{{ selectedRun.player?.party?.length || 0 }}/6</strong>
-                <span class="text-[10px] text-slate-500">Party</span>
-              </div>
-              <div class="audience-stat rounded-xl border border-white/8 p-3">
-                <SignalIcon class="size-4 text-emerald-200/80" aria-hidden="true" />
-                <strong class="mt-2 block font-mono text-base text-white">{{ runtimeLabel }}</strong>
-                <span class="text-[10px] text-slate-500">Runtime</span>
-              </div>
-              <div class="audience-stat rounded-xl border border-white/8 p-3">
-                <TrophyIcon class="size-4 text-amber-200/80" aria-hidden="true" />
-                <strong class="mt-2 block font-mono text-base text-white">{{ moneyLabel(selectedRun) }}</strong>
-                <span class="text-[10px] text-slate-500">Money</span>
+              <div
+                v-for="stat in statCards"
+                :key="stat.key"
+                :class="['premium-stat rounded-xl border p-3', statToneClass(stat.tone)]"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <span :class="['premium-stat-icon', statToneClass(stat.tone)]">
+                    <component :is="stat.icon" class="size-4" aria-hidden="true" />
+                  </span>
+                  <span class="text-[8px] font-bold tracking-[0.08em] text-slate-700 uppercase">{{ stat.hint }}</span>
+                </div>
+                <strong class="mt-2 block font-mono text-base text-white">{{ stat.value }}</strong>
+                <span class="text-[10px] text-slate-500">{{ stat.label }}</span>
               </div>
             </div>
           </section>
@@ -719,23 +863,42 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section v-if="nextMilestone" class="milestone-card overflow-hidden rounded-2xl border p-4">
-            <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">{{ nextMilestone.eyebrow }}</div>
-            <div class="mt-3 flex items-start gap-3">
-              <div class="grid size-12 shrink-0 place-items-center rounded-xl bg-cyan-300/10 ring-1 ring-cyan-300/20">
-                <TrophyIcon class="size-6 text-cyan-100" aria-hidden="true" />
-              </div>
+          <section class="milestone-card overflow-hidden rounded-2xl border p-4">
+            <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
-                <h2 class="text-base font-black text-white">{{ nextMilestone.title }}</h2>
-                <p class="mt-1 line-clamp-3 text-[11px] leading-5 text-slate-400">{{ nextMilestone.detail }}</p>
+                <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">{{ leagueGoal ? 'Final stretch' : 'Main story' }}</div>
+                <h2 class="mt-2 text-base font-black text-white">Elite Four & Hall of Fame</h2>
+                <p class="mt-1 text-[11px] leading-5 text-slate-400">
+                  {{ leagueGoal ? 'The run only reaches 100% after the Hall of Fame.' : 'Story milestones are tracked separately from the overall run goal.' }}
+                </p>
+              </div>
+              <div class="final-stretch-mark grid size-11 shrink-0 place-items-center rounded-xl">
+                <TrophyIcon class="size-5" aria-hidden="true" />
               </div>
             </div>
-            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/8">
-              <div class="mode-progress h-full rounded-full" :style="{ width: Math.min(100, ((selectedRun.player?.badges?.length || 0) / 8) * 100) + '%' }" />
-            </div>
-            <div class="mt-2 flex items-center justify-between text-[10px]">
-              <span class="text-slate-600">{{ nextMilestone.progress }}</span>
-              <span class="font-mono text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
+
+            <div class="stretch-list relative mt-4 space-y-2">
+              <div
+                v-for="step in finalStretchSteps"
+                :key="step.key"
+                :class="['stretch-step relative rounded-xl border p-3', stretchToneClass(step.state)]"
+              >
+                <div class="flex items-start gap-3">
+                  <span :class="['stretch-step-icon relative z-10', stretchToneClass(step.state)]">
+                    <component :is="step.icon" class="size-4" aria-hidden="true" />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <strong class="text-[11px] text-slate-200">{{ step.title }}</strong>
+                      <span v-if="step.value" class="font-mono text-[9px] text-slate-500">{{ step.value }}</span>
+                      <span v-else-if="step.state === 'active'" class="rounded-full bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-bold text-cyan-200 ring-1 ring-cyan-300/15">In progress</span>
+                      <span v-else-if="step.state === 'done'" class="text-[8px] font-bold text-emerald-300">Complete</span>
+                      <span v-else class="text-[8px] font-bold text-slate-700">Pending</span>
+                    </div>
+                    <p class="mt-0.5 text-[10px] leading-4 text-slate-500">{{ step.detail }}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -993,4 +1156,201 @@ function activityTimeAgo(item: ActivityItem): string {
 :fullscreen {
   background: #05070a;
 }
+
+.spectator-theme {
+  position: relative;
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(180deg, rgba(6, 11, 21, .72), rgba(6, 11, 21, .92)),
+    var(--spectator-art) center bottom / cover no-repeat;
+}
+
+.spectator-theme::before {
+  position: absolute;
+  inset: -1rem;
+  z-index: -1;
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 10% 70%, var(--mode-soft), transparent 24rem),
+    radial-gradient(circle at 92% 76%, rgba(103,232,249,.08), transparent 22rem);
+  content: '';
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.spectator-card,
+.milestone-card,
+.watching-card {
+  backdrop-filter: blur(14px);
+}
+
+.spectator-hero-card {
+  border-color: var(--mode-border);
+  background:
+    linear-gradient(180deg, rgba(13, 23, 40, .82), rgba(6, 12, 24, .94)),
+    var(--spectator-art) 28% 78% / 68rem auto no-repeat;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 18px 44px rgba(0,0,0,.22);
+}
+
+.goal-progress-card {
+  border-color: var(--mode-border);
+  background:
+    radial-gradient(circle at 100% 0%, var(--mode-soft), transparent 12rem),
+    rgba(2, 6, 23, .48);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.goal-progress-fill {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--mode-accent) 38%, transparent);
+}
+
+.pokeball-mark {
+  position: relative;
+  display: block;
+  width: 1.65rem;
+  height: 1.65rem;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,.9);
+  border-radius: 9999px;
+  background: linear-gradient(to bottom, #fb7185 0 46%, #e2e8f0 46% 54%, #f8fafc 54% 100%);
+  box-shadow: 0 0 18px rgba(251,113,133,.2);
+}
+
+.pokeball-mark::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: rgba(15,23,42,.86);
+  content: '';
+  transform: translateY(-50%);
+}
+
+.pokeball-mark::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: .52rem;
+  height: .52rem;
+  border: 2px solid rgba(15,23,42,.9);
+  border-radius: 9999px;
+  background: white;
+  content: '';
+  transform: translate(-50%, -50%);
+}
+
+.premium-stat {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(255,255,255,.08);
+  background:
+    linear-gradient(155deg, rgba(255,255,255,.035), transparent 55%),
+    rgba(2,6,23,.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+
+.premium-stat::after {
+  position: absolute;
+  right: -1.6rem;
+  bottom: -1.8rem;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 9999px;
+  content: '';
+  opacity: .12;
+  filter: blur(10px);
+}
+
+.premium-stat-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: .7rem;
+  background: rgba(255,255,255,.035);
+}
+
+.stat-tone-cyan { color: rgb(165 243 252); }
+.stat-tone-violet { color: rgb(221 214 254); }
+.stat-tone-emerald { color: rgb(167 243 208); }
+.stat-tone-amber { color: rgb(253 230 138); }
+.premium-stat.stat-tone-cyan::after { background: rgb(34 211 238); }
+.premium-stat.stat-tone-violet::after { background: rgb(168 85 247); }
+.premium-stat.stat-tone-emerald::after { background: rgb(16 185 129); }
+.premium-stat.stat-tone-amber::after { background: rgb(245 158 11); }
+
+.final-stretch-mark {
+  border: 1px solid rgba(103,232,249,.18);
+  background:
+    radial-gradient(circle at 35% 20%, rgba(255,255,255,.15), transparent 45%),
+    rgba(34,211,238,.09);
+  color: rgb(207 250 254);
+  box-shadow: 0 0 26px rgba(34,211,238,.08);
+}
+
+.stretch-list::before {
+  position: absolute;
+  top: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  width: 1px;
+  background: linear-gradient(to bottom, rgba(52,211,153,.35), rgba(103,232,249,.22), rgba(148,163,184,.08));
+  content: '';
+}
+
+.stretch-step {
+  border-color: rgba(255,255,255,.075);
+  background: rgba(2,6,23,.34);
+  transition: border-color .15s ease, background .15s ease, transform .15s ease;
+}
+
+.stretch-step-icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: .72rem;
+  background: rgba(15,23,42,.92);
+}
+
+.stretch-step-done {
+  border-color: rgba(52,211,153,.18);
+}
+.stretch-step-done .stretch-step-icon {
+  border-color: rgba(52,211,153,.25);
+  background: rgba(16,185,129,.11);
+  color: rgb(167 243 208);
+}
+.stretch-step-active {
+  border-color: rgba(103,232,249,.22);
+  background:
+    radial-gradient(circle at 0% 50%, rgba(103,232,249,.09), transparent 10rem),
+    rgba(2,6,23,.4);
+}
+.stretch-step-active .stretch-step-icon {
+  border-color: rgba(103,232,249,.28);
+  background: rgba(34,211,238,.1);
+  color: rgb(165 243 252);
+  box-shadow: 0 0 18px rgba(34,211,238,.08);
+}
+.stretch-step-todo {
+  opacity: .78;
+}
+.stretch-step-todo .stretch-step-icon {
+  color: rgb(100 116 139);
+}
+
+.milestone-card {
+  background:
+    linear-gradient(180deg, rgba(13, 23, 40, .88), rgba(6, 12, 24, .95)),
+    var(--spectator-art) 78% 80% / 60rem auto no-repeat;
+}
+
+
 </style>
