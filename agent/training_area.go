@@ -22,20 +22,20 @@ type TrainingAreaKnowledge struct {
 // active adapter's route/encounter data. Knowledge stores only visited habitats;
 // these dynamic costs are never persisted as world truth.
 type TrainingAreaAssessment struct {
-	Place            PlaceID            `json:"place"`
-	Location         LocationID         `json:"location"`
-	MinLevel         uint8              `json:"min_level,omitempty"`
-	MaxLevel         uint8              `json:"max_level,omitempty"`
-	Selected         bool               `json:"selected,omitempty"`
-	Routable         bool               `json:"routable"`
-	RecoveryKnown    bool               `json:"recovery_known,omitempty"`
-	TravelCost       int                `json:"travel_cost,omitempty"`
-	RecoveryCost     int                `json:"recovery_cost,omitempty"`
-	TotalCost        int                `json:"total_cost,omitempty"`
-	FastTravel       bool               `json:"fast_travel,omitempty"`
-	FastTravelMethod string             `json:"fast_travel_method,omitempty"`
-	Estimate         TrainingEstimate   `json:"estimate"`
-	Reason           string             `json:"reason,omitempty"`
+	Place            PlaceID          `json:"place"`
+	Location         LocationID       `json:"location"`
+	MinLevel         uint8            `json:"min_level,omitempty"`
+	MaxLevel         uint8            `json:"max_level,omitempty"`
+	Selected         bool             `json:"selected,omitempty"`
+	Routable         bool             `json:"routable"`
+	RecoveryKnown    bool             `json:"recovery_known,omitempty"`
+	TravelCost       int              `json:"travel_cost,omitempty"`
+	RecoveryCost     int              `json:"recovery_cost,omitempty"`
+	TotalCost        int              `json:"total_cost,omitempty"`
+	FastTravel       bool             `json:"fast_travel,omitempty"`
+	FastTravelMethod string           `json:"fast_travel_method,omitempty"`
+	Estimate         TrainingEstimate `json:"estimate"`
+	Reason           string           `json:"reason,omitempty"`
 }
 
 // rememberTrainingArea records a habitat only after the run has observed it.
