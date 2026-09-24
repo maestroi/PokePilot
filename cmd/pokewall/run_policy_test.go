@@ -73,7 +73,7 @@ func TestLeaseCarriesRunPolicyFromTheTile(t *testing.T) {
 	srv := httptest.NewServer(w.Handler())
 	t.Cleanup(srv.Close)
 
-	body := `{"run_id":"policy-lease","planner":"llm","goal":"badges:1","play_style":"adventure","risk_tolerance":"balanced","wild_encounters":"fight"}`
+	body := `{"run_id":"policy-lease","planner":"llm","goal":"badges:1","play_style":"adventure","purpose":"debug_coverage","risk_tolerance":"balanced","wild_encounters":"fight"}`
 	resp, err := http.Post(srv.URL+"/v1/specs", "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("enqueue: %v", err)
@@ -84,8 +84,8 @@ func TestLeaseCarriesRunPolicyFromTheTile(t *testing.T) {
 	if err != nil || leased == nil {
 		t.Fatalf("lease: %v (spec %v)", err, leased)
 	}
-	if leased.PlayStyle != "adventure" || leased.RiskTolerance != "balanced" || leased.WildEncounters != "fight" {
-		t.Fatalf("leased policy = %q/%q/%q", leased.PlayStyle, leased.RiskTolerance, leased.WildEncounters)
+	if leased.PlayStyle != "adventure" || leased.Purpose != farm.RunPurposeDebugCoverage || leased.RiskTolerance != "balanced" || leased.WildEncounters != "fight" {
+		t.Fatalf("leased policy = %q/%q/%q/%q", leased.PlayStyle, leased.Purpose, leased.RiskTolerance, leased.WildEncounters)
 	}
 }
 
@@ -100,6 +100,7 @@ func TestPersistedStateCarriesRunPolicyAndGoalState(t *testing.T) {
 		Planner:        "llm",
 		Goal:           farm.GoalFrom(""),
 		PlayStyle:      "completionist",
+		Purpose:        farm.RunPurposeDebugCoverage,
 		RiskTolerance:  "cautious",
 		WildEncounters: "planner",
 	})
@@ -122,8 +123,8 @@ func TestPersistedStateCarriesRunPolicyAndGoalState(t *testing.T) {
 	if tile == nil {
 		t.Fatal("restored tile missing")
 	}
-	if tile.PlayStyle != "completionist" || tile.RiskTolerance != "cautious" || tile.WildEncounters != "planner" {
-		t.Fatalf("restored policy = %q/%q/%q", tile.PlayStyle, tile.RiskTolerance, tile.WildEncounters)
+	if tile.PlayStyle != "completionist" || tile.Purpose != farm.RunPurposeDebugCoverage || tile.RiskTolerance != "cautious" || tile.WildEncounters != "planner" {
+		t.Fatalf("restored policy = %q/%q/%q/%q", tile.PlayStyle, tile.Purpose, tile.RiskTolerance, tile.WildEncounters)
 	}
 	if !tile.GoalProvided || tile.Goal != "" {
 		t.Fatalf("restored goal = %q provided=%v, want provided empty", tile.Goal, tile.GoalProvided)
