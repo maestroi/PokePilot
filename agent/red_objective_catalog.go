@@ -25,7 +25,8 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			{Starter: skill.StarterSquirtle, Species: "squirtle"},
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
-		CurrentCenter: isCenter(obs.MapName),
+		ChallengeProfiles: redProgressionChallengeProfiles(),
+		CurrentCenter:      isCenter(obs.MapName),
 	}
 
 	for _, name := range skill.PlaceNames() {
@@ -50,9 +51,10 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
-			Place:    gym.Place,
-			Location: redLocationID(obs.GameID, gym.Map),
-			Complete: hasBadge(obs, gym.Badge),
+			Place:     gym.Place,
+			Location:  redLocationID(obs.GameID, gym.Map),
+			Complete:  hasBadge(obs, gym.Badge),
+			Readiness: redGymReadinessProfile(gym.Badge),
 		})
 	}
 
