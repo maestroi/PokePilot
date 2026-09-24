@@ -21,7 +21,8 @@ type Knowledge struct {
 	Talked        map[LocationID]map[[2]uint8]bool
 	Adjacency     map[LocationID][]LocationID
 	Requirements  []Requirement
-	TrainingAreas map[LocationID]TrainingAreaKnowledge
+	TrainingAreas      map[LocationID]TrainingAreaKnowledge
+	RecoveryCheckpoints map[PlaceID]RecoveryCheckpointKnowledge
 
 	// Build is this process's running binary identity (e.g. a git SHA), set
 	// by the caller. Empty means unknown, which leaves failure tallies
@@ -55,7 +56,8 @@ func NewKnowledge(topology any) *Knowledge {
 		Adjacency:       resolved.Adjacency,
 		Requirements:    []Requirement{},
 		Failures:        map[string]Failure{},
-		TrainingAreas:   map[LocationID]TrainingAreaKnowledge{},
+		TrainingAreas:      map[LocationID]TrainingAreaKnowledge{},
+		RecoveryCheckpoints: map[PlaceID]RecoveryCheckpointKnowledge{},
 		nativeLocations: resolved.NativeLocations,
 	}
 }
@@ -360,6 +362,25 @@ func (k *Knowledge) HeardRequirement(line, place string, x, y uint8) {
 	k.Requirements = out
 }
 
+type RecoveryCheckpointKnowledge struct {
+	Place      PlaceID    `json:"place"`
+	Location   LocationID `json:"location"`
+	Successful bool       `json:"successful,omitempty"`
+}
+
+func (k *Knowledge) rememberRecoveryCheckpoint(place PlaceID, location LocationID, successful bool) {
+	if k == nil || place == "" || location == "" {
+		return
+	}
+	if k.RecoveryCheckpoints == nil {
+		k.RecoveryCheckpoints = map[PlaceID]RecoveryCheckpointKnowledge{}
+	}
+	entry := k.RecoveryCheckpoints[place]
+	entry.Place, entry.Location = place, location
+	entry.Successful = entry.Successful || successful
+	k.RecoveryCheckpoints[place] = entry
+}
+
 func (k *Knowledge) Done(o Objective) {
 	storage := objectiveStorageKey(o)
 	legacy := o.String()
@@ -373,6 +394,12 @@ func (k *Knowledge) Done(o Objective) {
 	delete(k.Failures, combatLossFailureKey(o))
 	delete(k.Failures, combatRetryReadyKey(o))
 	clearLegacyCombatRecovery(k, o)
+	if o.Kind == KindHeal && o.Place != "" {
+		if entry := k.RecoveryCheckpoints[o.Place]; entry.Place != "" {
+			entry.Successful = true
+			k.RecoveryCheckpoints[o.Place] = entry
+		}
+	}
 	if o.Kind == KindTrain {
 		// Pre-readiness checkpoints/direct callers have no quantitative target.
 		// Preserve their historical "one completed training rung unlocks retry"
@@ -438,6 +465,14 @@ func (k *Knowledge) restore(mem memoryFile) {
 		k.HeardRequirement(r.Text, r.Place, r.X, r.Y)
 		if len(k.Requirements) > 0 && k.Requirements[0].Text == r.Text {
 			k.Requirements[0].Times = r.Times
+		}
+	}
+	if k.RecoveryCheckpoints == nil {
+		k.RecoveryCheckpoints = map[PlaceID]RecoveryCheckpointKnowledge{}
+	}
+	for _, checkpoint := range mem.RecoveryCheckpoints {
+		if checkpoint.Place != "" && checkpoint.Location != "" {
+			k.rememberRecoveryCheckpoint(checkpoint.Place, checkpoint.Location, checkpoint.Successful)
 		}
 	}
 	if k.TrainingAreas == nil {
