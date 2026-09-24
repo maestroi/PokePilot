@@ -246,44 +246,18 @@ func dialoguePagingStuck(unchanged int, prev, next string) (int, bool) {
 // which the game refuses to let you flee and which talkBeside fights.
 func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (int, error) {
 	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	h, objectID, err := mapObjectSlot(m, romData, homeX, homeY)
 	if err != nil {
-		return 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
-	}
-	objectID := 0
-	for i, object := range h.Objects {
-		if object.X == homeX && object.Y == homeY {
-			objectID = i + 1 // map object constants and sprite slots are 1-based
-			break
-		}
-	}
-	if objectID == 0 {
-		return 0, fmt.Errorf("skill: TalkAt: no map object at (%d,%d) on map %#04x", homeX, homeY, cur)
+		return 0, err
 	}
 
 	const attempts = 4
-	tx, ty := homeX, homeY
 	for attempt := 1; attempt <= attempts; attempt++ {
-		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
-			tx, ty = liveX, liveY
+		tx, ty, facing, err := faceLiveMapObject(m, romData, h, objectID, homeX, homeY, policy)
+		if err != nil {
+			return 0, err
 		}
-		if err := talkBeside(m, romData, tx, ty, policy); err != nil {
-			return 0, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
-		}
-
-		// The NPC may have walked while the player approached. Re-read the
-		// slot and retry if its current tile is no longer adjacent.
-		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
-			tx, ty = liveX, liveY
-		}
-		faceX, faceY, facing := interactionFacingTile(m, romData, h, tx, ty)
 		if !facing {
-			// Neither adjacent nor in the counter approach: treat the NPC as
-			// having wandered off and re-approach it.
-			m.StepFrames(npcWaitFrames)
-			continue
-		}
-		if err := Face(m, faceX, faceY); err != nil {
 			m.StepFrames(npcWaitFrames)
 			continue
 		}
@@ -312,6 +286,50 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 		return presses, nil
 	}
 	return 0, fmt.Errorf("skill: TalkAt: object %d did not remain adjacent after %d approaches", objectID, attempts)
+}
+
+// mapObjectSlot resolves the 1-based sprite slot of the current map's object
+// whose ROM home coordinate is (homeX, homeY).
+func mapObjectSlot(m *emu.Emu, romData []byte, homeX, homeY uint8) (rom.MapHeader, int, error) {
+	cur := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return h, 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
+	}
+	for i, object := range h.Objects {
+		if object.X == homeX && object.Y == homeY {
+			return h, i + 1, nil // map object constants and sprite slots are 1-based
+		}
+	}
+	return h, 0, fmt.Errorf("skill: TalkAt: no map object at (%d,%d) on map %#04x", homeX, homeY, cur)
+}
+
+// faceLiveMapObject walks beside objectID's live sprite tile and faces it.
+// facing is false when the NPC wandered out of reach during the approach;
+// the caller waits and re-approaches. The returned tile is the object's live
+// position the player now faces.
+func faceLiveMapObject(m *emu.Emu, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+	tx, ty := homeX, homeY
+	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+		tx, ty = liveX, liveY
+	}
+	if err := talkBeside(m, romData, tx, ty, policy); err != nil {
+		return tx, ty, false, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
+	}
+
+	// The NPC may have walked while the player approached. Re-read the slot
+	// and report not-facing if its current tile is no longer adjacent.
+	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+		tx, ty = liveX, liveY
+	}
+	faceX, faceY, facing := interactionFacingTile(m, romData, h, tx, ty)
+	if !facing {
+		return tx, ty, false, nil
+	}
+	if err := Face(m, faceX, faceY); err != nil {
+		return tx, ty, false, nil
+	}
+	return tx, ty, true, nil
 }
 
 func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
