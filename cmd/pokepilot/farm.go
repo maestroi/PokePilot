@@ -1001,7 +1001,7 @@ func decisionSelectionFor(spec *farm.DecisionEngineSpec) agent.DecisionSelection
 		// Same as an unknown backend: fail resolution loudly.
 		mode = spec.Mode
 	}
-	return agent.DecisionSelection{
+	sel := agent.DecisionSelection{
 		Backend:            backend,
 		Mode:               mode,
 		ObjectiveSelection: spec.Objectives,
@@ -1009,4 +1009,8 @@ func decisionSelectionFor(spec *farm.DecisionEngineSpec) agent.DecisionSelection
 		Battles:            spec.Battles,
 		MinConfidence:      spec.MinConfidence,
 	}
+	if id := spec.Inference; id != nil {
+		sel.Endpoint, sel.Model, sel.TokenEnv = id.Endpoint, id.APIModel, id.TokenEnv
+	}
+	return sel
 }

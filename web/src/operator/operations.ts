@@ -141,7 +141,8 @@ export function reasoningEffortLabel(run: DashboardRun): string {
 export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>): string {
   const engine = run.decision_engine
   if (!engine || engine.backend === 'off' || engine.mode === 'off') return 'Off'
-  const name = engine.backend === 'jev' ? 'TypeSafe Jev' : 'Local System-1'
+  const legacyName = engine.backend === 'jev' ? 'TypeSafe Jev' : 'Local System-1'
+  const name = engine.inference?.label || engine.deployment || legacyName
   const mode = engine.mode === 'shadow' ? 'shadow' : 'active'
   const uses = [
     engine.battles ? 'battles' : '',

@@ -63,3 +63,37 @@ func TestSpecDecisionEngineIsOptionalOnTheWire(t *testing.T) {
 		t.Fatalf("old spec decoded selection %+v, %v", old.DecisionEngine, err)
 	}
 }
+
+func TestDecisionEngineDeploymentIdentity(t *testing.T) {
+	// Only the wall's registry binds a deployment.
+	if _, err := (&DecisionEngineSpec{Backend: "jev", Deployment: "typesafe-jev"}).Normalized(); err == nil || !strings.Contains(err.Error(), "decision_engine.deployment") {
+		t.Fatalf("unbound deployment err = %v", err)
+	}
+	src := &DecisionEngineSpec{Backend: "jev", Deployment: "typesafe-jev", Inference: &InferenceIdentity{DeploymentID: "typesafe-jev", Endpoint: "https://api.typesafe.ai/v1"}}
+	got, err := src.Normalized()
+	if err != nil || got.Inference == src.Inference || *got.Inference != *src.Inference {
+		t.Fatalf("normalized = %+v, %v; want an equal, independent identity", got, err)
+	}
+	clone := src.Clone()
+	clone.Inference.Endpoint = "changed"
+	if src.Inference.Endpoint == "changed" {
+		t.Fatal("clone shares the identity pointer")
+	}
+}
+
+func TestModelDeploymentProtocol(t *testing.T) {
+	base := ModelDeployment{ID: "d", ModelID: "m", Compute: "c", Endpoint: "http://x/v1", APIModel: "m"}
+	if !base.ServesStrategist() || base.DecisionBackend() != DecisionBackendSystemOne || base.Identity().Protocol != ProtocolOpenAI {
+		t.Fatalf("legacy row = strategist %v backend %q", base.ServesStrategist(), base.DecisionBackend())
+	}
+	jev := base
+	jev.Protocol = "TypeSafe-Choice"
+	if jev.ServesStrategist() || jev.DecisionBackend() != DecisionBackendJev || jev.Identity().Protocol != ProtocolTypeSafeChoice {
+		t.Fatalf("jev row = strategist %v backend %q", jev.ServesStrategist(), jev.DecisionBackend())
+	}
+	bad := base
+	bad.Protocol = "grpc"
+	if err := (ModelRegistry{Deployments: []ModelDeployment{bad}}).Validate(); err == nil || !strings.Contains(err.Error(), "protocol") {
+		t.Fatalf("invalid protocol err = %v", err)
+	}
+}

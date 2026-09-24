@@ -246,6 +246,12 @@ func (c *modelExperimentController) handleTestModel(w http.ResponseWriter, r *ht
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if !deployment.ServesStrategist() {
+		// The choice API has no /models listing and every probe call is a
+		// billed decision, so a typed-decision deployment is only validated.
+		writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: deployment, State: "configured"})
+		return
+	}
 	probe := deployment
 	if probe.ControlURL == "" {
 		probe.Discover = true
@@ -466,6 +472,14 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
 		return
 	}
+	decisionBound, err := c.bindDecisionDeployment(raw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if decisionBound {
+		body, _ = json.Marshal(raw)
+	}
 	deployment, _ := raw["llm_deployment"].(string)
 	if strings.TrimSpace(deployment) == "" {
 		c.forwardBody(w, r, body)
@@ -487,6 +501,41 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 		c.persistLocked()
 		c.mu.Unlock()
 	}
+}
+
+// bindDecisionDeployment resolves decision_engine.deployment against the
+// registry, exactly as llm_deployment is resolved for the strategist: the
+// deployment's protocol picks the backend and its secret-free identity is
+// copied onto the run. Any client-supplied identity is discarded so a run
+// can only ever name endpoints the registry declares. It reports whether raw
+// changed.
+func (c *modelExperimentController) bindDecisionDeployment(raw map[string]any) (bool, error) {
+	engine, ok := raw["decision_engine"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	_, hadIdentity := engine["inference"]
+	delete(engine, "inference")
+	id := strings.TrimSpace(stringValue(engine["deployment"]))
+	if id == "" {
+		return hadIdentity, nil
+	}
+	rawBackend := strings.TrimSpace(stringValue(engine["backend"]))
+	explicitOff := rawBackend != "" && farm.NormalizeDecisionBackend(rawBackend) == farm.DecisionBackendOff
+	if explicitOff || farm.NormalizeDecisionMode(stringValue(engine["mode"])) == farm.DecisionModeOff {
+		// An explicit off wins; the deployment is irrelevant.
+		delete(engine, "deployment")
+		return true, nil
+	}
+	d, err := c.resolvedDeployment(id)
+	if err != nil {
+		return false, fmt.Errorf("decision_engine.deployment: %w", err)
+	}
+	identity := d.Identity()
+	engine["deployment"] = d.ID
+	engine["backend"] = d.DecisionBackend()
+	engine["inference"] = identity
+	return true, nil
 }
 
 func (c *modelExperimentController) handleCloneRun(w http.ResponseWriter, r *http.Request) {
@@ -1257,6 +1306,9 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 	d, err := c.resolvedDeployment(deployment)
 	if err != nil {
 		return runExperimentMeta{}, err
+	}
+	if !d.ServesStrategist() {
+		return runExperimentMeta{}, fmt.Errorf("deployment %q speaks %s and can only serve the fast decision engine", deployment, d.Protocol)
 	}
 	runID, _ := raw["run_id"].(string)
 	if strings.TrimSpace(runID) == "" {

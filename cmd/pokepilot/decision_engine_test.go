@@ -23,6 +23,12 @@ func TestDecisionSelectionForRunSpec(t *testing.T) {
 	if got.Mode != farm.DecisionModeShadow || !got.Battles {
 		t.Fatalf("shadow selection = %+v", got)
 	}
+	got = decisionSelectionFor(&farm.DecisionEngineSpec{Backend: "jev", Deployment: "typesafe-jev", Inference: &farm.InferenceIdentity{
+		Endpoint: "https://api.typesafe.ai/v1", APIModel: "jev-2", TokenEnv: "JEV_KEY",
+	}})
+	if got.Endpoint != "https://api.typesafe.ai/v1" || got.Model != "jev-2" || got.TokenEnv != "JEV_KEY" {
+		t.Fatalf("deployment selection = %+v", got)
+	}
 	// A backend this runner does not know must fail resolution, never fall
 	// back to the environment default.
 	t.Setenv("POKEPILOT_DECISION_BACKEND", "")

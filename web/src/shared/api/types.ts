@@ -92,6 +92,10 @@ export interface DashboardStats {
 // on the runner; only the choice travels with the run.
 export interface DecisionEngineSpec {
   backend: 'off' | 'jev' | 'system-one'
+  // Registered deployment id. The wall resolves it and copies the
+  // secret-free identity into inference; clients never send inference.
+  deployment?: string
+  inference?: InferenceIdentity
   // Shadow records the backend's answers without acting on them; omitted
   // means active, which is how selections made before modes behaved.
   mode?: 'off' | 'shadow' | 'active'
@@ -210,12 +214,17 @@ export interface InferenceIdentity {
   compute: string
   endpoint: string
   api_model: string
+  protocol?: DeploymentProtocol
   control_url?: string
   token_env?: string
   engine?: string
   engine_version?: string
   engine_config?: string
 }
+
+// Wire API a registered deployment speaks. Empty/openai can serve the
+// strategist or a typed decision engine; typesafe-choice only the latter.
+export type DeploymentProtocol = '' | 'openai' | 'typesafe-choice' 
 
 export type DeploymentState = 'ready' | 'available' | 'loading' | 'busy' | 'failed' | 'unavailable' | string
 
@@ -229,6 +238,7 @@ export interface ModelDeployment {
   compute: string
   endpoint: string
   api_model: string
+  protocol?: DeploymentProtocol
   enabled: boolean
   discover?: boolean
   default_for?: string[]

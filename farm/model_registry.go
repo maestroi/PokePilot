@@ -39,7 +39,12 @@ type ModelDeployment struct {
 	Compute      string `json:"compute"`
 	Endpoint     string `json:"endpoint"`
 	APIModel     string `json:"api_model"`
-	Enabled      bool   `json:"enabled"`
+	// Protocol is the wire API the endpoint speaks. Empty or "openai" is an
+	// OpenAI-compatible chat endpoint that can serve the strategist or a typed
+	// decision engine; "typesafe-choice" is the TypeSafe System One choice API,
+	// which serves only the fast typed-decision engine.
+	Protocol string `json:"protocol,omitempty"`
+	Enabled  bool   `json:"enabled"`
 	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
 	// and bind runs to the model actually being served. This is useful for
 	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
@@ -73,12 +78,46 @@ type InferenceIdentity struct {
 	Compute            string `json:"compute"`
 	Endpoint           string `json:"endpoint"`
 	APIModel           string `json:"api_model"`
+	Protocol           string `json:"protocol,omitempty"`
 	ControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
 	EngineVersion      string `json:"engine_version,omitempty"`
 	EngineConfig       string `json:"engine_config,omitempty"`
 	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
+}
+
+// Deployment wire protocols.
+const (
+	ProtocolOpenAI         = "openai"
+	ProtocolTypeSafeChoice = "typesafe-choice"
+)
+
+// NormalizeProtocol maps a registry protocol to its canonical name, or ""
+// when unknown. Empty is OpenAI-compatible, how every older row behaved.
+func NormalizeProtocol(protocol string) string {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "", "openai", "openai-compatible":
+		return ProtocolOpenAI
+	case "typesafe-choice", "typesafe", "jev":
+		return ProtocolTypeSafeChoice
+	}
+	return ""
+}
+
+// ServesStrategist reports whether the deployment can answer the strategist's
+// chat-completion planner. A choice-only API cannot.
+func (d ModelDeployment) ServesStrategist() bool {
+	return NormalizeProtocol(d.Protocol) == ProtocolOpenAI
+}
+
+// DecisionBackend names the typed-decision backend that talks to this
+// deployment's protocol.
+func (d ModelDeployment) DecisionBackend() string {
+	if NormalizeProtocol(d.Protocol) == ProtocolTypeSafeChoice {
+		return DecisionBackendJev
+	}
+	return DecisionBackendSystemOne
 }
 
 const postgresRegistryEnvPrefix = "postgres-env://"
@@ -163,6 +202,9 @@ func (r ModelRegistry) Validate() error {
 		if d.MaxParallelWorkers < 0 || d.MaxParallelWorkers > MaxParallelWorkersLimit {
 			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d (must be 0-%d)", id, d.MaxParallelWorkers, MaxParallelWorkersLimit)
 		}
+		if NormalizeProtocol(d.Protocol) == "" {
+			return fmt.Errorf("model registry: deployment %q has invalid protocol %q (openai or typesafe-choice)", id, d.Protocol)
+		}
 		switch p := strings.TrimSpace(d.LegacyProfile); p {
 		case "", "auto", "gpu", "default":
 		default:
@@ -216,7 +258,7 @@ func (d ModelDeployment) Identity() InferenceIdentity {
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
 		Revision: d.Revision, Artifact: d.Artifact, Quantization: d.Quantization,
 		Compute: d.Compute, Endpoint: d.Endpoint, APIModel: d.APIModel,
-		ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
+		Protocol: NormalizeProtocol(d.Protocol), ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
 		EngineVersion: d.EngineVersion, EngineConfig: d.EngineConfig,
 		MaxParallelWorkers: d.ParallelLimit(),
 	}

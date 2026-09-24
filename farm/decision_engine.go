@@ -30,6 +30,14 @@ const (
 // environment-driven behavior, so older specs and runners are unchanged.
 type DecisionEngineSpec struct {
 	Backend string `json:"backend"`
+	// Deployment selects a registered model deployment by id, the same way
+	// the strategist's llm_deployment does. The wall resolves it at enqueue,
+	// sets Backend from the deployment's protocol, and copies its
+	// secret-free identity into Inference so the run stays reproducible
+	// even if the registry row later changes. Empty keeps the older
+	// runner-environment endpoint for Backend.
+	Deployment string             `json:"deployment,omitempty"`
+	Inference  *InferenceIdentity `json:"inference,omitempty"`
 	// Mode is off, shadow or active. Empty means active, which is how every
 	// selection made before modes existed behaved.
 	Mode string `json:"mode,omitempty"`
@@ -96,6 +104,16 @@ func (d *DecisionEngineSpec) Normalized() (*DecisionEngineSpec, error) {
 	if out.Backend == DecisionBackendOff || out.Mode == DecisionModeOff {
 		return &DecisionEngineSpec{Backend: DecisionBackendOff, Mode: DecisionModeOff}, nil
 	}
+	out.Deployment = strings.TrimSpace(d.Deployment)
+	if out.Deployment != "" && out.Inference == nil {
+		// Only the wall's registry can bind a deployment; a spec that names
+		// one it never resolved would silently run the runner's default.
+		return nil, fmt.Errorf("decision_engine.deployment %q is not a registered deployment", out.Deployment)
+	}
+	if out.Inference != nil {
+		identity := *out.Inference
+		out.Inference = &identity
+	}
 	if out.Battles && out.Mode != DecisionModeShadow {
 		return nil, fmt.Errorf("decision_engine.battles requires mode shadow (got %q)", out.Mode)
 	}
@@ -109,6 +127,10 @@ func (d *DecisionEngineSpec) Clone() *DecisionEngineSpec {
 		return nil
 	}
 	out := *d
+	if d.Inference != nil {
+		identity := *d.Inference
+		out.Inference = &identity
+	}
 	return &out
 }
 

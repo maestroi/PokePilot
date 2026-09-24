@@ -38,15 +38,42 @@ typed-decision telemetry.
 
 ### Per-run selection in PokeWall
 
-On the farm the backend is chosen per run, the same way the strategist
-deployment is: the PokeWall launch form has a **Fast decision engine** field
-(Off / TypeSafe Jev / Local System-1), a **Mode** (Off / Shadow / Active),
-battle, objective-selection and failure-recovery toggles, and a minimum
-confidence. The choice travels on the run as `decision_engine`:
+On the farm the decision engine is chosen per run from the **same model
+registry as the strategist**. Register it once in PokeWall's deployments panel
+(Protocol: *TypeSafe choice API* for Jev, or any OpenAI-compatible deployment
+used through typed choices), then pick it in the launch form's **Fast decision
+engine** field, next to a **Mode** (Shadow / Active), battle,
+objective-selection and failure-recovery toggles, and a minimum confidence.
+The choice travels on the run as `decision_engine`:
 
 ```json
-{"decision_engine": {"backend": "jev", "mode": "shadow", "battles": true, "objectives": true, "failures": true, "min_confidence": 0.65}}
+{"decision_engine": {"deployment": "typesafe-jev", "mode": "shadow", "battles": true, "objectives": true, "failures": true, "min_confidence": 0.65}}
 ```
+
+A registry row for Jev looks like:
+
+```json
+{"id": "typesafe-jev", "label": "TypeSafe Jev", "protocol": "typesafe-choice",
+ "endpoint": "https://api.typesafe.ai/v1", "model_id": "jev-latest", "api_model": "jev-latest",
+ "compute": "TypeSafe cloud", "token_env": "TYPESAFE_API_KEY", "enabled": true}
+```
+
+At enqueue the wall resolves `deployment`, sets `backend` from the protocol
+and copies the deployment's secret-free identity into
+`decision_engine.inference` (any identity a client sends is discarded). The
+runner builds the engine from that identity, exactly as it does for the
+strategist's `inference`, so no runner needs `POKEPILOT_DECISION_URL` or
+`POKEPILOT_DECISION_MODEL`. The one thing that stays in runner environment is
+the key, read from the variable the row's `token_env` names; this is the same
+rule the strategist follows, and it keeps the key out of run specs, the
+registry, clones and archives. A choice-only deployment cannot be selected
+as the strategist or an experiment arm (400).
+
+A selection without `deployment` (API clients, older runs) still accepts
+`"backend": "jev" | "system-one"` and uses the runner's own decision endpoint
+settings below.
+
+Modes:
 
 - `shadow` asks the backend at every enabled decision point and records its
   answer, confidence and whether it agreed with what actually executed
@@ -64,16 +91,16 @@ confidence. The choice travels on the run as `decision_engine`:
 
 Every runner uses the same image. `deploy/farm.yml` gives every runner
 `TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
-run selected it. The key never enters a run spec, catalog row, clone or
-archive. A run without `decision_engine` keeps the runner's
+run selected it. A run without `decision_engine` keeps the runner's
 `POKEPILOT_DECISION_BACKEND` default (unset = off), so older runs are
 unchanged; `"backend": "off"` disables typed decisions even when the runner
 default enables them. A Jev run leased by a runner without the key fails at
-start with `credentials are not configured` rather than silently running a
-different experiment. Clones and endless successors keep the selection, and
-the live view and archive show it.
+start with `credentials are not configured` (naming the missing variable)
+rather than silently running a different experiment. Clones and endless
+successors keep the selection and its identity, and the live view and
+archive show it.
 
-Feature switches:
+Runner defaults, used only by runs without a registered deployment:
 
 - `POKEPILOT_DECISION_FAILURES` defaults to on when a decision backend is
   enabled. It classifies only failures that deterministic runtime policy has

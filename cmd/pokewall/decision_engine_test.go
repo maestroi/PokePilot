@@ -100,3 +100,49 @@ func TestDecisionEngineSelectionFlowsThroughWall(t *testing.T) {
 		t.Fatal("clone shares the source's selection pointer")
 	}
 }
+
+func TestDecisionEngineDeploymentResolvesFromRegistry(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "qwen-9b", Label: "Qwen 9B", ModelID: "qwen3.5-9b", Compute: "RTX 4090", Endpoint: "http://4090/v1", APIModel: "qwen3.5-9b", Enabled: true},
+		{ID: "typesafe-jev", Label: "TypeSafe Jev", ModelID: "jev-latest", Compute: "typesafe-cloud", Endpoint: "https://api.typesafe.ai/v1", APIModel: "jev-latest", Protocol: "typesafe-choice", TokenEnv: "TYPESAFE_API_KEY", Enabled: true},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall(t.TempDir())
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	// The client names only the deployment; a forged identity is discarded.
+	res := postSpec(t, h, `{"run_id":"jev-shadow","planner":"llm","llm_deployment":"qwen-9b","decision_engine":{"deployment":"typesafe-jev","mode":"shadow","battles":true,"inference":{"endpoint":"https://evil.example/v1","token_env":"AWS_SECRET_ACCESS_KEY"}}}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", res.Code, res.Body.String())
+	}
+	w.mu.Lock()
+	got := w.tiles["jev-shadow"].DecisionEngine.Clone()
+	w.mu.Unlock()
+	if got == nil || got.Backend != farm.DecisionBackendJev || got.Deployment != "typesafe-jev" || got.Mode != farm.DecisionModeShadow || !got.Battles {
+		t.Fatalf("stored selection = %+v", got)
+	}
+	if id := got.Inference; id == nil || id.Endpoint != "https://api.typesafe.ai/v1" || id.APIModel != "jev-latest" || id.TokenEnv != "TYPESAFE_API_KEY" || id.Protocol != farm.ProtocolTypeSafeChoice {
+		t.Fatalf("stored identity = %+v", got.Inference)
+	}
+
+	for body, want := range map[string]string{
+		// A choice-only API cannot be the strategist.
+		`{"run_id":"jev-strategist","planner":"llm","llm_deployment":"typesafe-jev"}`:                           "decision engine",
+		`{"run_id":"unknown-decision","planner":"llm","decision_engine":{"deployment":"nope","mode":"shadow"}}`: "decision_engine.deployment",
+	} {
+		if res := postSpec(t, h, body); res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), want) {
+			t.Errorf("POST %s = %d %s, want 400 naming %q", body, res.Code, res.Body.String(), want)
+		}
+	}
+
+	// An explicit off ignores the deployment instead of binding it.
+	if res := postSpec(t, h, `{"run_id":"off-run","planner":"llm","decision_engine":{"deployment":"typesafe-jev","mode":"off"}}`); res.Code != http.StatusOK {
+		t.Fatalf("off enqueue = %d %s", res.Code, res.Body.String())
+	}
+	w.mu.Lock()
+	off := w.tiles["off-run"].DecisionEngine
+	w.mu.Unlock()
+	if off == nil || off.Enabled() || off.Inference != nil {
+		t.Fatalf("off selection = %+v", off)
+	}
+}
