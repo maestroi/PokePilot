@@ -14,13 +14,13 @@ import (
 // map translation is retained only as a runtime compatibility table for old
 // checkpoints and transient emulator samples; it is never serialized.
 type Knowledge struct {
-	Visited      map[LocationID]bool
-	Places       map[string]bool
-	Completed    map[string]int
-	Failures     map[string]Failure
-	Talked       map[LocationID]map[[2]uint8]bool
-	Adjacency    map[LocationID][]LocationID
-	Requirements []Requirement
+	Visited       map[LocationID]bool
+	Places        map[string]bool
+	Completed     map[string]int
+	Failures      map[string]Failure
+	Talked        map[LocationID]map[[2]uint8]bool
+	Adjacency     map[LocationID][]LocationID
+	Requirements  []Requirement
 	TrainingAreas map[LocationID]TrainingAreaKnowledge
 
 	// Build is this process's running binary identity (e.g. a git SHA), set
