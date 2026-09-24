@@ -27,6 +27,33 @@ func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
 			class: gameruntime.FailureClassBlocked, cause: "navigation_stalled", recoverable: true,
 		},
 		{
+			name: "semantic transition failure", phase: gameruntime.FailurePhaseExecution,
+			err: &world.TransitionExecutionError{
+				Transition: gameruntime.Transition{ID: "red:route21_surf"},
+				Cause:      errors.New("live transition controller rejected action"),
+			},
+			final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "transition_execution_failed", recoverable: true,
+		},
+		{
+			name: "unsafe semantic transition failure", phase: gameruntime.FailurePhaseExecution,
+			err: &world.TransitionExecutionError{
+				Transition: gameruntime.Transition{ID: "red:route21_surf"},
+				Cause:      errors.New("live transition controller rejected action"),
+			},
+			final: Observation{},
+			class: gameruntime.FailureClassControllerUncertain, cause: "transition_execution_failed", recoverable: false,
+		},
+		{
+			name: "semantic transition stall", phase: gameruntime.FailurePhaseExecution,
+			err: &world.TransitionExecutionError{
+				Transition: gameruntime.Transition{ID: "red:route21_surf"},
+				Cause:      world.ErrTransitionExecutionStalled,
+			},
+			final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "navigation_stalled", recoverable: true,
+		},
+		{
 			name: "unsafe navigation stall", phase: gameruntime.FailurePhaseExecution,
 			err: skill.ErrNavigationStalled, final: Observation{},
 			class: gameruntime.FailureClassControllerUncertain, cause: "navigation_stalled", recoverable: false,
@@ -118,6 +145,31 @@ func TestReplanExhaustedTakesPrecedenceOverWrappedRouteBlockedError(t *testing.T
 	cause, ctx := failureCauseFor(exhausted)
 	if cause != "route_replan_exhausted" {
 		t.Fatalf("cause = %q, ctx = %v; want route_replan_exhausted (got the shadowed route_prerequisite_missing)", cause, ctx)
+	}
+}
+
+func TestTransitionExecutionFailurePreservesSemanticContext(t *testing.T) {
+	err := &world.TransitionExecutionError{
+		Transition: gameruntime.Transition{ID: "red:route21_surf"},
+		Cause:      errors.New("shore rejected"),
+	}
+	got := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
+	if len(got.Context) != 1 || got.Context[0] != "red:route21_surf" {
+		t.Fatalf("transition failure context = %v; want semantic transition id", got.Context)
+	}
+}
+
+func TestTransitionExecutionBlockageNormalizesMissingCapability(t *testing.T) {
+	err := &world.TransitionExecutionError{
+		Transition: gameruntime.Transition{ID: "red:test_gate"},
+		Cause: &gameruntime.TransitionBlockage{
+			Transition: gameruntime.Transition{ID: "red:test_gate"},
+			Missing:    []gameruntime.CapabilityID{"surf"},
+		},
+	}
+	got := normalizeRedFailure(gameruntime.FailurePhaseExecution, err, Observation{Controllable: true})
+	if got.Cause != "route_prerequisite_missing" || len(got.Context) != 1 || got.Context[0] != "surf" {
+		t.Fatalf("transition blockage = %+v; want route prerequisite surf", got)
 	}
 }
 
