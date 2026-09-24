@@ -22,7 +22,6 @@ var ErrFieldItemNoEffect = errors.New("skill: UseFieldItem: the item had no effe
 var ErrFieldItemPrompt = errors.New("skill: UseFieldItem: a two-option prompt appeared while paging the result text; not answering it")
 
 const (
-	startMenuDrawBudget   = 60
 	useTossBudget         = 60
 	itemUsePartyBudget    = 1000
 	itemUseMoveBudget     = 1000
@@ -47,16 +46,6 @@ func useTossPrompt(mem *state.Mem) *state.TwoOptionMenu {
 		return nil
 	}
 	return p
-}
-
-// startMenuShape reports the start menu's item count and the cursor index of
-// its ITEM entry, derived from EVENT_GOT_POKEDEX.
-func startMenuShape(mem *state.Mem) (max, itemIndex int) {
-	max, itemIndex = 6, 1
-	if state.HasEvent(mem, state.EventGotPokedex) {
-		max, itemIndex = 7, 2
-	}
-	return max, itemIndex
 }
 
 func isSingleMovePPRestore(item uint8) bool {
