@@ -7,16 +7,15 @@ const (
 	DefaultDexGoal       = "dex"
 )
 
-// DefaultGoalForPlayStyle returns the wire-level terminal goal implied by an
-// explicitly selected play style. Empty/unknown styles intentionally return
-// empty so legacy specs keep their historical behavior instead of silently
-// acquiring a new goal.
+// DefaultGoalForPlayStyle returns the wire-level terminal goal used when a
+// play style is selected without an explicit goal. Play style describes how
+// the run behaves, not what ends it, so every built-in player style shares the
+// normal Champion default. Dex collection remains an explicit independent
+// goal. Empty/unknown styles intentionally return empty for legacy specs.
 func DefaultGoalForPlayStyle(style string) string {
 	switch strings.ToLower(strings.TrimSpace(style)) {
-	case "speedrun", "adventure", "team_builder", "team-builder", "teambuilder":
+	case "speedrun", "adventure", "completionist", "team_builder", "team-builder", "teambuilder":
 		return DefaultEliteFourGoal
-	case "completionist":
-		return DefaultDexGoal
 	default:
 		return ""
 	}

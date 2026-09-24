@@ -18,6 +18,9 @@ func (w *Wall) inheritRunPolicyLocked(t *Tile) {
 	if t.PlayStyle == "" {
 		t.PlayStyle = parent.PlayStyle
 	}
+	if t.Purpose == "" {
+		t.Purpose = parent.Purpose
+	}
 	if t.RiskTolerance == "" {
 		t.RiskTolerance = parent.RiskTolerance
 	}

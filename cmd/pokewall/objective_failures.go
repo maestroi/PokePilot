@@ -318,6 +318,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		evidenceValues["llm_profile"] = runContext.LLMProfile
 		evidenceValues["reasoning_effort"] = runContext.ReasoningEffort
 		evidenceValues["play_style"] = runContext.PlayStyle
+		evidenceValues["purpose"] = string(runContext.Purpose)
 		evidenceValues["risk_tolerance"] = runContext.RiskTolerance
 		evidenceValues["wild_encounters"] = runContext.WildEncounters
 		evidenceValues["seed"] = runContext.Seed
@@ -332,9 +333,12 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 
 	contextSuffix := ""
 	if hasRunContext {
-		parts := make([]string, 0, 6)
+		parts := make([]string, 0, 7)
 		if runContext.PlayStyle != "" {
 			parts = append(parts, "play_style="+runContext.PlayStyle)
+		}
+		if runContext.Purpose != "" {
+			parts = append(parts, "purpose="+string(runContext.Purpose))
 		}
 		if runContext.RiskTolerance != "" {
 			parts = append(parts, "risk_tolerance="+runContext.RiskTolerance)

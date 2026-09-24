@@ -44,6 +44,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		FPS            int             `json:"fps"`
 		LLMProfile     string          `json:"llm_profile,omitempty"`
 		PlayStyle      string          `json:"play_style,omitempty"`
+		Purpose        string          `json:"purpose,omitempty"`
 		RiskTolerance  string          `json:"risk_tolerance,omitempty"`
 		WildEncounters string          `json:"wild_encounters,omitempty"`
 		QueuedAt       int64           `json:"queued_at,omitempty"`
@@ -112,6 +113,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		FPS:            presentation.FPS,
 		LLMProfile:     presentation.LLMProfile,
 		PlayStyle:      presentation.PlayStyle,
+		Purpose:        presentation.Purpose,
 		RiskTolerance:  presentation.RiskTolerance,
 		WildEncounters: presentation.WildEncounters,
 		QueuedAt:       run.QueuedAt,

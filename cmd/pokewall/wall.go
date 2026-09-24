@@ -57,11 +57,12 @@ type Tile struct {
 	// default. Old state files without it decode as unset, which matches the
 	// historic behavior for runs whose goal was omitted.
 	GoalProvided bool
-	// PlayStyle, RiskTolerance, and WildEncounters are the run's gameplay
-	// policy. They are first-class Tile fields so every persisted catalog row
-	// and leased Spec carries its own policy instead of relying on
-	// process-global state keyed by run id.
+	// PlayStyle, Purpose, RiskTolerance, and WildEncounters are the run's
+	// orthogonal gameplay policy. They are first-class Tile fields so every
+	// persisted catalog row and leased Spec carries its own policy instead of
+	// relying on process-global state keyed by run id.
 	PlayStyle       string
+	Purpose         farm.RunPurpose
 	RiskTolerance   string
 	WildEncounters  string
 	LLMProfile      string
@@ -173,6 +174,7 @@ type tileRow struct {
 	Goal               string               `json:"goal,omitempty"`
 	GoalProvided       bool                 `json:"goal_provided,omitempty"`
 	PlayStyle          string               `json:"play_style,omitempty"`
+	Purpose            farm.RunPurpose      `json:"purpose,omitempty"`
 	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
 	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
@@ -285,6 +287,7 @@ type persistedTile struct {
 	Goal               string               `json:"goal,omitempty"`
 	GoalProvided       bool                 `json:"goal_provided,omitempty"`
 	PlayStyle          string               `json:"play_style,omitempty"`
+	Purpose            farm.RunPurpose      `json:"purpose,omitempty"`
 	RiskTolerance      string               `json:"risk_tolerance,omitempty"`
 	WildEncounters     string               `json:"wild_encounters,omitempty"`
 	LLMProfile         string               `json:"llm_profile,omitempty"`
@@ -365,6 +368,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Goal:               t.Goal,
 			GoalProvided:       t.GoalProvided,
 			PlayStyle:          t.PlayStyle,
+			Purpose:            t.Purpose,
 			RiskTolerance:      t.RiskTolerance,
 			WildEncounters:     t.WildEncounters,
 			LLMProfile:         t.LLMProfile,
@@ -485,6 +489,7 @@ func (w *Wall) loadState() {
 			Goal:               pt.Goal,
 			GoalProvided:       pt.GoalProvided,
 			PlayStyle:          pt.PlayStyle,
+			Purpose:            pt.Purpose,
 			RiskTolerance:      pt.RiskTolerance,
 			WildEncounters:     pt.WildEncounters,
 			LLMProfile:         pt.LLMProfile,
@@ -650,6 +655,10 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
 		return
 	}
+	if !spec.Purpose.Valid() {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal or debug_coverage"})
+		return
+	}
 
 	w.mu.Lock()
 	if tile, ok := w.tiles[spec.RunID]; ok && !tile.Finished {
@@ -681,6 +690,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Dest = spec.Dest
 	t.Goal, t.GoalProvided = farm.HeldGoal(spec)
 	t.PlayStyle = spec.PlayStyle
+	t.Purpose = spec.Purpose
 	t.RiskTolerance = spec.RiskTolerance
 	t.WildEncounters = spec.WildEncounters
 	t.LLMProfile = spec.LLMProfile
@@ -780,6 +790,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Starter:         t.Starter,
 		Dest:            t.Dest,
 		PlayStyle:       t.PlayStyle,
+		Purpose:         t.Purpose,
 		RiskTolerance:   t.RiskTolerance,
 		WildEncounters:  t.WildEncounters,
 		LLMProfile:      t.LLMProfile,
@@ -1768,6 +1779,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Goal:            farm.GoalFrom(prev.Goal),
 		Dest:            prev.Dest,
 		PlayStyle:       prev.PlayStyle,
+		Purpose:         prev.Purpose,
 		RiskTolerance:   prev.RiskTolerance,
 		WildEncounters:  prev.WildEncounters,
 		LLMProfile:      prev.LLMProfile,

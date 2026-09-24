@@ -13,6 +13,7 @@ func TestRunContextArtifactRoundTrip(t *testing.T) {
 		Dest:            "champion",
 		Goal:            GoalFrom("Beat the Elite Four and Champion."),
 		PlayStyle:       "adventure",
+		Purpose:         RunPurposeDebugCoverage,
 		RiskTolerance:   "careful",
 		WildEncounters:  "train",
 		LLMProfile:      "qwen",
@@ -36,7 +37,7 @@ func TestRunContextArtifactRoundTrip(t *testing.T) {
 	if got.Planner != spec.Planner || got.Goal != spec.Goal.String() || got.LLMProfile != spec.LLMProfile || got.ReasoningEffort != spec.ReasoningEffort {
 		t.Fatalf("run context core fields = %+v", got)
 	}
-	if got.PlayStyle != "adventure" || got.RiskTolerance != "careful" || got.WildEncounters != "train" {
+	if got.PlayStyle != "adventure" || got.Purpose != RunPurposeDebugCoverage || got.RiskTolerance != "careful" || got.WildEncounters != "train" {
 		t.Fatalf("run policy fields = %+v", got)
 	}
 	if got.Seed != spec.Seed || got.Starter != spec.Starter || got.Dest != spec.Dest {

@@ -562,6 +562,7 @@ function experimentLabel(run: DashboardRun): string {
                       <button v-if="isPlayStyleRun(run)" type="button" @click="setFilter('playStyle', run.play_style || '')">
                         <StatusBadge tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                       </button>
+                      <StatusBadge v-if="run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
                       <button type="button" @click="setFilter('starter', archiveStarter(run))">
                         <StatusBadge tone="info">{{ archiveStarter(run) }}</StatusBadge>
                       </button>

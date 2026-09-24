@@ -2,14 +2,14 @@ package agent
 
 import "strings"
 
-// completionistCoverageSignal turns Completionist from a broad preference for
-// optional work into an explicit novelty/coverage policy. Every objective that
-// reaches this function is already legal and offered by deterministic code;
-// this layer only makes novel game surfaces more attractive to the planner.
+// completionistCoverageSignal is the thorough-player novelty policy. Every
+// objective that reaches this function is already legal and offered by
+// deterministic code; this layer favors meaningful optional content without
+// turning Completionist into a test harness.
 //
 // The signal deliberately backs off while the party needs recovery. Safety and
-// legality stay owned by the shared runtime, while Completionist spends healthy
-// states probing optional maps, NPCs, trainers, items, machines and Dex paths.
+// legality stay owned by the shared runtime. Low-value interaction churn belongs
+// to Debug Coverage, not Completionist.
 func completionistCoverageSignal(obs Observation, o Objective, profile PlayStyleProfile) NaturalPlaySignal {
 	if profile.Name != PlayStyleCompletionist {
 		return NaturalPlaySignal{}
@@ -66,12 +66,9 @@ func completionistCoverageSignal(obs Observation, o Objective, profile PlayStyle
 		item := strings.ToLower(string(o.Item))
 		if strings.HasPrefix(item, "tm") || strings.HasPrefix(item, "hm") {
 			add("coverage-machine-use", 0.48)
-		} else {
-			// Using ordinary inventory still exercises deterministic menu/item
-			// behavior, but do not let potion churn compete with genuinely novel
-			// surfaces.
-			add("coverage-item-use", 0.08)
 		}
+		// Ordinary item/menu use is intentionally not a Completionist novelty
+		// target. Debug Coverage owns exercising low-value interaction flows.
 	}
 
 	return s

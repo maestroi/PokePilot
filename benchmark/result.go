@@ -92,6 +92,7 @@ type Configuration struct {
 	LLMProfile      string            `json:"llm_profile,omitempty"`
 	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
 	PlayStyle       string            `json:"play_style,omitempty"`
+	Purpose         string            `json:"purpose,omitempty"`
 	RiskTolerance   string            `json:"risk_tolerance,omitempty"`
 	WildEncounters  string            `json:"wild_encounters,omitempty"`
 	DecisionBackend string            `json:"decision_backend,omitempty"`

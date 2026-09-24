@@ -16,7 +16,7 @@ test('explicitly selected goal survives later play-style changes', () => {
   assert.equal(nextGoalForPlayStyle(boulder, 'completionist', true), boulder)
 })
 
-test('untouched goal still follows play-style defaults', () => {
+test('untouched goal uses the same Champion default for every play style', () => {
   assert.equal(nextGoalForPlayStyle('', 'adventure', false), 'Beat the Elite Four and Champion.')
-  assert.equal(nextGoalForPlayStyle('', 'completionist', false), 'Complete the obtainable Pokédex.')
+  assert.equal(nextGoalForPlayStyle('', 'completionist', false), 'Beat the Elite Four and Champion.')
 })

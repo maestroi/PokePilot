@@ -110,6 +110,7 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 			LLMProfile:      spec.LLMProfile,
 			ReasoningEffort: spec.ReasoningEffort,
 			PlayStyle:       mode,
+			Purpose:         string(spec.Purpose),
 			RiskTolerance:   spec.RiskTolerance,
 			WildEncounters:  spec.WildEncounters,
 			DecisionBackend: stats.decision.Backend,
