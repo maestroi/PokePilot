@@ -62,17 +62,18 @@ type storedFailure struct {
 // memoryFile is the v6 serialised form. Adjacency and native-map translation
 // are rebuilt from the active adapter/ROM on resume and are never persisted.
 type memoryFile struct {
-	Version       int                     `json:"version"`
-	Visited       []LocationID            `json:"visited"`
-	Places        []string                `json:"places"`
-	Completed     []storedCompletion      `json:"completed"`
-	Talked        []talkedKey             `json:"talked"`
-	Requirements  []Requirement           `json:"requirements,omitempty"`
-	Failures      []storedFailure         `json:"failures,omitempty"`
-	TrainingAreas []TrainingAreaKnowledge `json:"training_areas,omitempty"`
-	Intent        string                  `json:"intent,omitempty"`
-	IntentAge     int                     `json:"intent_age,omitempty"`
-	Plan          Plan                    `json:"plan,omitempty"`
+	Version                 int                     `json:"version"`
+	Visited                 []LocationID            `json:"visited"`
+	Places                  []string                `json:"places"`
+	Completed               []storedCompletion      `json:"completed"`
+	Talked                  []talkedKey             `json:"talked"`
+	Requirements            []Requirement           `json:"requirements,omitempty"`
+	Failures                []storedFailure         `json:"failures,omitempty"`
+	TrainingAreas           []TrainingAreaKnowledge `json:"training_areas,omitempty"`
+	TrainingAreasBackfilled bool                    `json:"training_areas_backfilled,omitempty"`
+	Intent                  string                  `json:"intent,omitempty"`
+	IntentAge               int                     `json:"intent_age,omitempty"`
+	Plan                    Plan                    `json:"plan,omitempty"`
 }
 
 type talkedKey struct {
@@ -150,6 +151,7 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
 
+	mem.TrainingAreasBackfilled = k.TrainingAreasBackfilled
 	trainingLocations := make([]LocationID, 0, len(k.TrainingAreas))
 	for location := range k.TrainingAreas {
 		trainingLocations = append(trainingLocations, location)
