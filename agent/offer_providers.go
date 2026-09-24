@@ -28,9 +28,10 @@ type ObjectiveBlockEvidence struct {
 }
 
 type ObjectiveOffer struct {
-	Candidates []Objective              `json:"candidates"`
-	Blocked    []ObjectiveBlockEvidence `json:"blocked,omitempty"`
-	Readiness  []ChallengeReadiness     `json:"readiness,omitempty"`
+	Candidates []Objective                     `json:"candidates"`
+	Blocked    []ObjectiveBlockEvidence        `json:"blocked,omitempty"`
+	Readiness  []ChallengeReadiness            `json:"readiness,omitempty"`
+	Recovery   []RecoveryCheckpointAssessment  `json:"recovery_checkpoints,omitempty"`
 }
 
 type objectiveProvider interface {
@@ -145,6 +146,7 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 			candidates := annotate(starterOnly.Candidates, known)
 			offer := ObjectiveOffer{Candidates: candidates, Blocked: starterOnly.Blocked}
 			offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+			offer.Recovery = rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
 			return offer
 		}
 	}
@@ -173,6 +175,7 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	candidates = annotate(candidates, known)
 	offer := ObjectiveOffer{Candidates: candidates, Blocked: blocked}
 	offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+	offer.Recovery = rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
 	return offer
 }
 
@@ -226,35 +229,35 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		}
 		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
-		candidates := preferredRecoveryCenters(obs, known, ctx.knownLocations, ctx.catalog)
-		name, routable := firstRoutableRecoveryCenter(candidates, ctx.unroutable)
+		ranked := rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
+		var selected *RecoveryCheckpointAssessment
+		for i := range ranked {
+			if ranked[i].Selected && ranked[i].Routable {
+				selected = &ranked[i]
+				break
+			}
+		}
 		switch {
-		case len(candidates) == 0:
+		case len(ranked) == 0:
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "no_known_center", nil, "", "pokemon_center"))
-		case !routable:
-			// A heal that names a Center is a journey too, and the live router
-			// already rejected every candidate. Offering one only walks the
-			// objective at a gate the game will not open: measured 2026-09-23 on
-			// run-jxh8lk19wv6on, locked in LORELEIS_ROOM, where each pick died in
-			// the room's own "Don't run away!" guard and surfaced as an
-			// unclassified failure eighty times over. Report the withheld
-			// destination instead so recovery can plan the state change that
-			// reopens the route.
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "route_unroutable", nil, candidates[0], "live_route"))
+		case selected == nil:
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "route_unroutable", nil, ranked[0].Place, "live_route"))
 		default:
-			note := ""
-			if name == obs.RecoveryCheckpoint {
-				note = "(active Pokemon Center checkpoint; prefer returning to this known-safe hub)"
+			note := fmt.Sprintf("(selected recovery checkpoint; route cost %d + return cost %d = %d)",
+				selected.CurrentCost, selected.ReturnCost, selected.TotalCost)
+			if selected.ActiveCheckpoint {
+				note += " (active cartridge checkpoint preference applied)"
+			}
+			if selected.FastTravel {
+				note += fmt.Sprintf(" (uses legal %s fast travel)", selected.FastTravelMethod)
 			}
 			if ppExhausted {
-				ppNote := "(lead has no PP; Center restores PP without spending finite items)"
-				if note == "" {
-					note = ppNote
-				} else {
-					note += " " + ppNote
-				}
+				note += " (lead has no PP; Center restores PP without spending finite items)"
 			}
-			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
+			out = append(out,
+				Objective{Kind: KindHeal, Place: selected.Place, Note: note},
+				Objective{Kind: KindHeal, Place: selected.Place, Flee: true, Note: note},
+			)
 		}
 	}
 	for _, it := range obs.Bag {
