@@ -103,6 +103,9 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	if missing := CinnabarSecretKeyPrerequisites(&mem); len(missing) != 0 {
 		return gameruntime.NewProgressionPrerequisiteMissing(missing...)
 	}
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
+	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
 		// The supported story corridor is Pallet -> Route 21 -> Cinnabar.
