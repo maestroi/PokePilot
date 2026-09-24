@@ -50,6 +50,7 @@ type Observation struct {
 	RecentDialogue    []string
 	History           []RoundRecord
 	Failures          []Failure
+	ChallengeReadiness []ChallengeReadiness `json:"challenge_readiness,omitempty"`
 
 	Round      int
 	RoundsLeft int
