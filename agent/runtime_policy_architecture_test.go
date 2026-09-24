@@ -3,6 +3,8 @@ package agent
 import (
 	"go/parser"
 	"go/token"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -46,6 +48,46 @@ func TestRuntimePolicyDependencies(t *testing.T) {
 					t.Errorf("%s imports concrete game/controller package %q; keep generic objective/runtime code adapter-only", name, path)
 				}
 			}
+		}
+	}
+}
+
+
+func TestGenericRunLoopDoesNotImportRedImplementation(t *testing.T) {
+	for _, name := range []string{"run.go", "objective_adapter_registry.go"} {
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, spec := range file.Imports {
+			path, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				t.Fatalf("unquote import in %s: %v", name, err)
+			}
+			if strings.HasPrefix(path, "github.com/maestroi/pokepilot/red/") ||
+				strings.HasPrefix(path, "github.com/maestroi/pokepilot/skill") {
+				t.Errorf("%s imports Gen-I implementation package %q; bind it through the registered objective adapter", name, path)
+			}
+		}
+	}
+}
+
+func TestRedObjectiveDispatcherStaysInAdapterFile(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		if strings.Contains(string(data), "func executeRedOwned(") && !strings.HasPrefix(name, "red_") {
+			t.Errorf("%s owns executeRedOwned; concrete objective dispatch must stay in a red_* adapter file", name)
 		}
 	}
 }
