@@ -303,12 +303,30 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, policy MoveP
 		}
 	}
 
-	if err := StepOnce(m, push.Direction); err != nil {
+	stepErr := StepOnce(m, push.Direction)
+	// StepOnce deliberately reports the coordinate change even when a wild
+	// encounter has started taking over the screen. WalkPath therefore checks
+	// movementInterruption before trusting stepErr; a direct Strength push must
+	// honor the same contract. Without this check, Victory Road could commit a
+	// valid boulder push, enter a battle on that step, and then fail the next
+	// puzzle observation as uncontrollable. The objective finish boundary would
+	// see the still-live battle and escalate the otherwise recoverable encounter
+	// into stabilization_failed/objective_boundary_dirty (#1742, #1745).
+	if interruptErr := movementInterruption(m); interruptErr != nil {
+		if errors.Is(interruptErr, ErrBattleInterrupted) || errors.Is(interruptErr, ErrDialogueInterrupted) {
+			if err := resolveBoulderWalkInterruption(m, policy, interruptErr); err != nil {
+				return false, err
+			}
+			return false, nil // push/world may have changed: observe and re-plan
+		}
+		return false, interruptErr
+	}
+	if stepErr != nil {
 		var blocked *ErrBlocked
-		if errors.As(err, &blocked) {
+		if errors.As(stepErr, &blocked) {
 			return false, nil // destination changed after planning; observe again
 		}
-		return false, fmt.Errorf("skill: boulder puzzle push slot %d %s from (%d,%d): %w", push.MovableID, push.Direction, push.From.X, push.From.Y, err)
+		return false, fmt.Errorf("skill: boulder puzzle push slot %d %s from (%d,%d): %w", push.MovableID, push.Direction, push.From.X, push.From.Y, stepErr)
 	}
 
 	px, py := playerXY(m)
