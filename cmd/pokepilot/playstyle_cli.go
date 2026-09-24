@@ -11,6 +11,7 @@ import (
 // Empty values preserve historical compatibility for old scripts/commands.
 var (
 	localPlayStyle      = flag.String("play-style", "", "gameplay priorities for llm runs: speedrun, adventure, completionist, or team_builder")
+	localRunPurpose     = flag.String("run-purpose", "", "run purpose for llm runs: normal or debug_coverage")
 	localRiskTolerance  = flag.String("risk-tolerance", "", "recovery policy for llm runs: aggressive, balanced, or cautious")
 	localWildEncounters = flag.String("wild-encounters", "", "wild encounter policy for llm runs: planner or fight")
 )
@@ -20,6 +21,13 @@ func localPlayStyleName() string {
 		return ""
 	}
 	return *localPlayStyle
+}
+
+func localRunPurposeName() string {
+	if localRunPurpose == nil {
+		return ""
+	}
+	return *localRunPurpose
 }
 
 func localRiskToleranceName() string {
@@ -73,6 +81,7 @@ func localRunPolicy(goal string) farm.RunPolicy {
 		Planner:        "llm",
 		Goal:           farm.GoalFrom(goal),
 		PlayStyle:      localPlayStyleName(),
+		Purpose:        farm.RunPurpose(localRunPurposeName()),
 		RiskTolerance:  localRiskToleranceName(),
 		WildEncounters: localWildEncountersName(),
 	}
