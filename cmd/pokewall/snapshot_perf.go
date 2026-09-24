@@ -25,6 +25,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		Goal:               t.Goal,
 		GoalProvided:       t.GoalProvided,
 		PlayStyle:          t.PlayStyle,
+		Purpose:            t.Purpose,
 		RiskTolerance:      t.RiskTolerance,
 		WildEncounters:     t.WildEncounters,
 		LLMProfile:         t.LLMProfile,
