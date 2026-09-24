@@ -340,6 +340,12 @@ type LLMStats struct {
 	DecisionProbabilities    map[string]float64    `json:"decision_probabilities,omitempty"`
 	DecisionRecords          []TypedDecisionRecord `json:"decision_records,omitempty"`
 	DecisionRecordsDropped   int                   `json:"decision_records_dropped,omitempty"`
+	// DecisionMode is the resolved mode (active or shadow) once a backend is
+	// consulted. Agreements/Disagreements count shadow answers against what
+	// the existing policy executed.
+	DecisionMode          string `json:"decision_mode,omitempty"`
+	DecisionAgreements    int    `json:"decision_agreements,omitempty"`
+	DecisionDisagreements int    `json:"decision_disagreements,omitempty"`
 
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the

@@ -17,5 +17,11 @@ type TypedDecisionRecord struct {
 	InputBytes       int                `json:"input_bytes,omitempty"`
 	OutputBytes      int                `json:"output_bytes,omitempty"`
 	Fallback         bool               `json:"fallback,omitempty"`
-	Error            string             `json:"error,omitempty"`
+	// Shadow marks an answer that was only observed. Executed is what the
+	// existing policy did instead, and Agreed compares it with Choice; it is
+	// nil when the shadow answer was unusable.
+	Shadow   bool   `json:"shadow,omitempty"`
+	Executed string `json:"executed,omitempty"`
+	Agreed   *bool  `json:"agreed,omitempty"`
+	Error    string `json:"error,omitempty"`
 }

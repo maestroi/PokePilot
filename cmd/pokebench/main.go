@@ -150,6 +150,8 @@ func (p *policyPlanner) boundRiskPlan(plan agent.Plan, offered []agent.Objective
 func decisionIdentity(settings agent.DecisionSettings) map[string]string {
 	out := map[string]string{
 		"POKEPILOT_DECISION_BACKEND":        settings.Backend,
+		"POKEPILOT_DECISION_MODE":           settings.Mode(),
+		"POKEPILOT_DECISION_BATTLES":        strconv.FormatBool(settings.Battles),
 		"POKEPILOT_DECISION_MIN_CONFIDENCE": fmt.Sprintf("%.3f", settings.MinConfidence),
 		"POKEPILOT_DECISION_OBJECTIVES":     strconv.FormatBool(settings.ObjectiveSelection),
 		"POKEPILOT_DECISION_FAILURES":       strconv.FormatBool(settings.FailureRecovery),

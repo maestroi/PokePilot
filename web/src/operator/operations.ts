@@ -140,11 +140,16 @@ export function reasoningEffortLabel(run: DashboardRun): string {
 // without one uses the runner default, which is off in the shipped stack.
 export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>): string {
   const engine = run.decision_engine
-  if (!engine || engine.backend === 'off') return 'Off'
+  if (!engine || engine.backend === 'off' || engine.mode === 'off') return 'Off'
   const name = engine.backend === 'jev' ? 'TypeSafe Jev' : 'Local System-1'
-  const uses = [engine.objectives ? 'objectives' : '', engine.failures ? 'recovery' : ''].filter(Boolean)
+  const mode = engine.mode === 'shadow' ? 'shadow' : 'active'
+  const uses = [
+    engine.battles ? 'battles' : '',
+    engine.objectives ? 'objectives' : '',
+    engine.failures ? 'recovery' : ''
+  ].filter(Boolean)
   const confidence = engine.min_confidence ? ` · ≥${engine.min_confidence.toFixed(2)}` : ''
-  return `${name} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`
+  return `${name} · ${mode} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`
 }
 
 export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'>): string {
