@@ -66,6 +66,69 @@ func redObjectiveProgressionPrerequisites(o Objective) []ProgressID {
 	}
 }
 
+type progressionFieldCapabilityRequirements struct {
+	Required  []CapabilityID
+	Preferred []CapabilityID
+}
+
+// redProgressionFieldCapabilityRequirements is Red-owned progression metadata.
+// Required capabilities are correctness preconditions: validation reports them
+// as structured prerequisites so generic recovery can repair the roster before
+// retrying the story objective. Preferred capabilities are optimizations only;
+// they are deliberately never emitted as blocking prerequisites.
+func redProgressionFieldCapabilityRequirements(o Objective, obs Observation) progressionFieldCapabilityRequirements {
+	if o.Kind != KindProgress {
+		return progressionFieldCapabilityRequirements{}
+	}
+	switch o.Progress {
+	case redProgressThunderBadge,
+		redProgressPostSurgeLavenderReached,
+		redProgressRainbowBadge:
+		return progressionFieldCapabilityRequirements{Required: []CapabilityID{"cut"}}
+	case ProgressSecretKeyOwned:
+		return progressionFieldCapabilityRequirements{
+			Required:  []CapabilityID{"surf"},
+			Preferred: []CapabilityID{"fly"},
+		}
+	case ProgressRoute23BadgeChecks:
+		return progressionFieldCapabilityRequirements{Required: []CapabilityID{"surf"}}
+	case redProgressVictoryRoadCleared:
+		return progressionFieldCapabilityRequirements{Required: []CapabilityID{"surf", "strength"}}
+	case redProgressFlyReady:
+		// Before HM02 is acquired the Route 16 house needs Cut. Once HM02
+		// exists, usable Fly is the objective's own completion requirement.
+		if fly, ok := observedFieldCapability(obs, "fly"); ok && fly.HMOwned {
+			return progressionFieldCapabilityRequirements{Required: []CapabilityID{"fly"}}
+		}
+		return progressionFieldCapabilityRequirements{Required: []CapabilityID{"cut"}}
+	default:
+		return progressionFieldCapabilityRequirements{}
+	}
+}
+
+func redMissingFieldCapabilityPrerequisites(o Objective, obs Observation) []CapabilityID {
+	requirements := redProgressionFieldCapabilityRequirements(o, obs)
+	missing := make([]CapabilityID, 0, len(requirements.Required))
+	for _, id := range requirements.Required {
+		if id == "" || fieldCapabilityUsable(obs, id) {
+			continue
+		}
+		missing = append(missing, id)
+	}
+	return missing
+}
+
+func fieldCapabilityPrerequisiteError(ids []CapabilityID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	missing := make([]gameruntime.Prerequisite, 0, len(ids))
+	for _, id := range ids {
+		missing = append(missing, gameruntime.FieldCapabilityPrerequisite(id))
+	}
+	return &gameruntime.PrerequisiteMissingError{Missing: missing}
+}
+
 func redMissingProgressionPrerequisites(o Objective, obs Observation) []ProgressID {
 	required := redObjectiveProgressionPrerequisites(o)
 	missing := make([]ProgressID, 0, len(required))
