@@ -54,6 +54,16 @@ func (e *PrerequisiteMissingError) Error() string {
 	return fmt.Sprintf("game: semantic prerequisites missing [%s]", strings.Join(parts, ", "))
 }
 
+func NewFieldCapabilityPrerequisiteMissing(ids ...CapabilityID) error {
+	missing := make([]Prerequisite, 0, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			missing = append(missing, FieldCapabilityPrerequisite(id))
+		}
+	}
+	return &PrerequisiteMissingError{Missing: missing}
+}
+
 func NewProgressionPrerequisiteMissing(ids ...ProgressID) error {
 	missing := make([]Prerequisite, 0, len(ids))
 	for _, id := range ids {
