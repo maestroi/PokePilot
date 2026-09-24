@@ -360,20 +360,19 @@ func TestLLMPlannerSchemaStaysArgumentFreePerKind(t *testing.T) {
 	}
 }
 
-// TestLLMPlannerSchemaReplyWithArgs: a schema-shaped reply carries the
-// choice AND the argument; the argument overrides the offered objective's
-// default and comes back on the returned objective.
-func TestLLMPlannerSchemaReplyWithArgs(t *testing.T) {
+// TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs pins the planner's
+// strongest safety invariant: choice selects one complete semantic objective.
+// Legacy/fallback JSON may still carry old argument fields, but those fields
+// cannot mutate the already viability-checked menu entry.
+func TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs(t *testing.T) {
 	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
-	offered := llmOffered()
 
-	got, err := llmPlanner(srv).Next(llmObs(), offered)
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next = %s, want rejection for level override", got)
 	}
-	want := agent.Objective{Kind: agent.KindTrain, Level: 12}
-	if got != want {
-		t.Fatalf("Next = %s, want %s (level override applied)", got, want)
+	if !strings.Contains(err.Error(), "cannot change offered training target") {
+		t.Fatalf("Next error = %v, want offered-target rejection", err)
 	}
 }
 
