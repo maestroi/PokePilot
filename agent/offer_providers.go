@@ -33,6 +33,9 @@ type ObjectiveOffer struct {
 	Readiness     []ChallengeReadiness           `json:"readiness,omitempty"`
 	Recovery      []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
 	TrainingAreas []TrainingAreaAssessment       `json:"training_areas,omitempty"`
+	// RecoveryFightsAhead mirrors the Observation value the offer's economy
+	// used, so the planner prompt sees the same stock targets.
+	RecoveryFightsAhead int `json:"recovery_fights_ahead,omitempty"`
 }
 
 type objectiveProvider interface {
@@ -172,7 +175,7 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		}
 	}
 	candidates := append(local, journeys...)
-	candidates = filterCombatRecoveryBlocked(candidates, known)
+	candidates = filterCombatRecoveryBlocked(candidates, known, ctx.catalog)
 	candidates = annotate(candidates, known)
 	offer := ObjectiveOffer{Candidates: candidates, Blocked: blocked}
 	offer.Readiness = challengeReadinessForOffer(obs, known, offer)

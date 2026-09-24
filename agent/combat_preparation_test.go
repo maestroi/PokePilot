@@ -131,7 +131,7 @@ func TestCombatPreparationObjectiveKeepsLocalRecoveryDeterministic(t *testing.T)
 		{Kind: KindGoTo, Place: PlaceID("victory road")},
 		{Kind: KindTrain, Level: 42},
 	}
-	got, ok := combatPreparationObjective(obs, offered, known)
+	got, ok := combatPreparationObjective(obs, offered, known, nil)
 	if !ok || got.Kind != KindTrain {
 		t.Fatalf("combat preparation choice = %+v, %v; want local training", got, ok)
 	}
@@ -140,7 +140,7 @@ func TestCombatPreparationObjectiveKeepsLocalRecoveryDeterministic(t *testing.T)
 	hurt.Party = append([]PartyMon(nil), obs.Party...)
 	hurt.Party[0].HP = 10
 	offered = []Objective{{Kind: KindHeal, Place: PlaceID("indigo plateau pokemon center")}, {Kind: KindTrain, Level: 42}}
-	got, ok = combatPreparationObjective(hurt, offered, known)
+	got, ok = combatPreparationObjective(hurt, offered, known, nil)
 	if !ok || got.Kind != KindHeal {
 		t.Fatalf("hurt combat preparation choice = %+v, %v; want healing first", got, ok)
 	}
@@ -149,7 +149,7 @@ func TestCombatPreparationObjectiveKeepsLocalRecoveryDeterministic(t *testing.T)
 	if len(journeys) != 1 || !strings.Contains(journeys[0].Note, "no viable local training") {
 		t.Fatalf("journey annotation = %+v, want stronger-training-area guidance", journeys)
 	}
-	if _, ok := combatPreparationObjective(obs, journeys, known); ok {
+	if _, ok := combatPreparationObjective(obs, journeys, known, nil); ok {
 		t.Fatal("combat preparation forced an arbitrary journey when no local training was viable")
 	}
 }
@@ -186,14 +186,14 @@ func TestCombatPreparationRestocksHealingBeforeTraining(t *testing.T) {
 
 	buy := Objective{Kind: KindBuy, Item: ItemID("super potion"), Qty: 3}
 	offered := []Objective{{Kind: KindTrain, Level: 42}, buy}
-	got, ok := combatPreparationObjective(obs, offered, known)
+	got, ok := combatPreparationObjective(obs, offered, known, nil)
 	if !ok || got.Kind != KindBuy {
 		t.Fatalf("empty-bag preparation choice = %+v, %v; want healing restock first", got, ok)
 	}
 
 	stocked := obs
 	stocked.Bag = []Item{{Name: "potion", Quantity: 1}}
-	got, ok = combatPreparationObjective(stocked, offered, known)
+	got, ok = combatPreparationObjective(stocked, offered, known, nil)
 	if !ok || got.Kind != KindTrain {
 		t.Fatalf("stocked preparation choice = %+v, %v; want training once healing stock exists", got, ok)
 	}

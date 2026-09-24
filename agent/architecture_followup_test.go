@@ -122,7 +122,7 @@ func TestGymRecoveryPreservesMultipleScopedRetries(t *testing.T) {
 		{Kind: KindGoTo, Place: "cerulean gym"},
 		{Kind: KindGym, Place: "pewter gym"},
 		cerulean,
-	}, known)
+	}, known, ObjectiveCatalog{})
 	for _, candidate := range out {
 		if candidate.Kind == KindTrain {
 			t.Fatal("training remained offered while Pewter retry was due")

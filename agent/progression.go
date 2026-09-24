@@ -55,18 +55,36 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	if catalogs, ok := p.(ObjectiveCatalogProvider); ok && catalogs != nil {
 		obs.Catalog = catalogs.ObjectiveCatalog(obs)
 	}
-	base := OfferWithEvidence(obs, known)
 	if p == nil {
-		return base
+		return OfferWithEvidence(obs, known)
 	}
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
 	ctx := newObjectiveOfferContext(obs, known)
 	provided := (progressionObjectiveProvider{planner: p}).Provide(ctx)
-	progress := annotate(provided.Candidates, known)
+	// Economy runs inside the base offer, so the gauntlet size must be known
+	// before it: stock is bought ahead of the chain, not after a loss.
+	for _, o := range provided.Candidates {
+		obs.RecoveryFightsAhead = maxInt(obs.RecoveryFightsAhead, challengeProfileFor(obs, o).RecoveryFights)
+	}
+	base := OfferWithEvidence(obs, known)
+	base.RecoveryFightsAhead = obs.RecoveryFightsAhead
+	// Progression bypasses the base combat lock; apply it here so a loss in
+	// any chain member gates the chain's entry too.
+	progress := make([]Objective, 0, len(provided.Candidates))
+	for _, o := range provided.Candidates {
+		if chainCombatLossRecorded(known, ctx.catalog, o) {
+			locked := o
+			base.Blocked = append(base.Blocked, blockEvidence(ObjectiveFamilyProgression, "combat_readiness", &locked, "", "material_party_progress"))
+			continue
+		}
+		progress = append(progress, o)
+	}
+	progress = annotate(progress, known)
 	base.Blocked = append(base.Blocked, provided.Blocked...)
 	if len(progress) == 0 {
+		base.Readiness = challengeReadinessForOffer(obs, known, base)
 		return base
 	}
 
@@ -82,7 +100,7 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	combined = append(combined, base.Candidates[:journeyAt]...)
 	combined = append(combined, progress...)
 	combined = append(combined, base.Candidates[journeyAt:]...)
-	base.Candidates = combined
+	base.Candidates = filterCombatRecoveryBlocked(combined, known, ctx.catalog)
 	base.Readiness = challengeReadinessForOffer(obs, known, base)
 	return base
 }
