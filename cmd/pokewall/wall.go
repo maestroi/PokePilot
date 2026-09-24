@@ -57,8 +57,8 @@ type Tile struct {
 	// default. Old state files without it decode as unset, which matches the
 	// historic behavior for runs whose goal was omitted.
 	GoalProvided bool
-	// PlayStyle, RiskTolerance, and WildEncounters are the run's gameplay
-	// policy. They are first-class Tile fields so every persisted catalog row
+	// PlayStyle, Purpose, RiskTolerance, and WildEncounters are the run's
+	// orthogonal gameplay policy. They are first-class Tile fields so every persisted catalog row
 	// and leased Spec carries its own policy instead of relying on
 	// process-global state keyed by run id.
 	PlayStyle       string
@@ -489,6 +489,7 @@ func (w *Wall) loadState() {
 			Goal:               pt.Goal,
 			GoalProvided:       pt.GoalProvided,
 			PlayStyle:          pt.PlayStyle,
+			Purpose:            pt.Purpose,
 			RiskTolerance:      pt.RiskTolerance,
 			WildEncounters:     pt.WildEncounters,
 			LLMProfile:         pt.LLMProfile,
@@ -1774,6 +1775,7 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Goal:            farm.GoalFrom(prev.Goal),
 		Dest:            prev.Dest,
 		PlayStyle:       prev.PlayStyle,
+		Purpose:         prev.Purpose,
 		RiskTolerance:   prev.RiskTolerance,
 		WildEncounters:  prev.WildEncounters,
 		LLMProfile:      prev.LLMProfile,
