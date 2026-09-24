@@ -141,6 +141,7 @@ runLoop:
 		offer := offerWithTMHMEvidence(m, romData, last, known)
 		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
 		last.ChallengeReadiness = append([]ChallengeReadiness(nil), offer.Readiness...)
+		last.RecoveryFightsAhead = offer.RecoveryFightsAhead
 		last.RecoveryCheckpoints = append([]RecoveryCheckpointAssessment(nil), offer.Recovery...)
 		last.TrainingAreaChoices = append([]TrainingAreaAssessment(nil), offer.TrainingAreas...)
 		now := engine.failures.filter(last, offer.Candidates)
@@ -161,7 +162,7 @@ runLoop:
 			err      error
 			retries  int
 		)
-		if prep, ok := combatPreparationObjective(last, now, known); ok {
+		if prep, ok := combatPreparationObjective(last, now, known, offer.Readiness); ok {
 			obj = prep
 			engine.planning.request("combat_preparation")
 			if budget.Log != nil {

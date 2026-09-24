@@ -237,7 +237,7 @@ func annotateCombatPreparation(obs Observation, known *Knowledge, out []Objectiv
 // while useful local work exists: heal first when needed, otherwise keep
 // training. If the current area cannot train efficiently, return no forced
 // choice and let the planner pick a journey using the annotations above.
-func combatPreparationObjective(obs Observation, offered []Objective, known *Knowledge) (Objective, bool) {
+func combatPreparationObjective(obs Observation, offered []Objective, known *Knowledge, readiness []ChallengeReadiness) (Objective, bool) {
 	state := combatPreparationFor(known, obs)
 	if !state.Active || (state.Target > 0 && state.Current >= state.Target) {
 		return Objective{}, false
@@ -259,20 +259,48 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 			}
 		}
 	}
-	for _, o := range offered {
-		if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {
-			return o, true
-		}
-	}
-	for _, o := range offered {
-		if o.Kind == KindTrain {
-			return o, true
-		}
+	o, ok, slotOnly := preferredTrainingObjective(offered, readiness)
+	if ok || slotOnly {
+		return o, ok
 	}
 	if journey, _, ok := bestKnownTrainingJourney(obs, known, offered); ok {
 		return journey, true
 	}
 	return Objective{}, false
+}
+
+// preferredTrainingObjective trains a readiness-flagged weak support member
+// when that slot's training is offered, else the lead, else any training.
+// slotOnly reports a support-slot request: leveling the carry cannot satisfy
+// it, so callers leave the choice to the planner (fail open) instead of
+// grinding the lead or forcing a journey that may not help.
+func preferredTrainingObjective(offered []Objective, readiness []ChallengeReadiness) (Objective, bool, bool) {
+	slotOnly := false
+	for _, assessment := range readiness {
+		if assessment.Action != ChallengeTrain || assessment.TrainSlot == 0 {
+			continue
+		}
+		slotOnly = true
+		for _, o := range offered {
+			if o.Kind == KindTrain && o.Slot == assessment.TrainSlot {
+				return o, true, true
+			}
+		}
+	}
+	if slotOnly {
+		return Objective{}, false, true
+	}
+	for _, o := range offered {
+		if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {
+			return o, true, false
+		}
+	}
+	for _, o := range offered {
+		if o.Kind == KindTrain {
+			return o, true, false
+		}
+	}
+	return Objective{}, false, false
 }
 
 // promoteCombatLossesToRetryWhere is the only live loss->retry state
@@ -475,14 +503,34 @@ func combatRetryMatchesObjective(ready map[ObjectiveKey]bool, o Objective) bool 
 	return false
 }
 
-func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective {
+// chainCombatLossRecorded extends combatLossRecorded to every member of o's
+// adapter-declared challenge chain.
+func chainCombatLossRecorded(known *Knowledge, catalog ObjectiveCatalog, o Objective) bool {
+	for _, peer := range combatChainPeers(catalog, o) {
+		if combatLossRecorded(known, peer) {
+			return true
+		}
+	}
+	return false
+}
+
+func chainCombatRetryMatches(ready map[ObjectiveKey]bool, catalog ObjectiveCatalog, o Objective) bool {
+	for _, peer := range combatChainPeers(catalog, o) {
+		if combatRetryMatchesObjective(ready, peer) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterCombatRecoveryBlocked(out []Objective, known *Knowledge, catalog ObjectiveCatalog) []Objective {
 	retryKeys := combatRetryKeys(known)
 	// A retry withholds further training only while it is actually offered. A
 	// marker whose objective is not on the menu cannot be tested now, and must
 	// not starve a later combat-loss campaign of its only recovery path.
 	retryDue := false
 	for _, o := range out {
-		if combatRetryMatchesObjective(retryKeys, o) {
+		if chainCombatRetryMatches(retryKeys, catalog, o) {
 			retryDue = true
 			break
 		}
@@ -490,7 +538,7 @@ func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective 
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if combatLossRecorded(known, o) {
+		if chainCombatLossRecorded(known, catalog, o) {
 			continue
 		}
 		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {
@@ -499,10 +547,12 @@ func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective 
 		if retryDue && o.Kind == KindTrain {
 			continue
 		}
-		if combatRetryMatchesObjective(retryKeys, o) {
-			o = appendObjectiveNote(o, "(retry due after combat-readiness progress; test the stronger party now)")
+		if chainCombatRetryMatches(retryKeys, catalog, o) && !strings.Contains(o.Note, combatRetryDueNote) {
+			o = appendObjectiveNote(o, combatRetryDueNote)
 		}
 		filtered = append(filtered, o)
 	}
 	return filtered
 }
+
+const combatRetryDueNote = "(retry due after combat-readiness progress; test the stronger party now)"

@@ -26,6 +26,12 @@ type ChallengeReadinessProfile struct {
 	MinimumReadiness   int      `json:"minimum_readiness,omitempty"`
 	MinimumUsableMons  int      `json:"minimum_usable_mons,omitempty"`
 	PreferredMoveTypes []string `json:"preferred_move_types,omitempty"`
+	// MinimumSupportLevel is the floor for the strongest non-lead members: a
+	// single carry cannot cover a gauntlet alone.
+	MinimumSupportLevel int `json:"minimum_support_level,omitempty"`
+	// RecoveryFights counts consecutive fights with no free recovery between
+	// them; each needs its own share of bag healing stock.
+	RecoveryFights int `json:"recovery_fights,omitempty"`
 }
 
 // ChallengeReadiness is the structured planner-facing assessment for one
@@ -42,6 +48,8 @@ type ChallengeReadiness struct {
 	UsableParty       int                      `json:"usable_party,omitempty"`
 	RecoveryAvailable bool                     `json:"recovery_available,omitempty"`
 	EmergencyHeals    int                      `json:"emergency_heals,omitempty"`
+	HealTarget        int                      `json:"heal_target,omitempty"`
+	TrainSlot         int                      `json:"train_slot,omitempty"`
 	Reasons           []string                 `json:"reasons,omitempty"`
 }
 
@@ -50,29 +58,80 @@ func challengePreparationFor(k *Knowledge, obs Observation, challenge Objective)
 	if k == nil {
 		return state
 	}
-	want := combatRecoveryObjective(challenge).Key()
+	want := map[ObjectiveKey]bool{}
+	for _, peer := range combatChainPeers(objectiveCatalogForObservation(obs), challenge) {
+		want[peer.Key()] = true
+	}
 	for storage, failure := range k.Failures {
 		key, mode, ok := parseFailureStorageKey(storage)
-		if !ok {
+		if !ok || !want[combatRecoveryObjective(key.Objective()).Key()] {
 			continue
 		}
 		switch mode {
 		case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
+			state.Active = true
+			if failure.ReadinessTarget > state.Target {
+				state.Target = failure.ReadinessTarget
+			}
+		case failureModeCombatRetry, legacyFailureModeGymRetry:
+			// Retry-ready still means "lost before": keep the loss visible so
+			// logistics (restock) apply, but its target was already met.
 		default:
 			continue
 		}
-		if combatRecoveryObjective(key.Objective()).Key() != want {
-			continue
-		}
-		state.Active = true
 		if failure.Times > state.Losses {
 			state.Losses = failure.Times
 		}
-		if failure.ReadinessTarget > state.Target {
-			state.Target = failure.ReadinessTarget
-		}
 	}
 	return state
+}
+
+// combatChainPeers returns the recovery identities sharing o's adapter-declared
+// challenge chain, including o itself. Standalone objectives return only o.
+func combatChainPeers(catalog ObjectiveCatalog, o Objective) []Objective {
+	base := combatRecoveryObjective(o)
+	key := base.Key()
+	chain := ""
+	for _, profile := range catalog.ChallengeProfiles {
+		if profile.Objective == key {
+			chain = profile.Chain
+			break
+		}
+	}
+	if chain == "" {
+		return []Objective{base}
+	}
+	peers := []Objective{base}
+	for _, profile := range catalog.ChallengeProfiles {
+		if profile.Chain == chain && profile.Objective != key {
+			peers = append(peers, profile.Objective.Objective())
+		}
+	}
+	return peers
+}
+
+// weakSupportSlot returns the party slot of the weakest of the two strongest
+// usable non-lead-level members when it is below floor.
+func weakSupportSlot(obs Observation, floor int) (int, bool) {
+	if floor <= 0 {
+		return 0, false
+	}
+	slots := make([]int, 0, len(obs.Party))
+	for slot, mon := range obs.Party {
+		if mon.HP > 0 || mon.MaxHP == 0 {
+			slots = append(slots, slot)
+		}
+	}
+	if len(slots) < 2 {
+		return 0, false
+	}
+	sort.SliceStable(slots, func(i, j int) bool { return obs.Party[slots[i]].Level > obs.Party[slots[j]].Level })
+	support := slots[1:minInt(3, len(slots))]
+	weakest := support[len(support)-1]
+	if int(obs.Party[weakest].Level) >= floor {
+		return 0, false
+	}
+	return weakest, true
 }
 
 func challengeProfileFor(obs Observation, challenge Objective) ChallengeReadinessProfile {
@@ -94,7 +153,8 @@ func challengeProfileFor(obs Observation, challenge Objective) ChallengeReadines
 }
 
 func challengeProfileKnown(profile ChallengeReadinessProfile) bool {
-	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0
+	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0 ||
+		profile.MinimumSupportLevel > 0 || profile.RecoveryFights > 0
 }
 
 func challengeUsableParty(obs Observation) int {
@@ -273,9 +333,25 @@ func EvaluateChallengeReadiness(obs Observation, known *Knowledge, challenge Obj
 		return result
 	}
 
+	// A gauntlet with no free recovery between fights is decided by bag stock:
+	// stock it before committing, not after the first loss.
+	if heals := chainHealTarget(profile.RecoveryFights); heals > 0 && emergencyHealStock(obs) < heals && challengeCanRestockRecovery(obs) {
+		result.Action = ChallengeRestock
+		result.HealTarget = heals
+		result.Reasons = []string{"chained fights without free recovery need bag healing stock before committing"}
+		return result
+	}
+
 	if target > 0 && preparation.Current < target {
 		result.Action = ChallengeTrain
 		result.Reasons = []string{"measured party readiness is below the current challenge preparation target"}
+		return result
+	}
+
+	if slot, ok := weakSupportSlot(obs, profile.MinimumSupportLevel); ok {
+		result.Action = ChallengeTrain
+		result.TrainSlot = slot
+		result.Reasons = []string{"a supporting party member is below the challenge's support-level floor"}
 		return result
 	}
 

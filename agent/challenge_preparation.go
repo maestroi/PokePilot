@@ -41,15 +41,12 @@ func proactiveChallengePreparationObjective(
 			}
 
 		case ChallengeTrain:
-			for _, objective := range offered {
-				if objective.Kind == KindTrain && objective.Species == "" && objective.Slot == 0 {
-					return objective, assessment, true
-				}
+			objective, ok, slotOnly := preferredTrainingObjective(offered, []ChallengeReadiness{assessment})
+			if ok {
+				return objective, assessment, true
 			}
-			for _, objective := range offered {
-				if objective.Kind == KindTrain {
-					return objective, assessment, true
-				}
+			if slotOnly {
+				continue
 			}
 			if journey, _, ok := bestKnownTrainingJourney(obs, known, offered); ok {
 				return journey, assessment, true
@@ -62,6 +59,9 @@ func proactiveChallengePreparationObjective(
 				}
 				name := string(objective.Item)
 				if _, ok := hpHealingItems[name]; ok {
+					return objective, assessment, true
+				}
+				if name == "revive" {
 					return objective, assessment, true
 				}
 				if _, ok := fieldMedStatus[name]; ok {

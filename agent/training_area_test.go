@@ -172,7 +172,7 @@ func TestCombatPreparationTravelsToBestKnownTrainingArea(t *testing.T) {
 		{Kind: KindGoTo, Place: "route 10"},
 		{Kind: KindGoTo, Place: "route 10", Flee: true},
 	}
-	got, ok := combatPreparationObjective(obs, offered, known)
+	got, ok := combatPreparationObjective(obs, offered, known, nil)
 	if !ok {
 		t.Fatal("combat preparation did not choose a training journey")
 	}

@@ -94,7 +94,7 @@ func TestStructuredProgressionCombatLossUsesGenericRecoveryGate(t *testing.T) {
 	offered := filterCombatRecoveryBlocked([]Objective{
 		{Kind: KindTrain, Level: 38},
 		obj,
-	}, known)
+	}, known, ObjectiveCatalog{})
 	if len(offered) != 1 || offered[0].Kind != KindTrain {
 		t.Fatalf("offered after combat loss = %+v, want training without unchanged rechallenge", offered)
 	}

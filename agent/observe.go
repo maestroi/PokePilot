@@ -52,7 +52,10 @@ type Observation struct {
 	Failures          []Failure
 	// CombatLossRecorded is typed evidence of an unresolved combat loss, so
 	// economy policy never infers "boss failure" from objective names.
-	CombatLossRecorded  bool                           `json:"combat_loss_recorded,omitempty"`
+	CombatLossRecorded bool `json:"combat_loss_recorded,omitempty"`
+	// RecoveryFightsAhead is the longest offered gauntlet of fights with no
+	// free recovery between them (adapter challenge profile); 0 when none.
+	RecoveryFightsAhead int                            `json:"recovery_fights_ahead,omitempty"`
 	ChallengeReadiness  []ChallengeReadiness           `json:"challenge_readiness,omitempty"`
 	RecoveryCheckpoints []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
 	TrainingAreaChoices []TrainingAreaAssessment       `json:"training_areas,omitempty"`

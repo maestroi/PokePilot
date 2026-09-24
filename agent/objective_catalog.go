@@ -71,6 +71,10 @@ type CatalogChallenge struct {
 type CatalogChallengeProfile struct {
 	Objective ObjectiveKey
 	Readiness ChallengeReadinessProfile
+	// Chain groups profiles that form one combat gauntlet: entering commits
+	// to every member and a loss anywhere resets to the entry, so a loss in
+	// any member gates the whole chain. Empty means a standalone challenge.
+	Chain string
 }
 
 type CatalogEncounter struct {

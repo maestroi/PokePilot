@@ -255,6 +255,23 @@ func emergencyHealStock(o Observation) int {
 	return total
 }
 
+// chainHealTarget is the bounded HP-healing stock for a gauntlet of fights
+// with no free recovery between them; zero for ordinary challenges.
+func chainHealTarget(fights int) int {
+	if fights <= 1 {
+		return 0
+	}
+	return targetEmergencyHeals * fights
+}
+
+// chainReviveTarget keeps one revive per fight after the first, capped.
+func chainReviveTarget(fights int) int {
+	if fights <= 1 {
+		return 0
+	}
+	return minInt(fights-1, 3)
+}
+
 // hasCombatLoss reports typed combat-loss evidence (a loss not yet cleared by
 // a win), whatever the challenge: gym, trainer, story boss or League stage.
 func hasCombatLoss(o Observation) bool {
@@ -308,13 +325,14 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 
 		case InventoryBattleConsumable:
 			if _, isHeal := hpHealingItems[name]; isHeal {
-				advice.CategoryStock, advice.TargetStock = heals, targetEmergencyHeals
-				need := maxInt(0, targetEmergencyHeals-heals)
-				needNow := partyHurt(o) || hasCombatLoss(o)
+				target := maxInt(targetEmergencyHeals, chainHealTarget(o.RecoveryFightsAhead))
+				advice.CategoryStock, advice.TargetStock = heals, target
+				need := maxInt(0, target-heals)
+				needNow := partyHurt(o) || hasCombatLoss(o) || chainHealTarget(o.RecoveryFightsAhead) > 0
 				switch {
 				case !needNow:
 					advice.Reason = "no immediate recovery pressure; prefer free Center healing and preserve money"
-				case heals >= targetEmergencyHeals:
+				case heals >= target:
 					advice.Reason = "emergency healing stock already meets its bounded target; prefer free Center healing"
 				case preferredHeal == "":
 					advice.Reason = "no stocked medicine is affordable without consuming reserved money"
@@ -327,6 +345,11 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 					advice.ShouldBuy = advice.SuggestedQty > 0
 					advice.Reason = "buy only bounded emergency stock; Center healing is free when practical"
 				}
+			} else if revives := chainReviveTarget(o.RecoveryFightsAhead); name == "revive" && owned < revives && canStore {
+				advice.CategoryStock, advice.TargetStock = owned, revives
+				advice.SuggestedQty = boundedAffordableQty(revives-owned, ctx.SpendableMoney, spec.UnitPrice)
+				advice.ShouldBuy = advice.SuggestedQty > 0
+				advice.Reason = "chained fights without free recovery: keep a bounded revive reserve"
 			} else if statusCureNeeded(o, name) && owned == 0 && canStore {
 				advice.TargetStock = 1
 				advice.SuggestedQty = boundedAffordableQty(1, ctx.SpendableMoney, spec.UnitPrice)

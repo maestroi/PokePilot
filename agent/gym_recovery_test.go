@@ -116,10 +116,10 @@ func TestUnofferedCombatRetryDoesNotStarveTraining(t *testing.T) {
 	champion := Objective{Kind: KindProgress, Progress: "league_champion_defeated"}
 	known.Failures[combatLossFailureKey(champion)] = Failure{Objective: champion.String(), Times: 1, ReadinessBaseline: 285, ReadinessTarget: 305}
 
-	if !hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}}, known), KindTrain) {
+	if !hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}}, known, ObjectiveCatalog{}), KindTrain) {
 		t.Fatal("an unoffered retry marker blocked Train while combat preparation still needs readiness")
 	}
-	if hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}, heal}, known), KindTrain) {
+	if hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}, heal}, known, ObjectiveCatalog{}), KindTrain) {
 		t.Fatal("an offered retry should still take precedence over another Train rung")
 	}
 }
@@ -139,7 +139,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 		{Kind: KindTrain, Level: 13},
 		{Kind: KindGoTo, Place: "pewter gym"},
 		gym,
-	}, known)
+	}, known, ObjectiveCatalog{})
 	if hasKind(out, KindTrain) {
 		t.Fatal("another Train rung remained available while a trained gym retry was due")
 	}
@@ -160,7 +160,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	// the last rung was insufficient, so exactly the normal training path is
 	// legal again.
 	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
-	out = filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, known)
+	out = filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, known, ObjectiveCatalog{})
 	if !hasKind(out, KindTrain) {
 		t.Fatal("Train stayed blocked after the due gym retry was attempted and lost")
 	}
@@ -370,7 +370,7 @@ func TestGymLossGateSurvivesCheckpointMemory(t *testing.T) {
 	if !combatRetryKeys(ready.Knowledge)[combatRecoveryObjective(gym).Key()] {
 		t.Fatal("checkpoint resume forgot the trained gym retry-due state")
 	}
-	out := filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, ready.Knowledge)
+	out := filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, ready.Knowledge, ObjectiveCatalog{})
 	if hasKind(out, KindTrain) {
 		t.Fatal("resumed retry-due state allowed another Train rung")
 	}
