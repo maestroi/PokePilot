@@ -717,6 +717,11 @@ func battleScreenHas(m *emu.Emu, marker string) bool {
 
 const settleStableFrames = 20
 
+// ErrCampaignComplete reports that a battle's aftermath was the game's ending:
+// the main story is now complete and control will not return to the caller's
+// walk. The run goal check, not the interrupted objective, owns what follows.
+var ErrCampaignComplete = errors.New("skill: Battle: campaign complete; the ending never returns control")
+
 // battleProgress is the part of a battle that must keep changing while the
 // fight is still resolving. Menus and text never change it; a landed hit, a
 // heal, a faint or a switch does.
@@ -747,6 +752,15 @@ func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 		} else {
 			m.StepFrame()
 		}
+	}
+	// The Champion's defeat hands the game to its ending, which never returns
+	// control. Whichever skill fought that battle, the League adapter owns
+	// driving the ending to its durable completion bit.
+	if leagueFacts(mem).LeagueChampionDefeated {
+		if err := finishHallOfFame(m); err != nil {
+			return err
+		}
+		return ErrCampaignComplete
 	}
 	x, y := playerXY(m)
 	return fmt.Errorf("skill: Battle: not controllable %d frames after the battle ended: map %02x at (%d,%d)",
