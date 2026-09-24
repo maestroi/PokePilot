@@ -161,12 +161,17 @@ const leagueBetweenBattleHPFloor = 80
 // using every bounded action the current window permits, attempting the next
 // fight is better than stranding the run in a completed member's room. A loss
 // will follow the normal blackout -> preparation -> retry lifecycle.
+func leagueBetweenBattlePolicy(encountersRemaining, partyCount int) LeagueResourcePolicy {
+	policy := DefaultLeagueResourcePolicy(encountersRemaining, partyCount)
+	policy.MinimumHPPercent = leagueBetweenBattleHPFloor
+	return policy
+}
+
 func prepareLeagueBetweenBattles(m *emu.Emu, romData []byte, encountersRemaining int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
-	policy := DefaultLeagueResourcePolicy(encountersRemaining, len(party.Mons))
-	policy.MinimumHPPercent = leagueBetweenBattleHPFloor
+	policy := leagueBetweenBattlePolicy(encountersRemaining, len(party.Mons))
 
 	_, err := PrepareLeagueResources(m, romData, policy)
 	if err == nil || errors.Is(err, ErrLeagueResourcesInsufficient) {
