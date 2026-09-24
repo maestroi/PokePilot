@@ -25,12 +25,15 @@ func TestStatsPlannerExplicitPlayStyleIsIndependentFromLLMProfile(t *testing.T) 
 // state. The Spec is the source passed to the planner.
 func TestFarmStatsPlannerConsumesLeasedRunPolicy(t *testing.T) {
 	var spec farm.Spec
-	if err := json.Unmarshal([]byte(`{"run_id":"style-farm","planner":"llm","play_style":"adventure","risk_tolerance":"cautious","wild_encounters":"fight"}`), &spec); err != nil {
+	if err := json.Unmarshal([]byte(`{"run_id":"style-farm","planner":"llm","play_style":"adventure","purpose":"debug_coverage","risk_tolerance":"cautious","wild_encounters":"fight"}`), &spec); err != nil {
 		t.Fatal(err)
 	}
 	p := newStatsPlannerWithRunPolicy(farm.RunPolicyFor(spec), spec.LLMProfile, spec.ReasoningEffort, spec.Inference, nil, nil, &heartbeatSnap{})
 	if p.playStyle.Name != agent.PlayStyleAdventure {
 		t.Fatalf("leased style = %q, want adventure", p.playStyle.Name)
+	}
+	if p.purpose != agent.RunPurposeDebugCoverage {
+		t.Fatalf("leased purpose = %q, want debug_coverage", p.purpose)
 	}
 	if p.riskTolerance != agent.RiskToleranceCautious {
 		t.Fatalf("leased risk = %q, want cautious", p.riskTolerance)
@@ -52,6 +55,9 @@ func TestLegacyFarmSpecKeepsCompatibilityPolicy(t *testing.T) {
 	if p.playStyle.Name != agent.PlayStyleSpeedrun {
 		t.Fatalf("legacy leased style = %q, want speedrun", p.playStyle.Name)
 	}
+	if p.purpose != agent.RunPurposeNormal {
+		t.Fatalf("legacy leased purpose = %q, want normal", p.purpose)
+	}
 	if p.riskTolerance != agent.RiskToleranceAggressive {
 		t.Fatalf("legacy leased risk = %q, want aggressive", p.riskTolerance)
 	}
@@ -64,13 +70,16 @@ func TestLegacyFarmSpecKeepsCompatibilityPolicy(t *testing.T) {
 // the flags are resolved once into a RunPolicy and passed to the planner.
 func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	oldStyle := *localPlayStyle
+	oldPurpose := *localRunPurpose
 	oldRisk := *localRiskTolerance
 	oldWild := *localWildEncounters
 	*localPlayStyle = agent.PlayStyleCompletionist
+	*localRunPurpose = agent.RunPurposeDebugCoverage
 	*localRiskTolerance = agent.RiskToleranceBalanced
 	*localWildEncounters = agent.WildEncountersFight
 	t.Cleanup(func() {
 		*localPlayStyle = oldStyle
+		*localRunPurpose = oldPurpose
 		*localRiskTolerance = oldRisk
 		*localWildEncounters = oldWild
 	})
@@ -80,6 +89,9 @@ func TestLocalRunPolicyFlagsFeedStatsPlanner(t *testing.T) {
 	p := newStatsPlannerWithRunPolicy(localRunPolicy("badges:1"), "", "", nil, nil, nil, nil)
 	if p.playStyle.Name != agent.PlayStyleCompletionist {
 		t.Fatalf("local style = %q, want completionist", p.playStyle.Name)
+	}
+	if p.purpose != agent.RunPurposeDebugCoverage {
+		t.Fatalf("local purpose = %q, want debug_coverage", p.purpose)
 	}
 	if p.riskTolerance != agent.RiskToleranceBalanced {
 		t.Fatalf("local risk = %q, want balanced", p.riskTolerance)
@@ -100,10 +112,13 @@ func TestLocalRunPolicyKeepsResolvedGoal(t *testing.T) {
 	*localPlayStyle = agent.PlayStyleCompletionist
 	t.Cleanup(func() { *localPlayStyle = oldStyle })
 
-	// resolveLocalGoal already substituted the play-style default upstream, so
-	// localRunPolicy must carry that value verbatim.
+	// Goal resolution is independent from play style. localRunPolicy carries both
+	// the ordinary Champion default and an explicit Dex goal verbatim.
+	if policy := localRunPolicy(farm.DefaultEliteFourGoal); policy.Goal != farm.DefaultEliteFourGoal {
+		t.Fatalf("resolved local goal = %q, want %q", policy.Goal, farm.DefaultEliteFourGoal)
+	}
 	if policy := localRunPolicy(farm.DefaultDexGoal); policy.Goal != farm.DefaultDexGoal {
-		t.Fatalf("resolved local goal = %q, want %q", policy.Goal, farm.DefaultDexGoal)
+		t.Fatalf("explicit Dex goal = %q, want %q", policy.Goal, farm.DefaultDexGoal)
 	}
 	if policy := localRunPolicy("badges:1"); policy.Goal != "badges:1" {
 		t.Fatalf("explicit local goal = %q, want badges:1", policy.Goal)
