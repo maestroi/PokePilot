@@ -103,16 +103,16 @@ func newStatsPlannerWithRunPolicy(policy farm.RunPolicy, llmProfile, reasoningEf
 	}
 
 	s := &statsPlanner{
-		inner:            inner,
-		emu:              m,
-		push:             push,
-		snap:             snap,
-		playStyle:        agent.PlayStyle(playStyle),
-		purpose:          agent.NormalizeRunPurpose(purpose),
-		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
-		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
-		decision:         agent.DecisionSettingsFromEnv(),
-		counts:           map[string]int{},
+		inner:          inner,
+		emu:            m,
+		push:           push,
+		snap:           snap,
+		playStyle:      agent.PlayStyle(playStyle),
+		purpose:        agent.NormalizeRunPurpose(purpose),
+		riskTolerance:  agent.NormalizeRiskTolerance(riskTolerance),
+		wildEncounters: agent.NormalizeWildEncounters(wildEncounters),
+		decision:       agent.DecisionSettingsFromEnv(),
+		counts:         map[string]int{},
 		baseExtraSystem: appendSystemNote(
 			appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
 			agent.RunPurposeSystemNote(purpose),
