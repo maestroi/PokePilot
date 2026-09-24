@@ -11,6 +11,9 @@ const (
 	startMenuOpenBudget   = 500
 	startMenuRetryWindow  = 25
 	startMenuSettleBudget = 100
+
+	startMenuPokemon = game.StartMenuPokemon
+	startMenuItems   = game.StartMenuItems
 )
 
 // waitForStartMenu opens the active game's START menu by positive semantic
@@ -61,4 +64,25 @@ func waitForStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error 
 		"skill: start menu did not appear after repeated START presses: visible=%v ready=%v in_battle=%v cursor=%d max=%d",
 		state.Visible, state.Ready, state.InBattle, state.Cursor.Current, state.Cursor.Max,
 	)
+}
+
+// openStartMenuEntry opens the active game's START menu and selects an entry
+// by semantic identity. The profile owns the current cursor index.
+func openStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return openStartMenuEntryWithDecoder(m, decoder, entry)
+}
+
+func openStartMenuEntryWithDecoder(m menuMachine, decoder game.MenuDecoder, entry game.StartMenuEntry) error {
+	if err := waitForStartMenuWithDecoder(m, decoder); err != nil {
+		return err
+	}
+	index, ok := decoder.StartMenuEntryIndex(m, entry)
+	if !ok {
+		return fmt.Errorf("skill: start menu entry %q is not available", entry)
+	}
+	return selectMenuItemWithDecoder(m, decoder, index)
 }

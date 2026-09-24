@@ -214,9 +214,8 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 		}
 	}()
 
-	_, itemIndex := startMenuShape(&mem)
 	menuMayBeOpen = true
-	if err := openStartMenuEntry(m, itemIndex); err != nil {
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {

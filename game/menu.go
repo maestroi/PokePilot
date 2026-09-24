@@ -23,6 +23,16 @@ type StartMenuState struct {
 	Cursor   MenuCursorState
 }
 
+// StartMenuEntry is a semantic entry in an overworld START menu. Concrete
+// profiles map these identities onto their current game/version-specific
+// ordering.
+type StartMenuEntry string
+
+const (
+	StartMenuPokemon StartMenuEntry = "pokemon"
+	StartMenuItems   StartMenuEntry = "items"
+)
+
 // MenuDecoder is the optional semantic capability used by generic menu
 // navigation. Concrete game profiles own RAM addresses, cursor glyphs,
 // prompt-liveness rules, and START-menu identification.
@@ -30,6 +40,7 @@ type MenuDecoder interface {
 	DecodeMenuCursor(MemoryReader) MenuCursorState
 	DecodeTwoOption(MemoryReader) (TwoOptionState, bool)
 	DecodeStartMenu(MemoryReader) StartMenuState
+	StartMenuEntryIndex(MemoryReader, StartMenuEntry) (int, bool)
 }
 
 // MenuProfile is a game profile that exposes semantic menu decoding.

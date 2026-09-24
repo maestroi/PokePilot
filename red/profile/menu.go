@@ -61,3 +61,26 @@ func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
 		Cursor:   game.MenuCursorState{Current: menu.Current, Max: menu.Max},
 	}
 }
+
+// StartMenuEntryIndex maps semantic entries to Red/Blue's current START-menu
+// ordering. The Pokédex insertion is a Red-family story/layout fact and stays
+// behind the profile boundary.
+func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	if reader == nil {
+		return 0, false
+	}
+	var mem state.Mem
+	reader.PeekInto(0, mem[:])
+	offset := 0
+	if state.HasEvent(&mem, state.EventGotPokedex) {
+		offset = 1
+	}
+	switch entry {
+	case game.StartMenuPokemon:
+		return offset, true
+	case game.StartMenuItems:
+		return offset + 1, true
+	default:
+		return 0, false
+	}
+}

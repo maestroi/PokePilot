@@ -101,13 +101,6 @@ func selectFieldMoveUser(m *emu.Emu, index int) error {
 	return nil
 }
 
-func openStartMenuEntry(m *emu.Emu, entry int) error {
-	if err := waitForStartMenu(m); err != nil {
-		return err
-	}
-	return SelectMenuItem(m, entry)
-}
-
 func closeToOverworld(m *emu.Emu) error {
 	var mem state.Mem
 	for i := 0; i < 80; i++ {
