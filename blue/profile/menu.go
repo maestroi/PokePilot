@@ -11,3 +11,7 @@ func (p *Profile) DecodeMenuCursor(r game.MemoryReader) game.MenuCursorState {
 func (p *Profile) DecodeTwoOption(r game.MemoryReader) (game.TwoOptionState, bool) {
 	return p.engine.DecodeTwoOption(r)
 }
+
+func (p *Profile) DecodeStartMenu(r game.MemoryReader) game.StartMenuState {
+	return p.engine.DecodeStartMenu(r)
+}
