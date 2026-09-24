@@ -139,8 +139,7 @@ func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
 		return fmt.Errorf("skill: UseFieldItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	_, itemIndex := startMenuShape(&mem)
-	if err := openStartMenuEntry(m, itemIndex); err != nil {
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
 		return fmt.Errorf("skill: UseFieldItem: open ITEM: %w", err)
 	}
 
