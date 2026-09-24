@@ -116,19 +116,8 @@ func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
 }
 
 func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
-	var specific uint8
-	switch status {
-	case "poisoned":
-		specific = itemAntidote
-	case "burned":
-		specific = itemBurnHeal
-	case "frozen":
-		specific = itemIceHeal
-	case "asleep":
-		specific = itemAwakening
-	case "paralyzed":
-		specific = itemParlyzHeal
-	default:
+	specific, ok := statusCure(status)
+	if !ok {
 		return 0, false
 	}
 	for _, item := range []uint8{specific, itemFullHeal, itemFullRestore} {

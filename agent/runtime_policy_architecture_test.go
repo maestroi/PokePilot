@@ -26,6 +26,7 @@ func TestRuntimePolicyDependencies(t *testing.T) {
 		"plan.go",
 		"failure_identity.go",
 		"normalized_failure.go",
+		"battle_decision.go",
 	}
 	forbidden := []string{
 		"github.com/maestroi/pokepilot/red/",

@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -22,25 +23,6 @@ func init() {
 	for _, id := range gen1Games {
 		registerSemanticObservationAdapter(redSemanticObservationAdapter{id: id})
 	}
-}
-
-var redMoveTypeNames = map[uint8]string{
-	0x00: "normal",
-	0x01: "fighting",
-	0x02: "flying",
-	0x03: "poison",
-	0x04: "ground",
-	0x05: "rock",
-	0x06: "flying",
-	0x07: "bug",
-	0x08: "ghost",
-	0x14: "fire",
-	0x15: "water",
-	0x16: "grass",
-	0x17: "electric",
-	0x18: "psychic",
-	0x19: "ice",
-	0x1a: "dragon",
 }
 
 // Observe owns every Pokémon Red-specific enrichment required by the generic
@@ -122,7 +104,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 			if err != nil {
 				continue
 			}
-			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: redMoveTypeNames[mv.Type]})
+			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: redTypeName(mv.Type)})
 			pp := lead.PP[slot]
 			if hasDamagingMove && !observedMoveDealsDamage(mv) {
 				pp = 0
@@ -382,4 +364,9 @@ func MapObjects(romData []byte, mapID uint8) []MapObject {
 		out = append(out, mo)
 	}
 	return out
+}
+
+func redTypeName(raw uint8) string {
+	name, _ := data.TypeName(raw)
+	return name
 }
