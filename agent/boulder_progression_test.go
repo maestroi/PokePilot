@@ -41,7 +41,7 @@ func TestPrerequisiteRecoveryChoosesBrockForPewterExit(t *testing.T) {
 		Story: ProgressState{{ID: redProgressPokedexAcquired, Complete: true}},
 		RouteBlockages: []RouteBlockage{{
 			Destination: "route 3",
-			Missing:     []Prerequisite{{Capability: "can_leave_pewter_east"}},
+			Missing:     []CapabilityID{"can_leave_pewter_east"},
 			Prerequisites: []RoutePrerequisiteLink{{
 				Capability: "can_leave_pewter_east",
 				Badge:      state.BadgeBoulder.String(),
@@ -58,7 +58,7 @@ func TestPrerequisiteRecoveryChoosesBrockForPewterExit(t *testing.T) {
 	if got.Key() != want.Key() {
 		t.Fatalf("recovery objective = %+v, want %+v", got, want)
 	}
-	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_leave_pewter_east"}) {
+	if !reflect.DeepEqual(capabilities, []Prerequisite{{Capability: "can_leave_pewter_east"}}) {
 		t.Fatalf("recovery capabilities = %v", capabilities)
 	}
 }
