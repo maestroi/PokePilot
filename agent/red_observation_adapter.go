@@ -225,6 +225,23 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	obs.Catalog = redObjectiveCatalog(obs)
+	for i := range obs.Catalog.Destinations {
+		destination := &obs.Catalog.Destinations[i]
+		if !destination.Center {
+			continue
+		}
+		redDestination, ok := skill.Place(destination.Place)
+		if !ok {
+			continue
+		}
+		destination.TravelCostChecked = true
+		if estimate, ok := skill.EstimateTravelCost(m, romData, redDestination); ok {
+			destination.TravelCostKnown = true
+			destination.TravelCost = estimate.Cost
+			destination.FastTravel = estimate.FastTravel
+			destination.FastTravelMethod = estimate.Method
+		}
+	}
 	// The ROM service role is authoritative for Center semantics. This matters
 	// for mixed-service maps such as Indigo Plateau Lobby, whose name does not
 	// contain POKECENTER but whose nurse establishes the blackout checkpoint.
