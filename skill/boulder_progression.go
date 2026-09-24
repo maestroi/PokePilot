@@ -53,9 +53,7 @@ func BoulderProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: BoulderProgression: %w", err)
 	}
 
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeBoulder) {
-		return fmt.Errorf("skill: BoulderProgression: Boulder Badge missing after Brock")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }

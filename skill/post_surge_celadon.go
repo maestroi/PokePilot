@@ -194,10 +194,8 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: %w", err)
 	}
 
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeRainbow) {
-		return fmt.Errorf("skill: PostSurgeDefeatErika: Rainbow Badge missing after Erika")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }
 

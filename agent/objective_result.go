@@ -98,6 +98,11 @@ var (
 
 	ErrObjectivePostconditionFailed      = errors.New("objective postcondition failed")
 	ErrObjectivePostconditionUnavailable = errors.New("objective postcondition unavailable")
+	// ErrProgressVerifierMissing marks a progression objective whose ID has no
+	// adapter-projected Story fact. It is always wrapped together with
+	// ErrObjectivePostconditionUnavailable: a missing verifier is a registry
+	// defect, so it stops the run instead of replanning a "false" fact forever.
+	ErrProgressVerifierMissing = errors.New("progression goal has no registered verifier")
 )
 
 type runAction uint8
@@ -185,7 +190,12 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 
 	switch o.Kind {
 	case KindProgress:
-		if !final.Story.Has(o.Progress) {
+		fact, ok := final.Story.Lookup(o.Progress)
+		if !ok {
+			return OutcomePostconditionUnavailable, fmt.Errorf(
+				"%w: %w: %s", ErrObjectivePostconditionUnavailable, ErrProgressVerifierMissing, o)
+		}
+		if !fact.Complete {
 			return OutcomePostconditionFailed, fmt.Errorf(
 				"%w: %s finished but progression fact %q is false",
 				ErrObjectivePostconditionFailed, o, o.Progress)

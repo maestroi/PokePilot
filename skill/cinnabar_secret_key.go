@@ -154,10 +154,8 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return err
 	}
 
-	state.Snapshot(m, &mem)
-	if !CinnabarSecretKeyOwned(&mem) {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: pickup completed without secret_key_owned semantic postcondition")
-	}
+	// Secret Key ownership is the objective's semantic postcondition, verified
+	// once by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }
 

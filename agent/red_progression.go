@@ -8,46 +8,58 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
+// redProgressionExecutor owns the game mechanics for one progression goal.
+// It never decides success: a nil return only claims the mechanics finished.
+type redProgressionExecutor func(m *emu.Emu, romData []byte, policy skill.MovePolicy) error
+
+// redProgressionExecutors is Red's single ProgressID registry. Every entry is
+// executable, and its positive semantic verifier is the same-ID fact that
+// redProgressStateFromRAM projects into Observation.Story; the objective
+// runtime checks that fact after the transaction and is the only owner of
+// final success (#1655). TestRedProgressionRegistryHasVerifiers fails when an
+// executor is registered without a projected verifier.
+var redProgressionExecutors = map[ProgressID]redProgressionExecutor{
+	redProgressMtMoonFossilAcquired:       skill.MtMoonFossil,
+	redProgressPokedexAcquired:            skill.OaksParcel,
+	redProgressSSTicketAcquired:           skill.Bill,
+	redProgressHM01Acquired:               skill.SSAnneHM01,
+	redProgressBicycleAcquired:            skill.AcquireBicycle,
+	redProgressBoulderBadge:               skill.BoulderProgression,
+	redProgressThunderBadge:               skill.SurgeProgression,
+	redProgressPostSurgeLavenderReached:   skill.PostSurgeReachLavender,
+	redProgressPostSurgeCeladonReady:      skill.PostSurgeReachCeladon,
+	redProgressFlyReady:                   skill.PrepareFlyFastTravel,
+	redProgressRainbowBadge:               skill.PostSurgeDefeatErika,
+	redProgressSilphScopeAcquired:         skill.RocketHideout,
+	redProgressPokeFluteAcquired:          skill.PokemonTower,
+	redProgressFuchsiaProgressionComplete: skill.FuchsiaProgression,
+	ProgressSaffronGateOpen:               skill.OpenSaffronGate,
+	ProgressCardKeyOwned:                  skill.AcquireSilphCardKey,
+	redProgressSilphRescueComplete:        skill.ClearSilphCo,
+	ProgressSecretKeyOwned:                skill.AcquireCinnabarSecretKey,
+	redProgressVolcanoBadge:               skill.CinnabarProgression,
+	redProgressEarthBadge:                 skill.ViridianProgression,
+	ProgressRoute22RivalResolved:          skill.VictoryRoadResolveRival,
+	ProgressRoute23BadgeChecks:            skill.VictoryRoadReachCave,
+	redProgressVictoryRoadCleared:         skill.VictoryRoadClearCave,
+	redProgressIndigoPlateauReady:         skill.VictoryRoadPrepareIndigo,
+	ProgressLeagueChallengeStarted:        skill.LeagueStartChallenge,
+	redProgressLeagueLoreleiDefeated:      skill.LeagueDefeatLorelei,
+	redProgressLeagueBrunoDefeated:        skill.LeagueDefeatBruno,
+	redProgressLeagueAgathaDefeated:       skill.LeagueDefeatAgatha,
+	redProgressLeagueLanceDefeated:        skill.LeagueDefeatLance,
+	ProgressLeagueChampionDefeated:        skill.LeagueDefeatChampion,
+	ProgressMainStoryComplete: func(m *emu.Emu, _ []byte, _ skill.MovePolicy) error {
+		return skill.LeagueFinishHallOfFame(m)
+	},
+}
+
 // redProgressionKnown is the adapter-owned vocabulary accepted by Red. The
 // generic runtime treats ProgressID as opaque and only verifies that the
 // requested fact became true.
 func redProgressionKnown(id ProgressID) bool {
-	switch id {
-	case redProgressPokedexAcquired,
-		redProgressMtMoonFossilAcquired,
-		redProgressSSTicketAcquired,
-		redProgressHM01Acquired,
-		redProgressFlyReady,
-		redProgressBicycleAcquired,
-		redProgressBoulderBadge,
-		redProgressThunderBadge,
-		redProgressPostSurgeLavenderReached,
-		redProgressPostSurgeCeladonReady,
-		redProgressRainbowBadge,
-		redProgressSilphScopeAcquired,
-		redProgressPokeFluteAcquired,
-		redProgressFuchsiaProgressionComplete,
-		redProgressSilphRescueComplete,
-		redProgressVolcanoBadge,
-		redProgressEarthBadge,
-		ProgressRoute22RivalResolved,
-		ProgressRoute23BadgeChecks,
-		redProgressVictoryRoadCleared,
-		redProgressIndigoPlateauReady,
-		ProgressLeagueChallengeStarted,
-		redProgressLeagueLoreleiDefeated,
-		redProgressLeagueBrunoDefeated,
-		redProgressLeagueAgathaDefeated,
-		redProgressLeagueLanceDefeated,
-		ProgressLeagueChampionDefeated,
-		ProgressMainStoryComplete,
-		ProgressSaffronGateOpen,
-		ProgressCardKeyOwned,
-		ProgressSecretKeyOwned:
-		return true
-	default:
-		return false
-	}
+	_, ok := redProgressionExecutors[id]
+	return ok
 }
 
 func routeBlockedOn(obs Observation, destination PlaceID, capability CapabilityID) bool {
@@ -377,71 +389,9 @@ func redProgressionObjectives(obs Observation) []Objective {
 // semantic progression goal. Success is still decided later by the generic
 // positive postcondition over Observation.Story, never by nil alone.
 func executeRedProgression(m *emu.Emu, romData []byte, o Objective) error {
-	policy := skill.StatAwareMove(romData)
-	switch o.Progress {
-	case redProgressMtMoonFossilAcquired:
-		return skill.MtMoonFossil(m, romData, policy)
-	case redProgressPokedexAcquired:
-		return skill.OaksParcel(m, romData, policy)
-	case redProgressSSTicketAcquired:
-		return skill.Bill(m, romData, policy)
-	case redProgressHM01Acquired:
-		return skill.SSAnneHM01(m, romData, policy)
-	case redProgressBicycleAcquired:
-		return skill.AcquireBicycle(m, romData, policy)
-	case redProgressBoulderBadge:
-		return skill.BoulderProgression(m, romData, policy)
-	case redProgressThunderBadge:
-		return skill.SurgeProgression(m, romData, policy)
-	case redProgressPostSurgeLavenderReached:
-		return skill.PostSurgeReachLavender(m, romData, policy)
-	case redProgressPostSurgeCeladonReady:
-		return skill.PostSurgeReachCeladon(m, romData, policy)
-	case redProgressFlyReady:
-		return skill.PrepareFlyFastTravel(m, romData, policy)
-	case redProgressRainbowBadge:
-		return skill.PostSurgeDefeatErika(m, romData, policy)
-	case redProgressSilphScopeAcquired:
-		return skill.RocketHideout(m, romData, policy)
-	case redProgressPokeFluteAcquired:
-		return skill.PokemonTower(m, romData, policy)
-	case redProgressFuchsiaProgressionComplete:
-		return skill.FuchsiaProgression(m, romData, policy)
-	case ProgressSaffronGateOpen:
-		return skill.OpenSaffronGate(m, romData, policy)
-	case ProgressCardKeyOwned:
-		return skill.AcquireSilphCardKey(m, romData, policy)
-	case redProgressSilphRescueComplete:
-		return skill.ClearSilphCo(m, romData, policy)
-	case ProgressSecretKeyOwned:
-		return skill.AcquireCinnabarSecretKey(m, romData, policy)
-	case redProgressVolcanoBadge:
-		return skill.CinnabarProgression(m, romData, policy)
-	case redProgressEarthBadge:
-		return skill.ViridianProgression(m, romData, policy)
-	case ProgressRoute22RivalResolved:
-		return skill.VictoryRoadResolveRival(m, romData, policy)
-	case ProgressRoute23BadgeChecks:
-		return skill.VictoryRoadReachCave(m, romData, policy)
-	case redProgressVictoryRoadCleared:
-		return skill.VictoryRoadClearCave(m, romData, policy)
-	case redProgressIndigoPlateauReady:
-		return skill.VictoryRoadPrepareIndigo(m, romData, policy)
-	case ProgressLeagueChallengeStarted:
-		return skill.LeagueStartChallenge(m, romData, policy)
-	case redProgressLeagueLoreleiDefeated:
-		return skill.LeagueDefeatLorelei(m, romData, policy)
-	case redProgressLeagueBrunoDefeated:
-		return skill.LeagueDefeatBruno(m, romData, policy)
-	case redProgressLeagueAgathaDefeated:
-		return skill.LeagueDefeatAgatha(m, romData, policy)
-	case redProgressLeagueLanceDefeated:
-		return skill.LeagueDefeatLance(m, romData, policy)
-	case ProgressLeagueChampionDefeated:
-		return skill.LeagueDefeatChampion(m, romData, policy)
-	case ProgressMainStoryComplete:
-		return skill.LeagueFinishHallOfFame(m)
-	default:
+	run, ok := redProgressionExecutors[o.Progress]
+	if !ok {
 		return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 	}
+	return run(m, romData, skill.StatAwareMove(romData))
 }

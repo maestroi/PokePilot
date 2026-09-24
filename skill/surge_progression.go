@@ -49,9 +49,7 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: SurgeProgression: %w", err)
 	}
 
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeThunder) {
-		return fmt.Errorf("skill: SurgeProgression: Thunder Badge missing after Lt. Surge")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }

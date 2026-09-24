@@ -72,8 +72,8 @@ func EnterViridianGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // ViridianProgression is issue #36's resumable executor. Returning to Viridian
 // City is significant: the city script is what commits EVENT_VIRIDIAN_GYM_OPEN
 // after seven badges. From there the real door, spinner floor, trainer battles,
-// Giovanni battle, and Earth Badge postcondition are all executed from live
-// state. A checkpoint already inside the gym resumes directly from its current
+// and Giovanni battle are all executed from live state; the Earth Badge is
+// the objective runtime's postcondition, not this skill's. A checkpoint already inside the gym resumes directly from its current
 // coordinate.
 func ViridianProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
@@ -122,10 +122,7 @@ func ViridianProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err := RequireTrainerBattleWin("gym:giovanni", outcome); err != nil {
 		return fmt.Errorf("skill: ViridianProgression: %w", err)
 	}
-	state.Snapshot(m, &mem)
-	progress = state.DecodeProgress(&mem)
-	if !progress.Has(state.BadgeEarth) || progress.BadgeCount != 8 {
-		return fmt.Errorf("skill: ViridianProgression: Giovanni win returned with badges=%#02x count=%d, want all eight", progress.Badges, progress.BadgeCount)
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }

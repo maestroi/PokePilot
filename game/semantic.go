@@ -29,12 +29,20 @@ type ProgressFact struct {
 type ProgressState []ProgressFact
 
 func (s ProgressState) Has(id ProgressID) bool {
+	fact, _ := s.Lookup(id)
+	return fact.Complete
+}
+
+// Lookup reports whether the adapter projected id at all. A projected fact is
+// that progression goal's positive verifier; an absent one means no verifier
+// is registered, which must not be confused with "projected and false".
+func (s ProgressState) Lookup(id ProgressID) (ProgressFact, bool) {
 	for _, fact := range s {
 		if fact.ID == id {
-			return fact.Complete
+			return fact, true
 		}
 	}
-	return false
+	return ProgressFact{}, false
 }
 
 func (s ProgressState) Value(id ProgressID) (int, bool) {
