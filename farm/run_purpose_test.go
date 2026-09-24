@@ -7,11 +7,11 @@ import (
 
 func TestRunPolicyForCarriesPurposeIndependently(t *testing.T) {
 	spec := Spec{
-		RunID:        "debug-completionist-champion",
-		Planner:      "llm",
-		PlayStyle:    "completionist",
-		Purpose:      "debug_coverage",
-		Goal:         GoalFrom("elite-four"),
+		RunID:         "debug-completionist-champion",
+		Planner:       "llm",
+		PlayStyle:     "completionist",
+		Purpose:       "debug_coverage",
+		Goal:          GoalFrom("elite-four"),
 		RiskTolerance: "balanced",
 	}
 	policy := RunPolicyFor(spec)
