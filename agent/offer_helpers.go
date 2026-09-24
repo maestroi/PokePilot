@@ -1,6 +1,9 @@
 package agent
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 var fieldMedStatus = map[string]string{
 	"potion":       "",
@@ -29,16 +32,59 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 // is standing behind a gate that the checkpoint sits on the far side of. The
 // caller takes the first candidate the router accepts.
 func preferredRecoveryCenters(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) []PlaceID {
-	ranked := make([]PlaceID, 0, 2)
+	current := observationLocation(obs, known)
+	hops := mapHops(known.Adjacency, current)
+	type candidate struct {
+		place      PlaceID
+		hops       int
+		successful bool
+		active     bool
+	}
+	seen := map[PlaceID]bool{}
+	candidates := make([]candidate, 0, len(known.RecoveryCheckpoints)+2)
+	add := func(place PlaceID, location LocationID, successful, active bool) {
+		if place == "" || location == "" || seen[place] {
+			return
+		}
+		destination, ok := catalog.destination(place)
+		if !ok || !destination.Center {
+			return
+		}
+		distance, reachable := hops[location]
+		if location != current && !reachable && len(known.Adjacency) > 0 {
+			return
+		}
+		seen[place] = true
+		candidates = append(candidates, candidate{place: place, hops: distance, successful: successful, active: active})
+	}
 	if obs.RecoveryCheckpoint != "" {
-		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok && destination.Center {
-			// The cartridge's active blackout checkpoint is stronger evidence than
-			// planner visitation: the player necessarily activated this nurse.
-			ranked = append(ranked, obs.RecoveryCheckpoint)
+		if destination, ok := catalog.destination(obs.RecoveryCheckpoint); ok {
+			add(obs.RecoveryCheckpoint, destination.Location, true, true)
 		}
 	}
-	if name, ok := nearestKnownCenter(obs, known, knownLocations, catalog); ok && name != obs.RecoveryCheckpoint {
-		ranked = append(ranked, name)
+	for place, checkpoint := range known.RecoveryCheckpoints {
+		add(place, checkpoint.Location, checkpoint.Successful, place == obs.RecoveryCheckpoint)
+	}
+	for _, destination := range catalog.Destinations {
+		if destination.Center && destination.Location != "" && knownLocations[destination.Location] {
+			add(destination.Place, destination.Location, false, destination.Place == obs.RecoveryCheckpoint)
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].active != candidates[j].active {
+			return candidates[i].active
+		}
+		if candidates[i].successful != candidates[j].successful {
+			return candidates[i].successful
+		}
+		if candidates[i].hops != candidates[j].hops {
+			return candidates[i].hops < candidates[j].hops
+		}
+		return candidates[i].place < candidates[j].place
+	})
+	ranked := make([]PlaceID, 0, len(candidates))
+	for _, candidate := range candidates {
+		ranked = append(ranked, candidate.place)
 	}
 	return ranked
 }
