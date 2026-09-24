@@ -46,16 +46,16 @@
     "adventure",
   );
 
-  const defaultGoalForPlayStyle = (style) =>
-    style === "completionist"
-      ? "Complete the obtainable Pokédex."
-      : "Beat the Elite Four and Champion.";
-
-  const applyPlayStyleGoal = () => {
-    if (form.elements.goal) form.elements.goal.value = defaultGoalForPlayStyle(playStyle.value);
-  };
-  applyPlayStyleGoal();
-  playStyle.addEventListener("change", applyPlayStyleGoal);
+  const purpose = addPolicySelect(
+    "purpose",
+    "Run purpose",
+    "Normal play keeps player-facing priorities. Debug Coverage deliberately exercises novel reachable interactions to uncover bugs.",
+    [
+      ["normal", "Normal · play the game"],
+      ["debug_coverage", "Debug Coverage · exercise new interactions"],
+    ],
+    "normal",
+  );
 
   const riskTolerance = addPolicySelect(
     "risk_tolerance",
@@ -120,10 +120,12 @@
         const spec = JSON.parse(init.body);
         if (spec && spec.planner === "llm") {
           spec.play_style = playStyle.value || "adventure";
+          spec.purpose = purpose.value || "normal";
           spec.risk_tolerance = riskTolerance.value || "balanced";
           spec.wild_encounters = wildEncounters.value || "planner";
         } else if (spec) {
           delete spec.play_style;
+          delete spec.purpose;
           delete spec.risk_tolerance;
           delete spec.wild_encounters;
         }
