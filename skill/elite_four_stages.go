@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -88,28 +89,28 @@ func leagueReachRoom(m *emu.Emu, romData []byte, policy MovePolicy, targetMap ui
 			}
 		case loreleiRoomMap:
 			if !facts.LeagueLoreleiDefeated {
-				return fmt.Errorf("Lorelei must be defeated before advancing toward map %#02x", targetMap)
+				return gameruntime.NewProgressionPrerequisiteMissing("league_lorelei_defeated")
 			}
 			if err := enterLeagueRoom(m, romData, policy, loreleiExitStand, brunoRoomMap, false); err != nil {
 				return err
 			}
 		case brunoRoomMap:
 			if !facts.LeagueBrunoDefeated {
-				return fmt.Errorf("Bruno must be defeated before advancing toward map %#02x", targetMap)
+				return gameruntime.NewProgressionPrerequisiteMissing("league_bruno_defeated")
 			}
 			if err := enterLeagueRoom(m, romData, policy, brunoExitStand, agathaRoomMap, false); err != nil {
 				return err
 			}
 		case agathaRoomMap:
 			if !facts.LeagueAgathaDefeated {
-				return fmt.Errorf("Agatha must be defeated before advancing toward map %#02x", targetMap)
+				return gameruntime.NewProgressionPrerequisiteMissing("league_agatha_defeated")
 			}
 			if err := enterLeagueRoom(m, romData, policy, agathaExitStand, lanceRoomMap, false); err != nil {
 				return err
 			}
 		case lanceRoomMap:
 			if !facts.LeagueLanceDefeated {
-				return fmt.Errorf("Lance must be defeated before advancing toward map %#02x", targetMap)
+				return gameruntime.NewProgressionPrerequisiteMissing("league_lance_defeated")
 			}
 			if err := enterLeagueRoom(m, romData, policy, lanceExitStand, championsRoomMap, true); err != nil {
 				return err
@@ -143,7 +144,7 @@ func LeagueDefeatBruno(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.LeagueLoreleiDefeated {
-		return fmt.Errorf("skill: LeagueDefeatBruno: Lorelei is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_lorelei_defeated")
 	}
 	if err := leagueReachRoom(m, romData, policy, brunoRoomMap); err != nil {
 		return fmt.Errorf("skill: LeagueDefeatBruno: %w", err)
@@ -157,7 +158,7 @@ func LeagueDefeatAgatha(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.LeagueBrunoDefeated {
-		return fmt.Errorf("skill: LeagueDefeatAgatha: Bruno is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_bruno_defeated")
 	}
 	if err := leagueReachRoom(m, romData, policy, agathaRoomMap); err != nil {
 		return fmt.Errorf("skill: LeagueDefeatAgatha: %w", err)
@@ -171,7 +172,7 @@ func LeagueDefeatLance(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.LeagueAgathaDefeated {
-		return fmt.Errorf("skill: LeagueDefeatLance: Agatha is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_agatha_defeated")
 	}
 	if err := leagueReachRoom(m, romData, policy, lanceRoomMap); err != nil {
 		return fmt.Errorf("skill: LeagueDefeatLance: %w", err)
@@ -230,7 +231,7 @@ func LeagueDefeatChampion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.LeagueLanceDefeated {
-		return fmt.Errorf("skill: LeagueDefeatChampion: Lance is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_lance_defeated")
 	}
 	if err := leagueReachRoom(m, romData, policy, championsRoomMap); err != nil {
 		return fmt.Errorf("skill: LeagueDefeatChampion: %w", err)
@@ -250,7 +251,7 @@ func LeagueFinishHallOfFame(m *emu.Emu) error {
 		return nil
 	}
 	if !facts.LeagueChampionDefeated {
-		return fmt.Errorf("skill: LeagueFinishHallOfFame: Champion is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_champion_defeated")
 	}
 	if err := finishHallOfFame(m); err != nil {
 		return fmt.Errorf("skill: LeagueFinishHallOfFame: %w", err)

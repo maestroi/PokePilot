@@ -123,6 +123,9 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
 	}
+	if missing := redMissingProgressionPrerequisites(o, obs); len(missing) != 0 {
+		return progressionPrerequisiteError(missing)
+	}
 	return nil
 }
 

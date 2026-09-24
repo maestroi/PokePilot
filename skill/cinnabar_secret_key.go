@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -71,10 +72,24 @@ func CinnabarSecretKeyOwned(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SecretKeyOwned
 }
 
-func CinnabarSecretKeyReady(mem *state.Mem) bool {
+func CinnabarSecretKeyPrerequisites(mem *state.Mem) []gameruntime.ProgressID {
 	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
 	progress := state.DecodeProgress(mem)
-	return facts.FuchsiaProgressionComplete && facts.SilphRescueComplete && progress.Has(state.BadgeMarsh)
+	missing := []gameruntime.ProgressID{}
+	if !facts.FuchsiaProgressionComplete {
+		missing = append(missing, "fuchsia_progression_complete")
+	}
+	if !facts.SilphRescueComplete {
+		missing = append(missing, "silph_rescue_complete")
+	}
+	if !progress.Has(state.BadgeMarsh) {
+		missing = append(missing, "marsh_badge")
+	}
+	return missing
+}
+
+func CinnabarSecretKeyReady(mem *state.Mem) bool {
+	return len(CinnabarSecretKeyPrerequisites(mem)) == 0
 }
 
 func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -86,8 +101,8 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	if CinnabarSecretKeyOwned(&mem) {
 		return nil
 	}
-	if !CinnabarSecretKeyReady(&mem) {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: post-Saffron/Surf handoff is not satisfied")
+	if missing := CinnabarSecretKeyPrerequisites(&mem); len(missing) != 0 {
+		return gameruntime.NewProgressionPrerequisiteMissing(missing...)
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -53,7 +54,7 @@ func EnterViridianGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !ViridianGymReady(&mem) {
-		return fmt.Errorf("skill: EnterViridianGym: Viridian Gym is not open")
+		return gameruntime.NewProgressionPrerequisiteMissing("viridian_gym_open")
 	}
 	res, err := TravelFlee(m, romData, Destination{Map: viridianGymMap, X: viridianGymEntranceX, Y: viridianGymEntranceY}, policy, viridianGymTravelBattles)
 	if err != nil {
@@ -85,7 +86,7 @@ func ViridianProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if progress.BadgeCount < 7 {
-		return fmt.Errorf("skill: ViridianProgression: have %d badges, need seven before Viridian Gym", progress.BadgeCount)
+		return gameruntime.NewProgressionPrerequisiteMissing("volcano_badge")
 	}
 
 	if m.Peek8(sym.CurMap) != viridianGymMap {
@@ -111,7 +112,7 @@ func ViridianProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return err
 		}
 	} else if !ViridianGymReady(&mem) {
-		return fmt.Errorf("skill: ViridianProgression: inside Viridian Gym without open-gym story fact")
+		return gameruntime.NewProgressionPrerequisiteMissing("viridian_gym_open")
 	}
 
 	outcome, err := Gym(m, romData, policy)

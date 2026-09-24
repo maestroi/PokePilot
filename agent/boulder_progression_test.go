@@ -35,7 +35,7 @@ func TestPewterExitCapabilityLinksToBoulderProgression(t *testing.T) {
 
 func TestPrerequisiteRecoveryChoosesBrockForPewterExit(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_leave_pewter_east"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_leave_pewter_east"}}
 
 	obs := Observation{
 		Story: ProgressState{{ID: redProgressPokedexAcquired, Complete: true}},
@@ -58,7 +58,7 @@ func TestPrerequisiteRecoveryChoosesBrockForPewterExit(t *testing.T) {
 	if got.Key() != want.Key() {
 		t.Fatalf("recovery objective = %+v, want %+v", got, want)
 	}
-	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_leave_pewter_east"}) {
+	if !reflect.DeepEqual(capabilities, []Prerequisite{{Capability: "can_leave_pewter_east"}}) {
 		t.Fatalf("recovery capabilities = %v", capabilities)
 	}
 }

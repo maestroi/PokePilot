@@ -39,13 +39,14 @@ const (
 // evidence needed to distinguish otherwise identical causes. The native typed
 // error remains outside this record for adapter-owned diagnostics/forensics.
 type Failure struct {
-	Phase       FailurePhase `json:"phase"`
-	Class       FailureClass `json:"class"`
-	Cause       string       `json:"cause"`
-	Recoverable bool         `json:"recoverable"`
-	Context     []string     `json:"context,omitempty"`
+	Phase         FailurePhase   `json:"phase"`
+	Class         FailureClass   `json:"class"`
+	Cause         string         `json:"cause"`
+	Recoverable   bool           `json:"recoverable"`
+	Context       []string       `json:"context,omitempty"`
+	Prerequisites []Prerequisite `json:"prerequisites,omitempty"`
 }
 
 func (f Failure) Empty() bool {
-	return f.Phase == "" && f.Class == "" && f.Cause == "" && !f.Recoverable && len(f.Context) == 0
+	return f.Phase == "" && f.Class == "" && f.Cause == "" && !f.Recoverable && len(f.Context) == 0 && len(f.Prerequisites) == 0
 }

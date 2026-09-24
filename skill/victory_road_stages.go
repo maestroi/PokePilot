@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -19,7 +20,7 @@ func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.Stor
 		return mem, facts, nil
 	}
 	if state.DecodeProgress(&mem).BadgeCount != 8 {
-		return state.Mem{}, state.StoryFacts{}, fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
+		return state.Mem{}, state.StoryFacts{}, gameruntime.NewProgressionPrerequisiteMissing("earth_badge")
 	}
 	return mem, facts, nil
 }
@@ -113,7 +114,7 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.Route22RivalResolved {
-		return fmt.Errorf("%w: Route 22 rival must be resolved before Route 23", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("route_22_rival_resolved")
 	}
 	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
 		return fmt.Errorf("skill: VictoryRoadReachCave: prepare Surf: %w", err)
@@ -141,7 +142,7 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.Route23BadgeChecksComplete {
-		return fmt.Errorf("%w: Route 23 badge checks must be complete before Victory Road puzzles", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("route_23_badge_checks")
 	}
 	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
 		return fmt.Errorf("skill: VictoryRoadClearCave: prepare Surf + Strength: %w", err)
@@ -180,7 +181,7 @@ func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return nil
 	}
 	if !victoryRoadClearBoundary(&mem, facts) {
-		return fmt.Errorf("%w: Victory Road must be cleared before Indigo recovery", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("victory_road_cleared")
 	}
 	if err := prepareIndigoLobby(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: %w", err)

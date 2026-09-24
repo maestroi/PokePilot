@@ -9,7 +9,7 @@ import (
 
 func TestPrerequisiteRecoverySynthesizesRecoveryOnlyProgressObjective(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_ride_cycling_road"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_ride_cycling_road"}}
 
 	obs := Observation{RouteBlockages: []RouteBlockage{{
 		Destination: "fuchsia city",
@@ -30,14 +30,14 @@ func TestPrerequisiteRecoverySynthesizesRecoveryOnlyProgressObjective(t *testing
 	if got.Key() != want.Key() {
 		t.Fatalf("recovery objective = %+v, want %+v", got, want)
 	}
-	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_ride_cycling_road"}) {
+	if !reflect.DeepEqual(capabilities, []Prerequisite{{Capability: "can_ride_cycling_road"}}) {
 		t.Fatalf("recovery capabilities = %v", capabilities)
 	}
 }
 
 func TestPrerequisiteRecoveryStillRequiresNormalOfferWithoutRecoveryOnly(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_enter_saffron"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_enter_saffron"}}
 	obs := Observation{RouteBlockages: []RouteBlockage{{
 		Destination: "saffron city",
 		Missing:     []CapabilityID{"can_enter_saffron"},
@@ -53,7 +53,7 @@ func TestPrerequisiteRecoveryStillRequiresNormalOfferWithoutRecoveryOnly(t *test
 
 func TestPrerequisiteRecoverySynthesizesUnlockedFieldCapabilityRepair(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_surf"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_surf"}}
 
 	obs := Observation{
 		FieldCapabilities: []FieldCapability{{
@@ -79,7 +79,7 @@ func TestPrerequisiteRecoverySynthesizesUnlockedFieldCapabilityRepair(t *testing
 	if got.Key() != want.Key() {
 		t.Fatalf("recovery objective = %+v, want %+v", got, want)
 	}
-	if !reflect.DeepEqual(capabilities, []CapabilityID{"can_surf"}) {
+	if !reflect.DeepEqual(capabilities, []Prerequisite{{Capability: "can_surf"}}) {
 		t.Fatalf("recovery capabilities = %v", capabilities)
 	}
 }
@@ -91,7 +91,7 @@ func TestPrerequisiteRecoveryDoesNotRepairLockedFieldCapability(t *testing.T) {
 		{Name: "surf", BadgeOwned: true, HMOwned: true, Usable: true},
 	} {
 		policy := newRunFailurePolicy(3)
-		policy.pendingPrerequisites = []CapabilityID{"can_surf"}
+		policy.pendingPrerequisites = []Prerequisite{{Capability: "can_surf"}}
 		obs := Observation{
 			FieldCapabilities: []FieldCapability{field},
 			RouteBlockages: []RouteBlockage{{
@@ -111,7 +111,7 @@ func TestPrerequisiteRecoveryDoesNotRepairLockedFieldCapability(t *testing.T) {
 
 func TestPrerequisiteRecoveryPrefersOfferedProgressBeforeFieldRepair(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_cut"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_cut"}}
 	obs := Observation{
 		FieldCapabilities: []FieldCapability{{
 			Name:       "cut",
@@ -149,7 +149,7 @@ func TestFailurePolicyRecordsMissingRouteCapabilitiesForRecovery(t *testing.T) {
 		Final: Observation{},
 	}
 	policy.record(result)
-	want := []CapabilityID{"can_clear_snorlax", "can_ride_cycling_road"}
+	want := []Prerequisite{{Capability: "can_clear_snorlax"}, {Capability: "can_ride_cycling_road"}}
 	if !reflect.DeepEqual(policy.pendingPrerequisites, want) {
 		t.Fatalf("pending prerequisites = %v, want %v", policy.pendingPrerequisites, want)
 	}
@@ -162,7 +162,7 @@ func TestFailurePolicyRecordsMissingRouteCapabilitiesForRecovery(t *testing.T) {
 
 func TestNonPrerequisiteFailureClearsPendingRouteRecovery(t *testing.T) {
 	policy := newRunFailurePolicy(3)
-	policy.pendingPrerequisites = []CapabilityID{"can_ride_cycling_road"}
+	policy.pendingPrerequisites = []Prerequisite{{Capability: "can_ride_cycling_road"}}
 	result := ObjectiveResult{
 		Objective: Objective{Kind: KindGoTo, Place: "route 9"},
 		Outcome:   OutcomeBlocked,

@@ -176,11 +176,11 @@ runLoop:
 					round, readiness.Action, readiness.CurrentReadiness, readiness.TargetReadiness,
 					readiness.Losses, readiness.Objective.Objective(), obj)
 			}
-		} else if recovery, capabilities, ok := engine.failures.prerequisiteRecovery(last, now); ok {
+		} else if recovery, prerequisites, ok := engine.failures.prerequisiteRecovery(last, now, newRedObjectiveAdapter(m, romData)); ok {
 			obj = recovery
 			engine.planning.request("prerequisite_recovery")
 			if budget.Log != nil {
-				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, capabilities, obj)
+				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
 			}
 		} else {
 			obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)

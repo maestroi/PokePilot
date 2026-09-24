@@ -1,63 +1,120 @@
 package agent
 
-// prerequisiteRecovery turns a typed route blockage into deterministic recovery
-// when the active game adapter has already linked the missing route capability
-// to an executable semantic prerequisite.
+// PrerequisiteRecoveryLink is adapter-owned knowledge that connects a portable
+// progression fact to the objective that can satisfy it. RecoverySafe permits
+// synthesis only when the adapter explicitly says the objective is safe to run
+// outside the normal offered menu.
+type PrerequisiteRecoveryLink struct {
+	Objective    Objective
+	RecoverySafe bool
+}
+
+type ProgressionPrerequisiteRecoveryProvider interface {
+	RecoveryForProgressionPrerequisite(ProgressID, Observation) (PrerequisiteRecoveryLink, bool)
+}
+
+// prerequisiteRecovery turns typed semantic prerequisite evidence into one
+// deterministic recovery objective. Route capabilities keep their existing
+// planner-visible links; progression facts are matched directly to an offered
+// progress objective or through adapter-owned recovery links.
 //
-// Progress links retain their historical behavior: ordinary progression must be
-// present in the offered menu, while RecoveryOnly links may synthesize it. Field
-// capability links are different: when the observation proves the badge and HM
-// are already owned but the move is not usable, the runtime synthesizes an
-// explicit field-capability repair objective. That keeps party/PC/wild-carrier
-// selection inside the game adapter instead of asking the strategist to invent
-// a Pokemon that might not even be HM-compatible.
-//
-// Unknown or still-locked prerequisites fall through to the strategist.
-func (f *runFailurePolicy) prerequisiteRecovery(obs Observation, offered []Objective) (Objective, []CapabilityID, bool) {
+// Exactly one prerequisite is repaired per call. Completed progression facts
+// are pruned from the pending list against the fresh observation, so a failure
+// that reports several missing facts becomes a sequence of re-observed,
+// individually verified objective transactions rather than one stale plan.
+func (f *runFailurePolicy) prerequisiteRecovery(
+	obs Observation,
+	offered []Objective,
+	providers ...ProgressionPrerequisiteRecoveryProvider,
+) (Objective, []Prerequisite, bool) {
 	if f == nil || len(f.pendingPrerequisites) == 0 {
 		return Objective{}, nil, false
 	}
 
-	pending := make(map[CapabilityID]bool, len(f.pendingPrerequisites))
-	for _, capability := range f.pendingPrerequisites {
-		pending[capability] = true
+	// Prune story prerequisites satisfied by the previous recovery transaction.
+	// Capability prerequisites retain historical lifetime semantics and are
+	// cleared by success().
+	pending := f.pendingPrerequisites[:0]
+	for _, prerequisite := range f.pendingPrerequisites {
+		if prerequisite.Progress != "" && obs.Story.Has(prerequisite.Progress) {
+			continue
+		}
+		pending = append(pending, prerequisite)
+	}
+	f.pendingPrerequisites = pending
+	if len(f.pendingPrerequisites) == 0 {
+		return Objective{}, nil, false
 	}
 
-	prerequisiteFor := map[CapabilityID]RoutePrerequisiteLink{}
+	var provider ProgressionPrerequisiteRecoveryProvider
+	if len(providers) > 0 {
+		provider = providers[0]
+	}
+
+	routePrerequisiteFor := map[CapabilityID]RoutePrerequisiteLink{}
 	for _, blockage := range obs.RouteBlockages {
 		for _, prerequisite := range blockage.Prerequisites {
-			if prerequisite.Capability == "" || !pending[prerequisite.Capability] {
+			if prerequisite.Capability == "" {
 				continue
 			}
-			prerequisiteFor[prerequisite.Capability] = prerequisite
+			routePrerequisiteFor[prerequisite.Capability] = prerequisite
 		}
 	}
 
-	// Preserve normalized failure-context order. When a transition reports
-	// multiple missing capabilities, repair one semantic prerequisite at a time
-	// and then rebuild reachability from fresh live state.
-	for _, capability := range f.pendingPrerequisites {
-		prerequisite, ok := prerequisiteFor[capability]
+	// Preserve normalized failure-context order. Repair one semantic
+	// prerequisite at a time and rebuild the offered menu from live state.
+	for _, prerequisite := range f.pendingPrerequisites {
+		if prerequisite.Progress != "" {
+			// The generic direct mapping needs no game knowledge: a progress
+			// objective for the exact missing fact is its natural owner.
+			for _, objective := range offered {
+				if objective.Kind == KindProgress && objective.Progress == prerequisite.Progress {
+					return objective, []Prerequisite{prerequisite}, true
+				}
+			}
+
+			// Non-progress owners (for example a gym objective that earns a
+			// badge fact) and recovery-only synthesis stay adapter-owned.
+			if provider != nil {
+				link, ok := provider.RecoveryForProgressionPrerequisite(prerequisite.Progress, obs)
+				if ok {
+					for _, objective := range offered {
+						if objective.Key() == link.Objective.Key() {
+							return objective, []Prerequisite{prerequisite}, true
+						}
+					}
+					if link.RecoverySafe {
+						return link.Objective, []Prerequisite{prerequisite}, true
+					}
+				}
+			}
+			continue
+		}
+
+		if prerequisite.Capability == "" {
+			continue
+		}
+		route, ok := routePrerequisiteFor[prerequisite.Capability]
 		if !ok {
 			continue
 		}
 
-		if prerequisite.Progress != "" {
+		if route.Progress != "" {
 			for _, objective := range offered {
-				if objective.Kind == KindProgress && objective.Progress == prerequisite.Progress {
-					return objective, []CapabilityID{capability}, true
+				if objective.Kind == KindProgress && objective.Progress == route.Progress {
+					return objective, []Prerequisite{prerequisite}, true
 				}
 			}
-			if prerequisite.RecoveryOnly {
-				return Objective{Kind: KindProgress, Progress: prerequisite.Progress}, []CapabilityID{capability}, true
+			if route.RecoveryOnly {
+				return Objective{Kind: KindProgress, Progress: route.Progress}, []Prerequisite{prerequisite}, true
 			}
 		}
 
-		if prerequisite.FieldCapability != "" && fieldCapabilityRepairReady(obs, prerequisite.FieldCapability) {
+		if route.FieldCapability != "" && fieldCapabilityRepairReady(obs, route.FieldCapability) {
 			return Objective{
 				Kind:            KindRepairFieldCapability,
-				FieldCapability: prerequisite.FieldCapability,
-			}, []CapabilityID{capability}, true
+				FieldCapability: route.FieldCapability,
+			}, []Prerequisite{prerequisite}, true
 		}
 	}
 
