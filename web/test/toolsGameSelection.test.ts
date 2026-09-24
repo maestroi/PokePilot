@@ -16,7 +16,7 @@ test('tools run form selects and submits a supported game', () => {
 
 
 test('tools run form keeps purpose independent from play style and goal', () => {
-  assert.match(typesSource, /export interface RunSpec[\s\S]*\bpurpose: string/)
+  assert.match(typesSource, /export interface RunSpec[\s\S]*\bpurpose\?: string/)
   assert.match(toolsSource, /purpose: 'normal'/)
   assert.match(toolsSource, /v-model="form\.purpose"/)
   assert.match(toolsSource, /<option value="debug_coverage">Debug Coverage/)
