@@ -190,7 +190,6 @@ func TestVictoryRoadOrderingIsStructuredAtAdapterBoundary(t *testing.T) {
 	}
 }
 
-
 func TestVictoryRoadValidationReportsStructuredFieldRequirements(t *testing.T) {
 	adapter := &redObjectiveAdapter{}
 	obs := Observation{
