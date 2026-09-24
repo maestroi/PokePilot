@@ -13,6 +13,7 @@ func TestTileRowJSONExposesRunPolicy(t *testing.T) {
 		RunID:          "style-row",
 		Planner:        "llm",
 		PlayStyle:      "adventure",
+		Purpose:        "debug_coverage",
 		RiskTolerance:  "balanced",
 		WildEncounters: "fight",
 	}
@@ -22,6 +23,7 @@ func TestTileRowJSONExposesRunPolicy(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"play_style":"adventure"`,
+		`"purpose":"debug_coverage"`,
 		`"risk_tolerance":"balanced"`,
 		`"wild_encounters":"fight"`,
 	} {
@@ -38,6 +40,7 @@ func TestTileRowJSONRestoresRunPolicy(t *testing.T) {
 		RunID:          "style-catalog-row",
 		Planner:        "llm",
 		PlayStyle:      "team_builder",
+		Purpose:        "debug_coverage",
 		RiskTolerance:  "balanced",
 		WildEncounters: "avoid",
 	})
@@ -52,6 +55,9 @@ func TestTileRowJSONRestoresRunPolicy(t *testing.T) {
 	if got.PlayStyle != "team_builder" {
 		t.Fatalf("restored style = %q, want team_builder", got.PlayStyle)
 	}
+	if got.Purpose != "debug_coverage" {
+		t.Fatalf("restored purpose = %q, want debug_coverage", got.Purpose)
+	}
 	if got.RiskTolerance != "balanced" {
 		t.Fatalf("restored risk = %q, want balanced", got.RiskTolerance)
 	}
@@ -65,6 +71,7 @@ func TestPersistedTileRestoresRunPolicy(t *testing.T) {
 		RunID:          "style-persist",
 		Planner:        "llm",
 		PlayStyle:      "completionist",
+		Purpose:        "debug_coverage",
 		RiskTolerance:  "cautious",
 		WildEncounters: "planner",
 	})
@@ -78,6 +85,9 @@ func TestPersistedTileRestoresRunPolicy(t *testing.T) {
 	}
 	if got.PlayStyle != "completionist" {
 		t.Fatalf("restored style = %q, want completionist", got.PlayStyle)
+	}
+	if got.Purpose != "debug_coverage" {
+		t.Fatalf("restored purpose = %q, want debug_coverage", got.Purpose)
 	}
 	if got.RiskTolerance != "cautious" {
 		t.Fatalf("restored risk = %q, want cautious", got.RiskTolerance)
@@ -94,11 +104,12 @@ func TestTileRowLockedCopiesRunPolicy(t *testing.T) {
 	row := w.tileRowLocked(&Tile{
 		RunID:          "style-snapshot",
 		PlayStyle:      "adventure",
+		Purpose:        "debug_coverage",
 		RiskTolerance:  "balanced",
 		WildEncounters: "fight",
 	})
-	if row.PlayStyle != "adventure" || row.RiskTolerance != "balanced" || row.WildEncounters != "fight" {
-		t.Fatalf("row policy = %q/%q/%q", row.PlayStyle, row.RiskTolerance, row.WildEncounters)
+	if row.PlayStyle != "adventure" || row.Purpose != "debug_coverage" || row.RiskTolerance != "balanced" || row.WildEncounters != "fight" {
+		t.Fatalf("row policy = %q/%q/%q/%q", row.PlayStyle, row.Purpose, row.RiskTolerance, row.WildEncounters)
 	}
 }
 
@@ -110,6 +121,7 @@ func TestResumedChildInheritsParentRunPolicy(t *testing.T) {
 	w.tiles["style-parent-wall"] = &Tile{
 		RunID:          "style-parent-wall",
 		PlayStyle:      "team_builder",
+		Purpose:        "debug_coverage",
 		RiskTolerance:  "cautious",
 		WildEncounters: "fight",
 	}
@@ -123,6 +135,9 @@ func TestResumedChildInheritsParentRunPolicy(t *testing.T) {
 	w.inheritRunPolicyLocked(child)
 	if child.PlayStyle != "completionist" {
 		t.Fatalf("child overridden style = %q, want completionist", child.PlayStyle)
+	}
+	if child.Purpose != "debug_coverage" {
+		t.Fatalf("inherited purpose = %q, want debug_coverage", child.Purpose)
 	}
 	if child.RiskTolerance != "cautious" {
 		t.Fatalf("inherited risk = %q, want cautious", child.RiskTolerance)
