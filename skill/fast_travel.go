@@ -290,11 +290,6 @@ func chooseFastTravelByCost(
 	return best
 }
 
-// chooseFastTravel turns legal Red shortcuts into route-cost alternatives.
-// Fly may land in any visited town that reduces the remaining route; Dig and
-// Escape Rope may return to the last healing town and continue onward. They are
-// no longer restricted to direct-map destinations and are never forced merely
-// because they are available.
 func fastTravelKindName(kind fastTravelKind) string {
 	switch kind {
 	case fastTravelFly:
@@ -357,6 +352,11 @@ func EstimateTravelCost(m *emu.Emu, romData []byte, dest Destination) (TravelCos
 	}, true
 }
 
+// chooseFastTravel turns legal Red shortcuts into route-cost alternatives.
+// Fly may land in any visited town that reduces the remaining route; Dig and
+// Escape Rope may return to the last healing town and continue onward. They are
+// no longer restricted to direct-map destinations and are never forced merely
+// because they are available.
 func chooseFastTravel(m *emu.Emu, romData []byte, mem *state.Mem, dest Destination) fastTravelChoice {
 	if m == nil || mem == nil || mem.U8(sym.CurMap) == dest.Map || !state.Controllable(mem) {
 		return fastTravelChoice{}
