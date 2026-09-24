@@ -25,3 +25,14 @@ func PlayStyleSystemNote(name string) string {
 		return "PLAY STYLE: SPEEDRUN. Prefer direct required progression and efficient preparation. Avoid optional exploration, collection, training, and interaction unless they unblock progression, materially improve success odds, or are needed for recovery. When offered bounded REPEL supply/use objectives on encounter-heavy travel, prefer them when they avoid unnecessary wild-battle transitions; do not use them when the run is intentionally fighting wild encounters. An on-route unbeaten trainer can be worthwhile when its XP or prize money materially reduces later grinding or enables required preparation, but do not detour just to clear trainers. Only choose objectives that are actually offered."
 	}
 }
+
+
+// RunPurposeSystemNote describes why a run exists independently from its play
+// style. Debug coverage deliberately exercises obscure/low-value interactions;
+// normal/empty purpose adds no prompt bytes.
+func RunPurposeSystemNote(name string) string {
+	if NormalizeRunPurpose(name) != RunPurposeDebugCoverage {
+		return ""
+	}
+	return "RUN PURPOSE: DEBUG COVERAGE. Systematically exercise NEW reachable game/runtime surfaces to expose bugs. Prefer untested maps, warps, NPC conversations, trainers, pickups, shop/center/menu/item flows, captures, evolutions, static/gift encounters and recovery paths even when they have little gameplay payoff. Do not repeat already-covered interactions without a state-change reason. Progress the story when it unlocks additional coverage. Safety and deterministic legality still win, and the explicit run goal still determines terminal success."
+}
