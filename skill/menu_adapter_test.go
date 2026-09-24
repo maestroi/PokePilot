@@ -45,6 +45,19 @@ func (fakeGen2MenuDecoder) DecodeStartMenu(r game.MemoryReader) game.StartMenuSt
 	}
 }
 
+func (fakeGen2MenuDecoder) StartMenuEntryIndex(_ game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	// Deliberately unlike Gen I: pretend Gen II inserts other entries between
+	// Pokémon and Items.
+	switch entry {
+	case game.StartMenuPokemon:
+		return 2, true
+	case game.StartMenuItems:
+		return 6, true
+	default:
+		return 0, false
+	}
+}
+
 type fakeMenuMachine struct {
 	mem [16]byte
 }
@@ -140,5 +153,30 @@ func TestGenericStartMenuRefusesBattle(t *testing.T) {
 	}
 	if m.mem[fakeStartVisible] != 0 || m.mem[fakeStartReady] != 0 {
 		t.Fatal("battle refusal changed start-menu state")
+	}
+}
+
+func TestGenericStartMenuSelectsSemanticEntryWithDifferentOrdering(t *testing.T) {
+	m := &fakeMenuMachine{}
+	m.mem[fakeMenuMax] = 8
+
+	if err := openStartMenuEntryWithDecoder(m, fakeGen2MenuDecoder{}, game.StartMenuItems); err != nil {
+		t.Fatalf("open fake Gen-II Items entry: %v", err)
+	}
+	if got := m.mem[fakeMenuCurrent]; got != 6 {
+		t.Fatalf("cursor = %d, want semantic Items index 6", got)
+	}
+	if got := m.mem[fakeSelected]; got != 7 {
+		t.Fatalf("selected marker = %d, want index-6 marker 7", got)
+	}
+}
+
+func TestGenericStartMenuRejectsUnavailableSemanticEntry(t *testing.T) {
+	m := &fakeMenuMachine{}
+	m.mem[fakeMenuMax] = 8
+
+	err := openStartMenuEntryWithDecoder(m, fakeGen2MenuDecoder{}, game.StartMenuEntry("pokegear"))
+	if err == nil {
+		t.Fatal("unavailable semantic START-menu entry was accepted")
 	}
 }
