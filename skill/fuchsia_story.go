@@ -189,19 +189,8 @@ func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem) bool) 
 		return fmt.Errorf("%w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("select ITEM: %w", err)
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID
