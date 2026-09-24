@@ -180,6 +180,16 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		}
 	}
 
+	// ponytail: only priced when the bag has no HP healing; that is the sole
+	// consumer (economyObjectiveProvider's travel-and-buy recovery).
+	if emergencyHealStock(obs) == 0 {
+		for _, id := range skill.ReachableMartStock(m, romData) {
+			if name, ok := ItemName(id); ok {
+				obs.RestockStock = append(obs.RestockStock, name)
+			}
+		}
+	}
+
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)
 	objectGrid := mapObjectReachabilityGridLive(romData, obs.Map, &mem)

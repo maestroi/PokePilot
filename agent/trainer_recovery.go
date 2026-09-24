@@ -239,7 +239,14 @@ func annotateCombatPreparation(obs Observation, known *Knowledge, out []Objectiv
 // choice and let the planner pick a journey using the annotations above.
 func combatPreparationObjective(obs Observation, offered []Objective, known *Knowledge) (Objective, bool) {
 	state := combatPreparationFor(known, obs)
-	if !state.Active || (state.Target > 0 && state.Current >= state.Target) {
+	preparing := state.Active && !(state.Target > 0 && state.Current >= state.Target)
+	// A loss with zero HP-healing stock is a logistics gap training cannot
+	// fix: chained fights (no Center between them) can only heal from the bag.
+	// It holds even once the readiness target is met — a strong lead still
+	// loses the League with an empty bag — so it is not gated on training.
+	// Economy offers a bounded healing buy only while stock is below target.
+	restock := known.hasCombatLossEvidence() && emergencyHealStock(obs) == 0
+	if !preparing && !restock {
 		return Objective{}, false
 	}
 	if partyHurt(obs) || leadOutOfPP(obs) {
@@ -249,15 +256,15 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 			}
 		}
 	}
-	// A loss with zero HP-healing stock is a logistics gap training cannot
-	// fix: chained fights (no Center between them) can only heal from the bag.
-	// Economy offers a bounded healing buy only while stock is below target.
-	if emergencyHealStock(obs) == 0 {
+	if restock {
 		for _, o := range offered {
 			if _, ok := hpHealingItems[string(o.Item)]; ok && o.Kind == KindBuy {
 				return o, true
 			}
 		}
+	}
+	if !preparing {
+		return Objective{}, false
 	}
 	for _, o := range offered {
 		if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {

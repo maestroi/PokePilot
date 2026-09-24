@@ -10,7 +10,10 @@ import (
 const (
 	dexEvolutionLimit        = 6
 	dexEvolutionSupplyIntent = "dex-evolution-supply"
-	dexEvolutionStoneShop    = PlaceID("celadon mart 4f stones")
+	// combatRecoverySupplyIntent marks a healing purchase that travels to the
+	// nearest reachable shop stocking the item before buying.
+	combatRecoverySupplyIntent = "combat-recovery-supply"
+	dexEvolutionStoneShop      = PlaceID("celadon mart 4f stones")
 )
 
 // appendDexEvolutionObjectives turns ROM-derived evolution sources into the

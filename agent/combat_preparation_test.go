@@ -203,3 +203,41 @@ func TestCombatPreparationRestocksHealingBeforeTraining(t *testing.T) {
 		t.Fatal("combat loss evidence survived the challenge win")
 	}
 }
+
+// run-3r9pgu3arq0ls358ehdw2khxo8: an L89 lead met its readiness target, yet the
+// League kept wiping the party because the bag had no healing and nothing
+// outside a shop ever offered a purchase. Restocking is logistics, not
+// training, so it must not wait on the readiness target.
+func TestCombatPreparationRestocksHealingAfterReadinessTargetMet(t *testing.T) {
+	known := NewKnowledge(nil)
+	obj := Objective{Kind: KindProgress, Progress: ProgressID("main_story_complete")}
+	obs := combatPreparationTestObservation(40)
+	recordStructuredCombatLoss(t, known, obj, obs)
+
+	strong := combatPreparationTestObservation(90)
+	strong.CombatLossRecorded = true
+	strong.Money = 20000
+	strong.RestockStock = []string{"ultra ball", "full restore", "max potion", "revive"}
+	if state := combatPreparationFor(known, strong); state.Current < state.Target {
+		t.Fatalf("fixture must meet its readiness target: %+v", state)
+	}
+
+	offered := restockHealingObjectives(strong)
+	if len(offered) != 1 || offered[0].Kind != KindBuy || offered[0].Intent != combatRecoverySupplyIntent {
+		t.Fatalf("remote restock offer = %+v, want one travel-and-buy healing purchase", offered)
+	}
+	offered = append(offered, Objective{Kind: KindProgress, Progress: ProgressID("main_story_complete")})
+	got, ok := combatPreparationObjective(strong, offered, known)
+	if !ok || got.Kind != KindBuy {
+		t.Fatalf("preparation choice = %+v, %v; want the healing restock before a retry", got, ok)
+	}
+
+	stocked := strong
+	stocked.Bag = []Item{{Name: "max potion", Quantity: 2}}
+	if offer := restockHealingObjectives(stocked); len(offer) != 0 {
+		t.Fatalf("stocked bag still offered a restock: %+v", offer)
+	}
+	if got, ok := combatPreparationObjective(stocked, offered, known); ok {
+		t.Fatalf("stocked party with met target was still forced into %+v", got)
+	}
+}
