@@ -41,6 +41,9 @@ func TestSpecCarriesRunPolicyAsOwnFields(t *testing.T) {
 	if got.PlayStyle != "adventure" {
 		t.Fatalf("play style = %q, want adventure", got.PlayStyle)
 	}
+	if got.Purpose != RunPurposeDebugCoverage {
+		t.Fatalf("purpose = %q, want debug_coverage", got.Purpose)
+	}
 	if got.RiskTolerance != "balanced" {
 		t.Fatalf("risk tolerance = %q, want balanced", got.RiskTolerance)
 	}
@@ -118,6 +121,7 @@ func TestSpecsWithDifferentPolicyDoNotCrossTalk(t *testing.T) {
 		Planner:        "llm",
 		Goal:           GoalFrom("badges:1"),
 		PlayStyle:      "adventure",
+		Purpose:        RunPurposeNormal,
 		RiskTolerance:  "balanced",
 		WildEncounters: "fight",
 	}
@@ -126,6 +130,7 @@ func TestSpecsWithDifferentPolicyDoNotCrossTalk(t *testing.T) {
 		Planner:        "llm",
 		Goal:           GoalFrom("dex"),
 		PlayStyle:      "completionist",
+		Purpose:        RunPurposeDebugCoverage,
 		RiskTolerance:  "cautious",
 		WildEncounters: "planner",
 	}
@@ -158,6 +163,9 @@ func TestSpecsWithDifferentPolicyDoNotCrossTalk(t *testing.T) {
 		if tc.got.PlayStyle != tc.want.PlayStyle {
 			t.Fatalf("%s play style = %q, want %q", name, tc.got.PlayStyle, tc.want.PlayStyle)
 		}
+		if tc.got.Purpose != tc.want.Purpose {
+			t.Fatalf("%s purpose = %q, want %q", name, tc.got.Purpose, tc.want.Purpose)
+		}
 		if tc.got.RiskTolerance != tc.want.RiskTolerance {
 			t.Fatalf("%s risk tolerance = %q, want %q", name, tc.got.RiskTolerance, tc.want.RiskTolerance)
 		}
@@ -184,6 +192,7 @@ func TestSpecPolicyIsRaceFreeUnderConcurrentDecode(t *testing.T) {
 				Planner:        "llm",
 				Goal:           GoalFrom("badges:1"),
 				PlayStyle:      "adventure",
+				Purpose:        RunPurposeDebugCoverage,
 				RiskTolerance:  "balanced",
 				WildEncounters: "fight",
 			}
@@ -198,8 +207,8 @@ func TestSpecPolicyIsRaceFreeUnderConcurrentDecode(t *testing.T) {
 					t.Errorf("unmarshal: %v", err)
 					return
 				}
-				if got.PlayStyle != want.PlayStyle || got.RiskTolerance != want.RiskTolerance || got.WildEncounters != want.WildEncounters {
-					t.Errorf("run %d policy = %q/%q/%q", i, got.PlayStyle, got.RiskTolerance, got.WildEncounters)
+				if got.PlayStyle != want.PlayStyle || got.Purpose != want.Purpose || got.RiskTolerance != want.RiskTolerance || got.WildEncounters != want.WildEncounters {
+					t.Errorf("run %d policy = %q/%q/%q/%q", i, got.PlayStyle, got.Purpose, got.RiskTolerance, got.WildEncounters)
 					return
 				}
 			}
