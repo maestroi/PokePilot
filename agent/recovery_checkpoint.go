@@ -144,6 +144,15 @@ func rankRecoveryCheckpoints(
 			out = append(out, assessment)
 			continue
 		}
+		if combatLossRecorded(known, Objective{Kind: KindHeal, Place: destination.Place}) {
+			// The journey to this Center lost a required battle. Its heal
+			// objective stays combat-locked until readiness improves, so
+			// selecting it would offer no heal at all; rank the next Center.
+			assessment.Routable = false
+			assessment.Reason = "route to this Center is combat-locked until readiness improves"
+			out = append(out, assessment)
+			continue
+		}
 		if destination.TravelCostChecked && !destination.TravelCostKnown && !local {
 			assessment.Routable = false
 			assessment.Reason = "adapter could not find a legal route with current capabilities"

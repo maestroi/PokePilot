@@ -60,6 +60,23 @@ func insertPartyTrainingObjectives(obs Observation, known *Knowledge, out []Obje
 	return merged
 }
 
+// dropUnviableTargetedTraining removes targeted training (such as a distant
+// dex-evolution threshold) that one bounded Train session cannot reach here.
+// The executor rejects those without input, so offering them only lets
+// combat preparation or the planner pick the same dead objective per map.
+func dropUnviableTargetedTraining(out []Objective, estimate partyTrainingEstimator) []Objective {
+	kept := out[:0]
+	for _, o := range out {
+		if o.Kind == KindTrain && o.Species != "" {
+			if est, err := estimate(o.Slot, int(o.Level)); err == nil && est.Viability == TrainingOutsideBudget {
+				continue
+			}
+		}
+		kept = append(kept, o)
+	}
+	return kept
+}
+
 func partyTrainingChoiceNote(slot int, mon, lead PartyMon, wild []WildSpecies, estimate *TrainingEstimate) string {
 	detail := fmt.Sprintf("party slot %d L%d; current lead L%d", slot, mon.Level, lead.Level)
 	if len(wild) > 0 {

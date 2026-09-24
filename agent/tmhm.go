@@ -41,9 +41,11 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
 	out = enhancePickupObjectives(romData, party, obs, out)
-	out = insertPartyTrainingObjectives(obs, known, out, func(slot, targetLevel int) (TrainingEstimate, error) {
+	estimate := func(slot, targetLevel int) (TrainingEstimate, error) {
 		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
-	})
+	}
+	out = insertPartyTrainingObjectives(obs, known, out, estimate)
+	out = dropUnviableTargetedTraining(out, estimate)
 	inventory := state.DecodeInventory(&mem)
 	// Bag-pressure recovery may preserve finite TMs in Player PC storage. Keep
 	// those machines visible to the objective provider even though they no
