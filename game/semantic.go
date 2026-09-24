@@ -12,6 +12,7 @@ type PlaceID = string
 type (
 	SpeciesID    string
 	ItemID       string
+	MoveID       string
 	CapabilityID string
 	ProgressID   string
 )

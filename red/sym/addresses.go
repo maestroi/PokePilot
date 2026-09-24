@@ -129,7 +129,15 @@ const (
 	// double, half or nothing (engine/battle/core.asm:5129 walks TypeEffects
 	// with the move's type in b and the defender's two types in d and e).
 	// A single-type mon stores the same value in both bytes.
-	EnemyMonType1  uint16 = 0xCFEA // wEnemyMonType1
+	EnemyMonType1 uint16 = 0xCFEA // wEnemyMonType1
+	// Live battle status bytes, in the same encoding as the party status
+	// byte. The battle copies are authoritative mid-battle; the party copy is
+	// written back only when the mon leaves the field.
+	EnemyMonStatus  uint16 = 0xCFE9 // wEnemyMonStatus
+	BattleMonStatus uint16 = 0xD018 // wBattleMonStatus
+	// BattleType is wBattleType: 0 normal, 1 the Old Man's scripted catch
+	// demo, 2 Safari Zone (which replaces FIGHT with BALL/BAIT/ROCK).
+	BattleType     uint16 = 0xD05A // wBattleType
 	EnemyMonType2  uint16 = 0xCFEB // wEnemyMonType2
 	BattleMonType1 uint16 = 0xD019 // wBattleMonType1
 	BattleMonType2 uint16 = 0xD01A // wBattleMonType2

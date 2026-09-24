@@ -80,6 +80,44 @@ For high-level objective selection the engine receives only the objectives that
 `Offer` and run policy already made valid. Invalid or low-confidence output
 falls back to the existing planner.
 
+## Battle turns (#1455)
+
+`game.BattleDecisionState` is the portable contract for one battle turn at
+the main battle menu: active/opponent species, level, HP, status and types;
+the active mon's moves with PP, type, power, accuracy and effectiveness
+against the current opponent; legal switches; caller-permitted items; and
+whether RUN is legal. It names everything by semantic id and has no Red,
+emulator or skill dependency.
+
+The action set is derived, never authored by a backend:
+
+`move:<slot>` / `switch:<party-slot>` / `item:<item>:<party-slot>` / `run`
+
+The Gen I adapter (`skill.BuildBattleDecisionState`) decides legality:
+move actions mirror `BattleState.Usable` (PP and Disable), switches exclude
+the active and fainted members, items are listed only when permitted by the
+caller, held in the bag and would have an effect on the target, and RUN is
+legal only in wild battles. Safari Zone and the Old Man demo are reported as
+`ErrBattleNotActionable`. `BattleDecisionRequest` declares exactly that set;
+`ResolveBattleDecision` re-checks the reply against it before anything could
+execute.
+
+This PR only defines the contract. Execution stays with `skill.Battle`,
+`SwitchActive` and `UseBattleMedicine`, and ordinary runs are unchanged:
+`agent.BattleMoveDecider` adapts a `DecisionEngine` to the existing
+`skill.MovePolicy` seam (move-only, falls back to the deterministic policy on
+any error or low confidence) but nothing installs it yet. Live consumers
+belong to #1456 (shadow mode).
+
+The battle suite is its own evaluation mode, separate from the planner suite
+and from live runs:
+
+```sh
+go run ./cmd/agent-eval -suite battle -list
+go run ./cmd/agent-eval -suite battle -backend decision -url http://localhost:8001/v1 -model qwen3.5-4b -json
+TYPESAFE_API_KEY=... go run ./cmd/agent-eval -suite battle -backend jev -model jev-latest -json
+```
+
 ## Telemetry
 
 Heartbeats persist typed-decision telemetry separately from the existing LLM
