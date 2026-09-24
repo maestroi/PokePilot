@@ -26,7 +26,9 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 		if artifact.Store == "" {
 			// Inline recordings can still have a derived MP4 in S3.
 			if artifact.Replayable && s.store != nil {
+				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
 				keySet[replayCacheKey(runID, artifact)] = struct{}{}
+				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
 			}
 			continue
 		}
@@ -57,7 +59,9 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 				prefixSet[prefix] = struct{}{}
 			} else {
 				keySet[key] = struct{}{}
+				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
 				keySet[replayCacheKey(runID, artifact)] = struct{}{}
+				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
 			}
 			continue
 		}
