@@ -14,7 +14,15 @@ import (
 const objectivePostconditionSettleBudget = 1200
 
 func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	return executeObjectiveWithAdapter(newRedObjectiveAdapter(m, romData), o)
+	return ExecuteWithAdapter(newRedObjectiveAdapter(m, romData), o)
+}
+
+func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
+	return executeObjective(m, romData, o)
+}
+
+func executeObjectiveResultWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
+	return ExecuteWithAdapter(newRedObjectiveAdapterWithRoutePriority(m, romData, priority), o)
 }
 
 func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
