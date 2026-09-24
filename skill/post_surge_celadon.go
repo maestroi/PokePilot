@@ -102,10 +102,10 @@ func postSurgePrerequisites(m *emu.Emu, policy MovePolicy) (state.Mem, error) {
 	return mem, nil
 }
 
-// PostSurgeReachLavender owns only the first bounded story leg after Surge:
-// repair/retain Cut and cross Route 9 + Rock Tunnel to Lavender. A resumed run
-// already on the west side of Lavender satisfies the stage without walking
-// backward just to replay its checkpoint.
+// PostSurgeReachLavender owns only the first bounded story leg after Surge.
+// Cut is a declared objective prerequisite; this skill only crosses Route 9 +
+// Rock Tunnel to Lavender. A resumed run already on the west side of Lavender
+// satisfies the stage without walking backward just to replay its checkpoint.
 func PostSurgeReachLavender(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	mem, err := postSurgePrerequisites(m, policy)
 	if err != nil {
@@ -117,9 +117,6 @@ func PostSurgeReachLavender(m *emu.Emu, romData []byte, policy MovePolicy) error
 	currentMap := state.DecodePlayer(&mem).MapID
 	if postSurgePastLavender(currentMap) {
 		return nil
-	}
-	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: PostSurgeReachLavender: prepare Cut carrier: %w", err)
 	}
 	lavender, ok := Place("lavender town")
 	if !ok {
@@ -160,9 +157,9 @@ func PostSurgeReachCeladon(m *emu.Emu, romData []byte, policy MovePolicy) error 
 	return nil
 }
 
-// PostSurgeDefeatErika is the final local stage. It revalidates Cut because
-// party/storage work can change the carrier between transactions, then owns
-// only the short Center/city -> Celadon Gym approach and Erika battle.
+// PostSurgeDefeatErika is the final local stage. Cut is revalidated by the
+// objective prerequisite contract before execution; this skill owns only the
+// short Center/city -> Celadon Gym approach and Erika battle.
 func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	mem, err := postSurgePrerequisites(m, policy)
 	if err != nil {
@@ -175,10 +172,6 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !postSurgeCeladonArea(currentMap) {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: Celadon-ready stage is incomplete from map %#04x", currentMap)
 	}
-	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: PostSurgeDefeatErika: prepare Cut carrier: %w", err)
-	}
-
 	city, ok := Place("celadon city")
 	if !ok {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: celadon city place missing")
