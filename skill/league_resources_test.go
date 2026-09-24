@@ -147,7 +147,6 @@ func TestPlanLeagueResourcesReportsInsufficientWithoutSpendingGuesswork(t *testi
 	}
 }
 
-
 func TestLeagueBetweenBattlePolicyHealsPartyAboveGenericFiftyPercentFloor(t *testing.T) {
 	romData := leagueTestROM(t, map[uint8]uint8{1: 20})
 	party := state.PartyState{Count: 1, Mons: []state.Mon{leagueMon(60, 100, 0, 1, 20)}}
