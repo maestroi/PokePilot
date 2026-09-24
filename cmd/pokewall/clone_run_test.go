@@ -33,6 +33,7 @@ func TestCloneRunCopiesExecutionSettingsAndRunPolicy(t *testing.T) {
 		"endless":true,
 		"random_seed":false,
 		"play_style":"completionist",
+		"purpose":"debug_coverage",
 		"risk_tolerance":"cautious",
 		"wild_encounters":"fight"
 	}`
@@ -88,8 +89,8 @@ func TestCloneRunCopiesExecutionSettingsAndRunPolicy(t *testing.T) {
 		t.Fatalf("queue = %#v", queue)
 	}
 
-	if clone.PlayStyle != "completionist" || clone.RiskTolerance != "cautious" || clone.WildEncounters != "fight" {
-		t.Fatalf("clone run policy = %q/%q/%q", clone.PlayStyle, clone.RiskTolerance, clone.WildEncounters)
+	if clone.PlayStyle != "completionist" || clone.Purpose != "debug_coverage" || clone.RiskTolerance != "cautious" || clone.WildEncounters != "fight" {
+		t.Fatalf("clone run policy = %q/%q/%q/%q", clone.PlayStyle, clone.Purpose, clone.RiskTolerance, clone.WildEncounters)
 	}
 
 	control, err := w.spectatorControlSnapshot(context.Background())
