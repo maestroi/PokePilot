@@ -34,7 +34,6 @@ func TestDecisionSettingsKeepsBackendAndFeatureFlagsIndependent(t *testing.T) {
 	}
 }
 
-
 func TestDecisionSettingsSelectsJevWithoutPersistingCredential(t *testing.T) {
 	t.Setenv("POKEPILOT_DECISION_BACKEND", "jev")
 	t.Setenv("POKEPILOT_DECISION_URL", "https://decision.example/v1")
