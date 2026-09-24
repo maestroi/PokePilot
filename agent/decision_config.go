@@ -50,6 +50,18 @@ func DecisionSettingsFromEnv() DecisionSettings {
 		settings.FailureRecovery = decisionEnvBool("POKEPILOT_DECISION_FAILURES", true)
 		settings.ObjectiveSelection = decisionEnvBool("POKEPILOT_DECISION_OBJECTIVES", false)
 		return settings
+	case "jev", "typesafe", "typesafe-jev", "system-one-jev", "system_one_jev":
+		engine := NewJevDecisionEngineFromEnv()
+		if value := strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_TIMEOUT")); value != "" {
+			if parsed, err := time.ParseDuration(value); err == nil && parsed > 0 {
+				engine.Timeout = parsed
+			}
+		}
+		settings.Engine = engine
+		settings.Backend = engine.Backend
+		settings.FailureRecovery = decisionEnvBool("POKEPILOT_DECISION_FAILURES", true)
+		settings.ObjectiveSelection = decisionEnvBool("POKEPILOT_DECISION_OBJECTIVES", false)
+		return settings
 	default:
 		// Unknown values deliberately leave the experimental backend disabled.
 		// They cannot silently replace the stable generative planner.

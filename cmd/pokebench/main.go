@@ -154,11 +154,16 @@ func decisionIdentity(settings agent.DecisionSettings) map[string]string {
 		"POKEPILOT_DECISION_OBJECTIVES":     strconv.FormatBool(settings.ObjectiveSelection),
 		"POKEPILOT_DECISION_FAILURES":       strconv.FormatBool(settings.FailureRecovery),
 	}
-	if engine, ok := settings.Engine.(*agent.OpenAIDecisionEngine); ok {
+	switch engine := settings.Engine.(type) {
+	case *agent.OpenAIDecisionEngine:
 		out["POKEPILOT_DECISION_URL"] = engine.BaseURL
 		out["POKEPILOT_DECISION_MODEL"] = engine.Model
 		out["POKEPILOT_DECISION_TIMEOUT"] = engine.Timeout.String()
 		out["POKEPILOT_DECISION_MAX_TOKENS"] = strconv.Itoa(engine.MaxTokens)
+	case *agent.JevDecisionEngine:
+		out["POKEPILOT_DECISION_URL"] = engine.BaseURL
+		out["POKEPILOT_DECISION_MODEL"] = engine.Model
+		out["POKEPILOT_DECISION_TIMEOUT"] = engine.Timeout.String()
 	}
 	return benchmark.SanitizeSettings(out)
 }

@@ -82,11 +82,16 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 		"typed_decision_failures":       strconv.FormatBool(stats.decision.FailureRecovery),
 		"typed_decision_min_confidence": fmt.Sprintf("%.3f", stats.decision.MinConfidence),
 	}
-	if engine, ok := stats.decision.Engine.(*agent.OpenAIDecisionEngine); ok {
+	switch engine := stats.decision.Engine.(type) {
+	case *agent.OpenAIDecisionEngine:
 		featureFlags["typed_decision_url"] = engine.BaseURL
 		featureFlags["typed_decision_model"] = engine.Model
 		featureFlags["typed_decision_timeout"] = engine.Timeout.String()
 		featureFlags["typed_decision_max_tokens"] = strconv.Itoa(engine.MaxTokens)
+	case *agent.JevDecisionEngine:
+		featureFlags["typed_decision_url"] = engine.BaseURL
+		featureFlags["typed_decision_model"] = engine.Model
+		featureFlags["typed_decision_timeout"] = engine.Timeout.String()
 	}
 
 	result := benchmark.Build(benchmark.BuildInput{
