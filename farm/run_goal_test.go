@@ -93,7 +93,7 @@ func TestHeldGoalNeverInventsADefault(t *testing.T) {
 	spec := Spec{RunID: "completionist", Planner: "llm", PlayStyle: "completionist"}
 	ApplyPlayStyleDefaultGoal(&spec)
 	goal, provided = HeldGoal(spec)
-	if !provided || goal != DefaultDexGoal {
-		t.Fatalf("HeldGoal(resolved style) = %q provided=%v, want %q", goal, provided, DefaultDexGoal)
+	if !provided || goal != DefaultEliteFourGoal {
+		t.Fatalf("HeldGoal(resolved style) = %q provided=%v, want %q", goal, provided, DefaultEliteFourGoal)
 	}
 }
