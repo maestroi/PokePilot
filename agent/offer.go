@@ -22,6 +22,10 @@ type Knowledge struct {
 	Adjacency     map[LocationID][]LocationID
 	Requirements  []Requirement
 	TrainingAreas map[LocationID]TrainingAreaKnowledge
+	// TrainingAreasBackfilled records that visited habitats were seeded once
+	// into TrainingAreas (see backfillVisitedTrainingAreas), so an area later
+	// forgotten as unreachable is not re-seeded.
+	TrainingAreasBackfilled bool
 
 	// Build is this process's running binary identity (e.g. a git SHA), set
 	// by the caller. Empty means unknown, which leaves failure tallies
@@ -443,6 +447,7 @@ func (k *Knowledge) restore(mem memoryFile) {
 	if k.TrainingAreas == nil {
 		k.TrainingAreas = map[LocationID]TrainingAreaKnowledge{}
 	}
+	k.TrainingAreasBackfilled = mem.TrainingAreasBackfilled
 	for _, area := range mem.TrainingAreas {
 		if area.Location != "" && area.Place != "" && area.MaxLevel > 0 {
 			k.TrainingAreas[area.Location] = area

@@ -190,6 +190,7 @@ func TestTrainingAreaKnowledgePersistsInMemory(t *testing.T) {
 	known.TrainingAreas[location] = TrainingAreaKnowledge{
 		Location: location, Place: "route 10", MinLevel: 13, MaxLevel: 17,
 	}
+	known.TrainingAreasBackfilled = true
 	data, err := encodeMemoryFile(known, "", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +204,9 @@ func TestTrainingAreaKnowledgePersistsInMemory(t *testing.T) {
 	got, ok := restored.TrainingAreas[location]
 	if !ok || got.Place != "route 10" || got.MinLevel != 13 || got.MaxLevel != 17 {
 		t.Fatalf("restored training areas = %+v", restored.TrainingAreas)
+	}
+	if !restored.TrainingAreasBackfilled {
+		t.Fatal("restored knowledge lost the one-shot backfill flag")
 	}
 }
 

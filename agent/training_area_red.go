@@ -127,12 +127,59 @@ func rankTrainingAreaAssessments(in []TrainingAreaAssessment) []TrainingAreaAsse
 	return out
 }
 
+// backfillVisitedTrainingAreas seeds TrainingAreas once from maps the run has
+// already visited. Knowledge written before habitats were learned (resumed
+// endless lineages) otherwise carries none, and combat preparation then has
+// no area to route to while every Fly lands in a grassless town. A visited
+// map is an observed habitat; its band is the same ROM encounter data
+// rememberTrainingArea records on arrival. Reachability is not proven here:
+// forgetUnreachedTrainingArea drops a seeded area whose journey lands without
+// grass, and the one-shot flag keeps it from being seeded again.
+func backfillVisitedTrainingAreas(romData []byte, obs Observation, known *Knowledge) {
+	if known == nil || known.TrainingAreasBackfilled || len(romData) == 0 {
+		return
+	}
+	known.TrainingAreasBackfilled = true
+	catalog := objectiveCatalogForObservation(obs)
+	for mapID, location := range known.nativeLocations {
+		if !known.Visited[location] {
+			continue
+		}
+		if _, ok := known.TrainingAreas[location]; ok {
+			continue
+		}
+		if grass, err := skill.HasGrass(romData, mapID); err != nil || !grass {
+			continue
+		}
+		wild, err := skill.WildGrass(romData, mapID)
+		if err != nil {
+			continue
+		}
+		band := make([]WildSpecies, 0, len(wild))
+		for _, w := range wild {
+			band = append(band, WildSpecies{MinLevel: w.MinLevel, MaxLevel: w.MaxLevel})
+		}
+		minLevel, maxLevel, ok := wildLevelBand(band)
+		place := trainingPlaceForLocation(catalog, location)
+		if !ok || place == "" {
+			continue
+		}
+		if known.TrainingAreas == nil {
+			known.TrainingAreas = map[LocationID]TrainingAreaKnowledge{}
+		}
+		known.TrainingAreas[location] = TrainingAreaKnowledge{
+			Location: location, Place: place, MinLevel: minLevel, MaxLevel: maxLevel,
+		}
+	}
+}
+
 // redTrainingAreaAssessments re-prices every legitimately learned habitat from
 // the current party state. Exact XP comes from the existing ROM encounter/base
 // yield estimator; route cost comes from the same live Travel/Fly stack used by
 // execution. Nothing is cached, so levels, carries, field moves and new world
 // knowledge immediately change the next round's ranking.
 func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) []TrainingAreaAssessment {
+	backfillVisitedTrainingAreas(romData, obs, known)
 	if m == nil || known == nil || len(known.TrainingAreas) == 0 || len(obs.Party) == 0 {
 		return nil
 	}
