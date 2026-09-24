@@ -209,6 +209,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
@@ -241,7 +242,13 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// the failure budget untouched. Genuine repeated navigation/controller
 	// failures still use the bounded policy below, and watchdog/round/frame
 	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite {
+	if routePrerequisite || trainingInefficient {
+		// A local training-area rejection is the same class of planning
+		// boundary as a missing route prerequisite: the executor deliberately
+		// sent no gameplay input because this area cannot satisfy the requested
+		// training rung within the bounded session. Quarantine/replanning owns
+		// the response; spending the fatal mechanical-failure budget here makes
+		// a healthy search for a better area terminate as "recovery exhausted".
 		decision := runFailureDecision{Recovered: true}
 		if strategic {
 			decision.ReplanReason = "objective_failed"

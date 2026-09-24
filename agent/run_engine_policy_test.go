@@ -183,6 +183,41 @@ func TestRunFailurePolicyRoutePrerequisiteDoesNotSpendFailureBudget(t *testing.T
 	}
 }
 
+func TestRunFailurePolicyTrainingInefficientDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindTrain, Species: SpeciesID("venusaur"), Level: 55}
+	result := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "training_inefficient_area",
+			Recoverable: true,
+		},
+		Final: Observation{Map: 0x23, X: 7, Y: 6},
+	}
+
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || got.ReplanReason != "objective_failed" || !got.Recovered {
+			t.Fatalf("training-area rejection %d = %+v; want recovered strategic replan", i+1, got)
+		}
+	}
+
+	mechanical := result
+	mechanical.Failure = &gameruntime.Failure{
+		Class:       gameruntime.FailureClassBlocked,
+		Cause:       "navigation_stalled",
+		Recoverable: true,
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {
+		t.Fatalf("first mechanical failure after training rejections = %+v; want recovered", got)
+	}
+	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopFailed {
+		t.Fatalf("repeated mechanical failure = %+v; want StopFailed", got)
+	}
+}
+
 func TestRunFailurePolicyConsecutiveFailuresAndSuccessReset(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	firstObj := Objective{Kind: KindGoTo, Place: "route 1"}
