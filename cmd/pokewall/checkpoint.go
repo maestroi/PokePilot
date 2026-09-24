@@ -37,7 +37,7 @@ func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 		w.handleCheckpointResume(res, id, report.Attempt)
 		return
 	}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: report.Artifacts}); err != nil {
+	if err := farm.ValidateCheckpointReport(report); err != nil {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -349,8 +349,20 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 	return farm.ResumeCheckpoint{State: stateArt}, nil
 }
 
+// latestLineageResumeCheckpoint returns the deepest usable ordinary checkpoint
+// in a run's lineage. The frame embedded in the checkpoint name is cumulative
+// emulator progress, so it is the only comparable ordering across attempts:
+// picking the newest attempt instead would let an attempt that booted fresh —
+// and therefore wrote only early checkpoints before dying — outrank the deep
+// progress an earlier attempt actually reached, and the recovery would quietly
+// replay hours of gameplay. Attempts are searched newest-first so an equally
+// deep candidate still prefers the most recent one, and a candidate that cannot
+// be read is skipped rather than ending the search.
 func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.ResumeCheckpoint, error) {
 	seen := map[string]struct{}{}
+	var best farm.ResumeCheckpoint
+	bestFrame := uint64(0)
+	found := false
 	id := startID
 	for id != "" {
 		if _, dup := seen[id]; dup {
@@ -370,13 +382,19 @@ func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.Resu
 			cp, err := latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, attempt), planner)
 			if err == nil {
 				cp.Attempt = attempt
-				return cp, nil
+				if frame := objectiveFrame(cp.State.Name); !found || frame > bestFrame {
+					best, bestFrame, found = cp, frame, true
+				}
+				continue
 			}
 			if !os.IsNotExist(err) {
 				return farm.ResumeCheckpoint{}, err
 			}
 		}
 		id = parent
+	}
+	if found {
+		return best, nil
 	}
 	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
@@ -524,12 +542,19 @@ func checkpointArtifact(dir, name, mediaType string) (farm.Artifact, error) {
 		return farm.Artifact{}, err
 	}
 	sum := sha256.Sum256(data)
-	return farm.Artifact{
+	art := farm.Artifact{
 		Name:      name,
 		MediaType: mediaType,
 		SHA256:    hex.EncodeToString(sum[:]),
 		Data:      data,
-	}, nil
+	}
+	// A state that is no longer a complete save must never be served as a
+	// resume candidate: the caller skips it and keeps looking for an older
+	// usable pair, so a truncated file cannot restart a run from scratch.
+	if err := farm.ValidateCheckpointState(art); err != nil {
+		return farm.Artifact{}, err
+	}
+	return art, nil
 }
 
 func checkpointAttemptDir(dumpsDir, runID string, attempt int) string {

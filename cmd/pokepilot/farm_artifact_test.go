@@ -593,3 +593,53 @@ func TestFinishIncludesRAMForensicsBundles(t *testing.T) {
 		}
 	}
 }
+
+// TestUploaderRefusesToPublishEmptyState is the runner's publication guard. A
+// 0-byte objective state is a leftover from a build that truncated in place;
+// uploading it replaces the wall's newest usable checkpoint with one no run can
+// load, which is what turned a single mid-write read into a permanent fresh
+// start. A complete pair in the same directory must still upload.
+func TestUploaderRefusesToPublishEmptyState(t *testing.T) {
+	dir := t.TempDir()
+	emptyState := "round-001-frame-0000100000-goto.state"
+	writePair(t, dir, emptyState, nil, []byte(`{"intent":"poisoned"}`))
+	usableState := "round-002-frame-0000200000-goto.state"
+	writePair(t, dir, usableState, []byte("complete-emulator-state"), []byte(`{"intent":"usable"}`))
+
+	var published []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runs/poisoned/checkpoint" {
+			http.NotFound(w, r)
+			return
+		}
+		var report farm.CheckpointReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode checkpoint: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, a := range report.Artifacts {
+			if strings.HasSuffix(a.Name, ".state") {
+				published = append(published, a.Name)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	uploaded := map[string]struct{}{}
+	uploadNewObjectivePairs(farm.NewClient(srv.URL), "poisoned", 1, dir, uploaded)
+
+	for _, name := range published {
+		if name == emptyState {
+			t.Fatalf("uploader published the empty state %s", name)
+		}
+	}
+	if len(published) != 1 || published[0] != usableState {
+		t.Fatalf("published states = %v, want just %s", published, usableState)
+	}
+	if _, ok := uploaded[emptyState]; !ok {
+		t.Fatal("empty state was not retired, so every scan retries it forever")
+	}
+}
