@@ -56,23 +56,34 @@ object key from pokewall. There is no generic arbitrary-key S3 endpoint.
 `run.gbrun` is canonical. MP4 is a disposable derived cache.
 
 1. The UI requests `POST /v1/runs/{id}/replay/render`.
-2. pokereplay resolves `run.gbrun` from pokewall.
+2. pokereplay resolves `run.gbrun` and the matching `media-timeline.json`
+   generation from pokewall.
 3. It downloads the recording, verifies the artifact SHA-256, and invokes
    `gomeboy-stream` with the read-only Pokémon Red ROM.
 4. GomeBoy restores the checked start state, replays the recorded input timeline,
    and rejects a ROM/model/state/final-hash mismatch.
-5. FFmpeg encodes the regenerated frames to MP4.
-6. The MP4 is uploaded to the same S3 attempt directory under an immutable key:
+5. The broadcast compositor combines the regenerated game frames with
+   deterministic objective, location, badge, party, planner, elapsed-time, and
+   semantic-event overlays. Older runs without a media timeline still render
+   with unavailable telemetry instead of becoming unreplayable.
+6. FFmpeg encodes the composed 1280x720 scene to MP4.
+7. The MP4 is uploaded beside the recording under a renderer-versioned immutable
+   cache key, so layout changes can re-render historical runs without colliding
+   with an older presentation.
 
-   `replay-<first-12-recording-sha256>.mp4`
-
-7. `GET /v1/runs/{id}/replay/video` streams the cached MP4 with HTTP Range
+8. `GET /v1/runs/{id}/replay/video` streams the cached MP4 with HTTP Range
    semantics, so the browser's normal `<video>` controls can seek.
 
 Replay status is available from `GET /v1/runs/{id}/replay/status` with states
-`missing`, `generating`, `ready`, `error`, or `disabled`.
+`missing`, `generating`, `ready`, `error`, or `disabled`. Broadcast is
+the default mode for status, render, and video. Adding `?mode=raw` to those
+three endpoints preserves the game-only renderer and its legacy
+`replay-<first-12-recording-sha256>.mp4` cache identity for debugging and
+backwards compatibility.
 
-Deleting a derived MP4 is safe; it can be regenerated from `run.gbrun`.
+Deleting a derived MP4 is safe; it can be regenerated from `run.gbrun`. A
+compositor failure only fails the derived replay job; it never mutates the
+source run or recording.
 
 ## MCP tools for debugging agents
 
