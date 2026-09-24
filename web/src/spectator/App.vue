@@ -615,6 +615,7 @@ function activityTimeAgo(item: ActivityItem): string {
               </span>
               <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
               <span class="mode-chip">{{ playStyleLabel(selectedRun) }}</span>
+              <span v-if="selectedRun.purpose === 'debug_coverage'" class="mode-chip">Debug coverage</span>
             </div>
 
             <div class="mt-4 flex items-start gap-3">
