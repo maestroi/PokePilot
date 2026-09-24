@@ -447,7 +447,16 @@ func combatRetryMatchesObjective(ready map[ObjectiveKey]bool, o Objective) bool 
 
 func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective {
 	retryKeys := combatRetryKeys(known)
-	retryDue := len(retryKeys) > 0
+	// A retry withholds further training only while it is actually offered. A
+	// marker whose objective is not on the menu cannot be tested now, and must
+	// not starve a later combat-loss campaign of its only recovery path.
+	retryDue := false
+	for _, o := range out {
+		if combatRetryMatchesObjective(retryKeys, o) {
+			retryDue = true
+			break
+		}
+	}
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {

@@ -105,6 +105,25 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 	}
 }
 
+// A retry-ready marker withholds Train only while that retry is offered.
+// Farm run-37cujg278a7w8s2dlpbnqu2jb kept an early Viridian Center retry
+// marker, lost the Champion later, and then ping-ponged between the League
+// and its best training area forever because every Train offer was filtered.
+func TestUnofferedCombatRetryDoesNotStarveTraining(t *testing.T) {
+	known := NewKnowledge(nil)
+	heal := Objective{Kind: KindHeal, Place: "viridian pokemon center"}
+	known.Failures[combatRetryReadyKey(heal)] = Failure{Objective: heal.String(), Times: 1}
+	champion := Objective{Kind: KindProgress, Progress: "league_champion_defeated"}
+	known.Failures[combatLossFailureKey(champion)] = Failure{Objective: champion.String(), Times: 1, ReadinessBaseline: 285, ReadinessTarget: 305}
+
+	if !hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}}, known), KindTrain) {
+		t.Fatal("an unoffered retry marker blocked Train while combat preparation still needs readiness")
+	}
+	if hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}, heal}, known), KindTrain) {
+		t.Fatal("an offered retry should still take precedence over another Train rung")
+	}
+}
+
 // TestGymRetryDueWithholdsFurtherTraining pins the live runaway shown by the
 // spectator run: after Brock had already proved the party too weak, the model
 // kept selecting two-level Train rungs until Ivysaur reached L22 while badge
