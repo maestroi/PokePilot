@@ -31,6 +31,7 @@ const (
 	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
 	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
 	ProgressRainbowBadge               game.ProgressID = "rainbow_badge"
+	ProgressMarshBadge                 game.ProgressID = "marsh_badge"
 	ProgressSilphScopeAcquired         game.ProgressID = "silph_scope_acquired"
 	ProgressPokeFluteAcquired          game.ProgressID = "poke_flute_acquired"
 	ProgressFuchsiaProgressionComplete game.ProgressID = "fuchsia_progression_complete"
@@ -278,6 +279,7 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
 		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem))},
 		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
+		game.ProgressFact{ID: ProgressMarshBadge, Complete: badges.Has(state.BadgeMarsh)},
 		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		game.ProgressFact{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
 		game.ProgressFact{ID: ProgressVictoryRoadCleared, Complete: victoryRoadCleared},
