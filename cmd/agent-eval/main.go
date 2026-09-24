@@ -35,10 +35,10 @@ func run() int {
 	jsonOut := flag.Bool("json", false, "write the report as JSON")
 	minScore := flag.Float64("min-score", 0, "exit 1 when score is below this 0..1 threshold; 0 only measures")
 	goal := flag.String("goal", "Make safe, efficient progress toward completing Pokemon Red.", "task statement supplied to the planner for every fixture")
-	backend := flag.String("backend", "llm", "planner backend: llm or decision")
+	backend := flag.String("backend", "llm", "planner backend: llm, decision, or jev")
 	model := flag.String("model", "", "override the selected backend model for this run")
-	baseURL := flag.String("url", "", "override the selected backend OpenAI-compatible URL for this run")
-	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for -backend decision, reject choices below this 0..1 confidence; 0 scores every valid decision")
+	baseURL := flag.String("url", "", "override the selected backend URL for this run")
+	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for typed backends, reject choices below this 0..1 confidence; 0 scores every valid decision")
 	flag.Parse()
 
 	if *minScore < 0 || *minScore > 1 {
@@ -109,14 +109,34 @@ func run() int {
 		backendName = "decision"
 		modelName = engine.Model
 		promptHash = agent.DecisionPromptHash()
+	case "jev", "typesafe", "typesafe-jev":
+		engine := agent.NewJevDecisionEngineFromEnv()
+		if *model != "" {
+			engine.Model = *model
+		}
+		if *baseURL != "" {
+			engine.BaseURL = *baseURL
+		}
+		decisionPlanner = &agent.DecisionObjectivePlanner{
+			Engine:        engine,
+			Goal:          *goal,
+			MinConfidence: *decisionMinConfidence,
+		}
+		planner = decisionPlanner
+		backendName = "jev"
+		modelName = engine.Model
+		promptHash = agent.JevDecisionPromptHash()
 	default:
-		fmt.Fprintf(os.Stderr, "agent-eval: unknown -backend %q; want llm or decision\n", *backend)
+		fmt.Fprintf(os.Stderr, "agent-eval: unknown -backend %q; want llm, decision, or jev\n", *backend)
 		return 2
 	}
 
 	started := time.Now()
 	report := agent.EvaluatePlanner(planner, cases)
 	elapsed := time.Since(started)
+	if decisionPlanner != nil && decisionPlanner.Last.Model != "" {
+		modelName = decisionPlanner.Last.Model
+	}
 	promptTokens, completionTokens := 0, 0
 	if usage, ok := planner.(agent.UsagePlanner); ok {
 		promptTokens, completionTokens = usage.Usage()

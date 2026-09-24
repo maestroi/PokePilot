@@ -20,6 +20,22 @@ The decision endpoint is independent of `POKEPILOT_LLM_URL` and
 back to those LLM variables only as a convenience, so one process can point the
 strategist and the typed decision engine at different deployments.
 
+Enable the hosted TypeSafe Jev backend with:
+
+```sh
+export POKEPILOT_DECISION_BACKEND=jev
+export TYPESAFE_API_KEY=...
+# Optional overrides:
+# export POKEPILOT_DECISION_MODEL=jev-latest
+# export POKEPILOT_DECISION_URL=https://api.typesafe.ai/v1
+```
+
+The Jev adapter calls the System One `choice` API directly over HTTP; no Jev SDK
+is required for ordinary builds or runs. `POKEPILOT_DECISION_TOKEN` overrides
+`TYPESAFE_API_KEY` when set. Credentials live only in process environment /
+runtime engine state and are never written to benchmark settings, run specs, or
+typed-decision telemetry.
+
 Feature switches:
 
 - `POKEPILOT_DECISION_FAILURES` defaults to on when a decision backend is
@@ -31,10 +47,12 @@ Feature switches:
 - `POKEPILOT_DECISION_MIN_CONFIDENCE` defaults to `0.65`. A lower-confidence
   answer is recorded and falls back to the existing deterministic/generative
   path.
-- `POKEPILOT_DECISION_TIMEOUT` and `POKEPILOT_DECISION_MAX_TOKENS` tune the
-  local request independently.
-- `POKEPILOT_DECISION_TOKEN` is the optional bearer token. It falls back to
-  `llm_token` when omitted.
+- `POKEPILOT_DECISION_TIMEOUT` tunes either decision backend.
+  `POKEPILOT_DECISION_MAX_TOKENS` applies only to the OpenAI-compatible
+  backend.
+- `POKEPILOT_DECISION_TOKEN` is the optional bearer token. The
+  OpenAI-compatible backend falls back to `llm_token`; Jev falls back to the
+  official `TYPESAFE_API_KEY` environment variable.
 
 The OpenAI-compatible implementation requests strict JSON containing one
 declared choice plus a complete probability distribution. PokePilot validates
@@ -86,6 +104,12 @@ Typed decision path against the same endpoint/model:
 
 ```sh
 go run ./cmd/agent-eval -backend decision -url http://localhost:8001/v1 -model qwen3.5-4b -json
+```
+
+Hosted Jev path against the same ROM-free fixtures:
+
+```sh
+TYPESAFE_API_KEY=... go run ./cmd/agent-eval -backend jev -model jev-latest -json
 ```
 
 Each report includes pass score, wall-clock duration, prompt/completion token
