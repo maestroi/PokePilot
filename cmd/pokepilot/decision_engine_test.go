@@ -1,0 +1,44 @@
+package main
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/farm"
+)
+
+func TestDecisionSelectionForRunSpec(t *testing.T) {
+	if got := decisionSelectionFor(nil); got != (agent.DecisionSelection{}) {
+		t.Fatalf("nil selection = %+v, want runner default", got)
+	}
+	got := decisionSelectionFor(&farm.DecisionEngineSpec{Backend: "TypeSafe", Objectives: true, Failures: true, MinConfidence: 0.7})
+	want := agent.DecisionSelection{Backend: farm.DecisionBackendJev, ObjectiveSelection: true, FailureRecovery: true, MinConfidence: 0.7}
+	if got != want {
+		t.Fatalf("selection = %+v, want %+v", got, want)
+	}
+	// A backend this runner does not know must fail resolution, never fall
+	// back to the environment default.
+	t.Setenv("POKEPILOT_DECISION_BACKEND", "")
+	if _, err := agent.DecisionSettingsFor(decisionSelectionFor(&farm.DecisionEngineSpec{Backend: "future-engine"})); !errors.Is(err, agent.ErrDecisionDisabled) {
+		t.Fatalf("unknown backend err = %v", err)
+	}
+}
+
+func TestFarmRunAppliesRunDecisionSelection(t *testing.T) {
+	src, err := os.ReadFile("farm.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	for _, want := range []string{
+		"agent.DecisionSettingsFor(decisionSelectionFor(spec.DecisionEngine))",
+		"stats.decision = decision",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("runFarmLLM no longer contains %q", want)
+		}
+	}
+}

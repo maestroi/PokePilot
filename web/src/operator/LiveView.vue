@@ -23,6 +23,7 @@ import {
   railFacts,
   railStatusLabel,
   reasoningEffortLabel,
+  decisionEngineLabel,
   starterLabel,
   statNumber,
   statsLine,
@@ -189,6 +190,7 @@ const settingsRows = computed(() => {
     rows.push(
       ['model', llmProfileLabel(run)],
       ['reasoning', reasoningEffortLabel(run)],
+      ['decision engine', decisionEngineLabel(run)],
       ['recovery mode', run.recovery_profile || 'strict']
     )
   } else {

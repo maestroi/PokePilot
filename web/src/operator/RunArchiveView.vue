@@ -20,6 +20,7 @@ import {
   safeIssueURL
 } from './runs'
 import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
+import { decisionEngineLabel } from './operations'
 
 const PAGE_SIZE = 25
 
@@ -641,6 +642,7 @@ function experimentLabel(run: DashboardRun): string {
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Compute</dt><dd class="text-slate-300">{{ computeName(run) || '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Quantization</dt><dd class="text-slate-300">{{ run.inference?.quantization || '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Reasoning</dt><dd class="text-slate-300">{{ run.reasoning_effort || 'default' }}</dd></div>
+                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Decisions</dt><dd class="text-slate-300">{{ decisionEngineLabel(run) }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Seed</dt><dd class="font-mono text-slate-300">{{ run.seed ?? '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Experiment</dt><dd class="text-slate-300">{{ experimentLabel(run) || '—' }}</dd></div>
                       </dl>

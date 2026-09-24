@@ -34,6 +34,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		ExperimentArm:      t.ExperimentArm,
 		ExperimentCase:     t.ExperimentCase,
 		ReasoningEffort:    t.ReasoningEffort,
+		DecisionEngine:     t.DecisionEngine.Clone(),
 		Seed:               t.Seed,
 		FPS:                t.FPS,
 		MaxRounds:          t.MaxRounds,

@@ -56,6 +56,7 @@ func (w *Wall) handleCloneRun(res http.ResponseWriter, req *http.Request) {
 		LLMProfile:      source.LLMProfile,
 		LLMDeployment:   source.LLMDeployment,
 		ReasoningEffort: source.ReasoningEffort,
+		DecisionEngine:  source.DecisionEngine.Clone(),
 		FPS:             source.FPS,
 		MaxRounds:       source.MaxRounds,
 		MaxFrames:       source.MaxFrames,
