@@ -26,7 +26,15 @@ func (s *replayServer) mediaTimeline(ctx context.Context, runID string) (farm.Me
 }
 
 func (s *replayServer) mediaTimelineAttempt(ctx context.Context, runID string, attempt int) (farm.MediaTimeline, error) {
+	resolvedAttempt := attempt
 	list, err := s.artifactsAttempt(ctx, runID, attempt)
+	if errors.Is(err, errRunNotFound) && attempt == 1 {
+		// Pre-attempt-history runs only expose the latest artifact generation.
+		// Their recording is still replayable, so let the broadcast renderer
+		// consume that same legacy artifact catalog without an attempt query.
+		resolvedAttempt = 0
+		list, err = s.artifacts(ctx, runID)
+	}
 	if err != nil {
 		return farm.MediaTimeline{}, err
 	}
@@ -34,7 +42,7 @@ func (s *replayServer) mediaTimelineAttempt(ctx context.Context, runID string, a
 	if !ok {
 		return farm.MediaTimeline{}, errMediaTimelineNotFound
 	}
-	data, err := s.readMediaTimelineArtifact(ctx, runID, artifact, attempt)
+	data, err := s.readMediaTimelineArtifact(ctx, runID, artifact, resolvedAttempt)
 	if err != nil {
 		return farm.MediaTimeline{}, err
 	}
