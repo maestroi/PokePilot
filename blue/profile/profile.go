@@ -47,3 +47,7 @@ func (p *Profile) DecodeBootState(r game.MemoryReader) game.BootState {
 func (p *Profile) DecodeObservation(r game.MemoryReader, rom []byte) (game.ProfileObservation, error) {
 	return p.engine.DecodeObservation(r, rom)
 }
+
+func (p *Profile) BuildDexCatalog(rom []byte, owned, seen []game.SpeciesID) (game.DexCatalog, error) {
+	return p.engine.BuildDexCatalog(rom, owned, seen)
+}
