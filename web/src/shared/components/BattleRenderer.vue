@@ -18,9 +18,9 @@ function hpPercent(actor: RenderBattleActor | undefined): number {
 
 function hpColor(actor: RenderBattleActor | undefined): string {
   const pct = hpPercent(actor)
-  if (pct <= 20) return props.theme.battle.hpDanger || '#fb7185'
-  if (pct <= 50) return props.theme.battle.hpWarn || '#fbbf24'
-  return props.theme.battle.hpHealthy || '#34d399'
+  if (pct <= 20) return props.theme.battle.hpDanger || '#d84018'
+  if (pct <= 50) return props.theme.battle.hpWarn || '#d8b838'
+  return props.theme.battle.hpHealthy || '#58a838'
 }
 
 function actorLabel(actor: RenderBattleActor | undefined): string {
@@ -28,112 +28,106 @@ function actorLabel(actor: RenderBattleActor | undefined): string {
 }
 
 function levelLabel(actor: RenderBattleActor | undefined): string {
-  return actor?.level ? `Lv ${actor.level}` : ''
+  return actor?.level ? `Lv${actor.level}` : ''
 }
 
 function movePP(move: RenderBattleMove): string {
-  if (move.max_pp) return `${move.pp || 0}/${move.max_pp} PP`
-  return `${move.pp || 0} PP`
+  if (move.max_pp) return `PP ${move.pp || 0}/${move.max_pp}`
+  return `PP ${move.pp || 0}`
 }
 </script>
 
 <template>
   <div
-    class="absolute inset-0 overflow-hidden"
-    :style="{
-      background: theme.battle.background || 'linear-gradient(180deg,#d9f0dd 0%,#9bc3ab 48%,#355568 100%)',
-      color: theme.ui.text
-    }"
-    aria-label="Modern battle view"
+    class="absolute inset-0 overflow-hidden font-mono"
+    :style="{ background: theme.battle.background, color: theme.ui.text }"
+    aria-label="Gold and Silver battle view"
   >
-    <div class="absolute inset-0 opacity-35" :style="{ background: 'radial-gradient(circle at 50% 35%, ' + theme.ui.accent + '55, transparent 42%)' }" />
-
-    <div class="absolute inset-x-0 top-0 flex items-start justify-between p-5 sm:p-7">
-      <div
-        class="min-w-44 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-md sm:min-w-56"
-        :style="{ background: theme.battle.panel || theme.ui.panel, borderColor: theme.battle.opponentAccent || theme.ui.accent }"
-      >
+    <div class="absolute inset-x-0 top-0 flex items-start justify-between gap-5 p-4 sm:p-6">
+      <section class="gen2-panel min-w-44 p-3 sm:min-w-56" :style="{ background: theme.battle.panel || theme.ui.panel }">
         <div class="flex items-center justify-between gap-3">
-          <div class="truncate text-sm font-black tracking-wide text-white">{{ actorLabel(opponent) }}</div>
-          <div class="shrink-0 font-mono text-[10px] font-bold text-white/60">{{ levelLabel(opponent) }}</div>
+          <strong class="truncate text-xs uppercase tracking-wide">{{ actorLabel(opponent) }}</strong>
+          <span class="shrink-0 text-[10px] font-bold">{{ levelLabel(opponent) }}</span>
         </div>
-        <div class="mt-2 h-2 overflow-hidden rounded-full bg-black/35">
-          <div class="h-full rounded-full transition-[width] duration-200" :style="{ width: hpPercent(opponent) + '%', background: hpColor(opponent) }" />
+        <div class="mt-2 grid grid-cols-[auto_1fr] items-center gap-2">
+          <span class="text-[9px] font-bold">HP:</span>
+          <div class="h-2 border-2 border-[#202020] bg-[#202020]">
+            <div class="h-full transition-[width] duration-150" :style="{ width: hpPercent(opponent) + '%', background: hpColor(opponent) }" />
+          </div>
         </div>
-        <div class="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-white/55">
-          <span>{{ opponent?.status || 'healthy' }}</span>
-          <span>{{ opponent?.hp || 0 }}/{{ opponent?.max_hp || 0 }}</span>
-        </div>
-      </div>
+        <div class="mt-1 text-right text-[9px]">{{ opponent?.status || '' }}</div>
+      </section>
 
       <PokemonSprite
         v-if="opponent"
         :name="opponent.appearance || opponent.name || ''"
-        :size="128"
+        :size="136"
         :fainted="opponent.defeated"
         class="battle-pokemon"
       />
     </div>
 
-    <div class="absolute inset-x-0 bottom-0 grid gap-4 p-5 sm:grid-cols-[minmax(0,1fr)_minmax(16rem,.8fr)] sm:p-7">
-      <div class="flex items-end gap-4">
+    <div class="absolute inset-x-0 bottom-0 grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(17rem,.85fr)] sm:p-6">
+      <div class="flex items-end gap-3">
         <PokemonSprite
           v-if="player"
           :name="player.appearance || player.name || ''"
-          :size="144"
+          :size="148"
           :fainted="player.defeated"
-          class="battle-pokemon battle-player"
+          back
+          class="battle-pokemon"
         />
-        <div
-          class="mb-2 min-w-0 flex-1 rounded-2xl border px-4 py-3 shadow-2xl backdrop-blur-md"
-          :style="{ background: theme.battle.panel || theme.ui.panel, borderColor: theme.battle.playerAccent || theme.ui.accent }"
-        >
+        <section class="gen2-panel mb-2 min-w-0 flex-1 p-3" :style="{ background: theme.battle.panel || theme.ui.panel }">
           <div class="flex items-center justify-between gap-3">
-            <div class="truncate text-sm font-black tracking-wide text-white">{{ actorLabel(player) }}</div>
-            <div class="shrink-0 font-mono text-[10px] font-bold text-white/60">{{ levelLabel(player) }}</div>
+            <strong class="truncate text-xs uppercase tracking-wide">{{ actorLabel(player) }}</strong>
+            <span class="shrink-0 text-[10px] font-bold">{{ levelLabel(player) }}</span>
           </div>
-          <div class="mt-2 h-2 overflow-hidden rounded-full bg-black/35">
-            <div class="h-full rounded-full transition-[width] duration-200" :style="{ width: hpPercent(player) + '%', background: hpColor(player) }" />
+          <div class="mt-2 grid grid-cols-[auto_1fr] items-center gap-2">
+            <span class="text-[9px] font-bold">HP:</span>
+            <div class="h-2 border-2 border-[#202020] bg-[#202020]">
+              <div class="h-full transition-[width] duration-150" :style="{ width: hpPercent(player) + '%', background: hpColor(player) }" />
+            </div>
           </div>
-          <div class="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-white/55">
-            <span>{{ player?.status || 'healthy' }}</span>
-            <span>{{ player?.hp || 0 }}/{{ player?.max_hp || 0 }}</span>
+          <div class="mt-1 flex justify-between text-[9px]">
+            <span>{{ player?.status || '' }}</span>
+            <span>{{ player?.hp || 0 }} / {{ player?.max_hp || 0 }}</span>
           </div>
-        </div>
+        </section>
       </div>
 
-      <div
-        class="grid content-end gap-2 rounded-2xl border p-3 shadow-2xl backdrop-blur-md"
-        :style="{ background: theme.battle.panel || theme.ui.panel, borderColor: 'rgba(255,255,255,.12)' }"
-      >
-        <div class="mb-1 flex items-center justify-between px-1 text-[9px] font-black uppercase tracking-[.12em] text-white/45">
+      <section class="gen2-panel grid content-end gap-2 p-3" :style="{ background: theme.battle.panel || theme.ui.panel }">
+        <div class="flex items-center justify-between text-[9px] font-bold uppercase">
           <span>{{ state.battle?.kind || 'battle' }}</span>
-          <span>{{ state.battle?.phase || 'action' }}</span>
+          <span>{{ state.battle?.phase || 'fight' }}</span>
         </div>
-        <div v-if="moves.length" class="grid grid-cols-2 gap-2">
+        <div v-if="moves.length" class="grid grid-cols-2 border-l-2 border-t-2 border-[#202020]">
           <div
             v-for="move in moves"
             :key="move.id || move.name"
-            class="rounded-xl border px-3 py-2.5"
+            class="border-r-2 border-b-2 border-[#202020] px-2 py-2"
             :class="move.disabled ? 'opacity-40' : ''"
-            :style="{ background: 'rgba(255,255,255,.045)', borderColor: 'rgba(255,255,255,.09)' }"
           >
-            <div class="truncate text-xs font-black text-white">{{ move.name || move.id || 'Move' }}</div>
-            <div class="mt-1 text-[9px] font-semibold text-white/45">{{ movePP(move) }}<span v-if="move.disabled"> · disabled</span></div>
+            <div class="truncate text-[11px] font-bold uppercase">{{ move.name || move.id || 'Move' }}</div>
+            <div class="mt-1 text-[9px]">{{ movePP(move) }}</div>
           </div>
         </div>
-        <div v-else class="rounded-xl bg-black/15 px-3 py-4 text-center text-xs font-semibold text-white/45">
+        <div v-else class="border-2 border-[#202020] px-3 py-4 text-center text-[10px]">
           Waiting for battle actions…
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <style scoped>
+.gen2-panel {
+  border: 3px solid #202020;
+  box-shadow: inset 0 0 0 2px #f8f8d8, 4px 4px 0 rgba(0, 0, 0, .28);
+}
+
 .battle-pokemon {
   border: 0;
   background: transparent;
-  filter: drop-shadow(0 18px 20px rgba(0,0,0,.24));
+  filter: drop-shadow(4px 5px 0 rgba(0,0,0,.18));
 }
 </style>

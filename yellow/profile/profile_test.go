@@ -43,19 +43,25 @@ func TestIdentityIsYellow(t *testing.T) {
 	}
 }
 
-func TestPhase0DoesNotAdvertiseUnimplementedCapabilities(t *testing.T) {
+func TestPhase4AdvertisesOnlyImplementedCapabilities(t *testing.T) {
 	p := New()
 	for _, feature := range []game.ProfileFeature{
 		game.FeatureMapParsing,
 		game.FeatureInventory,
 		game.FeatureStoryProgress,
+		game.FeatureSemanticSpecies,
+	} {
+		if !p.Features().Has(feature) {
+			t.Errorf("Yellow profile missing implemented capability %q", feature)
+		}
+	}
+	for _, feature := range []game.ProfileFeature{
 		game.FeatureBattles,
 		game.FeatureFieldMoves,
 		game.FeatureTrainerFlags,
-		game.FeatureSemanticSpecies,
 	} {
 		if p.Features().Has(feature) {
-			t.Errorf("phase-0 Yellow profile unexpectedly advertises %q", feature)
+			t.Errorf("Yellow profile unexpectedly advertises unimplemented %q", feature)
 		}
 	}
 }
@@ -86,6 +92,62 @@ func TestDecodeObservationReadsYellowPlayerBaseline(t *testing.T) {
 	}
 }
 
+func TestDecodeObservationProjectsYellowPartyMoneyAndBadges(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.CurMap] = 0x26
+	mem[sym.CurMapHeight] = 4
+	mem[sym.CurMapWidth] = 4
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+0x00] = 0x54 // Pikachu
+	mem[base+0x01], mem[base+0x02] = 0x00, 0x23
+	mem[base+0x04] = 1 << 6 // paralyzed
+	mem[base+0x0e], mem[base+0x0f], mem[base+0x10] = 0x01, 0x02, 0x03
+	mem[base+0x21] = 12
+	mem[base+0x22], mem[base+0x23] = 0x00, 0x30
+	mem[sym.PlayerMoney], mem[sym.PlayerMoney+1], mem[sym.PlayerMoney+2] = 0x12, 0x34, 0x56
+	mem[sym.ObtainedBadges] = 0b00000101
+	mem[sym.NumBagItems] = 2
+	mem[sym.BagItems], mem[sym.BagItems+1] = 0x04, 7
+	mem[sym.BagItems+2], mem[sym.BagItems+3] = 0x14, 3
+
+	obs, err := New().DecodeObservation(&mem, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !obs.Controllable {
+		t.Fatal("Yellow bedroom observation should be controllable")
+	}
+	if len(obs.Party) != 1 || obs.Party[0].Species != "pikachu" || obs.Party[0].Level != 12 {
+		t.Fatalf("party = %+v", obs.Party)
+	}
+	if obs.Party[0].Experience != 0x010203 || obs.Party[0].HP != 0x23 || obs.Party[0].MaxHP != 0x30 || obs.Party[0].Status != "paralyzed" {
+		t.Fatalf("Pikachu = %+v", obs.Party[0])
+	}
+	if obs.Money != 123456 {
+		t.Fatalf("money = %d, want 123456", obs.Money)
+	}
+	if len(obs.Badges) != 2 || obs.Badges[0] != "Boulder" || obs.Badges[1] != "Thunder" {
+		t.Fatalf("badges = %v", obs.Badges)
+	}
+	if obs.BagCapacity != 20 || len(obs.Bag) != 2 || obs.Bag[0].Quantity != 7 || obs.Bag[1].Quantity != 3 {
+		t.Fatalf("bag = %+v capacity=%d", obs.Bag, obs.BagCapacity)
+	}
+	if obs.PokedexTotal != 151 {
+		t.Fatalf("Pokédex total = %d, want 151", obs.PokedexTotal)
+	}
+}
+
+func TestYellowROMParserCoversFullMapNamespaceAndSpecies(t *testing.T) {
+	p := New().ROMParser()
+	if got, ok := p.MapName(0xF8); !ok || got != "SUMMER_BEACH_HOUSE" {
+		t.Fatalf("MapName(F8) = %q,%v", got, ok)
+	}
+	if got, ok := p.Species(0x54); !ok || got != "pikachu" {
+		t.Fatalf("Species(54) = %q,%v", got, ok)
+	}
+}
+
 func TestRealYellowImageIsDetected(t *testing.T) {
 	path := os.Getenv("POKEMON_YELLOW_ROM")
 	if path == "" {
@@ -101,5 +163,18 @@ func TestRealYellowImageIsDetected(t *testing.T) {
 	}
 	if info.SHA1 != sym.ROMSHA1 {
 		t.Fatalf("Yellow image sha1=%s, want %s", info.SHA1, sym.ROMSHA1)
+	}
+}
+
+func TestYellowVictoryRoadClearedUsesRoute23ExitPocket(t *testing.T) {
+	for _, tc := range []struct {
+		x, y uint8
+		want bool
+	}{{18, 30, true}, {14, 32, true}, {4, 31, false}, {4, 32, false}, {14, 40, false}} {
+		var mem fakeMemory
+		mem[sym.XCoord], mem[sym.YCoord] = tc.x, tc.y
+		if got := yellowVictoryRoadCleared(&mem, route23Map, true, false, false, false); got != tc.want {
+			t.Errorf("Route 23 (%d,%d) cleared=%v, want %v", tc.x, tc.y, got, tc.want)
+		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 )
 
 // checkpointRing is the bounded record of a run: one save state per
@@ -16,6 +17,8 @@ type checkpointRing struct {
 	dir       string
 	keep      int
 	lastState string
+	game      game.GameID
+	revision  game.RevisionID
 }
 
 func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
@@ -43,7 +46,7 @@ func (c *checkpointRing) writeNamed(m *emu.Emu, round int, name string, k *Knowl
 	if err := writeFileAtomic(path, ".state-*.tmp", b); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := writeMemoryFile(path, k, intent, intentAge, plans...); err != nil {
+	if err := writeMemoryFileForProfile(path, k, c.game, c.revision, intent, intentAge, plans...); err != nil {
 		return fmt.Errorf("knowledge round %d: %w", round, err)
 	}
 	if err := writeCoverageFile(path, coverage); err != nil {

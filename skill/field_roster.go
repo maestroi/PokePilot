@@ -650,8 +650,10 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 			}
 		}
 
-		state.Snapshot(m, &mem)
-		balls := wildBallCount(&mem)
+		balls, countErr := wildBallCount(m)
+		if countErr != nil {
+			return countErr
+		}
 		if balls <= 0 {
 			return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterNoBalls, candidate.Species, candidate.Map)
 		}

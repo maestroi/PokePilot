@@ -5,10 +5,7 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-const (
-	profileRoute23Map        uint8 = 0x22
-	profileRoute23NorthCaveY       = 31
-)
+const profileRoute23Map uint8 = 0x22
 
 // victoryRoadClearedForProgress turns the live final-switch event into the
 // semantic stage fact used by the planner. Route 23 resets the cave's boulder
@@ -31,7 +28,7 @@ func victoryRoadClearedForProgress(mem *state.Mem, facts state.StoryFacts) bool 
 	case indigoPlateauMap, indigoPlateauLobbyMap:
 		return true
 	case profileRoute23Map:
-		return int(mem.U8(sym.YCoord)) <= profileRoute23NorthCaveY
+		return state.Route23NorthOfVictoryRoad(int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)))
 	default:
 		return false
 	}

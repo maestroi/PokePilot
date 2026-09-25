@@ -3,18 +3,20 @@ import type { RenderTileCell, RenderTileLayer } from './api/renderstate'
 export interface TileImageReference {
   url: string
   source?: { x: number; y: number; size: number }
+  repeat?: number
 }
 
-// A bundled theme may refer to one tile within a packed, square-cell atlas.
-// The URL remains a normal image URL; the fragment is presentation metadata.
 export function parseTileImageReference(reference: string): TileImageReference | null {
-  const match = /^(\/[^#]+\.png)#tile=(\d+),(\d+),(\d+)$/.exec(reference)
+  const match = /^(\/[^#]+\.png(?:\?[^#]*)?)#tile=(\d+),(\d+),(\d+)$/.exec(reference)
   if (!match) return reference && !reference.includes('#') ? { url: reference } : null
   const column = Number(match[2])
   const row = Number(match[3])
   const size = Number(match[4])
   if (size < 1 || size > 256) return null
-  return { url: match[1], source: { x: column * size, y: row * size, size } }
+  const repeatMatch = /(?:\?|&)repeat=(\d+)/.exec(match[1])
+  const repeat = repeatMatch ? Number(repeatMatch[1]) : 1
+  if (!Number.isInteger(repeat) || repeat < 1 || repeat > 4) return null
+  return { url: match[1], source: { x: column * size, y: row * size, size }, ...(repeat > 1 ? { repeat } : {}) }
 }
 
 function layerCell(layer: RenderTileLayer, x: number, y: number): RenderTileCell | undefined {
@@ -24,14 +26,7 @@ function layerCell(layer: RenderTileLayer, x: number, y: number): RenderTileCell
   return layer.cells[localY * layer.width + localX]
 }
 
-// Nine-slice terrain uses adjacent semantic cells, never ROM-specific tile IDs.
-// A missing adjacent cell is an edge. Other themes can supply just the base key.
-export function terrainAssetKey(
-  assets: Record<string, string>,
-  layer: RenderTileLayer,
-  x: number,
-  y: number
-): string | undefined {
+export function terrainAssetKey(assets: Record<string, string>, layer: RenderTileLayer, x: number, y: number): string | undefined {
   const cell = layerCell(layer, x, y)
   if (!cell) return undefined
   const kind = cell.kind || 'unknown'

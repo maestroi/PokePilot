@@ -126,3 +126,19 @@ func TestClassifyCursorMenus(t *testing.T) {
 		})
 	}
 }
+
+// wFontLoaded stays 0 for a whole battle, so the battle bag must be read from
+// wIsInBattle instead (run-mis3rbm8t2283mwv0a6mrac8s: Hyper Potion vs
+// Giovanni failed "list menu is not visible" on a drawn bag).
+func TestDecodeInteractionBattleBagWithoutFontLoaded(t *testing.T) {
+	m := interactionMenuFixture(2, 0, itemListMenuID, listMenuWatchedKeys)
+	m[sym.FontLoaded] = 0
+	m[sym.IsInBattle] = 2
+	if got := DecodeInteraction(m); got.Kind != InteractionItemMenu {
+		t.Fatalf("DecodeInteraction kind = %q, want item_menu for the in-battle bag", got.Kind)
+	}
+	m[sym.IsInBattle] = 0
+	if got := DecodeInteraction(m); got.Kind == InteractionItemMenu {
+		t.Fatalf("DecodeInteraction kind = %q, want no list without drawn text outside battle", got.Kind)
+	}
+}

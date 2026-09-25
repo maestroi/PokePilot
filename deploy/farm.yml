@@ -217,13 +217,10 @@ services:
       # only virtual-trader availability into its observation; endpoints never
       # enter the planner prompt.
       POKEPILOT_LINK_BROKER: linkbroker:8765
-      # Disabled again after #1370. GomeBoy v1.3.0 fixed external-clock polling
-      # starvation, but production sessions can still register with the broker
-      # and exchange no serial clock traffic until skill.ErrLinkStalled fires at
-      # 25s. Keep the service deployed for protocol diagnostics, but do not
-      # advertise VirtualTrader to the planner until the end-to-end Cable Club
-      # handshake is proven on the farm.
-      # POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
+      # Advertised again after #1903: gomeboy v1.3.1 fixed the serial re-arm
+      # freeze behind #1370, and TestVirtualCableClubTrade completes the ROM
+      # trade end to end flat out and at paced fps.
+      POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
       # POKEPILOT_ROM_DIR is where the runner looks for every cartridge it can
       # play; POKEMON_RED_ROM names the one non-farm mode boots from.
       POKEPILOT_ROM_DIR: /rom

@@ -124,8 +124,8 @@ const frameEnabled = computed(() =>
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
   if (rendererMode.value !== 'modern' || showModern.value) return ''
-  if (renderStateStatus.value === 'error') return 'Modern · semantic state reconnecting'
-  if (renderState.value?.scene) return 'Modern · classic compatibility · ' + renderState.value.scene
+  if (renderStateStatus.value === 'error') return 'Gold / Silver · semantic state reconnecting'
+  if (renderState.value?.scene) return 'Gold / Silver · classic compatibility · ' + renderState.value.scene
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
@@ -830,7 +830,7 @@ function activityTimeAgo(item: ActivityItem): string {
                     :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
                     title="Render the live semantic world"
                     @click="setRendererMode('modern')"
-                  >Modern</button>
+                  >Gold / Silver</button>
                   <button
                     type="button"
                     :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"

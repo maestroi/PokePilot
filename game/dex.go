@@ -53,6 +53,10 @@ type DexCatalog struct {
 	Owned       []DexEntry `json:"owned"`
 	Targets     []DexEntry `json:"targets"`
 	Unavailable []DexEntry `json:"unavailable"`
+	// IncompleteReason is set when the adapter knows its source model does not
+	// yet cover every acquisition path. Dex completion must not be certified
+	// while it is non-empty.
+	IncompleteReason string `json:"incomplete_reason,omitempty"`
 }
 
 // DexExclusiveChoice describes mutually exclusive single-save acquisition

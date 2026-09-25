@@ -42,16 +42,34 @@ const (
 	TileMapLen             = 20 * 18
 	CurrentMenuItem uint16 = 0xCC26 // wCurrentMenuItem
 	MaxMenuItem     uint16 = 0xCC28 // wMaxMenuItem
-	FontLoaded      uint16 = 0xCFC4 // wFontLoaded
-	WalkCounter     uint16 = 0xCFC5 // wWalkCounter
+	FontLoaded      uint16 = 0xCFC3 // wFontLoaded
+	WalkCounter     uint16 = 0xCFC4 // wWalkCounter
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
 	// Battle.
 	IsInBattle uint16 = 0xD056 // wIsInBattle
 
 	// Inventory/progress.
+	PokedexOwned   uint16 = 0xD2F6 // wPokedexOwned, 19 bytes
+	PokedexSeen    uint16 = 0xD309 // wPokedexSeen, 19 bytes
+	PokedexBytes          = 19
 	NumBagItems    uint16 = 0xD31C // wNumBagItems
 	BagItems       uint16 = 0xD31D // first item id in wBagItems
 	PlayerMoney    uint16 = 0xD346 // wPlayerMoney, 3-byte BCD
 	ObtainedBadges uint16 = 0xD355 // wObtainedBadges
+
+	// Persistent/story state. Yellow's main-data block is shifted one byte
+	// earlier than Red in this region.
+	StatusFlags1    uint16 = 0xD727 // wStatusFlags1
+	StatusFlags4    uint16 = 0xD72D // wStatusFlags4
+	Elite4Flags     uint16 = 0xD733 // wElite4Flags
+	EventFlags      uint16 = 0xD746 // wEventFlags
+	RivalStarter    uint16 = 0xD714 // wRivalStarter: 1=Jolteon, 2=Flareon, 3=Vaporeon path
+	PlayerStarter   uint16 = 0xD716 // wPlayerStarter
+	LastBlackoutMap uint16 = 0xD718 // wLastBlackoutMap
+
+	// Yellow-only Pikachu state.
+	PikachuHappiness       uint16 = 0xD46F // wPikachuHappiness
+	PikachuMood            uint16 = 0xD470 // wPikachuMood
+	PikachuSpawnStateFlags uint16 = 0xD471 // wPikachuSpawnStateFlags
 )

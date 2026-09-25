@@ -1137,7 +1137,7 @@
           run_id: i === 0 ? f.run_id.value.trim() : newRunId(),
           planner,
           game: f.game.value,
-          starter: f.starter.value,
+          starter: f.game.value === "pokemon-yellow" ? "" : f.starter.value,
           dest: planner === "scripted" ? f.dest.value.trim() : "",
           goal: baseGoal,
           llm_profile: planner === "llm" ? f.llm_profile.value : "",

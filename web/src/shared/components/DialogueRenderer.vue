@@ -12,25 +12,24 @@ const hasWorld = computed(() => hasOverworldSurface(props.state))
 <template>
   <div class="absolute inset-0 overflow-hidden" :style="{ background: theme.effects.background }">
     <OverworldRenderer v-if="hasWorld" :state="state" :theme="theme" />
-    <div v-else class="absolute inset-0 opacity-50" :style="{ background: 'radial-gradient(circle at 50% 35%, ' + theme.ui.accent + '55, transparent 45%)' }" />
-    <div class="absolute inset-0 bg-black/20" />
-    <div class="absolute inset-x-0 bottom-0 p-4 sm:p-6">
-      <div
-        class="mx-auto max-w-4xl rounded-2xl border px-5 py-4 shadow-2xl backdrop-blur-xl sm:px-6 sm:py-5"
-        :style="{ background: theme.ui.panel, borderColor: theme.ui.accent + '55', color: theme.ui.text }"
-      >
-        <div v-if="state.dialogue?.speaker" class="mb-2 text-[10px] font-black uppercase tracking-[.14em]" :style="{ color: theme.ui.accent }">
+    <div v-else class="absolute inset-0 bg-[#508040]" />
+    <div class="absolute inset-x-0 bottom-0 p-3 sm:p-5">
+      <div class="gen2-textbox mx-auto max-w-4xl px-5 py-4 font-mono sm:px-6" :style="{ background: theme.ui.panel, color: theme.ui.text }">
+        <div v-if="state.dialogue?.speaker" class="mb-2 text-[10px] font-bold uppercase tracking-[.08em]" :style="{ color: theme.ui.accent }">
           {{ state.dialogue.speaker }}
         </div>
-        <div class="text-base font-semibold leading-7 text-white sm:text-lg">
+        <div class="min-h-12 text-sm font-bold leading-6 sm:text-base">
           {{ state.dialogue?.text || '…' }}
         </div>
-        <div class="mt-3 flex items-center justify-end gap-1.5" aria-hidden="true">
-          <span class="size-1.5 rounded-full opacity-40" :style="{ background: theme.ui.accent }" />
-          <span class="size-1.5 rounded-full opacity-65" :style="{ background: theme.ui.accent }" />
-          <span class="size-1.5 animate-pulse rounded-full" :style="{ background: theme.ui.accent }" />
-        </div>
+        <div class="mt-1 text-right text-xs" aria-hidden="true">▼</div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.gen2-textbox {
+  border: 4px solid #202020;
+  box-shadow: inset 0 0 0 2px #b8b898, 3px 3px 0 rgba(0,0,0,.25);
+}
+</style>

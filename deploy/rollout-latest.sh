@@ -122,7 +122,12 @@ if docker service inspect "$LITELLM_SVC" >/dev/null 2>&1 && [ -f "$LITELLM_YAML"
 	if [ "$CUR_CONFIG" = "$NEW_CONFIG" ]; then
 		echo "pokefarm-pull: $LITELLM_SVC config already $NEW_CONFIG"
 	else
-		docker config create "$NEW_CONFIG" "$LITELLM_YAML" >/dev/null
+		# The content-addressed config can already exist while the service sits
+		# on a hand-made name (e.g. _v3); creating it again fails the whole
+		# timer every run, so reuse it.
+		if ! docker config inspect "$NEW_CONFIG" >/dev/null 2>&1; then
+			docker config create "$NEW_CONFIG" "$LITELLM_YAML" >/dev/null
+		fi
 		echo "pokefarm-pull: $LITELLM_SVC $CUR_CONFIG -> $NEW_CONFIG"
 		docker service update --detach \
 			--config-rm "$CUR_CONFIG" \

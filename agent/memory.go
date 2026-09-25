@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/maestroi/pokepilot/game"
 )
 
 // Version 6 replaces native uint8 map identity with semantic LocationID for
@@ -63,6 +65,8 @@ type storedFailure struct {
 // are rebuilt from the active adapter/ROM on resume and are never persisted.
 type memoryFile struct {
 	Version                 int                     `json:"version"`
+	Game                    game.GameID             `json:"game,omitempty"`
+	Revision                game.RevisionID         `json:"revision,omitempty"`
 	Visited                 []LocationID            `json:"visited"`
 	Places                  []string                `json:"places"`
 	Completed               []storedCompletion      `json:"completed"`
@@ -105,7 +109,11 @@ type legacyTalkedKey struct {
 }
 
 func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan) ([]byte, error) {
-	mem := memoryFile{Version: memoryVersion, Intent: intent, IntentAge: intentAge}
+	return encodeMemoryFileForProfile(k, "", "", intent, intentAge, plans...)
+}
+
+func encodeMemoryFileForProfile(k *Knowledge, gameID game.GameID, revision game.RevisionID, intent string, intentAge int, plans ...Plan) ([]byte, error) {
+	mem := memoryFile{Version: memoryVersion, Game: gameID, Revision: revision, Intent: intent, IntentAge: intentAge}
 	if len(plans) > 0 {
 		mem.Plan = plans[0].clone()
 	}
@@ -185,7 +193,11 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 }
 
 func writeMemoryFile(statePath string, k *Knowledge, intent string, intentAge int, plans ...Plan) error {
-	data, err := encodeMemoryFile(k, intent, intentAge, plans...)
+	return writeMemoryFileForProfile(statePath, k, "", "", intent, intentAge, plans...)
+}
+
+func writeMemoryFileForProfile(statePath string, k *Knowledge, gameID game.GameID, revision game.RevisionID, intent string, intentAge int, plans ...Plan) error {
+	data, err := encodeMemoryFileForProfile(k, gameID, revision, intent, intentAge, plans...)
 	if err != nil {
 		return fmt.Errorf("encode knowledge: %w", err)
 	}
@@ -214,6 +226,39 @@ type ResumedMemory struct {
 	Intent    string
 	IntentAge int
 	Plan      Plan
+}
+
+// ValidateCheckpointProfile verifies the game/profile identity persisted beside
+// a save state before emulator state bytes are loaded. Old checkpoints did not
+// carry identity; they remain readable for backward compatibility, but once an
+// identity is present a state can never cross games or revisions.
+func ValidateCheckpointProfile(statePath string, wantGame game.GameID, wantRevision game.RevisionID) error {
+	if statePath == "" {
+		return nil
+	}
+	path := knowledgePathForState(statePath)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read checkpoint identity: %w", err)
+	}
+	var meta struct {
+		Version  int             `json:"version"`
+		Game     game.GameID     `json:"game,omitempty"`
+		Revision game.RevisionID `json:"revision,omitempty"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return fmt.Errorf("decode checkpoint identity: %w", err)
+	}
+	if meta.Game != "" && wantGame != "" && meta.Game != wantGame {
+		return fmt.Errorf("checkpoint game %q does not match active game %q", meta.Game, wantGame)
+	}
+	if meta.Revision != "" && wantRevision != "" && meta.Revision != wantRevision {
+		return fmt.Errorf("checkpoint revision %q does not match active revision %q", meta.Revision, wantRevision)
+	}
+	return nil
 }
 
 func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) memoryFile {

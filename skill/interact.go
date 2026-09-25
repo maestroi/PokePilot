@@ -413,10 +413,12 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if err != nil {
 		return Destination{}, false, err
 	}
-	return besideDestinationWithDecoder(m, decoder, romData, targetX, targetY)
+	return besideDestinationWithDecoder(m, decoder, romData, targetX, targetY, nil)
 }
 
-func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
+// besideDestinationWithDecoder never picks a tile in rejected: sides a walk
+// already proved the game will not let the player stand on.
+func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8, rejected map[[2]int]bool) (Destination, bool, error) {
 	live, err := interactionRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
 		return Destination{}, false, err
@@ -435,6 +437,9 @@ func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, rom
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
 	blocked := warpAvoidance(h, int(sx), int(sy), spriteBlockers(m))
+	for p := range rejected {
+		blocked[p] = true
+	}
 	steps, _, err := world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), blocked)
 	if err != nil {
 		// Every free side may simply be occupied this instant. Fall back to
@@ -443,7 +448,7 @@ func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, rom
 		// as before instead of a new one. Still keep warpAvoidance so the
 		// chosen side remains a tile GoTo will actually walk to.
 		steps, _, err = world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY),
-			warpAvoidance(h, int(sx), int(sy), nil))
+			warpAvoidance(h, int(sx), int(sy), rejected))
 	}
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
@@ -636,7 +641,7 @@ func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []
 	if _, err := AnswerKnownRouteGate(m); err != nil {
 		return fmt.Errorf("skill: TalkAt: %w", err)
 	}
-	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty)
+	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty, nil)
 	if err != nil {
 		// No ordinary neighbour of (tx,ty) is walkable — the target may be a
 		// nurse or clerk standing behind a counter, which has no adjacent
@@ -652,8 +657,24 @@ func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []
 	}
 
 	handledChoices := 0
+	// A side can look free yet be a coordinate-script tile that shows its
+	// text and pushes the player back off it (Travel reports ErrTextBoxLoop).
+	// The target usually has other sides; reject that one and pick again.
+	rejected := map[[2]int]bool{}
 	for {
 		if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
+			if errors.Is(err, ErrTextBoxLoop) && len(rejected) < len(counterSteps) {
+				rejected[[2]int{int(dest.X), int(dest.Y)}] = true
+				next, ok, besideErr := besideDestinationWithDecoder(m, decoder, romData, tx, ty, rejected)
+				if besideErr != nil {
+					return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+				}
+				if !ok {
+					return nil
+				}
+				dest = next
+				continue
+			}
 			var choice *ErrDialogueChoice
 			if !errors.As(err, &choice) || handledChoices >= maxTalkApproachChoices {
 				return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)

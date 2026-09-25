@@ -251,9 +251,11 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 // falls back to the largest affordable quantity, with one ball as the hard
 // minimum needed to continue.
 func EnsureProgressionPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) (int, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if have := wildBallCount(&mem); have > 0 {
+	have, err := wildBallCount(m)
+	if err != nil {
+		return 0, err
+	}
+	if have > 0 {
 		return have, nil
 	}
 	return EnsureItemStock(m, romData, policy, ItemPokeBall, progressionPokeBallReserve, 1)

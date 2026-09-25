@@ -204,6 +204,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/clone", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/runs/{id}", deleteRunHandler(wallBase, replayBase))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
+	mux.HandleFunc("GET /render-state", spectatorRenderState(wallBase))
 	mountRunInspectorRoutes(mux, wallBase, replayBase)
 	if token = strings.TrimSpace(token); token != "" {
 		mux.Handle("/mcp", newMCPHandler(wallBase, replayBase, token))

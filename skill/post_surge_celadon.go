@@ -64,6 +64,10 @@ func postSurgeCeladonArea(mapID uint8) bool {
 		strings.HasPrefix(name, "ROCKET_HIDEOUT_")
 }
 
+func postSurgeErikaNeedsCityApproach(mapID uint8) bool {
+	return mapID != celadonGymMap
+}
+
 // travelPostSurgeCeladon is retained as the composed journey helper used by
 // the milestone qualification tests. Runtime progression now invokes the two
 // travel legs as separate objective transactions so planner feedback and
@@ -172,12 +176,18 @@ func PostSurgeDefeatErika(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !postSurgeCeladonArea(currentMap) {
 		return fmt.Errorf("skill: PostSurgeDefeatErika: Celadon-ready stage is incomplete from map %#04x", currentMap)
 	}
-	city, ok := Place("celadon city")
-	if !ok {
-		return fmt.Errorf("skill: PostSurgeDefeatErika: celadon city place missing")
-	}
-	if _, err := TravelFlee(m, romData, city, policy, 10); err != nil {
-		return fmt.Errorf("skill: PostSurgeDefeatErika: leave Center for Celadon City: %w", err)
+	// A resumed attempt may already be inside Celadon Gym. Do not leave the
+	// Cut-sealed building just to re-enter it: continuing Gym from the live
+	// interior is both shorter and preserves the progress the previous attempt
+	// already made through the exterior tree and door.
+	if postSurgeErikaNeedsCityApproach(currentMap) {
+		city, ok := Place("celadon city")
+		if !ok {
+			return fmt.Errorf("skill: PostSurgeDefeatErika: celadon city place missing")
+		}
+		if _, err := TravelFlee(m, romData, city, policy, 10); err != nil {
+			return fmt.Errorf("skill: PostSurgeDefeatErika: leave Center for Celadon City: %w", err)
+		}
 	}
 	outcome, err := Gym(m, romData, policy)
 	if err != nil {

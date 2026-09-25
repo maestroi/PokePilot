@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	reddata "github.com/maestroi/pokepilot/red/data"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -144,15 +144,23 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		return CatchResult{}, fmt.Errorf("skill: Catch: maxBalls must be > 0, got %d", maxBalls)
 	}
 
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
 	}
-	before := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	live := overworld.DecodeOverworld(m)
+	if !live.Controllable {
+		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", live.NativeMapID)
+	}
+
+	var mem state.Mem
+	before := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
 	// The hunt ping-pongs the player between two nearby grass cells itself
@@ -230,7 +238,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, before, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, before, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
@@ -239,13 +247,17 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 // catchWanted throws balls at the wanted target in progress and reports the
 // outcome. It never attacks: the only way the target takes damage here is a
 // bug, which OutcomeTargetFainted exists to name.
-func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res CatchResult, maxBalls int) (CatchResult, error) {
+func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
 		state.Snapshot(m, mem)
-		ball, ok := wildCatchBall(mem)
+		nativeBall, ok := ordinaryCaptureBall(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder())
 		if !ok {
 			break // the bag is dry before maxBalls: same ending as running out
+		}
+		ball, idErr := legacyItemID(nativeBall)
+		if idErr != nil {
+			return res, idErr
 		}
 		if err := UseItem(m, ball); err != nil {
 			if errors.Is(err, ErrNotInBag) {
@@ -295,7 +307,12 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 		return res, err
 	}
 	state.Snapshot(m, mem)
-	if species, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(mem), boxBefore, state.DecodeBox(mem), ownedBefore, state.DecodePokedex(mem).Owned, want, wantDex); ok {
+	after := profile.DecodeCapture(m)
+	if nativeSpecies, ok := captureAcquiredWantedState(before, after, wantNative, wantDex); ok {
+		species, idErr := legacySpeciesID(nativeSpecies)
+		if idErr != nil {
+			return res, idErr
+		}
 		res.Outcome = OutcomeCaught
 		res.Species = species
 		return res, nil
@@ -306,25 +323,6 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 	}
 	res.Outcome = OutcomeFled
 	return res, nil
-}
-
-// wildCatchBall picks the strongest ordinary ball in the bag for this throw.
-func wildCatchBall(mem *state.Mem) (uint8, bool) {
-	for _, item := range reddata.WildCaptureBallOrder() {
-		if bagHasItem(mem, item) {
-			return item, true
-		}
-	}
-	return 0, false
-}
-
-// wildBallCount is how many ordinary catch balls of any grade the bag holds.
-func wildBallCount(mem *state.Mem) int {
-	n := 0
-	for _, item := range reddata.WildCaptureBallOrder() {
-		n += itemCount(mem, item)
-	}
-	return n
 }
 
 // waitThrowResult reports whether the battle ended while the result of a

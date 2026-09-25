@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
 
@@ -30,53 +32,59 @@ func (*Profile) Detect(info game.ROMInfo) bool { return info.SHA1 == sym.ROMSHA1
 
 func (*Profile) Symbols() game.SymbolTable {
 	return game.SymbolTable{
-		"player.map":       {Name: "player.map", Address: sym.CurMap, Width: 1},
-		"player.x":         {Name: "player.x", Address: sym.XCoord, Width: 1},
-		"player.y":         {Name: "player.y", Address: sym.YCoord, Width: 1},
-		"player.direction": {Name: "player.direction", Address: sym.SpritePlayerFacing, Width: 1},
-		"party.count":      {Name: "party.count", Address: sym.PartyCount, Width: 1},
-		"party.members":    {Name: "party.members", Address: sym.PartyMon1, Width: int(sym.PartyMonSize) * 6},
-		"battle.mode":      {Name: "battle.mode", Address: sym.IsInBattle, Width: 1},
-		"badges":           {Name: "badges", Address: sym.ObtainedBadges, Width: 1},
-		"bag":              {Name: "bag", Address: sym.BagItems},
-		"money":            {Name: "money", Address: sym.PlayerMoney, Width: 3},
+		"player.map":               {Name: "player.map", Address: sym.CurMap, Width: 1},
+		"player.x":                 {Name: "player.x", Address: sym.XCoord, Width: 1},
+		"player.y":                 {Name: "player.y", Address: sym.YCoord, Width: 1},
+		"player.direction":         {Name: "player.direction", Address: sym.SpritePlayerFacing, Width: 1},
+		"party.count":              {Name: "party.count", Address: sym.PartyCount, Width: 1},
+		"party.members":            {Name: "party.members", Address: sym.PartyMon1, Width: int(sym.PartyMonSize) * 6},
+		"battle.mode":              {Name: "battle.mode", Address: sym.IsInBattle, Width: 1},
+		"badges":                   {Name: "badges", Address: sym.ObtainedBadges, Width: 1},
+		"bag":                      {Name: "bag", Address: sym.BagItems},
+		"money":                    {Name: "money", Address: sym.PlayerMoney, Width: 3},
+		"respawn.map":              {Name: "respawn.map", Address: sym.LastBlackoutMap, Width: 1},
+		"story.events":             {Name: "story.events", Address: sym.EventFlags},
+		"yellow.rival.starter":     {Name: "yellow.rival.starter", Address: sym.RivalStarter, Width: 1},
+		"yellow.pikachu.happiness": {Name: "yellow.pikachu.happiness", Address: sym.PikachuHappiness, Width: 1},
 	}
 }
 
-// Phase 0 is deliberately capability-empty. Registering exact identity must not
-// accidentally advertise Red-compatible map parsing, battles, inventory, story
-// progress or field moves before the Yellow implementations are validated.
-func (*Profile) Features() game.ProfileFeatures { return game.ProfileFeatures{} }
+func (*Profile) Features() game.ProfileFeatures {
+	return game.ProfileFeatures{
+		game.FeatureMapParsing:      true,
+		game.FeatureInventory:       true,
+		game.FeatureStoryProgress:   true,
+		game.FeatureSemanticSpecies: true,
+	}
+}
 
 func (*Profile) ROMParser() game.ROMParser { return parser{} }
 
 type parser struct{}
 
 func (parser) MapName(rawMapID uint16) (string, bool) {
-	// Keep this deliberately tiny until Phase 2 supplies the full Yellow map
-	// parser. Phase 1 needs only the fresh-game bedroom plus Pallet Town.
-	switch rawMapID {
-	case 0x00:
-		return "PALLET_TOWN", true
-	case 0x26:
-		return "REDS_HOUSE_2F", true
-	default:
+	if rawMapID > 0xff {
 		return "", false
 	}
+	name := yellowrom.MapName(uint8(rawMapID))
+	return name, name != ""
 }
 
-func (parser) Species(uint16) (game.SpeciesID, bool) {
-	// Species/table parsing is intentionally deferred until the Yellow ROM data
-	// adapter is implemented. Do not silently reuse Red table assumptions here.
-	return "", false
+func (parser) Species(rawSpecies uint16) (game.SpeciesID, bool) {
+	if rawSpecies > 0xff {
+		return "", false
+	}
+	return gen1.Species(uint8(rawSpecies))
 }
 
-func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.ProfileObservation, error) {
+func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (game.ProfileObservation, error) {
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("yellow profile: nil memory reader")
 	}
 	mapID := reader.Peek8(sym.CurMap)
 	mapName, _ := (parser{}).MapName(uint16(mapID))
+	pokedexOwned, pokedexSeen := yellowPokedex(reader, romData)
+	bag := yellowBag(reader, romData)
 	location := game.PlaceID("")
 	if mapName != "" {
 		location = game.PlaceID(game.CanonicalID(strings.ReplaceAll(mapName, "_", " ")))
@@ -92,11 +100,26 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		// inventory and story decoding for later Yellow phases.
 		Controllable: yellowControllable(reader),
 		InBattle:     reader.Peek8(sym.IsInBattle) != 0,
-		Party:        []game.ProfilePartyMon{},
-		Badges:       []string{},
-		Events:       []string{},
-		Story:        game.ProgressState{},
+		Party:        gen1.DecodeParty(reader, yellowRAMLayout),
+		Bag:          bag,
+		BagCapacity:  gen1.BagCapacity,
+		Badges:       gen1.DecodeBadges(reader, yellowRAMLayout),
+		Money:        gen1.DecodeMoney(reader, yellowRAMLayout),
+		RespawnPlace: yellowLocation(reader.Peek8(sym.LastBlackoutMap)),
+		PokedexOwned: pokedexOwned,
+		PokedexSeen:  pokedexSeen,
+		PokedexTotal: gen1.SpeciesCount(),
+		Events:       yellowEventNames(reader),
+		Story:        projectYellowStory(reader, mapID),
 	}, nil
+}
+
+func yellowLocation(mapID uint8) game.PlaceID {
+	name := yellowrom.MapName(mapID)
+	if name == "" {
+		return ""
+	}
+	return game.PlaceID(game.CanonicalID(strings.ReplaceAll(name, "_", " ")))
 }
 
 func decodeFacing(v byte) string {

@@ -30,6 +30,10 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 	if err != nil {
 		return CatchResult{}, err
 	}
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
 	overworld, err := overworldDecoderFor(m)
 	if err != nil {
 		return CatchResult{}, err
@@ -45,13 +49,12 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		return CatchResult{}, fmt.Errorf("skill: CatchWater: player not controllable on map %#04x", live.Map)
 	}
 
-	// Collection uses the same positive acquisition evidence as Catch. Record
-	// it before entering Surf so teaching HM03 or walking to the shoreline
-	// cannot be mistaken for capture progress.
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	// Collection uses the same profile-owned positive acquisition evidence as
+	// Catch. Record it before entering Surf so teaching HM03 or walking to the
+	// shoreline cannot be mistaken for capture progress.
+	captureBefore := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
 	if !fieldActions.DecodeFieldAction(m).Surfing {
@@ -151,7 +154,7 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d Surf legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, mapID)
