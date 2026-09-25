@@ -253,7 +253,7 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 func EnsureProgressionPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) (int, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if have := itemCount(&mem, ItemPokeBall); have > 0 {
+	if have := wildBallCount(&mem); have > 0 {
 		return have, nil
 	}
 	return EnsureItemStock(m, romData, policy, ItemPokeBall, progressionPokeBallReserve, 1)

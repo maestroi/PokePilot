@@ -148,8 +148,7 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	}
 	if result.Outcome != OutcomeCaught || result.Species != candidate.Species {
 		state.Snapshot(m, &mem)
-		_, remaining := bagEntry(&mem, ItemPokeBall)
-		if remaining <= 0 {
+		if wildBallCount(&mem) <= 0 {
 			return fmt.Errorf("%w: utility carrier species %#02x for %s was not caught after %d balls", ErrFieldRosterNoBalls, candidate.Species, target, result.BallsThrown)
 		}
 		return utilityFieldRecoveryBlocked(target, ErrFieldRosterCatch,

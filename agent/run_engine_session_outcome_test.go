@@ -20,7 +20,7 @@ func recoverableSessionResult(obj Objective, cause string, final Observation) Ob
 }
 
 func TestRunFailurePolicyHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
-	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted"} {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed"} {
 		policy := newRunFailurePolicy(2)
 		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
 		result := recoverableSessionResult(obj, cause, Observation{
@@ -39,7 +39,7 @@ func TestRunFailurePolicyHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
 }
 
 func TestRunFailurePolicyHuntExhaustionStillReplansStrategically(t *testing.T) {
-	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted"} {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed"} {
 		policy := newRunFailurePolicy(2)
 		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
 		result := recoverableSessionResult(obj, cause, Observation{Location: "route 22"})
@@ -86,6 +86,7 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 	}{
 		{cause: "catch_hunt_exhausted", want: true},
 		{cause: "fishing_hunt_exhausted", want: true},
+		{cause: "catch_attempt_missed", want: true},
 		{cause: "train_progress_shortfall", want: true},
 		{cause: "fishing_no_shoreline", want: false},
 		{cause: "navigation_stalled", want: false},
