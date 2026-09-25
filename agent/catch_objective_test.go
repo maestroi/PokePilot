@@ -52,3 +52,17 @@ func TestCatchObjectivePartySlotOnlyForDirectPartyAdditions(t *testing.T) {
 		})
 	}
 }
+
+
+func TestCatchObjectiveFrameBudgetReservesControllerCleanup(t *testing.T) {
+	catchBudget := objectiveFrameBudgetFor(Objective{Kind: KindCatch, Species: "zubat"})
+	if catchBudget != catchObjectiveFrameBudget {
+		t.Fatalf("catch objective frame budget = %d, want %d", catchBudget, catchObjectiveFrameBudget)
+	}
+	if catchBudget <= objectiveFrameBudget {
+		t.Fatalf("catch objective frame budget = %d, must exceed ordinary %d-frame watchdog", catchBudget, objectiveFrameBudget)
+	}
+	if got := objectiveFrameBudgetFor(Objective{Kind: KindGoTo, Place: "mt moon 1f"}); got != objectiveFrameBudget {
+		t.Fatalf("ordinary objective frame budget = %d, want %d", got, objectiveFrameBudget)
+	}
+}
