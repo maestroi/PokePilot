@@ -9,15 +9,15 @@ import (
 
 type fakeTravelMemory struct{}
 
-func (fakeTravelMemory) Peek8(uint16) byte                  { return 0 }
-func (fakeTravelMemory) PeekInto(uint16, []byte)            {}
+func (fakeTravelMemory) Peek8(uint16) byte       { return 0 }
+func (fakeTravelMemory) PeekInto(uint16, []byte) {}
 
 type fakeGen2TravelRuntime struct {
-	world     game.OverworldState
-	battle    game.BattleState
-	inBattle  bool
-	result    game.BattleResult
-	blackout  game.OverworldBlackoutState
+	world    game.OverworldState
+	battle   game.BattleState
+	inBattle bool
+	result   game.BattleResult
+	blackout game.OverworldBlackoutState
 }
 
 func (f *fakeGen2TravelRuntime) DecodeOverworld(game.MemoryReader) game.OverworldState {
@@ -187,8 +187,8 @@ func TestPortableTravelFakeGen2DialogueBlackoutUsesRuntimeSemantics(t *testing.T
 		world: game.OverworldState{NativeMapID: 0x71, X: 2, Y: 2, InDialogue: true},
 		blackout: game.OverworldBlackoutState{
 			BlackoutInProgress: true,
-			PartyAllFainted:     true,
-			RespawnNativeMapID:  0x10,
+			PartyAllFainted:    true,
+			RespawnNativeMapID: 0x10,
 		},
 	}
 	resolve := func() (battleResolution, error) {
