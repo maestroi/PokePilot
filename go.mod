@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/lib/pq v1.10.9
-	github.com/maestroi/gomeboy v1.3.0
+	github.com/maestroi/gomeboy v1.3.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	golang.org/x/image v0.45.0
 	modernc.org/sqlite v1.58.0
