@@ -22,3 +22,22 @@ func TestGenericCaptureRuntimeHasNoConcreteGameDependencies(t *testing.T) {
 		}
 	}
 }
+
+func TestCatchRuntimesDoNotDecodeConcreteAcquisitionState(t *testing.T) {
+	for _, path := range []string{"catch.go", "water_catch.go", "fishing.go"} {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"state.DecodeParty(",
+			"state.DecodeBox(",
+			"state.DecodePokedex(",
+			"reddata.WildCaptureBallOrder(",
+		} {
+			if strings.Contains(string(src), forbidden) {
+				t.Fatalf("%s contains concrete capture/inventory dependency %q", path, forbidden)
+			}
+		}
+	}
+}
