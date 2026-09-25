@@ -2,22 +2,23 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/game"
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // Gen-I compatibility wrappers keep existing Red strategy tests/callers
-// source-stable while Battle itself consumes profile-projected resources.
+// source-stable while the reusable policy itself is generation-neutral.
 func chooseTacticalSwitch(romData []byte, mem *state.Mem, b state.BattleState) switchDecision {
-	return chooseTacticalSwitchState(romData, gen1BattleResourcesFromMem(mem), b)
+	return chooseTacticalSwitchWithStrategy(redprofile.New(), romData, gen1BattleResourcesFromMem(mem), b)
 }
 
 func chooseTrainingCarrySwitch(romData []byte, mem *state.Mem, b state.BattleState, minLevel uint8) switchDecision {
-	return chooseTrainingCarrySwitchState(romData, gen1BattleResourcesFromMem(mem), b, minLevel)
+	return chooseTrainingCarrySwitchWithStrategy(redprofile.New(), romData, gen1BattleResourcesFromMem(mem), b, minLevel)
 }
 
 func bestReplacementSlot(romData []byte, mem *state.Mem, b state.BattleState) (int, switchEvaluation) {
-	return bestReplacementSlotState(romData, gen1BattleResourcesFromMem(mem), b)
+	return bestReplacementSlotWithStrategy(redprofile.New(), romData, gen1BattleResourcesFromMem(mem), b)
 }
 
 func firstLivePartySlot(mem *state.Mem) int {

@@ -4,99 +4,77 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/combat"
-	"github.com/maestroi/pokepilot/red/rom"
 )
 
-// StatAwareMove is the default policy for a real fight. Damaging moves are
-// ranked by the shared Gen 1 combat model: current physical/special stats,
-// power, STAB, type effectiveness, accuracy and PP. If the opponent has been
-// grinding our physical offence down, the policy can still spend one healthy
-// turn lowering the opponent's Defense — the bounded setup behavior that
-// fixes the opening rival fight.
-//
-// This closes two important gaps left by the earlier power/type heuristic:
-// equal-power moves can be radically different when one uses a weak Attack
-// stat and the other a strong Special stat, and a high-power inaccurate move
-// is not automatically a better expected turn than a reliable one.
-//
-// It closes over the ROM because move metadata and the type chart live there,
-// while the live combat stats/types/PP come from BattleState. A move id that
-// cannot be decoded is treated as a fallback attack rather than silently
-// selecting an unrelated slot.
-func StatAwareMove(romData []byte) MovePolicy {
+// statAwareMoveWithStrategy is the reusable move policy. Generation mechanics
+// are projected by strategy: ROM lookup, damage scoring, move roles and setup
+// semantics never leak into this file.
+func statAwareMoveWithStrategy(romData []byte, strategy game.BattleCombatStrategy) MovePolicy {
+	if strategy == nil {
+		return FirstUsableMove
+	}
 	return func(b game.BattleState) int {
 		usable := b.Usable()
 		if len(usable) == 0 {
 			return -1
 		}
 
-		attacker, defender := combat.PlayerMatchup(b)
+		attacker, defender := battleCombatants(b)
 		bestAttack := -1
-		var bestEval combat.MoveEvaluation
+		var bestEval game.BattleMoveEvaluation
 		haveEval := false
 		fallbackAttack := -1
-		defenseDown := -1
+		setupMove := -1
+		var setupEval game.BattleMoveEvaluation
 		residualDamage := -1
 		residualQuality := -1
 		lowestPP := -1
 		lowestPPLeft := int(^uint(0) >> 1)
 
 		for _, i := range usable {
-			// If none of the decoded moves can make HP progress, consume the
-			// shortest remaining resource first. That reaches Red's legal
-			// STRUGGLE fallback sooner instead of spending dozens of turns on a
-			// high-PP stat move that has already bottomed out.
+			// If no decoded move can make HP progress, consume the shortest
+			// remaining resource first. That reaches the cartridge's legal
+			// STRUGGLE fallback sooner instead of burning a long status pool.
 			if pp := int(b.Moves[i].PP); pp < lowestPPLeft {
 				lowestPP, lowestPPLeft = i, pp
 			}
 
-			mv, err := rom.LookupMove(romData, b.Moves[i].ID)
+			eval, role, err := strategy.EvaluateCombatMove(
+				romData,
+				attacker,
+				defender,
+				uint16(b.Moves[i].ID),
+				b.Moves[i].PP,
+			)
 			if err != nil {
 				if fallbackAttack < 0 {
 					fallbackAttack = i
 				}
 				continue
 			}
-			switch {
-			case mv.Power > 0:
-				eval, err := combat.EvaluateMove(romData, attacker, defender, mv, b.Moves[i].PP)
-				if err != nil {
-					if fallbackAttack < 0 {
-						fallbackAttack = i
-					}
-					continue
-				}
-				if !haveEval || combat.BetterMove(eval, bestEval) {
+			switch role {
+			case game.BattleMoveRoleDirectDamage:
+				if !haveEval || game.BetterBattleMove(eval, bestEval) {
 					bestAttack, bestEval, haveEval = i, eval, true
 				}
-			case mv.Effect == rom.LeechSeedEffect || mv.Effect == rom.PoisonEffect:
-				// These zero-power moves still create eventual HP progress. Prefer
-				// them over pure debuffs when direct damage is temporarily gone
-				// (for example Tackle disabled with Vine Whip at 0 PP).
-				quality := statusMoveBase(mv.Effect)
-				if quality > residualQuality {
-					residualDamage, residualQuality = i, quality
+			case game.BattleMoveRoleResidualDamage:
+				// Residual progress is preferred over inert status turns only
+				// when direct damage is unavailable.
+				if eval.PolicyPriority > residualQuality {
+					residualDamage, residualQuality = i, eval.PolicyPriority
 				}
-			case mv.Effect == rom.DefenseDown1Effect && defenseDown < 0:
-				defenseDown = i
+			case game.BattleMoveRoleSetup:
+				if setupMove < 0 || eval.PolicyPriority > setupEval.PolicyPriority {
+					setupMove, setupEval = i, eval
+				}
 			}
 		}
 
-		// Only spend a turn on setup while we are actually behind, only while
-		// we can afford it, and only when a direct attack exists to benefit.
-		// Without an attack, repeatedly lowering Defense cannot end the fight.
-		//
-		// Lowering the opponent's ATTACK was tried here too and removed.
-		// MEASURED: it cost Charmander three extra turns and did not save
-		// Bulbasaur, because Gen 1 critical hits ignore stat stages entirely.
-		behind := b.OffenceStage() < 0
-		healthy := b.ActiveMaxHP == 0 || b.ActiveHP*2 > b.ActiveMaxHP
-		if bestAttack >= 0 && behind && healthy && defenseDown >= 0 {
+		if bestAttack >= 0 && setupMove >= 0 && strategy.PreferSetupMove(b, setupEval, bestEval) {
 			if zbatDebug {
-				fmt.Printf("zbat policy=setup slot=%d reason=physical-offence-stage-%d\n", defenseDown, b.OffenceStage())
+				fmt.Printf("zbat policy=setup slot=%d reason=generation-strategy\n", setupMove)
 			}
-			return defenseDown
+			return setupMove
 		}
 		if bestAttack >= 0 {
 			if zbatDebug {
