@@ -89,9 +89,16 @@ func prepareFarmAttempt(m *emu.Emu, client *farm.Client, spec farm.Spec, planner
 	expectedResume := planner == "llm" && (isRetryAttempt || spec.Endless)
 	fallbackReason := ""
 	if planner == "llm" && dir != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), farmHTTPTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), farmResumeTimeout)
 		cp, lookupErr := client.ResumeCheckpoint(ctx, spec.RunID, spec.Attempt)
 		cancel()
+		if lookupErr != nil && expectedResume {
+			// The wall never said "nothing to resume" (that is a 204); it was
+			// slow, restarting or failed. Booting fresh here publishes early
+			// checkpoints under this attempt and throws away the campaign, so
+			// end the attempt and let the next lease look again.
+			return dir, 0, fmt.Errorf("resume lookup failed for attempt %d: %w", spec.Attempt, lookupErr)
+		}
 		if lookupErr != nil {
 			fallbackReason = fmt.Sprintf("resume lookup failed: %v", lookupErr)
 			log.Printf("farm: %s: resume lookup failed; starting attempt %d fresh: %v", spec.RunID, spec.Attempt, lookupErr)

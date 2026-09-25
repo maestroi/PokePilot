@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 )
 
@@ -172,5 +175,37 @@ func TestMaterializeFarmResumeNeverExposesPartialState(t *testing.T) {
 	<-readerDone
 	if partial != 0 {
 		t.Fatalf("reader observed %d partial writes (%d complete)", partial, complete)
+	}
+}
+
+// A retry whose resume lookup fails has not been told "nothing to resume", so
+// it must end the attempt rather than boot a fresh cartridge whose early
+// checkpoints would replace the campaign's progress (run-s6v9q3t2w5rl).
+func TestPrepareFarmAttemptRefusesFreshBootWhenExpectedResumeLookupFails(t *testing.T) {
+	rom := os.Getenv("POKEMON_RED_ROM")
+	if rom == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	m, err := emu.Open(rom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, _ *http.Request) {
+		res.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	boot, err := m.SaveState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := m.FrameCount()
+	spec := farm.Spec{RunID: "deep-campaign", Attempt: 358, Planner: "llm", Endless: true}
+	_, _, err = prepareFarmAttempt(m, farm.NewClient(srv.URL), spec, "llm", boot, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "resume lookup failed") {
+		t.Fatalf("prepare = %v, want resume lookup failure", err)
+	}
+	if m.FrameCount() != frame {
+		t.Fatal("attempt booted a fresh cartridge after a failed resume lookup")
 	}
 }
