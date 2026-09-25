@@ -378,7 +378,7 @@ func chooseFastTravel(m *emu.Emu, romData []byte, mem *state.Mem, dest Destinati
 	})
 }
 
-func openPartyFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
+func openPartyFieldMove(m *emu.Emu, partySlot int, move FieldMove) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
@@ -393,16 +393,46 @@ func openPartyFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
 	if err := selectFieldMoveUser(m, partySlot); err != nil {
 		return fmt.Errorf("select party slot %d: %w", partySlot, err)
 	}
-	idx := fieldMoveMenuIndex(m, menuID)
-	if idx < 0 {
-		return fmt.Errorf("field menu id %d absent for party slot %d", menuID, partySlot)
-	}
-	if err := SelectMenuItem(m, idx); err != nil {
-		return fmt.Errorf("select field menu id %d: %w", menuID, err)
+	if err := selectFieldMoveMenuEntry(m, move); err != nil {
+		return fmt.Errorf("party slot %d: %w", partySlot, err)
 	}
 	return nil
 }
 
+func openPartyNativeFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return fmt.Errorf("player is not controllable")
+	}
+	if err := openStartMenuEntry(m, startMenuPokemon); err != nil {
+		return fmt.Errorf("open POKEMON: %w", err)
+	}
+	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
+		return fmt.Errorf("party menu did not appear")
+	}
+	if err := selectFieldMoveUser(m, partySlot); err != nil {
+		return fmt.Errorf("select party slot %d: %w", partySlot, err)
+	}
+	idx := -1
+	for i := 0; i < 4; i++ {
+		id := m.Peek8(sym.FieldMoves + uint16(i))
+		if id == 0 {
+			break
+		}
+		if id == menuID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("native field menu id %d absent for party slot %d", menuID, partySlot)
+	}
+	if err := SelectMenuItem(m, idx); err != nil {
+		return fmt.Errorf("select native field menu id %d: %w", menuID, err)
+	}
+	return nil
+}
 func waitFastTravelArrival(m *emu.Emu, landing Destination) error {
 	if _, err := m.StepUntil(fastTravelWarpBudget, func(e *emu.Emu) bool {
 		var mem state.Mem
@@ -438,7 +468,7 @@ func useFlyTo(m *emu.Emu, destMap uint8) error {
 	if !outsideForFly(&mem) || !townVisited(&mem, 0) || !townVisited(&mem, destMap) {
 		return fmt.Errorf("Fly destination %#02x is not currently legal", destMap)
 	}
-	if err := openPartyFieldMove(m, cap.PartySlot, fieldFlyMenuID); err != nil {
+	if err := openPartyFieldMove(m, cap.PartySlot, FieldFly); err != nil {
 		return fmt.Errorf("Fly: %w", err)
 	}
 
@@ -484,7 +514,7 @@ func useDigFastTravel(m *emu.Emu, destMap uint8) error {
 	if slot < 0 || !escapeTravelAllowed(&mem) || mem.U8(sym.LastBlackoutMap) != destMap {
 		return fmt.Errorf("Dig fast travel is not legal to map %#02x", destMap)
 	}
-	if err := openPartyFieldMove(m, slot, digFieldMoveMenuID); err != nil {
+	if err := openPartyNativeFieldMove(m, slot, digFieldMoveMenuID); err != nil {
 		return fmt.Errorf("Dig: %w", err)
 	}
 	return waitFastTravelArrival(m, landing)
@@ -523,7 +553,7 @@ func useTeleportFastTravel(m *emu.Emu, destMap uint8) error {
 	if slot < 0 || !outsideForFly(&mem) || mem.U8(sym.LastBlackoutMap) != destMap {
 		return fmt.Errorf("Teleport fast travel is not legal to map %#02x", destMap)
 	}
-	if err := openPartyFieldMove(m, slot, teleportFieldMoveMenuID); err != nil {
+	if err := openPartyNativeFieldMove(m, slot, teleportFieldMoveMenuID); err != nil {
 		return fmt.Errorf("Teleport: %w", err)
 	}
 	return waitFastTravelArrival(m, landing)
