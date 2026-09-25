@@ -15,6 +15,7 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -90,6 +91,15 @@ func main() {
 	}
 	defer m.Close()
 
+	renderFeed := newRenderStateFeed()
+	if err := m.HandleWatch("/render-state.json", renderFeed); err != nil {
+		log.Fatalf("serve semantic state: %v", err)
+	}
+	redRenderer, renderErr := redrenderstate.New(m.ROM())
+	if renderErr != nil {
+		log.Printf("semantic renderer unavailable for loaded ROM: %v", renderErr)
+	}
+
 	served, err := m.Watch(*addr, *every)
 	if err != nil {
 		log.Fatalf("serve screen: %v", err)
@@ -98,6 +108,7 @@ func main() {
 	tracer := newDialogueTracer()
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
+		renderFeed.capture(m, redRenderer)
 		m.TracePlayer(livePlayer(m, &watchMem))
 	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
@@ -126,7 +137,7 @@ func main() {
 		fmt.Printf("farm mode: leasing runs from %s; games mounted: %s\n", orchURL, library.games())
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		if runFarm(m, client, library, watchPort(served), *checkpointDir) {
+		if runFarm(m, client, library, watchPort(served), *checkpointDir, renderFeed) {
 			// ErrLinkStalled can leave a goroutine inside the emulator. os.Exit
 			// intentionally skips the deferred m.Close so this poisoned instance
 			// is never touched again; Swarm restarts the failed worker task.

@@ -4,8 +4,34 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
+
+// HandleWatch registers one extra read-only HTTP route that Watch will mount.
+// Call it before Watch starts. The handler must serve buffered/captured data;
+// it must never read or step the emulator from the HTTP goroutine.
+func (m *Emu) HandleWatch(pattern string, handler http.Handler) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" || !strings.HasPrefix(pattern, "/") || handler == nil {
+		return fmt.Errorf("emu: invalid watch route %q", pattern)
+	}
+	switch pattern {
+	case "/", "/frame.png", "/trace.json":
+		return fmt.Errorf("emu: watch route %q is reserved", pattern)
+	}
+	if m.spec != nil || m.trace != nil {
+		return fmt.Errorf("emu: watch already started")
+	}
+	if m.watchRoutes == nil {
+		m.watchRoutes = make(map[string]http.Handler)
+	}
+	if _, exists := m.watchRoutes[pattern]; exists {
+		return fmt.Errorf("emu: watch route %q already registered", pattern)
+	}
+	m.watchRoutes[pattern] = handler
+	return nil
+}
 
 // Watch serves the emulator's screen over HTTP at addr so a human can see
 // what the agent is doing. It returns the address actually listened on,
@@ -30,6 +56,9 @@ func (m *Emu) Watch(addr string, everyFrames int) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/frame.png", specHandler.ServeHTTP)
 	mux.HandleFunc("/trace.json", m.trace.serveHTTP)
+	for pattern, handler := range m.watchRoutes {
+		mux.Handle(pattern, handler)
+	}
 	mux.HandleFunc("/", serveWatchPage)
 	go http.Serve(ln, mux) //nolint:errcheck // serves until the process exits
 	return ln.Addr().String(), nil

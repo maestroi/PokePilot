@@ -19,7 +19,8 @@ Spectator mode mounts only:
 - `GET /` — the spectator page
 - `GET /watch.js` — its browser code
 - `GET /v1/watch` — a sanitized run snapshot
-- `GET /frame?run=...` — a read-only game frame
+- `GET /frame?run=...` — a read-only classic game frame
+- `GET /render-state?run=...` — validated semantic RenderState for the modern live renderer
 - `GET /maps/{name}` — embedded semantic map JSON for the live overlay
 
 It does **not** mount the operator dashboard, queue, cancel, delete, triage, or MCP routes. Requests for those paths never reach `pokewall`.
@@ -47,4 +48,4 @@ For local testing against an already-running wall:
 go run ./cmd/pokeui -wall http://127.0.0.1:8080 -http :18081 -spectator
 ```
 
-The page polls the sanitized snapshot every two seconds and refreshes the selected game frame independently. It defaults to a running run, then a leased or queued run, then the most recent finished run. Selecting a run only changes what the browser watches; it never sends a mutation request.
+The page polls the sanitized snapshot every two seconds. A selected live Pokémon Red run also polls validated semantic `RenderState` independently and renders supported overworld scenes on a camera-following Canvas. The viewer can switch between **Modern** and **Classic**; battle/menu/unsupported or unavailable semantic states automatically fall back to the classic framebuffer. The semantic endpoint is read-only and buffered on the emulator stepping goroutine, so spectator HTTP requests never inspect or mutate gameplay RAM. Selecting a run or renderer only changes what the browser watches; it never sends a gameplay mutation request.
