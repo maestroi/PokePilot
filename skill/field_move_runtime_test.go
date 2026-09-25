@@ -23,14 +23,14 @@ func (fakeGen2FieldMoveDecoder) DecodeFieldMoveCapability(_ game.MemoryReader, _
 		}, true, nil
 	case game.FieldMoveHeadbutt:
 		return game.FieldMoveCapability{
-			Move:          id,
-			Name:          "HEADBUTT",
-			BadgeOwned:    false, // no badge requirement
-			MachineOwned:  true,
-			Learned:       true,
-			PartySlot:     2,
-			Preparable:    true,
-			Usable:        true,
+			Move:         id,
+			Name:         "HEADBUTT",
+			BadgeOwned:   false, // no badge requirement
+			MachineOwned: true,
+			Learned:      true,
+			PartySlot:    2,
+			Preparable:   true,
+			Usable:       true,
 		}, true, nil
 	default:
 		return game.FieldMoveCapability{}, false, nil
