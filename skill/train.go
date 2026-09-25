@@ -187,7 +187,10 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 	if !state.Controllable(&mem) {
 		return TrainResult{}, fmt.Errorf("skill: Train: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return TrainResult{}, fmt.Errorf("skill: Train: observe world: %w", err)
+	}
 	res := TrainResult{StartLevel: int(state.DecodeParty(&mem).Mons[0].Level), Mode: options.Mode}
 
 	grass, grid, err := liveEncounterCells(m, romData, now.Map)
@@ -740,7 +743,10 @@ func HasReachableGrassLive(m *emu.Emu, romData []byte) (bool, error) {
 	if m == nil {
 		return false, fmt.Errorf("skill: live encounter reachability: nil emulator")
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: live encounter reachability: observe world: %w", err)
+	}
 	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return false, err
