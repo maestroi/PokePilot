@@ -54,14 +54,14 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 	}
 
 	return game.LiveTopologyState{
-		NativeMapID:    uint16(mem.U8(sym.CurMap)),
-		WidthBlocks:    width,
-		HeightBlocks:   height,
-		Blocks:         blocks,
-		Traversal:      mode,
-		LiveObjects:    liveObjects,
+		NativeMapID:     uint16(mem.U8(sym.CurMap)),
+		WidthBlocks:     width,
+		HeightBlocks:    height,
+		Blocks:          blocks,
+		Traversal:       mode,
+		LiveObjects:     liveObjects,
 		ObjectPositions: positions,
-		HiddenObjects:  hidden,
+		HiddenObjects:   hidden,
 	}, nil
 }
 
