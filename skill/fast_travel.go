@@ -399,7 +399,6 @@ func openPartyFieldMove(m *emu.Emu, partySlot int, move FieldMove) error {
 	return nil
 }
 
-
 func openPartyNativeFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
