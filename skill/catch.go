@@ -276,7 +276,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			continue
 		}
 
-		return catchWanted(m, captureProfile, exec, want, wantNative, wantDex, policy, before, res, maxBalls)
+		return catchWantedWithSemantics(m, captureProfile, exec, want, wantNative, wantDex, policy, before, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, overworld.DecodeOverworld(m).NativeMapID)
@@ -285,7 +285,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 // catchWanted throws balls at the wanted target in progress and reports the
 // outcome. It never attacks: the only way the target takes damage here is a
 // bug, which OutcomeTargetFainted exists to name.
-func catchWanted(m *emu.Emu, profile game.CaptureProfile, exec captureExecutionSemantics, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
+func catchWantedWithSemantics(m *emu.Emu, profile game.CaptureProfile, exec captureExecutionSemantics, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
 	for res.BallsThrown < maxBalls && exec.runtime.DecodeBattleRuntime(m).InBattle {
 		nativeBall, ok := ordinaryCaptureBall(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder())
