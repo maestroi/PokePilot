@@ -328,15 +328,26 @@ func TestRunPlanningAutoContinuesBoundaryLegIntoSingleProgression(t *testing.T) 
 	}
 }
 
+type policyAddedStrategist struct {
+	added Objective
+}
+
+func (p *policyAddedStrategist) PlanningMenu(_ Observation, _ []Objective) []Objective {
+	return []Objective{p.added}
+}
+
+func (p *policyAddedStrategist) Next(_ Observation, _ []Objective) (Objective, error) {
+	return p.added, nil
+}
+
+func (p *policyAddedStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	return Plan{Goal: "restock before collecting", Steps: []string{p.added.String()}}, nil
+}
+
 func TestRunPlanningValidatesPolicyAddedStrategicObjective(t *testing.T) {
 	progress := Objective{Kind: KindProgress, Progress: "next_story_gate"}
 	remoteBuy := Objective{Kind: KindBuy, Item: "pokeball", Qty: 10, Intent: "test-remote-supply"}
-	p := &planningTestPlanner{
-		plans: []Plan{{Goal: "restock before collecting", Steps: []string{remoteBuy.String()}}},
-		zeroCall: func(_ Observation, _ []Objective) []Objective {
-			return []Objective{remoteBuy}
-		},
-	}
+	p := &policyAddedStrategist{added: remoteBuy}
 	r := newRunPlanning(Plan{})
 
 	obj, fromPlan, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, []Objective{progress})
