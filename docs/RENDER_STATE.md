@@ -52,3 +52,16 @@ Examples:
 - `transition` and `effects` indicate richer animation/event support.
 
 Unknown semantic tile/entity/effect values are valid. Renderers should use a neutral fallback asset or omit the unsupported enhancement rather than failing the whole scene.
+
+
+## Pokémon Red producer
+
+`red/renderstate.Producer` is the first game-owned implementation of the rich world surfaces. It accepts the exact supported Red ROM revision and reuses `red/rom` plus `world` for deterministic map decoding.
+
+Static reconstruction uses ROM-owned map headers, blocks, collision/field tiles, warps, and signs. The adapter translates Red's native tile meanings into semantic terrain such as path, wall, water, grass, tree, and warp; raw tile/block IDs never leave the adapter.
+
+Live snapshots additionally read the current `wOverworldMap` block buffer so script-driven `ReplaceTileBlock` changes are reflected rather than overwritten by static ROM geometry. Player movement and visible entity positions/facing come from the same RAM snapshot. Live object slots are joined to their static map objects only to derive stable semantic identity/kind; their observed coordinates remain ephemeral and are never persisted as map geometry.
+
+Sprite picture IDs are translated to semantic appearance keys such as `professor_oak`, `youngster`, or `poke_ball`. Unknown picture IDs become `unknown`. Unknown terrain that has no Red-specific meaning still degrades to the portable walkable `path` or blocked `wall` fallback.
+
+This package is intentionally Red-owned. Blue can share the Gen-I extraction mechanics through its adapter boundary where appropriate, while Yellow and later generations can provide their own native mappings and still emit the same `renderstate.RenderState` contract.
