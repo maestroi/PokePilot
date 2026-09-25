@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -334,31 +335,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 // opens at FIGHT but a stale saved item could leave it anywhere in the
 // grid, so every tap is verified before the next one — never a press count.
 func selectRunEntry(m *emu.Emu) error {
-	atRun := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuRightX && int(m.Peek8(sym.CurrentMenuItem)) == mainMenuMax
-	}
-	for i := 0; i < 12; i++ {
-		if atRun(m) {
-			return nil
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevRow < mainMenuMax:
-			btn = emu.Down // FIGHT -> ITEM and PKMN -> RUN
-		case prevX == battleMenuLeftX:
-			btn = emu.Right // ITEM -> RUN
-		default:
-			btn = emu.Left // right column below the target: back left
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: Flee: cursor stuck at x=%#02x row %d, want RUN (x=%#02x row %d)", prevX, prevRow, battleMenuRightX, mainMenuMax)
-		}
-	}
-	return fmt.Errorf("skill: Flee: cursor did not reach RUN")
+	return selectBattleMainMenuEntry(m, game.BattleMenuRun)
 }
 
 // selectSafariRunEntry moves the Safari BALL/BAIT/THROW ROCK/RUN cursor to
