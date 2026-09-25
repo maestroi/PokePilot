@@ -36,83 +36,6 @@ const (
 	FieldHeadbutt
 )
 
-// FieldActionKind distinguishes moves that operate on a nearby world target
-// from moves that enter a mode or transition. Strength is target-oriented
-// even though the ROM implements it by enabling a temporary map-wide flag:
-// callers use it in the context of the boulder directly in front of Red.
-type FieldActionKind uint8
-
-const (
-	FieldActionTargeted FieldActionKind = iota
-	FieldActionMode
-	FieldActionTransition
-)
-
-// FieldMoveSpec is the stable definition of one field capability. HMItem,
-// MoveID, and MenuID are the ROM encodings used by the generic teaching/menu
-// primitives; Badge is the badge the party menu checks before dispatching it.
-type FieldMoveSpec struct {
-	Move   FieldMove
-	Name   string
-	HMItem uint8
-	MoveID uint8
-	MenuID uint8
-	Badge  state.Badge
-	Kind   FieldActionKind
-}
-
-const (
-	fieldHM02Item uint8 = 0xC5
-	fieldHM03Item uint8 = 0xC6
-	fieldHM04Item uint8 = 0xC7
-	fieldHM05Item uint8 = 0xC8
-
-	fieldFlyMove      uint8 = 0x13
-	fieldSurfMove     uint8 = 0x39
-	fieldStrengthMove uint8 = 0x46
-	fieldFlashMove    uint8 = 0x94
-
-	fieldFlyMenuID      uint8 = 2
-	fieldSurfMenuID     uint8 = 4
-	fieldStrengthMenuID uint8 = 5
-	fieldFlashMenuID    uint8 = 6
-
-	fieldStrengthActiveBit = 1 << 0
-	fieldSurfingState      = 2
-	fieldActionBudget      = 3000
-)
-
-var fieldMoveSpecs = [...]FieldMoveSpec{
-	{
-		Move: FieldCut, Name: "CUT", HMItem: hm01Item, MoveID: cutMove,
-		MenuID: cutFieldMove, Badge: state.BadgeCascade, Kind: FieldActionTargeted,
-	},
-	{
-		Move: FieldFly, Name: "FLY", HMItem: fieldHM02Item, MoveID: fieldFlyMove,
-		MenuID: fieldFlyMenuID, Badge: state.BadgeThunder, Kind: FieldActionTransition,
-	},
-	{
-		Move: FieldSurf, Name: "SURF", HMItem: fieldHM03Item, MoveID: fieldSurfMove,
-		MenuID: fieldSurfMenuID, Badge: state.BadgeSoul, Kind: FieldActionMode,
-	},
-	{
-		Move: FieldStrength, Name: "STRENGTH", HMItem: fieldHM04Item, MoveID: fieldStrengthMove,
-		MenuID: fieldStrengthMenuID, Badge: state.BadgeRainbow, Kind: FieldActionTargeted,
-	},
-	{
-		Move: FieldFlash, Name: "FLASH", HMItem: fieldHM05Item, MoveID: fieldFlashMove,
-		MenuID: fieldFlashMenuID, Badge: state.BadgeBoulder, Kind: FieldActionMode,
-	},
-}
-
-// FieldMoveSpecFor returns the definition for move.
-func FieldMoveSpecFor(move FieldMove) (FieldMoveSpec, bool) {
-	if int(move) >= len(fieldMoveSpecs) {
-		return FieldMoveSpec{}, false
-	}
-	return fieldMoveSpecs[move], true
-}
-
 func (m FieldMove) String() string {
 	if id, ok := semanticFieldMove(m); ok {
 		return strings.ToUpper(string(id))
@@ -120,93 +43,14 @@ func (m FieldMove) String() string {
 	return fmt.Sprintf("field-move(%d)", uint8(m))
 }
 
-// ProgressionFieldMoves is the set party/PC planning must treat as strategic
-// capabilities. Returning a fresh slice keeps callers from mutating package
-// state while still giving storage/roster code one authoritative list.
-func ProgressionFieldMoves() []FieldMove {
-	return []FieldMove{FieldCut, FieldFly, FieldSurf, FieldStrength, FieldFlash}
-}
-
-// SemanticFieldMoves is the generation-neutral field-move vocabulary exposed
-// by the generic lane. Red's roster planner intentionally keeps using
-// ProgressionFieldMoves above; a Gen II adapter can additionally implement
-// Whirlpool, Waterfall, and Headbutt without changing generic callers.
+// SemanticFieldMoves returns the portable field-move vocabulary. Concrete
+// profiles decide which moves exist and how their prerequisites/menu entries
+// are encoded.
 func SemanticFieldMoves() []FieldMove {
 	return []FieldMove{
 		FieldCut, FieldFly, FieldSurf, FieldStrength, FieldFlash,
 		FieldWhirlpool, FieldWaterfall, FieldHeadbutt,
 	}
-}
-
-// FieldCapability is a snapshot of one capability's prerequisites. Usable is
-// intentionally strict: owning an HM never makes a field move usable. The
-// required badge must be owned and a current party member must already know
-// the move. HMOwned is reported separately so callers may decide to prepare
-// the capability through generic TM/HM teaching.
-type FieldCapability struct {
-	Move       FieldMove
-	Name       string
-	Badge      state.Badge
-	BadgeOwned bool
-	HMOwned    bool
-	Learned    bool
-	PartySlot  int
-	Usable     bool
-}
-
-// FieldCapabilityFor decodes one field capability from a RAM snapshot.
-func FieldCapabilityFor(mem *state.Mem, move FieldMove) FieldCapability {
-	spec, ok := FieldMoveSpecFor(move)
-	if !ok {
-		return FieldCapability{Move: move, PartySlot: -1}
-	}
-	slot := partyMoveSlot(mem, spec.MoveID)
-	_, qty := bagEntry(mem, spec.HMItem)
-	badge := state.DecodeProgress(mem).Has(spec.Badge)
-	learned := slot >= 0
-	return FieldCapability{
-		Move:       move,
-		Name:       spec.Name,
-		Badge:      spec.Badge,
-		BadgeOwned: badge,
-		HMOwned:    qty > 0,
-		Learned:    learned,
-		PartySlot:  slot,
-		Usable:     badge && learned,
-	}
-}
-
-// FieldCapabilities returns all progression field capabilities in stable
-// order. This is the shared query surface for routing and future party/PC
-// retention: callers do not need to know HM item IDs or badge mappings.
-func FieldCapabilities(mem *state.Mem) []FieldCapability {
-	moves := ProgressionFieldMoves()
-	out := make([]FieldCapability, 0, len(moves))
-	for _, move := range moves {
-		out = append(out, FieldCapabilityFor(mem, move))
-	}
-	return out
-}
-
-// CanPrepareFieldMove reports whether a currently unusable capability can be
-// made usable without changing the party composition: the badge and HM must
-// be present and the generic TM/HM policy must find a compatible legal party
-// slot. This is deliberately stronger than "HM owned" and is safe for Travel
-// to use before deciding a blocked route is recoverable.
-func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove) bool {
-	cap := FieldCapabilityFor(mem, move)
-	if cap.Usable {
-		return true
-	}
-	if !cap.BadgeOwned || !cap.HMOwned {
-		return false
-	}
-	spec, ok := FieldMoveSpecFor(move)
-	if !ok {
-		return false
-	}
-	decision, err := DecideTMHM(romData, state.DecodeParty(mem), spec.HMItem, true)
-	return err == nil && decision.PartySlot >= 0
 }
 
 // EnsureFieldMove makes move usable by the current party. It reuses the
@@ -282,6 +126,8 @@ func fieldMoveMenuIndex(m *emu.Emu, move FieldMove) int {
 	}
 	return fieldMoveMenuIndexWithProfile(profile, m, move)
 }
+
+const fieldActionBudget = 3000
 
 // FieldActionResult is the positively observed result of UseFieldMove.
 type FieldActionResult struct {
