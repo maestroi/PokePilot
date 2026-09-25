@@ -104,7 +104,6 @@ func TestLiveMapGridRuntimeDoesNotReadConcreteSurfMode(t *testing.T) {
 	}
 }
 
-
 func TestFieldMoveLaneDoesNotDecodeRedPrerequisitesOrMenuIDs(t *testing.T) {
 	for _, path := range []string{"field_action.go", "field_move_runtime.go"} {
 		src, err := os.ReadFile(path)
