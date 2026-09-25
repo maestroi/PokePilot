@@ -69,6 +69,12 @@ type CatchResult struct {
 const (
 	catchHuntCap   = 32  // wanted-species encounters met before giving up
 	catchGrassLegs = 500 // total grass legs the hunt may spend on encounters
+	// catchHuntFrameCap keeps the stochastic search inside the historical
+	// 500k-frame objective envelope, but checks it only at safe overworld
+	// boundaries. The Red objective adapter gives Catch a larger hard watchdog
+	// solely so one battle already started near this boundary can finish under
+	// Battle's own 600k-frame backstop instead of being interrupted mid-menu.
+	catchHuntFrameCap uint64 = 500_000
 
 	// battleEndSettle bounds the wait for a just-ended battle to clear RAM
 	// and the player to become controllable again.
@@ -164,7 +170,17 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 
 	next := b
 	legsSpent := 0
+	huntStartFrame := m.FrameCount()
 	for res.Encounters < catchHuntCap && legsSpent < catchGrassLegs {
+		// The frame budget is intentionally cooperative: check only here, where
+		// the previous leg/battle has fully settled and it is safe to return the
+		// ordinary bounded-hunt outcome. The outer objective watchdog retains
+		// enough reserve for any battle started by the preceding leg to finish.
+		if catchHuntFrameBudgetReached(huntStartFrame, m.FrameCount()) {
+			return res, fmt.Errorf("%w: %d-frame hunt budget, %d grass legs and %d encounters (map %#04x)",
+				ErrCatchHuntExhausted, catchHuntFrameCap, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		}
+
 		// One leg: walk to the other grass cell. Stepping onto a fresh grass
 		// cell re-rolls the encounter, whether or not one fires on this leg.
 		d := Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}
@@ -347,6 +363,10 @@ func waitForBattleEnd(m *emu.Emu) error {
 }
 
 // speciesIn reports whether s is one of the wanted species.
+func catchHuntFrameBudgetReached(start, now uint64) bool {
+	return now >= start && now-start >= catchHuntFrameCap
+}
+
 func speciesIn(s uint8, want []uint8) bool {
 	for _, w := range want {
 		if w == s {
