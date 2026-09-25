@@ -184,7 +184,7 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		o.Flee = *a.Flee
 	}
 	if a.Intent != "" {
-		o.Intent = a.Intent
+		o.Purpose = a.Intent
 	}
 	return o, nil
 }

@@ -437,7 +437,7 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 	}
 	o, usedFallback, err := resolveReply(offered, reply)
 	if err == nil {
-		err = validateIntentFacts(o.Intent, obs)
+		err = validateIntentFacts(o.Purpose, obs)
 	}
 	if usedFallback {
 		p.Health.Fallbacks++

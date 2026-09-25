@@ -339,9 +339,9 @@ func TestRunCarriesIntentAcrossRounds(t *testing.T) {
 
 	const first, second = "earn the boulder badge", "catch a pidgey on route 1"
 	p := &capturePlanner{objs: []agent.Objective{
-		{Kind: agent.KindStarter, Intent: first},
+		{Kind: agent.KindStarter, Purpose: first},
 		{Kind: agent.KindGoTo, Place: "pallet town"},
-		{Kind: agent.KindGoTo, Place: "pallet town", Intent: second},
+		{Kind: agent.KindGoTo, Place: "pallet town", Purpose: second},
 	}}
 	res := agent.Run(e, e.ROM(), p, testBudget())
 

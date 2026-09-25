@@ -214,8 +214,8 @@ runLoop:
 		}
 
 		switch {
-		case obj.Intent != "" && obj.Intent != intent:
-			intent, intentAge = obj.Intent, 0
+		case obj.Purpose != "" && obj.Purpose != intent:
+			intent, intentAge = obj.Purpose, 0
 		case intent != "":
 			intentAge++
 		}
