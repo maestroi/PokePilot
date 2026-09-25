@@ -164,8 +164,10 @@ export function validateThemePack(input: unknown): ThemeValidation {
     errors.push('id must use lowercase letters, numbers, and hyphens')
   }
   if (!nonEmptyString(input.name)) errors.push('name is required')
-  if (!Number.isInteger(input.version) || Number(input.version) < 1) errors.push('version must be a positive integer')
-  if (!Number.isFinite(input.tileSize) || Number(input.tileSize) < 16 || Number(input.tileSize) > 64) {
+  if (typeof input.version !== 'number' || !Number.isInteger(input.version) || input.version < 1) {
+    errors.push('version must be a positive integer')
+  }
+  if (typeof input.tileSize !== 'number' || !Number.isFinite(input.tileSize) || input.tileSize < 16 || input.tileSize > 64) {
     errors.push('tileSize must be between 16 and 64')
   }
 
@@ -204,7 +206,7 @@ export function validateThemePack(input: unknown): ThemeValidation {
     } else {
       for (const key of ['waterPeriodMs', 'redrawIntervalMs']) {
         const value = input.animation[key]
-        if (value !== undefined && (!Number.isFinite(value) || Number(value) < 16 || Number(value) > 60_000)) {
+        if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 16 || value > 60_000)) {
           errors.push(`animation.${key} must be between 16 and 60000 milliseconds`)
         }
       }
