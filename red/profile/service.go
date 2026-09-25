@@ -34,7 +34,7 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 		out.Phase = game.ShopPhaseClosed
 		return out
 	}
-	if _, ok := state.DecodeTwoOptionMenu(&mem); ok {
+	if state.DecodeTwoOptionMenu(&mem) != nil {
 		out.Phase = game.ShopPhaseConfirmation
 		return out
 	}
@@ -66,7 +66,7 @@ func (*Profile) DecodeCenter(reader game.MemoryReader) game.CenterState {
 	}
 	var mem state.Mem
 	reader.PeekInto(0, mem[:])
-	_, prompt := state.DecodeTwoOptionMenu(&mem)
+	prompt := state.DecodeTwoOptionMenu(&mem) != nil
 	return game.CenterState{
 		PromptOpen:   prompt,
 		Recovered:    partyCenterRecovered(state.DecodeParty(&mem)),
