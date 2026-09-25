@@ -406,7 +406,7 @@ func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy Move
 	res, err := travel(m, policy, maxBattles,
 		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgressFor(m) },
 		resolveTrainingBattle(m, policy, options),
 	)
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
