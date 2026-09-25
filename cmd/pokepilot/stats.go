@@ -162,7 +162,7 @@ func (s *statsPlanner) RoutePriority() agent.RoutePriority {
 	return agent.RoutePriorityForPlayStyle(s.playStyle)
 }
 
-func (s *statsPlanner) ZeroCallPlanningMenu(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+func (s *statsPlanner) PlanningMenu(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	return s.applyRunPolicy(obs, offered)
 }
 
