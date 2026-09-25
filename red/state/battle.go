@@ -1,109 +1,28 @@
 package state
 
-import "github.com/maestroi/pokepilot/red/sym"
+import (
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
-// BattleKind classifies the kind of battle in progress.
-type BattleKind uint8
+// Compatibility aliases keep existing Gen-I strategy/tests source-stable while
+// the reusable battle controller moves to game.BattleState.
+type BattleKind = game.BattleKind
 
 const (
-	BattleNone    BattleKind = 0
-	BattleWild    BattleKind = 1
-	BattleTrainer BattleKind = 2
+	BattleNone    = game.BattleNone
+	BattleWild    = game.BattleWild
+	BattleTrainer = game.BattleTrainer
 )
 
 // CurrentPPMask is the low six bits of a Gen 1 PP byte. The high two bits
-// store how many PP Ups were used, so testing the raw byte for non-zero can
-// falsely report a move with zero current PP as usable.
+// store how many PP Ups were used.
 const CurrentPPMask uint8 = 0x3f
 
-// Move is one battle move slot.
-type Move struct {
-	ID uint8 // 0 means the slot is empty
-	PP uint8 // current PP; PP Up count bits are stripped during decode
-}
+type Move = game.BattleMove
+type BattleState = game.BattleState
 
-// BattleState is the decoded battle context.
-type BattleState struct {
-	Kind          BattleKind
-	EnemySpecies  uint8
-	EnemyHP       uint16
-	EnemyMaxHP    uint16
-	EnemyLevel    uint8
-	ActiveSpecies uint8
-	ActiveHP      uint16 // the player's active mon
-	ActiveLevel   uint8
-	ActiveMaxHP   uint16
-	Moves         [4]Move
-
-	// These are the current battle stats used directly by Red's damage
-	// routine. Stat-stage moves update these values, so callers can compare
-	// physical and special attacks without reconstructing stage math.
-	ActiveAttack  uint16
-	ActiveDefense uint16
-	ActiveSpecial uint16
-	EnemyAttack   uint16
-	EnemyDefense  uint16
-	EnemySpecial  uint16
-
-	// DisabledMove is the game's 1-based move slot from the high nibble of
-	// wPlayerDisabledMove. Zero means no move is disabled. Keeping the RAM's
-	// 1..4 encoding makes the zero value of BattleState mean "none disabled"
-	// and keeps hand-built test states backwards-compatible.
-	DisabledMove uint8
-
-	// Stat stages, biased the way the game stores them: 7 is neutral, lower
-	// is worse for us. They remain useful for deciding whether a setup move
-	// is worth a turn even though expected damage uses the live stats above.
-	ActiveAttackMod  uint8 // wPlayerMonAttackMod
-	ActiveDefenseMod uint8 // wPlayerMonDefenseMod
-	EnemyAttackMod   uint8 // wEnemyMonAttackMod
-	EnemyDefenseMod  uint8 // wEnemyMonDefenseMod
-
-	// The combatants' types. Gen 1 damage is multiplied by the move's
-	// effectiveness against BOTH of the defender's types, so a policy that
-	// reads only raw power picks a 40-power Normal move over a 40-power
-	// Water one against a Rock/Ground opponent — the first does half damage,
-	// the second does quadruple. A single-type mon repeats its type in both
-	// bytes, exactly as the game stores it.
-	EnemyType1  uint8 // wEnemyMonType1
-	EnemyType2  uint8 // wEnemyMonType2
-	ActiveType1 uint8 // wBattleMonType1
-	ActiveType2 uint8 // wBattleMonType2
-}
-
-// StatStageNeutral is the value both stat mods hold when nothing has raised
-// or lowered them.
-const StatStageNeutral uint8 = 7
-
-// OffenceStage reports how much better or worse our physical damage is than
-// at the start of the battle: our Attack stage minus the enemy's Defense
-// stage. Negative means we are being ground down. Lowering the enemy's
-// Defense by a stage cancels a stage lost from our Attack exactly, because
-// Gen 1 damage scales on the ratio of the two.
-func (b BattleState) OffenceStage() int {
-	return int(b.ActiveAttackMod) - int(b.EnemyDefenseMod)
-}
-
-// DefenceStage is the mirror of OffenceStage, for the damage coming at us:
-// the enemy's Attack stage minus our Defense stage. Positive means they are
-// hitting harder than they did at the start.
-func (b BattleState) DefenceStage() int {
-	return int(b.EnemyAttackMod) - int(b.ActiveDefenseMod)
-}
-
-// Usable returns the indices of move slots with ID != 0 and PP > 0 that are
-// not currently disabled, in slot order. DisabledMove uses the game's 1-based
-// slot encoding, hence i+1. PP is already decoded to current remaining PP;
-// the PP Up count bits never make an exhausted move appear usable.
-func (b BattleState) Usable() []int {
-	var out []int
-	for i, mv := range b.Moves {
-		if mv.ID != 0 && mv.PP > 0 && b.DisabledMove != uint8(i+1) {
-			out = append(out, i)
-		}
-	}
-	return out
-}
+const StatStageNeutral = game.StatStageNeutral
 
 // DecodeBattle returns nil when no battle is in progress.
 func DecodeBattle(m *Mem) *BattleState {
@@ -116,6 +35,7 @@ func DecodeBattle(m *Mem) *BattleState {
 	default:
 		return nil
 	}
+	disabled := m.U8(sym.PlayerDisabledMove) >> 4
 	s := &BattleState{
 		Kind:             kind,
 		EnemySpecies:     m.U8(sym.EnemyMonSpecies),
@@ -132,7 +52,7 @@ func DecodeBattle(m *Mem) *BattleState {
 		EnemyAttack:      m.U16BE(sym.EnemyMonAttack),
 		EnemyDefense:     m.U16BE(sym.EnemyMonDefense),
 		EnemySpecial:     m.U16BE(sym.EnemyMonSpecial),
-		DisabledMove:     m.U8(sym.PlayerDisabledMove) >> 4,
+		DisabledMove:     disabled,
 		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
 		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
 		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),
@@ -142,23 +62,29 @@ func DecodeBattle(m *Mem) *BattleState {
 		ActiveType1:      m.U8(sym.BattleMonType1),
 		ActiveType2:      m.U8(sym.BattleMonType2),
 	}
+	// Gen I has one Special stat; fill both split fields so callers that use the
+	// portable Gen-II-shaped names see the same live value.
+	s.ActiveSpecialAttack = s.ActiveSpecial
+	s.ActiveSpecialDefense = s.ActiveSpecial
+	s.EnemySpecialAttack = s.EnemySpecial
+	s.EnemySpecialDefense = s.EnemySpecial
 	for i := 0; i < len(s.Moves); i++ {
 		s.Moves[i].ID = m.U8(sym.BattleMonMoves + uint16(i))
 		s.Moves[i].PP = m.U8(sym.BattleMonPP+uint16(i)) & CurrentPPMask
+		s.Moves[i].Disabled = disabled == uint8(i+1)
 	}
 	return s
 }
 
-// BattleResult reports how a finished battle ended.
-type BattleResult uint8
+type BattleResult = game.BattleResult
 
 const (
-	ResultWon BattleResult = iota
-	ResultLost
-	ResultDraw
+	ResultWon  = game.BattleWon
+	ResultLost = game.BattleLost
+	ResultDraw = game.BattleDraw
 )
 
-// DecodeBattleResult decodes wBattleResult.
+// DecodeBattleResult decodes wBattleResult into the portable result enum.
 func DecodeBattleResult(m *Mem) BattleResult {
 	return BattleResult(m.U8(sym.BattleResult))
 }
