@@ -8,7 +8,6 @@ import (
 	"time"
 )
 
-
 // HandleWatch registers one extra read-only HTTP route that Watch will mount.
 // Call it before Watch starts. The handler must serve buffered/captured data;
 // it must never read or step the emulator from the HTTP goroutine.
