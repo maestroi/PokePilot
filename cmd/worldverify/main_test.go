@@ -27,10 +27,9 @@ func TestNormalizeGameFlag(t *testing.T) {
 }
 
 func TestWorldAdapters(t *testing.T) {
-	if !hasWorldAdapter("pokemon-red") || !hasWorldAdapter("pokemon-blue") {
-		t.Fatal("Red and Blue must both have Gen-I world adapters")
-	}
-	if hasWorldAdapter("pokemon-yellow") {
-		t.Fatal("Yellow must not be advertised until its world adapter is implemented")
+	for _, id := range []string{"pokemon-red", "pokemon-blue", "pokemon-yellow"} {
+		if !hasWorldAdapter(id) {
+			t.Errorf("%s must have a Gen-I world adapter", id)
+		}
 	}
 }
