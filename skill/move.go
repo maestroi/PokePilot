@@ -158,6 +158,10 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 	if err != nil {
 		return err
 	}
+	return walkPathWithRuntimeDecoder(m, path, decoder)
+}
+
+func walkPathWithRuntimeDecoder(m *emu.Emu, path []world.Step, decoder game.OverworldDecoder) error {
 	for _, step := range path {
 		stepErr := stepOnceWithRuntimeDecoder(m, step, decoder)
 
