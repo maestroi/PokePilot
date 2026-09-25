@@ -58,7 +58,6 @@ func TestRunPurposeSystemNote(t *testing.T) {
 	}
 }
 
-
 func TestApplyRunPurposeDexGoalPrioritizesAcquisition(t *testing.T) {
 	obs := Observation{
 		PartyCount: 1,
