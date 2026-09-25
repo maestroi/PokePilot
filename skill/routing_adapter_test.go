@@ -11,7 +11,7 @@ import (
 
 type fakeRoutingMemory struct{}
 
-func (fakeRoutingMemory) Peek8(uint16) byte { return 0 }
+func (fakeRoutingMemory) Peek8(uint16) byte       { return 0 }
 func (fakeRoutingMemory) PeekInto(uint16, []byte) {}
 
 type fakeRoutingDecoder struct {
