@@ -51,21 +51,21 @@ func (*Profile) EvaluateCombatMove(
 		return game.BattleMoveEvaluation{}, role, err
 	}
 	return game.BattleMoveEvaluation{
-		MoveID:          eval.MoveID,
-		NativeMoveID:    nativeMoveID,
-		Physical:        eval.Physical,
-		AttackStat:      eval.AttackStat,
-		DefenseStat:     eval.DefenseStat,
-		NeutralDamage:   eval.NeutralDamage,
-		Effectiveness:   eval.Effectiveness,
-		STAB:            eval.STAB,
-		Accuracy:        eval.Accuracy,
-		CurrentPP:       eval.CurrentPP,
-		MaxPP:           eval.MaxPP,
-		DamageRule:      eval.DamageRule,
-		ExpectedScore:   eval.ExpectedScore,
-		PolicyPriority:  priority,
-		DebugText:       eval.String(),
+		MoveID:         eval.MoveID,
+		NativeMoveID:   nativeMoveID,
+		Physical:       eval.Physical,
+		AttackStat:     eval.AttackStat,
+		DefenseStat:    eval.DefenseStat,
+		NeutralDamage:  eval.NeutralDamage,
+		Effectiveness:  eval.Effectiveness,
+		STAB:           eval.STAB,
+		Accuracy:       eval.Accuracy,
+		CurrentPP:      eval.CurrentPP,
+		MaxPP:          eval.MaxPP,
+		DamageRule:     eval.DamageRule,
+		ExpectedScore:  eval.ExpectedScore,
+		PolicyPriority: priority,
+		DebugText:      eval.String(),
 	}, role, nil
 }
 
