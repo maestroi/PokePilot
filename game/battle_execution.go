@@ -38,6 +38,7 @@ type BattleExecutionState struct {
 	InBattle     bool
 	Phase        BattleExecutionPhase
 	ForgetCursor MenuCursorState
+	ForgetReady  bool
 	OfferedMove  uint16
 	Learner      BattleMoveLearnerState
 	PartyMoves   [][4]uint16
