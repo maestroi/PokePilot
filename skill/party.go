@@ -159,4 +159,3 @@ func SwitchActive(m *emu.Emu, slot int) error {
 	}
 	return nil
 }
-
