@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+
 	gameruntime "github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/state"
