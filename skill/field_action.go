@@ -362,12 +362,8 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select party slot %d: %w", spec.Name, slot, err)
 	}
 
-	idx := fieldMoveMenuIndex(m, move)
-	if idx < 0 {
-		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d knows the move but the semantic field-move entry is absent", spec.Name, slot)
-	}
-	if err := SelectMenuItem(m, idx); err != nil {
-		return FieldActionResult{}, fmt.Errorf("skill: %s: select field move: %w", spec.Name, err)
+	if err := selectFieldMoveMenuEntry(m, move); err != nil {
+		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d: %w", spec.Name, slot, err)
 	}
 	m.StepFrames(30)
 	if err := settleFieldAction(m, &mem, spec, decoder); err != nil {
