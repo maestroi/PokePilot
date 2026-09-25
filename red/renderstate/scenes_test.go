@@ -19,7 +19,7 @@ func TestSemanticBattleProjectsActorsMovesAndStatus(t *testing.T) {
 	mem[sym.BattleMonMaxHP] = 0
 	mem[sym.BattleMonMaxHP+1] = 31
 	mem[sym.BattleMonStatus] = 1 << 3 // poison
-	mem[sym.EnemyMonSpecies] = 0x24  // Pidgey
+	mem[sym.EnemyMonSpecies] = 0x24   // Pidgey
 	mem[sym.EnemyMonLevel] = 9
 	mem[sym.EnemyMonHP] = 0
 	mem[sym.EnemyMonHP+1] = 14
