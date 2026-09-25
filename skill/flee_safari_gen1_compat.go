@@ -90,4 +90,3 @@ func waitGen1FleeMenu(m *emu.Emu) (fleeMenuKind, error) {
 		m.Tap(fleeWaitInputFromMem(&mem), 3, 7)
 	}
 }
-
