@@ -207,3 +207,46 @@ func TestValidateRejectsBrokenLayerShapeAndSchema(t *testing.T) {
 		t.Fatalf("schema validation err=%v", err)
 	}
 }
+
+
+func TestBattlePresentationFieldsRoundTripWithoutNativeIDs(t *testing.T) {
+	state := RenderState{
+		SchemaVersion: SchemaVersion,
+		Game:          GameRef{ID: "pokemon-red", Revision: "en-us-rev0"},
+		Scene:         SceneBattle,
+		Capabilities:  []Capability{CapabilityBattle},
+		Battle: &BattleState{
+			Kind:  "wild",
+			Phase: "menu",
+			Actors: []BattleActor{
+				{ID: "player-active", Role: "player", Name: "Charmander", Appearance: "charmander", Level: 12, HP: 21, MaxHP: 31, Status: "poisoned", Active: true},
+				{ID: "opponent-active", Role: "opponent", Name: "Pidgey", Appearance: "pidgey", Level: 9, HP: 14, MaxHP: 25, Active: true},
+			},
+			Moves: []BattleMove{
+				{ID: "tackle", Name: "Tackle", PP: 12, MaxPP: 35},
+				{ID: "tail-whip", Name: "Tail Whip", PP: 17, MaxPP: 30, Disabled: true},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := WriteJSON(&buf, state); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte("native")) {
+		t.Fatalf("native identity leaked onto battle wire: %s", buf.Bytes())
+	}
+	got, err := ReadJSON(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Battle == nil || len(got.Battle.Actors) != 2 || len(got.Battle.Moves) != 2 {
+		t.Fatalf("battle roundtrip = %+v", got.Battle)
+	}
+	if got.Battle.Actors[0].Appearance != "charmander" || got.Battle.Actors[0].Level != 12 {
+		t.Fatalf("player actor = %+v", got.Battle.Actors[0])
+	}
+	if got.Battle.Moves[1].ID != "tail-whip" || !got.Battle.Moves[1].Disabled {
+		t.Fatalf("move = %+v", got.Battle.Moves[1])
+	}
+}
