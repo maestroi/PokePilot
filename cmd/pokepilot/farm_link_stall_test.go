@@ -72,7 +72,7 @@ func TestFinishRunWithRecordingAllowsNilEmulator(t *testing.T) {
 
 func TestFarmModeHardExitsWhenWorkerNeedsRecycle(t *testing.T) {
 	src := functionSource(t, "main.go", "main")
-	if !strings.Contains(src, "if runFarm(m, client, library, watchPort(served), *checkpointDir)") {
+	if !strings.Contains(src, "if runFarm(m, client, library, watchPort(served), *checkpointDir, renderFeed)") {
 		t.Fatal("main does not inspect farm worker recycle result")
 	}
 	if !strings.Contains(src, "os.Exit(1)") {
