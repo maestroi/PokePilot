@@ -29,9 +29,9 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 	if err != nil {
 		return game.LiveTopologyState{}, err
 	}
-	mode := worldmodel.TraversalLand
+	mode := game.TraversalLand
 	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
-		mode = worldmodel.TraversalWater
+		mode = game.TraversalWater
 	}
 
 	live := state.DecodeSprites(&mem)
