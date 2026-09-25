@@ -64,5 +64,3 @@ func monHasCurrentPP(mon state.Mon) bool {
 func livePartyHasCurrentPP(mem *state.Mem) bool {
 	return gen1BattleResourcesFromMem(mem).LivePartyHasCurrentPP()
 }
-
-
