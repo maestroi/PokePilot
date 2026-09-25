@@ -133,6 +133,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
+	partyDecoder, err := partyMenuDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
 
 	if _, ok := battleDecoder.DecodeBattleState(m); !ok {
 		live := runtimeDecoder.DecodeBattleRuntime(m)
@@ -178,6 +182,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		runtime := runtimeDecoder.DecodeBattleRuntime(m)
 		execution := executionDecoder.DecodeBattleExecution(m)
 		resources := resourcesDecoder.DecodeBattleResources(m)
+		partyMenu := partyDecoder.DecodePartyMenu(m)
 		bs, inBattle := battleDecoder.DecodeBattleState(m)
 		if inBattle {
 			if p := progressOf(bs); p != lastProgress {
@@ -483,7 +488,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				return menuError(m, "answer two-option prompt", err)
 			}
 
-		case partyMenuUp(m):
+		case partyMenu.Visible && partyMenu.Kind == game.PartyMenuForcedBattle:
 			slot := resources.FirstLivePartySlot()
 			var replacement switchEvaluation
 			if current, ok := battleDecoder.DecodeBattleState(m); ok {
@@ -505,7 +510,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		case switchBoxUp(m):
 			m.Tap(emu.B, 3, 7)
 
-		case battleSwitchMenuUp(m):
+		case partyMenu.Visible && partyMenu.Kind == game.PartyMenuVoluntaryBattle:
 			forcedChoiceVisits++
 			if forcedChoiceVisits > forcedChoiceCap {
 				live := runtimeDecoder.DecodeBattleRuntime(m)
