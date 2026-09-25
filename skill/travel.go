@@ -6,8 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -45,10 +43,11 @@ type TravelResult struct {
 // battleResolution is the outcome of resolving one interrupting battle under
 // the journey's policy: either it was fought to a BattleResult, or it was a
 // wild encounter that was fled (fled true, outcome empty). A lost fight sets
-// outcome to state.ResultLost; a flee can never lose. trainer preserves the
-// battle kind after Battle clears wIsInBattle so a loss can be classified.
+// outcome to game.BattleLost; a flee can never lose. trainer preserves the
+// semantic battle kind after Battle clears the live encounter so a loss can
+// still be classified.
 type battleResolution struct {
-	outcome state.BattleResult
+	outcome game.BattleResult
 	fled    bool
 	trainer bool
 }
@@ -62,12 +61,30 @@ type resolveBattle func() (battleResolution, error)
 // fightOnly resolves every interrupting battle by fighting it. This is the
 // policy Travel has always used; a trainer battle is fought exactly as a wild
 // one, because there is nothing else to do — you cannot flee a trainer.
-func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
+type fightBattle func() (game.BattleResult, error)
+
+func fightOnlyWithDecoder(reader game.MemoryReader, decoder game.BattleStateDecoder, fight fightBattle) resolveBattle {
 	return func() (battleResolution, error) {
-		trainer := state.BattleKind(m.Peek8(sym.IsInBattle)) == state.BattleTrainer
-		outcome, err := Battle(m, policy)
-		return battleResolution{outcome: outcome, trainer: trainer}, err
+		if decoder == nil {
+			return battleResolution{}, fmt.Errorf("skill: Travel: nil battle-state decoder")
+		}
+		live, ok := decoder.DecodeBattleState(reader)
+		if !ok {
+			return battleResolution{}, fmt.Errorf("skill: Travel: interrupting battle has no semantic battle state")
+		}
+		outcome, err := fight()
+		return battleResolution{outcome: outcome, trainer: live.Kind == game.BattleTrainer}, err
 	}
+}
+
+func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
+	decoder, err := battleStateDecoderFor(m)
+	if err != nil {
+		return func() (battleResolution, error) { return battleResolution{}, err }
+	}
+	return fightOnlyWithDecoder(m, decoder, func() (game.BattleResult, error) {
+		return Battle(m, policy)
+	})
 }
 
 // guaranteedWildFleeAttempts is the first attempt count that makes escape
@@ -84,17 +101,29 @@ const guaranteedWildFleeAttempts = 10
 // wild encounters are fled, while trainer battles are fought because they
 // cannot be fled. fleeAttempts bounds one battle's flee retries; callers that
 // need deterministic wild escape should use guaranteedWildFleeAttempts.
-func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
+func fleeThenFightWith(
+	flee func(int) error,
+	fight fightBattle,
+	fleeAttempts int,
+) resolveBattle {
 	return func() (battleResolution, error) {
-		if err := Flee(m, fleeAttempts); err != nil {
+		if err := flee(fleeAttempts); err != nil {
 			if errors.Is(err, ErrTrainerBattle) {
-				outcome, berr := Battle(m, policy)
+				outcome, berr := fight()
 				return battleResolution{outcome: outcome, trainer: true}, berr
 			}
 			return battleResolution{}, fmt.Errorf("skill: Travel: flee: %w", err)
 		}
 		return battleResolution{fled: true}, nil
 	}
+}
+
+func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
+	return fleeThenFightWith(
+		func(attempts int) error { return Flee(m, attempts) },
+		func() (game.BattleResult, error) { return Battle(m, policy) },
+		fleeAttempts,
+	)
 }
 
 // ErrBlackedOut reports that the journey ended in a blackout: a battle was
@@ -148,18 +177,6 @@ func recordTravelBattleDefeat(res *TravelResult, r battleResolution) error {
 	}
 	return battleBlackoutError(r)
 }
-
-// blackoutBit is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT
-// (constants/ram_constants.asm:99). The game sets it when a battle ends
-// (home/overworld.asm:342) and when poison fainted the whole party out of
-// it (engine/events/poison.asm:106, the frame the "blacked out" box
-// closes), and clears it on every map entry (EnterMap, home/overworld.asm
-// 19-20) and inside HandleBlackOut before the respawn warp. So in the
-// overworld it is live only while a blackout transition is in flight: the
-// poison case sets it the frame the box closes and it stays set through
-// the fade-out until HandleBlackOut clears it, which is the window this
-// layer checks.
-const blackoutBit = 1 << 5
 
 // ErrDialogueChoice reports that the box that interrupted the walk is a
 // two-option prompt and is still unanswered: recovery refuses to answer a
@@ -368,11 +385,15 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 		// The verified shortcut may be an intermediate landing. Ordinary GoTo
 		// below owns the entire remaining route to the requested exact tile.
 	}
+	blackoutDecoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return TravelResult{}, fmt.Errorf("skill: Travel: %w", err)
+	}
 	var egresses []EmergencyEgress
 	res, err := travel(m, policy, maxBattles,
 		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgress(m, blackoutDecoder) },
 		fightOnly(m, policy),
 	)
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
@@ -404,11 +425,15 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 		// Continue with the flee-first journey from the verified shortcut
 		// landing, which may be an intermediate town/center.
 	}
+	blackoutDecoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: %w", err)
+	}
 	var egresses []EmergencyEgress
 	res, err := travel(m, policy, maxBattles,
 		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgress(m, blackoutDecoder) },
 		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	)
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
@@ -417,9 +442,9 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 
 // travel is Travel's instance of the shared interruption loop: goTo is the
 // resumable action, and recoverBox/blackout/resolveBattle are the resolvers.
-// Travel wires them to GoTo/Cut recovery, RecoverDialogue and the
-// wStatusFlags4 blackout bit, and the tests drive the loop with fakes instead
-// of an emulator.
+// Travel wires them to GoTo/Cut recovery, RecoverDialogue and profile-owned
+// blackout semantics; tests drive the loop with fake runtimes instead of a
+// concrete game's RAM layout.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
 	return runInterruptions(m, maxBattles, goTo, interruptionResolvers{
 		recoverBox:    recoverBox,
@@ -480,7 +505,7 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 			} else {
 				res.Battles++
 			}
-			lost := br.outcome == state.ResultLost
+			lost := br.outcome == game.BattleLost
 			settled, settleErr := r.settle(pre, lost)
 			if settleErr != nil {
 				return res, fmt.Errorf("skill: %s: settle world after battle: %w", label, settleErr)
