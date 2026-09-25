@@ -1,6 +1,13 @@
 package game
 
-import "github.com/maestroi/pokepilot/worldmodel"
+// TraversalMode is the live movement mode observed by a game profile. Static
+// collision interpretation remains owned by the routing adapter.
+type TraversalMode uint8
+
+const (
+	TraversalLand TraversalMode = iota
+	TraversalWater
+)
 
 // MapPoint is a portable tile coordinate used by routing/object observations.
 type MapPoint struct {
@@ -25,7 +32,7 @@ type LiveTopologyState struct {
 	WidthBlocks  int
 	HeightBlocks int
 	Blocks       []byte
-	Traversal    worldmodel.TraversalMode
+	Traversal    TraversalMode
 
 	LiveObjects     []LiveMapObject
 	ObjectPositions map[int]MapPoint
@@ -38,10 +45,3 @@ type RoutingDecoder interface {
 	DecodeLiveTopology(MemoryReader) (LiveTopologyState, error)
 }
 
-// RoutingProfile is the complete portable routing capability. The profile owns
-// selection of the static ROM provider and decoding of live mutable topology.
-type RoutingProfile interface {
-	GameProfile
-	RoutingDecoder
-	MapProvider([]byte) worldmodel.MapHeaderProvider
-}
