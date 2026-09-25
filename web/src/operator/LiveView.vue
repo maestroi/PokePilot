@@ -8,7 +8,9 @@ import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon } from '..
 import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
+import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
+import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import InspectorPanel from './InspectorPanel.vue'
@@ -40,10 +42,21 @@ import {
   policyLabel
 } from '../shared/playstyle'
 import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
+import { canRenderModernScene } from '../shared/semanticRenderer'
+import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
+
+type RendererMode = 'modern' | 'classic'
 
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
 const selectionPinned = ref(Boolean(selectedRunID.value))
+const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.operator.renderer') === 'classic' ? 'classic' : 'modern')
+const themeOptions = renderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.operator.theme') || DEFAULT_RENDER_THEME_ID
+const initialThemeSelection = resolveRenderTheme(storedThemeID)
+const selectedThemeID = ref(initialThemeSelection.theme.id)
+const themeNotice = ref(initialThemeSelection.diagnostics.join(' '))
+const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
 const historicalRun = ref<DashboardRun | null>(null)
 const historicalError = ref('')
 const pausing = ref(false)
@@ -111,8 +124,32 @@ watch(selectedRunID, async (runID) => {
 const selectedFrameID = computed(() => selectedRun.value?.run_id || '')
 const isLiveFrame = computed(() => isLiveStatus(selectedRun.value?.status))
 const frameEnabled = computed(() => Boolean(selectedFrameID.value) && selectedRun.value?.status !== 'queued')
-const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, frameEnabled, 50, isLiveFrame)
-const gameLabel = computed(() => gameMediaLabel(selectedRun.value?.status))
+const renderEnabled = computed(() => frameEnabled.value && isLiveFrame.value)
+const {
+  renderState,
+  state: renderStateStatus,
+  error: renderStateError
+} = useRenderStatePump(selectedFrameID, renderEnabled, 100, isLiveFrame)
+const semanticReady = computed(() => canRenderModernScene(renderState.value))
+const showModern = computed(() =>
+  isLiveFrame.value &&
+  rendererMode.value === 'modern' &&
+  semanticReady.value &&
+  renderStateStatus.value === 'ready'
+)
+const classicFrameEnabled = computed(() => frameEnabled.value && !showModern.value)
+const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, classicFrameEnabled, 50, isLiveFrame)
+const modernFallbackLabel = computed(() => {
+  if (!isLiveFrame.value || rendererMode.value !== 'modern' || showModern.value) return ''
+  if (renderStateStatus.value === 'error') return 'Modern unavailable · classic fallback'
+  if (renderState.value?.scene) return `Modern unsupported for ${renderState.value.scene} · classic fallback`
+  return renderStateStatus.value === 'loading' ? 'Loading semantic renderer · classic fallback' : ''
+})
+const gameLabel = computed(() => {
+  const base = gameMediaLabel(selectedRun.value?.status)
+  if (!isLiveFrame.value) return base
+  return `${base} · ${showModern.value ? 'Modern' : 'Classic'}`
+})
 
 const partySlots = computed<(PartyMon | null)[]>(() => {
   const members = selectedRun.value?.player?.party ?? []
@@ -279,6 +316,25 @@ function selectRunID(runID: string): void {
 
 function selectRun(run: DashboardRun): void {
   selectRunID(run.run_id)
+}
+
+function setRendererMode(mode: RendererMode): void {
+  rendererMode.value = mode
+  window.localStorage.setItem('pokepilot.operator.renderer', mode)
+}
+
+function setTheme(themeID: string): void {
+  const resolved = resolveRenderTheme(themeID)
+  selectedThemeID.value = resolved.theme.id
+  themeNotice.value = resolved.diagnostics.join(' ')
+  rendererMode.value = 'modern'
+  window.localStorage.setItem('pokepilot.operator.renderer', 'modern')
+  window.localStorage.setItem('pokepilot.operator.theme', resolved.theme.id)
+}
+
+function onThemeSelect(event: Event): void {
+  const target = event.target as HTMLSelectElement | null
+  if (target) setTheme(target.value)
 }
 
 function hpPercent(mon: PartyMon): number {
@@ -521,8 +577,13 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               </span>
             </header>
             <div class="relative aspect-[160/144] min-h-52 w-full max-h-[min(52vh,26.875rem)] overflow-hidden bg-[#0c1118] xl:aspect-auto xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+              <ModernSceneRenderer
+                v-if="showModern && renderState"
+                :state="renderState"
+                :theme="activeTheme"
+              />
               <img
-                v-if="frameURL"
+                v-else-if="frameURL"
                 :src="frameURL"
                 :alt="`Game frame for ${selectedRun.run_id}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
@@ -530,12 +591,14 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               <div v-else class="absolute inset-0 grid place-items-center px-4 text-center">
                 <div>
                   <span :class="['mx-auto block size-1.5 rounded-full', isLiveFrame ? 'bg-[var(--poke-green)] motion-safe:animate-pulse' : 'bg-[var(--poke-dim)]']" />
-                  <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for a live frame' : 'Last recorded frame unavailable.' }}</p>
-                  <p v-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
+                  <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for live game state' : 'Last recorded frame unavailable.' }}</p>
+                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ renderStateError }}</p>
+                  <p v-else-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
                 </div>
               </div>
+
               <div
-                v-if="frameURL"
+                v-if="showModern || frameURL"
                 :class="[
                   isLiveFrame ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
                   'absolute top-2 left-2 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-bold'
@@ -546,9 +609,45 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                   class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
                   aria-hidden="true"
                 />
-                {{ isLiveFrame ? 'Live' : 'Ended' }}
+                {{ isLiveFrame ? (showModern ? 'Live · Modern' : 'Live · Classic') : 'Ended' }}
               </div>
-              <div v-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
+
+              <div v-if="isLiveFrame" class="absolute top-2 right-2 z-10 flex flex-col items-end gap-1.5">
+                <div class="flex overflow-hidden border border-white/10 bg-black/75 text-[9px] font-bold uppercase tracking-[0.06em]">
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
+                    title="Use the shared semantic renderer"
+                    @click="setRendererMode('modern')"
+                  >Modern</button>
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
+                    title="Show the authoritative emulator framebuffer"
+                    @click="setRendererMode('classic')"
+                  >Classic</button>
+                </div>
+                <label v-if="rendererMode === 'modern'" class="flex items-center gap-1.5 border border-white/10 bg-black/75 px-2 py-1 text-[9px] text-[var(--poke-muted)]">
+                  <span class="font-bold uppercase tracking-[0.06em]">Theme</span>
+                  <select
+                    :value="selectedThemeID"
+                    class="max-w-28 bg-transparent text-[9px] font-semibold text-white outline-none"
+                    title="Choose the operator renderer theme"
+                    @change="onThemeSelect"
+                  >
+                    <option
+                      v-for="theme in themeOptions"
+                      :key="theme.id"
+                      :value="theme.id"
+                      class="bg-slate-950 text-white"
+                    >{{ theme.name }}</option>
+                  </select>
+                </label>
+                <div v-if="themeNotice" class="max-w-48 bg-amber-950/90 px-2 py-1 text-right text-[9px] text-amber-200">{{ themeNotice }}</div>
+              </div>
+
+              <div v-if="modernFallbackLabel" class="absolute right-2 bottom-2 bg-black/75 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">{{ modernFallbackLabel }}</div>
+              <div v-else-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
             </div>
           </section>
 
