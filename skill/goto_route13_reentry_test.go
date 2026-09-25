@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
 )
 
