@@ -125,6 +125,13 @@ var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
 // recoverableControllerFault in agent/red_failure_normalization.go.
 var ErrEngagementsExhausted = errors.New("skill: Travel: still interrupted by engagements")
 
+// ErrTextBoxLoop reports that the walk kept reopening the same text box
+// without getting past it, e.g. a coordinate script that shows its text and
+// pushes the player back off the tile. Travel cannot route around it because
+// the text belongs to the destination or the only way there; a caller with
+// alternative destinations (TalkAt choosing a side) can pick another one.
+var ErrTextBoxLoop = errors.New("looping on the same text box")
+
 func battleBlackoutError(r battleResolution) error {
 	if r.trainer {
 		// Keep the historical sentinel through RequiredBattleError.Unwrap while
@@ -575,8 +582,8 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 					}
 					lastBoxFrame = now
 					if sameBoxRepeats >= maxSameBoxRepeats {
-						return res, fmt.Errorf("skill: %s: looping on the same text box after %d repeats: %q",
-							label, sameBoxRepeats, t)
+						return res, fmt.Errorf("skill: %s: %w after %d repeats: %q",
+							label, ErrTextBoxLoop, sameBoxRepeats, t)
 					}
 				}
 				// recovered: the box is closed; the next pass re-plans from
