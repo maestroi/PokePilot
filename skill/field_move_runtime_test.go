@@ -141,7 +141,6 @@ func TestFieldMoveMenuPreservesUnknownNativeEntries(t *testing.T) {
 	}
 }
 
-
 func TestFieldMovePreparationAcceptsGen2NativeIDsThroughSemanticBoundary(t *testing.T) {
 	m := &fakeMenuMachine{}
 	slot, err := ensureFieldMoveWithProfile(fakeGen2FieldMoveDecoder{}, m, nil, FieldWhirlpool, func(native game.NativeFieldMove) error {
