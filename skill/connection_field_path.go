@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -52,8 +51,12 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 	if e.Kind != world.EdgeConnection {
 		return world.ErrNoPath
 	}
-	if got := m.Peek8(sym.CurMap); got != e.From {
-		return fmt.Errorf("skill: field-path connection approach on map %02x, edge starts on %02x", got, e.From)
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return err
+	}
+	if live.Map != e.From {
+		return fmt.Errorf("skill: field-path connection approach on map %02x, edge starts on %02x", live.Map, e.From)
 	}
 	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
@@ -63,7 +66,7 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 	if err != nil {
 		return err
 	}
-	sx, sy := playerXY(m)
+	sx, sy := live.X, live.Y
 	blocked := currentObservedStationaryObjectBlockers(m, h)
 	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
 
