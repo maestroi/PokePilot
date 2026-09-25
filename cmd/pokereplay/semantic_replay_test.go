@@ -55,7 +55,6 @@ func TestReplaySemanticEndpointServesCachedTimeline(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Length", "91")
 		_, _ = io.WriteString(w, payload)
 	}))
 	defer s3srv.Close()
