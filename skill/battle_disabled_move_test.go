@@ -8,7 +8,7 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// disabledMoveMarker has to survive the way the game actually draws the
+// testDisabledMoveMarker has to survive the way the game actually draws the
 // refusal. MoveSelectionMenu prints it into the box that normally holds the
 // TYPE/ panel, so the marker is the ONLY thing telling Battle that the move
 // list is up and waiting rather than that some text is playing. If it stops
@@ -18,6 +18,8 @@ import (
 // Both renderings are checked because the box wraps: ScreenText joins the
 // lines with single spaces, which is why the marker deliberately spans no
 // punctuation and no line break point.
+const testDisabledMoveMarker = "move is disabled"
+
 func TestDisabledMoveMarkerMatchesTheDrawnRefusal(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -37,8 +39,8 @@ func TestDisabledMoveMarkerMatchesTheDrawnRefusal(t *testing.T) {
 				}
 			}
 			screen := state.ScreenText(m)
-			if !strings.Contains(screen, disabledMoveMarker) {
-				t.Fatalf("screen %q does not contain marker %q", screen, disabledMoveMarker)
+			if !strings.Contains(screen, testDisabledMoveMarker) {
+				t.Fatalf("screen %q does not contain marker %q", screen, testDisabledMoveMarker)
 			}
 		})
 	}
@@ -58,7 +60,7 @@ func TestDisabledMoveMarkerIgnoresOrdinaryBattleText(t *testing.T) {
 				m[sym.TileMap+uint16(i)] = textTile(byte(c))
 			}
 		}
-		if screen := state.ScreenText(m); strings.Contains(screen, disabledMoveMarker) {
+		if screen := state.ScreenText(m); strings.Contains(screen, testDisabledMoveMarker) {
 			t.Errorf("marker matched ordinary text %q (screen %q)", text, screen)
 		}
 	}

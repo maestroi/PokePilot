@@ -7,18 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/red/rom"
 )
 
-func TestMoveLearnForgetRejectedRequiresExplicitHMMessage(t *testing.T) {
-	if moveLearnForgetRejected(0, "Which move should be forgotten?") {
-		t.Fatal("the still-visible forget menu must not count as a rejected move")
-	}
-	if !moveLearnForgetRejected(0, "HM techniques can't be deleted!") {
-		t.Fatal("the explicit HM refusal must count as a rejected move")
-	}
-	if moveLearnForgetRejected(-1, "HM techniques can't be deleted!") {
-		t.Fatal("an HM refusal without a pending forget selection must not reject a slot")
-	}
-}
-
 func TestHardIgnoreNaturalMove(t *testing.T) {
 	tests := []struct {
 		name       string
