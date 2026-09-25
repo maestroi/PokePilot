@@ -181,6 +181,21 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 			if !state.HasEvent(&mem, eventInSafariZone) {
 				return false, true, nil
 			}
+			if safariTimedEjectionInterrupted(targetMap, mem.U8(sym.CurMap), err) {
+				// The Safari timer can expire while a same-map grass step is in
+				// flight. The ROM warps the player to the gate and starts the
+				// ejection dialogue before EVENT_IN_SAFARI_ZONE is cleared, so
+				// checking only the event makes us repick a habitat grind pair
+				// against the gate map and rethrow ErrDialogueInterrupted.
+				// Own that bounded session-ending script here, then let the outer
+				// loop buy a fresh session.
+				if settleErr := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
+					return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
+				}); settleErr != nil {
+					return false, false, fmt.Errorf("settle timed Safari ejection: %w", settleErr)
+				}
+				return false, true, nil
+			}
 			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
 			if !ok {
 				return false, false, fmt.Errorf("Safari hunt leg %d: %w", legs+1, err)
@@ -217,6 +232,10 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 		}
 	}
 	return false, false, nil
+}
+
+func safariTimedEjectionInterrupted(targetMap, currentMap uint8, err error) bool {
+	return currentMap != targetMap && errors.Is(err, ErrDialogueInterrupted)
 }
 
 func safariBallCursor(mem *state.Mem) bool {
