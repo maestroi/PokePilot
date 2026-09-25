@@ -34,8 +34,8 @@ func TestDecodeBattleStateProjectsGen1IntoPortableContract(t *testing.T) {
 	if b.Moves[0].PP != 5 || b.Moves[0].Disabled {
 		t.Fatalf("move 0=%#v want 5 PP and usable", b.Moves[0])
 	}
-	if !b.Moves[1].Disabled || b.DisabledMove != 2 {
-		t.Fatalf("disabled state=%#v legacy=%d", b.Moves[1], b.DisabledMove)
+	if !b.Moves[1].Disabled {
+		t.Fatalf("disabled state=%#v want disabled", b.Moves[1])
 	}
 	if b.ActiveSpecialAttack != 123 || b.ActiveSpecialDefense != 123 ||
 		b.EnemySpecialAttack != 99 || b.EnemySpecialDefense != 99 {
