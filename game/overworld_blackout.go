@@ -6,7 +6,7 @@ package game
 // and saved respawn-map encoding.
 type OverworldBlackoutState struct {
 	BlackoutInProgress bool
-	PartyAllFainted     bool
+	PartyAllFainted    bool
 	RespawnNativeMapID uint16
 }
 
