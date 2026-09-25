@@ -47,6 +47,7 @@ import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import { canRenderOverworld } from '../shared/semanticRenderer'
+import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
@@ -67,6 +68,12 @@ const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'classic' ? 'classic' : 'modern')
+const themeOptions = renderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || DEFAULT_RENDER_THEME_ID
+const initialThemeSelection = resolveRenderTheme(storedThemeID)
+const selectedThemeID = ref(initialThemeSelection.theme.id)
+const themeNotice = ref(initialThemeSelection.diagnostics.join(' '))
+const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
 const playerRef = ref<HTMLElement | null>(null)
 const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
@@ -448,6 +455,20 @@ function setRendererMode(mode: RendererMode): void {
   window.localStorage.setItem('pokepilot.spectator.renderer', mode)
 }
 
+function setTheme(themeID: string): void {
+  const resolved = resolveRenderTheme(themeID)
+  selectedThemeID.value = resolved.theme.id
+  themeNotice.value = resolved.diagnostics.join(' ')
+  rendererMode.value = 'modern'
+  window.localStorage.setItem('pokepilot.spectator.renderer', 'modern')
+  window.localStorage.setItem('pokepilot.spectator.theme', resolved.theme.id)
+}
+
+function onThemeSelect(event: Event): void {
+  const target = event.target as HTMLSelectElement | null
+  if (target) setTheme(target.value)
+}
+
 async function fullscreenPlayer(): Promise<void> {
   if (!playerRef.value) return
   try {
@@ -770,6 +791,7 @@ function activityTimeAgo(item: ActivityItem): string {
               <OverworldRenderer
                 v-if="showModern && renderState"
                 :state="renderState"
+                :theme="activeTheme"
               />
 
               <img
@@ -816,6 +838,26 @@ function activityTimeAgo(item: ActivityItem): string {
                     @click="setRendererMode('classic')"
                   >Classic</button>
                 </div>
+                <label v-if="rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
+                  <span class="font-black uppercase tracking-[0.08em]">Theme</span>
+                  <select
+                    :value="selectedThemeID"
+                    class="max-w-36 bg-transparent text-[10px] font-semibold text-white outline-none"
+                    title="Choose your spectator theme"
+                    @change="onThemeSelect"
+                  >
+                    <option
+                      v-for="theme in themeOptions"
+                      :key="theme.id"
+                      :value="theme.id"
+                      class="bg-slate-950 text-white"
+                    >{{ theme.name }}</option>
+                  </select>
+                </label>
+                <div
+                  v-if="themeNotice"
+                  class="max-w-56 rounded-lg bg-amber-950/80 px-2.5 py-1.5 text-right text-[9px] font-semibold text-amber-200 ring-1 ring-amber-300/20"
+                >{{ themeNotice }}</div>
                 <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
                   <PlayIcon class="size-4" aria-hidden="true" />
                 </button>
