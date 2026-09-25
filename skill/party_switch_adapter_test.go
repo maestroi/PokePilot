@@ -111,7 +111,7 @@ func (m *fakeSwitchMachine) PeekInto(addr uint16, dst []byte) {
 	copy(dst, m.mem[int(addr):])
 }
 
-func (*fakeSwitchMachine) StepFrame()      {}
+func (*fakeSwitchMachine) StepFrame()     {}
 func (*fakeSwitchMachine) StepFrames(int) {}
 
 func (m *fakeSwitchMachine) Tap(btn emu.Button, _, _ int) {
