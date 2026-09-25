@@ -124,6 +124,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
+	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", s.handleReplaySemantic)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
 	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux
@@ -381,6 +382,7 @@ func (s *replayServer) render(runID string, recordings []replayRecording, cacheK
 	defer os.RemoveAll(dir)
 	videoPath := pathJoinOS(dir, "replay.mp4")
 	segmentVideos := make([]string, 0, len(recordings))
+	semanticSegments := make([]semanticReplaySegment, 0, len(recordings))
 	for index, recording := range recordings {
 		recordingPath := pathJoinOS(dir, fmt.Sprintf("segment-%03d.gbrun", index+1))
 		rawSegmentPath := videoPath
@@ -396,6 +398,9 @@ func (s *replayServer) render(runID string, recordings []replayRecording, cacheK
 			setError(fmt.Errorf("attempt %d replay ROM: %w", recording.Attempt, err))
 			return
 		}
+		semanticSegments = append(semanticSegments, semanticReplaySegment{
+			Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath,
+		})
 		if err := s.renderRecordingSegment(ctx, romPath, recordingPath, rawSegmentPath); err != nil {
 			setError(fmt.Errorf("attempt %d: %w", recording.Attempt, err))
 			return
@@ -450,6 +455,11 @@ func (s *replayServer) render(runID string, recordings []replayRecording, cacheK
 	}
 	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), obj.Size)
 	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: obj.Key, Size: obj.Size})
+	if err := s.renderSemanticReplay(ctx, runID, recordings, semanticSegments); err != nil {
+		// The semantic cache is derived presentation data. Its failure must not
+		// invalidate a deterministic recording or an otherwise healthy MP4.
+		log.Printf("pokereplay semantic replay unavailable run=%s err=%v", runID, err)
+	}
 }
 
 func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, recordingPath, videoPath string) error {
