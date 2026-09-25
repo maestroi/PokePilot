@@ -333,9 +333,7 @@ func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamil
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	out := repelUseObjectives(ctx.obs)
 	if ctx.catalog.Shop == nil {
-		out = append(out, restockHealingObjectives(ctx.obs)...)
-		out = append(out, restockCaptureObjectives(ctx.obs)...)
-		return objectiveProviderResult{Candidates: out}
+		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
