@@ -17,7 +17,7 @@ func TestAssembleDexCatalogKeepsProfileFactsPortable(t *testing.T) {
 		"trade-only":    {{Kind: AcquireTradeEvo, From: "middle"}},
 	}
 	choices := []DexExclusiveChoice{{
-		Group: "starter",
+		Group:        "starter",
 		Alternatives: [][]SpeciesID{{"starter-a"}, {"starter-b", "starter-b-evo"}},
 	}}
 	cat := AssembleDexCatalog(species, sources, []SpeciesID{"starter-a"}, nil, choices, map[SpeciesID]bool{"event-only": true})
