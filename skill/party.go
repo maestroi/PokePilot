@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -122,38 +123,10 @@ func SwitchActive(m *emu.Emu, slot int) error {
 		return fmt.Errorf("skill: SwitchActive: %w", err)
 	}
 
-	// 2. The POKéMON entry: right column, row 0. The cursor opens at FIGHT
-	// (wBattleAndStartSavedMenuItem), but a stale saved item could leave it
-	// anywhere in the grid, so every tap is verified against wTopMenuItemX
-	// and wCurrentMenuItem before the next one — never a press count.
-	atPKMN := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuRightX && int(m.Peek8(sym.CurrentMenuItem)) == 0
-	}
-	for i := 0; i < 8; i++ {
-		if atPKMN(m) {
-			break
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevX == battleMenuLeftX && prevRow != 0:
-			btn = emu.Up // ITEM -> FIGHT
-		case prevX == battleMenuLeftX:
-			btn = emu.Right // FIGHT -> PKMN: RIGHT keeps the row
-		default:
-			btn = emu.Left // right column: back to the left at the same row
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: SwitchActive: cursor stuck at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
-				prevX, prevRow, battleMenuRightX)
-		}
-	}
-	if !atPKMN(m) {
-		return fmt.Errorf("skill: SwitchActive: cursor at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
-			m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem)), battleMenuRightX)
+	// 2. Select the semantic POKéMON entry. The active profile owns the
+	// battle-menu layout; this driver no longer knows Gen I cursor columns.
+	if err := selectBattleMainMenuEntry(m, game.BattleMenuPokemon); err != nil {
+		return fmt.Errorf("skill: SwitchActive: select POKéMON: %w", err)
 	}
 
 	// 3. A on POKéMON opens the party menu. The VOLUNTARY menu prints the
