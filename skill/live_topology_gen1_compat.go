@@ -69,5 +69,5 @@ func liveMapGridFromMem(mem *state.Mem, romData []byte, h worldmodel.HeaderView)
 	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
 		mode = world.TraversalWater
 	}
-	return buildLiveMapGrid(romData, header, blocks, mode)
+	return buildLiveMapGrid(romData, h, blocks, mode)
 }
