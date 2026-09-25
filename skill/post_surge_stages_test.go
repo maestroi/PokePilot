@@ -28,7 +28,6 @@ func TestPostSurgeCeladonStageArea(t *testing.T) {
 	}
 }
 
-
 func TestPostSurgeErikaResumeKeepsGymInterior(t *testing.T) {
 	// The final badge stage accepts the whole Celadon area, but a resumed
 	// attempt already inside Erika's gym must not route back to the city first.
