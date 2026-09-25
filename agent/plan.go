@@ -318,6 +318,8 @@ func notifyPlanning(p Planner, stats PlanningStats) {
 	}
 }
 
+const maxPlannerTransportAttempts = 2
+
 type runPlanning struct {
 	Plan        Plan
 	Stats       PlanningStats
@@ -496,6 +498,29 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 		r.sync()
 		return obj, false, err, retries
 	}
+}
+
+// chooseWithTransportRecovery retries one complete planning operation when all
+// endpoint-level routing for that operation failed with ErrTransport. No game
+// input has happened yet, so re-asking against the same Observation/menu is
+// safe and does not consume a gameplay round. This is deliberately separate
+// from reply retries: changing temperature/feedback cannot repair transport,
+// while a fresh primary->fallback attempt can survive a transient backend
+// timeout (#1842). The bound keeps a persistent outage terminal.
+func (r *runPlanning) chooseWithTransportRecovery(log io.Writer, round int, p Planner, obs Observation, offered []Objective) (Objective, bool, error, int) {
+	totalReplyRetries := 0
+	for attempt := 1; attempt <= maxPlannerTransportAttempts; attempt++ {
+		obj, fromPlan, err, replyRetries := r.choose(log, round, p, obs, offered)
+		totalReplyRetries += replyRetries
+		if err == nil || !errors.Is(err, ErrTransport) || attempt == maxPlannerTransportAttempts {
+			return obj, fromPlan, err, totalReplyRetries
+		}
+		if log != nil {
+			fmt.Fprintf(log, "round %d: planner transport failed after endpoint failover (attempt %d of %d): %v; retrying unchanged planning state\n",
+				round, attempt, maxPlannerTransportAttempts, err)
+		}
+	}
+	return Objective{}, false, fmt.Errorf("%w: planning transport retry invariant", ErrTransport), totalReplyRetries
 }
 
 // replanOnce converts a watchdog edge into one strategic replan opportunity.

@@ -393,3 +393,66 @@ func TestRunPlanningDropsLegacyTailWhenBoundaryExecutes(t *testing.T) {
 		t.Fatalf("stats = %+v", r.Stats)
 	}
 }
+
+type transientTransportStrategist struct {
+	strategic int
+}
+
+func (p *transientTransportStrategist) Next(_ Observation, offered []Objective) (Objective, error) {
+	return offered[0], nil
+}
+
+func (p *transientTransportStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	p.strategic++
+	if p.strategic == 1 {
+		return Plan{}, fmt.Errorf("%w: backend timed out", ErrTransport)
+	}
+	return Plan{Goal: "continue north", Steps: []string{"go to route 1"}}, nil
+}
+
+func TestRunPlanningRetriesOneTransientTransportFailure(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	p := &transientTransportStrategist{}
+	r := newRunPlanning(Plan{})
+
+	obj, fromPlan, err, retries := r.chooseWithTransportRecovery(nil, 7, p, Observation{Round: 7}, offered)
+	if err != nil {
+		t.Fatalf("transient transport remained terminal: %v", err)
+	}
+	if !fromPlan || obj.String() != "go to route 1" {
+		t.Fatalf("obj=%q fromPlan=%v, want recovered strategist step", obj.String(), fromPlan)
+	}
+	if p.strategic != 2 {
+		t.Fatalf("strategist calls=%d, want exactly 2", p.strategic)
+	}
+	if retries != 0 {
+		t.Fatalf("reply retries=%d, transport retry must stay separate", retries)
+	}
+}
+
+type permanentTransportStrategist struct {
+	strategic int
+}
+
+func (p *permanentTransportStrategist) Next(_ Observation, offered []Objective) (Objective, error) {
+	return offered[0], nil
+}
+
+func (p *permanentTransportStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	p.strategic++
+	return Plan{}, fmt.Errorf("%w: backend still unavailable", ErrTransport)
+}
+
+func TestRunPlanningBoundsTransportRecovery(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	p := &permanentTransportStrategist{}
+	r := newRunPlanning(Plan{})
+
+	_, _, err, _ := r.chooseWithTransportRecovery(nil, 7, p, Observation{Round: 7}, offered)
+	if !errors.Is(err, ErrTransport) {
+		t.Fatalf("err=%v, want ErrTransport after bounded retries", err)
+	}
+	if p.strategic != maxPlannerTransportAttempts {
+		t.Fatalf("strategist calls=%d, want bound %d", p.strategic, maxPlannerTransportAttempts)
+	}
+}
