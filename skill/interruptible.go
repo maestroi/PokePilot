@@ -84,6 +84,20 @@ func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) (interruptionResolv
 	if r.observe != nil && r.settle != nil {
 		return r, nil
 	}
+	// ROM-free interruption-loop tests pass nil because dialogue-only paths
+	// never observe or settle the world. Preserve that lazy contract: install
+	// error-aware defaults, but do not require a profile unless they are
+	// actually invoked.
+	if m == nil {
+		if r.observe == nil {
+			r.observe = func() (Replan, error) { return currentWorld(m) }
+		}
+		if r.settle == nil {
+			r.settle = func(pre Replan, lost bool) (Replan, error) { return settleWorld(m, pre, lost) }
+		}
+		return r, nil
+	}
+
 	decoder, err := overworldDecoderFor(m)
 	if err != nil {
 		return r, err
