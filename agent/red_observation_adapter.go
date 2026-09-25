@@ -178,9 +178,10 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		}
 	}
 
-	// ponytail: only priced when the bag has no HP healing; that is the sole
-	// consumer (economyObjectiveProvider's travel-and-buy recovery).
-	if emergencyHealStock(obs) == 0 {
+	// Reachable Mart stock backs travel-and-buy objectives. Healing recovery
+	// needs it when emergency medicine is empty; Dex collection needs the same
+	// infrastructure when normal ball stock drops below its capture minimum.
+	if emergencyHealStock(obs) == 0 || (len(obs.Dex.Targets) > 0 && normalBallStock(obs) < minimumCaptureStock) {
 		for _, id := range skill.ReachableMartStock(m, romData) {
 			if name, ok := ItemName(id); ok {
 				obs.RestockStock = append(obs.RestockStock, name)
