@@ -1,5 +1,5 @@
-import modernManifest from './themes/rompilot-modern.json'
-import retroManifest from './themes/retro-16.json'
+import modernManifest from './themes/rompilot-modern.json' with { type: 'json' }
+import retroManifest from './themes/retro-16.json' with { type: 'json' }
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
 export const DEFAULT_RENDER_THEME_ID = 'rompilot-modern'
