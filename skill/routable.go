@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -43,8 +41,11 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build graph: %w", err)
 	}
-	cur := m.Peek8(sym.CurMap)
-	x, y := playerXY(m)
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return nil, fmt.Errorf("skill: RoutePlanner: observe overworld: %w", err)
+	}
+	cur, x, y := live.Map, live.X, live.Y
 	h, err := routingHeaderFor(m, cur)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: parse map %02x: %w", cur, err)
@@ -53,32 +54,16 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build live map %02x: %w", cur, err)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if cur == route16Map {
-		if !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
-			liveGrid.Set(route16SnorlaxX, route16SnorlaxY, false)
-		}
-		openRoute16CutPassage(liveGrid, romData, &mem)
-	}
-	routeGraph, err := g.WithMapGrid(cur, liveGrid)
+	routeGraph, prereqs, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
-	}
-	// The live overlay above replaces only the current map. Snorlax still has
-	// to split Route 16 when the player is indoors on its Fly-house side.
-	if cur != route16Map {
-		routeGraph, err = withAsleepRoute16Snorlax(routeGraph, romData, &mem)
-		if err != nil {
-			return nil, fmt.Errorf("skill: RoutePlanner: Route 16 Snorlax corridor: %w", err)
-		}
 	}
 	return &RoutePlanner{
 		graph:   routeGraph,
 		cur:     cur,
 		x:       x,
 		y:       y,
-		prereqs: redRoutePrerequisites(routeGraph, romData, &mem),
+		prereqs: prereqs,
 	}, nil
 }
 
