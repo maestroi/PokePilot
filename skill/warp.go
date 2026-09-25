@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -212,8 +213,12 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				// held south at Pallet (3,17) for the full budget without ever
 				// entering Route 21.
 				if errors.Is(err, errDidNotCross) {
-					if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
-						if mountErr := mountSurfFacingPush(m, romData, push); mountErr == nil {
+					fieldActions, fieldErr := fieldActionDecoderFor(m)
+					if fieldErr != nil {
+						return fmt.Errorf("skill: Traverse: observe Surf state: %w", fieldErr)
+					}
+					if !fieldActions.DecodeFieldAction(m).Surfing {
+						if mountErr := mountSurfFacingPushWithDecoder(m, fieldActions, romData, push); mountErr == nil {
 							if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
 								return finishArrival(m, e)
 							}
@@ -992,6 +997,14 @@ func edgeName(e world.Edge) string {
 // (not water, no Surf-capable party member, wrong facing) is expected and
 // left for the caller to report as the original crossing error.
 func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return mountSurfFacingPushWithDecoder(m, fieldActions, romData, push)
+}
+
+func mountSurfFacingPushWithDecoder(m *emu.Emu, fieldActions game.FieldActionDecoder, romData []byte, push world.Step) error {
 	x, y := playerXY(m)
 	tx, ty := int(x)+push.DX, int(y)+push.DY
 	if tx < 0 || tx > 255 || ty < 0 || ty > 255 {
@@ -1001,11 +1014,11 @@ func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
 		return err
 	}
 	m.StepFrames(2)
-	result, err := UseFieldMove(m, FieldSurf)
+	result, err := useFieldMoveWithDecoder(m, FieldSurf, fieldActions)
 	if err != nil {
 		return err
 	}
-	if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !result.Surfing || !fieldActions.DecodeFieldAction(m).Surfing {
 		return fmt.Errorf("skill: mountSurfFacingPush: returned without verified surfing state")
 	}
 	return nil
