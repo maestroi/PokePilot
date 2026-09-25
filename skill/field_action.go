@@ -27,6 +27,12 @@ const (
 	FieldSurf
 	FieldStrength
 	FieldFlash
+	// Gen II extends the portable field-move vocabulary. Red/Blue profiles
+	// deliberately report these as unsupported rather than assigning fake
+	// native ids.
+	FieldWhirlpool
+	FieldWaterfall
+	FieldHeadbutt
 )
 
 // FieldActionKind distinguishes moves that operate on a nearby world target
@@ -107,8 +113,8 @@ func FieldMoveSpecFor(move FieldMove) (FieldMoveSpec, bool) {
 }
 
 func (m FieldMove) String() string {
-	if spec, ok := FieldMoveSpecFor(m); ok {
-		return spec.Name
+	if id, ok := semanticFieldMove(m); ok {
+		return strings.ToUpper(string(id))
 	}
 	return fmt.Sprintf("field-move(%d)", uint8(m))
 }
@@ -118,6 +124,17 @@ func (m FieldMove) String() string {
 // state while still giving storage/roster code one authoritative list.
 func ProgressionFieldMoves() []FieldMove {
 	return []FieldMove{FieldCut, FieldFly, FieldSurf, FieldStrength, FieldFlash}
+}
+
+// SemanticFieldMoves is the generation-neutral field-move vocabulary exposed
+// by the generic lane. Red's roster planner intentionally keeps using
+// ProgressionFieldMoves above; a Gen II adapter can additionally implement
+// Whirlpool, Waterfall, and Headbutt without changing generic callers.
+func SemanticFieldMoves() []FieldMove {
+	return []FieldMove{
+		FieldCut, FieldFly, FieldSurf, FieldStrength, FieldFlash,
+		FieldWhirlpool, FieldWaterfall, FieldHeadbutt,
+	}
 }
 
 // FieldCapability is a snapshot of one capability's prerequisites. Usable is
@@ -196,52 +213,73 @@ func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove) bool {
 // Existing learned moves are idempotent; an HM in the bag by itself is never
 // reported as success.
 func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
-	spec, ok := FieldMoveSpecFor(move)
-	if !ok {
-		return -1, fmt.Errorf("skill: field move %d is unknown", move)
-	}
-
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(spec.Badge) {
-		return -1, fmt.Errorf("%w: %s requires the %s Badge", ErrFieldMovePrerequisite, spec.Name, spec.Badge)
-	}
-	if slot := partyMoveSlot(&mem, spec.MoveID); slot >= 0 {
-		return slot, nil
-	}
-	if _, qty := bagEntry(&mem, spec.HMItem); qty == 0 {
-		return -1, fmt.Errorf("%w: %s requires HM item %#02x in the bag", ErrFieldMovePrerequisite, spec.Name, spec.HMItem)
-	}
-
-	result, err := TeachTMHM(m, spec.HMItem, true)
+	profile, err := fieldMoveProfileFor(m)
 	if err != nil {
-		return -1, fmt.Errorf("skill: teach %s: %w", spec.Name, err)
+		return -1, err
 	}
-	if result.Decision.Machine.Move != spec.MoveID {
-		return -1, fmt.Errorf("skill: teach %s: HM %#02x mapped to move %d, want %d", spec.Name, spec.HMItem, result.Decision.Machine.Move, spec.MoveID)
+	capability, err := fieldMoveCapabilityWithProfile(profile, m, m.ROM(), move)
+	if err != nil {
+		return -1, err
+	}
+	name := capability.Name
+	if name == "" {
+		name = move.String()
+	}
+	if !capability.BadgeOwned {
+		if capability.BadgeRequired == "" {
+			return -1, fmt.Errorf("%w: %s is not unlocked for field use", ErrFieldMovePrerequisite, name)
+		}
+		return -1, fmt.Errorf("%w: %s requires the %s Badge", ErrFieldMovePrerequisite, name, capability.BadgeRequired)
+	}
+	if capability.Usable && capability.PartySlot >= 0 {
+		return capability.PartySlot, nil
+	}
+	if !capability.MachineOwned {
+		return -1, fmt.Errorf("%w: %s teaching machine is not owned", ErrFieldMovePrerequisite, name)
+	}
+	if !capability.Preparable {
+		return -1, fmt.Errorf("%w: %s has no compatible current-party carrier", ErrFieldMovePrerequisite, name)
 	}
 
-	state.Snapshot(m, &mem)
-	slot := partyMoveSlot(&mem, spec.MoveID)
-	if slot < 0 {
-		return -1, fmt.Errorf("skill: teach %s: move %d was not verified in party RAM", spec.Name, spec.MoveID)
+	id, _ := semanticFieldMove(move)
+	native, ok := profile.NativeFieldMove(id)
+	if !ok {
+		return -1, fmt.Errorf("%w: %s has no native teaching mapping", ErrFieldMovePrerequisite, name)
 	}
-	return slot, nil
+	if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
+		return -1, fmt.Errorf("skill: teach %s: native machine/item ids %#04x/%#04x exceed current teaching executor range",
+			name, native.MachineItemID, native.MoveID)
+	}
+
+	// TM/HM button sequencing is still shared with the existing move-learning
+	// executor. The field lane no longer decodes Red badge/HM/carrier state or
+	// native ids itself; a later move-learning slice can replace this byte-sized
+	// executor without changing the field-move contract.
+	result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
+	if err != nil {
+		return -1, fmt.Errorf("skill: teach %s: %w", name, err)
+	}
+	if uint16(result.Decision.Machine.Move) != native.MoveID {
+		return -1, fmt.Errorf("skill: teach %s: machine %#04x mapped to move %#04x, want %#04x",
+			name, native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
+	}
+
+	capability, err = fieldMoveCapabilityWithProfile(profile, m, m.ROM(), move)
+	if err != nil {
+		return -1, fmt.Errorf("skill: teach %s: verify capability: %w", name, err)
+	}
+	if !capability.Usable || capability.PartySlot < 0 {
+		return -1, fmt.Errorf("skill: teach %s: learned field capability was not verified", name)
+	}
+	return capability.PartySlot, nil
 }
 
-func fieldMoveMenuIndex(m *emu.Emu, menuID uint8) int {
-	// A Pokemon can know at most four moves, so wFieldMoves can expose at
-	// most four entries before its zero terminator.
-	for i := 0; i < 4; i++ {
-		id := m.Peek8(sym.FieldMoves + uint16(i))
-		if id == 0 {
-			break
-		}
-		if id == menuID {
-			return i
-		}
+func fieldMoveMenuIndex(m *emu.Emu, move FieldMove) int {
+	profile, err := fieldMoveProfileFor(m)
+	if err != nil {
+		return -1
 	}
-	return -1
+	return fieldMoveMenuIndexWithProfile(profile, m, move)
 }
 
 // FieldActionResult is the positively observed result of UseFieldMove.
@@ -323,9 +361,9 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select party slot %d: %w", spec.Name, slot, err)
 	}
 
-	idx := fieldMoveMenuIndex(m, spec.MenuID)
+	idx := fieldMoveMenuIndex(m, move)
 	if idx < 0 {
-		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d knows move %d but menu id %d is absent from wFieldMoves", spec.Name, slot, spec.MoveID, spec.MenuID)
+		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d knows the move but the semantic field-move entry is absent", spec.Name, slot)
 	}
 	if err := SelectMenuItem(m, idx); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select field move: %w", spec.Name, err)
