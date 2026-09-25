@@ -50,8 +50,8 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
 # deploy/gomeboy_pin_test.go keeps the two in lockstep. v1.3.0 also carries the
 # WithModel(recording.Model) line that replays CGB recordings as CGB while DMG
 # recordings stay DMG.
-RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@v1.3.0 && \
-    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.3.0
+RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@v1.3.1 && \
+    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.3.1
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
 # .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
