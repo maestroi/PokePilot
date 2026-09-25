@@ -144,7 +144,6 @@ func TestGenericFieldMoveProfileResolverHasNoConcreteGameImports(t *testing.T) {
 	}
 }
 
-
 func TestGenericFieldMoveExecutionHasNoConcreteGameImportsOrLegacyMenuHelpers(t *testing.T) {
 	src, err := os.ReadFile("field_action.go")
 	if err != nil {
