@@ -50,8 +50,8 @@ func projectDexList(romData []byte, numbers []uint8) []game.SpeciesID {
 
 func dexSpecies(romData []byte) ([]game.DexEntry, error) {
 	out := make([]game.DexEntry, 0, sym.PokedexCount)
-	for dex := uint16(1); dex <= uint16(sym.PokedexCount); dex++ {
-		internal, err := rom.DexNumberInternalSpecies(romData, uint8(dex))
+	for dex := uint8(1); dex <= uint8(sym.PokedexCount); dex++ {
+		internal, err := rom.DexNumberInternalSpecies(romData, dex)
 		if err != nil {
 			continue
 		}
