@@ -74,11 +74,11 @@ type MapObject struct {
 	X, Y               uint8
 	Movement           ObjectMovement
 	Role               InteractionRole
-	NativeSpriteID      uint16
-	NativeTextID        uint16
-	NativeItemID        uint16
-	NativeTrainerClass  uint16
-	NativeTrainerSet    uint16
+	NativeSpriteID     uint16
+	NativeTextID       uint16
+	NativeItemID       uint16
+	NativeTrainerClass uint16
+	NativeTrainerSet   uint16
 }
 
 // MapHeader is the subset of a game's map header that generic routing consumes.
@@ -87,9 +87,9 @@ type MapHeader struct {
 	NativeTileset uint16
 	WidthBlocks   uint8
 	HeightBlocks  uint8
-	Warps        []Warp
-	Connections  []Connection
-	Objects      []MapObject
+	Warps         []Warp
+	Connections   []Connection
+	Objects       []MapObject
 }
 
 // HeaderView lets compatibility callers pass a richer game-specific map
