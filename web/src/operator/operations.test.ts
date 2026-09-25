@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { gameMediaLabel, isLiveStatus, railFacts, railStatusLabel } from './operations.ts'
+import { gameMediaLabel, gameTitle, isLiveStatus, railFacts, railStatusLabel } from './operations.ts'
 
 test('live statuses keep the game pump on', () => {
   assert.equal(isLiveStatus('running'), true)
@@ -30,4 +30,12 @@ test('rail facts distinguish a live attempt from an ended run', () => {
     reason: 'blackout',
     ended_at: 1
   }), /^ended · blackout/)
+})
+
+
+test('run game ids have stable operator labels', () => {
+  assert.equal(gameTitle('pokemon-red'), 'Pokémon Red')
+  assert.equal(gameTitle('pokemon-blue'), 'Pokémon Blue')
+  assert.equal(gameTitle('pokemon-yellow'), 'Pokémon Yellow')
+  assert.equal(gameTitle(undefined), 'Pokémon Red')
 })

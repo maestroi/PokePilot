@@ -376,3 +376,15 @@ func redOccupiedDestinationArrival(final Observation, dest skill.Destination, sp
 	}
 	return false
 }
+
+// redLayoutGame reports whether id is served by the Red/Blue Gen-I adapter
+// (shared WRAM layout and ROM tables). Game-owned offer enrichment must not
+// run for any other profile.
+func redLayoutGame(id gameruntime.GameID) bool {
+	for _, gen1 := range gen1Games {
+		if gen1 == id {
+			return true
+		}
+	}
+	return false
+}

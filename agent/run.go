@@ -58,6 +58,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}
 	if budget.ResumeFrom != "" {
+		if err := ValidateCheckpointProfile(budget.ResumeFrom, profile.ID(), profile.Revision()); err != nil {
+			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: profile identity: %w", budget.ResumeFrom, err)}
+		}
 		stateBytes, err := os.ReadFile(budget.ResumeFrom)
 		if err != nil {
 			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: %w", budget.ResumeFrom, err)}
@@ -83,7 +86,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if keep <= 0 {
 			keep = defaultCheckpointKeep
 		}
-		ring = &checkpointRing{dir: budget.CheckpointDir, keep: keep}
+		ring = &checkpointRing{dir: budget.CheckpointDir, keep: keep, game: profile.ID(), revision: profile.Revision()}
 	}
 
 	res := Result{Completed: []Objective{}, Outcomes: []ObjectiveResult{}}

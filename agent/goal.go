@@ -222,13 +222,21 @@ func evaluateDexGoal(obs Observation) GoalStatus {
 		return GoalStatus{Summary: "Pokédex catalog unavailable; completion cannot be evaluated"}
 	}
 
-	complete := remaining == 0
+	complete := remaining == 0 && obs.Dex.IncompleteReason == ""
 	if complete {
 		return GoalStatus{
 			Complete: true,
 			Summary:  fmt.Sprintf("Pokédex complete: %d/%d obtainable owned; %d unavailable", owned, target, unavailable),
 			Current:  owned,
 			Target:   target,
+		}
+	}
+	if obs.Dex.IncompleteReason != "" {
+		return GoalStatus{
+			Summary: fmt.Sprintf("Pokédex source model incomplete (%s): %d modeled owned, %d modeled remaining; completion cannot be certified",
+				obs.Dex.IncompleteReason, owned, remaining),
+			Current: owned,
+			Target:  target,
 		}
 	}
 	return GoalStatus{

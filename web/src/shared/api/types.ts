@@ -155,6 +155,7 @@ export interface DecisionEngineSpec {
 export interface DashboardRun {
   run_id: string
   status: RunStatus
+  game?: string
   planner?: string
   starter?: string
   dest?: string
@@ -317,9 +318,9 @@ export interface ExperimentArm {
 
 export interface ExperimentRequest {
   name: string
+  game?: string
   arm_a: ExperimentArm
   arm_b: ExperimentArm
-  game?: string
   goal: string
   starter?: string
   seeds?: number[]

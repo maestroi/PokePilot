@@ -22,6 +22,16 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 // known-habitat catch transitions, and owned machines while preserving the
 // portable providers' structured block evidence alongside the enriched menu.
 func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) ObjectiveOffer {
+	if !redLayoutGame(obs.GameID) {
+		// Everything below decodes Red/Blue WRAM and ROM tables. Other games
+		// offer through their own registered adapter's progression planner.
+		if factory, err := objectiveAdapterFactoryFor(obs.GameID); err == nil {
+			if planner, ok := factory(m, romData, RoutePriorityConservative).(ProgressionPlanner); ok {
+				return OfferWithProgressionEvidence(obs, known, planner)
+			}
+		}
+		return OfferWithEvidence(obs, known)
+	}
 	obs.TrainingAreaChoices = redTrainingAreaAssessments(m, romData, obs, known)
 	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
 	out := offer.Candidates

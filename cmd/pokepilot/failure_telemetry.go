@@ -155,10 +155,16 @@ func farmIdentityFromAgent(result agent.ObjectiveResult) farm.FailureIdentity {
 	if result.Initial != nil {
 		initial = *result.Initial
 	}
+	adapter := string(result.Final.GameID)
+	if adapter == "" {
+		// Preserve historical fingerprints for synthetic/legacy results that
+		// predate semantic game identity. Runtime observations always set this.
+		adapter = "pokemon-red"
+	}
 	return farm.FailureIdentity{
 		Version:      farm.FailureIdentityVersion,
 		Game:         "pokemon",
-		Adapter:      "pokemon-red",
+		Adapter:      adapter,
 		Objective:    farmObjectiveFromAgent(agent.FailureObjectiveFor(result.Objective)),
 		Outcome:      string(result.Outcome),
 		Cause:        string(result.Cause),

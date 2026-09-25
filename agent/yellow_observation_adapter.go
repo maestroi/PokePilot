@@ -5,7 +5,10 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
+	"github.com/maestroi/pokepilot/gen1rom"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
 // yellowSemanticObservationAdapter keeps Yellow separate from the Red/Blue
@@ -54,13 +57,17 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 		RecentDialogue:    []string{},
 		History:           []RoundRecord{},
 		Failures:          []Failure{},
-		PokedexOwned:      []SpeciesID{},
-		PokedexSeen:       []SpeciesID{},
+		PokedexOwned:      append([]SpeciesID(nil), base.PokedexOwned...),
+		PokedexSeen:       append([]SpeciesID(nil), base.PokedexSeen...),
 		WildGrass:         []WildSpecies{},
 		Requirements:      []Requirement{},
 		RouteBlockages:    []RouteBlockage{},
 		Unroutable:        []string{},
 	}
+	for _, item := range base.Bag {
+		obs.Bag = append(obs.Bag, Item{Name: item.Name, Quantity: item.Quantity})
+	}
+
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
@@ -71,5 +78,46 @@ func (yellowSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, prof
 			Status:     mon.Status,
 		}
 	}
+
+	cat, err := buildYellowDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen)
+	if err != nil {
+		return Observation{}, fmt.Errorf("Yellow Dex catalog: %w", err)
+	}
+	obs.Dex = cat
+
+	wild, err := yellowrom.WildEncounters(romData)
+	if err != nil {
+		return Observation{}, fmt.Errorf("Yellow wild encounters: %w", err)
+	}
+	type levels struct {
+		min, max uint8
+		slots    int
+	}
+	local := map[SpeciesID]levels{}
+	for _, enc := range wild {
+		if enc.MapID != obs.Map || enc.Habitat != gen1rom.HabitatGrass {
+			continue
+		}
+		id, ok := gen1.Species(enc.Species)
+		if !ok {
+			continue
+		}
+		key := SpeciesID(id)
+		cur, exists := local[key]
+		if !exists || enc.Level < cur.min {
+			cur.min = enc.Level
+		}
+		if !exists || enc.Level > cur.max {
+			cur.max = enc.Level
+		}
+		cur.slots++
+		local[key] = cur
+	}
+	for id, level := range local {
+		obs.WildGrass = append(obs.WildGrass, WildSpecies{
+			Name: string(id), MinLevel: level.min, MaxLevel: level.max, Slots: level.slots,
+		})
+	}
+	obs.HasGrass = len(obs.WildGrass) > 0
 	return obs, nil
 }

@@ -195,7 +195,7 @@ func (starterObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	out := make([]Objective, 0, len(ctx.catalog.Starters))
 	for _, starter := range ctx.catalog.Starters {
-		out = append(out, Objective{Kind: KindStarter, Starter: starter.Starter})
+		out = append(out, Objective{Kind: KindStarter, Starter: starter.Starter, Species: starter.Species})
 	}
 	return objectiveProviderResult{Candidates: out}
 }
@@ -530,8 +530,12 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		if !ok {
 			continue
 		}
-		plain := Objective{Kind: KindGoTo, Place: destination.Place}
-		flee := Objective{Kind: KindGoTo, Place: destination.Place, Flee: true}
+		plain := Objective{
+			Kind: KindGoTo, Place: destination.Place, Location: destination.Location,
+			X: destination.X, Y: destination.Y,
+		}
+		flee := plain
+		flee.Flee = true
 		if ctx.adjacentLocations[destination.Location] && !known.Visited[destination.Location] {
 			plain.Note = "(unvisited adjacent map)"
 			flee.Note = "(unvisited adjacent map)"

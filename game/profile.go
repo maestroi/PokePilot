@@ -147,6 +147,12 @@ type ProfilePartyMon struct {
 	Status     string    `json:"status,omitempty"`
 }
 
+type ProfileItem struct {
+	ID       ItemID `json:"id"`
+	Name     string `json:"name,omitempty"`
+	Quantity int    `json:"quantity"`
+}
+
 // ProfileObservation is the game-agnostic state every runtime may rely on.
 // NativeMapID exists only as an opaque adapter handle for the current
 // incremental migration; it is intentionally excluded from planner JSON.
@@ -160,9 +166,12 @@ type ProfileObservation struct {
 	Controllable bool
 	InBattle     bool
 	Party        []ProfilePartyMon
+	Bag          []ProfileItem
+	BagCapacity  int
 	Badges       []string
 	Money        uint32
 	RespawnPlace PlaceID
+	PokedexTotal int
 	Events       []string
 	Story        ProgressState
 	BlackedOut   bool

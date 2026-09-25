@@ -49,6 +49,16 @@ func BuildDexCatalog(romData []byte, owned, seen []SpeciesID) (DexCatalog, error
 	return redprofile.New().BuildDexCatalog(romData, owned, seen)
 }
 
+// assembleDexCatalogWithPolicy lets a non-Red adapter supply its own
+// exclusive-choice and event-only policy to the shared catalog assembler.
+func assembleDexCatalogWithPolicy(species []DexEntry, sources map[SpeciesID][]DexSource, owned, seen []SpeciesID, exclusives []exclusiveChoice, eventOnly map[SpeciesID]bool) DexCatalog {
+	choices := make([]gameruntime.DexExclusiveChoice, len(exclusives))
+	for i, choice := range exclusives {
+		choices[i] = gameruntime.DexExclusiveChoice{Group: choice.Group, Alternatives: choice.Alternatives}
+	}
+	return gameruntime.AssembleDexCatalog(species, sources, owned, seen, choices, eventOnly)
+}
+
 func assembleDexCatalog(species []DexEntry, sources map[SpeciesID][]DexSource, owned, seen []SpeciesID, exclusives []exclusiveChoice) DexCatalog {
 	choices := make([]gameruntime.DexExclusiveChoice, len(exclusives))
 	for i, choice := range exclusives {

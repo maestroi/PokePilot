@@ -43,10 +43,11 @@ func TestIdentityIsYellow(t *testing.T) {
 	}
 }
 
-func TestPhase3AdvertisesOnlyImplementedCapabilities(t *testing.T) {
+func TestPhase4AdvertisesOnlyImplementedCapabilities(t *testing.T) {
 	p := New()
 	for _, feature := range []game.ProfileFeature{
 		game.FeatureMapParsing,
+		game.FeatureInventory,
 		game.FeatureStoryProgress,
 		game.FeatureSemanticSpecies,
 	} {
@@ -55,7 +56,6 @@ func TestPhase3AdvertisesOnlyImplementedCapabilities(t *testing.T) {
 		}
 	}
 	for _, feature := range []game.ProfileFeature{
-		game.FeatureInventory,
 		game.FeatureBattles,
 		game.FeatureFieldMoves,
 		game.FeatureTrainerFlags,
@@ -107,6 +107,9 @@ func TestDecodeObservationProjectsYellowPartyMoneyAndBadges(t *testing.T) {
 	mem[base+0x22], mem[base+0x23] = 0x00, 0x30
 	mem[sym.PlayerMoney], mem[sym.PlayerMoney+1], mem[sym.PlayerMoney+2] = 0x12, 0x34, 0x56
 	mem[sym.ObtainedBadges] = 0b00000101
+	mem[sym.NumBagItems] = 2
+	mem[sym.BagItems], mem[sym.BagItems+1] = 0x04, 7
+	mem[sym.BagItems+2], mem[sym.BagItems+3] = 0x14, 3
 
 	obs, err := New().DecodeObservation(&mem, nil)
 	if err != nil {
@@ -126,6 +129,12 @@ func TestDecodeObservationProjectsYellowPartyMoneyAndBadges(t *testing.T) {
 	}
 	if len(obs.Badges) != 2 || obs.Badges[0] != "Boulder" || obs.Badges[1] != "Thunder" {
 		t.Fatalf("badges = %v", obs.Badges)
+	}
+	if obs.BagCapacity != 20 || len(obs.Bag) != 2 || obs.Bag[0].Quantity != 7 || obs.Bag[1].Quantity != 3 {
+		t.Fatalf("bag = %+v capacity=%d", obs.Bag, obs.BagCapacity)
+	}
+	if obs.PokedexTotal != 151 {
+		t.Fatalf("Pokédex total = %d, want 151", obs.PokedexTotal)
 	}
 }
 
