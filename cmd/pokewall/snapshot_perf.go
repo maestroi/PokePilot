@@ -51,6 +51,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		RecoveryBadges:     t.RecoveryBadges,
 		RecoveryEvents:     t.RecoveryEvents,
 		RecoveryMaps:       t.RecoveryMaps,
+		RecoveryDexOwned:   t.RecoveryDexOwned,
 		Frame:              t.Frame,
 		Map:                t.Map,
 		X:                  t.X,

@@ -96,6 +96,10 @@ type Tile struct {
 	RecoveryBadges   int
 	RecoveryEvents   int
 	RecoveryMaps     int
+	// RecoveryDexOwned is the Pokédex-owned high-water mark. It is its own
+	// frontier axis: a campaign past its last badge still makes durable
+	// progress by acquiring species, and that must reset rollback depth.
+	RecoveryDexOwned int
 	// Activity is the bounded operator-facing causal story. It survives
 	// retries so one resilient campaign remains understandable as a whole.
 	Activity    []runActivityEvent
@@ -215,6 +219,7 @@ type tileRow struct {
 	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
 	Activity           []runActivityEvent       `json:"activity,omitempty"`
 	Reason             string                   `json:"reason"`
 	Detail             string                   `json:"detail"`
@@ -315,6 +320,7 @@ type persistedTile struct {
 	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
 	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
 	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
 	Activity           []runActivityEvent       `json:"activity,omitempty"`
 	Frame              uint64                   `json:"frame"`
 	Map                uint8                    `json:"map"`
@@ -397,6 +403,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			RecoveryBadges:     t.RecoveryBadges,
 			RecoveryEvents:     t.RecoveryEvents,
 			RecoveryMaps:       t.RecoveryMaps,
+			RecoveryDexOwned:   t.RecoveryDexOwned,
 			Activity:           copyRunActivity(t.Activity),
 			Frame:              t.Frame,
 			Map:                t.Map,
@@ -519,6 +526,7 @@ func (w *Wall) loadState() {
 			RecoveryBadges:     pt.RecoveryBadges,
 			RecoveryEvents:     pt.RecoveryEvents,
 			RecoveryMaps:       pt.RecoveryMaps,
+			RecoveryDexOwned:   pt.RecoveryDexOwned,
 			Activity:           copyRunActivity(pt.Activity),
 			Frame:              pt.Frame,
 			Map:                pt.Map,
@@ -728,6 +736,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.RecoveryBadges = 0
 	t.RecoveryEvents = 0
 	t.RecoveryMaps = 0
+	t.RecoveryDexOwned = 0
 	t.Activity = nil
 	t.Frame = 0
 	t.Map = 0
@@ -1608,28 +1617,41 @@ func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
 	if t == nil || p == nil || !t.RecoveryProfile.Resilient() {
 		return
 	}
-	advanced := p.Badges > t.RecoveryBadges ||
+	story := p.Badges > t.RecoveryBadges ||
 		(p.Badges == t.RecoveryBadges && p.Events > t.RecoveryEvents) ||
 		(p.Badges == t.RecoveryBadges && p.Events == t.RecoveryEvents && p.Maps > t.RecoveryMaps)
-	if !advanced {
+	dexOwned := 0
+	if p.Coverage != nil {
+		dexOwned = p.Coverage.DexOwned
+	}
+	dex := dexOwned > t.RecoveryDexOwned
+	if !story && !dex {
 		return
 	}
+	detail := fmt.Sprintf("badges %d · events %d · maps %d · dex %d", p.Badges, p.Events, p.Maps, dexOwned)
 	if t.RecoveryAttempts > 0 {
 		appendRunActivityLocked(t, runActivityEvent{
 			Source: "recovery", Kind: "recovered", Attempt: t.Attempts + 1,
 			RecoveryAttempt: t.RecoveryAttempts,
 			Summary:         "Recovery succeeded; progress advanced",
-			Detail:          fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+			Detail:          detail,
 		})
 	}
 	appendRunActivityLocked(t, runActivityEvent{
 		Source: "milestone", Kind: "progress", Attempt: t.Attempts + 1,
 		Summary: "Progress frontier advanced",
-		Detail:  fmt.Sprintf("badges %d · events %d · maps %d", p.Badges, p.Events, p.Maps),
+		Detail:  detail,
 	})
-	t.RecoveryBadges = p.Badges
-	t.RecoveryEvents = p.Events
-	t.RecoveryMaps = p.Maps
+	// Each axis only ever rises: a new species after a rollback must not
+	// lower the story high-water mark, and vice versa.
+	if story {
+		t.RecoveryBadges = p.Badges
+		t.RecoveryEvents = p.Events
+		t.RecoveryMaps = p.Maps
+	}
+	if dex {
+		t.RecoveryDexOwned = dexOwned
+	}
 	t.RecoveryAttempts = 0
 	clearTileCircuit(t)
 }
