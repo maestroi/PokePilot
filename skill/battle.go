@@ -532,18 +532,6 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	}
 }
 
-// firstLivePartySlot remains Gen-I battle strategy state for now. UI surface
-// classification and move-learning execution above are profile-driven.
-func firstLivePartySlot(mem *state.Mem) int {
-	party := state.DecodeParty(mem)
-	for i, mon := range party.Mons {
-		if !mon.Fainted() {
-			return i
-		}
-	}
-	return -1
-}
-
 func battleScreenHas(m *emu.Emu, marker string) bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
