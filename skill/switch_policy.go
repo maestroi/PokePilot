@@ -4,8 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/combat"
-	"github.com/maestroi/pokepilot/red/rom"
 )
 
 const (
@@ -22,10 +20,9 @@ const (
 )
 
 // switchEvaluation explains how one party member looks against the current
-// opponent. Score combines its best expected-damage move with current HP,
-// major status, defensive typing against the opponent's STAB types, and a
-// small penalty for carrying multiple field moves. The detailed best-move
-// evaluation remains the shared red/combat model from #49.
+// opponent. Generation-specific damage and typing mechanics are projected by
+// game.BattleCombatStrategy; this file only combines that score with portable
+// HP/status/resource considerations.
 type switchEvaluation struct {
 	Slot         int
 	Species      uint16
@@ -34,7 +31,7 @@ type switchEvaluation struct {
 	MaxHP        uint16
 	Status       string
 	BestMoveSlot int
-	BestMove     combat.MoveEvaluation
+	BestMove     game.BattleMoveEvaluation
 	IncomingRisk int // tenths: worst opponent STAB type into this member
 	FieldMoves   int
 	Score        int64
@@ -64,20 +61,31 @@ type switchDecision struct {
 	Candidate switchEvaluation
 }
 
-// chooseTacticalSwitch compares the active mon with every healthy bench
-// member. It is called only while the real battle main menu is up, which is
-// the ROM's practical switch-legality boundary: trapping/multi-turn states
-// that deny a choice never present this menu to Battle in the first place.
 func chooseTacticalSwitchState(romData []byte, resources game.BattleResourcesState, b game.BattleState) switchDecision {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return switchDecisionWithoutStrategy(resources, "combat-strategy-unavailable")
+	}
+	return chooseTacticalSwitchWithStrategy(strategy, romData, resources, b)
+}
+
+// chooseTacticalSwitchWithStrategy compares the active mon with every healthy
+// bench member using the selected generation's combat mechanics.
+func chooseTacticalSwitchWithStrategy(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+) switchDecision {
 	party := resources.Party
 	activeSlot := resources.ActiveSlot
 	decision := switchDecision{Slot: -1, Reason: "no-live-bench"}
-	if len(party) < 2 || activeSlot < 0 || activeSlot >= len(party) {
+	if strategy == nil || len(party) < 2 || activeSlot < 0 || activeSlot >= len(party) {
 		return decision
 	}
 
-	decision.Active = evaluateActiveForSwitch(romData, party, activeSlot, b)
-	_, defender := combat.PlayerMatchup(b)
+	decision.Active = evaluateActiveForSwitch(strategy, romData, party, activeSlot, b)
+	_, defender := battleCombatants(b)
 	bestSet := false
 	liveBench := false
 	for slot, mon := range party {
@@ -88,10 +96,10 @@ func chooseTacticalSwitchState(romData []byte, resources game.BattleResourcesSta
 		if criticallyWeak(mon) || mon.Status == "frozen" {
 			continue
 		}
-		eval := evaluatePartyMonForSwitch(romData, slot, mon, defender)
+		eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
 		// A voluntary switch into a member that cannot currently deal known
-		// damage is not tactical recovery; the emergency all-PP path in
-		// Battle remains responsible for its own legality/fallback behavior.
+		// damage is not tactical recovery; emergency PP/faint handling remains
+		// responsible for its own legality/fallback behavior.
 		if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
 			continue
 		}
@@ -123,22 +131,38 @@ func chooseTacticalSwitchState(romData []byte, resources game.BattleResourcesSta
 	return decision
 }
 
-// chooseTrainingCarrySwitch is the deliberate switch-training variant of the
-// tactical policy. The weak target has already entered the battle and earned
-// its participation flag; this policy must now hand the fight to a healthy
-// carry even when the target could technically attack. Unlike ordinary
-// tactical switching there is no 50% score-improvement threshold: the whole
-// point is protecting the trainee while preserving its share of XP.
-func chooseTrainingCarrySwitchState(romData []byte, resources game.BattleResourcesState, b game.BattleState, minLevel uint8) switchDecision {
+func chooseTrainingCarrySwitchState(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	minLevel uint8,
+) switchDecision {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return switchDecisionWithoutStrategy(resources, "combat-strategy-unavailable")
+	}
+	return chooseTrainingCarrySwitchWithStrategy(strategy, romData, resources, b, minLevel)
+}
+
+// chooseTrainingCarrySwitchWithStrategy is the deliberate switch-training
+// variant. The weak target already earned participation; hand the fight to a
+// healthy carry without applying the normal 50% material-gain threshold.
+func chooseTrainingCarrySwitchWithStrategy(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	minLevel uint8,
+) switchDecision {
 	party := resources.Party
 	activeSlot := resources.ActiveSlot
 	decision := switchDecision{Slot: -1, Reason: "no-training-carry"}
-	if len(party) < 2 || activeSlot < 0 || activeSlot >= len(party) {
+	if strategy == nil || len(party) < 2 || activeSlot < 0 || activeSlot >= len(party) {
 		return decision
 	}
 
-	decision.Active = evaluateActiveForSwitch(romData, party, activeSlot, b)
-	_, defender := combat.PlayerMatchup(b)
+	decision.Active = evaluateActiveForSwitch(strategy, romData, party, activeSlot, b)
+	_, defender := battleCombatants(b)
 	for slot, mon := range party {
 		if slot == activeSlot || mon.Fainted() || mon.Level < minLevel || mon.Status == "frozen" {
 			continue
@@ -148,7 +172,7 @@ func chooseTrainingCarrySwitchState(romData []byte, resources game.BattleResourc
 		if mon.MaxHP > 0 && mon.HP*2 < mon.MaxHP {
 			continue
 		}
-		eval := evaluatePartyMonForSwitch(romData, slot, mon, defender)
+		eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
 		if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
 			continue
 		}
@@ -165,20 +189,35 @@ func chooseTrainingCarrySwitchState(romData []byte, resources game.BattleResourc
 	return decision
 }
 
-// bestReplacementSlot ranks every live party member for the current opponent.
-// Forced replacement does not apply the voluntary HP/frozen filters because
-// the player must send something out. If ROM scoring cannot distinguish the
-// candidates, deterministic party order breaks the tie.
-func bestReplacementSlotState(romData []byte, resources game.BattleResourcesState, b game.BattleState) (int, switchEvaluation) {
+func bestReplacementSlotState(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+) (int, switchEvaluation) {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return firstLiveReplacement(resources)
+	}
+	return bestReplacementSlotWithStrategy(strategy, romData, resources, b)
+}
+
+// bestReplacementSlotWithStrategy ranks every live party member for the current
+// opponent. Forced replacement does not apply voluntary HP/frozen filters.
+func bestReplacementSlotWithStrategy(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+) (int, switchEvaluation) {
 	party := resources.Party
-	_, defender := combat.PlayerMatchup(b)
+	_, defender := battleCombatants(b)
 	bestSlot := -1
 	var best switchEvaluation
 	for slot, mon := range party {
 		if mon.Fainted() {
 			continue
 		}
-		eval := evaluatePartyMonForSwitch(romData, slot, mon, defender)
+		eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
 		if bestSlot < 0 || betterSwitchEvaluation(eval, best) {
 			bestSlot, best = slot, eval
 		}
@@ -186,66 +225,77 @@ func bestReplacementSlotState(romData []byte, resources game.BattleResourcesStat
 	return bestSlot, best
 }
 
-func evaluateActiveForSwitch(romData []byte, party []game.BattlePartyMon, activeSlot int, b game.BattleState) switchEvaluation {
-	attacker, defender := combat.PlayerMatchup(b)
+func evaluateActiveForSwitch(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	party []game.BattlePartyMon,
+	activeSlot int,
+	b game.BattleState,
+) switchEvaluation {
+	attacker, defender := battleCombatants(b)
 	mon := party[activeSlot]
-	moves := [4]uint8{}
+	moves := [4]uint16{}
 	pp := [4]uint8{}
 	for i := range b.Moves {
-		moves[i], pp[i] = b.Moves[i].ID, b.Moves[i].PP
+		moves[i], pp[i] = uint16(b.Moves[i].ID), b.Moves[i].PP
 		if b.Moves[i].Disabled {
 			// Disable makes the slot unusable right now. Counting it in the
-			// stay score would make a trapped weak move set look healthier than
-			// the choices Battle can actually select this turn.
+			// stay score would make the choices Battle can select look stronger
+			// than they really are this turn.
 			pp[i] = 0
 		}
 	}
-	return evaluateSwitchCombatant(romData, activeSlot, mon.NativeSpeciesID, mon.Status, moves, pp, attacker, defender)
+	return evaluateSwitchCombatant(
+		strategy, romData, activeSlot, mon.NativeSpeciesID, mon.Status,
+		moves, pp, attacker, defender,
+	)
 }
 
-func evaluatePartyMonForSwitch(romData []byte, slot int, mon game.BattlePartyMon, defender combat.Combatant) switchEvaluation {
-	type1, ok1 := nativeByte(mon.Type1)
-	type2, ok2 := nativeByte(mon.Type2)
-	if !ok1 || !ok2 {
-		return switchEvaluation{Slot: slot, Species: mon.NativeSpeciesID, Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status, BestMoveSlot: -1}
-	}
-	attacker := combat.Combatant{
-		Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP,
-		Attack: mon.Attack, Defense: mon.Defense, Special: mon.Special,
-		Type1: type1, Type2: type2,
-	}
-	var moves [4]uint8
+func evaluatePartyMonForSwitch(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	slot int,
+	mon game.BattlePartyMon,
+	defender game.BattleCombatant,
+) switchEvaluation {
+	attacker := battlePartyCombatant(mon)
+	var moves [4]uint16
 	var pp [4]uint8
 	for i, move := range mon.Moves {
-		id, ok := nativeByte(move.NativeMoveID)
-		if !ok {
-			continue
-		}
-		moves[i], pp[i] = id, move.PP
+		moves[i], pp[i] = move.NativeMoveID, move.PP
 	}
-	return evaluateSwitchCombatant(romData, slot, mon.NativeSpeciesID, mon.Status, moves, pp, attacker, defender)
+	return evaluateSwitchCombatant(
+		strategy, romData, slot, mon.NativeSpeciesID, mon.Status,
+		moves, pp, attacker, defender,
+	)
 }
 
-func evaluateSwitchCombatant(romData []byte, slot int, species uint16, status string, moves, pp [4]uint8, attacker, defender combat.Combatant) switchEvaluation {
+func evaluateSwitchCombatant(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	slot int,
+	species uint16,
+	status string,
+	moves [4]uint16,
+	pp [4]uint8,
+	attacker, defender game.BattleCombatant,
+) switchEvaluation {
 	e := switchEvaluation{
 		Slot: slot, Species: species, Level: attacker.Level,
 		HP: attacker.HP, MaxHP: attacker.MaxHP, Status: status,
-		BestMoveSlot: -1, IncomingRisk: incomingTypeRisk(romData, defender, attacker),
-		FieldMoves: fieldMoveCount(moves),
+		BestMoveSlot: -1,
+		IncomingRisk: strategy.IncomingTypeRisk(romData, defender, attacker),
+		FieldMoves:   fieldMoveCount(strategy, moves),
 	}
 	for i, id := range moves {
 		if id == 0 || pp[i] == 0 {
 			continue
 		}
-		mv, err := rom.LookupMove(romData, id)
+		moveEval, _, err := strategy.EvaluateCombatMove(romData, attacker, defender, id, pp[i])
 		if err != nil {
 			continue
 		}
-		moveEval, err := combat.EvaluateMove(romData, attacker, defender, mv, pp[i])
-		if err != nil {
-			continue
-		}
-		if e.BestMoveSlot < 0 || combat.BetterMove(moveEval, e.BestMove) {
+		if e.BestMoveSlot < 0 || game.BetterBattleMove(moveEval, e.BestMove) {
 			e.BestMoveSlot, e.BestMove = i, moveEval
 		}
 	}
@@ -269,32 +319,46 @@ func evaluateSwitchCombatant(romData []byte, slot int, species uint16, status st
 	e.Score = e.Score * statusPermille / 1000
 	e.Score = e.Score * defensePermille / 1000
 	// One field move is normal in story parties; multiple field moves are a
-	// useful signal that this member is serving an overworld role. Penalize
-	// only the extras, and only modestly: Surf/Strength can still make an HM
-	// carrier the best battler when their actual combat score warrants it.
+	// utility signal. The active generation decides which native moves count.
 	for n := 1; n < e.FieldMoves; n++ {
 		e.Score = e.Score * 85 / 100
 	}
 	return e
 }
 
-func incomingTypeRisk(romData []byte, enemy, candidate combat.Combatant) int {
-	risk := rom.NeutralEffect
-	if v, err := rom.TypeEffectiveness(romData, enemy.Type1, candidate.Type1, candidate.Type2); err == nil {
-		risk = v
+func switchDecisionWithoutStrategy(resources game.BattleResourcesState, reason string) switchDecision {
+	decision := switchDecision{Slot: -1, Reason: reason}
+	if resources.ActiveSlot < 0 || resources.ActiveSlot >= len(resources.Party) {
+		return decision
 	}
-	if enemy.Type2 != enemy.Type1 {
-		if v, err := rom.TypeEffectiveness(romData, enemy.Type2, candidate.Type1, candidate.Type2); err == nil && v > risk {
-			risk = v
+	for slot, mon := range resources.Party {
+		if slot != resources.ActiveSlot && !mon.Fainted() {
+			decision.Legal = true
+			break
 		}
 	}
-	return risk
+	return decision
+}
+
+func firstLiveReplacement(resources game.BattleResourcesState) (int, switchEvaluation) {
+	for slot, mon := range resources.Party {
+		if mon.Fainted() {
+			continue
+		}
+		eval := switchEvaluation{
+			Slot: slot, Species: mon.NativeSpeciesID, Level: mon.Level,
+			HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status, BestMoveSlot: -1,
+			Score: int64(mon.Level) * 1000,
+		}
+		return slot, eval
+	}
+	return -1, switchEvaluation{Slot: -1, BestMoveSlot: -1}
 }
 
 func defensiveSwitchFactor(risk int) int {
 	// Neutral risk (10) -> 1000. 2x -> 500. 0.5x -> 2000. Immunity is
-	// valuable but capped at 2.5x because we do not know the opponent's exact
-	// move set here; its species typing is a defensive prior, not clairvoyance.
+	// valuable but capped at 2.5x because this is a typing prior, not knowledge
+	// of the opponent's exact move set.
 	if risk <= 0 {
 		return 2500
 	}
@@ -337,24 +401,12 @@ func betterSwitchEvaluation(candidate, incumbent switchEvaluation) bool {
 	return candidate.Slot < incumbent.Slot
 }
 
-func fieldMoveCount(moves [4]uint8) int {
+func fieldMoveCount(strategy game.BattleCombatStrategy, moves [4]uint16) int {
 	count := 0
 	for _, id := range moves {
-		switch id {
-		case 0x0f, // CUT
-			0x13, // FLY
-			0x39, // SURF
-			0x46, // STRENGTH
-			0x94: // FLASH
+		if id != 0 && strategy.IsFieldMove(id) {
 			count++
 		}
 	}
 	return count
-}
-
-func nativeByte(v uint16) (uint8, bool) {
-	if v > 0xff {
-		return 0, false
-	}
-	return uint8(v), true
 }
