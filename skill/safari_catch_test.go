@@ -78,7 +78,6 @@ func TestSafariCatchStopsBeforeUnaffordableReentry(t *testing.T) {
 	}
 }
 
-
 func TestSafariBallResultPrioritizesNicknamePromptAfterBattleFlagClears(t *testing.T) {
 	mem := newFakeRAM()
 	openChoice(mem, 8, 12, "NICKNAME")
