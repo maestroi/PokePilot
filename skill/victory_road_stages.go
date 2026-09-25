@@ -44,7 +44,7 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 	case indigoPlateauMap, indigoPlateauLobbyMap:
 		return true
 	case route23Map:
-		return int(mem.U8(sym.YCoord)) <= route23NorthCaveY
+		return state.Route23NorthOfVictoryRoad(int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)))
 	default:
 		return false
 	}

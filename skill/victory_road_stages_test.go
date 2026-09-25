@@ -62,11 +62,11 @@ func TestVictoryRoadClearBoundarySurvivesRoute23ResetNorthOfCave(t *testing.T) {
 	facts := state.StoryFacts{Route23BadgeChecksComplete: true, Route23BadgeChecksPassed: 7}
 	var mem state.Mem
 	mem[sym.CurMap] = route23Map
-	mem[sym.YCoord] = route23NorthCaveY
+	mem[sym.XCoord], mem[sym.YCoord] = 14, 32 // just outside the 2F exit
 	if !victoryRoadClearBoundary(&mem, facts) {
 		t.Fatal("Route 23 north-of-cave checkpoint lost cave-clear stage")
 	}
-	mem[sym.YCoord] = route23NorthCaveY + 1
+	mem[sym.XCoord], mem[sym.YCoord] = 4, 32 // just outside the 1F entrance
 	if victoryRoadClearBoundary(&mem, facts) {
 		t.Fatal("Route 23 south-of-cave checkpoint incorrectly retained cave-clear stage")
 	}
