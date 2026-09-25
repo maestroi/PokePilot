@@ -906,7 +906,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 						// one made correct refinement terminate as route_replan_exhausted.
 						// Bounce-back evidence is cheaper to discover and retains the
 						// historical replan guard.
-						if !errors.Is(err, ErrConnectionBandExhausted) {
+						if legFailureConsumesReplanBudget(err) {
 							if replans++; replans > maxReplans {
 								return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 							}
@@ -969,6 +969,14 @@ func legFailureBanScope(err error) (edge, tile bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// legFailureConsumesReplanBudget separates bounded topology discovery from
+// transient retry pressure. Exhausting a component-scoped connection band is
+// already finite and monotonic because the successful safe-ban path records
+// that exact edge in deadEnds; every other failure keeps the historical guard.
+func legFailureConsumesReplanBudget(err error) bool {
+	return !errors.Is(err, ErrConnectionBandExhausted)
 }
 
 // places is the single source of truth for the names Place accepts.
