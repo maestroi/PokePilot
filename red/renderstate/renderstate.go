@@ -76,7 +76,7 @@ func (p *Producer) Snapshot(reader game.MemoryReader, meta protocol.FrameMeta) (
 
 	var mem state.Mem
 	reader.PeekInto(0, mem[:])
-	obs, err := p.profile.DecodeObservation(memorySnapshot{mem: &mem}, p.rom)
+	obs, err := p.profile.DecodeObservation(memorySnapshot{mem: &mem}, nil)
 	if err != nil {
 		return protocol.RenderState{}, fmt.Errorf("red renderstate: decode observation: %w", err)
 	}
