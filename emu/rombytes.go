@@ -13,7 +13,9 @@ func OpenCGBBytes(rom []byte) (*Emu, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Emu{e: e, semanticROM: e.ROM()}, nil
+	m := &Emu{e: e, semanticROM: e.ROM()}
+	m.bindResolvedView()
+	return m, nil
 }
 
 // LoadROMBytes replaces the cartridge image and makes the new image the
@@ -23,6 +25,7 @@ func (m *Emu) LoadROMBytes(rom []byte, name string) error {
 		return err
 	}
 	m.semanticROM = m.e.ROM()
+	m.bindResolvedView()
 	return nil
 }
 
@@ -35,5 +38,6 @@ func (m *Emu) LoadDerivedROM(base, derived []byte, name string) error {
 		return err
 	}
 	m.semanticROM = append(m.semanticROM[:0], base...)
+	m.bindResolvedView()
 	return nil
 }

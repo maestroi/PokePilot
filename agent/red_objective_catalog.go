@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -19,13 +20,34 @@ func (a *redObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog
 }
 
 func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
-	catalog := ObjectiveCatalog{
+	return gen1ObjectiveCatalog(obs, gen1CatalogFacts{
+		Location: redLocationID,
 		Starters: []CatalogStarter{
 			{Starter: skill.StarterCharmander, Species: "charmander"},
 			{Starter: skill.StarterSquirtle, Species: "squirtle"},
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
 		ChallengeProfiles: redProgressionChallengeProfiles(),
+	})
+}
+
+// gen1CatalogFacts are the game-owned parts of a Gen-I objective catalog.
+// Everything else (destinations by map, gyms, encounters, shop stock,
+// interactables) is decoded from the shared engine and the cartridge's own
+// ROM tables, so Red, Blue and Yellow build it with one function.
+type gen1CatalogFacts struct {
+	// Location names a native map in the game's knowledge topology.
+	Location func(game.GameID, uint8) LocationID
+	// Starters are the starter choices the game's opening offers.
+	Starters []CatalogStarter
+	// ChallengeProfiles are the story challenges the game's adapter can run.
+	ChallengeProfiles []CatalogChallengeProfile
+}
+
+func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCatalog {
+	catalog := ObjectiveCatalog{
+		Starters:          facts.Starters,
+		ChallengeProfiles: facts.ChallengeProfiles,
 		CurrentCenter:     isCenter(obs.MapName),
 	}
 
@@ -36,7 +58,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		}
 		entry := CatalogDestination{
 			Place:    PlaceID(name),
-			Location: redLocationID(obs.GameID, destination.Map),
+			Location: facts.Location(obs.GameID, destination.Map),
 			Kind:     destination.Kind,
 			Center:   strings.HasSuffix(name, "pokemon center") || isCenter(state.MapName(destination.Map)),
 		}
@@ -52,7 +74,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
 			Place:     gym.Place,
-			Location:  redLocationID(obs.GameID, gym.Map),
+			Location:  facts.Location(obs.GameID, gym.Map),
 			Complete:  hasBadge(obs, gym.Badge),
 			Readiness: redGymReadinessProfile(gym.Badge),
 		})

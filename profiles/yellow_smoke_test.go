@@ -84,6 +84,10 @@ func TestYellowCanonicalViewDecodesWithSharedGen1State(t *testing.T) {
 	}
 
 	native := func(addr uint16) byte { return m.Peek8Native(addr) }
+	// Loading the Yellow cartridge binds its canonical view by itself.
+	if got, want := m.Peek8(redsym.CurMap), native(yellowsym.CurMap); got != want {
+		t.Fatalf("emulator opened Yellow unbound: canonical wCurMap %#02x, native %#02x", got, want)
+	}
 	m.BindMemoryView(&yellowsym.Canonical)
 
 	var mem state.Mem

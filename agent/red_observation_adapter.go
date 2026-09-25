@@ -29,12 +29,28 @@ func init() {
 // runtime. Generic ObserveChecked never decodes Red RAM, ROM tables, map object
 // roles, encounter tables, marts, field moves, or route topology itself.
 func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile game.GameProfile) (Observation, error) {
+	return observeGen1(m, romData, profile, gen1ObservationFacts{Catalog: redObjectiveCatalog})
+}
+
+// gen1ObservationFacts are the game-owned parts of a Gen-I observation.
+type gen1ObservationFacts struct {
+	// Dex builds the game's Dex catalog; nil keeps the profile's own.
+	Dex func(romData []byte, owned, seen []SpeciesID) (DexCatalog, error)
+	// Catalog builds the game's objective catalog from the observation.
+	Catalog func(Observation) ObjectiveCatalog
+}
+
+// observeGen1 enriches a profile observation with everything the shared
+// Gen-I engine decodes: live RAM through the emulator's (canonical) memory
+// view and static facts from the cartridge's bound ROM tables. Red, Blue and
+// Yellow share it; each supplies only its own Dex and catalog facts.
+func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen1ObservationFacts) (Observation, error) {
 	base, err := profile.DecodeObservation(m, romData)
 	if err != nil {
 		return Observation{}, fmt.Errorf("base observation: %w", err)
 	}
 	if base.NativeMapID > 0xff {
-		return Observation{}, fmt.Errorf("native map id 0x%x does not fit Pokémon Red map identity", base.NativeMapID)
+		return Observation{}, fmt.Errorf("native map id 0x%x does not fit Gen-I map identity", base.NativeMapID)
 	}
 
 	var mem state.Mem
@@ -68,6 +84,13 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		PokedexOwned:      append([]SpeciesID(nil), base.PokedexOwned...),
 		PokedexSeen:       append([]SpeciesID(nil), base.PokedexSeen...),
 		Dex:               base.Dex,
+	}
+	if facts.Dex != nil {
+		dex, err := facts.Dex(romData, obs.PokedexOwned, obs.PokedexSeen)
+		if err != nil {
+			return Observation{}, fmt.Errorf("Dex catalog: %w", err)
+		}
+		obs.Dex = dex
 	}
 	if checkpoint, ok, checkpointErr := skill.RecoveryCheckpointPlace(romData, mem.U8(sym.LastBlackoutMap)); checkpointErr == nil && ok {
 		obs.RecoveryCheckpoint = PlaceID(checkpoint)
@@ -215,7 +238,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
-	obs.Catalog = redObjectiveCatalog(obs)
+	obs.Catalog = facts.Catalog(obs)
 	for i := range obs.Catalog.Destinations {
 		destination := &obs.Catalog.Destinations[i]
 		if !destination.Center {

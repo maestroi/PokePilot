@@ -1,7 +1,9 @@
 package rom
 
 import (
-	"github.com/maestroi/pokepilot/game"
+	"crypto/sha1"
+	"encoding/hex"
+
 	"github.com/maestroi/pokepilot/gen1rom"
 	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/yellow/sym"
@@ -88,8 +90,24 @@ func yellowLedges(romData []byte, tileset uint8) []worldmodel.Ledge {
 	return gen1rom.LedgesAt(romData, yellowLedgeTiles, tileset)
 }
 
-func isYellowWorldROM(romData []byte) bool {
-	return game.InspectROM(romData).SHA1 == sym.ROMSHA1
+func isYellowWorldROM(romData []byte) bool { return IsCartridge(romData) }
+
+// IsCartridge reports whether romData is the supported Yellow image. A
+// structural probe (MapHeaderBanks/MapHeaderPointers name PalletTown_h at
+// 06:42a1, pokeyellow.sym) rejects other cartridges in three byte reads, so
+// hot shared decoders never hash a Red image; the SHA-1 then pins the exact
+// revision whose layout this package describes.
+func IsCartridge(romData []byte) bool {
+	banks, err := Tables.MapHeaderBanks.Offset()
+	if err != nil || banks >= len(romData) || romData[banks] != 0x06 {
+		return false
+	}
+	ptrs, err := Tables.MapHeaderPointers.Offset()
+	if err != nil || ptrs+1 >= len(romData) || romData[ptrs] != 0xA1 || romData[ptrs+1] != 0x42 {
+		return false
+	}
+	sum := sha1.Sum(romData)
+	return hex.EncodeToString(sum[:]) == sym.ROMSHA1
 }
 
 func init() {

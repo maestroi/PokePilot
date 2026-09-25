@@ -1,10 +1,10 @@
 // Package profile implements the Pokémon Yellow profile baseline.
 //
-// Phase 0 intentionally exposes only exact ROM identity plus the small set of
-// RAM semantics needed to prove profile selection and basic player observation.
-// Yellow is not registered as sharing Red/Blue's gameplay adapter because its
-// RAM layout and story/mechanics differ. Later phases enable capabilities only
-// after their Yellow implementations exist.
+// Yellow owns its identity, boot, observation, story projection and Pikachu
+// facts, decoded from its native RAM. Everything the shared Gen-I engine
+// decodes (battle, menus, overworld movement, field actions, capture,
+// inventory) is served by that engine through the canonical memory view the
+// cartridge binds, with ROM tables located by yellow/rom.Tables (engine.go).
 package profile
 
 import (
@@ -54,6 +54,9 @@ func (*Profile) Features() game.ProfileFeatures {
 		game.FeatureMapParsing:      true,
 		game.FeatureInventory:       true,
 		game.FeatureStoryProgress:   true,
+		game.FeatureBattles:         true,
+		game.FeatureFieldMoves:      true,
+		game.FeatureTrainerFlags:    true,
 		game.FeatureSemanticSpecies: true,
 	}
 }
@@ -81,6 +84,7 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (gam
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("yellow profile: nil memory reader")
 	}
+	reader = native(reader)
 	mapID := reader.Peek8(sym.CurMap)
 	mapName, _ := (parser{}).MapName(uint16(mapID))
 	pokedexOwned, pokedexSeen := yellowPokedex(reader, romData)

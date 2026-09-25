@@ -1,6 +1,10 @@
 package rom
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/maestroi/pokepilot/gen1rom"
+)
 
 // Rod identities follow the three item-effect handlers in
 // pokered/engine/items/item_effects.asm.
@@ -11,14 +15,9 @@ const (
 )
 
 const (
-	superRodDataBank   uint8  = 0x03
-	superRodDataAddr   uint16 = 0x6919
-	goodRodMonsBank    uint8  = 0x03
-	goodRodMonsAddr    uint16 = 0x627F
-	itemUseOldRodBank  uint8  = 0x03
-	itemUseOldRodAddr  uint16 = 0x624C
-	goodRodEntries            = 2
-	oldRodOpcodeOffset        = 6 // after `call FishingInit` + `jp c, ...`
+	goodRodEntries     = 2
+	oldRodOpcodeOffset = 6 // after `call FishingInit` + `jp c, ...`
+	superRodInlineMons = 4 // SuperRodFishingSlots: map + four (species, level)
 )
 
 // FishingEncounter is one rod table slot. Old and Good rods are global
@@ -58,7 +57,7 @@ func FishingEncounters(romData []byte) ([]FishingEncounter, error) {
 }
 
 func oldRodEncounter(romData []byte) (FishingEncounter, error) {
-	off, err := bankedOffset(itemUseOldRodBank, itemUseOldRodAddr)
+	off, err := Tables(romData).ItemUseOldRod.Offset()
 	if err != nil {
 		return FishingEncounter{}, fmt.Errorf("rom: ItemUseOldRod: %w", err)
 	}
@@ -75,7 +74,7 @@ func oldRodEncounter(romData []byte) (FishingEncounter, error) {
 }
 
 func goodRodEncounters(romData []byte) ([]FishingEncounter, error) {
-	off, err := bankedOffset(goodRodMonsBank, goodRodMonsAddr)
+	off, err := Tables(romData).GoodRodMons.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: GoodRodMons: %w", err)
 	}
@@ -96,9 +95,13 @@ func goodRodEncounters(romData []byte) ([]FishingEncounter, error) {
 }
 
 func superRodEncounters(romData []byte) ([]FishingEncounter, error) {
-	off, err := bankedOffset(superRodDataBank, superRodDataAddr)
+	layout := Tables(romData)
+	off, err := layout.SuperRod.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: SuperRodData: %w", err)
+	}
+	if layout.SuperRodFormat == gen1rom.SuperRodInline {
+		return inlineSuperRodEncounters(romData, off)
 	}
 	out := make([]FishingEncounter, 0, 64)
 	for {
@@ -114,7 +117,7 @@ func superRodEncounters(romData []byte) ([]FishingEncounter, error) {
 		mapID := romData[off]
 		addr := uint16(romData[off+1]) | uint16(romData[off+2])<<8
 		off += 3
-		group, err := bankedOffset(superRodDataBank, addr)
+		group, err := bankedOffset(layout.SuperRod.Bank, addr)
 		if err != nil {
 			return nil, fmt.Errorf("rom: SuperRodData map %#02x: %w", mapID, err)
 		}
@@ -133,5 +136,34 @@ func superRodEncounters(romData []byte) ([]FishingEncounter, error) {
 			}
 			out = append(out, FishingEncounter{MapID: mapID, Rod: RodSuper, Species: species, Level: level})
 		}
+	}
+}
+
+// inlineSuperRodEncounters reads Yellow's SuperRodFishingSlots: each row is a
+// map id and four inline (species, level) slots, terminated by $ff
+// (pokeyellow/engine/items/super_rod.asm).
+func inlineSuperRodEncounters(romData []byte, off int) ([]FishingEncounter, error) {
+	const rowLen = 1 + 2*superRodInlineMons
+	out := make([]FishingEncounter, 0, 128)
+	for {
+		if off >= len(romData) {
+			return nil, fmt.Errorf("rom: SuperRodFishingSlots terminator missing before end of ROM")
+		}
+		if romData[off] == 0xFF {
+			return out, nil
+		}
+		if off+rowLen > len(romData) {
+			return nil, fmt.Errorf("rom: SuperRodFishingSlots row at %#x exceeds ROM of %d bytes", off, len(romData))
+		}
+		mapID := romData[off]
+		for i := 0; i < superRodInlineMons; i++ {
+			species := romData[off+1+2*i]
+			level := romData[off+2+2*i]
+			if species == 0 {
+				continue
+			}
+			out = append(out, FishingEncounter{MapID: mapID, Rod: RodSuper, Species: species, Level: level})
+		}
+		off += rowLen
 	}
 }

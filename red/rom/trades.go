@@ -3,11 +3,9 @@ package rom
 import "fmt"
 
 const (
-	tradeMonsBank   uint8  = 0x1C
-	tradeMonsAddr   uint16 = 0x5B7B
-	npcTradeCount          = 10
-	npcTradeNameLen        = 11
-	npcTradeSize           = 3 + npcTradeNameLen
+	npcTradeCount   = 10
+	npcTradeNameLen = 11
+	npcTradeSize    = 3 + npcTradeNameLen
 )
 
 // NPCTrade is one TradeMons row: Index is the stable wWhichTrade value, Give
@@ -23,7 +21,7 @@ type NPCTrade struct {
 // preserving the original row index. Scripts write that index to wWhichTrade,
 // so callers must not renumber rows if a patched/unused row is skipped.
 func NPCTrades(romData []byte) ([]NPCTrade, error) {
-	off, err := bankedOffset(tradeMonsBank, tradeMonsAddr)
+	off, err := Tables(romData).TradeMons.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: TradeMons: %w", err)
 	}

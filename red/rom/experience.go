@@ -37,7 +37,10 @@ func LookupSpeciesExperience(romData []byte, species uint8) (SpeciesExperienceDa
 	if err != nil {
 		return SpeciesExperienceData{}, err
 	}
-	entry := baseStatsOffset + (int(dex)-1)*baseStatsEntryLen
+	entry, err := baseStatsEntry(romData, dex)
+	if err != nil {
+		return SpeciesExperienceData{}, err
+	}
 	if entry < 0 || entry+baseStatsEntryLen > len(romData) {
 		return SpeciesExperienceData{}, fmt.Errorf("rom: base stats for dex %d at offset %#x exceed ROM of %d bytes", dex, entry, len(romData))
 	}

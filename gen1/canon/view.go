@@ -233,3 +233,28 @@ func (v *View) compose(raw *[0x10000]byte, start int, dst []byte) {
 	copy(canon[echoStart:echoEnd], canon[wramStart:wramStart+(echoEnd-echoStart)])
 	copy(dst, canon[start:])
 }
+
+// CanonicalFlag translates a native flag reference, the byte address a native
+// ROM table points into plus a bit offset that may exceed 7 (FlagAction adds
+// bit/8 to the byte), into the canonical byte and mask that read the same
+// flag through this view. ok is false when the native address is outside
+// every renumbered flag array, or the native flag has no canonical index.
+func (v *View) CanonicalFlag(nativeByte uint16, bit uint8) (canonByte uint16, mask uint8, ok bool) {
+	for _, f := range v.Flags {
+		maxNative := -1
+		for _, nat := range f.CanonToNative {
+			maxNative = max(maxNative, int(nat))
+		}
+		if int(nativeByte) < int(f.Native) || int(nativeByte) > int(f.Native)+maxNative/8 {
+			continue
+		}
+		native := int(nativeByte-f.Native)*8 + int(bit)
+		for c, nat := range f.CanonToNative {
+			if int(nat) == native {
+				return f.Canon + uint16(c/8), 1 << (uint(c) % 8), true
+			}
+		}
+		return 0, 0, false
+	}
+	return 0, 0, false
+}

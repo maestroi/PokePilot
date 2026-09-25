@@ -13,7 +13,6 @@ import "fmt"
 //
 // Move ids are 1-based, so move n is the (n-1)th entry.
 const (
-	movesOffset  = 0x0E * 0x4000
 	moveEntryLen = 6
 
 	// DefenseDown1Effect is DEFENSE_DOWN1_EFFECT: the move lowers the
@@ -59,7 +58,11 @@ func LookupMove(romData []byte, id uint8) (Move, error) {
 	if id == 0 {
 		return Move{}, fmt.Errorf("rom: move id 0 is the empty slot, not a move")
 	}
-	off := movesOffset + (int(id)-1)*moveEntryLen
+	base, err := Tables(romData).Moves.Offset()
+	if err != nil {
+		return Move{}, fmt.Errorf("rom: Moves: %w", err)
+	}
+	off := base + (int(id)-1)*moveEntryLen
 	if off+moveEntryLen > len(romData) {
 		return Move{}, fmt.Errorf("rom: move %d at offset %d exceeds ROM of %d bytes", id, off, len(romData))
 	}

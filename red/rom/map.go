@@ -12,8 +12,16 @@ import (
 // successfully and invent incoming warps if treated as real headers.
 var ErrInvalidMapID = errors.New("invalid Red map id")
 
+func validMapID(romData []byte, id uint8) bool {
+	layout := Tables(romData)
+	if int(id) >= layout.MapCount || layout.ValidMap == nil {
+		return false
+	}
+	return layout.ValidMap(id)
+}
+
 // Defined by pokered/constants/map_constants.asm.
-func validMapID(id uint8) bool {
+func redValidMapID(id uint8) bool {
 	if id >= 0xf8 {
 		return false
 	}
@@ -25,16 +33,6 @@ func validMapID(id uint8) bool {
 	}
 	return true
 }
-
-// Banked symbol addresses from pokered.sym, written bank:addr.
-const (
-	mapHeaderPointersBank uint8  = 0x00
-	mapHeaderPointersAddr uint16 = 0x01AE
-	mapHeaderBanksBank    uint8  = 0x03
-	mapHeaderBanksAddr    uint16 = 0x423D
-	tilesetsBank          uint8  = 0x03
-	tilesetsAddr          uint16 = 0x47BE
-)
 
 type Warp = gen1rom.Warp
 type Sign = gen1rom.Sign
@@ -54,8 +52,9 @@ func bankedOffset(bank uint8, addr uint16) (int, error) {
 	return gen1rom.BankedOffset(bank, addr)
 }
 
-func redHeaderRef(rom []byte, mapID uint8) (gen1rom.HeaderRef, error) {
-	bankOff, err := bankedOffset(mapHeaderBanksBank, mapHeaderBanksAddr)
+func headerRef(rom []byte, mapID uint8) (gen1rom.HeaderRef, error) {
+	layout := Tables(rom)
+	bankOff, err := layout.MapHeaderBanks.Offset()
 	if err != nil {
 		return gen1rom.HeaderRef{}, err
 	}
@@ -65,7 +64,7 @@ func redHeaderRef(rom []byte, mapID uint8) (gen1rom.HeaderRef, error) {
 	}
 	bank := rom[bankAt]
 
-	ptrOff, err := bankedOffset(mapHeaderPointersBank, mapHeaderPointersAddr)
+	ptrOff, err := layout.MapHeaderPointers.Offset()
 	if err != nil {
 		return gen1rom.HeaderRef{}, err
 	}
@@ -77,12 +76,13 @@ func redHeaderRef(rom []byte, mapID uint8) (gen1rom.HeaderRef, error) {
 	return gen1rom.HeaderRef{Bank: bank, Addr: addr}, nil
 }
 
-// ParseMap reads one Red/Blue map using the shared Gen-I header/object format.
+// ParseMap reads one map using the shared Gen-I header/object format, at the
+// header tables of the cartridge's bound layout.
 func ParseMap(rom []byte, mapID uint8) (MapHeader, error) {
-	if !validMapID(mapID) {
+	if !validMapID(rom, mapID) {
 		return MapHeader{ID: mapID}, fmt.Errorf("map %02x: %w", mapID, ErrInvalidMapID)
 	}
-	ref, err := redHeaderRef(rom, mapID)
+	ref, err := headerRef(rom, mapID)
 	if err != nil {
 		return MapHeader{ID: mapID}, err
 	}

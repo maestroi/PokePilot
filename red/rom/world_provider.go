@@ -10,9 +10,6 @@ import (
 const (
 	redWorldMaxMapID uint8 = 0xF7
 	tilesetEntryLen        = 12
-
-	tilePairCollisionsLandAddr  = 0x0c7e
-	tilePairCollisionsWaterAddr = 0x0ca0
 )
 
 type redWorldProvider struct {
@@ -29,7 +26,7 @@ func NewWorldProvider(romData []byte) worldmodel.MapHeaderProvider {
 func (p *redWorldProvider) MapIDs() []uint8 {
 	ids := make([]uint8, 0, int(redWorldMaxMapID)+1)
 	for id := uint16(0); id <= uint16(redWorldMaxMapID); id++ {
-		if validMapID(uint8(id)) {
+		if validMapID(p.rom, uint8(id)) {
 			ids = append(ids, uint8(id))
 		}
 	}
@@ -92,10 +89,12 @@ func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationM
 // WorldGridSpec lets existing Red callers keep passing rom.MapHeader while
 // the common Gen-I collision-grid byte decoder lives in gen1rom.
 func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	layout := Tables(romData)
 	return gen1rom.BuildGridSpec(romData, gen1rom.MapHeader(h), blocks, mode, gen1rom.GridLayout{
-		TilesetsBank:    tilesetsBank,
-		TilesetsAddr:    tilesetsAddr,
+		TilesetsBank:    layout.Tilesets.Bank,
+		TilesetsAddr:    layout.Tilesets.Addr,
 		TilesetEntryLen: tilesetEntryLen,
+		CollisionBank:   layout.CollisionBank,
 		TilePairs:       redTilePairsForTraversal,
 		Ledges: func(data []byte, tileset uint8) []worldmodel.Ledge {
 			raw := Ledges(data, tileset)
@@ -109,11 +108,16 @@ func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.
 }
 
 func redTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.TraversalMode) map[[2]uint8]bool {
-	addr := tilePairCollisionsLandAddr
+	layout := Tables(romData)
+	table := layout.TilePairCollisionsLand
 	if mode == worldmodel.TraversalWater {
-		addr = tilePairCollisionsWaterAddr
+		table = layout.TilePairCollisionsWater
 	}
-	return gen1rom.TilePairsAt(romData, addr, tileset)
+	off, err := table.Offset()
+	if err != nil {
+		return map[[2]uint8]bool{}
+	}
+	return gen1rom.TilePairsAt(romData, off, tileset)
 }
 
 func isRegisteredGen1WorldROM(romData []byte) bool {

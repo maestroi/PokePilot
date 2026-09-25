@@ -96,7 +96,9 @@ func openModel(romPath string, model gomeboy.Model) (*Emu, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Emu{e: e, semanticROM: e.ROM()}, nil
+	m := &Emu{e: e, semanticROM: e.ROM()}
+	m.bindResolvedView()
+	return m, nil
 }
 
 // Close releases resources held by the emulator.
