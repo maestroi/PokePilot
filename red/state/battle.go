@@ -52,7 +52,6 @@ func DecodeBattle(m *Mem) *BattleState {
 		EnemyAttack:      m.U16BE(sym.EnemyMonAttack),
 		EnemyDefense:     m.U16BE(sym.EnemyMonDefense),
 		EnemySpecial:     m.U16BE(sym.EnemyMonSpecial),
-		DisabledMove:     disabled,
 		ActiveAttackMod:  m.U8(sym.PlayerMonAttackMod),
 		ActiveDefenseMod: m.U8(sym.PlayerMonDefenseMod),
 		EnemyAttackMod:   m.U8(sym.EnemyMonAttackMod),
