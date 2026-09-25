@@ -4,63 +4,40 @@ import (
 	"fmt"
 	"sort"
 
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// Acquisition kinds are portable planner vocabulary. How Red implements
-// each kind stays in the adapter (ROM tables and scripted facts).
+// Re-export the portable Dex vocabulary at the planner boundary. Concrete
+// profiles own attainability; these aliases preserve the existing agent API.
 const (
-	AcquireWildGrass   = "wild_grass"
-	AcquireWildWater   = "wild_water"
-	AcquireFishing     = "fishing"
-	AcquireLevelEvo    = "evolution_level"
-	AcquireItemEvo     = "evolution_item"
-	AcquireTradeEvo    = "evolution_trade"
-	AcquireInGameTrade = "in_game_trade"
-	AcquireGift        = "gift"
-	AcquireStatic      = "static"
-	AcquireFossil      = "fossil"
-	AcquireStarter     = "starter"
+	AcquireWildGrass   = gameruntime.AcquireWildGrass
+	AcquireWildWater   = gameruntime.AcquireWildWater
+	AcquireFishing     = gameruntime.AcquireFishing
+	AcquireLevelEvo    = gameruntime.AcquireLevelEvo
+	AcquireItemEvo     = gameruntime.AcquireItemEvo
+	AcquireTradeEvo    = gameruntime.AcquireTradeEvo
+	AcquireInGameTrade = gameruntime.AcquireInGameTrade
+	AcquireGift        = gameruntime.AcquireGift
+	AcquireStatic      = gameruntime.AcquireStatic
+	AcquireFossil      = gameruntime.AcquireFossil
+	AcquireStarter     = gameruntime.AcquireStarter
 )
 
 const (
-	UnavailableTradeEvolution = "trade_evolution"
-	UnavailableEventOnly      = "event_only"
-	UnavailableNoLocalSource  = "no_local_source"
-	UnavailableForfeited      = "forfeited"
+	UnavailableTradeEvolution = gameruntime.UnavailableTradeEvolution
+	UnavailableEventOnly      = gameruntime.UnavailableEventOnly
+	UnavailableNoLocalSource  = gameruntime.UnavailableNoLocalSource
+	UnavailableForfeited      = gameruntime.UnavailableForfeited
 )
 
-// DexSource is one legitimate way this save can obtain a species.
-type DexSource struct {
-	Kind           string    `json:"kind"`
-	From           SpeciesID `json:"from,omitempty"`
-	Item           ItemID    `json:"item,omitempty"`
-	Level          uint8     `json:"level,omitempty"`
-	Place          PlaceID   `json:"place,omitempty"`
-	Requirement    string    `json:"requirement,omitempty"`
-	ExclusiveGroup string    `json:"exclusive_group,omitempty"`
-	Give           SpeciesID `json:"give,omitempty"`
-}
-
-// DexEntry is one National Dex species as the planner should see it.
-type DexEntry struct {
-	Species     SpeciesID   `json:"species"`
-	Dex         uint8       `json:"dex"`
-	Owned       bool        `json:"owned,omitempty"`
-	Seen        bool        `json:"seen,omitempty"`
-	Sources     []DexSource `json:"sources,omitempty"`
-	Unavailable string      `json:"unavailable,omitempty"`
-}
-
-// DexCatalog is the deterministic Dex-mode world model: owned species,
-// remaining local targets, and species this save cannot produce.
-type DexCatalog struct {
-	Owned       []DexEntry `json:"owned"`
-	Targets     []DexEntry `json:"targets"`
-	Unavailable []DexEntry `json:"unavailable"`
-}
+type (
+	DexSource  = gameruntime.DexSource
+	DexEntry   = gameruntime.DexEntry
+	DexCatalog = gameruntime.DexCatalog
+)
 
 // ProjectPokedex turns Red Pokédex numbers into semantic species IDs via
 // the ROM's PokedexOrder inverse. Dex numbers that do not resolve are
