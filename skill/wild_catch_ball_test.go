@@ -3,31 +3,36 @@ package skill
 import (
 	"testing"
 
-	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 )
 
-// A better ball is the largest lever on a throw's catch chance, so ordinary
-// wild catches throw the strongest ball in the bag and keep the Master Ball
-// for one-time encounters.
-func TestWildCatchBallPrefersStrongestOrdinaryBall(t *testing.T) {
-	const master, ultra, great, poke = 0x01, 0x02, 0x03, ItemPokeBall
-	var mem state.Mem
-	if _, ok := wildCatchBall(&mem); ok {
-		t.Fatal("empty bag offered a ball")
+func TestOrdinaryCaptureBallPrefersProfileOrder(t *testing.T) {
+	const master, ultra, great, poke uint16 = 0x01, 0x02, 0x03, ItemPokeBall
+	order := []uint16{ultra, great, poke}
+
+	if _, ok := ordinaryCaptureBall(game.InventoryState{}, order); ok {
+		t.Fatal("empty inventory offered a ball")
 	}
-	setTestBag(&mem, [2]uint8{master, 1})
-	if ball, ok := wildCatchBall(&mem); ok {
-		t.Fatalf("wild catch spent the Master Ball (%#02x)", ball)
+	if _, ok := ordinaryCaptureBall(game.InventoryState{
+		Items: []game.InventoryItem{{NativeItemID: master, Quantity: 1}},
+	}, order); ok {
+		t.Fatal("capture policy spent an item absent from its ordinary-ball order")
 	}
-	setTestBag(&mem, [2]uint8{poke, 5}, [2]uint8{great, 2}, [2]uint8{master, 1})
-	if ball, _ := wildCatchBall(&mem); ball != great {
-		t.Fatalf("ball = %#02x, want Great Ball", ball)
+
+	inventory := game.InventoryState{Items: []game.InventoryItem{
+		{NativeItemID: poke, Quantity: 5},
+		{NativeItemID: great, Quantity: 2},
+		{NativeItemID: master, Quantity: 1},
+	}}
+	if ball, _ := ordinaryCaptureBall(inventory, order); ball != great {
+		t.Fatalf("ball = %#04x, want Great Ball", ball)
 	}
-	if n := wildBallCount(&mem); n != 7 {
-		t.Fatalf("wild ball count = %d, want 7 (Master Ball excluded)", n)
+	if n := ordinaryCaptureBallCount(inventory, order); n != 7 {
+		t.Fatalf("ordinary ball count = %d, want 7", n)
 	}
-	setTestBag(&mem, [2]uint8{poke, 5}, [2]uint8{ultra, 1}, [2]uint8{great, 2})
-	if ball, _ := wildCatchBall(&mem); ball != ultra {
-		t.Fatalf("ball = %#02x, want Ultra Ball", ball)
+
+	inventory.Items = append(inventory.Items, game.InventoryItem{NativeItemID: ultra, Quantity: 1})
+	if ball, _ := ordinaryCaptureBall(inventory, order); ball != ultra {
+		t.Fatalf("ball = %#04x, want Ultra Ball", ball)
 	}
 }
