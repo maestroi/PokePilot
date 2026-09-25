@@ -36,6 +36,14 @@ type planningTestPlanner struct {
 	strategic int
 	fast      int
 	plans     []Plan
+	zeroCall  func(Observation, []Objective) []Objective
+}
+
+func (p *planningTestPlanner) ZeroCallPlanningMenu(obs Observation, offered []Objective) []Objective {
+	if p.zeroCall != nil {
+		return p.zeroCall(obs, offered)
+	}
+	return offered
 }
 
 func (p *planningTestPlanner) Next(_ Observation, offered []Objective) (Objective, error) {
@@ -317,6 +325,35 @@ func TestRunPlanningAutoContinuesBoundaryLegIntoSingleProgression(t *testing.T) 
 	}
 	if r.Stats.LegAutoExecutions != 1 || r.Stats.LastLegDecision != "single_progression" {
 		t.Fatalf("stats = %+v", r.Stats)
+	}
+}
+
+func TestRunPlanningZeroCallPolicyPreventsSingleProgressionRush(t *testing.T) {
+	progress := Objective{Kind: KindProgress, Progress: "mt_moon_fossil_acquired"}
+	catch := Objective{Kind: KindCatch, Species: "zubat"}
+	p := &planningTestPlanner{
+		plans: []Plan{{Goal: "exercise the current frontier", Steps: []string{catch.String()}}},
+		zeroCall: func(_ Observation, _ []Objective) []Objective {
+			return []Objective{catch}
+		},
+	}
+	r := newRunPlanning(Plan{
+		Goal:     "cross mt moon and reach cerulean",
+		Steps:    []string{"go to route 3"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "route 3"}},
+		Step:     1,
+		Boundary: true,
+	})
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, []Objective{progress, catch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fromPlan || obj.Kind != KindCatch || obj.Species != "zubat" {
+		t.Fatalf("obj=%+v fromPlan=%v; want strategist-selected catch", obj, fromPlan)
+	}
+	if p.strategic != 1 || r.Stats.LegAutoExecutions != 0 {
+		t.Fatalf("planner calls=%d auto=%d; zero-call policy was bypassed", p.strategic, r.Stats.LegAutoExecutions)
 	}
 }
 
