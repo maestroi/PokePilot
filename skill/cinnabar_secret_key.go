@@ -115,10 +115,9 @@ func route20ResumeExit(planner *RoutePlanner) (Destination, error) {
 	candidates := []struct {
 		dest   Destination
 		next   uint8
-		label  string
 	}{
-		{dest: Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, next: cinnabarIslandMap, label: "Cinnabar"},
-		{dest: fuchsia, next: route19Map, label: "Fuchsia"},
+		{dest: Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, next: cinnabarIslandMap},
+		{dest: fuchsia, next: route19Map},
 	}
 	for _, candidate := range candidates {
 		route, err := findRoutePlanForDestination(
