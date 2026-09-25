@@ -861,6 +861,19 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if step.Transition != nil {
 			execution, execErr := world.ExecuteTransition(executor, e, *step.Transition)
 			if execErr != nil {
+				if errors.Is(execErr, world.ErrTransitionExecutionStalled) {
+					forced := newLegFromMap(e, cur)
+					if !deadEnds[forced] {
+						if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
+							// The executor exhausted every candidate for this exact
+							// semantic edge. That is finite topology evidence, not a
+							// reason to terminate the whole journey while another band
+							// or route remains viable.
+							deadEnds[forced] = true
+							continue
+						}
+					}
+				}
 				return fmt.Errorf("skill: GoTo: %w", execErr)
 			}
 			if execution.Changed {
