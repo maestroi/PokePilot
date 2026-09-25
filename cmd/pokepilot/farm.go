@@ -417,7 +417,10 @@ func validateSpec(planner, starter, dest string) error {
 	const starterHelp = "use a canonical starter, any Gen I Pokemon (for example mewtwo), or random[:reasonable|basic|any]"
 	switch planner {
 	case "scripted":
-		if _, ok := starterFromName(starter); !ok {
+		// An empty starter asks for the game's own opening, which only a game
+		// without a starter choice (Yellow's Pikachu) can satisfy; that is
+		// decided against the loaded cartridge in runFarmScripted.
+		if _, ok := starterFromName(starter); starter != "" && !ok {
 			return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
 		}
 		if _, ok := skill.Place(dest); !ok {
@@ -738,13 +741,13 @@ func workerAddrs(port int) []string {
 // alive, because the wall decides what happens next. Both actions cross the
 // same objective transaction boundary as planner-selected gameplay.
 func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, string, *farm.Progress, *farm.Progress) {
-	starterObj, err := starterObjectiveForRequest(starter, seed)
+	starterObj, err := scriptedStarterObjective(m, starter, seed)
 	if err != nil {
 		return "error", fmt.Sprintf("starter objective: %v", err), nil, nil
 	}
 	results := make([]agent.ObjectiveResult, 0, 2)
 
-	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
+	fmt.Printf("%s (this includes the rival battle)...\n", starterObj)
 	starterResult, err := executeScriptedObjective(m, starterObj)
 	results = append(results, starterResult)
 	if err != nil {

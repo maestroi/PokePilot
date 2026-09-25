@@ -33,20 +33,19 @@ func TestYellowAdapterIsSeparateFromRedBlueFactory(t *testing.T) {
 	}
 }
 
-func TestYellowStoryObjectivesAreTypedBlocksNotRedScripts(t *testing.T) {
+func TestYellowUnownedStoryGoalIsTypedBlockNotRedScript(t *testing.T) {
 	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
-	for _, o := range []Objective{
-		{Kind: KindStarter, Species: "pikachu"},
-		{Kind: KindProgress, Progress: "oak-parcel"},
-	} {
-		result, err := adapter.ExecuteOwned(o)
-		if !errors.Is(err, errYellowControllerUnavailable) || result.Outcome != OutcomeBlocked {
-			t.Fatalf("%s: outcome=%q err=%v, want blocked controller-unavailable", o, result.Outcome, err)
-		}
-		failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
-		if failure.Class != game.FailureClassBlocked || failure.Recoverable {
-			t.Fatalf("%s: failure = %+v, want non-recoverable block", o, failure)
-		}
+	o := Objective{Kind: KindProgress, Progress: "ss_ticket_acquired"}
+	if err := adapter.Validate(o, Observation{GameID: yellowprofile.GameID, PartyCount: 1}); err == nil {
+		t.Fatal("a story goal no Yellow controller owns validated")
+	}
+	result, err := executeYellowOwned(nil, nil, o)
+	if !errors.Is(err, errYellowControllerUnavailable) || result.Outcome != OutcomeBlocked {
+		t.Fatalf("%s: outcome=%q err=%v, want blocked controller-unavailable", o, result.Outcome, err)
+	}
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
+	if failure.Class != game.FailureClassBlocked || failure.Recoverable {
+		t.Fatalf("%s: failure = %+v, want non-recoverable block", o, failure)
 	}
 }
 

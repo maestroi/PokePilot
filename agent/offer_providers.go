@@ -569,3 +569,19 @@ func sortBlockEvidence(blocked []ObjectiveBlockEvidence) {
 		return blocked[i].Place < blocked[j].Place
 	})
 }
+
+// DefaultStarterObjective returns the Starter objective for a fresh game whose
+// opening offers exactly one starter (Yellow's scripted Pikachu), so a caller
+// that was not told which starter to take can still run the opening. ok is
+// false when the game offers a choice (Red's three balls) or the party is
+// already started: the caller must then name a starter or skip the opening.
+func DefaultStarterObjective(obs Observation) (Objective, bool) {
+	if obs.PartyCount != 0 {
+		return Objective{}, false
+	}
+	starters := objectiveCatalogForObservation(obs).Starters
+	if len(starters) != 1 {
+		return Objective{}, false
+	}
+	return Objective{Kind: KindStarter, Starter: starters[0].Starter, Species: starters[0].Species}, true
+}

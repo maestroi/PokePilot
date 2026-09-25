@@ -40,6 +40,7 @@
     switch (game) {
       case "pokemon-blue": return "Pokémon Blue";
       case "pokemon-red": return "Pokémon Red";
+      case "pokemon-yellow": return "Pokémon Yellow";
       default: return game || "Pokémon Red";
     }
   };
@@ -314,6 +315,17 @@
     document.querySelectorAll(".llm-only").forEach((el) => { el.hidden = scripted; });
     document.querySelectorAll(".endless-only").forEach((el) => { el.hidden = !f.endless.checked; });
     syncQualificationFields();
+    // Yellow's opening always gives Pikachu, so there is no starter to pick;
+    // the spec sends an empty starter and the runner takes the game's own.
+    const yellow = f.game.value === "pokemon-yellow";
+    const pikachuOpt = f.starter.querySelector('option[value="pikachu"]');
+    if (pikachuOpt) pikachuOpt.hidden = !yellow;
+    f.starter.disabled = yellow;
+    if (yellow) {
+      f.starter.value = "pikachu";
+      return;
+    }
+    if (f.starter.value === "pikachu") f.starter.value = "";
     const llmOpt = f.starter.querySelector('option[value=""]');
     if (llmOpt) llmOpt.hidden = scripted;
     if (scripted && f.starter.value === "") f.starter.value = "squirtle";
@@ -1108,6 +1120,7 @@
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
+  $("spec-form").game.addEventListener("change", syncPlannerFields);
   $("spec-form").qualification_target.addEventListener("change", () => {
     syncQualificationFields();
     syncPlannerFields();
