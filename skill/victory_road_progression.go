@@ -172,11 +172,27 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 }
 
 func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if currentStoryFacts(m).Route22RivalResolved {
-		return nil
+	if !currentStoryFacts(m).Route22RivalResolved {
+		if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
+			// The after-battle script sets the durable event before its closing
+			// text/exit walk has necessarily returned overworld control. If the
+			// event is already positive, the story transaction succeeded and this
+			// skill still owns settling that trailing script (#1861).
+			if !currentStoryFacts(m).Route22RivalResolved {
+				return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival: %w", err)
+			}
+		}
 	}
-	if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
-		return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival: %w", err)
+
+	// Do not hand an event-positive but still scripted state to the generic
+	// objective boundary. Route22Rival1AfterBattleScript owns a final text box,
+	// music change and rival exit walk after setting the completion bit; the
+	// stage is complete only once that script has also returned control.
+	if err := Cutscene(m, route22AfterBattleBudget, func(mem *state.Mem) bool {
+		facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+		return facts.Route22RivalResolved
+	}); err != nil {
+		return fmt.Errorf("skill: VictoryRoadProgression: settle Route 22 rival after-battle script: %w", err)
 	}
 	if !currentStoryFacts(m).Route22RivalResolved {
 		return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival battle did not set its completion event")
