@@ -23,30 +23,6 @@ func partyMenuDecoderFor(m *emu.Emu) (game.PartyMenuDecoder, error) {
 	return decoder, nil
 }
 
-func partyMenuKindUp(m *emu.Emu, want game.PartyMenuKind) bool {
-	decoder, err := partyMenuDecoderFor(m)
-	if err != nil {
-		return false
-	}
-	state := decoder.DecodePartyMenu(m)
-	return state.Visible && state.Kind == want
-}
-
-// partyMenuUp reports the forced after-a-faint party-selection surface.
-func partyMenuUp(m *emu.Emu) bool {
-	return partyMenuKindUp(m, game.PartyMenuForcedBattle)
-}
-
-// battleSwitchMenuUp reports the voluntary battle party-selection surface.
-func battleSwitchMenuUp(m *emu.Emu) bool {
-	return partyMenuKindUp(m, game.PartyMenuVoluntaryBattle)
-}
-
-// useItemPartyMenuUp reports the party target list opened by item use.
-func useItemPartyMenuUp(m *emu.Emu) bool {
-	return partyMenuKindUp(m, game.PartyMenuItemUse)
-}
-
 // SelectPartySlot moves a visible party-menu cursor to index and confirms it.
 // The active profile owns cursor decoding and menu identity. The selection is
 // complete when input ownership leaves the party list; concrete overlays such
