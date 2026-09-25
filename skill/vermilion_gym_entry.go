@@ -5,7 +5,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // enterVermilionGymViaRouteGate uses the same semantic Cut transition that
@@ -35,30 +34,16 @@ func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy
 		}
 	}
 
-	g, err := world.BuildGraph(romData)
-	if err != nil {
-		return fmt.Errorf("skill: Vermilion Gym entry: build route graph: %w", err)
+	// Use the ordinary journey engine for the final Cut-gated gym entry. The
+	// semantic edge is still the same red:vermilion_gym_cut transition, but
+	// Travel owns transient live-path failures: ErrLegUnwalkable is evidence
+	// for one attempted approach, so GoTo bans/replans it instead of turning a
+	// single NPC/tree-side obstruction into a failed Thunder Badge objective.
+	if _, err := TravelFlee(m, romData, MapDestination(vermilionGymMap), policy, surgeProgressionTravelEngagements); err != nil {
+		return fmt.Errorf("skill: Vermilion Gym entry: travel through Cut gate: %w", err)
 	}
-
-	for _, edge := range g.Edges[vermilionCity] {
-		if edge.Kind != world.EdgeWarp || edge.To != vermilionGymMap {
-			continue
-		}
-		transition, ok := redRouteTransitionForEdge(edge)
-		if !ok || transition.ID != "red:vermilion_gym_cut" {
-			continue
-		}
-		if _, err := world.ExecuteTransition(newRedRouteTransitionExecutor(m, romData, policy), edge, transition); err != nil {
-			return fmt.Errorf("skill: Vermilion Gym entry: execute Cut gate: %w", err)
-		}
-		if err := Traverse(m, romData, edge); err != nil {
-			return fmt.Errorf("skill: Vermilion Gym entry: cross gym door after Cut: %w", err)
-		}
-		if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
-			return fmt.Errorf("skill: Vermilion Gym entry: arrived on map %#04x, want %#04x", got, vermilionGymMap)
-		}
-		return nil
+	if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
+		return fmt.Errorf("skill: Vermilion Gym entry: arrived on map %#04x, want %#04x", got, vermilionGymMap)
 	}
-
-	return fmt.Errorf("skill: Vermilion Gym entry: no Cut-gated warp from map %#04x to %#04x", vermilionCity, vermilionGymMap)
+	return nil
 }
