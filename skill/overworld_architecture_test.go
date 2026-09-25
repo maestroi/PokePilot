@@ -40,3 +40,19 @@ func TestGoToDoesNotReadConcretePositionSymbols(t *testing.T) {
 		}
 	}
 }
+
+func TestTravelWorldObservationDoesNotReadConcretePositionSymbols(t *testing.T) {
+	src, err := os.ReadFile("travel.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"sym.CurMap",
+		"sym.XCoord",
+		"sym.YCoord",
+	} {
+		if strings.Contains(string(src), forbidden) {
+			t.Fatalf("travel.go contains concrete live-position dependency %q", forbidden)
+		}
+	}
+}

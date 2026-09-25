@@ -76,18 +76,41 @@ type interruptionResolvers struct {
 	resolveBattle resolveBattle
 	// observe reads the pre-battle world; settle waits for the post-battle
 	// world (including a blackout respawn) to stand still and returns it.
-	observe func() Replan
-	settle  func(pre Replan, lost bool) Replan
+	observe func() (Replan, error)
+	settle  func(pre Replan, lost bool) (Replan, error)
 }
 
-func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) interruptionResolvers {
+func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) (interruptionResolvers, error) {
+	if r.observe != nil && r.settle != nil {
+		return r, nil
+	}
+	// ROM-free interruption-loop tests pass nil because dialogue-only paths
+	// never observe or settle the world. Preserve that lazy contract: install
+	// error-aware defaults, but do not require a profile unless they are
+	// actually invoked.
+	if m == nil {
+		if r.observe == nil {
+			r.observe = func() (Replan, error) { return currentWorld(m) }
+		}
+		if r.settle == nil {
+			r.settle = func(pre Replan, lost bool) (Replan, error) { return settleWorld(m, pre, lost) }
+		}
+		return r, nil
+	}
+
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return r, err
+	}
 	if r.observe == nil {
-		r.observe = func() Replan { return currentWorld(m) }
+		r.observe = func() (Replan, error) { return currentWorldWithDecoder(m, decoder) }
 	}
 	if r.settle == nil {
-		r.settle = func(pre Replan, lost bool) Replan { return settleWorld(m, pre, lost) }
+		r.settle = func(pre Replan, lost bool) (Replan, error) {
+			return settleWorldWithDecoder(m, decoder, pre, lost)
+		}
 	}
-	return r
+	return r, nil
 }
 
 // normalizeInterruption folds the movement layer's battle sentinel into the

@@ -159,7 +159,10 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	// (the same pair EnterWildBattle picks), because a dry attempt — no
 	// encounter rolled in a burst of legs — is part of the hunt, not a
 	// failure, and only the total leg budget should end it.
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return res, fmt.Errorf("skill: Catch: observe world: %w", err)
+	}
 	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return res, err

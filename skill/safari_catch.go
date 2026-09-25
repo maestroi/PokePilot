@@ -178,7 +178,10 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	if err != nil {
 		return false, false, err
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return false, false, fmt.Errorf("observe habitat world: %w", err)
+	}
 	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
 	if len(grass) == 0 {
 		return false, false, fmt.Errorf("habitat map %#04x has no reachable encounter grass from (%d,%d)", targetMap, now.X, now.Y)

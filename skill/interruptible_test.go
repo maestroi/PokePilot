@@ -39,8 +39,8 @@ func (f *fakeInterruptionWorld) resolvers(label string) interruptionResolvers {
 			}
 			return f.onBattle(f.battles)
 		},
-		observe: func() Replan { return f.world },
-		settle:  func(Replan, bool) Replan { return f.world },
+		observe: func() (Replan, error) { return f.world, nil },
+		settle:  func(Replan, bool) (Replan, error) { return f.world, nil },
 	}
 }
 
