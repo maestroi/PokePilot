@@ -9,7 +9,6 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-
 // The movement budgets are empirical controller limits, not game-layout
 // knowledge. Profiles own how "position" and "idle" are observed.
 const (
