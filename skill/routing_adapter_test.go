@@ -68,7 +68,7 @@ func TestLiveMapGridWithFakeGen2RoutingProfile(t *testing.T) {
 		WidthBlocks:  1,
 		HeightBlocks: 1,
 		Blocks:       []byte{0x99},
-		Traversal:    worldmodel.TraversalLand,
+		Traversal:    game.TraversalLand,
 	}}
 	grid, err := liveMapGridWithRuntime(fakeRoutingMemory{}, decoder, fakeGen2MapProvider{}, header, worldmodel.TraversalLand)
 	if err != nil {
