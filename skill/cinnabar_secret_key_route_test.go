@@ -65,7 +65,6 @@ func TestSecretKeyPalletRouteUsesRoute21(t *testing.T) {
 	}
 }
 
-
 func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	romData := badgeFourROM(t)
 
