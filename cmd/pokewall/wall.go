@@ -635,6 +635,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/checkpoint", w.handleCheckpoint)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
+	mux.HandleFunc("POST /v1/triage/dismiss", w.handleDismissTriages)
 	mux.HandleFunc("DELETE /v1/triage/{key}", w.handleDismissTriage)
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
 	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", w.handleSolverAttempt)

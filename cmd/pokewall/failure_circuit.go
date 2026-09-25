@@ -716,30 +716,136 @@ ORDER BY updated_at DESC`)
 	return out, nil
 }
 
-func (cp *controlPlane) dismissObjectiveFailureGroup(key string) (int64, bool, error) {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return 0, false, fmt.Errorf("failure key is required")
+type dismissTriageRequest struct {
+	Keys []string `json:"keys"`
+}
+
+type dismissTriageResult struct {
+	Status        string   `json:"status"`
+	Groups        int64    `json:"groups"`
+	Occurrences   int64    `json:"occurrences"`
+	SkippedLinked []string `json:"skipped_linked,omitempty"`
+}
+
+func normalizeTriageKeys(keys []string) []string {
+	seen := make(map[string]bool, len(keys))
+	out := make([]string, 0, len(keys))
+	for _, raw := range keys {
+		key := strings.TrimSpace(raw)
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, key)
 	}
-	var issueID string
-	err := cp.db.QueryRow(`SELECT issue_id FROM issue_links WHERE failure_key=$1 AND issue_id<>''`, key).Scan(&issueID)
-	if err == nil {
-		return 0, true, nil
+	return out
+}
+
+func (cp *controlPlane) dismissObjectiveFailureGroups(keys []string) (dismissTriageResult, error) {
+	result := dismissTriageResult{Status: "dismissed"}
+	keys = normalizeTriageKeys(keys)
+	if len(keys) == 0 {
+		return result, nil
 	}
-	if err != sql.ErrNoRows {
-		return 0, false, err
+
+	tx, err := cp.db.Begin()
+	if err != nil {
+		return dismissTriageResult{}, err
 	}
-	result, err := cp.db.Exec(`
+	defer tx.Rollback() //nolint:errcheck
+
+	for _, key := range keys {
+		var issueID string
+		err := tx.QueryRow(`SELECT issue_id FROM issue_links WHERE failure_key=$1 AND issue_id<>''`, key).Scan(&issueID)
+		if err == nil {
+			result.SkippedLinked = append(result.SkippedLinked, key)
+			continue
+		}
+		if err != sql.ErrNoRows {
+			return dismissTriageResult{}, err
+		}
+
+		updated, err := tx.Exec(`
 UPDATE objective_failures
 SET delivery_status='dismissed', delivery_error='', updated_at=CURRENT_TIMESTAMP
 WHERE COALESCE(NULLIF(family_key,''), failure_key)=$1
   AND (blocking=TRUE OR terminal_count>0)
   AND delivery_status<>'dismissed'`, key)
+		if err != nil {
+			return dismissTriageResult{}, err
+		}
+		count, err := updated.RowsAffected()
+		if err != nil {
+			return dismissTriageResult{}, err
+		}
+		result.Occurrences += count
+		if count > 0 {
+			result.Groups++
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return dismissTriageResult{}, err
+	}
+	return result, nil
+}
+
+func (cp *controlPlane) dismissObjectiveFailureGroup(key string) (int64, bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return 0, false, fmt.Errorf("failure key is required")
+	}
+	result, err := cp.dismissObjectiveFailureGroups([]string{key})
 	if err != nil {
 		return 0, false, err
 	}
-	count, err := result.RowsAffected()
-	return count, false, err
+	return result.Occurrences, len(result.SkippedLinked) > 0, nil
+}
+
+func (w *Wall) handleDismissTriages(res http.ResponseWriter, req *http.Request) {
+	req.Body = http.MaxBytesReader(res, req.Body, maxSmallControlBody)
+	var body dismissTriageRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "bad dismiss request: " + err.Error()})
+		return
+	}
+	keys := normalizeTriageKeys(body.Keys)
+	if len(keys) == 0 {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "at least one failure key is required"})
+		return
+	}
+	if len(keys) > 1000 {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "at most 1000 failure keys may be dismissed at once"})
+		return
+	}
+
+	// The durable DB is authoritative, but keep in-memory issue links as an
+	// additional guard for the small window before a freshly-created link has
+	// been persisted.
+	allowed := make([]string, 0, len(keys))
+	skipped := make([]string, 0)
+	w.mu.Lock()
+	for _, key := range keys {
+		if link := w.issueLinks[key]; link.IssueID != "" {
+			skipped = append(skipped, key)
+			continue
+		}
+		allowed = append(allowed, key)
+	}
+	w.mu.Unlock()
+
+	cp := controlPlaneFor(w)
+	if cp == nil {
+		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "durable triage dismissal requires the control plane"})
+		return
+	}
+	result, err := cp.dismissObjectiveFailureGroups(allowed)
+	if err != nil {
+		writeJSON(res, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	result.SkippedLinked = append(skipped, result.SkippedLinked...)
+	writeJSON(res, http.StatusOK, result)
 }
 
 func (w *Wall) handleDismissTriage(res http.ResponseWriter, req *http.Request) {
