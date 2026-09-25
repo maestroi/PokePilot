@@ -54,7 +54,6 @@ func TestIsSafariHabitatMapOnlyAcceptsOutdoorAreas(t *testing.T) {
 	}
 }
 
-
 func TestSafariCatchStopsBeforeUnaffordableReentry(t *testing.T) {
 	tests := []struct {
 		name    string
