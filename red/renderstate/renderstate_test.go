@@ -19,18 +19,20 @@ func TestSemanticTerrainKindUsesRedOwnedTileMeaning(t *testing.T) {
 		fieldOK   bool
 		collision uint8
 		collOK    bool
+		ledge     bool
 		want      protocol.TileKind
 	}{
 		{name: "water", walkable: false, collision: redWaterTile, collOK: true, want: protocol.TileWater},
 		{name: "overworld tree", tileset: redOverworldTileset, field: redCutTreeTile, fieldOK: true, want: protocol.TileTree},
 		{name: "overworld grass", tileset: redOverworldTileset, field: redGrassTile, fieldOK: true, walkable: true, want: protocol.TileGrass},
 		{name: "same byte is not a tree in another tileset", tileset: 3, field: redCutTreeTile, fieldOK: true, want: protocol.TileWall},
+		{name: "ledge from ROM ledge table", tileset: redOverworldTileset, collision: 0x2c, collOK: true, ledge: true, want: protocol.TileLedge},
 		{name: "unknown walkable tile", tileset: 7, field: 0xee, fieldOK: true, walkable: true, want: protocol.TilePath},
 		{name: "unknown blocked tile", tileset: 7, collision: 0xee, collOK: true, want: protocol.TileWall},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := semanticTerrainKind(tt.tileset, tt.walkable, tt.field, tt.fieldOK, tt.collision, tt.collOK); got != tt.want {
+			if got := semanticTerrainKind(tt.tileset, tt.walkable, tt.field, tt.fieldOK, tt.collision, tt.collOK, tt.ledge); got != tt.want {
 				t.Fatalf("semanticTerrainKind() = %q, want %q", got, tt.want)
 			}
 		})
