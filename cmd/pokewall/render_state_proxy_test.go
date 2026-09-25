@@ -84,9 +84,25 @@ func TestWallRenderStateRejectsInvalidUpstreamJSON(t *testing.T) {
 	t.Cleanup(runner.Close)
 
 	w := NewWall("")
-	w.tiles["bad-render"] = &tile{Status: statusRunning, workerAddrs: []string{runner.Listener.Addr().String()}}
 	srv := httptest.NewServer(w.Handler())
 	t.Cleanup(srv.Close)
+
+	ctx := context.Background()
+	spec := farm.Spec{RunID: "bad-render", Planner: "scripted", Starter: "squirtle", Dest: "pallet"}
+	body, _ := json.Marshal(spec)
+	resp, err := http.Post(srv.URL+"/v1/specs", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST spec: %v", err)
+	}
+	resp.Body.Close()
+	client := farm.NewClient(srv.URL)
+	if got, err := client.Lease(ctx); err != nil || got == nil {
+		t.Fatalf("lease = %v, %v", got, err)
+	}
+	hb := farm.Heartbeat{RunID: spec.RunID, WorkerAddrs: []string{runner.Listener.Addr().String()}}
+	if _, err := client.Heartbeat(ctx, hb); err != nil {
+		t.Fatalf("heartbeat: %v", err)
+	}
 
 	if code := renderStateStatus(t, srv.URL, "bad-render"); code != http.StatusBadGateway {
 		t.Fatalf("invalid render state = %d, want 502", code)
