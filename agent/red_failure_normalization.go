@@ -114,6 +114,8 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 	if errors.Is(err, skill.ErrBlackedOut) ||
 		errors.Is(err, skill.ErrCatchBlackout) ||
 		errors.Is(err, skill.ErrCatchHuntExhausted) ||
+		errors.Is(err, skill.ErrCatchMissed) ||
+		errors.Is(err, skill.ErrSafariCatchExhausted) ||
 		errors.Is(err, skill.ErrFishingHuntExhausted) ||
 		errors.Is(err, skill.ErrFishingNoShoreline) ||
 		errors.Is(err, skill.ErrFishingNoFishHere) ||
@@ -325,8 +327,13 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrBlackedOut) {
 		return "blacked_out", nil
 	}
-	if errors.Is(err, skill.ErrCatchHuntExhausted) {
+	if errors.Is(err, skill.ErrCatchHuntExhausted) || errors.Is(err, skill.ErrSafariCatchExhausted) {
+		// A Safari hunt is the same bounded stochastic session, spent on
+		// paid sessions instead of grass legs.
 		return "catch_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrCatchMissed) {
+		return "catch_attempt_missed", nil
 	}
 	if errors.Is(err, skill.ErrFishingHuntExhausted) {
 		return "fishing_hunt_exhausted", nil

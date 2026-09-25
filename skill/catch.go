@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -96,11 +97,18 @@ var (
 	// species. It is typed so callers can re-plan without parsing the measured
 	// legs/encounters diagnostic that accompanies it.
 	ErrCatchHuntExhausted = errors.New("skill: Catch: hunt exhausted without a wanted species")
+
+	// ErrCatchMissed is the ordinary stochastic outcome where a wanted target
+	// was met and balls were thrown, but every ball broke or it fled. Even a
+	// strong ball is not a guaranteed catch, so this is a bounded gameplay
+	// session that simply did not land, not evidence of a broken controller.
+	ErrCatchMissed = errors.New("skill: Catch: wanted target met but not caught")
 )
 
 // Catch hunts the tall grass on the current map until it meets a wild
-// Pokemon of one of the species in want, then throws POKE BALLs at it (via
-// S6-2's UseItem) until it is caught or maxBalls are spent.
+// Pokemon of one of the species in want, then throws the strongest ordinary
+// ball in the bag (Ultra, Great, then POKE BALL, via S6-2's UseItem) until it
+// is caught or maxBalls are spent.
 //
 // An encounter that is not wanted is fought normally with policy and the
 // hunt continues; Catch never reuses StatAwareMove against a wanted target,
@@ -231,9 +239,14 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
-		if err := UseItem(m, ItemPokeBall); err != nil {
+		state.Snapshot(m, mem)
+		ball, ok := wildCatchBall(mem)
+		if !ok {
+			break // the bag is dry before maxBalls: same ending as running out
+		}
+		if err := UseItem(m, ball); err != nil {
 			if errors.Is(err, ErrNotInBag) {
-				break // the bag is dry before maxBalls: same ending as running out
+				break
 			}
 			return res, fmt.Errorf("skill: Catch: throw %d: %w", res.BallsThrown+1, err)
 		}
@@ -290,6 +303,25 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 	}
 	res.Outcome = OutcomeFled
 	return res, nil
+}
+
+// wildCatchBall picks the strongest ordinary ball in the bag for this throw.
+func wildCatchBall(mem *state.Mem) (uint8, bool) {
+	for _, item := range reddata.WildCaptureBallOrder() {
+		if bagHasItem(mem, item) {
+			return item, true
+		}
+	}
+	return 0, false
+}
+
+// wildBallCount is how many ordinary catch balls of any grade the bag holds.
+func wildBallCount(mem *state.Mem) int {
+	n := 0
+	for _, item := range reddata.WildCaptureBallOrder() {
+		n += itemCount(mem, item)
+	}
+	return n
 }
 
 // waitThrowResult reports whether the battle ended while the result of a
