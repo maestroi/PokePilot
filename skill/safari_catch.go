@@ -373,6 +373,33 @@ func safariCatchWanted(m *emu.Emu, want, wantDex []uint8, partyBefore, boxBefore
 	return false, nil
 }
 
+type safariBallResultPhase uint8
+
+const (
+	safariBallResultWaiting safariBallResultPhase = iota
+	safariBallResultNicknamePrompt
+	safariBallResultBattleEnded
+	safariBallResultMenuReturned
+)
+
+// safariBallResultPhaseFromMem deliberately gives a visible two-option prompt
+// priority over the battle flag. On a successful Safari catch the ROM can
+// clear wIsInBattle before the "Give a nickname?" menu is dismissed. Treating
+// battle-end as terminal first leaks that owned capture choice into the
+// objective boundary, where the generic normalizer correctly refuses to guess.
+func safariBallResultPhaseFromMem(mem *state.Mem) safariBallResultPhase {
+	if state.DecodeTwoOptionMenu(mem) != nil {
+		return safariBallResultNicknamePrompt
+	}
+	if state.DecodeBattle(mem) == nil {
+		return safariBallResultBattleEnded
+	}
+	if fleeMenuFromMem(mem) == fleeMenuSafari {
+		return safariBallResultMenuReturned
+	}
+	return safariBallResultWaiting
+}
+
 // waitSafariBallResult is the Safari analogue of waitThrowResult. BALL can
 // either return to the Safari menu (the Pokemon stayed), end the battle by a
 // catch/run, or reach the nickname prompt on a successful catch. It never
@@ -382,16 +409,15 @@ func waitSafariBallResult(m *emu.Emu, beforeBalls uint8) (bool, error) {
 	for spent := 0; spent < battleEndSettle; spent += throwPollFrames {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
-			return true, nil
-		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
+		switch safariBallResultPhaseFromMem(&mem) {
+		case safariBallResultNicknamePrompt:
 			if err := selectTwoOption(m, 1); err != nil {
 				return false, fmt.Errorf("declining Safari catch nickname prompt: %w", err)
 			}
 			continue
-		}
-		if fleeMenuFromMem(&mem) == fleeMenuSafari {
+		case safariBallResultBattleEnded:
+			return true, nil
+		case safariBallResultMenuReturned:
 			after := mem.U8(sym.NumSafariBalls)
 			if beforeBalls == 0 || after+1 != beforeBalls {
 				return false, fmt.Errorf("Safari BALL count changed %d -> %d, want exactly one consumed", beforeBalls, after)
