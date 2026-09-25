@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onScopeDispose, ref, watch } from 'vue'
-import type { RenderActor, RenderState, RenderTileCell, RenderTileLayer } from '../api/renderstate'
+import type { RenderActor, RenderPosition, RenderState, RenderTileCell, RenderTileLayer } from '../api/renderstate'
+import { PresentationClock, presentationEntityKey, type PresentationSample } from '../animationClock'
 import { loadGen1Sprite } from '../gen1Sprite'
 import {
   actorStyle,
@@ -20,6 +21,7 @@ const failedSprites = new Set<string>()
 let observer: ResizeObserver | null = null
 let raf = 0
 let lastAnimatedDraw = 0
+const animationClock = new PresentationClock()
 
 function defaultSpriteAsset(appearance: string | undefined, player = false): string {
   if (player) return 'red'
@@ -235,10 +237,11 @@ function drawActor(
   ctx: CanvasRenderingContext2D,
   actor: RenderActor,
   viewport: ReturnType<typeof semanticViewport>,
-  player = false
+  player = false,
+  position: RenderPosition = actor.position
 ): void {
-  const x = viewport.offsetX + (actor.position.x - viewport.startX) * viewport.tileSize
-  const y = viewport.offsetY + (actor.position.y - viewport.startY) * viewport.tileSize
+  const x = viewport.offsetX + (position.x - viewport.startX) * viewport.tileSize
+  const y = viewport.offsetY + (position.y - viewport.startY) * viewport.tileSize
   const size = viewport.tileSize
   if (x + size < 0 || y + size < 0) return
 
@@ -277,7 +280,7 @@ function drawActor(
   ctx.restore()
 }
 
-function draw(now = performance.now()): void {
+function draw(now = performance.now(), presentation: PresentationSample = animationClock.sample(now)): void {
   const el = canvas.value
   const host = shell.value
   if (!el || !host || !props.state.map || !props.state.player) return
@@ -303,7 +306,8 @@ function draw(now = performance.now()): void {
   ctx.fillRect(0, 0, width, height)
 
   const preferredTileSize = width < 700 ? Math.min(props.theme.tileSize, 28) : props.theme.tileSize
-  const viewport = semanticViewport(props.state, width, height, preferredTileSize)
+  const cameraFocus = presentation.camera || props.state.player.position
+  const viewport = semanticViewport(props.state, width, height, preferredTileSize, cameraFocus)
   const layers = props.state.layers || []
 
   for (const layer of layers) {
@@ -332,8 +336,11 @@ function draw(now = performance.now()): void {
     }
   }
 
-  for (const actor of props.state.entities || []) drawActor(ctx, actor, viewport)
-  drawActor(ctx, props.state.player, viewport, true)
+  for (const [index, actor] of (props.state.entities || []).entries()) {
+    const position = presentation.entityPositions.get(presentationEntityKey(actor, index)) || actor.position
+    drawActor(ctx, actor, viewport, false, position)
+  }
+  drawActor(ctx, props.state.player, viewport, true, presentation.player || props.state.player.position)
 
   ctx.save()
   ctx.strokeStyle = props.theme.effects.grid
@@ -356,15 +363,27 @@ function draw(now = performance.now()): void {
 }
 
 function animate(now: number): void {
-  if (now - lastAnimatedDraw >= props.theme.animation.redrawIntervalMs) {
+  const presentation = animationClock.sample(now)
+  if (presentation.animating || now - lastAnimatedDraw >= props.theme.animation.redrawIntervalMs) {
     lastAnimatedDraw = now
-    draw(now)
+    draw(now, presentation)
   }
   raf = requestAnimationFrame(animate)
 }
 
 watch(
-  [() => props.state, () => props.theme.id, () => props.theme.version],
+  () => props.state,
+  (state) => {
+    const now = performance.now()
+    animationClock.ingest(state, now)
+    void syncSpriteImages()
+    draw(now)
+  },
+  { deep: false }
+)
+
+watch(
+  [() => props.theme.id, () => props.theme.version],
   () => {
     void syncSpriteImages()
     draw()
@@ -373,6 +392,8 @@ watch(
 )
 
 onMounted(() => {
+  const now = performance.now()
+  animationClock.ingest(props.state, now)
   observer = new ResizeObserver(() => draw())
   if (shell.value) observer.observe(shell.value)
   void syncSpriteImages()
