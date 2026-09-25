@@ -223,23 +223,38 @@ type DialogueState struct {
 // BattleActor is the minimal cross-game presentation state for one participant.
 // Producers may leave unsupported fields empty.
 type BattleActor struct {
+	ID         string `json:"id,omitempty"`
+	Role       string `json:"role,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Appearance string `json:"appearance,omitempty"`
+	Level      int    `json:"level,omitempty"`
+	HP         int    `json:"hp,omitempty"`
+	MaxHP      int    `json:"max_hp,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Active     bool   `json:"active,omitempty"`
+	Defeated   bool   `json:"defeated,omitempty"`
+}
+
+// BattleMove is one presentation-level move slot for the active player actor.
+// ID is semantic and stable when the producer has one; native ROM indexes stay
+// adapter-owned.
+type BattleMove struct {
 	ID       string `json:"id,omitempty"`
-	Role     string `json:"role,omitempty"`
 	Name     string `json:"name,omitempty"`
-	HP       int    `json:"hp,omitempty"`
-	MaxHP    int    `json:"max_hp,omitempty"`
-	Status   string `json:"status,omitempty"`
-	Active   bool   `json:"active,omitempty"`
-	Defeated bool   `json:"defeated,omitempty"`
+	PP       int    `json:"pp,omitempty"`
+	MaxPP    int    `json:"max_pp,omitempty"`
+	Disabled bool   `json:"disabled,omitempty"`
 }
 
 // BattleState is intentionally presentation-oriented rather than a battle
-// controller contract. Richer battle rendering can add optional fields later.
+// controller contract. It describes what a spectator may render, never which
+// action the game should take.
 type BattleState struct {
 	Kind   string        `json:"kind,omitempty"`
 	Phase  string        `json:"phase,omitempty"`
 	Turn   int           `json:"turn,omitempty"`
 	Actors []BattleActor `json:"actors,omitempty"`
+	Moves  []BattleMove  `json:"moves,omitempty"`
 }
 
 // TransitionState describes an authoritative scene/map transition.
