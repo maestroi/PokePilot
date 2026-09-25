@@ -731,7 +731,7 @@ func (cp *controlPlane) dismissObjectiveFailureGroup(key string) (int64, bool, e
 	}
 	result, err := cp.db.Exec(`
 UPDATE objective_failures
-SET delivery_status='dismissed', delivery_error='', updated_at=NOW()
+SET delivery_status='dismissed', delivery_error='', updated_at=CURRENT_TIMESTAMP
 WHERE COALESCE(NULLIF(family_key,''), failure_key)=$1
   AND (blocking=TRUE OR terminal_count>0)
   AND delivery_status<>'dismissed'`, key)
