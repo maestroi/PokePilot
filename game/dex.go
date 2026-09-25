@@ -41,7 +41,7 @@ type DexSource struct {
 // DexEntry is one semantic Pokédex entry as generic planning should see it.
 type DexEntry struct {
 	Species     SpeciesID   `json:"species"`
-	Dex         uint8      `json:"dex"`
+	Dex         uint8       `json:"dex"`
 	Owned       bool        `json:"owned,omitempty"`
 	Seen        bool        `json:"seen,omitempty"`
 	Sources     []DexSource `json:"sources,omitempty"`
