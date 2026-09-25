@@ -139,7 +139,6 @@ func TestPortableRoutingFilesDoNotImportRedROM(t *testing.T) {
 	}
 }
 
-
 func TestFakeGen2TransitionRuntimeUsesSemanticCurrentMap(t *testing.T) {
 	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: 0x42, To: 0x43},
