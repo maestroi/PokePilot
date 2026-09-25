@@ -28,12 +28,14 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 		mux.HandleFunc("GET /v1/runs/{id}/replay/status", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/replay/render", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/replay/video", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", replayUnavailable)
 		return
 	}
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", streamProxy(replayBase))
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", proxy(replayBase, true))
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", proxy(replayBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", streamProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", streamProxy(replayBase))
 }
 
 func replayUnavailable(w http.ResponseWriter, _ *http.Request) {
