@@ -352,6 +352,23 @@ to Red's profile and pins its own ROM hash. Every per-game dispatch table
 resolved `GameID`, so a Gen I image resolves to exactly one profile and the
 runtime never branches on a game name at runtime.
 
+Pokémon Yellow runs a revision of the same engine rather than the same
+layout: most work-RAM symbols sit one byte lower, a few are resized or gone,
+HRAM is partly permuted, and the event and toggleable-object flag arrays are
+renumbered. Item, move, species and map ids match. Yellow therefore binds a
+**canonical memory view** (`gen1/canon`) instead of forking the Gen I
+decoders: a `canon.View` answers reads addressed in canonical `red/sym`
+coordinates from Yellow's native RAM, renumbering flag bits and
+toggleable-object list entries by constant name. The view is a Yellow-owned
+fact generated from the vendored decomps (`go run ./cmd/gen1canongen`, output
+`yellow/sym/canonical_generated.go`); it is never hand-edited, and canonical
+bytes with no Yellow storage read as zero instead of aliasing a neighbour.
+`emu.Emu.BindMemoryView` routes `Peek*`/`SnapshotMemory` through it, while
+`Peek8Native`/`PeekIntoNative`/`SnapshotMemoryNative` stay available for
+Yellow-only state (Pikachu) and forensic dumps, which must record the bytes
+the CPU saw. ROM-table formats and bank layouts are not covered by the view;
+they stay behind each profile's ROM parser.
+
 The removal path is explicit: when the Gen I engine is factored out of `red/`
 into its own package, Red and Blue should both embed it and `blue/profile`
 loses its delegation. Until then, do not add Red-only facts to these shared
