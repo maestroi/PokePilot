@@ -525,7 +525,6 @@ func spectatorReplayVideo(catalog *spectatorReplayCatalog) http.HandlerFunc {
 	}
 }
 
-
 func spectatorReplaySemantic(catalog *spectatorReplayCatalog) http.HandlerFunc {
 	client := &http.Client{Timeout: proxyTimeout}
 	return func(res http.ResponseWriter, req *http.Request) {
