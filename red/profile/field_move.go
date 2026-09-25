@@ -10,12 +10,12 @@ import (
 )
 
 type redFieldMoveSpec struct {
-	id      game.FieldMoveID
-	name    string
-	item    uint8
-	move    uint8
-	menu    uint8
-	badge   state.Badge
+	id    game.FieldMoveID
+	name  string
+	item  uint8
+	move  uint8
+	menu  uint8
+	badge state.Badge
 }
 
 var redFieldMoves = [...]redFieldMoveSpec{
