@@ -44,4 +44,3 @@ type LiveTopologyState struct {
 type RoutingDecoder interface {
 	DecodeLiveTopology(MemoryReader) (LiveTopologyState, error)
 }
-
