@@ -27,6 +27,12 @@ var ErrTrainerBattle = errors.New("skill: cannot flee a trainer battle")
 const fleeAttemptBudget = 6000
 
 const (
+	// fleeMainMenuMarker and fleeMoveMenuMarker are retained only by Flee's
+	// Gen-I/Safari recovery path. Ordinary battle execution no longer depends
+	// on these strings.
+	fleeMainMenuMarker = "FIGHT"
+	fleeMoveMenuMarker = "TYPE/"
+
 	// trainerNoRunningMarker is on NoRunningText ("No! There's no running
 	// from a trainer battle!") and on no other battle screen. It is the
 	// POSITIVE fact that the RUN option was refused because this is a trainer
@@ -61,7 +67,7 @@ const (
 func fleeMenuFromMem(mem *state.Mem) fleeMenuKind {
 	text := state.ScreenText(mem)
 	switch {
-	case strings.Contains(text, mainMenuMarker):
+	case strings.Contains(text, fleeMainMenuMarker):
 		return fleeMenuNormal
 	case strings.Contains(text, safariBattleMenuMarker):
 		return fleeMenuSafari
@@ -76,7 +82,7 @@ func fleeMenuFromMem(mem *state.Mem) fleeMenuKind {
 // FIGHT before waitFleeMenu could observe the main menu. Backing out restores
 // the menu Flee owns instead of selecting a move and accidentally fighting.
 func fleeWaitInputFromMem(mem *state.Mem) emu.Button {
-	if strings.Contains(state.ScreenText(mem), moveMenuMarker) {
+	if strings.Contains(state.ScreenText(mem), fleeMoveMenuMarker) {
 		return emu.B
 	}
 	return emu.A
