@@ -40,3 +40,20 @@ func TestFieldActionExecutionDoesNotDecodeConcreteEffectFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestFieldPathDoesNotReadConcreteSurfMode(t *testing.T) {
+	src, err := os.ReadFile("field_path.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"sym.WalkBikeSurfState",
+		"fieldSurfingState",
+		"observeFrontTile(",
+		"cuttableFrontTile(",
+	} {
+		if strings.Contains(string(src), forbidden) {
+			t.Fatalf("field_path.go contains concrete field-action state dependency %q", forbidden)
+		}
+	}
+}
