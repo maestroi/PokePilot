@@ -222,6 +222,7 @@ export function validateThemePack(input: unknown): ThemeValidation {
       }
     }
   }
+  validateStringMap(input.battle, 'battle', errors)
 
   return { ok: errors.length === 0, errors, warnings }
 }
