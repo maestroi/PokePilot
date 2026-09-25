@@ -635,6 +635,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/checkpoint", w.handleCheckpoint)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
+	mux.HandleFunc("DELETE /v1/triage/{key}", w.handleDismissTriage)
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
 	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", w.handleSolverAttempt)
 	mux.HandleFunc("GET /", w.handleGrid)
@@ -1321,6 +1322,7 @@ type triageGroup struct {
 	RunIDs      []string   `json:"run_ids"`
 	Issue       *IssueLink `json:"issue,omitempty"`
 	Outbox      string     `json:"outbox,omitempty"`
+	Dismissable bool       `json:"dismissable,omitempty"`
 }
 
 // triageGroups groups finished, failed runs (reason error or lost) with a
