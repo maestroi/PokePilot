@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -87,9 +88,13 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	if qty < 1 || qty > 99 {
 		return fmt.Errorf("skill: Buy: quantity %d out of range 1..99", qty)
 	}
+	shop, err := shopDecoderFor(m)
+	if err != nil {
+		return err
+	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !shop.DecodeShop(m).Controllable {
 		return fmt.Errorf("skill: Buy: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
 			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
 	}
@@ -112,7 +117,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// 1. Open the shop: A on the clerk auto-advances the greeting to the
 	// BUY/SELL/QUIT menu (wMenuWatchedKeys == A|B, wMaxMenuItem == 2).
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, buySellQuitUp, "the BUY/SELL/QUIT menu"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseActionMenu }, "the BUY/SELL/QUIT menu"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 
@@ -122,11 +127,11 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	}
 
 	// 3. Advance to the priced item list ("Take your time." then the list).
-	if err := martAdvance(m, itemListUp, "the item list"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseItemList }, "the item list"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
-	pos, ok := martItemPosition(&mem, item)
+	pos, ok := shopItemPosition(shop.DecodeShop(m), uint16(item))
 	if !ok {
 		// Refusing the purchase is not enough: the item list is UP, and
 		// returning from here left it up. Every later objective then
@@ -157,7 +162,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
 	qtyUp := func(mm *state.Mem) bool { return quantityBoxUp(mm, hBefore, maxBefore) }
-	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
+	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the choose-quantity box"); err != nil {
 		// A timeout is still an engineering failure. The campaign may survive
 		// it only after the owning skill proves the shop has been closed.
 		return recoverShopFailure(m, err)
@@ -168,7 +173,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
-	total := bcdMoney(&mem)
+	total := shop.DecodeShop(m).Total
 
 	// 6. Affordability: a typed refusal, not a silent no-op or a hang.
 	if moneyBefore < total {
@@ -184,7 +189,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	// 7. Confirm the quantity; the "That will be ¥X. OK?" box closes to a
 	// two-option prompt.
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, twoOptionUp, "the purchase-confirmation prompt"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseConfirmation }, "the purchase-confirmation prompt"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 
@@ -222,9 +227,13 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 	if qty < 1 || qty > 99 {
 		return fmt.Errorf("skill: Sell: quantity %d out of range 1..99", qty)
 	}
+	shop, err := shopDecoderFor(m)
+	if err != nil {
+		return err
+	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !shop.DecodeShop(m).Controllable {
 		return fmt.Errorf("skill: Sell: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
 			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
 	}
@@ -245,7 +254,7 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 	if err := SelectMenuItem(m, 1); err != nil { // SELL
 		return recoverShopFailure(m, shopControllerFailure("select SELL", err))
 	}
-	if err := martAdvance(m, itemListUp, "the sell item list"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseItemList }, "the sell item list"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 
@@ -263,7 +272,7 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 		cur := int(mm.U8(sym.ItemQuantity))
 		return mm.U8(sym.MenuWatchedKeys) == watchListOrQty && max == liveQty && cur >= 1 && cur <= max
 	}
-	if err := martWait(m, quantityUp, "the sell choose-quantity box"); err != nil {
+	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the sell choose-quantity box"); err != nil {
 		state.Snapshot(m, &mem)
 		text := strings.ToLower(state.ScreenText(&mem))
 		if strings.Contains(text, "can't put a") || strings.Contains(text, "price on that") {
@@ -285,7 +294,7 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, twoOptionUp, "the sale-confirmation prompt"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseConfirmation }, "the sale-confirmation prompt"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 	if err := selectTwoOption(m, 0); err != nil { // YES
