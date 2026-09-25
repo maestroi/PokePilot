@@ -87,7 +87,7 @@ const selectedVideoURL = computed(() => selectedRun.value ? spectatorReplayVideo
 const showModern = computed(() =>
   rendererMode.value === 'modern' &&
   semanticStatus.value === 'ready' &&
-  Boolean(semanticState.value) &&
+  semanticState.value !== null &&
   canRenderModernScene(semanticState.value)
 )
 const modernFallbackLabel = computed(() => {
