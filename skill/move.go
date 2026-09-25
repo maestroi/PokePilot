@@ -55,11 +55,24 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 	return stepOnceWithRuntimeDecoder(m, s, decoder)
 }
 
-// stepOnceWithRuntimeDecoder keeps the still-Red-owned compatibility hooks
-// around the portable local-step controller. Cycling Road's release-frame
-// braking and Gen I poison-blackout recovery intentionally remain outside the
-// generic core until their own capability slices are defined.
+// stepOnceWithRuntimeDecoder keeps profile-owned compatibility state around the
+// portable local-step controller. Cycling Road's release-frame braking remains
+// a Gen-I route quirk; poison/blackout recovery is observed only through the
+// portable overworld-blackout capability.
 func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.OverworldDecoder) error {
+	blackout, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return stepOnceWithRuntimeDecoders(m, s, decoder, blackout)
+}
+
+func stepOnceWithRuntimeDecoders(
+	m *emu.Emu,
+	s world.Step,
+	decoder game.OverworldDecoder,
+	blackout game.OverworldBlackoutDecoder,
+) error {
 	btn, ok := buttonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
@@ -69,81 +82,16 @@ func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.Overworld
 		return stepOnceCyclingRoad(m, decoder, s, btn)
 	}
 
-	// A party that is already fainted blackouts on the next counted overworld
-	// step (ApplyOutOfBattlePoisonDamage -> AnyPartyAlive -> HandleBlackOut).
-	// That Gen I recovery remains adapter-owned around the portable movement
-	// primitive so it cannot leak Red RAM layout into the generic driver.
-	startFainted := partyAllFainted(m)
+	// A profile may report that an already-fainted party will be handled by an
+	// overworld blackout on the next counted step. The movement controller only
+	// consumes that semantic fact; native party/status/respawn RAM stays behind
+	// the profile.
+	startFainted := partyAllFaintedWithDecoder(m, blackout)
 	stepErr := stepOnceWithOverworldDecoder(m, s, decoder)
-	if err := waitForFaintRespawn(m, uint8(start.NativeMapID), startFainted); err != nil {
+	if err := waitForFaintRespawnWithDecoders(m, start.NativeMapID, startFainted, decoder, blackout); err != nil {
 		return err
 	}
 	return stepErr
-}
-
-// partyAllFainted reports that the party has at least one Pokémon and every
-// one of them has 0 HP. An empty party is not a faint: the overworld poison
-// check refuses to black out when wPartyCount is 0.
-func partyAllFainted(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	if len(party.Mons) == 0 {
-		return false
-	}
-	for _, mon := range party.Mons {
-		if !mon.Fainted() {
-			return false
-		}
-	}
-	return true
-}
-
-// respawnedFromFaint reports HandleBlackOut's positive postcondition: the
-// map is no longer the one the step started on, it is wLastBlackoutMap, the
-// player can move, and HealParty has brought someone off 0 HP.
-func respawnedFromFaint(m *emu.Emu, startMap uint8) bool {
-	if m.Peek8(sym.CurMap) == startMap || m.Peek8(sym.CurMap) != m.Peek8(sym.LastBlackoutMap) {
-		return false
-	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return state.Controllable(&mem) && !partyAllFainted(m)
-}
-
-// waitForFaintRespawn returns ErrBlackedOut once a fainted party's step has
-// finished HandleBlackOut. A step that is still on the origin map with the
-// joypad free is an ordinary step and returns nil immediately, so a healthy
-// walk never pays the respawn budget.
-func waitForFaintRespawn(m *emu.Emu, startMap uint8, startFainted bool) error {
-	if !startFainted {
-		return nil
-	}
-	if respawnedFromFaint(m, startMap) {
-		return ErrBlackedOut
-	}
-	mapNow := m.Peek8(sym.CurMap)
-	if mapNow != startMap && mapNow != m.Peek8(sym.LastBlackoutMap) {
-		return nil
-	}
-	if mapNow == startMap && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.IsInBattle) == 0 {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if state.DecodeDialogue(&mem) == nil {
-			return nil
-		}
-	}
-	_, _ = m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
-		if respawnedFromFaint(m, startMap) {
-			return true
-		}
-		cur := m.Peek8(sym.CurMap)
-		return cur != startMap && cur != m.Peek8(sym.LastBlackoutMap) && m.Peek8(sym.JoyIgnore) == 0
-	})
-	if respawnedFromFaint(m, startMap) {
-		return ErrBlackedOut
-	}
-	return nil
 }
 
 // WalkPath executes each step in order, re-reading state after every step.
@@ -162,8 +110,21 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 }
 
 func walkPathWithRuntimeDecoder(m *emu.Emu, path []world.Step, decoder game.OverworldDecoder) error {
+	blackout, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return walkPathWithRuntimeDecoders(m, path, decoder, blackout)
+}
+
+func walkPathWithRuntimeDecoders(
+	m *emu.Emu,
+	path []world.Step,
+	decoder game.OverworldDecoder,
+	blackout game.OverworldBlackoutDecoder,
+) error {
 	for _, step := range path {
-		stepErr := stepOnceWithRuntimeDecoder(m, step, decoder)
+		stepErr := stepOnceWithRuntimeDecoders(m, step, decoder, blackout)
 
 		// Check for an interruption BEFORE trusting stepErr. A wild
 		// encounter fires mid-step: the battle freezes the player, so the
