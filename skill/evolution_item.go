@@ -41,24 +41,8 @@ func UseEvolutionItem(m *emu.Emu, romData []byte, item uint8, slot int, wantSpec
 		return fmt.Errorf("skill: UseEvolutionItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5; attempt++ {
-		if _, stepErr := m.StepUntil(10, drawn); stepErr == nil {
-			break
-		}
-		m.Tap(emu.Start, 3, 7)
-		if _, stepErr := m.StepUntil(startMenuDrawBudget, drawn); stepErr == nil {
-			break
-		}
-	}
-	if !drawn(m) {
-		return fmt.Errorf("skill: UseEvolutionItem: start menu did not finish drawing")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("skill: UseEvolutionItem: select ITEM: %w", err)
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return fmt.Errorf("skill: UseEvolutionItem: open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID

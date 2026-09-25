@@ -44,23 +44,39 @@ const (
 
 // Tile is one run's live state as the wall sees it.
 type Tile struct {
-	RunID           string
-	Status          string
-	Game            string
-	Planner         string
-	Starter         string
-	Dest            string
-	Goal            string
+	RunID   string
+	Status  string
+	Game    string
+	Planner string
+	Starter string
+	Dest    string
+	Goal    string
+	// GoalProvided records whether the operator supplied a goal at all. It
+	// keeps an explicit empty Free play goal distinct from an unset goal, so a
+	// re-lease or clone does not silently replace Free play with a play-style
+	// default. Old state files without it decode as unset, which matches the
+	// historic behavior for runs whose goal was omitted.
+	GoalProvided bool
+	// PlayStyle, Purpose, RiskTolerance, and WildEncounters are the run's
+	// orthogonal gameplay policy. They are first-class Tile fields so every
+	// persisted catalog row and leased Spec carries its own policy instead of
+	// relying on process-global state keyed by run id.
+	PlayStyle       string
+	Purpose         farm.RunPurpose
+	RiskTolerance   string
+	WildEncounters  string
 	LLMProfile      string
 	LLMDeployment   string
 	ExperimentID    string
 	ExperimentArm   string
 	ExperimentCase  string
 	ReasoningEffort string
+	DecisionEngine  *farm.DecisionEngineSpec
 	Seed            int64
 	FPS             int
 	MaxRounds       int
 	MaxFrames       int
+	RecoveryProfile farm.RecoveryProfile
 	Endless         bool
 	RandomSeed      bool
 	QueuedAt        time.Time
@@ -73,13 +89,28 @@ type Tile struct {
 	// are persisted so wall restarts cannot reset either guard.
 	ErrorAttempts  int
 	LossRecoveries int
-	Frame          uint64
-	Map            uint8
-	X              uint8
-	Y              uint8
-	Trace          string
-	Question       string
-	Decision       string
+	// RecoveryAttempts is the current no-progress goal-recovery depth. Unlike
+	// Attempts it resets when a resilient campaign reaches a new progress
+	// frontier, so unrelated failures hours apart do not force deep rollback.
+	RecoveryAttempts int
+	RecoveryBadges   int
+	RecoveryEvents   int
+	RecoveryMaps     int
+	// RecoveryDexOwned is the Pokédex-owned high-water mark. It is its own
+	// frontier axis: a campaign past its last badge still makes durable
+	// progress by acquiring species, and that must reset rollback depth.
+	RecoveryDexOwned int
+	// Activity is the bounded operator-facing causal story. It survives
+	// retries so one resilient campaign remains understandable as a whole.
+	Activity    []runActivityEvent
+	Frame       uint64
+	Map         uint8
+	X           uint8
+	Y           uint8
+	MapsVisited int
+	Trace       string
+	Question    string
+	Decision    string
 	// Raw is the last verbatim model exchange from the heartbeat. Live
 	// only: it is deliberately absent from persistedTile, so a wall
 	// restart drops it rather than growing the state file.
@@ -121,55 +152,89 @@ type Tile struct {
 	// checkpoint this run should continue from on attempt 1. Empty for a
 	// brand-new campaign, including the successor of a successful `done`.
 	ResumeFromRunID string
+
+	// Circuit* records why an automatic failure circuit paused this campaign.
+	// It is durable so wall restarts and deployments can safely release one
+	// canary without losing the failure identity or progress baseline.
+	CircuitKey         string
+	CircuitFingerprint string
+	CircuitKind        string
+	CircuitCount       int
+	CircuitBadges      int
+	CircuitEvents      int
+	CircuitMaps        int
+	CircuitRevision    string
 }
 
 // tileRow is a plain-value snapshot of a Tile, taken under w.mu so the
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID           string           `json:"run_id"`
-	Status          string           `json:"status"`
-	Game            string           `json:"game,omitempty"`
-	Planner         string           `json:"planner"`
-	Starter         string           `json:"starter"`
-	Dest            string           `json:"dest"`
-	Goal            string           `json:"goal,omitempty"`
-	LLMProfile      string           `json:"llm_profile,omitempty"`
-	LLMDeployment   string           `json:"llm_deployment,omitempty"`
-	ExperimentID    string           `json:"experiment_id,omitempty"`
-	ExperimentArm   string           `json:"experiment_arm,omitempty"`
-	ExperimentCase  string           `json:"experiment_case,omitempty"`
-	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
-	Seed            int64            `json:"seed"`
-	FPS             int              `json:"fps"`
-	MaxRounds       int              `json:"max_rounds"`
-	MaxFrames       int              `json:"max_frames"`
-	Endless         bool             `json:"endless,omitempty"`
-	RandomSeed      bool             `json:"random_seed,omitempty"`
-	QueuedAt        int64            `json:"queued_at,omitempty"`
-	EndedAt         int64            `json:"ended_at,omitempty"`
-	Frame           uint64           `json:"frame"`
-	Map             uint8            `json:"map"`
-	X               uint8            `json:"x"`
-	Y               uint8            `json:"y"`
-	Trace           string           `json:"trace"`
-	Question        string           `json:"question,omitempty"`
-	Decision        string           `json:"decision,omitempty"`
-	Raw             string           `json:"raw,omitempty"`
-	StopSoFar       string           `json:"stop_so_far"`
-	Sprites         []farm.MapSprite `json:"sprites,omitempty"`
-	Trail           [][2]uint8       `json:"trail,omitempty"`
-	Stats           *farm.LLMStats   `json:"stats,omitempty"`
-	Player          *farm.Player     `json:"player,omitempty"`
-	Attempts        int              `json:"attempts"`
-	ErrorAttempts   int              `json:"error_attempts,omitempty"`
-	LossRecoveries  int              `json:"loss_recoveries,omitempty"`
-	Reason          string           `json:"reason"`
-	Detail          string           `json:"detail"`
-	Issue           *IssueLink       `json:"issue,omitempty"`
-	ReplayAvailable bool             `json:"replay_available,omitempty"`
-	ResumeFromRunID string           `json:"resume_from_run_id,omitempty"`
-	ResumeProtected bool             `json:"resume_protected,omitempty"`
+	RunID              string                   `json:"run_id"`
+	Status             string                   `json:"status"`
+	Game               string                   `json:"game,omitempty"`
+	Planner            string                   `json:"planner"`
+	Starter            string                   `json:"starter"`
+	Dest               string                   `json:"dest"`
+	Goal               string                   `json:"goal,omitempty"`
+	GoalProvided       bool                     `json:"goal_provided,omitempty"`
+	PlayStyle          string                   `json:"play_style,omitempty"`
+	Purpose            farm.RunPurpose          `json:"purpose,omitempty"`
+	RiskTolerance      string                   `json:"risk_tolerance,omitempty"`
+	WildEncounters     string                   `json:"wild_encounters,omitempty"`
+	LLMProfile         string                   `json:"llm_profile,omitempty"`
+	LLMDeployment      string                   `json:"llm_deployment,omitempty"`
+	ExperimentID       string                   `json:"experiment_id,omitempty"`
+	ExperimentArm      string                   `json:"experiment_arm,omitempty"`
+	ExperimentCase     string                   `json:"experiment_case,omitempty"`
+	ReasoningEffort    string                   `json:"reasoning_effort,omitempty"`
+	DecisionEngine     *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
+	Seed               int64                    `json:"seed"`
+	FPS                int                      `json:"fps"`
+	MaxRounds          int                      `json:"max_rounds"`
+	MaxFrames          int                      `json:"max_frames"`
+	RecoveryProfile    farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
+	Endless            bool                     `json:"endless,omitempty"`
+	RandomSeed         bool                     `json:"random_seed,omitempty"`
+	QueuedAt           int64                    `json:"queued_at,omitempty"`
+	EndedAt            int64                    `json:"ended_at,omitempty"`
+	Frame              uint64                   `json:"frame"`
+	Map                uint8                    `json:"map"`
+	X                  uint8                    `json:"x"`
+	Y                  uint8                    `json:"y"`
+	MapsVisited        int                      `json:"maps_visited,omitempty"`
+	Trace              string                   `json:"trace"`
+	Question           string                   `json:"question,omitempty"`
+	Decision           string                   `json:"decision,omitempty"`
+	Raw                string                   `json:"raw,omitempty"`
+	StopSoFar          string                   `json:"stop_so_far"`
+	Sprites            []farm.MapSprite         `json:"sprites,omitempty"`
+	Trail              [][2]uint8               `json:"trail,omitempty"`
+	Stats              *farm.LLMStats           `json:"stats,omitempty"`
+	Player             *farm.Player             `json:"player,omitempty"`
+	Attempts           int                      `json:"attempts"`
+	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
+	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
+	RecoveryAttempts   int                      `json:"recovery_attempts,omitempty"`
+	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
+	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
+	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
+	Activity           []runActivityEvent       `json:"activity,omitempty"`
+	Reason             string                   `json:"reason"`
+	Detail             string                   `json:"detail"`
+	Issue              *IssueLink               `json:"issue,omitempty"`
+	ReplayAvailable    bool                     `json:"replay_available,omitempty"`
+	ResumeFromRunID    string                   `json:"resume_from_run_id,omitempty"`
+	ResumeProtected    bool                     `json:"resume_protected,omitempty"`
+	CircuitKey         string                   `json:"circuit_key,omitempty"`
+	CircuitFingerprint string                   `json:"circuit_fingerprint,omitempty"`
+	CircuitKind        string                   `json:"circuit_kind,omitempty"`
+	CircuitCount       int                      `json:"circuit_count,omitempty"`
+	CircuitBadges      int                      `json:"circuit_badges,omitempty"`
+	CircuitEvents      int                      `json:"circuit_events,omitempty"`
+	CircuitMaps        int                      `json:"circuit_maps,omitempty"`
+	CircuitRevision    string                   `json:"circuit_revision,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -220,46 +285,67 @@ func (w *Wall) SetStatePath(path string) {
 // a restarted wall can resume proxying frames without waiting for the next
 // heartbeat; lastUpdate is not (see Tile.lastUpdate).
 type persistedTile struct {
-	RunID           string         `json:"run_id"`
-	Status          string         `json:"status"`
-	Game            string         `json:"game,omitempty"`
-	Planner         string         `json:"planner,omitempty"`
-	Starter         string         `json:"starter,omitempty"`
-	Dest            string         `json:"dest,omitempty"`
-	Goal            string         `json:"goal,omitempty"`
-	LLMProfile      string         `json:"llm_profile,omitempty"`
-	LLMDeployment   string         `json:"llm_deployment,omitempty"`
-	ExperimentID    string         `json:"experiment_id,omitempty"`
-	ExperimentArm   string         `json:"experiment_arm,omitempty"`
-	ExperimentCase  string         `json:"experiment_case,omitempty"`
-	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
-	Seed            int64          `json:"seed"`
-	FPS             int            `json:"fps"`
-	MaxRounds       int            `json:"max_rounds"`
-	MaxFrames       int            `json:"max_frames"`
-	Endless         bool           `json:"endless,omitempty"`
-	RandomSeed      bool           `json:"random_seed,omitempty"`
-	QueuedAt        int64          `json:"queued_at,omitempty"`
-	EndedAt         int64          `json:"ended_at,omitempty"`
-	Attempts        int            `json:"attempts"`
-	ErrorAttempts   int            `json:"error_attempts,omitempty"`
-	LossRecoveries  int            `json:"loss_recoveries,omitempty"`
-	Frame           uint64         `json:"frame"`
-	Map             uint8          `json:"map"`
-	X               uint8          `json:"x"`
-	Y               uint8          `json:"y"`
-	Trace           string         `json:"trace,omitempty"`
-	Question        string         `json:"question,omitempty"`
-	Decision        string         `json:"decision,omitempty"`
-	StopSoFar       string         `json:"stop_so_far,omitempty"`
-	Stats           *farm.LLMStats `json:"stats,omitempty"`
-	Player          *farm.Player   `json:"player,omitempty"`
-	Reason          string         `json:"reason,omitempty"`
-	Detail          string         `json:"detail,omitempty"`
-	Finished        bool           `json:"finished"`
-	WorkerAddrs     []string       `json:"worker_addrs,omitempty"`
-	ReplayAvailable bool           `json:"replay_available,omitempty"`
-	ResumeFromRunID string         `json:"resume_from_run_id,omitempty"`
+	RunID              string                   `json:"run_id"`
+	Status             string                   `json:"status"`
+	Game               string                   `json:"game,omitempty"`
+	Planner            string                   `json:"planner,omitempty"`
+	Starter            string                   `json:"starter,omitempty"`
+	Dest               string                   `json:"dest,omitempty"`
+	Goal               string                   `json:"goal,omitempty"`
+	GoalProvided       bool                     `json:"goal_provided,omitempty"`
+	PlayStyle          string                   `json:"play_style,omitempty"`
+	Purpose            farm.RunPurpose          `json:"purpose,omitempty"`
+	RiskTolerance      string                   `json:"risk_tolerance,omitempty"`
+	WildEncounters     string                   `json:"wild_encounters,omitempty"`
+	LLMProfile         string                   `json:"llm_profile,omitempty"`
+	LLMDeployment      string                   `json:"llm_deployment,omitempty"`
+	ExperimentID       string                   `json:"experiment_id,omitempty"`
+	ExperimentArm      string                   `json:"experiment_arm,omitempty"`
+	ExperimentCase     string                   `json:"experiment_case,omitempty"`
+	ReasoningEffort    string                   `json:"reasoning_effort,omitempty"`
+	DecisionEngine     *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
+	Seed               int64                    `json:"seed"`
+	FPS                int                      `json:"fps"`
+	MaxRounds          int                      `json:"max_rounds"`
+	MaxFrames          int                      `json:"max_frames"`
+	RecoveryProfile    farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
+	Endless            bool                     `json:"endless,omitempty"`
+	RandomSeed         bool                     `json:"random_seed,omitempty"`
+	QueuedAt           int64                    `json:"queued_at,omitempty"`
+	EndedAt            int64                    `json:"ended_at,omitempty"`
+	Attempts           int                      `json:"attempts"`
+	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
+	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
+	RecoveryAttempts   int                      `json:"recovery_attempts,omitempty"`
+	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
+	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
+	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
+	Activity           []runActivityEvent       `json:"activity,omitempty"`
+	Frame              uint64                   `json:"frame"`
+	Map                uint8                    `json:"map"`
+	X                  uint8                    `json:"x"`
+	Y                  uint8                    `json:"y"`
+	Trace              string                   `json:"trace,omitempty"`
+	Question           string                   `json:"question,omitempty"`
+	Decision           string                   `json:"decision,omitempty"`
+	StopSoFar          string                   `json:"stop_so_far,omitempty"`
+	Stats              *farm.LLMStats           `json:"stats,omitempty"`
+	Player             *farm.Player             `json:"player,omitempty"`
+	Reason             string                   `json:"reason,omitempty"`
+	Detail             string                   `json:"detail,omitempty"`
+	Finished           bool                     `json:"finished"`
+	WorkerAddrs        []string                 `json:"worker_addrs,omitempty"`
+	ReplayAvailable    bool                     `json:"replay_available,omitempty"`
+	ResumeFromRunID    string                   `json:"resume_from_run_id,omitempty"`
+	CircuitKey         string                   `json:"circuit_key,omitempty"`
+	CircuitFingerprint string                   `json:"circuit_fingerprint,omitempty"`
+	CircuitKind        string                   `json:"circuit_kind,omitempty"`
+	CircuitCount       int                      `json:"circuit_count,omitempty"`
+	CircuitBadges      int                      `json:"circuit_badges,omitempty"`
+	CircuitEvents      int                      `json:"circuit_events,omitempty"`
+	CircuitMaps        int                      `json:"circuit_maps,omitempty"`
+	CircuitRevision    string                   `json:"circuit_revision,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -282,46 +368,67 @@ func (w *Wall) persistedStateLocked() persistedState {
 	}
 	for id, t := range w.tiles {
 		ps.Tiles[id] = persistedTile{
-			RunID:           t.RunID,
-			Status:          t.Status,
-			Game:            t.Game,
-			Planner:         t.Planner,
-			Starter:         t.Starter,
-			Dest:            t.Dest,
-			Goal:            t.Goal,
-			LLMProfile:      t.LLMProfile,
-			LLMDeployment:   t.LLMDeployment,
-			ExperimentID:    t.ExperimentID,
-			ExperimentArm:   t.ExperimentArm,
-			ExperimentCase:  t.ExperimentCase,
-			ReasoningEffort: t.ReasoningEffort,
-			Seed:            t.Seed,
-			FPS:             t.FPS,
-			MaxRounds:       t.MaxRounds,
-			MaxFrames:       t.MaxFrames,
-			Endless:         t.Endless,
-			RandomSeed:      t.RandomSeed,
-			QueuedAt:        unixTime(t.QueuedAt),
-			EndedAt:         unixTime(t.EndedAt),
-			Attempts:        t.Attempts,
-			ErrorAttempts:   t.ErrorAttempts,
-			LossRecoveries:  t.LossRecoveries,
-			Frame:           t.Frame,
-			Map:             t.Map,
-			X:               t.X,
-			Y:               t.Y,
-			Trace:           t.Trace,
-			Question:        t.Question,
-			Decision:        t.Decision,
-			StopSoFar:       t.StopSoFar,
-			Stats:           t.Stats,
-			Player:          t.Player,
-			Reason:          t.Reason,
-			Detail:          t.Detail,
-			Finished:        t.Finished,
-			WorkerAddrs:     append([]string(nil), t.workerAddrs...),
-			ReplayAvailable: t.ReplayAvailable,
-			ResumeFromRunID: t.ResumeFromRunID,
+			RunID:              t.RunID,
+			Status:             t.Status,
+			Game:               t.Game,
+			Planner:            t.Planner,
+			Starter:            t.Starter,
+			Dest:               t.Dest,
+			Goal:               t.Goal,
+			GoalProvided:       t.GoalProvided,
+			PlayStyle:          t.PlayStyle,
+			Purpose:            t.Purpose,
+			RiskTolerance:      t.RiskTolerance,
+			WildEncounters:     t.WildEncounters,
+			LLMProfile:         t.LLMProfile,
+			LLMDeployment:      t.LLMDeployment,
+			ExperimentID:       t.ExperimentID,
+			ExperimentArm:      t.ExperimentArm,
+			ExperimentCase:     t.ExperimentCase,
+			ReasoningEffort:    t.ReasoningEffort,
+			DecisionEngine:     t.DecisionEngine.Clone(),
+			Seed:               t.Seed,
+			FPS:                t.FPS,
+			MaxRounds:          t.MaxRounds,
+			MaxFrames:          t.MaxFrames,
+			RecoveryProfile:    t.RecoveryProfile,
+			Endless:            t.Endless,
+			RandomSeed:         t.RandomSeed,
+			QueuedAt:           unixTime(t.QueuedAt),
+			EndedAt:            unixTime(t.EndedAt),
+			Attempts:           t.Attempts,
+			ErrorAttempts:      t.ErrorAttempts,
+			LossRecoveries:     t.LossRecoveries,
+			RecoveryAttempts:   t.RecoveryAttempts,
+			RecoveryBadges:     t.RecoveryBadges,
+			RecoveryEvents:     t.RecoveryEvents,
+			RecoveryMaps:       t.RecoveryMaps,
+			RecoveryDexOwned:   t.RecoveryDexOwned,
+			Activity:           copyRunActivity(t.Activity),
+			Frame:              t.Frame,
+			Map:                t.Map,
+			X:                  t.X,
+			Y:                  t.Y,
+			Trace:              t.Trace,
+			Question:           t.Question,
+			Decision:           t.Decision,
+			StopSoFar:          t.StopSoFar,
+			Stats:              t.Stats,
+			Player:             t.Player,
+			Reason:             t.Reason,
+			Detail:             t.Detail,
+			Finished:           t.Finished,
+			WorkerAddrs:        append([]string(nil), t.workerAddrs...),
+			ReplayAvailable:    t.ReplayAvailable,
+			ResumeFromRunID:    t.ResumeFromRunID,
+			CircuitKey:         t.CircuitKey,
+			CircuitFingerprint: t.CircuitFingerprint,
+			CircuitKind:        t.CircuitKind,
+			CircuitCount:       t.CircuitCount,
+			CircuitBadges:      t.CircuitBadges,
+			CircuitEvents:      t.CircuitEvents,
+			CircuitMaps:        t.CircuitMaps,
+			CircuitRevision:    t.CircuitRevision,
 		}
 	}
 	return ps
@@ -384,47 +491,68 @@ func (w *Wall) loadState() {
 		}
 		w.order = append(w.order, id)
 		w.tiles[id] = &Tile{
-			RunID:           pt.RunID,
-			Status:          pt.Status,
-			Game:            pt.Game,
-			Planner:         pt.Planner,
-			Starter:         pt.Starter,
-			Dest:            pt.Dest,
-			Goal:            pt.Goal,
-			LLMProfile:      pt.LLMProfile,
-			LLMDeployment:   pt.LLMDeployment,
-			ExperimentID:    pt.ExperimentID,
-			ExperimentArm:   pt.ExperimentArm,
-			ExperimentCase:  pt.ExperimentCase,
-			ReasoningEffort: pt.ReasoningEffort,
-			Seed:            pt.Seed,
-			FPS:             pt.FPS,
-			MaxRounds:       pt.MaxRounds,
-			MaxFrames:       pt.MaxFrames,
-			Endless:         pt.Endless,
-			RandomSeed:      pt.RandomSeed,
-			QueuedAt:        timeFromUnix(pt.QueuedAt),
-			EndedAt:         timeFromUnix(pt.EndedAt),
-			Attempts:        pt.Attempts,
-			ErrorAttempts:   pt.ErrorAttempts,
-			LossRecoveries:  pt.LossRecoveries,
-			Frame:           pt.Frame,
-			Map:             pt.Map,
-			X:               pt.X,
-			Y:               pt.Y,
-			Trace:           pt.Trace,
-			Question:        pt.Question,
-			Decision:        pt.Decision,
-			StopSoFar:       pt.StopSoFar,
-			Stats:           pt.Stats,
-			Player:          pt.Player,
-			Reason:          pt.Reason,
-			Detail:          pt.Detail,
-			Finished:        pt.Finished,
-			workerAddrs:     append([]string(nil), pt.WorkerAddrs...),
-			ReplayAvailable: pt.ReplayAvailable,
-			ResumeFromRunID: pt.ResumeFromRunID,
-			lastUpdate:      now,
+			RunID:              pt.RunID,
+			Status:             pt.Status,
+			Game:               pt.Game,
+			Planner:            pt.Planner,
+			Starter:            pt.Starter,
+			Dest:               pt.Dest,
+			Goal:               pt.Goal,
+			GoalProvided:       pt.GoalProvided,
+			PlayStyle:          pt.PlayStyle,
+			Purpose:            pt.Purpose,
+			RiskTolerance:      pt.RiskTolerance,
+			WildEncounters:     pt.WildEncounters,
+			LLMProfile:         pt.LLMProfile,
+			LLMDeployment:      pt.LLMDeployment,
+			ExperimentID:       pt.ExperimentID,
+			ExperimentArm:      pt.ExperimentArm,
+			ExperimentCase:     pt.ExperimentCase,
+			ReasoningEffort:    pt.ReasoningEffort,
+			DecisionEngine:     pt.DecisionEngine.Clone(),
+			Seed:               pt.Seed,
+			FPS:                pt.FPS,
+			MaxRounds:          pt.MaxRounds,
+			MaxFrames:          pt.MaxFrames,
+			RecoveryProfile:    pt.RecoveryProfile,
+			Endless:            pt.Endless,
+			RandomSeed:         pt.RandomSeed,
+			QueuedAt:           timeFromUnix(pt.QueuedAt),
+			EndedAt:            timeFromUnix(pt.EndedAt),
+			Attempts:           pt.Attempts,
+			ErrorAttempts:      pt.ErrorAttempts,
+			LossRecoveries:     pt.LossRecoveries,
+			RecoveryAttempts:   pt.RecoveryAttempts,
+			RecoveryBadges:     pt.RecoveryBadges,
+			RecoveryEvents:     pt.RecoveryEvents,
+			RecoveryMaps:       pt.RecoveryMaps,
+			RecoveryDexOwned:   pt.RecoveryDexOwned,
+			Activity:           copyRunActivity(pt.Activity),
+			Frame:              pt.Frame,
+			Map:                pt.Map,
+			X:                  pt.X,
+			Y:                  pt.Y,
+			Trace:              pt.Trace,
+			Question:           pt.Question,
+			Decision:           pt.Decision,
+			StopSoFar:          pt.StopSoFar,
+			Stats:              pt.Stats,
+			Player:             pt.Player,
+			Reason:             pt.Reason,
+			Detail:             pt.Detail,
+			Finished:           pt.Finished,
+			workerAddrs:        append([]string(nil), pt.WorkerAddrs...),
+			ReplayAvailable:    pt.ReplayAvailable,
+			ResumeFromRunID:    pt.ResumeFromRunID,
+			CircuitKey:         pt.CircuitKey,
+			CircuitFingerprint: pt.CircuitFingerprint,
+			CircuitKind:        pt.CircuitKind,
+			CircuitCount:       pt.CircuitCount,
+			CircuitBadges:      pt.CircuitBadges,
+			CircuitEvents:      pt.CircuitEvents,
+			CircuitMaps:        pt.CircuitMaps,
+			CircuitRevision:    pt.CircuitRevision,
+			lastUpdate:         now,
 		}
 	}
 	w.queue = append(w.queue, ps.Queue...)
@@ -501,14 +629,19 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers", w.handleWorkers)
 	mux.HandleFunc("POST /v1/runs/{id}/heartbeat", w.handleHeartbeat)
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
+	mux.HandleFunc("POST /v1/runs/{id}/clone", w.handleCloneRun)
 	mux.HandleFunc("DELETE /v1/runs/{id}", w.handleDelete)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
 	mux.HandleFunc("POST /v1/runs/{id}/checkpoint", w.handleCheckpoint)
 	mux.HandleFunc("GET /v1/dashboard", w.handleDashboard)
 	mux.HandleFunc("GET /v1/triage", w.handleTriage)
+	mux.HandleFunc("POST /v1/triage/dismiss", w.handleDismissTriages)
+	mux.HandleFunc("DELETE /v1/triage/{key}", w.handleDismissTriage)
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", w.handleInvestigate)
+	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", w.handleSolverAttempt)
 	mux.HandleFunc("GET /", w.handleGrid)
 	mux.HandleFunc("GET /frame", w.handleFrame)
+	mux.HandleFunc("GET /render-state", w.handleRenderState)
 	return mux
 }
 
@@ -534,6 +667,20 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "run_id is required"})
 		return
 	}
+	if !spec.RecoveryProfile.Valid() {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
+		return
+	}
+	if !spec.Purpose.Valid() {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal or debug_coverage"})
+		return
+	}
+	decisionEngine, err := spec.DecisionEngine.Normalized()
+	if err != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	spec.DecisionEngine = decisionEngine
 
 	w.mu.Lock()
 	if tile, ok := w.tiles[spec.RunID]; ok && !tile.Finished {
@@ -563,17 +710,23 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Planner = spec.Planner
 	t.Starter = spec.Starter
 	t.Dest = spec.Dest
-	t.Goal = spec.Goal
+	t.Goal, t.GoalProvided = farm.HeldGoal(spec)
+	t.PlayStyle = spec.PlayStyle
+	t.Purpose = spec.Purpose
+	t.RiskTolerance = spec.RiskTolerance
+	t.WildEncounters = spec.WildEncounters
 	t.LLMProfile = spec.LLMProfile
 	t.LLMDeployment = spec.LLMDeployment
 	t.ExperimentID = spec.ExperimentID
 	t.ExperimentArm = spec.ExperimentArm
 	t.ExperimentCase = spec.ExperimentCase
 	t.ReasoningEffort = spec.ReasoningEffort
+	t.DecisionEngine = spec.DecisionEngine.Clone()
 	t.Seed = spec.Seed
 	t.FPS = spec.FPS
 	t.MaxRounds = spec.MaxRounds
 	t.MaxFrames = spec.MaxFrames
+	t.RecoveryProfile = spec.RecoveryProfile
 	t.Endless = spec.Endless
 	t.RandomSeed = spec.RandomSeed
 	t.QueuedAt = time.Now()
@@ -581,6 +734,12 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Attempts = 0 // a manual re-queue is a fresh start, not a retry
 	t.ErrorAttempts = 0
 	t.LossRecoveries = 0
+	t.RecoveryAttempts = 0
+	t.RecoveryBadges = 0
+	t.RecoveryEvents = 0
+	t.RecoveryMaps = 0
+	t.RecoveryDexOwned = 0
+	t.Activity = nil
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -600,22 +759,52 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.lastFrame = nil
 	t.Finished = false
 	t.ResumeFromRunID = ""
+	clearTileCircuit(t)
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "queued", At: t.QueuedAt.Unix(), Attempt: 1,
+		Summary: "Run queued",
+		Detail:  fmt.Sprintf("recovery profile: %s", t.RecoveryProfile),
+	})
 }
 
 // handleLease hands out the oldest queued spec exactly once; 204 when the
 // queue is empty.
 func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	w.mu.Lock()
-	if len(w.queue) == 0 {
+	var t *Tile
+	now := time.Now()
+	// A queued run can be cancelled before any worker ever leases it (the
+	// operator hits cancel on a run stuck behind a bad deployment, say).
+	// handleCancel only records the intent in w.cancel; nothing else reads
+	// it until a heartbeat arrives, which a queued run never gets. Settle it
+	// here instead of handing it out, and keep walking the queue so one
+	// lease call can skip past any number of cancelled entries.
+	for len(w.queue) > 0 {
+		runID := w.queue[0]
+		w.queue = w.queue[1:]
+		cand := w.tiles[runID]
+		if cand == nil || cand.Finished {
+			continue
+		}
+		if w.cancel[runID] {
+			w.settleRun(cand, "cancelled", "cancelled while queued", now)
+			continue
+		}
+		t = cand
+		break
+	}
+	if t == nil {
 		w.mu.Unlock()
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-	runID := w.queue[0]
-	w.queue = w.queue[1:]
-	t := w.tiles[runID]
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
+	w.inheritRunPolicyLocked(t)
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "system", Kind: "leased", At: t.lastUpdate.Unix(), Attempt: t.Attempts + 1,
+		Summary: fmt.Sprintf("Attempt %d leased", t.Attempts+1),
+	})
 	spec := farm.Spec{
 		RunID:           t.RunID,
 		Attempt:         t.Attempts + 1,
@@ -624,18 +813,31 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 		Planner:         t.Planner,
 		Starter:         t.Starter,
 		Dest:            t.Dest,
-		Goal:            t.Goal,
+		PlayStyle:       t.PlayStyle,
+		Purpose:         t.Purpose,
+		RiskTolerance:   t.RiskTolerance,
+		WildEncounters:  t.WildEncounters,
 		LLMProfile:      t.LLMProfile,
 		LLMDeployment:   t.LLMDeployment,
 		ExperimentID:    t.ExperimentID,
 		ExperimentArm:   t.ExperimentArm,
 		ExperimentCase:  t.ExperimentCase,
 		ReasoningEffort: t.ReasoningEffort,
+		DecisionEngine:  t.DecisionEngine.Clone(),
 		FPS:             t.FPS,
 		MaxRounds:       t.MaxRounds,
 		MaxFrames:       t.MaxFrames,
+		RecoveryProfile: t.RecoveryProfile,
 		Endless:         t.Endless,
 		RandomSeed:      t.RandomSeed,
+	}
+	// A tri-state goal: unset, provided-empty Free play, or provided. Deriving
+	// the held goal here keeps an unset goal from becoming an explicit empty
+	// one on the next lease.
+	if goal := t.Goal; goal != "" {
+		spec.Goal = farm.GoalFrom(goal)
+	} else if t.GoalProvided {
+		spec.Goal = farm.GoalFrom("")
 	}
 	w.mu.Unlock()
 	w.saveState()
@@ -669,6 +871,11 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already finished: " + id})
 		return
 	}
+	previousStatus := t.Status
+	previousQuestion := t.Question
+	previousDecision := t.Decision
+	previousPlayer := t.Player
+	now := time.Now()
 	t.Status = statusRunning
 	t.Frame = hb.Frame
 	t.Map = hb.Map
@@ -681,10 +888,12 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.StopSoFar = hb.StopSoFar
 	t.Sprites = append(t.Sprites[:0], hb.Sprites...)
 	t.Trail = append(t.Trail[:0], hb.Trail...)
+	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats
 	t.Player = hb.Player
 	t.workerAddrs = hb.WorkerAddrs
-	t.lastUpdate = time.Now()
+	t.lastUpdate = now
+	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousPlayer)
 	w.upsertWorkerLocked(hb.WorkerAddrs, id, hb.Version, t.lastUpdate)
 	cancel := w.cancel[id]
 	w.mu.Unlock()
@@ -866,6 +1075,7 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		return
 	} else {
 		addrs = append([]string(nil), t.workerAddrs...)
+		noteRecoveryProgressLocked(t, report.ProgressFinal)
 		completedAttempt = w.settleRun(t, report.Reason, report.Detail, time.Now())
 		terminal = t.Finished
 	}
@@ -1113,6 +1323,7 @@ type triageGroup struct {
 	RunIDs      []string   `json:"run_ids"`
 	Issue       *IssueLink `json:"issue,omitempty"`
 	Outbox      string     `json:"outbox,omitempty"`
+	Dismissable bool       `json:"dismissable,omitempty"`
 }
 
 // triageGroups groups finished, failed runs (reason error or lost) with a
@@ -1185,10 +1396,16 @@ func (w *Wall) triage() []triageGroup {
 }
 
 func issueLinkFor(t *Tile, links map[string]IssueLink) *IssueLink {
-	if t == nil || !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+	if t == nil {
 		return nil
 	}
-	key, _ := failureIdentity(normalizeDetail(t.Detail))
+	key := strings.TrimSpace(t.CircuitKey)
+	if key == "" {
+		if !t.Finished || (t.Reason != "error" && t.Reason != "lost") || t.Detail == "" {
+			return nil
+		}
+		key, _ = failureIdentity(normalizeDetail(t.Detail))
+	}
 	link, ok := links[key]
 	if !ok || link.IssueID == "" {
 		return nil
@@ -1386,6 +1603,62 @@ const (
 // and worker loss consume separate budgets; everything else settles at once.
 // A user cancellation is never retried. Caller holds w.mu; the return value
 // is the number of completed generations.
+func resilientGoalRecoveryReason(reason string) bool {
+	switch reason {
+	case "error", "failed", "stuck", "budget":
+		return true
+	default:
+		return false
+	}
+}
+
+// noteRecoveryProgressLocked advances the resilient supervisor's high-water
+// mark. Crossing a new frontier resets rollback depth; rolling back to an older
+// checkpoint never lowers the high-water mark, so repeating the same failure
+// continues to escalate instead of oscillating forever.
+func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
+	if t == nil || p == nil || !t.RecoveryProfile.Resilient() {
+		return
+	}
+	story := p.Badges > t.RecoveryBadges ||
+		(p.Badges == t.RecoveryBadges && p.Events > t.RecoveryEvents) ||
+		(p.Badges == t.RecoveryBadges && p.Events == t.RecoveryEvents && p.Maps > t.RecoveryMaps)
+	dexOwned := 0
+	if p.Coverage != nil {
+		dexOwned = p.Coverage.DexOwned
+	}
+	dex := dexOwned > t.RecoveryDexOwned
+	if !story && !dex {
+		return
+	}
+	detail := fmt.Sprintf("badges %d · events %d · maps %d · dex %d", p.Badges, p.Events, p.Maps, dexOwned)
+	if t.RecoveryAttempts > 0 {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "recovery", Kind: "recovered", Attempt: t.Attempts + 1,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         "Recovery succeeded; progress advanced",
+			Detail:          detail,
+		})
+	}
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "milestone", Kind: "progress", Attempt: t.Attempts + 1,
+		Summary: "Progress frontier advanced",
+		Detail:  detail,
+	})
+	// Each axis only ever rises: a new species after a rollback must not
+	// lower the story high-water mark, and vice versa.
+	if story {
+		t.RecoveryBadges = p.Badges
+		t.RecoveryEvents = p.Events
+		t.RecoveryMaps = p.Maps
+	}
+	if dex {
+		t.RecoveryDexOwned = dexOwned
+	}
+	t.RecoveryAttempts = 0
+	clearTileCircuit(t)
+}
+
 func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Attempts++
 	completed := t.Attempts
@@ -1395,21 +1668,62 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	case "lost":
 		t.LossRecoveries++
 	}
+	resilient := t.RecoveryProfile.Resilient()
+	if resilient && resilientGoalRecoveryReason(reason) {
+		t.RecoveryAttempts++
+	}
 	t.lastUpdate = now
 	_, cancelled := w.cancel[t.RunID]
 	delete(w.cancel, t.RunID)
 
-	terminal := reason != "error" && reason != "lost"
-	if reason == "error" && t.ErrorAttempts >= maxAttempts {
+	recoverable := reason == "error" || reason == "lost"
+	if resilient && resilientGoalRecoveryReason(reason) {
+		recoverable = true
+	}
+	terminal := !recoverable
+	if !resilient && reason == "error" && t.ErrorAttempts >= maxAttempts {
 		terminal = true
 	}
-	if reason == "lost" && t.LossRecoveries >= maxLostRecoveries {
+	if !resilient && reason == "lost" && t.LossRecoveries >= maxLostRecoveries {
 		terminal = true
 	}
-	if cancelled {
+	if cancelled || reason == "cancelled" || reason == "done" {
 		terminal = true
 	}
+
+	if reason == "done" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "milestone", Kind: "goal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run goal completed",
+			Detail:  detail,
+		})
+	} else if cancelled || reason == "cancelled" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "system", Kind: "cancelled", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Run cancelled",
+			Detail:  detail,
+		})
+	} else {
+		source := "system"
+		if recoverable {
+			source = "recovery"
+		}
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: source, Kind: "failure", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			RecoveryAttempt: t.RecoveryAttempts,
+			Summary:         fmt.Sprintf("Attempt %d stopped: %s", completed, reason),
+			Detail:          detail,
+		})
+	}
+
 	if terminal {
+		if reason != "done" && !cancelled && reason != "cancelled" {
+			appendRunActivityLocked(t, runActivityEvent{
+				Source: "system", Kind: "terminal", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+				Summary: "Run stopped",
+				Detail:  fmt.Sprintf("%s: %s", reason, detail),
+			})
+		}
 		t.Status = statusDone
 		t.Reason = reason
 		t.Detail = detail
@@ -1420,8 +1734,16 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		}
 		return completed
 	}
-	// Retry: fresh luck, fresh progress, back of the queue. The old
-	// runner's addresses belong to its generation, not the next one.
+	// Retry: fresh luck, fresh progress, back of the queue. In resilient mode
+	// the retry is the outer goal supervisor: local agent/watchdog budgets stay
+	// bounded, but exhausting one escalates to a new checkpoint-backed attempt
+	// instead of terminating the campaign.
+	appendRunActivityLocked(t, runActivityEvent{
+		Source: "recovery", Kind: "retry", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+		RecoveryAttempt: t.RecoveryAttempts,
+		Summary:         fmt.Sprintf("Recovery queued attempt %d", completed+1),
+		Detail:          fmt.Sprintf("%s: %s", reason, detail),
+	})
 	t.Status = statusQueued
 	t.Seed = rand.Int64()
 	t.Frame = 0
@@ -1432,7 +1754,11 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Question = ""
 	t.Decision = ""
 	t.Raw = ""
-	t.StopSoFar = ""
+	if resilient {
+		t.StopSoFar = fmt.Sprintf("goal recovery %d queued after %s", t.RecoveryAttempts, reason)
+	} else {
+		t.StopSoFar = ""
+	}
 	t.Sprites = nil
 	t.Trail = nil
 	t.Stats = nil
@@ -1489,20 +1815,28 @@ func (w *Wall) enqueueNextLocked(prev *Tile) {
 		Game:            prev.Game,
 		Planner:         prev.Planner,
 		Starter:         prev.Starter,
+		Goal:            farm.GoalFrom(prev.Goal),
 		Dest:            prev.Dest,
-		Goal:            prev.Goal,
+		PlayStyle:       prev.PlayStyle,
+		Purpose:         prev.Purpose,
+		RiskTolerance:   prev.RiskTolerance,
+		WildEncounters:  prev.WildEncounters,
 		LLMProfile:      prev.LLMProfile,
 		LLMDeployment:   prev.LLMDeployment,
 		ExperimentID:    prev.ExperimentID,
 		ExperimentArm:   prev.ExperimentArm,
 		ExperimentCase:  prev.ExperimentCase,
 		ReasoningEffort: prev.ReasoningEffort,
+		DecisionEngine:  prev.DecisionEngine.Clone(),
 		FPS:             prev.FPS,
 		MaxRounds:       prev.MaxRounds,
 		MaxFrames:       prev.MaxFrames,
+		RecoveryProfile: prev.RecoveryProfile,
 		Endless:         true,
 		RandomSeed:      prev.RandomSeed,
 	})
+	// The successor inherits the predecessor goal verbatim, including an
+	// already-resolved play-style default or an explicit Free play goal.
 	w.tiles[id].ResumeFromRunID = resumeFrom
 }
 

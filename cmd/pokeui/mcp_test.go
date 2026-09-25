@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -124,6 +126,17 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 			json.NewEncoder(res).Encode([]map[string]any{{"key": "deadbeef", "pattern": "stuck", "count": 2}}) //nolint:errcheck
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/deadbeef/investigate":
 			json.NewEncoder(res).Encode(map[string]any{"issue_number": 42}) //nolint:errcheck
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/deadbeef/solver-attempt":
+			var attempt map[string]any
+			if err := json.NewDecoder(req.Body).Decode(&attempt); err != nil {
+				http.Error(res, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if attempt["model"] != "qwen3.8-27b/qwen3.8-27b" {
+				http.Error(res, "wrong model", http.StatusBadRequest)
+				return
+			}
+			json.NewEncoder(res).Encode(map[string]any{"attempt_count": 1}) //nolint:errcheck
 		case req.URL.Path == "/v1/lease" || strings.Contains(req.URL.Path, "/heartbeat") || strings.Contains(req.URL.Path, "/finish"):
 			http.Error(res, "runner-only route reached", http.StatusInternalServerError)
 		default:
@@ -161,9 +174,11 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
 		"pokepilot_get_run_debug",
+		"pokepilot_get_run_recovery_audit",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
+		"pokepilot_record_solver_attempt",
 		"pokepilot_start_run",
 	}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
@@ -188,7 +203,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	if runID == "" || !strings.HasPrefix(runID, "mcp-") {
 		t.Fatalf("generated run id = %q", runID)
 	}
-	if spec.Planner != "llm" || spec.Starter != "charmander" || spec.Goal != "badges:1" || spec.MaxRounds != 40 {
+	if spec.Planner != "llm" || spec.Starter != "charmander" || spec.Goal.String() != "badges:1" || spec.MaxRounds != 40 {
 		t.Fatalf("queued spec = %+v", spec)
 	}
 	if spec.Endless || spec.RandomSeed {
@@ -201,9 +216,14 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}{
 		{"pokepilot_get_run", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_debug", map[string]any{"run_id": runID}},
+		{"pokepilot_get_run_recovery_audit", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_artifacts", map[string]any{"run_id": runID}},
 		{"pokepilot_get_triage", map[string]any{}},
 		{"pokepilot_investigate_failure", map[string]any{"key": "deadbeef"}},
+		{"pokepilot_record_solver_attempt", map[string]any{
+			"key": "deadbeef", "id": "attempt-1", "backend": "opencode",
+			"model": "qwen3.8-27b/qwen3.8-27b", "state": "started", "run_id": runID,
+		}},
 		{"pokepilot_cancel_run", map[string]any{"run_id": runID}},
 	} {
 		if _, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: call.name, Arguments: call.args}); err != nil {
@@ -235,6 +255,89 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}
 	if string(decoded) != "checkpoint-bytes" {
 		t.Fatalf("artifact content = %q, want %q", decoded, "checkpoint-bytes")
+	}
+}
+
+func TestMCPRunRecoveryAuditKeepsOlderRecoveryAndResolvedTriage(t *testing.T) {
+	timeline := make([]map[string]any, 0, mcpMaxEvents+12)
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "system", "kind": "attempt_start", "attempt": 1,
+		"detail": "runner old-revision", "message": "Attempt 1 started",
+	})
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "recovery", "kind": "retry", "attempt": 1,
+		"recovery_attempt": 1, "message": "Old recovery still matters",
+	})
+	for i := 0; i < mcpMaxEvents+5; i++ {
+		timeline = append(timeline, map[string]any{
+			"type": "activity", "source": "llm", "kind": "decision", "attempt": 1,
+			"message": fmt.Sprintf("decision-%d", i),
+		})
+	}
+	timeline = append(timeline, map[string]any{
+		"type": "activity", "source": "recovery", "kind": "circuit", "attempt": 1,
+		"recovery_attempt": 2, "message": "Newest recovery",
+	})
+
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		switch req.URL.Path {
+		case "/v1/runs/run-audit/debug":
+			json.NewEncoder(res).Encode(map[string]any{ //nolint:errcheck
+				"run": map[string]any{
+					"run_id": "run-audit", "status": "done", "attempts": 1,
+					"recovery_attempts": 2, "question": strings.Repeat("q", 5000),
+				},
+				"finish": map[string]any{
+					"attempt": 1, "reason": "done", "runner_version": "old-revision",
+				},
+				"summary":  map[string]any{"progress_known": true, "progressed": true},
+				"timeline": timeline,
+			})
+		case "/v1/triage":
+			json.NewEncoder(res).Encode([]map[string]any{{ //nolint:errcheck
+				"key": "fixed-key", "fingerprint": "sha256:abc", "run_ids": []string{"run-audit"},
+				"issue": map[string]any{
+					"issue_number": 77, "status": "closed", "resolution": "fixed", "fixed_revision": "fix-revision",
+				},
+			}})
+		default:
+			http.NotFound(res, req)
+		}
+	}))
+	t.Cleanup(wall.Close)
+
+	control := &mcpControl{wallBase: wall.URL, artifactBase: wall.URL, http: wall.Client()}
+	_, got, err := control.getRunRecoveryAudit(context.Background(), nil, mcpRunInput{RunID: "run-audit"})
+	if err != nil {
+		t.Fatalf("getRunRecoveryAudit: %v", err)
+	}
+	if got["recovery_event_count"] != 2 {
+		t.Fatalf("recovery_event_count = %#v, want 2", got["recovery_event_count"])
+	}
+	events, ok := got["recovery_events"].([]map[string]any)
+	if !ok || len(events) != 2 {
+		t.Fatalf("recovery_events = %#v", got["recovery_events"])
+	}
+	if events[0]["message"] != "Old recovery still matters" {
+		t.Fatalf("old recovery was lost: %#v", events)
+	}
+	if events[0]["runner_version"] != "old-revision" {
+		t.Fatalf("runner revision annotation = %#v", events[0]["runner_version"])
+	}
+	related, ok := got["related_triage"].([]map[string]any)
+	if !ok || len(related) != 1 {
+		t.Fatalf("related_triage = %#v", got["related_triage"])
+	}
+	if related[0]["actionable"] != false || related[0]["fixed_revision"] != "fix-revision" {
+		t.Fatalf("resolved triage metadata = %#v", related[0])
+	}
+	run, ok := got["run"].(map[string]any)
+	if !ok {
+		t.Fatalf("run = %#v", got["run"])
+	}
+	if _, leaked := run["question"]; leaked {
+		t.Fatalf("audit packet leaked large planner question: %#v", run)
 	}
 }
 
@@ -298,5 +401,27 @@ func TestMCPArtifactContentUsesReplayForDurabilizedArtifacts(t *testing.T) {
 	}
 	if string(decoded) != "durabilized-bytes" {
 		t.Fatalf("artifact content = %q, want %q", decoded, "durabilized-bytes")
+	}
+}
+
+func TestCompactEventsKeepsNewestClippedEvents(t *testing.T) {
+	var events []any
+	for i := 0; i < mcpMaxEvents+5; i++ {
+		events = append(events, map[string]any{"at": i, "detail": strings.Repeat("é", mcpMaxEventText)})
+	}
+	m := map[string]any{"activity": events}
+	compactEvents(m, "activity")
+
+	got := m["activity"].([]any)
+	if len(got) != mcpMaxEvents || m["activity_omitted"] != 5 {
+		t.Fatalf("kept %d omitted %v, want %d and 5", len(got), m["activity_omitted"], mcpMaxEvents)
+	}
+	first := got[0].(map[string]any)
+	if first["at"] != 5 {
+		t.Fatalf("first kept event at=%v, want the newest window starting at 5", first["at"])
+	}
+	detail := first["detail"].(string)
+	if len(detail) > mcpMaxEventText+len("…") || !utf8.ValidString(detail) {
+		t.Fatalf("detail not clipped to valid UTF-8: %d bytes", len(detail))
 	}
 }

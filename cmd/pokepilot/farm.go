@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -21,12 +23,17 @@ import (
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
 const (
+	// farmRunIDEnv carries the current lease into per-run sidecars such as the
+	// virtual trader so their structured events can be joined back to the run.
+	farmRunIDEnv = "POKEPILOT_RUN_ID"
+
 	// heartbeatInterval is the cadence of an in-flight run's heartbeats:
 	// on the order of a second, not every frame.
 	heartbeatInterval = time.Second
@@ -35,6 +42,10 @@ const (
 	heartbeatDeadline = 2 * time.Second
 	// farmHTTPTimeout bounds the Lease and Finish calls.
 	farmHTTPTimeout = 2 * time.Second
+	// farmResumeTimeout bounds the resume-checkpoint lookup, which searches a
+	// campaign's whole attempt lineage and downloads the chosen state; it is a
+	// one-off per lease, not a hot-path call like Lease/Finish.
+	farmResumeTimeout = 30 * time.Second
 	// farmIdleSleep is how long a worker with no spec ready waits before
 	// leasing again; idle workers keep leasing.
 	farmIdleSleep = time.Second
@@ -105,6 +116,7 @@ func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	hb.Decision = s.hb.Decision
 	hb.Raw = s.hb.Raw
 	hb.Stats = s.hb.Stats
+	hb.Activity = s.hb.Activity
 	s.hb = hb
 	s.mu.Unlock()
 }
@@ -117,6 +129,13 @@ func (s *heartbeatSnap) storePlan(question, decision string) {
 	s.mu.Lock()
 	s.hb.Question = question
 	s.hb.Decision = decision
+	s.mu.Unlock()
+}
+
+func (s *heartbeatSnap) storeActivity(event farm.ActivityEvent) {
+	copy := event
+	s.mu.Lock()
+	s.hb.Activity = &copy
 	s.mu.Unlock()
 }
 
@@ -166,6 +185,27 @@ func (w rawWriter) Write(p []byte) (int, error) {
 // tally that record() keeps mutating on the stepping goroutine.
 func (s *heartbeatSnap) storeStats(st farm.LLMStats) {
 	st.Choices = append([]farm.ChoiceCount(nil), st.Choices...)
+	if len(st.DecisionProbabilities) > 0 {
+		probabilities := make(map[string]float64, len(st.DecisionProbabilities))
+		for key, value := range st.DecisionProbabilities {
+			probabilities[key] = value
+		}
+		st.DecisionProbabilities = probabilities
+	}
+	if len(st.DecisionRecords) > 0 {
+		st.DecisionRecords = append([]farm.TypedDecisionRecord(nil), st.DecisionRecords...)
+		for i := range st.DecisionRecords {
+			if len(st.DecisionRecords[i].Probabilities) == 0 {
+				continue
+			}
+			probabilities := make(map[string]float64, len(st.DecisionRecords[i].Probabilities))
+			for key, value := range st.DecisionRecords[i].Probabilities {
+				probabilities[key] = value
+			}
+			st.DecisionRecords[i].Probabilities = probabilities
+		}
+	}
+	st.DecisionSummary = st.DecisionSummary.Clone()
 	s.mu.Lock()
 	s.hb.Stats = &st
 	s.mu.Unlock()
@@ -181,12 +221,17 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 // heartbeatTrail owns the recent map-local position samples. It is only
 // touched on the stepping goroutine; snapshots get a copied slice.
 type heartbeatTrail struct {
-	mapID uint8
-	set   bool
-	pts   [][2]uint8
+	mapID   uint8
+	set     bool
+	pts     [][2]uint8
+	visited map[uint8]struct{}
 }
 
 func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
+	if t.visited == nil {
+		t.visited = make(map[uint8]struct{})
+	}
+	t.visited[mapID] = struct{}{}
 	if !t.set || t.mapID != mapID {
 		t.mapID = mapID
 		t.set = true
@@ -204,6 +249,10 @@ func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
 	return append([][2]uint8(nil), t.pts...)
 }
 
+func (t *heartbeatTrail) mapsVisited() int {
+	return len(t.visited)
+}
+
 // heartbeatLoop pushes one Heartbeat per tick until stop is closed, and
 // joins promptly after: every wall call carries a finite deadline
 // (heartbeatDeadline), so a wedged handler cannot hold the loop hostage. It
@@ -215,6 +264,7 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 	go func() {
 		defer close(done)
 		var once sync.Once
+		var lastHeartbeatError time.Time
 		for {
 			select {
 			case <-stop:
@@ -224,8 +274,16 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 			ctx, cancelCtx := context.WithTimeout(context.Background(), heartbeatDeadline)
 			reply, err := client.Heartbeat(ctx, snap())
 			cancelCtx()
-			if err == nil && reply.Cancel {
-				once.Do(func() { close(cancel) })
+			if err != nil {
+				if lastHeartbeatError.IsZero() || time.Since(lastHeartbeatError) >= 30*time.Second {
+					log.Printf("farm: %s: heartbeat failed: %v", runID, err)
+					lastHeartbeatError = time.Now()
+				}
+			} else if reply.Cancel {
+				once.Do(func() {
+					log.Printf("farm: %s: cancellation requested by wall", runID)
+					close(cancel)
+				})
 			}
 			select {
 			case <-stop:
@@ -262,11 +320,13 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string) {
+func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string, renderFeed *renderStateFeed) bool {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
 	addrs := workerAddrs(watchPort) // fixed for the container's lifetime
+	log.Printf("farm: worker online version=%s wall=%s addrs=%v", client.Version, client.BaseURL, addrs)
+	var lastIdleLog time.Time
 
 	for {
 		pingWorker(client, addrs)
@@ -277,7 +337,13 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 		if spec == nil {
-			// 204: no spec ready yet. Idle workers keep leasing.
+			// 204: no spec ready yet. Idle workers keep leasing. Emit this only
+			// occasionally so service logs distinguish idle from dead without
+			// turning the one-second lease poll into log spam.
+			if lastIdleLog.IsZero() || time.Since(lastIdleLog) >= 30*time.Second {
+				log.Printf("farm: idle: no runnable specs (wall=%s)", client.BaseURL)
+				lastIdleLog = time.Now()
+			}
 			time.Sleep(farmIdleSleep)
 			continue
 		}
@@ -286,6 +352,11 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			time.Sleep(farmErrorSleep)
 			continue
 		}
+		lastIdleLog = time.Time{}
+		log.Printf(
+			"farm: %s: lease acquired attempt=%d game=%s planner=%s starter=%s goal=%q",
+			spec.RunID, spec.Attempt, spec.Game, spec.Planner, spec.Starter, spec.Goal.String(),
+		)
 
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
 		if err := validateSpec(planner, starter, dest); err != nil {
@@ -294,6 +365,10 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			time.Sleep(farmErrorSleep)
 			continue
 		}
+		// Resolve a missing LLM goal from the leased play style here, where the
+		// run is about to start, rather than while decoding the wire. Decoding
+		// stays a faithful record of what the operator asked for.
+		farm.ApplyPlayStyleDefaultGoal(spec)
 
 		// The cartridge is rebuilt per lease: a two-game worker pool runs
 		// either game, and an empty game keeps the cartridge this worker
@@ -307,7 +382,10 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 
-		runOne(m, client, *spec, planner, starter, dest, spec.Goal, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir)
+		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir, renderFeed) {
+			log.Printf("farm: %s: emulator poisoned by stalled link exchange; recycling worker", spec.RunID)
+			return true
+		}
 	}
 }
 
@@ -360,10 +438,16 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest, goal string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) {
-	// A new lease must not inherit the previous run's plan: the snap is
-	// reused for the worker's lifetime.
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string, renderFeed *renderStateFeed) bool {
+	restoreRunID := setFarmRunID(spec.RunID)
+	defer restoreRunID()
+
+	// A new lease must not inherit the previous run's sample callback, plan,
+	// or semantic frame. prepareFarmAttempt can restore/step before the new
+	// callback is installed, so detach the old lease first.
+	m.OnSample(nil)
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
+	renderFeed.reset()
 
 	seed := spec.Seed
 	preparedDir, burn, err := prepareFarmAttempt(m, client, spec, planner, bootState, checkpointDir)
@@ -373,7 +457,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	if err != nil {
 		log.Printf("farm: %s: prepare attempt: %v", spec.RunID, err)
 		finishRun(m, client, spec, "error", err.Error(), 0, checkpointDir, nil, nil)
-		return
+		return false
 	}
 
 	profile, _, err := profiles.Detect(m.ROM())
@@ -381,16 +465,21 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		detail := fmt.Sprintf("detect active game profile: %v", err)
 		log.Printf("farm: %s: %s", spec.RunID, detail)
 		finishRun(m, client, spec, "error", detail, burn, checkpointDir, nil, nil)
-		return
+		return false
 	}
 
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
+	redRenderer, renderErr := redrenderstate.New(m.ROM())
+	if renderErr != nil {
+		log.Printf("farm: %s: semantic renderer unavailable: %v", spec.RunID, renderErr)
+	}
+
 	// Start after fresh restore + seed burn, or after durable resume restore,
 	// so the checked recording start state is the state this worker continues.
 	// Recording is diagnostic evidence only: failure to start must not affect gameplay.
-	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, goal, burn, client.Version))
+	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, spec.Goal.String(), burn, client.Version))
 	if err != nil {
 		log.Printf("farm: %s: start session recording: %v", spec.RunID, err)
 		recorder = nil
@@ -403,8 +492,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		if profile.Features().Has(game.FeatureBattles) {
 			tracer.sample(m)
 		}
+		renderFeed.capture(m, redRenderer)
 		sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
 	})
+	renderFeed.capture(m, redRenderer)
 	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
 
 	var samples chan periodicSample
@@ -429,17 +520,35 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 
 	var reason, detail string
 	var progEarly, progFinal *farm.Progress
+	var emulatorPoisoned bool
 	switch planner {
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
 	case "llm":
-		reason, detail, progEarly, progFinal = runFarmLLM(m, starter, goal, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, farm.RunPolicyFor(spec), starter, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+	}
+
+	if emulatorPoisoned {
+		// ErrLinkStalled explicitly means the goroutine inside StepFrame may
+		// still be alive. Do not sample, detach callbacks, stop recording, save,
+		// or otherwise touch m again. Settle from already-captured telemetry and
+		// force the long-lived farm worker to restart before another lease.
+		close(stop)
+		<-hbDone
+		sendFinalHeartbeat(client, snap.load())
+		if stopUploader != nil {
+			close(stopUploader)
+			<-uploaderDone
+		}
+		finishRunWithRecording(nil, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, nil)
+		return true
 	}
 
 	// The objective that satisfies a deterministic goal can stop the agent
 	// immediately, before OnSample happens to refresh the periodic snapshot.
 	// Sample the settled emulator state explicitly so badges/player/stats agree
 	// with the terminal result that is about to be reported.
+	renderFeed.capture(m, redRenderer)
 	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
 
 	// Stop and join the periodic heartbeat first, then publish exactly one
@@ -456,6 +565,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 
 	recording := stopFarmRecording(spec.RunID, recorder)
 	finishRunWithRecording(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, recording)
+	return false
 }
 
 // sampleHeartbeat captures the plain snapshot the heartbeat goroutine will
@@ -570,6 +680,7 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 		Trail:       trail.add(uint8(base.NativeMapID), base.X, base.Y),
 		Player:      player,
 	}
+	hb.MapsVisited = trail.mapsVisited()
 	// Sprite telemetry has not yet moved into ProfileObservation. Only profiles
 	// advertising the existing trainer/map-object runtime use the legacy decoder.
 	if profile.Features().Has(game.FeatureTrainerFlags) {
@@ -665,9 +776,13 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 
 // runFarmLLM mirrors runLLM's diagnostics and objective list; the only
 // differences are that the budget comes from the spec and cancel is the
-// wall's cooperative stop.
-func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress) {
+// wall's cooperative stop. The run's gameplay policy and inference identity
+// arrive already extracted from the leased Spec, so this path never consults
+// process-global state.
+func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
 	resumeFrom := farmResumePath(checkpointDir)
+	romSum := sha256.Sum256(m.ROM())
+	romSHA256 := fmt.Sprintf("%x", romSum[:])
 	// When the spec names a starter, the farm takes it before handing control
 	// to the model — the same reason badgerun does (a model that knows Pokemon
 	// always picks Squirtle otherwise). A resumed state is already past that
@@ -675,28 +790,62 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 	if starter != "" && resumeFrom == "" {
 		starterObj, objErr := starterObjectiveForRequest(starter, seed)
 		if objErr != nil {
-			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil
+			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false
 		}
 		starterResult, execErr := executeScriptedObjective(m, starterObj)
 		if execErr != nil {
 			captureScriptedObjectiveTelemetry(agent.StopError, []agent.ObjectiveResult{starterResult}, execErr)
-			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil
+			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil, errors.Is(execErr, skill.ErrLinkStalled)
 		}
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 
+	// The run's own typed-decision selection wins over the runner's env
+	// default. A selected backend this runner cannot serve fails the run
+	// before any emulation instead of silently running without it.
+	decision, err := agent.DecisionSettingsFor(decisionSelectionFor(spec.DecisionEngine))
+	if err != nil {
+		return "error", fmt.Sprintf("decision engine: %v", err), nil, nil, false
+	}
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner(llmProfile, reasoningEffort, goal, m, m.TraceStats, snap)
+	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
+	stats.decision = decision
 	stats.wirePlannerLogs(logw, snap)
+	benchmarkStarted := time.Now()
 	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,
+		Build:         version,
 		Log:           logw,
 		Cancel:        cancel,
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,
+		OnObjective: func(activity agent.ObjectiveActivity) {
+			if snap == nil {
+				return
+			}
+			detail := activity.Outcome
+			if activity.Error != "" {
+				if detail != "" {
+					detail += " · "
+				}
+				detail += activity.Error
+			}
+			snap.storeActivity(farm.ActivityEvent{
+				Source:  "skill",
+				Kind:    activity.Stage,
+				Summary: activity.Objective,
+				Detail:  detail,
+				Frame:   activity.Frame,
+				Round:   activity.Round,
+			})
+		},
 	})
+	benchmarkFinished := time.Now()
 	captureObjectiveFailureTelemetry(res)
+	if err := writeFarmBenchmarkResult(spec, res, stats, benchmarkStarted, benchmarkFinished, resumeFrom, checkpointDir, romSHA256, maxFrames); err != nil {
+		log.Printf("farm: %s: benchmark result: %v", spec.RunID, err)
+	}
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)
 	for i, o := range res.Completed {
@@ -708,7 +857,7 @@ func runFarmLLM(m *emu.Emu, starter, goal, llmProfile, reasoningEffort string, m
 		fmt.Printf("  error: %v\n", res.Err)
 		detail = res.Err.Error()
 	}
-	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal)
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled)
 }
 
 // farmProgress lifts one of the run's progress samples onto the wire type.
@@ -751,6 +900,13 @@ func farmProgress(p *agent.Progress) *farm.Progress {
 type reportingPlanner struct {
 	inner agent.Planner
 	snap  *heartbeatSnap
+}
+
+func (p reportingPlanner) RoutePriority() agent.RoutePriority {
+	if provider, ok := p.inner.(agent.RoutePriorityPlanner); ok {
+		return provider.RoutePriority()
+	}
+	return agent.RoutePriorityConservative
 }
 
 func (p reportingPlanner) Next(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
@@ -796,6 +952,19 @@ func (p reportingPlanner) ObservePlanning(stats agent.PlanningStats) {
 	}
 }
 
+func (p reportingPlanner) DecideFailure(result agent.ObjectiveResult) (agent.DecisionResponse, error) {
+	if decider, ok := p.inner.(agent.FailureDecisionPlanner); ok {
+		return decider.DecideFailure(result)
+	}
+	return agent.DecisionResponse{}, agent.ErrDecisionDisabled
+}
+
+func (p reportingPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if o, ok := p.inner.(agent.BattleTurnObserver); ok {
+		o.ObserveBattleTurn(turn, executed)
+	}
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
@@ -832,6 +1001,21 @@ func planQuestion(offered []agent.Objective) string {
 		fmt.Fprintf(&b, "%d: %s", i+1, o)
 	}
 	return b.String()
+}
+
+// setFarmRunID scopes sidecar provenance to exactly one lease. Farm workers
+// are long-lived, so restore the prior value instead of leaking one run into
+// the next.
+func setFarmRunID(runID string) func() {
+	previous, had := os.LookupEnv(farmRunIDEnv)
+	_ = os.Setenv(farmRunIDEnv, strings.TrimSpace(runID))
+	return func() {
+		if had {
+			_ = os.Setenv(farmRunIDEnv, previous)
+			return
+		}
+		_ = os.Unsetenv(farmRunIDEnv)
+	}
 }
 
 // enableFarmRAMForensics points POKEPILOT_RAM_DIR at <checkpoint-dir>/ram for
@@ -883,4 +1067,35 @@ func farmStarterFor(name string) skill.Starter {
 		return starter
 	}
 	return skill.StarterSquirtle
+}
+
+// decisionSelectionFor maps the wire selection onto the agent's runner-local
+// resolution. A nil selection keeps the runner environment default.
+func decisionSelectionFor(spec *farm.DecisionEngineSpec) agent.DecisionSelection {
+	if spec == nil {
+		return agent.DecisionSelection{}
+	}
+	backend := farm.NormalizeDecisionBackend(spec.Backend)
+	if backend == "" {
+		// Unknown on this runner (a newer wall, say): keep the raw value so
+		// resolution fails loudly rather than falling back to the env default.
+		backend = spec.Backend
+	}
+	mode := farm.NormalizeDecisionMode(spec.Mode)
+	if mode == "" {
+		// Same as an unknown backend: fail resolution loudly.
+		mode = spec.Mode
+	}
+	sel := agent.DecisionSelection{
+		Backend:            backend,
+		Mode:               mode,
+		ObjectiveSelection: spec.Objectives,
+		FailureRecovery:    spec.Failures,
+		Battles:            spec.Battles,
+		MinConfidence:      spec.MinConfidence,
+	}
+	if id := spec.Inference; id != nil {
+		sel.Endpoint, sel.Model, sel.TokenEnv = id.Endpoint, id.APIModel, id.TokenEnv
+	}
+	return sel
 }

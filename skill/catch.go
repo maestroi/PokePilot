@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -69,6 +70,12 @@ type CatchResult struct {
 const (
 	catchHuntCap   = 32  // wanted-species encounters met before giving up
 	catchGrassLegs = 500 // total grass legs the hunt may spend on encounters
+	// catchHuntFrameCap keeps the stochastic search inside the historical
+	// 500k-frame objective envelope, but checks it only at safe overworld
+	// boundaries. The Red objective adapter gives Catch a larger hard watchdog
+	// solely so one battle already started near this boundary can finish under
+	// Battle's own 600k-frame backstop instead of being interrupted mid-menu.
+	catchHuntFrameCap uint64 = 500_000
 
 	// battleEndSettle bounds the wait for a just-ended battle to clear RAM
 	// and the player to become controllable again.
@@ -90,11 +97,18 @@ var (
 	// species. It is typed so callers can re-plan without parsing the measured
 	// legs/encounters diagnostic that accompanies it.
 	ErrCatchHuntExhausted = errors.New("skill: Catch: hunt exhausted without a wanted species")
+
+	// ErrCatchMissed is the ordinary stochastic outcome where a wanted target
+	// was met and balls were thrown, but every ball broke or it fled. Even a
+	// strong ball is not a guaranteed catch, so this is a bounded gameplay
+	// session that simply did not land, not evidence of a broken controller.
+	ErrCatchMissed = errors.New("skill: Catch: wanted target met but not caught")
 )
 
 // Catch hunts the tall grass on the current map until it meets a wild
-// Pokemon of one of the species in want, then throws POKE BALLs at it (via
-// S6-2's UseItem) until it is caught or maxBalls are spent.
+// Pokemon of one of the species in want, then throws the strongest ordinary
+// ball in the bag (Ultra, Great, then POKE BALL, via S6-2's UseItem) until it
+// is caught or maxBalls are spent.
 //
 // An encounter that is not wanted is fought normally with policy and the
 // hunt continues; Catch never reuses StatAwareMove against a wanted target,
@@ -130,28 +144,43 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		return CatchResult{}, fmt.Errorf("skill: Catch: maxBalls must be > 0, got %d", maxBalls)
 	}
 
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
 	}
-	before := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	live := overworld.DecodeOverworld(m)
+	if !live.Controllable {
+		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", live.NativeMapID)
+	}
+
+	var mem state.Mem
+	before := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
 	// The hunt ping-pongs the player between two nearby grass cells itself
 	// (the same pair EnterWildBattle picks), because a dry attempt — no
 	// encounter rolled in a burst of legs — is part of the hunt, not a
 	// failure, and only the total leg budget should end it.
-	now := currentWorld(m)
-	grass, grid, err := grassCells(romData, now.Map)
+	now, err := currentWorld(m)
+	if err != nil {
+		return res, fmt.Errorf("skill: Catch: observe world: %w", err)
+	}
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return res, err
 	}
 	if len(grass) == 0 {
-		return res, fmt.Errorf("skill: Catch: no walkable tall grass on map %#04x", now.Map)
+		return res, fmt.Errorf("skill: Catch: no walkable encounter cells on map %#04x", now.Map)
+	}
+	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
+	if len(grass) == 0 {
+		return res, fmt.Errorf("skill: Catch: no encounter cells reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
 	}
 	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
 	if !ok {
@@ -160,7 +189,17 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 
 	next := b
 	legsSpent := 0
+	huntStartFrame := m.FrameCount()
 	for res.Encounters < catchHuntCap && legsSpent < catchGrassLegs {
+		// The frame budget is intentionally cooperative: check only here, where
+		// the previous leg/battle has fully settled and it is safe to return the
+		// ordinary bounded-hunt outcome. The outer objective watchdog retains
+		// enough reserve for any battle started by the preceding leg to finish.
+		if catchHuntFrameBudgetReached(huntStartFrame, m.FrameCount()) {
+			return res, fmt.Errorf("%w: %d-frame hunt budget, %d grass legs and %d encounters (map %#04x)",
+				ErrCatchHuntExhausted, catchHuntFrameCap, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		}
+
 		// One leg: walk to the other grass cell. Stepping onto a fresh grass
 		// cell re-rolls the encounter, whether or not one fires on this leg.
 		d := Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}
@@ -199,7 +238,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, before, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, before, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
@@ -208,12 +247,21 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 // catchWanted throws balls at the wanted target in progress and reports the
 // outcome. It never attacks: the only way the target takes damage here is a
 // bug, which OutcomeTargetFainted exists to name.
-func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res CatchResult, maxBalls int) (CatchResult, error) {
+func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
 	for res.BallsThrown < maxBalls && battleInFlight(m) {
-		if err := UseItem(m, ItemPokeBall); err != nil {
+		state.Snapshot(m, mem)
+		nativeBall, ok := ordinaryCaptureBall(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder())
+		if !ok {
+			break // the bag is dry before maxBalls: same ending as running out
+		}
+		ball, idErr := legacyItemID(nativeBall)
+		if idErr != nil {
+			return res, idErr
+		}
+		if err := UseItem(m, ball); err != nil {
 			if errors.Is(err, ErrNotInBag) {
-				break // the bag is dry before maxBalls: same ending as running out
+				break
 			}
 			return res, fmt.Errorf("skill: Catch: throw %d: %w", res.BallsThrown+1, err)
 		}
@@ -259,7 +307,12 @@ func catchWanted(m *emu.Emu, mem *state.Mem, want, wantDex []uint8, policy MoveP
 		return res, err
 	}
 	state.Snapshot(m, mem)
-	if species, ok := catchAcquiredWanted(partyBefore, state.DecodeParty(mem), boxBefore, state.DecodeBox(mem), ownedBefore, state.DecodePokedex(mem).Owned, want, wantDex); ok {
+	after := profile.DecodeCapture(m)
+	if nativeSpecies, ok := captureAcquiredWantedState(before, after, wantNative, wantDex); ok {
+		species, idErr := legacySpeciesID(nativeSpecies)
+		if idErr != nil {
+			return res, idErr
+		}
 		res.Outcome = OutcomeCaught
 		res.Species = species
 		return res, nil
@@ -343,6 +396,10 @@ func waitForBattleEnd(m *emu.Emu) error {
 }
 
 // speciesIn reports whether s is one of the wanted species.
+func catchHuntFrameBudgetReached(start, now uint64) bool {
+	return now >= start && now-start >= catchHuntFrameCap
+}
+
 func speciesIn(s uint8, want []uint8) bool {
 	for _, w := range want {
 		if w == s {

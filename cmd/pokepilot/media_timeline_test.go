@@ -54,7 +54,7 @@ func TestDrainMediaTimelineArtifactUsesReplayRelativeFramesAndSemanticEvents(t *
 
 	checkpoint := farm.Artifact{Name: "round-002-frame-0000000310-gym.state"}
 	artifact, err := drainMediaTimelineArtifact(farm.Spec{
-		RunID: "run-media", Attempt: 1, Planner: "llm", Goal: "Earn the Boulder Badge.",
+		RunID: "run-media", Attempt: 1, Planner: "llm", Goal: farm.GoalFrom("Earn the Boulder Badge."),
 	}, "done", 500, []farm.Artifact{checkpoint})
 	if err != nil {
 		t.Fatal(err)

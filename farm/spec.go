@@ -5,6 +5,37 @@
 // farm, and farm imports nothing from them.
 package farm
 
+// RecoveryProfile controls what the wall does when a goal-driven runner stops
+// before satisfying its goal. Empty is intentionally equivalent to strict so
+// older queued specs preserve their historic bounded-retry semantics.
+type RecoveryProfile string
+
+const (
+	RecoveryProfileStrict    RecoveryProfile = "strict"
+	RecoveryProfileResilient RecoveryProfile = "resilient"
+)
+
+func (p RecoveryProfile) Valid() bool {
+	return p == "" || p == RecoveryProfileStrict || p == RecoveryProfileResilient
+}
+
+func (p RecoveryProfile) Resilient() bool {
+	return p == RecoveryProfileResilient
+}
+
+// RunPurpose describes why the run exists independently from how it plays and
+// what terminal goal it pursues. Empty is the backwards-compatible normal run.
+type RunPurpose string
+
+const (
+	RunPurposeNormal        RunPurpose = "normal"
+	RunPurposeDebugCoverage RunPurpose = "debug_coverage"
+)
+
+func (p RunPurpose) Valid() bool {
+	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage
+}
+
 // Spec is one run's configuration, filled either by CLI flags (today) or
 // by a lease from the wall (farm mode). Field names mirror the flags in
 // cmd/pokepilot/main.go one for one.
@@ -24,9 +55,20 @@ type Spec struct {
 	Starter string `json:"starter"`
 	Dest    string `json:"dest"`
 	// Goal is the task statement for the llm planner: what to achieve,
-	// never how. Empty means no goal (the pre-Goal prompt).
-	Goal       string `json:"goal,omitempty"`
-	LLMProfile string `json:"llm_profile,omitempty"`
+	// never how. It is omitted entirely when no goal was provided, so a
+	// serialized Spec still distinguishes Free play (provided, empty) from
+	// an unset goal. See RunGoal.
+	Goal RunGoal `json:"goal,omitzero"`
+	// PlayStyle, Purpose, RiskTolerance, and WildEncounters are orthogonal
+	// gameplay policy knobs. They live on the Spec so one run's behavior is
+	// fully described by its own wire payload, and so two runs can coexist
+	// in one process without cross-talk. Empty intentionally means "use the
+	// historical compatibility default", not a specific profile.
+	PlayStyle      string     `json:"play_style,omitempty"`
+	Purpose        RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance  string     `json:"risk_tolerance,omitempty"`
+	WildEncounters string     `json:"wild_encounters,omitempty"`
+	LLMProfile     string     `json:"llm_profile,omitempty"`
 	// LLMDeployment is the first-class deployment selection. LLMProfile is
 	// retained only as a compatibility adapter for older queued runs/runners.
 	LLMDeployment string             `json:"llm_deployment,omitempty"`
@@ -40,7 +82,11 @@ type Spec struct {
 	// this run: "low", "medium", or "high". Empty means the endpoint's
 	// configured default (POKEPILOT_LLM_REASONING_EFFORT, or "medium").
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	FPS             int    `json:"fps"`
+	// DecisionEngine optionally selects the fast typed-decision backend for
+	// this run, independently of the strategist deployment. Nil keeps the
+	// runner's environment default.
+	DecisionEngine *DecisionEngineSpec `json:"decision_engine,omitempty"`
+	FPS            int                 `json:"fps"`
 	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
 	// Zero is the normal goal-driven mode: there is no hard round limit and
 	// the run ends on goal completion, a real failure, cancellation, or the
@@ -50,6 +96,11 @@ type Spec struct {
 	// MaxFrames remains the last-resort emulator watchdog. Zero on the wire
 	// asks the runner to use its built-in frame safety limit.
 	MaxFrames int `json:"max_frames"`
+	// RecoveryProfile is orthogonal to the agent's bounded local retry budgets.
+	// Strict preserves the historic wall-level terminal budgets. Resilient keeps
+	// the campaign alive across error/failed/stuck/budget stops, escalating
+	// checkpoint rollback until progress resumes or the operator cancels.
+	RecoveryProfile RecoveryProfile `json:"recovery_profile,omitempty"`
 	// Endless asks the wall to queue a successor when this run settles,
 	// so idle workers keep picking up work. A successor of a failed
 	// campaign resumes from the parent's latest major checkpoint; a
@@ -57,6 +108,29 @@ type Spec struct {
 	// each successor; otherwise the seed is copied.
 	Endless    bool `json:"endless,omitempty"`
 	RandomSeed bool `json:"random_seed,omitempty"`
+}
+
+// RunPolicy is the subset of a Spec that selects planner behavior. Goal says
+// what ends the run, PlayStyle says how it plays, and Purpose says why the run
+// exists (normal gameplay versus deliberate debug coverage). Run wiring passes
+// it by value so one run never reaches into process-global policy state.
+type RunPolicy struct {
+	Goal           string     `json:"goal,omitempty"`
+	PlayStyle      string     `json:"play_style,omitempty"`
+	Purpose        RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance  string     `json:"risk_tolerance,omitempty"`
+	WildEncounters string     `json:"wild_encounters,omitempty"`
+}
+
+// RunPolicyFor extracts the behavior policy from a run's Spec.
+func RunPolicyFor(spec Spec) RunPolicy {
+	return RunPolicy{
+		Goal:           spec.Goal.String(),
+		PlayStyle:      spec.PlayStyle,
+		Purpose:        spec.Purpose,
+		RiskTolerance:  spec.RiskTolerance,
+		WildEncounters: spec.WildEncounters,
+	}
 }
 
 // MapSprite is one live map object on the runner's current map. These are
@@ -104,15 +178,28 @@ type Player struct {
 	Milestones  []string   `json:"milestones,omitempty"`
 }
 
+// ActivityEvent is the latest structured execution event from the runner.
+// It complements Trace: Trace is emulator/debug evidence, while ActivityEvent
+// names the subsystem and semantic action that actually happened.
+type ActivityEvent struct {
+	Source  string `json:"source"`
+	Kind    string `json:"kind"`
+	Summary string `json:"summary"`
+	Detail  string `json:"detail,omitempty"`
+	Frame   uint64 `json:"frame,omitempty"`
+	Round   int    `json:"round,omitempty"`
+}
+
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
-	RunID string `json:"run_id"`
-	Frame uint64 `json:"frame"`
-	Map   uint8  `json:"map"`
-	X     uint8  `json:"x"`
-	Y     uint8  `json:"y"`
-	Trace string `json:"trace"`
+	RunID       string `json:"run_id"`
+	Frame       uint64 `json:"frame"`
+	Map         uint8  `json:"map"`
+	X           uint8  `json:"x"`
+	Y           uint8  `json:"y"`
+	MapsVisited int    `json:"maps_visited,omitempty"`
+	Trace       string `json:"trace"`
 	// Sprites are the current live map objects (slots 1..15). Trail is a
 	// bounded history of recent positions on this map, oldest first. Both
 	// are live-only and optional for compatibility with older runners.
@@ -147,6 +234,10 @@ type Heartbeat struct {
 	// Player is the live party/money/badges snapshot. Nil on older
 	// runners and before the first sample.
 	Player *Player `json:"player,omitempty"`
+	// Activity is the latest semantic execution event. It is intentionally a
+	// single event rather than an unbounded log; the wall deduplicates and
+	// retains a bounded operator history.
+	Activity *ActivityEvent `json:"activity,omitempty"`
 }
 
 // LLMStats is the planner tally a runner pushes on its heartbeats: round
@@ -211,16 +302,55 @@ type LLMStats struct {
 	StrategicCalls          int                   `json:"strategic_calls,omitempty"`
 	FastCalls               int                   `json:"fast_calls,omitempty"`
 	PlanExecutions          int                   `json:"plan_executions,omitempty"`
+	LegAutoExecutions       int                   `json:"leg_auto_executions,omitempty"`
+	LegFastExecutions       int                   `json:"leg_fast_executions,omitempty"`
+	LegBoundaries           int                   `json:"leg_boundaries,omitempty"`
+	LegTailStepsDropped     int                   `json:"leg_tail_steps_dropped,omitempty"`
 	StepsSkipped            int                   `json:"steps_skipped,omitempty"`
 	PlanGoal                string                `json:"plan_goal,omitempty"`
 	PlanSteps               []string              `json:"plan_steps,omitempty"`
 	PlanStep                int                   `json:"plan_step,omitempty"`
 	PlanRound               int                   `json:"plan_round,omitempty"`
+	PlanBoundary            bool                  `json:"plan_boundary,omitempty"`
+	LastLegDecision         string                `json:"last_leg_decision,omitempty"`
 	LastReplanReason        string                `json:"last_replan_reason,omitempty"`
 	ReplanReasons           map[string]int        `json:"replan_reasons,omitempty"`
 	StrategicSeconds        float64               `json:"strategic_seconds,omitempty"`
 	StrategicRecords        []StrategicCallRecord `json:"strategic_records,omitempty"`
 	StrategicRecordsDropped int                   `json:"strategic_records_dropped,omitempty"`
+
+	// Decision* is the independent constrained-backend telemetry. These fields
+	// deliberately do not reuse Calls/Rejected/Model above: those describe the
+	// generative planner and must remain comparable when typed decisions are
+	// enabled only for one part of a run.
+	DecisionCalls            int                `json:"decision_calls,omitempty"`
+	DecisionRejected         int                `json:"decision_rejected,omitempty"`
+	DecisionFallbacks        int                `json:"decision_fallbacks,omitempty"`
+	DecisionSeconds          float64            `json:"decision_seconds,omitempty"`
+	DecisionAvgSeconds       float64            `json:"decision_avg_seconds,omitempty"`
+	DecisionPromptTokens     int                `json:"decision_prompt_tokens,omitempty"`
+	DecisionCompletionTokens int                `json:"decision_completion_tokens,omitempty"`
+	DecisionInputBytes       int                `json:"decision_input_bytes,omitempty"`
+	DecisionOutputBytes      int                `json:"decision_output_bytes,omitempty"`
+	DecisionBackend          string             `json:"decision_backend,omitempty"`
+	DecisionModel            string             `json:"decision_model,omitempty"`
+	DecisionKind             string             `json:"decision_kind,omitempty"`
+	DecisionChoice           string             `json:"decision_choice,omitempty"`
+	DecisionConfidence       float64            `json:"decision_confidence,omitempty"`
+	DecisionProbabilities    map[string]float64 `json:"decision_probabilities,omitempty"`
+	// DecisionRecords is the live feed: only the most recent decisions, so
+	// heartbeats stay a constant size however long a run lasts. Older
+	// decisions survive only in DecisionSummary; DecisionRecordsDropped
+	// counts how many scrolled out of the feed.
+	DecisionRecords        []TypedDecisionRecord `json:"decision_records,omitempty"`
+	DecisionRecordsDropped int                   `json:"decision_records_dropped,omitempty"`
+	DecisionSummary        *DecisionSummary      `json:"decision_summary,omitempty"`
+	// DecisionMode is the resolved mode (active or shadow) once a backend is
+	// consulted. Agreements/Disagreements count shadow answers against what
+	// the existing policy executed.
+	DecisionMode          string `json:"decision_mode,omitempty"`
+	DecisionAgreements    int    `json:"decision_agreements,omitempty"`
+	DecisionDisagreements int    `json:"decision_disagreements,omitempty"`
 
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the

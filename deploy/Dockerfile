@@ -39,12 +39,19 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
     CGO_ENABLED=0 go build -o /out/gen1-trade-peer ./cmd/gen1-trade-peer
 
-# Keep the replay renderer on the v1.1.0 core used by PokePilot, plus the
-# one-line model-selection fix that makes CGB recordings replay as CGB while
-# historical DMG recordings continue to replay as DMG. The link broker itself
-# is taken from the same v1.2.0 GomeBoy API PokePilot compiles against.
-RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@26c3dbd668c2351ade5d3ca57019a2a0882255f8 && \
-    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.2.0
+# Both GomeBoy helpers MUST come from the release PokePilot itself compiles
+# against (go.mod). A .gbrun embeds a gob-encoded save state, and gob rejects a
+# fixed-length array whose length changed: v1.3.0 added the SerialExternalClock
+# scheduler event, growing scheduler.State.Events from [20]uint64 to
+# [21]uint64. gomeboy-stream pinned to a v1.1.0-era core could therefore not
+# restore ANY recording written by the current runner -- every render died with
+# "gob: wrong type ([20]uint64) for received field State.Events" and encoded no
+# frames -- while gomeboy-link-broker was already on v1.3.0.
+# deploy/gomeboy_pin_test.go keeps the two in lockstep. v1.3.0 also carries the
+# WithModel(recording.Model) line that replays CGB recordings as CGB while DMG
+# recordings stay DMG.
+RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@v1.3.1 && \
+    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.3.1
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
 # .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
@@ -60,9 +67,12 @@ COPY --from=build /out/gen1-trade-peer /usr/local/bin/gen1-trade-peer
 COPY --from=build /out/gomeboy-link-broker /usr/local/bin/gomeboy-link-broker
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
 # The manager-side updater is deliberately only a stable bootstrap. Changing
-# rollout behavior and LiteLLM config travel inside the exact image digest so
-# a stale host copy cannot keep the farm pinned to old deployment logic.
+# rollout behavior, the LiteLLM config, and the iGPU replay sidecar definition
+# travel inside the exact image digest so a stale host copy cannot keep the farm
+# pinned to old deployment logic.
 COPY deploy/rollout-latest.sh /usr/local/share/pokepilot/deploy/rollout-latest.sh
 COPY deploy/litellm.yaml /usr/local/share/pokepilot/deploy/litellm.yaml
-RUN chmod +x /usr/local/share/pokepilot/deploy/rollout-latest.sh && \
+COPY deploy/replay-sidecar.sh /usr/local/share/pokepilot/deploy/replay-sidecar.sh
+RUN chmod +x /usr/local/share/pokepilot/deploy/rollout-latest.sh \
+        /usr/local/share/pokepilot/deploy/replay-sidecar.sh && \
     ln -s pokereplay /usr/local/bin/ffmpeg-vaapi

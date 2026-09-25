@@ -104,7 +104,7 @@ func pickupUtility(obs Observation, item ItemID) (pickupPriority, string) {
 			switch {
 			case heals == 0:
 				return pickupHighValue, "no HP-healing stock; free emergency healing resource" + price
-			case partyHurt(obs) || hasBossFailure(obs) || heals < targetEmergencyHeals:
+			case partyHurt(obs) || hasCombatLoss(obs) || heals < targetEmergencyHeals:
 				return pickupHighValue, fmt.Sprintf("healing stock is thin (%d/%d emergency target)%s", heals, targetEmergencyHeals, price)
 			default:
 				return pickupUseful, fmt.Sprintf("finite healing stock; %d heals currently owned%s", heals, price)

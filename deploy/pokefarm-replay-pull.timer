@@ -1,0 +1,11 @@
+[Unit]
+Description=Check for a new PokePilot farm image for the replay sidecar
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -17,11 +18,11 @@ func init() {
 	// Shopping is an interaction-owned destination: reaching the fourth floor
 	// by itself is not a useful standalone objective, and Buy expects Red to be
 	// standing beside/facing the clerk when it opens the mart menu.
-	interactionPlaces["celadon mart 4f stones"] = Destination{
-		Map: celadonMart4FMap,
-		X:   celadonMart4FClerkX,
-		Y:   celadonMart4FClerkY + 1,
-	}
+	interactionPlaces["celadon mart 4f stones"] = InteractionDestination(
+		celadonMart4FMap,
+		celadonMart4FClerkX,
+		celadonMart4FClerkY,
+	)
 }
 
 // BuyEvolutionStone travels to Celadon Mart 4F, proves from the ROM-backed mart
@@ -55,7 +56,25 @@ func BuyEvolutionStone(m *emu.Emu, romData []byte, item uint8, policy MovePolicy
 	if err != nil {
 		return travel, fmt.Errorf("skill: BuyEvolutionStone: reach Celadon Mart 4F: %w", err)
 	}
-	if err := Face(m, celadonMart4FClerkX, celadonMart4FClerkY); err != nil {
+	// The clerk stands behind a service counter, so arriving at the
+	// interaction destination parks Red two tiles away with the counter
+	// between. Face must turn toward that counter tile; facing the clerk's own
+	// tile is not adjacent and fails outright (run-jxh8lk19wv6on: 45 identical
+	// "tile (5,7) is not orthogonally adjacent to (5,5)" failures from a
+	// Celadon City checkpoint). This is the same rule TalkAt uses, so it lives
+	// in one place rather than being re-derived per interaction.
+	cur := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return travel, fmt.Errorf("skill: BuyEvolutionStone: parse map %#04x: %w", cur, err)
+	}
+	faceX, faceY, facing := interactionFacingTile(m, romData, h, celadonMart4FClerkX, celadonMart4FClerkY)
+	if !facing {
+		px, py := playerXY(m)
+		return travel, fmt.Errorf("skill: BuyEvolutionStone: not in an interaction position for the clerk at (%d,%d): standing at (%d,%d) on map %#04x",
+			celadonMart4FClerkX, celadonMart4FClerkY, px, py, cur)
+	}
+	if err := Face(m, faceX, faceY); err != nil {
 		return travel, fmt.Errorf("skill: BuyEvolutionStone: face clerk: %w", err)
 	}
 	if err := Buy(m, item, 1); err != nil {

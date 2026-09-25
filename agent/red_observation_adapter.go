@@ -5,8 +5,10 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -21,25 +23,6 @@ func init() {
 	for _, id := range gen1Games {
 		registerSemanticObservationAdapter(redSemanticObservationAdapter{id: id})
 	}
-}
-
-var redMoveTypeNames = map[uint8]string{
-	0x00: "normal",
-	0x01: "fighting",
-	0x02: "flying",
-	0x03: "poison",
-	0x04: "ground",
-	0x05: "rock",
-	0x06: "flying",
-	0x07: "bug",
-	0x08: "ghost",
-	0x14: "fire",
-	0x15: "water",
-	0x16: "grass",
-	0x17: "electric",
-	0x18: "psychic",
-	0x19: "ice",
-	0x1a: "dragon",
 }
 
 // Observe owns every Pokémon Red-specific enrichment required by the generic
@@ -75,16 +58,20 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		BlackedOut:        base.BlackedOut,
 		LeadMoves:         []Move{},
 		LeadPP:            []uint8{},
+		RepelSteps:        int(mem.U8(sym.RepelRemainingSteps)),
 		Bag:               []Item{},
 		FieldCapabilities: []FieldCapability{},
 		RecentDialogue:    []string{},
 		History:           []RoundRecord{},
 		Failures:          []Failure{},
 		Requirements:      []Requirement{},
-		PokedexOwned:      []SpeciesID{},
-		PokedexSeen:       []SpeciesID{},
+		PokedexOwned:      append([]SpeciesID(nil), base.PokedexOwned...),
+		PokedexSeen:       append([]SpeciesID(nil), base.PokedexSeen...),
+		Dex:               base.Dex,
 	}
-	obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
+	if checkpoint, ok, checkpointErr := skill.RecoveryCheckpointPlace(romData, mem.U8(sym.LastBlackoutMap)); checkpointErr == nil && ok {
+		obs.RecoveryCheckpoint = PlaceID(checkpoint)
+	}
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
@@ -117,7 +104,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 			if err != nil {
 				continue
 			}
-			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: redMoveTypeNames[mv.Type]})
+			obs.LeadMoves = append(obs.LeadMoves, Move{Power: mv.Power, Type: redTypeName(mv.Type)})
 			pp := lead.PP[slot]
 			if hasDamagingMove && !observedMoveDealsDamage(mv) {
 				pp = 0
@@ -154,15 +141,13 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		})
 	}
 
-	if grass, err := skill.HasReachableGrass(romData, obs.Map, obs.X, obs.Y); err == nil {
+	if grass, err := skill.HasReachableGrassLive(m, romData); err == nil {
 		obs.HasGrass = grass
 	}
 	routes := routeAvailabilityFor(m, romData)
 	obs.Unroutable = routes.Unroutable
 	obs.RouteBlockages = routes.Blockages
-	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil {
-		obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages)
-	}
+	obs.Dex = annotateDexRouteRequirements(obs.Dex, obs.RouteBlockages)
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {
@@ -193,9 +178,20 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		}
 	}
 
+	// Reachable Mart stock backs travel-and-buy objectives. Healing recovery
+	// needs it when emergency medicine is empty; Dex collection needs the same
+	// infrastructure when normal ball stock drops below its capture minimum.
+	if emergencyHealStock(obs) == 0 || (len(obs.Dex.Targets) > 0 && normalBallStock(obs) < minimumCaptureStock) {
+		for _, id := range skill.ReachableMartStock(m, romData) {
+			if name, ok := ItemName(id); ok {
+				obs.RestockStock = append(obs.RestockStock, name)
+			}
+		}
+	}
+
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)
-	objectGrid := mapObjectReachabilityGrid(romData, obs.Map)
+	objectGrid := mapObjectReachabilityGridLive(romData, obs.Map, &mem)
 	stationary := stationaryHomeTiles(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
@@ -220,11 +216,54 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
 	obs.Catalog = redObjectiveCatalog(obs)
+	for i := range obs.Catalog.Destinations {
+		destination := &obs.Catalog.Destinations[i]
+		if !destination.Center {
+			continue
+		}
+		redDestination, ok := skill.Place(destination.Place)
+		if !ok {
+			continue
+		}
+		destination.TravelCostChecked = true
+		if estimate, ok := skill.EstimateTravelCost(m, romData, redDestination); ok {
+			destination.TravelCostKnown = true
+			destination.TravelCost = estimate.Cost
+			destination.FastTravel = estimate.FastTravel
+			destination.FastTravelMethod = estimate.Method
+		}
+	}
+	// The ROM service role is authoritative for Center semantics. This matters
+	// for mixed-service maps such as Indigo Plateau Lobby, whose name does not
+	// contain POKECENTER but whose nurse establishes the blackout checkpoint.
+	if center, centerErr := skill.PokemonCenterMap(romData, obs.Map); centerErr == nil {
+		obs.Catalog.CurrentCenter = center
+	}
 	return obs, nil
 }
 
 func unroutablePlaces(m *emu.Emu, romData []byte) []string {
 	return routeAvailabilityFor(m, romData).Unroutable
+}
+
+func mapObjectReachabilityGridLive(romData []byte, mapID uint8, mem *state.Mem) *world.Grid {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil
+	}
+	if mem != nil && mem.U8(sym.CurMap) == mapID {
+		if g, err := skill.LiveMapGridFromMem(mem, romData, h); err == nil {
+			return g
+		}
+	}
+	// Observation stays fail-open to the stable ROM geometry when a snapshot
+	// is incomplete. A valid live snapshot, however, must own current object
+	// reachability so script-replaced doors cannot advertise impossible work.
+	g, err := world.Build(romData, h)
+	if err != nil {
+		return nil
+	}
+	return g
 }
 
 func mapObjectReachabilityGrid(romData []byte, mapID uint8) *world.Grid {
@@ -334,4 +373,9 @@ func MapObjects(romData []byte, mapID uint8) []MapObject {
 		out = append(out, mo)
 	}
 	return out
+}
+
+func redTypeName(raw uint8) string {
+	name, _ := data.TypeName(raw)
+	return name
 }

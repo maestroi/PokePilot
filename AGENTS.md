@@ -3,6 +3,30 @@
 For the in-game agent loop (`-planner llm`, objectives, seeds) see `docs/AGENT.md`.
 This file is about working *on* this repository.
 
+## Always deliver work as a pull request
+
+When a human asks you to fix, change, or add something in this repository,
+the deliverable is a **pull request**, not a dirty tree and not a local
+commit. Do the whole loop:
+
+1. Branch from a freshly fetched `origin/main`.
+2. Do the work in an isolated worktree. Do not build on whatever happens to
+   be uncommitted in the primary checkout; those edits usually belong to
+   somebody else's task.
+3. Run the verification the change warrants (`gofmt`, `go vet ./...`, and
+   `POKEMON_RED_ROM= go test -short -count=1 ./...` are the floor; add `-race`
+   for anything touching shared state).
+4. Commit with a message explaining *why*, then push the branch and open a PR
+   that closes the issue it implements.
+5. Report the PR URL and the honest verification result, including any test
+   that fails for pre-existing or environmental reasons.
+
+A branch with no PR is unfinished work. If you cannot open one, say so
+plainly instead of stopping at a local commit.
+
+**Exception: a run started by agent-runner must not commit.** See "If you are
+run by agent-runner" at the end of this file; that section outranks this one.
+
 ## Mandatory architecture gate
 
 **Before changing gameplay/runtime architecture, read `docs/ARCHITECTURE.md`.**
@@ -37,6 +61,16 @@ In particular:
   forever.
 
 ## Never read a collision grid into context
+
+Use the public World Explorer for orientation and shareable diagnosis:
+`https://rompilot.app/world`. For map/routing work, the repo-local
+`.claude/skills/world-map-debug/SKILL.md` defines the intended sequence:
+Explorer for spatial context, `skill/probe_test.go` for exact local
+walkability/state answers, and `cmd/worldverify` for graph-wide invariants.
+
+The Explorer's decomp artwork is not collision proof, and static NPC/trainer
+markers are not current RAM positions. Do not turn a visual impression into a
+routing fact; measure it.
 
 Route 2 is 20x72. Viridian Forest is 34x48. Nothing is meant to read those
 tiles but a breadth-first search, and an agent that reconstructs one by hand
@@ -97,10 +131,11 @@ one call that answers all ten.
 
 ## Read the decomp; it is vendored here
 
-The full pokered decomposition is at `pokered/` in every worktree — no setup,
-no network. It writes its own paths as `scripts/Foo.asm`; here they are
-`pokered/scripts/Foo.asm`, and several attempts have burned budget
-rediscovering that. `docs/POKERED.md` maps question -> file.
+The pret decomps are at `pokered/` and `pokeyellow/` in every worktree — no
+setup, no network. They write their own paths as `scripts/Foo.asm`; here they
+are `pokered/scripts/Foo.asm` or `pokeyellow/scripts/Foo.asm`, and several
+attempts have burned budget rediscovering that. `docs/POKERED.md` and
+`docs/POKEYELLOW.md` map question -> file.
 
 Read how a value is **written**, not only how it is read. Sprite map
 coordinates are stored with +4 added (`macros/scripts/maps.asm`), which is
@@ -175,6 +210,11 @@ Write verbose test output to a file and grep it rather than into context.
 records the diff, runs the declared verification, and commits it itself; a
 clean tree trips the no-changes gate and fails the run even when the
 verification passes. This has cost this project several runs.
+
+This is the one exception to "Always deliver work as a pull request" above:
+the runner owns the commit, and the PR is opened from its Git commit, not
+yours. Everything else in that section — branch/verify, explain *why*, report
+the honest result — still applies to what you leave behind.
 
 Reporting "this task is built on a wrong assumption" is a good outcome, and
 has been the right answer more than once. Stop and say so rather than

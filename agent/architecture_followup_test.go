@@ -92,32 +92,31 @@ func TestGymRecoveryPreservesMultipleScopedRetries(t *testing.T) {
 	known := NewKnowledge(nil)
 	for i, place := range []string{"pewter gym", "cerulean gym"} {
 		o := Objective{Kind: KindGym, Place: PlaceID(place)}
-		known.Failures[gymLossFailureKey(place)] = Failure{
+		known.Failures[legacyGymLossStorageKey(place)] = Failure{
 			Objective: o.String(),
 			Times:     i + 1,
 			Last:      "lost",
 		}
 	}
 
-	known.clearGymLossFailures()
-	ready := gymRetryPlaces(known)
-	if len(ready) != 2 || !ready["pewter gym"] || !ready["cerulean gym"] {
+	known.promoteCombatLossesToRetry()
+	ready := combatRetryKeys(known)
+	pewterKey := combatRecoveryObjective(Objective{Kind: KindGym, Place: "pewter gym"}).Key()
+	ceruleanKey := combatRecoveryObjective(Objective{Kind: KindGym, Place: "cerulean gym"}).Key()
+	if len(ready) != 2 || !ready[pewterKey] || !ready[ceruleanKey] {
 		t.Fatalf("multi-gym recovery collapsed retry state: %+v", ready)
-	}
-	if place, ok := gymRetryPending(known); !ok || place != "cerulean gym" {
-		t.Fatalf("deterministic retry selection = %q, %v; want cerulean gym", place, ok)
 	}
 
 	// A new loss at Cerulean must suppress only Cerulean. Pewter's independent
 	// trained retry remains due instead of being masked by an unrelated loss.
 	cerulean := Objective{Kind: KindGym, Place: "cerulean gym"}
-	known.Failures[gymLossFailureKey("cerulean gym")] = Failure{Objective: cerulean.String(), Times: 3, Last: "lost again"}
-	ready = gymRetryPlaces(known)
-	if len(ready) != 1 || !ready["pewter gym"] {
+	known.Failures[legacyGymLossStorageKey("cerulean gym")] = Failure{Objective: cerulean.String(), Times: 3, Last: "lost again"}
+	ready = combatRetryKeys(known)
+	if len(ready) != 1 || !ready[pewterKey] || ready[ceruleanKey] {
 		t.Fatalf("fresh Cerulean loss masked Pewter retry: %+v", ready)
 	}
 
-	out := filterTrainerLossBlocked([]Objective{
+	out := filterCombatRecoveryBlocked([]Objective{
 		{Kind: KindTrain, Level: 22},
 		{Kind: KindGoTo, Place: "pewter gym"},
 		{Kind: KindGoTo, Place: "cerulean gym"},

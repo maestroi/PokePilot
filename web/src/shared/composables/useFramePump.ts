@@ -95,10 +95,10 @@ export function useFramePump(
     }
   }
 
-  function restart(): void {
+  function restart(preserveFrame = false): void {
     stopPump()
     error.value = ''
-    releaseFrame()
+    if (!preserveFrame) releaseFrame()
     if (!enabled.value || !runID.value) {
       state.value = 'idle'
       return
@@ -108,8 +108,9 @@ export function useFramePump(
     void tick(id)
   }
 
-  watch([runID, enabled], restart)
-  onMounted(restart)
+  watch([runID, enabled], () => restart())
+  if (continuous) watch(continuous, () => restart(true))
+  onMounted(() => restart())
   onScopeDispose(() => {
     stopPump()
     releaseFrame()

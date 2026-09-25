@@ -154,6 +154,27 @@ func TestClientCheckpointRejectsInvalidArtifacts(t *testing.T) {
 	}
 }
 
+func TestClientCheckpointRejectsEmptyStateBeforeUploading(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("Checkpoint must not publish an empty state")
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	empty := sha256.Sum256(nil)
+	err := c.Checkpoint(context.Background(), CheckpointReport{
+		RunID: "r1",
+		Artifacts: []Artifact{{
+			Name:      "round-001-frame-0003842410-progress-secret-key-owned.state",
+			MediaType: "application/octet-stream",
+			SHA256:    hex.EncodeToString(empty[:]),
+		}},
+	})
+	if err == nil {
+		t.Fatal("Checkpoint accepted an empty state payload")
+	}
+}
+
 func TestClientPingSendsVersion(t *testing.T) {
 	var got WorkerPing
 	srv := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {

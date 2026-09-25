@@ -31,7 +31,7 @@ func TestOfferTable(t *testing.T) {
 		mustNot []string
 	}{
 		{
-			name: "fresh boot at pallet: starters, one step out, nothing else",
+			name: "fresh boot at pallet: mandatory starter only",
 			obs:  Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0},
 			known: func() *Knowledge {
 				k := testKnowledge(adj)
@@ -42,10 +42,8 @@ func TestOfferTable(t *testing.T) {
 				"take the charmander starter",
 				"take the squirtle starter",
 				"take the bulbasaur starter",
-				"go to route 1",
-				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"pewter", "heal", "catch", "train", "gym", "parcel", "progress"},
+			mustNot: []string{"go to", "pewter", "heal", "catch", "train", "gym", "parcel", "progress"},
 		},
 		{
 			name: "on route 1 with a party, balls and grass: one catch per species the map rolls",
@@ -90,8 +88,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
@@ -316,12 +312,10 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to route 1",
 				"go to route 1, fleeing wild battles",
 			},
-			mustNot: []string{"pewter city", "viridian city", "forest", "lab", "progress"},
+			mustNot: []string{"pallet town", "pewter city", "viridian city", "forest", "lab", "progress"},
 		},
 		{
 			name: "a place the game named in dialogue joins the menu",
@@ -336,8 +330,6 @@ func TestOfferTable(t *testing.T) {
 				return k
 			},
 			want: []string{
-				"go to pallet town",
-				"go to pallet town, fleeing wild battles",
 				"go to pewter city",
 				"go to pewter city, fleeing wild battles",
 				"go to route 1",
@@ -623,6 +615,8 @@ func TestOfferMapObjects(t *testing.T) {
 func TestOfferDoesNotRepeatCompletedTalk(t *testing.T) {
 	obs := Observation{GameID: testGameID,
 		Map: 0x28,
+		// Starter already chosen, so talk stays on the menu.
+		PartyCount: 1,
 		MapObjects: []MapObject{
 			{X: 8, Y: 3, Kind: "person"},
 			{X: 5, Y: 2, Kind: "person"},
@@ -686,7 +680,9 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 }
 
 func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
-	known := NewKnowledge(nil)
+	known := testKnowledge(map[uint8][]uint8{0x0c: {0x00}})
+	known.SawMap(0x0c)
+	known.SawMap(0x00)
 	mk := func(hp, maxHP uint16) Observation {
 		return Observation{GameID: testGameID,
 			Map: 0x0c, MapName: "ROUTE_1", HasGrass: true, PartyCount: 1,

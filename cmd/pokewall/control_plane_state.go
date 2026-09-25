@@ -56,14 +56,18 @@ func restorePersistedState(w *Wall, ps persistedState) {
 		w.order = append(w.order, id)
 		w.tiles[id] = &Tile{
 			RunID: pt.RunID, Status: pt.Status, Planner: pt.Planner, Starter: pt.Starter,
-			Dest: pt.Dest, Goal: pt.Goal, LLMProfile: pt.LLMProfile, LLMDeployment: pt.LLMDeployment,
+			Dest: pt.Dest, Goal: pt.Goal, PlayStyle: pt.PlayStyle, Purpose: pt.Purpose, RiskTolerance: pt.RiskTolerance,
+			WildEncounters: pt.WildEncounters, LLMProfile: pt.LLMProfile, LLMDeployment: pt.LLMDeployment,
 			ExperimentID: pt.ExperimentID, ExperimentArm: pt.ExperimentArm, ExperimentCase: pt.ExperimentCase,
-			ReasoningEffort: pt.ReasoningEffort,
-			Seed:            pt.Seed, FPS: pt.FPS, MaxRounds: pt.MaxRounds, MaxFrames: pt.MaxFrames,
-			Endless: pt.Endless, RandomSeed: pt.RandomSeed,
+			ReasoningEffort: pt.ReasoningEffort, DecisionEngine: pt.DecisionEngine.Clone(),
+			Seed: pt.Seed, FPS: pt.FPS, MaxRounds: pt.MaxRounds, MaxFrames: pt.MaxFrames,
+			RecoveryProfile: pt.RecoveryProfile, Endless: pt.Endless, RandomSeed: pt.RandomSeed,
 			QueuedAt: timeFromUnix(pt.QueuedAt), EndedAt: timeFromUnix(pt.EndedAt),
 			Attempts: pt.Attempts, ErrorAttempts: pt.ErrorAttempts, LossRecoveries: pt.LossRecoveries,
-			Frame: pt.Frame, Map: pt.Map, X: pt.X, Y: pt.Y,
+			RecoveryAttempts: pt.RecoveryAttempts, RecoveryBadges: pt.RecoveryBadges, RecoveryEvents: pt.RecoveryEvents, RecoveryMaps: pt.RecoveryMaps,
+			RecoveryDexOwned: pt.RecoveryDexOwned,
+			Activity:         copyRunActivity(pt.Activity),
+			Frame:            pt.Frame, Map: pt.Map, X: pt.X, Y: pt.Y,
 			Trace: pt.Trace, Question: pt.Question, Decision: pt.Decision, StopSoFar: pt.StopSoFar,
 			Stats: pt.Stats, Player: pt.Player, Reason: pt.Reason, Detail: pt.Detail,
 			Finished: pt.Finished, workerAddrs: append([]string(nil), pt.WorkerAddrs...),
@@ -168,6 +172,7 @@ func controlPlanePersistedStateLocked(w *Wall) persistedState {
 		pt.Stats = nil
 		pt.Player = nil
 		pt.WorkerAddrs = nil
+		pt.Activity = durableRunActivity(pt.Activity)
 		ps.Tiles[id] = pt
 	}
 	return ps

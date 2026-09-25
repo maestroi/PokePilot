@@ -8,13 +8,23 @@ export interface WorldConnection {
   offsetBlocks: number
 }
 
-export type WorldPoiKind = 'npc' | 'trainer' | 'item' | 'sign'
+export type WorldPoiKind = 'npc' | 'trainer' | 'item' | 'sign' | 'encounter' | 'object'
 
 export interface WorldPoi {
   x: number
   y: number
   kind: WorldPoiKind
   label: string
+  sprite?: string
+  spriteAsset?: string | null
+  movement?: string
+  facing?: string
+  textSymbol?: string
+  trainerClass?: string
+  trainerNumber?: number | null
+  item?: string
+  species?: string
+  level?: number
 }
 
 export interface WorldMapMeta {
@@ -22,6 +32,8 @@ export interface WorldMapMeta {
   name: string
   width: number
   height: number
+  sourceName: string | null
+  tileset: string | null
   x?: number
   y?: number
   connections: readonly WorldConnection[]

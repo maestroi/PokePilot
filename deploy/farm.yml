@@ -55,6 +55,13 @@ services:
     environment:
       POKEPILOT_MODEL_REGISTRY: /etc/pokepilot/models.json
       POKEPILOT_MODELHOST_TOKEN: ${POKEPILOT_MODELHOST_TOKEN:-}
+      # Paired benchmarks use these immutable identities to decide whether
+      # two arms are actually comparable. Per-game hashes win over the
+      # legacy generic hash so Red/Blue experiments cannot share the wrong ROM.
+      POKEPILOT_ROM_SHA256: ${POKEPILOT_ROM_SHA256:-}
+      POKEPILOT_ROM_SHA256_POKEMON_RED: ${POKEPILOT_ROM_SHA256_POKEMON_RED:-}
+      POKEPILOT_ROM_SHA256_POKEMON_BLUE: ${POKEPILOT_ROM_SHA256_POKEMON_BLUE:-}
+      POKEPILOT_PROMPT_SHA256: ${POKEPILOT_PROMPT_SHA256:-}
     configs:
       - source: model_registry
         target: /etc/pokepilot/models.json
@@ -210,6 +217,9 @@ services:
       # only virtual-trader availability into its observation; endpoints never
       # enter the planner prompt.
       POKEPILOT_LINK_BROKER: linkbroker:8765
+      # Advertised again after #1903: gomeboy v1.3.1 fixed the serial re-arm
+      # freeze behind #1370, and TestVirtualCableClubTrade completes the ROM
+      # trade end to end flat out and at paced fps.
       POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080
       # POKEPILOT_ROM_DIR is where the runner looks for every cartridge it can
       # play; POKEMON_RED_ROM names the one non-farm mode boots from.
@@ -276,6 +286,20 @@ services:
       POKEPILOT_LLM_FALLBACK_NO_THINK: ${POKEPILOT_LLM_FALLBACK_NO_THINK:-}
       POKEPILOT_LLM_FALLBACK_MAX_TOKENS: ${POKEPILOT_LLM_FALLBACK_MAX_TOKENS:-}
       POKEPILOT_LLM_FALLBACK_TIMEOUT: ${POKEPILOT_LLM_FALLBACK_TIMEOUT:-}
+
+      # Fast typed-decision backend (docs/TYPED-DECISIONS.md). Endpoint and
+      # model come from the run's registered decision deployment; runners only
+      # carry the key its token_env names (TYPESAFE_API_KEY for Jev), exactly
+      # like strategist tokens. None uses it unless a run selects that
+      # deployment. The DECISION_* values below are defaults for runs without
+      # a registered deployment only (unset backend = off). A Jev run leased by
+      # a runner without the key fails at start with "credentials are not
+      # configured".
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      POKEPILOT_DECISION_BACKEND: ${POKEPILOT_DECISION_BACKEND:-}
+      POKEPILOT_DECISION_MODEL: ${POKEPILOT_DECISION_MODEL:-}
+      POKEPILOT_DECISION_URL: ${POKEPILOT_DECISION_URL:-}
+      POKEPILOT_DECISION_TIMEOUT: ${POKEPILOT_DECISION_TIMEOUT:-}
     volumes:
       - ${POKEPILOT_ROM_DIR}:/rom:ro
     deploy:

@@ -17,7 +17,7 @@ func TestLostWorkerRetryOffersLatestConsistentCheckpoint(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "long-run", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "long-run", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {
@@ -67,7 +67,7 @@ func TestOrdinaryErrorRetryResumesLatestMajorCheckpoint(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "buggy", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "buggy", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {
@@ -118,7 +118,7 @@ func TestOrdinaryErrorRetryWithoutBadgeStartsFresh(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "pre-gym", Planner: "llm", Goal: "beat the game"})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "pre-gym", Planner: "llm", Goal: farm.GoalFrom("beat the game")})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil {

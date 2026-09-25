@@ -173,6 +173,7 @@ func TestFarmImageCarriesRolloutBundle(t *testing.T) {
 	for _, want := range []string{
 		"COPY deploy/rollout-latest.sh /usr/local/share/pokepilot/deploy/rollout-latest.sh",
 		"COPY deploy/litellm.yaml /usr/local/share/pokepilot/deploy/litellm.yaml",
+		"COPY deploy/replay-sidecar.sh /usr/local/share/pokepilot/deploy/replay-sidecar.sh",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Dockerfile does not embed rollout bundle entry %q", want)
@@ -181,7 +182,7 @@ func TestFarmImageCarriesRolloutBundle(t *testing.T) {
 }
 
 func TestPullLatestShellSyntax(t *testing.T) {
-	for _, script := range []string{"./pull-latest.sh", "./rollout-latest.sh"} {
+	for _, script := range []string{"./pull-latest.sh", "./rollout-latest.sh", "./replay-pull.sh", "./replay-sidecar.sh"} {
 		cmd := exec.Command("bash", "-n", script)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("bash -n %s: %v\n%s", script, err, out)

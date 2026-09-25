@@ -9,8 +9,10 @@ const (
 
 // Celadon is like Vermilion at the objective boundary: the meaningful gym
 // challenge begins outside the building because the approach is Cut-gated.
-// Unlike Surge, Erika has no internal puzzle, so the ordinary Gym Travel to
-// Place("celadon gym") can own both the exterior Cut recovery and the trainer
+// Inside, Erika's chamber is also sealed by gym Cut trees, so leaving after
+// the badge still needs the same local Cut capability Traverse now applies
+// when land-only FindPath cannot reach the door. Ordinary Gym Travel to
+// Place("celadon gym") owns the exterior Cut recovery and the trainer
 // battles on the way to the leader.
 func init() {
 	erika := GymInfo{

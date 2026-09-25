@@ -93,6 +93,9 @@ func (cp *controlPlane) persistFinish(w *Wall, report farm.FinishReport) error {
 	if err := cp.persistStrategicRecordsTx(tx, w, durable.report.RunID, attempt); err != nil {
 		return err
 	}
+	// Typed decisions are not written per call: the run's row keeps their
+	// fixed-size LLMStats.DecisionSummary. decision_exchanges only holds
+	// rows from older runs.
 	if err := tx.Commit(); err != nil {
 		return err
 	}
@@ -172,6 +175,7 @@ func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 					parsed.FramePNG = w.captureFinishFrame(parsed.RunID)
 				}
 				finish = &parsed
+				req = withFinishReport(req, parsed)
 			}
 			req.Body = io.NopCloser(bytes.NewReader(data))
 			req.ContentLength = int64(len(data))

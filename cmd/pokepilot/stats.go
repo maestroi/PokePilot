@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/benchmark"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 )
 
 type (
@@ -30,8 +34,10 @@ type statsPlanner struct {
 	// llm_profile chooses inference routing; these fields choose orthogonal
 	// gameplay policy. They intentionally remain independent knobs.
 	playStyle      agent.PlayStyleProfile
+	purpose        string
 	riskTolerance  string
 	wildEncounters string
+	decision       agent.DecisionSettings
 
 	stats                runStats
 	counts               map[string]int
@@ -52,49 +58,73 @@ type statsPlanner struct {
 	strategySeen    bool
 	stallCaptured   bool
 	baseExtraSystem string
+
+	benchmarkCalls         []agent.LLMCall
+	benchmarkDecisionCalls []benchmark.DecisionCall
+
+	// battleShadowFailures counts consecutive failed battle-turn calls;
+	// battleShadowSuspended stops asking for the rest of the run once the
+	// backend has proven unreachable, so a dead endpoint cannot add its
+	// timeout to every remaining battle turn.
+	battleShadowFailures  int
+	battleShadowSuspended bool
 }
 
-// newStatsPlanner remains source-compatible with existing local/tests. Farm
-// construction consumes run policy from the lease farm.Client just decoded;
-// local construction consumes the corresponding CLI flags. Empty values keep
-// the historical compatibility defaults.
-func newStatsPlanner(profile, reasoningEffort, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	playStyle := localPlayStyleName()
-	riskTolerance := localRiskToleranceName()
-	wildEncounters := localWildEncountersName()
-	if snap != nil {
-		playStyle = farm.CurrentPlayStyle()
-		riskTolerance = farm.CurrentRiskTolerance()
-		wildEncounters = farm.CurrentWildEncounters()
+// newStatsPlannerWithRunPolicy builds the planner for one run from the policy
+// that describes it. Every gameplay knob — goal, play style, purpose, risk
+// tolerance, and wild-encounter policy — plus the run's own inference identity is passed
+// by value, so a process handling two runs can never leak one run's policy
+// into the other. Empty values keep the historical compatibility defaults.
+func newStatsPlannerWithRunPolicy(policy farm.RunPolicy, llmProfile, reasoningEffort string, inference *farm.InferenceIdentity, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
+	playStyle, purpose, riskTolerance, wildEncounters := policy.PlayStyle, string(policy.Purpose), policy.RiskTolerance, policy.WildEncounters
+	goal := policy.Goal
+	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(llmProfile), agent.NormalizeReasoningEffort(reasoningEffort))
+	// The run's inference identity is its own copy. Adopting a model the live
+	// endpoint actually answered with records the divergence on that copy
+	// instead of mutating a process-global lease.
+	if inference != nil && inference.Endpoint != "" && inference.APIModel != "" {
+		// A first-class leased deployment is authoritative. Keep the endpoint
+		// tuning defaults (no-think, token budget, reasoning effort), but route
+		// the request to the exact endpoint/model identity the wall resolved.
+		// This is what lets a pinned llama.cpp endpoint change 27B -> 9B without
+		// rebuilding the runner, and prevents experiment identity from diverging
+		// from the model actually requested.
+		primaryCfg.BaseURL = inference.Endpoint
+		primaryCfg.Model = inference.APIModel
+		primaryCfg.Token = ""
+		if inference.TokenEnv != "" {
+			primaryCfg.Token = os.Getenv(inference.TokenEnv)
+		}
+		fallbackCfg = nil
 	}
-	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal, m, push, snap)
-}
-
-// newStatsPlannerWithPlayStyle is kept for existing tests/callers that only
-// choose a play style. Empty risk/wild settings preserve the old behavior.
-func newStatsPlannerWithPlayStyle(profile, reasoningEffort, playStyle, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	return newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, "", "", goal, m, push, snap)
-}
-
-func newStatsPlannerWithRunPolicy(profile, reasoningEffort, playStyle, riskTolerance, wildEncounters, goal string, m *emu.Emu, push func(any), snap *heartbeatSnap) *statsPlanner {
-	primaryCfg, fallbackCfg := agent.ResolveLLMEndpointsWithEffort(agent.NormalizeLLMProfile(profile), agent.NormalizeReasoningEffort(reasoningEffort))
 	inner := agent.NewLLMPlannerFromConfig(primaryCfg)
 	inner.Goal = goal
+	inner.OnModelAdopted = func(model string) {
+		if inference != nil {
+			inference.AdoptModel(model)
+		}
+	}
 	var fallback *agent.LLMPlanner
 	if fallbackCfg != nil {
 		fallback = agent.NewLLMPlannerFromConfig(*fallbackCfg)
+		fallback.OnModelAdopted = inner.OnModelAdopted
 	}
 
 	s := &statsPlanner{
-		inner:            inner,
-		emu:              m,
-		push:             push,
-		snap:             snap,
-		playStyle:        agent.PlayStyle(playStyle),
-		riskTolerance:    agent.NormalizeRiskTolerance(riskTolerance),
-		wildEncounters:   agent.NormalizeWildEncounters(wildEncounters),
-		counts:           map[string]int{},
-		baseExtraSystem:  appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
+		inner:          inner,
+		emu:            m,
+		push:           push,
+		snap:           snap,
+		playStyle:      agent.PlayStyle(playStyle),
+		purpose:        agent.NormalizeRunPurpose(purpose),
+		riskTolerance:  agent.NormalizeRiskTolerance(riskTolerance),
+		wildEncounters: agent.NormalizeWildEncounters(wildEncounters),
+		decision:       agent.DecisionSettingsFromEnv(),
+		counts:         map[string]int{},
+		baseExtraSystem: appendSystemNote(
+			appendSystemNote(inner.ExtraSystem, agent.PlayStyleSystemNote(playStyle)),
+			agent.RunPurposeSystemNote(purpose),
+		),
 		lastTelemetrySeq: currentLLMTelemetrySeq(),
 	}
 	s.router = agent.NewFailoverPlanner(inner, fallback)
@@ -110,6 +140,7 @@ func (s *statsPlanner) wirePlannerLogs(log io.Writer, snap *heartbeatSnap) {
 		s.inner.PromptLog = policyRawWriter{
 			snap:           snap,
 			playStyle:      s.playStyle.Name,
+			purpose:        s.purpose,
 			riskTolerance:  s.riskTolerance,
 			wildEncounters: s.wildEncounters,
 		}
@@ -127,9 +158,18 @@ func (s *statsPlanner) NextRetry(obs agent.Observation, offered []agent.Objectiv
 	return s.ask(obs, offered, &r)
 }
 
+func (s *statsPlanner) RoutePriority() agent.RoutePriority {
+	return agent.RoutePriorityForPlayStyle(s.playStyle)
+}
+
+func (s *statsPlanner) PlanningMenu(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+	return s.applyRunPolicy(obs, offered)
+}
+
 func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	offered = agent.ApplyRunPolicy(obs, offered, s.riskTolerance, s.wildEncounters)
-	return agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
+	return agent.ApplyRunPurpose(obs, offered, s.purpose, s.inner.Goal)
 }
 
 // boundRiskPlan keeps persistent planning from skipping the safety decision
@@ -171,10 +211,282 @@ func (s *statsPlanner) ask(obs agent.Observation, offered []agent.Objective, ret
 		offered = farmRecoveryOffered(obs, offered)
 	}
 	offered = s.applyRunPolicy(obs, offered)
+	if retry == nil && s.decision.Engine != nil && s.decision.ObjectiveSelection {
+		if s.decision.Shadow {
+			return s.shadowObjective(obs, offered)
+		}
+		if objective, ok := s.typedObjective(obs, offered); ok {
+			return objective, nil
+		}
+	}
 	if retry == nil {
 		return s.router.Next(obs, offered)
 	}
 	return s.router.NextRetry(obs, offered, *retry)
+}
+
+func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, bool) {
+	req, resp, objective, err := s.consultObjective(obs, offered)
+	s.recordDecision(req, resp, err, nil)
+	if err != nil {
+		return agent.Objective{}, false
+	}
+	s.recordTypedObjectiveChoice(obs, objective)
+	return objective, true
+}
+
+// shadowOutcome is what the existing policy did instead of a shadow answer.
+// agreed is nil when the shadow answer was unusable.
+type shadowOutcome struct {
+	executed string
+	agreed   *bool
+}
+
+// shadowObjective asks the typed backend, then lets the existing planner
+// choose exactly as it would with the backend off. The backend's answer is
+// recorded with whether it agreed; it never reaches the returned objective.
+func (s *statsPlanner) shadowObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
+	req, resp, shadow, shadowErr := s.consultObjective(obs, offered)
+	objective, err := s.router.Next(obs, offered)
+	outcome := &shadowOutcome{}
+	if err == nil {
+		outcome.executed = objective.String()
+		if shadowErr == nil {
+			same := shadow.String() == objective.String()
+			outcome.agreed = &same
+		}
+	}
+	s.recordDecision(req, resp, shadowErr, outcome)
+	return objective, err
+}
+
+// consultObjective asks the backend to pick from the offered menu. The caller
+// records the call once it knows what executed.
+func (s *statsPlanner) consultObjective(obs agent.Observation, offered []agent.Objective) (agent.DecisionRequest, agent.DecisionResponse, agent.Objective, error) {
+	req, err := agent.ObjectiveDecisionRequest(obs, offered, s.inner.Goal)
+	if err != nil {
+		return req, agent.DecisionResponse{}, agent.Objective{}, err
+	}
+	resp, err := agent.DecideChecked(context.Background(), s.decision.Engine, req)
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	var objective agent.Objective
+	if err == nil {
+		objective, err = agent.Chosen(offered, resp.Choice)
+	}
+	return req, resp, objective, err
+}
+
+// DecideFailure implements agent.FailureDecisionPlanner. Run calls it only for
+// failures already admitted by deterministic recovery policy; an unavailable,
+// rejected, or low-confidence typed answer simply falls back to that existing
+// policy.
+func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.DecisionResponse, error) {
+	if s.decision.Engine == nil || !s.decision.FailureRecovery {
+		return agent.DecisionResponse{}, agent.ErrDecisionDisabled
+	}
+	req, err := agent.FailureDecisionRequest(result)
+	if err != nil {
+		s.recordDecision(req, agent.DecisionResponse{}, err, nil)
+		return agent.DecisionResponse{}, err
+	}
+	resp, err := agent.DecideChecked(context.Background(), s.decision.Engine, req)
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	if s.decision.Shadow {
+		// Deterministic policy already chose to continue through recovery;
+		// the backend agrees unless it asked to stop the run.
+		outcome := &shadowOutcome{executed: "continue"}
+		if err == nil {
+			if stop, mapErr := agent.FailureDecisionStops(resp.Choice); mapErr == nil {
+				same := !stop
+				outcome.agreed = &same
+			}
+		}
+		s.recordDecision(req, resp, err, outcome)
+		return agent.DecisionResponse{}, fmt.Errorf("%w: shadow mode observes only", agent.ErrDecisionDisabled)
+	}
+	s.recordDecision(req, resp, err, nil)
+	return resp, err
+}
+
+// Battle-turn shadow calls block the battle loop (never the emulator's
+// frames), so they get a tighter deadline than the backend's default and stop
+// after a few consecutive failures.
+const (
+	battleShadowTimeout     = 15 * time.Second
+	battleShadowMaxFailures = 3
+)
+
+// ObserveBattleTurn implements agent.BattleTurnObserver. With battle
+// decisions enabled (shadow only), it asks the typed backend about the turn
+// the adapter just reported and records whether the backend's legal answer
+// matches the move the deterministic policy is pressing. The answer never
+// reaches execution.
+func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow || s.battleShadowSuspended {
+		return
+	}
+	req, err := agent.BattleDecisionRequest(turn)
+	if err != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), battleShadowTimeout)
+	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
+	cancel()
+	transportErr := err
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	outcome := &shadowOutcome{executed: decisionChoiceLabel(req, executed.ID())}
+	if outcome.executed == "" {
+		outcome.executed = executed.ID()
+	}
+	if err == nil {
+		var action game.BattleAction
+		if action, err = agent.ResolveBattleDecision(turn, resp); err == nil {
+			same := action == executed
+			outcome.agreed = &same
+		}
+	}
+	if transportErr != nil {
+		s.battleShadowFailures++
+		s.battleShadowSuspended = s.battleShadowFailures >= battleShadowMaxFailures
+	} else {
+		s.battleShadowFailures = 0
+	}
+	s.recordDecision(req, resp, err, outcome)
+}
+
+func (s *statsPlanner) recordTypedObjectiveChoice(obs agent.Observation, objective agent.Objective) {
+	s.stats.FastCalls++
+	s.stats.Rounds++
+	s.stats.Round, s.stats.RoundsLeft = obs.Round, obs.RoundsLeft
+	name := objective.String()
+	if s.counts[name] > 0 {
+		s.stats.Repeats++
+	}
+	s.counts[name]++
+	s.stats.Choices = rankChoices(s.counts)
+	s.publish()
+}
+
+func benchmarkDecisionBackend(response, configured string) string {
+	if response != "" {
+		return response
+	}
+	return configured
+}
+
+func cloneDecisionProbabilities(in map[string]float64) map[string]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]float64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+// maxDecisionFeed bounds the live decision feed that travels on every
+// heartbeat. Older decisions survive only in the run's DecisionSummary.
+const maxDecisionFeed = 32
+
+// recordDecision records one finished backend call: it feeds the running
+// counters and the run's fixed-size summary, and pushes the call onto the
+// bounded live feed. An error means the existing path decided instead, so
+// it is also a fallback. shadow is nil for calls whose answer was allowed
+// to act.
+func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, shadow *shadowOutcome) {
+	fallback := err != nil
+	s.benchmarkDecisionCalls = append(s.benchmarkDecisionCalls, benchmark.DecisionCall{
+		Kind: req.Kind, Duration: resp.Duration, PromptTokens: resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens, Backend: benchmarkDecisionBackend(resp.Backend, s.decision.Backend),
+		Model: resp.Model, Err: err,
+	})
+	s.stats.DecisionCalls++
+	s.stats.DecisionSeconds += resp.Duration.Seconds()
+	s.stats.DecisionAvgSeconds = s.stats.DecisionSeconds / float64(s.stats.DecisionCalls)
+	s.stats.DecisionPromptTokens += resp.Usage.PromptTokens
+	s.stats.DecisionCompletionTokens += resp.Usage.CompletionTokens
+	s.stats.DecisionInputBytes += resp.Usage.InputBytes
+	s.stats.DecisionOutputBytes += resp.Usage.OutputBytes
+	if err != nil {
+		s.stats.DecisionRejected++
+	}
+	if fallback {
+		s.stats.DecisionFallbacks++
+	}
+	if resp.Backend != "" {
+		s.stats.DecisionBackend = resp.Backend
+	} else if s.decision.Backend != "" {
+		s.stats.DecisionBackend = s.decision.Backend
+	}
+	if resp.Model != "" {
+		s.stats.DecisionModel = resp.Model
+	}
+	s.stats.DecisionKind = req.Kind
+	s.stats.DecisionMode = s.decision.Mode()
+	s.stats.DecisionChoice = resp.Choice
+	s.stats.DecisionConfidence = resp.Confidence
+	s.stats.DecisionProbabilities = cloneDecisionProbabilities(resp.Probabilities)
+
+	record := farm.TypedDecisionRecord{
+		Kind:             req.Kind,
+		Choice:           resp.Choice,
+		ChoiceLabel:      decisionChoiceLabel(req, resp.Choice),
+		Probabilities:    cloneDecisionProbabilities(resp.Probabilities),
+		Confidence:       resp.Confidence,
+		DurationSeconds:  resp.Duration.Seconds(),
+		Backend:          resp.Backend,
+		Model:            resp.Model,
+		PromptTokens:     resp.Usage.PromptTokens,
+		CompletionTokens: resp.Usage.CompletionTokens,
+		InputBytes:       resp.Usage.InputBytes,
+		OutputBytes:      resp.Usage.OutputBytes,
+		Fallback:         fallback,
+	}
+	if record.Backend == "" {
+		record.Backend = s.decision.Backend
+	}
+	if err != nil {
+		record.Error = err.Error()
+	}
+	if shadow != nil {
+		record.Shadow, record.Executed, record.Agreed = true, shadow.executed, shadow.agreed
+		if shadow.agreed != nil {
+			if *shadow.agreed {
+				s.stats.DecisionAgreements++
+			} else {
+				s.stats.DecisionDisagreements++
+			}
+		}
+	}
+	if s.stats.DecisionSummary == nil {
+		s.stats.DecisionSummary = &farm.DecisionSummary{}
+	}
+	s.stats.DecisionSummary.Observe(record)
+	if len(s.stats.DecisionRecords) >= maxDecisionFeed {
+		drop := len(s.stats.DecisionRecords) - maxDecisionFeed + 1
+		s.stats.DecisionRecords = append(s.stats.DecisionRecords[:0], s.stats.DecisionRecords[drop:]...)
+		s.stats.DecisionRecordsDropped += drop
+	}
+	s.stats.DecisionRecords = append(s.stats.DecisionRecords, record)
+	s.publish()
+}
+
+// decisionChoiceLabel names the chosen option from the request's own
+// declared choices.
+func decisionChoiceLabel(req agent.DecisionRequest, choice string) string {
+	for _, c := range req.Choices {
+		if c.ID == choice {
+			return c.Label
+		}
+	}
+	return ""
 }
 
 func (s *statsPlanner) Strategize(obs agent.Observation, offered []agent.Objective, reason string) (agent.Plan, error) {
@@ -202,8 +514,14 @@ func (s *statsPlanner) ObservePlanning(p agent.PlanningStats) {
 	s.stats.PlanSteps = append([]string(nil), p.Plan.Steps...)
 	s.stats.PlanStep = p.Plan.Step
 	s.stats.PlanRound = p.Plan.Round
+	s.stats.PlanBoundary = p.Plan.Boundary
 	s.stats.PlanExecutions = p.PlanExecutions
+	s.stats.LegAutoExecutions = p.LegAutoExecutions
+	s.stats.LegFastExecutions = p.LegFastExecutions
+	s.stats.LegBoundaries = p.LegBoundaries
+	s.stats.LegTailStepsDropped = p.LegTailStepsDropped
 	s.stats.StepsSkipped = p.StepsSkipped
+	s.stats.LastLegDecision = p.LastLegDecision
 	s.stats.LastReplanReason = p.LastReplanReason
 	s.stats.ReplanReasons = make(map[string]int, len(p.ReplanReasons))
 	for k, v := range p.ReplanReasons {
@@ -258,6 +576,9 @@ func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent
 }
 
 func appendSystemNote(base, note string) string {
+	if note == "" {
+		return base
+	}
 	if base == "" {
 		return note
 	}
@@ -269,6 +590,7 @@ func (s *statsPlanner) record(obs agent.Observation, offered int, o agent.Object
 }
 
 func (s *statsPlanner) recordCall(call agent.LLMCall) {
+	s.benchmarkCalls = append(s.benchmarkCalls, call)
 	obs, offered, o, err, took := call.Observation, call.Offered, call.Objective, call.Err, call.Duration
 	s.stats.Calls++
 	s.offered += offered
@@ -333,6 +655,7 @@ func (s *statsPlanner) recordCall(call agent.LLMCall) {
 			ReplanReason:     call.ReplanReason,
 			PlanGoal:         call.Plan.Goal,
 			PlanSteps:        append([]string(nil), call.Plan.Steps...),
+			PlanBoundary:     call.Plan.Boundary,
 			Rejected:         err != nil,
 			DurationSeconds:  took.Seconds(),
 			Backend:          s.stats.Backend,

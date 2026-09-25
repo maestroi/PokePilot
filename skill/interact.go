@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -112,10 +113,17 @@ func facingFor(s world.Step) state.Facing {
 // toward an open tile may move the player onto it, and that is fine — the
 // facing is what Face promises.
 func Face(m *emu.Emu, tx, ty uint8) error {
-	x, y := playerXY(m)
-	step, ok := directionTo(x, y, tx, ty)
-	if !ok {
-		return fmt.Errorf("skill: Face: tile (%d,%d) is not orthogonally adjacent to (%d,%d)", tx, ty, x, y)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return faceWithOverworldDecoder(m, decoder, tx, ty)
+}
+
+func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty uint8) error {
+	step, live, err := interactionStepWithDecoder(m, decoder, tx, ty)
+	if err != nil {
+		return fmt.Errorf("skill: Face: %w", err)
 	}
 	btn, ok := buttonFor(step)
 	if !ok {
@@ -129,6 +137,13 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 		state.Snapshot(m, &mem)
 		return state.DecodePlayer(&mem).Facing == want
 	}); err != nil {
+		// The step onto this tile can roll a wild encounter that starts after
+		// the walk returned; the turn tap then lands in the battle intro.
+		after, observeErr := interactionRuntimeStateWithDecoder(m, decoder)
+		if observeErr == nil && after.InBattle {
+			return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
+				want, live.Map, live.X, live.Y, ErrBattle)
+		}
 		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 	}
 	return nil
@@ -240,55 +255,27 @@ func dialoguePagingStuck(unchanged int, prev, next string) (int, bool) {
 // the move policy for the one case fleeing cannot cover — a trainer battle,
 // which the game refuses to let you flee and which talkBeside fights.
 func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (int, error) {
-	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	decoder, err := overworldDecoderFor(m)
 	if err != nil {
-		return 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
+		return 0, err
 	}
-	objectID := 0
-	for i, object := range h.Objects {
-		if object.X == homeX && object.Y == homeY {
-			objectID = i + 1 // map object constants and sprite slots are 1-based
-			break
-		}
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return 0, err
 	}
-	if objectID == 0 {
-		return 0, fmt.Errorf("skill: TalkAt: no map object at (%d,%d) on map %#04x", homeX, homeY, cur)
+	cur := live.Map
+	h, objectID, err := mapObjectSlotWithDecoder(m, decoder, romData, homeX, homeY)
+	if err != nil {
+		return 0, err
 	}
 
 	const attempts = 4
-	tx, ty := homeX, homeY
 	for attempt := 1; attempt <= attempts; attempt++ {
-		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
-			tx, ty = liveX, liveY
+		tx, ty, facing, err := faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+		if err != nil {
+			return 0, err
 		}
-		if err := talkBeside(m, romData, tx, ty, policy); err != nil {
-			return 0, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
-		}
-
-		// The NPC may have walked while the player approached. Re-read the
-		// slot and retry if its current tile is no longer adjacent.
-		if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
-			tx, ty = liveX, liveY
-		}
-		px, py := playerXY(m)
-		faceX, faceY := tx, ty
-		if _, ok := directionTo(px, py, tx, ty); !ok {
-			// Not ordinarily adjacent — check whether we're at a counter
-			// approach instead (two tiles away, counter tile between) before
-			// treating this as the NPC having wandered off.
-			cg, err := liveMapGrid(m, romData, h)
-			cx, cy, counterOK := uint8(0), uint8(0), false
-			if err == nil {
-				cx, cy, counterOK = counterFacing(cg, px, py, tx, ty)
-			}
-			if !counterOK {
-				m.StepFrames(npcWaitFrames)
-				continue
-			}
-			faceX, faceY = cx, cy
-		}
-		if err := Face(m, faceX, faceY); err != nil {
+		if !facing {
 			m.StepFrames(npcWaitFrames)
 			continue
 		}
@@ -319,6 +306,70 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 	return 0, fmt.Errorf("skill: TalkAt: object %d did not remain adjacent after %d approaches", objectID, attempts)
 }
 
+// mapObjectSlot resolves the 1-based sprite slot of the current map's object
+// whose ROM home coordinate is (homeX, homeY).
+func mapObjectSlot(m *emu.Emu, romData []byte, homeX, homeY uint8) (rom.MapHeader, int, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return rom.MapHeader{}, 0, err
+	}
+	return mapObjectSlotWithDecoder(m, decoder, romData, homeX, homeY)
+}
+
+func mapObjectSlotWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, homeX, homeY uint8) (rom.MapHeader, int, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return rom.MapHeader{}, 0, err
+	}
+	cur := live.Map
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return h, 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
+	}
+	for i, object := range h.Objects {
+		if object.X == homeX && object.Y == homeY {
+			return h, i + 1, nil // map object constants and sprite slots are 1-based
+		}
+	}
+	return h, 0, fmt.Errorf("skill: TalkAt: no map object at (%d,%d) on map %#04x", homeX, homeY, cur)
+}
+
+// faceLiveMapObject walks beside objectID's live sprite tile and faces it.
+// facing is false when the NPC wandered out of reach during the approach;
+// the caller waits and re-approaches. The returned tile is the object's live
+// position the player now faces.
+func faceLiveMapObject(m *emu.Emu, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return homeX, homeY, false, err
+	}
+	return faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+}
+
+func faceLiveMapObjectWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+	tx, ty := homeX, homeY
+	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+		tx, ty = liveX, liveY
+	}
+	if err := talkBesideWithDecoder(m, decoder, romData, tx, ty, policy); err != nil {
+		return tx, ty, false, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
+	}
+
+	// The NPC may have walked while the player approached. Re-read the slot
+	// and report not-facing if its current tile is no longer adjacent.
+	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
+		tx, ty = liveX, liveY
+	}
+	faceX, faceY, facing := interactionFacingTileWithDecoder(m, decoder, romData, h, tx, ty)
+	if !facing {
+		return tx, ty, false, nil
+	}
+	if err := faceWithOverworldDecoder(m, decoder, faceX, faceY); err != nil {
+		return tx, ty, false, nil
+	}
+	return tx, ty, true, nil
+}
+
 func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -344,21 +395,39 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 // walk away, and Manhattan distance can't tell the two apart.
 //
 // The side it picks must be a side the WALKER will accept, so this plans on
-// exactly what GoTo plans on: the live post-script grid, and the tiles live
-// sprites occupy. Choosing with a blind ROM grid instead is how the approach
-// picks a tile another NPC is standing on and then fails to walk to the tile
-// it just chose — MEASURED on MT_MOON_POKECENTER (map 0x44), where "talk at
-// (7,2)" chose the side (7,3) with an NPC parked on it and died with "no path
-// from (10,5) to (7,3)" 51 times, while (6,2) and (8,2) stood free. The other
+// exactly what GoTo plans on: the live post-script grid, the tiles live
+// sprites occupy, and warpAvoidance. Choosing with a blind ROM grid instead
+// is how the approach picks a tile another NPC is standing on and then fails
+// to walk to the tile it just chose — MEASURED on MT_MOON_POKECENTER (map
+// 0x44), where "talk at (7,2)" chose the side (7,3) with an NPC parked on it
+// and died with "no path from (10,5) to (7,3)" 51 times, while (6,2) and
+// (8,2) stood free. Ignoring warpAvoidance is the same class of bug:
+// MEASURED on SILPH_CO_11F, where the shortest side of the president at
+// (7,5) is (6,5) whose only route steps onto teleporter (5,5), so GoTo then
+// fails with no capability-aware path while (8,5) is a clean walk. The other
 // sides of a talk target are usually equally good, so preferring a free one
 // costs nothing. The target tile itself is never required to be free — it is
 // the NPC being talked to.
 func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
-	sx, sy := playerXY(m)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	return besideDestinationWithDecoder(m, decoder, romData, targetX, targetY, nil)
+}
+
+// besideDestinationWithDecoder never picks a tile in rejected: sides a walk
+// already proved the game will not let the player stand on.
+func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8, rejected map[[2]int]bool) (Destination, bool, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	sx, sy := live.X, live.Y
 	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
 		return Destination{}, false, nil
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := live.Map
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
@@ -367,14 +436,19 @@ func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Dest
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
-	blocked := spriteBlockers(m)
+	blocked := warpAvoidance(h, int(sx), int(sy), spriteBlockers(m))
+	for p := range rejected {
+		blocked[p] = true
+	}
 	steps, _, err := world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), blocked)
 	if err != nil {
 		// Every free side may simply be occupied this instant. Fall back to
 		// the sprite-blind choice rather than refusing the objective: GoTo
 		// waits out a wanderer, and a stationary NPC yields the same error
-		// as before instead of a new one.
-		steps, _, err = world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY), nil)
+		// as before instead of a new one. Still keep warpAvoidance so the
+		// chosen side remains a tile GoTo will actually walk to.
+		steps, _, err = world.FindPathAdjacent(grid, int(sx), int(sy), int(targetX), int(targetY),
+			warpAvoidance(h, int(sx), int(sy), rejected))
 	}
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("no walkable tile beside (%d,%d) on map %#04x: %w", targetX, targetY, cur, err)
@@ -408,7 +482,19 @@ var counterSteps = []world.Step{world.StepUp, world.StepDown, world.StepLeft, wo
 // walkable, reachable standing tile beyond it — the target is genuinely not
 // a counter NPC, and the caller's ordinary "no path" error stands.
 func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
-	cur := m.Peek8(sym.CurMap)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	return counterBesideWithDecoder(m, decoder, romData, targetX, targetY)
+}
+
+func counterBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	cur, sx, sy := live.Map, live.X, live.Y
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
@@ -418,7 +504,6 @@ func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destinat
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
 	blocked := spriteBlockers(m)
-	sx, sy := playerXY(m)
 	for _, s := range counterSteps {
 		cx, cy := int(targetX)+s.DX, int(targetY)+s.DY
 		if !grid.IsCounterTile(cx, cy) {
@@ -454,6 +539,49 @@ func counterFacing(g *world.Grid, px, py, tx, ty uint8) (uint8, uint8, bool) {
 		return uint8(mx), uint8(my), true
 	}
 	return 0, 0, false
+}
+
+// interactionFacingTile reports the tile Face must turn the player toward in
+// order to interact with the map object at (tx,ty). It is the one shared rule
+// every "stand beside the object and interact" approach in this package needs,
+// so a caller cannot get it right by walking beside a counter NPC and then
+// wrong by facing the NPC's own tile:
+//
+//   - the object's own tile, when the player is already orthogonally adjacent;
+//   - otherwise the service-counter tile between the player and the object,
+//     when the player stands in the two-tile counter approach counterBeside
+//     picks. The Gen 1 talk range (IsSpriteOrSignInFrontOfPlayer,
+//     pokered home/overworld.asm:1118) counts the object as in front of the
+//     player in that position, so the counter tile is the correct — and
+//     genuinely adjacent — facing target. Facing the object's own tile from
+//     there is two tiles away and always fails.
+//
+// h is the current map header, used to build the live grid counterFacing
+// inspects. ok is false when the player is in neither position (a live NPC may
+// have walked away); the caller owns the re-approach decision because only it
+// knows whether the target can move.
+func interactionFacingTile(m *emu.Emu, romData []byte, h rom.MapHeader, tx, ty uint8) (uint8, uint8, bool) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return 0, 0, false
+	}
+	return interactionFacingTileWithDecoder(m, decoder, romData, h, tx, ty)
+}
+
+func interactionFacingTileWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, tx, ty uint8) (uint8, uint8, bool) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return 0, 0, false
+	}
+	px, py := live.X, live.Y
+	if _, ok := directionTo(px, py, tx, ty); ok {
+		return tx, ty, true
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return 0, 0, false
+	}
+	return counterFacing(grid, px, py, tx, ty)
 }
 
 // talkApproachChoiceIndex classifies the tiny set of choices that are part of
@@ -499,19 +627,27 @@ func routeGateChoiceText(text string) bool {
 // refuses to let you flee — is fought with policy; a blackout from that
 // fallback comes back as ErrBlackedOut for the caller to decide on.
 func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return talkBesideWithDecoder(m, decoder, romData, tx, ty, policy)
+}
+
+func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, tx, ty uint8, policy MovePolicy) error {
 	// The Museum ticket box can already be up when TalkAt starts (the
 	// player is standing on the gate). Pathing beside a counter NPC then
 	// fails with "no path" because the wall is still closed. Pay first.
 	if _, err := AnswerKnownRouteGate(m); err != nil {
 		return fmt.Errorf("skill: TalkAt: %w", err)
 	}
-	dest, ok, err := besideDestination(m, romData, tx, ty)
+	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty, nil)
 	if err != nil {
 		// No ordinary neighbour of (tx,ty) is walkable — the target may be a
 		// nurse or clerk standing behind a counter, which has no adjacent
 		// floor tile by design. Try the counter approach before giving up.
 		var counterErr error
-		dest, ok, counterErr = counterBeside(m, romData, tx, ty)
+		dest, ok, counterErr = counterBesideWithDecoder(m, decoder, romData, tx, ty)
 		if counterErr != nil || !ok {
 			return fmt.Errorf("skill: TalkAt: %w", err)
 		}
@@ -521,8 +657,24 @@ func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) err
 	}
 
 	handledChoices := 0
+	// A side can look free yet be a coordinate-script tile that shows its
+	// text and pushes the player back off it (Travel reports ErrTextBoxLoop).
+	// The target usually has other sides; reject that one and pick again.
+	rejected := map[[2]int]bool{}
 	for {
 		if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
+			if errors.Is(err, ErrTextBoxLoop) && len(rejected) < len(counterSteps) {
+				rejected[[2]int{int(dest.X), int(dest.Y)}] = true
+				next, ok, besideErr := besideDestinationWithDecoder(m, decoder, romData, tx, ty, rejected)
+				if besideErr != nil {
+					return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)
+				}
+				if !ok {
+					return nil
+				}
+				dest = next
+				continue
+			}
 			var choice *ErrDialogueChoice
 			if !errors.As(err, &choice) || handledChoices >= maxTalkApproachChoices {
 				return fmt.Errorf("skill: TalkAt: approach beside (%d,%d) on map %#04x: %w", tx, ty, dest.Map, err)

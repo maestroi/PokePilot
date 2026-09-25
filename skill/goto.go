@@ -9,15 +9,8 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
-
-// Destination is a concrete place: a map and a standing position on it.
-type Destination struct {
-	Map  uint8
-	X, Y uint8
-}
 
 // ErrBattle is returned by GoTo when a wild battle interrupts the route. GoTo
 // never fights or flees; it aborts and reports the battle.
@@ -40,6 +33,17 @@ var ErrReplanExhausted = errors.New("skill: route re-plan budget exhausted")
 // player state or has crossed an unreasonable number of maps without reaching
 // its destination. It aborts only the current navigation call.
 var ErrNavigationStalled = errors.New("skill: navigation made no progress")
+
+// errLocalNavigationWorldChanged is internal control flow: a field-capability
+// repair deliberately moved the player (for example to a PC or catch habitat).
+// The original GoTo journey is still valid, but every local grid/component
+// snapshot is stale and must be rebuilt from the new live position.
+var errLocalNavigationWorldChanged = errors.New("skill: local navigation world changed")
+
+// errPreferStrengthRoute is internal weighted-routing control flow. It is
+// emitted only after the live push solver proved a cheaper, currently
+// executable Strength route to the exact same destination.
+var errPreferStrengthRoute = errors.New("skill: weighted routing prefers Strength")
 
 const (
 	maxNavigationTransitions        = 64
@@ -89,6 +93,90 @@ type legAt struct {
 type legFromMap struct {
 	e world.Edge
 	m uint8
+}
+
+// newLegFromMap builds a legFromMap ban key, scoping a warp edge to its
+// (From,To) map pair rather than the exact warp tile. A gate building
+// commonly exposes several warp objects between the same two maps (Route 18
+// Gate has four: two doors in from Route 18, two doors back out), and
+// Traverse already treats same-pair warps as interchangeable when choosing
+// which tile to cross (warp.go: "warp tiles the collision grid marks
+// walkable are preferred, then considered in ROM warp-table order"). A dead
+// end proven through one door is a fact about the building, not that one
+// tile, so the ban must close every door between the same pair of maps at
+// once — otherwise the router discovers and bans them one at a time,
+// spending a full replan on each. MEASURED on run-4h4isxsvaskt1c7mslvxzsrr6:
+// OpenSaffronGate's travel to the Celadon vending machine hit Route 18's
+// one-way Cycling Road connection, correctly banned it, then spent 3 more of
+// its 8-replan budget discovering and banning Route 18 Gate's four doors one
+// by one before giving up on the area entirely and wandering back through
+// Fuchsia and Route 15's own gate, finally exhausting the budget there with
+// a "no route" error that named neither the real dead end nor its actual
+// cause.
+func newLegFromMap(e world.Edge, m uint8) legFromMap {
+	if e.Kind == world.EdgeWarp {
+		e.WarpX, e.WarpY = 0, 0
+	}
+	return legFromMap{e: e, m: m}
+}
+
+// navigationMemory carries GoTo's within-journey loop/bounce protection
+// (the guard, banned legs, dead ends, visited maps/positions, and observed
+// map-topology snapshots) across separate calls to
+// goToWithTransitionExecutorMemory. Travel's retry loop calls GoTo again
+// after every resolved battle or dialogue interruption; without this, each
+// fresh call forgot every leg/map this journey had already learned was
+// unproductive, so a wild battle landing near a map boundary could make the
+// walker legally re-plan straight back through ground its own guard/dead-end
+// machinery exists to forbid — MEASURED on run-13kws9zfzq7ka1p4bmd16c9yg3: a
+// battle at the Rock Tunnel 1F / Route 10 boundary reset visitedMaps on every
+// retry, so the replanned route detoured back in via Route 9 and hit another
+// encounter at the same tile, burning the entire maxBattles budget with zero
+// net progress.
+//
+// routeGraph is the same contract for observed stationary-object component
+// splits: a single GoTo retains WithMapGrid snapshots across legs so a later
+// fresh-component re-entry (Route 14 -> Route 13 row 8 after escaping the
+// west trainer pocket) stays distinguishable from a same-component bounce.
+// Travel's next GoTo must keep that evidence too — otherwise visitedMaps
+// falls back to a whole-map ban, the planner takes Route 15 instead, and the
+// journey dies on replan exhaustion (run-4h4isxsvaskt1c7mslvxzsrr6). A nil
+// memory (GoTo's own public entry point, which is not resumed after a battle)
+// behaves exactly as before: a single call still gets its own fresh
+// guard/bans/topology.
+type navigationMemory struct {
+	guard            *navigationGuard
+	failed           map[legAt]bool
+	deadEnds         map[legFromMap]bool
+	visitedMaps      map[uint8]bool
+	visitedPositions map[uint8][]navigationState
+	routeGraph       *world.Graph
+	policy           MovePolicy
+	replans          int
+}
+
+func newNavigationMemory() *navigationMemory {
+	return &navigationMemory{
+		failed:           map[legAt]bool{},
+		deadEnds:         map[legFromMap]bool{},
+		visitedMaps:      map[uint8]bool{},
+		visitedPositions: map[uint8][]navigationState{},
+	}
+}
+
+// ensureGuard seeds the journey's guard from start on the first call for this
+// memory and returns the SAME guard on every later call, no matter what start
+// is on that later call. This is the fix's core invariant: a later call is a
+// GoTo re-entered after Travel resolved a battle, at essentially the position
+// the battle interrupted, not the beginning of a new journey — replacing the
+// guard there would forget every bounce/repeat fact this journey already
+// learned, which is exactly what let a battle at a map boundary send the
+// walker back through ground it had already ruled out.
+func (nav *navigationMemory) ensureGuard(dest Destination, start navigationState) *navigationGuard {
+	if nav.guard == nil {
+		nav.guard = newNavigationGuard(dest, start)
+	}
+	return nav.guard
 }
 
 func newNavigationGuard(dest Destination, start navigationState) *navigationGuard {
@@ -211,6 +299,31 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 // forward path avoids revisiting, which hands off to the existing
 // forcedRevisitBan/safeForcedBan fallback below — the mechanism already
 // built to tell a real dead end from a revisit that is the only way through.
+// onlyExitReturnsToVisitedMap reports that current is a transit room whose
+// every graph exit leads back to the same map this journey already visited.
+// In that shape, the visited-map preference must be suspended for one step:
+// component-aware routing has to choose WHICH return door reaches the actual
+// destination. Preferring a "fresh" component can be actively wrong — the
+// Cerulean Badge House has one door back to the city plaza and another into
+// the isolated (9,9) pocket. Farm #1149/#1150 resumed inside that house and
+// anti-bounce filtering selected the fresh dead pocket instead of the plaza.
+func onlyExitReturnsToVisitedMap(g *world.Graph, current uint8, visited map[uint8]bool) bool {
+	edges := g.Edges[current]
+	if len(edges) == 0 {
+		return false
+	}
+	to := edges[0].To
+	if !visited[to] {
+		return false
+	}
+	for _, edge := range edges[1:] {
+		if edge.To != to {
+			return false
+		}
+	}
+	return true
+}
+
 func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool, visitedPositions ...map[uint8][]navigationState) *world.Graph {
 	var positions map[uint8][]navigationState
 	if len(visitedPositions) > 0 {
@@ -250,12 +363,12 @@ func forcedRevisitBan(g *world.Graph, retry []world.RouteStep, retryErr error, v
 	if !edgeEntersVisitedRegion(g, edge, visitedMaps, positions) {
 		return legFromMap{}, false
 	}
-	forced := legFromMap{e: edge, m: edge.From}
+	forced := newLegFromMap(edge, edge.From)
 	if deadEnds[forced] {
 		return legFromMap{}, false
 	}
 	for _, e := range g.Edges[forced.m] {
-		if e != forced.e && !deadEnds[legFromMap{e: e, m: forced.m}] {
+		if key := newLegFromMap(e, forced.m); key != forced && !deadEnds[key] {
 			return forced, true
 		}
 	}
@@ -294,7 +407,7 @@ func safeForcedBanWithDeadEnds(
 	for mapID, edges := range g.Edges {
 		filtered := make([]world.Edge, 0, len(edges))
 		for _, e := range edges {
-			key := legFromMap{e: e, m: mapID}
+			key := newLegFromMap(e, mapID)
 			if key == forced || deadEnds[key] {
 				continue
 			}
@@ -302,9 +415,12 @@ func safeForcedBanWithDeadEnds(
 		}
 		without.Edges[mapID] = filtered
 	}
-	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-		&without, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+	route, err := findRoutePlanForDestination(
+		&without, cur, int(x), int(y), dest, blockedHere, prereqs,
 	)
+	if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
+		return route, nil, true
+	}
 	return route, err, err == nil
 }
 
@@ -335,44 +451,134 @@ func routeFailureIsSpuriousCapabilityGate(err error, bannedALegThisCall bool) bo
 
 // GoTo walks the player to dest, crossing maps as needed. The immutable graph
 // is built once, but every planning pass overlays the current map's live WRAM
-// block geometry before component routing. After every leg the current map and
-// coordinates are re-read and the remaining route is re-planned, so an opened
-// door, closed gate, or unexpected landing is observed rather than cached.
+// block geometry and positively observed stationary objects before component
+// routing. Those immutable snapshots survive across this GoTo call so a later
+// leg can distinguish a fresh component on a previously visited map. Reloading
+// that map replaces its snapshot. When a shared navigationMemory is in use
+// (Travel's cutAwareGoTo), the same snapshots also survive into the next GoTo
+// call of the same journey so a dialogue/battle interrupt cannot erase the
+// component evidence visited-map preference needs.
 func GoTo(m *emu.Emu, romData []byte, dest Destination) error {
 	return goToWithTransitionExecutor(m, romData, dest, newRedRouteTransitionExecutor(m, romData, nil))
 }
 
+// goToWithTransitionExecutor is a single, self-contained GoTo call: its
+// loop/bounce memory starts empty and is discarded when it returns. Use
+// goToWithTransitionExecutorMemory directly to carry that memory across
+// repeated calls within one logical journey (see cutAwareGoTo).
 func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor) error {
+	return goToWithTransitionExecutorMemory(m, romData, dest, executor, newNavigationMemory())
+}
+
+// overlayObservedMapTopology applies the current Red map's stable, visible
+// object collisions to its freshly decoded grid, then returns a new routing
+// snapshot. Passing the previous snapshot preserves observations from earlier
+// legs without mutating the base graph. Callers supply only positively
+// observed stationary blockers, keeping moving and hidden objects out of the
+// remembered topology.
+func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeader, blockers map[[2]int]bool) (*world.Graph, error) {
+	for at := range blockers {
+		grid.Set(at[0], at[1], false)
+	}
+	return g.WithMapGrid(h.ID, grid)
+}
+
+// goToWithTransitionExecutorMemory is GoTo's implementation. nav carries
+// loop/bounce protection that can be shared across multiple calls within one
+// logical journey (see navigationMemory); nil gets a fresh one, matching a
+// single self-contained GoTo call.
+func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor, nav *navigationMemory) error {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		return err
 	}
-	startX, startY := playerXY(m)
-	guard := newNavigationGuard(dest, navigationState{
-		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
-	})
-
-	failed := map[legAt]bool{}
-	deadEnds := map[legFromMap]bool{}
+	var routeMem state.Mem
+	state.Snapshot(m, &routeMem)
+	g, err = withAsleepRoute16Snorlax(g, romData, &routeMem)
+	if err != nil {
+		return fmt.Errorf("skill: GoTo: Route 16 Snorlax corridor: %w", err)
+	}
+	if nav == nil {
+		nav = newNavigationMemory()
+	}
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	fieldRuntime, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	start, err := navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return err
+	}
+	guard := nav.ensureGuard(dest, start)
+	failed := nav.failed
+	deadEnds := nav.deadEnds
+	visitedMaps := nav.visitedMaps
+	visitedPositions := nav.visitedPositions
 
 	// A bound on re-plans. Each ban is a distinct (leg, tile) or (leg, map),
 	// so this terminates on its own, but an unattended run should not
-	// discover a pathological map by walking it for an hour.
+	// discover a pathological map by walking it for an hour. It is carried
+	// in nav so it bounds the whole journey, not just one battle-free
+	// stretch of it.
 	const maxReplans = 8
-	replans := 0
+	replans := nav.replans
+	defer func() { nav.replans = replans }()
 	semanticExecutions := 0
-	visitedMaps := map[uint8]bool{}
-	visitedPositions := map[uint8][]navigationState{}
+	routeGraph := g
+	if nav.routeGraph != nil {
+		// Resume with topology observed earlier in this journey (other maps'
+		// stationary-object splits) rather than a ROM-only BuildGraph that
+		// would collapse every visited map back into one component.
+		routeGraph = nav.routeGraph
+	}
+	defer func() { nav.routeGraph = routeGraph }()
+	restageCount := 0
+	const maxRestages = 2
 
 	for {
-		if err := abortIfBattle(m); err != nil {
+		if err := abortIfBattleWithDecoder(m, overworld); err != nil {
 			return err
 		}
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
-		cur := m.Peek8(sym.CurMap)
-		x, y := playerXY(m)
+		now, stateErr := navigationStateWithDecoder(m, overworld)
+		if stateErr != nil {
+			return stateErr
+		}
+		cur, x, y := now.Map, now.X, now.Y
+
+		// Travel may begin inside a Center, gym, hideout, or other interior
+		// where the real game does not permit Fly. Reconsider fast travel on
+		// every map boundary once a battle policy is present (plain GoTo keeps
+		// its historical walking-only contract). This closes the gap where the
+		// top-level Travel preflight saw "indoors", then one long GoTo walked
+		// across Kanto without ever checking Fly again after stepping outside.
+		if nav.policy != nil {
+			used, fastErr := maybeUseFastTravel(m, romData, dest)
+			if fastErr != nil {
+				return fmt.Errorf("skill: GoTo: fast travel: %w", fastErr)
+			}
+			if used {
+				visitedMaps[cur] = true
+				visitedPositions[cur] = append(visitedPositions[cur], navigationState{Map: cur, X: x, Y: y})
+				landed, stateErr := navigationStateWithDecoder(m, overworld)
+				if stateErr != nil {
+					return stateErr
+				}
+				if err := guard.observe(landed); err != nil {
+					return fmt.Errorf("skill: GoTo: %w", err)
+				}
+				// Fly is a non-edge world transition. Rebuild from immutable
+				// topology and let the next loop overlay the new live map.
+				routeGraph = g
+				continue
+			}
+		}
 
 		h, err := rom.ParseMap(romData, cur)
 		if err != nil {
@@ -382,9 +588,79 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
-		routeGraph, err := g.WithMapGrid(cur, liveGrid)
+		blockers := presentStationaryObjectBlockers(m, h)
+		if cur == route16Map {
+			var corridor state.Mem
+			state.Snapshot(m, &corridor)
+			if !state.HasEvent(&corridor, eventBeatRoute16Snorlax) {
+				if blockers == nil {
+					blockers = map[[2]int]bool{}
+				}
+				blockers[[2]int{route16SnorlaxX, route16SnorlaxY}] = true
+			}
+			openRoute16CutPassage(liveGrid, romData, &corridor)
+		}
+		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, blockers)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
+		}
+
+		routeDest := dest
+		if cur == dest.Map {
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve %s destination on map %02x: %w", dest.KindName(), cur, resolveErr)
+			}
+			if satisfied {
+				return abortIfBattle(m)
+			}
+			routeDest = resolved
+		}
+
+		// Prefer a direct capability-aware local route before component routing.
+		// This is what makes Cut/Surf true tile-path capabilities: if the
+		// destination is on this map and a mixed land/field-move path exists,
+		// do not leave the map just because pristine collision splits it.
+		if cur == dest.Map {
+			reachable, fieldErr := fieldPathReachableOnCurrentMapWithDecoders(m, overworld, fieldRuntime, romData, h, routeDest)
+			if fieldErr != nil {
+				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
+			}
+			if reachable {
+				walkErr := walkWithinMap(m, romData, routeDest, nav.policy)
+				if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+					continue
+				}
+				if walkErr == nil {
+					return abortIfBattle(m)
+				}
+				return walkErr
+			}
+
+			// Seafoam B4F has one ROM-enforced Surf entry restriction: while
+			// the current is active, Surf cannot be started from the stairs at
+			// (7,11). Prove that removing only that restriction makes this exact
+			// destination reachable before moving any boulders. Travel owns the
+			// multi-floor preparation because it has the battle/roster policy.
+			localBlocked := routingBlockers(m, h)
+			localBlocked = warpAvoidance(h, int(x), int(y), localBlocked)
+			currentBlocked, currentErr := seafoamCurrentBlocksDestination(m, romData, h, routeDest, localBlocked)
+			if currentErr != nil {
+				return fmt.Errorf("skill: GoTo: Seafoam current probe on map %02x: %w", cur, currentErr)
+			}
+			if currentBlocked {
+				if nav.policy == nil {
+					return fmt.Errorf("skill: GoTo: Seafoam current blocks destination (%d,%d); Travel is required to prepare the multi-floor Strength puzzle", routeDest.X, routeDest.Y)
+				}
+				if err := prepareSeafoamCurrents(m, romData, nav.policy); err != nil {
+					return fmt.Errorf("skill: GoTo: prepare Seafoam currents: %w", err)
+				}
+				// Preparation deliberately travels across several floors and mutates
+				// object/event topology. Throw away every graph overlay from before
+				// it and re-plan the original destination from the new live state.
+				routeGraph = g
+				continue
+			}
 		}
 		blockedHere := map[world.Edge]bool{}
 		for k := range failed {
@@ -392,12 +668,13 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				blockedHere[k.e] = true
 			}
 		}
-		for k := range deadEnds {
-			if k.m == cur {
-				blockedHere[k.e] = true
+		for _, e := range routeGraph.Edges[cur] {
+			if deadEnds[newLegFromMap(e, cur)] {
+				blockedHere[e] = true
 			}
 		}
-		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map]
+		avoidingVisited := len(visitedMaps) > 0 && !visitedMaps[dest.Map] &&
+			!onlyExitReturnsToVisitedMap(routeGraph, cur, visitedMaps)
 		planGraph := routeGraph
 		if avoidingVisited {
 			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps, visitedPositions)
@@ -406,9 +683,42 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
-		route, err := world.FindRoutePlanAtDestinationWithCapabilities(
-			planGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+		routeResult, err := routePlanToDestinationByTravelPolicy(
+			m, planGraph, cur, int(x), int(y), routeDest, blockedHere, prereqs,
 		)
+		route := routeResult.Steps
+		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
+			// The route is intentionally a safe prefix ending at a semantic
+			// action, but that action can lead AWAY from dest just as easily as
+			// toward it: findRoute stops expanding at the first such boundary
+			// it discovers in edge order and offers it regardless of whether
+			// crossing it helps. When dest sits on this same live map behind a
+			// Cut/Surf field-path action, prefer that concrete, verified route
+			// over an unrelated cross-map pivot. MEASURED on
+			// run-j6f404urmxjd2ouv6vim9fdfa round 12: staged on Route 16
+			// (1b,30,10) one Cut tree from the Fly house's own warp door, the
+			// graph's only boundary from there was the reverse Snorlax/Cut
+			// pivot back into Celadon City — an entirely different map that
+			// cannot reach the Fly house either, so GoTo crossed it, then
+			// repeated the same false "boundary" dance from Celadon's Cut-gym
+			// pivot until the navigation guard fired.
+			if cur != dest.Map {
+				if bridge, bridgeOK, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere); bridgeErr == nil && bridgeOK {
+					walkErr := walkWithinMap(m, romData, bridge, nav.policy)
+					if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+						continue
+					}
+					if walkErr != nil {
+						return walkErr
+					}
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					continue
+				}
+			}
+			err = nil
+		}
 		// A dead-end map's only exit IS the reverse. Route 4's Pokemon
 		// Center (map 0x44) has two warps and both land back on Route 4,
 		// so banning the reverse bans every edge and the journey dies on
@@ -457,9 +767,17 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 			// completely. The next visit to Route 24 then had nowhere at all to
 			// go, and "go to route 2" died on "world: no route" even though
 			// Route 24 -> Cerulean was the one genuinely open door.
-			retry, retryErr := world.FindRoutePlanAtDestinationWithCapabilities(
-				routeGraph, cur, dest.Map, int(x), int(y), int(dest.X), int(dest.Y), blockedHere, prereqs,
+			// Preserve the destination's semantic kind here. Named map/area/
+			// interaction goals intentionally do not use dest.X/Y as a canonical
+			// tile; retrying after the visited-map preference must use the same
+			// target-set semantics as the primary planning pass.
+			retryResult, retryErr := routePlanToDestinationByTravelPolicy(
+				m, routeGraph, cur, int(x), int(y), dest, blockedHere, prereqs,
 			)
+			retry := retryResult.Steps
+			if errors.Is(retryErr, world.ErrRouteReplanRequired) && len(retry) > 0 {
+				retryErr = nil
+			}
 			if forced, ok := forcedRevisitBan(routeGraph, retry, retryErr, visitedMaps, deadEnds, visitedPositions); ok {
 				// Banning forced.e is only safe if the destination stays
 				// reachable without it after every dead-end ban already
@@ -471,13 +789,60 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 					}
 					deadEnds[forced] = true
-					blockedHere[forced.e] = true
+					for _, e := range routeGraph.Edges[cur] {
+						if newLegFromMap(e, cur) == forced {
+							blockedHere[e] = true
+						}
+					}
 					retry, retryErr = afterBan, afterBanErr
 				}
 			}
 			route, err = retry, retryErr
 		}
 		if err != nil {
+			if errors.Is(err, world.ErrNoRoute) && cur != dest.Map {
+				// Cross-map routing dies on static components even when local
+				// Cut/Surf pathing can open an ordinary exit on this map.
+				// Bridge to a field-reachable port that restores a route, then
+				// re-plan — the same destination-aware local planner same-map
+				// GoTo already prefers before leaving the map.
+				bridge, ok, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere)
+				if bridgeErr != nil {
+					return fmt.Errorf("skill: GoTo: field-path bridge on map %02x: %w", cur, bridgeErr)
+				}
+				if ok {
+					walkErr := walkWithinMap(m, romData, bridge, nav.policy)
+					if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+						continue
+					}
+					if walkErr != nil {
+						return walkErr
+					}
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					continue
+				}
+				// Same-map field bridging cannot cross a building that is
+				// another map (Route 16's gate between west-north and
+				// east-north). Restage onto a warp-adjacent tile that
+				// ordinary routing can already reach and from which dest
+				// opens — then re-plan from there.
+				stage, stageOK, stageErr := componentRestagingDestination(m, romData, h, routeGraph, dest, prereqs, blockedHere)
+				if stageErr != nil {
+					return fmt.Errorf("skill: GoTo: component restage on map %02x: %w", cur, stageErr)
+				}
+				if stageOK && restageCount < maxRestages {
+					restageCount++
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+					}
+					if stageErr := goToWithTransitionExecutorMemory(m, romData, stage, executor, nav); stageErr != nil {
+						return fmt.Errorf("skill: GoTo: restage to map %02x (%d,%d): %w", stage.Map, stage.X, stage.Y, stageErr)
+					}
+					continue
+				}
+			}
 			if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
 				return newReplanExhaustedError(replans, cur, x, y, dest, err)
 			}
@@ -485,7 +850,24 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				cur, x, y, dest.Map, dest.X, dest.Y, err)
 		}
 		if len(route) == 0 {
-			return walkWithinMap(m, romData, dest)
+			if emptyErr := emptyCrossMapRouteError(cur, x, y, dest); emptyErr != nil {
+				return emptyErr
+			}
+			resolved, satisfied, resolveErr := resolveLocalDestination(m, romData, dest)
+			if resolveErr != nil {
+				return fmt.Errorf("skill: GoTo: resolve final %s destination: %w", dest.KindName(), resolveErr)
+			}
+			if satisfied {
+				return abortIfBattle(m)
+			}
+			walkErr := walkWithinMap(m, romData, resolved, nav.policy)
+			if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+				continue
+			}
+			if walkErr == nil {
+				return abortIfBattle(m)
+			}
+			return walkErr
 		}
 
 		step := route[0]
@@ -493,6 +875,19 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		if step.Transition != nil {
 			execution, execErr := world.ExecuteTransition(executor, e, *step.Transition)
 			if execErr != nil {
+				if errors.Is(execErr, world.ErrTransitionExecutionStalled) {
+					forced := newLegFromMap(e, cur)
+					if !deadEnds[forced] {
+						if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
+							// The executor exhausted every candidate for this exact
+							// semantic edge. That is finite topology evidence, not a
+							// reason to terminate the whole journey while another band
+							// or route remains viable.
+							deadEnds[forced] = true
+							continue
+						}
+					}
+				}
 				return fmt.Errorf("skill: GoTo: %w", execErr)
 			}
 			if execution.Changed {
@@ -505,9 +900,52 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 				continue // effect observed: discard stale route/topology and re-plan
 			}
 		}
-		if err := Traverse(m, romData, e); err != nil {
+		if traverseErr := Traverse(m, romData, e); traverseErr != nil {
+			err := traverseErr
+			// A measured bounce-back (Cycling Road's forced downhill descent,
+			// or any crossing that settles back on its own origin map) is
+			// evidence about the connection, not the tile: every tile of
+			// Route 18's north edge feeds the same forced descent, so a
+			// per-tile ban (legAt) just lets the router rediscover it from a
+			// different tile of the same map, over and over, until the
+			// navigation guard's exact-position repeat finally fires.
+			// MEASURED on run-5r5c0f2hrowk387f36ca57zob and
+			// run-3gf4z15byn2we2cyhg1zfez04n: entering ROUTE_18_GATE_1F
+			// (0xbe) and being routed straight back out to Route 18 through
+			// two different warp tiles before the guard caught it.
+			//
+			// Ban the whole map's edge when safe; never degrade a bounce to
+			// ErrLegUnwalkable's per-tile ban. ErrLegBouncesBack wraps
+			// ErrLegUnwalkable, so falling through would silently undo the
+			// map-scoped ban and reintroduce the gate thrash.
+			edgeScoped, tile := legFailureBanScope(err)
+			if edgeScoped {
+				forced := newLegFromMap(e, cur)
+				if !deadEnds[forced] {
+					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
+						// A fully exhausted connection band is already a finite,
+						// monotonic graph refinement: Traverse tried every tile in
+						// that scoped band, and deadEnds guarantees this journey will
+						// never inspect it again. Do not also charge the unrelated
+						// maxReplans budget for discovering another dead band. Wide,
+						// fragmented sea borders can contain more than eight distinct
+						// component bands before the usable crossing; charging each
+						// one made correct refinement terminate as route_replan_exhausted.
+						// Bounce-back evidence is cheaper to discover and retains the
+						// historical replan guard.
+						if legFailureConsumesReplanBudget(err) {
+							if replans++; replans > maxReplans {
+								return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+							}
+						}
+						deadEnds[forced] = true
+						continue // re-plan without this leg, from any tile of this map
+					}
+				}
+				return fmt.Errorf("skill: GoTo: %w", err)
+			}
 			k := legAt{e: e, m: cur, x: x, y: y}
-			if errors.Is(err, ErrLegUnwalkable) && !failed[k] {
+			if tile && !failed[k] {
 				if replans++; replans > maxReplans {
 					return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 				}
@@ -518,13 +956,55 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 		}
 		visitedMaps[e.From] = true
 		visitedPositions[e.From] = append(visitedPositions[e.From], navigationState{Map: e.From, X: x, Y: y})
-		nowX, nowY := playerXY(m)
-		if err := guard.observe(navigationState{
-			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
-		}); err != nil {
+		landed, stateErr := navigationStateWithDecoder(m, overworld)
+		if stateErr != nil {
+			return stateErr
+		}
+		if err := guard.observe(landed); err != nil {
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}
+}
+
+// emptyCrossMapRouteError protects GoTo's final same-map walk from an
+// impossible planner result. An empty route means "already at the destination"
+// only when the live map is the destination map. If a planner ever returns an
+// empty route across maps, surface a typed recoverable navigation failure
+// instead of calling walkWithinMap with mismatched maps. Farm #1488 observed
+// exactly that leak as GAME_CORNER (0x87) -> VERMILION_CITY (0x05), which
+// otherwise became terminal unknown_failure/unknown_error.
+func emptyCrossMapRouteError(cur, x, y uint8, dest Destination) error {
+	if cur == dest.Map {
+		return nil
+	}
+	return fmt.Errorf("skill: GoTo: empty cross-map route from map %02x at (%d,%d) to map %02x: %w",
+		cur, x, y, dest.Map, ErrNavigationStalled)
+}
+
+// legFailureBanScope decides how GoTo records a Traverse failure.
+// Bounce-backs and fully exhausted connection bands are edge-scoped: their
+// evidence applies to the selected edge/band from this map, not merely the
+// final approach tile. Ordinary unwalkable legs remain tile-scoped.
+//
+// Both stronger sentinels unwrap to ErrLegUnwalkable, so they must be checked
+// first or they would degrade to a tile ban and be rediscovered on the next
+// replan from a different tile.
+func legFailureBanScope(err error) (edge, tile bool) {
+	if errors.Is(err, ErrLegBouncesBack) || errors.Is(err, ErrConnectionBandExhausted) {
+		return true, false
+	}
+	if errors.Is(err, ErrLegUnwalkable) {
+		return false, true
+	}
+	return false, false
+}
+
+// legFailureConsumesReplanBudget separates bounded topology discovery from
+// transient retry pressure. Exhausting a component-scoped connection band is
+// already finite and monotonic because the successful safe-ban path records
+// that exact edge in deadEnds; every other failure keeps the historical guard.
+func legFailureConsumesReplanBudget(err error) bool {
+	return !errors.Is(err, ErrConnectionBandExhausted)
 }
 
 // places is the single source of truth for the names Place accepts.
@@ -658,27 +1138,17 @@ var places = map[string]Destination{
 // Place, but are not standalone travel objectives in PlaceNames.
 var interactionPlaces = map[string]Destination{}
 
-// Place maps a friendly name to a Destination.
+// Place maps a friendly name to a semantic Destination. Broad geographic
+// places such as cities and routes are map-arrival goals; interaction-owned
+// and scripted places retain their explicit exact coordinates.
 func Place(name string) (Destination, bool) {
 	d, ok := places[name]
-	if !ok {
-		d, ok = interactionPlaces[name]
+	if ok {
+		d.Kind = namedPlaceKind(name, d)
+		return d, true
 	}
+	d, ok = interactionPlaces[name]
 	return d, ok
-}
-
-// PlaceOnMap returns the named destination recorded for mapID, so a caller
-// standing on a map can find the tile that map's objectives are written
-// against without hardcoding coordinates a second time. Names are scanned in
-// sorted order, so a map carrying more than one place resolves the same way
-// every call. ok is false for a map with no named place.
-func PlaceOnMap(mapID uint8) (Destination, bool) {
-	for _, name := range PlaceNames() {
-		if d := places[name]; d.Map == mapID {
-			return d, true
-		}
-	}
-	return Destination{}, false
 }
 
 // PlaceNames returns every name Place accepts, sorted, so a caller can offer
@@ -736,64 +1206,180 @@ func waitOutScriptedMovement(m *emu.Emu) error {
 // abortIfBattle returns an error wrapping ErrBattle when a battle is active,
 // carrying the current map and coordinates.
 func abortIfBattle(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) != nil {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w",
-			m.Peek8(sym.CurMap), x, y, ErrBattle)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
 	}
-	return nil
+	return abortIfBattleWithDecoder(m, decoder)
 }
 
 // walkWithinMap walks the player from their current position to dest on the
-// current map, retrying around dynamic sprite obstacles up to maxRetries times.
-// Its collision grid is decoded from the current wOverworldMap block buffer,
-// so script-driven tile replacements are ordinary topology rather than
-// learned blockers or story-specific collision patches.
-func walkWithinMap(m *emu.Emu, romData []byte, dest Destination) error {
-	cur := m.Peek8(sym.CurMap)
-	sx, sy := playerXY(m)
+// current map, retrying around dynamic sprite obstacles. Local path planning
+// includes Cut and Surf when those capabilities are usable: the planner picks
+// a route first, walks only the ordinary prefix, performs the first field move
+// on that route, then rebuilds live state and plans again. It never scans for
+// an arbitrary nearby tree after a navigation failure.
+func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...MovePolicy) error {
+	var policy MovePolicy
+	if len(policies) > 0 {
+		policy = policies[0]
+	}
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	fieldRuntime, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	start, err := navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return err
+	}
+	cur, sx, sy := start.Map, start.X, start.Y
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}
-	grid, err := liveMapGrid(m, romData, h)
-	if err != nil {
-		return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, sx, sy, err)
+	if dest.Map != cur {
+		return fmt.Errorf("skill: GoTo: local walk destination is map %02x while current map is %02x", dest.Map, cur)
 	}
 
-	// planErr is the "no path at all" case: already described in full, so
-	// it is returned as-is rather than re-wrapped as a walk failure.
-	var planErr error
-	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
-		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			x, y := playerXY(m)
-			steps, err := world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
-			if err != nil {
-				planErr = fmt.Errorf("skill: GoTo: no path on map %02x from (%d,%d) to (%d,%d): %w",
-					cur, x, y, dest.X, dest.Y, err)
-				return nil, planErr
+	// Each action changes live traversal state/topology. Replanning immediately
+	// afterwards keeps Cut/Surf execution evidence-based and bounds malformed
+	// geometry without limiting ordinary walking distance.
+	const maxLocalFieldActions = 16
+	for fieldActions := 0; ; {
+		var planErr error
+		var nextAction *fieldPathStep
+		var blockedAtFailure map[[2]int]bool
+		err = walkAroundAvoidingObjects(func() error { return movementInterruptionWithDecoder(m, overworld) }, m, h,
+			func(blocked map[[2]int]bool) ([]world.Step, error) {
+				x, y := overworldPosition(m, overworld)
+				// Same-map destinations are ordinary standing tiles. Stepping on an
+				// unrelated door while walking to one fires that warp immediately,
+				// so keep every other warp tile out of the local route.
+				blocked = warpAvoidance(h, int(x), int(y), blocked)
+				plan, planCost, perr := currentFieldPathPlanWithCostWithDecoders(m, overworld, fieldRuntime, romData, h, dest, blocked)
+				if perr != nil {
+					planErr = fmt.Errorf("skill: GoTo: no capability-aware path on map %02x from (%d,%d) to (%d,%d): %w",
+						cur, x, y, dest.X, dest.Y, perr)
+					blockedAtFailure = blocked
+					return nil, planErr
+				}
+				preferStrength, strengthCostErr := preferLocalStrengthRoute(m, romData, h, dest, planCost)
+				if strengthCostErr != nil {
+					return nil, fmt.Errorf("skill: GoTo: weighted Strength route probe on map %02x: %w", cur, strengthCostErr)
+				}
+				if preferStrength {
+					return nil, errPreferStrengthRoute
+				}
+				prefix, action := firstFieldAction(plan)
+				nextAction = action
+				return prefix, nil
+			}, func(steps []world.Step) error { return walkPathWithRuntimeDecoder(m, steps, overworld) },
+			func() { m.StepFrames(npcWaitFrames) })
+
+		if err != nil {
+			if errors.Is(err, errPreferStrengthRoute) {
+				moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
+				if strengthErr != nil {
+					if errors.Is(strengthErr, ErrBattleInterrupted) {
+						x, y := overworldPosition(m, overworld)
+						return fmt.Errorf("skill: GoTo: battle during weighted Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+					}
+					return strengthErr
+				}
+				if moved {
+					return errLocalNavigationWorldChanged
+				}
+				continue
 			}
-			return steps, nil
-		}, func(steps []world.Step) error { return WalkPath(m, steps) },
-		func() { m.StepFrames(npcWaitFrames) })
-	if err == nil {
-		return nil
+			if err == planErr {
+				// Cut/Surf could not reach the destination. Before declaring a
+				// dead local component, ask the live push solver whether Strength
+				// can open it. This is destination-aware: no boulder moves unless
+				// the solved push state makes this exact destination reachable.
+				_, needsStrength, strengthPlanErr := currentLocalStrengthPlan(m, romData, h, dest)
+				if strengthPlanErr != nil {
+					return fmt.Errorf("skill: GoTo: Strength route plan on map %02x: %w", cur, strengthPlanErr)
+				}
+				if needsStrength {
+					moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
+					if strengthErr != nil {
+						if errors.Is(strengthErr, ErrBattleInterrupted) {
+							x, y := overworldPosition(m, overworld)
+							return fmt.Errorf("skill: GoTo: battle during Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+						}
+						return strengthErr
+					}
+					if moved {
+						return errLocalNavigationWorldChanged
+					}
+					// Pushes were positively observed. Re-read the map and let the
+					// ordinary/Cut/Surf planner own the now-open final walk.
+					continue
+				}
+
+				// Neither Cut/Surf nor Strength opens it. Some Red interiors
+				// (Silph Co 5F's Rocket2 guarding the Card Key room, Rocket
+				// Hideout's grunts) route the only corridor through a single
+				// STAY trainer tile: the game does not expect you to walk
+				// around them, it expects their sight line to force the fight
+				// that then removes them from the object table. Fight the one
+				// undefeated ordinary trainer whose tile is provably the sole
+				// reason this exact destination is unreachable before
+				// reporting a dead end.
+				trainer, gated, trainerErr := currentBlockingUndefeatedTrainer(m, romData, h, dest, blockedAtFailure)
+				if trainerErr != nil {
+					return fmt.Errorf("skill: GoTo: blocking-trainer probe on map %02x: %w", cur, trainerErr)
+				}
+				if gated {
+					if policy == nil {
+						return fmt.Errorf("skill: GoTo: undefeated trainer at (%d,%d) blocks the only route to (%d,%d) on map %02x; Travel is required to fight it",
+							trainer.X, trainer.Y, dest.X, dest.Y, cur)
+					}
+					if err := ChallengeTrainer(m, romData, trainer.X, trainer.Y, policy); err != nil {
+						if errors.Is(err, ErrTrainerBlackedOut) {
+							return err
+						}
+						return fmt.Errorf("skill: GoTo: fight blocking trainer at (%d,%d) on map %02x: %w", trainer.X, trainer.Y, cur, err)
+					}
+					// The trainer's tile is now clear (or was already passable
+					// via sight-triggered approach). Re-read live topology and
+					// let the ordinary planner own the rest of the walk.
+					continue
+				}
+				return arriveBesideBlockedDestination(m, romData, dest, planErr)
+			}
+			x, y := overworldPosition(m, overworld)
+			if errors.Is(err, ErrBattleInterrupted) {
+				return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+			}
+			var eb *ErrBlocked
+			if errors.As(err, &eb) {
+				return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
+					cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
+			}
+			return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
+		}
+		if nextAction == nil {
+			return nil
+		}
+		if fieldActions >= maxLocalFieldActions {
+			x, y := overworldPosition(m, overworld)
+			return fmt.Errorf("skill: GoTo: exceeded %d local field actions on map %02x at (%d,%d) toward (%d,%d)",
+				maxLocalFieldActions, cur, x, y, dest.X, dest.Y)
+		}
+		if err := executeFieldPathActionWithDecoders(m, overworld, fieldRuntime, *nextAction); err != nil {
+			if errors.Is(err, ErrBattleInterrupted) {
+				x, y := overworldPosition(m, overworld)
+				return fmt.Errorf("skill: GoTo: battle during field-path action on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
+			}
+			return err
+		}
+		fieldActions++
 	}
-	if err == planErr {
-		return arriveBesideBlockedDestination(m, romData, dest, planErr)
-	}
-	x, y := playerXY(m)
-	if errors.Is(err, ErrBattleInterrupted) {
-		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
-	}
-	var eb *ErrBlocked
-	if errors.As(err, &eb) {
-		return fmt.Errorf("skill: GoTo: blocked on map %02x at (%d,%d) after %d retries: %w",
-			cur, eb.At.X, eb.At.Y, maxWalkRetries, err)
-	}
-	return fmt.Errorf("skill: GoTo: walk on map %02x at (%d,%d): %w", cur, x, y, err)
 }
 
 // arriveBesideBlockedDestination is the last resort when walkAround's whole

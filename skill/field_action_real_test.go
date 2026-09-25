@@ -83,8 +83,12 @@ func TestUseFieldMoveStrengthRealROM(t *testing.T) {
 	m := loadPreparedFieldActionState(t, "POKEPILOT_STRENGTH_TEST_STATE")
 	var before state.Mem
 	state.Snapshot(m, &before)
-	if !boulderAhead(&before) {
-		t.Fatal("prepared Strength state is not facing a live boulder")
+	decoder, err := fieldActionDecoderFor(m)
+	if err != nil {
+		t.Fatalf("field-action profile: %v", err)
+	}
+	if runtime := decoder.DecodeFieldAction(m); !runtime.BoulderAhead {
+		t.Fatalf("prepared Strength state is not facing a live boulder: %+v", runtime)
 	}
 	cap := FieldCapabilityFor(&before, FieldStrength)
 	if !cap.Usable && !CanPrepareFieldMove(m.ROM(), &before, FieldStrength) {

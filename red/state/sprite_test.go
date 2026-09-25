@@ -57,3 +57,14 @@ func TestDecodeSprites(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeObjectTilesIncludesOffscreenObjects(t *testing.T) {
+	var m Mem
+	writeLiveSlot(&m, 7, 10, 3, 0x0e)
+	m[sym.SpritePlayerStateData1+7*0x10+0x02] = 0xff // off-screen: image index disabled
+
+	got := DecodeObjectTiles(&m)
+	if got[7] != [2]int{10, 3} || len(got) != 1 {
+		t.Fatalf("DecodeObjectTiles = %v, want only slot 7 at (10,3)", got)
+	}
+}

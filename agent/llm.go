@@ -111,21 +111,12 @@ type LLMPlanner struct {
 	// selection over presented objectives, not open reasoning, and
 	// RouteBlockages/Requirements already do the one derivation
 	// (prerequisite lookup) the task needs. POKEPILOT_LLM_REASONING_EFFORT
-	// overrides it. See RecoveryReasoningEffort for when this run has
-	// stopped making progress: that is a different regime, and "off"
-	// should not apply to it uniformly.
+	// overrides it. "off" is a hard run policy, including recovery replans.
 	ReasoningEffort string
 
-	// RecoveryReasoningEffort overrides ReasoningEffort for one strategist
-	// call when the replan reason is itself evidence something is going
-	// wrong (isRecoveryReplan): stagnation, stuck, objective_failed,
-	// blackout, train_retreat. A stalled run is exactly the case where
-	// "off"'s lookup-not-derivation assumption stops holding — the
-	// strategist needs to actually reconsider the approach, not just
-	// re-sequence the same menu. Defaults to "medium" in NewLLMPlanner;
-	// POKEPILOT_LLM_RECOVERY_REASONING_EFFORT overrides it. Only takes
-	// effect when ReasoningEffort is "off"; a run already reasoning at
-	// low/medium/high has no separate recovery tier.
+	// RecoveryReasoningEffort is retained for endpoint-configuration
+	// compatibility. It must never override ReasoningEffort="off"; callers
+	// that want reasoning must select it explicitly for the whole run.
 	RecoveryReasoningEffort string
 
 	// MaxTokens caps one reply's completion tokens. Zero means
@@ -146,6 +137,12 @@ type LLMPlanner struct {
 	// what make that visible, so every row can carry the conditions it ran
 	// under. badgerun reads these off the planner at the end of each run.
 	Health LLMHealth
+
+	// OnModelAdopted is called when reconcileResponseModel updates p.Model
+	// because a single-model endpoint answered under a different name than
+	// the (stale) lease requested. Farm uses it to keep InferenceIdentity
+	// aligned with what actually served the reply.
+	OnModelAdopted func(model string)
 
 	// modelOmittedLogged is the once-per-run gate for the "server did not
 	// report a model" log line: visible, but not repeated every call.
@@ -207,6 +204,88 @@ func (p *LLMPlanner) Usage() (prompt, completion int) {
 	return p.Health.PromptTokens, p.Health.CompletionTokens
 }
 
+// reconcileResponseModel enforces the S7-3 identity check with one shared
+// exception for switchable single-model hosts: llama.cpp (and similar)
+// ignores the request model name and echoes whatever is loaded. When a
+// lease still names a prior load (or a stale registry pin) but /v1/models
+// reports exactly the answering model, adopt that identity and keep the
+// reply. A multi-model endpoint or a live sole model that disagrees with
+// the answer stays a hard ErrModelMismatch — re-asking cannot change which
+// weights the server has loaded.
+func (p *LLMPlanner) reconcileResponseModel(answered string) error {
+	answered = strings.TrimSpace(answered)
+	if answered == "" {
+		if !p.modelOmittedLogged {
+			p.modelOmittedLogged = true
+			if p.Log != nil {
+				fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
+			}
+		}
+		return nil
+	}
+	if answered == p.Model {
+		return nil
+	}
+	if live, ok := p.liveSoleModel(); ok && live == answered {
+		requested := p.Model
+		p.Model = answered
+		if p.Log != nil {
+			fmt.Fprintf(p.Log, "  llm: adopting live model %q (requested %q; endpoint serves only that model)\n", answered, requested)
+		}
+		if p.OnModelAdopted != nil {
+			p.OnModelAdopted(answered)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, answered)
+}
+
+// liveSoleModel probes the planner endpoint's /v1/models list. ok is true
+// only when the endpoint reports exactly one non-empty model id.
+func (p *LLMPlanner) liveSoleModel() (string, bool) {
+	base := strings.TrimRight(p.BaseURL, "/")
+	if base == "" {
+		base = strings.TrimRight(defaultLLMBaseURL, "/")
+	}
+	req, err := http.NewRequest(http.MethodGet, base+"/models", nil)
+	if err != nil {
+		return "", false
+	}
+	if p.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.Token)
+	}
+	client := p.Client
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false
+	}
+	var models struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&models); err != nil {
+		return "", false
+	}
+	ids := make([]string, 0, len(models.Data))
+	for _, m := range models.Data {
+		if id := strings.TrimSpace(m.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) != 1 {
+		return "", false
+	}
+	return ids[0], true
+}
+
 // PromptHash is the comparability marker for the prompt a planner sends:
 // the first 8 hex chars of SHA-256 over the four values the request is
 // built from — the base system prompt, the goal, the extra system text and
@@ -253,7 +332,7 @@ func (p *LLMPlanner) StrategicPromptHash() string {
 // POKEPILOT_LLM_URL and POKEPILOT_LLM_MODEL when set. The bearer
 // token comes from llm_token (the name used in .env).
 func NewLLMPlanner() *LLMPlanner {
-	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
+	p := &LLMPlanner{BaseURL: defaultLLMBaseURL, Model: defaultLLMModel, ReasoningEffort: "off", RecoveryReasoningEffort: "off"}
 	if v := os.Getenv("POKEPILOT_LLM_URL"); v != "" {
 		p.BaseURL = v
 	}
@@ -282,19 +361,6 @@ func NewLLMPlanner() *LLMPlanner {
 	}
 	return p
 }
-
-// recoveryReplanReasons are the replan reasons run.go raises when something
-// is going wrong, not merely when a plan finished or the world moved on:
-// see agent/run.go's planning.request calls and recoverableFailureReplan.
-var recoveryReplanReasons = map[string]bool{
-	"stagnation":       true,
-	"stuck":            true,
-	"objective_failed": true,
-	"blackout":         true,
-	"train_retreat":    true,
-}
-
-func isRecoveryReplan(reason string) bool { return recoveryReplanReasons[reason] }
 
 // Next posts the observation and the offered objectives to the model and
 // returns the offered objective the model picked. It never guesses: a
@@ -358,23 +424,9 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 				len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)), picked)
 		}
 	}()
-	if res.Model != "" && res.Model != p.Model {
-		// The ablation question is "does the bigger model solve this?". If
-		// the server ignored the model field, loaded one model, or the env
-		// var is wrong, comparing a model to itself would be read as "not
-		// capacity" — a false negative on the central experiment. So this
-		// is a hard error naming both sides, never a warn-and-continue.
+	if err := p.reconcileResponseModel(res.Model); err != nil {
 		p.Health.Rejected++
-		return Objective{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
-	}
-	if res.Model == "" && !p.modelOmittedLogged {
-		// Some OpenAI-compatible servers omit the field entirely; that is
-		// not an error (failing there would break working setups), but it
-		// means which model answered is UNVERIFIED, so say so once.
-		p.modelOmittedLogged = true
-		if p.Log != nil {
-			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
-		}
+		return Objective{}, err
 	}
 	if res.FinishReason != "" && res.FinishReason != "stop" {
 		// "length" means the reply was cut off: a truncated JSON that still
@@ -399,7 +451,10 @@ func (p *LLMPlanner) NextRetry(obs Observation, offered []Objective, r Retry) (O
 	return o, nil
 }
 
-// Strategize asks the same endpoint for an ordered, bounded plan. Thinking is
+// Strategize asks the same endpoint for an ordered, bounded strategic leg.
+// The leg caches a longer-lived purpose plus immediate setup steps, but stops
+// at the first world-state/discovery boundary so the runtime can use newly
+// exposed objectives instead of executing a stale itinerary. Thinking is
 // intentionally enabled for this request even when the cheap chooser runs
 // with NoThink=true, and the strategist receives a larger completion/time
 // budget so a reasoning block cannot make planning unusable by construction.
@@ -429,15 +484,9 @@ func (p *LLMPlanner) StrategizeRetry(obs Observation, offered []Objective, reaso
 		}
 		fmt.Fprintf(p.Log, "  strategist: %d offered, %s%s, reply %q\n", len(offered), took.Round(10*time.Millisecond), usage, snippet([]byte(reply)))
 	}
-	if res.Model != "" && res.Model != p.Model {
+	if err := p.reconcileResponseModel(res.Model); err != nil {
 		p.Health.Rejected++
-		return Plan{}, fmt.Errorf("%w: requested %q but %q answered", ErrModelMismatch, p.Model, res.Model)
-	}
-	if res.Model == "" && !p.modelOmittedLogged {
-		p.modelOmittedLogged = true
-		if p.Log != nil {
-			fmt.Fprintln(p.Log, "  llm: server did not report a model field; cannot verify which model answered")
-		}
+		return Plan{}, err
 	}
 	if res.FinishReason != "" && res.FinishReason != "stop" {
 		p.Health.Rejected++
@@ -610,7 +659,7 @@ func llmUserPrompt(obs Observation, offered []Objective) string {
 	return b.String()
 }
 
-const strategicSystemPrompt = `You are the strategic planner for a deterministic game-playing runtime. Build a short multi-round plan toward the run goal from the current Observation. Deterministic code owns legality, navigation, battles, menus, and execution; you only sequence semantic objectives. Every plan step MUST be copied exactly as an objective sentence from the current Offered objectives. Never use menu indexes, never invent an unavailable action, and never infer that a prerequisite is satisfied unless Observation says so. RouteBlockages and Requirements are explicit evidence for prerequisite planning. Reply with ONLY JSON: {"goal":"one short strategic purpose","steps":["exact objective sentence", ...]}. Use at most 10 steps. Do not explain.`
+const strategicSystemPrompt = `You are the strategic planner for a deterministic game-playing runtime. Build one short strategic LEG toward the run goal from the current Observation. Put the longer-range purpose in "goal"; "steps" are only immediate setup actions that are legal in the CURRENT Offered objectives. Deterministic code owns legality, navigation, battles, menus, and execution; you only sequence semantic objectives. Every plan step MUST be copied exactly as an objective sentence from the current Offered objectives. Never use menu indexes, never invent an unavailable action, and never infer that a prerequisite is satisfied unless Observation says so. RouteBlockages and Requirements are explicit evidence for prerequisite planning. End the executable leg at the FIRST world-state/discovery boundary: a progression objective, gym objective, starter choice, or travel objective marked "(unvisited adjacent map)". Do NOT put executable steps after that boundary; the runtime will observe the new state and continue the same purpose when unambiguous or ask you again when a real branch appears. Prefer short legs; use extra steps only for necessary preparation before the boundary. Reply with ONLY JSON: {"goal":"one short strategic purpose","steps":["exact objective sentence", ...]}. Use at most 10 steps. Do not explain.`
 
 func (p *LLMPlanner) strategicSystemMessage() string {
 	s := strategicSystemPrompt + p.ExtraSystem
@@ -882,10 +931,6 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 		user += "\n\nYour previous plan reply was rejected: " + feedback +
 			"\nReturn ONLY corrected plan JSON, using exact objective sentences from the offered list."
 	}
-	maxTokens := p.MaxTokens
-	if maxTokens < strategicReplyTokens {
-		maxTokens = strategicReplyTokens
-	}
 	timeout := p.Timeout
 	if timeout < strategicTimeout {
 		timeout = strategicTimeout
@@ -895,22 +940,26 @@ func (p *LLMPlanner) askPlan(obs Observation, offered []Objective, reason, feedb
 	// the reasoning_effort field to shrink it. reasoning_effort is meaningless
 	// once thinking is off, so it is not sent alongside enable_thinking:false.
 	//
-	// A recovery-triggered replan (isRecoveryReplan) overrides that: the
-	// run has stopped making progress, which is exactly when "off"'s
-	// lookup-not-derivation assumption stops holding, so this one call
-	// escalates to RecoveryReasoningEffort instead.
+	// Off is a hard run policy. Recovery replans must not silently turn
+	// thinking back on: a small model can otherwise spend the whole slot on
+	// hidden reasoning and repeat that truncation on every retry.
 	effort := p.ReasoningEffort
-	if effort == "off" && isRecoveryReplan(reason) {
-		effort = p.RecoveryReasoningEffort
-		if effort == "" {
-			effort = "medium"
-		}
-	}
 	strategistNoThink := effort == "off"
 	if strategistNoThink {
 		effort = ""
 	}
-	return p.askRequest(system, user, "objective_plan", planSchema, strategistNoThink, effort, maxTokens, strategicRetryTokens, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
+	maxTokens := p.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = strategicReplyTokens
+	}
+	if !strategistNoThink && maxTokens < strategicReplyTokens {
+		maxTokens = strategicReplyTokens
+	}
+	retryCap := strategicRetryTokens
+	if strategistNoThink {
+		retryCap = maxTokens
+	}
+	return p.askRequest(system, user, "objective_plan", planSchema, strategistNoThink, effort, maxTokens, retryCap, timeout, p.StrategicPromptHash(), temperature, maxTokensFactor)
 }
 
 func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[string]any, noThink bool, reasoningEffort string, baseMaxTokens, retryCap int, timeout time.Duration, promptHash string, temperature *float64, maxTokensFactor int) (chatResult, error) {

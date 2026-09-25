@@ -61,56 +61,31 @@ func (p *worldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap 
 func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	return gen1rom.BuildGridSpec(romData, gen1rom.MapHeader(h), blocks, mode, gen1rom.GridLayout{
 		TilesetsBank: yellowTilesetsBank, TilesetsAddr: yellowTilesetsAddr, TilesetEntryLen: tilesetEntryLen,
-		TilePairs: yellowTilePairsForTraversal,
-		Ledges:    yellowLedges,
+		CollisionBank: yellowCollisionBank,
+		TilePairs:     yellowTilePairsForTraversal,
+		Ledges:        yellowLedges,
 	})
 }
 
-type yellowPair struct {
-	tileset uint8
-	a, b    uint8
-}
+// Yellow-owned table addresses (pokeyellow.sym). The byte formats are the
+// shared Gen-I ones decoded by gen1rom.
+const (
+	yellowCollisionBank           uint8 = 0x01                       // Overworld_Coll .. collision lists live in bank 1
+	yellowTilePairCollisionsLand        = 0x0ada                     // 00:0ada TilePairCollisionsLand
+	yellowTilePairCollisionsWater       = 0x0afc                     // 00:0afc TilePairCollisionsWater
+	yellowLedgeTiles                    = 6*0x4000 + 0x6851 - 0x4000 // 06:6851 LedgeTiles
+)
 
-var yellowLandPairs = []yellowPair{
-	{17, 0x20, 0x05}, {17, 0x41, 0x05}, {3, 0x30, 0x2E},
-	{17, 0x2A, 0x05}, {17, 0x05, 0x21}, {3, 0x52, 0x2E},
-	{3, 0x55, 0x2E}, {3, 0x56, 0x2E}, {3, 0x20, 0x2E},
-	{3, 0x5E, 0x2E}, {3, 0x5F, 0x2E},
-}
-var yellowWaterPairs = []yellowPair{
-	{3, 0x14, 0x2E}, {3, 0x48, 0x2E}, {17, 0x14, 0x05},
-}
-
-func yellowTilePairsForTraversal(_ []byte, tileset uint8, mode worldmodel.TraversalMode) map[[2]uint8]bool {
-	src := yellowLandPairs
+func yellowTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.TraversalMode) map[[2]uint8]bool {
+	addr := yellowTilePairCollisionsLand
 	if mode == worldmodel.TraversalWater {
-		src = yellowWaterPairs
+		addr = yellowTilePairCollisionsWater
 	}
-	out := map[[2]uint8]bool{}
-	for _, p := range src {
-		if p.tileset != tileset {
-			continue
-		}
-		out[[2]uint8{p.a, p.b}] = true
-		out[[2]uint8{p.b, p.a}] = true
-	}
-	return out
+	return gen1rom.TilePairsAt(romData, addr, tileset)
 }
 
-func yellowLedges(_ []byte, tileset uint8) []worldmodel.Ledge {
-	if tileset != 0 {
-		return nil
-	}
-	return []worldmodel.Ledge{
-		{DY: 1, From: 0x2C, Over: 0x37},
-		{DY: 1, From: 0x39, Over: 0x36},
-		{DY: 1, From: 0x39, Over: 0x37},
-		{DX: -1, From: 0x2C, Over: 0x27},
-		{DX: -1, From: 0x39, Over: 0x27},
-		{DX: 1, From: 0x2C, Over: 0x0D},
-		{DX: 1, From: 0x2C, Over: 0x1D},
-		{DX: 1, From: 0x39, Over: 0x0D},
-	}
+func yellowLedges(romData []byte, tileset uint8) []worldmodel.Ledge {
+	return gen1rom.LedgesAt(romData, yellowLedgeTiles, tileset)
 }
 
 func isYellowWorldROM(romData []byte) bool {

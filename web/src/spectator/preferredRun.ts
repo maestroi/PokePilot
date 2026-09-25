@@ -18,6 +18,7 @@ export function preferredRun<T extends SelectableSpectatorRun>(runs: T[], select
   return runs.find((run) => run.featured)
     || newest(runs.filter((run) => run.status === 'running'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'leased'), 'queued_at')
+    || newest(runs.filter((run) => run.status === 'paused'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'queued'), 'queued_at')
     || newest(runs.filter((run) => run.status === 'done'), 'ended_at')
     || runs[runs.length - 1]

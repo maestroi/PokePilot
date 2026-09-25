@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,10 @@ type fakeGitHub struct {
 	lastCreateTitle string
 	lastCreateBody  string
 	auth            []string
+	listed          int
+	createStarted   chan struct{}
+	createRelease   chan struct{}
+	secondLookup    chan struct{}
 }
 
 func newFakeGitHub() *fakeGitHub {
@@ -37,6 +42,10 @@ func (f *fakeGitHub) handler() http.Handler {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.auth = append(f.auth, r.Header.Get("Authorization"))
+		f.listed++
+		if f.listed == 2 && f.secondLookup != nil {
+			close(f.secondLookup)
+		}
 		_ = json.NewEncoder(w).Encode(f.issues)
 	})
 	mux.HandleFunc("POST /repos/o/r/issues", func(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +56,15 @@ func (f *fakeGitHub) handler() http.Handler {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			testHTTPError(w, http.StatusBadRequest, err.Error())
 			return
+		}
+		if f.createStarted != nil {
+			select {
+			case f.createStarted <- struct{}{}:
+			default:
+			}
+		}
+		if f.createRelease != nil {
+			<-f.createRelease
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -73,12 +91,24 @@ func (f *fakeGitHub) handler() http.Handler {
 	})
 	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
 		n := mustNumber(r.PathValue("number"))
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			testHTTPError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		for i := range f.issues {
 			if f.issues[i].Number == n {
-				f.issues[i].State = "open"
-				f.issues[i].StateReason = "reopened"
+				if state, ok := payload["state"]; ok {
+					f.issues[i].State = state
+					if state == "open" {
+						f.issues[i].StateReason = "reopened"
+					}
+				}
+				if body, ok := payload["body"]; ok {
+					f.issues[i].Body = body
+				}
 				f.patched++
 				_ = json.NewEncoder(w).Encode(f.issues[i])
 				return
@@ -188,7 +218,8 @@ func sampleManifest(externalID string) issueReportManifest {
 		Severity:         "critical",
 		Evidence: json.RawMessage(`{
 			"run_id":"run-42","attempt":3,"classification":"progression-blocker",
-			"objective":"GoTo Cerulean","error":"no path","map":"0x03","x":1,"y":2,
+			"objective":"GoTo Cerulean","error":"no path","cause":"route_prerequisite_missing",
+			"cause_context":["can_surf","can_clear_snorlax"],"map":"0x03","x":1,"y":2,
 			"trace_tail":["private noisy trace that should not be copied"]
 		}`),
 	}
@@ -221,10 +252,13 @@ func TestReportCreatesGitHubIssueWithoutArtifactBytes(t *testing.T) {
 	for _, want := range []string{
 		"pokepilot-fingerprint:sha256:0123456789abcdef",
 		"pokepilot-external-id:run-42-attempt-3-objective-key",
+		"pokepilot-latest-observed-revision:abc123",
+		"pokepilot-latest-observed-at:2026-09-14T01:00:00Z",
 		"Triage key:** `0123456789abcdef`",
 		"https://pokemon.test/v1/runs/run-42/debug",
 		"`round-003.state`",
 		"progression-blocker",
+		"| `cause_context` | can_surf, can_clear_snorlax |",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("issue body missing %q:\n%s", want, body)
@@ -259,6 +293,139 @@ func TestReportDeduplicatesOpenFingerprint(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.created != 0 || fake.commented != 0 || fake.patched != 0 {
 		t.Fatalf("created=%d commented=%d patched=%d", fake.created, fake.commented, fake.patched)
+	}
+}
+
+func TestReportSerializesConcurrentFingerprintDeduplication(t *testing.T) {
+	fake := newFakeGitHub()
+	fake.createStarted = make(chan struct{}, 1)
+	fake.createRelease = make(chan struct{})
+	fake.secondLookup = make(chan struct{})
+
+	gh := httptest.NewServer(fake.handler())
+	defer gh.Close()
+	client, err := newGitHubClient(gh.URL, "https://github.test", "o/r", "secret", "", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type reportResult struct {
+		out     issueReportResponse
+		created bool
+		err     error
+	}
+	first := make(chan reportResult, 1)
+	second := make(chan reportResult, 1)
+	go func() {
+		out, created, err := client.report(context.Background(), sampleManifest("concurrent-a"), nil)
+		first <- reportResult{out: out, created: created, err: err}
+	}()
+
+	select {
+	case <-fake.createStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first report never reached GitHub issue creation")
+	}
+
+	go func() {
+		out, created, err := client.report(context.Background(), sampleManifest("concurrent-b"), nil)
+		second <- reportResult{out: out, created: created, err: err}
+	}()
+
+	secondLookupBeforeCreate := false
+	select {
+	case <-fake.secondLookup:
+		secondLookupBeforeCreate = true
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(fake.createRelease)
+
+	r1, r2 := <-first, <-second
+	if r1.err != nil || r2.err != nil {
+		t.Fatalf("concurrent reports failed: first=%v second=%v", r1.err, r2.err)
+	}
+	if secondLookupBeforeCreate {
+		t.Fatal("second report scanned GitHub before the first fingerprint create completed")
+	}
+	if r1.out.Issue.IssueNumber != r2.out.Issue.IssueNumber {
+		t.Fatalf("concurrent reports returned different issues: %d vs %d", r1.out.Issue.IssueNumber, r2.out.Issue.IssueNumber)
+	}
+	created := 0
+	if r1.created {
+		created++
+	}
+	if r2.created {
+		created++
+	}
+	if created != 1 {
+		t.Fatalf("created reports=%d, want exactly 1", created)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.created != 1 {
+		t.Fatalf("GitHub creates=%d, want exactly 1", fake.created)
+	}
+}
+
+func TestReportDeduplicatedOpenIssueTracksLatestObservedRevision(t *testing.T) {
+	fake := newFakeGitHub()
+	old := sampleManifest("old-occurrence")
+	old.ObservedRevision = "old-revision"
+	fake.issues = []githubIssue{{Number: 8, State: "open", Body: renderIssueBody("", old, nil)}}
+	issues, _ := newTestServer(t, fake)
+
+	current := sampleManifest("new-occurrence")
+	current.ObservedRevision = "new-revision"
+	resp := reportRequest(t, issues.URL, current, "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.patched != 1 {
+		t.Fatalf("patched=%d, want 1 latest-observation update", fake.patched)
+	}
+	body := fake.issues[0].Body
+	if !strings.Contains(body, latestObservedRevisionMarker("new-revision")) {
+		t.Fatalf("latest observation marker missing:\n%s", body)
+	}
+	if strings.Contains(body, latestObservedRevisionMarker("old-revision")) {
+		t.Fatalf("stale latest observation marker retained:\n%s", body)
+	}
+}
+
+func TestReportDeduplicatedOpenIssueDoesNotRollLatestObservationBackward(t *testing.T) {
+	fake := newFakeGitHub()
+	latest := sampleManifest("latest-occurrence")
+	latest.ObservedRevision = "new-revision"
+	latest.ObservedAt = time.Date(2026, 9, 19, 21, 0, 0, 0, time.UTC)
+	fake.issues = []githubIssue{{Number: 18, State: "open", Body: renderIssueBody("", latest, nil)}}
+	issues, _ := newTestServer(t, fake)
+
+	older := sampleManifest("older-retry")
+	older.ObservedRevision = "old-revision"
+	older.ObservedAt = latest.ObservedAt.Add(-time.Hour)
+	resp := reportRequest(t, issues.URL, older, "", nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, body)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.patched != 0 {
+		t.Fatalf("older retry patched issue %d time(s), want 0", fake.patched)
+	}
+	body := fake.issues[0].Body
+	if !strings.Contains(body, latestObservedRevisionMarker("new-revision")) {
+		t.Fatalf("latest revision rolled backward:\n%s", body)
+	}
+	if strings.Contains(body, latestObservedRevisionMarker("old-revision")) {
+		t.Fatalf("old revision replaced latest marker:\n%s", body)
 	}
 }
 

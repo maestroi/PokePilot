@@ -3,6 +3,23 @@ import type { DashboardRun, TriageGroup } from '../shared/api/types'
 export const FAILURE_PATTERN_CAP = 128
 export const DELETE_CONCURRENCY = 3
 
+// pokewall composes an objective-failure pattern as
+// normalizeDetail(objective + " | " + error)[:128] + " | map=xx". The result
+// is longer than any normalizeFailureDetail(run.detail) can be, so an exact
+// string comparison can never match one of those groups. The stable identity
+// both sides carry is the canonical failure-id marker, so cleanup matches on
+// that; groups without a marker keep the normalized-pattern fallback.
+const FAILURE_MAP_SUFFIX_RE = /\s\|\smap=[0-9a-fA-F]{2}$/
+
+// Reasons that mark a run as having stopped on a failure. A cleanly finished
+// run that still carries an old failure detail must never be deleted.
+const FAILURE_REASONS = new Set(['error', 'lost', 'failed', 'stuck'])
+
+export interface FailureGroupIdentity {
+  tokens: string[]
+  patterns: string[]
+}
+
 export const AGE_OPTIONS = [
   { seconds: 60 * 60, label: '1h', description: '1 hour' },
   { seconds: 6 * 60 * 60, label: '6h', description: '6 hours' },
@@ -53,20 +70,66 @@ export function groupPattern(group: Pick<TriageGroup, 'pattern' | 'detail'> & { 
 }
 
 export function isResolvedGroup(group: TriageGroup): boolean {
-  const status = String(group.issue?.status || '').toLowerCase()
-  const resolution = String(group.issue?.resolution || '').toLowerCase()
-  return status === 'resolved' || status === 'fixed' || resolution === 'fixed'
+  const issue = group.issue
+  if (!issue) return false
+
+  const status = String(issue.status || '').trim().toLowerCase()
+  const resolution = String(issue.resolution || '').trim().toLowerCase()
+
+  // Keep this aligned with deploy.Actionable: a reopened/active issue wins over
+  // stale resolution metadata, while every non-empty resolution and terminal
+  // issue state belongs in history rather than the actionable queue.
+  if (['open', 'reopened', 'investigating', 'in_progress', 'in-progress', 'todo', 'backlog'].includes(status)) {
+    return false
+  }
+  if (resolution) return true
+  return ['resolved', 'closed', 'fixed', 'done', 'completed'].includes(status)
 }
 
 export function bugGroupRuns(runs: DashboardRun[] | null | undefined, pattern: string): DashboardRun[] {
   const wanted = String(pattern || '')
   if (!wanted) return []
+  return selectGroupRuns(runs, failureGroupIdentity([wanted]))
+}
+
+// groupFailureIdentity collects every identity a triage group advertises: the
+// failure-id markers it carries and the normalized patterns it may equal. A
+// composed objective-failure pattern truncates the marker it embeds, so the
+// group's raw `example` is read too — it usually keeps the full marker.
+export function groupFailureIdentity(group: Pick<TriageGroup, 'pattern' | 'detail' | 'example' | 'examples'>): FailureGroupIdentity {
+  const examples = Array.isArray(group.examples) ? group.examples : []
+  return failureGroupIdentity([group.pattern, group.detail, group.example, ...examples])
+}
+
+function failureGroupIdentity(texts: Array<string | undefined | null>): FailureGroupIdentity {
+  const tokens = new Set<string>()
+  const patterns = new Set<string>()
+  for (const raw of texts) {
+    const text = String(raw || '').trim()
+    if (!text) continue
+    patterns.add(text)
+    const base = text.replace(FAILURE_MAP_SUFFIX_RE, '').trim()
+    if (base) patterns.add(base)
+    for (const match of text.matchAll(/failure-id:([a-p]{12,64})/g)) tokens.add(match[1])
+  }
+  return { tokens: [...tokens], patterns: [...patterns] }
+}
+
+export function isFailureFinishedRun(run: DashboardRun | null | undefined): boolean {
+  return isDeletableFinishedRun(run) && FAILURE_REASONS.has(String(run?.reason || '').toLowerCase())
+}
+
+export function runMatchesFailureGroup(run: DashboardRun, identity: FailureGroupIdentity): boolean {
+  const detail = String(run.detail || '')
+  if (!detail) return false
+  if (identity.tokens.some((token) => detail.includes(`failure-id:${token}`))) return true
+  const normalized = normalizeFailureDetail(detail)
+  return identity.patterns.includes(normalized)
+}
+
+function selectGroupRuns(runs: DashboardRun[] | null | undefined, identity: FailureGroupIdentity): DashboardRun[] {
   return (Array.isArray(runs) ? runs : [])
-    .filter((run) =>
-      isDeletableFinishedRun(run)
-      && (run.reason === 'error' || run.reason === 'lost')
-      && run.detail
-      && normalizeFailureDetail(run.detail) === wanted)
+    .filter((run) => isFailureFinishedRun(run) && runMatchesFailureGroup(run, identity))
     .sort((a, b) => Number(a.ended_at || 0) - Number(b.ended_at || 0))
 }
 
@@ -74,7 +137,7 @@ export function matchingRunsForGroups(runs: DashboardRun[] | null | undefined, g
   const seen = new Set<string>()
   const matched: DashboardRun[] = []
   for (const group of groups) {
-    for (const run of bugGroupRuns(runs, groupPattern(group))) {
+    for (const run of selectGroupRuns(runs, groupFailureIdentity(group))) {
       if (seen.has(run.run_id)) continue
       seen.add(run.run_id)
       matched.push(run)

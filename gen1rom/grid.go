@@ -13,8 +13,12 @@ type GridLayout struct {
 	TilesetsBank    uint8
 	TilesetsAddr    uint16
 	TilesetEntryLen int
-	TilePairs       PairProvider
-	Ledges          LedgeProvider
+	// CollisionBank is the bank holding switchable-bank collision lists. Red
+	// keeps every list in home bank 0; Yellow moved them to bank 1. Zero keeps
+	// the historical behaviour of reading them from the tileset's GFX bank.
+	CollisionBank uint8
+	TilePairs     PairProvider
+	Ledges        LedgeProvider
 }
 
 func BuildGridSpec(rom []byte, h MapHeader, blocks []byte, mode worldmodel.TraversalMode, layout GridLayout) (worldmodel.GridSpec, error) {
@@ -68,6 +72,9 @@ func BuildGridSpec(rom []byte, h MapHeader, blocks []byte, mode worldmodel.Trave
 	collBank := uint8(0)
 	if collPtr >= 0x4000 {
 		collBank = tsBank
+		if layout.CollisionBank != 0 {
+			collBank = layout.CollisionBank
+		}
 	}
 	collOff, err := BankedOffset(collBank, collPtr)
 	if err != nil {
@@ -111,4 +118,50 @@ func BuildGridSpec(rom []byte, h MapHeader, blocks []byte, mode worldmodel.Trave
 		}
 	}
 	return spec, nil
+}
+
+// TilePairsAt decodes a TilePairCollisions table (tileset, tile A, tile B
+// triples terminated by $FF). The format is shared by every Gen-I image; only
+// the table address is game-owned.
+func TilePairsAt(rom []byte, offset int, tileset uint8) map[[2]uint8]bool {
+	pairs := map[[2]uint8]bool{}
+	for off := offset; off >= 0 && off+3 <= len(rom); off += 3 {
+		if rom[off] == 0xff {
+			break
+		}
+		if rom[off] != tileset {
+			continue
+		}
+		a, b := rom[off+1], rom[off+2]
+		pairs[[2]uint8{a, b}] = true
+		pairs[[2]uint8{b, a}] = true
+	}
+	return pairs
+}
+
+// LedgesAt decodes a LedgeTiles table (facing, standing tile, ledge tile,
+// input; $FF terminated). HandleLedges only runs on the OVERWORLD tileset in
+// every Gen-I game, so other tilesets have no ledges.
+func LedgesAt(rom []byte, offset int, tileset uint8) []worldmodel.Ledge {
+	if tileset != 0 {
+		return nil
+	}
+	var out []worldmodel.Ledge
+	for at := offset; at >= 0 && at+3 < len(rom) && rom[at] != 0xff; at += 4 {
+		l := worldmodel.Ledge{From: rom[at+1], Over: rom[at+2]}
+		switch rom[at] {
+		case 0:
+			l.DY = 1
+		case 4:
+			l.DY = -1
+		case 8:
+			l.DX = -1
+		case 12:
+			l.DX = 1
+		default:
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }

@@ -5,7 +5,7 @@ import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import ItemIcon from '../shared/components/ItemIcon.vue'
 import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
 import SemanticMap from '../shared/components/SemanticMap.vue'
-import { itemDisplayName } from '../shared/pokemonAssets'
+import { itemDescription, itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { playSpeedLabel } from '../shared/playstyle'
 import {
@@ -54,6 +54,10 @@ const bag = computed(() => props.run.player?.bag || [])
 const milestones = computed(() => props.run.player?.milestones || [])
 const hasMap = computed(() => Number.isFinite(Number(props.run.map)))
 const mapID = computed(() => Math.max(0, Number(props.run.map || 0)).toString(16).padStart(2, '0').toUpperCase())
+function itemTooltip(item: { name: string; quantity: number }): string {
+  return `${itemDisplayName(item.name)} ×${item.quantity}\n${itemDescription(item.name)}`
+}
+
 const worldHref = computed(() => {
   const url = new URL('/world', window.location.origin)
   url.searchParams.set('map', `0x${mapID.value}`)
@@ -166,7 +170,7 @@ const worldHref = computed(() => {
           v-for="item in bag"
           :key="item.name"
           class="flex min-w-0 items-center gap-2 rounded-md bg-black/20 p-1.5 ring-1 ring-white/7"
-          :title="itemDisplayName(item.name)"
+          :title="itemTooltip(item)"
         >
           <ItemIcon :name="item.name" :size="28" />
           <span class="min-w-0 flex-1 truncate text-[10px] font-medium text-slate-300">{{ itemDisplayName(item.name) }}</span>

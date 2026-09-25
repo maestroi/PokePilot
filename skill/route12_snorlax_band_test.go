@@ -11,10 +11,9 @@ import (
 // TestRoute12SnorlaxTransitionOnlyClaimsWalkableConnectionBands is the
 // regression for #958 and the map-0x18 route_replan_exhausted farm burst.
 // Route 13's north border contains several component-scoped in-bounds bands,
-// but only the real Route 12 seam is walkable. The Snorlax semantic action is
-// allowed to bypass ordinary canExit reachability, so attaching it to padding
-// bands makes those solid-ground edges selectable and strands the run at
-// Route 13 (11,4).
+// but only the real Route 12 seam is walkable. The Snorlax semantic action must
+// remain executable while preserving ordinary canExit reachability; attaching
+// it to padding bands would still make solid-ground edges semantic candidates.
 func TestRoute12SnorlaxTransitionOnlyClaimsWalkableConnectionBands(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
@@ -43,6 +42,9 @@ func TestRoute12SnorlaxTransitionOnlyClaimsWalkableConnectionBands(t *testing.T)
 			if !attached || transition.ID != "red:route12_snorlax" {
 				start, end, _ := world.ConnectionBand(edge)
 				t.Fatalf("walkable Route 13 -> Route 12 band %d..%d lacks Snorlax transition: attached=%v transition=%+v", start, end, attached, transition)
+			}
+			if transition.Gate || !transition.PivotOnly {
+				t.Fatalf("walkable Route 13 -> Route 12 Snorlax transition = %+v, want executable PivotOnly", transition)
 			}
 			continue
 		}

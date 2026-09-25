@@ -119,10 +119,9 @@ func reachRocketB2FElevatorFloor(m *emu.Emu, romData []byte, policy MovePolicy) 
 				return fmt.Errorf("skill: RocketHideout: B4F -> B3F after Lift Key: %w", err)
 			}
 		case rocketHideoutB3FMap:
-			if err := travelRocketWarp(m, policy, func() error {
-				return walkRocketSpinnerWarp(m, romData, rocketHideoutB3FMap, rocketHideoutB2FMap, 25, 6)
-			}); err != nil {
-				return fmt.Errorf("skill: RocketHideout: reverse B3F spinner floor: %w", err)
+			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB3FMap, To: rocketHideoutB2FMap, WarpX: 25, WarpY: 6}
+			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
+				return fmt.Errorf("skill: RocketHideout: reverse B3F forced-movement floor: %w", err)
 			}
 		case rocketHideoutB2FMap:
 			return nil
@@ -149,9 +148,8 @@ func enterRocketElevatorFromB2F(m *emu.Emu, romData []byte, policy MovePolicy) e
 	if got := m.Peek8(sym.CurMap); got != rocketHideoutB2FMap {
 		return fmt.Errorf("skill: RocketHideout: elevator entrance requested on map %#04x, want B2F %#04x", got, rocketHideoutB2FMap)
 	}
-	if err := travelRocketWarp(m, policy, func() error {
-		return walkRocketSpinnerWarp(m, romData, rocketHideoutB2FMap, rocketHideoutElevatorMap, 24, 19)
-	}); err != nil {
+	edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB2FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 19}
+	if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
 		return fmt.Errorf("skill: RocketHideout: enter B2F elevator: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != rocketHideoutElevatorMap {

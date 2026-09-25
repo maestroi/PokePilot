@@ -29,6 +29,15 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/abcdabcdabcdabcd/investigate":
 			res.Header().Set("Content-Type", "application/json")
 			res.Write([]byte(`{"issue_number":42}`))
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/dismiss":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"status":"dismissed","groups":390,"occurrences":512}`))
+		case req.Method == http.MethodDelete && req.URL.Path == "/v1/triage/abcdabcdabcdabcd":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"status":"dismissed","occurrences":2}`))
+		case req.Method == http.MethodPost && req.URL.Path == "/v1/triage/abcdabcdabcdabcd/solver-attempt":
+			res.Header().Set("Content-Type", "application/json")
+			res.Write([]byte(`{"attempt_count":1}`))
 		case req.Method == http.MethodPost && req.URL.Path == "/v1/specs":
 			body, _ := io.ReadAll(req.Body)
 			if !bytes.Contains(body, []byte(`"run_id"`)) {
@@ -103,6 +112,42 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		t.Fatalf("POST investigate = %d, want 200", res.StatusCode)
 	}
 
+	solverAttempt := bytes.NewBufferString(`{"id":"a","backend":"opencode","model":"qwen3.8-27b/qwen3.8-27b","state":"started"}`)
+	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/solver-attempt", "application/json", solverAttempt)
+	if err != nil {
+		t.Fatalf("POST solver-attempt: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("POST solver-attempt = %d, want 200", res.StatusCode)
+	}
+
+	bulkDismiss := bytes.NewBufferString(`{"keys":["abcdabcdabcdabcd","efefefefefefefef"]}`)
+	res, err = http.Post(ui.URL+"/v1/triage/dismiss", "application/json", bulkDismiss)
+	if err != nil {
+		t.Fatalf("POST bulk triage dismiss: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("POST /v1/triage/dismiss = %d, want 200", res.StatusCode)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, ui.URL+"/v1/triage/abcdabcdabcdabcd", nil)
+	if err != nil {
+		t.Fatalf("DELETE triage request: %v", err)
+	}
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE triage: %v", err)
+	}
+	io.Copy(io.Discard, res.Body) //nolint:errcheck
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("DELETE /v1/triage/{key} = %d, want 200", res.StatusCode)
+	}
+
 	res, err = http.Post(ui.URL+"/v1/triage/abcdabcdabcdabcd/other", "application/json", bytes.NewReader(nil))
 	if err != nil {
 		t.Fatalf("POST other triage: %v", err)
@@ -144,7 +189,7 @@ func TestPokeuiProxiesAllowlistedRoutes(t *testing.T) {
 		t.Fatalf("POST cancel = %d, want 200", res.StatusCode)
 	}
 
-	req, err := http.NewRequest(http.MethodDelete, ui.URL+"/v1/runs/r1", nil)
+	req, err = http.NewRequest(http.MethodDelete, ui.URL+"/v1/runs/r1", nil)
 	if err != nil {
 		t.Fatalf("DELETE request: %v", err)
 	}

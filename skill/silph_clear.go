@@ -19,17 +19,25 @@ const (
 	masterBallItemID uint8 = 0x01
 
 	// Ordinary stair landing on 3F. The story route deliberately enters the
-	// rival room through 3F's Card Key door and pad instead of relying on the
+	// rival room through 3F's Card Key doors and pad instead of relying on the
 	// elevator or on a blind floor-by-floor movement script.
 	silph3FStairLandingX uint8 = 24
 	silph3FStairLandingY uint8 = 1
 
 	// 3F pad (11,11) lands on 7F's pad (5,3), immediately west of the rival
-	// encounter. The closed Card Key block is block-coordinate (4,4).
-	silph3FTo7FWarpX  uint8 = 11
-	silph3FTo7FWarpY  uint8 = 11
-	silph3FDoorBlockX       = 4
-	silph3FDoorBlockY       = 4
+	// encounter. Two Card Key blocks gate that corridor from the stair
+	// landing: (8,4) opens the mid-floor passage, then (4,4) opens the
+	// rival-pad room. MEASURED on run-307qfeox5ecw52jviqm1q1t3kl: with both
+	// closed, (24,1) cannot reach any stand-beside tile of (4,4), so unlocking
+	// only the rival-room door reports no_path forever.
+	silph3FTo7FWarpX             uint8 = 11
+	silph3FTo7FWarpY             uint8 = 11
+	silph3FCorridorDoorBlockX          = 8
+	silph3FCorridorDoorBlockY          = 4
+	silph3FCorridorDoorApproachX uint8 = 10
+	silph3FCorridorDoorApproachY uint8 = 8
+	silph3FDoorBlockX                  = 4
+	silph3FDoorBlockY                  = 4
 
 	// The rival appears at home coordinate (3,7) and is triggered from either
 	// (3,2) or (3,3). After the fight, the pad at (5,7) lands on 11F (3,2).
@@ -64,9 +72,10 @@ var (
 )
 
 // ClearSilphCo completes the story portion of issue #34 after the Card Key is
-// owned: open only the two doors required by the shortest story route, take
-// the 3F pad to the rival, take the 7F pad to 11F, defeat Giovanni, and collect
-// the president's Master Ball reward.
+// owned: open the 3F corridor door, the 3F rival-room door, and the 11F boss
+// door required by the shortest story route, take the 3F pad to the rival,
+// take the 7F pad to 11F, defeat Giovanni, and collect the president's Master
+// Ball reward.
 //
 // Every boundary is reconstructed from RAM. A checkpoint after the rival,
 // after Giovanni, or after the president reward resumes from that durable fact
@@ -141,8 +150,19 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, err := TravelFlee(m, romData, landing, policy, silphStoryTravelBattles); err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: reach Silph Co 3F: %w", err)
 	}
-	reachable := func() bool { return silphWarpReachable(m, romData, silph3FTo7FEdge) }
+	reachable := func() bool { return warpEdgeReachable(m, romData, silph3FTo7FEdge) }
 	if !reachable() {
+		// The corridor door must open before the rival-room door is approachable
+		// from the stair landing. Its positive postcondition is reachability of
+		// the mid-corridor tile just west of the closed (8,4) block.
+		corridorOpen := func() bool {
+			return silphTileReachable(m, romData, silphCo3FMap, silph3FCorridorDoorApproachX, silph3FCorridorDoorApproachY)
+		}
+		if !corridorOpen() {
+			if err := unlockSilphDoor(m, romData, silph3FCorridorDoorBlockX, silph3FCorridorDoorBlockY, policy, corridorOpen); err != nil {
+				return fmt.Errorf("skill: ClearSilphCo: unlock 3F corridor door: %w", err)
+			}
+		}
 		if err := unlockSilphDoor(m, romData, silph3FDoorBlockX, silph3FDoorBlockY, policy, reachable); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: unlock 3F rival-room door: %w", err)
 		}
@@ -217,23 +237,6 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 		last = errors.New("no Card Key cell accepted the interaction")
 	}
 	return fmt.Errorf("door block (%d,%d) did not open a route: %w", blockX, blockY, last)
-}
-
-func silphWarpReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
-	if m.Peek8(sym.CurMap) != edge.From {
-		return false
-	}
-	h, err := rom.ParseMap(romData, edge.From)
-	if err != nil {
-		return false
-	}
-	grid, err := liveMapGrid(m, romData, h)
-	if err != nil {
-		return false
-	}
-	x, y := playerXY(m)
-	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), romData)
-	return err == nil
 }
 
 func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
@@ -379,8 +382,8 @@ func finishSilphBattle(m *emu.Emu, name string, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: battle %s: %w", name, err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: ClearSilphCo: %w after losing %s", ErrTrainerBlackedOut, name)
+	if err := RequireTrainerBattleWin("silph:"+name, outcome); err != nil {
+		return fmt.Errorf("skill: ClearSilphCo: %w", err)
 	}
 	return nil
 }
@@ -425,9 +428,12 @@ func collectSilphPresidentReward(m *emu.Emu, romData []byte, policy MovePolicy) 
 	if err := EnsureBagSpaceFor(m, masterBallItemID); err != nil {
 		return fmt.Errorf("skill: ClearSilphCo: make room for Master Ball: %w", err)
 	}
-	if m.Peek8(sym.CurMap) != silphCo11FMap {
-		dest := Destination{Map: silphCo11FMap, X: silphPresidentX, Y: silphPresidentY + 1}
-		if _, err := TravelFlee(m, romData, dest, policy, silphStoryTravelBattles); err != nil {
+	// The elevator and stair lobby on 11F are a different walking component
+	// from the president's office. Travel to an 11F coordinate lands via the
+	// elevator and cannot path beside the president; enter through the same 7F
+	// story pad used for Giovanni instead.
+	if !silphPresidentApproachable(m, romData) {
+		if err := reachSilphPresidentArea(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: ClearSilphCo: return to Silph president: %w", err)
 		}
 	}
@@ -437,6 +443,50 @@ func collectSilphPresidentReward(m *emu.Emu, romData []byte, policy MovePolicy) 
 	facts = currentSilphFacts(m)
 	if !facts.MasterBallAwarded || !facts.SilphRescueComplete {
 		return fmt.Errorf("skill: ClearSilphCo: president conversation ended without Master Ball award completion")
+	}
+	return nil
+}
+
+// silphPresidentApproachable is true when TalkAt can already plan a standing
+// tile beside the president from the current map position. The president's
+// own home tile is occupied by the sprite, so silphTileReachable on that
+// coordinate is the wrong probe.
+func silphPresidentApproachable(m *emu.Emu, romData []byte) bool {
+	if m.Peek8(sym.CurMap) != silphCo11FMap {
+		return false
+	}
+	_, _, err := besideDestination(m, romData, silphPresidentX, silphPresidentY)
+	return err == nil
+}
+
+// reachSilphPresidentArea puts the player on Silph Co 11F in the president's
+// connected component via the 7F story pad. Callers must already know the
+// president is not approachable from the current standing position.
+func reachSilphPresidentArea(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	// Already on 11F in the elevator/stair lobby: leave through the ordinary
+	// 3F stair landing first, then re-enter through the pad chain. Staying on
+	// 11F and asking Travel for the president tile routes back through the
+	// elevator into the same disconnected lobby.
+	if m.Peek8(sym.CurMap) == silphCo11FMap {
+		landing := Destination{Map: silphCo3FMap, X: silph3FStairLandingX, Y: silph3FStairLandingY}
+		if _, err := TravelFlee(m, romData, landing, policy, silphStoryTravelBattles); err != nil {
+			return fmt.Errorf("leave 11F lobby for story pad route: %w", err)
+		}
+	}
+	if m.Peek8(sym.CurMap) != silphCo7FMap && m.Peek8(sym.CurMap) != silphCo11FMap {
+		if err := reachSilphRivalRoom(m, romData, policy); err != nil {
+			return err
+		}
+	}
+	if m.Peek8(sym.CurMap) == silphCo7FMap {
+		if err := traverseSilphWarp(m, romData, silph7FTo11FEdge, policy, nil); err != nil {
+			return fmt.Errorf("take 7F pad to 11F: %w", err)
+		}
+	}
+	if !silphPresidentApproachable(m, romData) {
+		x, y := playerXY(m)
+		return fmt.Errorf("president still unreachable after story pad entry on map %#04x at (%d,%d)",
+			m.Peek8(sym.CurMap), x, y)
 	}
 	return nil
 }

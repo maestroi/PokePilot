@@ -2,6 +2,7 @@ package agent
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
@@ -24,7 +25,8 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			{Starter: skill.StarterSquirtle, Species: "squirtle"},
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
-		CurrentCenter: isCenter(obs.MapName),
+		ChallengeProfiles: redProgressionChallengeProfiles(),
+		CurrentCenter:     isCenter(obs.MapName),
 	}
 
 	for _, name := range skill.PlaceNames() {
@@ -32,20 +34,27 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 		if !ok {
 			continue
 		}
-		catalog.Destinations = append(catalog.Destinations, CatalogDestination{
+		entry := CatalogDestination{
 			Place:    PlaceID(name),
 			Location: redLocationID(obs.GameID, destination.Map),
-			X:        destination.X,
-			Y:        destination.Y,
-			Center:   isCenter(state.MapName(destination.Map)),
-		})
+			Kind:     destination.Kind,
+			Center:   strings.HasSuffix(name, "pokemon center") || isCenter(state.MapName(destination.Map)),
+		}
+		switch destination.Kind {
+		case skill.DestinationArea:
+			entry.Area = destination.Area
+		case skill.DestinationExactTile, skill.DestinationInteraction:
+			entry.X, entry.Y = destination.X, destination.Y
+		}
+		catalog.Destinations = append(catalog.Destinations, entry)
 	}
 
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
-			Place:    gym.Place,
-			Location: redLocationID(obs.GameID, gym.Map),
-			Complete: hasBadge(obs, gym.Badge),
+			Place:     gym.Place,
+			Location:  redLocationID(obs.GameID, gym.Map),
+			Complete:  hasBadge(obs, gym.Badge),
+			Readiness: redGymReadinessProfile(gym.Badge),
 		})
 	}
 

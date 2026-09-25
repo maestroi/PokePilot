@@ -138,7 +138,19 @@ func openChoice(m *state.Mem, y, x int, text string) {
 	m[sym.MaxMenuItem] = 1
 	m[sym.TopMenuItemY] = byte(y)
 	m[sym.TopMenuItemX] = byte(x)
-	m[sym.TileMap+uint16(y*20+x)] = 0xED
+	placeMenuCursor(m, y, x)
+}
+
+// placeMenuCursor draws the cursor glyph and publishes its location the way
+// the ROM does: the decoders read wMenuCursorLocation, not the first item's
+// (wTopMenuItemY, wTopMenuItemX), because PlaceMenuCursor walks down one row
+// per selected item.
+func placeMenuCursor(m *state.Mem, y, x int) {
+	offset := uint16(y*20 + x)
+	m[sym.TileMap+offset] = 0xED
+	cursor := sym.TileMap + offset
+	m[sym.MenuCursorLocation] = byte(cursor)
+	m[sym.MenuCursorLocation+1] = byte(cursor >> 8)
 }
 
 // TestRecoverDialoguePagesOrdinaryBox: a plain NPC line pages closed under
@@ -444,6 +456,10 @@ func TestTravelDetectsSameBoxLoop(t *testing.T) {
 	if !strings.Contains(err.Error(), "looping on the same text box") {
 		t.Fatalf("err = %q, want the same-box loop named", err)
 	}
+	// TalkAt picks another side of its target on this sentinel.
+	if !errors.Is(err, ErrTextBoxLoop) {
+		t.Fatalf("err = %v, want errors.Is ErrTextBoxLoop", err)
+	}
 }
 
 // TestTravelStopsOnKnownClosedRouteGate: a Saffron gate guard's notice pages
@@ -566,7 +582,7 @@ func openMenu(m *state.Mem, y, x int, text string) {
 	m[sym.MaxMenuItem] = 3
 	m[sym.TopMenuItemY] = byte(y)
 	m[sym.TopMenuItemX] = byte(x)
-	m[sym.TileMap+uint16(y*20+x)] = 0xED
+	placeMenuCursor(m, y, x)
 }
 
 // TestRecoverDialogueRefusesAMenu is the Viridian Mart bug: A on a text box

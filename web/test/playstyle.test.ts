@@ -24,7 +24,7 @@ test('play styles have terminal goal defaults', () => {
   assert.equal(defaultGoalForPlayStyle('speedrun'), 'Beat the Elite Four and Champion.')
   assert.equal(defaultGoalForPlayStyle('adventure'), 'Beat the Elite Four and Champion.')
   assert.equal(defaultGoalForPlayStyle('team_builder'), 'Beat the Elite Four and Champion.')
-  assert.equal(defaultGoalForPlayStyle('completionist'), 'Complete the obtainable Pokédex.')
+  assert.equal(defaultGoalForPlayStyle('completionist'), 'Beat the Elite Four and Champion.')
 })
 
 test('scripted runs are not assigned a play style', () => {

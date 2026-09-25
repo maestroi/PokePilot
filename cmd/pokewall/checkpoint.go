@@ -37,7 +37,7 @@ func (w *Wall) handleCheckpoint(res http.ResponseWriter, req *http.Request) {
 		w.handleCheckpointResume(res, id, report.Attempt)
 		return
 	}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: report.Artifacts}); err != nil {
+	if err := farm.ValidateCheckpointReport(report); err != nil {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -168,6 +168,9 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	lostPrefix := retryPrefix + "no heartbeat for "
 	planner := t.Planner
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
+	resilientRetry := previous > 0 && t.RecoveryProfile.Resilient() && planner == "llm" &&
+		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
+	recoveryAttempts := t.RecoveryAttempts
 	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	gymRetry := previous > 0 && !t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	lineageRetry := previous == 0 && t.Endless && planner == "llm" && t.ResumeFromRunID != ""
@@ -179,19 +182,22 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		err error
 	)
 	switch {
-	case lostRetry:
+	case lostRetry && planner != "llm":
 		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
 		if err == nil {
 			cp.Attempt = previous
-		} else if os.IsNotExist(err) && planner == "llm" {
-			// The lost worker may have disappeared before writing a fresh
-			// objective pair. Prefer the newest older ordinary checkpoint in
-			// the lineage, and only then fall back to a durable badge snapshot.
-			cp, err = w.latestLineageResumeCheckpoint(id, planner)
-			if os.IsNotExist(err) {
-				cp, err = w.latestLineageMajorCheckpoint(id)
-			}
 		}
+	case lostRetry:
+		// Resume the deepest pair in the lineage, not merely the previous
+		// attempt's: if that attempt had itself fallen back to a fresh
+		// cartridge before dying, its early checkpoints would otherwise lock
+		// the campaign's restart in permanently.
+		cp, err = w.latestLineageResumeCheckpoint(id, planner)
+		if os.IsNotExist(err) {
+			cp, err = w.latestLineageMajorCheckpoint(id)
+		}
+	case resilientRetry:
+		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
 	case endlessRetry:
 		cp, err = w.latestLineageResumeCheckpoint(id, planner)
 		if os.IsNotExist(err) {
@@ -208,16 +214,81 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if err != nil && !os.IsNotExist(err) {
+		// 204 means "nothing to resume; boot fresh". A lookup that failed
+		// has not proven that, so it must not erase the campaign's progress.
+		log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
+		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "resume checkpoint lookup failed: " + err.Error()})
+		return
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
+		// The runner interprets 204 as a clean fresh-start fallback.
+		w.mu.Lock()
+		if current := w.tiles[id]; current != nil && !current.Finished {
+			appendRunActivityLocked(current, runActivityEvent{
+				Source: "recovery", Kind: "fresh_start", Attempt: attempt,
+				RecoveryAttempt: recoveryAttempts,
+				Summary:         "No usable checkpoint; starting fresh",
+				Detail:          fmt.Sprintf("attempt %d recovery fallback", attempt),
+			})
 		}
-		// Resume is recovery, never a new reason for the run to fail. The
-		// runner interprets 204 as a clean fresh-start fallback.
+		w.mu.Unlock()
+		w.saveStateSoon()
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
+	kind := "resume"
+	summary := "Resuming from checkpoint"
+	if strings.HasPrefix(cp.State.Name, majorCheckpointPrefix) {
+		kind = "rollback"
+		summary = "Rolling back to major checkpoint"
+	}
+	w.mu.Lock()
+	if current := w.tiles[id]; current != nil && !current.Finished {
+		appendRunActivityLocked(current, runActivityEvent{
+			Source: "recovery", Kind: kind, Attempt: attempt,
+			RecoveryAttempt: recoveryAttempts,
+			Summary:         summary,
+			Detail:          cp.State.Name,
+		})
+	}
+	w.mu.Unlock()
+	w.saveStateSoon()
 	writeJSON(res, http.StatusOK, cp)
+}
+
+// resilientResumeCheckpoint turns repeated no-progress failures into a
+// deterministic rollback ladder. First retry stays near the fault so a changed
+// planner decision/seed can recover cheaply. Further failures back up across
+// major milestones one at a time; once no older retained milestone exists the
+// 204 path deliberately falls back to a fresh cartridge.
+func (w *Wall) resilientResumeCheckpoint(startID, planner string, recoveryAttempts int) (farm.ResumeCheckpoint, error) {
+	if recoveryAttempts <= 1 {
+		cp, err := w.latestLineageResumeCheckpoint(startID, planner)
+		if err == nil {
+			return cp, nil
+		}
+		if !os.IsNotExist(err) {
+			return farm.ResumeCheckpoint{}, err
+		}
+		return w.latestLineageMajorCheckpoint(startID)
+	}
+	return w.latestLineageMajorCheckpointRollback(startID, recoveryAttempts-2)
+}
+
+func (w *Wall) latestLineageMajorCheckpointRollback(startID string, rollback int) (farm.ResumeCheckpoint, error) {
+	latest, err := w.latestLineageMajorCheckpoint(startID)
+	if err != nil {
+		return farm.ResumeCheckpoint{}, err
+	}
+	if rollback <= 0 {
+		return latest, nil
+	}
+	badge, ok := majorCheckpointBadge(latest.State.Name)
+	if !ok || badge-rollback < 1 {
+		return farm.ResumeCheckpoint{}, os.ErrNotExist
+	}
+	return w.latestLineageMajorCheckpointAtOrBelow(startID, badge-rollback)
 }
 
 // objectiveFrame is the cumulative emulator frame embedded in an objective
@@ -282,8 +353,20 @@ func latestResumeCheckpoint(dir, planner string) (farm.ResumeCheckpoint, error) 
 	return farm.ResumeCheckpoint{State: stateArt}, nil
 }
 
+// latestLineageResumeCheckpoint returns the deepest usable ordinary checkpoint
+// in a run's lineage. The frame embedded in the checkpoint name is cumulative
+// emulator progress, so it is the only comparable ordering across attempts:
+// picking the newest attempt instead would let an attempt that booted fresh —
+// and therefore wrote only early checkpoints before dying — outrank the deep
+// progress an earlier attempt actually reached, and the recovery would quietly
+// replay hours of gameplay. Attempts are searched newest-first so an equally
+// deep candidate still prefers the most recent one, and a candidate that cannot
+// be read is skipped rather than ending the search.
 func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.ResumeCheckpoint, error) {
 	seen := map[string]struct{}{}
+	var best farm.ResumeCheckpoint
+	bestFrame := uint64(0)
+	found := false
 	id := startID
 	for id != "" {
 		if _, dup := seen[id]; dup {
@@ -303,13 +386,19 @@ func (w *Wall) latestLineageResumeCheckpoint(startID, planner string) (farm.Resu
 			cp, err := latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, attempt), planner)
 			if err == nil {
 				cp.Attempt = attempt
-				return cp, nil
+				if frame := objectiveFrame(cp.State.Name); !found || frame > bestFrame {
+					best, bestFrame, found = cp, frame, true
+				}
+				continue
 			}
 			if !os.IsNotExist(err) {
 				return farm.ResumeCheckpoint{}, err
 			}
 		}
 		id = parent
+	}
+	if found {
+		return best, nil
 	}
 	return farm.ResumeCheckpoint{}, os.ErrNotExist
 }
@@ -326,6 +415,10 @@ func majorCheckpointBadge(name string) (int, bool) {
 }
 
 func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoint, error) {
+	return w.latestLineageMajorCheckpointAtOrBelow(startID, 8)
+}
+
+func (w *Wall) latestLineageMajorCheckpointAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
 	seen := map[string]struct{}{}
 	id := startID
 	bestBadge := 0
@@ -346,7 +439,7 @@ func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoi
 		}
 		w.mu.Unlock()
 		if through > 0 {
-			cp, err := latestMajorResumeCheckpoint(w.dumpsDir, id, through)
+			cp, err := latestMajorResumeCheckpointAtOrBelow(w.dumpsDir, id, through, maxBadge)
 			if err == nil {
 				badge, ok := majorCheckpointBadge(cp.State.Name)
 				if ok && (!found || badge > bestBadge) {
@@ -367,6 +460,10 @@ func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoi
 }
 
 func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
+	return latestMajorResumeCheckpointAtOrBelow(dumpsDir, runID, throughAttempt, 8)
+}
+
+func latestMajorResumeCheckpointAtOrBelow(dumpsDir, runID string, throughAttempt, maxBadge int) (farm.ResumeCheckpoint, error) {
 	bestBadge := 0
 	var best farm.ResumeCheckpoint
 	found := false
@@ -386,7 +483,7 @@ func latestMajorResumeCheckpoint(dumpsDir, runID string, throughAttempt int) (fa
 			}
 			name := e.Name()
 			names = append(names, name)
-			if strings.HasPrefix(name, majorCheckpointPrefix) && strings.HasSuffix(name, ".state") {
+			if badge, ok := majorCheckpointBadge(name); ok && badge <= maxBadge {
 				states = append(states, name)
 			}
 		}
@@ -449,12 +546,19 @@ func checkpointArtifact(dir, name, mediaType string) (farm.Artifact, error) {
 		return farm.Artifact{}, err
 	}
 	sum := sha256.Sum256(data)
-	return farm.Artifact{
+	art := farm.Artifact{
 		Name:      name,
 		MediaType: mediaType,
 		SHA256:    hex.EncodeToString(sum[:]),
 		Data:      data,
-	}, nil
+	}
+	// A state that is no longer a complete save must never be served as a
+	// resume candidate: the caller skips it and keeps looking for an older
+	// usable pair, so a truncated file cannot restart a run from scratch.
+	if err := farm.ValidateCheckpointState(art); err != nil {
+		return farm.Artifact{}, err
+	}
+	return art, nil
 }
 
 func checkpointAttemptDir(dumpsDir, runID string, attempt int) string {

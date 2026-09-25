@@ -67,7 +67,9 @@ func TestFarmClientRoundTripsAgainstWall(t *testing.T) {
 	}
 	wantSpec := spec
 	wantSpec.Attempt = 1 // the wall numbers attempts from one
-	if *got != wantSpec {
+	// RunGoal holds an optional value, so compare the fields rather than the
+	// struct: an unset goal must stay unset across the lease.
+	if !reflect.DeepEqual(*got, wantSpec) {
 		t.Fatalf("leased spec = %+v, want %+v", *got, wantSpec)
 	}
 

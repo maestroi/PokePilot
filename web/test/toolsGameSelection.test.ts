@@ -1,21 +1,22 @@
-import { readFileSync } from 'node:fs'
 import assert from 'node:assert/strict'
-import { describe, it } from 'node:test'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
 
-describe('operator game selection', () => {
-  it('offers Red, Blue, and Yellow and sends the selected game', () => {
-    const source = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
-    assert.ok(source.includes("game: 'pokemon-red'"))
-    assert.ok(source.includes('value="pokemon-red"'))
-    assert.ok(source.includes('value="pokemon-blue"'))
-    assert.ok(source.includes('value="pokemon-yellow"'))
-    assert.ok(source.includes('game: form.game'))
-  })
+const toolsSource = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
+const typesSource = readFileSync(new URL('../src/shared/api/types.ts', import.meta.url), 'utf8')
 
-  it('does not offer Red-style starter replacement for Yellow', () => {
-    const source = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
-    assert.ok(source.includes("form.game === 'pokemon-yellow'"))
-    assert.ok(source.includes('if (isYellow.value) return'))
-    assert.ok(source.includes(':disabled="isYellow"'))
-  })
+test('tools run form selects and submits a supported game', () => {
+  assert.match(typesSource, /export interface RunSpec[\s\S]*\bgame: string/)
+  assert.match(toolsSource, /game: 'pokemon-red'/)
+  assert.match(toolsSource, /v-model="form\.game"/)
+  assert.match(toolsSource, /<option value="pokemon-red">Pokémon Red<\/option>/)
+  assert.match(toolsSource, /<option value="pokemon-blue">Pokémon Blue<\/option>/)
+  assert.match(toolsSource, /game: form\.game/)
+})
+
+test('tools run form offers Yellow without Red-style starter replacement', () => {
+  assert.match(toolsSource, /<option value="pokemon-yellow">Pokémon Yellow<\/option>/)
+  assert.ok(toolsSource.includes("form.game === 'pokemon-yellow'"))
+  assert.ok(toolsSource.includes('if (isYellow.value) return'))
+  assert.ok(toolsSource.includes(':disabled="isYellow"'))
 })

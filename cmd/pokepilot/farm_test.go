@@ -33,6 +33,39 @@ func TestMainWiresFarmMode(t *testing.T) {
 	}
 }
 
+func TestSetFarmRunIDSetsAndRestores(t *testing.T) {
+	original, had := os.LookupEnv(farmRunIDEnv)
+	_ = os.Unsetenv(farmRunIDEnv)
+	t.Cleanup(func() {
+		if had {
+			_ = os.Setenv(farmRunIDEnv, original)
+			return
+		}
+		_ = os.Unsetenv(farmRunIDEnv)
+	})
+
+	restore := setFarmRunID(" run-1370 ")
+	if got := os.Getenv(farmRunIDEnv); got != "run-1370" {
+		t.Fatalf("%s = %q, want run-1370", farmRunIDEnv, got)
+	}
+	restore()
+	if _, still := os.LookupEnv(farmRunIDEnv); still {
+		t.Fatalf("%s still set after restore", farmRunIDEnv)
+	}
+}
+
+func TestSetFarmRunIDRestoresPreviousValue(t *testing.T) {
+	t.Setenv(farmRunIDEnv, "outer-run")
+	restore := setFarmRunID("inner-run")
+	if got := os.Getenv(farmRunIDEnv); got != "inner-run" {
+		t.Fatalf("%s = %q, want inner-run", farmRunIDEnv, got)
+	}
+	restore()
+	if got := os.Getenv(farmRunIDEnv); got != "outer-run" {
+		t.Fatalf("%s = %q after restore, want outer-run", farmRunIDEnv, got)
+	}
+}
+
 func TestEnableFarmRAMForensicsSetsAndRestores(t *testing.T) {
 	orig, had := os.LookupEnv(agent.RAMForensicsDirEnv)
 	_ = os.Unsetenv(agent.RAMForensicsDirEnv)
@@ -116,17 +149,17 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(src)
-	if !strings.Contains(text, "newStatsPlanner(llmProfile, reasoningEffort, goal") {
-		t.Fatal("runFarmLLM does not pass the leased profile and goal into statsPlanner")
+	if !strings.Contains(text, "newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference") {
+		t.Fatal("runFarmLLM does not pass the leased policy, profile, and inference into statsPlanner")
 	}
-	if !strings.Contains(text, "spec.Goal") {
-		t.Fatal("runFarm never passes spec.Goal into the llm run")
+	if !strings.Contains(text, "farm.RunPolicyFor(spec)") {
+		t.Fatal("runFarm never derives the llm run policy from spec")
 	}
 	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap}") {
 		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
 	}
-	if !strings.Contains(text, "newStatsPlanner(") {
-		t.Fatal("runFarmLLM does not tally the llm planner's choices for the watch page")
+	if !strings.Contains(text, "spec.Goal.String()") {
+		t.Fatal("runFarm never reads spec.Goal for the llm run")
 	}
 }
 
@@ -160,6 +193,7 @@ func TestHeartbeatSnapKeepsPlan(t *testing.T) {
 	s := &heartbeatSnap{}
 	s.store(farm.Heartbeat{RunID: "r1", Frame: 10, Trace: "control: control regained"})
 	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "")
+	s.storeActivity(farm.ActivityEvent{Source: "skill", Kind: "started", Summary: "go to pallet town", Frame: 10, Round: 1})
 	got := s.load()
 	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" || got.Frame != 10 {
 		t.Fatalf("after storePlan: %+v", got)
@@ -172,6 +206,9 @@ func TestHeartbeatSnapKeepsPlan(t *testing.T) {
 	}
 	if got.Question != "1: go to pallet town\n2: talk at (5,3)" || got.Decision != "" {
 		t.Fatalf("storeStatus wiped the in-flight plan: %+v", got)
+	}
+	if got.Activity == nil || got.Activity.Source != "skill" || got.Activity.Summary != "go to pallet town" {
+		t.Fatalf("storeStatus wiped structured execution activity: %+v", got.Activity)
 	}
 
 	s.storePlan("1: go to pallet town\n2: talk at (5,3)", "go to pallet town")
@@ -213,6 +250,30 @@ func TestHeartbeatSnapRaw(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "… clipped") {
 		t.Fatalf("clipped prompt is not marked: %q", got[len(got)-20:])
+	}
+}
+
+type fixedRoutePriorityPlanner struct {
+	priority agent.RoutePriority
+}
+
+func (p fixedRoutePriorityPlanner) Next(agent.Observation, []agent.Objective) (agent.Objective, error) {
+	return agent.Objective{}, agent.ErrDone
+}
+
+func (p fixedRoutePriorityPlanner) RoutePriority() agent.RoutePriority {
+	return p.priority
+}
+
+func TestReportingPlannerForwardsRoutePriority(t *testing.T) {
+	fast := reportingPlanner{inner: fixedRoutePriorityPlanner{priority: agent.RoutePriorityFastest}}
+	if got := fast.RoutePriority(); got != agent.RoutePriorityFastest {
+		t.Fatalf("fast route priority = %v, want fastest", got)
+	}
+
+	conservative := reportingPlanner{inner: blockingPlanner{}}
+	if got := conservative.RoutePriority(); got != agent.RoutePriorityConservative {
+		t.Fatalf("planner without route priority = %v, want conservative", got)
 	}
 }
 
@@ -427,5 +488,17 @@ func TestHeartbeatSnapTakesPlayerKeepsStats(t *testing.T) {
 	s.store(farm.Heartbeat{RunID: "r2"})
 	if got = s.load(); got.Player != nil {
 		t.Fatalf("new lease kept the old player: %+v", got.Player)
+	}
+}
+
+func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
+	trail := &heartbeatTrail{}
+	trail.add(0x01, 1, 1)
+	trail.add(0x01, 2, 1)
+	trail.add(0x02, 3, 3)
+	trail.add(0x01, 4, 4)
+
+	if got := trail.mapsVisited(); got != 2 {
+		t.Fatalf("mapsVisited() = %d, want 2 distinct maps", got)
 	}
 }

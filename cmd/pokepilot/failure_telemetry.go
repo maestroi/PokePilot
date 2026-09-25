@@ -176,18 +176,19 @@ func farmIdentityFromAgent(result agent.ObjectiveResult) farm.FailureIdentity {
 
 func farmObjectiveFromAgent(o agent.FailureObjective) farm.FailureObjective {
 	return farm.FailureObjective{
-		Kind:     o.Kind,
-		Place:    string(o.Place),
-		X:        o.X,
-		Y:        o.Y,
-		Starter:  o.Starter,
-		Progress: string(o.Progress),
-		Level:    o.Level,
-		Species:  string(o.Species),
-		Item:     string(o.Item),
-		Slot:     o.Slot,
-		Qty:      o.Qty,
-		Flee:     o.Flee,
+		Kind:            o.Kind,
+		Place:           string(o.Place),
+		X:               o.X,
+		Y:               o.Y,
+		Starter:         o.Starter,
+		Progress:        string(o.Progress),
+		FieldCapability: string(o.FieldCapability),
+		Level:           o.Level,
+		Species:         string(o.Species),
+		Item:            string(o.Item),
+		Slot:            o.Slot,
+		Qty:             o.Qty,
+		Flee:            o.Flee,
 	}
 }
 

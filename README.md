@@ -22,10 +22,12 @@ the bit.
 - **No pixels.** The browser view is for humans to watch. PokePilot reads
   the game through `red/state` (a RAM snapshot decoded into typed state), so
   assertions are exact and tests cannot flake on a frame.
-- **The decomp is vendored.** `pokered/` is the full pokered decompilation,
+- **The decomp is vendored.** `pokered/` is the pokered decompilation,
   byte-identical to `roms/pokemon_red.gb` (sha1
-  `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). Every ROM fact this project
-  relies on is read from it; `docs/POKERED.md` maps question → file.
+  `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). `pokeyellow/` is the
+  pokeyellow decompilation, byte-identical to `roms/pokemon_yellow.gb`
+  (sha1 `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`). `docs/POKERED.md` and
+  `docs/POKEYELLOW.md` map question → file.
 - **Game facts do not define the core.** Generic layers own objective
   lifecycle, structured outcomes, semantic capabilities, and recovery policy;
   game-specific maps, RAM, menus, dialogue, and story mechanics belong behind
@@ -48,7 +50,8 @@ the bit.
 | `cmd/badgerun` | Scoreboard harness: llm planner to the Boulder Badge, N times per starter and seed, prints a table |
 | `cmd/pokewall` | Farm orchestrator: leases, checkpoints, flight recorder, issue handoff |
 | `cmd/pokeui` | Operator console; the browser talks only to this |
-| `pokered/` | The vendored decompilation — see `pokered/UPSTREAM.md` |
+| `pokered/` | The vendored Red decompilation — see `pokered/UPSTREAM.md` |
+| `pokeyellow/` | The vendored Yellow decompilation — see `pokeyellow/UPSTREAM.md` |
 | `deploy/` | Docker image and Swarm stack for the local farm (`deploy/README.md`) |
 | `docs/` | Design, agent-loop notes, decomp map, slice plans |
 | `roms/` | Gitignored; your ROM lives here |
@@ -172,7 +175,8 @@ Details in `deploy/README.md`.
 | `docs/ARCHITECTURE.md` | Binding multi-game architecture principles and the design gate for every runtime fix |
 | `docs/DESIGN.md` | The technical design and the GomeBoy investigation |
 | `docs/AGENT.md` | The agent loop, ROM facts, badgerun, farm evidence |
-| `docs/POKERED.md` | Question → file map for the vendored decomp |
+| `docs/POKERED.md` | Question → file map for the vendored Red decomp |
+| `docs/POKEYELLOW.md` | Question → file map for the vendored Yellow decomp |
 | `docs/DEVELOPMENT.md` | ROM-free vs ROM-backed workflow |
 | `docs/QUALIFICATION.md` | ROM-backed qualification catalog and private corpus |
 | `docs/MCP.md` | Remote MCP control plane |

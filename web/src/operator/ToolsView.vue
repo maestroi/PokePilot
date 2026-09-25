@@ -2,12 +2,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun, getModels } from '../shared/api/client'
-import type { ModelDeployment, RunSpec } from '../shared/api/types'
-import { GOAL_OPTIONS, nextGoalForPlayStyle } from '../shared/goals'
+import type { DecisionEngineSpec, ModelDeployment, RunSpec } from '../shared/api/types'
+import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { DEFAULT_ARM_A, deploymentOptionLabel, deploymentSelectable, preferredDeployment } from './llmDeployments'
+import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 
 type StarterMode =
   | 'default'
@@ -32,30 +32,76 @@ const form = reactive<RunSpec>({
   llm_profile: 'auto',
   llm_deployment: '',
   play_style: 'adventure',
+  purpose: 'normal',
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
   reasoning_effort: '',
   fps: 60,
   max_rounds: 0,
   max_frames: 0,
+  recovery_profile: 'resilient',
   endless: false,
   random_seed: false
 })
+
+// The fast typed-decision engine is chosen independently of the strategist,
+// from the same model registry. decisionTarget is 'off', 'deployment:<id>',
+// or (only when no registry is configured) 'env:<backend>', which uses the
+// runner's own decision endpoint. Off sends no selection at all.
+const decisionTarget = ref('off')
+const decision = reactive({
+  mode: 'shadow' as 'shadow' | 'active',
+  battles: true,
+  objectives: false,
+  failures: true,
+  min_confidence: 0.65
+})
+const decisionSelected = computed(() => decisionTarget.value !== 'off')
+const decisionShadow = computed(() => decision.mode === 'shadow')
+
+function decisionRequest(): DecisionEngineSpec | undefined {
+  if (!isLLM.value || !decisionSelected.value) return undefined
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  const target: Pick<DecisionEngineSpec, 'backend' | 'deployment'> = kind === 'deployment'
+    ? { backend: decisionBackendFor(deployments.value.find((d) => d.id === id)), deployment: id }
+    : { backend: id as DecisionEngineSpec['backend'] }
+  // Battle decisions are observational only; active runs never send them.
+  return { ...target, ...decision, battles: decisionShadow.value && decision.battles }
+}
+
+function splitDecisionTarget(target: string): [string, string] {
+  const at = target.indexOf(':')
+  return at < 0 ? [target, ''] : [target.slice(0, at), target.slice(at + 1)]
+}
+
+function decisionBackendFor(deployment: ModelDeployment | undefined): DecisionEngineSpec['backend'] {
+  return deployment?.protocol === 'typesafe-choice' ? 'jev' : 'system-one'
+}
 
 const { data: modelsData } = usePollingResource(
   (signal) => getModels(signal),
   { intervalMs: 5000, isEmpty: (snapshot) => snapshot.deployments.length === 0 }
 )
 const deployments = computed<ModelDeployment[]>(() => modelsData.value?.deployments ?? [])
-const hasDeployments = computed(() => deployments.value.length > 0)
+const strategists = computed(() => deployments.value.filter(servesStrategist))
+const hasDeployments = computed(() => strategists.value.length > 0)
+// Any registered deployment can back the decision engine: a choice API like
+// Jev, or an OpenAI-compatible model used through typed choices.
+const decisionDeployments = computed(() => deployments.value.filter((d) => d.enabled !== false))
+const selectedDecisionDeployment = computed(() => {
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  return kind === 'deployment' ? deployments.value.find((d) => d.id === id) : undefined
+})
 const selectedDeployment = computed(() => deployments.value.find((deployment) => deployment.id === form.llm_deployment))
 
 watch(deployments, (next) => {
+  const [kind, id] = splitDecisionTarget(decisionTarget.value)
+  if (kind === 'deployment' && !next.some((d) => d.id === id && d.enabled !== false)) decisionTarget.value = 'off'
   if (!next.length) {
     form.llm_deployment = ''
     return
   }
-  form.llm_deployment = preferredDeployment(next, form.llm_deployment || DEFAULT_ARM_A)
+  form.llm_deployment = preferredDeployment(next, form.llm_deployment || defaultFarmDeployment(next))
 }, { immediate: true })
 
 const submitting = ref(false)
@@ -63,21 +109,9 @@ const error = ref('')
 const createdRunID = ref('')
 const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
-const goalExplicitlySelected = ref(false)
 const isLLM = computed(() => form.planner === 'llm')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
-
-watch(
-  () => form.play_style,
-  () => {
-    form.goal = nextGoalForPlayStyle(form.goal, form.play_style, goalExplicitlySelected.value)
-  }
-)
-
-function markGoalExplicitlySelected(): void {
-  goalExplicitlySelected.value = true
-}
 
 function starterRequest(): string {
   if (isYellow.value) return ''
@@ -114,9 +148,12 @@ async function submit(): Promise<void> {
       llm_profile: isLLM.value && !hasDeployments.value ? form.llm_profile : '',
       llm_deployment: isLLM.value && hasDeployments.value ? form.llm_deployment : undefined,
       play_style: isLLM.value ? form.play_style : '',
+      purpose: isLLM.value ? form.purpose : '',
       risk_tolerance: isLLM.value ? form.risk_tolerance : '',
       wild_encounters: isLLM.value ? form.wild_encounters : '',
-      reasoning_effort: isLLM.value ? form.reasoning_effort : ''
+      reasoning_effort: isLLM.value ? form.reasoning_effort : '',
+      decision_engine: decisionRequest(),
+      recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     const response = await createRun(spec)
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
@@ -156,7 +193,7 @@ async function submit(): Promise<void> {
             <option value="pokemon-blue">Pokémon Blue</option>
             <option value="pokemon-yellow">Pokémon Yellow</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">The worker loads the matching mounted cartridge through the registered game profile.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">The worker leases the matching mounted cartridge. Only games with a registered runtime profile are selectable.</span>
         </label>
 
         <label class="block">
@@ -195,10 +232,10 @@ async function submit(): Promise<void> {
 
         <label v-if="isLLM" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="markGoalExplicitlySelected">
+          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Defaults from play style until you choose a goal here; an explicit goal stays selected.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">What ends the run. Goal is independent from play style and run purpose.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -209,7 +246,16 @@ async function submit(): Promise<void> {
             <option value="completionist">Completionist · explore and collect</option>
             <option value="team_builder">Team Builder · catches and training</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">What the player values; changing it updates the goal only until you explicitly pick one.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">How the agent values legal objectives. Completionist plays thoroughly but does not perform interactions only for test coverage.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run purpose</span>
+          <select v-model="form.purpose" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="normal">Normal · play the game</option>
+            <option value="debug_coverage">Debug coverage · exercise new interactions</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Debug coverage deliberately favors newly reachable maps, NPCs, trainers, pickups and interaction flows to expose bugs.</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -235,7 +281,7 @@ async function submit(): Promise<void> {
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Deployment</span>
           <select v-model="form.llm_deployment" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option
-              v-for="deployment in deployments"
+              v-for="deployment in strategists"
               :key="deployment.id"
               :value="deployment.id"
               :disabled="!deploymentSelectable(deployment)"
@@ -270,6 +316,60 @@ async function submit(): Promise<void> {
           </select>
         </label>
 
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Fast decision engine</span>
+          <select v-model="decisionTarget" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="off">Off</option>
+            <option
+              v-for="deployment in decisionDeployments"
+              :key="`decision-${deployment.id}`"
+              :value="`deployment:${deployment.id}`"
+              :disabled="!deploymentSelectable(deployment)"
+            >
+              {{ deploymentOptionLabel(deployment) }}
+            </option>
+            <template v-if="!deployments.length">
+              <option value="env:jev">TypeSafe Jev (runner endpoint)</option>
+              <option value="env:system-one">Local System-1 (runner endpoint)</option>
+            </template>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">
+            {{ selectedDecisionDeployment
+              ? `${selectedDecisionDeployment.api_model} via ${selectedDecisionDeployment.endpoint}`
+              : 'Separate from the strategist. Pick any registered deployment; its key stays in the runner environment named by token_env.' }}
+          </span>
+        </label>
+
+        <label v-if="isLLM && decisionSelected" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
+          <select v-model="decision.mode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="shadow">Shadow</option>
+            <option value="active">Active</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.</span>
+        </label>
+
+        <fieldset v-if="isLLM && decisionSelected" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ decisionShadow ? 'Decision engine observes' : 'Decision engine decides' }}</span>
+          <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
+            <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
+            Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
+          </label>
+          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
+            <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
+            Objective selection
+          </label>
+          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
+            <input v-model="decision.failures" type="checkbox" class="rounded border-white/10 bg-white/6" />
+            Failure recovery
+          </label>
+          <label class="mt-2 block">
+            <span class="text-[11px] text-slate-500">Min confidence</span>
+            <input v-model.number="decision.min_confidence" type="number" min="0" max="1" step="0.05" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
+          </label>
+          <span class="mt-1 block text-[11px] text-slate-600">Answers below the threshold fall back to the strategist and deterministic policy.</span>
+        </fieldset>
+
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Seed</span>
           <input v-model.number="form.seed" type="number" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
@@ -285,6 +385,15 @@ async function submit(): Promise<void> {
             <option :value="0">Max · uncapped</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Max keeps the existing 0 FPS wire value and runs as fast as the worker can emulate.</span>
+        </label>
+
+        <label v-if="isLLM" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recovery</span>
+          <select v-model="form.recovery_profile" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="resilient">Resilient · keep pursuing the goal</option>
+            <option value="strict">Strict · stop after bounded recovery</option>
+          </select>
+          <span class="mt-1 block text-[11px] text-slate-600">Resilient escalates from local resume to progressively older milestone checkpoints instead of ending the campaign on a stuck/failed attempt.</span>
         </label>
 
         <label class="block">

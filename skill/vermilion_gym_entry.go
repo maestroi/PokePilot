@@ -22,6 +22,18 @@ func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy
 	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
 		return fmt.Errorf("skill: Vermilion Gym entry: prepare Cut carrier: %w", err)
 	}
+	// Carrier repair may leave town to catch a wild Cut carrier (e.g. Oddish on
+	// Route 24) and returns wherever the catch ended. The gym door edge starts
+	// in Vermilion, so walk back before traversing it.
+	if m.Peek8(sym.CurMap) != vermilionCity {
+		city, ok := Place("vermilion city")
+		if !ok {
+			return fmt.Errorf("skill: Vermilion Gym entry: vermilion city place missing")
+		}
+		if _, err := TravelFlee(m, romData, city, policy, surgeProgressionTravelEngagements); err != nil {
+			return fmt.Errorf("skill: Vermilion Gym entry: return to Vermilion after Cut carrier repair: %w", err)
+		}
+	}
 
 	g, err := world.BuildGraph(romData)
 	if err != nil {

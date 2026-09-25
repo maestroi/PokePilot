@@ -215,13 +215,13 @@ func EnsurePartySlotForCollection(m *emu.Emu, romData []byte, policy MovePolicy,
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(romData, &mem))
 	if err != nil && errors.Is(err, ErrPCBoxFull) {
 		if err := SwitchToNextNonFullBox(m, romData, policy); err != nil {
 			return err
 		}
 		state.Snapshot(m, &mem)
-		slot, err = planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+		slot, err = planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(romData, &mem))
 	}
 	if err != nil {
 		return err

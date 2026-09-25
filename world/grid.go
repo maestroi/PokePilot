@@ -121,6 +121,11 @@ func BuildFromBlocksForTraversal(romData []byte, h worldmodel.GridHeader, blocks
 	return gridFromSpec(spec)
 }
 
+// GridFromSpec builds a Grid from a portable adapter GridSpec.
+func GridFromSpec(spec worldmodel.GridSpec) (*Grid, error) {
+	return gridFromSpec(spec)
+}
+
 func gridFromSpec(spec worldmodel.GridSpec) (*Grid, error) {
 	if spec.Width < 0 || spec.Height < 0 {
 		return nil, fmt.Errorf("map %d: negative grid dimensions %dx%d", spec.MapID, spec.Width, spec.Height)

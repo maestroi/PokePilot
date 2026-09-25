@@ -1,10 +1,13 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -14,6 +17,8 @@ import (
 const tradeCenterMapID uint8 = 0xef
 const linkReceptionBudget = 12_000
 const linkMenuBudget = 12_000
+const linkMenuSelectBudget = 600
+const linkRoomBudget = 12_000
 const linkExchangeBudget = 50_000
 const linkTradeMenuBudget = 50_000
 const linkTradeConfirmationBudget = 12_000
@@ -28,6 +33,21 @@ type LinkTradeResult struct {
 	Tradeback bool
 }
 
+// linkStallTimeout is how long VirtualTrade tolerates the emulator making no
+// frame progress. A master-clocked serial bit blocks inside StepFrame until
+// the network peer replies (up to the link's per-bit timeout), so a dead peer
+// freezes one frame indefinitely. Progress, not total wall time, is the
+// signal: a healthy trade is ~6.5k frames, which is 3s flat out, ~30s over
+// a 1ms-latency link and ~110s paced at 60fps, all with identical emulated
+// behaviour. emu.WithFrameDeadline can't help: it only checks between frames.
+const linkStallTimeout = 25 * time.Second
+
+// ErrLinkStalled means the emulator made no frame progress for
+// linkStallTimeout. The goroutine stepping m may still be blocked inside a
+// frame when this is returned: m must not be reused afterward. The caller
+// should end the run, not retry with the same emulator.
+var ErrLinkStalled = errors.New("skill: VirtualTrade: link exchange stalled")
+
 // VirtualTrade enters a normal Gen-I Cable Club Trade Center and trades the
 // requested player party slot with broker slot zero. With tradeback=true it
 // immediately trades the received placeholder back, causing the returned
@@ -35,6 +55,53 @@ type LinkTradeResult struct {
 //
 // The caller must attach a live GomeBoy link before calling this function.
 func VirtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, policy MovePolicy) (LinkTradeResult, error) {
+	done := make(chan linkTradeOutcome, 1)
+	go func() {
+		result, err := virtualTrade(m, romData, playerSlot, tradeback, policy)
+		done <- linkTradeOutcome{result, err}
+	}()
+	o, err := awaitLinkProgress(m.Progress, done, linkStallTimeout, time.Second)
+	if err != nil {
+		return LinkTradeResult{Tradeback: tradeback}, err
+	}
+	return o.result, o.err
+}
+
+type linkTradeOutcome struct {
+	result LinkTradeResult
+	err    error
+}
+
+// awaitLinkProgress waits for done, failing only when progress stays
+// unchanged for stall.
+func awaitLinkProgress(progress func() uint64, done <-chan linkTradeOutcome, stall, poll time.Duration) (linkTradeOutcome, error) {
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+	last, lastAt := progress(), time.Now()
+	for {
+		select {
+		case o := <-done:
+			return o, nil
+		case now := <-ticker.C:
+			if p := progress(); p != last {
+				last, lastAt = p, now
+			} else if now.Sub(lastAt) >= stall {
+				return linkTradeOutcome{}, linkExchangeStalled(last)
+			}
+		}
+	}
+}
+
+// linkExchangeStalled is the portable poison signal for one stalled link.
+// ErrLinkStalled keeps the farm's existing exit check. game.ErrMachineUnusable
+// tells the objective transaction not to step or save the emulator again:
+// the goroutine inside Step may still hold the frame lock.
+func linkExchangeStalled(frame uint64) error {
+	return fmt.Errorf("%w: %w: no frame progress for %s at frame %d",
+		game.ErrMachineUnusable, ErrLinkStalled, linkStallTimeout, frame)
+}
+
+func virtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, policy MovePolicy) (LinkTradeResult, error) {
 	result := LinkTradeResult{Tradeback: tradeback}
 	if policy == nil {
 		return result, fmt.Errorf("skill: VirtualTrade: nil move policy")
@@ -55,6 +122,9 @@ func VirtualTrade(m *emu.Emu, romData []byte, playerSlot int, tradeback bool, po
 		return result, err
 	}
 	if err := enterTradeCenter(m); err != nil {
+		return result, err
+	}
+	if err := activateTradeCenterConsole(m); err != nil {
 		return result, err
 	}
 	if err := waitForTradeSelectionMenu(m); err != nil {
@@ -91,14 +161,13 @@ func reachCableClubReceptionist(m *emu.Emu, romData []byte, policy MovePolicy) (
 	var total TravelResult
 	cur := m.Peek8(sym.CurMap)
 	if !knownPokemonCenterMap(cur) {
-		center, name, err := nearestPokemonCenter(romData, cur)
-		if err != nil {
-			return total, fmt.Errorf("skill: VirtualTrade: find Pokemon Center: %w", err)
-		}
-		travel, err := TravelFlee(m, romData, center, policy, linkTravelBattles)
+		travel, name, err := reachNearestPokemonCenter(m, romData, policy, linkTravelBattles)
 		total = combineLinkTravel(total, travel)
 		if err != nil {
-			return total, fmt.Errorf("skill: VirtualTrade: reach %s: %w", name, err)
+			if name != "" {
+				return total, fmt.Errorf("skill: VirtualTrade: reach %s: %w", name, err)
+			}
+			return total, fmt.Errorf("skill: VirtualTrade: find Pokemon Center: %w", err)
 		}
 	}
 
@@ -163,6 +232,7 @@ func combineLinkTravel(a, b TravelResult) TravelResult {
 	a.Dialogues += b.Dialogues
 	a.BlackedOut = a.BlackedOut || b.BlackedOut
 	a.Replans = append(a.Replans, b.Replans...)
+	a.EmergencyEgresses = append(a.EmergencyEgresses, b.EmergencyEgresses...)
 	return a
 }
 
@@ -186,8 +256,27 @@ func enterTradeCenter(m *emu.Emu) error {
 	if err := linkAdvanceUntil(m, linkMenuBudget, linkMenuScreen, false, "Cable Club link menu"); err != nil {
 		return err
 	}
-	if err := SelectMenuItem(m, 0); err != nil {
-		return fmt.Errorf("skill: VirtualTrade: select TRADE CENTER: %w", err)
+	return selectTradeCenter(m)
+}
+
+// selectTradeCenter confirms TRADE CENTER on LinkMenu. LinkMenu alternates
+// HandleMenuInput with Serial_ExchangeLinkMenuSelection, which spans several
+// frames over a network link, so a short tap can land entirely inside the
+// exchange and be lost. Hold A until the ROM records the agreed destination.
+func selectTradeCenter(m *emu.Emu) error {
+	m.StepFrames(talkSettle)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if cur := mem.U8(sym.CurrentMenuItem); cur != 0 {
+		return fmt.Errorf("skill: VirtualTrade: select TRADE CENTER: link menu cursor at %d, want 0", cur)
+	}
+	if _, err := m.HoldUntil(emu.A, linkMenuSelectBudget, func(em *emu.Emu) bool {
+		return em.Peek8(sym.CableClubDestinationMap) != 0
+	}); err != nil {
+		return fmt.Errorf("skill: VirtualTrade: select TRADE CENTER: link menu did not accept A: %w", err)
+	}
+	if dest := m.Peek8(sym.CableClubDestinationMap); dest != tradeCenterMapID {
+		return fmt.Errorf("skill: VirtualTrade: select TRADE CENTER: link menu chose map %#04x", dest)
 	}
 	return nil
 }
@@ -198,6 +287,56 @@ func linkMenuScreen(mem *state.Mem) bool {
 		mem.U8(sym.TopMenuItemY) == 7 && mem.U8(sym.TopMenuItemX) == 6
 }
 
+// activateTradeCenterConsole performs the interaction that actually starts
+// CableClub_DoBattleOrTrade. Selecting TRADE CENTER at the receptionist only
+// warps both players into map 0xef; the ROM does not begin party exchange until
+// the local player presses A on the Game Boy at the table.
+//
+// Red places the internal-clock player at (3,4), beside the left console
+// hidden event at (4,4), and the external-clock player at (6,4), beside the
+// right console at (5,4). CableClubLeftGameboy/CableClubRightGameboy then set
+// wLinkState=LINK_STATE_START_TRADE and the map loop begins serial exchange.
+func activateTradeCenterConsole(m *emu.Emu) error {
+	var mem state.Mem
+	if _, err := m.StepUntil(linkRoomBudget, func(em *emu.Emu) bool {
+		state.Snapshot(em, &mem)
+		if mem.U8(sym.CurMap) != tradeCenterMapID || !state.Controllable(&mem) {
+			return false
+		}
+		_, _, ok := tradeCenterConsoleTarget(mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		return ok
+	}); err != nil {
+		state.Snapshot(m, &mem)
+		return fmt.Errorf("skill: VirtualTrade: Trade Center console position did not become ready: map=%#04x at (%d,%d): %w",
+			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), err)
+	}
+
+	tx, ty, ok := tradeCenterConsoleTarget(mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	if !ok {
+		return fmt.Errorf("skill: VirtualTrade: no Cable Club console adjacent at (%d,%d)",
+			mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	if err := Face(m, tx, ty); err != nil {
+		return fmt.Errorf("skill: VirtualTrade: face Cable Club console at (%d,%d): %w", tx, ty, err)
+	}
+	m.Tap(emu.A, 3, 7)
+	return nil
+}
+
+func tradeCenterConsoleTarget(x, y uint8) (uint8, uint8, bool) {
+	if y != 4 {
+		return 0, 0, false
+	}
+	switch x {
+	case 3:
+		return 4, 4, true
+	case 6:
+		return 5, 4, true
+	default:
+		return 0, 0, false
+	}
+}
+
 func tradeSelectionMenu(mem *state.Mem) bool {
 	if mem.U8(sym.CurMap) != tradeCenterMapID {
 		return false
@@ -206,9 +345,16 @@ func tradeSelectionMenu(mem *state.Mem) bool {
 	if partyCount == 0 {
 		return false
 	}
-	text := strings.ToUpper(state.ScreenText(mem))
+	// TradeCenter_SelectMon itself establishes this exact controller shape:
+	// player menu at (1,1), wMaxMenuItem == wPartyCount. Do not require
+	// ScreenText here. The Cable Club clears/redraws the tilemap around the
+	// serial exchange, and a perfectly live selection menu can therefore have
+	// no decodable text in our WRAM shadow even though HandleMenuInput is active.
+	// The map + coordinates + party-derived bound are the ROM-owned liveness
+	// invariants and avoid treating rendering as control state.
 	return mem.U8(sym.TopMenuItemY) == 1 && mem.U8(sym.TopMenuItemX) == 1 &&
-		mem.U8(sym.MaxMenuItem) == partyCount && strings.Contains(text, "CANCEL")
+		mem.U8(sym.MaxMenuItem) == partyCount &&
+		mem.U8(sym.CurrentMenuItem) <= partyCount
 }
 
 func waitForTradeSelectionMenu(m *emu.Emu) error {
@@ -247,7 +393,9 @@ func executeCableTrade(m *emu.Emu, slot int) error {
 	}
 	m.Tap(emu.A, 3, 7)
 
-	if err := linkAdvanceUntil(m, linkTradeConfirmationBudget, tradeConfirmationMenu, false, "TRADE/CANCEL confirmation"); err != nil {
+	// TradeCenter_Trade prints _WillBeTradedText, whose `cont` scrolls a full
+	// two-line box and waits for a button before the TRADE/CANCEL menu.
+	if err := linkAdvanceUntil(m, linkTradeConfirmationBudget, tradeConfirmationMenu, true, "TRADE/CANCEL confirmation"); err != nil {
 		return err
 	}
 	if err := selectTwoOption(m, 0); err != nil {
@@ -309,14 +457,78 @@ func leaveTradeCenter(m *emu.Emu) error {
 	}
 	m.Tap(emu.A, 3, 7)
 
+	// Both sides cancelling runs ReturnToCableClubRoom: the player is back in
+	// the Trade Center room, which has no warps. Gen I has no in-game exit from
+	// a link room; the player resets and CONTINUEs from the receptionist's
+	// save, which already holds the traded party (SavePartyAndDexData).
 	if _, err := m.StepUntil(linkTradeExitBudget, func(em *emu.Emu) bool {
 		var snap state.Mem
 		state.Snapshot(em, &snap)
-		return snap.U8(sym.CurMap) != tradeCenterMapID && state.Controllable(&snap) && state.DecodeBattle(&snap) == nil
+		return snap.U8(sym.CurMap) == tradeCenterMapID && state.Controllable(&snap)
 	}); err != nil {
+		return fmt.Errorf("skill: VirtualTrade: return to Trade Center room: %w", err)
+	}
+	if err := softResetToSave(m); err != nil {
 		return fmt.Errorf("skill: VirtualTrade: leave Trade Center: %w", err)
 	}
 	return nil
+}
+
+var softResetButtons = []emu.Button{emu.A, emu.B, emu.Start, emu.Select}
+
+// softResetToSave performs Red's A+B+START+SELECT reset and continues from
+// the last save. _Joypad counts hSoftReset down once per poll while all four
+// are held, and Init then clears WRAM, so wCurMap leaving the link room is
+// the proof the reset happened.
+func softResetToSave(m *emu.Emu) error {
+	for _, b := range softResetButtons {
+		m.Press(b)
+	}
+	_, err := m.StepUntil(linkTradeExitBudget, func(em *emu.Emu) bool { return em.Peek8(sym.CurMap) != tradeCenterMapID })
+	for _, b := range softResetButtons {
+		m.Release(b)
+	}
+	if err != nil {
+		return fmt.Errorf("soft reset: %w", err)
+	}
+
+	// Title and intro accept START; the main menu opens with CONTINUE on
+	// item 0 whenever a save exists.
+	if err := tapUntil(m, linkTradeExitBudget, mainMenuScreen, emu.Start, "main menu"); err != nil {
+		return err
+	}
+	m.Tap(emu.A, 3, 7)
+	// DisplayContinueGameInfo waits for A, then SpecialEnterMap idles 20
+	// frames with the saved map in wCurMap but not loaded, so Controllable
+	// alone reads true while input is still dropped. Init left
+	// wUpdateSpritesEnabled at $ff; LoadMapData setting it to 1 proves EnterMap
+	// has run.
+	return tapUntil(m, linkTradeExitBudget, func(mem *state.Mem) bool {
+		return mem.U8(sym.CurMap) != tradeCenterMapID && mem.U8(sym.UpdateSpritesEnabled) == 1 &&
+			state.Controllable(mem) && state.DecodeBattle(mem) == nil
+	}, emu.A, "continued overworld")
+}
+
+// tapUntil taps btn between checks until pred holds. Only for screens where
+// btn is the sole way forward (title, CONTINUE info); pred is checked first
+// so the tap never reaches the surface it was waiting for.
+func tapUntil(m *emu.Emu, budget int, pred func(*state.Mem) bool, btn emu.Button, what string) error {
+	var mem state.Mem
+	for spent := 0; spent < budget; spent += talkSettle {
+		state.Snapshot(m, &mem)
+		if pred(&mem) {
+			return nil
+		}
+		m.Tap(btn, 3, 7)
+		m.StepFrames(talkSettle)
+	}
+	return fmt.Errorf("skill: VirtualTrade: %s did not appear: screen=%q", what, state.ScreenText(&mem))
+}
+
+func mainMenuScreen(mem *state.Mem) bool {
+	text := strings.ToUpper(state.ScreenText(mem))
+	return strings.Contains(text, "CONTINUE") && strings.Contains(text, "NEW GAME") &&
+		mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 && mem.U8(sym.CurrentMenuItem) == 0
 }
 
 func linkAdvanceUntil(m *emu.Emu, budget int, pred func(*state.Mem) bool, pageDialogue bool, what string) error {

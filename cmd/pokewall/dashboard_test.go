@@ -80,7 +80,7 @@ func TestDashboardJSON(t *testing.T) {
 
 	specBody, _ := json.Marshal(farm.Spec{
 		RunID: "dash-1", Seed: 42, Planner: "scripted", Starter: "charmander",
-		Dest: "pallet", Goal: "Earn the Boulder Badge.", FPS: 60, MaxRounds: 3, MaxFrames: 1000,
+		Dest: "pallet", Goal: farm.GoalFrom("Earn the Boulder Badge."), FPS: 60, MaxRounds: 3, MaxFrames: 1000,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(specBody))
 	res := httptest.NewRecorder()
@@ -164,7 +164,7 @@ func TestDashboardShowsLatestPlan(t *testing.T) {
 
 	specBody, _ := json.Marshal(farm.Spec{
 		RunID: "plan-1", Planner: "llm", Starter: "squirtle",
-		Goal: "Earn the Boulder Badge.", Seed: 0,
+		Goal: farm.GoalFrom("Earn the Boulder Badge."), Seed: 0,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(specBody))
 	res := httptest.NewRecorder()
@@ -308,7 +308,7 @@ func recordingArtifact(runID string) farm.Artifact {
 
 func enqueueLease(t *testing.T, h http.Handler, runID string) {
 	t.Helper()
-	specBody, _ := json.Marshal(farm.Spec{RunID: runID, Planner: "llm", Starter: "squirtle", Goal: "Earn the Boulder Badge."})
+	specBody, _ := json.Marshal(farm.Spec{RunID: runID, Planner: "llm", Starter: "squirtle", Goal: farm.GoalFrom("Earn the Boulder Badge.")})
 	req := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(specBody))
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, req)
@@ -360,5 +360,26 @@ func TestDashboardMarksReplayAvailable(t *testing.T) {
 	}
 	if byID["no-rec"] {
 		t.Fatal("run without a recording is replay_available")
+	}
+}
+
+func TestCompatibilityDashboardOmitsOperatorActivity(t *testing.T) {
+	wall := NewWall("")
+	wall.mu.Lock()
+	wall.order = []string{"activity-private"}
+	wall.tiles["activity-private"] = &Tile{
+		RunID: "activity-private", Status: statusRunning, Planner: "llm",
+		Activity: []runActivityEvent{{Source: "recovery", Kind: "retry", Summary: "private recovery story"}},
+	}
+	wall.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil)
+	res := httptest.NewRecorder()
+	wall.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d", res.Code)
+	}
+	if strings.Contains(res.Body.String(), "\"activity\"") || strings.Contains(res.Body.String(), "private recovery story") {
+		t.Fatalf("dashboard leaked operator activity: %s", res.Body.String())
 	}
 }

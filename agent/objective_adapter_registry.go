@@ -4,36 +4,27 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/profiles"
+	gameruntime "github.com/maestroi/pokepilot/game"
 )
 
-type objectiveAdapterFactory func(*emu.Emu, []byte) ObjectiveGameAdapter
+// ObjectiveAdapterFactory binds the portable objective runtime to one concrete
+// game implementation for a live machine. The generic run loop selects this
+// factory by GameID; game-specific construction stays in adapter registration.
+type ObjectiveAdapterFactory func(*emu.Emu, []byte, RoutePriority) ObjectiveGameAdapter
 
-var objectiveAdapterFactories = map[game.GameID]objectiveAdapterFactory{}
+var objectiveAdapterFactories = map[gameruntime.GameID]ObjectiveAdapterFactory{}
 
-func registerObjectiveAdapter(id game.GameID, factory objectiveAdapterFactory) {
+func registerObjectiveAdapterFactory(id gameruntime.GameID, factory ObjectiveAdapterFactory) {
 	if id == "" || factory == nil {
-		panic("agent: invalid objective adapter registration")
-	}
-	if _, exists := objectiveAdapterFactories[id]; exists {
-		panic("agent: duplicate objective adapter for " + string(id))
+		return
 	}
 	objectiveAdapterFactories[id] = factory
 }
 
-func objectiveAdapterForGame(id game.GameID, m *emu.Emu, romData []byte) (ObjectiveGameAdapter, error) {
-	factory := objectiveAdapterFactories[id]
-	if factory == nil {
+func objectiveAdapterFactoryFor(id gameruntime.GameID) (ObjectiveAdapterFactory, error) {
+	factory, ok := objectiveAdapterFactories[id]
+	if !ok {
 		return nil, fmt.Errorf("agent: no objective adapter registered for game %q", id)
 	}
-	return factory(m, romData), nil
-}
-
-func objectiveAdapterForROM(m *emu.Emu, romData []byte) (ObjectiveGameAdapter, error) {
-	profile, _, err := profiles.Detect(romData)
-	if err != nil {
-		return nil, fmt.Errorf("agent: detect objective game profile: %w", err)
-	}
-	return objectiveAdapterForGame(profile.ID(), m, romData)
+	return factory, nil
 }

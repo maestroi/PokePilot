@@ -107,7 +107,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		} else {
 			travel, err = skill.Travel(m, romData, dest, skill.StatAwareMove(romData), 40)
 		}
-		result.Travel = travelEvidenceFromRed(travel)
+		attachTravelResult(&result, travel)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: travel to catch habitat: %w", o, err)
 		}
@@ -166,6 +166,12 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		return result, nil
 	}
 	result.Outcome = OutcomeBlocked
+	if caught.BallsThrown > 0 && (caught.Outcome == skill.OutcomeFled || caught.Outcome == skill.OutcomeOutOfBalls) {
+		// Balls were thrown at the wanted target and none held: the catch
+		// roll lost, which is ordinary stochastic gameplay, not a defect.
+		return result, fmt.Errorf("agent: %s: %w: no %s acquired (outcome %s, balls=%d, encounters=%d)",
+			o, skill.ErrCatchMissed, strings.ToUpper(string(o.Species)), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
+	}
 	return result, fmt.Errorf("agent: %s: no %s acquired (outcome %s, balls=%d, encounters=%d)",
 		o, strings.ToUpper(string(o.Species)), catchOutcomeName(caught.Outcome), caught.BallsThrown, caught.Encounters)
 }

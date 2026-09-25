@@ -18,7 +18,7 @@ type yellowObjectiveAdapter struct {
 }
 
 func init() {
-	registerObjectiveAdapter(yellowprofile.GameID, func(m *emu.Emu, romData []byte) ObjectiveGameAdapter {
+	registerObjectiveAdapterFactory(yellowprofile.GameID, func(m *emu.Emu, romData []byte, _ RoutePriority) ObjectiveGameAdapter {
 		return &yellowObjectiveAdapter{m: m, romData: romData}
 	})
 	registerObjectiveCatalogProvider(yellowprofile.GameID, &yellowObjectiveAdapter{})

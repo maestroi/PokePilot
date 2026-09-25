@@ -1,12 +1,18 @@
 <script setup lang="ts">
+import DecisionTelemetry from './DecisionTelemetry.vue'
+import { showDecisionTelemetry } from './decisionTelemetry'
 import { computed, ref, watch } from 'vue'
-import { ArrowPathIcon, NoSymbolIcon, PauseIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { cancelRun, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
-import type { DashboardRun, DashboardStats, PartyMon } from '../shared/api/types'
+import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
+import { cancelRun, cloneRun, forceEndWorker, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
+import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon } from '../shared/api/types'
+import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
+import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
+import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import SemanticMap from './SemanticMap.vue'
 import {
@@ -22,6 +28,7 @@ import {
   railFacts,
   railStatusLabel,
   reasoningEffortLabel,
+  decisionEngineLabel,
   starterLabel,
   statNumber,
   statsLine,
@@ -36,17 +43,33 @@ import {
   policyLabel
 } from '../shared/playstyle'
 import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
+import { canRenderModernScene } from '../shared/semanticRenderer'
+import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
+
+type RendererMode = 'modern' | 'classic'
 
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
 const selectionPinned = ref(Boolean(selectedRunID.value))
+const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.operator.renderer') === 'classic' ? 'classic' : 'modern')
+const themeOptions = renderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.operator.theme') || DEFAULT_RENDER_THEME_ID
+const initialThemeSelection = resolveRenderTheme(storedThemeID)
+const selectedThemeID = ref(initialThemeSelection.theme.id)
+const themeNotice = ref(initialThemeSelection.diagnostics.join(' '))
+const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
 const historicalRun = ref<DashboardRun | null>(null)
 const historicalError = ref('')
 const pausing = ref(false)
 const resuming = ref(false)
 const canceling = ref(false)
+const cloning = ref(false)
+const spectatorUpdating = ref(false)
+const forceEndTarget = ref<DashboardWorker | null>(null)
+const forceEndBusy = ref(false)
 const actionError = ref('')
 const copyState = ref('')
+const cloneState = ref('')
 let detailSerial = 0
 
 const activeResource = usePollingResource(
@@ -57,6 +80,11 @@ const activeResource = usePollingResource(
 const recentResource = usePollingResource(
   (signal) => getDashboard({ status: 'done', limit: 8 }, signal),
   { intervalMs: 10000 }
+)
+
+const spectatorResource = usePollingResource(
+  (signal) => getSpectatorControl(signal),
+  { intervalMs: 5000 }
 )
 
 const activeRuns = computed(() => [...(activeResource.data.value?.runs ?? [])]
@@ -97,8 +125,32 @@ watch(selectedRunID, async (runID) => {
 const selectedFrameID = computed(() => selectedRun.value?.run_id || '')
 const isLiveFrame = computed(() => isLiveStatus(selectedRun.value?.status))
 const frameEnabled = computed(() => Boolean(selectedFrameID.value) && selectedRun.value?.status !== 'queued')
-const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, frameEnabled, 50, isLiveFrame)
-const gameLabel = computed(() => gameMediaLabel(selectedRun.value?.status))
+const renderEnabled = computed(() => frameEnabled.value && isLiveFrame.value)
+const {
+  renderState,
+  state: renderStateStatus,
+  error: renderStateError
+} = useRenderStatePump(selectedFrameID, renderEnabled, 100, isLiveFrame)
+const semanticReady = computed(() => canRenderModernScene(renderState.value))
+const showModern = computed(() =>
+  isLiveFrame.value &&
+  rendererMode.value === 'modern' &&
+  semanticReady.value &&
+  renderStateStatus.value === 'ready'
+)
+const classicFrameEnabled = computed(() => frameEnabled.value && !showModern.value)
+const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, classicFrameEnabled, 50, isLiveFrame)
+const modernFallbackLabel = computed(() => {
+  if (!isLiveFrame.value || rendererMode.value !== 'modern' || showModern.value) return ''
+  if (renderStateStatus.value === 'error') return 'Modern unavailable · classic fallback'
+  if (renderState.value?.scene) return `Modern unsupported for ${renderState.value.scene} · classic fallback`
+  return renderStateStatus.value === 'loading' ? 'Loading semantic renderer · classic fallback' : ''
+})
+const gameLabel = computed(() => {
+  const base = gameMediaLabel(selectedRun.value?.status)
+  if (!isLiveFrame.value) return base
+  return `${base} · ${showModern.value ? 'Modern' : 'Classic'}`
+})
 
 const partySlots = computed<(PartyMon | null)[]>(() => {
   const members = selectedRun.value?.player?.party ?? []
@@ -127,6 +179,24 @@ const isCancelable = computed(() => {
   const status = selectedRun.value?.status
   return status === 'queued' || status === 'leased' || status === 'running' || status === 'paused'
 })
+const selectedWorker = computed<DashboardWorker | null>(() => {
+  const runID = selectedRun.value?.run_id
+  if (!runID) return null
+  return activeResource.data.value?.workers?.find((worker) => worker.run_id === runID) ?? null
+})
+const spectatorVisible = computed(() => {
+  const runID = selectedRun.value?.run_id
+  if (!runID) return true
+  return spectatorResource.data.value?.runs?.[runID]?.visible ?? true
+})
+const spectatorControlReady = computed(() => Boolean(spectatorResource.data.value))
+const forceEndTitle = computed(() => forceEndTarget.value ? `Force quit worker ${forceEndTarget.value.addr}?` : 'Force quit worker?')
+const forceEndMessage = computed(() => {
+  const worker = forceEndTarget.value
+  if (!worker) return ''
+  const runID = worker.run_id || selectedRun.value?.run_id || ''
+  return `This immediately terminates worker ${worker.addr} and force-ends run ${runID}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nUse this only when pause/cancel cannot recover the run.`
+})
 const resourceState = computed(() => {
   if (activeResource.state.value === 'error' && recentResource.state.value === 'error') return 'error'
   if (activeResource.state.value === 'loading' && recentResource.state.value === 'loading') return 'loading'
@@ -152,14 +222,21 @@ const settingsRows = computed(() => {
   if (isPlayStyleRun(run)) {
     rows.push(
       ['play style', playStyleLabel(run)],
+      ['purpose', run.purpose === 'debug_coverage' ? 'debug coverage' : 'normal'],
       ['speed', playSpeedLabel(run)],
       ['risk', policyLabel(run.risk_tolerance, 'balanced')],
       ['wild encounters', policyLabel(run.wild_encounters, 'planner')]
     )
-    rows.push(['model', llmProfileLabel(run)], ['reasoning', reasoningEffortLabel(run)])
+    rows.push(
+      ['model', llmProfileLabel(run)],
+      ['reasoning', reasoningEffortLabel(run)],
+      ['decision engine', decisionEngineLabel(run)],
+      ['recovery mode', run.recovery_profile || 'strict']
+    )
   } else {
     rows.push(['speed', playSpeedLabel(run)], ['walk to', run.dest || '—'])
   }
+  if (selectedWorker.value) rows.push(['worker', selectedWorker.value.addr])
   rows.push(
     ['seed', String(run.seed ?? 0)],
     ['keep going', run.endless ? (run.random_seed ? 'yes, random seed' : 'yes, same seed') : ''],
@@ -179,7 +256,8 @@ const stateRows = computed(() => {
       ['last map', tileLabel(run)],
       ['frame', String(run.frame ?? 0)],
       ['fps', fpsLabel(run)],
-      ['attempts', String(run.attempts ?? 0)]
+      ['attempts', String(run.attempts ?? 0)],
+      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
     ].filter(([, value]) => value)
   }
   if (run.status === 'paused') {
@@ -189,7 +267,8 @@ const stateRows = computed(() => {
       ['detail', run.detail || ''],
       ['map', tileLabel(run)],
       ['frame', String(run.frame ?? 0)],
-      ['attempts', String(run.attempts ?? 0)]
+      ['attempts', String(run.attempts ?? 0)],
+      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
     ].filter(([, value]) => value)
   }
   return [
@@ -197,7 +276,8 @@ const stateRows = computed(() => {
     ['map', tileLabel(run)],
     ['frame', String(run.frame ?? 0)],
     ['fps', fpsLabel(run)],
-    ['attempt', String(run.attempts ?? 0)],
+    ['attempt', String((run.attempts ?? 0) + 1)],
+    ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : ''],
     ['so far', run.stop_so_far || '']
   ].filter(([, value]) => value)
 })
@@ -227,12 +307,35 @@ const playChoices = computed(() => {
 })
 const playTop = computed(() => playChoices.value[0]?.count || 1)
 
-function selectRun(run: DashboardRun): void {
-  selectedRunID.value = run.run_id
+function selectRunID(runID: string): void {
+  selectedRunID.value = runID
   selectionPinned.value = true
   const url = new URL(window.location.href)
-  url.searchParams.set('run', run.run_id)
+  url.searchParams.set('run', runID)
   history.replaceState(null, '', url)
+}
+
+function selectRun(run: DashboardRun): void {
+  selectRunID(run.run_id)
+}
+
+function setRendererMode(mode: RendererMode): void {
+  rendererMode.value = mode
+  window.localStorage.setItem('pokepilot.operator.renderer', mode)
+}
+
+function setTheme(themeID: string): void {
+  const resolved = resolveRenderTheme(themeID)
+  selectedThemeID.value = resolved.theme.id
+  themeNotice.value = resolved.diagnostics.join(' ')
+  rendererMode.value = 'modern'
+  window.localStorage.setItem('pokepilot.operator.renderer', 'modern')
+  window.localStorage.setItem('pokepilot.operator.theme', resolved.theme.id)
+}
+
+function onThemeSelect(event: Event): void {
+  const target = event.target as HTMLSelectElement | null
+  if (target) setTheme(target.value)
 }
 
 function hpPercent(mon: PartyMon): number {
@@ -260,6 +363,7 @@ function showEndedHeading(index: number): boolean {
 function refresh(): void {
   void activeResource.retry()
   void recentResource.retry()
+  void spectatorResource.retry()
 }
 
 async function pauseSelected(): Promise<void> {
@@ -304,6 +408,64 @@ async function cancelSelected(): Promise<void> {
     actionError.value = cause instanceof Error ? cause.message : 'Cancel failed'
   } finally {
     canceling.value = false
+  }
+}
+
+async function cloneSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || cloning.value) return
+  cloning.value = true
+  cloneState.value = ''
+  actionError.value = ''
+  try {
+    const result = await cloneRun(run.run_id)
+    await Promise.all([activeResource.retry(), spectatorResource.retry()])
+    cloneState.value = 'Cloned'
+    selectRunID(result.run_id)
+    window.setTimeout(() => { cloneState.value = '' }, 1800)
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Clone failed'
+  } finally {
+    cloning.value = false
+  }
+}
+
+async function toggleSpectatorSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || spectatorUpdating.value || !spectatorControlReady.value) return
+  spectatorUpdating.value = true
+  actionError.value = ''
+  try {
+    await patchSpectatorRunControl(run.run_id, { visible: !spectatorVisible.value })
+    await spectatorResource.retry()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Spectator visibility update failed'
+  } finally {
+    spectatorUpdating.value = false
+  }
+}
+
+function requestForceEndSelected(): void {
+  if (selectedWorker.value) forceEndTarget.value = selectedWorker.value
+}
+
+function closeForceEnd(): void {
+  if (!forceEndBusy.value) forceEndTarget.value = null
+}
+
+async function confirmForceEnd(): Promise<void> {
+  const worker = forceEndTarget.value
+  if (!worker || forceEndBusy.value) return
+  forceEndBusy.value = true
+  actionError.value = ''
+  try {
+    await forceEndWorker(worker.addr)
+    forceEndTarget.value = null
+    await Promise.all([activeResource.retry(), recentResource.retry()])
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Force quit failed'
+  } finally {
+    forceEndBusy.value = false
   }
 }
 
@@ -383,6 +545,8 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <span class="flex flex-wrap items-center gap-1">
                   <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
                   <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
+                  <StatusBadge v-if="run.planner === 'llm' && run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
+                  <StatusBadge v-if="run.planner === 'llm' && run.recovery_profile" :tone="run.recovery_profile === 'resilient' ? 'warning' : 'neutral'">{{ run.recovery_profile }}</StatusBadge>
                 </span>
                 <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
                 <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>
@@ -414,8 +578,13 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               </span>
             </header>
             <div class="relative aspect-[160/144] min-h-52 w-full max-h-[min(52vh,26.875rem)] overflow-hidden bg-[#0c1118] xl:aspect-auto xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
+              <ModernSceneRenderer
+                v-if="showModern && renderState"
+                :state="renderState"
+                :theme="activeTheme"
+              />
               <img
-                v-if="frameURL"
+                v-else-if="frameURL"
                 :src="frameURL"
                 :alt="`Game frame for ${selectedRun.run_id}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
@@ -423,12 +592,14 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               <div v-else class="absolute inset-0 grid place-items-center px-4 text-center">
                 <div>
                   <span :class="['mx-auto block size-1.5 rounded-full', isLiveFrame ? 'bg-[var(--poke-green)] motion-safe:animate-pulse' : 'bg-[var(--poke-dim)]']" />
-                  <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for a live frame' : 'Last recorded frame unavailable.' }}</p>
-                  <p v-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
+                  <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for live game state' : 'Last recorded frame unavailable.' }}</p>
+                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ renderStateError }}</p>
+                  <p v-else-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
                 </div>
               </div>
+
               <div
-                v-if="frameURL"
+                v-if="showModern || frameURL"
                 :class="[
                   isLiveFrame ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
                   'absolute top-2 left-2 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-bold'
@@ -439,9 +610,45 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                   class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
                   aria-hidden="true"
                 />
-                {{ isLiveFrame ? 'Live' : 'Ended' }}
+                {{ isLiveFrame ? (showModern ? 'Live · Modern' : 'Live · Classic') : 'Ended' }}
               </div>
-              <div v-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
+
+              <div v-if="isLiveFrame" class="absolute top-2 right-2 z-10 flex flex-col items-end gap-1.5">
+                <div class="flex overflow-hidden border border-white/10 bg-black/75 text-[9px] font-bold uppercase tracking-[0.06em]">
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
+                    title="Use the shared semantic renderer"
+                    @click="setRendererMode('modern')"
+                  >Modern</button>
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
+                    title="Show the authoritative emulator framebuffer"
+                    @click="setRendererMode('classic')"
+                  >Classic</button>
+                </div>
+                <label v-if="rendererMode === 'modern'" class="flex items-center gap-1.5 border border-white/10 bg-black/75 px-2 py-1 text-[9px] text-[var(--poke-muted)]">
+                  <span class="font-bold uppercase tracking-[0.06em]">Theme</span>
+                  <select
+                    :value="selectedThemeID"
+                    class="max-w-28 bg-transparent text-[9px] font-semibold text-white outline-none"
+                    title="Choose the operator renderer theme"
+                    @change="onThemeSelect"
+                  >
+                    <option
+                      v-for="theme in themeOptions"
+                      :key="theme.id"
+                      :value="theme.id"
+                      class="bg-slate-950 text-white"
+                    >{{ theme.name }}</option>
+                  </select>
+                </label>
+                <div v-if="themeNotice" class="max-w-48 bg-amber-950/90 px-2 py-1 text-right text-[9px] text-amber-200">{{ themeNotice }}</div>
+              </div>
+
+              <div v-if="modernFallbackLabel" class="absolute right-2 bottom-2 bg-black/75 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">{{ modernFallbackLabel }}</div>
+              <div v-else-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
             </div>
           </section>
 
@@ -558,8 +765,25 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Round</span>
             <strong class="mt-0.5 block font-mono text-[11px]">{{ selectedRun.stats?.round ?? selectedRun.stats?.rounds ?? '—' }}</strong>
           </div>
-          <div class="flex items-center justify-end gap-1 px-2 py-1.5">
+          <div class="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
             <button type="button" class="rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5" @click="copyRunID">{{ copyState || 'Copy' }}</button>
+            <button type="button" :disabled="cloning" class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 disabled:opacity-50" @click="cloneSelected">
+              <Square2StackIcon class="size-3" aria-hidden="true" /> {{ cloning ? 'Cloning…' : (cloneState || 'Clone') }}
+            </button>
+            <button
+              type="button"
+              :disabled="spectatorUpdating || !spectatorControlReady"
+              :title="spectatorControlReady ? (spectatorVisible ? 'Visible in spectator mode. Click to hide.' : 'Hidden from spectator mode. Click to show.') : 'Spectator controls unavailable.'"
+              :class="[
+                spectatorVisible ? 'bg-[#18362f] text-[var(--poke-green)] ring-[#315f52]' : 'bg-[#2b3038] text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
+                'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:brightness-110 disabled:opacity-50'
+              ]"
+              @click="toggleSpectatorSelected"
+            >
+              <EyeIcon v-if="spectatorVisible" class="size-3" aria-hidden="true" />
+              <EyeSlashIcon v-else class="size-3" aria-hidden="true" />
+              {{ spectatorUpdating ? 'Updating…' : (spectatorVisible ? 'Spectator visible' : 'Spectator hidden') }}
+            </button>
             <button v-if="isPausable" type="button" :disabled="pausing" class="inline-flex items-center gap-1 rounded-sm bg-[#3b3222] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-amber)] ring-1 ring-[#6b5632] hover:brightness-110 disabled:opacity-50" @click="pauseSelected">
               <PauseIcon class="size-3" aria-hidden="true" /> {{ pausing ? 'Pausing…' : 'Pause' }}
             </button>
@@ -568,6 +792,16 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             </button>
             <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-sm bg-[#352529] px-1.5 py-1 text-[10px] font-bold text-[#e4b5b7] ring-1 ring-[#654047] hover:brightness-110 disabled:opacity-50" @click="cancelSelected">
               <NoSymbolIcon class="size-3" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
+            </button>
+            <button
+              v-if="selectedWorker"
+              type="button"
+              :disabled="forceEndBusy"
+              :title="`Force quit worker ${selectedWorker.addr} for this run`"
+              class="inline-flex items-center gap-1 rounded-sm bg-[#4a2026] px-1.5 py-1 text-[10px] font-bold text-[#ffd4d6] ring-1 ring-[#8b3f4a] hover:brightness-110 disabled:opacity-50"
+              @click="requestForceEndSelected"
+            >
+              <NoSymbolIcon class="size-3" aria-hidden="true" /> Force quit
             </button>
           </div>
         </div>
@@ -624,6 +858,9 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               <p v-else class="text-[11px] text-[var(--poke-muted)]">Play telemetry appears for LLM runs.</p>
             </section>
           </div>
+          <div v-if="showDecisionTelemetry(selectedRun.stats, selectedRun.decision_engine)" class="border-t border-[var(--poke-border)]">
+            <DecisionTelemetry :stats="selectedRun.stats" :engine="selectedRun.decision_engine" />
+          </div>
           <div v-if="selectedRun.trace" class="flex items-baseline gap-2.5 border-t border-[var(--poke-border)] bg-[var(--poke-panel)] px-2.5 py-1">
             <h3 class="shrink-0 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Last event</h3>
             <pre class="min-w-0 flex-1 overflow-hidden font-mono text-[11px] leading-4 text-[var(--poke-text)] line-clamp-2">{{ selectedRun.trace }}</pre>
@@ -633,6 +870,17 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
         <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
         <InspectorPanel :run-id="selectedRun.run_id" />
+
+        <ConfirmDialog
+          :open="forceEndTarget !== null"
+          :title="forceEndTitle"
+          :message="forceEndMessage"
+          confirm-label="Force quit worker"
+          :busy="forceEndBusy"
+          danger
+          @close="closeForceEnd"
+          @confirm="confirmForceEnd"
+        />
       </div>
     </div>
 

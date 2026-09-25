@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // Stop says why a run ended.
@@ -69,8 +70,21 @@ type Result struct {
 // recording start frame can translate it without making the agent aware of
 // recording or presentation concerns.
 type ObjectiveTiming struct {
-	Frame uint64
-	Round int
+	Frame       uint64
+	Round       int
+	WallElapsed time.Duration
+}
+
+// ObjectiveActivity is an optional live observer event around one objective
+// transaction. It reports the semantic execution boundary without coupling the
+// agent package to farm/operator presentation.
+type ObjectiveActivity struct {
+	Stage     string
+	Objective string
+	Outcome   string
+	Error     string
+	Frame     uint64
+	Round     int
 }
 
 // Progress is one snapshot of how far a run has gotten.
@@ -176,6 +190,11 @@ type Budget struct {
 	MaxFrames int
 	Goal      string
 
+	// Build identifies the running binary (e.g. a git SHA). It scopes
+	// Knowledge failure tallies: a step's failure history from a different
+	// build is stale evidence, not proof the step is still broken.
+	Build string
+
 	StuckAfter             int
 	StagnationAfter        int
 	MaxConsecutiveFailures int
@@ -184,4 +203,5 @@ type Budget struct {
 	CheckpointKeep         int
 	ResumeFrom             string
 	Cancel                 <-chan struct{}
+	OnObjective            func(ObjectiveActivity)
 }

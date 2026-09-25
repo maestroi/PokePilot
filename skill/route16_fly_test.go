@@ -1,0 +1,268 @@
+package skill
+
+import (
+	"errors"
+	"os"
+	"testing"
+
+	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
+)
+
+func TestRoute16FlyHouseTransactionDestination(t *testing.T) {
+	got, ok := Place(route16FlyHousePlace)
+	if !ok {
+		t.Fatal("Route 16 Fly house transaction destination is not registered")
+	}
+	want := Destination{Map: route16FlyHouseMap, X: route16FlyHouseStagingX, Y: route16FlyHouseStagingY}
+	if got != want {
+		t.Fatalf("Route 16 Fly house destination = %+v, want %+v", got, want)
+	}
+	approach, ok := Place(route16FlyApproachPlace)
+	if !ok {
+		t.Fatal("Route 16 Fly approach destination is not registered")
+	}
+	wantApproach := Destination{Map: route16Map, X: route16FlyApproachX, Y: route16FlyApproachY}
+	if approach != wantApproach {
+		t.Fatalf("Route 16 Fly approach = %+v, want %+v", approach, wantApproach)
+	}
+}
+
+// TestRoute16FlyHouseRejectsLowerGateTeleport pins farm triage
+// 0ece8bd130597547 / run-1g7kwah5oygzl29jkvhmhsmby6: with flute+bike+cut,
+// semantic routing used to treat the lower Cycling Road gate door (24,10) as
+// a component teleport onto the upper pedestrian exits and plan
+// Route16 -lower-gate-> Gate1F -upper-west-> Fly house. The player entered the
+// lower corridor and died with world: no route from (7,8). The lower-door
+// annotation must stay a Gate so landing remains the lower corridor; the
+// honest Fly-house path uses the upper gate warps at y=4/5.
+//
+// Sibling fingerprints of the same lower-gate no_route (fixed by #1444):
+//   - run-1raszzjt1ird032sctzreuktyy (triage:4fb1be1a33296d41, farm-issue:1441;
+//     runner de517683 before #1444; progress fly_ready from Celadon Mart 4F
+//     entered ROUTE_16_GATE_1F (7,8) and exhausted the failure-recovery budget
+//     on world: no_route to the Fly house. On post-#1444 main,
+//     PrepareFlyFastTravel from round-005 reaches map 0xBC without no_route.)
+func TestRoute16FlyHouseRejectsLowerGateTeleport(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade | 1<<state.BadgeThunder |
+		1<<state.BadgeRainbow | 1<<state.BadgeSoul | 1<<state.BadgeMarsh
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonSpecies] = 44 // Oddish
+	copy(mem.Slice(base+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	mem[sym.NumBagItems] = 3
+	mem[sym.BagItems] = hm01Item
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = bicycleItem
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = pokeFluteItem
+	mem[sym.BagItems+5] = 1
+	mem[sym.BagItems+6] = 0xff
+	setEventFlag(&mem, eventBeatRoute16Snorlax)
+
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	for _, need := range []gameruntime.CapabilityID{capCanCut, capCanRideCyclingRoad, capCanClearSnorlax} {
+		if !prereqs.Capabilities.Has(need) {
+			t.Fatalf("capabilities missing %q: %v", need, prereqs.Capabilities)
+		}
+	}
+
+	dest, ok := Place(route16FlyHousePlace)
+	if !ok {
+		t.Fatal("Fly house place missing")
+	}
+
+	assertNoLowerGate := func(t *testing.T, label string, from uint8, x, y int) []world.RouteStep {
+		t.Helper()
+		plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			g, from, dest.Map, x, y, int(dest.X), int(dest.Y), nil, prereqs,
+		)
+		if err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		for i, step := range plan {
+			e := step.Edge
+			if e.From == route16Map && e.To == route16Gate1FMap &&
+				e.WarpX == 24 && (e.WarpY == 10 || e.WarpY == 11) {
+				t.Fatalf("%s leg %d used lower gate warp (%d,%d); plan=%+v", label, i+1, e.WarpX, e.WarpY, plan)
+			}
+			if step.Transition != nil && step.Transition.ID == "red:route16_snorlax_bicycle" {
+				t.Fatalf("%s leg %d still carries lower-gate transition: %+v", label, i+1, step)
+			}
+		}
+		return plan
+	}
+
+	plan := assertNoLowerGate(t, "upper east (24,5)", route16Map, 24, 5)
+	if len(plan) < 2 || plan[0].Edge.WarpY != 4 && plan[0].Edge.WarpY != 5 {
+		t.Fatalf("upper east plan = %+v, want first hop through upper gate y=4/5", plan)
+	}
+
+	_, err = world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Gate1FMap, dest.Map, 7, 8, int(dest.X), int(dest.Y), nil, prereqs,
+	)
+	if !errors.Is(err, world.ErrNoRoute) {
+		t.Fatalf("lower gate (7,8)->fly: err=%v, want ErrNoRoute", err)
+	}
+
+	_, err = world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Map, dest.Map, 24, 10, int(dest.X), int(dest.Y), nil, prereqs,
+	)
+	if !errors.Is(err, world.ErrNoRoute) {
+		t.Fatalf("lower east (24,10)->fly land plan: err=%v, want ErrNoRoute (Cut bridge owns the seam)", err)
+	}
+}
+
+// TestRoute16WestPocketGrassIsAGateHop pins the Fly-house recovery habitat.
+// The door from ROUTE_16_FLY_HOUSE lands at (7,6), a component with no tall
+// grass. Doduo/Spearow grass is a gate hop away (measured (24,3) on
+// run-2v0h14ws5jl5jeghjyff4ayql). Treating "this map's encounter table lists
+// a Fly learner" as a reachable habitat made roster repair give up inside
+// the house and, after the door, offer a tile Catch cannot hunt.
+func TestRoute16WestPocketGrassIsAGateHop(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	grass, grid, err := grassCells(romData, route16Map)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(grassInPlayerComponent(grass, grid, 7, 6)); n != 0 {
+		t.Fatalf("Route 16 (7,6) grass cells = %d, want 0", n)
+	}
+	if n := len(grassInPlayerComponent(grass, grid, 24, 3)); n == 0 {
+		t.Fatal("Route 16 (24,3) has no tall grass in its component")
+	}
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade | 1<<state.BadgeThunder |
+		1<<state.BadgeRainbow | 1<<state.BadgeSoul | 1<<state.BadgeMarsh
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonSpecies] = 44
+	copy(mem.Slice(base+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	mem[sym.NumBagItems] = 3
+	mem[sym.BagItems] = hm01Item
+	mem[sym.BagItems+1] = 1
+	mem[sym.BagItems+2] = bicycleItem
+	mem[sym.BagItems+3] = 1
+	mem[sym.BagItems+4] = pokeFluteItem
+	mem[sym.BagItems+5] = 1
+	mem[sym.BagItems+6] = 0xff
+	setEventFlag(&mem, eventBeatRoute16Snorlax)
+
+	planner := &RoutePlanner{
+		graph:   g,
+		cur:     route16Map,
+		x:       7,
+		y:       6,
+		prereqs: redRoutePrerequisites(g, romData, &mem),
+	}
+	dest, ok, err := currentMapGrassDestination(romData, planner)
+	if err != nil || !ok {
+		t.Fatalf("grass destination from (7,6) ok=%v err=%v", ok, err)
+	}
+	if len(grassInPlayerComponent(grass, grid, int(dest.X), int(dest.Y))) == 0 {
+		t.Fatalf("grass destination %+v is not in a grass component", dest)
+	}
+}
+
+// TestRoute16EastComponentReachesCeladonWithoutFlute pins
+// run-1c4k0nk8lwwcc2hr8dhy65m5o0 (triage:1e001c1e962bcdd0, farm-issue:1469).
+// The Fly house is west of Snorlax, but the upper-passage Cut tree at (34,9)
+// lands east of him. That component walks into Celadon with no Poké Flute.
+// The lower road at (24,10) still cannot, because his tile splits the corridor.
+func TestRoute16EastComponentReachesCeladonWithoutFlute(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mem state.Mem
+	g, err := withAsleepRoute16Snorlax(base, romData, &mem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	prereqs.Capabilities = gameruntime.NewCapabilitySet(capCanCut)
+	center, ok := Place("celadon pokemon center")
+	if !ok {
+		t.Fatal("celadon pokemon center is not registered")
+	}
+
+	east, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Map, center.Map, 30, 10, int(center.X), int(center.Y), nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("east of Snorlax (30,10) -> Celadon: %v", err)
+	}
+	for _, step := range east {
+		if step.Transition != nil && step.Transition.ID == "red:route16_snorlax" {
+			t.Fatalf("east component used %s; Cut/walk east of (26,10) must not clear Snorlax", step.Transition.ID)
+		}
+	}
+
+	_, err = world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route16Map, center.Map, 24, 10, int(center.X), int(center.Y), nil, prereqs,
+	)
+	var blocked *world.RouteBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("west lower road (24,10) err=%v, want RouteBlockedError", err)
+	}
+	missing := blocked.MissingCapabilities()
+	if len(missing) != 1 || missing[0] != capCanClearSnorlax {
+		t.Fatalf("west lower road missing=%v, want [%s]", missing, capCanClearSnorlax)
+	}
+
+	m, err := emu.Open(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if !tileOpensDest(m, romData, g, route16Map, 24, 6, center, prereqs, nil) {
+		t.Fatal("upper passage (24,6) did not open Celadon via Cut")
+	}
+
+	edge := world.Edge{Kind: world.EdgeConnection, From: route16Map, To: celadonCityMap}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok {
+		t.Fatal("route16_snorlax transition missing")
+	}
+	setEventFlag(&mem, eventBeatRoute16Snorlax)
+	if !redRouteTransitionEffectComplete(&mem, transition) {
+		t.Fatal("beaten Route 16 Snorlax must drop the port-bypass pivot")
+	}
+}

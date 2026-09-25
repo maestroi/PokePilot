@@ -7,36 +7,74 @@ import (
 	"testing"
 )
 
-func TestLiveFrameQueueCapsOldFramesAndRepeatsLast(t *testing.T) {
-	q := newLiveFrameQueue(3)
-	q.push(3, []byte("three"))
-	q.push(6, []byte("six"))
-	q.push(9, []byte("nine"))
-	q.push(12, []byte("twelve"))
+func TestLiveFrameQueueCompactsOverflowAcrossTimeline(t *testing.T) {
+	q := newLiveFrameQueue(4)
+	for _, frame := range []uint64{3, 6, 9, 12, 15, 18, 21} {
+		q.push(frame, []byte{byte(frame)})
+	}
 
-	for _, want := range []struct {
-		frame uint64
-		body  string
-	}{
-		{6, "six"},
-		{9, "nine"},
-		{12, "twelve"},
-	} {
-		got, ok := q.next()
+	q.mu.Lock()
+	got := make([]uint64, len(q.frames))
+	for i, frame := range q.frames {
+		got[i] = frame.frame
+	}
+	q.mu.Unlock()
+
+	want := []uint64{12, 18, 21}
+	if len(got) != len(want) {
+		t.Fatalf("compacted frames = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("compacted frames = %v, want %v", got, want)
+		}
+	}
+
+	latest, ok := q.latest()
+	if !ok || latest.frame != 21 {
+		t.Fatalf("latest after compaction = (%d, %t), want frame 21", latest.frame, ok)
+	}
+}
+
+func TestLiveFrameQueuePlaybackAcceleratesBacklog(t *testing.T) {
+	q := newLiveFrameQueue(20)
+	for frame := uint64(3); frame <= 36; frame += 3 {
+		q.push(frame, []byte{byte(frame)})
+	}
+
+	for _, want := range []uint64{12, 18, 24, 27} {
+		got, ok := q.nextPlayback()
 		if !ok {
-			t.Fatalf("next() missing frame %d", want.frame)
+			t.Fatalf("nextPlayback() missing frame %d", want)
 		}
-		if got.frame != want.frame || string(got.png) != want.body {
-			t.Fatalf("next() = (%d, %q), want (%d, %q)", got.frame, got.png, want.frame, want.body)
+		if got.frame != want {
+			t.Fatalf("nextPlayback() frame = %d, want %d", got.frame, want)
 		}
 	}
 
-	got, ok := q.next()
-	if !ok {
-		t.Fatal("next() should hold the last displayed frame when the producer pauses")
+	// Once the backlog is small, playback returns to one sampled frame per
+	// browser read instead of staying in fast-forward forever.
+	got, ok := q.nextPlayback()
+	if !ok || got.frame != 30 {
+		t.Fatalf("near-live nextPlayback() = (%d, %t), want frame 30", got.frame, ok)
 	}
-	if got.frame != 12 || string(got.png) != "twelve" {
-		t.Fatalf("held frame = (%d, %q), want (12, %q)", got.frame, got.png, "twelve")
+}
+
+func TestPlaybackAdvanceUsesBacklogBands(t *testing.T) {
+	for _, tc := range []struct {
+		depth int
+		want  int
+	}{
+		{1, 1},
+		{5, 1},
+		{6, 2},
+		{11, 2},
+		{12, 4},
+		{100, 4},
+	} {
+		if got := playbackAdvance(tc.depth); got != tc.want {
+			t.Fatalf("playbackAdvance(%d) = %d, want %d", tc.depth, got, tc.want)
+		}
 	}
 }
 
@@ -46,12 +84,34 @@ func TestLiveFrameQueueResetsOnFrameRollback(t *testing.T) {
 	q.push(303, []byte("old-b"))
 	q.push(12, []byte("new-run"))
 
-	got, ok := q.next()
+	got, ok := q.nextPlayback()
 	if !ok {
-		t.Fatal("next() missing first frame after rollback")
+		t.Fatal("nextPlayback() missing first frame after rollback")
 	}
 	if got.frame != 12 || string(got.png) != "new-run" {
-		t.Fatalf("next() after rollback = (%d, %q), want (12, %q)", got.frame, got.png, "new-run")
+		t.Fatalf("nextPlayback() after rollback = (%d, %q), want (12, %q)", got.frame, got.png, "new-run")
+	}
+}
+
+func TestLiveFrameQueueExplicitResetStartsNewEpochWhenFrameIncreases(t *testing.T) {
+	q := newLiveFrameQueue(8)
+	q.push(300, []byte("boot-a"))
+	q.push(303, []byte("boot-b"))
+
+	// Durable resume checkpoints commonly have a larger frame count than the
+	// worker's one-time boot sequence. The epoch must therefore be explicit,
+	// not inferred only from a decreasing frame number.
+	q.reset(900000, []byte("restored"))
+
+	got, ok := q.nextPlayback()
+	if !ok {
+		t.Fatal("nextPlayback() missing restored frame after explicit reset")
+	}
+	if got.frame != 900000 || string(got.png) != "restored" {
+		t.Fatalf("nextPlayback() after explicit reset = (%d, %q), want (900000, %q)", got.frame, got.png, "restored")
+	}
+	if _, ok := q.nextPlayback(); !ok {
+		t.Fatal("nextPlayback() should retain the restored frame once queue is drained")
 	}
 }
 

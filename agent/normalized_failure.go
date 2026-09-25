@@ -54,7 +54,8 @@ func failureCauseIs(result ObjectiveResult, cause string) bool {
 func failureIsBlackout(result ObjectiveResult) bool {
 	return failureCauseIs(result, "blacked_out") ||
 		failureCauseIs(result, "trainer_blacked_out") ||
-		failureCauseIs(result, "catch_blackout")
+		failureCauseIs(result, "catch_blackout") ||
+		failureCauseIs(result, failureCauseCombatDefeat)
 }
 
 func normalizedFailure(result ObjectiveResult) gameruntime.Failure {

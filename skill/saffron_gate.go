@@ -1,12 +1,15 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+var ErrSaffronGateInteractionStalled = errors.New("skill: Saffron gate interaction stalled")
 
 const (
 	celadonMartRoofMap uint8 = 0x7e
@@ -39,12 +42,6 @@ func SaffronGateOpen(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SaffronGateOpen
 }
 
-// SaffronGateReady keeps the issue #34 handoff explicit: this phase is offered
-// only after issue #33's Soul Badge + Surf + Strength postcondition exists.
-func SaffronGateReady(mem *state.Mem) bool {
-	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).FuchsiaProgressionComplete
-}
-
 // guardDrinkInBag reports whether Red's RemoveGuardDrink routine can consume
 // one of the player's current bag entries. The order mirrors GuardDrinksList,
 // but the particular drink does not matter to the gate postcondition.
@@ -61,6 +58,15 @@ func guardDrinkInBag(mem *state.Mem) (uint8, bool) {
 // Route 7 guard. It is resumable at every durable boundary: if a checkpoint is
 // taken after buying the drink, the next invocation reuses it; if the global
 // Saffron guard flag is already set, it returns without moving.
+//
+// The drink is the whole prerequisite: a ¥200 FRESH WATER from Celadon's roof
+// vending machine, purchasable with no badge, HM, or story fact. Do not add a
+// story-readiness gate here. Saffron is the only corridor between Celadon and
+// Vermilion, so gating this on a later milestone (it once required the Soul
+// Badge, Surf and Strength) makes the Thunder Badge in Vermilion unreachable
+// and deadlocks every run that crossed into Celadon with two badges
+// (run-jxh8lk19wv6on, run-1biaubd9xooqm). Calls from the wrong side of Kanto
+// fail on the travel leg below, which is the honest prerequisite.
 func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: OpenSaffronGate: nil policy")
@@ -70,9 +76,6 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	state.Snapshot(m, &mem)
 	if SaffronGateOpen(&mem) {
 		return nil
-	}
-	if !SaffronGateReady(&mem) {
-		return fmt.Errorf("skill: OpenSaffronGate: Fuchsia progression (#33) is incomplete")
 	}
 
 	if _, ok := guardDrinkInBag(&mem); !ok {
@@ -93,8 +96,8 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if mem.U8(sym.CurMap) != route7GateMap || mem.U8(sym.XCoord) != route7GuardStandX || mem.U8(sym.YCoord) != route7GuardStandY {
-		return fmt.Errorf("skill: OpenSaffronGate: expected Route 7 guard stand (%d,%d), on map %#04x at (%d,%d)",
-			route7GuardStandX, route7GuardStandY, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		return fmt.Errorf("skill: OpenSaffronGate: expected Route 7 guard stand (%d,%d), on map %#04x at (%d,%d): %w",
+			route7GuardStandX, route7GuardStandY, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), ErrNavigationStalled)
 	}
 
 	m.Tap(emu.Right, 3, 7)
@@ -106,7 +109,7 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	state.Snapshot(m, &mem)
 	if !SaffronGateOpen(&mem) {
-		return fmt.Errorf("skill: OpenSaffronGate: guard interaction finished without saffron_gate_open")
+		return fmt.Errorf("skill: OpenSaffronGate: guard interaction finished without saffron_gate_open: %w", ErrSaffronGateInteractionStalled)
 	}
 	return nil
 }
@@ -118,7 +121,7 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if money := state.DecodeInventory(&mem).Money; money < freshWaterPrice {
-		return fmt.Errorf("skill: OpenSaffronGate: need at least ¥%d for a guard drink, have ¥%d", freshWaterPrice, money)
+		return fmt.Errorf("skill: OpenSaffronGate: %w: need at least ¥%d for a guard drink, have ¥%d", ErrCantAfford, freshWaterPrice, money)
 	}
 	if err := EnsureBagSpaceFor(m, freshWaterItem); err != nil {
 		return fmt.Errorf("skill: OpenSaffronGate: make room for FRESH WATER: %w", err)
@@ -143,9 +146,18 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	// SelectMenuItem proves the cursor before A but intentionally returns as
 	// soon as the confirm tap is sent. Give the vending handler one ordinary
-	// settle window to consume that A before interpreting any remaining menu.
+	// settle window before polling for the purchase to land.
 	m.StepFrames(talkSettle)
-	if err := driveSaffronInteraction(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
+	// VendingMachineMenu (pokered/engine/events/vending_machine.asm) calls
+	// HandleMenuInput exactly once, at the top; every branch after the
+	// FRESH WATER/SODA POP/LEMONADE/CANCEL choice only prints text into a
+	// separate box below the item list, never re-entering HandleMenuInput.
+	// Nothing on screen ever redraws over that list, so its cursor glyph
+	// (and MenuUp/DecodeInteraction, which key off exactly that glyph) keep
+	// reading it as a live, unanswered menu for the rest of the purchase.
+	// Once the one real selection above is made, that residual "menu" can
+	// only ever be paged like ordinary dialogue, so tolerate it here.
+	if err := driveSaffronMenuTolerant(m, saffronGateInteractionBudget, func(mm *state.Mem) bool {
 		_, count := bagEntry(mm, freshWaterItem)
 		return count > 0 && state.Controllable(mm)
 	}); err != nil {
@@ -153,7 +165,7 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	state.Snapshot(m, &mem)
 	if _, ok := guardDrinkInBag(&mem); !ok {
-		return fmt.Errorf("skill: OpenSaffronGate: vending interaction returned without a valid guard drink")
+		return fmt.Errorf("skill: OpenSaffronGate: vending interaction returned without a valid guard drink: %w", ErrBagNotRisen)
 	}
 	return nil
 }
@@ -162,6 +174,19 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // concrete RAM/UI postcondition. Menus are never selected here: if an
 // unexpected menu surface appears, fail closed rather than guessing.
 func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+	return driveSaffronInteractionWithMenuPolicy(m, budget, done, false)
+}
+
+// driveSaffronMenuTolerant is driveSaffronInteraction, except a live
+// InteractionMenu is paged with A instead of failing closed. It exists only
+// for the wait right after a deliberate SelectInteractionIndex call, where
+// the ROM has already consumed its one HandleMenuInput and any menu the
+// decoder still reports is a stale cursor glyph, not a fresh input surface.
+func driveSaffronMenuTolerant(m *emu.Emu, budget int, done func(*state.Mem) bool) error {
+	return driveSaffronInteractionWithMenuPolicy(m, budget, done, true)
+}
+
+func driveSaffronInteractionWithMenuPolicy(m *emu.Emu, budget int, done func(*state.Mem) bool, tolerateMenu bool) error {
 	var mem state.Mem
 	for spent := 0; spent < budget; spent += 10 {
 		state.Snapshot(m, &mem)
@@ -174,15 +199,19 @@ func driveSaffronInteraction(m *emu.Emu, budget int, done func(*state.Mem) bool)
 		case state.InteractionNone:
 			m.StepFrames(10)
 		case state.InteractionMenu:
+			if tolerateMenu {
+				m.Tap(emu.A, 3, 7)
+				continue
+			}
 			// The vending-menu predicate is checked above. Any other live menu
 			// means a story step reached an input surface it did not own.
-			return fmt.Errorf("unexpected menu while waiting: %q", interaction.Text)
+			return fmt.Errorf("%w: unexpected menu while waiting: %q", ErrSaffronGateInteractionStalled, interaction.Text)
 		default:
-			return fmt.Errorf("unexpected interaction %q while waiting: %q", interaction.Kind, interaction.Text)
+			return fmt.Errorf("%w: unexpected interaction %q while waiting: %q", ErrSaffronGateInteractionStalled, interaction.Kind, interaction.Text)
 		}
 	}
 	state.Snapshot(m, &mem)
 	interaction := state.DecodeInteraction(&mem)
-	return fmt.Errorf("interaction exceeded %d frames on map %#04x at (%d,%d), surface=%q text=%q",
-		budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), interaction.Kind, interaction.Text)
+	return fmt.Errorf("%w: interaction exceeded %d frames on map %#04x at (%d,%d), surface=%q text=%q",
+		ErrSaffronGateInteractionStalled, budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), interaction.Kind, interaction.Text)
 }

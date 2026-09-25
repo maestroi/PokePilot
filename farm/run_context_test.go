@@ -4,14 +4,6 @@ import "testing"
 
 func TestRunContextArtifactRoundTrip(t *testing.T) {
 	const runID = "run-context-round-trip"
-	RememberPlayStyle(runID, "adventure")
-	RememberRiskTolerance(runID, "careful")
-	RememberWildEncounters(runID, "train")
-	t.Cleanup(func() {
-		RememberPlayStyle(runID, "")
-		RememberRiskTolerance(runID, "")
-		RememberWildEncounters(runID, "")
-	})
 
 	spec := Spec{
 		RunID:           runID,
@@ -19,7 +11,11 @@ func TestRunContextArtifactRoundTrip(t *testing.T) {
 		Planner:         "llm",
 		Starter:         "squirtle",
 		Dest:            "champion",
-		Goal:            "Beat the Elite Four and Champion.",
+		Goal:            GoalFrom("Beat the Elite Four and Champion."),
+		PlayStyle:       "adventure",
+		Purpose:         RunPurposeDebugCoverage,
+		RiskTolerance:   "careful",
+		WildEncounters:  "train",
 		LLMProfile:      "qwen",
 		ReasoningEffort: "high",
 	}
@@ -38,10 +34,10 @@ func TestRunContextArtifactRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("DecodeRunContext did not find artifact")
 	}
-	if got.Planner != spec.Planner || got.Goal != spec.Goal || got.LLMProfile != spec.LLMProfile || got.ReasoningEffort != spec.ReasoningEffort {
+	if got.Planner != spec.Planner || got.Goal != spec.Goal.String() || got.LLMProfile != spec.LLMProfile || got.ReasoningEffort != spec.ReasoningEffort {
 		t.Fatalf("run context core fields = %+v", got)
 	}
-	if got.PlayStyle != "adventure" || got.RiskTolerance != "careful" || got.WildEncounters != "train" {
+	if got.PlayStyle != "adventure" || got.Purpose != RunPurposeDebugCoverage || got.RiskTolerance != "careful" || got.WildEncounters != "train" {
 		t.Fatalf("run policy fields = %+v", got)
 	}
 	if got.Seed != spec.Seed || got.Starter != spec.Starter || got.Dest != spec.Dest {

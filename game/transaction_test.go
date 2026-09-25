@@ -2,6 +2,7 @@ package game
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -102,6 +103,27 @@ func TestExecuteTransactionOwnsPortableLifecycle(t *testing.T) {
 		t.Fatalf("Final = %q, want room-b", tx.Final)
 	}
 	want := []string{"observe", "validate", "normalize-start", "budget", "execute", "settle", "normalize-finish", "observe", "verify"}
+	if !reflect.DeepEqual(adapter.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
+	}
+}
+
+func TestExecuteTransactionMachineUnusableSkipsFinishBoundary(t *testing.T) {
+	execErr := fmt.Errorf("trade stalled: %w", ErrMachineUnusable)
+	adapter := &fakeAdapter{obs: "room-a", executeErr: execErr}
+	tx := ExecuteTransaction[string, string, string](adapter, "virtual-trade")
+
+	if !errors.Is(tx.ExecutionErr, ErrMachineUnusable) {
+		t.Fatalf("ExecutionErr = %v, want ErrMachineUnusable", tx.ExecutionErr)
+	}
+	if tx.Final != "room-a" {
+		t.Fatalf("Final = %q, want the initial observation without another read", tx.Final)
+	}
+	if tx.SettleErr != nil || tx.FinishBoundaryErr != nil || tx.FinalObservationErr != nil || tx.PostconditionErr != nil {
+		t.Fatalf("post-execution errors = settle %v finish %v observe %v post %v, want none",
+			tx.SettleErr, tx.FinishBoundaryErr, tx.FinalObservationErr, tx.PostconditionErr)
+	}
+	want := []string{"observe", "validate", "normalize-start", "budget", "execute"}
 	if !reflect.DeepEqual(adapter.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", adapter.calls, want)
 	}

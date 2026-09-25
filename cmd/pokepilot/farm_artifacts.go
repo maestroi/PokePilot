@@ -134,6 +134,13 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 		for {
 			select {
 			case <-stop:
+				// agent.Run may have just written the final paired checkpoint at
+				// a cooperative cancel boundary. Flush once before exit so Pause
+				// cannot race Finish and leave only the older pre-objective pair
+				// on the wall.
+				uploadNewObjectivePairs(client, runID, attempt, dir, uploaded)
+				_ = evictObjectiveCheckpoints(dir, objectiveCheckpointKeep)
+				uploadNewRAMBundles(client, runID, attempt, ramForensicsDir(dir), uploadedRAM)
 				return
 			case s := <-samples:
 				writeAndUploadPeriodic(client, runID, attempt, dir, s)
@@ -150,6 +157,12 @@ func runCheckpointUploader(client *farm.Client, runID string, attempt int, dir s
 
 func writeAndUploadPeriodic(client *farm.Client, runID string, attempt int, dir string, s periodicSample) {
 	if dir == "" || s.Name == "" {
+		return
+	}
+	// A periodic snapshot with no bytes is not a snapshot. Writing one would
+	// hand the uploader a state it can only publish as an unusable resume point.
+	if len(s.State) == 0 {
+		log.Printf("farm: %s: periodic sample %s carries no state bytes; skipping", runID, s.Name)
 		return
 	}
 	latest := latestObjectiveState(dir)
@@ -169,11 +182,11 @@ func writeAndUploadPeriodic(client *farm.Client, runID string, attempt int, dir 
 	base := strings.TrimSuffix(s.Name, ".state")
 	statePath := filepath.Join(dir, s.Name)
 	metaPath := filepath.Join(dir, base+".json")
-	if err := os.WriteFile(statePath, s.State, 0o644); err != nil {
+	if err := writeFileAtomic(statePath, s.State); err != nil {
 		log.Printf("farm: %s: write periodic state: %v", runID, err)
 		return
 	}
-	if err := os.WriteFile(metaPath, meta, 0o644); err != nil {
+	if err := writeFileAtomic(metaPath, meta); err != nil {
 		log.Printf("farm: %s: write periodic meta: %v", runID, err)
 		return
 	}
@@ -212,6 +225,15 @@ func uploadNewObjectivePairs(client *farm.Client, runID string, attempt int, dir
 		}
 		kn, ok := knowledge[st]
 		if !ok {
+			continue
+		}
+		// States are written through a rename, so a state file at its final
+		// path is always complete. A zero-byte one is a leftover from a build
+		// that truncated in place, and publishing it would replace the wall's
+		// usable checkpoint with one no run can load.
+		if info, statErr := os.Stat(filepath.Join(dir, st)); statErr != nil || info.Size() == 0 {
+			uploaded[st] = struct{}{}
+			log.Printf("farm: %s: checkpoint %s has no state bytes; refusing to publish it", runID, st)
 			continue
 		}
 		arts, err := artifactsForFiles([]string{kn, st}, dir)
@@ -297,11 +319,12 @@ func promoteBadgeCheckpointFiles(dir, stateName, knowledgeName string) (badge in
 	}
 	// Write the knowledge first and state last. A reader only considers a
 	// checkpoint once its .state exists, so a crash cannot expose a state
-	// whose paired knowledge was never fully copied.
-	if err := os.WriteFile(filepath.Join(dir, majorKnowledge), knowledgeData, 0o644); err != nil {
+	// whose paired knowledge was never fully copied — and both are renamed into
+	// place so a scan never reads a half-copied state.
+	if err := writeFileAtomic(filepath.Join(dir, majorKnowledge), knowledgeData); err != nil {
 		return 0, "", "", err
 	}
-	if err := os.WriteFile(filepath.Join(dir, majorState), stateData, 0o644); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, majorState), stateData); err != nil {
 		_ = os.Remove(filepath.Join(dir, majorKnowledge))
 		return 0, "", "", err
 	}
@@ -514,11 +537,86 @@ func collectCheckpointArtifacts(dir string) ([]farm.Artifact, error) {
 			return nil, fmt.Errorf("farm: orphan knowledge %s", kn)
 		}
 	}
+	if _, ok := files[farmBenchmarkResultName]; ok {
+		want = append(want, farmBenchmarkResultName)
+	}
 	arts, err := artifactsForFiles(want, dir)
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(arts, func(i, j int) bool { return arts[i].Name < arts[j].Name })
+	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: arts}); err != nil {
+		return nil, err
+	}
+	return arts, nil
+}
+
+// collectFailureCheckpointArtifacts keeps Finish focused on the small subset
+// of local checkpoint evidence that structured failures actually reference.
+// The complete checkpoint ring is already uploaded incrementally while the run
+// is active, so re-embedding every periodic/objective/major state here only
+// duplicates binary data and can exhaust the Finish artifact budget.
+func collectFailureCheckpointArtifacts(dir string, failures []farm.ObjectiveFailure) ([]farm.Artifact, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	files := map[string]struct{}{}
+	var knowledge []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		files[name] = struct{}{}
+		if strings.Contains(name, "knowledge-v") && strings.HasSuffix(name, ".json") {
+			knowledge = append(knowledge, name)
+		}
+	}
+
+	wantSet := map[string]struct{}{}
+	for _, failure := range failures {
+		stateName := strings.TrimSpace(failure.Checkpoint)
+		if stateName == "" {
+			continue
+		}
+		if err := checkArtifactName(stateName); err != nil {
+			return nil, err
+		}
+		if _, ok := files[stateName]; !ok {
+			// The local ring may already have evicted an older checkpoint after
+			// uploading it. Finish must not fail merely because only the wall has
+			// the durable copy.
+			continue
+		}
+		wantSet[stateName] = struct{}{}
+		base := strings.TrimSuffix(stateName, ".state")
+		if base == stateName {
+			continue
+		}
+		if kn := findKnowledge(base, knowledge); kn != "" {
+			if err := checkArtifactName(kn); err != nil {
+				return nil, err
+			}
+			wantSet[kn] = struct{}{}
+		}
+	}
+	if _, ok := files[farmBenchmarkResultName]; ok {
+		wantSet[farmBenchmarkResultName] = struct{}{}
+	}
+
+	want := make([]string, 0, len(wantSet))
+	for name := range wantSet {
+		want = append(want, name)
+	}
+	sort.Strings(want)
+	arts, err := artifactsForFiles(want, dir)
+	if err != nil {
+		return nil, err
+	}
 	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: arts}); err != nil {
 		return nil, err
 	}
@@ -721,7 +819,7 @@ func sendFinish(client *farm.Client, report farm.FinishReport, checkpointDir str
 		log.Printf("farm: %s: finish: %v", report.RunID, err)
 		return
 	}
-	fmt.Printf("run %s finished: %s\n", report.RunID, report.Reason)
+	log.Printf("farm: %s: finished reason=%s attempt=%d", report.RunID, report.Reason, report.Attempt)
 }
 
 // finishLeasedRun is the test-facing Finish+cleanup path that does not

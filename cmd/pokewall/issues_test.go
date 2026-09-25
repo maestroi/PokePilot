@@ -183,6 +183,9 @@ func TestDispatchOccurrenceFromDump(t *testing.T) {
 }
 
 func TestIssueStatusSyncPreservesOnFailure(t *testing.T) {
+	// Status stays "open" (never settles) so every tick keeps polling GitHub;
+	// this exercises the stale-preservation path independently of the
+	// settled-link cache tested above.
 	var fail atomic.Bool
 	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if fail.Load() {
@@ -190,8 +193,8 @@ func TestIssueStatusSyncPreservesOnFailure(t *testing.T) {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{
-			"id": "id-1", "issue_number": 42, "status": "resolved",
-			"resolution": "fixed", "occurrence_count": 3, "fixed_revision": "abc",
+			"id": "id-1", "issue_number": 42, "status": "open",
+			"occurrence_count": 3,
 		})
 	}))
 	t.Cleanup(ao.Close)
@@ -206,7 +209,7 @@ func TestIssueStatusSyncPreservesOnFailure(t *testing.T) {
 	w.mu.Lock()
 	got := w.issueLinks[key]
 	w.mu.Unlock()
-	if got.Status != "resolved" || got.Resolution != "fixed" || got.FixedRevision != "abc" || got.OccurrenceCount != 3 {
+	if got.Status != "open" || got.OccurrenceCount != 3 || got.Stale {
 		t.Fatalf("synced = %+v", got)
 	}
 
@@ -215,8 +218,85 @@ func TestIssueStatusSyncPreservesOnFailure(t *testing.T) {
 	w.mu.Lock()
 	got = w.issueLinks[key]
 	w.mu.Unlock()
-	if got.Status != "resolved" || !got.Stale {
+	if got.Status != "open" || !got.Stale {
 		t.Fatalf("after failure = %+v", got)
+	}
+}
+
+func TestIssueStatusSyncSkipsSettledLinks(t *testing.T) {
+	var calls atomic.Int32
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "id-1", "issue_number": 42, "status": "resolved",
+			"resolution": "fixed", "occurrence_count": 3, "fixed_revision": "abc",
+		})
+	}))
+	t.Cleanup(ao.Close)
+	w := NewWall("")
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	key := "abcdabcdabcdabcd"
+	w.mu.Lock()
+	w.issueLinks[key] = IssueLink{
+		IssueID: "id-1", IssueNumber: 42, IssueURL: "http://ui/issues/id-1",
+		Status: "resolved", Resolution: "fixed", FixedRevision: "abc",
+		UpdatedAt: time.Now().Unix(),
+	}
+	w.mu.Unlock()
+
+	w.syncIssueStatuses()
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("GetIssue called %d times for an already-settled link, want 0", n)
+	}
+
+	// A settled link past its recheck window is fetched again, to catch a
+	// rare reopen.
+	w.mu.Lock()
+	link := w.issueLinks[key]
+	link.UpdatedAt = time.Now().Add(-2 * issueSettledRecheckEvery).Unix()
+	w.issueLinks[key] = link
+	w.mu.Unlock()
+
+	w.syncIssueStatuses()
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("GetIssue called %d times after recheck window elapsed, want 1", n)
+	}
+}
+
+func TestIssueStatusSyncRetriesCircuitResumeWithoutFetch(t *testing.T) {
+	var calls atomic.Int32
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		json.NewEncoder(w).Encode(map[string]any{
+			"id": "id-1", "issue_number": 42, "status": "resolved",
+			"resolution": "fixed", "occurrence_count": 3, "fixed_revision": "abc",
+		})
+	}))
+	t.Cleanup(ao.Close)
+	w := NewWall("")
+	w.issues = newIssueClient(ao.URL, "p", "http://ui", time.Second)
+	key := "abcdabcdabcdabcd"
+	w.workers["runner-new"] = &workerInfo{Addrs: []string{"10.0.0.2:8099"}, Version: "abc", LastSeen: time.Now()}
+	w.tiles["run-a"] = &Tile{
+		RunID: "run-a", Status: statusPaused, Finished: true, EndedAt: time.Now(),
+		CircuitKey: key, CircuitKind: "fingerprint", CircuitRevision: "broken-build",
+	}
+	w.order = []string{"run-a"}
+	w.issueLinks[key] = IssueLink{
+		IssueID: "id-1", IssueNumber: 42, IssueURL: "http://ui/issues/id-1",
+		Status: "resolved", Resolution: "fixed", FixedRevision: "abc",
+		UpdatedAt: time.Now().Unix(), CircuitOpen: true,
+	}
+
+	w.syncIssueStatuses()
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("GetIssue called %d times for a settled link, want 0", n)
+	}
+	w.mu.Lock()
+	tile := w.tiles["run-a"]
+	w.mu.Unlock()
+	if tile.Status != statusQueued {
+		t.Fatalf("circuit tile status = %q, want resumed to queued", tile.Status)
 	}
 }
 

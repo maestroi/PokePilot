@@ -10,6 +10,13 @@ import (
 // ErrNoRoute reports that no sequence of warps/connections links the maps.
 var ErrNoRoute = errors.New("world: no route")
 
+// ErrRouteReplanRequired reports that routing reached an executable semantic
+// action whose post-action component topology is not represented by the
+// current graph. The returned route is a safe prefix ending at that action;
+// callers that can execute it must refresh live topology and re-plan instead
+// of treating the unknown landing as unrestricted reachability.
+var ErrRouteReplanRequired = errors.New("world: semantic route requires live-topology replan")
+
 // FindRoute returns the edges to traverse, in order, to get from map
 // `from` to map `to`. It returns an empty slice when from == to.
 //
@@ -51,7 +58,7 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, nil, nil, nil)
+	return findRoute(g, from, to, blockedHere, nil, nil, nil, nil)
 }
 
 // FindRouteAt is FindRouteAvoiding with the player's position on `from` known:
@@ -60,7 +67,7 @@ func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]E
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
 func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil)
+	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil, nil)
 }
 
 // FindRouteAtDestination is FindRouteAt with the destination tile known too.
@@ -70,23 +77,35 @@ func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) 
 // deliberately searches a cycle that leaves and re-enters the map through a
 // component that can actually reach the target.
 func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
-	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil)
+	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil, nil)
 }
 
 // findRouteAtDestinationAllowingSemantic is the component-aware planner with
-// one extra contract: an edge named in semantic is an executable topology
-// transition, so ordinary walking reachability to that edge's exit port is not
-// a prerequisite. The owning transition executor must establish and verify the
-// game-specific effect before the edge is traversed.
-func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, semantic map[Edge]bool) ([]Edge, error) {
+// two semantic privileges. skipCanExit edges may be taken even when ordinary
+// walking cannot reach their exit port (PortBypass / FROM-side actions such as
+// Surf or a Cut tree on this map). relaxLanding edges identify actions whose
+// destination topology may change. Routing may select such an edge, but it
+// stops at that semantic frontier unless the concrete static landing already
+// supports the requested destination; execution then refreshes live topology
+// before planning any continuation.
+//
+// PivotOnly annotations belong in relaxLanding only: their obstacle lives on
+// the adjacent map, so inventing FROM-side port reachability strands players
+// in dead pockets (Cerulean Badge House north exit) that planned "east to
+// Route 9" with Cut while standing on an unreachable component.
+func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
 	target := standingComponentAt(g, to, tx, ty)
-	if !g.componentAware || len(first) == 0 || len(target) == 0 {
-		// Missing component data is not evidence that a detour is required.
-		// Preserve the old map-level behavior in that case.
-		return findRoute(g, from, to, blockedHere, first, nil, semantic)
+	if !g.componentAware || len(target) == 0 {
+		// Unknown destination tile: map-level arrival is enough. A missing
+		// START component must not take this branch — that is not evidence
+		// the requested dest tile is unreachable, and dropping target made
+		// every landing on `to` look like success (Cerulean (19,28) is
+		// unwalkable in the ROM grid, so "go to Route 4 (10,10)" accepted
+		// the east-seam landing).
+		return findRoute(g, from, to, blockedHere, first, nil, skipCanExit, relaxLanding)
 	}
-	return findRoute(g, from, to, blockedHere, first, target, semantic)
+	return findRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding)
 }
 
 func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
@@ -113,15 +132,61 @@ func (g *Graph) EdgeEntrySharesComponentWith(e Edge, x, y int) (same, known bool
 	return shareComp(entry, at), true
 }
 
+// standingComponentAt reports the walkable component(s) at (x,y) on mapID.
+// A tile the player is physically standing on is never itself a warp tile's
+// component: componentsWithBlocked excludes warp tiles from the flood so a
+// teleporter can't falsely bridge two rooms it connects. But route search
+// treats an empty result as "unknown, don't filter" (canExit), so standing
+// exactly on a warp tile — a gym's exit door, a stair, a checkpoint that
+// resumed mid-warp — used to silently disable first-hop reachability
+// filtering and let the router offer every same-map warp edge as if it were
+// walkable from here, however far behind a wall its pad actually sits
+// (Saffron Gym's warp maze, standing on the exit door at (8,17)). Graph-build
+// time already solves this for a warp's own port component via
+// tileOrNeighbourComps; apply the same neighbor fallback here so a live
+// position gets the same answer a statically-known warp tile would.
+// isWarpTile reports whether (x,y) is a warp source tile on mapID, the only
+// reason componentsWithBlocked would leave a walkable tile at component 0.
+func isWarpTile(g *Graph, mapID uint8, x, y int) bool {
+	for _, w := range g.warps[mapID] {
+		if int(w.X) == x && int(w.Y) == y {
+			return true
+		}
+	}
+	return false
+}
+
 func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
 	if !g.componentAware {
 		return nil
 	}
 	c := g.comps[mapID]
-	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) || c[y][x] == 0 {
+	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) {
 		return nil
 	}
-	return []int{c[y][x]}
+	if v := c[y][x]; v != 0 {
+		return []int{v}
+	}
+	if !isWarpTile(g, mapID, x, y) {
+		// Zero here means genuinely unwalkable (a wall, padding on a
+		// connection border) rather than an excluded warp tile: stay
+		// "unknown" rather than borrowing a neighbor's component, or a
+		// padding tile would look like part of the walkable room beside it.
+		return nil
+	}
+	var out []int
+	seen := map[int]bool{}
+	for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		nx, ny := x+d[0], y+d[1]
+		if ny < 0 || ny >= len(c) || nx < 0 || nx >= len(c[ny]) {
+			continue
+		}
+		if v := c[ny][nx]; v != 0 && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 type routeStateKey struct {
@@ -159,22 +224,67 @@ func componentSetKey(in []int) string {
 	return b.String()
 }
 
-func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, semantic map[Edge]bool) ([]Edge, error) {
+// bypassBandDominatedByReachableSibling reports a component-scoped connection
+// band that only becomes selectable through skipCanExit even though another
+// band of the same logical map connection is ordinarily reachable from the
+// current component and lands in the same destination component.
+//
+// PortBypass is intentionally allowed to bridge an otherwise unreachable
+// source port (Surf is the canonical case), but that privilege must be a
+// fallback, not a reason to prefer an isolated source-border pocket over an
+// equivalent reachable shore. Pallet Town -> Route 21 exposes both shapes:
+// the first component-scoped south band is an isolated two-tile pocket while a
+// later band is reachable from town and lands in the same Route 21 component.
+// Taking the isolated band stranded live runs before Surf could cross.
+//
+// Different destination components are never dominated: selecting an
+// unreachable band can be the whole point of a semantic pivot when it opens a
+// distinct region.
+func bypassBandDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCanExit map[Edge]bool) bool {
+	if g == nil || !g.componentAware || e.Kind != EdgeConnection || !skipCanExit[e] || canExit(g, e, entry) {
+		return false
+	}
+	landing := g.entryComps[e]
+	if len(landing) == 0 {
+		return false
+	}
+	for _, sibling := range g.Edges[e.From] {
+		if sibling == e || sibling.Kind != EdgeConnection ||
+			sibling.To != e.To || sibling.Dir != e.Dir || !skipCanExit[sibling] {
+			continue
+		}
+		if !canExit(g, sibling, entry) {
+			continue
+		}
+		if shareComp(landing, g.entryComps[sibling]) {
+			return true
+		}
+	}
+	return false
+}
+
+func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
-	// node.prev indexes back into nodes, or -1 for a first hop. entry is the
-	// walkable component set on edge.To after taking edge.
+	// node.prev indexes back into nodes, or -1 for a first hop. entry always
+	// remains the concrete component set supported by the current graph.
+	// boundary marks a semantic action whose effect may rewrite destination
+	// topology; such a node is never expanded until live topology is refreshed.
 	type node struct {
-		edge  Edge
-		prev  int
-		entry []int
+		edge     Edge
+		prev     int
+		entry    []int
+		boundary bool
 	}
 	var nodes []node
 	seen := make(map[routeStateKey]bool)
+	// A PivotOnly hop may unlock exits on a map the search has not stood on
+	// yet. Re-entering a map already occupied in this search must use the
+	// physical landing: otherwise leave-and-return becomes a teleport onto
+	// every component of the origin (Cerulean -> Route 9 -> Cerulean).
+	occupied := map[uint8]bool{from: true}
 	if g.componentAware && len(first) > 0 {
-		// Returning to the exact component we started in is a no-op cycle, not
-		// a new opportunity to bypass a first-hop restriction.
 		seen[routeStateIdentity(g, from, first, Edge{})] = true
 	}
 	expand := func(cur uint8, prev int, entry []int) {
@@ -182,48 +292,64 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			if prev < 0 && blockedHere[e] {
 				continue
 			}
-			// A semantic edge represents an action that changes traversal state
-			// (Cut, Surf, a story gate, a boulder switch, ...). Requiring the
-			// pre-action walking component to reach its port would make the action
-			// impossible to select. Non-semantic edges retain the exact old rule.
-			if !semantic[e] && !canExit(g, e, entry) {
+			if bypassBandDominatedByReachableSibling(g, e, entry, skipCanExit) {
 				continue
 			}
-			nextEntry := g.entryComps[e]
-			if semantic[e] {
-				// The static graph's landing component for e.To was computed from
-				// pristine ROM collision. A semantic pivot (Cut, Surf, a switch...)
-				// can permanently rewrite that map's tile collision at the exact
-				// spot it lands (VermilionGymSetDoorTile, a cut tree), so the
-				// precomputed component is not authoritative once the action is
-				// taken. Treat the landing as unconstrained, same as a caller who
-				// does not know its component (canExit already treats nil this
-				// way); the live map, rebuilt fresh once the walker actually
-				// stands there, is what execution trusts anyway.
-				nextEntry = nil
+			// PortBypass / FROM-side actions may be selected even when ordinary
+			// walking cannot reach the exit port. PivotOnly destinations still
+			// require canExit: their obstacle is on the adjacent map.
+			//
+			// PortBypass must never promote a phantom connection band — one
+			// whose exit port has no walkable tile — into a real hop. Surf is
+			// the exception: its PortBypass privilege is skipCanExit+relaxLanding,
+			// and water shores have empty land exitComps by construction. Those
+			// edges are allowed as executable semantic frontiers, but routing
+			// stops there until live water topology is rebuilt.
+			if g.componentAware && len(g.exitComps[e]) == 0 && !(skipCanExit[e] && relaxLanding[e]) {
+				continue
 			}
+			if !skipCanExit[e] && !canExit(g, e, entry) {
+				continue
+			}
+
+			nextEntry := g.entryComps[e]
+			boundary := g.componentAware && relaxLanding[e] && !occupied[e.To]
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue
 			}
 			seen[key] = true
-			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry})
+			occupied[e.To] = true
+			nodes = append(nodes, node{edge: e, prev: prev, entry: nextEntry, boundary: boundary})
 		}
 	}
+	reconstruct := func(i int) []Edge {
+		var route []Edge
+		for j := i; j >= 0; j = nodes[j].prev {
+			route = append([]Edge{nodes[j].edge}, route...)
+		}
+		return route
+	}
+
 	expand(from, -1, first)
+	boundary := -1
 	for i := 0; i < len(nodes); i++ {
-		// nodes[i].entry == nil means a semantic pivot deliberately discarded
-		// the static landing component (see expand above): "unknown" must not
-		// read as "elsewhere," the same rule canExit already applies for an
-		// edge whose entry component isn't known.
-		if nodes[i].edge.To == to && (len(target) == 0 || nodes[i].entry == nil || shareComp(nodes[i].entry, target)) {
-			var route []Edge
-			for j := i; j >= 0; j = nodes[j].prev {
-				route = append([]Edge{nodes[j].edge}, route...)
+		// Destination success is allowed only when the physical landing supports
+		// the requested component. A semantic boundary may still complete a
+		// map-only goal, or an exact goal already in that concrete component.
+		if nodes[i].edge.To == to && (len(target) == 0 || shareComp(nodes[i].entry, target)) {
+			return reconstruct(i), nil
+		}
+		if nodes[i].boundary {
+			if boundary < 0 {
+				boundary = i
 			}
-			return route, nil
+			continue
 		}
 		expand(nodes[i].edge.To, i, nodes[i].entry)
+	}
+	if boundary >= 0 {
+		return reconstruct(boundary), ErrRouteReplanRequired
 	}
 	return nil, ErrNoRoute
 }

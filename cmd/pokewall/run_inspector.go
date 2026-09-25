@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -64,14 +65,19 @@ type runDebugSummary struct {
 }
 
 type runTimelineEvent struct {
-	Type     string         `json:"type"`
-	At       int64          `json:"at,omitempty"`
-	Frame    *uint64        `json:"frame,omitempty"`
-	Round    int            `json:"round,omitempty"`
-	Message  string         `json:"message,omitempty"`
-	Progress *farm.Progress `json:"progress,omitempty"`
-	Question string         `json:"question,omitempty"`
-	Decision string         `json:"decision,omitempty"`
+	Type            string         `json:"type"`
+	Source          string         `json:"source,omitempty"`
+	Kind            string         `json:"kind,omitempty"`
+	At              int64          `json:"at,omitempty"`
+	Frame           *uint64        `json:"frame,omitempty"`
+	Round           int            `json:"round,omitempty"`
+	Attempt         int            `json:"attempt,omitempty"`
+	RecoveryAttempt int            `json:"recovery_attempt,omitempty"`
+	Message         string         `json:"message,omitempty"`
+	Detail          string         `json:"detail,omitempty"`
+	Progress        *farm.Progress `json:"progress,omitempty"`
+	Question        string         `json:"question,omitempty"`
+	Decision        string         `json:"decision,omitempty"`
 }
 
 type runDebugView struct {
@@ -107,6 +113,16 @@ func (w *Wall) handleRunArtifacts(res http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		writeRunInspectError(res, err)
 		return
+	}
+	if requested, ok, parseErr := requestedArtifactAttempt(req); parseErr != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": parseErr.Error()})
+		return
+	} else if ok {
+		report, err = w.loadFinishReport(run.RunID, requested)
+		if err != nil {
+			writeRunInspectError(res, err)
+			return
+		}
 	}
 	artifacts := []runArtifactView{}
 	attempt := run.Attempts
@@ -149,10 +165,20 @@ func (w *Wall) handleRunDebug(res http.ResponseWriter, req *http.Request) {
 func (w *Wall) handleInlineArtifactContent(res http.ResponseWriter, req *http.Request) {
 	id := req.PathValue("id")
 	name := req.PathValue("name")
-	_, report, err := w.loadRunInspection(id)
+	run, report, err := w.loadRunInspection(id)
 	if err != nil {
 		writeRunInspectError(res, err)
 		return
+	}
+	if requested, ok, parseErr := requestedArtifactAttempt(req); parseErr != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": parseErr.Error()})
+		return
+	} else if ok {
+		report, err = w.loadFinishReport(run.RunID, requested)
+		if err != nil {
+			writeRunInspectError(res, err)
+			return
+		}
 	}
 	if report == nil {
 		writeJSON(res, http.StatusNotFound, map[string]string{"error": "run has no finish artifacts"})
@@ -183,6 +209,67 @@ func (w *Wall) handleInlineArtifactContent(res http.ResponseWriter, req *http.Re
 		return
 	}
 	writeJSON(res, http.StatusNotFound, map[string]string{"error": "artifact not found"})
+}
+
+func requestedArtifactAttempt(req *http.Request) (int, bool, error) {
+	raw := strings.TrimSpace(req.URL.Query().Get("attempt"))
+	if raw == "" {
+		return 0, false, nil
+	}
+	attempt, err := strconv.Atoi(raw)
+	if err != nil || attempt < 1 {
+		return 0, false, fmt.Errorf("invalid attempt %q: want a positive integer", raw)
+	}
+	return attempt, true, nil
+}
+
+func (w *Wall) loadFinishReport(runID string, attempt int) (*farm.FinishReport, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" || attempt < 1 {
+		return nil, fs.ErrNotExist
+	}
+	if cp := controlPlaneFor(w); cp != nil {
+		return cp.finishReport(runID, attempt)
+	}
+	if w.dumpsDir == "" {
+		return nil, fs.ErrNotExist
+	}
+	paths := []string{filepath.Join(w.dumpsDir, fmt.Sprintf("%s-attempt-%d.json", safeBase(runID), attempt))}
+	if attempt == 1 {
+		paths = append(paths, filepath.Join(w.dumpsDir, safeDumpName(runID)))
+	}
+	for _, path := range uniqueStrings(paths) {
+		info, err := os.Stat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			continue
+		}
+		if info.Size() > maxRunDumpBytes {
+			return nil, fmt.Errorf("finish dump %s exceeds %d bytes", filepath.Base(path), maxRunDumpBytes)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var report farm.FinishReport
+		if err := json.Unmarshal(data, &report); err != nil {
+			return nil, fmt.Errorf("decode finish dump %s: %w", filepath.Base(path), err)
+		}
+		reportAttempt := report.Attempt
+		if reportAttempt < 1 {
+			reportAttempt = 1
+		}
+		if report.RunID != runID || reportAttempt != attempt {
+			continue
+		}
+		return &report, nil
+	}
+	return nil, fs.ErrNotExist
 }
 
 func (w *Wall) loadRunInspection(runID string) (tileRow, *farm.FinishReport, error) {
@@ -369,31 +456,61 @@ func coverageProgressed(delta *farm.Coverage) bool {
 }
 
 func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent {
-	events := make([]runTimelineEvent, 0, 5)
-	if run.QueuedAt != 0 {
-		events = append(events, runTimelineEvent{Type: "queued", At: run.QueuedAt, Message: "run queued"})
+	events := make([]runTimelineEvent, 0, len(run.Activity)+5)
+	hasQueued := false
+	hasDecision := false
+	hasTerminal := false
+	for _, activity := range run.Activity {
+		event := runTimelineEvent{
+			Type:            "activity",
+			Source:          activity.Source,
+			Kind:            activity.Kind,
+			At:              activity.At,
+			Round:           activity.Round,
+			Attempt:         activity.Attempt,
+			RecoveryAttempt: activity.RecoveryAttempt,
+			Message:         activity.Summary,
+			Detail:          activity.Detail,
+		}
+		if activity.Frame != 0 {
+			frame := activity.Frame
+			event.Frame = &frame
+		}
+		switch activity.Kind {
+		case "queued":
+			hasQueued = true
+		case "decision":
+			hasDecision = true
+			event.Decision = activity.Summary
+		case "goal", "terminal", "cancelled":
+			hasTerminal = true
+		}
+		events = append(events, event)
+	}
+	if run.QueuedAt != 0 && !hasQueued {
+		events = append(events, runTimelineEvent{Type: "queued", Source: "system", Kind: "queued", At: run.QueuedAt, Message: "Run queued"})
 	}
 	if report != nil && report.ProgressEarly != nil {
 		events = append(events, runTimelineEvent{
-			Type: "progress_early", Round: report.ProgressEarly.Round,
-			Message: "progress snapshot before the first objective", Progress: report.ProgressEarly,
+			Type: "progress_early", Source: "milestone", Kind: "progress", Round: report.ProgressEarly.Round,
+			Message: "Progress snapshot before the first objective", Progress: report.ProgressEarly,
 		})
 	}
-	if run.Question != "" || run.Decision != "" {
+	if (run.Question != "" || run.Decision != "") && !hasDecision {
 		frame := run.Frame
 		events = append(events, runTimelineEvent{
-			Type: "latest_decision", Frame: &frame, Message: "last persisted planner decision",
+			Type: "latest_decision", Source: "llm", Kind: "decision", Frame: &frame, Message: "Last persisted planner decision",
 			Question: run.Question, Decision: run.Decision,
 		})
 	}
 	if report != nil && report.ProgressFinal != nil {
 		frame := run.Frame
 		events = append(events, runTimelineEvent{
-			Type: "progress_final", Frame: &frame, Round: report.ProgressFinal.Round,
-			Message: "final progress snapshot", Progress: report.ProgressFinal,
+			Type: "progress_final", Source: "milestone", Kind: "progress", Frame: &frame, Round: report.ProgressFinal.Round,
+			Message: "Final progress snapshot", Progress: report.ProgressFinal,
 		})
 	}
-	if run.Reason != "" || (report != nil && report.Reason != "") {
+	if run.Status == statusDone && (run.Reason != "" || (report != nil && report.Reason != "")) && !hasTerminal {
 		frame := run.Frame
 		reason, detail := run.Reason, run.Detail
 		if report != nil {
@@ -403,7 +520,7 @@ func buildRunTimeline(run tileRow, report *farm.FinishReport) []runTimelineEvent
 		if detail != "" {
 			message += ": " + detail
 		}
-		events = append(events, runTimelineEvent{Type: "finished", At: run.EndedAt, Frame: &frame, Message: message})
+		events = append(events, runTimelineEvent{Type: "finished", Source: "system", Kind: "finish", At: run.EndedAt, Frame: &frame, Message: message, Detail: detail})
 	}
 	return events
 }

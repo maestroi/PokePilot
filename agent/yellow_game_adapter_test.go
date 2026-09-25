@@ -27,7 +27,7 @@ func TestYellowAdapterIsSeparateFromRedBlueFactory(t *testing.T) {
 	if factory == nil {
 		t.Fatal("Yellow objective adapter not registered")
 	}
-	if _, ok := factory(nil, nil).(*yellowObjectiveAdapter); !ok {
-		t.Fatalf("Yellow factory returned %T", factory(nil, nil))
+	if _, ok := factory(nil, nil, RoutePriorityConservative).(*yellowObjectiveAdapter); !ok {
+		t.Fatalf("Yellow factory returned %T", factory(nil, nil, RoutePriorityConservative))
 	}
 }

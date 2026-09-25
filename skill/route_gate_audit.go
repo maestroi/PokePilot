@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -14,6 +15,22 @@ const (
 	capCanPassRoute23BadgeChecks gameruntime.CapabilityID = "can_pass_route23_badge_checks"
 	capCanPassLanceExit          gameruntime.CapabilityID = "can_pass_lance_exit"
 
+	// The Elite Four gauntlet is entered from the Indigo lobby and only lets the
+	// player move NORTH through Lorelei, Bruno, Agatha, Lance, the Champion and
+	// the Hall of Fame. Every room's own entrance guard refuses the walk back
+	// out: standing on the south tiles displays the room's "Don't run away!"
+	// text and pushes the player one step back up (measured 2026-09-23, the
+	// run-jxh8lk19wv6on stall in LORELEIS_ROOM at (4,9)). Because that refusal is
+	// a map SCRIPT, the ROM's warp table and static collision grid still describe
+	// a two-way door, so without a semantic gate the router happily prices a
+	// retreat to the lobby that the cartridge will not perform.
+	//
+	// HallOfFameResetEventsAndSaveScript sets the durable completion bit before
+	// it resets the Indigo event range and saves, so a finished campaign keeps
+	// this capability. A blackout does not need it: the game warps the player to
+	// the Indigo Plateau exterior directly, never through this door.
+	capCanLeaveLeague gameruntime.CapabilityID = "can_leave_league"
+
 	// Red's Celadon City object table contains a historical/unused warp at
 	// (39,19) directly to the department store 5F. The decomp explicitly marks
 	// it "inaccessible": there is no door there in the playable map. Keep a
@@ -22,9 +39,28 @@ const (
 	// intact for destination-warp indexing.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
+	// The Game Corner poster stair is a real warp_event, but the map script
+	// replaces its block with a wall until EVENT_FOUND_ROCKET_HIDEOUT.
+	capCanEnterRocketHideout gameruntime.CapabilityID = "can_enter_rocket_hideout"
+
 	bicycleItem uint8 = 0x06
 
-	route16Map       uint8 = 0x1B
+	// Every gauntlet room in pokered/data/maps/objects places its two south
+	// warps back toward the previous room on this row (LoreleisRoom, BrunosRoom
+	// and AgathasRoom all use y=11; LancesRoom's lone south warp is at (24,16)
+	// and needs no gate because nothing south of it is passable during the run).
+	leagueRoomSouthWarpY uint8 = 11
+
+	route16Map uint8 = 0x1B
+	// Snorlax's Route 16 home tile from the ROM object table (probe: sprite 67
+	// at (26,10)). He blocks the lower road only; the upper passage Cut tree
+	// at (34,9) joins the Fly-house side to the Celadon edge east of him.
+	route16SnorlaxX = 26
+	route16SnorlaxY = 10
+	// The Cut tree on the upper passage. Solid in the static grid; walkable
+	// while the player can Cut, it joins the Fly-house side to the east road.
+	route16CutTreeX        = 34
+	route16CutTreeY        = 9
 	route17Map       uint8 = 0x1C
 	route18Map       uint8 = 0x1D
 	route19Map       uint8 = 0x1E
@@ -35,6 +71,9 @@ const (
 	celadonMart5FMap             uint8 = 0x88
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
+
+	silphCo1FInaccessibleStairWarpX uint8 = 16
+	silphCo1FInaccessibleStairWarpY uint8 = 10
 
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
@@ -55,6 +94,13 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	if state.HasEvent(mem, eventBeatLance) {
 		caps[capCanPassLanceExit] = true
 	}
+	// Only the durable Hall-of-Fame completion bit opens the gauntlet's own
+	// south doors. See capCanLeaveLeague. Read the bit directly: this runs on
+	// every planner snapshot, so it must not re-derive the whole story
+	// projection.
+	if state.MainStoryComplete(mem) {
+		caps[capCanLeaveLeague] = true
+	}
 	// A completed Snorlax encounter is durable proof that this save already
 	// acquired the Poké Flute. Resume/checkpoint reconstruction can lose the
 	// derived inventory story fact while retaining event flags; without this
@@ -62,6 +108,40 @@ func addAuditedRedRouteCapabilities(mem *state.Mem, caps gameruntime.CapabilityS
 	// the unrelated Cycling Road escape and reports a missing Bicycle.
 	if state.HasEvent(mem, eventBeatRoute12Snorlax) || state.HasEvent(mem, eventBeatRoute16Snorlax) {
 		caps[capCanClearSnorlax] = true
+	}
+}
+
+// withAsleepRoute16Snorlax splits Route 16's lower road on Snorlax's home
+// tile while EVENT_BEAT_ROUTE16_SNORLAX is clear. The static collision grid
+// treats that tile as walkable, so without this split the west component
+// canExit the Celadon connection straight through him. The upper passage and
+// the east-of-Snorlax road stay separate components; Cut joins those.
+//
+// The returned graph is a snapshot. The cached ROM graph is not mutated.
+func withAsleepRoute16Snorlax(g *world.Graph, romData []byte, mem *state.Mem) (*world.Graph, error) {
+	if g == nil || mem == nil || state.HasEvent(mem, eventBeatRoute16Snorlax) {
+		return g, nil
+	}
+	h, err := rom.ParseMap(romData, route16Map)
+	if err != nil {
+		return nil, err
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		return nil, err
+	}
+	grid.Set(route16SnorlaxX, route16SnorlaxY, false)
+	openRoute16CutPassage(grid, romData, mem)
+	return g.WithMapGrid(route16Map, grid)
+}
+
+// openRoute16CutPassage opens the Cut tree at (34,9) in a Route 16 grid while
+// the player can Cut. The static collision grid keeps the tree solid, so the
+// graph only sees the upper-passage-to-east-road passage once the capability
+// is held; without it the two halves stay separate components.
+func openRoute16CutPassage(grid *world.Grid, romData []byte, mem *state.Mem) {
+	if redRouteCapabilities(romData, mem).Has(capCanCut) {
+		grid.Set(route16CutTreeX, route16CutTreeY, true)
 	}
 }
 
@@ -89,6 +169,16 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
 
+	case edge.Kind == world.EdgeWarp && edge.To == indigoPlateauLobbyMap &&
+		(edge.From == loreleiRoomMap || edge.From == brunoRoomMap || edge.From == agathaRoomMap) &&
+		edge.WarpY == leagueRoomSouthWarpY:
+		// The south door of each gauntlet room, back toward the lobby. The room
+		// scripts physically refuse this walk while the challenge is running, so
+		// the static two-way warp is a lie the router must not price. Gate the
+		// SOURCE edge only: lobby -> Lorelei stays an ordinary entrance, and the
+		// forward north exits are untouched.
+		return bikeGate("red:league_room_exit", capCanLeaveLeague)
+
 	case edge.Kind == world.EdgeWarp && edge.From == lanceRoomMap && edge.To == championsRoomMap &&
 		edge.WarpX == lanceExitStand.X && edge.WarpY == 0:
 		// Lance's north exit is a scripted progression boundary. The generic
@@ -110,14 +200,30 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the department-store entrance, stairs/elevator, and all raw warp ids.
 		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
 
+	case edge.Kind == world.EdgeWarp && edge.From == silphCo1FMap && edge.To == silphCo3FMap &&
+		edge.WarpX == silphCo1FInaccessibleStairWarpX && edge.WarpY == silphCo1FInaccessibleStairWarpY:
+		// pokered/data/maps/objects/SilphCo1F.asm declares this warp but
+		// annotates it "; inaccessible", the same leftover-ROM-data pattern as
+		// the Celadon Mart 5F warp above. Static collision leaves a walkable
+		// room beside the coordinate, so the generic graph mistakes it for a
+		// working stairway to 3F and Traverse spends its whole budget bouncing
+		// off a warp the real game never lets fire. Gate only this source
+		// edge; the real way to 3F stays open via the elevator and 2F stairs.
+		return bikeGate("red:silph_co_1f_inaccessible_stair_warp", capCanUseInaccessibleWarp)
+
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):
 		// The east entrance to Route 16's lower gate is reached from Celadon.
 		// Snorlax sits immediately east of the gate, and the guard inside the
-		// lower corridor separately requires a Bicycle. This transition owns
-		// both preconditions so a journey to Fuchsia cannot walk into either
-		// scripted blocker before reporting why the route is closed.
-		return semanticTransition("red:route16_snorlax_bicycle", edge, capCanClearSnorlax, capCanRideCyclingRoad), true
+		// lower corridor separately requires a Bicycle. Both are preconditions
+		// on ordinary geometry: the warp still lands in the lower corridor
+		// only. Modeling this as an action pivot used to relax that landing
+		// and let routing pretend the lower door reaches the upper
+		// pedestrian/Fly-house exits through a wall (farm triage
+		// 0ece8bd130597547 / run-1g7kwah5oygzl29jkvhmhsmby6). Keep it a Gate
+		// so component reachability stays honest; execution still clears
+		// Snorlax when the annotated edge is taken.
+		return bikeGate("red:route16_snorlax_bicycle", capCanClearSnorlax, capCanRideCyclingRoad)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
 		edge.WarpX == 17 && (edge.WarpY == 10 || edge.WarpY == 11):
@@ -139,10 +245,24 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
 	case edge.Kind == world.EdgeConnection && edge.From == route16Map && edge.To == celadonCityMap:
-		// Returning north from Cycling Road exits onto Route 16 west of the
-		// sleeping Snorlax. Clearing it is an action, not merely a gate, so the
-		// executor uses the Flute and resolves the battle before traversal.
-		return semanticTransition("red:route16_snorlax", edge, capCanClearSnorlax), true
+		// Snorlax sleeps on the lower road at (26,10). The Celadon connection's
+		// east component is already past him, and Route 16's upper passage
+		// reaches that component by Cut at (34,9) — measured from the upper
+		// gate landing (24,5) to the east edge (39,10) in one Cut while (26,10)
+		// is blocked. A hard deny on this whole connection made that side
+		// report can_clear_snorlax anyway, so a Fly-house save with Cut and no
+		// Poké Flute was unroutable to Celadon (run-1c4k0nk8lwwcc2hr8dhy65m5o0).
+		//
+		// PivotOnly keeps the edge on ordinary geometry when the flute is
+		// missing, so the east component still walks into Celadon. PortBypass
+		// lets a west-of-Snorlax tile that cannot reach the port select this
+		// action once the flute is held; the executor then wakes him. The
+		// asleep sprite must also split the lower road (withAsleepRoute16Snorlax)
+		// or the west component canExit through his tile and walks into him.
+		t := semanticTransition("red:route16_snorlax", edge, capCanClearSnorlax)
+		t.PivotOnly = true
+		t.PortBypass = true
+		return t, true
 
 	case pair(route19Map, route20Map), pair(route20Map, cinnabarIslandMap):
 		// The southern sea route is every bit as Surf-gated as Route 21. Keep
@@ -150,14 +270,30 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// seam and remains required through the Cinnabar connection.
 		return semanticTransition("red:southern_sea_surf", edge, capCanSurf), true
 
+	case edge.Kind == world.EdgeWarp && edge.From == gameCornerMap && edge.To == rocketHideoutB1FMap &&
+		edge.WarpX == gameCornerWarpX && edge.WarpY == gameCornerWarpY:
+		// pokered/scripts/GameCorner.asm GameCornerSetRocketHideoutDoorTile
+		// writes block $2a over (17,4) until EVENT_FOUND_ROCKET_HIDEOUT.
+		// The warp table entry remains, so a speedrun cost search prices a
+		// one-tile push into that wall and then stops at Rocket B1F's
+		// trainer-door frontier — the nearest semantic pivot, not a path to
+		// the destination (run-2fjudkv8c4i4y2147qkbldx57h). Gate only this
+		// source edge. The reverse stair stays ordinary, and RocketHideout
+		// still owns pressing the poster and crossing the revealed step.
+		return bikeGate("red:rocket_hideout_entrance", capCanEnterRocketHideout)
+
 	case edge.Kind == world.EdgeWarp && pair(celadonCityMap, celadonGymMap):
-		// Erika's door is behind the Cut tree in Celadon City. The immutable
-		// graph sees the gym landing yard and the city street as disconnected
-		// until that tree is removed. This is true in both directions: a run
-		// resumed inside Celadon Gym otherwise cannot route back to the Center
-		// and dies with "world: no route" from map 0x86. Model the door as the
-		// same bidirectional pivot used for Vermilion Gym; the reverse executor
-		// crosses the door first, then clears the city-side tree.
+		// Erika's door is behind the Cut tree in Celadon City, and a resumed
+		// run inside the gym can also need Cut to reach the exit through the
+		// interior garden. Keep this as a plain action pivot: skipCanExit lets
+		// Traverse own those live Cut approaches in either direction.
+		//
+		// Do NOT mark this EdgeWarp PortBypass. PortBypass also relaxes the
+		// destination landing and turns the gym into a semantic replan boundary.
+		// The router can then choose this one-exit room as a "safe prefix" toward
+		// unrelated destinations and bounce in/out until navigation stalls
+		// (#1586-#1588). Erika's challenge instead stages entry at the gym map
+		// before solving the separate interior Cut maze locally.
 		return semanticTransition("red:celadon_gym_cut", edge, capCanCut), true
 	}
 	return gameruntime.Transition{}, false
@@ -286,25 +422,30 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		return result, true, err
 
 	case "red:celadon_gym_cut":
-		if edge.From == celadonGymMap {
-			// Leaving starts inside the building while the tree that separates
-			// the landing yard from the city street is outside. Cross the warp
-			// first so the generic live Cut recovery can see and clear that tree.
-			// Traverse already performs the promised edge, so always report a
-			// state change and let Travel re-plan from the city side afterwards.
-			if err := Traverse(x.m, x.romData, edge); err != nil {
-				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: leave gym: %w", err)
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanCut},
 			}
-			if _, err := cutThroughReachableTree(x.m, x.romData); err != nil {
-				return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: clear city-side tree: %w", err)
+		}
+		// The semantic pivot only relaxes static component routing. Traverse's
+		// target-specific field approach owns the actual Cut, and after a reverse
+		// gym exit ordinary GoTo replans the city-side destination before cutting.
+		return world.TransitionExecutionResult{}, true, nil
+	case "red:league_room_exit":
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		if !redRouteCapabilities(x.romData, &mem).Has(capCanLeaveLeague) {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{
+				Transition: transition,
+				Missing:    []gameruntime.CapabilityID{capCanLeaveLeague},
 			}
-			return world.TransitionExecutionResult{Changed: true}, true, nil
 		}
-		opened, err := cutThroughReachableTree(x.m, x.romData)
-		if err != nil {
-			return world.TransitionExecutionResult{}, true, fmt.Errorf("Celadon Gym Cut gate: %w", err)
-		}
-		return world.TransitionExecutionResult{Changed: opened}, true, nil
+		// The exit itself is an ordinary warp once the campaign is complete;
+		// there is nothing for this layer to execute.
+		return world.TransitionExecutionResult{}, true, nil
 	}
 	return world.TransitionExecutionResult{}, false, nil
 }
@@ -330,7 +471,15 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if xPos <= 25 {
 		standX = 25
 	}
-	if _, err := TravelFlee(x.m, x.romData, Destination{Map: route16Map, X: standX, Y: 10}, x.policy, fuchsiaTravelEngagements); err != nil {
+	stand := Destination{Map: route16Map, X: standX, Y: 10}
+	// The west stand (25,10) is sealed behind the bike-gated gate corridor, so
+	// a Fly-house player without a bicycle cannot reach it. When the coordinate
+	// stand is unreachable, approach from the east stand instead: the graph
+	// routes through the upper gate passage and the Cut tree at (34,9).
+	if planner, perr := NewRoutePlanner(x.m, x.romData); perr != nil || !planner.CanReach(stand) {
+		stand = Destination{Map: route16Map, X: 27, Y: 10}
+	}
+	if _, err := TravelFlee(x.m, x.romData, stand, x.policy, fuchsiaTravelEngagements); err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax approach: %w", err)
 	}
 	if err := useOverworldKeyItem(x.m, pokeFluteItemFuchsia, func(mm *state.Mem) bool {
@@ -352,8 +501,8 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return false, fmt.Errorf("skill: Route 16 Snorlax battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("static:route16_snorlax", outcome); err != nil {
+		return false, fmt.Errorf("skill: Route 16 Snorlax battle: %w", err)
 	}
 	if err := Cutscene(x.m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventBeatRoute16Snorlax)

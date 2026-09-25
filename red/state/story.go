@@ -12,6 +12,18 @@ const (
 	// durable RAM fact that survives the ending's event reset.
 	elite4FlagsAddr     uint16 = 0xd734
 	elite4CompletedMask uint8  = 1 << 0
+	// BIT_STARTED_ELITE_4: set by each Elite Four room's first script run,
+	// cleared by the Indigo lobby script, which then resets the whole
+	// Indigo event range (autowalk through Lance, not the Champion).
+	elite4StartedMask uint8 = 1 << 1
+
+	// Elite Four gauntlet map ids from pokered/constants/map_constants.asm.
+	lancesRoomMap    uint8 = 0x71
+	hallOfFameMap    uint8 = 0x76
+	championsRoomMap uint8 = 0x78
+	loreleisRoomMap  uint8 = 0xF5
+	brunosRoomMap    uint8 = 0xF6
+	agathasRoomMap   uint8 = 0xF7
 
 	// Item ids from pokered/constants/item_constants.asm.
 	bicycleItemID    uint8 = 0x06
@@ -50,6 +62,11 @@ const (
 	eventBeatLanceTrainer           Event = 0x8f9
 	eventBeatLance                  Event = 0x8fe
 )
+
+// EventFoundRocketHideout is EVENT_FOUND_ROCKET_HIDEOUT. Game Corner's map
+// script closes the poster stair at (17,4) until the switch behind the poster
+// sets this flag. Routing projects it; the bit index is checked in story_test.
+const EventFoundRocketHideout Event = 0x1b9
 
 // StoryFacts is Red's semantic progression projection. It deliberately names
 // game concepts, not event ids, WRAM bits, or item bytes. Every field is
@@ -97,12 +114,21 @@ var route23BadgeCheckEvents = [...]Event{
 	eventPassedEarthBadgeCheck,
 }
 
+// MainStoryComplete reports the durable Hall-of-Fame completion bit. It is the
+// only Indigo fact that survives the ending's own event reset
+// (HallOfFameResetEventsAndSaveScript), so callers that need "this save has
+// actually finished the campaign" should read it here rather than re-deriving
+// the whole story projection.
+func MainStoryComplete(m *Mem) bool {
+	return m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
+}
+
 // DecodeStoryFacts derives planner-facing progression semantics from Red's
 // authoritative RAM and decoded inventory. No run memory is involved, so the
 // same checkpoint always reconstructs the same facts after resume.
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
-	mainStoryComplete := m.U8(elite4FlagsAddr)&elite4CompletedMask != 0
+	mainStoryComplete := MainStoryComplete(m)
 	facts := StoryFacts{
 		MtMoonFossilAcquired:   HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:        HasEvent(m, EventGotPokedex),
@@ -138,6 +164,15 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		}
 	}
 	facts.Route23BadgeChecksComplete = facts.Route23BadgeChecksPassed == len(route23BadgeCheckEvents)
+	if leagueRunAbandoned(m, facts) {
+		// The events are still set, but the lobby will erase them on the
+		// next entry: the gauntlet has to be restarted from Lorelei.
+		facts.LeagueChallengeStarted = false
+		facts.LeagueLoreleiDefeated = false
+		facts.LeagueBrunoDefeated = false
+		facts.LeagueAgathaDefeated = false
+		facts.LeagueLanceDefeated = false
+	}
 	if facts.LeagueLoreleiDefeated || facts.LeagueBrunoDefeated || facts.LeagueAgathaDefeated || facts.LeagueLanceDefeated || facts.LeagueChampionDefeated || facts.MainStoryComplete {
 		facts.LeagueChallengeStarted = true
 	}
@@ -151,4 +186,23 @@ func inventoryHasItem(inv InventoryState, id uint8) bool {
 		}
 	}
 	return false
+}
+
+// leagueRunAbandoned reports that Red left the Elite Four gauntlet (blackout,
+// or any warp out) after starting it. IndigoPlateauLobby_Script resets the
+// Indigo event range whenever BIT_STARTED_ELITE_4 is still set on entry, so
+// room progress observed outside the gauntlet is not durable and must not be
+// offered as a resumable stage. The Champion event lies outside that range.
+func leagueRunAbandoned(m *Mem, facts StoryFacts) bool {
+	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
+		return false
+	}
+	if m.U8(elite4FlagsAddr)&elite4StartedMask == 0 {
+		return false
+	}
+	switch m.U8(sym.CurMap) {
+	case loreleisRoomMap, brunosRoomMap, agathasRoomMap, lancesRoomMap, championsRoomMap, hallOfFameMap:
+		return false
+	}
+	return true
 }

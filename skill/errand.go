@@ -1,7 +1,6 @@
 package skill
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -246,12 +245,6 @@ func OaksParcel(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // succeed should level the lead to this first, in the gym-test pattern.
 const Route22RivalLeadLevel = 15
 
-// ErrLostRoute22RivalBattle reports that the Route 22 rival battle was lost:
-// the blackout relocated the player to the respawn spot, so GetPokeBalls
-// stops and reports it rather than pressing on from a state it did not
-// verify. Losing is a typed outcome, not a panic.
-var ErrLostRoute22RivalBattle = errors.New("skill: GetPokeBalls: lost the Route 22 rival battle; the blackout relocated the player")
-
 // GetPokeBalls gets the five POKE_BALLs Oak gives once the Route 22 rival
 // battle is won. From the post-parcel state it fights the Route 22 rival if
 // that battle has not been won yet, then Travels back to Oak's lab and runs
@@ -327,10 +320,10 @@ func GetPokeBalls(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if err != nil {
 			return fmt.Errorf("skill: GetPokeBalls: %w", err)
 		}
-		if outcome == state.ResultLost {
+		if err := RequireTrainerBattleWin("rival:route22_first", outcome); err != nil {
 			state.Snapshot(m, &mem)
 			return fmt.Errorf("skill: GetPokeBalls: map=%#04x at (%d,%d): %w",
-				mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), ErrLostRoute22RivalBattle)
+				mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), err)
 		}
 
 		// Battle settles on controllable, which holds in the gap between the

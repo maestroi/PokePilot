@@ -60,6 +60,84 @@ func TestRoutePrerequisiteQuarantineSurvivesPositionDrift(t *testing.T) {
 	}
 }
 
+func TestProgressRoutePrerequisiteQuarantineExpiresAfterRouteMovement(t *testing.T) {
+	failed := Objective{Kind: KindProgress, Progress: redProgressBoulderBadge}
+	alternative := Objective{Kind: KindTrain, Level: 12}
+	obs := Observation{
+		Location:     "route 2",
+		X:            8,
+		Y:            71,
+		Controllable: true,
+		Story:        ProgressState{{ID: redProgressPokedexAcquired, Complete: true}},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective:    failed,
+		Outcome:      OutcomeBlocked,
+		Cause:        "route_prerequisite_missing",
+		CauseContext: []string{"can_cut"},
+		Final:        obs,
+	})
+
+	// In the exact same route state the failed compound progression remains
+	// quarantined while an alternative exists.
+	got := policy.filter(obs, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("same-state progression prerequisite was not quarantined: %+v", got)
+	}
+
+	// #1109 died after Boulder progression hit a local route prerequisite on
+	// Route 2. A compound progression owns its internal route, so movement to a
+	// different component/map must reopen it; otherwise harmless alternatives
+	// can move Red around forever while the required story step stays hidden.
+	moved := obs
+	moved.Location = "viridian forest"
+	moved.X, moved.Y = 17, 43
+	got = policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("route movement did not release compound progression quarantine: %+v", got)
+	}
+}
+
+func TestCatchRoutePrerequisiteQuarantineExpiresAfterRouteMovement(t *testing.T) {
+	failed := Objective{Kind: KindCatch, Species: "caterpie", Place: "route 2", Flee: true}
+	alternative := Objective{Kind: KindHeal, Place: "vermilion pokemon center"}
+	obs := Observation{
+		Location:     "route 2",
+		X:            8,
+		Y:            71,
+		Controllable: true,
+		Party:        []PartyMon{{Species: "pikachu", Level: 18, HP: 35, MaxHP: 35}},
+		Bag:          []Item{{Name: "poke ball", Quantity: 5}},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective:    failed,
+		Outcome:      OutcomeBlocked,
+		Cause:        "route_prerequisite_missing",
+		CauseContext: []string{"can_cut"},
+		Final:        obs,
+	})
+
+	got := policy.filter(obs, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("same-state catch prerequisite was not quarantined: %+v", got)
+	}
+
+	// #1084 stopped in Vermilion after a Route 2 catch had been quarantined.
+	// Catch owns its travel, so a different location/component can produce a
+	// different route even when the capability set itself has not changed.
+	moved := obs
+	moved.Location = "vermilion pokemon center"
+	moved.X, moved.Y = 3, 3
+	got = policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("route movement did not release compound catch quarantine: %+v", got)
+	}
+}
+
 func TestRoutePrerequisiteQuarantineExpiresAfterSemanticProgress(t *testing.T) {
 	fleeing := Objective{Kind: KindGoTo, Place: "pewter city", Flee: true}
 	plain := Objective{Kind: KindGoTo, Place: "pewter city"}
@@ -139,5 +217,53 @@ func TestNavigationFailureQuarantineStillExpiresAfterPositionChange(t *testing.T
 	got := policy.filter(moved, []Objective{failed, alternative})
 	if len(got) != 2 || got[0].Key() != failed.Key() {
 		t.Fatalf("position change should release ordinary navigation quarantine: %+v", got)
+	}
+}
+
+func TestFieldRosterQuarantineSurvivesPositionDrift(t *testing.T) {
+	failed := Objective{Kind: KindProgress, FieldCapability: "fly"}
+	alternative := Objective{Kind: KindTrain, Level: 12}
+	obs := Observation{
+		Location:     "fuchsia city",
+		X:            39,
+		Y:            16,
+		Controllable: true,
+		Party: []PartyMon{
+			{Species: "venusaur", Level: 54, HP: 100, MaxHP: 100},
+			{Species: "nidoran-f", Level: 12, HP: 30, MaxHP: 30},
+			{Species: "magikarp", Level: 5, HP: 20, MaxHP: 20},
+		},
+		Bag: []Item{
+			{Name: "hm02", Quantity: 1},
+			{Name: "poke ball", Quantity: 7},
+		},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Cause:     "field_roster_no_recovery",
+		Final:     obs,
+	})
+
+	// Same roster at a different map/position: quarantine must persist.
+	moved := obs
+	moved.Location = "route 16"
+	moved.X, moved.Y = 5, 30
+	got := policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("position drift reopened field-roster failure: %+v", got)
+	}
+
+	// A material party change (new member that can learn FLY) must release it.
+	changed := obs
+	changed.Party = []PartyMon{
+		{Species: "venusaur", Level: 54, HP: 100, MaxHP: 100},
+		{Species: "pidgeot", Level: 40, HP: 80, MaxHP: 80},
+	}
+	got = policy.filter(changed, []Objective{failed, alternative})
+	if len(got) != 2 || got[0].Key() != failed.Key() {
+		t.Fatalf("party change did not release field-roster quarantine: %+v", got)
 	}
 }

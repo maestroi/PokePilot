@@ -14,20 +14,36 @@ import (
 // checkpointRing is the bounded record of a run: one save state per
 // objective, kept as a ring of the last keep entries.
 type checkpointRing struct {
-	dir      string
-	keep     int
-	game     game.GameID
-	revision game.RevisionID
+	dir       string
+	keep      int
+	lastState string
+	game      game.GameID
+	revision  game.RevisionID
 }
 
 func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
+	return c.writeNamed(m, round, checkpointSlug(obj), k, coverage, intent, intentAge, plans...)
+}
+
+// writeBoundary captures a safe between-objective state with the agent memory
+// that describes that exact emulator state. Cooperative cancellation happens
+// only at this boundary, so pause/resume can continue without rewinding to the
+// checkpoint taken before the previous objective ran.
+func (c *checkpointRing) writeBoundary(m *emu.Emu, round int, name string, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
+	return c.writeNamed(m, round, slugify(name), k, coverage, intent, intentAge, plans...)
+}
+
+func (c *checkpointRing) writeNamed(m *emu.Emu, round int, name string, k *Knowledge, coverage *coverageTracker, intent string, intentAge int, plans ...Plan) error {
 	b, err := m.SaveState()
 	if err != nil {
 		return fmt.Errorf("SaveState: %w", err)
 	}
+	if len(b) == 0 {
+		return fmt.Errorf("SaveState returned an empty state for round %d", round)
+	}
 	path := filepath.Join(c.dir, fmt.Sprintf("round-%03d-frame-%010d-%s.state",
-		round, m.FrameCount(), checkpointSlug(obj)))
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+		round, m.FrameCount(), name))
+	if err := writeFileAtomic(path, ".state-*.tmp", b); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	if err := writeMemoryFileForProfile(path, k, c.game, c.revision, intent, intentAge, plans...); err != nil {
@@ -39,7 +55,50 @@ func (c *checkpointRing) write(m *emu.Emu, round int, obj Objective, k *Knowledg
 	if err := embedCoverageInKnowledgeFile(path, coverage); err != nil {
 		return fmt.Errorf("embed coverage round %d: %w", round, err)
 	}
+	c.lastState = path
 	return c.evict()
+}
+
+// writeFileAtomic writes data to target through a same-directory temp file and
+// a rename. The caller supplies the temp-file pattern so a leftover from a
+// crashed run is traceable to its writer.
+//
+// The rename is the point. The farm checkpoint uploader polls this directory on
+// a timer and publishes whatever it reads, and os.WriteFile truncates the
+// target before writing it: a reader that arrives inside that window observes
+// an empty or partial save and publishes it as the run's latest checkpoint.
+// That is how a complete 321 KB pre-objective checkpoint became a 0-byte resume
+// state whose highest embedded frame then outranked every checkpoint the run
+// produced afterwards, permanently restarting the run from a fresh cartridge.
+func writeFileAtomic(target, pattern string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(target), pattern)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, target)
+}
+
+// rewriteKnowledge updates the knowledge sidecar of the checkpoint just
+// written, without saving emulator state. A poisoned machine cannot be
+// snapshotted; the pre-objective state file stays, and the failure has to
+// be durable or the next resume selects the same objective again.
+func (c *checkpointRing) rewriteKnowledge(k *Knowledge, intent string, intentAge int, plans ...Plan) error {
+	if c == nil || c.lastState == "" {
+		return nil
+	}
+	return writeMemoryFile(c.lastState, k, intent, intentAge, plans...)
 }
 
 func (c *checkpointRing) evict() error {

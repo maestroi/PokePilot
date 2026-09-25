@@ -7,9 +7,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Do not cancel the image build that is already running when main advances.
+# With frequent merges, cancel-in-progress=true can starve publishing forever:
+# every new merge throws away several minutes of image-build work and the farm
+# remains pinned to an old UI/wall. GitHub concurrency still keeps at most one
+# pending run for this group, so intermediate commits collapse while the current
+# image finishes; the newest pending commit publishes next.
 concurrency:
   group: publish-farm
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import DecisionTelemetry from './DecisionTelemetry.vue'
+import { showDecisionTelemetry } from './decisionTelemetry'
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, TrashIcon } from '@heroicons/vue/20/solid'
 import { deleteRun, getDashboard } from '../shared/api/client'
@@ -20,7 +22,7 @@ import {
   safeIssueURL
 } from './runs'
 import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
-import { gameTitle } from './operations'
+import { decisionEngineLabel, gameTitle } from './operations'
 
 const PAGE_SIZE = 25
 
@@ -564,6 +566,7 @@ function experimentLabel(run: DashboardRun): string {
                       <button v-if="isPlayStyleRun(run)" type="button" @click="setFilter('playStyle', run.play_style || '')">
                         <StatusBadge tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                       </button>
+                      <StatusBadge v-if="run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
                       <button type="button" @click="setFilter('starter', archiveStarter(run))">
                         <StatusBadge tone="info">{{ archiveStarter(run) }}</StatusBadge>
                       </button>
@@ -642,6 +645,7 @@ function experimentLabel(run: DashboardRun): string {
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Compute</dt><dd class="text-slate-300">{{ computeName(run) || '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Quantization</dt><dd class="text-slate-300">{{ run.inference?.quantization || '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Reasoning</dt><dd class="text-slate-300">{{ run.reasoning_effort || 'default' }}</dd></div>
+                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Decisions</dt><dd class="text-slate-300">{{ decisionEngineLabel(run) }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Seed</dt><dd class="font-mono text-slate-300">{{ run.seed ?? '—' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Experiment</dt><dd class="text-slate-300">{{ experimentLabel(run) || '—' }}</dd></div>
                       </dl>
@@ -661,6 +665,9 @@ function experimentLabel(run: DashboardRun): string {
                         <div><dt class="text-slate-600">Milestones</dt><dd class="mt-1 text-slate-300">{{ run.player?.milestones?.join(' · ') || '—' }}</dd></div>
                         <div><dt class="text-slate-600">Failure / stop detail</dt><dd class="mt-1 whitespace-pre-wrap text-slate-300">{{ run.detail || '—' }}</dd></div>
                       </dl>
+                    </div>
+                    <div v-if="showDecisionTelemetry(run.stats, run.decision_engine)" class="mt-4 overflow-hidden rounded-sm border border-white/10">
+                      <DecisionTelemetry :stats="run.stats" :engine="run.decision_engine" :show-feed="false" />
                     </div>
                   </td>
                 </tr>

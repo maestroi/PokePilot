@@ -5,10 +5,8 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
-	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -18,8 +16,6 @@ const (
 	cutTreeTile    uint8 = 0x3D
 	gymCutTreeTile uint8 = 0x50
 	vermilionCity  uint8 = 0x05
-	vermilionGymX        = 12
-	vermilionGymY        = 19
 	cutMenuBudget        = 4000
 )
 
@@ -105,13 +101,6 @@ func selectFieldMoveUser(m *emu.Emu, index int) error {
 	return nil
 }
 
-func openStartMenuEntry(m *emu.Emu, entry, wantMax int) error {
-	if err := waitForStartMenu(m, wantMax); err != nil {
-		return err
-	}
-	return SelectMenuItem(m, entry)
-}
-
 func closeToOverworld(m *emu.Emu) error {
 	var mem state.Mem
 	for i := 0; i < 80; i++ {
@@ -194,133 +183,10 @@ func CutAhead(m *emu.Emu) error {
 	return err
 }
 
-type cutCandidate struct{ x, y, d int }
-
-func reachableBeside(grid *world.Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) (Destination, bool) {
-	bestLen := int(^uint(0) >> 1)
-	var best Destination
-	found := false
-	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
-		x, y := tx+s.DX, ty+s.DY
-		if !grid.InBounds(x, y) || !grid.Walkable(x, y) {
-			continue
-		}
-		if x == vermilionGymX && y == vermilionGymY {
-			// The gym door itself is never a safe "beside" tile: stepping
-			// there re-triggers the warp instead of merely standing next to
-			// the candidate, which sends the walker back inside the gym
-			// before it ever gets to look at (let alone cut) the candidate.
-			// Only reachable from the yard side of the door (approaching from
-			// the street, the candidate's other neighbours already win on
-			// path length), so this only ever excludes a real dead end.
-			continue
-		}
-		steps, err := world.FindPath(grid, sx, sy, x, y, blocked)
-		if err == nil && len(steps) < bestLen {
-			bestLen, found = len(steps), true
-			best = Destination{Map: vermilionCity, X: uint8(x), Y: uint8(y)}
-		}
-	}
-	return best, found
-}
-
+// EnterVermilionGym is the public compatibility entry point. The route-gate
+// implementation is destination-aware: it selects the actual Vermilion Gym
+// warp and lets Traverse's shared field-path planner choose Cut only when that
+// exact door route requires it. No independent tree scan remains here.
 func EnterVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if m.Peek8(sym.CurMap) != vermilionCity {
-		return fmt.Errorf("skill: EnterVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionCity)
-	}
-	if policy == nil {
-		return fmt.Errorf("skill: EnterVermilionGym: nil policy")
-	}
-	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: prepare Cut carrier: %w", err)
-	}
-
-	h, err := rom.ParseMap(romData, vermilionCity)
-	if err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: parse city: %w", err)
-	}
-	grid, err := world.Build(romData, h)
-	if err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: build city: %w", err)
-	}
-
-	tree, err := findVermilionGymTree(m, romData, grid, policy)
-	if err != nil {
-		return err
-	}
-	if err := CutAhead(m); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
-	}
-	grid.Set(tree.x, tree.y, true)
-	return crossVermilionGymDoor(m, grid)
-}
-
-func findVermilionGymTree(m *emu.Emu, romData []byte, grid *world.Grid, policy MovePolicy) (cutCandidate, error) {
-	sx, sy := playerXY(m)
-	for _, c := range routeCutCandidates(grid, overworldTileset, int(sx), int(sy)) {
-		sx, sy = playerXY(m)
-		stand, ok := reachableBeside(grid, int(sx), int(sy), c.x, c.y, spriteBlockers(m))
-		if !ok {
-			continue
-		}
-		if _, err := Travel(m, romData, stand, policy, 10); err != nil {
-			continue
-		}
-		if err := Face(m, uint8(c.x), uint8(c.y)); err != nil {
-			continue
-		}
-		if !cuttableFrontTile(observeFrontTile(m)) {
-			continue
-		}
-		return cutCandidate{x: c.x, y: c.y, d: c.d}, nil
-	}
-	return cutCandidate{}, fmt.Errorf("skill: EnterVermilionGym: no reachable Cut tree found near gym warp (%d,%d)", vermilionGymX, vermilionGymY)
-}
-
-func crossVermilionGymDoor(m *emu.Emu, grid *world.Grid) error {
-	sx, sy := playerXY(m)
-	var best []world.Step
-	var push world.Step
-	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
-		x, y := vermilionGymX+s.DX, vermilionGymY+s.DY
-		if !grid.InBounds(x, y) || !grid.Walkable(x, y) {
-			continue
-		}
-		p, err := world.FindPath(grid, int(sx), int(sy), x, y, spriteBlockers(m))
-		if err == nil && (best == nil || len(p) < len(best)) {
-			best, push = p, world.Step{DX: -s.DX, DY: -s.DY}
-		}
-	}
-	if best == nil {
-		return fmt.Errorf("skill: EnterVermilionGym: no path through cut tree to gym door")
-	}
-	if err := WalkPath(m, best); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: walk through cut tree: %w", err)
-	}
-	btn, ok := buttonFor(push)
-	if !ok {
-		return fmt.Errorf("skill: EnterVermilionGym: invalid door push %s", push)
-	}
-	m.Press(btn)
-	crossed := false
-	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != vermilionCity {
-			crossed = true
-			break
-		}
-		m.StepFrame()
-	}
-	m.Release(btn)
-	if !crossed || m.Peek8(sym.CurMap) != vermilionGymMap {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: EnterVermilionGym: door did not enter gym; map=%#04x at (%d,%d)", m.Peek8(sym.CurMap), x, y)
-	}
-	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
-		var s state.Mem
-		state.Snapshot(m, &s)
-		return state.Controllable(&s)
-	}); err != nil {
-		return fmt.Errorf("skill: EnterVermilionGym: gym loaded but player did not become controllable")
-	}
-	return nil
+	return enterVermilionGymViaRouteGate(m, romData, policy)
 }

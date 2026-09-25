@@ -67,12 +67,36 @@ func TestCeladonInaccessibleMartWarpIsPermanentGate(t *testing.T) {
 	}
 }
 
+func TestSilphCo1FInaccessibleStairWarpIsPermanentGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  silphCo1FMap,
+		To:    silphCo3FMap,
+		WarpX: silphCo1FInaccessibleStairWarpX,
+		WarpY: silphCo1FInaccessibleStairWarpY,
+	}
+	transition := requireTransition(t, edge, "red:silph_co_1f_inaccessible_stair_warp", capCanUseInaccessibleWarp)
+	if !transition.Gate {
+		t.Fatalf("inaccessible Silph Co 1F stair warp was modeled as an executable pivot: %+v", transition)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanUseInaccessibleWarp) {
+		t.Fatalf("inaccessible warp capability must never be projected: %v", caps)
+	}
+
+	// The real way up remains ordinary topology; only the source warp
+	// explicitly marked inaccessible by the Red decomp is suppressed.
+	elevator := world.Edge{Kind: world.EdgeWarp, From: silphCo1FMap, To: 0xec, WarpX: 20, WarpY: 0}
+	if got, ok := redRouteTransitionForEdge(elevator); ok && got.ID == "red:silph_co_1f_inaccessible_stair_warp" {
+		t.Fatalf("real Silph Co elevator warp was suppressed: %+v", got)
+	}
+}
+
 func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 	east := requireTransition(t,
 		world.Edge{Kind: world.EdgeWarp, From: route16Map, To: route16Gate1FMap, WarpX: 24, WarpY: 10},
 		"red:route16_snorlax_bicycle", capCanClearSnorlax, capCanRideCyclingRoad)
-	if east.Gate {
-		t.Fatal("east Route 16 entry must execute the Snorlax action, not be a pure gate")
+	if !east.Gate {
+		t.Fatal("east Route 16 lower entry must be a Gate so its landing stays the lower corridor")
 	}
 
 	west := requireTransition(t,
@@ -96,11 +120,55 @@ func TestCyclingRoadModelsOnlyTheBikeCorridor(t *testing.T) {
 		world.Edge{Kind: world.EdgeWarp, From: route18Gate1FMap, To: route18Map, WarpX: 0, WarpY: 4},
 		"red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	requireTransition(t,
+	snorlaxEdge := requireTransition(t,
 		world.Edge{Kind: world.EdgeConnection, From: route16Map, To: celadonCityMap},
 		"red:route16_snorlax", capCanClearSnorlax)
+	if !snorlaxEdge.PivotOnly || !snorlaxEdge.PortBypass {
+		t.Fatalf("route16_snorlax = %+v, want PivotOnly+PortBypass so the east component stays walkable without the flute", snorlaxEdge)
+	}
 	if transition, ok := redRouteTransitionForEdge(world.Edge{Kind: world.EdgeConnection, From: celadonCityMap, To: route16Map}); ok && transition.ID == "red:route16_snorlax" {
 		t.Fatalf("Celadon -> Route 16 entry was over-gated by Snorlax: %+v", transition)
+	}
+}
+
+func TestCyclingRoadUphillConnectionsAreOrdinaryTopology(t *testing.T) {
+	// JoypadOverworld injects PAD_DOWN only when Route 17 has *no* held input.
+	// Explicit Up is legal, so both map directions must remain routable. The
+	// old never-projected "can_climb_cycling_road" gate encoded an automation
+	// release-frame bug as if it were a game rule.
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeConnection, From: route18Map, To: route17Map},
+		{Kind: world.EdgeConnection, From: route17Map, To: route16Map},
+		{Kind: world.EdgeConnection, From: route16Map, To: route17Map},
+		{Kind: world.EdgeConnection, From: route17Map, To: route18Map},
+	} {
+		if transition, ok := redRouteTransitionForEdge(edge); ok && transition.ID == "red:cycling_road_uphill" {
+			t.Fatalf("Cycling Road connection %+v still carries obsolete uphill gate: %+v", edge, transition)
+		}
+	}
+}
+
+func TestCyclingRoadAutoDownMatchesROMInputRule(t *testing.T) {
+	tests := []struct {
+		name          string
+		mapID         uint8
+		trainerBattle bool
+		inputHeld     bool
+		want          bool
+	}{
+		{name: "route17 idle", mapID: route17Map, want: true},
+		{name: "route17 explicit direction or button", mapID: route17Map, inputHeld: true, want: false},
+		{name: "route17 trainer battle", mapID: route17Map, trainerBattle: true, want: false},
+		{name: "route16 idle", mapID: route16Map, want: false},
+		{name: "route18 idle", mapID: route18Map, want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cyclingRoadAutoDown(tc.mapID, tc.trainerBattle, tc.inputHeld); got != tc.want {
+				t.Fatalf("cyclingRoadAutoDown(%#02x, trainer=%v, input=%v) = %v, want %v",
+					tc.mapID, tc.trainerBattle, tc.inputHeld, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -132,6 +200,9 @@ func TestGymCutGatesAreBidirectionalPivots(t *testing.T) {
 		if transition.Gate {
 			t.Fatalf("Celadon Gym Cut transition was a pure gate instead of a pivot: %+v", transition)
 		}
+		if transition.PortBypass || transition.PivotOnly {
+			t.Fatalf("Celadon Gym Cut warp became a live-topology boundary: %+v; one-exit gyms must not be transit prefixes", transition)
+		}
 	}
 
 	// The same tree sits on both sides of Vermilion's door in the immutable
@@ -160,10 +231,13 @@ func TestGymCutGatesAreBidirectionalPivots(t *testing.T) {
 // must be a real pivot, exactly like red:vermilion_gym_cut.
 func TestRoute9CutIsPivotNotGate(t *testing.T) {
 	transition := requireTransition(t,
-		world.Edge{Kind: world.EdgeConnection, From: semanticCeruleanCityMap, To: semanticRoute9Map},
+		world.Edge{Kind: world.EdgeConnection, From: semanticRoute9Map, To: route10Map},
 		"red:route9_cut", capCanCut)
 	if transition.Gate {
 		t.Fatalf("red:route9_cut is a Gate: %+v; a static pre-cut component strands Rock Tunnel/Lavender/Celadon behind it", transition)
+	}
+	if !transition.PivotOnly || !transition.PortBypass {
+		t.Fatalf("red:route9_cut = %+v, want PivotOnly+PortBypass FROM-side bridge", transition)
 	}
 }
 

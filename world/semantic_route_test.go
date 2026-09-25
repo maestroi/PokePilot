@@ -127,26 +127,134 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 		t.Fatalf("ordinary pivot-only plan = %+v, want one ordinary edge", plan)
 	}
 
-	// From the disconnected component the capability is still genuinely
-	// required, so preserve the structured prerequisite diagnosis.
+	// From the disconnected component, pure PivotOnly cannot help: it only
+	// relaxes the far landing. Missing can_pivot is not the reason this is
+	// unroutable, so do not invent a RouteBlockedError for it.
 	_, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("disconnected pure pivot-only error = %v, want ErrNoRoute", err)
+	}
 	var blocked *RouteBlockedError
+	if errors.As(err, &blocked) {
+		t.Fatalf("disconnected pure pivot-only mislabeled as capability blockage: %+v", blocked)
+	}
+
+	// Once the capability exists, PivotOnly still does not invent FROM-side
+	// port reachability — the obstacle lives on the adjacent map. PortBypass
+	// (or a normal FROM-side action) is what bridges a static split on this
+	// map. A satisfied PivotOnly from the wrong component must stay unroutable.
+	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
+	if _, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs); !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("enabled pivot-only from unreachable component routed: %v", err)
+	}
+
+	// PortBypass+PivotOnly is the FROM-side bridge. Without the capability,
+	// preserve structured prerequisite evidence; with it, the edge is usable.
+	prereqs.Capabilities = nil
+	prereqs.Transitions = map[Edge]gameruntime.Transition{pivot: {
+		ID:         "optional_component_pivot",
+		Requires:   []gameruntime.CapabilityID{"can_pivot"},
+		PivotOnly:  true,
+		PortBypass: true,
+	}}
+	_, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
 	if !errors.As(err, &blocked) {
-		t.Fatalf("disconnected pivot-only error = %T %v, want *RouteBlockedError", err, err)
+		t.Fatalf("disconnected port-bypass pivot error = %T %v, want *RouteBlockedError", err, err)
 	}
 	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_pivot"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("missing = %v, want %v", got, want)
 	}
 
-	// Once the capability exists the same edge becomes an executable pivot and
-	// may bridge the static component split.
 	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_pivot")
 	plan, err = FindRoutePlanAtDestinationWithCapabilities(g, 1, 2, 2, 0, 0, 0, nil, prereqs)
 	if err != nil {
-		t.Fatalf("enabled pivot-only route: %v", err)
+		t.Fatalf("enabled port-bypass pivot route: %v", err)
 	}
 	if len(plan) != 1 || plan[0].Transition == nil || plan[0].Transition.ID != "optional_component_pivot" {
-		t.Fatalf("enabled pivot-only plan = %+v, want executable transition", plan)
+		t.Fatalf("enabled port-bypass plan = %+v, want executable transition", plan)
+	}
+}
+
+// TestPivotOnlyReentryDoesNotUnlockUnreachableExits is the generic shape of
+// farm #1261. A TO-side pivot may relax landing on the adjacent map so the
+// walker can continue past that map's static split. It must not treat
+// leave-and-immediately-return as a teleport onto a different component of
+// the origin map. Otherwise an east-seam standing tile plans
+// "leave, re-enter, take a plaza-only exit" and GoTo oscillates forever.
+func TestPivotOnlyReentryDoesNotUnlockUnreachableExits(t *testing.T) {
+	toNeighbor := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	fromNeighbor := Edge{Kind: EdgeConnection, From: 2, To: 1, Dir: dirWest}
+	toDest := Edge{Kind: EdgeConnection, From: 1, To: 3, Dir: dirWest}
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {toNeighbor, toDest},
+			2: {fromNeighbor},
+			3: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1, 0, 2}},
+			2: {{1}},
+			3: {{1}},
+		},
+		tiles: map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			toNeighbor:   {2},
+			fromNeighbor: {1},
+			toDest:       {1},
+		},
+		entryComps: map[Edge][]int{
+			toNeighbor:   {1},
+			fromNeighbor: {2},
+			toDest:       {1},
+		},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+		Transitions: map[Edge]gameruntime.Transition{
+			toNeighbor: {
+				ID:        "cut",
+				Requires:  []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly: true,
+			},
+			fromNeighbor: {
+				ID:        "cut",
+				Requires:  []gameruntime.CapabilityID{"can_cut"},
+				PivotOnly: true,
+			},
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 2, 0, 0, 0, nil, prereqs)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("east seam error=%v plan=%+v, want bounded semantic replan", err, plan)
+	}
+	if len(plan) != 1 || plan[0].Edge != toNeighbor {
+		t.Fatalf("east seam plan=%+v, want only the local pivot frontier", plan)
+	}
+}
+
+// TestUnknownStartComponentStillHonorsDestinationLanding is the other half of
+// #1261. Cerulean (19,28) has no static walkable component, so the old
+// planner discarded the Route 4 (10,10) target and treated any landing on
+// map 0x0F as arrival. Missing start-tile evidence must not erase the
+// destination component.
+func TestUnknownStartComponentStillHonorsDestinationLanding(t *testing.T) {
+	wrong := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	g := &Graph{
+		componentAware: true,
+		Edges:          map[uint8][]Edge{1: {wrong}, 2: {}},
+		// Tile (0,0) is unwalkable (no start component). Dest (1,0) is
+		// component 2; the only edge lands in component 1.
+		comps:      map[uint8][][]int{1: {{0, 0}}, 2: {{1, 2}}},
+		tiles:      map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 1}},
+		exitComps:  map[Edge][]int{wrong: {1}},
+		entryComps: map[Edge][]int{wrong: {1}},
+	}
+
+	plan, err := FindRouteAtDestination(g, 1, 2, 0, 0, 1, 0, nil)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("unknown start component accepted a landing that is not the dest tile: err=%v plan=%+v", err, plan)
 	}
 }
 

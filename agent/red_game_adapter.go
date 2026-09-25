@@ -11,11 +11,31 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const objectiveFrameBudget uint64 = 500_000
+const (
+	objectiveFrameBudget      uint64 = 500_000
+	catchObjectiveFrameBudget uint64 = 1_200_000
+)
+
+func objectiveFrameBudgetFor(o Objective) uint64 {
+	if o.Kind == KindCatch {
+		// Catch cooperatively ends its stochastic search at 500k frames while
+		// back on a safe overworld boundary. Reserve another 700k here for one
+		// already-started Battle: Battle's own absolute backstop is 600k, plus
+		// its bounded post-battle settle. This prevents the outer watchdog from
+		// tearing down a catch objective mid-battle (#1857) without increasing
+		// the amount of stochastic hunting the objective performs.
+		return catchObjectiveFrameBudget
+	}
+	return objectiveFrameBudget
+}
 
 type redObjectiveAdapter struct {
-	m       *emu.Emu
-	romData []byte
+	m             *emu.Emu
+	romData       []byte
+	routePriority RoutePriority
+	// battleTurns, when set, is told about every move turn skill.Battle
+	// presses while this adapter executes an objective.
+	battleTurns BattleTurnObserver
 	// gameID is set only on instances bound at registration. Execution helpers
 	// build from an emulator and ROM and never need it: the caller already
 	// selected this adapter through the per-game registry lookup.
@@ -23,15 +43,45 @@ type redObjectiveAdapter struct {
 }
 
 func newRedObjectiveAdapter(m *emu.Emu, romData []byte) *redObjectiveAdapter {
-	return &redObjectiveAdapter{m: m, romData: romData}
+	return newRedObjectiveAdapterWithRoutePriority(m, romData, RoutePriorityConservative)
+}
+
+func newRedObjectiveAdapterWithRoutePriority(m *emu.Emu, romData []byte, priority RoutePriority) *redObjectiveAdapter {
+	return &redObjectiveAdapter{m: m, romData: romData, routePriority: priority}
 }
 
 func init() {
 	for _, id := range gen1Games {
 		gameID := id
-		registerObjectiveAdapter(gameID, func(m *emu.Emu, romData []byte) ObjectiveGameAdapter {
-			return &redObjectiveAdapter{m: m, romData: romData, gameID: gameID}
+		registerObjectiveAdapterFactory(gameID, func(m *emu.Emu, romData []byte, priority RoutePriority) ObjectiveGameAdapter {
+			adapter := newRedObjectiveAdapterWithRoutePriority(m, romData, priority)
+			adapter.gameID = gameID
+			return adapter
 		})
+	}
+}
+
+func redTravelCostPolicy(priority RoutePriority) skill.TravelCostPolicy {
+	if priority == RoutePriorityFastest {
+		return skill.TravelCostFastest
+	}
+	return skill.TravelCostConservative
+}
+
+func redFieldMoveForCapability(capability CapabilityID) (skill.FieldMove, bool) {
+	switch capability {
+	case "cut":
+		return skill.FieldCut, true
+	case "fly":
+		return skill.FieldFly, true
+	case "surf":
+		return skill.FieldSurf, true
+	case "strength":
+		return skill.FieldStrength, true
+	case "flash":
+		return skill.FieldFlash, true
+	default:
+		return 0, false
 	}
 }
 
@@ -62,7 +112,14 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 			if !ok {
 				return fmt.Errorf("agent: %s: unknown Red place %q", o, o.Place)
 			}
-			if !isCenter(state.MapName(d.Map)) {
+			center, centerErr := skill.PokemonCenterMap(a.romData, d.Map)
+			if centerErr != nil {
+				// Keep validation usable with synthetic/minimal ROM fixtures. Real
+				// runs use the service role; the legacy map-name check is only the
+				// fail-open compatibility path when ROM role decoding is unavailable.
+				center = isCenter(state.MapName(d.Map))
+			}
+			if !center {
 				return fmt.Errorf("agent: %s: %q is not a Pokemon Center", o, o.Place)
 			}
 		}
@@ -79,6 +136,10 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 		if !redProgressionKnown(o.Progress) {
 			return fmt.Errorf("agent: %s: unknown Red progression goal %q", o, o.Progress)
 		}
+	case KindRepairFieldCapability:
+		if _, ok := redFieldMoveForCapability(o.FieldCapability); !ok {
+			return fmt.Errorf("agent: %s: unknown Red field capability %q", o, o.FieldCapability)
+		}
 	case KindCatch:
 		if _, ok := redSpeciesID(o.Species); !ok {
 			return fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
@@ -91,6 +152,12 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 		if _, ok := a.resolveItemID(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
+	}
+	if missing := redMissingProgressionPrerequisites(o, obs); len(missing) != 0 {
+		return progressionPrerequisiteError(missing)
+	}
+	if missing := redMissingFieldCapabilityPrerequisites(o, obs); len(missing) != 0 {
+		return fieldCapabilityPrerequisiteError(missing)
 	}
 	return nil
 }
@@ -129,12 +196,43 @@ func (a *redObjectiveAdapter) NormalizeBoundary() error {
 	return normalizeObjectiveBoundary(a.m)
 }
 
+// ObserveBattleTurns implements BattleTurnObservingAdapter.
+func (a *redObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver) {
+	a.battleTurns = observer
+}
+
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
-	return executeRedOwned(a.m, a.romData, o)
+	restoreMoveObserver := skill.WithMoveObserver(a.m, gen1MoveObserver(a.romData, a.battleTurns))
+	defer restoreMoveObserver()
+	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
+	return normalizeRedOwnedExecutionResult(o, result, err)
+}
+
+// normalizeRedOwnedExecutionResult gives validated, bounded owned actions a
+// portable fallback outcome when their native controller path returns an
+// untyped error. UseFieldItem/TeachTMHM, Buy, and Catch can all fail after
+// bounded work even though their owning controller has already returned the
+// game to a safe boundary. Marking that owned action blocked prevents a clean
+// controller/acquisition miss from becoming terminal unknown_failure. Typed
+// failures still win in NormalizeFailure, and an unsafe finish boundary or
+// unreadable final observation still overrides this fallback in the transaction
+// runtime.
+func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err error) (ObjectiveResult, error) {
+	if err != nil {
+		var required *skill.RequiredBattleError
+		if errors.As(err, &required) {
+			result.Battle = requiredBattleEvidenceFromRed(required.Outcome.Encounter, required.Outcome.Result)
+			result.Outcome = OutcomeBlocked
+		}
+		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindCatch) && result.Outcome == "" {
+			result.Outcome = OutcomeBlocked
+		}
+	}
+	return result, err
 }
 
 func (a *redObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
-	deadline := a.m.FrameCount() + objectiveFrameBudget
+	deadline := a.m.FrameCount() + objectiveFrameBudgetFor(o)
 	err := a.m.WithFrameDeadline(deadline, fn)
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return fmt.Errorf("agent: %s: objective frame watchdog: %w", o, err)
@@ -150,6 +248,23 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 	if o.Kind == KindStarter && o.Species != "" {
 		return verifyRedStarterSpeciesPostcondition(o, final)
 	}
+	if o.Kind == KindGoTo {
+		dest, ok := skill.Place(o.Place)
+		if !ok {
+			return fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+		}
+		if dest.Reached(final.Map, final.X, final.Y) {
+			return nil
+		}
+		var mem state.Mem
+		state.Snapshot(a.m, &mem)
+		if redOccupiedDestinationArrival(final, dest, state.DecodeSprites(&mem)) {
+			return nil
+		}
+		return fmt.Errorf(
+			"%w: %s ended on map %02x at (%d,%d), want %s destination on map %02x",
+			ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.KindName(), dest.Map)
+	}
 
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
 	if err == nil && o.Kind == KindHeal {
@@ -160,16 +275,6 @@ func (a *redObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Ob
 	if o.Kind == KindTrain && o.Intent != "dex-evolution" && errors.Is(err, ErrObjectivePostconditionFailed) &&
 		redTrainingReachedThroughEvolution(o, initial, final, result) {
 		return nil
-	}
-	if o.Kind == KindGoTo && errors.Is(err, ErrObjectivePostconditionFailed) {
-		dest, ok := skill.Place(o.Place)
-		if ok {
-			var mem state.Mem
-			state.Snapshot(a.m, &mem)
-			if redOccupiedDestinationArrival(final, dest, state.DecodeSprites(&mem)) {
-				return nil
-			}
-		}
 	}
 	return err
 }
@@ -266,6 +371,18 @@ func redOccupiedDestinationArrival(final Observation, dest skill.Destination, sp
 	}
 	for _, sprite := range sprites {
 		if sprite.X == int(dest.X) && sprite.Y == int(dest.Y) {
+			return true
+		}
+	}
+	return false
+}
+
+// redLayoutGame reports whether id is served by the Red/Blue Gen-I adapter
+// (shared WRAM layout and ROM tables). Game-owned offer enrichment must not
+// run for any other profile.
+func redLayoutGame(id gameruntime.GameID) bool {
+	for _, gen1 := range gen1Games {
+		if gen1 == id {
 			return true
 		}
 	}

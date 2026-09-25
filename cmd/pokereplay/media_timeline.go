@@ -22,7 +22,19 @@ var errMediaTimelineNotFound = errors.New("run has no media-timeline.json artifa
 // replay. It deliberately uses the same artifact catalog/store seam as
 // run.gbrun so renderers do not learn pokewall persistence internals.
 func (s *replayServer) mediaTimeline(ctx context.Context, runID string) (farm.MediaTimeline, error) {
-	list, err := s.artifacts(ctx, runID)
+	return s.mediaTimelineAttempt(ctx, runID, 0)
+}
+
+func (s *replayServer) mediaTimelineAttempt(ctx context.Context, runID string, attempt int) (farm.MediaTimeline, error) {
+	resolvedAttempt := attempt
+	list, err := s.artifactsAttempt(ctx, runID, attempt)
+	if errors.Is(err, errRunNotFound) && attempt == 1 {
+		// Pre-attempt-history runs only expose the latest artifact generation.
+		// Their recording is still replayable, so let the broadcast renderer
+		// consume that same legacy artifact catalog without an attempt query.
+		resolvedAttempt = 0
+		list, err = s.artifacts(ctx, runID)
+	}
 	if err != nil {
 		return farm.MediaTimeline{}, err
 	}
@@ -30,7 +42,7 @@ func (s *replayServer) mediaTimeline(ctx context.Context, runID string) (farm.Me
 	if !ok {
 		return farm.MediaTimeline{}, errMediaTimelineNotFound
 	}
-	data, err := s.readMediaTimelineArtifact(ctx, runID, artifact)
+	data, err := s.readMediaTimelineArtifact(ctx, runID, artifact, resolvedAttempt)
 	if err != nil {
 		return farm.MediaTimeline{}, err
 	}
@@ -51,10 +63,25 @@ func (s *replayServer) mediaTimeline(ctx context.Context, runID string) (farm.Me
 	return timeline, nil
 }
 
-func (s *replayServer) readMediaTimelineArtifact(ctx context.Context, runID string, artifact artifactRef) ([]byte, error) {
+func (s *replayServer) mediaTimelineOrEmpty(ctx context.Context, runID string, attempt int) (farm.MediaTimeline, error) {
+	timeline, err := s.mediaTimelineAttempt(ctx, runID, attempt)
+	if errors.Is(err, errMediaTimelineNotFound) {
+		return farm.MediaTimeline{
+			Run:             farm.MediaRunSummary{RunID: runID},
+			Attempt:         attempt,
+			FramesPerSecond: farm.GameBoyFramesPerSecond,
+		}.Normalized(), nil
+	}
+	return timeline, err
+}
+
+func (s *replayServer) readMediaTimelineArtifact(ctx context.Context, runID string, artifact artifactRef, attempt int) ([]byte, error) {
 	var reader io.ReadCloser
 	if artifact.Store == "" {
 		endpoint := s.wallBase + "/v1/runs/" + url.PathEscape(runID) + "/artifacts/" + url.PathEscape(artifact.Name) + "/content"
+		if attempt > 0 {
+			endpoint += "?attempt=" + fmt.Sprint(attempt)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err

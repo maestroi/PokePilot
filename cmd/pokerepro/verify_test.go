@@ -60,6 +60,19 @@ func TestObjectiveFromFailure(t *testing.T) {
 	}
 }
 
+func TestObjectiveFromFailureFieldCapabilityRepair(t *testing.T) {
+	got, err := objectiveFromFailure(farm.FailureObjective{
+		Kind:            "repair_field_capability",
+		FieldCapability: "surf",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != agent.KindRepairFieldCapability || got.FieldCapability != "surf" {
+		t.Fatalf("objective=%+v", got)
+	}
+}
+
 func TestObjectiveFromFailureRejectsUnknownKind(t *testing.T) {
 	if _, err := objectiveFromFailure(farm.FailureObjective{Kind: "mystery"}); err == nil {
 		t.Fatal("expected unsupported objective kind error")

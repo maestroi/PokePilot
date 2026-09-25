@@ -109,6 +109,8 @@ func TestEliteFourRequiresEightBadgesAndHallOfFame(t *testing.T) {
 	obs := Observation{Badges: eight}
 	if got := EvaluateGoal(g, obs); got.Complete {
 		t.Fatal("eight badges alone completed elite-four goal")
+	} else if got.Current != 8 || got.Target != 9 {
+		t.Fatalf("eight-badge campaign progress = %d/%d, want 8/9 before Hall of Fame", got.Current, got.Target)
 	}
 
 	// Beating the Champion is intentionally not the final goal fact: Red sets
@@ -121,6 +123,8 @@ func TestEliteFourRequiresEightBadgesAndHallOfFame(t *testing.T) {
 	obs.Story = append(obs.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
 	if got := EvaluateGoal(g, obs); !got.Complete {
 		t.Fatal("eight badges plus main-story completion did not complete elite-four goal")
+	} else if got.Current != 9 || got.Target != 9 {
+		t.Fatalf("completed elite-four progress = %d/%d, want 9/9", got.Current, got.Target)
 	}
 
 	// #39 is a fresh-campaign qualification, so a synthetic ending flag without

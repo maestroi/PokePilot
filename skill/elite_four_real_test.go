@@ -10,10 +10,33 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
+func reopenEliteFourQualification(t *testing.T, romPath string, current *emu.Emu) *emu.Emu {
+	t.Helper()
+
+	checkpoint, err := current.SaveState()
+	if err != nil {
+		t.Fatalf("save stage checkpoint: %v", err)
+	}
+	next, err := emu.Open(romPath)
+	if err != nil {
+		t.Fatalf("reopen ROM for stage resume: %v", err)
+	}
+	if err := next.LoadState(checkpoint); err != nil {
+		_ = next.Close()
+		t.Fatalf("reload stage checkpoint: %v", err)
+	}
+	if err := current.Close(); err != nil {
+		_ = next.Close()
+		t.Fatalf("close pre-resume emulator: %v", err)
+	}
+	return next
+}
+
 // TestEliteFourProgressionQualification is the private checkpoint qualification
 // for the staged League path. Public CI has neither the commercial ROM nor the
 // derived checkpoint, so it skips there; the self-hosted qualification runner
 // supplies both. Each bounded stage must positively commit its own semantic
+// fact, survive a real save/close/reopen/load boundary, and still expose that
 // fact before the next stage is allowed to run.
 func TestEliteFourProgressionQualification(t *testing.T) {
 	if testing.Short() {
@@ -34,7 +57,11 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open ROM: %v", err)
 	}
-	defer m.Close()
+	defer func() {
+		if m != nil {
+			_ = m.Close()
+		}
+	}()
 	if err := m.LoadState(stateBytes); err != nil {
 		t.Fatalf("load checkpoint: %v", err)
 	}
@@ -72,6 +99,19 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 		facts := state.DecodeStoryFacts(&afterStage, state.DecodeInventory(&afterStage))
 		if !stage.done(facts) {
 			t.Fatalf("%s did not commit its semantic postcondition: %+v", stage.name, facts)
+		}
+
+		mapBeforeResume := afterStage.U8(sym.CurMap)
+		m = reopenEliteFourQualification(t, romPath, m)
+
+		var resumedStage state.Mem
+		state.Snapshot(m, &resumedStage)
+		if got := resumedStage.U8(sym.CurMap); got != mapBeforeResume {
+			t.Fatalf("%s resume map = %#02x, want %#02x", stage.name, got, mapBeforeResume)
+		}
+		resumedFacts := state.DecodeStoryFacts(&resumedStage, state.DecodeInventory(&resumedStage))
+		if !stage.done(resumedFacts) {
+			t.Fatalf("%s semantic postcondition did not survive save/reopen/load: %+v", stage.name, resumedFacts)
 		}
 	}
 

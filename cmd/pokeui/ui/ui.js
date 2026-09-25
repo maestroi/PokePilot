@@ -277,12 +277,43 @@
     crypto.getRandomValues(n);
     return "run-" + n[0].toString(36) + n[1].toString(36);
   }
+  const qualificationGoals = {
+    "brock": "badges:1",
+    "misty": "badges:2",
+    "rocket-hideout": "progress:silph_scope_acquired",
+    "pokemon-tower": "progress:poke_flute_acquired",
+    "surf-obtained": "capability:surf",
+    "strength-obtained": "capability:strength",
+    "silph-completed": "progress:silph_co_cleared",
+    "sabrina": "badges:6",
+    "blaine": "badges:7",
+    "giovanni": "badges:8",
+    "indigo-plateau": "progress:indigo_plateau_ready",
+    "hall-of-fame": "elite-four"
+  };
+  function qualificationGoal(target) {
+    return qualificationGoals[target] || "";
+  }
+  function newQualificationGroupId() {
+    return "qual-" + newRunId().slice(4);
+  }
+  function syncQualificationFields() {
+    const f = $("spec-form");
+    const target = f.qualification_target ? f.qualification_target.value : "";
+    document.querySelectorAll(".qualification-only").forEach((el) => { el.hidden = !target || f.planner.value !== "llm"; });
+    if (target && f.planner.value === "llm") {
+      const goal = qualificationGoal(target);
+      if (goal) f.goal.value = goal;
+      f.endless.checked = false;
+    }
+  }
   function syncPlannerFields() {
     const f = $("spec-form");
     const scripted = f.planner.value === "scripted";
     document.querySelectorAll(".scripted-only").forEach((el) => { el.hidden = !scripted; });
     document.querySelectorAll(".llm-only").forEach((el) => { el.hidden = scripted; });
     document.querySelectorAll(".endless-only").forEach((el) => { el.hidden = !f.endless.checked; });
+    syncQualificationFields();
     const llmOpt = f.starter.querySelector('option[value=""]');
     if (llmOpt) llmOpt.hidden = scripted;
     if (scripted && f.starter.value === "") f.starter.value = "squirtle";
@@ -297,6 +328,8 @@
     f.goal.value = "Earn the Boulder Badge.";
     f.llm_profile.value = "auto";
     f.reasoning_effort.value = "auto";
+    f.qualification_target.value = "";
+    f.qualification_runs.value = "1";
     f.seed.value = "0";
     f.fps.value = "60";
     f.max_rounds.value = "0";
@@ -1075,6 +1108,10 @@
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
+  $("spec-form").qualification_target.addEventListener("change", () => {
+    syncQualificationFields();
+    syncPlannerFields();
+  });
   $("detail-close").addEventListener("click", () => {
     selected = ""; localStorage.removeItem("pokefarm-selected-run");
     const url = new URL(location.href); url.searchParams.delete("run"); history.replaceState(null, "", url);
@@ -1082,15 +1119,56 @@
   });
 
   $("spec-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault(); const err = $("form-error"); err.textContent = ""; const f = ev.target; const planner = f.planner.value;
-    const spec = { run_id: f.run_id.value.trim(), planner, game: f.game.value, starter: f.game.value === "pokemon-yellow" ? "" : f.starter.value, dest: planner === "scripted" ? f.dest.value.trim() : "", goal: planner === "llm" ? f.goal.value.trim() : "", llm_profile: planner === "llm" ? f.llm_profile.value : "", reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "", seed: Number(f.seed.value || 0), fps: Number(f.fps.value || 0), max_rounds: Number(f.max_rounds.value || 0), max_frames: Number(f.max_frames.value || 0), endless: f.endless.checked, random_seed: f.endless.checked && f.seed_mode.value === "random" };
+    ev.preventDefault();
+    const err = $("form-error");
+    err.textContent = "";
+    const f = ev.target;
+    const planner = f.planner.value;
+    const target = planner === "llm" ? f.qualification_target.value : "";
+    const requestedRuns = target ? Number(f.qualification_runs.value || 1) : 1;
+    const runCount = Math.max(1, Math.min(20, Number.isFinite(requestedRuns) ? Math.floor(requestedRuns) : 1));
+    const baseSeed = Number(f.seed.value || 0);
+    const benchmarkGroup = target ? newQualificationGroupId() : "";
+    const baseGoal = target ? qualificationGoal(target) : (planner === "llm" ? f.goal.value.trim() : "");
+    const queued = [];
     try {
-      const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
-      const body = await res.json().catch(() => ({}));
-      if (res.status === 409) { err.textContent = "run already active"; return; }
-      if (!res.ok) { err.textContent = body.error || "could not queue"; return; }
-      const queuedID = spec.run_id; fillDefaults(); $("queue-toggle").setAttribute("aria-expanded", "false"); await refresh(); selectRun(queuedID);
-    } catch (e) { err.textContent = "wall unreachable"; }
+      for (let i = 0; i < runCount; i++) {
+        const spec = {
+          run_id: i === 0 ? f.run_id.value.trim() : newRunId(),
+          planner,
+          game: f.game.value,
+          starter: f.game.value === "pokemon-yellow" ? "" : f.starter.value,
+          dest: planner === "scripted" ? f.dest.value.trim() : "",
+          goal: baseGoal,
+          llm_profile: planner === "llm" ? f.llm_profile.value : "",
+          reasoning_effort: planner === "llm" && f.reasoning_effort.value !== "auto" ? f.reasoning_effort.value : "",
+          seed: baseSeed + i,
+          fps: Number(f.fps.value || 0),
+          max_rounds: Number(f.max_rounds.value || 0),
+          max_frames: Number(f.max_frames.value || 0),
+          recovery_profile: target ? "strict" : (planner === "llm" ? "resilient" : "strict"),
+          endless: target ? false : f.endless.checked,
+          random_seed: target ? false : (f.endless.checked && f.seed_mode.value === "random")
+        };
+        if (target) {
+          spec.experiment_id = benchmarkGroup;
+          spec.experiment_arm = `qualification-${i + 1}-of-${runCount}`;
+          spec.experiment_case = target;
+        }
+        const res = await fetch("/v1/specs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+        const body = await res.json().catch(() => ({}));
+        if (res.status === 409) throw new Error("run already active: " + spec.run_id);
+        if (!res.ok) throw new Error(body.error || "could not queue " + spec.run_id);
+        queued.push(spec.run_id);
+      }
+      const queuedID = queued[0];
+      fillDefaults();
+      $("queue-toggle").setAttribute("aria-expanded", "false");
+      await refresh();
+      selectRun(queuedID);
+    } catch (e) {
+      err.textContent = queued.length ? `queued ${queued.length}/${runCount}; ${e.message || "could not queue remaining runs"}` : (e.message || "wall unreachable");
+    }
   });
 
   document.body.addEventListener("keydown", (ev) => {

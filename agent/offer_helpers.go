@@ -22,23 +22,25 @@ func medReaches(mon PartyMon, wantStatus string) bool {
 	return mon.Status == wantStatus
 }
 
-func nearestKnownCenter(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) (PlaceID, bool) {
-	current := observationLocation(obs, known)
-	dist := mapHops(known.Adjacency, current)
-	best, bestDist := PlaceID(""), 0
-	for _, destination := range catalog.Destinations {
-		if !destination.Center || destination.Location == "" || destination.Location == current || !knownLocations[destination.Location] {
-			continue
-		}
-		hops, reachable := dist[destination.Location]
-		if !reachable {
-			continue
-		}
-		if best == "" || hops < bestDist || (hops == bestDist && destination.Place < best) {
-			best, bestDist = destination.Place, hops
+// preferredRecoveryCenters is the candidate-only compatibility projection of
+// the structured recovery checkpoint scorer.
+func preferredRecoveryCenters(obs Observation, known *Knowledge, knownLocations map[LocationID]bool, catalog ObjectiveCatalog) []PlaceID {
+	return recoveryCheckpointPlaces(rankRecoveryCheckpoints(obs, known, knownLocations, catalog, nil))
+}
+
+// firstRoutableRecoveryCenter returns the most preferred Center whose live
+// route is not positively rejected. Routability is a decision the generic Offer
+// already makes for journeys (route_blockage.go, travelObjectiveProvider); a
+// heal that names a destination is the same question and must not skip it.
+// Withholding is fail-open: an empty unroutable set means the router was never
+// consulted, so the first preference stands.
+func firstRoutableRecoveryCenter(candidates []PlaceID, unroutable map[string]bool) (PlaceID, bool) {
+	for _, candidate := range candidates {
+		if !unroutable[string(candidate)] {
+			return candidate, true
 		}
 	}
-	return best, best != ""
+	return "", false
 }
 
 func observedEvent(obs Observation, name string) bool {
