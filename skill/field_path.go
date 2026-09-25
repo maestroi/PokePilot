@@ -429,22 +429,27 @@ func fieldPathReachableOnCurrentMapWithDecoders(m *emu.Emu, decoder game.Overwor
 // to move a boulder that does not provably open the exact destination, means
 // this probe cannot tell which one the room actually needs, so it declines
 // rather than fight the wrong trainer.
-func currentBlockingUndefeatedTrainer(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) (rom.Object, bool, error) {
+func currentBlockingUndefeatedTrainer(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) (rom.Object, bool, error) {
 	if len(blocked) == 0 {
 		return rom.Object{}, false, nil
+	}
+	header := h.WorldMapHeader()
+	native, err := rom.ParseMap(romData, header.ID)
+	if err != nil {
+		return rom.Object{}, false, err
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 
 	var candidates []rom.Object
-	for _, o := range h.Objects {
+	for _, o := range native.Objects {
 		if o.Movement != rom.MovementStay {
 			continue
 		}
 		if !blocked[[2]int{int(o.X), int(o.Y)}] {
 			continue
 		}
-		target, err := trainerTargetAt(romData, h, o.X, o.Y)
+		target, err := trainerTargetAt(romData, native, o.X, o.Y)
 		if err != nil {
 			// Not a standard-trainer object (item ball, clipboard, sign, an
 			// NPC with a bespoke script): this probe only ever fights the
