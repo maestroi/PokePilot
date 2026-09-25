@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -64,9 +65,13 @@ func allPartyCenterRecovered(mem *state.Mem) bool {
 // counter tile in front of the player (pokered/home/overworld.asm,
 // IsSpriteOrSignInFrontOfPlayer), so facing the counter is what makes the nurse
 // talkable.
-func counterDirection(m *emu.Emu) (world.Step, error) {
+func counterDirection(m *emu.Emu, decoder game.OverworldDecoder) (world.Step, error) {
 	romData := m.ROM()
-	cur := m.Peek8(sym.CurMap)
+	live, err := healRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return world.Step{}, err
+	}
+	cur := live.Map
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: parse map %#04x: %w", cur, err)
@@ -75,7 +80,7 @@ func counterDirection(m *emu.Emu) (world.Step, error) {
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: build map %#04x: %w", cur, err)
 	}
-	x, y := playerXY(m)
+	x, y := live.X, live.Y
 	var solid []world.Step
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
 		nx, ny := int(x)+s.DX, int(y)+s.DY
@@ -98,23 +103,30 @@ func counterDirection(m *emu.Emu) (world.Step, error) {
 // at all, and a descriptive error when the boxes advance but the prompt never
 // appears. The wStatusFlags4 (bit 2 = BIT_USED_POKECENTER) in the diagnostics
 // distinguishes the first-visit and repeat-visit flows.
-func openNurseMenu(m *emu.Emu) error {
+func openNurseMenu(m *emu.Emu, decoder game.OverworldDecoder) error {
 	m.Tap(emu.A, 3, 7)
 	var mem state.Mem
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.FontLoaded) != 0
 	}); err != nil {
 		state.Snapshot(m, &mem)
+		live, liveErr := healRuntimeStateWithDecoder(m, decoder)
+		if liveErr != nil {
+			return fmt.Errorf("skill: Heal: %w; observe world: %v", ErrNoDialogue, liveErr)
+		}
 		return fmt.Errorf("skill: Heal: %w: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
-			ErrNoDialogue, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore))
+			ErrNoDialogue, live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore))
 	}
 	mem = advanceUntil(m, healMenuBudget, func(mem *state.Mem) bool {
 		return state.DecodeTwoOptionMenu(mem) != nil
 	})
 	if state.DecodeTwoOptionMenu(&mem) == nil {
+		live, liveErr := healRuntimeStateWithDecoder(m, decoder)
+		if liveErr != nil {
+			return fmt.Errorf("skill: Heal: yes/no prompt did not appear within %d iterations; observe world: %v", healMenuBudget, liveErr)
+		}
 		return fmt.Errorf("skill: Heal: yes/no prompt did not appear within %d iterations: map=%#04x at (%d,%d) wFontLoaded=%#04x wJoyIgnore=%#04x wStatusFlags4=%#04x menu=%+v",
-			healMenuBudget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
+			healMenuBudget, live.Map, live.X, live.Y,
 			mem.U16BE(sym.FontLoaded), mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.StatusFlags4),
 			state.DecodeMenu(&mem))
 	}
@@ -178,43 +190,55 @@ func settleHealBoundary(m frameClock, budget int) error {
 // must not let a PP-recovery objective succeed without actually using the
 // nurse.
 func Heal(m *emu.Emu) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	live, err := healRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return err
+	}
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	if !live.Controllable {
 		return fmt.Errorf("skill: Heal: player not controllable: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+			live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
 	}
 	if state.DecodeParty(&mem).Count == 0 {
 		return fmt.Errorf("skill: Heal: no party to heal: map=%#04x at (%d,%d)",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+			live.Map, live.X, live.Y)
 	}
 
 	// Healing is an interaction goal, not a canonical map coordinate. Resolve
 	// the nurse from the ROM's service-script role and let GoTo choose the
 	// cheapest valid counter approach from live geometry. This keeps callers
 	// free to use map-arrival semantics for Pokemon Centers.
-	nurse, ok, err := interactionDestinationForRole(m.ROM(), mem.U8(sym.CurMap), rom.InteractionPokemonCenterNurse)
+	nurse, ok, err := interactionDestinationForRole(m.ROM(), live.Map, rom.InteractionPokemonCenterNurse)
 	if err != nil {
 		return fmt.Errorf("skill: Heal: locate nurse: %w", err)
 	}
 	if !ok {
-		return fmt.Errorf("skill: Heal: no Pokemon Center nurse on map %#04x", mem.U8(sym.CurMap))
+		return fmt.Errorf("skill: Heal: no Pokemon Center nurse on map %#04x", live.Map)
 	}
 	if err := GoTo(m, m.ROM(), nurse); err != nil {
 		return fmt.Errorf("skill: Heal: approach nurse: %w", err)
 	}
 
-	step, err := counterDirection(m)
+	step, err := counterDirection(m, decoder)
 	if err != nil {
 		return err
 	}
-	x, y := playerXY(m)
+	live, err = healRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return err
+	}
+	x, y := live.X, live.Y
 	if err := Face(m, uint8(int(x)+step.DX), uint8(int(y)+step.DY)); err != nil {
 		return fmt.Errorf("skill: Heal: face the counter %s from (%d,%d): %w", step, x, y, err)
 	}
 
-	if err := openNurseMenu(m); err != nil {
+	if err := openNurseMenu(m, decoder); err != nil {
 		return err
 	}
 
@@ -223,9 +247,12 @@ func Heal(m *emu.Emu) error {
 	// (pokecenter.asm: 0 continues to HealParty, 1 declines).
 	if err := SelectMenuItem(m, 0); err != nil {
 		state.Snapshot(m, &mem)
+		live, liveErr := healRuntimeStateWithDecoder(m, decoder)
+		if liveErr != nil {
+			return fmt.Errorf("skill: Heal: select YES: %w; observe world: %v", err, liveErr)
+		}
 		return fmt.Errorf("skill: Heal: select YES: %w: map=%#04x at (%d,%d) wFontLoaded=%#04x menu=%+v",
-			err, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.FontLoaded), state.DecodeMenu(&mem))
+			err, live.Map, live.X, live.Y, mem.U16BE(sym.FontLoaded), state.DecodeMenu(&mem))
 	}
 
 	if err := Cutscene(m, healRunBudget, allPartyCenterRecovered); err != nil {
@@ -239,15 +266,17 @@ func Heal(m *emu.Emu) error {
 	// sustained Controllable boundary both hold, but re-asserting them keeps
 	// Heal's contract explicit to its callers.
 	state.Snapshot(m, &mem)
+	live, err = healRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return err
+	}
 	if !allPartyCenterRecovered(&mem) {
 		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
-			state.DecodeParty(&mem).Mons, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore))
+			state.DecodeParty(&mem).Mons, live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore))
 	}
-	if !state.Controllable(&mem) {
+	if !live.Controllable {
 		return fmt.Errorf("skill: Heal: not controllable after the heal: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+			live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
 	}
 	return nil
 }
