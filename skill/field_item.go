@@ -5,20 +5,15 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/game"
 )
 
 // ErrFieldItemNoEffect reports that the field item's sequence ran to
-// completion (menus closed, bag consumed) but the target mon did not gain HP,
-// clear a status, gain PP, or gain a level. A menu closing is not evidence of an effect;
-// this is the positive postcondition failing.
+// completion but the target did not gain HP, clear status, gain PP, or level.
 var ErrFieldItemNoEffect = errors.New("skill: UseFieldItem: the item had no effect on the target")
 
-// ErrFieldItemPrompt reports that a two-option (yes/no shaped) prompt was seen
-// while paging the item's result text. It is returned WITHOUT pressing A into
-// it: answering such a prompt by reflex has cost this project a caught
-// Caterpie (S6-3) and a learned move (S6-4).
+// ErrFieldItemPrompt reports an unexpected gameplay choice while paging the
+// result. Generic cleanup never answers such choices implicitly.
 var ErrFieldItemPrompt = errors.New("skill: UseFieldItem: a two-option prompt appeared while paging the result text; not answering it")
 
 const (
@@ -26,214 +21,176 @@ const (
 	itemUsePartyBudget    = 1000
 	itemUseMoveBudget     = 1000
 	fieldResultTextBudget = 3000
-	itemListMenuID        = 3
-
-	// Gen 1 item IDs from constants/item_constants.asm. ETHER/MAX ETHER ask
-	// for one move after the party member; ELIXER/MAX ELIXER restore every
-	// move on the selected member immediately.
-	itemEther     uint8 = 0x50
-	itemMaxEther  uint8 = 0x51
-	itemElixer    uint8 = 0x52
-	itemMaxElixer uint8 = 0x53
 )
 
-// useTossPrompt reports the USE/TOSS two-option prompt SPECIFICALLY. The bag
-// list itself can also decode as a two-option menu, so its screen position is
-// part of the identity.
-func useTossPrompt(mem *state.Mem) *state.TwoOptionMenu {
-	p := state.DecodeTwoOptionMenu(mem)
-	if p == nil || mem.U8(sym.TopMenuItemY) != 11 || mem.U8(sym.TopMenuItemX) != 14 {
-		return nil
-	}
-	return p
+type fieldItemMachine interface {
+	menuMachine
+	FrameCount() uint64
 }
 
-func isSingleMovePPRestore(item uint8) bool {
-	return item == itemEther || item == itemMaxEther
-}
-
-func isPPRestoreItem(item uint8) bool {
-	return item >= itemEther && item <= itemMaxElixer
-}
-
-// ppRestoreMoveSlot chooses the emptiest known move, preferring an exhausted
-// move. Offer only proposes finite PP items at hard exhaustion, but keeping
-// this helper deterministic makes direct skill callers safe too.
-func ppRestoreMoveSlot(mon state.Mon) (int, bool) {
-	best := -1
-	var bestPP uint8
-	for i, move := range mon.Moves {
-		if move == 0 {
-			continue
-		}
-		if mon.PP[i] == 0 {
-			return i, true
-		}
-		if best < 0 || mon.PP[i] < bestPP {
-			best, bestPP = i, mon.PP[i]
-		}
-	}
-	return best, best >= 0
-}
-
-// fieldItemHadEffect is the positive postcondition shared by ordinary
-// medicine, PP recovery, and Rare Candy. PP bytes are already decoded with
-// PP-Up bits stripped by state.DecodeParty.
-func fieldItemHadEffect(before, after state.Mon) bool {
-	if after.Level > before.Level {
-		return true
-	}
-	if after.HP > before.HP {
-		return true
-	}
-	if before.Status != 0 && after.Status == 0 {
-		return true
-	}
-	for i := range before.PP {
-		if after.PP[i] > before.PP[i] {
-			return true
-		}
-	}
-	return false
-}
-
-// UseFieldItem uses one item from the bag on a party member from the
-// overworld: START -> ITEM -> the item -> the party slot. Ether-style items
-// additionally select a move when the ROM requests one. The postcondition is
-// positive and item-effect based: level/HP rises, status clears, or PP rises;
-// the bag count must also fall by exactly one.
+// UseFieldItem uses one carried item on a party member from the overworld.
+// Menu layout, item action prompts, move-target menus, party RAM and item
+// semantics are all owned by the active profile. Success requires both a
+// positive target effect and exactly one item consumed.
 func UseFieldItem(m *emu.Emu, item uint8, slot int) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: UseFieldItem: player not controllable on map %#04x at (%d,%d): wJoyIgnore=%#04x wFontLoaded=%#04x",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U16BE(sym.JoyIgnore), mem.U16BE(sym.FontLoaded))
+	field, err := fieldItemDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseFieldItem: %w", err)
 	}
-	party := state.DecodeParty(&mem)
-	if slot < 0 || slot >= int(party.Count) {
-		return fmt.Errorf("skill: UseFieldItem: slot %d out of range for a party of %d", slot, party.Count)
+	inventory, err := inventoryDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseFieldItem: %w", err)
 	}
-	before := party.Mons[slot]
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseFieldItem: %w", err)
+	}
+	list, err := listMenuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseFieldItem: %w", err)
+	}
+	party, err := partyMenuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseFieldItem: %w", err)
+	}
+	return useFieldItemWithDecoders(m, uint16(item), slot, field, inventory, menu, list, party)
+}
+
+func useFieldItemWithDecoders(
+	m fieldItemMachine,
+	item uint16,
+	slot int,
+	field game.FieldItemDecoder,
+	inventory game.InventoryDecoder,
+	menu game.MenuDecoder,
+	list game.ListMenuDecoder,
+	party game.PartyMenuDecoder,
+) error {
+	if m == nil || field == nil || inventory == nil || menu == nil || list == nil || party == nil {
+		return fmt.Errorf("skill: UseFieldItem: incomplete semantic execution capability")
+	}
+	live := field.DecodeFieldItem(m)
+	if !live.OverworldReady {
+		return fmt.Errorf("skill: UseFieldItem: player not at a controllable overworld boundary")
+	}
+	if slot < 0 || slot >= len(live.Party) {
+		return fmt.Errorf("skill: UseFieldItem: slot %d out of range for a party of %d", slot, len(live.Party))
+	}
+	before := live.Party[slot]
+	semantics := field.FieldItemSemantics(item)
 	moveSlot := -1
-	if isSingleMovePPRestore(item) {
+	if semantics.SingleMoveTarget {
 		var ok bool
-		moveSlot, ok = ppRestoreMoveSlot(before)
+		moveSlot, ok = ppRestoreMoveSlotState(before)
 		if !ok {
 			return fmt.Errorf("skill: UseFieldItem: PP restore target slot %d has no known moves", slot)
 		}
 	}
-	idx, bagBefore := bagEntry(&mem, item)
+	idx, bagBefore := fieldItemInventoryEntry(inventory.DecodeInventory(m), item)
 	if idx < 0 {
-		return fmt.Errorf("skill: UseFieldItem: %w (id %#02x)", ErrNotInBag, item)
+		return fmt.Errorf("skill: UseFieldItem: %w (id %#04x)", ErrNotInBag, item)
 	}
 
-	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+	if err := openStartMenuEntryWithDecoder(m, menu, game.StartMenuItems); err != nil {
 		return fmt.Errorf("skill: UseFieldItem: open ITEM: %w", err)
 	}
-
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
-	}); err != nil {
-		state.Snapshot(m, &mem)
-		return fmt.Errorf("skill: UseFieldItem: bag list did not open after ITEM: wFontLoaded=%#04x wListMenuID=%#04x",
-			mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
+	if !waitMenuUntil(m, bagMenuBudget, func() bool {
+		s := list.DecodeListMenu(m)
+		return s.Visible && s.Kind == game.ListMenuItems
+	}) {
+		return fmt.Errorf("skill: UseFieldItem: item list did not open after ITEM")
 	}
+
 	for attempt := 0; ; attempt++ {
-		if err := selectBagEntry(m, idx); err != nil {
-			return fmt.Errorf("skill: UseFieldItem: %w", err)
+		if err := selectScrollingListEntryWithDecoder(m, list, idx); err != nil {
+			return fmt.Errorf("skill: UseFieldItem: select bag entry: %w", err)
 		}
-		if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
-			state.Snapshot(m, &mem)
-			return useTossPrompt(&mem) != nil
-		}); err == nil {
+		if waitMenuUntil(m, useTossBudget, func() bool {
+			return field.DecodeFieldItem(m).UsePromptVisible
+		}) {
 			break
 		}
 		if attempt >= 2 {
-			state.Snapshot(m, &mem)
-			return fmt.Errorf("skill: UseFieldItem: USE/TOSS prompt did not appear after selecting the bag entry (3 attempts): screen=%q wListMenuID=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.ListMenuID))
+			return fmt.Errorf("skill: UseFieldItem: USE action prompt did not appear after selecting the bag entry (3 attempts): %s",
+				field.DecodeFieldItem(m).DebugText)
 		}
 	}
-	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
-		return fmt.Errorf("skill: UseFieldItem: USE/TOSS cursor not on USE: screen=%q", state.ScreenText(&mem))
+	live = field.DecodeFieldItem(m)
+	if !live.UsePromptVisible || !live.UseSelected {
+		return fmt.Errorf("skill: UseFieldItem: item action cursor is not on USE")
 	}
 
 	for attempt := 0; ; attempt++ {
 		m.Tap(emu.A, 3, 7)
-		if _, err := m.StepUntil(itemUsePartyBudget, func(m *emu.Emu) bool {
-			return useItemPartyMenuUp(m)
-		}); err == nil {
+		if waitMenuUntil(m, itemUsePartyBudget, func() bool {
+			s := party.DecodePartyMenu(m)
+			return s.Visible && s.Kind == game.PartyMenuItemUse
+		}) {
 			break
 		}
-		state.Snapshot(m, &mem)
-		if useTossPrompt(&mem) == nil || attempt >= 2 {
-			return fmt.Errorf("skill: UseFieldItem: item-use party menu did not appear after USE: screen=%q wFontLoaded=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.FontLoaded))
+		if !field.DecodeFieldItem(m).UsePromptVisible || attempt >= 2 {
+			return fmt.Errorf("skill: UseFieldItem: item-use party menu did not appear after USE: %s",
+				field.DecodeFieldItem(m).DebugText)
 		}
 	}
-	if err := SelectPartySlot(m, slot); err != nil {
+	if err := selectPartySlotWithDecoder(m, party, slot); err != nil {
 		return fmt.Errorf("skill: UseFieldItem: %w", err)
 	}
 
-	// ETHER and MAX ETHER run MoveSelectionMenu after the party choice. The
-	// ROM explicitly sets wMoveMenuType=2 for this field menu; MoveSelectionMenu
-	// then uses 1-based wCurrentMenuItem, exactly like battle move selection.
-	if isSingleMovePPRestore(item) {
-		if _, err := m.StepUntil(itemUseMoveBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.MoveMenuType) == 2 && m.Peek8(sym.CurrentMenuItem) >= 1
-		}); err != nil {
-			state.Snapshot(m, &mem)
-			return fmt.Errorf("skill: UseFieldItem: PP move menu did not appear: item=%#02x slot=%d screen=%q wMoveMenuType=%#02x cursor=%d",
-				item, slot, state.ScreenText(&mem), mem.U8(sym.MoveMenuType), mem.U8(sym.CurrentMenuItem))
+	if semantics.SingleMoveTarget {
+		if !waitMenuUntil(m, itemUseMoveBudget, func() bool {
+			return field.DecodeFieldItem(m).MoveMenuVisible
+		}) {
+			return fmt.Errorf("skill: UseFieldItem: PP move menu did not appear for item %#04x slot %d: %s",
+				item, slot, field.DecodeFieldItem(m).DebugText)
 		}
-		if err := SelectMenuItem(m, moveSlot+1); err != nil {
+		if err := selectFieldItemMoveSlot(m, field, moveSlot); err != nil {
 			return fmt.Errorf("skill: UseFieldItem: select move slot %d for PP restore: %w", moveSlot, err)
 		}
 	}
 
-	// The result text and everything after it close with B, not A. B closes
-	// the result, bag list and start menu while doing nothing in the overworld.
-	state.Snapshot(m, &mem)
-	if !(state.Controllable(&mem) && m.Peek8(sym.FontLoaded) == 0) {
-		if _, err := m.StepUntil(500, func(m *emu.Emu) bool { return m.Peek8(sym.FontLoaded) != 0 }); err != nil {
-			state.Snapshot(m, &mem)
-			return fmt.Errorf("skill: UseFieldItem: result text did not appear within 500 frames: map=%#04x wFontLoaded=%#04x wJoyIgnore=%#04x",
-				mem.U8(sym.CurMap), mem.U8(sym.FontLoaded), mem.U16BE(sym.JoyIgnore))
+	live = field.DecodeFieldItem(m)
+	if !live.OverworldReady && !live.ResultTextActive {
+		if !waitMenuUntil(m, 500, func() bool {
+			s := field.DecodeFieldItem(m)
+			return s.ResultTextActive || s.OverworldReady
+		}) {
+			return fmt.Errorf("skill: UseFieldItem: result text did not appear within 500 frames: %s",
+				field.DecodeFieldItem(m).DebugText)
 		}
 	}
+
 	start := m.FrameCount()
 	for {
-		state.Snapshot(m, &mem)
-		if state.Controllable(&mem) && m.Peek8(sym.FontLoaded) == 0 {
+		live = field.DecodeFieldItem(m)
+		if live.OverworldReady {
 			break
 		}
-		if p := useTossPrompt(&mem); p != nil {
-			return fmt.Errorf("%w: cursor on option %d (map %#04x at (%d,%d))",
-				ErrFieldItemPrompt, p.Index, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		if live.InBattle {
+			return fmt.Errorf("skill: UseFieldItem: unexpected battle while closing item UI")
+		}
+		if live.ChoiceVisible {
+			return fmt.Errorf("%w: %s", ErrFieldItemPrompt, live.DebugText)
 		}
 		if int(m.FrameCount()-start) > fieldResultTextBudget {
-			state.Snapshot(m, &mem)
-			return fmt.Errorf("skill: UseFieldItem: not back to the overworld after item use: screen=%q wFontLoaded=%#02x",
-				state.ScreenText(&mem), mem.U8(sym.FontLoaded))
+			return fmt.Errorf("skill: UseFieldItem: not back to the overworld after item use: %s", live.DebugText)
 		}
 		m.Tap(emu.B, 3, 7)
 	}
 
-	state.Snapshot(m, &mem)
-	afterParty := state.DecodeParty(&mem)
-	if slot >= len(afterParty.Mons) {
+	live = field.DecodeFieldItem(m)
+	if slot >= len(live.Party) {
 		return fmt.Errorf("skill: UseFieldItem: party slot %d disappeared after item use", slot)
 	}
-	after := afterParty.Mons[slot]
-	if !fieldItemHadEffect(before, after) {
-		return fmt.Errorf("%w: slot %d level %d->%d HP %d/%d -> %d/%d, status %#02x -> %#02x, PP %v -> %v (item %#02x, ppRestore=%v)",
+	after := live.Party[slot]
+	if !fieldItemHadEffectState(before, after) {
+		return fmt.Errorf("%w: slot %d level %d->%d HP %d/%d -> %d/%d, status %q -> %q, PP %v -> %v (item %#04x, ppRestore=%v)",
 			ErrFieldItemNoEffect, slot, before.Level, after.Level, before.HP, before.MaxHP, after.HP, after.MaxHP,
-			before.Status, after.Status, before.PP, after.PP, item, isPPRestoreItem(item))
+			before.Status, after.Status, before.PP, after.PP, item, semantics.PPRestore)
 	}
-	if _, bagAfter := bagEntry(&mem, item); bagAfter != bagBefore-1 {
-		return fmt.Errorf("skill: UseFieldItem: bag count for %#02x did not drop from %d (now %d)", item, bagBefore, bagAfter)
+	_, bagAfter := fieldItemInventoryEntry(inventory.DecodeInventory(m), item)
+	if bagAfter != bagBefore-1 {
+		return fmt.Errorf("skill: UseFieldItem: bag count for %#04x did not drop from %d (now %d)", item, bagBefore, bagAfter)
 	}
 	return nil
 }
