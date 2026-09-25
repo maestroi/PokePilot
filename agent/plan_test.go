@@ -394,7 +394,6 @@ func TestRunPlanningDropsLegacyTailWhenBoundaryExecutes(t *testing.T) {
 	}
 }
 
-
 type transientTransportStrategist struct {
 	strategic int
 }
