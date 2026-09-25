@@ -350,3 +350,34 @@ func minInt(a, b int) int {
 	}
 	return b
 }
+
+
+// forgetSlot is the Gen-I strategic fallback used by the retained historical
+// Cut teaching path. UI navigation itself is profile-driven by
+// selectForgetSlot; this helper only scores which legacy move id to replace.
+func forgetSlot(romData []byte, moves [4]uint8, tried map[uint8]bool) int {
+	damagers := 0
+	damages := [4]bool{}
+	for i, id := range moves {
+		if id == 0 {
+			continue
+		}
+		damages[i] = true
+		if mv, err := rom.LookupMove(romData, id); err == nil && mv.Power == 0 {
+			damages[i] = false
+		}
+		if damages[i] {
+			damagers++
+		}
+	}
+	for i, id := range moves {
+		if id == 0 || tried[id] {
+			continue
+		}
+		if damagers == 1 && damages[i] {
+			continue
+		}
+		return i
+	}
+	return -1
+}
