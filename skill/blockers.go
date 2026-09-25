@@ -2,8 +2,8 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // spriteBlockers snapshots the sprite RAM and returns the tiles the live map
