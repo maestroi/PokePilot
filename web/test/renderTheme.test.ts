@@ -14,6 +14,7 @@ import {
 import { parseTileImageReference } from '../src/shared/tileAssets.ts'
 import townProvenance from '../public/theme-assets/kenney-tiny-town/provenance.json' with { type: 'json' }
 import dungeonProvenance from '../public/theme-assets/kenney-tiny-dungeon/provenance.json' with { type: 'json' }
+import pokegoldProvenance from '../public/theme-assets/pokegold-gen2/provenance.json' with { type: 'json' }
 
 function minimalTheme(overrides: Record<string, unknown> = {}) {
   return {
@@ -128,4 +129,17 @@ test('battle theme tokens are validated and inherited', () => {
   }))
   assert.equal(invalid.ok, false)
   assert.match(invalid.errors.join(' '), /battle\.background/)
+})
+
+
+test('Gold/Silver assets keep explicit upstream provenance without inventing a license', () => {
+  const theme = resolveRenderTheme('pokegold-gen2').theme
+  const atlas = parseTileImageReference(theme.assets.tiles.grass)
+  assert.ok(atlas)
+  assert.equal(atlas?.source?.size, 8)
+  assert.equal(atlas?.repeat, 2)
+  assert.match(atlas?.url || '', /palette=bg-green/)
+  assert.equal(pokegoldProvenance.sourceRef, '0f087a51e36cbd38f33e5055754614578246ceff')
+  assert.equal(pokegoldProvenance.license, 'NOASSERTION')
+  assert.equal(pokegoldProvenance.files['kanto.png'].upstreamBlob, 'a3036406eb796220493ba42e0ae7b6a0d45548e0')
 })

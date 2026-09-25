@@ -235,6 +235,11 @@ export function pokemonSpriteUrl(name: string): string | null {
   return dex ? `${POKEMON_SPRITE_ROOT}/${dex}.png` : null
 }
 
+export function pokemonBackSpriteUrl(name: string): string | null {
+  const dex = pokemonDexNumber(name)
+  return dex ? `${POKEMON_SPRITE_ROOT}/back/${dex}.png` : null
+}
+
 export function itemVisualKind(name: string): ItemVisualKind {
   const normalized = normalizeAssetName(name)
   if (/^hm-?\d+$/i.test(normalized)) return 'hm'

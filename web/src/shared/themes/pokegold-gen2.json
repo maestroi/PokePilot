@@ -117,18 +117,18 @@
     "shadow": "rgba(0,0,0,.28)"
   },
   "ui": {
-    "accent": "#ff3a08",
-    "panel": "rgba(58,58,58,.94)",
-    "text": "#deffde"
+    "accent": "#d84018",
+    "panel": "#f8f8d8",
+    "text": "#202020"
   },
   "assets": {
     "tiles": {
       "grass": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=12,2,8",
       "grass.tall": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=13,3,8",
-      "path": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown&repeat=2#tile=2,2,8",
+      "path": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown&repeat=2#tile=1,1,8",
       "path.paved": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=15,5,8",
       "floor": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=2,2,8",
-      "water": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-water&repeat=2#tile=4,1,8",
+      "water": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-water&repeat=2#tile=8,0,8",
       "tree": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=13,2,8",
       "ledge": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown&repeat=2#tile=2,3,8",
       "wall": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=15,5,8",
@@ -150,7 +150,35 @@
       "item": "/theme-assets/pokegold-gen2/sprites/poke_ball.png?palette=ow-red&transparent=1",
       "poke_ball": "/theme-assets/pokegold-gen2/sprites/poke_ball.png?palette=ow-red&transparent=1",
       "object": "/theme-assets/pokegold-gen2/sprites/boulder.png?palette=ow-rock&transparent=1",
-      "boulder": "/theme-assets/pokegold-gen2/sprites/boulder.png?palette=ow-rock&transparent=1"
+      "boulder": "/theme-assets/pokegold-gen2/sprites/boulder.png?palette=ow-rock&transparent=1",
+      "monster": "/theme-assets/pokegold-gen2/sprites/monster.png?palette=ow-red&transparent=1",
+      "middle_aged_man": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "gambler": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "hiker": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "beauty": "/theme-assets/pokegold-gen2/sprites/beauty.png?palette=ow-blue&transparent=1",
+      "gentleman": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "giovanni": "/theme-assets/pokegold-gen2/sprites/rocket.png?palette=ow-brown&transparent=1",
+      "rocket": "/theme-assets/pokegold-gen2/sprites/rocket.png?palette=ow-brown&transparent=1",
+      "waiter": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "lance": "/theme-assets/pokegold-gen2/sprites/lance.png?palette=ow-red&transparent=1",
+      "scientist": "/theme-assets/pokegold-gen2/sprites/scientist.png?palette=ow-blue&transparent=1",
+      "silph_worker_m": "/theme-assets/pokegold-gen2/sprites/scientist.png?palette=ow-blue&transparent=1",
+      "gym_guide": "/theme-assets/pokegold-gen2/sprites/gym_guide.png?palette=ow-blue&transparent=1",
+      "clerk": "/theme-assets/pokegold-gen2/sprites/clerk.png?palette=ow-green&transparent=1",
+      "bike_shop_clerk": "/theme-assets/pokegold-gen2/sprites/clerk.png?palette=ow-green&transparent=1",
+      "nurse": "/theme-assets/pokegold-gen2/sprites/nurse.png?palette=ow-red&transparent=1",
+      "silph_president": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "warden": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "fisher": "/theme-assets/pokegold-gen2/sprites/fisher.png?palette=ow-blue&transparent=1",
+      "fishing_guru": "/theme-assets/pokegold-gen2/sprites/fisher.png?palette=ow-blue&transparent=1",
+      "koga": "/theme-assets/pokegold-gen2/sprites/koga.png?palette=ow-brown&transparent=1",
+      "mom": "/theme-assets/pokegold-gen2/sprites/mom.png?palette=ow-red&transparent=1",
+      "balding_guy": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "gameboy_kid": "/theme-assets/pokegold-gen2/sprites/gameboy_kid.png?palette=ow-green&transparent=1",
+      "bruno": "/theme-assets/pokegold-gen2/sprites/bruno.png?palette=ow-red&transparent=1",
+      "lorelei": "/theme-assets/pokegold-gen2/sprites/beauty.png?palette=ow-blue&transparent=1",
+      "snorlax": "/theme-assets/pokegold-gen2/sprites/big_snorlax.png?palette=ow-blue&transparent=1",
+      "sleeping_gambler": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1"
     },
     "objects": {
       "sign": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown#tile=14,0,8",
@@ -161,12 +189,12 @@
     "battle": {}
   },
   "battle": {
-    "background": "linear-gradient(180deg,#deffde 0%,#b5ff52 46%,#63ce08 47%,#3a3a3a 100%)",
-    "panel": "rgba(58,58,58,.94)",
-    "playerAccent": "#ff3a08",
-    "opponentAccent": "#524aff",
-    "hpHealthy": "#63ce08",
-    "hpWarn": "#ffff3a",
-    "hpDanger": "#ff3a08"
+    "background": "linear-gradient(180deg,#f8f8d8 0%,#d8f0b8 52%,#88b858 53%,#508040 100%)",
+    "panel": "#f8f8d8",
+    "playerAccent": "#d84018",
+    "opponentAccent": "#4058b8",
+    "hpHealthy": "#58a838",
+    "hpWarn": "#d8b838",
+    "hpDanger": "#d84018"
   }
 }

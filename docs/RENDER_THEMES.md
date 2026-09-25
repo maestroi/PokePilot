@@ -2,92 +2,52 @@
 
 The semantic spectator renderer consumes a viewer-selected **theme pack**. A theme changes presentation only; the ROM, emulator, `RenderState`, and gameplay remain authoritative and unchanged.
 
+## Bundled themes
+
+The default presentation is **Gold / Silver** (`pokegold-gen2`). It renders Pokémon Red's semantic state with selected Pokémon Gold/Silver Kanto tiles, overworld sprites, Gen-II palettes, and Gold battle sprites. **Tiny Town Pixel** remains as the CC0 alternative. **Classic** is not a theme pack: it is the original framebuffer fallback/debug view.
+
+The old `rompilot-modern` and `retro-16` packs are no longer bundled.
+
 ## Manifest version 1
 
-Theme packs use a versioned JSON manifest. Bundled themes live under `web/src/shared/themes/` and are installed through the same `RenderThemeRegistry` validation path that future theme sources can use.
+Theme packs live under `web/src/shared/themes/` and are installed through `RenderThemeRegistry`. Every compatible pack defines `unknown`, `path`, and `wall`; optional `floor`, `grass`, `water`, `tree`, `ledge`, `door`, `warp`, and `sign` styles inherit from the default pack when omitted.
 
-```json
-{
-  "schemaVersion": 1,
-  "id": "pokegold-gen2",
-  "name": "Gold / Silver",
-  "version": 1,
-  "description": "Clean high-contrast spectator theme.",
-  "tileSize": 36,
-  "tiles": {
-    "unknown": { "fill": "#293a40", "pattern": "unknown" },
-    "path": { "fill": "#d0c493", "pattern": "path" },
-    "wall": { "fill": "#526268", "pattern": "wall" },
-    "grass": { "fill": "#4d9153", "detail": "#dcffcf59", "pattern": "grass" }
-  },
-  "objects": {},
-  "actors": {
-    "player": { "fill": "#f4f7ff", "stroke": "#e43c4f" }
-  },
-  "animation": {
-    "waterPeriodMs": 700,
-    "redrawIntervalMs": 100
-  },
-  "effects": {
-    "background": "#142228",
-    "vignette": "rgba(0,0,0,.28)",
-    "grid": "rgba(255,255,255,.045)",
-    "shadow": "rgba(0,0,0,.22)"
-  },
-  "ui": {
-    "accent": "#67e8f9",
-    "panel": "rgba(2,6,23,.72)",
-    "text": "#cffafe"
-  },
-  "assets": {
-    "tiles": {},
-    "characters": {
-      "player": "gen1:red"
-    },
-    "objects": {},
-    "effects": {},
-    "ui": {},
-    "battle": {}
-  },
-  "battle": {}
-}
+Asset namespaces cover tiles, characters, objects, effects, UI, and battle presentation. A tile reference can point at a full PNG or an atlas crop:
+
+```text
+/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=12,2,8
 ```
 
-`schemaVersion` versions the manifest format. `version` versions that particular theme. Version 1 supports semantic tile/object paint definitions, actor fallback styling, animation timing, full-scene effects, UI tokens, and namespaced asset references for tiles, characters, objects/buildings, effects, UI, and future battle presentation.
+The fragment identifies an 8×8 source tile. `palette` selects an indexed Gen-II palette at render time and `repeat=2` repeats that source tile across the 16×16 semantic field cell. Nearest-neighbor rendering stays enabled.
 
-Asset references are only consumed from bundled packs in this slice. Safe ingestion of arbitrary/community files, path validation, provenance, and licensing belong to #1425.
+## Semantic mapping
 
-## Required and optional semantics
+The theme never assumes Red tile IDs equal Gold/Silver tile IDs. The Red adapter owns native decoding and emits portable meanings such as `grass`, `path.paved`, `tree`, `water`, `floor`, `wall`, and semantic actor appearances. The Gold/Silver theme maps those meanings onto Gen-II graphics.
 
-Every compatible pack must define `unknown`, `path`, and `wall`. Those are the minimum safe surface needed to render an arbitrary overworld without invisible geometry.
+This keeps the architecture:
 
-`floor`, `grass`, `water`, `tree`, `ledge`, `door`, `warp`, and `sign` are optional. Missing optional tile styles inherit from the default **Gold / Silver** pack. Actor styles, object styles, animation settings, effects, UI tokens, and asset maps also inherit field-by-field from the default pack.
+```text
+Pokémon Red ROM -> Red adapter -> RenderState -> Gold/Silver theme
+```
 
-Unknown semantic tile kinds fall back to the selected theme's resolved `unknown` style.
+and lets the same theme machinery work for future game adapters.
 
-## Validation and failure behavior
+## Viewer selection and fallback
 
-`validateThemePack` rejects incompatible schema versions, invalid IDs, invalid sizing, missing required tiles, malformed paint definitions, and malformed asset maps. Optional omissions return warnings rather than failures because the default theme supplies them.
+Theme choice is viewer-local. Spectator storage uses `pokepilot.spectator.theme`; operator storage uses `pokepilot.operator.theme`. Changing the theme does not mutate or restart a run.
 
-`RenderThemeRegistry.install` never installs an invalid pack. Resolving an unknown theme ID returns the default theme plus a human-readable diagnostic instead of breaking the renderer.
+Unsupported or temporarily unavailable semantic scenes fall back to **Classic** without changing the viewer's selected renderer preference.
 
-Bundled manifests are validated at module startup; an invalid bundled pack therefore fails frontend verification rather than shipping silently.
+## Gold / Silver provenance
 
-## Viewer selection
+Selected graphics under `web/public/theme-assets/pokegold-gen2/` are copied from `pret/pokegold`, pinned to upstream commit `0f087a51e36cbd38f33e5055754614578246ceff`. The exact upstream path and blob SHA for every copied file are recorded in `provenance.json`.
 
-The spectator exposes a theme selector while **Modern** rendering is selected. The choice is stored under `pokepilot.spectator.theme` in browser-local storage. It is not stored on the run, sent to the worker, or included in farm state.
+Those graphics are game-derived. PokePilot records their license as **`NOASSERTION`**: availability in the disassembly repository is not treated as a separate artwork redistribution grant. They are bundled here for the project's current non-commercial prototype use, with provenance kept explicit so they can be replaced or gated later without confusing them with CC0/original assets.
 
-That means two viewers can watch the same `RenderState` with different themes at the same time. Switching themes during a live run changes only the Canvas presentation. **Classic** remains the framebuffer fallback/debug view.
+The Tiny Town/Tiny Dungeon files retain their existing CC0 provenance records.
 
-Bundled v1 themes:
+## Validation
 
-- **Gold / Silver** — the default Gen-II Kanto presentation using game-derived `pret/pokegold` assets with explicit provenance.
-- **Tiny Town Pixel** — 16×16 Kenney Tiny Town terrain plus matching Tiny Dungeon interior tiles, drawn at 32 screen pixels with nearest-neighbor scaling. Their bundled images and CC0 source records live under `web/public/theme-assets/`.
+`validateThemePack` rejects incompatible schema versions, invalid IDs, invalid sizing, missing required tiles, malformed paint definitions, and malformed asset maps. `RenderThemeRegistry.install` never installs an invalid pack. Unknown theme IDs resolve to the default Gold/Silver theme with a diagnostic instead of breaking rendering.
 
-## Bundled atlas tiles
-
-`assets.tiles` and `assets.objects` can name a PNG tile in a packed atlas with `/path/to/atlas.png#tile=column,row,size`. Columns and rows are zero-based; `size` is the square tile width in source pixels. The browser loads each atlas once, crops the selected tile, and draws it without smoothing. A plain image URL is also accepted for a single tile. If an image is unavailable, the theme's paint pattern is used.
-
-For nine-slice terrain such as a dirt path, the renderer looks for `path.center` and optional `path.top-left`, `path.top-center`, `path.top-right`, `path.middle-left`, `path.middle-center`, `path.middle-right`, `path.bottom-left`, `path.bottom-center`, and `path.bottom-right`. It chooses a piece from adjacent semantic cells; missing pieces fall back to `path.center`. A producer can also set `TileCell.variant` for a presentation distinction such as `path.paved`.
-
-The Red adapter now marks its known plain ground and forest ground as grass, marks indoor walkable cells as floor, and identifies the overworld's paved tile with a presentation variant. This keeps the theme generic: native Red tile IDs remain in the Red adapter. Building cells still have only portable wall/path information where the adapter cannot identify a facade or roof. The Tiny Town theme draws a generic facade from adjacent wall cells; it cannot yet recreate a specific building's shape or identity.
+Safe ingestion of arbitrary/community files, path validation, upload policy, and broader provenance enforcement remain part of #1425.

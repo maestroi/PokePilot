@@ -27,6 +27,7 @@ const animationClock = new PresentationClock()
 const INDEXED_PALETTES: Record<string, readonly string[]> = {
   'ow-red': ['#deffde', '#ff9c52', '#ff3a08', '#000000'],
   'ow-blue': ['#deffde', '#ff9c52', '#524aff', '#000000'],
+  'ow-green': ['#deffde', '#ff9c52', '#3abd19', '#000000'],
   'ow-brown': ['#deffde', '#ff9c52', '#7b5219', '#000000'],
   'ow-rock': ['#deffde', '#c5943a', '#a57b19', '#3a3a3a'],
   'bg-gray': ['#deffde', '#adadad', '#6b6b6b', '#3a3a3a'],
