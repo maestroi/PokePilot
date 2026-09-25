@@ -7,8 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrFieldMovePrerequisite reports that a field move cannot be used or
@@ -16,7 +14,7 @@ import (
 // missing. That is a stable, replan-able blockage, not a controller fault.
 var ErrFieldMovePrerequisite = errors.New("skill: field move prerequisite is missing")
 
-// FieldMove identifies one progression-relevant Gen 1 out-of-battle move.
+// FieldMove identifies one progression-relevant out-of-battle move.
 // It is deliberately separate from the raw move ID and wFieldMoves menu ID:
 // those are ROM encodings, while this is the capability vocabulary used by
 // routing, party retention, and execution code.
@@ -53,16 +51,44 @@ func SemanticFieldMoves() []FieldMove {
 	}
 }
 
-// EnsureFieldMove makes move usable by the current party. It reuses the
-// generic TM/HM teaching path and verifies the learned move from party RAM.
-// Existing learned moves are idempotent; an HM in the bag by itself is never
-// reported as success.
+// EnsureFieldMove makes move usable by the current party. Capability and
+// carrier decisions are generation-neutral; the active move-learning executor
+// is only an adapter for applying the profile's native machine mapping.
 func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	profile, err := fieldMoveProfileFor(m)
 	if err != nil {
 		return -1, err
 	}
-	capability, err := fieldMoveCapabilityWithProfile(profile, m, m.ROM(), move)
+	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, func(native game.NativeFieldMove) error {
+		// The current move-learning executor is still Gen-I-shaped. Keep that
+		// limitation at this adapter edge instead of baking it into generic
+		// field capability/preparation semantics.
+		if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
+			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
+				native.MachineItemID, native.MoveID)
+		}
+		result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
+		if err != nil {
+			return err
+		}
+		if uint16(result.Decision.Machine.Move) != native.MoveID {
+			return fmt.Errorf("machine %#04x mapped to move %#04x, want %#04x",
+				native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
+		}
+		return nil
+	})
+}
+
+type fieldMoveTeachFunc func(game.NativeFieldMove) error
+
+func ensureFieldMoveWithProfile(
+	profile game.FieldMoveDecoder,
+	reader game.MemoryReader,
+	romData []byte,
+	move FieldMove,
+	teach fieldMoveTeachFunc,
+) (int, error) {
+	capability, err := fieldMoveCapabilityWithProfile(profile, reader, romData, move)
 	if err != nil {
 		return -1, err
 	}
@@ -82,31 +108,20 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	if !capability.Preparable {
 		return -1, fmt.Errorf("%w: %s has no compatible current-party carrier", ErrFieldMovePrerequisite, name)
 	}
+	if teach == nil {
+		return -1, fmt.Errorf("skill: teach %s: no move-learning executor is available", name)
+	}
 
 	id, _ := semanticFieldMove(move)
 	native, ok := profile.NativeFieldMove(id)
 	if !ok {
 		return -1, fmt.Errorf("%w: %s has no native teaching mapping", ErrFieldMovePrerequisite, name)
 	}
-	if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
-		return -1, fmt.Errorf("skill: teach %s: native machine/item ids %#04x/%#04x exceed current teaching executor range",
-			name, native.MachineItemID, native.MoveID)
-	}
-
-	// TM/HM button sequencing is still shared with the existing move-learning
-	// executor. The field lane no longer decodes Red badge/HM/carrier state or
-	// native ids itself; a later move-learning slice can replace this byte-sized
-	// executor without changing the field-move contract.
-	result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
-	if err != nil {
+	if err := teach(native); err != nil {
 		return -1, fmt.Errorf("skill: teach %s: %w", name, err)
 	}
-	if uint16(result.Decision.Machine.Move) != native.MoveID {
-		return -1, fmt.Errorf("skill: teach %s: machine %#04x mapped to move %#04x, want %#04x",
-			name, native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
-	}
 
-	capability, err = fieldMoveCapabilityWithProfile(profile, m, m.ROM(), move)
+	capability, err = fieldMoveCapabilityWithProfile(profile, reader, romData, move)
 	if err != nil {
 		return -1, fmt.Errorf("skill: teach %s: verify capability: %w", name, err)
 	}
@@ -139,15 +154,17 @@ type FieldActionResult struct {
 // settleFieldAction waits for the ROM-side effect and for control to return.
 // Field moves may print ordinary text after changing state (Strength is the
 // important case). Page those text boxes with A, but never select an open menu
-// blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
-func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
+// blindly; the active profile distinguishes result text from choice surfaces.
+func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
-		state.Snapshot(m, mem)
 		runtime := decoder.DecodeFieldAction(m)
 		if fieldActionCompleteState(runtime, spec) {
 			return nil
 		}
-		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(mem) {
+		if runtime.ChoiceVisible {
+			return fmt.Errorf("field move exposed an unexpected choice prompt")
+		}
+		if runtime.ResultTextActive {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
@@ -159,6 +176,22 @@ func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder g
 		m.StepFrames(10)
 	}
 	return fmt.Errorf("field move did not settle within %d frames", fieldActionBudget)
+}
+
+func closeFieldActionToOverworld(m menuMachine, decoder game.FieldActionDecoder) error {
+	for i := 0; i < 80; i++ {
+		runtime := decoder.DecodeFieldAction(m)
+		if runtime.Controllable && !runtime.ResultTextActive {
+			return nil
+		}
+		if runtime.ChoiceVisible {
+			return fmt.Errorf("unexpected choice prompt while closing field-action UI")
+		}
+		m.Tap(emu.B, 3, 7)
+		m.StepFrames(20)
+	}
+	runtime := decoder.DecodeFieldAction(m)
+	return fmt.Errorf("field-action UI did not close to overworld: %s", runtime.DebugText)
 }
 
 // UseFieldMove executes one supported field move through the real START ->
@@ -176,6 +209,14 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 }
 
 func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActionDecoder) (FieldActionResult, error) {
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return FieldActionResult{}, err
+	}
+	party, err := partyMenuDecoderFor(m)
+	if err != nil {
+		return FieldActionResult{}, err
+	}
 	spec, ok := FieldMoveSpecFor(move)
 	if !ok {
 		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
@@ -188,20 +229,20 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: invalid context: %w", spec.Name, err)
 	}
 
-	var mem state.Mem
 	slot, err := EnsureFieldMove(m, move)
 	if err != nil {
 		return FieldActionResult{}, err
 	}
-	state.Snapshot(m, &mem)
-
-	if err := openStartMenuEntry(m, startMenuPokemon); err != nil {
+	if err := openStartMenuEntryWithDecoder(m, menu, startMenuPokemon); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: open POKEMON: %w", spec.Name, err)
 	}
-	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
-		return FieldActionResult{}, fmt.Errorf("skill: %s: party menu did not appear", spec.Name)
+	if !waitMenuUntil(m, 1000, func() bool {
+		s := party.DecodePartyMenu(m)
+		return s.Visible && s.Kind == game.PartyMenuFieldMove
+	}) {
+		return FieldActionResult{}, fmt.Errorf("skill: %s: field-move party menu did not appear", spec.Name)
 	}
-	if err := selectFieldMoveUser(m, slot); err != nil {
+	if err := selectPartySlotWithDecoder(m, party, slot); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select party slot %d: %w", spec.Name, slot, err)
 	}
 
@@ -209,16 +250,15 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d: %w", spec.Name, slot, err)
 	}
 	m.StepFrames(30)
-	if err := settleFieldAction(m, &mem, spec, decoder); err != nil {
-		state.Snapshot(m, &mem)
+	if err := settleFieldAction(m, spec, decoder); err != nil {
 		runtime = decoder.DecodeFieldAction(m)
-		closeErr := closeToOverworld(m)
+		closeErr := closeFieldActionToOverworld(m, decoder)
 		if closeErr != nil {
 			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q; cleanup: %v",
-				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem), closeErr)
+				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, runtime.DebugText, closeErr)
 		}
 		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q",
-			spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem))
+			spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, runtime.DebugText)
 	}
 
 	runtime = decoder.DecodeFieldAction(m)

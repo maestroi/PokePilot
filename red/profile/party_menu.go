@@ -30,6 +30,10 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 		kind = game.PartyMenuVoluntaryBattle
 	case strings.Contains(text, "Use item"):
 		kind = game.PartyMenuItemUse
+	case state.DecodeBattle(&mem) == nil && strings.Contains(text, "Choose"):
+		// Overworld POKEMON selection. Field-move callers use this semantic
+		// identity before the selected mon's action/field-move menu appears.
+		kind = game.PartyMenuFieldMove
 	default:
 		return game.PartyMenuState{}
 	}

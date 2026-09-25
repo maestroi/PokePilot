@@ -143,3 +143,23 @@ func TestGenericFieldMoveProfileResolverHasNoConcreteGameImports(t *testing.T) {
 		}
 	}
 }
+
+func TestGenericFieldMoveExecutionHasNoConcreteGameImportsOrLegacyMenuHelpers(t *testing.T) {
+	src, err := os.ReadFile("field_action.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"github.com/maestroi/pokepilot/red/",
+		"github.com/maestroi/pokepilot/blue/",
+		"github.com/maestroi/pokepilot/yellow/",
+		"github.com/maestroi/pokepilot/gs/",
+		"normalPartyMenuUp",
+		"selectFieldMoveUser(",
+		"closeToOverworld(",
+	} {
+		if strings.Contains(string(src), forbidden) {
+			t.Fatalf("field_action.go contains concrete/legacy field-move execution dependency %q", forbidden)
+		}
+	}
+}

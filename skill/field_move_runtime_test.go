@@ -6,12 +6,15 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
+const fakeGen2FieldPrepared uint16 = 15
+
 type fakeGen2FieldMoveDecoder struct{}
 
-func (fakeGen2FieldMoveDecoder) DecodeFieldMoveCapability(_ game.MemoryReader, _ []byte, id game.FieldMoveID) (game.FieldMoveCapability, bool, error) {
+func (fakeGen2FieldMoveDecoder) DecodeFieldMoveCapability(r game.MemoryReader, _ []byte, id game.FieldMoveID) (game.FieldMoveCapability, bool, error) {
 	switch id {
 	case game.FieldMoveWhirlpool:
-		return game.FieldMoveCapability{
+		prepared := r != nil && r.Peek8(fakeGen2FieldPrepared) != 0
+		capability := game.FieldMoveCapability{
 			Move:                 id,
 			Name:                 "WHIRLPOOL",
 			BadgeRequired:        "Glacier",
@@ -20,7 +23,13 @@ func (fakeGen2FieldMoveDecoder) DecodeFieldMoveCapability(_ game.MemoryReader, _
 			PartySlot:            -1,
 			CompatiblePartySlots: []int{1},
 			Preparable:           true,
-		}, true, nil
+		}
+		if prepared {
+			capability.Learned = true
+			capability.PartySlot = 1
+			capability.Usable = true
+		}
+		return capability, true, nil
 	case game.FieldMoveHeadbutt:
 		return game.FieldMoveCapability{
 			Move:         id,
@@ -129,5 +138,22 @@ func TestFieldMoveMenuPreservesUnknownNativeEntries(t *testing.T) {
 	}
 	if got := fieldMoveMenuIndexWithProfile(fakeGen2FieldMoveDecoder{}, m, FieldWaterfall); got != 3 {
 		t.Fatalf("Waterfall index=%d, want 3", got)
+	}
+}
+
+func TestFieldMovePreparationAcceptsGen2NativeIDsThroughSemanticBoundary(t *testing.T) {
+	m := &fakeMenuMachine{}
+	slot, err := ensureFieldMoveWithProfile(fakeGen2FieldMoveDecoder{}, m, nil, FieldWhirlpool, func(native game.NativeFieldMove) error {
+		if native.MachineItemID != 0x106 || native.MoveID != 0x150 {
+			t.Fatalf("native Whirlpool mapping=%+v, want Gen-II-width ids", native)
+		}
+		m.mem[fakeGen2FieldPrepared] = 1
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("prepare fake Gen-II Whirlpool: %v", err)
+	}
+	if slot != 1 {
+		t.Fatalf("prepared carrier slot=%d, want 1", slot)
 	}
 }
