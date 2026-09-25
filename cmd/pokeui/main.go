@@ -183,6 +183,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
+	mux.HandleFunc("DELETE /v1/triage/{key}", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/models", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/models", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/models/test", proxy(wallBase, false))
