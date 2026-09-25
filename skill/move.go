@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -28,10 +27,6 @@ var (
 	ErrBattleInterrupted   = errors.New("skill: battle interrupted movement")
 	ErrDialogueInterrupted = errors.New("skill: text box interrupted movement")
 )
-
-func playerXY(m *emu.Emu) (uint8, uint8) {
-	return m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
-}
 
 // StepOnce attempts a single tile of movement. It returns nil when the
 // player's tile coordinate actually changed in the requested direction.
