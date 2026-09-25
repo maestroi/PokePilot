@@ -555,6 +555,7 @@ const (
 	trainerSwitchMarker = "change POK"
 	forgetMenuMarker    = "forgotten?"
 	hmCantDeleteMarker  = "HM techniques"
+	switchMenuMarker    = "Choose"
 	switchBoxMarker     = "SWITCH"
 )
 
@@ -659,6 +660,12 @@ func selectForgetSlot(m *emu.Emu, index int) error {
 	}
 	m.Tap(emu.A, 3, 7)
 	return nil
+}
+
+func battleSwitchMenuUp(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return state.DecodeBattle(&mem) != nil && strings.Contains(state.ScreenText(&mem), switchMenuMarker)
 }
 
 func switchBoxUp(m *emu.Emu) bool {
