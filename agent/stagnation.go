@@ -31,26 +31,30 @@ func roundsLeft(round, maxRounds int) int {
 //
 // Maps comes from Knowledge.Visited, so traversing a genuinely new area is
 // progress even when an objective enters and leaves it within one round.
-// MaxLevel makes productive training count without making damage/healing a
-// false reset. PartyCount makes catching a new party member count. DexOwned
-// also counts successful collection when the party is already full and the
-// newly caught species is sent to storage, which is essential progress for
-// Dex and Completionist runs.
+// CombatReadiness makes productive training count without making damage/healing
+// a false reset. It uses the same strongest-three weighted score as combat
+// recovery, so leveling a useful secondary party member is visible even when
+// the party's maximum level does not change (#1850). PartyCount makes catching
+// a new party member count. DexOwned also counts successful collection when the
+// party is already full and the newly caught species is sent to storage, which
+// is essential progress for Dex and Completionist runs.
 type majorProgressMark struct {
-	Badges     int
-	Events     int
-	Maps       int
-	PartyCount int
-	DexOwned   int
-	MaxLevel   uint8
+	Badges          int
+	Events          int
+	Maps            int
+	PartyCount      int
+	DexOwned        int
+	MaxLevel        uint8
+	CombatReadiness int
 }
 
 func majorProgressMarkOf(obs Observation, k *Knowledge) majorProgressMark {
 	mark := majorProgressMark{
-		Badges:     len(obs.Badges),
-		Events:     len(obs.Events),
-		PartyCount: obs.PartyCount,
-		DexOwned:   len(obs.PokedexOwned),
+		Badges:          len(obs.Badges),
+		Events:          len(obs.Events),
+		PartyCount:      obs.PartyCount,
+		DexOwned:        len(obs.PokedexOwned),
+		CombatReadiness: partyCombatReadiness(obs),
 	}
 	if k != nil {
 		mark.Maps = len(k.Visited)
@@ -94,10 +98,14 @@ func (m *majorProgressMark) absorb(next majorProgressMark) bool {
 		m.MaxLevel = next.MaxLevel
 		advanced = true
 	}
+	if next.CombatReadiness > m.CombatReadiness {
+		m.CombatReadiness = next.CombatReadiness
+		advanced = true
+	}
 	return advanced
 }
 
 func (m majorProgressMark) String() string {
-	return fmt.Sprintf("%d badge(s), %d event(s), %d map(s), party %d, dex owned %d, max level %d",
-		m.Badges, m.Events, m.Maps, m.PartyCount, m.DexOwned, m.MaxLevel)
+	return fmt.Sprintf("%d badge(s), %d event(s), %d map(s), party %d, dex owned %d, max level %d, combat readiness %d",
+		m.Badges, m.Events, m.Maps, m.PartyCount, m.DexOwned, m.MaxLevel, m.CombatReadiness)
 }
