@@ -354,12 +354,19 @@ func itemListUp(mm *state.Mem) bool {
 // priced item list. The list already stores the highlighted item's price in
 // hMoney, and the quantity box's first total is that same price, so a price
 // change never arrives for a one-item purchase of the highlighted row.
-// pokemart.asm sets wMaxItemQuantity to 99 immediately before drawing the box;
-// the list leaves that byte at a smaller stale value (measured 1 at Cerulean
-// Mart, run-2v0h14ws5jl5jeghjyff4ayql).
+// pokemart.asm sets wMaxItemQuantity to 99 immediately before drawing the box.
+// The first purchase can detect that transition directly. Affordability
+// recovery is different: Buy backs all the way out, then EnsureItemStock may
+// immediately retry a smaller quantity, leaving wMaxItemQuantity stale at 99.
+// On that retry the rendered ×NN marker is the positive boundary: the priced
+// buy list never renders quantities, while DisplayChooseQuantityMenu always
+// draws one. This also keeps a dropped A press from being mistaken for an open
+// quantity box just because the stale RAM still says 99.
 func quantityBoxUp(mm *state.Mem, hBefore int, maxBefore uint8) bool {
-	if mm.U8(sym.MaxItemQuantity) == 99 && mm.U8(sym.ItemQuantity) >= 1 && maxBefore != 99 {
-		return true
+	if mm.U8(sym.MaxItemQuantity) == 99 && mm.U8(sym.ItemQuantity) >= 1 {
+		if maxBefore != 99 || strings.Contains(state.ScreenText(mm), "×") {
+			return true
+		}
 	}
 	price := bcdMoney(mm)
 	return price > 0 && price != hBefore
