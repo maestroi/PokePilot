@@ -25,10 +25,12 @@ func gen1BattleResourcesFromMem(mem *state.Mem) game.BattleResourcesState {
 		return game.BattleResourcesState{ActiveSlot: -1}
 	}
 	party := state.DecodeParty(mem)
+	inventory := state.DecodeInventory(mem)
 	out := game.BattleResourcesState{
 		InBattle:   state.DecodeBattle(mem) != nil,
 		ActiveSlot: int(mem.U8(sym.PlayerMonNumber)),
 		Party:      make([]game.BattlePartyMon, 0, len(party.Mons)),
+		Bag:        make([]game.InventoryItem, 0, len(inventory.Items)),
 	}
 	for _, mon := range party.Mons {
 		p := game.BattlePartyMon{
@@ -50,6 +52,9 @@ func gen1BattleResourcesFromMem(mem *state.Mem) game.BattleResourcesState {
 			p.Moves[i] = game.BattlePartyMove{NativeMoveID: uint16(mon.Moves[i]), PP: mon.PP[i]}
 		}
 		out.Party = append(out.Party, p)
+	}
+	for _, item := range inventory.Items {
+		out.Bag = append(out.Bag, game.InventoryItem{NativeItemID: uint16(item.ID), Quantity: int(item.Quantity)})
 	}
 	return out
 }
