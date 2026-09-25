@@ -128,3 +128,11 @@ func legacySpeciesID(native uint16) (uint8, error) {
 	}
 	return uint8(native), nil
 }
+
+func wildBallCount(m *emu.Emu) (int, error) {
+	profile, err := captureProfileFor(m)
+	if err != nil {
+		return 0, err
+	}
+	return ordinaryCaptureBallCount(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder()), nil
+}
