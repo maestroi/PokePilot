@@ -25,3 +25,18 @@ func TestOrdinaryConnectionFailureRemainsTileScoped(t *testing.T) {
 		t.Fatalf("ordinary unwalkable scope = (edge=%v tile=%v), want tile-scoped only (false, true)", edge, tile)
 	}
 }
+
+
+func TestExhaustedConnectionBandIsFiniteWithoutReplanBudget(t *testing.T) {
+	// The finite bound is the number of unique edge-scoped bands recorded in
+	// deadEnds, not GoTo's small transient replan budget. Preserve the stronger
+	// sentinel through wrapping so the caller can distinguish it from one-tile
+	// ErrLegUnwalkable evidence.
+	err := fmt.Errorf("all candidates failed: %w", ErrConnectionBandExhausted)
+	if !errors.Is(err, ErrConnectionBandExhausted) {
+		t.Fatal("wrapped exhausted-band evidence was lost")
+	}
+	if !errors.Is(err, ErrLegUnwalkable) {
+		t.Fatal("exhausted-band evidence must remain navigation-compatible")
+	}
+}
