@@ -100,7 +100,16 @@ func selectForgetSlot(m *emu.Emu, index int) error {
 	}
 	live := execution.DecodeBattleExecution(m)
 	if live.Phase != game.BattleExecutionForgetMove {
-		return fmt.Errorf("skill: selectForgetSlot: move-forget menu is not ready")
+		return fmt.Errorf("skill: selectForgetSlot: move-forget menu is not visible")
+	}
+	if !live.ForgetReady {
+		if !waitMenuUntil(m, menuSettleFrames, func() bool {
+			next := execution.DecodeBattleExecution(m)
+			return next.Phase == game.BattleExecutionForgetMove && next.ForgetReady
+		}) {
+			return fmt.Errorf("skill: selectForgetSlot: move-forget menu did not become ready")
+		}
+		live = execution.DecodeBattleExecution(m)
 	}
 	if index < 0 || index > live.ForgetCursor.Max {
 		return fmt.Errorf("skill: selectForgetSlot: slot %d out of range 0..%d", index, live.ForgetCursor.Max)
