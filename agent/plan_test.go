@@ -328,6 +328,26 @@ func TestRunPlanningAutoContinuesBoundaryLegIntoSingleProgression(t *testing.T) 
 	}
 }
 
+func TestRunPlanningValidatesPolicyAddedStrategicObjective(t *testing.T) {
+	progress := Objective{Kind: KindProgress, Progress: "next_story_gate"}
+	remoteBuy := Objective{Kind: KindBuy, Item: "pokeball", Qty: 10, Intent: "test-remote-supply"}
+	p := &planningTestPlanner{
+		plans: []Plan{{Goal: "restock before collecting", Steps: []string{remoteBuy.String()}}},
+		zeroCall: func(_ Observation, _ []Objective) []Objective {
+			return []Objective{remoteBuy}
+		},
+	}
+	r := newRunPlanning(Plan{})
+
+	obj, fromPlan, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, []Objective{progress})
+	if err != nil {
+		t.Fatalf("policy-added strategic objective failed validation: %v", err)
+	}
+	if !fromPlan || obj.Kind != KindBuy || obj.Item != "pokeball" {
+		t.Fatalf("obj=%+v fromPlan=%v; want policy-added buy", obj, fromPlan)
+	}
+}
+
 func TestRunPlanningZeroCallPolicyPreventsSingleProgressionRush(t *testing.T) {
 	progress := Objective{Kind: KindProgress, Progress: "mt_moon_fossil_acquired"}
 	catch := Objective{Kind: KindCatch, Species: "zubat"}
