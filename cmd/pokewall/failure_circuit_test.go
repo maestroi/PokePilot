@@ -163,6 +163,82 @@ func TestObjectiveFailureTriageUsesCanonicalFailureRows(t *testing.T) {
 	}
 }
 
+func TestObjectiveFailureTriageCarriesResolvedLegacyOccurrenceLinkIntoFamily(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "recover from repeated objective failures",
+		Error:     "failure recovery budget was exhausted",
+		Count:     1, TerminalCount: 1, Blocking: true, Map: 0x18,
+	}
+	raw, _ := json.Marshal(failure)
+	if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+		"run-old", 1, "legacy-occurrence", "sha256:legacy", "family-key", "sha256:family", raw); err != nil {
+		t.Fatal(err)
+	}
+
+	w := NewWall("")
+	w.issueLinks["legacy-occurrence"] = IssueLink{
+		IssueID: "91", IssueNumber: 91, Status: "closed", Resolution: "fixed", UpdatedAt: 20,
+	}
+
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Key != "family-key" {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if groups[0].Issue == nil || groups[0].Issue.IssueNumber != 91 || groups[0].Issue.Resolution != "fixed" {
+		t.Fatalf("issue = %+v, want resolved legacy issue #91", groups[0].Issue)
+	}
+	if groups[0].Dismissable {
+		t.Fatal("legacy-linked family must not be dismissable")
+	}
+}
+
+func TestObjectiveFailureTriagePrefersActiveLegacyOccurrenceLink(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "make progress toward run goal",
+		Error:     "stagnation watchdog stopped the run",
+		Count:     1, TerminalCount: 1, Blocking: true, Map: 0x18,
+	}
+	raw, _ := json.Marshal(failure)
+	for _, row := range []struct {
+		runID string
+		key   string
+	}{
+		{runID: "run-fixed", key: "legacy-fixed"},
+		{runID: "run-open", key: "legacy-open"},
+	} {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+			row.runID, 1, row.key, "sha256:"+row.key, "family-key", "sha256:family", raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := NewWall("")
+	w.issueLinks["legacy-fixed"] = IssueLink{
+		IssueID: "92", IssueNumber: 92, Status: "closed", Resolution: "fixed", UpdatedAt: 100,
+	}
+	w.issueLinks["legacy-open"] = IssueLink{
+		IssueID: "93", IssueNumber: 93, Status: "open", UpdatedAt: 10,
+	}
+
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Issue == nil {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if groups[0].Issue.IssueNumber != 93 || groups[0].Issue.Status != "open" {
+		t.Fatalf("issue = %+v, want active legacy issue #93", groups[0].Issue)
+	}
+}
+
 func TestDismissObjectiveFailureGroupHidesCurrentEvidenceAndAllowsRecurrence(t *testing.T) {
 	db := newFailureCircuitTestDB(t)
 	cp := &controlPlane{db: db}
