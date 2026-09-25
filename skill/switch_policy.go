@@ -352,7 +352,6 @@ func fieldMoveCount(moves [4]uint8) int {
 	return count
 }
 
-
 func nativeByte(v uint16) (uint8, bool) {
 	if v > 0xff {
 		return 0, false
