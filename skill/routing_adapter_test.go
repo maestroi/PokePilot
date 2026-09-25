@@ -19,11 +19,11 @@ type fakeRoutingDecoder struct {
 	state game.LiveTopologyState
 }
 
-type fakeGen2OverworldDecoder struct {
+type fakeRoutingOverworldDecoder struct {
 	state game.OverworldState
 }
 
-func (f fakeGen2OverworldDecoder) DecodeOverworld(game.MemoryReader) game.OverworldState {
+func (f fakeRoutingOverworldDecoder) DecodeOverworld(game.MemoryReader) game.OverworldState {
 	return f.state
 }
 
@@ -144,7 +144,7 @@ func TestFakeGen2TransitionRuntimeUsesSemanticCurrentMap(t *testing.T) {
 		{Kind: world.EdgeConnection, From: 0x42, To: 0x43},
 		{Kind: world.EdgeWarp, From: 0x43, To: 0x44, WarpX: 6, WarpY: 7},
 	} {
-		decoder := fakeGen2OverworldDecoder{state: game.OverworldState{
+		decoder := fakeRoutingOverworldDecoder{state: game.OverworldState{
 			NativeMapID: uint16(edge.From),
 			X:           11,
 			Y:           12,
