@@ -39,6 +39,11 @@ type BattleState struct {
 	ActiveMaxHP   uint16
 	Moves         [4]BattleMove
 
+	// DisabledMove retains the historical 1-based slot encoding used by Gen I.
+	// BattleMove.Disabled is the portable per-slot view; profiles should keep
+	// both consistent while legacy strategy code is being migrated.
+	DisabledMove uint8
+
 	ActiveAttack  uint16
 	ActiveDefense uint16
 	ActiveSpecial uint16
@@ -84,7 +89,7 @@ func (b BattleState) DefenceStage() int {
 func (b BattleState) Usable() []int {
 	var out []int
 	for i, mv := range b.Moves {
-		if mv.ID != 0 && mv.PP > 0 && !mv.Disabled {
+		if mv.ID != 0 && mv.PP > 0 && !mv.Disabled && b.DisabledMove != uint8(i+1) {
 			out = append(out, i)
 		}
 	}
