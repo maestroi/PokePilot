@@ -544,6 +544,13 @@ func executeFieldPathActionWithDecoders(m *emu.Emu, decoder game.OverworldDecode
 
 	switch step.Action {
 	case fieldPathCut:
+		// Face only turns the sprite; the game refreshes its front-target
+		// observation when the overworld considers a step, so press toward
+		// the (blocking) tree once before reading it.
+		if btn, ok := buttonFor(step.Move); ok {
+			m.Tap(btn, 3, 7)
+			m.StepFrames(8)
+		}
 		if !fieldActions.DecodeFieldAction(m).CuttableAhead {
 			return fmt.Errorf("skill: field path planned Cut at (%d,%d), but live front target is not cuttable", tx, ty)
 		}
