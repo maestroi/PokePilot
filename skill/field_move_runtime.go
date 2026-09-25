@@ -80,3 +80,33 @@ func fieldMoveMenuIndexWithProfile(profile game.FieldMoveDecoder, reader game.Me
 	}
 	return -1
 }
+
+
+func selectFieldMoveMenuEntryWithDecoders(m menuMachine, fieldDecoder game.FieldMoveDecoder, menuDecoder game.MenuDecoder, move FieldMove) error {
+	if fieldDecoder == nil {
+		return fmt.Errorf("skill: field move menu: nil field-move decoder")
+	}
+	if menuDecoder == nil {
+		return fmt.Errorf("skill: field move menu: nil menu decoder")
+	}
+	idx := fieldMoveMenuIndexWithProfile(fieldDecoder, m, move)
+	if idx < 0 {
+		return fmt.Errorf("skill: %s field-move entry is not available", move)
+	}
+	if err := selectMenuItemWithDecoder(m, menuDecoder, idx); err != nil {
+		return fmt.Errorf("skill: select %s field-move entry: %w", move, err)
+	}
+	return nil
+}
+
+func selectFieldMoveMenuEntry(m *emu.Emu, move FieldMove) error {
+	field, err := fieldMoveProfileFor(m)
+	if err != nil {
+		return err
+	}
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return selectFieldMoveMenuEntryWithDecoders(m, field, menu, move)
+}
