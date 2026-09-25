@@ -90,3 +90,21 @@ func waitGen1FleeMenu(m *emu.Emu) (fleeMenuKind, error) {
 		m.Tap(fleeWaitInputFromMem(&mem), 3, 7)
 	}
 }
+
+
+// waitFleeMenu preserves the Red Safari capture controller's legacy menu
+// classifier. Generic Flee uses waitFleeMenuWithControllers instead.
+func waitFleeMenu(m *emu.Emu) (fleeMenuKind, error) {
+	start := m.FrameCount()
+	for {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if kind := fleeMenuFromMem(&mem); kind != fleeMenuNone {
+			return kind, nil
+		}
+		if int(m.FrameCount()-start) > bagMainMenuBudget {
+			return fleeMenuNone, fmt.Errorf("skill: Safari battle menu did not open within %d frames", bagMainMenuBudget)
+		}
+		m.Tap(fleeWaitInputFromMem(&mem), 3, 7)
+	}
+}
