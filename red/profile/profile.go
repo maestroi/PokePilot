@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -18,39 +19,39 @@ const (
 	Revision game.RevisionID = "en-us-rev0"
 )
 
-// Progress IDs are Red profile vocabulary. The agent currently aliases the
-// same strings while its progression executor completes the adapter migration.
+// Preserve the Red profile API while the semantic Kanto vocabulary is owned
+// by gen1. Native event decoding remains Red-owned.
 const (
-	ProgressMtMoonFossilAcquired       game.ProgressID = "mt_moon_fossil_acquired"
-	ProgressPokedexAcquired            game.ProgressID = "pokedex_acquired"
-	ProgressSSTicketAcquired           game.ProgressID = "ss_ticket_acquired"
-	ProgressHM01Acquired               game.ProgressID = "hm01_acquired"
-	ProgressBicycleAcquired            game.ProgressID = "bicycle_acquired"
-	ProgressBoulderBadge               game.ProgressID = "boulder_badge"
-	ProgressThunderBadge               game.ProgressID = "thunder_badge"
-	ProgressPostSurgeLavenderReached   game.ProgressID = "post_surge_lavender_reached"
-	ProgressPostSurgeCeladonReady      game.ProgressID = "post_surge_celadon_ready"
-	ProgressRainbowBadge               game.ProgressID = "rainbow_badge"
-	ProgressMarshBadge                 game.ProgressID = "marsh_badge"
-	ProgressSilphScopeAcquired         game.ProgressID = "silph_scope_acquired"
-	ProgressPokeFluteAcquired          game.ProgressID = "poke_flute_acquired"
-	ProgressFuchsiaProgressionComplete game.ProgressID = "fuchsia_progression_complete"
-	ProgressSaffronGateOpen            game.ProgressID = "saffron_gate_open"
-	ProgressCardKeyOwned               game.ProgressID = "card_key_owned"
-	ProgressSilphCoCleared             game.ProgressID = "silph_co_cleared"
-	ProgressSilphRescueComplete        game.ProgressID = "silph_rescue_complete"
-	ProgressMansionSwitchOn            game.ProgressID = "mansion_switch_on"
-	ProgressSecretKeyOwned             game.ProgressID = "secret_key_owned"
-	ProgressViridianGymOpen            game.ProgressID = "viridian_gym_open"
-	ProgressRoute22RivalResolved       game.ProgressID = "route_22_rival_resolved"
-	ProgressRoute23BadgeChecks         game.ProgressID = "route_23_badge_checks"
-	ProgressVictoryRoadCleared         game.ProgressID = "victory_road_cleared"
-	ProgressLeagueChallengeStarted     game.ProgressID = "league_challenge_started"
-	ProgressLeagueChampionDefeated     game.ProgressID = "league_champion_defeated"
-	ProgressMainStoryComplete          game.ProgressID = "main_story_complete"
-	ProgressVolcanoBadge               game.ProgressID = "volcano_badge"
-	ProgressEarthBadge                 game.ProgressID = "earth_badge"
-	ProgressIndigoPlateauReady         game.ProgressID = "indigo_plateau_ready"
+	ProgressMtMoonFossilAcquired       = gen1.ProgressMtMoonFossilAcquired
+	ProgressPokedexAcquired            = gen1.ProgressPokedexAcquired
+	ProgressSSTicketAcquired           = gen1.ProgressSSTicketAcquired
+	ProgressHM01Acquired               = gen1.ProgressHM01Acquired
+	ProgressBicycleAcquired            = gen1.ProgressBicycleAcquired
+	ProgressBoulderBadge               = gen1.ProgressBoulderBadge
+	ProgressThunderBadge               = gen1.ProgressThunderBadge
+	ProgressPostSurgeLavenderReached   = gen1.ProgressPostSurgeLavenderReached
+	ProgressPostSurgeCeladonReady      = gen1.ProgressPostSurgeCeladonReady
+	ProgressRainbowBadge               = gen1.ProgressRainbowBadge
+	ProgressMarshBadge                 = gen1.ProgressMarshBadge
+	ProgressSilphScopeAcquired         = gen1.ProgressSilphScopeAcquired
+	ProgressPokeFluteAcquired          = gen1.ProgressPokeFluteAcquired
+	ProgressFuchsiaProgressionComplete = gen1.ProgressFuchsiaProgressionComplete
+	ProgressSaffronGateOpen            = gen1.ProgressSaffronGateOpen
+	ProgressCardKeyOwned               = gen1.ProgressCardKeyOwned
+	ProgressSilphCoCleared             = gen1.ProgressSilphCoCleared
+	ProgressSilphRescueComplete        = gen1.ProgressSilphRescueComplete
+	ProgressMansionSwitchOn            = gen1.ProgressMansionSwitchOn
+	ProgressSecretKeyOwned             = gen1.ProgressSecretKeyOwned
+	ProgressViridianGymOpen            = gen1.ProgressViridianGymOpen
+	ProgressRoute22RivalResolved       = gen1.ProgressRoute22RivalResolved
+	ProgressRoute23BadgeChecks         = gen1.ProgressRoute23BadgeChecks
+	ProgressVictoryRoadCleared         = gen1.ProgressVictoryRoadCleared
+	ProgressLeagueChallengeStarted     = gen1.ProgressLeagueChallengeStarted
+	ProgressLeagueChampionDefeated     = gen1.ProgressLeagueChampionDefeated
+	ProgressMainStoryComplete          = gen1.ProgressMainStoryComplete
+	ProgressVolcanoBadge               = gen1.ProgressVolcanoBadge
+	ProgressEarthBadge                 = gen1.ProgressEarthBadge
+	ProgressIndigoPlateauReady         = gen1.ProgressIndigoPlateauReady
 )
 
 const (

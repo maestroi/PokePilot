@@ -43,10 +43,11 @@ func TestIdentityIsYellow(t *testing.T) {
 	}
 }
 
-func TestPhase2AdvertisesOnlyImplementedCapabilities(t *testing.T) {
+func TestPhase3AdvertisesOnlyImplementedCapabilities(t *testing.T) {
 	p := New()
 	for _, feature := range []game.ProfileFeature{
 		game.FeatureMapParsing,
+		game.FeatureStoryProgress,
 		game.FeatureSemanticSpecies,
 	} {
 		if !p.Features().Has(feature) {
@@ -55,7 +56,6 @@ func TestPhase2AdvertisesOnlyImplementedCapabilities(t *testing.T) {
 	}
 	for _, feature := range []game.ProfileFeature{
 		game.FeatureInventory,
-		game.FeatureStoryProgress,
 		game.FeatureBattles,
 		game.FeatureFieldMoves,
 		game.FeatureTrainerFlags,
