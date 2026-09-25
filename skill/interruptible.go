@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // InterruptibleAction is one bounded, resumable piece of precise world work
@@ -58,10 +57,14 @@ func RunInterruptible(m *emu.Emu, policy MovePolicy, a InterruptibleAction) (Tra
 	if a.MaxEngagements <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: RunInterruptible %q: MaxEngagements must be > 0, got %d", a.Name, a.MaxEngagements)
 	}
+	blackoutDecoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return TravelResult{}, fmt.Errorf("skill: RunInterruptible %q: %w", a.Name, err)
+	}
 	return runInterruptions(m, a.MaxEngagements, a.Run, interruptionResolvers{
 		label:         a.Name,
 		recoverBox:    func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		blackout:      func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		blackout:      func() bool { return blackoutInProgress(m, blackoutDecoder) },
 		resolveBattle: fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	})
 }
