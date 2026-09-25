@@ -18,6 +18,38 @@ var (
 	ErrDecisionImpossible    = errors.New("agent: typed decision marked objective impossible")
 )
 
+// Decision error kinds are a coarse, display-safe classification of why a
+// typed decision call produced no usable answer. Raw error text can carry
+// backend response bodies; the kind never does.
+const (
+	DecisionErrorTimeout       = "timeout"
+	DecisionErrorInvalidAnswer = "invalid_answer"
+	DecisionErrorLowConfidence = "low_confidence"
+	DecisionErrorCredentials   = "credentials"
+	DecisionErrorBackend       = "backend"
+)
+
+// DecisionErrorKind classifies a failed decision call; "" for nil.
+func DecisionErrorKind(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, context.DeadlineExceeded):
+		return DecisionErrorTimeout
+	case errors.Is(err, ErrDecisionLowConfidence):
+		return DecisionErrorLowConfidence
+	case errors.Is(err, ErrInvalidDecision):
+		return DecisionErrorInvalidAnswer
+	case errors.Is(err, ErrDecisionCredentialsMissing):
+		return DecisionErrorCredentials
+	}
+	var timeout interface{ Timeout() bool }
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return DecisionErrorTimeout
+	}
+	return DecisionErrorBackend
+}
+
 // DecisionChoice is one value a DecisionEngine is allowed to return.
 // IDs are opaque backend-neutral strings; generic callers map them back to
 // their own semantic value only after ValidateDecisionResponse succeeds.

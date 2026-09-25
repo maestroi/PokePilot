@@ -6,9 +6,10 @@ import {
   decisionFeed,
   decisionIdleNote,
   decisionKindRows,
+  decisionPausedNote,
   latency,
   percent
-} from './decisionTelemetry'
+} from '../shared/decisionTelemetry'
 
 // Per-run typed-decision telemetry: the stored summary (every call, fixed
 // size) plus, when showFeed is set, the live feed of the most recent calls,
@@ -43,6 +44,8 @@ watch(rows, (next) => {
 const calibration = computed(() => decisionCalibration(props.stats?.decision_summary?.kinds?.[calibrationKind.value]))
 const hasVerdicts = computed(() => calibration.value.some((bin) => bin.judged > 0))
 
+const pausedNote = computed(() => decisionPausedNote(props.stats))
+
 const verdictClass: Record<string, string> = {
   agreed: 'text-[var(--poke-green)]',
   disagreed: 'text-[var(--poke-amber)]',
@@ -61,6 +64,10 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
       </span>
     </div>
 
+    <p v-if="mode === 'shadow' && rows.length" class="mb-1.5 text-[10px] text-[var(--poke-muted)]">
+      Shadow mode: the engine is asked but never acts. Agreement is how often its pick matched what the built-in policy actually did.
+    </p>
+    <p v-if="pausedNote" class="mb-1.5 text-[10px] text-[var(--poke-amber)]">{{ pausedNote }}</p>
     <p v-if="!rows.length" class="text-[11px] text-[var(--poke-muted)]">{{ decisionIdleNote(engine) }}</p>
 
     <div v-else class="overflow-x-auto">
@@ -69,9 +76,9 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
           <tr class="text-left text-[9px] text-[var(--poke-muted)] uppercase">
             <th class="py-0.5 pr-2 font-normal">kind</th>
             <th class="py-0.5 pr-2 text-right font-normal">calls</th>
-            <th class="py-0.5 pr-2 text-right font-normal">agreement</th>
+            <th class="py-0.5 pr-2 text-right font-normal" title="Share of compared answers where the engine picked what actually ran. Failed calls are not compared.">agreement</th>
             <th class="py-0.5 pr-2 text-right font-normal">p50 / p95</th>
-            <th class="py-0.5 pr-2 text-right font-normal">fallbacks</th>
+            <th class="py-0.5 pr-2 text-right font-normal" title="Calls with no usable answer (error, timeout, rejected or low-confidence answer); the built-in policy decided.">fallbacks</th>
             <th class="py-0.5 font-normal">engine picks most</th>
           </tr>
         </thead>
@@ -119,12 +126,23 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
       </div>
       <div class="mt-1 max-h-48 overflow-auto">
         <table class="w-full min-w-[30rem] text-[11px]">
+          <thead>
+            <tr class="text-left text-[9px] text-[var(--poke-muted)] uppercase">
+              <th class="py-0.5 pr-2 font-normal">kind</th>
+              <th class="py-0.5 pr-2 font-normal">engine picked</th>
+              <th class="py-0.5 pr-2 text-right font-normal">conf.</th>
+              <th class="py-0.5 pr-2 font-normal">policy ran</th>
+              <th class="py-0.5 pr-2 text-center font-normal">match</th>
+              <th class="py-0.5 text-right font-normal">time</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="(entry, index) in feed" :key="index" class="border-t border-[var(--poke-border)] align-top">
               <td class="py-0.5 pr-2 whitespace-nowrap text-[var(--poke-muted)]">{{ entry.kind }}</td>
-              <td class="py-0.5 pr-2 text-[var(--poke-text)]" :title="entry.error">{{ entry.error ? 'error' : entry.choice }}</td>
-              <td class="py-0.5 pr-2 text-right font-mono">{{ entry.error ? '—' : percent(entry.confidence) }}</td>
-              <td class="py-0.5 pr-2 text-[var(--poke-muted)]">{{ entry.executed ? `ran: ${entry.executed}` : '' }}</td>
+              <td v-if="entry.failure" class="py-0.5 pr-2 text-[var(--poke-amber)]" :title="entry.error">no answer · {{ entry.failure }}</td>
+              <td v-else class="py-0.5 pr-2 text-[var(--poke-text)]">{{ entry.choice }}</td>
+              <td class="py-0.5 pr-2 text-right font-mono">{{ entry.failure ? '—' : percent(entry.confidence) }}</td>
+              <td class="py-0.5 pr-2 text-[var(--poke-muted)]">{{ entry.executed }}</td>
               <td class="py-0.5 pr-2 text-center" :class="verdictClass[entry.verdict]">{{ verdictGlyph[entry.verdict] }}</td>
               <td class="py-0.5 text-right font-mono text-[var(--poke-muted)]">{{ latency(entry.seconds) }}</td>
             </tr>

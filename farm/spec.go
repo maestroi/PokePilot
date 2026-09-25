@@ -351,6 +351,9 @@ type LLMStats struct {
 	DecisionMode          string `json:"decision_mode,omitempty"`
 	DecisionAgreements    int    `json:"decision_agreements,omitempty"`
 	DecisionDisagreements int    `json:"decision_disagreements,omitempty"`
+	// DecisionBattlesPaused is set once battle-turn shadow calls stop for the
+	// rest of the run after repeated consecutive failures.
+	DecisionBattlesPaused bool `json:"decision_battles_paused,omitempty"`
 
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the

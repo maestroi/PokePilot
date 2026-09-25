@@ -27,4 +27,8 @@ type TypedDecisionRecord struct {
 	Executed string `json:"executed,omitempty"`
 	Agreed   *bool  `json:"agreed,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// ErrorKind is a coarse, display-safe class of Error (timeout,
+	// invalid_answer, low_confidence, credentials, backend). Unlike Error it
+	// never carries backend response text, so public views may show it.
+	ErrorKind string `json:"error_kind,omitempty"`
 }

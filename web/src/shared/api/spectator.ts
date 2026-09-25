@@ -1,3 +1,5 @@
+import type { DecisionTelemetryStats } from './types'
+
 export interface SpectatorPartyMon {
   name: string
   level: number
@@ -24,7 +26,7 @@ export interface SpectatorPlayer {
   milestones?: string[]
 }
 
-export interface SpectatorStats {
+export interface SpectatorStats extends DecisionTelemetryStats {
   round: number
   rounds_left: number
   calls: number

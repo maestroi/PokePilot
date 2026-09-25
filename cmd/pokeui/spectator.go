@@ -94,6 +94,50 @@ type spectatorStats struct {
 	GoalCurrent  int     `json:"goal_current,omitempty"`
 	GoalTarget   int     `json:"goal_target,omitempty"`
 	GoalComplete bool    `json:"goal_complete,omitempty"`
+
+	// Fast-decision telemetry: the run's fixed-size summary and the live feed.
+	// Feed records are projected through spectatorDecisionRecord, so raw
+	// backend error text never crosses the spectator boundary.
+	DecisionMode          string                    `json:"decision_mode,omitempty"`
+	DecisionBattlesPaused bool                      `json:"decision_battles_paused,omitempty"`
+	DecisionSummary       *farm.DecisionSummary     `json:"decision_summary,omitempty"`
+	DecisionRecords       []spectatorDecisionRecord `json:"decision_records,omitempty"`
+}
+
+// spectatorDecisionRecord is the public view of one typed decision. A failed
+// call is reported only by its coarse error kind.
+type spectatorDecisionRecord struct {
+	Kind            string  `json:"kind,omitempty"`
+	Choice          string  `json:"choice,omitempty"`
+	ChoiceLabel     string  `json:"choice_label,omitempty"`
+	Confidence      float64 `json:"confidence,omitempty"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	Shadow          bool    `json:"shadow,omitempty"`
+	Executed        string  `json:"executed,omitempty"`
+	Agreed          *bool   `json:"agreed,omitempty"`
+	ErrorKind       string  `json:"error_kind,omitempty"`
+}
+
+func (r *spectatorDecisionRecord) UnmarshalJSON(data []byte) error {
+	var src farm.TypedDecisionRecord
+	if err := json.Unmarshal(data, &src); err != nil {
+		return err
+	}
+	*r = spectatorDecisionRecord{
+		Kind:            src.Kind,
+		Choice:          src.Choice,
+		ChoiceLabel:     src.ChoiceLabel,
+		Confidence:      src.Confidence,
+		DurationSeconds: src.DurationSeconds,
+		Shadow:          src.Shadow,
+		Executed:        src.Executed,
+		Agreed:          src.Agreed,
+		ErrorKind:       src.ErrorKind,
+	}
+	if r.ErrorKind == "" && src.Error != "" {
+		r.ErrorKind = "backend"
+	}
+	return nil
 }
 
 // spectatorSourceRun includes private wall fields used only to decide whether a

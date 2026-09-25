@@ -1,4 +1,4 @@
-import type { DashboardStats, DecisionEngineSpec, DecisionKindSummary, TypedDecisionRecord } from '../shared/api/types'
+import type { DecisionEngineSpec, DecisionKindSummary, DecisionTelemetryStats, TypedDecisionRecord } from './api/types'
 
 // Typed-decision telemetry is two things: a fixed-size per-run summary that
 // is stored with the run, and a short live feed of the most recent calls that
@@ -46,7 +46,7 @@ function top(counts: Record<string, number> | undefined, n = 3): [string, number
   return Object.entries(counts || {}).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, n)
 }
 
-export function decisionKindRows(stats: DashboardStats | undefined): DecisionKindRow[] {
+export function decisionKindRows(stats: DecisionTelemetryStats | undefined): DecisionKindRow[] {
   const kinds = stats?.decision_summary?.kinds || {}
   return Object.entries(kinds)
     .map(([kind, k]) => kindRow(kind, k))
@@ -101,27 +101,45 @@ export interface DecisionFeedRow {
   verdict: 'agreed' | 'disagreed' | 'active' | 'unusable'
   seconds: number
   error: string
+  // Why the call produced no usable answer, in plain words; '' on success.
+  failure: string
+}
+
+const ERROR_KIND_LABELS: Record<string, string> = {
+  timeout: 'timed out',
+  invalid_answer: 'answer rejected',
+  low_confidence: 'below confidence floor',
+  credentials: 'no credentials',
+  backend: 'backend error'
+}
+
+// decisionFailure names why a call failed. Records from runners that predate
+// error_kind still read as failed, just without a reason.
+export function decisionFailure(r: TypedDecisionRecord): string {
+  if (!r.error && !r.error_kind) return ''
+  return ERROR_KIND_LABELS[r.error_kind || ''] || 'failed'
 }
 
 // decisionFeed returns the live feed newest first.
-export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow[] {
+export function decisionFeed(stats: DecisionTelemetryStats | undefined): DecisionFeedRow[] {
   const records: TypedDecisionRecord[] = stats?.decision_records || []
   return records.slice().reverse().map((r) => ({
     kind: decisionKindLabel(r.kind),
     choice: r.choice_label || r.choice || '—',
     confidence: Number(r.confidence || 0),
     executed: r.executed || '',
-    verdict: r.error
+    verdict: r.error || r.error_kind
       ? 'unusable'
       : r.shadow
         ? (r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
         : 'active',
     seconds: Number(r.duration_seconds || 0),
-    error: r.error || ''
+    error: r.error || '',
+    failure: decisionFailure(r)
   }))
 }
 
-export function hasDecisionTelemetry(stats: DashboardStats | undefined): boolean {
+export function hasDecisionTelemetry(stats: DecisionTelemetryStats | undefined): boolean {
   return Boolean(stats?.decision_summary?.kinds && Object.keys(stats.decision_summary.kinds).length)
     || Boolean(stats?.decision_records?.length)
 }
@@ -129,11 +147,18 @@ export function hasDecisionTelemetry(stats: DashboardStats | undefined): boolean
 // decisionEngineSelected is true when the run's spec asks a fast decision
 // engine anything. Such a run shows the panel before its first call, so an
 // idle engine reads as idle instead of as a missing panel.
+// decisionPausedNote explains a run whose battle shadow calls stopped.
+export function decisionPausedNote(stats: DecisionTelemetryStats | undefined): string {
+  return stats?.decision_battles_paused
+    ? 'Battle calls paused for the rest of this run after 3 failures in a row.'
+    : ''
+}
+
 export function decisionEngineSelected(engine: DecisionEngineSpec | undefined): boolean {
   return Boolean(engine && engine.backend !== 'off' && engine.mode !== 'off')
 }
 
-export function showDecisionTelemetry(stats: DashboardStats | undefined, engine: DecisionEngineSpec | undefined): boolean {
+export function showDecisionTelemetry(stats: DecisionTelemetryStats | undefined, engine: DecisionEngineSpec | undefined): boolean {
   return hasDecisionTelemetry(stats) || decisionEngineSelected(engine)
 }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DecisionTelemetry from './DecisionTelemetry.vue'
-import { showDecisionTelemetry } from './decisionTelemetry'
+import { showDecisionTelemetry } from '../shared/decisionTelemetry'
 import { computed, ref, watch } from 'vue'
 import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
 import { cancelRun, cloneRun, forceEndWorker, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'

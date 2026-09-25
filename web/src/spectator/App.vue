@@ -41,6 +41,8 @@ import {
   splitSpectatorRuns
 } from './model'
 import PublicHome from './PublicHome.vue'
+import DecisionShadow from './DecisionShadow.vue'
+import { hasDecisionTelemetry } from '../shared/decisionTelemetry'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
@@ -873,6 +875,8 @@ function activityTimeAgo(item: ActivityItem): string {
               <p class="mt-2 text-xs text-slate-500">Waiting for the next live event.</p>
             </div>
           </section>
+
+          <DecisionShadow v-if="hasDecisionTelemetry(selectedRun.stats)" :stats="selectedRun.stats" />
 
           <section class="milestone-card overflow-hidden rounded-2xl border p-4">
             <div class="final-stretch-art mb-4 overflow-hidden rounded-xl border" aria-hidden="true">

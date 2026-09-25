@@ -88,7 +88,19 @@ export interface DashboardStats {
   decision_records?: TypedDecisionRecord[]
   decision_records_dropped?: number
   decision_summary?: DecisionSummary
+  decision_mode?: string
+  decision_battles_paused?: boolean
   [key: string]: unknown
+}
+
+// The typed-decision fields both the operator stats and the public spectator
+// stats carry, so one set of helpers renders either.
+export interface DecisionTelemetryStats {
+  decision_records?: TypedDecisionRecord[]
+  decision_records_dropped?: number
+  decision_summary?: DecisionSummary
+  decision_mode?: string
+  decision_battles_paused?: boolean
 }
 
 // One typed-decision call in a run's live feed (only the most recent calls
@@ -107,6 +119,8 @@ export interface TypedDecisionRecord {
   executed?: string
   agreed?: boolean
   error?: string
+  // Coarse, display-safe class of error; the only failure detail spectators get.
+  error_kind?: string
 }
 
 // Fixed-size aggregate of every typed decision a run made, per kind.

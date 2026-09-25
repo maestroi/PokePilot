@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -85,5 +86,23 @@ func TestDecideCheckedDoesNotTrustBackendValidation(t *testing.T) {
 	}}
 	if _, err := DecideChecked(context.Background(), engine, testDecisionRequest()); !errors.Is(err, ErrInvalidDecision) {
 		t.Fatalf("error = %v, want invalid decision", err)
+	}
+}
+
+func TestDecisionErrorKindClassifiesWithoutText(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{nil, ""},
+		{fmt.Errorf("wrap: %w", context.DeadlineExceeded), DecisionErrorTimeout},
+		{fmt.Errorf("%w: 0.1 < 0.5", ErrDecisionLowConfidence), DecisionErrorLowConfidence},
+		{fmt.Errorf("%w: selected choice %q is not declared", ErrInvalidDecision, "x"), DecisionErrorInvalidAnswer},
+		{ErrDecisionCredentialsMissing, DecisionErrorCredentials},
+		{errors.New("agent: Jev decision HTTP 500 Internal Server Error: body"), DecisionErrorBackend},
+	} {
+		if got := DecisionErrorKind(tc.err); got != tc.want {
+			t.Errorf("DecisionErrorKind(%v) = %q, want %q", tc.err, got, tc.want)
+		}
 	}
 }

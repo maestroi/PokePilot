@@ -350,6 +350,7 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 	if transportErr != nil {
 		s.battleShadowFailures++
 		s.battleShadowSuspended = s.battleShadowFailures >= battleShadowMaxFailures
+		s.stats.DecisionBattlesPaused = s.battleShadowSuspended
 	} else {
 		s.battleShadowFailures = 0
 	}
@@ -450,6 +451,7 @@ func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.Deci
 	}
 	if err != nil {
 		record.Error = err.Error()
+		record.ErrorKind = agent.DecisionErrorKind(err)
 	}
 	if shadow != nil {
 		record.Shadow, record.Executed, record.Agreed = true, shadow.executed, shadow.agreed

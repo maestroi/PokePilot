@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { decisionCalibration, decisionFeed, decisionIdleNote, decisionKindRows, hasDecisionTelemetry, latency, percent, showDecisionTelemetry } from '../src/operator/decisionTelemetry.ts'
+import { decisionCalibration, decisionFailure, decisionFeed, decisionIdleNote, decisionPausedNote, decisionKindRows, hasDecisionTelemetry, latency, percent, showDecisionTelemetry } from '../src/shared/decisionTelemetry.ts'
 import type { DashboardStats, DecisionKindSummary } from '../src/shared/api/types.ts'
 
 function kind(partial: Partial<DecisionKindSummary>): DecisionKindSummary {
@@ -82,4 +82,21 @@ test('the live and archive views gate the panel on the run selection too', () =>
     assert.match(source, /showDecisionTelemetry\(\w+\.stats, \w+\.decision_engine\)/, view)
     assert.match(source, /:engine="\w+\.decision_engine"/, view)
   }
+})
+
+test('failed calls name a display-safe reason and a paused run says so', () => {
+  assert.equal(decisionFailure({ error: 'agent: Jev decision HTTP 500: body', error_kind: 'backend' }), 'backend error')
+  assert.equal(decisionFailure({ error_kind: 'timeout' }), 'timed out')
+  assert.equal(decisionFailure({ error: 'legacy' }), 'failed')
+  assert.equal(decisionFailure({ choice: '1' }), '')
+  const [spectatorFailed] = decisionFeed({ decision_records: [{ kind: 'battle_turn', shadow: true, executed: 'use fly', error_kind: 'invalid_answer' }] })
+  assert.equal(spectatorFailed.verdict, 'unusable')
+  assert.equal(spectatorFailed.failure, 'answer rejected')
+  assert.equal(decisionPausedNote({ decision_battles_paused: true }), 'Battle calls paused for the rest of this run after 3 failures in a row.')
+  assert.equal(decisionPausedNote(stats), '')
+})
+
+test('spectator shows the second-opinion card only for runs with decision telemetry', () => {
+  const app = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
+  assert.match(app, /<DecisionShadow v-if="hasDecisionTelemetry\(selectedRun\.stats\)" :stats="selectedRun\.stats" \/>/)
 })

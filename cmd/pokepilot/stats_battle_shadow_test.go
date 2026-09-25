@@ -87,6 +87,12 @@ func TestObserveBattleTurnSuspendsAfterConsecutiveTransportFailures(t *testing.T
 	if planner.stats.DecisionCalls != battleShadowMaxFailures {
 		t.Fatalf("recorded %d calls, want each failed call recorded", planner.stats.DecisionCalls)
 	}
+	if !planner.stats.DecisionBattlesPaused {
+		t.Fatal("DecisionBattlesPaused = false, want the pause visible on the run")
+	}
+	if last := planner.stats.DecisionRecords[len(planner.stats.DecisionRecords)-1]; last.ErrorKind != agent.DecisionErrorBackend {
+		t.Fatalf("ErrorKind = %q, want %q", last.ErrorKind, agent.DecisionErrorBackend)
+	}
 }
 
 func TestReportingPlannerForwardsBattleTurns(t *testing.T) {
