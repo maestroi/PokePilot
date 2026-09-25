@@ -87,3 +87,28 @@ func decodeLiveMapBlocks(mem *state.Mem, width, height int) ([]byte, error) {
 	}
 	return blocks, nil
 }
+
+
+func (*Profile) ElevatorTransitionReady(reader game.MemoryReader, transition game.ElevatorTransition) bool {
+	if reader == nil || transition.SourceMapID > 0xff || transition.DestinationMapID > 0xff || len(transition.Doors) == 0 {
+		return false
+	}
+	var mem state.Mem
+	reader.PeekInto(0, mem[:])
+	if uint16(mem.U8(sym.CurMap)) != transition.SourceMapID {
+		return false
+	}
+	if int(mem.U8(sym.NumberOfWarps)) < len(transition.Doors) {
+		return false
+	}
+	for i, door := range transition.Doors {
+		addr := sym.WarpEntries + uint16(i*4)
+		if int(mem.U8(addr)) != door.Y || int(mem.U8(addr+1)) != door.X {
+			return false
+		}
+		if mem.U8(addr+2) != transition.DestinationWarp || uint16(mem.U8(addr+3)) != transition.DestinationMapID {
+			return false
+		}
+	}
+	return true
+}
