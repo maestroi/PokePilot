@@ -167,21 +167,39 @@ func TestWithArgsApplies(t *testing.T) {
 	}
 
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, agent.ReplyArgs{Intent: "reach the gym"})
-	if err != nil || got.Intent != "reach the gym" {
-		t.Errorf("WithArgs(go to, intent) = %s, %v; want Intent set", got, err)
+	if err != nil || got.Purpose != "reach the gym" {
+		t.Errorf("WithArgs(go to, intent) = %s, %v; want Purpose set", got, err)
 	}
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &i10, Intent: "earn the boulder badge"})
-	if err != nil || got.Level != 10 || got.Intent != "earn the boulder badge" {
+	if err != nil || got.Level != 10 || got.Purpose != "earn the boulder badge" {
 		t.Errorf("WithArgs(train, matching level+intent) = %s, %v; want offered target plus intent", got, err)
 	}
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}, agent.ReplyArgs{Intent: "start the journey"})
-	if err != nil || got.Intent != "start the journey" {
-		t.Errorf("WithArgs(starter, intent) = %s, %v; want Intent set", got, err)
+	if err != nil || got.Purpose != "start the journey" {
+		t.Errorf("WithArgs(starter, intent) = %s, %v; want Purpose set", got, err)
 	}
 	atCap := strings.Repeat("a", agent.IntentCap)
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, agent.ReplyArgs{Intent: atCap})
-	if err != nil || got.Intent != atCap {
+	if err != nil || got.Purpose != atCap {
 		t.Errorf("WithArgs(intent at the cap) = %s, %v; want it accepted verbatim", got, err)
+	}
+}
+
+// TestWithArgsPurposeKeepsOfferedIntent: the model's free-text intent is
+// narrative only. It must never replace the offer's execution Intent, or a
+// travel-and-buy capture restock degrades into an in-place Buy that presses A
+// at whatever NPC is nearby.
+func TestWithArgsPurposeKeepsOfferedIntent(t *testing.T) {
+	offered := agent.Objective{Kind: agent.KindBuy, Item: "pokeball", Qty: 10, Intent: "dex-capture-supply"}
+	got, err := agent.WithArgs(offered, agent.ReplyArgs{Intent: "restock balls before catching"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Intent != offered.Intent || got.Key() != offered.Key() {
+		t.Errorf("WithArgs changed execution identity: Intent %q key %+v, want %q", got.Intent, got.Key(), offered.Intent)
+	}
+	if got.Purpose != "restock balls before catching" {
+		t.Errorf("Purpose = %q, want the model's sentence", got.Purpose)
 	}
 }
 

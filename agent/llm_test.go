@@ -738,8 +738,8 @@ func TestLLMPlannerReplyCarriesIntent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	if got.Intent != "earn the boulder badge" {
-		t.Errorf("got.Intent = %q, want the model's sentence carried on the objective", got.Intent)
+	if got.Purpose != "earn the boulder badge" {
+		t.Errorf("got.Purpose = %q, want the model's sentence carried on the objective", got.Intent)
 	}
 }
 

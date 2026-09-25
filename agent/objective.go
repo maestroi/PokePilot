@@ -52,7 +52,13 @@ type Objective struct {
 	Flee              bool
 	RepelBeforeTravel bool
 	Note              string
-	Intent            string
+	// Intent is offer-owned execution identity: providers set it to select a
+	// deterministic adapter path (e.g. travel-and-buy vs. in-shop buy).
+	Intent string
+	// Purpose is the planner's free-text reason for choosing this objective.
+	// It is narrative only and never part of Key or execution: a model reply
+	// must not be able to overwrite the offered Intent.
+	Purpose string
 }
 
 // Validate checks only portable shape/range invariants. Concrete-game name and
