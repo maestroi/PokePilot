@@ -76,7 +76,7 @@ func TestSurfStrengthConsumersDoNotReadConcreteModeFlags(t *testing.T) {
 			"sym.WalkBikeSurfState",
 			"fieldSurfingState",
 			"fieldStrengthActiveBit",
-		"sym.StatusFlags1",
+			"sym.StatusFlags1",
 		} {
 			if strings.Contains(string(src), forbidden) {
 				t.Fatalf("%s contains concrete Surf/Strength runtime dependency %q", path, forbidden)
