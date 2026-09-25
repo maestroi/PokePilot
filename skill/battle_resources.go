@@ -61,43 +61,7 @@ var hpMedicines = []hpMedicine{
 // status medicine is considered whenever a matching cure exists. When both
 // apply, FULL RESTORE resolves them in one turn if available.
 func chooseBattleMedicine(mem *state.Mem) (battleMedicineChoice, bool) {
-	if state.DecodeBattle(mem) == nil {
-		return battleMedicineChoice{}, false
-	}
-	party := state.DecodeParty(mem)
-	slot := int(mem.U8(sym.PlayerMonNumber))
-	if slot < 0 || slot >= len(party.Mons) {
-		return battleMedicineChoice{}, false
-	}
-	mon := party.Mons[slot]
-	if mon.Fainted() || mon.MaxHP == 0 {
-		return battleMedicineChoice{}, false
-	}
-
-	lowHP := mon.HP*3 <= mon.MaxHP
-	status := mon.StatusName()
-	if lowHP && status != "" && bagHasItem(mem, itemFullRestore) {
-		return battleMedicineChoice{
-			Item:   itemFullRestore,
-			Slot:   slot,
-			Reason: fmt.Sprintf("active HP %d/%d and %s", mon.HP, mon.MaxHP, status),
-		}, true
-	}
-	if lowHP {
-		if item, ok := chooseHPMedicine(mem, int(mon.MaxHP-mon.HP)); ok {
-			return battleMedicineChoice{
-				Item:   item,
-				Slot:   slot,
-				Reason: fmt.Sprintf("active HP %d/%d", mon.HP, mon.MaxHP),
-			}, true
-		}
-	}
-	if status != "" {
-		if item, ok := chooseStatusMedicine(mem, status); ok {
-			return battleMedicineChoice{Item: item, Slot: slot, Reason: "active is " + status}, true
-		}
-	}
-	return battleMedicineChoice{}, false
+	return chooseBattleMedicineState(gen1BattleResourcesFromMem(mem))
 }
 
 func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
@@ -137,14 +101,7 @@ func bagHasItem(mem *state.Mem, item uint8) bool {
 // ppRecoverySlot returns the first live bench mon that has at least one known
 // move with current PP. This is a dead-turn escape, not team strategy.
 func ppRecoverySlot(mem *state.Mem) (int, bool) {
-	party := state.DecodeParty(mem)
-	active := int(mem.U8(sym.PlayerMonNumber))
-	for slot, mon := range party.Mons {
-		if slot != active && !mon.Fainted() && monHasCurrentPP(mon) {
-			return slot, true
-		}
-	}
-	return 0, false
+	return gen1BattleResourcesFromMem(mem).PPRecoverySlot()
 }
 
 func monHasCurrentPP(mon state.Mon) bool {
@@ -157,12 +114,7 @@ func monHasCurrentPP(mon state.Mon) bool {
 }
 
 func livePartyHasCurrentPP(mem *state.Mem) bool {
-	for _, mon := range state.DecodeParty(mem).Mons {
-		if !mon.Fainted() && monHasCurrentPP(mon) {
-			return true
-		}
-	}
-	return false
+	return gen1BattleResourcesFromMem(mem).LivePartyHasCurrentPP()
 }
 
 // UseBattleMedicine uses one medicine item on one party slot. Unlike a ball,
