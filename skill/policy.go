@@ -3,9 +3,9 @@ package skill
 import (
 	"fmt"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/combat"
 	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/game"
 )
 
 // StatAwareMove is the default policy for a real fight. Damaging moves are
