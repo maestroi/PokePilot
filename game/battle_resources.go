@@ -58,6 +58,15 @@ func (s BattleResourcesState) ItemQuantity(nativeItemID uint16) int {
 	return total
 }
 
+func (s BattleResourcesState) ItemIndex(nativeItemID uint16) (int, bool) {
+	for i, item := range s.Bag {
+		if item.NativeItemID == nativeItemID {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 func (s BattleResourcesState) FirstLivePartySlot() int {
 	for i, mon := range s.Party {
 		if !mon.Fainted() {

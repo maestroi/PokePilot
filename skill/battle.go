@@ -8,8 +8,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrNoUsableMove reports that the active Pokémon has no selectable move.
@@ -131,13 +129,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
+	runtimeDecoder, err := battleRuntimeDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
 
-	var mem state.Mem
-	state.Snapshot(m, &mem)
 	if _, ok := battleDecoder.DecodeBattleState(m); !ok {
-		x, y := playerXY(m)
-		return 0, fmt.Errorf("skill: Battle: no battle in progress on map %02x at (%d,%d)",
-			m.Peek8(sym.CurMap), x, y)
+		live := runtimeDecoder.DecodeBattleRuntime(m)
+		return 0, fmt.Errorf("skill: Battle: no battle in progress on %s", battleRuntimeContext(live))
 	}
 
 	startFrame := m.FrameCount()
@@ -170,13 +169,13 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 
 	for {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
-			return stuckError(m, fmt.Sprintf("exceeded %d-frame cap", battleFrameCap))
+			return stuckError(m, battleDecoder, runtimeDecoder, fmt.Sprintf("exceeded %d-frame cap", battleFrameCap))
 		}
 		if int(m.FrameCount()-progressFrame) > battleStallCap {
-			return stuckError(m, fmt.Sprintf("no HP or species change for %d frames", battleStallCap))
+			return stuckError(m, battleDecoder, runtimeDecoder, fmt.Sprintf("no HP or species change for %d frames", battleStallCap))
 		}
 
-		state.Snapshot(m, &mem)
+		runtime := runtimeDecoder.DecodeBattleRuntime(m)
 		execution := executionDecoder.DecodeBattleExecution(m)
 		resources := resourcesDecoder.DecodeBattleResources(m)
 		bs, inBattle := battleDecoder.DecodeBattleState(m)
@@ -200,10 +199,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		}
 		if zbatDebug && inBattle {
 			fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v items=%d/%d switches=%d/%d | %s\n",
-				m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
+				m.FrameCount(), runtime.MenuCursor.Max, runtime.MenuCursor.Current,
 				bs.ActiveHP, bs.ActiveMaxHP, bs.EnemyHP, bs.EnemyMaxHP, bs.Moves,
 				itemUses, battleItemUseCap, voluntarySwitches, voluntarySwitchCap,
-				strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
+				strings.Join(strings.Fields(runtime.DebugText), " "))
 		}
 		if !inBattle {
 			if pendingLearnMove != 0 {
@@ -211,14 +210,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					pendingLearnMove, pendingLearnPartySlot, pendingLearnSlot)
 			}
 			if zbatDebug {
-				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
-					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
+				fmt.Printf("zbat EXIT f=%d inBattle=%t result=%d\n",
+					m.FrameCount(), runtime.InBattle, battleDecoder.DecodeBattleResult(m))
 			}
 			// Read the result at the battle boundary: settling walks through
 			// a blackout respawn, which clears wBattleResult and would report
 			// the loss as a win.
 			result := battleDecoder.DecodeBattleResult(m)
-			if err := settleAfterBattle(m, &mem); err != nil {
+			if err := settleAfterBattle(m, runtimeDecoder); err != nil {
 				return 0, err
 			}
 			return result, nil
@@ -233,7 +232,6 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}); err != nil {
 					return menuError(m, "clear the disabled-move refusal", err)
 				}
-				state.Snapshot(m, &mem)
 				execution = executionDecoder.DecodeBattleExecution(m)
 			}
 			if !inBattle {
@@ -260,17 +258,17 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
 					return executionDecoder.DecodeBattleExecution(m).Phase == game.BattleExecutionMainMenu
 				}); err != nil {
-					x, y := playerXY(m)
-					return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: cannot leave unusable move menu: %w",
-						m.Peek8(sym.CurMap), x, y, bs, ErrNoUsableMove)
+					live := runtimeDecoder.DecodeBattleRuntime(m)
+					return 0, fmt.Errorf("skill: Battle: %s battle %+v: cannot leave unusable move menu: %w",
+						battleRuntimeContext(live), bs, ErrNoUsableMove)
 				}
 				continue
 			}
 			slot := policy(bs)
 			if !containsInt(usable, slot) {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: policy returned slot %d, usable %v",
-					m.Peek8(sym.CurMap), x, y, bs, slot, usable)
+				live := runtimeDecoder.DecodeBattleRuntime(m)
+				return 0, fmt.Errorf("skill: Battle: %s battle %+v: policy returned slot %d, usable %v",
+					battleRuntimeContext(live), bs, slot, usable)
 			}
 			observeMove(m, bs, slot)
 			if err := SelectMenuItem(m, slot+1); err != nil {
@@ -369,9 +367,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		case execution.Phase == game.BattleExecutionHMForgetRejected && lastForgetSlot >= 0:
 			learner, learnerSlot, ok := naturalMoveLearner(execution)
 			if !ok || lastForgetSlot >= len(learner.Moves) || learner.Moves[lastForgetSlot] > 0xff {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d during HM rejection",
-					m.Peek8(sym.CurMap), x, y, learnerSlot)
+				live := runtimeDecoder.DecodeBattleRuntime(m)
+				return 0, fmt.Errorf("skill: Battle: %s: invalid move-learning party slot %d during HM rejection",
+					battleRuntimeContext(live), learnerSlot)
 			}
 			if triedForgets == nil {
 				triedForgets = map[uint8]bool{}
@@ -406,14 +404,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			offered := execution.OfferedMove
 			decision, learnerSlot, ok := naturalMoveDecisionForLearner(execution, m.ROM(), offered, triedForgets)
 			if !ok {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d",
-					m.Peek8(sym.CurMap), x, y, learnerSlot)
+				live := runtimeDecoder.DecodeBattleRuntime(m)
+				return 0, fmt.Errorf("skill: Battle: %s: invalid move-learning party slot %d",
+					battleRuntimeContext(live), learnerSlot)
 			}
 			if !decision.Learn || decision.ReplaceSlot < 0 {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): accepted natural move %d for party slot %d but no legal strategic replacement remains: %s",
-					m.Peek8(sym.CurMap), x, y, offered, learnerSlot, decision.Reason)
+				live := runtimeDecoder.DecodeBattleRuntime(m)
+				return 0, fmt.Errorf("skill: Battle: %s: accepted natural move %d for party slot %d but no legal strategic replacement remains: %s",
+					battleRuntimeContext(live), offered, learnerSlot, decision.Reason)
 			}
 			if zbatDebug {
 				fmt.Printf("zbat move-learn action=replace party-slot=%d %s\n", learnerSlot, decision.Reason)
@@ -464,9 +462,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					offered := execution.OfferedMove
 					decision, learnerSlot, ok := naturalMoveDecisionForLearner(execution, m.ROM(), offered, nil)
 					if !ok {
-						x, y := playerXY(m)
-						return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d",
-							m.Peek8(sym.CurMap), x, y, learnerSlot)
+						live := runtimeDecoder.DecodeBattleRuntime(m)
+						return 0, fmt.Errorf("skill: Battle: %s: invalid move-learning party slot %d",
+							battleRuntimeContext(live), learnerSlot)
 					}
 					if !decision.Learn {
 						choice = 1
@@ -510,8 +508,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		case battleSwitchMenuUp(m):
 			forcedChoiceVisits++
 			if forcedChoiceVisits > forcedChoiceCap {
-				x, y := playerXY(m)
-				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
+				live := runtimeDecoder.DecodeBattleRuntime(m)
+				return 0, fmt.Errorf("skill: Battle: %s: %w", battleRuntimeContext(live), ErrForcedChoiceStuck)
 			}
 			if forcedChoiceVisits == 1 {
 				slot := resourcesDecoder.DecodeBattleResources(m).FirstLivePartySlot()
@@ -532,19 +530,6 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	}
 }
 
-func battleScreenHas(m *emu.Emu, marker string) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return strings.Contains(state.ScreenText(&mem), marker)
-}
-
-const settleStableFrames = 20
-
-// ErrCampaignComplete reports that a battle's aftermath was the game's ending:
-// the main story is now complete and control will not return to the caller's
-// walk. The run goal check, not the interrupted objective, owns what follows.
-var ErrCampaignComplete = errors.New("skill: Battle: campaign complete; the ending never returns control")
-
 // battleProgress is the part of a battle that must keep changing while the
 // fight is still resolving. Menus and text never change it; a landed hit, a
 // heal, a faint or a switch does.
@@ -555,63 +540,6 @@ type battleProgress struct {
 
 func progressOf(bs game.BattleState) battleProgress {
 	return battleProgress{bs.ActiveHP, bs.EnemyHP, bs.ActiveSpecies, bs.EnemySpecies}
-}
-
-func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
-	startFrame := m.FrameCount()
-	stable := 0
-	for int(m.FrameCount()-startFrame) < settleBudget {
-		state.Snapshot(m, mem)
-		if state.Controllable(mem) {
-			stable++
-			if stable >= settleStableFrames {
-				return nil
-			}
-		} else {
-			stable = 0
-		}
-		if m.Peek8(sym.FontLoaded) != 0 {
-			m.Tap(emu.A, 3, 7)
-		} else {
-			m.StepFrame()
-		}
-	}
-	// The Champion's defeat hands the game to its ending, which never returns
-	// control. Whichever skill fought that battle, the League adapter owns
-	// driving the ending to its durable completion bit.
-	if leagueFacts(mem).LeagueChampionDefeated {
-		if err := finishHallOfFame(m); err != nil {
-			return err
-		}
-		return ErrCampaignComplete
-	}
-	x, y := playerXY(m)
-	return fmt.Errorf("skill: Battle: not controllable %d frames after the battle ended: map %02x at (%d,%d)",
-		settleBudget, m.Peek8(sym.CurMap), x, y)
-}
-
-func stuckError(m *emu.Emu, detail string) (game.BattleResult, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	x, y := playerXY(m)
-	bs := "<none>"
-	if b := state.DecodeBattle(&mem); b != nil {
-		bs = fmt.Sprintf("%+v", b)
-	}
-	return 0, fmt.Errorf("skill: Battle: %s: map %02x at (%d,%d) battle %s",
-		detail, m.Peek8(sym.CurMap), x, y, bs)
-}
-
-func menuError(m *emu.Emu, detail string, err error) (game.BattleResult, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	x, y := playerXY(m)
-	bs := "<none>"
-	if b := state.DecodeBattle(&mem); b != nil {
-		bs = fmt.Sprintf("%+v", b)
-	}
-	return 0, fmt.Errorf("skill: Battle: %s: map %02x at (%d,%d) battle %s: %w",
-		detail, m.Peek8(sym.CurMap), x, y, bs, err)
 }
 
 func containsInt(slice []int, x int) bool {
