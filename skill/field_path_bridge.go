@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -32,7 +31,11 @@ func fieldPathBridgeOnCurrentMap(
 	prereqs world.RoutePrerequisites,
 	blockedHere map[world.Edge]bool,
 ) (Destination, bool, error) {
-	cur := m.Peek8(sym.CurMap)
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	cur := live.Map
 	if cur == dest.Map || routeGraph == nil {
 		return Destination{}, false, nil
 	}
@@ -40,7 +43,7 @@ func fieldPathBridgeOnCurrentMap(
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("skill: field-path bridge: live grid: %w", err)
 	}
-	sx, sy := playerXY(m)
+	sx, sy := live.X, live.Y
 	blocked := currentObservedStationaryObjectBlockers(m, h)
 	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
 
