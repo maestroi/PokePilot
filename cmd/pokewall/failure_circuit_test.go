@@ -213,8 +213,8 @@ func TestDismissObjectiveFailureGroupMatchesHistoricalDerivedFamilyKey(t *testin
 	cp := &controlPlane{db: db}
 	failure := farm.ObjectiveFailure{
 		Objective: "recover from repeated objective failures",
-		Error: "failure recovery budget was exhausted",
-		Count: 12, TerminalCount: 1, Blocking: true, Map: 0x05,
+		Error:     "failure recovery budget was exhausted",
+		Count:     12, TerminalCount: 1, Blocking: true, Map: 0x05,
 	}
 	raw, _ := json.Marshal(failure)
 	familyKey, familyFingerprint, _, err := objectiveFailureFingerprint(failure)
