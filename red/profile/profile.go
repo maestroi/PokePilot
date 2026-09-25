@@ -124,7 +124,7 @@ var observedEvents = []state.Event{
 	state.EventBeatChampionRival,
 }
 
-func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.ProfileObservation, error) {
+func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (game.ProfileObservation, error) {
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("red profile: nil memory reader")
 	}
@@ -147,6 +147,12 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		RespawnPlace: semanticLocation(state.MapName(mem.U8(sym.LastBlackoutMap))),
 		Events:       []string{},
 		BlackedOut:   mem.U8(sym.StatusFlags4)&(1<<5) != 0,
+	}
+	if len(romData) > 0 {
+		obs.PokedexOwned, obs.PokedexSeen = projectPokedex(romData, gs.Pokedex)
+		if catalog, dexErr := p.BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); dexErr == nil {
+			obs.Dex = catalog
+		}
 	}
 	for i, mon := range gs.Party.Mons {
 		species, ok := reddata.Species(mon.Species)
