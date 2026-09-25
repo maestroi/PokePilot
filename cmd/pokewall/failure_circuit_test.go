@@ -23,8 +23,13 @@ CREATE TABLE objective_failures (
  fingerprint TEXT NOT NULL, family_key TEXT NOT NULL DEFAULT '',
  family_fingerprint TEXT NOT NULL DEFAULT '', blocking BOOLEAN NOT NULL DEFAULT FALSE,
  terminal_count INTEGER NOT NULL DEFAULT 0, failure_json BLOB NOT NULL DEFAULT '{}',
+ delivery_status TEXT NOT NULL DEFAULT 'pending', delivery_error TEXT NOT NULL DEFAULT '',
  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  PRIMARY KEY(run_id,attempt,failure_key)
+);
+CREATE TABLE issue_links (
+ failure_key TEXT PRIMARY KEY,
+ issue_id TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE run_attempts (
  run_id TEXT NOT NULL, attempt INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT '',
@@ -152,6 +157,86 @@ func TestObjectiveFailureTriageUsesCanonicalFailureRows(t *testing.T) {
 	}
 	if groups[0].Issue == nil || !groups[0].Issue.CircuitOpen {
 		t.Fatalf("issue = %+v, want circuit-open canonical link", groups[0].Issue)
+	}
+	if groups[0].Dismissable {
+		t.Fatal("linked group must not be dismissable")
+	}
+}
+
+func TestDismissObjectiveFailureGroupHidesCurrentEvidenceAndAllowsRecurrence(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "make progress toward run goal", Error: "stagnation watchdog stopped the run",
+		Count: 1, TerminalCount: 1, Blocking: true, Map: 0x12,
+	}
+	raw, _ := json.Marshal(failure)
+	for _, id := range []string{"run-a", "run-b"} {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+			id, 1, "occurrence-"+id, "sha256:occurrence", "canonical-key", "sha256:canonical", raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	count, linked, err := cp.dismissObjectiveFailureGroup("canonical-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked || count != 2 {
+		t.Fatalf("dismiss = count %d linked %v, want 2 false", count, linked)
+	}
+
+	w := NewWall("")
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("groups after dismiss = %+v, want none", groups)
+	}
+
+	if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+		"run-c", 1, "occurrence-run-c", "sha256:occurrence", "canonical-key", "sha256:canonical", raw); err != nil {
+		t.Fatal(err)
+	}
+	groups, err = cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Count != 1 || groups[0].Key != "canonical-key" || !groups[0].Dismissable {
+		t.Fatalf("groups after recurrence = %+v", groups)
+	}
+}
+
+func TestDismissObjectiveFailureGroupRefusesLinkedIssue(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "advance story", Error: "blocked", Count: 1, TerminalCount: 1, Blocking: true,
+	}
+	raw, _ := json.Marshal(failure)
+	if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+		"run-a", 1, "occurrence-key", "sha256:occurrence", "canonical-key", "sha256:canonical", raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO issue_links(failure_key,issue_id) VALUES(?,?)`, "canonical-key", "42"); err != nil {
+		t.Fatal(err)
+	}
+
+	count, linked, err := cp.dismissObjectiveFailureGroup("canonical-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !linked || count != 0 {
+		t.Fatalf("dismiss = count %d linked %v, want 0 true", count, linked)
+	}
+
+	var status string
+	if err := db.QueryRow(`SELECT delivery_status FROM objective_failures WHERE run_id=?`, "run-a").Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "pending" {
+		t.Fatalf("delivery_status = %q, want pending", status)
 	}
 }
 
