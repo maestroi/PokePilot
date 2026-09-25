@@ -103,7 +103,7 @@ func counterDirection(m *emu.Emu, decoder game.OverworldDecoder) (world.Step, er
 // at all, and a descriptive error when the boxes advance but the prompt never
 // appears. The wStatusFlags4 (bit 2 = BIT_USED_POKECENTER) in the diagnostics
 // distinguishes the first-visit and repeat-visit flows.
-func openNurseMenu(m *emu.Emu, decoder game.OverworldDecoder) error {
+func openNurseMenu(m *emu.Emu, decoder game.OverworldDecoder, center game.CenterDecoder) error {
 	m.Tap(emu.A, 3, 7)
 	var mem state.Mem
 	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
@@ -117,10 +117,10 @@ func openNurseMenu(m *emu.Emu, decoder game.OverworldDecoder) error {
 		return fmt.Errorf("skill: Heal: %w: map=%#04x at (%d,%d) wJoyIgnore=%#04x",
 			ErrNoDialogue, live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore))
 	}
-	mem = advanceUntil(m, healMenuBudget, func(mem *state.Mem) bool {
-		return state.DecodeTwoOptionMenu(mem) != nil
+	mem = advanceUntil(m, healMenuBudget, func(*state.Mem) bool {
+		return center.DecodeCenter(m).PromptOpen
 	})
-	if state.DecodeTwoOptionMenu(&mem) == nil {
+	if !center.DecodeCenter(m).PromptOpen {
 		live, liveErr := healRuntimeStateWithDecoder(m, decoder)
 		if liveErr != nil {
 			return fmt.Errorf("skill: Heal: yes/no prompt did not appear within %d iterations; observe world: %v", healMenuBudget, liveErr)
@@ -232,6 +232,10 @@ func Heal(m *emu.Emu) error {
 	if err != nil {
 		return err
 	}
+	center, err := centerDecoderFor(m)
+	if err != nil {
+		return err
+	}
 	live, err := healRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
 		return err
@@ -276,7 +280,7 @@ func Heal(m *emu.Emu) error {
 		return fmt.Errorf("skill: Heal: face the counter %s from (%d,%d): %w", step, x, y, err)
 	}
 
-	if err := openNurseMenu(m, decoder); err != nil {
+	if err := openNurseMenu(m, decoder, center); err != nil {
 		return err
 	}
 
@@ -293,7 +297,7 @@ func Heal(m *emu.Emu) error {
 			err, live.Map, live.X, live.Y, mem.U16BE(sym.FontLoaded), state.DecodeMenu(&mem))
 	}
 
-	if err := Cutscene(m, healRunBudget, allPartyCenterRecovered); err != nil {
+	if err := Cutscene(m, healRunBudget, func(*state.Mem) bool { return center.DecodeCenter(m).Recovered }); err != nil {
 		return fmt.Errorf("skill: Heal: %w", err)
 	}
 	if err := settleHealBoundaryWithDecoder(m, decoder, healRunBudget); err != nil {
@@ -308,7 +312,7 @@ func Heal(m *emu.Emu) error {
 	if err != nil {
 		return err
 	}
-	if !allPartyCenterRecovered(&mem) {
+	if !center.DecodeCenter(m).Recovered {
 		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: %+v (map=%#04x at (%d,%d) wJoyIgnore=%#04x)",
 			state.DecodeParty(&mem).Mons, live.Map, live.X, live.Y, mem.U16BE(sym.JoyIgnore))
 	}
