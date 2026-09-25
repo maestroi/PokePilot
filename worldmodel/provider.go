@@ -113,6 +113,8 @@ type GridSpec struct {
 	TilePairs     map[[2]uint8]bool
 	Ledges        []Ledge
 	CounterTiles  [3]uint8
+	// Traversal is the movement mode these collision semantics describe.
+	Traversal TraversalMode
 }
 
 // GridHeader is the compatibility boundary used by world.Build and

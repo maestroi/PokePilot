@@ -43,5 +43,8 @@ func routePlannerGen1Compatibility(
 			return nil, world.RoutePrerequisites{}, err
 		}
 	}
+	if routeGraph, err = withSurfSeaTopology(routeGraph, romData, &mem); err != nil {
+		return nil, world.RoutePrerequisites{}, err
+	}
 	return routeGraph, redRoutePrerequisites(routeGraph, romData, &mem), nil
 }

@@ -115,8 +115,11 @@ type Graph struct {
 	tiles          map[uint8]dim
 	connections    map[Edge]worldmodel.Connection
 	reachable      map[uint8]map[int][]int
-	provider       worldmodel.MapHeaderProvider
-	parseFailures  []MapParseFailure
+	// traversal records the movement mode of every WithMapGrid overlay;
+	// absent maps use the static land view.
+	traversal     map[uint8]TraversalMode
+	provider      worldmodel.MapHeaderProvider
+	parseFailures []MapParseFailure
 }
 
 // BuildGraph builds a map-level graph from an adapter-supplied provider. A

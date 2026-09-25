@@ -11,15 +11,18 @@ import (
 )
 
 const (
-	route2GateMap        uint8 = 0x31
-	route10Map           uint8 = 0x15
-	powerPlantMap        uint8 = 0x53
-	powerPlantWarpX      uint8 = 6
-	powerPlantWarpY      uint8 = 39
-	ceruleanCaveB1FMap   uint8 = 0xE3
-	ceruleanCave1FMap    uint8 = 0xE4
-	ceruleanCaveB1FWarpX uint8 = 0
-	ceruleanCaveB1FWarpY uint8 = 6
+	route2GateMap         uint8 = 0x31
+	diglettsCaveRoute2Map uint8 = 0x2E
+	route2DiglettWarpX    uint8 = 12
+	route2DiglettWarpY    uint8 = 9
+	route10Map            uint8 = 0x15
+	powerPlantMap         uint8 = 0x53
+	powerPlantWarpX       uint8 = 6
+	powerPlantWarpY       uint8 = 39
+	ceruleanCaveB1FMap    uint8 = 0xE3
+	ceruleanCave1FMap     uint8 = 0xE4
+	ceruleanCaveB1FWarpX  uint8 = 0
+	ceruleanCaveB1FWarpY  uint8 = 6
 )
 
 // redSideRouteTransitionForEdge models optional-world entrances whose door is
@@ -38,6 +41,26 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		t := semanticTransition("red:route2_gate_cut", edge, capCanCut)
 		t.PivotOnly = true
 		t.PortBypass = true
+		return t, true
+
+	case edge.From == semanticRoute2Map && edge.To == diglettsCaveRoute2Map &&
+		edge.WarpX == route2DiglettWarpX && edge.WarpY == route2DiglettWarpY:
+		// Diglett's Cave's Route 2 house opens onto a land pocket that only a
+		// Cut tree joins to the rest of Route 2, the mainland's only non-Fly
+		// link between Vermilion and Viridian. Same shape as the gate above.
+		t := semanticTransition("red:route2_diglett_cut", edge, capCanCut)
+		t.PivotOnly = true
+		t.PortBypass = true
+		return t, true
+
+	case edge.From == diglettsCaveRoute2Map && edge.To == semanticRoute2Map:
+		// Leaving the house lands in that pocket. PivotOnly keeps the door
+		// ordinary and makes the landing a live-topology boundary, so GoTo
+		// replans on Route 2 where the field planner can Cut out. Without it a
+		// Fuchsia-side journey to Viridian or Pallet has no route at all
+		// (run-2xj7ziq8p2p2o3siqjhbtm20e1, Secret Key via Pallet).
+		t := semanticTransition("red:route2_diglett_cut", edge, capCanCut)
+		t.PivotOnly = true
 		return t, true
 
 	case edge.From == route10Map && edge.To == powerPlantMap &&
@@ -63,7 +86,7 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 
 func (x *redRouteTransitionExecutor) executeSideRouteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, bool, error) {
 	switch transition.ID {
-	case "red:route2_gate_cut":
+	case "red:route2_gate_cut", "red:route2_diglett_cut":
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
 			return world.TransitionExecutionResult{}, true, blockage
 		}

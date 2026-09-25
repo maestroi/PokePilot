@@ -2,6 +2,8 @@ package skill
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -399,6 +401,10 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				if redRouteTransitionEffectComplete(mem, transition) {
 					continue
 				}
+				transition, ok = withObservedSurfTopology(g, edge, transition)
+				if !ok {
+					continue
+				}
 				transitions[edge] = transition
 			}
 		}
@@ -407,6 +413,76 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 		Transitions:  transitions,
 		Capabilities: redRouteCapabilities(romData, mem),
 	}
+}
+
+// withObservedSurfTopology drops a Surf seam's routing privileges once both
+// of its maps are water-decoded. PortBypass skips the source component check
+// and treats the landing as unknown because land collision cannot see water;
+// a water-decoded pair already models the crossing, and bypassing it lets
+// routing join disconnected water bodies (Route 20 is split by Seafoam
+// Islands: run-2xj7ziq8p2p2o3siqjhbtm20e1 surfed onto the east half and planned
+// the west Cinnabar seam until the connection band was exhausted). ok=false
+// means the edge is ordinary geometry: GoTo executes only a first leg, from the
+// live map, and Surf is already active whenever that map is water-decoded.
+func withObservedSurfTopology(g *world.Graph, edge world.Edge, t gameruntime.Transition) (gameruntime.Transition, bool) {
+	if !t.PortBypass || !slices.Contains(t.Requires, capCanSurf) {
+		return t, true
+	}
+	sourceMode, _ := g.MapTraversal(edge.From)
+	landingMode, _ := g.MapTraversal(edge.To)
+	return t, sourceMode != world.TraversalWater || landingMode != world.TraversalWater
+}
+
+// withSurfSeaTopology gives every map joined by a Surf seam its static water
+// view while the player can Surf, so routing sees which sea regions actually
+// connect instead of treating each Surf landing as an unknown frontier. Maps
+// already carrying a live overlay keep it. Without this a Fuchsia -> Pallet
+// journey always chose Route 19 -> Route 20 and only discovered Seafoam's split
+// on arrival (run-2xj7ziq8p2p2o3siqjhbtm20e1).
+func withSurfSeaTopology(g *world.Graph, romData []byte, mem *state.Mem) (*world.Graph, error) {
+	if g == nil || mem == nil || !redRouteCapabilities(romData, mem).Has(capCanSurf) {
+		return g, nil
+	}
+	seas := map[uint8]bool{}
+	for _, edges := range g.Edges {
+		for _, edge := range edges {
+			if edge.Kind != world.EdgeConnection {
+				continue
+			}
+			if t, ok := redRouteTransitionForEdge(edge); ok && t.PortBypass && slices.Contains(t.Requires, capCanSurf) {
+				seas[edge.From], seas[edge.To] = true, true
+			}
+		}
+	}
+	if len(seas) == 0 {
+		return g, nil
+	}
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint8, 0, len(seas))
+	for id := range seas {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		if _, overlaid := g.MapTraversal(id); overlaid {
+			continue
+		}
+		spec, err := provider.Grid(id, nil, world.TraversalWater)
+		if err != nil {
+			return nil, fmt.Errorf("skill: Surf sea topology for map %02x: %w", id, err)
+		}
+		grid, err := world.GridFromSpec(spec)
+		if err != nil {
+			return nil, fmt.Errorf("skill: Surf sea topology for map %02x: %w", id, err)
+		}
+		if g, err = g.WithMapGrid(id, grid); err != nil {
+			return nil, err
+		}
+	}
+	return g, nil
 }
 
 // ReachableMaps reports which native map IDs GoTo could actually route the
@@ -431,6 +507,9 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	state.Snapshot(m, &mem)
 	g, err = withAsleepRoute16Snorlax(g, romData, &mem)
 	if err != nil {
+		return nil, err
+	}
+	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
