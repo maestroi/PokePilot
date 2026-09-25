@@ -86,3 +86,18 @@ test('optional omissions produce diagnostics but remain installable', () => {
   assert.equal(validation.ok, true)
   assert.match(validation.warnings.join(' '), /default theme fallback/)
 })
+
+
+test('battle theme tokens are validated and inherited', () => {
+  const modern = resolveRenderTheme('rompilot-modern').theme
+  const retro = resolveRenderTheme('retro-16').theme
+  assert.ok(modern.battle.background)
+  assert.ok(retro.battle.background)
+  assert.notEqual(modern.battle.background, retro.battle.background)
+
+  const invalid = validateThemePack(minimalTheme({
+    battle: { background: 42 }
+  }))
+  assert.equal(invalid.ok, false)
+  assert.match(invalid.errors.join(' '), /battle\.background/)
+})
