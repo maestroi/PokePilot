@@ -207,7 +207,9 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	retryableBlackout := blackedOut
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
-	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted")
+	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") ||
+		failureCauseIs(result, "fishing_hunt_exhausted") ||
+		failureCauseIs(result, "safari_hunt_exhausted")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
@@ -217,7 +219,8 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// condition simply was not reached. A training shortfall explicitly means
 	// the lead gained a level; a hunt exhaustion (grass or fishing) means the
 	// controller completed the whole stochastic hunt budget without seeing the
-	// requested species. Neither is evidence that recovery itself is broken, so
+	// requested species (including a bounded paid Safari session). Neither is
+	// evidence that recovery itself is broken, so
 	// neither may consume the fatal consecutive-failure budget or look like idle
 	// time to the liveness watchdogs. Same-state quarantine still suppresses the
 	// exact objective when alternatives exist; explicit round/frame budgets
