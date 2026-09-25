@@ -63,11 +63,16 @@ func decodeTrainerFlagRef(romData []byte, bank uint8, ptr uint16) (trainerFlagRe
 	}
 	bit := romData[off]
 	base := uint16(romData[off+2]) | uint16(romData[off+3])<<8
-	addr := base + uint16(bit)/8
-	if base < sym.EventFlags || addr >= sym.EventFlags+0x200 {
+	// The header addresses the cartridge's native wEventFlags; shared decoders
+	// read canonical RAM, so the cartridge's layout binding translates it.
+	addr, mask, ok := rom.EventFlagRef(romData, base, bit)
+	if !ok {
+		return trainerFlagRef{}, fmt.Errorf("skill: trainer header event pointer %#04x + bit %d has no canonical event flag", base, bit)
+	}
+	if addr < sym.EventFlags || addr >= sym.EventFlags+0x200 {
 		return trainerFlagRef{}, fmt.Errorf("skill: trainer header event pointer %#04x + bit %d is outside wEventFlags", base, bit)
 	}
-	return trainerFlagRef{addr: addr, mask: uint8(1 << (bit & 7))}, nil
+	return trainerFlagRef{addr: addr, mask: mask}, nil
 }
 
 func trainerROMOffset(romData []byte, bank uint8, ptr uint16) (int, error) {

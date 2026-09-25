@@ -7,19 +7,16 @@ import "fmt"
 //   - PokedexOrder maps the game's internal species index to Pokédex number.
 //   - BaseStats stores seven TM/HM compatibility bytes for each Pokédex entry.
 //
-// These offsets are the canonical US Red layout already assumed by the other
-// parsers in this package (for example Moves in move.go). Keeping the policy in
+// The tables are located through the cartridge's bound layout (Tables), so
+// Red, Blue and Yellow read their own copies. Keeping the policy in
 // the ROM rather than a Go compatibility chart is important for patched ROMs:
 // a randomized/edited species should be taught according to the ROM it is
 // actually running.
 const (
-	technicalMachinesOffset = 0x13773 // 04:7773, 55 move ids
-	pokedexOrderOffset      = 0x41024 // 10:5024, internal species -> dex number
-	pokedexOrderLen         = 190
-	baseStatsOffset         = 0x383DE // 0E:43DE, indexed by dex number - 1
-	baseStatsEntryLen       = 28
-	baseStatsTMHMOffset     = 20
-	tmhmBytesPerSpecies     = 7
+	pokedexOrderLen     = 190
+	baseStatsEntryLen   = 28
+	baseStatsTMHMOffset = 20
+	tmhmBytesPerSpecies = 7
 
 	HM01Item uint8 = 0xC4
 	HM05Item uint8 = 0xC8
@@ -63,7 +60,11 @@ func LookupTMHM(romData []byte, item uint8) (Machine, error) {
 	if err != nil {
 		return Machine{}, err
 	}
-	off := technicalMachinesOffset + number - 1
+	base, err := Tables(romData).TechnicalMachines.Offset()
+	if err != nil {
+		return Machine{}, fmt.Errorf("rom: TechnicalMachines: %w", err)
+	}
+	off := base + number - 1
 	if off < 0 || off >= len(romData) {
 		return Machine{}, fmt.Errorf("rom: TM/HM table entry %d at offset %#x exceeds ROM of %d bytes", number, off, len(romData))
 	}
@@ -84,7 +85,11 @@ func InternalSpeciesDexNumber(romData []byte, species uint8) (uint8, error) {
 	if species == 0 || int(species) > pokedexOrderLen {
 		return 0, fmt.Errorf("rom: internal species %#02x is outside 1..%d", species, pokedexOrderLen)
 	}
-	off := pokedexOrderOffset + int(species) - 1
+	base, err := Tables(romData).PokedexOrder.Offset()
+	if err != nil {
+		return 0, fmt.Errorf("rom: PokedexOrder: %w", err)
+	}
+	off := base + int(species) - 1
 	if off >= len(romData) {
 		return 0, fmt.Errorf("rom: PokedexOrder entry for species %#02x at offset %#x exceeds ROM of %d bytes", species, off, len(romData))
 	}
@@ -106,7 +111,10 @@ func CanLearnTMHM(romData []byte, species uint8, item uint8) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	entry := baseStatsOffset + (int(dex)-1)*baseStatsEntryLen
+	entry, err := baseStatsEntry(romData, dex)
+	if err != nil {
+		return false, err
+	}
 	flag := machine.Number - 1
 	off := entry + baseStatsTMHMOffset + flag/8
 	if off < entry+baseStatsTMHMOffset || off >= entry+baseStatsTMHMOffset+tmhmBytesPerSpecies || off >= len(romData) {
@@ -122,7 +130,11 @@ func IsHMMove(romData []byte, move uint8) (bool, error) {
 	if move == 0 {
 		return false, nil
 	}
-	start := technicalMachinesOffset + NumTMs
+	base, err := Tables(romData).TechnicalMachines.Offset()
+	if err != nil {
+		return false, fmt.Errorf("rom: TechnicalMachines: %w", err)
+	}
+	start := base + NumTMs
 	end := start + NumHMs
 	if end > len(romData) {
 		return false, fmt.Errorf("rom: HM table at %#x..%#x exceeds ROM of %d bytes", start, end, len(romData))
@@ -133,4 +145,13 @@ func IsHMMove(romData []byte, move uint8) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// baseStatsEntry is the ROM offset of dex's BaseStats record.
+func baseStatsEntry(romData []byte, dex uint8) (int, error) {
+	base, err := Tables(romData).BaseStats.Offset()
+	if err != nil {
+		return 0, fmt.Errorf("rom: BaseStats: %w", err)
+	}
+	return base + (int(dex)-1)*baseStatsEntryLen, nil
 }

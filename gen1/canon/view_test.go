@@ -108,3 +108,28 @@ func TestReadsOutsideRAMPassThrough(t *testing.T) {
 		t.Fatalf("VRAM read = %#02x after %d native calls", b[0], calls)
 	}
 }
+
+func TestCanonicalFlagInvertsRenumbering(t *testing.T) {
+	v := testView()
+	// Native bit 9 is canonical bit 5; reached as byte+1 bit 1 or as base
+	// byte with FlagAction's carried bit offset 9.
+	for _, ref := range []struct {
+		byte uint16
+		bit  uint8
+	}{{0xC020, 1}, {0xC01F, 9}} {
+		addr, mask, ok := v.CanonicalFlag(ref.byte, ref.bit)
+		if !ok || addr != 0xC020 || mask != 1<<5 {
+			t.Fatalf("CanonicalFlag(%#04x,%d) = %#04x,%#02x,%v want 0xc020,0x20,true", ref.byte, ref.bit, addr, mask, ok)
+		}
+	}
+	// Native bit 3 is canonical bit 0; native bit 5 has no canonical flag.
+	if addr, mask, ok := v.CanonicalFlag(0xC01F, 3); !ok || addr != 0xC020 || mask != 1 {
+		t.Fatalf("CanonicalFlag(native 3) = %#04x,%#02x,%v want 0xc020,0x01,true", addr, mask, ok)
+	}
+	if _, _, ok := v.CanonicalFlag(0xC01F, 5); ok {
+		t.Fatal("native flag without a canonical index translated")
+	}
+	if _, _, ok := v.CanonicalFlag(0xC100, 0); ok {
+		t.Fatal("address outside every flag array translated")
+	}
+}

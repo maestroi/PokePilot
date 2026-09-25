@@ -10,10 +10,7 @@ const (
 )
 
 const (
-	wildDataPointersBank uint8  = 0x03
-	wildDataPointersAddr uint16 = 0x4EEB
-	wildSlots                   = 10
-	wildMapCount                = 0xF8 // NUM_MAPS: ids 0x00..0xF7
+	wildSlots = 10
 )
 
 // WildEncounter is one (map, habitat, species, level) slot from the ROM's
@@ -26,12 +23,14 @@ type WildEncounter struct {
 	Level   uint8
 }
 
-// WildEncounters walks WildDataPointers for every Red map id and returns
+// WildEncounters walks WildDataPointers for every map id and returns
 // every grass and water slot whose encounter rate is non-zero. A zero rate
 // occupies only the rate byte (NothingWildMons / Route 1 water), matching
 // LoadWildData's skip.
 func WildEncounters(romData []byte) ([]WildEncounter, error) {
-	base, err := bankedOffset(wildDataPointersBank, wildDataPointersAddr)
+	layout := Tables(romData)
+	wildMapCount := layout.MapCount
+	base, err := layout.WildDataPointers.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: WildDataPointers: %w", err)
 	}
@@ -46,7 +45,7 @@ func WildEncounters(romData []byte) ([]WildEncounter, error) {
 		if addr == 0 {
 			continue
 		}
-		rec, err := bankedOffset(wildDataPointersBank, addr)
+		rec, err := bankedOffset(layout.WildDataPointers.Bank, addr)
 		if err != nil {
 			return nil, fmt.Errorf("rom: wild data map %#02x: %w", mapID, err)
 		}

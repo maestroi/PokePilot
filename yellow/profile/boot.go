@@ -30,6 +30,7 @@ func (*Profile) DecodeBootState(reader game.MemoryReader) game.BootState {
 	if reader == nil {
 		return game.BootState{}
 	}
+	reader = native(reader)
 	mapID := reader.Peek8(sym.CurMap)
 	screen := gen1.NormalizeDisplayText(gen1.DecodeTiles(readBytes(reader, sym.TileMap, sym.TileMapLen)))
 	presetNames := gen1.PresetMenuNames(screen)

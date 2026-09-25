@@ -13,19 +13,15 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// The tileset table (pokered.sym: Tilesets = 03:47BE) is the same table
+// The tileset table (rom.Tables(romData).Tilesets) is the same table
 // world/grid.go reads for its collision side: 12 bytes per entry, the
-// grass tile at +10, the block-data pointer at +1. Train keeps its own
-// copy of the offsets because it needs the grass tile and block offset,
-// which world does not expose.
+// grass tile at +10, the block-data pointer at +1. Train reads it directly
+// because it needs the grass tile and block offset, which world does not
+// expose. WildDataPointers holds a 2-byte pointer per map to that map's wild
+// data record, whose first byte is the grass rate. Both are located through
+// the cartridge's bound Gen-I table layout, never a Red literal.
 const (
-	trainTilesetsBank uint8  = 0x03
-	trainTilesetsAddr uint16 = 0x47BE
-	// WildDataPointers (pokered/pokered.sym): a 2-byte pointer per map to
-	// that map's wild data record, whose first byte is the grass rate.
-	trainWildBank        uint8  = 0x03
-	trainWildAddr        uint16 = 0x4EEB
-	trainTilesetEntryLen        = 12
+	trainTilesetEntryLen = 12
 	// FIRST_INDOOR_MAP (pokered/constants/map_constants.asm:68): maps at or
 	// above this id are indoor (caves, buildings) and roll grass encounters
 	// on every walkable tile, not just the tileset's grass tile.
@@ -787,7 +783,7 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 		return nil, nil, nil
 	}
 	allTiles := mapID >= trainFirstIndoorMap && h.Tileset != trainForestTileset
-	tsOff, err := bankedOff(trainTilesetsBank, trainTilesetsAddr)
+	tsOff, err := rom.Tables(romData).Tilesets.Offset()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1144,7 +1140,8 @@ func WildGrass(romData []byte, mapID uint8) ([]WildSpecies, error) {
 // the map's WildDataPointers entry names the record. The record's first
 // byte is the grass encounter rate.
 func wildRecord(romData []byte, mapID uint8) (int, error) {
-	base, err := bankedOff(trainWildBank, trainWildAddr)
+	wild := rom.Tables(romData).WildDataPointers
+	base, err := wild.Offset()
 	if err != nil {
 		return 0, fmt.Errorf("skill: wild data: %w", err)
 	}
@@ -1156,7 +1153,7 @@ func wildRecord(romData []byte, mapID uint8) (int, error) {
 	// (LoadWildData loads it straight into hl and uses it):
 	// ld a,[hli] / ld h,[hl] / ld l,a.
 	off := uint16(romData[pOff]) | uint16(romData[pOff+1])<<8
-	recOff, err := bankedOff(trainWildBank, off)
+	recOff, err := bankedOff(wild.Bank, off)
 	if err != nil {
 		return 0, fmt.Errorf("skill: wild data: map %#04x: %w", mapID, err)
 	}

@@ -12,9 +12,8 @@ import "fmt"
 // engine/battle/core.asm:5129 walks it with the move's type in b and the
 // defender's two types in d and e.
 const (
-	typeEffectsOffset = 0x0F*0x4000 + (0x6474 - 0x4000)
-	typeEffectEntry   = 3
-	typeEffectsEnd    = 0xFF
+	typeEffectEntry = 3
+	typeEffectsEnd  = 0xFF
 	// typeEffectsMax bounds the scan so a mislocated table cannot run the
 	// length of the ROM. The real table is 82 entries.
 	typeEffectsMax = 256
@@ -53,8 +52,12 @@ func TypeEffectiveness(romData []byte, moveType, def1, def2 uint8) (int, error) 
 // typePairEffect is one lookup: the multiplier in tenths for moveType
 // against a single defending type, NeutralEffect when the chart is silent.
 func typePairEffect(romData []byte, moveType, defType uint8) (int, error) {
+	base, err := Tables(romData).TypeEffects.Offset()
+	if err != nil {
+		return 0, fmt.Errorf("rom: TypeEffects: %w", err)
+	}
 	for i := 0; i < typeEffectsMax; i++ {
-		off := typeEffectsOffset + i*typeEffectEntry
+		off := base + i*typeEffectEntry
 		if off+typeEffectEntry > len(romData) {
 			return 0, fmt.Errorf("rom: type chart entry %d at offset %d exceeds ROM of %d bytes", i, off, len(romData))
 		}

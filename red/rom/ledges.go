@@ -11,7 +11,10 @@ func Ledges(data []byte, tileset uint8) []Ledge {
 	if tileset != 0 {
 		return nil
 	} // HandleLedges only runs in OVERWORLD.
-	const offset = 6*0x4000 + 0x66cf - 0x4000 // pokered.sym: LedgeTiles
+	offset, err := Tables(data).LedgeTiles.Offset()
+	if err != nil {
+		return nil
+	}
 	var out []Ledge
 	for at := offset; at+3 < len(data) && data[at] != 0xff; at += 4 {
 		l := Ledge{From: data[at+1], Over: data[at+2]}

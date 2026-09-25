@@ -10,13 +10,17 @@ func DexNumberInternalSpecies(romData []byte, dex uint8) (uint8, error) {
 	if dex == 0 || dex > 151 {
 		return 0, fmt.Errorf("rom: Pokédex number %d is outside 1..151", dex)
 	}
-	end := pokedexOrderOffset + pokedexOrderLen
+	start, err := Tables(romData).PokedexOrder.Offset()
+	if err != nil {
+		return 0, fmt.Errorf("rom: PokedexOrder: %w", err)
+	}
+	end := start + pokedexOrderLen
 	if end > len(romData) {
-		return 0, fmt.Errorf("rom: PokedexOrder table at %#x..%#x exceeds ROM of %d bytes", pokedexOrderOffset, end, len(romData))
+		return 0, fmt.Errorf("rom: PokedexOrder table at %#x..%#x exceeds ROM of %d bytes", start, end, len(romData))
 	}
 
 	var found uint8
-	for i, mappedDex := range romData[pokedexOrderOffset:end] {
+	for i, mappedDex := range romData[start:end] {
 		if mappedDex != dex {
 			continue
 		}

@@ -23,8 +23,9 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 // portable providers' structured block evidence alongside the enriched menu.
 func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) ObjectiveOffer {
 	if !redLayoutGame(obs.GameID) {
-		// Everything below decodes Red/Blue WRAM and ROM tables. Other games
-		// offer through their own registered adapter's progression planner.
+		// Everything below is Red/Blue-owned story, Dex-source and training
+		// enrichment. Other games (Yellow included, whose story differs) offer
+		// through their own registered adapter's progression planner.
 		if factory, err := objectiveAdapterFactoryFor(obs.GameID); err == nil {
 			if planner, ok := factory(m, romData, RoutePriorityConservative).(ProgressionPlanner); ok {
 				return OfferWithProgressionEvidence(obs, known, planner)

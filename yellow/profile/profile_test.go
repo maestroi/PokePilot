@@ -43,26 +43,90 @@ func TestIdentityIsYellow(t *testing.T) {
 	}
 }
 
-func TestPhase4AdvertisesOnlyImplementedCapabilities(t *testing.T) {
+func TestAdvertisesSharedGen1EngineCapabilities(t *testing.T) {
 	p := New()
 	for _, feature := range []game.ProfileFeature{
 		game.FeatureMapParsing,
 		game.FeatureInventory,
 		game.FeatureStoryProgress,
-		game.FeatureSemanticSpecies,
-	} {
-		if !p.Features().Has(feature) {
-			t.Errorf("Yellow profile missing implemented capability %q", feature)
-		}
-	}
-	for _, feature := range []game.ProfileFeature{
 		game.FeatureBattles,
 		game.FeatureFieldMoves,
 		game.FeatureTrainerFlags,
+		game.FeatureSemanticSpecies,
 	} {
-		if p.Features().Has(feature) {
-			t.Errorf("Yellow profile unexpectedly advertises unimplemented %q", feature)
+		if !p.Features().Has(feature) {
+			t.Errorf("Yellow profile missing capability %q", feature)
 		}
+	}
+}
+
+func TestServesSharedGen1EngineDecoders(t *testing.T) {
+	var p game.GameProfile = New()
+	checks := map[string]bool{}
+	_, checks["battle execution"] = p.(game.BattleExecutionDecoder)
+	_, checks["battle menu"] = p.(game.BattleMenuDecoder)
+	_, checks["battle resources"] = p.(game.BattleResourcesDecoder)
+	_, checks["battle runtime"] = p.(game.BattleRuntimeDecoder)
+	_, checks["battle state"] = p.(game.BattleStateDecoder)
+	_, checks["capture"] = p.(game.CaptureDecoder)
+	_, checks["field action"] = p.(game.FieldActionDecoder)
+	_, checks["inventory"] = p.(game.InventoryDecoder)
+	_, checks["list menu"] = p.(game.ListMenuDecoder)
+	_, checks["menu"] = p.(game.MenuDecoder)
+	_, checks["overworld"] = p.(game.OverworldDecoder)
+	_, checks["party menu"] = p.(game.PartyMenuDecoder)
+	_, checks["boot"] = p.(game.BootProfile)
+	for name, ok := range checks {
+		if !ok {
+			t.Errorf("Yellow profile does not serve the shared %s decoder", name)
+		}
+	}
+}
+
+func TestSharedEngineDecodersReadCanonicalCoordinates(t *testing.T) {
+	// A canonical-view reader answers in Red coordinates: the shared
+	// overworld decoder must find the player at Red's wXCoord/wYCoord.
+	var canonical fakeMemory
+	canonical[redsym.XCoord], canonical[redsym.YCoord] = 9, 4
+	got := New().DecodeOverworld(&canonical)
+	if got.X != 9 || got.Y != 4 {
+		t.Fatalf("shared overworld decoder read (%d,%d), want canonical (9,4)", got.X, got.Y)
+	}
+}
+
+// boundMemory stands in for an emulator with Yellow's canonical view bound:
+// Peek* answers canonical coordinates, Peek*Native the cartridge's own RAM.
+type boundMemory struct {
+	canonical, native fakeMemory
+}
+
+func (m *boundMemory) Peek8(addr uint16) byte           { return m.canonical[addr] }
+func (m *boundMemory) PeekInto(addr uint16, dst []byte) { copy(dst, m.canonical[addr:]) }
+func (m *boundMemory) Peek8Native(addr uint16) byte     { return m.native[addr] }
+func (m *boundMemory) PeekIntoNative(addr uint16, dst []byte) {
+	copy(dst, m.native[addr:])
+}
+
+func TestYellowOwnedDecodersReadNativeRAMUnderCanonicalView(t *testing.T) {
+	var m boundMemory
+	m.native[sym.CurMap] = 0x26
+	m.native[sym.XCoord], m.native[sym.YCoord] = 3, 6
+	m.native[sym.CurMapWidth], m.native[sym.CurMapHeight] = 4, 4
+	// Canonical coordinates hold different bytes at Yellow's addresses.
+	m.canonical[sym.CurMap] = 0x01
+	m.canonical[sym.XCoord], m.canonical[sym.YCoord] = 40, 40
+
+	obs, err := New().DecodeObservation(&m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.NativeMapID != 0x26 || obs.X != 3 || obs.Y != 6 || !obs.Controllable {
+		t.Fatalf("observation map=%#02x (%d,%d) controllable=%v, want native 0x26 (3,6) controllable",
+			obs.NativeMapID, obs.X, obs.Y, obs.Controllable)
+	}
+	boot := New().DecodeBootState(&m)
+	if !boot.Ready || boot.NativeMapID != 0x26 || boot.X != 3 {
+		t.Fatalf("boot state = %+v, want native bedroom ready", boot)
 	}
 }
 

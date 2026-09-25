@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -29,5 +30,61 @@ func TestYellowAdapterIsSeparateFromRedBlueFactory(t *testing.T) {
 	}
 	if _, ok := factory(nil, nil, RoutePriorityConservative).(*yellowObjectiveAdapter); !ok {
 		t.Fatalf("Yellow factory returned %T", factory(nil, nil, RoutePriorityConservative))
+	}
+}
+
+func TestYellowStoryObjectivesAreTypedBlocksNotRedScripts(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	for _, o := range []Objective{
+		{Kind: KindStarter, Species: "pikachu"},
+		{Kind: KindProgress, Progress: "oak-parcel"},
+	} {
+		result, err := adapter.ExecuteOwned(o)
+		if !errors.Is(err, errYellowControllerUnavailable) || result.Outcome != OutcomeBlocked {
+			t.Fatalf("%s: outcome=%q err=%v, want blocked controller-unavailable", o, result.Outcome, err)
+		}
+		failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
+		if failure.Class != game.FailureClassBlocked || failure.Recoverable {
+			t.Fatalf("%s: failure = %+v, want non-recoverable block", o, failure)
+		}
+	}
+}
+
+func TestYellowSharedObjectivesValidateThroughGen1Engine(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	if adapter.gen1 == nil || adapter.gen1.gameID != yellowprofile.GameID {
+		t.Fatalf("Yellow adapter's Gen-I engine = %+v, want one bound to Yellow", adapter.gen1)
+	}
+	obs := Observation{GameID: yellowprofile.GameID, PartyCount: 1}
+	if err := adapter.Validate(Objective{Kind: KindGoTo, Place: "no such place"}, obs); err == nil {
+		t.Fatal("unknown destination validated: GoTo is not reaching the shared Gen-I validator")
+	}
+	if err := adapter.Validate(Objective{Kind: KindGoTo, Place: "viridian city"}, obs); err != nil {
+		t.Fatalf("shared GoTo rejected on Yellow: %v", err)
+	}
+	if err := adapter.Validate(Objective{Kind: KindStarter, Species: "charmander"}, obs); err == nil {
+		t.Fatal("Red starter accepted on Yellow")
+	}
+}
+
+func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
+	catalog := yellowObjectiveCatalog(Observation{GameID: yellowprofile.GameID, PartyCount: 1})
+	if len(catalog.Starters) != 0 {
+		t.Fatalf("starters offered after the Pikachu opening: %+v", catalog.Starters)
+	}
+	if len(catalog.ChallengeProfiles) != 0 {
+		t.Fatalf("Red story challenges offered on Yellow: %+v", catalog.ChallengeProfiles)
+	}
+	found := false
+	for _, d := range catalog.Destinations {
+		if d.Place == "viridian city" {
+			found = true
+			if d.Location != yellowLocationID(yellowprofile.GameID, 0x01) {
+				t.Fatalf("viridian city location = %q, want Yellow topology id", d.Location)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("shared Gen-I destinations missing from the Yellow catalog")
 	}
 }

@@ -11,10 +11,8 @@ const (
 )
 
 const (
-	evosMovesBank     uint8  = 0x0E
-	evosMovesAddr     uint16 = 0x705C
-	evosMovesCount           = 190 // NUM_POKEMON_INDEXES
-	maxEvoRecordBytes        = 64
+	evosMovesCount    = 190 // NUM_POKEMON_INDEXES
+	maxEvoRecordBytes = 64
 )
 
 // Evolution is one EvosMoves entry. From and To are Red internal species
@@ -41,7 +39,8 @@ type LevelUpMove struct {
 // records contribute nothing. This is the only evolution chart Dex mode
 // is allowed to use.
 func Evolutions(romData []byte) ([]Evolution, error) {
-	base, err := bankedOffset(evosMovesBank, evosMovesAddr)
+	table := Tables(romData).EvosMovesPointerTable
+	base, err := table.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: EvosMovesPointerTable: %w", err)
 	}
@@ -56,7 +55,7 @@ func Evolutions(romData []byte) ([]Evolution, error) {
 		if addr == 0 {
 			continue
 		}
-		rec, err := bankedOffset(evosMovesBank, addr)
+		rec, err := bankedOffset(table.Bank, addr)
 		if err != nil {
 			return nil, fmt.Errorf("rom: EvosMoves species %#02x: %w", species, err)
 		}
@@ -114,7 +113,8 @@ func LevelUpMoves(romData []byte, species uint8) ([]LevelUpMove, error) {
 	if species == 0 || int(species) > evosMovesCount {
 		return nil, fmt.Errorf("rom: LevelUpMoves species %#02x out of range 1..%d", species, evosMovesCount)
 	}
-	base, err := bankedOffset(evosMovesBank, evosMovesAddr)
+	table := Tables(romData).EvosMovesPointerTable
+	base, err := table.Offset()
 	if err != nil {
 		return nil, fmt.Errorf("rom: EvosMovesPointerTable: %w", err)
 	}
@@ -126,7 +126,7 @@ func LevelUpMoves(romData []byte, species uint8) ([]LevelUpMove, error) {
 	if addr == 0 {
 		return nil, nil
 	}
-	off, err := bankedOffset(evosMovesBank, addr)
+	off, err := bankedOffset(table.Bank, addr)
 	if err != nil {
 		return nil, fmt.Errorf("rom: EvosMoves species %#02x: %w", species, err)
 	}

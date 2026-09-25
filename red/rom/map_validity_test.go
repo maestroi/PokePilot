@@ -27,7 +27,7 @@ func TestMapValidityMatchesDecomp(t *testing.T) {
 		used[uint8(id)] = !strings.HasPrefix(string(entry[1]), "UNUSED_MAP_")
 	}
 	for id := 0; id < 256; id++ {
-		if got := validMapID(uint8(id)); got != used[uint8(id)] {
+		if got := redValidMapID(uint8(id)); got != used[uint8(id)] {
 			t.Errorf("map %02x validity = %v, decomp says %v", id, got, used[uint8(id)])
 		}
 		if !used[uint8(id)] {

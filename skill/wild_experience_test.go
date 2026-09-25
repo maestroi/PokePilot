@@ -57,3 +57,9 @@ func TestWildGrassSlotsZeroRateIsEmpty(t *testing.T) {
 		t.Fatalf("zero-rate WildGrassSlots = %+v, want empty", got)
 	}
 }
+
+// Red's WildDataPointers, which the synthetic images above patch.
+const (
+	trainWildBank uint8  = 0x03
+	trainWildAddr uint16 = 0x4EEB
+)
