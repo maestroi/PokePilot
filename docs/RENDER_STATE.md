@@ -10,6 +10,8 @@ The same state shape is intended for:
 
 Transport is not part of the contract. HTTP polling, SSE/WebSocket streaming, and replay files can all carry the same JSON representation.
 
+The live public spectator and private operator live view both consume the same validated `/render-state` feed and mount the shared `ModernSceneRenderer` component. Each viewer can select a theme locally, while unsupported scenes, unavailable semantic state, and explicit Classic mode fall back to the authoritative framebuffer. Replay remains a transport concern: recorded playback should feed reconstructable semantic states into this same renderer rather than create a separate game-view implementation.
+
 ## Versioning
 
 `schema_version` is currently `1`.
