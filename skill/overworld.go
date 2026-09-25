@@ -18,7 +18,7 @@ const (
 	hopSettleBudget  = 120
 )
 
-func movementButtonFor(s world.Step) (emu.Button, bool) {
+func buttonFor(s world.Step) (emu.Button, bool) {
 	if s.DX == 0 && (s.DY == 2 || s.DY == -2) {
 		s.DY /= 2
 	}
@@ -104,7 +104,7 @@ func stepOnceWithOverworldDecoder(m overworldMovementMachine, s world.Step, deco
 	if decoder == nil {
 		return fmt.Errorf("skill: StepOnce: nil overworld decoder")
 	}
-	btn, ok := movementButtonFor(s)
+	btn, ok := buttonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
