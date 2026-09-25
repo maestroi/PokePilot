@@ -11,7 +11,7 @@ func TestWatchExtraRouteServesBufferedData(t *testing.T) {
 	m := openTestEmu(t)
 	if err := m.HandleWatch("/render-state.json", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, "{"schema_version":1}") //nolint:errcheck // test handler
+		io.WriteString(w, `{"schema_version":1}`) //nolint:errcheck // test handler
 	})); err != nil {
 		t.Fatalf("HandleWatch: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestWatchExtraRouteServesBufferedData(t *testing.T) {
 	if got := resp.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
 		t.Fatalf("Content-Type = %q", got)
 	}
-	if string(body) != "{"schema_version":1}" {
+	if string(body) != `{"schema_version":1}` {
 		t.Fatalf("body = %q", body)
 	}
 }
