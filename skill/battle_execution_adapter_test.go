@@ -17,7 +17,7 @@ func (fakeGen2BattleExecutionDecoder) DecodeBattleExecution(r game.MemoryReader)
 	}
 	return game.BattleExecutionState{
 		InBattle: true,
-		Phase: phase,
+		Phase:    phase,
 		Learner: game.BattleMoveLearnerState{
 			Valid:     true,
 			PartySlot: 2,
