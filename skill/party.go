@@ -9,6 +9,21 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
+// partyMenuMarker identifies the FORCED battle party menu from wTileMap.
+// It is the footer line _PartyMenuBattleText ("Bring out which #MON?") that
+// DrawPartyMenu prints for BATTLE_PARTY_MENU (engine/menus/party_menu.asm).
+const partyMenuMarker = "Bring out"
+
+func partyMenuUp(m *emu.Emu) bool {
+	return battleScreenHas(m, partyMenuMarker)
+}
+
+const useItemPartyMenuMarker = "Use item"
+
+func useItemPartyMenuUp(m *emu.Emu) bool {
+	return battleScreenHas(m, useItemPartyMenuMarker)
+}
+
 // SetLead reorders the party through the start menu's POKEMON list so that
 // the member currently in slot is slot 0, the lead. A party of one needs no
 // decisions: SetLead(m, 0) verifies the range and returns without touching
