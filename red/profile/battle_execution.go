@@ -16,7 +16,7 @@ const (
 	battleTryLearnMarker      = "trying to learn"
 	battleAbandonLearnMarker  = "Abandon learning"
 	battleTrainerSwitchMarker = "change POK"
-	battleRunRefusedMarker     = "running from a"
+	battleRunRefusedMarker    = "running from a"
 	battleForgetMenuMarker    = "forgotten?"
 	battleHMCantDeleteMarker  = "HM techniques"
 	battleSwitchBoxMarker     = "SWITCH"
