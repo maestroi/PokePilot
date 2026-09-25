@@ -345,6 +345,9 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
+	if err := leaveSafariSessionFor(m, romData, dest, policy); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: Travel: %w", err)
+	}
 	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
 		return TravelResult{}, fmt.Errorf("skill: Travel: fast travel: %w", err)
 	} else if used {
@@ -377,6 +380,9 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: TravelFlee: maxBattles must be > 0, got %d", maxBattles)
+	}
+	if err := leaveSafariSessionFor(m, romData, dest, policy); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: %w", err)
 	}
 	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
 		return TravelResult{}, fmt.Errorf("skill: TravelFlee: fast travel: %w", err)
