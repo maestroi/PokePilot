@@ -102,8 +102,11 @@ test('fractional camera focus moves continuously between authoritative tiles', (
   const b = semanticViewport(sample, 320, 288, 32, { x: 10.5, y: 20 })
 
   assert.equal(a.startY, b.startY)
-  assert.ok(b.offsetX < a.offsetX)
-  assert.ok(Math.abs((a.offsetX - b.offsetX) - 16) < 0.001)
+  const worldTileX = 10
+  const screenA = a.offsetX + (worldTileX - a.startX) * a.tileSize
+  const screenB = b.offsetX + (worldTileX - b.startX) * b.tileSize
+  assert.ok(screenB < screenA)
+  assert.ok(Math.abs((screenA - screenB) - 16) < 0.001)
 })
 
 test('camera focus still clamps cleanly at map edges', () => {
