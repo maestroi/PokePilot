@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -629,7 +630,8 @@ func (cp *controlPlane) objectiveFailureTriage(w *Wall) ([]triageGroup, error) {
 	rows, err := cp.db.Query(`
 SELECT failure_key, fingerprint, family_key, family_fingerprint, run_id, failure_json
 FROM objective_failures
-WHERE blocking=TRUE OR terminal_count>0
+WHERE (blocking=TRUE OR terminal_count>0)
+  AND delivery_status<>'dismissed'
 ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -695,6 +697,8 @@ ORDER BY updated_at DESC`)
 		if link, ok := w.issueLinks[key]; ok && link.IssueID != "" {
 			copy := link
 			item.Issue = &copy
+		} else {
+			item.Dismissable = true
 		}
 		out = append(out, item)
 	}
@@ -711,3 +715,64 @@ ORDER BY updated_at DESC`)
 	})
 	return out, nil
 }
+
+func (cp *controlPlane) dismissObjectiveFailureGroup(key string) (int64, bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return 0, false, fmt.Errorf("failure key is required")
+	}
+	var issueID string
+	err := cp.db.QueryRow(`SELECT issue_id FROM issue_links WHERE failure_key=$1 AND issue_id<>''`, key).Scan(&issueID)
+	if err == nil {
+		return 0, true, nil
+	}
+	if err != sql.ErrNoRows {
+		return 0, false, err
+	}
+	result, err := cp.db.Exec(`
+UPDATE objective_failures
+SET delivery_status='dismissed', delivery_error='', updated_at=NOW()
+WHERE COALESCE(NULLIF(family_key,''), failure_key)=$1
+  AND (blocking=TRUE OR terminal_count>0)
+  AND delivery_status<>'dismissed'`, key)
+	if err != nil {
+		return 0, false, err
+	}
+	count, err := result.RowsAffected()
+	return count, false, err
+}
+
+func (w *Wall) handleDismissTriage(res http.ResponseWriter, req *http.Request) {
+	key := strings.TrimSpace(req.PathValue("key"))
+	if key == "" {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "failure key is required"})
+		return
+	}
+	w.mu.Lock()
+	link := w.issueLinks[key]
+	w.mu.Unlock()
+	if link.IssueID != "" {
+		writeJSON(res, http.StatusConflict, map[string]string{"error": "failure group already has a linked issue"})
+		return
+	}
+	cp := controlPlaneFor(w)
+	if cp == nil {
+		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "durable triage dismissal requires the control plane"})
+		return
+	}
+	count, linked, err := cp.dismissObjectiveFailureGroup(key)
+	if err != nil {
+		writeJSON(res, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if linked {
+		writeJSON(res, http.StatusConflict, map[string]string{"error": "failure group already has a linked issue"})
+		return
+	}
+	writeJSON(res, http.StatusOK, map[string]any{
+		"status":      "dismissed",
+		"key":         key,
+		"occurrences": count,
+	})
+}
+
