@@ -383,7 +383,11 @@ the default. Together the two bindings let `yellow/profile` delegate the
 shared engine decoders (battle, menus, overworld, field actions, capture,
 inventory) to the Gen-I engine exactly as Blue does. The agent runs Yellow's
 engine-owned objectives through the shared Gen-I executor, while its opening
-and story progression stay Yellow-owned.
+and story progression stay Yellow-owned: `yellow/story` drives them as a
+resumable phase machine over Yellow's native story flags
+(`yellowprofile.DecodeOpening`), reusing the shared Gen-I movement and battle
+skills, and the agent's Yellow registry (`agent/yellow_story.go`) offers and
+validates only the story goals that controller owns.
 
 The removal path is explicit: when the Gen I engine is factored out of `red/`
 into its own package, Red and Blue should both embed it and `blue/profile`

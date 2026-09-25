@@ -2,23 +2,24 @@ package agent
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/skill"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
-var errYellowControllerUnavailable = errors.New("Pokémon Yellow objective controller is not implemented yet")
+var errYellowControllerUnavailable = errors.New("no Pokémon Yellow controller owns this story goal yet")
 
 // yellowObjectiveAdapter runs Yellow objectives. The verbs the shared Gen-I
 // engine owns (travel, talk, trainers, gyms, healing, training, capture,
 // items, shopping, field-move repair) execute through that engine: Yellow's
 // cartridge binds the canonical memory view and its ROM tables, so the same
 // controllers drive it. The opening and story progression are Yellow's own
-// (Pikachu, Jessie & James, a different rival) and stay Yellow-owned; until a
-// Yellow controller exists they fail as a typed, non-recoverable block rather
-// than replaying Red's story scripts.
+// (Pikachu, Jessie & James, a different rival) and stay Yellow-owned: they run
+// through the Yellow story controller (yellow_story.go, yellow/story), and a
+// story goal no Yellow controller owns yet fails as a typed, non-recoverable
+// block rather than replaying Red's story scripts.
 type yellowObjectiveAdapter struct {
 	m       *emu.Emu
 	romData []byte
@@ -54,11 +55,8 @@ func (a *yellowObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	if o.Kind == KindStarter && o.Species != "" && o.Species != "pikachu" {
-		return fmt.Errorf("agent: %s: Yellow starter must be pikachu, got %q", o, o.Species)
-	}
 	if yellowOwnedKind(o.Kind) {
-		return nil
+		return validateYellowOwned(o)
 	}
 	return a.gen1.Validate(o, obs)
 }
@@ -74,7 +72,9 @@ func (a *yellowObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver)
 
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	if yellowOwnedKind(o.Kind) {
-		return ObjectiveResult{Objective: o, Outcome: OutcomeBlocked}, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+		restoreMoveObserver := skill.WithMoveObserver(a.m, gen1MoveObserver(a.romData, a.gen1.battleTurns))
+		defer restoreMoveObserver()
+		return executeYellowOwned(a.m, a.romData, o)
 	}
 	return a.gen1.ExecuteOwned(o)
 }
@@ -88,6 +88,9 @@ func (a *yellowObjectiveAdapter) SettlePostcondition(o Objective) error {
 }
 
 func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	if o.Kind == KindStarter {
+		return verifyYellowStarterPostcondition(o, final)
+	}
 	if yellowOwnedKind(o.Kind) {
 		_, err := verifyObjectivePostcondition(o, initial, final, result)
 		return err
@@ -96,11 +99,8 @@ func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final
 }
 
 func (a *yellowObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {
-	if errors.Is(err, errYellowControllerUnavailable) {
-		return gameruntime.Failure{
-			Phase: phase, Class: gameruntime.FailureClassBlocked,
-			Cause: "yellow_controller_unavailable", Recoverable: false,
-		}
+	if failure, ok := normalizeYellowStoryFailure(phase, err); ok {
+		return failure
 	}
 	return a.gen1.NormalizeFailure(phase, err, final)
 }
@@ -111,14 +111,20 @@ func (a *yellowObjectiveAdapter) CaptureFailure(o Objective, err error) error {
 	return a.gen1.CaptureFailure(o, err)
 }
 
+// ProgressionObjectives implements ProgressionPlanner with Yellow's own story
+// goals; Red's story registry is never consulted for Yellow.
+func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
+	return yellowProgressionObjectives(obs)
+}
+
 func (a *yellowObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog {
 	return yellowObjectiveCatalog(obs)
 }
 
 // yellowObjectiveCatalog is the shared Gen-I catalog with Yellow's own facts:
 // its map vocabulary, and the scripted Pikachu opening in place of Oak's
-// three-ball choice. Yellow's story challenges are not offered until a
-// Yellow progression controller owns them.
+// three-ball choice. Story goals come from ProgressionObjectives, and only
+// the ones the Yellow controller owns.
 func yellowObjectiveCatalog(obs Observation) ObjectiveCatalog {
 	facts := gen1CatalogFacts{Location: yellowLocationID}
 	if obs.PartyCount == 0 {
