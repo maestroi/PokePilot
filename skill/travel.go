@@ -426,7 +426,11 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 // action is re-entered from scratch after every resolution, so it must
 // re-observe the world and re-plan rather than resume stale local geometry.
 func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interruptionResolvers) (TravelResult, error) {
-	r = r.withWorldDefaults(m)
+	var err error
+	r, err = r.withWorldDefaults(m)
+	if err != nil {
+		return TravelResult{}, err
+	}
 	var res TravelResult
 	label := r.label
 	if label == "" {
@@ -456,7 +460,10 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 				return res, fmt.Errorf("skill: %s: still interrupted after %d engagement(s) (maxBattles): %w: %v",
 					label, maxBattles, ErrEngagementsExhausted, err)
 			}
-			pre := r.observe()
+			pre, observeErr := r.observe()
+			if observeErr != nil {
+				return res, fmt.Errorf("skill: %s: observe world before battle: %w", label, observeErr)
+			}
 			br, berr := r.resolveBattle()
 			if berr != nil {
 				return res, fmt.Errorf("skill: %s: battle %d: %w", label, res.Battles+res.Flees+1, berr)
@@ -467,7 +474,11 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 				res.Battles++
 			}
 			lost := br.outcome == state.ResultLost
-			res.Replans = append(res.Replans, r.settle(pre, lost))
+			settled, settleErr := r.settle(pre, lost)
+			if settleErr != nil {
+				return res, fmt.Errorf("skill: %s: settle world after battle: %w", label, settleErr)
+			}
+			res.Replans = append(res.Replans, settled)
 			if lost {
 				// A blackout ends the journey. Losing was once a silent
 				// continue — "the next pass re-plans from the Pokemon
