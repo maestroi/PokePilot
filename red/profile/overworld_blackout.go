@@ -33,7 +33,7 @@ func (*Profile) DecodeOverworldBlackout(reader game.MemoryReader) game.Overworld
 
 	return game.OverworldBlackoutState{
 		BlackoutInProgress: inProgress,
-		PartyAllFainted:     allFainted,
+		PartyAllFainted:    allFainted,
 		RespawnNativeMapID: uint16(mem.U8(sym.LastBlackoutMap)),
 	}
 }
