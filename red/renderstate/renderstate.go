@@ -84,20 +84,62 @@ func (p *Producer) Snapshot(reader game.MemoryReader, meta protocol.FrameMeta) (
 	meta.Revision = p.profile.Revision()
 	out := protocol.FromProfileObservation(meta, obs)
 
+	// Battle presentation is authoritative on its own and must not depend on
+	// overworld geometry remaining decodable while the battle engine owns the
+	// screen. This also prevents transient map-buffer churn from knocking a
+	// Modern viewer back to the framebuffer during battles.
+	if battle := semanticBattle(p.rom, &mem); battle != nil {
+		out.Scene = protocol.SceneBattle
+		out.Battle = battle
+		out.Capabilities = addCapabilities(out.Capabilities, protocol.CapabilityBattle)
+		if menu := semanticMenu(&mem); menu != nil {
+			out.Menu = menu
+			out.Capabilities = addCapabilities(out.Capabilities, protocol.CapabilityMenu)
+		}
+		if err := protocol.Validate(out); err != nil {
+			return protocol.RenderState{}, err
+		}
+		return out, nil
+	}
+
+	if menu := semanticMenu(&mem); menu != nil {
+		out.Scene = protocol.SceneMenu
+		out.Menu = menu
+		out.Capabilities = addCapabilities(out.Capabilities, protocol.CapabilityMenu)
+	} else if dialogue := semanticDialogue(&mem); dialogue != nil {
+		out.Scene = protocol.SceneDialogue
+		out.Dialogue = dialogue
+		out.Capabilities = addCapabilities(out.Capabilities, protocol.CapabilityDialogue)
+	} else {
+		out.Scene = protocol.SceneOverworld
+	}
+
 	header, err := rom.ParseMap(p.rom, uint8(obs.NativeMapID))
 	if err != nil {
+		if out.Scene != protocol.SceneOverworld {
+			return validatePresentationOnly(out)
+		}
 		return protocol.RenderState{}, fmt.Errorf("red renderstate: parse live map %02x: %w", obs.NativeMapID, err)
 	}
 	blocks, err := liveMapBlocks(&mem, header)
 	if err != nil {
+		if out.Scene != protocol.SceneOverworld {
+			return validatePresentationOnly(out)
+		}
 		return protocol.RenderState{}, err
 	}
 	grid, err := world.BuildFromBlocks(p.rom, header, blocks)
 	if err != nil {
+		if out.Scene != protocol.SceneOverworld {
+			return validatePresentationOnly(out)
+		}
 		return protocol.RenderState{}, fmt.Errorf("red renderstate: build live map %02x: %w", header.ID, err)
 	}
 	mapState, err := mapStateFor(header, grid)
 	if err != nil {
+		if out.Scene != protocol.SceneOverworld {
+			return validatePresentationOnly(out)
+		}
 		return protocol.RenderState{}, err
 	}
 	out.Map = mapState
@@ -107,6 +149,13 @@ func (p *Producer) Snapshot(reader game.MemoryReader, meta protocol.FrameMeta) (
 	if out.Player != nil {
 		out.Player.Movement = playerMovement(&mem, out.Player.Position)
 	}
+	if err := protocol.Validate(out); err != nil {
+		return protocol.RenderState{}, err
+	}
+	return out, nil
+}
+
+func validatePresentationOnly(out protocol.RenderState) (protocol.RenderState, error) {
 	if err := protocol.Validate(out); err != nil {
 		return protocol.RenderState{}, err
 	}
