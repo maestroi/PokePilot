@@ -123,3 +123,33 @@ test('stable entity identities interpolate independently and large entity jumps 
   clock.ingest(third, 200)
   assert.deepEqual(clock.sample(200).entityPositions.get(key), { x: 20, y: 4 })
 })
+
+
+test('emulator speed changes do not change presentation tween timing', () => {
+  const slowFrames = new PresentationClock({ minTweenMs: 40, maxTweenMs: 100 })
+  const fastFrames = new PresentationClock({ minTweenMs: 40, maxTweenMs: 100 })
+
+  slowFrames.ingest(state(1, 2), 0)
+  fastFrames.ingest(state(1, 2), 0)
+  slowFrames.ingest(state(2, 8), 100)
+  fastFrames.ingest(state(200, 8), 100)
+
+  const slowSample = slowFrames.sample(140)
+  const fastSample = fastFrames.sample(140)
+  assert.deepEqual(slowSample.player, fastSample.player)
+  assert.deepEqual(slowSample.camera, fastSample.camera)
+})
+
+test('authoritative movement progress is respected when supplied', () => {
+  const clock = new PresentationClock()
+  const moving = state(1, 10)
+  moving.player!.movement = {
+    kind: 'walk',
+    from: { x: 10, y: 5 },
+    to: { x: 11, y: 5 },
+    progress: 0.25
+  }
+  clock.ingest(moving, 0)
+
+  assert.deepEqual(clock.sample(0).player, { x: 10.25, y: 5 })
+})
