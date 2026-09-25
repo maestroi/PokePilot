@@ -34,20 +34,6 @@ const (
 	specialListMenuID    = 4
 )
 
-// Gen I two-option menu IDs from pokered/constants/menu_constants.asm and
-// pokered/data/yes_no_menu_strings.asm. Bit 7 of wTwoOptionMenuID controls
-// which entry starts selected; it does not change the option labels.
-const (
-	yesNoMenuID       = 0
-	northWestMenuID   = 1
-	southEastMenuID   = 2
-	wideYesNoMenuID   = 3
-	northEastMenuID   = 4
-	tradeCancelMenuID = 5
-	healCancelMenuID  = 6
-	noYesMenuID       = 7
-)
-
 // DisplayListMenuID watches A|B|SELECT. Using that live controller state is
 // important because wListMenuID is stale after a list closes; the ID alone
 // must never turn a later two-option prompt into an item/list menu.
@@ -94,7 +80,7 @@ func DecodeInteraction(m *Mem) InteractionState {
 			Text:    text,
 			Current: prompt.Index,
 			Max:     1,
-			Options: twoOptionLabels(m.U8(sym.TwoOptionMenuID)),
+			Options: twoOptionLabels(m),
 		}
 	}
 
@@ -151,23 +137,26 @@ func classifyCursorMenu(text string) InteractionKind {
 	return InteractionMenu
 }
 
-func twoOptionLabels(id uint8) [2]string {
-	switch id & 0x7f {
-	case yesNoMenuID, wideYesNoMenuID:
-		return [2]string{"YES", "NO"}
-	case northWestMenuID:
-		return [2]string{"NORTH", "WEST"}
-	case southEastMenuID:
-		return [2]string{"SOUTH", "EAST"}
-	case northEastMenuID:
-		return [2]string{"NORTH", "EAST"}
-	case tradeCancelMenuID:
-		return [2]string{"TRADE", "CANCEL"}
-	case healCancelMenuID:
-		return [2]string{"HEAL", "CANCEL"}
-	case noYesMenuID:
-		return [2]string{"NO", "YES"}
-	default:
+// twoOptionLabels reads the two labels DisplayTwoOptionMenu drew right of the
+// cursor column, one PlaceString <NEXT> (two rows) apart. wTwoOptionMenuID
+// cannot name them: the ROM zeroes it before HandleMenuInput for every menu
+// (text_box.asm .notNoYesMenu and the NO/YES branch), so a live TRADE/CANCEL
+// or HEAL/CANCEL menu read back as YES/NO.
+func twoOptionLabels(m *Mem) [2]string {
+	const screenWidth, screenHeight = 20, 18 // wTileMap geometry
+	x, y := int(m.U8(sym.TopMenuItemX)), int(m.U8(sym.TopMenuItemY))
+	if x+1 >= screenWidth || y+2 >= screenHeight {
 		return [2]string{}
 	}
+	tiles := m.Slice(sym.TileMap, sym.TileMapLen)
+	var out [2]string
+	for i := range out {
+		row := (y + 2*i) * screenWidth
+		fields := strings.Fields(DecodeTiles(tiles[row+x+1 : row+screenWidth]))
+		if len(fields) == 0 {
+			return [2]string{}
+		}
+		out[i] = strings.ToUpper(fields[0])
+	}
+	return out
 }
