@@ -137,6 +137,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 	if policy == nil {
 		return 0, errors.New("skill: Battle: nil policy")
 	}
+	executionDecoder, err := battleExecutionDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
+	menuDecoder, err := menuDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -157,7 +165,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 	// slot before Battle exits.
 	var lastForgetSlot = -1
 	var triedForgets map[uint8]bool
-	pendingLearnMove := uint8(0)
+	pendingLearnMove := uint16(0)
 	pendingLearnSlot := -1
 	pendingLearnPartySlot := -1
 	forcedChoiceVisits := 0
@@ -183,14 +191,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 		}
 
 		state.Snapshot(m, &mem)
+		execution := executionDecoder.DecodeBattleExecution(m)
 		if bs := state.DecodeBattle(&mem); bs != nil {
 			if p := progressOf(bs); p != lastProgress {
 				lastProgress, progressFrame = p, m.FrameCount()
 			}
 		}
 		if pendingLearnMove != 0 && pendingLearnSlot >= 0 && pendingLearnPartySlot >= 0 {
-			party := state.DecodeParty(&mem)
-			if pendingLearnPartySlot < len(party.Mons) && party.Mons[pendingLearnPartySlot].Moves[pendingLearnSlot] == pendingLearnMove {
+			if execution.MoveLearned(pendingLearnPartySlot, pendingLearnSlot, pendingLearnMove) {
 				if zbatDebug {
 					fmt.Printf("zbat move-learn verified move=%d party-slot=%d move-slot=%d\n",
 						pendingLearnMove, pendingLearnPartySlot, pendingLearnSlot)
@@ -231,15 +239,16 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 		}
 
 		switch {
-		case moveMenuUp(m):
-			if disabledMoveRefusalUp(m) {
+		case execution.Phase == game.BattleExecutionMoveMenu || execution.Phase == game.BattleExecutionMoveDisabled:
+			if execution.Phase == game.BattleExecutionMoveDisabled {
 				m.Tap(emu.A, 3, 7)
 				if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
-					return !disabledMoveRefusalUp(m)
+					return executionDecoder.DecodeBattleExecution(m).Phase != game.BattleExecutionMoveDisabled
 				}); err != nil {
 					return menuError(m, "clear the disabled-move refusal", err)
 				}
 				state.Snapshot(m, &mem)
+				execution = executionDecoder.DecodeBattleExecution(m)
 			}
 			bs := state.DecodeBattle(&mem)
 			if bs == nil {
@@ -249,7 +258,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			if len(usable) == 0 {
 				if slot, ok := ppRecoverySlot(&mem); ok {
 					m.Tap(emu.B, 3, 7)
-					if _, err := m.StepUntil(moveMenuBudget, mainMenuUp); err != nil {
+					if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
+						return executionDecoder.DecodeBattleExecution(m).Phase == game.BattleExecutionMainMenu
+					}); err != nil {
 						return menuError(m, "back out of unusable move menu for PP switch", err)
 					}
 					if zbatDebug {
@@ -261,7 +272,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 					continue
 				}
 				m.Tap(emu.B, 3, 7)
-				if _, err := m.StepUntil(moveMenuBudget, mainMenuUp); err != nil {
+				if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
+					return executionDecoder.DecodeBattleExecution(m).Phase == game.BattleExecutionMainMenu
+				}); err != nil {
 					x, y := playerXY(m)
 					return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: cannot leave unusable move menu: %w",
 						m.Peek8(sym.CurMap), x, y, bs, ErrNoUsableMove)
@@ -279,10 +292,11 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				return menuError(m, "select move", err)
 			}
 			_, _ = m.StepUntil(moveCloseBudget, func(m *emu.Emu) bool {
-				return !moveMenuUp(m)
+				phase := executionDecoder.DecodeBattleExecution(m).Phase
+				return phase != game.BattleExecutionMoveMenu && phase != game.BattleExecutionMoveDisabled
 			})
 
-		case mainMenuUp(m):
+		case execution.Phase == game.BattleExecutionMainMenu:
 			if openingTrainingSwitch {
 				bs := state.DecodeBattle(&mem)
 				if bs != nil {
@@ -368,9 +382,9 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				return menuError(m, "select FIGHT", err)
 			}
 
-		case moveLearnForgetRejected(lastForgetSlot, state.ScreenText(&mem)):
-			learner, learnerSlot, ok := naturalMoveLearner(&mem)
-			if !ok || lastForgetSlot >= len(learner.Moves) {
+		case execution.Phase == game.BattleExecutionHMForgetRejected && lastForgetSlot >= 0:
+			learner, learnerSlot, ok := naturalMoveLearner(execution)
+			if !ok || lastForgetSlot >= len(learner.Moves) || learner.Moves[lastForgetSlot] > 0xff {
 				x, y := playerXY(m)
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d during HM rejection",
 					m.Peek8(sym.CurMap), x, y, learnerSlot)
@@ -378,7 +392,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			if triedForgets == nil {
 				triedForgets = map[uint8]bool{}
 			}
-			rejectedMove := learner.Moves[lastForgetSlot]
+			rejectedMove := uint8(learner.Moves[lastForgetSlot])
 			triedForgets[rejectedMove] = true
 			if zbatDebug {
 				fmt.Printf("zbat move-learn action=hm-rejected party-slot=%d slot=%d move=%d\n", learnerSlot, lastForgetSlot, rejectedMove)
@@ -388,25 +402,21 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			pendingLearnPartySlot = -1
 			m.Tap(emu.A, 3, 7)
 			if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
-				return !battleScreenHas(m, hmCantDeleteMarker)
+				return executionDecoder.DecodeBattleExecution(m).Phase != game.BattleExecutionHMForgetRejected
 			}); err != nil {
 				return menuError(m, "dismiss HM move-forget refusal", err)
 			}
 
-		case forgetMenuUp(m):
-			if state.DecodeMenu(&mem).Max != 3 {
-				m.StepFrame()
-				continue
-			}
-			if state.DecodeBattle(&mem) == nil {
+		case execution.Phase == game.BattleExecutionForgetMove:
+			if !execution.InBattle {
 				continue
 			}
 			if lastForgetSlot >= 0 {
 				m.StepFrame()
 				continue
 			}
-			offered := m.Peek8(sym.MoveNum)
-			decision, learnerSlot, ok := naturalMoveDecisionForLearner(&mem, m.ROM(), offered, triedForgets)
+			offered := execution.OfferedMove
+			decision, learnerSlot, ok := naturalMoveDecisionForLearner(execution, m.ROM(), offered, triedForgets)
 			if !ok {
 				x, y := playerXY(m)
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d",
@@ -421,7 +431,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				fmt.Printf("zbat move-learn action=replace party-slot=%d %s\n", learnerSlot, decision.Reason)
 			}
 			slot := decision.ReplaceSlot
-			pendingLearnMove = offered
+			pendingLearnMove = uint16(decision.Offered)
 			pendingLearnSlot = slot
 			pendingLearnPartySlot = learnerSlot
 			if err := selectForgetSlot(m, slot); err != nil {
@@ -429,10 +439,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			}
 			lastForgetSlot = slot
 
-		case trainerSwitchPromptUp(m):
-			var s state.Mem
-			state.Snapshot(m, &s)
-			if state.DecodeTwoOptionMenu(&s) == nil {
+		case execution.Phase == game.BattleExecutionTrainerSwitch:
+			if _, ready := menuDecoder.DecodeTwoOption(m); !ready {
 				m.StepFrame()
 				continue
 			}
@@ -440,10 +448,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				return menuError(m, "decline trainer switch", err)
 			}
 
-		case abandonLearnPromptUp(m):
-			var s state.Mem
-			state.Snapshot(m, &s)
-			if state.DecodeTwoOptionMenu(&s) == nil {
+		case execution.Phase == game.BattleExecutionAbandonLearn:
+			if _, ready := menuDecoder.DecodeTwoOption(m); !ready {
 				m.StepFrame()
 				continue
 			}
@@ -451,22 +457,24 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				return menuError(m, "confirm decline of natural move", err)
 			}
 
-		case twoOptionPromptUp(m) || (pendingTryLearn && twoOptionCursorUp(m)):
-			var s state.Mem
-			state.Snapshot(m, &s)
-			text := state.ScreenText(&s)
-			if strings.Contains(text, tryLearnMarker) {
+		case execution.Phase == game.BattleExecutionUseNextPrompt ||
+			execution.Phase == game.BattleExecutionTryLearnPrompt ||
+			pendingTryLearn && func() bool {
+				_, ready := menuDecoder.DecodeTwoOption(m)
+				return ready
+			}():
+			if execution.Phase == game.BattleExecutionTryLearnPrompt {
 				pendingTryLearn = true
 			}
-			if state.DecodeTwoOptionMenu(&s) == nil {
+			if _, ready := menuDecoder.DecodeTwoOption(m); !ready {
 				m.Tap(emu.A, 3, 7)
 				continue
 			}
 			choice := 0
 			if pendingTryLearn {
-				if state.DecodeBattle(&s) != nil {
-					offered := m.Peek8(sym.MoveNum)
-					decision, learnerSlot, ok := naturalMoveDecisionForLearner(&s, m.ROM(), offered, nil)
+				if execution.InBattle {
+					offered := execution.OfferedMove
+					decision, learnerSlot, ok := naturalMoveDecisionForLearner(execution, m.ROM(), offered, nil)
 					if !ok {
 						x, y := playerXY(m)
 						return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): invalid move-learning party slot %d",
@@ -540,142 +548,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 	}
 }
 
-// Battle menus are identified by what the game has drawn into wTileMap,
-// because wFontLoaded — which every overworld skill relies on — is MEASURED
-// to stay 0 for the whole of a battle. Battle text does not go through the
-// overworld text engine. Gating on it made this whole state machine dead
-// code: the policy was never consulted and Battle degenerated into mashing A.
-const (
-	mainMenuMarker      = "FIGHT"
-	moveMenuMarker      = "TYPE/"
-	disabledMoveMarker  = "move is disabled"
-	useNextMonMarker    = "Use next"
-	tryLearnMarker      = "trying to learn"
-	abandonLearnMarker  = "Abandon learning"
-	trainerSwitchMarker = "change POK"
-	forgetMenuMarker    = "forgotten?"
-	hmCantDeleteMarker  = "HM techniques"
-	switchMenuMarker    = "Choose"
-	switchBoxMarker     = "SWITCH"
-)
-
-func mainMenuUp(m *emu.Emu) bool {
-	return battleScreenHas(m, mainMenuMarker)
-}
-
-func moveMenuUp(m *emu.Emu) bool {
-	return battleScreenHas(m, moveMenuMarker) || disabledMoveRefusalUp(m)
-}
-
-func disabledMoveRefusalUp(m *emu.Emu) bool {
-	return battleScreenHas(m, disabledMoveMarker)
-}
-
-func twoOptionPromptUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	t := state.ScreenText(&mem)
-	return strings.Contains(t, useNextMonMarker) || strings.Contains(t, tryLearnMarker)
-}
-
-func twoOptionCursorUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return state.DecodeTwoOptionMenu(&mem) != nil
-}
-
-func abandonLearnPromptUp(m *emu.Emu) bool {
-	return battleScreenHas(m, abandonLearnMarker)
-}
-
-func trainerSwitchPromptUp(m *emu.Emu) bool {
-	return battleScreenHas(m, trainerSwitchMarker)
-}
-
-func forgetMenuUp(m *emu.Emu) bool {
-	return battleScreenHas(m, forgetMenuMarker)
-}
-
-func moveLearnForgetRejected(selectedSlot int, text string) bool {
-	return selectedSlot >= 0 && strings.Contains(text, hmCantDeleteMarker)
-}
-
-func forgetSlot(romData []byte, moves [4]uint8, tried map[uint8]bool) int {
-	damagers := 0
-	damages := [4]bool{}
-	for i, id := range moves {
-		if id == 0 {
-			continue
-		}
-		damages[i] = true
-		if mv, err := rom.LookupMove(romData, id); err == nil && mv.Power == 0 {
-			damages[i] = false
-		}
-		if damages[i] {
-			damagers++
-		}
-	}
-	for i, id := range moves {
-		if id == 0 || tried[id] {
-			continue
-		}
-		if damagers == 1 && damages[i] {
-			continue
-		}
-		return i
-	}
-	return -1
-}
-
-func selectForgetSlot(m *emu.Emu, index int) error {
-	var cur int
-	stuck := 0
-	for i := 0; i < 60; i++ {
-		var s state.Mem
-		state.Snapshot(m, &s)
-		cur = state.DecodeMenu(&s).Current
-		if cur == index {
-			break
-		}
-		btn := emu.Down
-		if cur > index {
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != cur
-		}); err != nil {
-			if stuck >= 4 {
-				return fmt.Errorf("skill: selectForgetSlot: cursor stuck at %d, wanted %d: %w", cur, index, ErrMenuStuck)
-			}
-			stuck++
-		} else {
-			stuck = 0
-		}
-	}
-	var s state.Mem
-	state.Snapshot(m, &s)
-	if cur = state.DecodeMenu(&s).Current; cur != index {
-		return fmt.Errorf("skill: selectForgetSlot: cursor at %d, wanted %d: %w", cur, index, ErrMenuStuck)
-	}
-	m.Tap(emu.A, 3, 7)
-	return nil
-}
-
-func battleSwitchMenuUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return state.DecodeBattle(&mem) != nil && strings.Contains(state.ScreenText(&mem), switchMenuMarker)
-}
-
-func switchBoxUp(m *emu.Emu) bool {
-	return battleScreenHas(m, switchBoxMarker)
-}
-
-func selectFightEntry(m *emu.Emu) error {
-	return selectBattleMainMenuEntry(m, game.BattleMenuFight)
-}
-
+// firstLivePartySlot remains Gen-I battle strategy state for now. UI surface
+// classification and move-learning execution above are profile-driven.
 func firstLivePartySlot(mem *state.Mem) int {
 	party := state.DecodeParty(mem)
 	for i, mon := range party.Mons {
