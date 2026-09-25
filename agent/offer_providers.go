@@ -365,11 +365,6 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	return objectiveProviderResult{Candidates: out}
 }
 
-// restockHealingObjectives offers a travel-and-buy HP healing purchase when a
-// typed combat loss left the bag with no healing and no shop is on this map.
-// Without it the only buy offer required already standing in a shop, so a
-// challenge lost far from one (the League's chained fights) retried forever
-// with an empty bag.
 const dexCaptureSupplyIntent = "dex-capture-supply"
 
 // restockCaptureObjectives is the remote counterpart to the ordinary Mart
@@ -403,6 +398,11 @@ func restockCaptureObjectives(obs Observation) []Objective {
 	return nil
 }
 
+// restockHealingObjectives offers a travel-and-buy HP healing purchase when a
+// typed combat loss left the bag with no healing and no shop is on this map.
+// Without it the only buy offer required already standing in a shop, so a
+// challenge lost far from one (the League's chained fights) retried forever
+// with an empty bag.
 func restockHealingObjectives(obs Observation) []Objective {
 	if len(obs.RestockStock) == 0 || !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
 		return nil
