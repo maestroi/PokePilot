@@ -70,10 +70,7 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	if name == "" {
 		name = move.String()
 	}
-	if !capability.BadgeOwned {
-		if capability.BadgeRequired == "" {
-			return -1, fmt.Errorf("%w: %s is not unlocked for field use", ErrFieldMovePrerequisite, name)
-		}
+	if capability.BadgeRequired != "" && !capability.BadgeOwned {
 		return -1, fmt.Errorf("%w: %s requires the %s Badge", ErrFieldMovePrerequisite, name, capability.BadgeRequired)
 	}
 	if capability.Usable && capability.PartySlot >= 0 {
