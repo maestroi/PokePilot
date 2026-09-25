@@ -57,9 +57,22 @@ func ApplyRunPurpose(obs Observation, offered []Objective, purpose, goal string)
 	}
 
 	if debugPurposeDexGoal(goal) {
-		if supply := filterPurposeObjectives(annotated, func(o Objective) bool {
+		supply := filterPurposeObjectives(annotated, func(o Objective) bool {
 			return debugDexCaptureSupply(obs, o)
-		}); len(supply) > 0 {
+		})
+		if len(supply) == 0 && normalBallStock(obs) < minimumCaptureStock {
+			// A direct buy exists only while standing in a Mart. For a Debug+Dex
+			// run, add the same deterministic travel-and-buy recovery objective
+			// used by the Red runtime when a reachable Mart is known. Keep this
+			// scoped here so Champion/speedrun menus are not polluted by Dex-only
+			// capture infrastructure.
+			remote := restockCaptureObjectives(obs)
+			annotated = append(annotated, AnnotateRunPurpose(obs, remote, purpose)...)
+			supply = filterPurposeObjectives(annotated, func(o Objective) bool {
+				return debugDexCaptureSupply(obs, o)
+			})
+		}
+		if len(supply) > 0 {
 			return supply
 		}
 		if acquisition := filterPurposeObjectives(annotated, func(o Objective) bool {
