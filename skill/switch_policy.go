@@ -140,7 +140,7 @@ func chooseTrainingCarrySwitchState(romData []byte, resources game.BattleResourc
 	decision.Active = evaluateActiveForSwitch(romData, party, activeSlot, b)
 	_, defender := combat.PlayerMatchup(b)
 	for slot, mon := range party {
-		if slot == activeSlot || mon.Fainted() || mon.Level < minLevel || mon.StatusName() == "frozen" {
+		if slot == activeSlot || mon.Fainted() || mon.Level < minLevel || mon.Status == "frozen" {
 			continue
 		}
 		// Training is optional work: do not send a carry below the same 50% HP
@@ -200,13 +200,12 @@ func evaluateActiveForSwitch(romData []byte, party []game.BattlePartyMon, active
 			pp[i] = 0
 		}
 	}
-	return evaluateSwitchCombatant(romData, activeSlot, mon.Species, mon.StatusName(), moves, pp, attacker, defender)
+	return evaluateSwitchCombatant(romData, activeSlot, mon.NativeSpeciesID, mon.Status, moves, pp, attacker, defender)
 }
 
 func evaluatePartyMonForSwitch(romData []byte, slot int, mon game.BattlePartyMon, defender combat.Combatant) switchEvaluation {
 	type1, ok1 := nativeByte(mon.Type1)
 	type2, ok2 := nativeByte(mon.Type2)
-	species, _ := nativeByte(mon.NativeSpeciesID)
 	if !ok1 || !ok2 {
 		return switchEvaluation{Slot: slot, Species: mon.NativeSpeciesID, Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status, BestMoveSlot: -1}
 	}
@@ -224,12 +223,12 @@ func evaluatePartyMonForSwitch(romData []byte, slot int, mon game.BattlePartyMon
 		}
 		moves[i], pp[i] = id, move.PP
 	}
-	return evaluateSwitchCombatant(romData, slot, species, mon.Status, moves, pp, attacker, defender)
+	return evaluateSwitchCombatant(romData, slot, mon.NativeSpeciesID, mon.Status, moves, pp, attacker, defender)
 }
 
-func evaluateSwitchCombatant(romData []byte, slot int, species uint8, status string, moves, pp [4]uint8, attacker, defender combat.Combatant) switchEvaluation {
+func evaluateSwitchCombatant(romData []byte, slot int, species uint16, status string, moves, pp [4]uint8, attacker, defender combat.Combatant) switchEvaluation {
 	e := switchEvaluation{
-		Slot: slot, Species: uint16(species), Level: attacker.Level,
+		Slot: slot, Species: species, Level: attacker.Level,
 		HP: attacker.HP, MaxHP: attacker.MaxHP, Status: status,
 		BestMoveSlot: -1, IncomingRisk: incomingTypeRisk(romData, defender, attacker),
 		FieldMoves: fieldMoveCount(moves),
