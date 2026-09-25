@@ -50,17 +50,29 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 	}
 }
 
+// route22RivalCanReturnImmediately distinguishes a fully later story state
+// from the narrower rival event. The rival bit is set before its after-battle
+// text/music/exit script necessarily returns control, so an event-positive
+// checkpoint must still pass through resolveRoute22LeagueRival's settlement.
+func route22RivalCanReturnImmediately(facts state.StoryFacts) bool {
+	return facts.LeagueChallengeStarted || facts.LeagueChampionDefeated || facts.MainStoryComplete
+}
+
 // VictoryRoadResolveRival owns only the final Route 22 rival transaction. The
-// completion event is already projected as route_22_rival_resolved, so a
-// checkpoint after the battle resumes at the Route 23 stage without replay.
+// completion event is already projected as route_22_rival_resolved, but the
+// event alone is not a clean objective boundary: a checkpoint can capture the
+// trailing after-battle script after the event is set and before control returns.
 func VictoryRoadResolveRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	_, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
-	if facts.Route22RivalResolved || facts.LeagueChallengeStarted {
+	if route22RivalCanReturnImmediately(facts) {
 		return nil
 	}
+	// Even an event-positive rival checkpoint must enter the resolver: it skips
+	// replaying the battle itself, then Cutscene settles the owned trailing
+	// Route22Rival1AfterBattleScript until player control is restored (#1861).
 	if err := resolveRoute22LeagueRival(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadResolveRival: %w", err)
 	}
