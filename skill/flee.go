@@ -240,7 +240,7 @@ func fleeOneAttempt(m *emu.Emu) (fleeOutcome, error) {
 			// Escaped: the battle is over. Settle the end-of-battle text and
 			// wait until the player is controllable — the positive half of
 			// the postcondition.
-			return fleeSucceeded, settleAfterBattle(m, &mem)
+			return fleeSucceeded, settleAfterBattle(m, nil)
 		}
 		switch {
 		case !refused && strings.Contains(state.ScreenText(&mem), trainerNoRunningMarker):
