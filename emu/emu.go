@@ -49,6 +49,25 @@ type Emu struct {
 	// stepped mirrors FrameCount after each step for Progress readers on
 	// other goroutines.
 	stepped atomic.Uint64
+
+	// view, when bound, answers Peek*/SnapshotMemory in the running game
+	// profile's canonical memory coordinates. See BindMemoryView.
+	view MemoryView
+}
+
+// MemoryView presents the machine's native memory in another coordinate
+// system. A Gen-I revision whose RAM layout differs from the canonical engine
+// (Yellow against Red) binds one so shared decoders keep their addresses.
+// ReadInto must fill dst from canonical addr using only native reads.
+type MemoryView interface {
+	ReadInto(native func(addr uint16, dst []byte), addr uint16, dst []byte)
+}
+
+// BindMemoryView routes Peek8, Peek16, PeekInto and SnapshotMemory through v.
+// A nil v restores native reads. The Peek*Native methods always read the
+// machine as it is, for game-owned decoders and forensic dumps.
+func (m *Emu) BindMemoryView(v MemoryView) {
+	m.view = v
 }
 
 // Open loads a ROM using the cartridge-inferred hardware model. It performs
@@ -137,24 +156,65 @@ func (m *Emu) OnFrame(fn func(*Emu)) {
 
 // Peek8 reads a byte without any hardware side effects.
 func (m *Emu) Peek8(addr uint16) byte {
-	return m.e.Peek8(addr)
+	if m.view == nil {
+		return m.e.Peek8(addr)
+	}
+	var b [1]byte
+	m.view.ReadInto(m.e.PeekInto, addr, b[:])
+	return b[0]
 }
 
 // Peek16 reads a little-endian 16-bit value without side effects,
 // for CPU-style pointers.
 func (m *Emu) Peek16(addr uint16) uint16 {
-	return m.e.Peek16(addr)
+	if m.view == nil {
+		return m.e.Peek16(addr)
+	}
+	var b [2]byte
+	m.view.ReadInto(m.e.PeekInto, addr, b[:])
+	return uint16(b[0]) | uint16(b[1])<<8
 }
 
 // PeekInto fills dst with len(dst) bytes starting at addr, without
 // side effects and without allocating.
 func (m *Emu) PeekInto(addr uint16, dst []byte) {
-	m.e.PeekInto(addr, dst)
+	if m.view == nil {
+		m.e.PeekInto(addr, dst)
+		return
+	}
+	m.view.ReadInto(m.e.PeekInto, addr, dst)
 }
 
 // SnapshotMemory copies the complete 64 KiB address space into dst and
 // returns the frame number the bytes belong to.
 func (m *Emu) SnapshotMemory(dst []byte) (uint64, error) {
+	if m.view == nil {
+		return m.e.SnapshotMemory(dst)
+	}
+	raw := make([]byte, len(dst))
+	frame, err := m.e.SnapshotMemory(raw)
+	if err != nil {
+		return frame, err
+	}
+	m.view.ReadInto(func(addr uint16, out []byte) { copy(out, raw[addr:]) }, 0, dst)
+	return frame, nil
+}
+
+// Peek8Native reads the machine's own byte at addr, ignoring any bound view.
+func (m *Emu) Peek8Native(addr uint16) byte {
+	return m.e.Peek8(addr)
+}
+
+// PeekIntoNative fills dst from the machine's own memory, ignoring any bound
+// view.
+func (m *Emu) PeekIntoNative(addr uint16, dst []byte) {
+	m.e.PeekInto(addr, dst)
+}
+
+// SnapshotMemoryNative copies the machine's own 64 KiB address space,
+// ignoring any bound view. Forensic dumps use it so a .ram file is always
+// the bytes the CPU saw.
+func (m *Emu) SnapshotMemoryNative(dst []byte) (uint64, error) {
 	return m.e.SnapshotMemory(dst)
 }
 

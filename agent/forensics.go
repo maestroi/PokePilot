@@ -92,11 +92,14 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 		return fmt.Errorf("ram forensics mkdir %s: %w", dir, err)
 	}
 
-	var mem state.Mem
-	frame, err := m.SnapshotMemory(mem[:])
+	// The .ram dump is the machine's own bytes (instruction-level probes
+	// watch native addresses); the decoded summary reads the canonical view.
+	var raw, mem state.Mem
+	frame, err := m.SnapshotMemoryNative(raw[:])
 	if err != nil {
 		return fmt.Errorf("ram forensics snapshot: %w", err)
 	}
+	state.Snapshot(m, &mem)
 	gs := state.Decode(&mem)
 	base, err := uniqueFailureBase(dir, fmt.Sprintf("%s%010d-%s", prefix, frame, slug))
 	if err != nil {
@@ -105,7 +108,7 @@ func captureRAM(m *emu.Emu, prefix, kind, objective, cause, slug string) error {
 	ramPath := filepath.Join(dir, base+".ram")
 	statePath := filepath.Join(dir, base+".state")
 	metaPath := filepath.Join(dir, base+".json")
-	if err := os.WriteFile(ramPath, mem[:], 0o644); err != nil {
+	if err := os.WriteFile(ramPath, raw[:], 0o644); err != nil {
 		return fmt.Errorf("ram forensics write %s: %w", ramPath, err)
 	}
 

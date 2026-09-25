@@ -67,7 +67,7 @@ const selectedRunID = ref(runIDFromLocation(window.location.pathname, window.loc
 const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
-const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'classic' ? 'classic' : 'modern')
+const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'modern' ? 'modern' : 'classic')
 const themeOptions = renderThemeOptions()
 const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || DEFAULT_RENDER_THEME_ID
 const initialThemeSelection = resolveRenderTheme(storedThemeID)

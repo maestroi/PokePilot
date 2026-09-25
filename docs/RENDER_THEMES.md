@@ -4,7 +4,7 @@ The semantic spectator renderer consumes a viewer-selected **theme pack**. A the
 
 ## Bundled themes
 
-The default presentation is **Gold / Silver** (`pokegold-gen2`). It renders Pokémon Red's semantic state with selected Pokémon Gold/Silver Kanto tiles, overworld sprites, Gen-II palettes, and Gold battle sprites. **Tiny Town Pixel** remains as the CC0 alternative. **Classic** is not a theme pack: it is the original framebuffer fallback/debug view.
+The default presentation is **Gold / Silver** (`pokegold-gen2`). It renders Pokémon Red's semantic state with selected Pokémon Gold/Silver Kanto tiles, overworld sprites, Gen-II palettes, and Gold battle sprites. **Tiny Town Pixel** remains as the CC0 alternative. **Classic** is not a theme pack: it is the original emulator framebuffer, and the spectator opens in it by default until a viewer opts into the semantic renderer (stored under `pokepilot.spectator.renderer`).
 
 The old `rompilot-modern` and `retro-16` packs are no longer bundled.
 
