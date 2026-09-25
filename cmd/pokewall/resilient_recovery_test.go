@@ -179,3 +179,29 @@ func TestResilientMajorRollbackWalksBackwardThenFresh(t *testing.T) {
 		t.Fatalf("rollback past retained milestones = %v, want os.ErrNotExist for fresh boot", err)
 	}
 }
+
+// run-s6v9q3t2w5rl: past its last badge, a Pokédex campaign progresses by
+// acquiring species. That must reset rollback depth without lowering the
+// story high-water mark a rolled-back attempt reports.
+func TestResilientRecoveryDexOwnedIsItsOwnFrontierAxis(t *testing.T) {
+	tile := &Tile{
+		RecoveryProfile:  farm.RecoveryProfileResilient,
+		RecoveryAttempts: 7, RecoveryBadges: 8, RecoveryEvents: 6, RecoveryMaps: 129, RecoveryDexOwned: 22,
+	}
+	noteRecoveryProgressLocked(tile, &farm.Progress{Badges: 8, Events: 6, Maps: 129, Coverage: &farm.Coverage{DexOwned: 22}})
+	if tile.RecoveryAttempts != 7 {
+		t.Fatalf("same dex count reset recovery depth to %d", tile.RecoveryAttempts)
+	}
+	noteRecoveryProgressLocked(tile, &farm.Progress{Badges: 7, Events: 5, Maps: 120, Coverage: &farm.Coverage{DexOwned: 23}})
+	if tile.RecoveryAttempts != 0 || tile.RecoveryDexOwned != 23 {
+		t.Fatalf("new species = attempts %d dex %d, want reset at 23", tile.RecoveryAttempts, tile.RecoveryDexOwned)
+	}
+	if tile.RecoveryBadges != 8 || tile.RecoveryEvents != 6 || tile.RecoveryMaps != 129 {
+		t.Fatalf("dex progress lowered story frontier to %d/%d/%d", tile.RecoveryBadges, tile.RecoveryEvents, tile.RecoveryMaps)
+	}
+	tile.RecoveryAttempts = 3
+	noteRecoveryProgressLocked(tile, &farm.Progress{Badges: 8, Events: 7, Maps: 129, Coverage: &farm.Coverage{DexOwned: 10}})
+	if tile.RecoveryAttempts != 0 || tile.RecoveryEvents != 7 || tile.RecoveryDexOwned != 23 {
+		t.Fatalf("story progress = attempts %d events %d dex %d", tile.RecoveryAttempts, tile.RecoveryEvents, tile.RecoveryDexOwned)
+	}
+}

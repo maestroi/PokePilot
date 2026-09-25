@@ -135,6 +135,7 @@ func TestControlPlanePersistedStateRestoresRetryStateWithoutTelemetry(t *testing
 		RecoveryBadges:   4,
 		RecoveryEvents:   31,
 		RecoveryMaps:     74,
+		RecoveryDexOwned: 55,
 		Activity: []runActivityEvent{
 			{Source: "recovery", Kind: "rollback", Summary: "rollback to badge 3"},
 			{Source: "system", Kind: "leased", Summary: "attempt 5 leased"},
@@ -173,7 +174,7 @@ func TestControlPlanePersistedStateRestoresRetryStateWithoutTelemetry(t *testing
 	if tile.Status != statusQueued || tile.Attempts != 4 || tile.ErrorAttempts != 2 || tile.LossRecoveries != 1 {
 		t.Fatalf("restored recovery state = status %q attempts %d error_attempts %d loss_recoveries %d", tile.Status, tile.Attempts, tile.ErrorAttempts, tile.LossRecoveries)
 	}
-	if tile.RecoveryProfile != farm.RecoveryProfileResilient || tile.RecoveryAttempts != 3 || tile.RecoveryBadges != 4 || tile.RecoveryEvents != 31 || tile.RecoveryMaps != 74 {
+	if tile.RecoveryProfile != farm.RecoveryProfileResilient || tile.RecoveryAttempts != 3 || tile.RecoveryBadges != 4 || tile.RecoveryEvents != 31 || tile.RecoveryMaps != 74 || tile.RecoveryDexOwned != 55 {
 		t.Fatalf("restored resilient state = profile %q attempts %d frontier %d/%d/%d", tile.RecoveryProfile, tile.RecoveryAttempts, tile.RecoveryBadges, tile.RecoveryEvents, tile.RecoveryMaps)
 	}
 	if len(tile.Activity) != 2 || tile.Activity[0].Source != "recovery" || tile.Activity[1].Source != "system" {
