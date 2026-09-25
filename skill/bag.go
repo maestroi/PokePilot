@@ -39,7 +39,10 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	if !state.Controllable(&mem) {
 		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return fmt.Errorf("skill: EnterWildBattle: observe world: %w", err)
+	}
 	grass, grid, err := grassCells(m.ROM(), now.Map)
 	if err != nil {
 		return err
