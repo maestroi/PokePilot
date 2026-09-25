@@ -437,8 +437,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	restoreRunID := setFarmRunID(spec.RunID)
 	defer restoreRunID()
 
-	// A new lease must not inherit the previous run's plan or semantic frame:
-	// both buffers live for the worker's lifetime.
+	// A new lease must not inherit the previous run's sample callback, plan,
+	// or semantic frame. prepareFarmAttempt can restore/step before the new
+	// callback is installed, so detach the old lease first.
+	m.OnSample(nil)
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
 	renderFeed.reset()
 
