@@ -227,6 +227,7 @@ func spectatorHandlerWithReplay(wallBase, replayBase string) http.Handler {
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/watch", spectatorSnapshotWithReplay(wallBase, catalog))
 	mux.HandleFunc("GET /frame", spectatorFrame(wallBase))
+	mux.HandleFunc("GET /render-state", spectatorRenderState(wallBase))
 
 	if catalog.enabled() {
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/status", spectatorReplayStatusHandler(catalog))
