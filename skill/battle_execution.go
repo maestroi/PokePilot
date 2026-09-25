@@ -85,7 +85,6 @@ func switchBoxUp(m *emu.Emu) bool {
 	return err == nil && battleExecutionPhase(m, decoder) == game.BattleExecutionSwitchBox
 }
 
-
 func selectFightEntry(m *emu.Emu) error {
 	return selectBattleMainMenuEntry(m, game.BattleMenuFight)
 }
