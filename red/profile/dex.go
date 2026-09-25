@@ -28,7 +28,7 @@ func (*Profile) BuildDexCatalog(romData []byte, owned, seen []game.SpeciesID) (g
 	return game.AssembleDexCatalog(entries, sources, owned, seen, redExclusiveChoices(), redEventOnly()), nil
 }
 
-func projectPokedex(romData []byte, dex state.PokedexState) (owned, seen []game.SpeciesID) {
+func ProjectPokedex(romData []byte, dex state.PokedexState) (owned, seen []game.SpeciesID) {
 	return projectDexList(romData, dex.Owned), projectDexList(romData, dex.Seen)
 }
 
