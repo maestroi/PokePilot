@@ -101,7 +101,11 @@ func DecodeInteraction(m *Mem) InteractionState {
 }
 
 func liveListMenu(m *Mem) bool {
-	if !MenuUp(m) || m.U8(sym.MenuWatchedKeys) != listMenuWatchedKeys {
+	// wFontLoaded stays 0 for a whole battle (see DecodeTwoOptionMenu), so the
+	// battle bag's drawn-text gate is wIsInBattle; the cursor glyph still
+	// rejects stale list RAM.
+	if m.U8(sym.FontLoaded) == 0 && m.U8(sym.IsInBattle) == 0 || !menuCursorDrawn(m) ||
+		m.U8(sym.MenuWatchedKeys) != listMenuWatchedKeys {
 		return false
 	}
 	return m.U8(sym.ListMenuID) <= specialListMenuID
