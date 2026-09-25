@@ -9,6 +9,14 @@ import (
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
+func liveTopologyState(m *emu.Emu) (game.LiveTopologyState, error) {
+	routing, err := routingProfileFor(m)
+	if err != nil {
+		return game.LiveTopologyState{}, err
+	}
+	return routing.DecodeLiveTopology(m)
+}
+
 // liveMapBlocks returns the active profile's mutable row-major block map for
 // the current map and verifies it matches the static provider header.
 func liveMapBlocks(m *emu.Emu, h worldmodel.HeaderView) ([]byte, error) {
