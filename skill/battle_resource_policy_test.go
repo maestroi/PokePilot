@@ -63,7 +63,7 @@ func TestBattleResourcesPreserveWideNativeIDs(t *testing.T) {
 			NativeSpeciesID: 300,
 			Type1:           301,
 			Type2:           302,
-			Moves: [4]game.BattlePartyMove{{NativeMoveID: 400, PP: 3}},
+			Moves:           [4]game.BattlePartyMove{{NativeMoveID: 400, PP: 3}},
 		}},
 		Bag: []game.InventoryItem{{NativeItemID: 500, Quantity: 2}},
 	}
