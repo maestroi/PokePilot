@@ -208,6 +208,75 @@ func TestDismissObjectiveFailureGroupHidesCurrentEvidenceAndAllowsRecurrence(t *
 	}
 }
 
+func TestDismissObjectiveFailureGroupMatchesHistoricalDerivedFamilyKey(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "recover from repeated objective failures",
+		Error: "failure recovery budget was exhausted",
+		Count: 12, TerminalCount: 1, Blocking: true, Map: 0x05,
+	}
+	raw, _ := json.Marshal(failure)
+	familyKey, familyFingerprint, _, err := objectiveFailureFingerprint(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"run-old-a", "run-old-b"} {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,TRUE,1,?)`,
+			id, 1, "legacy-occurrence-"+id, "sha256:legacy-"+id, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := NewWall("")
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || groups[0].Key != familyKey || groups[0].Count != 2 {
+		t.Fatalf("historical triage = %+v, want one derived family %q", groups, familyKey)
+	}
+
+	result, err := cp.dismissObjectiveFailureGroups([]string{groups[0].Key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Groups != 1 || result.Occurrences != 2 {
+		t.Fatalf("dismiss historical = %+v, want 1 group / 2 occurrences", result)
+	}
+
+	groups, err = cp.objectiveFailureTriage(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("historical groups after dismiss = %+v, want none", groups)
+	}
+
+	rows, err := db.Query(`SELECT family_key, family_fingerprint, delivery_status FROM objective_failures ORDER BY run_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var gotKey, gotFingerprint, status string
+		if err := rows.Scan(&gotKey, &gotFingerprint, &status); err != nil {
+			t.Fatal(err)
+		}
+		if gotKey != familyKey || gotFingerprint != familyFingerprint || status != "dismissed" {
+			t.Fatalf("backfilled row = key %q fp %q status %q", gotKey, gotFingerprint, status)
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("backfilled rows = %d, want 2", count)
+	}
+}
+
 func TestDismissObjectiveFailureGroupsBatchesAndSkipsLinked(t *testing.T) {
 	db := newFailureCircuitTestDB(t)
 	cp := &controlPlane{db: db}
