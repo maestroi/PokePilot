@@ -4,19 +4,26 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // resolveLocalDestination converts a semantic goal on the current map into an
 // exact standing tile. satisfied=true means the current position already
 // fulfills the semantic destination and no local walking is needed.
 func resolveLocalDestination(m *emu.Emu, romData []byte, dest Destination) (exact Destination, satisfied bool, err error) {
-	cur := m.Peek8(sym.CurMap)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	cur, x, y := live.Map, live.X, live.Y
 	if cur != dest.Map {
 		return Destination{}, false, fmt.Errorf("semantic destination map %02x while current map is %02x", dest.Map, cur)
 	}
-	x, y := playerXY(m)
 	switch dest.Kind {
 	case DestinationMap:
 		return Destination{Map: cur, X: x, Y: y}, true, nil
@@ -24,18 +31,18 @@ func resolveLocalDestination(m *emu.Emu, romData []byte, dest Destination) (exac
 		if dest.Reached(cur, x, y) {
 			return Destination{Map: cur, X: x, Y: y}, true, nil
 		}
-		exact, err := cheapestAreaDestination(m, romData, dest)
+		exact, err := cheapestAreaDestinationWithDecoder(m, decoder, romData, dest)
 		return exact, false, err
 	case DestinationInteraction:
 		if _, ok := directionTo(x, y, dest.X, dest.Y); ok {
 			return Destination{Map: cur, X: x, Y: y}, true, nil
 		}
-		if beside, ok, counterErr := counterBeside(m, romData, dest.X, dest.Y); counterErr != nil {
+		if beside, ok, counterErr := counterBesideWithDecoder(m, decoder, romData, dest.X, dest.Y); counterErr != nil {
 			return Destination{}, false, counterErr
 		} else if ok {
 			return beside, false, nil
 		}
-		beside, ok, adjacentErr := besideDestination(m, romData, dest.X, dest.Y)
+		beside, ok, adjacentErr := besideDestinationWithDecoder(m, decoder, romData, dest.X, dest.Y)
 		if adjacentErr != nil {
 			return Destination{}, false, adjacentErr
 		}
@@ -69,11 +76,23 @@ func interactionDestinationForRole(romData []byte, mapID uint8, role rom.ObjectI
 // means a reachable region rather than merely the closest coordinate by
 // Manhattan distance.
 func cheapestAreaDestination(m *emu.Emu, romData []byte, dest Destination) (Destination, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, err
+	}
+	return cheapestAreaDestinationWithDecoder(m, decoder, romData, dest)
+}
+
+func cheapestAreaDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, dest Destination) (Destination, error) {
 	h, err := rom.ParseMap(romData, dest.Map)
 	if err != nil {
 		return Destination{}, fmt.Errorf("parse area map %02x: %w", dest.Map, err)
 	}
-	sx, sy := playerXY(m)
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, err
+	}
+	sx, sy := live.X, live.Y
 	blocked := warpAvoidance(h, int(sx), int(sy), spriteBlockers(m))
 
 	var (

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -112,10 +113,17 @@ func facingFor(s world.Step) state.Facing {
 // toward an open tile may move the player onto it, and that is fine — the
 // facing is what Face promises.
 func Face(m *emu.Emu, tx, ty uint8) error {
-	x, y := playerXY(m)
-	step, ok := directionTo(x, y, tx, ty)
-	if !ok {
-		return fmt.Errorf("skill: Face: tile (%d,%d) is not orthogonally adjacent to (%d,%d)", tx, ty, x, y)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return faceWithOverworldDecoder(m, decoder, tx, ty)
+}
+
+func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty uint8) error {
+	step, live, err := interactionStepWithDecoder(m, decoder, tx, ty)
+	if err != nil {
+		return fmt.Errorf("skill: Face: %w", err)
 	}
 	btn, ok := buttonFor(step)
 	if !ok {
@@ -131,8 +139,10 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 	}); err != nil {
 		// The step onto this tile can roll a wild encounter that starts after
 		// the walk returned; the turn tap then lands in the battle intro.
-		if m.Peek8(sym.IsInBattle) != 0 {
-			return fmt.Errorf("skill: Face: battle started before turning %s: %w", want, ErrBattle)
+		after, observeErr := interactionRuntimeStateWithDecoder(m, decoder)
+		if observeErr == nil && after.InBattle {
+			return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
+				want, live.Map, live.X, live.Y, ErrBattle)
 		}
 		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 	}
@@ -245,15 +255,23 @@ func dialoguePagingStuck(unchanged int, prev, next string) (int, bool) {
 // the move policy for the one case fleeing cannot cover — a trainer battle,
 // which the game refuses to let you flee and which talkBeside fights.
 func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (int, error) {
-	cur := m.Peek8(sym.CurMap)
-	h, objectID, err := mapObjectSlot(m, romData, homeX, homeY)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return 0, err
+	}
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return 0, err
+	}
+	cur := live.Map
+	h, objectID, err := mapObjectSlotWithDecoder(m, decoder, romData, homeX, homeY)
 	if err != nil {
 		return 0, err
 	}
 
 	const attempts = 4
 	for attempt := 1; attempt <= attempts; attempt++ {
-		tx, ty, facing, err := faceLiveMapObject(m, romData, h, objectID, homeX, homeY, policy)
+		tx, ty, facing, err := faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
 		if err != nil {
 			return 0, err
 		}
@@ -291,7 +309,19 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 // mapObjectSlot resolves the 1-based sprite slot of the current map's object
 // whose ROM home coordinate is (homeX, homeY).
 func mapObjectSlot(m *emu.Emu, romData []byte, homeX, homeY uint8) (rom.MapHeader, int, error) {
-	cur := m.Peek8(sym.CurMap)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return rom.MapHeader{}, 0, err
+	}
+	return mapObjectSlotWithDecoder(m, decoder, romData, homeX, homeY)
+}
+
+func mapObjectSlotWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, homeX, homeY uint8) (rom.MapHeader, int, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return rom.MapHeader{}, 0, err
+	}
+	cur := live.Map
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return h, 0, fmt.Errorf("skill: TalkAt: parse map %#04x: %w", cur, err)
@@ -309,11 +339,19 @@ func mapObjectSlot(m *emu.Emu, romData []byte, homeX, homeY uint8) (rom.MapHeade
 // the caller waits and re-approaches. The returned tile is the object's live
 // position the player now faces.
 func faceLiveMapObject(m *emu.Emu, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return homeX, homeY, false, err
+	}
+	return faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+}
+
+func faceLiveMapObjectWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
 	tx, ty := homeX, homeY
 	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 		tx, ty = liveX, liveY
 	}
-	if err := talkBeside(m, romData, tx, ty, policy); err != nil {
+	if err := talkBesideWithDecoder(m, decoder, romData, tx, ty, policy); err != nil {
 		return tx, ty, false, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
 	}
 
@@ -322,11 +360,11 @@ func faceLiveMapObject(m *emu.Emu, romData []byte, h rom.MapHeader, objectID int
 	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 		tx, ty = liveX, liveY
 	}
-	faceX, faceY, facing := interactionFacingTile(m, romData, h, tx, ty)
+	faceX, faceY, facing := interactionFacingTileWithDecoder(m, decoder, romData, h, tx, ty)
 	if !facing {
 		return tx, ty, false, nil
 	}
-	if err := Face(m, faceX, faceY); err != nil {
+	if err := faceWithOverworldDecoder(m, decoder, faceX, faceY); err != nil {
 		return tx, ty, false, nil
 	}
 	return tx, ty, true, nil
@@ -371,11 +409,23 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 // costs nothing. The target tile itself is never required to be free — it is
 // the NPC being talked to.
 func besideDestination(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
-	sx, sy := playerXY(m)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	return besideDestinationWithDecoder(m, decoder, romData, targetX, targetY)
+}
+
+func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	sx, sy := live.X, live.Y
 	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
 		return Destination{}, false, nil
 	}
-	cur := m.Peek8(sym.CurMap)
+	cur := live.Map
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
@@ -427,7 +477,19 @@ var counterSteps = []world.Step{world.StepUp, world.StepDown, world.StepLeft, wo
 // walkable, reachable standing tile beyond it — the target is genuinely not
 // a counter NPC, and the caller's ordinary "no path" error stands.
 func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
-	cur := m.Peek8(sym.CurMap)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	return counterBesideWithDecoder(m, decoder, romData, targetX, targetY)
+}
+
+func counterBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, targetX, targetY uint8) (Destination, bool, error) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	cur, sx, sy := live.Map, live.X, live.Y
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("parse map %#04x: %w", cur, err)
@@ -437,7 +499,6 @@ func counterBeside(m *emu.Emu, romData []byte, targetX, targetY uint8) (Destinat
 		return Destination{}, false, fmt.Errorf("build map %#04x: %w", cur, err)
 	}
 	blocked := spriteBlockers(m)
-	sx, sy := playerXY(m)
 	for _, s := range counterSteps {
 		cx, cy := int(targetX)+s.DX, int(targetY)+s.DY
 		if !grid.IsCounterTile(cx, cy) {
@@ -495,7 +556,19 @@ func counterFacing(g *world.Grid, px, py, tx, ty uint8) (uint8, uint8, bool) {
 // have walked away); the caller owns the re-approach decision because only it
 // knows whether the target can move.
 func interactionFacingTile(m *emu.Emu, romData []byte, h rom.MapHeader, tx, ty uint8) (uint8, uint8, bool) {
-	px, py := playerXY(m)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return 0, 0, false
+	}
+	return interactionFacingTileWithDecoder(m, decoder, romData, h, tx, ty)
+}
+
+func interactionFacingTileWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, tx, ty uint8) (uint8, uint8, bool) {
+	live, err := interactionRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return 0, 0, false
+	}
+	px, py := live.X, live.Y
 	if _, ok := directionTo(px, py, tx, ty); ok {
 		return tx, ty, true
 	}
@@ -549,19 +622,27 @@ func routeGateChoiceText(text string) bool {
 // refuses to let you flee — is fought with policy; a blackout from that
 // fallback comes back as ErrBlackedOut for the caller to decide on.
 func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return talkBesideWithDecoder(m, decoder, romData, tx, ty, policy)
+}
+
+func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, tx, ty uint8, policy MovePolicy) error {
 	// The Museum ticket box can already be up when TalkAt starts (the
 	// player is standing on the gate). Pathing beside a counter NPC then
 	// fails with "no path" because the wall is still closed. Pay first.
 	if _, err := AnswerKnownRouteGate(m); err != nil {
 		return fmt.Errorf("skill: TalkAt: %w", err)
 	}
-	dest, ok, err := besideDestination(m, romData, tx, ty)
+	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty)
 	if err != nil {
 		// No ordinary neighbour of (tx,ty) is walkable — the target may be a
 		// nurse or clerk standing behind a counter, which has no adjacent
 		// floor tile by design. Try the counter approach before giving up.
 		var counterErr error
-		dest, ok, counterErr = counterBeside(m, romData, tx, ty)
+		dest, ok, counterErr = counterBesideWithDecoder(m, decoder, romData, tx, ty)
 		if counterErr != nil || !ok {
 			return fmt.Errorf("skill: TalkAt: %w", err)
 		}
