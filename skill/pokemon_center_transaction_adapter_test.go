@@ -77,11 +77,11 @@ type fakeGen2CenterRuntime struct{}
 func (fakeGen2CenterRuntime) DecodeCenter(r game.MemoryReader) game.CenterState {
 	m := r.(*fakeGen2CenterMachine)
 	return game.CenterState{
-		PartyPresent:   true,
-		Recovered: m.recovered,
-		TextOpen:       m.phase == fakeCenterWelcome || m.phase == fakeCenterFarewell,
-		PromptOpen:     m.phase == fakeCenterPrompt,
-		MenuOpen:       m.phase == fakeCenterPrompt,
+		PartyPresent: true,
+		Recovered:    m.recovered,
+		TextOpen:     m.phase == fakeCenterWelcome || m.phase == fakeCenterFarewell,
+		PromptOpen:   m.phase == fakeCenterPrompt,
+		MenuOpen:     m.phase == fakeCenterPrompt,
 	}
 }
 
