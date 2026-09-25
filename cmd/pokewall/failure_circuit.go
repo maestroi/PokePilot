@@ -638,12 +638,14 @@ ORDER BY updated_at DESC`)
 	}
 	defer rows.Close()
 	type acc struct {
-		fingerprint string
-		pattern     string
-		example     string
-		count       int
-		runIDs      []string
-		seenRuns    map[string]bool
+		fingerprint   string
+		pattern       string
+		example       string
+		count         int
+		runIDs        []string
+		seenRuns      map[string]bool
+		issueKeys     []string
+		seenIssueKeys map[string]bool
 	}
 	groups := map[string]*acc{}
 	for rows.Next() {
@@ -668,14 +670,23 @@ ORDER BY updated_at DESC`)
 		group := groups[familyKey]
 		if group == nil {
 			group = &acc{
-				fingerprint: familyFingerprint,
-				pattern:     objectiveFailurePattern(failure),
-				example:     strings.TrimSpace(failure.Objective + ": " + failure.Error),
-				seenRuns:    map[string]bool{},
+				fingerprint:   familyFingerprint,
+				pattern:       objectiveFailurePattern(failure),
+				example:       strings.TrimSpace(failure.Objective + ": " + failure.Error),
+				seenRuns:      map[string]bool{},
+				seenIssueKeys: map[string]bool{},
 			}
 			groups[familyKey] = group
 		}
 		group.count++
+		// Family fingerprints were introduced after many exact occurrence
+		// fingerprints already owned GitHub issues. Keep those legacy keys with
+		// the family so historical closed issues can still suppress stale work
+		// without waiting for the same failure to recur after rollout.
+		if occurrenceKey != "" && occurrenceKey != familyKey && !group.seenIssueKeys[occurrenceKey] {
+			group.seenIssueKeys[occurrenceKey] = true
+			group.issueKeys = append(group.issueKeys, occurrenceKey)
+		}
 		if !group.seenRuns[runID] && len(group.runIDs) < triageRunIDCap {
 			group.seenRuns[runID] = true
 			group.runIDs = append(group.runIDs, runID)
@@ -694,7 +705,7 @@ ORDER BY updated_at DESC`)
 			Count: group.count, Example: group.example, RunIDs: group.runIDs,
 			Outbox: outboxStatusForKey(w.outbox, key),
 		}
-		if link, ok := w.issueLinks[key]; ok && link.IssueID != "" {
+		if link, ok := triageIssueLinkForFamily(w.issueLinks, key, group.issueKeys); ok {
 			copy := link
 			item.Issue = &copy
 		} else {
@@ -714,6 +725,50 @@ ORDER BY updated_at DESC`)
 		return out[i].Key < out[j].Key
 	})
 	return out, nil
+}
+
+func triageIssueLinkForFamily(links map[string]IssueLink, familyKey string, occurrenceKeys []string) (IssueLink, bool) {
+	if link, ok := links[familyKey]; ok && strings.TrimSpace(link.IssueID) != "" {
+		return link, true
+	}
+
+	var best IssueLink
+	bestPriority := -1
+	for _, key := range occurrenceKeys {
+		link, ok := links[key]
+		if !ok || strings.TrimSpace(link.IssueID) == "" {
+			continue
+		}
+		priority := triageIssueLinkPriority(link)
+		if priority > bestPriority ||
+			(priority == bestPriority && link.UpdatedAt > best.UpdatedAt) ||
+			(priority == bestPriority && link.UpdatedAt == best.UpdatedAt && link.IssueNumber > best.IssueNumber) {
+			best = link
+			bestPriority = priority
+		}
+	}
+	return best, bestPriority >= 0
+}
+
+// Active legacy links win over settled ones. A semantic family can contain
+// several pre-family exact issues; choosing a closed sibling while another is
+// still open would incorrectly hide actionable work.
+func triageIssueLinkPriority(link IssueLink) int {
+	status := strings.ToLower(strings.TrimSpace(link.Status))
+	resolution := strings.ToLower(strings.TrimSpace(link.Resolution))
+	switch status {
+	case "open", "reopened", "investigating", "in_progress", "in-progress", "todo", "backlog":
+		return 3
+	}
+	if resolution != "" {
+		return 1
+	}
+	switch status {
+	case "resolved", "closed", "fixed", "done", "completed":
+		return 1
+	default:
+		return 2
+	}
 }
 
 type dismissTriageRequest struct {
