@@ -10,7 +10,7 @@ const (
 	fieldCutTreeTile       uint8 = 0x3d
 	fieldGymCutTreeTile    uint8 = 0x50
 	fieldStrengthActiveBit       = 1 << 0
-	fieldSurfingState       uint8 = 2
+	fieldSurfingState      uint8 = 2
 )
 
 func redFieldActionFront(player state.PlayerState) (int, int, bool) {
