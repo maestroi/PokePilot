@@ -5,16 +5,18 @@ import {
   itemSpriteUrl,
   itemToken,
   itemVisualKind,
+  pokemonBackSpriteUrl,
   pokemonDexNumber,
   pokemonSpriteUrl
 } from '../src/shared/pokemonAssets.ts'
 
-test('resolves generation one species names to red/blue sprites', () => {
+test('resolves generation one species names to Gold/Silver sprites', () => {
   assert.equal(pokemonDexNumber('pidgeotto'), 17)
   assert.equal(pokemonDexNumber('Mr. Mime'), 122)
   assert.equal(pokemonDexNumber('Nidoran♀'), 29)
   assert.equal(pokemonDexNumber('Nidoran♂'), 32)
-  assert.match(pokemonSpriteUrl('butterfree') || '', /generation-i\/red-blue\/12\.png$/)
+  assert.match(pokemonSpriteUrl('butterfree') || '', /generation-ii\/gold\/12\.png$/)
+  assert.match(pokemonBackSpriteUrl('butterfree') || '', /generation-ii\/gold\/back\/12\.png$/)
 })
 
 test('unknown nicknames fall back instead of inventing a species sprite', () => {

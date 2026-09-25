@@ -63,6 +63,7 @@ test('Kenney atlas references stay inside their licensed bundled images', () => 
     dimensions.set(url, { width: image.readUInt32BE(16), height: image.readUInt32BE(20) })
   }
   for (const reference of Object.values(theme.assets.tiles).concat(Object.values(theme.assets.objects))) {
+    if (!reference.startsWith('/theme-assets/kenney-')) continue
     const tile = parseTileImageReference(reference)
     assert.ok(tile)
     const atlas = dimensions.get(tile.url)
