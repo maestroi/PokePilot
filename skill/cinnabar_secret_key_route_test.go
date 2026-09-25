@@ -82,6 +82,30 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	}
 
 	cinnabar := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+
+	westExit, err := route20ResumeExit(&RoutePlanner{
+		graph: g, cur: route20Map, x: 0, y: 10, prereqs: prereqs,
+	})
+	if err != nil {
+		t.Fatalf("classify west Route 20 resume: %v", err)
+	}
+	if westExit.Map != cinnabarIslandMap {
+		t.Fatalf("west Route 20 resume exit map = %#04x, want Cinnabar %#04x", westExit.Map, cinnabarIslandMap)
+	}
+
+	fuchsia, ok := Place("fuchsia city")
+	if !ok {
+		t.Fatal("fuchsia city place missing")
+	}
+	eastExit, err := route20ResumeExit(&RoutePlanner{
+		graph: g, cur: route20Map, x: 99, y: 10, prereqs: prereqs,
+	})
+	if err != nil {
+		t.Fatalf("classify east Route 20 resume: %v", err)
+	}
+	if eastExit.Map != fuchsia.Map {
+		t.Fatalf("east Route 20 resume exit map = %#04x, want Fuchsia %#04x", eastExit.Map, fuchsia.Map)
+	}
 	west, err := world.FindRoutePlanAtDestinationWithCapabilities(
 		g, route20Map, cinnabar.Map, 0, 10, int(cinnabar.X), int(cinnabar.Y), nil, prereqs,
 	)
@@ -97,10 +121,6 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 		}
 	}
 
-	fuchsia, ok := Place("fuchsia city")
-	if !ok {
-		t.Fatal("fuchsia city place missing")
-	}
 	east, err := world.FindRoutePlanAtDestinationWithCapabilities(
 		g, route20Map, fuchsia.Map, 99, 10, int(fuchsia.X), int(fuchsia.Y), nil, prereqs,
 	)

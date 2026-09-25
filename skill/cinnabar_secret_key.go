@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -103,33 +104,59 @@ func CinnabarSecretKeyReady(mem *state.Mem) bool {
 // generic utility-field recovery is performed here because this is recovery
 // from an already-stranded Route 20 checkpoint, not a new milestone
 // prerequisite.
+func route20ResumeExit(planner *RoutePlanner) (Destination, error) {
+	if planner == nil || planner.cur != route20Map {
+		return Destination{}, fmt.Errorf("Route 20 resume classifier requires a Route 20 planner")
+	}
+	fuchsia, ok := Place("fuchsia city")
+	if !ok {
+		return Destination{}, fmt.Errorf("fuchsia city place missing")
+	}
+	candidates := []struct {
+		dest Destination
+		next uint8
+	}{
+		{dest: Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, next: cinnabarIslandMap},
+		{dest: fuchsia, next: route19Map},
+	}
+	for _, candidate := range candidates {
+		route, err := findRoutePlanForDestination(
+			planner.graph, planner.cur, int(planner.x), int(planner.y),
+			candidate.dest, nil, planner.prereqs,
+		)
+		if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
+			continue
+		}
+		if len(route) == 0 {
+			continue
+		}
+		first := route[0].Edge
+		if first.From == route20Map && first.To == candidate.next {
+			return candidate.dest, nil
+		}
+	}
+	return Destination{}, fmt.Errorf("Route 20 component has no direct Cinnabar or Route 19 exit")
+}
+
 func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != route20Map {
 		return nil
 	}
 
-	cinnabar := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
 	planner, err := NewRoutePlanner(m, romData)
 	if err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: inspect Route 20 resume component: %w", err)
 	}
-	if planner.CanReach(cinnabar) {
-		if _, err := TravelFlee(m, romData, cinnabar, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave west Route 20 for Cinnabar: %w", err)
-		}
-		return nil
-	}
-
-	fuchsia, ok := Place("fuchsia city")
-	if !ok {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: fuchsia city place missing")
-	}
-	if !planner.CanReach(fuchsia) {
+	exit, err := route20ResumeExit(planner)
+	if err != nil {
 		x, y := playerXY(m)
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 resume at (%d,%d) reaches neither Cinnabar nor Fuchsia without traversing Seafoam", x, y)
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 resume at (%d,%d): %w", x, y, err)
 	}
-	if _, err := TravelFlee(m, romData, fuchsia, policy, mansionTravelBattles); err != nil {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave east Route 20 for Fuchsia: %w", err)
+	if _, err := TravelFlee(m, romData, exit, policy, mansionTravelBattles); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave Route 20 for map %#04x: %w", exit.Map, err)
+	}
+	if exit.Map == cinnabarIslandMap {
+		return nil
 	}
 
 	var mem state.Mem
