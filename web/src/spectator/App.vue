@@ -23,7 +23,7 @@ import AppShell from '../shared/components/AppShell.vue'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
-import OverworldRenderer from '../shared/components/OverworldRenderer.vue'
+import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -46,7 +46,7 @@ import PublicHome from './PublicHome.vue'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
-import { canRenderOverworld } from '../shared/semanticRenderer'
+import { canRenderModernScene } from '../shared/semanticRenderer'
 import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
@@ -116,7 +116,7 @@ const {
   state: renderStateStatus,
   error: renderStateError
 } = useRenderStatePump(frameRunID, renderEnabled, 100, frameContinuous)
-const semanticReady = computed(() => canRenderOverworld(renderState.value))
+const semanticReady = computed(() => canRenderModernScene(renderState.value))
 const showModern = computed(() => selectionPinned.value && rendererMode.value === 'modern' && semanticReady.value)
 const frameEnabled = computed(() =>
   Boolean(frameRunID.value) && (!selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
@@ -124,8 +124,8 @@ const frameEnabled = computed(() =>
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
   if (rendererMode.value !== 'modern' || showModern.value) return ''
-  if (renderState.value?.scene && renderState.value.scene !== 'overworld') return 'Classic fallback · ' + renderState.value.scene
-  if (renderStateStatus.value === 'error') return 'Classic fallback · modern state unavailable'
+  if (renderStateStatus.value === 'error') return 'Modern · semantic state reconnecting'
+  if (renderState.value?.scene) return 'Modern · classic compatibility · ' + renderState.value.scene
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
@@ -788,7 +788,7 @@ function activityTimeAgo(item: ActivityItem): string {
                 theaterMode ? 'min-h-[78vh]' : 'min-h-[34rem] sm:min-h-[42rem] xl:min-h-[46rem]'
               ]"
             >
-              <OverworldRenderer
+              <ModernSceneRenderer
                 v-if="showModern && renderState"
                 :state="renderState"
                 :theme="activeTheme"
