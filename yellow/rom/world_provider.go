@@ -66,11 +66,11 @@ func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	return worldmodel.MapHeader{
 		ID:            h.ID,
 		NativeTileset: uint16(h.Tileset),
-		WidthBlocks:     h.WidthBlocks,
-		HeightBlocks: h.HeightBlocks,
-		Warps:        warps,
-		Connections:  connections,
-		Objects:      objects,
+		WidthBlocks:   h.WidthBlocks,
+		HeightBlocks:  h.HeightBlocks,
+		Warps:         warps,
+		Connections:   connections,
+		Objects:       objects,
 	}
 }
 
@@ -166,7 +166,6 @@ func init() {
 		return NewWorldProvider(romData), true
 	})
 }
-
 
 func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
 	if spec == nil {
