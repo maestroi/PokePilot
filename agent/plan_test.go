@@ -39,7 +39,7 @@ type planningTestPlanner struct {
 	zeroCall  func(Observation, []Objective) []Objective
 }
 
-func (p *planningTestPlanner) ZeroCallPlanningMenu(obs Observation, offered []Objective) []Objective {
+func (p *planningTestPlanner) PlanningMenu(obs Observation, offered []Objective) []Objective {
 	if p.zeroCall != nil {
 		return p.zeroCall(obs, offered)
 	}
