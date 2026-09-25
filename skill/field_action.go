@@ -137,7 +137,7 @@ type FieldActionResult struct {
 // settleFieldAction waits for the ROM-side effect and for control to return.
 // Field moves may print ordinary text after changing state (Strength is the
 // important case). Page those text boxes with A, but never select an open menu
-// blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
+// blindly; the active profile distinguishes result text from choice surfaces.
 func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
 		runtime := decoder.DecodeFieldAction(m)
@@ -219,10 +219,13 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 	if err := openStartMenuEntryWithDecoder(m, menu, startMenuPokemon); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: open POKEMON: %w", spec.Name, err)
 	}
-	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
-		return FieldActionResult{}, fmt.Errorf("skill: %s: party menu did not appear", spec.Name)
+	if !waitMenuUntil(m, 1000, func() bool {
+		s := party.DecodePartyMenu(m)
+		return s.Visible && s.Kind == game.PartyMenuFieldMove
+	}) {
+		return FieldActionResult{}, fmt.Errorf("skill: %s: field-move party menu did not appear", spec.Name)
 	}
-	if err := selectFieldMoveUser(m, slot); err != nil {
+	if err := selectPartySlotWithDecoder(m, party, slot); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select party slot %d: %w", spec.Name, slot, err)
 	}
 
