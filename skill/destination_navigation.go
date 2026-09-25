@@ -83,7 +83,7 @@ func cheapestAreaDestination(m *emu.Emu, romData []byte, dest Destination) (Dest
 	return cheapestAreaDestinationWithDecoder(m, decoder, romData, dest)
 }
 
-func cheapestAreaDestinationWithDecoder(m *emu.Emu, decoder interface{ DecodeOverworld(game.MemoryReader) game.OverworldState }, romData []byte, dest Destination) (Destination, error) {
+func cheapestAreaDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, dest Destination) (Destination, error) {
 	h, err := rom.ParseMap(romData, dest.Map)
 	if err != nil {
 		return Destination{}, fmt.Errorf("parse area map %02x: %w", dest.Map, err)
