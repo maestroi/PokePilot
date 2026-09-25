@@ -754,6 +754,7 @@ func (cp *controlPlane) dismissObjectiveFailureGroups(keys []string) (dismissTri
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	selected := make(map[string]bool, len(keys))
 	for _, key := range keys {
 		var issueID string
 		err := tx.QueryRow(`SELECT issue_id FROM issue_links WHERE failure_key=$1 AND issue_id<>''`, key).Scan(&issueID)
@@ -764,13 +765,85 @@ func (cp *controlPlane) dismissObjectiveFailureGroups(keys []string) (dismissTri
 		if err != sql.ErrNoRows {
 			return dismissTriageResult{}, err
 		}
+		selected[key] = true
+	}
+	if len(selected) == 0 {
+		if err := tx.Commit(); err != nil {
+			return dismissTriageResult{}, err
+		}
+		return result, nil
+	}
+
+	// Historical rows predate family_key/family_fingerprint. Triage still groups
+	// those rows by recomputing the canonical family from failure_json, so the
+	// visible triage key is not necessarily stored in either key column. Resolve
+	// the same effective identity here before updating, otherwise dismissing an
+	// old group reports success with zero affected rows.
+	type candidate struct {
+		runID             string
+		attempt           int
+		occurrenceKey     string
+		familyKey         string
+		familyFingerprint string
+		failureRaw        []byte
+	}
+	rows, err := tx.Query(`
+SELECT run_id, attempt, failure_key, family_key, family_fingerprint, failure_json
+FROM objective_failures
+WHERE (blocking=TRUE OR terminal_count>0)
+  AND delivery_status<>'dismissed'`)
+	if err != nil {
+		return dismissTriageResult{}, err
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var item candidate
+		if err := rows.Scan(&item.runID, &item.attempt, &item.occurrenceKey, &item.familyKey, &item.familyFingerprint, &item.failureRaw); err != nil {
+			rows.Close()
+			return dismissTriageResult{}, err
+		}
+		candidates = append(candidates, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return dismissTriageResult{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return dismissTriageResult{}, err
+	}
+
+	dismissedGroups := make(map[string]bool, len(selected))
+	for _, item := range candidates {
+		effectiveKey := strings.TrimSpace(item.familyKey)
+		effectiveFingerprint := strings.TrimSpace(item.familyFingerprint)
+		if effectiveKey == "" || effectiveFingerprint == "" {
+			var failure farm.ObjectiveFailure
+			if json.Unmarshal(item.failureRaw, &failure) == nil {
+				if key, fingerprint, _, fingerprintErr := objectiveFailureFingerprint(failure); fingerprintErr == nil {
+					effectiveKey = key
+					effectiveFingerprint = fingerprint
+				}
+			}
+		}
+		if effectiveKey == "" {
+			effectiveKey = item.occurrenceKey
+		}
+		if !selected[effectiveKey] {
+			continue
+		}
 
 		updated, err := tx.Exec(`
 UPDATE objective_failures
-SET delivery_status='dismissed', delivery_error='', updated_at=CURRENT_TIMESTAMP
-WHERE COALESCE(NULLIF(family_key,''), failure_key)=$1
-  AND (blocking=TRUE OR terminal_count>0)
-  AND delivery_status<>'dismissed'`, key)
+SET family_key=$1,
+    family_fingerprint=$2,
+    delivery_status='dismissed',
+    delivery_error='',
+    updated_at=CURRENT_TIMESTAMP
+WHERE run_id=$3
+  AND attempt=$4
+  AND failure_key=$5
+  AND delivery_status<>'dismissed'`,
+			effectiveKey, effectiveFingerprint, item.runID, item.attempt, item.occurrenceKey)
 		if err != nil {
 			return dismissTriageResult{}, err
 		}
@@ -778,11 +851,12 @@ WHERE COALESCE(NULLIF(family_key,''), failure_key)=$1
 		if err != nil {
 			return dismissTriageResult{}, err
 		}
-		result.Occurrences += count
 		if count > 0 {
-			result.Groups++
+			result.Occurrences += count
+			dismissedGroups[effectiveKey] = true
 		}
 	}
+	result.Groups = int64(len(dismissedGroups))
 
 	if err := tx.Commit(); err != nil {
 		return dismissTriageResult{}, err
