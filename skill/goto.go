@@ -9,7 +9,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -502,10 +501,15 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	if nav == nil {
 		nav = newNavigationMemory()
 	}
-	startX, startY := playerXY(m)
-	guard := nav.ensureGuard(dest, navigationState{
-		Map: m.Peek8(sym.CurMap), X: startX, Y: startY,
-	})
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	start, err := navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return err
+	}
+	guard := nav.ensureGuard(dest, start)
 	failed := nav.failed
 	deadEnds := nav.deadEnds
 	visitedMaps := nav.visitedMaps
@@ -532,14 +536,17 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	const maxRestages = 2
 
 	for {
-		if err := abortIfBattle(m); err != nil {
+		if err := abortIfBattleWithDecoder(m, overworld); err != nil {
 			return err
 		}
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
-		cur := m.Peek8(sym.CurMap)
-		x, y := playerXY(m)
+		now, stateErr := navigationStateWithDecoder(m, overworld)
+		if stateErr != nil {
+			return stateErr
+		}
+		cur, x, y := now.Map, now.X, now.Y
 
 		// Travel may begin inside a Center, gym, hideout, or other interior
 		// where the real game does not permit Fly. Reconsider fast travel on
@@ -555,8 +562,11 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			if used {
 				visitedMaps[cur] = true
 				visitedPositions[cur] = append(visitedPositions[cur], navigationState{Map: cur, X: x, Y: y})
-				nowX, nowY := playerXY(m)
-				if err := guard.observe(navigationState{Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY}); err != nil {
+				landed, stateErr := navigationStateWithDecoder(m, overworld)
+				if stateErr != nil {
+					return stateErr
+				}
+				if err := guard.observe(landed); err != nil {
 					return fmt.Errorf("skill: GoTo: %w", err)
 				}
 				// Fly is a non-edge world transition. Rebuild from immutable
@@ -942,10 +952,11 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		}
 		visitedMaps[e.From] = true
 		visitedPositions[e.From] = append(visitedPositions[e.From], navigationState{Map: e.From, X: x, Y: y})
-		nowX, nowY := playerXY(m)
-		if err := guard.observe(navigationState{
-			Map: m.Peek8(sym.CurMap), X: nowX, Y: nowY,
-		}); err != nil {
+		landed, stateErr := navigationStateWithDecoder(m, overworld)
+		if stateErr != nil {
+			return stateErr
+		}
+		if err := guard.observe(landed); err != nil {
 			return fmt.Errorf("skill: GoTo: %w", err)
 		}
 	}
@@ -1191,14 +1202,11 @@ func waitOutScriptedMovement(m *emu.Emu) error {
 // abortIfBattle returns an error wrapping ErrBattle when a battle is active,
 // carrying the current map and coordinates.
 func abortIfBattle(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) != nil {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w",
-			m.Peek8(sym.CurMap), x, y, ErrBattle)
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
 	}
-	return nil
+	return abortIfBattleWithDecoder(m, decoder)
 }
 
 // walkWithinMap walks the player from their current position to dest on the
@@ -1212,8 +1220,15 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 	if len(policies) > 0 {
 		policy = policies[0]
 	}
-	cur := m.Peek8(sym.CurMap)
-	sx, sy := playerXY(m)
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	start, err := navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return err
+	}
+	cur, sx, sy := start.Map, start.X, start.Y
 	h, err := rom.ParseMap(romData, cur)
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
@@ -1230,9 +1245,9 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 		var planErr error
 		var nextAction *fieldPathStep
 		var blockedAtFailure map[[2]int]bool
-		err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
+		err = walkAroundAvoidingObjects(func() error { return movementInterruptionWithDecoder(m, overworld) }, m, h,
 			func(blocked map[[2]int]bool) ([]world.Step, error) {
-				x, y := playerXY(m)
+				x, y := overworldPosition(m, overworld)
 				// Same-map destinations are ordinary standing tiles. Stepping on an
 				// unrelated door while walking to one fires that warp immediately,
 				// so keep every other warp tile out of the local route.
@@ -1254,7 +1269,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				prefix, action := firstFieldAction(plan)
 				nextAction = action
 				return prefix, nil
-			}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			}, func(steps []world.Step) error { return walkPathWithRuntimeDecoder(m, steps, overworld) },
 			func() { m.StepFrames(npcWaitFrames) })
 
 		if err != nil {
@@ -1262,7 +1277,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
 				if strengthErr != nil {
 					if errors.Is(strengthErr, ErrBattleInterrupted) {
-						x, y := playerXY(m)
+						x, y := overworldPosition(m, overworld)
 						return fmt.Errorf("skill: GoTo: battle during weighted Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
 					}
 					return strengthErr
@@ -1285,7 +1300,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 					moved, strengthErr := solveLocalStrengthPath(m, romData, policy, h, dest)
 					if strengthErr != nil {
 						if errors.Is(strengthErr, ErrBattleInterrupted) {
-							x, y := playerXY(m)
+							x, y := overworldPosition(m, overworld)
 							return fmt.Errorf("skill: GoTo: battle during Strength route on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
 						}
 						return strengthErr
@@ -1329,7 +1344,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				}
 				return arriveBesideBlockedDestination(m, romData, dest, planErr)
 			}
-			x, y := playerXY(m)
+			x, y := overworldPosition(m, overworld)
 			if errors.Is(err, ErrBattleInterrupted) {
 				return fmt.Errorf("skill: GoTo: battle on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
 			}
@@ -1344,13 +1359,13 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 			return nil
 		}
 		if fieldActions >= maxLocalFieldActions {
-			x, y := playerXY(m)
+			x, y := overworldPosition(m, overworld)
 			return fmt.Errorf("skill: GoTo: exceeded %d local field actions on map %02x at (%d,%d) toward (%d,%d)",
 				maxLocalFieldActions, cur, x, y, dest.X, dest.Y)
 		}
 		if err := executeFieldPathAction(m, *nextAction); err != nil {
 			if errors.Is(err, ErrBattleInterrupted) {
-				x, y := playerXY(m)
+				x, y := overworldPosition(m, overworld)
 				return fmt.Errorf("skill: GoTo: battle during field-path action on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
 			}
 			return err
