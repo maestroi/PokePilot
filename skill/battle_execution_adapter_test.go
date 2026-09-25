@@ -11,9 +11,13 @@ const fakeBattleExecutionPhase uint16 = 48
 type fakeGen2BattleExecutionDecoder struct{}
 
 func (fakeGen2BattleExecutionDecoder) DecodeBattleExecution(r game.MemoryReader) game.BattleExecutionState {
+	phase := game.BattleExecutionNone
+	if r.Peek8(fakeBattleExecutionPhase) != 0 {
+		phase = game.BattleExecutionMoveMenu
+	}
 	return game.BattleExecutionState{
 		InBattle: true,
-		Phase: game.BattleExecutionPhase(r.Peek8(fakeBattleExecutionPhase)),
+		Phase: phase,
 		Learner: game.BattleMoveLearnerState{
 			Valid:     true,
 			PartySlot: 2,
@@ -27,7 +31,7 @@ func (fakeGen2BattleExecutionDecoder) DecodeBattleExecution(r game.MemoryReader)
 
 func TestGenericBattleExecutionUsesProfileState(t *testing.T) {
 	m := &fakeBattleMenuMachine{}
-	m.mem[fakeBattleExecutionPhase] = byte(game.BattleExecutionMoveMenu[0])
+	m.mem[fakeBattleExecutionPhase] = 1
 	decoder := fakeGen2BattleExecutionDecoder{}
 	got := decoder.DecodeBattleExecution(m)
 	if !got.InBattle || !got.Learner.Valid || got.Learner.PartySlot != 2 {
