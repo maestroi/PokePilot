@@ -21,6 +21,7 @@ import {
 
 const investigating = ref(new Set<string>())
 const selectedKeys = ref(new Set<string>())
+const showResolved = ref(false)
 const actionError = ref('')
 const cleanupStatus = ref('')
 const cleanupBusy = ref(false)
@@ -185,6 +186,14 @@ function retry(): void {
   <div class="space-y-3">
     <Panel title="Failure triage" description="Actionable failures grouped by their normalized fingerprint, not one row per failed attempt." compact>
       <template #actions>
+        <button
+          v-if="resolvedGroups.length"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white"
+          @click="showResolved = !showResolved"
+        >
+          {{ showResolved ? 'Hide resolved' : `Show resolved (${resolvedGroups.length})` }}
+        </button>
         <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" @click="retry">
           <ArrowPathIcon class="size-3.5" aria-hidden="true" />
           Refresh
@@ -267,7 +276,7 @@ function retry(): void {
       </ResourceState>
     </Panel>
 
-    <Panel v-if="resolvedGroups.length" title="Resolved history" description="Already-solved issues. Select one or many, then delete every finished run that still matches that failure." compact>
+    <Panel v-if="showResolved && resolvedGroups.length" title="Resolved history" description="Already-solved issues. Select one or many, then delete every finished run that still matches that failure." compact>
       <template #actions>
         <button
           type="button"

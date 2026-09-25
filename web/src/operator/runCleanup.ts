@@ -70,9 +70,20 @@ export function groupPattern(group: Pick<TriageGroup, 'pattern' | 'detail'> & { 
 }
 
 export function isResolvedGroup(group: TriageGroup): boolean {
-  const status = String(group.issue?.status || '').toLowerCase()
-  const resolution = String(group.issue?.resolution || '').toLowerCase()
-  return status === 'resolved' || status === 'fixed' || resolution === 'fixed'
+  const issue = group.issue
+  if (!issue) return false
+
+  const status = String(issue.status || '').trim().toLowerCase()
+  const resolution = String(issue.resolution || '').trim().toLowerCase()
+
+  // Keep this aligned with deploy.Actionable: a reopened/active issue wins over
+  // stale resolution metadata, while every non-empty resolution and terminal
+  // issue state belongs in history rather than the actionable queue.
+  if (['open', 'reopened', 'investigating', 'in_progress', 'in-progress', 'todo', 'backlog'].includes(status)) {
+    return false
+  }
+  if (resolution) return true
+  return ['resolved', 'closed', 'fixed', 'done', 'completed'].includes(status)
 }
 
 export function bugGroupRuns(runs: DashboardRun[] | null | undefined, pattern: string): DashboardRun[] {

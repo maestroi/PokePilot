@@ -115,10 +115,15 @@ test('groupPattern falls back to normalized detail when the wall omitted pattern
   )
 })
 
-test('isResolvedGroup treats fixed/resolved issue metadata as historical', () => {
+test('isResolvedGroup mirrors the actionable issue lifecycle', () => {
+  assert.equal(isResolvedGroup({ key: 'unlinked', count: 1 }), false)
   assert.equal(isResolvedGroup({ key: 'open', count: 1, issue: { status: 'open' } }), false)
+  assert.equal(isResolvedGroup({ key: 'reopened-stale', count: 1, issue: { status: 'reopened', resolution: 'fixed' } }), false)
   assert.equal(isResolvedGroup({ key: 'resolved', count: 1, issue: { status: 'resolved' } }), true)
+  assert.equal(isResolvedGroup({ key: 'closed', count: 1, issue: { status: 'closed' } }), true)
+  assert.equal(isResolvedGroup({ key: 'completed', count: 1, issue: { status: 'completed' } }), true)
   assert.equal(isResolvedGroup({ key: 'fixed', count: 1, issue: { resolution: 'fixed' } }), true)
+  assert.equal(isResolvedGroup({ key: 'not-planned', count: 1, issue: { status: 'closed', resolution: 'not_planned' } }), true)
 })
 
 test('eligibleRuns skips runs still required by a live resume lineage', () => {
