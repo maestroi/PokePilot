@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowPathIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/20/solid'
-import { deleteRun, dismissTriage, getDashboard, getTriage, investigateTriage } from '../shared/api/client'
+import { deleteRun, dismissTriage, dismissTriages, getDashboard, getTriage, investigateTriage } from '../shared/api/client'
 import type { TriageGroup } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
@@ -192,18 +192,17 @@ async function confirmDismiss(): Promise<void> {
   dismissBusy.value = true
   actionError.value = ''
   dismissStatus.value = ''
-  let dismissed = 0
   try {
-    for (const group of groups) {
-      await dismissTriage(group.key)
-      dismissed++
-    }
-    dismissStatus.value = `Dismissed ${dismissed} failure group${dismissed === 1 ? '' : 's'}. Future occurrences will reappear.`
+    const result = groups.length === 1
+      ? await dismissTriage(groups[0].key)
+      : await dismissTriages(groups.map((group) => group.key))
+    const dismissed = groups.length === 1 ? 1 : Number(result.groups || 0)
+    const skipped = groups.length === 1 ? 0 : (result.skipped_linked?.length || 0)
+    dismissStatus.value = `Dismissed ${dismissed} failure group${dismissed === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} that gained an issue` : ''}. Future occurrences will reappear.`
     dismissTarget.value = null
     await resource.retry()
   } catch (cause) {
     actionError.value = cause instanceof Error ? cause.message : 'Could not dismiss failure group'
-    if (dismissed) dismissStatus.value = `Dismissed ${dismissed} group${dismissed === 1 ? '' : 's'} before the request failed.`
   } finally {
     dismissBusy.value = false
   }
