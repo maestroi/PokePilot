@@ -65,3 +65,19 @@ Live snapshots additionally read the current `wOverworldMap` block buffer so scr
 Sprite picture IDs are translated to semantic appearance keys such as `professor_oak`, `youngster`, or `poke_ball`. Unknown picture IDs become `unknown`. Unknown terrain that has no Red-specific meaning still degrades to the portable walkable `path` or blocked `wall` fallback.
 
 This package is intentionally Red-owned. Blue can share the Gen-I extraction mechanics through its adapter boundary where appropriate, while Yellow and later generations can provide their own native mappings and still emit the same `renderstate.RenderState` contract.
+
+
+## Progressive presentation scenes
+
+Pokémon Red enriches the baseline scene model with presentation-only dialogue, menu, and battle state. These surfaces are decoded from the same coherent RAM snapshot as the overworld:
+
+- dialogue text comes from the live Gen-I tilemap decoder;
+- a menu is advertised only when the ROM-published cursor glyph is actually drawn, avoiding stale menu RAM;
+- battle actors come from the existing Red battle decoder and expose semantic species identity, level, HP/max HP, and status;
+- the active player's battle moves expose semantic move identity/name, current PP, ROM-derived max PP when available, and disabled state.
+
+Battle snapshots deliberately do not depend on overworld block geometry. Once the battle engine owns the screen, a temporary or stale overworld map buffer must not make the semantic feed disappear.
+
+These fields are **presentation state, not controller state**. The frontend may choose layout, colors, assets, transitions, and animation, but it must not reimplement damage, RNG, legal-action rules, menu selection, or any other gameplay mechanic. Unsupported sub-scenes remain valid reasons to display the authoritative framebuffer as a compatibility scene.
+
+Schema v1 remains additive: battle actor appearance/level and battle move details are optional fields, so older consumers continue to ignore what they do not understand.
