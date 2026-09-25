@@ -5,21 +5,25 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/game"
 )
 
 // Frame budgets for the bag submenu. The list menu is drawn with a palette
 // reload and a 10-frame delay, so a few hundred frames covers the
 // transition; the cap exists to fail loudly rather than hang.
 const (
-	bagMainMenuBudget = 3000 // wait for the FIGHT/ITEM/PKMN/RUN menu after an encounter
+	bagMainMenuBudget = 3000 // wait for the ordinary battle action menu after an encounter
 	bagMenuBudget     = 500  // wait for the bag list to be drawn
 	bagUseBudget      = 3000 // wait for the item's effect (count drop) after A
 )
 
 // ErrNotInBag reports that the bag has no entry for the wanted item.
 var ErrNotInBag = errors.New("skill: item not in bag")
+
+type itemUseMachine interface {
+	menuMachine
+	FrameCount() uint64
+}
 
 // EnterWildBattle steps the player into the tall grass on the current map
 // and returns once a wild battle is in progress. It walks to the nearest
@@ -34,10 +38,17 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	if attempts <= 0 {
 		return fmt.Errorf("skill: EnterWildBattle: attempts must be > 0, got %d", attempts)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: EnterWildBattle: %w", err)
+	}
+	battle, err := battleStateDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: EnterWildBattle: %w", err)
+	}
+	live := overworld.DecodeOverworld(m)
+	if !live.Controllable {
+		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", live.NativeMapID)
 	}
 	now, err := currentWorld(m)
 	if err != nil {
@@ -67,7 +78,7 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 		if err := GoTo(m, m.ROM(), d); err != nil && !errors.Is(err, ErrBattle) {
 			return fmt.Errorf("skill: EnterWildBattle: walk to grass cell (%d,%d): %w", next.x, next.y, err)
 		}
-		if waitBattleStart(m, 1000) {
+		if waitBattleStartWithDecoder(m, battle, 1000) {
 			return nil
 		}
 		legs++
@@ -81,20 +92,40 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 // waitBattleStart steps until a battle is in progress and reports whether
 // one started within budget frames.
 func waitBattleStart(m *emu.Emu, budget int) bool {
-	if _, err := m.StepUntil(budget, battleInFlight); err != nil {
+	decoder, err := battleStateDecoderFor(m)
+	if err != nil {
 		return false
 	}
-	return true
+	return waitBattleStartWithDecoder(m, decoder, budget)
 }
 
-// waitBattleMainMenu advances the encounter text and animations until the
-// FIGHT/ITEM/PKMN/RUN menu is up. The "A wild X appeared!" box does not
-// auto-advance, so — exactly as Battle's default branch does — each pass
-// taps A to move it along. It stops the moment the main menu is drawn, so
-// it never presses A on top of the menu itself (which would select FIGHT).
+func waitBattleStartWithDecoder(m menuMachine, decoder game.BattleStateDecoder, budget int) bool {
+	if decoder == nil {
+		return false
+	}
+	return waitMenuUntil(m, budget, func() bool {
+		_, ok := decoder.DecodeBattleState(m)
+		return ok
+	})
+}
+
+// waitBattleMainMenu advances encounter text and animations until the
+// profile reports the ordinary battle action menu. It never assumes a
+// concrete menu layout or cursor encoding.
 func waitBattleMainMenu(m *emu.Emu) error {
+	decoder, err := battleMenuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return waitBattleMainMenuWithDecoder(m, decoder)
+}
+
+func waitBattleMainMenuWithDecoder(m itemUseMachine, decoder game.BattleMenuDecoder) error {
+	if decoder == nil {
+		return fmt.Errorf("skill: UseItem: nil battle-menu decoder")
+	}
 	start := m.FrameCount()
-	for !mainMenuUp(m) {
+	for !decoder.DecodeBattleMainMenu(m).Visible {
 		if int(m.FrameCount()-start) > bagMainMenuBudget {
 			return fmt.Errorf("skill: UseItem: battle main menu did not open within %d frames", bagMainMenuBudget)
 		}
@@ -103,103 +134,126 @@ func waitBattleMainMenu(m *emu.Emu) error {
 	return nil
 }
 
-// UseItem uses one of item from the bag during a battle. From an open
-// battle main menu it opens ITEM, moves the cursor to the bag's entry for
-// item, and uses it. Its postcondition is that the bag's count for item
-// DROPPED by one, read back via state.DecodeInventory; if the game declines
-// the item the count never drops and UseItem reports that.
-//
-// The bag list scrolls: the visible window is four entries plus CANCEL, and
-// wMaxMenuItem holds only the window size (1 or 2), so the entry under the
-// cursor is wListScrollOffset + wCurrentMenuItem, not wCurrentMenuItem
-// alone. Selection is step-and-verify on that position — press, assert it
-// moved, repeat until it equals the wanted index, then A — never a press
-// count.
+// UseItem uses one carried item during a battle. The active game profile owns
+// battle-menu layout, item-list scrolling, inventory layout, live battle state,
+// and prompt identity. Success is proven positively by the item's quantity
+// dropping by exactly one.
 func UseItem(m *emu.Emu, item uint8) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: UseItem: no battle in progress on map %02x at (%d,%d)", m.Peek8(sym.CurMap), x, y)
+	inventory, err := inventoryDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
 	}
-	if err := waitBattleMainMenu(m); err != nil {
+	battle, err := battleStateDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	runtime, err := battleRuntimeDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	battleMenu, err := battleMenuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	listMenu, err := listMenuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	prompt, err := promptDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
+	return useItemWithDecoders(m, uint16(item), inventory, battle, runtime, battleMenu, listMenu, menu, prompt)
+}
+
+func useItemWithDecoders(
+	m itemUseMachine,
+	item uint16,
+	inventory game.InventoryDecoder,
+	battle game.BattleStateDecoder,
+	runtime game.BattleRuntimeDecoder,
+	battleMenu game.BattleMenuDecoder,
+	listMenu game.ListMenuDecoder,
+	menu game.MenuDecoder,
+	prompt game.PromptDecoder,
+) error {
+	if m == nil || inventory == nil || battle == nil || runtime == nil || battleMenu == nil || listMenu == nil || menu == nil || prompt == nil {
+		return fmt.Errorf("skill: UseItem: incomplete semantic execution capability")
+	}
+	if _, ok := battle.DecodeBattleState(m); !ok {
+		return fmt.Errorf("skill: UseItem: no battle in progress on %s", battleRuntimeContext(runtime.DecodeBattleRuntime(m)))
+	}
+	if err := waitBattleMainMenuWithDecoder(m, battleMenu); err != nil {
 		return err
 	}
 
-	state.Snapshot(m, &mem)
-	idx, before := bagEntry(&mem, item)
+	idx, before := inventoryEntry(inventory.DecodeInventory(m), item)
 	if idx < 0 {
 		return fmt.Errorf("skill: UseItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	// Select ITEM through the profile-owned ordinary battle-menu layout.
-	if err := selectItemEntry(m); err != nil {
+	if err := selectBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuItems); err != nil {
 		return fmt.Errorf("skill: UseItem: select ITEM: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
 
-	// The bag list is identified by wListMenuID, the game's own flag for an
-	// item list menu, set in DisplayBagMenu the moment the list opens. The
-	// CANCEL screen marker used here before is only drawn when the
-	// four-entry window reaches the end of the list, so a bag holding more
-	// than four item types never shows it and the wait timed out on a list
-	// that was open (run-30wscw8elg16m1ubfbhwhlusa8).
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool { return m.Peek8(sym.ListMenuID) == itemListMenuID }); err != nil {
-		state.Snapshot(m, &mem)
-		return fmt.Errorf("skill: UseItem: bag list did not open within %d frames: wFontLoaded=%#04x wListMenuID=%#04x",
-			bagMenuBudget, mem.U8(sym.FontLoaded), mem.U8(sym.ListMenuID))
+	if !waitMenuUntil(m, bagMenuBudget, func() bool {
+		live := listMenu.DecodeListMenu(m)
+		return live.Visible && live.Kind == game.ListMenuItems
+	}) {
+		return fmt.Errorf("skill: UseItem: item list did not open within %d frames on %s",
+			bagMenuBudget, battleRuntimeContext(runtime.DecodeBattleRuntime(m)))
 	}
 
-	if err := selectBagEntry(m, idx); err != nil {
-		return err
+	if err := selectScrollingListEntryWithDecoder(m, listMenu, idx); err != nil {
+		return fmt.Errorf("skill: UseItem: select bag entry %d: %w", idx, err)
 	}
 
-	// Postcondition: the count dropped by one, read back from RAM — a nil
-	// return is not evidence the item was used. For ordinary battle items the
-	// effect text needs A presses before the count changes. Poké Balls are a
-	// special case in the ROM: ItemUseBall calls AddPartyMon -> AskName BEFORE
-	// its final RemoveItemFromInventory, so a successful catch can show the
-	// "give a nickname?" choice while the count is still unchanged. Blind A
-	// there accepts YES, opens the naming keyboard on 'A', and subsequent A
-	// presses produce the pathological AAAAAAAAAA names seen in farm runs.
-	// Intercept only that exact prompt before every reflex A and choose NO;
-	// then keep driving the item routine until the count proves consumption.
+	// A caught Pokémon can ask for a nickname before the ball is removed from
+	// inventory. Blindly pressing A there accepts YES and enters the naming
+	// keyboard. Only the profile-classified nickname prompt is answered; any
+	// other live choice is an ownership failure rather than an implicit choice.
 	start := m.FrameCount()
-	for {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if _, after := bagEntry(&mem, item); after == before-1 {
+	for int(m.FrameCount()-start) <= bagUseBudget {
+		_, after := inventoryEntry(inventory.DecodeInventory(m), item)
+		if after == before-1 {
 			return nil
 		}
-		if pokemonNicknamePrompt(&mem) {
-			if err := selectTwoOption(m, 1); err != nil {
-				return fmt.Errorf("skill: UseItem: decline caught-Pokemon nickname prompt: %w", err)
+
+		if _, open := menu.DecodeTwoOption(m); open {
+			livePrompt := prompt.DecodePrompt(m)
+			if livePrompt.Visible && livePrompt.Kind == game.PromptNickname {
+				if err := selectTwoOptionWithDecoder(m, menu, 1); err != nil {
+					return fmt.Errorf("skill: UseItem: decline caught-Pokemon nickname prompt: %w", err)
+				}
+				continue
 			}
-			continue
+			return fmt.Errorf("skill: UseItem: unexpected choice prompt while resolving item %#02x", item)
 		}
-		if state.DecodeBattle(&mem) == nil {
-			// A successful catch normally finishes ItemUseBall only after its
-			// nickname choice and inventory removal. Ending without the count
-			// drop means the item was not consumed — stop rather than tap A in
-			// the overworld.
-			x, y := playerXY(m)
-			return fmt.Errorf("skill: UseItem: battle ended on map %02x at (%d,%d) without the count for %#02x dropping from %d", m.Peek8(sym.CurMap), x, y, item, before)
-		}
-		if int(m.FrameCount()-start) > bagUseBudget {
-			_, after := bagEntry(&mem, item)
-			return fmt.Errorf("skill: UseItem: bag count for %#02x did not drop from %d (now %d) within %d frames", item, before, after, bagUseBudget)
+
+		if _, ok := battle.DecodeBattleState(m); !ok {
+			return fmt.Errorf(
+				"skill: UseItem: battle ended on %s without the count for %#02x dropping from %d",
+				battleRuntimeContext(runtime.DecodeBattleRuntime(m)), item, before,
+			)
 		}
 		m.Tap(emu.A, 3, 7)
 	}
+	_, after := inventoryEntry(inventory.DecodeInventory(m), item)
+	return fmt.Errorf("skill: UseItem: bag count for %#02x did not drop from %d (now %d) within %d frames",
+		item, before, after, bagUseBudget)
 }
 
-// bagEntry reports the index of the bag's entry for item and its quantity.
-// The battle bag lists the bag's entries in order, so the list position is
-// the slice index. It returns -1 when the bag holds no such item.
-func bagEntry(mem *state.Mem, item uint8) (int, int) {
-	for i, it := range state.DecodeInventory(mem).Items {
-		if it.ID == item {
-			return i, int(it.Quantity)
+// inventoryEntry reports the absolute list position and quantity of an item.
+// Item-list ordering is the profile-projected inventory ordering.
+func inventoryEntry(state game.InventoryState, item uint16) (int, int) {
+	for i, it := range state.Items {
+		if it.NativeItemID == item {
+			return i, it.Quantity
 		}
 	}
 	return -1, 0
