@@ -1,12 +1,15 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+var ErrSaffronGateInteractionStalled = errors.New("skill: Saffron gate interaction stalled")
 
 const (
 	celadonMartRoofMap uint8 = 0x7e
@@ -93,8 +96,8 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if mem.U8(sym.CurMap) != route7GateMap || mem.U8(sym.XCoord) != route7GuardStandX || mem.U8(sym.YCoord) != route7GuardStandY {
-		return fmt.Errorf("skill: OpenSaffronGate: expected Route 7 guard stand (%d,%d), on map %#04x at (%d,%d)",
-			route7GuardStandX, route7GuardStandY, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		return fmt.Errorf("skill: OpenSaffronGate: expected Route 7 guard stand (%d,%d), on map %#04x at (%d,%d): %w",
+			route7GuardStandX, route7GuardStandY, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), ErrNavigationStalled)
 	}
 
 	m.Tap(emu.Right, 3, 7)
@@ -106,7 +109,7 @@ func OpenSaffronGate(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	state.Snapshot(m, &mem)
 	if !SaffronGateOpen(&mem) {
-		return fmt.Errorf("skill: OpenSaffronGate: guard interaction finished without saffron_gate_open")
+		return fmt.Errorf("skill: OpenSaffronGate: guard interaction finished without saffron_gate_open: %w", ErrSaffronGateInteractionStalled)
 	}
 	return nil
 }
@@ -118,7 +121,7 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if money := state.DecodeInventory(&mem).Money; money < freshWaterPrice {
-		return fmt.Errorf("skill: OpenSaffronGate: need at least ¥%d for a guard drink, have ¥%d", freshWaterPrice, money)
+		return fmt.Errorf("skill: OpenSaffronGate: %w: need at least ¥%d for a guard drink, have ¥%d", ErrCantAfford, freshWaterPrice, money)
 	}
 	if err := EnsureBagSpaceFor(m, freshWaterItem); err != nil {
 		return fmt.Errorf("skill: OpenSaffronGate: make room for FRESH WATER: %w", err)
@@ -162,7 +165,7 @@ func buySaffronGuardDrink(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	state.Snapshot(m, &mem)
 	if _, ok := guardDrinkInBag(&mem); !ok {
-		return fmt.Errorf("skill: OpenSaffronGate: vending interaction returned without a valid guard drink")
+		return fmt.Errorf("skill: OpenSaffronGate: vending interaction returned without a valid guard drink: %w", ErrBagNotRisen)
 	}
 	return nil
 }
@@ -202,13 +205,13 @@ func driveSaffronInteractionWithMenuPolicy(m *emu.Emu, budget int, done func(*st
 			}
 			// The vending-menu predicate is checked above. Any other live menu
 			// means a story step reached an input surface it did not own.
-			return fmt.Errorf("unexpected menu while waiting: %q", interaction.Text)
+			return fmt.Errorf("%w: unexpected menu while waiting: %q", ErrSaffronGateInteractionStalled, interaction.Text)
 		default:
-			return fmt.Errorf("unexpected interaction %q while waiting: %q", interaction.Kind, interaction.Text)
+			return fmt.Errorf("%w: unexpected interaction %q while waiting: %q", ErrSaffronGateInteractionStalled, interaction.Kind, interaction.Text)
 		}
 	}
 	state.Snapshot(m, &mem)
 	interaction := state.DecodeInteraction(&mem)
-	return fmt.Errorf("interaction exceeded %d frames on map %#04x at (%d,%d), surface=%q text=%q",
-		budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), interaction.Kind, interaction.Text)
+	return fmt.Errorf("%w: interaction exceeded %d frames on map %#04x at (%d,%d), surface=%q text=%q",
+		ErrSaffronGateInteractionStalled, budget, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord), interaction.Kind, interaction.Text)
 }

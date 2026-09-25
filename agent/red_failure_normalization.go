@@ -164,7 +164,8 @@ func recoverableControllerFault(err error) bool {
 		errors.Is(err, skill.ErrForcedChoiceStuck) ||
 		errors.Is(err, skill.ErrPickupMenu) ||
 		errors.Is(err, skill.ErrShopMenuTimeout) ||
-		errors.Is(err, skill.ErrShopControllerStalled)
+		errors.Is(err, skill.ErrShopControllerStalled) ||
+		errors.Is(err, skill.ErrSaffronGateInteractionStalled)
 }
 
 func failureCauseFor(err error) (FailureCauseID, []string) {
@@ -282,6 +283,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrMenuStuck) {
 		return "menu_stuck", nil
+	}
+	if errors.Is(err, skill.ErrSaffronGateInteractionStalled) {
+		return "saffron_gate_interaction_stalled", nil
 	}
 	if errors.Is(err, skill.ErrCutsceneTimeout) {
 		return "cutscene_timeout", nil
