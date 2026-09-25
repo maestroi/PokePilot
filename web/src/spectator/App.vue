@@ -23,7 +23,9 @@ import AppShell from '../shared/components/AppShell.vue'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
+import OverworldRenderer from '../shared/components/OverworldRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
+import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import {
   goalProgress,
@@ -44,11 +46,13 @@ import PublicHome from './PublicHome.vue'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
+import { canRenderOverworld } from '../shared/semanticRenderer'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
 type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
+type RendererMode = 'modern' | 'classic'
 
 interface ActivityItem {
   id: string
@@ -62,6 +66,7 @@ const selectedRunID = ref(runIDFromLocation(window.location.pathname, window.loc
 const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
+const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'classic' ? 'classic' : 'modern')
 const playerRef = ref<HTMLElement | null>(null)
 const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
@@ -97,9 +102,25 @@ const frameRunID = computed(() => {
   const run = selectedRun.value
   return run && isLiveRun(run) ? run.run_id : ''
 })
-const frameEnabled = computed(() => Boolean(frameRunID.value))
 const frameContinuous = computed(() => isLiveRun(selectedRun.value))
+const renderEnabled = computed(() => Boolean(frameRunID.value))
+const {
+  renderState,
+  state: renderStateStatus,
+  error: renderStateError
+} = useRenderStatePump(frameRunID, renderEnabled, 100, frameContinuous)
+const semanticReady = computed(() => canRenderOverworld(renderState.value))
+const showModern = computed(() => selectionPinned.value && rendererMode.value === 'modern' && semanticReady.value)
+const frameEnabled = computed(() =>
+  Boolean(frameRunID.value) && (!selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
+)
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
+const modernFallbackLabel = computed(() => {
+  if (rendererMode.value !== 'modern' || showModern.value) return ''
+  if (renderState.value?.scene && renderState.value.scene !== 'overworld') return 'Classic fallback · ' + renderState.value.scene
+  if (renderStateStatus.value === 'error') return 'Classic fallback · modern state unavailable'
+  return ''
+})
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
 const selectedActivity = computed(() => {
   const run = selectedRun.value
@@ -422,6 +443,11 @@ async function copyLink(): Promise<void> {
   window.setTimeout(() => { copyState.value = '' }, 1500)
 }
 
+function setRendererMode(mode: RendererMode): void {
+  rendererMode.value = mode
+  window.localStorage.setItem('pokepilot.spectator.renderer', mode)
+}
+
 async function fullscreenPlayer(): Promise<void> {
   if (!playerRef.value) return
   try {
@@ -741,8 +767,13 @@ function activityTimeAgo(item: ActivityItem): string {
                 theaterMode ? 'min-h-[78vh]' : 'min-h-[34rem] sm:min-h-[42rem] xl:min-h-[46rem]'
               ]"
             >
+              <OverworldRenderer
+                v-if="showModern && renderState"
+                :state="renderState"
+              />
+
               <img
-                v-if="frameURL"
+                v-else-if="frameURL"
                 :src="frameURL"
                 :alt="'Live frame for ' + selectedRun.run_id"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
@@ -754,7 +785,8 @@ function activityTimeAgo(item: ActivityItem): string {
                     <span :class="['size-3 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
                   </div>
                   <p class="mt-3 text-sm font-semibold text-slate-300">Waiting for the live stream</p>
-                  <p v-if="frameState === 'error' && frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
+                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-xs text-amber-300/80">{{ renderStateError }}</p>
+                  <p v-else-if="frameState === 'error' && frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
                 </div>
               </div>
 
@@ -769,7 +801,21 @@ function activityTimeAgo(item: ActivityItem): string {
                 <span class="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-slate-200 ring-1 ring-white/12">{{ currentLocation }}</span>
               </div>
 
-              <div class="absolute right-3 top-14 z-10 flex flex-col gap-2 opacity-80 transition-opacity group-hover:opacity-100 sm:right-4">
+              <div class="absolute right-3 top-14 z-10 flex flex-col items-end gap-2 opacity-85 transition-opacity group-hover:opacity-100 sm:right-4">
+                <div class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
+                    title="Render the live semantic world"
+                    @click="setRendererMode('modern')"
+                  >Modern</button>
+                  <button
+                    type="button"
+                    :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
+                    title="Show the classic emulator framebuffer"
+                    @click="setRendererMode('classic')"
+                  >Classic</button>
+                </div>
                 <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
                   <PlayIcon class="size-4" aria-hidden="true" />
                 </button>
@@ -797,7 +843,10 @@ function activityTimeAgo(item: ActivityItem): string {
                 </div>
               </div>
 
-              <div v-if="frameURL && frameState === 'error'" class="absolute left-3 top-14 rounded-full bg-amber-950/80 px-2.5 py-1 text-[10px] font-semibold text-amber-200 ring-1 ring-amber-300/20">
+              <div v-if="modernFallbackLabel && frameURL" class="absolute left-3 top-14 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold text-cyan-100 ring-1 ring-cyan-300/20">
+                {{ modernFallbackLabel }}
+              </div>
+              <div v-else-if="!showModern && frameURL && frameState === 'error'" class="absolute left-3 top-14 rounded-full bg-amber-950/80 px-2.5 py-1 text-[10px] font-semibold text-amber-200 ring-1 ring-amber-300/20">
                 Last frame · reconnecting
               </div>
             </div>
