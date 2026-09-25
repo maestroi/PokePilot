@@ -3,316 +3,252 @@ package skill
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/profiles"
 )
 
-// ItemAntidote is the bag item ID of ANTIDOTE (pokered/constants/
-// item_constants.asm: `const ANTIDOTE ; $0b`), stocked by the Viridian Mart.
+// ItemAntidote is the Gen-I native item ID of ANTIDOTE. Public Buy/Sell keep
+// their historical uint8 API while the transaction core uses uint16 native ids.
 const ItemAntidote = 0x0b
 
-// ErrCantAfford is returned by Buy when the player's money is below the
-// purchase total. It is a typed result, not a silent no-op: Buy backs out of
-// the clerk's menus and leaves the player controllable before returning it.
+// viridianMartMap is retained as a Gen-I compatibility constant for recovery
+// planners that still reason about Red map ids. Transaction execution itself
+// no longer branches on this value; the active shop profile owns that rule.
+const viridianMartMap = 0x2a
+
 var ErrCantAfford = errors.New("skill: not enough money for the purchase")
-
-// ErrNotInStock is returned by Buy when the clerk does not sell the requested
-// item. The stock is read from wItemList (the ROM's mart table), never a
-// hardcoded price list.
 var ErrNotInStock = errors.New("skill: the clerk does not stock the requested item")
-
-// ErrUnsellable is returned when Red's mart refuses to put a price on an
-// item (key items and HMs). Sell always backs out to a controllable overworld
-// boundary before returning this typed refusal.
 var ErrUnsellable = errors.New("skill: the item cannot be sold")
-
-// ErrShopMenuTimeout is a bounded mart transition timeout. It is recoverable
-// only when Buy successfully backs out to the overworld before returning it.
 var ErrShopMenuTimeout = errors.New("skill: shop menu transition timed out")
-
-// ErrShopControllerStalled is a bounded cursor/menu controller failure inside
-// Buy. Like ErrShopMenuTimeout, callers may recover only after a clean boundary.
 var ErrShopControllerStalled = errors.New("skill: shop controller stalled")
-
-// ErrShopStabilization means Buy could not prove that it returned to a safe
-// overworld boundary. It is deliberately terminal even if the original mart
-// error would otherwise be recoverable.
 var ErrShopStabilization = errors.New("skill: shop stabilization failed")
-
-// ErrShopNotOpenYet is returned by Buy when the clerk cannot offer a shop at
-// all right now: at the Viridian Mart specifically, talking to the clerk
-// before EventOakGotParcel always shows flavor text
-// (ViridianMartCheckParcelDeliveredScript, pokered/scripts/ViridianMart.asm)
-// instead of BUY/SELL/QUIT, however many times it is retried. It is a typed,
-// immediate refusal rather than the 500-frame menu timeout this used to
-// surface as ("the BUY/SELL/QUIT menu did not appear" / "the item list did
-// not appear", MEASURED on round-005 of run-2aaq5ecae52wzwayf1qcjk34, "buy 7
-// POKEBALL" issued before the parcel had been delivered to Oak).
 var ErrShopNotOpenYet = errors.New("skill: the clerk is not offering a shop yet")
 
-// viridianMartMap is Place("viridian mart").Map (pokered/data/maps/headers/
-// ViridianMart.asm), used directly since Buy runs before any Place lookup.
-const viridianMartMap = 0x2A
-
-// wMenuWatchedKeys values that identify the mart's menus. The BUY/SELL/QUIT
-// menu and the two-option prompt watch only A|B (3); the priced item list and
-// the choose-quantity box watch A|B|SELECT (7). These are the only signals that
-// tell the four shop screens apart, since wMaxMenuItem is a 1/2 sentinel on the
-// lists (DisplayListMenuID) and stale otherwise.
-const (
-	watchBuySellQuit = 3
-	watchListOrQty   = 7
-)
-
-// Budgets for the mart's short text/menu transitions. Each advanceUntil
-// iteration is either an A-tap plus talkSettle or a single frame; each
-// martWait iteration is one talkSettle block.
 const (
 	martAdvanceBudget = 500
 	martWaitBudget    = 60
 	martQtyBudget     = 120
-	backOutRedraw     = 8 // talkSettle blocks for the item list to redraw after B on the quantity box
 )
 
-// Buy purchases qty of item from a mart clerk. It talks to the clerk, selects
-// BUY, picks the item, sets the quantity, confirms (answering YES to the
-// two-option prompt), and exits the menus, leaving the player controllable.
-// On success it asserts the bag count rose by qty AND the money fell by the
-// total. If the player cannot afford it, it backs out cleanly and returns
-// ErrCantAfford; if the clerk does not stock the item, ErrNotInStock.
-func Buy(m *emu.Emu, item uint8, qty int) error {
-	if qty < 1 || qty > 99 {
-		return fmt.Errorf("skill: Buy: quantity %d out of range 1..99", qty)
+type shopRuntime interface {
+	game.ShopDecoder
+	game.InventoryDecoder
+	game.OverworldDecoder
+	game.MenuDecoder
+	game.ListMenuDecoder
+}
+
+type shopMachine interface {
+	menuMachine
+}
+
+func shopRuntimeFor(m *emu.Emu) (shopRuntime, error) {
+	if m == nil {
+		return nil, fmt.Errorf("skill: shop: nil emulator")
 	}
-	shop, err := shopDecoderFor(m)
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		return nil, fmt.Errorf("skill: shop: detect profile: %w", err)
+	}
+	runtime, ok := profile.(shopRuntime)
+	if !ok {
+		return nil, fmt.Errorf("skill: shop: profile %s@%s does not expose shop transaction semantics", profile.ID(), profile.Revision())
+	}
+	return runtime, nil
+}
+
+// Buy purchases qty units of a native Gen-I item and returns at a stable
+// overworld boundary. The reusable transaction core is native-id-width agnostic.
+func Buy(m *emu.Emu, item uint8, qty int) error {
+	runtime, err := shopRuntimeFor(m)
 	if err != nil {
 		return err
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !shop.DecodeShop(m).Controllable {
-		return fmt.Errorf("skill: Buy: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
-			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
+	return buyNative(m, runtime, uint16(item), qty)
+}
+
+func buyNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error {
+	if qty < 1 || qty > 99 {
+		return fmt.Errorf("skill: Buy: quantity %d out of range 1..99", qty)
 	}
-	before := state.DecodeInventory(&mem)
+	if runtime == nil {
+		return fmt.Errorf("skill: Buy: nil shop runtime")
+	}
+	if !runtime.DecodeOverworld(m).Controllable {
+		return fmt.Errorf("skill: Buy: player not controllable")
+	}
+	before := runtime.DecodeInventory(m)
 	moneyBefore := int(before.Money)
-	bagBefore := bagCount(before.Items, item)
-
-	// 0. The Viridian Mart clerk never offers a shop before Oak has received
-	// the parcel: ViridianMartCheckParcelDeliveredScript points the clerk's
-	// dialogue at flavor text instead of BUY/SELL/QUIT until EventOakGotParcel
-	// is set, and re-talking (or leaving and re-entering the mart) does not
-	// change that. Check it up front so that case fails fast and clearly
-	// instead of running the shop's menu-wait loops out to a confusing
-	// timeout. Scoped to the mart map so it never fires for skills that reuse
-	// this map id for something else.
-	if m.Peek8(sym.CurMap) == viridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel) {
-		return fmt.Errorf("%w: Viridian Mart clerk before EventOakGotParcel", ErrShopNotOpenYet)
+	bagBefore := inventoryItemQuantity(before, item)
+	if runtime.DecodeShop(m).TradeUnavailable {
+		return fmt.Errorf("%w: current clerk cannot transact yet", ErrShopNotOpenYet)
 	}
 
-	// 1. Open the shop: A on the clerk auto-advances the greeting to the
-	// BUY/SELL/QUIT menu (wMenuWatchedKeys == A|B, wMaxMenuItem == 2).
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseActionMenu }, "the BUY/SELL/QUIT menu"); err != nil {
-		return recoverShopFailure(m, err)
+	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
+	}
+	if err := selectMenuItemWithDecoder(m, runtime, 0); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure("select BUY", err))
+	}
+	if err := shopAdvance(m, runtime, game.ShopPhaseItemList, "the item list"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 
-	// 2. Select BUY (the cursor starts on BUY).
-	if err := SelectMenuItem(m, 0); err != nil {
-		return recoverShopFailure(m, shopControllerFailure("select BUY", err))
-	}
-
-	// 3. Advance to the priced item list ("Take your time." then the list).
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseItemList }, "the item list"); err != nil {
-		return recoverShopFailure(m, err)
-	}
-	state.Snapshot(m, &mem)
-	pos, ok := shopItemPosition(shop.DecodeShop(m), uint16(item))
+	shop := runtime.DecodeShop(m)
+	pos, ok := shopItemPosition(shop, item)
 	if !ok {
-		// Refusing the purchase is not enough: the item list is UP, and
-		// returning from here left it up. Every later objective then
-		// refuses to start on a screen nothing closes. MEASURED
-		// 2026-08-31: the Viridian Mart stocks POKe BALL, ANTIDOTE, PARLYZ
-		// HEAL and BURN HEAL — no POTION — so "buy 3 POTION" returned
-		// ErrNotInStock from inside the shop and killed the run four
-		// rounds later. Same rule as the affordability refusal below: leave
-		// the world where it was found, and say so loudly when you cannot.
-		primary := fmt.Errorf("skill: Buy: %w: item %#02x", ErrNotInStock, item)
-		if err := exitToOverworld(m); err != nil {
-			return shopStabilizationFailure(primary, err)
+		primary := fmt.Errorf("skill: Buy: %w: item %#04x", ErrNotInStock, item)
+		if cleanup := exitToOverworldWithRuntime(m, runtime); cleanup != nil {
+			return shopStabilizationFailure(primary, cleanup)
 		}
 		return primary
 	}
-
-	// 4. Select the item; the profile identifies the choose-quantity phase.
-	if err := selectListEntry(m, pos); err != nil {
-		// Same rule as the ErrNotInStock backout above: a cursor that never
-		// reached its target leaves the item list up. The typed controller
-		// failure becomes recoverable only after recoverShopFailure proves the
-		// shop is gone.
-		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
+	if err := selectShopListEntry(m, runtime, pos); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure(fmt.Sprintf("select item %#04x", item), err))
 	}
-	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the choose-quantity box"); err != nil {
-		// A timeout is still an engineering failure. The campaign may survive
-		// it only after the owning skill proves the shop has been closed.
-		return recoverShopFailure(m, err)
+	if err := shopWait(m, runtime, game.ShopPhaseQuantity, "the choose-quantity box"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-
-	// 5. Set the quantity; hMoney now holds the total price for it.
-	if err := setQuantity(m, qty); err != nil {
-		return recoverShopFailure(m, err)
+	if err := setShopQuantity(m, runtime, qty); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-	state.Snapshot(m, &mem)
-	total := shop.DecodeShop(m).Total
-
-	// 6. Affordability: a typed refusal, not a silent no-op or a hang.
+	total := runtime.DecodeShop(m).Total
 	if moneyBefore < total {
 		primary := fmt.Errorf("skill: Buy: %w: have %d, need %d", ErrCantAfford, moneyBefore, total)
-		if err := backOutOfShop(m); err != nil {
-			// Do not leak the benign ErrCantAfford classification when cleanup
-			// itself failed: the campaign no longer has a trustworthy boundary.
-			return shopStabilizationFailure(primary, err)
+		if cleanup := exitToOverworldWithRuntime(m, runtime); cleanup != nil {
+			return shopStabilizationFailure(primary, cleanup)
 		}
 		return primary
 	}
 
-	// 7. Confirm the quantity; the "That will be ¥X. OK?" box closes to a
-	// two-option prompt.
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseConfirmation }, "the purchase-confirmation prompt"); err != nil {
-		return recoverShopFailure(m, err)
+	if err := shopAdvance(m, runtime, game.ShopPhaseConfirmation, "the purchase-confirmation prompt"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
+	}
+	if err := selectTwoOptionWithDecoder(m, runtime, 0); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure("answer YES", err))
+	}
+	if err := exitShopWithRuntime(m, runtime); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 
-	// 8. Answer YES (menu index 0). The trap: never a bare Tap(A) on the box.
-	if err := SelectMenuItem(m, 0); err != nil {
-		return recoverShopFailure(m, shopControllerFailure("answer YES", err))
-	}
-
-	// 9. The purchase runs; leave the shop and wait until controllable.
-	if err := exitShop(m); err != nil {
-		return recoverShopFailure(m, err)
-	}
-
-	// 10. Postconditions: bag rose by qty AND money fell by the total.
-	state.Snapshot(m, &mem)
-	after := state.DecodeInventory(&mem)
-	bagAfter := bagCount(after.Items, item)
+	after := runtime.DecodeInventory(m)
+	bagAfter := inventoryItemQuantity(after, item)
 	if bagAfter != bagBefore+qty {
-		return fmt.Errorf("skill: Buy: bag count for item %#02x = %d, want %d (before %d + %d)",
-			item, bagAfter, bagBefore+qty, bagBefore, qty)
+		return fmt.Errorf("skill: Buy: bag count for item %#04x = %d, want %d (before %d + %d)", item, bagAfter, bagBefore+qty, bagBefore, qty)
 	}
 	if int(after.Money) != moneyBefore-total {
-		return fmt.Errorf("skill: Buy: money = %d, want %d (before %d - total %d)",
-			after.Money, moneyBefore-total, moneyBefore, total)
+		return fmt.Errorf("skill: Buy: money = %d, want %d (before %d - total %d)", after.Money, moneyBefore-total, moneyBefore, total)
 	}
 	return nil
 }
 
-// Sell sells qty units of one bag item to the current mart clerk and returns
-// to a controllable overworld boundary. It drives Red's real SELL flow,
-// verifies both sides of the transaction (bag decrement and money increment),
-// and refuses key items/HMs with ErrUnsellable instead of leaving a mart menu
-// open. The caller must already be standing at and facing a mart clerk/counter.
+// Sell sells qty units of one native Gen-I item and returns at a stable
+// overworld boundary.
 func Sell(m *emu.Emu, item uint8, qty int) error {
-	if qty < 1 || qty > 99 {
-		return fmt.Errorf("skill: Sell: quantity %d out of range 1..99", qty)
-	}
-	shop, err := shopDecoderFor(m)
+	runtime, err := shopRuntimeFor(m)
 	if err != nil {
 		return err
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !shop.DecodeShop(m).Controllable {
-		return fmt.Errorf("skill: Sell: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
-			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
+	return sellNative(m, runtime, uint16(item), qty)
+}
+
+func sellNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error {
+	if qty < 1 || qty > 99 {
+		return fmt.Errorf("skill: Sell: quantity %d out of range 1..99", qty)
 	}
-	before := state.DecodeInventory(&mem)
+	if runtime == nil {
+		return fmt.Errorf("skill: Sell: nil shop runtime")
+	}
+	if !runtime.DecodeOverworld(m).Controllable {
+		return fmt.Errorf("skill: Sell: player not controllable")
+	}
+	before := runtime.DecodeInventory(m)
 	moneyBefore := int(before.Money)
-	idx, bagBefore := bagEntry(&mem, item)
+	idx, bagBefore := inventoryEntry(before, item)
 	if idx < 0 || bagBefore < qty {
-		return fmt.Errorf("skill: Sell: item %#02x quantity %d, need %d", item, bagBefore, qty)
+		return fmt.Errorf("skill: Sell: item %#04x quantity %d, need %d", item, bagBefore, qty)
 	}
-	if m.Peek8(sym.CurMap) == viridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel) {
-		return fmt.Errorf("%w: Viridian Mart clerk before EventOakGotParcel", ErrShopNotOpenYet)
+	if runtime.DecodeShop(m).TradeUnavailable {
+		return fmt.Errorf("%w: current clerk cannot transact yet", ErrShopNotOpenYet)
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseActionMenu }, "the BUY/SELL/QUIT menu"); err != nil {
-		return recoverShopFailure(m, err)
+	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-	if err := SelectMenuItem(m, 1); err != nil { // SELL
-		return recoverShopFailure(m, shopControllerFailure("select SELL", err))
+	if err := selectMenuItemWithDecoder(m, runtime, 1); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure("select SELL", err))
 	}
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseItemList }, "the sell item list"); err != nil {
-		return recoverShopFailure(m, err)
+	if err := shopAdvance(m, runtime, game.ShopPhaseItemList, "the sell item list"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 
-	state.Snapshot(m, &mem)
-	liveIdx, liveQty := bagEntry(&mem, item)
+	liveInventory := runtime.DecodeInventory(m)
+	liveIdx, liveQty := inventoryEntry(liveInventory, item)
 	if liveIdx < 0 || liveQty < qty {
-		return recoverShopFailure(m, fmt.Errorf("skill: Sell: item %#02x changed before selection: index=%d quantity=%d", item, liveIdx, liveQty))
+		return recoverShopFailureWithRuntime(m, runtime, fmt.Errorf("skill: Sell: item %#04x changed before selection: index=%d quantity=%d", item, liveIdx, liveQty))
 	}
-	if err := selectListEntry(m, liveIdx); err != nil {
-		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select bag item %#02x", item), err))
+	if err := selectShopListEntry(m, runtime, liveIdx); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure(fmt.Sprintf("select bag item %#04x", item), err))
 	}
-
-	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the sell choose-quantity box"); err != nil {
-		state.Snapshot(m, &mem)
-		text := strings.ToLower(state.ScreenText(&mem))
-		if strings.Contains(text, "can't put a") || strings.Contains(text, "price on that") {
-			primary := fmt.Errorf("skill: Sell: %w: item %#02x", ErrUnsellable, item)
-			if cleanup := exitToOverworld(m); cleanup != nil {
+	if err := waitSellQuantity(m, runtime); err != nil {
+		if runtime.DecodeShop(m).Unsellable {
+			primary := fmt.Errorf("skill: Sell: %w: item %#04x", ErrUnsellable, item)
+			if cleanup := exitToOverworldWithRuntime(m, runtime); cleanup != nil {
 				return shopStabilizationFailure(primary, cleanup)
 			}
 			return primary
 		}
-		return recoverShopFailure(m, err)
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-	if err := setQuantity(m, qty); err != nil {
-		return recoverShopFailure(m, err)
+	if err := setShopQuantity(m, runtime, qty); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-	state.Snapshot(m, &mem)
-	total := shop.DecodeShop(m).Total
+	total := runtime.DecodeShop(m).Total
 	if total <= 0 {
-		return recoverShopFailure(m, fmt.Errorf("skill: Sell: item %#02x x%d produced non-positive sale total %d", item, qty, total))
+		return recoverShopFailureWithRuntime(m, runtime, fmt.Errorf("skill: Sell: item %#04x x%d produced non-positive sale total %d", item, qty, total))
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseConfirmation }, "the sale-confirmation prompt"); err != nil {
-		return recoverShopFailure(m, err)
+	if err := shopAdvance(m, runtime, game.ShopPhaseConfirmation, "the sale-confirmation prompt"); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
-	if err := selectTwoOption(m, 0); err != nil { // YES
-		return recoverShopFailure(m, shopControllerFailure("answer sale YES", err))
+	if err := selectTwoOptionWithDecoder(m, runtime, 0); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, shopControllerFailure("answer sale YES", err))
 	}
 
 	expectedMoney := moneyBefore + total
 	if expectedMoney > 999999 {
 		expectedMoney = 999999
 	}
-	if _, err := m.StepUntil(martAdvanceBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		_, afterQty := bagEntry(&mem, item)
-		return afterQty == bagBefore-qty && int(state.DecodeInventory(&mem).Money) == expectedMoney
-	}); err != nil {
-		state.Snapshot(m, &mem)
-		_, afterQty := bagEntry(&mem, item)
-		return recoverShopFailure(m, fmt.Errorf("skill: Sell: transaction did not settle: item %#02x %d->%d want %d, money %d->%d want %d: %w",
-			item, bagBefore, afterQty, bagBefore-qty, moneyBefore, state.DecodeInventory(&mem).Money, expectedMoney, err))
+	settled := false
+	for i := 0; i < martAdvanceBudget; i++ {
+		after := runtime.DecodeInventory(m)
+		_, afterQty := inventoryEntry(after, item)
+		if afterQty == bagBefore-qty && int(after.Money) == expectedMoney {
+			settled = true
+			break
+		}
+		m.StepFrame()
+	}
+	if !settled {
+		after := runtime.DecodeInventory(m)
+		_, afterQty := inventoryEntry(after, item)
+		return recoverShopFailureWithRuntime(m, runtime, fmt.Errorf("skill: Sell: transaction did not settle: item %#04x %d->%d want %d, money %d->%d want %d",
+			item, bagBefore, afterQty, bagBefore-qty, moneyBefore, after.Money, expectedMoney))
+	}
+	if err := exitToOverworldWithRuntime(m, runtime); err != nil {
+		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 
-	if err := exitToOverworld(m); err != nil {
-		return recoverShopFailure(m, err)
-	}
-	state.Snapshot(m, &mem)
-	after := state.DecodeInventory(&mem)
-	_, bagAfter := bagEntry(&mem, item)
+	after := runtime.DecodeInventory(m)
+	_, bagAfter := inventoryEntry(after, item)
 	if bagAfter != bagBefore-qty {
-		return fmt.Errorf("skill: Sell: bag count for item %#02x = %d, want %d", item, bagAfter, bagBefore-qty)
+		return fmt.Errorf("skill: Sell: bag count for item %#04x = %d, want %d", item, bagAfter, bagBefore-qty)
 	}
 	if int(after.Money) != expectedMoney {
 		return fmt.Errorf("skill: Sell: money = %d, want %d (before %d + sale %d)", after.Money, expectedMoney, moneyBefore, total)
@@ -320,261 +256,147 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 	return nil
 }
 
-// buySellQuitMax is wMaxMenuItem for the three-entry BUY/SELL/QUIT menu
-// (indices 0..2). MEASURED with DEBUG tracing on TestBuy: the real menu
-// reads wMenuWatchedKeys==3 wMaxMenuItem==2; the mart's own YES/NO
-// confirmation box also reads wMenuWatchedKeys==3 but wMaxMenuItem==1 — the
-// same wMaxMenuItem a plain flavor-text box leaves stale (nothing else in the
-// mart is a 3-item menu), so requiring both closes that false-positive.
-const buySellQuitMax = 2
-
-// buySellQuitUp reports that the BUY/SELL/QUIT menu is up. It is false while
-// controllable (wFontLoaded == 0) and while the item list / quantity box are up
-// (wMenuWatchedKeys == A|B|SELECT), so it cannot fire on a stale value. It also
-// checks wMaxMenuItem against the menu's real shape: without that, a plain
-// text box that happens to leave wMenuWatchedKeys==3 stale (e.g. the Viridian
-// Mart's pre-parcel flavor text, or its YES/NO confirmation box) reads as the
-// shop menu already open, and Buy selects BUY/SELL/QUIT entry 0 against
-// whatever is actually on screen instead.
-func buySellQuitUp(mm *state.Mem) bool {
-	return mm.U8(sym.FontLoaded) != 0 && mm.U8(sym.MenuWatchedKeys) == watchBuySellQuit &&
-		mm.U8(sym.MaxMenuItem) == buySellQuitMax
-}
-
-// itemListUp reports that the priced item list is up. It is only used at points
-// in the flow where the choose-quantity box is not (yet) up, so A|B|SELECT here
-// means the list.
-func itemListUp(mm *state.Mem) bool {
-	return mm.U8(sym.MenuWatchedKeys) == watchListOrQty
-}
-
-// quantityBoxUp reports that DisplayChooseQuantityMenu has taken over from the
-// priced item list. The list already stores the highlighted item's price in
-// hMoney, and the quantity box's first total is that same price, so a price
-// change never arrives for a one-item purchase of the highlighted row.
-// pokemart.asm sets wMaxItemQuantity to 99 immediately before drawing the box.
-// The first purchase can detect that transition directly. Affordability
-// recovery is different: Buy backs all the way out, then EnsureItemStock may
-// immediately retry a smaller quantity, leaving wMaxItemQuantity stale at 99.
-// On that retry the rendered ×NN marker is the positive boundary: the priced
-// buy list never renders quantities, while DisplayChooseQuantityMenu always
-// draws one. This also keeps a dropped A press from being mistaken for an open
-// quantity box just because the stale RAM still says 99.
-func quantityBoxUp(mm *state.Mem, hBefore int, maxBefore uint8) bool {
-	if mm.U8(sym.MaxItemQuantity) == 99 && mm.U8(sym.ItemQuantity) >= 1 {
-		if maxBefore != 99 || strings.Contains(state.ScreenText(mm), "×") {
-			return true
+func shopAdvance(m shopMachine, runtime shopRuntime, want game.ShopPhase, what string) error {
+	for i := 0; i < martAdvanceBudget; i++ {
+		state := runtime.DecodeShop(m)
+		if state.Phase == want {
+			return nil
+		}
+		if state.Phase == game.ShopPhaseGreeting {
+			m.Tap(emu.A, 3, 7)
+			m.StepFrames(talkSettle)
+		} else {
+			m.StepFrame()
 		}
 	}
-	price := bcdMoney(mm)
-	return price > 0 && price != hBefore
+	return shopTimeout(what, runtime.DecodeShop(m))
 }
 
-// twoOptionUp reports that a two-option prompt (the YES/NO confirmation) is up.
-func twoOptionUp(mm *state.Mem) bool {
-	return state.DecodeTwoOptionMenu(mm) != nil
-}
-
-// martAdvance steps frames, pressing A while a text box is up, until pred holds.
-// It returns a diagnostic error if pred never holds within the budget. Because
-// pred is checked before every A-tap, it never presses A on the menu it is
-// waiting for.
-func martAdvance(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
-	mem := advanceUntil(m, martAdvanceBudget, pred)
-	if !pred(&mem) {
-		return martTimeout(what, &mem)
-	}
-	return nil
-}
-
-// martWait steps frames with NO input until pred holds, for transitions that
-// advance on their own (the "anything else" text auto-advancing to the
-// BUY/SELL/QUIT menu, the quantity box computing its price).
-func martWait(m *emu.Emu, pred func(*state.Mem) bool, what string) error {
-	var mem state.Mem
+func shopWait(m shopMachine, runtime shopRuntime, want game.ShopPhase, what string) error {
 	for i := 0; i < martWaitBudget; i++ {
-		state.Snapshot(m, &mem)
-		if pred(&mem) {
+		if runtime.DecodeShop(m).Phase == want {
 			return nil
 		}
 		m.StepFrames(talkSettle)
 	}
-	state.Snapshot(m, &mem)
-	if !pred(&mem) {
-		return martTimeout(what, &mem)
-	}
-	return nil
+	return shopTimeout(what, runtime.DecodeShop(m))
 }
 
-func martTimeout(what string, mem *state.Mem) error {
-	return fmt.Errorf("%w: skill: Buy: %s did not appear (wFontLoaded=%#04x wCurMenuItem=%d wMaxMenuItem=%d wItemQuantity=%d wMoney=%d)",
-		ErrShopMenuTimeout, what, mem.U8(sym.FontLoaded), mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem),
-		mem.U8(sym.ItemQuantity), bcdMoney(mem))
+func waitSellQuantity(m shopMachine, runtime shopRuntime) error {
+	for i := 0; i < martWaitBudget; i++ {
+		state := runtime.DecodeShop(m)
+		if state.Unsellable {
+			return ErrUnsellable
+		}
+		if state.Phase == game.ShopPhaseQuantity {
+			return nil
+		}
+		m.StepFrames(talkSettle)
+	}
+	return shopTimeout("the sell choose-quantity box", runtime.DecodeShop(m))
+}
+
+func shopTimeout(what string, state game.ShopState) error {
+	return fmt.Errorf("%w: skill: shop: %s did not appear (phase=%d quantity=%d max=%d total=%d)",
+		ErrShopMenuTimeout, what, state.Phase, state.Quantity, state.MaxQuantity, state.Total)
 }
 
 func shopControllerFailure(context string, err error) error {
-	return fmt.Errorf("skill: Buy: %s: %w", context, errors.Join(ErrShopControllerStalled, err))
+	return fmt.Errorf("skill: shop: %s: %w", context, errors.Join(ErrShopControllerStalled, err))
 }
 
 func shopStabilizationFailure(primary, cleanup error) error {
 	return errors.Join(primary, fmt.Errorf("%w: %v", ErrShopStabilization, cleanup))
 }
 
-// recoverShopFailure is the ownership proof for a recoverable mart fault. A
-// timeout/controller error remains fully visible to callers, but it is only
-// eligible for runtime re-planning if this cleanup succeeds. Cleanup failure
-// adds ErrShopStabilization, which the agent treats as terminal.
-func recoverShopFailure(m *emu.Emu, err error) error {
+func recoverShopFailureWithRuntime(m shopMachine, runtime shopRuntime, err error) error {
 	if err == nil {
 		return nil
 	}
-	if cleanup := exitToOverworld(m); cleanup != nil {
+	if cleanup := exitToOverworldWithRuntime(m, runtime); cleanup != nil {
 		return shopStabilizationFailure(err, cleanup)
 	}
 	return err
 }
 
-// selectListEntry uses the shared profile-driven scrolling-list driver.
-// Shop-specific callers wrap any cursor failure with ErrShopControllerStalled.
-func selectListEntry(m *emu.Emu, index int) error {
-	if err := selectScrollingListEntry(m, index); err != nil {
+func recoverShopFailure(m *emu.Emu, err error) error {
+	runtime, runtimeErr := shopRuntimeFor(m)
+	if runtimeErr != nil {
+		return errors.Join(err, runtimeErr)
+	}
+	return recoverShopFailureWithRuntime(m, runtime, err)
+}
+
+func selectShopListEntry(m shopMachine, runtime shopRuntime, index int) error {
+	if err := selectScrollingListEntryWithDecoder(m, runtime, index); err != nil {
 		return err
 	}
-	// Preserve the mart controller's historical post-confirm settle window.
 	m.StepFrames(talkSettle)
 	return nil
 }
 
-// setQuantity drives the choose-quantity selector to qty by tapping Up (it
-// starts at 1 and only increments upward here), verifying wItemQuantity after
-// each tap.
-func setQuantity(m *emu.Emu, qty int) error {
+func setShopQuantity(m shopMachine, runtime shopRuntime, qty int) error {
 	for i := 0; i < martQtyBudget; i++ {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		cur := int(mem.U8(sym.ItemQuantity))
+		state := runtime.DecodeShop(m)
+		cur := state.Quantity
 		if cur == qty {
 			return nil
 		}
 		if cur > qty {
-			return fmt.Errorf("%w: quantity overshot %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, cur)
+			return fmt.Errorf("%w: quantity overshot %d (quantity=%d)", ErrShopControllerStalled, qty, cur)
 		}
 		m.Tap(emu.Up, 3, 7)
 		m.StepFrames(talkSettle)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	return fmt.Errorf("%w: quantity did not reach %d (wItemQuantity=%d)", ErrShopControllerStalled, qty, mem.U8(sym.ItemQuantity))
+	return fmt.Errorf("%w: quantity did not reach %d (quantity=%d)", ErrShopControllerStalled, qty, runtime.DecodeShop(m).Quantity)
 }
 
-// exitShop leaves the shop after a successful purchase: close "Here you are!"
-// to the item list, then out through leaveFromItemList.
-func exitShop(m *emu.Emu) error {
-	if err := martAdvance(m, itemListUp, "the item list after the purchase"); err != nil {
+func exitShopWithRuntime(m shopMachine, runtime shopRuntime) error {
+	if err := shopAdvance(m, runtime, game.ShopPhaseItemList, "the item list after the purchase"); err != nil {
 		return err
 	}
-	return leaveFromItemList(m)
+	return leaveFromItemListWithRuntime(m, runtime)
 }
 
-// backOutOfShop leaves the shop from the choose-quantity box (used to refuse
-// an unaffordable purchase).
-//
-// It is exitToOverworld and nothing else. The old version choreographed the
-// exit — B to the item list, settle for a redraw with no RAM marker, then
-// leaveFromItemList's B / wait-for-BUY-SELL-QUIT / B — and every step of
-// that assumed the screen it expected was the screen that was there. One
-// stale wMenuWatchedKeys and the sequence pressed its buttons at the wrong
-// menus and stopped somewhere inside the shop. exitToOverworld does not
-// assume: it looks at what is on screen and presses the button that closes
-// THAT, until the player is controllable and stays controllable.
-func backOutOfShop(m *emu.Emu) error {
-	return exitToOverworld(m)
-}
-
-// leaveFromItemList exits from the item list: B -> the "anything else" text
-// auto-advances to the BUY/SELL/QUIT menu -> B quits -> then back to the
-// overworld, whatever the shop still has on screen.
-func leaveFromItemList(m *emu.Emu) error {
+func leaveFromItemListWithRuntime(m shopMachine, runtime shopRuntime) error {
 	m.Tap(emu.B, 3, 7)
-	if err := martWait(m, buySellQuitUp, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
+	if err := shopWait(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
 		return err
 	}
 	m.Tap(emu.B, 3, 7)
-	return exitToOverworld(m)
+	return exitToOverworldWithRuntime(m, runtime)
 }
 
-// exitToOverworld backs out of whatever is still on screen until the player
-// is controllable, pressing the button that CLOSES what is up: B on a menu,
-// A on ordinary text.
-//
-// It replaces a martAdvance(state.Controllable) that pressed A at every
-// screen. Two things were wrong with that. A on a menu SELECTS, so the exit
-// path could re-enter the shop it was leaving; and the predicate was checked
-// on single snapshots, so the one-frame gap between one menu closing and the
-// next drawing reads as "controllable" — Buy then returned SUCCESS with the
-// item list still up, and every objective after it failed on a screen
-// nothing would clear. MEASURED 2026-08-31: "buy 3 POTION -> done" followed
-// immediately by "MONEY BUY Y793 ... POKe BALL ... Take your time.".
-//
-// So the exit confirms: controllable, then still controllable one settle
-// later. A screen that redraws in that window is not an exit.
-func exitToOverworld(m *emu.Emu) error {
-	var mem state.Mem
+func exitToOverworldWithRuntime(m shopMachine, runtime shopRuntime) error {
 	for i := 0; i < martWaitBudget; i++ {
-		state.Snapshot(m, &mem)
-		switch {
-		case state.Controllable(&mem):
+		if runtime.DecodeOverworld(m).Controllable {
 			m.StepFrames(talkSettle)
-			state.Snapshot(m, &mem)
-			if state.Controllable(&mem) {
+			if runtime.DecodeOverworld(m).Controllable {
 				return nil
 			}
-		case state.MenuUp(&mem):
-			m.Tap(emu.B, 3, 7) // B backs out of every Gen 1 menu
+			continue
+		}
+		switch runtime.DecodeShop(m).Phase {
+		case game.ShopPhaseActionMenu, game.ShopPhaseItemList, game.ShopPhaseQuantity, game.ShopPhaseConfirmation:
+			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
-		case mem.U8(sym.FontLoaded) != 0:
-			m.Tap(emu.A, 3, 7) // ordinary text: page it closed
+		case game.ShopPhaseGreeting:
+			m.Tap(emu.A, 3, 7)
 			m.StepFrames(talkSettle)
 		default:
-			m.StepFrames(talkSettle) // mid-transition; let it land
+			m.StepFrames(talkSettle)
 		}
 	}
-	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: Buy: still not controllable after leaving the shop (wFontLoaded=%#04x wJoyIgnore=%#04x menu=%t screen=%q)",
-		mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore), state.MenuUp(&mem), state.ScreenText(&mem))
+	state := runtime.DecodeShop(m)
+	world := runtime.DecodeOverworld(m)
+	return fmt.Errorf("skill: shop: still not controllable after leaving shop (phase=%d map=%#04x at (%d,%d))",
+		state.Phase, world.NativeMapID, world.X, world.Y)
 }
 
-// martItemPosition returns the 0-based position of item in the clerk's stock
-// (wItemList: a count byte then item ids, $ff-terminated). It reports ok=false
-// if the clerk does not sell it.
-func martItemPosition(mem *state.Mem, item uint8) (int, bool) {
-	for i := 1; ; i++ {
-		v := mem.U8(sym.ItemList + uint16(i))
-		if v == 0xff {
-			break
-		}
-		if v == item {
-			return i - 1, true
-		}
+func exitToOverworld(m *emu.Emu) error {
+	runtime, err := shopRuntimeFor(m)
+	if err != nil {
+		return err
 	}
-	return 0, false
-}
-
-// bcdMoney decodes the 3-byte BCD value at addr (hMoney for the shop's total).
-func bcdMoney(m *state.Mem) int {
-	v := 0
-	for _, b := range m.Slice(sym.Money, 3) {
-		v = v*100 + int(b>>4)*10 + int(b&0x0F)
-	}
-	return v
-}
-
-// bagCount returns the quantity of id in the bag (0 if absent).
-func bagCount(items []state.BagItem, id uint8) int {
-	for _, it := range items {
-		if it.ID == id {
-			return int(it.Quantity)
-		}
-	}
-	return 0
+	return exitToOverworldWithRuntime(m, runtime)
 }

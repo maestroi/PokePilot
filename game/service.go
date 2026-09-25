@@ -15,14 +15,16 @@ const (
 
 // ShopState is the portable transaction view used by the reusable shop driver.
 type ShopState struct {
-	Phase        ShopPhase
-	Controllable bool
-	Cursor       MenuCursorState
-	Items        []uint16
-	Quantity     int
-	MaxQuantity  int
-	Total        int
-	Text         string
+	Phase            ShopPhase
+	Controllable     bool
+	Cursor           MenuCursorState
+	Items            []uint16
+	Quantity         int
+	MaxQuantity      int
+	Total            int
+	Text             string
+	TradeUnavailable bool
+	Unsellable       bool
 }
 
 // ShopDecoder hides game-specific shop menu recognition, stock layout and
@@ -38,9 +40,12 @@ type ShopProfile interface {
 
 // CenterState is the semantic state needed to drive a Pokemon Center heal.
 type CenterState struct {
+	PartyPresent bool
 	PromptOpen   bool
 	Recovered    bool
 	Controllable bool
+	TextOpen     bool
+	MenuOpen     bool
 }
 
 // CenterDecoder hides game-specific nurse prompt and party-recovery layout.
