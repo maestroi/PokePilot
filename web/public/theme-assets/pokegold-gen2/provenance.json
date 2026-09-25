@@ -1,0 +1,110 @@
+{
+  "source": "https://github.com/pret/pokegold",
+  "sourceRef": "0f087a51e36cbd38f33e5055754614578246ceff",
+  "sourceDescription": "Disassembly of Pokémon Gold/Silver; selected bundled graphics are game-derived assets.",
+  "license": "NOASSERTION",
+  "redistributionIntent": "Non-commercial prototype use at the project owner's direction; no redistribution license is inferred.",
+  "paletteSources": [
+    "gfx/tilesets/bg_tiles.pal",
+    "gfx/overworld/npc_sprites.pal",
+    "data/sprites/sprites.asm"
+  ],
+  "files": {
+    "kanto.png": {
+      "upstreamPath": "gfx/tilesets/kanto.png",
+      "upstreamBlob": "a3036406eb796220493ba42e0ae7b6a0d45548e0"
+    },
+    "sprites/red.png": {
+      "upstreamPath": "gfx/sprites/red.png",
+      "upstreamBlob": "018b676f52d8a0af03c1b9b5eaf789d331cc8743"
+    },
+    "sprites/blue.png": {
+      "upstreamPath": "gfx/sprites/blue.png",
+      "upstreamBlob": "17fc2fdc648b211de0686cb6abba39de40be15af"
+    },
+    "sprites/oak.png": {
+      "upstreamPath": "gfx/sprites/oak.png",
+      "upstreamBlob": "7a76574d0929ee373f08c2f3dfc1366e924c99fd"
+    },
+    "sprites/youngster.png": {
+      "upstreamPath": "gfx/sprites/youngster.png",
+      "upstreamBlob": "5c0d339396a762b57f673144c8e02624f9070b20"
+    },
+    "sprites/lass.png": {
+      "upstreamPath": "gfx/sprites/lass.png",
+      "upstreamBlob": "762108ad536e28f0724504bd7f23a9394ee59b27"
+    },
+    "sprites/cooltrainer_m.png": {
+      "upstreamPath": "gfx/sprites/cooltrainer_m.png",
+      "upstreamBlob": "ffd94f410649464273bf5d2c4474800a67c4fb26"
+    },
+    "sprites/poke_ball.png": {
+      "upstreamPath": "gfx/sprites/poke_ball.png",
+      "upstreamBlob": "b12bf897cf0f90ea22fc2fee2e464d7613edd349"
+    },
+    "sprites/boulder.png": {
+      "upstreamPath": "gfx/sprites/boulder.png",
+      "upstreamBlob": "9b408e0214c8e62ab8b188e2a73a6c73656fbcb5"
+    },
+    "sprites/nurse.png": {
+      "upstreamPath": "gfx/sprites/nurse.png",
+      "upstreamBlob": "4cd71fcfc0e9ac676ecb4e1342dd4b62dbdaa730"
+    },
+    "sprites/rocket.png": {
+      "upstreamPath": "gfx/sprites/rocket.png",
+      "upstreamBlob": "43a71bd6e1f903d43c71e34331aceae1252296c1"
+    },
+    "sprites/lance.png": {
+      "upstreamPath": "gfx/sprites/lance.png",
+      "upstreamBlob": "5a2372dfa2f882dba1b697e7537c38653fe6ee08"
+    },
+    "sprites/scientist.png": {
+      "upstreamPath": "gfx/sprites/scientist.png",
+      "upstreamBlob": "39c44291e1901b2b473ce2ca5756eb5e38707e46"
+    },
+    "sprites/gym_guide.png": {
+      "upstreamPath": "gfx/sprites/gym_guide.png",
+      "upstreamBlob": "a1f74da03e4df89499a61a262ab52972ebceddc7"
+    },
+    "sprites/clerk.png": {
+      "upstreamPath": "gfx/sprites/clerk.png",
+      "upstreamBlob": "77a5fb91448491f48910f948b9e5ce345ee78986"
+    },
+    "sprites/fisher.png": {
+      "upstreamPath": "gfx/sprites/fisher.png",
+      "upstreamBlob": "a84a2e3716887c48f7590239d27bb933af8fa8d3"
+    },
+    "sprites/koga.png": {
+      "upstreamPath": "gfx/sprites/koga.png",
+      "upstreamBlob": "8afd066bd4969ea69b21e425f1eb828593f20181"
+    },
+    "sprites/mom.png": {
+      "upstreamPath": "gfx/sprites/mom.png",
+      "upstreamBlob": "36010c92d4be05a06d9541237b8d63abd993326d"
+    },
+    "sprites/gameboy_kid.png": {
+      "upstreamPath": "gfx/sprites/gameboy_kid.png",
+      "upstreamBlob": "0ca4acef975b2f984f70938a241954513b2f7405"
+    },
+    "sprites/bruno.png": {
+      "upstreamPath": "gfx/sprites/bruno.png",
+      "upstreamBlob": "5f77217ef6601ab9845b828f23c9eab06dcd1e98"
+    },
+    "sprites/big_snorlax.png": {
+      "upstreamPath": "gfx/sprites/big_snorlax.png",
+      "upstreamBlob": "f53f7110547fd56f97790022528e56cc87fc1a72"
+    },
+    "sprites/monster.png": {
+      "upstreamPath": "gfx/sprites/monster.png",
+      "upstreamBlob": "80d615b2e8ed0142ac577a026f1ba3f8e18c5ace"
+    },
+    "sprites/beauty.png": {
+      "upstreamPath": "gfx/sprites/beauty.png",
+      "upstreamBlob": "af5a7e7e767af7cff15977518c236f76bfd71ad9"
+    },
+    "sprites/gentleman.png": {
+      "upstreamPath": "gfx/sprites/gentleman.png",
+      "upstreamBlob": "38a6125d2afea487604cdc5c106e6fefb3648588"
+    }
+  }
+}

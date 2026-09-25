@@ -14,6 +14,7 @@ import {
 import { parseTileImageReference } from '../src/shared/tileAssets.ts'
 import townProvenance from '../public/theme-assets/kenney-tiny-town/provenance.json' with { type: 'json' }
 import dungeonProvenance from '../public/theme-assets/kenney-tiny-dungeon/provenance.json' with { type: 'json' }
+import pokegoldProvenance from '../public/theme-assets/pokegold-gen2/provenance.json' with { type: 'json' }
 
 function minimalTheme(overrides: Record<string, unknown> = {}) {
   return {
@@ -33,18 +34,17 @@ function minimalTheme(overrides: Record<string, unknown> = {}) {
 
 test('bundled theme packs are installed and independently selectable', () => {
   const options = renderThemeOptions()
-  assert.equal(options.length >= 3, true)
+  assert.equal(options.length >= 2, true)
   assert.deepEqual(
     options.map((theme) => theme.id).sort(),
-    ['kenney-tiny-town', 'retro-16', 'rompilot-modern']
+    ['kenney-tiny-town', 'pokegold-gen2']
   )
 
-  const modern = resolveRenderTheme('rompilot-modern').theme
-  const retro = resolveRenderTheme('retro-16').theme
-  assert.notEqual(modern.id, retro.id)
-  assert.notEqual(modern.tiles.path.fill, retro.tiles.path.fill)
-  assert.notEqual(modern.tileSize, retro.tileSize)
+  const gen2 = resolveRenderTheme('pokegold-gen2').theme
   const kenney = resolveRenderTheme('kenney-tiny-town').theme
+  assert.equal(gen2.id, DEFAULT_RENDER_THEME_ID)
+  assert.ok(gen2.assets.tiles.grass.includes('/theme-assets/pokegold-gen2/kanto.png'))
+  assert.ok(gen2.assets.characters.player.includes('/theme-assets/pokegold-gen2/sprites/red.png'))
   assert.ok(kenney.assets.tiles['path.center'])
 })
 
@@ -63,6 +63,7 @@ test('Kenney atlas references stay inside their licensed bundled images', () => 
     dimensions.set(url, { width: image.readUInt32BE(16), height: image.readUInt32BE(20) })
   }
   for (const reference of Object.values(theme.assets.tiles).concat(Object.values(theme.assets.objects))) {
+    if (!reference.startsWith('/theme-assets/kenney-')) continue
     const tile = parseTileImageReference(reference)
     assert.ok(tile)
     const atlas = dimensions.get(tile.url)
@@ -73,22 +74,19 @@ test('Kenney atlas references stay inside their licensed bundled images', () => 
   }
 })
 
-test('missing optional semantic assets inherit from the default theme', () => {
-  const retro = resolveRenderTheme('retro-16')
-  assert.deepEqual(retro.diagnostics, [])
-  assert.equal(retro.theme.id, 'retro-16')
-
-  const modern = resolveRenderTheme(DEFAULT_RENDER_THEME_ID).theme
-  assert.equal(retro.theme.tiles.sign.fill, modern.tiles.sign.fill)
-  assert.equal(retro.theme.tiles.warp.fill, modern.tiles.warp.fill)
-  assert.equal(retro.theme.tiles.ledge.fill, modern.tiles.ledge.fill)
+test('secondary themes inherit omitted presentation assets from the Gen-II default', () => {
+  const kenney = resolveRenderTheme('kenney-tiny-town')
+  assert.deepEqual(kenney.diagnostics, [])
+  const gen2 = resolveRenderTheme(DEFAULT_RENDER_THEME_ID).theme
+  assert.equal(kenney.theme.assets.characters.player, gen2.assets.characters.player)
+  assert.equal(kenney.theme.assets.characters.npc, gen2.assets.characters.npc)
 })
 
 test('unknown theme selection fails safe with a useful diagnostic', () => {
   const resolved = resolveRenderTheme('does-not-exist')
   assert.equal(resolved.theme.id, DEFAULT_RENDER_THEME_ID)
   assert.match(resolved.diagnostics.join(' '), /does-not-exist/)
-  assert.match(resolved.diagnostics.join(' '), /using RomPilot Modern/)
+  assert.match(resolved.diagnostics.join(' '), /using Gold \/ Silver/)
 })
 
 test('incompatible and malformed packs are rejected instead of installed', () => {
@@ -121,15 +119,28 @@ test('optional omissions produce diagnostics but remain installable', () => {
 
 
 test('battle theme tokens are validated and inherited', () => {
-  const modern = resolveRenderTheme('rompilot-modern').theme
-  const retro = resolveRenderTheme('retro-16').theme
-  assert.ok(modern.battle.background)
-  assert.ok(retro.battle.background)
-  assert.notEqual(modern.battle.background, retro.battle.background)
+  const gen2 = resolveRenderTheme('pokegold-gen2').theme
+  const kenney = resolveRenderTheme('kenney-tiny-town').theme
+  assert.ok(gen2.battle.background)
+  assert.ok(kenney.battle.background)
+  assert.notEqual(gen2.battle.background, kenney.battle.background)
 
   const invalid = validateThemePack(minimalTheme({
     battle: { background: 42 }
   }))
   assert.equal(invalid.ok, false)
   assert.match(invalid.errors.join(' '), /battle\.background/)
+})
+
+
+test('Gold/Silver assets keep explicit upstream provenance without inventing a license', () => {
+  const theme = resolveRenderTheme('pokegold-gen2').theme
+  const atlas = parseTileImageReference(theme.assets.tiles.grass)
+  assert.ok(atlas)
+  assert.equal(atlas?.source?.size, 8)
+  assert.equal(atlas?.repeat, 2)
+  assert.match(atlas?.url || '', /palette=bg-green/)
+  assert.equal(pokegoldProvenance.sourceRef, '0f087a51e36cbd38f33e5055754614578246ceff')
+  assert.equal(pokegoldProvenance.license, 'NOASSERTION')
+  assert.equal(pokegoldProvenance.files['kanto.png'].upstreamBlob, 'a3036406eb796220493ba42e0ae7b6a0d45548e0')
 })

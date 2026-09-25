@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "id": "pokegold-gen2",
+  "name": "Gold / Silver",
+  "version": 1,
+  "description": "Pokémon Gold/Silver-derived Kanto presentation over the semantic Red renderer.",
+  "tileSize": 32,
+  "tiles": {
+    "unknown": {
+      "fill": "#3a3a3a",
+      "detail": "#adadad",
+      "pattern": "unknown"
+    },
+    "path": {
+      "fill": "#deffde",
+      "detail": "#c5943a",
+      "pattern": "path"
+    },
+    "floor": {
+      "fill": "#deffde",
+      "detail": "#adadad",
+      "pattern": "floor"
+    },
+    "grass": {
+      "fill": "#b5ff52",
+      "detail": "#63ce08",
+      "accent": "#297300",
+      "pattern": "grass"
+    },
+    "water": {
+      "fill": "#4263ff",
+      "detail": "#ffffff",
+      "accent": "#0821ff",
+      "pattern": "water"
+    },
+    "tree": {
+      "fill": "#297300",
+      "detail": "#63ce08",
+      "accent": "#3a3a3a",
+      "pattern": "tree"
+    },
+    "ledge": {
+      "fill": "#c5943a",
+      "detail": "#deffde",
+      "accent": "#a57b19",
+      "pattern": "ledge"
+    },
+    "wall": {
+      "fill": "#adadad",
+      "detail": "#6b6b6b",
+      "accent": "#3a3a3a",
+      "pattern": "wall"
+    },
+    "door": {
+      "fill": "#a57b19",
+      "detail": "#c5943a",
+      "accent": "#3a3a3a",
+      "pattern": "door"
+    },
+    "warp": {
+      "fill": "#ffff3a",
+      "detail": "#ff8408",
+      "accent": "#3a3a3a",
+      "pattern": "warp"
+    },
+    "sign": {
+      "fill": "#c5943a",
+      "detail": "#deffde",
+      "accent": "#3a3a3a",
+      "pattern": "sign"
+    }
+  },
+  "objects": {
+    "sign": {
+      "fill": "#c5943a",
+      "detail": "#deffde",
+      "accent": "#3a3a3a",
+      "pattern": "sign"
+    },
+    "warp": {
+      "fill": "#ffff3a",
+      "detail": "#ff8408",
+      "accent": "#3a3a3a",
+      "pattern": "warp"
+    }
+  },
+  "actors": {
+    "player": {
+      "fill": "#ff3a08",
+      "stroke": "#000000"
+    },
+    "npc": {
+      "fill": "#524aff",
+      "stroke": "#000000"
+    },
+    "trainer": {
+      "fill": "#ff3a08",
+      "stroke": "#000000"
+    },
+    "item": {
+      "fill": "#ff3a08",
+      "stroke": "#000000"
+    },
+    "object": {
+      "fill": "#a57b19",
+      "stroke": "#3a3a3a"
+    }
+  },
+  "animation": {
+    "waterPeriodMs": 520,
+    "redrawIntervalMs": 90
+  },
+  "effects": {
+    "background": "#3a3a3a",
+    "vignette": "rgba(0,0,0,.14)",
+    "grid": "rgba(58,58,58,0)",
+    "shadow": "rgba(0,0,0,.28)"
+  },
+  "ui": {
+    "accent": "#d84018",
+    "panel": "#f8f8d8",
+    "text": "#202020"
+  },
+  "assets": {
+    "tiles": {
+      "grass": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=12,2,8",
+      "grass.tall": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=13,3,8",
+      "path": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown&repeat=2#tile=1,1,8",
+      "path.paved": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=15,5,8",
+      "floor": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=2,2,8",
+      "water": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-water&repeat=2#tile=8,0,8",
+      "tree": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-green&repeat=2#tile=13,2,8",
+      "ledge": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown&repeat=2#tile=2,3,8",
+      "wall": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-gray&repeat=2#tile=15,5,8",
+      "door": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown#tile=11,1,8",
+      "warp": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-yellow#tile=10,0,8"
+    },
+    "characters": {
+      "player": "/theme-assets/pokegold-gen2/sprites/red.png?palette=ow-red&transparent=1",
+      "rival": "/theme-assets/pokegold-gen2/sprites/blue.png?palette=ow-red&transparent=1",
+      "professor_oak": "/theme-assets/pokegold-gen2/sprites/oak.png?palette=ow-brown&transparent=1",
+      "youngster": "/theme-assets/pokegold-gen2/sprites/youngster.png?palette=ow-blue&transparent=1",
+      "little_girl": "/theme-assets/pokegold-gen2/sprites/lass.png?palette=ow-red&transparent=1",
+      "girl": "/theme-assets/pokegold-gen2/sprites/lass.png?palette=ow-red&transparent=1",
+      "brunette_girl": "/theme-assets/pokegold-gen2/sprites/lass.png?palette=ow-red&transparent=1",
+      "cooltrainer_f": "/theme-assets/pokegold-gen2/sprites/lass.png?palette=ow-red&transparent=1",
+      "cooltrainer_m": "/theme-assets/pokegold-gen2/sprites/cooltrainer_m.png?palette=ow-blue&transparent=1",
+      "npc": "/theme-assets/pokegold-gen2/sprites/youngster.png?palette=ow-blue&transparent=1",
+      "trainer": "/theme-assets/pokegold-gen2/sprites/cooltrainer_m.png?palette=ow-blue&transparent=1",
+      "item": "/theme-assets/pokegold-gen2/sprites/poke_ball.png?palette=ow-red&transparent=1",
+      "poke_ball": "/theme-assets/pokegold-gen2/sprites/poke_ball.png?palette=ow-red&transparent=1",
+      "object": "/theme-assets/pokegold-gen2/sprites/boulder.png?palette=ow-rock&transparent=1",
+      "boulder": "/theme-assets/pokegold-gen2/sprites/boulder.png?palette=ow-rock&transparent=1",
+      "monster": "/theme-assets/pokegold-gen2/sprites/monster.png?palette=ow-red&transparent=1",
+      "middle_aged_man": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "gambler": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "hiker": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "beauty": "/theme-assets/pokegold-gen2/sprites/beauty.png?palette=ow-blue&transparent=1",
+      "gentleman": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "giovanni": "/theme-assets/pokegold-gen2/sprites/rocket.png?palette=ow-brown&transparent=1",
+      "rocket": "/theme-assets/pokegold-gen2/sprites/rocket.png?palette=ow-brown&transparent=1",
+      "waiter": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "lance": "/theme-assets/pokegold-gen2/sprites/lance.png?palette=ow-red&transparent=1",
+      "scientist": "/theme-assets/pokegold-gen2/sprites/scientist.png?palette=ow-blue&transparent=1",
+      "silph_worker_m": "/theme-assets/pokegold-gen2/sprites/scientist.png?palette=ow-blue&transparent=1",
+      "gym_guide": "/theme-assets/pokegold-gen2/sprites/gym_guide.png?palette=ow-blue&transparent=1",
+      "clerk": "/theme-assets/pokegold-gen2/sprites/clerk.png?palette=ow-green&transparent=1",
+      "bike_shop_clerk": "/theme-assets/pokegold-gen2/sprites/clerk.png?palette=ow-green&transparent=1",
+      "nurse": "/theme-assets/pokegold-gen2/sprites/nurse.png?palette=ow-red&transparent=1",
+      "silph_president": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "warden": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "fisher": "/theme-assets/pokegold-gen2/sprites/fisher.png?palette=ow-blue&transparent=1",
+      "fishing_guru": "/theme-assets/pokegold-gen2/sprites/fisher.png?palette=ow-blue&transparent=1",
+      "koga": "/theme-assets/pokegold-gen2/sprites/koga.png?palette=ow-brown&transparent=1",
+      "mom": "/theme-assets/pokegold-gen2/sprites/mom.png?palette=ow-red&transparent=1",
+      "balding_guy": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1",
+      "gameboy_kid": "/theme-assets/pokegold-gen2/sprites/gameboy_kid.png?palette=ow-green&transparent=1",
+      "bruno": "/theme-assets/pokegold-gen2/sprites/bruno.png?palette=ow-red&transparent=1",
+      "lorelei": "/theme-assets/pokegold-gen2/sprites/beauty.png?palette=ow-blue&transparent=1",
+      "snorlax": "/theme-assets/pokegold-gen2/sprites/big_snorlax.png?palette=ow-blue&transparent=1",
+      "sleeping_gambler": "/theme-assets/pokegold-gen2/sprites/gentleman.png?palette=ow-blue&transparent=1"
+    },
+    "objects": {
+      "sign": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-brown#tile=14,0,8",
+      "warp": "/theme-assets/pokegold-gen2/kanto.png?palette=bg-yellow#tile=10,0,8"
+    },
+    "effects": {},
+    "ui": {},
+    "battle": {}
+  },
+  "battle": {
+    "background": "linear-gradient(180deg,#f8f8d8 0%,#d8f0b8 52%,#88b858 53%,#508040 100%)",
+    "panel": "#f8f8d8",
+    "playerAccent": "#d84018",
+    "opponentAccent": "#4058b8",
+    "hpHealthy": "#58a838",
+    "hpWarn": "#d8b838",
+    "hpDanger": "#d84018"
+  }
+}

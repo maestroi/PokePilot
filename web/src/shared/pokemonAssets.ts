@@ -1,4 +1,4 @@
-const POKEMON_SPRITE_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-i/red-blue'
+const POKEMON_SPRITE_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-ii/gold'
 const ITEM_SPRITE_ROOT = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items'
 
 const GEN_ONE_SPECIES = [
@@ -233,6 +233,11 @@ export function pokemonDexNumber(name: string): number | null {
 export function pokemonSpriteUrl(name: string): string | null {
   const dex = pokemonDexNumber(name)
   return dex ? `${POKEMON_SPRITE_ROOT}/${dex}.png` : null
+}
+
+export function pokemonBackSpriteUrl(name: string): string | null {
+  const dex = pokemonDexNumber(name)
+  return dex ? `${POKEMON_SPRITE_ROOT}/back/${dex}.png` : null
 }
 
 export function itemVisualKind(name: string): ItemVisualKind {
