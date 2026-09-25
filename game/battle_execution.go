@@ -6,17 +6,17 @@ package game
 type BattleExecutionPhase string
 
 const (
-	BattleExecutionNone              BattleExecutionPhase = ""
-	BattleExecutionMainMenu          BattleExecutionPhase = "main_menu"
-	BattleExecutionMoveMenu          BattleExecutionPhase = "move_menu"
-	BattleExecutionMoveDisabled      BattleExecutionPhase = "move_disabled"
-	BattleExecutionUseNextPrompt     BattleExecutionPhase = "use_next_prompt"
-	BattleExecutionTryLearnPrompt    BattleExecutionPhase = "try_learn_prompt"
-	BattleExecutionAbandonLearn      BattleExecutionPhase = "abandon_learn_prompt"
-	BattleExecutionTrainerSwitch     BattleExecutionPhase = "trainer_switch_prompt"
-	BattleExecutionForgetMove        BattleExecutionPhase = "forget_move_menu"
-	BattleExecutionHMForgetRejected  BattleExecutionPhase = "hm_forget_rejected"
-	BattleExecutionSwitchBox         BattleExecutionPhase = "switch_box"
+	BattleExecutionNone             BattleExecutionPhase = ""
+	BattleExecutionMainMenu         BattleExecutionPhase = "main_menu"
+	BattleExecutionMoveMenu         BattleExecutionPhase = "move_menu"
+	BattleExecutionMoveDisabled     BattleExecutionPhase = "move_disabled"
+	BattleExecutionUseNextPrompt    BattleExecutionPhase = "use_next_prompt"
+	BattleExecutionTryLearnPrompt   BattleExecutionPhase = "try_learn_prompt"
+	BattleExecutionAbandonLearn     BattleExecutionPhase = "abandon_learn_prompt"
+	BattleExecutionTrainerSwitch    BattleExecutionPhase = "trainer_switch_prompt"
+	BattleExecutionForgetMove       BattleExecutionPhase = "forget_move_menu"
+	BattleExecutionHMForgetRejected BattleExecutionPhase = "hm_forget_rejected"
+	BattleExecutionSwitchBox        BattleExecutionPhase = "switch_box"
 )
 
 // BattleMoveLearnerState is the portable state needed while a level-up move is
