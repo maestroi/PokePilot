@@ -53,7 +53,6 @@ func TestCatchObjectivePartySlotOnlyForDirectPartyAdditions(t *testing.T) {
 	}
 }
 
-
 func TestCatchObjectiveFrameBudgetReservesControllerCleanup(t *testing.T) {
 	catchBudget := objectiveFrameBudgetFor(Objective{Kind: KindCatch, Species: "zubat"})
 	if catchBudget != catchObjectiveFrameBudget {
