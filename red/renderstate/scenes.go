@@ -3,6 +3,7 @@ package renderstate
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -135,7 +136,7 @@ func titleCaseSemantic(value string) string {
 			continue
 		}
 		runes := []rune(word)
-		runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+		runes[0] = unicode.ToUpper(runes[0])
 		words[i] = string(runes)
 	}
 	return strings.Join(words, " ")
