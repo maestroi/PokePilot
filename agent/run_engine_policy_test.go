@@ -278,3 +278,56 @@ func TestRunFailurePolicyTrainingRetreatUsesLevelStreak(t *testing.T) {
 		t.Fatalf("same-level retreat = %+v; want StopFailed at streak budget", got)
 	}
 }
+
+
+func TestRunFailurePolicyRouteReplanExhaustionDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindGoTo, Place: "viridian city"}
+	result := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_replan_exhausted",
+			Recoverable: true,
+		},
+		Final: Observation{Location: "cinnabar island", X: 11, Y: 12, Controllable: true},
+	}
+
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+			t.Fatalf("route replan exhaustion %d = %+v; want recoverable strategic replan without fatal-budget spend", i+1, got)
+		}
+	}
+}
+
+func TestRouteReplanExhaustionStillUsesSameStateQuarantine(t *testing.T) {
+	failed := Objective{Kind: KindGoTo, Place: "viridian city"}
+	other := Objective{Kind: KindGoTo, Place: "fuchsia city"}
+	obs := Observation{Location: "cinnabar island", X: 11, Y: 12, Controllable: true}
+	policy := newRunFailurePolicy(2)
+	result := ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_replan_exhausted",
+			Recoverable: true,
+		},
+		Final: obs,
+	}
+	policy.record(result)
+
+	got := policy.filter(obs, []Objective{failed, other})
+	if len(got) != 1 || got[0].Key() != other.Key() {
+		t.Fatalf("same-state route exhaustion filter = %+v, want only alternate objective", got)
+	}
+
+	moved := obs
+	moved.X++
+	got = policy.filter(moved, []Objective{failed, other})
+	if len(got) != 2 {
+		t.Fatalf("movement did not release route-search quarantine: %+v", got)
+	}
+}
