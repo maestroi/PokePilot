@@ -103,3 +103,44 @@ func TestLiveMapGridRuntimeDoesNotReadConcreteSurfMode(t *testing.T) {
 		}
 	}
 }
+
+
+func TestFieldMoveLaneDoesNotDecodeRedPrerequisitesOrMenuIDs(t *testing.T) {
+	for _, path := range []string{"field_action.go", "field_move_runtime.go"} {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"sym.ObtainedBadges",
+			"sym.FieldMoves",
+			"sym.PartyMon1",
+			"state.DecodeProgress(",
+			"bagEntry(",
+			"partyMoveSlot(",
+			"fieldHM02Item",
+			"fieldFlyMenuID",
+		} {
+			if strings.Contains(string(src), forbidden) {
+				t.Fatalf("%s contains Red field-move prerequisite/menu dependency %q", path, forbidden)
+			}
+		}
+	}
+}
+
+func TestGenericFieldMoveProfileResolverHasNoConcreteGameImports(t *testing.T) {
+	src, err := os.ReadFile("field_move_runtime.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"github.com/maestroi/pokepilot/red/",
+		"github.com/maestroi/pokepilot/blue/",
+		"github.com/maestroi/pokepilot/yellow/",
+		"github.com/maestroi/pokepilot/gs/",
+	} {
+		if strings.Contains(string(src), forbidden) {
+			t.Fatalf("field_move_runtime.go imports concrete game package %q", forbidden)
+		}
+	}
+}
