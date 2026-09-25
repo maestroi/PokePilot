@@ -300,7 +300,7 @@ func currentFieldPathPlanWithRulesAndCostWithDecoder(m *emu.Emu, decoder game.Ov
 	state.Snapshot(m, &mem)
 	caps := redRouteCapabilities(romData, &mem)
 	startWater := mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
-	live, err := navigationStateWithDecoder(m, decoder)
+	live, err := fieldPathRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
 		return nil, fieldPathCost{}, err
 	}
@@ -351,7 +351,7 @@ func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader,
 }
 
 func fieldPathReachableOnCurrentMapWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, dest Destination) (bool, error) {
-	live, err := navigationStateWithDecoder(m, decoder)
+	live, err := fieldPathRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
 		return false, err
 	}
@@ -360,10 +360,9 @@ func fieldPathReachableOnCurrentMapWithDecoder(m *emu.Emu, decoder game.Overworl
 	}
 	blocked := routingBlockers(m, h)
 	blocked = warpAvoidance(h, int(live.X), int(live.Y), blocked)
-	plan, _, err := currentFieldPathPlanWithCostWithDecoder(m, decoder, romData, h, dest, blocked)
+	_, _, err = currentFieldPathPlanWithCostWithDecoder(m, decoder, romData, h, dest, blocked)
 	switch {
 	case err == nil:
-		_ = plan
 		return true, nil
 	case !errors.Is(err, world.ErrNoPath):
 		return false, err
@@ -500,13 +499,9 @@ func executeFieldPathAction(m *emu.Emu, step fieldPathStep) error {
 }
 
 func executeFieldPathActionWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, step fieldPathStep) error {
-	live, err := navigationStateWithDecoder(m, decoder)
+	live, tx, ty, err := fieldPathActionTargetWithDecoder(m, decoder, step)
 	if err != nil {
 		return err
-	}
-	tx, ty := int(live.X)+step.Move.DX, int(live.Y)+step.Move.DY
-	if absInt(step.Move.DX)+absInt(step.Move.DY) != 1 {
-		return fmt.Errorf("skill: field path action %d has non-adjacent step %s", step.Action, step.Move)
 	}
 	if err := faceWithOverworldDecoder(m, decoder, uint8(tx), uint8(ty)); err != nil {
 		return fmt.Errorf("skill: field path face (%d,%d): %w", tx, ty, err)
