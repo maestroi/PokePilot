@@ -24,7 +24,7 @@ func TestStatAwareMoveUsesMoveAgainWhenDisableClears(t *testing.T) {
 		t.Fatalf("policy chose slot %d while EMBER is disabled, want 0", got)
 	}
 
-	b.DisabledMove = 0
+	b.Moves[1].Disabled = false
 	if got := p(b); got != 1 {
 		t.Fatalf("policy chose slot %d after disable cleared, want 1 (EMBER)", got)
 	}
