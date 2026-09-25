@@ -2,9 +2,16 @@
 import { onMounted, onScopeDispose, ref, watch } from 'vue'
 import type { RenderActor, RenderState, RenderTileCell, RenderTileLayer } from '../api/renderstate'
 import { loadGen1Sprite } from '../gen1Sprite'
+import {
+  actorStyle,
+  characterAsset,
+  tileStyle,
+  type ResolvedRenderTheme,
+  type ThemeTileStyle
+} from '../renderTheme'
 import { semanticViewport } from '../semanticRenderer'
 
-const props = defineProps<{ state: RenderState }>()
+const props = defineProps<{ state: RenderState; theme: ResolvedRenderTheme }>()
 
 const shell = ref<HTMLElement | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -14,7 +21,7 @@ let observer: ResizeObserver | null = null
 let raf = 0
 let lastAnimatedDraw = 0
 
-function spriteAsset(appearance: string | undefined, player = false): string {
+function defaultSpriteAsset(appearance: string | undefined, player = false): string {
   if (player) return 'red'
   switch ((appearance || '').toLowerCase()) {
     case 'player': return 'red'
@@ -25,39 +32,48 @@ function spriteAsset(appearance: string | undefined, player = false): string {
   }
 }
 
+function actorAssetReference(actor: RenderActor, player = false): string {
+  const themed = characterAsset(props.theme, actor.appearance, player)
+  if (themed) return themed
+  const fallback = defaultSpriteAsset(actor.appearance, player)
+  return fallback && fallback !== 'unknown' ? `gen1:${fallback}` : ''
+}
+
+function loadImageReference(reference: string): Promise<HTMLImageElement> {
+  if (reference.startsWith('gen1:')) return loadGen1Sprite(reference.slice('gen1:'.length))
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.decoding = 'async'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error(`failed to load theme asset ${reference}`))
+    image.src = reference
+  })
+}
+
 async function syncSpriteImages(): Promise<void> {
-  const assets = new Set<string>()
-  assets.add('red')
+  const references = new Set<string>()
+  if (props.state.player) {
+    const player = actorAssetReference(props.state.player, true)
+    if (player) references.add(player)
+  }
   for (const actor of props.state.entities || []) {
-    const asset = spriteAsset(actor.appearance)
-    if (asset && asset !== 'unknown') assets.add(asset)
+    const reference = actorAssetReference(actor)
+    if (reference) references.add(reference)
   }
 
-  const missing = [...assets].filter((asset) => !spriteImages.has(asset) && !failedSprites.has(asset))
-  await Promise.all(missing.map(async (asset) => {
+  const missing = [...references].filter((reference) => !spriteImages.has(reference) && !failedSprites.has(reference))
+  await Promise.all(missing.map(async (reference) => {
     try {
-      spriteImages.set(asset, await loadGen1Sprite(asset))
+      spriteImages.set(reference, await loadImageReference(reference))
     } catch {
-      failedSprites.add(asset)
+      failedSprites.add(reference)
     }
   }))
   draw(performance.now())
 }
 
-function tileColor(kind: string): string {
-  switch (kind) {
-    case 'path': return '#c8bb84'
-    case 'floor': return '#b6aa7a'
-    case 'grass': return '#4d9153'
-    case 'water': return '#3f8ab5'
-    case 'tree': return '#2f6d3f'
-    case 'ledge': return '#927b55'
-    case 'wall': return '#526268'
-    case 'door': return '#8b6848'
-    case 'warp': return '#7760a8'
-    case 'sign': return '#806943'
-    default: return '#35434a'
-  }
+function patternFor(style: ThemeTileStyle, kind: string): string {
+  return style.pattern || kind || 'unknown'
 }
 
 function drawTile(
@@ -66,16 +82,32 @@ function drawTile(
   x: number,
   y: number,
   size: number,
-  now: number
+  now: number,
+  objectLayer = false
 ): void {
   const kind = cell?.kind || 'unknown'
-  ctx.fillStyle = tileColor(kind)
+  const style = tileStyle(props.theme, kind, objectLayer)
+  const pattern = patternFor(style, kind)
+  ctx.fillStyle = style.fill
   ctx.fillRect(x, y, size + 0.5, size + 0.5)
 
   ctx.save()
-  switch (kind) {
+  switch (pattern) {
+    case 'path':
+      ctx.fillStyle = style.detail || style.fill
+      for (let i = 0; i < 4; i++) {
+        const px = x + size * (0.18 + ((i * 0.31) % 0.7))
+        const py = y + size * (0.2 + ((i * 0.43) % 0.64))
+        ctx.fillRect(px, py, Math.max(1, size * 0.045), Math.max(1, size * 0.035))
+      }
+      break
+    case 'floor':
+      ctx.strokeStyle = style.detail || style.fill
+      ctx.lineWidth = Math.max(1, size / 28)
+      ctx.strokeRect(x + size * 0.08, y + size * 0.08, size * 0.84, size * 0.84)
+      break
     case 'grass':
-      ctx.strokeStyle = 'rgba(220,255,207,.35)'
+      ctx.strokeStyle = style.detail || style.fill
       ctx.lineWidth = Math.max(1, size / 18)
       for (let i = 0; i < 3; i++) {
         const px = x + size * (0.22 + i * 0.28)
@@ -88,8 +120,8 @@ function drawTile(
       }
       break
     case 'water': {
-      const phase = (now / 700) % 1
-      ctx.strokeStyle = 'rgba(215,245,255,.42)'
+      const phase = (now / props.theme.animation.waterPeriodMs) % 1
+      ctx.strokeStyle = style.detail || style.fill
       ctx.lineWidth = Math.max(1, size / 20)
       for (let row = -1; row < 4; row++) {
         const yy = y + ((row + phase) * size) / 3
@@ -103,29 +135,47 @@ function drawTile(
       break
     }
     case 'tree':
-      ctx.fillStyle = '#244f31'
+      ctx.fillStyle = style.accent || style.fill
       ctx.fillRect(x + size * 0.38, y + size * 0.55, size * 0.24, size * 0.38)
-      ctx.fillStyle = '#65a55e'
+      ctx.fillStyle = style.detail || style.fill
       ctx.beginPath()
       ctx.arc(x + size * 0.5, y + size * 0.38, size * 0.34, 0, Math.PI * 2)
       ctx.fill()
       break
     case 'ledge':
-      ctx.fillStyle = 'rgba(245,224,160,.5)'
+      ctx.fillStyle = style.detail || style.fill
       ctx.fillRect(x, y + size * 0.72, size, Math.max(2, size * 0.12))
       break
+    case 'wall':
+      ctx.strokeStyle = style.detail || style.fill
+      ctx.lineWidth = Math.max(1, size / 22)
+      ctx.beginPath()
+      ctx.moveTo(x + size * 0.12, y + size * 0.34)
+      ctx.lineTo(x + size * 0.88, y + size * 0.34)
+      ctx.moveTo(x + size * 0.12, y + size * 0.68)
+      ctx.lineTo(x + size * 0.88, y + size * 0.68)
+      ctx.stroke()
+      break
+    case 'door':
+      ctx.fillStyle = style.detail || style.fill
+      ctx.fillRect(x + size * 0.22, y + size * 0.12, size * 0.56, size * 0.82)
+      ctx.fillStyle = style.accent || style.fill
+      ctx.beginPath()
+      ctx.arc(x + size * 0.66, y + size * 0.55, Math.max(1.5, size * 0.045), 0, Math.PI * 2)
+      ctx.fill()
+      break
     case 'warp':
-      ctx.fillStyle = 'rgba(225,214,255,.55)'
+      ctx.fillStyle = style.detail || style.fill
       ctx.fillRect(x + size * 0.25, y + size * 0.25, size * 0.5, size * 0.5)
       break
     case 'sign':
-      ctx.fillStyle = '#d3b46d'
+      ctx.fillStyle = style.detail || style.fill
       ctx.fillRect(x + size * 0.18, y + size * 0.2, size * 0.64, size * 0.4)
-      ctx.fillStyle = '#70562e'
+      ctx.fillStyle = style.accent || style.fill
       ctx.fillRect(x + size * 0.45, y + size * 0.58, size * 0.1, size * 0.34)
       break
     case 'unknown':
-      ctx.strokeStyle = 'rgba(255,255,255,.09)'
+      ctx.strokeStyle = style.detail || style.fill
       ctx.beginPath()
       ctx.moveTo(x, y)
       ctx.lineTo(x + size, y + size)
@@ -164,15 +214,16 @@ function drawFallbackActor(
   size: number,
   player: boolean
 ): void {
+  const style = actorStyle(props.theme, actor.kind, player)
   ctx.save()
-  ctx.fillStyle = player ? '#f4f7ff' : actor.kind === 'trainer' ? '#f6a65d' : '#f2d071'
-  ctx.strokeStyle = player ? '#e43c4f' : '#18252a'
+  ctx.fillStyle = style.fill
+  ctx.strokeStyle = style.stroke
   ctx.lineWidth = Math.max(2, size * 0.08)
   ctx.beginPath()
   ctx.arc(left + size / 2, top + size / 2, size * 0.32, 0, Math.PI * 2)
   ctx.fill()
   ctx.stroke()
-  ctx.fillStyle = '#162229'
+  ctx.fillStyle = style.stroke
   ctx.font = 'bold ' + Math.max(9, size * 0.24) + 'px ui-monospace, monospace'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -192,14 +243,14 @@ function drawActor(
   if (x + size < 0 || y + size < 0) return
 
   ctx.save()
-  ctx.fillStyle = 'rgba(0,0,0,.22)'
+  ctx.fillStyle = props.theme.effects.shadow
   ctx.beginPath()
   ctx.ellipse(x + size / 2, y + size * 0.82, size * 0.3, size * 0.11, 0, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
 
-  const asset = spriteAsset(actor.appearance, player)
-  const image = spriteImages.get(asset)
+  const reference = actorAssetReference(actor, player)
+  const image = spriteImages.get(reference)
   if (!image) {
     drawFallbackActor(ctx, actor, x, y, size, player)
     return
@@ -248,10 +299,11 @@ function draw(now = performance.now()): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.imageSmoothingEnabled = false
   ctx.clearRect(0, 0, width, height)
-  ctx.fillStyle = '#142228'
+  ctx.fillStyle = props.theme.effects.background
   ctx.fillRect(0, 0, width, height)
 
-  const viewport = semanticViewport(props.state, width, height, width < 700 ? 28 : 36)
+  const preferredTileSize = width < 700 ? Math.min(props.theme.tileSize, 28) : props.theme.tileSize
+  const viewport = semanticViewport(props.state, width, height, preferredTileSize)
   const layers = props.state.layers || []
 
   for (const layer of layers) {
@@ -275,18 +327,16 @@ function draw(now = performance.now()): void {
         if (!cell || !cell.kind || cell.kind === 'unknown') continue
         const left = viewport.offsetX + (worldX - viewport.startX) * viewport.tileSize
         const top = viewport.offsetY + (worldY - viewport.startY) * viewport.tileSize
-        drawTile(ctx, cell, left, top, viewport.tileSize, now)
+        drawTile(ctx, cell, left, top, viewport.tileSize, now, true)
       }
     }
   }
 
-  for (const actor of props.state.entities || []) {
-    drawActor(ctx, actor, viewport)
-  }
+  for (const actor of props.state.entities || []) drawActor(ctx, actor, viewport)
   drawActor(ctx, props.state.player, viewport, true)
 
   ctx.save()
-  ctx.strokeStyle = 'rgba(255,255,255,.045)'
+  ctx.strokeStyle = props.theme.effects.grid
   ctx.lineWidth = 1
   for (let worldX = viewport.startX; worldX <= viewport.endX; worldX++) {
     const x = viewport.offsetX + (worldX - viewport.startX) * viewport.tileSize
@@ -306,17 +356,21 @@ function draw(now = performance.now()): void {
 }
 
 function animate(now: number): void {
-  if (now - lastAnimatedDraw >= 100) {
+  if (now - lastAnimatedDraw >= props.theme.animation.redrawIntervalMs) {
     lastAnimatedDraw = now
     draw(now)
   }
   raf = requestAnimationFrame(animate)
 }
 
-watch(() => props.state, () => {
-  void syncSpriteImages()
-  draw()
-}, { deep: false })
+watch(
+  [() => props.state, () => props.theme.id, () => props.theme.version],
+  () => {
+    void syncSpriteImages()
+    draw()
+  },
+  { deep: false }
+)
 
 onMounted(() => {
   observer = new ResizeObserver(() => draw())
@@ -334,10 +388,14 @@ onScopeDispose(() => {
 <template>
   <div
     ref="shell"
-    class="absolute inset-0 overflow-hidden bg-[#142228]"
-    :aria-label="'Modern semantic view of ' + (state.map?.name || state.map?.id || 'current map')"
+    class="absolute inset-0 overflow-hidden"
+    :style="{ background: theme.effects.background }"
+    :aria-label="theme.name + ' semantic view of ' + (state.map?.name || state.map?.id || 'current map')"
   >
     <canvas ref="canvas" class="absolute inset-0 h-full w-full [image-rendering:pixelated]" />
-    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_50%,rgba(0,0,0,.28)_100%)]" />
+    <div
+      class="pointer-events-none absolute inset-0"
+      :style="{ background: 'radial-gradient(circle at center, transparent 50%, ' + theme.effects.vignette + ' 100%)' }"
+    />
   </div>
 </template>

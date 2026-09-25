@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "retro-16",
+  "name": "Retro 16-bit",
+  "version": 1,
+  "description": "Chunkier saturated pixels inspired by handheld-era 16-bit palettes.",
+  "tileSize": 32,
+  "tiles": {
+    "unknown": { "fill": "#25334a", "detail": "#92a9c61f", "pattern": "unknown" },
+    "path": { "fill": "#e0c879", "detail": "#bc9e58", "accent": "#f4dda0", "pattern": "path" },
+    "wall": { "fill": "#46546d", "detail": "#2f394c", "accent": "#6d7b94", "pattern": "wall" },
+    "grass": { "fill": "#47a85d", "detail": "#b8f58b80", "accent": "#247542", "pattern": "grass" },
+    "water": { "fill": "#3f72c2", "detail": "#a8e7ff99", "accent": "#2854a0", "pattern": "water" },
+    "tree": { "fill": "#247246", "detail": "#69bf59", "accent": "#174b32", "pattern": "tree" }
+  },
+  "objects": {},
+  "actors": {
+    "player": { "fill": "#fff3cf", "stroke": "#e9535b" },
+    "npc": { "fill": "#ffd267", "stroke": "#20283b" },
+    "trainer": { "fill": "#ff8d55", "stroke": "#20283b" },
+    "item": { "fill": "#bc9cff", "stroke": "#493a73" },
+    "object": { "fill": "#9ec8c9", "stroke": "#26383c" }
+  },
+  "animation": {
+    "waterPeriodMs": 520,
+    "redrawIntervalMs": 90
+  },
+  "effects": {
+    "background": "#111a2b",
+    "vignette": "rgba(7,10,20,.36)",
+    "grid": "rgba(246,223,160,.075)",
+    "shadow": "rgba(8,10,18,.30)"
+  },
+  "ui": {
+    "accent": "#ffd267",
+    "panel": "rgba(13,18,34,.78)",
+    "text": "#fff1bd"
+  },
+  "assets": {
+    "tiles": {},
+    "characters": {
+      "player": "gen1:red",
+      "rival": "gen1:blue",
+      "professor_oak": "gen1:oak"
+    },
+    "objects": {},
+    "effects": {},
+    "ui": {},
+    "battle": {}
+  },
+  "battle": {}
+}
