@@ -15,13 +15,26 @@ import (
 var ErrRouteTransitionNeedsBattlePolicy = errors.New("skill: semantic route transition requires a battle policy")
 
 type redRouteTransitionExecutor struct {
-	m       *emu.Emu
-	romData []byte
-	policy  MovePolicy
+	m            *emu.Emu
+	romData      []byte
+	policy       MovePolicy
+	fieldActions gameruntime.FieldActionDecoder
 }
 
 func newRedRouteTransitionExecutor(m *emu.Emu, romData []byte, policy MovePolicy) world.TransitionExecutor {
 	return &redRouteTransitionExecutor{m: m, romData: romData, policy: policy}
+}
+
+func (x *redRouteTransitionExecutor) fieldActionDecoder() (gameruntime.FieldActionDecoder, error) {
+	if x.fieldActions != nil {
+		return x.fieldActions, nil
+	}
+	decoder, err := fieldActionDecoderFor(x.m)
+	if err != nil {
+		return nil, err
+	}
+	x.fieldActions = decoder
+	return decoder, nil
 }
 
 // evaluateRedRouteGate is the execution-side mirror of semantic routing for
@@ -165,7 +178,11 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 }
 
 func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	fieldActions, err := x.fieldActionDecoder()
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition field-action profile: %w", err)
+	}
+	if fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if edge.Kind != world.EdgeConnection {
@@ -271,8 +288,8 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition face water (%d,%d): %w", waterX, waterY, err)
 		}
 		x.m.StepFrames(2)
-		result, surfErr := UseFieldMove(x.m, FieldSurf)
-		if surfErr == nil && result.Surfing && x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+		result, surfErr := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
+		if surfErr == nil && result.Surfing && fieldActions.DecodeFieldAction(x.m).Surfing {
 			return world.TransitionExecutionResult{Changed: true}, nil
 		}
 

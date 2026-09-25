@@ -252,8 +252,12 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.P
 		return false, fmt.Errorf("skill: boulder puzzle face slot %d at (%d,%d): %w", push.MovableID, push.From.X, push.From.Y, err)
 	}
 	state.Snapshot(m, &before)
-	if before.U8(sym.StatusFlags1)&fieldStrengthActiveBit == 0 {
-		if _, err := UseFieldMove(m, FieldStrength); err != nil {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: boulder puzzle field-action profile: %w", err)
+	}
+	if !fieldActions.DecodeFieldAction(m).StrengthActive {
+		if _, err := useFieldMoveWithDecoder(m, FieldStrength, fieldActions); err != nil {
 			return false, fmt.Errorf("skill: boulder puzzle activate Strength for slot %d: %w", push.MovableID, err)
 		}
 	}
@@ -317,7 +321,11 @@ func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest 
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState || len(state.DecodeBoulders(&mem)) == 0 {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return world.PushPlan{}, false, err
+	}
+	if fieldActions.DecodeFieldAction(m).Surfing || len(state.DecodeBoulders(&mem)) == 0 {
 		return world.PushPlan{}, false, nil
 	}
 	puzzle, _, err := currentBoulderPuzzle(m, romData, localStrengthPuzzleSpec(m, h, dest))
@@ -375,7 +383,11 @@ func preferLocalStrengthRoute(m *emu.Emu, romData []byte, h rom.MapHeader, dest 
 	if !capability.Usable && !CanPrepareFieldMove(romData, &mem, FieldStrength) {
 		return false, nil
 	}
-	strengthActive := mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return false, err
+	}
+	strengthActive := fieldActions.DecodeFieldAction(m).StrengthActive
 	return strengthPlanBeatsFieldPath(fieldCost, plan, strengthActive, policy), nil
 }
 

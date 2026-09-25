@@ -6,6 +6,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func fieldActionDecoderFor(m *emu.Emu) (game.FieldActionDecoder, error) {
@@ -79,4 +80,11 @@ func fieldActionResultFromState(move FieldMove, slot int, state game.FieldAction
 		StrengthActive: state.StrengthActive,
 		Lit:            state.Lit,
 	}
+}
+
+func traversalModeForFieldActionState(state game.FieldActionState) world.TraversalMode {
+	if state.Surfing {
+		return world.TraversalWater
+	}
+	return world.TraversalLand
 }

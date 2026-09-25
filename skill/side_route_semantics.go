@@ -123,7 +123,11 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach cannot reach %02x even in water mode: %w", edge.To, err)
 	}
-	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	fieldActions, err := x.fieldActionDecoder()
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach field-action profile: %w", err)
+	}
+	if fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, nil
 	}
 
@@ -149,11 +153,11 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach face water (%d,%d): %w", waterX, waterY, err)
 	}
 	x.m.StepFrames(2)
-	result, err := UseFieldMove(x.m, FieldSurf)
+	result, err := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach enter mode: %w", err)
 	}
-	if !result.Surfing || x.m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !result.Surfing || !fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach returned without verified surfing state")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil

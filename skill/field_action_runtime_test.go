@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -74,5 +75,14 @@ func TestFieldActionRuntimeUsesSemanticModeFacts(t *testing.T) {
 	flash, _ := FieldMoveSpecFor(FieldFlash)
 	if err := validateFieldActionRuntime(game.FieldActionState{Lit: true}, flash); err == nil {
 		t.Fatal("already-lit state unexpectedly validated")
+	}
+}
+
+func TestTraversalModeUsesSemanticSurfState(t *testing.T) {
+	if got := traversalModeForFieldActionState(game.FieldActionState{}); got != world.TraversalLand {
+		t.Fatalf("non-surfing traversal mode = %v, want land", got)
+	}
+	if got := traversalModeForFieldActionState(game.FieldActionState{Surfing: true}); got != world.TraversalWater {
+		t.Fatalf("surfing traversal mode = %v, want water", got)
 	}
 }

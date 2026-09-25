@@ -234,7 +234,11 @@ func fieldPathBridgeFromTile(
 	rules := fieldPathRules{}
 	var land, water fieldPathGrid = grid, grid
 	if m.Peek8(sym.CurMap) == mapID {
-		startWater = mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
+		fieldActions, err := fieldActionDecoderFor(m)
+		if err != nil {
+			return Destination{}, false, err
+		}
+		startWater = fieldActions.DecodeFieldAction(m).Surfing
 		landGrid, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
 		if err != nil {
 			return Destination{}, false, err
