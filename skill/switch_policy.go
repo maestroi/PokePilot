@@ -194,7 +194,7 @@ func evaluateActiveForSwitch(romData []byte, party state.PartyState, activeSlot 
 	pp := [4]uint8{}
 	for i := range b.Moves {
 		moves[i], pp[i] = b.Moves[i].ID, b.Moves[i].PP
-		if b.DisabledMove == uint8(i+1) {
+		if b.Moves[i].Disabled {
 			// Disable makes the slot unusable right now. Counting it in the
 			// stay score would make a trapped weak move set look healthier than
 			// the choices Battle can actually select this turn.
