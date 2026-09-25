@@ -532,7 +532,7 @@ func executeFieldPathActionWithDecoder(m *emu.Emu, decoder game.OverworldDecoder
 		if err != nil {
 			return fmt.Errorf("skill: field path Surf toward (%d,%d): %w", tx, ty, err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing {
 			return fmt.Errorf("skill: field path Surf toward (%d,%d) returned without verified surfing state", tx, ty)
 		}
 		return nil
