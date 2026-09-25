@@ -38,6 +38,22 @@ func (p *redWorldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
+	out := projectWorldHeader(h)
+	actors, err := SpecialInteractionActors(p.rom, mapID)
+	if err != nil {
+		return worldmodel.MapHeader{}, err
+	}
+	roles := make(map[[2]uint8]worldmodel.InteractionRole, len(actors))
+	for _, actor := range actors {
+		roles[[2]uint8{actor.X, actor.Y}] = actor.Role
+	}
+	for i := range out.Objects {
+		out.Objects[i].Role = roles[[2]uint8{out.Objects[i].X, out.Objects[i].Y}]
+	}
+	return out, nil
+}
+
+func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	warps := make([]worldmodel.Warp, len(h.Warps))
 	for i, w := range h.Warps {
 		warps[i] = worldmodel.Warp{
@@ -49,13 +65,46 @@ func (p *redWorldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 	for i, c := range h.Connections {
 		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: c.MapID, Offset: c.Offset}
 	}
+	objects := make([]worldmodel.MapObject, len(h.Objects))
+	for i, object := range h.Objects {
+		objects[i] = worldmodel.MapObject{
+			Slot:               i + 1,
+			X:                  object.X,
+			Y:                  object.Y,
+			Movement:           worldObjectMovement(object.Movement),
+			NativeSpriteID:     uint16(object.SpriteID),
+			NativeTextID:       uint16(object.TextID),
+			NativeItemID:       uint16(object.ItemID),
+			NativeTrainerClass: uint16(object.TrainerClass),
+			NativeTrainerSet:   uint16(object.TrainerSet),
+		}
+	}
 	return worldmodel.MapHeader{
-		ID:           h.ID,
-		WidthBlocks:  h.WidthBlocks,
-		HeightBlocks: h.HeightBlocks,
-		Warps:        warps,
-		Connections:  connections,
-	}, nil
+		ID:            h.ID,
+		NativeTileset: uint16(h.Tileset),
+		WidthBlocks:   h.WidthBlocks,
+		HeightBlocks:  h.HeightBlocks,
+		Warps:         warps,
+		Connections:   connections,
+		Objects:       objects,
+	}
+}
+
+func worldObjectMovement(movement uint8) worldmodel.ObjectMovement {
+	switch movement {
+	case MovementWalk:
+		return worldmodel.ObjectMovementWalk
+	case MovementStay:
+		return worldmodel.ObjectMovementStay
+	default:
+		return worldmodel.ObjectMovementUnknown
+	}
+}
+
+// WorldMapHeader lets legacy Red-owned callers pass their richer header through
+// the generic routing boundary without exposing Red's concrete type.
+func (h MapHeader) WorldMapHeader() worldmodel.MapHeader {
+	return projectWorldHeader(h)
 }
 
 func (p *redWorldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
@@ -63,7 +112,28 @@ func (p *redWorldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.Trav
 	if err != nil {
 		return worldmodel.GridSpec{}, err
 	}
-	return h.WorldGridSpec(p.rom, blocks, mode)
+	spec, err := h.WorldGridSpec(p.rom, blocks, mode)
+	if err != nil {
+		return worldmodel.GridSpec{}, err
+	}
+	markGen1Cuttable(&spec, h.Tileset)
+	if mode == worldmodel.TraversalWater {
+		enableGen1SurfWater(&spec)
+	}
+	return spec, nil
+}
+
+func enableGen1SurfWater(spec *worldmodel.GridSpec) {
+	if spec == nil {
+		return
+	}
+	const surfWaterTile uint8 = 0x14
+	for i := range spec.Walkable {
+		if (i < len(spec.FieldTile) && spec.FieldTile[i] == surfWaterTile) ||
+			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == surfWaterTile) {
+			spec.Walkable[i] = true
+		}
+	}
 }
 
 func (p *redWorldProvider) LookupElevator(mapID uint8) (worldmodel.ElevatorSpec, bool) {
@@ -75,7 +145,7 @@ func (p *redWorldProvider) LookupElevator(mapID uint8) (worldmodel.ElevatorSpec,
 	for i, floor := range spec.Floors {
 		floors[i] = worldmodel.ElevatorFloor{MapID: floor.MapID, DestWarpID: floor.DestWarpID}
 	}
-	return worldmodel.ElevatorSpec{Floors: floors}, true
+	return worldmodel.ElevatorSpec{PanelX: spec.PanelX, PanelY: spec.PanelY, Floors: floors}, true
 }
 
 func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (worldmodel.ElevatorFloor, bool) {
@@ -135,4 +205,24 @@ func init() {
 		}
 		return NewWorldProvider(romData), true
 	})
+}
+
+func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
+	if spec == nil {
+		return
+	}
+	var tile uint8
+	switch tileset {
+	case 0: // OVERWORLD
+		tile = 0x3d
+	case 7: // GYM
+		tile = 0x50
+	default:
+		return
+	}
+	spec.Cuttable = make([]bool, len(spec.Walkable))
+	for i := range spec.Cuttable {
+		spec.Cuttable[i] = (i < len(spec.FieldTile) && spec.FieldTile[i] == tile) ||
+			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == tile)
+	}
 }

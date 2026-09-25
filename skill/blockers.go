@@ -2,8 +2,8 @@ package skill
 
 import (
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // spriteBlockers snapshots the sprite RAM and returns the tiles the live map
@@ -44,10 +44,11 @@ func spriteBlockers(m *emu.Emu) map[[2]int]bool {
 // the map reloads, so its RAM tile, not its header home, is the obstacle —
 // even off-screen. A slot without a RAM tile falls back to the header home.
 // hidden is state.HiddenObjectIDs, keyed by the same 1-based object ID.
-func stationaryObjectBlockers(h rom.MapHeader, tiles map[int][2]int, hidden map[uint8]bool) map[[2]int]bool {
+func stationaryObjectBlockers(h worldmodel.HeaderView, tiles map[int][2]int, hidden map[uint8]bool) map[[2]int]bool {
+	header := h.WorldMapHeader()
 	blocked := map[[2]int]bool{}
-	for i, o := range h.Objects {
-		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+	for i, o := range header.Objects {
+		if o.Movement != worldmodel.ObjectMovementStay || hidden[uint8(i+1)] {
 			continue
 		}
 		if t, ok := tiles[i+1]; ok {
@@ -65,14 +66,15 @@ func stationaryObjectBlockers(h rom.MapHeader, tiles map[int][2]int, hidden map[
 // trainer must not split the map after it has disappeared. Moving sprites are
 // excluded because their positions are observations for one walking plan, not
 // stable geometry for later map legs.
-func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState) map[[2]int]bool {
+func observedStationaryObjectBlockers(h worldmodel.HeaderView, live []state.SpriteState) map[[2]int]bool {
+	header := h.WorldMapHeader()
 	blocked := map[[2]int]bool{}
 	for _, sprite := range live {
-		if sprite.Slot < 1 || sprite.Slot > len(h.Objects) {
+		if sprite.Slot < 1 || sprite.Slot > len(header.Objects) {
 			continue
 		}
-		o := h.Objects[sprite.Slot-1]
-		if o.Movement != rom.MovementStay || sprite.X != int(o.X) || sprite.Y != int(o.Y) {
+		o := header.Objects[sprite.Slot-1]
+		if o.Movement != worldmodel.ObjectMovementStay || sprite.X != int(o.X) || sprite.Y != int(o.Y) {
 			continue
 		}
 		blocked[[2]int{sprite.X, sprite.Y}] = true
@@ -87,7 +89,7 @@ func observedStationaryObjectBlockers(h rom.MapHeader, live []state.SpriteState)
 // including already-collected balls), this is the topology set GoTo should
 // overlay: undefeated trainers and remaining items split components even when
 // they are outside the current sprite window (Silph Co 5F Card Key corridor).
-func presentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+func presentStationaryObjectBlockers(m *emu.Emu, h worldmodel.HeaderView) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return persistentTopologyBlockers(h, state.HiddenObjectIDs(&mem))
@@ -97,10 +99,11 @@ func presentStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]boo
 // the route graph across navigation legs. Moving objects are deliberately
 // excluded even when their live sprite currently occupies a corridor tile:
 // their position belongs to immediate path avoidance, not map geometry.
-func persistentTopologyBlockers(h rom.MapHeader, hidden map[uint8]bool) map[[2]int]bool {
+func persistentTopologyBlockers(h worldmodel.HeaderView, hidden map[uint8]bool) map[[2]int]bool {
+	header := h.WorldMapHeader()
 	blocked := map[[2]int]bool{}
-	for i, o := range h.Objects {
-		if o.Movement != rom.MovementStay || hidden[uint8(i+1)] {
+	for i, o := range header.Objects {
+		if o.Movement != worldmodel.ObjectMovementStay || hidden[uint8(i+1)] {
 			continue
 		}
 		blocked[[2]int{int(o.X), int(o.Y)}] = true
@@ -112,11 +115,11 @@ func persistentTopologyBlockers(h rom.MapHeader, hidden map[uint8]bool) map[[2]i
 // present stationary object plus the live sprite snapshot. Off-screen
 // trainers stay in the set so component routing can leave and re-enter
 // instead of planning a walk through their tile.
-func routingBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+func routingBlockers(m *emu.Emu, h worldmodel.HeaderView) map[[2]int]bool {
 	return mergeBlockers(spriteBlockers(m), presentStationaryObjectBlockers(m, h))
 }
 
-func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+func currentObservedStationaryObjectBlockers(m *emu.Emu, h worldmodel.HeaderView) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return observedStationaryObjectBlockers(h, state.DecodeSprites(&mem))
@@ -135,7 +138,7 @@ func currentObservedStationaryObjectBlockers(m *emu.Emu, h rom.MapHeader) map[[2
 // oscillation happens when a stay trainer has left its home tile to intercept
 // the player (Viridian Gym, run-1biaubd9xooqm): off-screen it vanished from
 // spriteBlockers while its empty home tile was blocked instead.
-func liveBlockers(m *emu.Emu, h rom.MapHeader) map[[2]int]bool {
+func liveBlockers(m *emu.Emu, h worldmodel.HeaderView) map[[2]int]bool {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return mergeBlockers(spriteBlockers(m), stationaryObjectBlockers(h, state.DecodeObjectTiles(&mem), state.HiddenObjectIDs(&mem)))

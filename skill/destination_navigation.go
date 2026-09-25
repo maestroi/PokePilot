@@ -5,7 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // resolveLocalDestination converts a semantic goal on the current map into an
@@ -58,14 +58,14 @@ func resolveLocalDestination(m *emu.Emu, romData []byte, dest Destination) (exac
 	}
 }
 
-func interactionDestinationForRole(romData []byte, mapID uint8, role rom.ObjectInteractionRole) (Destination, bool, error) {
-	actors, err := rom.SpecialInteractionActors(romData, mapID)
+func interactionDestinationForRole(romData []byte, mapID uint8, role worldmodel.InteractionRole) (Destination, bool, error) {
+	h, err := routingHeaderForROM(romData, mapID)
 	if err != nil {
 		return Destination{}, false, err
 	}
-	for _, actor := range actors {
-		if actor.Role == role {
-			return InteractionDestination(mapID, actor.X, actor.Y), true, nil
+	for _, object := range h.Objects {
+		if object.Role == role {
+			return InteractionDestination(mapID, object.X, object.Y), true, nil
 		}
 	}
 	return Destination{}, false, nil
@@ -84,7 +84,7 @@ func cheapestAreaDestination(m *emu.Emu, romData []byte, dest Destination) (Dest
 }
 
 func cheapestAreaDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, dest Destination) (Destination, error) {
-	h, err := rom.ParseMap(romData, dest.Map)
+	h, err := routingHeaderFor(m, dest.Map)
 	if err != nil {
 		return Destination{}, fmt.Errorf("parse area map %02x: %w", dest.Map, err)
 	}

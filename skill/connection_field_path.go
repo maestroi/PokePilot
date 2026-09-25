@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -56,7 +55,7 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 	if got := m.Peek8(sym.CurMap); got != e.From {
 		return fmt.Errorf("skill: field-path connection approach on map %02x, edge starts on %02x", got, e.From)
 	}
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
 		return err
 	}

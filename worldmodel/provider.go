@@ -40,14 +40,66 @@ type Ledge struct {
 	From, Over byte
 }
 
+// ObjectMovement is the portable movement class routing needs from a map
+// object. Concrete adapters translate their native object-event encoding into
+// these semantics.
+type ObjectMovement uint8
+
+const (
+	ObjectMovementUnknown ObjectMovement = iota
+	ObjectMovementWalk
+	ObjectMovementStay
+)
+
+// InteractionRole identifies built-in service actors whose interaction is not
+// ordinary NPC dialogue. Games may expose only the roles they support.
+type InteractionRole string
+
+const (
+	InteractionPokemonCenterNurse InteractionRole = "pokemon_center_nurse"
+	InteractionMart               InteractionRole = "mart"
+	InteractionBillsPC            InteractionRole = "bills_pc"
+	InteractionPlayersPC          InteractionRole = "players_pc"
+	InteractionPokemonCenterPC    InteractionRole = "pokemon_center_pc"
+	InteractionPrizeVendor        InteractionRole = "prize_vendor"
+	InteractionCableClub          InteractionRole = "cable_club"
+	InteractionVendingMachine     InteractionRole = "vending_machine"
+)
+
+// MapObject is the portable object-event projection used by generic routing.
+// Native fields are opaque identifiers retained for game-owned higher-level
+// adapters; routing itself interprets only Slot, coordinates, Movement and Role.
+type MapObject struct {
+	Slot               int
+	X, Y               uint8
+	Movement           ObjectMovement
+	Role               InteractionRole
+	NativeSpriteID     uint16
+	NativeTextID       uint16
+	NativeItemID       uint16
+	NativeTrainerClass uint16
+	NativeTrainerSet   uint16
+}
+
 // MapHeader is the subset of a game's map header that generic routing consumes.
 type MapHeader struct {
-	ID           uint8
-	WidthBlocks  uint8
-	HeightBlocks uint8
-	Warps        []Warp
-	Connections  []Connection
+	ID            uint8
+	NativeTileset uint16
+	WidthBlocks   uint8
+	HeightBlocks  uint8
+	Warps         []Warp
+	Connections   []Connection
+	Objects       []MapObject
 }
+
+// HeaderView lets compatibility callers pass a richer game-specific map
+// header to generic routing without exposing that concrete type here.
+type HeaderView interface {
+	WorldMapHeader() MapHeader
+}
+
+// WorldMapHeader makes the portable header itself a HeaderView.
+func (h MapHeader) WorldMapHeader() MapHeader { return h }
 
 // GridSpec is an adapter-decoded collision grid. Slices are row-major.
 type GridSpec struct {
@@ -57,6 +109,7 @@ type GridSpec struct {
 	Walkable      []bool
 	CollisionTile []uint8
 	FieldTile     []uint8
+	Cuttable      []bool
 	TilePairs     map[[2]uint8]bool
 	Ledges        []Ledge
 	CounterTiles  [3]uint8
@@ -77,6 +130,8 @@ type ElevatorFloor struct {
 
 // ElevatorSpec describes the selectable destinations of an elevator map.
 type ElevatorSpec struct {
+	PanelX uint8
+	PanelY uint8
 	Floors []ElevatorFloor
 }
 

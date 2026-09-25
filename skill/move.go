@@ -6,10 +6,10 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // ErrBlocked reports that a step could not be taken.
@@ -382,7 +382,7 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 // "world: no route", because a different Channeler's home tile sits close
 // enough to the corridor that unconditionally marking it occupied removes
 // the only path the live game actually allows.
-func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h rom.MapHeader, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
+func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h worldmodel.HeaderView, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
 	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, h) }, plan, walk, wait)
 	if err == nil {
 		return nil

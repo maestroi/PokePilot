@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 const (
@@ -78,15 +78,16 @@ func seafoamSurfAllowedFrom(mem *state.Mem, mapID uint8, x, y int) bool {
 	return x != seafoamB4FBlockedSurfX || y != seafoamB4FBlockedSurfY
 }
 
-func currentFieldPathRules(m *emu.Emu, h rom.MapHeader) fieldPathRules {
+func currentFieldPathRules(m *emu.Emu, h worldmodel.HeaderView) fieldPathRules {
+	header := h.WorldMapHeader()
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return fieldPathRules{
 		SurfAllowedFrom: func(x, y int) bool {
-			return seafoamSurfAllowedFrom(&mem, h.ID, x, y)
+			return seafoamSurfAllowedFrom(&mem, header.ID, x, y)
 		},
 		ForcedLanding: func(x, y int) (world.Point, bool) {
-			return forcedLandingForMap(h.ID, x, y)
+			return forcedLandingForMap(header.ID, x, y)
 		},
 	}
 }
@@ -95,8 +96,9 @@ func currentFieldPathRules(m *emu.Emu, h rom.MapHeader) fieldPathRules {
 // only reason an otherwise legal local field path cannot reach dest. This
 // keeps puzzle preparation destination-aware: a B4F destination that does not
 // need Surf from the blocked stairs never causes unrelated boulders to move.
-func seafoamCurrentBlocksDestination(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) (bool, error) {
-	if h.ID != seafoamB4FMap || dest.Map != seafoamB4FMap {
+func seafoamCurrentBlocksDestination(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) (bool, error) {
+	header := h.WorldMapHeader()
+	if header.ID != seafoamB4FMap || dest.Map != seafoamB4FMap {
 		return false, nil
 	}
 	var mem state.Mem

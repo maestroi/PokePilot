@@ -30,6 +30,10 @@ func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
+	return projectWorldHeader(h), nil
+}
+
+func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	warps := make([]worldmodel.Warp, len(h.Warps))
 	for i, w := range h.Warps {
 		warps[i] = worldmodel.Warp{X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: w.DestMap}
@@ -38,10 +42,40 @@ func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 	for i, c := range h.Connections {
 		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: c.MapID, Offset: c.Offset}
 	}
+	objects := make([]worldmodel.MapObject, len(h.Objects))
+	for i, object := range h.Objects {
+		movement := worldmodel.ObjectMovementUnknown
+		switch object.Movement {
+		case MovementWalk:
+			movement = worldmodel.ObjectMovementWalk
+		case MovementStay:
+			movement = worldmodel.ObjectMovementStay
+		}
+		objects[i] = worldmodel.MapObject{
+			Slot:               i + 1,
+			X:                  object.X,
+			Y:                  object.Y,
+			Movement:           movement,
+			NativeSpriteID:     uint16(object.SpriteID),
+			NativeTextID:       uint16(object.TextID),
+			NativeItemID:       uint16(object.ItemID),
+			NativeTrainerClass: uint16(object.TrainerClass),
+			NativeTrainerSet:   uint16(object.TrainerSet),
+		}
+	}
 	return worldmodel.MapHeader{
-		ID: h.ID, WidthBlocks: h.WidthBlocks, HeightBlocks: h.HeightBlocks,
-		Warps: warps, Connections: connections,
-	}, nil
+		ID:            h.ID,
+		NativeTileset: uint16(h.Tileset),
+		WidthBlocks:   h.WidthBlocks,
+		HeightBlocks:  h.HeightBlocks,
+		Warps:         warps,
+		Connections:   connections,
+		Objects:       objects,
+	}
+}
+
+func (h MapHeader) WorldMapHeader() worldmodel.MapHeader {
+	return projectWorldHeader(h)
 }
 
 func (p *worldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
@@ -49,7 +83,21 @@ func (p *worldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.Travers
 	if err != nil {
 		return worldmodel.GridSpec{}, err
 	}
-	return h.WorldGridSpec(p.rom, blocks, mode)
+	spec, err := h.WorldGridSpec(p.rom, blocks, mode)
+	if err != nil {
+		return worldmodel.GridSpec{}, err
+	}
+	markGen1Cuttable(&spec, h.Tileset)
+	if mode == worldmodel.TraversalWater {
+		const surfWaterTile uint8 = 0x14
+		for i := range spec.Walkable {
+			if (i < len(spec.FieldTile) && spec.FieldTile[i] == surfWaterTile) ||
+				(i < len(spec.CollisionTile) && spec.CollisionTile[i] == surfWaterTile) {
+				spec.Walkable[i] = true
+			}
+		}
+	}
+	return spec, nil
 }
 
 func (p *worldProvider) LookupElevator(mapID uint8) (worldmodel.ElevatorSpec, bool) {
@@ -117,4 +165,24 @@ func init() {
 		}
 		return NewWorldProvider(romData), true
 	})
+}
+
+func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
+	if spec == nil {
+		return
+	}
+	var tile uint8
+	switch tileset {
+	case 0: // OVERWORLD
+		tile = 0x3d
+	case 7: // GYM
+		tile = 0x50
+	default:
+		return
+	}
+	spec.Cuttable = make([]bool, len(spec.Walkable))
+	for i := range spec.Cuttable {
+		spec.Cuttable[i] = (i < len(spec.FieldTile) && spec.FieldTile[i] == tile) ||
+			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == tile)
+	}
 }

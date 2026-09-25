@@ -5,13 +5,13 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // counterDirection returns the step toward the center's counter. Local map
-// geometry is still a Gen-I navigation concern in this slice; nurse dialogue,
-// party recovery and transaction completion are profile-owned.
+// geometry is resolved through the active routing provider; nurse dialogue,
+// party recovery and transaction completion remain profile-owned.
 func counterDirection(m *emu.Emu, decoder game.OverworldDecoder) (world.Step, error) {
 	romData := m.ROM()
 	live, err := healRuntimeStateWithDecoder(m, decoder)
@@ -19,11 +19,11 @@ func counterDirection(m *emu.Emu, decoder game.OverworldDecoder) (world.Step, er
 		return world.Step{}, err
 	}
 	cur := live.Map
-	h, err := rom.ParseMap(romData, cur)
+	h, err := routingHeaderFor(m, cur)
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: parse map %#04x: %w", cur, err)
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := liveMapGrid(m, romData, h)
 	if err != nil {
 		return world.Step{}, fmt.Errorf("skill: Heal: build map %#04x: %w", cur, err)
 	}
@@ -45,10 +45,10 @@ func counterDirection(m *emu.Emu, decoder game.OverworldDecoder) (world.Step, er
 	return solid[0], nil
 }
 
-// Heal restores the party at a Pokemon Center nurse. Navigation to the Gen-I
-// service actor remains in this file for now; once interaction starts, every
-// UI/recovery/finish decision comes from the active game's semantic Center
-// profile rather than Red RAM.
+// Heal restores the party at a Pokemon Center nurse. Navigation resolves the
+// service actor through portable routing semantics; once interaction starts,
+// every UI/recovery/finish decision comes from the active game's semantic
+// Center profile rather than Red RAM.
 func Heal(m *emu.Emu) error {
 	runtime, err := pokemonCenterRuntimeFor(m)
 	if err != nil {
@@ -65,7 +65,7 @@ func Heal(m *emu.Emu) error {
 		return fmt.Errorf("skill: Heal: no party to heal: map=%#04x at (%d,%d)", live.Map, live.X, live.Y)
 	}
 
-	nurse, ok, err := interactionDestinationForRole(m.ROM(), live.Map, rom.InteractionPokemonCenterNurse)
+	nurse, ok, err := interactionDestinationForRole(m.ROM(), live.Map, worldmodel.InteractionPokemonCenterNurse)
 	if err != nil {
 		return fmt.Errorf("skill: Heal: locate nurse: %w", err)
 	}

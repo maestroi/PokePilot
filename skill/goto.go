@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // ErrBattle is returned by GoTo when a wild battle interrupts the route. GoTo
@@ -476,11 +476,12 @@ func goToWithTransitionExecutor(m *emu.Emu, romData []byte, dest Destination, ex
 // legs without mutating the base graph. Callers supply only positively
 // observed stationary blockers, keeping moving and hidden objects out of the
 // remembered topology.
-func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h rom.MapHeader, blockers map[[2]int]bool) (*world.Graph, error) {
+func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h worldmodel.HeaderView, blockers map[[2]int]bool) (*world.Graph, error) {
+	header := h.WorldMapHeader()
 	for at := range blockers {
 		grid.Set(at[0], at[1], false)
 	}
-	return g.WithMapGrid(h.ID, grid)
+	return g.WithMapGrid(header.ID, grid)
 }
 
 // goToWithTransitionExecutorMemory is GoTo's implementation. nav carries
@@ -580,7 +581,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			}
 		}
 
-		h, err := rom.ParseMap(romData, cur)
+		h, err := routingHeaderFor(m, cur)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: parse live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
@@ -1237,7 +1238,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 		return err
 	}
 	cur, sx, sy := start.Map, start.X, start.Y
-	h, err := rom.ParseMap(romData, cur)
+	h, err := routingHeaderFor(m, cur)
 	if err != nil {
 		return fmt.Errorf("skill: GoTo: parse map %02x at (%d,%d): %w", cur, sx, sy, err)
 	}

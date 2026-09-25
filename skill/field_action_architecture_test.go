@@ -92,7 +92,7 @@ func TestLiveMapGridRuntimeDoesNotReadConcreteSurfMode(t *testing.T) {
 	}
 	body := string(src)
 	start := strings.Index(body, "func liveMapGrid(m *emu.Emu")
-	end := strings.Index(body, "// LiveMapGridFromMem")
+	end := strings.Index(body, "func liveMapGridForTraversal(")
 	if start < 0 || end <= start {
 		t.Fatal("liveMapGrid runtime block not found")
 	}

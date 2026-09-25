@@ -9,6 +9,7 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 var (
@@ -302,11 +303,12 @@ func executeObservedBoulderPush(m *emu.Emu, spec BoulderPuzzleSpec, push world.P
 // boulder solver. Unlike story puzzle specs it has no switch/hole target: the
 // only goal is making the requested standing tile reachable. Unrelated warps
 // are fixed blockers so the push search stays on this map.
-func localStrengthPuzzleSpec(m *emu.Emu, h rom.MapHeader, dest Destination) BoulderPuzzleSpec {
+func localStrengthPuzzleSpec(m *emu.Emu, h worldmodel.HeaderView, dest Destination) BoulderPuzzleSpec {
+	header := h.WorldMapHeader()
 	sx, sy := playerXY(m)
 	fixed := warpAvoidance(h, int(sx), int(sy), nil)
 	return BoulderPuzzleSpec{
-		Map:       h.ID,
+		Map:       header.ID,
 		Reachable: &world.Point{X: int(dest.X), Y: int(dest.Y)},
 		Fixed:     fixed,
 	}
@@ -315,8 +317,9 @@ func localStrengthPuzzleSpec(m *emu.Emu, h rom.MapHeader, dest Destination) Boul
 // currentLocalStrengthPlan asks the push solver whether moving one or more
 // live boulders can make dest reachable. A zero-push result is deliberately
 // reported as not-needed: ordinary/Cut/Surf pathing owns that case.
-func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination) (world.PushPlan, bool, error) {
-	if h.ID != dest.Map || m.Peek8(sym.CurMap) != dest.Map {
+func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination) (world.PushPlan, bool, error) {
+	header := h.WorldMapHeader()
+	if header.ID != dest.Map || m.Peek8(sym.CurMap) != dest.Map {
 		return world.PushPlan{}, false, nil
 	}
 	var mem state.Mem
@@ -367,7 +370,7 @@ func strengthPlanBeatsFieldPath(fieldCost fieldPathCost, plan world.PushPlan, st
 // is cheaper than the already-planned Cut/Surf/walk route. It deliberately
 // declines roster repair: fetching/catching a carrier is not represented in
 // this local estimate and therefore must not masquerade as a cheap shortcut.
-func preferLocalStrengthRoute(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, fieldCost fieldPathCost) (bool, error) {
+func preferLocalStrengthRoute(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, fieldCost fieldPathCost) (bool, error) {
 	policy := fieldPathCostPolicyFor(m)
 	if !policy.weighted {
 		return false, nil
@@ -397,7 +400,7 @@ func preferLocalStrengthRoute(m *emu.Emu, romData []byte, h rom.MapHeader, dest 
 // repaired through the existing party -> PC -> catch pipeline. If that repair
 // moves the player to another map, moved=true tells GoTo to discard all local
 // geometry and re-plan the original journey from the new live state.
-func solveLocalStrengthPath(m *emu.Emu, romData []byte, policy MovePolicy, h rom.MapHeader, dest Destination) (moved bool, err error) {
+func solveLocalStrengthPath(m *emu.Emu, romData []byte, policy MovePolicy, h worldmodel.HeaderView, dest Destination) (moved bool, err error) {
 	_, needed, err := currentLocalStrengthPlan(m, romData, h, dest)
 	if err != nil || !needed {
 		return false, err
@@ -428,7 +431,7 @@ func solveLocalStrengthPath(m *emu.Emu, romData []byte, policy MovePolicy, h rom
 	// engagement budgets and ownership contract; policy above is used only for
 	// deliberate roster repair.
 	if _, err := SolveBoulderPuzzle(m, romData, nil, spec); err != nil {
-		return false, fmt.Errorf("skill: GoTo: solve local Strength route on map %02x: %w", h.ID, err)
+		return false, fmt.Errorf("skill: GoTo: solve local Strength route on map %02x: %w", h.WorldMapHeader().ID, err)
 	}
 	return false, nil
 }

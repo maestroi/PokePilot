@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -28,7 +27,7 @@ import (
 func componentRestagingDestination(
 	m *emu.Emu,
 	romData []byte,
-	h rom.MapHeader,
+	h worldmodel.HeaderView,
 	routeGraph *world.Graph,
 	dest Destination,
 	prereqs world.RoutePrerequisites,
@@ -73,7 +72,7 @@ func componentRestagingDestination(
 		if !ok {
 			continue
 		}
-		landH, err := rom.ParseMap(romData, e.To)
+		landH, err := routingHeaderForROM(romData, e.To)
 		if err != nil {
 			continue
 		}
@@ -108,11 +107,12 @@ func componentRestagingDestination(
 	}
 
 	// (2) Same-map gate restage onto another component of this map.
+	header := h.WorldMapHeader()
 	grid, err := liveMapGrid(m, romData, h)
 	if err != nil {
 		return Destination{}, false, fmt.Errorf("skill: component restage: live grid: %w", err)
 	}
-	for _, w := range h.Warps {
+	for _, w := range header.Warps {
 		for _, d := range [][2]int{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 			x, y := int(w.X)+d[0], int(w.Y)+d[1]
 			if !grid.Walkable(x, y) {
@@ -147,10 +147,11 @@ func tileOpensDest(
 	prereqs world.RoutePrerequisites,
 	blockedHere map[world.Edge]bool,
 ) bool {
-	h, err := rom.ParseMap(romData, mapID)
+	h, err := routingHeaderForROM(romData, mapID)
 	if err != nil {
 		return false
 	}
+	header := h.WorldMapHeader()
 	grid, err := gridForMap(m, romData, h, mapID)
 	if err != nil || grid == nil || !grid.Walkable(x, y) {
 		return false
@@ -164,7 +165,7 @@ func tileOpensDest(
 		return true
 	}
 	// One nested same-map gate hop from this tile.
-	for _, w := range h.Warps {
+	for _, w := range header.Warps {
 		for _, d := range [][2]int{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
 			nx, ny := int(w.X)+d[0], int(w.Y)+d[1]
 			if !grid.Walkable(nx, ny) || (nx == x && ny == y) {
@@ -189,13 +190,13 @@ func tileOpensDest(
 	return false
 }
 
-func gridForMap(m *emu.Emu, romData []byte, h rom.MapHeader, mapID uint8) (*world.Grid, error) {
+func gridForMap(m *emu.Emu, romData []byte, h worldmodel.HeaderView, mapID uint8) (*world.Grid, error) {
 	if m.Peek8(sym.CurMap) == mapID {
 		return liveMapGrid(m, romData, h)
 	}
-	provider, ok := worldmodel.ProviderForROM(romData)
-	if !ok {
-		return nil, fmt.Errorf("no map provider")
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
 	}
 	spec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand)
 	if err != nil {
@@ -207,7 +208,7 @@ func gridForMap(m *emu.Emu, romData []byte, h rom.MapHeader, mapID uint8) (*worl
 func fieldPathBridgeFromTile(
 	m *emu.Emu,
 	romData []byte,
-	h rom.MapHeader,
+	h worldmodel.HeaderView,
 	routeGraph *world.Graph,
 	grid *world.Grid,
 	mapID uint8,
@@ -250,8 +251,8 @@ func fieldPathBridgeFromTile(
 		land, water = landGrid, waterGrid
 		rules = currentFieldPathRules(m, h)
 	} else {
-		provider, ok := worldmodel.ProviderForROM(romData)
-		if ok {
+		provider, providerErr := routingProviderForROM(romData)
+		if providerErr == nil {
 			if spec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand); err == nil {
 				if g, err := world.GridFromSpec(spec); err == nil {
 					land = g
@@ -282,7 +283,7 @@ func fieldPathBridgeFromTile(
 			return
 		}
 		plan, perr := planFieldPath(
-			land, water, h.Tileset,
+			land, water, uint8(h.WorldMapHeader().NativeTileset),
 			sx, sy, x, y,
 			blocked,
 			canCut, canSurf, startWater,

@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // fieldPathBridgeOnCurrentMap finds a same-map standing tile that local
@@ -26,7 +26,7 @@ import (
 func fieldPathBridgeOnCurrentMap(
 	m *emu.Emu,
 	romData []byte,
-	h rom.MapHeader,
+	h worldmodel.HeaderView,
 	routeGraph *world.Graph,
 	dest Destination,
 	prereqs world.RoutePrerequisites,
