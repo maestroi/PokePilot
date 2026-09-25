@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
