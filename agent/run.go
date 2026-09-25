@@ -189,10 +189,10 @@ runLoop:
 					fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
 				}
 			} else {
-				obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)
+				obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
 			}
 		} else {
-			obj, fromPlan, err, retries = engine.planning.choose(budget.Log, round, p, last, now)
+			obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
 		}
 		res.ReplyRetries += retries
 		notifyPlanning(p, engine.planning.snapshot())
