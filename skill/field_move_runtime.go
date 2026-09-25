@@ -81,7 +81,6 @@ func fieldMoveMenuIndexWithProfile(profile game.FieldMoveDecoder, reader game.Me
 	return -1
 }
 
-
 func selectFieldMoveMenuEntryWithDecoders(m menuMachine, fieldDecoder game.FieldMoveDecoder, menuDecoder game.MenuDecoder, move FieldMove) error {
 	if fieldDecoder == nil {
 		return fmt.Errorf("skill: field move menu: nil field-move decoder")
