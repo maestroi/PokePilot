@@ -260,7 +260,7 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 		return "objective_postcondition_unavailable", nil
 	}
 	if errors.Is(err, ErrObjectiveBoundaryDirty) {
-		return "objective_boundary_dirty", nil
+		return "objective_boundary_dirty", dirtyBoundaryPrimaryCause(err)
 	}
 	if errors.Is(err, skill.ErrShopStabilization) {
 		return "shop_stabilization_failed", nil
@@ -407,6 +407,26 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 		return FailureCauseID("type:" + t), nil
 	}
 	return "unknown_error", nil
+}
+
+// dirtyBoundaryPrimaryCause names the execution fault that objectiveBoundaryError
+// joined with the dirty finish. The dirty outcome still dominates, but without
+// the primary cause every unrelated defect in one objective shared one family
+// fingerprint, so fixing one "regressed" on the next (#1861). A
+// postcondition-only dirty boundary has no primary and keeps its old identity.
+func dirtyBoundaryPrimaryCause(err error) []string {
+	var joined interface{ Unwrap() []error }
+	if !errors.As(err, &joined) {
+		return nil
+	}
+	for _, child := range joined.Unwrap() {
+		if errors.Is(child, ErrObjectiveBoundaryDirty) {
+			continue
+		}
+		cause, _ := failureCauseFor(child)
+		return []string{"primary:" + string(cause)}
+	}
+	return nil
 }
 
 // firstSpecificErrorType is the prose-free fallback for a failure not yet in
