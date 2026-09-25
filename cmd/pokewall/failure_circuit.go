@@ -775,4 +775,3 @@ func (w *Wall) handleDismissTriage(res http.ResponseWriter, req *http.Request) {
 		"occurrences": count,
 	})
 }
-
