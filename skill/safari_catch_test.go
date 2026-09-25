@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
@@ -74,5 +75,17 @@ func TestSafariCatchStopsBeforeUnaffordableReentry(t *testing.T) {
 					tt.session, tt.inZone, tt.money, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSafariBallResultPrioritizesNicknamePromptAfterBattleFlagClears(t *testing.T) {
+	mem := newFakeRAM()
+	openChoice(mem, 8, 12, "NICKNAME")
+
+	if state.DecodeBattle(mem) != nil {
+		t.Fatal("fixture unexpectedly has a battle in progress")
+	}
+	if got := safariBallResultPhaseFromMem(mem); got != safariBallResultNicknamePrompt {
+		t.Fatalf("phase = %d, want nickname prompt before battle-ended classification", got)
 	}
 }
