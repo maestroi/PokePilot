@@ -53,7 +53,7 @@ func (*Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionStat
 		}
 	}
 
-	_, choiceVisible := state.DecodeTwoOptionMenu(&mem)
+	choiceVisible := state.DecodeTwoOptionMenu(&mem) != nil
 	return game.FieldActionState{
 		Controllable:     state.Controllable(&mem),
 		CuttableAhead:    cuttable,
