@@ -6,8 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // CatchOutcome is how a Catch call ended. The outcomes that are part of the
@@ -105,6 +103,44 @@ var (
 	ErrCatchMissed = errors.New("skill: Catch: wanted target met but not caught")
 )
 
+type captureExecutionSemantics struct {
+	battle     game.BattleStateDecoder
+	runtime    game.BattleRuntimeDecoder
+	battleMenu game.BattleMenuDecoder
+	menu       game.MenuDecoder
+	prompt     game.PromptDecoder
+}
+
+func captureExecutionFor(m *emu.Emu) (captureExecutionSemantics, error) {
+	battle, err := battleStateDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	runtime, err := battleRuntimeDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	battleMenu, err := battleMenuDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	prompt, err := promptDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	return captureExecutionSemantics{
+		battle:     battle,
+		runtime:    runtime,
+		battleMenu: battleMenu,
+		menu:       menu,
+		prompt:     prompt,
+	}, nil
+}
+
 // Catch hunts the tall grass on the current map until it meets a wild
 // Pokemon of one of the species in want, then throws the strongest ordinary
 // ball in the bag (Ultra, Great, then POKE BALL, via S6-2's UseItem) until it
@@ -152,12 +188,15 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	if err != nil {
 		return CatchResult{}, err
 	}
+	exec, err := captureExecutionFor(m)
+	if err != nil {
+		return CatchResult{}, fmt.Errorf("skill: Catch: %w", err)
+	}
 	live := overworld.DecodeOverworld(m)
 	if !live.Controllable {
 		return CatchResult{}, fmt.Errorf("skill: Catch: player not controllable on map %#04x", live.NativeMapID)
 	}
 
-	var mem state.Mem
 	before := captureProfile.DecodeCapture(m)
 	wantNative := nativeSpeciesList(want)
 	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
@@ -197,7 +236,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		// enough reserve for any battle started by the preceding leg to finish.
 		if catchHuntFrameBudgetReached(huntStartFrame, m.FrameCount()) {
 			return res, fmt.Errorf("%w: %d-frame hunt budget, %d grass legs and %d encounters (map %#04x)",
-				ErrCatchHuntExhausted, catchHuntFrameCap, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+				ErrCatchHuntExhausted, catchHuntFrameCap, legsSpent, res.Encounters, overworld.DecodeOverworld(m).NativeMapID)
 		}
 
 		// One leg: walk to the other grass cell. Stepping onto a fresh grass
@@ -217,13 +256,12 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		}
 		legsSpent++
 		next = flip(a, b, next)
-		if !waitBattleStart(m, 1000) {
+		if !waitBattleStartWithDecoder(m, exec.battle, 1000) {
 			continue
 		}
-		state.Snapshot(m, &mem)
-		bs := state.DecodeBattle(&mem)
-		if bs == nil {
-			return res, fmt.Errorf("skill: Catch: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(sym.CurMap))
+		bs, ok := exec.battle.DecodeBattleState(m)
+		if !ok {
+			return res, fmt.Errorf("skill: Catch: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, overworld.DecodeOverworld(m).NativeMapID)
 		}
 		res.Encounters++
 
@@ -232,25 +270,24 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 			if err != nil {
 				return res, fmt.Errorf("skill: Catch: non-wanted battle %d (species %d): %w", res.Encounters, bs.EnemySpecies, err)
 			}
-			if outcome == state.ResultLost {
+			if outcome == game.BattleLost {
 				return res, ErrCatchBlackout
 			}
 			continue
 		}
 
-		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, before, res, maxBalls)
+		return catchWantedWithSemantics(m, captureProfile, exec, want, wantNative, wantDex, policy, before, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
-		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		ErrCatchHuntExhausted, legsSpent, res.Encounters, overworld.DecodeOverworld(m).NativeMapID)
 }
 
 // catchWanted throws balls at the wanted target in progress and reports the
 // outcome. It never attacks: the only way the target takes damage here is a
 // bug, which OutcomeTargetFainted exists to name.
-func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
+func catchWantedWithSemantics(m *emu.Emu, profile game.CaptureProfile, exec captureExecutionSemantics, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
-	for res.BallsThrown < maxBalls && battleInFlight(m) {
-		state.Snapshot(m, mem)
+	for res.BallsThrown < maxBalls && exec.runtime.DecodeBattleRuntime(m).InBattle {
 		nativeBall, ok := ordinaryCaptureBall(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder())
 		if !ok {
 			break // the bag is dry before maxBalls: same ending as running out
@@ -267,17 +304,15 @@ func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want [
 		}
 		res.BallsThrown++
 
-		state.Snapshot(m, mem)
-		if bs := state.DecodeBattle(mem); bs != nil && bs.EnemyHP == 0 {
+		if bs, ok := exec.battle.DecodeBattleState(m); ok && bs.EnemyHP == 0 {
 			targetFainted = true
 		}
 
 		// Wait for this throw's result: a catch (or the target ending the
 		// battle some other way) ends the battle, while a broken ball
-		// returns to the FIGHT/ITEM/PKMN/RUN menu. UseItem may return as
-		// early as the "used POKE BALL!" text, so the outcome is not yet
-		// in RAM when it does.
-		ended, err := waitThrowResult(m)
+		// returns to the ordinary battle menu. UseItem may return as early as
+		// the item-effect text, so the outcome is not necessarily settled yet.
+		ended, err := waitThrowResultWithSemantics(m, exec)
 		if err != nil {
 			return res, fmt.Errorf("skill: Catch: throw %d: %w", res.BallsThrown, err)
 		}
@@ -287,7 +322,7 @@ func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want [
 		break // the battle ended: classify below
 	}
 
-	if battleInFlight(m) {
+	if exec.runtime.DecodeBattleRuntime(m).InBattle {
 		// maxBalls spent (or the bag dry) with the target still in battle:
 		// end it by fighting so nothing is left mid-battle. The target was
 		// never caught, so using policy now is not the "kill what you are
@@ -299,14 +334,12 @@ func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want [
 		return res, nil
 	}
 
-	// The battle ended. Settle the overworld, then classify from RAM.
-	// Party growth is the common case; a full party sends the catch to
-	// the active box, and Dex mode treats a newly owned Pokédex bit as
-	// the portable postcondition.
-	if err := waitForBattleEnd(m); err != nil {
+	// The battle ended. Settle the overworld, then classify from portable
+	// capture evidence. Party growth is the common case; a full party sends
+	// the catch to storage, and Dex mode uses a newly owned entry.
+	if err := waitForBattleEndWithDecoder(m, exec.runtime); err != nil {
 		return res, err
 	}
-	state.Snapshot(m, mem)
 	after := profile.DecodeCapture(m)
 	if nativeSpecies, ok := captureAcquiredWantedState(before, after, wantNative, wantDex); ok {
 		species, idErr := legacySpeciesID(nativeSpecies)
@@ -327,70 +360,73 @@ func catchWanted(m *emu.Emu, mem *state.Mem, profile game.CaptureProfile, want [
 
 // waitThrowResult reports whether the battle ended while the result of a
 // thrown ball was resolving. It returns (true, nil) once no battle is in
-// progress, (false, nil) once the main battle menu is up again (the ball
+// progress, (false, nil) once the ordinary battle menu is up again (the ball
 // broke), and an error if neither happens within the budget.
 func waitThrowResult(m *emu.Emu) (bool, error) {
-	// The "It broke!" / "Gotcha!" boxes do not auto-advance (measured: a
-	// broken ball stalls on that box with no menu up), so each pass without
-	// a menu taps A, exactly as Battle's default branch does.
-	//
-	// A SUCCESSFUL catch is the one place in this loop where A is the wrong
-	// button. AddPartyMon asks whether to nickname the catch
-	// (pokered/engine/pokemon/add_mon.asm:52 `predef AskName` ->
-	// engine/menus/naming_screen.asm), and that prompt is a TWO_OPTION_MENU
-	// whose cursor defaults to YES: DisplayTwoOptionMenu
-	// (engine/menus/text_box.asm:229) only starts on the second option when
-	// BIT_SECOND_MENU_OPTION_DEFAULT is set, and AskName does not set it.
-	// wIsInBattle is still non-zero there — AskName reads it — so the
-	// battle-in-progress test below is still true, and a blind A opens the
-	// naming screen. The keyboard never closes on its own, so the battle
-	// never ends and the throw times out with the Pokemon already caught.
-	//
-	// Answer it the way every other menu in this package is answered:
-	// step-and-verify to NO (index 1), never a press count.
+	exec, err := captureExecutionFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: Catch: throw result: %w", err)
+	}
+	return waitThrowResultWithSemantics(m, exec)
+}
+
+func waitThrowResultWithSemantics(m menuMachine, exec captureExecutionSemantics) (bool, error) {
+	if exec.battle == nil || exec.runtime == nil || exec.battleMenu == nil || exec.menu == nil || exec.prompt == nil {
+		return false, fmt.Errorf("incomplete capture execution capability")
+	}
+
+	// Result text does not necessarily auto-advance, so each pass without a
+	// menu taps A. A successful catch is different: the nickname choice
+	// defaults to YES, so only a profile-classified nickname prompt may be
+	// answered automatically, and it is deliberately answered NO.
 	for spent := 0; spent < battleEndSettle; spent += throwPollFrames {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) == nil {
+		if !exec.runtime.DecodeBattleRuntime(m).InBattle {
 			return true, nil
 		}
-		if mainMenuUp(m) {
+		if exec.battleMenu.DecodeBattleMainMenu(m).Visible {
 			return false, nil
 		}
-		if state.DecodeTwoOptionMenu(&mem) != nil {
-			if err := selectTwoOption(m, 1); err != nil {
+		if _, open := exec.menu.DecodeTwoOption(m); open {
+			livePrompt := exec.prompt.DecodePrompt(m)
+			if !livePrompt.Visible || livePrompt.Kind != game.PromptNickname {
+				return false, fmt.Errorf("unexpected choice prompt while resolving capture")
+			}
+			if err := selectTwoOptionWithDecoder(m, exec.menu, 1); err != nil {
 				return false, fmt.Errorf("declining the nickname prompt: %w", err)
 			}
 			continue
 		}
-		// No menu up: a text box or animation. Tap A exactly as Battle's
-		// default branch does — inert during animations, and it advances
-		// the "It broke!" box.
 		m.Tap(emu.A, 3, 7)
 		m.StepFrames(throwPollFrames)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
+	if !exec.runtime.DecodeBattleRuntime(m).InBattle {
 		return true, nil
 	}
-	x, y := playerXY(m)
-	return false, fmt.Errorf("neither battle end nor main menu within %d frames: map %02x at (%d,%d)",
-		battleEndSettle, m.Peek8(sym.CurMap), x, y)
+	return false, fmt.Errorf("neither battle end nor main menu within %d frames on %s",
+		battleEndSettle, battleRuntimeContext(exec.runtime.DecodeBattleRuntime(m)))
 }
 
 // waitForBattleEnd steps until no battle is in progress and the player is
 // controllable again. It returns an error if the battle does not end within
 // the budget.
 func waitForBattleEnd(m *emu.Emu) error {
-	if _, err := m.StepUntil(battleEndSettle, func(m *emu.Emu) bool {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		return state.DecodeBattle(&mem) == nil && state.Controllable(&mem)
-	}); err != nil {
-		x, y := playerXY(m)
-		return fmt.Errorf("skill: Catch: battle did not end within %d frames: map %02x at (%d,%d)",
-			battleEndSettle, m.Peek8(sym.CurMap), x, y)
+	runtime, err := battleRuntimeDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: Catch: %w", err)
+	}
+	return waitForBattleEndWithDecoder(m, runtime)
+}
+
+func waitForBattleEndWithDecoder(m menuMachine, runtime game.BattleRuntimeDecoder) error {
+	if runtime == nil {
+		return fmt.Errorf("skill: Catch: nil battle-runtime decoder")
+	}
+	if !waitMenuUntil(m, battleEndSettle, func() bool {
+		live := runtime.DecodeBattleRuntime(m)
+		return !live.InBattle && live.Controllable
+	}) {
+		return fmt.Errorf("skill: Catch: battle did not end within %d frames on %s",
+			battleEndSettle, battleRuntimeContext(runtime.DecodeBattleRuntime(m)))
 	}
 	return nil
 }
