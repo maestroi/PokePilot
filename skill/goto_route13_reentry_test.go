@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
@@ -45,7 +46,7 @@ func TestRoute13StationaryTrainerMakesRow8FreshReentry(t *testing.T) {
 	if trainerSlot == 0 {
 		t.Fatal("Route 13 object at (12,4) is missing")
 	}
-	observed13 := observedStationaryObjectBlockers(h13, []state.SpriteState{{Slot: trainerSlot, X: 12, Y: 4}})
+	observed13 := observedStationaryObjectBlockers(h13, []game.LiveMapObject{{Slot: trainerSlot, X: 12, Y: 4}})
 	if !observed13[[2]int{12, 4}] {
 		t.Fatal("Route 13 object at (12,4) is no longer a visible MovementStay blocker")
 	}
