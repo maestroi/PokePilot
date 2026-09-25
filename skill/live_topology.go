@@ -56,7 +56,7 @@ func liveMapGrid(m *emu.Emu, romData []byte, h worldmodel.HeaderView) (*world.Gr
 	if err != nil {
 		return nil, err
 	}
-	return liveMapGridWithRuntime(m, routing, routing.MapProvider(romData), h, live.Traversal)
+	return liveMapGridWithRuntime(m, routing, routing.MapProvider(romData), h, world.TraversalMode(live.Traversal))
 }
 
 func liveMapGridForTraversal(m *emu.Emu, romData []byte, h worldmodel.HeaderView, mode world.TraversalMode) (*world.Grid, error) {
@@ -90,6 +90,13 @@ func liveMapGridWithRuntime(
 }
 
 func buildLiveMapGrid(romData []byte, h worldmodel.HeaderView, blocks []byte, mode world.TraversalMode) (*world.Grid, error) {
+	if gridHeader, ok := h.(worldmodel.GridHeader); ok {
+		spec, err := gridHeader.WorldGridSpec(romData, blocks, mode)
+		if err != nil {
+			return nil, err
+		}
+		return world.GridFromSpec(spec)
+	}
 	provider, ok := worldmodel.ProviderForROM(romData)
 	if !ok || provider == nil {
 		return nil, fmt.Errorf("skill: live map grid: no map provider for ROM")
