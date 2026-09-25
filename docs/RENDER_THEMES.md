@@ -9,8 +9,8 @@ Theme packs use a versioned JSON manifest. Bundled themes live under `web/src/sh
 ```json
 {
   "schemaVersion": 1,
-  "id": "rompilot-modern",
-  "name": "RomPilot Modern",
+  "id": "pokegold-gen2",
+  "name": "Gold / Silver",
   "version": 1,
   "description": "Clean high-contrast spectator theme.",
   "tileSize": 36,
@@ -61,7 +61,7 @@ Asset references are only consumed from bundled packs in this slice. Safe ingest
 
 Every compatible pack must define `unknown`, `path`, and `wall`. Those are the minimum safe surface needed to render an arbitrary overworld without invisible geometry.
 
-`floor`, `grass`, `water`, `tree`, `ledge`, `door`, `warp`, and `sign` are optional. Missing optional tile styles inherit from the default **RomPilot Modern** pack. Actor styles, object styles, animation settings, effects, UI tokens, and asset maps also inherit field-by-field from the default pack.
+`floor`, `grass`, `water`, `tree`, `ledge`, `door`, `warp`, and `sign` are optional. Missing optional tile styles inherit from the default **Gold / Silver** pack. Actor styles, object styles, animation settings, effects, UI tokens, and asset maps also inherit field-by-field from the default pack.
 
 Unknown semantic tile kinds fall back to the selected theme's resolved `unknown` style.
 
@@ -81,8 +81,7 @@ That means two viewers can watch the same `RenderState` with different themes at
 
 Bundled v1 themes:
 
-- **RomPilot Modern** — the default clean spectator presentation.
-- **Retro 16-bit** — a chunkier, more saturated alternative using the same semantic state.
+- **Gold / Silver** — the default Gen-II Kanto presentation using game-derived `pret/pokegold` assets with explicit provenance.
 - **Tiny Town Pixel** — 16×16 Kenney Tiny Town terrain plus matching Tiny Dungeon interior tiles, drawn at 32 screen pixels with nearest-neighbor scaling. Their bundled images and CC0 source records live under `web/public/theme-assets/`.
 
 ## Bundled atlas tiles

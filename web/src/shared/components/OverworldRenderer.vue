@@ -24,6 +24,19 @@ let raf = 0
 let lastAnimatedDraw = 0
 const animationClock = new PresentationClock()
 
+const INDEXED_PALETTES: Record<string, readonly string[]> = {
+  'ow-red': ['#deffde', '#ff9c52', '#ff3a08', '#000000'],
+  'ow-blue': ['#deffde', '#ff9c52', '#524aff', '#000000'],
+  'ow-brown': ['#deffde', '#ff9c52', '#7b5219', '#000000'],
+  'ow-rock': ['#deffde', '#c5943a', '#a57b19', '#3a3a3a'],
+  'bg-gray': ['#deffde', '#adadad', '#6b6b6b', '#3a3a3a'],
+  'bg-green': ['#b5ff52', '#63ce08', '#297300', '#3a3a3a'],
+  'bg-water': ['#ffffff', '#4263ff', '#0821ff', '#3a3a3a'],
+  'bg-yellow': ['#deffde', '#ffff3a', '#ff8408', '#3a3a3a'],
+  'bg-brown': ['#deffde', '#c5943a', '#a57b19', '#3a3a3a']
+}
+
+
 function defaultSpriteAsset(appearance: string | undefined, player = false): string {
   if (player) return 'red'
   switch ((appearance || '').toLowerCase()) {
@@ -38,19 +51,65 @@ function defaultSpriteAsset(appearance: string | undefined, player = false): str
 function actorAssetReference(actor: RenderActor, player = false): string {
   const themed = characterAsset(props.theme, actor.appearance, player)
   if (themed) return themed
+  if (!player) {
+    const generic = props.theme.assets.characters[actor.kind] || props.theme.assets.characters.npc
+    if (generic) return generic
+  }
   const fallback = defaultSpriteAsset(actor.appearance, player)
   return fallback && fallback !== 'unknown' ? `gen1:${fallback}` : ''
 }
 
-function loadImageReference(reference: string): Promise<HTMLImageElement> {
-  if (reference.startsWith('gen1:')) return loadGen1Sprite(reference.slice('gen1:'.length))
+function loadBrowserImage(source: string): Promise<HTMLImageElement> {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.decoding = 'async'
     image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error(`failed to load theme asset ${reference}`))
-    image.src = reference
+    image.onerror = () => reject(new Error(`failed to load theme asset ${source}`))
+    image.src = source
   })
+}
+
+function channel(hex: string, offset: number): number {
+  return Number.parseInt(hex.slice(offset, offset + 2), 16)
+}
+
+async function recolorIndexedImage(image: HTMLImageElement, paletteName: string, transparent: boolean): Promise<HTMLImageElement> {
+  const palette = INDEXED_PALETTES[paletteName]
+  if (!palette) return image
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return image
+  ctx.drawImage(image, 0, 0)
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const index = Math.max(0, Math.min(3, Math.round((255 - pixels.data[i]) / 85)))
+    if (transparent && index === 0) {
+      pixels.data[i + 3] = 0
+      continue
+    }
+    const color = palette[index]
+    pixels.data[i] = channel(color, 1)
+    pixels.data[i + 1] = channel(color, 3)
+    pixels.data[i + 2] = channel(color, 5)
+    pixels.data[i + 3] = 255
+  }
+  ctx.putImageData(pixels, 0, 0)
+  return loadBrowserImage(canvas.toDataURL('image/png'))
+}
+
+async function loadImageReference(reference: string): Promise<HTMLImageElement> {
+  if (reference.startsWith('gen1:')) return loadGen1Sprite(reference.slice('gen1:'.length))
+  const parsed = new URL(reference, window.location.origin)
+  const palette = parsed.searchParams.get('palette') || ''
+  const transparent = parsed.searchParams.get('transparent') === '1'
+  parsed.searchParams.delete('palette')
+  parsed.searchParams.delete('transparent')
+  parsed.searchParams.delete('repeat')
+  const source = parsed.origin === window.location.origin ? parsed.pathname + parsed.search : parsed.toString()
+  const image = await loadBrowserImage(source)
+  return palette ? recolorIndexedImage(image, palette, transparent) : image
 }
 
 async function syncSpriteImages(): Promise<void> {
@@ -114,7 +173,14 @@ function drawTile(
     ctx.save()
     ctx.imageSmoothingEnabled = false
     if (tile.source) {
-      ctx.drawImage(image, tile.source.x, tile.source.y, tile.source.size, tile.source.size, x, y, size, size)
+      const repeat = tile.repeat || 1
+      const drawSize = size / repeat
+      for (let row = 0; row < repeat; row++) {
+        for (let column = 0; column < repeat; column++) {
+          ctx.drawImage(image, tile.source.x, tile.source.y, tile.source.size, tile.source.size,
+            x + column * drawSize, y + row * drawSize, drawSize, drawSize)
+        }
+      }
     } else {
       ctx.drawImage(image, x, y, size, size)
     }
@@ -291,7 +357,11 @@ function drawActor(
   const frameSize = Math.min(16, image.naturalWidth, image.naturalHeight)
   const facing = (actor.facing || '').toLowerCase()
   let row = 0
-  if (image.naturalHeight >= 48) {
+  const frameRows = Math.floor(image.naturalHeight / frameSize)
+  if (frameRows >= 6) {
+    if (facing === 'up') row = 2
+    else if (facing === 'left' || facing === 'right') row = 4
+  } else if (frameRows >= 3) {
     if (facing === 'up') row = 1
     else if (facing === 'left' || facing === 'right') row = 2
   }

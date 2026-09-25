@@ -1,9 +1,8 @@
-import modernManifest from './themes/rompilot-modern.json' with { type: 'json' }
-import retroManifest from './themes/retro-16.json' with { type: 'json' }
+import pokegoldManifest from './themes/pokegold-gen2.json' with { type: 'json' }
 import kenneyManifest from './themes/kenney-tiny-town.json' with { type: 'json' }
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
-export const DEFAULT_RENDER_THEME_ID = 'rompilot-modern'
+export const DEFAULT_RENDER_THEME_ID = 'pokegold-gen2'
 
 export const REQUIRED_THEME_TILES = ['unknown', 'path', 'wall'] as const
 export const OPTIONAL_THEME_TILES = ['floor', 'grass', 'water', 'tree', 'ledge', 'door', 'warp', 'sign'] as const
@@ -343,8 +342,7 @@ function installBundled(input: unknown, makeDefault = false): void {
   if (!result.installed) throw new Error(`invalid bundled render theme: ${result.diagnostics.join('; ')}`)
 }
 
-installBundled(modernManifest, true)
-installBundled(retroManifest)
+installBundled(pokegoldManifest, true)
 installBundled(kenneyManifest)
 
 export function renderThemeOptions(): RenderThemeManifest[] {
