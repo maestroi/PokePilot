@@ -16,15 +16,20 @@ func TestDecodeBattleExcludesDisabledMove(t *testing.T) {
 	}
 
 	// The ROM stores slot 2 in the high nibble and the remaining turn count
-	// in the low nibble. Only the slot belongs in BattleState.DisabledMove.
+	// in the low nibble. DecodeBattle projects that encoding onto the move slot.
 	m[sym.PlayerDisabledMove] = 0x23
 
 	b := DecodeBattle(&m)
 	if b == nil {
 		t.Fatal("DecodeBattle = nil, want trainer battle")
 	}
-	if b.DisabledMove != 2 {
-		t.Fatalf("DisabledMove = %d, want 2", b.DisabledMove)
+	if !b.Moves[1].Disabled {
+		t.Fatalf("move 1 disabled=%v, want true", b.Moves[1].Disabled)
+	}
+	for i, move := range b.Moves {
+		if i != 1 && move.Disabled {
+			t.Fatalf("move %d unexpectedly disabled", i)
+		}
 	}
 	if got, want := b.Usable(), []int{0, 2, 3}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Usable() = %v, want %v: slot 1 (game slot 2) is disabled", got, want)
@@ -32,15 +37,16 @@ func TestDecodeBattleExcludesDisabledMove(t *testing.T) {
 }
 
 func TestUsableIncludesMoveAgainWhenDisableClears(t *testing.T) {
-	b := BattleState{DisabledMove: 2}
+	var b BattleState
 	for i := range b.Moves {
 		b.Moves[i] = Move{ID: uint8(i + 1), PP: 10}
 	}
+	b.Moves[1].Disabled = true
 	if got, want := b.Usable(), []int{0, 2, 3}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Usable() while disabled = %v, want %v", got, want)
 	}
 
-	b.DisabledMove = 0
+	b.Moves[1].Disabled = false
 	if got, want := b.Usable(), []int{0, 1, 2, 3}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Usable() after disable clears = %v, want %v", got, want)
 	}

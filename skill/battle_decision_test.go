@@ -76,8 +76,8 @@ func TestGen1BattleDecisionOrdinaryFourMoveWild(t *testing.T) {
 
 func TestGen1BattleDecisionMovesMirrorUsable(t *testing.T) {
 	snap := testGen1Snapshot()
-	snap.Battle.Moves[3].PP = 0  // exhausted
-	snap.Battle.DisabledMove = 1 // tackle disabled (1-based)
+	snap.Battle.Moves[3].PP = 0          // exhausted
+	snap.Battle.Moves[0].Disabled = true // tackle disabled
 	snap.Battle.Kind = state.BattleTrainer
 	s, err := BuildBattleDecisionState(nil, snap, BattleDecisionOptions{})
 	if err != nil {

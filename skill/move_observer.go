@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 )
 
 // MoveObserver is told about every move Battle is about to press: the decoded
@@ -13,7 +13,7 @@ import (
 // without stepping a frame, so an observed battle presses exactly the inputs
 // on exactly the frames an unobserved one would (the RNG mixes in the cycle
 // count, so frame neutrality is what keeps observation side-effect free).
-type MoveObserver func(b state.BattleState, executed int)
+type MoveObserver func(b game.BattleState, executed int)
 
 var scopedMoveObservers sync.Map
 
@@ -39,7 +39,7 @@ func WithMoveObserver(m *emu.Emu, observe MoveObserver) func() {
 	}
 }
 
-func observeMove(m *emu.Emu, b state.BattleState, executed int) {
+func observeMove(m *emu.Emu, b game.BattleState, executed int) {
 	raw, ok := scopedMoveObservers.Load(m)
 	if !ok {
 		return

@@ -3,9 +3,9 @@ package skill
 import (
 	"fmt"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/combat"
 	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/state"
 )
 
 // StatAwareMove is the default policy for a real fight. Damaging moves are
@@ -25,7 +25,7 @@ import (
 // cannot be decoded is treated as a fallback attack rather than silently
 // selecting an unrelated slot.
 func StatAwareMove(romData []byte) MovePolicy {
-	return func(b state.BattleState) int {
+	return func(b game.BattleState) int {
 		usable := b.Usable()
 		if len(usable) == 0 {
 			return -1

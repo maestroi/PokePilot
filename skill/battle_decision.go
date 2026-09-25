@@ -143,7 +143,7 @@ func BuildBattleDecisionState(romData []byte, snap Gen1BattleSnapshot, opts Batt
 
 // MoveOnlyBattleDecisionState serves the MovePolicy seam, which sees only
 // BattleState: the same move options with every non-move action withheld.
-func MoveOnlyBattleDecisionState(romData []byte, b state.BattleState) (game.BattleDecisionState, error) {
+func MoveOnlyBattleDecisionState(romData []byte, b game.BattleState) (game.BattleDecisionState, error) {
 	s := game.BattleDecisionState{
 		Context: battleContext(b.Kind),
 		Active:  gen1ActiveMon(b, 0),
@@ -159,14 +159,14 @@ func MoveOnlyBattleDecisionState(romData []byte, b state.BattleState) (game.Batt
 	return s, s.Validate()
 }
 
-func battleContext(kind state.BattleKind) game.BattleContext {
-	if kind == state.BattleTrainer {
+func battleContext(kind game.BattleKind) game.BattleContext {
+	if kind == game.BattleTrainer {
 		return game.BattleContextTrainer
 	}
 	return game.BattleContextWild
 }
 
-func gen1ActiveMon(b state.BattleState, status uint8) game.BattleMon {
+func gen1ActiveMon(b game.BattleState, status uint8) game.BattleMon {
 	return game.BattleMon{
 		Species: gen1Species(b.ActiveSpecies),
 		Level:   int(b.ActiveLevel),
@@ -190,7 +190,7 @@ func gen1PartyMon(mon state.Mon) game.BattleMon {
 
 // gen1MoveOptions lists every known move. Legality mirrors
 // BattleState.Usable exactly so the typed path and MovePolicy agree.
-func gen1MoveOptions(romData []byte, b state.BattleState) []game.BattleMoveOption {
+func gen1MoveOptions(romData []byte, b game.BattleState) []game.BattleMoveOption {
 	var out []game.BattleMoveOption
 	for i, mv := range b.Moves {
 		if mv.ID == 0 {
@@ -198,7 +198,7 @@ func gen1MoveOptions(romData []byte, b state.BattleState) []game.BattleMoveOptio
 		}
 		opt := game.BattleMoveOption{Slot: i, Move: gen1MoveID(mv.ID), PP: int(mv.PP)}
 		switch {
-		case b.DisabledMove == uint8(i+1):
+		case mv.Disabled:
 			opt.Unusable = game.BattleUnusableDisabled
 		case mv.PP == 0:
 			opt.Unusable = game.BattleUnusableNoPP

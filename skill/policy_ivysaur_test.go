@@ -67,7 +67,7 @@ func TestStatAwareMoveIvysaurUsesVineWhipWhenTackleIsDisabled(t *testing.T) {
 	b := battleWith(state.StatStageNeutral, state.StatStageNeutral, 55, 55,
 		tackle.ID, moveGrowl, moveLeechSeed, moveVineWhip)
 	b.ActiveType1, b.ActiveType2 = typeGrassIvysaur, typePoisonIvysaur
-	b.DisabledMove = 1 // game slot 1 = Tackle
+	b.Moves[0].Disabled = true // game slot 1 = Tackle
 
 	if got := p(b); got != 3 {
 		t.Fatalf("policy chose slot %d, want 3 (VINE WHIP): TACKLE is disabled and status moves must not replace damage", got)
@@ -86,7 +86,7 @@ func TestStatAwareMoveIvysaurUsesLeechSeedWhenOnlyDamageIsUnavailable(t *testing
 	b := battleWith(state.StatStageNeutral, state.StatStageNeutral, 14, 60,
 		tackle.ID, moveGrowl, moveLeechSeed, moveVineWhip)
 	b.ActiveType1, b.ActiveType2 = typeGrassIvysaur, typePoisonIvysaur
-	b.DisabledMove = 1
+	b.Moves[0].Disabled = true
 	b.Moves[0].PP = 12
 	b.Moves[1].PP = 40
 	b.Moves[2].PP = 10

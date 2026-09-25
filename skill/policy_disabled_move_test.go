@@ -10,7 +10,7 @@ func TestStatAwareMoveSkipsDisabledStrongestMove(t *testing.T) {
 	// disabled. Policies consume BattleState.Usable(), so they must fall back
 	// to Tackle instead of selecting a move the ROM will bounce back to the
 	// fight menu forever.
-	b.DisabledMove = 2
+	b.Moves[1].Disabled = true
 	if got := p(b); got != 0 {
 		t.Fatalf("policy chose slot %d, want 0 (TACKLE): slot 1 (EMBER) is disabled", got)
 	}
@@ -19,12 +19,12 @@ func TestStatAwareMoveSkipsDisabledStrongestMove(t *testing.T) {
 func TestStatAwareMoveUsesMoveAgainWhenDisableClears(t *testing.T) {
 	p := StatAwareMove(fakeROM(t, tackle, ember))
 	b := battleWith(7, 7, 20, 20, tackle.ID, ember.ID)
-	b.DisabledMove = 2
+	b.Moves[1].Disabled = true
 	if got := p(b); got != 0 {
 		t.Fatalf("policy chose slot %d while EMBER is disabled, want 0", got)
 	}
 
-	b.DisabledMove = 0
+	b.Moves[1].Disabled = false
 	if got := p(b); got != 1 {
 		t.Fatalf("policy chose slot %d after disable cleared, want 1 (EMBER)", got)
 	}

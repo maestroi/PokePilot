@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -35,7 +34,7 @@ func (d *BattleMoveDecider) Policy() skill.MovePolicy {
 	if d.Engine == nil {
 		return fallback
 	}
-	return func(b state.BattleState) int {
+	return func(b game.BattleState) int {
 		slot, err := d.decide(b)
 		if err != nil {
 			d.Fallbacks++
@@ -45,7 +44,7 @@ func (d *BattleMoveDecider) Policy() skill.MovePolicy {
 	}
 }
 
-func (d *BattleMoveDecider) decide(b state.BattleState) (int, error) {
+func (d *BattleMoveDecider) decide(b game.BattleState) (int, error) {
 	s, err := skill.MoveOnlyBattleDecisionState(d.RomData, b)
 	if err != nil {
 		return -1, err
@@ -81,7 +80,7 @@ func gen1MoveObserver(romData []byte, observer BattleTurnObserver) skill.MoveObs
 	if observer == nil {
 		return nil
 	}
-	return func(b state.BattleState, executed int) {
+	return func(b game.BattleState, executed int) {
 		s, err := skill.MoveOnlyBattleDecisionState(romData, b)
 		if err != nil {
 			return

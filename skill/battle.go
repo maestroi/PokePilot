@@ -12,27 +12,6 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// MovePolicy chooses which move slot to use. It is given the decoded
-// battle state and returns an index into BattleState.Moves. Returning an
-// index that is not in Usable() is a programming error and Battle will
-// report it rather than pressing anything.
-//
-// This is the seam where a learned policy eventually plugs in: Battle
-// decodes the state, asks the policy for a slot, and presses exactly that
-// slot. The default policy is deterministic, so tests never call a model.
-type MovePolicy func(state.BattleState) int
-
-// FirstUsableMove is the default policy: the lowest-numbered usable move
-// slot. Using BattleState.Usable keeps the default aligned with Battle's
-// legality check, including disabled moves and PP exhaustion.
-func FirstUsableMove(b state.BattleState) int {
-	usable := b.Usable()
-	if len(usable) == 0 {
-		return -1
-	}
-	return usable[0]
-}
-
 // ErrNoUsableMove reports that the active Pokémon has no selectable move.
 // Battle normally recovers by switching to a live party member with PP or,
 // when none exists, by backing out so the ROM can select STRUGGLE. The error
@@ -128,11 +107,11 @@ type BattleOptions struct {
 	MinTrainingCarryLevel uint8
 }
 
-func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
+func Battle(m *emu.Emu, policy MovePolicy) (game.BattleResult, error) {
 	return BattleWithOptions(m, policy, BattleOptions{})
 }
 
-func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (state.BattleResult, error) {
+func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (game.BattleResult, error) {
 	if policy == nil {
 		return 0, errors.New("skill: Battle: nil policy")
 	}
@@ -144,10 +123,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
+	battleDecoder, err := battleStateDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) == nil {
+	if _, ok := battleDecoder.DecodeBattleState(m); !ok {
 		x, y := playerXY(m)
 		return 0, fmt.Errorf("skill: Battle: no battle in progress on map %02x at (%d,%d)",
 			m.Peek8(sym.CurMap), x, y)
@@ -191,7 +174,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 
 		state.Snapshot(m, &mem)
 		execution := executionDecoder.DecodeBattleExecution(m)
-		if bs := state.DecodeBattle(&mem); bs != nil {
+		bs, inBattle := battleDecoder.DecodeBattleState(m)
+		if inBattle {
 			if p := progressOf(bs); p != lastProgress {
 				lastProgress, progressFrame = p, m.FrameCount()
 			}
@@ -209,16 +193,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				triedForgets = nil
 			}
 		}
-		if zbatDebug {
-			if bs := state.DecodeBattle(&mem); bs != nil {
-				fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v items=%d/%d switches=%d/%d | %s\n",
-					m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
-					bs.ActiveHP, bs.ActiveMaxHP, bs.EnemyHP, bs.EnemyMaxHP, bs.Moves,
-					itemUses, battleItemUseCap, voluntarySwitches, voluntarySwitchCap,
-					strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
-			}
+		if zbatDebug && inBattle {
+			fmt.Printf("zbat f=%6d max=%d cur=%d me=%d/%d enemy=%d/%d moves=%v items=%d/%d switches=%d/%d | %s\n",
+				m.FrameCount(), m.Peek8(sym.MaxMenuItem), m.Peek8(sym.CurrentMenuItem),
+				bs.ActiveHP, bs.ActiveMaxHP, bs.EnemyHP, bs.EnemyMaxHP, bs.Moves,
+				itemUses, battleItemUseCap, voluntarySwitches, voluntarySwitchCap,
+				strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
 		}
-		if state.DecodeBattle(&mem) == nil {
+		if !inBattle {
 			if pendingLearnMove != 0 {
 				return 0, fmt.Errorf("skill: Battle: natural move %d was accepted for party slot %d move slot %d but the resulting move set was never verified",
 					pendingLearnMove, pendingLearnPartySlot, pendingLearnSlot)
@@ -230,7 +212,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			// Read the result at the battle boundary: settling walks through
 			// a blackout respawn, which clears wBattleResult and would report
 			// the loss as a win.
-			result := state.DecodeBattleResult(&mem)
+			result := battleDecoder.DecodeBattleResult(m)
 			if err := settleAfterBattle(m, &mem); err != nil {
 				return 0, err
 			}
@@ -249,8 +231,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				state.Snapshot(m, &mem)
 				execution = executionDecoder.DecodeBattleExecution(m)
 			}
-			bs := state.DecodeBattle(&mem)
-			if bs == nil {
+			if !inBattle {
 				continue
 			}
 			usable := bs.Usable()
@@ -280,13 +261,13 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				}
 				continue
 			}
-			slot := policy(*bs)
+			slot := policy(bs)
 			if !containsInt(usable, slot) {
 				x, y := playerXY(m)
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: policy returned slot %d, usable %v",
 					m.Peek8(sym.CurMap), x, y, bs, slot, usable)
 			}
-			observeMove(m, *bs, slot)
+			observeMove(m, bs, slot)
 			if err := SelectMenuItem(m, slot+1); err != nil {
 				return menuError(m, "select move", err)
 			}
@@ -297,9 +278,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 
 		case execution.Phase == game.BattleExecutionMainMenu:
 			if openingTrainingSwitch {
-				bs := state.DecodeBattle(&mem)
-				if bs != nil {
-					decision := chooseTrainingCarrySwitch(m.ROM(), &mem, *bs, options.MinTrainingCarryLevel)
+				if inBattle {
+					decision := chooseTrainingCarrySwitch(m.ROM(), &mem, bs, options.MinTrainingCarryLevel)
 					if decision.Switch {
 						if zbatDebug {
 							fmt.Printf("zbat resource=SWITCH action=training reason=%s active={%s} candidate={%s}\n",
@@ -321,7 +301,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 				openingTrainingSwitch = false
 			}
 
-			if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) == 0 {
+			if inBattle && len(bs.Usable()) == 0 {
 				if slot, ok := ppRecoverySlot(&mem); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=SWITCH action=emergency reason=no-usable-move slot=%d\n", slot)
@@ -341,8 +321,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			// party members afterward: every extra participant further splits the
 			// trainee's XP and defeats the estimator's two-participant contract.
 			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
-				if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) > 0 {
-					decision := chooseTacticalSwitch(m.ROM(), &mem, *bs)
+				if inBattle && len(bs.Usable()) > 0 {
+					decision := chooseTacticalSwitch(m.ROM(), &mem, bs)
 					if decision.Switch {
 						if zbatDebug {
 							fmt.Printf("zbat resource=SWITCH action=voluntary reason=%s active={%s} candidate={%s}\n",
@@ -505,8 +485,8 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			state.Snapshot(m, &s)
 			slot := firstLivePartySlot(&s)
 			var replacement switchEvaluation
-			if bs := state.DecodeBattle(&s); bs != nil {
-				if bestSlot, best := bestReplacementSlot(m.ROM(), &s, *bs); bestSlot >= 0 {
+			if current, ok := battleDecoder.DecodeBattleState(m); ok {
+				if bestSlot, best := bestReplacementSlot(m.ROM(), &s, current); bestSlot >= 0 {
 					slot, replacement = bestSlot, best
 				}
 			}
@@ -584,7 +564,7 @@ type battleProgress struct {
 	activeSpecies, enemySpecies uint8
 }
 
-func progressOf(bs *state.BattleState) battleProgress {
+func progressOf(bs game.BattleState) battleProgress {
 	return battleProgress{bs.ActiveHP, bs.EnemyHP, bs.ActiveSpecies, bs.EnemySpecies}
 }
 
@@ -621,7 +601,7 @@ func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 		settleBudget, m.Peek8(sym.CurMap), x, y)
 }
 
-func stuckError(m *emu.Emu, detail string) (state.BattleResult, error) {
+func stuckError(m *emu.Emu, detail string) (game.BattleResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	x, y := playerXY(m)
@@ -633,7 +613,7 @@ func stuckError(m *emu.Emu, detail string) (state.BattleResult, error) {
 		detail, m.Peek8(sym.CurMap), x, y, bs)
 }
 
-func menuError(m *emu.Emu, detail string, err error) (state.BattleResult, error) {
+func menuError(m *emu.Emu, detail string, err error) (game.BattleResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	x, y := playerXY(m)
