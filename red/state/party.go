@@ -47,17 +47,20 @@ func (m Mon) Asleep() bool { return m.Status&statusSleepMask != 0 }
 // "" when the mon is healthy. Several bits can be set at once (a mon can
 // be poisoned and asleep), so the name is the first match in the order
 // sleep, poison, burn, freeze, paralyze.
-func (m Mon) StatusName() string {
+func (m Mon) StatusName() string { return StatusName(m.Status) }
+
+// StatusName decodes one live Gen-I status byte for presentation/logging.
+func StatusName(status uint8) string {
 	switch {
-	case m.Asleep():
+	case status&statusSleepMask != 0:
 		return "asleep"
-	case m.Poisoned():
+	case status&statusPoison != 0:
 		return "poisoned"
-	case m.Status&statusBurn != 0:
+	case status&statusBurn != 0:
 		return "burned"
-	case m.Status&statusFreeze != 0:
+	case status&statusFreeze != 0:
 		return "frozen"
-	case m.Status&statusParalyze != 0:
+	case status&statusParalyze != 0:
 		return "paralyzed"
 	}
 	return ""

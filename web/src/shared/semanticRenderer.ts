@@ -14,8 +14,8 @@ export function terrainLayer(state: RenderState | null | undefined): RenderTileL
   return state?.layers?.find((layer) => layer.kind === 'terrain')
 }
 
-export function canRenderOverworld(state: RenderState | null | undefined): state is RenderState {
-  if (!state || state.schema_version !== 1 || state.scene !== 'overworld') return false
+export function hasOverworldSurface(state: RenderState | null | undefined): state is RenderState {
+  if (!state || state.schema_version !== 1) return false
   const capabilities = new Set(state.capabilities || [])
   if (!capabilities.has('map') || !capabilities.has('player') || !capabilities.has('layers')) return false
   if (!state.map || !state.player) return false
@@ -24,6 +24,43 @@ export function canRenderOverworld(state: RenderState | null | undefined): state
   if (width <= 0 || height <= 0) return false
   const terrain = terrainLayer(state)
   return Boolean(terrain && terrain.width === width && terrain.height === height && terrain.cells.length === width * height)
+}
+
+export function canRenderOverworld(state: RenderState | null | undefined): state is RenderState {
+  return Boolean(state?.scene === 'overworld' && hasOverworldSurface(state))
+}
+
+export function canRenderDialogue(state: RenderState | null | undefined): state is RenderState {
+  if (!state || state.schema_version !== 1 || state.scene !== 'dialogue') return false
+  const capabilities = new Set(state.capabilities || [])
+  return capabilities.has('dialogue') && Boolean(state.dialogue?.text?.trim())
+}
+
+export function canRenderMenu(state: RenderState | null | undefined): state is RenderState {
+  if (!state || state.schema_version !== 1 || state.scene !== 'menu') return false
+  const capabilities = new Set(state.capabilities || [])
+  return capabilities.has('menu') && Boolean(state.menu && (state.menu.title?.trim() || state.menu.entries?.length))
+}
+
+export function canRenderBattle(state: RenderState | null | undefined): state is RenderState {
+  if (!state || state.schema_version !== 1 || state.scene !== 'battle') return false
+  const capabilities = new Set(state.capabilities || [])
+  const actors = state.battle?.actors || []
+  return capabilities.has('battle') && actors.length >= 2
+}
+
+export type ModernSceneKind = 'overworld' | 'dialogue' | 'menu' | 'battle' | ''
+
+export function modernSceneKind(state: RenderState | null | undefined): ModernSceneKind {
+  if (canRenderBattle(state)) return 'battle'
+  if (canRenderDialogue(state)) return 'dialogue'
+  if (canRenderMenu(state)) return 'menu'
+  if (canRenderOverworld(state)) return 'overworld'
+  return ''
+}
+
+export function canRenderModernScene(state: RenderState | null | undefined): state is RenderState {
+  return modernSceneKind(state) !== ''
 }
 
 export function semanticViewport(

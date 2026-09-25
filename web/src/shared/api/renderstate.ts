@@ -63,6 +63,55 @@ export interface RenderTileLayer {
   cells: RenderTileCell[]
 }
 
+export interface RenderBattleActor {
+  id?: string
+  role?: string
+  name?: string
+  appearance?: string
+  level?: number
+  hp?: number
+  max_hp?: number
+  status?: string
+  active?: boolean
+  defeated?: boolean
+}
+
+export interface RenderBattleMove {
+  id?: string
+  name?: string
+  pp?: number
+  max_pp?: number
+  disabled?: boolean
+}
+
+export interface RenderBattle {
+  kind?: string
+  phase?: string
+  turn?: number
+  actors?: RenderBattleActor[]
+  moves?: RenderBattleMove[]
+}
+
+export interface RenderMenuEntry {
+  id?: string
+  label?: string
+  disabled?: boolean
+}
+
+export interface RenderMenu {
+  id?: string
+  title?: string
+  cursor?: number
+  entries?: RenderMenuEntry[]
+}
+
+export interface RenderDialogue {
+  speaker?: string
+  text?: string
+  choices?: RenderMenuEntry[]
+  cursor?: number
+}
+
 export interface RenderState {
   schema_version: number
   game: {
@@ -80,4 +129,7 @@ export interface RenderState {
   player?: RenderActor
   entities?: RenderActor[]
   layers?: RenderTileLayer[]
+  dialogue?: RenderDialogue
+  menu?: RenderMenu
+  battle?: RenderBattle
 }
