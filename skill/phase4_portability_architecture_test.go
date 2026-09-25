@@ -115,6 +115,14 @@ var gen1AdapterExceptions = fileSet(
 	"trainer_live_status.go",
 	"utility_field_candidate.go",
 	"water_catch.go",
+	"component_restage.go",
+	"fast_travel.go",
+	"forced_movement.go",
+	"goto_gen1_compat.go",
+	"move_gen1_compat.go",
+	"safari_catch.go",
+	"train.go",
+	"utility_field_carrier.go",
 )
 
 // redOwnedStoryPolicyExceptions are deliberately Red-owned story, progression,
@@ -168,6 +176,14 @@ var redOwnedStoryPolicyExceptions = fileSet(
 	"victory_road_boulders.go",
 	"victory_road_progression.go",
 	"viridian_gym.go",
+	"elite_four_stage_descriptors.go",
+	"fuchsia_story.go",
+	"game_corner_porygon.go",
+	"pokemon_tower.go",
+	"post_surge_celadon.go",
+	"progression.go",
+	"route_semantics.go",
+	"victory_road_stages.go",
 )
 
 func fileSet(names ...string) map[string]bool {
