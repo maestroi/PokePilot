@@ -65,13 +65,13 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 		History:           []RoundRecord{},
 		Failures:          []Failure{},
 		Requirements:      []Requirement{},
-		PokedexOwned:      []SpeciesID{},
-		PokedexSeen:       []SpeciesID{},
+		PokedexOwned:      append([]SpeciesID(nil), base.PokedexOwned...),
+		PokedexSeen:       append([]SpeciesID(nil), base.PokedexSeen...),
+		Dex:               base.Dex,
 	}
 	if checkpoint, ok, checkpointErr := skill.RecoveryCheckpointPlace(romData, mem.U8(sym.LastBlackoutMap)); checkpointErr == nil && ok {
 		obs.RecoveryCheckpoint = PlaceID(checkpoint)
 	}
-	obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
@@ -147,9 +147,7 @@ func (redSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile
 	routes := routeAvailabilityFor(m, romData)
 	obs.Unroutable = routes.Unroutable
 	obs.RouteBlockages = routes.Blockages
-	if cat, err := BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); err == nil {
-		obs.Dex = annotateDexRouteRequirements(cat, obs.RouteBlockages)
-	}
+	obs.Dex = annotateDexRouteRequirements(obs.Dex, obs.RouteBlockages)
 	obs.WildGrass = []WildSpecies{}
 	if wild, err := skill.WildGrass(romData, obs.Map); err == nil {
 		for _, w := range wild {
