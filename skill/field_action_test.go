@@ -3,6 +3,7 @@ package skill
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -123,32 +124,25 @@ func TestBoulderAheadUsesLiveSpriteContext(t *testing.T) {
 	}
 }
 
-func TestFieldActionCompletionUsesROMState(t *testing.T) {
-	m := new(state.Mem)
-	makeFieldControllable(m)
-
+func TestFieldActionCompletionUsesSemanticState(t *testing.T) {
 	cut, _ := FieldMoveSpecFor(FieldCut)
-	m[sym.ActionResult] = 1
-	if !fieldActionComplete(m, cut) {
-		t.Fatal("Cut action result was not accepted")
+	if !fieldActionCompleteState(game.FieldActionState{Controllable: true, ActionSucceeded: true}, cut) {
+		t.Fatal("Cut semantic success was not accepted")
 	}
 
 	surf, _ := FieldMoveSpecFor(FieldSurf)
-	if fieldActionComplete(m, surf) {
-		t.Fatal("Surf completed without entering surfing state")
+	if fieldActionCompleteState(game.FieldActionState{Controllable: true, ActionSucceeded: true}, surf) {
+		t.Fatal("Surf completed without semantic surfing state")
 	}
-	m[sym.WalkBikeSurfState] = fieldSurfingState
-	if !fieldActionComplete(m, surf) {
-		t.Fatal("Surf action result + surfing state was not accepted")
+	if !fieldActionCompleteState(game.FieldActionState{Controllable: true, ActionSucceeded: true, Surfing: true}, surf) {
+		t.Fatal("Surf semantic success + mode was not accepted")
 	}
 
 	strength, _ := FieldMoveSpecFor(FieldStrength)
-	m[sym.ActionResult] = 0 // Strength completion is its dedicated live flag.
-	if fieldActionComplete(m, strength) {
-		t.Fatal("Strength completed before BIT_STRENGTH_ACTIVE was set")
+	if fieldActionCompleteState(game.FieldActionState{Controllable: true}, strength) {
+		t.Fatal("Strength completed before semantic active state")
 	}
-	m[sym.StatusFlags1] = fieldStrengthActiveBit
-	if !fieldActionComplete(m, strength) {
-		t.Fatal("Strength active flag was not accepted")
+	if !fieldActionCompleteState(game.FieldActionState{Controllable: true, StrengthActive: true}, strength) {
+		t.Fatal("Strength semantic active state was not accepted")
 	}
 }
