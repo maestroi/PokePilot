@@ -4,138 +4,151 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/game"
 )
 
-const (
-	ItemRepel      uint8 = 0x1E
-	ItemSuperRepel uint8 = 0x38
-	ItemMaxRepel   uint8 = 0x39
+const repelUseSettleBudget = 1200
 
-	repelUseSettleBudget = 1200
-)
-
-// RepelDuration returns the Gen 1 overworld step budget granted by a Repel item.
-func RepelDuration(item uint8) (int, bool) {
-	switch item {
-	case ItemRepel:
-		return 100, true
-	case ItemSuperRepel:
-		return 200, true
-	case ItemMaxRepel:
-		return 250, true
-	default:
-		return 0, false
+// UseRepel activates one repel-family item from the overworld. The active
+// profile owns native item identity and the effect counter; success requires
+// both the semantic repel duration and exactly one consumed item.
+func UseRepel(m *emu.Emu, item uint8) error {
+	field, err := fieldItemDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseRepel: %w", err)
 	}
+	inventory, err := inventoryDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseRepel: %w", err)
+	}
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseRepel: %w", err)
+	}
+	list, err := listMenuDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: UseRepel: %w", err)
+	}
+	return useRepelWithDecoders(m, uint16(item), field, inventory, menu, list)
 }
 
-// UseRepel activates a Repel-family item from the overworld and proves both
-// sides of the effect: the bag stack decreases by one and
-// wRepelRemainingSteps is loaded with the item's exact duration.
-func UseRepel(m *emu.Emu, item uint8) error {
-	duration, ok := RepelDuration(item)
-	if !ok {
-		return fmt.Errorf("skill: UseRepel: item %#02x is not a Repel-family item", item)
+func useRepelWithDecoders(
+	m fieldItemMachine,
+	item uint16,
+	field game.FieldItemDecoder,
+	inventory game.InventoryDecoder,
+	menu game.MenuDecoder,
+	list game.ListMenuDecoder,
+) error {
+	if m == nil || field == nil || inventory == nil || menu == nil || list == nil {
+		return fmt.Errorf("skill: UseRepel: incomplete semantic execution capability")
 	}
-
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: UseRepel: player not controllable on map %#04x at (%d,%d)",
-			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	duration := field.FieldItemSemantics(item).RepelSteps
+	if duration <= 0 {
+		return fmt.Errorf("skill: UseRepel: item %#04x is not a Repel-family item", item)
 	}
-	if active := int(mem.U8(sym.RepelRemainingSteps)); active > 0 {
-		return fmt.Errorf("skill: UseRepel: repel is already active for %d more steps", active)
+	live := field.DecodeFieldItem(m)
+	if !live.OverworldReady {
+		return fmt.Errorf("skill: UseRepel: player not at a controllable overworld boundary")
 	}
-	idx, bagBefore := bagEntry(&mem, item)
+	if live.RepelSteps > 0 {
+		return fmt.Errorf("skill: UseRepel: repel is already active for %d more steps", live.RepelSteps)
+	}
+	idx, bagBefore := fieldItemInventoryEntry(inventory.DecodeInventory(m), item)
 	if idx < 0 {
-		return fmt.Errorf("skill: UseRepel: %w (id %#02x)", ErrNotInBag, item)
+		return fmt.Errorf("skill: UseRepel: %w (id %#04x)", ErrNotInBag, item)
 	}
 
-	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+	if err := openStartMenuEntryWithDecoder(m, menu, game.StartMenuItems); err != nil {
 		return fmt.Errorf("skill: UseRepel: open ITEM: %w", err)
 	}
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.ListMenuID) == itemListMenuID
-	}); err != nil {
-		return fmt.Errorf("skill: UseRepel: bag list did not open: %w", err)
+	if !waitMenuUntil(m, bagMenuBudget, func() bool {
+		s := list.DecodeListMenu(m)
+		return s.Visible && s.Kind == game.ListMenuItems
+	}) {
+		return fmt.Errorf("skill: UseRepel: item list did not open")
 	}
-	if err := selectBagEntry(m, idx); err != nil {
+	if err := selectScrollingListEntryWithDecoder(m, list, idx); err != nil {
 		return fmt.Errorf("skill: UseRepel: select bag entry: %w", err)
 	}
-	if _, err := m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) != nil
-	}); err != nil {
-		return fmt.Errorf("skill: UseRepel: USE/TOSS prompt did not open: %w", err)
+	if !waitMenuUntil(m, useTossBudget, func() bool {
+		return field.DecodeFieldItem(m).UsePromptVisible
+	}) {
+		return fmt.Errorf("skill: UseRepel: USE action prompt did not open")
 	}
-	state.Snapshot(m, &mem)
-	if p := useTossPrompt(&mem); p == nil || p.Index != 0 {
-		return fmt.Errorf("skill: UseRepel: USE/TOSS cursor is not on USE")
+	live = field.DecodeFieldItem(m)
+	if !live.UseSelected {
+		return fmt.Errorf("skill: UseRepel: item action cursor is not on USE")
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if _, err := m.StepUntil(repelUseSettleBudget, func(m *emu.Emu) bool {
-		return int(m.Peek8(sym.RepelRemainingSteps)) == duration
-	}); err != nil {
-		state.Snapshot(m, &mem)
-		return fmt.Errorf("skill: UseRepel: effect did not load %d steps: now=%d screen=%q",
-			duration, mem.U8(sym.RepelRemainingSteps), state.ScreenText(&mem))
+	if !waitMenuUntil(m, repelUseSettleBudget, func() bool {
+		return field.DecodeFieldItem(m).RepelSteps == duration
+	}) {
+		live = field.DecodeFieldItem(m)
+		return fmt.Errorf("skill: UseRepel: effect did not load %d steps: now=%d %s",
+			duration, live.RepelSteps, live.DebugText)
 	}
-	// The counter is written immediately before the ROM enters the generic
-	// item-success path. Let the owned USE/TOSS surface disappear before
-	// treating any later two-option prompt as unexpected gameplay.
-	_, _ = m.StepUntil(useTossBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return useTossPrompt(&mem) == nil
+	_ = waitMenuUntil(m, useTossBudget, func() bool {
+		return !field.DecodeFieldItem(m).UsePromptVisible
 	})
 
-	// Repel's success message is dialogue, followed by the bag/start-menu
-	// stack. This verb owns that known result text, so page it with B while
-	// still refusing any unexpected two-option gameplay choice.
 	start := m.FrameCount()
 	for {
-		state.Snapshot(m, &mem)
-		interaction := state.DecodeInteraction(&mem)
-		if state.Controllable(&mem) && interaction.Kind == state.InteractionNone {
+		live = field.DecodeFieldItem(m)
+		if live.OverworldReady {
 			break
 		}
-		if state.DecodeBattle(&mem) != nil {
+		if live.InBattle {
 			return fmt.Errorf("skill: UseRepel: unexpected battle while closing item UI")
 		}
-		if interaction.Kind == state.InteractionTwoOption {
-			return fmt.Errorf("skill: UseRepel: unexpected choice while closing item UI: %q", interaction.Text)
+		if live.ChoiceVisible {
+			return fmt.Errorf("skill: UseRepel: unexpected choice while closing item UI: %s", live.DebugText)
 		}
 		if int(m.FrameCount()-start) > fieldResultTextBudget {
-			return fmt.Errorf("skill: UseRepel: item UI did not close: interaction=%s screen=%q", interaction.Kind, state.ScreenText(&mem))
+			return fmt.Errorf("skill: UseRepel: item UI did not close: %s", live.DebugText)
 		}
 		m.Tap(emu.B, 3, 7)
 	}
 
-	state.Snapshot(m, &mem)
-	if got := int(mem.U8(sym.RepelRemainingSteps)); got != duration {
-		return fmt.Errorf("skill: UseRepel: active steps changed unexpectedly: got %d want %d", got, duration)
+	live = field.DecodeFieldItem(m)
+	if live.RepelSteps != duration {
+		return fmt.Errorf("skill: UseRepel: active steps changed unexpectedly: got %d want %d", live.RepelSteps, duration)
 	}
-	if _, bagAfter := bagEntry(&mem, item); bagAfter != bagBefore-1 {
-		return fmt.Errorf("skill: UseRepel: bag count for %#02x did not drop from %d (now %d)", item, bagBefore, bagAfter)
+	_, bagAfter := fieldItemInventoryEntry(inventory.DecodeInventory(m), item)
+	if bagAfter != bagBefore-1 {
+		return fmt.Errorf("skill: UseRepel: bag count for %#04x did not drop from %d (now %d)", item, bagBefore, bagAfter)
 	}
 	return nil
 }
 
-// UseBestRepel activates the longest-duration Repel stack currently available.
-// It is a no-op while an effect is already active or when the bag has no
-// Repel-family item. The caller owns the policy decision to use encounter
-// suppression; this helper only performs the deterministic bag choice.
+// UseBestRepel activates the longest-duration repel stack exposed by the
+// active profile. It is a no-op while repel is active or no preferred repel
+// is carried.
 func UseBestRepel(m *emu.Emu) (bool, error) {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if mem.U8(sym.RepelRemainingSteps) > 0 {
+	field, err := fieldItemDecoderFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: UseBestRepel: %w", err)
+	}
+	inventory, err := inventoryDecoderFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: UseBestRepel: %w", err)
+	}
+	if field.DecodeFieldItem(m).RepelSteps > 0 {
 		return false, nil
 	}
-	for _, item := range []uint8{ItemMaxRepel, ItemSuperRepel, ItemRepel} {
-		if _, quantity := bagEntry(&mem, item); quantity > 0 {
-			if err := UseRepel(m, item); err != nil {
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: UseBestRepel: %w", err)
+	}
+	list, err := listMenuDecoderFor(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: UseBestRepel: %w", err)
+	}
+	bag := inventory.DecodeInventory(m)
+	for _, item := range field.PreferredRepels() {
+		if _, quantity := fieldItemInventoryEntry(bag, item); quantity > 0 {
+			if err := useRepelWithDecoders(m, item, field, inventory, menu, list); err != nil {
 				return false, err
 			}
 			return true, nil
