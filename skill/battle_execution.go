@@ -84,3 +84,37 @@ func switchBoxUp(m *emu.Emu) bool {
 	decoder, err := battleExecutionDecoderFor(m)
 	return err == nil && battleExecutionPhase(m, decoder) == game.BattleExecutionSwitchBox
 }
+
+
+func selectFightEntry(m *emu.Emu) error {
+	return selectBattleMainMenuEntry(m, game.BattleMenuFight)
+}
+
+// selectForgetSlot navigates the live replacement list through generic menu
+// semantics. The profile owns both recognition of the forget surface and the
+// cursor encoding.
+func selectForgetSlot(m *emu.Emu, index int) error {
+	execution, err := battleExecutionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	live := execution.DecodeBattleExecution(m)
+	if live.Phase != game.BattleExecutionForgetMove {
+		return fmt.Errorf("skill: selectForgetSlot: move-forget menu is not ready")
+	}
+	if index < 0 || index > live.ForgetCursor.Max {
+		return fmt.Errorf("skill: selectForgetSlot: slot %d out of range 0..%d", index, live.ForgetCursor.Max)
+	}
+	return SelectMenuItem(m, index)
+}
+
+// battleSwitchMenuUp is retained for battle-adjacent recovery callers, but
+// its classification now comes from the profile-owned party menu capability.
+func battleSwitchMenuUp(m *emu.Emu) bool {
+	decoder, err := partyMenuDecoderFor(m)
+	if err != nil {
+		return false
+	}
+	live := decoder.DecodePartyMenu(m)
+	return live.Visible && live.Kind == game.PartyMenuVoluntaryBattle
+}
