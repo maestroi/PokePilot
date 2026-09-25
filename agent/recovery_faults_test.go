@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/maestroi/pokepilot/skill"
@@ -41,9 +42,22 @@ func TestDirtyBoundaryDominatesRecoverableControllerCause(t *testing.T) {
 	if got := classifyObjectiveOutcome(o, combined, Observation{Controllable: true}); got != OutcomeStabilizationFailed {
 		t.Fatalf("outcome = %q, want stabilization_failed", got)
 	}
-	cause, _ := failureCauseFor(combined)
+	cause, context := failureCauseFor(combined)
 	if cause != "objective_boundary_dirty" {
 		t.Fatalf("cause = %q, want objective_boundary_dirty", cause)
+	}
+	// The execution fault that left the boundary dirty is part of the family
+	// identity, so unrelated defects in one objective do not share an issue.
+	if want := []string{"primary:navigation_stalled"}; !slices.Equal(context, want) {
+		t.Fatalf("context = %v, want %v", context, want)
+	}
+	other := objectiveBoundaryError(o, fmt.Errorf("%w: bag", skill.ErrMenuStuck), fmt.Errorf("%w: cleanup failed", ErrObjectiveBoundaryDirty))
+	if _, otherContext := failureCauseFor(other); slices.Equal(otherContext, context) {
+		t.Fatalf("distinct primary faults share dirty-boundary context %v", context)
+	}
+	postcondition := objectiveBoundaryError(o, nil, fmt.Errorf("%w: cleanup failed", ErrObjectiveBoundaryDirty))
+	if _, ctx := failureCauseFor(postcondition); ctx != nil {
+		t.Fatalf("postcondition-only dirty boundary context = %v, want none", ctx)
 	}
 }
 
