@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spectator-client'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { getSpectatorSemanticReplay, getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spectator-client'
+import type { RenderState } from '../shared/api/renderstate'
 import type { SpectatorRun, SpectatorSnapshot } from '../shared/api/spectator'
+import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { canRenderModernScene } from '../shared/semanticRenderer'
+import {
+  semanticReplaySampleAtMS,
+  semanticReplayStateAtMS,
+  type SemanticReplayTimeline
+} from '../shared/semanticReplay'
+import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
 import {
   formatReplayDuration,
   replayResult,
@@ -22,6 +31,27 @@ const selectedRunID = ref(runIDFromPath())
 const copyState = ref('')
 const playbackRate = ref(1)
 const videoRef = ref<HTMLVideoElement | null>(null)
+type RendererMode = 'modern' | 'classic'
+type SemanticReplayStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'classic' ? 'classic' : 'modern')
+const themeOptions = renderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || DEFAULT_RENDER_THEME_ID
+const initialTheme = resolveRenderTheme(storedThemeID)
+const selectedThemeID = ref(initialTheme.theme.id)
+const themeNotice = ref(initialTheme.diagnostics.join(' '))
+const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
+
+const semanticTimeline = shallowRef<SemanticReplayTimeline | null>(null)
+const semanticState = shallowRef<RenderState | null>(null)
+const semanticStatus = ref<SemanticReplayStatus>('idle')
+const semanticError = ref('')
+const currentTime = ref(0)
+const videoDuration = ref(0)
+const playing = ref(false)
+let semanticAbort: AbortController | null = null
+let playbackRAF = 0
+let lastSemanticSampleAt = -1
 
 const { data: snapshot, state, error, retry } = usePollingResource<SpectatorSnapshot>(
   (signal) => getSpectatorSnapshot(signal),
@@ -54,11 +84,30 @@ const selectedRun = computed(() => {
 })
 
 const selectedVideoURL = computed(() => selectedRun.value ? spectatorReplayVideoURL(selectedRun.value.run_id) : '')
+const showModern = computed(() =>
+  rendererMode.value === 'modern' &&
+  semanticStatus.value === 'ready' &&
+  Boolean(semanticState.value) &&
+  canRenderModernScene(semanticState.value)
+)
+const modernFallbackLabel = computed(() => {
+  if (rendererMode.value !== 'modern' || showModern.value) return ''
+  if (semanticStatus.value === 'loading') return 'Loading modern replay · classic fallback'
+  if (semanticStatus.value === 'error') return 'Modern replay unavailable · classic fallback'
+  if (semanticState.value) return `Modern unsupported for ${semanticState.value.scene} · classic fallback`
+  return ''
+})
 
 watch(selectedRun, (run) => {
   if (!run || selectedRunID.value) return
   selectedRunID.value = run.run_id
 }, { immediate: true })
+
+watch(
+  () => selectedRun.value?.run_id || '',
+  (runID) => { void loadSemanticReplay(runID) },
+  { immediate: true }
+)
 
 watch(playbackRate, (rate) => {
   if (videoRef.value) videoRef.value.playbackRate = rate
@@ -119,8 +168,150 @@ function resetFilters(): void {
   sort.value = 'recent'
 }
 
+function setRendererMode(mode: RendererMode): void {
+  rendererMode.value = mode
+  window.localStorage.setItem('pokepilot.spectator.renderer', mode)
+  syncPlaybackState()
+}
+
+function setTheme(themeID: string): void {
+  const resolved = resolveRenderTheme(themeID)
+  selectedThemeID.value = resolved.theme.id
+  themeNotice.value = resolved.diagnostics.join(' ')
+  rendererMode.value = 'modern'
+  window.localStorage.setItem('pokepilot.spectator.renderer', 'modern')
+  window.localStorage.setItem('pokepilot.spectator.theme', resolved.theme.id)
+}
+
+function onThemeSelect(event: Event): void {
+  const target = event.target as HTMLSelectElement | null
+  if (target) setTheme(target.value)
+}
+
+async function loadSemanticReplay(runID: string): Promise<void> {
+  semanticAbort?.abort()
+  semanticAbort = null
+  semanticTimeline.value = null
+  semanticState.value = null
+  semanticError.value = ''
+  semanticStatus.value = runID ? 'loading' : 'idle'
+  lastSemanticSampleAt = -1
+  if (!runID) return
+
+  const controller = new AbortController()
+  semanticAbort = controller
+  try {
+    const timeline = await getSpectatorSemanticReplay(runID, controller.signal)
+    if (controller.signal.aborted || selectedRun.value?.run_id !== runID) return
+    semanticTimeline.value = timeline
+    semanticStatus.value = 'ready'
+    syncPlaybackState(true)
+  } catch (cause) {
+    if (controller.signal.aborted) return
+    semanticStatus.value = 'error'
+    semanticError.value = cause instanceof Error ? cause.message : 'Semantic replay unavailable'
+  } finally {
+    if (semanticAbort === controller) semanticAbort = null
+  }
+}
+
+function syncPlaybackState(force = false): void {
+  const video = videoRef.value
+  if (video) {
+    currentTime.value = Number.isFinite(video.currentTime) ? video.currentTime : 0
+    if (Number.isFinite(video.duration) && video.duration > 0) videoDuration.value = video.duration
+  }
+  const timeline = semanticTimeline.value
+  const atMS = Math.max(0, currentTime.value * 1000)
+  const sample = semanticReplaySampleAtMS(timeline, atMS)
+  if (!sample) {
+    semanticState.value = null
+    lastSemanticSampleAt = -1
+    return
+  }
+  if (!force && sample.at_ms === lastSemanticSampleAt) return
+  lastSemanticSampleAt = sample.at_ms
+  semanticState.value = semanticReplayStateAtMS(timeline, atMS)
+}
+
+function stopPlaybackClock(): void {
+  if (playbackRAF) cancelAnimationFrame(playbackRAF)
+  playbackRAF = 0
+}
+
+function playbackTick(): void {
+  syncPlaybackState()
+  const video = videoRef.value
+  if (video && !video.paused && !video.ended) {
+    playbackRAF = requestAnimationFrame(playbackTick)
+  } else {
+    playbackRAF = 0
+  }
+}
+
+function startPlaybackClock(): void {
+  stopPlaybackClock()
+  playbackRAF = requestAnimationFrame(playbackTick)
+}
+
 function onCanPlay(): void {
   if (videoRef.value) videoRef.value.playbackRate = playbackRate.value
+  syncPlaybackState(true)
+}
+
+function onLoadedMetadata(): void {
+  if (videoRef.value && Number.isFinite(videoRef.value.duration)) videoDuration.value = videoRef.value.duration
+  syncPlaybackState(true)
+}
+
+function onPlay(): void {
+  playing.value = true
+  startPlaybackClock()
+}
+
+function onPause(): void {
+  playing.value = false
+  stopPlaybackClock()
+  syncPlaybackState(true)
+}
+
+function onEnded(): void {
+  playing.value = false
+  stopPlaybackClock()
+  syncPlaybackState(true)
+}
+
+function onTimeUpdate(): void {
+  syncPlaybackState()
+}
+
+function togglePlayback(): void {
+  const video = videoRef.value
+  if (!video) return
+  if (video.paused) void video.play()
+  else video.pause()
+}
+
+function seekPlayback(event: Event): void {
+  const target = event.target as HTMLInputElement | null
+  const video = videoRef.value
+  if (!target || !video) return
+  const next = Number(target.value)
+  if (!Number.isFinite(next)) return
+  video.currentTime = next
+  currentTime.value = next
+  syncPlaybackState(true)
+}
+
+function formatPlaybackTime(seconds: number): string {
+  const safe = Math.max(0, Number.isFinite(seconds) ? seconds : 0)
+  const total = Math.floor(safe)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const secs = total % 60
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    : `${minutes}:${String(secs).padStart(2, '0')}`
 }
 
 async function copyReplayLink(): Promise<void> {
@@ -137,7 +328,11 @@ async function copyReplayLink(): Promise<void> {
 }
 
 onMounted(() => window.addEventListener('popstate', syncPath))
-onBeforeUnmount(() => window.removeEventListener('popstate', syncPath))
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', syncPath)
+  semanticAbort?.abort()
+  stopPlaybackClock()
+})
 </script>
 
 <template>
@@ -173,14 +368,69 @@ onBeforeUnmount(() => window.removeEventListener('popstate', syncPath))
           <video
             ref="videoRef"
             :key="selectedRun.run_id"
-            class="replay-player"
+            :class="['replay-player', { 'semantic-video-clock': showModern }]"
             :src="selectedVideoURL"
-            controls
+            :controls="!showModern"
             playsinline
             preload="metadata"
             @canplay="onCanPlay"
+            @loadedmetadata="onLoadedMetadata"
+            @timeupdate="onTimeUpdate"
+            @seeked="() => syncPlaybackState(true)"
+            @play="onPlay"
+            @pause="onPause"
+            @ended="onEnded"
           />
-          <label class="speed-control">Speed
+          <ModernSceneRenderer
+            v-if="showModern && semanticState"
+            :state="semanticState"
+            :theme="activeTheme"
+          />
+
+          <div class="renderer-controls" aria-label="Replay renderer controls">
+            <div class="renderer-switch">
+              <button
+                type="button"
+                :class="{ active: rendererMode === 'modern' }"
+                @click="setRendererMode('modern')"
+              >Modern</button>
+              <button
+                type="button"
+                :class="{ active: rendererMode === 'classic' }"
+                @click="setRendererMode('classic')"
+              >Classic</button>
+            </div>
+            <label v-if="rendererMode === 'modern'" class="theme-control">Theme
+              <select :value="selectedThemeID" @change="onThemeSelect">
+                <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.name }}</option>
+              </select>
+            </label>
+          </div>
+
+          <div v-if="showModern" class="semantic-transport">
+            <button type="button" @click="togglePlayback">{{ playing ? 'Pause' : 'Play' }}</button>
+            <input
+              type="range"
+              min="0"
+              :max="Math.max(videoDuration, currentTime, 0.01)"
+              step="0.05"
+              :value="currentTime"
+              aria-label="Replay position"
+              @input="seekPlayback"
+            >
+            <span>{{ formatPlaybackTime(currentTime) }} / {{ formatPlaybackTime(videoDuration) }}</span>
+            <label>Speed
+              <select v-model.number="playbackRate">
+                <option :value="1">1×</option>
+                <option :value="2">2×</option>
+                <option :value="4">4×</option>
+                <option :value="8">8×</option>
+                <option :value="16">16×</option>
+              </select>
+            </label>
+          </div>
+
+          <label v-if="!showModern" class="speed-control">Speed
             <select v-model.number="playbackRate">
               <option :value="1">1×</option>
               <option :value="2">2×</option>
@@ -189,6 +439,8 @@ onBeforeUnmount(() => window.removeEventListener('popstate', syncPath))
               <option :value="16">16×</option>
             </select>
           </label>
+          <div v-if="modernFallbackLabel" class="renderer-notice">{{ modernFallbackLabel }}</div>
+          <div v-if="themeNotice && rendererMode === 'modern'" class="theme-notice">{{ themeNotice }}</div>
         </div>
       </div>
 
@@ -302,8 +554,21 @@ h2 { margin: 0; font-size: clamp(20px, 3vw, 30px); letter-spacing: -.025em; }
 .chip.accent, .result-pill { color: #ffd84a; border-color: rgba(255,216,74,.3); background: rgba(255,216,74,.07); }
 .player-wrap { position: relative; min-height: 320px; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; overflow: hidden; background: #04070d; display: grid; place-items: center; }
 .replay-player { width: 100%; max-height: 650px; aspect-ratio: 160 / 144; object-fit: contain; background: #04070d; }
+.semantic-video-clock { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
 .speed-control { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(4,7,13,.86); color: #aab8d3; font-size: 11px; font-weight: 750; }
-.speed-control select { border: 0; background: #111a2d; color: white; border-radius: 6px; padding: 2px 4px; }
+.speed-control select, .theme-control select, .semantic-transport select { border: 0; background: #111a2d; color: white; border-radius: 6px; padding: 2px 4px; }
+.renderer-controls { position: absolute; z-index: 5; top: 12px; left: 12px; display: flex; align-items: center; gap: 8px; }
+.renderer-switch { display: flex; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(4,7,13,.86); }
+.renderer-switch button { border: 0; background: transparent; color: #8999b8; padding: 6px 9px; font: inherit; font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
+.renderer-switch button.active { background: rgba(103,232,249,.15); color: #cffafe; }
+.theme-control { display: flex; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(4,7,13,.86); color: #aab8d3; font-size: 10px; font-weight: 800; }
+.semantic-transport { position: absolute; z-index: 6; right: 12px; bottom: 12px; left: 12px; display: grid; grid-template-columns: auto minmax(80px,1fr) auto auto; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(4,7,13,.88); color: #b7c3dc; font-size: 11px; backdrop-filter: blur(8px); }
+.semantic-transport button { border: 0; border-radius: 8px; background: rgba(255,255,255,.1); color: white; padding: 5px 9px; font: inherit; font-weight: 800; cursor: pointer; }
+.semantic-transport input[type="range"] { width: 100%; }
+.semantic-transport label { display: flex; align-items: center; gap: 5px; font-weight: 800; }
+.renderer-notice, .theme-notice { position: absolute; z-index: 7; right: 12px; max-width: min(320px,70%); padding: 5px 8px; border-radius: 8px; background: rgba(4,7,13,.88); font-size: 10px; }
+.renderer-notice { bottom: 12px; color: #ffd67a; }
+.theme-notice { top: 52px; color: #ffd67a; }
 .viewer-stats { display: grid; align-content: start; gap: 8px; }
 .viewer-stats div { padding: 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(255,255,255,.025); }
 .viewer-stats span, .card-metrics small { display: block; color: #8393b4; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
