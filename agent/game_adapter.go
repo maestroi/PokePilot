@@ -25,7 +25,14 @@ type ObjectiveGameAdapter interface {
 	CaptureFailure(Objective, error) error
 }
 
-// executeObjectiveWithAdapter is the agent-facing transaction boundary. The
+// ExecuteWithAdapter is the game-agnostic objective transaction entrypoint.
+// Callers bind the active game's adapter outside the generic runtime; no
+// emulator, ROM, native map ids, or game-owned skills are needed here.
+func ExecuteWithAdapter(a ObjectiveGameAdapter, o Objective) (ObjectiveResult, error) {
+	return executeObjectiveWithAdapter(a, o)
+}
+
+// executeObjectiveWithAdapter is the internal transaction boundary. The
 // portable game package owns lifecycle ordering; this layer attaches the game
 // adapter's normalized failure record while preserving the native error for
 // diagnostics and forensics.
@@ -103,9 +110,16 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 	}
 	if retErr != nil {
 		attachNormalizedFailure(a, &result, failurePhase, failureNative, tx.Final)
+		// A story/compound objective may own a battle without returning battle
+		// evidence directly. If an otherwise unknown failure visibly ended in a
+		// Pokemon Center respawn, recover that gameplay outcome here so every
+		// objective kind gets the same combat-loss policy.
+		promoteDefeatRespawnFailure(&result, tx.Initial, tx.Final)
 	}
 	result = finalizeObjectiveResult(o, result, tx.Final, retErr)
-	if retErr != nil {
+	// CaptureFailure saves emulator state. A poisoned machine still holds the
+	// frame lock inside the stalled step, so a save here deadlocks the worker.
+	if retErr != nil && !errors.Is(retErr, gameruntime.ErrMachineUnusable) {
 		reportObjectiveCaptureFailure(a, o, retErr)
 	}
 	return result, retErr
@@ -116,6 +130,20 @@ func attachNormalizedFailure(a ObjectiveGameAdapter, result *ObjectiveResult, ph
 		return
 	}
 	failure := a.NormalizeFailure(phase, err, final)
+	if result.Battle != nil && !result.Battle.Won {
+		failure.Class = gameruntime.FailureClassBlocked
+		failure.Recoverable = true
+		failure.Context = nil
+		if result.Battle.Encounter != "" {
+			failure.Context = []string{result.Battle.Encounter}
+		}
+		if result.Battle.Result == "lost" {
+			failure.Cause = failureCauseCombatDefeat
+		} else {
+			failure.Cause = failureCauseCombatNotWon
+		}
+		result.Outcome = OutcomeBlocked
+	}
 	// Some adapter-owned actions can provide a stronger semantic outcome than
 	// the native error type alone (for example a resolved-but-lost gym battle).
 	// Keep that evidence when normalization has only an unknown fallback.

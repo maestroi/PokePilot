@@ -60,10 +60,11 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 	}
 	known.Failed(gym, loss)
 
-	key := gymLossFailureKey("pewter gym")
+	key := combatLossFailureKey(gym)
 	if got := known.Failures[key]; got.Times != 1 {
-		t.Fatalf("scoped gym failure = %+v, want one failure under %q", got, key)
+		t.Fatalf("scoped combat failure = %+v, want one generic failure under %q", got, key)
 	}
+	assertNoLegacyCombatWriterModes(t, known)
 	if _, ok := offeredGym(pewter, known); ok {
 		t.Fatal("Pewter Gym offered immediately after losing to Brock with unchanged progression")
 	}
@@ -104,6 +105,25 @@ func TestGymLossRequiresTrainingBeforeRechallenge(t *testing.T) {
 	}
 }
 
+// A retry-ready marker withholds Train only while that retry is offered.
+// Farm run-37cujg278a7w8s2dlpbnqu2jb kept an early Viridian Center retry
+// marker, lost the Champion later, and then ping-ponged between the League
+// and its best training area forever because every Train offer was filtered.
+func TestUnofferedCombatRetryDoesNotStarveTraining(t *testing.T) {
+	known := NewKnowledge(nil)
+	heal := Objective{Kind: KindHeal, Place: "viridian pokemon center"}
+	known.Failures[combatRetryReadyKey(heal)] = Failure{Objective: heal.String(), Times: 1}
+	champion := Objective{Kind: KindProgress, Progress: "league_champion_defeated"}
+	known.Failures[combatLossFailureKey(champion)] = Failure{Objective: champion.String(), Times: 1, ReadinessBaseline: 285, ReadinessTarget: 305}
+
+	if !hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}}, known), KindTrain) {
+		t.Fatal("an unoffered retry marker blocked Train while combat preparation still needs readiness")
+	}
+	if hasKind(filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 25}, heal}, known), KindTrain) {
+		t.Fatal("an offered retry should still take precedence over another Train rung")
+	}
+}
+
 // TestGymRetryDueWithholdsFurtherTraining pins the live runaway shown by the
 // spectator run: after Brock had already proved the party too weak, the model
 // kept selecting two-level Train rungs until Ivysaur reached L22 while badge
@@ -115,7 +135,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
 	known.Done(Objective{Kind: KindTrain, Level: 11})
 
-	out := filterTrainerLossBlocked([]Objective{
+	out := filterCombatRecoveryBlocked([]Objective{
 		{Kind: KindTrain, Level: 13},
 		{Kind: KindGoTo, Place: "pewter gym"},
 		gym,
@@ -127,7 +147,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	for _, o := range out {
 		switch {
 		case o.Kind == KindGoTo && o.Place == "pewter gym":
-			sawJourney = strings.Contains(o.Note, "gym retry")
+			sawJourney = strings.Contains(o.Note, "retry due")
 		case o.Kind == KindGym:
 			sawGym = strings.Contains(o.Note, "retry due")
 		}
@@ -140,7 +160,7 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	// the last rung was insufficient, so exactly the normal training path is
 	// legal again.
 	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
-	out = filterTrainerLossBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, known)
+	out = filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, known)
 	if !hasKind(out, KindTrain) {
 		t.Fatal("Train stayed blocked after the due gym retry was attempted and lost")
 	}
@@ -151,11 +171,11 @@ func TestGymRetryDueWithholdsFurtherTraining(t *testing.T) {
 	// The next successful rung restores retry-due; a successful gym then
 	// consumes the ordinary ready marker through Knowledge.Done.
 	known.Done(Objective{Kind: KindTrain, Level: 13})
-	if _, ok := gymRetryPending(known); !ok {
+	if !combatRetryKeys(known)[combatRecoveryObjective(gym).Key()] {
 		t.Fatal("second successful rung did not restore gym retry-due state")
 	}
 	known.Done(gym)
-	if _, ok := gymRetryPending(known); ok {
+	if combatRetryKeys(known)[combatRecoveryObjective(gym).Key()] {
 		t.Fatal("successful gym challenge left stale retry-due state behind")
 	}
 }
@@ -347,10 +367,10 @@ func TestGymLossGateSurvivesCheckpointMemory(t *testing.T) {
 		t.Fatalf("write retry-ready memory: %v", err)
 	}
 	ready := LoadCheckpointMemory(statePath2, nil, nil)
-	if _, ok := gymRetryPending(ready.Knowledge); !ok {
+	if !combatRetryKeys(ready.Knowledge)[combatRecoveryObjective(gym).Key()] {
 		t.Fatal("checkpoint resume forgot the trained gym retry-due state")
 	}
-	out := filterTrainerLossBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, ready.Knowledge)
+	out := filterCombatRecoveryBlocked([]Objective{{Kind: KindTrain, Level: 13}, gym}, ready.Knowledge)
 	if hasKind(out, KindTrain) {
 		t.Fatal("resumed retry-due state allowed another Train rung")
 	}

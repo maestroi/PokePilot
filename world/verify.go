@@ -81,6 +81,8 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 				}
 			}
 
+			out.Execution = validationExecutionEvidence(g, edge)
+
 			if transition, ok := transitions[edge]; ok {
 				requires := make([]worldverify.CapabilityID, 0, len(transition.Requires))
 				for _, capability := range transition.Requires {
@@ -99,15 +101,119 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 					out.Exit.Known = false
 					out.Entry.Known = false
 				}
+				if !transition.Gate {
+					out.Execution = &worldverify.ExecutionEvidence{
+						Status: worldverify.ExecutionDynamicUnknown,
+						Reason: "semantic action changes traversal or landing topology; execute and rebuild live geometry",
+					}
+				}
 			}
 			snapshot.Edges = append(snapshot.Edges, out)
 		}
 	}
 
+	for _, failure := range g.ParseFailures() {
+		snapshot.MapParseDiagnostics = append(snapshot.MapParseDiagnostics, worldverify.MapParseDiagnostic{
+			Map:    validationMapID(failure.MapID),
+			Error:  failure.Err.Error(),
+			Reason: failure.Reason,
+		})
+	}
 	for _, start := range starts {
 		snapshot.StartMaps = append(snapshot.StartMaps, validationMapID(start))
 	}
 	return snapshot
+}
+
+func validationExecutionEvidence(g *Graph, edge Edge) *worldverify.ExecutionEvidence {
+	if g == nil || !g.componentAware || g.comps[edge.From] == nil || g.comps[edge.To] == nil {
+		return &worldverify.ExecutionEvidence{
+			Status: worldverify.ExecutionDynamicUnknown,
+			Reason: "static collision geometry unavailable",
+		}
+	}
+	if g.provider != nil {
+		if _, ok := g.provider.ElevatorFloorForDestination(edge.From, edge.To); ok {
+			return &worldverify.ExecutionEvidence{
+				Status: worldverify.ExecutionDynamicUnknown,
+				Reason: "elevator destination is selected by runtime menu/script state",
+			}
+		}
+	}
+
+	evidence := &worldverify.ExecutionEvidence{Status: worldverify.ExecutionProven}
+	switch edge.Kind {
+	case EdgeWarp:
+		active := false
+		for _, warp := range g.warps[edge.From] {
+			if warp.X == edge.WarpX && warp.Y == edge.WarpY && !warp.Inert {
+				active = true
+				break
+			}
+		}
+		if !active {
+			return evidence
+		}
+		dx, dy, ok := g.destWarpTile(edge)
+		if !ok {
+			return evidence
+		}
+		entry := standingComponentAt(g, edge.To, dx, dy)
+		if len(entry) == 0 {
+			return evidence
+		}
+		seen := map[int]bool{}
+		for _, delta := range [][2]int{{0, -1}, {-1, 0}, {1, 0}, {0, 1}} {
+			sx, sy := int(edge.WarpX)+delta[0], int(edge.WarpY)+delta[1]
+			for _, component := range standingComponentAt(g, edge.From, sx, sy) {
+				if component <= 0 || seen[component] {
+					continue
+				}
+				seen[component] = true
+				evidence.Paths = append(evidence.Paths, worldverify.ExecutionPath{
+					ExitComponent:  component,
+					EntryComponent: entry[0],
+					ExitPoint:      worldverify.Point{X: int(edge.WarpX), Y: int(edge.WarpY)},
+					EntryPoint:     worldverify.Point{X: dx, Y: dy},
+				})
+			}
+		}
+	case EdgeConnection:
+		connection, ok := g.connections[edge]
+		if !ok {
+			return evidence
+		}
+		src, dst := g.tiles[edge.From], g.tiles[edge.To]
+		n := src.w
+		if edge.Dir >= dirWest {
+			n = src.h
+		}
+		start, end := connectionBandRange(edge, n)
+		for i := start; i <= end; i++ {
+			sx, sy, tx, ty := g.connectionSeamTile(edge, connection, i)
+			if sx < 0 || sy < 0 || sx >= src.w || sy >= src.h ||
+				tx < 0 || ty < 0 || tx >= dst.w || ty >= dst.h {
+				continue
+			}
+			exit := standingComponentAt(g, edge.From, sx, sy)
+			entry := standingComponentAt(g, edge.To, tx, ty)
+			if len(exit) == 0 || len(entry) == 0 {
+				continue
+			}
+			evidence.Paths = append(evidence.Paths, worldverify.ExecutionPath{
+				ExitComponent:  exit[0],
+				EntryComponent: entry[0],
+				ExitPoint:      worldverify.Point{X: sx, Y: sy},
+				EntryPoint:     worldverify.Point{X: tx, Y: ty},
+			})
+		}
+	default:
+		return &worldverify.ExecutionEvidence{
+			Status: worldverify.ExecutionDynamicUnknown,
+			Reason: "edge kind has no static local-navigation proof",
+		}
+	}
+	return evidence
 }
 
 // VerifyGraph performs the portable structural and capability-state checks for

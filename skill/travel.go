@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -18,13 +19,27 @@ type Replan struct {
 	X, Y uint8
 }
 
+// EmergencyEgress records a navigation failure that Travel recovered from by
+// deliberately returning to a known-safe landing. Detail preserves the
+// original pathing error (including its transition trace) so a successful run
+// does not hide the defect that made recovery necessary.
+type EmergencyEgress struct {
+	Cause   string
+	Method  string
+	Detail  string
+	From    Replan
+	Landing Replan
+}
+
 // TravelResult reports what happened on the way.
 type TravelResult struct {
-	Battles    int      // wild encounters fought
-	Flees      int      // wild encounters fled (S8-7's fight/flee policy)
-	Dialogues  int      // text boxes recovered on the way
-	BlackedOut bool     // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
-	Replans    []Replan // one entry per engagement, in order resolved
+	Battles           int               // wild encounters fought
+	Flees             int               // wild encounters fled (S8-7's fight/flee policy)
+	Dialogues         int               // text boxes recovered on the way
+	BlackedOut        bool              // the journey ended in a blackout (a lost battle, or the last mon fainted out of poison)
+	TrainerDefeat     bool              // that blackout was specifically a lost trainer battle
+	Replans           []Replan          // one entry per engagement, in order resolved
+	EmergencyEgresses []EmergencyEgress // pathing stalls escaped to safety, in occurrence order
 }
 
 // battleResolution is the outcome of resolving one interrupting battle under
@@ -92,17 +107,46 @@ func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattl
 // knowledge that the party lost — not a silent continue.
 var ErrBlackedOut = errors.New("skill: Travel: blacked out")
 
-// ErrTrainerBlackedOut is the narrower class for a blackout caused by losing
-// a mandatory trainer battle. It unwraps to ErrBlackedOut so every existing
-// recovery caller keeps working while the agent can distinguish the repeated
-// trainer wall from a wild loss or poison wipe.
+// ErrTrainerBlackedOut is the legacy compatibility class for a blackout caused
+// by losing a mandatory trainer battle. New Travel losses return a structured
+// RequiredBattleError that unwraps through this sentinel to ErrBlackedOut, so
+// direct callers keep errors.Is compatibility without making the sentinel the
+// semantic recovery contract.
 var ErrTrainerBlackedOut = fmt.Errorf("%w: lost trainer battle", ErrBlackedOut)
+
+// ErrEngagementsExhausted reports that Travel hit maxBattles without reaching
+// dest: the walk kept getting interrupted by wild/trainer engagements faster
+// than it could make progress toward the destination. Unlike a blackout or a
+// dialogue choice, the player is left standing in the ordinary overworld —
+// this is a controller/navigation stall, the same shape as
+// ErrNavigationStalled or ErrReplanExhausted, not an unclassified terminal
+// failure: the caller should replan from the stable boundary it is already
+// standing on rather than treat this as an unrecoverable defect. See
+// recoverableControllerFault in agent/red_failure_normalization.go.
+var ErrEngagementsExhausted = errors.New("skill: Travel: still interrupted by engagements")
+
+// ErrTextBoxLoop reports that the walk kept reopening the same text box
+// without getting past it, e.g. a coordinate script that shows its text and
+// pushes the player back off the tile. Travel cannot route around it because
+// the text belongs to the destination or the only way there; a caller with
+// alternative destinations (TalkAt choosing a side) can pick another one.
+var ErrTextBoxLoop = errors.New("looping on the same text box")
 
 func battleBlackoutError(r battleResolution) error {
 	if r.trainer {
-		return ErrTrainerBlackedOut
+		// Keep the historical sentinel through RequiredBattleError.Unwrap while
+		// making structured combat outcome the primary semantic contract.
+		return RequireTrainerBattleWin("", r.outcome)
 	}
 	return ErrBlackedOut
+}
+
+func recordTravelBattleDefeat(res *TravelResult, r battleResolution) error {
+	if res != nil {
+		res.BlackedOut = true
+		res.TrainerDefeat = r.trainer
+	}
+	return battleBlackoutError(r)
 }
 
 // blackoutBit is wStatusFlags4's BIT_BATTLE_OVER_OR_BLACKOUT
@@ -172,23 +216,10 @@ const maxSameBoxRepeats = 3
 // does not.
 const sameBoxStallFrames = 600
 
-// maxRouteCuts bounds field-move recovery inside one Travel call. Route 9 and
-// the Celadon Gym approach each need one tree; four leaves room for a route
-// with several legitimate gates while keeping a bad collision classification
-// from turning into an unbounded tree-clearing loop.
-const maxRouteCuts = 4
-
-// ErrNavigationStalled is included because a Cut tree the router treats as
-// "the connection itself is open, the obstacle is inside the destination
-// map" (Route 9: see red:route9_cut) has no edge of its own the pre-cut
-// static graph can honestly route around. Once inside Route 9 with the tree
-// still standing, the capability-aware planner can find only degenerate
-// routes that leave and re-enter through the same border crossing, which
-// GoTo then walks in a circle until the exact-position repeat guard fires —
-// reproduced in run-1948e1rnco3sp1y9bbhdwp7eov. That repeat is the same
-// "stuck here, tree in the way" signal ErrNoPath already triggers recovery
-// for; cutThroughReachableTree is a no-op (opened=false, original error
-// preserved) when the stall was not actually caused by a reachable tree.
+// cutRecoverableNavigationError is retained as the navigation-error
+// classification used by tests and diagnostics. Travel no longer responds to
+// this class by cutting an arbitrary nearby tree; field moves are selected by
+// destination-aware path planning instead.
 func cutRecoverableNavigationError(err error) bool {
 	return errors.Is(err, ErrLegUnwalkable) ||
 		errors.Is(err, ErrReplanExhausted) ||
@@ -196,39 +227,104 @@ func cutRecoverableNavigationError(err error) bool {
 		errors.Is(err, ErrNavigationStalled)
 }
 
-// cutAwareGoTo wraps one Travel journey's GoTo attempts. Only a terminal
-// static-path failure is eligible for CUT recovery; battles and dialogue are
-// returned immediately to travel's existing resolvers. If the current map has
-// a real reachable Cut tree and the party can legally use Cut, the tree is
-// removed and the player steps onto the cleared cell before GoTo replans.
-// Otherwise the original navigation error is preserved verbatim.
+// cutAwareGoTo keeps Travel's journey-scoped navigation memory and semantic
+// transition executor. The historical name remains for callers, but generic
+// "navigation failed -> cut the nearest reachable tree" recovery is gone:
+// Cut and Surf are now selected by local capability-aware path planning, while
+// cross-map field gates remain owned by explicit semantic transitions.
 func cutAwareGoTo(m *emu.Emu, romData []byte, dest Destination, policies ...MovePolicy) func() error {
 	var policy MovePolicy
 	if len(policies) > 0 {
 		policy = policies[0]
 	}
 	executor := newRedRouteTransitionExecutor(m, romData, policy)
-	cuts := 0
+	// nav is shared across every call this closure makes for the rest of the
+	// journey: Travel's retry loop invokes this closure again after each
+	// resolved battle/dialogue, so learned bounce/dead-end facts must survive.
+	nav := newNavigationMemory()
+	nav.policy = policy
+	return func() error {
+		return goToWithTransitionExecutorMemory(m, romData, dest, executor, nav)
+	}
+}
+
+const maxEmergencyEgressesPerJourney = 1
+
+func emergencyEgressCause(err error) string {
+	switch {
+	case errors.Is(err, ErrNavigationStalled):
+		return "navigation_stalled"
+	case errors.Is(err, ErrReplanExhausted):
+		return "route_replan_exhausted"
+	case errors.Is(err, world.ErrNoRoute):
+		// GoTo only reaches this after its own in-map recovery (field-path
+		// bridging, component restaging) has already failed, so a bare
+		// world.ErrNoRoute here means the player's current walkable
+		// component has no graph edge out at all — e.g. a one-way ledge
+		// dropped them into a pocket whose only warp loops back into itself
+		// (measured on Vermilion City (12,23), issue #1553: every
+		// destination, not just the one being routed to, came back
+		// unroutable). Walking can never recover from a component with zero
+		// outgoing edges; the same emergency egress that already rescues a
+		// stalled/exhausted journey is equally the fix here.
+		return "no_route"
+	default:
+		return ""
+	}
+}
+
+// recoveringGoTo adds one bounded resilience step around ordinary journey
+// navigation. A controller-confirmed cycle/exhaustion may evacuate to the last
+// safe healing landing, then the entire GoTo navigation memory is rebuilt from
+// that landing. This is intentionally one-shot per Travel call: if the fresh
+// route stalls again, the real pathing error is returned to the agent instead
+// of hiding a persistent defect behind repeated escapes.
+func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, recovered *[]EmergencyEgress) func() error {
+	goTo := cutAwareGoTo(m, romData, dest, policy)
+	egresses := 0
 	return func() error {
 		for {
-			err := goToWithTransitionExecutor(m, romData, dest, executor)
-			if err == nil || errors.Is(err, ErrBattle) || errors.Is(err, ErrDialogueInterrupted) {
+			err := goTo()
+			if err == nil {
+				return nil
+			}
+			cause := emergencyEgressCause(err)
+			if cause == "" || egresses >= maxEmergencyEgressesPerJourney || m == nil {
 				return err
 			}
-			if cuts >= maxRouteCuts || !cutRecoverableNavigationError(err) {
+
+			from, worldErr := currentWorld(m)
+			if worldErr != nil {
+				return worldErr
+			}
+			choice, ok, egressErr := executeEmergencyEgress(m)
+			if !ok {
 				return err
 			}
-			opened, cutErr := cutThroughReachableTree(m, romData)
-			if cutErr != nil {
-				if errors.Is(cutErr, ErrBattle) || errors.Is(cutErr, ErrDialogueInterrupted) {
-					return cutErr
-				}
-				return fmt.Errorf("skill: Travel: Cut recovery after %v: %w", err, cutErr)
+			egresses++
+			if egressErr != nil {
+				return fmt.Errorf("%w; emergency egress via %s from map %#02x at (%d,%d) failed: %v",
+					err, choice.Method.String(), from.Map, from.X, from.Y, egressErr)
 			}
-			if !opened {
-				return err
+
+			landing, worldErr := currentWorld(m)
+			if worldErr != nil {
+				return worldErr
 			}
-			cuts++
+			if recovered != nil {
+				*recovered = append(*recovered, EmergencyEgress{
+					Cause:   cause,
+					Method:  choice.Method.String(),
+					Detail:  err.Error(),
+					From:    from,
+					Landing: landing,
+				})
+			}
+
+			// The old guard/dead-end/banned-leg memory describes the map graph
+			// before the forced warp. Rebuild it rather than carrying stale
+			// local evidence across the emergency transition.
+			goTo = cutAwareGoTo(m, romData, dest, policy)
 		}
 	}
 }
@@ -263,12 +359,24 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: Travel: maxBattles must be > 0, got %d", maxBattles)
 	}
-	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest, policy),
+	if err := leaveSafariSessionFor(m, romData, dest, policy); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: Travel: %w", err)
+	}
+	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: Travel: fast travel: %w", err)
+	} else if used {
+		// The verified shortcut may be an intermediate landing. Ordinary GoTo
+		// below owns the entire remaining route to the requested exact tile.
+	}
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxBattles,
+		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fightOnly(m, policy),
 	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
 // TravelFlee is Travel with S8-7's fight/flee policy: wild encounters are
@@ -284,49 +392,100 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // healed at a center, and re-planning from the respawn spot is the caller's
 // decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
-	return travel(m, policy, maxBattles,
-		cutAwareGoTo(m, romData, dest, policy),
+	if maxBattles <= 0 {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: maxBattles must be > 0, got %d", maxBattles)
+	}
+	if err := leaveSafariSessionFor(m, romData, dest, policy); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: %w", err)
+	}
+	if used, err := maybeUseFastTravel(m, romData, dest); err != nil {
+		return TravelResult{}, fmt.Errorf("skill: TravelFlee: fast travel: %w", err)
+	} else if used {
+		// Continue with the flee-first journey from the verified shortcut
+		// landing, which may be an intermediate town/center.
+	}
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxBattles,
+		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
 		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
 	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
-// travel is the retry loop: walk, resolve what interrupted the walk, walk
-// again. goTo, recoverBox and blackout are the resolvers; Travel wires them
-// to GoTo/Cut recovery, RecoverDialogue and the wStatusFlags4 blackout bit,
-// and the tests drive the loop with fakes instead of an emulator.
+// travel is Travel's instance of the shared interruption loop: goTo is the
+// resumable action, and recoverBox/blackout/resolveBattle are the resolvers.
+// Travel wires them to GoTo/Cut recovery, RecoverDialogue and the
+// wStatusFlags4 blackout bit, and the tests drive the loop with fakes instead
+// of an emulator.
 func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, recoverBox func() DialogueRecoveryResult, blackout func() bool, resolveBattle resolveBattle) (TravelResult, error) {
+	return runInterruptions(m, maxBattles, goTo, interruptionResolvers{
+		recoverBox:    recoverBox,
+		blackout:      blackout,
+		resolveBattle: resolveBattle,
+	})
+}
+
+// runInterruptions is the one retry loop behind Travel and RunInterruptible:
+// run the action, resolve what interrupted it, run the action again. The
+// action is re-entered from scratch after every resolution, so it must
+// re-observe the world and re-plan rather than resume stale local geometry.
+func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interruptionResolvers) (TravelResult, error) {
+	var err error
+	r, err = r.withWorldDefaults(m)
+	if err != nil {
+		return TravelResult{}, err
+	}
 	var res TravelResult
+	label := r.label
+	if label == "" {
+		label = "Travel"
+	}
 	var lastBoxText string
 	var lastBoxFrame uint64
 	var sameBoxRepeats int
 	for {
-		err := goTo()
+		err := normalizeInterruption(action())
 		if err == nil {
 			return res, nil
 		}
 		switch {
+		case errors.Is(err, ErrBlackedOut):
+			// A fainted party blackouts on the next counted step, before any
+			// battle starts. GoTo/Traverse used to read HandleBlackOut's
+			// respawn as a wrong-map warp arrival (unknown_failure). The
+			// respawn has already settled; surface it as the blackout it is.
+			res.BlackedOut = true
+			return res, err
 		case errors.Is(err, ErrBattle):
 			// The bound is on engagements (fights and flees alike): it caps how
 			// long the walk may be interrupted, whatever the policy does with each
 			// encounter.
 			if res.Battles+res.Flees >= maxBattles {
-				return res, fmt.Errorf("skill: Travel: still interrupted after %d engagement(s) (maxBattles): %v",
-					maxBattles, err)
+				return res, fmt.Errorf("skill: %s: still interrupted after %d engagement(s) (maxBattles): %w: %v",
+					label, maxBattles, ErrEngagementsExhausted, err)
 			}
-			pre := currentWorld(m)
-			r, berr := resolveBattle()
+			pre, observeErr := r.observe()
+			if observeErr != nil {
+				return res, fmt.Errorf("skill: %s: observe world before battle: %w", label, observeErr)
+			}
+			br, berr := r.resolveBattle()
 			if berr != nil {
-				return res, fmt.Errorf("skill: Travel: battle %d: %w", res.Battles+res.Flees+1, berr)
+				return res, fmt.Errorf("skill: %s: battle %d: %w", label, res.Battles+res.Flees+1, berr)
 			}
-			if r.fled {
+			if br.fled {
 				res.Flees++
 			} else {
 				res.Battles++
 			}
-			lost := r.outcome == state.ResultLost
-			res.Replans = append(res.Replans, settleWorld(m, pre, lost))
+			lost := br.outcome == state.ResultLost
+			settled, settleErr := r.settle(pre, lost)
+			if settleErr != nil {
+				return res, fmt.Errorf("skill: %s: settle world after battle: %w", label, settleErr)
+			}
+			res.Replans = append(res.Replans, settled)
 			if lost {
 				// A blackout ends the journey. Losing was once a silent
 				// continue — "the next pass re-plans from the Pokemon
@@ -340,16 +499,15 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// respawn spot is still the right move, but it is the
 				// caller's decision, made with the knowledge that the party
 				// lost. Trainer losses preserve that narrower cause too.
-				res.BlackedOut = true
-				return res, battleBlackoutError(r)
+				return res, recordTravelBattleDefeat(&res, br)
 			}
 		case errors.Is(err, ErrDialogueInterrupted):
 			if res.Dialogues >= maxDialogueRecoveries {
-				return res, fmt.Errorf("skill: Travel: still interrupted by a text box after %d recoveries: %v",
-					maxDialogueRecoveries, err)
+				return res, fmt.Errorf("skill: %s: still interrupted by a text box after %d recoveries: %v",
+					label, maxDialogueRecoveries, err)
 			}
 			res.Dialogues++
-			rec := recoverBox()
+			rec := r.recoverBox()
 			switch rec.Stop {
 			case DialogueChoiceRequired, DialogueMenuOpen:
 				// The choice is unanswered, or a menu is up that this layer
@@ -367,7 +525,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				if rec.Stop == DialogueChoiceRequired && routeGateChoiceText(rec.Text) && m != nil {
 					answered, aerr := AnswerKnownRouteGate(m)
 					if aerr != nil {
-						return res, fmt.Errorf("skill: Travel: %w", aerr)
+						return res, fmt.Errorf("skill: %s: %w", label, aerr)
 					}
 					if answered {
 						continue
@@ -378,7 +536,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 				// The box did not clear within the budget and is still up,
 				// so retrying would only meet it again. Report it with the
 				// text that was on screen.
-				return res, fmt.Errorf("skill: Travel: text box did not clear within the recovery budget: %q", rec.Text)
+				return res, fmt.Errorf("skill: %s: text box did not clear within the recovery budget: %q", label, rec.Text)
 			case DialogueRecovered:
 				if knownClosedRouteGateText(rec.LastText) {
 					// The guard's notice already closed (it is never a
@@ -389,7 +547,7 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 					// recoveries on "still interrupted by a text box".
 					return res, &ErrRouteGateClosed{Text: rec.LastText}
 				}
-				if blk := blackout(); blk {
+				if blk := r.blackout(); blk {
 					// The box that just closed was the blackout's own text:
 					// poison fainted the last mon out of it while walking.
 					// That is not a battle — ErrBattle never fired — it
@@ -424,8 +582,8 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 					}
 					lastBoxFrame = now
 					if sameBoxRepeats >= maxSameBoxRepeats {
-						return res, fmt.Errorf("skill: Travel: looping on the same text box after %d repeats: %q",
-							sameBoxRepeats, t)
+						return res, fmt.Errorf("skill: %s: %w after %d repeats: %q",
+							label, ErrTextBoxLoop, sameBoxRepeats, t)
 					}
 				}
 				// recovered: the box is closed; the next pass re-plans from
@@ -441,42 +599,78 @@ func travel(m *emu.Emu, policy MovePolicy, maxBattles int, goTo func() error, re
 	}
 }
 
-// currentWorld reads the map and tile the player stands on from RAM.
-func currentWorld(m *emu.Emu) Replan {
-	return Replan{m.Peek8(sym.CurMap), m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)}
+func replanFromOverworld(state game.OverworldState) (Replan, error) {
+	if state.NativeMapID > 0xff {
+		return Replan{}, fmt.Errorf("skill: Travel: native map id %#04x exceeds current routing range", state.NativeMapID)
+	}
+	return Replan{Map: uint8(state.NativeMapID), X: state.X, Y: state.Y}, nil
 }
 
-// settleWorld steps until the (map, x, y) triple has stood still for
-// worldStableFrames consecutive frames and returns that settled world.
-// On a loss it first waits for the map to change: a blackout lands the
-// position on the center's spawn tile before wCurMap flips, and that
-// pre-flip window is itself stable, so a plain stability wait would settle
-// on the stale map (the measured "step down blocked at (5,6)" walked a
-// 0x0C plan while on 0x00).
-func settleWorld(m *emu.Emu, pre Replan, lost bool) Replan {
+// currentWorldWithDecoder reads the semantic map and tile from the active game
+// profile. The current route graph still uses uint8 map ids, so wider native
+// ids fail explicitly until that graph is widened.
+func currentWorldWithDecoder(reader game.MemoryReader, decoder game.OverworldDecoder) (Replan, error) {
+	if decoder == nil {
+		return Replan{}, fmt.Errorf("skill: Travel: nil overworld decoder")
+	}
+	return replanFromOverworld(decoder.DecodeOverworld(reader))
+}
+
+func currentWorld(m *emu.Emu) (Replan, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Replan{}, err
+	}
+	return currentWorldWithDecoder(m, decoder)
+}
+
+// settleWorldWithDecoder steps until the semantic (map, x, y) triple has stood
+// still for worldStableFrames consecutive frames and returns that settled
+// world. On a loss it first waits for the map to change: a blackout can land
+// coordinates before the native map id flips, and that pre-flip window is
+// itself stable.
+type worldSettleMachine interface {
+	game.MemoryReader
+	StepFrame()
+}
+
+func settleWorldWithDecoder(m worldSettleMachine, decoder game.OverworldDecoder, pre Replan, lost bool) (Replan, error) {
 	if lost {
-		if _, err := m.StepUntil(worldStableBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.CurMap) != pre.Map
-		}); err != nil {
-			// ponytail: blackout transition longer than worldStableBudget ->
-			// fall through with the last read (today's behavior) rather than
-			// failing; raise worldStableBudget if that is ever measured.
+		for i := 0; i < worldStableBudget; i++ {
+			if decoder.DecodeOverworld(m).NativeMapID != uint16(pre.Map) {
+				break
+			}
+			m.StepFrame()
 		}
 	}
-	last := currentWorld(m)
+	last, err := currentWorldWithDecoder(m, decoder)
+	if err != nil {
+		return Replan{}, err
+	}
 	stable := 0
 	for i := 0; i < worldStableBudget; i++ {
 		m.StepFrame()
-		cur := currentWorld(m)
+		cur, err := currentWorldWithDecoder(m, decoder)
+		if err != nil {
+			return Replan{}, err
+		}
 		if cur == last {
 			stable++
 			if stable >= worldStableFrames {
-				return cur
+				return cur, nil
 			}
 		} else {
 			stable = 0
 		}
 		last = cur
 	}
-	return last
+	return last, nil
+}
+
+func settleWorld(m *emu.Emu, pre Replan, lost bool) (Replan, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Replan{}, err
+	}
+	return settleWorldWithDecoder(m, decoder, pre, lost)
 }

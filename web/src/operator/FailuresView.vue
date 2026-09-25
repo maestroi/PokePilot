@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ArrowPathIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, TrashIcon } from '@heroicons/vue/20/solid'
-import { deleteRun, getDashboard, getTriage, investigateTriage } from '../shared/api/client'
+import { ArrowPathIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, TrashIcon, XMarkIcon } from '@heroicons/vue/20/solid'
+import { deleteRun, dismissTriages, getDashboard, getTriage, investigateTriage } from '../shared/api/client'
 import type { TriageGroup } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
@@ -21,11 +21,15 @@ import {
 
 const investigating = ref(new Set<string>())
 const selectedKeys = ref(new Set<string>())
+const showResolved = ref(false)
 const actionError = ref('')
 const cleanupStatus = ref('')
 const cleanupBusy = ref(false)
 const cleanupTarget = ref<TriageGroup[] | null>(null)
 const cleanupCount = ref(0)
+const dismissBusy = ref(false)
+const dismissTarget = ref<TriageGroup[] | null>(null)
+const dismissStatus = ref('')
 
 const resource = usePollingResource(
   (signal) => getTriage(signal),
@@ -35,6 +39,7 @@ const resource = usePollingResource(
 const openGroups = computed(() => resource.data.value?.filter((group) => !isResolvedGroup(group)) ?? [])
 const resolvedGroups = computed(() => resource.data.value?.filter(isResolvedGroup) ?? [])
 const selectedResolved = computed(() => resolvedGroups.value.filter((group) => selectedKeys.value.has(group.key)))
+const dismissableGroups = computed(() => openGroups.value.filter((group) => group.dismissable && !group.issue))
 const allResolvedSelected = computed(() =>
   resolvedGroups.value.length > 0 && resolvedGroups.value.every((group) => selectedKeys.value.has(group.key))
 )
@@ -52,6 +57,17 @@ function issueURL(group: TriageGroup): string {
 
 function groupTitle(group: TriageGroup): string {
   return group.pattern || group.detail || group.example || group.fingerprint || group.key
+}
+
+function solverSummary(group: TriageGroup): string {
+  const attempts = group.issue?.solver_attempts || []
+  if (!attempts.length) return ''
+  const latest = attempts[attempts.length - 1]
+  const model = latest.model || latest.backend || 'unknown model'
+  const count = attempts.length
+  const state = String(latest.state || '').replace(/_/g, ' ')
+  const verified = group.issue?.verification_state === 'verified' ? ' · verified' : ''
+  return `last solver: ${model} · ${count} attempt${count === 1 ? '' : 's'}${state ? ` · ${state}` : ''}${verified}`
 }
 
 function exampleRuns(group: TriageGroup): string[] {
@@ -149,6 +165,47 @@ async function confirmCleanup(): Promise<void> {
   }
 }
 
+function dismissTitle(groups: TriageGroup[]): string {
+  return groups.length === 1 ? 'Dismiss this unlinked failure?' : `Dismiss ${groups.length} unlinked failures?`
+}
+
+function dismissMessage(groups: TriageGroup[]): string {
+  if (groups.length === 1) {
+    return 'Hide this current failure evidence from triage without deleting its run data. If the same failure happens again, it will appear again.'
+  }
+  return `Hide these ${groups.length} current failure groups from triage without deleting run data. Any future occurrence will appear again.`
+}
+
+function requestDismiss(groups: TriageGroup[]): void {
+  if (dismissBusy.value || !groups.length) return
+  actionError.value = ''
+  dismissTarget.value = groups
+}
+
+function closeDismiss(): void {
+  if (!dismissBusy.value) dismissTarget.value = null
+}
+
+async function confirmDismiss(): Promise<void> {
+  const groups = dismissTarget.value
+  if (!groups?.length || dismissBusy.value) return
+  dismissBusy.value = true
+  actionError.value = ''
+  dismissStatus.value = ''
+  try {
+    const result = await dismissTriages(groups.map((group) => group.key))
+    const dismissed = Number(result.groups || 0)
+    const skipped = result.skipped_linked?.length || 0
+    dismissStatus.value = `Dismissed ${dismissed} failure group${dismissed === 1 ? '' : 's'}${skipped ? `; skipped ${skipped} that gained an issue` : ''}. Future occurrences will reappear.`
+    dismissTarget.value = null
+    await resource.retry()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Could not dismiss failure group'
+  } finally {
+    dismissBusy.value = false
+  }
+}
+
 async function investigate(group: TriageGroup): Promise<void> {
   if (investigating.value.has(group.key)) return
   actionError.value = ''
@@ -174,6 +231,24 @@ function retry(): void {
   <div class="space-y-3">
     <Panel title="Failure triage" description="Actionable failures grouped by their normalized fingerprint, not one row per failed attempt." compact>
       <template #actions>
+        <button
+          v-if="dismissableGroups.length"
+          type="button"
+          :disabled="dismissBusy"
+          class="inline-flex items-center gap-1.5 rounded-md bg-amber-400/8 px-2.5 py-1.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/15 hover:bg-amber-400/15 disabled:cursor-wait disabled:opacity-60"
+          @click="requestDismiss(dismissableGroups)"
+        >
+          <XMarkIcon class="size-3.5" aria-hidden="true" />
+          Dismiss unlinked ({{ dismissableGroups.length }})
+        </button>
+        <button
+          v-if="resolvedGroups.length"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white"
+          @click="showResolved = !showResolved"
+        >
+          {{ showResolved ? 'Hide resolved' : `Show resolved (${resolvedGroups.length})` }}
+        </button>
         <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" @click="retry">
           <ArrowPathIcon class="size-3.5" aria-hidden="true" />
           Refresh
@@ -192,6 +267,7 @@ function retry(): void {
 
         <p v-if="actionError" class="mb-3 text-sm text-rose-300" role="alert">{{ actionError }}</p>
         <p v-if="cleanupStatus" class="mb-3 text-xs text-slate-400" aria-live="polite">{{ cleanupStatus }}</p>
+        <p v-if="dismissStatus" class="mb-3 text-xs text-slate-400" aria-live="polite">{{ dismissStatus }}</p>
 
         <div v-if="openGroups.length" class="divide-y divide-white/8">
           <article v-for="group in openGroups" :key="group.key" class="py-4 first:pt-0 last:pb-0">
@@ -200,6 +276,8 @@ function retry(): void {
                 <div class="flex flex-wrap items-center gap-2">
                   <StatusBadge tone="danger">{{ Number(group.count || 0) }} occurrence{{ Number(group.count || 0) === 1 ? '' : 's' }}</StatusBadge>
                   <StatusBadge v-if="group.issue?.issue_number" :tone="group.issue?.stale ? 'warning' : 'info'">Issue #{{ group.issue.issue_number }}</StatusBadge>
+                  <StatusBadge v-if="group.dismissable && !group.issue" tone="neutral">no issue</StatusBadge>
+                  <StatusBadge v-if="solverSummary(group)" tone="warning">{{ solverSummary(group) }}</StatusBadge>
                   <span class="font-mono text-[10px] text-slate-600">{{ group.key }}</span>
                 </div>
                 <h3 class="mt-2 break-words text-sm font-semibold leading-6 text-slate-100">{{ groupTitle(group) }}</h3>
@@ -238,6 +316,17 @@ function retry(): void {
                   Delete matching
                 </button>
                 <button
+                  v-if="group.dismissable && !group.issue"
+                  type="button"
+                  :disabled="dismissBusy"
+                  class="inline-flex items-center gap-1.5 rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                  @click="requestDismiss([group])"
+                >
+                  <XMarkIcon class="size-3.5" aria-hidden="true" />
+                  Dismiss
+                </button>
+                <button
+                  v-if="group.issue"
                   type="button"
                   :disabled="investigating.has(group.key)"
                   class="inline-flex items-center gap-1.5 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:cursor-wait disabled:opacity-60"
@@ -255,7 +344,7 @@ function retry(): void {
       </ResourceState>
     </Panel>
 
-    <Panel v-if="resolvedGroups.length" title="Resolved history" description="Already-solved issues. Select one or many, then delete every finished run that still matches that failure." compact>
+    <Panel v-if="showResolved && resolvedGroups.length" title="Resolved history" description="Already-solved issues. Select one or many, then delete every finished run that still matches that failure." compact>
       <template #actions>
         <button
           type="button"
@@ -295,6 +384,7 @@ function retry(): void {
             <div class="flex flex-wrap items-center gap-2">
               <StatusBadge v-if="group.issue?.issue_number" tone="info">Issue #{{ group.issue.issue_number }}</StatusBadge>
               <StatusBadge tone="success">resolved</StatusBadge>
+              <StatusBadge v-if="solverSummary(group)" :tone="group.issue?.verification_state === 'verified' ? 'success' : 'warning'">{{ solverSummary(group) }}</StatusBadge>
               <StatusBadge tone="neutral">{{ Number(group.count || 0) }} recorded</StatusBadge>
             </div>
             <p class="mt-1 truncate text-xs text-slate-300" :title="groupTitle(group)">{{ groupTitle(group) }}</p>
@@ -322,6 +412,16 @@ function retry(): void {
       danger
       @close="closeCleanup"
       @confirm="confirmCleanup"
+    />
+
+    <ConfirmDialog
+      :open="Boolean(dismissTarget)"
+      :title="dismissTarget ? dismissTitle(dismissTarget) : 'Dismiss failure?'"
+      :message="dismissTarget ? dismissMessage(dismissTarget) : ''"
+      :confirm-label="dismissTarget && dismissTarget.length > 1 ? `Dismiss ${dismissTarget.length} groups` : 'Dismiss group'"
+      :busy="dismissBusy"
+      @close="closeDismiss"
+      @confirm="confirmDismiss"
     />
   </div>
 </template>

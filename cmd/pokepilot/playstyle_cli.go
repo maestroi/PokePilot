@@ -11,6 +11,7 @@ import (
 // Empty values preserve historical compatibility for old scripts/commands.
 var (
 	localPlayStyle      = flag.String("play-style", "", "gameplay priorities for llm runs: speedrun, adventure, completionist, or team_builder")
+	localRunPurpose     = flag.String("run-purpose", "", "run purpose for llm runs: normal or debug_coverage")
 	localRiskTolerance  = flag.String("risk-tolerance", "", "recovery policy for llm runs: aggressive, balanced, or cautious")
 	localWildEncounters = flag.String("wild-encounters", "", "wild encounter policy for llm runs: planner or fight")
 )
@@ -20,6 +21,13 @@ func localPlayStyleName() string {
 		return ""
 	}
 	return *localPlayStyle
+}
+
+func localRunPurposeName() string {
+	if localRunPurpose == nil {
+		return ""
+	}
+	return *localRunPurpose
 }
 
 func localRiskToleranceName() string {
@@ -36,21 +44,46 @@ func localWildEncountersName() string {
 	return *localWildEncounters
 }
 
+// goalFlagProvided reports whether -goal was supplied explicitly. An explicit
+// empty -goal means Free play and must not gain a play-style default.
+func goalFlagProvided() bool {
+	provided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "goal" {
+			provided = true
+		}
+	})
+	return provided
+}
+
 // resolveLocalGoal keeps an explicitly supplied -goal authoritative. Without
 // one, an explicit play style supplies its own terminal default; a legacy
 // command with no play style retains main.go's historical elite-four default.
 func resolveLocalGoal(current string) string {
-	explicit := false
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "goal" {
-			explicit = true
-		}
-	})
-	if explicit {
+	if goalFlagProvided() {
 		return current
 	}
 	if goal := farm.DefaultGoalForPlayStyle(localPlayStyleName()); goal != "" {
 		return goal
 	}
 	return current
+}
+
+// localRunPolicy assembles the CLI-selected gameplay policy as the same value
+// type a leased Spec produces, so local runs feed the planner through one path
+// instead of reading process-global flag state inside it.
+//
+// The goal is already resolved: resolveLocalGoal applies the play-style default
+// unless -goal was supplied, and an explicit empty -goal is Free play. Marking
+// it provided here keeps that decision from being applied twice.
+func localRunPolicy(goal string) farm.RunPolicy {
+	spec := farm.Spec{
+		Planner:        "llm",
+		Goal:           farm.GoalFrom(goal),
+		PlayStyle:      localPlayStyleName(),
+		Purpose:        farm.RunPurpose(localRunPurposeName()),
+		RiskTolerance:  localRiskToleranceName(),
+		WildEncounters: localWildEncountersName(),
+	}
+	return farm.RunPolicyFor(spec)
 }

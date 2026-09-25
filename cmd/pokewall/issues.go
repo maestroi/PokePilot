@@ -519,22 +519,59 @@ func (w *Wall) runStatusSync(every time.Duration) {
 	}
 }
 
+// issueSettledRecheckEvery bounds how rarely an already-resolved issue link
+// is re-verified against GitHub. Nothing about a closed, fixed-with-revision
+// (or dismissed) issue changes on its own, so paying a GitHub call for it on
+// every 30s tick forever is pure waste: with hundreds of linked issues that
+// alone blew through GitHub's 5000/hour rate limit and starved every other
+// caller (objective-failure reporting, investigate requests) of quota.
+const issueSettledRecheckEvery = time.Hour
+
+// issueLinkSettled reports whether link's GitHub-side lifecycle is done and
+// unlikely to change: closed, and either dismissed or fixed with its fix
+// revision already recorded. A settled link still needs its local
+// auto-resume retried every tick while CircuitOpen (that gate is purely
+// local, no GitHub call involved) but does not need re-fetching.
+func issueLinkSettled(link IssueLink) bool {
+	status := strings.ToLower(strings.TrimSpace(link.Status))
+	if status == "" || issueStatusActive(status) {
+		return false
+	}
+	if ignoredResolution(strings.ToLower(strings.TrimSpace(link.Resolution))) {
+		return true
+	}
+	return issueFixedForVerification(link)
+}
+
 func (w *Wall) syncIssueStatuses() {
 	c := w.issueClient()
 	if c == nil {
 		return
 	}
+	now := time.Now()
 	w.mu.Lock()
 	ids := make([]IssueLink, 0, len(w.issueLinks))
 	keys := make([]string, 0, len(w.issueLinks))
+	var settledRetryKeys []string
+	var settledRetryLinks []IssueLink
 	for k, v := range w.issueLinks {
 		if v.IssueID == "" {
+			continue
+		}
+		if issueLinkSettled(v) && now.Sub(time.Unix(v.UpdatedAt, 0)) < issueSettledRecheckEvery {
+			if v.CircuitOpen {
+				settledRetryKeys = append(settledRetryKeys, k)
+				settledRetryLinks = append(settledRetryLinks, v)
+			}
 			continue
 		}
 		keys = append(keys, k)
 		ids = append(ids, v)
 	}
 	w.mu.Unlock()
+	for i, key := range settledRetryKeys {
+		w.maybeResumeCircuitCanary(key, settledRetryLinks[i])
+	}
 	for i, link := range ids {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultIssueTimeout)
 		got, err := c.GetIssue(ctx, link.IssueID)
@@ -560,6 +597,7 @@ func (w *Wall) syncIssueStatuses() {
 		cur.UpdatedAt = time.Now().Unix()
 		w.issueLinks[keys[i]] = cur
 		w.mu.Unlock()
+		w.maybeResumeCircuitCanary(keys[i], cur)
 	}
 	w.saveState()
 }

@@ -67,6 +67,68 @@ func TestRedProgressionStageFilterIsInactiveOutsidePostSurgeWindow(t *testing.T)
 	}
 }
 
+func TestRedProgressionStageFilterBlocksCinnabarGymWithOnlySilphCardKey(t *testing.T) {
+	obs := Observation{
+		Map: cinnabarIslandMap,
+		Badges: []string{
+			state.BadgeSoul.String(),
+			state.BadgeMarsh.String(),
+		},
+		Story: ProgressState{
+			{ID: ProgressCardKeyOwned, Complete: true},
+			{ID: redProgressSilphRescueComplete, Complete: true},
+			{ID: ProgressSecretKeyOwned, Complete: false},
+		},
+	}
+	in := []Objective{
+		{Kind: KindProgress, Progress: ProgressSecretKeyOwned},
+		{Kind: KindGym, Place: "cinnabar gym"},
+		{Kind: KindGoTo, Place: "cinnabar gym"},
+		{Kind: KindGoTo, Place: "pokemon mansion"},
+	}
+
+	got := filterRedProgressionStageObjectives(obs, in)
+	if hasObjective(got, Objective{Kind: KindGym, Place: "cinnabar gym"}) {
+		t.Fatalf("Silph Card Key incorrectly left Cinnabar gym challenge selectable: %v", got)
+	}
+	if hasObjective(got, Objective{Kind: KindGoTo, Place: "cinnabar gym"}) {
+		t.Fatalf("Silph Card Key incorrectly left Cinnabar gym journey selectable: %v", got)
+	}
+	if !hasProgressObjective(got, ProgressSecretKeyOwned) {
+		t.Fatalf("Pokemon Mansion Secret Key progression was removed: %v", got)
+	}
+	if !hasObjective(got, Objective{Kind: KindGoTo, Place: "pokemon mansion"}) {
+		t.Fatalf("Pokemon Mansion journey was removed: %v", got)
+	}
+}
+
+func TestRedProgressionStageFilterAllowsCinnabarGymAfterMansionSecretKey(t *testing.T) {
+	obs := Observation{
+		Map: cinnabarIslandMap,
+		Story: ProgressState{
+			{ID: ProgressCardKeyOwned, Complete: true},
+			{ID: ProgressSecretKeyOwned, Complete: true},
+		},
+	}
+	gym := Objective{Kind: KindGym, Place: "cinnabar gym"}
+	journey := Objective{Kind: KindGoTo, Place: "cinnabar gym"}
+
+	got := filterRedProgressionStageObjectives(obs, []Objective{gym, journey})
+	if !hasObjective(got, gym) || !hasObjective(got, journey) {
+		t.Fatalf("Mansion Secret Key did not unlock Cinnabar gym candidates: %v", got)
+	}
+}
+
+func TestRedProgressionStageFilterKeepsInsideCinnabarCheckpointRecoverable(t *testing.T) {
+	obs := Observation{Map: cinnabarGymMap}
+	gym := Objective{Kind: KindGym, Place: "cinnabar gym"}
+
+	got := filterRedProgressionStageObjectives(obs, []Objective{gym})
+	if !hasObjective(got, gym) {
+		t.Fatalf("already-inside Cinnabar checkpoint lost local gym recovery: %v", got)
+	}
+}
+
 func hasObjective(objs []Objective, want Objective) bool {
 	for _, o := range objs {
 		if o.Kind == want.Kind && o.Place == want.Place && o.Progress == want.Progress {

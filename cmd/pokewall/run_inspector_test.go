@@ -125,3 +125,90 @@ func TestRunInspectorCanReadDumpAfterHistoryRowWasDeleted(t *testing.T) {
 		t.Fatalf("run = %+v", out.Run)
 	}
 }
+
+func TestRunInspectorCanBrowseSpecificAttemptArtifacts(t *testing.T) {
+	dir := t.TempDir()
+	w := NewWall(dir)
+	w.mu.Lock()
+	w.order = append(w.order, "multi-run")
+	w.tiles["multi-run"] = &Tile{
+		RunID: "multi-run", Status: statusDone, Attempts: 2, Reason: "goal", Detail: "done", Finished: true,
+	}
+	w.mu.Unlock()
+
+	first := farm.FinishReport{
+		RunID: "multi-run", Attempt: 1, Reason: "error",
+		Artifacts: []farm.Artifact{
+			{Name: "summary.json", MediaType: "application/json", SHA256: "first-summary", Data: []byte(`{"attempt":1}`)},
+			{Name: "run.gbrun", MediaType: "application/octet-stream", SHA256: "first-recording", Store: farm.ArtifactStoreS3, Bucket: "pokepilot", ObjectKey: "runs/multi-run/attempt-1/run.gbrun", Size: 111},
+		},
+	}
+	second := farm.FinishReport{
+		RunID: "multi-run", Attempt: 2, Reason: "goal",
+		Artifacts: []farm.Artifact{
+			{Name: "summary.json", MediaType: "application/json", SHA256: "second-summary", Data: []byte(`{"attempt":2}`)},
+			{Name: "run.gbrun", MediaType: "application/octet-stream", SHA256: "second-recording", Store: farm.ArtifactStoreS3, Bucket: "pokepilot", ObjectKey: "runs/multi-run/attempt-2/run.gbrun", Size: 222},
+		},
+	}
+	for path, report := range map[string]farm.FinishReport{
+		filepath.Join(dir, safeDumpName("multi-run")):  first,
+		filepath.Join(dir, "multi-run-attempt-2.json"): second,
+	} {
+		data, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srv := httptest.NewServer(wallHTTPHandler(w))
+	defer srv.Close()
+
+	var latest struct {
+		Attempt   int               `json:"attempt"`
+		Artifacts []runArtifactView `json:"artifacts"`
+	}
+	res, err := http.Get(srv.URL + "/v1/runs/multi-run/artifacts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(res.Body).Decode(&latest); err != nil {
+		res.Body.Close()
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || latest.Attempt != 2 || len(latest.Artifacts) != 2 ||
+		latest.Artifacts[1].ObjectKey != "runs/multi-run/attempt-2/run.gbrun" {
+		t.Fatalf("latest artifacts status=%d payload=%+v", res.StatusCode, latest)
+	}
+
+	var historical struct {
+		Attempt   int               `json:"attempt"`
+		Artifacts []runArtifactView `json:"artifacts"`
+	}
+	res, err = http.Get(srv.URL + "/v1/runs/multi-run/artifacts?attempt=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.NewDecoder(res.Body).Decode(&historical); err != nil {
+		res.Body.Close()
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || historical.Attempt != 1 || len(historical.Artifacts) != 2 ||
+		historical.Artifacts[1].ObjectKey != "runs/multi-run/attempt-1/run.gbrun" {
+		t.Fatalf("historical artifacts status=%d payload=%+v", res.StatusCode, historical)
+	}
+
+	res, err = http.Get(srv.URL + "/v1/runs/multi-run/artifacts/summary.json/content?attempt=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || string(body) != `{"attempt":1}` {
+		t.Fatalf("historical inline content status=%d body=%q", res.StatusCode, body)
+	}
+}

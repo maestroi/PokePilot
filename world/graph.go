@@ -2,6 +2,8 @@ package world
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -35,6 +37,73 @@ const (
 
 type dim struct{ w, h int }
 
+// MapParseFailure records one provider ParseMap failure. Expected is only true
+// when the provider explicitly classifies the map as deliberately unsupported
+// or unused through worldmodel.MapParseFailureClassifier.
+type MapParseFailure struct {
+	MapID    uint8
+	Err      error
+	Expected bool
+	Reason   string
+}
+
+func (f MapParseFailure) Error() string {
+	message := fmt.Sprintf("map 0x%02x: %v", f.MapID, f.Err)
+	if f.Expected {
+		if f.Reason != "" {
+			return message + " (expected: " + f.Reason + ")"
+		}
+		return message + " (expected)"
+	}
+	return message
+}
+
+// GraphBuildError aggregates map parse failures so adapter/parser regressions
+// are reported together instead of surfacing later as mysterious route gaps.
+type GraphBuildError struct {
+	ParseFailures   []MapParseFailure
+	NoParseableMaps bool
+}
+
+func (e *GraphBuildError) Error() string {
+	if e == nil {
+		return ""
+	}
+	failures := append([]MapParseFailure(nil), e.ParseFailures...)
+	sort.Slice(failures, func(i, j int) bool { return failures[i].MapID < failures[j].MapID })
+	unexpected, expected := 0, 0
+	parts := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		if failure.Expected {
+			expected++
+		} else {
+			unexpected++
+		}
+		parts = append(parts, failure.Error())
+	}
+	prefix := fmt.Sprintf("map provider parse failures: %d unexpected, %d expected", unexpected, expected)
+	if e.NoParseableMaps {
+		prefix = "map provider returned no parseable maps; " + prefix
+	}
+	if len(parts) == 0 {
+		return prefix
+	}
+	return prefix + ": " + strings.Join(parts, "; ")
+}
+
+func (e *GraphBuildError) Unwrap() []error {
+	if e == nil {
+		return nil
+	}
+	out := make([]error, 0, len(e.ParseFailures))
+	for _, failure := range e.ParseFailures {
+		if failure.Err != nil {
+			out = append(out, fmt.Errorf("map 0x%02x: %w", failure.MapID, failure.Err))
+		}
+	}
+	return out
+}
+
 type Graph struct {
 	Edges map[uint8][]Edge
 
@@ -47,6 +116,7 @@ type Graph struct {
 	connections    map[Edge]worldmodel.Connection
 	reachable      map[uint8]map[int][]int
 	provider       worldmodel.MapHeaderProvider
+	parseFailures  []MapParseFailure
 }
 
 // BuildGraph builds a map-level graph from an adapter-supplied provider. A
@@ -80,21 +150,44 @@ func graphProvider(source any) (worldmodel.MapHeaderProvider, error) {
 
 func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	headers := make(map[uint8]worldmodel.MapHeader)
+	var parseFailures []MapParseFailure
+	classifier, _ := provider.(worldmodel.MapParseFailureClassifier)
 	for _, id := range provider.MapIDs() {
 		h, err := provider.ParseMap(id)
 		if err != nil {
+			failure := MapParseFailure{MapID: id, Err: err}
+			if classifier != nil {
+				if reason, ok := classifier.ExpectedMapParseFailure(id, err); ok {
+					failure.Expected = true
+					failure.Reason = reason
+				}
+			}
+			parseFailures = append(parseFailures, failure)
 			continue
 		}
 		headers[id] = h
 	}
+	unexpected := false
+	for _, failure := range parseFailures {
+		if !failure.Expected {
+			unexpected = true
+			break
+		}
+	}
+	if unexpected {
+		return nil, &GraphBuildError{ParseFailures: parseFailures}
+	}
 	if len(headers) == 0 {
-		return nil, fmt.Errorf("map provider returned no parseable maps")
+		return nil, &GraphBuildError{ParseFailures: parseFailures, NoParseableMaps: true}
 	}
 
 	warpTo := make(map[uint8]map[uint8]bool)
 	explicit := make(map[uint8]map[uint8]bool)
 	for id, h := range headers {
 		for _, w := range h.Warps {
+			if w.Inert {
+				continue
+			}
 			if warpTo[w.DestMap] == nil {
 				warpTo[w.DestMap] = make(map[uint8]bool)
 			}
@@ -119,6 +212,7 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		connections:    make(map[Edge]worldmodel.Connection),
 		reachable:      make(map[uint8]map[int][]int),
 		provider:       provider,
+		parseFailures:  append([]MapParseFailure(nil), parseFailures...),
 	}
 	for id, h := range headers {
 		g.Edges[id] = nil
@@ -129,7 +223,12 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		g.tiles[id] = dim{w: int(h.WidthBlocks) * 2, h: int(h.HeightBlocks) * 2}
 		if spec, err := provider.Grid(id, nil, worldmodel.TraversalLand); err == nil {
 			if grid, err := gridFromSpec(spec); err == nil {
-				g.comps[id] = components(grid)
+				// Warp tiles are walkable floor, but stepping on one leaves the
+				// map. Flood-filling through them falsely merges rooms that are
+				// only joined by a teleporter pad (Silph Co 5F's Card Key
+				// corridor across (9,15)). Component analysis must match
+				// GoTo's warpAvoidance: pads are ports, not corridors.
+				g.comps[id] = componentsWithBlocked(grid, warpTileBlockers(h.Warps))
 				g.reachable[id] = componentReachability(grid, g.comps[id])
 			}
 		}
@@ -174,6 +273,9 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	for id, h := range headers {
 		if elevator, ok := provider.LookupElevator(id); ok {
 			for _, w := range h.Warps {
+				if w.Inert {
+					continue
+				}
 				for _, floor := range elevator.Floors {
 					g.Edges[id] = append(g.Edges[id], Edge{
 						Kind: EdgeWarp, From: id, To: floor.MapID, WarpX: w.X, WarpY: w.Y,
@@ -182,6 +284,9 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 			}
 		} else {
 			for _, w := range h.Warps {
+				if w.Inert {
+					continue
+				}
 				to, ok := resolve(id, w)
 				if !ok {
 					continue
@@ -205,6 +310,16 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	return g, nil
 }
 
+// ParseFailures returns explicitly classified parse failures retained on a
+// successfully built graph. Unexpected failures never reach this point because
+// BuildGraph returns GraphBuildError instead.
+func (g *Graph) ParseFailures() []MapParseFailure {
+	if g == nil {
+		return nil
+	}
+	return append([]MapParseFailure(nil), g.parseFailures...)
+}
+
 // Components is the exported form of components, for callers outside this
 // package that need to know which tiles of a map are actually reachable from
 // one another rather than just walkable.
@@ -212,16 +327,44 @@ func Components(grid *Grid) [][]int {
 	return components(grid)
 }
 
+func warpTileBlockers(warps []worldmodel.Warp) map[[2]int]bool {
+	if len(warps) == 0 {
+		return nil
+	}
+	out := make(map[[2]int]bool, len(warps))
+	for _, w := range warps {
+		if w.Inert {
+			continue
+		}
+		out[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	return out
+}
+
 func components(grid *Grid) [][]int {
+	return componentsWithBlocked(grid, nil)
+}
+
+// componentsWithBlocked is components, but tiles in blocked are treated as
+// non-walkable for the flood. Callers use this to keep active teleporter/door
+// warp pads from bridging rooms that can only be joined by actually taking the
+// warp edge. Inert warp-table entries are deliberately not blocked.
+func componentsWithBlocked(grid *Grid, blocked map[[2]int]bool) [][]int {
 	w, h := grid.Width, grid.Height
 	comps := make([][]int, h)
 	for y := range comps {
 		comps[y] = make([]int, w)
 	}
+	walkable := func(x, y int) bool {
+		if blocked[[2]int{x, y}] {
+			return false
+		}
+		return grid.Walkable(x, y)
+	}
 	next := 0
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			if !grid.Walkable(x, y) || comps[y][x] != 0 {
+			if !walkable(x, y) || comps[y][x] != 0 {
 				continue
 			}
 			next++
@@ -234,7 +377,10 @@ func components(grid *Grid) [][]int {
 					if nx < 0 || ny < 0 || nx >= w || ny >= h {
 						continue
 					}
-					if !grid.Passable(c[0], c[1], nx, ny) || comps[ny][nx] != 0 {
+					if !walkable(nx, ny) || comps[ny][nx] != 0 {
+						continue
+					}
+					if !grid.Passable(c[0], c[1], nx, ny) {
 						continue
 					}
 					comps[ny][nx] = next
@@ -351,6 +497,11 @@ func (g *Graph) destWarpTile(e Edge) (int, int, bool) {
 		return 0, 0, false
 	}
 	return int(dest[destID].X), int(dest[destID].Y), true
+}
+
+// DestWarpTile returns the standing tile on e.To that edge e lands on.
+func (g *Graph) DestWarpTile(e Edge) (int, int, bool) {
+	return g.destWarpTile(e)
 }
 
 func edgeLineComps(comps [][]int, w, h int, dir uint8) []int {

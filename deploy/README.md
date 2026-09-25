@@ -43,7 +43,20 @@ selects a first-class **deployment** instead of a legacy LLM profile. Each
 deployment copies immutable inference identity onto the run. Switchable hosts
 are owned by `pokemodelhost`; the wall waits until that host reports `ready`
 before handing a runner lease, and it will not switch models while a lease is
-active.
+active. The 7900 XTX farm default uses `discover: true`: it probes the live
+`/v1/models` endpoint, so `xtx-9b` / `xtx-27b` host switches show up in the UI
+and leased run identity without editing the registry.
+
+Paired experiments also carry an explicit comparability identity. `make farm-up`
+derives the mounted Pokémon Red ROM SHA-256 and a deterministic hash of the
+runtime/prompt-generating Go sources, and passes both to PokéWall. If
+`pokemon_blue.gb` is present in `POKEPILOT_ROM_DIR`, its SHA-256 is derived
+separately. Override any of these with
+`POKEPILOT_ROM_SHA256_POKEMON_RED`,
+`POKEPILOT_ROM_SHA256_POKEMON_BLUE`, or `POKEPILOT_PROMPT_SHA256` in
+`.env` / `~/.config/pokepilot/env`. Missing or mismatched identities do not
+silently enter benchmark totals: the experiment UI marks those seed pairs
+non-comparable and excludes them from aggregates.
 
 The existing `llm_profile` wire values remain the compatibility adapter for
 queued/history runs and for installations with no registry:
@@ -62,7 +75,7 @@ route they started with; cancel/requeue one if a GPU must be freed immediately.
 Default physical backends are:
 
 ```text
-7900 XTX  qwen3.8-27B  http://192.168.50.130:8002/v1
+7900 XTX  switchable (discover)  http://192.168.50.130:8002/v1
 4090      switchable   http://192.168.50.81:8002/v1  (alias pokepilot-4090; control http://192.168.50.81:8091)
 LAN CPU   qwen 4B      http://192.168.50.204:8000/v1  (bearer llm_token)
 ```
@@ -166,14 +179,33 @@ Issue lifecycle maps cleanly back into the wall:
 
 The `Investigate` action in the operator console now adds one investigation
 request comment to the GitHub issue. The local qwagent loop still claims work
-from `/v1/triage`, so it does not depend on GitHub issue state to run.
+from MCP `pokepilot_get_triage`, so it does not depend on GitHub issue state
+to run.
 
 ## Local qwagent triage (optional)
 
-A user systemd timer can offer one unused `GET /v1/triage` group to local
-`qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every 30
-minutes. The picker is deterministic; the model only reproduces, patches, and
-opens a PR. It never merges and never writes `main`.
+A user systemd timer can offer one unused MCP `pokepilot_get_triage` group to
+local `qwagent` (`opencode run --auto --model qwen3.8-27b/qwen3.8-27b`) every
+30 minutes. The picker talks to `/mcp` because `admin.rompilot.app/v1/*` sits
+behind Cloudflare Access; a bearer token alone gets a 302 login page there.
+The picker is deterministic; the model only reproduces, patches, and opens a
+PR. It never merges and never writes `main`. Before launching a fresh coding
+attempt, the loop assigns the generated farm issue to the authenticated GitHub
+user. Assigned farm issues are skipped by later picker ticks, making ownership
+visible before a PR exists. If the attempt ends without a surviving PR the
+assignment is released; once a repair PR exists the assignment stays on the
+issue through the normal merge/close lifecycle. Every real coding attempt is
+recorded against the failure key with its backend, requested model, outcome,
+branch, and PR. The operator failure view shows the latest solver plus the
+attempt count; GitHub resolution and PokePilot verification still decide
+whether a repair actually succeeded.
+
+OpenCode defaults to `qwen3.8-27b/qwen3.8-27b`. Escalation is deliberately
+manual. For a one-off stronger attempt, invoke the script directly so the
+model override is scoped to that process, for example
+`POKEPILOT_TRIAGE_AGENT=opencode POKEPILOT_OPENCODE_MODEL=<model> ./deploy/qwagent-triage.sh`.
+The systemd timer never changes models on its own; `qwtriage-once` continues to
+use the defaults from `~/.config/pokepilot/env`.
 
 ```sh
 make qwagent-triage-install   # units + zsh helpers; timer stays off
@@ -186,6 +218,7 @@ qwtriage-logs
 ```
 
 Needs `POKEPILOT_MCP_TOKEN` in `~/.config/pokepilot/env`, `gh` auth, Qwen on
-`127.0.0.1:8002`, and `roms/pokemon_red.gb` in the worktree or
-`~/.config/pokepilot/pokemon_red.gb`. Open PRs are titled
-`fix(farm): … [triage:<key>]` so a later tick skips that key.
+`127.0.0.1:8002` or an authenticated Cursor CLI, and
+`~/.config/pokepilot/pokemon_red.gb` (symlinked into the worktree each tick).
+Open PRs are titled `fix(farm): … [triage:<key>]` so a later tick skips that
+key.

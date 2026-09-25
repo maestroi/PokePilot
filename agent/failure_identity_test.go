@@ -17,6 +17,13 @@ func TestFailureCauseUsesTypedSentinelNotProse(t *testing.T) {
 	}
 }
 
+func TestFailureCauseVirtualTradeStallIsStable(t *testing.T) {
+	cause, ctx := failureCauseFor(fmt.Errorf("agent: virtual trade failed: %w", skill.ErrLinkStalled))
+	if cause != "link_stalled" || len(ctx) != 0 {
+		t.Fatalf("cause=%q context=%v, want link_stalled", cause, ctx)
+	}
+}
+
 func TestFailureCauseGatedPathUsesTypedIdentity(t *testing.T) {
 	cause, ctx := failureCauseFor(fmt.Errorf("agent: go to route 9: %w", &skill.ErrRouteGateClosed{Text: "Oh wait there, the road's closed."}))
 	if cause != "route_gate_closed" || len(ctx) != 0 {

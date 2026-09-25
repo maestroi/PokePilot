@@ -14,57 +14,60 @@ import (
 // included because several adapter objectives (for example dex evolution/static
 // acquisition) use it to select a different deterministic execution path.
 type ObjectiveKey struct {
-	Kind     Kind       `json:"kind"`
-	Place    PlaceID    `json:"place,omitempty"`
-	Location LocationID `json:"location,omitempty"`
-	X        uint8      `json:"x,omitempty"`
-	Y        uint8      `json:"y,omitempty"`
-	Starter  uint8      `json:"starter,omitempty"`
-	Progress ProgressID `json:"progress,omitempty"`
-	Level    uint8      `json:"level,omitempty"`
-	Species  SpeciesID  `json:"species,omitempty"`
-	Item     ItemID     `json:"item,omitempty"`
-	Slot     int        `json:"slot,omitempty"`
-	Qty      int        `json:"qty,omitempty"`
-	Flee     bool       `json:"flee,omitempty"`
-	Intent   string     `json:"intent,omitempty"`
+	Kind            Kind         `json:"kind"`
+	Place           PlaceID      `json:"place,omitempty"`
+	Location        LocationID   `json:"location,omitempty"`
+	X               uint8        `json:"x,omitempty"`
+	Y               uint8        `json:"y,omitempty"`
+	Starter         uint8        `json:"starter,omitempty"`
+	Progress        ProgressID   `json:"progress,omitempty"`
+	FieldCapability CapabilityID `json:"field_capability,omitempty"`
+	Level           uint8        `json:"level,omitempty"`
+	Species         SpeciesID    `json:"species,omitempty"`
+	Item            ItemID       `json:"item,omitempty"`
+	Slot            int          `json:"slot,omitempty"`
+	Qty             int          `json:"qty,omitempty"`
+	Flee            bool         `json:"flee,omitempty"`
+	Intent          string       `json:"intent,omitempty"`
 }
 
 func (o Objective) Key() ObjectiveKey {
 	return ObjectiveKey{
-		Kind:     o.Kind,
-		Place:    o.Place,
-		Location: o.Location,
-		X:        o.X,
-		Y:        o.Y,
-		Starter:  uint8(o.Starter),
-		Progress: o.Progress,
-		Level:    o.Level,
-		Species:  o.Species,
-		Item:     o.Item,
-		Slot:     o.Slot,
-		Qty:      o.Qty,
-		Flee:     o.Flee,
-		Intent:   o.Intent,
+		Kind:            o.Kind,
+		Place:           o.Place,
+		Location:        o.Location,
+		X:               o.X,
+		Y:               o.Y,
+		Starter:         uint8(o.Starter),
+		Progress:        o.Progress,
+		FieldCapability: o.FieldCapability,
+		Level:           o.Level,
+		Species:         o.Species,
+		Item:            o.Item,
+		Slot:            o.Slot,
+		Qty:             o.Qty,
+		Flee:            o.Flee,
+		Intent:          o.Intent,
 	}
 }
 
 func (k ObjectiveKey) Objective() Objective {
 	return Objective{
-		Kind:     k.Kind,
-		Place:    k.Place,
-		Location: k.Location,
-		X:        k.X,
-		Y:        k.Y,
-		Starter:  skill.Starter(k.Starter),
-		Progress: k.Progress,
-		Level:    k.Level,
-		Species:  k.Species,
-		Item:     k.Item,
-		Slot:     k.Slot,
-		Qty:      k.Qty,
-		Flee:     k.Flee,
-		Intent:   k.Intent,
+		Kind:            k.Kind,
+		Place:           k.Place,
+		Location:        k.Location,
+		X:               k.X,
+		Y:               k.Y,
+		Starter:         skill.Starter(k.Starter),
+		Progress:        k.Progress,
+		FieldCapability: k.FieldCapability,
+		Level:           k.Level,
+		Species:         k.Species,
+		Item:            k.Item,
+		Slot:            k.Slot,
+		Qty:             k.Qty,
+		Flee:            k.Flee,
+		Intent:          k.Intent,
 	}
 }
 
@@ -97,9 +100,9 @@ func resolveObjectiveKey(offered []Objective, key ObjectiveKey) (Objective, bool
 func objectiveStorageKey(o Objective) string { return o.Key().ID() }
 
 const (
-	failureModeGymLoss     = "gym_loss"
-	failureModeGymRetry    = "gym_retry"
-	failureModeTrainerLoss = "trainer_loss"
+	failureModeCombatLoss      = "combat_loss"
+	failureModeCombatRetry     = "combat_retry"
+	failureModeMachineUnusable = "machine_unusable"
 )
 
 func failureStorageKey(key ObjectiveKey, mode string) string {
@@ -113,7 +116,9 @@ func parseFailureStorageKey(id string) (ObjectiveKey, string, bool) {
 	if key, ok := parseObjectiveKeyID(id); ok {
 		return key, "", true
 	}
-	for _, mode := range []string{failureModeGymLoss, failureModeGymRetry, failureModeTrainerLoss} {
+	modes := []string{failureModeCombatLoss, failureModeCombatRetry, failureModeMachineUnusable}
+	modes = append(modes, legacyCombatFailureModes()...)
+	for _, mode := range modes {
 		prefix := mode + ":"
 		if strings.HasPrefix(id, prefix) {
 			key, ok := parseObjectiveKeyID(strings.TrimPrefix(id, prefix))

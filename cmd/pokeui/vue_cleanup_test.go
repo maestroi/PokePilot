@@ -12,8 +12,9 @@ func TestVueOperatorBulkCleanupUsesSafeFinishedRunDeletePath(t *testing.T) {
 	files := map[string][]string{
 		"runCleanup.ts": {
 			`status === 'done'`,
-			`reason === 'error' || run.reason === 'lost'`,
+			`FAILURE_REASONS = new Set(['error', 'lost', 'failed', 'stuck'])`,
 			`DELETE_CONCURRENCY = 3`,
+			`failure-id:`,
 		},
 		"FailuresView.vue": {
 			`getDashboard({ status: 'done' })`,

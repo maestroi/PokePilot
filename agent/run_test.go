@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -92,6 +93,107 @@ func TestRunRoundBudget(t *testing.T) {
 	}
 	if len(res.Completed) != 1 {
 		t.Fatalf("len(Completed) = %d, want 1: %v", len(res.Completed), res.Completed)
+	}
+}
+
+type cancelAfterChoicePlanner struct {
+	cancel chan struct{}
+	closed bool
+	obj    agent.Objective
+}
+
+func (p *cancelAfterChoicePlanner) Next(agent.Observation, []agent.Objective) (agent.Objective, error) {
+	if !p.closed {
+		close(p.cancel)
+		p.closed = true
+	}
+	return p.obj, nil
+}
+
+func TestRunCancelCheckpointCapturesPostObjectiveBoundary(t *testing.T) {
+	e := loadFixture(t)
+	dir := t.TempDir()
+	cancel := make(chan struct{})
+	p := &cancelAfterChoicePlanner{
+		cancel: cancel,
+		obj:    agent.Objective{Kind: agent.KindStarter},
+	}
+	b := testBudget()
+	b.Cancel = cancel
+	b.CheckpointDir = dir
+
+	res := agent.Run(e, e.ROM(), p, b)
+	if res.Stop != agent.StopBudget {
+		t.Fatalf("Stop = %d, want StopBudget", res.Stop)
+	}
+	if res.Rounds != 1 {
+		t.Fatalf("Rounds = %d, want 1 completed round before cancellation", res.Rounds)
+	}
+	if len(res.Completed) != 1 {
+		t.Fatalf("Completed = %v, want the starter objective preserved", res.Completed)
+	}
+	if res.ProgressFinal == nil {
+		t.Fatal("cancelled run lost its final progress snapshot")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var states []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "round-") && strings.HasSuffix(entry.Name(), ".state") {
+			states = append(states, entry.Name())
+		}
+	}
+	sort.Strings(states)
+	if len(states) < 2 {
+		t.Fatalf("states = %v, want pre-objective and cancellation-boundary checkpoints", states)
+	}
+	latest := states[len(states)-1]
+	if !strings.HasSuffix(latest, "-cancel.state") {
+		t.Fatalf("latest checkpoint = %q, want exact cooperative-cancel boundary", latest)
+	}
+	base := strings.TrimSuffix(latest, ".state")
+	knowledge, err := filepath.Glob(filepath.Join(dir, base+".knowledge-v*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(knowledge) != 1 {
+		t.Fatalf("cancel checkpoint knowledge pair = %v, want exactly one", knowledge)
+	}
+
+	stateBytes, err := os.ReadFile(filepath.Join(dir, latest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveFrame := e.FrameCount()
+	var liveMem state.Mem
+	live := state.Read(e, &liveMem)
+
+	resumed := loadFixture(t)
+	if err := resumed.LoadState(stateBytes); err != nil {
+		t.Fatalf("LoadState(cancel boundary): %v", err)
+	}
+	var resumedMem state.Mem
+	got := state.Read(resumed, &resumedMem)
+	if resumed.FrameCount() != liveFrame {
+		t.Fatalf("resumed frame = %d, want paused frame %d", resumed.FrameCount(), liveFrame)
+	}
+	if got.Player.MapID != live.Player.MapID || got.Player.X != live.Player.X || got.Player.Y != live.Player.Y {
+		t.Fatalf("resumed player = map %#02x (%d,%d), want paused map %#02x (%d,%d)",
+			got.Player.MapID, got.Player.X, got.Player.Y,
+			live.Player.MapID, live.Player.X, live.Player.Y)
+	}
+	if len(got.Party.Mons) != len(live.Party.Mons) {
+		t.Fatalf("resumed party size = %d, want %d", len(got.Party.Mons), len(live.Party.Mons))
+	}
+	for i := range live.Party.Mons {
+		if got.Party.Mons[i].Species != live.Party.Mons[i].Species ||
+			got.Party.Mons[i].Level != live.Party.Mons[i].Level ||
+			got.Party.Mons[i].HP != live.Party.Mons[i].HP {
+			t.Fatalf("resumed party[%d] = %+v, want paused %+v", i, got.Party.Mons[i], live.Party.Mons[i])
+		}
 	}
 }
 

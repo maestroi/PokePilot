@@ -2,6 +2,8 @@
 // a concrete game implementation, emulator, ROM decoder, or skill package.
 package game
 
+import "errors"
+
 // Adapter is the game-owned half of one objective transaction. The generic
 // runtime owns lifecycle and ordering; an adapter owns how its game observes,
 // validates, executes, stabilizes, and proves a semantic postcondition.
@@ -79,10 +81,12 @@ type Transaction[Result any, Observation any] struct {
 //	observe -> validate -> normalize start -> bounded owned execution
 //	-> passive settle -> normalize finish -> observe -> verify postcondition
 //
-// Finish normalization still runs after execution or settle failure so the
-// objective owns the state it leaves behind. Postcondition verification runs
-// only after successful execution, successful settle, a clean finish boundary,
-// and a trustworthy final observation.
+// Finish normalization still runs after an ordinary execution or settle
+// failure so the objective owns the state it leaves behind. ErrMachineUnusable
+// is the exception: the backing machine must not be settled, cleaned, or
+// observed again. Postcondition verification runs only after successful
+// execution, successful settle, a clean finish boundary, and a trustworthy
+// final observation.
 func ExecuteTransaction[Objective any, Observation any, Result any](
 	a Adapter[Objective, Observation, Result],
 	o Objective,
@@ -110,6 +114,14 @@ func ExecuteTransaction[Objective any, Observation any, Result any](
 		tx.Result, err = a.ExecuteOwned(o)
 		return err
 	})
+
+	// A poisoned machine must not be settled, cleaned, or observed again.
+	// Finish-boundary work is allowed to step; doing that while another
+	// goroutine still holds the frame lock deadlocks the worker.
+	if errors.Is(tx.ExecutionErr, ErrMachineUnusable) {
+		tx.Final = tx.Initial
+		return tx
+	}
 
 	if tx.ExecutionErr == nil {
 		tx.SettleErr = a.SettlePostcondition(o)

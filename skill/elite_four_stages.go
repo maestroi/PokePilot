@@ -4,9 +4,32 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+func returnToLeagueCheckpoint(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	currentMap := m.Peek8(sym.CurMap)
+	switch currentMap {
+	case indigoPlateauMap, indigoPlateauLobbyMap:
+		return nil
+	}
+	if _, ok := leagueStageForRoom(currentMap); ok {
+		return nil
+	}
+	nurse, err := indigoLobbyNurseDestination(romData)
+	if err != nil {
+		return fmt.Errorf("resolve Indigo checkpoint: %w", err)
+	}
+	if _, err := TravelFlee(m, romData, nurse, policy, leagueTravelBattles); err != nil {
+		return fmt.Errorf("return to Indigo checkpoint: %w", err)
+	}
+	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
+		return fmt.Errorf("return to Indigo checkpoint ended on map %#02x, want %#02x", got, indigoPlateauLobbyMap)
+	}
+	return nil
+}
 
 // LeagueStartChallenge owns only the prepared-lobby -> Lorelei-room boundary.
 // A blackout may place Red on the Indigo exterior; in that case this stage
@@ -20,6 +43,9 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if facts.MainStoryComplete || facts.LeagueChampionDefeated || facts.LeagueChallengeStarted {
 		return nil
 	}
+	if err := returnToLeagueCheckpoint(m, romData, policy); err != nil {
+		return fmt.Errorf("skill: LeagueStartChallenge: %w", err)
+	}
 
 	if m.Peek8(sym.CurMap) == indigoPlateauMap {
 		if err := recoverLeagueBlackout(m, romData, policy); err != nil {
@@ -32,7 +58,7 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 	if m.Peek8(sym.CurMap) == loreleiRoomMap && !currentLeagueFacts(m).LeagueChallengeStarted {
-		if err := settleLeagueRoomEntry(m, loreleiRoomMap, false); err != nil {
+		if err := settleLeagueRoomEntry(m, romData, loreleiRoomMap, false); err != nil {
 			return fmt.Errorf("skill: LeagueStartChallenge: settle Lorelei entry: %w", err)
 		}
 	}
@@ -47,111 +73,65 @@ func LeagueStartChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // transaction bounded while still making resumed checkpoints and blackout
 // retries recoverable from the nearest semantic boundary.
 func leagueReachRoom(m *emu.Emu, romData []byte, policy MovePolicy, targetMap uint8) error {
+	if err := returnToLeagueCheckpoint(m, romData, policy); err != nil {
+		return err
+	}
 	for hop := 0; hop < 8; hop++ {
-		if m.Peek8(sym.CurMap) == targetMap {
+		currentMap := m.Peek8(sym.CurMap)
+		if currentMap == targetMap {
 			return nil
 		}
-		facts := currentLeagueFacts(m)
-		switch m.Peek8(sym.CurMap) {
+		switch currentMap {
 		case indigoPlateauMap:
 			if err := recoverLeagueBlackout(m, romData, policy); err != nil {
 				return err
 			}
+			continue
 		case indigoPlateauLobbyMap:
 			if err := prepareLeagueChallenge(m, romData, policy); err != nil {
 				return err
 			}
-		case loreleiRoomMap:
-			if !facts.LeagueLoreleiDefeated {
-				return fmt.Errorf("Lorelei must be defeated before advancing toward map %#02x", targetMap)
-			}
-			if err := enterLeagueRoom(m, romData, policy, loreleiExitStand, brunoRoomMap, false); err != nil {
-				return err
-			}
-		case brunoRoomMap:
-			if !facts.LeagueBrunoDefeated {
-				return fmt.Errorf("Bruno must be defeated before advancing toward map %#02x", targetMap)
-			}
-			if err := enterLeagueRoom(m, romData, policy, brunoExitStand, agathaRoomMap, false); err != nil {
-				return err
-			}
-		case agathaRoomMap:
-			if !facts.LeagueAgathaDefeated {
-				return fmt.Errorf("Agatha must be defeated before advancing toward map %#02x", targetMap)
-			}
-			if err := enterLeagueRoom(m, romData, policy, agathaExitStand, lanceRoomMap, false); err != nil {
-				return err
-			}
-		case lanceRoomMap:
-			if !facts.LeagueLanceDefeated {
-				return fmt.Errorf("Lance must be defeated before advancing toward map %#02x", targetMap)
-			}
-			if err := enterLeagueRoom(m, romData, policy, lanceExitStand, championsRoomMap, true); err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("cannot advance League stage from map %#02x toward %#02x", m.Peek8(sym.CurMap), targetMap)
+			continue
+		}
+
+		stage, ok := leagueStageForRoom(currentMap)
+		if !ok {
+			return fmt.Errorf("cannot advance League stage from map %#02x toward %#02x", currentMap, targetMap)
+		}
+		if !stage.Done(currentLeagueFacts(m)) {
+			return gameruntime.NewProgressionPrerequisiteMissing(stage.ID)
+		}
+		if stage.Exit == nil {
+			return fmt.Errorf("cannot advance past terminal League stage %s toward map %#02x", stage.Name, targetMap)
+		}
+		if err := enterLeagueRoom(
+			m,
+			romData,
+			policy,
+			stage.Exit.Stand,
+			stage.Exit.NextRoom,
+			stage.Exit.WaitForBattle,
+		); err != nil {
+			return err
 		}
 	}
 	return fmt.Errorf("exceeded bounded League room transitions while reaching map %#02x", targetMap)
 }
 
 func LeagueDefeatLorelei(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	facts := currentLeagueFacts(m)
-	if facts.MainStoryComplete || facts.LeagueLoreleiDefeated {
-		return nil
-	}
-	if !facts.LeagueChallengeStarted {
-		if err := LeagueStartChallenge(m, romData, policy); err != nil {
-			return err
-		}
-	}
-	if err := leagueReachRoom(m, romData, policy, loreleiRoomMap); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatLorelei: %w", err)
-	}
-	return fightLeagueMember(m, romData, policy, "Lorelei", 5, 2, func(f state.StoryFacts) bool { return f.LeagueLoreleiDefeated })
+	return runLeagueStageByID(m, romData, policy, leagueProgressLoreleiDefeated)
 }
 
 func LeagueDefeatBruno(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	facts := currentLeagueFacts(m)
-	if facts.MainStoryComplete || facts.LeagueBrunoDefeated {
-		return nil
-	}
-	if !facts.LeagueLoreleiDefeated {
-		return fmt.Errorf("skill: LeagueDefeatBruno: Lorelei is not defeated")
-	}
-	if err := leagueReachRoom(m, romData, policy, brunoRoomMap); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatBruno: %w", err)
-	}
-	return fightLeagueMember(m, romData, policy, "Bruno", 5, 2, func(f state.StoryFacts) bool { return f.LeagueBrunoDefeated })
+	return runLeagueStageByID(m, romData, policy, leagueProgressBrunoDefeated)
 }
 
 func LeagueDefeatAgatha(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	facts := currentLeagueFacts(m)
-	if facts.MainStoryComplete || facts.LeagueAgathaDefeated {
-		return nil
-	}
-	if !facts.LeagueBrunoDefeated {
-		return fmt.Errorf("skill: LeagueDefeatAgatha: Bruno is not defeated")
-	}
-	if err := leagueReachRoom(m, romData, policy, agathaRoomMap); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatAgatha: %w", err)
-	}
-	return fightLeagueMember(m, romData, policy, "Agatha", 5, 2, func(f state.StoryFacts) bool { return f.LeagueAgathaDefeated })
+	return runLeagueStageByID(m, romData, policy, leagueProgressAgathaDefeated)
 }
 
 func LeagueDefeatLance(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	facts := currentLeagueFacts(m)
-	if facts.MainStoryComplete || facts.LeagueLanceDefeated {
-		return nil
-	}
-	if !facts.LeagueAgathaDefeated {
-		return fmt.Errorf("skill: LeagueDefeatLance: Agatha is not defeated")
-	}
-	if err := leagueReachRoom(m, romData, policy, lanceRoomMap); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatLance: %w", err)
-	}
-	return fightLeagueMember(m, romData, policy, "Lance", 6, 1, func(f state.StoryFacts) bool { return f.LeagueLanceDefeated })
+	return runLeagueStageByID(m, romData, policy, leagueProgressLanceDefeated)
 }
 
 func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
@@ -178,10 +158,14 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 		}
 		outcome, err := Battle(m, policy)
 		if err != nil {
+			// A win hands control to Oak's scene and the Hall of Fame, not
+			// back to the player, so Battle's post-battle controllable
+			// settle times out. The committed victory is the positive proof.
+			if won := currentLeagueFacts(m); !won.LeagueChampionDefeated && !won.MainStoryComplete {
+				return fmt.Errorf("Champion battle: %w", err)
+			}
+		} else if err := RequireTrainerBattleWin("league:champion", outcome); err != nil {
 			return fmt.Errorf("Champion battle: %w", err)
-		}
-		if outcome != state.ResultWon {
-			return fmt.Errorf("%w against Champion", ErrTrainerBlackedOut)
 		}
 	}
 	mem = advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
@@ -196,20 +180,7 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 }
 
 func LeagueDefeatChampion(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	facts := currentLeagueFacts(m)
-	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
-		return nil
-	}
-	if !facts.LeagueLanceDefeated {
-		return fmt.Errorf("skill: LeagueDefeatChampion: Lance is not defeated")
-	}
-	if err := leagueReachRoom(m, romData, policy, championsRoomMap); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatChampion: %w", err)
-	}
-	if err := fightChampionStage(m, policy); err != nil {
-		return fmt.Errorf("skill: LeagueDefeatChampion: %w", err)
-	}
-	return nil
+	return runLeagueStageByID(m, romData, policy, leagueProgressChampionDefeated)
 }
 
 // LeagueFinishHallOfFame owns only the post-Champion ending scripts. The
@@ -221,7 +192,7 @@ func LeagueFinishHallOfFame(m *emu.Emu) error {
 		return nil
 	}
 	if !facts.LeagueChampionDefeated {
-		return fmt.Errorf("skill: LeagueFinishHallOfFame: Champion is not defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing("league_champion_defeated")
 	}
 	if err := finishHallOfFame(m); err != nil {
 		return fmt.Errorf("skill: LeagueFinishHallOfFame: %w", err)

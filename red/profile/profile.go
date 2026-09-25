@@ -27,10 +27,12 @@ const (
 	ProgressSSTicketAcquired           = gen1.ProgressSSTicketAcquired
 	ProgressHM01Acquired               = gen1.ProgressHM01Acquired
 	ProgressBicycleAcquired            = gen1.ProgressBicycleAcquired
+	ProgressBoulderBadge               = gen1.ProgressBoulderBadge
 	ProgressThunderBadge               = gen1.ProgressThunderBadge
 	ProgressPostSurgeLavenderReached   = gen1.ProgressPostSurgeLavenderReached
 	ProgressPostSurgeCeladonReady      = gen1.ProgressPostSurgeCeladonReady
 	ProgressRainbowBadge               = gen1.ProgressRainbowBadge
+	ProgressMarshBadge                 = gen1.ProgressMarshBadge
 	ProgressSilphScopeAcquired         = gen1.ProgressSilphScopeAcquired
 	ProgressPokeFluteAcquired          = gen1.ProgressPokeFluteAcquired
 	ProgressFuchsiaProgressionComplete = gen1.ProgressFuchsiaProgressionComplete
@@ -123,7 +125,7 @@ var observedEvents = []state.Event{
 	state.EventBeatChampionRival,
 }
 
-func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.ProfileObservation, error) {
+func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (game.ProfileObservation, error) {
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("red profile: nil memory reader")
 	}
@@ -146,6 +148,12 @@ func (*Profile) DecodeObservation(reader game.MemoryReader, _ []byte) (game.Prof
 		RespawnPlace: semanticLocation(state.MapName(mem.U8(sym.LastBlackoutMap))),
 		Events:       []string{},
 		BlackedOut:   mem.U8(sym.StatusFlags4)&(1<<5) != 0,
+	}
+	if len(romData) > 0 {
+		obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
+		if catalog, dexErr := p.BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); dexErr == nil {
+			obs.Dex = catalog
+		}
 	}
 	for i, mon := range gs.Party.Mons {
 		species, ok := reddata.Species(mon.Species)
@@ -273,10 +281,12 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	// stricter: inside the lobby, readiness requires a fully recovered party.
 	indigoReady := leaguePastLobby || mapID == indigoPlateauMap || (mapID == indigoPlateauLobbyMap && partyCenterRecovered(state.DecodeParty(mem)))
 	return append(progress,
+		game.ProgressFact{ID: ProgressBoulderBadge, Complete: badges.Has(state.BadgeBoulder)},
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
 		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
 		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem))},
 		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
+		game.ProgressFact{ID: ProgressMarshBadge, Complete: badges.Has(state.BadgeMarsh)},
 		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
 		game.ProgressFact{ID: ProgressEarthBadge, Complete: badges.Has(state.BadgeEarth)},
 		game.ProgressFact{ID: ProgressVictoryRoadCleared, Complete: victoryRoadCleared},

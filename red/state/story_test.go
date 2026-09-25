@@ -83,6 +83,27 @@ func TestDecodeStoryFactsHallOfFameBitSurvivesIndigoEventReset(t *testing.T) {
 	}
 }
 
+func TestDecodeStoryFactsLeftLeagueVoidsRoomProgress(t *testing.T) {
+	var mem Mem
+	setTestEvent(&mem, eventAutowalkedIntoLoreleisRoom)
+	setTestEvent(&mem, eventBeatLorelei)
+	setTestEvent(&mem, eventBeatLance)
+	mem[elite4FlagsAddr] |= elite4StartedMask
+
+	mem[sym.CurMap] = lancesRoomMap
+	if got := DecodeStoryFacts(&mem, InventoryState{}); !got.LeagueChallengeStarted || !got.LeagueLanceDefeated {
+		t.Fatalf("progress inside the gauntlet must hold: %+v", got)
+	}
+	mem[sym.CurMap] = 0x07 // FUCHSIA_CITY: a blackout left the gauntlet
+	if got := DecodeStoryFacts(&mem, InventoryState{}); got.LeagueChallengeStarted || got.LeagueLoreleiDefeated || got.LeagueLanceDefeated {
+		t.Fatalf("lobby will reset this progress, facts must not offer it: %+v", got)
+	}
+	setTestEvent(&mem, EventBeatChampionRival)
+	if got := DecodeStoryFacts(&mem, InventoryState{}); !got.LeagueChampionDefeated || !got.LeagueChallengeStarted {
+		t.Fatalf("Champion event is outside the reset range: %+v", got)
+	}
+}
+
 func TestStoryEventIndicesMatchDecomp(t *testing.T) {
 	events := parseEventConstants(t)
 	pairs := []struct {
@@ -90,6 +111,7 @@ func TestStoryEventIndicesMatchDecomp(t *testing.T) {
 		event Event
 	}{
 		{"EVENT_VIRIDIAN_GYM_OPEN", eventViridianGymOpen},
+		{"EVENT_FOUND_ROCKET_HIDEOUT", EventFoundRocketHideout},
 		{"EVENT_MANSION_SWITCH_ON", eventMansionSwitchOn},
 		{"EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE", eventBeatRoute22Rival2ndBattle},
 		{"EVENT_PASSED_CASCADEBADGE_CHECK", eventPassedCascadeBadgeCheck},

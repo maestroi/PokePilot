@@ -25,11 +25,9 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 
-	// Repair before travel, not only at the gym door. A resumed run may be on
-	// the far side of Route 9, whose legal return route itself requires Cut.
-	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: SurgeProgression: prepare Cut carrier: %w", err)
-	}
+	// Cut usability is a declared objective prerequisite. Generic recovery
+	// repairs the carrier before this story transaction starts, including for a
+	// resumed run on the far side of Route 9.
 
 	if m.Peek8(sym.CurMap) != vermilionGymMap {
 		city, ok := Place("vermilion city")
@@ -45,16 +43,11 @@ func SurgeProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: SurgeProgression: Lt. Surge: %w", err)
 	}
-	if outcome == state.ResultLost {
-		return fmt.Errorf("skill: SurgeProgression: %w against Lt. Surge", ErrTrainerBlackedOut)
-	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: SurgeProgression: Lt. Surge battle ended with outcome %d", outcome)
+	if err := RequireTrainerBattleWin("gym:lt_surge", outcome); err != nil {
+		return fmt.Errorf("skill: SurgeProgression: %w", err)
 	}
 
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeThunder) {
-		return fmt.Errorf("skill: SurgeProgression: Thunder Badge missing after Lt. Surge")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }

@@ -66,7 +66,7 @@ var modelExperimentsJS []byte
 // arbitrary prompt-only prose explicitly.
 var goalInputHTML = []byte(`<label class="llm-only goal-field">goal <input name="goal" value="Earn the Boulder Badge." autocomplete="off"></label>`)
 
-var goalPresetHTML = []byte(`<label class="llm-only goal-field">goal <select name="goal"><option value="Earn the Boulder Badge." selected>Earn the Boulder Badge</option><option value="Earn 2 badges.">Earn 2 badges</option><option value="Earn 3 badges.">Earn 3 badges</option><option value="Earn 4 badges.">Earn 4 badges</option><option value="Earn 5 badges.">Earn 5 badges</option><option value="Earn 6 badges.">Earn 6 badges</option><option value="Earn 7 badges.">Earn 7 badges</option><option value="Earn all 8 badges.">Earn all 8 badges</option><option value="Beat the Elite Four and Champion.">Beat the Elite Four + Champion</option><option value="">Free play (no automatic stop)</option></select></label>`)
+var goalPresetHTML = []byte(`<label class="llm-only goal-field">goal <select name="goal"><option value="Earn the Boulder Badge." selected>Earn the Boulder Badge</option><option value="Earn 2 badges.">Earn 2 badges</option><option value="Earn 3 badges.">Earn 3 badges</option><option value="Earn 4 badges.">Earn 4 badges</option><option value="Earn 5 badges.">Earn 5 badges</option><option value="Earn 6 badges.">Earn 6 badges</option><option value="Earn 7 badges.">Earn 7 badges</option><option value="Earn all 8 badges.">Earn all 8 badges</option><option value="badges:1">Brock / 1 badge</option><option value="badges:2">Misty / 2 badges</option><option value="progress:silph_scope_acquired">Rocket Hideout</option><option value="progress:poke_flute_acquired">Pokémon Tower</option><option value="capability:surf">Surf obtained</option><option value="capability:strength">Strength obtained</option><option value="progress:silph_co_cleared">Silph completed</option><option value="badges:6">Sabrina / 6 badges</option><option value="badges:7">Blaine / 7 badges</option><option value="badges:8">Giovanni / 8 badges</option><option value="progress:indigo_plateau_ready">Indigo Plateau</option><option value="elite-four">Hall of Fame</option><option value="Beat the Elite Four and Champion.">Beat the Elite Four + Champion</option><option value="">Free play (no automatic stop)</option></select></label>`)
 
 // mapFiles holds build-time semantic map JSON used by the operator console.
 //
@@ -183,8 +183,13 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/dashboard", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/stats", outcomesStatsHandler(wallBase))
 	mux.HandleFunc("GET /v1/triage", proxy(wallBase, true))
+	mux.HandleFunc("POST /v1/triage/dismiss", proxy(wallBase, false))
+	mux.HandleFunc("DELETE /v1/triage/{key}", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/models", proxy(wallBase, true))
+	mux.HandleFunc("POST /v1/models", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/models/test", proxy(wallBase, false))
 	mux.HandleFunc("PATCH /v1/models/{id}", proxy(wallBase, false))
+	mux.HandleFunc("DELETE /v1/models/{id}", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/experiments", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/experiments/{id}", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/experiments", proxy(wallBase, false))
@@ -192,11 +197,14 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("PATCH /v1/runs/{id}/spectator", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/pause", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/resume", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/runs/{id}/clone", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/runs/{id}", deleteRunHandler(wallBase, replayBase))
 	mux.HandleFunc("GET /frame", proxy(wallBase, true))
+	mux.HandleFunc("GET /render-state", spectatorRenderState(wallBase))
 	mountRunInspectorRoutes(mux, wallBase, replayBase)
 	if token = strings.TrimSpace(token); token != "" {
 		mux.Handle("/mcp", newMCPHandler(wallBase, replayBase, token))
@@ -288,6 +296,14 @@ func main() {
 	mcpToken := strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN"))
 	var httpHandler http.Handler
 	if *spectator {
+		if replayBase == "" {
+			// Not fatal: a spectator without a replay sidecar is a legitimate
+			// degraded mode. It is NOT a no-op though -- the replay catalog is
+			// what keeps finished runs in the public snapshot at all, so without
+			// -replay the public page shows only live runs and the archive looks
+			// empty rather than unconfigured.
+			log.Printf("pokeui: WARNING spectator mode without -replay: finished runs and their cached replays are omitted from the public archive; pass -replay http://replay:8080 and make sure this service shares an overlay network with the replay sidecar")
+		}
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase))
 		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")

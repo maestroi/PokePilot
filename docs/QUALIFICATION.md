@@ -32,6 +32,115 @@ If `POKEMON_RED_ROM` is not set, the local default is `$HOME/.config/pokepilot/p
 
 Never commit the ROM, `.sav` files, or `.state` files. The qualification command never copies the ROM into its output.
 
+## Starting qualification from RomPilot
+
+Operator-driven benchmark runs use the normal **New Run** form in RomPilot.
+Choose a **Qualification target** and, when desired, set **Benchmark runs** to
+queue a repeated seeded set. These are ordinary farm specs and use the same
+workers, model deployment selection, run policy, checkpoints, failure handling,
+and spectator path as any other UI-started run.
+
+Each completed Pokémon Red LLM run automatically carries a versioned
+`benchmark-result.json` finish artifact. Selecting a qualification target adds
+a deterministic semantic end condition and groups repeated runs with the
+existing experiment identity fields. Seeds advance from the form's base seed,
+so the same base seed and run count can be reused for a fair baseline/candidate
+comparison.
+
+The `pokebench` command remains available for private CI/offline execution and
+`pokebench compare` remains the machine-readable/result-set comparison tool;
+it is not required to launch normal operator qualification runs.
+
+## E2E speed and reliability benchmark
+
+`cmd/pokebench` is the structured measurement layer on top of the same
+`agent.Run`, semantic progression, checkpoint, and farm failure-fingerprint
+systems used by qualification. It does not parse screen text and it does not
+change controller timing to obtain measurements.
+
+A fresh baseline and candidate comparison looks like:
+
+```sh
+go run ./cmd/pokebench red \
+  --mode speedrun \
+  --from fresh \
+  --until hall-of-fame \
+  --runs 3 \
+  --seed 1 \
+  --output ./benchmarks/baseline
+
+# make the routing/model/runtime change
+
+go run ./cmd/pokebench red \
+  --mode speedrun \
+  --from fresh \
+  --until hall-of-fame \
+  --runs 3 \
+  --seed 1 \
+  --output ./benchmarks/candidate
+
+go run ./cmd/pokebench compare \
+  ./benchmarks/baseline \
+  ./benchmarks/candidate
+```
+
+The same seed sequence is used when the same `--seed` and `--runs` are
+supplied, so baseline and candidate see the same deterministic fresh-run frame
+burns. Use `--seeds 7,11,13` when an exact seed list is preferred.
+
+For a focused regression, load a preserved semantic milestone checkpoint
+instead of replaying Pallet Town onward:
+
+```sh
+go run ./cmd/pokebench red \
+  --from checkpoint:/absolute/path/to/sabrina.state \
+  --until blaine \
+  --runs 3 \
+  --output ./benchmarks/sabrina-to-blaine
+```
+
+Named checkpoints resolve against `POKEPILOT_QUALIFICATION_CORPUS` in both
+the existing `<case>/start.state` layout and the benchmark
+`checkpoints/<milestone>.state` layout. Benchmark-created milestone
+checkpoints copy the paired agent knowledge/coverage files when they exist, so
+a replay resumes with the same semantic agent memory rather than only emulator
+RAM.
+
+### Result contract
+
+Each run writes a version-1 `benchmark-result.json`. The containing directory
+includes game, fresh/checkpoint benchmark type, end milestone, commit, timestamp,
+run index, and seed. The result records:
+
+- commit, verified ROM SHA-256, mode, seed, source/checkpoint hash, and sanitized
+  model/run policy identity;
+- canonical emulator frames and emulated seconds separately from wall time;
+- semantic major-milestone splits with absolute/delta frames, wall splits,
+  party, map, badges/capabilities, and the objective crossing the split;
+- coarse frame attribution (navigation, battle, menus, healing,
+  shopping/inventory, field actions, unclassified) plus strategist/fast
+  inference wall latency;
+- planner/model call counts, p50/p95 latency, token totals, route and health;
+- optimization counters derived from existing structured objective evidence;
+- farm-compatible structured failure fingerprints, recent objective/events,
+  planner/navigation diagnostics, semantic state, and a replay checkpoint.
+
+No endpoint credential/token is persisted. Endpoint URLs are stripped of
+userinfo, query strings and fragments, and arbitrary settings pass through a
+secret-key denylist before serialization.
+
+A failed run is still written before the command returns non-zero. Its console
+summary includes the last split, failed objective, farm fingerprint, checkpoint,
+and frame count. `benchmark-summary.json` aggregates repeated runs without
+folding failures into successful completion time. `pokebench compare` makes
+completion-rate changes visible before speed deltas and reports only descriptive
+sample comparisons; it does not claim statistical significance from small N.
+
+Pokémon Red owns the milestone definitions in `red/benchmark`; the generic
+benchmark engine therefore does not need Red map/event constants. Yellow and
+future games can provide another profile using the same result/aggregation
+format.
+
 ## Qualification layers
 
 The current catalog lives in `qualification/catalog.go`.
@@ -44,15 +153,16 @@ The current catalog lives in `qualification/catalog.go`.
 | milestone | `misty` | generated/cached `post_boulder` fixture | runnable |
 | milestone | `rocket-hideout` | private `rocket-hideout/start.state` | runnable |
 | milestone | `pokemon-tower` | private `pokemon-tower/start.state` | runnable |
-| milestone | `fuchsia-koga-surf-strength` | private checkpoint | blocked by #33 |
-| milestone | `silph-sabrina` | private checkpoint | blocked by #34 |
-| milestone | `cinnabar-blaine` | private checkpoint | blocked by #35 |
-| milestone | `viridian-giovanni` | private checkpoint | blocked by #36 |
-| milestone | `victory-road-indigo` | private checkpoint | blocked by #37 |
-| milestone | `elite-four-champion` | private checkpoint | blocked by #38 |
-| full | `fresh-hall-of-fame` | fresh emulator boot | runner available; product completion blocked by #39 |
+| milestone | `fuchsia-koga-surf-strength` | private checkpoint | runnable |
+| milestone | `silph-sabrina` | private checkpoint | runnable |
+| milestone | `cinnabar-blaine` | private checkpoint | runnable |
+| milestone | `viridian-giovanni` | private checkpoint | runnable |
+| milestone | `victory-road-indigo` | private checkpoint | runnable |
+| milestone | `elite-four-loss-recovery` | private losing Indigo checkpoint | runnable; required defeat -> blackout -> restart -> League recommit |
+| milestone | `elite-four-champion` | private checkpoint | runnable; save/reopen/load after every League stage |
+| full | `fresh-hall-of-fame` | fresh emulator boot | runnable; #39 closes only after a clean proof |
 
-Future milestones stay in the catalog with their blocker instead of being silently skipped and presented as green coverage.
+Closed story slices stay in the daily milestone profile. A missing private checkpoint is a qualification failure, not a green skip.
 
 `mt-moon-cerulean` is the regression barrier for the farm defect that stalled
 run `run-17rjs2d1uf1kw3` for eighty rounds. Mt. Moon B2F's fossil corridor is
@@ -86,20 +196,41 @@ $POKEPILOT_QUALIFICATION_CORPUS/
     start.state
   victory-road-indigo/
     start.state
+  elite-four-loss-recovery/
+    start.state
   elite-four-champion/
     start.state
 ```
 
-A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip.
+A landed checkpoint case fails if its `start.state` is absent. It does not downgrade missing replay evidence to a skip. `pokequal` preflights private checkpoints before starting either a direct skill case or a Go-test case, copies the exact input into that case's private evidence directory, and records its SHA-256. Explicit `-corpus` overrides are also pinned into the child-test environment, so local and self-hosted runs resolve the same corpus path deterministically.
 
-For direct checkpoint cases, `pokequal` copies the exact input state into the run evidence, records its SHA-256, loads it through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success.
+For direct checkpoint cases, `pokequal` then loads the preserved state through `emu.LoadState`, runs the Red-owned progression skill, and verifies a positive semantic postcondition through `agent.Observation`. A nil skill error alone is never qualification success. Go-test checkpoint cases retain the same private `start.state` evidence and hash while the focused test owns the stronger multi-step assertions.
+
+The `elite-four-loss-recovery` case starts from an intentionally underpowered
+Indigo-lobby checkpoint that deterministically loses to Lorelei with the normal
+battle policy. It requires a typed `RequiredBattleError` with encounter identity,
+verifies the real Indigo blackout without falsely committing Lorelei, restarts
+the emulator from that post-loss state, and proves the ordinary League traversal
+heals and recommits to Lorelei. Generic ROM-free agent tests cover the other half
+of the contract: that this typed loss normalizes to `combat_defeat` and only
+becomes retry-ready after material combat-readiness progress.
+
+The `elite-four-champion` Go-test case is intentionally stronger than a single
+in-process gauntlet. After League start, each Elite Four member, the Champion,
+and Hall of Fame completion, it serializes the emulator state, closes the
+emulator, opens a fresh instance, reloads the checkpoint, and re-asserts the
+stage's semantic fact before continuing. This makes checkpoint/resume a
+qualification property rather than an assumption.
 
 Current direct postconditions are:
 
 - Rocket Hideout: semantic bag owns `silph scope`.
 - Pokémon Tower: semantic bag owns `poke flute`.
-
-When later progression slices land, add the smallest positive semantic postcondition for that milestone and flip its catalog entry to runnable.
+- Fuchsia/Koga: semantic progress `fuchsia_progression_complete` (Soul + HM03 + HM04).
+- Silph/Sabrina: Marsh Badge is owned.
+- Cinnabar/Blaine: Volcano Badge is owned.
+- Viridian/Giovanni: Earth Badge is owned.
+- Victory Road/Indigo: semantic progress `indigo_plateau_ready` is complete.
 
 ## Failure evidence
 
@@ -135,13 +266,7 @@ The runner can use the default private paths above, or repository variables can 
 
 LLM configuration uses the existing `POKEPILOT_LLM_*`, `POKEPILOT_LLM_GPU_*`, and profile environment variables available to the self-hosted runner. Credentials are never written to qualification metadata.
 
-The workflow runs milestone qualification daily. A weekly fresh-save job exists but is gated by:
-
-```text
-POKEPILOT_FULL_QUALIFICATION=1
-```
-
-Do not enable that repository variable as a required scheduled barrier until #39 has landed. Manual `full` runs are still useful while #39 is being completed because they produce the exact failing frontier and checkpoint ring.
+The workflow runs milestone qualification plus two representative checkpoint benchmarks daily and runs the structured fresh-save Hall-of-Fame benchmark weekly. The full run is intentionally a real barrier: it closes #39 only after the typed eight-badge + Hall-of-Fame postcondition passes. Failures preserve the checkpoint ring and diagnostics so the next frontier can be replayed without weakening the milestone suite.
 
 ### Artifact boundary
 

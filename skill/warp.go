@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -54,14 +55,100 @@ const (
 // rather than a defect — the caller bans the edge and re-plans.
 var ErrLegUnwalkable = errors.New("skill: leg is not walkable from here")
 
+// ErrLegBouncesBack reports that a crossing was measured to settle back on
+// its OWN origin map instead of holding on the destination — a forced-scroll
+// script (Cycling Road's mandatory downhill descent) rather than a blocked
+// approach tile. Unlike the ordinary ErrLegUnwalkable case (Route 2's ledge:
+// genuinely walkable from one tile of the edge and not another), a bounce is
+// evidence about the connection itself, not about the tile it was crossed
+// from: every tile of Route 18's north edge feeds the same forced descent,
+// so re-trying it from a different tile of the same map is not a fresh
+// discovery. It wraps ErrLegUnwalkable so existing errors.Is(err,
+// ErrLegUnwalkable) callers keep working unchanged; the caller that cares
+// about the stronger claim checks ErrLegBouncesBack specifically and bans
+// the whole map's edge (legFromMap) rather than just the one tile (legAt).
+var ErrLegBouncesBack = fmt.Errorf("skill: leg settles back on its own origin map: %w", ErrLegUnwalkable)
+
+// ErrConnectionBandExhausted reports stronger evidence than a single
+// ErrLegUnwalkable: Traverse tried every reachable candidate tile in one
+// component-scoped connection band and none crossed. That disproves this
+// specific band for the current journey, not merely the final approach tile.
+// It still unwraps to ErrLegUnwalkable for compatibility with generic
+// navigation-error classification.
+var ErrConnectionBandExhausted = fmt.Errorf("skill: connection band exhausted: %w", ErrLegUnwalkable)
+
 // maxWarpApproachAttempts bounds the retry-from-a-different-side loop below
 // to one try per orthogonal neighbour of the target warp tile.
 const maxWarpApproachAttempts = 4
 
+// maxWarpCandidates bounds how many distinct candidate warp tiles (Route 7
+// Gate's Saffron door is a genuine ROM pair reachable from the same side)
+// Traverse will cycle through before giving up on the edge.
+const maxWarpCandidates = 4
+
+// connectionCrossingCandidateBudget returns a finite upper bound for unique
+// border tiles Traverse can try on this connection. A failed held push is
+// tile-scoped evidence, so stopping after an arbitrary small constant can
+// reject a valid wide connection band before its live crossing is reached.
+// connectionTargetFailure preserves the strongest evidence available when a
+// connection edge has no reachable execution target. For an unscoped edge the
+// failure can be position-local (Route 2's ledge is the canonical case). A
+// component-scoped band already identifies one contiguous component pair, so
+// zero reachable candidates disproves that exact band for this journey.
+func connectionTargetFailure(e world.Edge, err error) error {
+	if _, _, scoped := world.ConnectionBand(e); scoped {
+		return fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrConnectionBandExhausted)
+	}
+	return fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+}
+
+func connectionCrossingCandidateBudget(g *world.Grid, e world.Edge) int {
+	if g == nil {
+		return 1
+	}
+	limit := 0
+	switch e.Dir {
+	case 0, 1:
+		limit = g.Width
+	case 2, 3:
+		limit = g.Height
+	default:
+		return 1
+	}
+	if limit < 1 {
+		return 1
+	}
+	start, end, scoped := world.ConnectionBand(e)
+	if !scoped {
+		return limit
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end >= limit {
+		end = limit - 1
+	}
+	if end < start {
+		return 1
+	}
+	return end - start + 1
+}
+
 func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
+	return TraverseAvoiding(m, romData, e, nil)
+}
+
+// TraverseAvoiding is Traverse with caller-supplied extra tiles treated as
+// unwalkable for every warp-approach planner. It is intended for scripted
+// blockers that the collision grid cannot represent, while keeping Traverse
+// itself map-agnostic.
+func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
 	cur := m.Peek8(sym.CurMap)
 	if cur != e.From {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
+	}
+	if e.Kind == world.EdgeWarp && e.From == e.To {
+		return traverseIntraMapWarp(m, romData, e)
 	}
 
 	h, err := rom.ParseMap(romData, e.From)
@@ -77,115 +164,246 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 	}
 
 	if e.Kind == world.EdgeConnection {
-		push, err := walkToConnectionEdge(m, h, grid, e)
-		if err != nil {
-			return err
+		// Border tiles whose held push never crossed are per-tile live
+		// evidence, so the next tile of the same band is tried before the
+		// edge is reported unwalkable.
+		deadCrossings := map[[2]int]bool{}
+		var lastDead error
+		banCrossing := func() {
+			x, y := playerXY(m)
+			deadCrossings[[2]int{int(x), int(y)}] = true
+			// A Surf mount on the failed tile changes which grid applies.
+			if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
+				grid = refreshed
+			}
 		}
-		btn, ok := buttonFor(push)
-		if !ok {
-			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
+		for attempt, budget := 0, connectionCrossingCandidateBudget(grid, e); attempt < budget; attempt++ {
+			push, err := walkToConnectionEdge(m, h, grid, e, deadCrossings)
+			if err != nil && errors.Is(err, ErrLegUnwalkable) {
+				// Land-only collision may split the selected source band behind Cut,
+				// Surf, Strength, or a forced-movement tile. Ask the same local
+				// capability planner used by GoTo to reach this exact connection band,
+				// then retry ordinary edge traversal from the resulting live state.
+				if fieldErr := approachConnectionWithFieldPath(m, romData, e); fieldErr == nil {
+					if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
+						grid = refreshed
+					}
+					push, err = walkToConnectionEdge(m, h, grid, e, deadCrossings)
+				}
+			}
+			if err != nil {
+				return err
+			}
+			btn, ok := buttonFor(push)
+			if !ok {
+				return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
+			}
+			if err := pushAcrossEdge(m, e, btn); err != nil {
+				// A connection edge that never crosses within crossBudget while
+				// simply held is a strong live signal that a water tile blocked
+				// the walk, not a wall: game input blocked by a wall reports
+				// itself as immediate lack of movement, not a stalled crossing.
+				// Ask the ROM itself whether Surf now clears it — it reads the
+				// live tile in front of the player, so it is authoritative about
+				// water even when the crossing is a shore that begins exactly on
+				// the OTHER map's side of the seam (Pallet Town's dry south
+				// border into Route 21's water), which neither map's own
+				// pre-crossing land/water grid can see. MEASURED on
+				// run-18lk6m6f27hl732ikt5b86rzvs round 3: AcquireCinnabarSecretKey
+				// held south at Pallet (3,17) for the full budget without ever
+				// entering Route 21.
+				if errors.Is(err, errDidNotCross) {
+					fieldActions, fieldErr := fieldActionDecoderFor(m)
+					if fieldErr != nil {
+						return fmt.Errorf("skill: Traverse: observe Surf state: %w", fieldErr)
+					}
+					if !fieldActions.DecodeFieldAction(m).Surfing {
+						if mountErr := mountSurfFacingPushWithDecoder(m, fieldActions, romData, push); mountErr == nil {
+							if err2 := pushAcrossEdge(m, e, btn); err2 == nil {
+								return finishArrival(m, e)
+							}
+						} else {
+							// The ROM itself declined to Surf here (validateFieldActionContext
+							// only rejects "already surfing", so a decline this far in means
+							// IsNextTileShoreOrWater said no): this exact border tile is not a
+							// crossing point at all, e.g. shoreline scenery rather than open
+							// water. That is per-tile evidence, not evidence about the edge
+							// itself — Route 21's near shore has open water a few columns over
+							// from Pallet's blocked (3,17). Ban this tile like ErrLegUnwalkable
+							// so GoTo's existing band search picks the next candidate column
+							// instead of failing the whole edge.
+							lastDead = fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+							banCrossing()
+							continue
+						}
+					}
+					// Already surfing and the held push still never crossed: the same
+					// per-tile evidence as the not-surfing/declined-Surf case above, just
+					// without a Surf decline to read it from. MEASURED on
+					// run-1biaubd9xooqm round 2 (Route 20 (99,3) -> Route 19 east): the
+					// connection's band is geometrically valid across the map's full
+					// height (offset +36 keeps every row in bounds on Route 19), and
+					// crossing at a different row of the SAME edge — (99,10) — fires
+					// immediately, landing on Route 19 at (10,46). Row 3 alone never
+					// budges the player's position across the full 180-frame hold: live
+					// proof this exact border tile is a dead spot, not that the whole
+					// edge is uncrossable. Ban it like ErrLegUnwalkable so GoTo's
+					// existing band search retries a different tile of this connection
+					// instead of terminating the journey on one bad row.
+					//
+					// The ban lives here rather than in GoTo: GoTo keys its ban by where the
+					// leg STARTED, so a player already standing on the dead tile banned the
+					// whole connection from that tile and never tried the next row
+					// (run-2gaqkunigwgd3c31gy74b09do: surfing at Route 20 (99,3), band 2..16
+					// the only reachable one, every re-plan exhausted).
+					lastDead = fmt.Errorf("skill: Traverse: %s: %v: %w", edgeName(e), err, ErrLegUnwalkable)
+					banCrossing()
+					continue
+				}
+				return err
+			}
+			return finishArrival(m, e)
 		}
-		if err := pushAcrossEdge(m, e, btn); err != nil {
-			return err
+		if lastDead != nil {
+			return fmt.Errorf("%w: %v", ErrConnectionBandExhausted, lastDead)
 		}
-		return finishArrival(m, e)
+		return ErrConnectionBandExhausted
 	}
 	if e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: Traverse: unknown edge kind %d on %02x->%02x", e.Kind, e.From, e.To)
 	}
 
-	var unwalkable error
-	var wx, wy int
-	var push world.Step
-	err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
-		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			// The tile is re-chosen on every re-plan, from wherever the
-			// interrupted walk stopped: which warp tile is reachable is a
-			// fact about where the player stands right now, never a property
-			// of the map or the warp, so it is never cached.
-			x, y := playerXY(m)
-			rx, ry, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, romData)
-			if err != nil {
-				unwalkable = fmt.Errorf("skill: Traverse: no reachable warp to %02x from (%d,%d) on map %02x (edge tile %d,%d): %v: %w",
-					e.To, x, y, e.From, e.WarpX, e.WarpY, err, ErrLegUnwalkable)
-				return nil, unwalkable
-			}
-			wx, wy = rx, ry
-			push = p // the last plan's push direction is the one walked
-			return steps, nil
-		}, func(steps []world.Step) error { return WalkPath(m, steps) },
-		func() { m.StepFrames(npcWaitFrames) })
-	if err != nil {
-		if err == unwalkable {
-			return err
-		}
-		// Normalize to ErrBattle exactly as the connection branch does, so a
-		// caller can test one sentinel no matter which layer was walking: a
-		// wild encounter on the walk to a warp is the same recoverable event
-		// as one on the walk to an edge, and Travel (and the llm loop) rely
-		// on ErrBattle to fight it and re-plan from where the walk stopped.
-		if errors.Is(err, ErrBattleInterrupted) {
-			x, y := playerXY(m)
-			return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
-		}
-		return fmt.Errorf("skill: Traverse: walk to warp on map %02x: %w", e.From, err)
-	}
-
-	// A warp tile is only ever route's first guess, not a guarantee: Route
-	// 18 Gate's (33,8)/(33,9) are genuine ROM warp tiles the door/warp-tile
-	// graphic checks recognize when arrived at from the west (push right),
-	// yet the exact same tiles never cross when arrived at from the north
-	// (push down) — measured by holding the push for the full crossBudget,
-	// then for 5,000,000 emulated CPU steps, with no difference. Pokemon
-	// Red's own warp check is graphic- and (for the ExtraWarpCheck fallback)
-	// facing-dependent, not purely coordinate-based, so more than one
-	// orthogonal approach to the same warp tile can exist with only one of
-	// them actually firing it.
-	//
-	// A failed approach is retried from a different orthogonal neighbour of
-	// the SAME target tile, reached by an unrestricted walk rather than
-	// another warpTarget search: the player has, by definition, ended the
-	// failed push standing on or beside a warp tile that just proved it does
-	// not fire from this direction, and warpTarget's own route-crosses-a-warp
-	// guard (needed so a shared approach corridor never fires the wrong one
-	// of two DIFFERENT destinations) would otherwise block every retry path
-	// that leads back out through it.
-	tried := map[[2]int]bool{}
+	// A destination can offer more than one candidate warp tile (Route 7
+	// Gate's Saffron-side door is a genuine ROM pair, (18,9) and (18,10),
+	// both leading to adjacent landing tiles on the far side). warpTarget
+	// picks its first reachable candidate in ROM order, but that candidate
+	// is only ever a guess: MEASURED on run-13kws9zfzq7ka1p4bmd16c9yg3, none
+	// of the four orthogonal approaches to (18,9) ever fired the warp (the
+	// tile's graphic is not a recognized door/warp tile, and the collision
+	// check's "tile two ahead" never matched for that coordinate either),
+	// while pushing west from (18,10) — the OTHER candidate — does fire it.
+	// excludeWarp lets a caller ban an exhausted candidate and have
+	// warpTarget hand back the next one instead of failing the whole edge.
+	excludeWarp := map[[2]int]bool{}
 	var lastErr error
-	for attempt := 0; attempt < maxWarpApproachAttempts; attempt++ {
-		ax, ay := playerXY(m)
-		tried[[2]int{int(ax), int(ay)}] = true
-
-		btn, ok := buttonFor(push)
-		if !ok {
-			return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
-		}
-		crossErr := pushAcrossEdge(m, e, btn)
-		if crossErr == nil {
-			return finishArrival(m, e)
-		}
-		if !errors.Is(crossErr, errDidNotCross) {
-			return crossErr // battle, or another terminal failure
-		}
-		lastErr = crossErr
-
-		nx, ny, npush, ok := untriedOrthogonalApproach(grid, wx, wy, tried)
-		if !ok {
-			break
-		}
-		x, y := playerXY(m)
-		steps, ferr := world.FindPath(grid, int(x), int(y), nx, ny, nil)
-		if ferr != nil {
-			break
-		}
-		if werr := WalkPath(m, steps); werr != nil {
-			if errors.Is(werr, ErrBattleInterrupted) {
-				px, py := playerXY(m)
-				return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, px, py, ErrBattle)
+	fieldApproachTried := false
+	for candidate := 0; candidate < maxWarpCandidates; candidate++ {
+		var unwalkable error
+		var wx, wy int
+		var push world.Step
+		err = walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
+			func(blocked map[[2]int]bool) ([]world.Step, error) {
+				// The tile is re-chosen on every re-plan, from wherever the
+				// interrupted walk stopped: which warp tile is reachable is a
+				// fact about where the player stands right now, never a property
+				// of the map or the warp, so it is never cached.
+				x, y := playerXY(m)
+				blocked = mergeBlockedTiles(blocked, extraBlocked)
+				rx, ry, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, excludeWarp, romData)
+				if err != nil {
+					unwalkable = fmt.Errorf("skill: Traverse: no reachable warp to %02x from (%d,%d) on map %02x (edge tile %d,%d): %v: %w",
+						e.To, x, y, e.From, e.WarpX, e.WarpY, err, ErrLegUnwalkable)
+					return nil, unwalkable
+				}
+				wx, wy = rx, ry
+				push = p // the last plan's push direction is the one walked
+				return steps, nil
+			}, func(steps []world.Step) error { return WalkPath(m, steps) },
+			func() { m.StepFrames(npcWaitFrames) })
+		if err != nil {
+			if err == unwalkable {
+				// Land-only FindPath still treats Cut trees as solid. Local
+				// field pathing already owns those trees for same-map walks;
+				// warp approaches must use the same destination-aware planner
+				// instead of failing a sealed pocket (Celadon Gym's leader
+				// chamber after #1327 removed post-failure nearest-tree cuts).
+				if !fieldApproachTried {
+					fieldApproachTried = true
+					if aperr := approachWarpWithFieldPath(m, romData, e, extraBlocked); aperr == nil {
+						if g, gerr := liveMapGrid(m, romData, h); gerr == nil {
+							grid = g
+						}
+						candidate--
+						continue
+					}
+				}
+				if lastErr != nil {
+					return lastErr
+				}
+				return err
 			}
-			break
+			// Normalize to ErrBattle exactly as the connection branch does, so a
+			// caller can test one sentinel no matter which layer was walking: a
+			// wild encounter on the walk to a warp is the same recoverable event
+			// as one on the walk to an edge, and Travel (and the llm loop) rely
+			// on ErrBattle to fight it and re-plan from where the walk stopped.
+			if errors.Is(err, ErrBattleInterrupted) {
+				x, y := playerXY(m)
+				return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
+			}
+			return fmt.Errorf("skill: Traverse: walk to warp on map %02x: %w", e.From, err)
 		}
-		push = npush
+
+		// A warp tile is only ever route's first guess, not a guarantee: Route
+		// 18 Gate's (33,8)/(33,9) are genuine ROM warp tiles the door/warp-tile
+		// graphic checks recognize when arrived at from the west (push right),
+		// yet the exact same tiles never cross when arrived at from the north
+		// (push down) — measured by holding the push for the full crossBudget,
+		// then for 5,000,000 emulated CPU steps, with no difference. Pokemon
+		// Red's own warp check is graphic- and (for the ExtraWarpCheck fallback)
+		// facing-dependent, not purely coordinate-based, so more than one
+		// orthogonal approach to the same warp tile can exist with only one of
+		// them actually firing it.
+		//
+		// A failed approach is retried from a different orthogonal neighbour of
+		// the SAME target tile, reached by an unrestricted walk rather than
+		// another warpTarget search: the player has, by definition, ended the
+		// failed push standing on or beside a warp tile that just proved it does
+		// not fire from this direction, and warpTarget's own route-crosses-a-warp
+		// guard (needed so a shared approach corridor never fires the wrong one
+		// of two DIFFERENT destinations) would otherwise block every retry path
+		// that leads back out through it.
+		tried := map[[2]int]bool{}
+		for attempt := 0; attempt < maxWarpApproachAttempts; attempt++ {
+			ax, ay := playerXY(m)
+			tried[[2]int{int(ax), int(ay)}] = true
+
+			btn, ok := buttonFor(push)
+			if !ok {
+				return fmt.Errorf("skill: Traverse: invalid push step %s on %02x->%02x", push, e.From, e.To)
+			}
+			crossErr := pushAcrossEdge(m, e, btn)
+			if crossErr == nil {
+				return finishArrival(m, e)
+			}
+			if !errors.Is(crossErr, errDidNotCross) {
+				return crossErr // battle, or another terminal failure
+			}
+			lastErr = crossErr
+
+			nx, ny, npush, ok := untriedOrthogonalApproach(grid, wx, wy, tried)
+			if !ok {
+				break
+			}
+			x, y := playerXY(m)
+			steps, ferr := world.FindPath(grid, int(x), int(y), nx, ny, nil)
+			if ferr != nil {
+				break
+			}
+			if werr := WalkPath(m, steps); werr != nil {
+				if errors.Is(werr, ErrBattleInterrupted) {
+					px, py := playerXY(m)
+					return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, px, py, ErrBattle)
+				}
+				break
+			}
+			push = npush
+		}
+		// Every orthogonal approach to this candidate tile within budget
+		// either was unwalkable or failed to fire the warp: ban it and let
+		// the next walkAroundAvoidingObjects/warpTarget pass hand back a
+		// different candidate, if the edge has one.
+		excludeWarp[[2]int{wx, wy}] = true
 	}
 	return lastErr
 }
@@ -209,19 +427,28 @@ func untriedOrthogonalApproach(g *world.Grid, wx, wy int, tried map[[2]int]bool)
 // every re-plan, not just the path to it: an NPC standing in a one-tile gap
 // can make the nearest edge tile unreachable while another one on the same
 // edge is fine.
-func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world.Edge) (world.Step, error) {
+func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world.Edge, excluded map[[2]int]bool) (world.Step, error) {
 	var unwalkable error
 	err := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
 			x, y := playerXY(m)
-			tx, ty, err := edgeTargetForConnection(grid, e, int(x), int(y), blocked)
+			// A connection edge is ordinary ground, not a door, but the path
+			// to it can still cross another warp tile of this same map (the
+			// Cerulean Badge House's front door sits right in the plaza).
+			// Stepping on ANY warp tile fires it, same as walking onto the
+			// intended one, and silently diverts the walk into that building
+			// instead of toward the border — MEASURED on
+			// run-3cefsxn84apv3126k7vkfk517y round 5: the walk toward
+			// Cerulean's east border crossed the Badge House door at (9,11),
+			// and the far door (9,9) is a genuine dead pocket with no route
+			// back out except through the same house, so every re-plan after
+			// that kept failing the same unreachable border search. Ban every
+			// other warp tile from the path exactly like warpTarget already
+			// does for a warp approach.
+			blocked = warpAvoidance(h, int(x), int(y), blocked)
+			tx, ty, err := edgeTargetForConnectionExcluding(grid, e, int(x), int(y), blocked, excluded)
 			if err != nil {
-				// Type it as ErrLegUnwalkable like the FindPath failure below:
-				// Route 2's ledge makes the north edge unreachable from the
-				// southern landing tile, and GoTo's per-tile ban is what
-				// re-routes around it through the forest. Unwrapped, the
-				// error is terminal and the only real route to Pewter dies.
-				unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+				unwalkable = connectionTargetFailure(e, err)
 				return nil, unwalkable
 			}
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
@@ -266,10 +493,17 @@ var errDidNotCross = errors.New("skill: Traverse: did not cross within budget")
 // tile, where no second encounter can fire because the player is already
 // standing on the grass.
 func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
+	startFainted := partyAllFainted(m)
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
 		if m.Peek8(sym.CurMap) != e.From {
+			if startFainted {
+				m.Release(btn)
+				if err := waitForFaintRespawn(m, e.From, true); err != nil {
+					return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
+				}
+			}
 			crossed = true
 			break
 		}
@@ -316,6 +550,29 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 	if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
 		return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
 	}
+
+	// waitForPositionStable only tracks (x,y): it never re-checks CurMap, so a
+	// forced-scroll script that keeps running after Controllable first flips
+	// true can carry the player back off e.To and let its settling position
+	// on a DIFFERENT map read as "stable". MEASURED on Route 18 -> Route 17
+	// (0x1d -> 0x1c, run-18ou0y2719oq33ly7rpykncxk4): the earlier CurMap check
+	// above passed while Cycling Road's forced downhill descent was still
+	// mid-flight, then that descent pushed the player back across the
+	// boundary onto e.From's exact starting tile, where the position finally
+	// stopped changing. The crossing never actually held, but every check
+	// before this one only ever sampled while it looked like it had. Without
+	// this, GoTo's navigationGuard sees "returned to a state already seen"
+	// and reports an unrecoverable stall instead of the ordinary "this leg
+	// does not hold from here" the router already knows how to route around.
+	if got := m.Peek8(sym.CurMap); got != e.To {
+		x, y := playerXY(m)
+		if got == e.From {
+			return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
+				edgeName(e), got, x, y, e.To, ErrLegBouncesBack)
+		}
+		return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
+			edgeName(e), got, x, y, e.To, ErrLegUnwalkable)
+	}
 	return nil
 }
 
@@ -342,6 +599,52 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 		budget, m.Peek8(sym.CurMap), x, y)
 }
 
+func mergeBlockedTiles(blocked, extra map[[2]int]bool) map[[2]int]bool {
+	if len(extra) == 0 {
+		return blocked
+	}
+	merged := make(map[[2]int]bool, len(blocked)+len(extra))
+	for p, blocked := range blocked {
+		merged[p] = blocked
+	}
+	for p, blocked := range extra {
+		merged[p] = blocked
+	}
+	return merged
+}
+
+// warpAvoidance extends blocked with every one of this map's warp tiles
+// except the tile the player is standing on. A path search that does not
+// know about warps can freely route across one on its way to some other
+// tile, firing it and silently diverting the walk into whatever it leads to
+// — the same hazard walkAroundAvoidingObjects's object blockers exist for,
+// just for doors instead of sprites. Standing on a warp tile does not refire
+// it (pokered only fires a warp on the step that arrives on it), so the
+// current tile is exempt: a caller already there must be free to walk off
+// it in any direction.
+//
+// Decomp-annotated "; inaccessible" warp-table entries are also exempt.
+// Those occupy ordinary walkable floor but do not fire as exits — MEASURED
+// on SILPH_CO_11F (5,5), where treating the inert teleporter as an eject
+// tile forced every approach to the president through the Beauty at (10,5)
+// and left GoTo with no capability-aware path.
+func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]int]bool {
+	out := make(map[[2]int]bool, len(blocked)+len(h.Warps))
+	for p, b := range blocked {
+		out[p] = b
+	}
+	for _, w := range h.Warps {
+		if int(w.X) == sx && int(w.Y) == sy {
+			continue
+		}
+		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+			continue
+		}
+		out[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	return out
+}
+
 // warpTarget picks the warp tile to cross. Among tiles that lead to e.To it
 // uses walkable tiles when any exist, then takes the first one in ROM table
 // order that the pathfinder can reach from (sx,sy). A destination made only
@@ -366,11 +669,19 @@ func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
 // A 0xFF (LAST_MAP) destination means "the map you came from." The graph
 // resolved it when it built e: if e's own tile is a 0xFF warp, every 0xFF
 // warp on this map resolves to e.To, so all of them lead to the target.
-func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
+
+// edgeWarpCandidates lists the door/ladder tiles on h that Traverse may use
+// for edge e. The filters match warpTarget: elevator scripts rewrite live
+// destinations, paired door tiles may share adjacent landings, and LAST_MAP
+// (0xFF) warps resolve to e.To when the edge tile itself is a LAST_MAP warp.
+func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.Warp {
 	lastMapDest, haveLastMap := uint8(0), false
 	var targetWarp uint8
 	haveTarget := false
 	for _, w := range h.Warps {
+		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+			continue
+		}
 		if w.X == e.WarpX && w.Y == e.WarpY {
 			targetWarp, haveTarget = w.DestWarpID, true
 		}
@@ -378,35 +689,19 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 			lastMapDest, haveLastMap = e.To, true
 		}
 	}
-	warpTile := make(map[[2]int]bool, len(h.Warps))
-	approachBlocked := make(map[[2]int]bool, len(blocked)+len(h.Warps))
-	for p, b := range blocked {
-		approachBlocked[p] = b
-	}
-	for _, w := range h.Warps {
-		warpTile[[2]int{int(w.X), int(w.Y)}] = true
-		if int(w.X) != sx || int(w.Y) != sy {
-			approachBlocked[[2]int{int(w.X), int(w.Y)}] = true
-		}
-	}
 
 	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
 	var candidates []rom.Warp
 	destHeader, destErr := rom.ParseMap(romData, e.To)
 	for _, w := range h.Warps {
-		// Elevator scripts rewrite every door's live destination after the
-		// floor choice, so their immutable ROM DestMap/DestWarpID values are
-		// not candidate filters. prepareElevatorEdge positively verified the
-		// live table before this point.
+		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+			continue
+		}
 		if elevatorEdge {
 			candidates = append(candidates, w)
 			continue
 		}
-		// Equal destination maps do not make ladders interchangeable: their
-		// landing warps can be in disconnected rooms on the same floor.
 		equivalent := w.DestWarpID == targetWarp
-		// Paired door tiles can name adjacent landing tiles. Preserve this
-		// measured door equivalence, but never substitute a remote ladder.
 		if !equivalent && destErr == nil && int(targetWarp) < len(destHeader.Warps) && int(w.DestWarpID) < len(destHeader.Warps) {
 			a, b := destHeader.Warps[targetWarp], destHeader.Warps[w.DestWarpID]
 			equivalent = absInt(int(w.X)-int(e.WarpX))+absInt(int(w.Y)-int(e.WarpY)) == 1 && absInt(int(a.X)-int(b.X))+absInt(int(a.Y)-int(b.Y)) == 1
@@ -419,12 +714,95 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 			if !haveLastMap || lastMapDest != e.To {
 				continue
 			}
+			// LAST_MAP is resolved at runtime, so a shared DestWarpID does not
+			// make two LAST_MAP warps the same exit: Route 22 Gate's south door
+			// (4,7) and north exit (4,0) are both "LAST_MAP, 1", and its script
+			// picks Route 22 or Route 23 from wYCoord. Only the edge tile itself
+			// and its adjacent door-pair partner lead where the edge does.
+			if absInt(int(w.X)-int(e.WarpX))+absInt(int(w.Y)-int(e.WarpY)) > 1 {
+				continue
+			}
 			dest = e.To
 		}
 		if dest == e.To {
 			candidates = append(candidates, w)
 		}
 	}
+	return candidates
+}
+
+// approachWarpWithFieldPath walks to an orthogonal neighbour of a warp that
+// leads across e, using the same Cut/Surf local planner as walkWithinMap.
+// Land-only FindPath still treats Cut trees as solid, so a sealed pocket
+// (Celadon Gym's leader chamber) has no ordinary route to the door even when
+// the party can legally Cut out. This is destination-aware: it ranks approach
+// tiles by field-action cost and never cuts an arbitrary nearby tree.
+func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
+	if e.Kind != world.EdgeWarp {
+		return world.ErrNoPath
+	}
+	if got := m.Peek8(sym.CurMap); got != e.From {
+		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", got, e.From)
+	}
+	h, err := rom.ParseMap(romData, e.From)
+	if err != nil {
+		return err
+	}
+	candidates := edgeWarpCandidates(h, e, romData)
+	if len(candidates) == 0 {
+		return world.ErrNoPath
+	}
+
+	sx, sy := playerXY(m)
+	blocked := spriteBlockers(m)
+	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
+	blocked = mergeBlockedTiles(blocked, extraBlocked)
+
+	type rankedApproach struct {
+		dest    Destination
+		actions int
+		moves   int
+	}
+	var best *rankedApproach
+	for _, w := range candidates {
+		for _, step := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+			ax, ay := int(w.X)+step.DX, int(w.Y)+step.DY
+			if ax < 0 || ay < 0 || ax > 255 || ay > 255 {
+				continue
+			}
+			dest := Destination{Map: e.From, X: uint8(ax), Y: uint8(ay)}
+			plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
+			if perr != nil {
+				continue
+			}
+			actions := 0
+			for _, p := range plan {
+				if p.Action != fieldPathWalk {
+					actions++
+				}
+			}
+			cand := rankedApproach{dest: dest, actions: actions, moves: len(plan)}
+			if best == nil || cand.actions < best.actions || (cand.actions == best.actions && cand.moves < best.moves) {
+				best = &cand
+			}
+		}
+	}
+	if best == nil {
+		return world.ErrNoPath
+	}
+	return walkWithinMap(m, romData, best.dest)
+}
+
+func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, excludeWarp map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
+	warpTile := make(map[[2]int]bool, len(h.Warps))
+	for _, w := range h.Warps {
+		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+			continue
+		}
+		warpTile[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	approachBlocked := warpAvoidance(h, sx, sy, blocked)
+	candidates := edgeWarpCandidates(h, e, romData)
 
 	// The player may already be standing on one of this destination's warp
 	// tiles: a resumed checkpoint whose previous leg warped in and landed
@@ -441,6 +819,9 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 	// whichever neighbor is not walkable rather than walking anywhere.
 	for _, w := range candidates {
 		if int(w.X) != sx || int(w.Y) != sy {
+			continue
+		}
+		if excludeWarp[[2]int{int(w.X), int(w.Y)}] {
 			continue
 		}
 		for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
@@ -468,6 +849,9 @@ func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocke
 			continue
 		}
 		if blocked[[2]int{wx, wy}] {
+			continue
+		}
+		if excludeWarp[[2]int{wx, wy}] {
 			continue
 		}
 		steps, push, err = world.FindPathAdjacent(g, sx, sy, wx, wy, approachBlocked)
@@ -605,4 +989,56 @@ func edgeName(e world.Edge) string {
 		return fmt.Sprintf("connection edge %02x->%02x via %s", e.From, e.To, dirName(e.Dir))
 	}
 	return fmt.Sprintf("edge %02x->%02x kind %d", e.From, e.To, e.Kind)
+}
+
+// mountSurfFacingPush faces the tile one step beyond the player in push's
+// direction and attempts to mount Surf there. It is only ever tried after an
+// ordinary connection push has already failed to cross, so a failure here
+// (not water, no Surf-capable party member, wrong facing) is expected and
+// left for the caller to report as the original crossing error.
+func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return mountSurfFacingPushWithDecoder(m, fieldActions, romData, push)
+}
+
+func mountSurfFacingPushWithDecoder(m *emu.Emu, fieldActions game.FieldActionDecoder, romData []byte, push world.Step) error {
+	x, y := playerXY(m)
+	tx, ty := int(x)+push.DX, int(y)+push.DY
+	if tx < 0 || tx > 255 || ty < 0 || ty > 255 {
+		return fmt.Errorf("skill: mountSurfFacingPush: facing tile (%d,%d) out of range", tx, ty)
+	}
+	if err := Face(m, uint8(tx), uint8(ty)); err != nil {
+		return err
+	}
+	m.StepFrames(2)
+	result, err := useFieldMoveWithDecoder(m, FieldSurf, fieldActions)
+	if err != nil {
+		return err
+	}
+	if !result.Surfing || !fieldActions.DecodeFieldAction(m).Surfing {
+		return fmt.Errorf("skill: mountSurfFacingPush: returned without verified surfing state")
+	}
+	return nil
+}
+
+// warpEdgeReachable reports whether the player can walk onto edge's warp on
+// the live grid right now.
+func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
+	if m.Peek8(sym.CurMap) != edge.From {
+		return false
+	}
+	h, err := rom.ParseMap(romData, edge.From)
+	if err != nil {
+		return false
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return false
+	}
+	x, y := playerXY(m)
+	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), nil, romData)
+	return err == nil
 }

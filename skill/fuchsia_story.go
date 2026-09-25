@@ -84,7 +84,7 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("skill: FuchsiaProgression: Koga: %w", err)
 		}
 		if outcome != state.ResultWon {
-			return fmt.Errorf("skill: FuchsiaProgression: Koga battle ended with outcome %d", outcome)
+			return fuchsiaKogaOutcomeErr(outcome)
 		}
 	}
 
@@ -106,6 +106,17 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !FuchsiaProgressionComplete(&mem) {
 		return fmt.Errorf("skill: FuchsiaProgression: incomplete after execution: soul=%v surf=%v strength=%v",
 			state.DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem), hasBagItem(&mem, hm04StrengthItem))
+	}
+	return nil
+}
+
+// fuchsiaKogaOutcomeErr maps the Koga battle outcome to the skill's error. A
+// loss keeps the typed trainer-blackout signal so the planner can train or
+// grow the party and retry the slice, instead of a raw outcome that classifies
+// as an unknown, unrecoverable failure.
+func fuchsiaKogaOutcomeErr(outcome state.BattleResult) error {
+	if err := RequireTrainerBattleWin("gym:koga", outcome); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: %w", err)
 	}
 	return nil
 }
@@ -153,8 +164,8 @@ func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle ended with outcome %d", outcome)
+	if err := RequireBattleWin("static:route12_snorlax", outcome); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: Snorlax battle: %w", err)
 	}
 	if err := Cutscene(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventBeatRoute12Snorlax)
@@ -178,19 +189,8 @@ func useOverworldKeyItem(m *emu.Emu, item uint8, started func(*state.Mem) bool) 
 		return fmt.Errorf("%w (id %#02x)", ErrNotInBag, item)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("select ITEM: %w", err)
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID
@@ -378,6 +378,11 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
+const (
+	safariExitTaps         = 4
+	safariExitSettleFrames = 40
+)
+
 func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -398,7 +403,19 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	// Center (14,25) is the south gate warp. One Down enters the gate, whose
 	// early-leave prompt defaults to YES. If the Safari timer already expired,
 	// the same predicate simply observes the automatic ejection.
-	m.Tap(emu.Down, 3, 7)
+	//
+	// A short tap toward a new direction only turns the player, and a tap
+	// during a step is swallowed, so arriving at the approach tile from the
+	// warp side (facing up) needs more than one Down. Settle after each tap
+	// and stop as soon as the warp has left the center map.
+	for tap := 0; tap < safariExitTaps; tap++ {
+		state.Snapshot(m, &mem)
+		if mem.U8(sym.CurMap) != safariZoneCenterMap || !state.Controllable(&mem) {
+			break
+		}
+		m.Tap(emu.Down, 3, 7)
+		m.StepFrames(safariExitSettleFrames)
+	}
 	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
 	})

@@ -63,3 +63,23 @@ func DecodeSprites(m *Mem) []SpriteState {
 	}
 	return out
 }
+
+// DecodeObjectTiles returns the RAM map tile of every populated object slot
+// (1..15), keyed by slot, including objects the visibility check has marked
+// with a $ff image index because they are off-screen. The ROM keeps
+// wSpriteStateData2's map Y/X current for off-screen objects, so a trainer
+// that walked out to intercept the player is reported where it now stands,
+// not at its header home tile. Toggled-hidden objects are also included;
+// callers that need presence consult HiddenObjectIDs.
+func DecodeObjectTiles(m *Mem) map[int][2]int {
+	out := map[int][2]int{}
+	for slot := spriteFirstSlot; slot <= spriteLastSlot; slot++ {
+		data1 := sym.SpritePlayerStateData1 + uint16(slot)*spriteSlotSize
+		if m.U8(data1+spritePictureID) == 0 {
+			continue
+		}
+		data2 := sym.SpriteStateData2 + uint16(slot)*spriteSlotSize
+		out[slot] = [2]int{int(m.U8(data2+spriteMapX)) - 4, int(m.U8(data2+spriteMapY)) - 4}
+	}
+	return out
+}

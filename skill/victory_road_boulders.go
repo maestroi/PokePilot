@@ -20,6 +20,10 @@ const (
 	eventVictoryRoad2BoulderOnSwitch2 state.Event = 0x53f
 	eventVictoryRoad3BoulderOnSwitch1 state.Event = 0x660
 	eventVictoryRoad3BoulderInHole    state.Event = 0x666
+
+	// VICTORYROAD2F_BOULDER3 is object 13 in
+	// pokered/data/maps/objects/VictoryRoad2F.asm (sprite slot 13).
+	victoryRoad2FHoleBoulderSlot = 13
 )
 
 // VictoryRoadBoulderSection names the five story-relevant movable-object goals
@@ -91,8 +95,13 @@ func VictoryRoadBoulderSpec(section VictoryRoadBoulderSection) (BoulderPuzzleSpe
 		}
 	case VictoryRoad2FSwitch2:
 		spec = BoulderPuzzleSpec{
-			Map:              victoryRoad2FMap,
-			Targets:          []world.Point{{X: 9, Y: 16}},
+			Map:     victoryRoad2FMap,
+			Targets: []world.Point{{X: 9, Y: 16}},
+			// Only the boulder the 3F hole exposes (VICTORYROAD2F_BOULDER3,
+			// object 13) is meant for this switch. Letting the search also
+			// shuffle the two west boulders blows the state limit
+			// (run-1biaubd9xooqm); they stay as fixed blockers.
+			MovableIDs:       map[int]bool{victoryRoad2FHoleBoulderSlot: true},
 			CompleteEvent:    eventVictoryRoad2BoulderOnSwitch2,
 			HasCompleteEvent: true,
 		}

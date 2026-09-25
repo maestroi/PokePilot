@@ -15,6 +15,7 @@ import (
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -33,7 +34,7 @@ const defaultGoal = "elite-four"
 
 func main() {
 	addr := flag.String("http", "localhost:8099", "address to serve the screen on")
-	every := flag.Int("capture-every", 4, "capture a frame for the browser every N frames")
+	every := flag.Int("capture-every", 3, "capture a frame for the browser every N frames")
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
@@ -90,6 +91,15 @@ func main() {
 	}
 	defer m.Close()
 
+	renderFeed := newRenderStateFeed()
+	if err := m.HandleWatch("/render-state.json", renderFeed); err != nil {
+		log.Fatalf("serve semantic state: %v", err)
+	}
+	redRenderer, renderErr := redrenderstate.New(m.ROM())
+	if renderErr != nil {
+		log.Printf("semantic renderer unavailable for loaded ROM: %v", renderErr)
+	}
+
 	served, err := m.Watch(*addr, *every)
 	if err != nil {
 		log.Fatalf("serve screen: %v", err)
@@ -98,6 +108,7 @@ func main() {
 	tracer := newDialogueTracer()
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
+		renderFeed.capture(m, redRenderer)
 		m.TracePlayer(livePlayer(m, &watchMem))
 	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
@@ -126,7 +137,12 @@ func main() {
 		fmt.Printf("farm mode: leasing runs from %s; games mounted: %s\n", orchURL, library.games())
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		runFarm(m, client, library, watchPort(served), *checkpointDir)
+		if runFarm(m, client, library, watchPort(served), *checkpointDir, renderFeed) {
+			// ErrLinkStalled can leave a goroutine inside the emulator. os.Exit
+			// intentionally skips the deferred m.Close so this poisoned instance
+			// is never touched again; Swarm restarts the failed worker task.
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -220,11 +236,12 @@ func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served st
 func runLLM(m *emu.Emu, goal, llmProfile string, maxRounds int, checkpointDir, resumeFrom string) {
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
 	log := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
-	stats := newStatsPlanner(llmProfile, "", goal, m, m.TraceStats, nil)
+	stats := newStatsPlannerWithRunPolicy(localRunPolicy(goal), llmProfile, "", nil, m, m.TraceStats, nil)
 	stats.wirePlannerLogs(log, nil)
 	res := agent.Run(m, m.ROM(), stats, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     llmMaxFrames,
+		Build:         version,
 		Log:           log,
 		CheckpointDir: checkpointDir,
 		ResumeFrom:    resumeFrom,

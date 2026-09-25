@@ -1,10 +1,13 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func TestCinnabarSecretKeySemanticHandoff(t *testing.T) {
@@ -82,6 +85,37 @@ func TestCinnabarPlacesRegistered(t *testing.T) {
 		}
 		if dest.Map != wantMap {
 			t.Fatalf("place %q map = %#04x, want %#04x", name, dest.Map, wantMap)
+		}
+	}
+}
+
+// #1647: the specs once held pokered's hidden_event bytes in stored (y,x)
+// order, so every "statue" was open floor and A pressed nothing. A real
+// switch is a solid statue with a walkable south-side stand.
+func TestMansionSwitchSpecsTargetROMStatues(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	specs := append([]mansionSwitchSpec{mansion1FSwitch, mansion2FSwitch, mansion3FSwitch}, mansionB1FSwitches...)
+	for _, sw := range specs {
+		h, err := rom.ParseMap(romData, sw.Map)
+		if err != nil {
+			t.Fatalf("parse map %#04x: %v", sw.Map, err)
+		}
+		g, err := world.Build(romData, h)
+		if err != nil {
+			t.Fatalf("build map %#04x: %v", sw.Map, err)
+		}
+		if g.Walkable(int(sw.TargetX), int(sw.TargetY)) {
+			t.Errorf("map %#04x switch target (%d,%d) is walkable floor, not a statue", sw.Map, sw.TargetX, sw.TargetY)
+		}
+		if !g.Walkable(int(sw.StandX), int(sw.StandY)) {
+			t.Errorf("map %#04x switch stand (%d,%d) is not walkable", sw.Map, sw.StandX, sw.StandY)
 		}
 	}
 }

@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"math/bits"
 	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -35,10 +36,39 @@ func CoreProgressionFieldMoves() []FieldMove {
 	return []FieldMove{FieldCut, FieldSurf, FieldStrength}
 }
 
-// OwnedCoreProgressionFieldMoves returns the core moves whose HM and badge are
-// already owned. It lets a story slice preserve everything the save has
-// actually unlocked without assuming a canonical badge order or starter.
-func OwnedCoreProgressionFieldMoves(mem *state.Mem) []FieldMove {
+// OwnedCoreProgressionFieldMoves returns the owned core traversal moves the
+// current party can actually retain: badge and HM owned, and the whole
+// returned set holdable by the party at once. The retention contract exists
+// to stop a roster change from dropping the last carrier of an unlocked
+// move; a move no party member can learn (a randomized compatibility table,
+// a wiped roster) has no carrier to retain, and demanding it would make
+// every roster repair report no recovery. The result is the largest jointly
+// satisfiable subset, so the final-party invariant stays achievable.
+func OwnedCoreProgressionFieldMoves(romData []byte, mem *state.Mem) []FieldMove {
+	owned := ownedCoreProgressionFieldMoves(mem)
+	mons := state.DecodeParty(mem).Mons
+	for size := len(owned); size >= 1; size-- {
+		for mask := 1; mask < 1<<len(owned); mask++ {
+			if bits.OnesCount8(uint8(mask)) != size {
+				continue
+			}
+			subset := make([]FieldMove, 0, size)
+			for i, move := range owned {
+				if mask&(1<<uint(i)) != 0 {
+					subset = append(subset, move)
+				}
+			}
+			if ok, err := partyCanSatisfyFieldMoves(romData, mons, subset); err == nil && ok {
+				return subset
+			}
+		}
+	}
+	return nil
+}
+
+// ownedCoreProgressionFieldMoves returns the core moves whose HM and badge
+// are already owned, before the retainability filter.
+func ownedCoreProgressionFieldMoves(mem *state.Mem) []FieldMove {
 	var out []FieldMove
 	for _, move := range CoreProgressionFieldMoves() {
 		cap := FieldCapabilityFor(mem, move)
@@ -306,6 +336,63 @@ func knownGrassDestinations() []Destination {
 	return out
 }
 
+// currentMapGrassDestination is a standing tile on the player's map whose
+// walkable component contains tall grass. The player's own tile qualifies
+// when they already share that component. Otherwise a warp-adjacent tile on
+// another component qualifies only when the live route plan can reach it, so
+// a gate between two pockets is a habitat and a sealed pocket is not.
+func currentMapGrassDestination(romData []byte, planner *RoutePlanner) (Destination, bool, error) {
+	if planner == nil {
+		return Destination{}, false, nil
+	}
+	mapID := planner.cur
+	grass, grid, err := grassCells(romData, mapID)
+	if err != nil || grid == nil || len(grass) == 0 {
+		return Destination{}, false, err
+	}
+	px, py := int(planner.x), int(planner.y)
+	if len(grassInPlayerComponent(grass, grid, px, py)) > 0 {
+		return Destination{Map: mapID, X: planner.x, Y: planner.y}, true, nil
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return Destination{}, false, err
+	}
+	best := Destination{}
+	bestLen := int(^uint(0) >> 1)
+	found := false
+	seen := map[[2]int]bool{}
+	for _, w := range h.Warps {
+		for _, d := range [][2]int{{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+			x, y := int(w.X)+d[0], int(w.Y)+d[1]
+			key := [2]int{x, y}
+			if seen[key] || x < 0 || y < 0 || x > 255 || y > 255 || !grid.Walkable(x, y) {
+				continue
+			}
+			seen[key] = true
+			if len(grassInPlayerComponent(grass, grid, x, y)) == 0 {
+				continue
+			}
+			plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+				planner.graph, mapID, mapID, px, py, x, y, nil, planner.prereqs,
+			)
+			if err != nil {
+				continue
+			}
+			n := len(plan)
+			if n == 0 {
+				n = 1
+			}
+			if !found || n < bestLen || (n == bestLen && (y < int(best.Y) || (y == int(best.Y) && x < int(best.X)))) {
+				found = true
+				bestLen = n
+				best = Destination{Map: mapID, X: uint8(x), Y: uint8(y)}
+			}
+		}
+	}
+	return best, found, nil
+}
+
 // findWildFieldCandidate uses only ROM encounter tables and HM compatibility.
 // It contains no species-specific "HM slave" table: any reachable known grass
 // map may supply the missing capability. Nearer maps win; within the same map,
@@ -316,6 +403,10 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	party := state.DecodeParty(&mem)
 	cur := mem.U8(sym.CurMap)
 	g, err := world.BuildGraph(romData)
+	if err != nil {
+		return wildFieldCandidate{}, false, err
+	}
+	routePlanner, err := NewRoutePlanner(m, romData)
 	if err != nil {
 		return wildFieldCandidate{}, false, err
 	}
@@ -341,7 +432,32 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 			continue
 		}
 		seenMap[dest.Map] = true
-		route, err := world.FindRoute(g, cur, dest.Map)
+		habitat := dest
+		if dest.Map == cur {
+			// The map's encounter table is not a habitat. Route 16's west
+			// Fly-house landing and its Doduo grass are different components;
+			// accepting the standing tile made a carrier "reachable" that
+			// Catch cannot hunt. A same-map gate hop onto the grass component
+			// is a real route, the same one GoTo already plans.
+			tile, ok, err := currentMapGrassDestination(romData, routePlanner)
+			if err != nil {
+				return wildFieldCandidate{}, false, err
+			}
+			if !ok {
+				continue
+			}
+			habitat = tile
+		} else {
+			// Plain graph connectivity is not enough here. A Surf repair must not
+			// choose a Surf-compatible species whose habitat is itself behind Surf
+			// (likewise for Cut/Strength/story gates). Use the same live capability-
+			// aware reachability contract as GoTo before using static route length
+			// only as a ranking signal.
+			if err := routePlanner.Reachability(dest); err != nil {
+				continue
+			}
+		}
+		route, err := world.FindRoute(g, cur, habitat.Map)
 		if err != nil {
 			continue
 		}
@@ -365,7 +481,7 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 			if !legal {
 				continue
 			}
-			candidate := wildFieldCandidate{Destination: dest, Map: dest.Map, Species: species.ID, Slots: species.Slots, RouteLen: len(route)}
+			candidate := wildFieldCandidate{Destination: habitat, Map: habitat.Map, Species: species.ID, Slots: species.Slots, RouteLen: len(route)}
 			if !found || candidate.RouteLen < best.RouteLen ||
 				(candidate.RouteLen == best.RouteLen && candidate.Slots > best.Slots) ||
 				(candidate.RouteLen == best.RouteLen && candidate.Slots == best.Slots && candidate.Map < best.Map) ||
@@ -377,10 +493,39 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	return best, found, nil
 }
 
+// findGiftFieldCandidate returns a registered gift whose story prerequisites
+// hold, which this save has not already claimed, and which can carry target
+// without stranding another required move.
+func findGiftFieldCandidate(mem *state.Mem, romData []byte, target FieldMove, required []FieldMove) (fieldCarrierGift, bool, error) {
+	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+	party := state.DecodeParty(mem)
+	for _, gift := range fieldCarrierGifts {
+		if !gift.Ready(facts) || giftPokemonAlreadyOwned(mem, romData, gift.Species) {
+			continue
+		}
+		incoming := state.Mon{Species: gift.Species}
+		canTarget, err := monCanPlaceFieldMove(romData, incoming, target)
+		if err != nil {
+			return fieldCarrierGift{}, false, err
+		}
+		if !canTarget {
+			continue
+		}
+		_, legal, err := chooseDepositSlotForIncoming(romData, party, incoming, required)
+		if err != nil {
+			return fieldCarrierGift{}, false, err
+		}
+		if legal {
+			return gift, true, nil
+		}
+	}
+	return fieldCarrierGift{}, false, nil
+}
+
 // RepairFieldCapabilities makes every required move usable by the current
 // party. It first teaches within the existing roster, then tries the active PC
-// box, and finally acquires a ROM-compatible wild species from a reachable
-// known grass map. Every roster mutation goes through the real PC/catch UI and
+// box, then acquires a ROM-compatible wild species from a reachable known
+// grass map, and finally claims a ready registered gift carrier. Every roster mutation goes through the real PC/catch UI and
 // every learned move is verified by EnsureFieldMove from party RAM.
 func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, required []FieldMove) error {
 	if policy == nil {
@@ -437,7 +582,56 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 			return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, err)
 		}
 		if !wildOK {
-			return fmt.Errorf("%w: %s has no compatible current-party member, active-box member, or reachable known grass species", ErrFieldRosterNoRecovery, target)
+			// A single-door room hides every outdoor habitat from component
+			// routing. Take that door once and search from the landing; the
+			// door is the only legal first action, the same rule Center
+			// recovery already uses.
+			g, gerr := cachedRouteGraph(romData)
+			if gerr != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, gerr)
+			}
+			left, leaveErr := leaveMandatoryWarpRoom(m, romData, g)
+			if leaveErr != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: leave room to seek %s carrier: %w", target, leaveErr)
+			}
+			if left {
+				candidate, wildOK, err = findWildFieldCandidate(m, romData, target, required)
+				if err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: find wild %s carrier: %w", target, err)
+				}
+			}
+		}
+		if !wildOK {
+			state.Snapshot(m, &mem)
+			gift, giftOK, err := findGiftFieldCandidate(&mem, romData, target, required)
+			if err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: find gift %s carrier: %w", target, err)
+			}
+			if !giftOK {
+				return fmt.Errorf("%w: %s has no compatible current-party member, active-box member, reachable known grass species, or ready gift", ErrFieldRosterNoRecovery, target)
+			}
+			party = state.DecodeParty(&mem)
+			// The gift lands in the box when the party is full, so make room first.
+			if party.Count >= gen1PartyCapacity {
+				depositSlot, _, err := chooseDepositSlotForIncoming(romData, party, state.Mon{Species: gift.Species}, required)
+				if err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: plan party room for gift species %#02x: %w", gift.Species, err)
+				}
+				if err := DepositPartyMon(m, romData, policy, depositSlot); err != nil {
+					return fmt.Errorf("skill: RepairFieldCapabilities: make room for gift species %#02x: %w", gift.Species, err)
+				}
+			}
+			result, err := gift.Receive(m, romData, policy)
+			if err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: receive gift species %#02x for %s: %w", gift.Species, target, err)
+			}
+			if result.Outcome != OutcomeCaught || result.Species != gift.Species {
+				return fmt.Errorf("%w: gift species %#02x for %s ended with outcome %d", ErrFieldRosterNoRecovery, gift.Species, target, result.Outcome)
+			}
+			if _, err := EnsureFieldMove(m, target); err != nil {
+				return fmt.Errorf("skill: RepairFieldCapabilities: teach %s after receiving gift species %#02x: %w", target, gift.Species, err)
+			}
+			continue
 		}
 
 		state.Snapshot(m, &mem)
@@ -456,8 +650,10 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 			}
 		}
 
-		state.Snapshot(m, &mem)
-		_, balls := bagEntry(&mem, ItemPokeBall)
+		balls, countErr := wildBallCount(m)
+		if countErr != nil {
+			return countErr
+		}
 		if balls <= 0 {
 			return fmt.Errorf("%w: compatible wild species %#02x exists on map %#04x but no POKE BALL is available", ErrFieldRosterNoBalls, candidate.Species, candidate.Map)
 		}
@@ -492,5 +688,5 @@ func RepairFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy, requ
 func RepairOwnedCoreFieldCapabilities(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(&mem))
+	return RepairFieldCapabilities(m, romData, policy, OwnedCoreProgressionFieldMoves(romData, &mem))
 }

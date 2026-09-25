@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -19,7 +20,7 @@ func victoryRoadStageState(m *emu.Emu, policy MovePolicy) (state.Mem, state.Stor
 		return mem, facts, nil
 	}
 	if state.DecodeProgress(&mem).BadgeCount != 8 {
-		return state.Mem{}, state.StoryFacts{}, fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
+		return state.Mem{}, state.StoryFacts{}, gameruntime.NewProgressionPrerequisiteMissing("earth_badge")
 	}
 	return mem, facts, nil
 }
@@ -100,12 +101,12 @@ func victoryRoadReachEntryFromCurrentState(m *emu.Emu, romData []byte, policy Mo
 	return nil
 }
 
-// VictoryRoadReachCave owns Route 23: it requires the final rival fact, repairs
-// Surf, crosses the three water bands and all seven badge checks, and ends at
-// the Victory Road 1F entry. Its semantic postcondition is the existing
-// route_23_badge_checks fact (7/7).
+// VictoryRoadReachCave owns Route 23 after the objective runtime has satisfied
+// its declared Surf prerequisite. It crosses the three water bands and all
+// seven badge checks, ending at the Victory Road 1F entry. Its semantic
+// postcondition is the existing route_23_badge_checks fact (7/7).
 func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	_, facts, err := victoryRoadStageState(m, policy)
+	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
 		return err
 	}
@@ -113,10 +114,10 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.Route22RivalResolved {
-		return fmt.Errorf("%w: Route 22 rival must be resolved before Route 23", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("route_22_rival_resolved")
 	}
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadReachCave: prepare Surf: %w", err)
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
 	}
 	if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadReachCave: %w", err)
@@ -128,10 +129,11 @@ func VictoryRoadReachCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
-// VictoryRoadClearCave owns the live Strength puzzle chain only. On the normal
-// path it starts at 1F from VictoryRoadReachCave; on a resumed/backtracked run
-// it can re-establish the entry first. Completion is the final 2F east switch
-// or a verified post-cave position before the Route 23 reset can erase it.
+// VictoryRoadClearCave owns the live Strength puzzle chain only, after the
+// objective runtime has satisfied its declared Surf+Strength prerequisites. On
+// the normal path it starts at 1F from VictoryRoadReachCave; on a resumed/
+// backtracked run it can re-establish the entry first. Completion is the final
+// 2F east switch or a verified post-cave position before Route 23 can reset it.
 func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	mem, facts, err := victoryRoadStageState(m, policy)
 	if err != nil {
@@ -141,10 +143,17 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return nil
 	}
 	if !facts.Route23BadgeChecksComplete {
-		return fmt.Errorf("%w: Route 23 badge checks must be complete before Victory Road puzzles", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("route_23_badge_checks")
 	}
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadClearCave: prepare Surf + Strength: %w", err)
+	missingField := make([]gameruntime.CapabilityID, 0, 2)
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		missingField = append(missingField, "surf")
+	}
+	if !FieldCapabilityFor(&mem, FieldStrength).Usable {
+		missingField = append(missingField, "strength")
+	}
+	if len(missingField) != 0 {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing(missingField...)
 	}
 	if !inVictoryRoad(m.Peek8(sym.CurMap)) {
 		if err := victoryRoadReachEntryFromCurrentState(m, romData, policy); err != nil {
@@ -180,7 +189,7 @@ func VictoryRoadPrepareIndigo(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return nil
 	}
 	if !victoryRoadClearBoundary(&mem, facts) {
-		return fmt.Errorf("%w: Victory Road must be cleared before Indigo recovery", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("victory_road_cleared")
 	}
 	if err := prepareIndigoLobby(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadPrepareIndigo: %w", err)

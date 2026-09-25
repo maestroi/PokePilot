@@ -40,8 +40,11 @@ func farmRecordingMetadata(spec farm.Spec, planner, starter, dest, goal string, 
 	if spec.LLMProfile != "" {
 		metadata["llm_profile"] = spec.LLMProfile
 	}
-	if style := farm.PlayStyleForSpec(spec); style != "" {
-		metadata["play_style"] = style
+	if spec.PlayStyle != "" {
+		metadata["play_style"] = spec.PlayStyle
+	}
+	if spec.Purpose != "" {
+		metadata["purpose"] = string(spec.Purpose)
 	}
 	for key, value := range starterExperimentMetadata(spec.RunID) {
 		metadata[key] = value
@@ -145,22 +148,40 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		Attempt:       spec.Attempt,
 		Reason:        reason,
 		Detail:        detail,
-		TraceTail:     m.TraceTail(20),
 		RunnerVersion: client.Version,
 		SeedBurn:      burn,
 		ProgressEarly: progEarly,
 		ProgressFinal: progFinal,
 	}
-	if save, err := m.SaveState(); err == nil {
-		report.SaveState = save
-	} else {
-		log.Printf("farm: %s: save state: %v", spec.RunID, err)
+	// A nil emulator is deliberate for terminal faults such as
+	// skill.ErrLinkStalled where another goroutine may still be inside
+	// StepFrame. In that case already-captured artifacts are safe, but any
+	// emulator read/save would violate the skill's ownership contract.
+	if m != nil {
+		report.TraceTail = m.TraceTail(20)
+		if save, err := m.SaveState(); err == nil {
+			report.SaveState = save
+		} else {
+			log.Printf("farm: %s: save state: %v", spec.RunID, err)
+		}
 	}
 
 	defer removeCheckpointDir(checkpointDir)
-	checkpointArtifacts, err := collectCheckpointArtifacts(checkpointDir)
+	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
+	if terminal != nil {
+		if marker := farm.FailureDetailMarker(*terminal); marker != "" {
+			// The operator-facing top-level key is structured and stable. Human
+			// diagnostics remain in objective-failures.json and TraceTail.
+			report.Detail = marker
+		}
+	}
+
+	// Checkpoints are uploaded continuously while the run is active. Finish
+	// only reattaches the exact failure-repro checkpoint pairs still present in
+	// the local ring, rather than repacking every periodic/objective snapshot.
+	checkpointArtifacts, err := collectFailureCheckpointArtifacts(checkpointDir, failures)
 	if err != nil {
-		log.Printf("farm: %s: collect checkpoints: %v", report.RunID, err)
+		log.Printf("farm: %s: collect failure checkpoints: %v", report.RunID, err)
 	} else {
 		report.Artifacts = checkpointArtifacts
 	}
@@ -175,35 +196,28 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 			report.Artifacts = candidate
 		}
 	}
-
-	failures, terminal := drainObjectiveFailureTelemetry(reason, client.Version, checkpointDir)
-	if terminal != nil {
-		if marker := farm.FailureDetailMarker(*terminal); marker != "" {
-			// The operator-facing top-level key is structured and stable. Human
-			// diagnostics remain in objective-failures.json and TraceTail.
-			report.Detail = marker
-		}
-	}
 	if failureArtifact, err := farm.NewObjectiveFailureArtifact(failures); err != nil {
 		log.Printf("farm: %s: objective failure telemetry: %v", report.RunID, err)
 	} else if failureArtifact.Name != "" {
-		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), failureArtifact)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+		evicted, err := appendPriorityFinishArtifact(&report, failureArtifact)
+		if err != nil {
 			log.Printf("farm: %s: omit %s: %v", report.RunID, failureArtifact.Name, err)
-		} else {
-			report.Artifacts = candidate
+		} else if len(evicted) > 0 {
+			log.Printf("farm: %s: evicted lower-priority artifacts %v to preserve %s", report.RunID, evicted, failureArtifact.Name)
 		}
 	}
 	appendFailureReproArtifacts(&report, failures)
 
-	if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {
-		log.Printf("farm: %s: media timeline telemetry: %v", report.RunID, err)
-	} else if timelineArtifact.Name != "" {
-		candidate := append(append([]farm.Artifact(nil), report.Artifacts...), timelineArtifact)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
-			log.Printf("farm: %s: omit %s: %v", report.RunID, timelineArtifact.Name, err)
-		} else {
-			report.Artifacts = candidate
+	if m != nil {
+		if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {
+			log.Printf("farm: %s: media timeline telemetry: %v", report.RunID, err)
+		} else if timelineArtifact.Name != "" {
+			candidate := append(append([]farm.Artifact(nil), report.Artifacts...), timelineArtifact)
+			if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: candidate, SeedBurn: report.SeedBurn}); err != nil {
+				log.Printf("farm: %s: omit %s: %v", report.RunID, timelineArtifact.Name, err)
+			} else {
+				report.Artifacts = candidate
+			}
 		}
 	}
 
@@ -239,5 +253,5 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		log.Printf("farm: %s: finish: %v", report.RunID, err)
 		return
 	}
-	fmt.Printf("run %s finished: %s\n", report.RunID, report.Reason)
+	log.Printf("farm: %s: finished reason=%s attempt=%d", report.RunID, report.Reason, report.Attempt)
 }

@@ -23,6 +23,13 @@ func init() {
 		X:   laprasGiftX,
 		Y:   laprasGiftY + 1,
 	}
+	// Before Surf, grass rarely offers a Surf carrier; this guaranteed gift in
+	// an already-cleared Silph is the Red-native one.
+	fieldCarrierGifts = append(fieldCarrierGifts, fieldCarrierGift{
+		Species: laprasGiftSpecies,
+		Ready:   func(f state.StoryFacts) bool { return f.SaffronGateOpen && f.CardKeyOwned },
+		Receive: ReceiveLaprasGift,
+	})
 }
 
 // ReceiveLaprasGift reaches Silph Co. 7F through the already-audited Card Key

@@ -42,6 +42,39 @@ const (
 	PlayStyleTeamBuilder   = "team_builder"
 )
 
+// RoutePriority is portable execution policy: game adapters decide how to
+// translate "fastest" into native movement/action costs. It deliberately does
+// not name Cut, Surf, Strength, map ids, or any other game-specific mechanic.
+type RoutePriority uint8
+
+const (
+	RoutePriorityConservative RoutePriority = iota
+	RoutePriorityFastest
+)
+
+// RoutePriorityPlanner is an optional run-level policy seam. Run asks it after
+// choosing an objective so cached strategic steps and deterministic recovery
+// objectives receive the same travel policy as freshly planned objectives.
+type RoutePriorityPlanner interface {
+	RoutePriority() RoutePriority
+}
+
+func routePriorityForPlanner(p Planner) RoutePriority {
+	if provider, ok := p.(RoutePriorityPlanner); ok {
+		return provider.RoutePriority()
+	}
+	return RoutePriorityConservative
+}
+
+// RoutePriorityForPlayStyle maps the product-facing play style to portable
+// execution policy. Empty retains the legacy speedrun default.
+func RoutePriorityForPlayStyle(profile PlayStyleProfile) RoutePriority {
+	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
+		return RoutePriorityFastest
+	}
+	return RoutePriorityConservative
+}
+
 // PlayStyleProfile is data-only policy over the shared planner. Besides drive
 // weights it controls how tolerant the mode is of detours and how strongly the
 // common natural-play layer values exploration/optional content versus party
@@ -312,11 +345,29 @@ func driveUrgency(obs Observation) map[Drive]float64 {
 	return u
 }
 
+// prioritizeFlyForSpeedrun makes the one-time Celadon Fly setup deterministic.
+// The objective is still sourced by Red's ordinary legal progression menu;
+// this policy only prevents a speedrun planner from walking into Erika/Rocket
+// work first and permanently missing the short Route 16 detour.
+func prioritizeFlyForSpeedrun(offered []Objective, profile PlayStyleProfile) []Objective {
+	if profile.Name != "" && profile.Name != PlayStyleSpeedrun {
+		return offered
+	}
+	for _, o := range offered {
+		if o.Kind == KindProgress && o.Progress == redProgressFlyReady {
+			return []Objective{o}
+		}
+	}
+	return offered
+}
+
 // AnnotatePlayStyle adds compact, inspectable drive hints to the lines the LLM
-// already sees. Speedrun is an exact no-op so old runs stay byte-for-byte
-// compatible until a non-Speedrun profile is explicitly selected.
+// already sees. Speedrun remains a scoring/annotation no-op, with narrowly
+// deterministic policy filters for mechanics that directly remove future
+// travel overhead (Repel and the one-time Fly setup).
 func AnnotatePlayStyle(obs Observation, offered []Objective, profile PlayStyleProfile) []Objective {
-	out := append([]Objective(nil), offered...)
+	out := filterRepelForPlayStyle(obs, offered, profile)
+	out = prioritizeFlyForSpeedrun(out, profile)
 	if profile.Name == "" || profile.Name == PlayStyleSpeedrun {
 		return out
 	}
@@ -383,6 +434,10 @@ func NewStyledLLMPlanner(inner *LLMPlanner, style string) *StyledLLMPlanner {
 
 func NewAdventureLLMPlanner(inner *LLMPlanner) *StyledLLMPlanner {
 	return NewStyledLLMPlanner(inner, PlayStyleAdventure)
+}
+
+func (p *StyledLLMPlanner) RoutePriority() RoutePriority {
+	return RoutePriorityForPlayStyle(p.Profile)
 }
 
 func (p *StyledLLMPlanner) Next(obs Observation, offered []Objective) (Objective, error) {

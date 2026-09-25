@@ -98,6 +98,29 @@ func isSafariHabitatMap(mapID uint8) bool {
 	return mapID >= safariZoneEastMap && mapID <= safariZoneCenterMap
 }
 
+// isSafariSessionMap reports the maps a Safari Game session continues on: the
+// four habitats and their rest houses. Anything else, the gate included, is
+// reached only by walking out through the gate's "Leaving early?" prompt.
+func isSafariSessionMap(mapID uint8) bool {
+	return mapID >= safariZoneEastMap && mapID <= safariZoneNorthRestHouseMap
+}
+
+// leaveSafariSessionFor ends an active Safari Game session before travel to a
+// destination outside it. Choosing a destination beyond the gate is choosing
+// to leave, so the traveler answers the gate's early-leave prompt through the
+// same owned exit SafariCatch and the Fuchsia story use. Leaving it to the
+// ordinary route instead met that prompt as an unanswered choice, which every
+// non-Safari objective started inside a session hit (triage 5a248584293ac9fc).
+func leaveSafariSessionFor(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy) error {
+	if isSafariSessionMap(dest.Map) {
+		return nil
+	}
+	if err := leaveSafariZoneIfNeeded(m, romData, policy); err != nil {
+		return fmt.Errorf("leave Safari session before travel to map %#04x: %w", dest.Map, err)
+	}
+	return nil
+}
+
 // travelToSafariGrass chooses one representative grass cell from each static
 // collision component and asks the ordinary semantic traveler to reach it.
 // This avoids hard-coding a Safari coordinate while still handling maps whose
@@ -155,7 +178,10 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	if err != nil {
 		return false, false, err
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return false, false, fmt.Errorf("observe habitat world: %w", err)
+	}
 	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
 	if len(grass) == 0 {
 		return false, false, fmt.Errorf("habitat map %#04x has no reachable encounter grass from (%d,%d)", targetMap, now.X, now.Y)
@@ -179,6 +205,21 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 		if err := GoTo(m, romData, d); err != nil && !errors.Is(err, ErrBattle) {
 			state.Snapshot(m, &mem)
 			if !state.HasEvent(&mem, eventInSafariZone) {
+				return false, true, nil
+			}
+			if safariTimedEjectionInterrupted(targetMap, mem.U8(sym.CurMap), err) {
+				// The Safari timer can expire while a same-map grass step is in
+				// flight. The ROM warps the player to the gate and starts the
+				// ejection dialogue before EVENT_IN_SAFARI_ZONE is cleared, so
+				// checking only the event makes us repick a habitat grind pair
+				// against the gate map and rethrow ErrDialogueInterrupted.
+				// Own that bounded session-ending script here, then let the outer
+				// loop buy a fresh session.
+				if settleErr := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
+					return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
+				}); settleErr != nil {
+					return false, false, fmt.Errorf("settle timed Safari ejection: %w", settleErr)
+				}
 				return false, true, nil
 			}
 			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
@@ -217,6 +258,10 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 		}
 	}
 	return false, false, nil
+}
+
+func safariTimedEjectionInterrupted(targetMap, currentMap uint8, err error) bool {
+	return currentMap != targetMap && errors.Is(err, ErrDialogueInterrupted)
 }
 
 func safariBallCursor(mem *state.Mem) bool {

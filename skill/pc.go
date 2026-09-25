@@ -23,6 +23,7 @@ const (
 	pcTravelBattles            = 80
 	pcTransitionBudget         = 3000
 	pcCloseBudget              = 120
+	pcCenterEscapeLimit        = 4
 	gen1PartyCapacity          = 6
 	gen1BoxCapacity            = 20
 )
@@ -38,34 +39,168 @@ var (
 // nearestPokemonCenter chooses the known Center requiring the fewest map
 // transitions from fromMap. PlaceNames is sorted, so equal-length ties are
 // deterministic. Tile-level reachability is still verified by TravelFlee.
+//
+// When the standing map's component-aware graph cannot reach any Center
+// (Route 16 Fly house / west-north pocket), fall back to Centers reachable
+// from a one-hop neighbour. Travel owns exiting the pocket onto that
+// neighbour — including component restaging through a gate before Cut.
 func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, error) {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		return Destination{}, "", err
 	}
+	return nearestPokemonCenterInGraph(g, fromMap)
+}
+
+func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, string, error) {
 	bestLen := int(^uint(0) >> 1)
 	var best Destination
 	bestName := ""
-	for _, name := range PlaceNames() {
-		if !strings.HasSuffix(name, "pokemon center") {
-			continue
+	consider := func(via uint8, hopPenalty int) {
+		for _, name := range PlaceNames() {
+			if !strings.HasSuffix(name, "pokemon center") {
+				continue
+			}
+			d, ok := Place(name)
+			if !ok {
+				continue
+			}
+			route, err := world.FindRoute(g, via, d.Map)
+			if err != nil {
+				continue
+			}
+			cost := hopPenalty + len(route)
+			if cost < bestLen {
+				bestLen, best, bestName = cost, d, name
+			}
 		}
-		d, ok := Place(name)
-		if !ok {
-			continue
-		}
-		route, err := world.FindRoute(g, fromMap, d.Map)
-		if err != nil {
-			continue
-		}
-		if len(route) < bestLen {
-			bestLen, best, bestName = len(route), d, name
+	}
+	consider(fromMap, 0)
+	if bestName == "" {
+		seen := map[uint8]bool{fromMap: true}
+		for _, e := range g.Edges[fromMap] {
+			if seen[e.To] {
+				continue
+			}
+			seen[e.To] = true
+			consider(e.To, 1)
 		}
 	}
 	if bestName == "" {
 		return Destination{}, "", fmt.Errorf("%w from map %#04x", ErrPCNoKnownCenter, fromMap)
 	}
 	return best, bestName, nil
+}
+
+// singleDestinationWarpExit reports the mandatory first hop of a room whose
+// graph exits are all warp tiles to one external map. Paired door tiles are
+// therefore one logical exit. This deliberately excludes connections and
+// multi-neighbor interiors: only a hop every cross-map journey must take is
+// safe to execute before the full destination becomes routable.
+//
+// Route 16's Fly House is the measured case: its LAST_MAP doors correctly
+// resolve to Route 16, but they land inside the Cut-gated Fly pocket. Static
+// component routing cannot prove a complete path from inside the house to any
+// Pokemon Center, even though the only legal first action is to walk outside.
+// Once outside, TravelFlee's live field-path bridge can Cut out of the pocket.
+func singleDestinationWarpExit(g *world.Graph, fromMap uint8) (world.Edge, bool) {
+	if g == nil {
+		return world.Edge{}, false
+	}
+	edges := g.Edges[fromMap]
+	if len(edges) == 0 {
+		return world.Edge{}, false
+	}
+	to := edges[0].To
+	if to == fromMap {
+		return world.Edge{}, false
+	}
+	for _, e := range edges {
+		if e.Kind != world.EdgeWarp || e.To != to {
+			return world.Edge{}, false
+		}
+	}
+	return edges[0], true
+}
+
+// leaveMandatoryWarpRoom walks out of a room whose every graph exit is a warp
+// to one outside map. Static component routing from inside such a room cannot
+// prove journeys that only exist after that mandatory first hop, but the door
+// is still the only legal move. Returns false when the map is not that shape.
+//
+// Route 16's Fly House is the measured case for both Pokemon Center recovery
+// and field-move roster repair: its LAST_MAP doors land in Route 16's west
+// pocket, so a search that never takes the door reports no route to any
+// habitat (run-2v0h14ws5jl5jeghjyff4ayql, field_roster_no_recovery).
+func leaveMandatoryWarpRoom(m *emu.Emu, romData []byte, g *world.Graph) (bool, error) {
+	if m == nil || g == nil {
+		return false, nil
+	}
+	cur := m.Peek8(sym.CurMap)
+	exit, ok := mandatoryWarpExitEdge(g, m)
+	if !ok {
+		return false, nil
+	}
+	if err := Traverse(m, romData, exit); err != nil {
+		return false, fmt.Errorf("leave mandatory warp room %#04x toward %#04x: %w", cur, exit.To, err)
+	}
+	return true, nil
+}
+
+// mandatoryWarpExitEdge is the door a single-destination warp room must take.
+// A room can have several non-equivalent doors to the same outside map
+// (Cerulean's Badge House is the canonical shape). Prefer the edge the
+// component-aware router can reach from the player's actual tile; Traverse
+// still owns live sprite blockers and paired-door candidate selection.
+func mandatoryWarpExitEdge(g *world.Graph, m *emu.Emu) (world.Edge, bool) {
+	exit, ok := singleDestinationWarpExit(g, m.Peek8(sym.CurMap))
+	if !ok {
+		return world.Edge{}, false
+	}
+	x, y := playerXY(m)
+	if route, routeErr := world.FindRouteAt(g, exit.From, exit.To, int(x), int(y), nil); routeErr == nil && len(route) > 0 {
+		exit = route[0]
+	}
+	return exit, true
+}
+
+// reachNearestPokemonCenter owns the whole "get to a Center" preflight shared
+// by Bill's PC and VirtualTrade. Normally it selects a Center and delegates to
+// TravelFlee. If component-aware routing cannot name any Center while the
+// player is inside a single-destination warp room, it takes that mandatory
+// room exit first and re-runs selection from the measured landing. This is
+// bounded and generic; no map id or Route 16 coordinate is special-cased.
+func reachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, maxBattles int) (TravelResult, string, error) {
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		return TravelResult{}, "", err
+	}
+	for escaped := 0; ; escaped++ {
+		cur := m.Peek8(sym.CurMap)
+		if knownPokemonCenterMap(cur) {
+			return TravelResult{}, "", nil
+		}
+
+		center, name, selectErr := nearestPokemonCenterInGraph(g, cur)
+		if selectErr == nil {
+			travel, travelErr := TravelFlee(m, romData, center, policy, maxBattles)
+			return travel, name, travelErr
+		}
+		if !errors.Is(selectErr, ErrPCNoKnownCenter) {
+			return TravelResult{}, "", selectErr
+		}
+		if escaped >= pcCenterEscapeLimit {
+			return TravelResult{}, "", selectErr
+		}
+
+		left, err := leaveMandatoryWarpRoom(m, romData, g)
+		if err != nil {
+			return TravelResult{}, "", fmt.Errorf("skill: Pokemon Center travel: %w", err)
+		}
+		if !left {
+			return TravelResult{}, "", selectErr
+		}
+	}
 }
 
 func knownPokemonCenterMap(mapID uint8) bool {
@@ -86,12 +221,12 @@ func ensureAtPokemonCenterPC(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	cur := m.Peek8(sym.CurMap)
 	if !knownPokemonCenterMap(cur) {
-		center, name, err := nearestPokemonCenter(romData, cur)
+		_, name, err := reachNearestPokemonCenter(m, romData, policy, pcTravelBattles)
 		if err != nil {
+			if name != "" {
+				return fmt.Errorf("skill: Bill's PC: reach %s: %w", name, err)
+			}
 			return err
-		}
-		if _, err := TravelFlee(m, romData, center, policy, pcTravelBattles); err != nil {
-			return fmt.Errorf("skill: Bill's PC: reach %s: %w", name, err)
 		}
 	}
 
@@ -231,7 +366,7 @@ func openBillsPC(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 // closePCToOverworld backs out according to the live screen until the player
 // is stably controllable. B closes menus; A pages ordinary text. A known PC
-// menu screen (pcMainMenuScreen/billsPCMenuScreen) is checked ahead of the
+// menu screen (pcMainMenuScreen/billsPCMenuScreen/playersPCMenuScreen) is checked ahead of the
 // bare FontLoaded/press-A fallback even when state.MenuUp's cursor glyph
 // is not currently drawn there — see billsPCMenuScreen — so a menu reached by
 // backing out of a nested screen is closed with B rather than mistaken for
@@ -248,7 +383,7 @@ func closePCToOverworld(m *emu.Emu) error {
 			if state.Controllable(&mem) {
 				return nil
 			}
-		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem):
+		case state.MenuUp(&mem), pcMainMenuScreen(&mem), billsPCMenuScreen(&mem), playersPCMenuScreen(&mem):
 			m.Tap(emu.B, 3, 7)
 			m.StepFrames(talkSettle)
 		case mem.U8(sym.FontLoaded) != 0:
@@ -427,7 +562,7 @@ func EnsurePartySlot(m *emu.Emu, romData []byte, policy MovePolicy, incoming uin
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(&mem))
+	slot, err := planPartySlot(romData, state.DecodeParty(&mem), state.DecodeBox(&mem), state.Mon{Species: incoming}, OwnedCoreProgressionFieldMoves(romData, &mem))
 	if err != nil {
 		return err
 	}

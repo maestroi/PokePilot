@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -209,6 +210,7 @@ func (s *tradeService) start(req sessionRequest) (sessionStatus, error) {
 	s.sessions[req.Session] = managed
 	s.mu.Unlock()
 
+	log.Printf("virtualtrader: session=%s run=%s starting game=%s policy=%s species=%s level=%d", req.Session, req.RunID, req.Game, req.Policy, req.Species, req.Level)
 	go s.run(ctx, managed, req, machine)
 	return status, nil
 }
@@ -245,19 +247,30 @@ func (s *tradeService) run(ctx context.Context, managed *managedSession, req ses
 	err := gen1trade.RunBroker(ctx, gen1trade.BrokerConfig{
 		Address: s.broker, Session: req.Session, PeerID: s.peerID + "-" + req.Session,
 		Metadata: metadata, Timeout: s.timeout,
-		OnReady: func() { s.setStatus(req.Session, "running", "") },
+		OnReady: func() {
+			s.setStatus(req.Session, "running", "")
+			log.Printf("virtualtrader: session=%s run=%s ready", req.Session, req.RunID)
+		},
 	}, machine)
 	managed.cancel()
+	finalStatus := "done"
+	detail := ""
 	switch {
 	case err == nil:
-		s.setStatus(req.Session, "done", "")
+		s.setStatus(req.Session, finalStatus, detail)
 	case errors.Is(err, context.Canceled):
-		s.setStatus(req.Session, "cancelled", "")
+		finalStatus = "cancelled"
+		s.setStatus(req.Session, finalStatus, detail)
 	case errors.Is(err, context.DeadlineExceeded):
-		s.setStatus(req.Session, "expired", "session TTL exceeded")
+		finalStatus = "expired"
+		detail = "session TTL exceeded"
+		s.setStatus(req.Session, finalStatus, detail)
 	default:
-		s.setStatus(req.Session, "error", err.Error())
+		finalStatus = "error"
+		detail = err.Error()
+		s.setStatus(req.Session, finalStatus, detail)
 	}
+	log.Printf("virtualtrader: session=%s run=%s finished status=%s duration=%s error=%q", req.Session, req.RunID, finalStatus, time.Since(managed.status.StartedAt).Round(time.Millisecond), detail)
 }
 
 func (s *tradeService) setStatus(id, status, detail string) {

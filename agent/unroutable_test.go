@@ -24,8 +24,8 @@ func TestOfferWithholdsUnroutableJourneys(t *testing.T) {
 	if offersPlace(Offer(obs, known), "viridian city") {
 		t.Error("Viridian stayed on the menu after the router said there is no route to it")
 	}
-	if !offersPlace(Offer(obs, known), "mt moon 1f") {
-		t.Error("withholding one unroutable place took a routable one with it")
+	if !offersPlace(Offer(obs, known), "route 4") {
+		t.Error("withholding one unroutable place took a routable journey with it")
 	}
 }
 

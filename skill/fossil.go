@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 const (
@@ -92,12 +93,21 @@ func ReviveFossil(m *emu.Emu, romData []byte, species uint8, policy MovePolicy) 
 		}
 		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: open fossil selection: %w", talkErr)
 	}
+	listCursor := m.Peek16(sym.MenuCursorLocation)
 	if err := SelectMenuItem(m, menuIndex); err != nil {
 		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: choose fossil menu entry %d: %w", menuIndex, err)
 	}
 
-	if err := recoverToOwnedChoice(m, "confirm fossil handoff"); err != nil {
-		return CatchResult{}, err
+	// GiveFossilToCinnabarLab never erases the answered fossil list: its
+	// filled '▶' stays drawn while "Oh! That is <FOSSIL>!" prints, so
+	// RecoverDialogue's menu guard refuses to page it (run-22ahrk9pflcilu3jxq9xt37x6).
+	// This skill answered that list, so it pages its own text until the ROM
+	// publishes a cursor somewhere else: the YesNoChoice box.
+	final, _ := advanceCore(m, dialogueRecoveryBudget, func(mm *state.Mem) bool {
+		return state.DecodeTwoOptionMenu(mm) != nil && mm.U16LE(sym.MenuCursorLocation) != listCursor
+	}, nil)
+	if state.DecodeTwoOptionMenu(&final) == nil || final.U16LE(sym.MenuCursorLocation) == listCursor {
+		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: confirm fossil handoff: YES/NO never appeared (%q)", state.ScreenText(&final))
 	}
 	if err := selectTwoOption(m, 0); err != nil { // YES
 		return CatchResult{}, fmt.Errorf("skill: ReviveFossil: confirm fossil handoff: %w", err)

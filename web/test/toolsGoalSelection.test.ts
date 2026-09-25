@@ -4,8 +4,12 @@ import test from 'node:test'
 
 const source = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
 
-test('tools run goal marks explicit selection before play-style changes', () => {
-  assert.match(source, /goalExplicitlySelected/)
-  assert.match(source, /nextGoalForPlayStyle/)
-  assert.match(source, /@change="markGoalExplicitlySelected"/)
+test('tools run goal stays independent from play style and purpose', () => {
+  assert.doesNotMatch(source, /goalExplicitlySelected/)
+  assert.doesNotMatch(source, /nextGoalForPlayStyle/)
+  assert.doesNotMatch(source, /markGoalExplicitlySelected/)
+  assert.match(source, /v-model="form\.goal"/)
+  assert.match(source, /v-model="form\.play_style"/)
+  assert.match(source, /v-model="form\.purpose"/)
+  assert.match(source, /Debug coverage · exercise new interactions/)
 })

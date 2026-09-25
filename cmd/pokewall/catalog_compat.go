@@ -90,10 +90,13 @@ func catalogRunIDFromPath(path string) string {
 }
 
 func (w *Wall) currentIssueForRow(row tileRow) *IssueLink {
-	if row.Status != statusDone || (row.Reason != "error" && row.Reason != "lost") || strings.TrimSpace(row.Detail) == "" {
-		return nil
+	key := strings.TrimSpace(row.CircuitKey)
+	if key == "" {
+		if row.Status != statusDone || (row.Reason != "error" && row.Reason != "lost") || strings.TrimSpace(row.Detail) == "" {
+			return nil
+		}
+		key, _ = failureIdentity(normalizeDetail(row.Detail))
 	}
-	key, _ := failureIdentity(normalizeDetail(row.Detail))
 	w.mu.Lock()
 	link, ok := w.issueLinks[key]
 	w.mu.Unlock()
@@ -143,6 +146,9 @@ func (w *Wall) overlayRunEnvelopeIssue(data []byte) ([]byte, error) {
 // This preserves the old triage semantics without retaining every finished
 // Tile in the wall process.
 func (w *Wall) catalogTriage() ([]triageGroup, error) {
+	if cp := controlPlaneFor(w); cp != nil {
+		return cp.objectiveFailureTriage(w)
+	}
 	catalog := catalogFor(w)
 	if catalog == nil {
 		return w.triage(), nil

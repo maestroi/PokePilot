@@ -78,6 +78,11 @@ const (
 	// to or re-entered.
 	EventOakGotParcel  Event = 56
 	EventGotOaksParcel Event = 57
+	// Vermilion Gym's trash-can puzzle is deliberately resumable from these
+	// durable script flags. The ROM declares SECOND before FIRST in the event
+	// table, even though gameplay opens them in the opposite order.
+	EventVermilionGymSecondLockOpened Event = 352
+	EventVermilionGymFirstLockOpened  Event = 353
 	// Set by Route22Rival1AfterBattleScript (pokered/scripts/Route22.asm:167),
 	// the only setter in the decomp; it is what unlocks Oak's .give_poke_balls.
 	EventBeatRoute22Rival1stBattle Event = 1317
@@ -92,17 +97,19 @@ const (
 )
 
 var eventNames = map[Event]string{
-	EventFollowedOakIntoLab:        "FollowedOakIntoLab",
-	EventOakAskedToChooseMon:       "OakAskedToChooseMon",
-	EventGotStarter:                "GotStarter",
-	EventBattledRivalInOaksLab:     "BattledRivalInOaksLab",
-	EventGotPokeballsFromOak:       "GotPokeballsFromOak",
-	EventGotPokedex:                "GotPokedex",
-	EventOakAppearedInPallet:       "OakAppearedInPallet",
-	EventOakGotParcel:              "OakGotParcel",
-	EventGotOaksParcel:             "GotOaksParcel",
-	EventBeatRoute22Rival1stBattle: "BeatRoute22Rival1stBattle",
-	EventBeatChampionRival:         "BeatChampionRival",
+	EventFollowedOakIntoLab:           "FollowedOakIntoLab",
+	EventOakAskedToChooseMon:          "OakAskedToChooseMon",
+	EventGotStarter:                   "GotStarter",
+	EventBattledRivalInOaksLab:        "BattledRivalInOaksLab",
+	EventGotPokeballsFromOak:          "GotPokeballsFromOak",
+	EventGotPokedex:                   "GotPokedex",
+	EventOakAppearedInPallet:          "OakAppearedInPallet",
+	EventOakGotParcel:                 "OakGotParcel",
+	EventGotOaksParcel:                "GotOaksParcel",
+	EventVermilionGymSecondLockOpened: "VermilionGymSecondLockOpened",
+	EventVermilionGymFirstLockOpened:  "VermilionGymFirstLockOpened",
+	EventBeatRoute22Rival1stBattle:    "BeatRoute22Rival1stBattle",
+	EventBeatChampionRival:            "BeatChampionRival",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".

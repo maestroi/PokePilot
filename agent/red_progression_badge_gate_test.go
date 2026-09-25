@@ -67,9 +67,26 @@ func TestRedProgressionWithholdsThunderBadgeBeforeCascadeBadge(t *testing.T) {
 		t.Errorf("offers thunder_badge progression %d times without Cut unlocked, want 0", got)
 	}
 
+	// Cut unlocked but the Saffron guardhouses still shut: the run cannot
+	// physically reach Vermilion, so the drink comes first. Offering the badge
+	// here is what deadlocked run-jxh8lk19wv6on on an unroutable "return to
+	// Vermilion" plan.
 	with := base
 	with.FieldCapabilities = []FieldCapability{{Name: "cut", BadgeOwned: true, HMOwned: true}}
-	if got := countProgress(redProgressionObjectives(with), redProgressThunderBadge); got != 1 {
-		t.Errorf("offers thunder_badge progression %d times with Cut unlocked, want 1", got)
+	if got := countProgress(redProgressionObjectives(with), redProgressThunderBadge); got != 0 {
+		t.Errorf("offers thunder_badge progression %d times behind a shut Saffron gate, want 0", got)
+	}
+	if !hasProgressObjective(redProgressionObjectives(with), ProgressSaffronGateOpen) {
+		t.Error("shut Saffron gate did not surface the guard-drink objective that unblocks Vermilion")
+	}
+
+	// Once the corridor is open the badge objective returns.
+	open := with
+	open.Story = ProgressState{
+		{ID: redProgressHM01Acquired, Complete: true},
+		{ID: ProgressSaffronGateOpen, Complete: true},
+	}
+	if got := countProgress(redProgressionObjectives(open), redProgressThunderBadge); got != 1 {
+		t.Errorf("offers thunder_badge progression %d times with Cut unlocked and Saffron open, want 1", got)
 	}
 }

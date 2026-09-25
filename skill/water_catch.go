@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -27,28 +26,44 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		return CatchResult{}, fmt.Errorf("skill: CatchWater: maxBalls must be > 0, got %d", maxBalls)
 	}
 
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
-		return CatchResult{}, fmt.Errorf("skill: CatchWater: player not controllable on map %#04x", m.Peek8(sym.CurMap))
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	live, err := navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return CatchResult{}, err
 	}
 
-	// Collection uses the same positive acquisition evidence as Catch. Record
-	// it before entering Surf so teaching HM03 or walking to the shoreline
-	// cannot be mistaken for capture progress.
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !fieldActions.DecodeFieldAction(m).Controllable {
+		return CatchResult{}, fmt.Errorf("skill: CatchWater: player not controllable on map %#04x", live.Map)
+	}
+
+	// Collection uses the same profile-owned positive acquisition evidence as
+	// Catch. Record it before entering Surf so teaching HM03 or walking to the
+	// shoreline cannot be mistaken for capture progress.
+	captureBefore := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
-	if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !fieldActions.DecodeFieldAction(m).Surfing {
 		shore, err := nearestFishingShore(m, romData)
 		if err != nil {
 			return res, fmt.Errorf("skill: CatchWater: find Surf shoreline: %w", err)
 		}
 		if _, err := TravelFlee(m, romData, Destination{
-			Map: m.Peek8(sym.CurMap), X: uint8(shore.standX), Y: uint8(shore.standY),
+			Map: live.Map, X: uint8(shore.standX), Y: uint8(shore.standY),
 		}, policy, fishingTravelCap); err != nil {
 			return res, fmt.Errorf("skill: CatchWater: reach shoreline (%d,%d): %w", shore.standX, shore.standY, err)
 		}
@@ -56,16 +71,20 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 			return res, fmt.Errorf("skill: CatchWater: face water (%d,%d): %w", shore.waterX, shore.waterY, err)
 		}
 		m.StepFrames(2)
-		result, err := UseFieldMove(m, FieldSurf)
+		result, err := useFieldMoveWithDecoder(m, FieldSurf, fieldActions)
 		if err != nil {
 			return res, fmt.Errorf("skill: CatchWater: enter Surf: %w", err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing || !fieldActions.DecodeFieldAction(m).Surfing {
 			return res, fmt.Errorf("skill: CatchWater: Surf returned without verified surfing state")
 		}
 	}
 
-	mapID := m.Peek8(sym.CurMap)
+	live, err = navigationStateWithDecoder(m, overworld)
+	if err != nil {
+		return res, fmt.Errorf("skill: CatchWater: observe Surf map: %w", err)
+	}
+	mapID := live.Map
 	h, err := rom.ParseMap(romData, mapID)
 	if err != nil {
 		return res, fmt.Errorf("skill: CatchWater: parse map %#04x: %w", mapID, err)
@@ -79,7 +98,10 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no Surf water cells", mapID)
 	}
 
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return res, fmt.Errorf("skill: CatchWater: observe world: %w", err)
+	}
 	// A map can contain multiple disconnected bodies of water. grindPair's
 	// nearest-cell choice is intentionally geometric, so filter the candidate
 	// set to the component reachable from Red's current Surf position first;
@@ -118,7 +140,7 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		state.Snapshot(m, &mem)
 		bs := state.DecodeBattle(&mem)
 		if bs == nil {
-			return res, fmt.Errorf("skill: CatchWater: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, m.Peek8(sym.CurMap))
+			return res, fmt.Errorf("skill: CatchWater: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, mapID)
 		}
 		res.Encounters++
 		if !speciesIn(bs.EnemySpecies, want) {
@@ -132,10 +154,10 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d Surf legs and %d encounters (map %#04x)",
-		ErrCatchHuntExhausted, legsSpent, res.Encounters, m.Peek8(sym.CurMap))
+		ErrCatchHuntExhausted, legsSpent, res.Encounters, mapID)
 }
 
 func surfEncounterCells(grid *world.Grid) []cell {

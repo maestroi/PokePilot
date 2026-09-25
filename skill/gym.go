@@ -98,6 +98,20 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		return 0, fmt.Errorf("skill: Gym: Place %q not found", g.Place)
 	}
 
+	if cur == celadonCityMap {
+		// Celadon Gym has two distinct Cut problems: the exterior tree that
+		// guards the door and an interior garden maze between the door landing
+		// and Erika. Route only to the gym MAP first so the cross-map planner
+		// never has to pretend the static landing can already reach Erika.
+		// Once inside, the ordinary local field planner below owns the garden
+		// cuts from live geometry. This keeps the gym warp a normal one-exit
+		// room for every unrelated journey (#1586-#1588).
+		if _, err := Travel(m, romData, MapDestination(celadonGymMap), policy, 20); err != nil {
+			return 0, fmt.Errorf("skill: Gym: reach %s's gym: %w", g.Leader, err)
+		}
+		cur = m.Peek8(sym.CurMap)
+	}
+
 	if cur == vermilionCity {
 		if err := enterVermilionGymViaRouteGate(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: reach %s: %w", g.Leader, err)
@@ -121,14 +135,14 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		}
 		res, err = travelOpenVermilion(m, romData, dest, policy, 20)
 	} else if cur == saffronGymMap {
-		res, err = travelIntraMapWarpMaze(m, romData, dest, policy, 30)
+		res, err = Travel(m, romData, dest, policy, 30)
 	} else if cur == cinnabarGymMap {
 		if err := OpenCinnabarGym(m, romData, policy); err != nil {
 			return 0, fmt.Errorf("skill: Gym: open %s's quiz gates: %w", g.Leader, err)
 		}
 		res, err = Travel(m, romData, dest, policy, cinnabarGymTravelBattles)
 	} else if cur == viridianGymMap {
-		res, err = travelViridianGymToLeader(m, romData, policy)
+		res, err = Travel(m, romData, dest, policy, viridianGymTravelBattles)
 	} else {
 		// Travel, not walkWithinMap: gym trainers can engage by line of sight
 		// on the way to the leader, and Travel resolves those battles before
@@ -143,16 +157,22 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 	if res.BlackedOut {
 		return 0, fmt.Errorf("skill: Gym: %w approaching %s (%d battles)", ErrBlackedOut, g.Leader, res.Battles)
 	}
-	// The Viridian spinner planner already ends on a verified tile beside
-	// Giovanni. Running ordinary Travel again here could step onto another
-	// forced arrow tile and invalidate that postcondition.
-	if cur != viridianGymMap {
-		if err := reachLeaderSide(m, romData, g, policy); err != nil {
-			return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
-		}
+	if err := reachLeaderSide(m, romData, g, policy); err != nil {
+		return 0, fmt.Errorf("skill: Gym: approach %s: %w", g.Leader, err)
 	}
 	if err := Face(m, g.LeaderX, g.LeaderY); err != nil {
 		return 0, fmt.Errorf("skill: Gym: face %s: %w", g.Leader, err)
+	}
+
+	// A wiped-out party cannot open the leader battle: the game runs
+	// HandleBlackOut and carries the player to the center instead. Without
+	// this check the A tap is swallowed by the blackout and the wait below
+	// times out into a terminal unknown_failure. Reuse the shared faint/
+	// respawn mechanism the travel paths already use and report a structured
+	// blackout so the objective re-plans.
+	if partyAllFainted(m) {
+		waitForFaintRespawn(m, m.Peek8(sym.CurMap), true)
+		return 0, ErrBlackedOut
 	}
 
 	m.Tap(emu.A, 3, 7)

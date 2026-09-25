@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { MapSprite } from '../api/types'
 import { mapEntry } from '../mapCatalog'
+import { drawGen1TextureMap, loadGen1TextureMap, type Gen1TextureMap } from '../gen1Texture'
+import { drawGen1Sprite, gen1SpriteURL, loadGen1Sprite } from '../gen1Sprite'
 import { worldConnections, worldPois, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
@@ -68,7 +70,11 @@ const loading = ref(false)
 const error = ref('')
 const zoomLevel = ref(1)
 const payload = ref<MapPayload | null>(null)
+const authenticTexture = ref<Gen1TextureMap | null>(null)
+const textureLoading = ref(false)
+const textureError = ref('')
 const selectedPoi = ref<WorldPoi | null>(null)
+const poiSpriteImages = shallowRef<Map<string, HTMLImageElement>>(new Map())
 let savedDebug = false
 try {
   savedDebug = window.localStorage.getItem('pokepilot.map.debug') === '1'
@@ -106,6 +112,7 @@ const warpDestinations = computed(() => {
 })
 const connections = computed(() => payload.value?.connections || [])
 let serial = 0
+let textureSerial = 0
 let observer: ResizeObserver | null = null
 let tileSize = 0
 
@@ -118,6 +125,7 @@ function mapLabel(value: number): string {
 }
 
 function friendlyMapLabel(value: number): string {
+  if (Number(value) === 0xff) return 'Previous map'
   return mapEntry(Number(value))?.label || mapLabel(Number(value))
 }
 
@@ -293,10 +301,13 @@ function drawPoi(ctx: CanvasRenderingContext2D, poi: WorldPoi, px: number): void
   const cy = (poi.y + 0.5) * px
   const radius = Math.max(2.2, px * 0.2)
   const selected = selectedPoi.value === poi
+  const spriteImage = poi.spriteAsset ? poiSpriteImages.value.get(poi.spriteAsset) : undefined
 
   ctx.save()
   ctx.lineWidth = Math.max(1, px * 0.08)
-  if (poi.kind === 'item') {
+  if (spriteImage) {
+    drawGen1Sprite(ctx, spriteImage, poi.x, poi.y, px, poi.facing)
+  } else if (poi.kind === 'item') {
     ctx.fillStyle = '#f6d365'
     ctx.strokeStyle = '#4b3810'
     ctx.translate(cx, cy)
@@ -365,8 +376,12 @@ function draw(): void {
   if (availW < 8 || availH < 8) return
 
   const fitPx = Math.floor(Math.min(availW / width, availH / height))
-  const basePx = Math.max(debugEnabled.value ? 18 : 6, fitPx)
-  const px = Math.max(2, Math.floor(basePx * zoomLevel.value))
+  const readableFloor = explorerAppearance.value && authenticTexture.value ? 18 : 6
+  const basePx = Math.max(debugEnabled.value ? 18 : readableFloor, fitPx)
+  const rawPx = Math.max(2, Math.floor(basePx * zoomLevel.value))
+  const px = explorerAppearance.value && authenticTexture.value
+    ? Math.max(2, Math.floor(rawPx / 2) * 2)
+    : rawPx
   tileSize = px
   node.width = width * px
   node.height = height * px
@@ -396,18 +411,34 @@ function draw(): void {
   }
   const colors = explorerAppearance.value ? explorerColors : semanticColors
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const cell = cellAt(data, x, y)
-      ctx.fillStyle = explorerAppearance.value
-        ? explorerFill(data, cell, x, y)
-        : cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
-      ctx.fillRect(x * px, y * px, px, px)
-      if (explorerAppearance.value) drawExplorerTexture(ctx, data, cell, x, y, px)
-      if (props.showWarps && cell === 'W') {
-        ctx.strokeStyle = colors.warp
-        ctx.lineWidth = Math.max(1, Math.floor(px / 4))
-        ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
+  if (explorerAppearance.value && authenticTexture.value) {
+    drawGen1TextureMap(ctx, authenticTexture.value, px)
+    if (props.showWarps) {
+      for (const warp of data.warps || []) {
+        const x = Number(warp.x)
+        const y = Number(warp.y)
+        if (x < 0 || y < 0 || x >= width || y >= height) continue
+        const radius = Math.max(1.5, px * 0.12)
+        ctx.fillStyle = 'rgba(214, 167, 255, 0.72)'
+        ctx.beginPath()
+        ctx.arc((x + 0.5) * px, (y + 0.5) * px, radius, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+  } else {
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const cell = cellAt(data, x, y)
+        ctx.fillStyle = explorerAppearance.value
+          ? explorerFill(data, cell, x, y)
+          : cell === '#' ? colors.wall : cell === 'g' ? colors.grass : cell === '~' ? colors.water : colors.ground
+        ctx.fillRect(x * px, y * px, px, px)
+        if (explorerAppearance.value) drawExplorerTexture(ctx, data, cell, x, y, px)
+        if (props.showWarps && cell === 'W') {
+          ctx.strokeStyle = colors.warp
+          ctx.lineWidth = Math.max(1, Math.floor(px / 4))
+          ctx.strokeRect(x * px + 1, y * px + 1, Math.max(1, px - 2), Math.max(1, px - 2))
+        }
       }
     }
   }
@@ -435,7 +466,8 @@ function draw(): void {
         const x = Number(warp.x)
         const y = Number(warp.y)
         if (x < 0 || y < 0 || x >= width || y >= height) continue
-        drawDebugText(ctx, `→${hexByte(warp.dest)}`, (x + 0.5) * px, (y + 0.5) * px, px)
+        const warpLabel = Number(warp.dest) === 0xff ? '↩' : `→${hexByte(warp.dest)}`
+        drawDebugText(ctx, warpLabel, (x + 0.5) * px, (y + 0.5) * px, px)
       }
     }
   }
@@ -492,6 +524,72 @@ function draw(): void {
         drawDebugText(ctx, `@${playerX},${playerY}`, (playerX + 0.5) * px, (playerY + 0.5) * px, px)
       }
     }
+  }
+}
+
+
+
+async function loadPoiSprites(): Promise<void> {
+  if (!explorerAppearance.value) {
+    poiSpriteImages.value = new Map()
+    return
+  }
+  const assets = [...new Set(currentPois.value.map((poi) => poi.spriteAsset).filter((asset): asset is string => Boolean(asset)))]
+  const settled = await Promise.allSettled(assets.map(async (asset) => [asset, await loadGen1Sprite(asset)] as const))
+  const next = new Map<string, HTMLImageElement>()
+  for (const result of settled) {
+    if (result.status === 'fulfilled') next.set(result.value[0], result.value[1])
+  }
+  poiSpriteImages.value = next
+  requestAnimationFrame(draw)
+}
+
+function poiWikiURL(poi: WorldPoi): string {
+  const query = poi.item || poi.species || (poi.trainerClass ? friendlyPoiSymbol(poi.trainerClass) : poi.label)
+  return `https://bulbapedia.bulbagarden.net/wiki/Special:Search?search=${encodeURIComponent(query)}`
+}
+
+function friendlyPoiSymbol(value: string | null | undefined): string {
+  return String(value || '')
+    .replace(/^(SPRITE_|OPP_|TEXT_|ITEM_)/, '')
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function poiKindLabel(poi: WorldPoi): string {
+  if (poi.kind === 'trainer') return 'Trainer'
+  if (poi.kind === 'item') return 'Item'
+  if (poi.kind === 'encounter') return 'Static encounter'
+  if (poi.kind === 'sign') return 'Sign'
+  if (poi.kind === 'object') return 'Object'
+  return 'NPC'
+}
+
+async function loadTexture(): Promise<void> {
+  const id = ++textureSerial
+  authenticTexture.value = null
+  textureError.value = ''
+  if (!explorerAppearance.value) {
+    textureLoading.value = false
+    return
+  }
+
+  textureLoading.value = true
+  try {
+    const next = await loadGen1TextureMap(Number(props.map || 0))
+    if (id !== textureSerial) return
+    authenticTexture.value = next
+    requestAnimationFrame(draw)
+  } catch (cause) {
+    if (id !== textureSerial) return
+    authenticTexture.value = null
+    textureError.value = cause instanceof Error ? cause.message : 'Authentic texture unavailable'
+    requestAnimationFrame(draw)
+  } finally {
+    if (id === textureSerial) textureLoading.value = false
   }
 }
 
@@ -594,7 +692,20 @@ function syncAtlasURL(): void {
   history.replaceState(null, '', url)
 }
 
-watch(() => props.map, () => { void loadMap() }, { immediate: true })
+watch(() => props.map, () => {
+  void loadMap()
+  void loadTexture()
+  void loadPoiSprites()
+}, { immediate: true })
+watch(() => props.appearance, (appearance) => {
+  if (appearance === 'explorer') {
+    void loadTexture()
+    void loadPoiSprites()
+  } else {
+    authenticTexture.value = null
+    poiSpriteImages.value = new Map()
+  }
+})
 watch([
   () => props.x,
   () => props.y,
@@ -606,6 +717,7 @@ watch([
   () => props.showWarps,
   () => props.showPois,
   () => props.appearance,
+  () => authenticTexture.value,
   () => debugEnabled.value,
   () => atlasMode.value
 ], () => requestAnimationFrame(draw), { deep: true })
@@ -636,6 +748,8 @@ onUnmounted(() => {
         <strong class="truncate text-[11px] text-white">{{ friendlyMapLabel(map) }}</strong>
         <span v-if="debugEnabled" class="shrink-0 font-mono text-[9px] text-slate-600">0x{{ hexByte(map) }}</span>
         <span v-if="!atlasMode && currentConnections.length" class="hidden truncate text-[10px] text-slate-500 sm:inline">{{ currentConnections.length }} connected exit{{ currentConnections.length === 1 ? '' : 's' }}</span>
+        <span v-if="explorerAppearance && !atlasMode && authenticTexture" class="hidden rounded-full bg-emerald-300/8 px-2 py-0.5 text-[9px] font-semibold text-emerald-100 ring-1 ring-emerald-300/15 sm:inline">Decomp art</span>
+        <span v-else-if="explorerAppearance && !atlasMode && textureLoading" class="hidden text-[9px] text-slate-600 sm:inline">Loading map art…</span>
         <span v-else-if="!atlasMode && connections.length" class="hidden truncate text-[10px] text-slate-500 sm:inline">edges: {{ connections.join(' · ') }}</span>
       </div>
       <div class="flex items-center gap-1">
@@ -692,19 +806,72 @@ onUnmounted(() => {
         </button>
       </template>
 
-      <div
+      <aside
         v-if="explorerAppearance && selectedPoi"
-        class="absolute top-3 left-3 z-20 max-w-56 rounded-lg border border-white/12 bg-[#09110e]/95 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur-sm"
+        class="absolute top-3 right-3 z-30 w-[min(22rem,calc(100%-1.5rem))] rounded-xl border border-white/12 bg-[#09110e]/96 p-3 shadow-2xl shadow-black/55 backdrop-blur-md"
       >
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-[9px] font-bold tracking-[0.1em] text-emerald-300/70 uppercase">{{ selectedPoi.kind }}</div>
-            <div class="mt-0.5 text-xs font-semibold text-white">{{ selectedPoi.label }}</div>
-            <div class="mt-1 text-[9px] text-slate-500">On {{ friendlyMapLabel(map) }}</div>
+        <div class="flex items-start gap-3">
+          <div
+            v-if="selectedPoi.spriteAsset"
+            class="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10"
+          >
+            <img
+              :src="gen1SpriteURL(selectedPoi.spriteAsset)"
+              :alt="selectedPoi.label"
+              class="w-16 max-w-none [image-rendering:pixelated]"
+            />
           </div>
-          <button type="button" class="text-xs text-slate-500 hover:text-white" aria-label="Close place details" @click="selectedPoi = null">×</button>
+          <div class="min-w-0 flex-1">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-bold tracking-[0.12em] text-emerald-300/70 uppercase">{{ poiKindLabel(selectedPoi) }}</div>
+                <div class="mt-0.5 truncate text-sm font-semibold text-white">{{ selectedPoi.label }}</div>
+                <div class="mt-1 text-[10px] text-slate-500">{{ friendlyMapLabel(map) }} · {{ selectedPoi.x }},{{ selectedPoi.y }}</div>
+              </div>
+              <button type="button" class="shrink-0 text-sm text-slate-500 hover:text-white" aria-label="Close object details" @click="selectedPoi = null">×</button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <dl class="mt-3 grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1.5 text-[10px]">
+          <template v-if="selectedPoi.sprite">
+            <dt class="text-slate-600">Sprite</dt>
+            <dd class="truncate text-slate-300">{{ friendlyPoiSymbol(selectedPoi.sprite) }}</dd>
+          </template>
+          <template v-if="selectedPoi.trainerClass">
+            <dt class="text-slate-600">Trainer</dt>
+            <dd class="text-slate-300">
+              {{ friendlyPoiSymbol(selectedPoi.trainerClass) }}
+              <span v-if="selectedPoi.trainerNumber != null" class="text-slate-500">#{{ selectedPoi.trainerNumber }}</span>
+            </dd>
+          </template>
+          <template v-if="selectedPoi.item">
+            <dt class="text-slate-600">Pickup</dt>
+            <dd class="text-amber-200">{{ friendlyPoiSymbol(selectedPoi.item) }}</dd>
+          </template>
+          <template v-if="selectedPoi.species">
+            <dt class="text-slate-600">Encounter</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.species) }} <span v-if="selectedPoi.level" class="text-slate-500">Lv. {{ selectedPoi.level }}</span></dd>
+          </template>
+          <template v-if="selectedPoi.movement">
+            <dt class="text-slate-600">Movement</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.movement) }}</dd>
+          </template>
+          <template v-if="selectedPoi.facing && selectedPoi.facing !== 'NONE'">
+            <dt class="text-slate-600">Facing</dt>
+            <dd class="text-slate-300">{{ friendlyPoiSymbol(selectedPoi.facing) }}</dd>
+          </template>
+        </dl>
+
+        <a
+          :href="poiWikiURL(selectedPoi)"
+          target="_blank"
+          rel="noreferrer"
+          class="mt-3 inline-flex rounded-md bg-white/7 px-2.5 py-1.5 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12 hover:text-white"
+        >
+          Search Bulbapedia ↗
+        </a>
+      </aside>
 
       <button
         v-if="showDebugToggle"
@@ -725,6 +892,7 @@ onUnmounted(() => {
       </div>
       <div v-if="loading" class="pointer-events-none absolute right-1.5 bottom-1.5 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-muted)]">Loading map…</div>
       <div v-else-if="error" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] bg-[#352529] px-1.5 py-0.5 text-[10px] text-[#e4b5b7]">{{ error }}</div>
+      <div v-else-if="explorerAppearance && textureError" class="pointer-events-none absolute right-1.5 bottom-1.5 max-w-[80%] rounded bg-black/70 px-1.5 py-0.5 text-[9px] text-slate-500" :title="textureError">Procedural fallback</div>
     </div>
 
     <div v-if="interactive && !atlasMode" class="flex flex-wrap items-center gap-1.5 border-t border-white/10 bg-black/20 px-2.5 py-2 text-[10px] text-slate-500">

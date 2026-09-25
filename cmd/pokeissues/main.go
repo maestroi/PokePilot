@@ -21,6 +21,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -110,6 +111,44 @@ type githubClient struct {
 	token   string
 	runBase string
 	http    *http.Client
+
+	// GitHub Issues has no atomic "find-or-create by fingerprint" operation.
+	// pokeissues is deliberately deployed as one replica; these in-process
+	// keyed locks serialize only reports for the same fingerprint, while
+	// unrelated failures can still upload/reconcile concurrently.
+	reportLocksMu sync.Mutex
+	reportLocks   map[string]*fingerprintReportLock
+}
+
+type fingerprintReportLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (c *githubClient) lockFingerprintReport(fingerprint string) func() {
+	c.reportLocksMu.Lock()
+	if c.reportLocks == nil {
+		c.reportLocks = make(map[string]*fingerprintReportLock)
+	}
+	lock := c.reportLocks[fingerprint]
+	if lock == nil {
+		lock = &fingerprintReportLock{}
+		c.reportLocks[fingerprint] = lock
+	}
+	lock.refs++
+	c.reportLocksMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+
+		c.reportLocksMu.Lock()
+		lock.refs--
+		if lock.refs == 0 {
+			delete(c.reportLocks, fingerprint)
+		}
+		c.reportLocksMu.Unlock()
+	}
 }
 
 type issueServer struct {
@@ -192,11 +231,18 @@ func (s *issueServer) handleReport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	log.Printf("pokeissues: report received source=%s fingerprint=%s external_id=%s artifacts=%d", manifest.Source, manifest.Fingerprint, manifest.ExternalID, len(artifacts))
 	result, created, err := s.github.report(r.Context(), manifest, artifacts)
 	if err != nil {
+		log.Printf("pokeissues: report failed fingerprint=%s external_id=%s: %v", manifest.Fingerprint, manifest.ExternalID, err)
 		writeGitHubError(w, err)
 		return
 	}
+	action := "deduplicated"
+	if created {
+		action = "created"
+	}
+	log.Printf("pokeissues: report %s issue=%d fingerprint=%s external_id=%s", action, result.Issue.IssueNumber, manifest.Fingerprint, manifest.ExternalID)
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
@@ -214,10 +260,14 @@ func (s *issueServer) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *issueServer) handleInvestigate(w http.ResponseWriter, r *http.Request) {
-	if err := s.github.investigate(r.Context(), r.PathValue("id")); err != nil {
+	id := r.PathValue("id")
+	log.Printf("pokeissues: investigation requested issue=%s", id)
+	if err := s.github.investigate(r.Context(), id); err != nil {
+		log.Printf("pokeissues: investigation request failed issue=%s: %v", id, err)
 		writeGitHubError(w, err)
 		return
 	}
+	log.Printf("pokeissues: investigation recorded issue=%s", id)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "investigating"})
 }
 
@@ -317,6 +367,9 @@ func validateManifest(m issueReportManifest) error {
 }
 
 func (c *githubClient) report(ctx context.Context, manifest issueReportManifest, artifacts []artifactMeta) (issueReportResponse, bool, error) {
+	unlock := c.lockFingerprintReport(manifest.Fingerprint)
+	defer unlock()
+
 	var out issueReportResponse
 	existing, found, err := c.findIssue(ctx, manifest.Fingerprint, manifest.ExternalID)
 	if err != nil {
@@ -343,6 +396,13 @@ func (c *githubClient) report(ctx context.Context, manifest issueReportManifest,
 			}
 			existing.State = "open"
 			existing.StateReason = "reopened"
+		}
+		if strings.EqualFold(existing.State, "open") {
+			updated, err := c.updateLatestObservation(ctx, existing, manifest)
+			if err != nil {
+				return out, false, err
+			}
+			existing = updated
 		}
 		if err := c.attachPortableRepro(ctx, &existing, manifest, artifacts); err != nil {
 			return out, false, err
@@ -424,6 +484,23 @@ func (c *githubClient) ensureOccurrenceComment(ctx context.Context, number int64
 	}
 	payload := map[string]string{"body": renderOccurrenceComment(c.runBase, manifest, artifacts)}
 	return c.doJSON(ctx, http.MethodPost, path, payload, nil)
+}
+
+func (c *githubClient) updateLatestObservation(ctx context.Context, issue githubIssue, manifest issueReportManifest) (githubIssue, error) {
+	revision := strings.TrimSpace(manifest.ObservedRevision)
+	if revision == "" {
+		return issue, nil
+	}
+	body := setLatestObservation(issue.Body, revision, manifest.ObservedAt)
+	if body == issue.Body {
+		return issue, nil
+	}
+	payload := map[string]string{"body": body}
+	var updated githubIssue
+	if err := c.doJSON(ctx, http.MethodPatch, c.repoPath("issues", strconv.FormatInt(issue.Number, 10)), payload, &updated); err != nil {
+		return issue, err
+	}
+	return updated, nil
 }
 
 func (c *githubClient) getIssueStatus(ctx context.Context, id string) (issueStatusResponse, error) {
@@ -553,6 +630,14 @@ func renderIssueBody(runBase string, manifest issueReportManifest, artifacts []a
 	b.WriteString(fingerprintMarker(manifest.Fingerprint))
 	b.WriteByte('\n')
 	b.WriteString(externalIDMarker(manifest.ExternalID))
+	if revision := strings.TrimSpace(manifest.ObservedRevision); revision != "" {
+		b.WriteByte('\n')
+		b.WriteString(latestObservedRevisionMarker(revision))
+		if !manifest.ObservedAt.IsZero() {
+			b.WriteByte('\n')
+			b.WriteString(latestObservedAtMarker(manifest.ObservedAt))
+		}
+	}
 	b.WriteString("\n<!-- pokepilot-generated:github-issues-v1 -->\n\n")
 	b.WriteString("Automated PokePilot farm failure. GitHub is the issue system of record; repeated active occurrences remain grouped by fingerprint.\n\n")
 	renderMetadata(&b, runBase, manifest)
@@ -608,7 +693,7 @@ func renderEvidence(b *strings.Builder, raw json.RawMessage) {
 		return
 	}
 	keys := []string{
-		"classification", "disposition", "objective", "error", "cause", "outcome",
+		"classification", "disposition", "objective", "error", "cause", "cause_context", "outcome",
 		"attempt", "seed", "seed_burn", "map", "x", "y", "occurrences_in_run",
 		"first_round", "last_round", "recovered", "recovered_count", "terminal_count",
 		"blocking", "run_reason", "runner_version", "observed_revision",
@@ -625,6 +710,19 @@ func renderEvidence(b *strings.Builder, raw json.RawMessage) {
 			text = v
 		case float64, bool:
 			text = fmt.Sprint(v)
+		case []any:
+			parts := make([]string, 0, len(v))
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok {
+					continue
+				}
+				s = strings.TrimSpace(truncateUTF8(s, maxEvidenceValueBytes))
+				if s != "" {
+					parts = append(parts, s)
+				}
+			}
+			text = strings.Join(parts, ", ")
 		default:
 			continue
 		}
@@ -756,6 +854,62 @@ func fingerprintMarker(fingerprint string) string {
 
 func externalIDMarker(externalID string) string {
 	return "<!-- pokepilot-external-id:" + htmlCommentSafe(externalID) + " -->"
+}
+
+const (
+	latestObservedRevisionPrefix = "<!-- pokepilot-latest-observed-revision:"
+	latestObservedAtPrefix       = "<!-- pokepilot-latest-observed-at:"
+)
+
+func latestObservedRevisionMarker(revision string) string {
+	return latestObservedRevisionPrefix + htmlCommentSafe(revision) + " -->"
+}
+
+func latestObservedAtMarker(observedAt time.Time) string {
+	return latestObservedAtPrefix + observedAt.UTC().Format(time.RFC3339Nano) + " -->"
+}
+
+func hiddenMarkerValue(body, prefix string) string {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) && strings.HasSuffix(line, " -->") {
+			return strings.TrimSuffix(strings.TrimPrefix(line, prefix), " -->")
+		}
+	}
+	return ""
+}
+
+func setHiddenMarker(body, prefix, marker string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), prefix) {
+			if line == marker {
+				return body
+			}
+			lines[i] = marker
+			return strings.Join(lines, "\n")
+		}
+	}
+	if body == "" {
+		return marker
+	}
+	return marker + "\n" + body
+}
+
+func setLatestObservation(body, revision string, observedAt time.Time) string {
+	if revision = strings.TrimSpace(revision); revision == "" {
+		return body
+	}
+	if raw := hiddenMarkerValue(body, latestObservedAtPrefix); raw != "" && !observedAt.IsZero() {
+		if previous, err := time.Parse(time.RFC3339Nano, raw); err == nil && previous.After(observedAt) {
+			return body
+		}
+	}
+	body = setHiddenMarker(body, latestObservedRevisionPrefix, latestObservedRevisionMarker(revision))
+	if !observedAt.IsZero() {
+		body = setHiddenMarker(body, latestObservedAtPrefix, latestObservedAtMarker(observedAt))
+	}
+	return body
 }
 
 func triageKey(fingerprint string) string {

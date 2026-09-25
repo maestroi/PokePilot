@@ -67,16 +67,24 @@ func liveMapBlocksFromMem(mem *state.Mem, h rom.MapHeader) ([]byte, error) {
 // the game is actually in. It intentionally has no cache: semantic transitions
 // such as Cut and Surf are followed by a fresh decode before routing continues.
 func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, error) {
-	mode := world.TraversalLand
-	if m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
-		mode = world.TraversalWater
+	decoder, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return nil, err
 	}
+	mode := traversalModeForFieldActionState(decoder.DecodeFieldAction(m))
 	return liveMapGridForTraversal(m, romData, h, mode)
 }
 
-// liveMapGridFromMem gives pure observation code the same post-script geometry
+// LiveMapGridFromMem gives pure observation code the same post-script geometry
 // used by runtime navigation. In particular, map scripts that ReplaceTileBlock
 // must affect both offered objective reachability and later execution.
+func LiveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
+	if mem == nil {
+		return nil, fmt.Errorf("skill: live map grid: nil memory snapshot")
+	}
+	return liveMapGridFromMem(mem, romData, h)
+}
+
 func liveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
 	mode := world.TraversalLand
 	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {

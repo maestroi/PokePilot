@@ -124,6 +124,7 @@ func main() {
 	}
 
 	go wall.RunReaper(5 * time.Second)
+	go wall.RunActivityLog(wallActivityLogInterval)
 	if *artifactRetention > 0 {
 		go wall.RunArtifactRetention(*artifactRetentionEvery, *artifactRetention)
 	}

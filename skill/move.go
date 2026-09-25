@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -29,61 +30,8 @@ var (
 	ErrDialogueInterrupted = errors.New("skill: text box interrupted movement")
 )
 
-// ponytail: the 60/40-frame budgets below are empirical, measured on this
-// ROM (one tile of movement, then the step animation settling). Tighten
-// them only with a measurement, not a guess.
-// hopSettleBudget covers a whole ledge jump, which the ROM drives itself:
-// MEASURED on the Pewter City ledge at (22,28), 42 frames from the press to
-// wJoyIgnore clearing again.
-const (
-	stepMoveBudget   = 60
-	stepSettleBudget = 40
-	hopSettleBudget  = 120
-)
-
-func buttonFor(s world.Step) (emu.Button, bool) {
-	if s.DX == 0 && (s.DY == 2 || s.DY == -2) {
-		s.DY /= 2
-	}
-	if s.DY == 0 && (s.DX == 2 || s.DX == -2) {
-		s.DX /= 2
-	}
-	switch s {
-	case world.StepUp:
-		return emu.Up, true
-	case world.StepDown:
-		return emu.Down, true
-	case world.StepLeft:
-		return emu.Left, true
-	case world.StepRight:
-		return emu.Right, true
-	}
-	return 0, false
-}
-
 func playerXY(m *emu.Emu) (uint8, uint8) {
 	return m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
-}
-
-// idle reports that the game is not executing any movement: the walk
-// animation has finished, no scripted sequence is running, and the ROM has
-// observed the release of every button.
-//
-// hJoyHeld is the load-bearing half. The overworld loop polls the joypad
-// again a frame or two AFTER a step's coordinate lands, so a step that
-// returns the instant the coordinate changes leaves the direction still
-// held into that poll and the game starts a second step nobody asked for.
-// On an ordinary tile that overrun is invisible — the next step is usually
-// the same direction anyway. On a ledge it arms a two-tile scripted jump
-// (HandleLedges, pokered/engine/overworld/ledges.asm) whose two simulated
-// inputs are then consumed while WE believe a fresh step is starting: they
-// are spent turning and settling instead of walking, and the player is left
-// standing ON the ledge tile with the hop half done. MEASURED in the Pewter
-// City descent at (22,28): wJoyIgnore was already 0xff and the simulated
-// index already exhausted on the first frame of the step that was supposed
-// to press the hop.
-func idle(m *emu.Emu) bool {
-	return m.Peek8(sym.WalkCounter) == 0 && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.JoyHeld) == 0
 }
 
 // StepOnce attempts a single tile of movement. It returns nil when the
@@ -100,46 +48,100 @@ func idle(m *emu.Emu) bool {
 // move of its own. A ledge hop is one step of two tiles: the ROM drives
 // both of them, so the same idle wait is what makes the landing observable.
 func StepOnce(m *emu.Emu, s world.Step) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return stepOnceWithRuntimeDecoder(m, s, decoder)
+}
+
+// stepOnceWithRuntimeDecoder keeps the still-Red-owned compatibility hooks
+// around the portable local-step controller. Cycling Road's release-frame
+// braking and Gen I poison-blackout recovery intentionally remain outside the
+// generic core until their own capability slices are defined.
+func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.OverworldDecoder) error {
 	btn, ok := buttonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
+	start := decoder.DecodeOverworld(m)
+	if start.NativeMapID == uint16(route17Map) && movementStepDistance(s) == 1 {
+		return stepOnceCyclingRoad(m, decoder, s, btn)
+	}
 
-	startX, startY := playerXY(m)
-	moved := false
-	for attempt := 0; attempt < 2 && !moved; attempt++ {
-		_, err := m.HoldUntil(btn, stepMoveBudget, func(m *emu.Emu) bool {
-			x, y := playerXY(m)
-			return x != startX || y != startY
-		})
-		if err == nil {
-			moved = true
+	// A party that is already fainted blackouts on the next counted overworld
+	// step (ApplyOutOfBattlePoisonDamage -> AnyPartyAlive -> HandleBlackOut).
+	// That Gen I recovery remains adapter-owned around the portable movement
+	// primitive so it cannot leak Red RAM layout into the generic driver.
+	startFainted := partyAllFainted(m)
+	stepErr := stepOnceWithOverworldDecoder(m, s, decoder)
+	if err := waitForFaintRespawn(m, uint8(start.NativeMapID), startFainted); err != nil {
+		return err
+	}
+	return stepErr
+}
+
+// partyAllFainted reports that the party has at least one Pokémon and every
+// one of them has 0 HP. An empty party is not a faint: the overworld poison
+// check refuses to black out when wPartyCount is 0.
+func partyAllFainted(m *emu.Emu) bool {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	party := state.DecodeParty(&mem)
+	if len(party.Mons) == 0 {
+		return false
+	}
+	for _, mon := range party.Mons {
+		if !mon.Fainted() {
+			return false
 		}
 	}
-	if !moved {
-		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
-	}
+	return true
+}
 
-	settleBudget := stepSettleBudget
-	if absInt(s.DX)+absInt(s.DY) == 2 {
-		settleBudget = hopSettleBudget
+// respawnedFromFaint reports HandleBlackOut's positive postcondition: the
+// map is no longer the one the step started on, it is wLastBlackoutMap, the
+// player can move, and HealParty has brought someone off 0 HP.
+func respawnedFromFaint(m *emu.Emu, startMap uint8) bool {
+	if m.Peek8(sym.CurMap) == startMap || m.Peek8(sym.CurMap) != m.Peek8(sym.LastBlackoutMap) {
+		return false
 	}
-	// A timeout here is not this step's failure to report. The game can be
-	// busy with something that is not movement at all — a wild encounter's
-	// screen transition holds the joypad long before the battle is legible
-	// in RAM — and detecting an interruption belongs to the caller, which
-	// re-reads the state after every step. The wait exists only so that a
-	// held direction does not leak into the next press; where it cannot be
-	// satisfied, the coordinate below is still the honest answer.
-	_, _ = m.StepUntil(settleBudget, idle)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return state.Controllable(&mem) && !partyAllFainted(m)
+}
 
-	// The step is over; report where it actually ended. A hop that the ROM
-	// only carried one tile lands here as an ordinary blocked step whose
-	// destination is the landing tile, which is what walkAround re-plans
-	// around.
-	x, y := playerXY(m)
-	if int(x) != int(startX)+s.DX || int(y) != int(startY)+s.DY {
-		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
+// waitForFaintRespawn returns ErrBlackedOut once a fainted party's step has
+// finished HandleBlackOut. A step that is still on the origin map with the
+// joypad free is an ordinary step and returns nil immediately, so a healthy
+// walk never pays the respawn budget.
+func waitForFaintRespawn(m *emu.Emu, startMap uint8, startFainted bool) error {
+	if !startFainted {
+		return nil
+	}
+	if respawnedFromFaint(m, startMap) {
+		return ErrBlackedOut
+	}
+	mapNow := m.Peek8(sym.CurMap)
+	if mapNow != startMap && mapNow != m.Peek8(sym.LastBlackoutMap) {
+		return nil
+	}
+	if mapNow == startMap && m.Peek8(sym.JoyIgnore) == 0 && m.Peek8(sym.IsInBattle) == 0 {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if state.DecodeDialogue(&mem) == nil {
+			return nil
+		}
+	}
+	_, _ = m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
+		if respawnedFromFaint(m, startMap) {
+			return true
+		}
+		cur := m.Peek8(sym.CurMap)
+		return cur != startMap && cur != m.Peek8(sym.LastBlackoutMap) && m.Peek8(sym.JoyIgnore) == 0
+	})
+	if respawnedFromFaint(m, startMap) {
+		return ErrBlackedOut
 	}
 	return nil
 }
@@ -152,16 +154,21 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // movement, the recovery layer may press A only while ordinary text is
 // active. It never answers a choice.
 func WalkPath(m *emu.Emu, path []world.Step) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return walkPathWithRuntimeDecoder(m, path, decoder)
+}
+
+func walkPathWithRuntimeDecoder(m *emu.Emu, path []world.Step, decoder game.OverworldDecoder) error {
 	for _, step := range path {
-		stepErr := StepOnce(m, step)
+		stepErr := stepOnceWithRuntimeDecoder(m, step, decoder)
 
 		// Check for an interruption BEFORE trusting stepErr. A wild
-		// encounter fires mid-step: the battle freezes the player, so
-		// StepOnce times out and reports the tile as blocked. Reporting
-		// that as collision sent a Route 1 investigation chasing a
-		// pathfinding bug that did not exist — the tile was walkable and
-		// a Pidgey was on the screen.
-		if err := movementInterruption(m); err != nil {
+		// encounter fires mid-step: the battle freezes the player, so the
+		// local step can look blocked even though the tile was walkable.
+		if err := movementInterruptionWithDecoder(m, decoder); err != nil {
 			return err
 		}
 		if stepErr != nil {
@@ -171,17 +178,14 @@ func WalkPath(m *emu.Emu, path []world.Step) error {
 	return nil
 }
 
-// movementInterruption reads Red's live mode without advancing gameplay.
+// movementInterruption reads the active profile's semantic live mode without
+// advancing gameplay.
 func movementInterruption(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.DecodeBattle(&mem) != nil {
-		return ErrBattleInterrupted
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
 	}
-	if state.DecodeDialogue(&mem) != nil {
-		return ErrDialogueInterrupted
-	}
-	return nil
+	return movementInterruptionWithDecoder(m, decoder)
 }
 
 // ponytail: maxWalkRetries and npcWaitFrames are knobs, not laws. STAGNANT

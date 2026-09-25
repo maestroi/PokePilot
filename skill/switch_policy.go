@@ -124,6 +124,48 @@ func chooseTacticalSwitch(romData []byte, mem *state.Mem, b state.BattleState) s
 	return decision
 }
 
+// chooseTrainingCarrySwitch is the deliberate switch-training variant of the
+// tactical policy. The weak target has already entered the battle and earned
+// its participation flag; this policy must now hand the fight to a healthy
+// carry even when the target could technically attack. Unlike ordinary
+// tactical switching there is no 50% score-improvement threshold: the whole
+// point is protecting the trainee while preserving its share of XP.
+func chooseTrainingCarrySwitch(romData []byte, mem *state.Mem, b state.BattleState, minLevel uint8) switchDecision {
+	party := state.DecodeParty(mem)
+	activeSlot := int(mem.U8(sym.PlayerMonNumber))
+	decision := switchDecision{Slot: -1, Reason: "no-training-carry"}
+	if len(party.Mons) < 2 || activeSlot < 0 || activeSlot >= len(party.Mons) {
+		return decision
+	}
+
+	decision.Active = evaluateActiveForSwitch(romData, party, activeSlot, b)
+	_, defender := combat.PlayerMatchup(b)
+	for slot, mon := range party.Mons {
+		if slot == activeSlot || mon.Fainted() || mon.Level < minLevel || mon.StatusName() == "frozen" {
+			continue
+		}
+		// Training is optional work: do not send a carry below the same 50% HP
+		// retreat line used by Train merely to squeeze out one more encounter.
+		if mon.MaxHP > 0 && mon.HP*2 < mon.MaxHP {
+			continue
+		}
+		eval := evaluatePartyMonForSwitch(romData, slot, mon, defender)
+		if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
+			continue
+		}
+		if decision.Slot < 0 || betterSwitchEvaluation(eval, decision.Candidate) {
+			decision.Slot = slot
+			decision.Candidate = eval
+		}
+	}
+	decision.Legal = decision.Slot >= 0
+	decision.Switch = decision.Legal
+	if decision.Switch {
+		decision.Reason = "switch-training-carry"
+	}
+	return decision
+}
+
 // bestReplacementSlot ranks every live party member for the current opponent.
 // Forced replacement does not apply the voluntary HP/frozen filters because
 // the player must send something out. If ROM scoring cannot distinguish the

@@ -1,0 +1,11 @@
+{
+  "name": "Tiny Dungeon",
+  "creator": "Kenney",
+  "source": "https://kenney.nl/assets/tiny-dungeon",
+  "version": "1.0",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "files": {
+    "tilemap.png": "sha256:d24e60a41e4ac7a745c0304dfde121143688557f40215f23221c29cfe683825f"
+  }
+}

@@ -57,6 +57,71 @@ func TestCollectCheckpointArtifacts(t *testing.T) {
 	}
 }
 
+func TestCollectFailureCheckpointArtifactsOnlyKeepsReferencedPairs(t *testing.T) {
+	dir := t.TempDir()
+	keep := "round-002-frame-0000000200-goto.state"
+	writePair(t, dir, "round-001-frame-0000000100-goto.state", []byte("state-a"), []byte(`{"k":1}`))
+	writePair(t, dir, keep, []byte("state-b"), []byte(`{"k":2}`))
+	writePeriodic(t, dir, "periodic-00000018000.state", []byte("periodic"), []byte(`{"frame":18000}`))
+	if err := os.WriteFile(filepath.Join(dir, farmBenchmarkResultName), []byte(`{"version":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := collectFailureCheckpointArtifacts(dir, []farm.ObjectiveFailure{
+		{Checkpoint: keep},
+		{Checkpoint: keep},
+		{Checkpoint: "round-999-frame-9999999999-missing.state"},
+	})
+	if err != nil {
+		t.Fatalf("collect failure checkpoints: %v", err)
+	}
+	want := []string{
+		farmBenchmarkResultName,
+		"round-002-frame-0000000200-goto.knowledge-v4.json",
+		keep,
+	}
+	if names := namesOf(got); len(names) != len(want) {
+		t.Fatalf("artifacts = %v, want %v", names, want)
+	} else {
+		for i := range want {
+			if names[i] != want[i] {
+				t.Fatalf("artifacts = %v, want %v", names, want)
+			}
+		}
+	}
+}
+
+func TestRecordingFinishDoesNotRepackCheckpointRing(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	dir, err := os.MkdirTemp("", "pokefarm-checkpoints-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePair(t, dir, "round-001-frame-0000000100-goto.state", []byte("state-a"), []byte(`{"k":1}`))
+	writePeriodic(t, dir, "periodic-00000018000.state", []byte("periodic"), []byte(`{"frame":18000}`))
+
+	var report farm.FinishReport
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode finish: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	client.Version = "abc123"
+	finishRunWithRecording(nil, client, farm.Spec{RunID: "r-no-repack", Attempt: 1}, "done", "", 0, dir, nil, nil, nil)
+
+	for _, artifact := range report.Artifacts {
+		if strings.HasSuffix(artifact.Name, ".state") ||
+			strings.Contains(artifact.Name, "knowledge-v") ||
+			strings.HasPrefix(artifact.Name, "periodic-") {
+			t.Fatalf("finish repacked incremental checkpoint artifact %q; artifacts=%v", artifact.Name, namesOf(report.Artifacts))
+		}
+	}
+}
+
 func TestCollectCheckpointArtifactsPeriodicPairs(t *testing.T) {
 	dir := t.TempDir()
 	writePeriodic(t, dir, "periodic-00000018000.state", []byte("p-state"), []byte(`{"frame":18000}`))
@@ -187,6 +252,61 @@ func TestObjectiveLatestAndEvictionFollowFrameNotRoundNumber(t *testing.T) {
 			t.Fatalf("carried-over oldest frame was not evicted: %s", e.Name())
 		}
 	}
+}
+
+func TestCheckpointUploaderFlushesObjectivePairOnStop(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		reports []farm.CheckpointReport
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runs/r1/checkpoint" {
+			t.Errorf("checkpoint path = %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var report farm.CheckpointReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode checkpoint: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		reports = append(reports, report)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	client := farm.NewClient(srv.URL)
+	dir := t.TempDir()
+	stop := make(chan struct{})
+	done := runCheckpointUploader(client, "r1", 1, dir, make(chan periodicSample, 1), stop)
+
+	stateName := "round-002-frame-0000000200-cancel.state"
+	writePair(t, dir, stateName, []byte("paused-state"), []byte(`{"intent":"after objective"}`))
+	close(stop)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("uploader did not flush and stop")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	wantKnowledge := strings.TrimSuffix(stateName, ".state") + ".knowledge-v4.json"
+	for _, report := range reports {
+		names := namesOf(report.Artifacts)
+		foundState, foundKnowledge := false, false
+		for _, name := range names {
+			foundState = foundState || name == stateName
+			foundKnowledge = foundKnowledge || name == wantKnowledge
+		}
+		if foundState && foundKnowledge {
+			return
+		}
+	}
+	t.Fatalf("final uploader flush did not send cancellation pair; reports=%v", reports)
 }
 
 func TestCheckpointUploaderNeverTouchesEmu(t *testing.T) {
@@ -471,5 +591,55 @@ func TestFinishIncludesRAMForensicsBundles(t *testing.T) {
 		if !found {
 			t.Errorf("finish artifacts missing %s: %v", want, names)
 		}
+	}
+}
+
+// TestUploaderRefusesToPublishEmptyState is the runner's publication guard. A
+// 0-byte objective state is a leftover from a build that truncated in place;
+// uploading it replaces the wall's newest usable checkpoint with one no run can
+// load, which is what turned a single mid-write read into a permanent fresh
+// start. A complete pair in the same directory must still upload.
+func TestUploaderRefusesToPublishEmptyState(t *testing.T) {
+	dir := t.TempDir()
+	emptyState := "round-001-frame-0000100000-goto.state"
+	writePair(t, dir, emptyState, nil, []byte(`{"intent":"poisoned"}`))
+	usableState := "round-002-frame-0000200000-goto.state"
+	writePair(t, dir, usableState, []byte("complete-emulator-state"), []byte(`{"intent":"usable"}`))
+
+	var published []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runs/poisoned/checkpoint" {
+			http.NotFound(w, r)
+			return
+		}
+		var report farm.CheckpointReport
+		if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+			t.Errorf("decode checkpoint: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, a := range report.Artifacts {
+			if strings.HasSuffix(a.Name, ".state") {
+				published = append(published, a.Name)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	uploaded := map[string]struct{}{}
+	uploadNewObjectivePairs(farm.NewClient(srv.URL), "poisoned", 1, dir, uploaded)
+
+	for _, name := range published {
+		if name == emptyState {
+			t.Fatalf("uploader published the empty state %s", name)
+		}
+	}
+	if len(published) != 1 || published[0] != usableState {
+		t.Fatalf("published states = %v, want just %s", published, usableState)
+	}
+	if _, ok := uploaded[emptyState]; !ok {
+		t.Fatal("empty state was not retired, so every scan retries it forever")
 	}
 }

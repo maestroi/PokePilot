@@ -15,13 +15,26 @@ import (
 var ErrRouteTransitionNeedsBattlePolicy = errors.New("skill: semantic route transition requires a battle policy")
 
 type redRouteTransitionExecutor struct {
-	m       *emu.Emu
-	romData []byte
-	policy  MovePolicy
+	m            *emu.Emu
+	romData      []byte
+	policy       MovePolicy
+	fieldActions gameruntime.FieldActionDecoder
 }
 
 func newRedRouteTransitionExecutor(m *emu.Emu, romData []byte, policy MovePolicy) world.TransitionExecutor {
 	return &redRouteTransitionExecutor{m: m, romData: romData, policy: policy}
+}
+
+func (x *redRouteTransitionExecutor) fieldActionDecoder() (gameruntime.FieldActionDecoder, error) {
+	if x.fieldActions != nil {
+		return x.fieldActions, nil
+	}
+	decoder, err := fieldActionDecoderFor(x.m)
+	if err != nil {
+		return nil, err
+	}
+	x.fieldActions = decoder
+	return decoder, nil
 }
 
 // evaluateRedRouteGate is the execution-side mirror of semantic routing for
@@ -129,10 +142,12 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 		}
 		return world.TransitionExecutionResult{}, nil
 
-	case "red:route9_cut":
-		// The actual tree is inside Route 9 and is still handled by Travel's
-		// live Cut recovery. This gate only proves that recovery is possible
-		// before the planner commits to the east route.
+	case "red:route9_cut", "red:vermilion_gym_cut":
+		// These semantic pivots exist so the component router may select an
+		// edge whose static ROM geometry is split by a Cut tree. Execution is
+		// deliberately capability-only: Traverse now approaches the selected
+		// connection/warp through the shared destination-aware field planner,
+		// which cuts only a tree proven to lie on that exact edge route.
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
 		if !redRouteCapabilities(x.romData, &mem).Has(capCanCut) {
@@ -142,57 +157,6 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 			}
 		}
 		return world.TransitionExecutionResult{}, nil
-
-	case "red:vermilion_gym_cut":
-		if edge.From == vermilionGymMap {
-			// Leaving: the tree stands outside, on Vermilion City's side of
-			// this door, so cutThroughReachableTree (which only ever looks at
-			// the CURRENT map, and only recognizes the exact overworld/gym
-			// tree tile ids) finds nothing while still inside the gym, and
-			// still misses this one live tile-ID quirk once outside. Cross
-			// the door ourselves first, then reuse EnterVermilionGym's own
-			// tree finder — already proven against this exact tree — to clear
-			// whatever still blocks the yard the door lands in, so the exit
-			// this transition promised is the one the walker actually gets.
-			// Measured on run-3djisxgsy3dgzpnsde2inzyuh round 7: the
-			// one-directional gate only ever cut the tree on entry, so every
-			// later GoTo leaving the Gym found the same tree still standing
-			// and reported "world: no route" trying to reach Celadon.
-			if err := Traverse(x.m, x.romData, edge); err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: %w", err)
-			}
-			h, err := rom.ParseMap(x.romData, vermilionCity)
-			if err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: parse city: %w", err)
-			}
-			grid, err := world.Build(x.romData, h)
-			if err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: build city: %w", err)
-			}
-			tree, err := findVermilionGymTree(x.m, x.romData, grid, x.policy)
-			if err != nil {
-				// No verifiable tree left standing is the idempotent
-				// already-cut case (a later run through the same door, or a
-				// route that lands beside a tree some earlier leg already
-				// removed): Traverse already delivered the crossing this
-				// transition promised, so report it and let ordinary
-				// geometry take it from here instead of failing the leg.
-				return world.TransitionExecutionResult{Changed: true}, nil
-			}
-			if err := CutAhead(x.m); err != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: leave gym: cut tree at (%d,%d): %w", tree.x, tree.y, err)
-			}
-			// Traverse already performed the crossing; report Changed so the
-			// caller re-plans from the new position instead of traversing e again.
-			return world.TransitionExecutionResult{Changed: true}, nil
-		}
-		opened, err := cutThroughReachableTree(x.m, x.romData)
-		if err != nil {
-			return world.TransitionExecutionResult{}, fmt.Errorf("Cut gate: %w", err)
-		}
-		// No candidate is the idempotent already-open case. Traverse is the
-		// positive proof that ordinary geometry is now sufficient.
-		return world.TransitionExecutionResult{Changed: opened}, nil
 
 	case "red:route21_surf":
 		return x.executeSurf(edge)
@@ -214,7 +178,11 @@ func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transiti
 }
 
 func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	fieldActions, err := x.fieldActionDecoder()
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition field-action profile: %w", err)
+	}
+	if fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if edge.Kind != world.EdgeConnection {
@@ -236,49 +204,106 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water grid: %w", err)
 	}
-	sx, sy := playerXY(x.m)
-	blocked := spriteBlockers(x.m)
-	tx, ty, err := edgeTargetForConnection(water, edge, int(sx), int(sy), blocked)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot reach %02x connection in water mode: %w", edge.To, err)
-	}
-	steps, err := world.FindPath(water, int(sx), int(sy), tx, ty, blocked)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water path: %w", err)
+	g, gerr := world.BuildGraph(x.romData)
+	if gerr != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition build graph: %w", gerr)
 	}
 
-	px, py := int(sx), int(sy)
-	standX, standY, waterX, waterY := 0, 0, 0, 0
-	found := false
-	for _, step := range steps {
-		nx, ny := px+step.DX, py+step.DY
-		if !land.Passable(px, py, nx, ny) && water.Passable(px, py, nx, ny) {
-			standX, standY, waterX, waterY = px, py, nx, ny
-			found = true
-			break
+	// A semantic Surf edge can expose several geometrically plausible shore
+	// tiles, but the ROM is authoritative about whether pressing Surf while
+	// facing across that exact seam is legal. Pallet -> Route 21 is the
+	// production case: (3,17) is reachable in the static water view but the
+	// game rejects Surf there, while another tile on the same south edge works.
+	// Treat a rejected shore as per-candidate evidence and keep searching the
+	// same connection band instead of terminating the whole transition.
+	excluded := map[[2]int]bool{}
+	blocked := spriteBlockers(x.m)
+	var lastErr error
+	for attempts := 0; attempts < 256; attempts++ {
+		sx, sy := playerXY(x.m)
+		tx, ty, targetErr := edgeTargetForConnectionExcluding(water, edge, int(sx), int(sy), blocked, excluded)
+		if targetErr != nil {
+			if lastErr != nil {
+				return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exhausted shoreline candidates for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
+			}
+			return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition cannot reach %02x connection in water mode: %v", world.ErrTransitionExecutionStalled, edge.To, targetErr)
 		}
-		px, py = nx, ny
+		steps, pathErr := world.FindPath(water, int(sx), int(sy), tx, ty, blocked)
+		if pathErr != nil {
+			excluded[[2]int{tx, ty}] = true
+			lastErr = pathErr
+			continue
+		}
+
+		px, py := int(sx), int(sy)
+		standX, standY, waterX, waterY := 0, 0, 0, 0
+		found := false
+		for _, step := range steps {
+			nx, ny := px+step.DX, py+step.DY
+			if !land.Passable(px, py, nx, ny) && water.Passable(px, py, nx, ny) {
+				standX, standY, waterX, waterY = px, py, nx, ny
+				found = true
+				break
+			}
+			px, py = nx, ny
+		}
+		if !found {
+			if g.ConnectionExitWalkable(edge) {
+				// Destination has an ordinary land landing. The semantic annotation
+				// is satisfied but no Surf entry is required from this component.
+				return world.TransitionExecutionResult{}, nil
+			}
+			standX, standY = tx, ty
+			// The tile one step beyond the player in the connection direction is
+			// outside this map's grid; the ROM's IsNextTileShoreOrWater reads
+			// wTileInFrontOfPlayer from the current map, so an out-of-bounds target
+			// gives a wrong tile id and Surf is rejected. Scan the in-map
+			// neighbours for a collision tile the ROM recognises as water ($14),
+			// shore ($32), or Safari shore ($48) and face that instead.
+			waterX, waterY = -1, -1
+			for _, n := range [][2]int{{tx + 1, ty}, {tx - 1, ty}, {tx, ty + 1}, {tx, ty - 1}} {
+				if !water.InBounds(n[0], n[1]) {
+					continue
+				}
+				id, ok := water.Tile(n[0], n[1])
+				if !ok {
+					continue
+				}
+				if id == surfWaterTile || id == 0x32 || id == 0x48 {
+					waterX, waterY = n[0], n[1]
+					break
+				}
+			}
+			if waterX < 0 {
+				excluded[[2]int{tx, ty}] = true
+				lastErr = fmt.Errorf("shore (%d,%d): no in-map water/shore tile adjacent for Surf target", tx, ty)
+				continue
+			}
+		}
+
+		if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
+			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
+		}
+		if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
+			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition face water (%d,%d): %w", waterX, waterY, err)
+		}
+		x.m.StepFrames(2)
+		result, surfErr := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
+		if surfErr == nil && result.Surfing && fieldActions.DecodeFieldAction(x.m).Surfing {
+			return world.TransitionExecutionResult{Changed: true}, nil
+		}
+
+		// The ROM rejected this exact shore. Exclude the edge target that led
+		// here and retry another candidate on the same band. A failed Surf use
+		// does not consume the capability or alter map topology.
+		excluded[[2]int{tx, ty}] = true
+		if surfErr != nil {
+			lastErr = fmt.Errorf("shore (%d,%d) facing (%d,%d): %w", standX, standY, waterX, waterY, surfErr)
+		} else {
+			lastErr = fmt.Errorf("shore (%d,%d) facing (%d,%d) returned without verified surfing state", standX, standY, waterX, waterY)
+		}
 	}
-	if !found {
-		// The connection is already ordinary-walkable from this position;
-		// do not enter Surf merely because the semantic edge is annotated.
-		return world.TransitionExecutionResult{}, nil
-	}
-	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
-	}
-	if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition face water (%d,%d): %w", waterX, waterY, err)
-	}
-	x.m.StepFrames(2)
-	result, err := UseFieldMove(x.m, FieldSurf)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition enter mode: %w", err)
-	}
-	if !result.Surfing || x.m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition returned without verified surfing state")
-	}
-	return world.TransitionExecutionResult{Changed: true}, nil
+	return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exceeded shoreline retry budget for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
 }
 
 func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionExecutionResult, error) {
@@ -351,7 +376,9 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 	spec, _ := VictoryRoadBoulderSpec(section)
 	var before state.Mem
 	state.Snapshot(x.m, &before)
-	if boulderPuzzleEventComplete(&before, spec) {
+	// The switch only gates the warp; 2F entry resets the 1F switch event
+	// while leaving the player past the barrier on the way back down.
+	if boulderPuzzleEventComplete(&before, spec) || warpEdgeReachable(x.m, x.romData, edge) {
 		return world.TransitionExecutionResult{}, nil
 	}
 	if x.policy == nil {

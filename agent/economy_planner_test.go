@@ -88,17 +88,26 @@ func TestLowBallStockSignalsResupplyAlongsideCatchContext(t *testing.T) {
 	}
 }
 
-func TestBossFailureCanTriggerRecoveryResupply(t *testing.T) {
+func TestCombatLossTriggersRecoveryResupply(t *testing.T) {
+	// A healthy party after blackout with zero medicine: the typed loss flag,
+	// not the failed objective's name, is what drives bounded restock.
 	obs := Observation{
-		Money: 3000,
-		Failures: []Failure{{
-			Objective: "beat the gym leader here",
-			Times:     1,
-			Last:      "blacked out",
-		}},
+		Money:              3000,
+		Party:              []PartyMon{{Level: 60, HP: 150, MaxHP: 150}},
+		MartStock:          []string{"potion", "super potion"},
+		CombatLossRecorded: true,
+		Failures:           []Failure{{Objective: "progress league_agatha_defeated", Times: 1}},
 	}
 	ctx := plannerEconomyContext(obs)
-	if ctx == nil || !ctx.ResupplyNeeded || !strings.Contains(ctx.ResupplyReason, "boss objective failed") {
-		t.Fatalf("boss recovery context = %+v, want bounded recovery resupply signal", ctx)
+	if ctx == nil || !ctx.ResupplyNeeded || !strings.Contains(ctx.ResupplyReason, "combat challenge was lost") {
+		t.Fatalf("combat-loss recovery context = %+v, want bounded recovery resupply signal", ctx)
+	}
+	if p := purchase(t, ctx, "super potion"); !p.ShouldBuy || p.SuggestedQty == 0 {
+		t.Fatalf("super potion advice = %+v, want bounded emergency purchase", p)
+	}
+
+	obs.CombatLossRecorded = false
+	if p := purchase(t, plannerEconomyContext(obs), "super potion"); p.ShouldBuy {
+		t.Fatalf("advice without typed loss evidence = %+v, want no purchase from objective names", p)
 	}
 }

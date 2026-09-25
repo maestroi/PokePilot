@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -116,19 +117,8 @@ func chooseHPMedicine(mem *state.Mem, missing int) (uint8, bool) {
 }
 
 func chooseStatusMedicine(mem *state.Mem, status string) (uint8, bool) {
-	var specific uint8
-	switch status {
-	case "poisoned":
-		specific = itemAntidote
-	case "burned":
-		specific = itemBurnHeal
-	case "frozen":
-		specific = itemIceHeal
-	case "asleep":
-		specific = itemAwakening
-	case "paralyzed":
-		specific = itemParlyzHeal
-	default:
+	specific, ok := statusCure(status)
+	if !ok {
 		return 0, false
 	}
 	for _, item := range []uint8{specific, itemFullHeal, itemFullRestore} {
@@ -252,30 +242,5 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 // selectItemEntry moves the 2x2 battle-main-menu cursor to ITEM (left column,
 // row 1), verifying each transition rather than assuming it starts on FIGHT.
 func selectItemEntry(m *emu.Emu) error {
-	atItem := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 1
-	}
-	for i := 0; i < 8; i++ {
-		if atItem(m) {
-			return nil
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevX == battleMenuRightX:
-			btn = emu.Left
-		case prevRow == 0:
-			btn = emu.Down
-		default:
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: UseBattleMedicine: cursor stuck at x=%#02x row %d, want ITEM (x=%#02x row 1): %w",
-				prevX, prevRow, battleMenuLeftX, ErrMenuStuck)
-		}
-	}
-	return fmt.Errorf("skill: UseBattleMedicine: cursor did not reach ITEM")
+	return selectBattleMainMenuEntry(m, game.BattleMenuItems)
 }

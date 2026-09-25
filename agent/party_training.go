@@ -60,6 +60,23 @@ func insertPartyTrainingObjectives(obs Observation, known *Knowledge, out []Obje
 	return merged
 }
 
+// dropUnviableTargetedTraining removes targeted training (such as a distant
+// dex-evolution threshold) that one bounded Train session cannot reach here.
+// The executor rejects those without input, so offering them only lets
+// combat preparation or the planner pick the same dead objective per map.
+func dropUnviableTargetedTraining(out []Objective, estimate partyTrainingEstimator) []Objective {
+	kept := out[:0]
+	for _, o := range out {
+		if o.Kind == KindTrain && o.Species != "" {
+			if est, err := estimate(o.Slot, int(o.Level)); err == nil && est.Viability == TrainingOutsideBudget {
+				continue
+			}
+		}
+		kept = append(kept, o)
+	}
+	return kept
+}
+
 func partyTrainingChoiceNote(slot int, mon, lead PartyMon, wild []WildSpecies, estimate *TrainingEstimate) string {
 	detail := fmt.Sprintf("party slot %d L%d; current lead L%d", slot, mon.Level, lead.Level)
 	if len(wild) > 0 {
@@ -97,7 +114,11 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 		return TrainingEstimate{}, err
 	}
 	mon := party.Mons[slot]
-	return estimateTraining(romData, mon.Species, currentXP, mon.Level, slots, targetLevel, budget)
+	estimate, err := estimateTraining(romData, mon.Species, currentXP, mon.Level, slots, targetLevel, budget)
+	if err != nil {
+		return TrainingEstimate{}, err
+	}
+	return applyPartyTrainingMethod(party, slot, slots, estimate), nil
 }
 
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
@@ -137,6 +158,7 @@ func trainingEvidenceFromRed(train skill.TrainResult) *TrainingEvidence {
 		BlackedOut: train.BlackedOut,
 		Reached:    train.Reached,
 		Retreated:  train.Retreated,
+		Method:     string(train.Mode),
 	}
 }
 
@@ -172,11 +194,16 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	if redSafariTrainingMap(m.Peek8(sym.CurMap)) {
+		result.Outcome = OutcomeBlocked
+		return result, fmt.Errorf("agent: %s: %w: Safari Game habitats use capture-only encounters and cannot award ordinary training XP", o, ErrTrainingInefficient)
+	}
 	slot, err := resolveTrainingPartySlot(&mem, o)
 	if err != nil {
 		return result, err
 	}
-	if estimate, estimateErr := currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, int(o.Level), trainSessionBattleBudget); estimateErr == nil && estimate.Viability == TrainingOutsideBudget {
+	estimate, estimateErr := currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, int(o.Level), trainSessionBattleBudget)
+	if estimateErr == nil && estimate.Viability == TrainingOutsideBudget {
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, &TrainingInefficientError{Estimate: estimate})
 	}
@@ -188,7 +215,12 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 		}
 	}
 
-	train, trainErr := skill.Train(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget)
+	trainOptions := skill.TrainOptions{Mode: skill.TrainDirect}
+	if estimateErr == nil && estimate.Method == TrainingSwitch {
+		trainOptions.Mode = skill.TrainSwitch
+		trainOptions.MinCarryLevel = estimate.MinCarryLevel
+	}
+	train, trainErr := skill.TrainWithOptions(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget, trainOptions)
 	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the

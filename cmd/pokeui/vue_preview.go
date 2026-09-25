@@ -91,6 +91,12 @@ func withVuePreview(next http.Handler, target string) http.Handler {
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/poke-assets/"):
 			servePokemonAsset(res, req)
 			return
+		case req.Method == http.MethodGet && target == "spectator" && strings.HasPrefix(req.URL.Path, "/gen1/"):
+			name := strings.TrimPrefix(req.URL.Path, "/")
+			if !serveVueFile(res, req, target, name) {
+				http.NotFound(res, req)
+			}
+			return
 		case req.Method == http.MethodGet && strings.HasPrefix(req.URL.Path, "/assets/"):
 			name := strings.TrimPrefix(req.URL.Path, "/")
 			if !serveVueFile(res, req, target, name) {
@@ -132,7 +138,7 @@ func serveVueFile(res http.ResponseWriter, req *http.Request, target, name strin
 	}
 	if strings.HasSuffix(clean, ".html") {
 		res.Header().Set("Cache-Control", "no-store")
-	} else if strings.HasPrefix(clean, "assets/") {
+	} else if strings.HasPrefix(clean, "assets/") || strings.HasPrefix(clean, "gen1/") {
 		res.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		res.Header().Set("Cache-Control", "no-cache")

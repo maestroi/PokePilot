@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -57,7 +58,7 @@ func (w *Wall) refreshIssueVerifications(now time.Time) {
 	changed := false
 	for key, link := range links {
 		next, ok := w.refreshOneIssueVerification(key, link, tiles, now)
-		if !ok || next == link {
+		if !ok || reflect.DeepEqual(next, link) {
 			continue
 		}
 		w.mu.Lock()

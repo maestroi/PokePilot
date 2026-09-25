@@ -22,7 +22,8 @@ type recoveryStateScope uint8
 const (
 	recoveryStateScopeObjective recoveryStateScope = iota
 	recoveryStateScopeRoutePrerequisite
-	recoveryStateScopeTrainerBlackout
+	recoveryStateScopeCombatLoss
+	recoveryStateScopeFieldRoster
 )
 
 type failureQuarantineEntry struct {
@@ -76,6 +77,10 @@ func recoveryStateFor(o Objective, obs Observation) recoveryState {
 
 	switch o.Kind {
 	case KindGoTo, KindProgress:
+		includeRoute()
+	case KindRepairFieldCapability:
+		includeCombat()
+		includeInventory()
 		includeRoute()
 	case KindTalk:
 		// Position/boundary state is sufficient for a local interaction retry.
@@ -147,12 +152,12 @@ func routePrerequisiteStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
-// trainerBlackoutStateKey treats a trainer interception during travel as the
-// combat failure it actually is. Ordinary GoTo failures intentionally ignore
-// party drift, but a blackout can become retryable after training, evolution,
-// PP recovery, or other material party progress even when the destination and
-// route state are unchanged.
-func trainerBlackoutStateKey(obs Observation) string {
+// combatLossStateKey treats every battle defeat as a combat-state failure.
+// Ordinary GoTo/progression failures intentionally ignore party drift, but a
+// blackout can become retryable after training, evolution, PP recovery, or
+// other material party progress even when the destination and route state are
+// unchanged.
+func combatLossStateKey(obs Observation) string {
 	full := FailureStateFor(obs)
 	data, _ := json.Marshal(struct {
 		Party        []FailurePartyMember  `json:"party,omitempty"`
@@ -171,12 +176,56 @@ func trainerBlackoutStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// fieldRosterStateKey treats a field-roster capability gap (no party or box
+// member can learn the required HM) as a roster-state failure, not a
+// position failure. Walking to a different tile or map does not change which
+// Pokémon can learn FLY; the quarantine must survive position drift until
+// party composition, inventory, badges, capabilities, or story progress
+// change.
+func fieldRosterStateKey(obs Observation) string {
+	full := FailureStateFor(obs)
+	data, _ := json.Marshal(struct {
+		Party        []FailurePartyMember   `json:"party,omitempty"`
+		LeadPP       []uint8                `json:"lead_pp,omitempty"`
+		Inventory    []FailureInventoryItem `json:"inventory,omitempty"`
+		Badges       []string               `json:"badges,omitempty"`
+		Capabilities []FailureCapability    `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact  `json:"progress,omitempty"`
+	}{
+		Party:        full.Party,
+		LeadPP:       append([]uint8(nil), obs.LeadPP...),
+		Inventory:    full.Inventory,
+		Badges:       full.Badges,
+		Capabilities: full.Capabilities,
+		Progress:     full.Progress,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
-		return recoveryStateScopeRoutePrerequisite
+		// Capability-only quarantine is safe for direct travel objectives: moving
+		// elsewhere does not satisfy a missing badge/HM/story gate, and the
+		// plain/flee sibling would otherwise immediately retry the same route.
+		//
+		// Compound objectives are different. Progress, catch, gym, gift/trade
+		// execution and similar transactions can own multiple internal journeys,
+		// so a route prerequisite may describe only the approach that failed.
+		// Their ordinary objective state includes position and lets a materially
+		// different route reopen the transaction. #1109 exposed this for
+		// progression; #1084 exposed the same permanent quarantine for a Route 2
+		// catch after recovery had moved Red elsewhere.
+		if _, direct := routePolicySibling(result.Objective); direct {
+			return recoveryStateScopeRoutePrerequisite
+		}
 	}
-	if failureCauseIs(result, "trainer_blacked_out") {
-		return recoveryStateScopeTrainerBlackout
+	if failureCauseIs(result, "trainer_blacked_out") ||
+		failureCauseIs(result, failureCauseCombatDefeat) {
+		return recoveryStateScopeCombatLoss
+	}
+	if failureCauseIs(result, "field_roster_no_recovery") {
+		return recoveryStateScopeFieldRoster
 	}
 	return recoveryStateScopeObjective
 }
@@ -185,8 +234,10 @@ func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateS
 	switch scope {
 	case recoveryStateScopeRoutePrerequisite:
 		return routePrerequisiteStateKey(obs)
-	case recoveryStateScopeTrainerBlackout:
-		return trainerBlackoutStateKey(obs)
+	case recoveryStateScopeCombatLoss:
+		return combatLossStateKey(obs)
+	case recoveryStateScopeFieldRoster:
+		return fieldRosterStateKey(obs)
 	default:
 		return recoveryStateKey(o, obs)
 	}
@@ -198,16 +249,24 @@ func normalizedFailureKey(result ObjectiveResult) string {
 	failure := normalizedFailure(result)
 	context := append([]string(nil), failure.Context...)
 	sort.Strings(context)
+	prerequisites := append([]Prerequisite(nil), failure.Prerequisites...)
+	sort.Slice(prerequisites, func(i, j int) bool {
+		left := string(prerequisites[i].Progress) + "|" + string(prerequisites[i].FieldCapability) + "|" + string(prerequisites[i].Capability)
+		right := string(prerequisites[j].Progress) + "|" + string(prerequisites[j].FieldCapability) + "|" + string(prerequisites[j].Capability)
+		return left < right
+	})
 	data, _ := json.Marshal(struct {
-		Phase   string   `json:"phase,omitempty"`
-		Class   string   `json:"class,omitempty"`
-		Cause   string   `json:"cause,omitempty"`
-		Context []string `json:"context,omitempty"`
+		Phase         string         `json:"phase,omitempty"`
+		Class         string         `json:"class,omitempty"`
+		Cause         string         `json:"cause,omitempty"`
+		Context       []string       `json:"context,omitempty"`
+		Prerequisites []Prerequisite `json:"prerequisites,omitempty"`
 	}{
-		Phase:   string(failure.Phase),
-		Class:   string(failure.Class),
-		Cause:   failure.Cause,
-		Context: context,
+		Phase:         string(failure.Phase),
+		Class:         string(failure.Class),
+		Cause:         failure.Cause,
+		Context:       context,
+		Prerequisites: prerequisites,
 	})
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum[:8])
@@ -254,6 +313,35 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	}
 	fingerprint := fingerprintRecoverableFailure(result.Objective, result)
 	scope := recoveryStateScopeFor(result)
+	f.pendingPrerequisites = nil
+	failure := normalizedFailure(result)
+	if len(failure.Prerequisites) != 0 {
+		seen := map[Prerequisite]bool{}
+		for _, prerequisite := range failure.Prerequisites {
+			if (prerequisite.Progress == "" && prerequisite.FieldCapability == "" && prerequisite.Capability == "") || seen[prerequisite] {
+				continue
+			}
+			seen[prerequisite] = true
+			f.pendingPrerequisites = append(f.pendingPrerequisites, prerequisite)
+		}
+	} else {
+		// Compatibility fallback for older normalized failures/checkpoints that
+		// predate structured prerequisite evidence.
+		switch {
+		case failureCauseIs(result, "route_prerequisite_missing"):
+			for _, raw := range failure.Context {
+				if capability := CapabilityID(raw); capability != "" {
+					f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Capability: capability})
+				}
+			}
+		case failureCauseIs(result, "progression_prerequisite_missing"):
+			for _, raw := range failure.Context {
+				if progress := ProgressID(raw); progress != "" {
+					f.pendingPrerequisites = append(f.pendingPrerequisites, Prerequisite{Progress: progress})
+				}
+			}
+		}
+	}
 	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
 		Fingerprint: fingerprint.Key,
 		StateKey:    fingerprint.StateKey,

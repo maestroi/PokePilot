@@ -39,7 +39,10 @@ func EnterWildBattle(m *emu.Emu, attempts int) error {
 	if !state.Controllable(&mem) {
 		return fmt.Errorf("skill: EnterWildBattle: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return fmt.Errorf("skill: EnterWildBattle: observe world: %w", err)
+	}
 	grass, grid, err := grassCells(m.ROM(), now.Map)
 	if err != nil {
 		return err
@@ -129,12 +132,9 @@ func UseItem(m *emu.Emu, item uint8) error {
 		return fmt.Errorf("skill: UseItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	// ITEM is the second entry of the main menu (below FIGHT). The menu is
-	// a 2x2 grid with wMaxMenuItem == 1 per column, so SelectMenuItem would
-	// reject index 1 as out of range; step-and-verify it by hand.
-	m.Tap(emu.Down, 3, 7)
-	if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool { return int(m.Peek8(sym.CurrentMenuItem)) == 1 }); err != nil {
-		return fmt.Errorf("skill: UseItem: cursor did not reach the ITEM entry: %w", err)
+	// Select ITEM through the profile-owned ordinary battle-menu layout.
+	if err := selectItemEntry(m); err != nil {
+		return fmt.Errorf("skill: UseItem: select ITEM: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
 
@@ -205,47 +205,12 @@ func bagEntry(mem *state.Mem, item uint8) (int, int) {
 	return -1, 0
 }
 
-// bagPosition is the entry under the cursor: the list menu scrolls by
-// raising wListScrollOffset while the cursor stays put at the window's
-// bottom, so the visible index is the sum.
-func bagPosition(m *emu.Emu) int {
-	return int(m.Peek8(sym.ListScrollOffset)) + int(m.Peek8(sym.CurrentMenuItem))
-}
-
-// selectBagEntry moves the cursor of the open bag list to entry idx and
-// presses A, step-and-verify: each tap is followed by a re-read of the
-// position, and A is pressed only once it is asserted to be idx. It never
-// relies on wrap-around or a press count, so it works across the scroll
-// boundary where wCurrentMenuItem stops moving and wListScrollOffset takes
-// over.
+// selectBagEntry uses the shared profile-driven scrolling-list driver. The
+// caller already resolved the bag entry from inventory order, so only the
+// absolute semantic list position is needed here.
 func selectBagEntry(m *emu.Emu, idx int) error {
-	// Settle before reading the cursor, same fix and same reason as
-	// SelectMenuItem/shop.go's selectListEntry: a caller that just detected
-	// the list opening can call in mid-render, and the wanted entry already
-	// under the cursor takes zero loop iterations below, so without this it
-	// goes straight to a bare Tap(A) that lands before the list is ready to
-	// see it. MEASURED via TeachTMHM: TM34 on a one-item bag ("USE/TOSS
-	// prompt did not appear") reproduced from round-030 of
-	// run-1dvuxv760j2as3rac0c68gcm2m and was fixed by this settle alone.
-	m.StepFrames(talkSettle)
-	const stuckLimit = 5
-	stuck := 0
-	for pos := bagPosition(m); pos != idx; {
-		btn := emu.Down
-		if pos > idx {
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool { return bagPosition(m) != pos }); err != nil {
-			stuck++
-			if stuck >= stuckLimit {
-				return fmt.Errorf("skill: UseItem: bag cursor stuck at entry %d, wanted %d, %d consecutive taps without movement: %w", pos, idx, stuck, ErrMenuStuck)
-			}
-		} else {
-			stuck = 0
-		}
-		pos = bagPosition(m)
+	if err := selectScrollingListEntry(m, idx); err != nil {
+		return fmt.Errorf("skill: UseItem: select bag entry %d: %w", idx, err)
 	}
-	m.Tap(emu.A, 3, 7)
 	return nil
 }

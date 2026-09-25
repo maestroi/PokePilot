@@ -14,6 +14,8 @@ func TestOperatorIndexIncludesClassicRunPolicyControls(t *testing.T) {
 		[]byte(`Speedrun · progression first`),
 		[]byte(`Completionist · explore and collect`),
 		[]byte(`Team Builder · catches and training`),
+		[]byte(`"purpose"`),
+		[]byte(`Debug coverage · exercise new interactions`),
 		[]byte(`"risk_tolerance"`),
 		[]byte(`Balanced · protect progress`),
 		[]byte(`Cautious · heal early and often`),
@@ -21,6 +23,7 @@ func TestOperatorIndexIncludesClassicRunPolicyControls(t *testing.T) {
 		[]byte(`Fight every encounter · never flee`),
 		[]byte(`Max · uncapped`),
 		[]byte(`spec.play_style = playStyle.value || "adventure"`),
+		[]byte(`spec.purpose = purpose.value || "normal"`),
 		[]byte(`spec.risk_tolerance = riskTolerance.value || "balanced"`),
 		[]byte(`spec.wild_encounters = wildEncounters.value || "planner"`),
 	}

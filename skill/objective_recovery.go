@@ -70,7 +70,15 @@ func CloseOpenMenuToOverworld(m *emu.Emu) error {
 			return fmt.Errorf("skill: CloseOpenMenuToOverworld: unsupported interaction %q", interaction.Kind)
 		}
 	}
+	// The last layer's InteractionNone wait can itself land on a controllable
+	// boundary; the loop's layer budget must not discard that outcome just
+	// because it happened on the final iteration. Re-check once more before
+	// declaring failure.
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: CloseOpenMenuToOverworld: menu cleanup exceeded %d layers; final=%+v", maxLayers, state.DecodeInteraction(&mem))
+	interaction := state.DecodeInteraction(&mem)
+	if state.Controllable(&mem) && interaction.Kind == state.InteractionNone {
+		return nil
+	}
+	return fmt.Errorf("skill: CloseOpenMenuToOverworld: menu cleanup exceeded %d layers; final=%+v", maxLayers, interaction)
 }

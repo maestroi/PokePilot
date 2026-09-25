@@ -30,22 +30,35 @@ type ModelRegistry struct {
 // environment variable containing a bearer token; the token itself is never
 // carried in the registry, run spec, dashboard or persisted experiment data.
 type ModelDeployment struct {
-	ID                 string `json:"id"`
-	Label              string `json:"label"`
-	ModelID            string `json:"model_id"`
-	Revision           string `json:"revision,omitempty"`
-	Artifact           string `json:"artifact,omitempty"`
-	Quantization       string `json:"quantization,omitempty"`
-	Compute            string `json:"compute"`
-	Endpoint           string `json:"endpoint"`
-	APIModel           string `json:"api_model"`
-	Enabled            bool   `json:"enabled"`
-	ControlURL         string `json:"control_url,omitempty"`
-	TokenEnv           string `json:"token_env,omitempty"`
-	Engine             string `json:"engine,omitempty"`
-	EngineVersion      string `json:"engine_version,omitempty"`
-	EngineConfig       string `json:"engine_config,omitempty"`
-	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
+	ID           string `json:"id"`
+	Label        string `json:"label"`
+	ModelID      string `json:"model_id"`
+	Revision     string `json:"revision,omitempty"`
+	Artifact     string `json:"artifact,omitempty"`
+	Quantization string `json:"quantization,omitempty"`
+	Compute      string `json:"compute"`
+	Endpoint     string `json:"endpoint"`
+	APIModel     string `json:"api_model"`
+	// Protocol is the wire API the endpoint speaks. Empty or "openai" is an
+	// OpenAI-compatible chat endpoint that can serve the strategist or a typed
+	// decision engine; "typesafe-choice" is the TypeSafe System One choice API,
+	// which serves only the fast typed-decision engine.
+	Protocol string `json:"protocol,omitempty"`
+	Enabled  bool   `json:"enabled"`
+	// Discover asks the wall to probe the OpenAI-compatible /v1/models endpoint
+	// and bind runs to the model actually being served. This is useful for
+	// pinned llama.cpp/vLLM/cloud endpoints whose model can change without a
+	// PokePilot deploy. Switchable hosts with ControlURL normally leave this off.
+	Discover bool `json:"discover,omitempty"`
+	// DefaultFor gives operator surfaces stable roles without encoding model
+	// sizes or hardware in code (for example "farm", "experiment-a").
+	DefaultFor         []string `json:"default_for,omitempty"`
+	ControlURL         string   `json:"control_url,omitempty"`
+	TokenEnv           string   `json:"token_env,omitempty"`
+	Engine             string   `json:"engine,omitempty"`
+	EngineVersion      string   `json:"engine_version,omitempty"`
+	EngineConfig       string   `json:"engine_config,omitempty"`
+	MaxParallelWorkers int      `json:"max_parallel_workers,omitempty"`
 	// LegacyProfile is only the compatibility adapter used by existing
 	// runners to choose the already-configured compute endpoint. New operator
 	// and experiment code selects ID, never this value.
@@ -65,6 +78,7 @@ type InferenceIdentity struct {
 	Compute            string `json:"compute"`
 	Endpoint           string `json:"endpoint"`
 	APIModel           string `json:"api_model"`
+	Protocol           string `json:"protocol,omitempty"`
 	ControlURL         string `json:"control_url,omitempty"`
 	TokenEnv           string `json:"token_env,omitempty"`
 	Engine             string `json:"engine,omitempty"`
@@ -73,7 +87,56 @@ type InferenceIdentity struct {
 	MaxParallelWorkers int    `json:"max_parallel_workers,omitempty"`
 }
 
+// Deployment wire protocols.
+const (
+	ProtocolOpenAI         = "openai"
+	ProtocolTypeSafeChoice = "typesafe-choice"
+)
+
+// NormalizeProtocol maps a registry protocol to its canonical name, or ""
+// when unknown. Empty is OpenAI-compatible, how every older row behaved.
+func NormalizeProtocol(protocol string) string {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "", "openai", "openai-compatible":
+		return ProtocolOpenAI
+	case "typesafe-choice", "typesafe", "jev":
+		return ProtocolTypeSafeChoice
+	}
+	return ""
+}
+
+// ServesStrategist reports whether the deployment can answer the strategist's
+// chat-completion planner. A choice-only API cannot.
+func (d ModelDeployment) ServesStrategist() bool {
+	return NormalizeProtocol(d.Protocol) == ProtocolOpenAI
+}
+
+// DecisionBackend names the typed-decision backend that talks to this
+// deployment's protocol.
+func (d ModelDeployment) DecisionBackend() string {
+	if NormalizeProtocol(d.Protocol) == ProtocolTypeSafeChoice {
+		return DecisionBackendJev
+	}
+	return DecisionBackendSystemOne
+}
+
 const postgresRegistryEnvPrefix = "postgres-env://"
+
+// AdoptModel records that the live endpoint answered with a different model
+// than the lease requested, dropping the stale artifact identity that
+// described the requested model. It mutates the caller's own identity copy,
+// so adoption stays scoped to one run instead of a process-global lease.
+func (i *InferenceIdentity) AdoptModel(model string) {
+	model = strings.TrimSpace(model)
+	if i == nil || model == "" {
+		return
+	}
+	i.ModelID = model
+	i.APIModel = model
+	i.Revision = ""
+	i.Artifact = ""
+	i.Quantization = ""
+}
 
 // LoadModelRegistry accepts the historical JSON file path, a Postgres DSN, or
 // the production-safe form postgres-env://ENV_NAME. The env indirection is
@@ -124,8 +187,8 @@ func (r ModelRegistry) Validate() error {
 			return fmt.Errorf("model registry: duplicate deployment id %q", id)
 		}
 		seen[id] = true
-		if strings.TrimSpace(d.ModelID) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty model_id", id)
+		if strings.TrimSpace(d.ModelID) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty model_id (set discover=true for endpoint discovery)", id)
 		}
 		if strings.TrimSpace(d.Compute) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty compute", id)
@@ -133,11 +196,14 @@ func (r ModelRegistry) Validate() error {
 		if strings.TrimSpace(d.Endpoint) == "" {
 			return fmt.Errorf("model registry: deployment %q has empty endpoint", id)
 		}
-		if strings.TrimSpace(d.APIModel) == "" {
-			return fmt.Errorf("model registry: deployment %q has empty api_model", id)
+		if strings.TrimSpace(d.APIModel) == "" && !d.Discover {
+			return fmt.Errorf("model registry: deployment %q has empty api_model (set discover=true for endpoint discovery)", id)
 		}
-		if d.MaxParallelWorkers < 0 {
-			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d", id, d.MaxParallelWorkers)
+		if d.MaxParallelWorkers < 0 || d.MaxParallelWorkers > MaxParallelWorkersLimit {
+			return fmt.Errorf("model registry: deployment %q has invalid max_parallel_workers %d (must be 0-%d)", id, d.MaxParallelWorkers, MaxParallelWorkersLimit)
+		}
+		if NormalizeProtocol(d.Protocol) == "" {
+			return fmt.Errorf("model registry: deployment %q has invalid protocol %q (openai or typesafe-choice)", id, d.Protocol)
 		}
 		switch p := strings.TrimSpace(d.LegacyProfile); p {
 		case "", "auto", "gpu", "default":
@@ -174,12 +240,25 @@ func (r ModelRegistry) EnabledDeployments() []ModelDeployment {
 	return out
 }
 
+// HasDefaultRole reports whether this deployment is preferred for an operator role.
+// Roles are intentionally free-form so adding another GPU or a cloud pool does not
+// require another enum/code change.
+func (d ModelDeployment) HasDefaultRole(role string) bool {
+	role = strings.TrimSpace(strings.ToLower(role))
+	for _, candidate := range d.DefaultFor {
+		if strings.ToLower(strings.TrimSpace(candidate)) == role {
+			return true
+		}
+	}
+	return false
+}
+
 func (d ModelDeployment) Identity() InferenceIdentity {
 	return InferenceIdentity{
 		DeploymentID: d.ID, Label: d.Label, ModelID: d.ModelID,
 		Revision: d.Revision, Artifact: d.Artifact, Quantization: d.Quantization,
 		Compute: d.Compute, Endpoint: d.Endpoint, APIModel: d.APIModel,
-		ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
+		Protocol: NormalizeProtocol(d.Protocol), ControlURL: d.ControlURL, TokenEnv: d.TokenEnv, Engine: d.Engine,
 		EngineVersion: d.EngineVersion, EngineConfig: d.EngineConfig,
 		MaxParallelWorkers: d.ParallelLimit(),
 	}
@@ -222,6 +301,79 @@ func SaveModelRegistry(path string, registry ModelRegistry) error {
 		return fmt.Errorf("write model registry: %w", err)
 	}
 	return nil
+}
+
+// UpsertModelDeployment persists a complete deployment definition to either
+// a JSON registry or Postgres. It is used by the operator UI so adding or
+// editing inference endpoints does not require restarting PokéWall.
+func UpsertModelDeployment(source string, deployment ModelDeployment) (ModelDeployment, error) {
+	deployment.ID = strings.TrimSpace(deployment.ID)
+	if deployment.ID == "" {
+		return ModelDeployment{}, fmt.Errorf("model registry: deployment id is empty")
+	}
+	registry, err := LoadModelRegistry(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	found := false
+	for i := range registry.Deployments {
+		if registry.Deployments[i].ID == deployment.ID {
+			registry.Deployments[i] = deployment
+			found = true
+			break
+		}
+	}
+	if !found {
+		registry.Deployments = append(registry.Deployments, deployment)
+	}
+	if err := registry.Validate(); err != nil {
+		return ModelDeployment{}, err
+	}
+	pathOrDSN, postgres, err := registryPersistTarget(source)
+	if err != nil {
+		return ModelDeployment{}, err
+	}
+	if postgres {
+		if err := upsertPostgresDeployment(pathOrDSN, deployment); err != nil {
+			return ModelDeployment{}, err
+		}
+	} else if err := SaveModelRegistry(pathOrDSN, registry); err != nil {
+		return ModelDeployment{}, err
+	}
+	return deployment, nil
+}
+
+// DeleteModelDeployment removes a deployment from the configured registry.
+// Callers are responsible for refusing deletion while runs still reference the
+// deployment.
+func DeleteModelDeployment(source, id string) error {
+	id = strings.TrimSpace(id)
+	registry, err := LoadModelRegistry(source)
+	if err != nil {
+		return err
+	}
+	index := -1
+	for i := range registry.Deployments {
+		if registry.Deployments[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index < 0 {
+		return fmt.Errorf("%w: %s", ErrDeploymentNotFound, id)
+	}
+	registry.Deployments = append(registry.Deployments[:index], registry.Deployments[index+1:]...)
+	if err := registry.Validate(); err != nil {
+		return err
+	}
+	pathOrDSN, postgres, err := registryPersistTarget(source)
+	if err != nil {
+		return err
+	}
+	if postgres {
+		return deletePostgresDeployment(pathOrDSN, id)
+	}
+	return SaveModelRegistry(pathOrDSN, registry)
 }
 
 // UpdateDeploymentParallelLimit persists a new worker cap to the registry

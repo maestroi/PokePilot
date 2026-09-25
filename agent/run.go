@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -34,6 +36,10 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	profile, _, err := profiles.Detect(romData)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: detect game profile: %w", err)}
+	}
+	objectiveAdapterFactory, err := objectiveAdapterFactoryFor(profile.ID())
+	if err != nil {
+		return Result{Stop: StopError, Err: err}
 	}
 	graph, err := world.BuildGraph(romData)
 	if err != nil {
@@ -65,6 +71,11 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		intent, intentAge = mem.Intent, mem.IntentAge
 		resumedPlan = mem.Plan.clone()
 	}
+	// Failure evidence is scoped to the binary that is actually running. A
+	// resumed checkpoint may carry tallies from an older build; re-apply the
+	// active build after loading checkpoint memory so fixed objectives are not
+	// discouraged by stale pre-fix history.
+	known.Build = budget.Build
 
 	var ring *checkpointRing
 	if budget.CheckpointDir != "" {
@@ -77,6 +88,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 
 	res := Result{Completed: []Objective{}, Outcomes: []ObjectiveResult{}}
 	startFrame := m.FrameCount()
+	runStarted := time.Now()
 	tape := &dialogueTape{}
 	m.AlsoSample(tape.sample)
 	var history []RoundRecord
@@ -94,10 +106,19 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	res.ProgressEarly = &early
 	lastUnroutable := ""
 
+runLoop:
 	for round := 1; ; round++ {
 		select {
 		case <-budget.Cancel:
-			return Result{Stop: StopBudget, Rounds: round - 1}
+			res.Stop = StopBudget
+			res.Rounds = round - 1
+			if ring != nil {
+				if err := ring.writeBoundary(m, round, "cancel", known, coverage, intent, intentAge, engine.planning.Plan); err != nil {
+					res.Stop = StopError
+					res.Err = fmt.Errorf("agent: Run: cancel checkpoint round %d: %w", round, err)
+				}
+			}
+			break runLoop
 		default:
 		}
 
@@ -120,8 +141,12 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		// blockers instead of turning them into stale durable knowledge.
 		last.Requirements = append([]Requirement(nil), known.Requirements...)
 		last.Failures = known.FailureList()
+		last.CombatLossRecorded = known.hasCombatLossEvidence()
 		offer := offerWithTMHMEvidence(m, romData, last, known)
 		last.Requirements = append(last.Requirements, providerBlockRequirements(offer.Blocked)...)
+		last.ChallengeReadiness = append([]ChallengeReadiness(nil), offer.Readiness...)
+		last.RecoveryCheckpoints = append([]RecoveryCheckpointAssessment(nil), offer.Recovery...)
+		last.TrainingAreaChoices = append([]TrainingAreaAssessment(nil), offer.TrainingAreas...)
 		now := engine.failures.filter(last, offer.Candidates)
 		if len(now) == 0 {
 			res.Stop = StopError
@@ -134,7 +159,41 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		last.Round = round
 		last.RoundsLeft = roundsLeft(round, budget.MaxRounds)
 
-		obj, fromPlan, err, retries := engine.planning.choose(budget.Log, round, p, last, now)
+		var (
+			obj      Objective
+			fromPlan bool
+			err      error
+			retries  int
+		)
+		if prep, ok := combatPreparationObjective(last, now, known); ok {
+			obj = prep
+			engine.planning.request("combat_preparation")
+			if budget.Log != nil {
+				state := combatPreparationFor(known, last)
+				fmt.Fprintf(budget.Log, "round %d: deterministic combat preparation readiness=%d/%d losses=%d -> %s\n",
+					round, state.Current, state.Target, state.Losses, obj)
+			}
+		} else if prep, readiness, ok := proactiveChallengePreparationObjective(last, now, offer.Readiness, known); ok {
+			obj = prep
+			engine.planning.request("challenge_preparation")
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "round %d: proactive challenge preparation action=%s readiness=%d/%d losses=%d challenge=%s -> %s\n",
+					round, readiness.Action, readiness.CurrentReadiness, readiness.TargetReadiness,
+					readiness.Losses, readiness.Objective.Objective(), obj)
+			}
+		} else if recoveryAdapter, ok := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p)).(ProgressionPrerequisiteRecoveryProvider); ok {
+			if recovery, prerequisites, found := engine.failures.prerequisiteRecovery(last, now, recoveryAdapter); found {
+				obj = recovery
+				engine.planning.request("prerequisite_recovery")
+				if budget.Log != nil {
+					fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
+				}
+			} else {
+				obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
+			}
+		} else {
+			obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
+		}
 		res.ReplyRetries += retries
 		notifyPlanning(p, engine.planning.snapshot())
 		if errors.Is(err, ErrDone) {
@@ -166,9 +225,28 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			}
 		}
 
+		if budget.OnObjective != nil {
+			budget.OnObjective(ObjectiveActivity{
+				Stage: "started", Objective: obj.String(), Frame: m.FrameCount(), Round: round,
+			})
+		}
 		before := last
-		objectiveResult, execErr := executeObjectiveResult(m, romData, obj)
-		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round}
+		objectiveAdapter := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p))
+		bindBattleTurnObserver(objectiveAdapter, p)
+		objectiveResult, execErr := ExecuteWithAdapter(objectiveAdapter, obj)
+		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
+		if budget.OnObjective != nil {
+			stage := "completed"
+			errText := ""
+			if execErr != nil {
+				stage = "failed"
+				errText = execErr.Error()
+			}
+			budget.OnObjective(ObjectiveActivity{
+				Stage: stage, Objective: obj.String(), Outcome: objectiveResult.HistoryText(), Error: errText,
+				Frame: settledTiming.Frame, Round: round,
+			})
+		}
 		last = objectiveResult.Final
 		coverage.seed(last)
 		res.Rounds = round
@@ -185,6 +263,24 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			outcome := objectiveResult.HistoryText()
 
 			known.FailedResult(objectiveResult, execErr)
+			if errors.Is(execErr, gameruntime.ErrMachineUnusable) {
+				// The stalled step may still hold the emulator lock. Record the
+				// failure beside the checkpoint already written for this round
+				// and stop. Do not save, step, or ask the planner to continue.
+				known.noteMachineUnusable(obj, execErr)
+				if ring != nil {
+					if err := ring.rewriteKnowledge(known, intent, intentAge, engine.planning.Plan); err != nil {
+						execErr = fmt.Errorf("%w (checkpoint knowledge: %v)", execErr, err)
+					}
+				}
+				history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
+				last.History = history
+				last.RecentDialogue = tape.recent()
+				logRound(budget.Log, round, obj, outcome, last)
+				markLastOutcomeTerminal(&res)
+				res.Stop, res.Err = StopError, execErr
+				break
+			}
 			known.notePartyCombatResult(before, last, objectiveResult)
 			history = appendHistory(history, RoundRecord{Objective: obj.String(), Outcome: outcome})
 			last.History = history
@@ -211,6 +307,27 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 				res.Stop = StopError
 				res.Err = fmt.Errorf("agent: objective %s returned error with completed outcome: %w", obj, execErr)
 			case actionReplan:
+				// Typed failure decisions are advisory inside the deterministic
+				// safety envelope. Only outcomes already classified as recoverable
+				// can reach this hook, and only the conservative pause/impossible
+				// choices may tighten policy into a stop.
+				if decider, ok := p.(FailureDecisionPlanner); ok {
+					decision, decisionErr := decider.DecideFailure(objectiveResult)
+					if decisionErr == nil {
+						stop, mappingErr := FailureDecisionStops(decision.Choice)
+						if mappingErr == nil && stop {
+							markLastOutcomeTerminal(&res)
+							res.Stop = StopError
+							sentinel := ErrDecisionImpossible
+							if decision.Choice == "pause" {
+								sentinel = ErrDecisionPause
+							}
+							res.Err = fmt.Errorf("%w: disposition=%s confidence=%.3f after %s: %v",
+								sentinel, decision.Choice, decision.Confidence, obj, execErr)
+							break
+						}
+					}
+				}
 				engine.failures.record(objectiveResult)
 			}
 			if res.Stop != StopUnset {
@@ -227,6 +344,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 			if failure.ReplanReason != "" {
 				engine.planning.request(failure.ReplanReason)
 				notifyPlanning(p, engine.planning.snapshot())
+			}
+			if failure.ProductiveSession {
+				engine.watchdogs.productiveSession(round)
 			}
 			if failure.Stop != StopUnset {
 				markLastOutcomeTerminal(&res)
@@ -247,9 +367,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		res.OutcomeTimings = append(res.OutcomeTimings, settledTiming)
 		res.Completed = append(res.Completed, obj)
 		engine.failures.clear(obj)
-		engine.planning.success(fromPlan)
+		legBoundary, droppedTail := engine.planning.success(fromPlan, obj)
+		if legBoundary && budget.Log != nil {
+			fmt.Fprintf(budget.Log, "round %d: strategic leg boundary reached goal=%q objective=%s dropped_tail_steps=%d\n",
+				round, engine.planning.Plan.Goal, obj, droppedTail)
+		}
 		notifyPlanning(p, engine.planning.snapshot())
 		known.Done(obj)
+		forgetUnreachedTrainingArea(known, obj, last)
 		known.notePartyCombatResult(before, last, objectiveResult)
 		if obj.Kind == KindTalk {
 			known.TalkedAt(observationLocation(before, known), obj.X, obj.Y)
@@ -322,6 +447,7 @@ func progressOf(obs Observation, k *Knowledge, coverage *coverageTracker, round 
 func noteObservation(k *Knowledge, obs Observation) {
 	k.SawLocation(observationLocation(obs, k))
 	k.SawDialogue(obs.RecentDialogue, obs.MapName, obs.X, obs.Y)
+	rememberTrainingArea(k, obs)
 }
 
 func sameProgress(a, b Observation) bool {

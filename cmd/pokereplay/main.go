@@ -61,6 +61,11 @@ type artifactList struct {
 	Artifacts []artifactRef `json:"artifacts"`
 }
 
+type replayRecording struct {
+	Attempt  int
+	Artifact artifactRef
+}
+
 type replayStatus struct {
 	RunID     string `json:"run_id"`
 	State     string `json:"state"`
@@ -83,6 +88,7 @@ type replayServer struct {
 	ffmpegVAAPI  string
 	store        *artifactstore.S3
 	wallHTTP     *http.Client
+	compositor   replayCompositor
 
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
@@ -98,6 +104,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		streamBinary: streamBinary,
 		store:        store,
 		wallHTTP:     &http.Client{Timeout: wallTimeout},
+		compositor:   &ffmpegBroadcastCompositor{binary: "ffmpeg"},
 		jobs:         make(map[string]replayStatus),
 	}
 }
@@ -111,11 +118,13 @@ func (s *replayServer) handler() http.Handler {
 			"encoder":       s.encoderName(),
 			"vaapi":         s.vaapi,
 			"vaapi_reason":  s.vaapiReason,
+			"renderer":      broadcastRendererVersion,
 		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
+	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", s.handleReplaySemantic)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
 	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux
@@ -123,18 +132,28 @@ func (s *replayServer) handler() http.Handler {
 
 func (s *replayServer) handleReplayStatus(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
-	recording, err := s.recording(r.Context(), runID)
+	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	recordings, err := s.recordings(r.Context(), runID)
 	if err != nil {
 		writeReplayError(w, err)
 		return
 	}
-	status := s.replayStatus(r.Context(), runID, recording)
+	status := s.replayStatus(r.Context(), runID, recordings, mode)
 	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
-	recording, err := s.recording(r.Context(), runID)
+	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	recordings, err := s.recordings(r.Context(), runID)
 	if err != nil {
 		writeReplayError(w, err)
 		return
@@ -143,12 +162,12 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusServiceUnavailable, replayStatus{RunID: runID, State: "disabled", Error: "S3 artifact storage is not configured for the replay service"})
 		return
 	}
-	status := s.replayStatus(r.Context(), runID, recording)
+	status := s.replayStatus(r.Context(), runID, recordings, mode)
 	if status.State == "ready" {
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
-	cacheKey := replayCacheKey(runID, recording)
+	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
 	s.mu.Lock()
 	if current, ok := s.jobs[cacheKey]; ok && current.State == "generating" {
 		s.mu.Unlock()
@@ -159,18 +178,23 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 	s.jobs[cacheKey] = status
 	s.mu.Unlock()
 
-	go s.render(runID, recording, cacheKey)
+	go s.render(runID, recordings, cacheKey, mode)
 	writeJSON(w, http.StatusAccepted, status)
 }
 
 func (s *replayServer) handleReplayVideo(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
-	recording, err := s.recording(r.Context(), runID)
+	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	recordings, err := s.recordings(r.Context(), runID)
 	if err != nil {
 		writeReplayError(w, err)
 		return
 	}
-	status := s.replayStatus(r.Context(), runID, recording)
+	status := s.replayStatus(r.Context(), runID, recordings, mode)
 	if status.State != "ready" {
 		writeJSON(w, http.StatusConflict, status)
 		return
@@ -235,12 +259,57 @@ func (s *replayServer) recording(ctx context.Context, runID string) (artifactRef
 	return artifactRef{}, errRecordingNotFound
 }
 
+func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRecording, error) {
+	latest, err := s.artifacts(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	latestAttempt := latest.Attempt
+	if latestAttempt < 1 {
+		latestAttempt = 1
+	}
+	if latestAttempt == 1 {
+		artifact, ok := findArtifact(latest.Artifacts, "run.gbrun")
+		if !ok || !artifact.Replayable {
+			return nil, errRecordingNotFound
+		}
+		return []replayRecording{{Attempt: 1, Artifact: artifact}}, nil
+	}
+
+	recordings := make([]replayRecording, 0, latestAttempt)
+	for attempt := 1; attempt <= latestAttempt; attempt++ {
+		list, err := s.artifactsAttempt(ctx, runID, attempt)
+		if errors.Is(err, errRunNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		artifact, ok := findArtifact(list.Artifacts, "run.gbrun")
+		if !ok || !artifact.Replayable {
+			continue
+		}
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
+	}
+	if len(recordings) == 0 {
+		return nil, errRecordingNotFound
+	}
+	return recordings, nil
+}
+
 func (s *replayServer) artifacts(ctx context.Context, runID string) (artifactList, error) {
+	return s.artifactsAttempt(ctx, runID, 0)
+}
+
+func (s *replayServer) artifactsAttempt(ctx context.Context, runID string, attempt int) (artifactList, error) {
 	var out artifactList
 	if strings.TrimSpace(runID) == "" {
 		return out, errRunNotFound
 	}
 	endpoint := s.wallBase + "/v1/runs/" + url.PathEscape(runID) + "/artifacts"
+	if attempt > 0 {
+		endpoint += "?attempt=" + strconv.Itoa(attempt)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return out, err
@@ -269,11 +338,11 @@ func (s *replayServer) artifacts(ctx context.Context, runID string) (artifactLis
 	return out, nil
 }
 
-func (s *replayServer) replayStatus(ctx context.Context, runID string, recording artifactRef) replayStatus {
+func (s *replayServer) replayStatus(ctx context.Context, runID string, recordings []replayRecording, mode replayMode) replayStatus {
 	if s.store == nil {
 		return replayStatus{RunID: runID, State: "disabled", Error: "S3 artifact storage is not configured for the replay service"}
 	}
-	cacheKey := replayCacheKey(runID, recording)
+	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
 	if obj, err := s.store.HeadObject(ctx, cacheKey); err == nil {
 		return replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: obj.Size}
 	} else if !artifactstore.IsNotFound(err) {
@@ -287,12 +356,12 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 	return replayStatus{RunID: runID, State: "missing", ObjectKey: cacheKey}
 }
 
-func (s *replayServer) render(runID string, recording artifactRef, cacheKey string) {
+func (s *replayServer) render(runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
 	ctx, cancel := context.WithTimeout(context.Background(), renderTimeout)
 	defer cancel()
 	started := time.Now()
 	encoder := s.encoderName()
-	log.Printf("pokereplay render start run=%s key=%s encoder=%s vaapi=%t", runID, cacheKey, encoder, s.vaapi)
+	log.Printf("pokereplay render start run=%s key=%s encoder=%s vaapi=%t segments=%d", runID, cacheKey, encoder, s.vaapi, len(recordings))
 	setError := func(err error) {
 		log.Printf("pokereplay render fail run=%s key=%s encoder=%s dur=%s err=%v", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), err)
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
@@ -311,25 +380,67 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 		return
 	}
 	defer os.RemoveAll(dir)
-	recordingPath := pathJoinOS(dir, "run.gbrun")
 	videoPath := pathJoinOS(dir, "replay.mp4")
-	if err := s.downloadRecording(ctx, runID, recording, recordingPath); err != nil {
-		setError(err)
-		return
-	}
-	romPath, err := s.prepareStreamROM(dir, recordingPath)
-	if err != nil {
-		setError(err)
-		return
-	}
+	segmentVideos := make([]string, 0, len(recordings))
+	semanticSegments := make([]semanticReplaySegment, 0, len(recordings))
+	for index, recording := range recordings {
+		recordingPath := pathJoinOS(dir, fmt.Sprintf("segment-%03d.gbrun", index+1))
+		rawSegmentPath := videoPath
+		if len(recordings) > 1 || mode == replayModeBroadcast {
+			rawSegmentPath = pathJoinOS(dir, fmt.Sprintf("segment-%03d-raw.mp4", index+1))
+		}
+		if err := s.downloadRecording(ctx, runID, recording.Artifact, recordingPath, recording.Attempt); err != nil {
+			setError(fmt.Errorf("attempt %d recording: %w", recording.Attempt, err))
+			return
+		}
+		romPath, err := s.prepareStreamROM(dir, recordingPath)
+		if err != nil {
+			setError(fmt.Errorf("attempt %d replay ROM: %w", recording.Attempt, err))
+			return
+		}
+		semanticSegments = append(semanticSegments, semanticReplaySegment{
+			Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath,
+		})
+		if err := s.renderRecordingSegment(ctx, romPath, recordingPath, rawSegmentPath); err != nil {
+			setError(fmt.Errorf("attempt %d: %w", recording.Attempt, err))
+			return
+		}
 
-	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(romPath, recordingPath, videoPath)...)
-	output := &replayOutputTail{}
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Run(); err != nil {
-		setError(fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(output.String())))
-		return
+		segmentPath := rawSegmentPath
+		if mode == replayModeBroadcast {
+			if s.compositor == nil {
+				setError(fmt.Errorf("broadcast compositor is not configured"))
+				return
+			}
+			timeline, err := s.mediaTimelineOrEmpty(ctx, runID, recording.Attempt)
+			if err != nil {
+				setError(fmt.Errorf("attempt %d media timeline: %w", recording.Attempt, err))
+				return
+			}
+			segmentPath = videoPath
+			if len(recordings) > 1 {
+				segmentPath = pathJoinOS(dir, fmt.Sprintf("segment-%03d-broadcast.mp4", index+1))
+			}
+			if err := s.compositor.Compose(ctx, broadcastScene{
+				RunID:       runID,
+				Attempt:     recording.Attempt,
+				RawVideo:    rawSegmentPath,
+				Destination: segmentPath,
+				Timeline:    timeline,
+				VAAPI:       s.vaapi,
+				VAAPIDevice: vaapiDevice(),
+			}); err != nil {
+				setError(fmt.Errorf("attempt %d broadcast renderer: %w", recording.Attempt, err))
+				return
+			}
+		}
+		segmentVideos = append(segmentVideos, segmentPath)
+	}
+	if len(segmentVideos) > 1 {
+		if err := concatReplaySegments(ctx, dir, segmentVideos, videoPath); err != nil {
+			setError(err)
+			return
+		}
 	}
 	file, err := os.Open(videoPath)
 	if err != nil {
@@ -344,9 +455,45 @@ func (s *replayServer) render(runID string, recording artifactRef, cacheKey stri
 	}
 	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), obj.Size)
 	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: obj.Key, Size: obj.Size})
+	if err := s.renderSemanticReplay(ctx, runID, recordings, semanticSegments); err != nil {
+		// The semantic cache is derived presentation data. Its failure must not
+		// invalidate a deterministic recording or an otherwise healthy MP4.
+		log.Printf("pokereplay semantic replay unavailable run=%s err=%v", runID, err)
+	}
 }
 
-func (s *replayServer) downloadRecording(ctx context.Context, runID string, recording artifactRef, destination string) error {
+func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, recordingPath, videoPath string) error {
+	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(romPath, recordingPath, videoPath)...)
+	output := &replayOutputTail{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(output.String()))
+	}
+	return nil
+}
+
+func concatReplaySegments(ctx context.Context, dir string, videos []string, destination string) error {
+	var manifest strings.Builder
+	for _, video := range videos {
+		escaped := strings.ReplaceAll(video, "'", "'\\''")
+		fmt.Fprintf(&manifest, "file '%s'\n", escaped)
+	}
+	manifestPath := pathJoinOS(dir, "segments.txt")
+	if err := os.WriteFile(manifestPath, []byte(manifest.String()), 0o600); err != nil {
+		return fmt.Errorf("write replay concat manifest: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", manifestPath, "-c", "copy", "-movflags", "+faststart", destination)
+	output := &replayOutputTail{}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("concat replay segments: %w: %s", err, strings.TrimSpace(output.String()))
+	}
+	return nil
+}
+
+func (s *replayServer) downloadRecording(ctx context.Context, runID string, recording artifactRef, destination string, attempts ...int) error {
 	file, err := os.Create(destination)
 	if err != nil {
 		return err
@@ -357,6 +504,9 @@ func (s *replayServer) downloadRecording(ctx context.Context, runID string, reco
 
 	if recording.Store == "" {
 		endpoint := s.wallBase + "/v1/runs/" + url.PathEscape(runID) + "/artifacts/" + url.PathEscape(recording.Name) + "/content"
+		if len(attempts) > 0 && attempts[0] > 0 {
+			endpoint += "?attempt=" + strconv.Itoa(attempts[0])
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return err
@@ -421,6 +571,31 @@ func (s *replayServer) setJob(key string, status replayStatus) {
 	s.jobs[key] = status
 	s.mu.Unlock()
 	scheduleReplayJobExpiry(s, key, status)
+}
+
+func replaySetCacheKey(runID string, recordings []replayRecording) string {
+	if len(recordings) == 1 {
+		return replayCacheKey(runID, recordings[0].Artifact)
+	}
+	runSegment := sanitizeKeySegment(runID)
+	if runSegment == "" {
+		runSegment = "run"
+	}
+	dir := path.Join("derived", runSegment)
+	if len(recordings) > 0 {
+		if prefix, ok := recordingRunPrefix(recordings[len(recordings)-1].Artifact.ObjectKey); ok {
+			dir = strings.TrimSuffix(prefix, "/")
+		}
+	}
+	h := sha256.New()
+	for _, recording := range recordings {
+		fmt.Fprintf(h, "%d:%s:%s\n", recording.Attempt, strings.ToLower(strings.TrimSpace(recording.Artifact.SHA256)), strings.TrimSpace(recording.Artifact.ObjectKey))
+	}
+	fingerprint := hex.EncodeToString(h.Sum(nil))
+	if len(fingerprint) > 12 {
+		fingerprint = fingerprint[:12]
+	}
+	return path.Join(dir, "replay-full-"+fingerprint+".mp4")
 }
 
 func replayCacheKey(runID string, recording artifactRef) string {

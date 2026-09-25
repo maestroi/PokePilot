@@ -40,6 +40,12 @@ type spectatorDashboard struct {
 	Now     int64            `json:"now"`
 	Runs    []spectatorRun   `json:"runs"`
 	Summary spectatorSummary `json:"summary"`
+	// ReplayArchive reports whether the replay catalog is wired up. Without it
+	// publicSpectatorRuns drops every finished run before it can check for a
+	// cached video, so an empty archive and a disabled one look identical on
+	// the page. This field makes the difference observable from outside rather
+	// than something an operator has to infer from a missing -replay flag.
+	ReplayArchive bool `json:"replay_archive"`
 }
 
 type spectatorSummary struct {
@@ -49,27 +55,30 @@ type spectatorSummary struct {
 }
 
 type spectatorRun struct {
-	RunID       string           `json:"run_id"`
-	Status      string           `json:"status"`
-	Starter     string           `json:"starter,omitempty"`
-	Dest        string           `json:"dest,omitempty"`
-	Goal        string           `json:"goal,omitempty"`
-	QueuedAt    int64            `json:"queued_at,omitempty"`
-	EndedAt     int64            `json:"ended_at,omitempty"`
-	Frame       uint64           `json:"frame"`
-	Map         uint8            `json:"map"`
-	X           uint8            `json:"x"`
-	Y           uint8            `json:"y"`
-	Decision    string           `json:"decision,omitempty"`
-	StopSoFar   string           `json:"stop_so_far,omitempty"`
-	Stats       *spectatorStats  `json:"stats,omitempty"`
-	Player      *farm.Player     `json:"player,omitempty"`
-	Sprites     []farm.MapSprite `json:"sprites,omitempty"`
-	Trail       [][2]uint8       `json:"trail,omitempty"`
-	Attempts    int              `json:"attempts,omitempty"`
-	Reason      string           `json:"reason,omitempty"`
-	ReplayReady bool             `json:"replay_ready,omitempty"`
-	Highlight   string           `json:"highlight,omitempty"`
+	RunID          string           `json:"run_id"`
+	Status         string           `json:"status"`
+	Starter        string           `json:"starter,omitempty"`
+	Dest           string           `json:"dest,omitempty"`
+	Goal           string           `json:"goal,omitempty"`
+	QueuedAt       int64            `json:"queued_at,omitempty"`
+	EndedAt        int64            `json:"ended_at,omitempty"`
+	Frame          uint64           `json:"frame"`
+	Map            uint8            `json:"map"`
+	X              uint8            `json:"x"`
+	Y              uint8            `json:"y"`
+	MapsVisited    int              `json:"maps_visited,omitempty"`
+	PlannerWaiting bool             `json:"planner_waiting,omitempty"`
+	PlannerOptions int              `json:"planner_options,omitempty"`
+	Decision       string           `json:"decision,omitempty"`
+	StopSoFar      string           `json:"stop_so_far,omitempty"`
+	Stats          *spectatorStats  `json:"stats,omitempty"`
+	Player         *farm.Player     `json:"player,omitempty"`
+	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
+	Trail          [][2]uint8       `json:"trail,omitempty"`
+	Attempts       int              `json:"attempts,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	ReplayReady    bool             `json:"replay_ready,omitempty"`
+	Highlight      string           `json:"highlight,omitempty"`
 }
 
 type spectatorStats struct {
@@ -93,7 +102,8 @@ type spectatorStats struct {
 // the spectator trust boundary.
 type spectatorSourceRun struct {
 	spectatorRun
-	Issue json.RawMessage `json:"issue,omitempty"`
+	Question string          `json:"question,omitempty"`
+	Issue    json.RawMessage `json:"issue,omitempty"`
 }
 
 type spectatorSourceDashboard struct {
@@ -217,10 +227,12 @@ func spectatorHandlerWithReplay(wallBase, replayBase string) http.Handler {
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/watch", spectatorSnapshotWithReplay(wallBase, catalog))
 	mux.HandleFunc("GET /frame", spectatorFrame(wallBase))
+	mux.HandleFunc("GET /render-state", spectatorRenderState(wallBase))
 
 	if catalog.enabled() {
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/status", spectatorReplayStatusHandler(catalog))
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/video", spectatorReplayVideo(catalog))
+		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/semantic", spectatorReplaySemantic(catalog))
 	}
 	return spectatorSecurityHeaders(mux)
 }
@@ -265,9 +277,10 @@ func spectatorSnapshotWithReplay(wallBase string, catalog *spectatorReplayCatalo
 			all = append(all, run.spectatorRun)
 		}
 		snapshot := spectatorDashboard{
-			Now:     source.Now,
-			Summary: summarizeSpectatorRuns(all),
-			Runs:    publicSpectatorRuns(ctx, source.Runs, catalog),
+			Now:           source.Now,
+			Summary:       summarizeSpectatorRuns(all),
+			Runs:          publicSpectatorRuns(ctx, source.Runs, catalog),
+			ReplayArchive: catalog.enabled(),
 		}
 
 		res.Header().Set("Cache-Control", "no-store")
@@ -321,8 +334,8 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 	return out
 }
 
-// publicSpectatorRuns keeps every in-flight run, but finished runs are a
-// curated replay archive rather than raw history. A finished run must both be
+// publicSpectatorRuns keeps only actively broadcasting runs (running or
+// leased). Finished runs are a curated replay archive rather than raw history. A finished run must both be
 // noteworthy and already have a cached video. Goal completion is inherently
 // noteworthy; a linked engineering issue means the run was selected for
 // analysis. Ordinary failures and recordings still remain available privately
@@ -330,8 +343,9 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog *spectatorReplayCatalog) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status != "done" {
-			active = append(active, run.spectatorRun)
+		switch run.Status {
+		case "running", "leased":
+			active = append(active, publicLiveSpectatorRun(run))
 		}
 	}
 
@@ -369,6 +383,31 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 	}
 	catalog.setAllowed(allowed)
 	return append(active, done...)
+}
+
+func publicLiveSpectatorRun(run spectatorSourceRun) spectatorRun {
+	publicRun := run.spectatorRun
+	question := strings.TrimSpace(run.Question)
+	publicRun.PlannerWaiting = question != "" && strings.TrimSpace(run.Decision) == ""
+	if publicRun.PlannerWaiting {
+		publicRun.PlannerOptions = spectatorPlannerOptions(question)
+	}
+	return publicRun
+}
+
+func spectatorPlannerOptions(question string) int {
+	count := 0
+	for _, line := range strings.Split(question, "\n") {
+		line = strings.TrimSpace(line)
+		colon := strings.IndexByte(line, ':')
+		if colon <= 0 {
+			continue
+		}
+		if _, err := strconv.Atoi(strings.TrimSpace(line[:colon])); err == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func spectatorHighlight(run spectatorSourceRun) string {
@@ -486,6 +525,47 @@ func spectatorReplayVideo(catalog *spectatorReplayCatalog) http.HandlerFunc {
 	}
 }
 
+func spectatorReplaySemantic(catalog *spectatorReplayCatalog) http.HandlerFunc {
+	client := &http.Client{Timeout: proxyTimeout}
+	return func(res http.ResponseWriter, req *http.Request) {
+		runID := strings.TrimSpace(req.PathValue("id"))
+		if runID == "" || len(runID) > 256 || !catalog.isAllowed(runID) {
+			http.NotFound(res, req)
+			return
+		}
+		up, err := http.NewRequestWithContext(req.Context(), http.MethodGet, catalog.replayBase+"/v1/runs/"+url.PathEscape(runID)+"/replay/semantic", nil)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		resp, err := client.Do(up)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			if status < 400 || status > 599 {
+				status = http.StatusBadGateway
+			}
+			writeSpectatorReplayUnavailable(res, status)
+			return
+		}
+		if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "public, max-age=60")
+		if length := resp.Header.Get("Content-Length"); length != "" {
+			res.Header().Set("Content-Length", length)
+		}
+		res.WriteHeader(http.StatusOK)
+		io.Copy(res, resp.Body) //nolint:errcheck // streamed derived replay data
+	}
+}
+
 func writeSpectatorReplayUnavailable(res http.ResponseWriter, status int) {
 	res.Header().Set("Cache-Control", "no-store")
 	res.Header().Set("Content-Type", "application/json")
@@ -522,11 +602,12 @@ func spectatorRuns(runs []spectatorRun) []spectatorRun {
 	active := make([]spectatorRun, 0, len(runs))
 	done := make([]spectatorRun, 0, len(runs))
 	for _, run := range runs {
-		if run.Status == "done" {
+		switch run.Status {
+		case "done":
 			done = append(done, run)
-			continue
+		case "running", "leased":
+			active = append(active, run)
 		}
-		active = append(active, run)
 	}
 	if len(done) > spectatorHistoryLimit {
 		done = done[len(done)-spectatorHistoryLimit:]

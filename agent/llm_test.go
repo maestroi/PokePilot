@@ -62,6 +62,13 @@ func llmOffered() []agent.Objective {
 func startModelServer(t *testing.T, reply string, capture *string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			// Default listing is multi-model so a mismatched chat reply is
+			// never auto-adopted by liveSoleModel during identity tests.
+			fmt.Fprint(w, `{"data":[{"id":"a"},{"id":"b"}]}`)
+			return
+		}
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("POST %s, want /chat/completions", r.URL.Path)
 		}
@@ -76,7 +83,6 @@ func startModelServer(t *testing.T, reply string, capture *string) *httptest.Ser
 				*capture = string(body)
 			}
 		}
-		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, reply)
 	}))
 	t.Cleanup(srv.Close)
@@ -354,20 +360,19 @@ func TestLLMPlannerSchemaStaysArgumentFreePerKind(t *testing.T) {
 	}
 }
 
-// TestLLMPlannerSchemaReplyWithArgs: a schema-shaped reply carries the
-// choice AND the argument; the argument overrides the offered objective's
-// default and comes back on the returned objective.
-func TestLLMPlannerSchemaReplyWithArgs(t *testing.T) {
+// TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs pins the planner's
+// strongest safety invariant: choice selects one complete semantic objective.
+// Legacy/fallback JSON may still carry old argument fields, but those fields
+// cannot mutate the already viability-checked menu entry.
+func TestLLMPlannerSchemaReplyCannotOverrideOfferedArgs(t *testing.T) {
 	srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
-	offered := llmOffered()
 
-	got, err := llmPlanner(srv).Next(llmObs(), offered)
-	if err != nil {
-		t.Fatalf("Next: %v", err)
+	got, err := llmPlanner(srv).Next(llmObs(), llmOffered())
+	if err == nil {
+		t.Fatalf("Next = %s, want rejection for level override", got)
 	}
-	want := agent.Objective{Kind: agent.KindTrain, Level: 12}
-	if got != want {
-		t.Fatalf("Next = %s, want %s (level override applied)", got, want)
+	if !strings.Contains(err.Error(), "cannot change offered training target") {
+		t.Fatalf("Next error = %v, want offered-target rejection", err)
 	}
 }
 
@@ -536,7 +541,7 @@ func TestLLMPlannerFinishReason(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			content := "2"
 			if tc.wantIndex == 2 {
-				content = `{"choice":3,"level":12}`
+				content = `{"choice":3}`
 			}
 			body := fmt.Sprintf(`{"choices":[{"message":{"content":%q}`, content)
 			if tc.reason != "" {
@@ -559,7 +564,7 @@ func TestLLMPlannerFinishReason(t *testing.T) {
 				t.Fatalf("Next: %v", err)
 			}
 			if tc.wantIndex == 2 {
-				want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+				want := llmOffered()[2]
 				if got != want {
 					t.Fatalf("Next = %s, want %s", got, want)
 				}
@@ -777,7 +782,7 @@ func TestLLMPlannerGoalInSystemPrompt(t *testing.T) {
 // how its reply is read.
 func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
 	for _, goal := range []string{"", "Earn the Boulder Badge."} {
-		srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3,\"level\":12}"}}]}`, nil)
+		srv := startModelServer(t, `{"choices":[{"message":{"content":"{\"choice\":3}"}}]}`, nil)
 		p := llmPlanner(srv)
 		p.Goal = goal
 
@@ -785,7 +790,7 @@ func TestLLMPlannerGoalDoesNotChangeParsing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Next (goal %q): %v", goal, err)
 		}
-		want := agent.Objective{Kind: agent.KindTrain, Level: 12}
+		want := llmOffered()[2]
 		if got != want {
 			t.Fatalf("Next (goal %q) = %s, want %s", goal, got, want)
 		}
@@ -1079,10 +1084,15 @@ func TestLengthRetryRaisesMaxTokensNotPrompt(t *testing.T) {
 // is typed, and one call drew it (the run-level half is
 // TestRunModelMismatchNotRetried).
 func TestModelMismatchIsTypedAndSingleShot(t *testing.T) {
-	var calls int
+	var chatCalls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
 		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			// Multi-model listing: liveSoleModel must NOT adopt.
+			fmt.Fprint(w, `{"data":[{"id":"qwen3.5-4b"},{"id":"other"}]}`)
+			return
+		}
+		chatCalls++
 		fmt.Fprint(w, `{"model":"qwen3.5-4b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1}"}, "finish_reason":"stop"}]}`)
 	}))
 	t.Cleanup(srv.Close)
@@ -1095,7 +1105,78 @@ func TestModelMismatchIsTypedAndSingleShot(t *testing.T) {
 	if !errors.Is(err, agent.ErrModelMismatch) {
 		t.Fatalf("Err = %v, want ErrModelMismatch (the typed error the retry classifier reads)", err)
 	}
-	if calls != 1 {
-		t.Fatalf("calls = %d, want 1 (the planner never re-asks on its own)", calls)
+	if chatCalls != 1 {
+		t.Fatalf("chat calls = %d, want 1 (the planner never re-asks on its own)", chatCalls)
+	}
+}
+
+// TestModelMismatchAdoptsLiveSoleModel reproduces farm fingerprint
+// ed63cfe2fa840cee: a switchable llama.cpp host was leased as qwen3.5-9b
+// but answered as qwen3.8-27b after an xtx host switch. When /v1/models
+// reports exactly the answering model, the reply is kept and identity
+// updates — the request name was stale, not a different endpoint.
+func TestModelMismatchAdoptsLiveSoleModel(t *testing.T) {
+	var adopted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/models"):
+			fmt.Fprint(w, `{"data":[{"id":"qwen3.8-27b"}]}`)
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			fmt.Fprint(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":"{\"choice\":1,\"intent\":\"take starter\"}"}, "finish_reason":"stop"}]}`)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	p := &agent.LLMPlanner{
+		BaseURL: srv.URL,
+		Model:   "qwen3.5-9b",
+		OnModelAdopted: func(model string) {
+			adopted = append(adopted, model)
+		},
+	}
+	obj, err := p.Next(llmObs(), llmOffered())
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if p.Model != "qwen3.8-27b" {
+		t.Fatalf("planner model = %q, want adopted qwen3.8-27b", p.Model)
+	}
+	if len(adopted) != 1 || adopted[0] != "qwen3.8-27b" {
+		t.Fatalf("OnModelAdopted = %v", adopted)
+	}
+	if obj.String() == "" {
+		t.Fatal("expected a chosen objective after adopt")
+	}
+}
+
+// TestStrategistAdoptsLiveSoleModelOnMismatch: the farm failure killed the
+// run on the strategist path ("strategist reply rejected and not retried"),
+// so adoption must apply there too — not only on the chooser.
+func TestStrategistAdoptsLiveSoleModelOnMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			fmt.Fprint(w, `{"data":[{"id":"qwen3.8-27b"}]}`)
+			return
+		}
+		offered := llmOffered()
+		fmt.Fprintf(w, `{"model":"qwen3.8-27b","choices":[{"message":{"role":"assistant","content":%q}, "finish_reason":"stop"}]}`,
+			fmt.Sprintf(`{"goal":"starter","steps":[%q]}`, offered[0].String()))
+	}))
+	t.Cleanup(srv.Close)
+
+	p := &agent.LLMPlanner{BaseURL: srv.URL, Model: "qwen3.5-9b"}
+	plan, err := p.Strategize(llmObs(), llmOffered(), "initial")
+	if err != nil {
+		t.Fatalf("Strategize: %v", err)
+	}
+	if p.Model != "qwen3.8-27b" {
+		t.Fatalf("planner model = %q after strategist adopt", p.Model)
+	}
+	if len(plan.Steps) == 0 {
+		t.Fatal("expected plan steps after adopt")
 	}
 }

@@ -18,7 +18,10 @@ func TestFreshHallOfFameWorkflowIsAnActivePrivateGate(t *testing.T) {
 	}
 	for _, want := range []string{
 		"github.event.schedule == '41 3 * * 0'",
-		"go run ./cmd/pokequal -profile full",
+		"Run fresh-save Hall of Fame benchmark qualification",
+		"go run ./cmd/pokebench red",
+		"--from fresh",
+		"--until hall-of-fame",
 		"gh issue close 39",
 		"issues: write",
 	} {

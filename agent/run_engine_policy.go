@@ -113,6 +113,25 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 	return decision
 }
 
+// productiveSession records a bounded gameplay session that made live
+// controller progress even though its requested semantic postcondition was not
+// reached. Stochastic hunt exhaustion is the canonical case: the full hunt
+// budget ran successfully and simply missed the requested species. Treating
+// that as idle time makes the stagnation/dead-position watchdogs kill a healthy
+// retry loop (#1547). This refreshes liveness without mutating semantic
+// majorProgress, so reporting still distinguishes "tried productively" from
+// actual badge/story/Dex progress. Explicit round/frame budgets remain the
+// outer ceiling for deliberately long-running goals.
+func (w *runWatchdogPolicy) productiveSession(round int) {
+	if round > w.lastMajorProgressRound {
+		w.lastMajorProgressRound = round
+	}
+	w.stagnationEscalated = false
+	w.stuck = 0
+	w.stuckEscalated = false
+	w.dead = deadPosition{}
+}
+
 // successfulObjective evaluates the short stuck watchdog after a successful
 // transaction. A material semantic change resets both its counter and its
 // one-shot strategic escalation.
@@ -146,9 +165,10 @@ func (w *runWatchdogPolicy) successfulObjective(before, after Observation, strat
 // objective failure. Frame-budget checks intentionally remain engine guards:
 // this policy is concerned only with retry/replan/terminal failure state.
 type runFailureDecision struct {
-	Stop         Stop
-	ReplanReason string
-	Recovered    bool
+	Stop              Stop
+	ReplanReason      string
+	Recovered         bool
+	ProductiveSession bool
 }
 
 // runFailurePolicy owns all recoverable-failure state: same-world quarantine,
@@ -156,13 +176,14 @@ type runFailureDecision struct {
 // Every path keys off fingerprintRecoverableFailure, so these mechanisms cannot
 // disagree about whether two failures are the same semantic event.
 type runFailurePolicy struct {
-	maxConsecutive   int
-	consecutive      int
-	lastFailKey      string
-	retreatStreak    int
-	lastRetreatLevel uint8
-	escalated        map[string]bool
-	quarantine       map[string]failureQuarantineEntry
+	maxConsecutive       int
+	consecutive          int
+	lastFailKey          string
+	retreatStreak        int
+	lastRetreatLevel     uint8
+	escalated            map[string]bool
+	quarantine           map[string]failureQuarantineEntry
+	pendingPrerequisites []Prerequisite
 }
 
 func newRunFailurePolicy(maxConsecutive int) *runFailurePolicy {
@@ -183,24 +204,63 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	fingerprint := fingerprintRecoverableFailure(obj, result)
 	failureKey := fingerprint.Key
 	blackedOut := failureIsBlackout(result)
-	ordinaryBlackout := failureCauseIs(result, "blacked_out")
+	retryableBlackout := blackedOut
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
-	catchMiss := failureCauseIs(result, "catch_hunt_exhausted")
+	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted") ||
+		failureCauseIs(result, "catch_attempt_missed")
+	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
+	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
+	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
+	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
 	// condition simply was not reached. A training shortfall explicitly means
-	// the lead gained a level; a catch-hunt exhaustion means the controller
-	// completed the whole stochastic hunt budget without seeing the requested
-	// species. Neither is evidence that recovery itself is broken, so neither
-	// may consume the fatal consecutive-failure budget. Same-state quarantine
-	// still suppresses the exact objective when alternatives exist, and the
-	// independent stagnation watchdog remains the ceiling when no alternative
-	// can make progress.
-	if trainProgress || catchMiss {
+	// the lead gained a level; a hunt exhaustion (grass, fishing or Safari)
+	// means the controller completed the whole stochastic hunt budget without
+	// landing the requested species; a missed catch means the wanted target
+	// was met and balls were thrown but the catch roll never held. Neither is evidence that recovery itself is broken, so
+	// neither may consume the fatal consecutive-failure budget or look like idle
+	// time to the liveness watchdogs. Same-state quarantine still suppresses the
+	// exact objective when alternatives exist; explicit round/frame budgets
+	// remain the ceiling for deliberately persistent stochastic goals.
+	if trainProgress || huntMiss {
 		f.consecutive = 0
 		f.lastFailKey = ""
 		f.retreatStreak, f.lastRetreatLevel = 0, 0
+		decision := runFailureDecision{Recovered: true, ProductiveSession: true}
+		if strategic {
+			decision.ReplanReason = "objective_failed"
+		}
+		return decision
+	}
+
+	// A typed route prerequisite is an expected planning boundary, not evidence
+	// that failure recovery itself is broken. record() has already quarantined
+	// the blocked objective (and its plain/flee sibling) and retained the missing
+	// capability for deterministic prerequisiteRecovery on the next round.
+	// Spending the fatal consecutive-failure/escalation budget here can stop a
+	// healthy run after a few distinct route gates before any of those recovery
+	// paths execute (#1555, #1557). Keep the ordinary replan signal, but leave
+	// the failure budget untouched. Genuine repeated navigation/controller
+	// failures still use the bounded policy below, and watchdog/round/frame
+	// budgets remain the outer guard if no prerequisite can be satisfied.
+	if routePrerequisite || routeSearchExhausted || progressionPrerequisite || trainingInefficient {
+		// A fully bounded route-search exhaustion is also a planning boundary:
+		// GoTo already spent its local replan budget and the failure policy has
+		// recorded a same-state quarantine for this exact objective. Charging the
+		// generic mechanical-failure budget again terminates healthy runs before
+		// another objective/movement can change the routing state (#1843-#1845).
+		// The quarantine fails open when no alternative exists, while the normal
+		// stagnation/round/frame watchdogs remain the outer bound.
+		//
+		// A local training-area rejection is the same class of planning
+		// boundary as a missing route prerequisite: the executor deliberately
+		// sent no gameplay input because this area cannot satisfy the requested
+		// training rung within the bounded session. Quarantine/replanning owns
+		// the response; spending the fatal mechanical-failure budget here makes
+		// a healthy search for a better area terminate as "recovery exhausted".
 		decision := runFailureDecision{Recovered: true}
 		if strategic {
 			decision.ReplanReason = "objective_failed"
@@ -208,20 +268,36 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		return decision
 	}
 
+	// A structured required-battle defeat is also an expected gameplay outcome,
+	// not a controller/recovery malfunction. Knowledge records a combat-loss
+	// gate for the exact objective, so an unchanged party cannot immediately
+	// rematch it; training, incidental level gain, or another material party
+	// change must release that gate first. Counting the defeat against the
+	// generic mechanical failure budget therefore kills the run before its
+	// dedicated combat recovery can do its job (#1695). Clear the mechanical
+	// streak and replan. The normal stagnation/round/frame watchdogs remain the
+	// outer guard if the run cannot find a way to improve combat readiness.
+	if combatDefeat {
+		f.consecutive = 0
+		f.lastFailKey = ""
+		f.retreatStreak, f.lastRetreatLevel = 0, 0
+		decision := runFailureDecision{Recovered: true}
+		if strategic {
+			decision.ReplanReason = "blackout"
+		}
+		return decision
+	}
+
 	if strategic {
 		f.consecutive++
-		// A plain Travel blackout can be caused by a wild encounter or
-		// overworld poison. Reaching the same respawn state again is therefore
-		// not proof that strategic recovery is broken: the next plan can choose
-		// the flee journey variant, train, heal PP, or simply get a different
-		// encounter sequence. Keep those blackouts under the consecutive-failure
-		// ceiling instead of permanently spending the one-shot fingerprint
-		// escalation. Trainer blackouts remain deterministic combat gates and
-		// retain the durable same-state stop behavior below.
-		if (!ordinaryBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
+		// Ordinary logistics blackouts (wild encounters, poison, or unstructured
+		// travel losses) remain under the bounded consecutive-failure ceiling.
+		// Structured required-battle defeats returned above because their combat
+		// recovery gate already owns retry suppression and readiness progress.
+		if (!retryableBlackout && f.escalated[failureKey]) || f.consecutive > f.maxConsecutive {
 			return runFailureDecision{Stop: StopFailed}
 		}
-		if !ordinaryBlackout {
+		if !retryableBlackout {
 			f.escalated[failureKey] = true
 		}
 		f.lastFailKey = failureKey
@@ -266,4 +342,16 @@ func (f *runFailurePolicy) success() {
 	f.consecutive = 0
 	f.lastFailKey = ""
 	f.retreatStreak, f.lastRetreatLevel = 0, 0
+	// Route-capability recovery is tied to the failed journey and is cleared by
+	// any successful objective, matching historical behavior. Progression facts
+	// and direct field-capability requirements survive the prerequisite objective
+	// itself so the next round can re-observe, prune what just became true, and
+	// repair another item from the same structured requirement set.
+	kept := f.pendingPrerequisites[:0]
+	for _, prerequisite := range f.pendingPrerequisites {
+		if prerequisite.Progress != "" || prerequisite.FieldCapability != "" {
+			kept = append(kept, prerequisite)
+		}
+	}
+	f.pendingPrerequisites = kept
 }

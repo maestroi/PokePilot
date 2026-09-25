@@ -23,6 +23,14 @@ const (
 	mcpWallTimeout      = 5 * time.Second
 	mcpMaxResponseBytes = 2 << 20
 	mcpMaxRuns          = 100
+	// A looping endless run accumulates hundreds of activity events, each
+	// planning event carrying a multi-KB STRATEGY dump (MEASURED 2026-09-23 on
+	// run-22ahrk9pflcilu3jxq9xt37x6: 76 KB of activity, repeated as an 87 KB
+	// timeline in the debug bundle), which overflows MCP clients' tool-result
+	// token cap. MCP gets the newest events with clipped text; the operator UI
+	// still serves the full history.
+	mcpMaxEvents    = 40
+	mcpMaxEventText = 400
 )
 
 var mcpRunSequence atomic.Uint64
@@ -81,6 +89,21 @@ type mcpTriageInput struct {
 
 type mcpInvestigateInput struct {
 	Key string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
+}
+
+type mcpSolverAttemptInput struct {
+	Key       string `json:"key" jsonschema:"triage failure key returned by pokepilot_get_triage"`
+	ID        string `json:"id" jsonschema:"stable id for this solver attempt; updates with the same id replace that attempt"`
+	Backend   string `json:"backend" jsonschema:"coding agent runtime, for example opencode, cursor, codex, or claude"`
+	Model     string `json:"model,omitempty" jsonschema:"actual requested coding model id when known"`
+	State     string `json:"state" jsonschema:"attempt state such as started, agent_failed, no_pr, pr_opened, or pr_updated"`
+	RunID     string `json:"run_id,omitempty" jsonschema:"representative failing PokePilot run id"`
+	Branch    string `json:"branch,omitempty" jsonschema:"repair branch produced by the coding agent"`
+	PRNumber  int64  `json:"pr_number,omitempty" jsonschema:"GitHub pull request number produced by the attempt"`
+	PRURL     string `json:"pr_url,omitempty" jsonschema:"GitHub pull request URL produced by the attempt"`
+	ExitCode  int    `json:"exit_code,omitempty" jsonschema:"coding agent process exit code when non-zero"`
+	Note      string `json:"note,omitempty" jsonschema:"short machine/operator note about the attempt outcome"`
+	StartedAt int64  `json:"started_at,omitempty" jsonschema:"optional Unix start timestamp; wall fills it for a new attempt when omitted"`
 }
 
 type mcpArtifactContentInput struct {
@@ -172,6 +195,10 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded.",
 	}, control.getRunDebug)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_recovery_audit",
+		Description: "Get a recovery-focused audit packet for one run. Returns the wall's full bounded recovery/failure activity history without the normal 40-event MCP timeline truncation, annotates recovery events with attempt runner revisions when available, and includes related triage groups including resolved history for stale/duplicate/regression analysis.",
+	}, control.getRunRecoveryAudit)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifacts",
 		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
 	}, control.getRunArtifacts)
@@ -191,6 +218,10 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_investigate_failure",
 		Description: "Trigger the existing PokePilot investigation handoff for one actionable triage failure key.",
 	}, control.investigateFailure)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_record_solver_attempt",
+		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
+	}, control.recordSolverAttempt)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
@@ -282,7 +313,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		Planner:         planner,
 		Starter:         starter,
 		Dest:            dest,
-		Goal:            goal,
+		Goal:            farm.GoalFrom(goal),
 		LLMProfile:      llmProfile,
 		ReasoningEffort: reasoningEffort,
 		FPS:             in.FPS,
@@ -350,6 +381,9 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 	if out == nil {
 		return nil, nil, fmt.Errorf("run %q not found", id)
 	}
+	if run, ok := out["run"].(map[string]any); ok {
+		compactEvents(run, "activity")
+	}
 	return nil, out, nil
 }
 
@@ -362,7 +396,219 @@ func (c *mcpControl) getRunDebug(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &out); err != nil {
 		return nil, nil, err
 	}
+	// timeline already carries every activity event; drop the duplicate copy.
+	if run, ok := out["run"].(map[string]any); ok {
+		delete(run, "activity")
+	}
+	compactEvents(out, "timeline")
 	return nil, out, nil
+}
+
+func (c *mcpControl) getRunRecoveryAudit(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
+	id := strings.TrimSpace(in.RunID)
+	if id == "" {
+		return nil, nil, fmt.Errorf("run_id is required")
+	}
+
+	// Fetch the wall's raw debug bundle directly. Do not call getRunDebug here:
+	// that MCP tool intentionally keeps only the newest mcpMaxEvents timeline
+	// entries, while a recovery audit must be able to see an older recovery that
+	// is still present in pokewall's bounded activity history.
+	var debug map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &debug); err != nil {
+		return nil, nil, err
+	}
+	recoveries, kindCounts, recoveryAttempts := recoveryAuditEvents(debug)
+
+	// Triage is the durable failure/issue view. Include resolved groups here on
+	// purpose: a recovery audit needs them to decide that an old event is stale
+	// or duplicate rather than creating the same repair again.
+	var triage []map[string]any
+	if err := c.requestJSON(ctx, http.MethodGet, "/v1/triage", nil, &triage); err != nil {
+		return nil, nil, err
+	}
+	related := make([]map[string]any, 0)
+	for _, group := range triage {
+		if !triageGroupMentionsRun(group, id) {
+			continue
+		}
+		triageGroupActionable(group)
+		related = append(related, group)
+	}
+
+	out := map[string]any{
+		"run_id":                 id,
+		"recovery_events":        recoveries,
+		"recovery_event_count":   len(recoveries),
+		"recovery_attempt_count": recoveryAttempts,
+		"recovery_kinds":         kindCounts,
+		"related_triage":         related,
+		"related_triage_count":   len(related),
+	}
+	if timeline, ok := debug["timeline"].([]any); ok {
+		out["source_timeline_event_count"] = len(timeline)
+	}
+	if run, ok := debug["run"].(map[string]any); ok {
+		out["run"] = compactRecoveryAuditRecord(run, []string{
+			"run_id", "status", "planner", "starter", "goal", "play_style", "purpose", "risk_tolerance",
+			"wild_encounters", "llm_profile", "reasoning_effort", "seed", "attempts",
+			"error_attempts", "loss_recoveries", "recovery_profile", "recovery_attempts",
+			"recovery_badges", "recovery_events", "recovery_maps", "reason", "detail",
+			"frame", "map", "x", "y", "queued_at", "ended_at", "resume_from_run_id",
+		})
+	}
+	if finish, ok := debug["finish"].(map[string]any); ok {
+		out["finish"] = compactRecoveryAuditRecord(finish, []string{
+			"attempt", "reason", "detail", "runner_version", "seed_burn", "progress_early", "progress_final",
+		})
+	}
+	if summary, ok := debug["summary"]; ok {
+		out["summary"] = summary
+	}
+	return nil, out, nil
+}
+
+func recoveryAuditEvents(debug map[string]any) ([]map[string]any, map[string]int, int) {
+	timeline, _ := debug["timeline"].([]any)
+	fallbackVersion := ""
+	if finish, ok := debug["finish"].(map[string]any); ok {
+		fallbackVersion, _ = finish["runner_version"].(string)
+	}
+
+	attemptVersions := map[int]string{}
+	currentVersion := ""
+	kindCounts := map[string]int{}
+	attempts := map[int]struct{}{}
+	out := make([]map[string]any, 0)
+	for _, raw := range timeline {
+		event, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		attempt := mcpJSONInt(event["attempt"])
+		source, _ := event["source"].(string)
+		kind, _ := event["kind"].(string)
+		source = strings.ToLower(strings.TrimSpace(source))
+		kind = strings.ToLower(strings.TrimSpace(kind))
+
+		if source == "system" && kind == "attempt_start" {
+			detail, _ := event["detail"].(string)
+			version := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(detail), "runner "))
+			if version != "" {
+				currentVersion = version
+				if attempt > 0 {
+					attemptVersions[attempt] = version
+				}
+			}
+		}
+
+		isRecovery := source == "recovery" || strings.Contains(kind, "recovery") || kind == "failure" || kind == "retry" || kind == "circuit"
+		if !isRecovery {
+			continue
+		}
+		copy := make(map[string]any, len(event)+1)
+		for key, value := range event {
+			copy[key] = value
+		}
+		version := attemptVersions[attempt]
+		if version == "" {
+			version = currentVersion
+		}
+		if version == "" {
+			version = fallbackVersion
+		}
+		if version != "" {
+			copy["runner_version"] = version
+		}
+		out = append(out, copy)
+		if kind == "" {
+			kind = "event"
+		}
+		kindCounts[kind]++
+		if attempt > 0 {
+			attempts[attempt] = struct{}{}
+		}
+	}
+	return out, kindCounts, len(attempts)
+}
+
+func compactRecoveryAuditRecord(in map[string]any, keys []string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if value, ok := in[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func mcpJSONInt(value any) int {
+	switch v := value.(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case json.Number:
+		n, _ := strconv.Atoi(v.String())
+		return n
+	default:
+		return 0
+	}
+}
+
+func triageGroupMentionsRun(group map[string]any, runID string) bool {
+	for _, key := range []string{"run_ids", "runs"} {
+		switch values := group[key].(type) {
+		case []any:
+			for _, value := range values {
+				if s, ok := value.(string); ok && s == runID {
+					return true
+				}
+			}
+		case []string:
+			for _, value := range values {
+				if value == runID {
+					return true
+				}
+			}
+		}
+	}
+	for _, key := range []string{"run_id", "latest_run_id"} {
+		if value, _ := group[key].(string); value == runID {
+			return true
+		}
+	}
+	return false
+}
+
+// compactEvents keeps the newest mcpMaxEvents entries of the event list at
+// m[key] (the wall returns them oldest first), records how many were dropped
+// under key+"_omitted", and clips each event's long text fields.
+func compactEvents(m map[string]any, key string) {
+	events, ok := m[key].([]any)
+	if !ok {
+		return
+	}
+	if n := len(events) - mcpMaxEvents; n > 0 {
+		events = events[n:]
+		m[key+"_omitted"] = n
+	}
+	for _, e := range events {
+		ev, ok := e.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, f := range []string{"detail", "message", "summary"} {
+			if s, ok := ev[f].(string); ok && len(s) > mcpMaxEventText {
+				ev[f] = strings.ToValidUTF8(s[:mcpMaxEventText], "") + "…"
+			}
+		}
+	}
+	m[key] = events
 }
 
 func (c *mcpControl) getRunArtifacts(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
@@ -508,6 +754,34 @@ func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequ
 		return nil, nil, err
 	}
 	out["key"] = key
+	return nil, out, nil
+}
+
+func (c *mcpControl) recordSolverAttempt(ctx context.Context, _ *mcp.CallToolRequest, in mcpSolverAttemptInput) (*mcp.CallToolResult, map[string]any, error) {
+	key := strings.TrimSpace(in.Key)
+	if key == "" {
+		return nil, nil, fmt.Errorf("key is required")
+	}
+	if strings.TrimSpace(in.ID) == "" || strings.TrimSpace(in.Backend) == "" || strings.TrimSpace(in.State) == "" {
+		return nil, nil, fmt.Errorf("id, backend, and state are required")
+	}
+	payload := map[string]any{
+		"id":         in.ID,
+		"backend":    in.Backend,
+		"model":      in.Model,
+		"state":      in.State,
+		"run_id":     in.RunID,
+		"branch":     in.Branch,
+		"pr_number":  in.PRNumber,
+		"pr_url":     in.PRURL,
+		"exit_code":  in.ExitCode,
+		"note":       in.Note,
+		"started_at": in.StartedAt,
+	}
+	var out map[string]any
+	if err := c.requestJSON(ctx, http.MethodPost, "/v1/triage/"+url.PathEscape(key)+"/solver-attempt", payload, &out); err != nil {
+		return nil, nil, err
+	}
 	return nil, out, nil
 }
 

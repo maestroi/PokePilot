@@ -165,6 +165,47 @@ func TestCancel(t *testing.T) {
 	}
 }
 
+// TestCancelQueued covers a run cancelled before any worker ever leases it.
+// handleCancel only records intent in w.cancel; a queued run never gets a
+// heartbeat to read that flag, so without a check in handleLease itself the
+// run would sit in the queue forever (or, worse, keep being handed out).
+func TestCancelQueued(t *testing.T) {
+	srv := newTestServer(t, "")
+	postJSON(t, srv.URL+"/v1/specs", spec("q1"))
+	postJSON(t, srv.URL+"/v1/specs", spec("q2"))
+
+	if resp := postJSON(t, srv.URL+"/v1/runs/q1/cancel", struct{}{}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("cancel: status %d", resp.StatusCode)
+	}
+
+	// Leasing must skip the cancelled q1 and hand out q2 instead.
+	resp := postJSON(t, srv.URL+"/v1/lease", struct{}{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("lease: status %d", resp.StatusCode)
+	}
+	var got farm.Spec
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode lease: %v", err)
+	}
+	if got.RunID != "q2" {
+		t.Fatalf("lease run_id = %q, want q2", got.RunID)
+	}
+
+	_, body := get(t, srv.URL+"/v1/dashboard")
+	var view dashboardView
+	if err := json.Unmarshal([]byte(body), &view); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	for _, row := range view.Runs {
+		if row.RunID != "q1" {
+			continue
+		}
+		if row.Status != statusDone || row.Reason != "cancelled" {
+			t.Fatalf("q1 status/reason = %q/%q, want %q/cancelled", row.Status, row.Reason, statusDone)
+		}
+	}
+}
+
 func TestFinish(t *testing.T) {
 	srv := newTestServer(t, "")
 	postJSON(t, srv.URL+"/v1/specs", spec("f1"))

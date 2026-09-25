@@ -22,6 +22,7 @@ type RoutePrerequisiteLink struct {
 	FieldCapability CapabilityID `json:"field_capability,omitempty"`
 	Progress        ProgressID   `json:"progress,omitempty"`
 	Badge           string       `json:"badge,omitempty"`
+	RecoveryOnly    bool         `json:"recovery_only,omitempty"`
 }
 
 // RouteBlockage is the planner-facing projection of either a structured

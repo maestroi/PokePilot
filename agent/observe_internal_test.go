@@ -3,6 +3,11 @@ package agent
 import (
 	"os"
 	"testing"
+
+	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // TestObservedItemsAreReachable pins the Mt. Moon B2F split. Map 0x3D is two
@@ -152,5 +157,97 @@ func TestObservedPersonsRespectStationaryBlockers(t *testing.T) {
 	// The gentleman himself is reachable from the same position.
 	if !personReachable(romData, mtMoonCenter, px, py, gentlemanX, gentlemanY) {
 		t.Error("gentleman at (7,3) reported unreachable from (6,3)")
+	}
+}
+
+func TestMapObjectReachabilityUsesLiveBlockReplacement(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const mapID = uint8(0xA5) // Pokemon Mansion 1F: scripts replace blocks here.
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := rom.Blocks(romData, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	static, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find one legal replacement block that changes collision, then project it
+	// into the same bordered wOverworldMap buffer scripts mutate at runtime.
+	var replacement byte
+	var expected *world.Grid
+	found := false
+	for candidate := 0; candidate <= 0xff; candidate++ {
+		if byte(candidate) == blocks[0] {
+			continue
+		}
+		changed := append([]byte(nil), blocks...)
+		changed[0] = byte(candidate)
+		g, err := world.BuildFromBlocks(romData, h, changed)
+		if err != nil {
+			continue
+		}
+		diff := false
+		for y := 0; y < static.Height && !diff; y++ {
+			for x := 0; x < static.Width; x++ {
+				if static.Walkable(x, y) != g.Walkable(x, y) {
+					diff = true
+					break
+				}
+			}
+		}
+		if diff {
+			replacement, expected, found = byte(candidate), g, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("could not find a Mansion block replacement that changes walkability")
+	}
+
+	var mem state.Mem
+	mem[sym.CurMap] = mapID
+	mem[sym.CurMapWidth] = h.WidthBlocks
+	mem[sym.CurMapHeight] = h.HeightBlocks
+	const border = 3
+	stride := int(h.WidthBlocks) + 2*border
+	first := border*stride + border
+	for y := 0; y < int(h.HeightBlocks); y++ {
+		for x := 0; x < int(h.WidthBlocks); x++ {
+			off := first + y*stride + x
+			mem[sym.OverworldMap+uint16(off)] = blocks[y*int(h.WidthBlocks)+x]
+		}
+	}
+	mem[sym.OverworldMap+uint16(first)] = replacement
+
+	got := mapObjectReachabilityGridLive(romData, mapID, &mem)
+	if got == nil {
+		t.Fatal("live object reachability grid is nil")
+	}
+	changed := false
+	for y := 0; y < got.Height; y++ {
+		for x := 0; x < got.Width; x++ {
+			if got.Walkable(x, y) != static.Walkable(x, y) {
+				changed = true
+			}
+			if got.Walkable(x, y) != expected.Walkable(x, y) {
+				t.Fatalf("live grid walkability at (%d,%d) = %v, want replacement geometry %v",
+					x, y, got.Walkable(x, y), expected.Walkable(x, y))
+			}
+		}
+	}
+	if !changed {
+		t.Fatal("live object reachability silently fell back to static ROM geometry")
 	}
 }

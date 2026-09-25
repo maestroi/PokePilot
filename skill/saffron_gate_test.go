@@ -7,6 +7,14 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
+// TestGuardDrinkInBag also pins the prerequisite of the guard-drink step to
+// the drink itself. The gate once required the Soul Badge, Surf and Strength
+// (the completed Fuchsia slice) before it would run. Saffron is the only
+// corridor between Celadon and Vermilion, so that requirement made the Thunder
+// Badge unreachable and deadlocked every run that had crossed into Celadon
+// with two badges (run-jxh8lk19wv6on, run-1biaubd9xooqm). A ¥200 FRESH WATER
+// from Celadon's roof is purchasable with no badge, HM or story fact, so a
+// fresh save carrying only money is enough.
 func TestGuardDrinkInBag(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -41,22 +49,5 @@ func TestSaffronGateOpenUsesSemanticStoryFact(t *testing.T) {
 	mem[sym.StatusFlags1] |= 1 << 6 // BIT_GAVE_SAFFRON_GUARDS_DRINK
 	if !SaffronGateOpen(&mem) {
 		t.Fatal("Saffron guard-drink flag did not satisfy semantic postcondition")
-	}
-}
-
-func TestSaffronGateReadyRequiresCompletedFuchsiaSlice(t *testing.T) {
-	var mem state.Mem
-	mem[sym.ObtainedBadges] |= 1 << 4 // Soul Badge
-	putBag(&mem,
-		state.BagItem{ID: hm03SurfItem, Quantity: 1},
-		state.BagItem{ID: hm04StrengthItem, Quantity: 1},
-	)
-	if !SaffronGateReady(&mem) {
-		t.Fatal("Soul Badge + Surf + Strength did not satisfy #33 handoff")
-	}
-
-	putBag(&mem, state.BagItem{ID: hm03SurfItem, Quantity: 1})
-	if SaffronGateReady(&mem) {
-		t.Fatal("missing Strength still reported Saffron gate ready")
 	}
 }

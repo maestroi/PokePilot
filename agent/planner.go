@@ -121,6 +121,9 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		if *a.Level < 1 || *a.Level > 100 {
 			return o, fmt.Errorf("agent: level %d out of range 1..100 for %s", *a.Level, o)
 		}
+		if *a.Level != int(o.Level) {
+			return o, fmt.Errorf("agent: level argument %d cannot change offered training target %d for %s", *a.Level, o.Level, o)
+		}
 	}
 	if a.Species != "" {
 		if o.Kind != KindCatch {
@@ -129,6 +132,9 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		id, ok := semanticSpecies(a.Species)
 		if !ok {
 			return o, fmt.Errorf("agent: unknown species %q for %s", a.Species, o)
+		}
+		if o.Species != "" && id != o.Species {
+			return o, fmt.Errorf("agent: species argument %q cannot change offered catch target %s", a.Species, o)
 		}
 		species = id
 	}
@@ -140,6 +146,9 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		if !ok {
 			return o, fmt.Errorf("agent: unknown item %q for %s", a.Item, o)
 		}
+		if o.Item != "" && id != o.Item {
+			return o, fmt.Errorf("agent: item argument %q cannot change offered purchase %s", a.Item, o)
+		}
 		item = id
 	}
 	if a.Quantity != nil {
@@ -149,9 +158,15 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		if *a.Quantity < 1 || *a.Quantity > 99 {
 			return o, fmt.Errorf("agent: quantity %d out of range 1..99 for %s", *a.Quantity, o)
 		}
+		if o.Qty > 0 && *a.Quantity != o.Qty {
+			return o, fmt.Errorf("agent: quantity argument %d cannot change offered purchase quantity %d for %s", *a.Quantity, o.Qty, o)
+		}
 	}
 	if a.Flee != nil && o.Kind != KindGoTo && !(o.Kind == KindHeal && o.Place != "") {
 		return o, fmt.Errorf("agent: flee argument %v does not apply to %s", *a.Flee, o)
+	}
+	if a.Flee != nil && *a.Flee != o.Flee {
+		return o, fmt.Errorf("agent: flee argument %v cannot change offered route policy for %s", *a.Flee, o)
 	}
 	if a.Level != nil {
 		o.Level = uint8(*a.Level)

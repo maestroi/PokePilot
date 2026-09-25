@@ -9,19 +9,22 @@ import (
 	"github.com/maestroi/pokepilot/red/sym"
 )
 
-// approachViaTravel walks to a walkable tile orthogonally adjacent to
-// (targetX, targetY) on the current map, fleeing wild battles that interrupt
-// the way. Trainer battles still fall back to Battle because they cannot be
-// fled. It is a no-op when the player is already adjacent.
+// ErrPickupApproachIncomplete means navigation returned without leaving the
+// player beside the item. Pickup must not interact from that position.
+var ErrPickupApproachIncomplete = errors.New("skill: Pickup: approach did not reach the item")
+
+// approachViaTravel walks beside the item, fleeing wild battles that interrupt
+// the way. A trainer battle may move a sprite onto the chosen standing tile,
+// so the destination must remain an interaction target: Travel then chooses a
+// new side from live state after the battle. It is a no-op when already beside.
 func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, policy MovePolicy) error {
-	dest, ok, err := besideDestination(m, romData, targetX, targetY)
-	if err != nil {
-		return fmt.Errorf("skill: Pickup: %w", err)
-	}
-	if !ok {
+	mapID := m.Peek8(sym.CurMap)
+	x, y := playerXY(m)
+	if _, adjacent := directionTo(x, y, targetX, targetY); adjacent {
 		return nil
 	}
-	_, err = TravelFlee(m, romData, dest, policy, 20)
+	dest := InteractionDestination(mapID, targetX, targetY)
+	_, err := TravelFlee(m, romData, dest, policy, 20)
 	if errors.Is(err, ErrForcedChoiceStuck) {
 		// A trainer can interrupt a forest/item approach after a failed RUN
 		// attempt and leave Battle on the forced party-choice screen. The
@@ -37,7 +40,30 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 	if err != nil {
 		return fmt.Errorf("skill: Pickup: approach beside (%d,%d) on map %#04x: %w", targetX, targetY, dest.Map, err)
 	}
+	x, y = playerXY(m)
+	if _, adjacent := directionTo(x, y, targetX, targetY); m.Peek8(sym.CurMap) != mapID || !adjacent {
+		return fmt.Errorf("%w: item on map %#04x at (%d,%d), player on map %#04x at (%d,%d)",
+			ErrPickupApproachIncomplete, mapID, targetX, targetY, m.Peek8(sym.CurMap), x, y)
+	}
 	return nil
+}
+
+const pickupFaceRecoveryAttempts = 3
+
+// recoverPickupInteractionInterruption owns the tiny race after an approach
+// has finished but before Pickup presses A. A sighted trainer (or an ordinary
+// wild encounter that lands on the last approach step) can take control in
+// exactly that window: Face then times out because direction input is ignored.
+// The shared interruption runner resolves whatever live battle/dialogue owns
+// the screen; Pickup then re-approaches the ball from the new live position
+// and tries the interaction again.
+func recoverPickupInteractionInterruption(m *emu.Emu, policy MovePolicy) error {
+	_, err := RunInterruptible(m, policy, InterruptibleAction{
+		Name:           "Pickup interaction",
+		MaxEngagements: 4,
+		Run:            func() error { return movementInterruption(m) },
+	})
+	return err
 }
 
 // ErrBagNotRisen reports that pressing A did not collect the wanted item:
@@ -90,8 +116,33 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 	if err := EnsureBagSpaceFor(m, want); err != nil {
 		return fmt.Errorf("skill: Pickup: make room for item %#02x: %w", want, err)
 	}
-	if err := Face(m, x, y); err != nil {
-		return fmt.Errorf("skill: Pickup: %w", err)
+	var faceErr error
+	for attempt := 1; attempt <= pickupFaceRecoveryAttempts; attempt++ {
+		faceErr = Face(m, x, y)
+		if faceErr == nil {
+			break
+		}
+
+		// If the face failed while the overworld is still idle, this is a
+		// genuine interaction/controller failure. Recovery is only justified
+		// when live RAM proves a battle/dialogue stole control after the
+		// approach completed.
+		if movementInterruption(m) == nil {
+			return fmt.Errorf("skill: Pickup: %w", faceErr)
+		}
+		if attempt == pickupFaceRecoveryAttempts {
+			return fmt.Errorf("skill: Pickup: face item at (%d,%d) still interrupted after %d recoveries: %w",
+				x, y, pickupFaceRecoveryAttempts-1, faceErr)
+		}
+		if err := recoverPickupInteractionInterruption(m, policy); err != nil {
+			return fmt.Errorf("skill: Pickup: recover interruption before facing item at (%d,%d): %w", x, y, err)
+		}
+		// A trainer fight can move the player a tile and a blackout can move
+		// maps entirely. Re-establish the normal Pickup approach rather than
+		// assuming the pre-interruption position is still valid.
+		if err := approachViaTravel(m, romData, x, y, policy); err != nil {
+			return err
+		}
 	}
 
 	m.Tap(emu.A, 3, 7)

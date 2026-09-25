@@ -1,11 +1,52 @@
 package skill
 
 import (
+	"crypto/sha256"
+	"fmt"
+	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
+
+// TestIndigoLobbyNurseReplay uses the round-11 checkpoint from
+// run-jxh8lk19wv6on. The artifact is kept by the farm, not in Git.
+// The old exact destination was the solid counter at (7,6).
+func TestIndigoLobbyNurseReplay(t *testing.T) {
+	statePath := os.Getenv("INDIGO_LOBBY_REPRO_STATE")
+	if statePath == "" {
+		t.Skip("set INDIGO_LOBBY_REPRO_STATE to the run-jxh8lk19wv6on round-11 .state artifact")
+	}
+	b, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const stateSHA = "df76d05bd0c51dddb62d4dfe2de8d5fd74784391699312a6d123bfc95e6dedd4"
+	if got := fmt.Sprintf("%x", sha256.Sum256(b)); got != stateSHA {
+		t.Fatalf("replay state SHA-256 = %s, want %s", got, stateSHA)
+	}
+	m, err := emu.Open(os.Getenv("POKEMON_RED_ROM"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err := m.LoadState(b); err != nil {
+		t.Fatal(err)
+	}
+	if err := VictoryRoadPrepareIndigo(m, m.ROM(), StatAwareMove(m.ROM())); err != nil {
+		t.Fatal(err)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if got := mem.U8(sym.CurMap); got != indigoPlateauLobbyMap {
+		t.Fatalf("finished on map %#02x, want Indigo lobby %#02x", got, indigoPlateauLobbyMap)
+	}
+	if !allPartyCenterRecovered(&mem) {
+		t.Fatal("Indigo nurse did not fully recover the party")
+	}
+}
 
 func TestVictoryRoadClearBoundaryUsesLiveSwitchInsideCave(t *testing.T) {
 	var mem state.Mem

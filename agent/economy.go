@@ -209,9 +209,9 @@ func EconomyContext(o Observation) *EconomyDecisionContext {
 	case partyHurt(o) && heals == 0:
 		ctx.ResupplyNeeded = true
 		ctx.ResupplyReason = "party is hurt with no HP-healing stock; prefer free Center healing, otherwise buy a bounded emergency stock"
-	case hasBossFailure(o) && heals == 0:
+	case hasCombatLoss(o) && heals == 0:
 		ctx.ResupplyNeeded = true
-		ctx.ResupplyReason = "a boss objective failed with no HP-healing stock; recover at a free Center first, then consider bounded emergency stock"
+		ctx.ResupplyReason = "a combat challenge was lost with no HP-healing stock; recover at a free Center first, then consider bounded emergency stock"
 	}
 
 	ctx.Purchases = purchaseAdvice(o, ctx)
@@ -255,21 +255,18 @@ func emergencyHealStock(o Observation) int {
 	return total
 }
 
-func hasBossFailure(o Observation) bool {
-	for _, failure := range o.Failures {
-		name := strings.ToLower(failure.Objective)
-		if strings.Contains(name, "gym leader") || strings.Contains(name, "rocket hideout") ||
-			strings.Contains(name, "pokemon tower") || strings.Contains(name, "fuchsia") {
-			return true
-		}
-	}
-	return false
+// hasCombatLoss reports typed combat-loss evidence (a loss not yet cleared by
+// a win), whatever the challenge: gym, trainer, story boss or League stage.
+func hasCombatLoss(o Observation) bool {
+	return o.CombatLossRecorded
 }
 
 func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice {
 	balls, heals := normalBallStock(o), emergencyHealStock(o)
+	repelCoverage := repelCoverageSteps(o)
 	preferredBall := preferredCapturePurchase(o.MartStock, ctx.SpendableMoney)
 	preferredHeal := preferredHealingPurchase(o, ctx.SpendableMoney)
+	preferredRepel := preferredRepelPurchase(o.MartStock, ctx.SpendableMoney)
 	out := make([]PurchaseAdvice, 0, len(o.MartStock))
 
 	for _, rawName := range o.MartStock {
@@ -313,7 +310,7 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 			if _, isHeal := hpHealingItems[name]; isHeal {
 				advice.CategoryStock, advice.TargetStock = heals, targetEmergencyHeals
 				need := maxInt(0, targetEmergencyHeals-heals)
-				needNow := partyHurt(o) || hasBossFailure(o)
+				needNow := partyHurt(o) || hasCombatLoss(o)
 				switch {
 				case !needNow:
 					advice.Reason = "no immediate recovery pressure; prefer free Center healing and preserve money"
@@ -342,7 +339,28 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 		case InventoryEvolution:
 			advice.Reason = "do not speculate on stones; wait for an explicit evolution objective naming the required stone"
 		case InventoryTravel:
-			advice.Reason = "travel utility is discretionary unless the current route proves it is required"
+			steps, isRepel := repelDurations[name]
+			if !isRepel {
+				advice.Reason = "travel utility is discretionary unless the current route proves it is required"
+				break
+			}
+			advice.CategoryStock, advice.TargetStock = repelCoverage, targetRepelSteps
+			needSteps := maxInt(0, targetRepelSteps-repelCoverage)
+			switch {
+			case repelCoverage >= targetRepelSteps:
+				advice.Reason = fmt.Sprintf("Repel coverage already meets the bounded speedrun target (%d/%d steps)", repelCoverage, targetRepelSteps)
+			case preferredRepel == "":
+				advice.Reason = "no stocked Repel is affordable without consuming reserved money"
+			case preferredRepel != name:
+				advice.Reason = fmt.Sprintf("prefer %s for lower cost per protected step", strings.ToUpper(preferredRepel))
+			case !canStore:
+				advice.Reason = "bag has no free item slot for a Repel stack"
+			default:
+				need := (needSteps + steps - 1) / steps
+				advice.SuggestedQty = boundedAffordableQty(need, ctx.SpendableMoney, spec.UnitPrice)
+				advice.ShouldBuy = advice.SuggestedQty > 0
+				advice.Reason = fmt.Sprintf("bounded speedrun encounter coverage toward %d protected steps while preserving ¥%d reserved money", targetRepelSteps, ctx.ReservedMoney)
+			}
 		default:
 			advice.Reason = "optional utility; preserve money and bag capacity without a concrete objective"
 		}
@@ -351,6 +369,23 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 		out = append(out, advice)
 	}
 	return out
+}
+
+func preferredRepelPurchase(stock []string, spendable uint32) string {
+	// SUPER REPEL is the best yen-per-step option in Gen 1 (500/200), then
+	// MAX REPEL (700/250), then ordinary REPEL (350/100).
+	for _, candidate := range []string{"super repel", "max repel", "repel"} {
+		spec, _ := ItemEconomy(candidate)
+		if spec.UnitPrice > spendable {
+			continue
+		}
+		for _, stocked := range stock {
+			if strings.EqualFold(strings.TrimSpace(stocked), candidate) {
+				return candidate
+			}
+		}
+	}
+	return ""
 }
 
 func preferredCapturePurchase(stock []string, spendable uint32) string {

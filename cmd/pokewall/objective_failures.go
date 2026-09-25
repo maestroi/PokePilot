@@ -137,6 +137,10 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		objective = "recover from repeated objective failures"
 		failureText = "failure recovery budget was exhausted"
 		cause = "failure-budget"
+	case "error":
+		objective = "recover from terminal run error"
+		failureText = "terminal run error stopped the run"
+		cause = "run-error"
 	default:
 		return farm.ObjectiveFailure{}, false
 	}
@@ -147,7 +151,8 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		round = dump.ProgressFinal.Round
 		mapID = dump.ProgressFinal.Map
 	}
-	if detail := strings.TrimSpace(dump.Detail); detail != "" {
+	detail := strings.TrimSpace(dump.Detail)
+	if detail != "" {
 		failureText += ": " + detail
 	}
 	return farm.ObjectiveFailure{
@@ -162,6 +167,7 @@ func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure
 		Build:         strings.TrimSpace(dump.RunnerVersion),
 		Outcome:       reason,
 		Cause:         cause,
+		CauseContext:  farm.ParseFailureDetailCauseContext(detail),
 	}, true
 }
 
@@ -191,13 +197,41 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if err != nil {
 		return err
 	}
-	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
+	occurrenceKey, occurrenceFP, _, err := objectiveFailureOccurrenceFingerprint(f)
+	if err != nil {
+		return err
+	}
+	circuit := failureCircuitDecision{}
+	if cp := controlPlaneFor(w); cp != nil && circuitFailureEligible(f) {
+		scope, _ := w.circuitScopeForRun(dump.RunID)
+		circuit, err = cp.failureCircuitForOccurrence(scope, dump, max(1, dump.Attempt), f)
+		if err != nil {
+			return fmt.Errorf("evaluate failure circuit: %w", err)
+		}
+	}
+	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, occurrenceKey)
 
 	w.mu.Lock()
 	existing := w.outbox[ext]
 	prior := w.issueLinks[key]
+	if prior.IssueID == "" && occurrenceKey != key {
+		// Rollout compatibility: issue links created before family fingerprints
+		// are keyed by the exact occurrence. Alias the first recurrence onto its
+		// new family key so deployment does not create one transitional duplicate.
+		if exactPrior := w.issueLinks[occurrenceKey]; exactPrior.IssueID != "" {
+			prior = exactPrior
+			prior.Fingerprint = fp
+			w.issueLinks[key] = prior
+		}
+	}
 	w.mu.Unlock()
-	if existing.Status == outboxComplete || existing.Status == outboxQuarantined {
+	// A terminal outbox row is only authoritative while the canonical issue
+	// binding still exists. Sink migrations can legitimately detach issueLinks
+	// while leaving old complete/quarantined occurrence rows behind; treating
+	// those rows as delivered forever strands the durable failure group with no
+	// GitHub issue. Re-delivery is safe because the issue adapter deduplicates by
+	// fingerprint/external id.
+	if prior.IssueID != "" && (existing.Status == outboxComplete || existing.Status == outboxQuarantined) {
 		return nil
 	}
 
@@ -205,6 +239,12 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if structured {
 		disposition = classifyIssueOccurrence(prior)
 		if disposition == occurrenceQuarantine {
+			if circuit.Open {
+				if err := w.requestCircuitInvestigation(c, prior.IssueID, circuit); err != nil {
+					return err
+				}
+				w.noteCircuitIssue(key, dump.RunID, circuit)
+			}
 			w.quarantineOccurrence(outboxEntry{
 				ExternalID: ext,
 				RunID:      dump.RunID,
@@ -234,39 +274,41 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	observedRevision := observedObjectiveFailureRevision(dump, f)
 	runContext, hasRunContext, runContextErr := farm.DecodeRunContext(dump)
 	evidenceValues := map[string]any{
-		"classification":       classification,
-		"disposition":          string(disposition),
-		"run_id":               dump.RunID,
-		"attempt":              max(1, dump.Attempt),
-		"seed_burn":            dump.SeedBurn,
-		"objective":            f.Objective,
-		"error":                f.Error,
-		"occurrences_in_run":   f.Count,
-		"first_round":          f.FirstRound,
-		"last_round":           f.LastRound,
-		"map":                  fmt.Sprintf("0x%02x", f.Map),
-		"x":                    f.X,
-		"y":                    f.Y,
-		"recovered":            f.Recovered,
-		"recovered_count":      f.RecoveredCount,
-		"terminal_count":       f.TerminalCount,
-		"blocking":             f.Blocking,
-		"run_reason":           dump.Reason,
-		"run_detail":           dump.Detail,
-		"progress_early":       dump.ProgressEarly,
-		"progress_final":       dump.ProgressFinal,
-		"trace_tail":           dump.TraceTail,
-		"runner_version":       dump.RunnerVersion,
-		"observed_revision":    observedRevision,
-		"fingerprint":          fp,
-		"identity":             f.Identity,
-		"outcome":              f.Outcome,
-		"cause":                f.Cause,
-		"cause_context":        f.CauseContext,
-		"checkpoint":           f.Checkpoint,
-		"prior_issue_status":   prior.Status,
-		"prior_resolution":     prior.Resolution,
-		"prior_fixed_revision": prior.FixedRevision,
+		"classification":         classification,
+		"disposition":            string(disposition),
+		"run_id":                 dump.RunID,
+		"attempt":                max(1, dump.Attempt),
+		"seed_burn":              dump.SeedBurn,
+		"objective":              f.Objective,
+		"error":                  f.Error,
+		"occurrences_in_run":     f.Count,
+		"first_round":            f.FirstRound,
+		"last_round":             f.LastRound,
+		"map":                    fmt.Sprintf("0x%02x", f.Map),
+		"x":                      f.X,
+		"y":                      f.Y,
+		"recovered":              f.Recovered,
+		"recovered_count":        f.RecoveredCount,
+		"terminal_count":         f.TerminalCount,
+		"blocking":               f.Blocking,
+		"run_reason":             dump.Reason,
+		"run_detail":             dump.Detail,
+		"progress_early":         dump.ProgressEarly,
+		"progress_final":         dump.ProgressFinal,
+		"trace_tail":             dump.TraceTail,
+		"runner_version":         dump.RunnerVersion,
+		"observed_revision":      observedRevision,
+		"fingerprint":            fp,
+		"family_fingerprint":     fp,
+		"occurrence_fingerprint": occurrenceFP,
+		"identity":               f.Identity,
+		"outcome":                f.Outcome,
+		"cause":                  f.Cause,
+		"cause_context":          f.CauseContext,
+		"checkpoint":             f.Checkpoint,
+		"prior_issue_status":     prior.Status,
+		"prior_resolution":       prior.Resolution,
+		"prior_fixed_revision":   prior.FixedRevision,
 	}
 	if hasRunContext {
 		evidenceValues["planner"] = runContext.Planner
@@ -276,6 +318,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 		evidenceValues["llm_profile"] = runContext.LLMProfile
 		evidenceValues["reasoning_effort"] = runContext.ReasoningEffort
 		evidenceValues["play_style"] = runContext.PlayStyle
+		evidenceValues["purpose"] = string(runContext.Purpose)
 		evidenceValues["risk_tolerance"] = runContext.RiskTolerance
 		evidenceValues["wild_encounters"] = runContext.WildEncounters
 		evidenceValues["seed"] = runContext.Seed
@@ -283,13 +326,19 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if runContextErr != nil {
 		evidenceValues["run_context_error"] = runContextErr.Error()
 	}
+	if circuit.Open {
+		evidenceValues["circuit_breaker"] = circuit
+	}
 	evidence, _ := json.Marshal(evidenceValues)
 
 	contextSuffix := ""
 	if hasRunContext {
-		parts := make([]string, 0, 6)
+		parts := make([]string, 0, 7)
 		if runContext.PlayStyle != "" {
 			parts = append(parts, "play_style="+runContext.PlayStyle)
+		}
+		if runContext.Purpose != "" {
+			parts = append(parts, "purpose="+string(runContext.Purpose))
 		}
 		if runContext.RiskTolerance != "" {
 			parts = append(parts, "risk_tolerance="+runContext.RiskTolerance)
@@ -363,6 +412,11 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	if result.Issue.ID == "" {
 		return fmt.Errorf("agent orchestrator returned an empty issue id")
 	}
+	if circuit.Open {
+		if err := w.requestCircuitInvestigation(c, result.Issue.ID, circuit); err != nil {
+			return err
+		}
+	}
 
 	now := time.Now().Unix()
 	w.mu.Lock()
@@ -377,6 +431,7 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	link.LastDisposition = string(disposition)
 	link.UpdatedAt = now
 	link.Fingerprint = fp
+	link = applyCircuitToIssueLink(link, dump.RunID, circuit)
 	w.issueLinks[key] = link
 	w.outbox[ext] = outboxEntry{
 		ExternalID: ext,

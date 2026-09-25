@@ -29,7 +29,10 @@ const virtualTradeLinkTimeout = 10 * time.Second
 // outside this branch. Trade evolutions require the exact base in the party;
 // version/choice gaps require a repeatably obtainable donor so completing the
 // Dex never destroys an irreplaceable field or one-off Pokemon.
-func appendDexVirtualTradeObjectives(obs Observation, out []Objective) []Objective {
+func appendDexVirtualTradeObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
+	if virtualTradeMachineUnusable(known) {
+		return out
+	}
 	if obs.Services == nil || !obs.Services.VirtualTrader || len(obs.Dex.Unavailable) == 0 {
 		return out
 	}
@@ -263,7 +266,7 @@ func executeDexVirtualTrade(m *emu.Emu, romData []byte, o Objective, result Obje
 	defer link.Close()
 
 	trade, err := skill.VirtualTrade(m, romData, o.Slot, tradeback, skill.StatAwareMove(romData))
-	result.Travel = travelEvidenceFromRed(trade.Travel)
+	attachTravelResult(&result, trade.Travel)
 	// Provenance is durable in two existing records without widening the
 	// ObjectiveResult schema: the objective Intent/Note names the policy and
 	// the trader service emits structured session/run trade_event records.

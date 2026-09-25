@@ -145,6 +145,13 @@ func sanitizeCatalogRow(row tileRow) tileRow {
 	row.Sprites = nil
 	row.Trail = nil
 	row.ResumeProtected = false
+	if row.Stats != nil && len(row.Stats.DecisionRecords) > 0 {
+		// The typed-decision feed is live-only too; the run keeps its
+		// fixed-size DecisionSummary. Copy first: Stats is the tile's.
+		stats := *row.Stats
+		stats.DecisionRecords = nil
+		row.Stats = &stats
+	}
 	return row
 }
 
@@ -205,7 +212,7 @@ func (w *Wall) ramRow(runID string) (tileRow, bool) {
 	if t == nil {
 		return tileRow{}, false
 	}
-	return w.tileRowLocked(t), true
+	return w.tileRowWithActivityLocked(t), true
 }
 
 func (w *Wall) syncCatalogFromRAM(includeFinished bool) error {
@@ -220,7 +227,7 @@ func (w *Wall) syncCatalogFromRAM(includeFinished bool) error {
 		if t == nil || (!includeFinished && t.Finished) {
 			continue
 		}
-		rows = append(rows, w.tileRowLocked(t))
+		rows = append(rows, w.tileRowWithActivityLocked(t))
 	}
 	w.mu.Unlock()
 	for _, row := range rows {
@@ -290,7 +297,7 @@ func (w *Wall) RunCatalogSettlementSweep(interval time.Duration) {
 		rows := make([]tileRow, 0)
 		for _, id := range w.order {
 			if t := w.tiles[id]; t != nil && t.Finished {
-				rows = append(rows, w.tileRowLocked(t))
+				rows = append(rows, w.tileRowWithActivityLocked(t))
 			}
 		}
 		w.mu.Unlock()

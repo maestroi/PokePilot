@@ -44,6 +44,42 @@ func ValidateFinishArtifacts(r FinishReport) error {
 	return nil
 }
 
+// ValidateCheckpointState checks one checkpoint state payload before it is
+// published or served as a resume candidate. State bytes are opaque to the
+// protocol, so the one structural guarantee available here is that a usable
+// emulator save is never empty. A zero-length state is exactly what a reader
+// observes when it reads a save file in the window between truncate and write,
+// and a wall that stores or serves one silently restarts the run from a fresh
+// cartridge on the next lease: the runner cannot load it, falls back to boot,
+// and the bad file stays in its checkpoint ring to be re-published. Refusing it
+// on both the upload and the resume path is the invariant that keeps a run's
+// lineage honest, so a candidate that fails here must be skipped in favour of
+// an older usable checkpoint rather than degraded into a fresh start.
+func ValidateCheckpointState(a Artifact) error {
+	if err := ValidateFinishArtifacts(FinishReport{Artifacts: []Artifact{a}}); err != nil {
+		return err
+	}
+	if a.Store == "" && len(a.Data) == 0 && strings.HasSuffix(a.Name, ".state") {
+		return fmt.Errorf("farm: checkpoint state %q is empty", a.Name)
+	}
+	return nil
+}
+
+// ValidateCheckpointReport validates one in-flight checkpoint upload. Beyond
+// the generic artifact contract every state payload must look like a complete
+// save, so a truncated or mid-write read is never made durable.
+func ValidateCheckpointReport(r CheckpointReport) error {
+	if err := ValidateFinishArtifacts(FinishReport{Artifacts: r.Artifacts}); err != nil {
+		return err
+	}
+	for _, a := range r.Artifacts {
+		if err := ValidateCheckpointState(a); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateArtifact(a Artifact) error {
 	if a.Name == "" {
 		return fmt.Errorf("empty name")

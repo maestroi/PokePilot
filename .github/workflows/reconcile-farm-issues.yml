@@ -1,0 +1,34 @@
+name: Reconcile farm issues
+
+on:
+  issues:
+    types: [opened, reopened]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: reconcile-farm-issues
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full repair history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate reconciler
+        run: bash -n .github/scripts/reconcile-farm-issues.sh
+      - name: Close generated issues already covered by merged repairs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPO: ${{ github.repository }}
+        run: bash .github/scripts/reconcile-farm-issues.sh

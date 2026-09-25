@@ -58,7 +58,7 @@ func TestTerminalRunFailureDoesNotDuplicateSpecificTerminalFailure(t *testing.T)
 }
 
 func TestTerminalRunFailureIgnoresNormalStops(t *testing.T) {
-	for _, reason := range []string{"done", "budget", "lost", "error", ""} {
+	for _, reason := range []string{"done", "budget", "lost", ""} {
 		if _, ok := terminalRunFailure(farm.FinishReport{Reason: reason}, nil); ok {
 			t.Fatalf("terminalRunFailure(%q) synthesized an issue", reason)
 		}

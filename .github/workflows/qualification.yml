@@ -20,6 +20,15 @@ on:
         description: Optional exact case id (overrides profile selection)
         required: false
         type: string
+      benchmark:
+        description: Optional structured benchmark qualification
+        required: true
+        default: fast
+        type: choice
+        options:
+          - none
+          - fast
+          - full
   schedule:
     - cron: "17 3 * * *"
     - cron: "41 3 * * 0"
@@ -83,8 +92,39 @@ jobs:
           fi
           go run ./cmd/pokequal "${args[@]}"
 
+      - name: Run fast benchmark qualification
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '17 3 * * *') || (github.event_name == 'workflow_dispatch' && inputs.benchmark == 'fast') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$POKEPILOT_QUALIFICATION_OUT/benchmark-fast"
+          go run ./cmd/pokebench red \
+            --mode speedrun \
+            --from checkpoint:fuchsia-koga-surf-strength \
+            --until sabrina \
+            --runs 1 \
+            --output "$root/fuchsia-to-sabrina"
+          go run ./cmd/pokebench red \
+            --mode speedrun \
+            --from checkpoint:viridian-giovanni \
+            --until indigo-plateau \
+            --runs 1 \
+            --output "$root/viridian-to-indigo"
+
+      - name: Run full benchmark qualification
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark == 'full' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          go run ./cmd/pokebench red \
+            --mode speedrun \
+            --from fresh \
+            --until hall-of-fame \
+            --runs 1 \
+            --output "$POKEPILOT_QUALIFICATION_OUT/benchmark-full"
+
       - name: Close full-chain issue after clean manual proof
-        if: ${{ success() && github.event_name == 'workflow_dispatch' && (inputs.profile == 'full' || inputs.case == 'fresh-hall-of-fame') }}
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && (inputs.profile == 'full' || inputs.case == 'fresh-hall-of-fame' || inputs.benchmark == 'full') }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -178,8 +218,14 @@ jobs:
           mkdir -p "$out"
           echo "POKEPILOT_QUALIFICATION_OUT=$out" >> "$GITHUB_ENV"
 
-      - name: Run fresh-save Hall of Fame qualification
-        run: go run ./cmd/pokequal -profile full -out "$POKEPILOT_QUALIFICATION_OUT"
+      - name: Run fresh-save Hall of Fame benchmark qualification
+        run: |
+          go run ./cmd/pokebench red \
+            --mode speedrun \
+            --from fresh \
+            --until hall-of-fame \
+            --runs 1 \
+            --output "$POKEPILOT_QUALIFICATION_OUT/benchmark-full"
 
       - name: Close full-chain issue after clean scheduled proof
         if: success()

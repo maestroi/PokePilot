@@ -1,5 +1,7 @@
 package state
 
+import "github.com/maestroi/pokepilot/red/sym"
+
 // BoulderPictureID is SPRITE_BOULDER in Pokémon Red's sprite constants.
 // Keeping the identity next to the live decoder lets puzzle code distinguish
 // movable Strength objects from ordinary NPC/item blockers without consulting
@@ -14,18 +16,22 @@ type BoulderState struct {
 	X, Y int
 }
 
-// DecodeBoulders returns every currently visible SPRITE_BOULDER in stable
-// sprite-slot order. Hidden/removed boulders are excluded by DecodeSprites,
-// which matters for Victory Road's 3F hole transition where the pushed
-// boulder is hidden on 3F and shown on 2F.
+// DecodeBoulders returns every present SPRITE_BOULDER in stable sprite-slot
+// order, on-screen or not. Off-screen objects carry the same $ff image index
+// as hidden ones, so DecodeSprites would drop a boulder the puzzle still needs
+// (Victory Road 2F's west-switch boulder from the 1F ladder, run-1biaubd9xooqm).
+// Presence comes from the toggleable-object flags instead, which still drop
+// Victory Road 3F's boulder once the hole script hides it.
 func DecodeBoulders(m *Mem) []BoulderState {
-	sprites := DecodeSprites(m)
-	out := make([]BoulderState, 0, len(sprites))
-	for _, sprite := range sprites {
-		if sprite.PictureID != BoulderPictureID {
+	hidden := HiddenObjectIDs(m)
+	var out []BoulderState
+	for slot := spriteFirstSlot; slot <= spriteLastSlot; slot++ {
+		data1 := sym.SpritePlayerStateData1 + uint16(slot)*spriteSlotSize
+		if m.U8(data1+spritePictureID) != BoulderPictureID || hidden[uint8(slot)] {
 			continue
 		}
-		out = append(out, BoulderState{Slot: sprite.Slot, X: sprite.X, Y: sprite.Y})
+		data2 := sym.SpriteStateData2 + uint16(slot)*spriteSlotSize
+		out = append(out, BoulderState{Slot: slot, X: int(m.U8(data2+spriteMapX)) - 4, Y: int(m.U8(data2+spriteMapY)) - 4})
 	}
 	return out
 }

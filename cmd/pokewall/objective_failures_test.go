@@ -111,3 +111,103 @@ func TestObjectiveFailureIdentityKeepsMapsDistinct(t *testing.T) {
 		t.Fatalf("map-local failures collapsed to one key %s", ka)
 	}
 }
+
+func TestReportObjectiveFailureRedeliversCompleteOutboxWhenIssueLinkMissing(t *testing.T) {
+	var calls int
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"issue":      map[string]any{"id": "92", "issue_number": 92, "status": "open"},
+			"occurrence": map[string]any{"id": "occ-orphan", "external_id": "occ-orphan"},
+			"automation": map[string]any{"status": "captured"},
+		})
+	}))
+	t.Cleanup(ao.Close)
+
+	failure := farm.ObjectiveFailure{
+		Objective:     "recover from repeated objective failures",
+		Error:         "failure recovery budget was exhausted",
+		Count:         1,
+		Map:           0x1d,
+		Blocking:      true,
+		TerminalCount: 1,
+	}
+	dump := farm.FinishReport{RunID: "run-orphan", Attempt: 1, Reason: "failed"}
+
+	key, _, _, err := objectiveFailureFingerprint(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
+
+	w := NewWall(t.TempDir())
+	w.issues = newIssueClient(ao.URL, "proj", "https://github.com/maestroi/PokePilot", time.Second)
+	w.outbox[ext] = outboxEntry{
+		ExternalID: ext,
+		RunID:      dump.RunID,
+		Attempt:    dump.Attempt,
+		Key:        key,
+		Status:     outboxComplete,
+	}
+
+	if err := w.reportObjectiveFailure(dump, failure); err != nil {
+		t.Fatalf("reportObjectiveFailure: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("issue reports = %d, want 1", calls)
+	}
+
+	w.mu.Lock()
+	link := w.issueLinks[key]
+	entry := w.outbox[ext]
+	w.mu.Unlock()
+	if link.IssueNumber != 92 || link.IssueID != "92" {
+		t.Fatalf("issue link = %+v, want issue 92", link)
+	}
+	if entry.Status != outboxComplete {
+		t.Fatalf("outbox = %+v, want complete", entry)
+	}
+}
+
+func TestReportObjectiveFailureKeepsCompleteOutboxIdempotentWithIssueLink(t *testing.T) {
+	var calls int
+	ao := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	t.Cleanup(ao.Close)
+
+	failure := farm.ObjectiveFailure{
+		Objective:     "recover from repeated objective failures",
+		Error:         "failure recovery budget was exhausted",
+		Count:         1,
+		Map:           0x1d,
+		Blocking:      true,
+		TerminalCount: 1,
+	}
+	dump := farm.FinishReport{RunID: "run-linked", Attempt: 1, Reason: "failed"}
+	key, fp, _, err := objectiveFailureFingerprint(failure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := objectiveFailureExternalID(dump.RunID, dump.Attempt, key)
+
+	w := NewWall(t.TempDir())
+	w.issues = newIssueClient(ao.URL, "proj", "https://github.com/maestroi/PokePilot", time.Second)
+	w.issueLinks[key] = IssueLink{IssueID: "91", IssueNumber: 91, Fingerprint: fp, Status: "open"}
+	w.outbox[ext] = outboxEntry{
+		ExternalID: ext,
+		RunID:      dump.RunID,
+		Attempt:    dump.Attempt,
+		Key:        key,
+		Status:     outboxComplete,
+	}
+
+	if err := w.reportObjectiveFailure(dump, failure); err != nil {
+		t.Fatalf("reportObjectiveFailure: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("issue reports = %d, want 0", calls)
+	}
+}

@@ -5,19 +5,25 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/maestroi/pokepilot/agent"
 )
 
 type output struct {
-	Model      string           `json:"model"`
-	PromptHash string           `json:"prompt_hash"`
-	Goal       string           `json:"goal"`
-	Score      float64          `json:"score"`
-	Report     agent.EvalReport `json:"report"`
-	Transport  int              `json:"transport_errors"`
-	Rejected   int              `json:"rejected_replies"`
-	Fallbacks  int              `json:"fallback_replies"`
+	Backend          string           `json:"backend"`
+	Model            string           `json:"model"`
+	PromptHash       string           `json:"prompt_hash"`
+	Goal             string           `json:"goal"`
+	Score            float64          `json:"score"`
+	Seconds          float64          `json:"seconds"`
+	PromptTokens     int              `json:"prompt_tokens,omitempty"`
+	CompletionTokens int              `json:"completion_tokens,omitempty"`
+	Report           agent.EvalReport `json:"report"`
+	Transport        int              `json:"transport_errors"`
+	Rejected         int              `json:"rejected_replies"`
+	Fallbacks        int              `json:"fallback_replies"`
 }
 
 func main() {
@@ -29,12 +35,28 @@ func run() int {
 	jsonOut := flag.Bool("json", false, "write the report as JSON")
 	minScore := flag.Float64("min-score", 0, "exit 1 when score is below this 0..1 threshold; 0 only measures")
 	goal := flag.String("goal", "Make safe, efficient progress toward completing Pokemon Red.", "task statement supplied to the planner for every fixture")
-	model := flag.String("model", "", "override POKEPILOT_LLM_MODEL for this run")
-	baseURL := flag.String("url", "", "override POKEPILOT_LLM_URL for this run")
+	backend := flag.String("backend", "llm", "planner backend: llm, decision, or jev")
+	model := flag.String("model", "", "override the selected backend model for this run")
+	baseURL := flag.String("url", "", "override the selected backend URL for this run")
+	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for typed backends, reject choices below this 0..1 confidence; 0 scores every valid decision")
+	suite := flag.String("suite", "planner", "fixture suite: planner (objective selection) or battle (typed battle turns; decision or jev backend only)")
 	flag.Parse()
 
 	if *minScore < 0 || *minScore > 1 {
 		fmt.Fprintln(os.Stderr, "agent-eval: -min-score must be between 0 and 1")
+		return 2
+	}
+	if *decisionMinConfidence < 0 || *decisionMinConfidence > 1 {
+		fmt.Fprintln(os.Stderr, "agent-eval: -decision-min-confidence must be between 0 and 1")
+		return 2
+	}
+
+	switch strings.ToLower(strings.TrimSpace(*suite)) {
+	case "", "planner":
+	case "battle":
+		return runBattleSuite(*backend, *model, *baseURL, *decisionMinConfidence, *minScore, *list, *jsonOut)
+	default:
+		fmt.Fprintf(os.Stderr, "agent-eval: unknown -suite %q; want planner or battle\n", *suite)
 		return 2
 	}
 
@@ -57,26 +79,96 @@ func run() int {
 		return 0
 	}
 
-	p := agent.NewLLMPlanner()
-	if *model != "" {
-		p.Model = *model
+	var (
+		planner         agent.Planner
+		llmPlanner      *agent.LLMPlanner
+		decisionPlanner *agent.DecisionObjectivePlanner
+		backendName     string
+		modelName       string
+		promptHash      string
+	)
+	switch strings.ToLower(strings.TrimSpace(*backend)) {
+	case "", "llm", "generative":
+		llmPlanner = agent.NewLLMPlanner()
+		if *model != "" {
+			llmPlanner.Model = *model
+		}
+		if *baseURL != "" {
+			llmPlanner.BaseURL = *baseURL
+		}
+		llmPlanner.Goal = *goal
+		llmPlanner.Log = os.Stderr
+		planner = llmPlanner
+		backendName = "llm"
+		modelName = llmPlanner.Model
+		promptHash = llmPlanner.PromptHash()
+	case "decision", "typed", "system-one", "system_one":
+		engine := agent.NewOpenAIDecisionEngineFromEnv()
+		if *model != "" {
+			engine.Model = *model
+		}
+		if *baseURL != "" {
+			engine.BaseURL = *baseURL
+		}
+		decisionPlanner = &agent.DecisionObjectivePlanner{
+			Engine:        engine,
+			Goal:          *goal,
+			MinConfidence: *decisionMinConfidence,
+		}
+		planner = decisionPlanner
+		backendName = "decision"
+		modelName = engine.Model
+		promptHash = agent.DecisionPromptHash()
+	case "jev", "typesafe", "typesafe-jev":
+		engine := agent.NewJevDecisionEngineFromEnv()
+		if *model != "" {
+			engine.Model = *model
+		}
+		if *baseURL != "" {
+			engine.BaseURL = *baseURL
+		}
+		decisionPlanner = &agent.DecisionObjectivePlanner{
+			Engine:        engine,
+			Goal:          *goal,
+			MinConfidence: *decisionMinConfidence,
+		}
+		planner = decisionPlanner
+		backendName = "jev"
+		modelName = engine.Model
+		promptHash = agent.JevDecisionPromptHash()
+	default:
+		fmt.Fprintf(os.Stderr, "agent-eval: unknown -backend %q; want llm, decision, or jev\n", *backend)
+		return 2
 	}
-	if *baseURL != "" {
-		p.BaseURL = *baseURL
-	}
-	p.Goal = *goal
-	p.Log = os.Stderr
 
-	report := agent.EvaluatePlanner(p, cases)
+	started := time.Now()
+	report := agent.EvaluatePlanner(planner, cases)
+	elapsed := time.Since(started)
+	if decisionPlanner != nil && decisionPlanner.Last.Model != "" {
+		modelName = decisionPlanner.Last.Model
+	}
+	promptTokens, completionTokens := 0, 0
+	if usage, ok := planner.(agent.UsagePlanner); ok {
+		promptTokens, completionTokens = usage.Usage()
+	}
 	out := output{
-		Model:      p.Model,
-		PromptHash: p.PromptHash(),
-		Goal:       p.Goal,
-		Score:      report.Score(),
-		Report:     report,
-		Transport:  p.Health.Transport,
-		Rejected:   p.Health.Rejected,
-		Fallbacks:  p.Health.Fallbacks,
+		Backend:          backendName,
+		Model:            modelName,
+		PromptHash:       promptHash,
+		Goal:             *goal,
+		Score:            report.Score(),
+		Seconds:          elapsed.Seconds(),
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		Report:           report,
+	}
+	if llmPlanner != nil {
+		out.Transport = llmPlanner.Health.Transport
+		out.Rejected = llmPlanner.Health.Rejected
+		out.Fallbacks = llmPlanner.Health.Fallbacks
+	}
+	if decisionPlanner != nil {
+		out.Rejected = decisionPlanner.Rejected
 	}
 
 	if *jsonOut {
@@ -87,18 +179,18 @@ func run() int {
 			return 2
 		}
 	} else {
-		fmt.Printf("agent-eval: %d/%d passed (score %.3f) model=%s prompt=%s\n",
-			report.Passed, report.Cases, report.Score(), p.Model, p.PromptHash())
+		fmt.Printf("agent-eval: %d/%d passed (score %.3f) backend=%s model=%s prompt=%s elapsed=%s\n",
+			report.Passed, report.Cases, report.Score(), out.Backend, out.Model, out.PromptHash, elapsed.Round(time.Millisecond))
 		for _, failure := range report.FailureSummary() {
 			fmt.Printf("FAIL %s\n", failure)
 		}
-		fmt.Printf("health: transport=%d rejected=%d fallbacks=%d\n",
-			p.Health.Transport, p.Health.Rejected, p.Health.Fallbacks)
+		fmt.Printf("health: transport=%d rejected=%d fallbacks=%d tokens=%d/%d\n",
+			out.Transport, out.Rejected, out.Fallbacks, out.PromptTokens, out.CompletionTokens)
 	}
 
 	// Transport failures are infrastructure failures, not planner quality.
 	// Keep them distinct from a low strategic score for scripts and sweeps.
-	if p.Health.Transport > 0 {
+	if out.Transport > 0 {
 		return 2
 	}
 	if report.Score() < *minScore {
