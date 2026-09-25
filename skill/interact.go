@@ -271,7 +271,7 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 
 	const attempts = 4
 	for attempt := 1; attempt <= attempts; attempt++ {
-		tx, ty, facing, err := faceLiveMapObject(m, decoder, romData, h, objectID, homeX, homeY, policy)
+		tx, ty, facing, err := faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
 		if err != nil {
 			return 0, err
 		}
@@ -338,7 +338,15 @@ func mapObjectSlotWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData
 // facing is false when the NPC wandered out of reach during the approach;
 // the caller waits and re-approaches. The returned tile is the object's live
 // position the player now faces.
-func faceLiveMapObject(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+func faceLiveMapObject(m *emu.Emu, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return homeX, homeY, false, err
+	}
+	return faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+}
+
+func faceLiveMapObjectWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, objectID int, homeX, homeY uint8, policy MovePolicy) (uint8, uint8, bool, error) {
 	tx, ty := homeX, homeY
 	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 		tx, ty = liveX, liveY
