@@ -198,7 +198,7 @@ func gen1MoveOptions(romData []byte, b game.BattleState) []game.BattleMoveOption
 		}
 		opt := game.BattleMoveOption{Slot: i, Move: gen1MoveID(mv.ID), PP: int(mv.PP)}
 		switch {
-		case b.DisabledMove == uint8(i+1):
+		case mv.Disabled:
 			opt.Unusable = game.BattleUnusableDisabled
 		case mv.PP == 0:
 			opt.Unusable = game.BattleUnusableNoPP
