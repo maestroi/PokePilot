@@ -53,3 +53,26 @@ func TestIsSafariHabitatMapOnlyAcceptsOutdoorAreas(t *testing.T) {
 		}
 	}
 }
+
+func TestSafariCatchStopsBeforeUnaffordableReentry(t *testing.T) {
+	tests := []struct {
+		name    string
+		session int
+		inZone  bool
+		money   uint32
+		want    bool
+	}{
+		{name: "initial underfunding stays an entry error", session: 1, money: safariCatchEntryFee - 1, want: false},
+		{name: "second session cannot be funded", session: 2, money: safariCatchEntryFee - 1, want: true},
+		{name: "second session can be funded", session: 2, money: safariCatchEntryFee, want: false},
+		{name: "active session needs no new fee", session: 2, inZone: true, money: 0, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := safariCatchReentryUnaffordable(tt.session, tt.inZone, tt.money); got != tt.want {
+				t.Fatalf("safariCatchReentryUnaffordable(%d, %v, %d) = %v, want %v",
+					tt.session, tt.inZone, tt.money, got, tt.want)
+			}
+		})
+	}
+}

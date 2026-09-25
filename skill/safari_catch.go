@@ -14,6 +14,7 @@ const (
 	safariCatchSessions       = 3
 	safariCatchTravelAttempts = 8
 	safariCatchLegsPerSession = 500
+	safariCatchEntryFee       = 500
 )
 
 var ErrSafariCatchExhausted = errors.New("skill: SafariCatch: bounded Safari sessions exhausted without the wanted species")
@@ -50,7 +51,15 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 
 	for session := 1; session <= safariCatchSessions; session++ {
 		state.Snapshot(m, &mem)
-		if !state.HasEvent(&mem, eventInSafariZone) {
+		inZone := state.HasEvent(&mem, eventInSafariZone)
+		money := state.DecodeInventory(&mem).Money
+		if safariCatchReentryUnaffordable(session, inZone, money) {
+			return res, fmt.Errorf(
+				"%w: cannot fund Safari session %d after prior bounded session(s); money=%d fee=%d encounters=%d balls=%d",
+				ErrSafariCatchExhausted, session, money, safariCatchEntryFee, res.Encounters, res.BallsThrown,
+			)
+		}
+		if !inZone {
 			if err := enterSafariZone(m, romData, policy); err != nil {
 				return res, fmt.Errorf("skill: SafariCatch: enter session %d: %w", session, err)
 			}
@@ -92,6 +101,16 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 	}
 
 	return res, fmt.Errorf("%w: %d encounter(s), %d Safari Ball(s) thrown at wanted targets", ErrSafariCatchExhausted, res.Encounters, res.BallsThrown)
+}
+
+// safariCatchReentryUnaffordable distinguishes an exhausted paid hunt from an
+// invalid initial request. The planner only promises enough money for one
+// Safari entry; SafariCatch may opportunistically use more. Once at least one
+// bounded session has been consumed, being outside the Zone without another
+// entry fee is therefore an ordinary hunt exhaustion rather than a gate
+// controller failure. An already-active session remains usable even at ¥0.
+func safariCatchReentryUnaffordable(session int, inZone bool, money uint32) bool {
+	return session > 1 && !inZone && money < safariCatchEntryFee
 }
 
 func isSafariHabitatMap(mapID uint8) bool {
