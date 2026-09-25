@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -275,30 +276,6 @@ func boulderAhead(mem *state.Mem) bool {
 	return false
 }
 
-func validateFieldActionContext(mem *state.Mem, spec FieldMoveSpec) error {
-	switch spec.Move {
-	case FieldCut:
-		if tile := mem.U8(sym.TileInFrontOfPlayer); !cuttableFrontTile(tile) {
-			return fmt.Errorf("tile in front is %#02x, not a Cut tree", tile)
-		}
-	case FieldStrength:
-		if !boulderAhead(mem) {
-			return fmt.Errorf("no boulder is directly in front of the player")
-		}
-	case FieldSurf:
-		if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
-			return fmt.Errorf("player is already surfing")
-		}
-	case FieldFlash:
-		if mem.U8(sym.MapPalOffset) == 0 {
-			return fmt.Errorf("current area is already lit")
-		}
-	case FieldFly:
-		return fmt.Errorf("Fly requires a destination selection; use a destination-aware transition")
-	}
-	return nil
-}
-
 // FieldActionResult is the positively observed result of UseFieldMove.
 type FieldActionResult struct {
 	Move           FieldMove
@@ -309,33 +286,15 @@ type FieldActionResult struct {
 	Lit            bool
 }
 
-func fieldActionEffectObserved(mem *state.Mem, spec FieldMoveSpec) bool {
-	switch spec.Move {
-	case FieldCut:
-		return mem.U8(sym.ActionResult) == 1
-	case FieldSurf:
-		return mem.U8(sym.ActionResult) == 1 && mem.U8(sym.WalkBikeSurfState) == fieldSurfingState
-	case FieldStrength:
-		return mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0
-	case FieldFlash:
-		return mem.U8(sym.MapPalOffset) == 0
-	default:
-		return false
-	}
-}
-
-func fieldActionComplete(mem *state.Mem, spec FieldMoveSpec) bool {
-	return fieldActionEffectObserved(mem, spec) && state.Controllable(mem)
-}
-
 // settleFieldAction waits for the ROM-side effect and for control to return.
 // Field moves may print ordinary text after changing state (Strength is the
 // important case). Page those text boxes with A, but never select an open menu
 // blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
-func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec) error {
+func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
 		state.Snapshot(m, mem)
-		if fieldActionComplete(mem, spec) {
+		runtime := decoder.DecodeFieldAction(m)
+		if fieldActionCompleteState(runtime, spec) {
 			return nil
 		}
 		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(mem) {
@@ -344,7 +303,7 @@ func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec) error {
 		}
 		// A failed field action returns to the overworld without the positive
 		// effect. Once that has happened there is nothing useful to wait for.
-		if spent >= 50 && state.Controllable(mem) && !fieldActionEffectObserved(mem, spec) {
+		if spent >= 50 && runtime.Controllable && !fieldActionEffectObservedState(runtime, spec) {
 			return fmt.Errorf("field move returned to the overworld without its expected effect")
 		}
 		m.StepFrames(10)
@@ -363,16 +322,19 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 	if !ok {
 		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
 	}
-
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if !state.Controllable(&mem) {
+	decoder, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return FieldActionResult{}, err
+	}
+	runtime := decoder.DecodeFieldAction(m)
+	if !runtime.Controllable {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: player is not controllable", spec.Name)
 	}
-	if err := validateFieldActionContext(&mem, spec); err != nil {
+	if err := validateFieldActionRuntime(runtime, spec); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: invalid context: %w", spec.Name, err)
 	}
 
+	var mem state.Mem
 	slot, err := EnsureFieldMove(m, move)
 	if err != nil {
 		return FieldActionResult{}, err
@@ -397,26 +359,20 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: select field move: %w", spec.Name, err)
 	}
 	m.StepFrames(30)
-	if err := settleFieldAction(m, &mem, spec); err != nil {
+	if err := settleFieldAction(m, &mem, spec, decoder); err != nil {
 		state.Snapshot(m, &mem)
+		runtime = decoder.DecodeFieldAction(m)
 		closeErr := closeToOverworld(m)
 		if closeErr != nil {
-			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q; cleanup: %v",
-				spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem), closeErr)
+			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q; cleanup: %v",
+				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem), closeErr)
 		}
-		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; action=%d surfing=%d strength=%#02x palette=%d screen=%q",
-			spec.Name, err, mem.U8(sym.ActionResult), mem.U8(sym.WalkBikeSurfState), mem.U8(sym.StatusFlags1), mem.U8(sym.MapPalOffset), state.ScreenText(&mem))
+		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q",
+			spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem))
 	}
 
-	state.Snapshot(m, &mem)
-	return FieldActionResult{
-		Move:           move,
-		PartySlot:      slot,
-		ActionResult:   mem.U8(sym.ActionResult),
-		Surfing:        mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
-		StrengthActive: mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
-		Lit:            mem.U8(sym.MapPalOffset) == 0,
-	}, nil
+	runtime = decoder.DecodeFieldAction(m)
+	return fieldActionResultFromState(move, slot, runtime), nil
 }
 
 // TeachSurf and TeachStrength are compatibility-sized entry points for story
