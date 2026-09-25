@@ -17,9 +17,16 @@ import (
 
 const (
 	redOverworldTileset uint8 = 0x00
+	redForestTileset    uint8 = 0x03
+	redShipPortTileset  uint8 = 0x0e
+	redPlateauTileset   uint8 = 0x17
 	redWaterTile        uint8 = 0x14
 	redCutTreeTile      uint8 = 0x3d
 	redGrassTile        uint8 = 0x52
+	redGroundTile       uint8 = 0x2c
+	redPavedTile        uint8 = 0x23
+	redForestGrassTile  uint8 = 0x20
+	redForestGroundTile uint8 = 0x30
 	liveMapBorderBlocks       = 3
 
 	tileSign protocol.TileKind = "sign"
@@ -227,7 +234,17 @@ func semanticTerrainCell(tileset uint8, grid *world.Grid, x, y int, ledgeOverTil
 	field, fieldOK := grid.FieldTile(x, y)
 	collision, collisionOK := grid.Tile(x, y)
 	_, ledge := ledgeOverTiles[collision]
-	return protocol.TileCell{Kind: semanticTerrainKind(tileset, grid.Walkable(x, y), field, fieldOK, collision, collisionOK, ledge)}
+	cell := protocol.TileCell{Kind: semanticTerrainKind(tileset, grid.Walkable(x, y), field, fieldOK, collision, collisionOK, ledge)}
+	if tileset == redOverworldTileset && cell.Kind == protocol.TilePath && fieldOK && field == redPavedTile {
+		cell.Variant = "paved"
+	}
+	if tileset == redOverworldTileset && cell.Kind == protocol.TileGrass && fieldOK && field == redGrassTile {
+		cell.Variant = "tall"
+	}
+	if cell.Kind == protocol.TileWall && tileset != redOverworldTileset && tileset != redForestTileset && tileset != redShipPortTileset && tileset != redPlateauTileset {
+		cell.Variant = "interior"
+	}
+	return cell
 }
 
 func semanticTerrainKind(tileset uint8, walkable bool, field uint8, fieldOK bool, collision uint8, collisionOK bool, ledge bool) protocol.TileKind {
@@ -240,12 +257,27 @@ func semanticTerrainKind(tileset uint8, walkable bool, field uint8, fieldOK bool
 		return protocol.TileWater
 	case tileset == redOverworldTileset && matches(redCutTreeTile):
 		return protocol.TileTree
+	case tileset == redOverworldTileset && !walkable && fieldOK && collisionOK &&
+		((field == 0x2a && collision == 0x3a) || (field == 0x40 && collision == 0x50)):
+		// The two blocked tree-block faces used by the Red overworld blockset.
+		return protocol.TileTree
 	case tileset == redOverworldTileset && matches(redGrassTile):
+		return protocol.TileGrass
+	case tileset == redOverworldTileset && walkable && fieldOK && field == redGroundTile:
+		return protocol.TileGrass
+	case tileset == redForestTileset && matches(redForestGrassTile):
+		return protocol.TileGrass
+	case tileset == redForestTileset && walkable && fieldOK && field == redForestGroundTile:
 		return protocol.TileGrass
 	case ledge:
 		return protocol.TileLedge
 	case walkable:
-		return protocol.TilePath
+		if tileset == redOverworldTileset || tileset == redForestTileset || tileset == redShipPortTileset || tileset == redPlateauTileset {
+			return protocol.TilePath
+		}
+		return protocol.TileFloor
+	case tileset == redForestTileset:
+		return protocol.TileTree
 	default:
 		return protocol.TileWall
 	}

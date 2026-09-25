@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -9,6 +11,9 @@ import {
   resolveRenderTheme,
   validateThemePack
 } from '../src/shared/renderTheme.ts'
+import { parseTileImageReference } from '../src/shared/tileAssets.ts'
+import townProvenance from '../public/theme-assets/kenney-tiny-town/provenance.json' with { type: 'json' }
+import dungeonProvenance from '../public/theme-assets/kenney-tiny-dungeon/provenance.json' with { type: 'json' }
 
 function minimalTheme(overrides: Record<string, unknown> = {}) {
   return {
@@ -28,10 +33,10 @@ function minimalTheme(overrides: Record<string, unknown> = {}) {
 
 test('bundled theme packs are installed and independently selectable', () => {
   const options = renderThemeOptions()
-  assert.equal(options.length >= 2, true)
+  assert.equal(options.length >= 3, true)
   assert.deepEqual(
     options.map((theme) => theme.id).sort(),
-    ['retro-16', 'rompilot-modern']
+    ['kenney-tiny-town', 'retro-16', 'rompilot-modern']
   )
 
   const modern = resolveRenderTheme('rompilot-modern').theme
@@ -39,6 +44,33 @@ test('bundled theme packs are installed and independently selectable', () => {
   assert.notEqual(modern.id, retro.id)
   assert.notEqual(modern.tiles.path.fill, retro.tiles.path.fill)
   assert.notEqual(modern.tileSize, retro.tileSize)
+  const kenney = resolveRenderTheme('kenney-tiny-town').theme
+  assert.ok(kenney.assets.tiles['path.center'])
+})
+
+test('Kenney atlas references stay inside their licensed bundled images', () => {
+  const theme = resolveRenderTheme('kenney-tiny-town').theme
+  const atlases = new Map([
+    ['/theme-assets/kenney-tiny-town/tilemap.png', townProvenance],
+    ['/theme-assets/kenney-tiny-dungeon/tilemap.png', dungeonProvenance]
+  ])
+  const dimensions = new Map<string, { width: number; height: number }>()
+  for (const [url, provenance] of atlases) {
+    const image = readFileSync(new URL(`../public${url}`, import.meta.url))
+    const digest = createHash('sha256').update(image).digest('hex')
+    assert.equal(`sha256:${digest}`, provenance.files['tilemap.png'])
+    assert.equal(provenance.license, 'CC0-1.0')
+    dimensions.set(url, { width: image.readUInt32BE(16), height: image.readUInt32BE(20) })
+  }
+  for (const reference of Object.values(theme.assets.tiles).concat(Object.values(theme.assets.objects))) {
+    const tile = parseTileImageReference(reference)
+    assert.ok(tile)
+    const atlas = dimensions.get(tile.url)
+    assert.ok(atlas)
+    assert.ok(tile?.source)
+    assert.ok(tile.source.x + tile.source.size <= atlas.width)
+    assert.ok(tile.source.y + tile.source.size <= atlas.height)
+  }
 })
 
 test('missing optional semantic assets inherit from the default theme', () => {

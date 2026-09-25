@@ -24,10 +24,17 @@ func TestSemanticTerrainKindUsesRedOwnedTileMeaning(t *testing.T) {
 	}{
 		{name: "water", walkable: false, collision: redWaterTile, collOK: true, want: protocol.TileWater},
 		{name: "overworld tree", tileset: redOverworldTileset, field: redCutTreeTile, fieldOK: true, want: protocol.TileTree},
+		{name: "overworld tree block face one", tileset: redOverworldTileset, field: 0x2a, fieldOK: true, collision: 0x3a, collOK: true, want: protocol.TileTree},
+		{name: "overworld tree block face two", tileset: redOverworldTileset, field: 0x40, fieldOK: true, collision: 0x50, collOK: true, want: protocol.TileTree},
 		{name: "overworld grass", tileset: redOverworldTileset, field: redGrassTile, fieldOK: true, walkable: true, want: protocol.TileGrass},
-		{name: "same byte is not a tree in another tileset", tileset: 3, field: redCutTreeTile, fieldOK: true, want: protocol.TileWall},
+		{name: "overworld ground", tileset: redOverworldTileset, field: redGroundTile, fieldOK: true, walkable: true, want: protocol.TileGrass},
+		{name: "forest grass", tileset: redForestTileset, field: redForestGrassTile, fieldOK: true, walkable: true, want: protocol.TileGrass},
+		{name: "forest ground", tileset: redForestTileset, field: redForestGroundTile, fieldOK: true, walkable: true, want: protocol.TileGrass},
+		{name: "forest canopy", tileset: redForestTileset, collision: 0xee, collOK: true, want: protocol.TileTree},
+		{name: "indoor floor", tileset: 7, field: 0xee, fieldOK: true, walkable: true, want: protocol.TileFloor},
+		{name: "same byte is not a tree in another tileset", tileset: 2, field: redCutTreeTile, fieldOK: true, want: protocol.TileWall},
 		{name: "ledge from ROM ledge table", tileset: redOverworldTileset, collision: 0x2c, collOK: true, ledge: true, want: protocol.TileLedge},
-		{name: "unknown walkable tile", tileset: 7, field: 0xee, fieldOK: true, walkable: true, want: protocol.TilePath},
+		{name: "outdoor walkable tile", tileset: redPlateauTileset, field: 0xee, fieldOK: true, walkable: true, want: protocol.TilePath},
 		{name: "unknown blocked tile", tileset: 7, collision: 0xee, collOK: true, want: protocol.TileWall},
 	}
 	for _, tt := range tests {
@@ -169,6 +176,20 @@ func TestStaticMapReconstructsPalletAndViridianSemantically(t *testing.T) {
 			}
 			if len(layers[0].Cells) != tt.wantWidth*tt.wantHeight {
 				t.Fatalf("terrain cells = %d", len(layers[0].Cells))
+			}
+			if tt.mapID == 0x00 {
+				ground, paved := 0, 0
+				for _, cell := range layers[0].Cells {
+					if cell.Kind == protocol.TileGrass {
+						ground++
+					}
+					if cell.Kind == protocol.TilePath && cell.Variant == "paved" {
+						paved++
+					}
+				}
+				if ground == 0 || paved == 0 {
+					t.Fatalf("Pallet presentation ground=%d paved=%d", ground, paved)
+				}
 			}
 			warps := 0
 			for _, cell := range layers[1].Cells {

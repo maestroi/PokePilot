@@ -1,5 +1,6 @@
 import modernManifest from './themes/rompilot-modern.json' with { type: 'json' }
 import retroManifest from './themes/retro-16.json' with { type: 'json' }
+import kenneyManifest from './themes/kenney-tiny-town.json' with { type: 'json' }
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
 export const DEFAULT_RENDER_THEME_ID = 'rompilot-modern'
@@ -344,6 +345,7 @@ function installBundled(input: unknown, makeDefault = false): void {
 
 installBundled(modernManifest, true)
 installBundled(retroManifest)
+installBundled(kenneyManifest)
 
 export function renderThemeOptions(): RenderThemeManifest[] {
   return renderThemeRegistry.list()
