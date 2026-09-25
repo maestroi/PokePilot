@@ -71,7 +71,7 @@ func TestRoute12SnorlaxRequiresReachablePort(t *testing.T) {
 	if trainerSlot == 0 {
 		t.Fatal("Route 13 object at (12,4) is missing")
 	}
-	observed := observedStationaryObjectBlockers(h13, []state.SpriteState{{Slot: trainerSlot, X: 12, Y: 4}})
+	observed := observedStationaryObjectBlockers(h13, []gameruntime.LiveMapObject{{Slot: trainerSlot, X: 12, Y: 4}})
 	g, err = overlayObservedMapTopology(g, grid13, h13, observed)
 	if err != nil {
 		t.Fatalf("overlay Route 13: %v", err)
@@ -145,7 +145,7 @@ func TestRoute13TrainerPocketRoutesOldRodHouseViaRoute14(t *testing.T) {
 	if trainerSlot == 0 {
 		t.Fatal("Route 13 object at (12,4) is missing")
 	}
-	observed := observedStationaryObjectBlockers(h, []state.SpriteState{{Slot: trainerSlot, X: 12, Y: 4}})
+	observed := observedStationaryObjectBlockers(h, []gameruntime.LiveMapObject{{Slot: trainerSlot, X: 12, Y: 4}})
 	g, err = overlayObservedMapTopology(g, grid, h, observed)
 	if err != nil {
 		t.Fatalf("overlay: %v", err)

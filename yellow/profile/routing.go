@@ -13,3 +13,7 @@ func (*Profile) MapProvider(romData []byte) worldmodel.MapHeaderProvider {
 func (*Profile) DecodeLiveTopology(r game.MemoryReader) (game.LiveTopologyState, error) {
 	return engine.DecodeLiveTopology(r)
 }
+
+func (*Profile) ElevatorTransitionReady(r game.MemoryReader, transition game.ElevatorTransition) bool {
+	return engine.ElevatorTransitionReady(r, transition)
+}

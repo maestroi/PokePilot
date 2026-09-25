@@ -3,6 +3,7 @@ package skill
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 )
@@ -14,7 +15,7 @@ func TestObservedStationaryObjectBlockers(t *testing.T) {
 		{X: 6, Y: 7, Movement: rom.MovementWalk},
 		{X: 8, Y: 9, Movement: rom.MovementWalk},
 	}}
-	live := []state.SpriteState{
+	live := []game.LiveMapObject{
 		{Slot: 1, X: 2, Y: 3},
 		{Slot: 3, X: 6, Y: 7},
 		// A different, moving object happens to occupy hidden stationary

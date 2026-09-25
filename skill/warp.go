@@ -7,8 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -143,7 +141,11 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 // blockers that the collision grid cannot represent, while keeping Traverse
 // itself map-agnostic.
 func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
-	cur := m.Peek8(sym.CurMap)
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return err
+	}
+	cur := live.Map
 	if cur != e.From {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
 	}
@@ -170,7 +172,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 		deadCrossings := map[[2]int]bool{}
 		var lastDead error
 		banCrossing := func() {
-			x, y := playerXY(m)
+			x, y := routingPlayerXY(m)
 			deadCrossings[[2]int{int(x), int(y)}] = true
 			// A Surf mount on the failed tile changes which grid applies.
 			if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
@@ -297,7 +299,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				// interrupted walk stopped: which warp tile is reachable is a
 				// fact about where the player stands right now, never a property
 				// of the map or the warp, so it is never cached.
-				x, y := playerXY(m)
+				x, y := routingPlayerXY(m)
 				blocked = mergeBlockedTiles(blocked, extraBlocked)
 				rx, ry, steps, p, err := warpTarget(h, e, grid, int(x), int(y), blocked, excludeWarp, romData)
 				if err != nil {
@@ -338,7 +340,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 			// as one on the walk to an edge, and Travel (and the llm loop) rely
 			// on ErrBattle to fight it and re-plan from where the walk stopped.
 			if errors.Is(err, ErrBattleInterrupted) {
-				x, y := playerXY(m)
+				x, y := routingPlayerXY(m)
 				return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
 			}
 			return fmt.Errorf("skill: Traverse: walk to warp on map %02x: %w", e.From, err)
@@ -365,7 +367,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 		// that leads back out through it.
 		tried := map[[2]int]bool{}
 		for attempt := 0; attempt < maxWarpApproachAttempts; attempt++ {
-			ax, ay := playerXY(m)
+			ax, ay := routingPlayerXY(m)
 			tried[[2]int{int(ax), int(ay)}] = true
 
 			btn, ok := buttonFor(push)
@@ -385,14 +387,14 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 			if !ok {
 				break
 			}
-			x, y := playerXY(m)
+			x, y := routingPlayerXY(m)
 			steps, ferr := world.FindPath(grid, int(x), int(y), nx, ny, nil)
 			if ferr != nil {
 				break
 			}
 			if werr := WalkPath(m, steps); werr != nil {
 				if errors.Is(werr, ErrBattleInterrupted) {
-					px, py := playerXY(m)
+					px, py := routingPlayerXY(m)
 					return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, px, py, ErrBattle)
 				}
 				break
@@ -431,7 +433,7 @@ func walkToConnectionEdge(m *emu.Emu, h worldmodel.HeaderView, grid *world.Grid,
 	var unwalkable error
 	err := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			x, y := playerXY(m)
+			x, y := routingPlayerXY(m)
 			// A connection edge is ordinary ground, not a door, but the path
 			// to it can still cross another warp tile of this same map (the
 			// Cerulean Badge House's front door sits right in the plaza).
@@ -467,7 +469,7 @@ func walkToConnectionEdge(m *emu.Emu, h worldmodel.HeaderView, grid *world.Grid,
 		// Normalize to ErrBattle like walkWithinMap does, so a caller
 		// can test one sentinel no matter which layer was walking.
 		if errors.Is(err, ErrBattleInterrupted) {
-			x, y := playerXY(m)
+			x, y := routingPlayerXY(m)
 			return world.Step{}, fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, x, y, ErrBattle)
 		}
 		return world.Step{}, fmt.Errorf("skill: Traverse: walk to edge on map %02x: %w", e.From, err)
@@ -493,11 +495,20 @@ var errDidNotCross = errors.New("skill: Traverse: did not cross within budget")
 // tile, where no second encounter can fire because the player is already
 // standing on the grass.
 func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
 	startFainted := partyAllFainted(m)
 	m.Press(btn)
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
-		if m.Peek8(sym.CurMap) != e.From {
+		live, liveErr := routingRuntimeStateWithDecoder(m, decoder)
+		if liveErr != nil {
+			m.Release(btn)
+			return liveErr
+		}
+		if live.Map != e.From {
 			if startFainted {
 				m.Release(btn)
 				if err := waitForFaintRespawn(m, e.From, true); err != nil {
@@ -507,19 +518,18 @@ func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
 			crossed = true
 			break
 		}
-		if m.Peek8(sym.IsInBattle) != 0 {
+		if live.InBattle {
 			m.Release(btn)
-			x, y := playerXY(m)
 			return fmt.Errorf("skill: Traverse: %s: battle on map %02x at (%d,%d): %w",
-				edgeName(e), e.From, x, y, ErrBattle)
+				edgeName(e), e.From, live.X, live.Y, ErrBattle)
 		}
 		m.StepFrame()
 	}
 	m.Release(btn)
 	if !crossed {
-		x, y := playerXY(m)
+		live, _ := routingRuntimeStateWithDecoder(m, decoder)
 		return fmt.Errorf("skill: Traverse: %s did not cross within %d frames; still on map %02x at (%d,%d): %w",
-			edgeName(e), crossBudget, m.Peek8(sym.CurMap), x, y, errDidNotCross)
+			edgeName(e), crossBudget, live.Map, live.X, live.Y, errDidNotCross)
 	}
 	return nil
 }
@@ -527,51 +537,40 @@ func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
 // finishArrival waits for the destination map to load and the position to
 // settle after a successful pushAcrossEdge.
 func finishArrival(m *emu.Emu, e world.Edge) error {
-	// Positive arrival facts: a map is actually loaded (non-zero dimensions,
-	// part of Controllable) and the player is controllable on it.
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
 	if _, err := m.StepUntil(arriveBudget, func(m *emu.Emu) bool {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		return state.Controllable(&mem)
+		return decoder.DecodeOverworld(m).Controllable
 	}); err != nil {
-		x, y := playerXY(m)
+		live, _ := routingRuntimeStateWithDecoder(m, decoder)
 		return fmt.Errorf("skill: Traverse: %s: player not controllable on map %02x after %d frames at (%d,%d)",
-			edgeName(e), m.Peek8(sym.CurMap), arriveBudget, x, y)
+			edgeName(e), live.Map, arriveBudget, live.X, live.Y)
 	}
 
-	if got := m.Peek8(sym.CurMap); got != e.To {
-		return fmt.Errorf("skill: Traverse: %s: arrived on map %02x, want %02x", edgeName(e), got, e.To)
+	live, err := routingRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return err
 	}
-
-	// After a map flip the tile position is transient: it carries the source
-	// map's warp tile, then the destination's door tile, then the standing
-	// position. Controllable passes before that settles, so wait until the
-	// position has been unchanged for a few consecutive frames.
-	if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
+	if live.Map != e.To {
+		return fmt.Errorf("skill: Traverse: %s: arrived on map %02x, want %02x", edgeName(e), live.Map, e.To)
+	}
+	if err := waitForPositionStableWithDecoder(m, decoder, positionStableBudget, positionStableFrames); err != nil {
 		return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
 	}
 
-	// waitForPositionStable only tracks (x,y): it never re-checks CurMap, so a
-	// forced-scroll script that keeps running after Controllable first flips
-	// true can carry the player back off e.To and let its settling position
-	// on a DIFFERENT map read as "stable". MEASURED on Route 18 -> Route 17
-	// (0x1d -> 0x1c, run-18ou0y2719oq33ly7rpykncxk4): the earlier CurMap check
-	// above passed while Cycling Road's forced downhill descent was still
-	// mid-flight, then that descent pushed the player back across the
-	// boundary onto e.From's exact starting tile, where the position finally
-	// stopped changing. The crossing never actually held, but every check
-	// before this one only ever sampled while it looked like it had. Without
-	// this, GoTo's navigationGuard sees "returned to a state already seen"
-	// and reports an unrecoverable stall instead of the ordinary "this leg
-	// does not hold from here" the router already knows how to route around.
-	if got := m.Peek8(sym.CurMap); got != e.To {
-		x, y := playerXY(m)
-		if got == e.From {
+	live, err = routingRuntimeStateWithDecoder(m, decoder)
+	if err != nil {
+		return err
+	}
+	if live.Map != e.To {
+		if live.Map == e.From {
 			return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
-				edgeName(e), got, x, y, e.To, ErrLegBouncesBack)
+				edgeName(e), live.Map, live.X, live.Y, e.To, ErrLegBouncesBack)
 		}
 		return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
-			edgeName(e), got, x, y, e.To, ErrLegUnwalkable)
+			edgeName(e), live.Map, live.X, live.Y, e.To, ErrLegUnwalkable)
 	}
 	return nil
 }
@@ -579,24 +578,16 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 // waitForPositionStable steps frames until the player's tile position has been
 // unchanged for stableFrames consecutive frames, or the budget is exhausted.
 func waitForPositionStable(m *emu.Emu, budget, stableFrames int) error {
-	lastX, lastY := playerXY(m)
-	stable := 0
-	for i := 0; i < budget; i++ {
-		m.StepFrame()
-		x, y := playerXY(m)
-		if x == lastX && y == lastY {
-			stable++
-			if stable >= stableFrames {
-				return nil
-			}
-		} else {
-			stable = 0
-		}
-		lastX, lastY = x, y
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
 	}
-	x, y := playerXY(m)
-	return fmt.Errorf("position not stable within %d frames on map %02x at (%d,%d)",
-		budget, m.Peek8(sym.CurMap), x, y)
+	if err := waitForPositionStableWithDecoder(m, decoder, budget, stableFrames); err != nil {
+		live, _ := routingRuntimeStateWithDecoder(m, decoder)
+		return fmt.Errorf("position not stable within %d frames on map %02x at (%d,%d): %w",
+			budget, live.Map, live.X, live.Y, err)
+	}
+	return nil
 }
 
 func mergeBlockedTiles(blocked, extra map[[2]int]bool) map[[2]int]bool {
@@ -749,8 +740,12 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 	if e.Kind != world.EdgeWarp {
 		return world.ErrNoPath
 	}
-	if got := m.Peek8(sym.CurMap); got != e.From {
-		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", got, e.From)
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return err
+	}
+	if live.Map != e.From {
+		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", live.Map, e.From)
 	}
 	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
@@ -761,7 +756,7 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 		return world.ErrNoPath
 	}
 
-	sx, sy := playerXY(m)
+	sx, sy := routingPlayerXY(m)
 	blocked := spriteBlockers(m)
 	blocked = warpAvoidance(h, int(sx), int(sy), blocked)
 	blocked = mergeBlockedTiles(blocked, extraBlocked)
@@ -1014,7 +1009,7 @@ func mountSurfFacingPush(m *emu.Emu, romData []byte, push world.Step) error {
 }
 
 func mountSurfFacingPushWithDecoder(m *emu.Emu, fieldActions game.FieldActionDecoder, romData []byte, push world.Step) error {
-	x, y := playerXY(m)
+	x, y := routingPlayerXY(m)
 	tx, ty := int(x)+push.DX, int(y)+push.DY
 	if tx < 0 || tx > 255 || ty < 0 || ty > 255 {
 		return fmt.Errorf("skill: mountSurfFacingPush: facing tile (%d,%d) out of range", tx, ty)
@@ -1036,7 +1031,8 @@ func mountSurfFacingPushWithDecoder(m *emu.Emu, fieldActions game.FieldActionDec
 // warpEdgeReachable reports whether the player can walk onto edge's warp on
 // the live grid right now.
 func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
-	if m.Peek8(sym.CurMap) != edge.From {
+	live, err := currentRoutingRuntime(m)
+	if err != nil || live.Map != edge.From {
 		return false
 	}
 	h, err := routingHeaderFor(m, edge.From)
@@ -1047,7 +1043,6 @@ func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
 	if err != nil {
 		return false
 	}
-	x, y := playerXY(m)
-	_, _, _, _, err = warpTarget(h, edge, grid, int(x), int(y), spriteBlockers(m), nil, romData)
+	_, _, _, _, err = warpTarget(h, edge, grid, int(live.X), int(live.Y), spriteBlockers(m), nil, romData)
 	return err == nil
 }

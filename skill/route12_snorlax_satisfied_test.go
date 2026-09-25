@@ -115,7 +115,7 @@ func TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14(t *testing.T) {
 	if trainerSlot == 0 {
 		t.Fatal("Route 13 object at (12,4) is missing")
 	}
-	observed := observedStationaryObjectBlockers(h, []state.SpriteState{{Slot: trainerSlot, X: 12, Y: 4}})
+	observed := observedStationaryObjectBlockers(h, []gameruntime.LiveMapObject{{Slot: trainerSlot, X: 12, Y: 4}})
 	g, err = overlayObservedMapTopology(g, grid, h, observed)
 	if err != nil {
 		t.Fatalf("overlay: %v", err)
