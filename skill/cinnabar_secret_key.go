@@ -113,8 +113,8 @@ func route20ResumeExit(planner *RoutePlanner) (Destination, error) {
 		return Destination{}, fmt.Errorf("fuchsia city place missing")
 	}
 	candidates := []struct {
-		dest   Destination
-		next   uint8
+		dest Destination
+		next uint8
 	}{
 		{dest: Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, next: cinnabarIslandMap},
 		{dest: fuchsia, next: route19Map},
