@@ -208,6 +208,51 @@ func TestDismissObjectiveFailureGroupHidesCurrentEvidenceAndAllowsRecurrence(t *
 	}
 }
 
+func TestDismissObjectiveFailureGroupsBatchesAndSkipsLinked(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	failure := farm.ObjectiveFailure{
+		Objective: "advance story", Error: "blocked", Count: 1, TerminalCount: 1, Blocking: true,
+	}
+	raw, _ := json.Marshal(failure)
+	for _, tc := range []struct {
+		runID string
+		key   string
+	}{
+		{runID: "run-a1", key: "group-a"},
+		{runID: "run-a2", key: "group-a"},
+		{runID: "run-b", key: "group-b"},
+		{runID: "run-linked", key: "group-linked"},
+	} {
+		if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,TRUE,1,?)`,
+			tc.runID, 1, "occurrence-"+tc.runID, "sha256:occurrence", tc.key, "sha256:"+tc.key, raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO issue_links(failure_key,issue_id) VALUES(?,?)`, "group-linked", "42"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := cp.dismissObjectiveFailureGroups([]string{"group-a", "group-b", "group-a", "group-linked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Groups != 2 || result.Occurrences != 3 {
+		t.Fatalf("result = %+v, want 2 groups / 3 occurrences", result)
+	}
+	if len(result.SkippedLinked) != 1 || result.SkippedLinked[0] != "group-linked" {
+		t.Fatalf("skipped = %v, want group-linked", result.SkippedLinked)
+	}
+
+	var dismissed int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM objective_failures WHERE delivery_status='dismissed'`).Scan(&dismissed); err != nil {
+		t.Fatal(err)
+	}
+	if dismissed != 3 {
+		t.Fatalf("dismissed rows = %d, want 3", dismissed)
+	}
+}
+
 func TestDismissObjectiveFailureGroupRefusesLinkedIssue(t *testing.T) {
 	db := newFailureCircuitTestDB(t)
 	cp := &controlPlane{db: db}
