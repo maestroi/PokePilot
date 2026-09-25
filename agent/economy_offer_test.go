@@ -51,7 +51,6 @@ func TestOfferMartRespectsEconomyReserve(t *testing.T) {
 	}
 }
 
-
 func TestRestockCaptureObjectivesOffersReachableDexBallSupply(t *testing.T) {
 	obs := Observation{
 		Money:        2000,
