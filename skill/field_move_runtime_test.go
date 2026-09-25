@@ -25,7 +25,7 @@ func (fakeGen2FieldMoveDecoder) DecodeFieldMoveCapability(_ game.MemoryReader, _
 		return game.FieldMoveCapability{
 			Move:          id,
 			Name:          "HEADBUTT",
-			BadgeOwned:    true,
+			BadgeOwned:    false, // no badge requirement
 			MachineOwned:  true,
 			Learned:       true,
 			PartySlot:     2,
