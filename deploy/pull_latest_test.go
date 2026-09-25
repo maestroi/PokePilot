@@ -164,6 +164,58 @@ exit 0
 	}
 }
 
+func TestRolloutLatestReusesExistingLitellmConfig(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	// Every farm service is absent; litellm runs on a hand-named config while
+	// the content-addressed config already exists (docker config create would
+	// fail with AlreadyExists).
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	case "$3" in
+	pokefarm_wall|pokefarm_litellm) ;;
+	*) exit 1 ;;
+	esac
+	case "$*" in
+	*ConfigName*) echo 'pokefarm_litellm_yaml_v3' ;;
+	*File.Name*) echo '/app/config.yaml' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "config" ] && [ "$2" = "create" ]; then
+	echo 'config already exists' >&2
+	exit 1
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker log: %v", err)
+	}
+	if strings.Contains(string(logData), "config create") {
+		t.Fatalf("recreated an existing litellm config:\n%s", logData)
+	}
+	if !strings.Contains(string(logData), "--config-rm pokefarm_litellm_yaml_v3") {
+		t.Fatalf("litellm was not moved onto the existing config:\n%s", logData)
+	}
+}
+
 func TestFarmImageCarriesRolloutBundle(t *testing.T) {
 	data, err := os.ReadFile("Dockerfile")
 	if err != nil {
