@@ -30,8 +30,8 @@ func redFieldActionFront(player state.PlayerState) (int, int, bool) {
 	return x, y, true
 }
 
-// DecodeFieldAction keeps Gen I tile ids, mode values, flags and live boulder
-// identity on the Red/Blue profile side of the boundary.
+// DecodeFieldAction keeps Gen I tile ids, mode values, flags, text/menu state,
+// and live boulder identity on the Red/Blue profile side of the boundary.
 func (*Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionState {
 	if reader == nil {
 		return game.FieldActionState{}
@@ -53,13 +53,17 @@ func (*Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionStat
 		}
 	}
 
+	_, choiceVisible := state.DecodeTwoOptionMenu(&mem)
 	return game.FieldActionState{
-		Controllable:    state.Controllable(&mem),
-		CuttableAhead:   cuttable,
-		BoulderAhead:    boulderAhead,
-		Surfing:         mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
-		StrengthActive:  mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
-		Lit:             mem.U8(sym.MapPalOffset) == 0,
-		ActionSucceeded: mem.U8(sym.ActionResult) == 1,
+		Controllable:     state.Controllable(&mem),
+		CuttableAhead:    cuttable,
+		BoulderAhead:     boulderAhead,
+		Surfing:          mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
+		StrengthActive:   mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
+		Lit:              mem.U8(sym.MapPalOffset) == 0,
+		ActionSucceeded:  mem.U8(sym.ActionResult) == 1,
+		ResultTextActive: mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(&mem),
+		ChoiceVisible:    choiceVisible,
+		DebugText:        state.ScreenText(&mem),
 	}
 }
