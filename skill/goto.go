@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -493,11 +492,9 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	if err != nil {
 		return err
 	}
-	var routeMem state.Mem
-	state.Snapshot(m, &routeMem)
-	g, err = withAsleepRoute16Snorlax(g, romData, &routeMem)
+	g, err = applyGoToCompatibilityInitialTopology(m, g, romData)
 	if err != nil {
-		return fmt.Errorf("skill: GoTo: Route 16 Snorlax corridor: %w", err)
+		return fmt.Errorf("skill: GoTo: compatibility topology overlay: %w", err)
 	}
 	if nav == nil {
 		nav = newNavigationMemory()
@@ -590,17 +587,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			return fmt.Errorf("skill: GoTo: build live map %02x at (%d,%d): %w", cur, x, y, err)
 		}
 		blockers := presentStationaryObjectBlockers(m, h)
-		if cur == route16Map {
-			var corridor state.Mem
-			state.Snapshot(m, &corridor)
-			if !state.HasEvent(&corridor, eventBeatRoute16Snorlax) {
-				if blockers == nil {
-					blockers = map[[2]int]bool{}
-				}
-				blockers[[2]int{route16SnorlaxX, route16SnorlaxY}] = true
-			}
-			openRoute16CutPassage(liveGrid, romData, &corridor)
-		}
+		blockers = applyGoToCompatibilityLocalTopology(m, cur, blockers, liveGrid, romData)
 		routeGraph, err = overlayObservedMapTopology(routeGraph, liveGrid, h, blockers)
 		if err != nil {
 			return fmt.Errorf("skill: GoTo: overlay live topology for map %02x: %w", cur, err)
@@ -681,9 +668,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			planGraph = graphWithoutEdgesInto(routeGraph, visitedMaps, visitedPositions)
 		}
 
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		prereqs := redRoutePrerequisites(routeGraph, romData, &mem)
+		prereqs := goToRoutePrerequisites(m, routeGraph, romData)
 		routeResult, err := routePlanToDestinationByTravelPolicy(
 			m, planGraph, cur, int(x), int(y), routeDest, blockedHere, prereqs,
 		)
@@ -1193,13 +1178,19 @@ const scriptedMovementBudget = 4000
 // which script it is. A battle or a text box is a different, already-handled
 // condition, so this only waits when neither is up.
 func waitOutScriptedMovement(m *emu.Emu) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if state.Controllable(&mem) || state.DecodeDialogue(&mem) != nil || state.DecodeBattle(&mem) != nil {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	live := decoder.DecodeOverworld(m)
+	if live.Controllable || live.InDialogue || live.InBattle {
 		return nil
 	}
-	if err := Cutscene(m, scriptedMovementBudget, func(*state.Mem) bool { return true }); err != nil {
-		return fmt.Errorf("skill: GoTo: %w", err)
+	if _, err := m.StepUntil(scriptedMovementBudget, func(em *emu.Emu) bool {
+		next := decoder.DecodeOverworld(em)
+		return next.Controllable || next.InDialogue || next.InBattle
+	}); err != nil {
+		return fmt.Errorf("skill: GoTo: scripted movement did not settle: %w", err)
 	}
 	return nil
 }
