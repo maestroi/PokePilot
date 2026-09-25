@@ -42,7 +42,7 @@ func resolveLocalDestination(m *emu.Emu, romData []byte, dest Destination) (exac
 		} else if ok {
 			return beside, false, nil
 		}
-		beside, ok, adjacentErr := besideDestinationWithDecoder(m, decoder, romData, dest.X, dest.Y)
+		beside, ok, adjacentErr := besideDestinationWithDecoder(m, decoder, romData, dest.X, dest.Y, nil)
 		if adjacentErr != nil {
 			return Destination{}, false, adjacentErr
 		}

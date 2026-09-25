@@ -456,6 +456,10 @@ func TestTravelDetectsSameBoxLoop(t *testing.T) {
 	if !strings.Contains(err.Error(), "looping on the same text box") {
 		t.Fatalf("err = %q, want the same-box loop named", err)
 	}
+	// TalkAt picks another side of its target on this sentinel.
+	if !errors.Is(err, ErrTextBoxLoop) {
+		t.Fatalf("err = %v, want errors.Is ErrTextBoxLoop", err)
+	}
 }
 
 // TestTravelStopsOnKnownClosedRouteGate: a Saffron gate guard's notice pages
