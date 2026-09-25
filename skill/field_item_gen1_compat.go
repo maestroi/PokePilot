@@ -36,7 +36,7 @@ func isPPRestoreItem(item uint8) bool {
 func gen1FieldItemMon(mon state.Mon) game.FieldItemPartyMon {
 	out := game.FieldItemPartyMon{
 		NativeSpeciesID: uint16(mon.Species),
-		Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP,
+		Level:           mon.Level, HP: mon.HP, MaxHP: mon.MaxHP,
 		Status: mon.StatusName(),
 	}
 	for i := range mon.Moves {
