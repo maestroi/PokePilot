@@ -51,6 +51,11 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 		return CatchResult{}, fmt.Errorf("skill: Fish: item %#02x is not a fishing rod", rod)
 	}
 
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
@@ -75,10 +80,9 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 	m.StepFrames(2)
 
 	state.Snapshot(m, &mem)
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	captureBefore := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
 	for attempt := 1; attempt <= fishingAttemptCap; attempt++ {
@@ -121,7 +125,7 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d casts and %d encounters on map %#04x", ErrFishingHuntExhausted, fishingAttemptCap, res.Encounters, m.Peek8(sym.CurMap))
 }
