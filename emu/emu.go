@@ -2,6 +2,7 @@ package emu
 
 import (
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
@@ -44,6 +45,10 @@ type Emu struct {
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
 	frameDur  time.Duration
 	nextFrame time.Time
+
+	// stepped mirrors FrameCount after each step for Progress readers on
+	// other goroutines.
+	stepped atomic.Uint64
 }
 
 // Open loads a ROM using the cartridge-inferred hardware model. It performs
@@ -83,6 +88,7 @@ func (m *Emu) Close() error {
 // StepFrame advances the emulator by exactly one frame.
 func (m *Emu) StepFrame() {
 	m.e.StepFrame()
+	m.stepped.Store(m.e.FrameCount())
 	if m.onFrame != nil {
 		m.onFrame(m)
 	}
@@ -115,6 +121,7 @@ func (m *Emu) StepFrames(n int) {
 		return
 	}
 	m.e.StepFrames(n)
+	m.stepped.Store(m.e.FrameCount())
 	m.capture()
 	m.throttle(n)
 }
@@ -194,6 +201,13 @@ func (m *Emu) LoadState(b []byte) error {
 		m.lastCapture = m.e.FrameCount()
 	}
 	return nil
+}
+
+// Progress is FrameCount as of the last completed step, safe to read from any
+// goroutine. A watchdog uses it to tell a slow emulator from one stuck inside
+// a single frame.
+func (m *Emu) Progress() uint64 {
+	return m.stepped.Load()
 }
 
 // FrameCount returns the number of frames stepped since the ROM was loaded.

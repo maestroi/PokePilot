@@ -197,6 +197,15 @@ const (
 	TileMapLen        = 20 * 18
 	FontLoaded uint16 = 0xCFC4
 	JoyIgnore  uint16 = 0xCD6B
+	// EnteringCableClub is wEnteringCableClub: nonzero from the link menu's
+	// special warp until the overworld's .changeMap path calls EnterMap.
+	EnteringCableClub uint16 = 0xCC47
+	// CableClubDestinationMap is wCableClubDestinationMap: LinkMenu zeroes it
+	// on entry and writes TRADE_CENTER or COLOSSEUM once a selection is agreed.
+	CableClubDestinationMap uint16 = 0xD72D
+	// UpdateSpritesEnabled is wUpdateSpritesEnabled: Init sets $ff and
+	// LoadMapData sets $01 once the map is in VRAM.
+	UpdateSpritesEnabled uint16 = 0xCFCB
 )
 
 // Shop / mart. The buy flow (pokered/engine/events/pokemart.asm) loads the

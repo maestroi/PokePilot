@@ -69,8 +69,14 @@ const pendingFlyOrDungeonWarp = 1<<3 | 1<<4
 // load, and EnterMap clears BIT_FLY_WARP/BIT_DUNGEON_WARP only after they do
 // (home/overworld.asm). Until then the old map's sprite table is still in RAM
 // (Victory Road 3F->2F hole, run-1biaubd9xooqm), so the warp is not landed.
+//
+// The Cable Club warp is the same shape: the link menu writes wCurMap to the
+// Trade Center/Colosseum, then SpecialEnterMap zeroes the joypad and returns
+// with the old map still loaded and wJoyIgnore clear. EnterMap runs only after
+// the overworld clears wEnteringCableClub, so input before then is dropped.
 func Controllable(m *Mem) bool {
 	return m.U8(sym.StatusFlags6)&pendingFlyOrDungeonWarp == 0 &&
+		m.U8(sym.EnteringCableClub) == 0 &&
 		m.U8(sym.CurMapWidth) != 0 &&
 		m.U8(sym.CurMapHeight) != 0 &&
 		m.U8(sym.FontLoaded) == 0 &&
