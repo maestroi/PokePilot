@@ -393,12 +393,8 @@ func openPartyFieldMove(m *emu.Emu, partySlot int, move FieldMove) error {
 	if err := selectFieldMoveUser(m, partySlot); err != nil {
 		return fmt.Errorf("select party slot %d: %w", partySlot, err)
 	}
-	idx := fieldMoveMenuIndex(m, move)
-	if idx < 0 {
-		return fmt.Errorf("%s field-menu entry absent for party slot %d", move, partySlot)
-	}
-	if err := SelectMenuItem(m, idx); err != nil {
-		return fmt.Errorf("select %s field-menu entry: %w", move, err)
+	if err := selectFieldMoveMenuEntry(m, move); err != nil {
+		return fmt.Errorf("party slot %d: %w", partySlot, err)
 	}
 	return nil
 }
