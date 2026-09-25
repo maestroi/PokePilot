@@ -166,6 +166,10 @@ type ProfileObservation struct {
 	Events       []string
 	Story        ProgressState
 	BlackedOut   bool
+
+	PokedexOwned []SpeciesID
+	PokedexSeen  []SpeciesID
+	Dex          DexCatalog
 }
 
 // ROMParser exposes only semantic ROM lookups that are meaningful to generic
