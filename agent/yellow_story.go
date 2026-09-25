@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/skill"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	yellowstory "github.com/maestroi/pokepilot/yellow/story"
@@ -30,6 +31,41 @@ func yellowOpeningExecutor(target yellowstory.OpeningMilestone) yellowProgressio
 var yellowProgressionExecutors = map[ProgressID]yellowProgressionExecutor{
 	yellowprofile.ProgressYellowStarterReceived:  yellowOpeningExecutor(yellowstory.MilestoneStarterReceived),
 	yellowprofile.ProgressYellowLabRivalResolved: yellowOpeningExecutor(yellowstory.MilestoneLabRivalResolved),
+}
+
+// yellowSharedStoryBeats are the Gen-I story beats whose Yellow scripts run
+// the same way as Red's, checked against the vendored decomps: Oak's parcel
+// (ViridianMart.asm and OaksLab.asm give the parcel on mart entry and swap it
+// for the Pokedex with Oak at (5,2); Yellow only adds the later old-man
+// toggle) and the Boulder Badge (the same Viridian Forest route and Brock's
+// gym). Yellow owns the decision to use them: the shared Gen-I executor runs
+// the mechanics through the canonical memory view, the offer reuses the
+// shared availability rule, and the positive verifier is Yellow's own
+// projection of the same ProgressID. Beats Yellow rewrites (Mt. Moon, the
+// Rocket Hideout, Pokemon Tower and Silph Co. all add Jessie & James) are
+// deliberately absent and stay a typed controller-unavailable block.
+var yellowSharedStoryBeats = []ProgressID{
+	gen1.ProgressPokedexAcquired,
+	gen1.ProgressBoulderBadge,
+}
+
+func init() {
+	for _, id := range yellowSharedStoryBeats {
+		shared, ok := redProgressionExecutors[id]
+		if !ok {
+			panic("agent: Yellow shared story beat " + string(id) + " has no Gen-I executor")
+		}
+		yellowProgressionExecutors[id] = yellowProgressionExecutor(shared)
+	}
+}
+
+func yellowSharedStoryBeat(id ProgressID) bool {
+	for _, shared := range yellowSharedStoryBeats {
+		if shared == id {
+			return true
+		}
+	}
+	return false
 }
 
 func yellowProgressionKnown(id ProgressID) bool {
@@ -122,6 +158,11 @@ func yellowProgressionObjectives(obs Observation) []Objective {
 			Progress: yellowprofile.ProgressYellowLabRivalResolved,
 			Note:     "(finish Yellow's opening: walk toward the lab exit so the rival challenges, then battle)",
 		})
+	}
+	for _, o := range redProgressionObjectives(obs) {
+		if o.Kind == KindProgress && yellowSharedStoryBeat(o.Progress) {
+			out = append(out, o)
+		}
 	}
 	return out
 }

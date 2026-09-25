@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 	yellowstory "github.com/maestroi/pokepilot/yellow/story"
 )
@@ -152,4 +154,59 @@ func TestYellowOfferRoutesThroughYellowProgressionPlanner(t *testing.T) {
 		}
 	}
 	t.Fatalf("Yellow offer %v is missing the interrupted opening's lab rival goal", offer.Candidates)
+}
+
+// Oak's parcel and the Boulder Badge run the same scripts in Yellow, so the
+// Yellow registry routes them to the shared Gen-I executors, offers them with
+// the shared availability rule, and verifies them from Yellow's own facts.
+// Beats Yellow rewrites with Jessie & James stay unowned.
+func TestYellowSharedStoryBeatsAreOwnedOfferedAndVerifiable(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	obs := Observation{GameID: yellowprofile.GameID, PartyCount: 1}
+	for _, id := range []ProgressID{gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge} {
+		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: id}, obs); err != nil {
+			t.Errorf("%s rejected: %v", id, err)
+		}
+	}
+	for _, id := range []ProgressID{gen1.ProgressMtMoonFossilAcquired, gen1.ProgressSilphScopeAcquired, gen1.ProgressPokeFluteAcquired} {
+		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: id}, obs); err == nil {
+			t.Errorf("%s validated; Yellow rewrites that beat", id)
+		}
+	}
+
+	afterOpening := Observation{
+		GameID: yellowprofile.GameID, PartyCount: 1,
+		Events: []string{"GotStarter", "BattledRivalInOaksLab"},
+		Story:  yellowStory(yellowprofile.ProgressYellowStarterReceived, yellowprofile.ProgressYellowLabRivalResolved),
+	}
+	got := adapter.ProgressionObjectives(afterOpening)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressPokedexAcquired {
+		t.Fatalf("after the opening offered %v, want the Pokedex", got)
+	}
+
+	withDex := afterOpening
+	withDex.Story = append(withDex.Story, game.ProgressFact{ID: gen1.ProgressPokedexAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(withDex)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressBoulderBadge {
+		t.Fatalf("with the Pokedex offered %v, want the Boulder Badge", got)
+	}
+
+	withBadge := withDex
+	withBadge.Badges = []string{"Boulder"}
+	if got := adapter.ProgressionObjectives(withBadge); len(got) != 0 {
+		t.Fatalf("with the Boulder Badge offered %v", got)
+	}
+}
+
+func TestDefaultStarterObjectiveOnlyWhenTheOpeningHasNoChoice(t *testing.T) {
+	o, ok := DefaultStarterObjective(Observation{GameID: yellowprofile.GameID})
+	if !ok || o.Kind != KindStarter || o.Species != "pikachu" {
+		t.Fatalf("Yellow default starter = %+v, %v; want Pikachu", o, ok)
+	}
+	if _, ok := DefaultStarterObjective(Observation{GameID: yellowprofile.GameID, PartyCount: 1}); ok {
+		t.Fatal("a started Yellow game still offered a default starter")
+	}
+	if _, ok := DefaultStarterObjective(Observation{GameID: redprofile.GameID}); ok {
+		t.Fatal("Red's three-ball choice produced a default starter")
+	}
 }

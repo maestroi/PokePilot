@@ -98,9 +98,11 @@ const (
 	itemHM03       = 0xc6
 	itemHM04       = 0xc7
 
+	badgeBoulder = 0
 	badgeThunder = 2
 	badgeRainbow = 3
 	badgeSoul    = 4
+	badgeMarsh   = 5
 	badgeVolcano = 6
 	badgeEarth   = 7
 
@@ -301,10 +303,12 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressSSTicketAcquired, Complete: yellowHasItem(reader, itemSSTicket)},
 		{ID: gen1.ProgressHM01Acquired, Complete: yellowHasItem(reader, itemHM01)},
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
+		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},
 		{ID: gen1.ProgressThunderBadge, Complete: yellowHasBadge(reader, badgeThunder)},
 		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowPostSurgeLavenderReached(mapID)},
 		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader)},
 		{ID: gen1.ProgressRainbowBadge, Complete: yellowHasBadge(reader, badgeRainbow)},
+		{ID: gen1.ProgressMarshBadge, Complete: yellowHasBadge(reader, badgeMarsh)},
 		{ID: gen1.ProgressSilphScopeAcquired, Complete: yellowHasItem(reader, itemSilphScope)},
 		{ID: gen1.ProgressPokeFluteAcquired, Complete: yellowHasItem(reader, itemPokeFlute)},
 		{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: yellowHasBadge(reader, badgeSoul) && hm03 && hm04},

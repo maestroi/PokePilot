@@ -35,7 +35,7 @@ func TestYellowAdapterIsSeparateFromRedBlueFactory(t *testing.T) {
 
 func TestYellowUnownedStoryGoalIsTypedBlockNotRedScript(t *testing.T) {
 	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
-	o := Objective{Kind: KindProgress, Progress: "pokedex_acquired"}
+	o := Objective{Kind: KindProgress, Progress: "ss_ticket_acquired"}
 	if err := adapter.Validate(o, Observation{GameID: yellowprofile.GameID, PartyCount: 1}); err == nil {
 		t.Fatal("a story goal no Yellow controller owns validated")
 	}

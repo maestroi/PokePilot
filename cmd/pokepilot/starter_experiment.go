@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/profiles"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
@@ -27,21 +30,36 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	if err != nil {
 		return err
 	}
+	if !selection.Experiment() {
+		// A vanilla lease only restores the unpatched cartridge. It must not
+		// go through the Oak-ball patcher, which is pinned to Red's image:
+		// Blue and Yellow have no experiment to apply and would otherwise be
+		// refused before they boot.
+		profile, _, err := profiles.Detect(base)
+		if err != nil {
+			return fmt.Errorf("detect base ROM: %w", err)
+		}
+		if err := m.LoadROMBytes(base, string(profile.ID())); err != nil {
+			return fmt.Errorf("reload base ROM: %w", err)
+		}
+		sum := sha1.Sum(base)
+		digest := hex.EncodeToString(sum[:])
+		starterExperimentRuns.Store(spec.RunID, starterExperimentRunMeta{
+			selection: selection,
+			patch:     redstarter.PatchInfo{BaseSHA1: digest, EffectiveSHA1: digest, Description: "vanilla ROM"},
+		})
+		return nil
+	}
 	derived, patch, err := redstarter.Patch(base, selection)
 	if err != nil {
 		return err
 	}
-	name := "pokemon-red"
-	if selection.Experiment() {
-		name = fmt.Sprintf("pokemon-red-starter-%s-%02x", selection.Mode, selection.Raw)
-	}
+	name := fmt.Sprintf("pokemon-red-starter-%s-%02x", selection.Mode, selection.Raw)
 	if err := m.LoadDerivedROM(base, derived, name); err != nil {
 		return fmt.Errorf("load derived ROM: %w", err)
 	}
 	starterExperimentRuns.Store(spec.RunID, starterExperimentRunMeta{selection: selection, patch: patch})
-	if selection.Experiment() {
-		m.TraceNote("starter", selection.Summary()+" · "+patch.Description)
-	}
+	m.TraceNote("starter", selection.Summary()+" · "+patch.Description)
 	return nil
 }
 
