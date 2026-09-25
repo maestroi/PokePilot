@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -21,10 +22,7 @@ func TestYellowROMOpeningThroughPokedex(t *testing.T) {
 	if testing.Short() {
 		t.Skip("ROM-backed Yellow story journey")
 	}
-	path := os.Getenv("POKEMON_YELLOW_ROM")
-	if path == "" {
-		t.Skip("POKEMON_YELLOW_ROM not set")
-	}
+	path := yellowROMPath(t)
 	m, err := emu.OpenCGB(path)
 	if err != nil {
 		t.Fatalf("OpenCGB Yellow: %v", err)
@@ -60,5 +58,36 @@ func TestYellowROMOpeningThroughPokedex(t *testing.T) {
 	}
 	if !obs.Story.Has(gen1.ProgressPokedexAcquired) {
 		t.Fatal("Pokedex goal completed but Yellow's story does not show the Pokedex")
+	}
+}
+
+// yellowROMPath reads POKEMON_YELLOW_ROM. go test runs in the package
+// directory, so a relative path is resolved against the module root (where
+// the command was most likely typed) when it does not exist as given.
+func yellowROMPath(t *testing.T) string {
+	t.Helper()
+	path := os.Getenv("POKEMON_YELLOW_ROM")
+	if path == "" {
+		t.Skip("POKEMON_YELLOW_ROM not set")
+	}
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return path
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return filepath.Join(dir, path)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return path
+		}
+		dir = parent
 	}
 }
