@@ -147,8 +147,11 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 		return fmt.Errorf("%w: catch utility carrier species %#02x for %s: %w", ErrFieldRosterCatch, candidate.Species, target, err)
 	}
 	if result.Outcome != OutcomeCaught || result.Species != candidate.Species {
-		state.Snapshot(m, &mem)
-		if wildBallCount(&mem) <= 0 {
+		ballsLeft, countErr := wildBallCount(m)
+		if countErr != nil {
+			return countErr
+		}
+		if ballsLeft <= 0 {
 			return fmt.Errorf("%w: utility carrier species %#02x for %s was not caught after %d balls", ErrFieldRosterNoBalls, candidate.Species, target, result.BallsThrown)
 		}
 		return utilityFieldRecoveryBlocked(target, ErrFieldRosterCatch,
