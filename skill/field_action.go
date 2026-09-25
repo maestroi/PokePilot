@@ -72,7 +72,6 @@ const (
 
 	fieldStrengthActiveBit = 1 << 0
 	fieldSurfingState      = 2
-	fieldBoulderPictureID  = 0x3F
 	fieldActionBudget      = 3000
 )
 
@@ -243,37 +242,6 @@ func fieldMoveMenuIndex(m *emu.Emu, menuID uint8) int {
 		}
 	}
 	return -1
-}
-
-func frontCoordinates(mem *state.Mem) (int, int, bool) {
-	p := state.DecodePlayer(mem)
-	x, y := int(p.X), int(p.Y)
-	switch p.Facing {
-	case state.FacingUp:
-		y--
-	case state.FacingDown:
-		y++
-	case state.FacingLeft:
-		x--
-	case state.FacingRight:
-		x++
-	default:
-		return 0, 0, false
-	}
-	return x, y, true
-}
-
-func boulderAhead(mem *state.Mem) bool {
-	x, y, ok := frontCoordinates(mem)
-	if !ok {
-		return false
-	}
-	for _, sprite := range state.DecodeSprites(mem) {
-		if sprite.X == x && sprite.Y == y && sprite.PictureID == fieldBoulderPictureID {
-			return true
-		}
-	}
-	return false
 }
 
 // FieldActionResult is the positively observed result of UseFieldMove.
