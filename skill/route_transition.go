@@ -207,9 +207,9 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 		tx, ty, targetErr := edgeTargetForConnectionExcluding(water, edge, int(sx), int(sy), blocked, excluded)
 		if targetErr != nil {
 			if lastErr != nil {
-				return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition exhausted shoreline candidates for %02x->%02x: %w", edge.From, edge.To, lastErr)
+				return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exhausted shoreline candidates for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
 			}
-			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot reach %02x connection in water mode: %w", edge.To, targetErr)
+			return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition cannot reach %02x connection in water mode: %v", world.ErrTransitionExecutionStalled, edge.To, targetErr)
 		}
 		steps, pathErr := world.FindPath(water, int(sx), int(sy), tx, ty, blocked)
 		if pathErr != nil {
@@ -286,7 +286,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 			lastErr = fmt.Errorf("shore (%d,%d) facing (%d,%d) returned without verified surfing state", standX, standY, waterX, waterY)
 		}
 	}
-	return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition exceeded shoreline retry budget for %02x->%02x: %w", edge.From, edge.To, lastErr)
+	return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exceeded shoreline retry budget for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
 }
 
 func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionExecutionResult, error) {
