@@ -94,3 +94,27 @@ test('modern scene selection keeps supported non-overworld scenes semantic', () 
   assert.equal(modernSceneKind(unsupported), '')
   assert.equal(canRenderModernScene(unsupported), false)
 })
+
+
+test('fractional camera focus moves continuously between authoritative tiles', () => {
+  const sample = state()
+  const a = semanticViewport(sample, 320, 288, 32, { x: 10, y: 20 })
+  const b = semanticViewport(sample, 320, 288, 32, { x: 10.5, y: 20 })
+
+  assert.equal(a.startY, b.startY)
+  assert.ok(b.offsetX < a.offsetX)
+  assert.ok(Math.abs((a.offsetX - b.offsetX) - 16) < 0.001)
+})
+
+test('camera focus still clamps cleanly at map edges', () => {
+  const sample = state()
+  const before = semanticViewport(sample, 320, 288, 32, { x: -100, y: -100 })
+  assert.equal(before.startX, 0)
+  assert.equal(before.startY, 0)
+  assert.equal(before.offsetX, 0)
+  assert.equal(before.offsetY, 0)
+
+  const after = semanticViewport(sample, 320, 288, 32, { x: 100, y: 100 })
+  assert.equal(after.endX, 20)
+  assert.equal(after.endY, 36)
+})
