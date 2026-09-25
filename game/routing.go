@@ -45,7 +45,6 @@ type RoutingDecoder interface {
 	DecodeLiveTopology(MemoryReader) (LiveTopologyState, error)
 }
 
-
 // ElevatorTransition is the portable postcondition for a profile-owned
 // elevator transition. Generic routing owns the requested destination and door
 // coordinates; the profile owns how a cartridge represents the mutable live
