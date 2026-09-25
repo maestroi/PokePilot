@@ -127,6 +127,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
+	resourcesDecoder, err := battleResourcesDecoderFor(m)
+	if err != nil {
+		return 0, fmt.Errorf("skill: Battle: %w", err)
+	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -174,6 +178,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 
 		state.Snapshot(m, &mem)
 		execution := executionDecoder.DecodeBattleExecution(m)
+		resources := resourcesDecoder.DecodeBattleResources(m)
 		bs, inBattle := battleDecoder.DecodeBattleState(m)
 		if inBattle {
 			if p := progressOf(bs); p != lastProgress {
@@ -236,7 +241,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 			usable := bs.Usable()
 			if len(usable) == 0 {
-				if slot, ok := ppRecoverySlot(&mem); ok {
+				if slot, ok := resources.PPRecoverySlot(); ok {
 					m.Tap(emu.B, 3, 7)
 					if _, err := m.StepUntil(moveMenuBudget, func(m *emu.Emu) bool {
 						return executionDecoder.DecodeBattleExecution(m).Phase == game.BattleExecutionMainMenu
@@ -279,7 +284,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 		case execution.Phase == game.BattleExecutionMainMenu:
 			if openingTrainingSwitch {
 				if inBattle {
-					decision := chooseTrainingCarrySwitch(m.ROM(), &mem, bs, options.MinTrainingCarryLevel)
+					decision := chooseTrainingCarrySwitchState(m.ROM(), resources, bs, options.MinTrainingCarryLevel)
 					if decision.Switch {
 						if zbatDebug {
 							fmt.Printf("zbat resource=SWITCH action=training reason=%s active={%s} candidate={%s}\n",
@@ -302,7 +307,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 
 			if inBattle && len(bs.Usable()) == 0 {
-				if slot, ok := ppRecoverySlot(&mem); ok {
+				if slot, ok := resources.PPRecoverySlot(); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=SWITCH action=emergency reason=no-usable-move slot=%d\n", slot)
 					}
@@ -311,7 +316,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					}
 					continue
 				}
-				if zbatDebug && !livePartyHasCurrentPP(&mem) {
+				if zbatDebug && !resources.LivePartyHasCurrentPP() {
 					fmt.Printf("zbat resource=STRUGGLE reason=all-live-party-pp-exhausted\n")
 				}
 			}
@@ -322,7 +327,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// trainee's XP and defeats the estimator's two-participant contract.
 			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
 				if inBattle && len(bs.Usable()) > 0 {
-					decision := chooseTacticalSwitch(m.ROM(), &mem, bs)
+					decision := chooseTacticalSwitchState(m.ROM(), resources, bs)
 					if decision.Switch {
 						if zbatDebug {
 							fmt.Printf("zbat resource=SWITCH action=voluntary reason=%s active={%s} candidate={%s}\n",
@@ -342,7 +347,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 
 			if itemUses < battleItemUseCap {
-				if choice, ok := chooseBattleMedicine(&mem); ok {
+				if choice, ok := chooseBattleMedicineState(resources); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=ITEM item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
 					}
@@ -481,12 +486,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 
 		case partyMenuUp(m):
-			var s state.Mem
-			state.Snapshot(m, &s)
-			slot := firstLivePartySlot(&s)
+			slot := resources.FirstLivePartySlot()
 			var replacement switchEvaluation
 			if current, ok := battleDecoder.DecodeBattleState(m); ok {
-				if bestSlot, best := bestReplacementSlot(m.ROM(), &s, current); bestSlot >= 0 {
+				if bestSlot, best := bestReplacementSlotState(m.ROM(), resources, current); bestSlot >= 0 {
 					slot, replacement = bestSlot, best
 				}
 			}
@@ -511,9 +514,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d): %w", m.Peek8(sym.CurMap), x, y, ErrForcedChoiceStuck)
 			}
 			if forcedChoiceVisits == 1 {
-				var s state.Mem
-				state.Snapshot(m, &s)
-				slot := firstLivePartySlot(&s)
+				slot := resourcesDecoder.DecodeBattleResources(m).FirstLivePartySlot()
 				if slot < 0 {
 					m.StepFrame()
 					continue
