@@ -28,15 +28,17 @@ func TestOrdinaryConnectionFailureRemainsTileScoped(t *testing.T) {
 
 
 func TestExhaustedConnectionBandIsFiniteWithoutReplanBudget(t *testing.T) {
-	// The finite bound is the number of unique edge-scoped bands recorded in
-	// deadEnds, not GoTo's small transient replan budget. Preserve the stronger
-	// sentinel through wrapping so the caller can distinguish it from one-tile
-	// ErrLegUnwalkable evidence.
 	err := fmt.Errorf("all candidates failed: %w", ErrConnectionBandExhausted)
-	if !errors.Is(err, ErrConnectionBandExhausted) {
-		t.Fatal("wrapped exhausted-band evidence was lost")
+	if legFailureConsumesReplanBudget(err) {
+		t.Fatal("fully exhausted band must not consume transient GoTo replan budget")
 	}
 	if !errors.Is(err, ErrLegUnwalkable) {
 		t.Fatal("exhausted-band evidence must remain navigation-compatible")
+	}
+
+	for _, other := range []error{ErrLegUnwalkable, ErrLegBouncesBack, errors.New("other")} {
+		if !legFailureConsumesReplanBudget(other) {
+			t.Fatalf("%v unexpectedly bypassed replan budget", other)
+		}
 	}
 }
