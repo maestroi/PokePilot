@@ -618,7 +618,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		// destination is on this map and a mixed land/field-move path exists,
 		// do not leave the map just because pristine collision splits it.
 		if cur == dest.Map {
-			reachable, fieldErr := fieldPathReachableOnCurrentMap(m, romData, h, routeDest)
+			reachable, fieldErr := fieldPathReachableOnCurrentMapWithDecoder(m, overworld, romData, h, routeDest)
 			if fieldErr != nil {
 				return fmt.Errorf("skill: GoTo: field-path probe on map %02x: %w", cur, fieldErr)
 			}
@@ -1252,7 +1252,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 				// unrelated door while walking to one fires that warp immediately,
 				// so keep every other warp tile out of the local route.
 				blocked = warpAvoidance(h, int(x), int(y), blocked)
-				plan, planCost, perr := currentFieldPathPlanWithCost(m, romData, h, dest, blocked)
+				plan, planCost, perr := currentFieldPathPlanWithCostWithDecoder(m, overworld, romData, h, dest, blocked)
 				if perr != nil {
 					planErr = fmt.Errorf("skill: GoTo: no capability-aware path on map %02x from (%d,%d) to (%d,%d): %w",
 						cur, x, y, dest.X, dest.Y, perr)
@@ -1363,7 +1363,7 @@ func walkWithinMap(m *emu.Emu, romData []byte, dest Destination, policies ...Mov
 			return fmt.Errorf("skill: GoTo: exceeded %d local field actions on map %02x at (%d,%d) toward (%d,%d)",
 				maxLocalFieldActions, cur, x, y, dest.X, dest.Y)
 		}
-		if err := executeFieldPathAction(m, *nextAction); err != nil {
+		if err := executeFieldPathActionWithDecoder(m, overworld, *nextAction); err != nil {
 			if errors.Is(err, ErrBattleInterrupted) {
 				x, y := overworldPosition(m, overworld)
 				return fmt.Errorf("skill: GoTo: battle during field-path action on map %02x at (%d,%d): %w", cur, x, y, ErrBattle)
