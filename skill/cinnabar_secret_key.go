@@ -91,6 +91,70 @@ func CinnabarSecretKeyReady(mem *state.Mem) bool {
 	return len(CinnabarSecretKeyPrerequisites(mem)) == 0
 }
 
+// restageSecretKeyRoute20Resume handles checkpoints that resume on Route 20.
+// Route 20 has two disconnected outdoor Surf components separated by Seafoam
+// Islands. The Secret Key milestone intentionally uses Route 21 and must not
+// ask a generic "go to Pallet" journey to cross the Seafoam split as a side
+// effect. A west-side resume can continue directly to Cinnabar. An east-side
+// resume first exits to Fuchsia, then returns to the mainland corridor.
+//
+// Fly remains an optional shortcut. Without Fly, the mainland return uses Cut
+// through Diglett's Cave/Route 2; if the current roster cannot supply Cut,
+// generic utility-field recovery is performed here because this is recovery
+// from an already-stranded Route 20 checkpoint, not a new milestone
+// prerequisite.
+func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if m.Peek8(sym.CurMap) != route20Map {
+		return nil
+	}
+
+	cinnabar := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+	planner, err := NewRoutePlanner(m, romData)
+	if err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: inspect Route 20 resume component: %w", err)
+	}
+	if planner.CanReach(cinnabar) {
+		if _, err := TravelFlee(m, romData, cinnabar, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave west Route 20 for Cinnabar: %w", err)
+		}
+		return nil
+	}
+
+	fuchsia, ok := Place("fuchsia city")
+	if !ok {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: fuchsia city place missing")
+	}
+	if !planner.CanReach(fuchsia) {
+		x, y := playerXY(m)
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 resume at (%d,%d) reaches neither Cinnabar nor Fuchsia without traversing Seafoam", x, y)
+	}
+	if _, err := TravelFlee(m, romData, fuchsia, policy, mansionTravelBattles); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave east Route 20 for Fuchsia: %w", err)
+	}
+
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if FieldCapabilityFor(&mem, FieldFly).Usable && townVisited(&mem, semanticPalletTownMap) {
+		if err := useFlyTo(m, semanticPalletTownMap); err == nil {
+			return nil
+		}
+	}
+
+	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare mainland Route 20 recovery via Cut: %w", err)
+	}
+	for _, placeName := range []string{"vermilion city", "viridian city"} {
+		dest, ok := Place(placeName)
+		if !ok {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: %s place missing", placeName)
+		}
+		if _, err := TravelFlee(m, romData, dest, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 mainland recovery via %s: %w", placeName, err)
+		}
+	}
+	return nil
+}
+
 func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: nil policy")
@@ -105,6 +169,12 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	}
 	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
 		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
+	}
+
+	if m.Peek8(sym.CurMap) == route20Map {
+		if err := restageSecretKeyRoute20Resume(m, romData, policy); err != nil {
+			return err
+		}
 	}
 
 	if !onCinnabarSecretKeySlice(m.Peek8(sym.CurMap)) {
