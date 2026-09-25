@@ -189,8 +189,8 @@ func (s *replayServer) handleReplaySemantic(w http.ResponseWriter, r *http.Reque
 	defer obj.Body.Close()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	if obj.Size > 0 {
-		w.Header().Set("Content-Length", fmt.Sprint(obj.Size))
+	if obj.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(obj.ContentLength))
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, obj.Body)
