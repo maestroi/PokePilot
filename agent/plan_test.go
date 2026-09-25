@@ -36,6 +36,14 @@ type planningTestPlanner struct {
 	strategic int
 	fast      int
 	plans     []Plan
+	zeroCall  func(Observation, []Objective) []Objective
+}
+
+func (p *planningTestPlanner) PlanningMenu(obs Observation, offered []Objective) []Objective {
+	if p.zeroCall != nil {
+		return p.zeroCall(obs, offered)
+	}
+	return offered
 }
 
 func (p *planningTestPlanner) Next(_ Observation, offered []Objective) (Objective, error) {
@@ -317,6 +325,66 @@ func TestRunPlanningAutoContinuesBoundaryLegIntoSingleProgression(t *testing.T) 
 	}
 	if r.Stats.LegAutoExecutions != 1 || r.Stats.LastLegDecision != "single_progression" {
 		t.Fatalf("stats = %+v", r.Stats)
+	}
+}
+
+type policyAddedStrategist struct {
+	added Objective
+}
+
+func (p *policyAddedStrategist) PlanningMenu(_ Observation, _ []Objective) []Objective {
+	return []Objective{p.added}
+}
+
+func (p *policyAddedStrategist) Next(_ Observation, _ []Objective) (Objective, error) {
+	return p.added, nil
+}
+
+func (p *policyAddedStrategist) Strategize(_ Observation, _ []Objective, _ string) (Plan, error) {
+	return Plan{Goal: "restock before collecting", Steps: []string{p.added.String()}}, nil
+}
+
+func TestRunPlanningValidatesPolicyAddedStrategicObjective(t *testing.T) {
+	progress := Objective{Kind: KindProgress, Progress: "next_story_gate"}
+	remoteBuy := Objective{Kind: KindBuy, Item: "pokeball", Qty: 10, Intent: "test-remote-supply"}
+	p := &policyAddedStrategist{added: remoteBuy}
+	r := newRunPlanning(Plan{})
+
+	obj, fromPlan, err, _ := r.choose(nil, 1, p, Observation{Round: 1}, []Objective{progress})
+	if err != nil {
+		t.Fatalf("policy-added strategic objective failed validation: %v", err)
+	}
+	if !fromPlan || obj.Kind != KindBuy || obj.Item != "pokeball" {
+		t.Fatalf("obj=%+v fromPlan=%v; want policy-added buy", obj, fromPlan)
+	}
+}
+
+func TestRunPlanningZeroCallPolicyPreventsSingleProgressionRush(t *testing.T) {
+	progress := Objective{Kind: KindProgress, Progress: "mt_moon_fossil_acquired"}
+	catch := Objective{Kind: KindCatch, Species: "zubat"}
+	p := &planningTestPlanner{
+		plans: []Plan{{Goal: "exercise the current frontier", Steps: []string{catch.String()}}},
+		zeroCall: func(_ Observation, _ []Objective) []Objective {
+			return []Objective{catch}
+		},
+	}
+	r := newRunPlanning(Plan{
+		Goal:     "cross mt moon and reach cerulean",
+		Steps:    []string{"go to route 3"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "route 3"}},
+		Step:     1,
+		Boundary: true,
+	})
+
+	obj, fromPlan, err, _ := r.choose(nil, 2, p, Observation{Round: 2}, []Objective{progress, catch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fromPlan || obj.Kind != KindCatch || obj.Species != "zubat" {
+		t.Fatalf("obj=%+v fromPlan=%v; want strategist-selected catch", obj, fromPlan)
+	}
+	if p.strategic != 1 || r.Stats.LegAutoExecutions != 0 {
+		t.Fatalf("planner calls=%d auto=%d; zero-call policy was bypassed", p.strategic, r.Stats.LegAutoExecutions)
 	}
 }
 

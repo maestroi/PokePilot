@@ -50,3 +50,30 @@ func TestOfferMartRespectsEconomyReserve(t *testing.T) {
 		t.Fatalf("purchase consumed reserved Fuchsia money: %+v", buy)
 	}
 }
+
+func TestRestockCaptureObjectivesOffersReachableDexBallSupply(t *testing.T) {
+	obs := Observation{
+		Money:        2000,
+		RestockStock: []string{"pokeball", "potion"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	got := restockCaptureObjectives(obs)
+	if len(got) != 1 {
+		t.Fatalf("capture restock = %+v, want one remote buy", got)
+	}
+	buy := got[0]
+	if buy.Kind != KindBuy || buy.Item != "pokeball" || buy.Qty != targetCaptureStock || buy.Intent != dexCaptureSupplyIntent {
+		t.Fatalf("capture restock = %+v, want %d POKEBALL travel-and-buy", buy, targetCaptureStock)
+	}
+
+	obs.Bag = []Item{{Name: "pokeball", Quantity: minimumCaptureStock}}
+	if got := restockCaptureObjectives(obs); len(got) != 0 {
+		t.Fatalf("capture stock at minimum still offered remote restock: %+v", got)
+	}
+
+	obs.Bag = nil
+	obs.Dex.Targets = nil
+	if got := restockCaptureObjectives(obs); len(got) != 0 {
+		t.Fatalf("completed Dex still offered remote restock: %+v", got)
+	}
+}

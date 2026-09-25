@@ -293,8 +293,23 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			}
 			return result, nil
 		}
-		if o.Intent == combatRecoverySupplyIntent {
-			if _, err := skill.EnsureItemStock(m, romData, skill.StatAwareMove(romData), item, o.Qty, 1); err != nil {
+		if o.Intent == combatRecoverySupplyIntent || o.Intent == dexCaptureSupplyIntent {
+			target, minimum := o.Qty, 1
+			if o.Intent == dexCaptureSupplyIntent {
+				// The objective quantity is an amount to ADD (KindBuy's verifier
+				// requires before+Qty). EnsureItemStock takes a final target, so
+				// translate the semantic buy quantity using the live bag count.
+				var mem state.Mem
+				state.Snapshot(m, &mem)
+				for _, bagged := range state.DecodeInventory(&mem).Items {
+					if bagged.ID == item {
+						target += int(bagged.Quantity)
+						break
+					}
+				}
+				minimum = target
+			}
+			if _, err := skill.EnsureItemStock(m, romData, skill.StatAwareMove(romData), item, target, minimum); err != nil {
 				return result, fmt.Errorf("agent: %s: %w", o, err)
 			}
 			return result, nil

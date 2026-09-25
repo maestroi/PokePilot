@@ -162,10 +162,14 @@ func (s *statsPlanner) RoutePriority() agent.RoutePriority {
 	return agent.RoutePriorityForPlayStyle(s.playStyle)
 }
 
+func (s *statsPlanner) PlanningMenu(obs agent.Observation, offered []agent.Objective) []agent.Objective {
+	return s.applyRunPolicy(obs, offered)
+}
+
 func (s *statsPlanner) applyRunPolicy(obs agent.Observation, offered []agent.Objective) []agent.Objective {
 	offered = agent.ApplyRunPolicy(obs, offered, s.riskTolerance, s.wildEncounters)
 	offered = agent.AnnotatePlayStyle(obs, offered, s.playStyle)
-	return agent.AnnotateRunPurpose(obs, offered, s.purpose)
+	return agent.ApplyRunPurpose(obs, offered, s.purpose, s.inner.Goal)
 }
 
 // boundRiskPlan keeps persistent planning from skipping the safety decision
