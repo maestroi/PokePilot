@@ -2,8 +2,8 @@ package profile
 
 import (
 	"github.com/maestroi/pokepilot/game"
-	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 	"github.com/maestroi/pokepilot/worldmodel"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
 func (*Profile) MapProvider(romData []byte) worldmodel.MapHeaderProvider {
