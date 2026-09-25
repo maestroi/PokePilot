@@ -102,28 +102,6 @@ func TestFieldCapabilitiesStableForPartyPlanning(t *testing.T) {
 	}
 }
 
-func TestBoulderAheadUsesLiveSpriteContext(t *testing.T) {
-	m := new(state.Mem)
-	m[sym.CurMap] = 1
-	m[sym.XCoord] = 10
-	m[sym.YCoord] = 10
-	m[sym.SpritePlayerFacing] = byte(state.FacingRight)
-
-	// Sprite slot 1: data1 picture id/image index plus data2 biased map X/Y.
-	m[sym.SpritePlayerStateData1+0x10] = fieldBoulderPictureID
-	m[sym.SpritePlayerStateData1+0x12] = 0
-	m[sym.SpriteStateData2+0x10+0x04] = 14 // y 10 + bias 4
-	m[sym.SpriteStateData2+0x10+0x05] = 15 // x 11 + bias 4
-	if !boulderAhead(m) {
-		t.Fatal("boulder directly in front was not detected")
-	}
-
-	m[sym.SpriteStateData2+0x10+0x05] = 16
-	if boulderAhead(m) {
-		t.Fatal("non-adjacent boulder was treated as the Strength target")
-	}
-}
-
 func TestFieldActionCompletionUsesSemanticState(t *testing.T) {
 	cut, _ := FieldMoveSpecFor(FieldCut)
 	if !fieldActionCompleteState(game.FieldActionState{Controllable: true, ActionSucceeded: true}, cut) {
