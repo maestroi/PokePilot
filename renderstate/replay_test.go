@@ -9,12 +9,12 @@ import (
 func replayTestState(frame uint64, x int, tile TileKind) RenderState {
 	return RenderState{
 		SchemaVersion: SchemaVersion,
-		Game: GameRef{ID: game.GameID("pokemon-red"), Revision: game.RevisionID("test")},
-		Clock: Clock{Frame: frame},
-		Scene: SceneOverworld,
-		Capabilities: []Capability{CapabilityMap, CapabilityPlayer, CapabilityLayers},
-		Map: &MapState{ID: game.PlaceID("route-1"), Name: "Route 1", Width: 2, Height: 1},
-		Player: &ActorState{ID: "player", Kind: EntityPlayer, Position: Position{X: x, Y: 0}},
+		Game:          GameRef{ID: game.GameID("pokemon-red"), Revision: game.RevisionID("test")},
+		Clock:         Clock{Frame: frame},
+		Scene:         SceneOverworld,
+		Capabilities:  []Capability{CapabilityMap, CapabilityPlayer, CapabilityLayers},
+		Map:           &MapState{ID: game.PlaceID("route-1"), Name: "Route 1", Width: 2, Height: 1},
+		Player:        &ActorState{ID: "player", Kind: EntityPlayer, Position: Position{X: x, Y: 0}},
 		Layers: []TileLayer{{
 			ID: "terrain", Kind: LayerTerrain, Width: 2, Height: 1,
 			Cells: []TileCell{{Kind: tile}, {Kind: TilePath}},
