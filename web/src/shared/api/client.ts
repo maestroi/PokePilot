@@ -161,6 +161,21 @@ export function dismissTriage(key: string, signal?: AbortSignal): Promise<Record
   })
 }
 
+export interface DismissTriageResult {
+  status: string
+  groups: number
+  occurrences: number
+  skipped_linked?: string[]
+}
+
+export function dismissTriages(keys: string[], signal?: AbortSignal): Promise<DismissTriageResult> {
+  return requestJSON<DismissTriageResult>('/v1/triage/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ keys }),
+    signal
+  })
+}
+
 export function pauseRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/pause`, {
     method: 'POST',
