@@ -143,19 +143,20 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 	return Plan{Goal: p.Goal, Steps: canonical, StepKeys: keys, Step: 0, Round: round, Boundary: boundary, TailDropped: tailDropped}, nil
 }
 
-// ZeroCallPlanningMenuPolicy lets a planner expose the same run-level menu
-// policy to the planning engine's zero-call tiers. Next/Strategize decorators
-// can filter their own model-facing menus, but cached plan execution and
-// strategicLegContinuation happen before those methods are called. Without
-// this seam, a zero-call single-progression continuation can bypass a purpose
-// policy that deliberately keeps currently reachable coverage ahead of story.
-type ZeroCallPlanningMenuPolicy interface {
-	ZeroCallPlanningMenu(obs Observation, offered []Objective) []Objective
+// PlanningMenuPolicy lets a planner expose the same run-level menu policy to
+// the planning engine itself. Next/Strategize decorators can filter their own
+// model-facing menus, but cached execution, strategic-plan validation, and
+// strategicLegContinuation otherwise operate on the raw runtime menu. Keeping
+// those tiers on one policy menu prevents zero-call story progression from
+// bypassing a purpose policy and lets deterministic policy-added objectives be
+// validated like ordinary offered work.
+type PlanningMenuPolicy interface {
+	PlanningMenu(obs Observation, offered []Objective) []Objective
 }
 
-func zeroCallPlanningMenu(p Planner, obs Observation, offered []Objective) []Objective {
-	if policy, ok := p.(ZeroCallPlanningMenuPolicy); ok {
-		return policy.ZeroCallPlanningMenu(obs, offered)
+func planningMenu(p any, obs Observation, offered []Objective) []Objective {
+	if policy, ok := p.(PlanningMenuPolicy); ok {
+		return policy.PlanningMenu(obs, offered)
 	}
 	return offered
 }
@@ -174,9 +175,10 @@ type StrategicFeedbackPlanner interface {
 }
 
 func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Observation, offered []Objective, reason string) (Plan, error, int) {
+	policyOffered := planningMenu(p, obs, offered)
 	plan, err := p.Strategize(obs, offered, reason)
 	if err == nil {
-		plan, err = validateStrategicPlan(plan, offered, round)
+		plan, err = validateStrategicPlan(plan, policyOffered, round)
 	}
 	fp, canRetry := p.(StrategicFeedbackPlanner)
 	retries := 0
@@ -203,7 +205,7 @@ func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Obs
 		}
 		plan, err = fp.StrategizeRetry(obs, offered, reason, r)
 		if err == nil {
-			plan, err = validateStrategicPlan(plan, offered, round)
+			plan, err = validateStrategicPlan(plan, policyOffered, round)
 		}
 	}
 	return plan, err, retries
@@ -402,7 +404,7 @@ func (r *runPlanning) install(plan Plan, reason string) {
 // least one currently resolvable step by validateStrategicPlan.
 func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observation, offered []Objective) (Objective, bool, error, int) {
 	sp, strategic := p.(StrategicPlanner)
-	zeroCallOffered := zeroCallPlanningMenu(p, obs, offered)
+	policyOffered := planningMenu(p, obs, offered)
 	for {
 		// A completed boundary leg keeps its strategic Goal alive while the
 		// newly revealed state is unambiguous. This is the latency-saving tier:
@@ -410,7 +412,7 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 		// strategist call. If the only ambiguity is fight-vs-flee for one
 		// frontier destination, ask only the cheap chooser on that tiny menu.
 		if strategic && r.pending == "" && !r.Plan.Active() && r.Plan.Boundary {
-			if continuation, reason := strategicLegContinuation(zeroCallOffered); len(continuation) > 0 {
+			if continuation, reason := strategicLegContinuation(policyOffered); len(continuation) > 0 {
 				r.Stats.LastLegDecision = reason
 				if len(continuation) == 1 {
 					r.Stats.LegAutoExecutions++
@@ -475,7 +477,7 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 				fmt.Fprintf(log, "round %d: strategic leg installed reason=%s goal=%q steps=%d boundary=%t dropped_tail_steps=%d\n",
 					round, reason, r.Plan.Goal, len(r.Plan.Steps), r.Plan.Boundary, r.Plan.TailDropped)
 			}
-			obj, skipped, ok := resolvePlanStep(&r.Plan, zeroCallOffered)
+			obj, skipped, ok := resolvePlanStep(&r.Plan, policyOffered)
 			r.Stats.StepsSkipped += skipped
 			r.sync()
 			if !ok {
@@ -492,7 +494,7 @@ func (r *runPlanning) choose(log io.Writer, round int, p Planner, obs Observatio
 		}
 
 		if r.Plan.Active() {
-			obj, skipped, ok := resolvePlanStep(&r.Plan, zeroCallOffered)
+			obj, skipped, ok := resolvePlanStep(&r.Plan, policyOffered)
 			r.Stats.StepsSkipped += skipped
 			r.sync()
 			if ok {
