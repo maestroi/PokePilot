@@ -12,7 +12,7 @@ type fieldActionTestMemory [0x10000]byte
 func (m *fieldActionTestMemory) Peek8(addr uint16) byte { return m[addr] }
 
 func (m *fieldActionTestMemory) PeekInto(addr uint16, dst []byte) {
-	copy(dst, m[int(addr):])
+	copy(dst, (*m)[int(addr):])
 }
 
 func TestDecodeFieldActionOwnsGen1RuntimeEncodings(t *testing.T) {
