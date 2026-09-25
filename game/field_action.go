@@ -4,13 +4,16 @@ package game
 // out-of-battle field actions. Profiles own the RAM encodings and concrete
 // object/tile identities behind these semantic facts.
 type FieldActionState struct {
-	Controllable    bool
-	CuttableAhead   bool
-	BoulderAhead    bool
-	Surfing         bool
-	StrengthActive  bool
-	Lit             bool
-	ActionSucceeded bool
+	Controllable     bool
+	CuttableAhead    bool
+	BoulderAhead     bool
+	Surfing          bool
+	StrengthActive   bool
+	Lit              bool
+	ActionSucceeded  bool
+	ResultTextActive bool
+	ChoiceVisible    bool
+	DebugText        string
 }
 
 // FieldActionDecoder hides game-specific field-action state encodings.
