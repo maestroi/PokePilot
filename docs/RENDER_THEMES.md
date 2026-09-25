@@ -77,7 +77,7 @@ Bundled manifests are validated at module startup; an invalid bundled pack there
 
 The spectator exposes a theme selector while **Modern** rendering is selected. The choice is stored under `pokepilot.spectator.theme` in browser-local storage. It is not stored on the run, sent to the worker, or included in farm state.
 
-That means two viewers can watch the same `RenderState` with different themes at the same time. Switching themes during a live run changes only the Canvas presentation. **Classic** remains the framebuffer fallback/debug view.
+That means two viewers can watch the same `RenderState` with different themes at the same time. Switching themes during a live run changes only the Canvas presentation. **Classic** (the emulator framebuffer) is the default renderer mode; viewers opt into Modern explicitly, and that choice is stored under `pokepilot.spectator.renderer`.
 
 Bundled v1 themes:
 
