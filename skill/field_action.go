@@ -7,8 +7,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ErrFieldMovePrerequisite reports that a field move cannot be used or
@@ -140,14 +138,16 @@ type FieldActionResult struct {
 // Field moves may print ordinary text after changing state (Strength is the
 // important case). Page those text boxes with A, but never select an open menu
 // blindly; MenuUp distinguishes a cursor menu from ordinary dialogue.
-func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
+func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
-		state.Snapshot(m, mem)
 		runtime := decoder.DecodeFieldAction(m)
 		if fieldActionCompleteState(runtime, spec) {
 			return nil
 		}
-		if mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(mem) {
+		if runtime.ChoiceVisible {
+			return fmt.Errorf("field move exposed an unexpected choice prompt")
+		}
+		if runtime.ResultTextActive {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
@@ -159,6 +159,22 @@ func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder g
 		m.StepFrames(10)
 	}
 	return fmt.Errorf("field move did not settle within %d frames", fieldActionBudget)
+}
+
+func closeFieldActionToOverworld(m menuMachine, decoder game.FieldActionDecoder) error {
+	for i := 0; i < 80; i++ {
+		runtime := decoder.DecodeFieldAction(m)
+		if runtime.Controllable && !runtime.ResultTextActive {
+			return nil
+		}
+		if runtime.ChoiceVisible {
+			return fmt.Errorf("unexpected choice prompt while closing field-action UI")
+		}
+		m.Tap(emu.B, 3, 7)
+		m.StepFrames(20)
+	}
+	runtime := decoder.DecodeFieldAction(m)
+	return fmt.Errorf("field-action UI did not close to overworld: %s", runtime.DebugText)
 }
 
 // UseFieldMove executes one supported field move through the real START ->
@@ -176,6 +192,14 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 }
 
 func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActionDecoder) (FieldActionResult, error) {
+	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return FieldActionResult{}, err
+	}
+	party, err := partyMenuDecoderFor(m)
+	if err != nil {
+		return FieldActionResult{}, err
+	}
 	spec, ok := FieldMoveSpecFor(move)
 	if !ok {
 		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
@@ -188,14 +212,11 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: invalid context: %w", spec.Name, err)
 	}
 
-	var mem state.Mem
 	slot, err := EnsureFieldMove(m, move)
 	if err != nil {
 		return FieldActionResult{}, err
 	}
-	state.Snapshot(m, &mem)
-
-	if err := openStartMenuEntry(m, startMenuPokemon); err != nil {
+	if err := openStartMenuEntryWithDecoder(m, menu, startMenuPokemon); err != nil {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: open POKEMON: %w", spec.Name, err)
 	}
 	if _, err := m.StepUntil(1000, normalPartyMenuUp); err != nil {
@@ -209,16 +230,15 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d: %w", spec.Name, slot, err)
 	}
 	m.StepFrames(30)
-	if err := settleFieldAction(m, &mem, spec, decoder); err != nil {
-		state.Snapshot(m, &mem)
+	if err := settleFieldAction(m, spec, decoder); err != nil {
 		runtime = decoder.DecodeFieldAction(m)
-		closeErr := closeToOverworld(m)
+		closeErr := closeFieldActionToOverworld(m, decoder)
 		if closeErr != nil {
 			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q; cleanup: %v",
-				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem), closeErr)
+				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, runtime.DebugText, closeErr)
 		}
 		return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q",
-			spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, state.ScreenText(&mem))
+			spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, runtime.DebugText)
 	}
 
 	runtime = decoder.DecodeFieldAction(m)
