@@ -896,8 +896,20 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				forced := newLegFromMap(e, cur)
 				if !deadEnds[forced] {
 					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
-						if replans++; replans > maxReplans {
-							return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+						// A fully exhausted connection band is already a finite,
+						// monotonic graph refinement: Traverse tried every tile in
+						// that scoped band, and deadEnds guarantees this journey will
+						// never inspect it again. Do not also charge the unrelated
+						// maxReplans budget for discovering another dead band. Wide,
+						// fragmented sea borders can contain more than eight distinct
+						// component bands before the usable crossing; charging each
+						// one made correct refinement terminate as route_replan_exhausted.
+						// Bounce-back evidence is cheaper to discover and retains the
+						// historical replan guard.
+						if legFailureConsumesReplanBudget(err) {
+							if replans++; replans > maxReplans {
+								return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+							}
 						}
 						deadEnds[forced] = true
 						continue // re-plan without this leg, from any tile of this map
@@ -957,6 +969,14 @@ func legFailureBanScope(err error) (edge, tile bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// legFailureConsumesReplanBudget separates bounded topology discovery from
+// transient retry pressure. Exhausting a component-scoped connection band is
+// already finite and monotonic because the successful safe-ban path records
+// that exact edge in deadEnds; every other failure keeps the historical guard.
+func legFailureConsumesReplanBudget(err error) bool {
+	return !errors.Is(err, ErrConnectionBandExhausted)
 }
 
 // places is the single source of truth for the names Place accepts.
