@@ -542,7 +542,6 @@ func progressOf(bs game.BattleState) battleProgress {
 	return battleProgress{bs.ActiveHP, bs.EnemyHP, bs.ActiveSpecies, bs.EnemySpecies}
 }
 
-
 func containsInt(slice []int, x int) bool {
 	for _, v := range slice {
 		if v == x {
