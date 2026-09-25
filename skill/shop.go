@@ -148,12 +148,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		return primary
 	}
 
-	// 4. Select the item; the choose-quantity box opens. Capture the stale
-	// hMoney and wMaxItemQuantity first. The highlighted row's price is
-	// already in hMoney, so a one-item total does not change it; the
-	// quantity menu is the one that sets wMaxItemQuantity to 99.
-	hBefore := bcdMoney(&mem)
-	maxBefore := mem.U8(sym.MaxItemQuantity)
+	// 4. Select the item; the profile identifies the choose-quantity phase.
 	if err := selectListEntry(m, pos); err != nil {
 		// Same rule as the ErrNotInStock backout above: a cursor that never
 		// reached its target leaves the item list up. The typed controller
@@ -161,7 +156,6 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		// shop is gone.
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
-	qtyUp := func(mm *state.Mem) bool { return quantityBoxUp(mm, hBefore, maxBefore) }
 	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the choose-quantity box"); err != nil {
 		// A timeout is still an engineering failure. The campaign may survive
 		// it only after the owning skill proves the shop has been closed.
@@ -248,7 +242,7 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 	}
 
 	m.Tap(emu.A, 3, 7)
-	if err := martAdvance(m, buySellQuitUp, "the BUY/SELL/QUIT menu"); err != nil {
+	if err := martAdvance(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseActionMenu }, "the BUY/SELL/QUIT menu"); err != nil {
 		return recoverShopFailure(m, err)
 	}
 	if err := SelectMenuItem(m, 1); err != nil { // SELL
@@ -267,11 +261,6 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select bag item %#02x", item), err))
 	}
 
-	quantityUp := func(mm *state.Mem) bool {
-		max := int(mm.U8(sym.MaxItemQuantity))
-		cur := int(mm.U8(sym.ItemQuantity))
-		return mm.U8(sym.MenuWatchedKeys) == watchListOrQty && max == liveQty && cur >= 1 && cur <= max
-	}
 	if err := martWait(m, func(*state.Mem) bool { return shop.DecodeShop(m).Phase == game.ShopPhaseQuantity }, "the sell choose-quantity box"); err != nil {
 		state.Snapshot(m, &mem)
 		text := strings.ToLower(state.ScreenText(&mem))
@@ -288,7 +277,7 @@ func Sell(m *emu.Emu, item uint8, qty int) error {
 		return recoverShopFailure(m, err)
 	}
 	state.Snapshot(m, &mem)
-	total := bcdMoney(&mem)
+	total := shop.DecodeShop(m).Total
 	if total <= 0 {
 		return recoverShopFailure(m, fmt.Errorf("skill: Sell: item %#02x x%d produced non-positive sale total %d", item, qty, total))
 	}
