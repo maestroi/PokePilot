@@ -24,7 +24,6 @@ func routingProfileFor(m *emu.Emu) (game.RoutingProfile, error) {
 	return routing, nil
 }
 
-
 func routingProviderForROM(romData []byte) (worldmodel.MapHeaderProvider, error) {
 	if profile, _, err := profiles.Detect(romData); err == nil {
 		if routing, ok := profile.(game.RoutingProfile); ok {
