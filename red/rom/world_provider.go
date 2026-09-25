@@ -13,7 +13,6 @@ const (
 
 	tilePairCollisionsLandAddr  = 0x0c7e
 	tilePairCollisionsWaterAddr = 0x0ca0
-	tilePairEntryLen            = 3
 )
 
 type redWorldProvider struct {
@@ -110,23 +109,11 @@ func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.
 }
 
 func redTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.TraversalMode) map[[2]uint8]bool {
-	pairs := map[[2]uint8]bool{}
 	addr := tilePairCollisionsLandAddr
 	if mode == worldmodel.TraversalWater {
 		addr = tilePairCollisionsWaterAddr
 	}
-	for off := addr; off+tilePairEntryLen <= len(romData); off += tilePairEntryLen {
-		if romData[off] == 0xff {
-			break
-		}
-		if romData[off] != tileset {
-			continue
-		}
-		a, b := romData[off+1], romData[off+2]
-		pairs[[2]uint8{a, b}] = true
-		pairs[[2]uint8{b, a}] = true
-	}
-	return pairs
+	return gen1rom.TilePairsAt(romData, addr, tileset)
 }
 
 func isRegisteredGen1WorldROM(romData []byte) bool {

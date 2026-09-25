@@ -40,7 +40,14 @@ func TestRealYellowWorldParsesEveryPlayableMap(t *testing.T) {
 				t.Errorf("%02x %s connection -> invalid %02x", id, MapName(id), c.MapID)
 			}
 		}
+		_, elevator := lookupElevator(id)
 		for _, w := range h.Warps {
+			// Elevator warps carry a placeholder destination that the
+			// elevator script rewrites; the graph models them through
+			// LookupElevator instead.
+			if elevator {
+				continue
+			}
 			if w.DestMap != 0xff && !validMapID(w.DestMap) {
 				t.Errorf("%02x %s warp -> invalid %02x", id, MapName(id), w.DestMap)
 			}
@@ -62,6 +69,41 @@ func TestRealYellowGraphIncludesBeachHouse(t *testing.T) {
 	}
 	if _, ok := graph.Edges[0xF8]; !ok {
 		t.Fatal("SUMMER_BEACH_HOUSE (F8) missing from graph")
+	}
+}
+
+// Regression: Yellow keeps tileset collision lists in bank 1, not in the
+// tileset's GFX bank. Reading them from the wrong bank made every overworld
+// tile walkable and left most of Kanto unreachable from Pallet Town.
+func TestRealYellowOverworldCollisionUsesYellowCollisionBank(t *testing.T) {
+	data := loadRealYellowROM(t)
+	h, err := ParseMap(data, 0x00) // PALLET_TOWN
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := h.WorldGridSpec(data, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := 0
+	for _, walkable := range spec.Walkable {
+		if !walkable {
+			blocked++
+		}
+	}
+	if blocked < len(spec.Walkable)/4 {
+		t.Fatalf("Pallet Town has %d/%d blocked tiles; collision list read from the wrong bank", blocked, len(spec.Walkable))
+	}
+	graph, err := world.BuildGraph(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reached := map[uint8]bool{}
+	for _, e := range graph.Edges[0x00] {
+		reached[e.To] = true
+	}
+	if !reached[0x25] { // REDS_HOUSE_1F
+		t.Fatalf("Pallet Town exits = %v, want a warp into REDS_HOUSE_1F", graph.Edges[0x00])
 	}
 }
 
