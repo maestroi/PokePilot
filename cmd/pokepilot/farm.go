@@ -41,6 +41,10 @@ const (
 	heartbeatDeadline = 2 * time.Second
 	// farmHTTPTimeout bounds the Lease and Finish calls.
 	farmHTTPTimeout = 2 * time.Second
+	// farmResumeTimeout bounds the resume-checkpoint lookup, which searches a
+	// campaign's whole attempt lineage and downloads the chosen state; it is a
+	// one-off per lease, not a hot-path call like Lease/Finish.
+	farmResumeTimeout = 30 * time.Second
 	// farmIdleSleep is how long a worker with no spec ready waits before
 	// leasing again; idle workers keep leasing.
 	farmIdleSleep = time.Second

@@ -182,18 +182,19 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		err error
 	)
 	switch {
-	case lostRetry:
+	case lostRetry && planner != "llm":
 		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
 		if err == nil {
 			cp.Attempt = previous
-		} else if os.IsNotExist(err) && planner == "llm" {
-			// The lost worker may have disappeared before writing a fresh
-			// objective pair. Prefer the newest older ordinary checkpoint in
-			// the lineage, and only then fall back to a durable badge snapshot.
-			cp, err = w.latestLineageResumeCheckpoint(id, planner)
-			if os.IsNotExist(err) {
-				cp, err = w.latestLineageMajorCheckpoint(id)
-			}
+		}
+	case lostRetry:
+		// Resume the deepest pair in the lineage, not merely the previous
+		// attempt's: if that attempt had itself fallen back to a fresh
+		// cartridge before dying, its early checkpoints would otherwise lock
+		// the campaign's restart in permanently.
+		cp, err = w.latestLineageResumeCheckpoint(id, planner)
+		if os.IsNotExist(err) {
+			cp, err = w.latestLineageMajorCheckpoint(id)
 		}
 	case resilientRetry:
 		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
@@ -213,12 +214,15 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
+	if err != nil && !os.IsNotExist(err) {
+		// 204 means "nothing to resume; boot fresh". A lookup that failed
+		// has not proven that, so it must not erase the campaign's progress.
+		log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
+		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "resume checkpoint lookup failed: " + err.Error()})
+		return
+	}
 	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
-		}
-		// Resume is recovery, never a new reason for the run to fail. The
-		// runner interprets 204 as a clean fresh-start fallback.
+		// The runner interprets 204 as a clean fresh-start fallback.
 		w.mu.Lock()
 		if current := w.tiles[id]; current != nil && !current.Finished {
 			appendRunActivityLocked(current, runActivityEvent{
