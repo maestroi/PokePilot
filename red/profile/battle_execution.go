@@ -62,9 +62,10 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 	switch {
 	case strings.Contains(text, battleHMCantDeleteMarker):
 		out.Phase = game.BattleExecutionHMForgetRejected
-	case strings.Contains(text, battleForgetMenuMarker) && menu.Max == 3:
+	case strings.Contains(text, battleForgetMenuMarker):
 		out.Phase = game.BattleExecutionForgetMove
 		out.ForgetCursor = game.MenuCursorState{Current: menu.Current, Max: menu.Max}
+		out.ForgetReady = menu.Max == 3
 	case strings.Contains(text, battleSwitchBoxMarker):
 		out.Phase = game.BattleExecutionSwitchBox
 	case strings.Contains(text, battleTrainerSwitchMarker):
