@@ -279,7 +279,6 @@ func TestRunFailurePolicyTrainingRetreatUsesLevelStreak(t *testing.T) {
 	}
 }
 
-
 func TestRunFailurePolicyRouteReplanExhaustionDoesNotSpendFailureBudget(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	obj := Objective{Kind: KindGoTo, Place: "viridian city"}
