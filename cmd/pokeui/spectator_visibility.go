@@ -77,6 +77,7 @@ func spectatorVisibilityHTTPHandler(wallBase string, next http.Handler) http.Han
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		protected := req.Method == http.MethodGet && (req.URL.Path == "/v1/watch" ||
 			req.URL.Path == "/frame" ||
+			req.URL.Path == "/render-state" ||
 			strings.HasPrefix(req.URL.Path, "/v1/watch/runs/"))
 		if !protected {
 			next.ServeHTTP(res, req)
@@ -93,7 +94,7 @@ func spectatorVisibilityHTTPHandler(wallBase string, next http.Handler) http.Han
 		case req.URL.Path == "/v1/watch":
 			serveControlledSpectatorSnapshot(res, req, next, control)
 			return
-		case req.URL.Path == "/frame":
+		case req.URL.Path == "/frame" || req.URL.Path == "/render-state":
 			runID := strings.TrimSpace(req.URL.Query().Get("run"))
 			if runID != "" && !spectatorRunVisible(control, runID) {
 				http.NotFound(res, req)

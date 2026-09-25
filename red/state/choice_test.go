@@ -12,7 +12,8 @@ import (
 
 // twoOptionFixture builds a Mem with the given menu-shape bytes and, when
 // (y,x) is inside the 18x20 screen, the given tile at that tilemap
-// position.
+// position. It also records that position in wMenuCursorLocation, which is
+// where the ROM publishes the cursor the decoders actually read.
 func twoOptionFixture(fontLoaded, inBattle, max, cur, y, x, tile byte) *Mem {
 	m := &Mem{}
 	m[sym.FontLoaded] = fontLoaded
@@ -22,7 +23,11 @@ func twoOptionFixture(fontLoaded, inBattle, max, cur, y, x, tile byte) *Mem {
 	m[sym.TopMenuItemY] = y
 	m[sym.TopMenuItemX] = x
 	if int(y) < 18 && int(x) < 20 {
-		m[sym.TileMap+uint16(int(y)*20+int(x))] = tile
+		offset := uint16(int(y)*20 + int(x))
+		m[sym.TileMap+offset] = tile
+		cursor := sym.TileMap + offset
+		m[sym.MenuCursorLocation] = byte(cursor)
+		m[sym.MenuCursorLocation+1] = byte(cursor >> 8)
 	}
 	return m
 }
@@ -121,5 +126,17 @@ func TestDecodeTwoOptionMenuOutOfRange(t *testing.T) {
 				t.Fatalf("out-of-range (%d,%d) must not decode, got %+v", tc.y, tc.x, got)
 			}
 		})
+	}
+}
+
+// TestDecodeTwoOptionMenuAnsweredUseTossIsNotLive is the item menu's USE/TOSS
+// box after USE was chosen, measured while a TM's "Teach X?" text printed on
+// run-22ahrk9pflcilu3jxq9xt37x6: wMaxMenuItem=1, wMenuCursorLocation at
+// (14,11), and the UNFILLED '▷' ($EC) that .choseItem draws once
+// HandleMenuInput has returned. That choice is already made; decoding it as a
+// live prompt stopped TeachTMHM from paging to the real YES/NO.
+func TestDecodeTwoOptionMenuAnsweredUseTossIsNotLive(t *testing.T) {
+	if got := DecodeTwoOptionMenu(twoOptionFixture(1, 0, 1, 0, 11, 14, 0xEC)); got != nil {
+		t.Fatalf("answered USE/TOSS cursor decoded as live prompt: %+v", got)
 	}
 }

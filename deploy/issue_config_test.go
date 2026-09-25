@@ -75,6 +75,7 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		"POKEPILOT_LLM_GATEWAY_URL: ${POKEPILOT_LLM_GATEWAY_URL:-}",
 		"POKEPILOT_LLM_URL: ${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}",
 		"POKEPILOT_LLM_GPU_URL: ${POKEPILOT_LLM_GPU_URL:-http://192.168.50.130:8002/v1}",
+		"POKEPILOT_LLM_GPU_MODEL: ${POKEPILOT_LLM_GPU_MODEL:-qwen3.8-27b}",
 		"POKEPILOT_LLM_GPU_TIMEOUT: ${POKEPILOT_LLM_GPU_TIMEOUT:-120s}",
 		"POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT: ${POKEPILOT_LLM_GPU_RECOVERY_REASONING_EFFORT:-off}",
 		"POKEPILOT_LLM_4090_URL: ${POKEPILOT_LLM_4090_URL:-http://192.168.50.81:8002/v1}",
@@ -85,6 +86,11 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		if !strings.Contains(runner, want) {
 			t.Errorf("runner missing inference setting %q", want)
 		}
+	}
+	// The runner advertises the virtual trader only through this private Swarm
+	// DNS name; the planner sees availability, never the endpoint.
+	if !strings.Contains(runner, "POKEPILOT_VIRTUAL_TRADER_URL: http://virtualtrader:8080") {
+		t.Error("runner must advertise the virtual trader at http://virtualtrader:8080")
 	}
 	for _, want := range []string{
 		"POKEPILOT_LITELLM_7900_URL: ${POKEPILOT_LITELLM_7900_URL:-http://192.168.50.130:8002/v1}",

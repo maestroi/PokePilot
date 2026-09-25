@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -22,6 +23,11 @@ var ErrCantAfford = errors.New("skill: not enough money for the purchase")
 // item. The stock is read from wItemList (the ROM's mart table), never a
 // hardcoded price list.
 var ErrNotInStock = errors.New("skill: the clerk does not stock the requested item")
+
+// ErrUnsellable is returned when Red's mart refuses to put a price on an
+// item (key items and HMs). Sell always backs out to a controllable overworld
+// boundary before returning this typed refusal.
+var ErrUnsellable = errors.New("skill: the item cannot be sold")
 
 // ErrShopMenuTimeout is a bounded mart transition timeout. It is recoverable
 // only when Buy successfully backs out to the overworld before returning it.
@@ -138,9 +144,11 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	}
 
 	// 4. Select the item; the choose-quantity box opens. Capture the stale
-	// hMoney first so the box is detected by the price changing (there is no
-	// other RAM marker that distinguishes it from the item list).
+	// hMoney and wMaxItemQuantity first. The highlighted row's price is
+	// already in hMoney, so a one-item total does not change it; the
+	// quantity menu is the one that sets wMaxItemQuantity to 99.
 	hBefore := bcdMoney(&mem)
+	maxBefore := mem.U8(sym.MaxItemQuantity)
 	if err := selectListEntry(m, pos); err != nil {
 		// Same rule as the ErrNotInStock backout above: a cursor that never
 		// reached its target leaves the item list up. The typed controller
@@ -148,7 +156,7 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 		// shop is gone.
 		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select item %#02x", item), err))
 	}
-	qtyUp := func(mm *state.Mem) bool { return bcdMoney(mm) > 0 && bcdMoney(mm) != hBefore }
+	qtyUp := func(mm *state.Mem) bool { return quantityBoxUp(mm, hBefore, maxBefore) }
 	if err := martWait(m, qtyUp, "the choose-quantity box"); err != nil {
 		// A timeout is still an engineering failure. The campaign may survive
 		// it only after the owning skill proves the shop has been closed.
@@ -205,6 +213,115 @@ func Buy(m *emu.Emu, item uint8, qty int) error {
 	return nil
 }
 
+// Sell sells qty units of one bag item to the current mart clerk and returns
+// to a controllable overworld boundary. It drives Red's real SELL flow,
+// verifies both sides of the transaction (bag decrement and money increment),
+// and refuses key items/HMs with ErrUnsellable instead of leaving a mart menu
+// open. The caller must already be standing at and facing a mart clerk/counter.
+func Sell(m *emu.Emu, item uint8, qty int) error {
+	if qty < 1 || qty > 99 {
+		return fmt.Errorf("skill: Sell: quantity %d out of range 1..99", qty)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return fmt.Errorf("skill: Sell: not controllable (wFontLoaded=%#04x wJoyIgnore=%#04x)",
+			mem.U8(sym.FontLoaded), mem.U8(sym.JoyIgnore))
+	}
+	before := state.DecodeInventory(&mem)
+	moneyBefore := int(before.Money)
+	idx, bagBefore := bagEntry(&mem, item)
+	if idx < 0 || bagBefore < qty {
+		return fmt.Errorf("skill: Sell: item %#02x quantity %d, need %d", item, bagBefore, qty)
+	}
+	if m.Peek8(sym.CurMap) == viridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel) {
+		return fmt.Errorf("%w: Viridian Mart clerk before EventOakGotParcel", ErrShopNotOpenYet)
+	}
+
+	m.Tap(emu.A, 3, 7)
+	if err := martAdvance(m, buySellQuitUp, "the BUY/SELL/QUIT menu"); err != nil {
+		return recoverShopFailure(m, err)
+	}
+	if err := SelectMenuItem(m, 1); err != nil { // SELL
+		return recoverShopFailure(m, shopControllerFailure("select SELL", err))
+	}
+	if err := martAdvance(m, itemListUp, "the sell item list"); err != nil {
+		return recoverShopFailure(m, err)
+	}
+
+	state.Snapshot(m, &mem)
+	liveIdx, liveQty := bagEntry(&mem, item)
+	if liveIdx < 0 || liveQty < qty {
+		return recoverShopFailure(m, fmt.Errorf("skill: Sell: item %#02x changed before selection: index=%d quantity=%d", item, liveIdx, liveQty))
+	}
+	if err := selectListEntry(m, liveIdx); err != nil {
+		return recoverShopFailure(m, shopControllerFailure(fmt.Sprintf("select bag item %#02x", item), err))
+	}
+
+	quantityUp := func(mm *state.Mem) bool {
+		max := int(mm.U8(sym.MaxItemQuantity))
+		cur := int(mm.U8(sym.ItemQuantity))
+		return mm.U8(sym.MenuWatchedKeys) == watchListOrQty && max == liveQty && cur >= 1 && cur <= max
+	}
+	if err := martWait(m, quantityUp, "the sell choose-quantity box"); err != nil {
+		state.Snapshot(m, &mem)
+		text := strings.ToLower(state.ScreenText(&mem))
+		if strings.Contains(text, "can't put a") || strings.Contains(text, "price on that") {
+			primary := fmt.Errorf("skill: Sell: %w: item %#02x", ErrUnsellable, item)
+			if cleanup := exitToOverworld(m); cleanup != nil {
+				return shopStabilizationFailure(primary, cleanup)
+			}
+			return primary
+		}
+		return recoverShopFailure(m, err)
+	}
+	if err := setQuantity(m, qty); err != nil {
+		return recoverShopFailure(m, err)
+	}
+	state.Snapshot(m, &mem)
+	total := bcdMoney(&mem)
+	if total <= 0 {
+		return recoverShopFailure(m, fmt.Errorf("skill: Sell: item %#02x x%d produced non-positive sale total %d", item, qty, total))
+	}
+
+	m.Tap(emu.A, 3, 7)
+	if err := martAdvance(m, twoOptionUp, "the sale-confirmation prompt"); err != nil {
+		return recoverShopFailure(m, err)
+	}
+	if err := selectTwoOption(m, 0); err != nil { // YES
+		return recoverShopFailure(m, shopControllerFailure("answer sale YES", err))
+	}
+
+	expectedMoney := moneyBefore + total
+	if expectedMoney > 999999 {
+		expectedMoney = 999999
+	}
+	if _, err := m.StepUntil(martAdvanceBudget, func(m *emu.Emu) bool {
+		state.Snapshot(m, &mem)
+		_, afterQty := bagEntry(&mem, item)
+		return afterQty == bagBefore-qty && int(state.DecodeInventory(&mem).Money) == expectedMoney
+	}); err != nil {
+		state.Snapshot(m, &mem)
+		_, afterQty := bagEntry(&mem, item)
+		return recoverShopFailure(m, fmt.Errorf("skill: Sell: transaction did not settle: item %#02x %d->%d want %d, money %d->%d want %d: %w",
+			item, bagBefore, afterQty, bagBefore-qty, moneyBefore, state.DecodeInventory(&mem).Money, expectedMoney, err))
+	}
+
+	if err := exitToOverworld(m); err != nil {
+		return recoverShopFailure(m, err)
+	}
+	state.Snapshot(m, &mem)
+	after := state.DecodeInventory(&mem)
+	_, bagAfter := bagEntry(&mem, item)
+	if bagAfter != bagBefore-qty {
+		return fmt.Errorf("skill: Sell: bag count for item %#02x = %d, want %d", item, bagAfter, bagBefore-qty)
+	}
+	if int(after.Money) != expectedMoney {
+		return fmt.Errorf("skill: Sell: money = %d, want %d (before %d + sale %d)", after.Money, expectedMoney, moneyBefore, total)
+	}
+	return nil
+}
+
 // buySellQuitMax is wMaxMenuItem for the three-entry BUY/SELL/QUIT menu
 // (indices 0..2). MEASURED with DEBUG tracing on TestBuy: the real menu
 // reads wMenuWatchedKeys==3 wMaxMenuItem==2; the mart's own YES/NO
@@ -231,6 +348,21 @@ func buySellQuitUp(mm *state.Mem) bool {
 // means the list.
 func itemListUp(mm *state.Mem) bool {
 	return mm.U8(sym.MenuWatchedKeys) == watchListOrQty
+}
+
+// quantityBoxUp reports that DisplayChooseQuantityMenu has taken over from the
+// priced item list. The list already stores the highlighted item's price in
+// hMoney, and the quantity box's first total is that same price, so a price
+// change never arrives for a one-item purchase of the highlighted row.
+// pokemart.asm sets wMaxItemQuantity to 99 immediately before drawing the box;
+// the list leaves that byte at a smaller stale value (measured 1 at Cerulean
+// Mart, run-2v0h14ws5jl5jeghjyff4ayql).
+func quantityBoxUp(mm *state.Mem, hBefore int, maxBefore uint8) bool {
+	if mm.U8(sym.MaxItemQuantity) == 99 && mm.U8(sym.ItemQuantity) >= 1 && maxBefore != 99 {
+		return true
+	}
+	price := bcdMoney(mm)
+	return price > 0 && price != hBefore
 }
 
 // twoOptionUp reports that a two-option prompt (the YES/NO confirmation) is up.
@@ -297,62 +429,13 @@ func recoverShopFailure(m *emu.Emu, err error) error {
 	return err
 }
 
-// listPosition is the item list's entry under the cursor. The mart's list
-// menu scrolls exactly like the battle bag list (skill/bag.go's
-// bagPosition): past the visible window wCurrentMenuItem stops moving and
-// wListScrollOffset takes over, so the true index is their sum, not
-// wCurrentMenuItem alone. wMaxMenuItem cannot substitute for either — it is
-// a 1/2 window-size sentinel on list menus (DisplayListMenuID), not the
-// entry count.
-func listPosition(mm *state.Mem) int {
-	return int(mm.U8(sym.ListScrollOffset)) + int(mm.U8(sym.CurrentMenuItem))
-}
-
-// selectListEntry drives the list-menu cursor to a 0-based position and
-// presses A. Step-and-verify against listPosition, the same pattern
-// selectBagEntry uses and for the same reason: a press count assumes
-// wCurrentMenuItem alone tracks the selection, which is only true inside
-// the visible window. MEASURED 2026-09-02: "buy 3 BURN HEAL" (index 3, the
-// stock's 4th and last entry) never reached it — the mart's list window is
-// 3 rows, so selecting it scrolls and wCurrentMenuItem pins at 2 while
-// wListScrollOffset climbs to 1; a loop watching only wCurrentMenuItem
-// never sees a match and burns its budget stuck on "2".
+// selectListEntry uses the shared profile-driven scrolling-list driver.
+// Shop-specific callers wrap any cursor failure with ErrShopControllerStalled.
 func selectListEntry(m *emu.Emu, index int) error {
-	const stuckLimit = 8
-	stuck := 0
-	// The list needs one settle window before it will accept input at all:
-	// martAdvance(itemListUp) returns the instant the list appears, which
-	// can be mid-render. Every OTHER path through the loop below gets that
-	// settle for free (a Down/Up tap is always followed by one before the
-	// next read), but the entry already under the cursor takes zero loop
-	// iterations and used to go straight to a bare Tap(A) — the confirming
-	// press landed before the list was ready to see it and nothing
-	// happened. MEASURED 2026-09-02: "buy 3 POKEBALL" right after buying
-	// something else, with POKe BALL (index 0) already under the cursor,
-	// silently dropped the selection and the choose-quantity box never
-	// opened. Settling here first closes the gap for every entry, not only
-	// the one already selected.
-	m.StepFrames(talkSettle)
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	for pos := listPosition(&mem); pos != index; pos = listPosition(&mem) {
-		dir := emu.Down
-		if index < pos {
-			dir = emu.Up
-		}
-		m.Tap(dir, 3, 7)
-		m.StepFrames(talkSettle)
-		state.Snapshot(m, &mem)
-		if listPosition(&mem) == pos {
-			stuck++
-			if stuck >= stuckLimit {
-				return fmt.Errorf("%w: cursor stuck at list entry %d, wanted %d, %d consecutive taps without movement", ErrShopControllerStalled, pos, index, stuck)
-			}
-		} else {
-			stuck = 0
-		}
+	if err := selectScrollingListEntry(m, index); err != nil {
+		return err
 	}
-	m.Tap(emu.A, 3, 7)
+	// Preserve the mart controller's historical post-confirm settle window.
 	m.StepFrames(talkSettle)
 	return nil
 }

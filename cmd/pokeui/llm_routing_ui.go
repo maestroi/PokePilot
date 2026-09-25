@@ -25,7 +25,7 @@ func init() {
 	indexHTML = bytes.Replace(indexHTML, oldPolicies, newPolicies, 1)
 
 	oldFacts := []byte(`<div><span>7900 XTX</span><strong>qwen3.8-27B · preferred</strong></div><div><span>4090</span><strong>qwen3.8-27B · overflow</strong></div><div><span>LAN CPU</span><strong>qwen 4B · final fallback</strong></div>`)
-	newFacts := []byte(`<div><span>7900 XTX</span><strong>qwen3.8-27B · direct default</strong></div><div><span>4090</span><strong>qwen3.8-27B · manual only</strong></div><div><span>LAN CPU</span><strong>qwen 4B · 120s fallback / manual</strong></div>`)
+	newFacts := []byte(`<div><span>7900 XTX</span><strong>registry model · discovered default</strong></div><div><span>4090</span><strong>switchable registry model · manual</strong></div><div><span>LAN CPU</span><strong>configured fallback / manual</strong></div>`)
 	indexHTML = bytes.Replace(indexHTML, oldFacts, newFacts, 1)
 
 	oldLabels := []byte(`    switch ((r.llm_profile || "").toLowerCase()) {

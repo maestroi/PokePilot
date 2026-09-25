@@ -19,7 +19,7 @@ func TestEndlessErrorRetryUsesLatestObjectiveCheckpoint(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {
@@ -74,7 +74,7 @@ func TestEndlessMajorCheckpointFallsBackAcrossAttempts(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil {
@@ -114,7 +114,7 @@ func TestLostEndlessRetryWithoutFreshObjectiveFallsBackToMajor(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil || first.Attempt != 1 {
@@ -228,7 +228,7 @@ func TestEndlessSuccessorAfterFailedUsesLatestParentObjectiveCheckpoint(t *testi
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil {
 		t.Fatalf("lease 1 = %+v, %v", first, err)
@@ -265,7 +265,7 @@ func TestEndlessSuccessorAfterDoneStartsFresh(t *testing.T) {
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil {
 		t.Fatalf("lease 1 = %+v, %v", first, err)
@@ -296,7 +296,7 @@ func TestEndlessSuccessorWithoutMajorUsesParentObjectiveCheckpoint(t *testing.T)
 	defer srv.Close()
 	client := farm.NewClient(srv.URL)
 	ctx := context.Background()
-	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, srv.URL, farm.Spec{RunID: "campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 	first, err := client.Lease(ctx)
 	if err != nil || first == nil {
 		t.Fatalf("lease 1 = %+v, %v", first, err)
@@ -405,7 +405,7 @@ func TestEndlessSuccessorResumeSurvivesWallRestart(t *testing.T) {
 func exhaustEndlessCampaign(t *testing.T, client *farm.Client, wallURL, runID, reason, detail string, state, knowledge farm.Artifact) {
 	t.Helper()
 	ctx := context.Background()
-	enqueueViaHTTP(t, wallURL, farm.Spec{RunID: runID, Planner: "llm", Goal: "beat the game", Endless: true})
+	enqueueViaHTTP(t, wallURL, farm.Spec{RunID: runID, Planner: "llm", Goal: farm.GoalFrom("beat the game"), Endless: true})
 	uploaded := false
 	for {
 		spec, err := client.Lease(ctx)

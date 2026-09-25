@@ -61,6 +61,15 @@ type MapReachability struct {
 	Reason string            `json:"reason,omitempty"`
 }
 
+// MapParseDiagnostic records a provider-declared map parse omission that was
+// explicitly allowed during graph construction. It remains visible to audit
+// tooling instead of disappearing from the graph silently.
+type MapParseDiagnostic struct {
+	Map    MapID  `json:"map"`
+	Error  string `json:"error"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // Map describes the geometry relevant to verification. Components are stable
 // positive ids for mutually reachable standing regions. GeometryKnown=false
 // means the adapter could not prove collision for this map and the verifier
@@ -97,6 +106,34 @@ type Port struct {
 	Point      *Point `json:"point,omitempty"`
 }
 
+type ExecutionStatus string
+
+const (
+	ExecutionProven         ExecutionStatus = "proven"
+	ExecutionDynamicUnknown ExecutionStatus = "dynamic_unknown"
+)
+
+// ExecutionPath is one statically executable local crossing. ExitComponent is
+// the source standing component that can approach ExitPoint without crossing
+// another active port; EntryComponent is the concrete destination component
+// reached by the corresponding landing tile.
+type ExecutionPath struct {
+	ExitComponent  int   `json:"exit_component,omitempty"`
+	EntryComponent int   `json:"entry_component,omitempty"`
+	ExitPoint      Point `json:"exit_point"`
+	EntryPoint     Point `json:"entry_point"`
+}
+
+// ExecutionEvidence is adapter-supplied proof about whether the local
+// navigation executor can realize a graph edge without running an emulator.
+// Dynamic semantic edges are explicit unknowns rather than being treated as
+// unrestricted geometry.
+type ExecutionEvidence struct {
+	Status ExecutionStatus `json:"status"`
+	Paths  []ExecutionPath `json:"paths,omitempty"`
+	Reason string          `json:"reason,omitempty"`
+}
+
 // Transition is the portable semantic overlay on one geometric edge.
 // Gate means requirements are preconditions on ordinary geometry. PivotOnly
 // means missing requirements still leave the ordinary geometric edge usable;
@@ -113,14 +150,15 @@ type Transition struct {
 
 // Edge is one directed topology transition.
 type Edge struct {
-	ID         string      `json:"id"`
-	Kind       EdgeKind    `json:"kind"`
-	From       MapID       `json:"from"`
-	To         MapID       `json:"to"`
-	Exit       Port        `json:"exit"`
-	Entry      Port        `json:"entry"`
-	BorderSpan *Span       `json:"border_span,omitempty"`
-	Transition *Transition `json:"transition,omitempty"`
+	ID         string             `json:"id"`
+	Kind       EdgeKind           `json:"kind"`
+	From       MapID              `json:"from"`
+	To         MapID              `json:"to"`
+	Exit       Port               `json:"exit"`
+	Entry      Port               `json:"entry"`
+	BorderSpan *Span              `json:"border_span,omitempty"`
+	Transition *Transition        `json:"transition,omitempty"`
+	Execution  *ExecutionEvidence `json:"execution,omitempty"`
 }
 
 // Snapshot is the complete portable input to Verify. StartMaps is optional;
@@ -129,10 +167,11 @@ type Edge struct {
 // RequiredMaps is retained as a compatibility shorthand for required
 // expectations and can be removed once all adapters have migrated.
 type Snapshot struct {
-	Game            string           `json:"game,omitempty"`
-	Maps            []Map            `json:"maps"`
-	Edges           []Edge           `json:"edges"`
-	StartMaps       []MapID          `json:"start_maps,omitempty"`
-	RequiredMaps    []MapID          `json:"required_maps,omitempty"`
-	MapExpectations []MapExpectation `json:"map_expectations,omitempty"`
+	Game                string               `json:"game,omitempty"`
+	Maps                []Map                `json:"maps"`
+	Edges               []Edge               `json:"edges"`
+	StartMaps           []MapID              `json:"start_maps,omitempty"`
+	RequiredMaps        []MapID              `json:"required_maps,omitempty"`
+	MapExpectations     []MapExpectation     `json:"map_expectations,omitempty"`
+	MapParseDiagnostics []MapParseDiagnostic `json:"map_parse_diagnostics,omitempty"`
 }

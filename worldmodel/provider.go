@@ -18,6 +18,9 @@ type Warp struct {
 	Y          uint8
 	DestWarpID uint8
 	DestMap    uint8
+	// Inert marks a ROM warp-table entry that is ordinary traversable floor:
+	// it does not fire a transition and therefore must not become a graph port.
+	Inert bool
 }
 
 // Connection is a portable adjacent-map seam.
@@ -86,6 +89,14 @@ type MapHeaderProvider interface {
 	Grid(mapID uint8, blocks []byte, mode TraversalMode) (GridSpec, error)
 	LookupElevator(mapID uint8) (ElevatorSpec, bool)
 	ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (ElevatorFloor, bool)
+}
+
+// MapParseFailureClassifier is an optional provider capability for maps that
+// are deliberately enumerated but not parseable by this adapter. Returning
+// ok=true makes that omission explicit; all unclassified ParseMap failures are
+// fatal to normal graph construction.
+type MapParseFailureClassifier interface {
+	ExpectedMapParseFailure(mapID uint8, err error) (reason string, ok bool)
 }
 
 // ROMProviderFactory is retained as a compatibility bridge for callers that

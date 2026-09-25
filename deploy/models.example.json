@@ -2,20 +2,19 @@
   "deployments": [
     {
       "id": "qwen38-27b-7900",
-      "label": "Qwen 3.8 27B \u00b7 7900 XTX",
-      "model_id": "qwen3.8-27b",
-      "revision": "replace-with-model-revision-or-sha256",
-      "artifact": "/srv/models/qwen3.8-27b/model.gguf",
-      "quantization": "replace-with-quantization",
+      "label": "7900 XTX",
+      "model_id": "",
       "compute": "RX 7900 XTX",
       "endpoint": "http://192.168.50.130:8002/v1",
-      "api_model": "qwen3.8-27b",
+      "api_model": "",
       "enabled": true,
+      "discover": true,
+      "default_for": ["farm", "experiment-a"],
       "engine": "llama.cpp",
       "engine_version": "replace-with-server-version",
-      "engine_config": "7900-pinned",
+      "engine_config": "7900-switchable",
       "legacy_profile": "auto",
-      "max_parallel_workers": 1
+      "max_parallel_workers": 4
     },
     {
       "id": "qwen35-4b-4090",
@@ -28,6 +27,7 @@
       "endpoint": "http://192.168.50.81:8002/v1",
       "api_model": "pokepilot-4090",
       "enabled": true,
+      "default_for": ["experiment-b"],
       "control_url": "http://192.168.50.81:8091",
       "token_env": "POKEPILOT_MODELHOST_TOKEN",
       "engine": "llama.cpp",

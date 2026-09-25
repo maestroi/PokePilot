@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/maestroi/pokepilot/farm"
 	"strings"
 	"testing"
 
@@ -8,7 +9,7 @@ import (
 )
 
 func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
-	p := newStatsPlanner("", "", "", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 	p.inner.ExtraSystem = "baseline system note"
 	p.baseExtraSystem = p.inner.ExtraSystem
 
@@ -33,7 +34,7 @@ func TestStatsPlannerSurfacesReplanSignalFromCarriedIntent(t *testing.T) {
 }
 
 func TestStatsPlannerSurfacesReplanWhenOnlyLevelsAdvance(t *testing.T) {
-	p := newStatsPlanner("", "", "", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 
 	for round := 1; round <= strategicReplanAfter+1; round++ {
 		p.prepareRunContext(agent.Observation{
@@ -57,7 +58,7 @@ func TestStatsPlannerSurfacesReplanWhenOnlyLevelsAdvance(t *testing.T) {
 }
 
 func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
-	p := newStatsPlanner("", "", "", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 	obs := agent.Observation{Round: 1, Map: 1, Party: []agent.PartyMon{{Level: 8}}}
 	p.prepareRunContext(obs)
 	p.prepareRunContext(obs) // same observation as a retry
@@ -73,7 +74,7 @@ func TestStatsPlannerCountsOneProgressSamplePerRound(t *testing.T) {
 }
 
 func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
-	p := newStatsPlanner("", "", "", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 	p.inner.ExtraSystem = "baseline"
 	p.baseExtraSystem = p.inner.ExtraSystem
 
@@ -97,7 +98,7 @@ func TestStatsPlannerClearsReplanSignalOnObservableProgress(t *testing.T) {
 // persists for twenty rounds is one piece of evidence, not twenty 64 KiB
 // files, and observable progress re-arms it for the next episode.
 func TestStatsPlannerCapturesStallOncePerEpisode(t *testing.T) {
-	p := newStatsPlanner("", "", "", nil, nil, nil)
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{}, "", "", nil, nil, nil, nil)
 	stalled := func(round int) agent.Observation {
 		return agent.Observation{Round: round, Map: 1, Intent: "explore", Party: []agent.PartyMon{{Level: 8}}}
 	}

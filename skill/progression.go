@@ -139,12 +139,75 @@ func interactHiddenTile(m *emu.Emu, romData []byte, x, y uint8, policy MovePolic
 	return nil
 }
 
+type vermilionGymPuzzlePhase uint8
+
+const (
+	vermilionGymNeedsFirstSwitch vermilionGymPuzzlePhase = iota
+	vermilionGymNeedsSecondSwitch
+	vermilionGymGateOpen
+)
+
+func vermilionGymPuzzlePhaseFor(mem *state.Mem) vermilionGymPuzzlePhase {
+	if state.HasEvent(mem, state.EventVermilionGymSecondLockOpened) {
+		return vermilionGymGateOpen
+	}
+	if state.HasEvent(mem, state.EventVermilionGymFirstLockOpened) {
+		return vermilionGymNeedsSecondSwitch
+	}
+	return vermilionGymNeedsFirstSwitch
+}
+
+// interactVermilionTrashCan deliberately keeps the approach on map 0x5C.
+// These hidden events are all in the lower half of the gym, before the locked
+// door. Sending their exact beside-tile through full-world TravelFlee lets a
+// temporary trainer blocker turn a tiny same-room approach into a leave/re-enter
+// journey; the navigation guard then reports navigation_stalled even though the
+// can itself is reachable after that trainer is fought. Use the same local
+// battle-aware walking loop as the post-switch leader approach instead.
+func interactVermilionTrashCan(m *emu.Emu, romData []byte, x, y uint8, policy MovePolicy) error {
+	const maxBattles = 20
+	_, err := travel(
+		m,
+		policy,
+		maxBattles,
+		func() error {
+			if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
+				return fmt.Errorf("skill: Vermilion Gym trash-can approach left map %#04x for %#04x", vermilionGymMap, got)
+			}
+			dest, ok, err := besideDestination(m, romData, x, y)
+			if err != nil {
+				return fmt.Errorf("skill: Vermilion Gym trash can (%d,%d): %w", x, y, err)
+			}
+			if !ok {
+				return nil
+			}
+			return walkWithinMap(m, romData, dest, policy)
+		},
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		fightOnly(m, policy),
+	)
+	if err != nil {
+		return err
+	}
+	if err := Face(m, x, y); err != nil {
+		return err
+	}
+	_, err = Talk(m)
+	return err
+}
+
 // OpenVermilionGym solves Lt. Surge's two-switch trash-can gate from the
 // game's own live puzzle state. It does not guess or brute-force. The map
 // script chooses the first switch in wFirstLockTrashCanIndex; after that can
 // succeeds, GymTrashScript writes the generated adjacent second switch into
-// wSecondLockTrashCanIndex. Reading those two values means a wrong second
-// guess can never reset the puzzle.
+// wSecondLockTrashCanIndex.
+//
+// The two lock event bits are the authoritative phase. A previous objective
+// can be interrupted after opening the first switch but before touching the
+// second. Pressing the first switch again in that state is NOT idempotent:
+// the ROM treats it as a wrong second-switch attempt, resets the first lock,
+// and chooses a new puzzle. Resume directly at the generated second switch.
 func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != vermilionGymMap {
 		return fmt.Errorf("skill: OpenVermilionGym: on map %#04x, want %#04x", m.Peek8(sym.CurMap), vermilionGymMap)
@@ -153,22 +216,43 @@ func OpenVermilionGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: OpenVermilionGym: nil policy")
 	}
 
-	first := m.Peek8(sym.FirstLockTrashCanIndex)
-	x, y, ok := vermilionTrashCanCoords(first)
-	if !ok {
-		return fmt.Errorf("skill: OpenVermilionGym: first switch index %d is outside 0..14", first)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	phase := vermilionGymPuzzlePhaseFor(&mem)
+	if phase == vermilionGymGateOpen {
+		return nil
 	}
-	if err := interactHiddenTile(m, romData, x, y, policy); err != nil {
-		return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
+
+	if phase == vermilionGymNeedsFirstSwitch {
+		first := m.Peek8(sym.FirstLockTrashCanIndex)
+		x, y, ok := vermilionTrashCanCoords(first)
+		if !ok {
+			return fmt.Errorf("skill: OpenVermilionGym: first switch index %d is outside 0..14", first)
+		}
+		if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
+			return fmt.Errorf("skill: OpenVermilionGym: first switch %d at (%d,%d): %w", first, x, y, err)
+		}
+		state.Snapshot(m, &mem)
+		phase = vermilionGymPuzzlePhaseFor(&mem)
+		if phase == vermilionGymGateOpen {
+			return nil
+		}
+		if phase != vermilionGymNeedsSecondSwitch {
+			return fmt.Errorf("skill: OpenVermilionGym: first switch %d did not advance the puzzle to the second lock", first)
+		}
 	}
 
 	second := m.Peek8(sym.SecondLockTrashCanIndex)
-	x, y, ok = vermilionTrashCanCoords(second)
+	x, y, ok := vermilionTrashCanCoords(second)
 	if !ok {
 		return fmt.Errorf("skill: OpenVermilionGym: second switch index %d is outside 0..14", second)
 	}
-	if err := interactHiddenTile(m, romData, x, y, policy); err != nil {
+	if err := interactVermilionTrashCan(m, romData, x, y, policy); err != nil {
 		return fmt.Errorf("skill: OpenVermilionGym: second switch %d at (%d,%d): %w", second, x, y, err)
+	}
+	state.Snapshot(m, &mem)
+	if phase = vermilionGymPuzzlePhaseFor(&mem); phase != vermilionGymGateOpen {
+		return fmt.Errorf("skill: OpenVermilionGym: second switch %d did not open the gate", second)
 	}
 	return nil
 }

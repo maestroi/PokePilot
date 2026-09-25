@@ -54,7 +54,7 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	h := modelExperimentHTTPHandler(w, w.Handler())
 
 	create := requestJSON(t, h, http.MethodPost, "/v1/experiments", farm.ExperimentRequest{
-		Name: "brock-27b-v-4b", Goal: "Earn the Boulder Badge.", Starter: "squirtle", Seeds: []int64{101, 202},
+		Name: "brock-27b-v-4b", Game: "pokemon-red", Goal: "Earn the Boulder Badge.", Starter: "squirtle", Seeds: []int64{101, 202},
 		ArmA: farm.ExperimentArm{Name: "27B", Deployment: "qwen-27b-7900"}, ArmB: farm.ExperimentArm{Name: "4B", Deployment: "qwen-4b-4090"},
 		PlayStyle: "speedrunner", RiskTolerance: "balanced", WildEncounters: "flee", ReasoningEffort: "medium", FPS: 0, MaxRounds: 30, MaxFrames: 500000,
 	})
@@ -91,6 +91,9 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	if err := json.Unmarshal(lease.Body.Bytes(), &spec); err != nil {
 		t.Fatal(err)
 	}
+	if spec.Game != "pokemon-red" {
+		t.Fatalf("leased game = %q, want pokemon-red", spec.Game)
+	}
 	if spec.LLMDeployment == "" || spec.Inference == nil || spec.Inference.DeploymentID != spec.LLMDeployment {
 		t.Fatalf("leased spec missing inference identity: %#v", spec)
 	}
@@ -117,6 +120,54 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	if !found {
 		t.Fatalf("dashboard did not expose deployment identity: %s", dashboard.Body.String())
 	}
+}
+
+func TestCloneRunPreservesModelDeploymentMetadata(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 3},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	enqueue := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "clone-model-source", "planner": "llm", "llm_deployment": "model-a", "max_parallel_workers": 2,
+	})
+	if enqueue.Code != http.StatusOK {
+		t.Fatalf("enqueue = %d %s", enqueue.Code, enqueue.Body.String())
+	}
+	cloned := requestJSON(t, h, http.MethodPost, "/v1/runs/clone-model-source/clone", nil)
+	if cloned.Code != http.StatusCreated {
+		t.Fatalf("clone = %d %s", cloned.Code, cloned.Body.String())
+	}
+	var clone cloneRunResult
+	if err := json.Unmarshal(cloned.Body.Bytes(), &clone); err != nil {
+		t.Fatal(err)
+	}
+
+	dashboard := requestJSON(t, h, http.MethodGet, "/v1/dashboard", nil)
+	if dashboard.Code != http.StatusOK {
+		t.Fatalf("dashboard = %d %s", dashboard.Code, dashboard.Body.String())
+	}
+	var doc struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	if err := json.Unmarshal(dashboard.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range doc.Runs {
+		if run["run_id"] != clone.RunID {
+			continue
+		}
+		if run["llm_deployment"] != "model-a" || run["inference"] == nil || intNumber(run["max_parallel_workers"]) != 2 {
+			t.Fatalf("clone model metadata differs: %#v", run)
+		}
+		if run["experiment_id"] != nil && run["experiment_id"] != "" {
+			t.Fatalf("manual clone inherited experiment id: %#v", run)
+		}
+		return
+	}
+	t.Fatalf("clone %q missing from dashboard: %s", clone.RunID, dashboard.Body.String())
 }
 
 func TestBusyModelHostLeavesRunQueued(t *testing.T) {
@@ -567,5 +618,141 @@ func TestLiveRunHostLeaseSurvivesReconcile(t *testing.T) {
 	}
 	if host.hasLease("exp-old-seed-1-b") {
 		t.Fatal("reconcile left the phantom lease in place")
+	}
+}
+
+func TestDiscoverableEndpointPrefersSoleLiveModelOverStaleAPIModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"qwen3.8-27b"}]}`))
+	}))
+	defer server.Close()
+
+	registry := writeModelRegistry(t, []farm.ModelDeployment{{
+		ID: "7900-primary", Label: "7900 primary", Compute: "RX 7900 XTX",
+		Endpoint: server.URL + "/v1", APIModel: "qwen3.5-9b", ModelID: "qwen3.5-9b",
+		Enabled: true, Discover: true, LegacyProfile: "auto", MaxParallelWorkers: 4,
+	}})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	enqueue := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "stale-api-model-run", "seed": 1, "planner": "llm",
+		"goal": "Earn the Boulder Badge.", "llm_deployment": "7900-primary",
+	})
+	if enqueue.Code < 200 || enqueue.Code >= 300 {
+		t.Fatalf("enqueue = %d %s", enqueue.Code, enqueue.Body.String())
+	}
+	lease := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if lease.Code != http.StatusOK {
+		t.Fatalf("lease = %d %s", lease.Code, lease.Body.String())
+	}
+	var spec farm.Spec
+	if err := json.Unmarshal(lease.Body.Bytes(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.Inference == nil || spec.Inference.ModelID != "qwen3.8-27b" || spec.Inference.APIModel != "qwen3.8-27b" {
+		t.Fatalf("discovered inference = %#v, want live sole model over stale api_model", spec.Inference)
+	}
+}
+
+func TestDiscoverableEndpointBindsActualServedModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"qwen3.5-9b"}]}`))
+	}))
+	defer server.Close()
+
+	registry := writeModelRegistry(t, []farm.ModelDeployment{{
+		ID: "7900-primary", Label: "7900 primary", Compute: "RX 7900 XTX",
+		Endpoint: server.URL + "/v1", Enabled: true, Discover: true,
+		LegacyProfile: "auto", MaxParallelWorkers: 4,
+	}})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK || !bytes.Contains(models.Body.Bytes(), []byte("qwen3.5-9b")) {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+
+	enqueue := requestJSON(t, h, http.MethodPost, "/v1/specs", map[string]any{
+		"run_id": "dynamic-model-run", "seed": 1, "planner": "llm",
+		"goal": "Earn the Boulder Badge.", "llm_deployment": "7900-primary",
+	})
+	if enqueue.Code < 200 || enqueue.Code >= 300 {
+		t.Fatalf("enqueue = %d %s", enqueue.Code, enqueue.Body.String())
+	}
+	lease := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if lease.Code != http.StatusOK {
+		t.Fatalf("lease = %d %s", lease.Code, lease.Body.String())
+	}
+	var spec farm.Spec
+	if err := json.Unmarshal(lease.Body.Bytes(), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.Inference == nil || spec.Inference.ModelID != "qwen3.5-9b" || spec.Inference.APIModel != "qwen3.5-9b" {
+		t.Fatalf("discovered inference = %#v", spec.Inference)
+	}
+	if spec.Inference.Revision != "" || spec.Inference.Artifact != "" || spec.Inference.Quantization != "" {
+		t.Fatalf("dynamic model retained stale artifact identity: %#v", spec.Inference)
+	}
+}
+
+func TestManageInferenceEndpointLifecycle(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected discovery path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"dynamic-9b"}]}`))
+	}))
+	defer server.Close()
+
+	registryPath := filepath.Join(t.TempDir(), "models.json")
+	if err := os.WriteFile(registryPath, []byte(`{"deployments":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registryPath)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	draft := map[string]any{
+		"id": "lab-gpu", "label": "Lab GPU", "compute": "GPU",
+		"endpoint": server.URL + "/v1", "enabled": true, "discover": true,
+		"default_for": []string{"farm"}, "max_parallel_workers": 3,
+	}
+	testResp := requestJSON(t, h, http.MethodPost, "/v1/models/test", draft)
+	if testResp.Code != http.StatusOK || !bytes.Contains(testResp.Body.Bytes(), []byte("dynamic-9b")) {
+		t.Fatalf("test endpoint = %d %s", testResp.Code, testResp.Body.String())
+	}
+
+	save := requestJSON(t, h, http.MethodPost, "/v1/models", draft)
+	if save.Code != http.StatusOK {
+		t.Fatalf("save endpoint = %d %s", save.Code, save.Body.String())
+	}
+	models := requestJSON(t, h, http.MethodGet, "/v1/models", nil)
+	if models.Code != http.StatusOK || !bytes.Contains(models.Body.Bytes(), []byte("lab-gpu")) || !bytes.Contains(models.Body.Bytes(), []byte("dynamic-9b")) {
+		t.Fatalf("models = %d %s", models.Code, models.Body.String())
+	}
+
+	deleted := requestJSON(t, h, http.MethodDelete, "/v1/models/lab-gpu", nil)
+	if deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete endpoint = %d %s", deleted.Code, deleted.Body.String())
+	}
+	registry, err := farm.LoadModelRegistry(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := registry.Deployment("lab-gpu"); ok {
+		t.Fatal("deleted deployment remained in registry")
 	}
 }

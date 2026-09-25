@@ -10,10 +10,12 @@ set -euo pipefail
 
 IMAGE=${FARM_IMAGE_REPO:-ghcr.io/maestroi/pokepilot}
 STACK=${FARM_STACK:-pokefarm}
-# Replay is a device-bound sidecar on the iGPU worker, not a Swarm service.
-# When FARM_REPLAY_HOST is set (manager unit), roll that container to :latest
-# too. Without it this script used to print "pokefarm_replay not deployed; skip"
-# forever while pokeui required newer replay APIs (DELETE /artifacts).
+# Replay is deliberately absent from this list. Swarm cannot pass /dev/dri to a
+# service, so the iGPU sidecar is a standalone container reconciled on its own
+# worker by pokefarm-replay-pull.timer (see deploy/replay-sidecar.sh). The
+# manager must not try to roll it over SSH: it has no trust into that worker, so
+# the old FARM_REPLAY_HOST branch could never converge and silently left the
+# sidecar on whatever image an operator had last run by hand.
 SERVICES=(wall issues ui spectator runner linkbroker virtualtrader)
 
 if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
@@ -100,13 +102,6 @@ if [ "$updated" -eq 0 ]; then
 	echo "pokefarm-pull: already current ($WANT)"
 else
 	echo "pokefarm-pull: updated $updated service(s) to $WANT"
-fi
-
-if [ -n "${FARM_REPLAY_HOST:-}" ]; then
-	echo "pokefarm-pull: updating replay sidecar on $FARM_REPLAY_HOST"
-	ssh -o BatchMode=yes -o ConnectTimeout=15 "$FARM_REPLAY_HOST" \
-		"FARM_IMAGE=${DIGEST_REF} /usr/local/sbin/pokefarm-replay-up" \
-		|| echo "pokefarm-pull: replay sidecar update failed" >&2
 fi
 
 # litellm.yaml only names env vars (os.environ/POKEPILOT_LITELLM_*); the

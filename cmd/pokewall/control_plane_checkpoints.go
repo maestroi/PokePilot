@@ -124,7 +124,7 @@ func (w *Wall) storeControlPlaneCheckpoint(report farm.CheckpointReport) error {
 	if cp == nil {
 		return errors.New("PostgreSQL control plane is not configured")
 	}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: report.Artifacts}); err != nil {
+	if err := farm.ValidateCheckpointReport(report); err != nil {
 		return fmt.Errorf("%w: %v", errCheckpointArtifactInvalid, err)
 	}
 
@@ -284,7 +284,7 @@ func (cp *controlPlane) materializeStoredArtifact(stored storedCheckpointArtifac
 		art := stored.meta
 		art.Store, art.Bucket, art.ObjectKey, art.Size = "", "", "", 0
 		art.Data = append([]byte(nil), stored.inline...)
-		if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{art}}); err != nil {
+		if err := farm.ValidateCheckpointState(art); err != nil {
 			return farm.Artifact{}, err
 		}
 		return art, nil
@@ -318,7 +318,11 @@ func (cp *controlPlane) materializeStoredArtifact(stored storedCheckpointArtifac
 		return farm.Artifact{}, closeErr
 	}
 	art := farm.Artifact{Name: stored.meta.Name, MediaType: stored.meta.MediaType, SHA256: stored.meta.SHA256, Data: data}
-	if err := farm.ValidateFinishArtifacts(farm.FinishReport{Artifacts: []farm.Artifact{art}}); err != nil {
+	// A stored state that is no longer a complete save (an older wall, or an
+	// object truncated by a mid-write upload) must not be offered as a resume
+	// checkpoint: the caller skips this candidate and tries an older pair, so
+	// the run keeps its progress instead of being restarted from a cartridge.
+	if err := farm.ValidateCheckpointState(art); err != nil {
 		return farm.Artifact{}, fmt.Errorf("checkpoint object %s: %w", stored.meta.ObjectKey, err)
 	}
 	return art, nil
@@ -339,38 +343,33 @@ func (cp *controlPlane) latestStoredObjective(runID string, attempt int) (farm.R
 	return cp.latestStoredPair(arts, states, attempt)
 }
 
+// latestStoredMajor ranks the run's badge checkpoints from metadata and only
+// materializes the best candidates, for the same reason as
+// latestStoredLineageObjective.
 func (cp *controlPlane) latestStoredMajor(runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
-	bestBadge := 0
-	var best farm.ResumeCheckpoint
-	found := false
-	for attempt := throughAttempt; attempt >= 1; attempt-- {
-		arts, err := cp.storedCheckpointArtifacts(runID, attempt)
+	candidates, err := cp.storedCheckpointCandidates(runID, throughAttempt, majorCheckpointPrefix)
+	if err != nil {
+		return farm.ResumeCheckpoint{}, err
+	}
+	badge := func(c storedCheckpointCandidate) int { n, _ := majorCheckpointBadge(c.state); return n }
+	sort.SliceStable(candidates, func(i, j int) bool { return badge(candidates[i]) > badge(candidates[j]) })
+	for _, c := range candidates {
+		if badge(c) == 0 {
+			break
+		}
+		arts, err := cp.storedCheckpointArtifacts(c.runID, c.attempt)
 		if err != nil {
 			return farm.ResumeCheckpoint{}, err
 		}
-		var states []string
-		for name := range arts {
-			if strings.HasPrefix(name, majorCheckpointPrefix) && strings.HasSuffix(name, ".state") {
-				states = append(states, name)
-			}
+		pair, err := cp.latestStoredPair(arts, []string{c.state}, c.attempt)
+		if err == nil {
+			return pair, nil
 		}
-		sort.Strings(states)
-		candidate, err := cp.latestStoredPair(arts, states, attempt)
-		if err != nil {
-			if errors.Is(err, errStoredCheckpointNotFound) {
-				continue
-			}
+		if !errors.Is(err, errStoredCheckpointNotFound) {
 			return farm.ResumeCheckpoint{}, err
 		}
-		badge, ok := majorCheckpointBadge(candidate.State.Name)
-		if ok && (!found || badge > bestBadge) {
-			best, bestBadge, found = candidate, badge, true
-		}
 	}
-	if !found {
-		return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
-	}
-	return best, nil
+	return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
 }
 
 func (cp *controlPlane) latestStoredPair(arts map[string]storedCheckpointArtifact, states []string, attempt int) (farm.ResumeCheckpoint, error) {
@@ -399,9 +398,23 @@ func (cp *controlPlane) latestStoredPair(arts map[string]storedCheckpointArtifac
 	return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
 }
 
+// latestStoredLineageObjective returns the deepest usable ordinary checkpoint
+// in a run's lineage. The frame embedded in the checkpoint name is cumulative
+// emulator progress, so it is the only comparable ordering across attempts:
+// picking the newest attempt instead would let an attempt that booted fresh —
+// and therefore stored only early checkpoints before dying — outrank the deep
+// progress an earlier attempt actually reached. Attempts are still searched
+// newest-first so an equally deep candidate prefers the most recent one.
+//
+// Candidates are ranked from row metadata alone and only then materialized,
+// deepest first, until one pair is usable. A long endless campaign carries
+// hundreds of attempts; downloading every attempt's state from S3 just to
+// compare frame numbers made this lookup outlive the runner's resume timeout,
+// and a timed-out resume used to restart the campaign from a fresh cartridge.
 func (w *Wall) latestStoredLineageObjective(startID string) (farm.ResumeCheckpoint, error) {
 	cp := controlPlaneFor(w)
 	seen := map[string]struct{}{}
+	var candidates []storedCheckpointCandidate
 	for id := startID; id != ""; {
 		if _, duplicate := seen[id]; duplicate {
 			break
@@ -414,18 +427,61 @@ func (w *Wall) latestStoredLineageObjective(startID string) (farm.ResumeCheckpoi
 			through, parent = t.Attempts, t.ResumeFromRunID
 		}
 		w.mu.Unlock()
-		for attempt := through; attempt >= 1; attempt-- {
-			candidate, err := cp.latestStoredObjective(id, attempt)
-			if err == nil {
-				return candidate, nil
-			}
-			if !errors.Is(err, errStoredCheckpointNotFound) {
+		if through > 0 {
+			found, err := cp.storedCheckpointCandidates(id, through, "round-")
+			if err != nil {
 				return farm.ResumeCheckpoint{}, err
 			}
+			candidates = append(candidates, found...)
 		}
 		id = parent
 	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].frame > candidates[j].frame })
+	for _, c := range candidates {
+		arts, err := cp.storedCheckpointArtifacts(c.runID, c.attempt)
+		if err != nil {
+			return farm.ResumeCheckpoint{}, err
+		}
+		pair, err := cp.latestStoredPair(arts, []string{c.state}, c.attempt)
+		if err == nil {
+			return pair, nil
+		}
+		if !errors.Is(err, errStoredCheckpointNotFound) {
+			return farm.ResumeCheckpoint{}, err
+		}
+	}
 	return farm.ResumeCheckpoint{}, errStoredCheckpointNotFound
+}
+
+type storedCheckpointCandidate struct {
+	runID   string
+	attempt int
+	state   string
+	frame   uint64
+}
+
+// storedCheckpointCandidates lists a run's checkpoint states with one name
+// prefix through one attempt from metadata only (no payloads), newest attempt
+// first.
+func (cp *controlPlane) storedCheckpointCandidates(runID string, through int, prefix string) ([]storedCheckpointCandidate, error) {
+	rows, err := cp.db.Query(`SELECT attempt,name FROM artifacts WHERE run_id=$1 AND attempt<=$2 AND kind='checkpoint' ORDER BY attempt DESC`, runID, through)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []storedCheckpointCandidate
+	for rows.Next() {
+		var c storedCheckpointCandidate
+		if err := rows.Scan(&c.attempt, &c.state); err != nil {
+			return nil, err
+		}
+		if !strings.HasPrefix(c.state, prefix) || !strings.HasSuffix(c.state, ".state") {
+			continue
+		}
+		c.runID, c.frame = runID, objectiveFrame(c.state)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (w *Wall) latestStoredLineageMajor(startID string) (farm.ResumeCheckpoint, error) {
@@ -499,15 +555,13 @@ func (w *Wall) handleControlPlaneCheckpointResume(res http.ResponseWriter, repor
 	var candidate farm.ResumeCheckpoint
 	var err error
 	switch {
-	case lostRetry:
+	case lostRetry && planner != "llm":
 		candidate, err = cp.latestStoredObjective(report.RunID, previous)
-		if errors.Is(err, errStoredCheckpointNotFound) && planner == "llm" {
-			candidate, err = w.latestStoredLineageObjective(report.RunID)
-			if errors.Is(err, errStoredCheckpointNotFound) {
-				candidate, err = w.latestStoredLineageMajor(report.RunID)
-			}
-		}
-	case endlessRetry:
+	case lostRetry, endlessRetry:
+		// A lost worker resumes the deepest pair in the lineage, not merely
+		// the previous attempt's: if that attempt had itself fallen back to a
+		// fresh cartridge before dying, its early checkpoints would otherwise
+		// lock the campaign's restart in permanently.
 		candidate, err = w.latestStoredLineageObjective(report.RunID)
 		if errors.Is(err, errStoredCheckpointNotFound) {
 			candidate, err = w.latestStoredLineageMajor(report.RunID)
@@ -523,11 +577,15 @@ func (w *Wall) handleControlPlaneCheckpointResume(res http.ResponseWriter, repor
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if err != nil {
-		if !errors.Is(err, errStoredCheckpointNotFound) {
-			log.Printf("pokewall: %s attempt %d PostgreSQL/S3 resume checkpoint: %v", report.RunID, previous, err)
-		}
+	if errors.Is(err, errStoredCheckpointNotFound) {
 		res.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err != nil {
+		// 204 means "nothing to resume; boot fresh". A lookup that failed
+		// has not proven that, so it must not erase the campaign's progress.
+		log.Printf("pokewall: %s attempt %d PostgreSQL/S3 resume checkpoint: %v", report.RunID, previous, err)
+		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "resume checkpoint lookup failed: " + err.Error()})
 		return
 	}
 	writeJSON(res, http.StatusOK, candidate)

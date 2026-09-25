@@ -7,6 +7,7 @@ import type {
   ExperimentRequest,
   ExperimentView,
   ModelDeployment,
+  ModelDeploymentInput,
   ModelRegistrySnapshot,
   ReplayStatus,
   RunArtifact,
@@ -105,6 +106,29 @@ export function patchDeploymentWorkers(id: string, maxParallelWorkers: number, s
   })
 }
 
+export function saveModelDeployment(deployment: ModelDeploymentInput, signal?: AbortSignal): Promise<ModelDeployment> {
+  return requestJSON<ModelDeployment>('/v1/models', {
+    method: 'POST',
+    body: JSON.stringify(deployment),
+    signal
+  })
+}
+
+export function testModelDeployment(deployment: ModelDeploymentInput, signal?: AbortSignal): Promise<ModelDeployment> {
+  return requestJSON<ModelDeployment>('/v1/models/test', {
+    method: 'POST',
+    body: JSON.stringify(deployment),
+    signal
+  })
+}
+
+export async function deleteModelDeployment(id: string, signal?: AbortSignal): Promise<void> {
+  await requestJSON<void>(`/v1/models/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal
+  })
+}
+
 export async function getExperiments(signal?: AbortSignal): Promise<ExperimentView[]> {
   const value = await requestJSON<ExperimentList | ExperimentView[]>('/v1/experiments', { signal })
   return Array.isArray(value) ? value : value.experiments || []
@@ -130,6 +154,28 @@ export function investigateTriage(key: string, signal?: AbortSignal): Promise<Re
   })
 }
 
+export function dismissTriage(key: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>(`/v1/triage/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    signal
+  })
+}
+
+export interface DismissTriageResult {
+  status: string
+  groups: number
+  occurrences: number
+  skipped_linked?: string[]
+}
+
+export function dismissTriages(keys: string[], signal?: AbortSignal): Promise<DismissTriageResult> {
+  return requestJSON<DismissTriageResult>('/v1/triage/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ keys }),
+    signal
+  })
+}
+
 export function pauseRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/pause`, {
     method: 'POST',
@@ -148,6 +194,20 @@ export function resumeRun(runID: string, signal?: AbortSignal): Promise<Record<s
 
 export function cancelRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/cancel`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
+export interface CloneRunResult {
+  run_id: string
+  cloned_from: string
+  status: string
+}
+
+export function cloneRun(runID: string, signal?: AbortSignal): Promise<CloneRunResult> {
+  return requestJSON<CloneRunResult>(`/v1/runs/${encodeURIComponent(runID)}/clone`, {
     method: 'POST',
     body: '{}',
     signal

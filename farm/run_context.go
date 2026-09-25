@@ -17,32 +17,34 @@ const RunContextArtifactName = "run-context.json"
 // planner/objective failures. These are intentionally the semantic behavior
 // inputs, not every execution limit on Spec.
 type RunContext struct {
-	Planner         string `json:"planner,omitempty"`
-	Starter         string `json:"starter,omitempty"`
-	Dest            string `json:"dest,omitempty"`
-	Goal            string `json:"goal,omitempty"`
-	LLMProfile      string `json:"llm_profile,omitempty"`
-	ReasoningEffort string `json:"reasoning_effort,omitempty"`
-	PlayStyle       string `json:"play_style,omitempty"`
-	RiskTolerance   string `json:"risk_tolerance,omitempty"`
-	WildEncounters  string `json:"wild_encounters,omitempty"`
-	Seed            int64  `json:"seed"`
+	Planner         string     `json:"planner,omitempty"`
+	Starter         string     `json:"starter,omitempty"`
+	Dest            string     `json:"dest,omitempty"`
+	Goal            string     `json:"goal,omitempty"`
+	LLMProfile      string     `json:"llm_profile,omitempty"`
+	ReasoningEffort string     `json:"reasoning_effort,omitempty"`
+	PlayStyle       string     `json:"play_style,omitempty"`
+	Purpose         RunPurpose `json:"purpose,omitempty"`
+	RiskTolerance   string     `json:"risk_tolerance,omitempty"`
+	WildEncounters  string     `json:"wild_encounters,omitempty"`
+	Seed            int64      `json:"seed"`
 }
 
-// RunContextForSpec snapshots policy extensions while the runner still owns
-// the leased Spec. That matters because PlayStyle/Risk/Wild are compatibility
-// extensions keyed by run ID rather than fields on the historical Spec struct.
+// RunContextForSpec snapshots the behavior knobs that shaped this run. They
+// are read straight off the Spec now that the Spec is the complete source of
+// truth for a run's configuration.
 func RunContextForSpec(spec Spec) RunContext {
 	return RunContext{
 		Planner:         spec.Planner,
 		Starter:         spec.Starter,
 		Dest:            spec.Dest,
-		Goal:            spec.Goal,
+		Goal:            spec.Goal.String(),
 		LLMProfile:      spec.LLMProfile,
 		ReasoningEffort: spec.ReasoningEffort,
-		PlayStyle:       PlayStyleForSpec(spec),
-		RiskTolerance:   RiskToleranceForSpec(spec),
-		WildEncounters:  WildEncountersForSpec(spec),
+		PlayStyle:       spec.PlayStyle,
+		Purpose:         spec.Purpose,
+		RiskTolerance:   spec.RiskTolerance,
+		WildEncounters:  spec.WildEncounters,
 		Seed:            spec.Seed,
 	}
 }

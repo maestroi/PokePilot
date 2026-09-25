@@ -260,6 +260,51 @@ export function itemToken(name: string): string {
   return '✦'
 }
 
+const ITEM_DESCRIPTIONS: Record<string, string> = {
+  'poke-ball': 'Used to catch wild Pokémon.',
+  'pokeball': 'Used to catch wild Pokémon.',
+  'great-ball': 'A stronger Ball for catching wild Pokémon.',
+  'ultra-ball': 'A high-performance Ball for catching wild Pokémon.',
+  'master-ball': 'Catches a wild Pokémon without fail.',
+  'potion': 'Restores 20 HP.',
+  'super-potion': 'Restores 50 HP.',
+  'hyper-potion': 'Restores 200 HP.',
+  'max-potion': 'Fully restores HP.',
+  'full-restore': 'Fully restores HP and clears status conditions.',
+  'antidote': 'Cures poison.',
+  'burn-heal': 'Cures a burn.',
+  'ice-heal': 'Thaws a frozen Pokémon.',
+  'awakening': 'Wakes a sleeping Pokémon.',
+  'paralyze-heal': 'Cures paralysis.',
+  'full-heal': 'Clears status conditions.',
+  'revive': 'Revives a fainted Pokémon with half HP.',
+  'max-revive': 'Revives a fainted Pokémon with full HP.',
+  'escape-rope': 'Returns to the entrance of a cave or dungeon.',
+  'repel': 'Repels weaker wild Pokémon for 100 steps.',
+  'super-repel': 'Repels weaker wild Pokémon for 200 steps.',
+  'max-repel': 'Repels weaker wild Pokémon for 250 steps.',
+  'rare-candy': 'Raises one Pokémon by one level.',
+  'nugget': 'A valuable item that can be sold for money.',
+  'bicycle': 'Lets the trainer travel faster outdoors.',
+  'itemfinder': 'Helps locate hidden nearby items.',
+  'poke-flute': 'Wakes sleeping Pokémon.',
+  'old-rod': 'A fishing rod for encounters on water.',
+  'good-rod': 'A better fishing rod for water encounters.',
+  'super-rod': 'The best fishing rod for water encounters.',
+  'exp-all': 'Shares battle experience with the party.'
+}
+
+export function itemDescription(name: string): string {
+  const normalized = normalizeAssetName(name)
+  if (/^tm-?\d+$/.test(normalized)) return 'A Technical Machine that teaches a move.'
+  if (/^hm-?\d+$/.test(normalized)) return 'A Hidden Machine that teaches a reusable field move.'
+  const description = ITEM_DESCRIPTIONS[normalized]
+  if (description) return description
+  if (itemVisualKind(name) === 'key') return 'A key item used for exploration or story progression.'
+  if (itemVisualKind(name) === 'ball') return 'Used to catch wild Pokémon.'
+  return 'Trainer inventory item.'
+}
+
 export function itemDisplayName(name: string): string {
   const raw = String(name || '').trim()
   const normalized = normalizeAssetName(raw)

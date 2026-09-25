@@ -55,6 +55,7 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 		{"cut", world.Edge{Kind: world.EdgeWarp, From: semanticVermilionCityMap, To: vermilionGymMap}, capCanCut},
 		{"surf", world.Edge{Kind: world.EdgeConnection, From: semanticRoute21Map, To: semanticCinnabarMap}, capCanSurf},
 		{"story", world.Edge{Kind: world.EdgeConnection, From: route12Map, To: route13Map}, capCanClearSnorlax},
+		{"route12 entry", world.Edge{Kind: world.EdgeConnection, From: semanticRoute11Map, To: route12Map}, capCanClearSnorlax},
 		{"strength", world.Edge{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap}, capCanMoveBoulders},
 		{"saffron border", world.Edge{Kind: world.EdgeConnection, From: semanticSaffronCityMap, To: semanticRoute5Map}, capCanEnterSaffron},
 		{"saffron guardhouse", world.Edge{Kind: world.EdgeWarp, From: route5GateMap, To: semanticRoute5Map, WarpX: 3, WarpY: 5}, capCanEnterSaffron},

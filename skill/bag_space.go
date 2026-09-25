@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -12,8 +13,11 @@ import (
 const (
 	gen1BagCapacity       = 20
 	bagQuantityMenuBudget = 300
-	bagTossConfirmBudget  = 600
-	bagTossSettleBudget   = 3000
+	// bagTossConfirmAdvanceBudget counts advanceUntil loop iterations (each
+	// up to talkSettle frames while a text box is up), not raw frames; sized
+	// like the sibling text-advance budgets in heal.go/story.go.
+	bagTossConfirmAdvanceBudget = 3000
+	bagTossSettleBudget         = 3000
 )
 
 // ErrNoSafeBagSpace reports that a full bag has no stack this skill is
@@ -68,13 +72,21 @@ func bagFreeSlots(mem *state.Mem) int {
 // slot is keyed by distinct item ID, so tossing only part of a stack cannot
 // create capacity; the score is therefore unit price * quantity. Ties prefer
 // the smaller stack, then the earlier bag entry for deterministic behavior.
-func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool) {
+//
+// protectEscapeRope reserves the Escape Rope stack as an emergency dungeon
+// exit. Because a partial toss cannot free a Gen I bag slot, protecting "one"
+// rope necessarily protects the whole stack until a reusable Dig carrier
+// exists.
+func chooseSafeBagSacrifice(inv state.InventoryState, protectEscapeRope bool) (int, state.BagItem, bool) {
 	bestIndex := -1
 	var best state.BagItem
 	bestCost := 0
 	for i, it := range inv.Items {
 		unit, ok := safeBagSacrificeUnitCost[it.ID]
 		if !ok || it.Quantity == 0 {
+			continue
+		}
+		if protectEscapeRope && it.ID == escapeRopeItem {
 			continue
 		}
 		cost := unit * int(it.Quantity)
@@ -88,14 +100,27 @@ func chooseSafeBagSacrifice(inv state.InventoryState) (int, state.BagItem, bool)
 
 // EnsureBagSpaceFor guarantees that receiving one unit of item will not need
 // a missing bag slot. If item is already present, Gen I stacks it into the
-// existing entry and no space is needed.
+// existing entry and no space is needed. Under real bag pressure it first
+// delegates to productive inventory recovery (sell/use/store) and only then
+// falls back to the explicit safe-toss whitelist.
+func protectEmergencyEscapeRope(mem *state.Mem) bool {
+	if mem == nil {
+		return true
+	}
+	// Dig uses the same legal dungeon/interior escape mechanism without
+	// consuming inventory, so it is the only durable substitute for a Rope in
+	// the places where a Rope matters. Teleport/Fly work outside and therefore
+	// do not make the last dungeon escape expendable.
+	return partyMoveSlot(mem, digMoveID) < 0
+}
+
 func EnsureBagSpaceFor(m *emu.Emu, item uint8) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if _, quantity := bagEntry(&mem, item); quantity > 0 {
 		return nil
 	}
-	return EnsureBagFreeSlots(m, 1)
+	return ensureBagFreeSlotsManaged(m, 1)
 }
 
 // EnsureBagFreeSlots guarantees at least minFree distinct-item slots in the
@@ -122,7 +147,7 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 		}
 
 		inv := state.DecodeInventory(&mem)
-		idx, sacrifice, ok := chooseSafeBagSacrifice(inv)
+		idx, sacrifice, ok := chooseSafeBagSacrifice(inv, protectEmergencyEscapeRope(&mem))
 		if !ok {
 			return fmt.Errorf("%w: bag uses %d/%d slots and %d free slot(s) are required",
 				ErrNoSafeBagSpace, len(inv.Items), gen1BagCapacity, minFree)
@@ -134,20 +159,9 @@ func EnsureBagFreeSlots(m *emu.Emu, minFree int) error {
 	}
 }
 
-func openOverworldBagList(m *emu.Emu, mem *state.Mem) error {
-	wantMax, itemIndex := startMenuShape(mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return fmt.Errorf("select ITEM: %w", err)
+func openOverworldBagList(m *emu.Emu) error {
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID
@@ -193,6 +207,23 @@ func selectBagQuantity(m *emu.Emu, target int) error {
 	return nil
 }
 
+// tossConfirmationPrompt identifies TossItem's final YES/NO by both a live
+// two-option cursor and the semantic prompt text. Its menu coordinates are not
+// a safe discriminator: on real Red the final "Is it OK to toss ...?" prompt
+// can reuse the same top-left coordinates as USE/TOSS, which made a visibly
+// open confirmation look like it never appeared.
+func tossConfirmationPrompt(mem *state.Mem) *state.TwoOptionMenu {
+	p := state.DecodeTwoOptionMenu(mem)
+	if p == nil {
+		return nil
+	}
+	text := strings.ToLower(state.ScreenText(mem))
+	if !strings.Contains(text, "ok to toss") {
+		return nil
+	}
+	return p
+}
+
 func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	if _, safe := safeBagSacrificeUnitCost[item.ID]; !safe {
 		return fmt.Errorf("refusing to toss protected item %#02x", item.ID)
@@ -203,12 +234,15 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
+	if item.ID == escapeRopeItem && protectEmergencyEscapeRope(&mem) {
+		return fmt.Errorf("refusing to toss reserved Escape Rope stack before Dig is available")
+	}
 	liveIdx, liveQty := bagEntry(&mem, item.ID)
 	if liveIdx != idx || liveQty != int(item.Quantity) {
 		return fmt.Errorf("bag changed before toss: item %#02x expected entry %d x%d, now entry %d x%d",
 			item.ID, idx, item.Quantity, liveIdx, liveQty)
 	}
-	if err := openOverworldBagList(m, &mem); err != nil {
+	if err := openOverworldBagList(m); err != nil {
 		return err
 	}
 	if err := selectBagEntry(m, idx); err != nil {
@@ -227,13 +261,24 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 		return err
 	}
 
-	// TossItem asks one final YES/NO at a different screen position than the
-	// USE/TOSS menu. Wait for that exact semantic shape, then choose YES.
-	if _, err := m.StepUntil(bagTossConfirmBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return state.DecodeTwoOptionMenu(&mem) != nil && useTossPrompt(&mem) == nil
-	}); err != nil {
-		return fmt.Errorf("toss confirmation did not appear: %w", err)
+	// TossItem prints "Is it OK to toss X?" ending in a <PROMPT> (pokered
+	// data/text/text_7.asm IsItOKToTossItemText): the question text needs an
+	// A press to dismiss its own arrow before DisplayTextBoxID ever draws the
+	// YES/NO menu (pokered engine/items/item_effects.asm TossItem_). A purely
+	// passive wait never sends that press and hangs forever, which is exactly
+	// what MEASURED failure-id:obhglcih...bkigcangaahddldkgngdai did: wTopMenuItemY
+	// (0xCC24) never changed across 5,000,000 CPU steps from the stalled
+	// state. advanceUntil is the shared "press A while text is up" loop
+	// (skill/story.go, also used by Heal/gyms/mart/tower/hideout) and is the
+	// existing invariant for exactly this shape, so this reuses it instead of
+	// a bespoke wait. The predicate is tossConfirmationPrompt (semantic text
+	// match, not coordinates) so advancing never presses A into the
+	// confirmation prompt itself once it appears.
+	mem = advanceUntil(m, bagTossConfirmAdvanceBudget, func(mem *state.Mem) bool {
+		return tossConfirmationPrompt(mem) != nil
+	})
+	if tossConfirmationPrompt(&mem) == nil {
+		return fmt.Errorf("toss confirmation did not appear within %d iterations", bagTossConfirmAdvanceBudget)
 	}
 	if err := selectTwoOption(m, 0); err != nil { // YES
 		return fmt.Errorf("confirm toss: %w", err)

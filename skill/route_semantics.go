@@ -1,10 +1,13 @@
 package skill
 
 import (
+	"errors"
 	"strings"
 
+	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -51,9 +54,25 @@ const (
 	// it on foot-collision coordinates the static block map does not
 	// encode. The real border crossing into Saffron is the plain map
 	// connection declared on both headers.
+	//
+	// Only the Saffron-facing half of each guardhouse is a route gate. The
+	// outside-facing half must stay routable while the drink flag is absent:
+	// OpenSaffronGate deliberately enters Route 7's west half, walks to the
+	// trigger at x=3, and gives the guard the drink from there. Treating every
+	// route<->guardhouse warp as gated makes the prerequisite impossible to
+	// satisfy because the skill cannot even enter the room that owns it.
 	route5GateMap uint8 = 0x46
 	route6GateMap uint8 = 0x49
 	route8GateMap uint8 = 0x4F
+
+	route5SaffronWarpY     uint8 = 33
+	route5GateSaffronWarpY uint8 = 5
+	route6SaffronWarpY     uint8 = 1
+	route6GateSaffronWarpY uint8 = 0
+	route7SaffronWarpX     uint8 = 18
+	route7GateSaffronWarpX uint8 = 5
+	route8SaffronWarpX     uint8 = 1
+	route8GateSaffronWarpX uint8 = 0
 
 	ceruleanTrashedHouseMap        uint8 = 0x3e
 	ceruleanTrashedHouseFrontWarpX uint8 = 27
@@ -122,6 +141,12 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	if facts.SaffronGateOpen {
 		caps[capCanEnterSaffron] = true
 	}
+	// GameCornerSetRocketHideoutDoorTile keeps the poster stair a wall
+	// until this flag. Project it so routing can tell a closed warp table
+	// entry from the stair the poster script has already opened.
+	if state.HasEvent(mem, state.EventFoundRocketHideout) {
+		caps[capCanEnterRocketHideout] = true
+	}
 	addAuditedRedRouteCapabilities(mem, caps)
 	return caps
 }
@@ -149,6 +174,32 @@ func semanticTransition(id string, edge world.Edge, requires ...gameruntime.Capa
 // redRouteTransitionForEdge maps representative existing Red gates onto the
 // portable transition model. The router never sees these map ids; they are
 // adapter facts attached to ordinary geometric edges.
+func saffronGuardhouseCrossingEdge(edge world.Edge) bool {
+	if edge.Kind != world.EdgeWarp {
+		return false
+	}
+	switch {
+	case edge.From == semanticRoute5Map && edge.To == route5GateMap:
+		return edge.WarpY == route5SaffronWarpY
+	case edge.From == route5GateMap && edge.To == semanticRoute5Map:
+		return edge.WarpY == route5GateSaffronWarpY
+	case edge.From == semanticRoute6Map && edge.To == route6GateMap:
+		return edge.WarpY == route6SaffronWarpY
+	case edge.From == route6GateMap && edge.To == semanticRoute6Map:
+		return edge.WarpY == route6GateSaffronWarpY
+	case edge.From == semanticRoute7Map && edge.To == route7GateMap:
+		return edge.WarpX == route7SaffronWarpX
+	case edge.From == route7GateMap && edge.To == semanticRoute7Map:
+		return edge.WarpX == route7GateSaffronWarpX
+	case edge.From == semanticRoute8Map && edge.To == route8GateMap:
+		return edge.WarpX == route8SaffronWarpX
+	case edge.From == route8GateMap && edge.To == semanticRoute8Map:
+		return edge.WarpX == route8GateSaffronWarpX
+	default:
+		return false
+	}
+}
+
 func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	if transition, ok := redAuditedRouteTransitionForEdge(edge); ok {
 		return transition, true
@@ -207,29 +258,41 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
 		// The immutable ROM collision splits Route 9 into a Cerulean-side
 		// component and a Route 10-side component, joined only by the live Cut
-		// tree. Once can_cut is available this semantic action must act as a
-		// pivot so routing can cross that static split. But the connection
-		// itself is not the tree: a player already on the Cerulean-side
-		// component can leave Route 9 again without Cut. Issue #815 exposed the
-		// old all-or-nothing behavior by stranding a checkpoint at Route 9
-		// (0,0) while recovery tried to return to Route 4.
+		// tree. Annotate only Route 9 -> Cerulean: a player already on the
+		// Cerulean-side component must still leave without Cut (issue #815),
+		// and Cerulean -> Route 9 must stay ordinary geometry so a TO-side
+		// PivotOnly landing relax cannot invent a direct east-edge crossing
+		// from Cerulean's west bank (run-os1jmuuqpc1033zjhq2at3qz4).
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
 		t.PivotOnly = true
+		return t, true
+	case pair(semanticRoute9Map, route10Map):
+		// FROM-side Cut bridge: the tree is on Route 9, so with can_cut the
+		// router must skip canExit toward Route 10 while keeping Route 10's
+		// north/south landing authoritative. PivotOnly alone only relaxes the
+		// far landing; PortBypass alone also discards it. Together they mean
+		// "skip source canExit, keep destination components" so a west-side
+		// checkpoint reaches Rock Tunnel instead of inventing Saffron
+		// (run-os1jmuuqpc1033zjhq2at3qz4). Route 10 -> Route 9 stays ordinary.
+		if edge.From != semanticRoute9Map {
+			return gameruntime.Transition{}, false
+		}
+		t := semanticTransition("red:route9_cut", edge, capCanCut)
+		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 	case pair(semanticSaffronCityMap, semanticRoute5Map),
 		pair(semanticSaffronCityMap, semanticRoute6Map),
 		pair(semanticSaffronCityMap, semanticRoute7Map),
 		pair(semanticSaffronCityMap, semanticRoute8Map),
-		pair(route5GateMap, semanticRoute5Map),
-		pair(route6GateMap, semanticRoute6Map),
-		pair(route7GateMap, semanticRoute7Map),
-		pair(route8GateMap, semanticRoute8Map):
-		// Both the route's plain border connection into Saffron and its
-		// guardhouse's interior floor are ordinary geometry; the guard
-		// standing in the doorway is the precondition, not the router's
-		// business to route around by picking a longer real edge. Without
-		// the drink flag this must fail closed as a missing capability, not
-		// walk the agent up to the guard's dialogue to discover it live.
+		saffronGuardhouseCrossingEdge(edge):
+		// The route's plain border connection into Saffron and only the
+		// Saffron-facing guardhouse warps are gated by the drink. The outside
+		// guardhouse entrance stays available so the progression skill can enter
+		// the room and trigger the guard script that satisfies this prerequisite.
 		t := semanticTransition("red:saffron_guard_drink", edge, capCanEnterSaffron)
 		t.Gate = true
 		return t, true
@@ -259,9 +322,15 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t.Gate = true
 		return t, true
 	case pair(route12Map, route13Map):
-		// Once the Poké Flute exists this action owns the actual wake/battle
-		// before the Fuchsia route continues south.
-		return semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax), true
+		// Snorlax is an executable blocker, but reaching it must not create a
+		// magic exit from another disconnected component. PivotOnly preserves
+		// ordinary FROM-side port reachability while still letting the owned
+		// transition wake/battle Snorlax and relax the landing after that world
+		// change. This keeps Route 13's west trainer pocket from selecting an
+		// unreachable north seam without turning the action into a passive gate.
+		t := semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax)
+		t.PivotOnly = true
+		return t, true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
@@ -284,6 +353,34 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	}
 }
 
+// redRouteTransitionEffectComplete reports that a semantic action's durable
+// postcondition already holds, so the edge must use ordinary walking geometry
+// instead of pivot privilege. A satisfied Snorlax clear still left
+// red:route12_snorlax attached; FindRoute then waived reachability to Route 13's
+// north port and offered an unwalkable first hop from the west-side trainer
+// pocket (run-4h4isxsvaskt1c7mslvxzsrr6). Gates and PortBypass seams stay
+// annotated: they are still the portable description of the edge.
+func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Transition) bool {
+	// Route 16's Snorlax action is PortBypass while he is asleep so the west
+	// lower road can select the crossing. Once he is gone the pivot must drop:
+	// leaving it attached waives port reachability for the upper passage,
+	// which still reaches Celadon only by Cut.
+	if transition.ID == "red:route16_snorlax" {
+		return state.HasEvent(mem, eventBeatRoute16Snorlax)
+	}
+	if transition.Gate || transition.PortBypass {
+		return false
+	}
+	switch transition.ID {
+	case "red:route12_snorlax":
+		return state.HasEvent(mem, eventBeatRoute12Snorlax)
+	case "red:rocket_b1f_trainer_door":
+		return state.HasEvent(mem, eventBeatRocketB1FTrainer4)
+	default:
+		return false
+	}
+}
+
 // redRoutePrerequisites attaches adapter-owned transition facts to the concrete
 // graph while keeping the routing algorithm generic.
 func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
@@ -299,6 +396,9 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
 					continue
 				}
+				if redRouteTransitionEffectComplete(mem, transition) {
+					continue
+				}
 				transitions[edge] = transition
 			}
 		}
@@ -307,4 +407,56 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 		Transitions:  transitions,
 		Capabilities: redRouteCapabilities(romData, mem),
 	}
+}
+
+// ReachableMaps reports which native map IDs GoTo could actually route the
+// player to right now, applying the same capability gating GoTo enforces
+// during travel (Cut, Surf, Snorlax, badges, story flags, ...). Planners that
+// pick a destination without this check can offer a target GoTo will then
+// refuse outright (e.g. a Route 12 catch habitat behind an uncleared
+// Snorlax), burning a full round on an objective that can never complete.
+//
+// A nil emu or empty ROM returns (nil, nil): "unknown" rather than "nothing
+// reachable", so callers that cannot supply live state keep their prior,
+// capability-blind behavior instead of suppressing everything.
+func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
+	if m == nil || len(romData) == 0 {
+		return nil, nil
+	}
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		return nil, err
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	g, err = withAsleepRoute16Snorlax(g, romData, &mem)
+	if err != nil {
+		return nil, err
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	cur := mem.U8(sym.CurMap)
+	x, y := mem.U8(sym.XCoord), mem.U8(sym.YCoord)
+
+	candidates := map[uint8]bool{cur: true}
+	for from, edges := range g.Edges {
+		candidates[from] = true
+		for _, edge := range edges {
+			candidates[edge.To] = true
+		}
+	}
+
+	reachable := map[uint8]bool{cur: true}
+	for mapID := range candidates {
+		if reachable[mapID] {
+			continue
+		}
+		if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			g, cur, mapID, int(x), int(y), -1, -1, nil, prereqs,
+		); err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+			// A semantic frontier is executable now even though its post-action
+			// component topology must be learned by live re-planning.
+			reachable[mapID] = true
+		}
+	}
+	return reachable, nil
 }

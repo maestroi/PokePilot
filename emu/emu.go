@@ -1,6 +1,8 @@
 package emu
 
 import (
+	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
@@ -17,6 +19,7 @@ type Emu struct {
 
 	// Set by Watch. Nil unless a human is watching; see emu/watch.go.
 	spec        frameSpectator
+	watchRoutes map[string]http.Handler
 	specEvery   int
 	lastCapture uint64
 
@@ -42,6 +45,10 @@ type Emu struct {
 	// Set by Pace. Zero means run flat out; see emu/watch.go.
 	frameDur  time.Duration
 	nextFrame time.Time
+
+	// stepped mirrors FrameCount after each step for Progress readers on
+	// other goroutines.
+	stepped atomic.Uint64
 }
 
 // Open loads a ROM using the cartridge-inferred hardware model. It performs
@@ -81,6 +88,7 @@ func (m *Emu) Close() error {
 // StepFrame advances the emulator by exactly one frame.
 func (m *Emu) StepFrame() {
 	m.e.StepFrame()
+	m.stepped.Store(m.e.FrameCount())
 	if m.onFrame != nil {
 		m.onFrame(m)
 	}
@@ -113,6 +121,7 @@ func (m *Emu) StepFrames(n int) {
 		return
 	}
 	m.e.StepFrames(n)
+	m.stepped.Store(m.e.FrameCount())
 	m.capture()
 	m.throttle(n)
 }
@@ -170,10 +179,35 @@ func (m *Emu) SaveState() ([]byte, error) {
 // state. This keeps existing fixtures and resumable-run checkpoints readable
 // while allowing new diagnostics to use SaveStateChecked.
 func (m *Emu) LoadState(b []byte) error {
+	var err error
 	if isCheckedState(b) {
-		return m.e.LoadStateChecked(b)
+		err = m.e.LoadStateChecked(b)
+	} else {
+		err = m.e.LoadState(b)
 	}
-	return m.e.LoadState(b)
+	if err != nil {
+		return err
+	}
+
+	// A state restore is an explicit visual epoch boundary. The long-lived
+	// farm worker starts Watch before it boots and leases runs, so its spectator
+	// queue may still contain intro or previous-run frames. A resumed checkpoint
+	// can have a higher frame counter than those frames, which means rollback
+	// detection alone cannot notice the boundary. Reset and seed the spectator
+	// from the restored machine immediately; preview failures remain diagnostic
+	// only and must never turn a valid state restore into a gameplay failure.
+	if m.spec != nil {
+		_ = m.spec.Reset(m.e)
+		m.lastCapture = m.e.FrameCount()
+	}
+	return nil
+}
+
+// Progress is FrameCount as of the last completed step, safe to read from any
+// goroutine. A watchdog uses it to tell a slow emulator from one stuck inside
+// a single frame.
+func (m *Emu) Progress() uint64 {
+	return m.stepped.Load()
 }
 
 // FrameCount returns the number of frames stepped since the ROM was loaded.

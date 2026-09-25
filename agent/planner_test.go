@@ -126,20 +126,20 @@ func TestChosenRejects(t *testing.T) {
 }
 
 func TestWithArgsApplies(t *testing.T) {
-	i12 := 12
+	i10 := 10
 	q3 := 3
 
-	got, err := agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &i12})
-	if err != nil || got.Level != 12 {
-		t.Errorf("WithArgs(train 10, level 12) = %s, %v; want level 12", got, err)
+	got, err := agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &i10})
+	if err != nil || got.Level != 10 {
+		t.Errorf("WithArgs(train 10, level 10) = %s, %v; want offered level preserved", got, err)
 	}
 
 	got, err = agent.WithArgs(
 		agent.Objective{Kind: agent.KindCatch, Species: agent.SpeciesID("caterpie")},
-		agent.ReplyArgs{Species: "Pidgey"},
+		agent.ReplyArgs{Species: "Caterpie"},
 	)
-	if err != nil || got.Species != agent.SpeciesID("pidgey") {
-		t.Errorf("WithArgs(catch caterpie, species Pidgey) = %s, %v; want semantic species pidgey", got, err)
+	if err != nil || got.Species != agent.SpeciesID("caterpie") {
+		t.Errorf("WithArgs(catch caterpie, species Caterpie) = %s, %v; want offered species preserved", got, err)
 	}
 
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "potion", Quantity: &q3})
@@ -148,13 +148,13 @@ func TestWithArgsApplies(t *testing.T) {
 	}
 
 	fleeTrue, fleeFalse := true, false
-	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "mt moon 1f"}, agent.ReplyArgs{Flee: &fleeTrue})
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "mt moon 1f", Flee: true}, agent.ReplyArgs{Flee: &fleeTrue})
 	if err != nil || !got.Flee {
-		t.Errorf("WithArgs(go to, flee true) = %s, %v; want Flee set", got, err)
+		t.Errorf("WithArgs(go to flee variant, flee true) = %s, %v; want offered route policy preserved", got, err)
 	}
-	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center"}, agent.ReplyArgs{Flee: &fleeTrue})
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindHeal, Place: "viridian pokemon center", Flee: true}, agent.ReplyArgs{Flee: &fleeTrue})
 	if err != nil || !got.Flee {
-		t.Errorf("WithArgs(heal at a place, flee true) = %s, %v; want Flee set", got, err)
+		t.Errorf("WithArgs(heal flee variant, flee true) = %s, %v; want offered route policy preserved", got, err)
 	}
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, agent.ReplyArgs{Flee: &fleeFalse})
 	if err != nil || got.Flee {
@@ -170,9 +170,9 @@ func TestWithArgsApplies(t *testing.T) {
 	if err != nil || got.Intent != "reach the gym" {
 		t.Errorf("WithArgs(go to, intent) = %s, %v; want Intent set", got, err)
 	}
-	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &i12, Intent: "earn the boulder badge"})
-	if err != nil || got.Level != 12 || got.Intent != "earn the boulder badge" {
-		t.Errorf("WithArgs(train, level+intent) = %s, %v; want both applied", got, err)
+	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &i10, Intent: "earn the boulder badge"})
+	if err != nil || got.Level != 10 || got.Intent != "earn the boulder badge" {
+		t.Errorf("WithArgs(train, matching level+intent) = %s, %v; want offered target plus intent", got, err)
 	}
 	got, err = agent.WithArgs(agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterCharmander}, agent.ReplyArgs{Intent: "start the journey"})
 	if err != nil || got.Intent != "start the journey" {
@@ -220,14 +220,17 @@ func TestWithArgsRejects(t *testing.T) {
 	}{
 		{"level above range", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &l500}, "out of range"},
 		{"level zero", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &l0}, "out of range"},
+		{"training target override", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Level: &l12}, "cannot change offered training target"},
 		{"unknown species", catchCaterpie, agent.ReplyArgs{Species: "mewthree"}, "unknown species"},
 		{"fuzzy species name", catchCaterpie, agent.ReplyArgs{Species: "caterpy"}, "unknown species"},
+		{"catch target override", catchCaterpie, agent.ReplyArgs{Species: "pidgey"}, "cannot change offered catch target"},
 		{"negative quantity", agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "potion", Quantity: &qNeg}, "out of range"},
 		{"quantity above range", agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "potion", Quantity: &q150}, "out of range"},
 		{"unknown item", agent.Objective{Kind: agent.KindBuy}, agent.ReplyArgs{Item: "master ball"}, "unknown item"},
 		{"level on a goto", agent.Objective{Kind: agent.KindGoTo, Place: "pallet town"}, agent.ReplyArgs{Level: &l12}, "does not apply"},
 		{"species on a train", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Species: "pidgey"}, "does not apply"},
 		{"quantity on a catch", catchCaterpie, agent.ReplyArgs{Quantity: &q3}, "does not apply"},
+		{"route policy override", agent.Objective{Kind: agent.KindGoTo, Place: "route 2"}, agent.ReplyArgs{Flee: &fleeTrue}, "cannot change offered route policy"},
 		{"flee on a train", agent.Objective{Kind: agent.KindTrain, Level: 10}, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},
 		{"flee on a catch", catchCaterpie, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},
 		{"flee on a heal in place", agent.Objective{Kind: agent.KindHeal}, agent.ReplyArgs{Flee: &fleeTrue}, "does not apply"},

@@ -11,13 +11,14 @@ import (
 // generic objective providers. Destinations and challenges carry semantic area
 // identity only; native map coordinates stay inside the concrete adapter.
 type ObjectiveCatalog struct {
-	Starters        []CatalogStarter
-	Destinations    []CatalogDestination
-	Challenges      []CatalogChallenge
-	LocalEncounters []CatalogEncounter
-	Shop            *CatalogShop
-	Interactables   []CatalogInteractable
-	CurrentCenter   bool
+	Starters          []CatalogStarter
+	Destinations      []CatalogDestination
+	Challenges        []CatalogChallenge
+	ChallengeProfiles []CatalogChallengeProfile
+	LocalEncounters   []CatalogEncounter
+	Shop              *CatalogShop
+	Interactables     []CatalogInteractable
+	CurrentCenter     bool
 }
 
 type CatalogStarter struct {
@@ -28,14 +29,48 @@ type CatalogStarter struct {
 type CatalogDestination struct {
 	Place    PlaceID
 	Location LocationID
+	Kind     skill.DestinationKind
 	X, Y     uint8
+	Area     skill.DestinationBounds
 	Center   bool
+
+	// Dynamic route estimates are adapter-owned and intentionally not
+	// persisted. Checked distinguishes "no route exists in the live state"
+	// from adapters/tests that do not provide route pricing.
+	TravelCostChecked bool
+	TravelCostKnown   bool
+	TravelCost        int
+	FastTravel        bool
+	FastTravelMethod  string
+}
+
+func (d CatalogDestination) reached(location LocationID, x, y uint8) bool {
+	if d.Location == "" || d.Location != location {
+		return false
+	}
+	switch d.Kind {
+	case skill.DestinationMap:
+		return true
+	case skill.DestinationArea:
+		return x >= d.Area.MinX && x <= d.Area.MaxX &&
+			y >= d.Area.MinY && y <= d.Area.MaxY
+	case skill.DestinationInteraction:
+		return false
+	default:
+		return x == d.X && y == d.Y
+	}
 }
 
 type CatalogChallenge struct {
-	Place    PlaceID
-	Location LocationID
-	Complete bool
+	Place     PlaceID
+	Location  LocationID
+	Complete  bool
+	Readiness ChallengeReadinessProfile
+}
+
+type CatalogChallengeProfile struct {
+	Objective ObjectiveKey
+	Readiness ChallengeReadinessProfile
 }
 
 type CatalogEncounter struct {
@@ -72,7 +107,7 @@ type CatalogInteractable struct {
 
 func objectiveCatalogEmpty(c ObjectiveCatalog) bool {
 	return len(c.Starters) == 0 && len(c.Destinations) == 0 && len(c.Challenges) == 0 &&
-		len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
+		len(c.ChallengeProfiles) == 0 && len(c.LocalEncounters) == 0 && c.Shop == nil && len(c.Interactables) == 0 && !c.CurrentCenter
 }
 
 func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
@@ -127,6 +162,7 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 	c.Starters = append([]CatalogStarter(nil), c.Starters...)
 	c.Destinations = append([]CatalogDestination(nil), c.Destinations...)
 	c.Challenges = append([]CatalogChallenge(nil), c.Challenges...)
+	c.ChallengeProfiles = append([]CatalogChallengeProfile(nil), c.ChallengeProfiles...)
 	c.LocalEncounters = append([]CatalogEncounter(nil), c.LocalEncounters...)
 	c.Interactables = append([]CatalogInteractable(nil), c.Interactables...)
 	if c.Shop != nil {
@@ -147,6 +183,9 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 		return c.Destinations[i].X < c.Destinations[j].X
 	})
 	sort.SliceStable(c.Challenges, func(i, j int) bool { return c.Challenges[i].Place < c.Challenges[j].Place })
+	sort.SliceStable(c.ChallengeProfiles, func(i, j int) bool {
+		return c.ChallengeProfiles[i].Objective.ID() < c.ChallengeProfiles[j].Objective.ID()
+	})
 	sort.SliceStable(c.LocalEncounters, func(i, j int) bool { return c.LocalEncounters[i].Species < c.LocalEncounters[j].Species })
 	if c.Shop != nil {
 		sort.SliceStable(c.Shop.Items, func(i, j int) bool { return c.Shop.Items[i].Item < c.Shop.Items[j].Item })

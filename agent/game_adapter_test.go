@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -174,6 +175,28 @@ func TestObjectiveRuntimeCompletesGenericProgressionWithoutRed(t *testing.T) {
 	}
 }
 
+func TestObjectiveRuntimeMachineUnusableSkipsCaptureAndFinish(t *testing.T) {
+	execErr := fmt.Errorf("link stalled: %w", gameruntime.ErrMachineUnusable)
+	adapter := &fakeObjectiveGame{
+		obs:        Observation{MapName: "ROOM_A", Controllable: true},
+		executeErr: execErr,
+	}
+	o := Objective{Kind: KindCatch, Species: "vulpix", Intent: "dex-virtual-version-assisted"}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, gameruntime.ErrMachineUnusable) {
+		t.Fatalf("error = %v, want machine-unusable identity", err)
+	}
+	if got.Final.MapName != "ROOM_A" {
+		t.Fatalf("Final = %+v, want the initial observation", got.Final)
+	}
+	for _, call := range []string{"normalize-finish", "settle", "capture"} {
+		if countCall(adapter.calls, call) != 0 {
+			t.Fatalf("call %q ran after a poisoned machine: %#v", call, adapter.calls)
+		}
+	}
+}
+
 func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	blockedErr := errors.New("door locked")
 	adapter := &fakeObjectiveGame{
@@ -189,6 +212,9 @@ func TestObjectiveRuntimePreservesAdapterBlockedOutcome(t *testing.T) {
 	}
 	if got.Outcome != OutcomeBlocked {
 		t.Fatalf("Outcome = %q, want blocked", got.Outcome)
+	}
+	if got.Failure == nil || got.Failure.Class != gameruntime.FailureClassBlocked || !got.Failure.Recoverable {
+		t.Fatalf("Failure = %+v, want recoverable blocked failure", got.Failure)
 	}
 	if got.Final.MapName != "ROOM_B" {
 		t.Fatalf("Final = %+v, want transaction-owned ROOM_B observation", got.Final)

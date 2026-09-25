@@ -28,6 +28,7 @@ const (
 	_ // legacy KindFuchsiaProgression numeric slot
 	KindProgress
 	KindTrainer
+	KindRepairFieldCapability
 )
 
 // Objective carries semantic planner arguments. Game-specific encodings stay
@@ -36,20 +37,22 @@ const (
 // intentionally presentation-hidden: coordinate-local interactions need it for
 // durable identity, while the model still sees the same concise objective text.
 type Objective struct {
-	Kind     Kind
-	Place    PlaceID
-	Location LocationID
-	X, Y     uint8
-	Starter  skill.Starter
-	Progress ProgressID
-	Level    uint8
-	Species  SpeciesID
-	Item     ItemID
-	Slot     int
-	Qty      int
-	Flee     bool
-	Note     string
-	Intent   string
+	Kind              Kind
+	Place             PlaceID
+	Location          LocationID
+	X, Y              uint8
+	Starter           skill.Starter
+	Progress          ProgressID
+	FieldCapability   CapabilityID
+	Level             uint8
+	Species           SpeciesID
+	Item              ItemID
+	Slot              int
+	Qty               int
+	Flee              bool
+	RepelBeforeTravel bool
+	Note              string
+	Intent            string
 }
 
 // Validate checks only portable shape/range invariants. Concrete-game name and
@@ -67,6 +70,10 @@ func (o Objective) Validate() error {
 	case KindProgress:
 		if strings.TrimSpace(string(o.Progress)) == "" {
 			return fmt.Errorf("agent: %s: empty progression id", o)
+		}
+	case KindRepairFieldCapability:
+		if strings.TrimSpace(string(o.FieldCapability)) == "" {
+			return fmt.Errorf("agent: %s: empty field capability id", o)
 		}
 	case KindTrain:
 		if o.Level < 1 || o.Level > 100 {
@@ -86,6 +93,12 @@ func (o Objective) Validate() error {
 	case KindUseItem:
 		if strings.TrimSpace(string(o.Item)) == "" {
 			return fmt.Errorf("agent: %s: empty item id", o)
+		}
+		if o.Intent == speedrunRepelUseIntent {
+			if !isRepelItemName(string(o.Item)) {
+				return fmt.Errorf("agent: %s: repel intent requires a Repel-family item", o)
+			}
+			break
 		}
 		if o.Slot < 0 || o.Slot > 5 {
 			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
@@ -119,6 +132,8 @@ func (o Objective) String() string {
 		return "take the " + starterName(o.Starter) + " starter"
 	case KindProgress:
 		return "progress " + string(o.Progress)
+	case KindRepairFieldCapability:
+		return "repair the " + strings.ToUpper(string(o.FieldCapability)) + " field capability"
 	case KindTrain:
 		if o.Species != "" {
 			return fmt.Sprintf("train %s to level %d", strings.ToUpper(string(o.Species)), o.Level)
@@ -153,6 +168,9 @@ func (o Objective) String() string {
 		return fmt.Sprintf("pick up the %s at (%d,%d)", strings.ToUpper(string(o.Item)), o.X, o.Y)
 	case KindUseItem:
 		name := string(o.Item)
+		if o.Intent == speedrunRepelUseIntent {
+			return "use " + strings.ToUpper(name) + " to suppress wild encounters"
+		}
 		return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
 	case KindBuy:
 		return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(string(o.Item)))
@@ -161,10 +179,11 @@ func (o Objective) String() string {
 }
 
 func gymOutcomeErr(o Objective, outcome state.BattleResult) error {
-	if outcome == state.ResultWon {
+	err := skill.RequireTrainerBattleWin("gym:"+string(o.Place), outcome)
+	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("agent: %s: %w (blacked out to the center)", o, errGymLeaderLost)
+	return fmt.Errorf("agent: %s: %w", o, err)
 }
 
 func catchOutcomeName(o skill.CatchOutcome) string {

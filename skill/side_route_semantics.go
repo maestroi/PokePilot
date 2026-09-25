@@ -24,9 +24,10 @@ const (
 
 // redSideRouteTransitionForEdge models optional-world entrances whose door is
 // real but lives in a different immutable walking component from the ordinary
-// route. These are PivotOnly transitions: Cut/Surf is needed to bridge into
-// the pocket, but a resumed save already standing on that pocket must remain
-// able to use the ordinary warp without owning the field capability.
+// route. These are PivotOnly+PortBypass: Cut/Surf is needed to bridge into the
+// pocket from the wrong component, but a resumed save already standing on that
+// pocket must remain able to use the ordinary warp without owning the field
+// capability (PivotOnly's missing-cap fallback).
 func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	if edge.Kind != world.EdgeWarp {
 		return gameruntime.Transition{}, false
@@ -36,12 +37,14 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		((edge.WarpX == 16 && edge.WarpY == 35) || (edge.WarpX == 15 && edge.WarpY == 39)):
 		t := semanticTransition("red:route2_gate_cut", edge, capCanCut)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 
 	case edge.From == route10Map && edge.To == powerPlantMap &&
 		edge.WarpX == powerPlantWarpX && edge.WarpY == powerPlantWarpY:
 		t := semanticTransition("red:power_plant_surf", edge, capCanSurf)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 
 	case edge.From == ceruleanCave1FMap && edge.To == ceruleanCaveB1FMap &&
@@ -52,6 +55,7 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		// walking leaves B1F isolated even though 1F/2F are reachable.
 		t := semanticTransition("red:cerulean_cave_b1f_surf", edge, capCanSurf)
 		t.PivotOnly = true
+		t.PortBypass = true
 		return t, true
 	}
 	return gameruntime.Transition{}, false
@@ -63,8 +67,9 @@ func (x *redRouteTransitionExecutor) executeSideRouteTransition(edge world.Edge,
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
 			return world.TransitionExecutionResult{}, true, blockage
 		}
-		result, err := x.executeCutWarpApproach(edge)
-		return result, true, err
+		// Traverse will approach the selected gate warp with the shared field
+		// planner and therefore Cut only a tree that actually unlocks this door.
+		return world.TransitionExecutionResult{}, true, nil
 
 	case "red:power_plant_surf", "red:cerulean_cave_b1f_surf":
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
@@ -84,40 +89,6 @@ func (x *redRouteTransitionExecutor) liveTransitionBlockage(transition gamerunti
 		return nil
 	}
 	return &blockage
-}
-
-// executeCutWarpApproach clears one reachable Cut tree only when the target
-// building warp is not already reachable through current live geometry. The
-// generic Cut recovery already validates the actual front tile against RAM,
-// cuts it, and steps onto the cleared cell; Changed then forces GoTo to rebuild
-// live topology before it attempts the door again.
-func (x *redRouteTransitionExecutor) executeCutWarpApproach(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if edge.Kind != world.EdgeWarp {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach %02x->%02x is not a warp", edge.From, edge.To)
-	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach starts on %02x, current map is %02x", edge.From, got)
-	}
-	h, err := rom.ParseMap(x.romData, edge.From)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach parse map %02x: %w", edge.From, err)
-	}
-	grid, err := liveMapGrid(x.m, x.romData, h)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach build map %02x: %w", edge.From, err)
-	}
-	sx, sy := playerXY(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, grid, int(sx), int(sy), spriteBlockers(x.m), x.romData); err == nil {
-		return world.TransitionExecutionResult{}, nil
-	}
-	opened, err := cutThroughReachableTree(x.m, x.romData)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach: %w", err)
-	}
-	if !opened {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Cut warp approach to %02x has no reachable verified Cut tree", edge.To)
-	}
-	return world.TransitionExecutionResult{Changed: true}, nil
 }
 
 // executeSurfWarpApproach enters Surf at the first water-only step on a path
@@ -145,14 +116,18 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 	}
 	sx, sy := playerXY(x.m)
 	blocked := spriteBlockers(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, land, int(sx), int(sy), blocked, x.romData); err == nil {
+	if _, _, _, _, err := warpTarget(h, edge, land, int(sx), int(sy), blocked, nil, x.romData); err == nil {
 		return world.TransitionExecutionResult{}, nil
 	}
-	_, _, steps, _, err := warpTarget(h, edge, water, int(sx), int(sy), blocked, x.romData)
+	_, _, steps, _, err := warpTarget(h, edge, water, int(sx), int(sy), blocked, nil, x.romData)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach cannot reach %02x even in water mode: %w", edge.To, err)
 	}
-	if x.m.Peek8(sym.WalkBikeSurfState) == fieldSurfingState {
+	fieldActions, err := x.fieldActionDecoder()
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach field-action profile: %w", err)
+	}
+	if fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, nil
 	}
 
@@ -178,11 +153,11 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach face water (%d,%d): %w", waterX, waterY, err)
 	}
 	x.m.StepFrames(2)
-	result, err := UseFieldMove(x.m, FieldSurf)
+	result, err := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach enter mode: %w", err)
 	}
-	if !result.Surfing || x.m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !result.Surfing || !fieldActions.DecodeFieldAction(x.m).Surfing {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach returned without verified surfing state")
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil

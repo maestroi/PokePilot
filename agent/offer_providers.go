@@ -28,8 +28,11 @@ type ObjectiveBlockEvidence struct {
 }
 
 type ObjectiveOffer struct {
-	Candidates []Objective              `json:"candidates"`
-	Blocked    []ObjectiveBlockEvidence `json:"blocked,omitempty"`
+	Candidates    []Objective                    `json:"candidates"`
+	Blocked       []ObjectiveBlockEvidence       `json:"blocked,omitempty"`
+	Readiness     []ChallengeReadiness           `json:"readiness,omitempty"`
+	Recovery      []RecoveryCheckpointAssessment `json:"recovery_checkpoints,omitempty"`
+	TrainingAreas []TrainingAreaAssessment       `json:"training_areas,omitempty"`
 }
 
 type objectiveProvider interface {
@@ -117,10 +120,44 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
-	if trainingUnviableHere(obs) {
-		known.releaseCombatLossGates()
+	switch {
+	case combatPreparationTrainingExhausted(obs):
+		// No local training and no learned habitat can advance readiness: the
+		// target is unreachable, so a locked fight would strand the planner
+		// wandering between towns. Retrying is the only remaining progress.
+		known.promoteCombatLossesToRetry()
+	case trainingUnviableHere(obs):
+		// Old checkpoints did not persist a readiness target and historically
+		// escaped a dead-end weak grass patch by scheduling a retry. New combat
+		// losses carry a target and stay locked so the planner seeks a stronger
+		// training area instead of retrying the same underpowered fight.
+		known.promoteCombatLossesToRetryWhere(func(f Failure) bool { return f.ReadinessTarget == 0 })
 	}
 	ctx := newObjectiveOfferContext(obs, known)
+
+	// A catalog that offers starters while the party is empty owns the game's
+	// mandatory opening transaction. Do not advertise travel (or other
+	// unrelated objectives) beside it: in Red, Pallet Town's north exit is
+	// physically script-locked until Oak has taken the player into the lab and
+	// the starter sequence completes. Offering "go to ..." here lets the
+	// strategist select an objective that deterministic execution cannot
+	// legally satisfy; the Oak cutscene then interrupts the crossing and the
+	// run surfaces a terminal navigation error (farm #1497/#1496).
+	//
+	// Keep this generic by keying off the catalog's actual starter candidates:
+	// games/catalog states with no mandatory starter continue through the
+	// ordinary provider pipeline unchanged.
+	if obs.PartyCount == 0 {
+		starterOnly := (starterObjectiveProvider{}).Provide(ctx)
+		if len(starterOnly.Candidates) > 0 {
+			candidates := annotate(starterOnly.Candidates, known)
+			offer := ObjectiveOffer{Candidates: candidates, Blocked: starterOnly.Blocked}
+			offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+			offer.Recovery = rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
+			return offer
+		}
+	}
+
 	local := make([]Objective, 0, 8)
 	journeys := make([]Objective, 0, 2*journeyPlaceLimit)
 	blocked := make([]ObjectiveBlockEvidence, 0, 8)
@@ -141,9 +178,12 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		}
 	}
 	candidates := append(local, journeys...)
-	candidates = filterTrainerLossBlocked(candidates, known)
+	candidates = filterCombatRecoveryBlocked(candidates, known)
 	candidates = annotate(candidates, known)
-	return ObjectiveOffer{Candidates: candidates, Blocked: blocked}
+	offer := ObjectiveOffer{Candidates: candidates, Blocked: blocked}
+	offer.Readiness = challengeReadinessForOffer(obs, known, offer)
+	offer.Recovery = rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
+	return offer
 }
 
 type starterObjectiveProvider struct{}
@@ -196,14 +236,35 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		}
 		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
-		if name, ok := nearestKnownCenter(obs, known, ctx.knownLocations, ctx.catalog); ok {
-			note := ""
-			if ppExhausted {
-				note = "(lead has no PP; Center restores PP without spending finite items)"
+		ranked := rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
+		var selected *RecoveryCheckpointAssessment
+		for i := range ranked {
+			if ranked[i].Selected && ranked[i].Routable {
+				selected = &ranked[i]
+				break
 			}
-			out = append(out, Objective{Kind: KindHeal, Place: name, Note: note}, Objective{Kind: KindHeal, Place: name, Flee: true, Note: note})
-		} else {
+		}
+		switch {
+		case len(ranked) == 0:
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "no_known_center", nil, "", "pokemon_center"))
+		case selected == nil:
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyRecovery, "route_unroutable", nil, ranked[0].Place, "live_route"))
+		default:
+			note := fmt.Sprintf("(selected recovery checkpoint; route cost %d + return cost %d = %d)",
+				selected.CurrentCost, selected.ReturnCost, selected.TotalCost)
+			if selected.ActiveCheckpoint {
+				note += " (active cartridge checkpoint preference applied)"
+			}
+			if selected.FastTravel {
+				note += fmt.Sprintf(" (uses legal %s fast travel)", selected.FastTravelMethod)
+			}
+			if ppExhausted {
+				note += " (lead has no PP; Center restores PP without spending finite items)"
+			}
+			out = append(out,
+				Objective{Kind: KindHeal, Place: selected.Place, Note: note},
+				Objective{Kind: KindHeal, Place: selected.Place, Flee: true, Note: note},
+			)
 		}
 	}
 	for _, it := range obs.Bag {
@@ -244,7 +305,7 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		switch {
 		case routePlaceBlocked(obs, challenge.Place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "route_prerequisite", &gym, challenge.Place, "route_requirement"))
-		case gymLossRecorded(known, challenge.Place):
+		case combatLossRecorded(known, Objective{Kind: KindGym, Place: challenge.Place}):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "combat_readiness", &gym, challenge.Place, "material_party_progress"))
 		default:
 			out = append(out, gym)
@@ -270,8 +331,9 @@ type economyObjectiveProvider struct{}
 
 func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
+	out := repelUseObjectives(ctx.obs)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{}
+		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -281,17 +343,89 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 	}
 	economy := EconomyContext(obs)
 	if economy == nil {
-		return objectiveProviderResult{}
+		return objectiveProviderResult{Candidates: out}
 	}
-	out := make([]Objective, 0, len(economy.Purchases))
+	if cap(out)-len(out) < len(economy.Purchases) {
+		grown := make([]Objective, len(out), len(out)+len(economy.Purchases))
+		copy(grown, out)
+		out = grown
+	}
 	for _, advice := range economy.Purchases {
 		if advice.ShouldBuy && advice.SuggestedQty > 0 {
 			if item, ok := ctx.catalog.shopItem(advice.Item); ok {
-				out = append(out, Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty})
+				objective := Objective{Kind: KindBuy, Item: item, Qty: advice.SuggestedQty}
+				if isRepelItemName(advice.Item) {
+					objective.Intent = speedrunRepelBuyIntent
+					objective.Note = "(speedrun encounter management: buy only bounded Repel coverage)"
+				}
+				out = append(out, objective)
 			}
 		}
 	}
 	return objectiveProviderResult{Candidates: out}
+}
+
+const dexCaptureSupplyIntent = "dex-capture-supply"
+
+// restockCaptureObjectives is the remote counterpart to the ordinary Mart
+// purchase provider. Dex acquisition objectives require a ball before they can
+// even be offered; without a travel-and-buy option, a run that leaves town dry
+// can keep progressing the story forever with an empty capture inventory.
+// RestockStock is already limited to stock from live-state reachable marts, so
+// this remains an executable objective rather than a planner hint.
+func restockCaptureObjectives(obs Observation) []Objective {
+	if len(obs.RestockStock) == 0 || len(obs.Dex.Targets) == 0 || normalBallStock(obs) >= minimumCaptureStock {
+		return nil
+	}
+	obs.MartStock = append([]string(nil), obs.RestockStock...)
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return nil
+	}
+	for _, advice := range economy.Purchases {
+		if advice.Category != InventoryCapture || !advice.ShouldBuy || advice.SuggestedQty <= 0 {
+			continue
+		}
+		item, ok := ItemByName(advice.Item)
+		if !ok {
+			continue
+		}
+		return []Objective{{
+			Kind: KindBuy, Item: item, Qty: advice.SuggestedQty, Intent: dexCaptureSupplyIntent,
+			Note: "(Dex capture supply: travel to the nearest reachable shop and restock balls before more acquisition work)",
+		}}
+	}
+	return nil
+}
+
+// restockHealingObjectives offers a travel-and-buy HP healing purchase when a
+// typed combat loss left the bag with no healing and no shop is on this map.
+// Without it the only buy offer required already standing in a shop, so a
+// challenge lost far from one (the League's chained fights) retried forever
+// with an empty bag.
+func restockHealingObjectives(obs Observation) []Objective {
+	if len(obs.RestockStock) == 0 || !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
+		return nil
+	}
+	obs.MartStock = obs.RestockStock
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return nil
+	}
+	for _, advice := range economy.Purchases {
+		if _, heal := hpHealingItems[advice.Item]; !heal || !advice.ShouldBuy || advice.SuggestedQty <= 0 {
+			continue
+		}
+		item, ok := ItemByName(advice.Item)
+		if !ok {
+			continue
+		}
+		return []Objective{{
+			Kind: KindBuy, Item: item, Qty: advice.SuggestedQty, Intent: combatRecoverySupplyIntent,
+			Note: "(combat recovery supply: travel to the nearest reachable shop and restock HP healing before retrying)",
+		}}
+	}
+	return nil
 }
 
 type explorationObjectiveProvider struct{}
@@ -342,7 +476,7 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		case routePlaceBlocked(obs, place):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTravel, "route_prerequisite", nil, place, "route_requirement"))
 			continue
-		case destination.Location == ctx.currentLocation && destination.X == obs.X && destination.Y == obs.Y:
+		case destination.reached(ctx.currentLocation, obs.X, obs.Y):
 			continue
 		default:
 			placeNames = append(placeNames, name)
@@ -361,8 +495,34 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 			placeNames = routable
 		}
 	}
+	seekTrainingArea := trainingUnviableHere(obs)
+	if preparation := combatPreparationFor(known, obs); preparation.Active && !obs.HasGrass {
+		seekTrainingArea = true
+	}
+	trainingChoice, hasTrainingChoice := trainingAreaChoice{}, false
+	if seekTrainingArea {
+		trainingChoice, hasTrainingChoice = bestKnownTrainingPlace(obs, known, placeNames, ctx.catalog)
+	}
 	if len(known.Adjacency) > 0 && len(placeNames) > journeyPlaceLimit {
 		placeNames = selectJourneyPlaces(placeNames, known, ctx.hops, ctx.catalog)
+		if hasTrainingChoice {
+			wanted := string(trainingChoice.Area.Place)
+			found := false
+			for _, name := range placeNames {
+				if name == wanted {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if len(placeNames) >= journeyPlaceLimit {
+					placeNames[len(placeNames)-1] = wanted
+				} else {
+					placeNames = append(placeNames, wanted)
+				}
+				sort.Strings(placeNames)
+			}
+		}
 	}
 	out := make([]Objective, 0, 2*len(placeNames))
 	for _, name := range placeNames {
@@ -375,6 +535,11 @@ func (travelObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProv
 		if ctx.adjacentLocations[destination.Location] && !known.Visited[destination.Location] {
 			plain.Note = "(unvisited adjacent map)"
 			flee.Note = "(unvisited adjacent map)"
+		}
+		if hasTrainingChoice && destination.Place == trainingChoice.Area.Place {
+			note := trainingAreaJourneyNote(trainingChoice)
+			plain = appendObjectiveNote(plain, note)
+			flee = appendObjectiveNote(flee, note)
 		}
 		out = append(out, plain, flee)
 	}

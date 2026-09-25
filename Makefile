@@ -191,6 +191,14 @@ farm-up: farm-image
 	# ~/.config/pokepilot/env. docker stack deploy interpolates them here;
 	# the GitHub token is passed only to the issue-adapter service.
 	$(load_env) \
+	red_sha="${POKEPILOT_ROM_SHA256_POKEMON_RED:-$(sha256sum "$(POKEMON_RED_ROM)" | awk '{print $1}')}" ; \
+	blue_rom="$(POKEPILOT_ROM_DIR)/pokemon_blue.gb" ; \
+	blue_sha="${POKEPILOT_ROM_SHA256_POKEMON_BLUE:-}" ; \
+	if [ -z "$blue_sha" ] && [ -f "$blue_rom" ]; then blue_sha="$(sha256sum "$blue_rom" | awk '{print $1}')" ; fi ; \
+	prompt_sha="${POKEPILOT_PROMPT_SHA256:-$(git ls-files agent cmd/pokepilot | grep '\.go$' | grep -v '_test\.go$' | xargs sha256sum | sha256sum | awk '{print $1}')}" ; \
+	POKEPILOT_ROM_SHA256_POKEMON_RED="$red_sha" \
+	POKEPILOT_ROM_SHA256_POKEMON_BLUE="$blue_sha" \
+	POKEPILOT_PROMPT_SHA256="$prompt_sha" \
 	docker stack deploy --resolve-image never -c deploy/farm.yml pokefarm
 	# The image tag does not change between builds, so the service spec is
 	# identical and Docker would not roll healthy tasks — a rebuilt image
@@ -208,8 +216,8 @@ farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
 	docker stack rm pokefarm
 
-# Opt-in local qwagent loop against GET /v1/triage. Installs user systemd
-# units and zsh helpers; does not enable the timer.
+# Opt-in local qwagent loop against MCP pokepilot_get_triage. Installs user
+# systemd units and zsh helpers; does not enable the timer.
 qwagent-triage-install:
 	mkdir -p "$(HOME)/.config/systemd/user"
 	sed 's|@@POKEPILOT_ROOT@@|$(CURDIR)|g' deploy/qwagent-triage.service.in \
@@ -222,3 +230,4 @@ qwagent-triage-install:
 		echo "appended source line to ~/.zshrc (open a new shell)"; \
 	fi
 	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."
+	@echo "Cursor subscription backend: run 'agent login' once; auto mode prefers authenticated Cursor CLI."

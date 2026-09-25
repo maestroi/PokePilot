@@ -16,8 +16,11 @@ func TestExperimentAnalyticsUsePersistedRunHistory(t *testing.T) {
 		{ID: "model-b", ModelID: "b", Compute: "gpu-b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true},
 	})
 	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	t.Setenv("POKEPILOT_ROM_SHA256", "rom-sha")
+	t.Setenv("POKEPILOT_PROMPT_SHA256", "prompt-sha")
 
 	w := NewWall("")
+	w.Version = "git-sha"
 	if err := w.SetCatalogPath(filepath.Join(t.TempDir(), "runs.db")); err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +31,7 @@ func TestExperimentAnalyticsUsePersistedRunHistory(t *testing.T) {
 		ArmA:  farm.ExperimentArm{Deployment: "model-a"},
 		ArmB:  farm.ExperimentArm{Deployment: "model-b"},
 		Seeds: []int64{1},
+		Game:  "pokemon-red",
 		Goal:  "Earn the Boulder Badge.",
 	})
 	if created.Code != http.StatusCreated {
@@ -81,7 +85,7 @@ func TestExperimentAnalyticsUsePersistedRunHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, got := range map[string]armAggregate{"a": view.ArmA, "b": view.ArmB} {
-		if got.Runs != 1 || got.Done != 1 || got.BoulderSuccesses != 1 || got.Rounds != 7 || got.Frames != 12345 {
+		if got.Runs != 1 || got.Done != 1 || got.GoalSuccesses != 1 || got.BoulderSuccesses != 1 || got.Rounds != 7 || got.Frames != 12345 {
 			t.Fatalf("arm %s aggregate = %#v", name, got)
 		}
 	}

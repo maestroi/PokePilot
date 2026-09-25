@@ -97,5 +97,8 @@ func decodeReplayCheckpoint(resp *http.Response) (*ResumeCheckpoint, error) {
 	if err := ValidateFinishArtifacts(FinishReport{Artifacts: arts}); err != nil {
 		return nil, fmt.Errorf("farm: replay checkpoint: invalid artifact: %w", err)
 	}
+	if err := ValidateCheckpointState(cp.State); err != nil {
+		return nil, fmt.Errorf("farm: replay checkpoint: invalid artifact: %w", err)
+	}
 	return &cp, nil
 }

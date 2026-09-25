@@ -20,7 +20,7 @@ func TestControlPlaneMigrationCoversDurableSources(t *testing.T) {
 	for _, table := range []string{
 		"schema_migrations", "runs", "control_plane_state", "run_attempts",
 		"experiments", "experiment_runs", "model_deployments", "model_hosts",
-		"llm_exchanges", "objective_failures", "issue_fingerprints",
+		"llm_exchanges", "decision_exchanges", "objective_failures", "issue_fingerprints",
 		"issue_occurrences", "issue_links", "issue_outbox", "artifacts",
 		"dataset_manifests",
 	} {

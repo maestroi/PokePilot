@@ -11,6 +11,7 @@ type Severity string
 const (
 	SeverityError   Severity = "error"
 	SeverityWarning Severity = "warning"
+	SeverityInfo    Severity = "info"
 )
 
 type Finding struct {
@@ -38,6 +39,9 @@ type Stats struct {
 	SuspiciousUnreachableMaps          int  `json:"suspicious_unreachable_maps,omitempty"`
 	InactiveStaticEdges                int  `json:"inactive_static_edges,omitempty"`
 	SemanticDeadPortEdges              int  `json:"semantic_dead_port_edges,omitempty"`
+	ExecutableEdges                    int  `json:"executable_edges,omitempty"`
+	DynamicExecutionEdges              int  `json:"dynamic_execution_edges,omitempty"`
+	ExpectedMapParseFailures           int  `json:"expected_map_parse_failures,omitempty"`
 }
 
 type Report struct {
@@ -70,6 +74,16 @@ func (r Report) WarningCount() int {
 	n := 0
 	for _, finding := range r.Findings {
 		if finding.Severity == SeverityWarning {
+			n++
+		}
+	}
+	return n
+}
+
+func (r Report) InfoCount() int {
+	n := 0
+	for _, finding := range r.Findings {
+		if finding.Severity == SeverityInfo {
 			n++
 		}
 	}
@@ -120,6 +134,15 @@ func Verify(snapshot Snapshot, options Options) Report {
 		report.Stats.Components += len(set)
 	}
 	report.Stats.Maps = len(maps)
+
+	for _, diagnostic := range snapshot.MapParseDiagnostics {
+		report.Stats.ExpectedMapParseFailures++
+		message := fmt.Sprintf("map %q was deliberately omitted after ParseMap failed: %s", diagnostic.Map, diagnostic.Error)
+		if diagnostic.Reason != "" {
+			message += "; " + diagnostic.Reason
+		}
+		report.add(SeverityWarning, "expected_map_parse_failure", message, diagnostic.Map, "")
+	}
 
 	for _, start := range snapshot.StartMaps {
 		if _, ok := maps[start]; !ok {
@@ -191,6 +214,7 @@ func Verify(snapshot Snapshot, options Options) Report {
 		validatePoint(&report, "entry", edge.Entry.Point, to, edge)
 		validatePort(&report, "exit", edge.Exit, componentSet[edge.From], edge)
 		validatePort(&report, "entry", edge.Entry, componentSet[edge.To], edge)
+		validateExecution(&report, edge, from, to, componentSet[edge.From], componentSet[edge.To])
 
 		if edge.BorderSpan != nil {
 			span := edge.BorderSpan
@@ -364,6 +388,79 @@ func validatePort(report *Report, side string, port Port, valid map[int]bool, ed
 			report.add(SeverityWarning, "duplicate_port_component", fmt.Sprintf("edge %q %s port repeats component %d", edge.ID, side, component), edge.From, edge.ID)
 		}
 		seen[component] = true
+	}
+}
+
+func validateExecution(report *Report, edge Edge, from, to Map, fromComponents, toComponents map[int]bool) {
+	execution := edge.Execution
+	if execution == nil {
+		return
+	}
+	switch execution.Status {
+	case ExecutionDynamicUnknown:
+		report.Stats.DynamicExecutionEdges++
+		reason := execution.Reason
+		if reason == "" {
+			reason = "adapter marked local execution as dynamic"
+		}
+		report.add(SeverityInfo, "dynamic_execution_unknown", fmt.Sprintf("edge %q is intentionally not statically proven executable: %s", edge.ID, reason), edge.From, edge.ID)
+		return
+	case ExecutionProven:
+	default:
+		report.add(SeverityError, "invalid_execution_status", fmt.Sprintf("edge %q has unknown execution status %q", edge.ID, execution.Status), edge.From, edge.ID)
+		return
+	}
+
+	if len(execution.Paths) == 0 {
+		// A structurally present edge with a proven dead source/entry port is
+		// already inactive and cannot be selected by component-aware routing.
+		// Executability becomes a hard error only when the graph advertises a
+		// usable port that the local navigator cannot realize.
+		if (edge.Exit.Known && len(edge.Exit.Components) == 0) ||
+			(edge.Entry.Known && len(edge.Entry.Components) == 0) {
+			return
+		}
+		report.add(SeverityError, "edge_not_executable", fmt.Sprintf("edge %q has no statically executable local crossing", edge.ID), edge.From, edge.ID)
+		return
+	}
+
+	report.Stats.ExecutableEdges++
+
+	executableExit := map[int]bool{}
+	for _, path := range execution.Paths {
+		validateExecutionPoint(report, "exit", path.ExitPoint, from, edge)
+		validateExecutionPoint(report, "entry", path.EntryPoint, to, edge)
+		if path.ExitComponent > 0 {
+			executableExit[path.ExitComponent] = true
+			if !fromComponents[path.ExitComponent] {
+				report.add(SeverityError, "execution_unknown_exit_component", fmt.Sprintf("edge %q executable path references unknown source component %d", edge.ID, path.ExitComponent), edge.From, edge.ID)
+			}
+		}
+		if path.EntryComponent > 0 && !toComponents[path.EntryComponent] {
+			report.add(SeverityError, "execution_unknown_entry_component", fmt.Sprintf("edge %q executable path references unknown destination component %d", edge.ID, path.EntryComponent), edge.To, edge.ID)
+		}
+		if edge.Exit.Known && path.ExitComponent > 0 && !contains(edge.Exit.Components, path.ExitComponent) {
+			report.add(SeverityError, "executor_exit_not_advertised", fmt.Sprintf("edge %q local executor can cross from component %d but graph exit port does not advertise it", edge.ID, path.ExitComponent), edge.From, edge.ID)
+		}
+		if edge.Entry.Known && path.EntryComponent > 0 && !contains(edge.Entry.Components, path.EntryComponent) {
+			report.add(SeverityError, "executor_landing_not_advertised", fmt.Sprintf("edge %q local executor lands in component %d but graph entry port does not advertise it", edge.ID, path.EntryComponent), edge.To, edge.ID)
+		}
+	}
+	if edge.Exit.Known {
+		for _, component := range edge.Exit.Components {
+			if component > 0 && !executableExit[component] {
+				report.add(SeverityError, "graph_executor_exit_mismatch", fmt.Sprintf("edge %q graph advertises source component %d but no local execution path can use it", edge.ID, component), edge.From, edge.ID)
+			}
+		}
+	}
+}
+
+func validateExecutionPoint(report *Report, side string, point Point, m Map, edge Edge) {
+	if !m.GeometryKnown {
+		return
+	}
+	if point.X < 0 || point.Y < 0 || point.X >= m.Width || point.Y >= m.Height {
+		report.add(SeverityError, "execution_point_out_of_bounds", fmt.Sprintf("edge %q executable %s point (%d,%d) is outside map %q size %dx%d", edge.ID, side, point.X, point.Y, m.ID, m.Width, m.Height), m.ID, edge.ID)
 	}
 }
 

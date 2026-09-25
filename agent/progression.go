@@ -83,6 +83,7 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	combined = append(combined, progress...)
 	combined = append(combined, base.Candidates[journeyAt:]...)
 	base.Candidates = combined
+	base.Readiness = challengeReadinessForOffer(obs, known, base)
 	return base
 }
 

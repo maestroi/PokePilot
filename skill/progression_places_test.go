@@ -11,7 +11,7 @@ func TestRoute25PlaceUsesBillsHouseApproachFloor(t *testing.T) {
 	if !ok {
 		t.Fatal("route 25 place missing")
 	}
-	want := (Destination{Map: 0x24, X: 45, Y: 4})
+	want := (Destination{Map: 0x24, X: 45, Y: 4, Kind: DestinationMap})
 	if d != want {
 		t.Fatalf("route 25 destination = %+v, want %+v", d, want)
 	}

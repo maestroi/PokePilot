@@ -105,3 +105,28 @@ func TestTrainingObjectiveRejectsInvalidPartySlot(t *testing.T) {
 		t.Fatal("expected invalid training party slot to be rejected")
 	}
 }
+
+func TestDropUnviableTargetedTrainingKeepsOnlyReachableTargets(t *testing.T) {
+	in := []Objective{
+		{Kind: KindTrain, Level: 20},
+		{Kind: KindTrain, Level: 32, Species: SpeciesID("ivysaur"), Slot: 1, Intent: "dex-evolution"},
+		{Kind: KindTrain, Level: 18, Species: SpeciesID("rattata"), Slot: 2},
+		{Kind: KindGoTo, Place: PlaceID("route 4")},
+	}
+	estimate := func(slot, target int) (TrainingEstimate, error) {
+		if target > 30 {
+			return TrainingEstimate{Viability: TrainingOutsideBudget}, nil
+		}
+		return TrainingEstimate{Viability: TrainingViable}, nil
+	}
+	got := dropUnviableTargetedTraining(in, estimate)
+	want := []string{"train the lead to level 20", "train RATTATA to level 18", "go to route 4"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i].String() != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+}

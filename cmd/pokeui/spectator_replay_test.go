@@ -274,7 +274,7 @@ func TestSpectatorReplayLookbackNarrowsFinishedHistoryAtTheWall(t *testing.T) {
 func TestSpectatorWithoutReplayServicePublishesOnlyActiveRuns(t *testing.T) {
 	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
-		res.Write([]byte(`{"now":123,"runs":[{"run_id":"live","status":"running"},{"run_id":"done","status":"done","stats":{"goal_complete":true}}]}`)) //nolint:errcheck
+		res.Write([]byte(`{"now":123,"runs":[{"run_id":"live","status":"running"},{"run_id":"leased","status":"leased"},{"run_id":"queued","status":"queued"},{"run_id":"paused","status":"paused"},{"run_id":"done","status":"done","stats":{"goal_complete":true}}]}`)) //nolint:errcheck
 	}))
 	t.Cleanup(wall.Close)
 	ui := httptest.NewServer(spectatorHandler(wall.URL))
@@ -286,8 +286,13 @@ func TestSpectatorWithoutReplayServicePublishesOnlyActiveRuns(t *testing.T) {
 	}
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if !bytes.Contains(body, []byte("live")) || bytes.Contains(body, []byte(`"run_id":"done"`)) {
-		t.Fatalf("snapshot without replay service = %s, want only active run", body)
+	if !bytes.Contains(body, []byte(`"run_id":"live"`)) || !bytes.Contains(body, []byte(`"run_id":"leased"`)) {
+		t.Fatalf("snapshot without replay service = %s, want running and leased runs", body)
+	}
+	for _, hidden := range []string{`"run_id":"queued"`, `"run_id":"paused"`, `"run_id":"done"`} {
+		if bytes.Contains(body, []byte(hidden)) {
+			t.Fatalf("snapshot without replay service exposed non-live run %s: %s", hidden, body)
+		}
 	}
 }
 

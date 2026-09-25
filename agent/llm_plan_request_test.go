@@ -65,13 +65,16 @@ func TestStrategistReasoningEffortOffDisablesThinking(t *testing.T) {
 		body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
 		return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
 	})}
-	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, ReasoningEffort: "off"}
+	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, MaxTokens: 1024, ReasoningEffort: "off"}
 	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
 	if _, err := p.Strategize(Observation{Round: 3}, offered, "initial"); err != nil {
 		t.Fatalf("Strategize: %v", err)
 	}
 	if _, present := request["reasoning_effort"]; present {
 		t.Fatalf("reasoning_effort should be omitted when thinking is off, got %v", request["reasoning_effort"])
+	}
+	if got := int(request["max_tokens"].(float64)); got != 1024 {
+		t.Fatalf("max_tokens=%d, want configured no-thinking cap 1024", got)
 	}
 	ctk, ok := request["chat_template_kwargs"].(map[string]any)
 	if !ok {
@@ -94,12 +97,33 @@ func TestStrategistReasoningEffortOffDisablesThinking(t *testing.T) {
 	}
 }
 
-// TestStrategistRecoveryReasonEscalatesReasoning locks in the recovery
-// tier: a run that is off by default (bounded selection, no derivation
-// needed) should still reason for real once something is going wrong —
-// isRecoveryReplan's reasons are exactly run.go's evidence of that, not a
-// routine plan_exhausted/story_changed replan.
-func TestStrategistRecoveryReasonEscalatesReasoning(t *testing.T) {
+func TestStrategistReasoningOffKeepsConfiguredBudgetOnRetry(t *testing.T) {
+	var request map[string]any
+	client := &http.Client{Transport: strategicRoundTrip(func(r *http.Request) (*http.Response, error) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &request); err != nil {
+			t.Fatal(err)
+		}
+		body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
+		return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
+	})}
+	p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, MaxTokens: 1024, ReasoningEffort: "off"}
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	if _, err := p.StrategizeRetry(Observation{Round: 3}, offered, "blackout", Retry{MaxTokensFactor: 4}); err != nil {
+		t.Fatalf("StrategizeRetry: %v", err)
+	}
+	if got := int(request["max_tokens"].(float64)); got != 1024 {
+		t.Fatalf("retry max_tokens=%d, want configured no-thinking cap 1024", got)
+	}
+}
+
+// TestStrategistRecoveryReasonCannotOverrideOff locks in off as a hard run
+// policy. Recovery evidence may request a fresh plan, but it must not silently
+// turn thinking back on or raise the configured completion budget.
+func TestStrategistRecoveryReasonCannotOverrideOff(t *testing.T) {
 	for _, reason := range []string{"stagnation", "stuck", "objective_failed", "blackout", "train_retreat"} {
 		var request map[string]any
 		client := &http.Client{Transport: strategicRoundTrip(func(r *http.Request) (*http.Response, error) {
@@ -113,19 +137,20 @@ func TestStrategistRecoveryReasonEscalatesReasoning(t *testing.T) {
 			body := `{"model":"test-model","choices":[{"message":{"content":"{\"goal\":\"go north\",\"steps\":[\"go to route 1\"]}"},"finish_reason":"stop"}]}`
 			return &http.Response{StatusCode: 200, Status: "200 OK", Body: io.NopCloser(bytes.NewBufferString(body)), Header: make(http.Header)}, nil
 		})}
-		p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
+		p := &LLMPlanner{BaseURL: "http://unused", Model: "test-model", Client: client, MaxTokens: 1024, ReasoningEffort: "off", RecoveryReasoningEffort: "medium"}
 		offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
 		if _, err := p.Strategize(Observation{Round: 3}, offered, reason); err != nil {
 			t.Fatalf("reason %q: Strategize: %v", reason, err)
 		}
-		if got := request["reasoning_effort"]; got != "medium" {
-			t.Errorf("reason %q: reasoning_effort=%v, want medium", reason, got)
+		if _, present := request["reasoning_effort"]; present {
+			t.Errorf("reason %q: reasoning_effort must stay omitted when off, got %v", reason, request["reasoning_effort"])
 		}
-		if _, present := request["chat_template_kwargs"]; present {
-			t.Errorf("reason %q: still disabled thinking despite recovery escalation: %+v", reason, request["chat_template_kwargs"])
+		ctk, ok := request["chat_template_kwargs"].(map[string]any)
+		if !ok || ctk["enable_thinking"] != false {
+			t.Errorf("reason %q: thinking not disabled: %+v", reason, request["chat_template_kwargs"])
 		}
-		if _, present := request["extra_body"]; present {
-			t.Errorf("reason %q: extra_body still disabling thinking: %+v", reason, request["extra_body"])
+		if got := int(request["max_tokens"].(float64)); got != 1024 {
+			t.Errorf("reason %q: max_tokens=%d, want configured no-thinking cap 1024", reason, got)
 		}
 	}
 }

@@ -98,6 +98,9 @@ func TestClassifyObjectiveOutcomeGameplayRecovery(t *testing.T) {
 		skill.ErrBlackedOut,
 		skill.ErrCatchBlackout,
 		skill.ErrCatchHuntExhausted,
+		skill.ErrFishingHuntExhausted,
+		skill.ErrFishingNoShoreline,
+		skill.ErrFishingNoFishHere,
 		skill.ErrTrainRetreat,
 		skill.ErrTrainProgress,
 		skill.ErrCantAfford,
@@ -172,23 +175,18 @@ func TestClassifyObjectiveOutcomeDoesNotParseLegacyGameplayProse(t *testing.T) {
 	}
 }
 
-func TestObjectivePostconditionGoToExactDestination(t *testing.T) {
-	o := Objective{Kind: KindGoTo, Place: "pallet town"}
-	dest, ok := skill.Place(o.Place)
-	if !ok {
-		t.Fatal("Place(pallet town) did not resolve")
-	}
-
-	good := Observation{Map: dest.Map, X: dest.X, Y: dest.Y, Controllable: true}
+func TestObjectivePostconditionGoToUsesSemanticLocation(t *testing.T) {
+	o := Objective{Kind: KindGoTo, Place: "room-b"}
+	good := Observation{Location: o.Place, X: 2, Y: 3, Controllable: true}
 	if out, err := objectivePostcondition(o, good); err != nil || out != OutcomeCompleted {
-		t.Fatalf("exact destination = %q, %v; want completed, nil", out, err)
+		t.Fatalf("semantic destination = %q, %v; want completed, nil", out, err)
 	}
 
-	wrongTile := good
-	wrongTile.X++
-	out, err := objectivePostcondition(o, wrongTile)
+	wrong := good
+	wrong.Location = "room-c"
+	out, err := objectivePostcondition(o, wrong)
 	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
-		t.Fatalf("wrong tile = %q, %v; want postcondition_failed sentinel", out, err)
+		t.Fatalf("wrong semantic location = %q, %v; want postcondition_failed sentinel", out, err)
 	}
 
 	unreadable := good
@@ -283,6 +281,13 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 			o:     Objective{Kind: KindProgress, Progress: ProgressID("door_unlocked")},
 			final: Observation{Controllable: true, Story: ProgressState{{ID: ProgressID("door_unlocked"), Complete: true}}},
 		},
+		{
+			name: "field capability repair",
+			o:    Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"},
+			final: Observation{Controllable: true, FieldCapabilities: []FieldCapability{{
+				Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true,
+			}}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -297,7 +302,13 @@ func TestVerifyObjectivePostconditionRepresentativeEvidence(t *testing.T) {
 
 func TestVerifyObjectivePostconditionFailsClosedWithoutEvidence(t *testing.T) {
 	stable := Observation{Controllable: true}
-	out, err := verifyObjectivePostcondition(
+	fieldRepair := Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}
+	out, err := verifyObjectivePostcondition(fieldRepair, Observation{}, stable, ObjectiveResult{})
+	if out != OutcomePostconditionFailed || !errors.Is(err, ErrObjectivePostconditionFailed) {
+		t.Fatalf("field repair without usable capability = %q, %v; want postcondition_failed", out, err)
+	}
+
+	out, err = verifyObjectivePostcondition(
 		Objective{Kind: KindUseItem, Item: "potion", Slot: 0},
 		Observation{}, stable, ObjectiveResult{},
 	)
@@ -319,8 +330,14 @@ func TestClassifyObjectiveOutcomePCStorageIsBlocked(t *testing.T) {
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrPCBoxFull, clean); got != OutcomeBlocked {
 		t.Fatalf("full box = %q, want blocked", got)
 	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "vulpix"}, skill.ErrPCNoKnownCenter, clean); got != OutcomeBlocked {
+		t.Fatalf("no known center = %q, want blocked", got)
+	}
 	if got := classifyObjectiveOutcome(Objective{Kind: KindCatch, Species: "pidgey"}, skill.ErrFieldRosterNoRecovery, clean); got != OutcomeBlocked {
 		t.Fatalf("no safe deposit = %q, want blocked", got)
+	}
+	if got := classifyObjectiveOutcome(Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}, skill.ErrFieldRosterCatch, clean); got != OutcomeBlocked {
+		t.Fatalf("field roster catch failure = %q, want blocked", got)
 	}
 }
 

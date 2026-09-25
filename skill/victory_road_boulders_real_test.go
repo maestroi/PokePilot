@@ -63,6 +63,9 @@ func TestVictoryRoadBoulderSectionsRealROM(t *testing.T) {
 
 			var after state.Mem
 			state.Snapshot(m, &after)
+			if state.DecodeBattle(&after) != nil || !state.Controllable(&after) {
+				t.Fatalf("%v returned on a dirty objective boundary: controllable=%v battle=%v", tc.section, state.Controllable(&after), state.DecodeBattle(&after))
+			}
 			if !state.HasEvent(&after, spec.CompleteEvent) {
 				t.Fatalf("%v completion event %#x is not set after solve", tc.section, spec.CompleteEvent)
 			}

@@ -3,18 +3,28 @@
 You are running unattended in a dedicated worktree. The shell already
 chose the failure. Do not call pokepilot_get_triage to pick another one.
 
-First load the native OpenCode skill `pokefarm-triage` with the `skill` tool.
-OpenCode discovers it from `.claude/skills/pokefarm-triage/SKILL.md`. If the
-skill tool is unavailable, read that file directly instead. Then read and
-follow `docs/ARCHITECTURE.md`.
+First load the repository triage instructions from
+`.claude/skills/pokefarm-triage/SKILL.md`. If your agent runtime exposes a
+native skill tool, you may load `pokefarm-triage` through that tool instead.
+Then read and follow `docs/ARCHITECTURE.md`.
 
 The packet JSON is attached. Use its `key`, `run_id`, and `example`. When
 `issue_number` is present, it is the generated GitHub farm issue linked to this
-failure group. The shell has already applied the local PokéWall + GitHub
+failure group. For a fresh repair, the shell has already assigned that issue to
+the authenticated GitHub user as the visible claim; do not remove or replace
+that assignment. The shell has also applied the local PokéWall + GitHub
 claim/repair/regression state machine; do not second-guess queue eligibility
 from stale Orchestrator status.
 
-Do:
+If `mode` is `repair_pr`, this attempt is a pull request this loop already
+opened and whose checks failed. Do not investigate a new farm failure.
+
+1. The shell has checked out `head_ref`. Stay on that branch.
+2. Fix the checks named in `failing_checks`. `make test-short` must pass.
+3. Commit on `head_ref` and `git push`.
+4. Do not open a new pull request and do not switch to `main`.
+
+Otherwise do:
 
 1. `pokepilot_get_run_debug` / `pokepilot_get_run_artifacts` for `run_id`.
 2. Download the failing round `.state` (objective matching finish.detail).

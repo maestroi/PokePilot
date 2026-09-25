@@ -13,6 +13,7 @@ type (
 	ProgressID    = gameruntime.ProgressID
 	ProgressFact  = gameruntime.ProgressFact
 	ProgressState = gameruntime.ProgressState
+	Prerequisite  = gameruntime.Prerequisite
 )
 
 // Current Red progression concepts are expressed as semantic facts rather

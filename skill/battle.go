@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -66,13 +67,18 @@ const voluntarySwitchCap = 4
 
 // Frame budgets for Battle. They are upper bounds, not measured timings: a
 // real turn (menu + move + resolution) is a few hundred frames and a whole
-// battle a few thousand. The total cap exists so a stuck battle fails
-// loudly instead of hanging the suite.
+// battle a few thousand. The stall cap exists so a stuck battle fails
+// loudly instead of hanging the suite. It is measured since the last HP or
+// species change, not since the battle began: a PP-exhausted STRUGGLE war
+// against a high-level trainer is slow but still resolving, and cutting it
+// off turns an ordinary blackout into a dirty objective boundary.
+// battleFrameCap is only an absolute backstop.
 const (
-	battleFrameCap  = 60000 // total frames for the whole battle
-	moveMenuBudget  = 500   // wait for the move/main menu transition
-	moveCloseBudget = 500   // wait for the move menu to close after a move
-	settleBudget    = 3000  // wait for controllable after the battle ends
+	battleStallCap  = 60000  // frames without any HP/species change
+	battleFrameCap  = 600000 // total frames for the whole battle
+	moveMenuBudget  = 500    // wait for the move/main menu transition
+	moveCloseBudget = 500    // wait for the move menu to close after a move
+	settleBudget    = 3000   // wait for controllable after the battle ends
 )
 
 // mainMenuMax is the wMaxMenuItem of the FIGHT/ITEM/PKMN/RUN menu. The move
@@ -115,7 +121,19 @@ const mainMenuMax = 1
 // 42MB of "getenv ZBAT" lines in one nine-minute run).
 var zbatDebug = os.Getenv("ZBAT") != ""
 
+// BattleOptions adds narrowly-scoped battle behavior for callers that need a
+// deliberate opening switch. Ordinary Battle uses the zero value and retains
+// the normal tactical policy.
+type BattleOptions struct {
+	OpeningTrainingSwitch bool
+	MinTrainingCarryLevel uint8
+}
+
 func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
+	return BattleWithOptions(m, policy, BattleOptions{})
+}
+
+func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (state.BattleResult, error) {
 	if policy == nil {
 		return 0, errors.New("skill: Battle: nil policy")
 	}
@@ -129,6 +147,8 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	}
 
 	startFrame := m.FrameCount()
+	progressFrame := startFrame
+	var lastProgress battleProgress
 
 	// The move-learning episode is tracked across loop passes. lastForgetSlot
 	// is the slot just picked in the forget list; triedForgets records a move
@@ -143,6 +163,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 	forcedChoiceVisits := 0
 	itemUses := 0
 	voluntarySwitches := 0
+	openingTrainingSwitch := options.OpeningTrainingSwitch
 	// pendingTryLearn remembers that the "<NAME> is trying to learn <MOVE>"
 	// text was seen. That message is long enough to scroll off the 4-line
 	// battle text box before the YES/NO cursor is drawn (the cursor appears
@@ -157,8 +178,16 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 		if int(m.FrameCount()-startFrame) > battleFrameCap {
 			return stuckError(m, fmt.Sprintf("exceeded %d-frame cap", battleFrameCap))
 		}
+		if int(m.FrameCount()-progressFrame) > battleStallCap {
+			return stuckError(m, fmt.Sprintf("no HP or species change for %d frames", battleStallCap))
+		}
 
 		state.Snapshot(m, &mem)
+		if bs := state.DecodeBattle(&mem); bs != nil {
+			if p := progressOf(bs); p != lastProgress {
+				lastProgress, progressFrame = p, m.FrameCount()
+			}
+		}
 		if pendingLearnMove != 0 && pendingLearnSlot >= 0 && pendingLearnPartySlot >= 0 {
 			party := state.DecodeParty(&mem)
 			if pendingLearnPartySlot < len(party.Mons) && party.Mons[pendingLearnPartySlot].Moves[pendingLearnSlot] == pendingLearnMove {
@@ -191,11 +220,14 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				fmt.Printf("zbat EXIT f=%d inBattle=%#02x rawResult=%#02x\n",
 					m.FrameCount(), m.Peek8(sym.IsInBattle), m.Peek8(sym.BattleResult))
 			}
+			// Read the result at the battle boundary: settling walks through
+			// a blackout respawn, which clears wBattleResult and would report
+			// the loss as a win.
+			result := state.DecodeBattleResult(&mem)
 			if err := settleAfterBattle(m, &mem); err != nil {
 				return 0, err
 			}
-			state.Snapshot(m, &mem)
-			return state.DecodeBattleResult(&mem), nil
+			return result, nil
 		}
 
 		switch {
@@ -242,6 +274,7 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				return 0, fmt.Errorf("skill: Battle: map %02x at (%d,%d) battle %+v: policy returned slot %d, usable %v",
 					m.Peek8(sym.CurMap), x, y, bs, slot, usable)
 			}
+			observeMove(m, *bs, slot)
 			if err := SelectMenuItem(m, slot+1); err != nil {
 				return menuError(m, "select move", err)
 			}
@@ -250,6 +283,31 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 			})
 
 		case mainMenuUp(m):
+			if openingTrainingSwitch {
+				bs := state.DecodeBattle(&mem)
+				if bs != nil {
+					decision := chooseTrainingCarrySwitch(m.ROM(), &mem, *bs, options.MinTrainingCarryLevel)
+					if decision.Switch {
+						if zbatDebug {
+							fmt.Printf("zbat resource=SWITCH action=training reason=%s active={%s} candidate={%s}\n",
+								decision.Reason, decision.Active.String(), decision.Candidate.String())
+						}
+						if err := SwitchActive(m, decision.Slot); err != nil {
+							return menuError(m, "switch-training carry", err)
+						}
+						openingTrainingSwitch = false
+						voluntarySwitches++
+						continue
+					}
+				}
+				// Train checks the same carry predicate before entering a wild
+				// encounter. If the live battle no longer has one (for example a
+				// status/HP transition landed between steps), fall through to the
+				// ordinary battle policy so Battle still resolves to a clean
+				// boundary rather than stranding the emulator mid-fight.
+				openingTrainingSwitch = false
+			}
+
 			if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) == 0 {
 				if slot, ok := ppRecoverySlot(&mem); ok {
 					if zbatDebug {
@@ -265,7 +323,11 @@ func Battle(m *emu.Emu, policy MovePolicy) (state.BattleResult, error) {
 				}
 			}
 
-			if voluntarySwitches < voluntarySwitchCap {
+			// A deliberate switch-training battle already chose the best carry
+			// for this exact opponent. Do not tactically rotate through additional
+			// party members afterward: every extra participant further splits the
+			// trainee's XP and defeats the estimator's two-participant contract.
+			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
 				if bs := state.DecodeBattle(&mem); bs != nil && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitch(m.ROM(), &mem, *bs)
 					if decision.Switch {
@@ -611,32 +673,7 @@ func switchBoxUp(m *emu.Emu) bool {
 }
 
 func selectFightEntry(m *emu.Emu) error {
-	atFight := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 0
-	}
-	for i := 0; i < 8; i++ {
-		if atFight(m) {
-			return nil
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevX == battleMenuRightX && prevRow != 0:
-			btn = emu.Up
-		case prevX == battleMenuRightX:
-			btn = emu.Left
-		default:
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: Battle: cursor stuck at x=%#02x row %d, want FIGHT (x=%#02x row 0): %w",
-				prevX, prevRow, battleMenuLeftX, ErrMenuStuck)
-		}
-	}
-	return fmt.Errorf("skill: Battle: cursor did not reach FIGHT")
+	return selectBattleMainMenuEntry(m, game.BattleMenuFight)
 }
 
 func firstLivePartySlot(mem *state.Mem) int {
@@ -657,6 +694,23 @@ func battleScreenHas(m *emu.Emu, marker string) bool {
 
 const settleStableFrames = 20
 
+// ErrCampaignComplete reports that a battle's aftermath was the game's ending:
+// the main story is now complete and control will not return to the caller's
+// walk. The run goal check, not the interrupted objective, owns what follows.
+var ErrCampaignComplete = errors.New("skill: Battle: campaign complete; the ending never returns control")
+
+// battleProgress is the part of a battle that must keep changing while the
+// fight is still resolving. Menus and text never change it; a landed hit, a
+// heal, a faint or a switch does.
+type battleProgress struct {
+	activeHP, enemyHP           uint16
+	activeSpecies, enemySpecies uint8
+}
+
+func progressOf(bs *state.BattleState) battleProgress {
+	return battleProgress{bs.ActiveHP, bs.EnemyHP, bs.ActiveSpecies, bs.EnemySpecies}
+}
+
 func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 	startFrame := m.FrameCount()
 	stable := 0
@@ -675,6 +729,15 @@ func settleAfterBattle(m *emu.Emu, mem *state.Mem) error {
 		} else {
 			m.StepFrame()
 		}
+	}
+	// The Champion's defeat hands the game to its ending, which never returns
+	// control. Whichever skill fought that battle, the League adapter owns
+	// driving the ending to its durable completion bit.
+	if leagueFacts(mem).LeagueChampionDefeated {
+		if err := finishHallOfFame(m); err != nil {
+			return err
+		}
+		return ErrCampaignComplete
 	}
 	x, y := playerXY(m)
 	return fmt.Errorf("skill: Battle: not controllable %d frames after the battle ended: map %02x at (%d,%d)",

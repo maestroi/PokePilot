@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -53,12 +54,26 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build live map %02x: %w", cur, err)
 	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if cur == route16Map {
+		if !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
+			liveGrid.Set(route16SnorlaxX, route16SnorlaxY, false)
+		}
+		openRoute16CutPassage(liveGrid, romData, &mem)
+	}
 	routeGraph, err := g.WithMapGrid(cur, liveGrid)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
+	// The live overlay above replaces only the current map. Snorlax still has
+	// to split Route 16 when the player is indoors on its Fly-house side.
+	if cur != route16Map {
+		routeGraph, err = withAsleepRoute16Snorlax(routeGraph, romData, &mem)
+		if err != nil {
+			return nil, fmt.Errorf("skill: RoutePlanner: Route 16 Snorlax corridor: %w", err)
+		}
+	}
 	return &RoutePlanner{
 		graph:   routeGraph,
 		cur:     cur,
@@ -76,9 +91,16 @@ func (p *RoutePlanner) Reachability(dest Destination) error {
 	if p == nil {
 		return nil // no planner is no evidence; never hide a place on a guess
 	}
-	_, err := world.FindRouteAtDestinationWithCapabilities(
-		p.graph, p.cur, dest.Map, int(p.x), int(p.y), int(dest.X), int(dest.Y), nil, p.prereqs,
+	_, err := findRoutePlanForDestination(
+		p.graph, p.cur, int(p.x), int(p.y), dest, nil, p.prereqs,
 	)
+	if errors.Is(err, world.ErrRouteReplanRequired) {
+		// The target lies beyond an executable semantic frontier. GoTo can
+		// advance to that action and re-plan from refreshed live topology; this
+		// is routable for objective offering without claiming a concrete
+		// post-action component in the world planner itself.
+		return nil
+	}
 	return err
 }
 

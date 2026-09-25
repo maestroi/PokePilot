@@ -16,24 +16,154 @@ if [ -f "$ENV_FILE" ]; then
 	set +a
 fi
 
-POKEPILOT_WALL=${POKEPILOT_WALL:-https://admin.rompilot.app}
+POKEPILOT_MCP_URL=${POKEPILOT_MCP_URL:-https://admin.rompilot.app/mcp}
 POKEPILOT_TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilot-qwagent-triage}
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}
-export PATH="$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
+POKEPILOT_TRIAGE_AGENT=${POKEPILOT_TRIAGE_AGENT:-auto}
+POKEPILOT_CURSOR_MODEL=${POKEPILOT_CURSOR_MODEL:-}
+POKEPILOT_OPENCODE_MODEL=${POKEPILOT_OPENCODE_MODEL:-qwen3.8-27b/qwen3.8-27b}
+export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
 LOCKED=0
+PREPARE_ONLY=0
 for arg in "$@"; do
 	case "$arg" in
 	--dry-run) DRY_RUN=1 ;;
 	--locked) LOCKED=1 ;;
+	--prepare-tree) PREPARE_ONLY=1 ;;
 	esac
 done
 
 log() { echo "qwagent-triage: $*" >&2; }
 
+cursor_binary() {
+	if command -v agent >/dev/null 2>&1; then
+		command -v agent
+		return 0
+	fi
+	if command -v cursor-agent >/dev/null 2>&1; then
+		command -v cursor-agent
+		return 0
+	fi
+	return 1
+}
+
+cursor_authenticated() {
+	local bin status
+	bin=$(cursor_binary) || return 1
+	status=$("$bin" status 2>&1 || true)
+	if printf '%s' "$status" | grep -Eiq 'not authenticated|not logged|logged out'; then
+		return 1
+	fi
+	[ -n "$status" ]
+}
+
+select_agent_backend() {
+	case "$POKEPILOT_TRIAGE_AGENT" in
+	auto)
+		if cursor_authenticated; then
+			echo cursor
+			return 0
+		fi
+		if command -v opencode >/dev/null 2>&1; then
+			echo opencode
+			return 0
+		fi
+		log "no authenticated Cursor CLI or OpenCode binary found; skip"
+		return 1
+		;;
+	cursor)
+		if ! cursor_binary >/dev/null; then
+			log "Cursor CLI not installed; install it from cursor.com/cli"
+			return 1
+		fi
+		if ! cursor_authenticated; then
+			log "Cursor CLI is not authenticated; run 'agent login' once with your Cursor account"
+			return 1
+		fi
+		echo cursor
+		;;
+	opencode)
+		if ! command -v opencode >/dev/null 2>&1; then
+			log "OpenCode is not installed; skip"
+			return 1
+		fi
+		echo opencode
+		;;
+	*)
+		log "unknown POKEPILOT_TRIAGE_AGENT=$POKEPILOT_TRIAGE_AGENT; want auto, cursor, or opencode"
+		return 1
+		;;
+	esac
+}
+
+selected_agent_model() {
+	case "$AGENT_BACKEND" in
+	cursor)
+		if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
+			printf '%s' "$POKEPILOT_CURSOR_MODEL"
+		else
+			printf '%s' "auto"
+		fi
+		;;
+	opencode) printf '%s' "$POKEPILOT_OPENCODE_MODEL" ;;
+	esac
+}
+
+record_solver_attempt() {
+	local state=$1 note=${2:-} branch_name=${3:-} pr_number=${4:-0} pr_url=${5:-} exit_code=${6:-0}
+	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" record-attempt \
+		--endpoint "$POKEPILOT_MCP_URL" \
+		--key "$KEY" \
+		--id "$ATTEMPT_ID" \
+		--backend "$AGENT_BACKEND" \
+		--model "$SOLVER_MODEL" \
+		--state "$state" \
+		--run-id "$RUN_ID" \
+		--branch "$branch_name" \
+		--pr-number "$pr_number" \
+		--pr-url "$pr_url" \
+		--exit-code "$exit_code" \
+		--note "$note" \
+		--started-at "$ATTEMPT_STARTED_AT" >/dev/null 2>&1 || log "could not record solver attempt $ATTEMPT_ID state=$state"
+}
+
+prepare_triage_tree() {
+	# Share objects with the local checkout, but fetch and push the
+	# primary repo's origin. A tree cloned from the checkout itself only
+	# sees that checkout's main, and push never reaches GitHub.
+	local upstream
+	upstream=$(git -C "$POKEPILOT_ROOT" remote get-url origin 2>/dev/null || true)
+	if [ -z "$upstream" ]; then
+		upstream=$POKEPILOT_ROOT
+	fi
+	if [ ! -d "$POKEPILOT_TRIAGE_TREE/.git" ]; then
+		mkdir -p "$(dirname "$POKEPILOT_TRIAGE_TREE")"
+		if ! git clone --reference "$POKEPILOT_ROOT" "$upstream" "$POKEPILOT_TRIAGE_TREE"; then
+			git clone "$upstream" "$POKEPILOT_TRIAGE_TREE"
+		fi
+	elif [ "$upstream" != "$POKEPILOT_ROOT" ]; then
+		git -C "$POKEPILOT_TRIAGE_TREE" remote set-url origin "$upstream"
+	fi
+	git -C "$POKEPILOT_TRIAGE_TREE" fetch origin
+	# A timed-out attempt leaves this dedicated tree dirty. checkout then
+	# aborts and the oneshot exits 1 before reset --hard can rebuild main.
+	git -C "$POKEPILOT_TRIAGE_TREE" reset --hard HEAD
+	git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+	git -C "$POKEPILOT_TRIAGE_TREE" checkout -f main
+	git -C "$POKEPILOT_TRIAGE_TREE" reset --hard origin/main
+	git -C "$POKEPILOT_TRIAGE_TREE" branch --set-upstream-to=origin/main main
+	git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+}
+
 mkdir -p "$POKEPILOT_TRIAGE_STATE"
+
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+	prepare_triage_tree
+	exit 0
+fi
 
 if [ -z "${POKEPILOT_MCP_TOKEN:-}" ]; then
 	log "POKEPILOT_MCP_TOKEN unset; skip"
@@ -71,30 +201,136 @@ gh_repo() {
 	esac
 }
 
+CLAIMED_ISSUE_NUMBER=""
+KEEP_ISSUE_CLAIM=0
+
+release_issue_claim() {
+	local login
+	[ -n "${CLAIMED_ISSUE_NUMBER:-}" ] || return 0
+	[ "${KEEP_ISSUE_CLAIM:-0}" -eq 0 ] || return 0
+	login=$(gh api user --jq .login 2>/dev/null || true)
+	[ -n "$login" ] || return 0
+	if gh issue edit "$CLAIMED_ISSUE_NUMBER" --repo "$(gh_repo)" --remove-assignee "$login" >/dev/null 2>&1; then
+		log "released GitHub issue #$CLAIMED_ISSUE_NUMBER from @$login"
+	fi
+	CLAIMED_ISSUE_NUMBER=""
+}
+
+claim_issue() {
+	local issue=$1 login assignees
+	[ -n "$issue" ] || return 0
+	login=$(gh api user --jq .login 2>/dev/null || true)
+	if [ -z "$login" ]; then
+		log "cannot determine authenticated GitHub user; refusing an invisible issue claim"
+		return 1
+	fi
+	assignees=$(gh issue view "$issue" --repo "$(gh_repo)" --json assignees --jq '.assignees[].login' 2>/dev/null || true)
+	if [ -n "$assignees" ]; then
+		log "GitHub issue #$issue is already assigned ($(printf '%s' "$assignees" | paste -sd, -)); another agent owns it"
+		return 2
+	fi
+	if ! gh issue edit "$issue" --repo "$(gh_repo)" --add-assignee "$login" >/dev/null; then
+		log "failed to claim GitHub issue #$issue as @$login"
+		return 1
+	fi
+	CLAIMED_ISSUE_NUMBER=$issue
+	log "claimed GitHub issue #$issue as @$login"
+	return 0
+}
+
+trap 'release_issue_claim' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+triage_bin() {
+	local bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
+	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
+	(cd "$POKEPILOT_ROOT" && go build -o "$bin" ./cmd/qwagent-triage)
+	printf '%s' "$bin"
+}
+
+seed_rom() {
+	local src=""
+	if [ -n "${POKEMON_RED_ROM:-}" ] && [ -f "$POKEMON_RED_ROM" ]; then
+		src=$POKEMON_RED_ROM
+	elif [ -f "$HOME/.config/pokepilot/pokemon_red.gb" ]; then
+		src=$HOME/.config/pokepilot/pokemon_red.gb
+	elif [ -f "$POKEPILOT_ROOT/roms/pokemon_red.gb" ]; then
+		src=$POKEPILOT_ROOT/roms/pokemon_red.gb
+	else
+		log "no pokemon_red.gb found for the worktree"
+		return 0
+	fi
+	mkdir -p "$POKEPILOT_TRIAGE_TREE/roms"
+	ln -sfn "$src" "$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+	if ! grep -qxF 'roms/pokemon_red.gb' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' 'roms/pokemon_red.gb' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	export POKEMON_RED_ROM="$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+}
+
 pick_next() {
 	local triage titles merged_prs pick_args status bin
 	local triage_file merged_file candidates ancestry_ready
-	if ! triage=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" "${POKEPILOT_WALL}/v1/triage"); then
-		log "wall unreachable; skip"
+	bin=$(triage_bin)
+	if ! triage=$("$bin" fetch-triage --endpoint "$POKEPILOT_MCP_URL"); then
+		log "MCP triage unreachable; skip"
 		return 2
 	fi
+	open_prs=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json number,title,headRefName,url,statusCheckRollup 2>/dev/null || printf '[]')
+	own_err=$(mktemp)
+	set +e
+	own_pr=$(printf '%s' "$open_prs" | "$bin" pick-own-pr 2>"$own_err")
+	own_status=$?
+	set -e
+	if [ "$own_status" -eq 0 ]; then
+		rm -f "$own_err"
+		printf '%s' "$own_pr"
+		return 0
+	fi
+	if [ "$own_status" -ne 2 ]; then
+		log "own-pr picker failed (exit $own_status): $(tr '\n' ' ' <"$own_err")"
+	fi
+	rm -f "$own_err"
+
 	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
+	assigned_issues=$(gh issue list --repo "$(gh_repo)" --state open --limit 200 --json body,assignees 2>/dev/null || printf '[]')
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	while IFS= read -r title; do
 		[ -z "$title" ] && continue
 		pick_args+=(--claimed "$title")
 	done <<<"$titles"
+	while IFS= read -r key; do
+		[ -z "$key" ] && continue
+		# Reuse the picker's existing stable marker parser: an assigned generated
+		# farm issue is an earlier claim than an eventual [triage:key] PR.
+		pick_args+=(--claimed "[triage:$key]")
+	done < <(printf '%s' "$assigned_issues" | python3 -c '
+import json
+import sys
 
-	# A merged [triage:key] PR is the local fallback for Orchestrator issue
-	# state. Compare its merge commit with the build that produced the newest
-	# representative failure. Old-build failures stay suppressed; a failure
-	# from a build containing the repair is a concrete regression.
+tick = chr(96)
+for issue in json.load(sys.stdin):
+    if not issue.get("assignees"):
+        continue
+    for line in (issue.get("body") or "").splitlines():
+        if not line.startswith("- **Triage key:**"):
+            continue
+        parts = line.split(tick)
+        if len(parts) >= 3 and parts[1].strip():
+            print(parts[1].strip())
+            break
+')
+
+	# A merged [triage:key] PR suppresses that key unless the fingerprint's
+	# last_observed_revision contains the merge. The run's latest finish is
+	# the wrong revision: a later attempt can fail differently on a newer build.
 	triage_file=$(mktemp)
 	merged_file=$(mktemp)
 	printf '%s' "$triage" >"$triage_file"
 	printf '%s' "$merged_prs" >"$merged_file"
-	candidates=$(python3 - "$triage_file" "$merged_file" <<'PY'
+	repairs=$(python3 - "$triage_file" "$merged_file" <<'PY'
 import json
 import re
 import sys
@@ -114,24 +350,26 @@ for pr in prs:
     if not match:
         continue
     key = match.group(1).strip()
-    if key not in groups:
+    group = groups.get(key)
+    if group is None:
         continue
-    merge_commit = pr.get("mergeCommit") or {}
-    merge_sha = merge_commit.get("oid") or ""
+    merge_sha = ((pr.get("mergeCommit") or {}).get("oid") or "")
+    issue = group.get("issue") or {}
+    observed = str(issue.get("last_observed_revision") or "").strip()
     previous = latest.get(key)
     if previous is None or merged_at > previous[0]:
-        latest[key] = (merged_at, merge_sha)
+        latest[key] = (merged_at, merge_sha, observed)
 
-for key, (_, merge_sha) in latest.items():
-    run_ids = groups[key].get("run_ids") or []
-    run_id = str(run_ids[0]) if run_ids else ""
-    print(f"{key}\t{run_id}\t{merge_sha}")
+rows = []
+for key, (_, merge_sha, observed) in latest.items():
+    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed})
+json.dump(rows, sys.stdout)
 PY
 )
 	rm -f "$triage_file" "$merged_file"
 
 	ancestry_ready=0
-	if [ -n "$candidates" ]; then
+	if [ "$repairs" != "[]" ] && [ -n "$repairs" ]; then
 		if git -C "$POKEPILOT_ROOT" fetch --quiet origin; then
 			ancestry_ready=1
 		else
@@ -139,36 +377,42 @@ PY
 		fi
 	fi
 
-	while IFS=$'\t' read -r key run_id merge_sha; do
+	if [ "$ancestry_ready" -eq 1 ]; then
+		set +e
+		class_json=$(printf '%s' "$repairs" | "$bin" classify-repairs --repo "$POKEPILOT_ROOT")
+		class_status=$?
+		set -e
+		if [ "$class_status" -ne 0 ]; then
+			log "classify-repairs failed; suppress merged repairs"
+			ancestry_ready=0
+		fi
+	fi
+	if [ "$ancestry_ready" -eq 1 ]; then
+		classified=$(printf '%s' "$class_json" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for key in data.get("repaired") or []:
+    print("repaired\t" + str(key))
+for key in data.get("regressed") or []:
+    print("regressed\t" + str(key))
+')
+	else
+		classified=$(printf '%s' "$repairs" | python3 -c '
+import json, sys
+for row in json.load(sys.stdin):
+    key = str(row.get("key") or "").strip()
+    if key:
+        print("repaired\t" + key)
+')
+	fi
+	while IFS=$'\t' read -r kind key; do
 		[ -z "$key" ] && continue
-		if [ "$ancestry_ready" -ne 1 ] || [ -z "$run_id" ] || [ -z "$merge_sha" ]; then
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		local debug runner_version
-		if ! debug=$(curl -fsS -H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" \
-			"${POKEPILOT_WALL}/v1/runs/${run_id}/debug"); then
-			log "cannot read representative run $run_id for $key; keep merged repair suppressed"
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		runner_version=$(printf '%s' "$debug" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(((d.get("finish") or {}).get("runner_version") or "").strip())')
-		if [ -z "$runner_version" ] || \
-			! git -C "$POKEPILOT_ROOT" cat-file -e "${merge_sha}^{commit}" 2>/dev/null || \
-			! git -C "$POKEPILOT_ROOT" cat-file -e "${runner_version}^{commit}" 2>/dev/null; then
-			pick_args+=(--repaired "$key")
-			continue
-		fi
-		if git -C "$POKEPILOT_ROOT" merge-base --is-ancestor "$merge_sha" "$runner_version"; then
-			pick_args+=(--regressed "$key")
-		else
-			pick_args+=(--repaired "$key")
-		fi
-	done <<<"$candidates"
+		case "$kind" in
+		repaired) pick_args+=(--repaired "$key") ;;
+		regressed) pick_args+=(--regressed "$key") ;;
+		esac
+	done <<<"$classified"
 
-	# go run rewrites a child exit 2 into its own exit 1; build so idle stays 2.
-	bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
-	(cd "$POKEPILOT_ROOT" && go build -o "$bin" ./cmd/qwagent-triage)
 	set +e
 	PICK_JSON=$(printf '%s' "$triage" | "$bin" "${pick_args[@]}")
 	status=$?
@@ -191,53 +435,82 @@ fi
 KEY=$(printf '%s' "$PICK_JSON" | json_field key)
 RUN_ID=$(printf '%s' "$PICK_JSON" | json_field run_id)
 EXAMPLE=$(printf '%s' "$PICK_JSON" | json_field example)
+MODE=$(printf '%s' "$PICK_JSON" | json_field mode)
+HEAD_REF=$(printf '%s' "$PICK_JSON" | json_field head_ref)
+PR_NUMBER=$(printf '%s' "$PICK_JSON" | json_field pr_number)
+PR_URL=$(printf '%s' "$PICK_JSON" | json_field pr_url)
+ISSUE_NUMBER=$(printf '%s' "$PICK_JSON" | json_field issue_number)
 if [ -z "$KEY" ]; then
 	log "picker returned empty key; skip"
 	exit 0
 fi
 
-OPENCODE_CMD=(opencode run --auto --model qwen3.8-27b/qwen3.8-27b
-	--dir "$POKEPILOT_TRIAGE_TREE"
-	--title "farm triage ${KEY}"
-	--file "$POKEPILOT_TRIAGE_STATE/packet.md"
-	--
-	"Follow the attached farm triage packet. Do not pick a different failure.")
-
-if [ "$DRY_RUN" -eq 1 ]; then
-	printf '%s\n' "$PICK_JSON"
-	echo "would claim $KEY (run $RUN_ID)"
-	echo "would run: ${OPENCODE_CMD[*]}"
+if ! AGENT_BACKEND=$(select_agent_backend); then
 	exit 0
 fi
 
-log "claiming $KEY ($EXAMPLE) run=$RUN_ID"
+if [ "$DRY_RUN" -eq 1 ]; then
+	printf '%s\n' "$PICK_JSON"
+	if [ "$MODE" = "repair_pr" ]; then
+		echo "would repair PR #$PR_NUMBER on $HEAD_REF"
+	elif [ -n "$ISSUE_NUMBER" ]; then
+		echo "would claim GitHub issue #$ISSUE_NUMBER for $KEY (run $RUN_ID)"
+	else
+		echo "would claim $KEY (run $RUN_ID; no generated GitHub issue)"
+	fi
+	SOLVER_MODEL=$(selected_agent_model)
+	case "$AGENT_BACKEND" in
+	cursor) echo "would run: Cursor CLI model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
+	opencode) echo "would run: OpenCode model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
+	esac
+	exit 0
+fi
+
+if [ "$MODE" != "repair_pr" ] && [ -n "$ISSUE_NUMBER" ]; then
+	set +e
+	claim_issue "$ISSUE_NUMBER"
+	claim_status=$?
+	set -e
+	if [ "$claim_status" -eq 2 ]; then
+		# Another agent won the GitHub-visible claim after selection. Leave this
+		# tick idle rather than racing it; the next timer tick will pick again.
+		exit 0
+	fi
+	if [ "$claim_status" -ne 0 ]; then
+		log "could not establish a GitHub-visible claim; skip"
+		exit 0
+	fi
+fi
+
+if [ "$MODE" = "repair_pr" ]; then
+	log "repairing PR #$PR_NUMBER ($HEAD_REF) for $KEY: $EXAMPLE"
+else
+	log "claiming $KEY ($EXAMPLE) run=$RUN_ID"
+fi
 # Investigate is a best-effort claim. Auto-filed issues are often already
 # investigating, and the orchestrator then 409s (the wall currently maps
 # that to 502). An open PR is the durable skip; do not abort the local agent.
-invest_body=$(mktemp)
 set +e
-invest_code=$(curl -sS -o "$invest_body" -w '%{http_code}' -X POST \
-	-H "Authorization: Bearer ${POKEPILOT_MCP_TOKEN}" \
-	"${POKEPILOT_WALL}/v1/triage/${KEY}/investigate")
+invest_out=$("$POKEPILOT_TRIAGE_STATE/qwagent-triage" investigate --endpoint "$POKEPILOT_MCP_URL" --key "$KEY" 2>&1)
+invest_status=$?
 set -e
-case "$invest_code" in
-200 | 201 | 202 | 409) ;;
-*)
-	log "investigate HTTP ${invest_code:-err}: $(tr '\n' ' ' <"$invest_body"); continuing locally"
-	;;
-esac
-rm -f "$invest_body"
-
-if [ ! -d "$POKEPILOT_TRIAGE_TREE/.git" ]; then
-	mkdir -p "$(dirname "$POKEPILOT_TRIAGE_TREE")"
-	if ! git clone --reference "$POKEPILOT_ROOT" "$POKEPILOT_ROOT" "$POKEPILOT_TRIAGE_TREE"; then
-		git clone "$(git -C "$POKEPILOT_ROOT" remote get-url origin)" "$POKEPILOT_TRIAGE_TREE"
-	fi
+if [ "$invest_status" -ne 0 ]; then
+	log "investigate failed: $(printf '%s' "$invest_out" | tr '\n' ' '); continuing locally"
 fi
-git -C "$POKEPILOT_TRIAGE_TREE" fetch origin
-git -C "$POKEPILOT_TRIAGE_TREE" checkout main
-git -C "$POKEPILOT_TRIAGE_TREE" reset --hard origin/main
-git -C "$POKEPILOT_TRIAGE_TREE" clean -fd
+
+prepare_triage_tree
+seed_rom
+if [ "$MODE" = "repair_pr" ]; then
+	if [ -z "$HEAD_REF" ]; then
+		log "repair packet missing head_ref; skip"
+		exit 0
+	fi
+	if ! git -C "$POKEPILOT_TRIAGE_TREE" fetch origin "$HEAD_REF"; then
+		log "cannot fetch $HEAD_REF; skip"
+		exit 0
+	fi
+	git -C "$POKEPILOT_TRIAGE_TREE" checkout -f -B "$HEAD_REF" "origin/$HEAD_REF"
+fi
 
 printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 {
@@ -247,19 +520,68 @@ printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
 	printf '```\n'
 } >"$POKEPILOT_TRIAGE_STATE/packet.md"
 
+ATTEMPT_STARTED_AT=$(date +%s)
+ATTEMPT_ID="${KEY}-${ATTEMPT_STARTED_AT}-${BASHPID}"
+SOLVER_MODEL=$(selected_agent_model)
+record_solver_attempt started "coding agent launched"
+
 set +e
-"${OPENCODE_CMD[@]}"
-agent_status=$?
+case "$AGENT_BACKEND" in
+cursor)
+	CURSOR_BIN=$(cursor_binary)
+	cursor_args=(-p --force --trust --approve-mcps
+		--workspace "$POKEPILOT_TRIAGE_TREE"
+		--output-format text)
+	if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
+		cursor_args+=(--model "$POKEPILOT_CURSOR_MODEL")
+	fi
+	cursor_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
+	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' '.pokepilot-triage-packet.md' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	cp "$POKEPILOT_TRIAGE_STATE/packet.md" "$cursor_packet"
+	"$CURSOR_BIN" "${cursor_args[@]}" \
+		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure."
+	agent_status=$?
+	rm -f "$cursor_packet"
+	;;
+opencode)
+	opencode run --auto --model "$POKEPILOT_OPENCODE_MODEL" \
+		--dir "$POKEPILOT_TRIAGE_TREE" \
+		--title "farm triage ${KEY}" \
+		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
+		-- \
+		"Follow the attached farm triage packet. Do not pick a different failure."
+	agent_status=$?
+	;;
+esac
 set -e
 if [ "$agent_status" -ne 0 ]; then
-	log "opencode exited $agent_status; no PR"
+	record_solver_attempt agent_failed "$AGENT_BACKEND exited before producing a usable PR" "" 0 "" "$agent_status"
+	log "$AGENT_BACKEND exited $agent_status; no PR"
 	exit 0
 fi
 
 branch=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --abbrev-ref HEAD)
+if [ "$MODE" = "repair_pr" ]; then
+	if [ "$branch" != "$HEAD_REF" ]; then
+		record_solver_attempt no_pr "repair left the expected PR branch" "$branch"
+		log "repair left branch $branch; want $HEAD_REF"
+		exit 0
+	fi
+	if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$HEAD_REF" >/dev/null 2>&1; then
+		record_solver_attempt no_pr "repair branch was not pushed" "$HEAD_REF"
+		log "repair branch $HEAD_REF not pushed"
+		exit 0
+	fi
+	record_solver_attempt pr_updated "updated an existing triage PR after failed checks" "$HEAD_REF" "${PR_NUMBER:-0}" "$PR_URL"
+	log "updated PR #$PR_NUMBER for $KEY"
+	exit 0
+fi
 case "$branch" in
 fix/*) ;;
 *)
+	record_solver_attempt no_pr "agent did not leave a fix/* branch" "$branch"
 	log "agent left branch $branch; refuse PR"
 	exit 0
 	;;
@@ -268,12 +590,14 @@ esac
 main_head=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse main)
 origin_main=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse origin/main)
 if [ "$main_head" != "$origin_main" ]; then
+	record_solver_attempt no_pr "triage worktree main moved during the attempt" "$branch"
 	log "main moved; refuse PR"
 	exit 0
 fi
 
 bad=$(git -C "$POKEPILOT_TRIAGE_TREE" diff --name-only origin/main...HEAD | grep -E '\.(state|gb|sav)$|^skill/zz_.*_test\.go$' || true)
 if [ -n "$bad" ]; then
+	record_solver_attempt no_pr "agent committed forbidden ROM/state/scratch paths" "$branch"
 	log "forbidden paths in commit; refuse PR:"
 	printf '%s\n' "$bad" >&2
 	exit 0
@@ -281,15 +605,36 @@ fi
 
 marker="[triage:${KEY}]"
 if gh pr list --repo "$(gh_repo)" --state open --head "$branch" --json title --jq '.[].title' | grep -F -q "$marker"; then
+	pr_json=$(gh pr list --repo "$(gh_repo)" --state open --head "$branch" --limit 1 --json number,url --jq '.[0]' 2>/dev/null || printf '{}')
+	existing_pr_number=$(printf '%s' "$pr_json" | json_field number)
+	existing_pr_url=$(printf '%s' "$pr_json" | json_field url)
+	record_solver_attempt pr_opened "PR already existed for the produced branch" "$branch" "${existing_pr_number:-0}" "$existing_pr_url"
+	KEEP_ISSUE_CLAIM=1
 	log "PR already open for $KEY"
 	exit 0
 fi
 if ! git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --verify "origin/$branch" >/dev/null 2>&1; then
+	record_solver_attempt no_pr "agent did not push the fix branch" "$branch"
 	log "branch $branch not pushed; refuse PR"
 	exit 0
 fi
 
-gh pr create --repo "$(gh_repo)" --head "$branch" \
+farm_issue_marker=""
+if [ -n "$ISSUE_NUMBER" ]; then
+	farm_issue_marker=" [farm-issue:${ISSUE_NUMBER}]"
+fi
+set +e
+created_pr_url=$(gh pr create --repo "$(gh_repo)" --head "$branch" \
 	--title "fix(farm): ${EXAMPLE} ${marker}" \
-	--body "Unattended qwagent attempt for run \`${RUN_ID}\` (${marker})."
-log "opened PR for $KEY"
+	--body "Unattended ${AGENT_BACKEND} repair attempt for run \`${RUN_ID}\` (${marker}).${farm_issue_marker} Solver: \`${SOLVER_MODEL}\`. Solver attempt: \`${ATTEMPT_ID}\`.")
+pr_status=$?
+set -e
+if [ "$pr_status" -ne 0 ]; then
+	record_solver_attempt no_pr "gh pr create failed" "$branch" 0 "" "$pr_status"
+	log "gh pr create failed for $KEY"
+	exit 0
+fi
+created_pr_number=$(gh pr view "$created_pr_url" --repo "$(gh_repo)" --json number --jq '.number' 2>/dev/null || true)
+record_solver_attempt pr_opened "opened a triage repair PR" "$branch" "${created_pr_number:-0}" "$created_pr_url"
+KEEP_ISSUE_CLAIM=1
+log "opened PR for $KEY with $AGENT_BACKEND model=$SOLVER_MODEL"

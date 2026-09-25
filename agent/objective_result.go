@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/skill"
 )
 
 type Outcome string
@@ -24,31 +22,47 @@ const (
 	OutcomeUnknownFailure           Outcome = "unknown_failure"
 )
 
+// EmergencyEgressEvidence is portable evidence that navigation had to leave
+// the current area to recover. Detail keeps the controller's diagnostic trace
+// as opaque evidence while Cause/Method remain stable aggregation fields.
+type EmergencyEgressEvidence struct {
+	Cause  string `json:"cause,omitempty"`
+	Method string `json:"method,omitempty"`
+	Detail string `json:"detail,omitempty"`
+}
+
 // TravelEvidence is the portable semantic subset of a game adapter's travel
-// result. Adapter-native route/controller details stay behind the adapter seam.
+// result. Adapter-native controller types stay behind the adapter seam, while
+// emergency recovery evidence survives so successful runs cannot hide stalls.
 type TravelEvidence struct {
-	Battles    int  `json:"battles,omitempty"`
-	Flees      int  `json:"flees,omitempty"`
-	Dialogues  int  `json:"dialogues,omitempty"`
-	BlackedOut bool `json:"blacked_out,omitempty"`
-	Replans    int  `json:"replans,omitempty"`
+	Battles           int                       `json:"battles,omitempty"`
+	Flees             int                       `json:"flees,omitempty"`
+	Dialogues         int                       `json:"dialogues,omitempty"`
+	BlackedOut        bool                      `json:"blacked_out,omitempty"`
+	TrainerDefeat     bool                      `json:"trainer_defeat,omitempty"`
+	Replans           int                       `json:"replans,omitempty"`
+	EmergencyEgresses []EmergencyEgressEvidence `json:"emergency_egresses,omitempty"`
 }
 
 // TrainingEvidence is the portable semantic summary of one training session.
 type TrainingEvidence struct {
-	StartLevel int  `json:"start_level,omitempty"`
-	EndLevel   int  `json:"end_level,omitempty"`
-	Battles    int  `json:"battles,omitempty"`
-	BlackedOut bool `json:"blacked_out,omitempty"`
-	Reached    bool `json:"reached,omitempty"`
-	Retreated  bool `json:"retreated,omitempty"`
+	StartLevel int    `json:"start_level,omitempty"`
+	EndLevel   int    `json:"end_level,omitempty"`
+	Battles    int    `json:"battles,omitempty"`
+	BlackedOut bool   `json:"blacked_out,omitempty"`
+	Reached    bool   `json:"reached,omitempty"`
+	Retreated  bool   `json:"retreated,omitempty"`
+	Method     string `json:"method,omitempty"`
 }
 
 // BattleEvidence avoids exposing a concrete game's battle enum through the
 // portable objective result while retaining positive win evidence.
 type BattleEvidence struct {
-	Result string `json:"result,omitempty"`
-	Won    bool   `json:"won,omitempty"`
+	// Encounter is an adapter-owned stable identity for the required fight.
+	// Generic recovery treats it as opaque semantic evidence.
+	Encounter string `json:"encounter,omitempty"`
+	Result    string `json:"result,omitempty"`
+	Won       bool   `json:"won,omitempty"`
 }
 
 type ObjectiveResult struct {
@@ -82,6 +96,11 @@ var (
 
 	ErrObjectivePostconditionFailed      = errors.New("objective postcondition failed")
 	ErrObjectivePostconditionUnavailable = errors.New("objective postcondition unavailable")
+	// ErrProgressVerifierMissing marks a progression objective whose ID has no
+	// adapter-projected Story fact. It is always wrapped together with
+	// ErrObjectivePostconditionUnavailable: a missing verifier is a registry
+	// defect, so it stops the run instead of replanning a "false" fact forever.
+	ErrProgressVerifierMissing = errors.New("progression goal has no registered verifier")
 )
 
 type runAction uint8
@@ -104,10 +123,6 @@ func actionFor(out Outcome) runAction {
 	default:
 		return actionStop
 	}
-}
-
-func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	return executeObjective(m, romData, o)
 }
 
 func finalizeObjectiveResult(o Objective, result ObjectiveResult, final Observation, err error) ObjectiveResult {
@@ -165,24 +180,38 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 
 	switch o.Kind {
 	case KindProgress:
-		if !final.Story.Has(o.Progress) {
+		fact, ok := final.Story.Lookup(o.Progress)
+		if !ok {
+			return OutcomePostconditionUnavailable, fmt.Errorf(
+				"%w: %w: %s", ErrObjectivePostconditionUnavailable, ErrProgressVerifierMissing, o)
+		}
+		if !fact.Complete {
 			return OutcomePostconditionFailed, fmt.Errorf(
 				"%w: %s finished but progression fact %q is false",
 				ErrObjectivePostconditionFailed, o, o.Progress)
 		}
 		return OutcomeCompleted, nil
 
+	case KindRepairFieldCapability:
+		for _, capability := range final.FieldCapabilities {
+			if capability.Name == o.FieldCapability && capability.Usable {
+				return OutcomeCompleted, nil
+			}
+		}
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s finished but field capability %q is not usable",
+			ErrObjectivePostconditionFailed, o, o.FieldCapability)
+
 	case KindGoTo:
-		dest, ok := skill.Place(string(o.Place))
-		if !ok {
-			return OutcomePostconditionFailed, fmt.Errorf("%w: destination %q no longer resolves", ErrObjectivePostconditionFailed, o.Place)
+		// Generic execution can verify a semantic location without resolving
+		// native map ids or game-owned destination geometry. Concrete adapters
+		// may provide a stronger exact-tile verifier before falling back here.
+		if o.Place != "" && final.Location == o.Place {
+			return OutcomeCompleted, nil
 		}
-		if final.Map != dest.Map || final.X != dest.X || final.Y != dest.Y {
-			return OutcomePostconditionFailed, fmt.Errorf(
-				"%w: %s ended on map %02x at (%d,%d), want map %02x at (%d,%d)",
-				ErrObjectivePostconditionFailed, o, final.Map, final.X, final.Y, dest.Map, dest.X, dest.Y)
-		}
-		return OutcomeCompleted, nil
+		return OutcomePostconditionFailed, fmt.Errorf(
+			"%w: %s ended at semantic location %q, want %q",
+			ErrObjectivePostconditionFailed, o, final.Location, o.Place)
 
 	case KindTalk:
 		if result.InteractionPresses <= 0 {

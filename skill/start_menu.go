@@ -2,53 +2,40 @@ package skill
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/game"
 )
 
 const (
 	startMenuOpenBudget   = 500
 	startMenuRetryWindow  = 25
 	startMenuSettleBudget = 100
+
+	startMenuPokemon = game.StartMenuPokemon
+	startMenuItems   = game.StartMenuItems
 )
 
-// startMenuReady requires positive evidence from the actual tilemap as well as
-// the live menu count. wMaxMenuItem/wCurrentMenuItem survive menu teardown and
-// can therefore describe an old two-item menu while the overworld is already
-// back on screen; FontLoaded has similar lifecycle gaps. SAVE + EXIT are stable
-// start-menu labels, so pairing them with the expected item count identifies
-// the menu we are actually trying to drive.
-func startMenuReady(mem *state.Mem, wantMax int) bool {
-	text := state.ScreenText(mem)
-	return strings.Contains(text, "SAVE") &&
-		strings.Contains(text, "EXIT") &&
-		state.DecodeMenu(mem).Max == wantMax
+// waitForStartMenu opens the active game's START menu by positive semantic
+// state rather than by a fixed press count. Concrete profiles own the menu's
+// labels, story-dependent shape, RAM addresses and battle-state encoding.
+func waitForStartMenu(m *emu.Emu) error {
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return waitForStartMenuWithDecoder(m, decoder)
 }
 
-func startMenuMarkersVisible(mem *state.Mem) bool {
-	text := state.ScreenText(mem)
-	return strings.Contains(text, "SAVE") && strings.Contains(text, "EXIT")
-}
+func waitForStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error {
+	if decoder == nil {
+		return fmt.Errorf("skill: start menu: nil menu decoder")
+	}
 
-// waitForStartMenu opens the overworld START menu by positive state rather than
-// by a fixed press count. A restored checkpoint can look controllable before
-// the overworld input loop is polling again, so the first START (or several)
-// can be swallowed. A menu can also be captured mid-close while stale menu RAM
-// and tilemap labels are still present. This mirrors the measured retry model
-// already used by PromoteToLead: settle a possible closing menu, then keep
-// pressing START until the expected menu is actually visible or the bounded
-// input budget is exhausted.
-func waitForStartMenu(m *emu.Emu, wantMax int) error {
-	var mem state.Mem
-
-	// Let a closing start menu finish clearing. A genuinely open menu remains
+	// Let a closing START menu finish clearing. A genuinely open menu remains
 	// visible for this bounded settle and is accepted immediately afterwards.
 	for i := 0; i < startMenuSettleBudget; i++ {
-		state.Snapshot(m, &mem)
-		if !startMenuMarkersVisible(&mem) {
+		if !decoder.DecodeStartMenu(m).Visible {
 			break
 		}
 		m.StepFrame()
@@ -56,25 +43,46 @@ func waitForStartMenu(m *emu.Emu, wantMax int) error {
 
 	attempts := startMenuOpenBudget / startMenuRetryWindow
 	for i := 0; i < attempts; i++ {
-		state.Snapshot(m, &mem)
-		if startMenuReady(&mem, wantMax) {
+		state := decoder.DecodeStartMenu(m)
+		if state.Ready {
 			return nil
 		}
-		if mem.U8(sym.IsInBattle) != 0 {
+		if state.InBattle {
 			return fmt.Errorf("skill: start menu cannot open during battle")
 		}
 
 		m.Tap(emu.Start, 3, 7)
-		if _, err := m.StepUntil(startMenuRetryWindow, func(m *emu.Emu) bool {
-			state.Snapshot(m, &mem)
-			return startMenuReady(&mem, wantMax)
-		}); err == nil {
+		if waitMenuUntil(m, startMenuRetryWindow, func() bool {
+			return decoder.DecodeStartMenu(m).Ready
+		}) {
 			return nil
 		}
 	}
 
-	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: start menu did not appear after repeated START presses: screen=%q wJoyIgnore=%#04x wFontLoaded=%#04x wCurrentMenuItem=%#04x wMaxMenuItem=%#04x (want max %d)",
-		state.ScreenText(&mem), mem.U16BE(sym.JoyIgnore), mem.U8(sym.FontLoaded),
-		mem.U8(sym.CurrentMenuItem), mem.U8(sym.MaxMenuItem), wantMax)
+	state := decoder.DecodeStartMenu(m)
+	return fmt.Errorf(
+		"skill: start menu did not appear after repeated START presses: visible=%v ready=%v in_battle=%v cursor=%d max=%d",
+		state.Visible, state.Ready, state.InBattle, state.Cursor.Current, state.Cursor.Max,
+	)
+}
+
+// openStartMenuEntry opens the active game's START menu and selects an entry
+// by semantic identity. The profile owns the current cursor index.
+func openStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return openStartMenuEntryWithDecoder(m, decoder, entry)
+}
+
+func openStartMenuEntryWithDecoder(m menuMachine, decoder game.MenuDecoder, entry game.StartMenuEntry) error {
+	if err := waitForStartMenuWithDecoder(m, decoder); err != nil {
+		return err
+	}
+	index, ok := decoder.StartMenuEntryIndex(m, entry)
+	if !ok {
+		return fmt.Errorf("skill: start menu entry %q is not available", entry)
+	}
+	return selectMenuItemWithDecoder(m, decoder, index)
 }

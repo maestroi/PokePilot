@@ -15,6 +15,7 @@ type StrategicCallRecord struct {
 	ReplanReason     string          `json:"replan_reason,omitempty"`
 	PlanGoal         string          `json:"plan_goal,omitempty"`
 	PlanSteps        []string        `json:"plan_steps,omitempty"`
+	PlanBoundary     bool            `json:"plan_boundary,omitempty"`
 	Rejected         bool            `json:"rejected,omitempty"`
 	Error            string          `json:"error,omitempty"`
 	DurationSeconds  float64         `json:"duration_seconds"`

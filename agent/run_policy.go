@@ -73,6 +73,7 @@ func ApplyRunPolicy(obs Observation, offered []Objective, riskTolerance, wildEnc
 	}
 	if NormalizeWildEncounters(wildEncounters) == WildEncountersFight {
 		out = forceFightWildEncounters(out)
+		out = removeRepelEncounterAvoidance(out)
 	}
 	return out
 }
@@ -251,4 +252,14 @@ func mergePolicyNotes(a, b string) string {
 	default:
 		return a + " " + b
 	}
+}
+
+func removeRepelEncounterAvoidance(offered []Objective) []Objective {
+	out := make([]Objective, 0, len(offered))
+	for _, o := range offered {
+		if !isSpeedrunRepelObjective(o) {
+			out = append(out, o)
+		}
+	}
+	return out
 }

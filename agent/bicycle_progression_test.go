@@ -12,15 +12,10 @@ func bicycleProgressCount(objectives []Objective) int {
 	return count
 }
 
-func TestRedProgressionOffersBicycleAfterHM01(t *testing.T) {
+func TestRedProgressionDoesNotOfferOptionalBicycleProactively(t *testing.T) {
 	obs := Observation{Story: ProgressState{{ID: redProgressHM01Acquired, Complete: true}}}
-	if got := bicycleProgressCount(redProgressionObjectives(obs)); got != 1 {
-		t.Fatalf("bicycle progression offered %d times after HM01, want 1", got)
-	}
-
-	obs.Story = append(obs.Story, ProgressFact{ID: redProgressBicycleAcquired, Complete: true})
 	if got := bicycleProgressCount(redProgressionObjectives(obs)); got != 0 {
-		t.Fatalf("bicycle progression offered %d times after Bicycle acquired, want 0", got)
+		t.Fatalf("optional Bicycle progression offered %d times without a Cycling Road blockage, want 0", got)
 	}
 }
 
@@ -40,5 +35,8 @@ func TestCyclingRoadCapabilityLinksToBicycleProgression(t *testing.T) {
 	}
 	if link.Progress != redProgressBicycleAcquired {
 		t.Fatalf("progress = %q, want %q", link.Progress, redProgressBicycleAcquired)
+	}
+	if !link.RecoveryOnly {
+		t.Fatal("Cycling Road Bicycle link must be recovery-only")
 	}
 }

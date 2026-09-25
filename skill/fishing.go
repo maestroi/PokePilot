@@ -51,6 +51,11 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 		return CatchResult{}, fmt.Errorf("skill: Fish: item %#02x is not a fishing rod", rod)
 	}
 
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
@@ -75,13 +80,21 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 	m.StepFrames(2)
 
 	state.Snapshot(m, &mem)
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
-	wantDex := wantedDexNumbers(romData, want)
+	captureBefore := captureProfile.DecodeCapture(m)
+	wantNative := nativeSpeciesList(want)
+	wantDex := wantedDexNumbersWithProfile(captureProfile, romData, want)
 	res := CatchResult{}
 
 	for attempt := 1; attempt <= fishingAttemptCap; attempt++ {
+		// A prior catch's AddPartyMon/AskName sequence can leave a trailing
+		// script holding wJoyIgnore for a short, self-clearing window after
+		// the naming prompt is dismissed (MEASURED: ~100 frames). GoTo's step
+		// loop already waits this out before trusting position/input; Fish's
+		// attempt loop must do the same before Face or the very next
+		// Controllable check below fails a perfectly recoverable transient.
+		if err := waitOutScriptedMovement(m); err != nil {
+			return res, fmt.Errorf("skill: Fish: attempt %d: %w", attempt, err)
+		}
 		// Battle and menu handling can change facing. Re-prove the cast target
 		// immediately before every attempt instead of assuming it stayed put.
 		if err := Face(m, uint8(shore.waterX), uint8(shore.waterY)); err != nil {
@@ -112,7 +125,7 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 			continue
 		}
 
-		return catchWanted(m, &mem, want, wantDex, policy, partyBefore, boxBefore, ownedBefore, res, maxBalls)
+		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
 	}
 	return res, fmt.Errorf("%w: %d casts and %d encounters on map %#04x", ErrFishingHuntExhausted, fishingAttemptCap, res.Encounters, m.Peek8(sym.CurMap))
 }
@@ -125,6 +138,12 @@ func fishingRodItem(item uint8) bool {
 // It returns only after either a battle has started or the no-bite result has
 // settled back to the overworld. Unknown prompts are never answered blindly.
 func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
+	// Face (the caller's last action) can itself be the input that lets a
+	// trailing script grab wJoyIgnore for its self-clearing window; wait it
+	// out here too, since that is where the transient actually lands.
+	if err := waitOutScriptedMovement(m); err != nil {
+		return false, err
+	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
@@ -135,19 +154,8 @@ func castRodOnce(m *emu.Emu, rod uint8) (bool, error) {
 		return false, fmt.Errorf("%w (rod %#02x)", ErrNotInBag, rod)
 	}
 
-	wantMax, itemIndex := startMenuShape(&mem)
-	drawn := func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0 && int(m.Peek8(sym.MaxMenuItem)) == wantMax
-	}
-	for attempt := 0; attempt < 5 && !drawn(m); attempt++ {
-		m.Tap(emu.Start, 3, 7)
-		_, _ = m.StepUntil(startMenuDrawBudget, drawn)
-	}
-	if !drawn(m) {
-		return false, fmt.Errorf("start menu did not draw")
-	}
-	if err := SelectMenuItem(m, itemIndex); err != nil {
-		return false, fmt.Errorf("select ITEM: %w", err)
+	if err := openStartMenuEntry(m, startMenuItems); err != nil {
+		return false, fmt.Errorf("open ITEM: %w", err)
 	}
 	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
 		return m.Peek8(sym.ListMenuID) == itemListMenuID

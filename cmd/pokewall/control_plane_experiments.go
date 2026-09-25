@@ -43,15 +43,7 @@ func controlPlaneModelExperimentHTTPHandler(w *Wall, fallback http.Handler) http
 	wallExperimentControllers.Store(w, controller)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/models", controller.handleModels)
-	mux.HandleFunc("PATCH /v1/models/{id}", controller.handlePatchModel)
-	mux.HandleFunc("POST /v1/experiments", controller.handleCreateExperiment)
-	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
-	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
-	mux.HandleFunc("POST /v1/specs", controller.handleSpec)
-	mux.HandleFunc("POST /v1/lease", controller.handleLease)
-	mux.HandleFunc("POST /v1/runs/{id}/finish", controller.handleFinish)
-	mux.HandleFunc("GET /v1/dashboard", controller.handleDashboard)
+	registerModelExperimentRoutes(mux, controller)
 	mux.Handle("/", fallback)
 	return mux
 }

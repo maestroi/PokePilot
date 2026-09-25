@@ -1,11 +1,13 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -103,7 +105,8 @@ func CinnabarGymOpen(mem *state.Mem) bool {
 
 // CinnabarProgression is the final #35 executor. It resumes from the Mansion,
 // Cinnabar Island, or the Gym, opens only the remaining quiz gates, delegates
-// combat to Gym/Battle, and returns only after the Volcano Badge is present.
+// combat to Gym/Battle, and returns after a won Blaine battle. The Volcano
+// Badge itself is the objective runtime's postcondition, not this skill's.
 func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: CinnabarProgression: nil policy")
@@ -123,7 +126,7 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 	if m.Peek8(sym.CurMap) != cinnabarGymMap {
-		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
+		if err := returnToCinnabarIsland(m, romData, policy); err != nil {
 			return fmt.Errorf("skill: CinnabarProgression: return to Cinnabar Island: %w", err)
 		}
 		if err := EnterCinnabarGym(m, romData, policy); err != nil {
@@ -135,15 +138,16 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
-	if outcome != state.ResultWon {
-		return fmt.Errorf("skill: CinnabarProgression: Blaine battle outcome %v, want won", outcome)
+	if err := RequireTrainerBattleWin("gym:blaine", outcome); err != nil {
+		return fmt.Errorf("skill: CinnabarProgression: %w", err)
 	}
-	state.Snapshot(m, &mem)
-	if !state.DecodeProgress(&mem).Has(state.BadgeVolcano) {
-		return fmt.Errorf("skill: CinnabarProgression: Blaine win returned without Volcano Badge")
-	}
+	// Badge ownership is the objective's semantic postcondition, verified once
+	// by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil
 }
+
+// mansionB1FExitX/Y is the B1F stairs tile up to 1F.
+const mansionB1FExitX, mansionB1FExitY uint8 = 23, 22
 
 // openMansionBasementExit handles the normal handoff from the Secret Key
 // objective, which ends beside the key on B1F. The global map graph knows the
@@ -153,8 +157,7 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
 		return nil
 	}
-	const exitX, exitY uint8 = 23, 22
-	if mansionTileReachable(m, romData, exitX, exitY) {
+	if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
 		return nil
 	}
 
@@ -164,7 +167,7 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	attempted := map[attemptKey]bool{}
 	for step := 0; step < 6; step++ {
-		if mansionTileReachable(m, romData, exitX, exitY) {
+		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
 			return nil
 		}
 		before := currentMansionSwitchOn(m)
@@ -185,10 +188,59 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 			break
 		}
 	}
-	if !mansionTileReachable(m, romData, exitX, exitY) {
-		return fmt.Errorf("Mansion B1F exit warp (%d,%d) is unreachable in every reachable switch state", exitX, exitY)
+	if !mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+		return fmt.Errorf("Mansion B1F exit warp (%d,%d) is unreachable in every reachable switch state", mansionB1FExitX, mansionB1FExitY)
 	}
 	return nil
+}
+
+// returnToCinnabarIsland leaves the Mansion. The B1F stairs land in a 1F
+// pocket that is sealed in one of the two shared switch states, and the 1F
+// statue sits outside that pocket; the key hunt usually leaves the switch in
+// the sealing state. Flip it from wherever a statue is reachable (1F, else
+// B1F without sealing the B1F stairs) and retry.
+func returnToCinnabarIsland(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	island := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+	_, err := TravelFlee(m, romData, island, policy, mansionTravelBattles)
+	if err == nil || m.Peek8(sym.CurMap) != pokemonMansion1FMap || !errors.Is(err, world.ErrNoRoute) {
+		return err
+	}
+	want := !currentMansionSwitchOn(m)
+	if mansionTileReachable(m, romData, mansion1FSwitch.StandX, mansion1FSwitch.StandY) {
+		if err := setMansionSwitch(m, romData, mansion1FSwitch, want, policy); err != nil {
+			return fmt.Errorf("flip Mansion 1F switch: %w", err)
+		}
+	} else {
+		if _, err := TravelFlee(m, romData, Destination{Map: pokemonMansionB1FMap, X: 23, Y: 21}, policy, mansionTravelBattles); err != nil {
+			return fmt.Errorf("Mansion 1F exit sealed; reach B1F switches: %w", err)
+		}
+		if err := setMansionSwitchKeepingBasementExit(m, romData, want, policy); err != nil {
+			return err
+		}
+	}
+	_, err = TravelFlee(m, romData, island, policy, mansionTravelBattles)
+	return err
+}
+
+// setMansionSwitchKeepingBasementExit sets the shared switch from a B1F statue
+// whose flip still leaves the 1F stairs reachable, undoing any flip that seals
+// them (the player stays on that statue's stand, so it can always flip back).
+func setMansionSwitchKeepingBasementExit(m *emu.Emu, romData []byte, want bool, policy MovePolicy) error {
+	for _, sw := range mansionB1FSwitches {
+		if !mansionTileReachable(m, romData, sw.StandX, sw.StandY) {
+			continue
+		}
+		if err := setMansionSwitch(m, romData, sw, want, policy); err != nil {
+			return fmt.Errorf("toggle B1F statue at (%d,%d): %w", sw.TargetX, sw.TargetY, err)
+		}
+		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+			return nil
+		}
+		if err := setMansionSwitch(m, romData, sw, !want, policy); err != nil {
+			return fmt.Errorf("undo B1F statue at (%d,%d): %w", sw.TargetX, sw.TargetY, err)
+		}
+	}
+	return fmt.Errorf("no reachable B1F statue sets Mansion switch=%v with the B1F stairs (%d,%d) still reachable", want, mansionB1FExitX, mansionB1FExitY)
 }
 
 func EnterCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -235,23 +287,24 @@ func OpenCinnabarGym(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if cinnabarQuizGateOpen(&mem, quiz.Index) {
 			continue
 		}
+		quiz := quiz
 		stand := Destination{Map: cinnabarGymMap, X: quiz.TargetX, Y: quiz.TargetY + 1}
-		res, err := Travel(m, romData, stand, policy, cinnabarGymTravelBattles)
+		_, err := executeTopologyInteraction(m, romData, policy, topologyInteraction{
+			Name:       fmt.Sprintf("Cinnabar quiz %d", quiz.Index),
+			Approach:   stand,
+			TargetX:    quiz.TargetX,
+			TargetY:    quiz.TargetY,
+			MaxBattles: cinnabarGymTravelBattles,
+			Budget:     cinnabarQuizDriveBudget,
+			Complete: func(mm *state.Mem) bool {
+				return cinnabarQuizGateOpen(mm, quiz.Index)
+			},
+			Interact: func() error {
+				return answerCinnabarQuiz(m, quiz)
+			},
+		})
 		if err != nil {
-			return fmt.Errorf("skill: OpenCinnabarGym: reach quiz %d at (%d,%d): %w", quiz.Index, quiz.TargetX, quiz.TargetY, err)
-		}
-		if res.BlackedOut {
-			return fmt.Errorf("skill: OpenCinnabarGym: %w reaching quiz %d", ErrBlackedOut, quiz.Index)
-		}
-
-		// The route may have crossed the associated trainer, whose post-battle
-		// script sets the same gate bit. Re-read before touching the terminal.
-		state.Snapshot(m, &mem)
-		if cinnabarQuizGateOpen(&mem, quiz.Index) {
-			continue
-		}
-		if err := answerCinnabarQuiz(m, quiz); err != nil {
-			return err
+			return fmt.Errorf("skill: OpenCinnabarGym: %w", err)
 		}
 	}
 

@@ -7,7 +7,7 @@ import { GOAL_OPTIONS } from '../shared/goals'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { defaultExperimentArms, deploymentOptionLabel } from './llmDeployments'
+import { defaultExperimentArms, deploymentOptionLabel, strategistDeployments } from './llmDeployments'
 
 const fieldClass = 'mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400'
 
@@ -28,11 +28,13 @@ const {
   { intervalMs: 5000, isEmpty: (experiments) => experiments.length === 0 }
 )
 
-const deployments = computed<ModelDeployment[]>(() => modelsData.value?.deployments ?? [])
+// Experiments compare strategists; decision-only deployments cannot be an arm.
+const deployments = computed<ModelDeployment[]>(() => strategistDeployments(modelsData.value?.deployments ?? []))
 const latest = computed<ExperimentView | null>(() => experimentData.value?.[0] ?? created.value)
 
 const form = reactive({
   name: 'Brock · 27B vs 4B',
+  game: 'pokemon-red',
   arm_a: '',
   arm_b: '',
   arm_a_workers: 1,
@@ -47,7 +49,8 @@ const form = reactive({
   reasoning_effort: 'medium',
   fps: 0,
   max_rounds: 0,
-  max_frames: 0
+  max_frames: 0,
+  recovery_profile: 'resilient' as 'strict' | 'resilient'
 })
 
 watch(deployments, (next) => {
@@ -73,6 +76,20 @@ function seconds(value: number | undefined): string {
   return `${Number(value || 0).toFixed(2)}s`
 }
 
+function compactIdentity(value: string | undefined): string {
+  if (!value) return 'missing'
+  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value
+}
+
+function deploymentIdentity(side: 'arm_a' | 'arm_b'): string {
+  const identity = latest.value?.identity?.[side]
+  if (!identity) return 'missing deployment identity'
+  const revision = identity.revision || identity.artifact || 'revision unknown'
+  return `${identity.model_id || identity.deployment_id} · ${revision} · ${identity.compute}`
+}
+
+const excludedPairs = computed(() => latest.value?.pairs?.filter((pair) => !pair.comparable) ?? [])
+
 function workerLimit(deploymentID: string): number {
   return Math.max(1, Number(deployments.value.find((deployment) => deployment.id === deploymentID)?.max_parallel_workers || 1))
 }
@@ -97,6 +114,7 @@ async function submit(): Promise<void> {
       name: form.name.trim() || 'Brock · 27B vs 4B',
       arm_a: { name: 'A', deployment: form.arm_a, max_parallel_workers: Number(form.arm_a_workers || 1) },
       arm_b: { name: 'B', deployment: form.arm_b, max_parallel_workers: Number(form.arm_b_workers || 1) },
+      game: form.game,
       goal: form.goal.trim() || 'Earn the Boulder Badge.',
       starter: form.starter,
       seeds,
@@ -107,7 +125,8 @@ async function submit(): Promise<void> {
       reasoning_effort: form.reasoning_effort,
       fps: Number(form.fps || 0),
       max_rounds: Number(form.max_rounds || 0),
-      max_frames: Number(form.max_frames || 0)
+      max_frames: Number(form.max_frames || 0),
+      recovery_profile: form.recovery_profile
     })
     void retryExperiments()
   } catch (cause) {
@@ -122,18 +141,28 @@ const metrics = computed(() => {
   if (!experiment) return []
   const a = experiment.arm_a || {}
   const b = experiment.arm_b || {}
-  return [
-    { label: 'Boulder success', a: `${a.boulder_successes || 0}/${a.done || 0} · ${pct(a.success_rate)}`, b: `${b.boulder_successes || 0}/${b.done || 0} · ${pct(b.success_rate)}` },
-    { label: 'Completed runs', a: `${a.done || 0}/${a.runs || 0}`, b: `${b.done || 0}/${b.runs || 0}` },
-    { label: 'Rounds', a: String(a.rounds || 0), b: String(b.rounds || 0) },
-    { label: 'Frames', a: String(a.frames || 0), b: String(b.frames || 0) },
-    { label: 'Strategic calls', a: String(a.strategic_calls || 0), b: String(b.strategic_calls || 0) },
-    { label: 'Avg / p50 / p95', a: `${seconds(a.avg_strategic_call_seconds)} / ${seconds(a.p50_strategic_call_seconds)} / ${seconds(a.p95_strategic_call_seconds)}`, b: `${seconds(b.avg_strategic_call_seconds)} / ${seconds(b.p50_strategic_call_seconds)} / ${seconds(b.p95_strategic_call_seconds)}` },
-    { label: 'Prefill / decode TPS', a: `${Number(a.avg_prefill_tps || 0).toFixed(1)} / ${Number(a.avg_decode_tps || 0).toFixed(1)}`, b: `${Number(b.avg_prefill_tps || 0).toFixed(1)} / ${Number(b.avg_decode_tps || 0).toFixed(1)}` },
-    { label: 'Prompt / completion', a: `${a.prompt_tokens || 0} / ${a.completion_tokens || 0}`, b: `${b.prompt_tokens || 0} / ${b.completion_tokens || 0}` },
-    { label: 'Rejects / transport / fallbacks', a: `${a.rejected || 0} / ${a.transport_errors || 0} / ${a.fallbacks || 0}`, b: `${b.rejected || 0} / ${b.transport_errors || 0} / ${b.fallbacks || 0}` },
-    { label: 'Plan exec / skipped', a: `${a.plan_executions || 0} / ${a.steps_skipped || 0}`, b: `${b.plan_executions || 0} / ${b.steps_skipped || 0}` }
+  const rows = [
+    { label: 'Goal success', a: `${a.goal_successes || 0}/${a.done || 0} · ${pct(a.success_rate)}`, b: `${b.goal_successes || 0}/${b.done || 0} · ${pct(b.success_rate)}` }
   ]
+  if ((experiment.request?.goal || '').toLowerCase().includes('boulder')) {
+    rows.push({ label: 'Boulder Badge', a: `${a.boulder_successes || 0}/${a.done || 0}`, b: `${b.boulder_successes || 0}/${b.done || 0}` })
+  }
+  rows.push(
+    { label: 'Completed comparable runs', a: `${a.done || 0}/${a.runs || 0}`, b: `${b.done || 0}/${b.runs || 0}` },
+    { label: 'Median rounds / frames to goal', a: `${Number(a.median_rounds_to_goal || 0).toFixed(0)} / ${a.median_frames_to_goal || 0}`, b: `${Number(b.median_rounds_to_goal || 0).toFixed(0)} / ${b.median_frames_to_goal || 0}` },
+    { label: 'Avg wall-clock run', a: seconds(a.avg_run_seconds), b: seconds(b.avg_run_seconds) },
+    { label: 'Blackouts / objective failures', a: `${a.blackouts || 0} / ${a.objective_failures || 0}`, b: `${b.blackouts || 0} / ${b.objective_failures || 0}` },
+    { label: 'Stagnation / plan-exhaustion replans', a: `${a.stagnation_replans || 0} / ${a.plan_exhaustion_replans || 0}`, b: `${b.stagnation_replans || 0} / ${b.plan_exhaustion_replans || 0}` },
+    { label: 'Strategic calls / rejected', a: `${a.strategic_calls || 0} / ${a.strategic_rejected || 0}`, b: `${b.strategic_calls || 0} / ${b.strategic_rejected || 0}` },
+    { label: 'Plan steps produced / executed / skipped', a: `${a.plan_steps_produced || 0} / ${a.plan_executions || 0} / ${a.steps_skipped || 0}`, b: `${b.plan_steps_produced || 0} / ${b.plan_executions || 0} / ${b.steps_skipped || 0}` },
+    { label: 'Plan execution fraction', a: pct(a.plan_execution_fraction), b: pct(b.plan_execution_fraction) },
+    { label: 'Strategic avg / p50 / p95', a: `${seconds(a.avg_strategic_call_seconds)} / ${seconds(a.p50_strategic_call_seconds)} / ${seconds(a.p95_strategic_call_seconds)}`, b: `${seconds(b.avg_strategic_call_seconds)} / ${seconds(b.p50_strategic_call_seconds)} / ${seconds(b.p95_strategic_call_seconds)}` },
+    { label: 'Planner time', a: seconds(a.strategic_seconds), b: seconds(b.strategic_seconds) },
+    { label: 'Prefill / decode TPS', a: `${Number(a.avg_prefill_tps || 0).toFixed(1)} / ${Number(a.avg_decode_tps || 0).toFixed(1)}`, b: `${Number(b.avg_prefill_tps || 0).toFixed(1)} / ${Number(b.avg_decode_tps || 0).toFixed(1)}` },
+    { label: 'Prompt / completion tokens', a: `${a.prompt_tokens || 0} / ${a.completion_tokens || 0}`, b: `${b.prompt_tokens || 0} / ${b.completion_tokens || 0}` },
+    { label: 'Reply rejects / transport / fallback', a: `${a.rejected || 0} / ${a.transport_errors || 0} / ${a.fallbacks || 0}`, b: `${b.rejected || 0} / ${b.transport_errors || 0} / ${b.fallbacks || 0}` }
+  )
+  return rows
 })
 </script>
 
@@ -143,6 +172,14 @@ const metrics = computed(() => {
       <label class="block sm:col-span-2 xl:col-span-1">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Name</span>
         <input v-model="form.name" :class="fieldClass" />
+      </label>
+      <label class="block">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
+        <select v-model="form.game" :class="fieldClass">
+          <option value="pokemon-red">Pokémon Red</option>
+          <option value="pokemon-blue">Pokémon Blue</option>
+        </select>
+        <span class="mt-1 block text-[10px] text-slate-600">Both arms run the same cartridge identity.</span>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm A</span>
@@ -235,6 +272,14 @@ const metrics = computed(() => {
         </select>
       </label>
       <label class="block">
+        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recovery</span>
+        <select v-model="form.recovery_profile" :class="fieldClass">
+          <option value="resilient">Resilient · measure recovery burden</option>
+          <option value="strict">Strict · fail on bounded recovery</option>
+        </select>
+        <span class="mt-1 block text-[10px] text-slate-600">Both arms use the same recovery policy, so weaker models can still be compared by time and recoveries to goal.</span>
+      </label>
+      <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Round cap</span>
         <input v-model.number="form.max_rounds" type="number" min="0" :class="fieldClass" />
       </label>
@@ -268,6 +313,18 @@ const metrics = computed(() => {
             </div>
             <span class="font-mono text-[11px] text-slate-500">{{ latest.total_pairs || 0 }} pairs</span>
           </div>
+          <div class="grid gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-3 text-[11px] sm:grid-cols-2">
+            <div>
+              <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Benchmark identity</div>
+              <div class="mt-1 text-slate-300">{{ latest.identity?.game || latest.request?.game || 'game missing' }} · git {{ compactIdentity(latest.identity?.git_revision) }}</div>
+              <div class="mt-1 font-mono text-[10px] text-slate-500">ROM {{ compactIdentity(latest.identity?.rom_identity) }} · prompt {{ compactIdentity(latest.identity?.prompt_identity) }}</div>
+            </div>
+            <div>
+              <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Model identities</div>
+              <div class="mt-1 text-slate-300">A · {{ deploymentIdentity('arm_a') }}</div>
+              <div class="mt-1 text-slate-300">B · {{ deploymentIdentity('arm_b') }}</div>
+            </div>
+          </div>
           <div class="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:grid">
             <span>Metric</span>
             <span>Arm A</span>
@@ -280,7 +337,11 @@ const metrics = computed(() => {
               <strong class="font-mono text-[11px] font-medium text-slate-200">{{ metric.b }}</strong>
             </div>
           </div>
-          <div class="grid grid-cols-3 gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-3 text-center">
+          <div class="grid grid-cols-2 gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-3 text-center sm:grid-cols-5">
+            <div>
+              <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Comparable</div>
+              <div class="mt-1 font-mono text-lg text-white">{{ latest.paired?.comparable_pairs || 0 }}</div>
+            </div>
             <div>
               <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">A wins</div>
               <div class="mt-1 font-mono text-lg text-white">{{ latest.paired?.a_wins || 0 }}</div>
@@ -293,6 +354,17 @@ const metrics = computed(() => {
               <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">B wins</div>
               <div class="mt-1 font-mono text-lg text-white">{{ latest.paired?.b_wins || 0 }}</div>
             </div>
+            <div>
+              <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Excluded</div>
+              <div class="mt-1 font-mono text-lg" :class="(latest.paired?.excluded_pairs || 0) ? 'text-amber-300' : 'text-white'">{{ latest.paired?.excluded_pairs || 0 }}</div>
+            </div>
+          </div>
+          <div v-if="excludedPairs.length" class="rounded-md border border-amber-300/15 bg-amber-300/5 px-3 py-3">
+            <div class="text-[10px] font-semibold tracking-[0.08em] text-amber-200 uppercase">Excluded non-comparable seeds</div>
+            <div class="mt-2 space-y-1 font-mono text-[10px] text-slate-400">
+              <div v-for="pair in excludedPairs" :key="pair.seed">seed {{ pair.seed }} · {{ pair.non_comparable_reason || 'comparability identity differs' }}</div>
+            </div>
+            <p class="mt-2 text-[10px] text-slate-500">Excluded pairs never contribute to the aggregate metrics above.</p>
           </div>
         </div>
       </ResourceState>

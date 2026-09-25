@@ -14,13 +14,23 @@ import (
 // map translation is retained only as a runtime compatibility table for old
 // checkpoints and transient emulator samples; it is never serialized.
 type Knowledge struct {
-	Visited      map[LocationID]bool
-	Places       map[string]bool
-	Completed    map[string]int
-	Failures     map[string]Failure
-	Talked       map[LocationID]map[[2]uint8]bool
-	Adjacency    map[LocationID][]LocationID
-	Requirements []Requirement
+	Visited       map[LocationID]bool
+	Places        map[string]bool
+	Completed     map[string]int
+	Failures      map[string]Failure
+	Talked        map[LocationID]map[[2]uint8]bool
+	Adjacency     map[LocationID][]LocationID
+	Requirements  []Requirement
+	TrainingAreas map[LocationID]TrainingAreaKnowledge
+	// TrainingAreasBackfilled records that visited habitats were seeded once
+	// into TrainingAreas (see backfillVisitedTrainingAreas), so an area later
+	// forgotten as unreachable is not re-seeded.
+	TrainingAreasBackfilled bool
+
+	// Build is this process's running binary identity (e.g. a git SHA), set
+	// by the caller. Empty means unknown, which leaves failure tallies
+	// build-unaware (their historical pre-feature behavior).
+	Build string
 
 	nativeLocations map[uint8]LocationID
 }
@@ -49,6 +59,7 @@ func NewKnowledge(topology any) *Knowledge {
 		Adjacency:       resolved.Adjacency,
 		Requirements:    []Requirement{},
 		Failures:        map[string]Failure{},
+		TrainingAreas:   map[LocationID]TrainingAreaKnowledge{},
 		nativeLocations: resolved.NativeLocations,
 	}
 }
@@ -86,9 +97,12 @@ func (k *Knowledge) nativeAdjacency() map[uint8][]uint8 {
 }
 
 type Failure struct {
-	Objective string
-	Times     int
-	Last      string
+	Objective         string
+	Times             int
+	Last              string
+	Build             string
+	ReadinessBaseline int
+	ReadinessTarget   int
 }
 
 type Completion struct {
@@ -130,15 +144,31 @@ func (k *Knowledge) Failed(o Objective, err error) {
 		return
 	}
 	storage := objectiveStorageKey(o)
-	if _, ok := gymLossFailureName(o, err); ok {
-		storage = gymLossFailureKey(o.Place)
-	}
-	if _, ok := trainerLossFailureName(o, err); ok {
-		storage = trainerLossFailureKey(o)
-	}
 	f := k.Failures[storage]
-	f.Objective, f.Times, f.Last = o.String(), f.Times+1, conciseObjectiveError(o, err)
+	if generic, ok := combatLossFailureName(o, err); ok {
+		storage = generic
+		f = mergeCombatRetryFailure(k.Failures[storage], k.Failures[combatRetryReadyKey(o)])
+		// Direct/legacy callers do not carry an Observation, so preserve the
+		// historical progress-based release behavior while still carrying the
+		// retry count forward for escalation on the next structured loss.
+		f.ReadinessBaseline, f.ReadinessTarget = 0, 0
+		delete(k.Failures, combatRetryReadyKey(o))
+	}
+	k.bumpFailureTimes(&f)
+	f.Objective, f.Last = o.String(), conciseObjectiveError(o, err)
 	k.Failures[storage] = f
+}
+
+// bumpFailureTimes increments f.Times as evidence toward "this objective is
+// broken". A tally carried over from a different build is not that evidence
+// (architecture: repeats only count "same objective, same relevant state,
+// same build"), so a build change resets it to a fresh count of one instead
+// of letting stale pre-fix failures keep discouraging a step forever.
+func (k *Knowledge) bumpFailureTimes(f *Failure) {
+	if build := strings.TrimSpace(k.Build); build != "" && f.Build != build {
+		f.Times, f.Build = 0, build
+	}
+	f.Times++
 }
 
 func (k *Knowledge) FailureList() []Failure {
@@ -344,17 +374,14 @@ func (k *Knowledge) Done(o Objective) {
 	k.Completed[storage]++
 	delete(k.Failures, storage)
 	delete(k.Failures, legacy)
-	delete(k.Failures, trainerLossFailureKey(o))
-	delete(k.Failures, legacyTrainerLossFailureKey(o))
-	if o.Kind == KindGym && o.Place != "" {
-		delete(k.Failures, gymLossFailureKey(o.Place))
-		delete(k.Failures, legacyGymLossFailureKey(o.Place))
-		delete(k.Failures, gymRetryReadyKey(o.Place))
-		delete(k.Failures, (Objective{Kind: KindGym}).String())
-	}
+	delete(k.Failures, combatLossFailureKey(o))
+	delete(k.Failures, combatRetryReadyKey(o))
+	clearLegacyCombatRecovery(k, o)
 	if o.Kind == KindTrain {
-		k.clearGymLossFailures()
-		k.clearTrainerLossFailures()
+		// Pre-readiness checkpoints/direct callers have no quantitative target.
+		// Preserve their historical "one completed training rung unlocks retry"
+		// behavior without weakening new structured preparation campaigns.
+		k.promoteCombatLossesToRetryWhere(func(f Failure) bool { return f.ReadinessTarget == 0 })
 	}
 }
 
@@ -398,7 +425,10 @@ func (k *Knowledge) restore(mem memoryFile) {
 		}
 	}
 	for _, f := range mem.Failures {
-		failure := Failure{Objective: f.Objective, Times: f.Times, Last: f.Last}
+		failure := Failure{
+			Objective: f.Objective, Times: f.Times, Last: f.Last, Build: f.Build,
+			ReadinessBaseline: f.ReadinessBaseline, ReadinessTarget: f.ReadinessTarget,
+		}
 		if f.Key != (ObjectiveKey{}) {
 			k.Failures[failureStorageKey(f.Key, f.Mode)] = failure
 		} else if f.Objective != "" {
@@ -412,6 +442,15 @@ func (k *Knowledge) restore(mem memoryFile) {
 		k.HeardRequirement(r.Text, r.Place, r.X, r.Y)
 		if len(k.Requirements) > 0 && k.Requirements[0].Text == r.Text {
 			k.Requirements[0].Times = r.Times
+		}
+	}
+	if k.TrainingAreas == nil {
+		k.TrainingAreas = map[LocationID]TrainingAreaKnowledge{}
+	}
+	k.TrainingAreasBackfilled = mem.TrainingAreasBackfilled
+	for _, area := range mem.TrainingAreas {
+		if area.Location != "" && area.Place != "" && area.MaxLevel > 0 {
+			k.TrainingAreas[area.Location] = area
 		}
 	}
 }

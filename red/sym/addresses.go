@@ -15,7 +15,10 @@ const (
 	CurMapTileset           uint16 = 0xD367
 	CurMapHeight            uint16 = 0xD368
 	CurMapWidth             uint16 = 0xD369
+	CurrentMapScriptFlags   uint16 = 0xD126 // wCurrentMapScriptFlags: EnterMap sets bit 5 (BIT_CUR_MAP_LOADED_1); scripts that care clear it on their first run
+	CurMapScriptPtr         uint16 = 0xD36E // wCurMapScriptPtr: written by LoadMapHeader, so it names the map whose header is actually loaded
 	WalkBikeSurfState       uint16 = 0xD700 // wWalkBikeSurfState: 0 walking, 1 biking, 2 surfing
+	TownVisitedFlag         uint16 = 0xD70B // wTownVisitedFlag: Fly-unlocked city bits
 	PlayerMovingDirection   uint16 = 0xD528
 	PlayerLastStopDirection uint16 = 0xD529
 	PlayerDirection         uint16 = 0xD52A
@@ -56,11 +59,12 @@ const (
 
 // Inventory and progress
 const (
-	NumBagItems    uint16 = 0xD31D
-	BagItems       uint16 = 0xD31E
-	PlayerMoney    uint16 = 0xD347 // 3 bytes, binary-coded decimal
-	PlayerCoins    uint16 = 0xD5A4 // 2 bytes, binary-coded decimal; Coin Case max is 9999
-	ObtainedBadges uint16 = 0xD356
+	RepelRemainingSteps uint16 = 0xD0DB // wRepelRemainingSteps: decremented once per step while Repel is active
+	NumBagItems         uint16 = 0xD31D
+	BagItems            uint16 = 0xD31E
+	PlayerMoney         uint16 = 0xD347 // 3 bytes, binary-coded decimal
+	PlayerCoins         uint16 = 0xD5A4 // 2 bytes, binary-coded decimal; Coin Case max is 9999
+	ObtainedBadges      uint16 = 0xD356
 	// ToggleableObjectFlags is the 256-bit global hidden-object array;
 	// ToggleableObjectList maps the current map's 1-based object IDs to
 	// indexes in that array and is terminated by 0xff.
@@ -80,6 +84,8 @@ const (
 	// nurse, before HealParty. A run that never heals at a Center leaves it
 	// at its zeroed new-game value, PALLET_TOWN.
 	LastBlackoutMap uint16 = 0xD719
+	DestinationMap  uint16 = 0xD71A // wDestinationMap: Fly/special-warp target
+	StatusFlags6    uint16 = 0xD732 // wStatusFlags6: Fly/escape/forced-bike warp flags
 )
 
 // Battle
@@ -123,7 +129,15 @@ const (
 	// double, half or nothing (engine/battle/core.asm:5129 walks TypeEffects
 	// with the move's type in b and the defender's two types in d and e).
 	// A single-type mon stores the same value in both bytes.
-	EnemyMonType1  uint16 = 0xCFEA // wEnemyMonType1
+	EnemyMonType1 uint16 = 0xCFEA // wEnemyMonType1
+	// Live battle status bytes, in the same encoding as the party status
+	// byte. The battle copies are authoritative mid-battle; the party copy is
+	// written back only when the mon leaves the field.
+	EnemyMonStatus  uint16 = 0xCFE9 // wEnemyMonStatus
+	BattleMonStatus uint16 = 0xD018 // wBattleMonStatus
+	// BattleType is wBattleType: 0 normal, 1 the Old Man's scripted catch
+	// demo, 2 Safari Zone (which replaces FIGHT with BALL/BAIT/ROCK).
+	BattleType     uint16 = 0xD05A // wBattleType
 	EnemyMonType2  uint16 = 0xCFEB // wEnemyMonType2
 	BattleMonType1 uint16 = 0xD019 // wBattleMonType1
 	BattleMonType2 uint16 = 0xD01A // wBattleMonType2
@@ -139,6 +153,18 @@ const (
 	TopMenuItemY    uint16 = 0xCC24
 	TopMenuItemX    uint16 = 0xCC25
 	CurrentMenuItem uint16 = 0xCC26
+	// MenuCursorLocation is wMenuCursorLocation (pokered.sym: 00:cc30): the
+	// absolute address of the menu cursor's current location within wTileMap,
+	// written by PlaceMenuCursor (pokered/home/window.asm) every iteration of
+	// HandleMenuInput. It is a little-endian pointer, so the cursor's tilemap
+	// offset is the 16-bit value minus TileMap.
+	//
+	// This is the only reliable way to find the cursor. PlaceMenuCursor walks
+	// down from (TopMenuItemY, TopMenuItemX) once per CurrentMenuItem and again
+	// once per item when hUILayoutFlags has BIT_DOUBLE_SPACED_MENU set, so the
+	// START menu's cursor sits at (11,2)+2*CurrentMenuItem*2 — four rows below
+	// TopMenuItemY for the ITEM entry, not on it.
+	MenuCursorLocation uint16 = 0xCC30
 	// PlayerMonNumber is wPlayerMonNumber: the party slot that is currently
 	// out in battle (InitBattleVariables zeroes it; SwitchPlayerMon and
 	// ChooseNextMon write it).
@@ -158,8 +184,9 @@ const (
 	TextBoxID        uint16 = 0xD125
 	// wFieldMoves is populated after choosing a Pokémon from the START-menu
 	// party list. Entries are field-move menu IDs (CUT=1), terminated by 0.
-	FieldMoves    uint16 = 0xCD3D
-	NumFieldMoves uint16 = 0xCD41
+	FieldMoves       uint16 = 0xCD3D
+	FlyLocationsList uint16 = 0xCD3E // union overlay used by ChooseFlyDestination
+	NumFieldMoves    uint16 = 0xCD41
 	// ActionResult is wActionResultOrTookBattleTurn. UsedCut writes 1 only
 	// when the tile in front was actually cut.
 	ActionResult uint16 = 0xCD6A
@@ -170,6 +197,15 @@ const (
 	TileMapLen        = 20 * 18
 	FontLoaded uint16 = 0xCFC4
 	JoyIgnore  uint16 = 0xCD6B
+	// EnteringCableClub is wEnteringCableClub: nonzero from the link menu's
+	// special warp until the overworld's .changeMap path calls EnterMap.
+	EnteringCableClub uint16 = 0xCC47
+	// CableClubDestinationMap is wCableClubDestinationMap: LinkMenu zeroes it
+	// on entry and writes TRADE_CENTER or COLOSSEUM once a selection is agreed.
+	CableClubDestinationMap uint16 = 0xD72D
+	// UpdateSpritesEnabled is wUpdateSpritesEnabled: Init sets $ff and
+	// LoadMapData sets $01 once the map is in VRAM.
+	UpdateSpritesEnabled uint16 = 0xCFCB
 )
 
 // Shop / mart. The buy flow (pokered/engine/events/pokemart.asm) loads the

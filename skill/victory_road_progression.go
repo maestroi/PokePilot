@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -28,7 +29,6 @@ var (
 	victoryRoad1FEntry   = Destination{Map: victoryRoad1FMap, X: 8, Y: 17}
 	victoryRoad2FEntry   = Destination{Map: victoryRoad2FMap, X: 0, Y: 8}
 	victoryRoad3FEntry   = Destination{Map: victoryRoad3FMap, X: 23, Y: 7}
-	indigoLobbyNurse     = Destination{Map: indigoPlateauLobbyMap, X: 7, Y: 6}
 )
 
 func currentStoryFacts(m *emu.Emu) state.StoryFacts {
@@ -129,6 +129,10 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 }
 
 func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: Route23 Surf field-action profile: %w", err)
+	}
 	if got := m.Peek8(sym.CurMap); got != route23Map {
 		return fmt.Errorf("skill: Route23 Surf barrier %d started on map %#02x", barrierY, got)
 	}
@@ -141,7 +145,7 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 	if err != nil {
 		return err
 	}
-	if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !fieldActions.DecodeFieldAction(m).Surfing {
 		stand := Destination{Map: route23Map, X: uint8(plan.stand.X), Y: uint8(plan.stand.Y)}
 		if _, err := TravelFlee(m, romData, stand, policy, victoryRoadTravelBattles); err != nil {
 			return fmt.Errorf("skill: Route23 Surf reach barrier %d shoreline: %w", barrierY, err)
@@ -150,11 +154,11 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 			return fmt.Errorf("skill: Route23 Surf face water at (%d,%d): %w", plan.water.X, plan.water.Y, err)
 		}
 		m.StepFrames(2)
-		result, err := UseFieldMove(m, FieldSurf)
+		result, err := useFieldMoveWithDecoder(m, FieldSurf, fieldActions)
 		if err != nil {
 			return fmt.Errorf("skill: Route23 Surf enter mode at barrier %d: %w", barrierY, err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing || !fieldActions.DecodeFieldAction(m).Surfing {
 			return fmt.Errorf("skill: Route23 Surf barrier %d did not enter Surf mode", barrierY)
 		}
 	}
@@ -172,11 +176,27 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 }
 
 func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if currentStoryFacts(m).Route22RivalResolved {
-		return nil
+	if !currentStoryFacts(m).Route22RivalResolved {
+		if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
+			// The after-battle script sets the durable event before its closing
+			// text/exit walk has necessarily returned overworld control. If the
+			// event is already positive, the story transaction succeeded and this
+			// skill still owns settling that trailing script (#1861).
+			if !currentStoryFacts(m).Route22RivalResolved {
+				return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival: %w", err)
+			}
+		}
 	}
-	if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
-		return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival: %w", err)
+
+	// Do not hand an event-positive but still scripted state to the generic
+	// objective boundary. Route22Rival1AfterBattleScript owns a final text box,
+	// music change and rival exit walk after setting the completion bit; the
+	// stage is complete only once that script has also returned control.
+	if err := Cutscene(m, route22AfterBattleBudget, func(mem *state.Mem) bool {
+		facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
+		return facts.Route22RivalResolved
+	}); err != nil {
+		return fmt.Errorf("skill: VictoryRoadProgression: settle Route 22 rival after-battle script: %w", err)
 	}
 	if !currentStoryFacts(m).Route22RivalResolved {
 		return fmt.Errorf("skill: VictoryRoadProgression: Route 22 rival battle did not set its completion event")
@@ -238,14 +258,39 @@ func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) err
 	return fmt.Errorf("skill: Victory Road 3F hole did not land on 2F within %d frames", victoryRoadWarpBudget)
 }
 
+// victoryRoadLadderEdge is the ROM warp on floor from that leads to floor to.
+func victoryRoadLadderEdge(romData []byte, from, to uint8) (world.Edge, error) {
+	h, err := rom.ParseMap(romData, from)
+	if err != nil {
+		return world.Edge{}, fmt.Errorf("skill: Victory Road parse map %#02x: %w", from, err)
+	}
+	for _, w := range h.Warps {
+		if w.DestMap == to {
+			return world.Edge{Kind: world.EdgeWarp, From: from, To: to, WarpX: w.X, WarpY: w.Y}, nil
+		}
+	}
+	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no warp to %#02x", from, to)
+}
+
 func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for phase := 0; phase < 10; phase++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		switch mem.U8(sym.CurMap) {
 		case victoryRoad1FMap:
-			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad1FSwitch); err != nil {
-				return fmt.Errorf("skill: Victory Road 1F switch: %w", err)
+			// VictoryRoad2F_Script resets EVENT_VICTORY_ROAD_1_BOULDER_ON_SWITCH
+			// on every 2F entry, so after coming back down the ladder the player
+			// stands past the barrier with the switch unset and the reloaded
+			// boulders out of reach. The switch only matters while the ladder
+			// is unreachable.
+			ladder, err := victoryRoadLadderEdge(romData, victoryRoad1FMap, victoryRoad2FMap)
+			if err != nil {
+				return err
+			}
+			if !warpEdgeReachable(m, romData, ladder) {
+				if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad1FSwitch); err != nil {
+					return fmt.Errorf("skill: Victory Road 1F switch: %w", err)
+				}
 			}
 			if _, err := TravelFlee(m, romData, victoryRoad2FEntry, policy, victoryRoadTravelBattles); err != nil {
 				return fmt.Errorf("skill: Victory Road reach 2F: %w", err)
@@ -285,8 +330,23 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return fmt.Errorf("skill: Victory Road progression exceeded its bounded phase count")
 }
 
+func indigoLobbyNurseDestination(romData []byte) (Destination, error) {
+	nurse, ok, err := interactionDestinationForRole(romData, indigoPlateauLobbyMap, rom.InteractionPokemonCenterNurse)
+	if err != nil {
+		return Destination{}, fmt.Errorf("find Indigo nurse: %w", err)
+	}
+	if !ok {
+		return Destination{}, fmt.Errorf("Indigo lobby has no nurse interaction")
+	}
+	return nurse, nil
+}
+
 func prepareIndigoLobby(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	if _, err := TravelFlee(m, romData, indigoLobbyNurse, policy, victoryRoadTravelBattles); err != nil {
+	nurse, err := indigoLobbyNurseDestination(romData)
+	if err != nil {
+		return fmt.Errorf("skill: VictoryRoadProgression: %w", err)
+	}
+	if _, err := TravelFlee(m, romData, nurse, policy, victoryRoadTravelBattles); err != nil {
 		return fmt.Errorf("skill: VictoryRoadProgression: reach Indigo Plateau lobby: %w", err)
 	}
 	if got := m.Peek8(sym.CurMap); got != indigoPlateauLobbyMap {
@@ -317,14 +377,21 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return nil
 	}
 	if state.DecodeProgress(&mem).BadgeCount != 8 {
-		return fmt.Errorf("%w: Victory Road requires all eight badges", ErrFieldMovePrerequisite)
+		return gameruntime.NewProgressionPrerequisiteMissing("earth_badge")
 	}
 	if mem.U8(sym.CurMap) == indigoPlateauLobbyMap || mem.U8(sym.CurMap) == indigoPlateauMap {
 		return prepareIndigoLobby(m, romData, policy)
 	}
 
-	if err := RepairFieldCapabilities(m, romData, policy, []FieldMove{FieldSurf, FieldStrength}); err != nil {
-		return fmt.Errorf("skill: VictoryRoadProgression: prepare Surf + Strength: %w", err)
+	missingField := make([]gameruntime.CapabilityID, 0, 2)
+	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
+		missingField = append(missingField, "surf")
+	}
+	if !FieldCapabilityFor(&mem, FieldStrength).Usable {
+		missingField = append(missingField, "strength")
+	}
+	if len(missingField) != 0 {
+		return gameruntime.NewFieldCapabilityPrerequisiteMissing(missingField...)
 	}
 
 	cur := m.Peek8(sym.CurMap)

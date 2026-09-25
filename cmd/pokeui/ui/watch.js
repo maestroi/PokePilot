@@ -70,6 +70,8 @@
     if (running) return running;
     const leased = newest(runs.filter((run) => run.status === "leased"), "queued_at");
     if (leased) return leased;
+    const paused = newest(runs.filter((run) => run.status === "paused"), "queued_at");
+    if (paused) return paused;
     const queued = newest(runs.filter((run) => run.status === "queued"), "queued_at");
     if (queued) return queued;
     return newest(runs.filter((run) => run.status === "done"), "ended_at") || runs[runs.length - 1];
@@ -495,22 +497,23 @@
     })();
   }
 
-  function fetchLast(run) {
+  function fetchLast(run, label = "Final frame", once = true) {
     const id = run.run_id;
-    if (lastOnce.has(id)) return;
-    lastOnce.add(id);
+    if (once && lastOnce.has(id)) return;
+    if (once) lastOnce.add(id);
     (async () => {
       try {
         const r = await fetch("/frame?run=" + encodeURIComponent(id), { cache: "no-store" });
         if (!r.ok) {
-          showEmpty(completedSummary(run));
+          if (once) lastOnce.delete(id);
+          showEmpty(run.status === "paused" ? "Paused · waiting for the last game frame…" : completedSummary(run));
           return;
         }
         paintFrame(URL.createObjectURL(await r.blob()));
-        setMediaLabel("Final frame", "");
+        setMediaLabel(label, "");
       } catch (e) {
-        lastOnce.delete(id);
-        showEmpty(completedSummary(run));
+        if (once) lastOnce.delete(id);
+        showEmpty(run.status === "paused" ? "Paused · waiting for the last game frame…" : completedSummary(run));
       }
     })();
   }
@@ -550,6 +553,10 @@
       return;
     }
     stopPump();
+    if (run.status === "paused") {
+      fetchLast(run, "Paused", false);
+      return;
+    }
     if (run.status === "done") {
       const status = await getReplayStatus(run.run_id);
       if (serial !== mediaSerial) return;

@@ -21,11 +21,14 @@ const (
 	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
 	redProgressSSTicketAcquired           ProgressID = redprofile.ProgressSSTicketAcquired
 	redProgressHM01Acquired               ProgressID = redprofile.ProgressHM01Acquired
+	redProgressFlyReady                   ProgressID = "fly_ready"
 	redProgressBicycleAcquired            ProgressID = redprofile.ProgressBicycleAcquired
+	redProgressBoulderBadge               ProgressID = redprofile.ProgressBoulderBadge
 	redProgressThunderBadge               ProgressID = redprofile.ProgressThunderBadge
 	redProgressPostSurgeLavenderReached   ProgressID = redprofile.ProgressPostSurgeLavenderReached
 	redProgressPostSurgeCeladonReady      ProgressID = redprofile.ProgressPostSurgeCeladonReady
 	redProgressRainbowBadge               ProgressID = redprofile.ProgressRainbowBadge
+	redProgressMarshBadge                 ProgressID = redprofile.ProgressMarshBadge
 	redProgressSilphScopeAcquired         ProgressID = redprofile.ProgressSilphScopeAcquired
 	redProgressPokeFluteAcquired          ProgressID = redprofile.ProgressPokeFluteAcquired
 	redProgressFuchsiaProgressionComplete ProgressID = redprofile.ProgressFuchsiaProgressionComplete
@@ -117,5 +120,9 @@ func redProgressState(f state.StoryFacts) ProgressState {
 }
 
 func redProgressStateFromRAM(mem *state.Mem, _ state.InventoryState, f state.StoryFacts) ProgressState {
-	return appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	progress := appendRedLeagueProgress(redprofile.ProjectStory(mem, f), f)
+	return append(progress, ProgressFact{
+		ID:       redProgressFlyReady,
+		Complete: skill.FieldCapabilityFor(mem, skill.FieldFly).Usable,
+	})
 }

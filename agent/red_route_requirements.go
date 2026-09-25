@@ -11,6 +11,7 @@ const (
 	lavenderTownMap              uint8 = 0x04
 	celadonCityMap               uint8 = 0x06
 	fuchsiaCityMap               uint8 = 0x07
+	cinnabarIslandMap            uint8 = 0x08
 	saffronCityMap               uint8 = 0x0a
 	route2Map                    uint8 = 0x0d
 	route3Map                    uint8 = 0x0e
@@ -82,7 +83,11 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 	}
 
 	if !redHasBadge(obs, state.BadgeBoulder) {
-		blockMap(route3Map, "red:story:route3_boulder", RoutePrerequisiteLink{Badge: state.BadgeBoulder.String()})
+		blockMap(route3Map, "red:story:route3_boulder", RoutePrerequisiteLink{
+			Capability: "can_leave_pewter_east",
+			Badge:      state.BadgeBoulder.String(),
+			Progress:   redProgressBoulderBadge,
+		})
 	}
 	if !observedEvent(obs, state.EventGotPokedex.String()) {
 		blockMap(route2Map, "red:story:route2_pokedex", RoutePrerequisiteLink{Progress: redProgressPokedexAcquired})
@@ -231,7 +236,7 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	case "can_leave_viridian_north":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokedexAcquired}, true
 	case "can_leave_pewter_east":
-		return RoutePrerequisiteLink{Capability: id, Badge: state.BadgeBoulder.String()}, true
+		return RoutePrerequisiteLink{Capability: id, Badge: state.BadgeBoulder.String(), Progress: redProgressBoulderBadge}, true
 	case "can_exit_mt_moon":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressMtMoonFossilAcquired}, true
 	case "can_pass_cerulean_robbed_house":
@@ -247,9 +252,13 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 	case "can_clear_snorlax":
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressPokeFluteAcquired}, true
 	case "can_ride_cycling_road":
-		return RoutePrerequisiteLink{Capability: id, Progress: redProgressBicycleAcquired}, true
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressBicycleAcquired, RecoveryOnly: true}, true
 	case "can_enter_saffron":
 		return RoutePrerequisiteLink{Capability: id, Progress: ProgressSaffronGateOpen}, true
+	case "can_enter_rocket_hideout":
+		// The poster stair is closed until the Rocket Hideout switch. The
+		// objective that presses it is the same one that collects the Scope.
+		return RoutePrerequisiteLink{Capability: id, Progress: redProgressSilphScopeAcquired}, true
 	default:
 		return RoutePrerequisiteLink{}, false
 	}

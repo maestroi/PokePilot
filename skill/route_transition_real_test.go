@@ -51,6 +51,24 @@ func TestSemanticCutRouteTransitionRealROM(t *testing.T) {
 	}
 }
 
+// POKEPILOT_VERMILION_GYM_WILD_CUT_TEST_STATE is a Vermilion City checkpoint
+// with HM01 + Cascade Badge but no party member able to learn Cut, so carrier
+// repair must leave town to catch one (run-22ahrk9pflcilu3jxq9xt37x6: Oddish
+// on Route 24). Gym entry must walk back and still land in the gym instead of
+// traversing Vermilion's door edge from Route 24.
+func TestVermilionGymEntryAfterWildCutRepairRealROM(t *testing.T) {
+	m := loadPreparedFieldActionState(t, "POKEPILOT_VERMILION_GYM_WILD_CUT_TEST_STATE")
+	if got := m.Peek8(sym.CurMap); got != semanticVermilionCityMap {
+		t.Fatalf("checkpoint map=%02x, want Vermilion City %02x", got, semanticVermilionCityMap)
+	}
+	if err := EnterVermilionGym(m, m.ROM(), StatAwareMove(m.ROM())); err != nil {
+		t.Fatalf("EnterVermilionGym: %v", err)
+	}
+	if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
+		t.Fatalf("map after gym entry=%02x, want %02x", got, vermilionGymMap)
+	}
+}
+
 // POKEPILOT_SURF_ROUTE_TEST_STATE is a controllable Pallet Town shoreline
 // checkpoint with Surf usable/preparable. The executor must enter verified
 // Surf mode and Traverse must continue across the Route 21 connection.

@@ -84,6 +84,12 @@ type modelHostStatus struct {
 	Error              string   `json:"error,omitempty"`
 }
 
+type endpointModelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+}
+
 // modelExperimentHTTPHandler adds #723/#724 operator behavior around the wall
 // without changing the runner-facing compatibility handler. If no registry is
 // configured the wrapper is a no-op for legacy runs.
@@ -110,17 +116,25 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 	controller.attachDeploymentsToTiles()
 
 	mux := http.NewServeMux()
+	registerModelExperimentRoutes(mux, controller)
+	mux.Handle("/", fallback)
+	return mux
+}
+
+func registerModelExperimentRoutes(mux *http.ServeMux, controller *modelExperimentController) {
 	mux.HandleFunc("GET /v1/models", controller.handleModels)
+	mux.HandleFunc("POST /v1/models", controller.handleSaveModel)
+	mux.HandleFunc("POST /v1/models/test", controller.handleTestModel)
 	mux.HandleFunc("PATCH /v1/models/{id}", controller.handlePatchModel)
+	mux.HandleFunc("DELETE /v1/models/{id}", controller.handleDeleteModel)
 	mux.HandleFunc("POST /v1/experiments", controller.handleCreateExperiment)
 	mux.HandleFunc("GET /v1/experiments", controller.handleExperiments)
 	mux.HandleFunc("GET /v1/experiments/{id}", controller.handleExperiment)
 	mux.HandleFunc("POST /v1/specs", controller.handleSpec)
+	mux.HandleFunc("POST /v1/runs/{id}/clone", controller.handleCloneRun)
 	mux.HandleFunc("POST /v1/lease", controller.handleLease)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", controller.handleFinish)
 	mux.HandleFunc("GET /v1/dashboard", controller.handleDashboard)
-	mux.Handle("/", fallback)
-	return mux
 }
 
 func logModelExperiment(format string, args ...any) {
@@ -129,13 +143,27 @@ func logModelExperiment(format string, args ...any) {
 
 func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.Request) {
 	c.reconcileHostLeases()
-	deployments := c.enabledDeployments()
+	deployments := c.allDeployments()
 	views := make([]deploymentView, 0, len(deployments))
 	statuses := map[string]modelHostStatus{}
 	queued := c.queuedByDeployment()
 	active := c.activeByDeployment()
 	for _, d := range deployments {
 		view := deploymentView{ModelDeployment: d, State: "ready", ActiveLeases: active[d.ID], Queued: queued[d.ID]}
+		if !d.Enabled {
+			view.State = "disabled"
+			views = append(views, view)
+			continue
+		}
+		if d.ControlURL == "" && d.Discover {
+			resolved, err := c.resolveDeployment(d)
+			if err != nil {
+				view.State = "unavailable"
+				view.Error = err.Error()
+			} else {
+				view.ModelDeployment = resolved
+			}
+		}
 		if d.ControlURL != "" {
 			status, err := c.hostStatus(d)
 			if err != nil {
@@ -144,6 +172,9 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 			} else {
 				statuses[d.ControlURL] = status
 				view.Loaded, view.Error = status.DeploymentID, status.Error
+				if status.DeploymentID == d.ID && strings.TrimSpace(status.ModelID) != "" {
+					view.ModelID = status.ModelID
+				}
 				if status.ActiveLeases > view.ActiveLeases {
 					view.ActiveLeases = status.ActiveLeases
 				}
@@ -164,6 +195,109 @@ func (c *modelExperimentController) handleModels(w http.ResponseWriter, _ *http.
 		views = append(views, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"deployments": views, "hosts": statuses})
+}
+
+func (c *modelExperimentController) reloadRegistry() error {
+	registry, err := farm.LoadModelRegistry(c.registrySource)
+	if err != nil {
+		return err
+	}
+	c.registryMu.Lock()
+	c.registry = registry
+	c.registryMu.Unlock()
+	return nil
+}
+
+func (c *modelExperimentController) handleSaveModel(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(c.registrySource) == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
+		return
+	}
+	var deployment farm.ModelDeployment
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSmallControlBody)).Decode(&deployment); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if deployment.MaxParallelWorkers == 0 {
+		deployment.MaxParallelWorkers = 1
+	}
+	updated, err := farm.UpsertModelDeployment(c.registrySource, deployment)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.reloadRegistry(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: updated, State: "ready"})
+}
+
+func (c *modelExperimentController) handleTestModel(w http.ResponseWriter, r *http.Request) {
+	var deployment farm.ModelDeployment
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSmallControlBody)).Decode(&deployment); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+	if deployment.MaxParallelWorkers == 0 {
+		deployment.MaxParallelWorkers = 1
+	}
+	if err := (farm.ModelRegistry{Deployments: []farm.ModelDeployment{deployment}}).Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if !deployment.ServesStrategist() {
+		// The choice API has no /models listing and every probe call is a
+		// billed decision, so a typed-decision deployment is only validated.
+		writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: deployment, State: "configured"})
+		return
+	}
+	probe := deployment
+	if probe.ControlURL == "" {
+		probe.Discover = true
+	}
+	resolved, err := c.resolveDeployment(probe)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, deploymentView{ModelDeployment: resolved, State: "ready"})
+}
+
+func (c *modelExperimentController) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "deployment id is required"})
+		return
+	}
+	if strings.TrimSpace(c.registrySource) == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model registry is not configured"})
+		return
+	}
+	c.reconcileHostLeases()
+	active := c.activeByDeployment()[id]
+	queued := c.queuedByDeployment()[id]
+	if active > 0 || queued > 0 {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":         "deployment still has active or queued runs",
+			"active_leases": active,
+			"queued":        queued,
+		})
+		return
+	}
+	if err := farm.DeleteModelDeployment(c.registrySource, id); err != nil {
+		if errors.Is(err, farm.ErrDeploymentNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := c.reloadRegistry(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *modelExperimentController) handlePatchModel(w http.ResponseWriter, r *http.Request) {
@@ -204,10 +338,120 @@ func (c *modelExperimentController) enabledDeployments() []farm.ModelDeployment 
 	return c.registry.EnabledDeployments()
 }
 
+func (c *modelExperimentController) allDeployments() []farm.ModelDeployment {
+	c.registryMu.RLock()
+	defer c.registryMu.RUnlock()
+	return append([]farm.ModelDeployment(nil), c.registry.Deployments...)
+}
+
 func (c *modelExperimentController) deployment(id string) (farm.ModelDeployment, bool) {
 	c.registryMu.RLock()
 	defer c.registryMu.RUnlock()
 	return c.registry.Deployment(id)
+}
+
+func (c *modelExperimentController) resolvedDeployment(id string) (farm.ModelDeployment, error) {
+	d, ok := c.deployment(id)
+	if !ok || !d.Enabled {
+		return farm.ModelDeployment{}, fmt.Errorf("deployment %q is unavailable", id)
+	}
+	return c.resolveDeployment(d)
+}
+
+// resolveDeployment binds an endpoint declaration to what it is actually
+// serving. Switchable model hosts remain authoritative via their control API;
+// pinned/generic OpenAI-compatible endpoints can opt into /v1/models discovery.
+// We only auto-select when there is one unambiguous model (or the configured
+// api_model is present), so a multi-model cloud endpoint is never guessed.
+func (c *modelExperimentController) resolveDeployment(d farm.ModelDeployment) (farm.ModelDeployment, error) {
+	if d.ControlURL != "" {
+		status, err := c.hostStatus(d)
+		if err != nil {
+			return farm.ModelDeployment{}, err
+		}
+		if status.DeploymentID == d.ID && strings.TrimSpace(status.ModelID) != "" && status.ModelID != d.ModelID {
+			d.ModelID = status.ModelID
+			d.Revision, d.Artifact, d.Quantization = "", "", ""
+		}
+		return d, nil
+	}
+	if !d.Discover {
+		return d, nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(d.Endpoint, "/")+"/models", nil)
+	if err != nil {
+		return farm.ModelDeployment{}, err
+	}
+	if d.TokenEnv != "" {
+		if token := strings.TrimSpace(os.Getenv(d.TokenEnv)); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: %w", d.Endpoint, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: HTTP %s", d.Endpoint, resp.Status)
+	}
+	var models endpointModelsResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&models); err != nil {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: decode models: %w", d.Endpoint, err)
+	}
+	ids := make([]string, 0, len(models.Data))
+	for _, model := range models.Data {
+		if id := strings.TrimSpace(model.ID); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: endpoint reported no models", d.Endpoint)
+	}
+	chosen := ""
+	// A discoverable single-model host is authoritative: prefer the sole live
+	// id over a possibly-stale configured api_model left in the registry row
+	// after an xtx-9b/xtx-27b host switch.
+	if len(ids) == 1 {
+		chosen = ids[0]
+	} else {
+		for _, id := range ids {
+			if d.APIModel != "" && id == d.APIModel {
+				chosen = id
+				break
+			}
+		}
+	}
+	if chosen == "" {
+		return farm.ModelDeployment{}, fmt.Errorf("discover %s: %d models reported and configured api_model %q did not match", d.Endpoint, len(ids), d.APIModel)
+	}
+	if chosen != d.APIModel || chosen != d.ModelID {
+		d.APIModel = chosen
+		d.ModelID = chosen
+		d.Label = chosen + " · " + d.Compute
+		// A changed runtime model invalidates artifact-specific comparability
+		// metadata from the static registry. Keep hardware/engine identity, but
+		// do not pretend the old model hash/quantization still applies.
+		d.Revision, d.Artifact, d.Quantization = "", "", ""
+	}
+	return d, nil
+}
+
+func (c *modelExperimentController) refreshRunInference(meta runExperimentMeta) (runExperimentMeta, error) {
+	d, err := c.resolvedDeployment(meta.Deployment)
+	if err != nil {
+		return meta, err
+	}
+	meta.Inference = d.Identity()
+	meta.MaxParallelWorkers = d.ParallelLimit()
+	c.mu.Lock()
+	if _, exists := c.state.Runs[meta.RunID]; exists {
+		c.state.Runs[meta.RunID] = meta
+		c.persistLocked()
+	}
+	c.mu.Unlock()
+	return meta, nil
 }
 
 func (c *modelExperimentController) liveParallelLimit(id string) int {
@@ -227,6 +471,14 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 	if err := json.Unmarshal(body, &raw); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
 		return
+	}
+	decisionBound, err := c.bindDecisionDeployment(raw)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if decisionBound {
+		body, _ = json.Marshal(raw)
 	}
 	deployment, _ := raw["llm_deployment"].(string)
 	if strings.TrimSpace(deployment) == "" {
@@ -249,6 +501,72 @@ func (c *modelExperimentController) handleSpec(w http.ResponseWriter, r *http.Re
 		c.persistLocked()
 		c.mu.Unlock()
 	}
+}
+
+// bindDecisionDeployment resolves decision_engine.deployment against the
+// registry, exactly as llm_deployment is resolved for the strategist: the
+// deployment's protocol picks the backend and its secret-free identity is
+// copied onto the run. Any client-supplied identity is discarded so a run
+// can only ever name endpoints the registry declares. It reports whether raw
+// changed.
+func (c *modelExperimentController) bindDecisionDeployment(raw map[string]any) (bool, error) {
+	engine, ok := raw["decision_engine"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	_, hadIdentity := engine["inference"]
+	delete(engine, "inference")
+	id := strings.TrimSpace(stringValue(engine["deployment"]))
+	if id == "" {
+		return hadIdentity, nil
+	}
+	rawBackend := strings.TrimSpace(stringValue(engine["backend"]))
+	explicitOff := rawBackend != "" && farm.NormalizeDecisionBackend(rawBackend) == farm.DecisionBackendOff
+	if explicitOff || farm.NormalizeDecisionMode(stringValue(engine["mode"])) == farm.DecisionModeOff {
+		// An explicit off wins; the deployment is irrelevant.
+		delete(engine, "deployment")
+		return true, nil
+	}
+	d, err := c.resolvedDeployment(id)
+	if err != nil {
+		return false, fmt.Errorf("decision_engine.deployment: %w", err)
+	}
+	identity := d.Identity()
+	engine["deployment"] = d.ID
+	engine["backend"] = d.DecisionBackend()
+	engine["inference"] = identity
+	return true, nil
+}
+
+func (c *modelExperimentController) handleCloneRun(w http.ResponseWriter, r *http.Request) {
+	sourceID := strings.TrimSpace(r.PathValue("id"))
+	sourceDeployment := c.tileDeployment(sourceID)
+	sourceMeta, hasMeta := c.bindingForRun(sourceID, sourceDeployment)
+
+	capture := httptest.NewRecorder()
+	c.fallback.ServeHTTP(capture, r)
+	if capture.Code < 200 || capture.Code >= 300 {
+		copyRecorder(w, capture)
+		return
+	}
+
+	if hasMeta && strings.TrimSpace(sourceMeta.Deployment) != "" {
+		var result cloneRunResult
+		if err := json.Unmarshal(capture.Body.Bytes(), &result); err == nil && result.RunID != "" {
+			cloneMeta := sourceMeta
+			cloneMeta.RunID = result.RunID
+			// Execution/model settings are cloned; experiment provenance is not.
+			// Otherwise a manual parallel clone would contaminate paired results.
+			cloneMeta.ExperimentID = ""
+			cloneMeta.ExperimentArm = ""
+			cloneMeta.ExperimentCase = ""
+			c.mu.Lock()
+			c.state.Runs[result.RunID] = cloneMeta
+			c.persistLocked()
+			c.mu.Unlock()
+		}
+	}
+	copyRecorder(w, capture)
 }
 
 func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.Request) {
@@ -275,6 +593,13 @@ func (c *modelExperimentController) handleLease(w http.ResponseWriter, r *http.R
 		copyRecorder(w, capture)
 		return
 	}
+	refreshed, refreshErr := c.refreshRunInference(meta)
+	if refreshErr != nil {
+		c.requeueLease(spec.RunID)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "deployment endpoint unavailable while leasing", "deployment": spec.LLMDeployment, "detail": refreshErr.Error()})
+		return
+	}
+	meta = refreshed
 	if meta.Inference.ControlURL != "" {
 		status, code, err := c.hostAction(meta.Inference, "/v1/leases/acquire", map[string]any{"run_id": spec.RunID, "deployment_id": meta.Deployment, "max_parallel_workers": c.liveParallelLimit(meta.Deployment)})
 		if err != nil || code >= 300 || status.State != "ready" || status.DeploymentID != meta.Deployment {
@@ -530,8 +855,16 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 	if request.Name == "" {
 		request.Name = "paired-model-experiment"
 	}
+	request.Game = strings.ToLower(strings.TrimSpace(request.Game))
+	if request.Game == "" {
+		request.Game = "pokemon-red"
+	}
 	if request.Goal == "" {
 		request.Goal = "Earn the Boulder Badge."
+	}
+	if !request.RecoveryProfile.Valid() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
+		return
 	}
 	if request.ArmA.Name == "" {
 		request.ArmA.Name = "A"
@@ -584,9 +917,9 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 		}{{"a", request.ArmA}, {"b", request.ArmB}} {
 			runID := caseID + "-" + arm.key
 			raw := map[string]any{
-				"run_id": runID, "seed": seed, "planner": "llm", "starter": request.Starter, "dest": "", "goal": request.Goal,
+				"run_id": runID, "seed": seed, "game": request.Game, "planner": "llm", "starter": request.Starter, "dest": "", "goal": request.Goal,
 				"llm_deployment": arm.cfg.Deployment, "reasoning_effort": request.ReasoningEffort, "max_parallel_workers": arm.cfg.MaxParallelWorkers,
-				"fps": request.FPS, "max_rounds": request.MaxRounds, "max_frames": request.MaxFrames,
+				"fps": request.FPS, "max_rounds": request.MaxRounds, "max_frames": request.MaxFrames, "recovery_profile": request.RecoveryProfile,
 				"play_style": request.PlayStyle, "risk_tolerance": request.RiskTolerance, "wild_encounters": request.WildEncounters,
 			}
 			meta, err := c.resolveRunMeta(raw, arm.cfg.Deployment, experimentID, arm.key, caseID)
@@ -647,11 +980,15 @@ func (c *modelExperimentController) handleExperiment(w http.ResponseWriter, r *h
 type armAggregate struct {
 	Runs                    int            `json:"runs"`
 	Done                    int            `json:"done"`
+	GoalSuccesses           int            `json:"goal_successes"`
 	BoulderSuccesses        int            `json:"boulder_successes"`
 	SuccessRate             float64        `json:"success_rate"`
 	Badges                  int            `json:"badges"`
 	Rounds                  int            `json:"rounds"`
 	Frames                  uint64         `json:"frames"`
+	MedianRoundsToGoal      float64        `json:"median_rounds_to_goal"`
+	MedianFramesToGoal      uint64         `json:"median_frames_to_goal"`
+	AvgRunSeconds           float64        `json:"avg_run_seconds"`
 	Calls                   int            `json:"calls"`
 	StrategicCalls          int            `json:"strategic_calls"`
 	StrategicRejected       int            `json:"strategic_rejected"`
@@ -678,6 +1015,10 @@ type armAggregate struct {
 	FinalStopReasons        map[string]int `json:"final_stop_reasons,omitempty"`
 	StrategicRecordsDropped int            `json:"strategic_records_dropped,omitempty"`
 	latencies               []float64
+	successRounds           []float64
+	successFrames           []float64
+	runSeconds              float64
+	runSamples              int
 	prefillSum              float64
 	prefillSamples          int
 	decodeSum               float64
@@ -695,6 +1036,24 @@ type pairResult struct {
 	Reason     string `json:"non_comparable_reason,omitempty"`
 }
 
+type experimentPairedSummary struct {
+	AWins           int `json:"a_wins"`
+	BWins           int `json:"b_wins"`
+	Ties            int `json:"ties"`
+	ComparablePairs int `json:"comparable_pairs"`
+	CompletedPairs  int `json:"completed_pairs"`
+	ExcludedPairs   int `json:"excluded_pairs"`
+}
+
+type experimentIdentityView struct {
+	Game           string                 `json:"game"`
+	GitRevision    string                 `json:"git_revision,omitempty"`
+	ROMIdentity    string                 `json:"rom_identity,omitempty"`
+	PromptIdentity string                 `json:"prompt_identity,omitempty"`
+	ArmA           farm.InferenceIdentity `json:"arm_a"`
+	ArmB           farm.InferenceIdentity `json:"arm_b"`
+}
+
 func (c *modelExperimentController) experimentView(record experimentRecord) map[string]any {
 	rows := make(map[string]tileRow, len(record.RunIDs))
 	for _, id := range record.RunIDs {
@@ -704,35 +1063,54 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	}
 	armA, armB := armAggregate{}, armAggregate{}
 	pairs := make([]pairResult, 0, len(record.Request.Seeds))
-	winsA, winsB, ties := 0, 0, 0
+	paired := experimentPairedSummary{}
+	identity := experimentIdentityView{Game: record.Request.Game}
 	for _, seed := range record.Request.Seeds {
 		caseID := record.ID + "-seed-" + strconv.FormatInt(seed, 10)
 		idA, idB := caseID+"-a", caseID+"-b"
 		tA, okA := rows[idA]
 		tB, okB := rows[idB]
-		if okA {
-			accumulateArm(&armA, tA)
-		}
-		if okB {
-			accumulateArm(&armB, tB)
-		}
 		metaA, haveMetaA := c.runMeta(idA)
 		metaB, haveMetaB := c.runMeta(idB)
-		pair := pairResult{Seed: seed, StatusA: tA.Status, StatusB: tB.Status, SuccessA: rowBoulderSuccess(tA), SuccessB: rowBoulderSuccess(tB)}
-		pair.Comparable = haveMetaA && haveMetaB && metaA.ComparableHash != "" && metaA.ComparableHash == metaB.ComparableHash
+		if identity.GitRevision == "" && haveMetaA {
+			identity.Game = metaA.Comparable.Game
+			identity.GitRevision = metaA.Comparable.GitRevision
+			identity.ROMIdentity = metaA.Comparable.ROMIdentity
+			identity.PromptIdentity = metaA.Comparable.PromptIdentity
+			identity.ArmA = metaA.Inference
+		}
+		if identity.ArmB.DeploymentID == "" && haveMetaB {
+			identity.ArmB = metaB.Inference
+		}
+		pair := pairResult{
+			Seed: seed, StatusA: tA.Status, StatusB: tB.Status,
+			SuccessA: rowGoalSuccess(tA, record.Request.Goal), SuccessB: rowGoalSuccess(tB, record.Request.Goal),
+		}
+		pair.Comparable, pair.Reason = comparablePair(metaA, haveMetaA, metaB, haveMetaB)
 		if !pair.Comparable {
-			pair.Reason = "matched configuration identity differs or is missing"
-		} else if tA.Status == statusDone && tB.Status == statusDone {
+			paired.ExcludedPairs++
+			pairs = append(pairs, pair)
+			continue
+		}
+		paired.ComparablePairs++
+		if okA {
+			accumulateArm(&armA, tA, pair.SuccessA)
+		}
+		if okB {
+			accumulateArm(&armB, tB, pair.SuccessB)
+		}
+		if tA.Status == statusDone && tB.Status == statusDone {
+			paired.CompletedPairs++
 			switch {
 			case pair.SuccessA && !pair.SuccessB:
 				pair.Winner = "a"
-				winsA++
+				paired.AWins++
 			case pair.SuccessB && !pair.SuccessA:
 				pair.Winner = "b"
-				winsB++
+				paired.BWins++
 			default:
 				pair.Winner = "tie"
-				ties++
+				paired.Ties++
 			}
 		}
 		pairs = append(pairs, pair)
@@ -742,11 +1120,34 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	return map[string]any{
 		"id": record.ID, "name": record.Name, "created_at": record.CreatedAt, "request": record.Request,
 		"total_pairs": len(record.Request.Seeds), "arm_a": armA, "arm_b": armB,
-		"paired": map[string]int{"a_wins": winsA, "b_wins": winsB, "ties": ties}, "pairs": pairs,
+		"paired": paired, "identity": identity, "pairs": pairs,
 	}
 }
 
-func accumulateArm(out *armAggregate, row tileRow) {
+func comparablePair(a runExperimentMeta, haveA bool, b runExperimentMeta, haveB bool) (bool, string) {
+	if !haveA || !haveB {
+		return false, "experiment run metadata is missing"
+	}
+	if a.ComparableHash == "" || b.ComparableHash == "" || a.ComparableHash != b.ComparableHash {
+		return false, "matched configuration identity differs or is missing"
+	}
+	var missing []string
+	for name, value := range map[string]string{
+		"game": a.Comparable.Game, "git revision": a.Comparable.GitRevision,
+		"ROM identity": a.Comparable.ROMIdentity, "prompt identity": a.Comparable.PromptIdentity,
+	} {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		return false, "missing comparability identity: " + strings.Join(missing, ", ")
+	}
+	return true, ""
+}
+
+func accumulateArm(out *armAggregate, row tileRow, goalSuccess bool) {
 	out.Runs++
 	if out.ReplanReasons == nil {
 		out.ReplanReasons = map[string]int{}
@@ -760,6 +1161,9 @@ func accumulateArm(out *armAggregate, row tileRow) {
 	if row.Status == statusDone {
 		out.Done++
 	}
+	if goalSuccess {
+		out.GoalSuccesses++
+	}
 	if rowBoulderSuccess(row) {
 		out.BoulderSuccesses++
 	}
@@ -767,9 +1171,21 @@ func accumulateArm(out *armAggregate, row tileRow) {
 		out.Badges += len(row.Player.Badges)
 	}
 	out.Frames += row.Frame
+	if row.Status == statusDone && row.QueuedAt > 0 && row.EndedAt >= row.QueuedAt {
+		out.runSeconds += float64(row.EndedAt - row.QueuedAt)
+		out.runSamples++
+	}
 	if row.Stats != nil {
 		s := row.Stats
 		out.Rounds += s.Rounds
+		if goalSuccess {
+			if s.Rounds > 0 {
+				out.successRounds = append(out.successRounds, float64(s.Rounds))
+			}
+			if row.Frame > 0 {
+				out.successFrames = append(out.successFrames, float64(row.Frame))
+			}
+		}
 		out.Calls += s.Calls
 		out.StrategicCalls += s.StrategicCalls
 		out.PlanExecutions += s.PlanExecutions
@@ -808,7 +1224,18 @@ func accumulateArm(out *armAggregate, row tileRow) {
 
 func finalizeArm(out *armAggregate) {
 	if out.Done > 0 {
-		out.SuccessRate = float64(out.BoulderSuccesses) / float64(out.Done)
+		out.SuccessRate = float64(out.GoalSuccesses) / float64(out.Done)
+	}
+	if out.runSamples > 0 {
+		out.AvgRunSeconds = out.runSeconds / float64(out.runSamples)
+	}
+	if len(out.successRounds) > 0 {
+		sort.Float64s(out.successRounds)
+		out.MedianRoundsToGoal = percentile(out.successRounds, 0.50)
+	}
+	if len(out.successFrames) > 0 {
+		sort.Float64s(out.successFrames)
+		out.MedianFramesToGoal = uint64(percentile(out.successFrames, 0.50))
 	}
 	if out.StrategicCalls > 0 {
 		out.AvgStrategicCall = out.StrategicSeconds / float64(out.StrategicCalls)
@@ -843,6 +1270,16 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[index]
 }
 
+func rowGoalSuccess(row tileRow, goal string) bool {
+	if row.Stats != nil && row.Stats.GoalComplete {
+		return true
+	}
+	if strings.Contains(strings.ToLower(goal), "boulder") {
+		return rowBoulderSuccess(row)
+	}
+	return false
+}
+
 func rowBoulderSuccess(row tileRow) bool {
 	if row.Player != nil {
 		for _, badge := range row.Player.Badges {
@@ -854,10 +1291,24 @@ func rowBoulderSuccess(row tileRow) bool {
 	return row.Stats != nil && row.Stats.GoalComplete && strings.Contains(strings.ToLower(row.Stats.GoalSummary), "boulder")
 }
 
+func experimentROMIdentity(gameID string) string {
+	gameID = strings.ToUpper(strings.TrimSpace(gameID))
+	gameID = strings.NewReplacer("-", "_", " ", "_").Replace(gameID)
+	if gameID != "" {
+		if value := strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256_" + gameID)); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256"))
+}
+
 func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deployment, experimentID, arm, caseID string) (runExperimentMeta, error) {
-	d, ok := c.deployment(deployment)
-	if !ok || !d.Enabled {
-		return runExperimentMeta{}, fmt.Errorf("deployment %q is unavailable", deployment)
+	d, err := c.resolvedDeployment(deployment)
+	if err != nil {
+		return runExperimentMeta{}, err
+	}
+	if !d.ServesStrategist() {
+		return runExperimentMeta{}, fmt.Errorf("deployment %q speaks %s and can only serve the fast decision engine", deployment, d.Protocol)
 	}
 	runID, _ := raw["run_id"].(string)
 	if strings.TrimSpace(runID) == "" {
@@ -874,10 +1325,11 @@ func (c *modelExperimentController) resolveRunMeta(raw map[string]any, deploymen
 		return runExperimentMeta{}, fmt.Errorf("deployment %q allows at most %d parallel worker(s)", deployment, d.ParallelLimit())
 	}
 	comparable := farm.ComparableRunConfig{
-		GitRevision: c.wall.Version, ROMIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_ROM_SHA256")), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
-		Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
+		GitRevision: c.wall.Version, ROMIdentity: experimentROMIdentity(stringValue(raw["game"])), PromptIdentity: strings.TrimSpace(os.Getenv("POKEPILOT_PROMPT_SHA256")),
+		Game: stringValue(raw["game"]), Seed: int64Number(raw["seed"]), Starter: stringValue(raw["starter"]), Goal: stringValue(raw["goal"]), PlayStyle: stringValue(raw["play_style"]),
 		RiskTolerance: stringValue(raw["risk_tolerance"]), WildEncounters: stringValue(raw["wild_encounters"]), ReasoningEffort: stringValue(raw["reasoning_effort"]),
-		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]), MaxParallelWorkers: parallel,
+		FPS: intNumber(raw["fps"]), MaxRounds: intNumber(raw["max_rounds"]), MaxFrames: intNumber(raw["max_frames"]),
+		RecoveryProfile: farm.RecoveryProfile(stringValue(raw["recovery_profile"])), MaxParallelWorkers: parallel,
 	}
 	blob, _ := json.Marshal(comparable)
 	hash := sha256.Sum256(blob)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -24,13 +25,27 @@ func normalizeRedFailure(phase gameruntime.FailurePhase, err error, final Observ
 		out = OutcomeControllerUncertain
 	}
 	cause, context := failureCauseFor(err)
-	return gameruntime.Failure{
+	failure := gameruntime.Failure{
 		Phase:       phase,
 		Class:       failureClassForOutcome(out),
 		Cause:       string(cause),
 		Recoverable: actionFor(out) == actionReplan,
 		Context:     context,
 	}
+	var prerequisite *gameruntime.PrerequisiteMissingError
+	if errors.As(err, &prerequisite) {
+		failure.Prerequisites = append([]gameruntime.Prerequisite(nil), prerequisite.Missing...)
+	} else if cause == "route_prerequisite_missing" {
+		// Route errors predate PrerequisiteMissingError. Project their typed
+		// capability context into the shared prerequisite field so generic
+		// recovery consumes one model for route and story blockers.
+		for _, raw := range context {
+			if raw != "" {
+				failure.Prerequisites = append(failure.Prerequisites, gameruntime.CapabilityPrerequisite(gameruntime.CapabilityID(raw)))
+			}
+		}
+	}
+	return failure
 }
 
 // classifyObjectiveOutcome remains as a Red-adapter helper because focused
@@ -70,6 +85,19 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomeControllerUncertain
 	}
 
+	// A semantic transition executor is part of navigation. Its typed wrapper
+	// used to fall through to unknown_failure even on a clean overworld
+	// boundary, making one failed Surf/gate/puzzle transition terminal (#1758).
+	// Preserve fail-closed behavior when the controller boundary is unsafe, but
+	// let a stable transition failure enter the normal bounded replan policy.
+	var transitionExecution *world.TransitionExecutionError
+	if errors.As(err, &transitionExecution) {
+		if stableObjectiveBoundary(final) {
+			return OutcomeBlocked
+		}
+		return OutcomeControllerUncertain
+	}
+
 	if errors.Is(err, skill.ErrBattle) || errors.Is(err, skill.ErrBattleInterrupted) {
 		return OutcomeOwnershipFailure
 	}
@@ -78,9 +106,19 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomePostconditionFailed
 	}
 
+	var requiredBattle *skill.RequiredBattleError
+	if errors.As(err, &requiredBattle) {
+		return OutcomeBlocked
+	}
+
 	if errors.Is(err, skill.ErrBlackedOut) ||
 		errors.Is(err, skill.ErrCatchBlackout) ||
 		errors.Is(err, skill.ErrCatchHuntExhausted) ||
+		errors.Is(err, skill.ErrCatchMissed) ||
+		errors.Is(err, skill.ErrSafariCatchExhausted) ||
+		errors.Is(err, skill.ErrFishingHuntExhausted) ||
+		errors.Is(err, skill.ErrFishingNoShoreline) ||
+		errors.Is(err, skill.ErrFishingNoFishHere) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
 		errors.Is(err, skill.ErrTrainProgress) ||
 		errors.Is(err, ErrTrainingInefficient) ||
@@ -88,7 +126,9 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrNotInStock) ||
 		errors.Is(err, skill.ErrBagNotRisen) ||
 		errors.Is(err, skill.ErrFieldRosterNoBalls) ||
+		errors.Is(err, skill.ErrFieldRosterCatch) ||
 		errors.Is(err, skill.ErrPCBoxFull) ||
+		errors.Is(err, skill.ErrPCNoKnownCenter) ||
 		errors.Is(err, skill.ErrFieldRosterPrerequisite) ||
 		errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return OutcomeBlocked
@@ -96,7 +136,9 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 
 	var blocked *skill.ErrBlocked
 	var gate *skill.ErrRouteGateClosed
-	knownBlockage := errors.Is(err, world.ErrNoPath) ||
+	var semanticPrerequisite *gameruntime.PrerequisiteMissingError
+	knownBlockage := errors.As(err, &semanticPrerequisite) ||
+		errors.Is(err, world.ErrNoPath) ||
 		errors.Is(err, world.ErrNoRoute) ||
 		errors.Is(err, skill.ErrLegUnwalkable) ||
 		errors.Is(err, skill.ErrNoDialogue) ||
@@ -118,12 +160,14 @@ func recoverableControllerFault(err error) bool {
 	return errors.Is(err, emu.ErrFrameDeadline) ||
 		errors.Is(err, skill.ErrNavigationStalled) ||
 		errors.Is(err, skill.ErrReplanExhausted) ||
+		errors.Is(err, skill.ErrEngagementsExhausted) ||
 		errors.Is(err, skill.ErrMenuStuck) ||
 		errors.Is(err, skill.ErrCutsceneTimeout) ||
 		errors.Is(err, skill.ErrForcedChoiceStuck) ||
 		errors.Is(err, skill.ErrPickupMenu) ||
 		errors.Is(err, skill.ErrShopMenuTimeout) ||
-		errors.Is(err, skill.ErrShopControllerStalled)
+		errors.Is(err, skill.ErrShopControllerStalled) ||
+		errors.Is(err, skill.ErrSaffronGateInteractionStalled)
 }
 
 func failureCauseFor(err error) (FailureCauseID, []string) {
@@ -144,6 +188,48 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrReplanExhausted) {
 		return "route_replan_exhausted", nil
 	}
+	var semanticPrerequisite *gameruntime.PrerequisiteMissingError
+	if errors.As(err, &semanticPrerequisite) {
+		context := make([]string, 0, len(semanticPrerequisite.Missing))
+		hasObjectivePrerequisite := false
+		for _, prerequisite := range semanticPrerequisite.Missing {
+			switch {
+			case prerequisite.Progress != "":
+				hasObjectivePrerequisite = true
+				context = append(context, string(prerequisite.Progress))
+			case prerequisite.FieldCapability != "":
+				hasObjectivePrerequisite = true
+				context = append(context, string(prerequisite.FieldCapability))
+			case prerequisite.Capability != "":
+				context = append(context, string(prerequisite.Capability))
+			}
+		}
+		if hasObjectivePrerequisite {
+			return "progression_prerequisite_missing", context
+		}
+		return "route_prerequisite_missing", context
+	}
+	var transitionExecution *world.TransitionExecutionError
+	if errors.As(err, &transitionExecution) {
+		context := []string(nil)
+		if transitionExecution.Transition.ID != "" {
+			context = []string{transitionExecution.Transition.ID}
+		}
+		if errors.Is(transitionExecution, world.ErrTransitionExecutionStalled) {
+			return "navigation_stalled", context
+		}
+		var blockage *gameruntime.TransitionBlockage
+		if errors.As(transitionExecution, &blockage) {
+			missing := make([]string, 0, len(blockage.Missing))
+			for _, id := range blockage.Missing {
+				missing = append(missing, string(id))
+			}
+			sort.Strings(missing)
+			return "route_prerequisite_missing", missing
+		}
+		return "transition_execution_failed", context
+	}
+
 	var routeBlocked *world.RouteBlockedError
 	if errors.As(err, &routeBlocked) {
 		missing := routeBlocked.MissingCapabilities()
@@ -164,6 +250,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldItemPrompt) {
 		return "field_item_prompt", nil
 	}
+	if errors.Is(err, skill.ErrPickupApproachIncomplete) {
+		return "pickup_approach_incomplete", nil
+	}
 	if errors.Is(err, ErrObjectivePostconditionFailed) {
 		return "objective_postcondition_failed", nil
 	}
@@ -176,11 +265,17 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrShopStabilization) {
 		return "shop_stabilization_failed", nil
 	}
+	if errors.Is(err, skill.ErrLinkStalled) {
+		return "link_stalled", nil
+	}
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return "frame_deadline", nil
 	}
 	if errors.Is(err, skill.ErrNavigationStalled) {
 		return "navigation_stalled", nil
+	}
+	if errors.Is(err, skill.ErrEngagementsExhausted) {
+		return "travel_engagements_exhausted", nil
 	}
 	if errors.Is(err, skill.ErrShopMenuTimeout) {
 		return "shop_menu_timeout", nil
@@ -190,6 +285,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrMenuStuck) {
 		return "menu_stuck", nil
+	}
+	if errors.Is(err, skill.ErrSaffronGateInteractionStalled) {
+		return "saffron_gate_interaction_stalled", nil
 	}
 	if errors.Is(err, skill.ErrCutsceneTimeout) {
 		return "cutscene_timeout", nil
@@ -206,8 +304,22 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldItemNoEffect) {
 		return "field_item_no_effect", nil
 	}
+	var requiredBattle *skill.RequiredBattleError
+	if errors.As(err, &requiredBattle) {
+		context := []string(nil)
+		if requiredBattle.Outcome.Encounter != "" {
+			context = []string{requiredBattle.Outcome.Encounter}
+		}
+		if requiredBattle.Outcome.Result == state.ResultLost {
+			return failureCauseCombatDefeat, context
+		}
+		return failureCauseCombatNotWon, context
+	}
 	if errors.Is(err, skill.ErrTrainerBlackedOut) {
-		return "trainer_blacked_out", nil
+		// Direct/nested skill callers may still expose the compatibility
+		// sentinel without a TravelResult. Its semantic meaning is the same
+		// required combat defeat as portable BattleEvidence.
+		return failureCauseCombatDefeat, nil
 	}
 	if errors.Is(err, skill.ErrCatchBlackout) {
 		return "catch_blackout", nil
@@ -215,8 +327,22 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrBlackedOut) {
 		return "blacked_out", nil
 	}
-	if errors.Is(err, skill.ErrCatchHuntExhausted) {
+	if errors.Is(err, skill.ErrCatchHuntExhausted) || errors.Is(err, skill.ErrSafariCatchExhausted) {
+		// A Safari hunt is the same bounded stochastic session, spent on
+		// paid sessions instead of grass legs.
 		return "catch_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrCatchMissed) {
+		return "catch_attempt_missed", nil
+	}
+	if errors.Is(err, skill.ErrFishingHuntExhausted) {
+		return "fishing_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrFishingNoShoreline) {
+		return "fishing_no_shoreline", nil
+	}
+	if errors.Is(err, skill.ErrFishingNoFishHere) {
+		return "fishing_no_fish_here", nil
 	}
 	if errors.Is(err, ErrTrainingInefficient) {
 		return "training_inefficient_area", nil
@@ -239,8 +365,14 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldRosterNoBalls) {
 		return "no_pokeball", nil
 	}
+	if errors.Is(err, skill.ErrFieldRosterCatch) {
+		return "field_roster_catch_failed", nil
+	}
 	if errors.Is(err, skill.ErrPCBoxFull) {
 		return "pc_box_full", nil
+	}
+	if errors.Is(err, skill.ErrPCNoKnownCenter) {
+		return "pc_no_known_center", nil
 	}
 	if errors.Is(err, skill.ErrFieldRosterNoRecovery) {
 		return "field_roster_no_recovery", nil

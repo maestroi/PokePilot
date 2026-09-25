@@ -25,6 +25,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/qualification"
 	redrom "github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -243,7 +244,7 @@ func executeCase(cfg config, c qualification.Case, stdout io.Writer) caseResult 
 	var err error
 	switch c.Runner {
 	case qualification.RunnerGoTest:
-		result.Command, result.Evidence, err = runGoTestCase(cfg, c, caseDir, stdout)
+		result.Command, result.Evidence, result.CheckpointHash, err = runGoTestCase(cfg, c, caseDir, stdout)
 	case qualification.RunnerRedSkill:
 		result.Evidence, result.CheckpointHash, err = runRedSkillCase(cfg, c, caseDir)
 	case qualification.RunnerFullRun:
@@ -264,7 +265,27 @@ func executeCase(cfg config, c qualification.Case, stdout io.Writer) caseResult 
 	return result
 }
 
-func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.Writer) ([]string, []string, error) {
+func preparePrivateCheckpointEvidence(cfg config, c qualification.Case, caseDir string) ([]string, string, error) {
+	if c.Checkpoint == "" || strings.HasPrefix(c.Checkpoint, "fixture:") {
+		return nil, "", nil
+	}
+	checkpoint, err := corpusCheckpoint(cfg.corpus, c.Checkpoint)
+	if err != nil {
+		return nil, "", err
+	}
+	stateBytes, err := os.ReadFile(checkpoint)
+	if err != nil {
+		return nil, "", fmt.Errorf("pokequal: %s checkpoint %s: %w", c.ID, checkpoint, err)
+	}
+	checkpointHash := sha256Hex(stateBytes)
+	startCopy := filepath.Join(caseDir, "start.state")
+	if err := os.WriteFile(startCopy, stateBytes, 0o600); err != nil {
+		return nil, checkpointHash, fmt.Errorf("pokequal: %s preserve checkpoint evidence: %w", c.ID, err)
+	}
+	return []string{relativeEvidence(cfg.out, startCopy)}, checkpointHash, nil
+}
+
+func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.Writer) ([]string, []string, string, error) {
 	args := []string{"test"}
 	if c.Short {
 		args = append(args, "-short")
@@ -274,10 +295,14 @@ func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.W
 		args = append(args, "-run", c.Test, "-v")
 	}
 	command := append([]string{"go"}, args...)
+	evidence, checkpointHash, err := preparePrivateCheckpointEvidence(cfg, c, caseDir)
+	if err != nil {
+		return command, evidence, checkpointHash, err
+	}
 	logPath := filepath.Join(caseDir, "run.log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		return command, nil, err
+		return command, evidence, checkpointHash, err
 	}
 	defer logFile.Close()
 	fixtureDir := filepath.Join(cfg.out, "fixtures")
@@ -286,7 +311,7 @@ func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.W
 	cmd.Stdout = io.MultiWriter(stdout, logFile)
 	cmd.Stderr = io.MultiWriter(stdout, logFile)
 	err = cmd.Run()
-	evidence := []string{relativeEvidence(cfg.out, logPath)}
+	evidence = append(evidence, relativeEvidence(cfg.out, logPath))
 	if strings.HasPrefix(c.Checkpoint, "fixture:") {
 		// The named fixture cache is inside the uploaded output. It is the exact
 		// replayable input used by this run, whether the test passed or failed.
@@ -297,7 +322,7 @@ func runGoTestCase(cfg config, c qualification.Case, caseDir string, stdout io.W
 			evidence = append(evidence, relativeEvidence(cfg.out, copied))
 		}
 	}
-	return command, evidence, err
+	return command, evidence, checkpointHash, err
 }
 
 func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string, string, error) {
@@ -346,6 +371,16 @@ func runRedSkillCase(cfg config, c qualification.Case, caseDir string) ([]string
 		actionErr = skill.RocketHideout(m, romBytes, policy)
 	case "pokemon-tower":
 		actionErr = skill.PokemonTower(m, romBytes, policy)
+	case "fuchsia-progression":
+		actionErr = skill.FuchsiaProgression(m, romBytes, policy)
+	case "silph-sabrina":
+		actionErr = runSilphSabrinaQualification(m, romBytes, policy)
+	case "cinnabar-blaine":
+		actionErr = runCinnabarBlaineQualification(m, romBytes, policy)
+	case "viridian-giovanni":
+		actionErr = skill.ViridianProgression(m, romBytes, policy)
+	case "victory-road-indigo":
+		actionErr = skill.VictoryRoadProgression(m, romBytes, policy)
 	default:
 		actionErr = fmt.Errorf("unknown Red qualification action %q", c.Action)
 	}
@@ -495,6 +530,43 @@ func runFullCase(cfg config, caseDir string, stdout io.Writer) ([]string, error)
 	return evidence, nil
 }
 
+func runSilphSabrinaQualification(m *emu.Emu, romBytes []byte, policy skill.MovePolicy) error {
+	if err := skill.OpenSaffronGate(m, romBytes, policy); err != nil {
+		return fmt.Errorf("open Saffron: %w", err)
+	}
+	if err := skill.AcquireSilphCardKey(m, romBytes, policy); err != nil {
+		return fmt.Errorf("acquire Card Key: %w", err)
+	}
+	if err := skill.ClearSilphCo(m, romBytes, policy); err != nil {
+		return fmt.Errorf("clear Silph Co: %w", err)
+	}
+	dest, ok := skill.Place("saffron gym")
+	if !ok {
+		return fmt.Errorf("saffron gym place missing")
+	}
+	if _, err := skill.TravelFlee(m, romBytes, dest, policy, 60); err != nil {
+		return fmt.Errorf("reach Saffron Gym: %w", err)
+	}
+	outcome, err := skill.Gym(m, romBytes, policy)
+	if err != nil {
+		return fmt.Errorf("Sabrina: %w", err)
+	}
+	if outcome != state.ResultWon {
+		return fmt.Errorf("Sabrina outcome=%d, want won", outcome)
+	}
+	return nil
+}
+
+func runCinnabarBlaineQualification(m *emu.Emu, romBytes []byte, policy skill.MovePolicy) error {
+	if err := skill.AcquireCinnabarSecretKey(m, romBytes, policy); err != nil {
+		return fmt.Errorf("acquire Secret Key: %w", err)
+	}
+	if err := skill.CinnabarProgression(m, romBytes, policy); err != nil {
+		return fmt.Errorf("Blaine: %w", err)
+	}
+	return nil
+}
+
 func verifyExpectation(expect qualification.Expectation, obs agent.Observation) error {
 	switch expect.Kind {
 	case "":
@@ -506,6 +578,18 @@ func verifyExpectation(expect qualification.Expectation, obs agent.Observation) 
 			}
 		}
 		return fmt.Errorf("item %q is not owned", expect.Value)
+	case "badge":
+		for _, badge := range obs.Badges {
+			if strings.EqualFold(badge, expect.Value) {
+				return nil
+			}
+		}
+		return fmt.Errorf("badge %q is not owned", expect.Value)
+	case "progress":
+		if obs.Story.Has(agent.ProgressID(expect.Value)) {
+			return nil
+		}
+		return fmt.Errorf("progress %q is not complete", expect.Value)
 	default:
 		return fmt.Errorf("unsupported expectation kind %q", expect.Kind)
 	}
@@ -539,6 +623,7 @@ func corpusCheckpoint(root, rel string) (string, error) {
 func qualificationEnv(cfg config, fixtureDir string) []string {
 	env := os.Environ()
 	env = setEnv(env, "POKEMON_RED_ROM", cfg.romPath)
+	env = setEnv(env, "POKEPILOT_QUALIFICATION_CORPUS", cfg.corpus)
 	env = setEnv(env, "POKEPILOT_FIXTURE_DIR", fixtureDir)
 	// A self-hosted runner may also be a farm worker. Qualification must not
 	// accidentally lease unrelated work while running child tests.

@@ -49,26 +49,31 @@ type storedCompletion struct {
 }
 
 type storedFailure struct {
-	Key       ObjectiveKey `json:"key,omitempty"`
-	Mode      string       `json:"mode,omitempty"`
-	Objective string       `json:"objective"`
-	Times     int          `json:"times"`
-	Last      string       `json:"last"`
+	Key               ObjectiveKey `json:"key,omitempty"`
+	Mode              string       `json:"mode,omitempty"`
+	Objective         string       `json:"objective"`
+	Times             int          `json:"times"`
+	Last              string       `json:"last"`
+	Build             string       `json:"build,omitempty"`
+	ReadinessBaseline int          `json:"readiness_baseline,omitempty"`
+	ReadinessTarget   int          `json:"readiness_target,omitempty"`
 }
 
 // memoryFile is the v6 serialised form. Adjacency and native-map translation
 // are rebuilt from the active adapter/ROM on resume and are never persisted.
 type memoryFile struct {
-	Version      int                `json:"version"`
-	Visited      []LocationID       `json:"visited"`
-	Places       []string           `json:"places"`
-	Completed    []storedCompletion `json:"completed"`
-	Talked       []talkedKey        `json:"talked"`
-	Requirements []Requirement      `json:"requirements,omitempty"`
-	Failures     []storedFailure    `json:"failures,omitempty"`
-	Intent       string             `json:"intent,omitempty"`
-	IntentAge    int                `json:"intent_age,omitempty"`
-	Plan         Plan               `json:"plan,omitempty"`
+	Version                 int                     `json:"version"`
+	Visited                 []LocationID            `json:"visited"`
+	Places                  []string                `json:"places"`
+	Completed               []storedCompletion      `json:"completed"`
+	Talked                  []talkedKey             `json:"talked"`
+	Requirements            []Requirement           `json:"requirements,omitempty"`
+	Failures                []storedFailure         `json:"failures,omitempty"`
+	TrainingAreas           []TrainingAreaKnowledge `json:"training_areas,omitempty"`
+	TrainingAreasBackfilled bool                    `json:"training_areas_backfilled,omitempty"`
+	Intent                  string                  `json:"intent,omitempty"`
+	IntentAge               int                     `json:"intent_age,omitempty"`
+	Plan                    Plan                    `json:"plan,omitempty"`
 }
 
 type talkedKey struct {
@@ -146,6 +151,20 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
 
+	mem.TrainingAreasBackfilled = k.TrainingAreasBackfilled
+	trainingLocations := make([]LocationID, 0, len(k.TrainingAreas))
+	for location := range k.TrainingAreas {
+		trainingLocations = append(trainingLocations, location)
+	}
+	sort.Slice(trainingLocations, func(i, j int) bool { return trainingLocations[i] < trainingLocations[j] })
+	for _, location := range trainingLocations {
+		area := k.TrainingAreas[location]
+		if area.Location == "" {
+			area.Location = location
+		}
+		mem.TrainingAreas = append(mem.TrainingAreas, area)
+	}
+
 	failureKeys := make([]string, 0, len(k.Failures))
 	for storage := range k.Failures {
 		failureKeys = append(failureKeys, storage)
@@ -153,7 +172,10 @@ func encodeMemoryFile(k *Knowledge, intent string, intentAge int, plans ...Plan)
 	sort.Strings(failureKeys)
 	for _, storage := range failureKeys {
 		failure := k.Failures[storage]
-		entry := storedFailure{Objective: failure.Objective, Times: failure.Times, Last: failure.Last}
+		entry := storedFailure{
+			Objective: failure.Objective, Times: failure.Times, Last: failure.Last, Build: failure.Build,
+			ReadinessBaseline: failure.ReadinessBaseline, ReadinessTarget: failure.ReadinessTarget,
+		}
 		if key, mode, ok := parseFailureStorageKey(storage); ok {
 			entry.Key, entry.Mode = key, mode
 		}

@@ -53,6 +53,7 @@ export interface SpectatorRun {
   fps?: number
   llm_profile?: string
   play_style?: string
+  purpose?: string
   risk_tolerance?: string
   wild_encounters?: string
   queued_at?: number
@@ -61,6 +62,9 @@ export interface SpectatorRun {
   map?: number
   x?: number
   y?: number
+  maps_visited?: number
+  planner_waiting?: boolean
+  planner_options?: number
   decision?: string
   stop_so_far?: string
   stats?: SpectatorStats

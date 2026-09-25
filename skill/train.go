@@ -36,14 +36,31 @@ const (
 	trainForestTileset uint8 = 3
 )
 
+type TrainMode string
+
+const (
+	TrainDirect TrainMode = "direct"
+	TrainSwitch TrainMode = "switch"
+)
+
+// TrainOptions controls how the lead earns XP. Switch training deliberately
+// starts the weak target and then hands each wild fight to a stronger carry;
+// MinCarryLevel is the safety floor computed by the agent from the local wild
+// band. The zero value preserves ordinary direct training.
+type TrainOptions struct {
+	Mode          TrainMode
+	MinCarryLevel uint8
+}
+
 // TrainResult reports what a grind session did.
 type TrainResult struct {
-	StartLevel int  // the lead's level when the session began
-	EndLevel   int  // the lead's level when it ended
-	Battles    int  // wild battles fought
-	BlackedOut bool // a battle ended in ResultLost
-	Reached    bool // EndLevel >= targetLevel
-	Retreated  bool // stopped while the party was alive: continuing would have lost it
+	StartLevel int       // the lead/target's level when the session began
+	EndLevel   int       // the lead/target's level when it ended
+	Battles    int       // wild battles fought
+	BlackedOut bool      // a battle ended in ResultLost
+	Reached    bool      // EndLevel >= targetLevel
+	Retreated  bool      // stopped while the party was alive: continuing would have lost it
+	Mode       TrainMode // direct or deliberate switch training
 }
 
 // ErrTrainRetreat marks a Train session that ended while the party was still
@@ -54,6 +71,12 @@ type TrainResult struct {
 // and it carries the exemption agent.Run gives a blackout: the session
 // changed the party, so repeating the objective is not an identical attempt.
 var ErrTrainRetreat = errors.New("skill: Train: stopped while the party was alive: continuing would have lost it")
+
+// ErrTrainCarryUnavailable is an internal/surfaced safety class for switch
+// training. If the live encounter has no healthy eligible carry, Train flees
+// that wild battle and ends the session as a retreat rather than leaving the
+// weak target to fight an encounter it was explicitly judged unsafe to face.
+var ErrTrainCarryUnavailable = errors.New("skill: Train: no safe switch-training carry available")
 
 // ErrTrainProgress marks a Train session that exhausted its battle budget
 // short of targetLevel but still raised the lead's level at least once. The
@@ -139,6 +162,16 @@ const (
 // battle is still fought: Train never leaves a battle in progress, so a
 // session may fight maxBattles+1.
 func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBattles int) (TrainResult, error) {
+	return TrainWithOptions(m, romData, targetLevel, policy, maxBattles, TrainOptions{Mode: TrainDirect})
+}
+
+func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBattles int, options TrainOptions) (TrainResult, error) {
+	if options.Mode == "" {
+		options.Mode = TrainDirect
+	}
+	if options.Mode != TrainDirect && options.Mode != TrainSwitch {
+		return TrainResult{}, fmt.Errorf("skill: Train: unknown training mode %q", options.Mode)
+	}
 	if policy == nil {
 		return TrainResult{}, fmt.Errorf("skill: Train: nil policy")
 	}
@@ -154,10 +187,13 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	if !state.Controllable(&mem) {
 		return TrainResult{}, fmt.Errorf("skill: Train: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
-	now := currentWorld(m)
-	res := TrainResult{StartLevel: int(state.DecodeParty(&mem).Mons[0].Level)}
+	now, err := currentWorld(m)
+	if err != nil {
+		return TrainResult{}, fmt.Errorf("skill: Train: observe world: %w", err)
+	}
+	res := TrainResult{StartLevel: int(state.DecodeParty(&mem).Mons[0].Level), Mode: options.Mode}
 
-	grass, grid, err := grassCells(romData, now.Map)
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
 	if err != nil {
 		return res, err
 	}
@@ -183,7 +219,7 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	// next battle is more likely to faint the lead than to level it, so the
 	// session ends before it fights anything. Healing is the caller's
 	// decision (KindHeal exists for exactly this).
-	if leadBelowRetreatLine(m) {
+	if trainingRetreatDue(m, options) {
 		res.EndLevel = res.StartLevel
 		res.Retreated = true
 		return res, nil
@@ -205,10 +241,16 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 	next := b
 	legs := 0
 	for {
-		tr, err := Travel(m, romData, Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}, policy, maxBattles-res.Battles)
+		tr, err := travelTrainingLeg(m, romData, Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}, policy, maxBattles-res.Battles, options)
 		res.Battles += tr.Battles
 		if tr.BlackedOut {
 			res.BlackedOut = true
+		}
+		if errors.Is(err, ErrTrainCarryUnavailable) {
+			res.EndLevel = leadLevel(m)
+			res.Reached = res.EndLevel >= targetLevel
+			res.Retreated = !res.Reached
+			return res, nil
 		}
 		if err != nil && !battleInFlight(m) {
 			// A non-battle failure: nothing is left in progress, so the
@@ -236,15 +278,23 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 			return res, err
 		}
 		if err != nil {
-			// Travel's budget ran out with a fresh encounter pending.
-			// Finish it: the session ends, but nothing may be left
-			// mid-battle.
-			outcome, berr := Battle(m, policy)
+			// The engagement budget can expire with a fresh encounter pending.
+			// Finish it under the same training method so switch training never
+			// silently degrades to direct combat on the final battle.
+			r, berr := resolveTrainingBattle(m, policy, options)()
+			if errors.Is(berr, ErrTrainCarryUnavailable) {
+				res.EndLevel = leadLevel(m)
+				res.Reached = res.EndLevel >= targetLevel
+				res.Retreated = !res.Reached
+				return res, nil
+			}
 			if berr != nil {
 				return res, fmt.Errorf("skill: Train: battle %d: %w", res.Battles+1, berr)
 			}
-			res.Battles++
-			if outcome == state.ResultLost {
+			if !r.fled {
+				res.Battles++
+			}
+			if r.outcome == state.ResultLost {
 				res.BlackedOut = true
 			}
 		}
@@ -257,9 +307,25 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 		// it. End the session and report the retreat; a blackout costs half
 		// the money and the walk back, this costs only the level the next,
 		// healed, session can still earn.
-		if leadBelowRetreatLine(m) {
+		if trainingRetreatDue(m, options) {
 			res.Retreated = true
 			return res, nil
+		}
+		// A map script can switch random battles off for the cell the player
+		// stands on (wStatusFlags4 BIT_NO_BATTLES: Mt. Moon B2F's fossil
+		// area, Pokemon Tower 5F's purified zone), and NewBattle then skips
+		// the encounter roll. The ROM's grass rule cannot see that, so the
+		// flag read after arriving is the fact: MEASURED on
+		// run-1hk2olbnt05ae, a pair inside the fossil area walked 854 legs
+		// without a single roll. Drop the cell and re-pick.
+		if m.Peek8(sym.StatusFlags4)&noBattlesBit != 0 {
+			x, y := playerXY(m)
+			grass = withoutCell(grass, cell{int(x), int(y)})
+			if na, nb, ok := repickGrindPair(m, grass, grid, a, b); ok && legs+1 <= maxLegs {
+				a, b, next = na, nb, nb
+				legs++
+				continue
+			}
 		}
 		if legs+1 > maxLegs {
 			species := 0
@@ -271,6 +337,84 @@ func Train(m *emu.Emu, romData []byte, targetLevel int, policy MovePolicy, maxBa
 		next = flip(a, b, next)
 		legs++
 	}
+}
+
+func trainingCarryReady(mem *state.Mem, minLevel uint8) bool {
+	party := state.DecodeParty(mem)
+	for slot, mon := range party.Mons {
+		if slot == 0 || mon.Fainted() || mon.Level < minLevel || mon.StatusName() == "frozen" {
+			continue
+		}
+		if mon.MaxHP > 0 && mon.HP*retreatLineDen < mon.MaxHP*retreatLineNum {
+			continue
+		}
+		for _, pp := range mon.PP {
+			if pp > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func trainingRetreatDue(m *emu.Emu, options TrainOptions) bool {
+	if leadBelowRetreatLine(m) {
+		return true
+	}
+	if options.Mode != TrainSwitch {
+		return false
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return !trainingCarryReady(&mem, options.MinCarryLevel)
+}
+
+// resolveTrainingBattle preserves ordinary Battle for trainer interruptions,
+// but on wild encounters it verifies a real carry against the actual opponent,
+// then forces the opening switch. If the encounter-specific matchup has no
+// eligible carry, flee to a stable overworld boundary and let Train retreat.
+func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) resolveBattle {
+	return func() (battleResolution, error) {
+		trainer := state.BattleKind(m.Peek8(sym.IsInBattle)) == state.BattleTrainer
+		if trainer || options.Mode != TrainSwitch {
+			outcome, err := Battle(m, policy)
+			return battleResolution{outcome: outcome, trainer: trainer}, err
+		}
+
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		bs := state.DecodeBattle(&mem)
+		if bs == nil {
+			return battleResolution{}, fmt.Errorf("skill: Train: switch-training encounter disappeared before carry selection")
+		}
+		decision := chooseTrainingCarrySwitch(m.ROM(), &mem, *bs, options.MinCarryLevel)
+		if !decision.Switch {
+			if err := Flee(m, guaranteedWildFleeAttempts); err != nil {
+				return battleResolution{}, fmt.Errorf("%w; flee unsafe encounter: %v", ErrTrainCarryUnavailable, err)
+			}
+			return battleResolution{fled: true}, ErrTrainCarryUnavailable
+		}
+		outcome, err := BattleWithOptions(m, policy, BattleOptions{
+			OpeningTrainingSwitch: true,
+			MinTrainingCarryLevel: options.MinCarryLevel,
+		})
+		return battleResolution{outcome: outcome}, err
+	}
+}
+
+func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int, options TrainOptions) (TravelResult, error) {
+	if maxBattles <= 0 {
+		return TravelResult{}, fmt.Errorf("skill: Train: travel battle budget must be > 0, got %d", maxBattles)
+	}
+	var egresses []EmergencyEgress
+	res, err := travel(m, policy, maxBattles,
+		recoveringGoTo(m, romData, dest, policy, &egresses),
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		resolveTrainingBattle(m, policy, options),
+	)
+	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
+	return res, err
 }
 
 // PromoteToLead moves party member index (1..Count-1) into slot 0 through
@@ -541,6 +685,83 @@ func HasReachableGrass(romData []byte, mapID uint8, px, py uint8) (bool, error) 
 	return len(grassInPlayerComponent(grass, grid, int(px), int(py))) > 0, nil
 }
 
+// liveEncounterCells overlays the current map's post-script collision state
+// onto the ROM-derived encounter cells. Maps such as Pokemon Mansion replace
+// blocks when statue switches move doors; a static collision grid can therefore
+// advertise an encounter cell that the player cannot reach in the live state.
+// Off-map callers still use grassCells because there is no live geometry to
+// observe.
+func liveEncounterCells(m *emu.Emu, romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
+	grass, staticGrid, err := grassCells(romData, mapID)
+	if err != nil || len(grass) == 0 || m == nil || m.Peek8(sym.CurMap) != mapID {
+		return grass, staticGrid, err
+	}
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("skill: encounter grid: parse map %#04x: %w", mapID, err)
+	}
+	live, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return nil, nil, fmt.Errorf("skill: encounter grid: live map %#04x: %w", mapID, err)
+	}
+	allTiles := mapID >= trainFirstIndoorMap && h.Tileset != trainForestTileset
+	return encounterCellsForWalkability(grass, live.Width, live.Height, allTiles, live.Walkable), live, nil
+}
+
+// encounterCellsForWalkability applies live walkability without coupling the
+// encounter rules to a concrete Grid. Indoor non-FOREST maps roll encounters
+// on every walkable tile; outdoor/FOREST maps retain the ROM-derived encounter
+// cells and only discard cells that live topology has closed.
+func encounterCellsForWalkability(static []cell, width, height int, allTiles bool, walkable func(int, int) bool) []cell {
+	if walkable == nil {
+		return append([]cell(nil), static...)
+	}
+	if allTiles {
+		out := make([]cell, 0, width*height)
+		for y := 0; y < height; y++ {
+			for x := 0; x < width; x++ {
+				if walkable(x, y) {
+					out = append(out, cell{x: x, y: y})
+				}
+			}
+		}
+		return out
+	}
+	out := make([]cell, 0, len(static))
+	for _, c := range static {
+		if walkable(c.x, c.y) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// HasReachableGrassLive is the current-map offer/execution predicate. Besides
+// using live scripted topology, it requires an actual two-cell grind pair,
+// matching the precondition shared by Train and Catch.
+func HasReachableGrassLive(m *emu.Emu, romData []byte) (bool, error) {
+	if m == nil {
+		return false, fmt.Errorf("skill: live encounter reachability: nil emulator")
+	}
+	now, err := currentWorld(m)
+	if err != nil {
+		return false, fmt.Errorf("skill: live encounter reachability: observe world: %w", err)
+	}
+	grass, grid, err := liveEncounterCells(m, romData, now.Map)
+	if err != nil {
+		return false, err
+	}
+	if len(grass) == 0 || grid == nil {
+		return false, nil
+	}
+	grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y))
+	if len(grass) == 0 {
+		return false, nil
+	}
+	_, _, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	return ok, nil
+}
+
 // grassCells returns the walkable cells of mapID that stand on the
 // tileset's grass tile — the cells where the game actually rolls wild
 // encounters — along with the map's collision grid (nil when the map has
@@ -754,6 +975,21 @@ func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cel
 		return a, b, false
 	}
 	return na, nb, true
+}
+
+// noBattlesBit is BIT_NO_BATTLES in wStatusFlags4
+// (pokered/constants/ram_constants.asm): NewBattle skips the wild roll while
+// it is set (home/overworld.asm).
+const noBattlesBit = 1 << 4
+
+func withoutCell(cells []cell, drop cell) []cell {
+	out := make([]cell, 0, len(cells))
+	for _, c := range cells {
+		if c != drop {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // battleInFlight reports whether a battle is in progress in RAM: the same

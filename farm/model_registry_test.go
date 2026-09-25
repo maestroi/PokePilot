@@ -42,19 +42,25 @@ func TestProductionModelRegistryValidates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"qwen38-27b-7900", "qwen35-4b-4090"} {
-		d, ok := registry.Deployment(id)
-		if !ok || !d.Enabled {
-			t.Fatalf("production registry missing enabled %s", id)
-		}
-		if d.Revision == "" || strings.HasPrefix(d.Revision, "replace-with-") {
-			t.Fatalf("%s still has a placeholder revision %q", id, d.Revision)
-		}
+	a, ok := registry.Deployment("qwen38-27b-7900")
+	if !ok || !a.Enabled || !a.Discover {
+		t.Fatalf("7900 deployment must be the discoverable farm default: %#v", a)
 	}
-	a, _ := registry.Deployment("qwen38-27b-7900")
-	b, _ := registry.Deployment("qwen35-4b-4090")
-	if a.CompatibilityProfile() != "auto" {
-		t.Fatalf("7900 legacy_profile = %q, want auto", a.CompatibilityProfile())
+	if a.CompatibilityProfile() != "auto" || a.MaxParallelWorkers != 4 || !a.HasDefaultRole("farm") {
+		t.Fatalf("7900 deployment = %#v", a)
+	}
+	if a.ModelID != "" || a.APIModel != "" || a.Revision != "" || a.Artifact != "" {
+		t.Fatalf("7900 deployment must not pin a static model identity: %#v", a)
+	}
+	if _, exists := registry.Deployment("qwen35-9b-7900"); exists {
+		t.Fatal("static 7900 9B pin must not compete with discovery; xtx-9b/xtx-27b share one endpoint")
+	}
+	b, ok := registry.Deployment("qwen35-4b-4090")
+	if !ok || !b.Enabled {
+		t.Fatalf("production registry missing enabled qwen35-4b-4090")
+	}
+	if b.Revision == "" || strings.HasPrefix(b.Revision, "replace-with-") {
+		t.Fatalf("qwen35-4b-4090 still has a placeholder revision %q", b.Revision)
 	}
 	if b.CompatibilityProfile() != "gpu" || b.APIModel != "pokepilot-4090" || b.ControlURL == "" {
 		t.Fatalf("4090 4B deployment = %#v", b)
@@ -68,5 +74,62 @@ func TestModelRegistryRejectsDuplicateDeployment(t *testing.T) {
 	}}
 	if err := registry.Validate(); err == nil {
 		t.Fatal("expected duplicate id error")
+	}
+}
+
+func TestDiscoverableDeploymentAllowsEndpointOnlyIdentity(t *testing.T) {
+	registry := ModelRegistry{Deployments: []ModelDeployment{
+		{ID: "dynamic", Label: "Dynamic endpoint", Compute: "gpu", Endpoint: "http://gpu/v1", Enabled: true, Discover: true, DefaultFor: []string{"farm", "experiment-a"}},
+	}}
+	if err := registry.Validate(); err != nil {
+		t.Fatalf("discoverable endpoint should validate without fixed model ids: %v", err)
+	}
+	d, _ := registry.Deployment("dynamic")
+	if !d.HasDefaultRole("FARM") || !d.HasDefaultRole("experiment-a") || d.HasDefaultRole("other") {
+		t.Fatalf("default roles = %#v", d.DefaultFor)
+	}
+}
+
+func TestUpsertAndDeleteModelDeploymentJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	if err := os.WriteFile(path, []byte(`{"deployments":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deployment := ModelDeployment{
+		ID: "new-gpu", Label: "New GPU", Compute: "gpu", Endpoint: "http://gpu:8000/v1",
+		Enabled: true, Discover: true, DefaultFor: []string{"farm"}, MaxParallelWorkers: 4,
+	}
+	if _, err := UpsertModelDeployment(path, deployment); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := registry.Deployment("new-gpu")
+	if !ok || !got.Discover || got.ParallelLimit() != 4 || !got.HasDefaultRole("farm") {
+		t.Fatalf("saved deployment = %#v", got)
+	}
+	deployment.Label = "Renamed GPU"
+	if _, err := UpsertModelDeployment(path, deployment); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = registry.Deployment("new-gpu")
+	if got.Label != "Renamed GPU" || len(registry.Deployments) != 1 {
+		t.Fatalf("updated registry = %#v", registry)
+	}
+	if err := DeleteModelDeployment(path, "new-gpu"); err != nil {
+		t.Fatal(err)
+	}
+	registry, err = LoadModelRegistry(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registry.Deployments) != 0 {
+		t.Fatalf("deployments after delete = %#v", registry.Deployments)
 	}
 }

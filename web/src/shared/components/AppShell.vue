@@ -30,15 +30,46 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
 </script>
 
 <template>
-  <div class="min-h-screen bg-transparent text-[var(--poke-text)]">
-    <Disclosure as="nav" class="sticky top-0 z-40 border-b border-[var(--poke-border)] bg-[#0f141c]" v-slot="{ open }">
-      <div class="flex h-11 items-center gap-2 px-2 sm:px-3">
-        <div class="flex min-w-0 items-center gap-2 border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]">
-          <span class="size-2 shrink-0 rounded-sm bg-[var(--poke-cyan)]" aria-hidden="true" />
+  <div
+    :class="[
+      'min-h-screen text-[var(--poke-text)]',
+      mode === 'public'
+        ? 'bg-[radial-gradient(circle_at_18%_-8%,rgba(37,99,235,.16),transparent_28rem),radial-gradient(circle_at_82%_0%,rgba(124,58,237,.12),transparent_30rem),#040812]'
+        : 'bg-transparent'
+    ]"
+  >
+    <Disclosure
+      as="nav"
+      :class="[
+        'sticky top-0 z-40 border-b',
+        mode === 'public'
+          ? 'border-white/8 bg-[#050914]/90 shadow-lg shadow-black/20 backdrop-blur-xl'
+          : 'border-[var(--poke-border)] bg-[#0f141c]'
+      ]"
+      v-slot="{ open }"
+    >
+      <div :class="['flex items-center gap-2 px-2 sm:px-3', mode === 'public' ? 'h-14' : 'h-11']">
+        <div
+          :class="[
+            'flex min-w-0 items-center gap-2',
+            mode === 'public' ? 'pr-4 sm:min-w-[12rem]' : 'border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]'
+          ]"
+        >
+          <span
+            :class="[
+              'shrink-0',
+              mode === 'public'
+                ? 'size-7 rounded-lg bg-gradient-to-br from-cyan-300 via-blue-500 to-violet-500 shadow-[0_0_24px_rgba(59,130,246,.28)] ring-1 ring-white/15'
+                : 'size-2 rounded-sm bg-[var(--poke-cyan)]'
+            ]"
+            aria-hidden="true"
+          />
           <div class="min-w-0 leading-tight">
-            <strong class="block truncate text-[15px] text-white">{{ mode === 'private' ? 'RomPilot Admin' : 'RomPilot' }}</strong>
-            <span class="hidden text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase sm:block">
-              {{ mode === 'private' ? 'Control plane' : 'Live runs' }}
+            <strong :class="['block truncate text-white', mode === 'public' ? 'text-base font-black tracking-tight' : 'text-[15px]']">
+              {{ mode === 'private' ? 'RomPilot Admin' : 'RomPilot' }}
+            </strong>
+            <span :class="['hidden text-[9px] tracking-[0.04em] uppercase sm:block', mode === 'public' ? 'text-cyan-200/55' : 'text-[var(--poke-muted)]']">
+              {{ mode === 'private' ? 'Control plane' : 'Autonomous game runs' }}
             </span>
           </div>
         </div>
@@ -51,9 +82,9 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
             :aria-current="item.current ? 'page' : undefined"
             :class="[
               item.current
-                ? 'border-[var(--poke-cyan)] text-white'
-                : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white',
-              'inline-flex items-center border-b-2 px-2.5 text-[13px] font-semibold'
+                ? (mode === 'public' ? 'border-cyan-300 text-white' : 'border-[var(--poke-cyan)] text-white')
+                : (mode === 'public' ? 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white' : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white'),
+              'inline-flex items-center border-b-2 px-3 text-[13px] font-semibold transition-colors'
             ]"
           >
             {{ item.name }}
@@ -104,7 +135,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
       </DisclosurePanel>
     </Disclosure>
 
-    <main class="px-2.5 py-2 sm:px-3">
+    <main :class="mode === 'public' ? 'px-2.5 py-3 sm:px-4 sm:py-4 xl:px-5' : 'px-2.5 py-2 sm:px-3'">
       <div v-if="showIntro && (title || subtitle)" class="mb-3 max-w-4xl">
         <span v-if="eyebrow && effectiveNavigation.length" class="poke-kicker block">{{ eyebrow }}</span>
         <h1 v-if="effectiveNavigation.length" class="text-xl font-semibold text-white">{{ title }}</h1>

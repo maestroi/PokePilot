@@ -40,6 +40,41 @@ test("bugGroupRuns selects every finished error/lost run in one triage pattern",
   assert.deepEqual(bugGroupRuns(runs, ""), []);
 });
 
+// A composed objective-failure pattern is
+// normalizeDetail(objective + " | " + error)[:128] + " | map=xx" — longer
+// than any normalized run detail — so the old exact comparison selected
+// nothing. The shared failure-id marker is the identity that makes cleanup
+// work again.
+test("bugGroupRuns matches a composed objective-failure group by failure-id", () => {
+  const marker = "hfhmhabpkfeiljbjdkcciamajgiehelcallfhlonokpeapokbahfnafeegkcipgl";
+  const group = {
+    key: "hfhmhabpkfeiljbjd",
+    count: 11,
+    pattern: `recover from repeated objective failures | failure recovery budget was exhausted: failure-id:${marker.slice(0, 28)} | map=06`,
+    example: `recover from repeated objective failures: failure recovery budget was exhausted: failure-id:${marker} progress blocked route_prerequisite_missing`,
+  };
+  const runs = [
+    { run_id: "marker", status: "done", reason: "failed", detail: `failure-id:${marker} progress blocked route_prerequisite_missing`, ended_at: 20 },
+    { run_id: "other-marker", status: "done", reason: "failed", detail: `failure-id:${"a".repeat(64)} progress blocked no_route`, ended_at: 10 },
+    { run_id: "clean-finish", status: "done", reason: "done", detail: `failure-id:${marker} progress blocked`, ended_at: 30 },
+    { run_id: "protected", status: "done", reason: "failed", resume_protected: true, detail: `failure-id:${marker} progress blocked`, ended_at: 40 },
+  ];
+
+  assert.deepEqual(
+    bugGroupRuns(runs, group).map((run) => run.run_id),
+    ["marker"],
+  );
+});
+
+test("bugGroupRuns still matches a legacy normalized pattern without a marker", () => {
+  const pattern = normalizeFailureDetail("still on map 0x0c at (10,35)");
+  const runs = [
+    { run_id: "legacy", status: "done", reason: "failed", detail: "still on map 0x21 at (4,22)", ended_at: 10 },
+  ];
+
+  assert.deepEqual(bugGroupRuns(runs, pattern).map((run) => run.run_id), ["legacy"]);
+});
+
 test("eligibleRuns selects only finished runs older than the cutoff", () => {
   const now = 10_000;
   const runs = [

@@ -1,0 +1,11 @@
+{
+  "name": "Tiny Town",
+  "creator": "Kenney",
+  "source": "https://kenney.nl/assets/tiny-town",
+  "version": "1.1",
+  "license": "CC0-1.0",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "files": {
+    "tilemap.png": "sha256:3a54d99ecde790d4fdea207a3644cf130fc56fa838f1beb1507c185a95b8e902"
+  }
+}

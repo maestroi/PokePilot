@@ -19,10 +19,12 @@ func TestOfferKeepsVisitedDestinationsBeyondTheCurrentMap(t *testing.T) {
 	known := NewKnowledge(nil)
 	known.SawLocation(redLocationID(redprofile.GameID, far.Map))
 	obs := Observation{GameID: testGameID,
-		Map:    here.Map,
-		X:      here.X,
-		Y:      here.Y,
-		Badges: []string{state.BadgeBoulder.String()}, // Route 3's scripted gate
+		Map: here.Map,
+		X:   here.X,
+		Y:   here.Y,
+		// Starter already chosen, so travel stays on the menu.
+		PartyCount: 1,
+		Badges:     []string{state.BadgeBoulder.String()}, // Route 3's scripted gate
 	}
 
 	for _, o := range Offer(obs, known) {

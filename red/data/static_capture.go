@@ -65,3 +65,11 @@ func StaticCaptureBallOrder(site StaticCaptureSite) []uint8 {
 	}
 	return []uint8{staticUltraBall, staticGreatBall, staticPokeBall, staticMasterBall}
 }
+
+// WildCaptureBallOrder is Red's ball preference for ordinary wild catches:
+// strongest first, because a better ball is the largest lever on each throw's
+// catch chance. The Master Ball is deliberately absent: it is reserved for
+// one-time static encounters, where a miss can consume the only chance.
+func WildCaptureBallOrder() []uint8 {
+	return []uint8{staticUltraBall, staticGreatBall, staticPokeBall}
+}

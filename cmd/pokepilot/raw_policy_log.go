@@ -10,14 +10,16 @@ import "fmt"
 type policyRawWriter struct {
 	snap           *heartbeatSnap
 	playStyle      string
+	purpose        string
 	riskTolerance  string
 	wildEncounters string
 }
 
 func (w policyRawWriter) Write(p []byte) (int, error) {
 	prefix := fmt.Sprintf(
-		"=== run policy ===\nplay_style=%s\nrisk_tolerance=%s\nwild_encounters=%s\n\n",
+		"=== run policy ===\nplay_style=%s\npurpose=%s\nrisk_tolerance=%s\nwild_encounters=%s\n\n",
 		w.playStyle,
+		w.purpose,
 		w.riskTolerance,
 		w.wildEncounters,
 	)
