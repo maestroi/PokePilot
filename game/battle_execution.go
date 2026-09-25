@@ -14,6 +14,7 @@ const (
 	BattleExecutionTryLearnPrompt   BattleExecutionPhase = "try_learn_prompt"
 	BattleExecutionAbandonLearn     BattleExecutionPhase = "abandon_learn_prompt"
 	BattleExecutionTrainerSwitch    BattleExecutionPhase = "trainer_switch_prompt"
+	BattleExecutionRunRefused       BattleExecutionPhase = "run_refused"
 	BattleExecutionForgetMove       BattleExecutionPhase = "forget_move_menu"
 	BattleExecutionHMForgetRejected BattleExecutionPhase = "hm_forget_rejected"
 	BattleExecutionSwitchBox        BattleExecutionPhase = "switch_box"
