@@ -152,6 +152,7 @@ func TestStaticMapReconstructsPalletAndViridianSemantically(t *testing.T) {
 		wantWarps  int
 	}{
 		{mapID: 0x00, wantID: "pallet town", wantWidth: 20, wantHeight: 18, wantWarps: 3},
+		{mapID: 0x0c, wantID: "route 1", wantWidth: 20, wantHeight: 36, wantWarps: 0},
 		{mapID: 0x01, wantID: "viridian city", wantWidth: 40, wantHeight: 36, wantWarps: 5},
 	}
 	for _, tt := range tests {
