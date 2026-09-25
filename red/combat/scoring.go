@@ -3,8 +3,8 @@ package combat
 import (
 	"fmt"
 
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 )
 
 // SpecialType is the Gen 1 physical/special split used by the ROM. Types
