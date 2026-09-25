@@ -7,7 +7,7 @@ import (
 )
 
 func TestGenericMenuDriversHaveNoConcreteGameDependencies(t *testing.T) {
-	for _, path := range []string{"menu.go", "start_menu.go"} {
+	for _, path := range []string{"menu.go", "start_menu.go", "battle_menu.go"} {
 		src, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
