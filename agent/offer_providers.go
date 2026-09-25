@@ -333,7 +333,9 @@ func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamil
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
 	out := repelUseObjectives(ctx.obs)
 	if ctx.catalog.Shop == nil {
-		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
+		out = append(out, restockHealingObjectives(ctx.obs)...)
+		out = append(out, restockCaptureObjectives(ctx.obs)...)
+		return objectiveProviderResult{Candidates: out}
 	}
 	obs := ctx.obs
 	if len(obs.MartStock) == 0 {
@@ -370,6 +372,39 @@ func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePro
 // Without it the only buy offer required already standing in a shop, so a
 // challenge lost far from one (the League's chained fights) retried forever
 // with an empty bag.
+const dexCaptureSupplyIntent = "dex-capture-supply"
+
+// restockCaptureObjectives is the remote counterpart to the ordinary Mart
+// purchase provider. Dex acquisition objectives require a ball before they can
+// even be offered; without a travel-and-buy option, a run that leaves town dry
+// can keep progressing the story forever with an empty capture inventory.
+// RestockStock is already limited to stock from live-state reachable marts, so
+// this remains an executable objective rather than a planner hint.
+func restockCaptureObjectives(obs Observation) []Objective {
+	if len(obs.RestockStock) == 0 || len(obs.Dex.Targets) == 0 || normalBallStock(obs) >= minimumCaptureStock {
+		return nil
+	}
+	obs.MartStock = append([]string(nil), obs.RestockStock...)
+	economy := EconomyContext(obs)
+	if economy == nil {
+		return nil
+	}
+	for _, advice := range economy.Purchases {
+		if advice.Category != InventoryCapture || !advice.ShouldBuy || advice.SuggestedQty <= 0 {
+			continue
+		}
+		item, ok := ItemByName(advice.Item)
+		if !ok {
+			continue
+		}
+		return []Objective{{
+			Kind: KindBuy, Item: item, Qty: advice.SuggestedQty, Intent: dexCaptureSupplyIntent,
+			Note: "(Dex capture supply: travel to the nearest reachable shop and restock balls before more acquisition work)",
+		}}
+	}
+	return nil
+}
+
 func restockHealingObjectives(obs Observation) []Objective {
 	if len(obs.RestockStock) == 0 || !hasCombatLoss(obs) || emergencyHealStock(obs) > 0 {
 		return nil
