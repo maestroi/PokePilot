@@ -130,7 +130,7 @@ func TestChooseTacticalSwitchIgnoresDisabledActiveMove(t *testing.T) {
 	putSwitchMon(&mem, 1, bench)
 	mem[sym.PlayerMonNumber] = 0
 	b := switchBattle(active, [2]uint8{typeNormal, typeNormal}, strong.ID, weak.ID)
-	b.DisabledMove = 1
+	b.Moves[0].Disabled = true
 
 	decision := chooseTacticalSwitch(romData, &mem, b)
 	if !decision.Switch || decision.Slot != 1 {
