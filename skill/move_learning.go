@@ -351,7 +351,6 @@ func minInt(a, b int) int {
 	return b
 }
 
-
 // forgetSlot is the Gen-I strategic fallback used by the retained historical
 // Cut teaching path. UI navigation itself is profile-driven by
 // selectForgetSlot; this helper only scores which legacy move id to replace.
