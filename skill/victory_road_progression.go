@@ -129,6 +129,10 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 }
 
 func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("skill: Route23 Surf field-action profile: %w", err)
+	}
 	if got := m.Peek8(sym.CurMap); got != route23Map {
 		return fmt.Errorf("skill: Route23 Surf barrier %d started on map %#02x", barrierY, got)
 	}
@@ -141,7 +145,7 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 	if err != nil {
 		return err
 	}
-	if m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+	if !fieldActions.DecodeFieldAction(m).Surfing {
 		stand := Destination{Map: route23Map, X: uint8(plan.stand.X), Y: uint8(plan.stand.Y)}
 		if _, err := TravelFlee(m, romData, stand, policy, victoryRoadTravelBattles); err != nil {
 			return fmt.Errorf("skill: Route23 Surf reach barrier %d shoreline: %w", barrierY, err)
@@ -150,11 +154,11 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 			return fmt.Errorf("skill: Route23 Surf face water at (%d,%d): %w", plan.water.X, plan.water.Y, err)
 		}
 		m.StepFrames(2)
-		result, err := UseFieldMove(m, FieldSurf)
+		result, err := useFieldMoveWithDecoder(m, FieldSurf, fieldActions)
 		if err != nil {
 			return fmt.Errorf("skill: Route23 Surf enter mode at barrier %d: %w", barrierY, err)
 		}
-		if !result.Surfing || m.Peek8(sym.WalkBikeSurfState) != fieldSurfingState {
+		if !result.Surfing || !fieldActions.DecodeFieldAction(m).Surfing {
 			return fmt.Errorf("skill: Route23 Surf barrier %d did not enter Surf mode", barrierY)
 		}
 	}
