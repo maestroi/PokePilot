@@ -77,7 +77,7 @@ func semanticBattle(romData []byte, mem *state.Mem) *protocol.BattleState {
 			Name:     titleCaseSemantic(name),
 			PP:       int(move.PP),
 			MaxPP:    maxPP,
-			Disabled: battle.DisabledMove == uint8(i+1),
+			Disabled: move.Disabled,
 		})
 	}
 	return out
