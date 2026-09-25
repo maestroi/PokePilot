@@ -70,6 +70,7 @@ VALUES(?,?,?,?,?,?,?,?)`, runID, 1, key, blocking, terminal, failureRaw, reportR
 	insert("linked", "linked-key", "complete", true, 1, true)
 	insert("nonblocking", "nonblocking-key", "complete", false, 0, false)
 	insert("error", "error-key", "error", true, 1, false)
+	insert("dismissed", "dismissed-key", "dismissed", true, 1, false)
 
 	cp := &controlPlane{db: db}
 	items, err := cp.pendingObjectiveFailures(20)
@@ -85,7 +86,7 @@ VALUES(?,?,?,?,?,?,?,?)`, runID, 1, key, blocking, terminal, failureRaw, reportR
 			t.Errorf("missing %s from pending objective failures", key)
 		}
 	}
-	for _, key := range []string{"linked-key", "nonblocking-key", "error-key"} {
+	for _, key := range []string{"linked-key", "nonblocking-key", "error-key", "dismissed-key"} {
 		if got[key] {
 			t.Errorf("unexpected %s in pending objective failures", key)
 		}
