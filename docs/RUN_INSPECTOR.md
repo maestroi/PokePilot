@@ -132,6 +132,14 @@ forces software, `vaapi`/`on` forces VAAPI, and anything else (including unset
 and `auto`) probes for the render node. `POKEPILOT_VAAPI_DEVICE` overrides the
 probed path. The wall still has neither ROM nor S3 credentials.
 
+A multi-attempt run renders one segment per attempt. Each finished segment is
+cached in S3 next to its recording before the segments are concatenated, so a
+sidecar restart (every image roll recreates it) or a failed attempt only loses
+the segments still in flight; the next render request, which the inspector
+re-sends automatically while it is open, reuses the rest. Segments render in
+parallel, `POKEPILOT_REPLAY_WORKERS` at a time across all jobs (default 3), and
+the two-hour render timeout applies per segment.
+
 If S3 is not configured, the replay service stays healthy and reports replay as
 disabled. Dashboard, farm execution, PostgreSQL-backed finish inspection, inline
 artifact browsing, MCP run-debug reads, and the public spectator remain

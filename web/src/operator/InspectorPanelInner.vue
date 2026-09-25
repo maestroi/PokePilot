@@ -33,6 +33,7 @@ const video = ref<HTMLVideoElement | null>(null)
 const playbackRate = ref(Number(localStorage.getItem('pokepilot.replayPlaybackRate') || 1))
 let serial = 0
 let liveTimer = 0
+let replayTimer = 0
 
 function object(value: unknown): Row {
   return value && typeof value === 'object' ? value as Row : {}
@@ -162,6 +163,7 @@ async function load(): Promise<void> {
   selectedEvent.value = timeline.value.length ? timeline.value.length - 1 : -1
   loading.value = false
   scheduleLiveRefresh()
+  scheduleReplayRefresh()
 }
 
 async function requestReplay(): Promise<void> {
@@ -170,7 +172,7 @@ async function requestReplay(): Promise<void> {
   replayError.value = ''
   try {
     replay.value = await renderReplay(props.runID)
-    window.setTimeout(() => { void refreshReplay() }, 1500)
+    scheduleReplayRefresh()
   } catch (cause) {
     replayError.value = cause instanceof Error ? cause.message : 'Replay render failed'
   } finally {
@@ -178,13 +180,34 @@ async function requestReplay(): Promise<void> {
   }
 }
 
+function clearReplayTimer(): void {
+  if (replayTimer) window.clearTimeout(replayTimer)
+  replayTimer = 0
+}
+
+function scheduleReplayRefresh(): void {
+  clearReplayTimer()
+  if (replay.value?.state === 'generating') replayTimer = window.setTimeout(() => { void refreshReplay() }, 5000)
+}
+
 async function refreshReplay(): Promise<void> {
+  const runID = props.runID
+  const previous = replay.value?.state
   try {
-    replay.value = await getReplayStatus(props.runID)
+    const next = await getReplayStatus(runID)
+    if (runID !== props.runID) return
+    replay.value = next
     replayError.value = ''
+    // A replay sidecar restart drops its in-memory job. Finished attempt
+    // segments stay cached in S3, so re-requesting resumes where it stopped.
+    if (previous === 'generating' && next.state === 'missing') {
+      void requestReplay()
+      return
+    }
   } catch (cause) {
     replayError.value = cause instanceof Error ? cause.message : 'Replay status unavailable'
   }
+  scheduleReplayRefresh()
 }
 
 function checkpointLabel(value: unknown, index: number): string {
@@ -221,10 +244,11 @@ function applyPlaybackRate(): void {
 
 watch(() => props.runID, () => {
   clearLiveTimer()
+  clearReplayTimer()
   void load()
 }, { immediate: true })
 watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
-onBeforeUnmount(clearLiveTimer)
+onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer() })
 </script>
 
 <template>
@@ -281,7 +305,7 @@ onBeforeUnmount(clearLiveTimer)
           </template>
           <div v-else class="mt-3 rounded-md border border-dashed border-white/10 px-4 py-6 text-center">
             <FilmIcon class="mx-auto size-6 text-slate-600" aria-hidden="true" />
-            <p class="mt-2 text-xs text-slate-500">{{ replay?.state === 'generating' ? 'Replay is being rendered.' : 'Render the canonical .gbrun recording into a seekable MP4 when available.' }}</p>
+            <p class="mt-2 text-xs text-slate-500">{{ replay?.state === 'generating' ? `Replay is being rendered${replay.segments ? ` (${replay.segments_done || 0}/${replay.segments} attempts)` : ''}.` : 'Render the canonical .gbrun recording into a seekable MP4 when available.' }}</p>
             <button v-if="replay?.state !== 'disabled'" type="button" class="mt-3 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:opacity-50" :disabled="rendering || replay?.state === 'generating'" @click="requestReplay">
               {{ rendering ? 'Requesting…' : replay?.state === 'generating' ? 'Generating…' : 'Render replay' }}
             </button>
