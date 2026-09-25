@@ -721,9 +721,9 @@ type dismissTriageRequest struct {
 }
 
 type dismissTriageResult struct {
-	Status         string   `json:"status"`
-	Groups         int64    `json:"groups"`
-	Occurrences    int64    `json:"occurrences"`
+	Status        string   `json:"status"`
+	Groups        int64    `json:"groups"`
+	Occurrences   int64    `json:"occurrences"`
 	SkippedLinked []string `json:"skipped_linked,omitempty"`
 }
 
