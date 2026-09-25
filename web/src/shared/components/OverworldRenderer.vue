@@ -11,6 +11,7 @@ import {
   type ThemeTileStyle
 } from '../renderTheme'
 import { semanticViewport } from '../semanticRenderer'
+import { parseTileImageReference, terrainAssetKey } from '../tileAssets'
 
 const props = defineProps<{ state: RenderState; theme: ResolvedRenderTheme }>()
 
@@ -62,6 +63,10 @@ async function syncSpriteImages(): Promise<void> {
     const reference = actorAssetReference(actor)
     if (reference) references.add(reference)
   }
+  for (const reference of Object.values(props.theme.assets.tiles).concat(Object.values(props.theme.assets.objects))) {
+    const tile = parseTileImageReference(reference)
+    if (tile) references.add(tile.url)
+  }
 
   const missing = [...references].filter((reference) => !spriteImages.has(reference) && !failedSprites.has(reference))
   await Promise.all(missing.map(async (reference) => {
@@ -85,13 +90,37 @@ function drawTile(
   y: number,
   size: number,
   now: number,
-  objectLayer = false
+  objectLayer = false,
+  assetReference = ''
 ): void {
   const kind = cell?.kind || 'unknown'
   const style = tileStyle(props.theme, kind, objectLayer)
   const pattern = patternFor(style, kind)
-  ctx.fillStyle = style.fill
-  ctx.fillRect(x, y, size + 0.5, size + 0.5)
+  if (!objectLayer) {
+    ctx.fillStyle = assetReference && (kind === 'tree' || kind === 'path') ? props.theme.tiles.grass.fill : style.fill
+    ctx.fillRect(x, y, size + 0.5, size + 0.5)
+    if (assetReference && (kind === 'tree' || kind === 'path')) {
+      const ground = parseTileImageReference(props.theme.assets.tiles.grass || '')
+      const groundImage = ground && spriteImages.get(ground.url)
+      if (ground?.source && groundImage) {
+        ctx.drawImage(groundImage, ground.source.x, ground.source.y, ground.source.size, ground.source.size, x, y, size, size)
+      }
+    }
+  }
+
+  const tile = parseTileImageReference(assetReference)
+  const image = tile && spriteImages.get(tile.url)
+  if (image && (!tile.source || (tile.source.x + tile.source.size <= image.naturalWidth && tile.source.y + tile.source.size <= image.naturalHeight))) {
+    ctx.save()
+    ctx.imageSmoothingEnabled = false
+    if (tile.source) {
+      ctx.drawImage(image, tile.source.x, tile.source.y, tile.source.size, tile.source.size, x, y, size, size)
+    } else {
+      ctx.drawImage(image, x, y, size, size)
+    }
+    ctx.restore()
+    return
+  }
 
   ctx.save()
   switch (pattern) {
@@ -318,7 +347,8 @@ function draw(now = performance.now(), presentation: PresentationSample = animat
         if (!cell) continue
         const left = viewport.offsetX + (worldX - viewport.startX) * viewport.tileSize
         const top = viewport.offsetY + (worldY - viewport.startY) * viewport.tileSize
-        drawTile(ctx, cell, left, top, viewport.tileSize, now)
+        const assetKey = terrainAssetKey(props.theme.assets.tiles, layer, worldX, worldY)
+        drawTile(ctx, cell, left, top, viewport.tileSize, now, false, assetKey ? props.theme.assets.tiles[assetKey] : '')
       }
     }
   }
@@ -331,7 +361,7 @@ function draw(now = performance.now(), presentation: PresentationSample = animat
         if (!cell || !cell.kind || cell.kind === 'unknown') continue
         const left = viewport.offsetX + (worldX - viewport.startX) * viewport.tileSize
         const top = viewport.offsetY + (worldY - viewport.startY) * viewport.tileSize
-        drawTile(ctx, cell, left, top, viewport.tileSize, now, true)
+        drawTile(ctx, cell, left, top, viewport.tileSize, now, true, props.theme.assets.objects[cell.kind] || '')
       }
     }
   }

@@ -83,3 +83,12 @@ Bundled v1 themes:
 
 - **RomPilot Modern** — the default clean spectator presentation.
 - **Retro 16-bit** — a chunkier, more saturated alternative using the same semantic state.
+- **Tiny Town Pixel** — 16×16 Kenney Tiny Town terrain plus matching Tiny Dungeon interior tiles, drawn at 32 screen pixels with nearest-neighbor scaling. Their bundled images and CC0 source records live under `web/public/theme-assets/`.
+
+## Bundled atlas tiles
+
+`assets.tiles` and `assets.objects` can name a PNG tile in a packed atlas with `/path/to/atlas.png#tile=column,row,size`. Columns and rows are zero-based; `size` is the square tile width in source pixels. The browser loads each atlas once, crops the selected tile, and draws it without smoothing. A plain image URL is also accepted for a single tile. If an image is unavailable, the theme's paint pattern is used.
+
+For nine-slice terrain such as a dirt path, the renderer looks for `path.center` and optional `path.top-left`, `path.top-center`, `path.top-right`, `path.middle-left`, `path.middle-center`, `path.middle-right`, `path.bottom-left`, `path.bottom-center`, and `path.bottom-right`. It chooses a piece from adjacent semantic cells; missing pieces fall back to `path.center`. A producer can also set `TileCell.variant` for a presentation distinction such as `path.paved`.
+
+The Red adapter now marks its known plain ground and forest ground as grass, marks indoor walkable cells as floor, and identifies the overworld's paved tile with a presentation variant. This keeps the theme generic: native Red tile IDs remain in the Red adapter. Building cells still have only portable wall/path information where the adapter cannot identify a facade or roof. The Tiny Town theme draws a generic facade from adjacent wall cells; it cannot yet recreate a specific building's shape or identity.
