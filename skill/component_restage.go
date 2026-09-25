@@ -251,7 +251,7 @@ func fieldPathBridgeFromTile(
 		land, water = landGrid, waterGrid
 		rules = currentFieldPathRules(m, h)
 	} else {
-			provider, providerErr := routingProviderForROM(romData)
+		provider, providerErr := routingProviderForROM(romData)
 		if providerErr == nil {
 			if spec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand); err == nil {
 				if g, err := world.GridFromSpec(spec); err == nil {
