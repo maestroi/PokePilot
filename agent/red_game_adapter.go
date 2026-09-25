@@ -11,7 +11,23 @@ import (
 	"github.com/maestroi/pokepilot/skill"
 )
 
-const objectiveFrameBudget uint64 = 500_000
+const (
+	objectiveFrameBudget      uint64 = 500_000
+	catchObjectiveFrameBudget uint64 = 1_200_000
+)
+
+func objectiveFrameBudgetFor(o Objective) uint64 {
+	if o.Kind == KindCatch {
+		// Catch cooperatively ends its stochastic search at 500k frames while
+		// back on a safe overworld boundary. Reserve another 700k here for one
+		// already-started Battle: Battle's own absolute backstop is 600k, plus
+		// its bounded post-battle settle. This prevents the outer watchdog from
+		// tearing down a catch objective mid-battle (#1857) without increasing
+		// the amount of stochastic hunting the objective performs.
+		return catchObjectiveFrameBudget
+	}
+	return objectiveFrameBudget
+}
 
 type redObjectiveAdapter struct {
 	m             *emu.Emu
@@ -216,7 +232,7 @@ func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err e
 }
 
 func (a *redObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
-	deadline := a.m.FrameCount() + objectiveFrameBudget
+	deadline := a.m.FrameCount() + objectiveFrameBudgetFor(o)
 	err := a.m.WithFrameDeadline(deadline, fn)
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return fmt.Errorf("agent: %s: objective frame watchdog: %w", o, err)
