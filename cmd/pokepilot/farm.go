@@ -22,6 +22,7 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
+	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -314,7 +315,7 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string) bool {
+func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string, renderFeed *renderStateFeed) bool {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
@@ -376,7 +377,7 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 
-		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir) {
+		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir, renderFeed) {
 			log.Printf("farm: %s: emulator poisoned by stalled link exchange; recycling worker", spec.RunID)
 			return true
 		}
@@ -432,13 +433,14 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string) bool {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string, renderFeed *renderStateFeed) bool {
 	restoreRunID := setFarmRunID(spec.RunID)
 	defer restoreRunID()
 
-	// A new lease must not inherit the previous run's plan: the snap is
-	// reused for the worker's lifetime.
+	// A new lease must not inherit the previous run's plan or semantic frame:
+	// both buffers live for the worker's lifetime.
 	snap.store(farm.Heartbeat{RunID: spec.RunID})
+	renderFeed.reset()
 
 	seed := spec.Seed
 	preparedDir, burn, err := prepareFarmAttempt(m, client, spec, planner, bootState, checkpointDir)
@@ -454,6 +456,11 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
+	redRenderer, renderErr := redrenderstate.New(m.ROM())
+	if renderErr != nil {
+		log.Printf("farm: %s: semantic renderer unavailable: %v", spec.RunID, renderErr)
+	}
+
 	// Start after fresh restore + seed burn, or after durable resume restore,
 	// so the checked recording start state is the state this worker continues.
 	// Recording is diagnostic evidence only: failure to start must not affect gameplay.
@@ -468,8 +475,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	trail := &heartbeatTrail{}
 	m.OnSample(func(m *emu.Emu) {
 		tracer.sample(m)
+		renderFeed.capture(m, redRenderer)
 		sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
 	})
+	renderFeed.capture(m, redRenderer)
 	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
 
 	var samples chan periodicSample
@@ -522,6 +531,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// immediately, before OnSample happens to refresh the periodic snapshot.
 	// Sample the settled emulator state explicitly so badges/player/stats agree
 	// with the terminal result that is about to be reported.
+	renderFeed.capture(m, redRenderer)
 	sampleHeartbeat(m, spec.RunID, snap, mem, addrs, trail)
 
 	// Stop and join the periodic heartbeat first, then publish exactly one
