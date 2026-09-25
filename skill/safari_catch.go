@@ -308,7 +308,7 @@ func safariBallNextInput(mem *state.Mem) (btn emu.Button, done bool) {
 }
 
 func selectSafariBallEntry(m *emu.Emu) error {
-	kind, err := waitFleeMenu(m)
+	kind, err := waitGen1FleeMenu(m)
 	if err != nil {
 		return err
 	}
