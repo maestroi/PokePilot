@@ -67,7 +67,6 @@ func TestSpectatorRenderStateRejectsInvalidProtocol(t *testing.T) {
 	}
 }
 
-
 func TestOperatorRenderStateUsesSharedValidatedProxy(t *testing.T) {
 	const payload = `{"schema_version":1,"game":{"id":"pokemon-red","revision":"en-us-rev0"},"clock":{"frame":91},"scene":"overworld","capabilities":["map","player","layers"],"map":{"id":"viridian city","name":"VIRIDIAN_CITY","width":20,"height":18},"player":{"id":"player","kind":"player","position":{"x":8,"y":9},"facing":"left"},"layers":[]}`
 	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
