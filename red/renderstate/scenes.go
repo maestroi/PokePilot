@@ -60,7 +60,7 @@ func semanticBattle(romData []byte, mem *state.Mem) *protocol.BattleState {
 		},
 	}
 
-	for i, move := range battle.Moves {
+	for _, move := range battle.Moves {
 		if move.ID == 0 {
 			continue
 		}
