@@ -144,3 +144,31 @@ func stepOnceWithOverworldDecoder(m overworldMovementMachine, s world.Step, deco
 	}
 	return nil
 }
+
+// waitForPositionStableWithDecoder steps until semantic tile position has
+// remained unchanged for stableFrames consecutive frames.
+func waitForPositionStableWithDecoder(m interface {
+	game.MemoryReader
+	StepFrame()
+}, decoder game.OverworldDecoder, budget, stableFrames int) error {
+	if decoder == nil {
+		return fmt.Errorf("skill: overworld: nil decoder while waiting for stable position")
+	}
+	last := decoder.DecodeOverworld(m)
+	stable := 0
+	for i := 0; i < budget; i++ {
+		m.StepFrame()
+		cur := decoder.DecodeOverworld(m)
+		if cur.X == last.X && cur.Y == last.Y {
+			stable++
+			if stable >= stableFrames {
+				return nil
+			}
+		} else {
+			stable = 0
+			last = cur
+		}
+	}
+	return fmt.Errorf("skill: overworld position did not stabilize within %d frames; ended at (%d,%d)",
+		budget, last.X, last.Y)
+}

@@ -66,7 +66,7 @@ func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.Overworld
 	}
 	start := decoder.DecodeOverworld(m)
 	if start.NativeMapID == uint16(route17Map) && movementStepDistance(s) == 1 {
-		return stepOnceCyclingRoad(m, s, btn)
+		return stepOnceCyclingRoad(m, decoder, s, btn)
 	}
 
 	// A party that is already fainted blackouts on the next counted overworld
