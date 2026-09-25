@@ -65,8 +65,14 @@ func fieldPathBridgeOnCurrentMap(
 		if perr != nil {
 			return
 		}
-		_, rerr := findRoutePlanForDestination(
-			routeGraph, cur, x, y, dest, blockedHere, prereqs,
+		// Validate with the same travel-policy planner GoTo re-plans with from
+		// the bridge tile. A policy-free check can accept a tile whose policy
+		// route still stops at a semantic boundary, and that boundary's own
+		// bridge leads back here. MEASURED on run-mis3rbm8t2283mwv0a6mrac8s:
+		// fastest-policy GoTo from Cinnabar Island ping-ponged between
+		// (6,4) and (6,10) until route_replan_exhausted.
+		_, rerr := routePlanToDestinationByTravelPolicy(
+			m, routeGraph, cur, x, y, dest, blockedHere, prereqs,
 		)
 		if rerr != nil {
 			return
