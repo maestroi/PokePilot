@@ -89,6 +89,18 @@ const maxWarpCandidates = 4
 // border tiles Traverse can try on this connection. A failed held push is
 // tile-scoped evidence, so stopping after an arbitrary small constant can
 // reject a valid wide connection band before its live crossing is reached.
+// connectionTargetFailure preserves the strongest evidence available when a
+// connection edge has no reachable execution target. For an unscoped edge the
+// failure can be position-local (Route 2's ledge is the canonical case). A
+// component-scoped band already identifies one contiguous component pair, so
+// zero reachable candidates disproves that exact band for this journey.
+func connectionTargetFailure(e world.Edge, err error) error {
+	if _, _, scoped := world.ConnectionBand(e); scoped {
+		return fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrConnectionBandExhausted)
+	}
+	return fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+}
+
 func connectionCrossingCandidateBudget(g *world.Grid, e world.Edge) int {
 	if g == nil {
 		return 1
@@ -431,12 +443,7 @@ func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world
 			blocked = warpAvoidance(h, int(x), int(y), blocked)
 			tx, ty, err := edgeTargetForConnectionExcluding(grid, e, int(x), int(y), blocked, excluded)
 			if err != nil {
-				// Type it as ErrLegUnwalkable like the FindPath failure below:
-				// Route 2's ledge makes the north edge unreachable from the
-				// southern landing tile, and GoTo's per-tile ban is what
-				// re-routes around it through the forest. Unwrapped, the
-				// error is terminal and the only real route to Pewter dies.
-				unwalkable = fmt.Errorf("skill: Traverse: map %02x: %v: %w", e.From, err, ErrLegUnwalkable)
+				unwalkable = connectionTargetFailure(e, err)
 				return nil, unwalkable
 			}
 			steps, err := world.FindPath(grid, int(x), int(y), tx, ty, blocked)
