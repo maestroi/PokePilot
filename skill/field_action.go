@@ -318,13 +318,17 @@ func settleFieldAction(m *emu.Emu, mem *state.Mem, spec FieldMoveSpec, decoder g
 // Fly is represented by the same capability abstraction but needs a caller-
 // supplied destination, so destination-free execution rejects it explicitly.
 func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
-	spec, ok := FieldMoveSpecFor(move)
-	if !ok {
-		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
-	}
 	decoder, err := fieldActionDecoderFor(m)
 	if err != nil {
 		return FieldActionResult{}, err
+	}
+	return useFieldMoveWithDecoder(m, move, decoder)
+}
+
+func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActionDecoder) (FieldActionResult, error) {
+	spec, ok := FieldMoveSpecFor(move)
+	if !ok {
+		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
 	}
 	runtime := decoder.DecodeFieldAction(m)
 	if !runtime.Controllable {
