@@ -88,7 +88,6 @@ func decodeLiveMapBlocks(mem *state.Mem, width, height int) ([]byte, error) {
 	return blocks, nil
 }
 
-
 func (*Profile) ElevatorTransitionReady(reader game.MemoryReader, transition game.ElevatorTransition) bool {
 	if reader == nil || transition.SourceMapID > 0xff || transition.DestinationMapID > 0xff || len(transition.Doors) == 0 {
 		return false
