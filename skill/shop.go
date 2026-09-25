@@ -98,7 +98,7 @@ func buyNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error {
 	}
 
 	shop := runtime.DecodeShop(m)
-	pos, ok := shopItemPosition(shop.Items, item)
+	pos, ok := shopItemPosition(shop, item)
 	if !ok {
 		primary := fmt.Errorf("skill: Buy: %w: item %#04x", ErrNotInStock, item)
 		if cleanup := exitToOverworldWithRuntime(m, runtime); cleanup != nil {
