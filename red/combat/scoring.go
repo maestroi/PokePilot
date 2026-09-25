@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 )
 
 // SpecialType is the Gen 1 physical/special split used by the ROM. Types
@@ -66,7 +66,7 @@ func IsPhysicalType(moveType uint8) bool { return moveType < SpecialType }
 // PlayerMatchup converts the live battle state into the generic combatants
 // used by EvaluateMove. The stats are already the current values Red itself
 // consumes after stat changes.
-func PlayerMatchup(b state.BattleState) (Combatant, Combatant) {
+func PlayerMatchup(b game.BattleState) (Combatant, Combatant) {
 	attacker := Combatant{
 		Level: b.ActiveLevel, HP: b.ActiveHP, MaxHP: b.ActiveMaxHP,
 		Attack: b.ActiveAttack, Defense: b.ActiveDefense, Special: b.ActiveSpecial,
@@ -81,7 +81,7 @@ func PlayerMatchup(b state.BattleState) (Combatant, Combatant) {
 }
 
 // EvaluateBattleMove evaluates one live move slot from BattleState.
-func EvaluateBattleMove(romData []byte, b state.BattleState, slot int) (MoveEvaluation, error) {
+func EvaluateBattleMove(romData []byte, b game.BattleState, slot int) (MoveEvaluation, error) {
 	if slot < 0 || slot >= len(b.Moves) {
 		return MoveEvaluation{}, fmt.Errorf("combat: move slot %d out of range", slot)
 	}
