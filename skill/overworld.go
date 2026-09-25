@@ -9,6 +9,47 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
+
+// The movement budgets are empirical controller limits, not game-layout
+// knowledge. Profiles own how "position" and "idle" are observed.
+const (
+	stepMoveBudget   = 60
+	stepSettleBudget = 40
+	hopSettleBudget  = 120
+)
+
+func movementButtonFor(s world.Step) (emu.Button, bool) {
+	if s.DX == 0 && (s.DY == 2 || s.DY == -2) {
+		s.DY /= 2
+	}
+	if s.DY == 0 && (s.DX == 2 || s.DX == -2) {
+		s.DX /= 2
+	}
+	switch s {
+	case world.StepUp:
+		return emu.Up, true
+	case world.StepDown:
+		return emu.Down, true
+	case world.StepLeft:
+		return emu.Left, true
+	case world.StepRight:
+		return emu.Right, true
+	}
+	return 0, false
+}
+
+func movementStepDistance(s world.Step) int {
+	dx := s.DX
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := s.DY
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx + dy
+}
+
 // overworldMovementMachine is the execution surface needed by the portable
 // one-step controller. *emu.Emu satisfies it; tests can use a deterministic
 // fake without importing a concrete game's RAM layout.
@@ -63,7 +104,7 @@ func stepOnceWithOverworldDecoder(m overworldMovementMachine, s world.Step, deco
 	if decoder == nil {
 		return fmt.Errorf("skill: StepOnce: nil overworld decoder")
 	}
-	btn, ok := buttonFor(s)
+	btn, ok := movementButtonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
@@ -88,7 +129,7 @@ func stepOnceWithOverworldDecoder(m overworldMovementMachine, s world.Step, deco
 	}
 
 	settleBudget := stepSettleBudget
-	if absInt(s.DX)+absInt(s.DY) == 2 {
+	if movementStepDistance(s) == 2 {
 		settleBudget = hopSettleBudget
 	}
 	for stepped := 0; stepped < settleBudget; stepped++ {
