@@ -61,7 +61,7 @@ func fleeControllersFor(m *emu.Emu) (fleeControllers, error) {
 	}, nil
 }
 
-func waitFleeMenu(m *emu.Emu, controllers fleeControllers) (game.BattleEscapeMenuKind, error) {
+func waitFleeMenuWithControllers(m *emu.Emu, controllers fleeControllers) (game.BattleEscapeMenuKind, error) {
 	start := m.FrameCount()
 	for {
 		if live := controllers.escape.DecodeBattleEscapeMenu(m); live.Visible {
@@ -119,7 +119,7 @@ const (
 )
 
 func fleeOneAttempt(m *emu.Emu, controllers fleeControllers) (fleeOutcome, error) {
-	if _, err := waitFleeMenu(m, controllers); err != nil {
+	if _, err := waitFleeMenuWithControllers(m, controllers); err != nil {
 		return 0, err
 	}
 	if err := selectBattleEscapeRunWithDecoder(m, controllers.escape); err != nil {
