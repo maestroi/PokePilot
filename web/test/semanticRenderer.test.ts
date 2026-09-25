@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { canRenderOverworld, semanticViewport } from '../src/shared/semanticRenderer.ts'
+import { canRenderModernScene, canRenderOverworld, modernSceneKind, semanticViewport } from '../src/shared/semanticRenderer.ts'
 import type { RenderState } from '../src/shared/api/renderstate.ts'
 
 function state(): RenderState {
@@ -57,4 +57,40 @@ test('camera follows the player while clamping to map edges', () => {
   const bottomViewport = semanticViewport(bottom, 320, 288, 32)
   assert.equal(bottomViewport.endX, 20)
   assert.equal(bottomViewport.endY, 36)
+})
+
+
+test('modern scene selection keeps supported non-overworld scenes semantic', () => {
+  const battle = state()
+  battle.scene = 'battle'
+  battle.capabilities = ['battle']
+  battle.battle = {
+    kind: 'wild',
+    actors: [
+      { role: 'player', name: 'Charmander', hp: 20, max_hp: 30 },
+      { role: 'opponent', name: 'Pidgey', hp: 9, max_hp: 12 }
+    ]
+  }
+  assert.equal(modernSceneKind(battle), 'battle')
+  assert.equal(canRenderModernScene(battle), true)
+
+  const dialogue = state()
+  dialogue.scene = 'dialogue'
+  dialogue.capabilities = ['dialogue']
+  dialogue.dialogue = { text: 'Welcome to the world of Pokémon!' }
+  assert.equal(modernSceneKind(dialogue), 'dialogue')
+  assert.equal(canRenderModernScene(dialogue), true)
+
+  const menu = state()
+  menu.scene = 'menu'
+  menu.capabilities = ['menu']
+  menu.menu = { title: 'ITEM POKEMON EXIT', cursor: 1, entries: [{ id: '0' }, { id: '1' }, { id: '2' }] }
+  assert.equal(modernSceneKind(menu), 'menu')
+  assert.equal(canRenderModernScene(menu), true)
+
+  const unsupported = state()
+  unsupported.scene = 'transition'
+  unsupported.capabilities = ['transition']
+  assert.equal(modernSceneKind(unsupported), '')
+  assert.equal(canRenderModernScene(unsupported), false)
 })
