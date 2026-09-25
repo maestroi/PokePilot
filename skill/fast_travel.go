@@ -378,7 +378,7 @@ func chooseFastTravel(m *emu.Emu, romData []byte, mem *state.Mem, dest Destinati
 	})
 }
 
-func openPartyFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
+func openPartyFieldMove(m *emu.Emu, partySlot int, move FieldMove) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if !state.Controllable(&mem) {
@@ -393,12 +393,12 @@ func openPartyFieldMove(m *emu.Emu, partySlot int, menuID uint8) error {
 	if err := selectFieldMoveUser(m, partySlot); err != nil {
 		return fmt.Errorf("select party slot %d: %w", partySlot, err)
 	}
-	idx := fieldMoveMenuIndex(m, menuID)
+	idx := fieldMoveMenuIndex(m, move)
 	if idx < 0 {
-		return fmt.Errorf("field menu id %d absent for party slot %d", menuID, partySlot)
+		return fmt.Errorf("%s field-menu entry absent for party slot %d", move, partySlot)
 	}
 	if err := SelectMenuItem(m, idx); err != nil {
-		return fmt.Errorf("select field menu id %d: %w", menuID, err)
+		return fmt.Errorf("select %s field-menu entry: %w", move, err)
 	}
 	return nil
 }
@@ -438,7 +438,7 @@ func useFlyTo(m *emu.Emu, destMap uint8) error {
 	if !outsideForFly(&mem) || !townVisited(&mem, 0) || !townVisited(&mem, destMap) {
 		return fmt.Errorf("Fly destination %#02x is not currently legal", destMap)
 	}
-	if err := openPartyFieldMove(m, cap.PartySlot, fieldFlyMenuID); err != nil {
+	if err := openPartyFieldMove(m, cap.PartySlot, FieldFly); err != nil {
 		return fmt.Errorf("Fly: %w", err)
 	}
 
