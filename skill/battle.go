@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -672,32 +673,7 @@ func switchBoxUp(m *emu.Emu) bool {
 }
 
 func selectFightEntry(m *emu.Emu) error {
-	atFight := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuLeftX && int(m.Peek8(sym.CurrentMenuItem)) == 0
-	}
-	for i := 0; i < 8; i++ {
-		if atFight(m) {
-			return nil
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevX == battleMenuRightX && prevRow != 0:
-			btn = emu.Up
-		case prevX == battleMenuRightX:
-			btn = emu.Left
-		default:
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: Battle: cursor stuck at x=%#02x row %d, want FIGHT (x=%#02x row 0): %w",
-				prevX, prevRow, battleMenuLeftX, ErrMenuStuck)
-		}
-	}
-	return fmt.Errorf("skill: Battle: cursor did not reach FIGHT")
+	return selectBattleMainMenuEntry(m, game.BattleMenuFight)
 }
 
 func firstLivePartySlot(mem *state.Mem) int {

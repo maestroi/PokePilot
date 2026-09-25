@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -38,18 +39,6 @@ func useItemPartyMenuUp(m *emu.Emu) bool {
 	state.Snapshot(m, &mem)
 	return battleScreenHas(m, useItemPartyMenuMarker)
 }
-
-// The FIGHT/ITEM/PKMN/RUN battle menu is a 2x2 grid: FIGHT/ITEM in the left
-// column, PKMN/RUN in the right (DisplayBattleMenu, engine/battle/core.asm).
-// The cursor's tile X sits in wTopMenuItemX: $9 for the left column, $f for
-// the right; wCurrentMenuItem holds the row (0 is the top). A press in the
-// right column adds $2 to the row before dispatch, so POKéMON selects as
-// item 2 — unreachable by SelectMenuItem, whose range check reads the
-// per-column wMaxMenuItem of 1.
-const (
-	battleMenuLeftX  byte = 0x09
-	battleMenuRightX byte = 0x0F
-)
 
 // SetLead reorders the party through the start menu's POKEMON list so that
 // the member currently in slot is slot 0, the lead. A party of one needs no
@@ -89,9 +78,9 @@ func SetLead(m *emu.Emu, slot int) error {
 //
 // This is the half of the battle party menu that Battle does not drive:
 // the forced switch after a faint (S6-5b) is answered inside Battle's state
-// machine; this one is opened by the player. Every step is press, assert,
-// A — the column is asserted from wTopMenuItemX, the row and the party slot
-// from wCurrentMenuItem, each menu from its own wTileMap marker.
+// machine; this one is opened by the player. The ordinary battle command is
+// selected semantically through the active profile; party-slot handling remains
+// Gen-I-owned in this file until its own capability slice lands.
 func SwitchActive(m *emu.Emu, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -122,38 +111,10 @@ func SwitchActive(m *emu.Emu, slot int) error {
 		return fmt.Errorf("skill: SwitchActive: %w", err)
 	}
 
-	// 2. The POKéMON entry: right column, row 0. The cursor opens at FIGHT
-	// (wBattleAndStartSavedMenuItem), but a stale saved item could leave it
-	// anywhere in the grid, so every tap is verified against wTopMenuItemX
-	// and wCurrentMenuItem before the next one — never a press count.
-	atPKMN := func(m *emu.Emu) bool {
-		return m.Peek8(sym.TopMenuItemX) == battleMenuRightX && int(m.Peek8(sym.CurrentMenuItem)) == 0
-	}
-	for i := 0; i < 8; i++ {
-		if atPKMN(m) {
-			break
-		}
-		prevX, prevRow := m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem))
-		var btn emu.Button
-		switch {
-		case prevX == battleMenuLeftX && prevRow != 0:
-			btn = emu.Up // ITEM -> FIGHT
-		case prevX == battleMenuLeftX:
-			btn = emu.Right // FIGHT -> PKMN: RIGHT keeps the row
-		default:
-			btn = emu.Left // right column: back to the left at the same row
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return m.Peek8(sym.TopMenuItemX) != prevX || int(m.Peek8(sym.CurrentMenuItem)) != prevRow
-		}); err != nil {
-			return fmt.Errorf("skill: SwitchActive: cursor stuck at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
-				prevX, prevRow, battleMenuRightX)
-		}
-	}
-	if !atPKMN(m) {
-		return fmt.Errorf("skill: SwitchActive: cursor at x=%#02x row %d, want POKéMON (x=%#02x row 0)",
-			m.Peek8(sym.TopMenuItemX), int(m.Peek8(sym.CurrentMenuItem)), battleMenuRightX)
+	// 2. Select the semantic POKéMON entry. The active profile owns the
+	// battle-menu layout; this driver no longer knows Gen I cursor columns.
+	if err := selectBattleMainMenuEntry(m, game.BattleMenuPokemon); err != nil {
+		return fmt.Errorf("skill: SwitchActive: select POKéMON: %w", err)
 	}
 
 	// 3. A on POKéMON opens the party menu. The VOLUNTARY menu prints the
