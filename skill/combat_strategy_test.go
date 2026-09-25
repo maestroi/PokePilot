@@ -30,12 +30,12 @@ func (s *fakeGen2CombatStrategy) EvaluateCombatMove(
 		legacy = uint8(nativeMoveID)
 	}
 	return game.BattleMoveEvaluation{
-		MoveID:          legacy,
-		NativeMoveID:    nativeMoveID,
-		Accuracy:        255,
-		CurrentPP:       currentPP,
-		ExpectedScore:   s.scores[nativeMoveID],
-		PolicyPriority:  s.priorities[nativeMoveID],
+		MoveID:         legacy,
+		NativeMoveID:   nativeMoveID,
+		Accuracy:       255,
+		CurrentPP:      currentPP,
+		ExpectedScore:  s.scores[nativeMoveID],
+		PolicyPriority: s.priorities[nativeMoveID],
 	}, s.roles[nativeMoveID], nil
 }
 
@@ -136,14 +136,14 @@ func TestSwitchPolicyPreservesWiderNativePartyMechanics(t *testing.T) {
 		Party: []game.BattlePartyMon{
 			{
 				NativeSpeciesID: 152,
-				Level: 20, HP: 60, MaxHP: 60,
+				Level:           20, HP: 60, MaxHP: 60,
 				Type1: 1, Type2: 1,
 				Attack: 60, Defense: 60, SpecialAttack: 60, SpecialDefense: 60,
 				Moves: [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 20}},
 			},
 			{
 				NativeSpeciesID: 251,
-				Level: 20, HP: 60, MaxHP: 60,
+				Level:           20, HP: 60, MaxHP: 60,
 				Type1: 0x101, Type2: 0x102,
 				Attack: 60, Defense: 60, SpecialAttack: 130, SpecialDefense: 110,
 				Moves: [4]game.BattlePartyMove{{NativeMoveID: wideMove, PP: 20}},
