@@ -58,7 +58,7 @@ export function parseSemanticReplay(input: unknown): SemanticReplayTimeline {
   return timeline as SemanticReplayTimeline
 }
 
-export function semanticReplayStateAtMS(timeline: SemanticReplayTimeline | null, atMS: number): RenderState | null {
+export function semanticReplaySampleAtMS(timeline: SemanticReplayTimeline | null, atMS: number): SemanticReplaySample | null {
   if (!timeline?.samples.length) return null
   const target = Number.isFinite(atMS) ? atMS : 0
   let low = 0
@@ -68,7 +68,12 @@ export function semanticReplayStateAtMS(timeline: SemanticReplayTimeline | null,
     if (timeline.samples[mid].at_ms <= target) low = mid + 1
     else high = mid
   }
-  const sample = timeline.samples[Math.max(0, low - 1)]
+  return timeline.samples[Math.max(0, low - 1)]
+}
+
+export function semanticReplayStateAtMS(timeline: SemanticReplayTimeline | null, atMS: number): RenderState | null {
+  const sample = semanticReplaySampleAtMS(timeline, atMS)
+  if (!sample || !timeline) return null
   const layerSet = Number(sample.layer_set || 0)
   const layers = layerSet > 0 ? timeline.layer_sets?.[layerSet - 1] : undefined
   return {
