@@ -10,6 +10,7 @@ import (
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 type fieldPathAction uint8
@@ -105,7 +106,14 @@ func (r fieldPathRules) moveAllowed(x, y int, input world.Step) bool {
 	return r.MoveAllowed == nil || r.MoveAllowed(x, y, input)
 }
 
+type fieldPathCuttableGrid interface {
+	Cuttable(x, y int) bool
+}
+
 func fieldPathCutTile(g fieldPathGrid, tileset uint8, x, y int) bool {
+	if cuttable, ok := g.(fieldPathCuttableGrid); ok {
+		return cuttable.Cuttable(x, y)
+	}
 	if field, ok := g.FieldTile(x, y); ok && cutRouteTile(tileset, field) {
 		return true
 	}
@@ -115,14 +123,11 @@ func fieldPathCutTile(g fieldPathGrid, tileset uint8, x, y int) bool {
 	return false
 }
 
-func fieldPathWaterTile(g fieldPathGrid, x, y int) bool {
-	if field, ok := g.FieldTile(x, y); ok && field == surfWaterTile {
-		return true
+func fieldPathWaterTile(land, water fieldPathGrid, x, y int) bool {
+	if water == nil || !water.InBounds(x, y) || !water.Walkable(x, y) {
+		return false
 	}
-	if collision, ok := g.Tile(x, y); ok && collision == surfWaterTile {
-		return true
-	}
-	return false
+	return land == nil || !land.Walkable(x, y)
 }
 
 // planFieldPath preserves the historical conservative local policy for pure
@@ -234,7 +239,7 @@ func planFieldPathWithCost(
 					continue
 				}
 				nx, ny := cur.x+move.DX, cur.y+move.DY
-				nextWater := fieldPathWaterTile(water, nx, ny) || !land.Walkable(nx, ny)
+				nextWater := fieldPathWaterTile(land, water, nx, ny) || !land.Walkable(nx, ny)
 				push(cur, fieldPathState{x: nx, y: ny, water: nextWater},
 					fieldPathStep{Move: move, Action: fieldPathWalk}, absInt(move.DX)+absInt(move.DY))
 				continue
@@ -265,7 +270,7 @@ func planFieldPathWithCost(
 					fieldPathStep{Move: input, Action: fieldPathCut}, 1)
 				continue
 			}
-			if canSurf && rule.canSurfFrom(cur.x, cur.y) && water != nil && fieldPathWaterTile(water, nx, ny) {
+			if canSurf && rule.canSurfFrom(cur.x, cur.y) && water != nil && fieldPathWaterTile(land, water, nx, ny) {
 				if move, ok := water.Movement(cur.x, cur.y, input, blocked); ok {
 					wx, wy := cur.x+move.DX, cur.y+move.DY
 					push(cur, fieldPathState{x: wx, y: wy, water: true},
@@ -277,7 +282,7 @@ func planFieldPathWithCost(
 	return nil, fieldPathCost{}, world.ErrNoPath
 }
 
-func currentFieldPathPlanWithRulesAndCost(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithRulesAndCost(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
 	overworld, err := overworldDecoderFor(m)
 	if err != nil {
 		return nil, fieldPathCost{}, err
@@ -289,7 +294,7 @@ func currentFieldPathPlanWithRulesAndCost(m *emu.Emu, romData []byte, h rom.MapH
 	return currentFieldPathPlanWithRulesAndCostWithDecoders(m, overworld, fieldActions, romData, h, dest, blocked, rules)
 }
 
-func currentFieldPathPlanWithRulesAndCostWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithRulesAndCostWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
 	fieldActions, err := fieldActionDecoderFor(m)
 	if err != nil {
 		return nil, fieldPathCost{}, err
@@ -297,7 +302,7 @@ func currentFieldPathPlanWithRulesAndCostWithDecoder(m *emu.Emu, decoder game.Ov
 	return currentFieldPathPlanWithRulesAndCostWithDecoders(m, decoder, fieldActions, romData, h, dest, blocked, rules)
 }
 
-func currentFieldPathPlanWithRulesAndCostWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithRulesAndCostWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
 	land, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
 	if err != nil {
 		return nil, fieldPathCost{}, err
@@ -315,8 +320,9 @@ func currentFieldPathPlanWithRulesAndCostWithDecoders(m *emu.Emu, decoder game.O
 	if err != nil {
 		return nil, fieldPathCost{}, err
 	}
+	header := h.WorldMapHeader()
 	return planFieldPathWithCost(
-		land, water, h.Tileset,
+		land, water, uint8(header.NativeTileset),
 		int(live.X), int(live.Y), int(dest.X), int(dest.Y),
 		blocked,
 		caps.Has(capCanCut), caps.Has(capCanSurf), startWater,
@@ -325,16 +331,16 @@ func currentFieldPathPlanWithRulesAndCostWithDecoders(m *emu.Emu, decoder game.O
 	)
 }
 
-func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, error) {
+func currentFieldPathPlanWithRules(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, error) {
 	plan, _, err := currentFieldPathPlanWithRulesAndCost(m, romData, h, dest, blocked, rules)
 	return plan, err
 }
 
-func currentFieldPathPlanWithCost(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithCost(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
 	return currentFieldPathPlanWithRulesAndCost(m, romData, h, dest, blocked, currentFieldPathRules(m, h))
 }
 
-func currentFieldPathPlanWithCostWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithCostWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
 	fieldActions, err := fieldActionDecoderFor(m)
 	if err != nil {
 		return nil, fieldPathCost{}, err
@@ -342,11 +348,11 @@ func currentFieldPathPlanWithCostWithDecoder(m *emu.Emu, decoder game.OverworldD
 	return currentFieldPathPlanWithCostWithDecoders(m, decoder, fieldActions, romData, h, dest, blocked)
 }
 
-func currentFieldPathPlanWithCostWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
+func currentFieldPathPlanWithCostWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
 	return currentFieldPathPlanWithRulesAndCostWithDecoders(m, decoder, fieldActions, romData, h, dest, blocked, currentFieldPathRules(m, h))
 }
 
-func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, error) {
+func currentFieldPathPlan(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, error) {
 	plan, _, err := currentFieldPathPlanWithCost(m, romData, h, dest, blocked)
 	return plan, err
 }
@@ -361,7 +367,7 @@ func currentFieldPathPlan(m *emu.Emu, romData []byte, h rom.MapHeader, dest Dest
 // GoTo should stay on this map and let walkWithinMap execute the field
 // actions directly; a negative result leaves the existing leave/re-enter
 // component routing behavior untouched.
-func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader, dest Destination) (bool, error) {
+func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination) (bool, error) {
 	decoder, err := overworldDecoderFor(m)
 	if err != nil {
 		return false, err
@@ -369,7 +375,7 @@ func fieldPathReachableOnCurrentMap(m *emu.Emu, romData []byte, h rom.MapHeader,
 	return fieldPathReachableOnCurrentMapWithDecoder(m, decoder, romData, h, dest)
 }
 
-func fieldPathReachableOnCurrentMapWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h rom.MapHeader, dest Destination) (bool, error) {
+func fieldPathReachableOnCurrentMapWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, h worldmodel.HeaderView, dest Destination) (bool, error) {
 	fieldActions, err := fieldActionDecoderFor(m)
 	if err != nil {
 		return false, err
@@ -377,7 +383,7 @@ func fieldPathReachableOnCurrentMapWithDecoder(m *emu.Emu, decoder game.Overworl
 	return fieldPathReachableOnCurrentMapWithDecoders(m, decoder, fieldActions, romData, h, dest)
 }
 
-func fieldPathReachableOnCurrentMapWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h rom.MapHeader, dest Destination) (bool, error) {
+func fieldPathReachableOnCurrentMapWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h worldmodel.HeaderView, dest Destination) (bool, error) {
 	live, err := fieldPathRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
 		return false, err

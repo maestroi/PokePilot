@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -20,11 +20,34 @@ const elevatorMenuBudget = 300
 //
 // This runs only for adapter-declared elevator edges. Ordinary warps retain the
 // generic Traverse behavior.
-func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.Grid) error {
-	spec, floor, floorIndex, ok := rom.ElevatorFloorForDestination(e.From, e.To)
+func prepareElevatorEdge(m *emu.Emu, h worldmodel.HeaderView, e world.Edge, grid *world.Grid) error {
+	routing, err := routingProfileFor(m)
+	if err != nil {
+		return err
+	}
+	provider := routing.MapProvider(m.ROM())
+	if provider == nil {
+		return fmt.Errorf("skill: elevator: nil map provider")
+	}
+	spec, ok := provider.LookupElevator(e.From)
 	if !ok {
 		return nil
 	}
+	floor, ok := provider.ElevatorFloorForDestination(e.From, e.To)
+	if !ok {
+		return nil
+	}
+	floorIndex := -1
+	for i, candidate := range spec.Floors {
+		if candidate == floor {
+			floorIndex = i
+			break
+		}
+	}
+	if floorIndex < 0 {
+		return fmt.Errorf("skill: elevator %02x destination %02x missing from floor menu", e.From, e.To)
+	}
+	header := h.WorldMapHeader()
 	if e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: elevator transition %02x->%02x is not a warp edge", e.From, e.To)
 	}
@@ -49,7 +72,7 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 	if blocked == nil {
 		blocked = map[[2]int]bool{}
 	}
-	for _, w := range h.Warps {
+	for _, w := range header.Warps {
 		if int(w.X) == int(sx) && int(w.Y) == int(sy) {
 			continue
 		}
@@ -91,11 +114,12 @@ func prepareElevatorEdge(m *emu.Emu, h rom.MapHeader, e world.Edge, grid *world.
 	return nil
 }
 
-func elevatorWarpEntriesMatch(m *emu.Emu, h rom.MapHeader, floor rom.ElevatorFloor) bool {
-	if int(m.Peek8(sym.NumberOfWarps)) < len(h.Warps) {
+func elevatorWarpEntriesMatch(m *emu.Emu, h worldmodel.HeaderView, floor worldmodel.ElevatorFloor) bool {
+	header := h.WorldMapHeader()
+	if int(m.Peek8(sym.NumberOfWarps)) < len(header.Warps) {
 		return false
 	}
-	for i, w := range h.Warps {
+	for i, w := range header.Warps {
 		addr := sym.WarpEntries + uint16(i*4)
 		if m.Peek8(addr) != w.Y || m.Peek8(addr+1) != w.X {
 			return false
@@ -104,5 +128,5 @@ func elevatorWarpEntriesMatch(m *emu.Emu, h rom.MapHeader, floor rom.ElevatorFlo
 			return false
 		}
 	}
-	return len(h.Warps) > 0
+	return len(header.Warps) > 0
 }

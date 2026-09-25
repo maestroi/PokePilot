@@ -1,22 +1,25 @@
 package rom
 
-import "github.com/maestroi/pokepilot/gen1rom"
+import (
+	"github.com/maestroi/pokepilot/gen1rom"
+	"github.com/maestroi/pokepilot/worldmodel"
+)
 
 // ObjectInteractionRole describes Red's built-in text-script dispatch for a
 // map object. These scripts do not behave like ordinary NPC dialogue: the home
 // text dispatcher transfers control to a service/menu handler instead of just
 // printing text. Generic Talk must therefore not own them.
-type ObjectInteractionRole string
+type ObjectInteractionRole = worldmodel.InteractionRole
 
 const (
-	InteractionPokemonCenterNurse ObjectInteractionRole = "pokemon_center_nurse"
-	InteractionMart               ObjectInteractionRole = "mart"
-	InteractionBillsPC            ObjectInteractionRole = "bills_pc"
-	InteractionPlayersPC          ObjectInteractionRole = "players_pc"
-	InteractionPokemonCenterPC    ObjectInteractionRole = "pokemon_center_pc"
-	InteractionPrizeVendor        ObjectInteractionRole = "prize_vendor"
-	InteractionCableClub          ObjectInteractionRole = "cable_club"
-	InteractionVendingMachine     ObjectInteractionRole = "vending_machine"
+	InteractionPokemonCenterNurse = worldmodel.InteractionPokemonCenterNurse
+	InteractionMart               = worldmodel.InteractionMart
+	InteractionBillsPC            = worldmodel.InteractionBillsPC
+	InteractionPlayersPC          = worldmodel.InteractionPlayersPC
+	InteractionPokemonCenterPC    = worldmodel.InteractionPokemonCenterPC
+	InteractionPrizeVendor        = worldmodel.InteractionPrizeVendor
+	InteractionCableClub          = worldmodel.InteractionCableClub
+	InteractionVendingMachine     = worldmodel.InteractionVendingMachine
 )
 
 // SpecialInteractionActor is a map object whose text pointer starts with one

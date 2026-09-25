@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -26,7 +26,7 @@ import (
 func fieldPathBridgeOnCurrentMap(
 	m *emu.Emu,
 	romData []byte,
-	h rom.MapHeader,
+	h worldmodel.HeaderView,
 	routeGraph *world.Graph,
 	dest Destination,
 	prereqs world.RoutePrerequisites,

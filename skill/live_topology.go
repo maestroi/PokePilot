@@ -4,128 +4,99 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
-const (
-	liveMapBorderBlocks = 3
-	// IsNextTileShoreOrWater in the Red ROM accepts $14 as the ordinary
-	// water tile. Land collision lists intentionally exclude it, so a Surf
-	// traversal grid must add it back after decoding the shared map blocks.
-	surfWaterTile uint8 = 0x14
-)
-
-func readLiveMapBlocks(peek func(uint16) uint8, widthBlocks, heightBlocks int) ([]byte, error) {
-	if widthBlocks < 0 || heightBlocks < 0 {
-		return nil, fmt.Errorf("skill: live map has negative dimensions %dx%d", widthBlocks, heightBlocks)
-	}
-	if widthBlocks == 0 || heightBlocks == 0 {
-		return []byte{}, nil
-	}
-	stride := widthBlocks + 2*liveMapBorderBlocks
-	first := liveMapBorderBlocks*stride + liveMapBorderBlocks
-	last := first + (heightBlocks-1)*stride + (widthBlocks - 1)
-	if first < 0 || last >= sym.OverworldMapLen {
-		return nil, fmt.Errorf("skill: live map %dx%d needs wOverworldMap offset %d, buffer length is %d", widthBlocks, heightBlocks, last, sym.OverworldMapLen)
-	}
-	blocks := make([]byte, widthBlocks*heightBlocks)
-	for y := 0; y < heightBlocks; y++ {
-		for x := 0; x < widthBlocks; x++ {
-			off := first + y*stride + x
-			blocks[y*widthBlocks+x] = peek(sym.OverworldMap + uint16(off))
-		}
-	}
-	return blocks, nil
-}
-
-func liveMapBlocks(m *emu.Emu, h rom.MapHeader) ([]byte, error) {
-	widthBlocks, heightBlocks := int(h.WidthBlocks), int(h.HeightBlocks)
-	if got := int(m.Peek8(sym.CurMapWidth)); got != widthBlocks {
-		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", got, h.ID, widthBlocks)
-	}
-	if got := int(m.Peek8(sym.CurMapHeight)); got != heightBlocks {
-		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", got, h.ID, heightBlocks)
-	}
-	return readLiveMapBlocks(m.Peek8, widthBlocks, heightBlocks)
-}
-
-func liveMapBlocksFromMem(mem *state.Mem, h rom.MapHeader) ([]byte, error) {
-	widthBlocks, heightBlocks := int(h.WidthBlocks), int(h.HeightBlocks)
-	if got := int(mem.U8(sym.CurMapWidth)); got != widthBlocks {
-		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", got, h.ID, widthBlocks)
-	}
-	if got := int(mem.U8(sym.CurMapHeight)); got != heightBlocks {
-		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", got, h.ID, heightBlocks)
-	}
-	return readLiveMapBlocks(mem.U8, widthBlocks, heightBlocks)
-}
-
-// liveMapGrid decodes the current post-script geometry using the traversal mode
-// the game is actually in. It intentionally has no cache: semantic transitions
-// such as Cut and Surf are followed by a fresh decode before routing continues.
-func liveMapGrid(m *emu.Emu, romData []byte, h rom.MapHeader) (*world.Grid, error) {
-	decoder, err := fieldActionDecoderFor(m)
+// liveMapBlocks returns the active profile's mutable row-major block map for
+// the current map and verifies it matches the static provider header.
+func liveMapBlocks(m *emu.Emu, h worldmodel.HeaderView) ([]byte, error) {
+	routing, err := routingProfileFor(m)
 	if err != nil {
 		return nil, err
 	}
-	mode := traversalModeForFieldActionState(decoder.DecodeFieldAction(m))
-	return liveMapGridForTraversal(m, romData, h, mode)
+	return liveMapBlocksWithDecoder(m, routing, h)
 }
 
-// LiveMapGridFromMem gives pure observation code the same post-script geometry
-// used by runtime navigation. In particular, map scripts that ReplaceTileBlock
-// must affect both offered objective reachability and later execution.
-func LiveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
-	if mem == nil {
-		return nil, fmt.Errorf("skill: live map grid: nil memory snapshot")
+func liveMapBlocksWithDecoder(reader game.MemoryReader, decoder game.RoutingDecoder, h worldmodel.HeaderView) ([]byte, error) {
+	if decoder == nil {
+		return nil, fmt.Errorf("skill: live map: nil routing decoder")
 	}
-	return liveMapGridFromMem(mem, romData, h)
-}
-
-func liveMapGridFromMem(mem *state.Mem, romData []byte, h rom.MapHeader) (*world.Grid, error) {
-	mode := world.TraversalLand
-	if mem.U8(sym.WalkBikeSurfState) == fieldSurfingState {
-		mode = world.TraversalWater
-	}
-	blocks, err := liveMapBlocksFromMem(mem, h)
+	header := h.WorldMapHeader()
+	live, err := decoder.DecodeLiveTopology(reader)
 	if err != nil {
 		return nil, err
 	}
-	return buildLiveMapGrid(romData, h, blocks, mode)
+	if live.NativeMapID != uint16(header.ID) {
+		return nil, fmt.Errorf("skill: live map id is %02x, header is %02x", live.NativeMapID, header.ID)
+	}
+	if live.WidthBlocks != int(header.WidthBlocks) {
+		return nil, fmt.Errorf("skill: live map width is %d blocks, ROM header for map %02x says %d", live.WidthBlocks, header.ID, header.WidthBlocks)
+	}
+	if live.HeightBlocks != int(header.HeightBlocks) {
+		return nil, fmt.Errorf("skill: live map height is %d blocks, ROM header for map %02x says %d", live.HeightBlocks, header.ID, header.HeightBlocks)
+	}
+	want := live.WidthBlocks * live.HeightBlocks
+	if len(live.Blocks) != want {
+		return nil, fmt.Errorf("skill: live map %02x block payload has %d entries, want %d", header.ID, len(live.Blocks), want)
+	}
+	return append([]byte(nil), live.Blocks...), nil
 }
 
-func liveMapGridForTraversal(m *emu.Emu, romData []byte, h rom.MapHeader, mode world.TraversalMode) (*world.Grid, error) {
-	blocks, err := liveMapBlocks(m, h)
+// liveMapGrid decodes current post-script geometry using the traversal mode the
+// active profile reports. Static collision interpretation stays in the ROM
+// provider; skill never reads a concrete game's ROM tables.
+func liveMapGrid(m *emu.Emu, romData []byte, h worldmodel.HeaderView) (*world.Grid, error) {
+	routing, err := routingProfileFor(m)
 	if err != nil {
 		return nil, err
 	}
-	return buildLiveMapGrid(romData, h, blocks, mode)
-}
-
-func buildLiveMapGrid(romData []byte, h rom.MapHeader, blocks []byte, mode world.TraversalMode) (*world.Grid, error) {
-	grid, err := world.BuildFromBlocksForTraversal(romData, h, blocks, mode)
+	live, err := routing.DecodeLiveTopology(m)
 	if err != nil {
 		return nil, err
 	}
-	if mode == world.TraversalWater {
-		// BuildFromBlocksForTraversal swaps the ROM's tile-pair collision table,
-		// but the base collision list is shared with land movement and does not
-		// itself include water. The actual game permits $14 while surfing, so
-		// project that same semantic fact into live pathfinding. Checking both
-		// top-left field-action and bottom-left collision subtiles covers the
-		// two tile contracts the decoder deliberately keeps separate.
-		for y := 0; y < grid.Height; y++ {
-			for x := 0; x < grid.Width; x++ {
-				field, fieldOK := grid.FieldTile(x, y)
-				collision, collisionOK := grid.Tile(x, y)
-				if (fieldOK && field == surfWaterTile) || (collisionOK && collision == surfWaterTile) {
-					grid.Set(x, y, true)
-				}
-			}
-		}
+	return liveMapGridWithRuntime(m, routing, routing.MapProvider(romData), h, live.Traversal)
+}
+
+func liveMapGridForTraversal(m *emu.Emu, romData []byte, h worldmodel.HeaderView, mode world.TraversalMode) (*world.Grid, error) {
+	routing, err := routingProfileFor(m)
+	if err != nil {
+		return nil, err
 	}
-	return grid, nil
+	return liveMapGridWithRuntime(m, routing, routing.MapProvider(romData), h, mode)
+}
+
+func liveMapGridWithRuntime(
+	reader game.MemoryReader,
+	decoder game.RoutingDecoder,
+	provider worldmodel.MapHeaderProvider,
+	h worldmodel.HeaderView,
+	mode world.TraversalMode,
+) (*world.Grid, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("skill: live map grid: nil map provider")
+	}
+	header := h.WorldMapHeader()
+	blocks, err := liveMapBlocksWithDecoder(reader, decoder, header)
+	if err != nil {
+		return nil, err
+	}
+	spec, err := provider.Grid(header.ID, blocks, mode)
+	if err != nil {
+		return nil, err
+	}
+	return world.GridFromSpec(spec)
+}
+
+func buildLiveMapGrid(romData []byte, h worldmodel.HeaderView, blocks []byte, mode world.TraversalMode) (*world.Grid, error) {
+	provider, ok := worldmodel.ProviderForROM(romData)
+	if !ok || provider == nil {
+		return nil, fmt.Errorf("skill: live map grid: no map provider for ROM")
+	}
+	spec, err := provider.Grid(h.WorldMapHeader().ID, blocks, mode)
+	if err != nil {
+		return nil, err
+	}
+	return world.GridFromSpec(spec)
 }

@@ -7,7 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -151,7 +151,7 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 		return traverseIntraMapWarp(m, romData, e)
 	}
 
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
 		return fmt.Errorf("skill: Traverse: parse map %02x: %w", e.From, err)
 	}
@@ -427,7 +427,7 @@ func untriedOrthogonalApproach(g *world.Grid, wx, wy int, tried map[[2]int]bool)
 // every re-plan, not just the path to it: an NPC standing in a one-tile gap
 // can make the nearest edge tile unreachable while another one on the same
 // edge is fine.
-func walkToConnectionEdge(m *emu.Emu, h rom.MapHeader, grid *world.Grid, e world.Edge, excluded map[[2]int]bool) (world.Step, error) {
+func walkToConnectionEdge(m *emu.Emu, h worldmodel.HeaderView, grid *world.Grid, e world.Edge, excluded map[[2]int]bool) (world.Step, error) {
 	var unwalkable error
 	err := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
 		func(blocked map[[2]int]bool) ([]world.Step, error) {
@@ -628,16 +628,17 @@ func mergeBlockedTiles(blocked, extra map[[2]int]bool) map[[2]int]bool {
 // on SILPH_CO_11F (5,5), where treating the inert teleporter as an eject
 // tile forced every approach to the president through the Beauty at (10,5)
 // and left GoTo with no capability-aware path.
-func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]int]bool {
-	out := make(map[[2]int]bool, len(blocked)+len(h.Warps))
+func warpAvoidance(h worldmodel.HeaderView, sx, sy int, blocked map[[2]int]bool) map[[2]int]bool {
+	header := h.WorldMapHeader()
+	out := make(map[[2]int]bool, len(blocked)+len(header.Warps))
 	for p, b := range blocked {
 		out[p] = b
 	}
-	for _, w := range h.Warps {
+	for _, w := range header.Warps {
 		if int(w.X) == sx && int(w.Y) == sy {
 			continue
 		}
-		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+		if w.Inert {
 			continue
 		}
 		out[[2]int{int(w.X), int(w.Y)}] = true
@@ -674,12 +675,13 @@ func warpAvoidance(h rom.MapHeader, sx, sy int, blocked map[[2]int]bool) map[[2]
 // for edge e. The filters match warpTarget: elevator scripts rewrite live
 // destinations, paired door tiles may share adjacent landings, and LAST_MAP
 // (0xFF) warps resolve to e.To when the edge tile itself is a LAST_MAP warp.
-func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.Warp {
+func edgeWarpCandidates(h worldmodel.HeaderView, e world.Edge, romData []byte) []worldmodel.Warp {
+	header := h.WorldMapHeader()
 	lastMapDest, haveLastMap := uint8(0), false
 	var targetWarp uint8
 	haveTarget := false
-	for _, w := range h.Warps {
-		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+	for _, w := range header.Warps {
+		if w.Inert {
 			continue
 		}
 		if w.X == e.WarpX && w.Y == e.WarpY {
@@ -690,11 +692,17 @@ func edgeWarpCandidates(h rom.MapHeader, e world.Edge, romData []byte) []rom.War
 		}
 	}
 
-	_, _, _, elevatorEdge := rom.ElevatorFloorForDestination(e.From, e.To)
-	var candidates []rom.Warp
-	destHeader, destErr := rom.ParseMap(romData, e.To)
-	for _, w := range h.Warps {
-		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+	provider, _ := routingProviderForROM(romData)
+	elevatorEdge := false
+	var destHeader worldmodel.MapHeader
+	var destErr error
+	if provider != nil {
+		_, elevatorEdge = provider.ElevatorFloorForDestination(e.From, e.To)
+		destHeader, destErr = provider.ParseMap(e.To)
+	}
+	var candidates []worldmodel.Warp
+	for _, w := range header.Warps {
+		if w.Inert {
 			continue
 		}
 		if elevatorEdge {
@@ -744,7 +752,7 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 	if got := m.Peek8(sym.CurMap); got != e.From {
 		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", got, e.From)
 	}
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
 		return err
 	}
@@ -793,10 +801,11 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 	return walkWithinMap(m, romData, best.dest)
 }
 
-func warpTarget(h rom.MapHeader, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, excludeWarp map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
-	warpTile := make(map[[2]int]bool, len(h.Warps))
-	for _, w := range h.Warps {
-		if rom.IsInertWarp(h.ID, w.X, w.Y) {
+func warpTarget(h worldmodel.HeaderView, e world.Edge, g *world.Grid, sx, sy int, blocked map[[2]int]bool, excludeWarp map[[2]int]bool, romData []byte) (wx, wy int, steps []world.Step, push world.Step, err error) {
+	header := h.WorldMapHeader()
+	warpTile := make(map[[2]int]bool, len(header.Warps))
+	for _, w := range header.Warps {
+		if w.Inert {
 			continue
 		}
 		warpTile[[2]int{int(w.X), int(w.Y)}] = true
@@ -1030,7 +1039,7 @@ func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
 	if m.Peek8(sym.CurMap) != edge.From {
 		return false
 	}
-	h, err := rom.ParseMap(romData, edge.From)
+	h, err := routingHeaderFor(m, edge.From)
 	if err != nil {
 		return false
 	}

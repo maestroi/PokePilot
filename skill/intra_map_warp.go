@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
+	"github.com/maestroi/pokepilot/worldmodel"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -23,11 +23,12 @@ const intraMapWarpCrossBudget = 1200
 // the route graph; for a same-map warp the destination lives in the same
 // header. This is the positive identity used by traversal instead of relying
 // on animation timing.
-func intraMapWarpDestination(h rom.MapHeader, e world.Edge) (uint8, uint8, error) {
+func intraMapWarpDestination(h worldmodel.HeaderView, e world.Edge) (uint8, uint8, error) {
+	header := h.WorldMapHeader()
 	if e.Kind != world.EdgeWarp || e.From != e.To {
 		return 0, 0, fmt.Errorf("edge %s is not a same-map warp", edgeName(e))
 	}
-	for _, w := range h.Warps {
+	for _, w := range header.Warps {
 		if w.X != e.WarpX || w.Y != e.WarpY {
 			continue
 		}
@@ -35,11 +36,11 @@ func intraMapWarpDestination(h rom.MapHeader, e world.Edge) (uint8, uint8, error
 			return 0, 0, fmt.Errorf("warp (%d,%d) on map %02x points to map %02x, want %02x",
 				w.X, w.Y, e.From, w.DestMap, e.To)
 		}
-		if int(w.DestWarpID) >= len(h.Warps) {
+		if int(w.DestWarpID) >= len(header.Warps) {
 			return 0, 0, fmt.Errorf("warp (%d,%d) on map %02x has destination index %d, only %d warps exist",
-				w.X, w.Y, e.From, w.DestWarpID, len(h.Warps))
+				w.X, w.Y, e.From, w.DestWarpID, len(header.Warps))
 		}
-		dest := h.Warps[w.DestWarpID]
+		dest := header.Warps[w.DestWarpID]
 		return dest.X, dest.Y, nil
 	}
 	return 0, 0, fmt.Errorf("source warp (%d,%d) not found on map %02x", e.WarpX, e.WarpY, e.From)
@@ -55,7 +56,7 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 		return fmt.Errorf("skill: traverseIntraMapWarp: invalid edge %s from current map %02x", edgeName(e), cur)
 	}
 
-	h, err := rom.ParseMap(romData, e.From)
+	h, err := routingHeaderFor(m, e.From)
 	if err != nil {
 		return fmt.Errorf("skill: traverseIntraMapWarp: parse map %02x: %w", e.From, err)
 	}

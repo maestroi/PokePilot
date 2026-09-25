@@ -24,6 +24,7 @@ type Grid struct {
 	walkable      []bool
 	collisionTile []uint8
 	fieldTile     []uint8
+	cuttable      []bool
 	tilePairs     map[[2]uint8]bool
 	ledges        []worldmodel.Ledge
 	counterTiles  [3]uint8
@@ -73,6 +74,15 @@ func (g *Grid) FieldTile(x, y int) (uint8, bool) {
 		return 0, false
 	}
 	return g.fieldTile[y*g.Width+x], true
+}
+
+// Cuttable reports whether the active adapter marks (x,y) as a removable
+// Cut-style route obstacle. Games that do not expose such cells return false.
+func (g *Grid) Cuttable(x, y int) bool {
+	if !g.InBounds(x, y) || len(g.cuttable) != g.Width*g.Height {
+		return false
+	}
+	return g.cuttable[y*g.Width+x]
 }
 
 // IsCounterTile reports whether the collision tile at (x, y) is one of the
@@ -145,6 +155,7 @@ func gridFromSpec(spec worldmodel.GridSpec) (*Grid, error) {
 		walkable:      append([]bool(nil), spec.Walkable...),
 		collisionTile: append([]uint8(nil), spec.CollisionTile...),
 		fieldTile:     append([]uint8(nil), spec.FieldTile...),
+		cuttable:      append([]bool(nil), spec.Cuttable...),
 		tilePairs:     pairs,
 		ledges:        append([]worldmodel.Ledge(nil), spec.Ledges...),
 		counterTiles:  spec.CounterTiles,
