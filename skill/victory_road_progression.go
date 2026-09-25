@@ -16,7 +16,6 @@ const (
 	route23Map               uint8 = 0x22
 	indigoPlateauMap         uint8 = 0x09
 	indigoPlateauLobbyMap    uint8 = 0xAE
-	route23NorthCaveY              = 31
 	victoryRoadTravelBattles       = 64
 	victoryRoadWarpBudget          = 1800
 )
@@ -272,6 +271,21 @@ func victoryRoadLadderEdge(romData []byte, from, to uint8) (world.Edge, error) {
 	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no warp to %#02x", from, to)
 }
 
+// victoryRoadExitEdge is the ROM LAST_MAP warp that leaves floor from onto
+// Route 23's north side.
+func victoryRoadExitEdge(romData []byte, from uint8) (world.Edge, error) {
+	h, err := rom.ParseMap(romData, from)
+	if err != nil {
+		return world.Edge{}, fmt.Errorf("skill: Victory Road parse map %#02x: %w", from, err)
+	}
+	for _, w := range h.Warps {
+		if w.DestMap == 0xFF {
+			return world.Edge{Kind: world.EdgeWarp, From: from, To: route23Map, WarpX: w.X, WarpY: w.Y}, nil
+		}
+	}
+	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no exit warp", from)
+}
+
 func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	for phase := 0; phase < 10; phase++ {
 		var mem state.Mem
@@ -297,6 +311,21 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			}
 
 		case victoryRoad2FMap:
+			// Route23SetVictoryRoadBoulders resets every 2F/3F switch event
+			// whenever Route 23 loads, so walking back in through the north
+			// exit leaves the player on the exit side with the switches unset
+			// and the west boulders unreachable. The switches only matter while
+			// that exit is unreachable.
+			exit, err := victoryRoadExitEdge(romData, victoryRoad2FMap)
+			if err != nil {
+				return err
+			}
+			if warpEdgeReachable(m, romData, exit) {
+				if err := Traverse(m, romData, exit); err != nil {
+					return fmt.Errorf("skill: Victory Road leave by 2F exit: %w", err)
+				}
+				continue
+			}
 			if state.HasEvent(&mem, eventVictoryRoad3BoulderInHole) {
 				if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad2FSwitch2); err != nil {
 					return fmt.Errorf("skill: Victory Road 2F east switch: %w", err)
@@ -397,8 +426,8 @@ func VictoryRoadProgression(m *emu.Emu, romData []byte, policy MovePolicy) error
 	cur := m.Peek8(sym.CurMap)
 	if !inVictoryRoad(cur) {
 		if cur == route23Map {
-			_, y := playerXY(m)
-			if int(y) <= route23NorthCaveY {
+			x, y := playerXY(m)
+			if state.Route23NorthOfVictoryRoad(int(x), int(y)) {
 				return prepareIndigoLobby(m, romData, policy)
 			}
 		} else {

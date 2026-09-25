@@ -10,18 +10,23 @@ import (
 func TestVictoryRoadClearedForProgressSurvivesRoute23EventResetByGeography(t *testing.T) {
 	facts := state.StoryFacts{Route23BadgeChecksComplete: true, Route23BadgeChecksPassed: 7}
 
-	var north state.Mem
-	north[sym.CurMap] = profileRoute23Map
-	north[sym.YCoord] = profileRoute23NorthCaveY
-	if !victoryRoadClearedForProgress(&north, facts) {
-		t.Fatal("Route 23 north-of-cave position did not preserve Victory Road clear progress")
+	// (14,32) is where the 2F exit drops the player (run-s6v9q3t2w5rl).
+	for _, p := range [][2]uint8{{18, 30}, {14, 32}} {
+		var north state.Mem
+		north[sym.CurMap] = profileRoute23Map
+		north[sym.XCoord], north[sym.YCoord] = p[0], p[1]
+		if !victoryRoadClearedForProgress(&north, facts) {
+			t.Fatalf("Route 23 north-of-cave position %v did not preserve Victory Road clear progress", p)
+		}
 	}
 
-	var south state.Mem
-	south[sym.CurMap] = profileRoute23Map
-	south[sym.YCoord] = profileRoute23NorthCaveY + 1
-	if victoryRoadClearedForProgress(&south, facts) {
-		t.Fatal("Route 23 south-of-cave position incorrectly preserved Victory Road clear progress")
+	for _, p := range [][2]uint8{{4, 31}, {4, 32}, {14, 40}} {
+		var south state.Mem
+		south[sym.CurMap] = profileRoute23Map
+		south[sym.XCoord], south[sym.YCoord] = p[0], p[1]
+		if victoryRoadClearedForProgress(&south, facts) {
+			t.Fatalf("Route 23 south-of-cave position %v incorrectly preserved Victory Road clear progress", p)
+		}
 	}
 
 	var lobby state.Mem

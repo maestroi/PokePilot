@@ -104,10 +104,17 @@ const (
 	badgeVolcano = 6
 	badgeEarth   = 7
 
-	route23Map        = 0x22
-	route23NorthCaveY = 31
-	indigoPlateauMap  = 0x09
-	indigoLobbyMap    = 0xae
+	route23Map       = 0x22
+	indigoPlateauMap = 0x09
+	indigoLobbyMap   = 0xae
+
+	// Route 23 north of Victory Road, measured from the live collision grid
+	// (same blocks and warps as Red). Both cave doors sit on row 31; the 2F
+	// exit at (14,31) opens into an east pocket running to row 37 beside the
+	// 1F entrance's x<=7 corridor, so a row threshold alone is wrong.
+	route23NorthMaxY      = 30
+	route23ExitPocketMinX = 14
+	route23ExitPocketMaxY = 37
 )
 
 var yellowObservedEvents = []struct {
@@ -229,7 +236,8 @@ func yellowVictoryRoadCleared(reader game.MemoryReader, mapID uint8, badgeChecks
 	case indigoPlateauMap, indigoLobbyMap:
 		return true
 	case route23Map:
-		return int(reader.Peek8(sym.YCoord)) <= route23NorthCaveY
+		x, y := int(reader.Peek8(sym.XCoord)), int(reader.Peek8(sym.YCoord))
+		return y <= route23NorthMaxY || (x >= route23ExitPocketMinX && y <= route23ExitPocketMaxY)
 	default:
 		return false
 	}

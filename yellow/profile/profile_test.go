@@ -165,3 +165,16 @@ func TestRealYellowImageIsDetected(t *testing.T) {
 		t.Fatalf("Yellow image sha1=%s, want %s", info.SHA1, sym.ROMSHA1)
 	}
 }
+
+func TestYellowVictoryRoadClearedUsesRoute23ExitPocket(t *testing.T) {
+	for _, tc := range []struct {
+		x, y uint8
+		want bool
+	}{{18, 30, true}, {14, 32, true}, {4, 31, false}, {4, 32, false}, {14, 40, false}} {
+		var mem fakeMemory
+		mem[sym.XCoord], mem[sym.YCoord] = tc.x, tc.y
+		if got := yellowVictoryRoadCleared(&mem, route23Map, true, false, false, false); got != tc.want {
+			t.Errorf("Route 23 (%d,%d) cleared=%v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
