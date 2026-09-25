@@ -62,7 +62,7 @@ func (p *Producer) StaticMap(mapID uint8) (*protocol.MapState, []protocol.TileLa
 	if err != nil {
 		return nil, nil, err
 	}
-	return mapState, semanticLayers(header, grid), nil
+	return mapState, semanticLayers(p.rom, header, grid), nil
 }
 
 // Snapshot captures one coherent RAM observation and enriches the generic
@@ -101,7 +101,7 @@ func (p *Producer) Snapshot(reader game.MemoryReader, meta protocol.FrameMeta) (
 		return protocol.RenderState{}, err
 	}
 	out.Map = mapState
-	out.Layers = semanticLayers(header, grid)
+	out.Layers = semanticLayers(p.rom, header, grid)
 	out.Entities = liveEntities(header, &mem, out.Map.ID)
 	out.Capabilities = addCapabilities(out.Capabilities, protocol.CapabilityLayers, protocol.CapabilityEntities)
 	if out.Player != nil {
@@ -139,7 +139,7 @@ func mapStateFor(header rom.MapHeader, grid *world.Grid) (*protocol.MapState, er
 	}, nil
 }
 
-func semanticLayers(header rom.MapHeader, grid *world.Grid) []protocol.TileLayer {
+func semanticLayers(romData []byte, header rom.MapHeader, grid *world.Grid) []protocol.TileLayer {
 	terrain := protocol.TileLayer{
 		ID:     "terrain",
 		Kind:   protocol.LayerTerrain,
@@ -154,10 +154,14 @@ func semanticLayers(header rom.MapHeader, grid *world.Grid) []protocol.TileLayer
 		Height: grid.Height,
 		Cells:  make([]protocol.TileCell, grid.Width*grid.Height),
 	}
+	ledgeOverTiles := make(map[uint8]struct{})
+	for _, ledge := range rom.Ledges(romData, header.Tileset) {
+		ledgeOverTiles[ledge.Over] = struct{}{}
+	}
 	for y := 0; y < grid.Height; y++ {
 		for x := 0; x < grid.Width; x++ {
 			i := y*grid.Width + x
-			terrain.Cells[i] = semanticTerrainCell(header.Tileset, grid, x, y)
+			terrain.Cells[i] = semanticTerrainCell(header.Tileset, grid, x, y, ledgeOverTiles)
 			objects.Cells[i] = protocol.TileCell{Kind: protocol.TileUnknown}
 		}
 	}
@@ -170,13 +174,14 @@ func semanticLayers(header rom.MapHeader, grid *world.Grid) []protocol.TileLayer
 	return []protocol.TileLayer{terrain, objects}
 }
 
-func semanticTerrainCell(tileset uint8, grid *world.Grid, x, y int) protocol.TileCell {
+func semanticTerrainCell(tileset uint8, grid *world.Grid, x, y int, ledgeOverTiles map[uint8]struct{}) protocol.TileCell {
 	field, fieldOK := grid.FieldTile(x, y)
 	collision, collisionOK := grid.Tile(x, y)
-	return protocol.TileCell{Kind: semanticTerrainKind(tileset, grid.Walkable(x, y), field, fieldOK, collision, collisionOK)}
+	_, ledge := ledgeOverTiles[collision]
+	return protocol.TileCell{Kind: semanticTerrainKind(tileset, grid.Walkable(x, y), field, fieldOK, collision, collisionOK, ledge)}
 }
 
-func semanticTerrainKind(tileset uint8, walkable bool, field uint8, fieldOK bool, collision uint8, collisionOK bool) protocol.TileKind {
+func semanticTerrainKind(tileset uint8, walkable bool, field uint8, fieldOK bool, collision uint8, collisionOK bool, ledge bool) protocol.TileKind {
 	matches := func(tile uint8) bool {
 		return fieldOK && field == tile || collisionOK && collision == tile
 	}
@@ -188,6 +193,8 @@ func semanticTerrainKind(tileset uint8, walkable bool, field uint8, fieldOK bool
 		return protocol.TileTree
 	case tileset == redOverworldTileset && matches(redGrassTile):
 		return protocol.TileGrass
+	case ledge:
+		return protocol.TileLedge
 	case walkable:
 		return protocol.TilePath
 	default:
