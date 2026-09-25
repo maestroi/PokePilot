@@ -30,38 +30,6 @@ var (
 	ErrDialogueInterrupted = errors.New("skill: text box interrupted movement")
 )
 
-// ponytail: the 60/40-frame budgets below are empirical, measured on this
-// ROM (one tile of movement, then the step animation settling). Tighten
-// them only with a measurement, not a guess.
-// hopSettleBudget covers a whole ledge jump, which the ROM drives itself:
-// MEASURED on the Pewter City ledge at (22,28), 42 frames from the press to
-// wJoyIgnore clearing again.
-const (
-	stepMoveBudget   = 60
-	stepSettleBudget = 40
-	hopSettleBudget  = 120
-)
-
-func buttonFor(s world.Step) (emu.Button, bool) {
-	if s.DX == 0 && (s.DY == 2 || s.DY == -2) {
-		s.DY /= 2
-	}
-	if s.DY == 0 && (s.DX == 2 || s.DX == -2) {
-		s.DX /= 2
-	}
-	switch s {
-	case world.StepUp:
-		return emu.Up, true
-	case world.StepDown:
-		return emu.Down, true
-	case world.StepLeft:
-		return emu.Left, true
-	case world.StepRight:
-		return emu.Right, true
-	}
-	return 0, false
-}
-
 func playerXY(m *emu.Emu) (uint8, uint8) {
 	return m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)
 }
@@ -92,12 +60,12 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // braking and Gen I poison-blackout recovery intentionally remain outside the
 // generic core until their own capability slices are defined.
 func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.OverworldDecoder) error {
-	btn, ok := buttonFor(s)
+	btn, ok := movementButtonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
 	start := decoder.DecodeOverworld(m)
-	if start.NativeMapID == uint16(route17Map) && absInt(s.DX)+absInt(s.DY) == 1 {
+	if start.NativeMapID == uint16(route17Map) && movementStepDistance(s) == 1 {
 		return stepOnceCyclingRoad(m, s, btn)
 	}
 
