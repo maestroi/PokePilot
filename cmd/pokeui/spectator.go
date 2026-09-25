@@ -232,6 +232,7 @@ func spectatorHandlerWithReplay(wallBase, replayBase string) http.Handler {
 	if catalog.enabled() {
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/status", spectatorReplayStatusHandler(catalog))
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/video", spectatorReplayVideo(catalog))
+		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/semantic", spectatorReplaySemantic(catalog))
 	}
 	return spectatorSecurityHeaders(mux)
 }
@@ -521,6 +522,48 @@ func spectatorReplayVideo(catalog *spectatorReplayCatalog) http.HandlerFunc {
 		res.Header().Set("Cache-Control", "public, max-age=60")
 		res.WriteHeader(resp.StatusCode)
 		io.Copy(res, resp.Body) //nolint:errcheck // streamed response
+	}
+}
+
+
+func spectatorReplaySemantic(catalog *spectatorReplayCatalog) http.HandlerFunc {
+	client := &http.Client{Timeout: proxyTimeout}
+	return func(res http.ResponseWriter, req *http.Request) {
+		runID := strings.TrimSpace(req.PathValue("id"))
+		if runID == "" || len(runID) > 256 || !catalog.isAllowed(runID) {
+			http.NotFound(res, req)
+			return
+		}
+		up, err := http.NewRequestWithContext(req.Context(), http.MethodGet, catalog.replayBase+"/v1/runs/"+url.PathEscape(runID)+"/replay/semantic", nil)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		resp, err := client.Do(up)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			if status < 400 || status > 599 {
+				status = http.StatusBadGateway
+			}
+			writeSpectatorReplayUnavailable(res, status)
+			return
+		}
+		if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "public, max-age=60")
+		if length := resp.Header.Get("Content-Length"); length != "" {
+			res.Header().Set("Content-Length", length)
+		}
+		res.WriteHeader(http.StatusOK)
+		io.Copy(res, resp.Body) //nolint:errcheck // streamed derived replay data
 	}
 }
 
