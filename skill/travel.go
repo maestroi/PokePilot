@@ -622,14 +622,18 @@ func currentWorld(m *emu.Emu) (Replan, error) {
 // world. On a loss it first waits for the map to change: a blackout can land
 // coordinates before the native map id flips, and that pre-flip window is
 // itself stable.
-func settleWorldWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, pre Replan, lost bool) (Replan, error) {
+type worldSettleMachine interface {
+	game.MemoryReader
+	StepFrame()
+}
+
+func settleWorldWithDecoder(m worldSettleMachine, decoder game.OverworldDecoder, pre Replan, lost bool) (Replan, error) {
 	if lost {
-		if _, err := m.StepUntil(worldStableBudget, func(m *emu.Emu) bool {
-			state := decoder.DecodeOverworld(m)
-			return state.NativeMapID != uint16(pre.Map)
-		}); err != nil {
-			// Blackout transition longer than worldStableBudget: preserve the
-			// historical behavior and fall through to the stability read.
+		for i := 0; i < worldStableBudget; i++ {
+			if decoder.DecodeOverworld(m).NativeMapID != uint16(pre.Map) {
+				break
+			}
+			m.StepFrame()
 		}
 	}
 	last, err := currentWorldWithDecoder(m, decoder)
