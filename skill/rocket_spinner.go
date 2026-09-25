@@ -12,7 +12,7 @@ func travelRocketWarp(m *emu.Emu, policy MovePolicy, goTo func() error) error {
 	_, err := travel(m, policy, 20,
 		goTo,
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgressFor(m) },
 		fightOnly(m, policy),
 	)
 	return err

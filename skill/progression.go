@@ -184,7 +184,7 @@ func interactVermilionTrashCan(m *emu.Emu, romData []byte, x, y uint8, policy Mo
 			return walkWithinMap(m, romData, dest, policy)
 		},
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgressFor(m) },
 		fightOnly(m, policy),
 	)
 	if err != nil {
@@ -270,7 +270,7 @@ func travelOpenVermilion(m *emu.Emu, romData []byte, dest Destination, policy Mo
 	return travel(m, policy, maxBattles,
 		func() error { return walkOpenVermilion(m, romData, dest) },
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgressFor(m) },
 		fightOnly(m, policy),
 	)
 }

@@ -204,7 +204,7 @@ func travelPokemonTower(m *emu.Emu, romData []byte, dest Destination, policy Mov
 	res, err := travel(m, policy, maxEngagements,
 		recoveringGoTo(m, romData, dest, nil, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
-		func() bool { return m.Peek8(sym.StatusFlags4)&blackoutBit != 0 },
+		func() bool { return blackoutInProgressFor(m) },
 		towerBattleResolver(m, policy),
 	)
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
