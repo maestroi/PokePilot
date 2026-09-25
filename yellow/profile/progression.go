@@ -20,8 +20,8 @@ const (
 	eventOakAppearedInPallet     yellowEvent = 39
 	eventViridianGymOpen         yellowEvent = 40
 	eventGotBulbasaurInCerulean  yellowEvent = 168
-	eventBeatTowerJessieJames    yellowEvent = 273
-	eventGotSquirtleFromJenny    yellowEvent = 327
+	eventBeatTowerJessieJames    yellowEvent = 275
+	eventGotSquirtleFromJenny    yellowEvent = 329
 	eventMansionSwitchOn         yellowEvent = 632
 	eventRescuedMrFuji           yellowEvent = 1231
 	eventBeatRoute22Rival2       yellowEvent = 1318

@@ -1,6 +1,9 @@
 package profile
 
 import (
+	"os"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -193,32 +196,109 @@ func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	}
 }
 
-func TestYellowSelectedEventIndices(t *testing.T) {
+// yellowDecompEventIndices evaluates the vendored pokeyellow event constant
+// table (const_def / const / const_skip / const_next) so event bit indices are
+// checked against the decomp rather than hand-counted.
+func yellowDecompEventIndices(t *testing.T) map[string]yellowEvent {
+	t.Helper()
+	data, err := os.ReadFile("../../pokeyellow/constants/event_constants.asm")
+	if err != nil {
+		t.Fatalf("read vendored pokeyellow event constants: %v", err)
+	}
+	parseNum := func(s string) int {
+		s = strings.Replace(s, "$", "0x", 1)
+		n, err := strconv.ParseInt(s, 0, 32)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return int(n)
+	}
+	out := map[string]yellowEvent{}
+	next := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		if i := strings.IndexByte(line, ';'); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		switch fields[0] {
+		case "const_def":
+			next = 0
+			if len(fields) > 1 {
+				next = parseNum(fields[1])
+			}
+		case "const":
+			out[fields[1]] = yellowEvent(next)
+			next++
+		case "const_skip":
+			if len(fields) > 1 {
+				next += parseNum(fields[1])
+			} else {
+				next++
+			}
+		case "const_next":
+			next = parseNum(fields[1])
+		}
+	}
+	return out
+}
+
+func TestYellowEventIndicesMatchDecomp(t *testing.T) {
+	decomp := yellowDecompEventIndices(t)
 	got := map[string]yellowEvent{
+		"EVENT_FOLLOWED_OAK_INTO_LAB":              eventFollowedOakIntoLab,
+		"EVENT_OAK_ASKED_TO_CHOOSE_MON":            eventOakAskedToChooseMon,
 		"EVENT_GOT_STARTER":                        eventGotStarter,
 		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":          eventBattledRivalInOaksLab,
+		"EVENT_GOT_POKEDEX":                        eventGotPokedex,
+		"EVENT_OAK_APPEARED_IN_PALLET":             eventOakAppearedInPallet,
+		"EVENT_VIRIDIAN_GYM_OPEN":                  eventViridianGymOpen,
 		"EVENT_GOT_BULBASAUR_IN_CERULEAN":          eventGotBulbasaurInCerulean,
 		"EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES":   eventBeatTowerJessieJames,
 		"EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY":    eventGotSquirtleFromJenny,
+		"EVENT_MANSION_SWITCH_ON":                  eventMansionSwitchOn,
+		"EVENT_RESCUED_MR_FUJI":                    eventRescuedMrFuji,
+		"EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE":      eventBeatRoute22Rival2,
+		"EVENT_PASSED_CASCADEBADGE_CHECK":          eventPassedCascadeBadgeCheck,
+		"EVENT_PASSED_THUNDERBADGE_CHECK":          eventPassedThunderBadgeCheck,
+		"EVENT_PASSED_RAINBOWBADGE_CHECK":          eventPassedRainbowBadgeCheck,
+		"EVENT_PASSED_SOULBADGE_CHECK":             eventPassedSoulBadgeCheck,
+		"EVENT_PASSED_MARSHBADGE_CHECK":            eventPassedMarshBadgeCheck,
+		"EVENT_PASSED_VOLCANOBADGE_CHECK":          eventPassedVolcanoBadgeCheck,
+		"EVENT_PASSED_EARTHBADGE_CHECK":            eventPassedEarthBadgeCheck,
+		"EVENT_54F":                                eventGotCharmanderRoute24, // Route24.asm Charmander gift
+		"EVENT_GOT_DOME_FOSSIL":                    eventGotDomeFossil,
+		"EVENT_BEAT_MT_MOON_EXIT_SUPER_NERD":       eventBeatMtMoonSuperNerd,
 		"EVENT_BEAT_MT_MOON_3_JESSIE_JAMES":        eventBeatMtMoonJessieJames,
+		"EVENT_GOT_HELIX_FOSSIL":                   eventGotHelixFossil,
 		"EVENT_BEAT_ROCKET_HIDEOUT_4_JESSIE_JAMES": eventBeatRocketJessieJames,
+		"EVENT_ROCKET_HIDEOUT_4_DOOR_UNLOCKED":     eventRocketHideoutDoorOpen,
+		"EVENT_BEAT_ROCKET_HIDEOUT_GIOVANNI":       eventBeatRocketGiovanni,
+		"EVENT_BEAT_SILPH_CO_RIVAL":                eventBeatSilphRival,
 		"EVENT_BEAT_SILPH_CO_11F_JESSIE_JAMES":     eventBeatSilphJessieJames,
+		"EVENT_GOT_MASTER_BALL":                    eventGotMasterBall,
+		"EVENT_BEAT_SILPH_CO_GIOVANNI":             eventBeatSilphGiovanni,
+		"EVENT_BEAT_LORELEIS_ROOM_TRAINER_0":       eventBeatLorelei,
+		"EVENT_AUTOWALKED_INTO_LORELEIS_ROOM":      eventAutowalkedIntoLorelei,
+		"EVENT_BEAT_BRUNOS_ROOM_TRAINER_0":         eventBeatBruno,
+		"EVENT_BEAT_AGATHAS_ROOM_TRAINER_0":        eventBeatAgatha,
+		"EVENT_BEAT_LANCES_ROOM_TRAINER_0":         eventBeatLanceTrainer,
+		"EVENT_BEAT_LANCE":                         eventBeatLance,
 		"EVENT_BEAT_CHAMPION_RIVAL":                eventBeatChampionRival,
 	}
-	want := map[string]yellowEvent{
-		"EVENT_GOT_STARTER":                        34,
-		"EVENT_BATTLED_RIVAL_IN_OAKS_LAB":          35,
-		"EVENT_GOT_BULBASAUR_IN_CERULEAN":          168,
-		"EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES":   273,
-		"EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY":    327,
-		"EVENT_BEAT_MT_MOON_3_JESSIE_JAMES":        1402,
-		"EVENT_BEAT_ROCKET_HIDEOUT_4_JESSIE_JAMES": 1698,
-		"EVENT_BEAT_SILPH_CO_11F_JESSIE_JAMES":     1924,
-		"EVENT_BEAT_CHAMPION_RIVAL":                2305,
-	}
-	for name, expected := range want {
-		if got[name] != expected {
-			t.Errorf("%s = %d, want %d", name, got[name], expected)
+	for name, event := range got {
+		want, ok := decomp[name]
+		if name == "EVENT_54F" {
+			want, ok = 0x54f, true // unnamed flag; SetEvent EVENT_54F in Route24.asm
+		}
+		if !ok {
+			t.Errorf("%s not found in pokeyellow event constants", name)
+			continue
+		}
+		if event != want {
+			t.Errorf("%s = %d, decomp says %d", name, event, want)
 		}
 	}
 }
