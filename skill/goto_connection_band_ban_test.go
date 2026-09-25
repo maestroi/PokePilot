@@ -26,7 +26,6 @@ func TestOrdinaryConnectionFailureRemainsTileScoped(t *testing.T) {
 	}
 }
 
-
 func TestExhaustedConnectionBandIsFiniteWithoutReplanBudget(t *testing.T) {
 	err := fmt.Errorf("all candidates failed: %w", ErrConnectionBandExhausted)
 	if legFailureConsumesReplanBudget(err) {
