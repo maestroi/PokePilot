@@ -79,7 +79,10 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no Surf water cells", mapID)
 	}
 
-	now := currentWorld(m)
+	now, err := currentWorld(m)
+	if err != nil {
+		return res, fmt.Errorf("skill: CatchWater: observe world: %w", err)
+	}
 	// A map can contain multiple disconnected bodies of water. grindPair's
 	// nearest-cell choice is intentionally geometric, so filter the candidate
 	// set to the component reachable from Red's current Surf position first;
