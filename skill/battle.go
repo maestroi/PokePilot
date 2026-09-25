@@ -408,6 +408,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (st
 			}
 
 		case execution.Phase == game.BattleExecutionForgetMove:
+			if !execution.ForgetReady {
+				m.StepFrame()
+				continue
+			}
 			if !execution.InBattle {
 				continue
 			}
