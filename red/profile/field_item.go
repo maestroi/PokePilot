@@ -53,7 +53,7 @@ func (*Profile) DecodeFieldItem(reader game.MemoryReader) game.FieldItemState {
 	for _, mon := range party.Mons {
 		p := game.FieldItemPartyMon{
 			NativeSpeciesID: uint16(mon.Species),
-			Level: mon.Level, HP: mon.HP, MaxHP: mon.MaxHP,
+			Level:           mon.Level, HP: mon.HP, MaxHP: mon.MaxHP,
 			Status: mon.StatusName(),
 		}
 		for i := range mon.Moves {
@@ -72,7 +72,7 @@ func (*Profile) DecodeFieldItem(reader game.MemoryReader) game.FieldItemState {
 		out.MoveMenuVisible = true
 		out.MoveCursor = game.MenuCursorState{
 			Current: int(mem.U8(sym.CurrentMenuItem)) - 1,
-			Max: maxKnownMoveSlot(party),
+			Max:     maxKnownMoveSlot(party),
 		}
 	}
 	interaction := state.DecodeInteraction(&mem)
