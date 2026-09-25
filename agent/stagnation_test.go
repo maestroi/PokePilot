@@ -51,6 +51,32 @@ func TestMajorProgressMarkOnlyAdvancesOnMeaningfulHighWaterMarks(t *testing.T) {
 	}
 }
 
+func TestMajorProgressMarkCountsSecondaryTrainingThatAdvancesCombatRecovery(t *testing.T) {
+	before := Observation{
+		PartyCount: 3,
+		Party: []PartyMon{
+			{Level: 20},
+			{Level: 12},
+			{Level: 10},
+		},
+	}
+	after := before
+	after.Party = append([]PartyMon(nil), before.Party...)
+	after.Party[1].Level = 13
+
+	mark := majorProgressMarkOf(before, nil)
+	next := majorProgressMarkOf(after, nil)
+	if next.MaxLevel != mark.MaxLevel {
+		t.Fatalf("fixture changed max level: before=%+v after=%+v", mark, next)
+	}
+	if next.CombatReadiness <= mark.CombatReadiness {
+		t.Fatalf("secondary training did not advance combat readiness: before=%+v after=%+v", mark, next)
+	}
+	if !mark.absorb(next) {
+		t.Fatalf("combat-recovery training was invisible to stagnation watchdog: before=%+v after=%+v", mark, next)
+	}
+}
+
 func TestMajorProgressMarkIgnoresHPPositionMoneyAndConsumablesByConstruction(t *testing.T) {
 	obsA := Observation{
 		Map: 1, X: 1, Y: 1, Money: 3000, PartyCount: 1,
