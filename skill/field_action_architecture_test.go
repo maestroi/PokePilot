@@ -57,3 +57,49 @@ func TestFieldPathDoesNotReadConcreteSurfMode(t *testing.T) {
 		}
 	}
 }
+
+func TestSurfStrengthConsumersDoNotReadConcreteModeFlags(t *testing.T) {
+	for _, path := range []string{
+		"water_catch.go",
+		"warp.go",
+		"route_transition.go",
+		"side_route_semantics.go",
+		"boulder_puzzle.go",
+		"component_restage.go",
+		"victory_road_progression.go",
+	} {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"sym.WalkBikeSurfState",
+			"fieldSurfingState",
+			"fieldStrengthActiveBit",
+		"sym.StatusFlags1",
+		} {
+			if strings.Contains(string(src), forbidden) {
+				t.Fatalf("%s contains concrete Surf/Strength runtime dependency %q", path, forbidden)
+			}
+		}
+	}
+}
+
+func TestLiveMapGridRuntimeDoesNotReadConcreteSurfMode(t *testing.T) {
+	src, err := os.ReadFile("live_topology.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	start := strings.Index(body, "func liveMapGrid(m *emu.Emu")
+	end := strings.Index(body, "// LiveMapGridFromMem")
+	if start < 0 || end <= start {
+		t.Fatal("liveMapGrid runtime block not found")
+	}
+	body = body[start:end]
+	for _, forbidden := range []string{"sym.WalkBikeSurfState", "fieldSurfingState"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("liveMapGrid runtime contains concrete Surf dependency %q", forbidden)
+		}
+	}
+}
