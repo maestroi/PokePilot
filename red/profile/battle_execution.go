@@ -16,6 +16,7 @@ const (
 	battleTryLearnMarker      = "trying to learn"
 	battleAbandonLearnMarker  = "Abandon learning"
 	battleTrainerSwitchMarker = "change POK"
+	battleRunRefusedMarker    = "running from a"
 	battleForgetMenuMarker    = "forgotten?"
 	battleHMCantDeleteMarker  = "HM techniques"
 	battleSwitchBoxMarker     = "SWITCH"
@@ -66,6 +67,8 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 		out.Phase = game.BattleExecutionForgetMove
 		out.ForgetCursor = game.MenuCursorState{Current: menu.Current, Max: menu.Max}
 		out.ForgetReady = menu.Max == 3
+	case strings.Contains(text, battleRunRefusedMarker):
+		out.Phase = game.BattleExecutionRunRefused
 	case strings.Contains(text, battleSwitchBoxMarker):
 		out.Phase = game.BattleExecutionSwitchBox
 	case strings.Contains(text, battleTrainerSwitchMarker):
