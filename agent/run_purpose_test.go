@@ -51,9 +51,107 @@ func TestRunPurposeSystemNote(t *testing.T) {
 		t.Fatalf("legacy empty purpose changed prompt: %q", got)
 	}
 	got := RunPurposeSystemNote(RunPurposeDebugCoverage)
-	for _, want := range []string{"DEBUG COVERAGE", "NEW reachable", "Progress the story"} {
+	for _, want := range []string{"DEBUG COVERAGE", "NEW reachable", "story progression as an unlock step"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("debug purpose note = %q, want %q", got, want)
 		}
+	}
+}
+
+
+func TestApplyRunPurposeDexGoalPrioritizesAcquisition(t *testing.T) {
+	obs := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "mewtwo", HP: 100, MaxHP: 100}},
+		Bag:        []Item{{Name: "pokeball", Quantity: minimumCaptureStock}},
+		Dex:        DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	offered := []Objective{
+		{Kind: KindProgress, Progress: ProgressID("next_story_gate")},
+		{Kind: KindTalk, X: 3, Y: 4},
+		{Kind: KindCatch, Species: "rattata"},
+	}
+
+	got := ApplyRunPurpose(obs, offered, RunPurposeDebugCoverage, "Complete the obtainable Pokédex.")
+	if len(got) != 1 || got[0].Kind != KindCatch || got[0].Species != "rattata" {
+		t.Fatalf("Debug+Dex menu = %+v, want only executable Dex acquisition", got)
+	}
+}
+
+func TestApplyRunPurposeDexGoalCreatesRemoteCaptureRestock(t *testing.T) {
+	obs := Observation{
+		PartyCount:   1,
+		Party:        []PartyMon{{Species: "mewtwo", HP: 100, MaxHP: 100}},
+		Money:        2000,
+		RestockStock: []string{"pokeball", "potion"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	offered := []Objective{
+		{Kind: KindProgress, Progress: ProgressID("next_story_gate")},
+		{Kind: KindTalk, X: 3, Y: 4},
+	}
+
+	got := ApplyRunPurpose(obs, offered, RunPurposeDebugCoverage, "dex")
+	if len(got) != 1 || got[0].Kind != KindBuy || got[0].Item != "pokeball" ||
+		got[0].Qty != targetCaptureStock || got[0].Intent != dexCaptureSupplyIntent {
+		t.Fatalf("Debug+Dex zero-ball menu = %+v, want remote capture restock", got)
+	}
+}
+
+func TestApplyRunPurposeDebugCoverageSweepsFrontierBeforeStory(t *testing.T) {
+	obs := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "mewtwo", HP: 100, MaxHP: 100}},
+	}
+	offered := []Objective{
+		{Kind: KindProgress, Progress: ProgressID("next_story_gate")},
+		{Kind: KindGoTo, Place: "cerulean city"},
+		{Kind: KindTalk, X: 3, Y: 4},
+		{Kind: KindPickup, Item: "potion", X: 5, Y: 6},
+	}
+
+	got := ApplyRunPurpose(obs, offered, RunPurposeDebugCoverage, "Beat the Elite Four and Champion.")
+	if len(got) != 2 {
+		t.Fatalf("Debug frontier menu = %+v, want talk + pickup only", got)
+	}
+	for _, objective := range got {
+		if objective.Kind != KindTalk && objective.Kind != KindPickup {
+			t.Fatalf("Debug frontier leaked non-coverage objective: %+v", objective)
+		}
+	}
+}
+
+func TestApplyRunPurposeAllowsStoryAfterCoverageFrontierIsEmpty(t *testing.T) {
+	obs := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "mewtwo", HP: 100, MaxHP: 100}},
+	}
+	offered := []Objective{
+		{Kind: KindProgress, Progress: ProgressID("next_story_gate")},
+		{Kind: KindGoTo, Place: "cerulean city"},
+	}
+
+	got := ApplyRunPurpose(obs, offered, RunPurposeDebugCoverage, "Beat the Elite Four and Champion.")
+	if len(got) != len(offered) {
+		t.Fatalf("empty coverage frontier menu = %+v, want story/travel menu preserved", got)
+	}
+}
+
+func TestApplyRunPurposeKeepsRecoveryChoicesUnderSafetyPressure(t *testing.T) {
+	obs := Observation{
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "mewtwo", HP: 10, MaxHP: 100}},
+		Bag:        []Item{{Name: "pokeball", Quantity: minimumCaptureStock}},
+		Dex:        DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	offered := []Objective{
+		{Kind: KindHeal},
+		{Kind: KindCatch, Species: "rattata"},
+		{Kind: KindProgress, Progress: ProgressID("next_story_gate")},
+	}
+
+	got := ApplyRunPurpose(obs, offered, RunPurposeDebugCoverage, "dex")
+	if len(got) != len(offered) {
+		t.Fatalf("injured Debug+Dex menu = %+v, want safety menu preserved", got)
 	}
 }
