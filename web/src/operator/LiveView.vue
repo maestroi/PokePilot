@@ -141,14 +141,14 @@ const classicFrameEnabled = computed(() => frameEnabled.value && !showModern.val
 const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, classicFrameEnabled, 50, isLiveFrame)
 const modernFallbackLabel = computed(() => {
   if (!isLiveFrame.value || rendererMode.value !== 'modern' || showModern.value) return ''
-  if (renderStateStatus.value === 'error') return 'Modern unavailable · classic fallback'
-  if (renderState.value?.scene) return `Modern unsupported for ${renderState.value.scene} · classic fallback`
+  if (renderStateStatus.value === 'error') return 'Gold / Silver unavailable · classic fallback'
+  if (renderState.value?.scene) return `Gold / Silver unsupported for ${renderState.value.scene} · classic fallback`
   return renderStateStatus.value === 'loading' ? 'Loading semantic renderer · classic fallback' : ''
 })
 const gameLabel = computed(() => {
   const base = gameMediaLabel(selectedRun.value?.status)
   if (!isLiveFrame.value) return base
-  return `${base} · ${showModern.value ? 'Modern' : 'Classic'}`
+  return `${base} · ${showModern.value ? activeTheme.value.name : 'Classic'}`
 })
 
 const partySlots = computed<(PartyMon | null)[]>(() => {
@@ -609,7 +609,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                   class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
                   aria-hidden="true"
                 />
-                {{ isLiveFrame ? (showModern ? 'Live · Modern' : 'Live · Classic') : 'Ended' }}
+                {{ isLiveFrame ? (showModern ? `Live · ${activeTheme.name}` : 'Live · Classic') : 'Ended' }}
               </div>
 
               <div v-if="isLiveFrame" class="absolute top-2 right-2 z-10 flex flex-col items-end gap-1.5">
@@ -619,7 +619,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                     :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
                     title="Use the shared semantic renderer"
                     @click="setRendererMode('modern')"
-                  >Modern</button>
+                  >Gold / Silver</button>
                   <button
                     type="button"
                     :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
