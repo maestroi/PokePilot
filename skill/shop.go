@@ -429,62 +429,13 @@ func recoverShopFailure(m *emu.Emu, err error) error {
 	return err
 }
 
-// listPosition is the item list's entry under the cursor. The mart's list
-// menu scrolls exactly like the battle bag list (skill/bag.go's
-// bagPosition): past the visible window wCurrentMenuItem stops moving and
-// wListScrollOffset takes over, so the true index is their sum, not
-// wCurrentMenuItem alone. wMaxMenuItem cannot substitute for either — it is
-// a 1/2 window-size sentinel on list menus (DisplayListMenuID), not the
-// entry count.
-func listPosition(mm *state.Mem) int {
-	return int(mm.U8(sym.ListScrollOffset)) + int(mm.U8(sym.CurrentMenuItem))
-}
-
-// selectListEntry drives the list-menu cursor to a 0-based position and
-// presses A. Step-and-verify against listPosition, the same pattern
-// selectBagEntry uses and for the same reason: a press count assumes
-// wCurrentMenuItem alone tracks the selection, which is only true inside
-// the visible window. MEASURED 2026-09-02: "buy 3 BURN HEAL" (index 3, the
-// stock's 4th and last entry) never reached it — the mart's list window is
-// 3 rows, so selecting it scrolls and wCurrentMenuItem pins at 2 while
-// wListScrollOffset climbs to 1; a loop watching only wCurrentMenuItem
-// never sees a match and burns its budget stuck on "2".
+// selectListEntry uses the shared profile-driven scrolling-list driver.
+// Shop-specific callers wrap any cursor failure with ErrShopControllerStalled.
 func selectListEntry(m *emu.Emu, index int) error {
-	const stuckLimit = 8
-	stuck := 0
-	// The list needs one settle window before it will accept input at all:
-	// martAdvance(itemListUp) returns the instant the list appears, which
-	// can be mid-render. Every OTHER path through the loop below gets that
-	// settle for free (a Down/Up tap is always followed by one before the
-	// next read), but the entry already under the cursor takes zero loop
-	// iterations and used to go straight to a bare Tap(A) — the confirming
-	// press landed before the list was ready to see it and nothing
-	// happened. MEASURED 2026-09-02: "buy 3 POKEBALL" right after buying
-	// something else, with POKe BALL (index 0) already under the cursor,
-	// silently dropped the selection and the choose-quantity box never
-	// opened. Settling here first closes the gap for every entry, not only
-	// the one already selected.
-	m.StepFrames(talkSettle)
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	for pos := listPosition(&mem); pos != index; pos = listPosition(&mem) {
-		dir := emu.Down
-		if index < pos {
-			dir = emu.Up
-		}
-		m.Tap(dir, 3, 7)
-		m.StepFrames(talkSettle)
-		state.Snapshot(m, &mem)
-		if listPosition(&mem) == pos {
-			stuck++
-			if stuck >= stuckLimit {
-				return fmt.Errorf("%w: cursor stuck at list entry %d, wanted %d, %d consecutive taps without movement", ErrShopControllerStalled, pos, index, stuck)
-			}
-		} else {
-			stuck = 0
-		}
+	if err := selectScrollingListEntry(m, index); err != nil {
+		return err
 	}
-	m.Tap(emu.A, 3, 7)
+	// Preserve the mart controller's historical post-confirm settle window.
 	m.StepFrames(talkSettle)
 	return nil
 }
