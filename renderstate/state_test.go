@@ -208,7 +208,6 @@ func TestValidateRejectsBrokenLayerShapeAndSchema(t *testing.T) {
 	}
 }
 
-
 func TestBattlePresentationFieldsRoundTripWithoutNativeIDs(t *testing.T) {
 	state := RenderState{
 		SchemaVersion: SchemaVersion,
