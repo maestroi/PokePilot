@@ -1,6 +1,7 @@
 package emu
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
@@ -17,6 +18,7 @@ type Emu struct {
 
 	// Set by Watch. Nil unless a human is watching; see emu/watch.go.
 	spec        frameSpectator
+	watchRoutes map[string]http.Handler
 	specEvery   int
 	lastCapture uint64
 
