@@ -98,6 +98,29 @@ func isSafariHabitatMap(mapID uint8) bool {
 	return mapID >= safariZoneEastMap && mapID <= safariZoneCenterMap
 }
 
+// isSafariSessionMap reports the maps a Safari Game session continues on: the
+// four habitats and their rest houses. Anything else, the gate included, is
+// reached only by walking out through the gate's "Leaving early?" prompt.
+func isSafariSessionMap(mapID uint8) bool {
+	return mapID >= safariZoneEastMap && mapID <= safariZoneNorthRestHouseMap
+}
+
+// leaveSafariSessionFor ends an active Safari Game session before travel to a
+// destination outside it. Choosing a destination beyond the gate is choosing
+// to leave, so the traveler answers the gate's early-leave prompt through the
+// same owned exit SafariCatch and the Fuchsia story use. Leaving it to the
+// ordinary route instead met that prompt as an unanswered choice, which every
+// non-Safari objective started inside a session hit (triage 5a248584293ac9fc).
+func leaveSafariSessionFor(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy) error {
+	if isSafariSessionMap(dest.Map) {
+		return nil
+	}
+	if err := leaveSafariZoneIfNeeded(m, romData, policy); err != nil {
+		return fmt.Errorf("leave Safari session before travel to map %#04x: %w", dest.Map, err)
+	}
+	return nil
+}
+
 // travelToSafariGrass chooses one representative grass cell from each static
 // collision component and asks the ordinary semantic traveler to reach it.
 // This avoids hard-coding a Safari coordinate while still handling maps whose

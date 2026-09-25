@@ -378,6 +378,11 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return nil
 }
 
+const (
+	safariExitTaps         = 4
+	safariExitSettleFrames = 40
+)
+
 func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -398,7 +403,19 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	// Center (14,25) is the south gate warp. One Down enters the gate, whose
 	// early-leave prompt defaults to YES. If the Safari timer already expired,
 	// the same predicate simply observes the automatic ejection.
-	m.Tap(emu.Down, 3, 7)
+	//
+	// A short tap toward a new direction only turns the player, and a tap
+	// during a step is swallowed, so arriving at the approach tile from the
+	// warp side (facing up) needs more than one Down. Settle after each tap
+	// and stop as soon as the warp has left the center map.
+	for tap := 0; tap < safariExitTaps; tap++ {
+		state.Snapshot(m, &mem)
+		if mem.U8(sym.CurMap) != safariZoneCenterMap || !state.Controllable(&mem) {
+			break
+		}
+		m.Tap(emu.Down, 3, 7)
+		m.StepFrames(safariExitSettleFrames)
+	}
 	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
 	})
