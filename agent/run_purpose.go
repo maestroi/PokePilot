@@ -34,9 +34,10 @@ func RunPurposeSystemNote(name string) string {
 }
 
 // ApplyRunPurpose turns Debug Coverage from a prompt hint into a bounded
-// frontier policy. Legality still comes exclusively from the offered menu; this
-// function only narrows already-legal choices while substantive new coverage is
-// available. That matters for persistent strategic plans: without narrowing,
+// frontier policy. Ordinary choices are narrowed from the already-legal offered
+// menu; the one additive case is remote Dex ball resupply, built only from
+// live-state reachable Mart stock using the same deterministic supply helper as
+// execution. That matters for persistent strategic plans: without this policy,
 // the zero-call "single progression" continuation can race through story gates
 // even while catches/NPCs/trainers/pickups are waiting in the same menu.
 //
