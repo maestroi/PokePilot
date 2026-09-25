@@ -60,7 +60,7 @@ func StepOnce(m *emu.Emu, s world.Step) error {
 // braking and Gen I poison-blackout recovery intentionally remain outside the
 // generic core until their own capability slices are defined.
 func stepOnceWithRuntimeDecoder(m *emu.Emu, s world.Step, decoder game.OverworldDecoder) error {
-	btn, ok := movementButtonFor(s)
+	btn, ok := buttonFor(s)
 	if !ok {
 		return fmt.Errorf("skill: invalid step %s", s)
 	}
