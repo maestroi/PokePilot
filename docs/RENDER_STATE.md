@@ -81,3 +81,20 @@ Battle snapshots deliberately do not depend on overworld block geometry. Once th
 These fields are **presentation state, not controller state**. The frontend may choose layout, colors, assets, transitions, and animation, but it must not reimplement damage, RNG, legal-action rules, menu selection, or any other gameplay mechanic. Unsupported sub-scenes remain valid reasons to display the authoritative framebuffer as a compatibility scene.
 
 Schema v1 remains additive: battle actor appearance/level and battle move details are optional fields, so older consumers continue to ignore what they do not understand.
+
+
+## Spectator animation clock
+
+The browser renderer owns a presentation-only animation clock that is intentionally decoupled from emulator speed. Sparse authoritative snapshots are ingested with their spectator arrival time and sampled at display-refresh time; the clock never mutates or replaces `RenderState`.
+
+The clock follows these rules:
+
+- interpolation duration is based on spectator update cadence, not the number of emulator frames advanced, so 1x, 10x, and 20x runs share the same visual timing budget;
+- player and stable-identity entity positions are interpolated only for presentation, with a bounded catch-up window;
+- the camera follows a separately smoothed fractional focus, so crossing tile boundaries does not move the viewport in whole-tile jumps;
+- repeated source frames are treated as pause/stall heartbeats and do not queue movement;
+- a long gap/reconnect snaps to the newest authoritative state instead of replaying stale motion;
+- map changes, frame rewinds, and large same-map position jumps are explicit discontinuities and snap rather than masquerading as walking;
+- authoritative `MovementState.progress`, when available, is used as the starting semantic position rather than guessed from wall-clock time.
+
+`clock.frame` and `clock.captured_at_unix_ms` remain attached to presentation samples so replay implementations can drive the same deterministic ingest/sample API with recorded timing metadata. The renderer clock has no gameplay output path.
