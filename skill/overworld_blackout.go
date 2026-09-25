@@ -40,6 +40,42 @@ func partyAllFaintedWithDecoder(reader game.MemoryReader, decoder game.Overworld
 	return decoder.DecodeOverworldBlackout(reader).PartyAllFainted
 }
 
+// blackoutInProgressFor is the compatibility front for older interruption
+// seams whose resolver signature is bool-only. Detection stays profile-owned;
+// a profile that lacks the capability reports no semantic blackout here and
+// will fail earlier on portable Travel/RunInterruptible entry points.
+func blackoutInProgressFor(m *emu.Emu) bool {
+	decoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return false
+	}
+	return blackoutInProgress(m, decoder)
+}
+
+// partyAllFainted keeps existing skill callers source-stable while moving the
+// actual party layout behind OverworldBlackoutDecoder.
+func partyAllFainted(m *emu.Emu) bool {
+	decoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return false
+	}
+	return partyAllFaintedWithDecoder(m, decoder)
+}
+
+// waitForFaintRespawn keeps the established Gen-I-compatible skill seam, but
+// all runtime observations are now projected by profile decoders.
+func waitForFaintRespawn(m *emu.Emu, startMap uint8, startFainted bool) error {
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	blackout, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return waitForFaintRespawnWithDecoders(m, uint16(startMap), startFainted, overworld, blackout)
+}
+
 func respawnedFromFaintWithDecoders(
 	reader game.MemoryReader,
 	startMap uint16,
