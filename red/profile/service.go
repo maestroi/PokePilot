@@ -12,6 +12,7 @@ const (
 	shopWatchActionMenu = 3
 	shopWatchListOrQty  = 7
 	shopActionMenuMax   = 2
+	redViridianMartMap  = 0x2a
 )
 
 func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
@@ -22,13 +23,17 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 	reader.PeekInto(0, mem[:])
 
 	menu := state.DecodeMenu(&mem)
+	text := state.ScreenText(&mem)
+	lower := strings.ToLower(text)
 	out := game.ShopState{
-		Controllable: state.Controllable(&mem),
-		Cursor:       game.MenuCursorState{Current: menu.Current, Max: menu.Max},
-		Quantity:     int(mem.U8(sym.ItemQuantity)),
-		MaxQuantity:  int(mem.U8(sym.MaxItemQuantity)),
-		Total:        decodeShopBCD(&mem),
-		Text:         state.ScreenText(&mem),
+		Controllable:     state.Controllable(&mem),
+		Cursor:           game.MenuCursorState{Current: menu.Current, Max: menu.Max},
+		Quantity:         int(mem.U8(sym.ItemQuantity)),
+		MaxQuantity:      int(mem.U8(sym.MaxItemQuantity)),
+		Total:            decodeShopBCD(&mem),
+		Text:             text,
+		TradeUnavailable: mem.U8(sym.CurMap) == redViridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel),
+		Unsellable:       strings.Contains(lower, "can't put a") || strings.Contains(lower, "price on that"),
 	}
 	if out.Controllable {
 		out.Phase = game.ShopPhaseClosed
@@ -66,11 +71,16 @@ func (*Profile) DecodeCenter(reader game.MemoryReader) game.CenterState {
 	}
 	var mem state.Mem
 	reader.PeekInto(0, mem[:])
+	party := state.DecodeParty(&mem)
 	prompt := state.DecodeTwoOptionMenu(&mem) != nil
+	menuUp := state.MenuUp(&mem)
 	return game.CenterState{
+		PartyPresent: party.Count > 0,
 		PromptOpen:   prompt,
-		Recovered:    partyCenterRecovered(state.DecodeParty(&mem)),
+		Recovered:    partyCenterRecovered(party),
 		Controllable: state.Controllable(&mem),
+		TextOpen:     mem.U8(sym.FontLoaded) != 0 && !menuUp,
+		MenuOpen:     menuUp,
 	}
 }
 
