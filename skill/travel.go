@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -285,7 +286,10 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 				return err
 			}
 
-			from := currentWorld(m)
+			from, worldErr := currentWorld(m)
+			if worldErr != nil {
+				return worldErr
+			}
 			choice, ok, egressErr := executeEmergencyEgress(m)
 			if !ok {
 				return err
@@ -296,7 +300,10 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 					err, choice.Method.String(), from.Map, from.X, from.Y, egressErr)
 			}
 
-			landing := currentWorld(m)
+			landing, worldErr := currentWorld(m)
+			if worldErr != nil {
+				return worldErr
+			}
 			if recovered != nil {
 				*recovered = append(*recovered, EmergencyEgress{
 					Cause:   cause,
@@ -574,42 +581,74 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 	}
 }
 
-// currentWorld reads the map and tile the player stands on from RAM.
-func currentWorld(m *emu.Emu) Replan {
-	return Replan{m.Peek8(sym.CurMap), m.Peek8(sym.XCoord), m.Peek8(sym.YCoord)}
+func replanFromOverworld(state game.OverworldState) (Replan, error) {
+	if state.NativeMapID > 0xff {
+		return Replan{}, fmt.Errorf("skill: Travel: native map id %#04x exceeds current routing range", state.NativeMapID)
+	}
+	return Replan{Map: uint8(state.NativeMapID), X: state.X, Y: state.Y}, nil
 }
 
-// settleWorld steps until the (map, x, y) triple has stood still for
-// worldStableFrames consecutive frames and returns that settled world.
-// On a loss it first waits for the map to change: a blackout lands the
-// position on the center's spawn tile before wCurMap flips, and that
-// pre-flip window is itself stable, so a plain stability wait would settle
-// on the stale map (the measured "step down blocked at (5,6)" walked a
-// 0x0C plan while on 0x00).
-func settleWorld(m *emu.Emu, pre Replan, lost bool) Replan {
+// currentWorldWithDecoder reads the semantic map and tile from the active game
+// profile. The current route graph still uses uint8 map ids, so wider native
+// ids fail explicitly until that graph is widened.
+func currentWorldWithDecoder(reader game.MemoryReader, decoder game.OverworldDecoder) (Replan, error) {
+	if decoder == nil {
+		return Replan{}, fmt.Errorf("skill: Travel: nil overworld decoder")
+	}
+	return replanFromOverworld(decoder.DecodeOverworld(reader))
+}
+
+func currentWorld(m *emu.Emu) (Replan, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Replan{}, err
+	}
+	return currentWorldWithDecoder(m, decoder)
+}
+
+// settleWorldWithDecoder steps until the semantic (map, x, y) triple has stood
+// still for worldStableFrames consecutive frames and returns that settled
+// world. On a loss it first waits for the map to change: a blackout can land
+// coordinates before the native map id flips, and that pre-flip window is
+// itself stable.
+func settleWorldWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, pre Replan, lost bool) (Replan, error) {
 	if lost {
 		if _, err := m.StepUntil(worldStableBudget, func(m *emu.Emu) bool {
-			return m.Peek8(sym.CurMap) != pre.Map
+			state := decoder.DecodeOverworld(m)
+			return state.NativeMapID != uint16(pre.Map)
 		}); err != nil {
-			// ponytail: blackout transition longer than worldStableBudget ->
-			// fall through with the last read (today's behavior) rather than
-			// failing; raise worldStableBudget if that is ever measured.
+			// Blackout transition longer than worldStableBudget: preserve the
+			// historical behavior and fall through to the stability read.
 		}
 	}
-	last := currentWorld(m)
+	last, err := currentWorldWithDecoder(m, decoder)
+	if err != nil {
+		return Replan{}, err
+	}
 	stable := 0
 	for i := 0; i < worldStableBudget; i++ {
 		m.StepFrame()
-		cur := currentWorld(m)
+		cur, err := currentWorldWithDecoder(m, decoder)
+		if err != nil {
+			return Replan{}, err
+		}
 		if cur == last {
 			stable++
 			if stable >= worldStableFrames {
-				return cur
+				return cur, nil
 			}
 		} else {
 			stable = 0
 		}
 		last = cur
 	}
-	return last
+	return last, nil
+}
+
+func settleWorld(m *emu.Emu, pre Replan, lost bool) (Replan, error) {
+	decoder, err := overworldDecoderFor(m)
+	if err != nil {
+		return Replan{}, err
+	}
+	return settleWorldWithDecoder(m, decoder, pre, lost)
 }
