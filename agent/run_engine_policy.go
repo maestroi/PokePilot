@@ -210,6 +210,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted") ||
 		failureCauseIs(result, "catch_attempt_missed")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
@@ -245,7 +246,15 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// the failure budget untouched. Genuine repeated navigation/controller
 	// failures still use the bounded policy below, and watchdog/round/frame
 	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite || progressionPrerequisite || trainingInefficient {
+	if routePrerequisite || routeSearchExhausted || progressionPrerequisite || trainingInefficient {
+		// A fully bounded route-search exhaustion is also a planning boundary:
+		// GoTo already spent its local replan budget and the failure policy has
+		// recorded a same-state quarantine for this exact objective. Charging the
+		// generic mechanical-failure budget again terminates healthy runs before
+		// another objective/movement can change the routing state (#1843-#1845).
+		// The quarantine fails open when no alternative exists, while the normal
+		// stagnation/round/frame watchdogs remain the outer bound.
+		//
 		// A local training-area rejection is the same class of planning
 		// boundary as a missing route prerequisite: the executor deliberately
 		// sent no gameplay input because this area cannot satisfy the requested
