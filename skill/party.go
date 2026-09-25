@@ -11,32 +11,16 @@ import (
 
 // partyMenuMarker identifies the FORCED battle party menu from wTileMap.
 // It is the footer line _PartyMenuBattleText ("Bring out which #MON?") that
-// DrawPartyMenu prints for BATTLE_PARTY_MENU (engine/menus/party_menu.asm);
-// the other party menu types print different footers, and no other battle
-// screen contains this line. As with every battle screen it comes from
-// wTileMap, never wFontLoaded, which stays 0 for the whole of a battle.
+// DrawPartyMenu prints for BATTLE_PARTY_MENU (engine/menus/party_menu.asm).
 const partyMenuMarker = "Bring out"
 
-// partyMenuUp reports whether the forced (after-a-faint) battle party menu
-// is on screen.
 func partyMenuUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
 	return battleScreenHas(m, partyMenuMarker)
 }
 
-// useItemPartyMenuMarker identifies the OVERWORLD item-use party menu from
-// wTileMap: the footer line _PartyMenuItemUseText ("Use item on which
-// #MON?") that DrawPartyMenu prints for USE_ITEM_PARTY_MENU
-// (engine/items/item_effects.asm ItemUseMedicine); no battle screen and no
-// other overworld menu contains this line.
 const useItemPartyMenuMarker = "Use item"
 
-// useItemPartyMenuUp reports whether the overworld item-use party menu is on
-// screen.
 func useItemPartyMenuUp(m *emu.Emu) bool {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
 	return battleScreenHas(m, useItemPartyMenuMarker)
 }
 
@@ -79,8 +63,8 @@ func SetLead(m *emu.Emu, slot int) error {
 // This is the half of the battle party menu that Battle does not drive:
 // the forced switch after a faint (S6-5b) is answered inside Battle's state
 // machine; this one is opened by the player. The ordinary battle command is
-// selected semantically through the active profile; party-slot handling remains
-// Gen-I-owned in this file until its own capability slice lands.
+// selected semantically through the active profile; party-slot navigation is
+// likewise profile-driven, while Gen-I battle/party data still owns the postcondition.
 func SwitchActive(m *emu.Emu, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -174,83 +158,4 @@ func SwitchActive(m *emu.Emu, slot int) error {
 		return fmt.Errorf("skill: SwitchActive: active species %#02x after selecting slot %d, want %#02x", got, slot, want)
 	}
 	return nil
-}
-
-// SelectPartySlot moves the party menu cursor to index, asserts that
-// wCurrentMenuItem reads index, presses A, and waits for the selection to
-// take. It is the single slot-selection path for every party menu: Battle's
-// forced switch after a faint (the "Bring out" menu), the voluntary switch
-// (the "Choose" menu, SwitchActive) and the overworld item-use menu (the
-// "Use item on which #MON?" menu, UseFieldItem) go through it rather than
-// hand-rolling a second one.
-//
-// SelectMenuItem cannot do this job: the party menu stores wMaxMenuItem as
-// the LAST valid index (count-1, PartyMenuInit), while SelectMenuItem's
-// range check treats it as a count, so it rejects the menu's last entry.
-// The cursor index is the positive fact, as in SelectMenuItem: each
-// direction tap is followed by a re-read of wCurrentMenuItem, and A is
-// pressed only once the index is asserted.
-//
-// The first A can be lost in the menu's joypad-init window — the screen is
-// drawn a few frames before HandlePartyMenuInput starts polling (measured
-// in PromoteToLead: the first A never lands, the second always does) — so
-// A is re-pressed until the menu is gone, never counted.
-func SelectPartySlot(m *emu.Emu, index int) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	party := state.DecodeParty(&mem)
-	if index < 0 || index >= int(party.Count) {
-		return fmt.Errorf("skill: SelectPartySlot: index %d out of range for a party of %d", index, party.Count)
-	}
-
-	// Move the cursor toward index and verify after every tap.
-	const stuckLimit = 5
-	stuck := 0
-	for {
-		state.Snapshot(m, &mem)
-		cur := state.DecodeMenu(&mem).Current
-		if cur == index {
-			break
-		}
-		btn := emu.Down
-		if cur > index {
-			btn = emu.Up
-		}
-		m.Tap(btn, 3, 7)
-		if _, err := m.StepUntil(menuSettleFrames, func(m *emu.Emu) bool {
-			return int(m.Peek8(sym.CurrentMenuItem)) != cur
-		}); err != nil {
-			stuck++
-			if stuck >= stuckLimit {
-				state.Snapshot(m, &mem)
-				return fmt.Errorf("skill: SelectPartySlot: cursor stuck at %d, wanted %d (party of %d), %d consecutive taps without movement",
-					state.DecodeMenu(&mem).Current, index, party.Count, stuck)
-			}
-		} else {
-			stuck = 0
-		}
-	}
-
-	// Press A until the selection took; each re-press is gated on the menu
-	// still being up, so a stray A that left it is reported, not chased.
-	// The two menus end differently (measured): the forced "Bring out" menu
-	// simply goes away, while the voluntary "Choose" menu is covered by the
-	// SWITCH/STATS/CANCEL box, which is drawn ON TOP of it — the footer
-	// persists in wTileMap under the box, so "menu gone" alone would never
-	// fire for the voluntary one.
-	selectionTook := func(m *emu.Emu) bool {
-		return switchBoxUp(m) || (!partyMenuUp(m) && !battleSwitchMenuUp(m) && !useItemPartyMenuUp(m))
-	}
-	for i := 0; i < 24; i++ {
-		if selectionTook(m) {
-			return nil
-		}
-		m.Tap(emu.A, 3, 7)
-		if _, err := m.StepUntil(25, selectionTook); err == nil {
-			return nil
-		}
-	}
-	state.Snapshot(m, &mem)
-	return fmt.Errorf("skill: SelectPartySlot: party menu still up after selecting slot %d: %+v",
-		index, state.DecodeMenu(&mem))
 }
