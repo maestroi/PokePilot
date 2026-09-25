@@ -14,18 +14,18 @@ const (
 )
 
 type fakeFieldItemMachine struct {
-	frames uint64
-	phase int
+	frames      uint64
+	phase       int
 	startCursor int
-	listPos int
-	useCursor int
+	listPos     int
+	useCursor   int
 	partyCursor int
-	moveCursor int
-	targetSlot int
-	items []game.InventoryItem
-	party []game.FieldItemPartyMon
-	selected uint16
-	repel int
+	moveCursor  int
+	targetSlot  int
+	items       []game.InventoryItem
+	party       []game.FieldItemPartyMon
+	selected    uint16
+	repel       int
 }
 
 func newFakeFieldItemMachine() *fakeFieldItemMachine {
@@ -44,32 +44,50 @@ func newFakeFieldItemMachine() *fakeFieldItemMachine {
 	}
 }
 
-func (m *fakeFieldItemMachine) Peek8(uint16) byte { return 0 }
+func (m *fakeFieldItemMachine) Peek8(uint16) byte       { return 0 }
 func (m *fakeFieldItemMachine) PeekInto(uint16, []byte) {}
-func (m *fakeFieldItemMachine) StepFrame() { m.frames++ }
-func (m *fakeFieldItemMachine) StepFrames(n int) { if n > 0 { m.frames += uint64(n) } }
+func (m *fakeFieldItemMachine) StepFrame()              { m.frames++ }
+func (m *fakeFieldItemMachine) StepFrames(n int) {
+	if n > 0 {
+		m.frames += uint64(n)
+	}
+}
 func (m *fakeFieldItemMachine) FrameCount() uint64 { return m.frames }
 
 func (m *fakeFieldItemMachine) Tap(btn emu.Button, hold, gap int) {
-	if hold+gap > 0 { m.frames += uint64(hold+gap) }
+	if hold+gap > 0 {
+		m.frames += uint64(hold + gap)
+	}
 	switch m.phase {
 	case 0:
-		if btn == emu.Start { m.phase = 1 }
+		if btn == emu.Start {
+			m.phase = 1
+		}
 	case 1:
 		switch btn {
 		case emu.Down:
-			if m.startCursor < 7 { m.startCursor++ }
+			if m.startCursor < 7 {
+				m.startCursor++
+			}
 		case emu.Up:
-			if m.startCursor > 0 { m.startCursor-- }
+			if m.startCursor > 0 {
+				m.startCursor--
+			}
 		case emu.A:
-			if m.startCursor == 5 { m.phase, m.listPos = 2, 0 }
+			if m.startCursor == 5 {
+				m.phase, m.listPos = 2, 0
+			}
 		}
 	case 2:
 		switch btn {
 		case emu.Down:
-			if m.listPos < len(m.items)-1 { m.listPos++ }
+			if m.listPos < len(m.items)-1 {
+				m.listPos++
+			}
 		case emu.Up:
-			if m.listPos > 0 { m.listPos-- }
+			if m.listPos > 0 {
+				m.listPos--
+			}
 		case emu.A:
 			m.selected = m.items[m.listPos].NativeItemID
 			m.phase, m.useCursor = 3, 0
@@ -81,7 +99,9 @@ func (m *fakeFieldItemMachine) Tap(btn emu.Button, hold, gap int) {
 		case emu.Up:
 			m.useCursor = 0
 		case emu.A:
-			if m.useCursor != 0 { return }
+			if m.useCursor != 0 {
+				return
+			}
 			sem := (fakeFieldItemDecoder{}).FieldItemSemantics(m.selected)
 			if sem.RepelSteps > 0 {
 				m.consume(m.selected)
@@ -94,9 +114,13 @@ func (m *fakeFieldItemMachine) Tap(btn emu.Button, hold, gap int) {
 	case 4:
 		switch btn {
 		case emu.Down:
-			if m.partyCursor < len(m.party)-1 { m.partyCursor++ }
+			if m.partyCursor < len(m.party)-1 {
+				m.partyCursor++
+			}
 		case emu.Up:
-			if m.partyCursor > 0 { m.partyCursor-- }
+			if m.partyCursor > 0 {
+				m.partyCursor--
+			}
 		case emu.A:
 			m.targetSlot = m.partyCursor
 			if (fakeFieldItemDecoder{}).FieldItemSemantics(m.selected).SingleMoveTarget {
@@ -108,14 +132,20 @@ func (m *fakeFieldItemMachine) Tap(btn emu.Button, hold, gap int) {
 	case 5:
 		switch btn {
 		case emu.Down:
-			if m.moveCursor < 2 { m.moveCursor++ }
+			if m.moveCursor < 2 {
+				m.moveCursor++
+			}
 		case emu.Up:
-			if m.moveCursor > 0 { m.moveCursor-- }
+			if m.moveCursor > 0 {
+				m.moveCursor--
+			}
 		case emu.A:
 			m.applyItem()
 		}
 	case 6:
-		if btn == emu.B { m.phase = 0 }
+		if btn == emu.B {
+			m.phase = 0
+		}
 	}
 }
 
@@ -129,7 +159,9 @@ func (m *fakeFieldItemMachine) consume(item uint16) {
 }
 
 func (m *fakeFieldItemMachine) applyItem() {
-	if m.targetSlot < 0 || m.targetSlot >= len(m.party) { return }
+	if m.targetSlot < 0 || m.targetSlot >= len(m.party) {
+		return
+	}
 	sem := (fakeFieldItemDecoder{}).FieldItemSemantics(m.selected)
 	if sem.SingleMoveTarget {
 		m.party[m.targetSlot].PP[m.moveCursor] += 5
@@ -158,81 +190,114 @@ func (fakeFieldItemDecoder) DecodeFieldItem(r game.MemoryReader) game.FieldItemS
 	party := append([]game.FieldItemPartyMon(nil), m.party...)
 	s := game.FieldItemState{
 		Party: party, RepelSteps: m.repel,
-		OverworldReady: m.phase == 0,
-		UIOpen: m.phase != 0,
+		OverworldReady:   m.phase == 0,
+		UIOpen:           m.phase != 0,
 		UsePromptVisible: m.phase == 3,
-		UseSelected: m.phase == 3 && m.useCursor == 0,
-		MoveMenuVisible: m.phase == 5,
-		MoveCursor: game.MenuCursorState{Current:m.moveCursor, Max:2},
+		UseSelected:      m.phase == 3 && m.useCursor == 0,
+		MoveMenuVisible:  m.phase == 5,
+		MoveCursor:       game.MenuCursorState{Current: m.moveCursor, Max: 2},
 		ResultTextActive: m.phase == 6,
-		ChoiceVisible: m.phase == 3,
+		ChoiceVisible:    m.phase == 3,
 	}
 	return s
 }
 
 type fakeFieldInventoryDecoder struct{}
+
 func (fakeFieldInventoryDecoder) DecodeInventory(r game.MemoryReader) game.InventoryState {
 	m := r.(*fakeFieldItemMachine)
 	return game.InventoryState{Items: append([]game.InventoryItem(nil), m.items...)}
 }
 
 type fakeFieldMenuDecoder struct{}
+
 func (fakeFieldMenuDecoder) DecodeMenuCursor(r game.MemoryReader) game.MenuCursorState {
-	m:=r.(*fakeFieldItemMachine)
+	m := r.(*fakeFieldItemMachine)
 	switch m.phase {
-	case 1: return game.MenuCursorState{Current:m.startCursor,Max:7}
-	case 3: return game.MenuCursorState{Current:m.useCursor,Max:1}
-	default: return game.MenuCursorState{}
+	case 1:
+		return game.MenuCursorState{Current: m.startCursor, Max: 7}
+	case 3:
+		return game.MenuCursorState{Current: m.useCursor, Max: 1}
+	default:
+		return game.MenuCursorState{}
 	}
 }
-func (fakeFieldMenuDecoder) DecodeTwoOption(r game.MemoryReader) (game.TwoOptionState,bool) {
-	m:=r.(*fakeFieldItemMachine)
-	if m.phase != 3 { return game.TwoOptionState{},false }
-	return game.TwoOptionState{Current:m.useCursor},true
+func (fakeFieldMenuDecoder) DecodeTwoOption(r game.MemoryReader) (game.TwoOptionState, bool) {
+	m := r.(*fakeFieldItemMachine)
+	if m.phase != 3 {
+		return game.TwoOptionState{}, false
+	}
+	return game.TwoOptionState{Current: m.useCursor}, true
 }
 func (fakeFieldMenuDecoder) DecodeStartMenu(r game.MemoryReader) game.StartMenuState {
-	m:=r.(*fakeFieldItemMachine)
-	return game.StartMenuState{Visible:m.phase==1,Ready:m.phase==1,Cursor:game.MenuCursorState{Current:m.startCursor,Max:7}}
+	m := r.(*fakeFieldItemMachine)
+	return game.StartMenuState{Visible: m.phase == 1, Ready: m.phase == 1, Cursor: game.MenuCursorState{Current: m.startCursor, Max: 7}}
 }
-func (fakeFieldMenuDecoder) StartMenuEntryIndex(_ game.MemoryReader, entry game.StartMenuEntry)(int,bool){
-	if entry==game.StartMenuItems { return 5,true }
-	if entry==game.StartMenuPokemon { return 2,true }
-	return 0,false
+func (fakeFieldMenuDecoder) StartMenuEntryIndex(_ game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	if entry == game.StartMenuItems {
+		return 5, true
+	}
+	if entry == game.StartMenuPokemon {
+		return 2, true
+	}
+	return 0, false
 }
 
 type fakeFieldListDecoder struct{}
+
 func (fakeFieldListDecoder) DecodeListMenu(r game.MemoryReader) game.ListMenuState {
-	m:=r.(*fakeFieldItemMachine)
-	return game.ListMenuState{Visible:m.phase==2,Kind:game.ListMenuItems,Position:m.listPos}
+	m := r.(*fakeFieldItemMachine)
+	return game.ListMenuState{Visible: m.phase == 2, Kind: game.ListMenuItems, Position: m.listPos}
 }
 
 type fakeFieldPartyDecoder struct{}
+
 func (fakeFieldPartyDecoder) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
-	m:=r.(*fakeFieldItemMachine)
-	return game.PartyMenuState{Visible:m.phase==4,Kind:game.PartyMenuItemUse,Cursor:game.MenuCursorState{Current:m.partyCursor,Max:len(m.party)-1}}
+	m := r.(*fakeFieldItemMachine)
+	return game.PartyMenuState{Visible: m.phase == 4, Kind: game.PartyMenuItemUse, Cursor: game.MenuCursorState{Current: m.partyCursor, Max: len(m.party) - 1}}
 }
 
 func TestGenericFieldItemUsesSemanticGen2Layout(t *testing.T) {
-	m:=newFakeFieldItemMachine()
-	err:=useFieldItemWithDecoders(m,fakeFieldMedicine,1,fakeFieldItemDecoder{},fakeFieldInventoryDecoder{},fakeFieldMenuDecoder{},fakeFieldListDecoder{},fakeFieldPartyDecoder{})
-	if err!=nil { t.Fatalf("use field item: %v",err) }
-	if got:=m.party[1].HP; got!=60 { t.Fatalf("HP=%d want 60",got) }
-	if _,q:=fieldItemInventoryEntry((fakeFieldInventoryDecoder{}).DecodeInventory(m),fakeFieldMedicine);q!=1 { t.Fatalf("medicine qty=%d want 1",q) }
-	if m.startCursor!=5 { t.Fatalf("Items cursor=%d want fake Gen-II index 5",m.startCursor) }
+	m := newFakeFieldItemMachine()
+	err := useFieldItemWithDecoders(m, fakeFieldMedicine, 1, fakeFieldItemDecoder{}, fakeFieldInventoryDecoder{}, fakeFieldMenuDecoder{}, fakeFieldListDecoder{}, fakeFieldPartyDecoder{})
+	if err != nil {
+		t.Fatalf("use field item: %v", err)
+	}
+	if got := m.party[1].HP; got != 60 {
+		t.Fatalf("HP=%d want 60", got)
+	}
+	if _, q := fieldItemInventoryEntry((fakeFieldInventoryDecoder{}).DecodeInventory(m), fakeFieldMedicine); q != 1 {
+		t.Fatalf("medicine qty=%d want 1", q)
+	}
+	if m.startCursor != 5 {
+		t.Fatalf("Items cursor=%d want fake Gen-II index 5", m.startCursor)
+	}
 }
 
 func TestGenericFieldItemSelectsSemanticPPMove(t *testing.T) {
-	m:=newFakeFieldItemMachine()
-	err:=useFieldItemWithDecoders(m,fakeFieldEther,1,fakeFieldItemDecoder{},fakeFieldInventoryDecoder{},fakeFieldMenuDecoder{},fakeFieldListDecoder{},fakeFieldPartyDecoder{})
-	if err!=nil { t.Fatalf("use PP item: %v",err) }
-	if got:=m.party[1].PP[1]; got!=5 { t.Fatalf("PP slot 1=%d want 5",got) }
-	if m.moveCursor!=1 { t.Fatalf("move cursor=%d want exhausted move slot 1",m.moveCursor) }
+	m := newFakeFieldItemMachine()
+	err := useFieldItemWithDecoders(m, fakeFieldEther, 1, fakeFieldItemDecoder{}, fakeFieldInventoryDecoder{}, fakeFieldMenuDecoder{}, fakeFieldListDecoder{}, fakeFieldPartyDecoder{})
+	if err != nil {
+		t.Fatalf("use PP item: %v", err)
+	}
+	if got := m.party[1].PP[1]; got != 5 {
+		t.Fatalf("PP slot 1=%d want 5", got)
+	}
+	if m.moveCursor != 1 {
+		t.Fatalf("move cursor=%d want exhausted move slot 1", m.moveCursor)
+	}
 }
 
 func TestGenericRepelUsesProfileDurationAndWideID(t *testing.T) {
-	m:=newFakeFieldItemMachine()
-	err:=useRepelWithDecoders(m,fakeFieldRepel,fakeFieldItemDecoder{},fakeFieldInventoryDecoder{},fakeFieldMenuDecoder{},fakeFieldListDecoder{})
-	if err!=nil { t.Fatalf("use repel: %v",err) }
-	if m.repel!=321 { t.Fatalf("repel steps=%d want 321",m.repel) }
-	if _,q:=fieldItemInventoryEntry((fakeFieldInventoryDecoder{}).DecodeInventory(m),fakeFieldRepel);q!=0 { t.Fatalf("repel qty=%d want 0",q) }
+	m := newFakeFieldItemMachine()
+	err := useRepelWithDecoders(m, fakeFieldRepel, fakeFieldItemDecoder{}, fakeFieldInventoryDecoder{}, fakeFieldMenuDecoder{}, fakeFieldListDecoder{})
+	if err != nil {
+		t.Fatalf("use repel: %v", err)
+	}
+	if m.repel != 321 {
+		t.Fatalf("repel steps=%d want 321", m.repel)
+	}
+	if _, q := fieldItemInventoryEntry((fakeFieldInventoryDecoder{}).DecodeInventory(m), fakeFieldRepel); q != 0 {
+		t.Fatalf("repel qty=%d want 0", q)
+	}
 }
