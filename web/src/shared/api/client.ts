@@ -154,6 +154,13 @@ export function investigateTriage(key: string, signal?: AbortSignal): Promise<Re
   })
 }
 
+export function dismissTriage(key: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>(`/v1/triage/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+    signal
+  })
+}
+
 export function pauseRun(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/pause`, {
     method: 'POST',

@@ -456,6 +456,7 @@ export interface TriageGroup {
   detail?: string
   latest_run_id?: string
   issue?: DashboardIssueLink
+  dismissable?: boolean
   [key: string]: unknown
 }
 
