@@ -68,25 +68,25 @@ func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	objects := make([]worldmodel.MapObject, len(h.Objects))
 	for i, object := range h.Objects {
 		objects[i] = worldmodel.MapObject{
-			Slot:              i + 1,
-			X:                 object.X,
-			Y:                 object.Y,
-			Movement:          worldObjectMovement(object.Movement),
-			NativeSpriteID:    uint16(object.SpriteID),
-			NativeTextID:      uint16(object.TextID),
-			NativeItemID:      uint16(object.ItemID),
+			Slot:               i + 1,
+			X:                  object.X,
+			Y:                  object.Y,
+			Movement:           worldObjectMovement(object.Movement),
+			NativeSpriteID:     uint16(object.SpriteID),
+			NativeTextID:       uint16(object.TextID),
+			NativeItemID:       uint16(object.ItemID),
 			NativeTrainerClass: uint16(object.TrainerClass),
-			NativeTrainerSet:  uint16(object.TrainerSet),
+			NativeTrainerSet:   uint16(object.TrainerSet),
 		}
 	}
 	return worldmodel.MapHeader{
 		ID:            h.ID,
 		NativeTileset: uint16(h.Tileset),
-		WidthBlocks:     h.WidthBlocks,
-		HeightBlocks: h.HeightBlocks,
-		Warps:        warps,
-		Connections:  connections,
-		Objects:      objects,
+		WidthBlocks:   h.WidthBlocks,
+		HeightBlocks:  h.HeightBlocks,
+		Warps:         warps,
+		Connections:   connections,
+		Objects:       objects,
 	}
 }
 
@@ -206,7 +206,6 @@ func init() {
 		return NewWorldProvider(romData), true
 	})
 }
-
 
 func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
 	if spec == nil {
