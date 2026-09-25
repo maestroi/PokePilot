@@ -91,3 +91,30 @@ func (*Profile) DecodeOverworld(r game.MemoryReader) game.OverworldState {
 func (*Profile) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
 	return engine.DecodePartyMenu(r)
 }
+
+
+var _ game.BattleCombatStrategy = (*Profile)(nil)
+
+func (*Profile) EvaluateCombatMove(
+	romData []byte,
+	attacker, defender game.BattleCombatant,
+	nativeMoveID uint16,
+	currentPP uint8,
+) (game.BattleMoveEvaluation, game.BattleMoveRole, error) {
+	return engine.EvaluateCombatMove(romData, attacker, defender, nativeMoveID, currentPP)
+}
+
+func (*Profile) IncomingTypeRisk(romData []byte, enemy, candidate game.BattleCombatant) int {
+	return engine.IncomingTypeRisk(romData, enemy, candidate)
+}
+
+func (*Profile) PreferSetupMove(
+	b game.BattleState,
+	setup, attack game.BattleMoveEvaluation,
+) bool {
+	return engine.PreferSetupMove(b, setup, attack)
+}
+
+func (*Profile) IsFieldMove(nativeMoveID uint16) bool {
+	return engine.IsFieldMove(nativeMoveID)
+}
