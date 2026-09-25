@@ -5,9 +5,8 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/forcedmove"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -41,15 +40,17 @@ func cyclingRoadAutoDown(mapID uint8, trainerBattle, inputHeld bool) bool {
 // observes a frame with no input between the requested movement and the settle.
 // It is released only after WalkCounter/JoyIgnore settle; callers can then
 // immediately press the next planned direction before advancing another frame.
-func stepOnceCyclingRoad(m *emu.Emu, s world.Step, btn emu.Button) error {
-	startX, startY := playerXY(m)
+func stepOnceCyclingRoad(m *emu.Emu, decoder game.OverworldDecoder, s world.Step, btn emu.Button) error {
+	start := decoder.DecodeOverworld(m)
+	startX, startY := start.X, start.Y
 	targetX := int(startX) + s.DX
 	targetY := int(startY) + s.DY
 
 	m.Press(btn)
 	moved := false
 	for i := 0; i < 2*stepMoveBudget; i++ {
-		x, y := playerXY(m)
+		live := decoder.DecodeOverworld(m)
+		x, y := live.X, live.Y
 		if int(x) == targetX && int(y) == targetY {
 			moved = true
 			break
@@ -70,20 +71,16 @@ func stepOnceCyclingRoad(m *emu.Emu, s world.Step, btn emu.Button) error {
 	m.Press(emu.B)
 	m.Release(btn)
 	for i := 0; i < stepSettleBudget; i++ {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil || state.DecodeDialogue(&mem) != nil {
-			break
-		}
-		if mem.U8(sym.WalkCounter) == 0 && mem.U8(sym.JoyIgnore) == 0 {
+		live := decoder.DecodeOverworld(m)
+		if live.InBattle || live.InDialogue || live.MovementIdle {
 			break
 		}
 		m.StepFrame()
 	}
 	m.Release(emu.B)
 
-	x, y := playerXY(m)
-	if int(x) != targetX || int(y) != targetY {
+	live := decoder.DecodeOverworld(m)
+	if int(live.X) != targetX || int(live.Y) != targetY {
 		return &ErrBlocked{Step: s, At: struct{ X, Y uint8 }{startX, startY}}
 	}
 	return nil
@@ -92,8 +89,9 @@ func stepOnceCyclingRoad(m *emu.Emu, s world.Step, btn emu.Button) error {
 // executeForcedMovementStep presses the one input that enters a scripted
 // movement tile and then lets the ROM own movement until the planned landing.
 // It positively verifies map, coordinate, control, and walk-counter state.
-func executeForcedMovementStep(m *emu.Emu, mapID uint8, input world.Step, landing world.Point) error {
-	startX, startY := playerXY(m)
+func executeForcedMovementStep(m *emu.Emu, decoder game.OverworldDecoder, mapID uint8, input world.Step, landing world.Point) error {
+	start := decoder.DecodeOverworld(m)
+	startX, startY := start.X, start.Y
 	btn, ok := buttonFor(input)
 	if !ok {
 		return fmt.Errorf("skill: forced movement: invalid input %s", input)
@@ -102,18 +100,16 @@ func executeForcedMovementStep(m *emu.Emu, mapID uint8, input world.Step, landin
 	m.Press(btn)
 	moved := false
 	for i := 0; i < stepMoveBudget; i++ {
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		live := decoder.DecodeOverworld(m)
+		if live.InBattle {
 			m.Release(btn)
 			return ErrBattleInterrupted
 		}
-		if state.DecodeDialogue(&mem) != nil {
+		if live.InDialogue {
 			m.Release(btn)
 			return ErrDialogueInterrupted
 		}
-		x, y := playerXY(m)
-		if x != startX || y != startY {
+		if live.X != startX || live.Y != startY {
 			moved = true
 			break
 		}
@@ -125,28 +121,26 @@ func executeForcedMovementStep(m *emu.Emu, mapID uint8, input world.Step, landin
 	}
 
 	for i := 0; i < forcedMovementSettleBudget; i++ {
-		if got := m.Peek8(sym.CurMap); got != mapID {
-			return fmt.Errorf("skill: forced movement unexpectedly left map %#02x for %#02x", mapID, got)
+		live := decoder.DecodeOverworld(m)
+		if live.NativeMapID != uint16(mapID) {
+			return fmt.Errorf("skill: forced movement unexpectedly left map %#02x for %#04x", mapID, live.NativeMapID)
 		}
-		var mem state.Mem
-		state.Snapshot(m, &mem)
-		if state.DecodeBattle(&mem) != nil {
+		if live.InBattle {
 			return ErrBattleInterrupted
 		}
-		if state.DecodeDialogue(&mem) != nil {
+		if live.InDialogue {
 			return ErrDialogueInterrupted
 		}
-		x, y := playerXY(m)
-		if int(x) == landing.X && int(y) == landing.Y && state.Controllable(&mem) && mem.U8(sym.WalkCounter) == 0 {
-			if err := waitForPositionStable(m, positionStableBudget, positionStableFrames); err != nil {
+		if int(live.X) == landing.X && int(live.Y) == landing.Y && live.Controllable && live.MovementIdle {
+			if err := waitForPositionStableWithDecoder(m, decoder, positionStableBudget, positionStableFrames); err != nil {
 				return err
 			}
 			return nil
 		}
 		m.StepFrame()
 	}
-	x, y := playerXY(m)
-	return fmt.Errorf("skill: forced movement did not settle at (%d,%d); ended at (%d,%d)", landing.X, landing.Y, x, y)
+	live := decoder.DecodeOverworld(m)
+	return fmt.Errorf("skill: forced movement did not settle at (%d,%d); ended at (%d,%d)", landing.X, landing.Y, live.X, live.Y)
 }
 
 func normalizeForcedMovementError(err error) error {
