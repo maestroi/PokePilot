@@ -115,6 +115,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrCatchBlackout) ||
 		errors.Is(err, skill.ErrCatchHuntExhausted) ||
 		errors.Is(err, skill.ErrFishingHuntExhausted) ||
+		errors.Is(err, skill.ErrSafariCatchExhausted) ||
 		errors.Is(err, skill.ErrFishingNoShoreline) ||
 		errors.Is(err, skill.ErrFishingNoFishHere) ||
 		errors.Is(err, skill.ErrTrainRetreat) ||
@@ -330,6 +331,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrFishingHuntExhausted) {
 		return "fishing_hunt_exhausted", nil
+	}
+	if errors.Is(err, skill.ErrSafariCatchExhausted) {
+		return "safari_hunt_exhausted", nil
 	}
 	if errors.Is(err, skill.ErrFishingNoShoreline) {
 		return "fishing_no_shoreline", nil
