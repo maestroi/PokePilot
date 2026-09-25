@@ -26,18 +26,20 @@ func TestReplayOutputTailIsBounded(t *testing.T) {
 }
 
 func TestReplayRenderSlotHonorsCancellation(t *testing.T) {
-	release, err := acquireReplayRender(context.Background())
-	if err != nil {
-		t.Fatalf("first slot: %v", err)
+	for i := 0; i < cap(replayRenderSlots); i++ {
+		release, err := acquireReplayRender(context.Background())
+		if err != nil {
+			t.Fatalf("slot %d: %v", i, err)
+		}
+		defer release()
 	}
-	defer release()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	second, err := acquireReplayRender(ctx)
 	if err == nil {
 		second()
-		t.Fatal("second render acquired slot while first was held")
+		t.Fatal("render acquired a slot while all were held")
 	}
 	if ctx.Err() == nil {
 		t.Fatalf("second render err=%v, want context cancellation", err)

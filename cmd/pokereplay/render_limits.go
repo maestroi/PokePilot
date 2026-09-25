@@ -2,22 +2,34 @@ package main
 
 import (
 	"context"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	maxConcurrentReplayRenders = 1
+	defaultReplayRenderWorkers = 3
 	maxReplayProcessLogBytes   = 64 << 10
 	replayJobRetention         = 30 * time.Minute
 )
 
-var replayRenderSlots = make(chan struct{}, maxConcurrentReplayRenders)
+var replayRenderSlots = make(chan struct{}, replayRenderWorkers())
 
-// acquireReplayRender bounds expensive emulator+encoder processes. One slot is
-// intentional: VAAPI is a shared device and CPU fallback renders are expensive
-// enough that concurrent jobs are more likely to make both slower than improve
-// throughput. Additional requests remain lightweight waiting goroutines.
+// replayRenderWorkers is how many attempt segments render at once across all
+// jobs. Each segment is a single-threaded emulator piped into one encoder
+// (~1k fps on the worker-05 iGPU node), so a long run is bound by segment
+// count, not by the VAAPI engine. POKEPILOT_REPLAY_WORKERS tunes it per node.
+func replayRenderWorkers() int {
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("POKEPILOT_REPLAY_WORKERS"))); err == nil && n > 0 {
+		return n
+	}
+	return defaultReplayRenderWorkers
+}
+
+// acquireReplayRender bounds expensive emulator+encoder processes. Additional
+// segments remain lightweight waiting goroutines.
 func acquireReplayRender(ctx context.Context) (func(), error) {
 	select {
 	case replayRenderSlots <- struct{}{}:

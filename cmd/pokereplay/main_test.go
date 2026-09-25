@@ -239,3 +239,72 @@ func TestReplayRecordingsIncludeAllRunAttempts(t *testing.T) {
 		t.Fatalf("single-attempt cache key changed: got %q want %q", got, want)
 	}
 }
+
+// A replay sidecar restart (every image roll) must not throw away finished
+// attempts: a segment already cached in S3 is reused instead of re-rendered.
+func TestReplaySegmentCacheSurvivesRestart(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake stream helper is a POSIX shell script")
+	}
+	var mu sync.Mutex
+	objects := map[string][]byte{}
+	s3srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		body, ok := objects[r.URL.Path]
+		switch r.Method {
+		case http.MethodPut:
+			objects[r.URL.Path], _ = io.ReadAll(r.Body)
+		case http.MethodHead, http.MethodGet:
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			if r.Method == http.MethodGet {
+				_, _ = w.Write(body)
+			}
+		}
+	}))
+	defer s3srv.Close()
+	store, err := artifactstore.NewS3(artifactstore.S3Config{
+		Endpoint: s3srv.URL, Bucket: "pokepilot", Region: "us-east-1",
+		AccessKey: "test", SecretKey: "secret", Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	calls := filepath.Join(dir, "calls")
+	stream := filepath.Join(dir, "fake-gomeboy-stream")
+	script := `#!/bin/sh
+echo x >> "` + calls + `"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-output" ]; then shift; printf 'fake-mp4' > "$1"; fi
+  shift
+done
+`
+	if err := os.WriteFile(stream, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recording := replayRecording{Attempt: 2, Artifact: artifactRef{Name: "run.gbrun", SHA256: strings.Repeat("ab", 32), ObjectKey: "runs/run-1/attempt-2/run.gbrun"}}
+	segment := semanticReplaySegment{Attempt: 2, RecordingPath: filepath.Join(dir, "run.gbrun"), ReplayROMPath: filepath.Join(dir, "rom.gb")}
+
+	for pass := 1; pass <= 2; pass++ {
+		replay := newReplayServer("http://wall.invalid", segment.ReplayROMPath, stream, store)
+		video, err := replay.renderCachedSegment(context.Background(), "run-1", recording, segment, t.TempDir(), 0, replayModeRaw)
+		if err != nil {
+			t.Fatalf("pass %d: %v", pass, err)
+		}
+		if got, _ := os.ReadFile(video); string(got) != "fake-mp4" {
+			t.Fatalf("pass %d video=%q", pass, got)
+		}
+	}
+	if got, _ := os.ReadFile(calls); strings.Count(string(got), "x") != 1 {
+		t.Fatalf("stream renders=%d, want 1 (second pass must reuse the S3 segment)", strings.Count(string(got), "x"))
+	}
+	if _, ok := objects["/pokepilot/runs/run-1/attempt-2/replay-abababababab.mp4"]; !ok {
+		t.Fatalf("segment not cached under its attempt key: %v", objects)
+	}
+}

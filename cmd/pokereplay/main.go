@@ -26,12 +26,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -39,7 +41,7 @@ const (
 	serverIdleTimeout       = 60 * time.Second
 	serverShutdownTimeout   = 10 * time.Second
 	wallTimeout             = 30 * time.Second
-	renderTimeout           = 2 * time.Hour
+	renderTimeout           = 2 * time.Hour // per attempt segment, not per run
 	maxWallResponseBytes    = 4 << 20
 )
 
@@ -72,6 +74,9 @@ type replayStatus struct {
 	ObjectKey string `json:"object_key,omitempty"`
 	Size      int64  `json:"size,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Segments/SegmentsDone report per-attempt progress while generating.
+	Segments     int `json:"segments,omitempty"`
+	SegmentsDone int `json:"segments_done,omitempty"`
 }
 
 type replayIdentity struct {
@@ -357,7 +362,7 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 }
 
 func (s *replayServer) render(runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
-	ctx, cancel := context.WithTimeout(context.Background(), renderTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started := time.Now()
 	encoder := s.encoderName()
@@ -367,28 +372,15 @@ func (s *replayServer) render(runID string, recordings []replayRecording, cacheK
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
 	}
 
-	release, err := acquireReplayRender(ctx)
-	if err != nil {
-		setError(fmt.Errorf("wait for replay render slot: %w", err))
-		return
-	}
-	defer release()
-
 	dir, err := os.MkdirTemp("", "pokereplay-*")
 	if err != nil {
 		setError(err)
 		return
 	}
 	defer os.RemoveAll(dir)
-	videoPath := pathJoinOS(dir, "replay.mp4")
-	segmentVideos := make([]string, 0, len(recordings))
-	semanticSegments := make([]semanticReplaySegment, 0, len(recordings))
+	semanticSegments := make([]semanticReplaySegment, len(recordings))
 	for index, recording := range recordings {
 		recordingPath := pathJoinOS(dir, fmt.Sprintf("segment-%03d.gbrun", index+1))
-		rawSegmentPath := videoPath
-		if len(recordings) > 1 || mode == replayModeBroadcast {
-			rawSegmentPath = pathJoinOS(dir, fmt.Sprintf("segment-%03d-raw.mp4", index+1))
-		}
 		if err := s.downloadRecording(ctx, runID, recording.Artifact, recordingPath, recording.Attempt); err != nil {
 			setError(fmt.Errorf("attempt %d recording: %w", recording.Attempt, err))
 			return
@@ -398,68 +390,136 @@ func (s *replayServer) render(runID string, recordings []replayRecording, cacheK
 			setError(fmt.Errorf("attempt %d replay ROM: %w", recording.Attempt, err))
 			return
 		}
-		semanticSegments = append(semanticSegments, semanticReplaySegment{
-			Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath,
-		})
-		if err := s.renderRecordingSegment(ctx, romPath, recordingPath, rawSegmentPath); err != nil {
-			setError(fmt.Errorf("attempt %d: %w", recording.Attempt, err))
-			return
-		}
-
-		segmentPath := rawSegmentPath
-		if mode == replayModeBroadcast {
-			if s.compositor == nil {
-				setError(fmt.Errorf("broadcast compositor is not configured"))
-				return
-			}
-			timeline, err := s.mediaTimelineOrEmpty(ctx, runID, recording.Attempt)
-			if err != nil {
-				setError(fmt.Errorf("attempt %d media timeline: %w", recording.Attempt, err))
-				return
-			}
-			segmentPath = videoPath
-			if len(recordings) > 1 {
-				segmentPath = pathJoinOS(dir, fmt.Sprintf("segment-%03d-broadcast.mp4", index+1))
-			}
-			if err := s.compositor.Compose(ctx, broadcastScene{
-				RunID:       runID,
-				Attempt:     recording.Attempt,
-				RawVideo:    rawSegmentPath,
-				Destination: segmentPath,
-				Timeline:    timeline,
-				VAAPI:       s.vaapi,
-				VAAPIDevice: vaapiDevice(),
-			}); err != nil {
-				setError(fmt.Errorf("attempt %d broadcast renderer: %w", recording.Attempt, err))
-				return
-			}
-		}
-		segmentVideos = append(segmentVideos, segmentPath)
+		semanticSegments[index] = semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath}
 	}
+
+	// Each attempt is rendered and cached in S3 under its own key, so a
+	// restarted sidecar (every image roll recreates it) or a failed segment
+	// only costs the segments still in flight: the next request reuses the rest.
+	segmentVideos := make([]string, len(recordings))
+	var done atomic.Int32
+	g, gctx := errgroup.WithContext(ctx)
+	for index, recording := range recordings {
+		g.Go(func() error {
+			video, err := s.renderCachedSegment(gctx, runID, recording, semanticSegments[index], dir, index, mode)
+			if err != nil {
+				return fmt.Errorf("attempt %d: %w", recording.Attempt, err)
+			}
+			segmentVideos[index] = video
+			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: len(recordings), SegmentsDone: int(done.Add(1))})
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		setError(err)
+		return
+	}
+
+	size := int64(0)
 	if len(segmentVideos) > 1 {
+		videoPath := pathJoinOS(dir, "replay.mp4")
 		if err := concatReplaySegments(ctx, dir, segmentVideos, videoPath); err != nil {
 			setError(err)
 			return
 		}
+		file, err := os.Open(videoPath)
+		if err != nil {
+			setError(err)
+			return
+		}
+		obj, err := s.store.PutObjectReader(ctx, cacheKey, "video/mp4", file)
+		file.Close()
+		if err != nil {
+			setError(err)
+			return
+		}
+		size = obj.Size
+	} else if info, err := os.Stat(segmentVideos[0]); err == nil {
+		// A single segment's cache key is the replay key; it is already uploaded.
+		size = info.Size()
 	}
-	file, err := os.Open(videoPath)
-	if err != nil {
-		setError(err)
-		return
-	}
-	obj, err := s.store.PutObjectReader(ctx, cacheKey, "video/mp4", file)
-	file.Close()
-	if err != nil {
-		setError(err)
-		return
-	}
-	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), obj.Size)
-	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: obj.Key, Size: obj.Size})
+	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size)
+	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size})
 	if err := s.renderSemanticReplay(ctx, runID, recordings, semanticSegments); err != nil {
 		// The semantic cache is derived presentation data. Its failure must not
 		// invalidate a deterministic recording or an otherwise healthy MP4.
 		log.Printf("pokereplay semantic replay unavailable run=%s err=%v", runID, err)
 	}
+}
+
+// renderCachedSegment returns a local MP4 for one attempt, downloading it from
+// its S3 segment cache when present and otherwise rendering and caching it.
+func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, recording replayRecording, segment semanticReplaySegment, dir string, index int, mode replayMode) (string, error) {
+	key := s.replayCacheKeyForMode(runID, []replayRecording{recording}, mode)
+	video := pathJoinOS(dir, fmt.Sprintf("segment-%03d.mp4", index+1))
+	if _, err := s.store.HeadObject(ctx, key); err == nil {
+		return video, s.downloadObject(ctx, key, video)
+	} else if !artifactstore.IsNotFound(err) {
+		return "", err
+	}
+
+	release, err := acquireReplayRender(ctx)
+	if err != nil {
+		return "", fmt.Errorf("wait for replay render slot: %w", err)
+	}
+	defer release()
+	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
+	defer cancel()
+
+	raw := video
+	if mode == replayModeBroadcast {
+		raw = pathJoinOS(dir, fmt.Sprintf("segment-%03d-raw.mp4", index+1))
+	}
+	if err := s.renderRecordingSegment(ctx, segment.ReplayROMPath, segment.RecordingPath, raw); err != nil {
+		return "", err
+	}
+	if mode == replayModeBroadcast {
+		if s.compositor == nil {
+			return "", fmt.Errorf("broadcast compositor is not configured")
+		}
+		timeline, err := s.mediaTimelineOrEmpty(ctx, runID, recording.Attempt)
+		if err != nil {
+			return "", fmt.Errorf("media timeline: %w", err)
+		}
+		if err := s.compositor.Compose(ctx, broadcastScene{
+			RunID:       runID,
+			Attempt:     recording.Attempt,
+			RawVideo:    raw,
+			Destination: video,
+			Timeline:    timeline,
+			VAAPI:       s.vaapi,
+			VAAPIDevice: vaapiDevice(),
+		}); err != nil {
+			return "", fmt.Errorf("broadcast renderer: %w", err)
+		}
+		_ = os.Remove(raw)
+	}
+	file, err := os.Open(video)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if _, err := s.store.PutObjectReader(ctx, key, "video/mp4", file); err != nil {
+		return "", fmt.Errorf("cache segment: %w", err)
+	}
+	return video, nil
+}
+
+func (s *replayServer) downloadObject(ctx context.Context, key, destination string) error {
+	obj, err := s.store.GetObject(ctx, key, "")
+	if err != nil {
+		return err
+	}
+	defer obj.Body.Close()
+	file, err := os.Create(destination)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(file, obj.Body); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, recordingPath, videoPath string) error {

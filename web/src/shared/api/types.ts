@@ -466,6 +466,8 @@ export interface ReplayStatus {
   state: string
   size?: number
   error?: string
+  segments?: number
+  segments_done?: number
   [key: string]: unknown
 }
 
