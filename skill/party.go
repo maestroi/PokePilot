@@ -40,18 +40,6 @@ func useItemPartyMenuUp(m *emu.Emu) bool {
 	return battleScreenHas(m, useItemPartyMenuMarker)
 }
 
-// The FIGHT/ITEM/PKMN/RUN battle menu is a 2x2 grid: FIGHT/ITEM in the left
-// column, PKMN/RUN in the right (DisplayBattleMenu, engine/battle/core.asm).
-// The cursor's tile X sits in wTopMenuItemX: $9 for the left column, $f for
-// the right; wCurrentMenuItem holds the row (0 is the top). A press in the
-// right column adds $2 to the row before dispatch, so POKéMON selects as
-// item 2 — unreachable by SelectMenuItem, whose range check reads the
-// per-column wMaxMenuItem of 1.
-const (
-	battleMenuLeftX  byte = 0x09
-	battleMenuRightX byte = 0x0F
-)
-
 // SetLead reorders the party through the start menu's POKEMON list so that
 // the member currently in slot is slot 0, the lead. A party of one needs no
 // decisions: SetLead(m, 0) verifies the range and returns without touching
@@ -90,9 +78,9 @@ func SetLead(m *emu.Emu, slot int) error {
 //
 // This is the half of the battle party menu that Battle does not drive:
 // the forced switch after a faint (S6-5b) is answered inside Battle's state
-// machine; this one is opened by the player. Every step is press, assert,
-// A — the column is asserted from wTopMenuItemX, the row and the party slot
-// from wCurrentMenuItem, each menu from its own wTileMap marker.
+// machine; this one is opened by the player. The ordinary battle command is
+// selected semantically through the active profile; party-slot handling remains
+// Gen-I-owned in this file until its own capability slice lands.
 func SwitchActive(m *emu.Emu, slot int) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
