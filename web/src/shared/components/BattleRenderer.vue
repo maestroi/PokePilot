@@ -71,7 +71,7 @@ function movePP(move: RenderBattleMove): string {
         :name="opponent.appearance || opponent.name || ''"
         :size="128"
         :fainted="opponent.defeated"
-        class="battle-pokemon battle-opponent"
+        class="battle-pokemon"
       />
     </div>
 
@@ -135,8 +135,5 @@ function movePP(move: RenderBattleMove): string {
   border: 0;
   background: transparent;
   filter: drop-shadow(0 18px 20px rgba(0,0,0,.24));
-}
-.battle-opponent {
-  transform: scaleX(-1);
 }
 </style>
