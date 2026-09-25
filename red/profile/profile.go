@@ -149,7 +149,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 		BlackedOut:   mem.U8(sym.StatusFlags4)&(1<<5) != 0,
 	}
 	if len(romData) > 0 {
-		obs.PokedexOwned, obs.PokedexSeen = projectPokedex(romData, gs.Pokedex)
+		obs.PokedexOwned, obs.PokedexSeen = ProjectPokedex(romData, gs.Pokedex)
 		if catalog, dexErr := p.BuildDexCatalog(romData, obs.PokedexOwned, obs.PokedexSeen); dexErr == nil {
 			obs.Dex = catalog
 		}
