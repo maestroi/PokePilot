@@ -1,9 +1,6 @@
 package skill
 
 import (
-	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -39,34 +36,4 @@ func cellCutRouteTile(grid *world.Grid, tileset uint8, x, y int) bool {
 		return true
 	}
 	return false
-}
-
-func buttonForFacing(f state.Facing) (emu.Button, bool) {
-	switch f {
-	case state.FacingUp:
-		return emu.Up, true
-	case state.FacingDown:
-		return emu.Down, true
-	case state.FacingLeft:
-		return emu.Left, true
-	case state.FacingRight:
-		return emu.Right, true
-	}
-	return 0, false
-}
-
-// observeFrontTile asks the ROM to refresh wTileInFrontOfPlayer for the
-// direction the player is already facing. Face only writes the sprite
-// direction; GetTileAndCoordsInFrontOfPlayer runs when the overworld
-// considers a step.
-func observeFrontTile(m *emu.Emu) uint8 {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	btn, ok := buttonForFacing(state.DecodePlayer(&mem).Facing)
-	if !ok {
-		return m.Peek8(sym.TileInFrontOfPlayer)
-	}
-	m.Tap(btn, 3, 7)
-	m.StepFrames(8)
-	return m.Peek8(sym.TileInFrontOfPlayer)
 }
