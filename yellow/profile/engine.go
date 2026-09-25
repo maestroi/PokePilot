@@ -92,7 +92,6 @@ func (*Profile) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
 	return engine.DecodePartyMenu(r)
 }
 
-
 var _ game.BattleCombatStrategy = (*Profile)(nil)
 
 func (*Profile) EvaluateCombatMove(
