@@ -1,10 +1,5 @@
 package skill
 
-import (
-	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/game"
-)
-
 // Gen 1 item IDs from pokered/constants/item_constants.asm. The automatic
 // battle policy intentionally covers ordinary medicine only.
 const (
@@ -50,10 +45,4 @@ var hpMedicines = []hpMedicine{
 	{item: itemHyperPotion, heal: 200},
 	{item: itemMaxPotion, heal: 1 << 30},
 	{item: itemFullRestore, heal: 1 << 30},
-}
-
-// selectItemEntry moves the 2x2 battle-main-menu cursor to ITEM (left column,
-// row 1), verifying each transition rather than assuming it starts on FIGHT.
-func selectItemEntry(m *emu.Emu) error {
-	return selectBattleMainMenuEntry(m, game.BattleMenuItems)
 }

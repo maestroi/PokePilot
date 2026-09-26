@@ -118,3 +118,48 @@ func TestGenericBattleMainMenuRejectsUnknownEntry(t *testing.T) {
 		t.Fatal("unknown battle menu entry was accepted")
 	}
 }
+
+// fakeDroppingBattleMenuMachine drops the first `drop` A presses, the way
+// Gen I ignores input between drawing the battle menu and HandleMenuInput's
+// first joypad poll. An accepted A hides the main menu (the submenu opened).
+type fakeDroppingBattleMenuMachine struct {
+	fakeBattleMenuMachine
+	drop, aPresses int
+}
+
+func (m *fakeDroppingBattleMenuMachine) Tap(btn emu.Button, hold, gap int) {
+	if btn != emu.A {
+		m.fakeBattleMenuMachine.Tap(btn, hold, gap)
+		return
+	}
+	m.aPresses++
+	if m.aPresses > m.drop {
+		m.mem[fakeBattleVisible] = 0
+	}
+}
+
+func TestActivateBattleMainMenuEntryRetriesDroppedPress(t *testing.T) {
+	m := &fakeDroppingBattleMenuMachine{drop: 1}
+	m.mem[fakeBattleVisible] = 1
+	opened := func() bool { return m.mem[fakeBattleVisible] == 0 }
+
+	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuItems, 10, opened); err != nil {
+		t.Fatalf("activate after a dropped A: %v", err)
+	}
+	if m.aPresses != 2 {
+		t.Fatalf("A presses = %d, want 2 (one dropped, one accepted)", m.aPresses)
+	}
+}
+
+func TestActivateBattleMainMenuEntryNeverRepressesInsideSubmenu(t *testing.T) {
+	m := &fakeDroppingBattleMenuMachine{}
+	m.mem[fakeBattleVisible] = 1
+	// The press is accepted (main menu gone) but the submenu never reports
+	// open: re-pressing A here would act inside whatever now owns input.
+	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuItems, 10, func() bool { return false }); err == nil {
+		t.Fatal("unopened submenu was accepted")
+	}
+	if m.aPresses != 1 {
+		t.Fatalf("A presses = %d, want 1 once the main menu stopped owning input", m.aPresses)
+	}
+}

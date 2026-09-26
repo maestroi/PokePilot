@@ -196,17 +196,12 @@ func useItemWithDecoders(
 		return fmt.Errorf("skill: UseItem: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	if err := selectBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuItems); err != nil {
-		return fmt.Errorf("skill: UseItem: select ITEM: %w", err)
-	}
-	m.Tap(emu.A, 3, 7)
-
-	if !waitMenuUntil(m, bagMenuBudget, func() bool {
+	if err := activateBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuItems, bagMenuBudget, func() bool {
 		live := listMenu.DecodeListMenu(m)
 		return live.Visible && live.Kind == game.ListMenuItems
-	}) {
-		return fmt.Errorf("skill: UseItem: item list did not open within %d frames on %s",
-			bagMenuBudget, battleRuntimeContext(runtime.DecodeBattleRuntime(m)))
+	}); err != nil {
+		return fmt.Errorf("skill: UseItem: open item list on %s: %w",
+			battleRuntimeContext(runtime.DecodeBattleRuntime(m)), err)
 	}
 
 	if err := selectScrollingListEntryWithDecoder(m, listMenu, idx); err != nil {
