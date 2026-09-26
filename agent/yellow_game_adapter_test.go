@@ -33,20 +33,37 @@ func TestYellowAdapterIsSeparateFromRedBlueFactory(t *testing.T) {
 	}
 }
 
-func TestYellowStoryObjectivesAreTypedBlocksNotRedScripts(t *testing.T) {
+func TestYellowOpeningObjectivesUseYellowControllerNotRedScripts(t *testing.T) {
 	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
 	for _, o := range []Objective{
 		{Kind: KindStarter, Species: "pikachu"},
-		{Kind: KindProgress, Progress: "oak-parcel"},
+		{Kind: KindProgress, Progress: yellowprofile.ProgressYellowLabRivalResolved},
 	} {
-		result, err := adapter.ExecuteOwned(o)
-		if !errors.Is(err, errYellowControllerUnavailable) || result.Outcome != OutcomeBlocked {
-			t.Fatalf("%s: outcome=%q err=%v, want blocked controller-unavailable", o, result.Outcome, err)
+		_, err := adapter.ExecuteOwned(o)
+		if err == nil {
+			t.Fatalf("%s: nil emulator unexpectedly executed", o)
 		}
-		failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
-		if failure.Class != game.FailureClassBlocked || failure.Recoverable {
-			t.Fatalf("%s: failure = %+v, want non-recoverable block", o, failure)
+		if errors.Is(err, errYellowControllerUnavailable) {
+			t.Fatalf("%s: opening still reports controller unavailable: %v", o, err)
 		}
+	}
+
+	unsupported := Objective{Kind: KindProgress, Progress: "oak-parcel"}
+	if err := adapter.Validate(unsupported, Observation{GameID: yellowprofile.GameID}); err == nil {
+		t.Fatalf("%s: unimplemented Yellow story goal validated", unsupported)
+	}
+}
+
+func TestYellowUnimplementedProgressionStillNormalizesAsTypedBlock(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	o := Objective{Kind: KindProgress, Progress: "yellow_future_story_gate"}
+	result, err := adapter.ExecuteOwned(o)
+	if !errors.Is(err, errYellowControllerUnavailable) || result.Outcome != OutcomeBlocked {
+		t.Fatalf("%s: outcome=%q err=%v, want blocked controller-unavailable", o, result.Outcome, err)
+	}
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
+	if failure.Class != game.FailureClassBlocked || failure.Recoverable {
+		t.Fatalf("%s: failure = %+v, want non-recoverable block", o, failure)
 	}
 }
 

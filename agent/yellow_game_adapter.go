@@ -18,7 +18,8 @@ var errYellowControllerUnavailable = errors.New("Pokémon Yellow objective contr
 // controllers drive it. The opening and story progression are Yellow's own
 // (Pikachu, Jessie & James, a different rival) and stay Yellow-owned; until a
 // Yellow controller exists they fail as a typed, non-recoverable block rather
-// than replaying Red's story scripts.
+// than replaying Red's story scripts. The first executable Yellow-owned slice
+// is the resumable Pikachu opening through the lab-rival boundary.
 type yellowObjectiveAdapter struct {
 	m       *emu.Emu
 	romData []byte
@@ -57,6 +58,9 @@ func (a *yellowObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if o.Kind == KindStarter && o.Species != "" && o.Species != "pikachu" {
 		return fmt.Errorf("agent: %s: Yellow starter must be pikachu, got %q", o, o.Species)
 	}
+	if o.Kind == KindProgress && !yellowProgressionKnown(o.Progress) {
+		return fmt.Errorf("agent: %s: Yellow progression goal %q is not implemented yet", o, o.Progress)
+	}
 	if yellowOwnedKind(o.Kind) {
 		return nil
 	}
@@ -73,10 +77,25 @@ func (a *yellowObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver)
 }
 
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
-	if yellowOwnedKind(o.Kind) {
-		return ObjectiveResult{Objective: o, Outcome: OutcomeBlocked}, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+	result := ObjectiveResult{Objective: o}
+	switch o.Kind {
+	case KindStarter:
+		if err := executeYellowOpening(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	case KindProgress:
+		if o.Progress == yellowprofile.ProgressYellowLabRivalResolved {
+			if err := executeYellowOpening(a.m, a.romData); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		}
+		result.Outcome = OutcomeBlocked
+		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
+	default:
+		return a.gen1.ExecuteOwned(o)
 	}
-	return a.gen1.ExecuteOwned(o)
 }
 
 func (a *yellowObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
