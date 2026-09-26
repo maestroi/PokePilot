@@ -101,6 +101,20 @@ type RouteCostResult struct {
 // the conservative router already knows is legal.
 func FindWeightedRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
+	from, to uint8,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+	policy RouteCostPolicy,
+) (RouteCostResult, error) {
+	return FindWeightedRoutePlanAtDestinationWithCapabilitiesMaps(
+		g, MapID(from), MapID(to), x, y, tx, ty, blockedHere, prereqs, policy,
+	)
+}
+
+// FindWeightedRoutePlanAtDestinationWithCapabilitiesMaps is the wide-map-id variant.
+func FindWeightedRoutePlanAtDestinationWithCapabilitiesMaps(
+	g *Graph,
 	from, to MapID,
 	x, y, tx, ty int,
 	blockedHere map[Edge]bool,
@@ -112,7 +126,7 @@ func FindWeightedRoutePlanAtDestinationWithCapabilities(
 	}
 	policy = policy.normalized()
 
-	fallback, fallbackErr := FindRoutePlanAtDestinationWithCapabilities(
+	fallback, fallbackErr := FindRoutePlanAtDestinationWithCapabilitiesMaps(
 		g, from, to, x, y, tx, ty, blockedHere, prereqs,
 	)
 	if fallbackErr != nil && !errors.Is(fallbackErr, ErrRouteReplanRequired) {
@@ -547,7 +561,12 @@ func newRouteGeometry(g *Graph, allowWater bool) *routeGeometry {
 // such as Surf may legitimately bypass pristine LAND component reachability,
 // but it still cannot teleport the player to a shore in another disconnected
 // region of the same map.
-func EdgePortReachableFrom(g *Graph, mapID MapID, x, y int, edge Edge, policy RouteCostPolicy) bool {
+func EdgePortReachableFrom(g *Graph, mapID uint8, x, y int, edge Edge, policy RouteCostPolicy) bool {
+	return EdgePortReachableFromMap(g, MapID(mapID), x, y, edge, policy)
+}
+
+// EdgePortReachableFromMap is the wide-map-id variant of EdgePortReachableFrom.
+func EdgePortReachableFromMap(g *Graph, mapID MapID, x, y int, edge Edge, policy RouteCostPolicy) bool {
 	if g == nil || edge.From != mapID || x < 0 || y < 0 {
 		return false
 	}
