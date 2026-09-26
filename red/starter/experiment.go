@@ -201,16 +201,19 @@ var middleBallSignature = []byte{
 // unmodified copy. Custom/random selections alter exactly the middle-ball
 // species immediate plus Oak's middle-slot comparison; Blue's starter temp,
 // trainer team, maps, encounters, items and all other scripts remain untouched.
+//
+// Vanilla touches no Red layout, so it passes any cartridge through unchanged
+// (Blue, Yellow, ...); only a real patch requires the exact Red image.
 func Patch(base []byte, selection Selection) ([]byte, PatchInfo, error) {
-	if err := redrom.Verify(base); err != nil {
-		return nil, PatchInfo{}, fmt.Errorf("starter: base ROM: %w", err)
-	}
 	out := append([]byte(nil), base...)
 	info := PatchInfo{BaseSHA1: redrom.SHA1Hex(base)}
 	if !selection.Experiment() {
 		info.EffectiveSHA1 = info.BaseSHA1
 		info.Description = "vanilla ROM"
 		return out, info, nil
+	}
+	if err := redrom.Verify(base); err != nil {
+		return nil, PatchInfo{}, fmt.Errorf("starter: base ROM: %w", err)
 	}
 
 	ball, err := findUnique(out, middleBallSignature)

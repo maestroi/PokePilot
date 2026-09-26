@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/profiles"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
@@ -32,6 +33,9 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 		return err
 	}
 	name := "pokemon-red"
+	if profile, _, err := profiles.Detect(base); err == nil {
+		name = string(profile.ID())
+	}
 	if selection.Experiment() {
 		name = fmt.Sprintf("pokemon-red-starter-%s-%02x", selection.Mode, selection.Raw)
 	}
