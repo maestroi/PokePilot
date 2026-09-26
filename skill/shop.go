@@ -86,8 +86,7 @@ func buyNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error {
 		return fmt.Errorf("%w: current clerk cannot transact yet", ErrShopNotOpenYet)
 	}
 
-	m.Tap(emu.A, 3, 7)
-	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu"); err != nil {
+	if err := shopOpenActionMenu(m, runtime); err != nil {
 		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 	if err := selectMenuItemWithDecoder(m, runtime, 0); err != nil {
@@ -176,8 +175,7 @@ func sellNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error 
 		return fmt.Errorf("%w: current clerk cannot transact yet", ErrShopNotOpenYet)
 	}
 
-	m.Tap(emu.A, 3, 7)
-	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu"); err != nil {
+	if err := shopOpenActionMenu(m, runtime); err != nil {
 		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
 	if err := selectMenuItemWithDecoder(m, runtime, 1); err != nil {
@@ -254,6 +252,40 @@ func sellNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error 
 		return fmt.Errorf("skill: Sell: money = %d, want %d (before %d + sale %d)", after.Money, expectedMoney, moneyBefore, total)
 	}
 	return nil
+}
+
+// shopOpenActionMenu drives the one transition that starts a shop transaction.
+//
+// Buy/Sell are called from a proven clerk interaction boundary, but the first A
+// press is still timing-sensitive: a just-finished face/step can consume it
+// before the clerk script owns input. The opposite race is possible too: the A
+// that dismisses the greeting can carry far enough to choose the default BUY
+// entry before the decoder observes the root menu. The old controller treated
+// both shapes as impossible and then waited the full menu budget for exactly
+// ShopPhaseActionMenu (#1958).
+//
+// Make opening idempotent. Closed means retry the clerk interaction; Greeting
+// means page ordinary shop text; any deeper shop-owned surface means input
+// overshot the root menu, so back out with B until BUY/SELL/QUIT is visible.
+// Every repair is reversible and occurs before the caller has chosen BUY/SELL,
+// so this cannot spend money or confirm a transaction.
+func shopOpenActionMenu(m shopMachine, runtime shopRuntime) error {
+	for i := 0; i < martAdvanceBudget; i++ {
+		state := runtime.DecodeShop(m)
+		switch state.Phase {
+		case game.ShopPhaseActionMenu:
+			return nil
+		case game.ShopPhaseClosed, game.ShopPhaseGreeting:
+			m.Tap(emu.A, 3, 7)
+			m.StepFrames(talkSettle)
+		case game.ShopPhaseItemList, game.ShopPhaseQuantity, game.ShopPhaseConfirmation:
+			m.Tap(emu.B, 3, 7)
+			m.StepFrames(talkSettle)
+		default:
+			m.StepFrame()
+		}
+	}
+	return shopTimeout("the BUY/SELL/QUIT menu", runtime.DecodeShop(m))
 }
 
 func shopAdvance(m shopMachine, runtime shopRuntime, want game.ShopPhase, what string) error {
