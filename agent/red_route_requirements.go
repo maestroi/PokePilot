@@ -13,8 +13,8 @@ const (
 	fuchsiaCityMap               uint8 = 0x07
 	cinnabarIslandMap            uint8 = 0x08
 	saffronCityMap               uint8 = 0x0a
-	route2Map                    uint8 = 0x0d
-	route3Map                    uint8 = 0x0e
+	route2Map                    uint8 = gen1Route2Map
+	route3Map                    uint8 = gen1Route3Map
 	route9Map                    uint8 = 0x14
 	route10Map                   uint8 = 0x15
 	route12Map                   uint8 = 0x17
@@ -65,7 +65,7 @@ func (a *redObjectiveAdapter) RouteRequirements(obs Observation) []RouteBlockage
 // portable semantic destination/prerequisite contract. No generic provider has
 // to know the native map byte, event flag, badge enum, or compound story owner.
 func redRouteRequirements(obs Observation) []RouteBlockage {
-	out := make([]RouteBlockage, 0, 24)
+	out := append([]RouteBlockage(nil), gen1EarlyRouteRequirements(obs, "red")...)
 	blockMap := func(mapID uint8, transition string, prerequisite RoutePrerequisiteLink) {
 		// A route requirement governs entry. If a checkpoint/resume is already
 		// inside the map, local actions must remain available so recovery cannot
@@ -82,16 +82,6 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 		}
 	}
 
-	if !redHasBadge(obs, state.BadgeBoulder) {
-		blockMap(route3Map, "red:story:route3_boulder", RoutePrerequisiteLink{
-			Capability: "can_leave_pewter_east",
-			Badge:      state.BadgeBoulder.String(),
-			Progress:   redProgressBoulderBadge,
-		})
-	}
-	if !observedEvent(obs, state.EventGotPokedex.String()) {
-		blockMap(route2Map, "red:story:route2_pokedex", RoutePrerequisiteLink{Progress: redProgressPokedexAcquired})
-	}
 	if !obs.Story.Has(redProgressSSTicketAcquired) {
 		blockMap(route25Map, "red:story:route25_bill", RoutePrerequisiteLink{Progress: redProgressSSTicketAcquired})
 	}
