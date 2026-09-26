@@ -19,9 +19,9 @@ const (
 	yellowOpeningRedsHouse2F uint8 = 0x26
 	yellowOpeningOaksLab     uint8 = 0x28
 
-	yellowOpeningFrameBudget = 90000
+	yellowOpeningFrameBudget  = 90000
 	yellowOpeningBattleBudget = 30000
-	yellowOpeningMenuBudget = 120
+	yellowOpeningMenuBudget   = 120
 )
 
 type yellowOpeningState struct {
