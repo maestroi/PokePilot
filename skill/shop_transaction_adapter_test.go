@@ -21,13 +21,15 @@ const (
 )
 
 type fakeGen2ShopMachine struct {
-	phase      fakeShopPhase
-	modeSell   bool
-	menuCursor int
-	listPos    int
-	quantity   int
-	money      int
-	itemQty    int
+	phase                fakeShopPhase
+	modeSell             bool
+	menuCursor           int
+	listPos              int
+	quantity             int
+	money                int
+	itemQty              int
+	dropOpeningPresses   int
+	overshootOpeningOnce bool
 }
 
 func (*fakeGen2ShopMachine) Peek8(uint16) byte       { return 0 }
@@ -58,8 +60,18 @@ func (m *fakeGen2ShopMachine) Tap(btn emu.Button, _, _ int) {
 	case emu.A:
 		switch m.phase {
 		case fakeShopOverworld:
+			if m.dropOpeningPresses > 0 {
+				m.dropOpeningPresses--
+				return
+			}
 			m.phase = fakeShopRoot
 			m.menuCursor = 0
+			if m.overshootOpeningOnce {
+				m.overshootOpeningOnce = false
+				m.modeSell = false // default root entry is BUY
+				m.phase = fakeShopList
+				m.listPos = 0
+			}
 		case fakeShopRoot:
 			m.modeSell = m.menuCursor == 1
 			m.phase = fakeShopList
@@ -182,5 +194,40 @@ func TestShopTransactionsUseFakeGen2SemanticState(t *testing.T) {
 	}
 	if m.itemQty != 1 || m.money != 900 || m.phase != fakeShopOverworld {
 		t.Fatalf("after sell: qty=%d money=%d phase=%d, want 1/900/overworld", m.itemQty, m.money, m.phase)
+	}
+}
+
+
+func TestShopOpenRetriesDroppedClerkInteraction(t *testing.T) {
+	m := &fakeGen2ShopMachine{
+		money:              1000,
+		dropOpeningPresses: 1,
+	}
+	runtime := fakeGen2ShopRuntime{}
+
+	if err := buyNative(m, runtime, fakeGen2ShopItem, 1); err != nil {
+		t.Fatalf("buy after dropped opening A: %v", err)
+	}
+	if m.itemQty != 1 || m.money != 950 || m.phase != fakeShopOverworld {
+		t.Fatalf("after recovered open: qty=%d money=%d phase=%d, want 1/950/overworld", m.itemQty, m.money, m.phase)
+	}
+}
+
+func TestShopOpenRepairsAccidentalDefaultBuyBeforeSell(t *testing.T) {
+	m := &fakeGen2ShopMachine{
+		money:                1000,
+		itemQty:              3,
+		overshootOpeningOnce: true,
+	}
+	runtime := fakeGen2ShopRuntime{}
+
+	// The opening input jumps straight into the default BUY list. Opening must
+	// back out to BUY/SELL/QUIT before sellNative selects SELL, otherwise this
+	// would either time out waiting for the root menu or buy the wrong item.
+	if err := sellNative(m, runtime, fakeGen2ShopItem, 2); err != nil {
+		t.Fatalf("sell after opening overshoot: %v", err)
+	}
+	if m.itemQty != 1 || m.money != 1050 || m.phase != fakeShopOverworld {
+		t.Fatalf("after repaired sell: qty=%d money=%d phase=%d, want 1/1050/overworld", m.itemQty, m.money, m.phase)
 	}
 }
