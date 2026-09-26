@@ -706,7 +706,11 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 }
 
 func normalizeGameStarter(spec *farm.Spec) error {
-	if spec == nil || !strings.EqualFold(strings.TrimSpace(spec.Game), "pokemon-yellow") {
+	if spec == nil {
+		return nil
+	}
+	spec.Game = strings.ToLower(strings.TrimSpace(spec.Game))
+	if spec.Game != "pokemon-yellow" {
 		return nil
 	}
 	starter := strings.ToLower(strings.TrimSpace(spec.Starter))
