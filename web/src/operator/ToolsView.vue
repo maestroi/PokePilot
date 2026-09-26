@@ -130,7 +130,7 @@ function runURL(runID: string): string {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (isSpecificStarter.value && !specificStarter.value.trim()) {
+  if (!isYellow.value && isSpecificStarter.value && !specificStarter.value.trim()) {
     error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
     return
   }
