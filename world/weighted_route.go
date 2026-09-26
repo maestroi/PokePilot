@@ -369,7 +369,7 @@ func findExactWeightedRoute(
 		y:        y,
 		known:    true,
 		entry:    componentSetAt(g, from, x, y),
-		occupied: (routeOccupancy{}).with(from),
+		occupied: routeOccupancy("").with(from),
 		prev:     -1,
 	}
 	nodes := []weightedRouteNode{start}
