@@ -35,17 +35,21 @@ func starterObjectiveForRequest(request string, seed int64) (agent.Objective, er
 // loaded game's only opening starter, which is how Yellow selects Pikachu
 // without pretending it has Red's three-ball choice.
 func scriptedStarterObjective(m *emu.Emu, request string, seed int64) (agent.Objective, error) {
-	if strings.TrimSpace(request) != "" {
-		return starterObjectiveForRequest(request, seed)
-	}
 	obs, err := agent.ObserveChecked(m, m.ROM())
 	if err != nil {
 		return agent.Objective{}, err
 	}
 	if o, ok := agent.DefaultStarterObjective(obs); ok {
+		req := strings.ToLower(strings.TrimSpace(request))
+		if req != "" && req != string(o.Species) {
+			return agent.Objective{}, fmt.Errorf("%s uses the scripted %s starter, got %q", obs.GameID, o.Species, request)
+		}
 		return o, nil
 	}
-	return agent.Objective{}, fmt.Errorf("%s offers a starter choice; name one", obs.GameID)
+	if strings.TrimSpace(request) == "" {
+		return agent.Objective{}, fmt.Errorf("%s offers a starter choice; name one", obs.GameID)
+	}
+	return starterObjectiveForRequest(request, seed)
 }
 
 func executeScriptedObjective(m *emu.Emu, o agent.Objective) (agent.ObjectiveResult, error) {
