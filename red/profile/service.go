@@ -35,10 +35,13 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 		TradeUnavailable: mem.U8(sym.CurMap) == redViridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel),
 		Unsellable:       strings.Contains(lower, "can't put a") || strings.Contains(lower, "price on that"),
 	}
-	if out.Controllable {
-		out.Phase = game.ShopPhaseClosed
-		return out
-	}
+	// Shop menus own input even when the generic overworld predicate looks
+	// controllable. Gen I does not include menu state in state.Controllable,
+	// and the mart action menu can clear FontLoaded/JoyIgnore while its menu
+	// registers are still live. Classify those positive shop surfaces before
+	// falling back to the overworld boundary, otherwise a visible BUY/SELL/QUIT
+	// menu is reported as Closed and the transaction waits until
+	// ErrShopMenuTimeout (#1958).
 	if state.DecodeTwoOptionMenu(&mem) != nil {
 		out.Phase = game.ShopPhaseConfirmation
 		return out
@@ -47,11 +50,16 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 	switch {
 	case watched == shopWatchActionMenu && mem.U8(sym.MaxMenuItem) == shopActionMenuMax:
 		out.Phase = game.ShopPhaseActionMenu
+		return out
 	case watched == shopWatchListOrQty && out.MaxQuantity > 0 && out.Quantity >= 1 && out.Quantity <= out.MaxQuantity &&
 		(out.MaxQuantity == 99 || strings.Contains(out.Text, "×")):
 		out.Phase = game.ShopPhaseQuantity
+		return out
 	case watched == shopWatchListOrQty:
 		out.Phase = game.ShopPhaseItemList
+		return out
+	case out.Controllable:
+		out.Phase = game.ShopPhaseClosed
 	default:
 		out.Phase = game.ShopPhaseGreeting
 	}
