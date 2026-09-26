@@ -33,10 +33,10 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 	}
 
 	const (
-		cerulean = uint8(0x03)
-		route9   = uint8(0x14)
-		celadon  = uint8(0x06)
-		badge    = uint8(0xe6)
+		cerulean = 0x03
+		route9   = 0x14
+		celadon  = 0x06
+		badge    = 0xe6
 	)
 	var route9Edge Edge
 	found := false
