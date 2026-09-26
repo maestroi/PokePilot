@@ -197,7 +197,6 @@ func TestShopTransactionsUseFakeGen2SemanticState(t *testing.T) {
 	}
 }
 
-
 func TestShopOpenRetriesDroppedClerkInteraction(t *testing.T) {
 	m := &fakeGen2ShopMachine{
 		money:              1000,
