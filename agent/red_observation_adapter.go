@@ -98,6 +98,8 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 	for i, mon := range base.Party {
 		obs.Party[i] = PartyMon{
 			Species:    SpeciesID(mon.Species),
+			HeldItem:   ItemID(mon.HeldItem),
+			IsEgg:      mon.IsEgg,
 			Level:      mon.Level,
 			Experience: mon.Experience,
 			HP:         mon.HP,
