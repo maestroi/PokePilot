@@ -553,7 +553,7 @@ func TestFixedCircuitReleasesOneCanaryAfterRunnerRollout(t *testing.T) {
 	for _, id := range []string{"run-a", "run-b"} {
 		w.tiles[id] = &Tile{
 			RunID: id, Status: statusPaused, Finished: true, EndedAt: time.Now(),
-			CircuitKey: "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
+			CircuitKey:      "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
 			CircuitBadges: 5, Attempts: 2,
 		}
 		w.order = append(w.order, id)
@@ -683,7 +683,6 @@ func TestFixedCircuitStillWaitingKeepsFlagWhilePausedTileExists(t *testing.T) {
 	}
 }
 
-
 func TestResilientCircuitDefersSameRunnerRevisionUntilRollout(t *testing.T) {
 	w := NewWall("")
 	w.tiles["blocked"] = &Tile{
@@ -735,7 +734,7 @@ func TestResilientCircuitDoesNotBlockUnrelatedWorkOnOldRevision(t *testing.T) {
 	w.tiles["blocked"] = &Tile{
 		RunID: "blocked", Status: statusQueued,
 		RecoveryProfile: farm.RecoveryProfileResilient,
-		CircuitKey: "deadbeef", CircuitRevision: "build-broken",
+		CircuitKey:      "deadbeef", CircuitRevision: "build-broken",
 	}
 	w.tiles["other"] = &Tile{RunID: "other", Status: statusQueued}
 	w.queue = []string{"blocked", "other"}
