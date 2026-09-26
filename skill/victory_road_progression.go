@@ -321,7 +321,22 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				return err
 			}
 			if warpEdgeReachable(m, romData, exit) {
-				if err := Traverse(m, romData, exit); err != nil {
+				// A wild encounter can roll on the exit approach or the warp
+				// tile itself; a bare Traverse would return ErrBattle with the
+				// battle still owning the screen (#1988). The shared runner
+				// resolves it and re-enters; a re-entry that finds the warp
+				// already taken leaves re-dispatch to the phase loop.
+				_, err := RunInterruptible(m, policy, InterruptibleAction{
+					Name:           "Victory Road 2F exit",
+					MaxEngagements: victoryRoadTravelBattles,
+					Run: func() error {
+						if m.Peek8(sym.CurMap) != victoryRoad2FMap {
+							return nil
+						}
+						return Traverse(m, romData, exit)
+					},
+				})
+				if err != nil {
 					return fmt.Errorf("skill: Victory Road leave by 2F exit: %w", err)
 				}
 				continue
