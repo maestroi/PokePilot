@@ -135,3 +135,47 @@ func TestYellowEarlySharedProgressionContinuesAfterOpening(t *testing.T) {
 		t.Fatalf("post-Pokedex Yellow objectives = %v, want Boulder Badge", got)
 	}
 }
+
+
+func TestYellowOpeningFailuresNormalizeWithoutUnknownFailure(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	tests := []struct {
+		err   error
+		class game.FailureClass
+		cause string
+	}{
+		{errYellowOpeningStalled, game.FailureClassControllerUncertain, "yellow_opening_stalled"},
+		{errYellowOpeningUnexpectedState, game.FailureClassControllerUncertain, "yellow_opening_unexpected_state"},
+		{errYellowOpeningChoiceRequired, game.FailureClassChoiceRequired, "yellow_opening_choice_required"},
+	}
+	for _, tc := range tests {
+		got := adapter.NormalizeFailure(game.FailurePhaseExecution, tc.err, Observation{})
+		if got.Class != tc.class || got.Cause != tc.cause {
+			t.Fatalf("NormalizeFailure(%v)=%+v, want class=%q cause=%q", tc.err, got, tc.class, tc.cause)
+		}
+	}
+}
+
+func TestYellowStarterPostconditionRequiresWholeOpening(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	o := Objective{Kind: KindStarter, Species: "pikachu"}
+	base := Observation{
+		GameID:       yellowprofile.GameID,
+		Controllable: true,
+		Party:        []PartyMon{{Species: "pikachu"}},
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: false},
+		},
+	}
+	if err := adapter.VerifyPostcondition(o, Observation{}, base, ObjectiveResult{Objective: o}); err == nil {
+		t.Fatal("starter postcondition accepted Pikachu before the lab rival resolved")
+	}
+	base.Story = ProgressState{
+		{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
+		{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+	}
+	if err := adapter.VerifyPostcondition(o, Observation{}, base, ObjectiveResult{Objective: o}); err != nil {
+		t.Fatalf("completed Yellow opening rejected: %v", err)
+	}
+}
