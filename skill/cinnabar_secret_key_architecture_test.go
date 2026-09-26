@@ -32,7 +32,7 @@ func TestSecretKeySouthernSeaRecoveryBypassesOptionalFastTravel(t *testing.T) {
 	if strings.Contains(recovery, "if _, err := TravelFlee(") {
 		t.Fatal("southern-sea recovery drifted back to fast-travel-enabled TravelFlee")
 	}
-	if !strings.Contains(recovery, ""vermilion city", "viridian city", "pallet town"") {
+	if !strings.Contains(recovery, "\"vermilion city\", \"viridian city\", \"pallet town\"") {
 		t.Fatal("mainland restage must deterministically return all the way to Pallet")
 	}
 }
