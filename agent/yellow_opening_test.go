@@ -9,81 +9,18 @@ func TestYellowOpeningPhaseForResumableStates(t *testing.T) {
 		nickname bool
 		want     yellowOpeningPhase
 	}{
-		{
-			name: "completed boundary",
-			state: yellowOpeningState{
-				mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1,
-				hasPikachu: true, starter: true, labRival: true,
-			},
-			want: yellowOpeningDone,
-		},
-		{
-			name: "rival flag cannot hide missing Pikachu",
-			state: yellowOpeningState{
-				mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1,
-				starter: true, labRival: true,
-			},
-			want: yellowOpeningUnexpected,
-		},
-		{
-			name: "scripted capture battle",
-			state: yellowOpeningState{mapID: yellowOpeningOaksLab, inBattle: true},
-			want: yellowOpeningBattle,
-		},
-		{
-			name: "nickname choice",
-			state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1},
-			nickname: true,
-			want: yellowOpeningNickname,
-		},
-		{
-			name: "script owns input",
-			state: yellowOpeningState{mapID: yellowOpeningPalletTown},
-			want: yellowOpeningScript,
-		},
-		{
-			name: "fresh bedroom upstairs",
-			state: yellowOpeningState{mapID: yellowOpeningRedsHouse2F, controllable: true},
-			want: yellowOpeningBedroomUpstairs,
-		},
-		{
-			name: "fresh bedroom downstairs",
-			state: yellowOpeningState{mapID: yellowOpeningRedsHouse1F, controllable: true},
-			want: yellowOpeningBedroomDownstairs,
-		},
-		{
-			name: "before Oak intercept",
-			state: yellowOpeningState{mapID: yellowOpeningPalletTown, controllable: true},
-			want: yellowOpeningOakGate,
-		},
-		{
-			name: "before Eevee ball",
-			state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true},
-			want: yellowOpeningEeveeBall,
-		},
-		{
-			name: "Pikachu in party before starter event settles",
-			state: yellowOpeningState{
-				mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true,
-			},
-			want: yellowOpeningAwaitStarter,
-		},
-		{
-			name: "starter before rival trigger",
-			state: yellowOpeningState{
-				mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1,
-				hasPikachu: true, starter: true,
-			},
-			want: yellowOpeningRivalTrigger,
-		},
-		{
-			name: "starter outside lab fails closed",
-			state: yellowOpeningState{
-				mapID: yellowOpeningPalletTown, controllable: true, partyCount: 1,
-				hasPikachu: true, starter: true,
-			},
-			want: yellowOpeningUnexpected,
-		},
+		{name: "completed boundary", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true, starter: true, labRival: true}, want: yellowOpeningDone},
+		{name: "rival flag cannot hide missing Pikachu", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, starter: true, labRival: true}, want: yellowOpeningUnexpected},
+		{name: "scripted capture battle", state: yellowOpeningState{mapID: yellowOpeningOaksLab, inBattle: true}, want: yellowOpeningBattle},
+		{name: "nickname choice", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1}, nickname: true, want: yellowOpeningNickname},
+		{name: "script owns input", state: yellowOpeningState{mapID: yellowOpeningPalletTown}, want: yellowOpeningScript},
+		{name: "fresh bedroom upstairs", state: yellowOpeningState{mapID: yellowOpeningRedsHouse2F, controllable: true}, want: yellowOpeningBedroomUpstairs},
+		{name: "fresh bedroom downstairs", state: yellowOpeningState{mapID: yellowOpeningRedsHouse1F, controllable: true}, want: yellowOpeningBedroomDownstairs},
+		{name: "before Oak intercept", state: yellowOpeningState{mapID: yellowOpeningPalletTown, controllable: true}, want: yellowOpeningOakGate},
+		{name: "before Eevee ball", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true}, want: yellowOpeningEeveeBall},
+		{name: "Pikachu in party before starter event settles", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true}, want: yellowOpeningAwaitStarter},
+		{name: "starter before rival trigger", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true, starter: true}, want: yellowOpeningRivalTrigger},
+		{name: "starter outside lab fails closed", state: yellowOpeningState{mapID: yellowOpeningPalletTown, controllable: true, partyCount: 1, hasPikachu: true, starter: true}, want: yellowOpeningUnexpected},
 	}
 
 	for _, tc := range tests {
