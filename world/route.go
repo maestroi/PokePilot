@@ -24,8 +24,13 @@ var ErrRouteReplanRequired = errors.New("world: semantic route requires live-top
 // the fewest map transitions. Edges of a map are explored in slice order,
 // so the same call always returns the same route. Tile-level pathfinding is
 // not done here; that happens per leg at execution time.
-func FindRoute(g *Graph, from, to MapID) ([]Edge, error) {
-	return FindRouteAvoiding(g, from, to, nil)
+func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
+	return FindRouteMaps(g, MapID(from), MapID(to))
+}
+
+// FindRouteMaps is FindRoute for adapters whose native map ids exceed one byte.
+func FindRouteMaps(g *Graph, from, to MapID) ([]Edge, error) {
+	return FindRouteAvoidingMaps(g, from, to, nil)
 }
 
 // FindRouteAvoiding is FindRoute with the legs the caller has discovered it
@@ -57,7 +62,12 @@ func FindRoute(g *Graph, from, to MapID) ([]Edge, error) {
 // identity rather than inventing geometry.
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
-func FindRouteAvoiding(g *Graph, from, to MapID, blockedHere map[Edge]bool) ([]Edge, error) {
+func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAvoidingMaps(g, MapID(from), MapID(to), blockedHere)
+}
+
+// FindRouteAvoidingMaps is the wide-map-id variant of FindRouteAvoiding.
+func FindRouteAvoidingMaps(g *Graph, from, to MapID, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRoute(g, from, to, blockedHere, nil, nil, nil, nil)
 }
 
@@ -66,7 +76,12 @@ func FindRouteAvoiding(g *Graph, from, to MapID, blockedHere map[Edge]bool) ([]E
 // same walkable component. Use it when the start map has disconnected
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
-func FindRouteAt(g *Graph, from, to MapID, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
+func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAtMaps(g, MapID(from), MapID(to), x, y, blockedHere)
+}
+
+// FindRouteAtMaps is the wide-map-id variant of FindRouteAt.
+func FindRouteAtMaps(g *Graph, from, to MapID, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil, nil)
 }
 
@@ -76,7 +91,12 @@ func FindRouteAt(g *Graph, from, to MapID, x, y int, blockedHere map[Edge]bool) 
 // If from == to but the player and target are in different components, this
 // deliberately searches a cycle that leaves and re-enters the map through a
 // component that can actually reach the target.
-func FindRouteAtDestination(g *Graph, from, to MapID, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
+func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAtDestinationMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere)
+}
+
+// FindRouteAtDestinationMaps is the wide-map-id variant of FindRouteAtDestination.
+func FindRouteAtDestinationMaps(g *Graph, from, to MapID, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil, nil)
 }
 
