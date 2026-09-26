@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -678,5 +680,79 @@ func TestFixedCircuitStillWaitingKeepsFlagWhilePausedTileExists(t *testing.T) {
 	}
 	if !w.issueLinks["deadbeef"].CircuitOpen {
 		t.Fatal("CircuitOpen was cleared while a real paused tile is still waiting on the fleet")
+	}
+}
+
+
+func TestResilientCircuitDefersSameRunnerRevisionUntilRollout(t *testing.T) {
+	w := NewWall("")
+	w.tiles["blocked"] = &Tile{
+		RunID: "blocked", Status: statusQueued, Planner: "llm",
+		RecoveryProfile: farm.RecoveryProfileResilient,
+		CircuitKey: "deadbeef", CircuitKind: "fingerprint",
+		CircuitRevision: "build-broken",
+	}
+	w.queue = []string{"blocked"}
+	w.order = []string{"blocked"}
+
+	srv := httptest.NewServer(w.Handler())
+	defer srv.Close()
+	ctx := context.Background()
+
+	broken := farm.NewClient(srv.URL)
+	broken.Version = "build-broken"
+	// Repeated polling by the old fleet must not burn another attempt or
+	// rotate the blocked run out of the queue.
+	for poll := 1; poll <= 3; poll++ {
+		spec, err := broken.Lease(ctx)
+		if err != nil {
+			t.Fatalf("broken-build lease %d: %v", poll, err)
+		}
+		if spec != nil {
+			t.Fatalf("broken-build lease %d = %+v, want deferred", poll, spec)
+		}
+	}
+	if len(w.queue) != 1 || w.queue[0] != "blocked" {
+		t.Fatalf("queue after broken-build polls = %v, want blocked run retained", w.queue)
+	}
+	if got := w.tiles["blocked"].Attempts; got != 0 {
+		t.Fatalf("same-revision polling advanced attempts to %d", got)
+	}
+
+	fixed := farm.NewClient(srv.URL)
+	fixed.Version = "build-fixed"
+	spec, err := fixed.Lease(ctx)
+	if err != nil {
+		t.Fatalf("fixed-build lease: %v", err)
+	}
+	if spec == nil || spec.RunID != "blocked" || spec.Attempt != 1 {
+		t.Fatalf("fixed-build lease = %+v, want blocked attempt 1", spec)
+	}
+}
+
+func TestResilientCircuitDoesNotBlockUnrelatedWorkOnOldRevision(t *testing.T) {
+	w := NewWall("")
+	w.tiles["blocked"] = &Tile{
+		RunID: "blocked", Status: statusQueued,
+		RecoveryProfile: farm.RecoveryProfileResilient,
+		CircuitKey: "deadbeef", CircuitRevision: "build-broken",
+	}
+	w.tiles["other"] = &Tile{RunID: "other", Status: statusQueued}
+	w.queue = []string{"blocked", "other"}
+	w.order = []string{"blocked", "other"}
+
+	srv := httptest.NewServer(w.Handler())
+	defer srv.Close()
+	client := farm.NewClient(srv.URL)
+	client.Version = "build-broken"
+	spec, err := client.Lease(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec == nil || spec.RunID != "other" {
+		t.Fatalf("same-revision worker leased %+v, want unrelated run", spec)
+	}
+	if len(w.queue) != 1 || w.queue[0] != "blocked" {
+		t.Fatalf("queue = %v, want blocked run still parked", w.queue)
 	}
 }
