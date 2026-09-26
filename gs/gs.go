@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	GoldGameID = gsprofile.GoldGameID
+	GoldGameID   = gsprofile.GoldGameID
 	SilverGameID = gsprofile.SilverGameID
 )
 
 func New(ids ...game.GameID) *gsprofile.Profile { return gsprofile.New(ids...) }
-func Gold() *gsprofile.Profile { return gsprofile.NewGold() }
-func Silver() *gsprofile.Profile { return gsprofile.NewSilver() }
+func Gold() *gsprofile.Profile                  { return gsprofile.NewGold() }
+func Silver() *gsprofile.Profile                { return gsprofile.NewSilver() }
