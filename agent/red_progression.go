@@ -20,11 +20,11 @@ type redProgressionExecutor func(m *emu.Emu, romData []byte, policy skill.MovePo
 // executor is registered without a projected verifier.
 var redProgressionExecutors = map[ProgressID]redProgressionExecutor{
 	redProgressMtMoonFossilAcquired:       skill.MtMoonFossil,
-	redProgressPokedexAcquired:            skill.OaksParcel,
+	redProgressPokedexAcquired:            gen1AcquirePokedex,
 	redProgressSSTicketAcquired:           skill.Bill,
 	redProgressHM01Acquired:               skill.SSAnneHM01,
 	redProgressBicycleAcquired:            skill.AcquireBicycle,
-	redProgressBoulderBadge:               skill.BoulderProgression,
+	redProgressBoulderBadge:               gen1DefeatBrock,
 	redProgressThunderBadge:               skill.SurgeProgression,
 	redProgressPostSurgeLavenderReached:   skill.PostSurgeReachLavender,
 	redProgressPostSurgeCeladonReady:      skill.PostSurgeReachCeladon,
@@ -123,21 +123,10 @@ func redProgressionObjectives(obs Observation) []Objective {
 	if skill.MtMoonProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressMtMoonFossilAcquired) {
 		out = append(out, Objective{Kind: KindProgress, Progress: redProgressMtMoonFossilAcquired, Note: "(defeat Mt. Moon's Super Nerd and choose the Dome Fossil to open the eastern exit)"})
 	}
-	if observedEvent(obs, state.EventBattledRivalInOaksLab.String()) &&
-		!obs.Story.Has(redProgressPokedexAcquired) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressPokedexAcquired,
-			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
-		})
-	}
-	if obs.Story.Has(redProgressPokedexAcquired) && !hasBadge(obs, state.BadgeBoulder) {
-		out = append(out, Objective{
-			Kind:     KindProgress,
-			Progress: redProgressBoulderBadge,
-			Note:     "(travel through Viridian Forest to Pewter, challenge Brock, and positively verify the Boulder Badge before Route 3)",
-		})
-	}
+	out = append(out, gen1EarlyProgressionObjectives(
+		obs,
+		observedEvent(obs, state.EventBattledRivalInOaksLab.String()),
+	)...)
 	if skill.BillProgressionAvailable(obs.Map) && !obs.Story.Has(redProgressSSTicketAcquired) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
