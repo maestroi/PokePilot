@@ -17,9 +17,12 @@ func TestSurfTransitionPlansLandToWaterEntryWithFieldPath(t *testing.T) {
 	}
 	src := string(srcBytes)
 	start := strings.Index(src, "func (x *redRouteTransitionExecutor) executeSurf")
-	end := strings.Index(src[start:], "\nfunc (x *redRouteTransitionExecutor) executeRoute12Snorlax")
-	if start < 0 || end < 0 {
+	if start < 0 {
 		t.Fatal("executeSurf function not found")
+	}
+	end := strings.Index(src[start:], "\nfunc (x *redRouteTransitionExecutor) executeRoute12Snorlax")
+	if end < 0 {
+		t.Fatal("executeSurf end not found")
 	}
 	body := src[start : start+end]
 
