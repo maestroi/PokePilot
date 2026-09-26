@@ -13,6 +13,7 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/profiles"
 )
 
 const farmRecordingName = "run.gbrun"
@@ -46,10 +47,29 @@ func farmRecordingMetadata(spec farm.Spec, planner, starter, dest, goal string, 
 	if spec.Purpose != "" {
 		metadata["purpose"] = string(spec.Purpose)
 	}
+	if spec.Game != "" {
+		metadata["game"] = spec.Game
+	}
 	for key, value := range starterExperimentMetadata(spec.RunID) {
 		metadata[key] = value
 	}
 	return metadata
+}
+
+// addFarmRecordingProfileIdentity records the cartridge identity actually
+// loaded by the emulator. This overrides the requested game from Spec and adds
+// the concrete revision so replay/debug consumers cannot reinterpret Yellow
+// bytes under Red assumptions. GomeBoy separately records the exact ROM SHA.
+func addFarmRecordingProfileIdentity(metadata map[string]string, m *emu.Emu) {
+	if metadata == nil || m == nil {
+		return
+	}
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		return
+	}
+	metadata["game"] = string(profile.ID())
+	metadata["revision"] = string(profile.Revision())
 }
 
 func stopFarmRecording(runID string, recorder *emu.SessionRecording) []byte {

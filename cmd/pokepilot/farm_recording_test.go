@@ -17,6 +17,7 @@ func TestFarmRecordingMetadata(t *testing.T) {
 		RunID:      "run-42",
 		Attempt:    3,
 		Seed:       12345,
+		Game:       "pokemon-yellow",
 		LLMProfile: "primary",
 	}
 	got := farmRecordingMetadata(spec, "llm", "squirtle", "", "earn the Boulder Badge", 87, "abc123")
@@ -27,6 +28,7 @@ func TestFarmRecordingMetadata(t *testing.T) {
 		"planner":        "llm",
 		"seed":           "12345",
 		"seed_burn":      "87",
+		"game":           "pokemon-yellow",
 		"starter":        "squirtle",
 		"goal":           "earn the Boulder Badge",
 		"llm_profile":    "primary",

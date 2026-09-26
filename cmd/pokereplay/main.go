@@ -87,6 +87,7 @@ type replayIdentity struct {
 type replayServer struct {
 	wallBase     string
 	romPath      string
+	romLibrary   *replayROMLibrary
 	streamBinary string
 	vaapi        bool
 	vaapiReason  string
@@ -819,30 +820,52 @@ func (s *replayServer) prepareStreamROM(workDir, recordingPath string) (string, 
 	}
 	ident, err := parse(data)
 	if err != nil {
-		// The existing render tests (and a corrupt download) still invoke
-		// gomeboy-stream; let that command report the recording problem.
+		// Preserve the historical corrupt-recording behavior: let
+		// gomeboy-stream report the recording problem against the fallback ROM.
 		return s.romPath, nil
 	}
-	base, err := os.ReadFile(s.romPath)
-	if err != nil {
-		return "", fmt.Errorf("read replay ROM: %w", err)
+
+	candidates := []string{s.romPath}
+	if s.romLibrary != nil {
+		candidates = s.romLibrary.candidates(ident.Metadata)
 	}
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no mounted replay ROM for game %q", strings.TrimSpace(ident.Metadata["game"]))
+	}
+
 	derive := s.deriveROM
 	if derive == nil {
 		derive = cartridgeForRecording
 	}
-	derived, err := derive(base, ident.Metadata, ident.ROMSHA256)
-	if err != nil {
-		return "", err
+	var candidateErrors []string
+	for _, basePath := range candidates {
+		if strings.TrimSpace(basePath) == "" {
+			continue
+		}
+		base, readErr := os.ReadFile(basePath)
+		if readErr != nil {
+			candidateErrors = append(candidateErrors, fmt.Sprintf("%s: %v", basePath, readErr))
+			continue
+		}
+		derived, deriveErr := derive(base, ident.Metadata, ident.ROMSHA256)
+		if deriveErr != nil {
+			candidateErrors = append(candidateErrors, fmt.Sprintf("%s: %v", basePath, deriveErr))
+			continue
+		}
+		if bytes.Equal(derived, base) {
+			return basePath, nil
+		}
+		name := "replay-" + safeFingerprint(ident.ROMSHA256) + ".gb"
+		path := pathJoinOS(workDir, name)
+		if err := os.WriteFile(path, derived, 0o644); err != nil {
+			return "", err
+		}
+		return path, nil
 	}
-	if bytes.Equal(derived, base) {
-		return s.romPath, nil
+	if len(candidateErrors) == 0 {
+		return "", fmt.Errorf("no mounted replay ROM matched recording sha256 %s", ident.ROMSHA256)
 	}
-	path := pathJoinOS(workDir, "replay.gb")
-	if err := os.WriteFile(path, derived, 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
+	return "", fmt.Errorf("no mounted replay ROM matched recording sha256 %s: %s", ident.ROMSHA256, strings.Join(candidateErrors, "; "))
 }
 
 // pathJoinOS is intentionally tiny: temp paths are local filesystem paths,
@@ -857,7 +880,8 @@ func main() {
 	}
 	httpAddr := flag.String("http", ":8080", "listen address for the replay HTTP API")
 	wallBase := flag.String("wall", "", "pokewall base URL")
-	romPath := flag.String("rom", "/rom/pokemon_red.gb", "ROM path used for deterministic replay")
+	romPath := flag.String("rom", "/rom/pokemon_red.gb", "fallback ROM path for legacy/unparseable replay recordings")
+	romDir := flag.String("rom-dir", "/rom", "directory of mounted ROMs; cartridges are selected by detected game profile")
 	streamBinary := flag.String("stream-binary", "/usr/local/bin/gomeboy-stream", "gomeboy-stream executable")
 	flag.Parse()
 	if strings.TrimSpace(*wallBase) == "" {
@@ -872,6 +896,7 @@ func main() {
 		log.Printf("pokereplay: S3 not configured; artifact metadata remains browsable but replay cache is disabled")
 	}
 	serverImpl := newReplayServer(*wallBase, *romPath, *streamBinary, store)
+	serverImpl.romLibrary = buildReplayROMLibrary(*romPath, *romDir)
 	on, encoder, reason := currentVAAPI()
 	serverImpl.vaapi = on
 	serverImpl.vaapiReason = reason

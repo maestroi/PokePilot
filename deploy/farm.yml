@@ -97,9 +97,12 @@ services:
 
   replay:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
-    # Replay is intentionally a separate trust boundary. It needs the ROM and
-    # S3 credentials to verify/render .gbrun recordings; pokewall does not.
-    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb"] # ponytail: Blue recordings still need a per-recording ROM picker; replay stays Red until then
+    # Replay is intentionally a separate trust boundary. It needs the mounted
+    # ROM library and S3 credentials to verify/render .gbrun recordings;
+    # pokewall does not. -rom remains the compatibility fallback for corrupt or
+    # pre-profile recordings; valid recordings select a cartridge from -rom-dir
+    # by their recorded game identity and exact ROM hash.
+    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb", "-rom-dir", "/rom"]
     environment:
       POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:-}
       POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:-}
