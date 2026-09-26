@@ -3,13 +3,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand/v2"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
@@ -145,7 +148,12 @@ func main() {
 		fmt.Printf("farm mode: leasing runs from %s; games mounted: %s\n", orchURL, library.games())
 		client := farm.NewClient(orchURL)
 		client.Version = version
-		if runFarm(m, client, library, watchPort(served), *checkpointDir, renderFeed) {
+		// Swarm sends SIGTERM before replacing this task. Convert it into the
+		// farm's cooperative safe-boundary cancellation instead of letting the
+		// wall discover a dead heartbeat thirty seconds later (#1933).
+		drainCtx, stopDrain := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stopDrain()
+		if runFarm(m, client, library, watchPort(served), *checkpointDir, renderFeed, drainCtx.Done()) {
 			// ErrLinkStalled can leave a goroutine inside the emulator. os.Exit
 			// intentionally skips the deferred m.Close so this poisoned instance
 			// is never touched again; Swarm restarts the failed worker task.
