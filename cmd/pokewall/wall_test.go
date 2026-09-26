@@ -76,7 +76,7 @@ func TestYellowSpecNormalizesScriptedPikachu(t *testing.T) {
 	srv := newTestServer(t, "")
 
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
-		RunID: "yellow", Game: "pokemon-yellow", Planner: "llm",
+		RunID: "yellow", Game: "Pokemon-Yellow", Planner: "llm",
 	}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("Yellow spec: status %d, want 200", resp.StatusCode)
 	}
