@@ -140,6 +140,8 @@ func (f ProfileFeatures) Has(feature ProfileFeature) bool { return f[feature] }
 // ProfilePartyMon is the common party representation exposed by profiles.
 type ProfilePartyMon struct {
 	Species    SpeciesID `json:"species"`
+	HeldItem   ItemID    `json:"held_item,omitempty"`
+	IsEgg      bool      `json:"is_egg,omitempty"`
 	Level      uint8     `json:"level"`
 	Experience uint32    `json:"experience"`
 	HP         uint16    `json:"hp"`

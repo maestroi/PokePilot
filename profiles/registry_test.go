@@ -6,6 +6,7 @@ import (
 
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
 	"github.com/maestroi/pokepilot/game"
+	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
@@ -16,8 +17,8 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiles := registry.Profiles()
-	if len(profiles) != 3 {
-		t.Fatalf("built-in profile count = %d, want 3", len(profiles))
+	if len(profiles) != 5 {
+		t.Fatalf("built-in profile count = %d, want 5", len(profiles))
 	}
 	seen := map[game.GameID]bool{}
 	for _, p := range profiles {
@@ -30,6 +31,8 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 		redprofile.GameID,
 		blueprofile.GameID,
 		yellowprofile.GameID,
+		gsprofile.GoldGameID,
+		gsprofile.SilverGameID,
 	} {
 		if !seen[want] {
 			t.Fatalf("built-in profile ids = %v, missing %s", seen, want)
@@ -38,7 +41,7 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 }
 
 // TestEachRegisteredImageResolvesToItsOwnProfile is the guard the registry
-// exists for: nearby Gen-I images must still each resolve to exactly one
+// exists for: all registered images must still each resolve to exactly one
 // profile because every other layer dispatches on that id.
 func TestEachRegisteredImageResolvesToItsOwnProfile(t *testing.T) {
 	for _, tc := range []struct {
@@ -48,6 +51,8 @@ func TestEachRegisteredImageResolvesToItsOwnProfile(t *testing.T) {
 		{"POKEMON_RED_ROM", "roms/pokemon_red.gb", redprofile.GameID},
 		{"POKEMON_BLUE_ROM", "roms/pokemon_blue.gb", blueprofile.GameID},
 		{"POKEMON_YELLOW_ROM", "roms/pokemon_yellow.gb", yellowprofile.GameID},
+		{"POKEMON_GOLD_ROM", "roms/pokemon_gold.gbc", gsprofile.GoldGameID},
+		{"POKEMON_SILVER_ROM", "roms/pokemon_silver.gbc", gsprofile.SilverGameID},
 	} {
 		t.Run(string(tc.want), func(t *testing.T) {
 			path := os.Getenv(tc.env)
