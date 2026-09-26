@@ -53,6 +53,8 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressBoulderBadge,
 		gen1.ProgressMtMoonFossilAcquired,
 		yellowprofile.ProgressYellowMtMoonExitResolved,
+		gen1.ProgressSSTicketAcquired,
+		gen1.ProgressHM01Acquired,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -87,5 +89,35 @@ func TestYellowProgressionInsertsJessieJamesAfterMtMoonFossil(t *testing.T) {
 	obs.Story = append(obs.Story, ProgressFact{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true})
 	if got = a.ProgressionObjectives(obs); len(got) != 0 {
 		t.Fatalf("Mt Moon slice should stop after Yellow exit until next controller lands: %v", got)
+	}
+}
+
+func TestYellowProgressionContinuesSharedBillAndHM01AfterMtMoon(t *testing.T) {
+	a := &yellowObjectiveAdapter{}
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 1,
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+			{ID: gen1.ProgressPokedexAcquired, Complete: true},
+			{ID: gen1.ProgressBoulderBadge, Complete: true},
+			{ID: gen1.ProgressMtMoonFossilAcquired, Complete: true},
+			{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true},
+		},
+	}
+	got := a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSSTicketAcquired {
+		t.Fatalf("post-MtMoon progression=%v, want S.S. Ticket", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSSTicketAcquired, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressHM01Acquired {
+		t.Fatalf("post-Bill progression=%v, want HM01", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressHM01Acquired, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "cerulean gym" {
+		t.Fatalf("post-HM01 progression=%v, want Cascade gym handoff", got)
 	}
 }
