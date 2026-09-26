@@ -317,6 +317,12 @@
     const llmOpt = f.starter.querySelector('option[value=""]');
     if (llmOpt) llmOpt.hidden = scripted;
     if (scripted && f.starter.value === "") f.starter.value = "squirtle";
+    const yellow = f.game.value === "pokemon-yellow";
+    const pikaOpt = f.starter.querySelector('option[value="pikachu"]');
+    if (pikaOpt) pikaOpt.hidden = !yellow;
+    f.starter.disabled = yellow;
+    if (yellow) f.starter.value = "pikachu";
+    else if (f.starter.value === "pikachu") f.starter.value = scripted ? "squirtle" : "";
   }
   function fillDefaults() {
     const f = $("spec-form");
@@ -1107,6 +1113,7 @@
     catch (_) { $("copy-run-id").textContent = "Select the run ID to copy"; }
   });
   $("spec-form").planner.addEventListener("change", syncPlannerFields);
+  $("spec-form").game.addEventListener("change", syncPlannerFields);
   $("spec-form").endless.addEventListener("change", syncPlannerFields);
   $("spec-form").qualification_target.addEventListener("change", () => {
     syncQualificationFields();
@@ -1137,7 +1144,7 @@
           run_id: i === 0 ? f.run_id.value.trim() : newRunId(),
           planner,
           game: f.game.value,
-          starter: f.game.value === "pokemon-yellow" ? "" : f.starter.value,
+          starter: f.starter.value,
           dest: planner === "scripted" ? f.dest.value.trim() : "",
           goal: baseGoal,
           llm_profile: planner === "llm" ? f.llm_profile.value : "",
