@@ -267,7 +267,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		if starter != "" && starter != "pikachu" {
 			return nil, mcpStartRunOutput{}, fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter")
 		}
-		starter = ""
+		starter = "pikachu"
 	} else {
 		if starter == "" {
 			starter = "squirtle"
