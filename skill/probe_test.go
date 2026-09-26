@@ -145,9 +145,9 @@ func TestProbe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("build graph: %v", err)
 		}
-		route, err := world.FindRoute(graph, mapID, uint8(to64))
+		route, err := world.FindRouteMaps(graph, world.MapID(mapID), world.MapID(to64))
 		if err != nil {
-			t.Logf("route %#04x -> %#04x: %v", mapID, uint8(to64), err)
+			t.Logf("route %#04x -> %#04x: %v", mapID, to64, err)
 		}
 		for i, e := range route {
 			if e.Kind == world.EdgeWarp {
