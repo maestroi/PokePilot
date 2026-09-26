@@ -13,12 +13,12 @@ import (
 )
 
 const (
-	cinnabarIslandMap              = 0x08
-	pokemonMansion1FMap            = 0xa5
-	cinnabarPokemonCenterMap       = 0xab
-	pokemonMansion2FMap            = 0xd6
-	pokemonMansion3FMap            = 0xd7
-	pokemonMansionB1FMap           = 0xd8
+	cinnabarIslandMap        = 0x08
+	pokemonMansion1FMap      = 0xa5
+	cinnabarPokemonCenterMap = 0xab
+	pokemonMansion2FMap      = 0xd6
+	pokemonMansion3FMap      = 0xd7
+	pokemonMansionB1FMap     = 0xd8
 
 	mansionSecretKeyItem uint8 = 0x2b
 	mansionSecretKeyX    uint8 = 5
