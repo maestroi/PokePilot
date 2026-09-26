@@ -202,6 +202,14 @@ services:
 
   runner:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
+    # Give SIGTERM enough time to finish the current safe objective boundary,
+    # flush the paired checkpoint, send Finish(reason=drained), and exit before
+    # Swarm escalates to SIGKILL. The selectable 4090/gateway routes allow a
+    # single model request up to 300s, and Finish itself is bounded at 30s, so
+    # the grace window must exceed both. It is only a maximum: healthy workers
+    # exit immediately after draining. Without it, deploys become heartbeat
+    # losses and unnecessarily consume recovery work (#1933).
+    stop_grace_period: 6m
     # -http :8099 binds all interfaces inside the container. The runners
     # publish NO ports: they stay fully inside the swarm network, and the
     # wall proxies each runner's live screen (GET /frame?run=...) using

@@ -30,6 +30,24 @@ func TestClientLeaseReturnsSpec(t *testing.T) {
 	}
 }
 
+func TestClientLeaseSendsRunnerVersion(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(RunnerVersionHeader)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.Version = "build-1932"
+	if spec, err := c.Lease(context.Background()); err != nil || spec != nil {
+		t.Fatalf("Lease = %+v, %v; want no work", spec, err)
+	}
+	if got != "build-1932" {
+		t.Fatalf("lease runner version = %q, want build-1932", got)
+	}
+}
+
 func TestClientLeaseNoneReady(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

@@ -767,29 +767,57 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	})
 }
 
-// handleLease hands out the oldest queued spec exactly once; 204 when the
-// queue is empty.
+func resilientCircuitBlocksLease(t *Tile, runnerVersion string) bool {
+	if t == nil || !t.RecoveryProfile.Resilient() || strings.TrimSpace(t.CircuitKey) == "" {
+		return false
+	}
+	broken := strings.TrimSpace(t.CircuitRevision)
+	if broken == "" {
+		// Older circuit records did not always carry a runner revision. Do not
+		// turn one of those into a permanent queue tombstone; the revision gate
+		// is only authoritative when the failing build is known.
+		return false
+	}
+	runnerVersion = strings.TrimSpace(runnerVersion)
+	// An unversioned worker cannot prove it is newer than the build that
+	// opened the circuit, so fail closed for this one run while still allowing
+	// it to lease unrelated queued work.
+	return runnerVersion == "" || runnerVersion == broken
+}
+
+// handleLease hands out the oldest queued spec that this runner revision may
+// execute; 204 when none is ready. A resilient circuit is deliberately left in
+// the queue for the next build instead of being handed straight back to the
+// revision that just proved the blocker (#1932).
 func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	w.mu.Lock()
 	var t *Tile
 	now := time.Now()
+	runnerVersion := strings.TrimSpace(req.Header.Get(farm.RunnerVersionHeader))
 	// A queued run can be cancelled before any worker ever leases it (the
 	// operator hits cancel on a run stuck behind a bad deployment, say).
 	// handleCancel only records the intent in w.cancel; nothing else reads
 	// it until a heartbeat arrives, which a queued run never gets. Settle it
-	// here instead of handing it out, and keep walking the queue so one
-	// lease call can skip past any number of cancelled entries.
-	for len(w.queue) > 0 {
-		runID := w.queue[0]
-		w.queue = w.queue[1:]
+	// here instead of handing it out. Circuited resilient runs are different:
+	// keep them in-place and continue scanning so the old build can still do
+	// unrelated work while the blocked campaign waits for a rollout.
+	for i := 0; i < len(w.queue); {
+		runID := w.queue[i]
 		cand := w.tiles[runID]
 		if cand == nil || cand.Finished {
+			w.queue = append(w.queue[:i], w.queue[i+1:]...)
 			continue
 		}
 		if w.cancel[runID] {
+			w.queue = append(w.queue[:i], w.queue[i+1:]...)
 			w.settleRun(cand, "cancelled", "cancelled while queued", now)
 			continue
 		}
+		if resilientCircuitBlocksLease(cand, runnerVersion) {
+			i++
+			continue
+		}
+		w.queue = append(w.queue[:i], w.queue[i+1:]...)
 		t = cand
 		break
 	}
@@ -1676,7 +1704,10 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	_, cancelled := w.cancel[t.RunID]
 	delete(w.cancel, t.RunID)
 
-	recoverable := reason == "error" || reason == "lost"
+	// A graceful runner drain is infrastructure lifecycle, not gameplay
+	// recovery. Requeue it like worker loss, but do not spend either the loss
+	// budget or resilient rollback depth (#1933).
+	recoverable := reason == "error" || reason == "lost" || reason == "drained"
 	if resilient && resilientGoalRecoveryReason(reason) {
 		recoverable = true
 	}
@@ -1701,6 +1732,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		appendRunActivityLocked(t, runActivityEvent{
 			Source: "system", Kind: "cancelled", At: now.Unix(), Frame: t.Frame, Attempt: completed,
 			Summary: "Run cancelled",
+			Detail:  detail,
+		})
+	} else if reason == "drained" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "system", Kind: "drained", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Runner drained for deployment",
 			Detail:  detail,
 		})
 	} else {
@@ -1745,7 +1782,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		Detail:          fmt.Sprintf("%s: %s", reason, detail),
 	})
 	t.Status = statusQueued
-	t.Seed = rand.Int64()
+	// A deploy drain is expected to continue bit-for-bit from the flushed
+	// checkpoint. Keep the campaign seed too, so a rare fresh-start fallback
+	// does not turn infrastructure churn into different gameplay.
+	if reason != "drained" {
+		t.Seed = rand.Int64()
+	}
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -1764,7 +1806,11 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Stats = nil
 	t.Player = nil
 	t.Reason = ""
-	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	if reason == "drained" {
+		t.Detail = fmt.Sprintf("attempt %d drained: %s", completed, detail)
+	} else {
+		t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	}
 	t.workerAddrs = nil
 	t.Finished = false
 	w.queue = append(w.queue, t.RunID)

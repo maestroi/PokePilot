@@ -15,6 +15,12 @@ import (
 const (
 	defaultHTTPTimeout = 15 * time.Second
 	maxErrorBody       = 4 << 10
+
+	// RunnerVersionHeader lets the wall make lease decisions against the
+	// exact worker build before a run is handed out. Heartbeats arrive only
+	// after leasing, which is too late to keep a known-broken resilient
+	// circuit off the same revision (#1932).
+	RunnerVersionHeader = "X-PokePilot-Runner-Version"
 )
 
 // Client is the runner's only knowledge of the wall: four HTTP calls.
@@ -43,6 +49,9 @@ func (c *Client) Lease(ctx context.Context) (*Spec, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/v1/lease", nil)
 	if err != nil {
 		return nil, err
+	}
+	if version := strings.TrimSpace(c.Version); version != "" {
+		req.Header.Set(RunnerVersionHeader, version)
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
