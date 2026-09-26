@@ -33,6 +33,37 @@ func TestMainWiresFarmMode(t *testing.T) {
 	}
 }
 
+func TestFarmDrainMergesIntoSafeBoundaryCancel(t *testing.T) {
+	wallCancel := make(chan struct{})
+	drain := make(chan struct{})
+	merged, cleanup := mergeFarmCancel(wallCancel, drain)
+	defer cleanup()
+
+	close(drain)
+	select {
+	case <-merged:
+	case <-time.After(time.Second):
+		t.Fatal("SIGTERM drain did not reach the agent cancellation channel")
+	}
+	if !farmDrainRequested(drain) {
+		t.Fatal("closed drain channel was not recognized")
+	}
+}
+
+func TestMainWiresSIGTERMIntoFarmDrain(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(src)
+	if !strings.Contains(text, "signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)") {
+		t.Fatal("farm main does not convert SIGTERM into a cooperative drain")
+	}
+	if !strings.Contains(text, "renderFeed, drainCtx.Done())") {
+		t.Fatal("farm drain channel is not passed into runFarm")
+	}
+}
+
 func TestSetFarmRunIDSetsAndRestores(t *testing.T) {
 	original, had := os.LookupEnv(farmRunIDEnv)
 	_ = os.Unsetenv(farmRunIDEnv)
