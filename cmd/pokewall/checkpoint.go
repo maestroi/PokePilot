@@ -166,8 +166,10 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	previous := attempt - 1
 	retryPrefix := fmt.Sprintf("attempt %d failed: ", previous)
 	lostPrefix := retryPrefix + "no heartbeat for "
+	drainedPrefix := fmt.Sprintf("attempt %d drained: ", previous)
 	planner := t.Planner
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
+	drainedRetry := previous > 0 && strings.HasPrefix(t.Detail, drainedPrefix)
 	resilientRetry := previous > 0 && t.RecoveryProfile.Resilient() && planner == "llm" &&
 		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	recoveryAttempts := t.RecoveryAttempts
@@ -182,16 +184,16 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		err error
 	)
 	switch {
-	case lostRetry && planner != "llm":
+	case (lostRetry || drainedRetry) && planner != "llm":
 		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
 		if err == nil {
 			cp.Attempt = previous
 		}
-	case lostRetry:
-		// Resume the deepest pair in the lineage, not merely the previous
-		// attempt's: if that attempt had itself fallen back to a fresh
-		// cartridge before dying, its early checkpoints would otherwise lock
-		// the campaign's restart in permanently.
+	case lostRetry || drainedRetry:
+		// Worker loss and graceful deploy drain both continue from the deepest
+		// safe pair in the lineage. A drain has already flushed the final
+		// objective pair before Finish, so this normally resumes exactly at the
+		// safe boundary where SIGTERM was observed (#1933).
 		cp, err = w.latestLineageResumeCheckpoint(id, planner)
 		if os.IsNotExist(err) {
 			cp, err = w.latestLineageMajorCheckpoint(id)
