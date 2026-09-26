@@ -13,7 +13,26 @@ const (
 	shopWatchListOrQty  = 7
 	shopActionMenuMax   = 2
 	redViridianMartMap  = 0x2a
+
+	// DisplayChooseQuantityMenu (pokered home/list_menu.asm) prints "×01"
+	// at a list-kind-dependent tile; the list itself never draws × there.
+	shopPricedListMenuID = 0x02 // PRICEDITEMLISTMENU
+	shopQuantityGlyph    = 0xf1 // charmap "×"
+	shopMoreTextGlyph    = 0xee // charmap "▼", drawn at (18,16) by _ContText/_ParagraphText
+	shopScreenWidth      = 20
 )
+
+// shopQuantityBoxDrawn reports whether the choose-quantity box is on screen.
+// wItemQuantity/wMaxItemQuantity outlive the box (a finished purchase leaves
+// them at the last quantity and 99), so they cannot tell the item list from
+// the quantity box; the box's own × glyph can (#1958).
+func shopQuantityBoxDrawn(mem *state.Mem) bool {
+	x := 16
+	if mem.U8(sym.ListMenuID) == shopPricedListMenuID {
+		x = 8
+	}
+	return mem.U8(sym.TileMap+uint16(10*shopScreenWidth+x)) == shopQuantityGlyph
+}
 
 func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 	if reader == nil {
@@ -48,13 +67,21 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 		out.Phase = game.ShopPhaseConfirmation
 		return out
 	}
+	// A "cont"/"para" break waiting for a button is shop text even while the
+	// item list's cursor and the quantity box stay drawn behind it: the Buy
+	// price line ("POKé BALL? That will be" ▼ "¥400. OK?") pauses here before
+	// its YES/NO prompt. Paging it is reversible; reading it as the quantity
+	// box stalled the purchase until a held A happened to carry through.
+	if mem.U8(sym.FontLoaded) != 0 && mem.U8(sym.TileMap+uint16(16*shopScreenWidth+18)) == shopMoreTextGlyph {
+		out.Phase = game.ShopPhaseGreeting
+		return out
+	}
 	menuUp := state.MenuUp(&mem)
 	watched := mem.U8(sym.MenuWatchedKeys)
 	switch {
 	case menuUp && watched == shopWatchActionMenu && mem.U8(sym.MaxMenuItem) == shopActionMenuMax:
 		out.Phase = game.ShopPhaseActionMenu
-	case menuUp && watched == shopWatchListOrQty && out.MaxQuantity > 0 && out.Quantity >= 1 && out.Quantity <= out.MaxQuantity &&
-		(out.MaxQuantity == 99 || strings.Contains(out.Text, "×")):
+	case menuUp && watched == shopWatchListOrQty && shopQuantityBoxDrawn(&mem):
 		out.Phase = game.ShopPhaseQuantity
 	case menuUp && watched == shopWatchListOrQty:
 		out.Phase = game.ShopPhaseItemList
