@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
@@ -103,5 +104,34 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("shared Gen-I destinations missing from the Yellow catalog")
+	}
+}
+
+func TestYellowDefaultStarterObjectiveIsScriptedPikachu(t *testing.T) {
+	obs := Observation{GameID: yellowprofile.GameID, PartyCount: 0}
+	got, ok := DefaultStarterObjective(obs)
+	if !ok || got.Kind != KindStarter || got.Species != "pikachu" {
+		t.Fatalf("DefaultStarterObjective(Yellow) = %+v,%v, want Pikachu starter", got, ok)
+	}
+}
+
+func TestYellowEarlySharedProgressionContinuesAfterOpening(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 1,
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+		},
+	}
+	got := adapter.ProgressionObjectives(obs)
+	if !hasProgressObjective(got, gen1.ProgressPokedexAcquired) {
+		t.Fatalf("post-opening Yellow objectives = %v, want Pokedex acquisition", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressPokedexAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if !hasProgressObjective(got, gen1.ProgressBoulderBadge) {
+		t.Fatalf("post-Pokedex Yellow objectives = %v, want Boulder Badge", got)
 	}
 }

@@ -533,3 +533,26 @@ func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
 		t.Fatalf("mapsVisited() = %d, want 2 distinct maps", got)
 	}
 }
+
+func TestValidateSpecAcceptsYellowScriptedPikachu(t *testing.T) {
+	for _, starter := range []string{"", "pikachu", "Pikachu"} {
+		if err := validateSpec("pokemon-yellow", "scripted", starter, "viridian city"); err != nil {
+			t.Fatalf("validateSpec(Yellow, starter=%q): %v", starter, err)
+		}
+	}
+	if err := validateSpec("pokemon-yellow", "llm", "pikachu", ""); err != nil {
+		t.Fatalf("validateSpec(Yellow LLM): %v", err)
+	}
+	if err := validateSpec("pokemon-yellow", "llm", "squirtle", ""); err == nil {
+		t.Fatal("Yellow accepted a Red-style Squirtle starter")
+	}
+}
+
+func TestValidateSpecKeepsRedScriptedStarterRequirement(t *testing.T) {
+	if err := validateSpec("pokemon-red", "scripted", "", "viridian city"); err == nil {
+		t.Fatal("Red scripted run accepted an empty starter")
+	}
+	if err := validateSpec("pokemon-red", "scripted", "squirtle", "viridian city"); err != nil {
+		t.Fatalf("Red scripted Squirtle rejected: %v", err)
+	}
+}

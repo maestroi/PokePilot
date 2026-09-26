@@ -859,6 +859,14 @@ func (c *modelExperimentController) handleCreateExperiment(w http.ResponseWriter
 	if request.Game == "" {
 		request.Game = "pokemon-red"
 	}
+	if request.Game == "pokemon-yellow" {
+		starter := strings.ToLower(strings.TrimSpace(request.Starter))
+		if starter != "" && starter != "pikachu" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("pokemon-yellow uses the scripted Pikachu starter, got %q", request.Starter)})
+			return
+		}
+		request.Starter = "pikachu"
+	}
 	if request.Goal == "" {
 		request.Goal = "Earn the Boulder Badge."
 	}

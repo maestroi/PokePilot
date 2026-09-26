@@ -399,7 +399,7 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 		)
 
 		planner, starter, dest, fps, maxRounds, maxFrames := applySpec(*spec)
-		if err := validateSpec(planner, starter, dest); err != nil {
+		if err := validateSpec(spec.Game, planner, starter, dest); err != nil {
 			log.Printf("farm: %s: %v", spec.RunID, err)
 			finishRun(m, client, *spec, "error", err.Error(), 0, "", nil, nil)
 			time.Sleep(farmErrorSleep)
@@ -457,22 +457,33 @@ func pingWorker(client *farm.Client, addrs []string) {
 // validateSpec rejects a bad spec before it spends a run: the planner must
 // be known, and a scripted spec must name a starter and destination we can
 // resolve. An llm spec may name a starter (empty lets the model pick); dest is unused.
-func validateSpec(planner, starter, dest string) error {
+func validateSpec(gameID, planner, starter, dest string) error {
 	const starterHelp = "use a canonical starter, any Gen I Pokemon (for example mewtwo), or random[:reasonable|basic|any]"
+	starter = strings.ToLower(strings.TrimSpace(starter))
+	if gameID == "pokemon-yellow" {
+		if starter != "" && starter != "pikachu" {
+			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", starter)
+		}
+	} else {
+		switch planner {
+		case "scripted":
+			if _, ok := starterFromName(starter); !ok {
+				return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
+			}
+		case "llm":
+			if starter != "" {
+				if _, ok := starterFromName(starter); !ok {
+					return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
+				}
+			}
+		}
+	}
 	switch planner {
 	case "scripted":
-		if _, ok := starterFromName(starter); !ok {
-			return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
-		}
 		if _, ok := skill.Place(dest); !ok {
 			return fmt.Errorf("unknown destination %q", dest)
 		}
 	case "llm":
-		if starter != "" {
-			if _, ok := starterFromName(starter); !ok {
-				return fmt.Errorf("unknown starter %q: %s", starter, starterHelp)
-			}
-		}
 	default:
 		return fmt.Errorf("unknown planner %q: want scripted or llm", planner)
 	}
@@ -803,7 +814,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64, drain <-chan 
 	if farmDrainRequested(drain) {
 		return "drained", "runner shutdown requested before scripted objective", nil, nil
 	}
-	starterObj, err := starterObjectiveForRequest(starter, seed)
+	starterObj, err := scriptedStarterObjective(m, starter, seed)
 	if err != nil {
 		return "error", fmt.Sprintf("starter objective: %v", err), nil, nil
 	}
@@ -856,7 +867,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	// always picks Squirtle otherwise). A resumed state is already past that
 	// setup, so replaying the starter objective would corrupt the continuation.
 	if starter != "" && resumeFrom == "" {
-		starterObj, objErr := starterObjectiveForRequest(starter, seed)
+		starterObj, objErr := scriptedStarterObjective(m, starter, seed)
 		if objErr != nil {
 			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false
 		}

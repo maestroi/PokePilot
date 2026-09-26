@@ -72,6 +72,34 @@ func TestSpecsEnqueue(t *testing.T) {
 	}
 }
 
+func TestYellowSpecNormalizesScriptedPikachu(t *testing.T) {
+	srv := newTestServer(t, "")
+
+	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
+		RunID: "yellow", Game: "Pokemon-Yellow", Planner: "llm",
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("Yellow spec: status %d, want 200", resp.StatusCode)
+	}
+
+	resp := postJSON(t, srv.URL+"/v1/lease", struct{}{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Yellow lease: status %d, want 200", resp.StatusCode)
+	}
+	var got farm.Spec
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode Yellow lease: %v", err)
+	}
+	if got.Game != "pokemon-yellow" || got.Starter != "pikachu" {
+		t.Fatalf("Yellow lease = game %q starter %q, want pokemon-yellow/pikachu", got.Game, got.Starter)
+	}
+
+	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
+		RunID: "bad-yellow", Game: "pokemon-yellow", Planner: "llm", Starter: "squirtle",
+	}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Yellow Squirtle spec: status %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestLeaseOldestOnceThenEmpty(t *testing.T) {
 	srv := newTestServer(t, "")
 	for _, id := range []string{"a", "b"} {

@@ -24,7 +24,27 @@ var starterExperimentRuns sync.Map // run id -> starterExperimentRunMeta
 // Mewtwo experiment cannot leak that cartridge into its next lease.
 func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	base := m.ROM() // semantic/base ROM, even when the previous lease was patched
-	selection, err := redstarter.Resolve(spec.Starter, spec.Seed)
+	profile, _, detectErr := profiles.Detect(base)
+
+	request := strings.ToLower(strings.TrimSpace(spec.Starter))
+	var selection redstarter.Selection
+	var err error
+	if detectErr == nil && string(profile.ID()) == "pokemon-yellow" {
+		if request != "" && request != "pikachu" {
+			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", spec.Starter)
+		}
+		// Yellow's starter is a cartridge script, not a Red ROM experiment.
+		// Keep the image byte-identical while retaining the semantic starter
+		// identity in run metadata.
+		selection, err = redstarter.Resolve("", spec.Seed)
+		if err == nil {
+			selection.Request = spec.Starter
+			selection.Species = "pikachu"
+			selection.Slot = "scripted"
+		}
+	} else {
+		selection, err = redstarter.Resolve(spec.Starter, spec.Seed)
+	}
 	if err != nil {
 		return err
 	}
@@ -33,7 +53,7 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 		return err
 	}
 	name := "pokemon-red"
-	if profile, _, err := profiles.Detect(base); err == nil {
+	if detectErr == nil {
 		name = string(profile.ID())
 	}
 	if selection.Experiment() {

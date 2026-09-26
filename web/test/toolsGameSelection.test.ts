@@ -14,9 +14,10 @@ test('tools run form selects and submits a supported game', () => {
   assert.match(toolsSource, /game: form\.game/)
 })
 
-test('tools run form offers Yellow without Red-style starter replacement', () => {
+test('tools run form shows Yellow scripted Pikachu explicitly', () => {
   assert.match(toolsSource, /<option value="pokemon-yellow">Pokémon Yellow<\/option>/)
   assert.ok(toolsSource.includes("form.game === 'pokemon-yellow'"))
-  assert.ok(toolsSource.includes('if (isYellow.value) return'))
-  assert.ok(toolsSource.includes(':disabled="isYellow"'))
+  assert.ok(toolsSource.includes("if (isYellow.value) return 'pikachu'"))
+  assert.ok(toolsSource.includes('value="Pikachu · scripted"'))
+  assert.ok(toolsSource.includes('!isYellow.value && isSpecificStarter.value'))
 })

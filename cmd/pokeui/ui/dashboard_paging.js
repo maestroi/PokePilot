@@ -141,7 +141,7 @@
     try{return new Date(sec*1000).toLocaleString();}catch(_){return "—";}
   }
   function howLabel(run){return run&&run.planner==="scripted"?"walk":"play"}
-  function starterLabel(run){return String(run&&run.starter|| (run&&run.planner==="scripted"?"squirtle":"LLM picks"));}
+  function starterLabel(run){return String(run&&run.starter|| (run&&run.game==="pokemon-yellow"?"pikachu":(run&&run.planner==="scripted"?"squirtle":"LLM picks")));}
   function whereLabel(run){
     if(run&&run.planner==="scripted"&&run.dest)return run.dest;
     const map=Number(run&&run.map||0).toString(16).padStart(2,"0");

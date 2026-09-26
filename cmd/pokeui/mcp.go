@@ -53,7 +53,7 @@ type mcpControl struct {
 type mcpStartRunInput struct {
 	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
 	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, or pokemon-yellow; empty lets the runner pick its mounted cartridge"`
-	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon: squirtle, charmander, or bulbasaur; defaults to squirtle"`
+	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
@@ -267,7 +267,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		if starter != "" && starter != "pikachu" {
 			return nil, mcpStartRunOutput{}, fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter")
 		}
-		starter = ""
+		starter = "pikachu"
 	} else {
 		if starter == "" {
 			starter = "squirtle"

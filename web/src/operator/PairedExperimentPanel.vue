@@ -52,6 +52,7 @@ const form = reactive({
   max_frames: 0,
   recovery_profile: 'resilient' as 'strict' | 'resilient'
 })
+const isYellow = computed(() => form.game === 'pokemon-yellow')
 
 watch(deployments, (next) => {
   if (!next.length) return
@@ -116,7 +117,7 @@ async function submit(): Promise<void> {
       arm_b: { name: 'B', deployment: form.arm_b, max_parallel_workers: Number(form.arm_b_workers || 1) },
       game: form.game,
       goal: form.goal.trim() || 'Earn the Boulder Badge.',
-      starter: form.starter,
+      starter: isYellow.value ? 'pikachu' : form.starter,
       seeds,
       seed_count: seeds.length ? seeds.length : Number(form.seed_count || 20),
       play_style: form.play_style,
@@ -178,6 +179,7 @@ const metrics = computed(() => {
         <select v-model="form.game" :class="fieldClass">
           <option value="pokemon-red">Pokémon Red</option>
           <option value="pokemon-blue">Pokémon Blue</option>
+          <option value="pokemon-yellow">Pokémon Yellow</option>
         </select>
         <span class="mt-1 block text-[10px] text-slate-600">Both arms run the same cartridge identity.</span>
       </label>
@@ -213,7 +215,8 @@ const metrics = computed(() => {
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-        <select v-model="form.starter" :class="fieldClass">
+        <input v-if="isYellow" value="Pikachu · scripted" disabled :class="fieldClass" />
+        <select v-else v-model="form.starter" :class="fieldClass">
           <option value="">Let LLM decide</option>
           <option value="squirtle">Squirtle</option>
           <option value="charmander">Charmander</option>

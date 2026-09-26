@@ -674,6 +674,10 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "run_id is required"})
 		return
 	}
+	if err := normalizeGameStarter(&spec); err != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if !spec.RecoveryProfile.Valid() {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
 		return
@@ -708,7 +712,29 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 	writeJSON(res, http.StatusOK, map[string]string{"status": statusQueued})
 }
 
+func normalizeGameStarter(spec *farm.Spec) error {
+	if spec == nil {
+		return nil
+	}
+	spec.Game = strings.ToLower(strings.TrimSpace(spec.Game))
+	if spec.Game != "pokemon-yellow" {
+		return nil
+	}
+	starter := strings.ToLower(strings.TrimSpace(spec.Starter))
+	if starter != "" && starter != "pikachu" {
+		return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", spec.Starter)
+	}
+	spec.Starter = "pikachu"
+	return nil
+}
+
 func (w *Wall) applySpec(runID string, spec farm.Spec) {
+	// Old persisted/clone specs may predate explicit Yellow starter identity.
+	// Canonicalize the safe empty case here too; direct API submissions are
+	// validated by handleSpecs before reaching this point.
+	if strings.EqualFold(strings.TrimSpace(spec.Game), "pokemon-yellow") && strings.TrimSpace(spec.Starter) == "" {
+		spec.Starter = "pikachu"
+	}
 	t := w.tiles[runID]
 	t.RunID = spec.RunID
 	t.Status = statusQueued

@@ -114,7 +114,7 @@ const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
 function starterRequest(): string {
-  if (isYellow.value) return ''
+  if (isYellow.value) return 'pikachu'
   if (starterMode.value === 'specific') return specificStarter.value.trim()
   if (starterMode.value === 'default') return isLLM.value ? '' : 'squirtle'
   return starterMode.value
@@ -130,7 +130,7 @@ function runURL(runID: string): string {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (isSpecificStarter.value && !specificStarter.value.trim()) {
+  if (!isYellow.value && isSpecificStarter.value && !specificStarter.value.trim()) {
     error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
     return
   }
@@ -198,7 +198,8 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <select v-model="starterMode" :disabled="isYellow" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+          <input v-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
+          <select v-else v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <optgroup label="Default">
               <option value="default">{{ isLLM ? 'Let LLM decide' : 'Default · Squirtle' }}</option>
             </optgroup>
@@ -216,7 +217,7 @@ async function submit(): Promise<void> {
               <option value="specific">Specific Pokémon…</option>
             </optgroup>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow uses its scripted Pikachu starter; Red-style starter replacement is disabled.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.' }}</span>
         </label>
 
         <label v-if="isSpecificStarter && !isYellow" class="block">

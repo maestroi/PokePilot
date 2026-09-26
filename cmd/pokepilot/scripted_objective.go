@@ -30,6 +30,28 @@ func starterObjectiveForRequest(request string, seed int64) (agent.Objective, er
 	}, nil
 }
 
+// scriptedStarterObjective resolves a scripted run's starter. A named request
+// keeps the existing Red/Blue starter path. An empty request may use the
+// loaded game's only opening starter, which is how Yellow selects Pikachu
+// without pretending it has Red's three-ball choice.
+func scriptedStarterObjective(m *emu.Emu, request string, seed int64) (agent.Objective, error) {
+	obs, err := agent.ObserveChecked(m, m.ROM())
+	if err != nil {
+		return agent.Objective{}, err
+	}
+	if o, ok := agent.DefaultStarterObjective(obs); ok {
+		req := strings.ToLower(strings.TrimSpace(request))
+		if req != "" && req != string(o.Species) {
+			return agent.Objective{}, fmt.Errorf("%s uses the scripted %s starter, got %q", obs.GameID, o.Species, request)
+		}
+		return o, nil
+	}
+	if strings.TrimSpace(request) == "" {
+		return agent.Objective{}, fmt.Errorf("%s offers a starter choice; name one", obs.GameID)
+	}
+	return starterObjectiveForRequest(request, seed)
+}
+
 func executeScriptedObjective(m *emu.Emu, o agent.Objective) (agent.ObjectiveResult, error) {
 	return agent.Execute(m, m.ROM(), o)
 }
