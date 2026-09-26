@@ -107,7 +107,6 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 	}
 }
 
-
 func TestYellowDefaultStarterObjectiveIsScriptedPikachu(t *testing.T) {
 	obs := Observation{GameID: yellowprofile.GameID, PartyCount: 0}
 	got, ok := DefaultStarterObjective(obs)
