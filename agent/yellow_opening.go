@@ -3,299 +3,217 @@ package agent
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
-	yellowsym "github.com/maestroi/pokepilot/yellow/sym"
 )
 
-const (
-	yellowOpeningPalletTown  uint8 = 0x00
-	yellowOpeningRedsHouse1F uint8 = 0x25
-	yellowOpeningRedsHouse2F uint8 = 0x26
-	yellowOpeningOaksLab     uint8 = 0x28
-
-	yellowOpeningFrameBudget  = 90000
-	yellowOpeningBattleBudget = 30000
-	yellowOpeningMenuBudget   = 120
+var (
+	errYellowOpeningStalled         = errors.New("yellow opening made no progress")
+	errYellowOpeningUnexpectedState = errors.New("yellow opening state has no owning phase")
+	errYellowOpeningChoiceRequired  = errors.New("yellow opening exposed an unexpected choice prompt")
 )
-
-type yellowOpeningState struct {
-	mapID        uint8
-	x, y         uint8
-	controllable bool
-	inBattle     bool
-	partyCount   int
-	hasPikachu   bool
-	starter      bool
-	labRival     bool
-}
 
 type yellowOpeningPhase string
 
 const (
-	yellowOpeningDone              yellowOpeningPhase = "done"
-	yellowOpeningBattle            yellowOpeningPhase = "battle"
-	yellowOpeningNickname          yellowOpeningPhase = "nickname"
-	yellowOpeningScript            yellowOpeningPhase = "script"
-	yellowOpeningBedroomUpstairs   yellowOpeningPhase = "bedroom-upstairs"
-	yellowOpeningBedroomDownstairs yellowOpeningPhase = "bedroom-downstairs"
-	yellowOpeningOakGate           yellowOpeningPhase = "oak-gate"
-	yellowOpeningEeveeBall         yellowOpeningPhase = "eevee-ball"
-	yellowOpeningAwaitStarter      yellowOpeningPhase = "await-starter"
-	yellowOpeningRivalTrigger      yellowOpeningPhase = "rival-trigger"
-	yellowOpeningUnexpected        yellowOpeningPhase = "unexpected"
+	yellowOpeningWalkToGate  yellowOpeningPhase = "walk_to_gate"
+	yellowOpeningScript      yellowOpeningPhase = "advance_script"
+	yellowOpeningTakeBall    yellowOpeningPhase = "take_ball"
+	yellowOpeningWalkToRival yellowOpeningPhase = "walk_to_rival"
+	yellowOpeningFightRival  yellowOpeningPhase = "fight_rival"
+	yellowOpeningDone        yellowOpeningPhase = "done"
 )
 
-func yellowOpeningPhaseFor(state yellowOpeningState, nickname bool) yellowOpeningPhase {
-	if state.labRival {
-		if state.starter && state.hasPikachu && state.controllable && !state.inBattle {
-			return yellowOpeningDone
-		}
-		if !state.starter || !state.hasPikachu {
-			return yellowOpeningUnexpected
-		}
-	}
-	if state.inBattle {
-		return yellowOpeningBattle
-	}
-	if nickname {
-		return yellowOpeningNickname
-	}
-	if !state.controllable {
-		return yellowOpeningScript
-	}
-	if !state.starter {
-		switch state.mapID {
-		case yellowOpeningRedsHouse2F:
-			return yellowOpeningBedroomUpstairs
-		case yellowOpeningRedsHouse1F:
-			return yellowOpeningBedroomDownstairs
-		case yellowOpeningPalletTown:
-			return yellowOpeningOakGate
-		case yellowOpeningOaksLab:
-			if state.partyCount == 0 {
-				return yellowOpeningEeveeBall
-			}
-			return yellowOpeningAwaitStarter
-		default:
-			return yellowOpeningUnexpected
-		}
-	}
-	if state.mapID == yellowOpeningOaksLab {
-		return yellowOpeningRivalTrigger
-	}
-	return yellowOpeningUnexpected
+const (
+	yellowOpeningMaxSteps            = 40
+	yellowOpeningScriptBudget        = 30000
+	yellowOpeningBallReactionBudget  = 600
+	yellowOpeningGateApproachX uint8 = 10
+	yellowOpeningGateApproachY uint8 = 1
+	yellowOpeningBallX         uint8 = 7
+	yellowOpeningBallY         uint8 = 3
+	yellowOpeningBallStandX    uint8 = 7
+	yellowOpeningBallStandY    uint8 = 4
+	yellowOpeningRivalX        uint8 = 5
+	yellowOpeningRivalY        uint8 = 6
+)
+
+func yellowOpeningReached(f yellowprofile.OpeningFacts) bool {
+	return f.GotStarter && f.PartyCount > 0 && f.BattledRival && f.Controllable && !f.InBattle
 }
 
-func observeYellowOpening(m *emu.Emu, romData []byte) (yellowOpeningState, error) {
-	obs, err := yellowprofile.New().DecodeObservation(m, romData)
-	if err != nil {
-		return yellowOpeningState{}, err
+// yellowOpeningPhaseFor mirrors Yellow's native opening scripts. In
+// particular, OakAskedToChoose prevents the controller from treating a brief
+// controllable frame in the lab as permission to touch the Eevee ball before
+// Oak's speech has actually completed.
+func yellowOpeningPhaseFor(f yellowprofile.OpeningFacts) (yellowOpeningPhase, error) {
+	if f.ChoicePrompt {
+		return "", errYellowOpeningChoiceRequired
 	}
-	hasPikachu := false
-	for _, mon := range obs.Party {
-		if mon.Species == "pikachu" {
-			hasPikachu = true
-			break
+	switch {
+	case yellowOpeningReached(f):
+		return yellowOpeningDone, nil
+	case f.InBattle:
+		if f.GotStarter && !f.BattledRival {
+			return yellowOpeningFightRival, nil
 		}
+		return yellowOpeningScript, nil
+	case !f.Controllable:
+		return yellowOpeningScript, nil
+	case !f.OakAppeared && !f.FollowedOak:
+		return yellowOpeningWalkToGate, nil
+	case !f.OakAskedToChoose:
+		return yellowOpeningScript, nil
+	case !f.GotStarter:
+		if f.Map != yellowprofile.OaksLabMap {
+			return "", fmt.Errorf("%w: Oak asked to choose on map %#02x at (%d,%d)",
+				errYellowOpeningUnexpectedState, f.Map, f.X, f.Y)
+		}
+		return yellowOpeningTakeBall, nil
+	case !f.BattledRival:
+		if f.Map != yellowprofile.OaksLabMap {
+			return "", fmt.Errorf("%w: Pikachu received outside Oak's Lab on map %#02x at (%d,%d)",
+				errYellowOpeningUnexpectedState, f.Map, f.X, f.Y)
+		}
+		return yellowOpeningWalkToRival, nil
+	default:
+		return yellowOpeningScript, nil
 	}
-	return yellowOpeningState{
-		mapID:        uint8(obs.NativeMapID),
-		x:            obs.X,
-		y:            obs.Y,
-		controllable: obs.Controllable,
-		inBattle:     obs.InBattle,
-		partyCount:   len(obs.Party),
-		hasPikachu:   hasPikachu,
-		starter:      obs.Story.Has(yellowprofile.ProgressYellowStarterReceived),
-		labRival:     obs.Story.Has(yellowprofile.ProgressYellowLabRivalResolved),
-	}, nil
 }
 
-// executeYellowOpening drives Yellow's scripted Pikachu opening as a resumable
-// story state machine. Navigation and the player-owned rival battle use the
-// shared profile-driven skill runtime. Yellow-specific code owns only the
-// cartridge's scripted decisions: Oak's interception/capture, the Eevee-ball
-// interaction, nickname refusal, and the rival trigger.
+// executeYellowOpening is a resumable semantic state machine. Yellow owns the
+// facts and trigger geometry; ordinary travel, facing, stepping and battle
+// execution remain shared Gen-I mechanics.
 func executeYellowOpening(m *emu.Emu, romData []byte) error {
 	if m == nil {
 		return fmt.Errorf("yellow opening: nil emulator")
 	}
-	info := game.InspectROM(romData)
-	if info.SHA1 != yellowsym.ROMSHA1 {
-		return fmt.Errorf("yellow opening: ROM sha1=%s, want %s", info.SHA1, yellowsym.ROMSHA1)
-	}
-
 	policy := skill.StatAwareMove(romData)
-	start := m.FrameCount()
-	for int(m.FrameCount()-start) <= yellowOpeningFrameBudget {
-		state, err := observeYellowOpening(m, romData)
-		if err != nil {
-			return fmt.Errorf("yellow opening: observe: %w", err)
-		}
-		phase := yellowOpeningPhaseFor(state, yellowOpeningNicknamePrompt(m))
-		switch phase {
-		case yellowOpeningDone:
+	facts := yellowprofile.DecodeOpening(m)
+	stalls := 0
+
+	for step := 0; step < yellowOpeningMaxSteps; step++ {
+		if yellowOpeningReached(facts) {
 			return nil
-
-		case yellowOpeningBattle:
-			if state.starter {
-				if _, err := skill.Battle(m, policy); err != nil {
-					return fmt.Errorf("yellow opening: resolve lab rival battle: %w", err)
-				}
-			} else if err := advanceYellowScriptedCaptureBattle(m, romData); err != nil {
-				return err
-			}
-
-		case yellowOpeningNickname:
-			if err := declineYellowOpeningNickname(m); err != nil {
-				return err
-			}
-
-		case yellowOpeningScript, yellowOpeningAwaitStarter:
-			advanceYellowOpeningScriptFrame(m)
-
-		case yellowOpeningBedroomUpstairs:
-			if err := yellowOpeningGoTo(m, romData, skill.MapDestination(yellowOpeningRedsHouse1F), false); err != nil {
-				return fmt.Errorf("yellow opening: leave upstairs bedroom: %w", err)
-			}
-
-		case yellowOpeningBedroomDownstairs:
-			if err := yellowOpeningGoTo(m, romData, skill.MapDestination(yellowOpeningPalletTown), false); err != nil {
-				return fmt.Errorf("yellow opening: leave house: %w", err)
-			}
-
-		case yellowOpeningOakGate:
-			if err := yellowOpeningGoTo(m, romData, skill.ExactDestination(yellowOpeningPalletTown, 10, 0), true); err != nil {
-				return fmt.Errorf("yellow opening: reach Oak interception: %w", err)
-			}
-
-		case yellowOpeningEeveeBall:
-			if err := interactYellowOpeningTarget(m, romData, 7, 3); err != nil {
-				return fmt.Errorf("yellow opening: trigger Eevee-ball script: %w", err)
-			}
-
-		case yellowOpeningRivalTrigger:
-			if err := yellowOpeningGoTo(m, romData, skill.ExactDestination(yellowOpeningOaksLab, 5, 6), true); err != nil {
-				return fmt.Errorf("yellow opening: reach rival trigger: %w", err)
-			}
-
-		case yellowOpeningUnexpected:
-			return fmt.Errorf(
-				"yellow opening: unexpected state map=%#02x (%d,%d) controllable=%v battle=%v party=%d pikachu=%v starter=%v lab_rival=%v",
-				state.mapID, state.x, state.y, state.controllable, state.inBattle,
-				state.partyCount, state.hasPikachu, state.starter, state.labRival,
-			)
 		}
+		phase, err := yellowOpeningPhaseFor(facts)
+		if err != nil {
+			return fmt.Errorf("yellow opening: %w", err)
+		}
+		if phase == yellowOpeningDone {
+			return nil
+		}
+
+		actionErr := runYellowOpeningPhase(m, romData, policy, phase)
+		next := yellowprofile.DecodeOpening(m)
+		if next == facts {
+			if actionErr != nil {
+				return fmt.Errorf("yellow opening: %s: %w", phase, actionErr)
+			}
+			stalls++
+			if stalls >= 2 {
+				return fmt.Errorf("%w: phase=%s map=%#02x at (%d,%d)",
+					errYellowOpeningStalled, phase, facts.Map, facts.X, facts.Y)
+			}
+			continue
+		}
+
+		// A scripted trigger often reports an interruption exactly when it
+		// succeeds (Oak's gate, rival challenge). Progress in Yellow's own
+		// facts wins over that transport-level error.
+		stalls = 0
+		facts = next
 	}
 
-	state, _ := observeYellowOpening(m, romData)
-	return fmt.Errorf(
-		"yellow opening: exceeded %d frames at map=%#02x (%d,%d) controllable=%v battle=%v party=%d starter=%v lab_rival=%v",
-		yellowOpeningFrameBudget, state.mapID, state.x, state.y, state.controllable,
-		state.inBattle, state.partyCount, state.starter, state.labRival,
-	)
+	return fmt.Errorf("%w: lab rival not resolved within %d semantic steps; map=%#02x at (%d,%d)",
+		errYellowOpeningStalled, yellowOpeningMaxSteps, facts.Map, facts.X, facts.Y)
 }
 
-func yellowOpeningGoTo(m *emu.Emu, romData []byte, dest skill.Destination, allowStoryInterrupt bool) error {
-	err := skill.GoTo(m, romData, dest)
-	if err == nil {
+func runYellowOpeningPhase(m *emu.Emu, romData []byte, policy skill.MovePolicy, phase yellowOpeningPhase) error {
+	switch phase {
+	case yellowOpeningWalkToGate:
+		return yellowOpeningWalkGate(m, romData)
+	case yellowOpeningScript:
+		return yellowOpeningAdvanceScript(m)
+	case yellowOpeningTakeBall:
+		return yellowOpeningTakeEeveeBall(m, romData)
+	case yellowOpeningWalkToRival:
+		return yellowOpeningTriggerRival(m, romData)
+	case yellowOpeningFightRival:
+		_, err := skill.Battle(m, policy)
+		return err
+	case yellowOpeningDone:
 		return nil
+	default:
+		return fmt.Errorf("%w: unknown phase %q", errYellowOpeningUnexpectedState, phase)
 	}
-	if allowStoryInterrupt && (errors.Is(err, skill.ErrDialogueInterrupted) ||
-		errors.Is(err, skill.ErrBattleInterrupted) || errors.Is(err, skill.ErrBattle)) {
+}
+
+func yellowOpeningWalkGate(m *emu.Emu, romData []byte) error {
+	if yellowprofile.DecodeOpening(m).Map != yellowprofile.PalletTownMap {
+		if err := skill.GoTo(m, romData, skill.MapDestination(yellowprofile.PalletTownMap)); err != nil {
+			return fmt.Errorf("reach Pallet Town: %w", err)
+		}
+	}
+	if err := skill.GoTo(m, romData, skill.ExactDestination(
+		yellowprofile.PalletTownMap, yellowOpeningGateApproachX, yellowOpeningGateApproachY)); err != nil {
+		return fmt.Errorf("reach Oak gate approach: %w", err)
+	}
+	// The northward step is itself the story trigger. An interruption error is
+	// acceptable when the following semantic read shows Oak appeared.
+	return skill.StepOnce(m, world.StepUp)
+}
+
+func yellowOpeningAdvanceScript(m *emu.Emu) error {
+	for frame := 0; frame < yellowOpeningScriptBudget; frame++ {
+		facts := yellowprofile.DecodeOpening(m)
+		phase, err := yellowOpeningPhaseFor(facts)
+		if err != nil {
+			return err
+		}
+		if phase != yellowOpeningScript {
+			return nil
+		}
+		if facts.TextOpen {
+			m.Tap(emu.A, 3, 7)
+			continue
+		}
+		m.StepFrame()
+	}
+	f := yellowprofile.DecodeOpening(m)
+	return fmt.Errorf("%w: scripted phase exceeded %d frames on map %#02x at (%d,%d)",
+		errYellowOpeningStalled, yellowOpeningScriptBudget, f.Map, f.X, f.Y)
+}
+
+func yellowOpeningTakeEeveeBall(m *emu.Emu, romData []byte) error {
+	if err := skill.GoTo(m, romData, skill.ExactDestination(
+		yellowprofile.OaksLabMap, yellowOpeningBallStandX, yellowOpeningBallStandY)); err != nil {
+		return fmt.Errorf("reach Eevee ball: %w", err)
+	}
+	if err := skill.Face(m, yellowOpeningBallX, yellowOpeningBallY); err != nil {
+		return fmt.Errorf("face Eevee ball: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	for frame := 0; frame < yellowOpeningBallReactionBudget; frame++ {
+		facts := yellowprofile.DecodeOpening(m)
+		if !facts.Controllable || facts.GotStarter {
+			return nil
+		}
+		m.StepFrame()
+	}
+	f := yellowprofile.DecodeOpening(m)
+	return fmt.Errorf("%w: Eevee-ball script did not start at (%d,%d); player at (%d,%d)",
+		errYellowOpeningStalled, yellowOpeningBallX, yellowOpeningBallY, f.X, f.Y)
+}
+
+func yellowOpeningTriggerRival(m *emu.Emu, romData []byte) error {
+	err := skill.GoTo(m, romData, skill.ExactDestination(
+		yellowprofile.OaksLabMap, yellowOpeningRivalX, yellowOpeningRivalY))
+	if errors.Is(err, skill.ErrDialogueInterrupted) || errors.Is(err, skill.ErrBattleInterrupted) || errors.Is(err, skill.ErrBattle) {
 		return nil
 	}
 	return err
-}
-
-func interactYellowOpeningTarget(m *emu.Emu, romData []byte, tx, ty uint8) error {
-	if err := yellowOpeningGoTo(m, romData, skill.InteractionDestination(yellowOpeningOaksLab, tx, ty), false); err != nil {
-		return err
-	}
-	state, err := observeYellowOpening(m, romData)
-	if err != nil {
-		return err
-	}
-	btn, ok := yellowOpeningFacingButton(state.x, state.y, tx, ty)
-	if !ok {
-		return fmt.Errorf("target (%d,%d) is not adjacent to player (%d,%d)", tx, ty, state.x, state.y)
-	}
-	m.Tap(btn, 3, 7)
-	m.Tap(emu.A, 3, 7)
-	return nil
-}
-
-func yellowOpeningFacingButton(x, y, tx, ty uint8) (emu.Button, bool) {
-	switch {
-	case x == tx && y+1 == ty:
-		return emu.Down, true
-	case x == tx && y == ty+1:
-		return emu.Up, true
-	case x+1 == tx && y == ty:
-		return emu.Right, true
-	case x == tx+1 && y == ty:
-		return emu.Left, true
-	default:
-		return 0, false
-	}
-}
-
-func advanceYellowOpeningScriptFrame(m *emu.Emu) {
-	if m.Peek8(yellowsym.FontLoaded) != 0 {
-		m.Tap(emu.A, 3, 7)
-		return
-	}
-	m.StepFrame()
-}
-
-func yellowOpeningScreenText(m *emu.Emu) string {
-	buf := make([]byte, yellowsym.TileMapLen)
-	m.PeekInto(yellowsym.TileMap, buf)
-	return gen1.NormalizeDisplayText(gen1.DecodeTiles(buf))
-}
-
-func yellowOpeningNicknamePrompt(m *emu.Emu) bool {
-	return m.Peek8(yellowsym.MaxMenuItem) == 1 &&
-		strings.Contains(strings.ToLower(yellowOpeningScreenText(m)), "give a nickname")
-}
-
-func declineYellowOpeningNickname(m *emu.Emu) error {
-	if !yellowOpeningNicknamePrompt(m) {
-		return fmt.Errorf("yellow opening: nickname prompt disappeared before selection")
-	}
-	if m.Peek8(yellowsym.CurrentMenuItem) != 1 {
-		m.Tap(emu.Down, 3, 7)
-		if _, err := m.StepUntil(yellowOpeningMenuBudget, func(m *emu.Emu) bool {
-			return m.Peek8(yellowsym.CurrentMenuItem) == 1
-		}); err != nil {
-			return fmt.Errorf("yellow opening: nickname NO cursor did not settle: %w", err)
-		}
-	}
-	m.Tap(emu.A, 3, 7)
-	return nil
-}
-
-// Oak's Pikachu encounter is a scripted capture, not a player-owned battle.
-// Advance only rendered text/script frames until Yellow clears the battle flag;
-// using the generic battle controller here would invent a FIGHT/ITEM decision
-// that the cartridge never offers.
-func advanceYellowScriptedCaptureBattle(m *emu.Emu, romData []byte) error {
-	start := m.FrameCount()
-	for int(m.FrameCount()-start) <= yellowOpeningBattleBudget {
-		state, err := observeYellowOpening(m, romData)
-		if err != nil {
-			return fmt.Errorf("yellow opening: observe scripted capture: %w", err)
-		}
-		if !state.inBattle {
-			return nil
-		}
-		advanceYellowOpeningScriptFrame(m)
-	}
-	return fmt.Errorf("yellow opening: scripted Pikachu capture exceeded %d frames", yellowOpeningBattleBudget)
 }
