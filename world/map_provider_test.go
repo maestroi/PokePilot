@@ -178,6 +178,45 @@ func TestBuildGraphKeepsExpectedParseFailureVisibleToWorldVerify(t *testing.T) {
 	}
 }
 
+
+type wideMapProvider struct{}
+
+func (wideMapProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{0x0101} }
+
+func (wideMapProvider) ParseMap(id worldmodel.MapID) (worldmodel.MapHeader, error) {
+	return worldmodel.MapHeader{ID: id, WidthBlocks: 1, HeightBlocks: 1}, nil
+}
+
+func (wideMapProvider) Grid(id worldmodel.MapID, _ []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	return worldmodel.GridSpec{
+		MapID:         id,
+		Width:         2,
+		Height:        2,
+		Walkable:      []bool{true, true, true, true},
+		CollisionTile: []uint8{1, 1, 1, 1},
+		FieldTile:     []uint8{1, 1, 1, 1},
+		Traversal:     mode,
+	}, nil
+}
+
+func (wideMapProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
+	return worldmodel.ElevatorSpec{}, false
+}
+
+func (wideMapProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
+	return worldmodel.ElevatorFloor{}, false
+}
+
+func TestBuildGraphPreservesWideMapID(t *testing.T) {
+	g, err := BuildGraph(wideMapProvider{})
+	if err != nil {
+		t.Fatalf("BuildGraph(wide provider): %v", err)
+	}
+	if _, ok := g.Edges[0x0101]; !ok {
+		t.Fatalf("wide map id 0x0101 was truncated: keys=%v", g.Edges)
+	}
+}
+
 func TestWorldProductionFilesDoNotImportRedROM(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
