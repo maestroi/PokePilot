@@ -85,3 +85,36 @@ func selectBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenu
 		final.Cursor.Column, final.Cursor.Row, entry, target.Column, target.Row, ErrMenuStuck,
 	)
 }
+
+const (
+	battleMenuActivatePresses = 3
+	battleMenuActivateSettle  = 60
+)
+
+// activateBattleMainMenuEntryWithDecoder selects entry and presses A until
+// opened reports the submenu. The main menu is drawn before HandleMenuInput
+// polls the joypad (PlaceMenuCursor, then Delay3), so an A that lands in that
+// window is silently dropped: Lorelei's room left UseBattleMedicine waiting
+// 500 frames on an unopened bag (run-z5ghf614serd8, triage:f6e0e5cee7099781).
+// A is re-pressed only while the main menu is still up with the cursor on
+// entry, which is exactly the dropped-press state, so a retry can never act
+// inside the submenu.
+func activateBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenuDecoder, entry game.BattleMenuEntry, budget int, opened func() bool) error {
+	if err := selectBattleMainMenuEntryWithDecoder(m, decoder, entry); err != nil {
+		return err
+	}
+	target, _ := decoder.BattleMainMenuEntryPosition(entry)
+	for press := 0; press < battleMenuActivatePresses; press++ {
+		m.Tap(emu.A, 3, 7)
+		if waitMenuUntil(m, battleMenuActivateSettle, opened) {
+			return nil
+		}
+		if live := decoder.DecodeBattleMainMenu(m); !live.Visible || live.Cursor != target {
+			break // the press was taken; let the caller's budget decide
+		}
+	}
+	if waitMenuUntil(m, budget, opened) {
+		return nil
+	}
+	return fmt.Errorf("skill: battle menu %q did not open within %d frames: %w", entry, budget, ErrMenuStuck)
+}

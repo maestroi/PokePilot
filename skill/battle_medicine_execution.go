@@ -43,20 +43,19 @@ func UseBattleMedicine(m *emu.Emu, item uint8, slot int) error {
 		return fmt.Errorf("skill: UseBattleMedicine: %w (id %#02x)", ErrNotInBag, item)
 	}
 
-	if err := waitBattleMainMenu(m); err != nil {
+	battleMenu, err := battleMenuDecoderFor(m)
+	if err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
 	}
-	if err := selectItemEntry(m); err != nil {
-		return fmt.Errorf("skill: UseBattleMedicine: select ITEM: %w", err)
+	if err := waitBattleMainMenuWithDecoder(m, battleMenu); err != nil {
+		return fmt.Errorf("skill: UseBattleMedicine: %w", err)
 	}
-	m.Tap(emu.A, 3, 7)
-	if _, err := m.StepUntil(bagMenuBudget, func(m *emu.Emu) bool {
+	if err := activateBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuItems, bagMenuBudget, func() bool {
 		live := listDecoder.DecodeListMenu(m)
 		return live.Visible && live.Kind == game.ListMenuItems
 	}); err != nil {
-		live := runtimeDecoder.DecodeBattleRuntime(m)
-		return fmt.Errorf("skill: UseBattleMedicine: item list did not open within %d frames on %s",
-			bagMenuBudget, battleRuntimeContext(live))
+		return fmt.Errorf("skill: UseBattleMedicine: open item list on %s: %w",
+			battleRuntimeContext(runtimeDecoder.DecodeBattleRuntime(m)), err)
 	}
 	if err := selectScrollingListEntryWithDecoder(m, listDecoder, idx); err != nil {
 		return fmt.Errorf("skill: UseBattleMedicine: select bag entry %d: %w", idx, err)

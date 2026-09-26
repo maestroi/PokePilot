@@ -93,15 +93,10 @@ func switchActiveWithDecoders(
 	}) {
 		return fmt.Errorf("battle main menu did not open within %d frames", bagMainMenuBudget)
 	}
-	if err := selectBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuPokemon); err != nil {
-		return fmt.Errorf("select POKéMON: %w", err)
-	}
-	m.Tap(emu.A, 3, 7)
-
-	if !waitMenuUntil(m, moveMenuBudget, func() bool {
+	if err := activateBattleMainMenuEntryWithDecoder(m, battleMenu, game.BattleMenuPokemon, moveMenuBudget, func() bool {
 		return party.DecodePartyMenu(m).Visible
-	}) {
-		return fmt.Errorf("voluntary party menu did not appear")
+	}); err != nil {
+		return fmt.Errorf("voluntary party menu did not appear: %w", err)
 	}
 	partyMenu := party.DecodePartyMenu(m)
 	if partyMenu.Kind != game.PartyMenuVoluntaryBattle {
