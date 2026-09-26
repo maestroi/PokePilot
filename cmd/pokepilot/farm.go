@@ -856,7 +856,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	// always picks Squirtle otherwise). A resumed state is already past that
 	// setup, so replaying the starter objective would corrupt the continuation.
 	if starter != "" && resumeFrom == "" {
-		starterObj, objErr := starterObjectiveForRequest(starter, seed)
+		starterObj, objErr := scriptedStarterObjective(m, starter, seed)
 		if objErr != nil {
 			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false
 		}
