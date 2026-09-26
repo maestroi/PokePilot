@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -80,4 +81,22 @@ func TestRealBlueImageIsDetected(t *testing.T) {
 	if info.SHA1 != ROMSHA1 {
 		t.Fatalf("Blue image sha1=%s, want %s", info.SHA1, ROMSHA1)
 	}
+}
+
+// TestBlueDelegatesEveryEngineCapability guards the hand-written delegation:
+// the runtime discovers optional capabilities by type assertion, so a method
+// Red gains and Blue does not forward silently disables it for Blue runs
+// (#1997: DecodeOverworldBlackout, every Traverse failed on the first step).
+func TestBlueDelegatesEveryEngineCapability(t *testing.T) {
+	red, blue := reflect.TypeOf(redprofile.New()), reflect.TypeOf(New())
+	for i := 0; i < red.NumMethod(); i++ {
+		if name := red.Method(i).Name; !hasMethod(blue, name) {
+			t.Errorf("Blue profile does not delegate %s to the shared Gen I engine", name)
+		}
+	}
+}
+
+func hasMethod(typ reflect.Type, name string) bool {
+	_, ok := typ.MethodByName(name)
+	return ok
 }
