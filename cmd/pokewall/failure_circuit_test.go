@@ -553,7 +553,7 @@ func TestFixedCircuitReleasesOneCanaryAfterRunnerRollout(t *testing.T) {
 	for _, id := range []string{"run-a", "run-b"} {
 		w.tiles[id] = &Tile{
 			RunID: id, Status: statusPaused, Finished: true, EndedAt: time.Now(),
-			CircuitKey:      "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
+			CircuitKey: "deadbeef", CircuitKind: "fingerprint", CircuitRevision: "build-broken",
 			CircuitBadges: 5, Attempts: 2,
 		}
 		w.order = append(w.order, id)
@@ -688,7 +688,7 @@ func TestResilientCircuitDefersSameRunnerRevisionUntilRollout(t *testing.T) {
 	w.tiles["blocked"] = &Tile{
 		RunID: "blocked", Status: statusQueued, Planner: "llm",
 		RecoveryProfile: farm.RecoveryProfileResilient,
-		CircuitKey: "deadbeef", CircuitKind: "fingerprint",
+		CircuitKey:      "deadbeef", CircuitKind: "fingerprint",
 		CircuitRevision: "build-broken",
 	}
 	w.queue = []string{"blocked"}
