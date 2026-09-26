@@ -43,7 +43,7 @@ func (p *redWorldProvider) ParseMap(mapID worldmodel.MapID) (worldmodel.MapHeade
 		return worldmodel.MapHeader{}, err
 	}
 	out := projectWorldHeader(h)
-	actors, err := SpecialInteractionActors(p.rom, mapID)
+	actors, err := SpecialInteractionActors(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
@@ -166,7 +166,7 @@ func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationM
 	if !ok {
 		return worldmodel.ElevatorFloor{}, false
 	}
-	return worldmodel.ElevatorFloor{MapID: floor.MapID, DestWarpID: floor.DestWarpID}, true
+	return worldmodel.ElevatorFloor{MapID: worldmodel.MapID(floor.MapID), DestWarpID: floor.DestWarpID}, true
 }
 
 // WorldGridSpec lets existing Red callers keep passing rom.MapHeader while
