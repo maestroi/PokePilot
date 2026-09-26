@@ -65,14 +65,16 @@ func (s *replayServer) renderSemanticReplay(ctx context.Context, runID string, r
 		return fmt.Errorf("semantic replay segments do not match recordings")
 	}
 
-	semanticROM, err := os.ReadFile(s.romPath)
+	semanticROM, err := os.ReadFile(segments[0].ReplayROMPath)
 	if err != nil {
 		return fmt.Errorf("read semantic replay ROM: %w", err)
 	}
 	producer, err := redrenderstate.New(semanticROM)
 	if err != nil {
 		// The modern semantic renderer currently has a rich Red adapter. Other
-		// games keep their existing framebuffer replay until they gain one.
+		// games keep their existing framebuffer replay until they gain one. The
+		// important invariant is that we never decode a non-Red recording against
+		// the replay service's fallback Red cartridge.
 		return err
 	}
 
