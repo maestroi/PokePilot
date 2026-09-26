@@ -39,11 +39,19 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		}}
 	}
 
-	out := make([]Objective, 0, 2)
-	for _, o := range redProgressionObjectives(obs) {
-		if o.Kind == KindProgress && yellowSharedStoryBeat(o.Progress) {
-			out = append(out, o)
-		}
+	if !obs.Story.Has(gen1.ProgressPokedexAcquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressPokedexAcquired,
+			Note:     "(deliver Oak's parcel and acquire the Pokedex)",
+		}}
 	}
-	return out
+	if !obs.Story.Has(gen1.ProgressBoulderBadge) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressBoulderBadge,
+			Note:     "(travel through Viridian Forest to Pewter, challenge Brock, and verify the Boulder Badge)",
+		}}
+	}
+	return nil
 }
