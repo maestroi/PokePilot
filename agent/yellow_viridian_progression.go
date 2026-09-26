@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/skill"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
@@ -31,12 +32,8 @@ func completeYellowViridianCatchTraining(m *emu.Emu, romData []byte) error {
 		return fmt.Errorf("yellow Viridian catch training: nil emulator")
 	}
 
-	observe := func() (Observation, error) {
-		raw, err := yellowprofile.New().DecodeObservation(m, romData)
-		if err != nil {
-			return Observation{}, err
-		}
-		return observationFromProfile(raw, romData)
+	observe := func() (game.ProfileObservation, error) {
+		return yellowprofile.New().DecodeObservation(m, romData)
 	}
 
 	obs, err := observe()
