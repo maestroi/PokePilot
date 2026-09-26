@@ -16,6 +16,9 @@
 # individual cartridges back as /rom/pokemon_red.gb, /rom/pokemon_blue.gb, ...
 # Which game a file is comes from its bytes (profiles.Detect), not its name, so
 # dropping a third cartridge into that directory needs no code or deploy change.
+# Swarm nodes share no disk, so a runner that lacks a leased game downloads it
+# from the S3 bucket at roms/<game-id> (e.g. roms/pokemon-blue), checks its
+# bytes, and caches it: `aws s3 cp pokemon_blue.gb s3://$POKEPILOT_S3_BUCKET/roms/pokemon-blue`.
 #
 # pokeui is in the stack twice: `ui` is the private operator console, while
 # `spectator` is a separate process with a server-side read-only route table.
