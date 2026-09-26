@@ -65,6 +65,26 @@ func TestDecodeShopRecognizesLiveActionMenuCursor(t *testing.T) {
 	}
 }
 
+func TestDecodeShopItemListKeepsDecodedStock(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.CurMapWidth] = 10
+	mem[sym.CurMapHeight] = 8
+	mem[sym.MenuWatchedKeys] = shopWatchListOrQty
+	mem[sym.ItemList] = 2
+	mem[sym.ItemList+1] = 0x0b
+	mem[sym.ItemList+2] = 0x0c
+	mem[sym.ItemList+3] = 0xff
+	drawTestShopMenuCursor(&mem, 42)
+
+	got := New().DecodeShop(&mem)
+	if got.Phase != game.ShopPhaseItemList {
+		t.Fatalf("DecodeShop phase = %d, want item list", got.Phase)
+	}
+	if len(got.Items) != 2 || got.Items[0] != 0x0b || got.Items[1] != 0x0c {
+		t.Fatalf("DecodeShop items = %#v, want [0x0b 0x0c]", got.Items)
+	}
+}
+
 func TestDecodeShopClosedWhenNoShopSurfaceOwnsInput(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.CurMapWidth] = 10
