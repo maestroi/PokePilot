@@ -80,8 +80,8 @@ func (g *Graph) MapTraversal(mapID MapID) (mode TraversalMode, overlaid bool) {
 
 type liveConnectionKey struct {
 	from, to MapID
-	dir           uint8
-	offset        int8
+	dir      uint8
+	offset   int8
 }
 
 // resegmentConnectionsTouching rebuilds every logical connection whose source
