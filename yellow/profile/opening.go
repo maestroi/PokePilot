@@ -1,6 +1,9 @@
 package profile
 
-import "github.com/maestroi/pokepilot/game"
+import (
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/yellow/sym"
+)
 
 const (
 	PalletTownMap uint8 = 0x00
