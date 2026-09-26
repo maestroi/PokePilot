@@ -122,6 +122,46 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	}
 }
 
+func TestYellowExperimentUsesScriptedPikachu(t *testing.T) {
+	registry := writeModelRegistry(t, []farm.ModelDeployment{
+		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true},
+		{ID: "model-b", ModelID: "b", Compute: "gpu-b", Endpoint: "http://b/v1", APIModel: "b", Enabled: true},
+	})
+	t.Setenv("POKEPILOT_MODEL_REGISTRY", registry)
+	w := NewWall("")
+	h := modelExperimentHTTPHandler(w, w.Handler())
+
+	create := requestJSON(t, h, http.MethodPost, "/v1/experiments", farm.ExperimentRequest{
+		Game: "pokemon-yellow", Seeds: []int64{7},
+		ArmA: farm.ExperimentArm{Deployment: "model-a"},
+		ArmB: farm.ExperimentArm{Deployment: "model-b"},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create Yellow experiment = %d %s", create.Code, create.Body.String())
+	}
+
+	lease := requestJSON(t, h, http.MethodPost, "/v1/lease", map[string]any{})
+	if lease.Code != http.StatusOK {
+		t.Fatalf("lease Yellow experiment = %d %s", lease.Code, lease.Body.String())
+	}
+	var got farm.Spec
+	if err := json.Unmarshal(lease.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Game != "pokemon-yellow" || got.Starter != "pikachu" {
+		t.Fatalf("Yellow experiment lease = game %q starter %q, want pokemon-yellow/pikachu", got.Game, got.Starter)
+	}
+
+	bad := requestJSON(t, h, http.MethodPost, "/v1/experiments", farm.ExperimentRequest{
+		Game: "pokemon-yellow", Starter: "squirtle", Seeds: []int64{8},
+		ArmA: farm.ExperimentArm{Deployment: "model-a"},
+		ArmB: farm.ExperimentArm{Deployment: "model-b"},
+	})
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("Yellow experiment with Squirtle = %d, want 400", bad.Code)
+	}
+}
+
 func TestCloneRunPreservesModelDeploymentMetadata(t *testing.T) {
 	registry := writeModelRegistry(t, []farm.ModelDeployment{
 		{ID: "model-a", ModelID: "a", Compute: "gpu-a", Endpoint: "http://a/v1", APIModel: "a", Enabled: true, MaxParallelWorkers: 3},
