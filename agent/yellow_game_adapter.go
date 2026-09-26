@@ -91,6 +91,9 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			}
 			return result, nil
 		}
+		if yellowSharedStoryBeat(o.Progress) {
+			return a.gen1.ExecuteOwned(o)
+		}
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	default:
