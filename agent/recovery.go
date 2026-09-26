@@ -24,6 +24,7 @@ const (
 	recoveryStateScopeRoutePrerequisite
 	recoveryStateScopeCombatLoss
 	recoveryStateScopeFieldRoster
+	recoveryStateScopeHuntExhausted
 )
 
 type failureQuarantineEntry struct {
@@ -203,6 +204,51 @@ func fieldRosterStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+// huntExhaustedStateKey scopes a completed-but-unlucky encounter hunt to the
+// catch resources that can change its outcome: balls, money for more balls or
+// another paid session, and capabilities such as rods or Surf. The habitat is
+// part of huntQuarantineKey. Position and party drift are the hunt's own side
+// effects, so hashing them reopened the same exhausted hunt every time
+// (run-1v98zy914jk23p).
+func huntExhaustedStateKey(obs Observation) string {
+	full := FailureStateFor(obs)
+	data, _ := json.Marshal(struct {
+		Money        uint32                 `json:"money,omitempty"`
+		Inventory    []FailureInventoryItem `json:"inventory,omitempty"`
+		Badges       []string               `json:"badges,omitempty"`
+		Capabilities []FailureCapability    `json:"capabilities,omitempty"`
+		Progress     []FailureProgressFact  `json:"progress,omitempty"`
+	}{
+		Money:        full.Money,
+		Inventory:    full.Inventory,
+		Badges:       full.Badges,
+		Capabilities: full.Capabilities,
+		Progress:     full.Progress,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+// huntQuarantineKey names an encounter hunt by what decides its odds: species,
+// method (intent/rod) and habitat. The planner reaches the same hunt as a plain
+// local offer ("catch X here") or as a placed dex offer, so keying on the exact
+// objective let the other spelling repeat an exhausted hunt. A hunt without a
+// Place runs on the current map.
+func huntQuarantineKey(o Objective, obs Observation) (string, bool) {
+	if o.Kind != KindCatch {
+		return "", false
+	}
+	habitat := o.Place
+	if habitat == "" {
+		habitat = obs.Location
+	}
+	if habitat == "" {
+		return "", false
+	}
+	hunt := Objective{Kind: KindCatch, Species: o.Species, Place: habitat, Item: o.Item, Intent: o.Intent}
+	return "hunt:" + objectiveStorageKey(hunt), true
+}
+
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "route_prerequisite_missing") {
 		// Capability-only quarantine is safe for direct travel objectives: moving
@@ -227,6 +273,9 @@ func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 	if failureCauseIs(result, "field_roster_no_recovery") {
 		return recoveryStateScopeFieldRoster
 	}
+	if failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted") {
+		return recoveryStateScopeHuntExhausted
+	}
 	return recoveryStateScopeObjective
 }
 
@@ -238,6 +287,8 @@ func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateS
 		return combatLossStateKey(obs)
 	case recoveryStateScopeFieldRoster:
 		return fieldRosterStateKey(obs)
+	case recoveryStateScopeHuntExhausted:
+		return huntExhaustedStateKey(obs)
 	default:
 		return recoveryStateKey(o, obs)
 	}
@@ -342,7 +393,13 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 			}
 		}
 	}
-	f.quarantine[fingerprint.ObjectiveKey] = failureQuarantineEntry{
+	quarantineKey := fingerprint.ObjectiveKey
+	if scope == recoveryStateScopeHuntExhausted {
+		if key, ok := huntQuarantineKey(result.Objective, result.Final); ok {
+			quarantineKey = key
+		}
+	}
+	f.quarantine[quarantineKey] = failureQuarantineEntry{
 		Fingerprint: fingerprint.Key,
 		StateKey:    fingerprint.StateKey,
 		StateScope:  scope,
@@ -377,22 +434,32 @@ func (f *runFailurePolicy) filter(obs Observation, offered []Objective) []Object
 	}
 	out := make([]Objective, 0, len(offered))
 	for _, o := range offered {
-		key := objectiveStorageKey(o)
-		entry, ok := f.quarantine[key]
-		if !ok {
-			out = append(out, o)
+		if f.quarantined(obs, o, objectiveStorageKey(o)) {
 			continue
 		}
-		if entry.StateKey != recoveryStateKeyForScope(o, obs, entry.StateScope) {
-			delete(f.quarantine, key)
-			out = append(out, o)
+		if key, ok := huntQuarantineKey(o, obs); ok && f.quarantined(obs, o, key) {
 			continue
 		}
+		out = append(out, o)
 	}
 	if len(out) == 0 {
 		return offered
 	}
 	return out
+}
+
+// quarantined reports whether the entry under key still matches the scoped
+// state; a material scoped change expires it.
+func (f *runFailurePolicy) quarantined(obs Observation, o Objective, key string) bool {
+	entry, ok := f.quarantine[key]
+	if !ok {
+		return false
+	}
+	if entry.StateKey != recoveryStateKeyForScope(o, obs, entry.StateScope) {
+		delete(f.quarantine, key)
+		return false
+	}
+	return true
 }
 
 func (f *runFailurePolicy) clear(o Objective) {
