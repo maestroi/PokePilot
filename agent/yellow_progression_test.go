@@ -3,6 +3,7 @@ package agent
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/gen1"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
@@ -29,7 +30,7 @@ func TestYellowProgressionResumesOpeningAfterStarterReceipt(t *testing.T) {
 	}
 }
 
-func TestYellowProgressionStopsAfterLabRivalBoundary(t *testing.T) {
+func TestYellowProgressionContinuesToPokedexAfterLabRival(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
@@ -39,14 +40,21 @@ func TestYellowProgressionStopsAfterLabRivalBoundary(t *testing.T) {
 			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
 		},
 	}
-	if got := a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed opening progression=%v, want no later story objective in this slice", got)
+	got := a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressPokedexAcquired {
+		t.Fatalf("completed opening progression=%v, want Pokedex acquisition", got)
 	}
 }
 
 func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
-	if !yellowProgressionKnown(yellowprofile.ProgressYellowLabRivalResolved) {
-		t.Fatal("lab rival progression must be executable")
+	for _, id := range []ProgressID{
+		yellowprofile.ProgressYellowLabRivalResolved,
+		gen1.ProgressPokedexAcquired,
+		gen1.ProgressBoulderBadge,
+	} {
+		if !yellowProgressionKnown(id) {
+			t.Fatalf("%q progression must be executable", id)
+		}
 	}
 	if yellowProgressionKnown("yellow_future_story_gate") {
 		t.Fatal("unimplemented Yellow progression must fail closed")
