@@ -1704,7 +1704,10 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	_, cancelled := w.cancel[t.RunID]
 	delete(w.cancel, t.RunID)
 
-	recoverable := reason == "error" || reason == "lost"
+	// A graceful runner drain is infrastructure lifecycle, not gameplay
+	// recovery. Requeue it like worker loss, but do not spend either the loss
+	// budget or resilient rollback depth (#1933).
+	recoverable := reason == "error" || reason == "lost" || reason == "drained"
 	if resilient && resilientGoalRecoveryReason(reason) {
 		recoverable = true
 	}
@@ -1729,6 +1732,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		appendRunActivityLocked(t, runActivityEvent{
 			Source: "system", Kind: "cancelled", At: now.Unix(), Frame: t.Frame, Attempt: completed,
 			Summary: "Run cancelled",
+			Detail:  detail,
+		})
+	} else if reason == "drained" {
+		appendRunActivityLocked(t, runActivityEvent{
+			Source: "system", Kind: "drained", At: now.Unix(), Frame: t.Frame, Attempt: completed,
+			Summary: "Runner drained for deployment",
 			Detail:  detail,
 		})
 	} else {
@@ -1773,7 +1782,12 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 		Detail:          fmt.Sprintf("%s: %s", reason, detail),
 	})
 	t.Status = statusQueued
-	t.Seed = rand.Int64()
+	// A deploy drain is expected to continue bit-for-bit from the flushed
+	// checkpoint. Keep the campaign seed too, so a rare fresh-start fallback
+	// does not turn infrastructure churn into different gameplay.
+	if reason != "drained" {
+		t.Seed = rand.Int64()
+	}
 	t.Frame = 0
 	t.Map = 0
 	t.X = 0
@@ -1792,7 +1806,11 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Stats = nil
 	t.Player = nil
 	t.Reason = ""
-	t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	if reason == "drained" {
+		t.Detail = fmt.Sprintf("attempt %d drained: %s", completed, detail)
+	} else {
+		t.Detail = fmt.Sprintf("attempt %d failed: %s", completed, detail)
+	}
 	t.workerAddrs = nil
 	t.Finished = false
 	w.queue = append(w.queue, t.RunID)
