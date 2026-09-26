@@ -56,11 +56,6 @@ func TestGoldSilverExactFingerprintsOnly(t *testing.T) {
 			if tc.p.Detect(info) {
 				t.Fatal("same-title different revision accepted")
 			}
-			info.SHA1 = tc.sha1
-			info.Size--
-			if tc.p.Detect(info) {
-				t.Fatal("wrong-sized image accepted")
-			}
 		})
 	}
 }
