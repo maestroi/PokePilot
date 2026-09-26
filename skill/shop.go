@@ -392,7 +392,13 @@ func exitShopWithRuntime(m shopMachine, runtime shopRuntime) error {
 
 func leaveFromItemListWithRuntime(m shopMachine, runtime shopRuntime) error {
 	m.Tap(emu.B, 3, 7)
-	if err := shopWait(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
+	// Gen I does not return directly from the item list to BUY/SELL/QUIT.
+	// The Mart script first prints "Anything else?" and waits for A, then
+	// redraws the action menu. shopWait only observes frames, so it can never
+	// cross that real greeting boundary and deterministically times out after
+	// every successful purchase (#1958). Use the same greeting-aware advance
+	// primitive as the rest of the transaction.
+	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
 		return err
 	}
 	m.Tap(emu.B, 3, 7)

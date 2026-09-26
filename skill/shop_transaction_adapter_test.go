@@ -18,6 +18,7 @@ const (
 	fakeShopQuantity
 	fakeShopConfirm
 	fakeShopText
+	fakeShopAnythingElse
 )
 
 type fakeGen2ShopMachine struct {
@@ -93,10 +94,15 @@ func (m *fakeGen2ShopMachine) Tap(btn emu.Button, _, _ int) {
 			m.phase = fakeShopText
 		case fakeShopText:
 			m.phase = fakeShopList
+		case fakeShopAnythingElse:
+			m.phase = fakeShopRoot
+			m.menuCursor = 0
 		}
 	case emu.B:
 		switch m.phase {
-		case fakeShopList, fakeShopQuantity, fakeShopConfirm:
+		case fakeShopList:
+			m.phase = fakeShopAnythingElse
+		case fakeShopQuantity, fakeShopConfirm:
 			m.phase = fakeShopRoot
 		case fakeShopRoot:
 			m.phase = fakeShopOverworld
@@ -128,7 +134,7 @@ func (fakeGen2ShopRuntime) DecodeShop(r game.MemoryReader) game.ShopState {
 		state.Phase = game.ShopPhaseQuantity
 	case fakeShopConfirm:
 		state.Phase = game.ShopPhaseConfirmation
-	case fakeShopText:
+	case fakeShopText, fakeShopAnythingElse:
 		state.Phase = game.ShopPhaseGreeting
 	}
 	return state
@@ -194,6 +200,23 @@ func TestShopTransactionsUseFakeGen2SemanticState(t *testing.T) {
 	}
 	if m.itemQty != 1 || m.money != 900 || m.phase != fakeShopOverworld {
 		t.Fatalf("after sell: qty=%d money=%d phase=%d, want 1/900/overworld", m.itemQty, m.money, m.phase)
+	}
+}
+
+func TestShopExitPagesAnythingElseBeforeRootMenu(t *testing.T) {
+	m := &fakeGen2ShopMachine{money: 1000}
+	runtime := fakeGen2ShopRuntime{}
+
+	// Real Gen-I Mart flow is:
+	// successful purchase -> item list -> B -> "Anything else?" -> A ->
+	// BUY/SELL/QUIT -> B -> overworld. The old cleanup waited passively for
+	// the root menu after B, so it could never cross the greeting and ended in
+	// shop_menu_timeout even though the purchase itself succeeded (#1958).
+	if err := buyNative(m, runtime, fakeGen2ShopItem, 1); err != nil {
+		t.Fatalf("buy through Anything else cleanup: %v", err)
+	}
+	if m.itemQty != 1 || m.money != 950 || m.phase != fakeShopOverworld {
+		t.Fatalf("after buy cleanup: qty=%d money=%d phase=%d, want 1/950/overworld", m.itemQty, m.money, m.phase)
 	}
 }
 
