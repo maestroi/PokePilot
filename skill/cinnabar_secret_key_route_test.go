@@ -138,7 +138,6 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	}
 }
 
-
 func TestSecretKeyRoute19ResumeStagesNorthBeforePallet(t *testing.T) {
 	romData := badgeFourROM(t)
 
