@@ -185,6 +185,20 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	}
 }
 
+func TestYellowEarlySharedProgressProjectsBoulderAndViridianTutorial(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.ObtainedBadges] = 1 << badgeBoulder
+	setYellowEvent(&mem, eventCompletedCatchTraining)
+
+	story := projectYellowStory(&mem, 0x01)
+	if !story.Has(gen1.ProgressBoulderBadge) {
+		t.Fatal("Boulder Badge was not projected into shared Gen-I progress")
+	}
+	if !story.Has(ProgressYellowViridianCatchTraining) {
+		t.Fatal("mandatory Viridian catch tutorial completion was not projected")
+	}
+}
+
 func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.Elite4Flags] = elite4CompletedMask
@@ -255,6 +269,7 @@ func TestYellowEventIndicesMatchDecomp(t *testing.T) {
 		"EVENT_GOT_POKEDEX":                        eventGotPokedex,
 		"EVENT_OAK_APPEARED_IN_PALLET":             eventOakAppearedInPallet,
 		"EVENT_VIRIDIAN_GYM_OPEN":                  eventViridianGymOpen,
+		"EVENT_COMPLETED_CATCH_TRAINING":            eventCompletedCatchTraining,
 		"EVENT_GOT_BULBASAUR_IN_CERULEAN":          eventGotBulbasaurInCerulean,
 		"EVENT_BEAT_POKEMONTOWER_7_JESSIE_JAMES":   eventBeatTowerJessieJames,
 		"EVENT_GOT_SQUIRTLE_FROM_OFFICER_JENNY":    eventGotSquirtleFromJenny,
