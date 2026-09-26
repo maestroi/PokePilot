@@ -184,14 +184,27 @@ func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name strin
 	if done(currentLeagueFacts(m)) {
 		return nil
 	}
-	if err := ChallengeTrainer(m, romData, homeX, homeY, policy); err != nil {
-		return fmt.Errorf("skill: EliteFourProgression: %s: %w", name, err)
+
+	// ChallengeTrainer owns ordinary trainers through their fought flag and a
+	// controllable overworld boundary. Elite Four rooms add one more mandatory
+	// owner: after victory the room script displays the member's post-battle
+	// dialogue before returning control. That script can outlive the generic
+	// trainer settle even though the room-completion fact is already committed
+	// (Lorelei in farm #1953). Once that positive fact exists, the League stage
+	// — not the generic trainer controller — owns the remaining script.
+	trainerErr := ChallengeTrainer(m, romData, homeX, homeY, policy)
+	if trainerErr != nil && !done(currentLeagueFacts(m)) {
+		return fmt.Errorf("skill: EliteFourProgression: %s: %w", name, trainerErr)
 	}
+
 	mem := advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
 		return done(leagueFacts(mm)) && state.Controllable(mm)
 	})
 	facts := leagueFacts(&mem)
 	if !done(facts) {
+		if trainerErr != nil {
+			return fmt.Errorf("skill: EliteFourProgression: %s trainer controller failed before the room-completion fact settled: %w", name, trainerErr)
+		}
 		return fmt.Errorf("skill: EliteFourProgression: %s battle won but its room-completion fact was not committed", name)
 	}
 	if !state.Controllable(&mem) {
