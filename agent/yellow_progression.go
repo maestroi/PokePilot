@@ -11,7 +11,7 @@ import (
 // sequencing and must stay Yellow-owned until ported deliberately.
 func yellowSharedStoryBeat(id ProgressID) bool {
 	switch id {
-	case gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge, gen1.ProgressMtMoonFossilAcquired:
+	case gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge, gen1.ProgressMtMoonFossilAcquired, gen1.ProgressSSTicketAcquired, gen1.ProgressHM01Acquired:
 		return true
 	default:
 		return false
@@ -67,5 +67,19 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			Note:     "(trigger and defeat Yellow's Jessie & James encounter after the fossil so Mt. Moon's east exit is resolved)",
 		}}
 	}
-	return nil
+	if !obs.Story.Has(gen1.ProgressSSTicketAcquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressSSTicketAcquired,
+			Note:     "(help Bill at the end of Route 25 and obtain the S.S. Ticket)",
+		}}
+	}
+	if !obs.Story.Has(gen1.ProgressHM01Acquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressHM01Acquired,
+			Note:     "(board the S.S. Anne, resolve its rival sequence, and receive HM01 Cut from the Captain)",
+		}}
+	}
+	return redCascadeBadgeObjectives(obs)
 }
