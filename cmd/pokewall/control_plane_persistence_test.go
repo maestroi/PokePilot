@@ -116,6 +116,7 @@ func TestControlPlanePersistedStateRestoresRetryStateWithoutTelemetry(t *testing
 	w.tiles["retry-run"] = &Tile{
 		RunID:            "retry-run",
 		Status:           statusQueued,
+		Game:             "pokemon-blue",
 		Planner:          "llm",
 		Starter:          "squirtle",
 		Goal:             "earn the Cascade Badge",
@@ -179,6 +180,11 @@ func TestControlPlanePersistedStateRestoresRetryStateWithoutTelemetry(t *testing
 	}
 	if len(tile.Activity) != 2 || tile.Activity[0].Source != "recovery" || tile.Activity[1].Source != "system" {
 		t.Fatalf("restored durable activity = %+v", tile.Activity)
+	}
+	// A lost Game made the next lease run on the worker's default cartridge,
+	// so Blue campaigns silently continued as Red after a wall redeploy.
+	if tile.Game != "pokemon-blue" {
+		t.Fatalf("restored game = %q, want pokemon-blue", tile.Game)
 	}
 	if tile.Seed != 1234 || tile.LLMDeployment != "gpu-9b" || tile.ResumeFromRunID != "parent-run" || tile.Detail == "" {
 		t.Fatalf("restored scheduler fields incomplete: %+v", tile)
