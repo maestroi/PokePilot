@@ -91,6 +91,12 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			}
 			return result, nil
 		}
+		if _, ok := gen1EarlyProgressionExecutor(o.Progress); ok {
+			if err := executeYellowEarlyProgression(a.m, a.romData, o); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		}
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, errYellowControllerUnavailable)
 	default:
