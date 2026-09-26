@@ -98,3 +98,40 @@ func TestDecodeShopClosedWhenNoShopSurfaceOwnsInput(t *testing.T) {
 		t.Fatalf("DecodeShop phase = %d, want closed overworld", got.Phase)
 	}
 }
+
+func TestDecodeShopItemListIgnoresStalePurchaseQuantity(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.CurMapWidth] = 10
+	mem[sym.CurMapHeight] = 8
+	mem[sym.MenuWatchedKeys] = shopWatchListOrQty
+	mem[sym.ListMenuID] = shopPricedListMenuID
+	mem[sym.ItemQuantity] = 2 // left behind by the previous purchase
+	mem[sym.MaxItemQuantity] = 99
+	drawTestShopMenuCursor(&mem, 42)
+
+	if got := New().DecodeShop(&mem); got.Phase != game.ShopPhaseItemList {
+		t.Fatalf("DecodeShop phase = %d, want item list; quantity registers outlive the quantity box (#1958)", got.Phase)
+	}
+
+	mem[sym.TileMap+10*shopScreenWidth+8] = shopQuantityGlyph
+	if got := New().DecodeShop(&mem); got.Phase != game.ShopPhaseQuantity {
+		t.Fatalf("DecodeShop phase = %d, want quantity once the box's × is drawn", got.Phase)
+	}
+}
+
+func TestDecodeShopPricePromptMoreTextIsPageable(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.CurMapWidth] = 10
+	mem[sym.CurMapHeight] = 8
+	mem[sym.MenuWatchedKeys] = shopWatchListOrQty
+	mem[sym.ListMenuID] = shopPricedListMenuID
+	mem[sym.ItemQuantity] = 2
+	mem[sym.MaxItemQuantity] = 99
+	drawTestShopMenuCursor(&mem, 42)
+	mem[sym.TileMap+10*shopScreenWidth+8] = shopQuantityGlyph
+	mem[sym.TileMap+16*shopScreenWidth+18] = shopMoreTextGlyph
+
+	if got := New().DecodeShop(&mem); got.Phase != game.ShopPhaseGreeting {
+		t.Fatalf("DecodeShop phase = %d, want pageable text while ▼ awaits a button", got.Phase)
+	}
+}
