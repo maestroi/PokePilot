@@ -125,6 +125,22 @@ cannot see a manager's local PokePilot image store: CI on `main` publishes
 timer on the manager (`deploy/pull-latest.sh`) that pins services to the new
 digest. Keep Traefik hosts, node bind-mounts, and tokens out of git.
 
+## ROMs on a multi-node Swarm
+
+Worker nodes share no disk. A runner with no local cartridge for a leased game
+downloads it from the S3 bucket at `roms/<game-id>` (e.g. `roms/pokemon-blue`),
+checks the bytes, and caches it. **After adding or changing a ROM in `roms/`,
+run:**
+
+```sh
+make roms-upload             # uploads every supported cartridge in roms/
+make roms-upload ARGS=-n     # dry run
+```
+
+Keys come from each file's bytes, not its name, so file names don't matter.
+Files this build has no game profile for (e.g. Crystal today) are skipped; rerun
+once support lands.
+
 ## GitHub issue handoff
 
 Qualifying farm failures are now filed directly in GitHub Issues through the

@@ -27,17 +27,14 @@ type romLibrary struct {
 	bootStates map[game.GameID][]byte
 
 	// remote serves cartridges this worker was not given on disk, under
-	// romObjectPrefix+<game id>; nil when S3 is not configured. Worker nodes
+	// artifactstore.ROMObjectKey; nil when S3 is not configured. Worker nodes
 	// share no filesystem, so this is how a new game reaches every node.
 	remote   *artifactstore.S3
 	cacheDir string
 }
 
-const (
-	romObjectPrefix = "roms/"
-	// maxROMBytes bounds a download; the largest Game Boy cartridge is 8 MiB.
-	maxROMBytes = 16 << 20
-)
+// maxROMBytes bounds a download; the largest Game Boy cartridge is 8 MiB.
+const maxROMBytes = 16 << 20
 
 // buildROMLibrary enumerates the mounted ROM directory (POKEPILOT_ROM_DIR),
 // plus the one cartridge this process already opened when it is set. bootState
@@ -109,7 +106,7 @@ func (l *romLibrary) fetch(id game.GameID) (string, error) {
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	}
-	key := romObjectPrefix + string(id)
+	key := artifactstore.ROMObjectKey(string(id))
 	obj, err := l.remote.GetObject(context.Background(), key, "")
 	if err != nil {
 		return "", fmt.Errorf("fetch %s from ROM store: %w", key, err)
