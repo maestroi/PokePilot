@@ -366,16 +366,38 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != safariZoneGateMap {
 		return fmt.Errorf("expected Safari gate, on %#04x", m.Peek8(sym.CurMap))
 	}
-	// (3,2) is the script trigger immediately above our stable (3,3) gate
-	// target. The gate's YES/NO prompt defaults to YES; driveStoryUntil
-	// advances that script until EVENT_IN_SAFARI_ZONE and the center warp.
-	m.Tap(emu.Up, 3, 7)
+	// The gate's YES/NO prompt defaults to YES; driveStoryUntil advances
+	// that script until EVENT_IN_SAFARI_ZONE and the center warp.
+	if err := stepOntoSafariJoinTrigger(m); err != nil {
+		return err
+	}
 	if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
 	}); err != nil {
 		return err
 	}
 	return nil
+}
+
+// stepOntoSafariJoinTrigger moves from the stable (3,3) gate target onto the
+// join trigger directly above it. Arriving from the side, or being parked there
+// facing down after a declined re-join, means the first Up only turns the
+// player; one tap then left entry pressing A at nothing for the whole story
+// budget (run-s6v9q3t2w5rl). Tap and settle until the step or the gate script
+// has taken the player off the approach tile.
+func stepOntoSafariJoinTrigger(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	x, y := mem.U8(sym.XCoord), mem.U8(sym.YCoord)
+	for tap := 0; tap < safariExitTaps; tap++ {
+		m.Tap(emu.Up, 3, 7)
+		m.StepFrames(safariExitSettleFrames)
+		state.Snapshot(m, &mem)
+		if !state.Controllable(&mem) || mem.U8(sym.XCoord) != x || mem.U8(sym.YCoord) != y {
+			return nil
+		}
+	}
+	return fmt.Errorf("could not step onto the Safari join trigger from (%d,%d)", x, y)
 }
 
 const (
