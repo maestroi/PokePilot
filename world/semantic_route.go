@@ -117,12 +117,23 @@ func (e *RouteBlockedError) MissingCapabilities() []gameruntime.CapabilityID {
 // of FindRoutePlanAtDestinationWithCapabilities.
 func FindRouteAtDestinationWithCapabilities(
 	g *Graph,
+	from, to uint8,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+) ([]Edge, error) {
+	return FindRouteAtDestinationWithCapabilitiesMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere, prereqs)
+}
+
+// FindRouteAtDestinationWithCapabilitiesMaps is the wide-map-id variant.
+func FindRouteAtDestinationWithCapabilitiesMaps(
+	g *Graph,
 	from, to MapID,
 	x, y, tx, ty int,
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 ) ([]Edge, error) {
-	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, from, to, x, y, tx, ty, blockedHere, prereqs)
+	plan, err := FindRoutePlanAtDestinationWithCapabilitiesMaps(g, from, to, x, y, tx, ty, blockedHere, prereqs)
 	if err != nil {
 		return nil, err
 	}
@@ -156,13 +167,24 @@ func FindRouteAtDestinationWithCapabilities(
 // demand an action that was not needed.
 func FindRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
+	from, to uint8,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+) ([]RouteStep, error) {
+	return FindRoutePlanAtDestinationWithCapabilitiesMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere, prereqs)
+}
+
+// FindRoutePlanAtDestinationWithCapabilitiesMaps is the wide-map-id variant.
+func FindRoutePlanAtDestinationWithCapabilitiesMaps(
+	g *Graph,
 	from, to MapID,
 	x, y, tx, ty int,
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 ) ([]RouteStep, error) {
 	if g == nil || len(prereqs.Transitions) == 0 {
-		route, err := FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+		route, err := FindRouteAtDestinationMaps(g, from, to, x, y, tx, ty, blockedHere)
 		return routeSteps(route, nil), err
 	}
 
