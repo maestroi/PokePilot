@@ -53,14 +53,11 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 	switch {
 	case menuUp && watched == shopWatchActionMenu && mem.U8(sym.MaxMenuItem) == shopActionMenuMax:
 		out.Phase = game.ShopPhaseActionMenu
-		return out
 	case menuUp && watched == shopWatchListOrQty && out.MaxQuantity > 0 && out.Quantity >= 1 && out.Quantity <= out.MaxQuantity &&
 		(out.MaxQuantity == 99 || strings.Contains(out.Text, "×")):
 		out.Phase = game.ShopPhaseQuantity
-		return out
 	case menuUp && watched == shopWatchListOrQty:
 		out.Phase = game.ShopPhaseItemList
-		return out
 	case out.Controllable:
 		out.Phase = game.ShopPhaseClosed
 	default:
