@@ -55,7 +55,7 @@ type Connection struct {
 // These accessors satisfy world's portable connection view without making the
 // shared Gen-I decoder depend on the world package.
 func (c Connection) WorldDirection() uint8 { return c.Dir }
-func (c Connection) WorldMapID() uint16     { return c.MapID }
+func (c Connection) WorldMapID() uint16    { return c.MapID }
 func (c Connection) WorldOffset() int8     { return c.Offset }
 
 // MapHeader is the common Gen-I map-header/object-data byte format.
