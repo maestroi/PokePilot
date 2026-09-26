@@ -50,6 +50,15 @@ func victoryRoadClearBoundary(mem *state.Mem, facts state.StoryFacts) bool {
 	}
 }
 
+// victoryRoadClearBoundaryReady distinguishes the durable progress fact from a
+// clean objective boundary. The final 2F switch event can be set on the same
+// movement that starts a wild encounter, so an event-positive checkpoint may
+// still be battle-owned. Returning from VictoryRoadClearCave in that window
+// leaks the encounter to the agent finish boundary (#1988).
+func victoryRoadClearBoundaryReady(mem *state.Mem, facts state.StoryFacts) bool {
+	return victoryRoadClearBoundary(mem, facts) && state.Controllable(mem)
+}
+
 // route22RivalCanReturnImmediately distinguishes a fully later story state
 // from the narrower rival event. The rival bit is set before its after-battle
 // text/music/exit script necessarily returns control, so an event-positive
@@ -151,7 +160,7 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if err != nil {
 		return err
 	}
-	if victoryRoadClearBoundary(&mem, facts) {
+	if victoryRoadClearBoundaryReady(&mem, facts) {
 		return nil
 	}
 	if !facts.Route23BadgeChecksComplete {
@@ -180,8 +189,8 @@ func VictoryRoadClearCave(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 	state.Snapshot(m, &mem)
 	facts = state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
-	if !victoryRoadClearBoundary(&mem, facts) {
-		return fmt.Errorf("skill: VictoryRoadClearCave: final cave-clear boundary is still false")
+	if !victoryRoadClearBoundaryReady(&mem, facts) {
+		return fmt.Errorf("skill: VictoryRoadClearCave: final cave-clear boundary is not controllable")
 	}
 	return nil
 }
