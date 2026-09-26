@@ -24,7 +24,7 @@ type GridLayout struct {
 func BuildGridSpec(rom []byte, h MapHeader, blocks []byte, mode worldmodel.TraversalMode, layout GridLayout) (worldmodel.GridSpec, error) {
 	width, height := int(h.WidthBlocks)*2, int(h.HeightBlocks)*2
 	spec := worldmodel.GridSpec{
-		MapID: h.ID, Width: width, Height: height,
+		MapID: h.ID, Width: width, Height: height, Traversal: mode,
 		Walkable:      make([]bool, width*height),
 		CollisionTile: make([]uint8, width*height),
 		FieldTile:     make([]uint8, width*height),

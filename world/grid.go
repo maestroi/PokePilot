@@ -28,6 +28,8 @@ type Grid struct {
 	tilePairs     map[[2]uint8]bool
 	ledges        []worldmodel.Ledge
 	counterTiles  [3]uint8
+	// Traversal is the movement mode the collision view was decoded for.
+	Traversal TraversalMode
 }
 
 // Passable reports whether a step from (fx,fy) to (tx,ty) is one the game
@@ -159,6 +161,7 @@ func gridFromSpec(spec worldmodel.GridSpec) (*Grid, error) {
 		tilePairs:     pairs,
 		ledges:        append([]worldmodel.Ledge(nil), spec.Ledges...),
 		counterTiles:  spec.CounterTiles,
+		Traversal:     spec.Traversal,
 	}, nil
 }
 

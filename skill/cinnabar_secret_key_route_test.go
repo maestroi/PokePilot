@@ -1,8 +1,10 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -76,6 +78,11 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
+	}
+	// NewRoutePlanner models the sea in water mode once Surf is usable; the
+	// land-only graph cannot tell Route 20's two halves apart.
+	if g, err = withSurfSeaTopology(g, romData, mem); err != nil {
+		t.Fatalf("withSurfSeaTopology: %v", err)
 	}
 	prereqs := redRoutePrerequisites(g, romData, mem)
 	if !prereqs.Capabilities.Has(capCanSurf) {
@@ -204,5 +211,64 @@ func TestSecretKeyRoute19ResumeStagesNorthBeforePallet(t *testing.T) {
 		if step.Edge.To == route20Map {
 			t.Fatalf("Route 19 -> Fuchsia restage entered Route 20/Seafoam: %+v", escape)
 		}
+	}
+}
+
+// TestSurfSeaTopologyRoutesFuchsiaToPalletOverland pins
+// run-2xj7ziq8p2p2o3siqjhbtm20e1. With Surf usable, the sea maps' water
+// topology shows that Route 19 -> Route 20 dead-ends at Seafoam, so Fuchsia ->
+// Pallet must take the Cut-gated Diglett's Cave corridor instead of surfing
+// onto east Route 20 and stranding at its unreachable Cinnabar seam.
+func TestSurfSeaTopologyRoutesFuchsiaToPalletOverland(t *testing.T) {
+	romData := badgeFourROM(t)
+
+	mem := fieldTestMem(FieldSurf, true, true, true)
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade |
+		1<<state.BadgeThunder | 1<<state.BadgeRainbow | 1<<state.BadgeSoul |
+		1<<state.BadgeMarsh
+	cut, _ := FieldMoveSpecFor(FieldCut)
+	mem[sym.PartyMon1+sym.MonMoves+1] = cut.MoveID
+	setTestBag(mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{cut.HMItem, 1})
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	if g, err = withSurfSeaTopology(g, romData, mem); err != nil {
+		t.Fatalf("withSurfSeaTopology: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, mem)
+	for _, capability := range []gameruntime.CapabilityID{capCanSurf, capCanCut} {
+		if !prereqs.Capabilities.Has(capability) {
+			t.Fatalf("capabilities missing %q: %v", capability, prereqs.Capabilities)
+		}
+	}
+
+	fuchsia, _ := Place("fuchsia city")
+	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, fuchsia.Map, semanticPalletTownMap, 23, 35, 5, 6, nil, prereqs,
+	)
+	if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
+		t.Fatalf("Fuchsia -> Pallet: %v", err)
+	}
+	if len(route) == 0 {
+		t.Fatal("empty Fuchsia -> Pallet route")
+	}
+	for _, step := range route {
+		if step.Edge.To == route20Map {
+			t.Fatalf("Fuchsia -> Pallet surfed into split Route 20: %+v", route)
+		}
+	}
+	if last := route[len(route)-1]; last.Transition == nil || last.Transition.ID != "red:route2_diglett_cut" {
+		t.Fatalf("Fuchsia -> Pallet did not reach the Diglett's Cave Cut pocket boundary: %+v", route)
+	}
+
+	// Surfing on east Route 20 must not plan its west Cinnabar seam.
+	cinnabar := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+	east, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route20Map, cinnabar.Map, 99, 4, int(cinnabar.X), int(cinnabar.Y), nil, prereqs,
+	)
+	if err == nil && len(east) > 0 && east[0].Edge.To == cinnabarIslandMap {
+		t.Fatalf("east Route 20 planned the unreachable Cinnabar seam: %+v", east)
 	}
 }

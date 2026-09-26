@@ -73,6 +73,9 @@ func reachableStockMarts(romData []byte, mem *state.Mem) (map[standardMartRecove
 	if g, err = withAsleepRoute16Snorlax(g, romData, mem); err != nil {
 		return nil, err
 	}
+	if g, err = withSurfSeaTopology(g, romData, mem); err != nil {
+		return nil, err
+	}
 	prereqs := redRoutePrerequisites(g, romData, mem)
 	from, x, y := mem.U8(sym.CurMap), int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord))
 	out := map[standardMartRecoveryTarget]int{}

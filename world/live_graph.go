@@ -46,6 +46,11 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 	out.comps[mapID] = componentsWithBlocked(grid, warpTileBlockers(g.warps[mapID]))
 	out.reachable[mapID] = componentReachability(grid, out.comps[mapID])
 	out.tiles[mapID] = dim{w: grid.Width, h: grid.Height}
+	out.traversal = make(map[uint8]TraversalMode, len(g.traversal)+1)
+	for id, mode := range g.traversal {
+		out.traversal[id] = mode
+	}
+	out.traversal[mapID] = grid.Traversal
 
 	out.resegmentConnectionsTouching(g, mapID)
 
@@ -61,6 +66,16 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 		}
 	}
 	return &out, nil
+}
+
+// MapTraversal reports the movement mode mapID's walkable components were
+// decoded for. overlaid is false for the graph's static land topology.
+func (g *Graph) MapTraversal(mapID uint8) (mode TraversalMode, overlaid bool) {
+	if g == nil {
+		return TraversalLand, false
+	}
+	mode, overlaid = g.traversal[mapID]
+	return mode, overlaid
 }
 
 type liveConnectionKey struct {
