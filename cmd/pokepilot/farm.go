@@ -530,7 +530,9 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// Start after fresh restore + seed burn, or after durable resume restore,
 	// so the checked recording start state is the state this worker continues.
 	// Recording is diagnostic evidence only: failure to start must not affect gameplay.
-	recorder, err := m.StartSessionRecording(farmRecordingMetadata(spec, planner, starter, dest, spec.Goal.String(), burn, client.Version))
+	recordingMetadata := farmRecordingMetadata(spec, planner, starter, dest, spec.Goal.String(), burn, client.Version)
+	addFarmRecordingProfileIdentity(recordingMetadata, m)
+	recorder, err := m.StartSessionRecording(recordingMetadata)
 	if err != nil {
 		log.Printf("farm: %s: start session recording: %v", spec.RunID, err)
 		recorder = nil
