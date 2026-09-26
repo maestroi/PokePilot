@@ -100,6 +100,10 @@ func nearestUsableMart(romData []byte, mem *state.Mem) (standardMartRecoveryTarg
 // caller, then restores the exact map/tile where bag pressure was detected.
 // Callers such as Pickup and scripted rewards rely on their local coordinates
 // still being valid after EnsureBagSpaceFor returns.
+// ErrInventoryDetourStranded means an inventory detour could not restore the
+// caller's map/tile. Unlike a failed sale or deposit it is never optional.
+var ErrInventoryDetourStranded = errors.New("skill: inventory detour could not return to its origin")
+
 func runInventoryDetour(m *emu.Emu, romData []byte, policy MovePolicy, action func() error) error {
 	var before state.Mem
 	state.Snapshot(m, &before)
@@ -119,8 +123,8 @@ func runInventoryDetour(m *emu.Emu, romData []byte, policy MovePolicy, action fu
 
 	if after.U8(sym.CurMap) != origin.Map || after.U8(sym.XCoord) != origin.X || after.U8(sym.YCoord) != origin.Y {
 		if _, err := TravelFlee(m, romData, origin, policy, inventoryRecoveryBattles); err != nil {
-			return errors.Join(actionErr, fmt.Errorf("skill: inventory detour return to map %#04x at (%d,%d): %w",
-				origin.Map, origin.X, origin.Y, err))
+			return errors.Join(actionErr, fmt.Errorf("%w: map %#04x at (%d,%d): %w",
+				ErrInventoryDetourStranded, origin.Map, origin.X, origin.Y, err))
 		}
 	}
 	return actionErr
@@ -216,25 +220,22 @@ func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 	romData := m.ROM()
 	policy := StatAwareMove(romData)
 
-	// A Nugget is pure money once acquired. Sell the whole stack whenever bag
-	// pressure has already forced inventory maintenance.
-	if _, qty := bagEntry(&mem, nuggetItem); qty > 0 {
-		if _, err := sellNuggetsForBagSpace(m, romData, policy); err != nil {
-			// If no transaction occurred but another productive action can still
-			// satisfy capacity, do not turn an unreachable mart into a blocker.
-			state.Snapshot(m, &mem)
-			if bagFreeSlots(&mem) < minFree {
-				// Continue to local/store/toss recovery below.
-			}
+	// Rare Candy is useful rather than disposable, and using it frees the slot
+	// where the player stands. Try it before any detour: callers ask for space
+	// beside the thing they are about to take, often deep in a dungeon, and a
+	// Mart trip from there can strand them (run-2xj7ziq8p2p2o3siqjhbtm20e1).
+	if _, qty := bagEntry(&mem, rareCandyItem); qty == 1 {
+		if _, err := useRareCandyForBagSpace(m, romData); err != nil {
+			return err
 		}
 	}
 
-	// Rare Candy is useful rather than disposable. Even if selling the Nugget
-	// already made the mandatory slot, consume one safe singleton Candy now so
-	// future rewards do not immediately recreate the same 20/20 pressure.
+	// A Nugget is pure money once acquired; sell it when capacity is still
+	// short. An unreachable mart is not a blocker, but a detour that could not
+	// bring the player back is: the caller's coordinates are no longer valid.
 	state.Snapshot(m, &mem)
-	if _, qty := bagEntry(&mem, rareCandyItem); qty == 1 {
-		if _, err := useRareCandyForBagSpace(m, romData); err != nil {
+	if _, qty := bagEntry(&mem, nuggetItem); qty > 0 && bagFreeSlots(&mem) < minFree {
+		if _, err := sellNuggetsForBagSpace(m, romData, policy); errors.Is(err, ErrInventoryDetourStranded) {
 			return err
 		}
 	}
@@ -245,7 +246,9 @@ func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 	}
 
 	// Preserve a finite TM in Player PC before destroying replenishable stock.
-	if _, err := storeTMForBagSpace(m, romData, policy); err != nil {
+	if _, err := storeTMForBagSpace(m, romData, policy); errors.Is(err, ErrInventoryDetourStranded) {
+		return err
+	} else if err != nil {
 		// Storage is a preservation optimization. If it cannot be completed
 		// cleanly, fall through to the explicit toss whitelist rather than
 		// blocking progression solely on optional PC capacity.
