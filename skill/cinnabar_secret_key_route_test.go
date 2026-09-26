@@ -3,6 +3,7 @@ package skill
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -133,6 +134,75 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	for _, step := range east {
 		if step.Edge.To == seafoam1FMap {
 			t.Fatalf("east Route 20 resume entered Seafoam: %+v", east)
+		}
+	}
+}
+
+func TestSecretKeyRoute19ResumeStagesNorthBeforePallet(t *testing.T) {
+	romData := badgeFourROM(t)
+
+	mem := fieldTestMem(FieldSurf, true, true, true)
+	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade |
+		1<<state.BadgeThunder | 1<<state.BadgeRainbow | 1<<state.BadgeSoul |
+		1<<state.BadgeMarsh
+
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		t.Fatalf("BuildGraph: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, mem)
+	fuchsia, ok := Place("fuchsia city")
+	if !ok {
+		t.Fatal("fuchsia city place missing")
+	}
+	pallet := Destination{Map: semanticPalletTownMap, X: 5, Y: 6}
+
+	h, err := rom.ParseMap(romData, route19Map)
+	if err != nil {
+		t.Fatalf("parse Route 19: %v", err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatalf("build Route 19 grid: %v", err)
+	}
+
+	// Find the exact production shape rather than pinning a brittle coordinate:
+	// a walkable Route 19 tile where generic shortest-map routing to Pallet
+	// selects Route 20/Seafoam as its first hop. #1970 ended on Route 19 after
+	// Secret Key used that generic Pallet staging path.
+	found := false
+	var sx, sy int
+	for y := 0; y < grid.Height && !found; y++ {
+		for x := 0; x < grid.Width; x++ {
+			if !grid.Walkable(x, y) {
+				continue
+			}
+			route, routeErr := findRoutePlanForDestination(
+				g, route19Map, x, y, pallet, nil, prereqs,
+			)
+			if routeErr != nil || len(route) == 0 || route[0].Edge.To != route20Map {
+				continue
+			}
+			sx, sy, found = x, y, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("Route 19 fixture no longer reproduces a generic Pallet route through Route 20")
+	}
+
+	escape, err := findRoutePlanForDestination(
+		g, route19Map, sx, sy, fuchsia, nil, prereqs,
+	)
+	if err != nil {
+		t.Fatalf("Route 19 -> Fuchsia restage from (%d,%d): %v", sx, sy, err)
+	}
+	if len(escape) == 0 || escape[0].Edge.To != fuchsia.Map {
+		t.Fatalf("Route 19 restage from (%d,%d) = %+v, want direct north exit to Fuchsia", sx, sy, escape)
+	}
+	for _, step := range escape {
+		if step.Edge.To == route20Map {
+			t.Fatalf("Route 19 -> Fuchsia restage entered Route 20/Seafoam: %+v", escape)
 		}
 	}
 }

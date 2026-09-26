@@ -158,7 +158,30 @@ func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy
 	if exit.Map == cinnabarIslandMap {
 		return nil
 	}
+	return restageSecretKeyMainlandFromFuchsia(m, romData, policy)
+}
 
+func restageSecretKeyRoute19Resume(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if m.Peek8(sym.CurMap) != route19Map {
+		return nil
+	}
+	fuchsia, ok := Place("fuchsia city")
+	if !ok {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: fuchsia city place missing")
+	}
+	// Route 19 is the north approach to the same unsupported Seafoam corridor
+	// Route 20 recovery already avoids. Generic "go to Pallet" routing is free
+	// to choose the shorter Route 19 -> Route 20 -> Cinnabar -> Route 21 path,
+	// which makes this story objective absorb the Seafoam traversal it
+	// explicitly does not own (#1970). First leave the sea route north, then
+	// use the same mainland recovery as an east-side Route 20 resume.
+	if _, err := TravelFlee(m, romData, fuchsia, policy, mansionTravelBattles); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave Route 19 for Fuchsia: %w", err)
+	}
+	return restageSecretKeyMainlandFromFuchsia(m, romData, policy)
+}
+
+func restageSecretKeyMainlandFromFuchsia(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if FieldCapabilityFor(&mem, FieldFly).Usable && townVisited(&mem, semanticPalletTownMap) {
@@ -168,7 +191,7 @@ func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy
 	}
 
 	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
-		return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare mainland Route 20 recovery via Cut: %w", err)
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare southern-sea mainland recovery via Cut: %w", err)
 	}
 	for _, placeName := range []string{"vermilion city", "viridian city"} {
 		dest, ok := Place(placeName)
@@ -176,7 +199,7 @@ func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: %s place missing", placeName)
 		}
 		if _, err := TravelFlee(m, romData, dest, policy, mansionTravelBattles); err != nil {
-			return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 mainland recovery via %s: %w", placeName, err)
+			return fmt.Errorf("skill: AcquireCinnabarSecretKey: southern-sea mainland recovery via %s: %w", placeName, err)
 		}
 	}
 	return nil
@@ -198,8 +221,13 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
 	}
 
-	if m.Peek8(sym.CurMap) == route20Map {
+	switch m.Peek8(sym.CurMap) {
+	case route20Map:
 		if err := restageSecretKeyRoute20Resume(m, romData, policy); err != nil {
+			return err
+		}
+	case route19Map:
+		if err := restageSecretKeyRoute19Resume(m, romData, policy); err != nil {
 			return err
 		}
 	}
