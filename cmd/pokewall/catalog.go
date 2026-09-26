@@ -132,6 +132,9 @@ func catalogStarter(row tileRow) string {
 	if starter := strings.TrimSpace(row.Starter); starter != "" {
 		return starter
 	}
+	if strings.EqualFold(strings.TrimSpace(row.Game), "pokemon-yellow") {
+		return "pikachu"
+	}
 	if row.Planner == "scripted" {
 		return "squirtle"
 	}
