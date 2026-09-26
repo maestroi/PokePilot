@@ -35,27 +35,30 @@ func (*Profile) DecodeShop(reader game.MemoryReader) game.ShopState {
 		TradeUnavailable: mem.U8(sym.CurMap) == redViridianMartMap && !state.HasEvent(&mem, state.EventOakGotParcel),
 		Unsellable:       strings.Contains(lower, "can't put a") || strings.Contains(lower, "price on that"),
 	}
-	// Shop menus own input even when the generic overworld predicate looks
-	// controllable. Gen I does not include menu state in state.Controllable,
-	// and the mart action menu can clear FontLoaded/JoyIgnore while its menu
-	// registers are still live. Classify those positive shop surfaces before
-	// falling back to the overworld boundary, otherwise a visible BUY/SELL/QUIT
-	// menu is reported as Closed and the transaction waits until
-	// ErrShopMenuTimeout (#1958).
+	// The mart scratch registers survive the screen that wrote them. In
+	// particular wMenuWatchedKeys==7 and the quantity bytes can remain live
+	// while the clerk's next ordinary greeting is already on screen. Treating
+	// those bytes alone as a positive menu signal makes shopAdvance believe it
+	// is one screen ahead, so it stops paging the greeting and times out
+	// (#1958/#1961). A real Gen-I menu publishes a cursor and draws that cursor
+	// into wTileMap; state.MenuUp validates both facts and therefore rejects the
+	// stale-register shape. Two-option prompts keep their stronger dedicated
+	// decoder because only the filled cursor means the prompt is awaiting input.
 	if state.DecodeTwoOptionMenu(&mem) != nil {
 		out.Phase = game.ShopPhaseConfirmation
 		return out
 	}
+	menuUp := state.MenuUp(&mem)
 	watched := mem.U8(sym.MenuWatchedKeys)
 	switch {
-	case watched == shopWatchActionMenu && mem.U8(sym.MaxMenuItem) == shopActionMenuMax:
+	case menuUp && watched == shopWatchActionMenu && mem.U8(sym.MaxMenuItem) == shopActionMenuMax:
 		out.Phase = game.ShopPhaseActionMenu
 		return out
-	case watched == shopWatchListOrQty && out.MaxQuantity > 0 && out.Quantity >= 1 && out.Quantity <= out.MaxQuantity &&
+	case menuUp && watched == shopWatchListOrQty && out.MaxQuantity > 0 && out.Quantity >= 1 && out.Quantity <= out.MaxQuantity &&
 		(out.MaxQuantity == 99 || strings.Contains(out.Text, "×")):
 		out.Phase = game.ShopPhaseQuantity
 		return out
-	case watched == shopWatchListOrQty:
+	case menuUp && watched == shopWatchListOrQty:
 		out.Phase = game.ShopPhaseItemList
 		return out
 	case out.Controllable:
