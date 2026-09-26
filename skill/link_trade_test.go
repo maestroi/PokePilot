@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/gomeboy/pkg/link"
 	"github.com/maestroi/pokepilot/game"
 	gen1trade "github.com/maestroi/pokepilot/gen1/trade"
@@ -20,6 +21,8 @@ import (
 // peer: an unmodified Red ROM with the Pokédex walks to a Center, negotiates
 // the Cable Club over GomeBoy's broker, receives a synthetic remote Pokemon
 // through the real Trade Center code, saves, and returns to the overworld.
+// The session is recorded across the trade and must replay exactly without
+// the peer: the link traffic is part of the .gbrun, not only joypad input.
 // It is opt-in because the commercial ROM is never stored in the repository.
 func TestVirtualCableClubTrade(t *testing.T) {
 	if testing.Short() {
@@ -68,6 +71,10 @@ func TestVirtualCableClubTrade(t *testing.T) {
 		t.Fatal("virtual peer did not register with broker")
 	}
 
+	recorder, err := e.StartSessionRecording(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	networkLink, err := e.ConnectBrokerLink(listener.Addr().String(), "rom-e2e", "emulator", "emulator", nil, time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -96,5 +103,25 @@ func TestVirtualCableClubTrade(t *testing.T) {
 	case <-peerDone:
 	case <-time.After(2 * time.Second):
 		t.Fatal("virtual peer did not stop")
+	}
+
+	archive, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recording, err := gomeboy.ParseRecording(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recording.Links) == 0 {
+		t.Fatal("recording carries no link events for a linked trade session")
+	}
+	replay, err := gomeboy.New(gomeboy.WithROMBytes(romData), gomeboy.WithModel(recording.Model), gomeboy.WithoutVideo())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replay.Close()
+	if err := replay.ReplayRecording(recording); err != nil {
+		t.Fatalf("recorded trade session does not replay: %v", err)
 	}
 }
