@@ -127,6 +127,8 @@ type RoundRecord struct {
 
 type PartyMon struct {
 	Species    SpeciesID
+	HeldItem   ItemID
+	IsEgg      bool
 	Level      uint8
 	Experience uint32
 	HP         uint16
