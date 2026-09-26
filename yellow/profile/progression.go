@@ -19,6 +19,7 @@ const (
 	eventGotPokedex              yellowEvent = 37
 	eventOakAppearedInPallet     yellowEvent = 39
 	eventViridianGymOpen         yellowEvent = 40
+	eventCompletedCatchTraining  yellowEvent = 45
 	eventGotBulbasaurInCerulean  yellowEvent = 168
 	eventBeatTowerJessieJames    yellowEvent = 275
 	eventGotSquirtleFromJenny    yellowEvent = 329
@@ -56,6 +57,7 @@ const (
 const (
 	ProgressYellowStarterReceived           game.ProgressID = "yellow_starter_received"
 	ProgressYellowLabRivalResolved          game.ProgressID = "yellow_lab_rival_resolved"
+	ProgressYellowViridianCatchTraining     game.ProgressID = "yellow_viridian_catch_training_complete"
 	ProgressYellowRivalJolteonPath          game.ProgressID = "yellow_rival_jolteon_path"
 	ProgressYellowRivalFlareonPath          game.ProgressID = "yellow_rival_flareon_path"
 	ProgressYellowRivalVaporeonPath         game.ProgressID = "yellow_rival_vaporeon_path"
@@ -98,6 +100,7 @@ const (
 	itemHM03       = 0xc6
 	itemHM04       = 0xc7
 
+	badgeBoulder = 0
 	badgeThunder = 2
 	badgeRainbow = 3
 	badgeSoul    = 4
@@ -301,6 +304,7 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressSSTicketAcquired, Complete: yellowHasItem(reader, itemSSTicket)},
 		{ID: gen1.ProgressHM01Acquired, Complete: yellowHasItem(reader, itemHM01)},
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
+		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},
 		{ID: gen1.ProgressThunderBadge, Complete: yellowHasBadge(reader, badgeThunder)},
 		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowPostSurgeLavenderReached(mapID)},
 		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader)},
@@ -327,6 +331,7 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 
 		{ID: ProgressYellowStarterReceived, Complete: yellowHasEvent(reader, eventGotStarter)},
 		{ID: ProgressYellowLabRivalResolved, Complete: labRivalResolved},
+		{ID: ProgressYellowViridianCatchTraining, Complete: yellowHasEvent(reader, eventCompletedCatchTraining)},
 		{ID: ProgressYellowRivalJolteonPath, Complete: labRivalResolved && rival == rivalStarterJolteon},
 		{ID: ProgressYellowRivalFlareonPath, Complete: labRivalResolved && rival == rivalStarterFlareon},
 		{ID: ProgressYellowRivalVaporeonPath, Complete: labRivalResolved && rival == rivalStarterVaporeon},
