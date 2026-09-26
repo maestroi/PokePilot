@@ -803,7 +803,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64, drain <-chan 
 	if farmDrainRequested(drain) {
 		return "drained", "runner shutdown requested before scripted objective", nil, nil
 	}
-	starterObj, err := starterObjectiveForRequest(starter, seed)
+	starterObj, err := scriptedStarterObjective(m, starter, seed)
 	if err != nil {
 		return "error", fmt.Sprintf("starter objective: %v", err), nil, nil
 	}
