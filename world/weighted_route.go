@@ -101,7 +101,7 @@ type RouteCostResult struct {
 // the conservative router already knows is legal.
 func FindWeightedRoutePlanAtDestinationWithCapabilities(
 	g *Graph,
-	from, to uint8,
+	from, to MapID,
 	x, y, tx, ty int,
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
@@ -135,7 +135,7 @@ func FindWeightedRoutePlanAtDestinationWithCapabilities(
 	return fallbackResult, nil
 }
 
-func fallbackRouteCost(steps []RouteStep, from, to uint8, x, y, tx, ty int, policy RouteCostPolicy) int {
+func fallbackRouteCost(steps []RouteStep, from, to MapID, x, y, tx, ty int, policy RouteCostPolicy) int {
 	cost := len(steps) * policy.FallbackMapTransitionCost
 	for _, step := range steps {
 		if step.Transition != nil {
@@ -221,21 +221,46 @@ func buildWeightedSemanticView(g *Graph, prereqs RoutePrerequisites) weightedSem
 	return view
 }
 
-type routeOccupancy [4]uint64
+// routeOccupancy is a compact, comparable sorted set of 16-bit map ids.
+// The previous fixed 256-bit bitmap could not represent Gen-II map-group ids.
+type routeOccupancy string
 
-func (o routeOccupancy) has(mapID uint8) bool {
-	slot, bit := int(mapID)/64, uint(mapID%64)
-	return o[slot]&(uint64(1)<<bit) != 0
+func (o routeOccupancy) has(mapID MapID) bool {
+	b := []byte(o)
+	for i := 0; i+1 < len(b); i += 2 {
+		current := MapID(b[i])<<8 | MapID(b[i+1])
+		if current == mapID {
+			return true
+		}
+		if current > mapID {
+			return false
+		}
+	}
+	return false
 }
 
-func (o routeOccupancy) with(mapID uint8) routeOccupancy {
-	slot, bit := int(mapID)/64, uint(mapID%64)
-	o[slot] |= uint64(1) << bit
-	return o
+func (o routeOccupancy) with(mapID MapID) routeOccupancy {
+	if o.has(mapID) {
+		return o
+	}
+	b := []byte(o)
+	pos := len(b)
+	for i := 0; i+1 < len(b); i += 2 {
+		current := MapID(b[i])<<8 | MapID(b[i+1])
+		if mapID < current {
+			pos = i
+			break
+		}
+	}
+	b = append(b, 0, 0)
+	copy(b[pos+2:], b[pos:len(b)-2])
+	b[pos] = byte(mapID >> 8)
+	b[pos+1] = byte(mapID)
+	return routeOccupancy(string(b))
 }
 
 type weightedRouteNode struct {
-	mapID    uint8
+	mapID    MapID
 	x, y     int
 	known    bool
 	entry    []int
@@ -249,7 +274,7 @@ type weightedRouteNode struct {
 }
 
 type weightedRouteKey struct {
-	mapID      uint8
+	mapID      MapID
 	x, y       int
 	known      bool
 	components string
@@ -298,7 +323,7 @@ func (q *weightedRouteQueue) Pop() any {
 // weightedSameComponent reports whether two tiles of one map can be walked
 // without leaving it. Missing component data keeps the grid-distance
 // decision; a known split does not.
-func weightedSameComponent(g *Graph, mapID uint8, fromX, fromY, toX, toY int) bool {
+func weightedSameComponent(g *Graph, mapID MapID, fromX, fromY, toX, toY int) bool {
 	if g == nil || !g.componentAware {
 		return true
 	}
@@ -312,7 +337,7 @@ func weightedSameComponent(g *Graph, mapID uint8, fromX, fromY, toX, toY int) bo
 
 func findExactWeightedRoute(
 	g *Graph,
-	from, to uint8,
+	from, to MapID,
 	x, y, tx, ty int,
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
@@ -482,12 +507,12 @@ type routePortCandidate struct {
 }
 
 type routeGridKey struct {
-	mapID uint8
+	mapID MapID
 	mode  TraversalMode
 }
 
 type routeDistanceKey struct {
-	mapID          uint8
+	mapID          MapID
 	sx, sy, dx, dy int
 	adjacent       bool
 }
@@ -522,7 +547,7 @@ func newRouteGeometry(g *Graph, allowWater bool) *routeGeometry {
 // such as Surf may legitimately bypass pristine LAND component reachability,
 // but it still cannot teleport the player to a shore in another disconnected
 // region of the same map.
-func EdgePortReachableFrom(g *Graph, mapID uint8, x, y int, edge Edge, policy RouteCostPolicy) bool {
+func EdgePortReachableFrom(g *Graph, mapID MapID, x, y int, edge Edge, policy RouteCostPolicy) bool {
 	if g == nil || edge.From != mapID || x < 0 || y < 0 {
 		return false
 	}
@@ -531,7 +556,7 @@ func EdgePortReachableFrom(g *Graph, mapID uint8, x, y int, edge Edge, policy Ro
 	return ok
 }
 
-func (r *routeGeometry) grid(mapID uint8, mode TraversalMode) (*Grid, bool) {
+func (r *routeGeometry) grid(mapID MapID, mode TraversalMode) (*Grid, bool) {
 	key := routeGridKey{mapID: mapID, mode: mode}
 	if grid, ok := r.grids[key]; ok {
 		return grid, true
@@ -553,7 +578,7 @@ func (r *routeGeometry) grid(mapID uint8, mode TraversalMode) (*Grid, bool) {
 	return grid, true
 }
 
-func (r *routeGeometry) distance(mapID uint8, sx, sy, dx, dy int, adjacent bool) (int, bool) {
+func (r *routeGeometry) distance(mapID MapID, sx, sy, dx, dy int, adjacent bool) (int, bool) {
 	key := routeDistanceKey{
 		mapID: mapID, sx: sx, sy: sy, dx: dx, dy: dy, adjacent: adjacent,
 	}
@@ -619,7 +644,7 @@ func routeStepDistance(steps []Step) int {
 	return total
 }
 
-func (r *routeGeometry) bestPort(mapID uint8, sx, sy int, edge Edge) (routePortCandidate, int, bool) {
+func (r *routeGeometry) bestPort(mapID MapID, sx, sy int, edge Edge) (routePortCandidate, int, bool) {
 	ports := r.edgePorts(edge)
 	var best routePortCandidate
 	bestDistance, found := 0, false

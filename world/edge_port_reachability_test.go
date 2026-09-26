@@ -8,11 +8,11 @@ import (
 
 type splitPortProvider struct{}
 
-func (splitPortProvider) MapIDs() []uint8 { return []uint8{1, 2} }
-func (splitPortProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
+func (splitPortProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{1, 2} }
+func (splitPortProvider) ParseMap(mapID worldmodel.MapID) (worldmodel.MapHeader, error) {
 	return worldmodel.MapHeader{ID: mapID, WidthBlocks: 2, HeightBlocks: 2}, nil
 }
-func (splitPortProvider) Grid(mapID uint8, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+func (splitPortProvider) Grid(mapID worldmodel.MapID, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	const width, height = 4, 4
 	walkable := make([]bool, width*height)
 	for i := range walkable {
@@ -35,10 +35,10 @@ func (splitPortProvider) Grid(mapID uint8, _ []byte, _ worldmodel.TraversalMode)
 		FieldTile:     make([]uint8, width*height),
 	}, nil
 }
-func (splitPortProvider) LookupElevator(uint8) (worldmodel.ElevatorSpec, bool) {
+func (splitPortProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
 	return worldmodel.ElevatorSpec{}, false
 }
-func (splitPortProvider) ElevatorFloorForDestination(uint8, uint8) (worldmodel.ElevatorFloor, bool) {
+func (splitPortProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
 	return worldmodel.ElevatorFloor{}, false
 }
 

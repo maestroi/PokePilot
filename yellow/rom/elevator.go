@@ -47,7 +47,7 @@ func elevatorFloorForDestination(elevatorMap, destinationMap uint8) (worldmodel.
 		return worldmodel.ElevatorFloor{}, false
 	}
 	for _, floor := range spec.Floors {
-		if floor.MapID == destinationMap {
+		if floor.MapID == worldmodel.MapID(destinationMap) {
 			return floor, true
 		}
 	}

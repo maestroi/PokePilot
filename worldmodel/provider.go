@@ -4,6 +4,10 @@ package worldmodel
 
 import "sync"
 
+// MapID is the portable native map identity used by world/routing adapters.
+// Gen I uses one-byte ids; Gen II needs the full map-group/map-number pair.
+type MapID = uint16
+
 // TraversalMode selects movement-specific collision semantics supplied by a game adapter.
 type TraversalMode uint8
 
@@ -17,7 +21,7 @@ type Warp struct {
 	X          uint8
 	Y          uint8
 	DestWarpID uint8
-	DestMap    uint8
+	DestMap    MapID
 	// Inert marks a ROM warp-table entry that is ordinary traversable floor:
 	// it does not fire a transition and therefore must not become a graph port.
 	Inert bool
@@ -26,12 +30,12 @@ type Warp struct {
 // Connection is a portable adjacent-map seam.
 type Connection struct {
 	Dir    uint8
-	MapID  uint8
+	MapID  MapID
 	Offset int8
 }
 
 func (c Connection) WorldDirection() uint8 { return c.Dir }
-func (c Connection) WorldMapID() uint8     { return c.MapID }
+func (c Connection) WorldMapID() MapID     { return c.MapID }
 func (c Connection) WorldOffset() int8     { return c.Offset }
 
 // Ledge is a directed two-tile movement hop in decoded collision geometry.
@@ -83,7 +87,7 @@ type MapObject struct {
 
 // MapHeader is the subset of a game's map header that generic routing consumes.
 type MapHeader struct {
-	ID            uint8
+	ID            MapID
 	NativeTileset uint16
 	WidthBlocks   uint8
 	HeightBlocks  uint8
@@ -103,7 +107,7 @@ func (h MapHeader) WorldMapHeader() MapHeader { return h }
 
 // GridSpec is an adapter-decoded collision grid. Slices are row-major.
 type GridSpec struct {
-	MapID         uint8
+	MapID         MapID
 	Width         int
 	Height        int
 	Walkable      []bool
@@ -126,7 +130,7 @@ type GridHeader interface {
 
 // ElevatorFloor is the topology-relevant part of a selectable elevator floor.
 type ElevatorFloor struct {
-	MapID      uint8
+	MapID      MapID
 	DestWarpID uint8
 }
 
@@ -141,11 +145,11 @@ type ElevatorSpec struct {
 // elevator topology for one game/revision. The provider owns any ROM bytes it
 // needs; generic world code never interprets them.
 type MapHeaderProvider interface {
-	MapIDs() []uint8
-	ParseMap(mapID uint8) (MapHeader, error)
-	Grid(mapID uint8, blocks []byte, mode TraversalMode) (GridSpec, error)
-	LookupElevator(mapID uint8) (ElevatorSpec, bool)
-	ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (ElevatorFloor, bool)
+	MapIDs() []MapID
+	ParseMap(mapID MapID) (MapHeader, error)
+	Grid(mapID MapID, blocks []byte, mode TraversalMode) (GridSpec, error)
+	LookupElevator(mapID MapID) (ElevatorSpec, bool)
+	ElevatorFloorForDestination(elevatorMap, destinationMap MapID) (ElevatorFloor, bool)
 }
 
 // MapParseFailureClassifier is an optional provider capability for maps that
@@ -153,7 +157,7 @@ type MapHeaderProvider interface {
 // ok=true makes that omission explicit; all unclassified ParseMap failures are
 // fatal to normal graph construction.
 type MapParseFailureClassifier interface {
-	ExpectedMapParseFailure(mapID uint8, err error) (reason string, ok bool)
+	ExpectedMapParseFailure(mapID MapID, err error) (reason string, ok bool)
 }
 
 // ROMProviderFactory is retained as a compatibility bridge for callers that

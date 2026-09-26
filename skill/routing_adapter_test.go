@@ -43,9 +43,9 @@ func (f fakeRoutingDecoder) DecodeLiveTopology(game.MemoryReader) (game.LiveTopo
 
 type fakeGen2MapProvider struct{}
 
-func (fakeGen2MapProvider) MapIDs() []uint8 { return []uint8{0x42} }
+func (fakeGen2MapProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{0x42} }
 
-func (fakeGen2MapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
+func (fakeGen2MapProvider) ParseMap(id worldmodel.MapID) (worldmodel.MapHeader, error) {
 	return worldmodel.MapHeader{
 		ID:           id,
 		WidthBlocks:  1,
@@ -56,7 +56,7 @@ func (fakeGen2MapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
 	}, nil
 }
 
-func (fakeGen2MapProvider) Grid(id uint8, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+func (fakeGen2MapProvider) Grid(id worldmodel.MapID, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	walkable := []bool{true, false, true, true}
 	if mode == worldmodel.TraversalWater {
 		walkable[1] = true
@@ -72,11 +72,11 @@ func (fakeGen2MapProvider) Grid(id uint8, blocks []byte, mode worldmodel.Travers
 	}, nil
 }
 
-func (fakeGen2MapProvider) LookupElevator(uint8) (worldmodel.ElevatorSpec, bool) {
+func (fakeGen2MapProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
 	return worldmodel.ElevatorSpec{}, false
 }
 
-func (fakeGen2MapProvider) ElevatorFloorForDestination(uint8, uint8) (worldmodel.ElevatorFloor, bool) {
+func (fakeGen2MapProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
 	return worldmodel.ElevatorFloor{}, false
 }
 

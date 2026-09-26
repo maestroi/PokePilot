@@ -3,6 +3,7 @@ package rom
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/maestroi/pokepilot/gen1rom"
 	"github.com/maestroi/pokepilot/worldmodel"
@@ -23,10 +24,20 @@ func NewWorldProvider(romData []byte) worldmodel.MapHeaderProvider {
 	return &worldProvider{rom: romData}
 }
 
-func (p *worldProvider) MapIDs() []uint8 { return MapIDs() }
+func (p *worldProvider) MapIDs() []worldmodel.MapID {
+	raw := MapIDs()
+	ids := make([]worldmodel.MapID, len(raw))
+	for i, id := range raw {
+		ids[i] = worldmodel.MapID(id)
+	}
+	return ids
+}
 
-func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
-	h, err := ParseMap(p.rom, mapID)
+func (p *worldProvider) ParseMap(mapID worldmodel.MapID) (worldmodel.MapHeader, error) {
+	if mapID > 0xff {
+		return worldmodel.MapHeader{}, fmt.Errorf("yellow world: map id %#04x exceeds Gen-I range", mapID)
+	}
+	h, err := ParseMap(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
@@ -36,11 +47,11 @@ func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	warps := make([]worldmodel.Warp, len(h.Warps))
 	for i, w := range h.Warps {
-		warps[i] = worldmodel.Warp{X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: w.DestMap}
+		warps[i] = worldmodel.Warp{X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: worldmodel.MapID(w.DestMap)}
 	}
 	connections := make([]worldmodel.Connection, len(h.Connections))
 	for i, c := range h.Connections {
-		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: c.MapID, Offset: c.Offset}
+		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: worldmodel.MapID(c.MapID), Offset: c.Offset}
 	}
 	objects := make([]worldmodel.MapObject, len(h.Objects))
 	for i, object := range h.Objects {
@@ -64,7 +75,7 @@ func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 		}
 	}
 	return worldmodel.MapHeader{
-		ID:            h.ID,
+		ID:            worldmodel.MapID(h.ID),
 		NativeTileset: uint16(h.Tileset),
 		WidthBlocks:   h.WidthBlocks,
 		HeightBlocks:  h.HeightBlocks,
@@ -78,8 +89,11 @@ func (h MapHeader) WorldMapHeader() worldmodel.MapHeader {
 	return projectWorldHeader(h)
 }
 
-func (p *worldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
-	h, err := ParseMap(p.rom, mapID)
+func (p *worldProvider) Grid(mapID worldmodel.MapID, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	if mapID > 0xff {
+		return worldmodel.GridSpec{}, fmt.Errorf("yellow world: map id %#04x exceeds Gen-I range", mapID)
+	}
+	h, err := ParseMap(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.GridSpec{}, err
 	}
@@ -100,12 +114,25 @@ func (p *worldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.Travers
 	return spec, nil
 }
 
-func (p *worldProvider) LookupElevator(mapID uint8) (worldmodel.ElevatorSpec, bool) {
-	return lookupElevator(mapID)
+func (p *worldProvider) LookupElevator(mapID worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
+	if mapID > 0xff {
+		return worldmodel.ElevatorSpec{}, false
+	}
+	spec, ok := lookupElevator(uint8(mapID))
+	if !ok {
+		return worldmodel.ElevatorSpec{}, false
+	}
+	for i := range spec.Floors {
+		spec.Floors[i].MapID = worldmodel.MapID(spec.Floors[i].MapID)
+	}
+	return spec, true
 }
 
-func (p *worldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (worldmodel.ElevatorFloor, bool) {
-	return elevatorFloorForDestination(elevatorMap, destinationMap)
+func (p *worldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
+	if elevatorMap > 0xff || destinationMap > 0xff {
+		return worldmodel.ElevatorFloor{}, false
+	}
+	return elevatorFloorForDestination(uint8(elevatorMap), uint8(destinationMap))
 }
 
 func (h MapHeader) WorldGridSpec(romData []byte, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
