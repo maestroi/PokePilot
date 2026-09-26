@@ -98,9 +98,11 @@ const (
 	itemHM03       = 0xc6
 	itemHM04       = 0xc7
 
+	badgeBoulder = 0
 	badgeThunder = 2
 	badgeRainbow = 3
 	badgeSoul    = 4
+	badgeMarsh   = 5
 	badgeVolcano = 6
 	badgeEarth   = 7
 
