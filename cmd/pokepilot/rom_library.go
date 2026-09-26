@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
@@ -22,7 +25,19 @@ type romLibrary struct {
 	paths      map[game.GameID]string
 	primary    game.GameID
 	bootStates map[game.GameID][]byte
+
+	// remote serves cartridges this worker was not given on disk, under
+	// romObjectPrefix+<game id>; nil when S3 is not configured. Worker nodes
+	// share no filesystem, so this is how a new game reaches every node.
+	remote   *artifactstore.S3
+	cacheDir string
 }
+
+const (
+	romObjectPrefix = "roms/"
+	// maxROMBytes bounds a download; the largest Game Boy cartridge is 8 MiB.
+	maxROMBytes = 16 << 20
+)
 
 // buildROMLibrary enumerates the mounted ROM directory (POKEPILOT_ROM_DIR),
 // plus the one cartridge this process already opened when it is set. bootState
@@ -32,6 +47,12 @@ func buildROMLibrary(primaryPath string, bootState []byte) *romLibrary {
 	lib := &romLibrary{
 		paths:      map[game.GameID]string{},
 		bootStates: map[game.GameID][]byte{},
+	}
+	if store, configured, err := artifactstore.S3FromEnv(); err != nil {
+		log.Printf("farm: ROM store disabled: %v", err)
+	} else if configured {
+		lib.remote = store
+		lib.cacheDir = filepath.Join(os.TempDir(), "pokepilot-roms")
 	}
 	seen := map[string]bool{}
 	candidates := []string{primaryPath, primaryGameDir(primaryPath)}
@@ -75,6 +96,55 @@ func (l *romLibrary) add(path string, bootState []byte, primaryPath string) {
 			l.bootStates[id] = bootState
 		}
 	}
+}
+
+// fetch downloads the cartridge for id from the ROM store into cacheDir and
+// returns its path. The bytes are checked with profiles.Detect before they are
+// cached, so a misnamed object can never be remembered as the wrong game.
+func (l *romLibrary) fetch(id game.GameID) (string, error) {
+	if l.remote == nil {
+		return "", fmt.Errorf("no ROM store configured (%s)", artifactstore.EnvS3Bucket)
+	}
+	path := filepath.Join(l.cacheDir, string(id))
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	key := romObjectPrefix + string(id)
+	obj, err := l.remote.GetObject(context.Background(), key, "")
+	if err != nil {
+		return "", fmt.Errorf("fetch %s from ROM store: %w", key, err)
+	}
+	defer obj.Body.Close()
+	rom, err := io.ReadAll(io.LimitReader(obj.Body, maxROMBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("fetch %s from ROM store: %w", key, err)
+	}
+	if len(rom) > maxROMBytes {
+		return "", fmt.Errorf("ROM store object %s exceeds %d bytes", key, maxROMBytes)
+	}
+	if profile, _, err := profiles.Detect(rom); err != nil || profile.ID() != id {
+		return "", fmt.Errorf("ROM store object %s is not game %q", key, id)
+	}
+	if err := os.MkdirAll(l.cacheDir, 0o755); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(l.cacheDir, string(id)+".*")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(rom); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return "", err
+	}
+	log.Printf("farm: fetched %s from ROM store (%d bytes)", id, len(rom))
+	return path, nil
 }
 
 // romFilesIn expands one candidate, which is either a directory or a single
@@ -130,7 +200,12 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 	}
 	path, ok := l.paths[id]
 	if !ok {
-		return nil, fmt.Errorf("this worker has no ROM for game %q; mounted: %s", id, l.games())
+		fetched, err := l.fetch(id)
+		if err != nil {
+			return nil, fmt.Errorf("this worker has no ROM for game %q; mounted: %s; %w", id, l.games(), err)
+		}
+		l.paths[id] = fetched
+		path = fetched
 	}
 	rom, err := os.ReadFile(path)
 	if err != nil {
