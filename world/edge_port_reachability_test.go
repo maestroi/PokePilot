@@ -56,7 +56,7 @@ func TestEdgePortReachableFromRejectsDifferentSourceComponent(t *testing.T) {
 				{X: 0, Y: 1, DestWarpID: 0, DestMap: 1},
 			},
 		},
-		tiles: map[uint8]dim{1: {w: 4, h: 4}, 2: {w: 4, h: 4}},
+		tiles:    map[uint8]dim{1: {w: 4, h: 4}, 2: {w: 4, h: 4}},
 		provider: splitPortProvider{},
 	}
 	policy := DefaultRouteCostPolicy()
