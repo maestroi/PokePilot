@@ -116,6 +116,9 @@ func runtimeStarter(t *Tile) string {
 	if starter := strings.TrimSpace(t.Starter); starter != "" {
 		return starter
 	}
+	if strings.EqualFold(strings.TrimSpace(t.Game), "pokemon-yellow") {
+		return "pikachu"
+	}
 	if t.Planner == "scripted" {
 		return "squirtle"
 	}
