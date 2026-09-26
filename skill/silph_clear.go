@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	silphCo3FMap  uint8 = 0xd0
-	silphCo7FMap  uint8 = 0xd4
-	silphCo11FMap uint8 = 0xeb
+	silphCo3FMap  = 0xd0
+	silphCo7FMap  = 0xd4
+	silphCo11FMap = 0xeb
 
 	masterBallItemID uint8 = 0x01
 
