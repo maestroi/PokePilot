@@ -534,7 +534,6 @@ func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
 	}
 }
 
-
 func TestValidateSpecAcceptsYellowScriptedPikachu(t *testing.T) {
 	for _, starter := range []string{"", "pikachu", "Pikachu"} {
 		if err := validateSpec("pokemon-yellow", "scripted", starter, "viridian city"); err != nil {
