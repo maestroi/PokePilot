@@ -6,7 +6,6 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -192,115 +191,118 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition starts on %02x, current map is %02x", edge.From, got)
 	}
 
-	h, err := rom.ParseMap(x.romData, edge.From)
+	h, err := routingHeaderFor(x.m, edge.From)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition parse map %02x: %w", edge.From, err)
-	}
-	land, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalLand)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition land grid: %w", err)
 	}
 	water, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalWater)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition water grid: %w", err)
 	}
-	g, gerr := world.BuildGraph(x.romData)
-	if gerr != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition build graph: %w", gerr)
+	overworld, err := overworldDecoderFor(x.m)
+	if err != nil {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition overworld profile: %w", err)
 	}
 
-	// A semantic Surf edge can expose several geometrically plausible shore
-	// tiles, but the ROM is authoritative about whether pressing Surf while
-	// facing across that exact seam is legal. Pallet -> Route 21 is the
-	// production case: (3,17) is reachable in the static water view but the
-	// game rejects Surf there, while another tile on the same south edge works.
-	// Treat a rejected shore as per-candidate evidence and keep searching the
-	// same connection band instead of terminating the whole transition.
-	excluded := map[[2]int]bool{}
-	blocked := spriteBlockers(x.m)
+	// Do not plan the whole approach in TraversalWater and then infer where
+	// Surf should start. That treats a semantic mode switch as if the player
+	// were already surfing for the entire local leg. Route 19 is the production
+	// counterexample: the player can be on the long land beach while the chosen
+	// Route 19 -> Route 20 connection is water-only. The water-only approach can
+	// reject every border candidate even though an ordinary land walk to a
+	// legal shore followed by Surf is available (#1983).
+	//
+	// Ask the same capability-aware field-path planner used by normal local
+	// navigation to reach each concrete connection-band target. It models the
+	// land prefix and the first land->water step explicitly. Execute only that
+	// prefix and Surf action here; once Surf owns input, ordinary Traverse can
+	// cross the map connection with fresh live topology.
+	rejectedSurfEntry := map[[2]int]bool{}
 	var lastErr error
 	for attempts := 0; attempts < 256; attempts++ {
-		sx, sy := playerXY(x.m)
-		tx, ty, targetErr := edgeTargetForConnectionExcluding(water, edge, int(sx), int(sy), blocked, excluded)
-		if targetErr != nil {
+		blocked := spriteBlockers(x.m)
+		for at := range rejectedSurfEntry {
+			blocked[at] = true
+		}
+
+		var (
+			bestDest    Destination
+			bestPlan    []fieldPathStep
+			bestActions int
+			bestMoves   int
+			found       bool
+		)
+		for _, at := range connectionFieldTargets(water, edge) {
+			if !water.Walkable(at[0], at[1]) || blocked[at] {
+				continue
+			}
+			dest := Destination{Map: edge.From, X: uint8(at[0]), Y: uint8(at[1])}
+			plan, _, planErr := currentFieldPathPlanWithCost(x.m, x.romData, h, dest, blocked)
+			if planErr != nil {
+				continue
+			}
+			actions := fieldPathPlanActionCount(plan)
+			if !found || actions < bestActions || (actions == bestActions && len(plan) < bestMoves) {
+				bestDest, bestPlan = dest, plan
+				bestActions, bestMoves, found = actions, len(plan), true
+			}
+		}
+		if !found {
 			if lastErr != nil {
 				return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exhausted shoreline candidates for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
 			}
-			return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition cannot reach %02x connection in water mode: %v", world.ErrTransitionExecutionStalled, edge.To, targetErr)
+			return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition has no capability-aware path to %02x connection", world.ErrTransitionExecutionStalled, edge.To)
 		}
-		steps, pathErr := world.FindPath(water, int(sx), int(sy), tx, ty, blocked)
-		if pathErr != nil {
-			excluded[[2]int{tx, ty}] = true
-			lastErr = pathErr
+
+		prefix, action := firstFieldAction(bestPlan)
+		if action == nil {
+			// The selected band is reachable entirely on land. The semantic
+			// Surf annotation is only a capability guard for other components;
+			// let generic connection traversal own this ordinary crossing.
+			return world.TransitionExecutionResult{}, nil
+		}
+		if action.Action != fieldPathSurf {
+			// A Surf transition must not opportunistically perform an unrelated
+			// field action such as Cut. Leave that topology change to the layer
+			// that owns it and try another concrete connection target.
+			rejectedSurfEntry[[2]int{int(bestDest.X), int(bestDest.Y)}] = true
+			lastErr = fmt.Errorf("connection target (%d,%d) first requires field action %d, want Surf", bestDest.X, bestDest.Y, action.Action)
 			continue
 		}
 
-		px, py := int(sx), int(sy)
-		standX, standY, waterX, waterY := 0, 0, 0, 0
-		found := false
-		for _, step := range steps {
-			nx, ny := px+step.DX, py+step.DY
-			if !land.Passable(px, py, nx, ny) && water.Passable(px, py, nx, ny) {
-				standX, standY, waterX, waterY = px, py, nx, ny
-				found = true
-				break
-			}
-			px, py = nx, ny
+		sx, sy := playerXY(x.m)
+		standX, standY := int(sx), int(sy)
+		for _, step := range prefix {
+			standX += step.DX
+			standY += step.DY
 		}
-		if !found {
-			if g.ConnectionExitWalkable(edge) {
-				// Destination has an ordinary land landing. The semantic annotation
-				// is satisfied but no Surf entry is required from this component.
-				return world.TransitionExecutionResult{}, nil
-			}
-			standX, standY = tx, ty
-			// The tile one step beyond the player in the connection direction is
-			// outside this map's grid; the ROM's IsNextTileShoreOrWater reads
-			// wTileInFrontOfPlayer from the current map, so an out-of-bounds target
-			// gives a wrong tile id and Surf is rejected. Scan the in-map
-			// neighbours for a collision tile the ROM recognises as water ($14),
-			// shore ($32), or Safari shore ($48) and face that instead.
-			waterX, waterY = -1, -1
-			for _, n := range [][2]int{{tx + 1, ty}, {tx - 1, ty}, {tx, ty + 1}, {tx, ty - 1}} {
-				if !water.InBounds(n[0], n[1]) {
-					continue
-				}
-				id, ok := water.Tile(n[0], n[1])
-				if !ok {
-					continue
-				}
-				if id == surfWaterTile || id == 0x32 || id == 0x48 {
-					waterX, waterY = n[0], n[1]
-					break
-				}
-			}
-			if waterX < 0 {
-				excluded[[2]int{tx, ty}] = true
-				lastErr = fmt.Errorf("shore (%d,%d): no in-map water/shore tile adjacent for Surf target", tx, ty)
-				continue
-			}
+		if standX < 0 || standY < 0 || standX > 255 || standY > 255 {
+			rejectedSurfEntry[[2]int{int(bestDest.X), int(bestDest.Y)}] = true
+			lastErr = fmt.Errorf("field-path Surf stand (%d,%d) is outside map coordinates", standX, standY)
+			continue
 		}
 
-		if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
+		if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}, x.policy); err != nil {
 			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
 		}
-		if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
-			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition face water (%d,%d): %w", waterX, waterY, err)
+
+		_, waterX, waterY, targetErr := fieldPathActionTargetWithDecoder(x.m, overworld, *action)
+		if targetErr != nil {
+			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition resolve shoreline target: %w", targetErr)
 		}
-		x.m.StepFrames(2)
-		result, surfErr := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
-		if surfErr == nil && result.Surfing && fieldActions.DecodeFieldAction(x.m).Surfing {
+		surfErr := executeFieldPathActionWithDecoders(x.m, overworld, fieldActions, *action)
+		if surfErr == nil && fieldActions.DecodeFieldAction(x.m).Surfing {
 			return world.TransitionExecutionResult{Changed: true}, nil
 		}
 
-		// The ROM rejected this exact shore. Exclude the edge target that led
-		// here and retry another candidate on the same band. A failed Surf use
-		// does not consume the capability or alter map topology.
-		excluded[[2]int{tx, ty}] = true
+		// A failed Surf action is evidence about this exact shore, not the whole
+		// map connection. Block its first water tile and let the field planner
+		// choose a different land->water entry on the same connection band.
+		rejectedSurfEntry[[2]int{waterX, waterY}] = true
 		if surfErr != nil {
-			lastErr = fmt.Errorf("shore (%d,%d) facing (%d,%d): %w", standX, standY, waterX, waterY, surfErr)
+			lastErr = fmt.Errorf("shore (%d,%d) facing water (%d,%d): %w", standX, standY, waterX, waterY, surfErr)
 		} else {
-			lastErr = fmt.Errorf("shore (%d,%d) facing (%d,%d) returned without verified surfing state", standX, standY, waterX, waterY)
+			lastErr = fmt.Errorf("shore (%d,%d) facing water (%d,%d) returned without verified surfing state", standX, standY, waterX, waterY)
 		}
 	}
 	return world.TransitionExecutionResult{}, fmt.Errorf("%w: skill: Surf transition exceeded shoreline retry budget for %02x->%02x: %v", world.ErrTransitionExecutionStalled, edge.From, edge.To, lastErr)
