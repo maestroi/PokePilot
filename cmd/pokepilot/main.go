@@ -43,7 +43,7 @@ func main() {
 	dest := flag.String("goto", "viridian pokemon center", "named destination to walk to")
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
-	starter := flag.String("starter", "squirtle", "starter to take: charmander, squirtle or bulbasaur (bulbasaur loses the rival battle)")
+	starter := flag.String("starter", "", "starter to take; empty uses the game's scripted default when it has one, otherwise Squirtle for the legacy Red/Blue CLI")
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
@@ -189,6 +189,9 @@ func main() {
 func runHeader(planner, starter, dest string, seed int64, burn int) string {
 	what := "planner " + planner
 	if planner == "scripted" {
+		if starter == "" {
+			starter = "profile/default starter"
+		}
 		what += " · " + starter + " → " + dest
 	}
 	if seed == 0 {
@@ -210,17 +213,29 @@ func watchPort(served string) int {
 }
 
 func runScripted(m *emu.Emu, starter, dest string, hold time.Duration, served string) {
-	switch starter {
-	case "charmander", "squirtle", "bulbasaur":
-	default:
-		log.Fatalf("unknown starter %q: want charmander, squirtle or bulbasaur", starter)
+	request := starter
+	if request == "" {
+		// Preserve the historical Red/Blue CLI default while allowing games
+		// with exactly one profile-owned opening starter (Yellow) to select it
+		// semantically instead of pretending they use Oak's three-ball menu.
+		obs, err := agent.ObserveChecked(m, m.ROM())
+		if err != nil {
+			log.Fatalf("observe starter choice: %v", err)
+		}
+		if _, ok := agent.DefaultStarterObjective(obs); !ok {
+			request = "squirtle"
+		}
 	}
 
-	starterObj, err := starterObjectiveForRequest(starter, 0)
+	starterObj, err := scriptedStarterObjective(m, request, 0)
 	if err != nil {
 		log.Fatalf("starter objective: %v", err)
 	}
-	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starter)
+	starterName := string(starterObj.Species)
+	if starterName == "" {
+		starterName = request
+	}
+	fmt.Printf("getting the %s starter (this includes the rival battle)...\n", starterName)
 	starterResult, err := executeScriptedObjective(m, starterObj)
 	if err != nil {
 		log.Fatalf("get starter: %s", scriptedObjectiveDetail(starterResult, err))
