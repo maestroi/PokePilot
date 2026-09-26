@@ -52,6 +52,7 @@ func standardLeagueStageFight(m *emu.Emu, romData []byte, policy MovePolicy, sta
 		stage.Name,
 		stage.TrainerHomeX,
 		stage.TrainerHomeY,
+		stage.RoomMap,
 		stage.Done,
 	)
 }

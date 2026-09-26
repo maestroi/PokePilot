@@ -72,6 +72,14 @@ const (
 	ToggleableObjectList  uint16 = 0xD5CE
 	EventFlags            uint16 = 0xD747
 	MtMoonB2FCurScript    uint16 = 0xD607
+	// Elite Four room script selectors. Unlike wCurMapScript, these are the
+	// map-owned values ExecuteCurMapScriptInTable reads on entry and writes
+	// only after the selected script returns, so a nonzero end-battle script
+	// here proves the room still owns the interaction boundary.
+	LoreleisRoomCurScript uint16 = 0xD64D
+	BrunosRoomCurScript   uint16 = 0xD64E
+	AgathasRoomCurScript  uint16 = 0xD64F
+	LancesRoomCurScript   uint16 = 0xD653
 	StatusFlags1          uint16 = 0xD728 // wStatusFlags1: Strength active lives in bit 0
 	StatusFlags4          uint16 = 0xD72E // wStatusFlags4
 	// The Vermilion Gym script seeds these with the live trash-can puzzle.
