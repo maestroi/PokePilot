@@ -66,7 +66,7 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 func TestYellowProgressionInsertsJessieJamesAfterMtMoonFossil(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
-		GameID: yellowprofile.GameID,
+		GameID:     yellowprofile.GameID,
 		PartyCount: 1,
 		Story: ProgressState{
 			{ID: yellowprofile.ProgressYellowStarterReceived, Complete: true},
