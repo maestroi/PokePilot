@@ -1,6 +1,7 @@
 package rom
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/maestroi/pokepilot/gen1rom"
@@ -23,23 +24,26 @@ func NewWorldProvider(romData []byte) worldmodel.MapHeaderProvider {
 	return &redWorldProvider{rom: romData}
 }
 
-func (p *redWorldProvider) MapIDs() []uint8 {
-	ids := make([]uint8, 0, int(redWorldMaxMapID)+1)
+func (p *redWorldProvider) MapIDs() []worldmodel.MapID {
+	ids := make([]worldmodel.MapID, 0, int(redWorldMaxMapID)+1)
 	for id := uint16(0); id <= uint16(redWorldMaxMapID); id++ {
 		if validMapID(p.rom, uint8(id)) {
-			ids = append(ids, uint8(id))
+			ids = append(ids, worldmodel.MapID(id))
 		}
 	}
 	return ids
 }
 
-func (p *redWorldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
-	h, err := ParseMap(p.rom, mapID)
+func (p *redWorldProvider) ParseMap(mapID worldmodel.MapID) (worldmodel.MapHeader, error) {
+	if mapID > 0xff {
+		return worldmodel.MapHeader{}, fmt.Errorf("red world: map id %#04x exceeds Gen-I range", mapID)
+	}
+	h, err := ParseMap(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
 	out := projectWorldHeader(h)
-	actors, err := SpecialInteractionActors(p.rom, mapID)
+	actors, err := SpecialInteractionActors(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
@@ -57,13 +61,13 @@ func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	warps := make([]worldmodel.Warp, len(h.Warps))
 	for i, w := range h.Warps {
 		warps[i] = worldmodel.Warp{
-			X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: w.DestMap,
+			X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: worldmodel.MapID(w.DestMap),
 			Inert: IsInertWarp(h.ID, w.X, w.Y),
 		}
 	}
 	connections := make([]worldmodel.Connection, len(h.Connections))
 	for i, c := range h.Connections {
-		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: c.MapID, Offset: c.Offset}
+		connections[i] = worldmodel.Connection{Dir: c.Dir, MapID: worldmodel.MapID(c.MapID), Offset: c.Offset}
 	}
 	objects := make([]worldmodel.MapObject, len(h.Objects))
 	for i, object := range h.Objects {
@@ -80,7 +84,7 @@ func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 		}
 	}
 	return worldmodel.MapHeader{
-		ID:            h.ID,
+		ID:            worldmodel.MapID(h.ID),
 		NativeTileset: uint16(h.Tileset),
 		WidthBlocks:   h.WidthBlocks,
 		HeightBlocks:  h.HeightBlocks,
@@ -107,8 +111,11 @@ func (h MapHeader) WorldMapHeader() worldmodel.MapHeader {
 	return projectWorldHeader(h)
 }
 
-func (p *redWorldProvider) Grid(mapID uint8, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
-	h, err := ParseMap(p.rom, mapID)
+func (p *redWorldProvider) Grid(mapID worldmodel.MapID, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	if mapID > 0xff {
+		return worldmodel.GridSpec{}, fmt.Errorf("red world: map id %#04x exceeds Gen-I range", mapID)
+	}
+	h, err := ParseMap(p.rom, uint8(mapID))
 	if err != nil {
 		return worldmodel.GridSpec{}, err
 	}
@@ -136,24 +143,30 @@ func enableGen1SurfWater(spec *worldmodel.GridSpec) {
 	}
 }
 
-func (p *redWorldProvider) LookupElevator(mapID uint8) (worldmodel.ElevatorSpec, bool) {
-	spec, ok := LookupElevator(mapID)
+func (p *redWorldProvider) LookupElevator(mapID worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
+	if mapID > 0xff {
+		return worldmodel.ElevatorSpec{}, false
+	}
+	spec, ok := LookupElevator(uint8(mapID))
 	if !ok {
 		return worldmodel.ElevatorSpec{}, false
 	}
 	floors := make([]worldmodel.ElevatorFloor, len(spec.Floors))
 	for i, floor := range spec.Floors {
-		floors[i] = worldmodel.ElevatorFloor{MapID: floor.MapID, DestWarpID: floor.DestWarpID}
+		floors[i] = worldmodel.ElevatorFloor{MapID: worldmodel.MapID(floor.MapID), DestWarpID: floor.DestWarpID}
 	}
 	return worldmodel.ElevatorSpec{PanelX: spec.PanelX, PanelY: spec.PanelY, Floors: floors}, true
 }
 
-func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap uint8) (worldmodel.ElevatorFloor, bool) {
-	_, floor, _, ok := ElevatorFloorForDestination(elevatorMap, destinationMap)
+func (p *redWorldProvider) ElevatorFloorForDestination(elevatorMap, destinationMap worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
+	if elevatorMap > 0xff || destinationMap > 0xff {
+		return worldmodel.ElevatorFloor{}, false
+	}
+	_, floor, _, ok := ElevatorFloorForDestination(uint8(elevatorMap), uint8(destinationMap))
 	if !ok {
 		return worldmodel.ElevatorFloor{}, false
 	}
-	return worldmodel.ElevatorFloor{MapID: floor.MapID, DestWarpID: floor.DestWarpID}, true
+	return worldmodel.ElevatorFloor{MapID: worldmodel.MapID(floor.MapID), DestWarpID: floor.DestWarpID}, true
 }
 
 // WorldGridSpec lets existing Red callers keep passing rom.MapHeader while

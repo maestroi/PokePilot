@@ -4,7 +4,7 @@ import "github.com/maestroi/pokepilot/worldmodel"
 
 type connectionView interface {
 	WorldDirection() uint8
-	WorldMapID() uint8
+	WorldMapID() MapID
 	WorldOffset() int8
 }
 
@@ -72,7 +72,7 @@ type connectionComponentPair struct {
 	entry int
 }
 
-func (g *Graph) connectionEdges(from uint8, source connectionView) []Edge {
+func (g *Graph) connectionEdges(from MapID, source connectionView) []Edge {
 	c := portableConnection(source)
 	base := Edge{Kind: EdgeConnection, From: from, To: c.MapID, Dir: c.Dir}
 	src, okSrc := g.tiles[from]

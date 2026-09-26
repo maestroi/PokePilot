@@ -13,9 +13,9 @@ type weightedRouteTestProvider struct {
 	height int
 }
 
-func (p weightedRouteTestProvider) MapIDs() []uint8 { return []uint8{1, 2, 3, 4} }
+func (p weightedRouteTestProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{1, 2, 3, 4} }
 
-func (p weightedRouteTestProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
+func (p weightedRouteTestProvider) ParseMap(mapID worldmodel.MapID) (worldmodel.MapHeader, error) {
 	return worldmodel.MapHeader{
 		ID:           mapID,
 		WidthBlocks:  uint8(p.width / 2),
@@ -23,7 +23,7 @@ func (p weightedRouteTestProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, 
 	}, nil
 }
 
-func (p weightedRouteTestProvider) Grid(mapID uint8, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+func (p weightedRouteTestProvider) Grid(mapID worldmodel.MapID, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	n := p.width * p.height
 	walkable := make([]bool, n)
 	for i := range walkable {
@@ -39,11 +39,11 @@ func (p weightedRouteTestProvider) Grid(mapID uint8, _ []byte, _ worldmodel.Trav
 	}, nil
 }
 
-func (weightedRouteTestProvider) LookupElevator(uint8) (worldmodel.ElevatorSpec, bool) {
+func (weightedRouteTestProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
 	return worldmodel.ElevatorSpec{}, false
 }
 
-func (weightedRouteTestProvider) ElevatorFloorForDestination(uint8, uint8) (worldmodel.ElevatorFloor, bool) {
+func (weightedRouteTestProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
 	return worldmodel.ElevatorFloor{}, false
 }
 

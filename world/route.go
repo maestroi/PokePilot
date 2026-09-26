@@ -25,7 +25,12 @@ var ErrRouteReplanRequired = errors.New("world: semantic route requires live-top
 // so the same call always returns the same route. Tile-level pathfinding is
 // not done here; that happens per leg at execution time.
 func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
-	return FindRouteAvoiding(g, from, to, nil)
+	return FindRouteMaps(g, MapID(from), MapID(to))
+}
+
+// FindRouteMaps is FindRoute for adapters whose native map ids exceed one byte.
+func FindRouteMaps(g *Graph, from, to MapID) ([]Edge, error) {
+	return FindRouteAvoidingMaps(g, from, to, nil)
 }
 
 // FindRouteAvoiding is FindRoute with the legs the caller has discovered it
@@ -58,6 +63,11 @@ func FindRoute(g *Graph, from, to uint8) ([]Edge, error) {
 //
 // Edge is comparable, so the caller's set is a plain map[Edge]bool.
 func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAvoidingMaps(g, MapID(from), MapID(to), blockedHere)
+}
+
+// FindRouteAvoidingMaps is the wide-map-id variant of FindRouteAvoiding.
+func FindRouteAvoidingMaps(g *Graph, from, to MapID, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRoute(g, from, to, blockedHere, nil, nil, nil, nil)
 }
 
@@ -67,6 +77,11 @@ func FindRouteAvoiding(g *Graph, from, to uint8, blockedHere map[Edge]bool) ([]E
 // components (Route 2, the gate maps) and the caller knows which one it stands
 // in; the component the player is in is the only honest first-hop constraint.
 func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAtMaps(g, MapID(from), MapID(to), x, y, blockedHere)
+}
+
+// FindRouteAtMaps is the wide-map-id variant of FindRouteAt.
+func FindRouteAtMaps(g *Graph, from, to MapID, x, y int, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRoute(g, from, to, blockedHere, componentSetAt(g, from, x, y), nil, nil, nil)
 }
 
@@ -77,6 +92,11 @@ func FindRouteAt(g *Graph, from, to uint8, x, y int, blockedHere map[Edge]bool) 
 // deliberately searches a cycle that leaves and re-enters the map through a
 // component that can actually reach the target.
 func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
+	return FindRouteAtDestinationMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere)
+}
+
+// FindRouteAtDestinationMaps is the wide-map-id variant of FindRouteAtDestination.
+func FindRouteAtDestinationMaps(g *Graph, from, to MapID, x, y, tx, ty int, blockedHere map[Edge]bool) ([]Edge, error) {
 	return findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, nil, nil)
 }
 
@@ -93,7 +113,7 @@ func FindRouteAtDestination(g *Graph, from, to uint8, x, y, tx, ty int, blockedH
 // the adjacent map, so inventing FROM-side port reachability strands players
 // in dead pockets (Cerulean Badge House north exit) that planned "east to
 // Route 9" with Cut while standing on an unreachable component.
-func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
+func findRouteAtDestinationAllowingSemantic(g *Graph, from, to MapID, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	first := componentSetAt(g, from, x, y)
 	target := standingComponentAt(g, to, tx, ty)
 	if !g.componentAware || len(target) == 0 {
@@ -108,7 +128,7 @@ func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, 
 	return findRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding)
 }
 
-func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
+func componentSetAt(g *Graph, mapID MapID, x, y int) []int {
 	return g.expandComponents(mapID, standingComponentAt(g, mapID, x, y))
 }
 
@@ -147,7 +167,7 @@ func (g *Graph) EdgeEntrySharesComponentWith(e Edge, x, y int) (same, known bool
 // position gets the same answer a statically-known warp tile would.
 // isWarpTile reports whether (x,y) is a warp source tile on mapID, the only
 // reason componentsWithBlocked would leave a walkable tile at component 0.
-func isWarpTile(g *Graph, mapID uint8, x, y int) bool {
+func isWarpTile(g *Graph, mapID MapID, x, y int) bool {
 	for _, w := range g.warps[mapID] {
 		if int(w.X) == x && int(w.Y) == y {
 			return true
@@ -156,7 +176,7 @@ func isWarpTile(g *Graph, mapID uint8, x, y int) bool {
 	return false
 }
 
-func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
+func standingComponentAt(g *Graph, mapID MapID, x, y int) []int {
 	if !g.componentAware {
 		return nil
 	}
@@ -190,7 +210,7 @@ func standingComponentAt(g *Graph, mapID uint8, x, y int) []int {
 }
 
 type routeStateKey struct {
-	mapID      uint8
+	mapID      MapID
 	components string
 	via        Edge
 	byEdge     bool
@@ -201,7 +221,7 @@ type routeStateKey struct {
 // building cycles that both land on the same plaza component are the same
 // routing state. When the graph has no component evidence for the landing, use
 // via as the conservative fallback and preserve the previous edge-keyed search.
-func routeStateIdentity(g *Graph, mapID uint8, entry []int, via Edge) routeStateKey {
+func routeStateIdentity(g *Graph, mapID MapID, entry []int, via Edge) routeStateKey {
 	if g.componentAware && len(entry) > 0 {
 		return routeStateKey{mapID: mapID, components: componentSetKey(entry)}
 	}
@@ -263,7 +283,7 @@ func bypassBandDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCa
 	return false
 }
 
-func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
+func findRoute(g *Graph, from, to MapID, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
@@ -283,11 +303,11 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 	// yet. Re-entering a map already occupied in this search must use the
 	// physical landing: otherwise leave-and-return becomes a teleport onto
 	// every component of the origin (Cerulean -> Route 9 -> Cerulean).
-	occupied := map[uint8]bool{from: true}
+	occupied := map[MapID]bool{from: true}
 	if g.componentAware && len(first) > 0 {
 		seen[routeStateIdentity(g, from, first, Edge{})] = true
 	}
-	expand := func(cur uint8, prev int, entry []int) {
+	expand := func(cur MapID, prev int, entry []int) {
 		for _, e := range g.Edges[cur] {
 			if prev < 0 && blockedHere[e] {
 				continue

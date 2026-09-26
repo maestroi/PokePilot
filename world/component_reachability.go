@@ -39,7 +39,7 @@ func componentReachability(grid *Grid, comps [][]int) map[int][]int {
 	return out
 }
 
-func (g *Graph) expandComponents(id uint8, in []int) []int {
+func (g *Graph) expandComponents(id MapID, in []int) []int {
 	var out []int
 	seen := map[int]bool{}
 	for _, c := range in {

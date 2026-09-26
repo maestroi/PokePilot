@@ -122,7 +122,18 @@ func FindRouteAtDestinationWithCapabilities(
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 ) ([]Edge, error) {
-	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, from, to, x, y, tx, ty, blockedHere, prereqs)
+	return FindRouteAtDestinationWithCapabilitiesMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere, prereqs)
+}
+
+// FindRouteAtDestinationWithCapabilitiesMaps is the wide-map-id variant.
+func FindRouteAtDestinationWithCapabilitiesMaps(
+	g *Graph,
+	from, to MapID,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+) ([]Edge, error) {
+	plan, err := FindRoutePlanAtDestinationWithCapabilitiesMaps(g, from, to, x, y, tx, ty, blockedHere, prereqs)
 	if err != nil {
 		return nil, err
 	}
@@ -161,8 +172,19 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	blockedHere map[Edge]bool,
 	prereqs RoutePrerequisites,
 ) ([]RouteStep, error) {
+	return FindRoutePlanAtDestinationWithCapabilitiesMaps(g, MapID(from), MapID(to), x, y, tx, ty, blockedHere, prereqs)
+}
+
+// FindRoutePlanAtDestinationWithCapabilitiesMaps is the wide-map-id variant.
+func FindRoutePlanAtDestinationWithCapabilitiesMaps(
+	g *Graph,
+	from, to MapID,
+	x, y, tx, ty int,
+	blockedHere map[Edge]bool,
+	prereqs RoutePrerequisites,
+) ([]RouteStep, error) {
 	if g == nil || len(prereqs.Transitions) == 0 {
-		route, err := FindRouteAtDestination(g, from, to, x, y, tx, ty, blockedHere)
+		route, err := FindRouteAtDestinationMaps(g, from, to, x, y, tx, ty, blockedHere)
 		return routeSteps(route, nil), err
 	}
 
@@ -269,7 +291,7 @@ func routeSteps(route []Edge, transitions map[Edge]gameruntime.Transition) []Rou
 
 func graphWithoutSemanticEdges(g *Graph, denied map[Edge]gameruntime.TransitionBlockage) *Graph {
 	copyGraph := *g
-	copyGraph.Edges = make(map[uint8][]Edge, len(g.Edges))
+	copyGraph.Edges = make(map[MapID][]Edge, len(g.Edges))
 	for mapID, edges := range g.Edges {
 		filtered := make([]Edge, 0, len(edges))
 		for _, edge := range edges {

@@ -15,7 +15,7 @@ import (
 // component ids on both sides of the seam, so retaining the base bands after a
 // live topology change can make the router approve one component while the
 // executor crosses a different tile in that stale aggregate band.
-func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
+func (g *Graph) WithMapGrid(mapID MapID, grid *Grid) (*Graph, error) {
 	if g == nil {
 		return nil, fmt.Errorf("world: live graph overlay on nil graph")
 	}
@@ -30,15 +30,15 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 	}
 
 	out := *g
-	out.reachable = make(map[uint8]map[int][]int, len(g.reachable))
+	out.reachable = make(map[MapID]map[int][]int, len(g.reachable))
 	for id, reachable := range g.reachable {
 		out.reachable[id] = reachable
 	}
-	out.comps = make(map[uint8][][]int, len(g.comps))
+	out.comps = make(map[MapID][][]int, len(g.comps))
 	for id, comps := range g.comps {
 		out.comps[id] = comps
 	}
-	out.tiles = make(map[uint8]dim, len(g.tiles))
+	out.tiles = make(map[MapID]dim, len(g.tiles))
 	for id, d := range g.tiles {
 		out.tiles[id] = d
 	}
@@ -46,7 +46,7 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 	out.comps[mapID] = componentsWithBlocked(grid, warpTileBlockers(g.warps[mapID]))
 	out.reachable[mapID] = componentReachability(grid, out.comps[mapID])
 	out.tiles[mapID] = dim{w: grid.Width, h: grid.Height}
-	out.traversal = make(map[uint8]TraversalMode, len(g.traversal)+1)
+	out.traversal = make(map[MapID]TraversalMode, len(g.traversal)+1)
 	for id, mode := range g.traversal {
 		out.traversal[id] = mode
 	}
@@ -70,7 +70,7 @@ func (g *Graph) WithMapGrid(mapID uint8, grid *Grid) (*Graph, error) {
 
 // MapTraversal reports the movement mode mapID's walkable components were
 // decoded for. overlaid is false for the graph's static land topology.
-func (g *Graph) MapTraversal(mapID uint8) (mode TraversalMode, overlaid bool) {
+func (g *Graph) MapTraversal(mapID MapID) (mode TraversalMode, overlaid bool) {
 	if g == nil {
 		return TraversalLand, false
 	}
@@ -79,8 +79,9 @@ func (g *Graph) MapTraversal(mapID uint8) (mode TraversalMode, overlaid bool) {
 }
 
 type liveConnectionKey struct {
-	from, to, dir uint8
-	offset        int8
+	from, to MapID
+	dir      uint8
+	offset   int8
 }
 
 // resegmentConnectionsTouching rebuilds every logical connection whose source
@@ -91,7 +92,7 @@ type liveConnectionKey struct {
 // g already contains the live component matrix for mapID. Rebuilt bands are
 // inserted at the first old edge for that logical connection, preserving the
 // route graph's relative edge order while dropping any remaining stale bands.
-func (g *Graph) resegmentConnectionsTouching(base *Graph, mapID uint8) {
+func (g *Graph) resegmentConnectionsTouching(base *Graph, mapID MapID) {
 	affected := make(map[Edge]bool)
 	for _, edges := range base.Edges {
 		for _, e := range edges {
@@ -102,7 +103,7 @@ func (g *Graph) resegmentConnectionsTouching(base *Graph, mapID uint8) {
 		}
 	}
 
-	g.Edges = make(map[uint8][]Edge, len(base.Edges))
+	g.Edges = make(map[MapID][]Edge, len(base.Edges))
 	g.connections = make(map[Edge]worldmodel.Connection, len(base.connections))
 	for e, c := range base.connections {
 		if !affected[e] {

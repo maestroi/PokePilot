@@ -98,7 +98,7 @@ func TestRealYellowOverworldCollisionUsesYellowCollisionBank(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reached := map[uint8]bool{}
+	reached := map[world.MapID]bool{}
 	for _, e := range graph.Edges[0x00] {
 		reached[e.To] = true
 	}

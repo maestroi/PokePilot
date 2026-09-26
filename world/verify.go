@@ -12,13 +12,13 @@ import (
 // worldverify contract. The graph is still Red-backed today, but none of its
 // native map ids, collision representation, or ROM structs cross the verifier
 // boundary. Future game adapters can emit the same snapshot directly.
-func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, starts ...uint8) worldverify.Snapshot {
+func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, starts ...MapID) worldverify.Snapshot {
 	snapshot := worldverify.Snapshot{Game: "pokemon-red"}
 	if g == nil {
 		return snapshot
 	}
 
-	mapIDs := map[uint8]bool{}
+	mapIDs := map[MapID]bool{}
 	for id := range g.Edges {
 		mapIDs[id] = true
 	}
@@ -35,7 +35,7 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 	sort.Ints(ordered)
 
 	for _, raw := range ordered {
-		id := uint8(raw)
+		id := MapID(raw)
 		d := g.tiles[id]
 		components := uniqueComponents(g.comps[id])
 		snapshot.Maps = append(snapshot.Maps, worldverify.Map{
@@ -48,7 +48,7 @@ func ValidationSnapshot(g *Graph, transitions map[Edge]gameruntime.Transition, s
 	}
 
 	for _, raw := range ordered {
-		from := uint8(raw)
+		from := MapID(raw)
 		for index, edge := range g.Edges[from] {
 			out := worldverify.Edge{
 				ID:   validationEdgeID(edge, index),
@@ -220,10 +220,19 @@ func validationExecutionEvidence(g *Graph, edge Edge) *worldverify.ExecutionEvid
 // a built graph. Callers that need custom verifier limits can use
 // ValidationSnapshot and worldverify.Verify directly.
 func VerifyGraph(g *Graph, transitions map[Edge]gameruntime.Transition, starts ...uint8) worldverify.Report {
+	wide := make([]MapID, len(starts))
+	for i, start := range starts {
+		wide[i] = MapID(start)
+	}
+	return worldverify.Verify(ValidationSnapshot(g, transitions, wide...), worldverify.Options{})
+}
+
+// VerifyGraphMaps is the wide-map-id variant for adapters such as Gen II.
+func VerifyGraphMaps(g *Graph, transitions map[Edge]gameruntime.Transition, starts ...MapID) worldverify.Report {
 	return worldverify.Verify(ValidationSnapshot(g, transitions, starts...), worldverify.Options{})
 }
 
-func validationMapID(id uint8) worldverify.MapID {
+func validationMapID(id MapID) worldverify.MapID {
 	return worldverify.MapID(fmt.Sprintf("%02x", id))
 }
 

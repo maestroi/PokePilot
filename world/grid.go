@@ -9,6 +9,7 @@ import (
 // TraversalMode selects movement-specific collision semantics supplied by the
 // active game adapter.
 type TraversalMode = worldmodel.TraversalMode
+type MapID = worldmodel.MapID
 
 const (
 	TraversalLand  = worldmodel.TraversalLand
@@ -19,7 +20,7 @@ const (
 // Collision decoding is adapter-owned; generic pathfinding only consumes the
 // portable result below.
 type Grid struct {
-	MapID         uint8
+	MapID         MapID
 	Width, Height int
 	walkable      []bool
 	collisionTile []uint8

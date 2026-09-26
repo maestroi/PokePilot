@@ -17,8 +17,8 @@ const (
 
 type Edge struct {
 	Kind  EdgeKind
-	From  uint8
-	To    uint8
+	From  MapID
+	To    MapID
 	WarpX uint8
 	WarpY uint8
 	Dir   uint8
@@ -41,7 +41,7 @@ type dim struct{ w, h int }
 // when the provider explicitly classifies the map as deliberately unsupported
 // or unused through worldmodel.MapParseFailureClassifier.
 type MapParseFailure struct {
-	MapID    uint8
+	MapID    MapID
 	Err      error
 	Expected bool
 	Reason   string
@@ -105,19 +105,19 @@ func (e *GraphBuildError) Unwrap() []error {
 }
 
 type Graph struct {
-	Edges map[uint8][]Edge
+	Edges map[MapID][]Edge
 
 	componentAware bool
-	comps          map[uint8][][]int
+	comps          map[MapID][][]int
 	exitComps      map[Edge][]int
 	entryComps     map[Edge][]int
-	warps          map[uint8][]worldmodel.Warp
-	tiles          map[uint8]dim
+	warps          map[MapID][]worldmodel.Warp
+	tiles          map[MapID]dim
 	connections    map[Edge]worldmodel.Connection
-	reachable      map[uint8]map[int][]int
+	reachable      map[MapID]map[int][]int
 	// traversal records the movement mode of every WithMapGrid overlay;
 	// absent maps use the static land view.
-	traversal     map[uint8]TraversalMode
+	traversal     map[MapID]TraversalMode
 	provider      worldmodel.MapHeaderProvider
 	parseFailures []MapParseFailure
 }
@@ -152,7 +152,7 @@ func graphProvider(source any) (worldmodel.MapHeaderProvider, error) {
 }
 
 func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
-	headers := make(map[uint8]worldmodel.MapHeader)
+	headers := make(map[MapID]worldmodel.MapHeader)
 	var parseFailures []MapParseFailure
 	classifier, _ := provider.(worldmodel.MapParseFailureClassifier)
 	for _, id := range provider.MapIDs() {
@@ -184,20 +184,20 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		return nil, &GraphBuildError{ParseFailures: parseFailures, NoParseableMaps: true}
 	}
 
-	warpTo := make(map[uint8]map[uint8]bool)
-	explicit := make(map[uint8]map[uint8]bool)
+	warpTo := make(map[MapID]map[MapID]bool)
+	explicit := make(map[MapID]map[MapID]bool)
 	for id, h := range headers {
 		for _, w := range h.Warps {
 			if w.Inert {
 				continue
 			}
 			if warpTo[w.DestMap] == nil {
-				warpTo[w.DestMap] = make(map[uint8]bool)
+				warpTo[w.DestMap] = make(map[MapID]bool)
 			}
 			warpTo[w.DestMap][id] = true
 			if w.DestMap != 0xFF {
 				if explicit[id] == nil {
-					explicit[id] = make(map[uint8]bool)
+					explicit[id] = make(map[MapID]bool)
 				}
 				explicit[id][w.DestMap] = true
 			}
@@ -205,15 +205,15 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	}
 
 	g := &Graph{
-		Edges:          make(map[uint8][]Edge, len(headers)),
+		Edges:          make(map[MapID][]Edge, len(headers)),
 		componentAware: true,
-		comps:          make(map[uint8][][]int, len(headers)),
+		comps:          make(map[MapID][][]int, len(headers)),
 		exitComps:      make(map[Edge][]int),
 		entryComps:     make(map[Edge][]int),
-		warps:          make(map[uint8][]worldmodel.Warp, len(headers)),
-		tiles:          make(map[uint8]dim, len(headers)),
+		warps:          make(map[MapID][]worldmodel.Warp, len(headers)),
+		tiles:          make(map[MapID]dim, len(headers)),
 		connections:    make(map[Edge]worldmodel.Connection),
-		reachable:      make(map[uint8]map[int][]int),
+		reachable:      make(map[MapID]map[int][]int),
 		provider:       provider,
 		parseFailures:  append([]MapParseFailure(nil), parseFailures...),
 	}
@@ -237,11 +237,11 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		}
 	}
 
-	resolve := func(a uint8, w worldmodel.Warp) (uint8, bool) {
+	resolve := func(a MapID, w worldmodel.Warp) (MapID, bool) {
 		if w.DestMap != 0xFF {
 			return w.DestMap, true
 		}
-		n, dest := 0, uint8(0)
+		n, dest := 0, MapID(0)
 		for b := range warpTo[a] {
 			if explicit[a][b] {
 				continue
@@ -254,7 +254,7 @@ func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 		}
 		if n > 1 {
 			if d := nearestDir(int(w.X), int(w.Y), g.tiles[a].w, g.tiles[a].h); d >= 0 {
-				var match uint8
+				var match MapID
 				matched := 0
 				for b := range warpTo[a] {
 					if explicit[a][b] {
@@ -596,7 +596,7 @@ func oppositeDir(d int) int {
 	return -1
 }
 
-func (g *Graph) candidateSide(cand, m uint8) int {
+func (g *Graph) candidateSide(cand, m MapID) int {
 	side := -1
 	for _, cw := range g.warps[cand] {
 		if cw.DestMap != m {

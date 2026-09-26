@@ -13,9 +13,9 @@ import (
 
 type fakeMapProvider struct{}
 
-func (fakeMapProvider) MapIDs() []uint8 { return []uint8{1, 2} }
+func (fakeMapProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{1, 2} }
 
-func (fakeMapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
+func (fakeMapProvider) ParseMap(id worldmodel.MapID) (worldmodel.MapHeader, error) {
 	switch id {
 	case 1:
 		return worldmodel.MapHeader{
@@ -35,7 +35,7 @@ func (fakeMapProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
 	}
 }
 
-func (fakeMapProvider) Grid(id uint8, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+func (fakeMapProvider) Grid(id worldmodel.MapID, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	return worldmodel.GridSpec{
 		MapID:         id,
 		Width:         2,
@@ -46,11 +46,11 @@ func (fakeMapProvider) Grid(id uint8, _ []byte, _ worldmodel.TraversalMode) (wor
 	}, nil
 }
 
-func (fakeMapProvider) LookupElevator(uint8) (worldmodel.ElevatorSpec, bool) {
+func (fakeMapProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
 	return worldmodel.ElevatorSpec{}, false
 }
 
-func (fakeMapProvider) ElevatorFloorForDestination(uint8, uint8) (worldmodel.ElevatorFloor, bool) {
+func (fakeMapProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
 	return worldmodel.ElevatorFloor{}, false
 }
 
@@ -82,20 +82,20 @@ func TestBuildGraphFromFakeProvider(t *testing.T) {
 }
 
 type parseFailureProvider struct {
-	failures map[uint8]error
-	expected map[uint8]string
+	failures map[worldmodel.MapID]error
+	expected map[worldmodel.MapID]string
 }
 
-func (p parseFailureProvider) MapIDs() []uint8 { return []uint8{1, 2, 3} }
+func (p parseFailureProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{1, 2, 3} }
 
-func (p parseFailureProvider) ParseMap(id uint8) (worldmodel.MapHeader, error) {
+func (p parseFailureProvider) ParseMap(id worldmodel.MapID) (worldmodel.MapHeader, error) {
 	if err := p.failures[id]; err != nil {
 		return worldmodel.MapHeader{}, err
 	}
 	return worldmodel.MapHeader{ID: id, WidthBlocks: 1, HeightBlocks: 1}, nil
 }
 
-func (parseFailureProvider) Grid(id uint8, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+func (parseFailureProvider) Grid(id worldmodel.MapID, _ []byte, _ worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
 	return worldmodel.GridSpec{
 		MapID:         id,
 		Width:         2,
@@ -106,15 +106,15 @@ func (parseFailureProvider) Grid(id uint8, _ []byte, _ worldmodel.TraversalMode)
 	}, nil
 }
 
-func (parseFailureProvider) LookupElevator(uint8) (worldmodel.ElevatorSpec, bool) {
+func (parseFailureProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
 	return worldmodel.ElevatorSpec{}, false
 }
 
-func (parseFailureProvider) ElevatorFloorForDestination(uint8, uint8) (worldmodel.ElevatorFloor, bool) {
+func (parseFailureProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
 	return worldmodel.ElevatorFloor{}, false
 }
 
-func (p parseFailureProvider) ExpectedMapParseFailure(id uint8, _ error) (string, bool) {
+func (p parseFailureProvider) ExpectedMapParseFailure(id worldmodel.MapID, _ error) (string, bool) {
 	reason, ok := p.expected[id]
 	return reason, ok
 }
@@ -123,7 +123,7 @@ func TestBuildGraphAggregatesUnexpectedMapParseFailures(t *testing.T) {
 	badHeader := errors.New("truncated map header")
 	badObjects := errors.New("invalid object table")
 	provider := parseFailureProvider{
-		failures: map[uint8]error{2: badHeader, 3: badObjects},
+		failures: map[worldmodel.MapID]error{2: badHeader, 3: badObjects},
 	}
 
 	g, err := BuildGraph(provider)
@@ -153,8 +153,8 @@ func TestBuildGraphAggregatesUnexpectedMapParseFailures(t *testing.T) {
 
 func TestBuildGraphKeepsExpectedParseFailureVisibleToWorldVerify(t *testing.T) {
 	provider := parseFailureProvider{
-		failures: map[uint8]error{2: errors.New("unused map layout is intentionally unsupported")},
-		expected: map[uint8]string{2: "dead duplicate map excluded by this adapter"},
+		failures: map[worldmodel.MapID]error{2: errors.New("unused map layout is intentionally unsupported")},
+		expected: map[worldmodel.MapID]string{2: "dead duplicate map excluded by this adapter"},
 	}
 
 	g, err := BuildGraph(provider)
@@ -175,6 +175,44 @@ func TestBuildGraphKeepsExpectedParseFailureVisibleToWorldVerify(t *testing.T) {
 	}
 	if !reportHasFinding(report, "expected_map_parse_failure", worldverify.SeverityWarning) {
 		t.Fatalf("worldverify did not surface expected parse failure: %+v", report.Findings)
+	}
+}
+
+type wideMapProvider struct{}
+
+func (wideMapProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{0x0101} }
+
+func (wideMapProvider) ParseMap(id worldmodel.MapID) (worldmodel.MapHeader, error) {
+	return worldmodel.MapHeader{ID: id, WidthBlocks: 1, HeightBlocks: 1}, nil
+}
+
+func (wideMapProvider) Grid(id worldmodel.MapID, _ []byte, mode worldmodel.TraversalMode) (worldmodel.GridSpec, error) {
+	return worldmodel.GridSpec{
+		MapID:         id,
+		Width:         2,
+		Height:        2,
+		Walkable:      []bool{true, true, true, true},
+		CollisionTile: []uint8{1, 1, 1, 1},
+		FieldTile:     []uint8{1, 1, 1, 1},
+		Traversal:     mode,
+	}, nil
+}
+
+func (wideMapProvider) LookupElevator(worldmodel.MapID) (worldmodel.ElevatorSpec, bool) {
+	return worldmodel.ElevatorSpec{}, false
+}
+
+func (wideMapProvider) ElevatorFloorForDestination(worldmodel.MapID, worldmodel.MapID) (worldmodel.ElevatorFloor, bool) {
+	return worldmodel.ElevatorFloor{}, false
+}
+
+func TestBuildGraphPreservesWideMapID(t *testing.T) {
+	g, err := BuildGraph(wideMapProvider{})
+	if err != nil {
+		t.Fatalf("BuildGraph(wide provider): %v", err)
+	}
+	if _, ok := g.Edges[0x0101]; !ok {
+		t.Fatalf("wide map id 0x0101 was truncated: keys=%v", g.Edges)
 	}
 }
 

@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/red/rom"
-	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // TestProbe answers "can I get there from here?" without anyone reading a
@@ -56,9 +56,12 @@ func TestProbe(t *testing.T) {
 	if spec == "" && statePath == "" {
 		t.Skip("set PROBE_MAP or PROBE_STATE to run the probe, e.g. PROBE_MAP=0x0c PROBE_AT=15,13")
 	}
-	romPath := os.Getenv("POKEMON_RED_ROM")
+	romPath := os.Getenv("POKEMON_ROM")
 	if romPath == "" {
-		t.Skip("POKEMON_RED_ROM not set")
+		romPath = os.Getenv("POKEMON_RED_ROM") // legacy convenience for existing Gen-I probe commands
+	}
+	if romPath == "" {
+		t.Skip("POKEMON_ROM not set")
 	}
 	romData, err := os.ReadFile(romPath)
 	if err != nil {
@@ -82,17 +85,38 @@ func TestProbe(t *testing.T) {
 			t.Setenv("PROBE_AT", fmt.Sprintf("%d,%d", p.X, p.Y))
 		}
 	}
-	id64, err := strconv.ParseUint(strings.TrimPrefix(spec, "0x"), 16, 8)
+	id64, err := strconv.ParseUint(strings.TrimPrefix(spec, "0x"), 16, 16)
 	if err != nil {
 		t.Fatalf("PROBE_MAP %q is not a map id: %v", spec, err)
 	}
+	if id64 > 0xff {
+		t.Fatalf("PROBE_MAP %#04x needs wide map-id support; the current world provider boundary is still uint8", id64)
+	}
 	mapID := uint8(id64)
 
-	h, err := rom.ParseMap(romData, mapID)
+	profile, _, err := profiles.Detect(romData)
+	if err != nil {
+		t.Fatalf("detect ROM profile: %v", err)
+	}
+	providerProfile, ok := profile.(interface {
+		MapProvider([]byte) worldmodel.MapHeaderProvider
+	})
+	if !ok {
+		t.Fatalf("profile %s@%s does not expose a map provider", profile.ID(), profile.Revision())
+	}
+	provider := providerProfile.MapProvider(romData)
+	if provider == nil {
+		t.Fatalf("profile %s@%s returned a nil map provider", profile.ID(), profile.Revision())
+	}
+	h, err := provider.ParseMap(mapID)
 	if err != nil {
 		t.Fatalf("parse map %#04x: %v", mapID, err)
 	}
-	g, err := world.Build(romData, h)
+	gridSpec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatalf("build map %#04x: %v", mapID, err)
+	}
+	g, err := world.GridFromSpec(gridSpec)
 	if err != nil {
 		t.Fatalf("build map %#04x: %v", mapID, err)
 	}
@@ -117,13 +141,13 @@ func TestProbe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PROBE_ROUTE %q is not a map id: %v", spec, err)
 		}
-		graph, err := world.BuildGraph(romData)
+		graph, err := world.BuildGraph(provider)
 		if err != nil {
 			t.Fatalf("build graph: %v", err)
 		}
-		route, err := world.FindRoute(graph, mapID, uint8(to64))
+		route, err := world.FindRouteMaps(graph, world.MapID(mapID), world.MapID(to64))
 		if err != nil {
-			t.Logf("route %#04x -> %#04x: %v", mapID, uint8(to64), err)
+			t.Logf("route %#04x -> %#04x: %v", mapID, to64, err)
 		}
 		for i, e := range route {
 			if e.Kind == world.EdgeWarp {
@@ -165,7 +189,7 @@ func TestProbe(t *testing.T) {
 	// answered from data rather than from memory of a past run.
 	for _, o := range h.Objects {
 		if abs(int(o.X)-sx) <= 4 && abs(int(o.Y)-sy) <= 4 {
-			t.Logf("  object sprite %d home tile (%d,%d)", o.SpriteID, o.X, o.Y)
+			t.Logf("  object sprite %d home tile (%d,%d)", o.NativeSpriteID, o.X, o.Y)
 		}
 	}
 
@@ -268,7 +292,7 @@ func abs(n int) int {
 // geometry; only RAM knows which tile you are standing on after a walk went
 // wrong.
 type liveState struct {
-	MapID        uint8
+	MapID        uint16
 	X, Y         uint8
 	Facing       string
 	Controllable bool
@@ -288,8 +312,13 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	if err := m.LoadState(b); err != nil {
 		t.Fatalf("PROBE_STATE %s: LoadState: %v", statePath, err)
 	}
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	p := state.DecodePlayer(&mem)
-	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), state.Controllable(&mem)}
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		t.Fatalf("detect ROM profile: %v", err)
+	}
+	obs, err := profile.DecodeObservation(m, m.ROM())
+	if err != nil {
+		t.Fatalf("decode profile observation: %v", err)
+	}
+	return liveState{obs.NativeMapID, obs.X, obs.Y, obs.Facing, obs.Controllable}
 }
