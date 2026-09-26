@@ -311,6 +311,42 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 	}
 }
 
+func farmDrainRequested(drain <-chan struct{}) bool {
+	if drain == nil {
+		return false
+	}
+	select {
+	case <-drain:
+		return true
+	default:
+		return false
+	}
+}
+
+// mergeFarmCancel lets wall cancellation and process drain share the agent's
+// existing safe-boundary cancel path without giving either producer ownership
+// of the other's channel. cleanup prevents a goroutine leak when gameplay ends
+// naturally before either signal fires.
+func mergeFarmCancel(wallCancel, drain <-chan struct{}) (<-chan struct{}, func()) {
+	if drain == nil {
+		return wallCancel, func() {}
+	}
+	merged := make(chan struct{})
+	done := make(chan struct{})
+	var once sync.Once
+	cleanup := func() { once.Do(func() { close(done) }) }
+	go func() {
+		select {
+		case <-wallCancel:
+			close(merged)
+		case <-drain:
+			close(merged)
+		case <-done:
+		}
+	}()
+	return merged, cleanup
+}
+
 // runFarm is the farm loop: lease a spec, validate it before gameplay, run
 // it exactly as main.go runs from flags, report why it stopped, and lease
 // again. bootState is the SaveState taken right after BootToOverworld; fresh
@@ -320,7 +356,7 @@ func sendFinalHeartbeat(client *farm.Client, hb farm.Heartbeat) {
 //
 // The emulator is single-goroutine: everything that steps or reads it runs
 // on this goroutine. The heartbeat goroutine sees only the plain snapshot.
-func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string, renderFeed *renderStateFeed) bool {
+func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int, checkpointDir string, renderFeed *renderStateFeed, drain <-chan struct{}) bool {
 	tracer := newDialogueTracer()
 	snap := &heartbeatSnap{}
 	var mem state.Mem               // hoisted: every sample reuses this buffer
@@ -329,6 +365,10 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 	var lastIdleLog time.Time
 
 	for {
+		if farmDrainRequested(drain) {
+			log.Printf("farm: runner drain requested while idle; stopping lease loop")
+			return false
+		}
 		pingWorker(client, addrs)
 		spec, err := leaseSpec(client)
 		if err != nil {
@@ -382,9 +422,13 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 			continue
 		}
 
-		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir, renderFeed) {
+		if runOne(m, client, *spec, planner, starter, dest, fps, maxRounds, maxFrames, bootState, tracer, snap, &mem, addrs, checkpointDir, renderFeed, drain) {
 			log.Printf("farm: %s: emulator poisoned by stalled link exchange; recycling worker", spec.RunID)
 			return true
+		}
+		if farmDrainRequested(drain) {
+			log.Printf("farm: %s: graceful drain complete; stopping worker", spec.RunID)
+			return false
 		}
 	}
 }
@@ -438,9 +482,16 @@ func validateSpec(planner, starter, dest string) error {
 // runOne runs one leased spec end-to-end and always finishes it. The
 // heartbeat starts before gameplay and is stopped and joined before the
 // dump, so no heartbeat arrives after Finish.
-func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string, renderFeed *renderStateFeed) bool {
+func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, dest string, fps, maxRounds, maxFrames int, bootState []byte, tracer *dialogueTracer, snap *heartbeatSnap, mem *state.Mem, addrs []string, checkpointDir string, renderFeed *renderStateFeed, drain <-chan struct{}) bool {
 	restoreRunID := setFarmRunID(spec.RunID)
 	defer restoreRunID()
+	if farmDrainRequested(drain) {
+		// The lease crossed SIGTERM before this attempt touched the emulator.
+		// Settle it explicitly so the wall can requeue it immediately instead of
+		// waiting thirty seconds to misclassify the rollout as worker loss.
+		finishRunWithRecording(nil, client, spec, "drained", "runner shutdown requested before attempt start", 0, "", nil, nil, nil)
+		return false
+	}
 
 	// A new lease must not inherit the previous run's sample callback, plan,
 	// or semantic frame. prepareFarmAttempt can restore/step before the new
@@ -514,18 +565,27 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		})
 	}
 
-	cancel := make(chan struct{})
+	wallCancel := make(chan struct{})
+	cancel, stopCancelMerge := mergeFarmCancel(wallCancel, drain)
+	defer stopCancelMerge()
 	stop := make(chan struct{})
-	hbDone := heartbeatLoop(client, spec.RunID, snap.load, cancel, stop, heartbeatInterval)
+	hbDone := heartbeatLoop(client, spec.RunID, snap.load, wallCancel, stop, heartbeatInterval)
 
 	var reason, detail string
 	var progEarly, progFinal *farm.Progress
 	var emulatorPoisoned bool
 	switch planner {
 	case "scripted":
-		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed)
+		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed, drain)
 	case "llm":
 		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, farm.RunPolicyFor(spec), starter, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		// agent.Run deliberately reports cooperative cancellation as StopBudget.
+		// Only rewrite the empty-detail budget stop when SIGTERM actually fired;
+		// a genuine frame/round budget remains a gameplay budget result.
+		if farmDrainRequested(drain) && reason == "budget" && detail == "" {
+			reason = "drained"
+			detail = "runner shutdown requested; stopped at safe objective boundary"
+		}
 	}
 
 	if emulatorPoisoned {
@@ -737,7 +797,10 @@ func workerAddrs(port int) []string {
 // destination. It returns the finish reason instead of keeping the server
 // alive, because the wall decides what happens next. Both actions cross the
 // same objective transaction boundary as planner-selected gameplay.
-func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, string, *farm.Progress, *farm.Progress) {
+func runFarmScripted(m *emu.Emu, starter, dest string, seed int64, drain <-chan struct{}) (string, string, *farm.Progress, *farm.Progress) {
+	if farmDrainRequested(drain) {
+		return "drained", "runner shutdown requested before scripted objective", nil, nil
+	}
 	starterObj, err := starterObjectiveForRequest(starter, seed)
 	if err != nil {
 		return "error", fmt.Sprintf("starter objective: %v", err), nil, nil
@@ -750,6 +813,9 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64) (string, stri
 	if err != nil {
 		captureScriptedObjectiveTelemetry(agent.StopError, results, err)
 		return "error", scriptedObjectiveDetail(starterResult, err), nil, nil
+	}
+	if farmDrainRequested(drain) {
+		return "drained", "runner shutdown requested after starter objective", nil, nil
 	}
 
 	target, ok := skill.Place(dest)
