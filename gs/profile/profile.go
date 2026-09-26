@@ -47,7 +47,7 @@ func NewSilver() *Profile { return New(SilverGameID) }
 func (p *Profile) ID() game.GameID         { return p.id }
 func (*Profile) Revision() game.RevisionID { return Revision }
 func (p *Profile) Detect(info game.ROMInfo) bool {
-	return p.sha1 != "" && info.SHA1 == p.sha1 && info.Size == sym.ROMSize
+	return p.sha1 != "" && info.SHA1 == p.sha1
 }
 func (*Profile) ROMParser() game.ROMParser { return parser{} }
 
