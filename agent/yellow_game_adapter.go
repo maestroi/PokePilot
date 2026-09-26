@@ -91,6 +91,12 @@ func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, err
 			}
 			return result, nil
 		}
+		if o.Progress == yellowprofile.ProgressYellowMtMoonExitResolved {
+			if err := executeYellowMtMoonExit(a.m, a.romData); err != nil {
+				return result, fmt.Errorf("agent: %s: %w", o, err)
+			}
+			return result, nil
+		}
 		if yellowSharedStoryBeat(o.Progress) {
 			return a.gen1.ExecuteOwned(o)
 		}
