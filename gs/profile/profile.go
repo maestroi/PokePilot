@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	GoldGameID   game.GameID = "pokemon-gold"
-	SilverGameID game.GameID = "pokemon-silver"
+	GoldGameID   game.GameID     = "pokemon-gold"
+	SilverGameID game.GameID     = "pokemon-silver"
 	Revision     game.RevisionID = "en-us-eu-rev0"
 
 	ProgressJohtoBadges game.ProgressID = "johto-badges"
@@ -44,8 +44,8 @@ func New(ids ...game.GameID) *Profile {
 func NewGold() *Profile   { return New(GoldGameID) }
 func NewSilver() *Profile { return New(SilverGameID) }
 
-func (p *Profile) ID() game.GameID           { return p.id }
-func (*Profile) Revision() game.RevisionID   { return Revision }
+func (p *Profile) ID() game.GameID         { return p.id }
+func (*Profile) Revision() game.RevisionID { return Revision }
 func (p *Profile) Detect(info game.ROMInfo) bool {
 	return p.sha1 != "" && info.SHA1 == p.sha1 && info.Size == sym.ROMSize
 }
