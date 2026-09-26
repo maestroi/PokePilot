@@ -314,6 +314,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			}
 			return result, nil
 		}
+		if err := prepareRedMartPurchase(m, romData); err != nil {
+			return result, fmt.Errorf("agent: %s: prepare mart purchase: %w", o, err)
+		}
 		if err := skill.Buy(m, item, o.Qty); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
