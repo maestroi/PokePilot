@@ -381,6 +381,8 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 const (
 	safariExitTaps         = 4
 	safariExitSettleFrames = 40
+
+	safariRejoinPromptSettleFrames = 240
 )
 
 func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -396,7 +398,7 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	if _, err := TravelFlee(m, romData, exit, policy, fuchsiaTravelEngagements); err != nil {
 		state.Snapshot(m, &mem)
 		if !state.HasEvent(&mem, eventInSafariZone) {
-			return nil
+			return declineSafariRejoinPrompt(m)
 		}
 		return err
 	}
@@ -416,9 +418,36 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 		m.Tap(emu.Down, 3, 7)
 		m.StepFrames(safariExitSettleFrames)
 	}
-	return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
+	if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
 		return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
-	})
+	}); err != nil {
+		return err
+	}
+	return declineSafariRejoinPrompt(m)
+}
+
+// declineSafariRejoinPrompt finishes a leave at a stable boundary. Leaving
+// early can stop the player on the gate's join trigger, and the gate script
+// opens "Would you like to join the hunt?" a few frames after control returns.
+// Leaving owns that prompt: a caller that wants another session re-enters
+// through enterSafariZone, and one that cannot afford it must not inherit an
+// open YES/NO (run-s6v9q3t2w5rl, triage:e3a271f89ba8e843).
+func declineSafariRejoinPrompt(m *emu.Emu) error {
+	var mem state.Mem
+	if _, err := m.StepUntil(safariRejoinPromptSettleFrames, func(e *emu.Emu) bool {
+		state.Snapshot(e, &mem)
+		return state.DecodeTwoOptionMenu(&mem) != nil
+	}); err != nil {
+		return nil // no prompt: the leave already ended controllable
+	}
+	handled, err := answerSafariGateJoinChoice(m, state.ScreenText(&mem), false)
+	if err != nil {
+		return fmt.Errorf("decline Safari re-entry after leaving: %w", err)
+	}
+	if !handled {
+		return fmt.Errorf("unexpected choice after leaving Safari Zone: %q", state.ScreenText(&mem))
+	}
+	return recoverAfterSafariGateChoice(m)
 }
 
 func receiveStrengthFromWarden(m *emu.Emu, romData []byte, policy MovePolicy) error {
