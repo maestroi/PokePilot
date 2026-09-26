@@ -267,3 +267,70 @@ func TestFieldRosterQuarantineSurvivesPositionDrift(t *testing.T) {
 		t.Fatalf("party change did not release field-roster quarantine: %+v", got)
 	}
 }
+
+// run-1v98zy914jk23p: an exhausted Mt. Moon Clefairy hunt was re-selected
+// rounds later because the ordinary catch state hashes position and party HP,
+// and every hunt moves the player and costs HP. A hunt miss is only worth
+// retrying in a different habitat or after the catch resources change; a heal
+// trip away from the habitat must not erase that evidence either.
+func TestHuntExhaustionQuarantineSurvivesPositionAndPartyDrift(t *testing.T) {
+	failed := Objective{Kind: KindCatch, Species: "clefairy"}
+	alternative := Objective{Kind: KindCatch, Species: "zubat"}
+	obs := Observation{
+		Location:     "mt moon 1f",
+		X:            14,
+		Y:            33,
+		Controllable: true,
+		Money:        27,
+		Party:        []PartyMon{{Species: "mewtwo", Level: 36, HP: 134, MaxHP: 134}},
+		Bag:          []Item{{Name: "poke ball", Quantity: 1}},
+	}
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{Objective: failed, Outcome: OutcomeBlocked, Cause: "catch_hunt_exhausted", Final: obs})
+
+	suppressed := func(o Observation, why string) {
+		t.Helper()
+		if got := policy.filter(o, []Objective{failed, alternative}); len(got) != 1 || got[0].Key() != alternative.Key() {
+			t.Fatalf("%s reopened the exhausted hunt: %+v", why, got)
+		}
+	}
+	offered := func(o Observation, why string) {
+		t.Helper()
+		if got := policy.filter(o, []Objective{failed, alternative}); len(got) != 2 {
+			t.Fatalf("%s kept the hunt quarantined: %+v", why, got)
+		}
+	}
+
+	drifted := obs
+	drifted.X, drifted.Y = 14, 34
+	drifted.Party = []PartyMon{{Species: "mewtwo", Level: 37, HP: 90, MaxHP: 138}}
+	suppressed(drifted, "position and party drift")
+
+	center := obs
+	center.Location, center.X, center.Y = "mt moon pokemon center", 3, 7
+	offered(center, "a different map")
+	suppressed(drifted, "returning after a heal trip")
+
+	restocked := drifted
+	restocked.Bag = []Item{{Name: "poke ball", Quantity: 10}}
+	offered(restocked, "a changed ball supply")
+}
+
+// The same run failed the placed dex offer ("catch CLEFAIRY at MT MOON 1F",
+// fleeing) and then picked the plain local offer for the same hunt, whose
+// objective key differs.
+func TestHuntExhaustionQuarantineCoversPlacedAndLocalOffers(t *testing.T) {
+	placed := Objective{Kind: KindCatch, Species: "clefairy", Place: "mt moon 1f", Flee: true}
+	local := Objective{Kind: KindCatch, Species: "clefairy"}
+	fishing := Objective{Kind: KindCatch, Species: "clefairy", Place: "mt moon 1f", Item: "super rod", Intent: dexFishingIntent, Flee: true}
+	alternative := Objective{Kind: KindCatch, Species: "zubat"}
+	obs := Observation{Location: "mt moon 1f", X: 14, Y: 33, Controllable: true, Bag: []Item{{Name: "poke ball", Quantity: 1}}}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{Objective: placed, Outcome: OutcomeBlocked, Cause: "catch_hunt_exhausted", Final: obs})
+
+	got := policy.filter(obs, []Objective{local, fishing, alternative})
+	if len(got) != 2 || got[0].Key() != fishing.Key() || got[1].Key() != alternative.Key() {
+		t.Fatalf("want the local spelling suppressed and a different hunt method kept, got %+v", got)
+	}
+}
