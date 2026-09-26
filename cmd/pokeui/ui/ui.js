@@ -34,11 +34,12 @@
   const hexMap = (n) => "0x" + Number(n).toString(16).padStart(2, "0");
   const howLabel = (r) => r.planner === "scripted" ? "walk" : "play";
   const howText = (r) => r.planner === "scripted" ? "walk to a place" : "play the game";
-  const starterOf = (r) => r.starter || (r.planner === "scripted" ? "squirtle" : "LLM picks");
+  const starterOf = (r) => r.starter || (r.game === "pokemon-yellow" ? "pikachu" : (r.planner === "scripted" ? "squirtle" : "LLM picks"));
   const gameOf = (r) => {
     const game = (r.game || "").toLowerCase();
     switch (game) {
       case "pokemon-blue": return "Pokémon Blue";
+      case "pokemon-yellow": return "Pokémon Yellow";
       case "pokemon-red": return "Pokémon Red";
       default: return game || "Pokémon Red";
     }
