@@ -180,25 +180,58 @@ func prepareLeagueBetweenBattles(m *emu.Emu, romData []byte, encountersRemaining
 	return fmt.Errorf("skill: EliteFourProgression: prepare between League battles: %w", err)
 }
 
-func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name string, homeX, homeY uint8, done leagueFact) error {
+func leagueRoomScriptAddress(mapID uint8) (uint16, bool) {
+	switch mapID {
+	case loreleiRoomMap:
+		return sym.LoreleisRoomCurScript, true
+	case brunoRoomMap:
+		return sym.BrunosRoomCurScript, true
+	case agathaRoomMap:
+		return sym.AgathasRoomCurScript, true
+	case lanceRoomMap:
+		return sym.LancesRoomCurScript, true
+	default:
+		return 0, false
+	}
+}
+
+func leagueMemberBoundaryReady(mem *state.Mem, roomScript uint16, done leagueFact) bool {
+	return done(leagueFacts(mem)) && mem.U8(roomScript) == 0 && state.Controllable(mem)
+}
+
+func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name string, homeX, homeY, roomMap uint8, done leagueFact) error {
 	if done(currentLeagueFacts(m)) {
 		return nil
+	}
+	roomScript, ok := leagueRoomScriptAddress(roomMap)
+	if !ok {
+		return fmt.Errorf("skill: EliteFourProgression: %s has no declared room-script boundary for map %#02x", name, roomMap)
 	}
 
 	// ChallengeTrainer owns ordinary trainers through their fought flag and a
 	// controllable overworld boundary. Elite Four rooms add one more mandatory
 	// owner: after victory the room script displays the member's post-battle
-	// dialogue before returning control. That script can outlive the generic
-	// trainer settle even though the room-completion fact is already committed
-	// (Lorelei in farm #1953). Once that positive fact exists, the League stage
-	// — not the generic trainer controller — owns the remaining script.
+	// dialogue before returning control. The defeated event is committed inside
+	// EndTrainerBattle, before ExecuteCurMapScriptInTable returns and writes the
+	// room's script selector back to SCRIPT_DEFAULT. A transient controllable
+	// frame in that gap therefore cannot be an objective boundary (#1953).
 	trainerErr := ChallengeTrainer(m, romData, homeX, homeY, policy)
 	if trainerErr != nil && !done(currentLeagueFacts(m)) {
 		return fmt.Errorf("skill: EliteFourProgression: %s: %w", name, trainerErr)
 	}
 
+	// Require both positive owners to be finished, then keep the ordinary
+	// battle-settlement stability window. The room-script selector is the key
+	// signal: unlike generic controllability it cannot read idle while the
+	// selected end-battle script still owns execution.
+	stable := 0
 	mem := advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-		return done(leagueFacts(mm)) && state.Controllable(mm)
+		if !leagueMemberBoundaryReady(mm, roomScript, done) {
+			stable = 0
+			return false
+		}
+		stable++
+		return stable >= settleStableFrames
 	})
 	facts := leagueFacts(&mem)
 	if !done(facts) {
@@ -207,8 +240,11 @@ func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name strin
 		}
 		return fmt.Errorf("skill: EliteFourProgression: %s battle won but its room-completion fact was not committed", name)
 	}
-	if !state.Controllable(&mem) {
-		return fmt.Errorf("skill: EliteFourProgression: %s post-battle script did not return control", name)
+	if mem.U8(roomScript) != 0 {
+		return fmt.Errorf("skill: EliteFourProgression: %s room end-battle script %#02x did not return to default", name, mem.U8(roomScript))
+	}
+	if stable < settleStableFrames || !state.Controllable(&mem) {
+		return fmt.Errorf("skill: EliteFourProgression: %s post-battle boundary was not stable for %d frames", name, settleStableFrames)
 	}
 	return nil
 }
