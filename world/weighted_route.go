@@ -512,6 +512,25 @@ func newRouteGeometry(g *Graph, allowWater bool) *routeGeometry {
 	}
 }
 
+// EdgePortReachableFrom reports whether at least one concrete source port for
+// edge can be reached from (x,y) using the traversal modes allowed by policy.
+// It is intentionally a local-leg question, not a route selector: callers use
+// it to validate semantic PortBypass first hops without changing their global
+// route-cost policy.
+//
+// This matters on maps with disconnected same-map regions. A semantic action
+// such as Surf may legitimately bypass pristine LAND component reachability,
+// but it still cannot teleport the player to a shore in another disconnected
+// region of the same map.
+func EdgePortReachableFrom(g *Graph, mapID uint8, x, y int, edge Edge, policy RouteCostPolicy) bool {
+	if g == nil || edge.From != mapID || x < 0 || y < 0 {
+		return false
+	}
+	geometry := newRouteGeometry(g, policy.normalized().AllowWater)
+	_, _, ok := geometry.bestPort(mapID, x, y, edge)
+	return ok
+}
+
 func (r *routeGeometry) grid(mapID uint8, mode TraversalMode) (*Grid, bool) {
 	key := routeGridKey{mapID: mapID, mode: mode}
 	if grid, ok := r.grids[key]; ok {
