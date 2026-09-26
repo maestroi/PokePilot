@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/maestroi/pokepilot/game"
 )
 
 func TestCartridgeForRecordingAppliesPatchBytes(t *testing.T) {
@@ -114,6 +116,117 @@ func TestPrepareStreamROMWritesDerivedCartridge(t *testing.T) {
 	}
 	if string(body) != string(derived) {
 		t.Fatalf("derived ROM = %x, want %x", body, derived)
+	}
+}
+
+func TestPrepareStreamROMUsesRecordingGameROM(t *testing.T) {
+	dir := t.TempDir()
+	red := filepath.Join(dir, "red.gb")
+	yellow := filepath.Join(dir, "yellow.gb")
+	if err := os.WriteFile(red, []byte("red-rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yellowBytes := []byte("yellow-rom")
+	if err := os.WriteFile(yellow, yellowBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("identity supplied by test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newReplayServer("", red, "", nil)
+	s.romLibrary = &replayROMLibrary{
+		primary: red,
+		paths: map[game.GameID]string{
+			game.GameID("pokemon-red"):    red,
+			game.GameID("pokemon-yellow"): yellow,
+		},
+	}
+	s.parseRecording = func([]byte) (replayIdentity, error) {
+		return replayIdentity{
+			ROMSHA256: hex.EncodeToString(sha256Sum(yellowBytes)),
+			Metadata:  map[string]string{"game": "pokemon-yellow", "revision": "en-us-rev0"},
+		}, nil
+	}
+
+	got, err := s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != yellow {
+		t.Fatalf("prepareStreamROM = %q, want Yellow ROM %q", got, yellow)
+	}
+}
+
+func TestPrepareStreamROMFailsClosedWhenRecordedGameIsNotMounted(t *testing.T) {
+	dir := t.TempDir()
+	red := filepath.Join(dir, "red.gb")
+	if err := os.WriteFile(red, []byte("red-rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("identity supplied by test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newReplayServer("", red, "", nil)
+	s.romLibrary = &replayROMLibrary{
+		primary: red,
+		paths: map[game.GameID]string{
+			game.GameID("pokemon-red"): red,
+		},
+	}
+	s.parseRecording = func([]byte) (replayIdentity, error) {
+		return replayIdentity{
+			ROMSHA256: strings.Repeat("a", 64),
+			Metadata:  map[string]string{"game": "pokemon-yellow"},
+		}, nil
+	}
+
+	_, err := s.prepareStreamROM(dir, recording)
+	if err == nil {
+		t.Fatal("prepareStreamROM succeeded without the recorded Yellow cartridge")
+	}
+	if !strings.Contains(err.Error(), "pokemon-yellow") {
+		t.Fatalf("error = %q, want recorded game identity", err)
+	}
+}
+
+func TestPrepareStreamROMLegacyRecordingFindsMountedROMByHash(t *testing.T) {
+	dir := t.TempDir()
+	red := filepath.Join(dir, "red.gb")
+	yellow := filepath.Join(dir, "yellow.gb")
+	if err := os.WriteFile(red, []byte("red-rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	yellowBytes := []byte("yellow-rom")
+	if err := os.WriteFile(yellow, yellowBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("legacy recording"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newReplayServer("", red, "", nil)
+	s.romLibrary = &replayROMLibrary{
+		primary: red,
+		paths: map[game.GameID]string{
+			game.GameID("pokemon-red"):    red,
+			game.GameID("pokemon-yellow"): yellow,
+		},
+	}
+	s.parseRecording = func([]byte) (replayIdentity, error) {
+		return replayIdentity{ROMSHA256: hex.EncodeToString(sha256Sum(yellowBytes)), Metadata: map[string]string{}}, nil
+	}
+
+	got, err := s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != yellow {
+		t.Fatalf("legacy prepareStreamROM = %q, want hash-matched Yellow ROM %q", got, yellow)
 	}
 }
 
