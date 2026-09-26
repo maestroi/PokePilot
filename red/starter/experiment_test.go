@@ -190,3 +190,27 @@ func TestReplayROMRejectsSHAMismatch(t *testing.T) {
 		t.Fatal("error message was empty")
 	}
 }
+
+// A vanilla lease on a non-Red Gen I cartridge (Blue, Yellow) must pass the
+// image through untouched; only a real patch needs the exact Red ROM.
+func TestPatchVanillaAcceptsAnyCartridge(t *testing.T) {
+	other := []byte("not the red cartridge")
+	vanilla, err := Resolve("", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, info, err := Patch(other, vanilla)
+	if err != nil {
+		t.Fatalf("vanilla Patch rejected a non-Red cartridge: %v", err)
+	}
+	if string(out) != string(other) || info.EffectiveSHA1 != info.BaseSHA1 {
+		t.Fatalf("vanilla Patch changed the cartridge: %+v", info)
+	}
+	mewtwo, err := Resolve("mewtwo", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Patch(other, mewtwo); err == nil {
+		t.Fatal("experiment Patch accepted a non-Red cartridge")
+	}
+}
