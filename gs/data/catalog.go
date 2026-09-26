@@ -259,23 +259,6 @@ var speciesByRaw = map[uint8]game.SpeciesID{
 	0xfa: "ho-oh",
 	0xfb: "celebi",
 	0xfd: "egg",
-	0x10: "unown-j",
-	0x11: "unown-k",
-	0x12: "unown-l",
-	0x13: "unown-m",
-	0x14: "unown-n",
-	0x15: "unown-o",
-	0x16: "unown-p",
-	0x17: "unown-q",
-	0x18: "unown-r",
-	0x19: "unown-s",
-	0x20: "unown-t",
-	0x21: "unown-u",
-	0x22: "unown-v",
-	0x23: "unown-w",
-	0x24: "unown-x",
-	0x25: "unown-y",
-	0x26: "unown-z",
 }
 
 func Species(raw uint8) (game.SpeciesID, bool) {
