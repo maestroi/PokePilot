@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -13,8 +14,21 @@ import (
 
 const objectivePostconditionSettleBudget = 1200
 
+// Execute runs one objective through the adapter selected by the cartridge
+// profile. Scripted/pre-planner Yellow objectives must reach Yellow's story
+// controller rather than the legacy Red dispatcher. Synthetic test ROMs keep
+// the historical Red fallback when no registered profile can identify them.
 func Execute(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
-	return ExecuteWithAdapter(newRedObjectiveAdapter(m, romData), o)
+	return ExecuteWithAdapter(objectiveAdapterForROM(m, romData, RoutePriorityConservative), o)
+}
+
+func objectiveAdapterForROM(m *emu.Emu, romData []byte, priority RoutePriority) ObjectiveGameAdapter {
+	if profile, _, err := profiles.Detect(romData); err == nil {
+		if factory, err := objectiveAdapterFactoryFor(profile.ID()); err == nil {
+			return factory(m, romData, priority)
+		}
+	}
+	return newRedObjectiveAdapterWithRoutePriority(m, romData, priority)
 }
 
 func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveResult, error) {
@@ -22,7 +36,7 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 }
 
 func executeObjectiveResultWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
-	return ExecuteWithAdapter(newRedObjectiveAdapterWithRoutePriority(m, romData, priority), o)
+	return ExecuteWithAdapter(objectiveAdapterForROM(m, romData, priority), o)
 }
 
 func travelEvidenceFromRed(travel skill.TravelResult) *TravelEvidence {
