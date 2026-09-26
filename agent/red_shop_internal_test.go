@@ -4,10 +4,10 @@ import "testing"
 
 func TestRedMartFacingTile(t *testing.T) {
 	tests := []struct {
-		name                  string
+		name                   string
 		px, py, clerkX, clerkY uint8
-		wantX, wantY          uint8
-		wantOK                bool
+		wantX, wantY           uint8
+		wantOK                 bool
 	}{
 		{name: "adjacent left", px: 2, py: 5, clerkX: 1, clerkY: 5, wantX: 1, wantY: 5, wantOK: true},
 		{name: "adjacent above", px: 2, py: 5, clerkX: 2, clerkY: 4, wantX: 2, wantY: 4, wantOK: true},
