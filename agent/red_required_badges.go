@@ -2,19 +2,10 @@ package agent
 
 import "github.com/maestroi/pokepilot/red/state"
 
-// redCascadeBadgeObjectives turns Cascade from an implicit Cut precondition
-// into an explicit story handoff. Away from Cerulean the progression provider
-// supplies the journey; once there, the ordinary typed gym catalog supplies
-// the challenge itself and its positive badge postcondition.
+// redCascadeBadgeObjectives is retained as a compatibility wrapper while Red
+// call sites/tests migrate to the shared Gen-I handoff.
 func redCascadeBadgeObjectives(obs Observation) []Objective {
-	if !obs.Story.Has(redProgressHM01Acquired) || hasBadge(obs, state.BadgeCascade) {
-		return nil
-	}
-	return []Objective{{
-		Kind:  KindGoTo,
-		Place: "cerulean gym",
-		Note:  "(HM01 is owned but Cut is not legal until Misty is defeated; return to Cerulean Gym and earn the Cascade Badge before the Surge leg)",
-	}}
+	return gen1CascadeBadgeObjectives(obs)
 }
 
 // redRequireRainbowForPostCeladon removes later local story offers until Erika
