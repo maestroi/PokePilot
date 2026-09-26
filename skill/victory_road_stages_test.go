@@ -58,6 +58,43 @@ func TestVictoryRoadClearBoundaryUsesLiveSwitchInsideCave(t *testing.T) {
 	}
 }
 
+func TestVictoryRoadClearBoundaryInBattleStillNeedsSettlement(t *testing.T) {
+	var mem state.Mem
+	mem[sym.CurMap] = victoryRoad2FMap
+	mem[sym.CurMapWidth] = 1
+	mem[sym.CurMapHeight] = 1
+	const event = uint16(0x53f)
+	mem[sym.EventFlags+event/8] |= 1 << (event % 8)
+
+	if !victoryRoadClearBoundaryReady(&mem, state.StoryFacts{}) {
+		t.Fatal("clean final-switch checkpoint should be ready to return")
+	}
+
+	// The switch event is durable before ownership necessarily returns to the
+	// overworld. #1988 captured exactly this shape: progress said
+	// victory_road_cleared while a battle still owned the screen.
+	mem[sym.IsInBattle] = 1
+	if !victoryRoadClearBoundary(&mem, state.StoryFacts{}) {
+		t.Fatal("battle unexpectedly erased durable Victory Road progress")
+	}
+	if victoryRoadClearBoundaryReady(&mem, state.StoryFacts{}) {
+		t.Fatal("event-positive checkpoint returned while battle still owned the screen")
+	}
+
+	// Battle teardown has a second transient window after wIsInBattle clears.
+	// state.Controllable intentionally keeps that window dirty too.
+	mem[sym.IsInBattle] = 0
+	mem[sym.StatusFlags4] = 1 << 5
+	if victoryRoadClearBoundaryReady(&mem, state.StoryFacts{}) {
+		t.Fatal("event-positive checkpoint returned during post-battle teardown")
+	}
+
+	mem[sym.StatusFlags4] = 0
+	if !victoryRoadClearBoundaryReady(&mem, state.StoryFacts{}) {
+		t.Fatal("settled final-switch checkpoint did not become ready")
+	}
+}
+
 func TestVictoryRoadClearBoundarySurvivesRoute23ResetNorthOfCave(t *testing.T) {
 	facts := state.StoryFacts{Route23BadgeChecksComplete: true, Route23BadgeChecksPassed: 7}
 	var mem state.Mem
