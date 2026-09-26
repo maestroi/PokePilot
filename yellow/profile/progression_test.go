@@ -156,7 +156,7 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 		mem[at], mem[at+1] = item.id, item.qty
 	}
 	mem[sym.StatusFlags1] |= saffronGuardsDrinkMask
-	mem[sym.ObtainedBadges] |= 1 << badgeSoul
+	mem[sym.ObtainedBadges] |= 1<<badgeBoulder | 1<<badgeSoul | 1<<badgeMarsh
 	setYellowEvent(&mem, eventGotPokedex)
 	setYellowEvent(&mem, eventViridianGymOpen)
 	for _, event := range route23BadgeCheckEvents {
@@ -166,11 +166,13 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	story := projectYellowStory(&mem, indigoPlateauMap)
 	for _, id := range []game.ProgressID{
 		gen1.ProgressPokedexAcquired,
+		gen1.ProgressBoulderBadge,
 		gen1.ProgressSSTicketAcquired,
 		gen1.ProgressHM01Acquired,
 		gen1.ProgressSaffronGateOpen,
 		gen1.ProgressCardKeyOwned,
 		gen1.ProgressFuchsiaProgressionComplete,
+		gen1.ProgressMarshBadge,
 		gen1.ProgressViridianGymOpen,
 		gen1.ProgressRoute23BadgeChecks,
 		gen1.ProgressVictoryRoadCleared,
