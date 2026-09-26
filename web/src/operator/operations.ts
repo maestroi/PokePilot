@@ -132,7 +132,7 @@ export function howText(run: DashboardRun): string {
 }
 
 export function starterLabel(run: DashboardRun): string {
-  return run.starter || (run.planner === 'scripted' ? 'squirtle' : 'LLM picks')
+  return run.starter || (run.game === 'pokemon-yellow' ? 'pikachu' : (run.planner === 'scripted' ? 'squirtle' : 'LLM picks'))
 }
 
 export function reasoningEffortLabel(run: DashboardRun): string {
