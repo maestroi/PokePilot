@@ -81,5 +81,5 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			Note:     "(board the S.S. Anne, resolve its rival sequence, and receive HM01 Cut from the Captain)",
 		}}
 	}
-	return redCascadeBadgeObjectives(obs)
+	return gen1CascadeBadgeObjectives(obs)
 }
