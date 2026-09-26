@@ -178,7 +178,6 @@ func TestBuildGraphKeepsExpectedParseFailureVisibleToWorldVerify(t *testing.T) {
 	}
 }
 
-
 type wideMapProvider struct{}
 
 func (wideMapProvider) MapIDs() []worldmodel.MapID { return []worldmodel.MapID{0x0101} }
