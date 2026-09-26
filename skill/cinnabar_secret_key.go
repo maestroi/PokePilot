@@ -138,6 +138,38 @@ func route20ResumeExit(planner *RoutePlanner) (Destination, error) {
 	return Destination{}, fmt.Errorf("Route 20 component has no direct Cinnabar or Route 19 exit")
 }
 
+// travelSecretKeyCorridor is the deterministic journey used by the Secret Key
+// story corridor. It keeps TravelFlee's battle/dialogue recovery but deliberately
+// disables optional Fly/Dig/Escape-Rope optimization by constructing GoTo
+// without a navigation policy.
+//
+// The distinction is important for recovery: #1970 resumed on Route 19 and
+// the intended "leave north to Fuchsia" leg still called TravelFlee, whose
+// fast-travel preflight could start Fly before taking a single step. A failed
+// optional Fly controller then surfaced as an untyped error while the player
+// was still on Route 19, defeating the explicit restage added in #1972.
+// Correctness legs here must walk/Surf the declared corridor; shortcuts remain
+// an optimization for ordinary journeys.
+func travelSecretKeyCorridor(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy) error {
+	if err := leaveSafariSessionFor(m, romData, dest, policy); err != nil {
+		return fmt.Errorf("leave Safari session before Secret Key corridor travel: %w", err)
+	}
+	blackoutDecoder, err := overworldBlackoutDecoderFor(m)
+	if err != nil {
+		return fmt.Errorf("Secret Key corridor blackout decoder: %w", err)
+	}
+	_, err = travel(
+		m,
+		policy,
+		mansionTravelBattles,
+		cutAwareGoTo(m, romData, dest),
+		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
+		func() bool { return blackoutInProgress(m, blackoutDecoder) },
+		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
+	)
+	return err
+}
+
 func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != route20Map {
 		return nil
@@ -152,7 +184,7 @@ func restageSecretKeyRoute20Resume(m *emu.Emu, romData []byte, policy MovePolicy
 		x, y := playerXY(m)
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: Route 20 resume at (%d,%d): %w", x, y, err)
 	}
-	if _, err := TravelFlee(m, romData, exit, policy, mansionTravelBattles); err != nil {
+	if err := travelSecretKeyCorridor(m, romData, exit, policy); err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave Route 20 for map %#04x: %w", exit.Map, err)
 	}
 	if exit.Map == cinnabarIslandMap {
@@ -175,30 +207,26 @@ func restageSecretKeyRoute19Resume(m *emu.Emu, romData []byte, policy MovePolicy
 	// which makes this story objective absorb the Seafoam traversal it
 	// explicitly does not own (#1970). First leave the sea route north, then
 	// use the same mainland recovery as an east-side Route 20 resume.
-	if _, err := TravelFlee(m, romData, fuchsia, policy, mansionTravelBattles); err != nil {
+	if err := travelSecretKeyCorridor(m, romData, fuchsia, policy); err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: leave Route 19 for Fuchsia: %w", err)
 	}
 	return restageSecretKeyMainlandFromFuchsia(m, romData, policy)
 }
 
 func restageSecretKeyMainlandFromFuchsia(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	var mem state.Mem
-	state.Snapshot(m, &mem)
-	if FieldCapabilityFor(&mem, FieldFly).Usable && townVisited(&mem, semanticPalletTownMap) {
-		if err := useFlyTo(m, semanticPalletTownMap); err == nil {
-			return nil
-		}
-	}
-
+	// Do not attempt optional Fly here. A failed menu-driven shortcut is not
+	// side-effect free, so "try Fly, ignore the error, then walk" can leave the
+	// recovery in a dirty UI state. This is an already-stranded story recovery;
+	// make the declared mainland corridor deterministic instead.
 	if err := RepairUtilityFieldCapability(m, romData, policy, FieldCut); err != nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: prepare southern-sea mainland recovery via Cut: %w", err)
 	}
-	for _, placeName := range []string{"vermilion city", "viridian city"} {
+	for _, placeName := range []string{"vermilion city", "viridian city", "pallet town"} {
 		dest, ok := Place(placeName)
 		if !ok {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: %s place missing", placeName)
 		}
-		if _, err := TravelFlee(m, romData, dest, policy, mansionTravelBattles); err != nil {
+		if err := travelSecretKeyCorridor(m, romData, dest, policy); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: southern-sea mainland recovery via %s: %w", placeName, err)
 		}
 	}
@@ -245,15 +273,15 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		//
 		// Surf is a declared correctness prerequisite of the progression
 		// objective and is repaired by generic prerequisite recovery before this
-		// skill runs. Fly is only a speed preference: TravelFlee may use it when
-		// already usable, but inability to prepare Fly must never block the
-		// Route 21 correctness path.
+		// skill runs. Fly is only a speed preference, so the story-owned
+		// correctness corridor deliberately does not invoke optional fast
+		// travel. A shortcut controller failure must never block Route 21.
 
 		pallet := Destination{Map: semanticPalletTownMap, X: 5, Y: 6}
-		if _, err := TravelFlee(m, romData, pallet, policy, mansionTravelBattles); err != nil {
+		if err := travelSecretKeyCorridor(m, romData, pallet, policy); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: reach Pallet for Route 21: %w", err)
 		}
-		if _, err := TravelFlee(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy, mansionTravelBattles); err != nil {
+		if err := travelSecretKeyCorridor(m, romData, Destination{Map: cinnabarIslandMap, X: 11, Y: 12}, policy); err != nil {
 			return fmt.Errorf("skill: AcquireCinnabarSecretKey: Surf Route 21 to Cinnabar: %w", err)
 		}
 	}
