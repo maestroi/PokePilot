@@ -214,6 +214,8 @@ type tileRow struct {
 	Trail              [][2]uint8               `json:"trail,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
+	GameState          map[string]any            `json:"game_state,omitempty"`
+	GameDecision       map[string]any            `json:"game_decision,omitempty"`
 	Attempts           int                      `json:"attempts"`
 	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
 	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
@@ -334,6 +336,8 @@ type persistedTile struct {
 	StopSoFar          string                   `json:"stop_so_far,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
+	GameState          map[string]any            `json:"game_state,omitempty"`
+	GameDecision       map[string]any            `json:"game_decision,omitempty"`
 	Reason             string                   `json:"reason,omitempty"`
 	Detail             string                   `json:"detail,omitempty"`
 	Finished           bool                     `json:"finished"`
@@ -524,6 +528,8 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		StopSoFar:          p.StopSoFar,
 		Stats:              p.Stats,
 		Player:             p.Player,
+		GameState:          cloneJSONMap(p.GameState),
+		GameDecision:       cloneJSONMap(p.GameDecision),
 		Reason:             p.Reason,
 		Detail:             p.Detail,
 		Finished:           p.Finished,
