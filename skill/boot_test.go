@@ -48,21 +48,21 @@ func TestBootInputSelectsSecondPreset(t *testing.T) {
 	}
 	for _, tt := range tests {
 		state := game.BootState{NameMenu: true, CurrentMenuItem: tt.current}
-		if got := bootInput(state, 4); got != tt.want {
-			t.Fatalf("bootInput(current=%d) = %v, want %v", tt.current, got, tt.want)
+		if got, press := bootInput(state, 4); !press || got != tt.want {
+			t.Fatalf("bootInput(current=%d) = (%v,%v), want (%v,true)", tt.current, got, press, tt.want)
 		}
 	}
 }
 
 func TestBootInputUsesAForOrdinaryIntroState(t *testing.T) {
-	if got := bootInput(game.BootState{NameMenu: false, MaxMenuItem: 3}, 4); got != emu.A {
-		t.Fatalf("bootInput = %v, want A", got)
+	if got, press := bootInput(game.BootState{NameMenu: false, MaxMenuItem: 3}, 4); !press || got != emu.A {
+		t.Fatalf("bootInput = (%v,%v), want (A,true)", got, press)
 	}
 }
 
 func TestBootInputPreservesInitialStartTaps(t *testing.T) {
-	if got := bootInput(game.BootState{NameMenu: true}, 3); got != emu.Start {
-		t.Fatalf("bootInput(iteration=3) = %v, want Start", got)
+	if got, press := bootInput(game.BootState{NameMenu: true}, 3); !press || got != emu.Start {
+		t.Fatalf("bootInput(iteration=3) = (%v,%v), want (Start,true)", got, press)
 	}
 }
 
@@ -109,5 +109,26 @@ func TestBootIsRepeatable(t *testing.T) {
 		t.Errorf("boot not repeatable: (%#04x,%d,%d) vs (%#04x,%d,%d)",
 			obs1.NativeMapID, obs1.X, obs1.Y,
 			obs2.NativeMapID, obs2.X, obs2.Y)
+	}
+}
+
+
+func TestBootInputHonorsProfileSemanticInput(t *testing.T) {
+	tests := []struct {
+		input game.BootInput
+		want  emu.Button
+		press bool
+	}{
+		{game.BootInputConfirm, emu.A, true},
+		{game.BootInputStart, emu.Start, true},
+		{game.BootInputUp, emu.Up, true},
+		{game.BootInputDown, emu.Down, true},
+		{game.BootInputWait, 0, false},
+	}
+	for _, tt := range tests {
+		got, press := bootInput(game.BootState{NextInput: tt.input}, 0)
+		if got != tt.want || press != tt.press {
+			t.Fatalf("bootInput(%d) = (%v,%v), want (%v,%v)", tt.input, got, press, tt.want, tt.press)
+		}
 	}
 }
