@@ -52,7 +52,7 @@ func TestProactiveChallengePreparationChoosesLocalTraining(t *testing.T) {
 func TestProactiveChallengePreparationRoutesToSelectedTrainingArea(t *testing.T) {
 	current := LocationID("current")
 	training := LocationID("training")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		current:  {training},
 		training: {current},
 	}})
