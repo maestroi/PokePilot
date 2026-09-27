@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	billsHouseMap     uint8 = 0x58
-	vermilionGymMap   uint8 = 0x5C
+	billsHouseMap      = 0x58
+	vermilionGymMap    = 0x5C
 	ssTicketItem      uint8 = 0x3F
 	billPokemonX      uint8 = 6
 	billPokemonY      uint8 = 5
