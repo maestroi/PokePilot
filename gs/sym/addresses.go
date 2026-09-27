@@ -22,9 +22,9 @@ const (
 	ScriptMode     uint16 = 0xD437
 	ScriptRunning  uint16 = 0xD438
 
-	ObjectStructs   uint16 = 0xD4D6
-	ObjectStructLen        = 0x28
-	NumObjectStructs       = 13
+	ObjectStructs    uint16 = 0xD4D6
+	ObjectStructLen         = 0x28
+	NumObjectStructs        = 13
 
 	PlayerState uint16 = 0xD95D
 
