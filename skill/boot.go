@@ -15,20 +15,34 @@ const introPresetNameIndex = 2
 
 // bootInput chooses input from semantic boot state. It contains no RAM
 // addresses, map ids or game-name branches.
-func bootInput(state game.BootState, iteration int) emu.Button {
+func bootInput(state game.BootState, iteration int) (emu.Button, bool) {
+	switch state.NextInput {
+	case game.BootInputConfirm:
+		return emu.A, true
+	case game.BootInputStart:
+		return emu.Start, true
+	case game.BootInputUp:
+		return emu.Up, true
+	case game.BootInputDown:
+		return emu.Down, true
+	case game.BootInputWait:
+		return 0, false
+	}
+
+	// Legacy profiles keep the established Gen-I boot policy.
 	if iteration < 4 {
-		return emu.Start
+		return emu.Start, true
 	}
 	if !state.NameMenu {
-		return emu.A
+		return emu.A, true
 	}
 	switch {
 	case state.CurrentMenuItem < introPresetNameIndex:
-		return emu.Down
+		return emu.Down, true
 	case state.CurrentMenuItem > introPresetNameIndex:
-		return emu.Up
+		return emu.Up, true
 	default:
-		return emu.A
+		return emu.A, true
 	}
 }
 
@@ -48,10 +62,9 @@ func verifyBootedOverworld(state game.BootState, expectedNames []string) error {
 // BootToOverworld drives any profile implementing game.BootProfile from a
 // fresh cartridge to its profile-owned normal-overworld starting state.
 //
-// The input policy is shared Gen-I behavior: clear title/menu with Start,
-// page ordinary intro dialogue with A, and steer Oak's preset-name menus to
-// the second built-in preset. Profiles own all RAM decoding, the ready map and
-// controllability test.
+// Legacy profiles retain the shared Gen-I policy. Profiles with distinct boot
+// flows may recommend semantic confirm/start/direction/wait inputs while still
+// keeping RAM addresses, menu detection and the ready-state decision private.
 func BootToOverworld(m *emu.Emu) (game.ProfileObservation, error) {
 	if m == nil {
 		return game.ProfileObservation{}, fmt.Errorf("boot: nil emulator")
@@ -91,16 +104,25 @@ func BootToOverworld(m *emu.Emu) (game.ProfileObservation, error) {
 			return obs, nil
 		}
 
-		// The cursor rests on the selected preset for several frames while A is
-		// pressed. Capture the live menu text rather than hard-coding names.
-		if last.NameMenu && last.CurrentMenuItem == introPresetNameIndex &&
+		// Profiles may provide the exact preset implied by their semantic menu
+		// state. Legacy Gen-I profiles still expose live preset text.
+		name := last.SelectedPresetName
+		if name == "" && last.NameMenu && last.CurrentMenuItem == introPresetNameIndex &&
 			len(last.PresetNames) >= introPresetNameIndex {
-			name := last.PresetNames[introPresetNameIndex-1]
+			name = last.PresetNames[introPresetNameIndex-1]
+		}
+		if name != "" {
 			if n := len(expectedNames); n == 0 || expectedNames[n-1] != name {
 				expectedNames = append(expectedNames, name)
 			}
 		}
-		m.Tap(bootInput(last, i), 3, 7)
+
+		btn, press := bootInput(last, i)
+		if !press {
+			m.StepFrames(10)
+			continue
+		}
+		m.Tap(btn, 3, 7)
 	}
 
 	return game.ProfileObservation{}, fmt.Errorf(
