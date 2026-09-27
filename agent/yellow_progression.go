@@ -35,7 +35,6 @@ func yellowProgressionKnown(id ProgressID) bool {
 	return id == yellowprofile.ProgressYellowLabRivalResolved || id == yellowprofile.ProgressYellowMtMoonExitResolved || yellowSharedStoryBeat(id)
 }
 
-
 // yellowSharedProgressionPrerequisites owns ordering where Yellow deliberately
 // reuses a shared executor but not Red's campaign policy. The Mansion mechanics
 // need Surf; Silph/Sabrina are independent story branches and are therefore
