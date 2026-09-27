@@ -158,7 +158,6 @@ func TestGenericMovementInterruptionUsesSemanticDialogueState(t *testing.T) {
 	}
 }
 
-
 func TestGenericFaceUsesSemanticProfileFacing(t *testing.T) {
 	m := &fakeOverworldMachine{}
 	m.mem[fakeOverworldMap] = 7
