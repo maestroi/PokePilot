@@ -66,7 +66,6 @@ func TestInspectROM(t *testing.T) {
 	}
 }
 
-
 func TestCartridgeRegistryAcceptsIdentityOnlyProfiles(t *testing.T) {
 	p := testCartridgeProfile{id: "puzzle-test", revision: "rev0", title: "PUZZLE TEST"}
 	r, err := NewCartridgeRegistry(p)
