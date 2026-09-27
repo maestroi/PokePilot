@@ -146,7 +146,7 @@ const selectedActivity = computed(() => {
   const run = selectedRun.value
   const activity = run ? activityByRun.value[run.run_id] || [] : []
   if (activityFilter.value === 'milestones') {
-    return activity.filter((item) => ['area', 'badge', 'party', 'dex', 'milestone'].includes(item.kind))
+    return activity.filter((item) => ['area', 'badge', 'party', 'dex', 'milestone', 'game'].includes(item.kind))
   }
   if (activityFilter.value === 'decisions') {
     return activity.filter((item) => item.kind === 'decision')
@@ -717,7 +717,7 @@ function activityTimeAgo(item: ActivityItem): string {
       </div>
     </div>
 
-    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass]" :style="sceneStyle">
+    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass, gameClass]" :style="sceneStyle">
       <div v-if="state === 'stale'" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-xs text-amber-100" role="status">
         <span><strong>Connection lost.</strong> Showing the last known run state while reconnecting automatically.</span>
         <span class="flex items-center gap-2 text-amber-200/70">
@@ -744,25 +744,38 @@ function activityTimeAgo(item: ActivityItem): string {
                 Live run
               </span>
               <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
-              <span class="mode-chip">{{ playStyleLabel(selectedRun) }}</span>
+              <span class="mode-chip">{{ isTetrisSelected ? tetrisModeLabel : playStyleLabel(selectedRun) }}</span>
               <span v-if="selectedRun.purpose === 'debug_coverage'" class="mode-chip">Debug coverage</span>
             </div>
 
             <div class="mt-4 flex items-start gap-3">
               <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10" aria-hidden="true">
-                <span class="pokeball-mark" />
+                <span v-if="isTetrisSelected" class="tetris-mark" />
+                <span v-else class="pokeball-mark" />
               </div>
               <div class="min-w-0">
-                <h1 class="text-2xl font-black tracking-tight text-white">Pokémon Red</h1>
-                <p class="mt-0.5 truncate text-sm text-slate-400">{{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}</p>
+                <h1 class="text-2xl font-black tracking-tight text-white">{{ gameTitle(selectedRun) }}</h1>
+                <p v-if="isTetrisSelected" class="mt-0.5 truncate text-sm text-slate-400">
+                  {{ tetrisModeLabel }} · autonomous stack
+                </p>
+                <p v-else class="mt-0.5 truncate text-sm text-slate-400">
+                  {{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}
+                </p>
                 <p class="mt-1 flex items-center gap-1.5 truncate text-[11px] text-slate-500">
-                  <MapPinIcon class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
+                  <component :is="isTetrisSelected ? SparklesIcon : MapPinIcon" class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
                   {{ currentLocation }}
                 </p>
               </div>
             </div>
 
-            <div class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
+            <div v-if="isTetrisSelected" class="spectator-art-banner tetris-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
+              <div class="tetris-art-grid" />
+              <div class="spectator-art-banner-caption">
+                <span>Stack in progress</span>
+                <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }} pts · {{ Number(tetrisState?.lines_cleared || 0) }} lines</strong>
+              </div>
+            </div>
+            <div v-else class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
               <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover" />
               <div class="spectator-art-banner-glow" />
               <div class="spectator-art-banner-caption">
@@ -794,7 +807,7 @@ function activityTimeAgo(item: ActivityItem): string {
               </div>
             </div>
 
-            <div class="mt-5">
+            <div v-if="!isTetrisSelected" class="mt-5">
               <div class="mb-2 flex items-center justify-between gap-2">
                 <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
                 <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
@@ -814,6 +827,25 @@ function activityTimeAgo(item: ActivityItem): string {
                     :name="selectedRun.player.badges[slot - 1]"
                     :size="26"
                   />
+                </div>
+              </div>
+            </div>
+            <div v-else class="mt-5">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Piece queue</div>
+                <span class="font-mono text-[10px] text-slate-500">{{ tetrisState?.screen || 'playing' }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="tetris-piece-card rounded-xl border p-3">
+                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Active</span>
+                  <div class="mt-1 flex items-end justify-between gap-2">
+                    <strong class="font-mono text-2xl text-yellow-200">{{ tetrisActivePiece }}</strong>
+                    <span class="font-mono text-[9px] text-slate-500">r{{ Number(tetrisState?.active?.rotation || 0) }}</span>
+                  </div>
+                </div>
+                <div class="tetris-piece-card rounded-xl border p-3">
+                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next</span>
+                  <strong class="mt-1 block font-mono text-2xl text-cyan-200">{{ tetrisNextPiece }}</strong>
                 </div>
               </div>
             </div>
@@ -907,7 +939,7 @@ function activityTimeAgo(item: ActivityItem): string {
               </div>
 
               <div class="absolute right-3 top-14 z-10 flex flex-col items-end gap-2 opacity-85 transition-opacity group-hover:opacity-100 sm:right-4">
-                <div class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
+                <div v-if="!isTetrisSelected" class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
                   <button
                     type="button"
                     :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
@@ -921,7 +953,7 @@ function activityTimeAgo(item: ActivityItem): string {
                     @click="setRendererMode('classic')"
                   >Classic</button>
                 </div>
-                <label v-if="rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
+                <label v-if="!isTetrisSelected && rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
                   <span class="font-black uppercase tracking-[0.08em]">Theme</span>
                   <select
                     :value="selectedThemeID"
@@ -938,9 +970,12 @@ function activityTimeAgo(item: ActivityItem): string {
                   </select>
                 </label>
                 <div
-                  v-if="themeNotice"
+                  v-if="!isTetrisSelected && themeNotice"
                   class="max-w-56 rounded-lg bg-amber-950/80 px-2.5 py-1.5 text-right text-[9px] font-semibold text-amber-200 ring-1 ring-amber-300/20"
                 >{{ themeNotice }}</div>
+                <div v-if="isTetrisSelected" class="rounded-lg bg-yellow-300/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-yellow-100 ring-1 ring-yellow-300/20 backdrop-blur-md">
+                  Classic framebuffer
+                </div>
                 <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
                   <PlayIcon class="size-4" aria-hidden="true" />
                 </button>
@@ -977,7 +1012,57 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section class="spectator-card rounded-2xl border p-3 sm:p-4">
+          <section v-if="isTetrisSelected" class="spectator-card rounded-2xl border p-3 sm:p-4">
+            <div class="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <h2 class="text-sm font-black text-white">Tetris state</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">Live board telemetry from the running game.</p>
+              </div>
+              <span class="font-mono text-[10px] text-yellow-200">{{ tetrisModeLabel }} · {{ tetrisState?.screen || 'playing' }}</span>
+            </div>
+            <div class="grid gap-4 md:grid-cols-[10rem_minmax(0,1fr)] md:items-start">
+              <div class="tetris-board-shell mx-auto w-full max-w-[10rem] rounded-xl border p-2">
+                <div v-if="tetrisBoardRows.length" class="tetris-board" aria-label="Tetris board">
+                  <div v-for="(row, y) in tetrisBoardRows" :key="y" class="tetris-board-row">
+                    <span
+                      v-for="(cell, x) in row"
+                      :key="x"
+                      :class="['tetris-cell', cell === '#' ? 'tetris-cell-filled' : 'tetris-cell-empty']"
+                    />
+                  </div>
+                </div>
+                <div v-else class="grid aspect-[10/18] place-items-center text-[10px] text-slate-600">Waiting for board</div>
+              </div>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Score</span>
+                  <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Lines</span>
+                  <strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Level</span>
+                  <strong>{{ Number(tetrisState?.level || 0) }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Active</span>
+                  <strong>{{ tetrisActivePiece }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Next</span>
+                  <strong>{{ tetrisNextPiece }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Status</span>
+                  <strong class="text-sm">{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section v-else class="spectator-card rounded-2xl border p-3 sm:p-4">
             <div class="mb-3 flex items-end justify-between gap-3">
               <div>
                 <h2 class="text-sm font-black text-white">Current Party</h2>
@@ -1048,7 +1133,41 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section class="milestone-card overflow-hidden rounded-2xl border p-4">
+          <section v-if="isTetrisSelected" class="milestone-card tetris-goal-card overflow-hidden rounded-2xl border p-4">
+            <div class="tetris-goal-visual mb-4 rounded-xl border" aria-hidden="true">
+              <span class="tetris-goal-piece" />
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-black tracking-[0.11em] text-yellow-200/70 uppercase">Run target</div>
+                <h2 class="mt-2 text-base font-black text-white">{{ selectedRun.goal || 'Keep stacking' }}</h2>
+                <p class="mt-1 text-[11px] leading-5 text-slate-400">{{ goalProgressCopy.detail }}</p>
+              </div>
+              <div class="tetris-goal-mark grid size-11 shrink-0 place-items-center rounded-xl">
+                <TrophyIcon class="size-5" aria-hidden="true" />
+              </div>
+            </div>
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/8 ring-1 ring-white/5">
+              <div class="mode-progress goal-progress-fill h-full rounded-full transition-[width]" :style="{ width: goalPercent + '%' }" />
+            </div>
+            <div class="mt-4 grid grid-cols-3 gap-2">
+              <div class="tetris-goal-stat"><span>Score</span><strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong></div>
+              <div class="tetris-goal-stat"><span>Lines</span><strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong></div>
+              <div class="tetris-goal-stat"><span>Level</span><strong>{{ Number(tetrisState?.level || 0) }}</strong></div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="tetris-piece-card rounded-xl border p-3">
+                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Current piece</span>
+                <strong class="mt-1 block font-mono text-xl text-yellow-200">{{ tetrisActivePiece }}</strong>
+              </div>
+              <div class="tetris-piece-card rounded-xl border p-3">
+                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next piece</span>
+                <strong class="mt-1 block font-mono text-xl text-cyan-200">{{ tetrisNextPiece }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section v-else class="milestone-card overflow-hidden rounded-2xl border p-4">
             <div class="final-stretch-art mb-4 overflow-hidden rounded-xl border" aria-hidden="true">
               <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover object-[72%_54%]" />
               <div class="final-stretch-art-shade" />
