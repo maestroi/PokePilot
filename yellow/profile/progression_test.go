@@ -212,6 +212,18 @@ func TestYellowLeagueMemberProgressUsesNativeEvents(t *testing.T) {
 	}
 }
 
+func TestYellowChampionEventDoesNotImplyHallOfFame(t *testing.T) {
+	var mem fakeMemory
+	setYellowEvent(&mem, eventBeatChampionRival)
+	story := projectYellowStory(&mem, 0x00)
+	if !story.Has(gen1.ProgressLeagueChampionDefeated) {
+		t.Fatal("Yellow Champion event did not project Champion completion")
+	}
+	if story.Has(gen1.ProgressMainStoryComplete) {
+		t.Fatal("transient Yellow Champion event incorrectly implied durable Hall-of-Fame completion")
+	}
+}
+
 func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.Elite4Flags] = elite4CompletedMask
