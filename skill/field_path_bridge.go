@@ -97,7 +97,7 @@ func fieldPathBridgeOnCurrentMap(
 		}
 	}
 
-	for _, e := range routeGraph.Edges[cur] {
+	for _, e := range routeGraph.Edges[world.MapID(cur)] {
 		switch e.Kind {
 		case world.EdgeWarp:
 			for _, w := range edgeWarpCandidates(h, e, romData) {
