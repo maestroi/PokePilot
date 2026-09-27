@@ -67,10 +67,6 @@ func Place(profile game.CartridgeProfile, m Machine, target Placement) (Result, 
 	if target.Rotation > 3 {
 		return Result{}, fmt.Errorf("%w: rotation %d is outside 0..3", ErrBlocked, target.Rotation)
 	}
-	if target.Column < 0 || target.Column >= tetris.BoardWidth {
-		return Result{}, fmt.Errorf("%w: column %d is outside 0..%d", ErrBlocked, target.Column, tetris.BoardWidth-1)
-	}
-
 	before, err := tetris.Observe(profile, m)
 	if err != nil {
 		return Result{}, err
@@ -83,6 +79,10 @@ func Place(profile game.CartridgeProfile, m Machine, target Placement) (Result, 
 	}
 	if !before.ReadyForPieceInput || before.Active == nil {
 		return Result{}, fmt.Errorf("%w: lock/clear transition is active", ErrNotReady)
+	}
+	lo, hi, _ := tetris.AnchorColumns(before.Active.Piece, target.Rotation)
+	if target.Column < lo || target.Column > hi {
+		return Result{}, fmt.Errorf("%w: column %d is outside %d..%d for %s rotation %d", ErrBlocked, target.Column, lo, hi, before.Active.Piece, target.Rotation)
 	}
 
 	result := Result{

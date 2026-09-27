@@ -74,7 +74,7 @@ func TestDecodeStateTypeA(t *testing.T) {
 	if got.Active == nil {
 		t.Fatal("active piece is nil")
 	}
-	if got.Active.Piece != PieceT || got.Active.Rotation != 2 || got.Active.X != 5 || got.Active.Y != 2 {
+	if got.Active.Piece != PieceT || got.Active.Rotation != 2 || got.Active.X != 6 || got.Active.Y != 2 {
 		t.Fatalf("active = %#v", *got.Active)
 	}
 	if got.Next == nil || got.Next.Piece != PieceI || got.Next.Rotation != 1 {
@@ -207,5 +207,51 @@ func TestObserveRequiresTetrisStateCapability(t *testing.T) {
 	_, err := Observe(identityOnlyProfile{}, gameplayMemory())
 	if err == nil || !strings.Contains(err.Error(), "does not expose Tetris state") {
 		t.Fatalf("expected capability error, got %v", err)
+	}
+}
+
+// Raw anchor X at each wall, measured on the cartridge by shifting every
+// piece/orientation until the game rejected the input. The decoded anchor plus
+// Cells must put the piece flush against that wall; an off-by-one here lets
+// policy offer placements the game cannot reach.
+func TestDecodeActiveAnchorMatchesMeasuredWalls(t *testing.T) {
+	tests := []struct {
+		raw   byte // DecodePiece id: piece*4 + rotation
+		left  byte
+		right byte
+	}{
+		{0x0C, 0x1F, 0x5F}, // O
+		{0x08, 0x27, 0x57}, // I r0
+		{0x09, 0x1F, 0x67}, // I r1
+		{0x10, 0x27, 0x5F}, // S r0
+		{0x11, 0x27, 0x67}, // S r1
+		{0x05, 0x1F, 0x5F}, // J r1
+		{0x18, 0x27, 0x5F}, // T r0
+		{0x1A, 0x27, 0x5F}, // T r2
+		{0x1B, 0x27, 0x67}, // T r3
+		{0x03, 0x27, 0x67}, // L r3
+	}
+	for _, tc := range tests {
+		for _, wall := range []struct {
+			rawX byte
+			want int
+		}{{tc.left, 0}, {tc.right, BoardWidth - 1}} {
+			active, ok := decodeActive(tc.raw, wall.rawX, 0x18)
+			if !ok {
+				t.Fatalf("decodeActive(0x%02x) failed", tc.raw)
+			}
+			cells, _ := Cells(active.Piece, active.Rotation)
+			edge := active.X + cells[0].X
+			for _, c := range cells {
+				if wall.want == 0 {
+					edge = min(edge, active.X+c.X)
+				} else {
+					edge = max(edge, active.X+c.X)
+				}
+			}
+			if edge != wall.want {
+				t.Fatalf("%s r%d at raw X 0x%02x reaches column %d, want %d", active.Piece, active.Rotation, wall.rawX, edge, wall.want)
+			}
+		}
 	}
 }

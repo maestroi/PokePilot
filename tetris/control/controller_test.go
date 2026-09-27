@@ -115,7 +115,7 @@ func (m *fakeMachine) rememberButtons() {
 }
 
 func (m *fakeMachine) beginLock() {
-	column := 4 + (int(m.mem[sym.ActiveX])-0x3F)/8
+	column := 5 + (int(m.mem[sym.ActiveX])-0x3F)/8
 	if column >= 0 && column < tetris.BoardWidth && !m.lineClear {
 		m.mem[sym.BoardTopLeft+17*sym.BoardStride+uint16(column)] = 0x80
 	}
@@ -165,7 +165,7 @@ func TestPlaceRotatesShiftsDropsAndVerifies(t *testing.T) {
 	if result.After.Active.Piece != tetris.PieceI {
 		t.Fatalf("next active piece = %s", result.After.Active.Piece)
 	}
-	if !containsButton(m.history, emu.A) || countButton(m.history, emu.Left) != 2 || !containsButton(m.history, emu.Down) {
+	if !containsButton(m.history, emu.A) || countButton(m.history, emu.Left) != 3 || !containsButton(m.history, emu.Down) {
 		t.Fatalf("input history = %#v", m.history)
 	}
 }

@@ -206,7 +206,11 @@ func enumerate(
 ) []Candidate {
 	var out []Candidate
 	for rotation := uint8(0); rotation < 4; rotation++ {
-		for column := 0; column < tetris.BoardWidth; column++ {
+		lo, hi, ok := tetris.AnchorColumns(piece, rotation)
+		if !ok {
+			continue
+		}
+		for column := lo; column <= hi; column++ {
 			if !reachable(board, piece, startRotation, startX, startY, rotation, column) {
 				continue
 			}
