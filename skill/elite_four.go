@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	loreleiRoomMap   uint8 = 0xF5
-	brunoRoomMap     uint8 = 0xF6
-	agathaRoomMap    uint8 = 0xF7
-	lanceRoomMap     uint8 = 0x71
-	championsRoomMap uint8 = 0x78
-	hallOfFameMap    uint8 = 0x76
+	loreleiRoomMap    = 0xF5
+	brunoRoomMap      = 0xF6
+	agathaRoomMap     = 0xF7
+	lanceRoomMap      = 0x71
+	championsRoomMap  = 0x78
+	hallOfFameMap     = 0x76
 
 	leagueTravelBattles      = 8
 	leagueWarpBudget         = 600
@@ -28,7 +28,7 @@ const (
 	// curMapLoadedScriptPending is BIT_CUR_MAP_LOADED_1 in
 	// wCurrentMapScriptFlags: set by EnterMap, cleared by each Elite Four room
 	// script on its first run after the load.
-	curMapLoadedScriptPending uint8 = 1 << 5
+	curMapLoadedScriptPending  = 1 << 5
 )
 
 var (
