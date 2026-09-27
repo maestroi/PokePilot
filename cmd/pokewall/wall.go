@@ -126,8 +126,10 @@ type Tile struct {
 	Stats *farm.LLMStats
 	// Player is the live party/money/badges snapshot. Kept on finish,
 	// nilled on retry, same rule as Stats.
-	Player   *farm.Player
-	Reason   string
+	Player       *farm.Player
+	GameState    map[string]any
+	GameDecision map[string]any
+	Reason       string
 	Detail   string
 	Finished bool
 	// workerAddrs is where this run's runner watch server is reachable,
@@ -415,6 +417,8 @@ func (w *Wall) persistedStateLocked() persistedState {
 			StopSoFar:          t.StopSoFar,
 			Stats:              t.Stats,
 			Player:             t.Player,
+			GameState:          cloneJSONMap(t.GameState),
+			GameDecision:       cloneJSONMap(t.GameDecision),
 			Reason:             t.Reason,
 			Detail:             t.Detail,
 			Finished:           t.Finished,
@@ -652,6 +656,17 @@ func (w *Wall) Handler() http.Handler {
 	return mux
 }
 
+func cloneJSONMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -786,6 +801,8 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Trail = nil
 	t.Stats = nil
 	t.Player = nil
+	t.GameState = nil
+	t.GameDecision = nil
 	t.Reason = ""
 	t.Detail = ""
 	t.workerAddrs = nil
@@ -952,6 +969,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats
 	t.Player = hb.Player
+	t.GameState = cloneJSONMap(hb.GameState)
+	t.GameDecision = cloneJSONMap(hb.GameDecision)
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = now
 	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousPlayer)
