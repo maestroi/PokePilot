@@ -10,14 +10,14 @@ func TestValidationSnapshotTreatsPortBypassAsPostActionGeometry(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	g := &Graph{
 		componentAware: true,
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
-		comps: map[uint8][][]int{
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1}},
 		},
 		exitComps:  map[Edge][]int{edge: nil},
 		entryComps: map[Edge][]int{edge: nil},
-		tiles:      map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
+		tiles:      map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
 	}
 	transitions := map[Edge]gameruntime.Transition{
 		edge: {ID: "fixture:surf", Requires: []gameruntime.CapabilityID{"can_surf"}, PortBypass: true},
