@@ -39,7 +39,11 @@ test('Tetris uses the fast engine only for bounded legal placements', () => {
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*max_choices\?: number/)
   assert.match(toolsSource, /max_choices: decision\.max_choices/)
   assert.match(toolsSource, /d\.protocol === 'typesafe-choice'/)
+  assert.match(toolsSource, /preferredTetrisDecisionDeployment/)
+  assert.match(toolsSource, /role\.toLowerCase\(\) === 'tetris'/)
   assert.match(toolsSource, /decisionTarget\.value = jev \? `deployment:\$\{jev\.id\}` : \(deployments\.value\.length \? 'off' : 'env:jev'\)/)
+  assert.match(toolsSource, /\['endless', 'Endless high score/)
+  assert.match(toolsSource, /form\.goal = 'endless'/)
   assert.match(toolsSource, /Tetris placements[\s\S]*legal candidates only/)
 })
 
