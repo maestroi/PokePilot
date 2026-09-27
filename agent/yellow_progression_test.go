@@ -211,7 +211,7 @@ func TestYellowSharedMiddleProgressionUsesGen1CutPrerequisites(t *testing.T) {
 	}
 }
 
-func TestYellowPostFuchsiaPreparesSurfStrengthThenRoutesCinnabar(t *testing.T) {
+func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
@@ -240,20 +240,15 @@ func TestYellowPostFuchsiaPreparesSurfStrengthThenRoutesCinnabar(t *testing.T) {
 		t.Fatalf("post-Fuchsia progression=%v, want Surf repair", got)
 	}
 
+	// Strength is deliberately still unprepared: Fuchsia positively owns HM04,
+	// but the Cinnabar route itself must not invent a Strength prerequisite.
 	obs.FieldCapabilities = []FieldCapability{
 		{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+		{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: false, Usable: false},
 	}
-	got = a.ProgressionObjectives(obs)
-	if len(got) != 1 || got[0].Kind != KindRepairFieldCapability || got[0].FieldCapability != "strength" {
-		t.Fatalf("post-Surf progression=%v, want Strength repair", got)
-	}
-
-	obs.FieldCapabilities = append(obs.FieldCapabilities,
-		FieldCapability{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
-	)
 	got = a.ProgressionObjectives(obs)
 	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "cinnabar pokemon center" {
-		t.Fatalf("post-field-repair progression=%v, want Cinnabar handoff", got)
+		t.Fatalf("post-Surf progression=%v, want Cinnabar handoff without Strength repair", got)
 	}
 
 	obs.Location = yellowLocationID(yellowprofile.GameID, 0xab)
