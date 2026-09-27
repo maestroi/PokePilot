@@ -400,6 +400,9 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 
 	seen := map[[3]uint16]bool{}
 	for transitions := 0; transitions <= maxNavigationTransitions; transitions++ {
+		if err := waitOutScriptedMovement(m); err != nil {
+			return err
+		}
 		state := profile.DecodeOverworld(m)
 		if state.InBattle {
 			return ErrBattle
