@@ -144,11 +144,11 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 	}
 
 	obs := game.ProfileObservation{
-		NativeMapID: nativeMap,
-		Location:    mapInfo.Location,
-		MapName:     mapInfo.Name,
-		X:           reader.Peek8(sym.XCoord),
-		Y:           reader.Peek8(sym.YCoord),
+		NativeMapID:  nativeMap,
+		Location:     mapInfo.Location,
+		MapName:      mapInfo.Name,
+		X:            reader.Peek8(sym.XCoord),
+		Y:            reader.Peek8(sym.YCoord),
 		Facing:       decodeFacing(reader.Peek8(sym.PlayerDirection)),
 		Controllable: gsControllable(reader),
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
