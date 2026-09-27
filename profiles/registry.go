@@ -12,12 +12,17 @@ import (
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
+	tetrisprofile "github.com/maestroi/pokepilot/tetris/profile"
 )
 
 var (
 	builtinOnce sync.Once
 	builtin     *game.Registry
 	builtinErr  error
+
+	cartridgeOnce sync.Once
+	cartridges    *game.CartridgeRegistry
+	cartridgeErr  error
 )
 
 func Builtin() (*game.Registry, error) {
@@ -31,6 +36,35 @@ func Builtin() (*game.Registry, error) {
 		)
 	})
 	return builtin, builtinErr
+}
+
+ // Cartridges returns the game-agnostic ROM identity registry. Pokémon profiles
+ // participate because game.GameProfile extends game.CartridgeProfile; Tetris
+ // is registered here without pretending to implement Pokémon semantics.
+func Cartridges() (*game.CartridgeRegistry, error) {
+	cartridgeOnce.Do(func() {
+		cartridges, cartridgeErr = game.NewCartridgeRegistry(
+			redprofile.New(),
+			blueprofile.New(),
+			yellowprofile.New(),
+			gsprofile.NewGold(),
+			gsprofile.NewSilver(),
+			tetrisprofile.New(),
+		)
+	})
+	return cartridges, cartridgeErr
+}
+
+func DetectCartridge(rom []byte) (game.CartridgeProfile, game.ROMInfo, error) {
+	registry, err := Cartridges()
+	if err != nil {
+		return nil, game.ROMInfo{}, fmt.Errorf("profiles: build cartridge registry: %w", err)
+	}
+	profile, info, err := registry.DetectROM(rom)
+	if err != nil {
+		return nil, info, fmt.Errorf("profiles: %w", err)
+	}
+	return profile, info, nil
 }
 
 func Detect(rom []byte) (game.GameProfile, game.ROMInfo, error) {
