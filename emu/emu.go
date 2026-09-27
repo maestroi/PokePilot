@@ -8,7 +8,7 @@ import (
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 )
 
-// Emu is a headless Pokemon Red emulator session.
+// Emu is a headless Game Boy emulator session.
 type Emu struct {
 	e *gomeboy.Emulator
 
