@@ -53,17 +53,20 @@ func yellowOpeningReached(f yellowprofile.OpeningFacts) bool {
 // controllable frame in the lab as permission to touch the Eevee ball before
 // Oak's speech has actually completed.
 func yellowOpeningPhaseFor(f yellowprofile.OpeningFacts) (yellowOpeningPhase, error) {
-	if f.ChoicePrompt {
-		return "", errYellowOpeningChoiceRequired
-	}
 	switch {
 	case yellowOpeningReached(f):
 		return yellowOpeningDone, nil
 	case f.InBattle:
+		// Gen I's 2x2 battle menu is cursor-shaped like a two-option prompt:
+		// wMaxMenuItem is 1 for each column and the live cursor is the same
+		// glyph. Battle ownership is therefore stronger evidence than the
+		// generic prompt decoder during Yellow's opening.
 		if f.GotStarter && !f.BattledRival {
 			return yellowOpeningFightRival, nil
 		}
 		return yellowOpeningScript, nil
+	case f.ChoicePrompt:
+		return "", errYellowOpeningChoiceRequired
 	case !f.Controllable:
 		return yellowOpeningScript, nil
 	case !f.OakAppeared && !f.FollowedOak:
