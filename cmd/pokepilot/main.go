@@ -1,4 +1,4 @@
-// Command pokepilot boots a supported Pokemon Gen I ROM, serves
+// Command pokepilot boots a supported Game Boy ROM, serves
 // the screen over HTTP so a human can watch, and drives the built skills.
 package main
 
@@ -24,6 +24,7 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
+	tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
 
 var version = "dev"
@@ -44,10 +45,10 @@ func main() {
 	fps := flag.Int("fps", 60, "pace the walk to this many frames per second so it is watchable; 0 runs flat out")
 	hold := flag.Duration("hold", 30*time.Second, "how long to keep serving after the run finishes")
 	starter := flag.String("starter", "", "starter to take; empty uses the game's scripted default when it has one, otherwise Squirtle for the legacy Red/Blue CLI")
-	planner := flag.String("planner", "scripted", "how to choose objectives: scripted or llm")
+	planner := flag.String("planner", "scripted", "how to choose objectives: scripted, llm, or policy (Tetris)")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
-	goal := flag.String("goal", defaultGoal, "structured goal: badges:N | reach:<place> | level:N | item:<name> | elite-four | dex")
+	goal := flag.String("goal", defaultGoal, "structured goal: Pokemon goals or Tetris auto | survival | complete | lines:N | score:N")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
 	llmProfile := flag.String("llm-profile", "", "llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)")
 	resume := flag.String("resume", "", "resume an llm run from a round checkpoint, checkpoint directory, or run directory")
@@ -62,7 +63,7 @@ func main() {
 		romPath = os.Getenv("POKEMON_RED_ROM")
 	}
 	if romPath == "" {
-		log.Fatal("POKEPILOT_ROM is not set; point it at a supported Pokemon Gen I ROM (POKEMON_RED_ROM still works)")
+		log.Fatal("POKEPILOT_ROM is not set; point it at a supported Game Boy ROM (POKEMON_RED_ROM still works)")
 	}
 
 	resumeFrom := ""
@@ -100,13 +101,19 @@ func main() {
 	if err := m.HandleWatch("/render-state.json", renderFeed); err != nil {
 		log.Fatalf("serve semantic state: %v", err)
 	}
-	redRenderer, renderErr := redrenderstate.New(m.ROM())
-	if renderErr != nil {
-		log.Printf("semantic renderer unavailable for loaded ROM: %v", renderErr)
-	}
-	watchProfile, _, err := profiles.Detect(m.ROM())
+	cartridgeProfile, _, err := profiles.DetectCartridge(m.ROM())
 	if err != nil {
-		log.Fatalf("detect game profile: %v", err)
+		log.Fatalf("detect cartridge profile: %v", err)
+	}
+	watchProfile, isPokemon := cartridgeProfile.(game.GameProfile)
+	captureRender := func(*emu.Emu) {}
+	if isPokemon {
+		redRenderer, renderErr := redrenderstate.New(m.ROM())
+		if renderErr != nil {
+			log.Printf("semantic renderer unavailable for loaded ROM: %v", renderErr)
+		} else {
+			captureRender = func(em *emu.Emu) { renderFeed.capture(em, redRenderer) }
+		}
 	}
 
 	served, err := m.Watch(*addr, *every)
@@ -115,12 +122,15 @@ func main() {
 	}
 	var watchMem state.Mem
 	tracer := newDialogueTracer()
-	m.OnSample(func(m *emu.Emu) {
-		if watchProfile.Features().Has(game.FeatureBattles) {
-			tracer.sample(m)
+	m.OnSample(func(em *emu.Emu) {
+		if !isPokemon {
+			return
 		}
-		renderFeed.capture(m, redRenderer)
-		m.TracePlayer(livePlayerForProfile(m, watchProfile, &watchMem))
+		if watchProfile.Features().Has(game.FeatureBattles) {
+			tracer.sample(em)
+		}
+		captureRender(em)
+		em.TracePlayer(livePlayerForProfile(em, watchProfile, &watchMem))
 	})
 	fmt.Printf("%s\nwatch: http://%s\n\n", version, served)
 
@@ -130,11 +140,21 @@ func main() {
 	}
 	m.TraceHeader(runHeader(*planner, *starter, *dest, *seed, burn))
 
-	fmt.Println("booting to the overworld (unthrottled)...")
-	if _, err := skill.BootToOverworld(m); err != nil {
-		log.Fatalf("boot: %v", err)
+	if isPokemon {
+		fmt.Println("booting to the overworld (unthrottled)...")
+		if _, err := skill.BootToOverworld(m); err != nil {
+			log.Fatalf("boot: %v", err)
+		}
+		report(m, "booted")
+	} else if string(cartridgeProfile.ID()) == "tetris" {
+		fmt.Println("booting to the Tetris title screen (unthrottled)...")
+		if _, err := tetrissession.BootToTitle(cartridgeProfile, m); err != nil {
+			log.Fatalf("boot: %v", err)
+		}
+		fmt.Printf("  booted Tetris at frame %d\n", m.FrameCount())
+	} else {
+		log.Fatalf("game %q has no runtime", cartridgeProfile.ID())
 	}
-	report(m, "booted")
 
 	if orchURL := os.Getenv("POKEPILOT_ORCH_URL"); orchURL != "" {
 		if err := startWorkerControlServer(); err != nil {
@@ -178,11 +198,26 @@ func main() {
 
 	switch *planner {
 	case "scripted":
+		if !isPokemon {
+			log.Fatalf("planner scripted requires a Pokemon gameplay profile")
+		}
 		runScripted(m, *starter, *dest, *hold, served)
 	case "llm":
+		if !isPokemon {
+			log.Fatalf("planner llm requires a Pokemon gameplay profile")
+		}
 		runLLM(m, *goal, *llmProfile, *maxRounds, *checkpointDir, resumeFrom)
+	case "policy":
+		if string(cartridgeProfile.ID()) != "tetris" {
+			log.Fatalf("planner policy currently supports Tetris only")
+		}
+		tetrisGoal := *goal
+		if tetrisGoal == defaultGoal {
+			tetrisGoal = "auto"
+		}
+		runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds)
 	default:
-		log.Fatalf("unknown planner %q: want scripted or llm", *planner)
+		log.Fatalf("unknown planner %q: want scripted, llm, or policy", *planner)
 	}
 }
 
