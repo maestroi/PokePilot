@@ -74,8 +74,8 @@ type State struct {
 
 	Board Board `json:"board"`
 
-	Active *PieceState  `json:"active,omitempty"`
-	Next   PiecePreview `json:"next"`
+	Active *PieceState   `json:"active,omitempty"`
+	Next   *PiecePreview `json:"next,omitempty"`
 
 	Level          int  `json:"level"`
 	Score          int  `json:"score"`
@@ -164,7 +164,7 @@ func DecodeState(reader game.MemoryReader) (State, error) {
 	}
 
 	if preview, ok := decodePreview(reader.Peek8(sym.PreviewPiece)); ok {
-		state.Next = preview
+		state.Next = &preview
 	}
 
 	if screen == ScreenPlaying && reader.Peek8(sym.ActiveVisible) != 0x80 {
