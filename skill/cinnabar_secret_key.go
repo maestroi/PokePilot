@@ -72,26 +72,10 @@ func CinnabarSecretKeyOwned(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SecretKeyOwned
 }
 
-func CinnabarSecretKeyPrerequisites(mem *state.Mem) []gameruntime.ProgressID {
-	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
-	progress := state.DecodeProgress(mem)
-	missing := []gameruntime.ProgressID{}
-	if !facts.FuchsiaProgressionComplete {
-		missing = append(missing, "fuchsia_progression_complete")
-	}
-	if !facts.SilphRescueComplete {
-		missing = append(missing, "silph_rescue_complete")
-	}
-	if !progress.Has(state.BadgeMarsh) {
-		missing = append(missing, "marsh_badge")
-	}
-	return missing
-}
-
-func CinnabarSecretKeyReady(mem *state.Mem) bool {
-	return len(CinnabarSecretKeyPrerequisites(mem)) == 0
-}
-
+// AcquireCinnabarSecretKey owns only the Mansion transaction. Campaign
+// ordering belongs to the concrete game adapter: mechanically this story leg
+// requires only a usable Surf capability, and the skill already verifies that
+// directly before it routes to Cinnabar.
 // restageSecretKeyRoute20Resume handles checkpoints that resume on Route 20.
 // Route 20 has two disconnected outdoor Surf components separated by Seafoam
 // Islands. The Secret Key milestone intentionally uses Route 21 and must not
@@ -241,9 +225,6 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 	state.Snapshot(m, &mem)
 	if CinnabarSecretKeyOwned(&mem) {
 		return nil
-	}
-	if missing := CinnabarSecretKeyPrerequisites(&mem); len(missing) != 0 {
-		return gameruntime.NewProgressionPrerequisiteMissing(missing...)
 	}
 	if !FieldCapabilityFor(&mem, FieldSurf).Usable {
 		return gameruntime.NewFieldCapabilityPrerequisiteMissing("surf")
