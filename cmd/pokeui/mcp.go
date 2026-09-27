@@ -55,7 +55,7 @@ type mcpStartRunInput struct {
 	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, or tetris; empty lets the runner pick its mounted cartridge"`
 	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments; Tetris must leave this empty"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
-	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm Pokemon mode, or Tetris auto, survival, complete, lines:N, or score:N"`
+	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm Pokemon mode, or Tetris auto, endless, survival, complete, lines:N, or score:N"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
 	FPS        int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
 	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"optional emergency/experiment cap: LLM objectives for Pokemon or placed pieces for Tetris; zero means no hard round/piece cap"`
