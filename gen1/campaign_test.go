@@ -83,7 +83,6 @@ func TestFuchsiaStagesAreOrderedAndFresh(t *testing.T) {
 	}
 }
 
-
 func TestCinnabarStagesAreOrderedAndFresh(t *testing.T) {
 	want := []game.ProgressID{ProgressSecretKeyOwned, ProgressVolcanoBadge}
 	got := CinnabarStages()
