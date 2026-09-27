@@ -19,19 +19,19 @@ func TestPortBypassRejectsPhantomConnectionBands(t *testing.T) {
 
 	g := &Graph{
 		componentAware: true,
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {phantom, real},
 			2: {farExit, bridge},
 			3: {},
 		},
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 1}},
 			// Map 2 has two disconnected components: landing from `real` is
 			// component 1; the south farExit lives only in component 2.
 			2: {{1, 0}, {0, 2}},
 			3: {{1}},
 		},
-		tiles: map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 2}, 3: {w: 1, h: 1}},
+		tiles: map[MapID]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 2}, 3: {w: 1, h: 1}},
 		exitComps: map[Edge][]int{
 			real:    {1},
 			farExit: {2},
