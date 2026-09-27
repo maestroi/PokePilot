@@ -115,12 +115,11 @@ func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
 	}
 }
 
-
 func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
 	obs := Observation{
 		GameID:     gsprofile.GoldGameID,
-		PartyCount:  1,
+		PartyCount: 1,
 		Story: ProgressState{
 			{ID: gsprofile.ProgressStarterReceived, Complete: true},
 			{ID: gsprofile.ProgressMysteryEggReturned, Complete: false},
@@ -143,7 +142,7 @@ func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
 func TestGSProgressionDoesNotSkipDurableStarterBoundary(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
 	obs := Observation{
-		GameID:    gsprofile.GoldGameID,
+		GameID:     gsprofile.GoldGameID,
 		PartyCount: 1,
 		Story: ProgressState{
 			{ID: gsprofile.ProgressStarterReceived, Complete: false},
