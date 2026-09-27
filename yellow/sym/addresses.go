@@ -48,7 +48,8 @@ const (
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
 	// Battle.
-	IsInBattle uint16 = 0xD056 // wIsInBattle
+	IsInBattle  uint16 = 0xD056 // wIsInBattle
+	CurOpponent uint16 = 0xD058 // wCurOpponent
 
 	// Inventory/progress.
 	PokedexOwned   uint16 = 0xD2F6 // wPokedexOwned, 19 bytes
