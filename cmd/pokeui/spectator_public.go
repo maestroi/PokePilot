@@ -62,38 +62,38 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Next               *publicTetrisPiece `json:"next,omitempty"`
 	}
 	type publicRun struct {
-		RunID          string          `json:"run_id"`
-		Status         string          `json:"status"`
-		Game           string          `json:"game,omitempty"`
-		Starter        string          `json:"starter,omitempty"`
-		Dest           string          `json:"dest,omitempty"`
-		Goal           string          `json:"goal,omitempty"`
-		FPS            int             `json:"fps"`
-		LLMProfile     string          `json:"llm_profile,omitempty"`
-		PlayStyle      string          `json:"play_style,omitempty"`
-		Purpose        string          `json:"purpose,omitempty"`
-		RiskTolerance  string          `json:"risk_tolerance,omitempty"`
-		WildEncounters string          `json:"wild_encounters,omitempty"`
-		QueuedAt       int64           `json:"queued_at,omitempty"`
-		EndedAt        int64           `json:"ended_at,omitempty"`
-		Frame          uint64          `json:"frame"`
-		Map            uint8           `json:"map"`
-		X              uint8           `json:"x"`
-		Y              uint8           `json:"y"`
-		MapsVisited    int             `json:"maps_visited,omitempty"`
-		PlannerWaiting bool            `json:"planner_waiting,omitempty"`
-		PlannerOptions int             `json:"planner_options,omitempty"`
-		Decision       string          `json:"decision,omitempty"`
-		StopSoFar      string          `json:"stop_so_far,omitempty"`
-		Stats          *spectatorStats   `json:"stats,omitempty"`
-		Player         *publicPlayer    `json:"player,omitempty"`
+		RunID          string             `json:"run_id"`
+		Status         string             `json:"status"`
+		Game           string             `json:"game,omitempty"`
+		Starter        string             `json:"starter,omitempty"`
+		Dest           string             `json:"dest,omitempty"`
+		Goal           string             `json:"goal,omitempty"`
+		FPS            int                `json:"fps"`
+		LLMProfile     string             `json:"llm_profile,omitempty"`
+		PlayStyle      string             `json:"play_style,omitempty"`
+		Purpose        string             `json:"purpose,omitempty"`
+		RiskTolerance  string             `json:"risk_tolerance,omitempty"`
+		WildEncounters string             `json:"wild_encounters,omitempty"`
+		QueuedAt       int64              `json:"queued_at,omitempty"`
+		EndedAt        int64              `json:"ended_at,omitempty"`
+		Frame          uint64             `json:"frame"`
+		Map            uint8              `json:"map"`
+		X              uint8              `json:"x"`
+		Y              uint8              `json:"y"`
+		MapsVisited    int                `json:"maps_visited,omitempty"`
+		PlannerWaiting bool               `json:"planner_waiting,omitempty"`
+		PlannerOptions int                `json:"planner_options,omitempty"`
+		Decision       string             `json:"decision,omitempty"`
+		StopSoFar      string             `json:"stop_so_far,omitempty"`
+		Stats          *spectatorStats    `json:"stats,omitempty"`
+		Player         *publicPlayer      `json:"player,omitempty"`
 		GameState      *publicTetrisState `json:"game_state,omitempty"`
-		Sprites        []publicSprite   `json:"sprites,omitempty"`
-		Trail          [][2]uint8      `json:"trail,omitempty"`
-		Attempts       int             `json:"attempts,omitempty"`
-		Reason         string          `json:"reason,omitempty"`
-		ReplayReady    bool            `json:"replay_ready,omitempty"`
-		Highlight      string          `json:"highlight,omitempty"`
+		Sprites        []publicSprite     `json:"sprites,omitempty"`
+		Trail          [][2]uint8         `json:"trail,omitempty"`
+		Attempts       int                `json:"attempts,omitempty"`
+		Reason         string             `json:"reason,omitempty"`
+		ReplayReady    bool               `json:"replay_ready,omitempty"`
+		Highlight      string             `json:"highlight,omitempty"`
 	}
 
 	var player *publicPlayer
