@@ -41,9 +41,9 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			want: yellowOpeningTakeBall,
 		},
 		{
-			name: "scripted Oak capture battle is not player battle",
+			name:  "scripted Oak capture battle is not player battle",
 			facts: yellowprofile.OpeningFacts{Map: yellowprofile.PalletTownMap, InBattle: true},
-			want: yellowOpeningScript,
+			want:  yellowOpeningScript,
 		},
 		{
 			name: "lab rival battle is player owned",
