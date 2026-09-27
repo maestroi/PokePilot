@@ -51,20 +51,19 @@ func TestDecodeOpeningMarksKnownScriptAsOwnedState(t *testing.T) {
 	}
 }
 
-
 func TestDecodeOpeningProjectsPostStarterStoryAndRivalName(t *testing.T) {
 	mem := fakeGSReader{
-		sym.MapGroup:                 24,
-		sym.MapNumber:                5,
-		sym.MapWidth:                 5,
-		sym.MapHeight:                6,
-		sym.MapStatus:                gen2MapStatusHandle,
-		sym.MapEventStatus:           gen2MapEventsOn,
-		sym.StatusFlags:              statusFlagsPokedexMask,
-		sym.MrPokemonsHouseSceneID:   sceneMrPokemonsHouseNoop,
-		sym.CherrygroveCitySceneID:   sceneCherrygroveNoop,
-		sym.ElmsLabSceneID:           sceneElmsLabNoop,
-		sym.BattleResult:             1,
+		sym.MapGroup:               24,
+		sym.MapNumber:              5,
+		sym.MapWidth:               5,
+		sym.MapHeight:              6,
+		sym.MapStatus:              gen2MapStatusHandle,
+		sym.MapEventStatus:         gen2MapEventsOn,
+		sym.StatusFlags:            statusFlagsPokedexMask,
+		sym.MrPokemonsHouseSceneID: sceneMrPokemonsHouseNoop,
+		sym.CherrygroveCitySceneID: sceneCherrygroveNoop,
+		sym.ElmsLabSceneID:         sceneElmsLabNoop,
+		sym.BattleResult:           1,
 	}
 	setGSEvent(mem, eventGotPokemonFromElm)
 	setGSEvent(mem, eventGotMysteryEggMrPokemon)
@@ -87,15 +86,15 @@ func TestDecodeOpeningProjectsPostStarterStoryAndRivalName(t *testing.T) {
 
 func TestDecodeOpeningRecognizesRivalNamingScreen(t *testing.T) {
 	mem := fakeGSReader{
-		sym.MapGroup:       24,
-		sym.MapNumber:      5,
-		sym.MapWidth:       5,
-		sym.MapHeight:      6,
-		sym.MapStatus:      gen2MapStatusHandle,
-		sym.MapEventStatus: gen2MapEventsOn,
-		sym.ScriptMode:     1,
+		sym.MapGroup:         24,
+		sym.MapNumber:        5,
+		sym.MapWidth:         5,
+		sym.MapHeight:        6,
+		sym.MapStatus:        gen2MapStatusHandle,
+		sym.MapEventStatus:   gen2MapEventsOn,
+		sym.ScriptMode:       1,
 		sym.NamingScreenType: 2,
-		sym.RivalName:      0xf2,
+		sym.RivalName:        0xf2,
 	}
 	facts := NewGold().DecodeOpening(mem)
 	if !facts.ScriptActive || !facts.RivalNamePrompt {
