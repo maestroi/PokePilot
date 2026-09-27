@@ -43,6 +43,19 @@ func CinnabarStages() []game.ProgressID {
 	}
 }
 
+// SaffronStages is the shared late-game story bridge from opening Saffron's
+// guardhouses through Silph Co and Sabrina. Concrete cartridges may insert
+// version-specific scripted battles inside Silph while retaining these durable
+// semantic boundaries.
+func SaffronStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressSaffronGateOpen,
+		ProgressCardKeyOwned,
+		ProgressSilphRescueComplete,
+		ProgressMarshBadge,
+	}
+}
+
 // FirstIncomplete returns the first semantic campaign fact that has not yet
 // been positively observed. It contains no map, event, item, or game-specific
 // assumptions.
