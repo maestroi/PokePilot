@@ -78,12 +78,16 @@ func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, st
 	consider(fromMap, 0)
 	if bestName == "" {
 		seen := map[uint8]bool{fromMap: true}
-		for _, e := range g.Edges[fromMap] {
-			if seen[e.To] {
+		for _, e := range g.Edges[world.MapID(fromMap)] {
+			if e.To > 0xff {
 				continue
 			}
-			seen[e.To] = true
-			consider(e.To, 1)
+			to := uint8(e.To)
+			if seen[to] {
+				continue
+			}
+			seen[to] = true
+			consider(to, 1)
 		}
 	}
 	if bestName == "" {
@@ -107,12 +111,12 @@ func singleDestinationWarpExit(g *world.Graph, fromMap uint8) (world.Edge, bool)
 	if g == nil {
 		return world.Edge{}, false
 	}
-	edges := g.Edges[fromMap]
+	edges := g.Edges[world.MapID(fromMap)]
 	if len(edges) == 0 {
 		return world.Edge{}, false
 	}
 	to := edges[0].To
-	if to == fromMap {
+	if to == world.MapID(fromMap) {
 		return world.Edge{}, false
 	}
 	for _, e := range edges {
