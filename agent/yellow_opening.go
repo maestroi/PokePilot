@@ -34,6 +34,7 @@ const (
 	yellowOpeningMaxSteps                 = 40
 	yellowOpeningScriptBudget             = 30000
 	yellowOpeningBallReactionBudget       = 600
+	yellowOpeningRivalTriggerBudget       = 180
 	yellowOpeningGateApproachX      uint8 = 10
 	yellowOpeningGateApproachY      uint8 = 1
 	yellowOpeningBallX              uint8 = 7
@@ -240,5 +241,29 @@ func yellowOpeningTriggerRival(m *emu.Emu, romData []byte) error {
 	if errors.Is(err, skill.ErrDialogueInterrupted) || errors.Is(err, skill.ErrBattleInterrupted) || errors.Is(err, skill.ErrBattle) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	// GoTo can positively finish the exact-tile request on the same frame the
+	// player reaches y=6, before OaksLabRivalChallengesPlayerScript consumes
+	// that coordinate. A second GoTo then has nothing to do, which previously
+	// looked like two identical semantic states and tripped the opening stall
+	// detector (#2071). Yield to Yellow's map script until it takes ownership;
+	// once dialogue/movement/battle starts, the outer phase machine resumes
+	// with the appropriate script or battle owner.
+	for frame := 0; frame < yellowOpeningRivalTriggerBudget; frame++ {
+		facts := yellowprofile.DecodeOpening(m)
+		phase, phaseErr := yellowOpeningPhaseFor(facts)
+		if phaseErr != nil {
+			return phaseErr
+		}
+		if phase != yellowOpeningWalkToRival {
+			return nil
+		}
+		m.StepFrame()
+	}
+	facts := yellowprofile.DecodeOpening(m)
+	return fmt.Errorf("%w: rival trigger did not take script ownership within %d frames on map %#02x at (%d,%d)",
+		errYellowOpeningStalled, yellowOpeningRivalTriggerBudget, facts.Map, facts.X, facts.Y)
 }
