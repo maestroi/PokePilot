@@ -318,7 +318,6 @@ func TestYellowCinnabarValidationDoesNotRequireSilphOrMarsh(t *testing.T) {
 }
 
 func TestYellowCinnabarUsesSharedGen1Executors(t *testing.T) {
-	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
 	for _, id := range []ProgressID{gen1.ProgressSecretKeyOwned, gen1.ProgressVolcanoBadge} {
 		if !yellowSharedStoryBeat(id) {
 			t.Fatalf("%q must dispatch through the shared Gen-I executor", id)
