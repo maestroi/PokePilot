@@ -689,7 +689,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// repeated the same false "boundary" dance from Celadon's Cut-gym
 			// pivot until the navigation guard fired.
 			if cur != dest.Map {
-				if bridge, bridgeOK, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere); bridgeErr == nil && bridgeOK {
+				if bridge, bridgeOK, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere, false); bridgeErr == nil && bridgeOK {
 					walkErr := walkWithinMap(m, romData, bridge, nav.policy)
 					if errors.Is(walkErr, errLocalNavigationWorldChanged) {
 						continue
@@ -792,7 +792,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				// Bridge to a field-reachable port that restores a route, then
 				// re-plan — the same destination-aware local planner same-map
 				// GoTo already prefers before leaving the map.
-				bridge, ok, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere)
+				bridge, ok, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere, true)
 				if bridgeErr != nil {
 					return fmt.Errorf("skill: GoTo: field-path bridge on map %02x: %w", cur, bridgeErr)
 				}
