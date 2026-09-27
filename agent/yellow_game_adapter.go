@@ -156,6 +156,8 @@ func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final
 			required = yellowprofile.ProgressYellowRocketJessieJamesDefeated
 		case gen1.ProgressPokeFluteAcquired:
 			required = yellowprofile.ProgressYellowTowerJessieJamesDefeated
+		case gen1.ProgressSilphRescueComplete:
+			required = yellowprofile.ProgressYellowSilphJessieJamesDefeated
 		}
 		if required != "" {
 			fact, ok := final.Story.Lookup(required)
