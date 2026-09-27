@@ -41,10 +41,14 @@ func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, m
 			return selection.Decision, nil
 		}
 	}
+	maxFrames := llmMaxFrames
+	if goal.Kind == tetrissession.GoalEndless {
+		maxFrames = 0
+	}
 	result := tetrissession.Run(profile, m, tetrissession.RunOptions{
 		Goal:      goal,
 		MaxPieces: maxPieces,
-		MaxFrames: llmMaxFrames,
+		MaxFrames: maxFrames,
 		Choose:    choose,
 		OnDecision: func(decision tetrispolicy.Decision) {
 			fmt.Printf(
@@ -142,10 +146,14 @@ func runFarmTetris(
 		m.TraceNote("tetris", fmt.Sprintf("typed placements backend=%s mode=%s min_confidence=%.2f max_choices=%d", settings.Backend, settings.Mode(), settings.MinConfidence, decisionSpec.MaxChoices))
 	}
 
+	runMaxFrames := maxFrames
+	if goal.Kind == tetrissession.GoalEndless && spec.MaxFrames == 0 {
+		runMaxFrames = 0
+	}
 	result := tetrissession.Run(profile, m, tetrissession.RunOptions{
 		Goal:      goal,
 		MaxPieces: maxPieces,
-		MaxFrames: maxFrames,
+		MaxFrames: runMaxFrames,
 		Cancel:    cancel,
 		Choose:    choose,
 		OnDecision: func(decision tetrispolicy.Decision) {
@@ -177,7 +185,7 @@ func runFarmTetris(
 	case "done":
 		return "done", detail
 	case "game-over":
-		if goal.Kind == tetrissession.GoalAuto || goal.Kind == tetrissession.GoalSurvival {
+		if goal.Kind == tetrissession.GoalAuto || goal.Kind == tetrissession.GoalEndless || goal.Kind == tetrissession.GoalSurvival {
 			return "done", "game over · " + detail
 		}
 		return "failed", "game over before " + tetrisGoalLabel(goal) + " · " + detail

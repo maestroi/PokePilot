@@ -17,6 +17,7 @@ func TestParseGoal(t *testing.T) {
 	}{
 		{"", GoalAuto, 0, policy.ObjectiveAuto, tetris.ModeA},
 		{"auto", GoalAuto, 0, policy.ObjectiveAuto, tetris.ModeA},
+		{"endless", GoalEndless, 0, policy.ObjectiveScore, tetris.ModeA},
 		{"survival", GoalSurvival, 0, policy.ObjectiveSurvival, tetris.ModeA},
 		{"score:10000", GoalScore, 10000, policy.ObjectiveScore, tetris.ModeA},
 		{"lines:25", GoalLines, 25, policy.ObjectiveLines, tetris.ModeB},
@@ -42,6 +43,11 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 }
 
 func TestGoalSatisfied(t *testing.T) {
+	endless := Goal{Kind: GoalEndless, Objective: policy.ObjectiveScore}
+	if endless.Satisfied(tetris.State{ScoreValid: true, Score: 999999}) {
+		t.Fatal("endless goal must run until a terminal condition")
+	}
+
 	score := Goal{Kind: GoalScore, Target: 1000, Objective: policy.ObjectiveScore}
 	if score.Satisfied(tetris.State{ScoreValid: true, Score: 999}) {
 		t.Fatal("score goal completed early")

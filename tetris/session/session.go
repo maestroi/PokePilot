@@ -30,6 +30,7 @@ type GoalKind string
 
 const (
 	GoalAuto     GoalKind = "auto"
+	GoalEndless  GoalKind = "endless"
 	GoalSurvival GoalKind = "survival"
 	GoalLines    GoalKind = "lines"
 	GoalScore    GoalKind = "score"
@@ -47,6 +48,8 @@ func ParseGoal(raw string) (Goal, error) {
 	switch raw {
 	case "", "auto":
 		return Goal{Kind: GoalAuto, Objective: policy.ObjectiveAuto}, nil
+	case "endless":
+		return Goal{Kind: GoalEndless, Objective: policy.ObjectiveScore}, nil
 	case "survival":
 		return Goal{Kind: GoalSurvival, Objective: policy.ObjectiveSurvival}, nil
 	case "complete":
@@ -69,7 +72,7 @@ func ParseGoal(raw string) (Goal, error) {
 		}
 		return Goal{Kind: spec.kind, Target: n, Objective: spec.objective}, nil
 	}
-	return Goal{}, fmt.Errorf("tetris session: unknown goal %q; want auto, survival, complete, lines:N, or score:N", raw)
+	return Goal{}, fmt.Errorf("tetris session: unknown goal %q; want auto, endless, survival, complete, lines:N, or score:N", raw)
 }
 
 func (g Goal) Mode() tetris.Mode {

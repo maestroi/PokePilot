@@ -49,7 +49,7 @@ func main() {
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
 	maxChoices := flag.Int("max-choices", 0, "Tetris: offer a typed decision backend only the policy's best N placements; 0 offers all")
-	goal := flag.String("goal", defaultGoal, "structured goal: Pokemon goals or Tetris auto | survival | complete | lines:N | score:N")
+	goal := flag.String("goal", defaultGoal, "structured goal: Pokemon goals or Tetris auto | endless | survival | complete | lines:N | score:N")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
 	llmProfile := flag.String("llm-profile", "", "llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)")
 	resume := flag.String("resume", "", "resume an llm run from a round checkpoint, checkpoint directory, or run directory")

@@ -90,6 +90,11 @@ function decisionBackendFor(deployment: ModelDeployment | undefined): DecisionEn
   return deployment?.protocol === 'typesafe-choice' ? 'jev' : 'system-one'
 }
 
+function preferredTetrisDecisionDeployment(items: ModelDeployment[]): ModelDeployment | undefined {
+  const jev = items.filter((d) => d.enabled !== false && d.protocol === 'typesafe-choice' && deploymentSelectable(d))
+  return jev.find((d) => d.default_for?.some((role) => role.toLowerCase() === 'tetris')) ?? jev[0]
+}
+
 const { data: modelsData } = usePollingResource(
   (signal) => getModels(signal),
   { intervalMs: 5000, isEmpty: (snapshot) => snapshot.deployments.length === 0 }
@@ -116,7 +121,7 @@ watch(deployments, (next) => {
   }
   form.llm_deployment = preferredDeployment(next, form.llm_deployment || defaultFarmDeployment(next))
   if (form.game === 'tetris') {
-    const jev = next.find((d) => d.enabled !== false && d.protocol === 'typesafe-choice' && deploymentSelectable(d))
+    const jev = preferredTetrisDecisionDeployment(next)
     decisionTarget.value = jev ? `deployment:${jev.id}` : 'off'
   }
 }, { immediate: true })
@@ -136,13 +141,13 @@ watch(() => form.game, (game, previous) => {
     form.planner = 'policy'
     form.starter = ''
     form.dest = ''
-    form.goal = 'score:10000'
+    form.goal = 'endless'
     decision.mode = 'active'
     decision.battles = false
     decision.objectives = false
     decision.failures = false
     decision.placements = true
-    const jev = decisionDeployments.value.find((d) => d.protocol === 'typesafe-choice' && deploymentSelectable(d))
+    const jev = preferredTetrisDecisionDeployment(decisionDeployments.value)
     decisionTarget.value = jev ? `deployment:${jev.id}` : (deployments.value.length ? 'off' : 'env:jev')
     return
   }
@@ -159,6 +164,7 @@ watch(() => form.game, (game, previous) => {
 })
 
 const tetrisGoals = [
+  ['endless', 'Endless high score · Type A · until game over'],
   ['auto', 'Auto · score-oriented Type A'],
   ['survival', 'Survival · Type A'],
   ['score:10000', 'Score · 10,000'],
@@ -483,7 +489,7 @@ async function submit(): Promise<void> {
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Max frames</span>
           <input v-model.number="form.max_frames" type="number" min="0" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-          <span class="mt-1 block text-[11px] text-slate-600">0 = runner safety default.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris && form.goal === 'endless' ? '0 = uncapped; play continues until game over or cancellation.' : '0 = runner safety default.' }}</span>
         </label>
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">

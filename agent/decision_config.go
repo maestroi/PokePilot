@@ -130,11 +130,18 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 	}
 	applyDecisionDeployment(engine, sel)
 	if jev, ok := engine.(*JevDecisionEngine); ok && jev.Token == "" {
-		source := "TYPESAFE_API_KEY (or POKEPILOT_DECISION_TOKEN)"
-		if sel.TokenEnv != "" {
-			source = sel.TokenEnv
+		// A registered deployment with an explicit endpoint and no token_env is
+		// deliberately unauthenticated (for example a LAN-hosted Jev server).
+		// Legacy/env Jev and deployments that name a token_env still require
+		// credentials so hosted TypeSafe runs cannot silently lose auth.
+		tokenlessRegisteredDeployment := strings.TrimSpace(sel.Endpoint) != "" && strings.TrimSpace(sel.TokenEnv) == ""
+		if !tokenlessRegisteredDeployment {
+			source := "TYPESAFE_API_KEY (or POKEPILOT_DECISION_TOKEN)"
+			if sel.TokenEnv != "" {
+				source = sel.TokenEnv
+			}
+			return settings, fmt.Errorf("%w: backend %q needs %s", ErrDecisionCredentialsMissing, name, source)
 		}
-		return settings, fmt.Errorf("%w: backend %q needs %s", ErrDecisionCredentialsMissing, name, source)
 	}
 	settings.Engine = engine
 	settings.Backend = name
@@ -161,9 +168,10 @@ func applyDecisionDeployment(engine DecisionEngine, sel DecisionSelection) {
 		if sel.Model != "" {
 			e.Model = sel.Model
 		}
-		if sel.TokenEnv != "" {
-			e.Token = token
-		}
+		// The registry owns auth semantics for an explicit endpoint. An empty
+		// token_env means "no auth", and must not leak the runner's cloud key to
+		// a local server.
+		e.Token = token
 	case *OpenAIDecisionEngine:
 		e.BaseURL = sel.Endpoint
 		if sel.Model != "" {

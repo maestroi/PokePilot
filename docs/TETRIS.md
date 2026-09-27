@@ -89,7 +89,7 @@ A farm run uses:
 }
 ```
 
-Supported goals are `auto`, `survival`, `score:N`, `lines:N`, and `complete`. Score/survival run Type A; lines/complete run Type B. The operator's New Run form exposes Tetris directly and fixes the planner to the deterministic policy runtime.
+Supported goals are `auto`, `endless`, `survival`, `score:N`, `lines:N`, and `complete`. `endless` runs score-oriented Type A without a score target or implicit frame cap and records the final score when the board tops out; an explicit `max_frames` still limits a farm run. Score/survival also run Type A, while lines/complete run Type B. The operator's New Run form exposes Tetris directly and fixes the planner to the deterministic policy runtime.
 
 Farm heartbeats retain the legacy Pokémon fields for backwards compatibility and add two optional game-owned envelopes:
 
@@ -117,7 +117,7 @@ A fast typed-decision backend can then choose among that finite set. The first s
 - low confidence, transport errors, invalid responses, or unavailable answers fall back to the deterministic scorer;
 - Jev never emits buttons, coordinates outside the candidate set, or arbitrary emulator actions.
 
-Farm runs keep `planner: "policy"`; Jev is selected independently through `decision_engine`. The operator launch form defaults Tetris to an active TypeSafe-choice deployment when one is registered, or to the runner's Jev endpoint when no model registry exists.
+Farm runs keep `planner: "policy"`; Jev is selected independently through `decision_engine`. The operator launch form defaults Tetris to `endless` and prefers an available TypeSafe-choice deployment whose registry `default_for` includes `tetris`, then falls back to any available Jev deployment or the runner's Jev endpoint when no model registry exists. The shipped deployment registry includes the tokenless LAN target `JEV 9B · local 8077` at `http://192.168.50.80:8077/v1`.
 
 Local `-planner policy` runs also use the runner's `POKEPILOT_DECISION_*` settings when a typed backend is enabled. For a local JEV-9B server with a 16-choice limit, pass `-max-choices 16`. The selector ranks all reachable placements with the deterministic policy, offers its best 16 to Jev, and keeps the full policy result as fallback. The limit is optional for other backends; an invalid value fails the run before play begins.
 
