@@ -169,6 +169,12 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 
 	runs := make([]any, 0, len(paged))
 	for _, run := range paged {
+		// Full per-call LLM observations were ~270KB per finished run (6MB of
+		// a 6.7MB response). The list UI never reads them; llm_exchanges and
+		// experiment metrics use the stored rows, not this response.
+		if stats, ok := run["stats"].(map[string]any); ok {
+			delete(stats, "strategic_records")
+		}
 		runs = append(runs, run)
 	}
 	document["runs"] = runs
