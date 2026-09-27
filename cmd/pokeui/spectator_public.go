@@ -35,9 +35,36 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		X uint8 `json:"x"`
 		Y uint8 `json:"y"`
 	}
+	type publicTetrisPiece struct {
+		Piece    string `json:"piece,omitempty"`
+		Rotation int    `json:"rotation,omitempty"`
+		X        int    `json:"x,omitempty"`
+		Y        int    `json:"y,omitempty"`
+	}
+	type publicTetrisState struct {
+		Kind               string             `json:"kind,omitempty"`
+		Mode               string             `json:"mode,omitempty"`
+		Screen             string             `json:"screen,omitempty"`
+		Board              []string           `json:"board,omitempty"`
+		Level              int                `json:"level,omitempty"`
+		Score              int                `json:"score,omitempty"`
+		ScoreValid         bool               `json:"score_valid,omitempty"`
+		LinesCleared       int                `json:"lines_cleared,omitempty"`
+		LinesRemaining     int                `json:"lines_remaining,omitempty"`
+		LineGoal           int                `json:"line_goal,omitempty"`
+		Paused             bool               `json:"paused,omitempty"`
+		Locking            bool               `json:"locking,omitempty"`
+		Clearing           bool               `json:"clearing,omitempty"`
+		GameOver           bool               `json:"game_over,omitempty"`
+		Complete           bool               `json:"complete,omitempty"`
+		ReadyForPieceInput bool               `json:"ready_for_piece_input,omitempty"`
+		Active             *publicTetrisPiece `json:"active,omitempty"`
+		Next               *publicTetrisPiece `json:"next,omitempty"`
+	}
 	type publicRun struct {
 		RunID          string          `json:"run_id"`
 		Status         string          `json:"status"`
+		Game           string          `json:"game,omitempty"`
 		Starter        string          `json:"starter,omitempty"`
 		Dest           string          `json:"dest,omitempty"`
 		Goal           string          `json:"goal,omitempty"`
@@ -58,9 +85,10 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		PlannerOptions int             `json:"planner_options,omitempty"`
 		Decision       string          `json:"decision,omitempty"`
 		StopSoFar      string          `json:"stop_so_far,omitempty"`
-		Stats          *spectatorStats `json:"stats,omitempty"`
-		Player         *publicPlayer   `json:"player,omitempty"`
-		Sprites        []publicSprite  `json:"sprites,omitempty"`
+		Stats          *spectatorStats   `json:"stats,omitempty"`
+		Player         *publicPlayer    `json:"player,omitempty"`
+		GameState      *publicTetrisState `json:"game_state,omitempty"`
+		Sprites        []publicSprite   `json:"sprites,omitempty"`
 		Trail          [][2]uint8      `json:"trail,omitempty"`
 		Attempts       int             `json:"attempts,omitempty"`
 		Reason         string          `json:"reason,omitempty"`
@@ -102,11 +130,38 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	for i, sp := range run.Sprites {
 		sprites[i] = publicSprite{X: sp.X, Y: sp.Y}
 	}
+
+	// game_state is a game-owned envelope on the private wall. Only copy the
+	// small Tetris presentation contract that the public UI needs; arbitrary
+	// keys (including future backend/model metadata) stay behind this boundary.
+	var gameState *publicTetrisState
+	if run.Game == "tetris" && len(run.GameState) > 0 {
+		encoded, err := json.Marshal(run.GameState)
+		if err != nil {
+			return nil, err
+		}
+		var decoded publicTetrisState
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			return nil, err
+		}
+		if decoded.Kind == "tetris" {
+			if len(decoded.Board) > 18 {
+				decoded.Board = decoded.Board[:18]
+			}
+			for i, row := range decoded.Board {
+				if len(row) > 10 {
+					decoded.Board[i] = row[:10]
+				}
+			}
+			gameState = &decoded
+		}
+	}
 	presentation := spectatorPresentationPolicyForRun(run.RunID)
 
 	return json.Marshal(publicRun{
 		RunID:          run.RunID,
 		Status:         run.Status,
+		Game:           run.Game,
 		Starter:        run.Starter,
 		Dest:           run.Dest,
 		Goal:           run.Goal,
@@ -129,6 +184,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		StopSoFar:      run.StopSoFar,
 		Stats:          run.Stats,
 		Player:         player,
+		GameState:      gameState,
 		Sprites:        sprites,
 		Trail:          append([][2]uint8(nil), run.Trail...),
 		Attempts:       run.Attempts,
