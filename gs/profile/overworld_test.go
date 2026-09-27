@@ -50,28 +50,28 @@ func TestDecodeOverworldReadyGoldState(t *testing.T) {
 
 func TestDecodeOverworldRejectsScriptBattleAndMovement(t *testing.T) {
 	tests := []struct {
-		name string
-		edit func(fakeGSReader)
+		name  string
+		edit  func(fakeGSReader)
 		check func(game.OverworldState) bool
 	}{
 		{
-			name: "script",
-			edit: func(r fakeGSReader) { r[sym.ScriptRunning] = 1 },
+			name:  "script",
+			edit:  func(r fakeGSReader) { r[sym.ScriptRunning] = 1 },
 			check: func(s game.OverworldState) bool { return !s.Controllable && s.InDialogue },
 		},
 		{
-			name: "battle",
-			edit: func(r fakeGSReader) { r[sym.BattleMode] = 1 },
+			name:  "battle",
+			edit:  func(r fakeGSReader) { r[sym.BattleMode] = 1 },
 			check: func(s game.OverworldState) bool { return !s.Controllable && s.InBattle },
 		},
 		{
-			name: "movement",
-			edit: func(r fakeGSReader) { r[sym.PlayerStepFlags] = gen2PlayerStepContinue },
+			name:  "movement",
+			edit:  func(r fakeGSReader) { r[sym.PlayerStepFlags] = gen2PlayerStepContinue },
 			check: func(s game.OverworldState) bool { return s.Controllable && !s.MovementIdle },
 		},
 		{
-			name: "events-off",
-			edit: func(r fakeGSReader) { r[sym.MapEventStatus] = 1 },
+			name:  "events-off",
+			edit:  func(r fakeGSReader) { r[sym.MapEventStatus] = 1 },
 			check: func(s game.OverworldState) bool { return !s.Controllable },
 		},
 	}
