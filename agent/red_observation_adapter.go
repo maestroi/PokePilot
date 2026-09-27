@@ -220,7 +220,7 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 	stationary := stationaryHomeTiles(romData, obs.Map)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
-		if hidden[uint8(i+1)] {
+		if hidden[uint8(i+1)] || object.Kind == "boulder" {
 			continue
 		}
 		if object.Kind == "trainer" {
@@ -392,6 +392,11 @@ func MapObjects(romData []byte, mapID uint8) []MapObject {
 			}
 		case o.TextID&0x40 != 0:
 			mo.Kind = "trainer"
+		case o.SpriteID == state.BoulderPictureID:
+			// A Strength boulder is a puzzle object owned by the boulder
+			// skills, not someone to talk to: pushing it moves it away, so
+			// TalkAt can never stay adjacent (run-s6v9q3t2w5rl).
+			mo.Kind = "boulder"
 		default:
 			mo.Kind = "person"
 		}

@@ -68,6 +68,22 @@ func TestMapObjectsFromROM(t *testing.T) {
 	if trainers != 2 {
 		t.Errorf("pewter gym trainers = %d, want 2 (%+v)", trainers, gym)
 	}
+
+	// Victory Road 1F (0x6c): three Strength boulders, no people. A boulder
+	// classified as a person became an unwinnable "talk at (14,2)"
+	// (run-s6v9q3t2w5rl).
+	var boulders int
+	for _, o := range agent.MapObjects(romData, 0x6c) {
+		switch o.Kind {
+		case "boulder":
+			boulders++
+		case "person":
+			t.Errorf("victory road 1f person at (%d,%d), want none", o.X, o.Y)
+		}
+	}
+	if boulders != 3 {
+		t.Errorf("victory road 1f boulders = %d, want 3", boulders)
+	}
 }
 
 // TestObserveFreshBoot observes a freshly booted, controllable overworld and
