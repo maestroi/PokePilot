@@ -127,7 +127,6 @@ func TestYellowProgressionContinuesSharedBillAndHM01AfterMtMoon(t *testing.T) {
 	}
 }
 
-
 func TestYellowProgressionContinuesThroughSurgeLavenderCeladonAndErika(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
