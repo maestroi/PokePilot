@@ -265,7 +265,7 @@ func victoryRoadLadderEdge(romData []byte, from, to uint8) (world.Edge, error) {
 	}
 	for _, w := range h.Warps {
 		if w.DestMap == to {
-			return world.Edge{Kind: world.EdgeWarp, From: from, To: to, WarpX: w.X, WarpY: w.Y}, nil
+			return world.Edge{Kind: world.EdgeWarp, From: world.MapID(from), To: world.MapID(to), WarpX: w.X, WarpY: w.Y}, nil
 		}
 	}
 	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no warp to %#02x", from, to)
@@ -280,7 +280,7 @@ func victoryRoadExitEdge(romData []byte, from uint8) (world.Edge, error) {
 	}
 	for _, w := range h.Warps {
 		if w.DestMap == 0xFF {
-			return world.Edge{Kind: world.EdgeWarp, From: from, To: route23Map, WarpX: w.X, WarpY: w.Y}, nil
+			return world.Edge{Kind: world.EdgeWarp, From: world.MapID(from), To: route23Map, WarpX: w.X, WarpY: w.Y}, nil
 		}
 	}
 	return world.Edge{}, fmt.Errorf("skill: Victory Road map %#02x has no exit warp", from)
