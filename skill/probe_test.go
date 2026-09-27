@@ -56,13 +56,17 @@ func TestProbe(t *testing.T) {
 	if spec == "" && statePath == "" {
 		t.Skip("set PROBE_MAP or PROBE_STATE to run the probe, e.g. PROBE_MAP=0x0c PROBE_AT=15,13")
 	}
-	romPath := os.Getenv("POKEMON_RED_ROM")
+	romPath := probeROMPath()
 	if romPath == "" {
-		t.Skip("POKEMON_RED_ROM not set")
+		t.Skip("set POKEMON_RED_ROM, POKEMON_GOLD_ROM, or POKEMON_SILVER_ROM")
 	}
 	romData, err := os.ReadFile(romPath)
 	if err != nil {
 		t.Fatalf("read ROM %s: %v", romPath, err)
+	}
+	if nativeProfile, nativeErr := nativeRoutingProfileForROM(romData); nativeErr == nil {
+		runNativeProbe(t, romPath, romData, spec, statePath, nativeProfile)
+		return
 	}
 
 	// A save state answers where the player IS; PROBE_MAP and PROBE_AT then
@@ -292,4 +296,164 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	state.Snapshot(m, &mem)
 	p := state.DecodePlayer(&mem)
 	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), state.Controllable(&mem)}
+}
+
+
+func probeROMPath() string {
+	for _, key := range []string{"POKEMON_RED_ROM", "POKEMON_GOLD_ROM", "POKEMON_SILVER_ROM"} {
+		if path := os.Getenv(key); path != "" {
+			return path
+		}
+	}
+	return ""
+}
+
+func runNativeProbe(t *testing.T, romPath string, romData []byte, spec, statePath string, profile nativeRoutingProfile) {
+	t.Helper()
+	provider := profile.NativeMapProvider(romData)
+	if provider == nil {
+		t.Fatal("native profile returned nil map provider")
+	}
+
+	var m *emu.Emu
+	if statePath != "" {
+		stateBytes, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatalf("PROBE_STATE %s: %v", statePath, err)
+		}
+		m, err = emu.Open(romPath)
+		if err != nil {
+			t.Fatalf("open ROM %s: %v", romPath, err)
+		}
+		defer m.Close()
+		if err := m.LoadState(stateBytes); err != nil {
+			t.Fatalf("PROBE_STATE %s: LoadState: %v", statePath, err)
+		}
+		live := profile.DecodeOverworld(m)
+		t.Logf("live: map %#04x (%d,%d) controllable=%v battle=%v dialogue=%v",
+			live.NativeMapID, live.X, live.Y, live.Controllable, live.InBattle, live.InDialogue)
+		if spec == "" {
+			spec = fmt.Sprintf("%x", live.NativeMapID)
+		}
+		if os.Getenv("PROBE_AT") == "" {
+			t.Setenv("PROBE_AT", fmt.Sprintf("%d,%d", live.X, live.Y))
+		}
+	}
+	if spec == "" {
+		t.Fatal("native probe needs PROBE_MAP when PROBE_STATE is not set")
+	}
+
+	id64, err := strconv.ParseUint(strings.TrimPrefix(spec, "0x"), 16, 16)
+	if err != nil {
+		t.Fatalf("PROBE_MAP %q is not a native map id: %v", spec, err)
+	}
+	mapID := uint16(id64)
+	header, err := provider.ParseMap(mapID)
+	if err != nil {
+		t.Fatalf("parse native map %#04x: %v", mapID, err)
+	}
+	t.Logf("native map %#04x: %dx%d blocks, %d warp(s), %d connection(s)",
+		mapID, header.WidthBlocks, header.HeightBlocks, len(header.Warps), len(header.Connections))
+	for _, warp := range header.Warps {
+		t.Logf("  warp (%d,%d) -> map %#04x warp %d", warp.X, warp.Y, warp.DestMap, warp.DestWarpID)
+	}
+	for _, connection := range header.Connections {
+		t.Logf("  connection %-5s -> map %#04x offset %+d", dirName(connection.Dir), connection.MapID, connection.Offset)
+	}
+
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("build native graph: %v", err)
+	}
+	if routeSpec := os.Getenv("PROBE_ROUTE"); routeSpec != "" {
+		to64, parseErr := strconv.ParseUint(strings.TrimPrefix(routeSpec, "0x"), 16, 16)
+		if parseErr != nil {
+			t.Fatalf("PROBE_ROUTE %q is not a native map id: %v", routeSpec, parseErr)
+		}
+		route, routeErr := world.FindNativeRoute(graph, mapID, uint16(to64))
+		if routeErr != nil {
+			t.Logf("route %#04x -> %#04x: %v", mapID, uint16(to64), routeErr)
+		}
+		for i, edge := range route {
+			if edge.Kind == world.EdgeWarp {
+				t.Logf("  leg %d: map %#04x -warp(%d,%d)-> map %#04x", i+1, edge.From, edge.WarpX, edge.WarpY, edge.To)
+			} else {
+				t.Logf("  leg %d: map %#04x -%s edge offset %+d-> map %#04x", i+1, edge.From, dirName(edge.Dir), edge.Offset, edge.To)
+			}
+		}
+	}
+
+	if os.Getenv("PROBE_AT") == "" {
+		return
+	}
+	if m == nil {
+		t.Log("native tile probing needs PROBE_STATE so the live Gen-II block buffer is available")
+		return
+	}
+	liveWorld := profile.DecodeOverworld(m)
+	if liveWorld.NativeMapID != mapID {
+		t.Fatalf("PROBE_MAP %#04x differs from loaded state's live map %#04x; native collision uses the live block buffer", mapID, liveWorld.NativeMapID)
+	}
+	grid, live, _, err := nativeLiveGrid(m, profile, provider, mapID)
+	if err != nil {
+		t.Fatalf("build native live grid: %v", err)
+	}
+	sx, sy := probeTile(t, "PROBE_AT")
+	blocked := nativeRuntimeBlockers(live, header, nil)
+	for at := range probeBlocked(t) {
+		blocked[at] = true
+	}
+	delete(blocked, [2]int{sx, sy})
+	t.Logf("standing (%d,%d) walkable=%v, %d live/explicit blocker(s)", sx, sy, grid.Walkable(sx, sy), len(blocked))
+
+	if to := os.Getenv("PROBE_TO"); to != "" {
+		tx, ty := probeTile(t, "PROBE_TO")
+		delete(blocked, [2]int{tx, ty})
+		steps, pathErr := world.FindNativePath(grid, sx, sy, tx, ty, blocked)
+		t.Logf("path (%d,%d) -> (%d,%d): %d input(s), err=%v", sx, sy, tx, ty, len(steps), pathErr)
+	}
+	if routeSpec := os.Getenv("PROBE_ROUTE"); routeSpec != "" {
+		to64, _ := strconv.ParseUint(strings.TrimPrefix(routeSpec, "0x"), 16, 16)
+		route, routeErr := world.FindNativeRoute(graph, mapID, uint16(to64))
+		if routeErr == nil && len(route) > 0 {
+			edge := route[0]
+			var path []world.NativeStep
+			var push world.NativeStep
+			if edge.Kind == world.EdgeWarp {
+				path, push, err = nativeAdjacentApproach(grid, sx, sy, int(edge.WarpX), int(edge.WarpY), blocked)
+			} else {
+				path, push, err = nativeConnectionApproach(provider, grid, edge, sx, sy, blocked)
+			}
+			t.Logf("first leg approach: %d input(s), push=%+v, err=%v", len(path), push, err)
+		}
+	}
+	t.Log(nativeProbeGrid(grid, sx, sy, blocked))
+}
+
+func nativeProbeGrid(g *world.NativeGrid, sx, sy int, blocked map[[2]int]bool) string {
+	const radius = 8
+	var b strings.Builder
+	b.WriteString("native grid window (@ = you, # = wall, x = occupied):\n")
+	for y := sy - radius; y <= sy+radius; y++ {
+		if y < 0 || y >= g.Height {
+			continue
+		}
+		fmt.Fprintf(&b, "y=%3d ", y)
+		for x := sx - radius; x <= sx+radius; x++ {
+			switch {
+			case x < 0 || x >= g.Width:
+				b.WriteByte(' ')
+			case x == sx && y == sy:
+				b.WriteByte('@')
+			case blocked[[2]int{x, y}]:
+				b.WriteByte('x')
+			case g.Walkable(x, y):
+				b.WriteByte('.')
+			default:
+				b.WriteByte('#')
+			}
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
