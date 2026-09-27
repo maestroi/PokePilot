@@ -187,7 +187,6 @@ func (a *gsObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog 
 	}}
 }
 
-
 func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
 	if obs.PartyCount == 0 || !obs.Story.Has(gsprofile.ProgressStarterReceived) {
 		return nil
