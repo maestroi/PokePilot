@@ -66,6 +66,8 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		Trail:              append([][2]uint8(nil), t.Trail...),
 		Stats:              t.Stats,
 		Player:             t.Player,
+		GameState:          cloneJSONMap(t.GameState),
+		GameDecision:       cloneJSONMap(t.GameDecision),
 		Reason:             t.Reason,
 		Detail:             t.Detail,
 		Issue:              issueLinkFor(t, w.issueLinks),
