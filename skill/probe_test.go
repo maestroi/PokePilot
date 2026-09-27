@@ -298,7 +298,6 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), state.Controllable(&mem)}
 }
 
-
 func probeROMPath() string {
 	for _, key := range []string{"POKEMON_RED_ROM", "POKEMON_GOLD_ROM", "POKEMON_SILVER_ROM"} {
 		if path := os.Getenv(key); path != "" {
