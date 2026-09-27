@@ -141,7 +141,6 @@ func TestRunWatchdogProductiveSessionRefreshesLivenessWithoutMajorProgress(t *te
 	}
 }
 
-
 func TestRunFailurePolicyStaticUnavailableDoesNotSpendFailureBudget(t *testing.T) {
 	policy := newRunFailurePolicy(2)
 	obj := Objective{Kind: KindCatch, Species: SpeciesID("zapdos"), Place: "power plant zapdos", Intent: dexStaticIntent}
