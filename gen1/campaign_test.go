@@ -46,7 +46,6 @@ func TestFirstIncomplete(t *testing.T) {
 	}
 }
 
-
 func TestRocketTowerStagesAreOrderedAndFresh(t *testing.T) {
 	want := []game.ProgressID{
 		ProgressSilphScopeAcquired,
