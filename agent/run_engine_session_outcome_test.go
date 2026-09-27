@@ -20,7 +20,7 @@ func recoverableSessionResult(obj Objective, cause string, final Observation) Ob
 }
 
 func TestRunFailurePolicyHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
-	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed"} {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed", "static_capture_exhausted"} {
 		policy := newRunFailurePolicy(2)
 		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
 		result := recoverableSessionResult(obj, cause, Observation{
@@ -39,7 +39,7 @@ func TestRunFailurePolicyHuntExhaustionDoesNotSpendFailureBudget(t *testing.T) {
 }
 
 func TestRunFailurePolicyHuntExhaustionStillReplansStrategically(t *testing.T) {
-	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed"} {
+	for _, cause := range []string{"catch_hunt_exhausted", "fishing_hunt_exhausted", "catch_attempt_missed", "static_capture_exhausted"} {
 		policy := newRunFailurePolicy(2)
 		obj := Objective{Kind: KindCatch, Species: SpeciesID("nidoran♀")}
 		result := recoverableSessionResult(obj, cause, Observation{Location: "route 22"})
@@ -87,6 +87,7 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 		{cause: "catch_hunt_exhausted", want: true},
 		{cause: "fishing_hunt_exhausted", want: true},
 		{cause: "catch_attempt_missed", want: true},
+		{cause: "static_capture_exhausted", want: true},
 		{cause: "train_progress_shortfall", want: true},
 		{cause: "fishing_no_shoreline", want: false},
 		{cause: "navigation_stalled", want: false},
@@ -137,5 +138,17 @@ func TestRunWatchdogProductiveSessionRefreshesLivenessWithoutMajorProgress(t *te
 	}
 	if next.MajorProgress {
 		t.Fatal("productive stochastic session was incorrectly reported as semantic major progress")
+	}
+}
+
+func TestRunFailurePolicyStaticUnavailableDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindCatch, Species: SpeciesID("zapdos"), Place: "power plant zapdos", Intent: dexStaticIntent}
+	result := recoverableSessionResult(obj, "static_capture_unavailable", Observation{Location: "power plant"})
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+			t.Fatalf("static unavailable %d = %+v; want planning-boundary replan", i+1, got)
+		}
 	}
 }

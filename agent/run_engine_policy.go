@@ -208,7 +208,8 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	retreated := failureCauseIs(result, "train_retreat")
 	trainProgress := failureCauseIs(result, "train_progress_shortfall")
 	huntMiss := failureCauseIs(result, "catch_hunt_exhausted") || failureCauseIs(result, "fishing_hunt_exhausted") ||
-		failureCauseIs(result, "catch_attempt_missed")
+		failureCauseIs(result, "catch_attempt_missed") || failureCauseIs(result, "static_capture_exhausted")
+	staticUnavailable := failureCauseIs(result, "static_capture_unavailable")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
 	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
@@ -219,8 +220,10 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// condition simply was not reached. A training shortfall explicitly means
 	// the lead gained a level; a hunt exhaustion (grass, fishing or Safari)
 	// means the controller completed the whole stochastic hunt budget without
-	// landing the requested species; a missed catch means the wanted target
-	// was met and balls were thrown but the catch roll never held. Neither is evidence that recovery itself is broken, so
+	// landing the requested species; a finite static exhaustion means all
+	// rollback-safe RNG phases were attempted without consuming the one-time
+	// encounter; a missed catch means the wanted target was met and balls were
+	// thrown but the catch roll never held. None is evidence that recovery itself is broken, so
 	// neither may consume the fatal consecutive-failure budget or look like idle
 	// time to the liveness watchdogs. Same-state quarantine still suppresses the
 	// exact objective when alternatives exist; explicit round/frame budgets
@@ -246,7 +249,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// the failure budget untouched. Genuine repeated navigation/controller
 	// failures still use the bounded policy below, and watchdog/round/frame
 	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite || routeSearchExhausted || progressionPrerequisite || trainingInefficient {
+	if routePrerequisite || routeSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable {
 		// A fully bounded route-search exhaustion is also a planning boundary:
 		// GoTo already spent its local replan budget and the failure policy has
 		// recorded a same-state quarantine for this exact objective. Charging the
