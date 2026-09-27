@@ -37,7 +37,7 @@ func TestSafeForcedBanRefusesToStrandDestinationBehindMissingCapability(t *testi
 	// Cut pivot without modeling all of Rock Tunnel/Lavender/Route 6.
 	route9ToVermilion := world.Edge{Kind: world.EdgeConnection, From: route9, To: vermilion}
 
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		trashedHouse: {houseToCerulean},
 		cerulean:     {ceruleanToHouse, ceruleanToRoute5, ceruleanToRoute9},
 		route5:       {route5ToVermilion},
