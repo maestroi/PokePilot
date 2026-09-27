@@ -14,7 +14,6 @@ func MiddleCampaignStages() []game.ProgressID {
 	}
 }
 
-
 // RocketTowerStages is the shared Kanto story bridge from Celadon's Rocket
 // Hideout through Mr. Fuji's Poké Flute handoff. Concrete cartridges may
 // insert scripted battles (Yellow's Jessie/James encounters), but the durable
