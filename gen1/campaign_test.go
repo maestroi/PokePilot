@@ -121,3 +121,26 @@ func TestSaffronStagesAreOrderedAndFresh(t *testing.T) {
 		t.Fatal("SaffronStages returned mutable global storage")
 	}
 }
+
+func TestLeagueApproachStagesAreOrderedAndFresh(t *testing.T) {
+	want := []game.ProgressID{
+		ProgressEarthBadge,
+		ProgressRoute22RivalResolved,
+		ProgressRoute23BadgeChecks,
+		ProgressVictoryRoadCleared,
+		ProgressIndigoPlateauReady,
+	}
+	got := LeagueApproachStages()
+	if len(got) != len(want) {
+		t.Fatalf("LeagueApproachStages()=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("LeagueApproachStages()[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if LeagueApproachStages()[0] != ProgressEarthBadge {
+		t.Fatal("LeagueApproachStages returned mutable global storage")
+	}
+}
