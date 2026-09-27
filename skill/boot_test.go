@@ -132,3 +132,50 @@ func TestBootInputHonorsProfileSemanticInput(t *testing.T) {
 		}
 	}
 }
+
+
+func TestBootGoldToBedroom(t *testing.T) {
+	path := os.Getenv("POKEMON_GOLD_ROM")
+	if path == "" {
+		t.Skip("POKEMON_GOLD_ROM not set")
+	}
+	e, err := emu.Open(path)
+	if err != nil {
+		t.Fatalf("emu.Open Gold: %v", err)
+	}
+	t.Cleanup(func() { e.Close() })
+
+	obs, err := BootToOverworld(e)
+	if err != nil {
+		t.Fatalf("BootToOverworld Gold: %v", err)
+	}
+	if obs.NativeMapID != 0x1807 {
+		t.Fatalf("Gold map = %#04x, want PLAYERS_HOUSE_2F (0x1807)", obs.NativeMapID)
+	}
+	if !obs.Controllable {
+		t.Fatal("Gold bedroom is not controllable")
+	}
+}
+
+func TestBootSilverToBedroom(t *testing.T) {
+	path := os.Getenv("POKEMON_SILVER_ROM")
+	if path == "" {
+		t.Skip("POKEMON_SILVER_ROM not set")
+	}
+	e, err := emu.Open(path)
+	if err != nil {
+		t.Fatalf("emu.Open Silver: %v", err)
+	}
+	t.Cleanup(func() { e.Close() })
+
+	obs, err := BootToOverworld(e)
+	if err != nil {
+		t.Fatalf("BootToOverworld Silver: %v", err)
+	}
+	if obs.NativeMapID != 0x1807 {
+		t.Fatalf("Silver map = %#04x, want PLAYERS_HOUSE_2F (0x1807)", obs.NativeMapID)
+	}
+	if !obs.Controllable {
+		t.Fatal("Silver bedroom is not controllable")
+	}
+}
