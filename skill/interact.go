@@ -105,6 +105,21 @@ func facingFor(s world.Step) state.Facing {
 	return 0
 }
 
+func semanticFacingFor(s world.Step) string {
+	switch s {
+	case world.StepUp:
+		return "up"
+	case world.StepDown:
+		return "down"
+	case world.StepLeft:
+		return "left"
+	case world.StepRight:
+		return "right"
+	default:
+		return ""
+	}
+}
+
 // Face turns the player to look at the orthogonally adjacent tile (tx,ty).
 // It returns an error if the tile is not orthogonally adjacent, or if the
 // facing did not change within the budget.
@@ -129,13 +144,11 @@ func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty 
 	if !ok {
 		return fmt.Errorf("skill: Face: invalid step %s", step)
 	}
-	want := facingFor(step)
+	want := semanticFacingFor(step)
 
 	m.Tap(btn, 3, 7)
-	var mem state.Mem
 	if _, err := m.StepUntil(faceTurnBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return state.DecodePlayer(&mem).Facing == want
+		return decoder.DecodeOverworld(m).Facing == want
 	}); err != nil {
 		// The step onto this tile can roll a wild encounter that starts after
 		// the walk returned; the turn tap then lands in the battle intro.
