@@ -317,6 +317,9 @@ func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.
 		if state.InBattle {
 			return ErrBattle
 		}
+		if state.NativeMapID == edge.To && state.InDialogue {
+			return ErrDialogueInterrupted
+		}
 		m.StepFrame()
 	}
 	state := decoder.DecodeOverworld(m)
