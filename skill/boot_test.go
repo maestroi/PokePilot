@@ -112,7 +112,6 @@ func TestBootIsRepeatable(t *testing.T) {
 	}
 }
 
-
 func TestBootInputHonorsProfileSemanticInput(t *testing.T) {
 	tests := []struct {
 		input game.BootInput
@@ -132,7 +131,6 @@ func TestBootInputHonorsProfileSemanticInput(t *testing.T) {
 		}
 	}
 }
-
 
 func TestBootGoldToBedroom(t *testing.T) {
 	path := os.Getenv("POKEMON_GOLD_ROM")
