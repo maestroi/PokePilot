@@ -158,3 +158,29 @@ func TestArchiveLeaseCapturesExecutionStartAndRuntime(t *testing.T) {
 		t.Fatalf("runtime row = %#v, started %d", got.Runs, started)
 	}
 }
+
+func TestArchiveDashboardOmitsStrategicRecords(t *testing.T) {
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"runs": []any{map[string]any{
+			"run_id": "r", "status": "done", "ended_at": 1.0,
+			"stats": map[string]any{"rounds": 3.0, "strategic_records": []any{map[string]any{"observation": "huge"}}, "strategic_records_dropped": 2.0},
+		}}})
+	})
+	res := httptest.NewRecorder()
+	archiveHTTPHandler(NewWall(""), fallback).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done", nil))
+	var got struct {
+		Runs []struct {
+			Stats map[string]any `json:"stats"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil || len(got.Runs) != 1 {
+		t.Fatalf("decode: %v body=%s", err, res.Body.String())
+	}
+	stats := got.Runs[0].Stats
+	if _, ok := stats["strategic_records"]; ok {
+		t.Fatalf("strategic_records leaked into dashboard list: %v", stats)
+	}
+	if stats["rounds"] != 3.0 || stats["strategic_records_dropped"] != 2.0 {
+		t.Fatalf("other stats lost: %v", stats)
+	}
+}
