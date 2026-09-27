@@ -38,7 +38,7 @@ func TestInteractionStepUsesSemanticPosition(t *testing.T) {
 	if step != world.StepUp {
 		t.Fatalf("step = %v, want %v", step, world.StepUp)
 	}
-	if live.Map != 0x12 || live.X != 7 || live.Y != 4 {
+	if live.NativeMapID != 0x12 || live.X != 7 || live.Y != 4 {
 		t.Fatalf("live = %+v", live)
 	}
 }
@@ -59,5 +59,17 @@ func TestInteractionRuntimeRejectsWideNativeMap(t *testing.T) {
 	_, err := interactionRuntimeStateWithDecoder(&fakeOverworldMachine{}, decoder)
 	if err == nil || !strings.Contains(err.Error(), "exceeds current routing range") {
 		t.Fatalf("error = %v, want routing-range error", err)
+	}
+}
+
+
+func TestInteractionStepPreservesWideNativeMap(t *testing.T) {
+	decoder := fixedOverworldDecoder{state: game.OverworldState{NativeMapID: 0x1805, X: 6, Y: 4}}
+	step, live, err := interactionStepWithDecoder(&fakeOverworldMachine{}, decoder, 6, 3)
+	if err != nil {
+		t.Fatalf("interaction step: %v", err)
+	}
+	if step != world.StepUp || live.NativeMapID != 0x1805 {
+		t.Fatalf("step=%v live=%+v, want up on 0x1805", step, live)
 	}
 }
