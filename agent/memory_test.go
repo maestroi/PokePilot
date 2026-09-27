@@ -58,7 +58,8 @@ func TestMemoryRoundTrip(t *testing.T) {
 	}
 
 	var log bytes.Buffer
-	got := LoadCheckpointMemory(statePath, knowledgeTopologyFor(testGameID, map[uint8][]uint8{0x09: {0x0a}}), &log)
+	topology := knowledgeTopologyFor(testGameID, map[uint8][]uint8{0x09: {0x0a}})
+	got := LoadCheckpointMemory(statePath, &topology, &log)
 
 	for _, id := range []uint8{0x01, 0x03} {
 		location := legacyLocationID(id)
@@ -141,7 +142,7 @@ func TestMemoryCorruptedFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			var log bytes.Buffer
-			got := LoadCheckpointMemory(statePath, map[uint8][]uint8{}, &log)
+			got := LoadCheckpointMemory(statePath, nil, &log)
 			assertEmptyKnowledge(t, got.Knowledge)
 			if got.Intent != "" || got.IntentAge != 0 {
 				t.Errorf("Intent/Age = (%q, %d), want clean start", got.Intent, got.IntentAge)
@@ -160,7 +161,7 @@ func TestMemoryMissingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	var log bytes.Buffer
-	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{}, &log)
+	got := LoadCheckpointMemory(statePath, nil, &log)
 	assertEmptyKnowledge(t, got.Knowledge)
 	if !strings.Contains(log.String(), "starting with empty knowledge") {
 		t.Errorf("log = %q, want a line saying the run starts empty", log.String())
@@ -180,7 +181,7 @@ func TestMemoryIntentOverCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	var log bytes.Buffer
-	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{}, &log)
+	got := LoadCheckpointMemory(statePath, nil, &log)
 	assertEmptyKnowledge(t, got.Knowledge)
 	if got.Intent != "" {
 		t.Errorf("Intent = %q, want clean start", got.Intent)
