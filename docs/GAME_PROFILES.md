@@ -4,6 +4,25 @@ PokePilot separates portable planning/runtime concepts from ROM- and revision-sp
 
 A profile represents one exact supported game revision. It owns the semantic RAM symbol table, ROM detection rule, baseline observation decoder, ROM-name/species parser and optional feature set. Generic code consumes semantic values such as `player.x`, `party.count`, `battle.mode`, `badges` and `money`; it should not learn a concrete game's WRAM addresses.
 
+
+## Cartridge identity vs Pokémon gameplay profiles
+
+`game.CartridgeProfile` is the minimal, game-agnostic ROM identity contract:
+
+```go
+type CartridgeProfile interface {
+    ID() GameID
+    Revision() RevisionID
+    Detect(ROMInfo) bool
+}
+```
+
+`game.GameProfile` extends that identity with the Pokémon semantic state used by the existing agent/runtime. This split is deliberate: a non-Pokémon Game Boy title must not provide fake party, badge, battle, inventory, map, species, or Pokédex concepts merely to be recognized.
+
+`profiles.Cartridges()` / `profiles.DetectCartridge` use the generic identity registry. `profiles.Builtin()` / `profiles.Detect` remain the Pokémon gameplay registry so existing callers keep their current contract.
+
+Tetris (World) (Rev 1) is the first identity-only profile and is registered by exact SHA-1/SHA-256 fingerprint. Gameplay observation and execution for Tetris are intentionally separate later capabilities.
+
 ## Runtime selection
 
 `profiles.Detect` fingerprints the complete ROM and asks every registered profile whether it owns that identity. Selection has three deliberate properties:
