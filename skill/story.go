@@ -15,9 +15,12 @@ import (
 type Starter uint8
 
 const (
-	StarterCharmander Starter = iota // ball at (6,3), approached from (6,4)
-	StarterSquirtle                  // ball at (7,3), approached from (7,4)
-	StarterBulbasaur                 // ball at (8,3), approached from (8,4)
+	StarterCharmander Starter = iota // Gen-I ball at (6,3)
+	StarterSquirtle                  // Gen-I ball at (7,3)
+	StarterBulbasaur                 // Gen-I ball at (8,3)
+	StarterChikorita                 // Gen-II Elm ball at (8,3)
+	StarterCyndaquil                 // Gen-II Elm ball at (6,3)
+	StarterTotodile                  // Gen-II Elm ball at (7,3)
 )
 
 // oaksLabMap is Oak's lab, where the starter choice and the rival battle
