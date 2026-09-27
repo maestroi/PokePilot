@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/maestroi/pokepilot/farm"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -113,5 +114,31 @@ func TestCatalogSurvivesWallRestart(t *testing.T) {
 	row, ok := second.snapshotRun("done-1")
 	if !ok || row.Attempts != 2 || row.Reason != "goal" {
 		t.Fatalf("restarted catalog row=%#v ok=%v", row, ok)
+	}
+}
+
+func TestCatalogHistoryDashboardOmitsStrategicRecords(t *testing.T) {
+	w := NewWall(t.TempDir())
+	w.mu.Lock()
+	w.order = []string{"done-1"}
+	w.tiles["done-1"] = &Tile{RunID: "done-1", Status: statusDone, Finished: true, EndedAt: time.Unix(10, 0), Reason: "goal",
+		Stats: &farm.LLMStats{Rounds: 3, StrategicRecordsDropped: 2, StrategicRecords: []farm.StrategicCallRecord{{DurationSeconds: 1}}}}
+	w.mu.Unlock()
+	if err := w.SetCatalogPath(filepath.Join(t.TempDir(), "catalog.db")); err != nil {
+		t.Fatal(err)
+	}
+	defer w.CloseCatalog()
+
+	res := httptest.NewRecorder()
+	w.catalogHTTPHandler(runtimeOperatorHTTPHandler(w)).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done", nil))
+	var history runtimeDashboardView
+	if err := json.Unmarshal(res.Body.Bytes(), &history); err != nil || len(history.Runs) != 1 || history.Runs[0].Stats == nil {
+		t.Fatalf("history=%s err=%v", res.Body.String(), err)
+	}
+	if s := history.Runs[0].Stats; len(s.StrategicRecords) != 0 || s.Rounds != 3 || s.StrategicRecordsDropped != 2 {
+		t.Fatalf("stats = %+v, want strategic records stripped and the rest kept", s)
+	}
+	if row, ok, err := catalogFor(w).get("done-1"); err != nil || !ok || len(row.Stats.StrategicRecords) != 1 {
+		t.Fatalf("stored row lost strategic records: ok=%v err=%v", ok, err)
 	}
 }

@@ -532,6 +532,13 @@ func (w *Wall) catalogHistorySnapshot(query runtimeDashboardQuery) (runtimeDashb
 		if w.runArtifactsProtected(row.RunID) {
 			row.ResumeProtected = true
 		}
+		if row.Stats != nil {
+			// Full per-call LLM observations are ~270KB per run; every wrapper
+			// layer re-encodes this response and /v1/watch polls it every 2s.
+			// No dashboard reader uses them; the stored row keeps them for
+			// llm_exchanges and experiment metrics.
+			row.Stats.StrategicRecords = nil
+		}
 		history = append(history, row)
 	}
 	if err := rows.Err(); err != nil {
