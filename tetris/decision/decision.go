@@ -52,7 +52,10 @@ func (s Selector) Choose(ctx context.Context, state tetris.State, objective poli
 		return Selection{}, err
 	}
 	best, ok := policy.BestCandidate(candidates)
-	if !ok || state.Active == nil {
+	if state.Active == nil {
+		return Selection{}, policy.ErrNotReady
+	}
+	if !ok {
 		return Selection{}, fmt.Errorf("%w for %s", policy.ErrNoPlacement, state.Active.Piece)
 	}
 	deterministic := policy.Decision{
