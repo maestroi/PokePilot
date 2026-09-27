@@ -55,10 +55,14 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 	if err != nil {
 		return err
 	}
-	if live.Map != e.From {
+	if world.MapID(live.Map) != e.From {
 		return fmt.Errorf("skill: field-path connection approach on map %02x, edge starts on %02x", live.Map, e.From)
 	}
-	h, err := routingHeaderFor(m, e.From)
+	if e.From > 0xff {
+		return fmt.Errorf("skill: field-path connection approach cannot execute wide source map %04x", e.From)
+	}
+	from := uint8(e.From)
+	h, err := routingHeaderFor(m, from)
 	if err != nil {
 		return err
 	}
@@ -80,7 +84,7 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 		if !grid.Walkable(at[0], at[1]) || blocked[at] {
 			continue
 		}
-		dest := Destination{Map: e.From, X: uint8(at[0]), Y: uint8(at[1])}
+		dest := Destination{Map: from, X: uint8(at[0]), Y: uint8(at[1])}
 		plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
 		if perr != nil {
 			continue
