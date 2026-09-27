@@ -18,7 +18,7 @@ import {
   UserGroupIcon
 } from '@heroicons/vue/20/solid'
 import { getSpectatorSnapshot } from '../shared/api/spectator-client'
-import type { SpectatorRun } from '../shared/api/spectator'
+import type { SpectatorDecisionRecord, SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
@@ -135,13 +135,23 @@ const tetrisDecisionCalls = computed(() => Number(selectedRun.value?.stats?.deci
 const tetrisDecisionConfidence = computed(() =>
   Number(tetrisLatestDecision.value?.confidence ?? selectedRun.value?.stats?.decision_confidence ?? 0)
 )
-const tetrisDecisionAgreement = computed(() => {
+const tetrisDecisionReference = computed(() => {
   const stats = selectedRun.value?.stats
   const agreed = Number(stats?.decision_reference_agreements || 0)
   const disagreed = Number(stats?.decision_reference_disagreements || 0)
   const judged = agreed + disagreed
-  return judged > 0 ? agreed / judged : null
+  return {
+    agreed,
+    disagreed,
+    judged,
+    rate: judged > 0 ? agreed / judged : null
+  }
 })
+const tetrisDecisionAgreement = computed(() => tetrisDecisionReference.value.rate)
+const tetrisDecisionVisible = computed(() =>
+  isTetrisSelected.value
+  && Boolean(selectedRun.value?.decision_engine?.backend || tetrisDecisionCalls.value > 0)
+)
 const tetrisDecisionFallbackRate = computed(() => {
   const calls = tetrisDecisionCalls.value
   return calls > 0 ? Number(selectedRun.value?.stats?.decision_fallbacks || 0) / calls : null
@@ -421,6 +431,34 @@ function stretchToneClass(state: StretchState): string {
   return `stretch-step-${state}`
 }
 
+function percentLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return `${Math.round(value * 100)}%`
+}
+
+function decisionLatencyLabel(seconds: number | undefined): string {
+  const value = Number(seconds || 0)
+  if (value <= 0) return '—'
+  return value < 1 ? `${Math.round(value * 1000)}ms` : `${value.toFixed(1)}s`
+}
+
+function latestTypedDecision(run: SpectatorRun): SpectatorDecisionRecord | undefined {
+  const records = run.stats?.decision_records || []
+  return records[records.length - 1]
+}
+
+function typedDecisionFingerprint(record: SpectatorDecisionRecord | undefined): string {
+  if (!record) return ''
+  return [record.kind, record.choice, record.choice_label, record.confidence, record.duration_seconds, record.fallback].join('|')
+}
+
+function typedDecisionActivityDetail(record: SpectatorDecisionRecord): string {
+  const choice = record.choice_label || record.choice || 'fallback'
+  const confidence = record.fallback ? 'fallback' : percentLabel(Number(record.confidence || 0))
+  const latency = decisionLatencyLabel(record.duration_seconds)
+  return [choice, confidence, latency].filter(Boolean).join(' · ')
+}
+
 watch([selectedRun, selectionPinned], ([run, pinned]) => {
   if (run && !pinned) selectedRunID.value = run.run_id
   document.title = run
@@ -442,6 +480,10 @@ watch(runs, (nextRuns) => {
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
       else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
       else if (run.stop_so_far) pushActivity(run.run_id, 'state', 'Run state', run.stop_so_far)
+      const typed = latestTypedDecision(run)
+      if (isTetrisRun(run) && typed) {
+        pushActivity(run.run_id, 'decision', 'Jev decision', typedDecisionActivityDetail(typed))
+      }
       previousRuns.set(run.run_id, run)
       continue
     }
@@ -465,6 +507,10 @@ watch(runs, (nextRuns) => {
           'Lines cleared',
           `${afterLines} total · ${Number(run.game_state?.score || 0).toLocaleString()} points`
         )
+      }
+      const typed = latestTypedDecision(run)
+      if (typed && typedDecisionFingerprint(typed) !== typedDecisionFingerprint(latestTypedDecision(previous))) {
+        pushActivity(run.run_id, 'decision', 'Jev decision', typedDecisionActivityDetail(typed))
       }
     }
 
