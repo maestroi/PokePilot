@@ -738,6 +738,19 @@ func normalizeGameStarter(spec *farm.Spec) error {
 		return nil
 	}
 	spec.Game = strings.ToLower(strings.TrimSpace(spec.Game))
+	if spec.Game == "tetris" {
+		if strings.TrimSpace(spec.Starter) != "" {
+			return fmt.Errorf("tetris does not use a starter, got %q", spec.Starter)
+		}
+		spec.Starter = ""
+		if strings.TrimSpace(spec.Planner) == "" {
+			spec.Planner = "policy"
+		}
+		if spec.Planner != "policy" {
+			return fmt.Errorf("tetris uses planner %q, got %q", "policy", spec.Planner)
+		}
+		return nil
+	}
 	if spec.Game != "pokemon-yellow" {
 		return nil
 	}
