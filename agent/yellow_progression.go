@@ -11,7 +11,7 @@ import (
 // sequencing and must stay Yellow-owned until ported deliberately.
 func yellowSharedStoryBeat(id ProgressID) bool {
 	switch id {
-	case gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge:
+	case gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge, gen1.ProgressMtMoonFossilAcquired, gen1.ProgressSSTicketAcquired, gen1.ProgressHM01Acquired:
 		return true
 	default:
 		return false
@@ -19,7 +19,7 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 }
 
 func yellowProgressionKnown(id ProgressID) bool {
-	return id == yellowprofile.ProgressYellowLabRivalResolved || yellowSharedStoryBeat(id)
+	return id == yellowprofile.ProgressYellowLabRivalResolved || id == yellowprofile.ProgressYellowMtMoonExitResolved || yellowSharedStoryBeat(id)
 }
 
 // ProgressionObjectives exposes only Yellow story steps that the current
@@ -53,5 +53,33 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			Note:     "(travel through Viridian Forest to Pewter, challenge Brock, and verify the Boulder Badge)",
 		}}
 	}
-	return nil
+	if !obs.Story.Has(gen1.ProgressMtMoonFossilAcquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressMtMoonFossilAcquired,
+			Note:     "(cross Mt. Moon, defeat the Super Nerd, and take the Dome Fossil before Yellow's exit encounter)",
+		}}
+	}
+	if !obs.Story.Has(yellowprofile.ProgressYellowMtMoonExitResolved) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: yellowprofile.ProgressYellowMtMoonExitResolved,
+			Note:     "(trigger and defeat Yellow's Jessie & James encounter after the fossil so Mt. Moon's east exit is resolved)",
+		}}
+	}
+	if !obs.Story.Has(gen1.ProgressSSTicketAcquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressSSTicketAcquired,
+			Note:     "(help Bill at the end of Route 25 and obtain the S.S. Ticket)",
+		}}
+	}
+	if !obs.Story.Has(gen1.ProgressHM01Acquired) {
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gen1.ProgressHM01Acquired,
+			Note:     "(board the S.S. Anne, resolve its rival sequence, and receive HM01 Cut from the Captain)",
+		}}
+	}
+	return gen1CascadeBadgeObjectives(obs)
 }
