@@ -29,8 +29,10 @@ const (
 	JumptableIndex         uint16 = 0xCE63 // wJumptableIndex
 	TitleScreenSelected    uint16 = 0xCE64 // wTitleScreenSelectedOption
 	TitleScreenTimer       uint16 = 0xCE65 // wTitleScreenTimer
-	NamingScreenCurNameLen uint16 = 0xC5D2 // wNamingScreenCurNameLength
-	NamingScreenType       uint16 = 0xC5D4 // wNamingScreenType
+	NamingScreenDestination uint16 = 0xC5D0 // wNamingScreenDestinationPointer
+	NamingScreenCurNameLen  uint16 = 0xC5D2 // wNamingScreenCurNameLength
+	NamingScreenMaxNameLen  uint16 = 0xC5D3 // wNamingScreenMaxNameLength
+	NamingScreenType        uint16 = 0xC5D4 // wNamingScreenType
 	TimeSetBuffer          uint16 = 0xC508 // wTimeSetBuffer
 	InitHourBuffer         uint16 = 0xC51C // wInitHourBuffer
 	InitMinuteBuffer       uint16 = 0xC526 // wInitMinuteBuffer
@@ -51,11 +53,21 @@ const (
 	NumObjectStructs        = 13
 	PlayerState      uint16 = 0xD682 // wPlayerState
 
+	// Early Johto story state.
+	StatusFlags            uint16 = 0xD571 // wStatusFlags
+	ElmsLabSceneID         uint16 = 0xD6CC // wElmsLabSceneID
+	Route29SceneID         uint16 = 0xD6CE // wRoute29SceneID
+	CherrygroveCitySceneID uint16 = 0xD6CF // wCherrygroveCitySceneID
+	MrPokemonsHouseSceneID uint16 = 0xD6D0 // wMrPokemonsHouseSceneID
+	EventFlags             uint16 = 0xD7B7 // wEventFlags
+
 	// Fresh-game / RTC state.
 	Options         uint16 = 0xD199 // wOptions
 	SaveFileExists  uint16 = 0xD19A // wSaveFileExists
 	PlayerName      uint16 = 0xD1A3 // wPlayerName
 	PlayerNameLen          = 11
+	RivalName       uint16 = 0xD1B9 // wRivalName
+	RivalNameLen           = 11
 	StartDay        uint16 = 0xD1DC // wStartDay
 	StartHour       uint16 = 0xD1DD // wStartHour
 	StartMinute     uint16 = 0xD1DE // wStartMinute
@@ -73,7 +85,8 @@ const (
 	PartyMon1    uint16 = 0xDA2A
 	PartyMonSize uint16 = 0x30
 
-	BattleMode  uint16 = 0xD116
+	BattleMode   uint16 = 0xD116
+	BattleResult uint16 = 0xCFE9
 	Money       uint16 = 0xD573
 	JohtoBadges uint16 = 0xD57C
 	KantoBadges uint16 = 0xD57D
