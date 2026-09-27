@@ -6,12 +6,16 @@ import (
 	"testing"
 )
 
-func TestResolvePlanStepSkipsStaleSentences(t *testing.T) {
+func TestResolvePlanStepSkipsStaleSemanticKeys(t *testing.T) {
 	offered := []Objective{
 		{Kind: KindGoTo, Place: "pallet town"},
 		{Kind: KindGoTo, Place: "route 1"},
 	}
-	plan := Plan{Goal: "go north", Steps: []string{"heal the party here", "go to route 1"}}
+	plan := Plan{
+		Goal:     "go north",
+		Steps:    []string{"old viridian wording", "old route 1 wording"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "viridian city"}, {Kind: KindGoTo, Place: "route 1"}},
+	}
 	obj, skipped, ok := resolvePlanStep(&plan, offered)
 	if !ok || skipped != 1 || obj.String() != "go to route 1" || plan.Step != 1 {
 		t.Fatalf("resolve = obj %q skipped %d ok %v step %d", obj.String(), skipped, ok, plan.Step)
@@ -435,14 +439,15 @@ func TestRunPlanningReplansWhenBoundaryRevealsRealBranch(t *testing.T) {
 	}
 }
 
-func TestRunPlanningDropsLegacyTailWhenBoundaryExecutes(t *testing.T) {
+func TestRunPlanningDropsTailWhenBoundaryExecutes(t *testing.T) {
 	offered := []Objective{
 		{Kind: KindGoTo, Place: "route 3", Note: "(unvisited adjacent map)"},
 		{Kind: KindGoTo, Place: "pallet town"},
 	}
 	r := newRunPlanning(Plan{
-		Goal:  "reach mt moon",
-		Steps: []string{"go to route 3", "go to pallet town"},
+		Goal:     "reach mt moon",
+		Steps:    []string{"go to route 3", "go to pallet town"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "route 3"}, {Kind: KindGoTo, Place: "pallet town"}},
 	})
 	p := &planningTestPlanner{}
 
