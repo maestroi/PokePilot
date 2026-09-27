@@ -159,15 +159,6 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		}}
 	}
 
-	const cinnabarCenter PlaceID = "cinnabar pokemon center"
-	if !progressionAtPlaceLocation(obs, cinnabarCenter) {
-		return []Objective{{
-			Kind:  KindGoTo,
-			Place: cinnabarCenter,
-			Note:  "(use the shared Gen-I route graph with Surf prepared and establish Cinnabar as the next stable campaign handoff)",
-		}}
-	}
-
 	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.CinnabarStages()); ok {
 		note := map[ProgressID]string{
 			gen1.ProgressSecretKeyOwned: "(enter Pokemon Mansion from Cinnabar, solve the live statue-gate topology, and collect the Secret Key)",
@@ -180,9 +171,4 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		}}
 	}
 	return nil
-}
-
-func progressionAtPlaceLocation(obs Observation, place PlaceID) bool {
-	destination, ok := objectiveCatalogForObservation(obs).destination(place)
-	return ok && destination.Location != "" && destination.Location == LocationID(obs.Location)
 }
