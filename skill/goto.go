@@ -91,7 +91,7 @@ type legAt struct {
 // approached from.
 type legFromMap struct {
 	e world.Edge
-	m uint8
+	m world.MapID
 }
 
 // newLegFromMap builds a legFromMap ban key, scoping a warp edge to its
@@ -112,7 +112,7 @@ type legFromMap struct {
 // Fuchsia and Route 15's own gate, finally exhausting the budget there with
 // a "no route" error that named neither the real dead end nor its actual
 // cause.
-func newLegFromMap(e world.Edge, m uint8) legFromMap {
+func newLegFromMap(e world.Edge, m world.MapID) legFromMap {
 	if e.Kind == world.EdgeWarp {
 		e.WarpX, e.WarpY = 0, 0
 	}
@@ -228,11 +228,15 @@ func formatNavigationTrace(trace []navigationState) string {
 // already-visited map as a preference closes the whole cycle, not just its
 // last link.
 func edgeEntersVisitedRegion(g *world.Graph, e world.Edge, visited map[uint8]bool, positions map[uint8][]navigationState) bool {
-	if !visited[e.To] {
+	if e.To > 0xff {
+		return false
+	}
+	to := uint8(e.To)
+	if !visited[to] {
 		return false
 	}
 	known, unknown := false, false
-	for _, p := range positions[e.To] {
+	for _, p := range positions[to] {
 		same, ok := g.EdgeEntrySharesComponentWith(e, int(p.X), int(p.Y))
 		if !ok {
 			unknown = true
@@ -265,7 +269,7 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 	for e := range hard {
 		blocked[e] = true
 	}
-	for _, e := range g.Edges[current] {
+	for _, e := range g.Edges[world.MapID(current)] {
 		if edgeEntersVisitedRegion(g, e, visited, positions) {
 			blocked[e] = true
 		}
@@ -307,12 +311,12 @@ func blockVisitedMaps(g *world.Graph, hard map[world.Edge]bool, current uint8, v
 // the isolated (9,9) pocket. Farm #1149/#1150 resumed inside that house and
 // anti-bounce filtering selected the fresh dead pocket instead of the plaza.
 func onlyExitReturnsToVisitedMap(g *world.Graph, current uint8, visited map[uint8]bool) bool {
-	edges := g.Edges[current]
+	edges := g.Edges[world.MapID(current)]
 	if len(edges) == 0 {
 		return false
 	}
 	to := edges[0].To
-	if !visited[to] {
+	if to > 0xff || !visited[uint8(to)] {
 		return false
 	}
 	for _, edge := range edges[1:] {
@@ -329,7 +333,7 @@ func graphWithoutEdgesInto(g *world.Graph, visited map[uint8]bool, visitedPositi
 		positions = visitedPositions[0]
 	}
 	without := *g
-	without.Edges = make(map[uint8][]world.Edge, len(g.Edges))
+	without.Edges = make(map[world.MapID][]world.Edge, len(g.Edges))
 	for mapID, edges := range g.Edges {
 		filtered := make([]world.Edge, 0, len(edges))
 		for _, e := range edges {
@@ -402,7 +406,7 @@ func safeForcedBanWithDeadEnds(
 	prereqs world.RoutePrerequisites,
 ) ([]world.RouteStep, error, bool) {
 	without := *g
-	without.Edges = make(map[uint8][]world.Edge, len(g.Edges))
+	without.Edges = make(map[world.MapID][]world.Edge, len(g.Edges))
 	for mapID, edges := range g.Edges {
 		filtered := make([]world.Edge, 0, len(edges))
 		for _, e := range edges {
@@ -656,8 +660,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 				blockedHere[k.e] = true
 			}
 		}
-		for _, e := range routeGraph.Edges[cur] {
-			if deadEnds[newLegFromMap(e, cur)] {
+		for _, e := range routeGraph.Edges[world.MapID(cur)] {
+			if deadEnds[newLegFromMap(e, world.MapID(cur))] {
 				blockedHere[e] = true
 			}
 		}
@@ -775,8 +779,8 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 						return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
 					}
 					deadEnds[forced] = true
-					for _, e := range routeGraph.Edges[cur] {
-						if newLegFromMap(e, cur) == forced {
+					for _, e := range routeGraph.Edges[world.MapID(cur)] {
+						if newLegFromMap(e, world.MapID(cur)) == forced {
 							blockedHere[e] = true
 						}
 					}
@@ -862,7 +866,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			execution, execErr := world.ExecuteTransition(executor, e, *step.Transition)
 			if execErr != nil {
 				if errors.Is(execErr, world.ErrTransitionExecutionStalled) {
-					forced := newLegFromMap(e, cur)
+					forced := newLegFromMap(e, world.MapID(cur))
 					if !deadEnds[forced] {
 						if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
 							// The executor exhausted every candidate for this exact
@@ -906,7 +910,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			// map-scoped ban and reintroduce the gate thrash.
 			edgeScoped, tile := legFailureBanScope(err)
 			if edgeScoped {
-				forced := newLegFromMap(e, cur)
+				forced := newLegFromMap(e, world.MapID(cur))
 				if !deadEnds[forced] {
 					if _, _, ok := safeForcedBanWithDeadEnds(routeGraph, cur, dest, x, y, blockedHere, forced, deadEnds, prereqs); ok {
 						// A fully exhausted connection band is already a finite,
