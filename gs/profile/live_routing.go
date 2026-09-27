@@ -80,13 +80,13 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 	}
 	objects, positions := decodeGen2LiveObjects(reader)
 	return game.LiveTopologyState{
-		NativeMapID: gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber)),
-		WidthBlocks: width,
-		HeightBlocks: height,
-		Blocks: blocks,
-		Traversal: gen2Traversal(reader),
-		LiveObjects: objects,
+		NativeMapID:     gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber)),
+		WidthBlocks:     width,
+		HeightBlocks:    height,
+		Blocks:          blocks,
+		Traversal:       gen2Traversal(reader),
+		LiveObjects:     objects,
 		ObjectPositions: positions,
-		HiddenObjects: map[int]bool{},
+		HiddenObjects:   map[int]bool{},
 	}, nil
 }
