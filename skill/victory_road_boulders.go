@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	victoryRoad1FMap uint8 = 0x6c
-	victoryRoad2FMap uint8 = 0xc2
-	victoryRoad3FMap uint8 = 0xc6
+	victoryRoad1FMap  = 0x6c
+	victoryRoad2FMap  = 0xc2
+	victoryRoad3FMap  = 0xc6
 
 	// ROM-derived from pokered/constants/event_constants.asm. The coordinates
 	// below come from each Victory Road script's CheckBoulderCoords table.
