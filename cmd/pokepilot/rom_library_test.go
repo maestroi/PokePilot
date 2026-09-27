@@ -51,10 +51,17 @@ func TestROMLibraryFetchesMissingGameFromStore(t *testing.T) {
 		t.Fatalf("cached %d bytes, want %d", len(got), len(blue))
 	}
 
+	// A stale cache entry must not bypass byte identity. Seed the Red cache
+	// key with Blue bytes; fetch must discard it, try the store, reject the
+	// still-wrong remote bytes, and leave no poisoned cache behind.
+	redCache := filepath.Join(lib.cacheDir, "pokemon-red")
+	if err := os.WriteFile(redCache, blue, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := lib.fetch("pokemon-red"); err == nil {
 		t.Fatal("fetch red accepted Blue bytes")
 	}
-	if _, err := os.Stat(filepath.Join(lib.cacheDir, "pokemon-red")); !os.IsNotExist(err) {
+	if _, err := os.Stat(redCache); !os.IsNotExist(err) {
 		t.Fatalf("mismatched object was cached: %v", err)
 	}
 	if _, err := lib.fetch("pokemon-yellow"); err == nil {

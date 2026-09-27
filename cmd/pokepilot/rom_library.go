@@ -108,7 +108,18 @@ func (l *romLibrary) fetch(id game.GameID) (string, error) {
 	}
 	path := filepath.Join(l.cacheDir, string(id))
 	if _, err := os.Stat(path); err == nil {
-		return path, nil
+		rom, readErr := os.ReadFile(path)
+		if readErr == nil {
+			if profile, _, detectErr := profiles.DetectCartridge(rom); detectErr == nil && profile.ID() == id {
+				return path, nil
+			}
+		}
+		// A cache entry is only an optimization, never identity evidence. Older
+		// workers may have left a wrong or partial file here; discard it and
+		// re-fetch instead of permanently poisoning every lease for this game.
+		if removeErr := os.Remove(path); removeErr != nil {
+			return "", fmt.Errorf("discard invalid cached ROM %s: %w", path, removeErr)
+		}
 	}
 	key := romObjectPrefix + string(id)
 	obj, err := l.remote.GetObject(context.Background(), key, "")
@@ -218,7 +229,7 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 	// Re-detect the bytes being loaded: the library was built once at startup,
 	// and this is the trust boundary that proves the file still is the game
 	// the lease asked for.
-	if profile, _, err := profiles.Detect(rom); err != nil || profile.ID() != id {
+	if profile, _, err := profiles.DetectCartridge(rom); err != nil || profile.ID() != id {
 		return nil, fmt.Errorf("ROM %s is not game %q", path, id)
 	}
 	if err := m.LoadROMBytes(rom, string(id)); err != nil {
