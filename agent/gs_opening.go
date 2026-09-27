@@ -18,17 +18,17 @@ var (
 )
 
 const (
-	gsOpeningScriptFrameBudget  uint64 = 120_000
+	gsOpeningScriptFrameBudget   uint64 = 120_000
 	gsStarterReactionFrameBudget uint64 = 1_200
-	gsOpeningMaxScriptPresses          = 160
-	gsOpeningRouteAttempts             = 8
+	gsOpeningMaxScriptPresses           = 160
+	gsOpeningRouteAttempts              = 8
 )
 
 type gsStarterSpec struct {
-	Starter                  skill.Starter
-	Species                  game.SpeciesID
-	BallX, BallY             uint8
-	ApproachX, ApproachY     uint8
+	Starter              skill.Starter
+	Species              game.SpeciesID
+	BallX, BallY         uint8
+	ApproachX, ApproachY uint8
 }
 
 func gsStarterSpecFor(starter skill.Starter) (gsStarterSpec, bool) {
