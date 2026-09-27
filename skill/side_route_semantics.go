@@ -11,16 +11,16 @@ import (
 )
 
 const (
-	route2GateMap         uint8 = 0x31
-	diglettsCaveRoute2Map uint8 = 0x2E
+	route2GateMap          = 0x31
+	diglettsCaveRoute2Map  = 0x2E
 	route2DiglettWarpX    uint8 = 12
 	route2DiglettWarpY    uint8 = 9
-	route10Map            uint8 = 0x15
-	powerPlantMap         uint8 = 0x53
+	route10Map             = 0x15
+	powerPlantMap          = 0x53
 	powerPlantWarpX       uint8 = 6
 	powerPlantWarpY       uint8 = 39
-	ceruleanCaveB1FMap    uint8 = 0xE3
-	ceruleanCave1FMap     uint8 = 0xE4
+	ceruleanCaveB1FMap     = 0xE3
+	ceruleanCave1FMap      = 0xE4
 	ceruleanCaveB1FWarpX  uint8 = 0
 	ceruleanCaveB1FWarpY  uint8 = 6
 )
