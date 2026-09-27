@@ -85,6 +85,8 @@ type State struct {
 	LineGoal       int  `json:"line_goal"`
 
 	Paused             bool `json:"paused"`
+	Locking            bool `json:"locking"`
+	Clearing           bool `json:"clearing"`
 	GameOver           bool `json:"game_over"`
 	Complete           bool `json:"complete"`
 	ReadyForPieceInput bool `json:"ready_for_piece_input"`
@@ -177,11 +179,13 @@ func DecodeState(reader game.MemoryReader) (State, error) {
 		}
 	}
 
+	state.Locking = reader.Peek8(sym.LockStage) != 0
+	state.Clearing = reader.Peek8(sym.WipeCounter) != 0
 	state.ReadyForPieceInput =
 		screen == ScreenPlaying &&
 			!state.Paused &&
-			reader.Peek8(sym.LockStage) == 0 &&
-			reader.Peek8(sym.WipeCounter) == 0 &&
+			!state.Locking &&
+			!state.Clearing &&
 			state.Active != nil
 
 	return state, nil
