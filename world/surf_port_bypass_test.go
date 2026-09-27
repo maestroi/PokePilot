@@ -19,17 +19,17 @@ func TestSurfPortBypassRoutesAcrossWaterOnlySeams(t *testing.T) {
 
 	g := &Graph{
 		componentAware: true,
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {shore},
 			2: {arrival},
 			3: {},
 		},
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1}},
 			3: {{1}},
 		},
-		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 2}, 3: {w: 2, h: 2}},
+		tiles: map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 2}, 3: {w: 2, h: 2}},
 		// Water shore: no land component on either seam tile.
 		exitComps:  map[Edge][]int{arrival: {1}},
 		entryComps: map[Edge][]int{arrival: {1}},
@@ -69,15 +69,15 @@ func TestSurfPortBypassPrefersReachableEquivalentBand(t *testing.T) {
 
 	g := &Graph{
 		componentAware: true,
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {isolated, reachable}, // bad band deliberately first
 			2: {},
 		},
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{2, 2, 1, 1}},
 			2: {{1, 1, 1, 1}},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 4, h: 1},
 			2: {w: 4, h: 1},
 		},
@@ -121,9 +121,9 @@ func TestSurfPortBypassWithoutCapabilityStaysBlocked(t *testing.T) {
 
 	g := &Graph{
 		componentAware: true,
-		Edges:          map[uint8][]Edge{1: {shore}, 2: {}},
-		comps:          map[uint8][][]int{1: {{1}}, 2: {{1}}},
-		tiles:          map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
+		Edges:          map[MapID][]Edge{1: {shore}, 2: {}},
+		comps:          map[MapID][][]int{1: {{1}}, 2: {{1}}},
+		tiles:          map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
 	}
 	prereqs := RoutePrerequisites{
 		Capabilities: gameruntime.NewCapabilitySet(),
