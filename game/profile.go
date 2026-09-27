@@ -74,6 +74,19 @@ type MemoryReader interface {
 	PeekInto(addr uint16, dst []byte)
 }
 
+// BootInput is an optional profile-owned input recommendation for fresh-game
+// boot. BootInputLegacy preserves the historical Gen-I policy.
+type BootInput uint8
+
+const (
+	BootInputLegacy BootInput = iota
+	BootInputConfirm
+	BootInputStart
+	BootInputUp
+	BootInputDown
+	BootInputWait
+)
+
 // BootState is the semantic fresh-game state used by the shared boot driver.
 // Concrete profiles own every RAM address and version-specific "ready" map
 // decision; generic code only sees menu/player concepts.
@@ -89,9 +102,11 @@ type BootState struct {
 	NameMenu        bool
 	CurrentMenuItem uint8
 	MaxMenuItem     uint8
-	PresetNames     []string
-	PlayerName      string
-	RivalName       string
+	PresetNames        []string
+	SelectedPresetName string
+	NextInput          BootInput
+	PlayerName         string
+	RivalName          string
 }
 
 // BootProfile is an optional profile capability for driving a fresh cartridge
