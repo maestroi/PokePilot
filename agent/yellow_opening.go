@@ -34,7 +34,7 @@ const (
 	yellowOpeningMaxSteps                 = 40
 	yellowOpeningScriptBudget             = 30000
 	yellowOpeningBallReactionBudget       = 600
-	yellowOpeningRivalTriggerBudget        = 180
+	yellowOpeningRivalTriggerBudget       = 180
 	yellowOpeningGateApproachX      uint8 = 10
 	yellowOpeningGateApproachY      uint8 = 1
 	yellowOpeningBallX              uint8 = 7
