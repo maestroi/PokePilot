@@ -58,6 +58,8 @@ A registry row for Jev looks like:
  "compute": "TypeSafe cloud", "token_env": "TYPESAFE_API_KEY", "enabled": true}
 ```
 
+A registered Jev deployment may omit `token_env` when the endpoint is intentionally unauthenticated, such as a LAN-hosted Jev server. In that case the runner sends no Authorization header and explicitly does not inherit or forward `TYPESAFE_API_KEY`. Hosted TypeSafe rows should keep `token_env: "TYPESAFE_API_KEY"`.
+
 At enqueue the wall resolves `deployment`, sets `backend` from the protocol
 and copies the deployment's secret-free identity into
 `decision_engine.inference` (any identity a client sends is discarded). The
