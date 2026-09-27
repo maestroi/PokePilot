@@ -100,14 +100,13 @@ func TestYellowSpecNormalizesScriptedPikachu(t *testing.T) {
 	}
 }
 
-
 func TestTetrisSpecAndHeartbeatSurfaceGameTelemetry(t *testing.T) {
 	srv := newTestServer(t, "")
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
-		RunID: "tetris-run",
-		Game:   "TETRIS",
+		RunID:   "tetris-run",
+		Game:    "TETRIS",
 		Planner: "policy",
-		Goal:   farm.GoalFrom("score:10000"),
+		Goal:    farm.GoalFrom("score:10000"),
 	}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("Tetris spec: status %d, want 200", resp.StatusCode)
 	}
@@ -167,8 +166,8 @@ func TestTetrisSpecAndHeartbeatSurfaceGameTelemetry(t *testing.T) {
 	}
 
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
-		RunID: "bad-tetris",
-		Game:   "tetris",
+		RunID:   "bad-tetris",
+		Game:    "tetris",
 		Planner: "llm",
 	}); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("Tetris LLM spec: status %d, want 400", resp.StatusCode)
