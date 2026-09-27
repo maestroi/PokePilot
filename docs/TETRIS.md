@@ -74,6 +74,32 @@ When the preview piece is available, the policy includes one-piece lookahead at 
 
 `tetris/policy.Step` combines exactly one policy decision with one verified `control.Place` transaction. Long-running loops, run configuration, telemetry and replay integration remain runtime concerns rather than policy responsibilities.
 
+## Run integration
+
+Tetris uses the same farm lease, cancellation, save-state, recording and replay plumbing as Pokémon while keeping game-owned semantics separate.
+
+A farm run uses:
+
+```json
+{
+  "game": "tetris",
+  "planner": "policy",
+  "starter": "",
+  "goal": "score:10000"
+}
+```
+
+Supported goals are `auto`, `survival`, `score:N`, `lines:N`, and `complete`. Score/survival run Type A; lines/complete run Type B. The operator's New Run form exposes Tetris directly and fixes the planner to the deterministic policy runtime.
+
+Farm heartbeats retain the legacy Pokémon fields for backwards compatibility and add two optional game-owned envelopes:
+
+- `game_state`: Tetris board rows, active/next piece, mode/screen, score, lines, level and transition flags;
+- `game_decision`: the latest placement target, objective, candidate count, board metrics and policy scores.
+
+The wall persists those envelopes and clears them on a fresh lease/retry just like Pokémon player/planner telemetry. The operator live view renders the 10×18 board and Tetris state instead of presenting map/party placeholders.
+
+Session recordings store the generic cartridge game/revision identity. The replay ROM library resolves `game=tetris` through `profiles.DetectCartridge`, after which the recording's exact ROM SHA-256 remains the final replay identity check.
+
 ## Current scope
 
-PokePilot can now observe Tetris, choose a semantic placement, and execute that placement deterministically. It does not yet expose Tetris as a normal configurable long-running run with replay/operator telemetry; that is the next runtime-integration phase.
+PokePilot can now launch, observe, choose, execute, record and replay Tetris through the normal run infrastructure. Phase 6 is qualification: exercise real Rev-1 runs and establish autonomous benchmark expectations before treating the integration as production-qualified.

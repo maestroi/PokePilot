@@ -189,6 +189,52 @@ func TestHeartbeatCarriesPlayer(t *testing.T) {
 	}
 }
 
+func TestHeartbeatCarriesGameSpecificTelemetry(t *testing.T) {
+	want := Heartbeat{
+		RunID: "tetris-1",
+		Frame: 123,
+		GameState: map[string]any{
+			"kind":          "tetris",
+			"score":         float64(1200),
+			"lines_cleared": float64(4),
+			"board":         []any{"..........", "####.#####"},
+		},
+		GameDecision: map[string]any{
+			"kind":      "tetris-placement",
+			"objective": "score",
+			"rotation":  float64(1),
+			"column":    float64(6),
+		},
+	}
+	b, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got Heartbeat
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got.GameState, want.GameState) {
+		t.Fatalf("game_state round trip = %#v, want %#v", got.GameState, want.GameState)
+	}
+	if !reflect.DeepEqual(got.GameDecision, want.GameDecision) {
+		t.Fatalf("game_decision round trip = %#v, want %#v", got.GameDecision, want.GameDecision)
+	}
+	for _, field := range []string{`"game_state"`, `"game_decision"`, `"kind"`, `"rotation"`, `"column"`} {
+		if !contains(string(b), field) {
+			t.Errorf("marshaled heartbeat missing %s: %s", field, b)
+		}
+	}
+
+	b, err = json.Marshal(Heartbeat{RunID: "pokemon-old"})
+	if err != nil {
+		t.Fatalf("marshal legacy heartbeat: %v", err)
+	}
+	if contains(string(b), `"game_state"`) || contains(string(b), `"game_decision"`) {
+		t.Fatalf("empty game telemetry must be omitted: %s", b)
+	}
+}
+
 func TestFinishReportJSONRoundTrip(t *testing.T) {
 	data := []byte("checkpoint-state")
 	sum := sha256.Sum256(data)

@@ -43,7 +43,7 @@ func (l *replayROMLibrary) add(path string) {
 		log.Printf("pokereplay: ignoring unreadable ROM %s: %v", path, err)
 		return
 	}
-	profile, _, err := profiles.Detect(rom)
+	profile, _, err := profiles.DetectCartridge(rom)
 	if err != nil {
 		log.Printf("pokereplay: ignoring unrecognised ROM %s: %v", path, err)
 		return

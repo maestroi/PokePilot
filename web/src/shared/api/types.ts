@@ -198,6 +198,8 @@ export interface DashboardRun {
   trail?: [number, number][]
   stats?: DashboardStats
   player?: PlayerSnapshot
+  game_state?: Record<string, unknown>
+  game_decision?: Record<string, unknown>
   attempts?: number
   error_attempts?: number
   loss_recoveries?: number

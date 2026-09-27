@@ -110,10 +110,35 @@ const createdRunID = ref('')
 const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
 const isLLM = computed(() => form.planner === 'llm')
+const isTetris = computed(() => form.game === 'tetris')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
+watch(() => form.game, (game, previous) => {
+  if (game === 'tetris') {
+    form.planner = 'policy'
+    form.starter = ''
+    form.dest = ''
+    form.goal = 'score:10000'
+    return
+  }
+  if (previous === 'tetris' && form.planner === 'policy') {
+    form.planner = 'llm'
+    form.goal = defaultGoalForPlayStyle('adventure')
+  }
+})
+
+const tetrisGoals = [
+  ['auto', 'Auto · score-oriented Type A'],
+  ['survival', 'Survival · Type A'],
+  ['score:10000', 'Score · 10,000'],
+  ['score:50000', 'Score · 50,000'],
+  ['lines:25', 'Lines · 25 (Type B)'],
+  ['complete', 'Complete · Type B']
+] as const
+
 function starterRequest(): string {
+  if (isTetris.value) return ''
   if (isYellow.value) return 'pikachu'
   if (starterMode.value === 'specific') return specificStarter.value.trim()
   if (starterMode.value === 'default') return isLLM.value ? '' : 'squirtle'
@@ -130,7 +155,7 @@ function runURL(runID: string): string {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (!isYellow.value && isSpecificStarter.value && !specificStarter.value.trim()) {
+  if (!isTetris.value && !isYellow.value && isSpecificStarter.value && !specificStarter.value.trim()) {
     error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
     return
   }
@@ -143,8 +168,8 @@ async function submit(): Promise<void> {
       run_id: form.run_id.trim(),
       game: form.game,
       starter: starterRequest(),
-      dest: isLLM.value ? '' : form.dest.trim(),
-      goal: isLLM.value ? form.goal.trim() : '',
+      dest: (isLLM.value || isTetris.value) ? '' : form.dest.trim(),
+      goal: (isLLM.value || isTetris.value) ? form.goal.trim() : '',
       llm_profile: isLLM.value && !hasDeployments.value ? form.llm_profile : '',
       llm_deployment: isLLM.value && hasDeployments.value ? form.llm_deployment : undefined,
       play_style: isLLM.value ? form.play_style : '',
@@ -180,9 +205,12 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
-          <select v-model="form.planner" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option value="llm">Play the game</option>
-            <option value="scripted">Walk to a place</option>
+          <select v-model="form.planner" :disabled="isTetris" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 disabled:opacity-60">
+            <option v-if="isTetris" value="policy">Play Tetris · deterministic policy</option>
+            <template v-else>
+              <option value="llm">Play the game</option>
+              <option value="scripted">Walk to a place</option>
+            </template>
           </select>
         </label>
 
@@ -192,13 +220,15 @@ async function submit(): Promise<void> {
             <option value="pokemon-red">Pokémon Red</option>
             <option value="pokemon-blue">Pokémon Blue</option>
             <option value="pokemon-yellow">Pokémon Yellow</option>
+            <option value="tetris">Tetris</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">The worker leases the matching mounted cartridge. Only games with a registered runtime profile are selectable.</span>
         </label>
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <input v-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
+          <input v-if="isTetris" value="Not used" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
+          <input v-else-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
           <select v-else v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <optgroup label="Default">
               <option value="default">{{ isLLM ? 'Let LLM decide' : 'Default · Squirtle' }}</option>
@@ -217,26 +247,31 @@ async function submit(): Promise<void> {
               <option value="specific">Specific Pokémon…</option>
             </optgroup>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Tetris starts directly through its native mode menus.' : (isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.') }}</span>
         </label>
 
-        <label v-if="isSpecificStarter && !isYellow" class="block">
+        <label v-if="isSpecificStarter && !isYellow && !isTetris" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Specific Pokémon</span>
           <input v-model="specificStarter" placeholder="e.g. pikachu, dragonite, snorlax" autocomplete="off" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
           <span class="mt-1 block text-[11px] text-slate-600">Enter any valid Generation I Pokémon name.</span>
         </label>
 
-        <label v-if="!isLLM" class="block">
+        <label v-if="!isLLM && !isTetris" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Destination</span>
           <input v-model="form.dest" placeholder="viridian pokemon center" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
-        <label v-if="isLLM" class="block sm:col-span-2">
+        <label v-if="isLLM || isTetris" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
           <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
-            <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
+            <template v-if="isTetris">
+              <option v-for="[value, label] in tetrisGoals" :key="value" :value="value">{{ label }}</option>
+            </template>
+            <template v-else>
+              <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
+            </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">What ends the run. Goal is independent from play style and run purpose.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : 'What ends the run. Goal is independent from play style and run purpose.' }}</span>
         </label>
 
         <label v-if="isLLM" class="block">

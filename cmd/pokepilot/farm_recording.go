@@ -64,7 +64,7 @@ func addFarmRecordingProfileIdentity(metadata map[string]string, m *emu.Emu) {
 	if metadata == nil || m == nil {
 		return
 	}
-	profile, _, err := profiles.Detect(m.ROM())
+	profile, _, err := profiles.DetectCartridge(m.ROM())
 	if err != nil {
 		return
 	}

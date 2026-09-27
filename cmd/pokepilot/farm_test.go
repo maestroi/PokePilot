@@ -534,6 +534,50 @@ func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
 	}
 }
 
+func TestValidateSpecAcceptsTetrisPolicy(t *testing.T) {
+	if err := validateSpec("tetris", "policy", "", ""); err != nil {
+		t.Fatalf("Tetris policy rejected: %v", err)
+	}
+	if err := validateSpec("tetris", "llm", "", ""); err == nil {
+		t.Fatal("Tetris unexpectedly accepted the Pokemon LLM planner")
+	}
+	if err := validateSpec("tetris", "policy", "squirtle", ""); err == nil {
+		t.Fatal("Tetris unexpectedly accepted a Pokemon starter")
+	}
+}
+
+func TestHeartbeatSnapKeepsGameDecisionAcrossStatusSamples(t *testing.T) {
+	s := &heartbeatSnap{}
+	s.store(farm.Heartbeat{RunID: "tetris"})
+	s.storeGameDecision(map[string]any{
+		"kind":     "tetris-placement",
+		"rotation": 1,
+		"column":   6,
+	})
+	s.storeStatus(farm.Heartbeat{
+		RunID: "tetris",
+		Frame: 42,
+		GameState: map[string]any{
+			"kind":  "tetris",
+			"score": 1200,
+		},
+	})
+
+	got := s.load()
+	if got.Frame != 42 || got.GameState["kind"] != "tetris" {
+		t.Fatalf("status = %#v", got)
+	}
+	if got.GameDecision["kind"] != "tetris-placement" || got.GameDecision["column"] != 6 {
+		t.Fatalf("storeStatus dropped game decision: %#v", got.GameDecision)
+	}
+
+	s.store(farm.Heartbeat{RunID: "next"})
+	got = s.load()
+	if got.GameState != nil || got.GameDecision != nil {
+		t.Fatalf("new lease kept old game telemetry: state=%#v decision=%#v", got.GameState, got.GameDecision)
+	}
+}
+
 func TestValidateSpecAcceptsYellowScriptedPikachu(t *testing.T) {
 	for _, starter := range []string{"", "pikachu", "Pikachu"} {
 		if err := validateSpec("pokemon-yellow", "scripted", starter, "viridian city"); err != nil {

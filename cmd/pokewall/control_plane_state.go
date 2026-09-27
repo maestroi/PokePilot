@@ -153,6 +153,8 @@ func controlPlanePersistedStateLocked(w *Wall) persistedState {
 		pt.StopSoFar = ""
 		pt.Stats = nil
 		pt.Player = nil
+		pt.GameState = nil
+		pt.GameDecision = nil
 		pt.WorkerAddrs = nil
 		pt.Activity = durableRunActivity(pt.Activity)
 		ps.Tiles[id] = pt

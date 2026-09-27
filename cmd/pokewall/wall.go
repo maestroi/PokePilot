@@ -126,10 +126,12 @@ type Tile struct {
 	Stats *farm.LLMStats
 	// Player is the live party/money/badges snapshot. Kept on finish,
 	// nilled on retry, same rule as Stats.
-	Player   *farm.Player
-	Reason   string
-	Detail   string
-	Finished bool
+	Player       *farm.Player
+	GameState    map[string]any
+	GameDecision map[string]any
+	Reason       string
+	Detail       string
+	Finished     bool
 	// workerAddrs is where this run's runner watch server is reachable,
 	// last reported by its heartbeats. Unexported: it is proxy input, not
 	// grid data.
@@ -212,6 +214,8 @@ type tileRow struct {
 	Trail              [][2]uint8               `json:"trail,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
+	GameState          map[string]any           `json:"game_state,omitempty"`
+	GameDecision       map[string]any           `json:"game_decision,omitempty"`
 	Attempts           int                      `json:"attempts"`
 	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
 	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
@@ -332,6 +336,8 @@ type persistedTile struct {
 	StopSoFar          string                   `json:"stop_so_far,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
+	GameState          map[string]any           `json:"game_state,omitempty"`
+	GameDecision       map[string]any           `json:"game_decision,omitempty"`
 	Reason             string                   `json:"reason,omitempty"`
 	Detail             string                   `json:"detail,omitempty"`
 	Finished           bool                     `json:"finished"`
@@ -415,6 +421,8 @@ func (w *Wall) persistedStateLocked() persistedState {
 			StopSoFar:          t.StopSoFar,
 			Stats:              t.Stats,
 			Player:             t.Player,
+			GameState:          cloneJSONMap(t.GameState),
+			GameDecision:       cloneJSONMap(t.GameDecision),
 			Reason:             t.Reason,
 			Detail:             t.Detail,
 			Finished:           t.Finished,
@@ -520,6 +528,8 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		StopSoFar:          p.StopSoFar,
 		Stats:              p.Stats,
 		Player:             p.Player,
+		GameState:          cloneJSONMap(p.GameState),
+		GameDecision:       cloneJSONMap(p.GameDecision),
 		Reason:             p.Reason,
 		Detail:             p.Detail,
 		Finished:           p.Finished,
@@ -652,6 +662,17 @@ func (w *Wall) Handler() http.Handler {
 	return mux
 }
 
+func cloneJSONMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -717,6 +738,19 @@ func normalizeGameStarter(spec *farm.Spec) error {
 		return nil
 	}
 	spec.Game = strings.ToLower(strings.TrimSpace(spec.Game))
+	if spec.Game == "tetris" {
+		if strings.TrimSpace(spec.Starter) != "" {
+			return fmt.Errorf("tetris does not use a starter, got %q", spec.Starter)
+		}
+		spec.Starter = ""
+		if strings.TrimSpace(spec.Planner) == "" {
+			spec.Planner = "policy"
+		}
+		if spec.Planner != "policy" {
+			return fmt.Errorf("tetris uses planner %q, got %q", "policy", spec.Planner)
+		}
+		return nil
+	}
 	if spec.Game != "pokemon-yellow" {
 		return nil
 	}
@@ -786,6 +820,8 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Trail = nil
 	t.Stats = nil
 	t.Player = nil
+	t.GameState = nil
+	t.GameDecision = nil
 	t.Reason = ""
 	t.Detail = ""
 	t.workerAddrs = nil
@@ -952,6 +988,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats
 	t.Player = hb.Player
+	t.GameState = cloneJSONMap(hb.GameState)
+	t.GameDecision = cloneJSONMap(hb.GameDecision)
 	t.workerAddrs = hb.WorkerAddrs
 	t.lastUpdate = now
 	appendHeartbeatActivityLocked(t, hb, now, previousStatus, previousQuestion, previousDecision, previousPlayer)
@@ -1838,6 +1876,8 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Trail = nil
 	t.Stats = nil
 	t.Player = nil
+	t.GameState = nil
+	t.GameDecision = nil
 	t.Reason = ""
 	if reason == "drained" {
 		t.Detail = fmt.Sprintf("attempt %d drained: %s", completed, detail)
