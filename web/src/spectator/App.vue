@@ -111,6 +111,47 @@ const tetrisBoardRows = computed(() =>
 const tetrisModeLabel = computed(() => formatGameToken(tetrisState.value?.mode || 'type-a'))
 const tetrisActivePiece = computed(() => tetrisState.value?.active?.piece || '—')
 const tetrisNextPiece = computed(() => tetrisState.value?.next?.piece || '—')
+const tetrisDecisionRecords = computed(() => [...(selectedRun.value?.stats?.decision_records || [])].reverse())
+const tetrisLatestDecision = computed(() => tetrisDecisionRecords.value[0])
+const tetrisDecisionIdentity = computed(() => {
+  const run = selectedRun.value
+  if (!run) return '—'
+  const configured = run.decision_engine
+  const served = run.stats?.decision_model || tetrisLatestDecision.value?.model
+  const label = configured?.label || configured?.deployment
+  const parts = [label, served || configured?.model].filter(Boolean)
+  return [...new Set(parts)].join(' · ') || 'Jev'
+})
+const tetrisDecisionBackend = computed(() =>
+  selectedRun.value?.stats?.decision_backend
+  || tetrisLatestDecision.value?.backend
+  || selectedRun.value?.decision_engine?.backend
+  || ''
+)
+const tetrisDecisionMode = computed(() =>
+  selectedRun.value?.stats?.decision_mode || selectedRun.value?.decision_engine?.mode || 'active'
+)
+const tetrisDecisionCalls = computed(() => Number(selectedRun.value?.stats?.decision_calls || 0))
+const tetrisDecisionConfidence = computed(() =>
+  Number(tetrisLatestDecision.value?.confidence ?? selectedRun.value?.stats?.decision_confidence ?? 0)
+)
+const tetrisDecisionAgreement = computed(() => {
+  const stats = selectedRun.value?.stats
+  const agreed = Number(stats?.decision_reference_agreements || 0)
+  const disagreed = Number(stats?.decision_reference_disagreements || 0)
+  const judged = agreed + disagreed
+  return judged > 0 ? agreed / judged : null
+})
+const tetrisDecisionFallbackRate = computed(() => {
+  const calls = tetrisDecisionCalls.value
+  return calls > 0 ? Number(selectedRun.value?.stats?.decision_fallbacks || 0) / calls : null
+})
+const tetrisLatestChoice = computed(() =>
+  tetrisLatestDecision.value?.choice_label
+  || tetrisLatestDecision.value?.choice
+  || selectedRun.value?.stats?.decision_choice
+  || 'Waiting for first Jev choice'
+)
 const otherLiveRuns = computed(() => {
   const selectedID = selectedRun.value?.run_id || ''
   return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
