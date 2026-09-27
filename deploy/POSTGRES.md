@@ -83,7 +83,11 @@ compatibility, but the production wall uses the PostgreSQL registry. The schema
 seeds the deployments that were previously represented by
 `deploy/models.example.json`; update revision, quantization and engine-version
 fields to the exact deployed artifacts before treating results as reproducible
-benchmarks.
+benchmarks. Fresh databases also seed the local JEV 9B Tetris decision target at
+`http://192.168.50.80:8077/v1`. Existing persistent databases keep operator
+ownership of deployment rows; add or update `jev9b-local-8077` once through the
+Deployments panel (Protocol: TypeSafe choice API, token_env empty) if that row
+predates this seed.
 
 SQLite, `state.json`, and `model-experiments.json` are legacy/local
 compatibility paths only. They are not configured by the PostgreSQL production
