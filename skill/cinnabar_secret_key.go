@@ -131,7 +131,7 @@ func route20ResumeExit(planner *RoutePlanner) (Destination, error) {
 			continue
 		}
 		first := route[0].Edge
-		if first.From == route20Map && first.To == candidate.next {
+		if first.From == world.MapID(route20Map) && first.To == world.MapID(candidate.next) {
 			return candidate.dest, nil
 		}
 	}
