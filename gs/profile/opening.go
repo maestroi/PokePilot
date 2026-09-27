@@ -18,6 +18,21 @@ type OpeningFacts struct {
 	InBattle     bool
 	ScriptActive bool
 
+	GotStarter                bool
+	GotMysteryEgg             bool
+	HasPokedex                bool
+	MrPokemonVisitComplete    bool
+	CherrygroveRivalResolved  bool
+	RivalNamed                bool
+	GaveMysteryEggToElm       bool
+	RivalNamePrompt           bool
+	RivalName                 string
+	BattleMode                uint8
+	BattleResult              uint8
+	ElmsLabScene              uint8
+	CherrygroveCityScene      uint8
+	MrPokemonsHouseScene      uint8
+
 	Party []game.SpeciesID
 }
 
@@ -52,15 +67,33 @@ func (p *Profile) DecodeOpening(reader game.MemoryReader) OpeningFacts {
 			party = append(party, species)
 		}
 	}
+	story := decodeEarlyStory(reader)
+	rivalRaw := readGSBytes(reader, sym.RivalName, sym.RivalNameLen)
+	rivalPrompt := reader.Peek8(sym.NamingScreenType) == 2 &&
+		len(rivalRaw) > 0 && (rivalRaw[0] == 0xf2 || rivalRaw[0] == 0xeb)
 	return OpeningFacts{
-		NativeMapID:  ow.NativeMapID,
-		X:            ow.X,
-		Y:            ow.Y,
-		Facing:       ow.Facing,
-		Controllable: ow.Controllable,
-		MovementIdle: ow.MovementIdle,
-		InBattle:     ow.InBattle,
-		ScriptActive: ow.InDialogue,
-		Party:        party,
+		NativeMapID:               ow.NativeMapID,
+		X:                         ow.X,
+		Y:                         ow.Y,
+		Facing:                    ow.Facing,
+		Controllable:              ow.Controllable,
+		MovementIdle:              ow.MovementIdle,
+		InBattle:                  ow.InBattle,
+		ScriptActive:              ow.InDialogue,
+		GotStarter:                story.StarterReceived,
+		GotMysteryEgg:             story.MysteryEggReceived,
+		HasPokedex:                story.PokedexAcquired,
+		MrPokemonVisitComplete:    story.MrPokemonVisitComplete,
+		CherrygroveRivalResolved:  story.CherrygroveRivalResolved,
+		RivalNamed:                story.RivalNamed,
+		GaveMysteryEggToElm:       story.MysteryEggReturned,
+		RivalNamePrompt:           rivalPrompt,
+		RivalName:                 decodeGSName(rivalRaw),
+		BattleMode:                reader.Peek8(sym.BattleMode),
+		BattleResult:              reader.Peek8(sym.BattleResult),
+		ElmsLabScene:              reader.Peek8(sym.ElmsLabSceneID),
+		CherrygroveCityScene:      reader.Peek8(sym.CherrygroveCitySceneID),
+		MrPokemonsHouseScene:      reader.Peek8(sym.MrPokemonsHouseSceneID),
+		Party:                     party,
 	}
 }
