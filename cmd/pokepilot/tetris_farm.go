@@ -71,7 +71,7 @@ func runFarmTetris(
 	m.TraceNote("tetris", fmt.Sprintf("goal=%s objective=%s mode=%s", tetrisGoalLabel(goal), goal.Objective, goal.Mode()))
 
 	var (
-		choose         func(tetris.State, tetrispolicy.Objective) (tetrispolicy.Decision, error)
+		choose        func(tetris.State, tetrispolicy.Objective) (tetrispolicy.Decision, error)
 		lastSelection *tetrisdecision.Selection
 	)
 	if decisionSpec := spec.DecisionEngine; decisionSpec != nil && decisionSpec.Enabled() {
