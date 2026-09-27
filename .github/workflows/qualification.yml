@@ -21,9 +21,18 @@ on:
         required: false
         type: string
       benchmark:
-        description: Optional structured benchmark qualification
+        description: Optional structured Pokemon benchmark qualification
         required: true
         default: fast
+        type: choice
+        options:
+          - none
+          - fast
+          - full
+      tetris:
+        description: Optional Jev-backed Tetris qualification
+        required: true
+        default: none
         type: choice
         options:
           - none
@@ -63,12 +72,16 @@ jobs:
         shell: bash
         env:
           CONFIGURED_ROM: ${{ vars.POKEMON_RED_ROM_PATH }}
+          CONFIGURED_TETRIS_ROM: ${{ vars.TETRIS_ROM_PATH }}
           CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
           CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
         run: |
           set -euo pipefail
           if [[ -n "${CONFIGURED_ROM}" ]]; then
             echo "POKEMON_RED_ROM=${CONFIGURED_ROM}" >> "$GITHUB_ENV"
+          fi
+          if [[ -n "${CONFIGURED_TETRIS_ROM}" ]]; then
+            echo "TETRIS_ROM=${CONFIGURED_TETRIS_ROM}" >> "$GITHUB_ENV"
           fi
           if [[ -n "${CONFIGURED_CORPUS}" ]]; then
             echo "POKEPILOT_QUALIFICATION_CORPUS=${CONFIGURED_CORPUS}" >> "$GITHUB_ENV"
@@ -122,6 +135,39 @@ jobs:
             --until hall-of-fame \
             --runs 1 \
             --output "$POKEPILOT_QUALIFICATION_OUT/benchmark-full"
+
+      - name: Run Jev-backed Tetris qualification
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tetris != 'none' }}
+        shell: bash
+        env:
+          TETRIS_PROFILE: ${{ inputs.tetris }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${TETRIS_ROM:-}" ]]; then
+            echo "TETRIS_ROM_PATH repository variable is required for Tetris qualification" >&2
+            exit 1
+          fi
+          if [[ -z "${TYPESAFE_API_KEY:-${POKEPILOT_DECISION_TOKEN:-}}" ]]; then
+            echo "TypeSafe Jev credentials must be configured on the self-hosted qualification runner" >&2
+            exit 1
+          fi
+          go run ./cmd/tetrisbench \
+            --profile "$TETRIS_PROFILE" \
+            --decision-backend jev \
+            --decision-mode active \
+            --output "$POKEPILOT_QUALIFICATION_OUT/tetris-$TETRIS_PROFILE"
+
+      - name: Close Tetris epic after clean full qualification
+        if: ${{ success() && github.event_name == 'workflow_dispatch' && inputs.tetris == 'full' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$(gh issue view 2015 --repo "$GITHUB_REPOSITORY" --json state --jq .state)" == "OPEN" ]]; then
+            gh issue close 2015 --repo "$GITHUB_REPOSITORY" --reason completed \
+              --comment "Full Jev-backed Tetris qualification passed in workflow run ${GITHUB_RUN_ID}: three independently seeded autonomous runs reached the 10,000-point target with deterministic legal-placement fallback available."
+          fi
 
       - name: Close full-chain issue after clean manual proof
         if: ${{ success() && github.event_name == 'workflow_dispatch' && (inputs.profile == 'full' || inputs.case == 'fresh-hall-of-fame' || inputs.benchmark == 'full') }}
