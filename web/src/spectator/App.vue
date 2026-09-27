@@ -1744,4 +1744,202 @@ function activityTimeAgo(item: ActivityItem): string {
 }
 
 
+
+
+/* Tetris gets its own visual language. Keep this below the play-style rules so
+   the active game, not a Pokémon policy default, owns the spectator chrome. */
+.spectator-theme.game-tetris {
+  --mode-accent: #fde047;
+  --mode-soft: rgba(253, 224, 71, 0.1);
+  --mode-border: rgba(253, 224, 71, 0.28);
+  background:
+    radial-gradient(circle at 80% 8%, rgba(34, 211, 238, .08), transparent 24rem),
+    radial-gradient(circle at 12% 70%, rgba(253, 224, 71, .08), transparent 22rem),
+    linear-gradient(rgba(148, 163, 184, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .035) 1px, transparent 1px),
+    linear-gradient(180deg, #05070c, #080d16);
+  background-size: auto, auto, 26px 26px, 26px 26px, auto;
+}
+
+.spectator-theme.game-tetris::before {
+  background:
+    radial-gradient(circle at 12% 72%, rgba(253, 224, 71, .1), transparent 22rem),
+    radial-gradient(circle at 88% 18%, rgba(34, 211, 238, .08), transparent 20rem);
+}
+
+.game-tetris .spectator-hero-card {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .08), transparent 17rem),
+    linear-gradient(180deg, rgba(12, 16, 25, .95), rgba(5, 8, 14, .98));
+}
+
+.game-tetris .game-mark {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.18), transparent 35%),
+    linear-gradient(145deg, rgba(250, 204, 21, .88), rgba(8, 145, 178, .7));
+}
+
+.tetris-mark {
+  display: block;
+  width: .48rem;
+  height: .48rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .55rem 0 #fde047,
+    1.1rem 0 #fde047,
+    .55rem .55rem #fde047;
+  transform: translate(-.55rem, -.25rem);
+}
+
+.tetris-art-banner {
+  border-color: rgba(253, 224, 71, .18);
+  background:
+    linear-gradient(180deg, rgba(250, 204, 21, .05), transparent 62%),
+    #05070c;
+}
+
+.tetris-art-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .08) 1px, transparent 1px);
+  background-size: 14px 14px;
+  mask-image: linear-gradient(to right, black, transparent 78%);
+}
+
+.tetris-art-banner::before {
+  position: absolute;
+  top: 1rem;
+  left: 2rem;
+  width: .72rem;
+  height: .72rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .78rem 0 #fde047,
+    1.56rem 0 #fde047,
+    .78rem .78rem #fde047,
+    4.5rem 1.2rem #67e8f9,
+    5.28rem 1.2rem #67e8f9,
+    5.28rem .42rem #67e8f9,
+    6.06rem .42rem #67e8f9;
+  content: '';
+  filter: drop-shadow(0 0 10px rgba(253, 224, 71, .2));
+}
+
+.game-tetris .spectator-art-banner-caption span {
+  color: rgb(254 240 138 / .78);
+}
+
+.tetris-piece-card,
+.tetris-board-shell,
+.tetris-state-tile {
+  border-color: rgba(148, 163, 184, .1);
+  background: rgba(2, 6, 23, .42);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+
+.tetris-board-shell {
+  border-color: rgba(253, 224, 71, .16);
+  background:
+    linear-gradient(180deg, rgba(253, 224, 71, .035), transparent),
+    rgba(1, 4, 9, .78);
+}
+
+.tetris-board {
+  display: grid;
+  gap: 1px;
+}
+
+.tetris-board-row {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.tetris-cell {
+  aspect-ratio: 1;
+  border-radius: 1px;
+}
+
+.tetris-cell-empty {
+  background: rgba(148, 163, 184, .045);
+}
+
+.tetris-cell-filled {
+  background: linear-gradient(145deg, #fef08a, #eab308);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.24),
+    0 0 6px rgba(250, 204, 21, .12);
+}
+
+.tetris-state-tile span,
+.tetris-goal-stat span {
+  display: block;
+  color: #64748b;
+  font-size: .5rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.tetris-state-tile strong,
+.tetris-goal-stat strong {
+  display: block;
+  margin-top: .35rem;
+  color: #f8fafc;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.tetris-goal-card {
+  border-color: rgba(253, 224, 71, .16);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .09), transparent 14rem),
+    linear-gradient(180deg, rgba(16, 20, 29, .96), rgba(5, 8, 14, .98));
+}
+
+.tetris-goal-visual {
+  position: relative;
+  height: 5rem;
+  overflow: hidden;
+  border-color: rgba(253, 224, 71, .14);
+  background:
+    linear-gradient(rgba(148, 163, 184, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .06) 1px, transparent 1px),
+    #05070c;
+  background-size: 14px 14px;
+}
+
+.tetris-goal-piece {
+  position: absolute;
+  top: 1.1rem;
+  left: calc(50% - 1.35rem);
+  width: .78rem;
+  height: .78rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .86rem 0 #fde047,
+    1.72rem 0 #fde047,
+    .86rem .86rem #fde047;
+  filter: drop-shadow(0 0 12px rgba(253, 224, 71, .28));
+}
+
+.tetris-goal-mark {
+  border: 1px solid rgba(253, 224, 71, .2);
+  background: rgba(253, 224, 71, .09);
+  color: #fef08a;
+}
+
+.tetris-goal-stat {
+  border: 1px solid rgba(148, 163, 184, .09);
+  border-radius: .75rem;
+  background: rgba(2, 6, 23, .38);
+  padding: .65rem;
+}
+
 </style>
