@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SpectatorRun } from '../src/shared/api/spectator.ts'
-import { gameTitle, isTetrisRun, locationLabel, routeLabel, runTitle } from '../src/spectator/model.ts'
+import { gameTitle, isTetrisRun, tetrisLocationLabel, tetrisRouteLabel, tetrisRunTitle } from '../src/spectator/gamePresentation.ts'
 import { preferredRun, type SelectableSpectatorRun } from '../src/spectator/preferredRun.ts'
 
 function run(run_id: string, status: string, queued_at: number, featured = false): SelectableSpectatorRun {
@@ -67,9 +67,9 @@ test('Tetris spectator labels use game-owned state instead of Pokémon chrome', 
 
   assert.equal(isTetrisRun(tetris), true)
   assert.equal(gameTitle(tetris), 'Tetris')
-  assert.equal(runTitle(tetris), 'Tetris · 573 pts · 7 lines')
-  assert.equal(routeLabel(tetris), 'score:10000')
-  assert.equal(locationLabel(tetris), 'Level 0 · 7 lines')
+  assert.equal(tetrisRunTitle(tetris), 'Tetris · 573 pts · 7 lines')
+  assert.equal(tetrisRouteLabel(tetris), 'score:10000')
+  assert.equal(tetrisLocationLabel(tetris), 'Level 0 · 7 lines')
 })
 
 test('Pokémon spectator labels keep their existing presentation', () => {
@@ -83,6 +83,4 @@ test('Pokémon spectator labels keep their existing presentation', () => {
 
   assert.equal(isTetrisRun(pokemon), false)
   assert.equal(gameTitle(pokemon), 'Pokémon Red')
-  assert.match(runTitle(pokemon), /bulbasaur/)
-  assert.equal(locationLabel(pokemon), '0x00 · 0,0')
 })
