@@ -102,7 +102,7 @@ func TestFindRouteAvoiding(t *testing.T) {
 	// 1 --warp--> 2 --> 3  (longer, and real)
 	short := Edge{Kind: EdgeConnection, From: 1, To: 3}
 	viaWarp := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 5, WarpY: 5}
-	g := &Graph{Edges: map[uint8][]Edge{
+	g := &Graph{Edges: map[MapID][]Edge{
 		1: {short, viaWarp},
 		2: {{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 1}},
 		3: nil,
@@ -141,13 +141,13 @@ func TestFindRouteAtDoesNotUseSameComponentCycleToClearFirstHopBan(t *testing.T)
 	intoRoom := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
 	outOfRoom := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {direct, intoRoom},
 			2: {outOfRoom},
 			3: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1}},
 			3: {{1}},
@@ -178,13 +178,13 @@ func TestFindRouteAtReentersMapWhenComponentChanges(t *testing.T) {
 	intoDetour := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	outOfDetour := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {north, intoDetour},
 			2: {outOfDetour},
 			3: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 2}},
 			2: {{1}},
 			3: {{1}},
@@ -224,7 +224,7 @@ func TestFindRouteAvoidingReEntersTheStartMap(t *testing.T) {
 	north := Edge{Kind: EdgeConnection, From: 0x0D, To: 0x02, Dir: 0}
 	intoForest := Edge{Kind: EdgeWarp, From: 0x0D, To: 0x33, WarpX: 15, WarpY: 55}
 	outOfForest := Edge{Kind: EdgeWarp, From: 0x33, To: 0x0D, WarpX: 1, WarpY: 0}
-	g := &Graph{Edges: map[uint8][]Edge{
+	g := &Graph{Edges: map[MapID][]Edge{
 		0x0D: {north, intoForest},
 		0x33: {outOfForest},
 		0x02: nil,
