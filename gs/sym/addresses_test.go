@@ -1,0 +1,45 @@
+package sym
+
+import "testing"
+
+func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
+	tests := []struct {
+		name string
+		got  uint16
+		want uint16
+	}{
+		{"wOverworldMapBlocks", OverworldMap, 0xC700},
+		{"wPlayerStepFlags", PlayerStepFlags, 0xCE85},
+		{"wMapHeight", MapHeight, 0xD087},
+		{"wMapWidth", MapWidth, 0xD088},
+		{"wMapStatus", MapStatus, 0xD159},
+		{"wMapEventStatus", MapEventStatus, 0xD15A},
+		{"wScriptFlags", ScriptFlags, 0xD15B},
+		{"wScriptMode", ScriptMode, 0xD15E},
+		{"wScriptRunning", ScriptRunning, 0xD15F},
+		{"wObjectStructs", ObjectStructs, 0xD1FD},
+		{"wPlayerState", PlayerState, 0xD682},
+		{"wMapGroup", MapGroup, 0xDA00},
+		{"wPartyCount", PartyCount, 0xDA22},
+		{"wBattleMode", BattleMode, 0xD116},
+		{"wMenuCursorY", MenuCursorY, 0xCEE0},
+		{"w2DMenuNumRows", TwoDMenuNumRows, 0xCEDA},
+		{"wSaveFileExists", SaveFileExists, 0xD19A},
+		{"wPlayerName", PlayerName, 0xD1A3},
+		{"wInitHourBuffer", InitHourBuffer, 0xC51C},
+		{"wInitMinuteBuffer", InitMinuteBuffer, 0xC526},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Fatalf("%s = %#04x, want %#04x", tc.name, tc.got, tc.want)
+			}
+		})
+	}
+}
+
+func TestOverworldBlockBufferMatchesRetailRange(t *testing.T) {
+	if got := int(OverworldMap) + OverworldMapLen; got != 0xCC14 {
+		t.Fatalf("wOverworldMapBlocks end = %#04x, want 0xcc14", got)
+	}
+}
