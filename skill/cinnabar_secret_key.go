@@ -72,11 +72,9 @@ func CinnabarSecretKeyOwned(mem *state.Mem) bool {
 	return state.DecodeStoryFacts(mem, state.DecodeInventory(mem)).SecretKeyOwned
 }
 
-// AcquireCinnabarSecretKey owns only the Mansion transaction. Campaign
-// ordering belongs to the concrete game adapter: mechanically this story leg
-// requires only a usable Surf capability, and the skill already verifies that
-// directly before it routes to Cinnabar.
-
+// CinnabarSecretKeyReady reports the mechanical Mansion handoff. Campaign
+// ordering belongs to the concrete game adapter; the shared transaction only
+// requires a party that can actually Surf.
 func CinnabarSecretKeyReady(mem *state.Mem) bool {
 	return mem != nil && FieldCapabilityFor(mem, FieldSurf).Usable
 }
@@ -222,6 +220,8 @@ func restageSecretKeyMainlandFromFuchsia(m *emu.Emu, romData []byte, policy Move
 	return nil
 }
 
+// AcquireCinnabarSecretKey owns only the Mansion transaction. Concrete game
+// adapters decide when that transaction belongs in their campaign order.
 func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: AcquireCinnabarSecretKey: nil policy")
