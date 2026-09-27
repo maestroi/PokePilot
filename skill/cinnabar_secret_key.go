@@ -700,11 +700,17 @@ func driveMansionSwitchInteraction(m *emu.Emu, sw mansionSwitchSpec, want bool) 
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		facts := state.DecodeStoryFacts(&mem, state.DecodeInventory(&mem))
-		if answered && facts.MansionSwitchOn == want && state.Controllable(&mem) {
+		interaction := state.DecodeInteraction(&mem)
+		// The switch event bit can flip before the YES/NO UI has actually
+		// disappeared. Do not hand control back to the objective runtime while
+		// that owned choice is still visible: the generic boundary correctly
+		// refuses to answer it and would terminate the run as
+		// objective_boundary_choice (#2076).
+		if answered && facts.MansionSwitchOn == want && state.Controllable(&mem) &&
+			interaction.Kind == state.InteractionNone {
 			m.StepFrames(2)
 			return nil
 		}
-		interaction := state.DecodeInteraction(&mem)
 		switch interaction.Kind {
 		case state.InteractionTwoOption:
 			if answered {
