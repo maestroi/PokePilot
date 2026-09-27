@@ -15,26 +15,26 @@ const (
 	PlayerStepFlags uint16 = 0xCE85 // wPlayerStepFlags
 
 	// Shared menu / intro state in fixed WRAM.
-	WindowStackPointer      uint16 = 0xCEA8 // wWindowStackPointer
-	MenuJoypad              uint16 = 0xCEAA // wMenuJoypad
-	MenuSelection           uint16 = 0xCEAB // wMenuSelection
-	WhichIndexSet           uint16 = 0xCEAD // wWhichIndexSet
-	TwoDMenuCursorInitY     uint16 = 0xCED8 // w2DMenuCursorInitY
-	TwoDMenuCursorInitX     uint16 = 0xCED9 // w2DMenuCursorInitX
-	TwoDMenuNumRows         uint16 = 0xCEDA // w2DMenuNumRows
-	TwoDMenuNumCols         uint16 = 0xCEDB // w2DMenuNumCols
-	MenuJoypadFilter        uint16 = 0xCEDF // wMenuJoypadFilter
-	MenuCursorY             uint16 = 0xCEE0 // wMenuCursorY
-	MenuCursorX             uint16 = 0xCEE1 // wMenuCursorX
-	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
-	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
-	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
-	NamingScreenCurNameLen  uint16 = 0xC5D2 // wNamingScreenCurNameLength
-	NamingScreenType        uint16 = 0xC5D4 // wNamingScreenType
-	TimeSetBuffer           uint16 = 0xC508 // wTimeSetBuffer
-	InitHourBuffer          uint16 = 0xC51C // wInitHourBuffer
-	InitMinuteBuffer        uint16 = 0xC526 // wInitMinuteBuffer
-	StringBuffer2           uint16 = 0xCF7E // wStringBuffer2
+	WindowStackPointer     uint16 = 0xCEA8 // wWindowStackPointer
+	MenuJoypad             uint16 = 0xCEAA // wMenuJoypad
+	MenuSelection          uint16 = 0xCEAB // wMenuSelection
+	WhichIndexSet          uint16 = 0xCEAD // wWhichIndexSet
+	TwoDMenuCursorInitY    uint16 = 0xCED8 // w2DMenuCursorInitY
+	TwoDMenuCursorInitX    uint16 = 0xCED9 // w2DMenuCursorInitX
+	TwoDMenuNumRows        uint16 = 0xCEDA // w2DMenuNumRows
+	TwoDMenuNumCols        uint16 = 0xCEDB // w2DMenuNumCols
+	MenuJoypadFilter       uint16 = 0xCEDF // wMenuJoypadFilter
+	MenuCursorY            uint16 = 0xCEE0 // wMenuCursorY
+	MenuCursorX            uint16 = 0xCEE1 // wMenuCursorX
+	JumptableIndex         uint16 = 0xCE63 // wJumptableIndex
+	TitleScreenSelected    uint16 = 0xCE64 // wTitleScreenSelectedOption
+	TitleScreenTimer       uint16 = 0xCE65 // wTitleScreenTimer
+	NamingScreenCurNameLen uint16 = 0xC5D2 // wNamingScreenCurNameLength
+	NamingScreenType       uint16 = 0xC5D4 // wNamingScreenType
+	TimeSetBuffer          uint16 = 0xC508 // wTimeSetBuffer
+	InitHourBuffer         uint16 = 0xC51C // wInitHourBuffer
+	InitMinuteBuffer       uint16 = 0xC526 // wInitMinuteBuffer
+	StringBuffer2          uint16 = 0xCF7E // wStringBuffer2
 
 	// Bank-1 live map/script state.
 	MapHeight       uint16 = 0xD087 // wMapHeight
