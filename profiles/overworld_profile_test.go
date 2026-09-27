@@ -21,5 +21,10 @@ func TestBuiltinGen1ProfilesExposeOverworldCapability(t *testing.T) {
 		if want[profile.ID()] && !hasOverworld {
 			t.Errorf("%s should expose game.OverworldProfile", profile.ID())
 		}
+		// Travel refuses to walk without blackout semantics (#1959).
+		_, hasBlackout := profile.(game.OverworldBlackoutDecoder)
+		if want[profile.ID()] && !hasBlackout {
+			t.Errorf("%s should expose game.OverworldBlackoutDecoder", profile.ID())
+		}
 	}
 }

@@ -88,6 +88,10 @@ func (*Profile) DecodeOverworld(r game.MemoryReader) game.OverworldState {
 	return engine.DecodeOverworld(r)
 }
 
+func (*Profile) DecodeOverworldBlackout(r game.MemoryReader) game.OverworldBlackoutState {
+	return engine.DecodeOverworldBlackout(r)
+}
+
 func (*Profile) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
 	return engine.DecodePartyMenu(r)
 }
