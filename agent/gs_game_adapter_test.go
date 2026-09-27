@@ -99,3 +99,19 @@ func TestGSObjectiveAdapterFactoriesAreRegistered(t *testing.T) {
 		}
 	}
 }
+
+
+func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
+	obs := Observation{GameID: gsprofile.GoldGameID, PartyCount: 0}
+	got, ok := StarterObjectiveForSpecies(obs, "cyndaquil")
+	if !ok {
+		t.Fatal("cyndaquil starter did not resolve")
+	}
+	want := Objective{Kind: KindStarter, Starter: skill.StarterCyndaquil, Species: "cyndaquil"}
+	if got != want {
+		t.Fatalf("objective = %+v, want %+v", got, want)
+	}
+	if _, ok := StarterObjectiveForSpecies(obs, "squirtle"); ok {
+		t.Fatal("Gold catalog resolved Red starter squirtle")
+	}
+}
