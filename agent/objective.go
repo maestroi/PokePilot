@@ -70,7 +70,7 @@ func (o Objective) Validate() error {
 			return fmt.Errorf("agent: %s: empty place id", o)
 		}
 	case KindStarter:
-		if o.Starter > skill.StarterBulbasaur {
+		if o.Starter > skill.StarterTotodile {
 			return fmt.Errorf("agent: %s: unknown starter %d", o, int(o.Starter))
 		}
 	case KindProgress:
@@ -225,6 +225,12 @@ func starterName(s skill.Starter) string {
 		return "squirtle"
 	case skill.StarterBulbasaur:
 		return "bulbasaur"
+	case skill.StarterChikorita:
+		return "chikorita"
+	case skill.StarterCyndaquil:
+		return "cyndaquil"
+	case skill.StarterTotodile:
+		return "totodile"
 	}
 	return fmt.Sprintf("unknown starter %d", int(s))
 }
