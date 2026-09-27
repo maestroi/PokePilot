@@ -36,8 +36,9 @@ func TestBuildNativeGraphPreservesMapGroupIdentity(t *testing.T) {
 		groupOneMapOne: {
 			ID: groupOneMapOne,
 			Connections: []worldmodel.NativeConnection{{
-				Dir:   dirEast,
-				MapID: groupTwoMapOne,
+				Dir:    dirEast,
+				MapID:  groupTwoMapOne,
+				Offset: -3,
 			}},
 		},
 		groupTwoMapOne: {ID: groupTwoMapOne},
@@ -56,6 +57,9 @@ func TestBuildNativeGraphPreservesMapGroupIdentity(t *testing.T) {
 	}
 	if got := edges[0].To; got != groupTwoMapOne {
 		t.Fatalf("edge destination = %#04x, want %#04x", got, groupTwoMapOne)
+	}
+	if got := edges[0].Offset; got != -3 {
+		t.Fatalf("edge offset = %d, want -3", got)
 	}
 }
 

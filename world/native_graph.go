@@ -9,12 +9,13 @@ import (
 // NativeEdge is the map-level edge equivalent of Edge for cartridges whose
 // native map identity needs more than eight bits.
 type NativeEdge struct {
-	Kind  EdgeKind
-	From  uint16
-	To    uint16
-	WarpX uint8
-	WarpY uint8
-	Dir   uint8
+	Kind   EdgeKind
+	From   uint16
+	To     uint16
+	WarpX  uint8
+	WarpY  uint8
+	Dir    uint8
+	Offset int8
 }
 
 // NativeGraph is a topology-only graph keyed by native cartridge map ids.
@@ -69,7 +70,7 @@ func BuildNativeGraph(provider worldmodel.NativeMapTopologyProvider) (*NativeGra
 				continue
 			}
 			graph.Edges[id] = append(graph.Edges[id], NativeEdge{
-				Kind: EdgeConnection, From: id, To: connection.MapID, Dir: connection.Dir,
+				Kind: EdgeConnection, From: id, To: connection.MapID, Dir: connection.Dir, Offset: connection.Offset,
 			})
 		}
 	}

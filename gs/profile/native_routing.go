@@ -8,6 +8,6 @@ import (
 // NativeMapProvider exposes the verified wide-id Gold/Silver topology slice.
 // The historical MapProvider contract remains uint8 and cannot represent the
 // Gen-II (map group, map number) namespace without collisions.
-func (*Profile) NativeMapProvider(romData []byte) worldmodel.NativeMapTopologyProvider {
+func (*Profile) NativeMapProvider(romData []byte) worldmodel.NativeGridProvider {
 	return gsrom.NewFirstBadgeWorldProvider(romData)
 }
