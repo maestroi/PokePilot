@@ -172,23 +172,25 @@ type Result struct {
 
 func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 	startFrame := m.FrameCount()
+	pieces := 0
+	var lastDecision *policy.Decision
 	for {
 		if cancelled(opts.Cancel) {
-			return resultFromState(profile, m, "cancelled", nil, 0)
+			return resultFromState(profile, m, "cancelled", nil, pieces, lastDecision)
 		}
 		if opts.MaxFrames > 0 && int(m.FrameCount()-startFrame) >= opts.MaxFrames {
-			return resultFromState(profile, m, "budget", nil, 0)
+			return resultFromState(profile, m, "budget", nil, pieces, lastDecision)
 		}
 
 		state, err := tetris.Observe(profile, m)
 		if err != nil {
-			return Result{Reason: "error", Err: err}
+			return Result{Reason: "error", Pieces: pieces, LastDecision: lastDecision, Err: err}
 		}
 		if opts.Goal.Satisfied(state) || state.Complete {
-			return Result{Reason: "done", State: state}
+			return Result{Reason: "done", Pieces: pieces, State: state, LastDecision: lastDecision}
 		}
 		if state.GameOver {
-			return Result{Reason: "game-over", State: state}
+			return Result{Reason: "game-over", Pieces: pieces, State: state, LastDecision: lastDecision}
 		}
 		if !state.ReadyForPieceInput {
 			m.StepFrame()
@@ -197,33 +199,36 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 
 		decision, err := policy.Choose(state, opts.Goal.Objective)
 		if err != nil {
-			return Result{Reason: "error", State: state, Err: err}
+			return Result{Reason: "error", Pieces: pieces, State: state, LastDecision: lastDecision, Err: err}
 		}
+		lastDecision = &decision
 		if opts.OnDecision != nil {
 			opts.OnDecision(decision)
 		}
 		placement, err := control.Place(profile, m, decision.Candidate.Placement)
 		if err != nil {
-			return Result{Reason: "error", State: placement.After, LastDecision: &decision, Err: err}
+			return Result{Reason: "error", Pieces: pieces, State: placement.After, LastDecision: lastDecision, Err: err}
 		}
+		pieces++
 
-		opts.MaxPieces--
-		if opts.MaxPieces == 0 {
-			after := placement.After
-			if opts.Goal.Satisfied(after) || after.Complete {
-				return Result{Reason: "done", Pieces: 1, State: after, LastDecision: &decision}
-			}
-			return Result{Reason: "budget", Pieces: 1, State: after, LastDecision: &decision}
+		if opts.Goal.Satisfied(placement.After) || placement.After.Complete {
+			return Result{Reason: "done", Pieces: pieces, State: placement.After, LastDecision: lastDecision}
+		}
+		if placement.After.GameOver {
+			return Result{Reason: "game-over", Pieces: pieces, State: placement.After, LastDecision: lastDecision}
+		}
+		if opts.MaxPieces > 0 && pieces >= opts.MaxPieces {
+			return Result{Reason: "budget", Pieces: pieces, State: placement.After, LastDecision: lastDecision}
 		}
 	}
 }
 
-func resultFromState(profile game.CartridgeProfile, m Machine, reason string, err error, pieces int) Result {
+func resultFromState(profile game.CartridgeProfile, m Machine, reason string, err error, pieces int, lastDecision *policy.Decision) Result {
 	state, observeErr := tetris.Observe(profile, m)
 	if err == nil {
 		err = observeErr
 	}
-	return Result{Reason: reason, Pieces: pieces, State: state, Err: err}
+	return Result{Reason: reason, Pieces: pieces, State: state, LastDecision: lastDecision, Err: err}
 }
 
 func cancelled(cancel <-chan struct{}) bool {
