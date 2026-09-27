@@ -113,8 +113,14 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	// finish the item handoff directly. Before the rescue Fuji's sprite is
 	// hidden; in that case continue through Lavender/Tower instead.
 	if m.Peek8(sym.CurMap) == mrFujisHouseMap {
-		if _, _, live := liveObjectPosition(m, 5); live { // MRFUJISHOUSE_MR_FUJI
-			return receivePokeFlute(m, romData, policy)
+		fujiObjectID, ok, err := mapObjectIDAt(romData, mrFujisHouseMap, 3, 1)
+		if err != nil {
+			return fmt.Errorf("skill: PokemonTower: resolve Mr. Fuji house object: %w", err)
+		}
+		if ok {
+			if _, _, live := liveObjectPosition(m, fujiObjectID); live {
+				return receivePokeFlute(m, romData, policy)
+			}
 		}
 	}
 
@@ -221,7 +227,13 @@ func rescueMrFuji(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: PokemonTower: rescue Mr. Fuji on map %#04x, want 7F %#04x", m.Peek8(sym.CurMap), pokemonTower7FMap)
 	}
 
-	const fujiObjectID = 4 // POKEMONTOWER7F_MR_FUJI
+	fujiObjectID, ok, err := mapObjectIDAt(romData, pokemonTower7FMap, 10, 3)
+	if err != nil {
+		return fmt.Errorf("skill: PokemonTower: resolve Mr. Fuji object: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("skill: PokemonTower: no Mr. Fuji object at (10,3) on 7F")
+	}
 	tx, ty := uint8(10), uint8(3)
 	if x, y, live := liveObjectPosition(m, fujiObjectID); live {
 		tx, ty = x, y
