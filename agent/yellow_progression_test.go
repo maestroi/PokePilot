@@ -67,6 +67,11 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressSaffronGateOpen,
 		gen1.ProgressCardKeyOwned,
 		gen1.ProgressSilphRescueComplete,
+		gen1.ProgressEarthBadge,
+		gen1.ProgressRoute22RivalResolved,
+		gen1.ProgressRoute23BadgeChecks,
+		gen1.ProgressVictoryRoadCleared,
+		gen1.ProgressIndigoPlateauReady,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -390,8 +395,9 @@ func TestYellowPostBlaineContinuesThroughSaffronSilphAndSabrina(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressMarshBadge, Complete: true})
-	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("post-Marsh Saffron slice should stop cleanly: %v", got)
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressEarthBadge {
+		t.Fatalf("post-Marsh progression=%v, want Earth Badge", got)
 	}
 }
 
@@ -442,5 +448,124 @@ func TestYellowSilphRescueRequiresJessieJamesPostcondition(t *testing.T) {
 	})
 	if err := a.VerifyPostcondition(o, initial, final, ObjectiveResult{Objective: o}); err != nil {
 		t.Fatalf("Silph rescue rejected with Yellow Jessie/James completion: %v", err)
+	}
+}
+
+func TestYellowPostMarshContinuesThroughViridianAndVictoryRoad(t *testing.T) {
+	a := &yellowObjectiveAdapter{}
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 4,
+		Badges:     []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Marsh", "Volcano"},
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+			{ID: gen1.ProgressPokedexAcquired, Complete: true},
+			{ID: gen1.ProgressBoulderBadge, Complete: true},
+			{ID: gen1.ProgressMtMoonFossilAcquired, Complete: true},
+			{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true},
+			{ID: gen1.ProgressSSTicketAcquired, Complete: true},
+			{ID: gen1.ProgressHM01Acquired, Complete: true},
+			{ID: gen1.ProgressThunderBadge, Complete: true},
+			{ID: gen1.ProgressPostSurgeLavenderReached, Complete: true},
+			{ID: gen1.ProgressPostSurgeCeladonReady, Complete: true},
+			{ID: gen1.ProgressRainbowBadge, Complete: true},
+			{ID: gen1.ProgressSilphScopeAcquired, Complete: true},
+			{ID: gen1.ProgressPokeFluteAcquired, Complete: true},
+			{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: true},
+			{ID: gen1.ProgressSecretKeyOwned, Complete: true},
+			{ID: gen1.ProgressVolcanoBadge, Complete: true},
+			{ID: gen1.ProgressSaffronGateOpen, Complete: true},
+			{ID: gen1.ProgressCardKeyOwned, Complete: true},
+			{ID: gen1.ProgressSilphRescueComplete, Complete: true},
+			{ID: gen1.ProgressMarshBadge, Complete: true},
+		},
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+			{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+		},
+	}
+
+	want := []ProgressID{
+		gen1.ProgressEarthBadge,
+		gen1.ProgressRoute22RivalResolved,
+		gen1.ProgressRoute23BadgeChecks,
+		gen1.ProgressVictoryRoadCleared,
+		gen1.ProgressIndigoPlateauReady,
+	}
+	for _, id := range want {
+		got := a.ProgressionObjectives(obs)
+		if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != id {
+			t.Fatalf("progression before %q=%v, want one matching progress objective", id, got)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: id, Complete: true})
+		if id == gen1.ProgressEarthBadge {
+			obs.Badges = append(obs.Badges, "Earth")
+		}
+	}
+	if got := a.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("Indigo-ready slice should stop before the League: %v", got)
+	}
+}
+
+func TestYellowEarthBadgeRequiresCompletedSevenBadgeStory(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	o := Objective{Kind: KindProgress, Progress: gen1.ProgressEarthBadge}
+	obs := Observation{GameID: yellowprofile.GameID}
+
+	if err := a.Validate(o, obs); err == nil {
+		t.Fatal("Earth Badge validated without Fuchsia, Marsh, and Volcano progression")
+	}
+	obs.Story = ProgressState{
+		{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: true},
+		{ID: gen1.ProgressMarshBadge, Complete: true},
+		{ID: gen1.ProgressVolcanoBadge, Complete: true},
+	}
+	if err := a.Validate(o, obs); err != nil {
+		t.Fatalf("Earth Badge rejected after the seven-badge story prerequisites: %v", err)
+	}
+}
+
+func TestYellowVictoryRoadUsesSharedFieldPrerequisites(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+
+	route23 := Objective{Kind: KindProgress, Progress: gen1.ProgressRoute23BadgeChecks}
+	obs := Observation{
+		GameID: yellowprofile.GameID,
+		Story: ProgressState{
+			{ID: gen1.ProgressEarthBadge, Complete: true},
+			{ID: gen1.ProgressRoute22RivalResolved, Complete: true},
+		},
+	}
+	if err := a.Validate(route23, obs); err == nil {
+		t.Fatal("Route 23 badge checks validated without Surf")
+	}
+	obs.FieldCapabilities = []FieldCapability{
+		{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+	}
+	if err := a.Validate(route23, obs); err != nil {
+		t.Fatalf("Route 23 badge checks rejected with Surf: %v", err)
+	}
+
+	victory := Objective{Kind: KindProgress, Progress: gen1.ProgressVictoryRoadCleared}
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressRoute23BadgeChecks, Complete: true})
+	if err := a.Validate(victory, obs); err == nil {
+		t.Fatal("Victory Road validated without Strength")
+	}
+	obs.FieldCapabilities = append(obs.FieldCapabilities,
+		FieldCapability{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+	)
+	if err := a.Validate(victory, obs); err != nil {
+		t.Fatalf("Victory Road rejected with Surf + Strength: %v", err)
+	}
+}
+
+func TestYellowLeagueApproachUsesSharedGen1Executors(t *testing.T) {
+	for _, id := range gen1.LeagueApproachStages() {
+		if !yellowSharedStoryBeat(id) {
+			t.Fatalf("%q must dispatch through the shared Gen-I executor", id)
+		}
+		if !yellowProgressionKnown(id) {
+			t.Fatalf("%q must be registered as executable Yellow progression", id)
+		}
 	}
 }

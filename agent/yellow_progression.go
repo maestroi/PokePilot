@@ -27,7 +27,12 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressVolcanoBadge,
 		gen1.ProgressSaffronGateOpen,
 		gen1.ProgressCardKeyOwned,
-		gen1.ProgressSilphRescueComplete:
+		gen1.ProgressSilphRescueComplete,
+		gen1.ProgressEarthBadge,
+		gen1.ProgressRoute22RivalResolved,
+		gen1.ProgressRoute23BadgeChecks,
+		gen1.ProgressVictoryRoadCleared,
+		gen1.ProgressIndigoPlateauReady:
 		return true
 	default:
 		return false
@@ -69,6 +74,24 @@ func yellowSharedProgressionPrerequisites(id ProgressID, obs Observation) (bool,
 		}
 		if !obs.Story.Has(gen1.ProgressCardKeyOwned) {
 			missing = append(missing, gen1.ProgressCardKeyOwned)
+		}
+		if len(missing) != 0 {
+			return true, progressionPrerequisiteError(missing)
+		}
+		return true, nil
+	case gen1.ProgressEarthBadge:
+		// Yellow deliberately allows Cinnabar before Silph/Sabrina. Giovanni's
+		// city script still requires all seven prior badges, so Volcano alone is
+		// not a sufficient prerequisite on this campaign ordering.
+		missing := make([]ProgressID, 0, 3)
+		for _, required := range []ProgressID{
+			gen1.ProgressFuchsiaProgressionComplete,
+			gen1.ProgressMarshBadge,
+			gen1.ProgressVolcanoBadge,
+		} {
+			if !obs.Story.Has(required) {
+				missing = append(missing, required)
+			}
 		}
 		if len(missing) != 0 {
 			return true, progressionPrerequisiteError(missing)
@@ -219,6 +242,21 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			gen1.ProgressSaffronGateOpen:     "(buy a guard drink in Celadon and open Saffron's guardhouses through the shared Gen-I route-gate transaction)",
 			gen1.ProgressCardKeyOwned:        "(enter Silph Co, follow the stair topology to 5F, and collect the Card Key)",
 			gen1.ProgressSilphRescueComplete: "(open the required Silph doors, resolve the rival and Yellow's 11F Jessie/James interruption, defeat Giovanni, and receive the president's Master Ball)",
+		}[next]
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     note,
+		}}
+	}
+
+	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.LeagueApproachStages()); ok {
+		note := map[ProgressID]string{
+			gen1.ProgressEarthBadge:           "(return to Viridian after all seven prior badges, let the city script open the Gym, traverse the live arrow tiles, defeat Giovanni, and verify the Earth Badge)",
+			gen1.ProgressRoute22RivalResolved: "(travel to Route 22, defeat Yellow's final rival team, and settle the complete after-battle exit script)",
+			gen1.ProgressRoute23BadgeChecks:   "(prepare Surf, cross Route 23's three live water bands, pass all seven badge gates, and enter Victory Road 1F)",
+			gen1.ProgressVictoryRoadCleared:   "(prepare Surf and Strength, solve the live 1F/2F/3F boulder chain, and clear Victory Road)",
+			gen1.ProgressIndigoPlateauReady:   "(leave the cleared cave, reach the Indigo Plateau lobby, and fully recover the party before the League)",
 		}[next]
 		return []Objective{{
 			Kind:     KindProgress,

@@ -56,6 +56,19 @@ func SaffronStages() []game.ProgressID {
 	}
 }
 
+// LeagueApproachStages is the shared eight-badge path from Giovanni through
+// the final Route 22 rival, Route 23 badge gates, Victory Road and the healed
+// Indigo Plateau lobby. It intentionally stops before the Elite Four gauntlet.
+func LeagueApproachStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressEarthBadge,
+		ProgressRoute22RivalResolved,
+		ProgressRoute23BadgeChecks,
+		ProgressVictoryRoadCleared,
+		ProgressIndigoPlateauReady,
+	}
+}
+
 // FirstIncomplete returns the first semantic campaign fact that has not yet
 // been positively observed. It contains no map, event, item, or game-specific
 // assumptions.
