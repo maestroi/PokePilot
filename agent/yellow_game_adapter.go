@@ -58,8 +58,16 @@ func (a *yellowObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if o.Kind == KindStarter && o.Species != "" && o.Species != "pikachu" {
 		return fmt.Errorf("agent: %s: Yellow starter must be pikachu, got %q", o, o.Species)
 	}
-	if o.Kind == KindProgress && !yellowProgressionKnown(o.Progress) {
-		return fmt.Errorf("agent: %s: Yellow progression goal %q is not implemented yet", o, o.Progress)
+	if o.Kind == KindProgress {
+		if !yellowProgressionKnown(o.Progress) {
+			return fmt.Errorf("agent: %s: Yellow progression goal %q is not implemented yet", o, o.Progress)
+		}
+		// Shared Kanto transactions use the same semantic prerequisite contract
+		// as Red/Blue (Cut for Surge/Rock Tunnel/Erika, etc.). Yellow-specific
+		// story facts remain locally validated above.
+		if yellowSharedStoryBeat(o.Progress) {
+			return a.gen1.Validate(o, obs)
+		}
 	}
 	if yellowOwnedKind(o.Kind) {
 		return nil
