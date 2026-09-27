@@ -14,12 +14,12 @@ import (
 // dialogue advancement, resumption, and positive postcondition handling are
 // shared here.
 type scriptedProgressTrigger struct {
-	Name       string
+	Name        string
 	Destination skill.Destination
-	Progress   ProgressID
-	MaxFrames  int
-	IdleFrames int
-	AdvanceA   bool
+	Progress    ProgressID
+	MaxFrames   int
+	IdleFrames  int
+	AdvanceA    bool
 }
 
 func executeScriptedProgressTrigger(m *emu.Emu, romData []byte, spec scriptedProgressTrigger) error {
