@@ -62,7 +62,6 @@ func TestInteractionRuntimeRejectsWideNativeMap(t *testing.T) {
 	}
 }
 
-
 func TestInteractionStepPreservesWideNativeMap(t *testing.T) {
 	decoder := fixedOverworldDecoder{state: game.OverworldState{NativeMapID: 0x1805, X: 6, Y: 4}}
 	step, live, err := interactionStepWithDecoder(&fakeOverworldMachine{}, decoder, 6, 3)
