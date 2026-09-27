@@ -3,8 +3,8 @@ package skill
 import "github.com/maestroi/pokepilot/red/state"
 
 const (
-	celadonCityMap uint8 = 0x06
-	celadonGymMap  uint8 = 0x86
+	celadonCityMap  = 0x06
+	celadonGymMap   = 0x86
 )
 
 // Celadon is like Vermilion at the objective boundary: the meaningful gym
