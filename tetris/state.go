@@ -140,7 +140,13 @@ func DecodeState(reader game.MemoryReader) (State, error) {
 		state.ScoreValid = true
 	}
 
-	lines, err := decodePackedBCDLE(readBytes(reader, sym.Lines, 2))
+	lineBytes := 2
+	if mode == ModeB || mode == ModeVersus {
+		// Type B and versus initialize/update only the low BCD byte. The high
+		// byte is not part of their line-goal state.
+		lineBytes = 1
+	}
+	lines, err := decodePackedBCDLE(readBytes(reader, sym.Lines, lineBytes))
 	if err != nil {
 		return State{}, fmt.Errorf("tetris: lines: %w", err)
 	}
