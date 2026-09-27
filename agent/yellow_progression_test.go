@@ -333,6 +333,7 @@ func TestYellowPostBlaineContinuesThroughSaffronSilphAndSabrina(t *testing.T) {
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
 		PartyCount: 3,
+		Badges:     []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Volcano"},
 		Story: ProgressState{
 			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
 			{ID: gen1.ProgressPokedexAcquired, Complete: true},
