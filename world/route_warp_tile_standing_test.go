@@ -44,16 +44,16 @@ func TestFindRouteAtIgnoresUnreachableWarpWhenStandingOnAWarpTile(t *testing.T) 
 		// farEdge listed first: BFS explores edges in slice order, so a
 		// route that picks it over nearEdge proves the bug (first hop
 		// unconstrained), not slice-order luck.
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {farEdge, nearEdge},
 			9: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{0, 1, 0, 0, 0, 2}},
 			9: {{1}},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {{X: door, Y: 0}, {X: nearPad, Y: 0}, {X: farPad, Y: 0}},
 		},
 		exitComps: map[Edge][]int{
@@ -96,15 +96,15 @@ func TestFindRouteAtDestinationIgnoresUnreachableSameMapWarpWhenStandingOnWarpTi
 	nearEdge := Edge{Kind: EdgeWarp, From: 1, To: 1, WarpX: nearPad, WarpY: 0}
 	g := &Graph{
 		// farEdge first: unconstrained first-hop search would pick it.
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {farEdge, nearEdge},
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			// door excluded (0); roomA=1 around nearPad; roomB=2 around farPad/dest
 			1: {{0, 1, 0, 0, 0, 2}},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {{X: door, Y: 0}, {X: nearPad, Y: 0}, {X: farPad, Y: 0}},
 		},
 		exitComps: map[Edge][]int{
@@ -135,10 +135,10 @@ func TestFindRouteAtDestinationIgnoresUnreachableSameMapWarpWhenStandingOnWarpTi
 func TestStandingComponentAtDistinguishesWarpTileFromUnwalkablePadding(t *testing.T) {
 	g := &Graph{
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 0, 0}},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {{X: 1, Y: 0}}, // only x=1 is a warp tile; x=2 is plain wall/padding
 		},
 	}
