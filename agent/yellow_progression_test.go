@@ -218,6 +218,7 @@ func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
 		PartyCount: 3,
+		Badges:     []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul"},
 		Location:   PlaceID(yellowLocationID(yellowprofile.GameID, 0x07)),
 		Story: ProgressState{
 			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
