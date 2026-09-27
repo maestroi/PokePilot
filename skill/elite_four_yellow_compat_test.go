@@ -92,6 +92,8 @@ func TestYellowLeagueReadinessLevelsMatchTrainerData(t *testing.T) {
 		"AgathaData: db $FF, 56, GENGAR, 56, GOLBAT, 55, HAUNTER, 58, ARBOK, 60, GENGAR, 0",
 		"LanceData: db $FF, 58, GYARADOS, 56, DRAGONAIR, 56, DRAGONAIR, 60, AERODACTYL, 62, DRAGONITE, 0",
 		"Rival3Data: ; Champion's Room db $FF, 61, SANDSLASH, 59, ALAKAZAM, 61, EXEGGUTOR, 61, CLOYSTER, 63, NINETALES, 65, JOLTEON, 0",
+		"db $FF, 61, SANDSLASH, 59, ALAKAZAM, 61, EXEGGUTOR, 61, MAGNETON, 63, CLOYSTER, 65, FLAREON, 0",
+		"db $FF, 61, SANDSLASH, 59, ALAKAZAM, 61, EXEGGUTOR, 61, NINETALES, 63, MAGNETON, 65, VAPOREON, 0",
 	} {
 		if !strings.Contains(parties, want) {
 			t.Fatalf("Yellow trainer data no longer matches League readiness fact %q", want)
