@@ -10,18 +10,18 @@ import (
 func TestWithMapGridRecomputesReachabilityWithoutMutatingBase(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	base := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {edge},
 			2: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 0, 2}}, // closed middle tile splits west/east halves
 			2: {{1}},
 		},
 		exitComps:  map[Edge][]int{edge: {2}},
 		entryComps: map[Edge][]int{edge: {1}},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 3, h: 1},
 			2: {w: 1, h: 1},
 		},
@@ -57,9 +57,9 @@ func TestWithMapGridRecomputesReachabilityWithoutMutatingBase(t *testing.T) {
 
 func TestWithMapGridResegmentsConnectionsTouchingLiveMap(t *testing.T) {
 	base := &Graph{
-		Edges:          make(map[uint8][]Edge),
+		Edges:          make(map[MapID][]Edge),
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {
 				{1, 1, 1, 1},
 				{1, 1, 1, 1},
@@ -69,14 +69,14 @@ func TestWithMapGridResegmentsConnectionsTouchingLiveMap(t *testing.T) {
 				{1, 1, 1, 1},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 4, h: 2},
 			2: {w: 4, h: 2},
 		},
 		connections: make(map[Edge]worldmodel.Connection),
 		exitComps:   make(map[Edge][]int),
 		entryComps:  make(map[Edge][]int),
-		reachable:   make(map[uint8]map[int][]int),
+		reachable:   make(map[MapID]map[int][]int),
 	}
 
 	to2 := worldmodel.Connection{Dir: dirNorth, MapID: 2}
