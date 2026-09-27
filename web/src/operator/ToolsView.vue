@@ -55,7 +55,8 @@ const decision = reactive({
   objectives: false,
   failures: true,
   placements: false,
-  min_confidence: 0.65
+  min_confidence: 0.65,
+  max_choices: 16
 })
 const decisionSelected = computed(() => decisionTarget.value !== 'off')
 const decisionShadow = computed(() => decision.mode === 'shadow')
@@ -71,11 +72,13 @@ function decisionRequest(): DecisionEngineSpec | undefined {
       ...target,
       mode: decision.mode,
       placements: true,
-      min_confidence: decision.min_confidence
+      min_confidence: decision.min_confidence,
+      max_choices: decision.max_choices
     }
   }
   // Battle decisions are observational only; active runs never send them.
-  return { ...target, ...decision, placements: false, battles: decisionShadow.value && decision.battles }
+  const { max_choices: _, ...pokemon } = decision
+  return { ...target, ...pokemon, placements: false, battles: decisionShadow.value && decision.battles }
 }
 
 function splitDecisionTarget(target: string): [string, string] {
@@ -437,6 +440,10 @@ async function submit(): Promise<void> {
           <label class="mt-2 block">
             <span class="text-[11px] text-slate-500">Min confidence</span>
             <input v-model.number="decision.min_confidence" type="number" min="0" max="1" step="0.05" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
+          </label>
+          <label v-if="isTetris" class="mt-2 block">
+            <span class="text-[11px] text-slate-500">Max choices <span class="text-slate-600">(policy's best N; 0 = all)</span></span>
+            <input v-model.number="decision.max_choices" type="number" min="0" step="1" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
           </label>
           <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : 'Answers below the threshold fall back to the strategist and deterministic policy.' }}</span>
         </fieldset>

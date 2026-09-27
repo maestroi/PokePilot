@@ -5,9 +5,6 @@ package decision
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/tetris"
@@ -15,19 +12,6 @@ import (
 )
 
 const KindPlacement = "tetris_placement"
-
-// MaxChoicesFromEnv reads the runner-local limit for typed Tetris choices.
-func MaxChoicesFromEnv() (int, error) {
-	raw := strings.TrimSpace(os.Getenv("POKEPILOT_TETRIS_MAX_CHOICES"))
-	if raw == "" {
-		return 0, nil
-	}
-	limit, err := strconv.Atoi(raw)
-	if err != nil || limit < 2 {
-		return 0, fmt.Errorf("POKEPILOT_TETRIS_MAX_CHOICES must be an integer of at least 2")
-	}
-	return limit, nil
-}
 
 // Selection is one policy-bounded placement decision. Decision is the
 // placement that should execute. Deterministic is always the policy fallback.

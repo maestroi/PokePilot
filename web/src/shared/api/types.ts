@@ -153,6 +153,7 @@ export interface DecisionEngineSpec {
   // Tetris uses this for choices from its already-legal placement set.
   placements?: boolean
   min_confidence?: number
+  max_choices?: number
 }
 
 export interface DashboardRun {

@@ -36,6 +36,8 @@ test('tools run form picks the decision engine from registered deployments', () 
 test('Tetris uses the fast engine only for bounded legal placements', () => {
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*placements\?: boolean/)
   assert.match(toolsSource, /if \(isTetris\.value\) \{[\s\S]*placements: true/)
+  assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*max_choices\?: number/)
+  assert.match(toolsSource, /max_choices: decision\.max_choices/)
   assert.match(toolsSource, /d\.protocol === 'typesafe-choice'/)
   assert.match(toolsSource, /decisionTarget\.value = jev \? `deployment:\$\{jev\.id\}` : \(deployments\.value\.length \? 'off' : 'env:jev'\)/)
   assert.match(toolsSource, /Tetris placements[\s\S]*legal candidates only/)

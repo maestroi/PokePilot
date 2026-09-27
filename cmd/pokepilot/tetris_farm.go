@@ -15,7 +15,7 @@ import (
 	tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
 
-func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, maxPieces int) {
+func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, maxPieces, maxChoices int) {
 	goal, err := tetrissession.ParseGoal(rawGoal)
 	if err != nil {
 		panic(fmt.Sprintf("tetris goal: %v", err))
@@ -27,10 +27,6 @@ func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, m
 	var choose func(tetris.State, tetrispolicy.Objective) (tetrispolicy.Decision, error)
 	var lastSelection *tetrisdecision.Selection
 	if settings.Engine != nil {
-		maxChoices, err := tetrisdecision.MaxChoicesFromEnv()
-		if err != nil {
-			panic(fmt.Sprintf("tetris decision engine: %v", err))
-		}
 		selector := tetrisdecision.Selector{
 			Engine: settings.Engine, MinConfidence: settings.MinConfidence,
 			Shadow: settings.Shadow, MaxChoices: maxChoices,
@@ -120,15 +116,11 @@ func runFarmTetris(
 		if err != nil {
 			return "error", fmt.Sprintf("tetris decision engine: %v", err)
 		}
-		maxChoices, err := tetrisdecision.MaxChoicesFromEnv()
-		if err != nil {
-			return "error", err.Error()
-		}
 		selector := tetrisdecision.Selector{
 			Engine:        settings.Engine,
 			MinConfidence: settings.MinConfidence,
 			Shadow:        settings.Shadow,
-			MaxChoices:    maxChoices,
+			MaxChoices:    decisionSpec.MaxChoices,
 		}
 		recorder := &statsPlanner{decision: settings, snap: snap}
 		choose = func(state tetris.State, objective tetrispolicy.Objective) (tetrispolicy.Decision, error) {
@@ -147,7 +139,7 @@ func runFarmTetris(
 			recorder.recordDecision(selection.Request, selection.Response, selection.DecisionErr, shadow)
 			return selection.Decision, nil
 		}
-		m.TraceNote("tetris", fmt.Sprintf("typed placements backend=%s mode=%s min_confidence=%.2f", settings.Backend, settings.Mode(), settings.MinConfidence))
+		m.TraceNote("tetris", fmt.Sprintf("typed placements backend=%s mode=%s min_confidence=%.2f max_choices=%d", settings.Backend, settings.Mode(), settings.MinConfidence, decisionSpec.MaxChoices))
 	}
 
 	result := tetrissession.Run(profile, m, tetrissession.RunOptions{

@@ -48,6 +48,7 @@ func main() {
 	planner := flag.String("planner", "scripted", "how to choose objectives: scripted, llm, or policy (Tetris)")
 	seed := flag.Int64("seed", 0, "diverge this run's luck by burning seed-derived idle frames after boot; 0 replays bit-identically")
 	maxRounds := flag.Int("max-rounds", llmMaxRounds, "optional emergency objective cap for one llm run; 0 means no round cap")
+	maxChoices := flag.Int("max-choices", 0, "Tetris: offer a typed decision backend only the policy's best N placements; 0 offers all")
 	goal := flag.String("goal", defaultGoal, "structured goal: Pokemon goals or Tetris auto | survival | complete | lines:N | score:N")
 	checkpointDir := flag.String("checkpoint-dir", "", "directory for the per-objective save-state ring")
 	llmProfile := flag.String("llm-profile", "", "llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)")
@@ -211,11 +212,14 @@ func main() {
 		if string(cartridgeProfile.ID()) != "tetris" {
 			log.Fatalf("planner policy currently supports Tetris only")
 		}
+		if *maxChoices < 0 || *maxChoices == 1 {
+			log.Fatalf("-max-choices must be 0 or at least 2")
+		}
 		tetrisGoal := *goal
 		if tetrisGoal == defaultGoal {
 			tetrisGoal = "auto"
 		}
-		runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds)
+		runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds, *maxChoices)
 	default:
 		log.Fatalf("unknown planner %q: want scripted, llm, or policy", *planner)
 	}
