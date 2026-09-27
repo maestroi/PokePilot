@@ -22,6 +22,7 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wTextBoxID":                {TextBoxID, 0xD124},
 		"wWalkCounter":              {WalkCounter, 0xCFC4},
 		"wJoyIgnore":                {JoyIgnore, 0xCD6B},
+		"wOaksLabCurScript":         {OaksLabCurScript, 0xD5EF},
 		"wPartyCount":               {PartyCount, 0xD162},
 		"wPartyMon1":                {PartyMon1, 0xD16A},
 		"wIsInBattle":               {IsInBattle, 0xD056},
