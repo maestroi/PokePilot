@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	celadonPokemonCenterMap uint8 = 0x85
-	gameCornerMap           uint8 = 0x87
-	rocketHideoutB1FMap     uint8 = 0xC7
-	rocketHideoutB2FMap     uint8 = 0xC8
-	rocketHideoutB3FMap     uint8 = 0xC9
-	rocketHideoutB4FMap     uint8 = 0xCA
+	celadonPokemonCenterMap  = 0x85
+	gameCornerMap            = 0x87
+	rocketHideoutB1FMap      = 0xC7
+	rocketHideoutB2FMap      = 0xC8
+	rocketHideoutB3FMap      = 0xC9
+	rocketHideoutB4FMap      = 0xCA
 
 	silphScopeItem uint8 = 0x48
 
