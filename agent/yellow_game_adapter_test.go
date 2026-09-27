@@ -90,8 +90,24 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 	if len(catalog.Starters) != 0 {
 		t.Fatalf("starters offered after the Pikachu opening: %+v", catalog.Starters)
 	}
-	if len(catalog.ChallengeProfiles) != 0 {
-		t.Fatalf("Red story challenges offered on Yellow: %+v", catalog.ChallengeProfiles)
+	wantLeagueProfiles := map[string]int{
+		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueLoreleiDefeated}).Key():  56 * 4,
+		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueBrunoDefeated}).Key():    58 * 4,
+		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueAgathaDefeated}).Key():   60 * 4,
+		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueLanceDefeated}).Key():    62 * 4,
+		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueChampionDefeated}).Key(): 65 * 4,
+	}
+	if len(catalog.ChallengeProfiles) != len(wantLeagueProfiles) {
+		t.Fatalf("Yellow challenge profiles = %+v, want only the five implemented League fights", catalog.ChallengeProfiles)
+	}
+	for _, profile := range catalog.ChallengeProfiles {
+		want, ok := wantLeagueProfiles[profile.Objective]
+		if !ok {
+			t.Fatalf("unexpected non-League Yellow challenge profile: %+v", profile)
+		}
+		if profile.Readiness.MinimumReadiness != want {
+			t.Fatalf("Yellow readiness for %q = %+v, want %d", profile.Objective, profile.Readiness, want)
+		}
 	}
 	found := false
 	for _, d := range catalog.Destinations {
