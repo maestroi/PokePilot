@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS model_deployments (
     engine TEXT NOT NULL DEFAULT '',
     engine_version TEXT NOT NULL DEFAULT '',
     engine_config TEXT NOT NULL DEFAULT '',
+    max_parallel_workers INTEGER NOT NULL DEFAULT 1,
     legacy_profile TEXT NOT NULL DEFAULT '',
+    protocol TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -35,26 +37,32 @@ CREATE INDEX IF NOT EXISTS model_deployments_enabled_compute_idx
 INSERT INTO model_deployments (
     id, label, model_id, revision, artifact, quantization, compute, endpoint,
     api_model, enabled, discover, default_for, control_url, token_env, engine, engine_version,
-    engine_config, legacy_profile
+    engine_config, max_parallel_workers, legacy_profile, protocol
 ) VALUES
     (
         'qwen38-27b-7900', '7900 XTX', '',
         '', '', '', 'RX 7900 XTX', 'http://192.168.50.130:8002/v1',
         '', TRUE, TRUE, ARRAY['farm','experiment-a'], '', '', 'llama.cpp', 'replace-with-server-version',
-        '7900-switchable', 'auto'
+        '7900-switchable', 4, 'auto', 'openai'
     ),
     (
         'qwen35-4b-4090', 'Qwen 3.5 4B · RTX 4090', 'qwen3.5-4b',
         'replace-with-model-revision-or-sha256', '/srv/models/qwen3.5-4b/model.gguf',
         'replace-with-quantization', 'RTX 4090', 'http://192.168.50.81:8002/v1',
         'pokepilot-4090', TRUE, FALSE, ARRAY['experiment-b'], 'http://192.168.50.81:8091', 'POKEPILOT_MODELHOST_TOKEN',
-        'llama.cpp', 'replace-with-server-version', '4090-switchable', 'gpu'
+        'llama.cpp', 'replace-with-server-version', '4090-switchable', 1, 'gpu', 'openai'
     ),
     (
         'qwen35-9b-4090', 'Qwen 3.5 9B · RTX 4090', 'qwen3.5-9b',
         'replace-with-model-revision-or-sha256', '/srv/models/qwen3.5-9b/model.gguf',
         'replace-with-quantization', 'RTX 4090', 'http://192.168.50.81:8002/v1',
         'pokepilot-4090', TRUE, FALSE, ARRAY[]::TEXT[], 'http://192.168.50.81:8091', 'POKEPILOT_MODELHOST_TOKEN',
-        'llama.cpp', 'replace-with-server-version', '4090-switchable', 'gpu'
+        'llama.cpp', 'replace-with-server-version', '4090-switchable', 1, 'gpu', 'openai'
+    ),
+    (
+        'jev9b-local-8077', 'JEV 9B · local 8077', 'jev9-local',
+        '', '', '', 'Local JEV 9B · 192.168.50.80', 'http://192.168.50.80:8077/v1',
+        'jev9-local', TRUE, FALSE, ARRAY['tetris'], '', '', 'jev', '',
+        'local-8077', 1, '', 'typesafe-choice'
     )
 ON CONFLICT (id) DO NOTHING;
