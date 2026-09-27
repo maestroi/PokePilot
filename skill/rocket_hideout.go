@@ -53,10 +53,11 @@ const (
 )
 
 var (
-	gameCornerStand = Destination{Map: gameCornerMap, X: 15, Y: 16}
-	rocketB3FReturn = Destination{Map: rocketHideoutB3FMap, X: 19, Y: 17}
-	rocketB4FEntry  = Destination{Map: rocketHideoutB4FMap, X: 19, Y: 11}
-	giovanniStand   = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 4}
+	gameCornerStand     = Destination{Map: gameCornerMap, X: 15, Y: 16}
+	rocketB3FReturn     = Destination{Map: rocketHideoutB3FMap, X: 19, Y: 17}
+	rocketB4FEntry      = Destination{Map: rocketHideoutB4FMap, X: 19, Y: 11}
+	rocketBossApproach  = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 9}
+	giovanniStand       = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 4}
 )
 
 // RocketHideoutAvailable reports whether the Rocket Hideout story objective
@@ -152,6 +153,26 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return err
 	}
 
+	// Version differences on B4F are best expressed through live topology,
+	// not a cartridge-name branch. Red/Blue arrive behind a runtime door that
+	// only opens after the two guard trainers. Yellow has no equivalent closed
+	// door: walking north from the elevator instead triggers the mandatory
+	// Jessie/James script. If the live grid already reaches the boss side,
+	// let Travel own that approach so any coordinate-triggered dialogue/battle
+	// is resolved by the shared interruption machinery.
+	reachable, err := rocketB4FBossRoomReachable(m, romData)
+	if err != nil {
+		return fmt.Errorf("skill: RocketHideout: inspect B4F boss approach: %w", err)
+	}
+	if reachable {
+		if _, err := Travel(m, romData, rocketBossApproach, policy, 10); err != nil {
+			return fmt.Errorf("skill: RocketHideout: reach boss approach: %w", err)
+		}
+		return finishRocketBossRoom(m, romData, policy)
+	}
+
+	// Closed-door variants require the two explicit guards before the live
+	// topology can reach Giovanni.
 	if err := fightStoryTrainerAt(m, romData, rocketGuard1X, rocketGuard1Y, "B4F guard 1", policy); err != nil {
 		return err
 	}
@@ -205,18 +226,11 @@ func finishRocketBossRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // guard simply reaches controllable state with no battle and is a no-op.
 func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name string, policy MovePolicy) error {
 	cur := m.Peek8(sym.CurMap)
-	h, err := rom.ParseMap(romData, cur)
+	objectID, ok, err := mapObjectIDAt(romData, cur, homeX, homeY)
 	if err != nil {
 		return fmt.Errorf("skill: RocketHideout: parse map %#04x for %s: %w", cur, name, err)
 	}
-	objectID := 0
-	for i, object := range h.Objects {
-		if object.X == homeX && object.Y == homeY {
-			objectID = i + 1
-			break
-		}
-	}
-	if objectID == 0 {
+	if !ok {
 		return fmt.Errorf("skill: RocketHideout: no %s object at (%d,%d) on map %#04x", name, homeX, homeY, cur)
 	}
 
