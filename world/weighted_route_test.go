@@ -54,12 +54,12 @@ func TestWeightedRouteCanPreferMoreTransitionsWhenWalkingIsShorter(t *testing.T)
 
 	provider := weightedRouteTestProvider{width: 20, height: 4}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {direct, via},
 			2: {finish},
 			4: nil,
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {
 				{X: 18, Y: 1, DestWarpID: 0, DestMap: 4},
 				{X: 1, Y: 1, DestWarpID: 0, DestMap: 2},
@@ -73,7 +73,7 @@ func TestWeightedRouteCanPreferMoreTransitionsWhenWalkingIsShorter(t *testing.T)
 				{X: 0, Y: 1, DestWarpID: 1, DestMap: 2},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 20, h: 4},
 			2: {w: 20, h: 4},
 			4: {w: 20, h: 4},
@@ -111,13 +111,13 @@ func TestWeightedRouteDistinguishesEqualHopRoutesByWalkingDistance(t *testing.T)
 
 	provider := weightedRouteTestProvider{width: 20, height: 4}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {far, near},
 			2: {farFinish},
 			3: {nearFinish},
 			4: nil,
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {
 				{X: 18, Y: 1, DestWarpID: 0, DestMap: 2},
 				{X: 1, Y: 1, DestWarpID: 0, DestMap: 3},
@@ -135,7 +135,7 @@ func TestWeightedRouteDistinguishesEqualHopRoutesByWalkingDistance(t *testing.T)
 				{X: 0, Y: 1, DestWarpID: 1, DestMap: 3},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 20, h: 4},
 			2: {w: 20, h: 4},
 			3: {w: 20, h: 4},
@@ -161,7 +161,7 @@ func TestWeightedRouteDistinguishesEqualHopRoutesByWalkingDistance(t *testing.T)
 func TestWeightedRouteFallsBackWhenGeometryIsUnavailable(t *testing.T) {
 	direct := Edge{Kind: EdgeConnection, From: 1, To: 3}
 	via := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 1}
-	g := &Graph{Edges: map[uint8][]Edge{
+	g := &Graph{Edges: map[MapID][]Edge{
 		1: {direct, via},
 		2: {{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 1}},
 		3: nil,
@@ -182,7 +182,7 @@ func TestWeightedRouteFallsBackWhenGeometryIsUnavailable(t *testing.T) {
 }
 
 func TestWeightedMapOnlyGoalDoesNotInventDestinationTile(t *testing.T) {
-	g := &Graph{Edges: map[uint8][]Edge{1: nil}}
+	g := &Graph{Edges: map[MapID][]Edge{1: nil}}
 	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
 		g, 1, 1, 17, 23, -1, -1, nil, RoutePrerequisites{}, DefaultRouteCostPolicy(),
 	)
@@ -199,13 +199,13 @@ func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 	onward := Edge{Kind: EdgeWarp, From: 2, To: 3, WarpX: 1, WarpY: 0}
 	provider := weightedRouteTestProvider{width: 20, height: 4}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {pivot},
 			2: {onward},
 			3: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 1}},
 			2: {{1, 2}},
 			3: {{1, 1}},
@@ -218,7 +218,7 @@ func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 			pivot:  {1},
 			onward: {1},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {{X: 1, Y: 0, DestWarpID: 0, DestMap: 2}},
 			2: {
 				{X: 0, Y: 0, DestWarpID: 0, DestMap: 1},
@@ -226,7 +226,7 @@ func TestWeightedRouteStopsAtSemanticRelaxLandingFrontier(t *testing.T) {
 			},
 			3: {{X: 0, Y: 0, DestWarpID: 1, DestMap: 2}},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 20, h: 4},
 			2: {w: 20, h: 4},
 			3: {w: 20, h: 4},
@@ -263,12 +263,12 @@ func TestWeightedRouteLeavesMapWhenSameMapComponentsDiffer(t *testing.T) {
 	back := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
 	provider := weightedRouteTestProvider{width: 3, height: 2}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {out},
 			2: {back},
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {
 				{1, 0, 2},
 				{1, 1, 2},
@@ -286,7 +286,7 @@ func TestWeightedRouteLeavesMapWhenSameMapComponentsDiffer(t *testing.T) {
 			out:  {1},
 			back: {2},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {
 				{X: 0, Y: 1, DestWarpID: 0, DestMap: 2},
 				{X: 2, Y: 1, DestWarpID: 0, DestMap: 2},
@@ -295,7 +295,7 @@ func TestWeightedRouteLeavesMapWhenSameMapComponentsDiffer(t *testing.T) {
 				{X: 0, Y: 0, DestWarpID: 1, DestMap: 1},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 3, h: 2},
 			2: {w: 3, h: 2},
 		},
@@ -337,13 +337,13 @@ func TestWeightedRoutePrefersDirectWarpOverSurfDetour(t *testing.T) {
 
 	provider := weightedRouteTestProvider{width: 20, height: 4}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {direct, surf},
 			2: {back},
 			4: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 1}},
 			2: {{1, 2}},
 			4: {{1, 4}},
@@ -358,7 +358,7 @@ func TestWeightedRoutePrefersDirectWarpOverSurfDetour(t *testing.T) {
 			surf:   {2},
 			back:   {1},
 		},
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {
 				{X: 18, Y: 1, DestWarpID: 0, DestMap: 4},
 				{X: 0, Y: 1, DestWarpID: 0, DestMap: 2},
@@ -370,7 +370,7 @@ func TestWeightedRoutePrefersDirectWarpOverSurfDetour(t *testing.T) {
 				{X: 19, Y: 1, DestWarpID: 0, DestMap: 1},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 20, h: 4},
 			2: {w: 20, h: 4},
 			4: {w: 20, h: 4},
