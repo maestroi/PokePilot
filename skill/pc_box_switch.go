@@ -22,13 +22,16 @@ var ErrPCAllBoxesFull = errors.New("skill: Bill's PC: all boxes are full")
 
 // pcChangeBoxSavePrompt identifies ChangeBox's mandatory save warning. A
 // generic two-option menu is not enough evidence: nickname, toss, and story
-// prompts use the same menu shape, so require the ROM's visible SAVE/BOX text.
+// prompts use the same menu shape. _WhenYouChangeBoxText ends with
+// `para "Is that okay?"`, which clears "...will be saved." before YesNoChoice
+// runs, so the save wording is never on screen with the menu. What is visible
+// is the question plus the BillsPCMenu it was opened from (CHANGE BOX).
 func pcChangeBoxSavePrompt(mem *state.Mem) bool {
 	if state.DecodeTwoOptionMenu(mem) == nil {
 		return false
 	}
 	text := strings.ToUpper(state.ScreenText(mem))
-	return strings.Contains(text, "SAVE") && strings.Contains(text, "BOX")
+	return strings.Contains(text, "IS THAT OKAY") && strings.Contains(text, "CHANGE BOX")
 }
 
 // pcChangeBoxMenuScreen identifies DisplayChangeBoxMenu from geometry alone.
