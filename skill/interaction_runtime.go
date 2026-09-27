@@ -29,11 +29,11 @@ func interactionRuntimeStateWithDecoder(reader game.MemoryReader, decoder game.O
 	}, nil
 }
 
-func interactionStepWithDecoder(reader game.MemoryReader, decoder game.OverworldDecoder, tx, ty uint8) (world.Step, interactionRuntimeState, error) {
-	live, err := interactionRuntimeStateWithDecoder(reader, decoder)
-	if err != nil {
-		return world.Step{}, interactionRuntimeState{}, err
+func interactionStepWithDecoder(reader game.MemoryReader, decoder game.OverworldDecoder, tx, ty uint8) (world.Step, game.OverworldState, error) {
+	if decoder == nil {
+		return world.Step{}, game.OverworldState{}, fmt.Errorf("skill: interaction: nil overworld decoder")
 	}
+	live := decoder.DecodeOverworld(reader)
 	step, ok := directionTo(live.X, live.Y, tx, ty)
 	if !ok {
 		return world.Step{}, live, fmt.Errorf("skill: interaction: tile (%d,%d) is not orthogonally adjacent to (%d,%d)", tx, ty, live.X, live.Y)
