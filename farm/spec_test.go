@@ -196,15 +196,15 @@ func TestHeartbeatCarriesGameSpecificTelemetry(t *testing.T) {
 		Frame: 123,
 		GameState: map[string]any{
 			"kind":          "tetris",
-			"score":         1200,
-			"lines_cleared": 4,
+			"score":         float64(1200),
+			"lines_cleared": float64(4),
 			"board":         []any{"..........", "####.#####"},
 		},
 		GameDecision: map[string]any{
 			"kind":      "tetris-placement",
 			"objective": "score",
-			"rotation":  1,
-			"column":    6,
+			"rotation":  float64(1),
+			"column":    float64(6),
 		},
 	}
 	b, err := json.Marshal(want)
