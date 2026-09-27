@@ -65,6 +65,12 @@ func yellowOpeningPhaseFor(f yellowprofile.OpeningFacts) (yellowOpeningPhase, er
 			return yellowOpeningFightRival, nil
 		}
 		return yellowOpeningScript, nil
+	case f.ChoicePrompt && f.Map == yellowprofile.OaksLabMap && f.OakAskedToChoose && !f.GotStarter:
+		// Yellow's rival snatches the Eevee and Oak grants Pikachu without a
+		// player choice. During that ROM-owned handoff the shared Gen-I prompt
+		// shape decoder can transiently see a choice-shaped cursor. Keep this
+		// narrow story window script-owned until EVENT_GOT_STARTER commits.
+		return yellowOpeningScript, nil
 	case f.ChoicePrompt:
 		return "", errYellowOpeningChoiceRequired
 	case !f.Controllable:
