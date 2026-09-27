@@ -179,7 +179,7 @@ func TestTrainingOfferWithholdsOutsideBudgetLeadTraining(t *testing.T) {
 			SessionBudget: 20, Viability: TrainingOutsideBudget,
 		},
 	}
-	for _, offer := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
+	for _, offer := range Offer(obs, NewKnowledge(nil)) {
 		if offer.Kind == KindTrain {
 			t.Fatalf("outside-budget training was offered: %+v", offer)
 		}
@@ -201,7 +201,7 @@ func TestTrainingOfferKeepsViableLeadTraining(t *testing.T) {
 			SessionBudget: 20, Viability: TrainingViable,
 		},
 	}
-	for _, offer := range Offer(obs, NewKnowledge(map[uint8][]uint8{})) {
+	for _, offer := range Offer(obs, NewKnowledge(nil)) {
 		if offer.Kind == KindTrain && offer.Level == 18 {
 			if !strings.Contains(offer.Note, "training viable") {
 				t.Fatalf("training note = %q, want viability evidence", offer.Note)
