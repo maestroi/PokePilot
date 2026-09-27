@@ -48,10 +48,10 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 	}
 	return &NativeGrid{
 		MapID: spec.MapID, Width: spec.Width, Height: spec.Height,
-		walkable: append([]bool(nil), spec.Walkable...),
+		walkable:      append([]bool(nil), spec.Walkable...),
 		collisionTile: append([]uint8(nil), spec.CollisionTile...),
-		cuttable: append([]bool(nil), spec.Cuttable...),
-		blocked: blocked, jumps: jumps, Traversal: spec.Traversal,
+		cuttable:      append([]bool(nil), spec.Cuttable...),
+		blocked:       blocked, jumps: jumps, Traversal: spec.Traversal,
 	}, nil
 }
 
@@ -182,4 +182,3 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	}
 	return nil, ErrNoPath
 }
-
