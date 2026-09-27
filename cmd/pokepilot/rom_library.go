@@ -15,10 +15,11 @@ import (
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/skill"
+tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
 
 // romLibrary is the set of cartridges this worker can run, keyed by the game
-// each file actually is. Identity comes from profiles.Detect on the bytes,
+// each file actually is. Identity comes from profiles.DetectCartridge on the bytes,
 // never from a filename: an operator's roms/ directory holds pokemon_red.gb
 // and pokemon_blue.gb, and a third game needs no code or deploy change here.
 type romLibrary struct {
@@ -81,7 +82,7 @@ func (l *romLibrary) add(path string, bootState []byte, primaryPath string) {
 		log.Printf("farm: ignoring unreadable ROM %s: %v", path, err)
 		return
 	}
-	profile, _, err := profiles.Detect(rom)
+	profile, _, err := profiles.DetectCartridge(rom)
 	if err != nil {
 		log.Printf("farm: ignoring unrecognised ROM %s: %v", path, err)
 		return
@@ -99,7 +100,7 @@ func (l *romLibrary) add(path string, bootState []byte, primaryPath string) {
 }
 
 // fetch downloads the cartridge for id from the ROM store into cacheDir and
-// returns its path. The bytes are checked with profiles.Detect before they are
+// returns its path. The bytes are checked with profiles.DetectCartridge before they are
 // cached, so a misnamed object can never be remembered as the wrong game.
 func (l *romLibrary) fetch(id game.GameID) (string, error) {
 	if l.remote == nil {
@@ -122,7 +123,7 @@ func (l *romLibrary) fetch(id game.GameID) (string, error) {
 	if len(rom) > maxROMBytes {
 		return "", fmt.Errorf("ROM store object %s exceeds %d bytes", key, maxROMBytes)
 	}
-	if profile, _, err := profiles.Detect(rom); err != nil || profile.ID() != id {
+	if profile, _, err := profiles.DetectCartridge(rom); err != nil || profile.ID() != id {
 		return "", fmt.Errorf("ROM store object %s is not game %q", key, id)
 	}
 	if err := os.MkdirAll(l.cacheDir, 0o755); err != nil {
@@ -221,8 +222,21 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 		return nil, fmt.Errorf("load %s: %w", id, err)
 	}
 	m.Pace(0) // boot unthrottled; runOne sets the run's pace afterwards
-	if _, err := skill.BootToOverworld(m); err != nil {
-		return nil, fmt.Errorf("boot %s: %w", id, err)
+	cartridge, _, err := profiles.DetectCartridge(rom)
+	if err != nil {
+		return nil, fmt.Errorf("detect loaded %s: %w", id, err)
+	}
+	if pokemon, ok := cartridge.(game.GameProfile); ok {
+		if _, err := skill.BootToOverworld(m); err != nil {
+			return nil, fmt.Errorf("boot %s: %w", id, err)
+		}
+		_ = pokemon // documents the gameplay capability used by this branch
+	} else if id == "tetris" {
+		if _, err := tetrissession.BootToTitle(cartridge, m); err != nil {
+			return nil, fmt.Errorf("boot %s: %w", id, err)
+		}
+	} else {
+		return nil, fmt.Errorf("game %q has cartridge identity but no boot runtime", id)
 	}
 	state, err := m.SaveState()
 	if err != nil {
