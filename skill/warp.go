@@ -141,19 +141,23 @@ func Traverse(m *emu.Emu, romData []byte, e world.Edge) error {
 // blockers that the collision grid cannot represent, while keeping Traverse
 // itself map-agnostic.
 func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map[[2]int]bool) error {
+	if e.From > 0xff || e.To > 0xff {
+		return fmt.Errorf("skill: Traverse: Gen-I executor cannot execute wide map edge %04x->%04x", e.From, e.To)
+	}
+	from := uint8(e.From)
 	live, err := currentRoutingRuntime(m)
 	if err != nil {
 		return err
 	}
 	cur := live.Map
-	if cur != e.From {
+	if cur != from {
 		return fmt.Errorf("skill: Traverse: on map %02x, but edge starts on %02x", cur, e.From)
 	}
 	if e.Kind == world.EdgeWarp && e.From == e.To {
 		return traverseIntraMapWarp(m, romData, e)
 	}
 
-	h, err := routingHeaderFor(m, e.From)
+	h, err := routingHeaderFor(m, from)
 	if err != nil {
 		return fmt.Errorf("skill: Traverse: parse map %02x: %w", e.From, err)
 	}
@@ -495,6 +499,10 @@ var errDidNotCross = errors.New("skill: Traverse: did not cross within budget")
 // tile, where no second encounter can fire because the player is already
 // standing on the grass.
 func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
+	if e.From > 0xff {
+		return fmt.Errorf("skill: Traverse: cannot push across wide source map %04x", e.From)
+	}
+	from := uint8(e.From)
 	decoder, err := overworldDecoderFor(m)
 	if err != nil {
 		return err
@@ -508,10 +516,10 @@ func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
 			m.Release(btn)
 			return liveErr
 		}
-		if live.Map != e.From {
+		if live.Map != from {
 			if startFainted {
 				m.Release(btn)
-				if err := waitForFaintRespawn(m, e.From, true); err != nil {
+				if err := waitForFaintRespawn(m, from, true); err != nil {
 					return fmt.Errorf("skill: Traverse: %s: %w", edgeName(e), err)
 				}
 			}
@@ -537,6 +545,10 @@ func pushAcrossEdge(m *emu.Emu, e world.Edge, btn emu.Button) error {
 // finishArrival waits for the destination map to load and the position to
 // settle after a successful pushAcrossEdge.
 func finishArrival(m *emu.Emu, e world.Edge) error {
+	if e.From > 0xff || e.To > 0xff {
+		return fmt.Errorf("skill: Traverse: cannot finish arrival for wide edge %04x->%04x", e.From, e.To)
+	}
+	from, to := uint8(e.From), uint8(e.To)
 	decoder, err := overworldDecoderFor(m)
 	if err != nil {
 		return err
@@ -553,7 +565,7 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 	if err != nil {
 		return err
 	}
-	if live.Map != e.To {
+	if live.Map != to {
 		return fmt.Errorf("skill: Traverse: %s: arrived on map %02x, want %02x", edgeName(e), live.Map, e.To)
 	}
 	if err := waitForPositionStableWithDecoder(m, decoder, positionStableBudget, positionStableFrames); err != nil {
@@ -564,8 +576,8 @@ func finishArrival(m *emu.Emu, e world.Edge) error {
 	if err != nil {
 		return err
 	}
-	if live.Map != e.To {
-		if live.Map == e.From {
+	if live.Map != to {
+		if live.Map == from {
 			return fmt.Errorf("skill: Traverse: %s: settled back on map %02x at (%d,%d), never held %02x: %w",
 				edgeName(e), live.Map, live.X, live.Y, e.To, ErrLegBouncesBack)
 		}
@@ -740,14 +752,18 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 	if e.Kind != world.EdgeWarp {
 		return world.ErrNoPath
 	}
+	if e.From > 0xff {
+		return fmt.Errorf("skill: field-path warp approach cannot execute wide source map %04x", e.From)
+	}
+	from := uint8(e.From)
 	live, err := currentRoutingRuntime(m)
 	if err != nil {
 		return err
 	}
-	if live.Map != e.From {
+	if live.Map != from {
 		return fmt.Errorf("skill: field-path warp approach on map %02x, edge starts on %02x", live.Map, e.From)
 	}
-	h, err := routingHeaderFor(m, e.From)
+	h, err := routingHeaderFor(m, from)
 	if err != nil {
 		return err
 	}
@@ -773,7 +789,7 @@ func approachWarpWithFieldPath(m *emu.Emu, romData []byte, e world.Edge, extraBl
 			if ax < 0 || ay < 0 || ax > 255 || ay > 255 {
 				continue
 			}
-			dest := Destination{Map: e.From, X: uint8(ax), Y: uint8(ay)}
+			dest := Destination{Map: from, X: uint8(ax), Y: uint8(ay)}
 			plan, perr := currentFieldPathPlan(m, romData, h, dest, blocked)
 			if perr != nil {
 				continue
@@ -1031,11 +1047,15 @@ func mountSurfFacingPushWithDecoder(m *emu.Emu, fieldActions game.FieldActionDec
 // warpEdgeReachable reports whether the player can walk onto edge's warp on
 // the live grid right now.
 func warpEdgeReachable(m *emu.Emu, romData []byte, edge world.Edge) bool {
-	live, err := currentRoutingRuntime(m)
-	if err != nil || live.Map != edge.From {
+	if edge.From > 0xff {
 		return false
 	}
-	h, err := routingHeaderFor(m, edge.From)
+	from := uint8(edge.From)
+	live, err := currentRoutingRuntime(m)
+	if err != nil || live.Map != from {
+		return false
+	}
+	h, err := routingHeaderFor(m, from)
 	if err != nil {
 		return false
 	}
