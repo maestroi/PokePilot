@@ -386,6 +386,8 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	t.Trail = append(t.Trail[:0], before.row.Trail...)
 	t.Stats = before.row.Stats
 	t.Player = before.row.Player
+	t.GameState = cloneJSONMap(before.row.GameState)
+	t.GameDecision = cloneJSONMap(before.row.GameDecision)
 	t.lastFrame = append(t.lastFrame[:0], before.lastFrame...)
 	w.mu.Unlock()
 	w.noteCircuitIssue(decision.Key, id, decision)
