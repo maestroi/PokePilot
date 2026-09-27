@@ -55,32 +55,44 @@ type spectatorSummary struct {
 }
 
 type spectatorRun struct {
-	RunID          string           `json:"run_id"`
-	Status         string           `json:"status"`
-	Game           string           `json:"game,omitempty"`
-	Starter        string           `json:"starter,omitempty"`
-	Dest           string           `json:"dest,omitempty"`
-	Goal           string           `json:"goal,omitempty"`
-	QueuedAt       int64            `json:"queued_at,omitempty"`
-	EndedAt        int64            `json:"ended_at,omitempty"`
-	Frame          uint64           `json:"frame"`
-	Map            uint8            `json:"map"`
-	X              uint8            `json:"x"`
-	Y              uint8            `json:"y"`
-	MapsVisited    int              `json:"maps_visited,omitempty"`
-	PlannerWaiting bool             `json:"planner_waiting,omitempty"`
-	PlannerOptions int              `json:"planner_options,omitempty"`
-	Decision       string           `json:"decision,omitempty"`
-	StopSoFar      string           `json:"stop_so_far,omitempty"`
-	Stats          *spectatorStats  `json:"stats,omitempty"`
-	Player         *farm.Player     `json:"player,omitempty"`
-	GameState      map[string]any   `json:"game_state,omitempty"`
-	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
-	Trail          [][2]uint8       `json:"trail,omitempty"`
-	Attempts       int              `json:"attempts,omitempty"`
-	Reason         string           `json:"reason,omitempty"`
-	ReplayReady    bool             `json:"replay_ready,omitempty"`
-	Highlight      string           `json:"highlight,omitempty"`
+	RunID          string                   `json:"run_id"`
+	Status         string                   `json:"status"`
+	Game           string                   `json:"game,omitempty"`
+	Starter        string                   `json:"starter,omitempty"`
+	Dest           string                   `json:"dest,omitempty"`
+	Goal           string                   `json:"goal,omitempty"`
+	QueuedAt       int64                    `json:"queued_at,omitempty"`
+	EndedAt        int64                    `json:"ended_at,omitempty"`
+	Frame          uint64                   `json:"frame"`
+	Map            uint8                    `json:"map"`
+	X              uint8                    `json:"x"`
+	Y              uint8                    `json:"y"`
+	MapsVisited    int                      `json:"maps_visited,omitempty"`
+	PlannerWaiting bool                     `json:"planner_waiting,omitempty"`
+	PlannerOptions int                      `json:"planner_options,omitempty"`
+	Decision       string                   `json:"decision,omitempty"`
+	StopSoFar      string                   `json:"stop_so_far,omitempty"`
+	DecisionEngine *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
+	Stats          *spectatorStats          `json:"stats,omitempty"`
+	Player         *farm.Player             `json:"player,omitempty"`
+	GameState      map[string]any           `json:"game_state,omitempty"`
+	Sprites        []farm.MapSprite         `json:"sprites,omitempty"`
+	Trail          [][2]uint8               `json:"trail,omitempty"`
+	Attempts       int                      `json:"attempts,omitempty"`
+	Reason         string                   `json:"reason,omitempty"`
+	ReplayReady    bool                     `json:"replay_ready,omitempty"`
+	Highlight      string                   `json:"highlight,omitempty"`
+}
+
+type spectatorDecisionRecord struct {
+	Kind            string  `json:"kind,omitempty"`
+	Choice          string  `json:"choice,omitempty"`
+	ChoiceLabel     string  `json:"choice_label,omitempty"`
+	Confidence      float64 `json:"confidence,omitempty"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	Backend         string  `json:"backend,omitempty"`
+	Model           string  `json:"model,omitempty"`
+	Fallback        bool    `json:"fallback,omitempty"`
 }
 
 type spectatorStats struct {
@@ -96,6 +108,21 @@ type spectatorStats struct {
 	GoalCurrent  int     `json:"goal_current,omitempty"`
 	GoalTarget   int     `json:"goal_target,omitempty"`
 	GoalComplete bool    `json:"goal_complete,omitempty"`
+
+	DecisionCalls                  int                       `json:"decision_calls,omitempty"`
+	DecisionRejected               int                       `json:"decision_rejected,omitempty"`
+	DecisionFallbacks              int                       `json:"decision_fallbacks,omitempty"`
+	DecisionAvgSeconds             float64                   `json:"decision_avg_seconds,omitempty"`
+	DecisionBackend                string                    `json:"decision_backend,omitempty"`
+	DecisionModel                  string                    `json:"decision_model,omitempty"`
+	DecisionMode                   string                    `json:"decision_mode,omitempty"`
+	DecisionChoice                 string                    `json:"decision_choice,omitempty"`
+	DecisionConfidence             float64                   `json:"decision_confidence,omitempty"`
+	DecisionReference              string                    `json:"decision_reference,omitempty"`
+	DecisionReferenceAgreed        *bool                     `json:"decision_reference_agreed,omitempty"`
+	DecisionReferenceAgreements    int                       `json:"decision_reference_agreements,omitempty"`
+	DecisionReferenceDisagreements int                       `json:"decision_reference_disagreements,omitempty"`
+	DecisionRecords                []spectatorDecisionRecord `json:"decision_records,omitempty"`
 }
 
 // spectatorSourceRun includes private wall fields used only to decide whether a

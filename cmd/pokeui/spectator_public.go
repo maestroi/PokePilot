@@ -61,39 +61,49 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Active             *publicTetrisPiece `json:"active,omitempty"`
 		Next               *publicTetrisPiece `json:"next,omitempty"`
 	}
+	type publicDecisionEngine struct {
+		Backend       string  `json:"backend,omitempty"`
+		Mode          string  `json:"mode,omitempty"`
+		Deployment    string  `json:"deployment,omitempty"`
+		Label         string  `json:"label,omitempty"`
+		Model         string  `json:"model,omitempty"`
+		MinConfidence float64 `json:"min_confidence,omitempty"`
+		MaxChoices    int     `json:"max_choices,omitempty"`
+	}
 	type publicRun struct {
-		RunID          string             `json:"run_id"`
-		Status         string             `json:"status"`
-		Game           string             `json:"game,omitempty"`
-		Starter        string             `json:"starter,omitempty"`
-		Dest           string             `json:"dest,omitempty"`
-		Goal           string             `json:"goal,omitempty"`
-		FPS            int                `json:"fps"`
-		LLMProfile     string             `json:"llm_profile,omitempty"`
-		PlayStyle      string             `json:"play_style,omitempty"`
-		Purpose        string             `json:"purpose,omitempty"`
-		RiskTolerance  string             `json:"risk_tolerance,omitempty"`
-		WildEncounters string             `json:"wild_encounters,omitempty"`
-		QueuedAt       int64              `json:"queued_at,omitempty"`
-		EndedAt        int64              `json:"ended_at,omitempty"`
-		Frame          uint64             `json:"frame"`
-		Map            uint8              `json:"map"`
-		X              uint8              `json:"x"`
-		Y              uint8              `json:"y"`
-		MapsVisited    int                `json:"maps_visited,omitempty"`
-		PlannerWaiting bool               `json:"planner_waiting,omitempty"`
-		PlannerOptions int                `json:"planner_options,omitempty"`
-		Decision       string             `json:"decision,omitempty"`
-		StopSoFar      string             `json:"stop_so_far,omitempty"`
-		Stats          *spectatorStats    `json:"stats,omitempty"`
-		Player         *publicPlayer      `json:"player,omitempty"`
-		GameState      *publicTetrisState `json:"game_state,omitempty"`
-		Sprites        []publicSprite     `json:"sprites,omitempty"`
-		Trail          [][2]uint8         `json:"trail,omitempty"`
-		Attempts       int                `json:"attempts,omitempty"`
-		Reason         string             `json:"reason,omitempty"`
-		ReplayReady    bool               `json:"replay_ready,omitempty"`
-		Highlight      string             `json:"highlight,omitempty"`
+		RunID          string                `json:"run_id"`
+		Status         string                `json:"status"`
+		Game           string                `json:"game,omitempty"`
+		Starter        string                `json:"starter,omitempty"`
+		Dest           string                `json:"dest,omitempty"`
+		Goal           string                `json:"goal,omitempty"`
+		FPS            int                   `json:"fps"`
+		LLMProfile     string                `json:"llm_profile,omitempty"`
+		PlayStyle      string                `json:"play_style,omitempty"`
+		Purpose        string                `json:"purpose,omitempty"`
+		RiskTolerance  string                `json:"risk_tolerance,omitempty"`
+		WildEncounters string                `json:"wild_encounters,omitempty"`
+		QueuedAt       int64                 `json:"queued_at,omitempty"`
+		EndedAt        int64                 `json:"ended_at,omitempty"`
+		Frame          uint64                `json:"frame"`
+		Map            uint8                 `json:"map"`
+		X              uint8                 `json:"x"`
+		Y              uint8                 `json:"y"`
+		MapsVisited    int                   `json:"maps_visited,omitempty"`
+		PlannerWaiting bool                  `json:"planner_waiting,omitempty"`
+		PlannerOptions int                   `json:"planner_options,omitempty"`
+		Decision       string                `json:"decision,omitempty"`
+		StopSoFar      string                `json:"stop_so_far,omitempty"`
+		DecisionEngine *publicDecisionEngine `json:"decision_engine,omitempty"`
+		Stats          *spectatorStats       `json:"stats,omitempty"`
+		Player         *publicPlayer         `json:"player,omitempty"`
+		GameState      *publicTetrisState    `json:"game_state,omitempty"`
+		Sprites        []publicSprite        `json:"sprites,omitempty"`
+		Trail          [][2]uint8            `json:"trail,omitempty"`
+		Attempts       int                   `json:"attempts,omitempty"`
+		Reason         string                `json:"reason,omitempty"`
+		ReplayReady    bool                  `json:"replay_ready,omitempty"`
+		Highlight      string                `json:"highlight,omitempty"`
 	}
 
 	var player *publicPlayer
@@ -187,6 +197,42 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	}
 	presentation := spectatorPresentationPolicyForRun(run.RunID)
 
+	// The public spectator may name the selected typed-decision model, but never
+	// its endpoint, compute address, token environment, artifact path, or other
+	// registry internals.
+	var decisionEngine *publicDecisionEngine
+	if engine := run.DecisionEngine; engine != nil && engine.Enabled() {
+		decisionEngine = &publicDecisionEngine{
+			Backend:       engine.Backend,
+			Mode:          engine.Mode,
+			Deployment:    engine.Deployment,
+			MinConfidence: engine.MinConfidence,
+			MaxChoices:    engine.MaxChoices,
+		}
+		if engine.Inference != nil {
+			decisionEngine.Label = engine.Inference.Label
+			decisionEngine.Model = engine.Inference.ModelID
+			if decisionEngine.Model == "" {
+				decisionEngine.Model = engine.Inference.APIModel
+			}
+		}
+	}
+
+	// Keep the public live decision feed compact. The wall already bounds the
+	// private feed, but spectator polls every two seconds and needs only recent
+	// choices plus the cumulative counters.
+	var stats *spectatorStats
+	if run.Stats != nil {
+		copyStats := *run.Stats
+		const publicDecisionFeed = 12
+		if len(copyStats.DecisionRecords) > publicDecisionFeed {
+			copyStats.DecisionRecords = append([]spectatorDecisionRecord(nil), copyStats.DecisionRecords[len(copyStats.DecisionRecords)-publicDecisionFeed:]...)
+		} else {
+			copyStats.DecisionRecords = append([]spectatorDecisionRecord(nil), copyStats.DecisionRecords...)
+		}
+		stats = &copyStats
+	}
+
 	return json.Marshal(publicRun{
 		RunID:          run.RunID,
 		Status:         run.Status,
@@ -211,7 +257,8 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		PlannerOptions: run.PlannerOptions,
 		Decision:       run.Decision,
 		StopSoFar:      run.StopSoFar,
-		Stats:          run.Stats,
+		DecisionEngine: decisionEngine,
+		Stats:          stats,
 		Player:         player,
 		GameState:      gameState,
 		Sprites:        sprites,

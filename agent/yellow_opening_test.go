@@ -79,7 +79,7 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
 				RivalTriggerReady: true,
-				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+				OakAppeared:       true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningWalkToRival,
 		},
@@ -89,7 +89,7 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 				Map: yellowprofile.OaksLabMap, X: yellowOpeningRivalX, Y: yellowOpeningRivalY,
 				Controllable: true, GotStarter: true, PartyCount: 1,
 				RivalTriggerReady: true,
-				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+				OakAppeared:       true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningWalkToRival,
 		},
@@ -98,6 +98,15 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
 				LabOpeningSequenceActive: true, RivalTriggerReady: false,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningScript,
+		},
+		{
+			name: "queued rival battle is ROM-owned before wIsInBattle commits",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, X: yellowOpeningRivalX, Y: yellowOpeningRivalY,
+				Controllable: true, GotStarter: true, PartyCount: 1, BattlePending: true,
 				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningScript,

@@ -12,9 +12,9 @@ const (
 	// OaksLab_ScriptPointers in the vendored Yellow decomposition is a
 	// zero-based script table. Script 12 waits for the player to enter y=6;
 	// scripts 13-18 are ROM-owned rival battle / exit / Pikachu follow-up.
-	oaksLabScriptChoseStarter      uint8 = 8
-	oaksLabScriptRivalChallenges  uint8 = 12
-	oaksLabScriptPikachuDislikes  uint8 = 18
+	oaksLabScriptChoseStarter    uint8 = 8
+	oaksLabScriptRivalChallenges uint8 = 12
+	oaksLabScriptPikachuDislikes uint8 = 18
 )
 
 // OpeningFacts is the Yellow-owned semantic slice required to drive the
@@ -25,11 +25,15 @@ type OpeningFacts struct {
 	X, Y       uint8
 	PartyCount uint8
 
-	InBattle     bool
-	Controllable bool
-	TextOpen     bool
-	TextBoxID    uint8
-	ChoicePrompt bool
+	InBattle bool
+	// BattlePending is wCurOpponent: a script has queued a battle that the
+	// overworld loop has not entered yet (the transition animation runs with
+	// joypad ignore clear and wIsInBattle still zero).
+	BattlePending bool
+	Controllable  bool
+	TextOpen      bool
+	TextBoxID     uint8
+	ChoicePrompt  bool
 
 	// Yellow's opening cannot infer input ownership from JoyIgnore alone:
 	// rival scripted movement runs with JoyIgnore cleared. These semantic
@@ -58,21 +62,22 @@ func DecodeOpening(reader game.MemoryReader) OpeningFacts {
 		labScript >= oaksLabScriptChoseStarter &&
 		labScript <= oaksLabScriptPikachuDislikes
 	return OpeningFacts{
-		Map:              mapID,
-		X:                nativeReader.Peek8(sym.XCoord),
-		Y:                nativeReader.Peek8(sym.YCoord),
-		PartyCount:       nativeReader.Peek8(sym.PartyCount),
-		InBattle:         nativeReader.Peek8(sym.IsInBattle) != 0,
-		Controllable:     yellowControllable(nativeReader),
-		TextOpen:         nativeReader.Peek8(sym.FontLoaded) != 0,
-		TextBoxID:        nativeReader.Peek8(sym.TextBoxID),
-		ChoicePrompt:     choice,
+		Map:                      mapID,
+		X:                        nativeReader.Peek8(sym.XCoord),
+		Y:                        nativeReader.Peek8(sym.YCoord),
+		PartyCount:               nativeReader.Peek8(sym.PartyCount),
+		InBattle:                 nativeReader.Peek8(sym.IsInBattle) != 0,
+		BattlePending:            nativeReader.Peek8(sym.CurOpponent) != 0,
+		Controllable:             yellowControllable(nativeReader),
+		TextOpen:                 nativeReader.Peek8(sym.FontLoaded) != 0,
+		TextBoxID:                nativeReader.Peek8(sym.TextBoxID),
+		ChoicePrompt:             choice,
 		LabOpeningSequenceActive: labOpening,
 		RivalTriggerReady:        mapID == OaksLabMap && labScript == oaksLabScriptRivalChallenges,
-		OakAppeared:      yellowHasEvent(nativeReader, eventOakAppearedInPallet),
-		FollowedOak:      yellowHasEvent(nativeReader, eventFollowedOakIntoLab),
-		OakAskedToChoose: yellowHasEvent(nativeReader, eventOakAskedToChooseMon),
-		GotStarter:       yellowHasEvent(nativeReader, eventGotStarter),
-		BattledRival:     yellowHasEvent(nativeReader, eventBattledRivalInOaksLab),
+		OakAppeared:              yellowHasEvent(nativeReader, eventOakAppearedInPallet),
+		FollowedOak:              yellowHasEvent(nativeReader, eventFollowedOakIntoLab),
+		OakAskedToChoose:         yellowHasEvent(nativeReader, eventOakAskedToChooseMon),
+		GotStarter:               yellowHasEvent(nativeReader, eventGotStarter),
+		BattledRival:             yellowHasEvent(nativeReader, eventBattledRivalInOaksLab),
 	}
 }

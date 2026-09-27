@@ -356,6 +356,13 @@ type LLMStats struct {
 	DecisionMode          string `json:"decision_mode,omitempty"`
 	DecisionAgreements    int    `json:"decision_agreements,omitempty"`
 	DecisionDisagreements int    `json:"decision_disagreements,omitempty"`
+	// DecisionReference* compares a constrained backend with an optional
+	// deterministic/reference choice even when the backend is active. It is a
+	// benchmark signal, not ground-truth accuracy.
+	DecisionReference              string `json:"decision_reference,omitempty"`
+	DecisionReferenceAgreed        *bool  `json:"decision_reference_agreed,omitempty"`
+	DecisionReferenceAgreements    int    `json:"decision_reference_agreements,omitempty"`
+	DecisionReferenceDisagreements int    `json:"decision_reference_disagreements,omitempty"`
 
 	// Goal* is present only when LLMPlanner.Goal opted into the structured
 	// deterministic syntax. Summary is the human/model-facing status; the
