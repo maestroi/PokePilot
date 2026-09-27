@@ -9,11 +9,11 @@ import (
 // NativeEdge is the map-level edge equivalent of Edge for cartridges whose
 // native map identity needs more than eight bits.
 type NativeEdge struct {
-	Kind  EdgeKind
-	From  uint16
-	To    uint16
-	WarpX uint8
-	WarpY uint8
+	Kind   EdgeKind
+	From   uint16
+	To     uint16
+	WarpX  uint8
+	WarpY  uint8
 	Dir    uint8
 	Offset int8
 }
