@@ -124,7 +124,7 @@ watch(() => form.game, (game, previous) => {
   }
   if (previous === 'tetris' && form.planner === 'policy') {
     form.planner = 'llm'
-    form.goal = defaultGoalForPlayStyle(form.play_style || 'adventure')
+    form.goal = defaultGoalForPlayStyle('adventure')
   }
 })
 
