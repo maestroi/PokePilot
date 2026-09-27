@@ -116,6 +116,7 @@ func (s *heartbeatSnap) storeStatus(hb farm.Heartbeat) {
 	hb.Decision = s.hb.Decision
 	hb.Raw = s.hb.Raw
 	hb.Stats = s.hb.Stats
+	hb.GameDecision = s.hb.GameDecision
 	hb.Activity = s.hb.Activity
 	s.hb = hb
 	s.mu.Unlock()
@@ -129,6 +130,12 @@ func (s *heartbeatSnap) storePlan(question, decision string) {
 	s.mu.Lock()
 	s.hb.Question = question
 	s.hb.Decision = decision
+	s.mu.Unlock()
+}
+
+func (s *heartbeatSnap) storeGameDecision(decision map[string]any) {
+	s.mu.Lock()
+	s.hb.GameDecision = decision
 	s.mu.Unlock()
 }
 
