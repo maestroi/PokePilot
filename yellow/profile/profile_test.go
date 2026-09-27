@@ -130,6 +130,28 @@ func TestYellowOwnedDecodersReadNativeRAMUnderCanonicalView(t *testing.T) {
 	}
 }
 
+func TestDecodeOpeningUsesNativeOaksLabScriptOwnership(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.CurMap] = OaksLabMap
+	mem[sym.OaksLabCurScript] = oaksLabScriptRivalChallenges
+	facts := DecodeOpening(&mem)
+	if !facts.LabOpeningSequenceActive || !facts.RivalTriggerReady {
+		t.Fatalf("script 12 facts = %+v; want active opening with player rival trigger ready", facts)
+	}
+
+	mem[sym.OaksLabCurScript] = oaksLabScriptRivalChallenges + 1
+	facts = DecodeOpening(&mem)
+	if !facts.LabOpeningSequenceActive || facts.RivalTriggerReady {
+		t.Fatalf("script 13 facts = %+v; want ROM-owned opening sequence", facts)
+	}
+
+	mem[sym.OaksLabCurScript] = oaksLabScriptPikachuDislikes + 1
+	facts = DecodeOpening(&mem)
+	if facts.LabOpeningSequenceActive || facts.RivalTriggerReady {
+		t.Fatalf("post-opening script facts = %+v; want opening sequence released", facts)
+	}
+}
+
 func TestDecodeObservationReadsYellowPlayerBaseline(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.CurMap] = 0
