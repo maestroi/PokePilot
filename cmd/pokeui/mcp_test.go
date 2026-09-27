@@ -426,7 +426,6 @@ func TestCompactEventsKeepsNewestClippedEvents(t *testing.T) {
 	}
 }
 
-
 func TestMCPStartRunSupportsTetrisPolicy(t *testing.T) {
 	var queued farm.Spec
 	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
