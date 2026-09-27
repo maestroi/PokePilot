@@ -177,7 +177,7 @@ func runFarmTetris(
 	case "done":
 		return "done", detail
 	case "game-over":
-		if goal.Kind == tetrissession.GoalAuto || goal.Kind == tetrissession.GoalSurvival {
+		if goal.Kind == tetrissession.GoalAuto || goal.Kind == tetrissession.GoalEndless || goal.Kind == tetrissession.GoalSurvival {
 			return "done", "game over · " + detail
 		}
 		return "failed", "game over before " + tetrisGoalLabel(goal) + " · " + detail
