@@ -149,8 +149,12 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	if transition, ok := redSideRouteTransitionForEdge(edge); ok {
 		return transition, true
 	}
+	if edge.From > 0xff || edge.To > 0xff {
+		return gameruntime.Transition{}, false
+	}
+	from, to := uint8(edge.From), uint8(edge.To)
 	pair := func(a, b uint8) bool {
-		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
+		return (from == a && to == b) || (from == b && to == a)
 	}
 	bikeGate := func(id string, requires ...gameruntime.CapabilityID) (gameruntime.Transition, bool) {
 		t := semanticTransition(id, edge, requires...)
@@ -159,7 +163,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 	}
 
 	switch {
-	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == victoryRoad1FMap &&
+	case edge.Kind == world.EdgeWarp && from == route23Map && to == victoryRoad1FMap &&
 		edge.WarpX == route23VictoryRoadWarpX && edge.WarpY == route23VictoryRoadWarpY:
 		// Route 23 is not one immutable walking component. The League approach
 		// crosses three full-width Surf bands and seven scripted badge guards
@@ -169,8 +173,8 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
 
-	case edge.Kind == world.EdgeWarp && edge.To == indigoPlateauLobbyMap &&
-		(edge.From == loreleiRoomMap || edge.From == brunoRoomMap || edge.From == agathaRoomMap) &&
+	case edge.Kind == world.EdgeWarp && to == indigoPlateauLobbyMap &&
+		(from == loreleiRoomMap || from == brunoRoomMap || from == agathaRoomMap) &&
 		edge.WarpY == leagueRoomSouthWarpY:
 		// The south door of each gauntlet room, back toward the lobby. The room
 		// scripts physically refuse this walk while the challenge is running, so
@@ -179,7 +183,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// forward north exits are untouched.
 		return bikeGate("red:league_room_exit", capCanLeaveLeague)
 
-	case edge.Kind == world.EdgeWarp && edge.From == lanceRoomMap && edge.To == championsRoomMap &&
+	case edge.Kind == world.EdgeWarp && from == lanceRoomMap && to == championsRoomMap &&
 		edge.WarpX == lanceExitStand.X && edge.WarpY == 0:
 		// Lance's north exit is a scripted progression boundary. The generic
 		// immutable collision graph cannot prove the post-battle approach to the
@@ -190,7 +194,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		t.PortBypass = true
 		return t, true
 
-	case edge.Kind == world.EdgeWarp && edge.From == celadonCityMap && edge.To == celadonMart5FMap &&
+	case edge.Kind == world.EdgeWarp && from == celadonCityMap && to == celadonMart5FMap &&
 		edge.WarpX == celadonInaccessibleMartWarpX && edge.WarpY == celadonInaccessibleMartWarpY:
 		// pokered/data/maps/objects/CeladonCity.asm declares this warp but
 		// annotates it "; inaccessible". Static collision leaves a walkable
@@ -200,7 +204,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the department-store entrance, stairs/elevator, and all raw warp ids.
 		return bikeGate("red:celadon_inaccessible_mart_warp", capCanUseInaccessibleWarp)
 
-	case edge.Kind == world.EdgeWarp && edge.From == silphCo1FMap && edge.To == silphCo3FMap &&
+	case edge.Kind == world.EdgeWarp && from == silphCo1FMap && to == silphCo3FMap &&
 		edge.WarpX == silphCo1FInaccessibleStairWarpX && edge.WarpY == silphCo1FInaccessibleStairWarpY:
 		// pokered/data/maps/objects/SilphCo1F.asm declares this warp but
 		// annotates it "; inaccessible", the same leftover-ROM-data pattern as
@@ -211,7 +215,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// edge; the real way to 3F stays open via the elevator and 2F stairs.
 		return bikeGate("red:silph_co_1f_inaccessible_stair_warp", capCanUseInaccessibleWarp)
 
-	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
+	case edge.Kind == world.EdgeWarp && from == route16Map && to == route16Gate1FMap &&
 		edge.WarpX == 24 && (edge.WarpY == 10 || edge.WarpY == 11):
 		// The east entrance to Route 16's lower gate is reached from Celadon.
 		// Snorlax sits immediately east of the gate, and the guard inside the
@@ -225,26 +229,26 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// Snorlax when the annotated edge is taken.
 		return bikeGate("red:route16_snorlax_bicycle", capCanClearSnorlax, capCanRideCyclingRoad)
 
-	case edge.Kind == world.EdgeWarp && edge.From == route16Map && edge.To == route16Gate1FMap &&
+	case edge.Kind == world.EdgeWarp && from == route16Map && to == route16Gate1FMap &&
 		edge.WarpX == 17 && (edge.WarpY == 10 || edge.WarpY == 11):
 		// West-side entry is already past Snorlax; only the Cycling Road guard
 		// applies. Do not gate Route 16's separate upper pedestrian/Fly-house
 		// passage at y=4/5.
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	case edge.Kind == world.EdgeWarp && edge.From == route16Gate1FMap && edge.To == route16Map &&
+	case edge.Kind == world.EdgeWarp && from == route16Gate1FMap && to == route16Map &&
 		(edge.WarpX == 0 || edge.WarpX == 7) && (edge.WarpY == 8 || edge.WarpY == 9):
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	case edge.Kind == world.EdgeWarp && edge.From == route18Map && edge.To == route18Gate1FMap &&
+	case edge.Kind == world.EdgeWarp && from == route18Map && to == route18Gate1FMap &&
 		(edge.WarpX == 33 || edge.WarpX == 40) && (edge.WarpY == 8 || edge.WarpY == 9):
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	case edge.Kind == world.EdgeWarp && edge.From == route18Gate1FMap && edge.To == route18Map &&
+	case edge.Kind == world.EdgeWarp && from == route18Gate1FMap && to == route18Map &&
 		(edge.WarpX == 0 || edge.WarpX == 7) && (edge.WarpY == 4 || edge.WarpY == 5):
 		return bikeGate("red:cycling_road_bicycle", capCanRideCyclingRoad)
 
-	case edge.Kind == world.EdgeConnection && edge.From == route16Map && edge.To == celadonCityMap:
+	case edge.Kind == world.EdgeConnection && from == route16Map && to == celadonCityMap:
 		// Snorlax sleeps on the lower road at (26,10). The Celadon connection's
 		// east component is already past him, and Route 16's upper passage
 		// reaches that component by Cut at (34,9) — measured from the upper
@@ -270,7 +274,7 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// seam and remains required through the Cinnabar connection.
 		return semanticTransition("red:southern_sea_surf", edge, capCanSurf), true
 
-	case edge.Kind == world.EdgeWarp && edge.From == gameCornerMap && edge.To == rocketHideoutB1FMap &&
+	case edge.Kind == world.EdgeWarp && from == gameCornerMap && to == rocketHideoutB1FMap &&
 		edge.WarpX == gameCornerWarpX && edge.WarpY == gameCornerWarpY:
 		// pokered/scripts/GameCorner.asm GameCornerSetRocketHideoutDoorTile
 		// writes block $2a over (17,4) until EVENT_FOUND_ROCKET_HIDEOUT.
