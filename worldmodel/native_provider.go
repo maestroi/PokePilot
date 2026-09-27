@@ -33,11 +33,47 @@ type NativeMapHeader struct {
 
 // NativeMapTopologyProvider is the wide map-identity boundary for cartridges
 // whose native map namespace does not fit in the historical Gen-I uint8 graph.
-//
-// This interface is intentionally topology-only. Collision decoding is added
-// separately so adapters never need to invent geometry merely to make a map
-// graph buildable.
 type NativeMapTopologyProvider interface {
 	MapIDs() []uint16
 	ParseMap(mapID uint16) (NativeMapHeader, error)
+}
+
+// NativeDirectionMask uses bits 0..3 for down, up, left and right. Adapters
+// may attach a mask to one collision byte without leaking the native meaning
+// of that byte into generic routing.
+type NativeDirectionMask uint8
+
+const (
+	NativeBlockDown NativeDirectionMask = 1 << iota
+	NativeBlockUp
+	NativeBlockLeft
+	NativeBlockRight
+)
+
+// NativeJump describes a directed two-tile hop triggered while standing on a
+// collision tile. DirectionMask uses the same down/up/left/right bit layout.
+type NativeJump struct {
+	Collision     uint8
+	DirectionMask NativeDirectionMask
+}
+
+// NativeGridSpec is the wide-id counterpart to GridSpec. Collision decoding is
+// adapter-owned; generic native routing receives only tile-level semantics.
+type NativeGridSpec struct {
+	MapID         uint16
+	Width         int
+	Height        int
+	Walkable      []bool
+	CollisionTile []uint8
+	Cuttable      []bool
+	Blocked       map[uint8]NativeDirectionMask
+	Jumps         []NativeJump
+	Traversal     TraversalMode
+}
+
+// NativeGridProvider is an optional extension of NativeMapTopologyProvider for
+// games whose map ids do not fit the legacy uint8 grid boundary.
+type NativeGridProvider interface {
+	NativeMapTopologyProvider
+	Grid(mapID uint16, blocks []byte, mode TraversalMode) (NativeGridSpec, error)
 }

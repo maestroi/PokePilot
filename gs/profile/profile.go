@@ -144,15 +144,13 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 	}
 
 	obs := game.ProfileObservation{
-		NativeMapID: nativeMap,
-		Location:    mapInfo.Location,
-		MapName:     mapInfo.Name,
-		X:           reader.Peek8(sym.XCoord),
-		Y:           reader.Peek8(sym.YCoord),
-		Facing:      decodeFacing(reader.Peek8(sym.PlayerDirection)),
-		// Phase 2 has no proven Gen-II overworld-control-state decoder yet.
-		// Do not infer controllability from position or battle state.
-		Controllable: false,
+		NativeMapID:  nativeMap,
+		Location:     mapInfo.Location,
+		MapName:      mapInfo.Name,
+		X:            reader.Peek8(sym.XCoord),
+		Y:            reader.Peek8(sym.YCoord),
+		Facing:       decodeFacing(reader.Peek8(sym.PlayerDirection)),
+		Controllable: gsControllable(reader),
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
 		Party:        make([]game.ProfilePartyMon, partyCount),
 		BagCapacity:  sym.MaxItems,

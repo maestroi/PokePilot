@@ -8,11 +8,30 @@ const (
 	ROMSize    = 2 * 1024 * 1024
 	WRAMBank   = 1
 
-	MapGroup        uint16 = 0xDA00
-	MapNumber       uint16 = 0xDA01
-	YCoord          uint16 = 0xDA02
-	XCoord          uint16 = 0xDA03
+	OverworldMap    uint16 = 0xC800
+	OverworldMapLen        = 1300
+
+	PlayerStepFlags uint16 = 0xD150
+	MapHeight       uint16 = 0xD19E
+	MapWidth        uint16 = 0xD19F
 	PlayerDirection uint16 = 0xD205
+
+	MapStatus      uint16 = 0xD432
+	MapEventStatus uint16 = 0xD433
+	ScriptFlags    uint16 = 0xD434
+	ScriptMode     uint16 = 0xD437
+	ScriptRunning  uint16 = 0xD438
+
+	ObjectStructs    uint16 = 0xD4D6
+	ObjectStructLen         = 0x28
+	NumObjectStructs        = 13
+
+	PlayerState uint16 = 0xD95D
+
+	MapGroup  uint16 = 0xDA00
+	MapNumber uint16 = 0xDA01
+	YCoord    uint16 = 0xDA02
+	XCoord    uint16 = 0xDA03
 
 	PartyCount   uint16 = 0xDA22
 	PartySpecies uint16 = 0xDA23

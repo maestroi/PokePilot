@@ -246,7 +246,7 @@ type firstBadgeWorldProvider struct {
 // romData is accepted now so this constructor can grow into the real #973 ROM
 // parser without changing its profile-facing shape. The current slice uses
 // only generated catalog identities plus decomp-verified topology facts.
-func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeMapTopologyProvider {
+func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeGridProvider {
 	_ = romData
 	specs := make(map[uint16]mapSpec, len(firstBadgeTopology))
 	ids := make([]uint16, 0, len(firstBadgeTopology))
