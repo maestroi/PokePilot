@@ -66,6 +66,12 @@ func yellowOpeningPhaseFor(f yellowprofile.OpeningFacts) (yellowOpeningPhase, er
 			return yellowOpeningFightRival, nil
 		}
 		return yellowOpeningScript, nil
+	case f.BattlePending:
+		// The ROM queued the battle (OaksLabRivalStartBattleScript sets
+		// wCurOpponent) and owns the transition until wIsInBattle commits.
+		// The player reads as controllable meanwhile, so without this the
+		// rival trigger looked unfired for the whole animation (#2071).
+		return yellowOpeningScript, nil
 	case f.ChoicePrompt && f.Map == yellowprofile.OaksLabMap && f.OakAskedToChoose && !f.GotStarter:
 		// Yellow's rival snatches the Eevee and Oak grants Pikachu without a
 		// player choice. During that ROM-owned handoff the shared Gen-I prompt

@@ -92,6 +92,15 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			want: yellowOpeningWalkToRival,
 		},
 		{
+			name: "queued rival battle is ROM-owned before wIsInBattle commits",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, X: yellowOpeningRivalX, Y: yellowOpeningRivalY,
+				Controllable: true, GotStarter: true, PartyCount: 1, BattlePending: true,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningScript,
+		},
+		{
 			name: "post starter non battle choice still fails closed",
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, ChoicePrompt: true, GotStarter: true, PartyCount: 1,

@@ -18,11 +18,15 @@ type OpeningFacts struct {
 	X, Y       uint8
 	PartyCount uint8
 
-	InBattle     bool
-	Controllable bool
-	TextOpen     bool
-	TextBoxID    uint8
-	ChoicePrompt bool
+	InBattle bool
+	// BattlePending is wCurOpponent: a script has queued a battle that the
+	// overworld loop has not entered yet (the transition animation runs with
+	// joypad ignore clear and wIsInBattle still zero).
+	BattlePending bool
+	Controllable  bool
+	TextOpen      bool
+	TextBoxID     uint8
+	ChoicePrompt  bool
 
 	OakAppeared      bool
 	FollowedOak      bool
@@ -45,6 +49,7 @@ func DecodeOpening(reader game.MemoryReader) OpeningFacts {
 		Y:                nativeReader.Peek8(sym.YCoord),
 		PartyCount:       nativeReader.Peek8(sym.PartyCount),
 		InBattle:         nativeReader.Peek8(sym.IsInBattle) != 0,
+		BattlePending:    nativeReader.Peek8(sym.CurOpponent) != 0,
 		Controllable:     yellowControllable(nativeReader),
 		TextOpen:         nativeReader.Peek8(sym.FontLoaded) != 0,
 		TextBoxID:        nativeReader.Peek8(sym.TextBoxID),

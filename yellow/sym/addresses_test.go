@@ -25,6 +25,7 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wPartyCount":               {PartyCount, 0xD162},
 		"wPartyMon1":                {PartyMon1, 0xD16A},
 		"wIsInBattle":               {IsInBattle, 0xD056},
+		"wCurOpponent":              {CurOpponent, 0xD058},
 		"wPokedexOwned":             {PokedexOwned, 0xD2F6},
 		"wPokedexSeen":              {PokedexSeen, 0xD309},
 		"wNumBagItems":              {NumBagItems, 0xD31C},
