@@ -201,17 +201,23 @@ func Gym(m *emu.Emu, romData []byte, policy MovePolicy) (state.BattleResult, err
 		}
 	}
 
-	mem = advanceUntil(m, gymPostBattleBudget, func(mm *state.Mem) bool {
-		return state.Controllable(mm)
-	})
-	if !state.Controllable(&mem) {
-		what := "win"
-		if outcome != state.ResultWon {
-			what = "lost"
-		}
-		return outcome, fmt.Errorf("skill: Gym: not controllable %d frames after the %s battle: map=%#04x at (%d,%d) wJoyIgnore=%#04x wFontLoaded=%#04x",
-			gymPostBattleBudget, what, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord),
-			mem.U8(sym.JoyIgnore), mem.U8(sym.FontLoaded))
+	// Badge/event bits can become visible before the leader's post-battle text
+	// has fully closed. A bare Controllable check is not enough here: Gen I can
+	// briefly report input ownership while a dialogue/menu surface is still
+	// active, which hands a dirty boundary to the objective runtime (#2078).
+	// Gym owns this deterministic post-battle dialogue, so finish paging it
+	// without ever answering a gameplay choice.
+	recovery := RecoverDialogue(m, gymPostBattleBudget)
+	switch recovery.Stop {
+	case DialogueRecovered:
+		return outcome, nil
+	case DialogueChoiceRequired:
+		return outcome, fmt.Errorf("skill: Gym: unexpected gameplay choice remained after %s battle", g.Leader)
+	case DialogueMenuOpen:
+		return outcome, fmt.Errorf("skill: Gym: unexpected menu remained after %s battle", g.Leader)
+	case DialogueUnexpectedMode:
+		return outcome, fmt.Errorf("skill: Gym: battle still active after %s post-battle handoff", g.Leader)
+	default:
+		return outcome, fmt.Errorf("skill: Gym: post-battle dialogue did not settle within %d frames after %s", gymPostBattleBudget, g.Leader)
 	}
-	return outcome, nil
 }
