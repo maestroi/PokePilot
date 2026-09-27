@@ -199,9 +199,9 @@ func TestDecodePiece(t *testing.T) {
 
 type identityOnlyProfile struct{}
 
-func (identityOnlyProfile) ID() game.GameID               { return "identity-only" }
-func (identityOnlyProfile) Revision() game.RevisionID     { return "rev0" }
-func (identityOnlyProfile) Detect(game.ROMInfo) bool      { return false }
+func (identityOnlyProfile) ID() game.GameID           { return "identity-only" }
+func (identityOnlyProfile) Revision() game.RevisionID { return "rev0" }
+func (identityOnlyProfile) Detect(game.ROMInfo) bool  { return false }
 
 func TestObserveRequiresTetrisStateCapability(t *testing.T) {
 	_, err := Observe(identityOnlyProfile{}, gameplayMemory())
