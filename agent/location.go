@@ -73,20 +73,6 @@ func rawLegacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
 	return normalizeKnowledgeTopology(topology)
 }
 
-// legacyKnowledgeTopology is the one-release compatibility path for callers
-// that still provide only a native byte graph. With exactly one registered
-// game adapter, native bytes can be translated without ambiguity and the
-// resulting Knowledge remains semantic. If multiple games are registered,
-// callers must provide a GameID or a semantic KnowledgeTopology explicitly.
-func legacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
-	if len(knowledgeTopologyProviders) == 1 {
-		for _, provider := range knowledgeTopologyProviders {
-			return normalizeKnowledgeTopology(provider.KnowledgeTopology(adjacency))
-		}
-	}
-	return rawLegacyKnowledgeTopology(adjacency)
-}
-
 func normalizeKnowledgeTopology(t KnowledgeTopology) KnowledgeTopology {
 	if t.Adjacency == nil {
 		t.Adjacency = map[LocationID][]LocationID{}
@@ -126,14 +112,19 @@ func registerKnowledgeTopologyProvider(id game.GameID, provider KnowledgeTopolog
 	knowledgeTopologyProviders[id] = provider
 }
 
-func knowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
-	if id != "" {
-		if provider := knowledgeTopologyProviders[id]; provider != nil {
-			return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
-		}
-		return rawLegacyKnowledgeTopology(native)
+// KnowledgeTopologyFor translates an adapter-native map graph into the semantic
+// topology accepted by NewKnowledge and checkpoint loading. Callers must name
+// the game explicitly; unsupported or empty game IDs stay raw rather than
+// guessing from whichever adapters happen to be registered in this process.
+func KnowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
+	if provider := knowledgeTopologyProviders[id]; provider != nil {
+		return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
 	}
-	return legacyKnowledgeTopology(native)
+	return rawLegacyKnowledgeTopology(native)
+}
+
+func knowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
+	return KnowledgeTopologyFor(id, native)
 }
 
 func observationLocation(obs Observation, k *Knowledge) LocationID {
