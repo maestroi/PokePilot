@@ -27,23 +27,23 @@ const (
 )
 
 const (
-	semanticPalletTownMap    uint8 = 0x00
-	semanticViridianCityMap  uint8 = 0x01
-	semanticPewterCityMap    uint8 = 0x02
-	semanticCeruleanCityMap  uint8 = 0x03
-	semanticLavenderTownMap  uint8 = 0x04
-	semanticVermilionCityMap uint8 = 0x05
-	semanticCinnabarMap      uint8 = 0x08
-	semanticSaffronCityMap   uint8 = 0x0A
-	semanticRoute2Map        uint8 = 0x0D
-	semanticRoute3Map        uint8 = 0x0E
-	semanticRoute5Map        uint8 = 0x10
-	semanticRoute6Map        uint8 = 0x11
-	semanticRoute7Map        uint8 = 0x12
-	semanticRoute8Map        uint8 = 0x13
-	semanticRoute9Map        uint8 = 0x14
-	semanticRoute11Map       uint8 = 0x16
-	semanticRoute21Map       uint8 = 0x20
+	semanticPalletTownMap     = 0x00
+	semanticViridianCityMap   = 0x01
+	semanticPewterCityMap     = 0x02
+	semanticCeruleanCityMap   = 0x03
+	semanticLavenderTownMap   = 0x04
+	semanticVermilionCityMap  = 0x05
+	semanticCinnabarMap       = 0x08
+	semanticSaffronCityMap    = 0x0A
+	semanticRoute2Map         = 0x0D
+	semanticRoute3Map         = 0x0E
+	semanticRoute5Map         = 0x10
+	semanticRoute6Map         = 0x11
+	semanticRoute7Map         = 0x12
+	semanticRoute8Map         = 0x13
+	semanticRoute9Map         = 0x14
+	semanticRoute11Map        = 0x16
+	semanticRoute21Map        = 0x20
 
 	// The four guardhouses ringing Saffron (map type GATE) each block
 	// passage until BIT_GAVE_SAFFRON_GUARDS_DRINK is set; giving any one
@@ -63,9 +63,9 @@ const (
 	// trigger at x=3, and gives the guard the drink from there. Treating every
 	// route<->guardhouse warp as gated makes the prerequisite impossible to
 	// satisfy because the skill cannot even enter the room that owns it.
-	route5GateMap uint8 = 0x46
-	route6GateMap uint8 = 0x49
-	route8GateMap uint8 = 0x4F
+	route5GateMap  = 0x46
+	route6GateMap  = 0x49
+	route8GateMap  = 0x4F
 
 	route5SaffronWarpY     uint8 = 33
 	route5GateSaffronWarpY uint8 = 5
@@ -76,21 +76,21 @@ const (
 	route8SaffronWarpX     uint8 = 1
 	route8GateSaffronWarpX uint8 = 0
 
-	ceruleanTrashedHouseMap        uint8 = 0x3e
+	ceruleanTrashedHouseMap         = 0x3e
 	ceruleanTrashedHouseFrontWarpX uint8 = 27
 	ceruleanTrashedHouseFrontWarpY uint8 = 11
 
 	// Vermilion's harbor guard checks the S.S. Ticket immediately before
 	// these two city -> dock warps. The reverse dock -> city edge remains
 	// open, including after HM01 starts the departure sequence.
-	semanticVermilionDockMap uint8 = 0x5E
+	semanticVermilionDockMap  = 0x5E
 	vermilionDockWarpY       uint8 = 31
 	vermilionDockWarpX1      uint8 = 18
 	vermilionDockWarpX2      uint8 = 19
 
 	// The ladder out of Mt. Moon B2F's fossil corridor
 	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
-	mtMoonB2FMap       uint8 = 0x3D
+	mtMoonB2FMap        = 0x3D
 	mtMoonB2FExitWarpX uint8 = 5
 	mtMoonB2FExitWarpY uint8 = 7
 )
