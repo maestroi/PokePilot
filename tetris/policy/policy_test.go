@@ -14,7 +14,7 @@ func readyState(piece tetris.Piece) tetris.State {
 		Active: &tetris.PieceState{
 			Piece:    piece,
 			Rotation: 0,
-			X:        4,
+			X:        5,
 			Y:        0,
 		},
 		ReadyForPieceInput: true,
@@ -203,5 +203,25 @@ func TestUnknownObjectiveRejected(t *testing.T) {
 	_, err := Choose(readyState(tetris.PieceT), Objective("speed"))
 	if err == nil {
 		t.Fatal("unknown objective unexpectedly accepted")
+	}
+}
+
+// A vertical I reaches board column 9 only at anchor column 10, so candidate
+// enumeration must use the piece footprint rather than 0..BoardWidth-1.
+func TestChooseLinesFillsRightWallWell(t *testing.T) {
+	state := readyState(tetris.PieceI)
+	state.Mode = tetris.ModeB
+	for y := tetris.BoardHeight - 4; y < tetris.BoardHeight; y++ {
+		for x := 0; x < tetris.BoardWidth-1; x++ {
+			state.Board[y][x] = true
+		}
+	}
+
+	got, err := Choose(state, ObjectiveLines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Candidate.Placement.Column != 10 || got.Candidate.LinesCleared != 4 {
+		t.Fatalf("placement = %#v lines=%d, want column 10 clearing 4", got.Candidate.Placement, got.Candidate.LinesCleared)
 	}
 }
