@@ -61,6 +61,7 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressRainbowBadge,
 		gen1.ProgressSilphScopeAcquired,
 		gen1.ProgressPokeFluteAcquired,
+		gen1.ProgressFuchsiaProgressionComplete,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -184,8 +185,9 @@ func TestYellowProgressionContinuesThroughSurgeLavenderCeladonAndErika(t *testin
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressPokeFluteAcquired, Complete: true})
-	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("Rocket/Tower slice should stop after Poké Flute until the next Yellow slice: %v", got)
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressFuchsiaProgressionComplete {
+		t.Fatalf("post-Flute progression=%v, want Fuchsia progression", got)
 	}
 }
 
@@ -206,5 +208,65 @@ func TestYellowSharedMiddleProgressionUsesGen1CutPrerequisites(t *testing.T) {
 		if err := a.Validate(o, withCut); err != nil {
 			t.Fatalf("%q rejected with usable Cut: %v", id, err)
 		}
+	}
+}
+
+
+func TestYellowPostFuchsiaPreparesSurfStrengthThenRoutesCinnabar(t *testing.T) {
+	a := &yellowObjectiveAdapter{}
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 3,
+		Location:   yellowLocationID(yellowprofile.GameID, 0x07),
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+			{ID: gen1.ProgressPokedexAcquired, Complete: true},
+			{ID: gen1.ProgressBoulderBadge, Complete: true},
+			{ID: gen1.ProgressMtMoonFossilAcquired, Complete: true},
+			{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true},
+			{ID: gen1.ProgressSSTicketAcquired, Complete: true},
+			{ID: gen1.ProgressHM01Acquired, Complete: true},
+			{ID: gen1.ProgressThunderBadge, Complete: true},
+			{ID: gen1.ProgressPostSurgeLavenderReached, Complete: true},
+			{ID: gen1.ProgressPostSurgeCeladonReady, Complete: true},
+			{ID: gen1.ProgressRainbowBadge, Complete: true},
+			{ID: gen1.ProgressSilphScopeAcquired, Complete: true},
+			{ID: gen1.ProgressPokeFluteAcquired, Complete: true},
+			{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: true},
+		},
+	}
+
+	got := a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindRepairFieldCapability || got[0].FieldCapability != "surf" {
+		t.Fatalf("post-Fuchsia progression=%v, want Surf repair", got)
+	}
+
+	obs.FieldCapabilities = []FieldCapability{
+		{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+	}
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindRepairFieldCapability || got[0].FieldCapability != "strength" {
+		t.Fatalf("post-Surf progression=%v, want Strength repair", got)
+	}
+
+	obs.FieldCapabilities = append(obs.FieldCapabilities,
+		FieldCapability{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+	)
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "cinnabar pokemon center" {
+		t.Fatalf("post-field-repair progression=%v, want Cinnabar handoff", got)
+	}
+
+	obs.Location = yellowLocationID(yellowprofile.GameID, 0xab)
+	if got = a.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("Cinnabar handoff should stop the slice at the Center: %v", got)
+	}
+}
+
+func TestYellowFuchsiaUsesSharedGen1Executor(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	o := Objective{Kind: KindProgress, Progress: gen1.ProgressFuchsiaProgressionComplete}
+	if err := a.Validate(o, Observation{GameID: yellowprofile.GameID}); err != nil {
+		t.Fatalf("shared Fuchsia progression rejected on Yellow: %v", err)
 	}
 }
