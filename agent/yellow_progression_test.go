@@ -213,7 +213,7 @@ func TestYellowSharedMiddleProgressionUsesGen1CutPrerequisites(t *testing.T) {
 	}
 }
 
-func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
+func TestYellowPostFuchsiaPreparesSurfThenRunsCinnabarStages(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
@@ -250,14 +250,16 @@ func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 		{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: false, Usable: false},
 	}
 	got = a.ProgressionObjectives(obs)
-	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "cinnabar pokemon center" {
-		t.Fatalf("post-Surf progression=%v, want Cinnabar handoff without Strength repair", got)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressSecretKeyOwned {
+		t.Fatalf("post-Surf progression=%v, want resumable Secret Key transaction", got)
 	}
 
-	obs.Location = PlaceID(yellowLocationID(yellowprofile.GameID, 0xab))
+	// An interrupted Mansion run must keep the Secret Key objective instead of
+	// being pushed back out to a Cinnabar-center travel handoff.
+	obs.Location = PlaceID(yellowLocationID(yellowprofile.GameID, 0xd8))
 	got = a.ProgressionObjectives(obs)
-	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressSecretKeyOwned {
-		t.Fatalf("Cinnabar Center progression=%v, want Secret Key", got)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSecretKeyOwned {
+		t.Fatalf("Mansion resume progression=%v, want Secret Key", got)
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSecretKeyOwned, Complete: true})
@@ -279,7 +281,6 @@ func TestYellowFuchsiaUsesSharedGen1Executor(t *testing.T) {
 		t.Fatalf("shared Fuchsia progression rejected on Yellow: %v", err)
 	}
 }
-
 
 func TestYellowCinnabarValidationDoesNotRequireSilphOrMarsh(t *testing.T) {
 	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
