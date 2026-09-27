@@ -159,6 +159,10 @@ type RunOptions struct {
 	MaxPieces  int
 	MaxFrames  int
 	Cancel     <-chan struct{}
+	// Choose may replace the deterministic policy selector with another bounded
+	// selector. The selector still returns a policy.Decision, so controller
+	// execution remains unchanged. Nil preserves historical deterministic play.
+	Choose     func(tetris.State, policy.Objective) (policy.Decision, error)
 	OnDecision func(policy.Decision)
 }
 
@@ -197,7 +201,11 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 			continue
 		}
 
-		decision, err := policy.Choose(state, opts.Goal.Objective)
+		choose := opts.Choose
+		if choose == nil {
+			choose = policy.Choose
+		}
+		decision, err := choose(state, opts.Goal.Objective)
 		if err != nil {
 			return Result{Reason: "error", Pieces: pieces, State: state, LastDecision: lastDecision, Err: err}
 		}
