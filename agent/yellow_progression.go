@@ -22,7 +22,9 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressRainbowBadge,
 		gen1.ProgressSilphScopeAcquired,
 		gen1.ProgressPokeFluteAcquired,
-		gen1.ProgressFuchsiaProgressionComplete:
+		gen1.ProgressFuchsiaProgressionComplete,
+		gen1.ProgressSecretKeyOwned,
+		gen1.ProgressVolcanoBadge:
 		return true
 	default:
 		return false
@@ -31,6 +33,31 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 
 func yellowProgressionKnown(id ProgressID) bool {
 	return id == yellowprofile.ProgressYellowLabRivalResolved || id == yellowprofile.ProgressYellowMtMoonExitResolved || yellowSharedStoryBeat(id)
+}
+
+
+// yellowSharedProgressionPrerequisites owns ordering where Yellow deliberately
+// reuses a shared executor but not Red's campaign policy. The Mansion mechanics
+// need Surf; Silph/Sabrina are independent story branches and are therefore
+// not prerequisites for Yellow's Cinnabar leg.
+func yellowSharedProgressionPrerequisites(id ProgressID, obs Observation) (bool, error) {
+	switch id {
+	case gen1.ProgressSecretKeyOwned:
+		if !obs.Story.Has(gen1.ProgressFuchsiaProgressionComplete) {
+			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressFuchsiaProgressionComplete})
+		}
+		if !fieldCapabilityUsable(obs, "surf") {
+			return true, fieldCapabilityPrerequisiteError([]CapabilityID{"surf"})
+		}
+		return true, nil
+	case gen1.ProgressVolcanoBadge:
+		if !obs.Story.Has(gen1.ProgressSecretKeyOwned) {
+			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressSecretKeyOwned})
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 // ProgressionObjectives exposes only Yellow story steps that the current
@@ -132,18 +159,16 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		}}
 	}
 
-	const cinnabarCenter PlaceID = "cinnabar pokemon center"
-	if !progressionAtPlaceLocation(obs, cinnabarCenter) {
+	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.CinnabarStages()); ok {
+		note := map[ProgressID]string{
+			gen1.ProgressSecretKeyOwned: "(enter Pokemon Mansion from Cinnabar, solve the live statue-gate topology, and collect the Secret Key)",
+			gen1.ProgressVolcanoBadge:   "(unlock Cinnabar Gym with the Secret Key, answer the six ROM-declared quiz gates, defeat Blaine, and verify the Volcano Badge)",
+		}[next]
 		return []Objective{{
-			Kind:  KindGoTo,
-			Place: cinnabarCenter,
-			Note:  "(use the shared Gen-I route graph with Surf/Strength prepared and establish Cinnabar as the next stable campaign handoff)",
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     note,
 		}}
 	}
 	return nil
-}
-
-func progressionAtPlaceLocation(obs Observation, place PlaceID) bool {
-	destination, ok := objectiveCatalogForObservation(obs).destination(place)
-	return ok && destination.Location != "" && destination.Location == LocationID(obs.Location)
 }
