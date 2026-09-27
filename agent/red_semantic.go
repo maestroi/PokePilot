@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	reddata "github.com/maestroi/pokepilot/red/data"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -13,9 +14,8 @@ import (
 )
 
 // Keep the existing agent names as aliases while progression execution is
-// migrated. The concrete vocabulary is owned by the Red profile where it
-// already exists; League room facts remain adapter-local until that migration
-// is complete.
+// migrated. Shared Kanto progression lives in gen1; Red keeps these aliases
+// so existing adapter-local code does not need to care where the IDs live.
 const (
 	redProgressMtMoonFossilAcquired       ProgressID = redprofile.ProgressMtMoonFossilAcquired
 	redProgressPokedexAcquired            ProgressID = redprofile.ProgressPokedexAcquired
@@ -37,10 +37,10 @@ const (
 	redProgressEarthBadge                 ProgressID = redprofile.ProgressEarthBadge
 	redProgressVictoryRoadCleared         ProgressID = redprofile.ProgressVictoryRoadCleared
 	redProgressIndigoPlateauReady         ProgressID = redprofile.ProgressIndigoPlateauReady
-	redProgressLeagueLoreleiDefeated      ProgressID = "league_lorelei_defeated"
-	redProgressLeagueBrunoDefeated        ProgressID = "league_bruno_defeated"
-	redProgressLeagueAgathaDefeated       ProgressID = "league_agatha_defeated"
-	redProgressLeagueLanceDefeated        ProgressID = "league_lance_defeated"
+	redProgressLeagueLoreleiDefeated      ProgressID = gen1.ProgressLeagueLoreleiDefeated
+	redProgressLeagueBrunoDefeated        ProgressID = gen1.ProgressLeagueBrunoDefeated
+	redProgressLeagueAgathaDefeated       ProgressID = gen1.ProgressLeagueAgathaDefeated
+	redProgressLeagueLanceDefeated        ProgressID = gen1.ProgressLeagueLanceDefeated
 
 	redIndigoPlateauMap      uint8 = 0x09
 	redIndigoPlateauLobbyMap uint8 = 0xAE

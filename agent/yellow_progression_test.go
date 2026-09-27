@@ -72,6 +72,13 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressRoute23BadgeChecks,
 		gen1.ProgressVictoryRoadCleared,
 		gen1.ProgressIndigoPlateauReady,
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+		gen1.ProgressLeagueChampionDefeated,
+		gen1.ProgressMainStoryComplete,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -502,8 +509,24 @@ func TestYellowPostMarshContinuesThroughViridianAndVictoryRoad(t *testing.T) {
 			obs.Badges = append(obs.Badges, "Earth")
 		}
 	}
+	league := []ProgressID{
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+		gen1.ProgressLeagueChampionDefeated,
+		gen1.ProgressMainStoryComplete,
+	}
+	for _, id := range league {
+		got := a.ProgressionObjectives(obs)
+		if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != id {
+			t.Fatalf("League progression before %q=%v, want one matching progress objective", id, got)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: id, Complete: true})
+	}
 	if got := a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("Indigo-ready slice should stop before the League: %v", got)
+		t.Fatalf("Hall-of-Fame-complete Yellow campaign re-offered progression: %v", got)
 	}
 }
 
@@ -567,5 +590,38 @@ func TestYellowLeagueApproachUsesSharedGen1Executors(t *testing.T) {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q must be registered as executable Yellow progression", id)
 		}
+	}
+}
+
+func TestYellowLeagueUsesSharedGen1ExecutorsAndPrerequisites(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	stages := gen1.LeagueStages()
+	for _, id := range stages {
+		if !yellowSharedStoryBeat(id) {
+			t.Fatalf("%q must dispatch through the shared Gen-I League executor", id)
+		}
+		if !yellowProgressionKnown(id) {
+			t.Fatalf("%q must be registered as executable Yellow League progression", id)
+		}
+	}
+
+	obs := Observation{
+		GameID: yellowprofile.GameID,
+		Story: ProgressState{
+			{ID: gen1.ProgressIndigoPlateauReady, Complete: true},
+		},
+	}
+	for i, id := range stages {
+		o := Objective{Kind: KindProgress, Progress: id}
+		if err := a.Validate(o, obs); err != nil {
+			t.Fatalf("%q rejected after its staged prerequisites: %v", id, err)
+		}
+		if i+1 < len(stages) {
+			next := Objective{Kind: KindProgress, Progress: stages[i+1]}
+			if err := a.Validate(next, obs); err == nil {
+				t.Fatalf("%q validated before predecessor %q", stages[i+1], id)
+			}
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: id, Complete: true})
 	}
 }

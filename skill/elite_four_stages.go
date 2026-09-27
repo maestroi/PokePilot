@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -192,7 +193,7 @@ func LeagueFinishHallOfFame(m *emu.Emu) error {
 		return nil
 	}
 	if !facts.LeagueChampionDefeated {
-		return gameruntime.NewProgressionPrerequisiteMissing("league_champion_defeated")
+		return gameruntime.NewProgressionPrerequisiteMissing(gen1.ProgressLeagueChampionDefeated)
 	}
 	if err := finishHallOfFame(m); err != nil {
 		return fmt.Errorf("skill: LeagueFinishHallOfFame: %w", err)

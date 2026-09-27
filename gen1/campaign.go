@@ -69,6 +69,22 @@ func LeagueApproachStages() []game.ProgressID {
 	}
 }
 
+// LeagueStages is the shared no-exit Kanto League sequence from committing
+// to Lorelei's room through the Champion and durable Hall-of-Fame completion.
+// Concrete games own how each member/completion fact is decoded from native
+// event/RAM state; the staged controller mechanics are shared Gen I.
+func LeagueStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressLeagueChallengeStarted,
+		ProgressLeagueLoreleiDefeated,
+		ProgressLeagueBrunoDefeated,
+		ProgressLeagueAgathaDefeated,
+		ProgressLeagueLanceDefeated,
+		ProgressLeagueChampionDefeated,
+		ProgressMainStoryComplete,
+	}
+}
+
 // FirstIncomplete returns the first semantic campaign fact that has not yet
 // been positively observed. It contains no map, event, item, or game-specific
 // assumptions.

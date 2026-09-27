@@ -32,7 +32,14 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressRoute22RivalResolved,
 		gen1.ProgressRoute23BadgeChecks,
 		gen1.ProgressVictoryRoadCleared,
-		gen1.ProgressIndigoPlateauReady:
+		gen1.ProgressIndigoPlateauReady,
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+		gen1.ProgressLeagueChampionDefeated,
+		gen1.ProgressMainStoryComplete:
 		return true
 	default:
 		return false
@@ -257,6 +264,23 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			gen1.ProgressRoute23BadgeChecks:   "(prepare Surf, cross Route 23's three live water bands, pass all seven badge gates, and enter Victory Road 1F)",
 			gen1.ProgressVictoryRoadCleared:   "(prepare Surf and Strength, solve the live 1F/2F/3F boulder chain, and clear Victory Road)",
 			gen1.ProgressIndigoPlateauReady:   "(leave the cleared cave, reach the Indigo Plateau lobby, and fully recover the party before the League)",
+		}[next]
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     note,
+		}}
+	}
+
+	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.LeagueStages()); ok {
+		note := map[ProgressID]string{
+			gen1.ProgressLeagueChallengeStarted: "(commit to the League from the healed Indigo lobby and settle Lorelei's forced room entry)",
+			gen1.ProgressLeagueLoreleiDefeated:  "(defeat Lorelei and settle her post-battle room script before advancing)",
+			gen1.ProgressLeagueBrunoDefeated:    "(prepare bounded between-fight recovery, defeat Bruno, and settle his room script)",
+			gen1.ProgressLeagueAgathaDefeated:   "(prepare bounded between-fight recovery, defeat Agatha, and settle her room script)",
+			gen1.ProgressLeagueLanceDefeated:    "(prepare bounded between-fight recovery, defeat Lance, and settle the Champion-room handoff)",
+			gen1.ProgressLeagueChampionDefeated: "(defeat Yellow's final rival team selected from the native Eevee evolution path and verify the Champion event)",
+			gen1.ProgressMainStoryComplete:      "(advance Oak and the Hall of Fame sequence until Yellow's durable Elite Four completion bit is saved)",
 		}[next]
 		return []Objective{{
 			Kind:     KindProgress,

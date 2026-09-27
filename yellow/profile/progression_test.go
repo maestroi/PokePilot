@@ -187,14 +187,59 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	}
 }
 
+func TestYellowLeagueMemberProgressUsesNativeEvents(t *testing.T) {
+	var mem fakeMemory
+	setYellowEvent(&mem, eventAutowalkedIntoLorelei)
+	setYellowEvent(&mem, eventBeatLorelei)
+	setYellowEvent(&mem, eventBeatBruno)
+	setYellowEvent(&mem, eventBeatAgatha)
+	setYellowEvent(&mem, eventBeatLance)
+
+	story := projectYellowStory(&mem, 0x00)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+	} {
+		if !story.Has(id) {
+			t.Errorf("Yellow League progress %q not projected from native event state", id)
+		}
+	}
+	if story.Has(gen1.ProgressLeagueChampionDefeated) || story.Has(gen1.ProgressMainStoryComplete) {
+		t.Fatalf("pre-Champion League events overclaimed completion: %+v", story)
+	}
+}
+
+func TestYellowChampionEventDoesNotImplyHallOfFame(t *testing.T) {
+	var mem fakeMemory
+	setYellowEvent(&mem, eventBeatChampionRival)
+	story := projectYellowStory(&mem, 0x00)
+	if !story.Has(gen1.ProgressLeagueChampionDefeated) {
+		t.Fatal("Yellow Champion event did not project Champion completion")
+	}
+	if story.Has(gen1.ProgressMainStoryComplete) {
+		t.Fatal("transient Yellow Champion event incorrectly implied durable Hall-of-Fame completion")
+	}
+}
+
 func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.Elite4Flags] = elite4CompletedMask
 	story := projectYellowStory(&mem, 0x00)
-	if !story.Has(gen1.ProgressMainStoryComplete) ||
-		!story.Has(gen1.ProgressLeagueChampionDefeated) ||
-		!story.Has(gen1.ProgressLeagueChallengeStarted) {
-		t.Fatalf("durable Hall-of-Fame state not projected: %+v", story)
+	for _, id := range []game.ProgressID{
+		gen1.ProgressLeagueChallengeStarted,
+		gen1.ProgressLeagueLoreleiDefeated,
+		gen1.ProgressLeagueBrunoDefeated,
+		gen1.ProgressLeagueAgathaDefeated,
+		gen1.ProgressLeagueLanceDefeated,
+		gen1.ProgressLeagueChampionDefeated,
+		gen1.ProgressMainStoryComplete,
+	} {
+		if !story.Has(id) {
+			t.Errorf("durable Hall-of-Fame state missing %q: %+v", id, story)
+		}
 	}
 }
 
