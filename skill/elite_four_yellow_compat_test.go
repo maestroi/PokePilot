@@ -25,9 +25,9 @@ func TestYellowLeagueSharedMapIDs(t *testing.T) {
 func TestYellowLeagueSharedControllerGeometryMatchesDecomp(t *testing.T) {
 	for path, want := range map[string]string{
 		"data/maps/objects/LoreleisRoom.asm": "object_event 5, 2, SPRITE_LORELEI, STAY, DOWN, TEXT_LORELEISROOM_LORELEI, OPP_LORELEI, 1",
-		"data/maps/objects/BrunosRoom.asm":    "object_event 5, 2, SPRITE_BRUNO, STAY, DOWN, TEXT_BRUNOSROOM_BRUNO, OPP_BRUNO, 1",
-		"data/maps/objects/AgathasRoom.asm":   "object_event 5, 2, SPRITE_AGATHA, STAY, DOWN, TEXT_AGATHASROOM_AGATHA, OPP_AGATHA, 1",
-		"data/maps/objects/LancesRoom.asm":    "object_event 6, 1, SPRITE_LANCE, STAY, DOWN, TEXT_LANCESROOM_LANCE, OPP_LANCE, 1",
+		"data/maps/objects/BrunosRoom.asm":   "object_event 5, 2, SPRITE_BRUNO, STAY, DOWN, TEXT_BRUNOSROOM_BRUNO, OPP_BRUNO, 1",
+		"data/maps/objects/AgathasRoom.asm":  "object_event 5, 2, SPRITE_AGATHA, STAY, DOWN, TEXT_AGATHASROOM_AGATHA, OPP_AGATHA, 1",
+		"data/maps/objects/LancesRoom.asm":   "object_event 6, 1, SPRITE_LANCE, STAY, DOWN, TEXT_LANCESROOM_LANCE, OPP_LANCE, 1",
 	} {
 		if got := yellowDecompText(t, path); !strings.Contains(got, want) {
 			t.Fatalf("Yellow League geometry %s no longer matches shared controller fact %q", path, want)
