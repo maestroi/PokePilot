@@ -87,8 +87,9 @@ func TestYellowProgressionInsertsJessieJamesAfterMtMoonFossil(t *testing.T) {
 		t.Fatalf("post-fossil progression=%v, want Yellow Jessie/James exit", got)
 	}
 	obs.Story = append(obs.Story, ProgressFact{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true})
-	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("Mt Moon slice should stop after Yellow exit until next controller lands: %v", got)
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSSTicketAcquired {
+		t.Fatalf("post-MtMoon progression=%v, want S.S. Ticket", got)
 	}
 }
 
