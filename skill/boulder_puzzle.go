@@ -308,7 +308,7 @@ func localStrengthPuzzleSpec(m *emu.Emu, h worldmodel.HeaderView, dest Destinati
 	sx, sy := playerXY(m)
 	fixed := warpAvoidance(h, int(sx), int(sy), nil)
 	return BoulderPuzzleSpec{
-		Map:       header.ID,
+		Map:       dest.Map,
 		Reachable: &world.Point{X: int(dest.X), Y: int(dest.Y)},
 		Fixed:     fixed,
 	}
@@ -319,7 +319,7 @@ func localStrengthPuzzleSpec(m *emu.Emu, h worldmodel.HeaderView, dest Destinati
 // reported as not-needed: ordinary/Cut/Surf pathing owns that case.
 func currentLocalStrengthPlan(m *emu.Emu, romData []byte, h worldmodel.HeaderView, dest Destination) (world.PushPlan, bool, error) {
 	header := h.WorldMapHeader()
-	if header.ID != dest.Map || m.Peek8(sym.CurMap) != dest.Map {
+	if header.ID != world.MapID(dest.Map) || m.Peek8(sym.CurMap) != dest.Map {
 		return world.PushPlan{}, false, nil
 	}
 	var mem state.Mem
