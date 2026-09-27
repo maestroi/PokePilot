@@ -12,6 +12,43 @@ import (
 	tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
 
+func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, maxPieces int) {
+	goal, err := tetrissession.ParseGoal(rawGoal)
+	if err != nil {
+		panic(fmt.Sprintf("tetris goal: %v", err))
+	}
+	if _, err := tetrissession.BootToPlaying(profile, m, goal.Mode()); err != nil {
+		panic(fmt.Sprintf("tetris boot: %v", err))
+	}
+	result := tetrissession.Run(profile, m, tetrissession.RunOptions{
+		Goal:      goal,
+		MaxPieces: maxPieces,
+		MaxFrames: llmMaxFrames,
+		OnDecision: func(decision tetrispolicy.Decision) {
+			fmt.Printf(
+				"tetris: %s %s -> rotation %d column %d score=%d lookahead=%d\n",
+				decision.Objective,
+				decision.Piece,
+				decision.Candidate.Placement.Rotation,
+				decision.Candidate.Placement.Column,
+				decision.Candidate.ImmediateScore,
+				decision.Candidate.LookaheadScore,
+			)
+		},
+	})
+	fmt.Printf(
+		"tetris stopped: %s after %d piece(s), score=%d lines=%d level=%d\n",
+		result.Reason,
+		result.Pieces,
+		result.State.Score,
+		result.State.LinesCleared,
+		result.State.Level,
+	)
+	if result.Err != nil {
+		panic(fmt.Sprintf("tetris run: %v", result.Err))
+	}
+}
+
 func runFarmTetris(
 	m *emu.Emu,
 	profile game.CartridgeProfile,
