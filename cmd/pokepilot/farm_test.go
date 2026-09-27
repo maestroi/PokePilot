@@ -578,6 +578,23 @@ func TestHeartbeatSnapKeepsGameDecisionAcrossStatusSamples(t *testing.T) {
 	}
 }
 
+func TestNormalizeLeasedSpecRepairsStaleYellowStarter(t *testing.T) {
+	spec := farm.Spec{
+		Game:    " Pokemon-Yellow ",
+		Starter: "mewtwo",
+	}
+	normalizeLeasedSpec(&spec)
+	if spec.Game != "pokemon-yellow" || spec.Starter != "pikachu" {
+		t.Fatalf("normalized Yellow spec = game %q starter %q, want pokemon-yellow/pikachu", spec.Game, spec.Starter)
+	}
+
+	red := farm.Spec{Game: "pokemon-red", Starter: "mewtwo"}
+	normalizeLeasedSpec(&red)
+	if red.Game != "pokemon-red" || red.Starter != "mewtwo" {
+		t.Fatalf("Red spec was changed by Yellow compatibility normalization: %+v", red)
+	}
+}
+
 func TestValidateSpecAcceptsYellowScriptedPikachu(t *testing.T) {
 	for _, starter := range []string{"", "pikachu", "Pikachu"} {
 		if err := validateSpec("pokemon-yellow", "scripted", starter, "viridian city"); err != nil {

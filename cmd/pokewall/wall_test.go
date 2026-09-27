@@ -72,6 +72,22 @@ func TestSpecsEnqueue(t *testing.T) {
 	}
 }
 
+func TestApplySpecRepairsPersistedYellowStarter(t *testing.T) {
+	w := NewWall("")
+	const runID = "old-yellow"
+	w.tiles[runID] = &Tile{}
+	w.applySpec(runID, farm.Spec{
+		RunID:   runID,
+		Game:    "Pokemon-Yellow",
+		Planner: "llm",
+		Starter: "mewtwo",
+	})
+	got := w.tiles[runID]
+	if got.Game != "pokemon-yellow" || got.Starter != "pikachu" {
+		t.Fatalf("restored Yellow tile = game %q starter %q, want pokemon-yellow/pikachu", got.Game, got.Starter)
+	}
+}
+
 func TestYellowSpecNormalizesScriptedPikachu(t *testing.T) {
 	srv := newTestServer(t, "")
 
