@@ -42,15 +42,12 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	var selection redstarter.Selection
 	var err error
 	if detectErr == nil && string(profile.ID()) == "pokemon-yellow" {
-		if request != "" && request != "pikachu" {
-			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", spec.Starter)
-		}
 		// Yellow's starter is a cartridge script, not a Red ROM experiment.
-		// Keep the image byte-identical while retaining the semantic starter
-		// identity in run metadata.
+		// Ignore stale Red-style starter metadata from older persisted leases:
+		// the cartridge always provides Pikachu and must remain byte-identical.
 		selection, err = redstarter.Resolve("", spec.Seed)
 		if err == nil {
-			selection.Request = spec.Starter
+			selection.Request = "pikachu"
 			selection.Species = "pikachu"
 			selection.Slot = "scripted"
 		}
