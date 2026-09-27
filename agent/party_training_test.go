@@ -31,7 +31,7 @@ func TestInsertPartyTrainingObjectivesOffersViableSecondariesBeforeTravel(t *tes
 		},
 		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 8, MaxLevel: 12, Slots: 10}},
 	}
-	known := NewKnowledge(map[uint8][]uint8{})
+	known := NewKnowledge(nil)
 	base := []Objective{
 		{Kind: KindHeal},
 		{Kind: KindGoTo, Place: PlaceID("route 25")},
@@ -81,7 +81,7 @@ func TestInsertPartyTrainingObjectivesFiltersUnsafeAndUnviableMembers(t *testing
 			{Species: SpeciesID("zubat"), Level: 8, HP: 20, MaxHP: 20},
 		},
 	}
-	known := NewKnowledge(map[uint8][]uint8{})
+	known := NewKnowledge(nil)
 	estimator := func(slot, target int) (TrainingEstimate, error) {
 		switch slot {
 		case 2:
