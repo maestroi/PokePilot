@@ -9,14 +9,14 @@ import (
 
 func TestYellowViridianVictoryRoadSharedMapIDs(t *testing.T) {
 	for id, want := range map[uint8]string{
-		viridianCityMap:        "VIRIDIAN_CITY",
-		viridianGymMap:         "VIRIDIAN_GYM",
-		route22Map:             "ROUTE_22",
-		route23Map:             "ROUTE_23",
-		victoryRoad1FMap:       "VICTORY_ROAD_1F",
-		victoryRoad2FMap:       "VICTORY_ROAD_2F",
-		victoryRoad3FMap:       "VICTORY_ROAD_3F",
-		indigoPlateauMap:       "INDIGO_PLATEAU",
+		viridianCityMap:       "VIRIDIAN_CITY",
+		viridianGymMap:        "VIRIDIAN_GYM",
+		route22Map:            "ROUTE_22",
+		route23Map:            "ROUTE_23",
+		victoryRoad1FMap:      "VICTORY_ROAD_1F",
+		victoryRoad2FMap:      "VICTORY_ROAD_2F",
+		victoryRoad3FMap:      "VICTORY_ROAD_3F",
+		indigoPlateauMap:      "INDIGO_PLATEAU",
 		indigoPlateauLobbyMap: "INDIGO_PLATEAU_LOBBY",
 	} {
 		if got := yellowrom.MapName(id); got != want {
