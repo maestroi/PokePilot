@@ -22,7 +22,9 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressRainbowBadge,
 		gen1.ProgressSilphScopeAcquired,
 		gen1.ProgressPokeFluteAcquired,
-		gen1.ProgressFuchsiaProgressionComplete:
+		gen1.ProgressFuchsiaProgressionComplete,
+		gen1.ProgressSecretKeyOwned,
+		gen1.ProgressVolcanoBadge:
 		return true
 	default:
 		return false
@@ -137,7 +139,19 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		return []Objective{{
 			Kind:  KindGoTo,
 			Place: cinnabarCenter,
-			Note:  "(use the shared Gen-I route graph with Surf/Strength prepared and establish Cinnabar as the next stable campaign handoff)",
+			Note:  "(use the shared Gen-I route graph with Surf prepared and establish Cinnabar as the next stable campaign handoff)",
+		}}
+	}
+
+	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.CinnabarStages()); ok {
+		note := map[ProgressID]string{
+			gen1.ProgressSecretKeyOwned: "(enter Pokemon Mansion from Cinnabar, solve the live statue-gate topology, and collect the Secret Key)",
+			gen1.ProgressVolcanoBadge:   "(unlock Cinnabar Gym with the Secret Key, answer the six ROM-declared quiz gates, defeat Blaine, and verify the Volcano Badge)",
+		}[next]
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     note,
 		}}
 	}
 	return nil
