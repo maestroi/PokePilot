@@ -155,19 +155,19 @@ func BootToPlaying(profile game.CartridgeProfile, m Machine, mode tetris.Mode) (
 }
 
 type RunOptions struct {
-	Goal      Goal
-	MaxPieces int
-	MaxFrames int
-	Cancel    <-chan struct{}
+	Goal       Goal
+	MaxPieces  int
+	MaxFrames  int
+	Cancel     <-chan struct{}
 	OnDecision func(policy.Decision)
 }
 
 type Result struct {
-	Reason       string          `json:"reason"`
-	Pieces       int             `json:"pieces"`
-	State        tetris.State    `json:"state"`
+	Reason       string           `json:"reason"`
+	Pieces       int              `json:"pieces"`
+	State        tetris.State     `json:"state"`
 	LastDecision *policy.Decision `json:"last_decision,omitempty"`
-	Err          error           `json:"-"`
+	Err          error            `json:"-"`
 }
 
 func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
