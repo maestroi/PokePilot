@@ -28,17 +28,17 @@ const (
 )
 
 const (
-	yellowOpeningMaxSteps            = 40
-	yellowOpeningScriptBudget        = 30000
-	yellowOpeningBallReactionBudget  = 600
-	yellowOpeningGateApproachX uint8 = 10
-	yellowOpeningGateApproachY uint8 = 1
-	yellowOpeningBallX         uint8 = 7
-	yellowOpeningBallY         uint8 = 3
-	yellowOpeningBallStandX    uint8 = 7
-	yellowOpeningBallStandY    uint8 = 4
-	yellowOpeningRivalX        uint8 = 5
-	yellowOpeningRivalY        uint8 = 6
+	yellowOpeningMaxSteps                 = 40
+	yellowOpeningScriptBudget             = 30000
+	yellowOpeningBallReactionBudget       = 600
+	yellowOpeningGateApproachX      uint8 = 10
+	yellowOpeningGateApproachY      uint8 = 1
+	yellowOpeningBallX              uint8 = 7
+	yellowOpeningBallY              uint8 = 3
+	yellowOpeningBallStandX         uint8 = 7
+	yellowOpeningBallStandY         uint8 = 4
+	yellowOpeningRivalX             uint8 = 5
+	yellowOpeningRivalY             uint8 = 6
 )
 
 func yellowOpeningReached(f yellowprofile.OpeningFacts) bool {
