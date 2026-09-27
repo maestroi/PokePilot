@@ -16,6 +16,7 @@ import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
   goalProgress,
   isLiveRun,
+  isTetrisRun,
   locationLabel,
   objectiveLabel,
   playSpeedLabel,
@@ -36,10 +37,24 @@ const emit = defineEmits<{
   select: [run: SpectatorRun]
 }>()
 
+const isTetris = computed(() => isTetrisRun(props.run))
 const badges = computed(() => props.run.player?.badges?.length || 0)
 const party = computed(() => props.run.player?.party?.length || 0)
+const tetrisScore = computed(() => Number(props.run.game_state?.score || 0))
+const tetrisLines = computed(() => Number(props.run.game_state?.lines_cleared || 0))
+const tetrisLevel = computed(() => Number(props.run.game_state?.level || 0))
+const tetrisPiece = computed(() => props.run.game_state?.active?.piece || '—')
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
-const goal = computed(() => goalProgress(props.run))
+const goal = computed(() => {
+  if (!isTetris.value) return goalProgress(props.run)
+  if (props.run.game_state?.complete) return 100
+  const match = (props.run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
+  if (!match) return 0
+  const target = Number(match[2] || 0)
+  if (target <= 0) return 0
+  const current = match[1] === 'score' ? tetrisScore.value : tetrisLines.value
+  return Math.max(0, Math.min(100, 100 * current / target))
+})
 const mapProgress = computed(() => `${Number(props.run.maps_visited || 0)}/${MAP_CATALOG.length}`)
 const plannerState = computed(() => {
   if (props.run.decision) return null
@@ -76,7 +91,7 @@ function watch(run: SpectatorRun): void {
 
         <p class="mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
           RomPilot runs game playthroughs with autonomous agents and broadcasts the interesting parts live:
-          decisions, progression, party state, objectives, world position, and the mistakes that make every run different.
+          decisions, progression, live game state, objectives, and the mistakes that make every run different.
         </p>
 
         <div class="mt-6 flex flex-wrap gap-3">
@@ -152,7 +167,7 @@ function watch(run: SpectatorRun): void {
               </div>
 
               <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-3 py-3">
-                <span class="rounded-md bg-black/55 px-2 py-1 text-[9px] font-bold tracking-[0.08em] text-white uppercase ring-1 ring-white/10">{{ playStyleLabel(run) }}</span>
+                <span class="rounded-md bg-black/55 px-2 py-1 text-[9px] font-bold tracking-[0.08em] text-white uppercase ring-1 ring-white/10">{{ isTetris ? 'Tetris' : playStyleLabel(run) }}</span>
                 <span class="rounded-md bg-black/55 px-2 py-1 font-mono text-[9px] text-slate-300 ring-1 ring-white/10">{{ locationLabel(run) }}</span>
               </div>
               <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-3 pt-12">
@@ -188,26 +203,50 @@ function watch(run: SpectatorRun): void {
               </div>
 
               <div class="grid grid-cols-2 gap-2">
-                <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
-                  <TrophyIcon class="size-4 text-amber-300" aria-hidden="true" />
-                  <div class="mt-2 font-mono text-xl font-black text-white">{{ badges }}</div>
-                  <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Badges</div>
-                </div>
-                <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
-                  <QueueListIcon class="size-4 text-violet-300" aria-hidden="true" />
-                  <div class="mt-2 font-mono text-xl font-black text-white">{{ party }}/6</div>
-                  <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Party</div>
-                </div>
-                <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
-                  <BoltIcon class="size-4 text-cyan-300" aria-hidden="true" />
-                  <div class="mt-2 font-mono text-xl font-black text-white">{{ run.stats?.round ?? 0 }}</div>
-                  <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Rounds</div>
-                </div>
-                <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
-                  <SignalIcon class="size-4 text-emerald-300" aria-hidden="true" />
-                  <div class="mt-2 font-mono text-xl font-black text-white">{{ runStatusLabel(run) }}</div>
-                  <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Status</div>
-                </div>
+                <template v-if="isTetris">
+                  <div class="rounded-xl border border-yellow-300/12 bg-yellow-300/[0.035] p-3">
+                    <TrophyIcon class="size-4 text-amber-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ tetrisScore.toLocaleString() }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Score</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <QueueListIcon class="size-4 text-violet-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ tetrisLines }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Lines</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <BoltIcon class="size-4 text-cyan-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ tetrisLevel }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Level</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <SignalIcon class="size-4 text-emerald-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ runStatusLabel(run) }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Status</div>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <TrophyIcon class="size-4 text-amber-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ badges }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Badges</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <QueueListIcon class="size-4 text-violet-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ party }}/6</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Party</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <BoltIcon class="size-4 text-cyan-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ run.stats?.round ?? 0 }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Rounds</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <SignalIcon class="size-4 text-emerald-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ runStatusLabel(run) }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Status</div>
+                  </div>
+                </template>
               </div>
 
               <button
@@ -235,22 +274,22 @@ function watch(run: SpectatorRun): void {
       <div class="public-stat">
         <GlobeAltIcon class="size-5 text-blue-300" aria-hidden="true" />
         <div>
-          <strong>{{ mapProgress }}</strong>
-          <span>Maps explored</span>
+          <strong>{{ isTetris ? tetrisScore.toLocaleString() : mapProgress }}</strong>
+          <span>{{ isTetris ? 'Tetris score' : 'Maps explored' }}</span>
         </div>
       </div>
       <div class="public-stat">
         <BoltIcon class="size-5 text-violet-300" aria-hidden="true" />
         <div>
-          <strong>{{ run.stats?.round ?? 0 }}</strong>
-          <span>Planner rounds</span>
+          <strong>{{ isTetris ? tetrisLines : (run.stats?.round ?? 0) }}</strong>
+          <span>{{ isTetris ? 'Lines cleared' : 'Planner rounds' }}</span>
         </div>
       </div>
       <div class="public-stat">
         <TrophyIcon class="size-5 text-amber-300" aria-hidden="true" />
         <div>
-          <strong>{{ badges }}</strong>
-          <span>Badges</span>
+          <strong>{{ isTetris ? tetrisPiece : badges }}</strong>
+          <span>{{ isTetris ? 'Active piece' : 'Badges' }}</span>
         </div>
       </div>
     </div>
@@ -290,7 +329,7 @@ function watch(run: SpectatorRun): void {
           <div class="mt-3 line-clamp-2 text-xs font-extrabold leading-5 text-white">{{ runTitle(candidate) }}</div>
           <div class="mt-1 truncate text-[10px] text-slate-500">{{ routeLabel(candidate) }}</div>
           <div class="mt-3 flex items-center justify-between gap-2 text-[9px] text-slate-500">
-            <span>{{ candidate.player?.badges?.length || 0 }} badges</span>
+            <span>{{ isTetrisRun(candidate) ? `${Number(candidate.game_state?.score || 0).toLocaleString()} pts · ${Number(candidate.game_state?.lines_cleared || 0)} lines` : `${candidate.player?.badges?.length || 0} badges` }}</span>
             <ArrowRightIcon class="size-3 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-cyan-200" aria-hidden="true" />
           </div>
         </button>
