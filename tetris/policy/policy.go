@@ -87,8 +87,8 @@ func Candidates(state tetris.State, objective Objective) (Objective, []Candidate
 			candidates[i].ResultBoard,
 			state.Next.Piece,
 			0,
-			4,
-			0,
+			tetris.SpawnAnchorX,
+			tetris.SpawnAnchorY,
 			state.Level,
 			resolved,
 		)

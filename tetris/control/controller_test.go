@@ -187,26 +187,49 @@ func TestPlaceUsesShortestCounterClockwiseRotation(t *testing.T) {
 func TestPlaceRejectsBlockedRotationBeforeDrop(t *testing.T) {
 	m := newFakeMachine()
 	m.blockRotation = true
+	m.mem[sym.Score] = 0x41 // packed BCD 41: a run that has already scored
 
-	_, err := Place(tetrisprofile.New(), m, Placement{Rotation: 1, Column: 4})
+	result, err := Place(tetrisprofile.New(), m, Placement{Rotation: 1, Column: 4})
 	if !errors.Is(err, ErrBlocked) {
 		t.Fatalf("error = %v, want ErrBlocked", err)
 	}
 	if containsButton(m.history, emu.Down) {
 		t.Fatalf("controller dropped after rejected rotation: %#v", m.history)
 	}
+	assertLiveAbortState(t, result)
 }
 
 func TestPlaceRejectsBlockedShiftBeforeDrop(t *testing.T) {
 	m := newFakeMachine()
 	m.blockShift = true
+	m.mem[sym.Score] = 0x41
 
-	_, err := Place(tetrisprofile.New(), m, Placement{Rotation: 0, Column: 3})
+	result, err := Place(tetrisprofile.New(), m, Placement{Rotation: 0, Column: 3})
 	if !errors.Is(err, ErrBlocked) {
 		t.Fatalf("error = %v, want ErrBlocked", err)
 	}
 	if containsButton(m.history, emu.Down) {
 		t.Fatalf("controller dropped after rejected shift: %#v", m.history)
+	}
+	assertLiveAbortState(t, result)
+}
+
+// assertLiveAbortState pins that an aborted placement reports where the game
+// actually is. The zero State here used to reach the farm as "score 0, lines 0"
+// for a run whose final frame showed SCORE 41.
+func assertLiveAbortState(t *testing.T, result Result) {
+	t.Helper()
+	if result.After.Score != 41 {
+		t.Fatalf("after score = %d, want the live 41", result.After.Score)
+	}
+	if result.After.Active == nil || result.After.Active.Piece != tetris.PieceT {
+		t.Fatalf("after active = %#v, want the live piece", result.After.Active)
+	}
+	if !result.After.ReadyForPieceInput {
+		t.Fatal("after must be the live ready state, not the zero State")
+	}
+	if result.BoardChanged || result.LinesCleared != 0 {
+		t.Fatalf("aborted placement changed the board: changed=%v lines=%d", result.BoardChanged, result.LinesCleared)
 	}
 }
 
