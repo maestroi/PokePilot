@@ -131,11 +131,11 @@ func DecodeState(reader game.MemoryReader) (State, error) {
 		Complete: isCompleteState(gameState),
 	}
 
-	score, err := decodePackedBCDLE(readBytes(reader, sym.Score, 3))
-	if err != nil {
-		return State{}, fmt.Errorf("tetris: score: %w", err)
-	}
 	if mode == ModeA {
+		score, err := decodePackedBCDLE(readBytes(reader, sym.Score, 3))
+		if err != nil {
+			return State{}, fmt.Errorf("tetris: score: %w", err)
+		}
 		state.Score = score
 		state.ScoreValid = true
 	}
