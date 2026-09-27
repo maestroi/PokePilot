@@ -3,7 +3,7 @@ package agent
 import "testing"
 
 func recoveryTestKnowledge(edges map[LocationID][]LocationID, visited ...LocationID) *Knowledge {
-	k := NewKnowledge(KnowledgeTopology{Adjacency: edges})
+	k := NewKnowledge(&KnowledgeTopology{Adjacency: edges})
 	for _, location := range visited {
 		k.SawLocation(location)
 	}
