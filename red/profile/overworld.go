@@ -19,6 +19,7 @@ func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
 		NativeMapID:  uint16(player.MapID),
 		X:            player.X,
 		Y:            player.Y,
+		Facing:       player.Facing.String(),
 		Controllable: state.Controllable(&mem),
 		MovementIdle: mem.U8(sym.WalkCounter) == 0 && mem.U8(sym.JoyIgnore) == 0 && mem.U8(sym.JoyHeld) == 0,
 		InBattle:     state.DecodeBattle(&mem) != nil,
