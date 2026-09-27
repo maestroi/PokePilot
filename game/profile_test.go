@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+type testCartridgeProfile struct {
+	id       GameID
+	revision RevisionID
+	title    string
+}
+
+func (p testCartridgeProfile) ID() GameID               { return p.id }
+func (p testCartridgeProfile) Revision() RevisionID     { return p.revision }
+func (p testCartridgeProfile) Detect(info ROMInfo) bool { return info.Title == p.title }
+
 type testProfile struct {
 	id       GameID
 	revision RevisionID
@@ -53,6 +63,45 @@ func TestInspectROM(t *testing.T) {
 	}
 	if info.CartridgeType != 0x13 || info.ROMSizeCode != 0x05 || info.RAMSizeCode != 0x03 {
 		t.Fatalf("header = %#v", info)
+	}
+}
+
+func TestCartridgeRegistryAcceptsIdentityOnlyProfiles(t *testing.T) {
+	p := testCartridgeProfile{id: "puzzle-test", revision: "rev0", title: "PUZZLE TEST"}
+	r, err := NewCartridgeRegistry(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, info, err := r.DetectROM(testROM("PUZZLE TEST"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID() != p.ID() || info.Title != "PUZZLE TEST" {
+		t.Fatalf("got profile=%s info=%#v", got.ID(), info)
+	}
+}
+
+func TestCartridgeRegistryRejectsAmbiguousMatches(t *testing.T) {
+	one := testCartridgeProfile{id: "one", revision: "rev0", title: "PUZZLE TEST"}
+	two := testCartridgeProfile{id: "two", revision: "rev0", title: "PUZZLE TEST"}
+	r, err := NewCartridgeRegistry(one, two)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := r.DetectROM(testROM("PUZZLE TEST")); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("expected ambiguous match error, got %v", err)
+	}
+}
+
+func TestValidateCartridgeProfileContract(t *testing.T) {
+	if err := ValidateCartridgeProfileContract(testCartridgeProfile{id: "tetris", revision: "rev1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCartridgeProfileContract(testCartridgeProfile{revision: "rev1"}); err == nil {
+		t.Fatal("expected empty id error")
+	}
+	if err := ValidateCartridgeProfileContract(testCartridgeProfile{id: "tetris"}); err == nil {
+		t.Fatal("expected empty revision error")
 	}
 }
 

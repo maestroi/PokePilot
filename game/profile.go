@@ -191,12 +191,21 @@ type ROMParser interface {
 	Species(rawSpecies uint16) (SpeciesID, bool)
 }
 
-// GameProfile owns all game/revision-specific layout knowledge required to
-// turn emulator/ROM bytes into semantic state.
-type GameProfile interface {
+// CartridgeProfile is the smallest contract required to identify a supported
+// cartridge image. It intentionally contains no gameplay semantics: non-Pokémon
+// games such as Tetris can participate in ROM selection without inventing
+// party, badge, inventory, map, or battle concepts.
+type CartridgeProfile interface {
 	ID() GameID
 	Revision() RevisionID
 	Detect(ROMInfo) bool
+}
+
+// GameProfile is the Pokémon gameplay profile contract. It extends the generic
+// cartridge identity with the semantic state currently consumed by the Pokémon
+// runtime. Existing Pokémon profiles therefore also satisfy CartridgeProfile.
+type GameProfile interface {
+	CartridgeProfile
 	Symbols() SymbolTable
 	Features() ProfileFeatures
 	ROMParser() ROMParser
@@ -216,17 +225,27 @@ var requiredProfileSymbols = []string{
 	"money",
 }
 
-// ValidateProfileContract is reusable by every concrete profile test. It
-// checks the invariants generic runtime code assumes without knowing a game.
-func ValidateProfileContract(p GameProfile) error {
+// ValidateCartridgeProfileContract checks only identity invariants shared by
+// every supported cartridge, regardless of the game's mechanics.
+func ValidateCartridgeProfileContract(p CartridgeProfile) error {
 	if p == nil {
-		return errors.New("game: nil profile")
+		return errors.New("game: nil cartridge profile")
 	}
 	if strings.TrimSpace(string(p.ID())) == "" {
-		return errors.New("game: profile has empty id")
+		return errors.New("game: cartridge profile has empty id")
 	}
 	if strings.TrimSpace(string(p.Revision())) == "" {
-		return fmt.Errorf("game: profile %q has empty revision", p.ID())
+		return fmt.Errorf("game: cartridge profile %q has empty revision", p.ID())
+	}
+	return nil
+}
+
+// ValidateProfileContract is reusable by every concrete Pokémon profile test.
+// It first validates generic cartridge identity, then the Pokémon semantic
+// invariants expected by the existing gameplay runtime.
+func ValidateProfileContract(p GameProfile) error {
+	if err := ValidateCartridgeProfileContract(p); err != nil {
+		return err
 	}
 	if p.ROMParser() == nil {
 		return fmt.Errorf("game: profile %s@%s has nil ROM parser", p.ID(), p.Revision())
@@ -238,6 +257,69 @@ func ValidateProfileContract(p GameProfile) error {
 		}
 	}
 	return nil
+}
+
+// CartridgeRegistry selects exactly one cartridge profile for a ROM without
+// requiring any game-specific observation or execution contract.
+type CartridgeRegistry struct {
+	profiles []CartridgeProfile
+}
+
+func NewCartridgeRegistry(profiles ...CartridgeProfile) (*CartridgeRegistry, error) {
+	r := &CartridgeRegistry{}
+	for _, p := range profiles {
+		if err := r.Register(p); err != nil {
+			return nil, err
+		}
+	}
+	return r, nil
+}
+
+func (r *CartridgeRegistry) Register(p CartridgeProfile) error {
+	if err := ValidateCartridgeProfileContract(p); err != nil {
+		return err
+	}
+	for _, existing := range r.profiles {
+		if existing.ID() == p.ID() && existing.Revision() == p.Revision() {
+			return fmt.Errorf("game: duplicate cartridge profile %s@%s", p.ID(), p.Revision())
+		}
+	}
+	r.profiles = append(r.profiles, p)
+	return nil
+}
+
+func (r *CartridgeRegistry) Profiles() []CartridgeProfile {
+	out := append([]CartridgeProfile(nil), r.profiles...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID() == out[j].ID() {
+			return out[i].Revision() < out[j].Revision()
+		}
+		return out[i].ID() < out[j].ID()
+	})
+	return out
+}
+
+func (r *CartridgeRegistry) DetectROM(rom []byte) (CartridgeProfile, ROMInfo, error) {
+	info := InspectROM(rom)
+	var matches []CartridgeProfile
+	for _, p := range r.profiles {
+		if p.Detect(info) {
+			matches = append(matches, p)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], info, nil
+	case 0:
+		return nil, info, UnsupportedROMError{Info: info}
+	default:
+		keys := make([]string, 0, len(matches))
+		for _, p := range matches {
+			keys = append(keys, fmt.Sprintf("%s@%s", p.ID(), p.Revision()))
+		}
+		sort.Strings(keys)
+		return nil, info, fmt.Errorf("game: ambiguous ROM cartridge profile match for title=%q sha256=%s: %s", info.Title, info.SHA256, strings.Join(keys, ", "))
+	}
 }
 
 // Registry selects exactly one profile for a ROM. Registration order is not
