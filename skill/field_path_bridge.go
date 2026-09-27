@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -22,6 +23,16 @@ import (
 //     and run-jjzpcm0bpqco24ijjvh3vm93q (triage ab11fbcf89382c39)
 //   - Game Corner stand (silph_scope_acquired / RocketHideout):
 //     run-3hksgfzyx8naz3kvcvmuevzjeo
+//
+// acceptBoundaryPrefix lets a bridge tile qualify when the policy route from
+// it is a non-empty safe prefix ending at a semantic boundary
+// (world.ErrRouteReplanRequired). Only GoTo's ErrNoRoute branch sets it: from
+// a pocket with no route at all, any executable prefix is progress, and every
+// destination behind a semantic gate only ever yields a prefix. Leaving
+// Route 2's Diglett pocket for the Indigo lobby looped on "no route" until
+// this was allowed (run-46xvnrqmqwcwvjnfqu5u03nj, issue #2006). The
+// replan-required branch keeps it false so the Cinnabar ping-pong below
+// cannot recur.
 func fieldPathBridgeOnCurrentMap(
 	m *emu.Emu,
 	romData []byte,
@@ -30,6 +41,7 @@ func fieldPathBridgeOnCurrentMap(
 	dest Destination,
 	prereqs world.RoutePrerequisites,
 	blockedHere map[world.Edge]bool,
+	acceptBoundaryPrefix bool,
 ) (Destination, bool, error) {
 	live, err := currentRoutingRuntime(m)
 	if err != nil {
@@ -74,9 +86,12 @@ func fieldPathBridgeOnCurrentMap(
 		// bridge leads back here. MEASURED on run-mis3rbm8t2283mwv0a6mrac8s:
 		// fastest-policy GoTo from Cinnabar Island ping-ponged between
 		// (6,4) and (6,10) until route_replan_exhausted.
-		_, rerr := routePlanToDestinationByTravelPolicy(
+		route, rerr := routePlanToDestinationByTravelPolicy(
 			m, routeGraph, cur, x, y, dest, blockedHere, prereqs,
 		)
+		if acceptBoundaryPrefix && errors.Is(rerr, world.ErrRouteReplanRequired) && len(route.Steps) > 0 {
+			rerr = nil
+		}
 		if rerr != nil {
 			return
 		}
