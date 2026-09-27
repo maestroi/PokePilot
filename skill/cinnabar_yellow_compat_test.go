@@ -20,12 +20,12 @@ func yellowDecompText(t *testing.T, path string) string {
 
 func TestYellowCinnabarSharedMapIDs(t *testing.T) {
 	for id, want := range map[uint8]string{
-		cinnabarIslandMap:     "CINNABAR_ISLAND",
-		pokemonMansion1FMap:   "POKEMON_MANSION_1F",
-		cinnabarGymMap:        "CINNABAR_GYM",
-		pokemonMansion2FMap:   "POKEMON_MANSION_2F",
-		pokemonMansion3FMap:   "POKEMON_MANSION_3F",
-		pokemonMansionB1FMap:  "POKEMON_MANSION_B1F",
+		cinnabarIslandMap:    "CINNABAR_ISLAND",
+		pokemonMansion1FMap:  "POKEMON_MANSION_1F",
+		cinnabarGymMap:       "CINNABAR_GYM",
+		pokemonMansion2FMap:  "POKEMON_MANSION_2F",
+		pokemonMansion3FMap:  "POKEMON_MANSION_3F",
+		pokemonMansionB1FMap: "POKEMON_MANSION_B1F",
 	} {
 		if got := yellowrom.MapName(id); got != want {
 			t.Fatalf("Yellow map %#02x = %q, want %q", id, got, want)
