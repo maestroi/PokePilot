@@ -130,8 +130,8 @@ type Tile struct {
 	GameState    map[string]any
 	GameDecision map[string]any
 	Reason       string
-	Detail   string
-	Finished bool
+	Detail       string
+	Finished     bool
 	// workerAddrs is where this run's runner watch server is reachable,
 	// last reported by its heartbeats. Unexported: it is proxy input, not
 	// grid data.
@@ -214,8 +214,8 @@ type tileRow struct {
 	Trail              [][2]uint8               `json:"trail,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
-	GameState          map[string]any            `json:"game_state,omitempty"`
-	GameDecision       map[string]any            `json:"game_decision,omitempty"`
+	GameState          map[string]any           `json:"game_state,omitempty"`
+	GameDecision       map[string]any           `json:"game_decision,omitempty"`
 	Attempts           int                      `json:"attempts"`
 	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
 	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
@@ -336,8 +336,8 @@ type persistedTile struct {
 	StopSoFar          string                   `json:"stop_so_far,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
-	GameState          map[string]any            `json:"game_state,omitempty"`
-	GameDecision       map[string]any            `json:"game_decision,omitempty"`
+	GameState          map[string]any           `json:"game_state,omitempty"`
+	GameDecision       map[string]any           `json:"game_decision,omitempty"`
 	Reason             string                   `json:"reason,omitempty"`
 	Detail             string                   `json:"detail,omitempty"`
 	Finished           bool                     `json:"finished"`
