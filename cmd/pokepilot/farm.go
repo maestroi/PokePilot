@@ -466,7 +466,17 @@ func pingWorker(client *farm.Client, addrs []string) {
 // resolve. An llm spec may name a starter (empty lets the model pick); dest is unused.
 func validateSpec(gameID, planner, starter, dest string) error {
 	const starterHelp = "use a canonical starter, any Gen I Pokemon (for example mewtwo), or random[:reasonable|basic|any]"
+	gameID = strings.ToLower(strings.TrimSpace(gameID))
 	starter = strings.ToLower(strings.TrimSpace(starter))
+	if gameID == "tetris" {
+		if starter != "" {
+			return fmt.Errorf("tetris does not use a starter, got %q", starter)
+		}
+		if planner != "policy" {
+			return fmt.Errorf("tetris uses planner %q; got %q", "policy", planner)
+		}
+		return nil
+	}
 	if gameID == "pokemon-yellow" {
 		if starter != "" && starter != "pikachu" {
 			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", starter)
@@ -529,9 +539,17 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		return false
 	}
 
-	profile, _, err := profiles.Detect(m.ROM())
+	cartridge, _, err := profiles.DetectCartridge(m.ROM())
 	if err != nil {
-		detail := fmt.Sprintf("detect active game profile: %v", err)
+		detail := fmt.Sprintf("detect active cartridge profile: %v", err)
+		log.Printf("farm: %s: %s", spec.RunID, detail)
+		finishRun(m, client, spec, "error", detail, burn, checkpointDir, nil, nil)
+		return false
+	}
+	pokemonProfile, isPokemon := cartridge.(game.GameProfile)
+	isTetris := string(cartridge.ID()) == "tetris"
+	if !isPokemon && !isTetris {
+		detail := fmt.Sprintf("game %q has no farm runtime", cartridge.ID())
 		log.Printf("farm: %s: %s", spec.RunID, detail)
 		finishRun(m, client, spec, "error", detail, burn, checkpointDir, nil, nil)
 		return false
@@ -540,9 +558,14 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	m.Pace(fps)
 	m.TraceHeader(runHeader(planner, starter, dest, seed, burn))
 
-	redRenderer, renderErr := redrenderstate.New(m.ROM())
-	if renderErr != nil {
-		log.Printf("farm: %s: semantic renderer unavailable: %v", spec.RunID, renderErr)
+	captureRender := func(*emu.Emu) {}
+	if isPokemon {
+		redRenderer, renderErr := redrenderstate.New(m.ROM())
+		if renderErr != nil {
+			log.Printf("farm: %s: semantic renderer unavailable: %v", spec.RunID, renderErr)
+		} else {
+			captureRender = func(em *emu.Emu) { renderFeed.capture(em, redRenderer) }
+		}
 	}
 
 	// Start after fresh restore + seed burn, or after durable resume restore,
@@ -559,15 +582,24 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// Compose the sample callback on this (stepping) goroutine: the dialogue
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	trail := &heartbeatTrail{}
-	m.OnSample(func(m *emu.Emu) {
-		if profile.Features().Has(game.FeatureBattles) {
-			tracer.sample(m)
+	sampleRunHeartbeat := func(em *emu.Emu) {
+		if isPokemon {
+			if pokemonProfile.Features().Has(game.FeatureBattles) {
+				tracer.sample(em)
+			}
+			sampleHeartbeat(em, pokemonProfile, spec.RunID, snap, mem, addrs, trail)
+			return
 		}
-		renderFeed.capture(m, redRenderer)
-		sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
+		if isTetris {
+			sampleTetrisHeartbeat(em, cartridge, spec.RunID, snap, addrs)
+		}
+	}
+	m.OnSample(func(em *emu.Emu) {
+		captureRender(em)
+		sampleRunHeartbeat(em)
 	})
-	renderFeed.capture(m, redRenderer)
-	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail) // synchronous initial sample
+	captureRender(m)
+	sampleRunHeartbeat(m) // synchronous initial sample
 
 	var samples chan periodicSample
 	var stopUploader chan struct{}
@@ -606,6 +638,12 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 			reason = "drained"
 			detail = "runner shutdown requested; stopped at safe objective boundary"
 		}
+	case "policy":
+		reason, detail = runFarmTetris(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+		if farmDrainRequested(drain) && reason == "cancelled" {
+			reason = "drained"
+			detail = "runner shutdown requested; " + detail
+		}
 	}
 
 	if emulatorPoisoned {
@@ -628,8 +666,8 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// immediately, before OnSample happens to refresh the periodic snapshot.
 	// Sample the settled emulator state explicitly so badges/player/stats agree
 	// with the terminal result that is about to be reported.
-	renderFeed.capture(m, redRenderer)
-	sampleHeartbeat(m, profile, spec.RunID, snap, mem, addrs, trail)
+	captureRender(m)
+	sampleRunHeartbeat(m)
 
 	// Stop and join the periodic heartbeat first, then publish exactly one
 	// settled snapshot while the run is still active on the wall. Finish comes
