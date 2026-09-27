@@ -78,7 +78,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down qwagent-triage-install
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -211,6 +211,13 @@ farm-up: farm-image
 	docker service update --force --detach pokefarm_linkbroker
 	docker service update --force --detach pokefarm_virtualtrader
 	@echo "pokefarm UI: http://localhost:$(FARM_WALL_PORT)/"
+
+# Publish every recognised cartridge in $(POKEPILOT_ROM_DIR) to the S3 ROM
+# store (roms/<game id>) that runners on other nodes fetch from. Games already
+# in the store are left alone, so this is safe to rerun after adding a ROM.
+roms-upload:
+	$(load_env) \
+	go run ./cmd/romupload -dir "$(POKEPILOT_ROM_DIR)"
 
 farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
