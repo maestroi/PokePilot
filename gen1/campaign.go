@@ -25,7 +25,6 @@ func RocketTowerStages() []game.ProgressID {
 	}
 }
 
-
 // FuchsiaStages is the shared Kanto handoff after the Poké Flute. The
 // progression transaction owns Route 12 Snorlax, Koga/Soul, HM03 Surf and
 // HM04 Strength as one resumable semantic milestone.
