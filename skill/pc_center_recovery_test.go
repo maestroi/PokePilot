@@ -9,7 +9,7 @@ import (
 )
 
 func TestSingleDestinationWarpExitRequiresOneExternalWarpNeighbor(t *testing.T) {
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		1: {
 			{Kind: world.EdgeWarp, From: 1, To: 2, WarpX: 2, WarpY: 7},
 			{Kind: world.EdgeWarp, From: 1, To: 2, WarpX: 3, WarpY: 7},
