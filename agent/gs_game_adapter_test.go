@@ -131,7 +131,10 @@ func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
 		t.Fatalf("progression = %+v, want Mystery Egg return objective", got)
 	}
 
-	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressMysteryEggReturned, Complete: true})
+	obs.Story = ProgressState{
+		{ID: gsprofile.ProgressStarterReceived, Complete: true},
+		{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
+	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
 		t.Fatalf("completed errand still offered: %+v", got)
 	}
