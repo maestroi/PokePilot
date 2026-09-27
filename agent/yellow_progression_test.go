@@ -62,6 +62,8 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressSilphScopeAcquired,
 		gen1.ProgressPokeFluteAcquired,
 		gen1.ProgressFuchsiaProgressionComplete,
+		gen1.ProgressSecretKeyOwned,
+		gen1.ProgressVolcanoBadge,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -211,7 +213,7 @@ func TestYellowSharedMiddleProgressionUsesGen1CutPrerequisites(t *testing.T) {
 	}
 }
 
-func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
+func TestYellowPostFuchsiaPreparesSurfThenRunsCinnabarStages(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
@@ -248,13 +250,27 @@ func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 		{Name: "strength", BadgeOwned: true, HMOwned: true, Learned: false, Usable: false},
 	}
 	got = a.ProgressionObjectives(obs)
-	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "cinnabar pokemon center" {
-		t.Fatalf("post-Surf progression=%v, want Cinnabar handoff without Strength repair", got)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressSecretKeyOwned {
+		t.Fatalf("post-Surf progression=%v, want resumable Secret Key transaction", got)
 	}
 
-	obs.Location = PlaceID(yellowLocationID(yellowprofile.GameID, 0xab))
+	// An interrupted Mansion run must keep the Secret Key objective instead of
+	// being pushed back out to a Cinnabar-center travel handoff.
+	obs.Location = PlaceID(yellowLocationID(yellowprofile.GameID, 0xd8))
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSecretKeyOwned {
+		t.Fatalf("Mansion resume progression=%v, want Secret Key", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSecretKeyOwned, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressVolcanoBadge {
+		t.Fatalf("post-Secret-Key progression=%v, want Volcano Badge", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressVolcanoBadge, Complete: true})
 	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("Cinnabar handoff should stop the slice at the Center: %v", got)
+		t.Fatalf("post-Blaine Cinnabar slice should stop after Volcano Badge: %v", got)
 	}
 }
 
@@ -263,5 +279,47 @@ func TestYellowFuchsiaUsesSharedGen1Executor(t *testing.T) {
 	o := Objective{Kind: KindProgress, Progress: gen1.ProgressFuchsiaProgressionComplete}
 	if err := a.Validate(o, Observation{GameID: yellowprofile.GameID}); err != nil {
 		t.Fatalf("shared Fuchsia progression rejected on Yellow: %v", err)
+	}
+}
+
+func TestYellowCinnabarValidationDoesNotRequireSilphOrMarsh(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	obs := Observation{
+		GameID: yellowprofile.GameID,
+		Story: ProgressState{
+			{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: true},
+		},
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+		},
+	}
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSecretKeyOwned}, obs); err != nil {
+		t.Fatalf("Yellow Secret Key should need Fuchsia + Surf, not Silph/Marsh: %v", err)
+	}
+
+	withoutSurf := obs
+	withoutSurf.FieldCapabilities = nil
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSecretKeyOwned}, withoutSurf); err == nil {
+		t.Fatal("Yellow Secret Key validation accepted missing Surf")
+	}
+
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressVolcanoBadge}, obs); err == nil {
+		t.Fatal("Yellow Blaine validation accepted missing Secret Key")
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSecretKeyOwned, Complete: true})
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressVolcanoBadge}, obs); err != nil {
+		t.Fatalf("Yellow Blaine rejected with Secret Key: %v", err)
+	}
+}
+
+func TestYellowCinnabarUsesSharedGen1Executors(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	for _, id := range []ProgressID{gen1.ProgressSecretKeyOwned, gen1.ProgressVolcanoBadge} {
+		if !yellowSharedStoryBeat(id) {
+			t.Fatalf("%q must dispatch through the shared Gen-I executor", id)
+		}
+		if !yellowProgressionKnown(id) {
+			t.Fatalf("%q must be registered as executable Yellow progression", id)
+		}
 	}
 }
