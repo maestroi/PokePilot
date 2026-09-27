@@ -100,7 +100,6 @@ func TestGSObjectiveAdapterFactoriesAreRegistered(t *testing.T) {
 	}
 }
 
-
 func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
 	obs := Observation{GameID: gsprofile.GoldGameID, PartyCount: 0}
 	got, ok := StarterObjectiveForSpecies(obs, "cyndaquil")
