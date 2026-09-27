@@ -252,7 +252,7 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 
 	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.LeagueApproachStages()); ok {
 		note := map[ProgressID]string{
-			gen1.ProgressEarthBadge:          "(return to Viridian after all seven prior badges, let the city script open the Gym, traverse the live arrow tiles, defeat Giovanni, and verify the Earth Badge)",
+			gen1.ProgressEarthBadge:           "(return to Viridian after all seven prior badges, let the city script open the Gym, traverse the live arrow tiles, defeat Giovanni, and verify the Earth Badge)",
 			gen1.ProgressRoute22RivalResolved: "(travel to Route 22, defeat Yellow's final rival team, and settle the complete after-battle exit script)",
 			gen1.ProgressRoute23BadgeChecks:   "(prepare Surf, cross Route 23's three live water bands, pass all seven badge gates, and enter Victory Road 1F)",
 			gen1.ProgressVictoryRoadCleared:   "(prepare Surf and Strength, solve the live 1F/2F/3F boulder chain, and clear Victory Road)",
