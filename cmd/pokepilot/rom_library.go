@@ -226,11 +226,10 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("detect loaded %s: %w", id, err)
 	}
-	if pokemon, ok := cartridge.(game.GameProfile); ok {
+	if _, ok := cartridge.(game.GameProfile); ok {
 		if _, err := skill.BootToOverworld(m); err != nil {
 			return nil, fmt.Errorf("boot %s: %w", id, err)
 		}
-		_ = pokemon // documents the gameplay capability used by this branch
 	} else if id == "tetris" {
 		if _, err := tetrissession.BootToTitle(cartridge, m); err != nil {
 			return nil, fmt.Errorf("boot %s: %w", id, err)
