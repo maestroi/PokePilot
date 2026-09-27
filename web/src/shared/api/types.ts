@@ -149,6 +149,9 @@ export interface DecisionEngineSpec {
   battles?: boolean
   objectives?: boolean
   failures?: boolean
+  // Non-Pokemon runtimes can expose their own bounded typed decision points.
+  // Tetris uses this for choices from its already-legal placement set.
+  placements?: boolean
   min_confidence?: number
 }
 
