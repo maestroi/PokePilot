@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"os"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -287,14 +288,20 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 		defer close(done)
 		var once sync.Once
 		var lastHeartbeatError time.Time
+		var stall frameStallWatch
 		for {
 			select {
 			case <-stop:
 				return
 			default:
 			}
+			hb := snap()
+			if stall.observe(hb.Frame, time.Now()) {
+				log.Printf("farm: %s: frame %d unchanged for %s; goroutine dump follows", runID, hb.Frame, frameStallDumpAfter)
+				_ = pprof.Lookup("goroutine").WriteTo(log.Writer(), 1)
+			}
 			ctx, cancelCtx := context.WithTimeout(context.Background(), heartbeatDeadline)
-			reply, err := client.Heartbeat(ctx, snap())
+			reply, err := client.Heartbeat(ctx, hb)
 			cancelCtx()
 			if err != nil {
 				if lastHeartbeatError.IsZero() || time.Since(lastHeartbeatError) >= 30*time.Second {
@@ -315,6 +322,32 @@ func heartbeatLoop(client *farm.Client, runID string, snap func() farm.Heartbeat
 		}
 	}()
 	return done
+}
+
+// frameStallDumpAfter is how long the emulator frame may stay put before the
+// heartbeat goroutine logs every goroutine's stack. A live worker that is
+// alive but not stepping (CPU spin, blocked call) is otherwise opaque: the
+// control port is overlay-only and the process keeps heartbeating.
+const frameStallDumpAfter = 60 * time.Second
+
+// frameStallWatch reports true once per stall, when frame has not moved for
+// frameStallDumpAfter. Any frame change re-arms it.
+type frameStallWatch struct {
+	frame  uint64
+	since  time.Time
+	dumped bool
+}
+
+func (w *frameStallWatch) observe(frame uint64, now time.Time) bool {
+	if w.since.IsZero() || frame != w.frame {
+		*w = frameStallWatch{frame: frame, since: now}
+		return false
+	}
+	if w.dumped || now.Sub(w.since) < frameStallDumpAfter {
+		return false
+	}
+	w.dumped = true
+	return true
 }
 
 // sendFinalHeartbeat publishes the settled snapshot after the periodic loop
