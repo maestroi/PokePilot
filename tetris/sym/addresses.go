@@ -26,8 +26,8 @@ const (
 	// LockStage is non-zero while a landed piece is locking/clearing.
 	LockStage uint16 = 0xFF98
 
-	// Lines is a two-byte packed-BCD value. In Type A it is total cleared
-	// lines; in Type B/versus it counts remaining goal lines.
+	// Lines starts at the Type A two-byte packed-BCD total. Type B/versus use
+	// only the low byte as their remaining-goal counter.
 	Lines uint16 = 0xFF9E
 
 	Level  uint16 = 0xFFA9
