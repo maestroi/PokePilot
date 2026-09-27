@@ -190,11 +190,11 @@ func TestExpectedLineScoreMatchesGameTable(t *testing.T) {
 
 func TestReachableUsesControllerRotationPath(t *testing.T) {
 	var board tetris.Board
-	// T rotation 1 at spawn anchor (4,0) occupies board cell (3,0).
+	// L rotation 0 at spawn does not occupy (4,1), while rotation 1 does.
 	// Blocking it means the controller cannot take B from rotation 0 to 1.
-	board[0][3] = true
+	board[1][4] = true
 
-	if reachable(board, tetris.PieceT, 0, 4, 0, 1, 4) {
+	if reachable(board, tetris.PieceL, 0, 4, 0, 1, 4) {
 		t.Fatal("rotation through occupied cell unexpectedly reachable")
 	}
 }
