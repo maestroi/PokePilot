@@ -66,7 +66,6 @@ func TestRocketTowerStagesAreOrderedAndFresh(t *testing.T) {
 	}
 }
 
-
 func TestFuchsiaStagesAreOrderedAndFresh(t *testing.T) {
 	want := []game.ProgressID{ProgressFuchsiaProgressionComplete}
 	got := FuchsiaStages()
