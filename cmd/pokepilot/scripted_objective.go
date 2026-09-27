@@ -46,8 +46,12 @@ func scriptedStarterObjective(m *emu.Emu, request string, seed int64) (agent.Obj
 		}
 		return o, nil
 	}
-	if strings.TrimSpace(request) == "" {
+	req := strings.ToLower(strings.TrimSpace(request))
+	if req == "" {
 		return agent.Objective{}, fmt.Errorf("%s offers a starter choice; name one", obs.GameID)
+	}
+	if o, ok := agent.StarterObjectiveForSpecies(obs, agent.SpeciesID(req)); ok {
+		return o, nil
 	}
 	return starterObjectiveForRequest(request, seed)
 }
