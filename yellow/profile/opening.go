@@ -21,6 +21,7 @@ type OpeningFacts struct {
 	InBattle     bool
 	Controllable bool
 	TextOpen     bool
+	TextBoxID    uint8
 	ChoicePrompt bool
 
 	OakAppeared      bool
@@ -46,6 +47,7 @@ func DecodeOpening(reader game.MemoryReader) OpeningFacts {
 		InBattle:         nativeReader.Peek8(sym.IsInBattle) != 0,
 		Controllable:     yellowControllable(nativeReader),
 		TextOpen:         nativeReader.Peek8(sym.FontLoaded) != 0,
+		TextBoxID:        nativeReader.Peek8(sym.TextBoxID),
 		ChoicePrompt:     choice,
 		OakAppeared:      yellowHasEvent(nativeReader, eventOakAppearedInPallet),
 		FollowedOak:      yellowHasEvent(nativeReader, eventFollowedOakIntoLab),
