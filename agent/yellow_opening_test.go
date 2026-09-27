@@ -67,12 +67,28 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			want: yellowOpeningFightRival,
 		},
 		{
+			name: "rival Eevee handoff choice-shaped frame stays script owned",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, TextOpen: true, ChoicePrompt: true,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningScript,
+		},
+		{
 			name: "Pikachu received walks to rival",
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
 				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningWalkToRival,
+		},
+		{
+			name: "post starter non battle choice still fails closed",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, ChoicePrompt: true, GotStarter: true, PartyCount: 1,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			err: errYellowOpeningChoiceRequired,
 		},
 		{
 			name: "completed opening",
