@@ -100,6 +100,81 @@ func TestYellowSpecNormalizesScriptedPikachu(t *testing.T) {
 	}
 }
 
+
+func TestTetrisSpecAndHeartbeatSurfaceGameTelemetry(t *testing.T) {
+	srv := newTestServer(t, "")
+	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
+		RunID: "tetris-run",
+		Game:   "TETRIS",
+		Planner: "policy",
+		Goal:   farm.GoalFrom("score:10000"),
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("Tetris spec: status %d, want 200", resp.StatusCode)
+	}
+
+	resp := postJSON(t, srv.URL+"/v1/lease", struct{}{})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Tetris lease: status %d, want 200", resp.StatusCode)
+	}
+	var leased farm.Spec
+	if err := json.NewDecoder(resp.Body).Decode(&leased); err != nil {
+		t.Fatalf("decode Tetris lease: %v", err)
+	}
+	if leased.Game != "tetris" || leased.Planner != "policy" || leased.Starter != "" {
+		t.Fatalf("Tetris lease = game %q planner %q starter %q", leased.Game, leased.Planner, leased.Starter)
+	}
+
+	hb := farm.Heartbeat{
+		RunID: "tetris-run",
+		Frame: 99,
+		GameState: map[string]any{
+			"kind":          "tetris",
+			"screen":        "playing",
+			"score":         1200,
+			"lines_cleared": 4,
+		},
+		GameDecision: map[string]any{
+			"kind":      "tetris-placement",
+			"objective": "score",
+			"rotation":  1,
+			"column":    6,
+		},
+	}
+	if resp := postJSON(t, srv.URL+"/v1/runs/tetris-run/heartbeat", hb); resp.StatusCode != http.StatusOK {
+		t.Fatalf("Tetris heartbeat: status %d, want 200", resp.StatusCode)
+	}
+
+	_, body := get(t, srv.URL+"/v1/dashboard")
+	var view dashboardView
+	if err := json.Unmarshal([]byte(body), &view); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	var found *tileRow
+	for i := range view.Runs {
+		if view.Runs[i].RunID == "tetris-run" {
+			found = &view.Runs[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("Tetris run missing from dashboard")
+	}
+	if found.GameState["kind"] != "tetris" || found.GameState["screen"] != "playing" {
+		t.Fatalf("dashboard game_state = %#v", found.GameState)
+	}
+	if found.GameDecision["kind"] != "tetris-placement" || found.GameDecision["objective"] != "score" {
+		t.Fatalf("dashboard game_decision = %#v", found.GameDecision)
+	}
+
+	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
+		RunID: "bad-tetris",
+		Game:   "tetris",
+		Planner: "llm",
+	}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Tetris LLM spec: status %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestLeaseOldestOnceThenEmpty(t *testing.T) {
 	srv := newTestServer(t, "")
 	for _, id := range []string{"a", "b"} {
