@@ -12,21 +12,21 @@ import (
 )
 
 const (
-	lavenderTownMap          uint8 = 0x04
-	route7Map                uint8 = 0x12
-	route8Map                uint8 = 0x13
-	undergroundRoute7Map     uint8 = 0x4D
-	undergroundRoute8Map     uint8 = 0x50
-	undergroundWestEastMap   uint8 = 0x79
-	lavenderPokemonCenterMap uint8 = 0x8D
-	pokemonTower1FMap        uint8 = 0x8E
-	pokemonTower2FMap        uint8 = 0x8F
-	pokemonTower3FMap        uint8 = 0x90
-	pokemonTower4FMap        uint8 = 0x91
-	pokemonTower5FMap        uint8 = 0x92
-	pokemonTower6FMap        uint8 = 0x93
-	pokemonTower7FMap        uint8 = 0x94
-	mrFujisHouseMap          uint8 = 0x95
+	lavenderTownMap           = 0x04
+	route7Map                 = 0x12
+	route8Map                 = 0x13
+	undergroundRoute7Map      = 0x4D
+	undergroundRoute8Map      = 0x50
+	undergroundWestEastMap    = 0x79
+	lavenderPokemonCenterMap  = 0x8D
+	pokemonTower1FMap         = 0x8E
+	pokemonTower2FMap         = 0x8F
+	pokemonTower3FMap         = 0x90
+	pokemonTower4FMap         = 0x91
+	pokemonTower5FMap         = 0x92
+	pokemonTower6FMap         = 0x93
+	pokemonTower7FMap         = 0x94
+	mrFujisHouseMap           = 0x95
 
 	pokeFluteItem  uint8 = 0x49
 	marowakSpecies uint8 = 0x91
