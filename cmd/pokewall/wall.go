@@ -1876,6 +1876,8 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Trail = nil
 	t.Stats = nil
 	t.Player = nil
+	t.GameState = nil
+	t.GameDecision = nil
 	t.Reason = ""
 	if reason == "drained" {
 		t.Detail = fmt.Sprintf("attempt %d drained: %s", completed, detail)
