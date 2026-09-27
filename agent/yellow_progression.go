@@ -145,5 +145,5 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 
 func progressionAtPlaceLocation(obs Observation, place PlaceID) bool {
 	destination, ok := objectiveCatalogForObservation(obs).destination(place)
-	return ok && destination.Location != "" && destination.Location == obs.Location
+	return ok && destination.Location != "" && destination.Location == LocationID(obs.Location)
 }
