@@ -30,7 +30,19 @@ func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 	if err != nil {
 		return worldmodel.MapHeader{}, err
 	}
-	return projectWorldHeader(h), nil
+	out := projectWorldHeader(h)
+	actors, err := SpecialInteractionActors(p.rom, mapID)
+	if err != nil {
+		return worldmodel.MapHeader{}, err
+	}
+	roles := make(map[[2]uint8]worldmodel.InteractionRole, len(actors))
+	for _, actor := range actors {
+		roles[[2]uint8{actor.X, actor.Y}] = actor.Role
+	}
+	for i := range out.Objects {
+		out.Objects[i].Role = roles[[2]uint8{out.Objects[i].X, out.Objects[i].Y}]
+	}
+	return out, nil
 }
 
 func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
