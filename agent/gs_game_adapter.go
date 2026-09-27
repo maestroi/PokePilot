@@ -43,18 +43,25 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
-	if o.Kind != KindStarter {
+	switch o.Kind {
+	case KindStarter:
+		spec, ok := gsStarterSpecFor(o.Starter)
+		if !ok {
+			return fmt.Errorf("agent: %s: unsupported Gold/Silver starter %d", o, o.Starter)
+		}
+		if o.Species != "" && gameruntime.SpeciesID(o.Species) != spec.Species {
+			return fmt.Errorf("agent: %s: starter slot %s contains %s, got semantic species %q",
+				o, starterName(o.Starter), spec.Species, o.Species)
+		}
+		return nil
+	case KindProgress:
+		if o.Progress != gsprofile.ProgressMysteryEggReturned {
+			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
+		}
+		return nil
+	default:
 		return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 	}
-	spec, ok := gsStarterSpecFor(o.Starter)
-	if !ok {
-		return fmt.Errorf("agent: %s: unsupported Gold/Silver starter %d", o, o.Starter)
-	}
-	if o.Species != "" && gameruntime.SpeciesID(o.Species) != spec.Species {
-		return fmt.Errorf("agent: %s: starter slot %s contains %s, got semantic species %q",
-			o, starterName(o.Starter), spec.Species, o.Species)
-	}
-	return nil
 }
 
 // NormalizeBoundary is deliberately fail-closed except for the exact opening
@@ -73,7 +80,10 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 	if facts.Controllable && !facts.InBattle {
 		return nil
 	}
-	if !facts.InBattle && gsOpeningScriptMap(facts.NativeMapID) {
+	if facts.InBattle && facts.GotStarter && !facts.GaveMysteryEggToElm {
+		return nil
+	}
+	if !facts.InBattle && (gsOpeningScriptMap(facts.NativeMapID) || gsErrandScriptMap(facts.NativeMapID)) {
 		return nil
 	}
 	return fmt.Errorf("%w: map=%#04x at (%d,%d) controllable=%v battle=%v script=%v",
@@ -82,14 +92,25 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 
 func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
-	if o.Kind != KindStarter {
+	switch o.Kind {
+	case KindStarter:
+		if err := executeGSOpening(a.m, a.romData, o.Starter); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	case KindProgress:
+		if o.Progress != gsprofile.ProgressMysteryEggReturned {
+			result.Outcome = OutcomeBlocked
+			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
+		}
+		if err := executeGSPostStarterErrand(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	default:
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 	}
-	if err := executeGSOpening(a.m, a.romData, o.Starter); err != nil {
-		return result, fmt.Errorf("agent: %s: %w", o, err)
-	}
-	return result, nil
 }
 
 func (a *gsObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
@@ -112,7 +133,7 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
-	if o.Kind != KindStarter {
+	if o.Kind != KindStarter && !(o.Kind == KindProgress && o.Progress == gsprofile.ProgressMysteryEggReturned) {
 		return fmt.Errorf("%w: %s has no Gold/Silver verifier yet", ErrObjectivePostconditionUnavailable, o)
 	}
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
@@ -163,5 +184,20 @@ func (a *gsObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog 
 		{Starter: skill.StarterChikorita, Species: "chikorita"},
 		{Starter: skill.StarterCyndaquil, Species: "cyndaquil"},
 		{Starter: skill.StarterTotodile, Species: "totodile"},
+	}}
+}
+
+
+func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
+	if obs.PartyCount == 0 || !obs.Story.Has(gsprofile.ProgressStarterReceived) {
+		return nil
+	}
+	if obs.Story.Has(gsprofile.ProgressMysteryEggReturned) {
+		return nil
+	}
+	return []Objective{{
+		Kind:     KindProgress,
+		Progress: gsprofile.ProgressMysteryEggReturned,
+		Note:     "(visit Mr. Pokemon, receive Oak's Pokedex, resolve the Cherrygrove rival and officer name sequence, then return the Mystery Egg to Elm)",
 	}}
 }
