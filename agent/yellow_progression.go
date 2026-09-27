@@ -120,18 +120,16 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 		}}
 	}
 
-	// Fuchsia owns the durable HM handoff; the generic field-capability repair
-	// engine owns teaching/rearranging carriers. Preparing both before the
-	// Cinnabar leg keeps later Surf/Strength traversal independent of which
-	// party member happened to receive the HMs.
-	for _, capability := range []CapabilityID{"surf", "strength"} {
-		if !fieldCapabilityUsable(obs, capability) {
-			return []Objective{{
-				Kind:            KindRepairFieldCapability,
-				FieldCapability: capability,
-				Note:            "(prepare the newly acquired field move on a usable party carrier before the Cinnabar leg)",
-			}}
-		}
+	// Fuchsia owns the durable HM03/HM04 handoff; the generic field-capability
+	// repair engine owns teaching/rearranging carriers. Cinnabar requires Surf,
+	// but not Strength, so repair only the capability this route actually uses.
+	// HM04 remains owned and can be prepared lazily when a later route needs it.
+	if !fieldCapabilityUsable(obs, "surf") {
+		return []Objective{{
+			Kind:            KindRepairFieldCapability,
+			FieldCapability: "surf",
+			Note:            "(prepare the newly acquired Surf field move on a usable party carrier before the Cinnabar leg)",
+		}}
 	}
 
 	const cinnabarCenter PlaceID = "cinnabar pokemon center"
