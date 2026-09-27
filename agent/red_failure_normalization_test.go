@@ -88,6 +88,13 @@ func TestNormalizeRedFailureRepresentativeClasses(t *testing.T) {
 			err: skill.ErrNavigationStalled, final: stable,
 			class: gameruntime.FailureClassControllerUncertain, cause: "navigation_stalled", recoverable: false,
 		},
+		{
+			name: "stranded inventory detour", phase: gameruntime.FailurePhaseExecution,
+			err: fmt.Errorf("bag maintenance failed: %w and return failed: %w",
+				errors.New("sell failed"), skill.ErrInventoryDetourStranded),
+			final: stable,
+			class: gameruntime.FailureClassBlocked, cause: "inventory_detour_stranded", recoverable: true,
+		},
 		// MEASURED run-7r4gd76w4w061ewqnfebx7pw0 round 5: "catch a TENTACOOL
 		// here" exhausted Fish's rod-attempt budget (32 casts, 11 encounters,
 		// never the wanted species) and fell through to unknown_failure/
@@ -206,5 +213,12 @@ func TestNormalizedFailureFingerprintIncludesPhaseAndContext(t *testing.T) {
 	if recoverableFailureKey(obj, ObjectiveResult{Outcome: OutcomeBlocked, Failure: &first, Final: final}) ==
 		recoverableFailureKey(obj, ObjectiveResult{Outcome: OutcomeBlocked, Failure: &second, Final: final}) {
 		t.Fatal("failure context did not affect fingerprint")
+	}
+}
+
+func TestSpecificErrorFallbackSkipsFmtMultiWrapper(t *testing.T) {
+	err := fmt.Errorf("two generic failures: %w / %w", errors.New("first"), errors.New("second"))
+	if got := firstSpecificErrorType(err); got != "" {
+		t.Fatalf("firstSpecificErrorType(multi-wrap) = %q; want no Go implementation wrapper type", got)
 	}
 }
