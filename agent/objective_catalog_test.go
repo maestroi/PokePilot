@@ -52,7 +52,7 @@ func TestAdapterCatalogFeedsGenericProviders(t *testing.T) {
 			{Kind: CatalogInteractableItem, X: 8, Y: 9, Item: "potion"},
 		},
 	}
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		"alpha": {"beta"},
 		"beta":  {"alpha"},
 	}})
@@ -109,7 +109,7 @@ func TestCatalogNormalizationKeepsOffersDeterministic(t *testing.T) {
 		{Place: "zeta", Location: "beta"},
 		{Place: "beta", Location: "beta"},
 	}}
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		"alpha": {"beta"},
 	}})
 	first := OfferWithEvidence(obs, known)
@@ -140,7 +140,7 @@ func TestRecoveryPrefersActivePokemonCenterCheckpoint(t *testing.T) {
 			{Place: "checkpoint pokemon center", Location: "checkpoint-center", Center: true},
 		}},
 	}
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		"field":             {"near-center"},
 		"near-center":       {"field", "checkpoint-center"},
 		"checkpoint-center": {"near-center"},
