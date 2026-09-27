@@ -5,16 +5,17 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
 const (
-	leagueProgressChallengeStarted gameruntime.ProgressID = "league_challenge_started"
-	leagueProgressLoreleiDefeated  gameruntime.ProgressID = "league_lorelei_defeated"
-	leagueProgressBrunoDefeated    gameruntime.ProgressID = "league_bruno_defeated"
-	leagueProgressAgathaDefeated   gameruntime.ProgressID = "league_agatha_defeated"
-	leagueProgressLanceDefeated    gameruntime.ProgressID = "league_lance_defeated"
-	leagueProgressChampionDefeated gameruntime.ProgressID = "league_champion_defeated"
+	leagueProgressChallengeStarted gameruntime.ProgressID = gen1.ProgressLeagueChallengeStarted
+	leagueProgressLoreleiDefeated  gameruntime.ProgressID = gen1.ProgressLeagueLoreleiDefeated
+	leagueProgressBrunoDefeated    gameruntime.ProgressID = gen1.ProgressLeagueBrunoDefeated
+	leagueProgressAgathaDefeated   gameruntime.ProgressID = gen1.ProgressLeagueAgathaDefeated
+	leagueProgressLanceDefeated    gameruntime.ProgressID = gen1.ProgressLeagueLanceDefeated
+	leagueProgressChampionDefeated gameruntime.ProgressID = gen1.ProgressLeagueChampionDefeated
 )
 
 type leagueStageFight func(*emu.Emu, []byte, MovePolicy, leagueStageDescriptor) error
