@@ -49,6 +49,9 @@ type DecisionEngineSpec struct {
 	// Failures lets the backend classify failures the runtime already
 	// declared recoverable.
 	Failures bool `json:"failures,omitempty"`
+	// Placements lets a non-Pokemon runtime such as Tetris choose only from
+	// placements its deterministic policy already proved legal.
+	Placements bool `json:"placements,omitempty"`
 	// MinConfidence below which an answer falls back to the existing path.
 	// Zero means the runner default.
 	MinConfidence float64 `json:"min_confidence,omitempty"`
