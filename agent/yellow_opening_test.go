@@ -46,9 +46,23 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			want:  yellowOpeningScript,
 		},
 		{
+			name: "Oak battle menu shape is not an unexpected choice",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.PalletTownMap, InBattle: true, ChoicePrompt: true,
+			},
+			want: yellowOpeningScript,
+		},
+		{
 			name: "lab rival battle is player owned",
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, InBattle: true, GotStarter: true, PartyCount: 1,
+			},
+			want: yellowOpeningFightRival,
+		},
+		{
+			name: "lab rival battle menu shape stays player battle",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, InBattle: true, ChoicePrompt: true, GotStarter: true, PartyCount: 1,
 			},
 			want: yellowOpeningFightRival,
 		},
