@@ -92,6 +92,8 @@ func TestRecoverableFailureCauseVocabulary(t *testing.T) {
 		{skill.ErrShopStabilization, "shop_stabilization_failed"},
 		{skill.ErrCatchHuntExhausted, "catch_hunt_exhausted"},
 		{skill.ErrSafariCatchExhausted, "catch_hunt_exhausted"},
+		{skill.ErrStaticCaptureExhausted, "static_capture_exhausted"},
+		{skill.ErrStaticCaptureUnavailable, "static_capture_unavailable"},
 		{skill.ErrCatchMissed, "catch_attempt_missed"},
 		{skill.ErrFishingHuntExhausted, "fishing_hunt_exhausted"},
 		{skill.ErrFishingNoShoreline, "fishing_no_shoreline"},
