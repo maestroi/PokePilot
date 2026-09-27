@@ -146,6 +146,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrNoDialogue) ||
 		errors.Is(err, skill.ErrDialogueInterrupted) ||
 		errors.Is(err, skill.ErrFieldMovePrerequisite) ||
+		errors.Is(err, skill.ErrInventoryDetourStranded) ||
 		errors.As(err, &blocked) ||
 		errors.As(err, &gate)
 	if knownBlockage {
