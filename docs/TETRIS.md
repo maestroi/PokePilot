@@ -119,6 +119,19 @@ A fast typed-decision backend can then choose among that finite set. The first s
 
 Farm runs keep `planner: "policy"`; Jev is selected independently through `decision_engine`. The operator launch form defaults Tetris to an active TypeSafe-choice deployment when one is registered, or to the runner's Jev endpoint when no model registry exists.
 
+Local `-planner policy` runs also use the runner's `POKEPILOT_DECISION_*` settings when a typed backend is enabled. For a local JEV-9B server with a 16-choice limit, set `POKEPILOT_TETRIS_MAX_CHOICES=16`. The selector ranks all reachable placements with the deterministic policy, offers its best 16 to Jev, and keeps the full policy result as fallback. The limit is optional for other backends; an invalid value fails the run before play begins.
+
+```bash
+POKEPILOT_ROM=/private/Tetris.gb \
+POKEPILOT_DECISION_BACKEND=jev POKEPILOT_DECISION_MODE=shadow \
+POKEPILOT_DECISION_URL=http://127.0.0.1:8077/v1 \
+POKEPILOT_DECISION_MODEL=jev9-local POKEPILOT_DECISION_TOKEN=local-only \
+POKEPILOT_TETRIS_MAX_CHOICES=16 \
+  go run ./cmd/pokepilot -planner policy -goal score:1000
+```
+
+Use `POKEPILOT_DECISION_MODE=active` to execute accepted Jev choices. Farm workers read the same runner-local choice limit. Their run spec still needs `decision_engine.placements: true`.
+
 Example run fragment:
 
 ```json
@@ -144,7 +157,7 @@ The built-in profiles are:
 - `fast`: one independently booted run must reach score 1,000 within 120 pieces / 180,000 gameplay frames.
 - `full`: three independently seeded runs must each reach score 10,000 within 600 pieces / 900,000 gameplay frames.
 
-Both profiles default to active Jev with a 0.65 confidence floor. The emitted `tetris-benchmark.json` records score/lines/pieces, emulator and wall time, Jev call/fallback/error counts, backend/model identity, and decision p50/p95 latency. Every required run must pass; a partial pass is a failed qualification.
+Both profiles default to active Jev with a 0.65 confidence floor and the best 16 policy candidates per decision. `--max-choices 0` offers the full candidate set to backends that accept it. The emitted `tetris-benchmark.json` records score/lines/pieces, emulator and wall time, Jev call/fallback/error counts, backend/model identity, and decision p50/p95 latency. Every required run must pass; a partial pass is a failed qualification.
 
 Run locally on a private ROM host:
 

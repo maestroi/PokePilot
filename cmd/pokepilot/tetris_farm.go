@@ -23,10 +23,33 @@ func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, m
 	if _, err := tetrissession.BootToPlaying(profile, m, goal.Mode()); err != nil {
 		panic(fmt.Sprintf("tetris boot: %v", err))
 	}
+	settings := agent.DecisionSettingsFromEnv()
+	var choose func(tetris.State, tetrispolicy.Objective) (tetrispolicy.Decision, error)
+	var lastSelection *tetrisdecision.Selection
+	if settings.Engine != nil {
+		maxChoices, err := tetrisdecision.MaxChoicesFromEnv()
+		if err != nil {
+			panic(fmt.Sprintf("tetris decision engine: %v", err))
+		}
+		selector := tetrisdecision.Selector{
+			Engine: settings.Engine, MinConfidence: settings.MinConfidence,
+			Shadow: settings.Shadow, MaxChoices: maxChoices,
+		}
+		fmt.Printf("tetris typed placements: backend=%s mode=%s max_choices=%d\n", settings.Backend, settings.Mode(), maxChoices)
+		choose = func(state tetris.State, objective tetrispolicy.Objective) (tetrispolicy.Decision, error) {
+			selection, err := selector.Choose(context.Background(), state, objective)
+			if err != nil {
+				return tetrispolicy.Decision{}, err
+			}
+			lastSelection = &selection
+			return selection.Decision, nil
+		}
+	}
 	result := tetrissession.Run(profile, m, tetrissession.RunOptions{
 		Goal:      goal,
 		MaxPieces: maxPieces,
 		MaxFrames: llmMaxFrames,
+		Choose:    choose,
 		OnDecision: func(decision tetrispolicy.Decision) {
 			fmt.Printf(
 				"tetris: %s %s -> rotation %d column %d score=%d lookahead=%d\n",
@@ -37,6 +60,18 @@ func runLocalTetris(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, m
 				decision.Candidate.ImmediateScore,
 				decision.Candidate.LookaheadScore,
 			)
+			if lastSelection != nil {
+				if lastSelection.DecisionErr != nil {
+					fmt.Printf("  typed placement fallback: %v\n", lastSelection.DecisionErr)
+				} else {
+					agreement := "unknown"
+					if lastSelection.Agreed != nil {
+						agreement = fmt.Sprint(*lastSelection.Agreed)
+					}
+					fmt.Printf("  typed placement: %s confidence=%.2f shadow=%v agreed=%v\n",
+						lastSelection.Response.Choice, lastSelection.Response.Confidence, lastSelection.Shadow, agreement)
+				}
+			}
 		},
 	})
 	fmt.Printf(
@@ -85,10 +120,15 @@ func runFarmTetris(
 		if err != nil {
 			return "error", fmt.Sprintf("tetris decision engine: %v", err)
 		}
+		maxChoices, err := tetrisdecision.MaxChoicesFromEnv()
+		if err != nil {
+			return "error", err.Error()
+		}
 		selector := tetrisdecision.Selector{
 			Engine:        settings.Engine,
 			MinConfidence: settings.MinConfidence,
 			Shadow:        settings.Shadow,
+			MaxChoices:    maxChoices,
 		}
 		recorder := &statsPlanner{decision: settings, snap: snap}
 		choose = func(state tetris.State, objective tetrispolicy.Objective) (tetrispolicy.Decision, error) {
