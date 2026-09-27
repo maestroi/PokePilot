@@ -11,15 +11,15 @@ import (
 func TestVerifyGraphCountsPhantomOrdinaryEdgeAsInactive(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandScoped: true, BandStart: 0, BandEnd: 0}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1}},
 		},
 		exitComps:  map[Edge][]int{edge: nil},
 		entryComps: map[Edge][]int{edge: {1}},
-		tiles:      map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
+		tiles:      map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
 	}
 
 	report := VerifyGraph(g, nil, 1)
@@ -45,15 +45,15 @@ func TestVerifyGraphCountsPhantomOrdinaryEdgeAsInactive(t *testing.T) {
 func TestVerifyGraphKeepsSemanticGeometryMismatchVisible(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandScoped: true, BandStart: 0, BandEnd: 0}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1}},
 		},
 		exitComps:  map[Edge][]int{edge: nil},
 		entryComps: map[Edge][]int{edge: {1}},
-		tiles:      map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
+		tiles:      map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}},
 	}
 	transitions := map[Edge]gameruntime.Transition{
 		edge: {ID: "fixture:surf", Requires: []gameruntime.CapabilityID{"can_surf"}},
@@ -77,15 +77,15 @@ func TestVerifyGraphKeepsSemanticGeometryMismatchVisible(t *testing.T) {
 func TestValidationSnapshotPreservesConnectionBandLimit(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirSouth, BandScoped: true, BandStart: 1, BandEnd: 3}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 1}, {1, 1}},
 			2: {{1, 1}, {1, 1}},
 		},
 		exitComps:  map[Edge][]int{edge: {1}},
 		entryComps: map[Edge][]int{edge: {1}},
-		tiles:      map[uint8]dim{1: {w: 2, h: 2}, 2: {w: 2, h: 2}},
+		tiles:      map[MapID]dim{1: {w: 2, h: 2}, 2: {w: 2, h: 2}},
 	}
 
 	report := VerifyGraph(g, nil, 1)
@@ -106,19 +106,19 @@ func reportHasFinding(report worldverify.Report, code string, severity worldveri
 func TestVerifyGraphDetectsWarpLandingExecutorMismatch(t *testing.T) {
 	edge := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{0, 1}},
 			2: {{0, 2, 1}},
 		},
 		exitComps:  map[Edge][]int{edge: {1}},
 		entryComps: map[Edge][]int{edge: {1}}, // stale graph claim; actual landing is component 2
-		warps: map[uint8][]worldmodel.Warp{
+		warps: map[MapID][]worldmodel.Warp{
 			1: {{X: 0, Y: 0, DestWarpID: 0, DestMap: 2}},
 			2: {{X: 0, Y: 0, DestWarpID: 0, DestMap: 1}},
 		},
-		tiles: map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 3, h: 1}},
+		tiles: map[MapID]dim{1: {w: 2, h: 1}, 2: {w: 3, h: 1}},
 	}
 
 	report := VerifyGraph(g, nil, 1)
@@ -133,15 +133,15 @@ func TestVerifyGraphDetectsConnectionBandLandingMismatch(t *testing.T) {
 		BandScoped: true, BandStart: 0, BandEnd: 0,
 	}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{2, 1}},
 		},
 		exitComps:  map[Edge][]int{edge: {1}},
 		entryComps: map[Edge][]int{edge: {1}}, // aggregate/stale claim; seam actually lands in 2
-		tiles:      map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 1}},
+		tiles:      map[MapID]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 1}},
 		connections: map[Edge]worldmodel.Connection{
 			edge: {Dir: dirEast, MapID: 2, Offset: 0},
 		},
