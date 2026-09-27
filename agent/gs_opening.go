@@ -258,7 +258,6 @@ func executeGSOpening(m *emu.Emu, romData []byte, starter skill.Starter) error {
 	return nil
 }
 
-
 func gsErrandScriptMap(mapID uint16) bool {
 	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "CHERRYGROVE_CITY"} {
 		id, err := gsOpeningMapID(name)
