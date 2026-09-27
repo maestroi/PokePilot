@@ -72,10 +72,10 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 		0x1803: {ID: 0x1803, WidthBlocks: 2, HeightBlocks: 2},
 	}
 	edge := world.NativeEdge{
-		Kind: world.EdgeConnection,
-		From: 0x1804,
-		To: 0x1803,
-		Dir: 0,
+		Kind:   world.EdgeConnection,
+		From:   0x1804,
+		To:     0x1803,
+		Dir:    0,
 		Offset: -2,
 	}
 	path, push, err := nativeConnectionApproach(provider, grid, edge, 5, 3, nil)
