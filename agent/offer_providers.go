@@ -570,6 +570,22 @@ func sortBlockEvidence(blocked []ObjectiveBlockEvidence) {
 	})
 }
 
+// StarterObjectiveForSpecies resolves one semantic starter choice from the
+// active game's catalog. It is used by scripted entrypoints so Gold/Silver can
+// accept their native starter names without routing through Red's ROM-patching
+// experiment resolver.
+func StarterObjectiveForSpecies(obs Observation, species SpeciesID) (Objective, bool) {
+	if obs.PartyCount != 0 || species == "" {
+		return Objective{}, false
+	}
+	for _, starter := range objectiveCatalogForObservation(obs).Starters {
+		if starter.Species == species {
+			return Objective{Kind: KindStarter, Starter: starter.Starter, Species: starter.Species}, true
+		}
+	}
+	return Objective{}, false
+}
+
 // DefaultStarterObjective returns the Starter objective for a fresh game whose
 // opening offers exactly one starter (Yellow's scripted Pikachu), so callers
 // that were not told which starter to take can still run the opening. Games

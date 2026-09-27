@@ -537,7 +537,7 @@ func TestValidateRejects(t *testing.T) {
 		{"buy negative quantity", agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: -1}, "out of range"},
 		{"buy 150 quantity", agent.Objective{Kind: agent.KindBuy, Item: agent.ItemID("potion"), Qty: 150}, "out of range"},
 		{"buy empty item", agent.Objective{Kind: agent.KindBuy, Qty: 1}, "empty item id"},
-		{"unknown starter", agent.Objective{Kind: agent.KindStarter, Starter: skill.Starter(4)}, "unknown starter"},
+		{"unknown starter", agent.Objective{Kind: agent.KindStarter, Starter: skill.StarterTotodile + 1}, "unknown starter"},
 		{"use empty item", agent.Objective{Kind: agent.KindUseItem, Slot: 0}, "empty item id"},
 		{"use an item on slot -1", agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: -1}, "out of range"},
 		{"use an item on slot 6", agent.Objective{Kind: agent.KindUseItem, Item: agent.ItemID("potion"), Slot: 6}, "out of range"},
@@ -566,6 +566,9 @@ func TestValidateRejects(t *testing.T) {
 
 	// The portable boundaries themselves are legal.
 	accept := []agent.Objective{
+		{Kind: agent.KindStarter, Starter: skill.StarterChikorita},
+		{Kind: agent.KindStarter, Starter: skill.StarterCyndaquil},
+		{Kind: agent.KindStarter, Starter: skill.StarterTotodile},
 		{Kind: agent.KindProgress, Progress: agent.ProgressID("campaign_goal")},
 		{Kind: agent.KindRepairFieldCapability, FieldCapability: agent.CapabilityID("surf")},
 		{Kind: agent.KindTrain, Level: 1},

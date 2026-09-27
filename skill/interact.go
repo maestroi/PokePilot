@@ -105,6 +105,21 @@ func facingFor(s world.Step) state.Facing {
 	return 0
 }
 
+func semanticFacingFor(s world.Step) string {
+	switch s {
+	case world.StepUp:
+		return "up"
+	case world.StepDown:
+		return "down"
+	case world.StepLeft:
+		return "left"
+	case world.StepRight:
+		return "right"
+	default:
+		return ""
+	}
+}
+
 // Face turns the player to look at the orthogonally adjacent tile (tx,ty).
 // It returns an error if the tile is not orthogonally adjacent, or if the
 // facing did not change within the budget.
@@ -120,7 +135,14 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 	return faceWithOverworldDecoder(m, decoder, tx, ty)
 }
 
-func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty uint8) error {
+type faceMachine interface {
+	game.MemoryReader
+	Press(emu.Button)
+	Release(emu.Button)
+	StepFrame()
+}
+
+func faceWithOverworldDecoder(m faceMachine, decoder game.OverworldDecoder, tx, ty uint8) error {
 	step, live, err := interactionStepWithDecoder(m, decoder, tx, ty)
 	if err != nil {
 		return fmt.Errorf("skill: Face: %w", err)
@@ -129,24 +151,31 @@ func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty 
 	if !ok {
 		return fmt.Errorf("skill: Face: invalid step %s", step)
 	}
-	want := facingFor(step)
+	want := semanticFacingFor(step)
 
-	m.Tap(btn, 3, 7)
-	var mem state.Mem
-	if _, err := m.StepUntil(faceTurnBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return state.DecodePlayer(&mem).Facing == want
-	}); err != nil {
-		// The step onto this tile can roll a wild encounter that starts after
-		// the walk returned; the turn tap then lands in the battle intro.
-		after, observeErr := interactionRuntimeStateWithDecoder(m, decoder)
-		if observeErr == nil && after.InBattle {
-			return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
-				want, live.Map, live.X, live.Y, ErrBattle)
-		}
-		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
+	m.Press(btn)
+	for i := 0; i < 3; i++ {
+		m.StepFrame()
 	}
-	return nil
+	m.Release(btn)
+	for i := 0; i < 7; i++ {
+		m.StepFrame()
+	}
+	for frame := 0; frame < faceTurnBudget; frame++ {
+		if decoder.DecodeOverworld(m).Facing == want {
+			return nil
+		}
+		m.StepFrame()
+	}
+
+	// The step onto this tile can roll a wild encounter that starts after
+	// the walk returned; the turn tap then lands in the battle intro.
+	after := decoder.DecodeOverworld(m)
+	if after.InBattle {
+		return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
+			want, live.NativeMapID, live.X, live.Y, ErrBattle)
+	}
+	return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 }
 
 // Talk presses A to open a text box, then keeps pressing A while a box is

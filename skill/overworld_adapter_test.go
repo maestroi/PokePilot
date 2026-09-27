@@ -14,6 +14,7 @@ const (
 	fakeOverworldX
 	fakeOverworldY
 	fakeOverworldFlags
+	fakeOverworldFacing
 )
 
 const (
@@ -27,10 +28,22 @@ type fakeGen2OverworldDecoder struct{}
 
 func (fakeGen2OverworldDecoder) DecodeOverworld(r game.MemoryReader) game.OverworldState {
 	flags := r.Peek8(fakeOverworldFlags)
+	facing := ""
+	switch r.Peek8(fakeOverworldFacing) {
+	case 1:
+		facing = "up"
+	case 2:
+		facing = "down"
+	case 3:
+		facing = "left"
+	case 4:
+		facing = "right"
+	}
 	return game.OverworldState{
 		NativeMapID:  uint16(r.Peek8(fakeOverworldMap)),
 		X:            r.Peek8(fakeOverworldX),
 		Y:            r.Peek8(fakeOverworldY),
+		Facing:       facing,
 		Controllable: flags&fakeOverworldControllable != 0,
 		MovementIdle: flags&fakeOverworldIdle != 0,
 		InBattle:     flags&fakeOverworldBattle != 0,
@@ -54,6 +67,16 @@ func (m *fakeOverworldMachine) PeekInto(addr uint16, dst []byte) {
 func (m *fakeOverworldMachine) Press(btn emu.Button) {
 	m.held = btn
 	m.mem[fakeOverworldFlags] &^= fakeOverworldIdle
+	switch btn {
+	case emu.Up:
+		m.mem[fakeOverworldFacing] = 1
+	case emu.Down:
+		m.mem[fakeOverworldFacing] = 2
+	case emu.Left:
+		m.mem[fakeOverworldFacing] = 3
+	case emu.Right:
+		m.mem[fakeOverworldFacing] = 4
+	}
 }
 
 func (m *fakeOverworldMachine) Release(btn emu.Button) {
@@ -132,5 +155,26 @@ func TestGenericMovementInterruptionUsesSemanticDialogueState(t *testing.T) {
 	m.mem[fakeOverworldFlags] = fakeOverworldDialogue
 	if err := movementInterruptionWithDecoder(m, fakeGen2OverworldDecoder{}); !errors.Is(err, ErrDialogueInterrupted) {
 		t.Fatalf("error = %v, want ErrDialogueInterrupted", err)
+	}
+}
+
+func TestGenericFaceUsesSemanticProfileFacing(t *testing.T) {
+	m := &fakeOverworldMachine{}
+	m.mem[fakeOverworldMap] = 7
+	m.mem[fakeOverworldX] = 20
+	m.mem[fakeOverworldY] = 11
+	m.mem[fakeOverworldFlags] = fakeOverworldIdle | fakeOverworldControllable
+
+	if err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 20, 10); err != nil {
+		t.Fatalf("face up: %v", err)
+	}
+	if got := (fakeGen2OverworldDecoder{}).DecodeOverworld(m).Facing; got != "up" {
+		t.Fatalf("facing = %q, want up", got)
+	}
+	if got := m.mem[fakeOverworldX]; got != 20 {
+		t.Fatalf("x = %d, want 20", got)
+	}
+	if got := m.mem[fakeOverworldY]; got != 11 {
+		t.Fatalf("y = %d, want 11", got)
 	}
 }

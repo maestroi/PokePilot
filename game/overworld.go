@@ -6,6 +6,7 @@ package game
 type OverworldState struct {
 	NativeMapID uint16
 	X, Y        uint8
+	Facing      string
 
 	Controllable bool
 	MovementIdle bool
