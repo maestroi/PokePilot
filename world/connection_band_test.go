@@ -9,9 +9,9 @@ import (
 
 func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 	g := &Graph{
-		Edges:          make(map[uint8][]Edge),
+		Edges:          make(map[MapID][]Edge),
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {
 				{1, 1, 1, 1, 1, 1},
 				{1, 1, 1, 1, 1, 1},
@@ -21,7 +21,7 @@ func TestConnectionEdgesSplitContiguousComponentPairs(t *testing.T) {
 				{2, 2, 3, 3, 0, 4},
 			},
 		},
-		tiles: map[uint8]dim{
+		tiles: map[MapID]dim{
 			1: {w: 6, h: 2},
 			2: {w: 6, h: 2},
 		},
