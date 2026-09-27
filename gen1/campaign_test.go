@@ -45,3 +45,23 @@ func TestFirstIncomplete(t *testing.T) {
 		t.Fatalf("complete campaign FirstIncomplete=%q,%v, want empty,false", got, ok)
 	}
 }
+
+func TestRocketTowerStagesAreOrderedAndFresh(t *testing.T) {
+	want := []game.ProgressID{
+		ProgressSilphScopeAcquired,
+		ProgressPokeFluteAcquired,
+	}
+	got := RocketTowerStages()
+	if len(got) != len(want) {
+		t.Fatalf("RocketTowerStages()=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("RocketTowerStages()[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if RocketTowerStages()[0] != ProgressSilphScopeAcquired {
+		t.Fatal("RocketTowerStages returned mutable global storage")
+	}
+}

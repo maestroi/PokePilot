@@ -381,6 +381,24 @@ func liveObjectPosition(m *emu.Emu, objectID int) (uint8, uint8, bool) {
 	return 0, 0, false
 }
 
+// mapObjectIDAt resolves the cartridge's static object slot from its home
+// coordinate. Scripts are free to move or hide that object later; callers can
+// then use liveObjectPosition with the returned slot. Keeping this lookup
+// ROM-driven avoids assuming that equivalent story NPCs occupy the same object
+// index across Red, Blue, and Yellow.
+func mapObjectIDAt(romData []byte, mapID, x, y uint8) (int, bool, error) {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return 0, false, err
+	}
+	for i, object := range h.Objects {
+		if object.X == x && object.Y == y {
+			return i + 1, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
 // besideDestination picks the walkable tile orthogonally adjacent to
 // (targetX, targetY) on the current map that the player can actually reach
 // by the shortest walk. ok is false when the player already stands on such a

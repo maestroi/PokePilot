@@ -59,6 +59,8 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressPostSurgeLavenderReached,
 		gen1.ProgressPostSurgeCeladonReady,
 		gen1.ProgressRainbowBadge,
+		gen1.ProgressSilphScopeAcquired,
+		gen1.ProgressPokeFluteAcquired,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -170,8 +172,20 @@ func TestYellowProgressionContinuesThroughSurgeLavenderCeladonAndErika(t *testin
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressRainbowBadge, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSilphScopeAcquired {
+		t.Fatalf("post-Erika progression=%v, want Silph Scope", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSilphScopeAcquired, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressPokeFluteAcquired {
+		t.Fatalf("post-Hideout progression=%v, want Poké Flute", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressPokeFluteAcquired, Complete: true})
 	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("middle campaign should stop after Erika until next Yellow slice: %v", got)
+		t.Fatalf("Rocket/Tower slice should stop after Poké Flute until the next Yellow slice: %v", got)
 	}
 }
 

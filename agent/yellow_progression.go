@@ -19,7 +19,9 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressThunderBadge,
 		gen1.ProgressPostSurgeLavenderReached,
 		gen1.ProgressPostSurgeCeladonReady,
-		gen1.ProgressRainbowBadge:
+		gen1.ProgressRainbowBadge,
+		gen1.ProgressSilphScopeAcquired,
+		gen1.ProgressPokeFluteAcquired:
 		return true
 	default:
 		return false
@@ -95,13 +97,18 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 
 	next, ok := gen1.FirstIncomplete(obs.Story, gen1.MiddleCampaignStages())
 	if !ok {
-		return nil
+		next, ok = gen1.FirstIncomplete(obs.Story, gen1.RocketTowerStages())
+		if !ok {
+			return nil
+		}
 	}
 	note := map[ProgressID]string{
 		gen1.ProgressThunderBadge:             "(prepare Cut, enter Vermilion Gym, solve the live trash-can switches, defeat Lt. Surge, and verify the Thunder Badge)",
 		gen1.ProgressPostSurgeLavenderReached: "(cross Route 9 and Rock Tunnel to Lavender; Flash is optional because navigation is ROM-driven)",
 		gen1.ProgressPostSurgeCeladonReady:    "(continue from Lavender through Route 8/7's Underground Path to Celadon Pokemon Center and fully recover)",
 		gen1.ProgressRainbowBadge:             "(use Cut for the Celadon Gym approach, defeat Erika, and verify the Rainbow Badge)",
+		gen1.ProgressSilphScopeAcquired:       "(clear the Celadon Rocket Hideout; Yellow's B4F Jessie/James interruption is resolved on the shared live-topology route before Giovanni and the Silph Scope)",
+		gen1.ProgressPokeFluteAcquired:        "(return to Lavender, clear Pokémon Tower including Yellow's 7F Jessie/James interruption, rescue Mr. Fuji, and receive the Poké Flute)",
 	}[next]
 	return []Objective{{
 		Kind:     KindProgress,

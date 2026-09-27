@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
@@ -143,8 +144,26 @@ func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final
 		return nil
 	}
 	if yellowOwnedKind(o.Kind) {
-		_, err := verifyObjectivePostcondition(o, initial, final, result)
-		return err
+		if _, err := verifyObjectivePostcondition(o, initial, final, result); err != nil {
+			return err
+		}
+		var required ProgressID
+		switch o.Progress {
+		case gen1.ProgressSilphScopeAcquired:
+			required = yellowprofile.ProgressYellowRocketJessieJamesDefeated
+		case gen1.ProgressPokeFluteAcquired:
+			required = yellowprofile.ProgressYellowTowerJessieJamesDefeated
+		}
+		if required != "" {
+			fact, ok := final.Story.Lookup(required)
+			if !ok {
+				return fmt.Errorf("%w: %s needs Yellow story verifier %q", ErrObjectivePostconditionUnavailable, o, required)
+			}
+			if !fact.Complete {
+				return fmt.Errorf("%w: %s finished before Yellow story fact %q completed", ErrObjectivePostconditionFailed, o, required)
+			}
+		}
+		return nil
 	}
 	return a.gen1.VerifyPostcondition(o, initial, final, result)
 }

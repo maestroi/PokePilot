@@ -178,3 +178,35 @@ func TestYellowStarterPostconditionRequiresWholeOpening(t *testing.T) {
 		t.Fatalf("completed Yellow opening rejected: %v", err)
 	}
 }
+
+func TestYellowRocketTowerPostconditionsRequireJessieJamesFacts(t *testing.T) {
+	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	tests := []struct {
+		progress ProgressID
+		required ProgressID
+	}{
+		{gen1.ProgressSilphScopeAcquired, yellowprofile.ProgressYellowRocketJessieJamesDefeated},
+		{gen1.ProgressPokeFluteAcquired, yellowprofile.ProgressYellowTowerJessieJamesDefeated},
+	}
+	for _, tc := range tests {
+		o := Objective{Kind: KindProgress, Progress: tc.progress}
+		final := Observation{
+			GameID:       yellowprofile.GameID,
+			Controllable: true,
+			Story: ProgressState{
+				{ID: tc.progress, Complete: true},
+				{ID: tc.required, Complete: false},
+			},
+		}
+		if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{Objective: o}); err == nil {
+			t.Fatalf("%q accepted before Yellow fact %q completed", tc.progress, tc.required)
+		}
+		final.Story = ProgressState{
+			{ID: tc.progress, Complete: true},
+			{ID: tc.required, Complete: true},
+		}
+		if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{Objective: o}); err != nil {
+			t.Fatalf("%q rejected with Yellow fact %q complete: %v", tc.progress, tc.required, err)
+		}
+	}
+}
