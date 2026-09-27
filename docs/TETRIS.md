@@ -89,7 +89,7 @@ A farm run uses:
 }
 ```
 
-Supported goals are `auto`, `endless`, `survival`, `score:N`, `lines:N`, and `complete`. `endless` runs score-oriented Type A without a score target and records the final score when the board tops out; score/survival also run Type A, while lines/complete run Type B. The operator's New Run form exposes Tetris directly and fixes the planner to the deterministic policy runtime.
+Supported goals are `auto`, `endless`, `survival`, `score:N`, `lines:N`, and `complete`. `endless` runs score-oriented Type A without a score target or implicit frame cap and records the final score when the board tops out; an explicit `max_frames` still limits a farm run. Score/survival also run Type A, while lines/complete run Type B. The operator's New Run form exposes Tetris directly and fixes the planner to the deterministic policy runtime.
 
 Farm heartbeats retain the legacy Pokémon fields for backwards compatibility and add two optional game-owned envelopes:
 
