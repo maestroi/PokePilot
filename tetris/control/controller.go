@@ -39,7 +39,9 @@ type Placement struct {
 	Column   int   `json:"column"`
 }
 
-// Result records the verified semantic effect of one placement.
+// Result records one placement attempt. After is the state observed once the
+// attempt stopped: an aborted attempt reports the live state instead of the
+// zero State, because callers publish it as the run's state.
 type Result struct {
 	Piece        tetris.Piece `json:"piece"`
 	Target       Placement    `json:"target"`
@@ -95,7 +97,7 @@ func Place(profile game.CartridgeProfile, m Machine, target Placement) (Result, 
 	steps, err := rotateTo(profile, m, current, target.Rotation)
 	result.Frames += steps
 	if err != nil {
-		return result, err
+		return abortResult(profile, m, result), err
 	}
 	current, err = tetris.Observe(profile, m)
 	if err != nil {
@@ -105,7 +107,7 @@ func Place(profile game.CartridgeProfile, m Machine, target Placement) (Result, 
 	steps, err = shiftTo(profile, m, current, target.Column)
 	result.Frames += steps
 	if err != nil {
-		return result, err
+		return abortResult(profile, m, result), err
 	}
 	current, err = tetris.Observe(profile, m)
 	if err != nil {
@@ -134,6 +136,21 @@ func Place(profile game.CartridgeProfile, m Machine, target Placement) (Result, 
 		return result, fmt.Errorf("%w: lock transition completed without a board, line, or terminal-state change", ErrBlocked)
 	}
 	return result, nil
+}
+
+// abortResult records the state the machine is actually in after a placement
+// could not be executed. session.Run publishes Result.After as the run state,
+// so returning the zero Result made a blocked placement claim an empty board
+// and a zero score while the game was demonstrably mid-run.
+func abortResult(profile game.CartridgeProfile, m Machine, result Result) Result {
+	state, err := tetris.Observe(profile, m)
+	if err != nil {
+		return result
+	}
+	result.After = state
+	result.BoardChanged = state.Board != result.Before.Board
+	result.LinesCleared = max(0, state.LinesCleared-result.Before.LinesCleared)
+	return result
 }
 
 func rotateTo(profile game.CartridgeProfile, m Machine, state tetris.State, target uint8) (int, error) {
