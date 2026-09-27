@@ -27,8 +27,14 @@ func TestBackfillVisitedTrainingAreasSeedsObservedHabitatsOnce(t *testing.T) {
 	}
 	adjacency := map[uint8][]uint8{}
 	for from, edges := range graph.Edges {
+		if from > 0xff {
+			t.Fatalf("wide map id %#04x in Gen-I fixture", from)
+		}
 		for _, e := range edges {
-			adjacency[from] = append(adjacency[from], e.To)
+			if e.To > 0xff {
+				t.Fatalf("wide edge %#04x->%#04x in Gen-I fixture", from, e.To)
+			}
+			adjacency[uint8(from)] = append(adjacency[uint8(from)], uint8(e.To))
 		}
 	}
 	known := testKnowledge(adjacency)
