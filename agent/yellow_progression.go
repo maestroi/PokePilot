@@ -11,7 +11,15 @@ import (
 // sequencing and must stay Yellow-owned until ported deliberately.
 func yellowSharedStoryBeat(id ProgressID) bool {
 	switch id {
-	case gen1.ProgressPokedexAcquired, gen1.ProgressBoulderBadge, gen1.ProgressMtMoonFossilAcquired, gen1.ProgressSSTicketAcquired, gen1.ProgressHM01Acquired:
+	case gen1.ProgressPokedexAcquired,
+		gen1.ProgressBoulderBadge,
+		gen1.ProgressMtMoonFossilAcquired,
+		gen1.ProgressSSTicketAcquired,
+		gen1.ProgressHM01Acquired,
+		gen1.ProgressThunderBadge,
+		gen1.ProgressPostSurgeLavenderReached,
+		gen1.ProgressPostSurgeCeladonReady,
+		gen1.ProgressRainbowBadge:
 		return true
 	default:
 		return false
@@ -81,5 +89,23 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 			Note:     "(board the S.S. Anne, resolve its rival sequence, and receive HM01 Cut from the Captain)",
 		}}
 	}
-	return gen1CascadeBadgeObjectives(obs)
+	if cascade := gen1CascadeBadgeObjectives(obs); len(cascade) != 0 {
+		return cascade
+	}
+
+	next, ok := gen1.FirstIncomplete(obs.Story, gen1.MiddleCampaignStages())
+	if !ok {
+		return nil
+	}
+	note := map[ProgressID]string{
+		gen1.ProgressThunderBadge:             "(prepare Cut, enter Vermilion Gym, solve the live trash-can switches, defeat Lt. Surge, and verify the Thunder Badge)",
+		gen1.ProgressPostSurgeLavenderReached: "(cross Route 9 and Rock Tunnel to Lavender; Flash is optional because navigation is ROM-driven)",
+		gen1.ProgressPostSurgeCeladonReady:    "(continue from Lavender through Route 8/7's Underground Path to Celadon Pokemon Center and fully recover)",
+		gen1.ProgressRainbowBadge:             "(use Cut for the Celadon Gym approach, defeat Erika, and verify the Rainbow Badge)",
+	}[next]
+	return []Objective{{
+		Kind:     KindProgress,
+		Progress: next,
+		Note:     note,
+	}}
 }
