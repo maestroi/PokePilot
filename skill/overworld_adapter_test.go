@@ -169,7 +169,7 @@ func TestGenericFaceUsesSemanticProfileFacing(t *testing.T) {
 	if err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 20, 10); err != nil {
 		t.Fatalf("face up: %v", err)
 	}
-	if got := fakeGen2OverworldDecoder{}.DecodeOverworld(m).Facing; got != "up" {
+	if got := (fakeGen2OverworldDecoder{}).DecodeOverworld(m).Facing; got != "up" {
 		t.Fatalf("facing = %q, want up", got)
 	}
 	if got := m.mem[fakeOverworldX]; got != 20 {
