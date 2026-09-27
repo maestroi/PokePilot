@@ -27,10 +27,18 @@ test('tools run form picks the decision engine from registered deployments', () 
   assert.match(toolsSource, /v-model="decision\.failures"/)
   assert.match(toolsSource, /v-model\.number="decision\.min_confidence"/)
   // Off (and scripted runs) send no selection, keeping the runner default.
-  assert.match(toolsSource, /if \(!isLLM\.value \|\| !decisionSelected\.value\) return undefined/)
+  assert.match(toolsSource, /if \(!\(isLLM\.value \|\| isTetris\.value\) \|\| !decisionSelected\.value\) return undefined/)
   assert.match(toolsSource, /decision_engine: decisionRequest\(\)/)
   // Clients name a deployment; only the wall writes its identity.
   assert.doesNotMatch(toolsSource, /inference:/)
+})
+
+test('Tetris uses the fast engine only for bounded legal placements', () => {
+  assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*placements\?: boolean/)
+  assert.match(toolsSource, /if \(isTetris\.value\) \{[\s\S]*placements: true/)
+  assert.match(toolsSource, /d\.protocol === 'typesafe-choice'/)
+  assert.match(toolsSource, /decisionTarget\.value = jev \? `deployment:\$\{jev\.id\}` : \(deployments\.value\.length \? 'off' : 'env:jev'\)/)
+  assert.match(toolsSource, /Tetris placements[\s\S]*legal candidates only/)
 })
 
 test('deployment registry editor declares the wire protocol', () => {

@@ -7,7 +7,8 @@ import type { DashboardStats, DecisionEngineSpec, DecisionKindSummary, TypedDeci
 const KIND_LABELS: Record<string, string> = {
   objective_selection: 'Objectives',
   failure_recovery: 'Recovery',
-  battle_turn: 'Battles'
+  battle_turn: 'Battles',
+  tetris_placement: 'Tetris placements'
 }
 
 export function decisionKindLabel(kind: string | undefined): string {
@@ -144,7 +145,8 @@ export function decisionIdleNote(engine: DecisionEngineSpec | undefined): string
   const points = [
     engine?.objectives ? 'every objective choice' : '',
     engine?.battles && engine?.mode === 'shadow' ? 'every battle move' : '',
-    engine?.failures ? 'recoverable failures' : ''
+    engine?.failures ? 'recoverable failures' : '',
+    engine?.placements ? 'every Tetris placement' : ''
   ].filter(Boolean)
   if (!points.length) return 'No decision points enabled, so the engine is never asked.'
   return `No calls yet. The engine is asked on ${points.join(', ')}.`

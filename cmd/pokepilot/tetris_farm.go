@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/tetris"
+	tetrisdecision "github.com/maestroi/pokepilot/tetris/decision"
 	tetrispolicy "github.com/maestroi/pokepilot/tetris/policy"
 	tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
@@ -66,16 +69,58 @@ func runFarmTetris(
 	}
 
 	m.TraceNote("tetris", fmt.Sprintf("goal=%s objective=%s mode=%s", tetrisGoalLabel(goal), goal.Objective, goal.Mode()))
+
+	var (
+		choose        func(tetris.State, tetrispolicy.Objective) (tetrispolicy.Decision, error)
+		lastSelection *tetrisdecision.Selection
+	)
+	if decisionSpec := spec.DecisionEngine; decisionSpec != nil && decisionSpec.Enabled() {
+		if !decisionSpec.Placements {
+			return "error", "tetris decision engine selected without placements enabled"
+		}
+		if decisionSpec.Battles || decisionSpec.Objectives || decisionSpec.Failures {
+			return "error", "tetris decision engine supports placement decisions only"
+		}
+		settings, err := agent.DecisionSettingsFor(decisionSelectionFor(decisionSpec))
+		if err != nil {
+			return "error", fmt.Sprintf("tetris decision engine: %v", err)
+		}
+		selector := tetrisdecision.Selector{
+			Engine:        settings.Engine,
+			MinConfidence: settings.MinConfidence,
+			Shadow:        settings.Shadow,
+		}
+		recorder := &statsPlanner{decision: settings, snap: snap}
+		choose = func(state tetris.State, objective tetrispolicy.Objective) (tetrispolicy.Decision, error) {
+			selection, err := selector.Choose(context.Background(), state, objective)
+			if err != nil {
+				return tetrispolicy.Decision{}, err
+			}
+			lastSelection = &selection
+			var shadow *shadowOutcome
+			if selection.Shadow {
+				shadow = &shadowOutcome{
+					executed: tetrisPlacementLabel(selection.Decision.Candidate),
+					agreed:   selection.Agreed,
+				}
+			}
+			recorder.recordDecision(selection.Request, selection.Response, selection.DecisionErr, shadow)
+			return selection.Decision, nil
+		}
+		m.TraceNote("tetris", fmt.Sprintf("typed placements backend=%s mode=%s min_confidence=%.2f", settings.Backend, settings.Mode(), settings.MinConfidence))
+	}
+
 	result := tetrissession.Run(profile, m, tetrissession.RunOptions{
 		Goal:      goal,
 		MaxPieces: maxPieces,
 		MaxFrames: maxFrames,
 		Cancel:    cancel,
+		Choose:    choose,
 		OnDecision: func(decision tetrispolicy.Decision) {
 			if snap == nil {
 				return
 			}
-			snap.storeGameDecision(tetrisDecisionEnvelope(decision))
+			snap.storeGameDecision(tetrisDecisionEnvelope(decision, lastSelection))
 			snap.storePlan("", fmt.Sprintf(
 				"%s %s → rotation %d, column %d",
 				decision.Objective,
@@ -185,9 +230,9 @@ func tetrisStateEnvelope(state tetris.State) map[string]any {
 	return out
 }
 
-func tetrisDecisionEnvelope(decision tetrispolicy.Decision) map[string]any {
+func tetrisDecisionEnvelope(decision tetrispolicy.Decision, selections ...*tetrisdecision.Selection) map[string]any {
 	c := decision.Candidate
-	return map[string]any{
+	out := map[string]any{
 		"kind":                "tetris-placement",
 		"objective":           string(decision.Objective),
 		"piece":               string(decision.Piece),
@@ -209,6 +254,33 @@ func tetrisDecisionEnvelope(decision tetrispolicy.Decision) map[string]any {
 			"wells":            c.Metrics.Wells,
 		},
 	}
+	if len(selections) == 0 || selections[0] == nil {
+		return out
+	}
+	selection := selections[0]
+	mode := "active"
+	if selection.Shadow {
+		mode = "shadow"
+	}
+	out["decision_mode"] = mode
+	out["decision_backend"] = selection.Response.Backend
+	out["decision_model"] = selection.Response.Model
+	out["decision_choice"] = selection.Response.Choice
+	out["decision_confidence"] = selection.Response.Confidence
+	out["decision_fallback"] = selection.Fallback
+	if selection.DecisionErr != nil {
+		out["decision_error"] = selection.DecisionErr.Error()
+	}
+	if selection.Agreed != nil {
+		out["decision_agreed"] = *selection.Agreed
+	}
+	out["policy_rotation"] = selection.Deterministic.Candidate.Placement.Rotation
+	out["policy_column"] = selection.Deterministic.Candidate.Placement.Column
+	return out
+}
+
+func tetrisPlacementLabel(candidate tetrispolicy.Candidate) string {
+	return fmt.Sprintf("rotation %d, column %d", candidate.Placement.Rotation, candidate.Placement.Column)
 }
 
 func tetrisGoalLabel(goal tetrissession.Goal) string {

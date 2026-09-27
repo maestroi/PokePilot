@@ -103,3 +103,57 @@ Session recordings store the generic cartridge game/revision identity. The repla
 ## Current scope
 
 PokePilot can now launch, observe, choose, execute, record and replay Tetris through the normal run infrastructure. Phase 6 is qualification: exercise real Rev-1 runs and establish autonomous benchmark expectations before treating the integration as production-qualified.
+
+
+## Typed placement decisions (Jev)
+
+Tetris does not need the generative Pokémon strategist. Its deterministic policy still owns the hard safety boundary: it enumerates reachable rotations/columns, simulates landing and line clears, scores the resulting board, and exposes only those legal candidates.
+
+A fast typed-decision backend can then choose among that finite set. The first supported backend is TypeSafe Jev:
+
+- decision kind: `tetris_placement`;
+- active mode: an accepted Jev choice selects one already-legal placement;
+- shadow mode: the deterministic scorer executes while Jev agreement is measured;
+- low confidence, transport errors, invalid responses, or unavailable answers fall back to the deterministic scorer;
+- Jev never emits buttons, coordinates outside the candidate set, or arbitrary emulator actions.
+
+Farm runs keep `planner: "policy"`; Jev is selected independently through `decision_engine`. The operator launch form defaults Tetris to an active TypeSafe-choice deployment when one is registered, or to the runner's Jev endpoint when no model registry exists.
+
+Example run fragment:
+
+```json
+{
+  "game": "tetris",
+  "planner": "policy",
+  "goal": "score:10000",
+  "decision_engine": {
+    "backend": "jev",
+    "mode": "active",
+    "placements": true,
+    "min_confidence": 0.65
+  }
+}
+```
+
+## Phase 6 qualification
+
+`cmd/tetrisbench` is the ROM-backed autonomous qualification harness. It uses the same semantic state, policy candidate set, typed selector, controller, and session loop as normal Tetris runs, but does not invoke a generative LLM.
+
+The built-in profiles are:
+
+- `fast`: one independently booted run must reach score 1,000 within 120 pieces / 180,000 gameplay frames.
+- `full`: three independently seeded runs must each reach score 10,000 within 600 pieces / 900,000 gameplay frames.
+
+Both profiles default to active Jev with a 0.65 confidence floor. The emitted `tetris-benchmark.json` records score/lines/pieces, emulator and wall time, Jev call/fallback/error counts, backend/model identity, and decision p50/p95 latency. Every required run must pass; a partial pass is a failed qualification.
+
+Run locally on a private ROM host:
+
+```bash
+TETRIS_ROM=/private/Tetris.gb TYPESAFE_API_KEY=... \
+  go run ./cmd/tetrisbench --profile fast --output /tmp/tetris-fast
+
+TETRIS_ROM=/private/Tetris.gb TYPESAFE_API_KEY=... \
+  go run ./cmd/tetrisbench --profile full --output /tmp/tetris-full
+```
+
+The private `ROM-backed Qualification` workflow exposes the same `none / fast / full` Tetris gate. It reads the ROM from the `TETRIS_ROM_PATH` repository variable and expects Jev credentials on the self-hosted runner. A clean manual `full` run closes #2015 with the workflow run as qualification evidence; public PR CI remains ROM-free.

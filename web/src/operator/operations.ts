@@ -159,7 +159,8 @@ export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>):
   const uses = [
     engine.battles ? 'battles' : '',
     engine.objectives ? 'objectives' : '',
-    engine.failures ? 'recovery' : ''
+    engine.failures ? 'recovery' : '',
+    engine.placements ? 'placements' : ''
   ].filter(Boolean)
   const confidence = engine.min_confidence ? ` · ≥${engine.min_confidence.toFixed(2)}` : ''
   return `${name} · ${mode} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`

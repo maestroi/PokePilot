@@ -54,19 +54,28 @@ const decision = reactive({
   battles: true,
   objectives: false,
   failures: true,
+  placements: false,
   min_confidence: 0.65
 })
 const decisionSelected = computed(() => decisionTarget.value !== 'off')
 const decisionShadow = computed(() => decision.mode === 'shadow')
 
 function decisionRequest(): DecisionEngineSpec | undefined {
-  if (!isLLM.value || !decisionSelected.value) return undefined
+  if (!(isLLM.value || isTetris.value) || !decisionSelected.value) return undefined
   const [kind, id] = splitDecisionTarget(decisionTarget.value)
   const target: Pick<DecisionEngineSpec, 'backend' | 'deployment'> = kind === 'deployment'
     ? { backend: decisionBackendFor(deployments.value.find((d) => d.id === id)), deployment: id }
     : { backend: id as DecisionEngineSpec['backend'] }
+  if (isTetris.value) {
+    return {
+      ...target,
+      mode: decision.mode,
+      placements: true,
+      min_confidence: decision.min_confidence
+    }
+  }
   // Battle decisions are observational only; active runs never send them.
-  return { ...target, ...decision, battles: decisionShadow.value && decision.battles }
+  return { ...target, ...decision, placements: false, battles: decisionShadow.value && decision.battles }
 }
 
 function splitDecisionTarget(target: string): [string, string] {
@@ -99,9 +108,14 @@ watch(deployments, (next) => {
   if (kind === 'deployment' && !next.some((d) => d.id === id && d.enabled !== false)) decisionTarget.value = 'off'
   if (!next.length) {
     form.llm_deployment = ''
+    if (form.game === 'tetris') decisionTarget.value = 'env:jev'
     return
   }
   form.llm_deployment = preferredDeployment(next, form.llm_deployment || defaultFarmDeployment(next))
+  if (form.game === 'tetris') {
+    const jev = next.find((d) => d.enabled !== false && d.protocol === 'typesafe-choice' && deploymentSelectable(d))
+    decisionTarget.value = jev ? `deployment:${jev.id}` : 'off'
+  }
 }, { immediate: true })
 
 const submitting = ref(false)
@@ -120,11 +134,24 @@ watch(() => form.game, (game, previous) => {
     form.starter = ''
     form.dest = ''
     form.goal = 'score:10000'
+    decision.mode = 'active'
+    decision.battles = false
+    decision.objectives = false
+    decision.failures = false
+    decision.placements = true
+    const jev = decisionDeployments.value.find((d) => d.protocol === 'typesafe-choice' && deploymentSelectable(d))
+    decisionTarget.value = jev ? `deployment:${jev.id}` : (deployments.value.length ? 'off' : 'env:jev')
     return
   }
   if (previous === 'tetris' && form.planner === 'policy') {
     form.planner = 'llm'
     form.goal = defaultGoalForPlayStyle('adventure')
+    decisionTarget.value = 'off'
+    decision.mode = 'shadow'
+    decision.battles = true
+    decision.objectives = false
+    decision.failures = true
+    decision.placements = false
   }
 })
 
@@ -206,7 +233,7 @@ async function submit(): Promise<void> {
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="form.planner" :disabled="isTetris" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 disabled:opacity-60">
-            <option v-if="isTetris" value="policy">Play Tetris · deterministic policy</option>
+            <option v-if="isTetris" value="policy">Play Tetris · bounded placement policy</option>
             <template v-else>
               <option value="llm">Play the game</option>
               <option value="scripted">Walk to a place</option>
@@ -352,7 +379,7 @@ async function submit(): Promise<void> {
           </select>
         </label>
 
-        <label v-if="isLLM" class="block">
+        <label v-if="isLLM || isTetris" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Fast decision engine</span>
           <select v-model="decisionTarget" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="off">Off</option>
@@ -376,34 +403,42 @@ async function submit(): Promise<void> {
           </span>
         </label>
 
-        <label v-if="isLLM && decisionSelected" class="block">
+        <label v-if="(isLLM || isTetris) && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="decision.mode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="shadow">Shadow</option>
             <option value="active">Active</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Active lets Jev choose from placements already proven legal by the deterministic Tetris policy; Shadow measures agreement while policy executes.' : 'Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.' }}</span>
         </label>
 
-        <fieldset v-if="isLLM && decisionSelected" class="block">
+        <fieldset v-if="(isLLM || isTetris) && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ decisionShadow ? 'Decision engine observes' : 'Decision engine decides' }}</span>
-          <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
-            <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
-            Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
-          </label>
-          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
-            <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
-            Objective selection
-          </label>
-          <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
-            <input v-model="decision.failures" type="checkbox" class="rounded border-white/10 bg-white/6" />
-            Failure recovery
-          </label>
+          <template v-if="isTetris">
+            <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="decision.placements" type="checkbox" disabled class="rounded border-white/10 bg-white/6" />
+              Tetris placements <span class="text-[11px]">(legal candidates only)</span>
+            </label>
+          </template>
+          <template v-else>
+            <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
+              <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
+              Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
+            </label>
+            <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
+              Objective selection
+            </label>
+            <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="decision.failures" type="checkbox" class="rounded border-white/10 bg-white/6" />
+              Failure recovery
+            </label>
+          </template>
           <label class="mt-2 block">
             <span class="text-[11px] text-slate-500">Min confidence</span>
             <input v-model.number="decision.min_confidence" type="number" min="0" max="1" step="0.05" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
           </label>
-          <span class="mt-1 block text-[11px] text-slate-600">Answers below the threshold fall back to the strategist and deterministic policy.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : 'Answers below the threshold fall back to the strategist and deterministic policy.' }}</span>
         </fieldset>
 
         <label class="block">

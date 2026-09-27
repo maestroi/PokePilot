@@ -52,16 +52,17 @@ type Decision struct {
 	Considered int          `json:"considered"`
 }
 
-// Choose selects one deterministic reachable placement for the current piece.
-// If a preview piece is available, a one-piece lookahead is included so the
-// policy avoids obvious dead-end placements without coupling to the controller.
-func Choose(state tetris.State, objective Objective) (Decision, error) {
+// Candidates returns every reachable placement after applying the same
+// simulation, objective scoring, and one-piece lookahead used by Choose.
+// Callers that add a bounded decision engine must select only from this set;
+// legality and board simulation remain deterministic policy responsibilities.
+func Candidates(state tetris.State, objective Objective) (Objective, []Candidate, error) {
 	if !state.ReadyForPieceInput || state.Active == nil {
-		return Decision{}, fmt.Errorf("%w: screen=%s paused=%v locking=%v clearing=%v", ErrNotReady, state.Screen, state.Paused, state.Locking, state.Clearing)
+		return "", nil, fmt.Errorf("%w: screen=%s paused=%v locking=%v clearing=%v", ErrNotReady, state.Screen, state.Paused, state.Locking, state.Clearing)
 	}
 	resolved, err := resolveObjective(objective, state.Mode)
 	if err != nil {
-		return Decision{}, err
+		return "", nil, err
 	}
 
 	candidates := enumerate(
@@ -74,7 +75,7 @@ func Choose(state tetris.State, objective Objective) (Decision, error) {
 		resolved,
 	)
 	if len(candidates) == 0 {
-		return Decision{}, fmt.Errorf("%w for %s", ErrNoPlacement, state.Active.Piece)
+		return resolved, nil, fmt.Errorf("%w for %s", ErrNoPlacement, state.Active.Piece)
 	}
 
 	for i := range candidates {
@@ -106,13 +107,36 @@ func Choose(state tetris.State, objective Objective) (Decision, error) {
 		candidates[i].TotalScore = candidates[i].ImmediateScore + candidates[i].LookaheadScore
 	}
 
+	return resolved, candidates, nil
+}
+
+// BestCandidate applies the deterministic policy tie-breakers to an evaluated
+// candidate set. The bool is false only for an empty set.
+func BestCandidate(candidates []Candidate) (Candidate, bool) {
+	if len(candidates) == 0 {
+		return Candidate{}, false
+	}
 	best := candidates[0]
 	for i := 1; i < len(candidates); i++ {
 		if better(candidates[i], best) {
 			best = candidates[i]
 		}
 	}
+	return best, true
+}
 
+// Choose selects one deterministic reachable placement for the current piece.
+// If a preview piece is available, a one-piece lookahead is included so the
+// policy avoids obvious dead-end placements without coupling to the controller.
+func Choose(state tetris.State, objective Objective) (Decision, error) {
+	resolved, candidates, err := Candidates(state, objective)
+	if err != nil {
+		return Decision{}, err
+	}
+	best, ok := BestCandidate(candidates)
+	if !ok {
+		return Decision{}, fmt.Errorf("%w for %s", ErrNoPlacement, state.Active.Piece)
+	}
 	return Decision{
 		Objective:  resolved,
 		Piece:      state.Active.Piece,

@@ -74,6 +74,7 @@ test('a run with a selected engine shows the panel before its first call', () =>
   assert.equal(showDecisionTelemetry(stats, undefined), true)
   assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move, recoverable failures.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'shadow' }), 'No decision points enabled, so the engine is never asked.')
+  assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', placements: true }), 'No calls yet. The engine is asked on every Tetris placement.')
 })
 
 test('the live and archive views gate the panel on the run selection too', () => {
@@ -82,4 +83,11 @@ test('the live and archive views gate the panel on the run selection too', () =>
     assert.match(source, /showDecisionTelemetry\(\w+\.stats, \w+\.decision_engine\)/, view)
     assert.match(source, /:engine="\w+\.decision_engine"/, view)
   }
+})
+
+test('Tetris placement summaries get a readable label', () => {
+  const rows = decisionKindRows({
+    decision_summary: { kinds: { tetris_placement: kind({ calls: 4 }) } }
+  })
+  assert.equal(rows[0]?.label, 'Tetris placements')
 })
