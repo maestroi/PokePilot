@@ -13,7 +13,7 @@ func TestBlockVisitedMapsChoosesForestDetour(t *testing.T) {
 	forest := world.Edge{Kind: world.EdgeWarp, From: 0x32, To: 0x33, WarpX: 5, WarpY: 0}
 	forestNorth := world.Edge{Kind: world.EdgeWarp, From: 0x33, To: 0x2F, WarpX: 1, WarpY: 0}
 	northGate := world.Edge{Kind: world.EdgeWarp, From: 0x2F, To: 0x0D, WarpX: 5, WarpY: 0}
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		0x32: {reverseLeft, reverseRight, forest},
 		0x33: {forestNorth},
 		0x2F: {northGate},
@@ -64,7 +64,7 @@ func TestBlockVisitedMapsDeadEndKeepsHardBans(t *testing.T) {
 	left := world.Edge{Kind: world.EdgeWarp, From: center, To: route4, WarpX: 3, WarpY: 7}
 	right := world.Edge{Kind: world.EdgeWarp, From: center, To: route4, WarpX: 4, WarpY: 7}
 	onward := world.Edge{Kind: world.EdgeConnection, From: route4, To: 0x03, Dir: 3}
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		center: {left, right},
 		route4: {onward},
 		0x03:   nil,
@@ -110,7 +110,7 @@ func TestForcedRevisitBanClosesDeadEndConnection(t *testing.T) {
 	route4 := uint8(0x0F)
 	crossing := world.Edge{Kind: world.EdgeConnection, From: cerulean, To: route4, Dir: 0}
 	onward := world.Edge{Kind: world.EdgeConnection, From: cerulean, To: 0x02, Dir: 1}
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		cerulean: {crossing, onward},
 		route4:   {{Kind: world.EdgeConnection, From: route4, To: cerulean, Dir: 2}},
 	}}
@@ -154,7 +154,7 @@ func TestForcedRevisitBanKeepsOnlyExit(t *testing.T) {
 	cerulean := uint8(0x03)
 	toCerulean := world.Edge{Kind: world.EdgeConnection, From: route24, To: cerulean, Dir: 0}
 	toRoute25 := world.Edge{Kind: world.EdgeConnection, From: route24, To: 0x19, Dir: 1}
-	g := &world.Graph{Edges: map[uint8][]world.Edge{route24: {toCerulean, toRoute25}}}
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{route24: {toCerulean, toRoute25}}}
 	visited := map[uint8]bool{cerulean: true}
 	deadEnds := map[legFromMap]bool{{e: toRoute25, m: route24}: true} // Route 25 already a measured dead end
 
