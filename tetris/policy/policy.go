@@ -4,6 +4,7 @@ package policy
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/tetris"
@@ -123,6 +124,17 @@ func BestCandidate(candidates []Candidate) (Candidate, bool) {
 		}
 	}
 	return best, true
+}
+
+// TopCandidates returns at most limit candidates in deterministic policy order.
+// A non-positive limit leaves the complete set available. The input is unchanged.
+func TopCandidates(candidates []Candidate, limit int) []Candidate {
+	if limit <= 0 || limit >= len(candidates) {
+		return candidates
+	}
+	ranked := append([]Candidate(nil), candidates...)
+	sort.SliceStable(ranked, func(i, j int) bool { return better(ranked[i], ranked[j]) })
+	return ranked[:limit]
 }
 
 // Choose selects one deterministic reachable placement for the current piece.

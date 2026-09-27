@@ -14,7 +14,7 @@ func TestParseConfigProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fast.Profile != "fast" || fast.Goal != "score:1000" || fast.Runs != 1 || fast.MaxPieces != 120 || fast.Decision != "jev" || fast.DecisionMode != "active" {
+	if fast.Profile != "fast" || fast.Goal != "score:1000" || fast.Runs != 1 || fast.MaxPieces != 120 || fast.Decision != "jev" || fast.DecisionMode != "active" || fast.MaxChoices != 16 {
 		t.Fatalf("fast = %+v", fast)
 	}
 
@@ -32,6 +32,7 @@ func TestParseConfigRejectsBadInputs(t *testing.T) {
 		{"-rom", "tetris.gb", "-profile", "unknown"},
 		{"-rom", "tetris.gb", "-decision-mode", "maybe"},
 		{"-rom", "tetris.gb", "-min-confidence", "1.5"},
+		{"-rom", "tetris.gb", "-max-choices", "1"},
 		{"-rom", "tetris.gb", "-goal", "score:nope"},
 	} {
 		if _, err := parseConfig(args); err == nil {

@@ -184,3 +184,45 @@ func TestPlacementRequestContainsOnlyPolicyCandidates(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectorLimitsChoicesWithoutLosingPolicyFallback(t *testing.T) {
+	state := readyState(tetris.PieceT)
+	_, all, err := policy.Candidates(state, policy.ObjectiveScore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) <= 16 {
+		t.Fatalf("fixture has %d candidates; need more than 16", len(all))
+	}
+	best, _ := policy.BestCandidate(all)
+	engine := &fakeEngine{decide: func(req agent.DecisionRequest) (agent.DecisionResponse, error) {
+		if len(req.Choices) != 16 {
+			t.Fatalf("sent %d choices, want 16", len(req.Choices))
+		}
+		if req.Choices[0].ID != placementID(best) {
+			t.Fatalf("first choice %q, want policy best %q", req.Choices[0].ID, placementID(best))
+		}
+		return responseFor(req, req.Choices[1].ID, 0.9), nil
+	}}
+	got, err := (Selector{Engine: engine, MaxChoices: 16}).Choose(context.Background(), state, policy.ObjectiveScore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Fallback || got.Decision.Considered != len(all) || placementID(got.Decision.Candidate) != engine.req.Choices[1].ID {
+		t.Fatalf("selection = %+v", got)
+	}
+	if placementID(got.Deterministic.Candidate) != placementID(best) {
+		t.Fatal("policy fallback changed")
+	}
+}
+
+func TestMaxChoicesFromEnv(t *testing.T) {
+	t.Setenv("POKEPILOT_TETRIS_MAX_CHOICES", "16")
+	if got, err := MaxChoicesFromEnv(); err != nil || got != 16 {
+		t.Fatalf("limit = %d, %v", got, err)
+	}
+	t.Setenv("POKEPILOT_TETRIS_MAX_CHOICES", "1")
+	if _, err := MaxChoicesFromEnv(); err == nil {
+		t.Fatal("accepted one choice")
+	}
+}

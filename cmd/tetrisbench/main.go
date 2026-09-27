@@ -39,6 +39,7 @@ type config struct {
 	Decision      string
 	DecisionMode  string
 	MinConfidence float64
+	MaxChoices    int
 	Output        string
 }
 
@@ -125,6 +126,7 @@ func parseConfig(args []string) (config, error) {
 	decision := fs.String("decision-backend", "jev", "typed placement backend: jev, system-one, or off")
 	mode := fs.String("decision-mode", "active", "typed placement mode: active or shadow")
 	minConfidence := fs.Float64("min-confidence", 0.65, "typed decision confidence floor")
+	maxChoices := fs.Int("max-choices", 16, "maximum policy-ranked choices offered to typed backend; 0 means all")
 	output := fs.String("output", "tetris-benchmark-out", "benchmark evidence directory")
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
@@ -139,6 +141,7 @@ func parseConfig(args []string) (config, error) {
 		Decision:      strings.ToLower(strings.TrimSpace(*decision)),
 		DecisionMode:  strings.ToLower(strings.TrimSpace(*mode)),
 		MinConfidence: *minConfidence,
+		MaxChoices:    *maxChoices,
 		Output:        strings.TrimSpace(*output),
 	}
 	switch cfg.Profile {
@@ -179,6 +182,9 @@ func parseConfig(args []string) (config, error) {
 	}
 	if cfg.MinConfidence < 0 || cfg.MinConfidence > 1 {
 		return config{}, fmt.Errorf("tetrisbench: min-confidence must be between 0 and 1")
+	}
+	if cfg.MaxChoices != 0 && cfg.MaxChoices < 2 {
+		return config{}, fmt.Errorf("tetrisbench: max-choices must be zero or at least 2")
 	}
 	if cfg.DecisionMode != "active" && cfg.DecisionMode != "shadow" {
 		return config{}, fmt.Errorf("tetrisbench: decision-mode must be active or shadow")
@@ -299,6 +305,7 @@ func runOne(cfg config, profile game.CartridgeProfile, goal tetrissession.Goal, 
 			Engine:        settings.Engine,
 			MinConfidence: settings.MinConfidence,
 			Shadow:        settings.Shadow,
+			MaxChoices:    cfg.MaxChoices,
 		}
 		choose = func(state tetris.State, objective tetrispolicy.Objective) (tetrispolicy.Decision, error) {
 			selection, err := selector.Choose(context.Background(), state, objective)
