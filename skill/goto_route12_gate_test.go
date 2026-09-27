@@ -114,7 +114,7 @@ func TestSingleNeighborTransitRoomSuspendsVisitedPreference(t *testing.T) {
 		badgeHouse   = uint8(0xe6)
 		ceruleanCity = uint8(0x03)
 	)
-	g := &world.Graph{Edges: map[uint8][]world.Edge{
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{
 		badgeHouse: {
 			{Kind: world.EdgeWarp, From: badgeHouse, To: ceruleanCity, WarpX: 2, WarpY: 0},
 			{Kind: world.EdgeWarp, From: badgeHouse, To: ceruleanCity, WarpX: 2, WarpY: 7},
