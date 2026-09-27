@@ -13,9 +13,9 @@ import (
 type fakeMachine struct {
 	mem [1 << 16]byte
 
-	pressed map[emu.Button]bool
+	pressed  map[emu.Button]bool
 	previous map[emu.Button]bool
-	history []emu.Button
+	history  []emu.Button
 
 	blockRotation bool
 	blockShift    bool
@@ -41,7 +41,7 @@ func newFakeMachine() *fakeMachine {
 	m.mem[sym.ActiveVisible] = 0x00
 	m.mem[sym.ActiveX] = 0x3F
 	m.mem[sym.ActiveY] = 0x18
-	m.mem[sym.ActivePiece] = 0x18 // T, rotation 0
+	m.mem[sym.ActivePiece] = 0x18  // T, rotation 0
 	m.mem[sym.PreviewPiece] = 0x08 // I, rotation 0
 	return m
 }
