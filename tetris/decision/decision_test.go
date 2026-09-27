@@ -215,14 +215,3 @@ func TestSelectorLimitsChoicesWithoutLosingPolicyFallback(t *testing.T) {
 		t.Fatal("policy fallback changed")
 	}
 }
-
-func TestMaxChoicesFromEnv(t *testing.T) {
-	t.Setenv("POKEPILOT_TETRIS_MAX_CHOICES", "16")
-	if got, err := MaxChoicesFromEnv(); err != nil || got != 16 {
-		t.Fatalf("limit = %d, %v", got, err)
-	}
-	t.Setenv("POKEPILOT_TETRIS_MAX_CHOICES", "1")
-	if _, err := MaxChoicesFromEnv(); err == nil {
-		t.Fatal("accepted one choice")
-	}
-}

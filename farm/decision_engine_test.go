@@ -23,7 +23,7 @@ func TestDecisionEngineSpecNormalized(t *testing.T) {
 			t.Errorf("off selection kept features: %+v", got)
 		}
 	}
-	for _, bad := range []DecisionEngineSpec{{Backend: "gpt-4"}, {Backend: "jev", MinConfidence: -0.1}, {Backend: "jev", MinConfidence: 1.01}} {
+	for _, bad := range []DecisionEngineSpec{{Backend: "gpt-4"}, {Backend: "jev", MinConfidence: -0.1}, {Backend: "jev", MinConfidence: 1.01}, {Backend: "jev", MaxChoices: 1}, {Backend: "jev", MaxChoices: -1}} {
 		if _, err := bad.Normalized(); err == nil || !strings.Contains(err.Error(), "decision_engine") {
 			t.Errorf("Normalized(%+v) err = %v", bad, err)
 		}

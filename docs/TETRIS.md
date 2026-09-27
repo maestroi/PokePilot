@@ -119,18 +119,17 @@ A fast typed-decision backend can then choose among that finite set. The first s
 
 Farm runs keep `planner: "policy"`; Jev is selected independently through `decision_engine`. The operator launch form defaults Tetris to an active TypeSafe-choice deployment when one is registered, or to the runner's Jev endpoint when no model registry exists.
 
-Local `-planner policy` runs also use the runner's `POKEPILOT_DECISION_*` settings when a typed backend is enabled. For a local JEV-9B server with a 16-choice limit, set `POKEPILOT_TETRIS_MAX_CHOICES=16`. The selector ranks all reachable placements with the deterministic policy, offers its best 16 to Jev, and keeps the full policy result as fallback. The limit is optional for other backends; an invalid value fails the run before play begins.
+Local `-planner policy` runs also use the runner's `POKEPILOT_DECISION_*` settings when a typed backend is enabled. For a local JEV-9B server with a 16-choice limit, pass `-max-choices 16`. The selector ranks all reachable placements with the deterministic policy, offers its best 16 to Jev, and keeps the full policy result as fallback. The limit is optional for other backends; an invalid value fails the run before play begins.
 
 ```bash
 POKEPILOT_ROM=/private/Tetris.gb \
 POKEPILOT_DECISION_BACKEND=jev POKEPILOT_DECISION_MODE=shadow \
 POKEPILOT_DECISION_URL=http://127.0.0.1:8077/v1 \
 POKEPILOT_DECISION_MODEL=jev9-local POKEPILOT_DECISION_TOKEN=local-only \
-POKEPILOT_TETRIS_MAX_CHOICES=16 \
-  go run ./cmd/pokepilot -planner policy -goal score:1000
+  go run ./cmd/pokepilot -planner policy -goal score:1000 -max-choices 16
 ```
 
-Use `POKEPILOT_DECISION_MODE=active` to execute accepted Jev choices. Farm workers read the same runner-local choice limit. Their run spec still needs `decision_engine.placements: true`.
+Use `POKEPILOT_DECISION_MODE=active` to execute accepted Jev choices. Farm runs set the limit per run as `decision_engine.max_choices` (the launch form defaults it to 16; 0 offers every legal placement). Their run spec still needs `decision_engine.placements: true`.
 
 Example run fragment:
 
@@ -143,7 +142,8 @@ Example run fragment:
     "backend": "jev",
     "mode": "active",
     "placements": true,
-    "min_confidence": 0.65
+    "min_confidence": 0.65,
+    "max_choices": 16
   }
 }
 ```

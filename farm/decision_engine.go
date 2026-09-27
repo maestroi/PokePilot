@@ -55,6 +55,9 @@ type DecisionEngineSpec struct {
 	// MinConfidence below which an answer falls back to the existing path.
 	// Zero means the runner default.
 	MinConfidence float64 `json:"min_confidence,omitempty"`
+	// MaxChoices offers the backend only the deterministic policy's best N
+	// placements. Zero offers every legal placement.
+	MaxChoices int `json:"max_choices,omitempty"`
 }
 
 // NormalizeDecisionBackend maps accepted aliases to the canonical backend
@@ -103,6 +106,9 @@ func (d *DecisionEngineSpec) Normalized() (*DecisionEngineSpec, error) {
 	}
 	if math.IsNaN(out.MinConfidence) || out.MinConfidence < 0 || out.MinConfidence > 1 {
 		return nil, fmt.Errorf("decision_engine.min_confidence must be between 0 and 1 (got %v)", d.MinConfidence)
+	}
+	if out.MaxChoices < 0 || out.MaxChoices == 1 {
+		return nil, fmt.Errorf("decision_engine.max_choices must be 0 or at least 2 (got %d)", d.MaxChoices)
 	}
 	if out.Backend == DecisionBackendOff || out.Mode == DecisionModeOff {
 		return &DecisionEngineSpec{Backend: DecisionBackendOff, Mode: DecisionModeOff}, nil

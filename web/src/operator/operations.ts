@@ -163,7 +163,8 @@ export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>):
     engine.placements ? 'placements' : ''
   ].filter(Boolean)
   const confidence = engine.min_confidence ? ` · ≥${engine.min_confidence.toFixed(2)}` : ''
-  return `${name} · ${mode} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`
+  const choices = engine.max_choices ? ` · top ${engine.max_choices}` : ''
+  return `${name} · ${mode} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}${choices}`
 }
 
 export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'> & Partial<Pick<DashboardRun, 'game' | 'game_state'>>): string {
