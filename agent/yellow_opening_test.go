@@ -112,3 +112,21 @@ func TestYellowOpeningReachedRequiresStableStarterAndRivalFacts(t *testing.T) {
 		t.Fatal("stable completed opening was not recognized")
 	}
 }
+
+
+func TestYellowOpeningOakCaptureRemainsScriptOwned(t *testing.T) {
+	facts := yellowprofile.OpeningFacts{
+		Map:          yellowprofile.PalletTownMap,
+		InBattle:     true,
+		TextOpen:     true,
+		OakAppeared:  true,
+		Controllable: false,
+	}
+	phase, err := yellowOpeningPhaseFor(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if phase != yellowOpeningScript {
+		t.Fatalf("phase = %q, want %q for Oak's simulated Pikachu capture", phase, yellowOpeningScript)
+	}
+}
