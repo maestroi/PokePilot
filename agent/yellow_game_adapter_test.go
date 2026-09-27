@@ -90,7 +90,7 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 	if len(catalog.Starters) != 0 {
 		t.Fatalf("starters offered after the Pikachu opening: %+v", catalog.Starters)
 	}
-	wantLeagueProfiles := map[string]int{
+	wantLeagueProfiles := map[ObjectiveKey]int{
 		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueLoreleiDefeated}).Key():  56 * 4,
 		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueBrunoDefeated}).Key():    58 * 4,
 		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueAgathaDefeated}).Key():   60 * 4,
