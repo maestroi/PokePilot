@@ -155,10 +155,10 @@ func BootToPlaying(profile game.CartridgeProfile, m Machine, mode tetris.Mode) (
 }
 
 type RunOptions struct {
-	Goal       Goal
-	MaxPieces  int
-	MaxFrames  int
-	Cancel     <-chan struct{}
+	Goal      Goal
+	MaxPieces int
+	MaxFrames int
+	Cancel    <-chan struct{}
 	// Choose may replace the deterministic policy selector with another bounded
 	// selector. The selector still returns a policy.Decision, so controller
 	// execution remains unchanged. Nil preserves historical deterministic play.
