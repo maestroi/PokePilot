@@ -22,9 +22,9 @@ func (f *fakeTransitionExecutor) ExecuteTransition(edge Edge, transition gamerun
 func TestSemanticRoutePlanPreservesExecutableTransitionAcrossBlockedComponent(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: {}},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: {}},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 2}}, // player is component 1; edge exits component 2
 			2: {{3}},
 		},
@@ -52,9 +52,9 @@ func TestSemanticRoutePlanPreservesExecutableTransitionAcrossBlockedComponent(t 
 func TestSemanticRouteBlockedBeforeMovementWhenPivotCapabilityMissing(t *testing.T) {
 	edge := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {edge}, 2: {}},
+		Edges:          map[MapID][]Edge{1: {edge}, 2: {}},
 		componentAware: true,
-		comps:          map[uint8][][]int{1: {{1, 2}}, 2: {{3}}},
+		comps:          map[MapID][][]int{1: {{1, 2}}, 2: {{3}}},
 		exitComps:      map[Edge][]int{edge: {2}},
 		entryComps:     map[Edge][]int{edge: {3}},
 	}
