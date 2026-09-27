@@ -534,7 +534,6 @@ func TestHeartbeatTrailCountsDistinctMaps(t *testing.T) {
 	}
 }
 
-
 func TestValidateSpecAcceptsTetrisPolicy(t *testing.T) {
 	if err := validateSpec("tetris", "policy", "", ""); err != nil {
 		t.Fatalf("Tetris policy rejected: %v", err)
