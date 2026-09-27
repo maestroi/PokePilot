@@ -47,8 +47,14 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 	nativeAdjacency := make(map[uint8][]uint8, len(graph.Edges))
 	for from, edges := range graph.Edges {
+		if from > 0xff {
+			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: legacy knowledge topology cannot represent map %#04x", from)}
+		}
 		for _, e := range edges {
-			nativeAdjacency[from] = append(nativeAdjacency[from], e.To)
+			if e.To > 0xff {
+				return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: legacy knowledge topology cannot represent edge %#04x->%#04x", from, e.To)}
+			}
+			nativeAdjacency[uint8(from)] = append(nativeAdjacency[uint8(from)], uint8(e.To))
 		}
 	}
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
