@@ -129,3 +129,39 @@ func TestYellowOpeningOakCaptureRemainsScriptOwned(t *testing.T) {
 		t.Fatalf("phase = %q, want %q for Oak's simulated Pikachu capture", phase, yellowOpeningScript)
 	}
 }
+
+func TestYellowOpeningScriptConfirmsOnlyMessageBoxesDuringOakCapture(t *testing.T) {
+	tests := []struct {
+		name string
+		facts yellowprofile.OpeningFacts
+		want bool
+	}{
+		{
+			name: "ordinary scripted dialogue",
+			facts: yellowprofile.OpeningFacts{TextOpen: true},
+			want: true,
+		},
+		{
+			name: "oak capture wild appeared prompt",
+			facts: yellowprofile.OpeningFacts{InBattle: true, TextBoxID: yellowOpeningMessageBoxID},
+			want: true,
+		},
+		{
+			name: "oak simulated battle menu",
+			facts: yellowprofile.OpeningFacts{InBattle: true, TextOpen: true, TextBoxID: yellowOpeningBattleMenuID},
+			want: false,
+		},
+		{
+			name: "oak simulated item list",
+			facts: yellowprofile.OpeningFacts{InBattle: true, TextOpen: true, TextBoxID: yellowOpeningListMenuBoxID},
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := yellowOpeningScriptNeedsConfirm(tc.facts); got != tc.want {
+				t.Fatalf("yellowOpeningScriptNeedsConfirm(%+v)=%t, want %t", tc.facts, got, tc.want)
+			}
+		})
+	}
+}
