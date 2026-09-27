@@ -51,14 +51,14 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted; defaults to llm"`
-	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, or pokemon-yellow; empty lets the runner pick its mounted cartridge"`
-	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments"`
-	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted mode"`
-	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm mode; defaults to earning the Boulder Badge"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted for Pokemon, policy for Tetris; defaults from game"`
+	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, or tetris; empty lets the runner pick its mounted cartridge"`
+	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments; Tetris must leave this empty"`
+	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
+	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm Pokemon mode, or Tetris auto, survival, complete, lines:N, or score:N"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
 	FPS        int    `json:"fps,omitempty" jsonschema:"emulation pace; zero runs flat out"`
-	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"optional emergency/experiment LLM objective cap; zero means no hard round cap"`
+	MaxRounds  int    `json:"max_rounds,omitempty" jsonschema:"optional emergency/experiment cap: LLM objectives for Pokemon or placed pieces for Tetris; zero means no hard round/piece cap"`
 	MaxFrames  int    `json:"max_frames,omitempty" jsonschema:"emulated frame budget; zero uses the runner default"`
 	LLMProfile string `json:"llm_profile,omitempty" jsonschema:"llm endpoint routing: default, gpu, or auto (GPU primary with LAN fallback)"`
 	// ReasoningEffort overrides the strategist's reasoning_effort: low,
@@ -122,6 +122,7 @@ type mcpArtifactContentOutput struct {
 type mcpRunView struct {
 	RunID           string         `json:"run_id"`
 	Status          string         `json:"status"`
+	Game            string         `json:"game,omitempty"`
 	Planner         string         `json:"planner,omitempty"`
 	Starter         string         `json:"starter,omitempty"`
 	Dest            string         `json:"dest,omitempty"`
@@ -145,6 +146,8 @@ type mcpRunView struct {
 	StopSoFar       string         `json:"stop_so_far,omitempty"`
 	Stats           *farm.LLMStats `json:"stats,omitempty"`
 	Player          *farm.Player   `json:"player,omitempty"`
+	GameState       map[string]any `json:"game_state,omitempty"`
+	GameDecision    map[string]any `json:"game_decision,omitempty"`
 	Reason          string         `json:"reason,omitempty"`
 	Detail          string         `json:"detail,omitempty"`
 	Issue           map[string]any `json:"issue,omitempty"`
@@ -180,7 +183,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_start_run",
-		Description: "Queue one goal-driven PokePilot run and return its generated run id. Defaults to an LLM Squirtle run for the Boulder Badge.",
+		Description: "Queue one PokePilot run and return its generated run id. Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Tetris uses the deterministic policy runtime.",
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
@@ -188,7 +191,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 	}, control.listRuns)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run",
-		Description: "Get the live or finished state of one PokePilot run, including planner state, party, location and LLM statistics when available.",
+		Description: "Get the live or finished state of one PokePilot run, including game-specific semantic state/decisions and Pokemon planner/player fields when available.",
 	}, control.getRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_debug",
@@ -257,13 +260,33 @@ func mcpBearerAuth(token string, next http.Handler) http.Handler {
 func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpStartRunInput) (*mcp.CallToolResult, mcpStartRunOutput, error) {
 	gameID := strings.ToLower(strings.TrimSpace(in.Game))
 	switch gameID {
-	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow":
+	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow", "tetris":
 	default:
-		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, or pokemon-yellow")
+		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, pokemon-yellow, or tetris")
+	}
+
+	planner := strings.ToLower(strings.TrimSpace(in.Planner))
+	if planner == "" {
+		if gameID == "tetris" {
+			planner = "policy"
+		} else {
+			planner = "llm"
+		}
+	}
+	if gameID == "tetris" {
+		if planner != "policy" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris uses planner policy")
+		}
+	} else if planner != "llm" && planner != "scripted" {
+		return nil, mcpStartRunOutput{}, fmt.Errorf("planner must be llm or scripted for Pokemon")
 	}
 
 	starter := strings.ToLower(strings.TrimSpace(in.Starter))
-	if gameID == "pokemon-yellow" {
+	if gameID == "tetris" {
+		if starter != "" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris does not use a starter")
+		}
+	} else if gameID == "pokemon-yellow" {
 		if starter != "" && starter != "pikachu" {
 			return nil, mcpStartRunOutput{}, fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter")
 		}
@@ -277,14 +300,6 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		default:
 			return nil, mcpStartRunOutput{}, fmt.Errorf("starter must be squirtle, charmander, or bulbasaur")
 		}
-	}
-
-	planner := strings.ToLower(strings.TrimSpace(in.Planner))
-	if planner == "" {
-		planner = "llm"
-	}
-	if planner != "llm" && planner != "scripted" {
-		return nil, mcpStartRunOutput{}, fmt.Errorf("planner must be llm or scripted")
 	}
 	if in.FPS < 0 || in.FPS > 240 {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("fps must be between 0 and 240")
@@ -316,7 +331,14 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	if planner == "scripted" && dest == "" {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("dest is required for scripted runs")
 	}
-	if planner == "llm" && goal == "" {
+	if gameID == "tetris" {
+		if dest != "" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris does not use a destination")
+		}
+		if goal == "" {
+			goal = "auto"
+		}
+	} else if planner == "llm" && goal == "" {
 		goal = "Earn the Boulder Badge."
 	}
 
