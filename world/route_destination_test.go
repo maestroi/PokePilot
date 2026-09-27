@@ -9,12 +9,12 @@ func TestFindRouteAtDestinationReentersSameMapForDifferentComponent(t *testing.T
 	out := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	back := Edge{Kind: EdgeWarp, From: 2, To: 1, WarpX: 0, WarpY: 0}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {out},
 			2: {back},
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 2}},
 			2: {{1}},
 		},
@@ -49,11 +49,11 @@ func TestFindRouteAtDestinationReentersSameMapForDifferentComponent(t *testing.T
 func TestFindRouteAtDestinationUsesSameMapWarpBetweenComponents(t *testing.T) {
 	pad := Edge{Kind: EdgeWarp, From: 1, To: 1, WarpX: 0, WarpY: 0}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {pad},
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 0, 2}},
 		},
 		exitComps: map[Edge][]int{
