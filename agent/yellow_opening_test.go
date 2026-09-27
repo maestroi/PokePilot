@@ -1,52 +1,114 @@
 package agent
 
-import "testing"
+import (
+	"errors"
+	"testing"
 
-func TestYellowOpeningPhaseForResumableStates(t *testing.T) {
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
+)
+
+func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 	tests := []struct {
-		name     string
-		state    yellowOpeningState
-		nickname bool
-		want     yellowOpeningPhase
+		name  string
+		facts yellowprofile.OpeningFacts
+		want  yellowOpeningPhase
+		err   error
 	}{
-		{name: "completed boundary", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true, starter: true, labRival: true}, want: yellowOpeningDone},
-		{name: "rival flag cannot hide missing Pikachu", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, starter: true, labRival: true}, want: yellowOpeningUnexpected},
-		{name: "scripted capture battle", state: yellowOpeningState{mapID: yellowOpeningOaksLab, inBattle: true}, want: yellowOpeningBattle},
-		{name: "nickname choice", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1}, nickname: true, want: yellowOpeningNickname},
-		{name: "script owns input", state: yellowOpeningState{mapID: yellowOpeningPalletTown}, want: yellowOpeningScript},
-		{name: "fresh bedroom upstairs", state: yellowOpeningState{mapID: yellowOpeningRedsHouse2F, controllable: true}, want: yellowOpeningBedroomUpstairs},
-		{name: "fresh bedroom downstairs", state: yellowOpeningState{mapID: yellowOpeningRedsHouse1F, controllable: true}, want: yellowOpeningBedroomDownstairs},
-		{name: "before Oak intercept", state: yellowOpeningState{mapID: yellowOpeningPalletTown, controllable: true}, want: yellowOpeningOakGate},
-		{name: "before Eevee ball", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true}, want: yellowOpeningEeveeBall},
-		{name: "Pikachu in party before starter event settles", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true}, want: yellowOpeningAwaitStarter},
-		{name: "starter before rival trigger", state: yellowOpeningState{mapID: yellowOpeningOaksLab, controllable: true, partyCount: 1, hasPikachu: true, starter: true}, want: yellowOpeningRivalTrigger},
-		{name: "starter outside lab fails closed", state: yellowOpeningState{mapID: yellowOpeningPalletTown, controllable: true, partyCount: 1, hasPikachu: true, starter: true}, want: yellowOpeningUnexpected},
+		{
+			name:  "fresh bedroom routes toward gate",
+			facts: yellowprofile.OpeningFacts{Map: 0x26, Controllable: true},
+			want:  yellowOpeningWalkToGate,
+		},
+		{
+			name:  "Oak gate script owns input",
+			facts: yellowprofile.OpeningFacts{Map: yellowprofile.PalletTownMap, OakAppeared: true},
+			want:  yellowOpeningScript,
+		},
+		{
+			name: "transient lab control before choose speech still waits",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, Controllable: true,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: false,
+			},
+			want: yellowOpeningScript,
+		},
+		{
+			name: "ball only after choose speech",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, Controllable: true,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningTakeBall,
+		},
+		{
+			name:  "scripted Oak capture battle is not player battle",
+			facts: yellowprofile.OpeningFacts{Map: yellowprofile.PalletTownMap, InBattle: true},
+			want:  yellowOpeningScript,
+		},
+		{
+			name: "lab rival battle is player owned",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, InBattle: true, GotStarter: true, PartyCount: 1,
+			},
+			want: yellowOpeningFightRival,
+		},
+		{
+			name: "Pikachu received walks to rival",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningWalkToRival,
+		},
+		{
+			name: "completed opening",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1, BattledRival: true,
+			},
+			want: yellowOpeningDone,
+		},
+		{
+			name:  "unexpected choice fails closed",
+			facts: yellowprofile.OpeningFacts{ChoicePrompt: true},
+			err:   errYellowOpeningChoiceRequired,
+		},
+		{
+			name: "starter outside lab fails closed",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.PalletTownMap, Controllable: true, GotStarter: true, PartyCount: 1,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			err: errYellowOpeningUnexpectedState,
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := yellowOpeningPhaseFor(tc.state, tc.nickname); got != tc.want {
-				t.Fatalf("yellowOpeningPhaseFor(%+v, nickname=%v) = %q, want %q",
-					tc.state, tc.nickname, got, tc.want)
+			got, err := yellowOpeningPhaseFor(tc.facts)
+			if tc.err != nil {
+				if !errors.Is(err, tc.err) {
+					t.Fatalf("yellowOpeningPhaseFor(%+v) error=%v, want %v", tc.facts, err, tc.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("yellowOpeningPhaseFor(%+v): %v", tc.facts, err)
+			}
+			if got != tc.want {
+				t.Fatalf("yellowOpeningPhaseFor(%+v)=%q, want %q", tc.facts, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestYellowOpeningFacingButton(t *testing.T) {
-	tests := []struct {
-		x, y, tx, ty uint8
-		ok           bool
-	}{
-		{5, 5, 5, 6, true},
-		{5, 5, 5, 4, true},
-		{5, 5, 6, 5, true},
-		{5, 5, 4, 5, true},
-		{5, 5, 7, 5, false},
+func TestYellowOpeningReachedRequiresStableStarterAndRivalFacts(t *testing.T) {
+	if yellowOpeningReached(yellowprofile.OpeningFacts{GotStarter: true, BattledRival: true, Controllable: true}) {
+		t.Fatal("opening completed without a party member")
 	}
-	for _, tc := range tests {
-		if _, ok := yellowOpeningFacingButton(tc.x, tc.y, tc.tx, tc.ty); ok != tc.ok {
-			t.Fatalf("facing (%d,%d)->(%d,%d) ok=%v, want %v", tc.x, tc.y, tc.tx, tc.ty, ok, tc.ok)
-		}
+	if yellowOpeningReached(yellowprofile.OpeningFacts{GotStarter: true, PartyCount: 1, BattledRival: true, InBattle: true}) {
+		t.Fatal("opening completed during battle")
+	}
+	if !yellowOpeningReached(yellowprofile.OpeningFacts{GotStarter: true, PartyCount: 1, BattledRival: true, Controllable: true}) {
+		t.Fatal("stable completed opening was not recognized")
 	}
 }

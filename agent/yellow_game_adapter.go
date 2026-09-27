@@ -110,6 +110,24 @@ func (a *yellowObjectiveAdapter) SettlePostcondition(o Objective) error {
 }
 
 func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	if o.Kind == KindStarter {
+		if _, err := verifyObjectivePostcondition(o, initial, final, result); err != nil {
+			return err
+		}
+		for _, id := range []ProgressID{
+			yellowprofile.ProgressYellowStarterReceived,
+			yellowprofile.ProgressYellowLabRivalResolved,
+		} {
+			fact, ok := final.Story.Lookup(id)
+			if !ok {
+				return fmt.Errorf("%w: %s needs Yellow story verifier %q", ErrObjectivePostconditionUnavailable, o, id)
+			}
+			if !fact.Complete {
+				return fmt.Errorf("%w: %s finished before Yellow story fact %q completed", ErrObjectivePostconditionFailed, o, id)
+			}
+		}
+		return nil
+	}
 	if yellowOwnedKind(o.Kind) {
 		_, err := verifyObjectivePostcondition(o, initial, final, result)
 		return err
@@ -118,13 +136,30 @@ func (a *yellowObjectiveAdapter) VerifyPostcondition(o Objective, initial, final
 }
 
 func (a *yellowObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {
-	if errors.Is(err, errYellowControllerUnavailable) {
+	switch {
+	case errors.Is(err, errYellowControllerUnavailable):
 		return gameruntime.Failure{
 			Phase: phase, Class: gameruntime.FailureClassBlocked,
 			Cause: "yellow_controller_unavailable", Recoverable: false,
 		}
+	case errors.Is(err, errYellowOpeningChoiceRequired):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassChoiceRequired,
+			Cause: "yellow_opening_choice_required", Recoverable: false,
+		}
+	case errors.Is(err, errYellowOpeningStalled):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
+			Cause: "yellow_opening_stalled", Recoverable: false,
+		}
+	case errors.Is(err, errYellowOpeningUnexpectedState):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
+			Cause: "yellow_opening_unexpected_state", Recoverable: false,
+		}
+	default:
+		return a.gen1.NormalizeFailure(phase, err, final)
 	}
-	return a.gen1.NormalizeFailure(phase, err, final)
 }
 
 func (a *yellowObjectiveAdapter) CaptureFailure(o Objective, err error) error {
