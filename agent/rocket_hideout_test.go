@@ -25,7 +25,7 @@ func TestRocketHideoutUsesSemanticProgressionObjective(t *testing.T) {
 }
 
 func TestOfferRocketHideoutProgressionUntilScopeObtained(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{})
+	known := NewKnowledge(nil)
 	planner := &redObjectiveAdapter{}
 
 	for _, mapID := range []uint8{0x06, 0x85, 0x86, 0x87, 0xC7, 0xC8, 0xC9, 0xCA} {
