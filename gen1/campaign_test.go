@@ -65,3 +65,21 @@ func TestRocketTowerStagesAreOrderedAndFresh(t *testing.T) {
 		t.Fatal("RocketTowerStages returned mutable global storage")
 	}
 }
+
+
+func TestFuchsiaStagesAreOrderedAndFresh(t *testing.T) {
+	want := []game.ProgressID{ProgressFuchsiaProgressionComplete}
+	got := FuchsiaStages()
+	if len(got) != len(want) {
+		t.Fatalf("FuchsiaStages()=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("FuchsiaStages()[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if FuchsiaStages()[0] != ProgressFuchsiaProgressionComplete {
+		t.Fatal("FuchsiaStages returned mutable global storage")
+	}
+}
