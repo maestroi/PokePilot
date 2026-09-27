@@ -216,7 +216,7 @@ func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 	obs := Observation{
 		GameID:     yellowprofile.GameID,
 		PartyCount: 3,
-		Location:   yellowLocationID(yellowprofile.GameID, 0x07),
+		Location:   PlaceID(yellowLocationID(yellowprofile.GameID, 0x07)),
 		Story: ProgressState{
 			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
 			{ID: gen1.ProgressPokedexAcquired, Complete: true},
@@ -251,7 +251,7 @@ func TestYellowPostFuchsiaPreparesSurfThenRoutesCinnabar(t *testing.T) {
 		t.Fatalf("post-Surf progression=%v, want Cinnabar handoff without Strength repair", got)
 	}
 
-	obs.Location = yellowLocationID(yellowprofile.GameID, 0xab)
+	obs.Location = PlaceID(yellowLocationID(yellowprofile.GameID, 0xab))
 	if got = a.ProgressionObjectives(obs); len(got) != 0 {
 		t.Fatalf("Cinnabar handoff should stop the slice at the Center: %v", got)
 	}
