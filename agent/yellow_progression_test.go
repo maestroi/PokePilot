@@ -64,6 +64,9 @@ func TestYellowProgressionKnownIsBoundedToImplementedSlice(t *testing.T) {
 		gen1.ProgressFuchsiaProgressionComplete,
 		gen1.ProgressSecretKeyOwned,
 		gen1.ProgressVolcanoBadge,
+		gen1.ProgressSaffronGateOpen,
+		gen1.ProgressCardKeyOwned,
+		gen1.ProgressSilphRescueComplete,
 	} {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q progression must be executable", id)
@@ -269,8 +272,10 @@ func TestYellowPostFuchsiaPreparesSurfThenRunsCinnabarStages(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressVolcanoBadge, Complete: true})
-	if got = a.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("post-Blaine Cinnabar slice should stop after Volcano Badge: %v", got)
+	obs.FieldCapabilities = nil // Surf repair must not gate the unrelated Saffron leg once Cinnabar is complete.
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressSaffronGateOpen {
+		t.Fatalf("post-Blaine progression=%v, want Saffron gate", got)
 	}
 }
 
@@ -320,5 +325,122 @@ func TestYellowCinnabarUsesSharedGen1Executors(t *testing.T) {
 		if !yellowProgressionKnown(id) {
 			t.Fatalf("%q must be registered as executable Yellow progression", id)
 		}
+	}
+}
+
+func TestYellowPostBlaineContinuesThroughSaffronSilphAndSabrina(t *testing.T) {
+	a := &yellowObjectiveAdapter{}
+	obs := Observation{
+		GameID:     yellowprofile.GameID,
+		PartyCount: 3,
+		Badges:     []string{"Boulder", "Cascade", "Thunder", "Rainbow", "Soul", "Volcano"},
+		Story: ProgressState{
+			{ID: yellowprofile.ProgressYellowLabRivalResolved, Complete: true},
+			{ID: gen1.ProgressPokedexAcquired, Complete: true},
+			{ID: gen1.ProgressBoulderBadge, Complete: true},
+			{ID: gen1.ProgressMtMoonFossilAcquired, Complete: true},
+			{ID: yellowprofile.ProgressYellowMtMoonExitResolved, Complete: true},
+			{ID: gen1.ProgressSSTicketAcquired, Complete: true},
+			{ID: gen1.ProgressHM01Acquired, Complete: true},
+			{ID: gen1.ProgressThunderBadge, Complete: true},
+			{ID: gen1.ProgressPostSurgeLavenderReached, Complete: true},
+			{ID: gen1.ProgressPostSurgeCeladonReady, Complete: true},
+			{ID: gen1.ProgressRainbowBadge, Complete: true},
+			{ID: gen1.ProgressSilphScopeAcquired, Complete: true},
+			{ID: gen1.ProgressPokeFluteAcquired, Complete: true},
+			{ID: gen1.ProgressFuchsiaProgressionComplete, Complete: true},
+			{ID: gen1.ProgressSecretKeyOwned, Complete: true},
+			{ID: gen1.ProgressVolcanoBadge, Complete: true},
+		},
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+		},
+	}
+
+	got := a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gen1.ProgressSaffronGateOpen {
+		t.Fatalf("post-Blaine progression=%v, want Saffron gate", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSaffronGateOpen, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressCardKeyOwned {
+		t.Fatalf("post-Saffron-gate progression=%v, want Card Key", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressCardKeyOwned, Complete: true})
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gen1.ProgressSilphRescueComplete {
+		t.Fatalf("post-Card-Key progression=%v, want Silph rescue", got)
+	}
+
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: gen1.ProgressSilphRescueComplete, Complete: true},
+		ProgressFact{ID: yellowprofile.ProgressYellowSilphJessieJamesDefeated, Complete: true},
+	)
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindGoTo || got[0].Place != "saffron gym" {
+		t.Fatalf("post-Silph progression=%v, want Saffron Gym travel", got)
+	}
+
+	obs.Location = PlaceID("saffron gym")
+	got = a.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindGym || got[0].Place != "saffron gym" {
+		t.Fatalf("inside Saffron Gym progression=%v, want Sabrina gym objective", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressMarshBadge, Complete: true})
+	if got = a.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("post-Marsh Saffron slice should stop cleanly: %v", got)
+	}
+}
+
+func TestYellowSaffronValidationUsesYellowOrdering(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	obs := Observation{GameID: yellowprofile.GameID}
+
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSaffronGateOpen}, obs); err != nil {
+		t.Fatalf("Saffron gate should have no Yellow story prerequisite: %v", err)
+	}
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressCardKeyOwned}, obs); err == nil {
+		t.Fatal("Card Key validated before Saffron gate")
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressSaffronGateOpen, Complete: true})
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressCardKeyOwned}, obs); err != nil {
+		t.Fatalf("Card Key rejected after Saffron gate: %v", err)
+	}
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSilphRescueComplete}, obs); err == nil {
+		t.Fatal("Silph rescue validated before Card Key")
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gen1.ProgressCardKeyOwned, Complete: true})
+	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSilphRescueComplete}, obs); err != nil {
+		t.Fatalf("Silph rescue rejected after gate + Card Key: %v", err)
+	}
+}
+
+func TestYellowSilphRescueRequiresJessieJamesPostcondition(t *testing.T) {
+	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
+	o := Objective{Kind: KindProgress, Progress: gen1.ProgressSilphRescueComplete}
+	initial := Observation{GameID: yellowprofile.GameID, Controllable: true}
+	final := Observation{
+		GameID:       yellowprofile.GameID,
+		Controllable: true,
+		Story: ProgressState{
+			{ID: gen1.ProgressSilphRescueComplete, Complete: true},
+		},
+	}
+
+	if err := a.VerifyPostcondition(o, initial, final, ObjectiveResult{Objective: o}); err == nil {
+		t.Fatal("Silph rescue succeeded without Yellow Jessie/James completion")
+	}
+
+	final.Story = append(final.Story, ProgressFact{
+		ID:       yellowprofile.ProgressYellowSilphJessieJamesDefeated,
+		Complete: true,
+	})
+	if err := a.VerifyPostcondition(o, initial, final, ObjectiveResult{Objective: o}); err != nil {
+		t.Fatalf("Silph rescue rejected with Yellow Jessie/James completion: %v", err)
 	}
 }

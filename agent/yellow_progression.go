@@ -24,7 +24,10 @@ func yellowSharedStoryBeat(id ProgressID) bool {
 		gen1.ProgressPokeFluteAcquired,
 		gen1.ProgressFuchsiaProgressionComplete,
 		gen1.ProgressSecretKeyOwned,
-		gen1.ProgressVolcanoBadge:
+		gen1.ProgressVolcanoBadge,
+		gen1.ProgressSaffronGateOpen,
+		gen1.ProgressCardKeyOwned,
+		gen1.ProgressSilphRescueComplete:
 		return true
 	default:
 		return false
@@ -54,9 +57,47 @@ func yellowSharedProgressionPrerequisites(id ProgressID, obs Observation) (bool,
 			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressSecretKeyOwned})
 		}
 		return true, nil
+	case gen1.ProgressCardKeyOwned:
+		if !obs.Story.Has(gen1.ProgressSaffronGateOpen) {
+			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressSaffronGateOpen})
+		}
+		return true, nil
+	case gen1.ProgressSilphRescueComplete:
+		missing := make([]ProgressID, 0, 2)
+		if !obs.Story.Has(gen1.ProgressSaffronGateOpen) {
+			missing = append(missing, gen1.ProgressSaffronGateOpen)
+		}
+		if !obs.Story.Has(gen1.ProgressCardKeyOwned) {
+			missing = append(missing, gen1.ProgressCardKeyOwned)
+		}
+		if len(missing) != 0 {
+			return true, progressionPrerequisiteError(missing)
+		}
+		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+// yellowMarshBadgeObjectives keeps Sabrina's story ordering Yellow-owned while
+// reusing the shared semantic travel and gym executors. Silph must be fully
+// rescued first, including Yellow's 11F Jessie/James interruption.
+func yellowMarshBadgeObjectives(obs Observation) []Objective {
+	if !obs.Story.Has(gen1.ProgressSilphRescueComplete) || obs.Story.Has(gen1.ProgressMarshBadge) {
+		return nil
+	}
+	if obs.Location == PlaceID("saffron gym") {
+		return []Objective{{
+			Kind:  KindGym,
+			Place: "saffron gym",
+			Note:  "(Silph is clear; traverse Saffron Gym's warp maze, defeat Sabrina, and verify the Marsh Badge)",
+		}}
+	}
+	return []Objective{{
+		Kind:  KindGoTo,
+		Place: "saffron gym",
+		Note:  "(Silph is clear; travel to Saffron Gym so Sabrina can be defeated for the Marsh Badge)",
+	}}
 }
 
 // ProgressionObjectives exposes only Yellow story steps that the current
@@ -148,20 +189,36 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 
 	// Fuchsia owns the durable HM03/HM04 handoff; the generic field-capability
 	// repair engine owns teaching/rearranging carriers. Cinnabar requires Surf,
-	// but not Strength, so repair only the capability this route actually uses.
-	// HM04 remains owned and can be prepared lazily when a later route needs it.
-	if !fieldCapabilityUsable(obs, "surf") {
-		return []Objective{{
-			Kind:            KindRepairFieldCapability,
-			FieldCapability: "surf",
-			Note:            "(prepare the newly acquired Surf field move on a usable party carrier before the Cinnabar leg)",
-		}}
-	}
-
+	// but not Strength, so repair only while that route is still incomplete.
+	// Once Blaine is complete, an unrelated Saffron step must not be blocked by
+	// a party reshuffle that temporarily makes Surf unusable.
 	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.CinnabarStages()); ok {
+		if !fieldCapabilityUsable(obs, "surf") {
+			return []Objective{{
+				Kind:            KindRepairFieldCapability,
+				FieldCapability: "surf",
+				Note:            "(prepare the newly acquired Surf field move on a usable party carrier before the Cinnabar leg)",
+			}}
+		}
 		note := map[ProgressID]string{
 			gen1.ProgressSecretKeyOwned: "(enter Pokemon Mansion from Cinnabar, solve the live statue-gate topology, and collect the Secret Key)",
 			gen1.ProgressVolcanoBadge:   "(unlock Cinnabar Gym with the Secret Key, answer the six ROM-declared quiz gates, defeat Blaine, and verify the Volcano Badge)",
+		}[next]
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: next,
+			Note:     note,
+		}}
+	}
+
+	if next, ok := gen1.FirstIncomplete(obs.Story, gen1.SaffronStages()); ok {
+		if next == gen1.ProgressMarshBadge {
+			return yellowMarshBadgeObjectives(obs)
+		}
+		note := map[ProgressID]string{
+			gen1.ProgressSaffronGateOpen:     "(buy a guard drink in Celadon and open Saffron's guardhouses through the shared Gen-I route-gate transaction)",
+			gen1.ProgressCardKeyOwned:        "(enter Silph Co, follow the stair topology to 5F, and collect the Card Key)",
+			gen1.ProgressSilphRescueComplete: "(open the required Silph doors, resolve the rival and Yellow's 11F Jessie/James interruption, defeat Giovanni, and receive the president's Master Ball)",
 		}[next]
 		return []Objective{{
 			Kind:     KindProgress,

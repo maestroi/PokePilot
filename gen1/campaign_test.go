@@ -99,3 +99,25 @@ func TestCinnabarStagesAreOrderedAndFresh(t *testing.T) {
 		t.Fatal("CinnabarStages returned mutable global storage")
 	}
 }
+
+func TestSaffronStagesAreOrderedAndFresh(t *testing.T) {
+	want := []game.ProgressID{
+		ProgressSaffronGateOpen,
+		ProgressCardKeyOwned,
+		ProgressSilphRescueComplete,
+		ProgressMarshBadge,
+	}
+	got := SaffronStages()
+	if len(got) != len(want) {
+		t.Fatalf("SaffronStages()=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("SaffronStages()[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if SaffronStages()[0] != ProgressSaffronGateOpen {
+		t.Fatal("SaffronStages returned mutable global storage")
+	}
+}
