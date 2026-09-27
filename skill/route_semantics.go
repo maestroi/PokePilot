@@ -180,10 +180,10 @@ func semanticTransition(id string, edge world.Edge, requires ...gameruntime.Capa
 // portable transition model. The router never sees these map ids; they are
 // adapter facts attached to ordinary geometric edges.
 func saffronGuardhouseCrossingEdge(edge world.Edge) bool {
-	if edge.Kind != world.EdgeWarp || from > 0xff || to > 0xff {
+	if edge.Kind != world.EdgeWarp || edge.From > 0xff || edge.To > 0xff {
 		return false
 	}
-	from, to := uint8(from), uint8(to)
+	from, to := uint8(edge.From), uint8(edge.To)
 	switch {
 	case from == semanticRoute5Map && to == route5GateMap:
 		return edge.WarpY == route5SaffronWarpY
