@@ -177,6 +177,17 @@ func yellowOpeningAdvanceScript(m *emu.Emu) error {
 		if phase != yellowOpeningScript {
 			return nil
 		}
+		// Before the player receives Pikachu, Yellow's only opening battle is
+		// Professor Oak's BATTLE_TYPE_PIKACHU tutorial. The ROM simulates its
+		// menu/item inputs itself; player A presses can race that script and
+		// leave the opening in a non-progressing tutorial state (#2050).
+		// Rival combat is classified as yellowOpeningFightRival instead and is
+		// driven by skill.Battle, so an in-battle scripted phase is safe to
+		// advance with frames only.
+		if facts.InBattle {
+			m.StepFrame()
+			continue
+		}
 		if facts.TextOpen {
 			m.Tap(emu.A, 3, 7)
 			continue
