@@ -136,7 +136,6 @@ func TestYellowEarlySharedProgressionContinuesAfterOpening(t *testing.T) {
 	}
 }
 
-
 func TestYellowOpeningFailuresNormalizeWithoutUnknownFailure(t *testing.T) {
 	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
 	tests := []struct {
