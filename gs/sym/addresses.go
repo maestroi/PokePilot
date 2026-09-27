@@ -15,28 +15,28 @@ const (
 	PlayerStepFlags uint16 = 0xCE85 // wPlayerStepFlags
 
 	// Shared menu / intro state in fixed WRAM.
-	WindowStackPointer     uint16 = 0xCEA8 // wWindowStackPointer
-	MenuJoypad             uint16 = 0xCEAA // wMenuJoypad
-	MenuSelection          uint16 = 0xCEAB // wMenuSelection
-	WhichIndexSet          uint16 = 0xCEAD // wWhichIndexSet
-	TwoDMenuCursorInitY    uint16 = 0xCED8 // w2DMenuCursorInitY
-	TwoDMenuCursorInitX    uint16 = 0xCED9 // w2DMenuCursorInitX
-	TwoDMenuNumRows        uint16 = 0xCEDA // w2DMenuNumRows
-	TwoDMenuNumCols        uint16 = 0xCEDB // w2DMenuNumCols
-	MenuJoypadFilter       uint16 = 0xCEDF // wMenuJoypadFilter
-	MenuCursorY            uint16 = 0xCEE0 // wMenuCursorY
-	MenuCursorX            uint16 = 0xCEE1 // wMenuCursorX
-	JumptableIndex         uint16 = 0xCE63 // wJumptableIndex
-	TitleScreenSelected    uint16 = 0xCE64 // wTitleScreenSelectedOption
-	TitleScreenTimer       uint16 = 0xCE65 // wTitleScreenTimer
+	WindowStackPointer      uint16 = 0xCEA8 // wWindowStackPointer
+	MenuJoypad              uint16 = 0xCEAA // wMenuJoypad
+	MenuSelection           uint16 = 0xCEAB // wMenuSelection
+	WhichIndexSet           uint16 = 0xCEAD // wWhichIndexSet
+	TwoDMenuCursorInitY     uint16 = 0xCED8 // w2DMenuCursorInitY
+	TwoDMenuCursorInitX     uint16 = 0xCED9 // w2DMenuCursorInitX
+	TwoDMenuNumRows         uint16 = 0xCEDA // w2DMenuNumRows
+	TwoDMenuNumCols         uint16 = 0xCEDB // w2DMenuNumCols
+	MenuJoypadFilter        uint16 = 0xCEDF // wMenuJoypadFilter
+	MenuCursorY             uint16 = 0xCEE0 // wMenuCursorY
+	MenuCursorX             uint16 = 0xCEE1 // wMenuCursorX
+	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
+	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
+	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
 	NamingScreenDestination uint16 = 0xC5D0 // wNamingScreenDestinationPointer
 	NamingScreenCurNameLen  uint16 = 0xC5D2 // wNamingScreenCurNameLength
 	NamingScreenMaxNameLen  uint16 = 0xC5D3 // wNamingScreenMaxNameLength
 	NamingScreenType        uint16 = 0xC5D4 // wNamingScreenType
-	TimeSetBuffer          uint16 = 0xC508 // wTimeSetBuffer
-	InitHourBuffer         uint16 = 0xC51C // wInitHourBuffer
-	InitMinuteBuffer       uint16 = 0xC526 // wInitMinuteBuffer
-	StringBuffer2          uint16 = 0xCF7E // wStringBuffer2
+	TimeSetBuffer           uint16 = 0xC508 // wTimeSetBuffer
+	InitHourBuffer          uint16 = 0xC51C // wInitHourBuffer
+	InitMinuteBuffer        uint16 = 0xC526 // wInitMinuteBuffer
+	StringBuffer2           uint16 = 0xCF7E // wStringBuffer2
 
 	// Bank-1 live map/script state.
 	MapHeight       uint16 = 0xD087 // wMapHeight
@@ -87,18 +87,18 @@ const (
 
 	BattleMode   uint16 = 0xD116
 	BattleResult uint16 = 0xCFE9
-	Money       uint16 = 0xD573
-	JohtoBadges uint16 = 0xD57C
-	KantoBadges uint16 = 0xD57D
-	TMsHMs      uint16 = 0xD57E
-	TMsHMsCount        = 57
-	NumItems    uint16 = 0xD5B7
-	Items       uint16 = 0xD5B8
-	MaxItems           = 20
-	NumKeyItems uint16 = 0xD5E1
-	KeyItems    uint16 = 0xD5E2
-	MaxKeyItems        = 25
-	NumBalls    uint16 = 0xD5FC
-	Balls       uint16 = 0xD5FD
-	MaxBalls           = 12
+	Money        uint16 = 0xD573
+	JohtoBadges  uint16 = 0xD57C
+	KantoBadges  uint16 = 0xD57D
+	TMsHMs       uint16 = 0xD57E
+	TMsHMsCount         = 57
+	NumItems     uint16 = 0xD5B7
+	Items        uint16 = 0xD5B8
+	MaxItems            = 20
+	NumKeyItems  uint16 = 0xD5E1
+	KeyItems     uint16 = 0xD5E2
+	MaxKeyItems         = 25
+	NumBalls     uint16 = 0xD5FC
+	Balls        uint16 = 0xD5FD
+	MaxBalls            = 12
 )
