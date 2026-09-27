@@ -26,6 +26,15 @@ func TestYellowViridianVictoryRoadSharedMapIDs(t *testing.T) {
 }
 
 func TestYellowViridianVictoryRoadSharedControllerFactsMatchDecomp(t *testing.T) {
+	indigoObjects := yellowDecompText(t, "data/maps/objects/IndigoPlateauLobby.asm")
+	if !strings.Contains(indigoObjects, "object_event 7, 5, SPRITE_NURSE, STAY, DOWN, TEXT_INDIGOPLATEAULOBBY_NURSE") {
+		t.Fatal("Yellow Indigo Plateau nurse moved from the shared semantic heal endpoint")
+	}
+	indigoScript := yellowDecompText(t, "scripts/IndigoPlateauLobby.asm")
+	if !strings.Contains(indigoScript, "IndigoPlateauLobbyNurseText: script_pokecenter_nurse") {
+		t.Fatal("Yellow Indigo Plateau nurse no longer uses the shared Pokemon Center service script")
+	}
+
 	gymObjects := yellowDecompText(t, "data/maps/objects/ViridianGym.asm")
 	if !strings.Contains(gymObjects, "object_event 2, 1, SPRITE_GIOVANNI, STAY, DOWN, TEXT_VIRIDIANGYM_GIOVANNI, OPP_GIOVANNI, 3") {
 		t.Fatal("Yellow Viridian Gym Giovanni moved from the shared controller coordinate")
