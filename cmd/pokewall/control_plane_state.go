@@ -104,23 +104,30 @@ func (cp *controlPlane) loadIssueOutbox() (map[string]outboxEntry, error) {
 }
 
 type controlPlanePersistPayload struct {
-	stateRaw   []byte
-	stateHash  [sha256.Size]byte
-	links      map[string]IssueLink
-	linksHash  [sha256.Size]byte
-	outbox     map[string]outboxEntry
-	outboxHash [sha256.Size]byte
+	stateRaw  []byte
+	stateHash [sha256.Size]byte
+	links     map[string]persistRow
+	outbox    map[string]persistRow
+}
+
+// persistRow is one issue_links/issue_outbox row with its encoded payload and
+// hash, so persistWall writes only rows whose content actually changed.
+type persistRow struct {
+	raw  []byte
+	hash [sha256.Size]byte
+	link IssueLink
+	out  outboxEntry
 }
 
 type controlPlaneWriteCoordinator struct {
 	mu sync.Mutex
 
-	haveState  bool
-	stateHash  [sha256.Size]byte
-	haveLinks  bool
-	linksHash  [sha256.Size]byte
-	haveOutbox bool
-	outboxHash [sha256.Size]byte
+	haveState bool
+	stateHash [sha256.Size]byte
+	// Per-row hashes of what PostgreSQL holds. nil means unknown (fresh
+	// process), which forces one full replace to seed them.
+	linkHashes   map[string][sha256.Size]byte
+	outboxHashes map[string][sha256.Size]byte
 }
 
 var controlPlaneWriteCoordinators sync.Map // *controlPlane -> *controlPlaneWriteCoordinator
@@ -173,24 +180,58 @@ func captureControlPlanePersistPayload(w *Wall) (controlPlanePersistPayload, err
 	if err != nil {
 		return controlPlanePersistPayload{}, err
 	}
-	linksRaw, err := json.Marshal(links)
-	if err != nil {
-		return controlPlanePersistPayload{}, err
+	payload := controlPlanePersistPayload{
+		stateRaw:  stateRaw,
+		stateHash: sha256.Sum256(stateRaw),
+		links:     make(map[string]persistRow, len(links)),
+		outbox:    make(map[string]persistRow, len(outbox)),
 	}
-	outboxRaw, err := json.Marshal(outbox)
-	if err != nil {
-		return controlPlanePersistPayload{}, err
+	for key, link := range links {
+		raw, err := json.Marshal(link)
+		if err != nil {
+			return controlPlanePersistPayload{}, err
+		}
+		payload.links[key] = persistRow{raw: raw, hash: sha256.Sum256(raw), link: link}
 	}
-	return controlPlanePersistPayload{
-		stateRaw:   stateRaw,
-		stateHash:  sha256.Sum256(stateRaw),
-		links:      links,
-		linksHash:  sha256.Sum256(linksRaw),
-		outbox:     outbox,
-		outboxHash: sha256.Sum256(outboxRaw),
-	}, nil
+	for id, e := range outbox {
+		raw, err := json.Marshal(e)
+		if err != nil {
+			return controlPlanePersistPayload{}, err
+		}
+		payload.outbox[id] = persistRow{raw: raw, hash: sha256.Sum256(raw), out: e}
+	}
+	return payload, nil
 }
 
+// changedRows returns the sorted keys whose hash differs from prev and the
+// sorted keys present in prev but gone now.
+func changedRows(prev map[string][sha256.Size]byte, cur map[string]persistRow) (upsert, remove []string) {
+	for key, row := range cur {
+		if h, ok := prev[key]; !ok || h != row.hash {
+			upsert = append(upsert, key)
+		}
+	}
+	for key := range prev {
+		if _, ok := cur[key]; !ok {
+			remove = append(remove, key)
+		}
+	}
+	sort.Strings(upsert)
+	sort.Strings(remove)
+	return upsert, remove
+}
+
+func rowHashes(rows map[string]persistRow) map[string][sha256.Size]byte {
+	out := make(map[string][sha256.Size]byte, len(rows))
+	for key, row := range rows {
+		out[key] = row.hash
+	}
+	return out
+}
+
+// persistWall writes only the rows that changed since the last successful
+// write. Replacing whole tables on every change rewrote ~16k outbox rows
+// several times a minute in production, saturating WAL and checkpoints.
 func (cp *controlPlane) persistWall(w *Wall) error {
 	writes := controlPlaneWritesFor(cp)
 	writes.mu.Lock()
@@ -201,9 +242,12 @@ func (cp *controlPlane) persistWall(w *Wall) error {
 		return err
 	}
 	stateChanged := !writes.haveState || writes.stateHash != payload.stateHash
-	linksChanged := !writes.haveLinks || writes.linksHash != payload.linksHash
-	outboxChanged := !writes.haveOutbox || writes.outboxHash != payload.outboxHash
-	if !stateChanged && !linksChanged && !outboxChanged {
+	linksSeed := writes.linkHashes == nil
+	outboxSeed := writes.outboxHashes == nil
+	linkUpserts, linkRemoves := changedRows(writes.linkHashes, payload.links)
+	outboxUpserts, outboxRemoves := changedRows(writes.outboxHashes, payload.outbox)
+	if !stateChanged && !linksSeed && !outboxSeed &&
+		len(linkUpserts)+len(linkRemoves)+len(outboxUpserts)+len(outboxRemoves) == 0 {
 		return nil
 	}
 
@@ -213,47 +257,47 @@ func (cp *controlPlane) persistWall(w *Wall) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if stateChanged {
-		if _, err := tx.Exec(`INSERT INTO control_plane_state(id,state_json,updated_at) VALUES(1,$1::jsonb,NOW()) ON CONFLICT(id) DO UPDATE SET state_json=EXCLUDED.state_json,updated_at=NOW() WHERE control_plane_state.state_json IS DISTINCT FROM EXCLUDED.state_json`, string(payload.stateRaw)); err != nil {
+		if _, err := tx.Exec(`INSERT INTO control_plane_state(id,state_json,updated_at) VALUES(1,$1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET state_json=EXCLUDED.state_json,updated_at=CURRENT_TIMESTAMP WHERE control_plane_state.state_json IS DISTINCT FROM EXCLUDED.state_json`, string(payload.stateRaw)); err != nil {
 			return fmt.Errorf("persist wall state: %w", err)
 		}
 	}
-	if linksChanged {
+	if linksSeed {
 		if _, err := tx.Exec(`DELETE FROM issue_links`); err != nil {
 			return err
 		}
-		keys := make([]string, 0, len(payload.links))
-		for key := range payload.links {
-			keys = append(keys, key)
+	}
+	for _, key := range linkRemoves {
+		if _, err := tx.Exec(`DELETE FROM issue_links WHERE failure_key=$1`, key); err != nil {
+			return err
 		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			link := payload.links[key]
-			raw, _ := json.Marshal(link)
-			if _, err := tx.Exec(`INSERT INTO issue_links(failure_key,issue_id,status,fingerprint,payload_json,updated_at) VALUES($1,$2,$3,$4,$5::jsonb,NOW())`, key, link.IssueID, link.Status, link.Fingerprint, string(raw)); err != nil {
-				return fmt.Errorf("persist issue link %s: %w", key, err)
-			}
-			if link.Fingerprint != "" {
-				if _, err := tx.Exec(`INSERT INTO issue_fingerprints(failure_key,fingerprint,payload_json,updated_at) VALUES($1,$2,$3::jsonb,NOW()) ON CONFLICT(failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,payload_json=EXCLUDED.payload_json,updated_at=NOW() WHERE issue_fingerprints.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint OR issue_fingerprints.payload_json IS DISTINCT FROM EXCLUDED.payload_json`, key, link.Fingerprint, string(raw)); err != nil {
-					return err
-				}
+	}
+	for _, key := range linkUpserts {
+		row := payload.links[key]
+		link := row.link
+		if _, err := tx.Exec(`INSERT INTO issue_links(failure_key,issue_id,status,fingerprint,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,CURRENT_TIMESTAMP) ON CONFLICT(failure_key) DO UPDATE SET issue_id=EXCLUDED.issue_id,status=EXCLUDED.status,fingerprint=EXCLUDED.fingerprint,payload_json=EXCLUDED.payload_json,updated_at=CURRENT_TIMESTAMP`, key, link.IssueID, link.Status, link.Fingerprint, string(row.raw)); err != nil {
+			return fmt.Errorf("persist issue link %s: %w", key, err)
+		}
+		if link.Fingerprint != "" {
+			if _, err := tx.Exec(`INSERT INTO issue_fingerprints(failure_key,fingerprint,payload_json,updated_at) VALUES($1,$2,$3,CURRENT_TIMESTAMP) ON CONFLICT(failure_key) DO UPDATE SET fingerprint=EXCLUDED.fingerprint,payload_json=EXCLUDED.payload_json,updated_at=CURRENT_TIMESTAMP WHERE issue_fingerprints.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint OR issue_fingerprints.payload_json IS DISTINCT FROM EXCLUDED.payload_json`, key, link.Fingerprint, string(row.raw)); err != nil {
+				return err
 			}
 		}
 	}
-	if outboxChanged {
+	if outboxSeed {
 		if _, err := tx.Exec(`DELETE FROM issue_outbox`); err != nil {
 			return err
 		}
-		ids := make([]string, 0, len(payload.outbox))
-		for id := range payload.outbox {
-			ids = append(ids, id)
+	}
+	for _, id := range outboxRemoves {
+		if _, err := tx.Exec(`DELETE FROM issue_outbox WHERE external_id=$1`, id); err != nil {
+			return err
 		}
-		sort.Strings(ids)
-		for _, id := range ids {
-			e := payload.outbox[id]
-			raw, _ := json.Marshal(e)
-			if _, err := tx.Exec(`INSERT INTO issue_outbox(external_id,run_id,attempt,failure_key,status,next_attempt,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW())`, e.ExternalID, e.RunID, e.Attempt, e.Key, e.Status, e.NextAttempt, string(raw)); err != nil {
-				return fmt.Errorf("persist issue outbox %s: %w", id, err)
-			}
+	}
+	for _, id := range outboxUpserts {
+		row := payload.outbox[id]
+		e := row.out
+		if _, err := tx.Exec(`INSERT INTO issue_outbox(external_id,run_id,attempt,failure_key,status,next_attempt,payload_json,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP) ON CONFLICT(external_id) DO UPDATE SET run_id=EXCLUDED.run_id,attempt=EXCLUDED.attempt,failure_key=EXCLUDED.failure_key,status=EXCLUDED.status,next_attempt=EXCLUDED.next_attempt,payload_json=EXCLUDED.payload_json,updated_at=CURRENT_TIMESTAMP`, id, e.RunID, e.Attempt, e.Key, e.Status, e.NextAttempt, string(row.raw)); err != nil {
+			return fmt.Errorf("persist issue outbox %s: %w", id, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -263,14 +307,8 @@ func (cp *controlPlane) persistWall(w *Wall) error {
 		writes.stateHash = payload.stateHash
 		writes.haveState = true
 	}
-	if linksChanged {
-		writes.linksHash = payload.linksHash
-		writes.haveLinks = true
-	}
-	if outboxChanged {
-		writes.outboxHash = payload.outboxHash
-		writes.haveOutbox = true
-	}
+	writes.linkHashes = rowHashes(payload.links)
+	writes.outboxHashes = rowHashes(payload.outbox)
 	return nil
 }
 
