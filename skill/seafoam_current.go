@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	seafoamB1FMap uint8 = 0x9f
-	seafoamB2FMap uint8 = 0xa0
-	seafoamB3FMap uint8 = 0xa1
-	seafoamB4FMap uint8 = 0xa2
-	seafoam1FMap  uint8 = 0xc0
+	seafoamB1FMap  = 0x9f
+	seafoamB2FMap  = 0xa0
+	seafoamB3FMap  = 0xa1
+	seafoamB4FMap  = 0xa2
+	seafoam1FMap   = 0xc0
 
 	seafoamB4FBlockedSurfX = 7
 	seafoamB4FBlockedSurfY = 11
