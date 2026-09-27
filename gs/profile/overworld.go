@@ -57,6 +57,7 @@ func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
 		NativeMapID:  nativeMap,
 		X:            reader.Peek8(sym.XCoord),
 		Y:            reader.Peek8(sym.YCoord),
+		Facing:       decodeFacing(reader.Peek8(sym.PlayerDirection)),
 		Controllable: gsControllable(reader),
 		MovementIdle: gsMovementIdle(reader),
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
