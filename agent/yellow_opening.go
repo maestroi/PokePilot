@@ -46,7 +46,8 @@ const (
 )
 
 func yellowOpeningReached(f yellowprofile.OpeningFacts) bool {
-	return f.GotStarter && f.PartyCount > 0 && f.BattledRival && f.Controllable && !f.InBattle
+	return f.GotStarter && f.PartyCount > 0 && f.BattledRival &&
+		f.Controllable && !f.InBattle && !f.LabOpeningSequenceActive
 }
 
 // yellowOpeningPhaseFor mirrors Yellow's native opening scripts. In
@@ -97,7 +98,15 @@ func yellowOpeningPhaseFor(f yellowprofile.OpeningFacts) (yellowOpeningPhase, er
 			return "", fmt.Errorf("%w: Pikachu received outside Oak's Lab on map %#02x at (%d,%d)",
 				errYellowOpeningUnexpectedState, f.Map, f.X, f.Y)
 		}
-		return yellowOpeningWalkToRival, nil
+		// Script 12 is the only post-starter phase where the player owns
+		// movement: Yellow waits for y=6 to trigger the rival. Once the map
+		// advances to script 13 the rival is walking under ROM control even
+		// though wJoyIgnore is already zero, so generic controllability is not
+		// sufficient evidence to call GoTo again.
+		if f.RivalTriggerReady {
+			return yellowOpeningWalkToRival, nil
+		}
+		return yellowOpeningScript, nil
 	default:
 		return yellowOpeningScript, nil
 	}
