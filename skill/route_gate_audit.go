@@ -51,7 +51,7 @@ const (
 	// and needs no gate because nothing south of it is passable during the run).
 	leagueRoomSouthWarpY uint8 = 11
 
-	route16Map uint8 = 0x1B
+	route16Map  = 0x1B
 	// Snorlax's Route 16 home tile from the ROM object table (probe: sprite 67
 	// at (26,10)). He blocks the lower road only; the upper passage Cut tree
 	// at (34,9) joins the Fly-house side to the Celadon edge east of him.
@@ -61,14 +61,14 @@ const (
 	// while the player can Cut, it joins the Fly-house side to the east road.
 	route16CutTreeX        = 34
 	route16CutTreeY        = 9
-	route17Map       uint8 = 0x1C
-	route18Map       uint8 = 0x1D
-	route19Map       uint8 = 0x1E
-	route20Map       uint8 = 0x1F
-	route16Gate1FMap uint8 = 0xBA
-	route18Gate1FMap uint8 = 0xBE
+	route17Map        = 0x1C
+	route18Map        = 0x1D
+	route19Map        = 0x1E
+	route20Map        = 0x1F
+	route16Gate1FMap  = 0xBA
+	route18Gate1FMap  = 0xBE
 
-	celadonMart5FMap             uint8 = 0x88
+	celadonMart5FMap              = 0x88
 	celadonInaccessibleMartWarpX uint8 = 39
 	celadonInaccessibleMartWarpY uint8 = 19
 
