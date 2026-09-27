@@ -28,6 +28,9 @@ const (
 )
 
 const (
+	yellowOpeningMessageBoxID       uint8 = 0x01
+	yellowOpeningBattleMenuID       uint8 = 0x0b
+	yellowOpeningListMenuBoxID      uint8 = 0x0d
 	yellowOpeningMaxSteps                 = 40
 	yellowOpeningScriptBudget             = 30000
 	yellowOpeningBallReactionBudget       = 600
@@ -177,18 +180,7 @@ func yellowOpeningAdvanceScript(m *emu.Emu) error {
 		if phase != yellowOpeningScript {
 			return nil
 		}
-		// Before the player receives Pikachu, Yellow's only opening battle is
-		// Professor Oak's BATTLE_TYPE_PIKACHU tutorial. The ROM simulates its
-		// menu/item inputs itself; player A presses can race that script and
-		// leave the opening in a non-progressing tutorial state (#2050).
-		// Rival combat is classified as yellowOpeningFightRival instead and is
-		// driven by skill.Battle, so an in-battle scripted phase is safe to
-		// advance with frames only.
-		if facts.InBattle {
-			m.StepFrame()
-			continue
-		}
-		if facts.TextOpen {
+		if yellowOpeningScriptNeedsConfirm(facts) {
 			m.Tap(emu.A, 3, 7)
 			continue
 		}
@@ -197,6 +189,19 @@ func yellowOpeningAdvanceScript(m *emu.Emu) error {
 	f := yellowprofile.DecodeOpening(m)
 	return fmt.Errorf("%w: scripted phase exceeded %d frames on map %#02x at (%d,%d)",
 		errYellowOpeningStalled, yellowOpeningScriptBudget, f.Map, f.X, f.Y)
+}
+
+// yellowOpeningScriptNeedsConfirm separates battle text from Oak's simulated
+// menu ownership. BATTLE_TYPE_PIKACHU still prints ordinary MESSAGE_BOX text
+// ("Wild PIKACHU appeared!" and capture follow-ups), which waits for A. Once
+// DisplayBattleMenu takes over it writes BATTLE_MENU_TEMPLATE, and the
+// simulated item list writes LIST_MENU_BOX; those states must advance on
+// frames only so player input cannot race the ROM-owned tutorial.
+func yellowOpeningScriptNeedsConfirm(f yellowprofile.OpeningFacts) bool {
+	if !f.InBattle {
+		return f.TextOpen
+	}
+	return f.TextBoxID == yellowOpeningMessageBoxID
 }
 
 func yellowOpeningTakeEeveeBall(m *emu.Emu, romData []byte) error {

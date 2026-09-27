@@ -19,6 +19,7 @@ func TestPhase0AddressesMatchSupportedYellowLayout(t *testing.T) {
 		"wCurrentMenuItem":          {CurrentMenuItem, 0xCC26},
 		"wMaxMenuItem":              {MaxMenuItem, 0xCC28},
 		"wFontLoaded":               {FontLoaded, 0xCFC3},
+		"wTextBoxID":                {TextBoxID, 0xD124},
 		"wWalkCounter":              {WalkCounter, 0xCFC4},
 		"wJoyIgnore":                {JoyIgnore, 0xCD6B},
 		"wPartyCount":               {PartyCount, 0xD162},
