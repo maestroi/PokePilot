@@ -33,23 +33,23 @@ type Metrics struct {
 }
 
 type Candidate struct {
-	Placement          control.Placement `json:"placement"`
-	LandingY           int               `json:"landing_y"`
-	LinesCleared       int               `json:"lines_cleared"`
-	ExpectedLineScore  int               `json:"expected_line_score"`
-	Metrics            Metrics           `json:"metrics"`
-	ImmediateScore     int               `json:"immediate_score"`
-	LookaheadScore     int               `json:"lookahead_score"`
-	TotalScore         int               `json:"total_score"`
-	InputSteps         int               `json:"input_steps"`
-	ResultBoard        tetris.Board      `json:"-"`
+	Placement         control.Placement `json:"placement"`
+	LandingY          int               `json:"landing_y"`
+	LinesCleared      int               `json:"lines_cleared"`
+	ExpectedLineScore int               `json:"expected_line_score"`
+	Metrics           Metrics           `json:"metrics"`
+	ImmediateScore    int               `json:"immediate_score"`
+	LookaheadScore    int               `json:"lookahead_score"`
+	TotalScore        int               `json:"total_score"`
+	InputSteps        int               `json:"input_steps"`
+	ResultBoard       tetris.Board      `json:"-"`
 }
 
 type Decision struct {
-	Objective  Objective  `json:"objective"`
+	Objective  Objective    `json:"objective"`
 	Piece      tetris.Piece `json:"piece"`
-	Candidate  Candidate  `json:"candidate"`
-	Considered int        `json:"considered"`
+	Candidate  Candidate    `json:"candidate"`
+	Considered int          `json:"considered"`
 }
 
 // Choose selects one deterministic reachable placement for the current piece.
