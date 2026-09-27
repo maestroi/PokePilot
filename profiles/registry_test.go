@@ -41,7 +41,6 @@ func TestBuiltinProfilesSatisfyContract(t *testing.T) {
 	}
 }
 
-
 func TestBuiltinCartridgesIncludeTetrisWithoutPokemonContract(t *testing.T) {
 	registry, err := Cartridges()
 	if err != nil {
