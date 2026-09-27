@@ -46,8 +46,8 @@ func TestEdgePortReachableFromRejectsDifferentSourceComponent(t *testing.T) {
 	near := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 1}
 	far := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 3, WarpY: 1}
 	g := &Graph{
-		Edges: map[uint8][]Edge{1: {near, far}, 2: nil},
-		warps: map[uint8][]worldmodel.Warp{
+		Edges: map[MapID][]Edge{1: {near, far}, 2: nil},
+		warps: map[MapID][]worldmodel.Warp{
 			1: {
 				{X: 1, Y: 1, DestWarpID: 0, DestMap: 2},
 				{X: 3, Y: 1, DestWarpID: 0, DestMap: 2},
@@ -56,7 +56,7 @@ func TestEdgePortReachableFromRejectsDifferentSourceComponent(t *testing.T) {
 				{X: 0, Y: 1, DestWarpID: 0, DestMap: 1},
 			},
 		},
-		tiles:    map[uint8]dim{1: {w: 4, h: 4}, 2: {w: 4, h: 4}},
+		tiles:    map[MapID]dim{1: {w: 4, h: 4}, 2: {w: 4, h: 4}},
 		provider: splitPortProvider{},
 	}
 	policy := DefaultRouteCostPolicy()
