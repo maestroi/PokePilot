@@ -509,7 +509,8 @@ watch(runs, (nextRuns) => {
         )
       }
       const typed = latestTypedDecision(run)
-      if (typed && typedDecisionFingerprint(typed) !== typedDecisionFingerprint(latestTypedDecision(previous))) {
+      const typedCallAdvanced = Number(run.stats?.decision_calls || 0) > Number(previous.stats?.decision_calls || 0)
+      if (typed && (typedCallAdvanced || typedDecisionFingerprint(typed) !== typedDecisionFingerprint(latestTypedDecision(previous)))) {
         pushActivity(run.run_id, 'decision', 'Jev decision', typedDecisionActivityDetail(typed))
       }
     }
