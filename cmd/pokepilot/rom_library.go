@@ -15,7 +15,7 @@ import (
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/skill"
-tetrissession "github.com/maestroi/pokepilot/tetris/session"
+	tetrissession "github.com/maestroi/pokepilot/tetris/session"
 )
 
 // romLibrary is the set of cartridges this worker can run, keyed by the game
