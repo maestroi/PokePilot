@@ -1,7 +1,6 @@
 package world
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/worldmodel"
@@ -184,6 +183,3 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	return nil, ErrNoPath
 }
 
-// Keep the package-level error contract explicit for callers that distinguish
-// topology failure from local tile failure.
-var _ = errors.Is
