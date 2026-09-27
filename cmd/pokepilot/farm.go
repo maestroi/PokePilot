@@ -76,10 +76,10 @@ func applySpec(s farm.Spec) (planner, starter, dest string, fps, maxRounds, maxF
 }
 
 // normalizeLeasedSpec repairs safe game-owned defaults on the runner boundary.
- // The wall normally canonicalizes new submissions, but persisted/retried specs
- // from older revisions can still carry stale metadata. Yellow's starter is
- // scripted by the cartridge, so a historical Red-style starter request is
- // never gameplay input and must not terminate the lease.
+// The wall normally canonicalizes new submissions, but persisted/retried specs
+// from older revisions can still carry stale metadata. Yellow's starter is
+// scripted by the cartridge, so a historical Red-style starter request is
+// never gameplay input and must not terminate the lease.
 func normalizeLeasedSpec(spec *farm.Spec) {
 	if spec == nil {
 		return
