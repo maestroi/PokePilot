@@ -43,6 +43,7 @@ const (
 	CurrentMenuItem uint16 = 0xCC26 // wCurrentMenuItem
 	MaxMenuItem     uint16 = 0xCC28 // wMaxMenuItem
 	FontLoaded      uint16 = 0xCFC3 // wFontLoaded
+	TextBoxID       uint16 = 0xD124 // wTextBoxID
 	WalkCounter     uint16 = 0xCFC4 // wWalkCounter
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
