@@ -119,7 +119,7 @@ func parseConfig(args []string) (config, error) {
 	fs.SetOutput(io.Discard)
 	rom := fs.String("rom", os.Getenv("TETRIS_ROM"), "path to Tetris (World) (Rev 1)")
 	profile := fs.String("profile", "fast", "qualification profile: fast or full")
-	goal := fs.String("goal", "", "override profile goal: auto, survival, complete, lines:N, score:N")
+	goal := fs.String("goal", "", "override profile goal: auto, endless, survival, complete, lines:N, score:N")
 	runs := fs.Int("runs", 0, "override profile run count")
 	maxPieces := fs.Int("max-pieces", 0, "override placed-piece budget")
 	maxFrames := fs.Int("max-frames", 0, "override emulated frame budget")
