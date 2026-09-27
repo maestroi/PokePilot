@@ -234,6 +234,11 @@ type Heartbeat struct {
 	// Player is the live party/money/badges snapshot. Nil on older
 	// runners and before the first sample.
 	Player *Player `json:"player,omitempty"`
+	// GameState and GameDecision are optional game-owned semantic envelopes.
+	// They let non-Pokemon runtimes expose useful live state without inventing
+	// party/map/badge fields. Values must be JSON-safe plain data.
+	GameState    map[string]any `json:"game_state,omitempty"`
+	GameDecision map[string]any `json:"game_decision,omitempty"`
 	// Activity is the latest semantic execution event. It is intentionally a
 	// single event rather than an unbounded log; the wall deduplicates and
 	// retains a bounded operator history.
