@@ -106,7 +106,7 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 			t.Fatalf("unexpected non-League Yellow challenge profile: %+v", profile)
 		}
 		if profile.Readiness.MinimumReadiness != want {
-			t.Fatalf("Yellow readiness for %q = %+v, want %d", profile.Objective, profile.Readiness, want)
+			t.Fatalf("Yellow readiness for %+v = %+v, want %d", profile.Objective, profile.Readiness, want)
 		}
 	}
 	found := false
