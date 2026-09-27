@@ -91,17 +91,17 @@ const (
 // Concrete profiles own every RAM address and version-specific "ready" map
 // decision; generic code only sees menu/player concepts.
 type BootState struct {
-	Ready           bool
-	Controllable    bool
-	NativeMapID     uint16
-	MapName         string
-	X, Y            uint8
-	MapWidth        uint8
-	MapHeight       uint8
-	FontLoaded      uint8
-	NameMenu        bool
-	CurrentMenuItem uint8
-	MaxMenuItem     uint8
+	Ready              bool
+	Controllable       bool
+	NativeMapID        uint16
+	MapName            string
+	X, Y               uint8
+	MapWidth           uint8
+	MapHeight          uint8
+	FontLoaded         uint8
+	NameMenu           bool
+	CurrentMenuItem    uint8
+	MaxMenuItem        uint8
 	PresetNames        []string
 	SelectedPresetName string
 	NextInput          BootInput
