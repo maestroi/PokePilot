@@ -16,7 +16,7 @@ func preparedSemanticEdge(t *testing.T, m *emu.Emu, transitionID string) (world.
 		t.Fatalf("BuildGraph: %v", err)
 	}
 	cur := m.Peek8(sym.CurMap)
-	for _, edge := range g.Edges[cur] {
+	for _, edge := range g.Edges[world.MapID(cur)] {
 		transition, ok := redRouteTransitionForEdge(edge)
 		if ok && transition.ID == transitionID {
 			return edge, transition
@@ -46,7 +46,10 @@ func TestSemanticCutRouteTransitionRealROM(t *testing.T) {
 	if err := Traverse(m, m.ROM(), edge); err != nil {
 		t.Fatalf("Traverse after Cut: %v", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != edge.To {
+	if edge.To > 0xff {
+		t.Fatalf("wide destination map %#04x in Gen-I Cut fixture", edge.To)
+	}
+	if got := m.Peek8(sym.CurMap); got != uint8(edge.To) {
 		t.Fatalf("map after Cut transition=%02x, want %02x", got, edge.To)
 	}
 }
@@ -88,7 +91,10 @@ func TestSemanticSurfRouteTransitionRealROM(t *testing.T) {
 	if err := Traverse(m, m.ROM(), edge); err != nil {
 		t.Fatalf("Traverse while surfing: %v", err)
 	}
-	if got := m.Peek8(sym.CurMap); got != edge.To {
+	if edge.To > 0xff {
+		t.Fatalf("wide destination map %#04x in Gen-I Surf fixture", edge.To)
+	}
+	if got := m.Peek8(sym.CurMap); got != uint8(edge.To) {
 		t.Fatalf("map after Surf transition=%02x, want %02x", got, edge.To)
 	}
 }
