@@ -71,7 +71,7 @@ func TestInteractionDestinationRoutesToApproachTilesNotObjectTile(t *testing.T) 
 }
 
 func TestSemanticMapCostDoesNotChargeCanonicalTileDetour(t *testing.T) {
-	g := &world.Graph{Edges: map[uint8][]world.Edge{1: nil}}
+	g := &world.Graph{Edges: map[world.MapID][]world.Edge{1: nil}}
 	from := Destination{Map: 1, X: 2, Y: 2}
 
 	mapGoal := Destination{Map: 1, X: 50, Y: 50, Kind: DestinationMap}
