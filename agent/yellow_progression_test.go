@@ -211,7 +211,6 @@ func TestYellowSharedMiddleProgressionUsesGen1CutPrerequisites(t *testing.T) {
 	}
 }
 
-
 func TestYellowPostFuchsiaPreparesSurfStrengthThenRoutesCinnabar(t *testing.T) {
 	a := &yellowObjectiveAdapter{}
 	obs := Observation{
