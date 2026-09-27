@@ -132,29 +132,29 @@ func TestYellowOpeningOakCaptureRemainsScriptOwned(t *testing.T) {
 
 func TestYellowOpeningScriptConfirmsOnlyMessageBoxesDuringOakCapture(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		facts yellowprofile.OpeningFacts
-		want bool
+		want  bool
 	}{
 		{
-			name: "ordinary scripted dialogue",
+			name:  "ordinary scripted dialogue",
 			facts: yellowprofile.OpeningFacts{TextOpen: true},
-			want: true,
+			want:  true,
 		},
 		{
-			name: "oak capture wild appeared prompt",
+			name:  "oak capture wild appeared prompt",
 			facts: yellowprofile.OpeningFacts{InBattle: true, TextBoxID: yellowOpeningMessageBoxID},
-			want: true,
+			want:  true,
 		},
 		{
-			name: "oak simulated battle menu",
+			name:  "oak simulated battle menu",
 			facts: yellowprofile.OpeningFacts{InBattle: true, TextOpen: true, TextBoxID: yellowOpeningBattleMenuID},
-			want: false,
+			want:  false,
 		},
 		{
-			name: "oak simulated item list",
+			name:  "oak simulated item list",
 			facts: yellowprofile.OpeningFacts{InBattle: true, TextOpen: true, TextBoxID: yellowOpeningListMenuBoxID},
-			want: false,
+			want:  false,
 		},
 	}
 	for _, tc := range tests {
