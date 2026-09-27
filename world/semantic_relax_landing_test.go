@@ -124,3 +124,35 @@ func TestSemanticReplanUsesRefreshedComponentTopology(t *testing.T) {
 		t.Fatalf("refreshed plan = %+v, want onward edge", plan)
 	}
 }
+
+// A frontier must not make a target look reachable when nothing beyond it can
+// lead there: the only way on is an action whose capability is missing.
+func TestSemanticFrontierDoesNotHideBlockedDestination(t *testing.T) {
+	pivot := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	onward := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
+	locked := Edge{Kind: EdgeConnection, From: 3, To: 4, Dir: dirEast}
+	g := &Graph{
+		Edges:          map[uint8][]Edge{1: {pivot}, 2: {onward}, 3: {locked}, 4: nil},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1, 2}},
+			3: {{1}},
+			4: {{1}},
+		},
+		exitComps:  map[Edge][]int{pivot: {1}, onward: {2}, locked: {1}},
+		entryComps: map[Edge][]int{pivot: {1}, onward: {1}, locked: {1}},
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			pivot:  {ID: "fake:local-cut", Requires: []gameruntime.CapabilityID{"can_cut"}, PivotOnly: true},
+			locked: {ID: "fake:sleeping-blocker", Requires: []gameruntime.CapabilityID{"can_wake"}},
+		},
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+	}
+
+	_, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 4, 0, 0, 0, 0, nil, prereqs)
+	if errors.Is(err, ErrRouteReplanRequired) || !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("error = %v, want no-route (the frontier cannot reach map 4)", err)
+	}
+}

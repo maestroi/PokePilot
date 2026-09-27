@@ -227,7 +227,15 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		return routeSteps(route, executable), nil
 	}
 	if errors.Is(err, ErrRouteReplanRequired) {
-		return routeSteps(route, executable), err
+		// A frontier only defers the answer when something past it could lead
+		// to the target. Map-level adjacency over the usable edges ignores
+		// every component restriction, so it over-approximates any post-action
+		// topology: if even it cannot reach the target, no replan will, and the
+		// honest answer is the blocked/no-route diagnosis below.
+		if mapsConnected(usable, from, to) {
+			return routeSteps(route, executable), err
+		}
+		err = ErrNoRoute
 	}
 	if !errors.Is(err, ErrNoRoute) || len(denied) == 0 {
 		return nil, err
@@ -253,6 +261,26 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		return nil, err
 	}
 	return nil, &RouteBlockedError{Blockages: blockages}
+}
+
+// mapsConnected is a component-blind BFS over g's edges.
+func mapsConnected(g *Graph, from, to uint8) bool {
+	seen := map[uint8]bool{from: true}
+	queue := []uint8{from}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur == to {
+			return true
+		}
+		for _, e := range g.Edges[cur] {
+			if !seen[e.To] {
+				seen[e.To] = true
+				queue = append(queue, e.To)
+			}
+		}
+	}
+	return false
 }
 
 func routeSteps(route []Edge, transitions map[Edge]gameruntime.Transition) []RouteStep {
