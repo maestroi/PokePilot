@@ -24,6 +24,27 @@ export interface SpectatorPlayer {
   milestones?: string[]
 }
 
+export interface SpectatorDecisionRecord {
+  kind?: string
+  choice?: string
+  choice_label?: string
+  confidence?: number
+  duration_seconds?: number
+  backend?: string
+  model?: string
+  fallback?: boolean
+}
+
+export interface SpectatorDecisionEngine {
+  backend?: string
+  mode?: string
+  deployment?: string
+  label?: string
+  model?: string
+  min_confidence?: number
+  max_choices?: number
+}
+
 export interface SpectatorStats {
   round: number
   rounds_left: number
@@ -37,6 +58,20 @@ export interface SpectatorStats {
   goal_current?: number
   goal_target?: number
   goal_complete?: boolean
+  decision_calls?: number
+  decision_rejected?: number
+  decision_fallbacks?: number
+  decision_avg_seconds?: number
+  decision_backend?: string
+  decision_model?: string
+  decision_mode?: string
+  decision_choice?: string
+  decision_confidence?: number
+  decision_reference?: string
+  decision_reference_agreed?: boolean
+  decision_reference_agreements?: number
+  decision_reference_disagreements?: number
+  decision_records?: SpectatorDecisionRecord[]
 }
 
 export interface SpectatorMapSprite {
@@ -97,6 +132,7 @@ export interface SpectatorRun {
   planner_options?: number
   decision?: string
   stop_so_far?: string
+  decision_engine?: SpectatorDecisionEngine
   stats?: SpectatorStats
   player?: SpectatorPlayer
   sprites?: SpectatorMapSprite[]
