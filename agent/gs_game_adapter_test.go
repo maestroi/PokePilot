@@ -114,3 +114,65 @@ func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
 		t.Fatal("Gold catalog resolved Red starter squirtle")
 	}
 }
+
+
+func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	obs := Observation{
+		GameID:     gsprofile.GoldGameID,
+		PartyCount:  1,
+		Story: ProgressState{
+			{ID: gsprofile.ProgressStarterReceived, Complete: true},
+			{ID: gsprofile.ProgressMysteryEggReturned, Complete: false},
+		},
+	}
+	got := adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Kind != KindProgress || got[0].Progress != gsprofile.ProgressMysteryEggReturned {
+		t.Fatalf("progression = %+v, want Mystery Egg return objective", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressMysteryEggReturned, Complete: true})
+	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("completed errand still offered: %+v", got)
+	}
+}
+
+func TestGSProgressionDoesNotSkipDurableStarterBoundary(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	obs := Observation{
+		GameID:    gsprofile.GoldGameID,
+		PartyCount: 1,
+		Story: ProgressState{
+			{ID: gsprofile.ProgressStarterReceived, Complete: false},
+		},
+	}
+	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("errand offered before starter event completed: %+v", got)
+	}
+}
+
+func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	ok := Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}
+	if err := adapter.Validate(ok, Observation{}); err != nil {
+		t.Fatalf("Validate opening errand: %v", err)
+	}
+	err := adapter.Validate(Objective{Kind: KindProgress, Progress: "gs_future_goal"}, Observation{})
+	if !errors.Is(err, errGSControllerUnavailable) {
+		t.Fatalf("future progress validation = %v, want controller unavailable", err)
+	}
+}
+
+func TestGSPostStarterProgressUsesGenericStoryVerifier(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	o := Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}
+	final := Observation{
+		Controllable: true,
+		Story: ProgressState{
+			{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
+		},
+	}
+	if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{}); err != nil {
+		t.Fatalf("VerifyPostcondition: %v", err)
+	}
+}
