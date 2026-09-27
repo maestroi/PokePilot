@@ -3,6 +3,7 @@ package profile
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
@@ -21,13 +22,13 @@ func TestEarlyJohtoProgressionProjectsDurableFlags(t *testing.T) {
 	setGSEvent(mem, eventGaveMysteryEggToElm)
 
 	story := projectEarlyStory(mem)
-	for _, id := range []string{
-		string(ProgressStarterReceived),
-		string(ProgressMysteryEggReceived),
-		string(ProgressPokedexAcquired),
-		string(ProgressCherrygroveRivalResolved),
-		string(ProgressRivalNamed),
-		string(ProgressMysteryEggReturned),
+	for _, id := range []game.ProgressID{
+		ProgressStarterReceived,
+		ProgressMysteryEggReceived,
+		ProgressPokedexAcquired,
+		ProgressCherrygroveRivalResolved,
+		ProgressRivalNamed,
+		ProgressMysteryEggReturned,
 	} {
 		if !story.Has(id) {
 			t.Fatalf("story missing completed %q: %+v", id, story)
