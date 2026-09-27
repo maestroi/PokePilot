@@ -6,35 +6,16 @@ import {
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
+import { gameTitle, isTetrisRun, tetrisLocationLabel, tetrisRouteLabel, tetrisRunTitle } from './gamePresentation'
 import { preferredRun } from './preferredRun'
 
 export type SpectatorPlayStyle = PlayStyle
-export { normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
+export { gameTitle, isTetrisRun, normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
 export function isLiveRun(run: SpectatorRun | null | undefined): boolean {
   return Boolean(run && (run.status === 'running' || run.status === 'leased'))
-}
-
-export function isTetrisRun(run: SpectatorRun | null | undefined): boolean {
-  return Boolean(run && (run.game === 'tetris' || run.game_state?.kind === 'tetris'))
-}
-
-export function gameTitle(run: SpectatorRun): string {
-  if (isTetrisRun(run)) return 'Tetris'
-  switch ((run.game || '').toLowerCase()) {
-    case 'pokemon-blue': return 'Pokémon Blue'
-    case 'pokemon-yellow': return 'Pokémon Yellow'
-    default: return 'Pokémon Red'
-  }
-}
-
-function titleCase(value: string): string {
-  return value
-    .replaceAll('_', ' ')
-    .replaceAll('-', ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 export function splitSpectatorRuns(runs: SpectatorRun[]) {
@@ -66,12 +47,7 @@ export function playSpeedLabel(run: SpectatorRun): string {
 }
 
 export function routeLabel(run: SpectatorRun): string {
-  if (isTetrisRun(run)) {
-    const state = run.game_state
-    if (run.goal) return run.goal
-    const mode = state?.mode ? titleCase(state.mode) : 'Autonomous play'
-    return `${mode} · ${Number(state?.lines_cleared || 0)} lines`
-  }
+  if (isTetrisRun(run)) return tetrisRouteLabel(run)
   const route = [run.starter, run.dest].filter(Boolean).join(' → ')
   return route || run.goal || `${gameTitle(run)} run`
 }
@@ -81,15 +57,7 @@ export function objectiveLabel(run: SpectatorRun): string {
 }
 
 export function locationLabel(run: SpectatorRun): string {
-  if (isTetrisRun(run)) {
-    const state = run.game_state
-    const level = Number(state?.level || 0)
-    const lines = Number(state?.lines_cleared || 0)
-    if (state?.game_over) return `Game over · ${lines} lines`
-    if (state?.complete) return `Goal complete · ${lines} lines`
-    if (state?.paused) return `Paused · level ${level}`
-    return `Level ${level} · ${lines} lines`
-  }
+  if (isTetrisRun(run)) return tetrisLocationLabel(run)
   const map = Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase()
   return `0x${map} · ${run.x ?? 0},${run.y ?? 0}`
 }
@@ -102,11 +70,7 @@ export {
 } from './goalProgress'
 
 export function runTitle(run: SpectatorRun): string {
-  if (isTetrisRun(run)) {
-    const score = Number(run.game_state?.score || 0).toLocaleString()
-    const lines = Number(run.game_state?.lines_cleared || 0)
-    return `Tetris · ${score} pts · ${lines} lines`
-  }
+  if (isTetrisRun(run)) return tetrisRunTitle(run)
   const lead = run.starter || run.player?.party?.[0]?.name || gameTitle(run)
   const badges = run.player?.badges?.length || 0
   const badgeText = badges === 1 ? '1 badge' : `${badges} badges`
