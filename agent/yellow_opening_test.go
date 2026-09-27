@@ -78,6 +78,7 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			name: "Pikachu received walks to rival",
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
+				RivalTriggerReady: true,
 				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningWalkToRival,
@@ -87,9 +88,19 @@ func TestYellowOpeningPhaseWaitsForOakChooseSpeech(t *testing.T) {
 			facts: yellowprofile.OpeningFacts{
 				Map: yellowprofile.OaksLabMap, X: yellowOpeningRivalX, Y: yellowOpeningRivalY,
 				Controllable: true, GotStarter: true, PartyCount: 1,
+				RivalTriggerReady: true,
 				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
 			},
 			want: yellowOpeningWalkToRival,
+		},
+		{
+			name: "rival scripted walk stays ROM owned with joy unlocked",
+			facts: yellowprofile.OpeningFacts{
+				Map: yellowprofile.OaksLabMap, Controllable: true, GotStarter: true, PartyCount: 1,
+				LabOpeningSequenceActive: true, RivalTriggerReady: false,
+				OakAppeared: true, FollowedOak: true, OakAskedToChoose: true,
+			},
+			want: yellowOpeningScript,
 		},
 		{
 			name: "post starter non battle choice still fails closed",
@@ -146,6 +157,11 @@ func TestYellowOpeningReachedRequiresStableStarterAndRivalFacts(t *testing.T) {
 	}
 	if yellowOpeningReached(yellowprofile.OpeningFacts{GotStarter: true, PartyCount: 1, BattledRival: true, InBattle: true}) {
 		t.Fatal("opening completed during battle")
+	}
+	if yellowOpeningReached(yellowprofile.OpeningFacts{
+		GotStarter: true, PartyCount: 1, BattledRival: true, Controllable: true, LabOpeningSequenceActive: true,
+	}) {
+		t.Fatal("opening completed while Yellow's lab opening script still owned the sequence")
 	}
 	if !yellowOpeningReached(yellowprofile.OpeningFacts{GotStarter: true, PartyCount: 1, BattledRival: true, Controllable: true}) {
 		t.Fatal("stable completed opening was not recognized")
