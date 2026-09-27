@@ -763,10 +763,12 @@ func normalizeGameStarter(spec *farm.Spec) error {
 }
 
 func (w *Wall) applySpec(runID string, spec farm.Spec) {
-	// Old persisted/clone specs may predate explicit Yellow starter identity.
-	// Canonicalize the safe empty case here too; direct API submissions are
-	// validated by handleSpecs before reaching this point.
-	if strings.EqualFold(strings.TrimSpace(spec.Game), "pokemon-yellow") && strings.TrimSpace(spec.Starter) == "" {
+	// Old persisted/clone specs may predate explicit Yellow starter identity or
+	// may retain a Red experiment starter. Yellow's starter is cartridge-scripted,
+	// so all internal/replayed specs canonicalize to Pikachu here. Direct API
+	// submissions are still validated by handleSpecs before reaching this point.
+	if strings.EqualFold(strings.TrimSpace(spec.Game), "pokemon-yellow") {
+		spec.Game = "pokemon-yellow"
 		spec.Starter = "pikachu"
 	}
 	t := w.tiles[runID]
