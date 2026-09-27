@@ -18,7 +18,7 @@ import {
   UserGroupIcon
 } from '@heroicons/vue/20/solid'
 import { getSpectatorSnapshot } from '../shared/api/spectator-client'
-import type { SpectatorRun } from '../shared/api/spectator'
+import type { SpectatorDecisionRecord, SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
@@ -111,6 +111,57 @@ const tetrisBoardRows = computed(() =>
 const tetrisModeLabel = computed(() => formatGameToken(tetrisState.value?.mode || 'type-a'))
 const tetrisActivePiece = computed(() => tetrisState.value?.active?.piece || '—')
 const tetrisNextPiece = computed(() => tetrisState.value?.next?.piece || '—')
+const tetrisDecisionRecords = computed(() => [...(selectedRun.value?.stats?.decision_records || [])].reverse())
+const tetrisLatestDecision = computed(() => tetrisDecisionRecords.value[0])
+const tetrisDecisionIdentity = computed(() => {
+  const run = selectedRun.value
+  if (!run) return '—'
+  const configured = run.decision_engine
+  const served = run.stats?.decision_model || tetrisLatestDecision.value?.model
+  const label = configured?.label || configured?.deployment
+  const parts = [label, served || configured?.model].filter(Boolean)
+  return [...new Set(parts)].join(' · ') || 'Jev'
+})
+const tetrisDecisionBackend = computed(() =>
+  selectedRun.value?.stats?.decision_backend
+  || tetrisLatestDecision.value?.backend
+  || selectedRun.value?.decision_engine?.backend
+  || ''
+)
+const tetrisDecisionMode = computed(() =>
+  selectedRun.value?.stats?.decision_mode || selectedRun.value?.decision_engine?.mode || 'active'
+)
+const tetrisDecisionCalls = computed(() => Number(selectedRun.value?.stats?.decision_calls || 0))
+const tetrisDecisionConfidence = computed(() =>
+  Number(tetrisLatestDecision.value?.confidence ?? selectedRun.value?.stats?.decision_confidence ?? 0)
+)
+const tetrisDecisionReference = computed(() => {
+  const stats = selectedRun.value?.stats
+  const agreed = Number(stats?.decision_reference_agreements || 0)
+  const disagreed = Number(stats?.decision_reference_disagreements || 0)
+  const judged = agreed + disagreed
+  return {
+    agreed,
+    disagreed,
+    judged,
+    rate: judged > 0 ? agreed / judged : null
+  }
+})
+const tetrisDecisionAgreement = computed(() => tetrisDecisionReference.value.rate)
+const tetrisDecisionVisible = computed(() =>
+  isTetrisSelected.value
+  && Boolean(selectedRun.value?.decision_engine?.backend || tetrisDecisionCalls.value > 0)
+)
+const tetrisDecisionFallbackRate = computed(() => {
+  const calls = tetrisDecisionCalls.value
+  return calls > 0 ? Number(selectedRun.value?.stats?.decision_fallbacks || 0) / calls : null
+})
+const tetrisLatestChoice = computed(() =>
+  tetrisLatestDecision.value?.choice_label
+  || tetrisLatestDecision.value?.choice
+  || selectedRun.value?.stats?.decision_choice
+  || 'Waiting for first Jev choice'
+)
 const otherLiveRuns = computed(() => {
   const selectedID = selectedRun.value?.run_id || ''
   return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
@@ -380,6 +431,34 @@ function stretchToneClass(state: StretchState): string {
   return `stretch-step-${state}`
 }
 
+function percentLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '—'
+  return `${Math.round(value * 100)}%`
+}
+
+function decisionLatencyLabel(seconds: number | undefined): string {
+  const value = Number(seconds || 0)
+  if (value <= 0) return '—'
+  return value < 1 ? `${Math.round(value * 1000)}ms` : `${value.toFixed(1)}s`
+}
+
+function latestTypedDecision(run: SpectatorRun): SpectatorDecisionRecord | undefined {
+  const records = run.stats?.decision_records || []
+  return records[records.length - 1]
+}
+
+function typedDecisionFingerprint(record: SpectatorDecisionRecord | undefined): string {
+  if (!record) return ''
+  return [record.kind, record.choice, record.choice_label, record.confidence, record.duration_seconds, record.fallback].join('|')
+}
+
+function typedDecisionActivityDetail(record: SpectatorDecisionRecord): string {
+  const choice = record.choice_label || record.choice || 'fallback'
+  const confidence = record.fallback ? 'fallback' : percentLabel(Number(record.confidence || 0))
+  const latency = decisionLatencyLabel(record.duration_seconds)
+  return [choice, confidence, latency].filter(Boolean).join(' · ')
+}
+
 watch([selectedRun, selectionPinned], ([run, pinned]) => {
   if (run && !pinned) selectedRunID.value = run.run_id
   document.title = run
@@ -401,6 +480,10 @@ watch(runs, (nextRuns) => {
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
       else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
       else if (run.stop_so_far) pushActivity(run.run_id, 'state', 'Run state', run.stop_so_far)
+      const typed = latestTypedDecision(run)
+      if (isTetrisRun(run) && typed) {
+        pushActivity(run.run_id, 'decision', 'Jev decision', typedDecisionActivityDetail(typed))
+      }
       previousRuns.set(run.run_id, run)
       continue
     }
@@ -424,6 +507,11 @@ watch(runs, (nextRuns) => {
           'Lines cleared',
           `${afterLines} total · ${Number(run.game_state?.score || 0).toLocaleString()} points`
         )
+      }
+      const typed = latestTypedDecision(run)
+      const typedCallAdvanced = Number(run.stats?.decision_calls || 0) > Number(previous.stats?.decision_calls || 0)
+      if (typed && (typedCallAdvanced || typedDecisionFingerprint(typed) !== typedDecisionFingerprint(latestTypedDecision(previous)))) {
+        pushActivity(run.run_id, 'decision', 'Jev decision', typedDecisionActivityDetail(typed))
       }
     }
 
@@ -1131,6 +1219,74 @@ function activityTimeAgo(item: ActivityItem): string {
               <SignalIcon class="mx-auto size-5 text-slate-700" aria-hidden="true" />
               <p class="mt-2 text-xs text-slate-500">Waiting for the next live event.</p>
             </div>
+          </section>
+
+          <section v-if="tetrisDecisionVisible" class="spectator-card rounded-2xl border p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">Placement model</div>
+                <h2 class="mt-1 truncate text-sm font-black text-white">{{ tetrisDecisionIdentity }}</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">
+                  {{ formatGameToken(tetrisDecisionBackend || 'jev') }} · {{ formatGameToken(tetrisDecisionMode) }}
+                </p>
+              </div>
+              <span class="rounded-full bg-cyan-300/10 px-2 py-1 font-mono text-[9px] text-cyan-100 ring-1 ring-cyan-300/20">
+                {{ tetrisDecisionCalls }} calls
+              </span>
+            </div>
+
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Latest confidence</span>
+                <strong>{{ tetrisDecisionCalls ? percentLabel(tetrisDecisionConfidence) : '—' }}</strong>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Policy agreement</span>
+                <strong>{{ percentLabel(tetrisDecisionAgreement) }}</strong>
+                <small v-if="tetrisDecisionReference.judged" class="mt-0.5 block font-mono text-[8px] text-slate-600">
+                  {{ tetrisDecisionReference.agreed }}/{{ tetrisDecisionReference.judged }}
+                </small>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Fallback rate</span>
+                <strong>{{ percentLabel(tetrisDecisionFallbackRate) }}</strong>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Avg latency</span>
+                <strong>{{ decisionLatencyLabel(selectedRun.stats?.decision_avg_seconds) }}</strong>
+              </div>
+            </div>
+
+            <div class="mt-3 rounded-xl bg-black/15 p-3 ring-1 ring-white/8">
+              <div class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Latest Jev choice</div>
+              <div class="mt-1 text-[11px] font-semibold text-slate-200">{{ tetrisLatestChoice }}</div>
+              <div v-if="selectedRun.stats?.decision_reference" class="mt-1 text-[9px] text-slate-600">
+                scorer: {{ selectedRun.stats.decision_reference }}
+                <span v-if="selectedRun.stats.decision_reference_agreed !== undefined">
+                  · {{ selectedRun.stats.decision_reference_agreed ? 'match' : 'different' }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="tetrisDecisionRecords.length" class="mt-3">
+              <div class="mb-1 text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Recent Jev choices</div>
+              <div class="space-y-1">
+                <div
+                  v-for="(decision, index) in tetrisDecisionRecords.slice(0, 4)"
+                  :key="`${decision.choice || decision.choice_label}-${index}`"
+                  class="flex items-center justify-between gap-2 rounded-lg bg-black/10 px-2.5 py-1.5 ring-1 ring-white/6"
+                >
+                  <span class="min-w-0 truncate text-[10px] text-slate-400">{{ decision.choice_label || decision.choice || 'fallback' }}</span>
+                  <span class="shrink-0 font-mono text-[9px]" :class="decision.fallback ? 'text-amber-300' : 'text-cyan-200'">
+                    {{ decision.fallback ? 'fallback' : percentLabel(Number(decision.confidence || 0)) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p class="mt-3 text-[9px] leading-4 text-slate-600">
+              Policy agreement compares Jev with PokePilot's deterministic best-placement scorer. It is a reference metric, not ground-truth accuracy.
+            </p>
           </section>
 
           <section v-if="isTetrisSelected" class="milestone-card tetris-goal-card overflow-hidden rounded-2xl border p-4">

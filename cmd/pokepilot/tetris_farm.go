@@ -133,6 +133,18 @@ func runFarmTetris(
 				return tetrispolicy.Decision{}, err
 			}
 			lastSelection = &selection
+			if selection.Agreed != nil {
+				recorder.stats.DecisionReference = tetrisPlacementLabel(selection.Deterministic.Candidate)
+				recorder.stats.DecisionReferenceAgreed = selection.Agreed
+				if *selection.Agreed {
+					recorder.stats.DecisionReferenceAgreements++
+				} else {
+					recorder.stats.DecisionReferenceDisagreements++
+				}
+			} else {
+				recorder.stats.DecisionReference = ""
+				recorder.stats.DecisionReferenceAgreed = nil
+			}
 			var shadow *shadowOutcome
 			if selection.Shadow {
 				shadow = &shadowOutcome{

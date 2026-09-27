@@ -32,6 +32,40 @@ func TestSpectatorPresentationPolicyCrossesPublicBoundary(t *testing.T) {
 			"risk_tolerance":"cautious",
 			"wild_encounters":"fight",
 			"decision":"Explore Route 3",
+			"decision_engine":{
+				"backend":"jev",
+				"deployment":"jev9b-local-8077",
+				"mode":"active",
+				"placements":true,
+				"min_confidence":0.65,
+				"max_choices":16,
+				"inference":{
+					"deployment_id":"jev9b-local-8077",
+					"label":"JEV 9B · local 8077",
+					"model_id":"jev9-local",
+					"compute":"private-lan-host",
+					"endpoint":"http://192.168.50.80:8077/v1",
+					"api_model":"jev9-local",
+					"token_env":"PRIVATE_JEV_TOKEN"
+				}
+			},
+			"stats":{
+				"decision_calls":12,
+				"decision_fallbacks":2,
+				"decision_avg_seconds":0.021,
+				"decision_backend":"jev",
+				"decision_model":"jev9-local",
+				"decision_mode":"active",
+				"decision_choice":"r1-c5",
+				"decision_confidence":0.91,
+				"decision_reference":"rotation 0, column 4",
+				"decision_reference_agreed":false,
+				"decision_reference_agreements":7,
+				"decision_reference_disagreements":3,
+				"decision_records":[
+					{"kind":"tetris_placement","choice":"r1-c5","choice_label":"rotation 1, column 5","confidence":0.91,"duration_seconds":0.021,"backend":"jev","model":"jev9-local"}
+				]
+			},
 			"trace":"private trace",
 			"detail":"private detail",
 			"issue":{"number":99}
@@ -63,12 +97,18 @@ func TestSpectatorPresentationPolicyCrossesPublicBoundary(t *testing.T) {
 		`"risk_tolerance":"cautious"`,
 		`"wild_encounters":"fight"`,
 		`"decision":"Explore Route 3"`,
+		`"decision_engine":{"backend":"jev","mode":"active","deployment":"jev9b-local-8077","label":"JEV 9B · local 8077","model":"jev9-local","min_confidence":0.65,"max_choices":16}`,
+		`"decision_calls":12`,
+		`"decision_fallbacks":2`,
+		`"decision_reference_agreements":7`,
+		`"decision_reference_disagreements":3`,
+		`"choice_label":"rotation 1, column 5"`,
 	} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Errorf("public dashboard missing %s: %s", want, body)
 		}
 	}
-	for _, forbidden := range []string{"private trace", "private detail", `"issue"`, "secret-engine", "private_backend", "hidden-piece", "private_piece_field"} {
+	for _, forbidden := range []string{"private trace", "private detail", `"issue"`, "secret-engine", "private_backend", "hidden-piece", "private_piece_field", "192.168.50.80", "PRIVATE_JEV_TOKEN", "private-lan-host", `"endpoint"`, `"token_env"`, `"compute"`} {
 		if bytes.Contains(body, []byte(forbidden)) {
 			t.Errorf("public dashboard leaked %q: %s", forbidden, body)
 		}
