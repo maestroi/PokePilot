@@ -12,7 +12,7 @@ import (
 func TestSemanticRouteReportsMissingCapabilityThenUnlocks(t *testing.T) {
 	e12 := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	e23 := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
-	g := &Graph{Edges: map[uint8][]Edge{
+	g := &Graph{Edges: map[MapID][]Edge{
 		1: {e12},
 		2: {e23},
 		3: {},
@@ -64,12 +64,12 @@ func TestSemanticGateStaysSubjectToComponentReachability(t *testing.T) {
 	gated := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	g := &Graph{
 		componentAware: true,
-		Edges:          map[uint8][]Edge{1: {gated}, 2: {}},
+		Edges:          map[MapID][]Edge{1: {gated}, 2: {}},
 		// Map 1 is two rooms: the port's room (component 1) and the room
 		// the player stands in (component 2), with no walk between them.
-		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
-		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
-		warps:      map[uint8][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		comps:      map[MapID][][]int{1: {{1, 0, 2}}, 2: {{1}}},
+		tiles:      map[MapID]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
+		warps:      map[MapID][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
 		exitComps:  map[Edge][]int{gated: {1}},
 		entryComps: map[Edge][]int{gated: {1}},
 	}
@@ -99,12 +99,12 @@ func TestMissingPivotOnlyCapabilityFallsBackToOrdinaryGeometry(t *testing.T) {
 	pivot := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
 	g := &Graph{
 		componentAware: true,
-		Edges:          map[uint8][]Edge{1: {pivot}, 2: {}},
+		Edges:          map[MapID][]Edge{1: {pivot}, 2: {}},
 		// Component 1 can reach the underlying edge normally; component 2 can
 		// reach it only when the semantic action is available as a pivot.
-		comps:      map[uint8][][]int{1: {{1, 0, 2}}, 2: {{1}}},
-		tiles:      map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
-		warps:      map[uint8][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
+		comps:      map[MapID][][]int{1: {{1, 0, 2}}, 2: {{1}}},
+		tiles:      map[MapID]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}},
+		warps:      map[MapID][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}}, 2: {{X: 0, Y: 0, DestMap: 1}}},
 		exitComps:  map[Edge][]int{pivot: {1}},
 		entryComps: map[Edge][]int{pivot: {1}},
 	}
@@ -187,17 +187,17 @@ func TestPivotOnlyReentryDoesNotUnlockUnreachableExits(t *testing.T) {
 	toDest := Edge{Kind: EdgeConnection, From: 1, To: 3, Dir: dirWest}
 	g := &Graph{
 		componentAware: true,
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {toNeighbor, toDest},
 			2: {fromNeighbor},
 			3: {},
 		},
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1, 0, 2}},
 			2: {{1}},
 			3: {{1}},
 		},
-		tiles: map[uint8]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}},
+		tiles: map[MapID]dim{1: {w: 3, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}},
 		exitComps: map[Edge][]int{
 			toNeighbor:   {2},
 			fromNeighbor: {1},
@@ -243,11 +243,11 @@ func TestUnknownStartComponentStillHonorsDestinationLanding(t *testing.T) {
 	wrong := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	g := &Graph{
 		componentAware: true,
-		Edges:          map[uint8][]Edge{1: {wrong}, 2: {}},
+		Edges:          map[MapID][]Edge{1: {wrong}, 2: {}},
 		// Tile (0,0) is unwalkable (no start component). Dest (1,0) is
 		// component 2; the only edge lands in component 1.
-		comps:      map[uint8][][]int{1: {{0, 0}}, 2: {{1, 2}}},
-		tiles:      map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 1}},
+		comps:      map[MapID][][]int{1: {{0, 0}}, 2: {{1, 2}}},
+		tiles:      map[MapID]dim{1: {w: 2, h: 1}, 2: {w: 2, h: 1}},
 		exitComps:  map[Edge][]int{wrong: {1}},
 		entryComps: map[Edge][]int{wrong: {1}},
 	}
@@ -260,7 +260,7 @@ func TestUnknownStartComponentStillHonorsDestinationLanding(t *testing.T) {
 
 func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T) {
 	gated := Edge{Kind: EdgeConnection, From: 9, To: 10, Dir: dirEast}
-	g := &Graph{Edges: map[uint8][]Edge{
+	g := &Graph{Edges: map[MapID][]Edge{
 		1:  {},
 		9:  {gated},
 		10: {},
