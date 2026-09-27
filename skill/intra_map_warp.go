@@ -57,11 +57,15 @@ func traverseIntraMapWarp(m *emu.Emu, romData []byte, e world.Edge) error {
 	if err != nil {
 		return err
 	}
-	if live.Map != e.From || e.From != e.To || e.Kind != world.EdgeWarp {
+	if world.MapID(live.Map) != e.From || e.From != e.To || e.Kind != world.EdgeWarp {
 		return fmt.Errorf("skill: traverseIntraMapWarp: invalid edge %s from current map %02x", edgeName(e), live.Map)
 	}
 
-	h, err := routingHeaderFor(m, e.From)
+	if e.From > 0xff {
+		return fmt.Errorf("skill: traverseIntraMapWarp: wide map id %04x is not executable by Gen-I routing", e.From)
+	}
+	from := uint8(e.From)
+	h, err := routingHeaderFor(m, from)
 	if err != nil {
 		return fmt.Errorf("skill: traverseIntraMapWarp: parse map %02x: %w", e.From, err)
 	}
