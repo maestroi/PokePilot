@@ -153,8 +153,11 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	return caps
 }
 
-func semanticMapPlace(mapID uint8) gameruntime.PlaceID {
-	return gameruntime.CanonicalID(strings.ReplaceAll(state.MapName(mapID), "_", " "))
+func semanticMapPlace(mapID world.MapID) gameruntime.PlaceID {
+	if mapID > 0xff {
+		return gameruntime.PlaceID(fmt.Sprintf("map-%04x", mapID))
+	}
+	return gameruntime.CanonicalID(strings.ReplaceAll(state.MapName(uint8(mapID)), "_", " "))
 }
 
 func semanticTransition(id string, edge world.Edge, requires ...gameruntime.CapabilityID) gameruntime.Transition {
@@ -177,25 +180,26 @@ func semanticTransition(id string, edge world.Edge, requires ...gameruntime.Capa
 // portable transition model. The router never sees these map ids; they are
 // adapter facts attached to ordinary geometric edges.
 func saffronGuardhouseCrossingEdge(edge world.Edge) bool {
-	if edge.Kind != world.EdgeWarp {
+	if edge.Kind != world.EdgeWarp || from > 0xff || to > 0xff {
 		return false
 	}
+	from, to := uint8(from), uint8(to)
 	switch {
-	case edge.From == semanticRoute5Map && edge.To == route5GateMap:
+	case from == semanticRoute5Map && to == route5GateMap:
 		return edge.WarpY == route5SaffronWarpY
-	case edge.From == route5GateMap && edge.To == semanticRoute5Map:
+	case from == route5GateMap && to == semanticRoute5Map:
 		return edge.WarpY == route5GateSaffronWarpY
-	case edge.From == semanticRoute6Map && edge.To == route6GateMap:
+	case from == semanticRoute6Map && to == route6GateMap:
 		return edge.WarpY == route6SaffronWarpY
-	case edge.From == route6GateMap && edge.To == semanticRoute6Map:
+	case from == route6GateMap && to == semanticRoute6Map:
 		return edge.WarpY == route6GateSaffronWarpY
-	case edge.From == semanticRoute7Map && edge.To == route7GateMap:
+	case from == semanticRoute7Map && to == route7GateMap:
 		return edge.WarpX == route7SaffronWarpX
-	case edge.From == route7GateMap && edge.To == semanticRoute7Map:
+	case from == route7GateMap && to == semanticRoute7Map:
 		return edge.WarpX == route7GateSaffronWarpX
-	case edge.From == semanticRoute8Map && edge.To == route8GateMap:
+	case from == semanticRoute8Map && to == route8GateMap:
 		return edge.WarpX == route8SaffronWarpX
-	case edge.From == route8GateMap && edge.To == semanticRoute8Map:
+	case from == route8GateMap && to == semanticRoute8Map:
 		return edge.WarpX == route8GateSaffronWarpX
 	default:
 		return false
@@ -206,11 +210,15 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	if transition, ok := redAuditedRouteTransitionForEdge(edge); ok {
 		return transition, true
 	}
+	if edge.From > 0xff || edge.To > 0xff {
+		return gameruntime.Transition{}, false
+	}
+	from, to := uint8(edge.From), uint8(edge.To)
 	pair := func(a, b uint8) bool {
-		return (edge.From == a && edge.To == b) || (edge.From == b && edge.To == a)
+		return (from == a && to == b) || (from == b && to == a)
 	}
 	switch {
-	case edge.From == semanticViridianCityMap && edge.To == semanticRoute2Map && edge.Kind == world.EdgeConnection:
+	case from == semanticViridianCityMap && to == semanticRoute2Map && edge.Kind == world.EdgeConnection:
 		// Viridian's old man physically blocks the north road until Oak's
 		// parcel/Pokedex story has completed. This must be an EDGE gate, not
 		// only a "Route 2" destination filter: once a farther place becomes
@@ -219,7 +227,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:viridian_north_pokedex", edge, capCanLeaveViridianNorth)
 		t.Gate = true
 		return t, true
-	case edge.From == semanticPewterCityMap && edge.To == semanticRoute3Map && edge.Kind == world.EdgeConnection:
+	case from == semanticPewterCityMap && to == semanticRoute3Map && edge.Kind == world.EdgeConnection:
 		// The Pewter east-exit NPC blocks Route 3 until Brock is beaten. Like
 		// Viridian's old man, the lock belongs to the edge so every downstream
 		// destination inherits it; filtering only the named Route 3 waypoint
@@ -227,7 +235,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:pewter_east_boulder", edge, capCanLeavePewterEast)
 		t.Gate = true
 		return t, true
-	case edge.From == mtMoonB2FMap && edge.Kind == world.EdgeWarp &&
+	case from == mtMoonB2FMap && edge.Kind == world.EdgeWarp &&
 		edge.WarpX == mtMoonB2FExitWarpX && edge.WarpY == mtMoonB2FExitWarpY:
 		// A gate, not an action: nothing is performed to open the fossil
 		// corridor, its Super Nerd simply stops standing in it. B2F's rooms
@@ -237,7 +245,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:mt_moon_exit", edge, capCanExitMtMoon)
 		t.Gate = true
 		return t, true
-	case edge.From == semanticCeruleanCityMap && edge.To == ceruleanTrashedHouseMap &&
+	case from == semanticCeruleanCityMap && to == ceruleanTrashedHouseMap &&
 		edge.Kind == world.EdgeWarp && edge.WarpX == ceruleanTrashedHouseFrontWarpX &&
 		edge.WarpY == ceruleanTrashedHouseFrontWarpY:
 		// Before Bill gives the S.S. Ticket the guard occupies the approach
@@ -247,7 +255,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		t := semanticTransition("red:cerulean_robbed_house", edge, capCanPassCeruleanRobbedHouse)
 		t.Gate = true
 		return t, true
-	case edge.From == semanticVermilionCityMap && edge.To == semanticVermilionDockMap &&
+	case from == semanticVermilionCityMap && to == semanticVermilionDockMap &&
 		edge.Kind == world.EdgeWarp && edge.WarpY == vermilionDockWarpY &&
 		(edge.WarpX == vermilionDockWarpX1 || edge.WarpX == vermilionDockWarpX2):
 		// The sailor one row north of the harbor warps checks S.S. Ticket and
@@ -265,7 +273,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// and Cerulean -> Route 9 must stay ordinary geometry so a TO-side
 		// PivotOnly landing relax cannot invent a direct east-edge crossing
 		// from Cerulean's west bank (run-os1jmuuqpc1033zjhq2at3qz4).
-		if edge.From != semanticRoute9Map {
+		if from != semanticRoute9Map {
 			return gameruntime.Transition{}, false
 		}
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
@@ -279,7 +287,7 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// "skip source canExit, keep destination components" so a west-side
 		// checkpoint reaches Rock Tunnel instead of inventing Saffron
 		// (run-os1jmuuqpc1033zjhq2at3qz4). Route 10 -> Route 9 stays ordinary.
-		if edge.From != semanticRoute9Map {
+		if from != semanticRoute9Map {
 			return gameruntime.Transition{}, false
 		}
 		t := semanticTransition("red:route9_cut", edge, capCanCut)
@@ -312,8 +320,8 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(semanticPalletTownMap, semanticRoute21Map),
 		pair(semanticRoute21Map, semanticCinnabarMap):
 		return semanticTransition("red:route21_surf", edge, capCanSurf), true
-	case edge.To == route12Map &&
-		(edge.From == semanticRoute11Map || edge.From == semanticLavenderTownMap):
+	case to == route12Map &&
+		(from == semanticRoute11Map || from == semanticLavenderTownMap):
 		// Route 12's Snorlax is a live object at (10,62), inside the map rather
 		// than on either connection. The immutable graph therefore sees a fake
 		// Route 11 -> Route 12 -> Lavender shortcut before the Poké Flute and
@@ -336,9 +344,9 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
-	case edge.From == rocketHideoutB1FMap && edge.Kind == world.EdgeWarp &&
-		((edge.To == gameCornerMap && edge.WarpX == rocketB1FGameCornerWarpX && edge.WarpY == rocketB1FGameCornerWarpY) ||
-			(edge.To == rocketHideoutB2FMap && edge.WarpX == rocketB1FStairsWarpX && edge.WarpY == rocketB1FStairsWarpY)):
+	case from == rocketHideoutB1FMap && edge.Kind == world.EdgeWarp &&
+		((to == gameCornerMap && edge.WarpX == rocketB1FGameCornerWarpX && edge.WarpY == rocketB1FGameCornerWarpY) ||
+			(to == rocketHideoutB2FMap && edge.WarpX == rocketB1FStairsWarpX && edge.WarpY == rocketB1FStairsWarpY)):
 		// RocketHideoutB1FDoorCallbackScript (pokered
 		// scripts/RocketHideoutB1F.asm) replaces the block at (24,16)/(25,16)
 		// between a Door block and a Floor block, keyed on
@@ -443,7 +451,7 @@ func withSurfSeaTopology(g *world.Graph, romData []byte, mem *state.Mem) (*world
 	if g == nil || mem == nil || !redRouteCapabilities(romData, mem).Has(capCanSurf) {
 		return g, nil
 	}
-	seas := map[uint8]bool{}
+	seas := map[world.MapID]bool{}
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
 			if edge.Kind != world.EdgeConnection {
@@ -461,7 +469,7 @@ func withSurfSeaTopology(g *world.Graph, romData []byte, mem *state.Mem) (*world
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]uint8, 0, len(seas))
+	ids := make([]world.MapID, 0, len(seas))
 	for id := range seas {
 		ids = append(ids, id)
 	}
@@ -518,9 +526,15 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 
 	candidates := map[uint8]bool{cur: true}
 	for from, edges := range g.Edges {
-		candidates[from] = true
+		if from > 0xff {
+			return nil, fmt.Errorf("skill: ReachableMaps: Red graph contains wide map id %#04x", from)
+		}
+		candidates[uint8(from)] = true
 		for _, edge := range edges {
-			candidates[edge.To] = true
+			if edge.To > 0xff {
+				return nil, fmt.Errorf("skill: ReachableMaps: Red graph contains wide edge %#04x->%#04x", from, edge.To)
+			}
+			candidates[uint8(edge.To)] = true
 		}
 	}
 
