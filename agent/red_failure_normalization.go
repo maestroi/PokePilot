@@ -403,6 +403,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	if errors.Is(err, skill.ErrFieldMovePrerequisite) || errors.Is(err, skill.ErrFieldRosterPrerequisite) {
 		return "field_move_prerequisite_missing", nil
 	}
+	if errors.Is(err, skill.ErrInventoryDetourStranded) {
+		return "inventory_detour_stranded", nil
+	}
 	var gate *skill.ErrRouteGateClosed
 	if errors.As(err, &gate) {
 		return "route_gate_closed", nil
@@ -447,7 +450,7 @@ func firstSpecificErrorType(err error) string {
 	t := reflect.TypeOf(err)
 	if t != nil {
 		name := t.String()
-		if name != "*fmt.wrapError" && name != "*errors.joinError" && name != "*errors.errorString" && name != "errors.errorString" {
+		if name != "*fmt.wrapError" && name != "*fmt.wrapErrors" && name != "*errors.joinError" && name != "*errors.errorString" && name != "errors.errorString" {
 			return name
 		}
 	}
