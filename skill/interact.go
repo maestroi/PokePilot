@@ -135,7 +135,14 @@ func Face(m *emu.Emu, tx, ty uint8) error {
 	return faceWithOverworldDecoder(m, decoder, tx, ty)
 }
 
-func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty uint8) error {
+type faceMachine interface {
+	game.MemoryReader
+	Press(emu.Button)
+	Release(emu.Button)
+	StepFrame()
+}
+
+func faceWithOverworldDecoder(m faceMachine, decoder game.OverworldDecoder, tx, ty uint8) error {
 	step, live, err := interactionStepWithDecoder(m, decoder, tx, ty)
 	if err != nil {
 		return fmt.Errorf("skill: Face: %w", err)
@@ -146,20 +153,29 @@ func faceWithOverworldDecoder(m *emu.Emu, decoder game.OverworldDecoder, tx, ty 
 	}
 	want := semanticFacingFor(step)
 
-	m.Tap(btn, 3, 7)
-	if _, err := m.StepUntil(faceTurnBudget, func(m *emu.Emu) bool {
-		return decoder.DecodeOverworld(m).Facing == want
-	}); err != nil {
-		// The step onto this tile can roll a wild encounter that starts after
-		// the walk returned; the turn tap then lands in the battle intro.
-		after, observeErr := interactionRuntimeStateWithDecoder(m, decoder)
-		if observeErr == nil && after.InBattle {
-			return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
-				want, live.Map, live.X, live.Y, ErrBattle)
-		}
-		return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
+	m.Press(btn)
+	for i := 0; i < 3; i++ {
+		m.StepFrame()
 	}
-	return nil
+	m.Release(btn)
+	for i := 0; i < 7; i++ {
+		m.StepFrame()
+	}
+	for frame := 0; frame < faceTurnBudget; frame++ {
+		if decoder.DecodeOverworld(m).Facing == want {
+			return nil
+		}
+		m.StepFrame()
+	}
+
+	// The step onto this tile can roll a wild encounter that starts after
+	// the walk returned; the turn tap then lands in the battle intro.
+	after, observeErr := interactionRuntimeStateWithDecoder(m, decoder)
+	if observeErr == nil && after.InBattle {
+		return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
+			want, live.Map, live.X, live.Y, ErrBattle)
+	}
+	return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 }
 
 // Talk presses A to open a text box, then keeps pressing A while a box is
