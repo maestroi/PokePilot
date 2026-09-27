@@ -187,11 +187,15 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 	if edge.Kind != world.EdgeConnection {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition %02x->%02x is not a map connection", edge.From, edge.To)
 	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
+	if edge.From > 0xff || edge.To > 0xff {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition cannot execute wide map edge %04x->%04x", edge.From, edge.To)
+	}
+	from := uint8(edge.From)
+	if got := x.m.Peek8(sym.CurMap); got != from {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition starts on %02x, current map is %02x", edge.From, got)
 	}
 
-	h, err := routingHeaderFor(x.m, edge.From)
+	h, err := routingHeaderFor(x.m, from)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition parse map %02x: %w", edge.From, err)
 	}
@@ -236,7 +240,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 			if !water.Walkable(at[0], at[1]) || blocked[at] {
 				continue
 			}
-			dest := Destination{Map: edge.From, X: uint8(at[0]), Y: uint8(at[1])}
+			dest := Destination{Map: from, X: uint8(at[0]), Y: uint8(at[1])}
 			plan, _, planErr := currentFieldPathPlanWithCost(x.m, x.romData, h, dest, blocked)
 			if planErr != nil {
 				continue
@@ -282,7 +286,7 @@ func (x *redRouteTransitionExecutor) executeSurf(edge world.Edge) (world.Transit
 			continue
 		}
 
-		if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}, x.policy); err != nil {
+		if err := walkWithinMap(x.m, x.romData, Destination{Map: from, X: uint8(standX), Y: uint8(standY)}, x.policy); err != nil {
 			return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf transition reach shoreline (%d,%d): %w", standX, standY, err)
 		}
 
