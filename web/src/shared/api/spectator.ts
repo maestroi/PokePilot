@@ -44,9 +44,39 @@ export interface SpectatorMapSprite {
   y: number
 }
 
+export interface SpectatorTetrisPiece {
+  piece?: string
+  rotation?: number
+  x?: number
+  y?: number
+}
+
+export interface SpectatorTetrisState {
+  kind?: 'tetris' | string
+  mode?: string
+  screen?: string
+  board?: string[]
+  level?: number
+  score?: number
+  score_valid?: boolean
+  lines_cleared?: number
+  lines_remaining?: number
+  line_goal?: number
+  paused?: boolean
+  locking?: boolean
+  clearing?: boolean
+  game_over?: boolean
+  complete?: boolean
+  ready_for_piece_input?: boolean
+  active?: SpectatorTetrisPiece
+  next?: SpectatorTetrisPiece
+}
+
 export interface SpectatorRun {
   run_id: string
   status: string
+  game?: string
+  game_state?: SpectatorTetrisState
   starter?: string
   dest?: string
   goal?: string

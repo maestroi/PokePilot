@@ -28,8 +28,10 @@ import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import {
+  gameTitle,
   goalProgress,
   isLiveRun,
+  isTetrisRun,
   locationLabel,
   normalizePlayStyle,
   objectiveLabel,
@@ -51,7 +53,7 @@ import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from 
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
-type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
+type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'game' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
 type RendererMode = 'modern' | 'classic'
 
@@ -101,6 +103,14 @@ const selectedRun = computed(() => preferredRun(
   groupedRuns.value.live,
   selectionPinned.value ? selectedRunID.value : ''
 ))
+const isTetrisSelected = computed(() => isTetrisRun(selectedRun.value))
+const tetrisState = computed(() => selectedRun.value?.game_state)
+const tetrisBoardRows = computed(() =>
+  (tetrisState.value?.board || []).slice(0, 18).map((row) => row.slice(0, 10).split(''))
+)
+const tetrisModeLabel = computed(() => formatGameToken(tetrisState.value?.mode || 'type-a'))
+const tetrisActivePiece = computed(() => tetrisState.value?.active?.piece || '—')
+const tetrisNextPiece = computed(() => tetrisState.value?.next?.piece || '—')
 const otherLiveRuns = computed(() => {
   const selectedID = selectedRun.value?.run_id || ''
   return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
@@ -117,23 +127,26 @@ const {
   error: renderStateError
 } = useRenderStatePump(frameRunID, renderEnabled, 100, frameContinuous)
 const semanticReady = computed(() => canRenderModernScene(renderState.value))
-const showModern = computed(() => selectionPinned.value && rendererMode.value === 'modern' && semanticReady.value)
+const showModern = computed(() =>
+  selectionPinned.value && !isTetrisSelected.value && rendererMode.value === 'modern' && semanticReady.value
+)
 const frameEnabled = computed(() =>
-  Boolean(frameRunID.value) && (!selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
+  Boolean(frameRunID.value) && (isTetrisSelected.value || !selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
 )
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
-  if (rendererMode.value !== 'modern' || showModern.value) return ''
+  if (isTetrisSelected.value || rendererMode.value !== 'modern' || showModern.value) return ''
   if (renderStateStatus.value === 'error') return 'Gold / Silver · semantic state reconnecting'
   if (renderState.value?.scene) return 'Gold / Silver · classic compatibility · ' + renderState.value.scene
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
+const gameClass = computed(() => isTetrisSelected.value ? 'game-tetris' : 'game-pokemon')
 const selectedActivity = computed(() => {
   const run = selectedRun.value
   const activity = run ? activityByRun.value[run.run_id] || [] : []
   if (activityFilter.value === 'milestones') {
-    return activity.filter((item) => ['area', 'badge', 'party', 'dex', 'milestone'].includes(item.kind))
+    return activity.filter((item) => ['area', 'badge', 'party', 'dex', 'milestone', 'game'].includes(item.kind))
   }
   if (activityFilter.value === 'decisions') {
     return activity.filter((item) => item.kind === 'decision')
@@ -166,8 +179,8 @@ const lastRefreshLabel = computed(() => {
 
 const currentLocation = computed(() => {
   const run = selectedRun.value
-  if (!run) return 'Waiting for location'
-  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+  if (!run) return 'Waiting for state'
+  return displayLocation(run)
 })
 const runtimeLabel = computed(() => {
   const run = selectedRun.value
@@ -176,17 +189,27 @@ const runtimeLabel = computed(() => {
   return seconds > 0 ? formatDuration(seconds) : 'Just started'
 })
 const sceneStyle = computed(() => ({
-  '--spectator-art': `url("${spectatorNightscapeUrl}")`
+  '--spectator-art': isTetrisSelected.value ? 'none' : `url("${spectatorNightscapeUrl}")`
 }))
 
 const goalPercent = computed(() => {
   const run = selectedRun.value
-  return run ? goalProgress(run) : 0
+  if (!run) return 0
+  if (!isTetrisRun(run)) return goalProgress(run)
+  if (run.game_state?.complete) return 100
+  const match = (run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
+  if (!match) return 0
+  const target = Number(match[2] || 0)
+  if (target <= 0) return 0
+  const current = match[1] === 'score'
+    ? Number(run.game_state?.score || 0)
+    : Number(run.game_state?.lines_cleared || 0)
+  return Math.max(0, Math.min(100, 100 * current / target))
 })
 
 const leagueGoal = computed(() => {
   const run = selectedRun.value
-  if (!run) return false
+  if (!run || isTetrisRun(run)) return false
   const text = [run.goal, run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
   return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
 })
@@ -195,8 +218,34 @@ const goalProgressCopy = computed(() => {
   const run = selectedRun.value
   if (!run) return { label: 'Waiting for goal', detail: 'Run objective is loading.' }
 
-  const badges = run.player?.badges?.length || 0
   const stats = run.stats
+  if (isTetrisRun(run)) {
+    const state = run.game_state
+    const score = Number(state?.score || 0)
+    const lines = Number(state?.lines_cleared || 0)
+    const match = (run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
+    if (state?.complete || stats?.goal_complete) {
+      return {
+        label: 'Goal complete',
+        detail: `${score.toLocaleString()} points · ${lines} lines cleared`
+      }
+    }
+    if (match) {
+      const target = Number(match[2] || 0)
+      const current = match[1] === 'score' ? score : lines
+      const unit = match[1] === 'score' ? 'points' : 'lines'
+      return {
+        label: `${current.toLocaleString()}/${target.toLocaleString()} ${unit}`,
+        detail: `${Math.max(0, target - current).toLocaleString()} ${unit} remaining`
+      }
+    }
+    return {
+      label: 'Stack in progress',
+      detail: `${score.toLocaleString()} points · ${lines} lines cleared`
+    }
+  }
+
+  const badges = run.player?.badges?.length || 0
   if (stats?.goal_complete) {
     return {
       label: 'Goal complete',
@@ -241,6 +290,14 @@ interface PremiumStat {
 const statCards = computed<PremiumStat[]>(() => {
   const run = selectedRun.value
   if (!run) return []
+  if (isTetrisRun(run)) {
+    return [
+      { key: 'score', label: 'Score', value: Number(run.game_state?.score || 0).toLocaleString(), hint: 'Points', icon: TrophyIcon, tone: 'amber' },
+      { key: 'lines', label: 'Lines cleared', value: String(Number(run.game_state?.lines_cleared || 0)), hint: 'Stack', icon: FlagIcon, tone: 'cyan' },
+      { key: 'level', label: 'Level', value: String(Number(run.game_state?.level || 0)), hint: 'Speed', icon: SparklesIcon, tone: 'violet' },
+      { key: 'runtime', label: 'Runtime', value: runtimeLabel.value, hint: 'Live', icon: ClockIcon, tone: 'emerald' }
+    ]
+  }
   return [
     { key: 'maps', label: 'Maps visited', value: mapsLabel.value, hint: 'World', icon: MapIcon, tone: 'cyan' },
     { key: 'party', label: 'Party', value: `${run.player?.party?.length || 0}/6`, hint: 'Team', icon: UserGroupIcon, tone: 'violet' },
@@ -262,7 +319,7 @@ interface StretchStep {
 
 const finalStretchSteps = computed<StretchStep[]>(() => {
   const run = selectedRun.value
-  if (!run) return []
+  if (!run || isTetrisRun(run)) return []
 
   const badges = run.player?.badges?.length || 0
   const location = currentLocation.value.toLowerCase()
@@ -339,7 +396,7 @@ watch(runs, (nextRuns) => {
         run.run_id,
         'area',
         'Watching from',
-        mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+        displayLocation(run)
       )
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
       else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
@@ -354,8 +411,20 @@ watch(runs, (nextRuns) => {
     if (run.decision && run.decision !== previous.decision) {
       pushActivity(run.run_id, 'decision', 'Decision', run.decision)
     }
-    if (run.map !== previous.map) {
-      pushActivity(run.run_id, 'area', 'Entered area', mapEntry(Number(run.map || 0))?.label || locationLabel(run))
+    if (!isTetrisRun(run) && run.map !== previous.map) {
+      pushActivity(run.run_id, 'area', 'Entered area', displayLocation(run))
+    }
+    if (isTetrisRun(run)) {
+      const beforeLines = Number(previous.game_state?.lines_cleared || 0)
+      const afterLines = Number(run.game_state?.lines_cleared || 0)
+      if (afterLines > beforeLines) {
+        pushActivity(
+          run.run_id,
+          'game',
+          'Lines cleared',
+          `${afterLines} total · ${Number(run.game_state?.score || 0).toLocaleString()} points`
+        )
+      }
     }
 
     const beforeBadges = previous.player?.badges || []
@@ -411,6 +480,7 @@ function activityIcon(kind: ActivityKind) {
     case 'party': return UserGroupIcon
     case 'dex': return BookOpenIcon
     case 'milestone': return FlagIcon
+    case 'game': return SparklesIcon
     default: return SignalIcon
   }
 }
@@ -423,8 +493,21 @@ function activityTone(kind: ActivityKind): string {
     case 'party': return 'text-violet-300 bg-violet-300/10 ring-violet-300/20'
     case 'dex': return 'text-rose-300 bg-rose-300/10 ring-rose-300/20'
     case 'milestone': return 'text-emerald-300 bg-emerald-300/10 ring-emerald-300/20'
+    case 'game': return 'text-amber-300 bg-amber-300/10 ring-amber-300/20'
     default: return 'text-slate-300 bg-white/5 ring-white/10'
   }
+}
+
+function formatGameToken(value: string): string {
+  return value
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function displayLocation(run: SpectatorRun): string {
+  if (isTetrisRun(run)) return locationLabel(run)
+  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
 }
 
 function selectRun(run: SpectatorRun): void {
@@ -634,7 +717,7 @@ function activityTimeAgo(item: ActivityItem): string {
       </div>
     </div>
 
-    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass]" :style="sceneStyle">
+    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass, gameClass]" :style="sceneStyle">
       <div v-if="state === 'stale'" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-xs text-amber-100" role="status">
         <span><strong>Connection lost.</strong> Showing the last known run state while reconnecting automatically.</span>
         <span class="flex items-center gap-2 text-amber-200/70">
@@ -661,25 +744,38 @@ function activityTimeAgo(item: ActivityItem): string {
                 Live run
               </span>
               <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
-              <span class="mode-chip">{{ playStyleLabel(selectedRun) }}</span>
+              <span class="mode-chip">{{ isTetrisSelected ? tetrisModeLabel : playStyleLabel(selectedRun) }}</span>
               <span v-if="selectedRun.purpose === 'debug_coverage'" class="mode-chip">Debug coverage</span>
             </div>
 
             <div class="mt-4 flex items-start gap-3">
               <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10" aria-hidden="true">
-                <span class="pokeball-mark" />
+                <span v-if="isTetrisSelected" class="tetris-mark" />
+                <span v-else class="pokeball-mark" />
               </div>
               <div class="min-w-0">
-                <h1 class="text-2xl font-black tracking-tight text-white">Pokémon Red</h1>
-                <p class="mt-0.5 truncate text-sm text-slate-400">{{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}</p>
+                <h1 class="text-2xl font-black tracking-tight text-white">{{ gameTitle(selectedRun) }}</h1>
+                <p v-if="isTetrisSelected" class="mt-0.5 truncate text-sm text-slate-400">
+                  {{ tetrisModeLabel }} · autonomous stack
+                </p>
+                <p v-else class="mt-0.5 truncate text-sm text-slate-400">
+                  {{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}
+                </p>
                 <p class="mt-1 flex items-center gap-1.5 truncate text-[11px] text-slate-500">
-                  <MapPinIcon class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
+                  <component :is="isTetrisSelected ? SparklesIcon : MapPinIcon" class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
                   {{ currentLocation }}
                 </p>
               </div>
             </div>
 
-            <div class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
+            <div v-if="isTetrisSelected" class="spectator-art-banner tetris-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
+              <div class="tetris-art-grid" />
+              <div class="spectator-art-banner-caption">
+                <span>Stack in progress</span>
+                <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }} pts · {{ Number(tetrisState?.lines_cleared || 0) }} lines</strong>
+              </div>
+            </div>
+            <div v-else class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
               <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover" />
               <div class="spectator-art-banner-glow" />
               <div class="spectator-art-banner-caption">
@@ -711,7 +807,7 @@ function activityTimeAgo(item: ActivityItem): string {
               </div>
             </div>
 
-            <div class="mt-5">
+            <div v-if="!isTetrisSelected" class="mt-5">
               <div class="mb-2 flex items-center justify-between gap-2">
                 <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
                 <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
@@ -731,6 +827,25 @@ function activityTimeAgo(item: ActivityItem): string {
                     :name="selectedRun.player.badges[slot - 1]"
                     :size="26"
                   />
+                </div>
+              </div>
+            </div>
+            <div v-else class="mt-5">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Piece queue</div>
+                <span class="font-mono text-[10px] text-slate-500">{{ tetrisState?.screen || 'playing' }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="tetris-piece-card rounded-xl border p-3">
+                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Active</span>
+                  <div class="mt-1 flex items-end justify-between gap-2">
+                    <strong class="font-mono text-2xl text-yellow-200">{{ tetrisActivePiece }}</strong>
+                    <span class="font-mono text-[9px] text-slate-500">r{{ Number(tetrisState?.active?.rotation || 0) }}</span>
+                  </div>
+                </div>
+                <div class="tetris-piece-card rounded-xl border p-3">
+                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next</span>
+                  <strong class="mt-1 block font-mono text-2xl text-cyan-200">{{ tetrisNextPiece }}</strong>
                 </div>
               </div>
             </div>
@@ -773,7 +888,7 @@ function activityTimeAgo(item: ActivityItem): string {
                   <strong class="truncate text-[11px] text-slate-300">{{ runTitle(run) }}</strong>
                   <span class="size-1.5 shrink-0 rounded-full bg-emerald-300" />
                 </div>
-                <div class="mt-1 truncate text-[9px] text-slate-600">{{ mapEntry(Number(run.map || 0))?.label || locationLabel(run) }}</div>
+                <div class="mt-1 truncate text-[9px] text-slate-600">{{ displayLocation(run) }}</div>
               </button>
             </div>
           </section>
@@ -824,7 +939,7 @@ function activityTimeAgo(item: ActivityItem): string {
               </div>
 
               <div class="absolute right-3 top-14 z-10 flex flex-col items-end gap-2 opacity-85 transition-opacity group-hover:opacity-100 sm:right-4">
-                <div class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
+                <div v-if="!isTetrisSelected" class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
                   <button
                     type="button"
                     :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
@@ -838,7 +953,7 @@ function activityTimeAgo(item: ActivityItem): string {
                     @click="setRendererMode('classic')"
                   >Classic</button>
                 </div>
-                <label v-if="rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
+                <label v-if="!isTetrisSelected && rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
                   <span class="font-black uppercase tracking-[0.08em]">Theme</span>
                   <select
                     :value="selectedThemeID"
@@ -855,9 +970,12 @@ function activityTimeAgo(item: ActivityItem): string {
                   </select>
                 </label>
                 <div
-                  v-if="themeNotice"
+                  v-if="!isTetrisSelected && themeNotice"
                   class="max-w-56 rounded-lg bg-amber-950/80 px-2.5 py-1.5 text-right text-[9px] font-semibold text-amber-200 ring-1 ring-amber-300/20"
                 >{{ themeNotice }}</div>
+                <div v-if="isTetrisSelected" class="rounded-lg bg-yellow-300/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-yellow-100 ring-1 ring-yellow-300/20 backdrop-blur-md">
+                  Classic framebuffer
+                </div>
                 <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
                   <PlayIcon class="size-4" aria-hidden="true" />
                 </button>
@@ -894,7 +1012,57 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section class="spectator-card rounded-2xl border p-3 sm:p-4">
+          <section v-if="isTetrisSelected" class="spectator-card rounded-2xl border p-3 sm:p-4">
+            <div class="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <h2 class="text-sm font-black text-white">Tetris state</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">Live board telemetry from the running game.</p>
+              </div>
+              <span class="font-mono text-[10px] text-yellow-200">{{ tetrisModeLabel }} · {{ tetrisState?.screen || 'playing' }}</span>
+            </div>
+            <div class="grid gap-4 md:grid-cols-[10rem_minmax(0,1fr)] md:items-start">
+              <div class="tetris-board-shell mx-auto w-full max-w-[10rem] rounded-xl border p-2">
+                <div v-if="tetrisBoardRows.length" class="tetris-board" aria-label="Tetris board">
+                  <div v-for="(row, y) in tetrisBoardRows" :key="y" class="tetris-board-row">
+                    <span
+                      v-for="(cell, x) in row"
+                      :key="x"
+                      :class="['tetris-cell', cell === '#' ? 'tetris-cell-filled' : 'tetris-cell-empty']"
+                    />
+                  </div>
+                </div>
+                <div v-else class="grid aspect-[10/18] place-items-center text-[10px] text-slate-600">Waiting for board</div>
+              </div>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Score</span>
+                  <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Lines</span>
+                  <strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Level</span>
+                  <strong>{{ Number(tetrisState?.level || 0) }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Active</span>
+                  <strong>{{ tetrisActivePiece }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Next</span>
+                  <strong>{{ tetrisNextPiece }}</strong>
+                </div>
+                <div class="tetris-state-tile rounded-xl border p-3">
+                  <span>Status</span>
+                  <strong class="text-sm">{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</strong>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section v-else class="spectator-card rounded-2xl border p-3 sm:p-4">
             <div class="mb-3 flex items-end justify-between gap-3">
               <div>
                 <h2 class="text-sm font-black text-white">Current Party</h2>
@@ -965,7 +1133,41 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
-          <section class="milestone-card overflow-hidden rounded-2xl border p-4">
+          <section v-if="isTetrisSelected" class="milestone-card tetris-goal-card overflow-hidden rounded-2xl border p-4">
+            <div class="tetris-goal-visual mb-4 rounded-xl border" aria-hidden="true">
+              <span class="tetris-goal-piece" />
+            </div>
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-black tracking-[0.11em] text-yellow-200/70 uppercase">Run target</div>
+                <h2 class="mt-2 text-base font-black text-white">{{ selectedRun.goal || 'Keep stacking' }}</h2>
+                <p class="mt-1 text-[11px] leading-5 text-slate-400">{{ goalProgressCopy.detail }}</p>
+              </div>
+              <div class="tetris-goal-mark grid size-11 shrink-0 place-items-center rounded-xl">
+                <TrophyIcon class="size-5" aria-hidden="true" />
+              </div>
+            </div>
+            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/8 ring-1 ring-white/5">
+              <div class="mode-progress goal-progress-fill h-full rounded-full transition-[width]" :style="{ width: goalPercent + '%' }" />
+            </div>
+            <div class="mt-4 grid grid-cols-3 gap-2">
+              <div class="tetris-goal-stat"><span>Score</span><strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong></div>
+              <div class="tetris-goal-stat"><span>Lines</span><strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong></div>
+              <div class="tetris-goal-stat"><span>Level</span><strong>{{ Number(tetrisState?.level || 0) }}</strong></div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="tetris-piece-card rounded-xl border p-3">
+                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Current piece</span>
+                <strong class="mt-1 block font-mono text-xl text-yellow-200">{{ tetrisActivePiece }}</strong>
+              </div>
+              <div class="tetris-piece-card rounded-xl border p-3">
+                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next piece</span>
+                <strong class="mt-1 block font-mono text-xl text-cyan-200">{{ tetrisNextPiece }}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section v-else class="milestone-card overflow-hidden rounded-2xl border p-4">
             <div class="final-stretch-art mb-4 overflow-hidden rounded-xl border" aria-hidden="true">
               <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover object-[72%_54%]" />
               <div class="final-stretch-art-shade" />
@@ -1541,5 +1743,203 @@ function activityTimeAgo(item: ActivityItem): string {
     var(--spectator-art) 80% 68% / 48rem auto no-repeat;
 }
 
+
+
+
+/* Tetris gets its own visual language. Keep this below the play-style rules so
+   the active game, not a Pokémon policy default, owns the spectator chrome. */
+.spectator-theme.game-tetris {
+  --mode-accent: #fde047;
+  --mode-soft: rgba(253, 224, 71, 0.1);
+  --mode-border: rgba(253, 224, 71, 0.28);
+  background:
+    radial-gradient(circle at 80% 8%, rgba(34, 211, 238, .08), transparent 24rem),
+    radial-gradient(circle at 12% 70%, rgba(253, 224, 71, .08), transparent 22rem),
+    linear-gradient(rgba(148, 163, 184, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .035) 1px, transparent 1px),
+    linear-gradient(180deg, #05070c, #080d16);
+  background-size: auto, auto, 26px 26px, 26px 26px, auto;
+}
+
+.spectator-theme.game-tetris::before {
+  background:
+    radial-gradient(circle at 12% 72%, rgba(253, 224, 71, .1), transparent 22rem),
+    radial-gradient(circle at 88% 18%, rgba(34, 211, 238, .08), transparent 20rem);
+}
+
+.game-tetris .spectator-hero-card {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .08), transparent 17rem),
+    linear-gradient(180deg, rgba(12, 16, 25, .95), rgba(5, 8, 14, .98));
+}
+
+.game-tetris .game-mark {
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.18), transparent 35%),
+    linear-gradient(145deg, rgba(250, 204, 21, .88), rgba(8, 145, 178, .7));
+}
+
+.tetris-mark {
+  display: block;
+  width: .48rem;
+  height: .48rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .55rem 0 #fde047,
+    1.1rem 0 #fde047,
+    .55rem .55rem #fde047;
+  transform: translate(-.55rem, -.25rem);
+}
+
+.tetris-art-banner {
+  border-color: rgba(253, 224, 71, .18);
+  background:
+    linear-gradient(180deg, rgba(250, 204, 21, .05), transparent 62%),
+    #05070c;
+}
+
+.tetris-art-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, .08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .08) 1px, transparent 1px);
+  background-size: 14px 14px;
+  mask-image: linear-gradient(to right, black, transparent 78%);
+}
+
+.tetris-art-banner::before {
+  position: absolute;
+  top: 1rem;
+  left: 2rem;
+  width: .72rem;
+  height: .72rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .78rem 0 #fde047,
+    1.56rem 0 #fde047,
+    .78rem .78rem #fde047,
+    4.5rem 1.2rem #67e8f9,
+    5.28rem 1.2rem #67e8f9,
+    5.28rem .42rem #67e8f9,
+    6.06rem .42rem #67e8f9;
+  content: '';
+  filter: drop-shadow(0 0 10px rgba(253, 224, 71, .2));
+}
+
+.game-tetris .spectator-art-banner-caption span {
+  color: rgb(254 240 138 / .78);
+}
+
+.tetris-piece-card,
+.tetris-board-shell,
+.tetris-state-tile {
+  border-color: rgba(148, 163, 184, .1);
+  background: rgba(2, 6, 23, .42);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+
+.tetris-board-shell {
+  border-color: rgba(253, 224, 71, .16);
+  background:
+    linear-gradient(180deg, rgba(253, 224, 71, .035), transparent),
+    rgba(1, 4, 9, .78);
+}
+
+.tetris-board {
+  display: grid;
+  gap: 1px;
+}
+
+.tetris-board-row {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.tetris-cell {
+  aspect-ratio: 1;
+  border-radius: 1px;
+}
+
+.tetris-cell-empty {
+  background: rgba(148, 163, 184, .045);
+}
+
+.tetris-cell-filled {
+  background: linear-gradient(145deg, #fef08a, #eab308);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.24),
+    0 0 6px rgba(250, 204, 21, .12);
+}
+
+.tetris-state-tile span,
+.tetris-goal-stat span {
+  display: block;
+  color: #64748b;
+  font-size: .5rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.tetris-state-tile strong,
+.tetris-goal-stat strong {
+  display: block;
+  margin-top: .35rem;
+  color: #f8fafc;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.tetris-goal-card {
+  border-color: rgba(253, 224, 71, .16);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .09), transparent 14rem),
+    linear-gradient(180deg, rgba(16, 20, 29, .96), rgba(5, 8, 14, .98));
+}
+
+.tetris-goal-visual {
+  position: relative;
+  height: 5rem;
+  overflow: hidden;
+  border-color: rgba(253, 224, 71, .14);
+  background:
+    linear-gradient(rgba(148, 163, 184, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, .06) 1px, transparent 1px),
+    #05070c;
+  background-size: 14px 14px;
+}
+
+.tetris-goal-piece {
+  position: absolute;
+  top: 1.1rem;
+  left: calc(50% - 1.35rem);
+  width: .78rem;
+  height: .78rem;
+  border-radius: .08rem;
+  background: #fde047;
+  box-shadow:
+    .86rem 0 #fde047,
+    1.72rem 0 #fde047,
+    .86rem .86rem #fde047;
+  filter: drop-shadow(0 0 12px rgba(253, 224, 71, .28));
+}
+
+.tetris-goal-mark {
+  border: 1px solid rgba(253, 224, 71, .2);
+  background: rgba(253, 224, 71, .09);
+  color: #fef08a;
+}
+
+.tetris-goal-stat {
+  border: 1px solid rgba(148, 163, 184, .09);
+  border-radius: .75rem;
+  background: rgba(2, 6, 23, .38);
+  padding: .65rem;
+}
 
 </style>

@@ -6,10 +6,11 @@ import {
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
+import { gameTitle, isTetrisRun, tetrisLocationLabel, tetrisRouteLabel, tetrisRunTitle } from './gamePresentation'
 import { preferredRun } from './preferredRun'
 
 export type SpectatorPlayStyle = PlayStyle
-export { normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
+export { gameTitle, isTetrisRun, normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -46,8 +47,9 @@ export function playSpeedLabel(run: SpectatorRun): string {
 }
 
 export function routeLabel(run: SpectatorRun): string {
+  if (isTetrisRun(run)) return tetrisRouteLabel(run)
   const route = [run.starter, run.dest].filter(Boolean).join(' → ')
-  return route || run.goal || 'Pokémon Red run'
+  return route || run.goal || `${gameTitle(run)} run`
 }
 
 export function objectiveLabel(run: SpectatorRun): string {
@@ -55,6 +57,7 @@ export function objectiveLabel(run: SpectatorRun): string {
 }
 
 export function locationLabel(run: SpectatorRun): string {
+  if (isTetrisRun(run)) return tetrisLocationLabel(run)
   const map = Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase()
   return `0x${map} · ${run.x ?? 0},${run.y ?? 0}`
 }
@@ -67,7 +70,8 @@ export {
 } from './goalProgress'
 
 export function runTitle(run: SpectatorRun): string {
-  const lead = run.starter || run.player?.party?.[0]?.name || 'Pokémon Red'
+  if (isTetrisRun(run)) return tetrisRunTitle(run)
+  const lead = run.starter || run.player?.party?.[0]?.name || gameTitle(run)
   const badges = run.player?.badges?.length || 0
   const badgeText = badges === 1 ? '1 badge' : `${badges} badges`
   return `${playStyleLabel(run)} · ${lead} · ${badgeText}`
