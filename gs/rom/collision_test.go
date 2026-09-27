@@ -129,9 +129,9 @@ func TestGen2NativeGridJumpsLedgeOnlyInAllowedDirection(t *testing.T) {
 func TestGen2NativeGridRespectsDirectionalWallBothWays(t *testing.T) {
 	spec := worldmodel.NativeGridSpec{
 		MapID: 1, Width: 2, Height: 1,
-		Walkable: []bool{true, true},
+		Walkable:      []bool{true, true},
 		CollisionTile: []uint8{0xb0, 0x00}, // RIGHT_WALL, FLOOR
-		Blocked: gen2BlockedDirections(),
+		Blocked:       gen2BlockedDirections(),
 	}
 	grid, err := world.NativeGridFromSpec(spec)
 	if err != nil {
