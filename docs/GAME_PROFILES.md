@@ -21,7 +21,9 @@ type CartridgeProfile interface {
 
 `profiles.Cartridges()` / `profiles.DetectCartridge` use the generic identity registry. `profiles.Builtin()` / `profiles.Detect` remain the Pokémon gameplay registry so existing callers keep their current contract.
 
-Tetris (World) (Rev 1) is the first identity-only profile and is registered by exact SHA-1/SHA-256 fingerprint. Gameplay observation and execution for Tetris are intentionally separate later capabilities.
+Tetris (World) (Rev 1) is the first non-Pokémon profile and is registered by exact SHA-1/SHA-256 fingerprint. Its semantic gameplay state is exposed through the optional `tetris.StateProfile` capability rather than `game.GameProfile`.
+
+The Tetris state decoder exposes a 10×18 locked-cell board, active and preview tetromino identity/orientation, grid-anchor position, mode, level, Type A score, line progress, pause/game-over/completion state, and a conservative `ReadyForPieceInput` signal. Revision-specific RAM addresses live under `tetris/sym`; the generic cartridge registry does not know them.
 
 ## Runtime selection
 
