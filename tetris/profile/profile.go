@@ -1,8 +1,8 @@
-// Package profile implements cartridge identity for Game Boy Tetris.
+// Package profile implements the Game Boy Tetris cartridge adapter.
 //
-// Phase 1 deliberately exposes ROM identity only. Tetris gameplay semantics
-// (board, pieces, score, lines and menu state) belong to later Tetris-specific
-// capabilities and must not be represented with Pokémon fields.
+// The base contract remains game-agnostic cartridge identity. Tetris gameplay
+// state is exposed through the optional tetris.StateProfile capability rather
+// than through Pokémon-specific observation fields.
 package profile
 
 import "github.com/maestroi/pokepilot/game"
