@@ -64,7 +64,7 @@ func componentRestagingDestination(
 	}
 
 	// (1) Exit onto a neighbour map landing that can open dest.
-	for _, e := range routeGraph.Edges[cur] {
+	for _, e := range routeGraph.Edges[world.MapID(cur)] {
 		if e.Kind != world.EdgeWarp {
 			continue
 		}
@@ -72,11 +72,15 @@ func componentRestagingDestination(
 		if !ok {
 			continue
 		}
-		landH, err := routingHeaderForROM(romData, e.To)
+		if e.To > 0xff {
+			continue
+		}
+		toMap := uint8(e.To)
+		landH, err := routingHeaderForROM(romData, toMap)
 		if err != nil {
 			continue
 		}
-		landGrid, err := gridForMap(m, romData, landH, e.To)
+		landGrid, err := gridForMap(m, romData, landH, toMap)
 		if err != nil || landGrid == nil {
 			continue
 		}
@@ -89,19 +93,19 @@ func componentRestagingDestination(
 				continue
 			}
 			toStage, err := world.FindRoutePlanAtDestinationWithCapabilities(
-				routeGraph, cur, e.To, int(sx), int(sy), x, y, blockedHere, prereqs,
+				routeGraph, cur, toMap, int(sx), int(sy), x, y, blockedHere, prereqs,
 			)
 			if err != nil {
 				continue
 			}
-			if !tileOpensDest(m, romData, routeGraph, e.To, x, y, dest, prereqs, blockedHere) {
+			if !tileOpensDest(m, romData, routeGraph, toMap, x, y, dest, prereqs, blockedHere) {
 				continue
 			}
 			hops := len(toStage)
 			if hops == 0 {
 				hops = 1
 			}
-			consider(Destination{Map: e.To, X: uint8(x), Y: uint8(y)}, hops)
+			consider(Destination{Map: toMap, X: uint8(x), Y: uint8(y)}, hops)
 			break
 		}
 	}
@@ -198,7 +202,7 @@ func gridForMap(m *emu.Emu, romData []byte, h worldmodel.HeaderView, mapID uint8
 	if err != nil {
 		return nil, err
 	}
-	spec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand)
+	spec, err := provider.Grid(worldmodel.MapID(mapID), nil, worldmodel.TraversalLand)
 	if err != nil {
 		return nil, err
 	}
@@ -253,12 +257,12 @@ func fieldPathBridgeFromTile(
 	} else {
 		provider, providerErr := routingProviderForROM(romData)
 		if providerErr == nil {
-			if spec, err := provider.Grid(mapID, nil, worldmodel.TraversalLand); err == nil {
+			if spec, err := provider.Grid(worldmodel.MapID(mapID), nil, worldmodel.TraversalLand); err == nil {
 				if g, err := world.GridFromSpec(spec); err == nil {
 					land = g
 				}
 			}
-			if spec, err := provider.Grid(mapID, nil, worldmodel.TraversalWater); err == nil {
+			if spec, err := provider.Grid(worldmodel.MapID(mapID), nil, worldmodel.TraversalWater); err == nil {
 				if g, err := world.GridFromSpec(spec); err == nil {
 					water = g
 				}
@@ -311,7 +315,7 @@ func fieldPathBridgeFromTile(
 		}
 	}
 
-	for _, e := range routeGraph.Edges[mapID] {
+	for _, e := range routeGraph.Edges[world.MapID(mapID)] {
 		switch e.Kind {
 		case world.EdgeWarp:
 			for _, w := range edgeWarpCandidates(h, e, romData) {
