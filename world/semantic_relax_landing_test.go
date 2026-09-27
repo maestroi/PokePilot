@@ -11,13 +11,13 @@ func TestSemanticRelaxLandingStopsBeforeUnrelatedDestinationComponent(t *testing
 	pivot := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	onward := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
 	g := &Graph{
-		Edges: map[uint8][]Edge{
+		Edges: map[MapID][]Edge{
 			1: {pivot},
 			2: {onward},
 			3: nil,
 		},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{1, 2}}, // landing is component 1; onward exit is component 2
 			3: {{1}},
@@ -58,9 +58,9 @@ func TestSemanticRelaxLandingStopsBeforeUnrelatedDestinationComponent(t *testing
 func TestSemanticRelaxLandingStillAllowsPhysicallySupportedDestination(t *testing.T) {
 	pivot := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
 	g := &Graph{
-		Edges:          map[uint8][]Edge{1: {pivot}, 2: nil},
+		Edges:          map[MapID][]Edge{1: {pivot}, 2: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			1: {{1}},
 			2: {{7, 8}},
 		},
@@ -90,9 +90,9 @@ func TestSemanticRelaxLandingStillAllowsPhysicallySupportedDestination(t *testin
 func TestSemanticReplanUsesRefreshedComponentTopology(t *testing.T) {
 	onward := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
 	before := &Graph{
-		Edges:          map[uint8][]Edge{2: {onward}, 3: nil},
+		Edges:          map[MapID][]Edge{2: {onward}, 3: nil},
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			2: {{1, 2}},
 			3: {{1}},
 		},
@@ -108,7 +108,7 @@ func TestSemanticReplanUsesRefreshedComponentTopology(t *testing.T) {
 	// Simulate the fresh live topology after the local action: the landing
 	// region and onward exit are now physically connected.
 	after := *before
-	after.comps = map[uint8][][]int{
+	after.comps = map[MapID][][]int{
 		2: {{1, 1}},
 		3: {{1}},
 	}
