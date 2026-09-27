@@ -19,9 +19,13 @@ var (
 
 const (
 	gsOpeningScriptFrameBudget   uint64 = 120_000
+	gsOpeningBattleFrameBudget   uint64 = 180_000
 	gsStarterReactionFrameBudget uint64 = 1_200
 	gsOpeningMaxScriptPresses           = 160
+	gsErrandMaxScriptPresses            = 480
+	gsOpeningMaxBattlePresses           = 900
 	gsOpeningRouteAttempts              = 8
+	gsErrandRouteAttempts               = 32
 )
 
 type gsStarterSpec struct {
@@ -252,4 +256,250 @@ func executeGSOpening(m *emu.Emu, romData []byte, starter skill.Starter) error {
 			errGSOpeningUnexpectedState, spec.Species, final.Party, final.Controllable)
 	}
 	return nil
+}
+
+
+func gsErrandScriptMap(mapID uint16) bool {
+	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "CHERRYGROVE_CITY"} {
+		id, err := gsOpeningMapID(name)
+		if err == nil && mapID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// driveGSOpeningBattle is deliberately scoped to the pre-Violet opening.
+// Those encounters are one-mon wild fights plus Cherrygrove's can-lose rival
+// fight. Repeated A accepts the battle's default FIGHT/first-move path and
+// pages deterministic battle text; it is not a general Gen-II battle policy.
+func driveGSOpeningBattle(m *emu.Emu, profile *gsprofile.Profile) error {
+	if m == nil || profile == nil {
+		return fmt.Errorf("%w: missing emulator/profile for opening battle", errGSOpeningUnexpectedState)
+	}
+	start := m.FrameCount()
+	presses := 0
+	sawBattle := false
+	for m.FrameCount()-start < gsOpeningBattleFrameBudget {
+		facts := profile.DecodeOpening(m)
+		if facts.InBattle {
+			sawBattle = true
+			if presses >= gsOpeningMaxBattlePresses {
+				return fmt.Errorf("%w: exceeded %d A presses in opening battle mode %d",
+					errGSOpeningStalled, gsOpeningMaxBattlePresses, facts.BattleMode)
+			}
+			m.Tap(emu.A, 3, 7)
+			presses++
+			continue
+		}
+		if !sawBattle {
+			return nil
+		}
+		if facts.Controllable {
+			return nil
+		}
+
+		// Trainer battles resume their owning map script after the battle engine
+		// exits. A wild blackout can also leave deterministic text/transition
+		// work. Both are part of the battle interruption and contain no opening
+		// gameplay choice.
+		if facts.ScriptActive && facts.MovementIdle {
+			if presses >= gsOpeningMaxBattlePresses {
+				return fmt.Errorf("%w: exceeded %d post-battle A presses on map %#04x",
+					errGSOpeningStalled, gsOpeningMaxBattlePresses, facts.NativeMapID)
+			}
+			m.Tap(emu.A, 3, 7)
+			presses++
+			continue
+		}
+		m.StepFrame()
+	}
+	facts := profile.DecodeOpening(m)
+	return fmt.Errorf("%w: opening battle exceeded %d frames; map=%#04x at (%d,%d) battle=%d script=%v",
+		errGSOpeningStalled, gsOpeningBattleFrameBudget, facts.NativeMapID, facts.X, facts.Y, facts.BattleMode, facts.ScriptActive)
+}
+
+// driveGSErrandScript owns the deterministic scripts in Mr. Pokemon's house,
+// Cherrygrove's first rival encounter and Elm's post-theft sequence. The only
+// non-A surface is the officer's rival naming screen: START moves the naming
+// cursor to END and A accepts the game's version-specific default name.
+func driveGSErrandScript(m *emu.Emu, profile *gsprofile.Profile) error {
+	if m == nil || profile == nil {
+		return fmt.Errorf("%w: missing emulator/profile for errand script", errGSOpeningUnexpectedState)
+	}
+	start := m.FrameCount()
+	presses := 0
+	for m.FrameCount()-start < gsOpeningScriptFrameBudget {
+		facts := profile.DecodeOpening(m)
+		if facts.InBattle {
+			if err := driveGSOpeningBattle(m, profile); err != nil {
+				return err
+			}
+			continue
+		}
+		if facts.Controllable {
+			return nil
+		}
+		if !gsErrandScriptMap(facts.NativeMapID) {
+			return fmt.Errorf("%w: errand script active on unowned map %#04x at (%d,%d)",
+				errGSOpeningUnexpectedState, facts.NativeMapID, facts.X, facts.Y)
+		}
+		if facts.RivalNamePrompt {
+			if presses+2 > gsErrandMaxScriptPresses {
+				return fmt.Errorf("%w: exceeded %d errand inputs at rival naming screen",
+					errGSOpeningStalled, gsErrandMaxScriptPresses)
+			}
+			m.Tap(emu.Start, 3, 7)
+			m.Tap(emu.A, 3, 7)
+			presses += 2
+			continue
+		}
+		if facts.ScriptActive && facts.MovementIdle {
+			if presses >= gsErrandMaxScriptPresses {
+				return fmt.Errorf("%w: exceeded %d owned errand A presses on map %#04x",
+					errGSOpeningStalled, gsErrandMaxScriptPresses, facts.NativeMapID)
+			}
+			m.Tap(emu.A, 3, 7)
+			presses++
+			continue
+		}
+		m.StepFrame()
+	}
+	facts := profile.DecodeOpening(m)
+	return fmt.Errorf("%w: errand script exceeded %d frames on map %#04x at (%d,%d)",
+		errGSOpeningStalled, gsOpeningScriptFrameBudget, facts.NativeMapID, facts.X, facts.Y)
+}
+
+func gsErrandGoTo(m *emu.Emu, romData []byte, profile *gsprofile.Profile, dest skill.NativeDestination) error {
+	for attempt := 0; attempt < gsErrandRouteAttempts; attempt++ {
+		err := skill.GoToNative(m, romData, dest)
+		if err == nil {
+			return nil
+		}
+		switch {
+		case errors.Is(err, skill.ErrBattle):
+			if battleErr := driveGSOpeningBattle(m, profile); battleErr != nil {
+				return fmt.Errorf("gen2 opening errand: settle route battle: %w", battleErr)
+			}
+		case errors.Is(err, skill.ErrDialogueInterrupted):
+			facts := profile.DecodeOpening(m)
+			if !gsErrandScriptMap(facts.NativeMapID) {
+				return fmt.Errorf("%w: route interrupted by unowned script on map %#04x at (%d,%d)",
+					errGSOpeningUnexpectedState, facts.NativeMapID, facts.X, facts.Y)
+			}
+			if scriptErr := driveGSErrandScript(m, profile); scriptErr != nil {
+				return fmt.Errorf("gen2 opening errand: settle route script: %w", scriptErr)
+			}
+		default:
+			return err
+		}
+	}
+	return fmt.Errorf("%w: errand route did not settle after %d interruptions", errGSOpeningStalled, gsErrandRouteAttempts)
+}
+
+func settleCompletedGSErrand(m *emu.Emu, profile *gsprofile.Profile) error {
+	facts := profile.DecodeOpening(m)
+	if !facts.GaveMysteryEggToElm {
+		return fmt.Errorf("%w: Mystery Egg return flag is not set", errGSOpeningUnexpectedState)
+	}
+	if facts.Controllable {
+		return nil
+	}
+	if !gsErrandScriptMap(facts.NativeMapID) {
+		return fmt.Errorf("%w: completed errand is unstable on map %#04x", errGSOpeningUnexpectedState, facts.NativeMapID)
+	}
+	if err := driveGSErrandScript(m, profile); err != nil {
+		return err
+	}
+	facts = profile.DecodeOpening(m)
+	if !facts.GaveMysteryEggToElm || !facts.Controllable {
+		return fmt.Errorf("%w: Mystery Egg return did not settle; flag=%v controllable=%v",
+			errGSOpeningUnexpectedState, facts.GaveMysteryEggToElm, facts.Controllable)
+	}
+	return nil
+}
+
+// executeGSPostStarterErrand resumes the mandatory Elm -> Mr. Pokemon -> Oak
+// -> Cherrygrove rival -> officer -> Elm loop from any durable intermediate
+// state. Completion is the cartridge's EVENT_GAVE_MYSTERY_EGG_TO_ELM bit.
+func executeGSPostStarterErrand(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 opening errand: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	facts := profile.DecodeOpening(m)
+	if facts.GaveMysteryEggToElm {
+		return settleCompletedGSErrand(m, profile)
+	}
+	if !facts.GotStarter || len(facts.Party) == 0 {
+		return fmt.Errorf("%w: post-starter errand requires Elm's starter handoff; party=%v event=%v",
+			errGSOpeningUnexpectedState, facts.Party, facts.GotStarter)
+	}
+
+	mrPokemon, err := gsOpeningMapID("MR_POKEMONS_HOUSE")
+	if err != nil {
+		return err
+	}
+	lab, err := gsOpeningMapID("ELMS_LAB")
+	if err != nil {
+		return err
+	}
+
+	if !facts.MrPokemonVisitComplete {
+		if err := gsErrandGoTo(m, romData, profile, skill.NativeMapDestination(mrPokemon)); err != nil {
+			return fmt.Errorf("gen2 opening errand: reach Mr. Pokemon: %w", err)
+		}
+		facts = profile.DecodeOpening(m)
+		if !facts.Controllable {
+			if err := driveGSErrandScript(m, profile); err != nil {
+				return fmt.Errorf("gen2 opening errand: finish Mr. Pokemon visit: %w", err)
+			}
+			facts = profile.DecodeOpening(m)
+		}
+		if !facts.MrPokemonVisitComplete || !facts.GotMysteryEgg || !facts.HasPokedex {
+			return fmt.Errorf("%w: Mr. Pokemon visit ended without egg/dex completion; egg=%v dex=%v scene=%d",
+				errGSOpeningUnexpectedState, facts.GotMysteryEgg, facts.HasPokedex, facts.MrPokemonsHouseScene)
+		}
+	}
+
+	// Returning through Cherrygrove owns the mandatory can-lose rival battle.
+	// Routing onward to the lab naturally crosses its coordinate trigger.
+	if !facts.CherrygroveRivalResolved {
+		if err := gsErrandGoTo(m, romData, profile, skill.NativeMapDestination(lab)); err != nil {
+			return fmt.Errorf("gen2 opening errand: return through Cherrygrove: %w", err)
+		}
+		facts = profile.DecodeOpening(m)
+		if !facts.CherrygroveRivalResolved {
+			return fmt.Errorf("%w: reached Elm's Lab without resolving Cherrygrove rival; scene=%d",
+				errGSOpeningUnexpectedState, facts.CherrygroveCityScene)
+		}
+	}
+
+	// The officer trigger is at lab y=5; Elm stands at (5,2). Routing to (5,3)
+	// deliberately crosses the trigger, then resumes after the officer leaves.
+	if !facts.RivalNamed {
+		if err := gsErrandGoTo(m, romData, profile, skill.ExactNativeDestination(lab, 5, 3)); err != nil {
+			return fmt.Errorf("gen2 opening errand: resolve officer and rival name: %w", err)
+		}
+		facts = profile.DecodeOpening(m)
+		if !facts.RivalNamed {
+			return fmt.Errorf("%w: officer sequence ended without durable rival-name boundary; lab scene=%d rival=%q",
+				errGSOpeningUnexpectedState, facts.ElmsLabScene, facts.RivalName)
+		}
+	}
+
+	if err := gsErrandGoTo(m, romData, profile, skill.ExactNativeDestination(lab, 5, 3)); err != nil {
+		return fmt.Errorf("gen2 opening errand: approach Elm: %w", err)
+	}
+	if err := skill.Face(m, 5, 2); err != nil {
+		return fmt.Errorf("gen2 opening errand: face Elm: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSErrandScript(m, profile); err != nil {
+		return fmt.Errorf("gen2 opening errand: hand Mystery Egg to Elm: %w", err)
+	}
+	return settleCompletedGSErrand(m, profile)
 }
