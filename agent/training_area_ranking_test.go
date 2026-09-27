@@ -82,7 +82,7 @@ func TestBestKnownTrainingPlaceUsesDynamicSelectedAssessment(t *testing.T) {
 	current := LocationID("current")
 	legacyHigh := LocationID("legacy-high")
 	exactBest := LocationID("exact-best")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		current:    {legacyHigh, exactBest},
 		legacyHigh: {current},
 		exactBest:  {current},

@@ -91,7 +91,7 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 	}
 	fieldLocation := LocationID("test/route")
 	centerLocation := redLocationID(redprofile.GameID, center.Map)
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		fieldLocation:  {centerLocation},
 		centerLocation: {fieldLocation},
 	}})

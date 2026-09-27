@@ -52,7 +52,7 @@ func TestKnowledgeWritesCanonicalObjectiveIdentity(t *testing.T) {
 	}
 }
 
-func TestLoadCheckpointMemoryMigratesV4PlanAndKnowledge(t *testing.T) {
+func TestLoadCheckpointMemoryDropsV4SentencePlanButKeepsKnowledge(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "round-1.state")
 	if err := os.WriteFile(statePath, []byte("state"), 0o644); err != nil {
@@ -81,8 +81,8 @@ func TestLoadCheckpointMemoryMigratesV4PlanAndKnowledge(t *testing.T) {
 	}
 
 	got := LoadCheckpointMemory(statePath, nil, nil)
-	if got.Plan.Goal != "old plan" || len(got.Plan.Steps) != 1 || len(got.Plan.StepKeys) != 0 {
-		t.Fatalf("migrated legacy plan = %+v", got.Plan)
+	if got.Plan.Goal != "" || len(got.Plan.Steps) != 0 || len(got.Plan.StepKeys) != 0 {
+		t.Fatalf("sentence-only legacy plan survived migration: %+v", got.Plan)
 	}
 	if got.Knowledge.Completed["go to route 1"] != 2 {
 		t.Fatalf("legacy completion did not survive migration: %+v", got.Knowledge.Completed)

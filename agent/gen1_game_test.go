@@ -16,5 +16,6 @@ const testGameID game.GameID = redprofile.GameID
 // so the resulting Knowledge carries the same semantic LocationIDs the catalog
 // offers, rather than the raw legacy fallback ids no catalog matches.
 func testKnowledge(adjacency map[uint8][]uint8) *Knowledge {
-	return NewKnowledge(knowledgeTopologyFor(testGameID, adjacency))
+	topology := knowledgeTopologyFor(testGameID, adjacency)
+	return NewKnowledge(&topology)
 }

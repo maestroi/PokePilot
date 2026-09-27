@@ -23,7 +23,7 @@ func TestFuchsiaUsesSemanticProgressionObjectiveAndItemVocabulary(t *testing.T) 
 }
 
 func TestOfferFuchsiaProgressionUntilSemanticPostcondition(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{})
+	known := NewKnowledge(nil)
 	planner := &redObjectiveAdapter{}
 	maps := []uint8{0x95, 0x04, 0x8D, 0x17, 0x18, 0x19, 0x1A, 0xB8, 0x07, 0x9A, 0x9B, 0x9C, 0x9D, 0xD9, 0xDA, 0xDB, 0xDC, 0xDE}
 

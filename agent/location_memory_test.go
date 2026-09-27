@@ -11,7 +11,7 @@ import (
 func TestKnowledgeTopologySupportsNonByteSemanticLocations(t *testing.T) {
 	here := LocationID("johto/bank-03/goldenrod-city")
 	next := LocationID("johto/bank-03/goldenrod-pokemon-center")
-	known := NewKnowledge(KnowledgeTopology{
+	known := NewKnowledge(&KnowledgeTopology{
 		Adjacency: map[LocationID][]LocationID{
 			here: {next},
 		},
@@ -35,7 +35,7 @@ func TestMemoryV6SerializationIsDeterministic(t *testing.T) {
 		mapA: {mapB},
 	}}
 	build := func(reverse bool) *Knowledge {
-		k := NewKnowledge(topology)
+		k := NewKnowledge(&topology)
 		locations := []LocationID{mapA, mapB}
 		places := []string{"beta place", "alpha place"}
 		if reverse {
@@ -92,7 +92,7 @@ func TestMemoryMigratesV5NativeGeographyToSemanticLocations(t *testing.T) {
 		},
 	}
 	var log bytes.Buffer
-	got := LoadCheckpointMemory(statePath, topology, &log)
+	got := LoadCheckpointMemory(statePath, &topology, &log)
 
 	if !got.Knowledge.Visited[pallet] || !got.Knowledge.Visited[lab] {
 		t.Fatalf("visited = %v; want migrated semantic Pallet and Oak's Lab", got.Knowledge.Visited)

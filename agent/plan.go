@@ -33,10 +33,10 @@ var ErrPlanStepUnresolved = errors.New("agent: strategist: plan step does not re
 //
 // Steps remain the human-readable sentences the strategist emitted for
 // prompt/telemetry compatibility. StepKeys is the durable semantic identity
-// captured when a fresh plan is validated. New checkpoints resolve by
-// StepKeys; legacy plans without StepKeys retain the historical
-// sentence-resolution fallback. Boundary is additive checkpoint metadata, so
-// older checkpoints decode with the conservative false value.
+// captured when a fresh plan is validated and is the only executable identity
+// accepted from checkpoint state. Sentence-only legacy plans are discarded by
+// checkpoint migration. Boundary is additive metadata; older keyed checkpoints
+// decode with the conservative false value.
 type Plan struct {
 	Goal        string         `json:"goal,omitempty"`
 	Steps       []string       `json:"steps,omitempty"`
@@ -56,9 +56,8 @@ func (p Plan) clone() Plan {
 }
 
 // validateStoredPlan checks only the durable shape. A resumed step may be
-// stale by design; Run resolves it against the freshly rebuilt menu and skips
-// it rather than treating an old checkpoint as corrupt. StepKeys may be absent
-// only for a migrated legacy checkpoint.
+// stale by design; Run resolves its ObjectiveKey against the freshly rebuilt
+// menu and skips it rather than treating an old checkpoint as corrupt.
 func validateStoredPlan(p Plan) error {
 	if len(p.Goal) > PlanGoalCap {
 		return fmt.Errorf("plan goal is %d bytes, over cap %d", len(p.Goal), PlanGoalCap)
@@ -69,7 +68,7 @@ func validateStoredPlan(p Plan) error {
 	if p.Step < 0 || p.Step > len(p.Steps) {
 		return fmt.Errorf("plan step %d is outside 0..%d", p.Step, len(p.Steps))
 	}
-	if len(p.StepKeys) != 0 && len(p.StepKeys) != len(p.Steps) {
+	if len(p.StepKeys) != len(p.Steps) {
 		return fmt.Errorf("plan has %d display steps but %d semantic step keys", len(p.Steps), len(p.StepKeys))
 	}
 	for i, step := range p.Steps {
@@ -79,13 +78,11 @@ func validateStoredPlan(p Plan) error {
 		if len(step) > PlanStepCap {
 			return fmt.Errorf("plan step %d is %d bytes, over cap %d", i, len(step), PlanStepCap)
 		}
-		if len(p.StepKeys) != 0 {
-			if err := p.StepKeys[i].Objective().Validate(); err != nil {
-				return fmt.Errorf("plan step %d has invalid semantic key: %w", i, err)
-			}
-			if len(p.StepKeys[i].Intent) > IntentCap {
-				return fmt.Errorf("plan step %d intent is %d bytes, over cap %d", i, len(p.StepKeys[i].Intent), IntentCap)
-			}
+		if err := p.StepKeys[i].Objective().Validate(); err != nil {
+			return fmt.Errorf("plan step %d has invalid semantic key: %w", i, err)
+		}
+		if len(p.StepKeys[i].Intent) > IntentCap {
+			return fmt.Errorf("plan step %d intent is %d bytes, over cap %d", i, len(p.StepKeys[i].Intent), IntentCap)
 		}
 	}
 	return nil
@@ -211,23 +208,16 @@ func strategizeWithRetries(log io.Writer, round int, p StrategicPlanner, obs Obs
 	return plan, err, retries
 }
 
-// resolvePlanStep advances past stale steps and returns the first objective
-// that still resolves against the current menu. New plans resolve by semantic
-// key, so changing presentation wording cannot invalidate a checkpoint. Plans
-// loaded from v4 checkpoint memory have no StepKeys and use the old sentence
-// resolver until they are replaced by the next strategic plan.
+// resolvePlanStep advances past stale keyed steps and returns the first
+// objective that still resolves against the current menu. Presentation wording
+// is telemetry only; checkpoint execution never reparses Steps.
 func resolvePlanStep(plan *Plan, offered []Objective) (Objective, int, bool) {
-	if plan == nil {
+	if plan == nil || len(plan.StepKeys) != len(plan.Steps) {
 		return Objective{}, 0, false
 	}
 	skipped := 0
-	semantic := len(plan.StepKeys) == len(plan.Steps) && len(plan.StepKeys) != 0
 	for plan.Step < len(plan.Steps) {
-		if semantic {
-			if obj, ok := resolveObjectiveKey(offered, plan.StepKeys[plan.Step]); ok {
-				return obj, skipped, true
-			}
-		} else if obj, err := Chosen(offered, plan.Steps[plan.Step]); err == nil {
+		if obj, ok := resolveObjectiveKey(offered, plan.StepKeys[plan.Step]); ok {
 			return obj, skipped, true
 		}
 		plan.Step++

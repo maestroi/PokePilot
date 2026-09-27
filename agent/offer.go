@@ -35,22 +35,16 @@ type Knowledge struct {
 	nativeLocations map[uint8]LocationID
 }
 
-// NewKnowledge accepts semantic topology in production and the historical
-// map[uint8][]uint8 shape as a one-release compatibility shim for tests/tools.
-// Regardless of input, the Knowledge object itself contains semantic keys.
-func NewKnowledge(topology any) *Knowledge {
-	resolved := KnowledgeTopology{Adjacency: map[LocationID][]LocationID{}, NativeLocations: map[uint8]LocationID{}}
-	switch value := topology.(type) {
-	case nil:
-	case KnowledgeTopology:
-		resolved = normalizeKnowledgeTopology(value)
-	case map[LocationID][]LocationID:
-		resolved = normalizeKnowledgeTopology(KnowledgeTopology{Adjacency: value})
-	case map[uint8][]uint8:
-		resolved = legacyKnowledgeTopology(value)
-	default:
-		panic(fmt.Sprintf("agent: unsupported knowledge topology %T", topology))
+// NewKnowledge builds run-owned evidence from semantic topology. Native byte
+// graphs must be translated by a game adapter before they reach this boundary.
+// A nil topology is the explicit empty-topology case used when geography is not
+// relevant to the caller.
+func NewKnowledge(topology *KnowledgeTopology) *Knowledge {
+	resolved := KnowledgeTopology{}
+	if topology != nil {
+		resolved = *topology
 	}
+	resolved = normalizeKnowledgeTopology(resolved)
 	return &Knowledge{
 		Visited:         map[LocationID]bool{},
 		Places:          map[string]bool{},

@@ -74,7 +74,7 @@ func TestRecoveryFallsBackToRoutableCenter(t *testing.T) {
 			{Place: "checkpoint pokemon center", Location: "checkpoint-center", Center: true},
 		}},
 	}
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		"field":             {"near-center"},
 		"near-center":       {"field", "checkpoint-center"},
 		"checkpoint-center": {"near-center"},

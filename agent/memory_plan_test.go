@@ -13,12 +13,18 @@ func TestCheckpointMemoryRestoresPlanAdditively(t *testing.T) {
 	if err := os.WriteFile(statePath, []byte("state-not-read-here"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	k := NewKnowledge(map[uint8][]uint8{})
-	plan := Plan{Goal: "reach pewter", Steps: []string{"go to route 1", "go to viridian city"}, Step: 1, Round: 7}
+	k := NewKnowledge(nil)
+	plan := Plan{
+		Goal:     "reach pewter",
+		Steps:    []string{"go to route 1", "go to viridian city"},
+		StepKeys: []ObjectiveKey{{Kind: KindGoTo, Place: "route 1"}, {Kind: KindGoTo, Place: "viridian city"}},
+		Step:     1,
+		Round:    7,
+	}
 	if err := writeMemoryFile(statePath, k, "", 0, plan); err != nil {
 		t.Fatal(err)
 	}
-	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{}, nil)
+	got := LoadCheckpointMemory(statePath, nil, nil)
 	if got.Plan.Goal != plan.Goal || got.Plan.Step != 1 || len(got.Plan.Steps) != 2 {
 		t.Fatalf("restored plan = %+v, want %+v", got.Plan, plan)
 	}
@@ -41,7 +47,7 @@ func TestCheckpointMemoryVersionFourWithoutPlanLoadsEmptyPlan(t *testing.T) {
 	if err := os.WriteFile(knowledgePathForState(statePath), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := LoadCheckpointMemory(statePath, map[uint8][]uint8{}, nil)
+	got := LoadCheckpointMemory(statePath, nil, nil)
 	if got.Plan.Goal != "" || len(got.Plan.Steps) != 0 || got.Plan.Step != 0 {
 		t.Fatalf("legacy checkpoint restored non-empty plan: %+v", got.Plan)
 	}

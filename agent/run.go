@@ -53,7 +53,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	}
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
-	known := NewKnowledge(topology)
+	known := NewKnowledge(&topology)
 	coverage := newCoverageTracker()
 	intent, intentAge := "", 0
 	resumedPlan := Plan{}
@@ -68,7 +68,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 		if err := m.LoadState(stateBytes); err != nil {
 			return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: resume %s: LoadState: %w", budget.ResumeFrom, err)}
 		}
-		mem := LoadCheckpointMemory(budget.ResumeFrom, topology, budget.Log)
+		mem := LoadCheckpointMemory(budget.ResumeFrom, &topology, budget.Log)
 		known = mem.Knowledge
 		coverage = loadCoverageFile(budget.ResumeFrom, budget.Log)
 		intent, intentAge = mem.Intent, mem.IntentAge

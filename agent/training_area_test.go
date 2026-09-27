@@ -23,7 +23,7 @@ func TestRememberTrainingAreaLearnsObservedBand(t *testing.T) {
 			Place: "route 10", Location: location,
 		}),
 	}
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{location: nil}})
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{location: nil}})
 
 	noteObservation(known, obs)
 
@@ -40,7 +40,7 @@ func TestBestKnownTrainingPlaceRejectsUnsafeHighLevelArea(t *testing.T) {
 	current := LocationID("kanto/route/route-1")
 	safe := LocationID("kanto/route/route-10")
 	danger := LocationID("kanto/dungeon/victory-road")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		current: {safe, danger},
 		safe:    {current},
 		danger:  {current},
@@ -75,7 +75,7 @@ func TestBestKnownTrainingPlaceCanUseHighLevelAreaWithCarry(t *testing.T) {
 	current := LocationID("kanto/route/route-1")
 	mid := LocationID("kanto/route/route-10")
 	high := LocationID("kanto/dungeon/victory-road")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		current: {mid, high},
 		mid:     {current},
 		high:    {current},
@@ -107,7 +107,7 @@ func TestTravelProviderPreservesBestTrainingAreaThroughJourneyCap(t *testing.T) 
 	training := LocationID("region/zz-training")
 	adjacency := map[LocationID][]LocationID{current: {}}
 	destinations := make([]CatalogDestination, 0, journeyPlaceLimit+3)
-	known := NewKnowledge(KnowledgeTopology{Adjacency: adjacency})
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: adjacency})
 	for i := 0; i < journeyPlaceLimit+2; i++ {
 		name := PlaceID("area " + string(rune('a'+i)))
 		location := LocationID("region/" + string(rune('a'+i)))
@@ -149,7 +149,7 @@ func TestTravelProviderPreservesBestTrainingAreaThroughJourneyCap(t *testing.T) 
 func TestCombatPreparationTravelsToBestKnownTrainingArea(t *testing.T) {
 	current := LocationID("kanto/route/route-1")
 	training := LocationID("kanto/route/route-10")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		current:  {training},
 		training: {current},
 	}})
@@ -217,7 +217,7 @@ func TestTrainingAreaKnowledgePersistsInMemory(t *testing.T) {
 func TestCompletedJourneyWithoutReachableGrassForgetsTrainingArea(t *testing.T) {
 	training := LocationID("kanto/route/route-10")
 	other := LocationID("kanto/route/route-9")
-	known := NewKnowledge(KnowledgeTopology{Adjacency: map[LocationID][]LocationID{training: {other}, other: {training}}})
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{training: {other}, other: {training}}})
 	known.TrainingAreas[training] = TrainingAreaKnowledge{Location: training, Place: "route 10", MinLevel: 11, MaxLevel: 17}
 	known.TrainingAreas[other] = TrainingAreaKnowledge{Location: other, Place: "route 9", MinLevel: 11, MaxLevel: 17}
 	journey := Objective{Kind: KindGoTo, Place: "route 10", Flee: true}

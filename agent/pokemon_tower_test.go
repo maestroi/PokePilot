@@ -25,7 +25,7 @@ func TestPokemonTowerUsesSemanticProgressionObjective(t *testing.T) {
 }
 
 func TestOfferPokemonTowerProgressionRequiresScopeAndStopsAfterFlute(t *testing.T) {
-	known := NewKnowledge(map[uint8][]uint8{})
+	known := NewKnowledge(nil)
 	planner := &redObjectiveAdapter{}
 	availableMaps := []uint8{
 		0x06,

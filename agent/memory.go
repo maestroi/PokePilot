@@ -14,9 +14,10 @@ import (
 )
 
 // Version 6 replaces native uint8 map identity with semantic LocationID for
-// durable visited/talked evidence. v5 and v4 remain explicitly migratable: v5
-// already carries ObjectiveKey records, while v4 may still use presentation
-// strings for objective identity.
+// durable visited/talked evidence. v5 and v4 remain explicitly migratable for
+// knowledge and objective history. v5 already carries ObjectiveKey plan steps;
+// v4 sentence-only strategic legs are discarded on load and replanned from the
+// migrated knowledge instead of reviving presentation text as executable state.
 const (
 	memoryVersion             = 6
 	legacyObjectiveKeyVersion = 5
@@ -261,7 +262,15 @@ func ValidateCheckpointProfile(statePath string, wantGame game.GameID, wantRevis
 	return nil
 }
 
-func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) memoryFile {
+func migrateLegacyPlan(plan Plan) (Plan, bool) {
+	if len(plan.Steps) != 0 && len(plan.StepKeys) != len(plan.Steps) {
+		return Plan{}, true
+	}
+	return plan.clone(), false
+}
+
+func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) (memoryFile, bool) {
+	plan, droppedPlan := migrateLegacyPlan(legacy.Plan)
 	mem := memoryFile{
 		Version:      memoryVersion,
 		Places:       append([]string(nil), legacy.Places...),
@@ -270,7 +279,7 @@ func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) memoryFile {
 		Failures:     append([]storedFailure(nil), legacy.Failures...),
 		Intent:       legacy.Intent,
 		IntentAge:    legacy.IntentAge,
-		Plan:         legacy.Plan.clone(),
+		Plan:         plan,
 	}
 	for _, native := range legacy.Visited {
 		mem.Visited = append(mem.Visited, k.locationForNative(native))
@@ -278,10 +287,10 @@ func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) memoryFile {
 	for _, talked := range legacy.Talked {
 		mem.Talked = append(mem.Talked, talkedKey{Location: k.locationForNative(talked.Map), X: talked.X, Y: talked.Y})
 	}
-	return mem
+	return mem, droppedPlan
 }
 
-func LoadCheckpointMemory(statePath string, topology any, log io.Writer) ResumedMemory {
+func LoadCheckpointMemory(statePath string, topology *KnowledgeTopology, log io.Writer) ResumedMemory {
 	empty := ResumedMemory{Knowledge: NewKnowledge(topology)}
 	base := filepath.Base(statePath)
 	if !strings.HasSuffix(base, ".state") {
@@ -328,8 +337,12 @@ func LoadCheckpointMemory(statePath string, topology any, log io.Writer) Resumed
 			logMemory(log, "knowledge file %s is version %d, expected legacy v%d; starting with empty knowledge", path, legacy.Version, version)
 			return empty
 		}
-		mem = migrateLegacyMemory(legacy, k)
+		var droppedPlan bool
+		mem, droppedPlan = migrateLegacyMemory(legacy, k)
 		logMemory(log, "migrating v%d checkpoint geography to semantic locations beside %s", version, statePath)
+		if droppedPlan {
+			logMemory(log, "discarding sentence-only v%d strategic plan beside %s; migrated knowledge and intent remain active", version, statePath)
+		}
 	}
 
 	if len(mem.Intent) > IntentCap {
@@ -337,8 +350,8 @@ func LoadCheckpointMemory(statePath string, topology any, log io.Writer) Resumed
 		return empty
 	}
 	if err := validateStoredPlan(mem.Plan); err != nil {
-		logMemory(log, "knowledge file beside %s carries an invalid plan (%v); starting with empty knowledge", statePath, err)
-		return empty
+		logMemory(log, "knowledge file beside %s carries an invalid plan (%v); discarding the plan while retaining knowledge", statePath, err)
+		mem.Plan = Plan{}
 	}
 	k.restore(mem)
 	return ResumedMemory{Knowledge: k, Intent: mem.Intent, IntentAge: mem.IntentAge, Plan: mem.Plan.clone()}
