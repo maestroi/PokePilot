@@ -189,7 +189,6 @@ func TestHeartbeatCarriesPlayer(t *testing.T) {
 	}
 }
 
-
 func TestHeartbeatCarriesGameSpecificTelemetry(t *testing.T) {
 	want := Heartbeat{
 		RunID: "tetris-1",
