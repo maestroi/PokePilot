@@ -489,7 +489,7 @@ async function submit(): Promise<void> {
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Max frames</span>
           <input v-model.number="form.max_frames" type="number" min="0" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-          <span class="mt-1 block text-[11px] text-slate-600">0 = runner safety default.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris && form.goal === 'endless' ? '0 = uncapped; play continues until game over or cancellation.' : '0 = runner safety default.' }}</span>
         </label>
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">
