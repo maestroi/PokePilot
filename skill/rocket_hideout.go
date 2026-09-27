@@ -53,11 +53,11 @@ const (
 )
 
 var (
-	gameCornerStand     = Destination{Map: gameCornerMap, X: 15, Y: 16}
-	rocketB3FReturn     = Destination{Map: rocketHideoutB3FMap, X: 19, Y: 17}
-	rocketB4FEntry      = Destination{Map: rocketHideoutB4FMap, X: 19, Y: 11}
-	rocketBossApproach  = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 9}
-	giovanniStand       = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 4}
+	gameCornerStand    = Destination{Map: gameCornerMap, X: 15, Y: 16}
+	rocketB3FReturn    = Destination{Map: rocketHideoutB3FMap, X: 19, Y: 17}
+	rocketB4FEntry     = Destination{Map: rocketHideoutB4FMap, X: 19, Y: 11}
+	rocketBossApproach = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 9}
+	giovanniStand      = Destination{Map: rocketHideoutB4FMap, X: 25, Y: 4}
 )
 
 // RocketHideoutAvailable reports whether the Rocket Hideout story objective
