@@ -35,6 +35,7 @@ export function gameTitle(game: string | undefined): string {
   switch ((game || 'pokemon-red').toLowerCase()) {
     case 'pokemon-blue': return 'Pokémon Blue'
     case 'pokemon-yellow': return 'Pokémon Yellow'
+    case 'tetris': return 'Tetris'
     case 'pokemon-red':
     default: return 'Pokémon Red'
   }
@@ -128,10 +129,12 @@ export function formatFrame(frame: number | undefined): string {
 }
 
 export function howText(run: DashboardRun): string {
+  if (run.planner === 'policy') return 'deterministic policy'
   return run.planner === 'scripted' ? 'walk to a place' : 'play the game'
 }
 
 export function starterLabel(run: DashboardRun): string {
+  if (run.game === 'tetris') return '—'
   return run.starter || (run.game === 'pokemon-yellow' ? 'pikachu' : (run.planner === 'scripted' ? 'squirtle' : 'LLM picks'))
 }
 
@@ -162,7 +165,12 @@ export function decisionEngineLabel(run: Pick<DashboardRun, 'decision_engine'>):
   return `${name} · ${mode} · ${uses.length ? uses.join(' + ') : 'no features'}${confidence}`
 }
 
-export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'>): string {
+export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'> & Partial<Pick<DashboardRun, 'game' | 'game_state'>>): string {
+  if (run.game === 'tetris') {
+    const screen = String(run.game_state?.screen || 'starting')
+    const mode = String(run.game_state?.mode || '').replace('type-', 'Type ').toUpperCase()
+    return mode ? `${mode} · ${screen.replaceAll('-', ' ')}` : screen.replaceAll('-', ' ')
+  }
   const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
   return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`
 }
