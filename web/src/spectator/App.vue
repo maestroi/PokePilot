@@ -1220,6 +1220,74 @@ function activityTimeAgo(item: ActivityItem): string {
             </div>
           </section>
 
+          <section v-if="tetrisDecisionVisible" class="spectator-card rounded-2xl border p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">Placement model</div>
+                <h2 class="mt-1 truncate text-sm font-black text-white">{{ tetrisDecisionIdentity }}</h2>
+                <p class="mt-0.5 text-[10px] text-slate-600">
+                  {{ formatGameToken(tetrisDecisionBackend || 'jev') }} · {{ formatGameToken(tetrisDecisionMode) }}
+                </p>
+              </div>
+              <span class="rounded-full bg-cyan-300/10 px-2 py-1 font-mono text-[9px] text-cyan-100 ring-1 ring-cyan-300/20">
+                {{ tetrisDecisionCalls }} calls
+              </span>
+            </div>
+
+            <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Latest confidence</span>
+                <strong>{{ tetrisDecisionCalls ? percentLabel(tetrisDecisionConfidence) : '—' }}</strong>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Policy agreement</span>
+                <strong>{{ percentLabel(tetrisDecisionAgreement) }}</strong>
+                <small v-if="tetrisDecisionReference.judged" class="mt-0.5 block font-mono text-[8px] text-slate-600">
+                  {{ tetrisDecisionReference.agreed }}/{{ tetrisDecisionReference.judged }}
+                </small>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Fallback rate</span>
+                <strong>{{ percentLabel(tetrisDecisionFallbackRate) }}</strong>
+              </div>
+              <div class="tetris-state-tile rounded-xl border p-3">
+                <span>Avg latency</span>
+                <strong>{{ decisionLatencyLabel(selectedRun.stats?.decision_avg_seconds) }}</strong>
+              </div>
+            </div>
+
+            <div class="mt-3 rounded-xl bg-black/15 p-3 ring-1 ring-white/8">
+              <div class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Latest Jev choice</div>
+              <div class="mt-1 text-[11px] font-semibold text-slate-200">{{ tetrisLatestChoice }}</div>
+              <div v-if="selectedRun.stats?.decision_reference" class="mt-1 text-[9px] text-slate-600">
+                scorer: {{ selectedRun.stats.decision_reference }}
+                <span v-if="selectedRun.stats.decision_reference_agreed !== undefined">
+                  · {{ selectedRun.stats.decision_reference_agreed ? 'match' : 'different' }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="tetrisDecisionRecords.length" class="mt-3">
+              <div class="mb-1 text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Recent Jev choices</div>
+              <div class="space-y-1">
+                <div
+                  v-for="(decision, index) in tetrisDecisionRecords.slice(0, 4)"
+                  :key="`${decision.choice || decision.choice_label}-${index}`"
+                  class="flex items-center justify-between gap-2 rounded-lg bg-black/10 px-2.5 py-1.5 ring-1 ring-white/6"
+                >
+                  <span class="min-w-0 truncate text-[10px] text-slate-400">{{ decision.choice_label || decision.choice || 'fallback' }}</span>
+                  <span class="shrink-0 font-mono text-[9px]" :class="decision.fallback ? 'text-amber-300' : 'text-cyan-200'">
+                    {{ decision.fallback ? 'fallback' : percentLabel(Number(decision.confidence || 0)) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p class="mt-3 text-[9px] leading-4 text-slate-600">
+              Policy agreement compares Jev with PokePilot's deterministic best-placement scorer. It is a reference metric, not ground-truth accuracy.
+            </p>
+          </section>
+
           <section v-if="isTetrisSelected" class="milestone-card tetris-goal-card overflow-hidden rounded-2xl border p-4">
             <div class="tetris-goal-visual mb-4 rounded-xl border" aria-hidden="true">
               <span class="tetris-goal-piece" />
