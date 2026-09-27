@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/artifactstore"
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 )
 
 // TestROMLibraryFetchesMissingGameFromStore proves a worker with no local
@@ -56,5 +59,59 @@ func TestROMLibraryFetchesMissingGameFromStore(t *testing.T) {
 	}
 	if _, err := lib.fetch("pokemon-yellow"); err == nil {
 		t.Fatal("fetch of absent object succeeded")
+	}
+}
+
+// TestROMLibraryCachedBootStateSwitchesCartridge reproduces #2000: a worker
+// can cache Blue's neutral boot state, run Red, then lease Blue again. The
+// cached state is only RAM/CPU state; the cartridge itself still has to be
+// switched back to Blue before that state (or a Blue checkpoint) is restored.
+func TestROMLibraryCachedBootStateSwitchesCartridge(t *testing.T) {
+	redPath := os.Getenv("POKEMON_RED_ROM")
+	if redPath == "" {
+		redPath = "../../roms/pokemon_red.gb"
+	}
+	bluePath := os.Getenv("POKEMON_BLUE_ROM")
+	if bluePath == "" {
+		bluePath = "../../roms/pokemon_blue.gb"
+	}
+	if _, err := os.Stat(redPath); err != nil {
+		t.Skipf("Red ROM unavailable: %v", err)
+	}
+	if _, err := os.Stat(bluePath); err != nil {
+		t.Skipf("Blue ROM unavailable: %v", err)
+	}
+
+	m, err := emu.Open(redPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close() })
+
+	cached := []byte("cached-blue-boot-state")
+	lib := &romLibrary{
+		paths: map[game.GameID]string{
+			"pokemon-red":  redPath,
+			"pokemon-blue": bluePath,
+		},
+		primary: "pokemon-red",
+		bootStates: map[game.GameID][]byte{
+			"pokemon-blue": cached,
+		},
+	}
+
+	got, err := lib.bootStateFor(m, "pokemon-blue")
+	if err != nil {
+		t.Fatalf("bootStateFor blue: %v", err)
+	}
+	if !bytes.Equal(got, cached) {
+		t.Fatalf("bootStateFor returned %q, want cached state %q", got, cached)
+	}
+	active, _, err := profiles.DetectCartridge(m.ROM())
+	if err != nil {
+		t.Fatalf("detect active cartridge: %v", err)
+	}
+	if active.ID() != "pokemon-blue" {
+		t.Fatalf("active cartridge = %q, want pokemon-blue", active.ID())
 	}
 }

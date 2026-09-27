@@ -196,8 +196,11 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 			return nil, fmt.Errorf("no supported ROM mounted for this worker; checked %s", l.checked())
 		}
 	}
-	if state := l.bootStates[id]; state != nil {
-		return state, nil
+	cachedState := l.bootStates[id]
+	if cachedState != nil {
+		if active, _, err := profiles.DetectCartridge(m.ROM()); err == nil && active.ID() == id {
+			return cachedState, nil
+		}
 	}
 	path, ok := l.paths[id]
 	if !ok {
@@ -221,7 +224,11 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 	if err := m.LoadROMBytes(rom, string(id)); err != nil {
 		return nil, fmt.Errorf("load %s: %w", id, err)
 	}
-	m.Pace(0) // boot unthrottled; runOne sets the run's pace afterwards
+	m.Pace(0) // boot/restore unthrottled; runOne sets the run's pace afterwards
+	if cachedState != nil {
+		log.Printf("farm: switched cartridge to %s from %s; reusing cached boot state", id, path)
+		return cachedState, nil
+	}
 	cartridge, _, err := profiles.DetectCartridge(rom)
 	if err != nil {
 		return nil, fmt.Errorf("detect loaded %s: %w", id, err)
