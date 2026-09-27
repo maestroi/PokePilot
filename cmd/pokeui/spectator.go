@@ -57,6 +57,7 @@ type spectatorSummary struct {
 type spectatorRun struct {
 	RunID          string           `json:"run_id"`
 	Status         string           `json:"status"`
+	Game           string           `json:"game,omitempty"`
 	Starter        string           `json:"starter,omitempty"`
 	Dest           string           `json:"dest,omitempty"`
 	Goal           string           `json:"goal,omitempty"`
@@ -73,6 +74,7 @@ type spectatorRun struct {
 	StopSoFar      string           `json:"stop_so_far,omitempty"`
 	Stats          *spectatorStats  `json:"stats,omitempty"`
 	Player         *farm.Player     `json:"player,omitempty"`
+	GameState      map[string]any   `json:"game_state,omitempty"`
 	Sprites        []farm.MapSprite `json:"sprites,omitempty"`
 	Trail          [][2]uint8       `json:"trail,omitempty"`
 	Attempts       int              `json:"attempts,omitempty"`
