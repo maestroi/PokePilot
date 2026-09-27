@@ -68,7 +68,6 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 			adjacency[from] = append(adjacency[from], edge.To)
 		}
 	}
-	memory := agent.LoadCheckpointMemory(mat.StatePath, adjacency, nil)
 	obs, err := readReproObservation("checkpoint", func() (agent.Observation, error) {
 		return agent.ObserveChecked(m, m.ROM())
 	})
@@ -78,6 +77,8 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
 		return verdict, err
 	}
+	topology := agent.KnowledgeTopologyFor(obs.GameID, adjacency)
+	memory := agent.LoadCheckpointMemory(mat.StatePath, &topology, nil)
 	offered := agent.Offer(obs, memory.Knowledge)
 	obj, ok, matchErr := underlyingObjectiveFromDiagnostic(mat.Manifest.Diagnostic, offered)
 	if matchErr != nil {
