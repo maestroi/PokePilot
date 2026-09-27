@@ -33,11 +33,11 @@ func (f OpeningFacts) HasSpecies(species game.SpeciesID) bool {
 // DecodeOpening projects only the state needed to resume the known New Bark
 // opening transaction. It intentionally does not infer story completion from
 // coordinates: receiving the selected species is the durable postcondition.
-func (*Profile) DecodeOpening(reader game.MemoryReader) OpeningFacts {
+func (p *Profile) DecodeOpening(reader game.MemoryReader) OpeningFacts {
 	if reader == nil {
 		return OpeningFacts{}
 	}
-	ow := (&Profile{}).DecodeOverworld(reader)
+	ow := p.DecodeOverworld(reader)
 	count := int(reader.Peek8(sym.PartyCount))
 	if count < 0 {
 		count = 0
