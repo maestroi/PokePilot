@@ -145,13 +145,42 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 			return nil, err
 		}
 		if decoded.Kind == "tetris" {
+			switch decoded.Mode {
+			case "unknown", "type-a", "type-b", "versus":
+			default:
+				decoded.Mode = "unknown"
+			}
+			switch decoded.Screen {
+			case "unknown", "intro", "title", "game-type-select", "music-select", "level-select", "height-select", "high-score", "starting", "playing", "versus-setup", "game-over", "ending":
+			default:
+				decoded.Screen = "unknown"
+			}
+			sanitizePiece := func(piece *publicTetrisPiece) {
+				if piece == nil {
+					return
+				}
+				switch piece.Piece {
+				case "L", "J", "I", "O", "S", "Z", "T":
+				default:
+					piece.Piece = ""
+				}
+				if piece.Rotation < 0 || piece.Rotation > 3 {
+					piece.Rotation = 0
+				}
+			}
+			sanitizePiece(decoded.Active)
+			sanitizePiece(decoded.Next)
 			if len(decoded.Board) > 18 {
 				decoded.Board = decoded.Board[:18]
 			}
 			for i, row := range decoded.Board {
-				if len(row) > 10 {
-					decoded.Board[i] = row[:10]
+				cells := []byte("..........")
+				for x := 0; x < len(cells) && x < len(row); x++ {
+					if row[x] == '#' {
+						cells[x] = '#'
+					}
 				}
+				decoded.Board[i] = string(cells)
 			}
 			gameState = &decoded
 		}
