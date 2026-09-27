@@ -113,7 +113,6 @@ func TestYellowOpeningReachedRequiresStableStarterAndRivalFacts(t *testing.T) {
 	}
 }
 
-
 func TestYellowOpeningOakCaptureRemainsScriptOwned(t *testing.T) {
 	facts := yellowprofile.OpeningFacts{
 		Map:          yellowprofile.PalletTownMap,
