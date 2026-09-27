@@ -8,7 +8,7 @@ func TestEdgeEntrySharesComponentWithDistinguishesFreshRegion(t *testing.T) {
 	fresh := Edge{Kind: EdgeWarp, From: 1, To: target, WarpX: 2, WarpY: 1}
 	g := &Graph{
 		componentAware: true,
-		comps: map[uint8][][]int{
+		comps: map[MapID][][]int{
 			target: {{1, 1, 2, 2}},
 		},
 		entryComps: map[Edge][]int{
