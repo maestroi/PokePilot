@@ -228,6 +228,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 
 	next := b
 	legsSpent := 0
+	dialogueRecoveries := 0
 	huntStartFrame := m.FrameCount()
 	for res.Encounters < catchHuntCap && legsSpent < catchGrassLegs {
 		// The frame budget is intentionally cooperative: check only here, where
@@ -242,13 +243,32 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		// One leg: walk to the other grass cell. Stepping onto a fresh grass
 		// cell re-rolls the encounter, whether or not one fires on this leg.
 		d := Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}
-		if err := GoTo(m, romData, d); err != nil && !errors.Is(err, ErrBattle) {
+		moveErr := GoTo(m, romData, d)
+		if errors.Is(moveErr, ErrDialogueInterrupted) {
+			if dialogueRecoveries >= maxDialogueRecoveries {
+				return res, fmt.Errorf("skill: Catch: still interrupted by dialogue after %d recoveries: %w", maxDialogueRecoveries, moveErr)
+			}
+			dialogueRecoveries++
+			rec := RecoverDialogue(m, dialogueRecoveryBudget)
+			battleStarted, recErr := catchDialogueResolution(rec)
+			if recErr != nil {
+				return res, fmt.Errorf("skill: Catch: recover hunt dialogue: %w", recErr)
+			}
+			if !battleStarted {
+				// The box closed without starting a battle. Re-plan the same
+				// bounded grass leg from live state; the dialogue budget prevents
+				// a repeated non-progressing box from spinning forever.
+				continue
+			}
+			moveErr = ErrBattleInterrupted
+		}
+		if moveErr != nil && !errors.Is(moveErr, ErrBattle) && !errors.Is(moveErr, ErrBattleInterrupted) {
 			// A sprite may have wandered onto a cell that was free when the
 			// pair was chosen. Re-pick and spend the leg rather than ending
 			// the hunt; the leg budget still bounds the retries.
 			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
 			if !ok {
-				return res, fmt.Errorf("skill: Catch: hunt leg %d: %w", legsSpent+1, err)
+				return res, fmt.Errorf("skill: Catch: hunt leg %d: %w", legsSpent+1, moveErr)
 			}
 			a, b, next = na, nb, nb
 			legsSpent++
@@ -261,10 +281,25 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		}
 		bs, ok := exec.battle.DecodeBattleState(m)
 		if !ok {
-			return res, fmt.Errorf("skill: Catch: hunt leg %d reported an encounter but no battle is in progress on map %#04x", legsSpent, overworld.DecodeOverworld(m).NativeMapID)
+			return res, fmt.Errorf("skill: Catch: hunt leg %d reported a battle but no battle is in progress on map %#04x", legsSpent, overworld.DecodeOverworld(m).NativeMapID)
 		}
-		res.Encounters++
 
+		// Trainer sightlines begin as dialogue interruptions. They are owned
+		// here so the catch loop can resume afterward, but they are not wild
+		// encounters and must never be treated as catchable even when the
+		// trainer happens to lead with the requested species.
+		if bs.Kind != game.BattleWild {
+			outcome, err := Battle(m, policy)
+			if err != nil {
+				return res, fmt.Errorf("skill: Catch: incidental trainer battle: %w", err)
+			}
+			if outcome == game.BattleLost {
+				return res, ErrCatchBlackout
+			}
+			continue
+		}
+
+		res.Encounters++
 		if !speciesIn(bs.EnemySpecies, want) {
 			outcome, err := Battle(m, policy)
 			if err != nil {
@@ -280,6 +315,21 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	}
 	return res, fmt.Errorf("%w: %d grass legs and %d encounters (map %#04x)",
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, overworld.DecodeOverworld(m).NativeMapID)
+}
+
+func catchDialogueResolution(rec DialogueRecoveryResult) (battleStarted bool, err error) {
+	switch rec.Stop {
+	case DialogueRecovered:
+		return false, nil
+	case DialogueUnexpectedMode:
+		return true, nil
+	case DialogueChoiceRequired, DialogueMenuOpen:
+		return false, &ErrDialogueChoice{Result: rec}
+	case DialogueBudgetExhausted:
+		return false, fmt.Errorf("text box did not clear within the recovery budget: %q", rec.Text)
+	default:
+		return false, fmt.Errorf("unknown dialogue recovery stop %d", rec.Stop)
+	}
 }
 
 // catchWanted throws balls at the wanted target in progress and reports the
