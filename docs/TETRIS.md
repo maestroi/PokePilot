@@ -57,6 +57,23 @@ The controller chooses the shorter rotation direction. Equal two-turn rotations 
 
 A blocked rotation or horizontal shift returns `control.ErrBlocked` immediately; the controller does not continue with a different placement. Starting during pause/lock/clear state returns `control.ErrNotReady`. A piece that never begins or finishes its lock transition returns `control.ErrTimeout`.
 
+## Placement policy
+
+`tetris/policy.Choose` enumerates placements that the Phase-3 controller can reach from the current semantic piece state, simulates the vertical landing and line clears, evaluates the resulting board, and returns a deterministic `control.Placement`.
+
+The simulator uses exact Rev-1 tetromino geometry transcribed from the game's 4×4 sprite matrices. The semantic piece anchor corresponds to matrix row/column 2, so policy geometry and controller coordinates use the same origin.
+
+Policy objectives are:
+
+- `auto`: Type A chooses score play, Type B chooses line completion, and versus chooses survival;
+- `survival`: strongly penalizes holes, stack height, roughness and wells;
+- `lines`: increases the immediate value of clearing rows while retaining safety penalties;
+- `score`: uses the game's Type-A line awards (40/100/300/1200 × level+1), making Tetrises materially more valuable.
+
+When the preview piece is available, the policy includes one-piece lookahead at half weight. Candidates that leave no legal preview-piece spawn receive a large top-out penalty.
+
+`tetris/policy.Step` combines exactly one policy decision with one verified `control.Place` transaction. Long-running loops, run configuration, telemetry and replay integration remain runtime concerns rather than policy responsibilities.
+
 ## Current scope
 
-This layer executes an already-selected placement. It deliberately does **not** choose placements or score board positions. Search/evaluation policy belongs to the next Tetris phase so controller mechanics stay deterministic and independently testable.
+PokePilot can now observe Tetris, choose a semantic placement, and execute that placement deterministically. It does not yet expose Tetris as a normal configurable long-running run with replay/operator telemetry; that is the next runtime-integration phase.
