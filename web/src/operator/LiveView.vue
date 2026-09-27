@@ -157,6 +157,25 @@ const partySlots = computed<(PartyMon | null)[]>(() => {
   return Array.from({ length: 6 }, (_, index) => members[index] || null)
 })
 const badges = computed(() => selectedRun.value?.player?.badges ?? [])
+const isTetrisRun = computed(() => selectedRun.value?.game === 'tetris')
+const tetrisState = computed<Record<string, unknown>>(() => selectedRun.value?.game_state ?? {})
+const tetrisDecision = computed<Record<string, unknown>>(() => selectedRun.value?.game_decision ?? {})
+const tetrisBoard = computed<string[]>(() => {
+  const board = tetrisState.value.board
+  return Array.isArray(board) ? board.map((row) => String(row)) : []
+})
+const tetrisActive = computed<Record<string, unknown> | null>(() => {
+  const active = tetrisState.value.active
+  return active && typeof active === 'object' && !Array.isArray(active) ? active as Record<string, unknown> : null
+})
+const tetrisNext = computed<Record<string, unknown> | null>(() => {
+  const next = tetrisState.value.next
+  return next && typeof next === 'object' && !Array.isArray(next) ? next as Record<string, unknown> : null
+})
+const tetrisMetrics = computed<Record<string, unknown> | null>(() => {
+  const metrics = tetrisDecision.value.metrics
+  return metrics && typeof metrics === 'object' && !Array.isArray(metrics) ? metrics as Record<string, unknown> : null
+})
 const bagLabel = computed(() => bagMeter(selectedRun.value?.player))
 const dexLabel = computed(() => dexMeter(selectedRun.value?.player))
 const dexInfo = computed(() => dexDetail(selectedRun.value?.player))
@@ -654,13 +673,30 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
 
           <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
-              <h3 class="text-xs font-semibold text-white">Semantic map</h3>
+              <h3 class="text-xs font-semibold text-white">{{ isTetrisRun ? 'Tetris board' : 'Semantic map' }}</h3>
               <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ tileLabel(selectedRun) }}</span>
             </header>
-            <div class="h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
+            <div v-if="isTetrisRun" class="flex h-64 min-h-52 items-center justify-center bg-[#0c1118] p-2 xl:h-auto xl:min-h-0 xl:flex-1">
+              <div v-if="tetrisBoard.length" class="grid aspect-[10/18] h-full max-h-full grid-cols-10 grid-rows-[repeat(18,minmax(0,1fr))] gap-px border border-white/10 bg-black/60 p-px">
+                <template v-for="(row, y) in tetrisBoard" :key="y">
+                  <span
+                    v-for="(cell, x) in row.split('')"
+                    :key="`${y}-${x}`"
+                    :class="[cell === '#' ? 'bg-cyan-300/80' : 'bg-white/[0.035]', 'min-h-0 min-w-0']"
+                  />
+                </template>
+              </div>
+              <p v-else class="text-[11px] text-[var(--poke-muted)]">Waiting for Tetris semantic state…</p>
+            </div>
+            <div v-else class="h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
               <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
             </div>
-            <div class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
+            <div v-if="isTetrisRun" class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
+              <span><b class="text-cyan-200">■</b> locked cell</span>
+              <span>active {{ tetrisActive?.piece || '—' }} r{{ tetrisActive?.rotation ?? '—' }}</span>
+              <span>next {{ tetrisNext?.piece || '—' }}</span>
+            </div>
+            <div v-else class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
               <span><b class="text-[var(--poke-text)]">@</b> player</span>
               <span><b class="text-[var(--poke-text)]">■</b> sprite</span>
               <span><b class="text-[var(--poke-text)]">·</b> trail</span>
@@ -672,14 +708,44 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
           <section class="flex min-h-0 min-w-0 flex-col bg-[var(--poke-panel)]">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
               <h3 class="text-xs font-semibold text-white">Game state</h3>
-              <span class="flex max-w-[70%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
+              <span v-if="isTetrisRun" class="flex max-w-[75%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
+                <span>score {{ Number(tetrisState.score || 0).toLocaleString() }}</span>
+                <span>lines {{ Number(tetrisState.lines_cleared || 0) }}</span>
+                <span>level {{ Number(tetrisState.level || 0) }}</span>
+              </span>
+              <span v-else class="flex max-w-[70%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
                 <span>₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }}</span>
                 <span v-if="bagLabel">bag {{ bagLabel }}</span>
                 <span v-if="dexLabel">dex {{ dexLabel }}</span>
                 <span>{{ badges.length ? badges.join(', ') : 'no badges' }}</span>
               </span>
             </header>
-            <div class="flex min-h-52 flex-1 flex-col overflow-auto xl:min-h-0">
+            <div v-if="isTetrisRun" class="grid min-h-52 flex-1 content-start gap-px overflow-auto bg-[var(--poke-border)] xl:min-h-0">
+              <div class="grid grid-cols-2 gap-px bg-[var(--poke-border)]">
+                <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px]">
+                  <span class="text-[var(--poke-muted)]">Active</span>
+                  <strong class="mt-0.5 block font-mono text-sm text-white">{{ tetrisActive?.piece || '—' }}</strong>
+                  <span class="font-mono text-[var(--poke-muted)]">r{{ tetrisActive?.rotation ?? '—' }} · x{{ tetrisActive?.x ?? '—' }} y{{ tetrisActive?.y ?? '—' }}</span>
+                </div>
+                <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px]">
+                  <span class="text-[var(--poke-muted)]">Next</span>
+                  <strong class="mt-0.5 block font-mono text-sm text-white">{{ tetrisNext?.piece || '—' }}</strong>
+                  <span class="font-mono text-[var(--poke-muted)]">r{{ tetrisNext?.rotation ?? '—' }}</span>
+                </div>
+              </div>
+              <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px] leading-5">
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Screen</span><strong>{{ tetrisState.screen || '—' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Mode</span><strong>{{ tetrisState.mode || '—' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Input</span><strong>{{ tetrisState.ready_for_piece_input ? 'ready' : (tetrisState.clearing ? 'clearing' : (tetrisState.locking ? 'locking' : 'waiting')) }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Placement</span><strong class="font-mono">r{{ tetrisDecision.rotation ?? '—' }} c{{ tetrisDecision.column ?? '—' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Policy</span><strong>{{ tetrisDecision.objective || '—' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Evaluated</span><strong>{{ tetrisDecision.considered ?? '—' }}</strong></div>
+                <div v-if="tetrisMetrics" class="mt-1 border-t border-[var(--poke-border)] pt-1 text-[var(--poke-muted)]">
+                  holes {{ tetrisMetrics.holes ?? 0 }} · height {{ tetrisMetrics.max_height ?? 0 }} · bump {{ tetrisMetrics.bumpiness ?? 0 }}
+                </div>
+              </div>
+            </div>
+            <div v-else class="flex min-h-52 flex-1 flex-col overflow-auto xl:min-h-0">
               <div class="grid flex-1 grid-cols-2 gap-px bg-[var(--poke-border)]">
                 <div
                   v-for="(mon, index) in partySlots"
