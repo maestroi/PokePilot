@@ -28,8 +28,10 @@ import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import {
+  gameTitle,
   goalProgress,
   isLiveRun,
+  isTetrisRun,
   locationLabel,
   normalizePlayStyle,
   objectiveLabel,
@@ -51,7 +53,7 @@ import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from 
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
-type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'state'
+type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'game' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
 type RendererMode = 'modern' | 'classic'
 
@@ -101,6 +103,14 @@ const selectedRun = computed(() => preferredRun(
   groupedRuns.value.live,
   selectionPinned.value ? selectedRunID.value : ''
 ))
+const isTetrisSelected = computed(() => isTetrisRun(selectedRun.value))
+const tetrisState = computed(() => selectedRun.value?.game_state)
+const tetrisBoardRows = computed(() =>
+  (tetrisState.value?.board || []).slice(0, 18).map((row) => row.slice(0, 10).split(''))
+)
+const tetrisModeLabel = computed(() => formatGameToken(tetrisState.value?.mode || 'type-a'))
+const tetrisActivePiece = computed(() => tetrisState.value?.active?.piece || '—')
+const tetrisNextPiece = computed(() => tetrisState.value?.next?.piece || '—')
 const otherLiveRuns = computed(() => {
   const selectedID = selectedRun.value?.run_id || ''
   return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
@@ -117,18 +127,21 @@ const {
   error: renderStateError
 } = useRenderStatePump(frameRunID, renderEnabled, 100, frameContinuous)
 const semanticReady = computed(() => canRenderModernScene(renderState.value))
-const showModern = computed(() => selectionPinned.value && rendererMode.value === 'modern' && semanticReady.value)
+const showModern = computed(() =>
+  selectionPinned.value && !isTetrisSelected.value && rendererMode.value === 'modern' && semanticReady.value
+)
 const frameEnabled = computed(() =>
-  Boolean(frameRunID.value) && (!selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
+  Boolean(frameRunID.value) && (isTetrisSelected.value || !selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
 )
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
-  if (rendererMode.value !== 'modern' || showModern.value) return ''
+  if (isTetrisSelected.value || rendererMode.value !== 'modern' || showModern.value) return ''
   if (renderStateStatus.value === 'error') return 'Gold / Silver · semantic state reconnecting'
   if (renderState.value?.scene) return 'Gold / Silver · classic compatibility · ' + renderState.value.scene
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
+const gameClass = computed(() => isTetrisSelected.value ? 'game-tetris' : 'game-pokemon')
 const selectedActivity = computed(() => {
   const run = selectedRun.value
   const activity = run ? activityByRun.value[run.run_id] || [] : []
@@ -166,8 +179,8 @@ const lastRefreshLabel = computed(() => {
 
 const currentLocation = computed(() => {
   const run = selectedRun.value
-  if (!run) return 'Waiting for location'
-  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+  if (!run) return 'Waiting for state'
+  return displayLocation(run)
 })
 const runtimeLabel = computed(() => {
   const run = selectedRun.value
@@ -176,17 +189,27 @@ const runtimeLabel = computed(() => {
   return seconds > 0 ? formatDuration(seconds) : 'Just started'
 })
 const sceneStyle = computed(() => ({
-  '--spectator-art': `url("${spectatorNightscapeUrl}")`
+  '--spectator-art': isTetrisSelected.value ? 'none' : `url("${spectatorNightscapeUrl}")`
 }))
 
 const goalPercent = computed(() => {
   const run = selectedRun.value
-  return run ? goalProgress(run) : 0
+  if (!run) return 0
+  if (!isTetrisRun(run)) return goalProgress(run)
+  if (run.game_state?.complete) return 100
+  const match = (run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
+  if (!match) return 0
+  const target = Number(match[2] || 0)
+  if (target <= 0) return 0
+  const current = match[1] === 'score'
+    ? Number(run.game_state?.score || 0)
+    : Number(run.game_state?.lines_cleared || 0)
+  return Math.max(0, Math.min(100, 100 * current / target))
 })
 
 const leagueGoal = computed(() => {
   const run = selectedRun.value
-  if (!run) return false
+  if (!run || isTetrisRun(run)) return false
   const text = [run.goal, run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
   return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
 })
@@ -195,8 +218,34 @@ const goalProgressCopy = computed(() => {
   const run = selectedRun.value
   if (!run) return { label: 'Waiting for goal', detail: 'Run objective is loading.' }
 
-  const badges = run.player?.badges?.length || 0
   const stats = run.stats
+  if (isTetrisRun(run)) {
+    const state = run.game_state
+    const score = Number(state?.score || 0)
+    const lines = Number(state?.lines_cleared || 0)
+    const match = (run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
+    if (state?.complete || stats?.goal_complete) {
+      return {
+        label: 'Goal complete',
+        detail: `${score.toLocaleString()} points · ${lines} lines cleared`
+      }
+    }
+    if (match) {
+      const target = Number(match[2] || 0)
+      const current = match[1] === 'score' ? score : lines
+      const unit = match[1] === 'score' ? 'points' : 'lines'
+      return {
+        label: `${current.toLocaleString()}/${target.toLocaleString()} ${unit}`,
+        detail: `${Math.max(0, target - current).toLocaleString()} ${unit} remaining`
+      }
+    }
+    return {
+      label: 'Stack in progress',
+      detail: `${score.toLocaleString()} points · ${lines} lines cleared`
+    }
+  }
+
+  const badges = run.player?.badges?.length || 0
   if (stats?.goal_complete) {
     return {
       label: 'Goal complete',
@@ -241,6 +290,14 @@ interface PremiumStat {
 const statCards = computed<PremiumStat[]>(() => {
   const run = selectedRun.value
   if (!run) return []
+  if (isTetrisRun(run)) {
+    return [
+      { key: 'score', label: 'Score', value: Number(run.game_state?.score || 0).toLocaleString(), hint: 'Points', icon: TrophyIcon, tone: 'amber' },
+      { key: 'lines', label: 'Lines cleared', value: String(Number(run.game_state?.lines_cleared || 0)), hint: 'Stack', icon: FlagIcon, tone: 'cyan' },
+      { key: 'level', label: 'Level', value: String(Number(run.game_state?.level || 0)), hint: 'Speed', icon: SparklesIcon, tone: 'violet' },
+      { key: 'runtime', label: 'Runtime', value: runtimeLabel.value, hint: 'Live', icon: ClockIcon, tone: 'emerald' }
+    ]
+  }
   return [
     { key: 'maps', label: 'Maps visited', value: mapsLabel.value, hint: 'World', icon: MapIcon, tone: 'cyan' },
     { key: 'party', label: 'Party', value: `${run.player?.party?.length || 0}/6`, hint: 'Team', icon: UserGroupIcon, tone: 'violet' },
@@ -262,7 +319,7 @@ interface StretchStep {
 
 const finalStretchSteps = computed<StretchStep[]>(() => {
   const run = selectedRun.value
-  if (!run) return []
+  if (!run || isTetrisRun(run)) return []
 
   const badges = run.player?.badges?.length || 0
   const location = currentLocation.value.toLowerCase()
@@ -339,7 +396,7 @@ watch(runs, (nextRuns) => {
         run.run_id,
         'area',
         'Watching from',
-        mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+        displayLocation(run)
       )
       if (run.decision) pushActivity(run.run_id, 'decision', 'Current decision', run.decision)
       else if (run.planner_waiting) pushActivity(run.run_id, 'state', 'Planner thinking', 'Choosing the first objective')
@@ -354,8 +411,20 @@ watch(runs, (nextRuns) => {
     if (run.decision && run.decision !== previous.decision) {
       pushActivity(run.run_id, 'decision', 'Decision', run.decision)
     }
-    if (run.map !== previous.map) {
-      pushActivity(run.run_id, 'area', 'Entered area', mapEntry(Number(run.map || 0))?.label || locationLabel(run))
+    if (!isTetrisRun(run) && run.map !== previous.map) {
+      pushActivity(run.run_id, 'area', 'Entered area', displayLocation(run))
+    }
+    if (isTetrisRun(run)) {
+      const beforeLines = Number(previous.game_state?.lines_cleared || 0)
+      const afterLines = Number(run.game_state?.lines_cleared || 0)
+      if (afterLines > beforeLines) {
+        pushActivity(
+          run.run_id,
+          'game',
+          'Lines cleared',
+          `${afterLines} total · ${Number(run.game_state?.score || 0).toLocaleString()} points`
+        )
+      }
     }
 
     const beforeBadges = previous.player?.badges || []
@@ -411,6 +480,7 @@ function activityIcon(kind: ActivityKind) {
     case 'party': return UserGroupIcon
     case 'dex': return BookOpenIcon
     case 'milestone': return FlagIcon
+    case 'game': return SparklesIcon
     default: return SignalIcon
   }
 }
@@ -423,8 +493,21 @@ function activityTone(kind: ActivityKind): string {
     case 'party': return 'text-violet-300 bg-violet-300/10 ring-violet-300/20'
     case 'dex': return 'text-rose-300 bg-rose-300/10 ring-rose-300/20'
     case 'milestone': return 'text-emerald-300 bg-emerald-300/10 ring-emerald-300/20'
+    case 'game': return 'text-amber-300 bg-amber-300/10 ring-amber-300/20'
     default: return 'text-slate-300 bg-white/5 ring-white/10'
   }
+}
+
+function formatGameToken(value: string): string {
+  return value
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function displayLocation(run: SpectatorRun): string {
+  if (isTetrisRun(run)) return locationLabel(run)
+  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
 }
 
 function selectRun(run: SpectatorRun): void {
@@ -773,7 +856,7 @@ function activityTimeAgo(item: ActivityItem): string {
                   <strong class="truncate text-[11px] text-slate-300">{{ runTitle(run) }}</strong>
                   <span class="size-1.5 shrink-0 rounded-full bg-emerald-300" />
                 </div>
-                <div class="mt-1 truncate text-[9px] text-slate-600">{{ mapEntry(Number(run.map || 0))?.label || locationLabel(run) }}</div>
+                <div class="mt-1 truncate text-[9px] text-slate-600">{{ displayLocation(run) }}</div>
               </button>
             </div>
           </section>
