@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/gen1"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
