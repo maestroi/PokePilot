@@ -15,14 +15,14 @@ const (
 )
 
 const (
-	eventGotPokemonFromElm        uint16 = 26
-	eventGotMysteryEggMrPokemon   uint16 = 30
-	eventGaveMysteryEggToElm      uint16 = 31
-	statusFlagsPokedexMask               = 1 << 0
+	eventGotPokemonFromElm      uint16 = 26
+	eventGotMysteryEggMrPokemon uint16 = 30
+	eventGaveMysteryEggToElm    uint16 = 31
+	statusFlagsPokedexMask             = 1 << 0
 
-	sceneCherrygroveNoop       = 0
-	sceneMrPokemonsHouseNoop   = 1
-	sceneElmsLabNoop           = 2
+	sceneCherrygroveNoop     = 0
+	sceneMrPokemonsHouseNoop = 1
+	sceneElmsLabNoop         = 2
 )
 
 type earlyStoryFacts struct {
