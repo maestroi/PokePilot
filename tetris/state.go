@@ -52,6 +52,14 @@ const (
 	PieceT Piece = "T"
 )
 
+// SpawnAnchorX and SpawnAnchorY are the board cell a fresh piece's anchor
+// occupies: raw X $3f / Y $18, decoded. It is not a corner of the board or of
+// the piece, because the anchor is sprite-matrix row/column 2 (see Cells).
+const (
+	SpawnAnchorX = 5
+	SpawnAnchorY = 1
+)
+
 type Board [BoardHeight][BoardWidth]bool
 
 type PieceState struct {
@@ -276,11 +284,10 @@ func decodeActive(rawPiece, rawX, rawY byte) (PieceState, bool) {
 	return PieceState{
 		Piece:    piece,
 		Rotation: rotation,
-		// The game spawns an anchor at raw X=$3f, Y=$18, which is board
-		// column 5 (sprite-matrix column 2, see Cells). Horizontal and
+		// The game spawns an anchor at raw X=$3f, Y=$18 and horizontal and
 		// vertical movement change these values in exact 8-pixel increments.
-		X: 5 + (int(rawX)-0x3f)/8,
-		Y: (int(rawY) - 0x18) / 8,
+		X: SpawnAnchorX + (int(rawX)-0x3f)/8,
+		Y: SpawnAnchorY + (int(rawY)-0x18)/8,
 	}, true
 }
 
