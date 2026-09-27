@@ -36,14 +36,14 @@ type Selector struct {
 }
 
 type placementState struct {
-	Mode      tetris.Mode   `json:"mode"`
-	Objective policy.Objective `json:"objective"`
-	Board     []string      `json:"board"`
-	Active    tetris.PieceState `json:"active"`
+	Mode      tetris.Mode          `json:"mode"`
+	Objective policy.Objective     `json:"objective"`
+	Board     []string             `json:"board"`
+	Active    tetris.PieceState    `json:"active"`
 	Next      *tetris.PiecePreview `json:"next,omitempty"`
-	Level     int           `json:"level"`
-	Score     int           `json:"score"`
-	Lines     int           `json:"lines"`
+	Level     int                  `json:"level"`
+	Score     int                  `json:"score"`
+	Lines     int                  `json:"lines"`
 }
 
 func (s Selector) Choose(ctx context.Context, state tetris.State, objective policy.Objective) (Selection, error) {
