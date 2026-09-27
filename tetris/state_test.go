@@ -77,7 +77,7 @@ func TestDecodeStateTypeA(t *testing.T) {
 	if got.Active.Piece != PieceT || got.Active.Rotation != 2 || got.Active.X != 5 || got.Active.Y != 2 {
 		t.Fatalf("active = %#v", *got.Active)
 	}
-	if got.Next.Piece != PieceI || got.Next.Rotation != 1 {
+	if got.Next == nil || got.Next.Piece != PieceI || got.Next.Rotation != 1 {
 		t.Fatalf("next = %#v", got.Next)
 	}
 	if !got.Board[0][0] || !got.Board[17][9] || got.Board[0][1] {
