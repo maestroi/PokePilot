@@ -425,3 +425,101 @@ func TestCompactEventsKeepsNewestClippedEvents(t *testing.T) {
 		t.Fatalf("detail not clipped to valid UTF-8: %d bytes", len(detail))
 	}
 }
+
+func TestMCPStartRunSupportsTetrisPolicy(t *testing.T) {
+	var queued farm.Spec
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost || req.URL.Path != "/v1/specs" {
+			http.NotFound(res, req)
+			return
+		}
+		if err := json.NewDecoder(req.Body).Decode(&queued); err != nil {
+			http.Error(res, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(res).Encode(map[string]string{"status": "queued"}) //nolint:errcheck
+	}))
+	t.Cleanup(wall.Close)
+
+	control := &mcpControl{wallBase: wall.URL, artifactBase: wall.URL, http: wall.Client()}
+	_, out, err := control.startRun(context.Background(), nil, mcpStartRunInput{
+		Game: "tetris",
+		FPS:  60,
+	})
+	if err != nil {
+		t.Fatalf("start Tetris run: %v", err)
+	}
+	if out.RunID == "" || out.Status != "queued" {
+		t.Fatalf("start output = %+v", out)
+	}
+	if queued.Game != "tetris" || queued.Planner != "policy" {
+		t.Fatalf("queued game/planner = %q/%q, want tetris/policy", queued.Game, queued.Planner)
+	}
+	if queued.Starter != "" || queued.Dest != "" {
+		t.Fatalf("Tetris leaked Pokemon fields: starter=%q dest=%q", queued.Starter, queued.Dest)
+	}
+	if got := queued.Goal.String(); got != "auto" {
+		t.Fatalf("Tetris default goal = %q, want auto", got)
+	}
+
+	_, _, err = control.startRun(context.Background(), nil, mcpStartRunInput{
+		Game:    "tetris",
+		Planner: "llm",
+	})
+	if err == nil || !strings.Contains(err.Error(), "planner policy") {
+		t.Fatalf("Tetris llm planner error = %v, want policy validation", err)
+	}
+
+	_, _, err = control.startRun(context.Background(), nil, mcpStartRunInput{
+		Game:    "tetris",
+		Starter: "squirtle",
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not use a starter") {
+		t.Fatalf("Tetris starter error = %v, want starter validation", err)
+	}
+}
+
+func TestMCPListRunsPreservesGameSpecificTelemetry(t *testing.T) {
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet || req.URL.Path != "/v1/dashboard" {
+			http.NotFound(res, req)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(res).Encode(map[string]any{ //nolint:errcheck
+			"now": int64(123),
+			"runs": []map[string]any{{
+				"run_id":  "tetris-live",
+				"status":  "running",
+				"game":    "tetris",
+				"planner": "policy",
+				"game_state": map[string]any{
+					"kind": "tetris", "score": 4321.0, "lines_cleared": 7.0,
+				},
+				"game_decision": map[string]any{
+					"kind": "tetris-placement", "rotation": 2.0, "column": 6.0,
+				},
+			}},
+			"workers": []any{},
+		})
+	}))
+	t.Cleanup(wall.Close)
+
+	control := &mcpControl{wallBase: wall.URL, artifactBase: wall.URL, http: wall.Client()}
+	_, out, err := control.listRuns(context.Background(), nil, mcpListRunsInput{Limit: 5})
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	runs, ok := out["runs"].([]mcpRunView)
+	if !ok || len(runs) != 1 {
+		t.Fatalf("runs = %#v", out["runs"])
+	}
+	run := runs[0]
+	if run.Game != "tetris" || run.GameState["kind"] != "tetris" {
+		t.Fatalf("game telemetry = game %q state %#v", run.Game, run.GameState)
+	}
+	if run.GameDecision["kind"] != "tetris-placement" || run.GameDecision["column"] != float64(6) {
+		t.Fatalf("game decision = %#v", run.GameDecision)
+	}
+}
