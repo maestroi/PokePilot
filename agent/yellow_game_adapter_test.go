@@ -179,7 +179,6 @@ func TestYellowStarterPostconditionRequiresWholeOpening(t *testing.T) {
 	}
 }
 
-
 func TestYellowRocketTowerPostconditionsRequireJessieJamesFacts(t *testing.T) {
 	adapter := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
 	tests := []struct {
