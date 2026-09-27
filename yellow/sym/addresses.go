@@ -47,6 +47,10 @@ const (
 	WalkCounter     uint16 = 0xCFC4 // wWalkCounter
 	JoyIgnore       uint16 = 0xCD6B // wJoyIgnore
 
+	// Map-script state. Canonical wOaksLabCurScript is 0xD5F0; Yellow's
+	// canonical mapping resolves that byte to native 0xD5EF.
+	OaksLabCurScript uint16 = 0xD5EF // wOaksLabCurScript
+
 	// Battle.
 	IsInBattle uint16 = 0xD056 // wIsInBattle
 
