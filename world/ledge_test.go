@@ -8,7 +8,7 @@ import (
 )
 
 func TestDirectedReachabilityDoesNotExpandDestination(t *testing.T) {
-	g := &Graph{componentAware: true, Edges: map[uint8][]Edge{1: nil}, comps: map[uint8][][]int{1: {{1}, {0}, {2}}}, reachable: map[uint8]map[int][]int{1: {1: {1, 2}}}}
+	g := &Graph{componentAware: true, Edges: map[MapID][]Edge{1: nil}, comps: map[MapID][][]int{1: {{1}, {0}, {2}}}, reachable: map[MapID]map[int][]int{1: {1: {1, 2}}}}
 	if _, err := FindRouteAtDestination(g, 1, 1, 0, 2, 0, 0, nil); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("uphill route: %v", err)
 	}
