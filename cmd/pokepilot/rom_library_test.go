@@ -62,7 +62,6 @@ func TestROMLibraryFetchesMissingGameFromStore(t *testing.T) {
 	}
 }
 
-
 // TestROMLibraryCachedBootStateSwitchesCartridge reproduces #2000: a worker
 // can cache Blue's neutral boot state, run Red, then lease Blue again. The
 // cached state is only RAM/CPU state; the cartridge itself still has to be
