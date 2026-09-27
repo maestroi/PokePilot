@@ -157,7 +157,19 @@ func TestDecisionSettingsForRegisteredDeployment(t *testing.T) {
 		t.Fatalf("jev engine = %+v", jev)
 	}
 
-	// Without token_env the deployment keeps the runner's credential chain.
+	// A registered LAN Jev deployment can explicitly omit token_env. It must
+	// run unauthenticated and must not forward the runner's TypeSafe cloud key.
+	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "jev", Endpoint: "http://192.168.50.80:8077/v1", Model: "jev9-local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	localJev := settings.Engine.(*JevDecisionEngine)
+	if localJev.BaseURL != "http://192.168.50.80:8077/v1" || localJev.Model != "jev9-local" || localJev.Token != "" {
+		t.Fatalf("local Jev engine = %+v", localJev)
+	}
+
+	// OpenAI-compatible deployments without token_env keep their existing
+	// runner credential behavior.
 	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "system-one", Endpoint: "http://4090/v1", Model: "qwen3.5-4b"})
 	if err != nil {
 		t.Fatal(err)
