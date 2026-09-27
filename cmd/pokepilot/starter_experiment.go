@@ -38,7 +38,6 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 
 	profile, _, detectErr := profiles.Detect(base)
 
-	request := strings.ToLower(strings.TrimSpace(spec.Starter))
 	var selection redstarter.Selection
 	var err error
 	if detectErr == nil && string(profile.ID()) == "pokemon-yellow" {
