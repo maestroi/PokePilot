@@ -67,6 +67,9 @@ func (a *yellowObjectiveAdapter) Validate(o Objective, obs Observation) error {
 		// as Red/Blue (Cut for Surge/Rock Tunnel/Erika, etc.). Yellow-specific
 		// story facts remain locally validated above.
 		if yellowSharedStoryBeat(o.Progress) {
+			if handled, err := yellowSharedProgressionPrerequisites(o.Progress, obs); handled {
+				return err
+			}
 			return a.gen1.Validate(o, obs)
 		}
 	}

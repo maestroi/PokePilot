@@ -34,6 +34,15 @@ func FuchsiaStages() []game.ProgressID {
 	}
 }
 
+// CinnabarStages is the shared Kanto Mansion/Gym transaction after Surf is
+// available: obtain the Secret Key, then unlock Cinnabar Gym and defeat Blaine.
+func CinnabarStages() []game.ProgressID {
+	return []game.ProgressID{
+		ProgressSecretKeyOwned,
+		ProgressVolcanoBadge,
+	}
+}
+
 // FirstIncomplete returns the first semantic campaign fact that has not yet
 // been positively observed. It contains no map, event, item, or game-specific
 // assumptions.

@@ -82,3 +82,20 @@ func TestFuchsiaStagesAreOrderedAndFresh(t *testing.T) {
 		t.Fatal("FuchsiaStages returned mutable global storage")
 	}
 }
+
+func TestCinnabarStagesAreOrderedAndFresh(t *testing.T) {
+	want := []game.ProgressID{ProgressSecretKeyOwned, ProgressVolcanoBadge}
+	got := CinnabarStages()
+	if len(got) != len(want) {
+		t.Fatalf("CinnabarStages()=%v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("CinnabarStages()[%d]=%q, want %q", i, got[i], want[i])
+		}
+	}
+	got[0] = "mutated"
+	if CinnabarStages()[0] != ProgressSecretKeyOwned {
+		t.Fatal("CinnabarStages returned mutable global storage")
+	}
+}

@@ -6,39 +6,32 @@ import (
 
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
 func TestCinnabarSecretKeySemanticHandoff(t *testing.T) {
-	var mem state.Mem
-	if CinnabarSecretKeyReady(&mem) {
-		t.Fatal("Cinnabar Secret Key phase is ready before #34 completion")
+	var empty state.Mem
+	if CinnabarSecretKeyReady(&empty) {
+		t.Fatal("Cinnabar Secret Key phase is mechanically ready without usable Surf")
 	}
-	if CinnabarSecretKeyOwned(&mem) {
+	if CinnabarSecretKeyOwned(&empty) {
 		t.Fatal("empty bag reports Secret Key owned")
 	}
 
-	// #33 handoff: Soul Badge plus Surf + Strength HMs.
-	mem[sym.ObtainedBadges] |= 1 << uint(state.BadgeSoul)
-	putBag(&mem,
-		state.BagItem{ID: hm03SurfItem, Quantity: 1},
-		state.BagItem{ID: hm04StrengthItem, Quantity: 1},
-	)
-	// #34 story + gym completion: Giovanni, president reward, Marsh Badge.
-	setTestEvent(&mem, state.Event(0x78d)) // EVENT_GOT_MASTER_BALL
-	setTestEvent(&mem, state.Event(0x78f)) // EVENT_BEAT_SILPH_CO_GIOVANNI
-	mem[sym.ObtainedBadges] |= 1 << uint(state.BadgeMarsh)
-	if !CinnabarSecretKeyReady(&mem) {
-		t.Fatal("completed Saffron slice did not make Cinnabar Secret Key phase ready")
+	// The reusable Mansion transaction owns mechanics, not campaign ordering:
+	// Soul + a learned Surf move are sufficient to traverse Route 21. The
+	// concrete adapter decides whether Silph/Sabrina must happen first.
+	mem := fieldTestMem(FieldSurf, true, true, true)
+	if !CinnabarSecretKeyReady(mem) {
+		t.Fatal("usable Surf did not make the Secret Key transaction ready")
 	}
 
-	putBag(&mem,
+	putBag(mem,
 		state.BagItem{ID: hm03SurfItem, Quantity: 1},
 		state.BagItem{ID: hm04StrengthItem, Quantity: 1},
 		state.BagItem{ID: mansionSecretKeyItem, Quantity: 1},
 	)
-	if !CinnabarSecretKeyOwned(&mem) {
+	if !CinnabarSecretKeyOwned(mem) {
 		t.Fatal("Secret Key bag entry did not satisfy semantic postcondition")
 	}
 }
