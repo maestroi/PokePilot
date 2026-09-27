@@ -76,6 +76,11 @@ func CinnabarSecretKeyOwned(mem *state.Mem) bool {
 // ordering belongs to the concrete game adapter: mechanically this story leg
 // requires only a usable Surf capability, and the skill already verifies that
 // directly before it routes to Cinnabar.
+
+func CinnabarSecretKeyReady(mem *state.Mem) bool {
+	return mem != nil && FieldCapabilityFor(mem, FieldSurf).Usable
+}
+
 // restageSecretKeyRoute20Resume handles checkpoints that resume on Route 20.
 // Route 20 has two disconnected outdoor Surf components separated by Seafoam
 // Islands. The Secret Key milestone intentionally uses Route 21 and must not
