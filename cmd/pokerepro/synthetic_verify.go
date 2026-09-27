@@ -64,8 +64,14 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 	}
 	adjacency := make(map[uint8][]uint8, len(graph.Edges))
 	for from, edges := range graph.Edges {
+		if from > 0xff {
+			return verdict, fmt.Errorf("portable repro legacy topology cannot represent map %#04x", from)
+		}
 		for _, edge := range edges {
-			adjacency[from] = append(adjacency[from], edge.To)
+			if edge.To > 0xff {
+				return verdict, fmt.Errorf("portable repro legacy topology cannot represent edge %#04x->%#04x", from, edge.To)
+			}
+			adjacency[uint8(from)] = append(adjacency[uint8(from)], uint8(edge.To))
 		}
 	}
 	memory := agent.LoadCheckpointMemory(mat.StatePath, adjacency, nil)
