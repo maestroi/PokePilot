@@ -32,18 +32,19 @@ const (
 // pocket must remain able to use the ordinary warp without owning the field
 // capability (PivotOnly's missing-cap fallback).
 func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
-	if edge.Kind != world.EdgeWarp {
+	if edge.Kind != world.EdgeWarp || edge.From > 0xff || edge.To > 0xff {
 		return gameruntime.Transition{}, false
 	}
+	from, to := uint8(edge.From), uint8(edge.To)
 	switch {
-	case edge.From == semanticRoute2Map && edge.To == route2GateMap &&
+	case from == semanticRoute2Map && to == route2GateMap &&
 		((edge.WarpX == 16 && edge.WarpY == 35) || (edge.WarpX == 15 && edge.WarpY == 39)):
 		t := semanticTransition("red:route2_gate_cut", edge, capCanCut)
 		t.PivotOnly = true
 		t.PortBypass = true
 		return t, true
 
-	case edge.From == semanticRoute2Map && edge.To == diglettsCaveRoute2Map &&
+	case from == semanticRoute2Map && to == diglettsCaveRoute2Map &&
 		edge.WarpX == route2DiglettWarpX && edge.WarpY == route2DiglettWarpY:
 		// Diglett's Cave's Route 2 house opens onto a land pocket that only a
 		// Cut tree joins to the rest of Route 2, the mainland's only non-Fly
@@ -53,7 +54,7 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		t.PortBypass = true
 		return t, true
 
-	case edge.From == diglettsCaveRoute2Map && edge.To == semanticRoute2Map:
+	case from == diglettsCaveRoute2Map && to == semanticRoute2Map:
 		// Leaving the house lands in that pocket. PivotOnly keeps the door
 		// ordinary and makes the landing a live-topology boundary, so GoTo
 		// replans on Route 2 where the field planner can Cut out. Without it a
@@ -63,14 +64,14 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 		t.PivotOnly = true
 		return t, true
 
-	case edge.From == route10Map && edge.To == powerPlantMap &&
+	case from == route10Map && to == powerPlantMap &&
 		edge.WarpX == powerPlantWarpX && edge.WarpY == powerPlantWarpY:
 		t := semanticTransition("red:power_plant_surf", edge, capCanSurf)
 		t.PivotOnly = true
 		t.PortBypass = true
 		return t, true
 
-	case edge.From == ceruleanCave1FMap && edge.To == ceruleanCaveB1FMap &&
+	case from == ceruleanCave1FMap && to == ceruleanCaveB1FMap &&
 		edge.WarpX == ceruleanCaveB1FWarpX && edge.WarpY == ceruleanCaveB1FWarpY:
 		// The lowest-floor ladder is a real ROM warp, but the 1F route to it
 		// crosses the cave's lake. Red/Blue's own traversal therefore needs
@@ -122,10 +123,14 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 	if edge.Kind != world.EdgeWarp {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach %02x->%02x is not a warp", edge.From, edge.To)
 	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
+	if edge.From > 0xff || edge.To > 0xff {
+		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach cannot execute wide map edge %04x->%04x", edge.From, edge.To)
+	}
+	from := uint8(edge.From)
+	if got := x.m.Peek8(sym.CurMap); got != from {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach starts on %02x, current map is %02x", edge.From, got)
 	}
-	h, err := rom.ParseMap(x.romData, edge.From)
+	h, err := rom.ParseMap(x.romData, from)
 	if err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach parse map %02x: %w", edge.From, err)
 	}
@@ -169,7 +174,7 @@ func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (w
 	if !found {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach to %02x has no water-entry step", edge.To)
 	}
-	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
+	if err := walkWithinMap(x.m, x.romData, Destination{Map: from, X: uint8(standX), Y: uint8(standY)}); err != nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach reach shoreline (%d,%d): %w", standX, standY, err)
 	}
 	if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
