@@ -140,3 +140,16 @@ func TestRunWatchdogProductiveSessionRefreshesLivenessWithoutMajorProgress(t *te
 		t.Fatal("productive stochastic session was incorrectly reported as semantic major progress")
 	}
 }
+
+
+func TestRunFailurePolicyStaticUnavailableDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindCatch, Species: SpeciesID("zapdos"), Place: "power plant zapdos", Intent: dexStaticIntent}
+	result := recoverableSessionResult(obj, "static_capture_unavailable", Observation{Location: "power plant"})
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+			t.Fatalf("static unavailable %d = %+v; want planning-boundary replan", i+1, got)
+		}
+	}
+}
