@@ -356,7 +356,8 @@ func mergeFarmCancel(wallCancel, drain <-chan struct{}) (<-chan struct{}, func()
 
 // runFarm is the farm loop: lease a spec, validate it before gameplay, run
 // it exactly as main.go runs from flags, report why it stopped, and lease
-// again. bootState is the SaveState taken right after BootToOverworld; fresh
+// again. bootState is the game's cached neutral post-boot state (Pokemon
+// overworld or Tetris title); fresh
 // leases restore it before applying their seed. A lease may instead restore a
 // durable checkpoint: the latest objective after worker loss, or the latest
 // major badge checkpoint after an endless error retry or failed successor.
@@ -415,7 +416,9 @@ func runFarm(m *emu.Emu, client *farm.Client, library *romLibrary, watchPort int
 		// Resolve a missing LLM goal from the leased play style here, where the
 		// run is about to start, rather than while decoding the wire. Decoding
 		// stays a faithful record of what the operator asked for.
-		farm.ApplyPlayStyleDefaultGoal(spec)
+		if !strings.EqualFold(strings.TrimSpace(spec.Game), "tetris") {
+			farm.ApplyPlayStyleDefaultGoal(spec)
+		}
 
 		// The cartridge is rebuilt per lease: a two-game worker pool runs
 		// either game, and an empty game keeps the cartridge this worker
