@@ -105,12 +105,12 @@ func (a *yellowObjectiveAdapter) ProgressionObjectives(obs Observation) []Object
 	}
 	if ok {
 		note := map[ProgressID]string{
-			gen1.ProgressThunderBadge:             "(prepare Cut, enter Vermilion Gym, solve the live trash-can switches, defeat Lt. Surge, and verify the Thunder Badge)",
-			gen1.ProgressPostSurgeLavenderReached: "(cross Route 9 and Rock Tunnel to Lavender; Flash is optional because navigation is ROM-driven)",
-			gen1.ProgressPostSurgeCeladonReady:    "(continue from Lavender through Route 8/7's Underground Path to Celadon Pokemon Center and fully recover)",
-			gen1.ProgressRainbowBadge:             "(use Cut for the Celadon Gym approach, defeat Erika, and verify the Rainbow Badge)",
-			gen1.ProgressSilphScopeAcquired:       "(clear the Celadon Rocket Hideout; Yellow's B4F Jessie/James interruption is resolved on the shared live-topology route before Giovanni and the Silph Scope)",
-			gen1.ProgressPokeFluteAcquired:        "(return to Lavender, clear Pokémon Tower including Yellow's 7F Jessie/James interruption, rescue Mr. Fuji, and receive the Poké Flute)",
+			gen1.ProgressThunderBadge:               "(prepare Cut, enter Vermilion Gym, solve the live trash-can switches, defeat Lt. Surge, and verify the Thunder Badge)",
+			gen1.ProgressPostSurgeLavenderReached:   "(cross Route 9 and Rock Tunnel to Lavender; Flash is optional because navigation is ROM-driven)",
+			gen1.ProgressPostSurgeCeladonReady:      "(continue from Lavender through Route 8/7's Underground Path to Celadon Pokemon Center and fully recover)",
+			gen1.ProgressRainbowBadge:               "(use Cut for the Celadon Gym approach, defeat Erika, and verify the Rainbow Badge)",
+			gen1.ProgressSilphScopeAcquired:         "(clear the Celadon Rocket Hideout; Yellow's B4F Jessie/James interruption is resolved on the shared live-topology route before Giovanni and the Silph Scope)",
+			gen1.ProgressPokeFluteAcquired:          "(return to Lavender, clear Pokémon Tower including Yellow's 7F Jessie/James interruption, rescue Mr. Fuji, and receive the Poké Flute)",
 			gen1.ProgressFuchsiaProgressionComplete: "(wake Route 12 Snorlax with the Poké Flute, reach Fuchsia, defeat Koga for Soul, then collect HM03 Surf and HM04 Strength through the shared Safari/Warden transaction)",
 		}[next]
 		return []Objective{{
