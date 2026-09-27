@@ -35,6 +35,31 @@ func yellowProgressionKnown(id ProgressID) bool {
 	return id == yellowprofile.ProgressYellowLabRivalResolved || id == yellowprofile.ProgressYellowMtMoonExitResolved || yellowSharedStoryBeat(id)
 }
 
+
+// yellowSharedProgressionPrerequisites owns ordering where Yellow deliberately
+// reuses a shared executor but not Red's campaign policy. The Mansion mechanics
+// need Surf; Silph/Sabrina are independent story branches and are therefore
+// not prerequisites for Yellow's Cinnabar leg.
+func yellowSharedProgressionPrerequisites(id ProgressID, obs Observation) (bool, error) {
+	switch id {
+	case gen1.ProgressSecretKeyOwned:
+		if !obs.Story.Has(gen1.ProgressFuchsiaProgressionComplete) {
+			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressFuchsiaProgressionComplete})
+		}
+		if !fieldCapabilityUsable(obs, "surf") {
+			return true, fieldCapabilityPrerequisiteError([]CapabilityID{"surf"})
+		}
+		return true, nil
+	case gen1.ProgressVolcanoBadge:
+		if !obs.Story.Has(gen1.ProgressSecretKeyOwned) {
+			return true, progressionPrerequisiteError([]ProgressID{gen1.ProgressSecretKeyOwned})
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
 // ProgressionObjectives exposes only Yellow story steps that the current
 // adapter can execute. The scripted Pikachu opening remains Yellow-owned.
 // Oak's parcel/Pokedex and Brock are shared Gen-I transactions whose Yellow
