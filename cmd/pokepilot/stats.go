@@ -68,6 +68,11 @@ type statsPlanner struct {
 	// timeout to every remaining battle turn.
 	battleShadowFailures  int
 	battleShadowSuspended bool
+
+	// battleShadowSamples is a bounded evaluation corpus for #1459. It keeps
+	// portable state + executed reference only; it is not the sampled training
+	// dataset tracked separately by #1826.
+	battleShadowSamples []agent.BattleShadowSample
 }
 
 // newStatsPlannerWithRunPolicy builds the planner for one run from the policy
@@ -318,6 +323,7 @@ func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Decisi
 const (
 	battleShadowTimeout     = 15 * time.Second
 	battleShadowMaxFailures = 3
+	maxBattleShadowSamples  = 256
 )
 
 // ObserveBattleTurn implements agent.BattleTurnObserver. With battle
@@ -356,6 +362,21 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 		s.battleShadowSuspended = s.battleShadowFailures >= battleShadowMaxFailures
 	} else {
 		s.battleShadowFailures = 0
+	}
+	if len(s.battleShadowSamples) < maxBattleShadowSamples {
+		sample := agent.BattleShadowSample{
+			Version:                 agent.BattleShadowSampleVersion,
+			State:                   turn,
+			Executed:                executed.ID(),
+			ObservedChoice:          resp.Choice,
+			ObservedConfidence:      resp.Confidence,
+			ObservedProbabilities:   cloneDecisionProbabilities(resp.Probabilities),
+			ObservedDurationSeconds: resp.Duration.Seconds(),
+		}
+		if err != nil {
+			sample.ObservedError = err.Error()
+		}
+		s.battleShadowSamples = append(s.battleShadowSamples, sample)
 	}
 	s.recordDecision(req, resp, err, outcome)
 }
