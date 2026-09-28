@@ -23,7 +23,7 @@ const stats: DashboardStats = {
     }
   },
   decision_records: [
-    { kind: 'objective_selection', choice: '1', choice_label: 'heal', confidence: 0.95, shadow: true, executed: 'go to pewter city', agreed: false, duration_seconds: 0.2 },
+    { kind: 'objective_selection', choice: '1', choice_label: 'heal', probabilities: { '1': 0.8, '0': 0.2 }, confidence: 0.95, shadow: true, executed: 'go to pewter city', agreed: false, duration_seconds: 0.2 },
     { kind: 'failure_recovery', choice: 'retry', choice_label: 'retry', confidence: 0.7, duration_seconds: 0.05 },
     { kind: 'objective_selection', error: 'timeout', shadow: true, executed: 'heal', duration_seconds: 9 }
   ]
@@ -51,6 +51,8 @@ test('live feed is newest first with a verdict per call', () => {
   const feed = decisionFeed(stats)
   assert.deepEqual(feed.map((row) => row.verdict), ['unusable', 'active', 'disagreed'])
   assert.equal(feed[2].choice, 'heal')
+  assert.deepEqual(feed[2].probabilities, [['1', 0.8], ['0', 0.2]])
+  assert.deepEqual(feed[1].probabilities, [])
   assert.equal(feed[0].error, 'timeout')
   assert.ok(hasDecisionTelemetry(stats))
   assert.ok(!hasDecisionTelemetry({}))
@@ -63,6 +65,8 @@ test('live view streams the feed and the archive shows only the stored summary',
   const archive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
   assert.match(live, /<DecisionTelemetry :stats="selectedRun\.stats" :engine="selectedRun\.decision_engine" \/>/)
   assert.match(archive, /<DecisionTelemetry :stats="run\.stats" :engine="run\.decision_engine" :show-feed="false" \/>/)
+  assert.match(live, /entry\.probabilities\.length/)
+  assert.match(live, /percent\(probability\[1\]\)/)
 })
 
 test('a run with a selected engine shows the panel before its first call', () => {
