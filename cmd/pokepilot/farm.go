@@ -529,6 +529,15 @@ func validateSpec(gameID, planner, starter, dest string) error {
 		}
 		return nil
 	}
+	if gameID == "boxxle" {
+		if starter != "" {
+			return fmt.Errorf("boxxle does not use a starter, got %q", starter)
+		}
+		if planner != "launch" {
+			return fmt.Errorf("boxxle uses planner %q; got %q", "launch", planner)
+		}
+		return nil
+	}
 	if gameID == "pokemon-yellow" {
 		if starter != "" && starter != "pikachu" {
 			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", starter)
@@ -600,7 +609,8 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	}
 	pokemonProfile, isPokemon := cartridge.(game.GameProfile)
 	isTetris := string(cartridge.ID()) == "tetris"
-	if !isPokemon && !isTetris {
+	isBoxxle := string(cartridge.ID()) == "boxxle"
+	if !isPokemon && !isTetris && !isBoxxle {
 		detail := fmt.Sprintf("game %q has no farm runtime", cartridge.ID())
 		log.Printf("farm: %s: %s", spec.RunID, detail)
 		finishRun(m, client, spec, "error", detail, burn, checkpointDir, nil, nil)
@@ -692,6 +702,19 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		}
 	case "policy":
 		reason, detail = runFarmTetris(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+		if farmDrainRequested(drain) && reason == "cancelled" {
+			reason = "drained"
+			detail = "runner shutdown requested; " + detail
+		}
+	case "launch":
+		if !isBoxxle {
+			reason, detail = "error", "planner launch is Boxxle-only"
+			break
+		}
+		// The cartridge is already booted by prepareFarmAttempt. This slice
+		// registers and launches Boxxle but does not play it: autonomous puzzle
+		// play is a later slice, so the run finishes as registered.
+		reason, detail = runFarmBoxxle(m, spec)
 		if farmDrainRequested(drain) && reason == "cancelled" {
 			reason = "drained"
 			detail = "runner shutdown requested; " + detail

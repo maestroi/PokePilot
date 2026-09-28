@@ -751,6 +751,19 @@ func normalizeGameStarter(spec *farm.Spec) error {
 		}
 		return nil
 	}
+	if spec.Game == "boxxle" {
+		if strings.TrimSpace(spec.Starter) != "" {
+			return fmt.Errorf("boxxle does not use a starter, got %q", spec.Starter)
+		}
+		spec.Starter = ""
+		if strings.TrimSpace(spec.Planner) == "" {
+			spec.Planner = "launch"
+		}
+		if spec.Planner != "launch" {
+			return fmt.Errorf("boxxle uses planner %q, got %q", "launch", spec.Planner)
+		}
+		return nil
+	}
 	if spec.Game != "pokemon-yellow" {
 		return nil
 	}

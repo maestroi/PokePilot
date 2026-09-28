@@ -546,6 +546,18 @@ func TestValidateSpecAcceptsTetrisPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateSpecAcceptsBoxxleLaunch(t *testing.T) {
+	if err := validateSpec("boxxle", "launch", "", ""); err != nil {
+		t.Fatalf("Boxxle launch rejected: %v", err)
+	}
+	if err := validateSpec("boxxle", "llm", "", ""); err == nil {
+		t.Fatal("Boxxle unexpectedly accepted the Pokemon LLM planner")
+	}
+	if err := validateSpec("boxxle", "launch", "squirtle", ""); err == nil {
+		t.Fatal("Boxxle unexpectedly accepted a Pokemon starter")
+	}
+}
+
 func TestHeartbeatSnapKeepsGameDecisionAcrossStatusSamples(t *testing.T) {
 	s := &heartbeatSnap{}
 	s.store(farm.Heartbeat{RunID: "tetris"})
