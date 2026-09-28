@@ -37,7 +37,7 @@ type mapSpec struct {
 
 // firstBadgeTopology is the verified early-Johto corridor needed to leave the
 // player's room, run Elm's opening errand, clear Violet, then continue through
-// Route 32 / Union Cave into Azalea and Slowpoke Well.
+// Route 32 / Union Cave into Azalea, then through Ilex Forest to Route 34.
 //
 // Facts are projected from pret/pokegold at gs/data.SourceRevision. Keeping the
 // names here (rather than raw group/number ids) makes the generated gs/data
@@ -269,6 +269,8 @@ var firstBadgeTopology = []mapSpec{
 			{x: 9, y: 5, dest: "KURTS_HOUSE", destWarp: 1},
 			{x: 10, y: 15, dest: "AZALEA_GYM", destWarp: 1},
 			{x: 31, y: 7, dest: "SLOWPOKE_WELL_B1F", destWarp: 1},
+			{x: 2, y: 10, dest: "ILEX_FOREST_AZALEA_GATE", destWarp: 3},
+			{x: 2, y: 11, dest: "ILEX_FOREST_AZALEA_GATE", destWarp: 4},
 		},
 		connections: []connectionSpec{
 			{dir: dirEast, dest: "ROUTE_33", offset: 0},
@@ -301,6 +303,51 @@ var firstBadgeTopology = []mapSpec{
 			{x: 17, y: 15, dest: "AZALEA_TOWN", destWarp: 6},
 		},
 	},
+	{
+		name: "ILEX_FOREST_AZALEA_GATE",
+		warps: []warpSpec{
+			{x: 0, y: 4, dest: "ILEX_FOREST", destWarp: 2},
+			{x: 0, y: 5, dest: "ILEX_FOREST", destWarp: 3},
+			{x: 9, y: 4, dest: "AZALEA_TOWN", destWarp: 7},
+			{x: 9, y: 5, dest: "AZALEA_TOWN", destWarp: 8},
+		},
+	},
+	{
+		name: "ILEX_FOREST",
+		warps: []warpSpec{
+			{x: 1, y: 5, dest: "ROUTE_34_ILEX_FOREST_GATE", destWarp: 3},
+			{x: 3, y: 42, dest: "ILEX_FOREST_AZALEA_GATE", destWarp: 1},
+			{x: 3, y: 43, dest: "ILEX_FOREST_AZALEA_GATE", destWarp: 2},
+		},
+	},
+	{
+		name: "ROUTE_34_ILEX_FOREST_GATE",
+		warps: []warpSpec{
+			{x: 4, y: 0, dest: "ROUTE_34", destWarp: 1},
+			{x: 5, y: 0, dest: "ROUTE_34", destWarp: 2},
+			{x: 4, y: 7, dest: "ILEX_FOREST", destWarp: 1},
+			{x: 5, y: 7, dest: "ILEX_FOREST", destWarp: 1},
+		},
+	},
+	{
+		name: "ROUTE_34",
+		warps: []warpSpec{
+			{x: 13, y: 37, dest: "ROUTE_34_ILEX_FOREST_GATE", destWarp: 1},
+			{x: 14, y: 37, dest: "ROUTE_34_ILEX_FOREST_GATE", destWarp: 2},
+		},
+		// The decomp also connects Route 34 east to Azalea. The executable
+		// story corridor reaches that side through Ilex Forest, so expose only
+		// the north connection here rather than a static shortcut around Cut.
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "GOLDENROD_CITY", offset: -5},
+		},
+	},
+	{
+		name: "GOLDENROD_CITY",
+		connections: []connectionSpec{
+			{dir: dirSouth, dest: "ROUTE_34", offset: 5},
+		},
+	},
 }
 
 type firstBadgeWorldProvider struct {
@@ -309,7 +356,7 @@ type firstBadgeWorldProvider struct {
 }
 
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
-// for the fresh-save -> Violet -> Azalea/Slowpoke Well/Bugsy vertical slice.
+// for the fresh-save -> Violet -> Azalea -> Ilex Forest / Route 34 vertical slice.
 //
 // romData is accepted now so this constructor can grow into the real #973 ROM
 // parser without changing its profile-facing shape. The current slice uses

@@ -164,8 +164,26 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressHiveBadgeEarned, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressAzaleaRivalResolved {
+		t.Fatalf("after Hive Badge progression = %+v, want Azalea rival", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressAzaleaRivalResolved, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressFarfetchdHerded {
+		t.Fatalf("after Azalea rival progression = %+v, want Farfetchd", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressFarfetchdHerded, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressHM01CutAcquired {
+		t.Fatalf("after Farfetchd progression = %+v, want HM01 Cut", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressHM01CutAcquired, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed Bugsy slice still offered: %+v", got)
+		t.Fatalf("completed Ilex HM01 slice still offered: %+v", got)
 	}
 }
 
@@ -192,6 +210,9 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressTogepiEggReceived,
 		gsprofile.ProgressSlowpokeWellCleared,
 		gsprofile.ProgressHiveBadgeEarned,
+		gsprofile.ProgressAzaleaRivalResolved,
+		gsprofile.ProgressFarfetchdHerded,
+		gsprofile.ProgressHM01CutAcquired,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -225,6 +246,9 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressTogepiEggReceived,
 		gsprofile.ProgressSlowpokeWellCleared,
 		gsprofile.ProgressHiveBadgeEarned,
+		gsprofile.ProgressAzaleaRivalResolved,
+		gsprofile.ProgressFarfetchdHerded,
+		gsprofile.ProgressHM01CutAcquired,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -258,13 +282,19 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressZephyrBadgeEarned,
 		gsprofile.ProgressSlowpokeWellCleared,
 		gsprofile.ProgressHiveBadgeEarned,
+		gsprofile.ProgressAzaleaRivalResolved,
+		gsprofile.ProgressFarfetchdHerded,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {
 			t.Fatalf("budget(%s) = %d, want %d", progress, got, gsFirstBadgeObjectiveFrameBudget)
 		}
 	}
-	for _, progress := range []ProgressID{gsprofile.ProgressMysteryEggReturned, gsprofile.ProgressTogepiEggReceived} {
+	for _, progress := range []ProgressID{
+		gsprofile.ProgressMysteryEggReturned,
+		gsprofile.ProgressTogepiEggReceived,
+		gsprofile.ProgressHM01CutAcquired,
+	} {
 		if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress}); got != objectiveFrameBudget {
 			t.Fatalf("%s budget = %d, want ordinary %d", progress, got, objectiveFrameBudget)
 		}

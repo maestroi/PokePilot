@@ -175,3 +175,30 @@ func TestGen2SecondBadgeTilesetsDecodeCaveAndKurtHouse(t *testing.T) {
 		}
 	}
 }
+
+func TestGen2IlexCorridorUsesPinnedTilesets(t *testing.T) {
+	for _, name := range []string{"ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY"} {
+		if got, ok := firstBadgeTileset(name); !ok || got != 0x02 {
+			t.Fatalf("%s tileset = %#02x ok=%v, want JOHTO_MODERN 0x02", name, got, ok)
+		}
+	}
+	if got, ok := firstBadgeTileset("ILEX_FOREST"); !ok || got != 0x1c {
+		t.Fatalf("ILEX_FOREST tileset = %#02x ok=%v, want FOREST 0x1c", got, ok)
+	}
+}
+
+func TestGen2IlexForestMarksRetailCutTree(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	mapID := collisionMapID(t, "ILEX_FOREST")
+	blocks := blocksFor(t, mapID, 0x01)
+	blocks[0] = 0x0f // FLOOR, FLOOR, CUT_TREE, HEADBUTT_TREE
+
+	spec, err := provider.Grid(mapID, blocks, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatalf("Grid: %v", err)
+	}
+	if !spec.Cuttable[spec.Width] || spec.Walkable[spec.Width] {
+		t.Fatalf("forest Cut tree = cuttable %v walkable %v, want true/false",
+			spec.Cuttable[spec.Width], spec.Walkable[spec.Width])
+	}
+}

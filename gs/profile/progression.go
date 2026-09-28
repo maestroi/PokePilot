@@ -17,6 +17,9 @@ const (
 	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
 	ProgressSlowpokeWellCleared      game.ProgressID = "gs_slowpoke_well_cleared"
 	ProgressHiveBadgeEarned          game.ProgressID = "gs_hive_badge_earned"
+	ProgressAzaleaRivalResolved      game.ProgressID = "gs_azalea_rival_resolved"
+	ProgressFarfetchdHerded          game.ProgressID = "gs_farfetchd_herded"
+	ProgressHM01CutAcquired          game.ProgressID = "gs_hm01_cut_acquired"
 )
 
 const (
@@ -27,13 +30,17 @@ const (
 	// Keep these zero-based event indices pinned: event flags are addressed
 	// directly as EventFlags + event/8 below.
 	eventGotHM05Flash             uint16 = 20
+	eventGotHM01Cut               uint16 = 16
+	eventHerdedFarfetchd          uint16 = 41
 	eventGotTogepiEggFromElmsAide uint16 = 45
 	eventClearedSlowpokeWell      uint16 = 43
+	eventRivalAzaleaTown          uint16 = 1727
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
 	johtoBadgeHiveMask                   = 1 << 1
 
 	sceneCherrygroveNoop     = 0
+	sceneAzaleaTownNoop      = 0
 	sceneMrPokemonsHouseNoop = 1
 	sceneElmsLabNoop         = 2
 )
@@ -90,6 +97,17 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressTogepiEggReceived, Complete: hasGSEvent(reader, eventGotTogepiEggFromElmsAide)},
 		{ID: ProgressSlowpokeWellCleared, Complete: hasGSEvent(reader, eventClearedSlowpokeWell)},
 		{ID: ProgressHiveBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeHiveMask != 0},
+		{
+			ID: ProgressAzaleaRivalResolved,
+			// EVENT_RIVAL_AZALEA_TOWN is set before startbattle, so it is not
+			// sufficient after a loss. The post-win script resets the scene to
+			// NOOP; requiring both facts makes this durable and retry-safe.
+			Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeHiveMask != 0 &&
+				hasGSEvent(reader, eventRivalAzaleaTown) &&
+				reader.Peek8(sym.AzaleaTownSceneID) == sceneAzaleaTownNoop,
+		},
+		{ID: ProgressFarfetchdHerded, Complete: hasGSEvent(reader, eventHerdedFarfetchd)},
+		{ID: ProgressHM01CutAcquired, Complete: hasGSEvent(reader, eventGotHM01Cut)},
 	}
 }
 

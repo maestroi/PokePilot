@@ -218,3 +218,36 @@ func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 		t.Fatalf("Kurt -> Azalea Gym route = %#v, want Kurt -> Azalea -> Gym", route)
 	}
 }
+
+func TestEarlyJohtoWorldProviderRoutesAzaleaThroughIlexToGoldenrod(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	names := []string{
+		"AZALEA_TOWN",
+		"ILEX_FOREST_AZALEA_GATE",
+		"ILEX_FOREST",
+		"ROUTE_34_ILEX_FOREST_GATE",
+		"ROUTE_34",
+		"GOLDENROD_CITY",
+	}
+	ids := make([]uint16, len(names))
+	for i, name := range names {
+		ids[i] = nativeID(t, name)
+	}
+	route, err := world.FindNativeRoute(graph, ids[0], ids[len(ids)-1])
+	if err != nil {
+		t.Fatalf("FindNativeRoute(Azalea -> Goldenrod): %v", err)
+	}
+	if len(route) != len(ids)-1 {
+		t.Fatalf("route has %d transitions, want %d: %#v", len(route), len(ids)-1, route)
+	}
+	for i, edge := range route {
+		if edge.From != ids[i] || edge.To != ids[i+1] {
+			t.Fatalf("route[%d] = %#04x -> %#04x, want %#04x -> %#04x", i, edge.From, edge.To, ids[i], ids[i+1])
+		}
+	}
+}
