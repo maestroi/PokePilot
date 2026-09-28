@@ -1,8 +1,6 @@
 package profile
 
 import (
-	"fmt"
-
 	"github.com/maestroi/pokepilot/game"
 	gsdata "github.com/maestroi/pokepilot/gs/data"
 	"github.com/maestroi/pokepilot/gs/sym"
@@ -21,13 +19,13 @@ func (p *Profile) DecodeBattleRuntime(reader game.MemoryReader) game.BattleRunti
 	nativeMap := gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber))
 	text := gsScreenText(reader)
 	return game.BattleRuntimeState{
-		InBattle:      inBattle,
-		Controllable:  gsControllable(reader),
-		TextActive:    !inBattle && scriptActive,
-		NativeMapID:   nativeMap,
-		X:             reader.Peek8(sym.XCoord),
-		Y:             reader.Peek8(sym.YCoord),
-		DebugText:     fmt.Sprintf("%s", text),
-		MenuCursor:    p.DecodeMenuCursor(reader),
+		InBattle:     inBattle,
+		Controllable: gsControllable(reader),
+		TextActive:   !inBattle && scriptActive,
+		NativeMapID:  nativeMap,
+		X:            reader.Peek8(sym.XCoord),
+		Y:            reader.Peek8(sym.YCoord),
+		DebugText:    text,
+		MenuCursor:   p.DecodeMenuCursor(reader),
 	}
 }
