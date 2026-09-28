@@ -113,6 +113,12 @@ func menuCursorDrawn(m *Mem) bool {
 // menu which owns input from leftover menu text still sitting in the tilemap.
 func MenuCursorDrawn(m *Mem) bool { return menuCursorDrawn(m) }
 
+// MenuCursorOffset exposes menuCursorOffset: the wTileMap offset the ROM
+// currently publishes for the menu cursor, and whether it is inside the
+// tilemap. Profiles use it to locate a cursor without trusting a shared,
+// last-writer-wins coordinate byte such as wTopMenuItemX.
+func MenuCursorOffset(m *Mem) (int, bool) { return menuCursorOffset(m) }
+
 // menuCursorGlyph returns the raw tile at the ROM-published cursor location.
 func menuCursorGlyph(m *Mem) (uint8, bool) {
 	offset, ok := menuCursorOffset(m)
