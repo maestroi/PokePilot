@@ -4,11 +4,11 @@ import test from 'node:test'
 import { PresentationClock, presentationEntityKey } from '../src/shared/animationClock.ts'
 import type { RenderState } from '../src/shared/api/renderstate.ts'
 
-function state(frame: number, x: number, y = 5, map = 'route 1'): RenderState {
+function state(frame: number, x: number, y = 5, map = 'route 1', epoch = 1): RenderState {
   return {
     schema_version: 1,
     game: { id: 'pokemon-red', revision: 'en-us-rev0' },
-    clock: { frame, captured_at_unix_ms: 1_800_000_000_000 + frame },
+    clock: { epoch, frame, cycle: frame * 100, captured_at_unix_ms: 1_800_000_000_000 + frame },
     scene: 'overworld',
     capabilities: ['map', 'player', 'layers'],
     map: { id: map, width: 40, height: 40 },
@@ -152,4 +152,19 @@ test('authoritative movement progress is respected when supplied', () => {
   clock.ingest(moving, 0)
 
   assert.deepEqual(clock.sample(0).player, { x: 10.25, y: 5 })
+})
+
+
+test('execution epoch changes snap even when restored frame moves forward', () => {
+  const clock = new PresentationClock({ minTweenMs: 40, maxTweenMs: 100 })
+  clock.ingest(state(10, 5, 5, 'route 1', 7), 100)
+
+  const restored = state(500, 20, 5, 'route 1', 8)
+  assert.equal(clock.ingest(restored, 150), 'epoch-change')
+
+  const sample = clock.sample(150)
+  assert.deepEqual(sample.player, { x: 20, y: 5 })
+  assert.equal(sample.animating, false)
+  assert.equal(sample.sourceEpoch, 8)
+  assert.equal(sample.sourceFrame, 500)
 })
