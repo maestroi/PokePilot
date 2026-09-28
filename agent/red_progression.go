@@ -107,15 +107,20 @@ func redCutFieldUnlocked(obs Observation) bool {
 	return ok && cut.BadgeOwned && cut.HMOwned
 }
 
-// redFlyPreparationAvailable decides whether the optional Fly optimization is
-// still worth putting in the ordinary progression menu after HM02 is owned.
-// Fly is not a correctness gate. Once the handoff has happened, an unusable
-// HM should not trigger PC/catch/gift roster surgery just to preserve a speed
-// optimization: offer it again only if the current party can prepare Fly. A
-// later natural party change makes Preparable true and re-enables the option.
-func redFlyPreparationAvailable(obs Observation) bool {
+// redFlyOptimizationAvailable decides whether the optional Fly setup belongs
+// in the ordinary progression menu. Before HM02 is owned, the Celadon+Flute
+// story state makes the safe Route 16 handoff worth attempting. After HM02 is
+// owned, Fly is not a correctness gate: do not launch PC/catch/gift roster
+// surgery just for this optimization. Re-offer it only when the current party
+// can prepare Fly (or already has it usable); a later natural party change
+// makes Preparable true and re-enables the option.
+func redFlyOptimizationAvailable(obs Observation) bool {
 	fly, ok := observedFieldCapability(obs, "fly")
-	return ok && fly.BadgeOwned && fly.HMOwned && (fly.Usable || fly.Preparable)
+	if ok && fly.HMOwned {
+		return fly.BadgeOwned && (fly.Usable || fly.Preparable)
+	}
+	return obs.Story.Has(redProgressPostSurgeCeladonReady) &&
+		obs.Story.Has(redProgressPokeFluteAcquired)
 }
 
 // redProgressionObjectives exposes Red story opportunities as one portable
@@ -217,14 +222,7 @@ func redProgressionObjectives(obs Observation) []Objective {
 		// Fly is a speed optimization, not a correctness gate. Once Celadon is
 		// ready and the Poke Flute makes the Route 16 detour reversible, offer
 		// Fly alongside the mandatory story step instead of replacing it.
-		if !obs.Story.Has(redProgressFlyReady) &&
-			((obs.Story.Has(redProgressPostSurgeCeladonReady) &&
-				obs.Story.Has(redProgressPokeFluteAcquired) &&
-				func() bool {
-					fly, ok := observedFieldCapability(obs, "fly")
-					return !ok || !fly.HMOwned
-				}()) ||
-				redFlyPreparationAvailable(obs)) {
+		if !obs.Story.Has(redProgressFlyReady) && redFlyOptimizationAvailable(obs) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,
