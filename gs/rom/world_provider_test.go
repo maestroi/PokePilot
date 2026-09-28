@@ -219,7 +219,6 @@ func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 	}
 }
 
-
 func TestEarlyJohtoWorldProviderRoutesAzaleaThroughIlexToGoldenrod(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	graph, err := world.BuildNativeGraph(provider)
