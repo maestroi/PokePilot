@@ -179,7 +179,12 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// back to an already-seen map instead of using Surf (#2150). This action
 		// owns only the source-map traversal; the gate warp itself remains an
 		// ordinary landing once the player reaches y=138.
-		return semanticTransition("red:route23_league_return", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+		t := semanticTransition("red:route23_league_return", edge, capCanSurf, capCanPassRoute23BadgeChecks)
+		// Surf happens before the warp, entirely inside Route 23. The action
+		// needs source-component pivot privilege, but the Route 22 Gate landing
+		// is ordinary known geometry and must not be relaxed as a Surf seam.
+		t.PortBypass = false
+		return t, true
 
 	case edge.Kind == world.EdgeWarp && edge.To == indigoPlateauLobbyMap &&
 		(edge.From == loreleiRoomMap || edge.From == brunoRoomMap || edge.From == agathaRoomMap) &&
