@@ -926,6 +926,7 @@ func main() {
 			log.Fatalf("pokereplay: server stopped: %v", err)
 		}
 	case <-ctx.Done():
+		serverImpl.stopLiveSessions()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
