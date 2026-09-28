@@ -84,3 +84,56 @@ func TestCollectCheckpointArtifactsIncludesBenchmarkResult(t *testing.T) {
 		t.Fatalf("artifacts = %+v", arts)
 	}
 }
+
+
+func TestWriteFarmBenchmarkResultWritesBattleShadowCorpus(t *testing.T) {
+	dir := t.TempDir()
+	primary := &agent.LLMPlanner{Model: "test-model"}
+	stats := &statsPlanner{
+		inner:  primary,
+		router: agent.NewFailoverPlanner(primary, nil),
+		decision: agent.DecisionSettings{
+			Backend: "jev",
+			Shadow:  true,
+			Battles: true,
+		},
+		battleShadowSamples: []agent.BattleShadowSample{{
+			Version:        agent.BattleShadowSampleVersion,
+			State:          agent.CoreBattleEvalCases()[0].State.MoveOnly(),
+			Executed:       "move:3",
+			ObservedChoice: "move:2",
+		}},
+	}
+	spec := farm.Spec{RunID: "shadow-corpus", Game: "pokemon-red", Planner: "llm"}
+	started := time.Unix(2000, 0)
+	if err := writeFarmBenchmarkResult(spec, agent.Result{}, stats, started, started.Add(time.Second), "", dir, "romsha", 1000); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(filepath.Join(dir, farmBattleShadowCorpusName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	samples, err := agent.ReadBattleShadowCorpus(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 || samples[0].Executed != "move:3" || samples[0].ObservedChoice != "move:2" {
+		t.Fatalf("samples = %+v", samples)
+	}
+}
+
+func TestCollectCheckpointArtifactsIncludesBattleShadowCorpus(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte("{\"version\":1,\"state\":{\"context\":\"wild\",\"active_slot\":0,\"active\":{},\"opponent\":{},\"moves\":[{\"slot\":0,\"move\":\"tackle\",\"pp\":1}],\"can_run\":false},\"executed\":\"move:0\"}\n")
+	if err := os.WriteFile(filepath.Join(dir, farmBattleShadowCorpusName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	arts, err := collectCheckpointArtifacts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(arts) != 1 || arts[0].Name != farmBattleShadowCorpusName || arts[0].MediaType != "application/x-ndjson" {
+		t.Fatalf("artifacts = %+v", arts)
+	}
+}
