@@ -115,7 +115,7 @@ func TestCombatDefeatDoesNotSpendMechanicalFailureBudget(t *testing.T) {
 		Outcome:   OutcomeBlocked,
 		Failure: &gameruntime.Failure{
 			Class:       gameruntime.FailureClassBlocked,
-			Cause:       "navigation_stalled",
+			Cause:       "menu_stuck",
 			Recoverable: true,
 		},
 	}
