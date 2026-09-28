@@ -154,6 +154,7 @@ func TestProgrammingQueuePromotesOneChallengeAndHandsOffAfterFinish(t *testing.T
 	}
 
 	snapshotRes = challengeRequest(t, h, http.MethodGet, "/v1/programming", nil)
+	snapshot = challengeProgrammingSnapshot{}
 	if err := json.Unmarshal(snapshotRes.Body.Bytes(), &snapshot); err != nil {
 		t.Fatal(err)
 	}
