@@ -135,11 +135,23 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 	}
 }
 
+const gsFirstBadgeObjectiveFrameBudget uint64 = 1_500_000
+
+func gsObjectiveFrameBudget(o Objective) uint64 {
+	if o.Kind == KindProgress {
+		switch o.Progress {
+		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned:
+			return gsFirstBadgeObjectiveFrameBudget
+		}
+	}
+	return objectiveFrameBudgetFor(o)
+}
+
 func (a *gsObjectiveAdapter) WithinObjectiveBudget(o Objective, fn func() error) error {
 	if a.m == nil {
 		return fmt.Errorf("agent: %s: nil emulator", o)
 	}
-	deadline := a.m.FrameCount() + objectiveFrameBudgetFor(o)
+	deadline := a.m.FrameCount() + gsObjectiveFrameBudget(o)
 	err := a.m.WithFrameDeadline(deadline, fn)
 	if errors.Is(err, emu.ErrFrameDeadline) {
 		return fmt.Errorf("agent: %s: objective frame watchdog: %w", o, err)
