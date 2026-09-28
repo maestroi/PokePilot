@@ -259,6 +259,20 @@ const trainerBattleTransitionSettleBudget = 400
 // flag still belong in a higher-level story skill. Such a skill may reuse this
 // fight primitive and then assert its badge/item/warp/story postcondition.
 func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) error {
+	return ChallengeTrainerWithOptions(m, romData, homeX, homeY, policy, BattleOptions{})
+}
+
+// ChallengeTrainerWithOptions is ChallengeTrainer with caller-owned battle
+// policy context. Ordinary callers use the zero-value options; major trainer
+// sequences can carry future-matchup preservation into Battle without
+// teaching the generic trainer interaction about a specific campaign.
+func ChallengeTrainerWithOptions(
+	m *emu.Emu,
+	romData []byte,
+	homeX, homeY uint8,
+	policy MovePolicy,
+	options BattleOptions,
+) error {
 	if policy == nil {
 		return errors.New("skill: ChallengeTrainer: nil policy")
 	}
@@ -342,7 +356,7 @@ func ChallengeTrainer(m *emu.Emu, romData []byte, homeX, homeY uint8, policy Mov
 		}
 	}
 
-	outcome, err := Battle(m, policy)
+	outcome, err := BattleWithOptions(m, policy, options)
 	if err != nil {
 		return fmt.Errorf("skill: ChallengeTrainer: battle: %w", err)
 	}
