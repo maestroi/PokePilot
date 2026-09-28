@@ -103,6 +103,18 @@ func TestGenOneProfilesExposeSharedBattleMenuSemantics(t *testing.T) {
 	}
 }
 
+func TestGenOneProfilesExposeSharedCenterSemantics(t *testing.T) {
+	for _, p := range []game.GameProfile{
+		redprofile.New(),
+		blueprofile.New(),
+		yellowprofile.New(),
+	} {
+		if _, ok := p.(game.CenterDecoder); !ok {
+			t.Errorf("%s: does not expose Pokemon Center semantics", p.ID())
+		}
+	}
+}
+
 func TestTetrisCartridgeResolvesWhenROMAvailable(t *testing.T) {
 	path := os.Getenv("TETRIS_ROM")
 	if path == "" {
