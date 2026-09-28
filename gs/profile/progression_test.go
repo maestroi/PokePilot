@@ -100,7 +100,6 @@ func TestGSObservationIncludesMysteryEggReturnVerifier(t *testing.T) {
 	}
 }
 
-
 func TestFirstBadgeProgressionProjectsSproutTowerAndZephyrBoundaries(t *testing.T) {
 	mem := fakeGSReader{}
 	if story := projectEarlyStory(mem); story.Has(ProgressSproutTowerCleared) || story.Has(ProgressZephyrBadgeEarned) {
