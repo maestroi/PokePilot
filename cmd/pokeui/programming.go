@@ -100,4 +100,3 @@ func spectatorProgrammingHTTPHandler(wallBase string, next http.Handler) http.Ha
 	mux.Handle("/", next)
 	return mux
 }
-
