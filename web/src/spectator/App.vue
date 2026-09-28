@@ -49,7 +49,7 @@ import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import { canRenderModernScene } from '../shared/semanticRenderer'
-import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
+import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
@@ -70,12 +70,12 @@ const selectionPinned = ref(Boolean(selectedRunID.value))
 const copyState = ref('')
 const theaterMode = ref(false)
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'modern' ? 'modern' : 'classic')
-const themeOptions = renderThemeOptions()
-const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || DEFAULT_RENDER_THEME_ID
-const initialThemeSelection = resolveRenderTheme(storedThemeID)
+const themeOptions = publicRenderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || PUBLIC_RENDER_THEME_ID
+const initialThemeSelection = resolvePublicRenderTheme(storedThemeID)
 const selectedThemeID = ref(initialThemeSelection.theme.id)
 const themeNotice = ref(initialThemeSelection.diagnostics.join(' '))
-const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
+const activeTheme = computed(() => resolvePublicRenderTheme(selectedThemeID.value).theme)
 const playerRef = ref<HTMLElement | null>(null)
 const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
@@ -187,8 +187,8 @@ const frameEnabled = computed(() =>
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
   if (isTetrisSelected.value || rendererMode.value !== 'modern' || showModern.value) return ''
-  if (renderStateStatus.value === 'error') return 'Gold / Silver · semantic state reconnecting'
-  if (renderState.value?.scene) return 'Gold / Silver · classic compatibility · ' + renderState.value.scene
+  if (renderStateStatus.value === 'error') return `${activeTheme.value.name} · semantic state reconnecting`
+  if (renderState.value?.scene) return `${activeTheme.value.name} · classic compatibility · ${renderState.value.scene}`
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
@@ -627,7 +627,7 @@ function setRendererMode(mode: RendererMode): void {
 }
 
 function setTheme(themeID: string): void {
-  const resolved = resolveRenderTheme(themeID)
+  const resolved = resolvePublicRenderTheme(themeID)
   selectedThemeID.value = resolved.theme.id
   themeNotice.value = resolved.diagnostics.join(' ')
   rendererMode.value = 'modern'
