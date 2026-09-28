@@ -13,6 +13,11 @@ import (
 // progress so callers can hand it to Battle.
 var ErrTrainerBattle = errors.New("skill: cannot flee a trainer battle")
 
+// ErrFleeExhausted reports that every bounded RUN attempt completed without
+// escaping and the encounter is still live. Callers that own the encounter
+// may hand it to Battle rather than returning a poisoned in-battle boundary.
+var ErrFleeExhausted = errors.New("skill: flee attempts exhausted")
+
 // fleeAttemptBudget bounds one RUN attempt: refusal/escape text, the enemy's
 // turn after a failed attempt, and any faint-and-switch episode in between.
 const fleeAttemptBudget = 6000
@@ -142,7 +147,7 @@ func Flee(m *emu.Emu, attempts int) error {
 		}
 	}
 	live = controllers.runtime.DecodeBattleRuntime(m)
-	return fmt.Errorf("skill: Flee: still in battle after %d attempts: %s", attempts, battleRuntimeContext(live))
+	return fmt.Errorf("skill: Flee: still in battle after %d attempts: %s: %w", attempts, battleRuntimeContext(live), ErrFleeExhausted)
 }
 
 type fleeOutcome int
