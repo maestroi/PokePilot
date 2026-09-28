@@ -39,7 +39,8 @@ func run() int {
 	model := flag.String("model", "", "override the selected backend model for this run")
 	baseURL := flag.String("url", "", "override the selected backend URL for this run")
 	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for typed backends, reject choices below this 0..1 confidence; 0 scores every valid decision")
-	suite := flag.String("suite", "planner", "fixture suite: planner (objective selection) or battle (typed battle turns; decision or jev backend only)")
+	battleCorpus := flag.String("battle-corpus", "", "for -suite battle, replay a battle-shadow JSONL corpus instead of built-in fixtures")
+	suite := flag.String("suite", "planner", "fixture suite: planner (objective selection) or battle (typed battle turns)")
 	flag.Parse()
 
 	if *minScore < 0 || *minScore > 1 {
@@ -54,7 +55,7 @@ func run() int {
 	switch strings.ToLower(strings.TrimSpace(*suite)) {
 	case "", "planner":
 	case "battle":
-		return runBattleSuite(*backend, *model, *baseURL, *decisionMinConfidence, *minScore, *list, *jsonOut)
+		return runBattleSuite(*backend, *model, *baseURL, *battleCorpus, *decisionMinConfidence, *minScore, *list, *jsonOut)
 	default:
 		fmt.Fprintf(os.Stderr, "agent-eval: unknown -suite %q; want planner or battle\n", *suite)
 		return 2
