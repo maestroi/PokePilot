@@ -265,11 +265,27 @@ var firstBadgeTopology = []mapSpec{
 	{
 		name: "AZALEA_TOWN",
 		warps: []warpSpec{
+			{x: 15, y: 9, dest: "AZALEA_POKECENTER_1F", destWarp: 1},
 			{x: 9, y: 5, dest: "KURTS_HOUSE", destWarp: 1},
+			{x: 10, y: 15, dest: "AZALEA_GYM", destWarp: 1},
 			{x: 31, y: 7, dest: "SLOWPOKE_WELL_B1F", destWarp: 1},
 		},
 		connections: []connectionSpec{
 			{dir: dirEast, dest: "ROUTE_33", offset: 0},
+		},
+	},
+	{
+		name: "AZALEA_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "AZALEA_TOWN", destWarp: 1},
+			{x: 4, y: 7, dest: "AZALEA_TOWN", destWarp: 1},
+		},
+	},
+	{
+		name: "AZALEA_GYM",
+		warps: []warpSpec{
+			{x: 4, y: 15, dest: "AZALEA_TOWN", destWarp: 5},
+			{x: 5, y: 15, dest: "AZALEA_TOWN", destWarp: 5},
 		},
 	},
 	{
@@ -293,7 +309,7 @@ type firstBadgeWorldProvider struct {
 }
 
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
-// for the fresh-save -> Violet -> Azalea/Slowpoke Well vertical slice.
+// for the fresh-save -> Violet -> Azalea/Slowpoke Well/Bugsy vertical slice.
 //
 // romData is accepted now so this constructor can grow into the real #973 ROM
 // parser without changing its profile-facing shape. The current slice uses

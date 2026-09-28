@@ -173,10 +173,12 @@ func TestEarlyJohtoWorldProviderRoutesVioletThroughUnionCaveToAzalea(t *testing.
 	}
 }
 
-func TestEarlyJohtoWorldProviderIncludesKurtAndSlowpokeWellWarps(t *testing.T) {
+func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	azalea := nativeID(t, "AZALEA_TOWN")
+	center := nativeID(t, "AZALEA_POKECENTER_1F")
 	kurt := nativeID(t, "KURTS_HOUSE")
+	gym := nativeID(t, "AZALEA_GYM")
 	well := nativeID(t, "SLOWPOKE_WELL_B1F")
 
 	header, err := provider.ParseMap(azalea)
@@ -184,17 +186,35 @@ func TestEarlyJohtoWorldProviderIncludesKurtAndSlowpokeWellWarps(t *testing.T) {
 		t.Fatalf("ParseMap(AZALEA_TOWN): %v", err)
 	}
 
+	foundCenter := false
 	foundKurt := false
+	foundGym := false
 	foundWell := false
 	for _, warp := range header.Warps {
 		switch {
+		case warp.X == 15 && warp.Y == 9 && warp.DestMap == center && warp.DestWarpID == 0:
+			foundCenter = true
 		case warp.X == 9 && warp.Y == 5 && warp.DestMap == kurt && warp.DestWarpID == 0:
 			foundKurt = true
+		case warp.X == 10 && warp.Y == 15 && warp.DestMap == gym && warp.DestWarpID == 0:
+			foundGym = true
 		case warp.X == 31 && warp.Y == 7 && warp.DestMap == well && warp.DestWarpID == 0:
 			foundWell = true
 		}
 	}
-	if !foundKurt || !foundWell {
-		t.Fatalf("Azalea story warps: Kurt=%v Well=%v header=%+v", foundKurt, foundWell, header.Warps)
+	if !foundCenter || !foundKurt || !foundGym || !foundWell {
+		t.Fatalf("Azalea story warps: Center=%v Kurt=%v Gym=%v Well=%v header=%+v", foundCenter, foundKurt, foundGym, foundWell, header.Warps)
+	}
+
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+	route, err := world.FindNativeRoute(graph, kurt, gym)
+	if err != nil {
+		t.Fatalf("FindNativeRoute(Kurt -> Azalea Gym): %v", err)
+	}
+	if len(route) != 2 || route[0].From != kurt || route[0].To != azalea || route[1].From != azalea || route[1].To != gym {
+		t.Fatalf("Kurt -> Azalea Gym route = %#v, want Kurt -> Azalea -> Gym", route)
 	}
 }

@@ -308,7 +308,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x04, true
 	case "PLAYERS_HOUSE_1F":
 		return 0x05, true
-	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F":
+	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F":
 		return 0x06, true
 	case "ROUTE_31_VIOLET_GATE":
 		return 0x07, true
@@ -318,7 +318,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x0a, true
 	case "CHERRYGROVE_MART", "VIOLET_MART":
 		return 0x0b, true
-	case "VIOLET_GYM":
+	case "VIOLET_GYM", "AZALEA_GYM":
 		return 0x0e, true
 	case "KURTS_HOUSE":
 		return 0x0f, true

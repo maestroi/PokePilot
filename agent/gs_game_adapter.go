@@ -45,7 +45,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
 		gsprofile.ProgressTogepiEggReceived,
-		gsprofile.ProgressSlowpokeWellCleared:
+		gsprofile.ProgressSlowpokeWellCleared,
+		gsprofile.ProgressHiveBadgeEarned:
 		return true
 	default:
 		return false
@@ -127,6 +128,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSTogepiEggPickup(a.m, a.romData)
 		case gsprofile.ProgressSlowpokeWellCleared:
 			err = executeGSSlowpokeWell(a.m, a.romData)
+		case gsprofile.ProgressHiveBadgeEarned:
+			err = executeGSBugsy(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -147,7 +150,7 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 	if o.Kind == KindProgress {
 		switch o.Progress {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
-			gsprofile.ProgressSlowpokeWellCleared:
+			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -296,6 +299,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressSlowpokeWellCleared,
 			Note:     "(travel Route 32 through Union Cave to Azalea, recruit Kurt, defeat Team Rocket in Slowpoke Well, and restore the Slowpoke)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressHiveBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressHiveBadgeEarned,
+			Note:     "(enter Azalea Gym, defeat Bugsy, and earn the Hive Badge)",
 		}}
 	default:
 		return nil

@@ -132,6 +132,15 @@ func TestFirstBadgeProgressionProjectsSproutTowerZephyrAndEggBoundaries(t *testi
 	if !story.Has(ProgressSlowpokeWellCleared) {
 		t.Fatalf("Slowpoke Well event did not complete Rocket clear milestone: %+v", story)
 	}
+	if story.Has(ProgressHiveBadgeEarned) {
+		t.Fatal("Slowpoke Well completion falsely granted Hive Badge")
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgeHiveMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHiveBadgeEarned) {
+		t.Fatalf("Hive badge bit did not complete Bugsy milestone: %+v", story)
+	}
 }
 
 func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
@@ -146,5 +155,14 @@ func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
 	}
 	if eventClearedSlowpokeWell != 43 {
 		t.Fatalf("EVENT_CLEARED_SLOWPOKE_WELL = %d, want 43", eventClearedSlowpokeWell)
+	}
+}
+
+func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
+	if johtoBadgeZephyrMask != 1<<0 {
+		t.Fatalf("ENGINE_ZEPHYRBADGE mask = %#02x, want %#02x", johtoBadgeZephyrMask, 1<<0)
+	}
+	if johtoBadgeHiveMask != 1<<1 {
+		t.Fatalf("ENGINE_HIVEBADGE mask = %#02x, want %#02x", johtoBadgeHiveMask, 1<<1)
 	}
 }

@@ -16,6 +16,7 @@ const (
 	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
 	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
 	ProgressSlowpokeWellCleared      game.ProgressID = "gs_slowpoke_well_cleared"
+	ProgressHiveBadgeEarned          game.ProgressID = "gs_hive_badge_earned"
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 	eventClearedSlowpokeWell      uint16 = 43
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
+	johtoBadgeHiveMask                   = 1 << 1
 
 	sceneCherrygroveNoop     = 0
 	sceneMrPokemonsHouseNoop = 1
@@ -87,6 +89,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
 		{ID: ProgressTogepiEggReceived, Complete: hasGSEvent(reader, eventGotTogepiEggFromElmsAide)},
 		{ID: ProgressSlowpokeWellCleared, Complete: hasGSEvent(reader, eventClearedSlowpokeWell)},
+		{ID: ProgressHiveBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeHiveMask != 0},
 	}
 }
 
