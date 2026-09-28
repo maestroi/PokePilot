@@ -67,9 +67,46 @@ func TestDecodeBattleExecutionMoveSelectionSkipped(t *testing.T) {
 	}
 	for _, c := range cases {
 		var mem fakeMemory
+		// Every case below is about a status that skips the menu on its own, so
+		// give the active mon a selectable move and isolate the status bit.
+		putBattlePP(&mem, [4]byte{10, 10, 10, 10})
 		mem[int(c.addr)] = c.val
 		if got := New().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.want {
 			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// MoveSelectionMenu.regularmenu calls AnyMoveToSelect before drawing anything,
+// and AnyMoveToSelect selects STRUGGLE instead when no move the cursor can pick
+// has PP left. FIGHT then runs the whole turn, so the shared battle loop must
+// not wait for a move menu that will never be drawn
+// (run-39etso0zuq4451wr2duvk128ph: Oddish out of PP against the Silph rival).
+func TestDecodeBattleExecutionMoveSelectionSkippedWithoutPP(t *testing.T) {
+	cases := []struct {
+		name     string
+		pp       [4]byte
+		disabled byte // high nibble of wPlayerDisabledMove: 1-based move index
+		want     bool
+	}{
+		{"one move with pp", [4]byte{1, 0, 0, 0}, 0, false},
+		{"all moves spent", [4]byte{0, 0, 0, 0}, 0, true},
+		{"only the disabled move has pp", [4]byte{0, 5, 0, 0}, 2, true},
+		{"a move the cursor can pick has pp", [4]byte{0, 5, 0, 0}, 1, false},
+		{"pp up bits do not count as pp", [4]byte{0xc0, 0, 0, 0}, 0, true},
+	}
+	for _, c := range cases {
+		var mem fakeMemory
+		putBattlePP(&mem, c.pp)
+		mem[int(sym.PlayerDisabledMove)] = c.disabled << 4
+		if got := New().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.want {
+			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.want)
+		}
+	}
+}
+
+func putBattlePP(mem *fakeMemory, pp [4]byte) {
+	for slot, value := range pp {
+		mem[int(sym.BattleMonPP)+slot] = value
 	}
 }
