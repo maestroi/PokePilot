@@ -115,7 +115,7 @@ func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
 	}
 }
 
-func TestGSProgressionOffersFirstBadgeStagesInOrder(t *testing.T) {
+func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
 	obs := Observation{
 		GameID:     gsprofile.GoldGameID,
@@ -146,8 +146,14 @@ func TestGSProgressionOffersFirstBadgeStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressZephyrBadgeEarned, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressTogepiEggReceived {
+		t.Fatalf("after Zephyr Badge progression = %+v, want Togepi Egg handoff", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressTogepiEggReceived, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed first-badge slice still offered: %+v", got)
+		t.Fatalf("completed post-Falkner handoff still offered: %+v", got)
 	}
 }
 
@@ -171,6 +177,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressMysteryEggReturned,
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
+		gsprofile.ProgressTogepiEggReceived,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -201,6 +208,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 	for _, progress := range []ProgressID{
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
+		gsprofile.ProgressTogepiEggReceived,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -238,7 +246,9 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 			t.Fatalf("budget(%s) = %d, want %d", progress, got, gsFirstBadgeObjectiveFrameBudget)
 		}
 	}
-	if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}); got != objectiveFrameBudget {
-		t.Fatalf("opening errand budget = %d, want ordinary %d", got, objectiveFrameBudget)
+	for _, progress := range []ProgressID{gsprofile.ProgressMysteryEggReturned, gsprofile.ProgressTogepiEggReceived} {
+		if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress}); got != objectiveFrameBudget {
+			t.Fatalf("%s budget = %d, want ordinary %d", progress, got, objectiveFrameBudget)
+		}
 	}
 }

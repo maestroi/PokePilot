@@ -43,7 +43,8 @@ func gsSupportedProgress(id ProgressID) bool {
 	switch id {
 	case gsprofile.ProgressMysteryEggReturned,
 		gsprofile.ProgressSproutTowerCleared,
-		gsprofile.ProgressZephyrBadgeEarned:
+		gsprofile.ProgressZephyrBadgeEarned,
+		gsprofile.ProgressTogepiEggReceived:
 		return true
 	default:
 		return false
@@ -121,6 +122,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSSproutTower(a.m, a.romData)
 		case gsprofile.ProgressZephyrBadgeEarned:
 			err = executeGSFalkner(a.m, a.romData)
+		case gsprofile.ProgressTogepiEggReceived:
+			err = executeGSTogepiEggPickup(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -267,6 +270,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressZephyrBadgeEarned,
 			Note:     "(enter Violet Gym, defeat the gym trainers and Falkner, and earn the Zephyr Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressTogepiEggReceived):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressTogepiEggReceived,
+			Note:     "(answer Elm's post-Falkner call, meet his aide in Violet Pokemon Center, and accept the Togepi Egg that opens Route 32)",
 		}}
 	default:
 		return nil

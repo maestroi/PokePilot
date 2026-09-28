@@ -100,10 +100,10 @@ func TestGSObservationIncludesMysteryEggReturnVerifier(t *testing.T) {
 	}
 }
 
-func TestFirstBadgeProgressionProjectsSproutTowerAndZephyrBoundaries(t *testing.T) {
+func TestFirstBadgeProgressionProjectsSproutTowerZephyrAndEggBoundaries(t *testing.T) {
 	mem := fakeGSReader{}
-	if story := projectEarlyStory(mem); story.Has(ProgressSproutTowerCleared) || story.Has(ProgressZephyrBadgeEarned) {
-		t.Fatalf("fresh story already completed first-badge milestones: %+v", story)
+	if story := projectEarlyStory(mem); story.Has(ProgressSproutTowerCleared) || story.Has(ProgressZephyrBadgeEarned) || story.Has(ProgressTogepiEggReceived) {
+		t.Fatalf("fresh story already completed early-Johto milestones: %+v", story)
 	}
 
 	setGSEvent(mem, eventGotHM05Flash)
@@ -119,5 +119,23 @@ func TestFirstBadgeProgressionProjectsSproutTowerAndZephyrBoundaries(t *testing.
 	story = projectEarlyStory(mem)
 	if !story.Has(ProgressZephyrBadgeEarned) {
 		t.Fatalf("Zephyr badge bit did not complete milestone: %+v", story)
+	}
+
+	setGSEvent(mem, eventGotTogepiEggFromElmsAide)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressTogepiEggReceived) {
+		t.Fatalf("Togepi Egg event did not complete post-Falkner handoff: %+v", story)
+	}
+}
+
+func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
+	// constants/event_flags.asm at gs/data.SourceRevision. These literals are
+	// intentional: using the production constants as both setup and expected
+	// value would not catch an off-by-one event binding.
+	if eventGotHM05Flash != 20 {
+		t.Fatalf("EVENT_GOT_HM05_FLASH = %d, want 20", eventGotHM05Flash)
+	}
+	if eventGotTogepiEggFromElmsAide != 45 {
+		t.Fatalf("EVENT_GOT_TOGEPI_EGG_FROM_ELMS_AIDE = %d, want 45", eventGotTogepiEggFromElmsAide)
 	}
 }

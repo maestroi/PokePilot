@@ -220,3 +220,53 @@ func executeGSFalkner(m *emu.Emu, romData []byte) error {
 	}
 	return nil
 }
+
+// executeGSTogepiEggPickup owns the mandatory post-Falkner handoff that opens
+// Route 32. The retail script waits in Violet's Pokemon Center after Elm's
+// phone call, asks a YES/NO question, gives the egg, then advances Route 32's
+// scene. The existing interruption driver safely accepts the default YES and
+// waits for the aide's exit movement to return stable overworld control.
+func executeGSTogepiEggPickup(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 Togepi egg: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTogepiEggReceived) {
+		if profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		return driveGSFirstBadgeInterruption(m, profile, "violet:elms_aide_togepi_egg")
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressZephyrBadgeEarned) {
+		return fmt.Errorf("%w: Togepi Egg handoff requires the Zephyr Badge", errGSFirstBadgeUnexpectedState)
+	}
+
+	center, err := gsOpeningMapID("VIOLET_POKECENTER_1F")
+	if err != nil {
+		return err
+	}
+	// VioletPokecenter1F.asm places Elm's aide at (4,3), facing down.
+	if err := gsFirstBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(center, 4, 4)); err != nil {
+		return fmt.Errorf("gen2 Togepi egg: reach Elm's aide: %w", err)
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTogepiEggReceived) {
+		return nil
+	}
+	if err := skill.Face(m, 4, 3); err != nil {
+		return fmt.Errorf("gen2 Togepi egg: face Elm's aide: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSFirstBadgeInterruption(m, profile, "violet:elms_aide_togepi_egg"); err != nil {
+		return fmt.Errorf("gen2 Togepi egg: aide script: %w", err)
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTogepiEggReceived) {
+		return fmt.Errorf("%w: Elm's aide script returned without the Togepi Egg event", errGSFirstBadgeUnexpectedState)
+	}
+	if !profile.DecodeOverworld(m).Controllable {
+		return fmt.Errorf("%w: Togepi Egg handoff completed without stable overworld control", errGSFirstBadgeUnexpectedState)
+	}
+	return nil
+}
