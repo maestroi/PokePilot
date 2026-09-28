@@ -35,9 +35,9 @@ type mapSpec struct {
 	connections []connectionSpec
 }
 
-// firstBadgeTopology is the verified fresh-save corridor needed to leave the
-// player's room, run Elm's opening errand, reach Violet, enter Sprout Tower,
-// and enter Falkner's gym.
+// firstBadgeTopology is the verified early-Johto corridor needed to leave the
+// player's room, run Elm's opening errand, clear Violet, then continue through
+// Route 32 / Union Cave into Azalea and Slowpoke Well.
 //
 // Facts are projected from pret/pokegold at gs/data.SourceRevision. Keeping the
 // names here (rather than raw group/number ids) makes the generated gs/data
@@ -233,6 +233,58 @@ var firstBadgeTopology = []mapSpec{
 			{x: 10, y: 14, dest: "SPROUT_TOWER_2F", destWarp: 4},
 		},
 	},
+	{
+		name: "ROUTE_32",
+		warps: []warpSpec{
+			{x: 6, y: 79, dest: "UNION_CAVE_1F", destWarp: 4},
+		},
+		// The decomp also declares a south connection directly to Route 33,
+		// but the executable badge corridor is the cave warp. Keep the partial
+		// provider honest instead of offering an abstract edge whose landing is
+		// not reachable through the live collision grid.
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "VIOLET_CITY", offset: 0},
+		},
+	},
+	{
+		name: "UNION_CAVE_1F",
+		warps: []warpSpec{
+			{x: 17, y: 31, dest: "ROUTE_33", destWarp: 1},
+			{x: 17, y: 3, dest: "ROUTE_32", destWarp: 4},
+		},
+	},
+	{
+		name: "ROUTE_33",
+		warps: []warpSpec{
+			{x: 11, y: 9, dest: "UNION_CAVE_1F", destWarp: 3},
+		},
+		connections: []connectionSpec{
+			{dir: dirWest, dest: "AZALEA_TOWN", offset: 0},
+		},
+	},
+	{
+		name: "AZALEA_TOWN",
+		warps: []warpSpec{
+			{x: 9, y: 5, dest: "KURTS_HOUSE", destWarp: 1},
+			{x: 31, y: 7, dest: "SLOWPOKE_WELL_B1F", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirEast, dest: "ROUTE_33", offset: 0},
+		},
+	},
+	{
+		name: "KURTS_HOUSE",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "AZALEA_TOWN", destWarp: 4},
+			{x: 4, y: 7, dest: "AZALEA_TOWN", destWarp: 4},
+		},
+	},
+	{
+		name: "SLOWPOKE_WELL_B1F",
+		warps: []warpSpec{
+			{x: 17, y: 15, dest: "AZALEA_TOWN", destWarp: 6},
+		},
+	},
 }
 
 type firstBadgeWorldProvider struct {
@@ -241,7 +293,7 @@ type firstBadgeWorldProvider struct {
 }
 
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
-// for the fresh-save -> Violet/Falkner vertical slice.
+// for the fresh-save -> Violet -> Azalea/Slowpoke Well vertical slice.
 //
 // romData is accepted now so this constructor can grow into the real #973 ROM
 // parser without changing its profile-facing shape. The current slice uses

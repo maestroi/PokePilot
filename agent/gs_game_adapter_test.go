@@ -152,8 +152,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressTogepiEggReceived, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressSlowpokeWellCleared {
+		t.Fatalf("after Togepi Egg progression = %+v, want Slowpoke Well", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSlowpokeWellCleared, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed post-Falkner handoff still offered: %+v", got)
+		t.Fatalf("completed Slowpoke Well slice still offered: %+v", got)
 	}
 }
 
@@ -178,6 +184,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
 		gsprofile.ProgressTogepiEggReceived,
+		gsprofile.ProgressSlowpokeWellCleared,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -209,6 +216,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
 		gsprofile.ProgressTogepiEggReceived,
+		gsprofile.ProgressSlowpokeWellCleared,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -240,6 +248,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 	for _, progress := range []ProgressID{
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
+		gsprofile.ProgressSlowpokeWellCleared,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {

@@ -126,6 +126,12 @@ func TestFirstBadgeProgressionProjectsSproutTowerZephyrAndEggBoundaries(t *testi
 	if !story.Has(ProgressTogepiEggReceived) {
 		t.Fatalf("Togepi Egg event did not complete post-Falkner handoff: %+v", story)
 	}
+
+	setGSEvent(mem, eventClearedSlowpokeWell)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressSlowpokeWellCleared) {
+		t.Fatalf("Slowpoke Well event did not complete Rocket clear milestone: %+v", story)
+	}
 }
 
 func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
@@ -137,5 +143,8 @@ func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
 	}
 	if eventGotTogepiEggFromElmsAide != 45 {
 		t.Fatalf("EVENT_GOT_TOGEPI_EGG_FROM_ELMS_AIDE = %d, want 45", eventGotTogepiEggFromElmsAide)
+	}
+	if eventClearedSlowpokeWell != 43 {
+		t.Fatalf("EVENT_CLEARED_SLOWPOKE_WELL = %d, want 43", eventClearedSlowpokeWell)
 	}
 }
