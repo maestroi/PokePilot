@@ -1,6 +1,6 @@
 ---
 name: pokefarm-run-diagnose
-description: Use when the user gives a PokePilot run id (e.g. "run-9avakysua1ml", "what's wrong with run X", "why is this run stuck/failing") and wants a diagnosis. Reads the run's own evidence (finish detail, trace tail, failure frame, circuit/issue state), traces the error chain to the owning code, and reports the root cause. Diagnosis only — hand off to pokefarm-triage for repro + fix.
+description: Use when the user gives a PokePilot run id (e.g. "run-9avakysua1ml", "what's wrong with run X", "why is this run stuck/failing") and wants a diagnosis. Reads the run's own evidence (finish detail, trace tail, failure frame, circuit/issue state), traces the error chain to the owning code, and reports the root cause. Diagnosis only — hand off to pokefarm-run-fix when the user wants the run repaired.
 ---
 
 # PokeFarm run diagnosis
@@ -10,8 +10,9 @@ is already tracked. Most of the time the run's own evidence is enough — do not
 download states or reproduce unless the evidence is genuinely ambiguous.
 
 Do not edit code, file issues, or open PRs unless the user asks. If they ask
-for a fix, hand off to `.claude/skills/pokefarm-triage/SKILL.md` (it owns
-reproduce-before-fix).
+for a fix, hand off to `pokefarm-run-fix`: it takes the same run id, resolves
+this run's triage key, and drives repro → fix → PR through
+`.claude/skills/pokefarm-triage/SKILL.md`.
 
 ## 1. Pull the debug bundle
 
@@ -84,7 +85,7 @@ Root cause: <why, pointing at file:line>
 Tracked:    #<issue> <status>/<verification_state>, circuit <count>
             — or "not tracked"
 Confidence: high | medium (what would confirm it)
-Next:       pokefarm-triage on key <key>  |  expected gameplay, no action  |  ...
+Next:       pokefarm-run-fix on this run id  |  expected gameplay, no action  |  ...
 ```
 
 Call out explicitly when it is **not** a software defect (normal blackout,

@@ -12,7 +12,14 @@ same skill call should fail the same way. Never fix from the error string alone
 
 ## 1. What is failing
 
-There are two entry modes.
+There are three entry modes.
+
+### Starting from one run id
+
+`pokefarm-run-fix` owns this entry: it turns a run id into this run's triage key
+(`run.issue.circuit_key`), decides whether the run is a defect, a stall, expected
+gameplay, or infrastructure, then rejoins this procedure at section 3. Use it
+whenever the work item arrived as a run id rather than as a queue packet.
 
 ### Interactive triage
 
@@ -227,6 +234,7 @@ this skill can.
 
 ## Known map
 
+- `.claude/skills/pokefarm-run-fix/SKILL.md` — work item is a run id: resolve the key and drive this procedure to a PR.
 - `.claude/skills/world-map-debug/SKILL.md` — World Explorer → probe → worldverify workflow for map/routing failures.
 - `docs/RUN_INSPECTOR.md` — artifact/replay endpoints and run inspection.
 - `docs/RAM_FORENSICS.md` + `gomeboy-forensics` — instruction-level probes.
