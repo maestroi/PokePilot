@@ -51,8 +51,8 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
 # WithModel(recording.Model) line that replays CGB recordings as CGB while DMG
 # recordings stay DMG. v1.4.0 records network link results in the .gbrun, so
 # sessions that ran a Cable Club trade replay instead of diverging at the trade.
-RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@v1.4.1-0.20260927175826-14088b6e1a4c && \
-    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.4.1-0.20260927175826-14088b6e1a4c
+RUN GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-stream@v1.4.1-0.20260928072120-133b708d8170 && \
+    GOBIN=/out CGO_ENABLED=0 go install github.com/maestroi/gomeboy/cmd/gomeboy-link-broker@v1.4.1-0.20260928072120-133b708d8170
 
 # FFmpeg is runtime-only and is used by gomeboy-stream to encode deterministic
 # .gbrun replays into cached MP4s. intel-media-driver is the userspace half of
