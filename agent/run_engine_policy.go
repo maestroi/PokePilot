@@ -212,6 +212,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	staticUnavailable := failureCauseIs(result, "static_capture_unavailable")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
 	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
+	navigationStalled := failureCauseIs(result, "navigation_stalled")
 	pushPuzzleSearchExhausted := failureCauseIs(result, "push_puzzle_search_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
@@ -251,10 +252,17 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// Spending the fatal consecutive-failure/escalation budget here can stop a
 	// healthy run after a few distinct route gates before any of those recovery
 	// paths execute (#1555, #1557). Keep the ordinary replan signal, but leave
-	// the failure budget untouched. Genuine repeated navigation/controller
-	// failures still use the bounded policy below, and watchdog/round/frame
-	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite || routeSearchExhausted || pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable || purchaseBlocked {
+	// the failure budget untouched. Genuine controller failures still use the
+	// bounded policy below, and watchdog/round/frame budgets remain the outer
+	// guard if no prerequisite can be satisfied.
+	//
+	// ErrNavigationStalled is also bounded route-search evidence: GoTo emits it
+	// only after proving a repeated player state or an excessive sequence of
+	// successful map transitions. record() already installs same-state
+	// quarantine for that journey, so charging the generic mechanical budget as
+	// well can terminate a healthy run before an alternate objective moves the
+	// player or advances progression (#2141).
+	if routePrerequisite || routeSearchExhausted || navigationStalled || pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable || purchaseBlocked {
 		// A fully bounded route-search exhaustion is also a planning boundary:
 		// GoTo already spent its local replan budget and the failure policy has
 		// recorded a same-state quarantine for this exact objective. Charging the
