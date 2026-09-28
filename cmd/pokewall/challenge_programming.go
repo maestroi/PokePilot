@@ -67,22 +67,22 @@ type challengeRunLink struct {
 }
 
 type challengeQueueEntry struct {
-	ID               string   `json:"id"`
-	ChallengeID      string   `json:"challenge_id"`
-	ChallengeVersion int      `json:"challenge_version"`
-	ChallengeName    string   `json:"challenge_name"`
-	State            string   `json:"state"`
-	ScheduledAt      int64    `json:"scheduled_at,omitempty"`
-	RepeatEverySeconds int64   `json:"repeat_every_seconds,omitempty"`
-	RepeatUntil       int64    `json:"repeat_until,omitempty"`
-	CreatedAt        int64    `json:"created_at"`
-	StartedAt        int64    `json:"started_at,omitempty"`
-	EndedAt          int64    `json:"ended_at,omitempty"`
-	RunIDs           []string `json:"run_ids,omitempty"`
-	ExperimentID     string   `json:"experiment_id,omitempty"`
-	Result           string   `json:"result,omitempty"`
-	Error            string   `json:"error,omitempty"`
-	Pinned           bool     `json:"pinned,omitempty"`
+	ID                 string   `json:"id"`
+	ChallengeID        string   `json:"challenge_id"`
+	ChallengeVersion   int      `json:"challenge_version"`
+	ChallengeName      string   `json:"challenge_name"`
+	State              string   `json:"state"`
+	ScheduledAt        int64    `json:"scheduled_at,omitempty"`
+	RepeatEverySeconds int64    `json:"repeat_every_seconds,omitempty"`
+	RepeatUntil        int64    `json:"repeat_until,omitempty"`
+	CreatedAt          int64    `json:"created_at"`
+	StartedAt          int64    `json:"started_at,omitempty"`
+	EndedAt            int64    `json:"ended_at,omitempty"`
+	RunIDs             []string `json:"run_ids,omitempty"`
+	ExperimentID       string   `json:"experiment_id,omitempty"`
+	Result             string   `json:"result,omitempty"`
+	Error              string   `json:"error,omitempty"`
+	Pinned             bool     `json:"pinned,omitempty"`
 }
 
 type challengeProgrammingState struct {
@@ -467,16 +467,16 @@ func (c *challengeProgrammingController) enqueueDefinition(challenge challengeDe
 		state = programStateScheduled
 	}
 	entry := challengeQueueEntry{
-		ID:               "slot-" + strings.TrimPrefix(newRunID(), "run-"),
-		ChallengeID:      challenge.ID,
-		ChallengeVersion: challenge.Version,
-		ChallengeName:    challenge.Name,
-		State:            state,
+		ID:                 "slot-" + strings.TrimPrefix(newRunID(), "run-"),
+		ChallengeID:        challenge.ID,
+		ChallengeVersion:   challenge.Version,
+		ChallengeName:      challenge.Name,
+		State:              state,
 		ScheduledAt:        request.ScheduledAt,
 		RepeatEverySeconds: request.RepeatEverySeconds,
-		RepeatUntil:         request.RepeatUntil,
-		CreatedAt:           now,
-		Pinned:           request.PinNext,
+		RepeatUntil:        request.RepeatUntil,
+		CreatedAt:          now,
+		Pinned:             request.PinNext,
 	}
 	c.mu.Lock()
 	if request.PinNext {
