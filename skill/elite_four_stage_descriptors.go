@@ -80,7 +80,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 			return f.LeagueLoreleiDefeated
 		},
 		Matchups: leagueLoreleiMatchups(),
-		Fight: standardLeagueStageFight,
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               loreleiExitStand,
 			NextRoom:            brunoRoomMap,
@@ -102,7 +102,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 			return f.LeagueBrunoDefeated
 		},
 		Matchups: leagueBrunoMatchups(),
-		Fight: standardLeagueStageFight,
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               brunoExitStand,
 			NextRoom:            agathaRoomMap,
@@ -124,7 +124,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 			return f.LeagueAgathaDefeated
 		},
 		Matchups: leagueAgathaMatchups(),
-		Fight: standardLeagueStageFight,
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               agathaExitStand,
 			NextRoom:            lanceRoomMap,
@@ -146,7 +146,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 			return f.LeagueLanceDefeated
 		},
 		Matchups: leagueLanceMatchups(),
-		Fight: standardLeagueStageFight,
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               lanceExitStand,
 			NextRoom:            championsRoomMap,
@@ -167,7 +167,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 			return f.LeagueChampionDefeated
 		},
 		Matchups: leagueChampionMatchups(),
-		Fight: championLeagueStageFight,
+		Fight:    championLeagueStageFight,
 	},
 }
 
