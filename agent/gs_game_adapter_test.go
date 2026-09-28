@@ -115,7 +115,7 @@ func TestStarterObjectiveForSpeciesUsesActiveGoldCatalog(t *testing.T) {
 	}
 }
 
-func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
+func TestGSProgressionOffersFirstBadgeStagesInOrder(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
 	obs := Observation{
 		GameID:     gsprofile.GoldGameID,
@@ -134,8 +134,20 @@ func TestGSProgressionOffersPostStarterErrandUntilEggReturned(t *testing.T) {
 		{ID: gsprofile.ProgressStarterReceived, Complete: true},
 		{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
 	}
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressSproutTowerCleared {
+		t.Fatalf("after Egg return progression = %+v, want Sprout Tower", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSproutTowerCleared, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressZephyrBadgeEarned {
+		t.Fatalf("after Sprout Tower progression = %+v, want Zephyr Badge", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressZephyrBadgeEarned, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed errand still offered: %+v", got)
+		t.Fatalf("completed first-badge slice still offered: %+v", got)
 	}
 }
 
@@ -155,9 +167,14 @@ func TestGSProgressionDoesNotSkipDurableStarterBoundary(t *testing.T) {
 
 func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
-	ok := Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}
-	if err := adapter.Validate(ok, Observation{}); err != nil {
-		t.Fatalf("Validate opening errand: %v", err)
+	for _, progress := range []ProgressID{
+		gsprofile.ProgressMysteryEggReturned,
+		gsprofile.ProgressSproutTowerCleared,
+		gsprofile.ProgressZephyrBadgeEarned,
+	} {
+		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
+			t.Fatalf("Validate %s: %v", progress, err)
+		}
 	}
 	err := adapter.Validate(Objective{Kind: KindProgress, Progress: "gs_future_goal"}, Observation{})
 	if !errors.Is(err, errGSControllerUnavailable) {
@@ -176,5 +193,52 @@ func TestGSPostStarterProgressUsesGenericStoryVerifier(t *testing.T) {
 	}
 	if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{}); err != nil {
 		t.Fatalf("VerifyPostcondition: %v", err)
+	}
+}
+
+func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	for _, progress := range []ProgressID{
+		gsprofile.ProgressSproutTowerCleared,
+		gsprofile.ProgressZephyrBadgeEarned,
+	} {
+		o := Objective{Kind: KindProgress, Progress: progress}
+		final := Observation{
+			Controllable: true,
+			Story:        ProgressState{{ID: progress, Complete: true}},
+		}
+		if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{}); err != nil {
+			t.Fatalf("VerifyPostcondition(%s): %v", progress, err)
+		}
+	}
+}
+
+func TestGSRequiredBattleLossNormalizesAsCombatDefeat(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	err := skill.RequireTrainerBattleWin("gym:falkner", game.BattleLost)
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
+	if failure.Class != game.FailureClassBlocked || !failure.Recoverable {
+		t.Fatalf("failure = %+v, want recoverable blocked", failure)
+	}
+	if failure.Cause != failureCauseCombatDefeat {
+		t.Fatalf("cause = %q, want %q", failure.Cause, failureCauseCombatDefeat)
+	}
+	if len(failure.Context) != 1 || failure.Context[0] != "gym:falkner" {
+		t.Fatalf("context = %+v, want Falkner encounter", failure.Context)
+	}
+}
+
+func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
+	for _, progress := range []ProgressID{
+		gsprofile.ProgressSproutTowerCleared,
+		gsprofile.ProgressZephyrBadgeEarned,
+	} {
+		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
+		if got != gsFirstBadgeObjectiveFrameBudget {
+			t.Fatalf("budget(%s) = %d, want %d", progress, got, gsFirstBadgeObjectiveFrameBudget)
+		}
+	}
+	if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}); got != objectiveFrameBudget {
+		t.Fatalf("opening errand budget = %d, want ordinary %d", got, objectiveFrameBudget)
 	}
 }

@@ -270,9 +270,9 @@ func gsErrandScriptMap(mapID uint16) bool {
 
 // driveGSEarlyBattle routes Gold/Silver encounters through the shared semantic
 // battle controller. The GS profile now owns the native 2D battle menu, move
-// list, execution phases and runtime boundary; generic code only chooses a
-// portable move slot. Resource/party UI remains optional and fail-closed until
-// the later Gen-II item/switch slice.
+// list, execution phases, party/resource projection and runtime boundary;
+// generic code only chooses portable battle actions. Gen-II battle-item use
+// remains fail-closed until native item semantics are generation-neutral.
 func driveGSEarlyBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 	if m == nil || profile == nil {
 		return fmt.Errorf("%w: missing emulator/profile for early battle", errGSOpeningUnexpectedState)

@@ -12,13 +12,17 @@ const (
 	ProgressCherrygroveRivalResolved game.ProgressID = "gs_cherrygrove_rival_resolved"
 	ProgressRivalNamed               game.ProgressID = "gs_rival_named"
 	ProgressMysteryEggReturned       game.ProgressID = "gs_mystery_egg_returned"
+	ProgressSproutTowerCleared       game.ProgressID = "gs_sprout_tower_cleared"
+	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
 )
 
 const (
 	eventGotPokemonFromElm      uint16 = 26
 	eventGotMysteryEggMrPokemon uint16 = 30
 	eventGaveMysteryEggToElm    uint16 = 31
+	eventGotHM05Flash           uint16 = 21
 	statusFlagsPokedexMask             = 1 << 0
+	johtoBadgeZephyrMask               = 1 << 0
 
 	sceneCherrygroveNoop     = 0
 	sceneMrPokemonsHouseNoop = 1
@@ -72,5 +76,14 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressCherrygroveRivalResolved, Complete: f.CherrygroveRivalResolved},
 		{ID: ProgressRivalNamed, Complete: f.RivalNamed},
 		{ID: ProgressMysteryEggReturned, Complete: f.MysteryEggReturned},
+		{ID: ProgressSproutTowerCleared, Complete: hasGSEvent(reader, eventGotHM05Flash)},
+		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
 	}
+}
+
+// DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
+// needed by the first-badge executor without leaking event numbers or badge
+// bit positions into agent policy.
+func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
+	return projectEarlyStory(reader)
 }

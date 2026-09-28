@@ -99,3 +99,25 @@ func TestGSObservationIncludesMysteryEggReturnVerifier(t *testing.T) {
 		t.Fatalf("mystery egg return fact = %+v, ok=%v", fact, ok)
 	}
 }
+
+func TestFirstBadgeProgressionProjectsSproutTowerAndZephyrBoundaries(t *testing.T) {
+	mem := fakeGSReader{}
+	if story := projectEarlyStory(mem); story.Has(ProgressSproutTowerCleared) || story.Has(ProgressZephyrBadgeEarned) {
+		t.Fatalf("fresh story already completed first-badge milestones: %+v", story)
+	}
+
+	setGSEvent(mem, eventGotHM05Flash)
+	story := projectEarlyStory(mem)
+	if !story.Has(ProgressSproutTowerCleared) {
+		t.Fatalf("FLASH handoff did not complete Sprout Tower: %+v", story)
+	}
+	if story.Has(ProgressZephyrBadgeEarned) {
+		t.Fatal("Sprout Tower completion falsely granted Zephyr Badge")
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgeZephyrMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressZephyrBadgeEarned) {
+		t.Fatalf("Zephyr badge bit did not complete milestone: %+v", story)
+	}
+}
