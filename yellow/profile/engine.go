@@ -118,15 +118,59 @@ func (*Profile) DecodeCenter(r game.MemoryReader) game.CenterState {
 	return engine.DecodeCenter(r)
 }
 
+// DecodeShop delegates the shared Gen-I Poke Mart transaction state. Omitting
+// it made skill.Buy reject Yellow with "does not expose shop transaction
+// semantics" on every Viridian Mart visit (run-1wsyy1f75ssxsheu3o4xpui4).
+func (*Profile) DecodeShop(r game.MemoryReader) game.ShopState {
+	return engine.DecodeShop(r)
+}
+
+func (*Profile) DecodePrompt(r game.MemoryReader) game.PromptState {
+	return engine.DecodePrompt(r)
+}
+
+func (*Profile) DecodeFieldItem(r game.MemoryReader) game.FieldItemState {
+	return engine.DecodeFieldItem(r)
+}
+
+func (*Profile) FieldItemSemantics(item uint16) game.FieldItemSemantics {
+	return engine.FieldItemSemantics(item)
+}
+
+func (*Profile) PreferredRepels() []uint16 {
+	return engine.PreferredRepels()
+}
+
+// Field-move capability reads TM/HM compatibility through red/rom, which
+// resolves Yellow's own tables via the cartridge-bound gen1rom layout.
+func (*Profile) DecodeFieldMoveCapability(r game.MemoryReader, rom []byte, id game.FieldMoveID) (game.FieldMoveCapability, bool, error) {
+	return engine.DecodeFieldMoveCapability(r, rom, id)
+}
+
+func (*Profile) DecodeFieldMoveMenu(r game.MemoryReader) game.FieldMoveMenuState {
+	return engine.DecodeFieldMoveMenu(r)
+}
+
+func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool) {
+	return engine.NativeFieldMove(id)
+}
+
 // Every capability the shared Gen-I runtime resolves from a profile must be
 // delegated explicitly. A missing method is invisible at compile time and only
 // surfaces at runtime as a "profile does not expose X semantics" stall, so the
 // assertions below turn that omission into a build failure.
+//
+// ponytail: BuildDexCatalog is deliberately not delegated; Red's catalog
+// carries Red/Blue scripted exclusives and event sources, not Yellow's.
 var (
 	_ game.BattleMenuDecoder       = (*Profile)(nil)
 	_ game.BattleEscapeMenuDecoder = (*Profile)(nil)
 	_ game.BattleCombatStrategy    = (*Profile)(nil)
 	_ game.CenterDecoder           = (*Profile)(nil)
+	_ game.ShopDecoder             = (*Profile)(nil)
+	_ game.PromptDecoder           = (*Profile)(nil)
+	_ game.FieldItemDecoder        = (*Profile)(nil)
+	_ game.FieldMoveDecoder        = (*Profile)(nil)
 )
 
 func (*Profile) EvaluateCombatMove(

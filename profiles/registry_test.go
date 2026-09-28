@@ -112,6 +112,18 @@ func TestGenOneProfilesExposeSharedCenterSemantics(t *testing.T) {
 		if _, ok := p.(game.CenterDecoder); !ok {
 			t.Errorf("%s: does not expose Pokemon Center semantics", p.ID())
 		}
+		if _, ok := p.(game.ShopDecoder); !ok {
+			t.Errorf("%s: does not expose shop transaction semantics", p.ID())
+		}
+		if _, ok := p.(game.PromptDecoder); !ok {
+			t.Errorf("%s: does not expose prompt semantics", p.ID())
+		}
+		if _, ok := p.(game.FieldItemDecoder); !ok {
+			t.Errorf("%s: does not expose field-item semantics", p.ID())
+		}
+		if _, ok := p.(game.FieldMoveDecoder); !ok {
+			t.Errorf("%s: does not expose field-move semantics", p.ID())
+		}
 	}
 }
 
