@@ -28,7 +28,7 @@ var gsIlexBirdSteps = map[int]gsIlexBirdStep{
 	10: {position: 10, birdX: 6, birdY: 28, standX: 6, standY: 29},
 	// A resumed save may already be at position 2. Facing UP from below takes
 	// the normal forward branch to position 3.
-	2:  {position: 2, birdX: 15, birdY: 25, standX: 15, standY: 26},
+	2: {position: 2, birdX: 15, birdY: 25, standX: 15, standY: 26},
 }
 
 func executeGSAzaleaRival(m *emu.Emu, romData []byte) error {
