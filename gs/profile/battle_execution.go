@@ -9,7 +9,6 @@ import (
 
 var _ game.BattleExecutionDecoder = (*Profile)(nil)
 
-
 func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecutionState {
 	if reader == nil {
 		return game.BattleExecutionState{}
