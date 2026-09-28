@@ -24,9 +24,9 @@ const (
 	// pret/pokegold constants/event_flags.asm at gs/data.SourceRevision.
 	// Keep these zero-based event indices pinned: event flags are addressed
 	// directly as EventFlags + event/8 below.
-	eventGotHM05Flash              uint16 = 20
-	eventGotTogepiEggFromElmsAide  uint16 = 45
-	statusFlagsPokedexMask                = 1 << 0
+	eventGotHM05Flash             uint16 = 20
+	eventGotTogepiEggFromElmsAide uint16 = 45
+	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask               = 1 << 0
 
 	sceneCherrygroveNoop     = 0
