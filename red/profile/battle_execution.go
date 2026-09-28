@@ -108,8 +108,37 @@ const (
 // DisplayBattleMenu returns (engine/battle/core.asm): a sleeping or frozen
 // active mon, the player's own Bide or Wrap, or an enemy Wrap all jump to
 // .selectEnemyMove, so FIGHT runs the turn without drawing the move menu.
+//
+// MoveSelectionMenu.regularmenu calls AnyMoveToSelect first and returns before
+// drawing anything when it selects STRUGGLE, so an active mon with no
+// selectable move left skips the move menu the same way: FIGHT alone runs the
+// turn. Missing that case stranded the Silph rival fight — Oddish was out of PP
+// on every move, the ROM printed "has no moves left!" and started the Struggle
+// turn, and the shared FIGHT wait read the absent move menu as a stuck menu
+// (run-39etso0zuq4451wr2duvk128ph).
 func moveSelectionSkipped(mem *state.Mem) bool {
 	return mem.U8(sym.BattleMonStatus)&(battleStatusFrozen|battleStatusSleepMask) != 0 ||
 		mem.U8(sym.PlayerBattleStatus1)&(battleStatusBide|battleStatusTrappingMove) != 0 ||
-		mem.U8(sym.EnemyBattleStatus1)&battleStatusTrappingMove != 0
+		mem.U8(sym.EnemyBattleStatus1)&battleStatusTrappingMove != 0 ||
+		!anyMoveToSelect(mem)
+}
+
+// anyMoveToSelect mirrors engine/battle/core.asm AnyMoveToSelect: it is false
+// exactly when the ROM picks STRUGGLE instead of drawing the move menu. A
+// disabled move's PP is ignored because the cursor can never select it.
+//
+// The ROM ORs raw PP bytes when a move is disabled and masks them otherwise;
+// masking both ways says "no move to select" for a spent move that carries PP
+// Up bits. That is the safe direction: it hands the turn to the ROM's own
+// STRUGGLE path instead of waiting for a move menu whose moves all refuse.
+func anyMoveToSelect(mem *state.Mem) bool {
+	disabled := int(mem.U8(sym.PlayerDisabledMove) >> 4)
+	var pp uint8
+	for slot := 0; slot < 4; slot++ {
+		if slot+1 == disabled {
+			continue
+		}
+		pp |= mem.U8(sym.BattleMonPP+uint16(slot)) & state.CurrentPPMask
+	}
+	return pp != 0
 }

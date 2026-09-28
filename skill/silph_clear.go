@@ -290,6 +290,7 @@ func resolveSilphRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: ClearSilphCo: rival resolution requested on map %#04x", m.Peek8(sym.CurMap))
 	}
 
+	var firstErr error
 	for _, trigger := range []Destination{
 		{Map: silphCo7FMap, X: silphRivalTriggerX, Y: silphRivalTriggerY},
 		{Map: silphCo7FMap, X: silphRivalAltTriggerX, Y: silphRivalAltTriggerY},
@@ -298,15 +299,20 @@ func resolveSilphRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if err != nil && !silphStoryActive(m) {
 			return fmt.Errorf("skill: ClearSilphCo: reach rival trigger (%d,%d): %w", trigger.X, trigger.Y, err)
 		}
-		if driveErr := driveSilphStory(m, "Silph rival", policy, func(f state.StoryFacts) bool {
+		driveErr := driveSilphStory(m, "Silph rival", policy, func(f state.StoryFacts) bool {
 			return f.SilphCoRivalDefeated
-		}); driveErr == nil {
-			return nil
-		} else if currentSilphFacts(m).SilphCoRivalDefeated {
+		})
+		if driveErr == nil || currentSilphFacts(m).SilphCoRivalDefeated {
 			return nil
 		}
+		if silphDriveResolvedBattle(driveErr) {
+			return fmt.Errorf("skill: ClearSilphCo: Silph rival: %w", driveErr)
+		}
+		if firstErr == nil {
+			firstErr = driveErr
+		}
 	}
-	return fmt.Errorf("skill: ClearSilphCo: rival triggers completed without silph rival defeated fact")
+	return silphTriggerFailure("rival triggers completed without silph rival defeated fact", firstErr)
 }
 
 func resolveSilphGiovanni(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -326,6 +332,7 @@ func resolveSilphGiovanni(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
+	var firstErr error
 	for _, trigger := range []Destination{
 		{Map: silphCo11FMap, X: silphGiovanniTriggerX, Y: silphGiovanniTriggerY},
 		{Map: silphCo11FMap, X: silphGiovanniAltTriggerX, Y: silphGiovanniAltTriggerY},
@@ -334,15 +341,44 @@ func resolveSilphGiovanni(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if err != nil && !silphStoryActive(m) {
 			return fmt.Errorf("skill: ClearSilphCo: reach Giovanni trigger (%d,%d): %w", trigger.X, trigger.Y, err)
 		}
-		if driveErr := driveSilphStory(m, "Silph Giovanni", policy, func(f state.StoryFacts) bool {
+		driveErr := driveSilphStory(m, "Silph Giovanni", policy, func(f state.StoryFacts) bool {
 			return f.SilphCoCleared
-		}); driveErr == nil {
-			return nil
-		} else if currentSilphFacts(m).SilphCoCleared {
+		})
+		if driveErr == nil || currentSilphFacts(m).SilphCoCleared {
 			return nil
 		}
+		if silphDriveResolvedBattle(driveErr) {
+			return fmt.Errorf("skill: ClearSilphCo: Silph Giovanni: %w", driveErr)
+		}
+		if firstErr == nil {
+			firstErr = driveErr
+		}
 	}
-	return fmt.Errorf("skill: ClearSilphCo: Giovanni triggers completed without silph_co_cleared")
+	return silphTriggerFailure("Giovanni triggers completed without silph_co_cleared", firstErr)
+}
+
+// silphDriveResolvedBattle reports whether a failed story drive already
+// resolved the required battle rather than leaving it running. A resolved loss
+// is durable: the blackout has already moved the player out of the room, so
+// walking to the other candidate trigger tile cannot change the outcome, and
+// the agent's combat recovery owns what happens next. Retrying there instead
+// spent thousands of frames re-entering a lost slice.
+func silphDriveResolvedBattle(err error) bool {
+	var required *RequiredBattleError
+	return errors.As(err, &required)
+}
+
+// silphTriggerFailure composes the error for a Silph slice whose candidate
+// trigger coordinates were all exhausted. The first drive failure stays the
+// wrapped cause: replacing it with prose reported a lost required battle and a
+// stuck battle menu as the same unknown_error, so recovery replayed the same
+// checkpoint into the same failure until the circuit opened
+// (run-39etso0zuq4451wr2duvk128ph).
+func silphTriggerFailure(message string, first error) error {
+	if first == nil {
+		return fmt.Errorf("skill: ClearSilphCo: %s", message)
+	}
+	return fmt.Errorf("skill: ClearSilphCo: %s: %w", message, first)
 }
 
 func silphStoryActive(m *emu.Emu) bool {
