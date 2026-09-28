@@ -151,7 +151,6 @@ func TestGen2NativeGridRespectsDirectionalWallBothWays(t *testing.T) {
 	}
 }
 
-
 func TestGen2SecondBadgeTilesetsDecodeCaveAndKurtHouse(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 
