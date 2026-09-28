@@ -255,6 +255,8 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 		return RoutePrerequisiteLink{Capability: id, Progress: redProgressBicycleAcquired, RecoveryOnly: true}, true
 	case "can_enter_saffron":
 		return RoutePrerequisiteLink{Capability: id, Progress: ProgressSaffronGateOpen}, true
+	case "can_enter_viridian_gym":
+		return RoutePrerequisiteLink{Capability: id, Progress: ProgressViridianGymOpen}, true
 	case "can_enter_rocket_hideout":
 		// The poster stair is closed until the Rocket Hideout switch. The
 		// objective that presses it is the same one that collects the Scope.

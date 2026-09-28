@@ -78,7 +78,7 @@ func TestRunFailurePolicyPushPuzzleSearchDoesNotSpendMechanicalBudget(t *testing
 	mechanical := result
 	mechanical.Failure = &gameruntime.Failure{
 		Class:       gameruntime.FailureClassBlocked,
-		Cause:       "navigation_stalled",
+		Cause:       "menu_stuck",
 		Recoverable: true,
 	}
 	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {

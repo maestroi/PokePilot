@@ -24,6 +24,7 @@ const (
 	capCanLeaveViridianNorth      gameruntime.CapabilityID = "can_leave_viridian_north"
 	capCanLeavePewterEast         gameruntime.CapabilityID = "can_leave_pewter_east"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
+	capCanEnterViridianGym        gameruntime.CapabilityID = "can_enter_viridian_gym"
 )
 
 const (
@@ -143,6 +144,9 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	if facts.SaffronGateOpen {
 		caps[capCanEnterSaffron] = true
 	}
+	if facts.ViridianGymOpen {
+		caps[capCanEnterViridianGym] = true
+	}
 	// GameCornerSetRocketHideoutDoorTile keeps the poster stair a wall
 	// until this flag. Project it so routing can tell a closed warp table
 	// entry from the stair the poster script has already opened.
@@ -225,6 +229,17 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// destination inherits it; filtering only the named Route 3 waypoint
 		// is not enough once Mt. Moon/Cerulean are known.
 		t := semanticTransition("red:pewter_east_boulder", edge, capCanLeavePewterEast)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticViridianCityMap && edge.To == viridianGymMap && edge.Kind == world.EdgeWarp:
+		// Viridian's Gym warp is present in the immutable ROM graph even while
+		// the city script intercepts its doorway and prints "The GYM's doors
+		// are locked". Treat the scripted door as a passive forward gate so a
+		// generic GoTo cannot repeatedly walk into that text box before the
+		// durable open-gym event is set (#2140). The reverse gym->city warp
+		// stays ordinary so a resumed checkpoint inside the gym can always
+		// leave.
+		t := semanticTransition("red:viridian_gym_open", edge, capCanEnterViridianGym)
 		t.Gate = true
 		return t, true
 	case edge.From == mtMoonB2FMap && edge.Kind == world.EdgeWarp &&
