@@ -9,6 +9,8 @@ import type {
   ModelDeployment,
   ModelDeploymentInput,
   ModelRegistrySnapshot,
+  ProgrammingEntry,
+  ProgrammingSnapshot,
   ReplayStatus,
   RunArtifact,
   RunSpec,
@@ -73,6 +75,26 @@ export function getBuildProvenance(signal?: AbortSignal): Promise<BuildProvenanc
 
 export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal): Promise<DashboardSnapshot> {
   return requestJSON<DashboardSnapshot>(`/v1/dashboard${queryString(params)}`, { signal })
+}
+
+export function getProgramming(signal?: AbortSignal): Promise<ProgrammingSnapshot> {
+  return requestJSON<ProgrammingSnapshot>('/v1/programming', { signal })
+}
+
+export function pauseProgramming(signal?: AbortSignal): Promise<{ paused: boolean }> {
+  return requestJSON<{ paused: boolean }>('/v1/programming/pause', { method: 'POST', body: '{}', signal })
+}
+
+export function resumeProgramming(signal?: AbortSignal): Promise<{ paused: boolean }> {
+  return requestJSON<{ paused: boolean }>('/v1/programming/resume', { method: 'POST', body: '{}', signal })
+}
+
+export function programmingEntryAction(id: string, action: 'skip' | 'cancel' | 'pin-next' | 'retry', signal?: AbortSignal): Promise<ProgrammingEntry> {
+  return requestJSON<ProgrammingEntry>(`/v1/programming/${encodeURIComponent(id)}/${action}`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
 }
 
 export function getStats(signal?: AbortSignal): Promise<Record<string, unknown>> {
