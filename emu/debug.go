@@ -85,6 +85,13 @@ func (m *Emu) Cycle() uint64 {
 	return m.e.Cycle()
 }
 
+// ExecutionEpoch identifies the current continuous emulator timeline. It
+// changes after successful reset/load/restore operations and stays stable
+// during ordinary stepping.
+func (m *Emu) ExecutionEpoch() uint64 {
+	return m.e.ExecutionEpoch()
+}
+
 // ROMSHA256Hex returns the loaded ROM's SHA-256 fingerprint as lowercase hex.
 func (m *Emu) ROMSHA256Hex() string {
 	sum := m.e.ROMSHA256()
