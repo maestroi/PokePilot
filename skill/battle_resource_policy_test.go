@@ -74,7 +74,6 @@ func TestBattleResourcesPreserveWideNativeIDs(t *testing.T) {
 	}
 }
 
-
 func TestSacrificialBenchHealRestoresMateriallyStrongerCarry(t *testing.T) {
 	strategy := &fakeGen2CombatStrategy{
 		scores: map[uint16]int64{1: 100, 2: 1000},
@@ -101,13 +100,13 @@ func TestSacrificialBenchHealRestoresMateriallyStrongerCarry(t *testing.T) {
 		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
 	}
 	battle := game.BattleState{
-		ActiveLevel:  30,
-		ActiveHP:     60,
-		ActiveMaxHP:  60,
-		EnemyLevel:   50,
-		EnemyHP:      100,
-		EnemyMaxHP:   100,
-		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+		ActiveLevel: 30,
+		ActiveHP:    60,
+		ActiveMaxHP: 60,
+		EnemyLevel:  50,
+		EnemyHP:     100,
+		EnemyMaxHP:  100,
+		Moves:       [4]game.BattleMove{{ID: 1, PP: 10}},
 	}
 
 	choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle)
@@ -145,13 +144,13 @@ func TestSacrificialBenchHealRejectsComparableBench(t *testing.T) {
 		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
 	}
 	battle := game.BattleState{
-		ActiveLevel:  30,
-		ActiveHP:     60,
-		ActiveMaxHP:  60,
-		EnemyLevel:   30,
-		EnemyHP:      60,
-		EnemyMaxHP:   60,
-		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+		ActiveLevel: 30,
+		ActiveHP:    60,
+		ActiveMaxHP: 60,
+		EnemyLevel:  30,
+		EnemyHP:     60,
+		EnemyMaxHP:  60,
+		Moves:       [4]game.BattleMove{{ID: 1, PP: 10}},
 	}
 
 	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
@@ -185,13 +184,13 @@ func TestSacrificialBenchHealRequiresCriticalBenchHP(t *testing.T) {
 		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
 	}
 	battle := game.BattleState{
-		ActiveLevel:  30,
-		ActiveHP:     60,
-		ActiveMaxHP:  60,
-		EnemyLevel:   50,
-		EnemyHP:      100,
-		EnemyMaxHP:   100,
-		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+		ActiveLevel: 30,
+		ActiveHP:    60,
+		ActiveMaxHP: 60,
+		EnemyLevel:  50,
+		EnemyHP:     100,
+		EnemyMaxHP:  100,
+		Moves:       [4]game.BattleMove{{ID: 1, PP: 10}},
 	}
 
 	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
