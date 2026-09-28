@@ -129,7 +129,6 @@ func frameStatus(t *testing.T, base, runID string) int {
 	return resp.StatusCode
 }
 
-
 func TestWallFrameLatestBypassesBufferedPlayback(t *testing.T) {
 	buffered := []byte{0x89, 'P', 'N', 'G', 'b', 'u', 'f'}
 	latest := []byte{0x89, 'P', 'N', 'G', 'n', 'o', 'w'}
