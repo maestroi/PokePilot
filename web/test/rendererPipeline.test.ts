@@ -11,7 +11,7 @@ test('public spectator and operator live view share the semantic renderer pipeli
     assert.match(source, /ModernSceneRenderer/, name)
     assert.match(source, /useRenderStatePump/, name)
     assert.match(source, /canRenderModernScene/, name)
-    assert.match(source, /resolveRenderTheme/, name)
+    assert.match(source, /resolve(?:Public)?RenderTheme/, name)
     assert.match(source, /<ModernSceneRenderer/, name)
   }
 })
@@ -29,7 +29,18 @@ test('recorded replay uses the shared semantic renderer with classic fallback', 
   assert.match(replay, /ModernSceneRenderer/)
   assert.match(replay, /getSpectatorSemanticReplay/)
   assert.match(replay, /canRenderModernScene/)
-  assert.match(replay, /resolveRenderTheme/)
+  assert.match(replay, /resolvePublicRenderTheme/)
   assert.match(replay, /semanticReplayStateAtMS/)
   assert.match(replay, /classic fallback/)
+})
+
+
+test('public renderer surfaces use the public-safe theme registry', () => {
+  for (const [name, source] of [['spectator', spectator], ['replay', replay]] as const) {
+    assert.match(source, /publicRenderThemeOptions/, name)
+    assert.match(source, /resolvePublicRenderTheme/, name)
+    assert.doesNotMatch(source, /renderThemeOptions\(\)/, name)
+  }
+  assert.match(operator, /renderThemeOptions/)
+  assert.match(operator, /resolveRenderTheme/)
 })
