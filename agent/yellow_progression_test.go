@@ -410,7 +410,10 @@ func TestYellowPostBlaineContinuesThroughSaffronSilphAndSabrina(t *testing.T) {
 
 func TestYellowSaffronValidationUsesYellowOrdering(t *testing.T) {
 	a := newYellowObjectiveAdapter(nil, nil, RoutePriorityConservative)
-	obs := Observation{GameID: yellowprofile.GameID}
+	// Usable Cut is the gate's field prerequisite (Route 9); this test pins story ordering only.
+	obs := Observation{GameID: yellowprofile.GameID, FieldCapabilities: []FieldCapability{
+		{Name: "cut", BadgeOwned: true, HMOwned: true, Learned: true, Usable: true},
+	}}
 
 	if err := a.Validate(Objective{Kind: KindProgress, Progress: gen1.ProgressSaffronGateOpen}, obs); err != nil {
 		t.Fatalf("Saffron gate should have no Yellow story prerequisite: %v", err)

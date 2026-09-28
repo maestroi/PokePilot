@@ -258,3 +258,18 @@ func TestFlyProgressionRequirementSwitchesFromCutToFlyAfterHM02(t *testing.T) {
 		t.Fatalf("Fly requirements after HM02 = %v, want [fly]", got)
 	}
 }
+
+func TestSaffronGateValidationRequiresUsableCut(t *testing.T) {
+	adapter := &redObjectiveAdapter{}
+	obj := Objective{Kind: KindProgress, Progress: ProgressSaffronGateOpen}
+	obs := Observation{FieldCapabilities: []FieldCapability{{Name: "cut", BadgeOwned: true, HMOwned: true}}}
+	var missing *gameruntime.PrerequisiteMissingError
+	if err := adapter.Validate(obj, obs); !errors.As(err, &missing) ||
+		!reflect.DeepEqual(missing.Missing, []gameruntime.Prerequisite{gameruntime.FieldCapabilityPrerequisite("cut")}) {
+		t.Fatalf("Saffron gate without usable Cut: err=%v, want missing field_capability:cut", err)
+	}
+	obs.FieldCapabilities[0].Learned, obs.FieldCapabilities[0].Usable = true, true
+	if err := adapter.Validate(obj, obs); err != nil {
+		t.Fatalf("Saffron gate with usable Cut blocked: %v", err)
+	}
+}

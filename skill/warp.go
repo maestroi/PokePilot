@@ -186,7 +186,11 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				// Surf, Strength, or a forced-movement tile. Ask the same local
 				// capability planner used by GoTo to reach this exact connection band,
 				// then retry ordinary edge traversal from the resulting live state.
-				if fieldErr := approachConnectionWithFieldPath(m, romData, e); fieldErr == nil {
+				fieldErr := approachConnectionWithFieldPath(m, romData, e)
+				if fieldApproachInterrupted(fieldErr) {
+					return fmt.Errorf("skill: Traverse: field-path approach on map %02x: %w", e.From, fieldErr)
+				}
+				if fieldErr == nil {
 					if refreshed, refreshErr := liveMapGrid(m, romData, h); refreshErr == nil {
 						grid = refreshed
 					}
@@ -321,7 +325,11 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				// chamber after #1327 removed post-failure nearest-tree cuts).
 				if !fieldApproachTried {
 					fieldApproachTried = true
-					if aperr := approachWarpWithFieldPath(m, romData, e, extraBlocked); aperr == nil {
+					aperr := approachWarpWithFieldPath(m, romData, e, extraBlocked)
+					if fieldApproachInterrupted(aperr) {
+						return fmt.Errorf("skill: Traverse: field-path approach on map %02x: %w", e.From, aperr)
+					}
+					if aperr == nil {
 						if g, gerr := liveMapGrid(m, romData, h); gerr == nil {
 							grid = g
 						}

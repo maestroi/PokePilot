@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -100,4 +101,14 @@ func approachConnectionWithFieldPath(m *emu.Emu, romData []byte, e world.Edge) e
 		return world.ErrNoPath
 	}
 	return walkWithinMap(m, romData, best.dest)
+}
+
+// fieldApproachInterrupted reports a field-path approach that stopped because
+// the world changed under it (a trainer's sight-line dialogue or a battle),
+// not because the target was unreachable. Callers must surface it instead of
+// falling back to land-only evidence: the approach may already have cut the
+// tree that splits the band, so reporting the band exhausted would ban a
+// crossing that is open (run-12vowvyawgx0b3jl0srufdx8tq, Route 9).
+func fieldApproachInterrupted(err error) bool {
+	return errors.Is(err, ErrDialogueInterrupted) || errors.Is(err, ErrBattleInterrupted) || errors.Is(err, ErrBattle)
 }
