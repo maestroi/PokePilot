@@ -69,7 +69,27 @@ jobs:
           fi
           echo "POKEPILOT_DEX_QUAL_MAX_LEGS=$max_legs" >> "$GITHUB_ENV"
 
+      - name: Check LLM planner endpoint
+        id: llm-preflight
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        shell: bash
+        env:
+          CONFIGURED_LLM_URL: ${{ vars.POKEPILOT_LLM_URL }}
+        run: |
+          set -euo pipefail
+          base="${CONFIGURED_LLM_URL:-${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}}"
+          token="${llm_token:-}"
+          args=(--fail --silent --show-error --max-time 5)
+          if [[ -n "$token" ]]; then
+            args+=(-H "Authorization: Bearer $token")
+          fi
+          if ! curl "${args[@]}" "${base%/}/models" >/dev/null; then
+            echo "::warning::LLM planner endpoint is unavailable; scheduled Dex qualification is infrastructure-blocked, not a gameplay failure."
+            exit 1
+          fi
+
       - name: Run fresh-save Dex completion qualification
+        if: ${{ steps.llm-preflight.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -128,7 +148,7 @@ jobs:
           fi
 
       - name: Close Dex completion issues after clean proof
-        if: success()
+        if: ${{ success() && steps.llm-preflight.outcome == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
