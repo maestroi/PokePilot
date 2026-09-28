@@ -129,3 +129,30 @@ func TestTrainingAreaTargetTracksCombatReadinessGap(t *testing.T) {
 		t.Fatalf("target level = %d, want 25 to close readiness 80->100", got)
 	}
 }
+
+// An adapter assessment that measured an area as outside the training budget
+// must veto the legacy level heuristic; otherwise preparation keeps routing to
+// a habitat that offers no training on arrival and the run ping-pongs.
+func TestBestKnownTrainingPlaceRespectsUnviableAssessment(t *testing.T) {
+	current := LocationID("current")
+	weak := LocationID("weak")
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		current: {weak},
+		weak:    {current},
+	}})
+	known.TrainingAreas[weak] = TrainingAreaKnowledge{Location: weak, Place: "weak route", MinLevel: 2, MaxLevel: 5}
+	obs := Observation{
+		Location: PlaceID(current),
+		Party:    []PartyMon{{Species: "testmon", Level: 13, HP: 36, MaxHP: 37}},
+		TrainingAreaChoices: []TrainingAreaAssessment{{
+			Place: "weak route", Location: weak, Routable: true,
+			Estimate: TrainingEstimate{
+				CurrentLevel: 13, TargetLevel: 15, XPPerEncounter: 26, EstimatedEncounters: 22,
+				SessionBudget: 20, Viability: TrainingOutsideBudget, Method: TrainingDirect,
+			},
+		}},
+	}
+	if choice, ok := bestKnownTrainingPlace(obs, known, []string{"weak route"}, ObjectiveCatalog{}); ok {
+		t.Fatalf("choice = %+v, want none: adapter measured the only area outside budget", choice)
+	}
+}

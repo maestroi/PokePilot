@@ -171,9 +171,19 @@ func bestKnownTrainingPlace(obs Observation, known *Knowledge, placeNames []stri
 		}
 	}
 
+	// A measured adapter verdict outranks the level heuristic below: an area
+	// already estimated outside budget (or unroutable) offers no training on
+	// arrival, so routing there only ping-pongs back through the planner.
+	rejected := map[LocationID]bool{}
+	for _, assessment := range obs.TrainingAreaChoices {
+		if !assessment.Routable || assessment.Estimate.Viability == TrainingOutsideBudget {
+			rejected[assessment.Location] = true
+		}
+	}
+
 	choices := make([]trainingAreaChoice, 0, len(known.TrainingAreas))
 	for _, area := range known.TrainingAreas {
-		if area.Location == "" || area.Location == current || area.Place == "" || !allowed[area.Place] {
+		if area.Location == "" || area.Location == current || area.Place == "" || !allowed[area.Place] || rejected[area.Location] {
 			continue
 		}
 		if trainingUnviableHere(obs) && currentMax > 0 && area.MaxLevel <= currentMax {
