@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"strings"
 )
 
 func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
@@ -23,18 +24,26 @@ func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
 	defer wall.Close()
 
 	replay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/runs/run-1/replay/video" {
+		switch r.URL.Path {
+		case "/v1/runs/run-1/replay/video":
+			if got := r.Header.Get("Range"); got != "bytes=0-3" {
+				t.Fatalf("replay Range=%q", got)
+			}
+			w.Header().Set("Content-Type", "video/mp4")
+			w.Header().Set("Content-Range", "bytes 0-3/8")
+			w.Header().Set("Accept-Ranges", "bytes")
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = io.WriteString(w, "fake")
+		case "/v1/runs/run-1/live/status":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"run_id":"run-1","state":"live","target_fps":20}`)
+		case "/v1/runs/run-1/live/stream.mjpeg":
+			w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=test")
+			w.Header().Set("X-PokePilot-Live-FPS", "20")
+			_, _ = io.WriteString(w, "--test--\r\n")
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		if got := r.Header.Get("Range"); got != "bytes=0-3" {
-			t.Fatalf("replay Range=%q", got)
-		}
-		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Content-Range", "bytes 0-3/8")
-		w.Header().Set("Accept-Ranges", "bytes")
-		w.WriteHeader(http.StatusPartialContent)
-		_, _ = io.WriteString(w, "fake")
 	}))
 	defer replay.Close()
 
@@ -64,6 +73,26 @@ func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusPartialContent || string(body) != "fake" || res.Header.Get("Content-Range") != "bytes 0-3/8" {
 		t.Fatalf("video status=%d range=%q body=%q", res.StatusCode, res.Header.Get("Content-Range"), body)
+	}
+
+	res, err = http.Get(ui.URL + "/v1/runs/run-1/live/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"state":"live"`) {
+		t.Fatalf("live status=%d body=%q", res.StatusCode, body)
+	}
+
+	res, err = http.Get(ui.URL + "/v1/runs/run-1/live/stream.mjpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ = io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || res.Header.Get("X-PokePilot-Live-FPS") != "20" || string(body) != "--test--\r\n" {
+		t.Fatalf("live stream status=%d fps=%q body=%q", res.StatusCode, res.Header.Get("X-PokePilot-Live-FPS"), body)
 	}
 }
 
