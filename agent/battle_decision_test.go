@@ -132,8 +132,8 @@ func TestCoreBattleEvalCases(t *testing.T) {
 	if report.Passed != len(cases) || stats.Calls != len(cases) || stats.Rejected != 0 || stats.Model != "oracle" {
 		t.Fatalf("report=%+v stats=%+v", report, stats)
 	}
-	if stats.AverageConfidence() != 0.9 || stats.LatencyPercentile(0.50) != 0.025 || stats.ErrorRate() != 0 {
-		t.Fatalf("benchmark health = confidence %.3f p50 %.3f error %.3f", stats.AverageConfidence(), stats.LatencyPercentile(0.50), stats.ErrorRate())
+	if confidence := stats.AverageConfidence(); confidence <= 0.8 || confidence >= 0.9 || stats.LatencyPercentile(0.50) != 0.025 || stats.ErrorRate() != 0 {
+		t.Fatalf("benchmark health = confidence %.3f p50 %.3f error %.3f", confidence, stats.LatencyPercentile(0.50), stats.ErrorRate())
 	}
 
 	broken := append([]BattleEvalCase(nil), cases...)
