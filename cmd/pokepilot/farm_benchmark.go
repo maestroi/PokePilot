@@ -15,7 +15,10 @@ import (
 	redbench "github.com/maestroi/pokepilot/red/benchmark"
 )
 
-const farmBenchmarkResultName = "benchmark-result.json"
+const (
+	farmBenchmarkResultName    = "benchmark-result.json"
+	farmBattleShadowCorpusName = "battle-shadow-corpus.jsonl"
+)
 
 func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlanner, startedAt, finishedAt time.Time, resumeFrom, checkpointDir, romSHA256 string, effectiveMaxFrames int) error {
 	if checkpointDir == "" || stats == nil || spec.Planner != "llm" {
@@ -136,7 +139,22 @@ func writeFarmBenchmarkResult(spec farm.Spec, res agent.Result, stats *statsPlan
 	result.ExperimentCase = spec.ExperimentCase
 
 	attachFarmBenchmarkCheckpoints(&result, checkpointDir)
-	return benchmark.WriteJSON(filepath.Join(checkpointDir, farmBenchmarkResultName), result)
+	if err := benchmark.WriteJSON(filepath.Join(checkpointDir, farmBenchmarkResultName), result); err != nil {
+		return err
+	}
+	if len(stats.battleShadowSamples) == 0 {
+		return nil
+	}
+	file, err := os.Create(filepath.Join(checkpointDir, farmBattleShadowCorpusName))
+	if err != nil {
+		return err
+	}
+	writeErr := agent.WriteBattleShadowCorpus(file, stats.battleShadowSamples)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 func attachFarmBenchmarkCheckpoints(result *benchmark.Result, checkpointDir string) {
