@@ -3,10 +3,11 @@ import test from 'node:test'
 
 import {
   MAX_THEME_ASSET_BYTES,
+  RENDER_THEME_SCHEMA_VERSION,
   validateThemeAssetFile,
-  validateThemeAssetReference
-} from '../src/shared/themeAssetPolicy.ts'
-import { RENDER_THEME_SCHEMA_VERSION, validateThemePack } from '../src/shared/renderTheme.ts'
+  validateThemeAssetReference,
+  validateThemePack
+} from '../src/shared/renderTheme.ts'
 
 function themeWithAsset(reference: string) {
   return {
