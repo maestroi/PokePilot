@@ -77,9 +77,10 @@ func (*Profile) DecodeMenuCursor(reader game.MemoryReader) game.MenuCursorState 
 	y, _, rows, cols, filter := gsMenuCursor(reader)
 	if reader.Peek8(sym.BattleMode) != 0 &&
 		reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
-		cols == 1 && rows >= 2 && rows <= 5 &&
-		filter == gen2BattleMoveFilter {
-		return game.MenuCursorState{Current: int(y), Max: int(rows) - 1}
+		cols == 1 && rows >= 1 && rows <= 4 &&
+		filter == gen2BattleMoveFilter &&
+		strings.Contains(gsScreenText(reader), "TYPE/") {
+		return game.MenuCursorState{Current: int(y), Max: int(rows)}
 	}
 	if rows == 2 && cols == 1 && filter == gen2PadA|gen2PadB {
 		current := int(y) - 1
