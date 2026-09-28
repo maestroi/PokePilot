@@ -35,7 +35,7 @@ func run() int {
 	jsonOut := flag.Bool("json", false, "write the report as JSON")
 	minScore := flag.Float64("min-score", 0, "exit 1 when score is below this 0..1 threshold; 0 only measures")
 	goal := flag.String("goal", "Make safe, efficient progress toward completing Pokemon Red.", "task statement supplied to the planner for every fixture")
-	backend := flag.String("backend", "llm", "planner backend: llm, decision, or jev")
+	backend := flag.String("backend", "llm", "backend: llm, decision, or jev; battle suite also supports deterministic")
 	model := flag.String("model", "", "override the selected backend model for this run")
 	baseURL := flag.String("url", "", "override the selected backend URL for this run")
 	decisionMinConfidence := flag.Float64("decision-min-confidence", 0, "for typed backends, reject choices below this 0..1 confidence; 0 scores every valid decision")
