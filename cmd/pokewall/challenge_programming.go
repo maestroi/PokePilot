@@ -21,7 +21,7 @@ import (
 
 const (
 	challengeProgrammingStateFile = "challenge-programming.json"
-	challengeCapabilityVersion     = "2026-09-28.1"
+	challengeCapabilityVersion    = "2026-09-28.1"
 
 	programStateScheduled = "scheduled"
 	programStateVoting    = "voting"
@@ -38,12 +38,12 @@ const (
 var challengeIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,95}$`)
 
 type challengeCapability struct {
-	Game            string   `json:"game"`
-	CapabilityVersion string `json:"capability_version"`
-	Planners        []string `json:"planners"`
-	PlayStyles      []string `json:"play_styles,omitempty"`
-	StarterPolicy   string   `json:"starter_policy"`
-	Features        []string `json:"features"`
+	Game              string   `json:"game"`
+	CapabilityVersion string   `json:"capability_version"`
+	Planners          []string `json:"planners"`
+	PlayStyles        []string `json:"play_styles,omitempty"`
+	StarterPolicy     string   `json:"starter_policy"`
+	Features          []string `json:"features"`
 }
 
 type challengeDefinition struct {
@@ -79,14 +79,14 @@ type challengeQueueEntry struct {
 	ExperimentID     string   `json:"experiment_id,omitempty"`
 	Result           string   `json:"result,omitempty"`
 	Error            string   `json:"error,omitempty"`
-	Pinned            bool     `json:"pinned,omitempty"`
+	Pinned           bool     `json:"pinned,omitempty"`
 }
 
 type challengeProgrammingState struct {
 	Challenges map[string][]challengeDefinition `json:"challenges"`
 	Entries    []challengeQueueEntry            `json:"entries"`
-	RunLinks   map[string]challengeRunLink       `json:"run_links"`
-	Paused     bool                              `json:"paused"`
+	RunLinks   map[string]challengeRunLink      `json:"run_links"`
+	Paused     bool                             `json:"paused"`
 }
 
 type challengeProgrammingSnapshot struct {
@@ -162,13 +162,13 @@ func challengeCapabilities() map[string]challengeCapability {
 			Game: "pokemon-blue", CapabilityVersion: challengeCapabilityVersion,
 			Planners: []string{"llm", "scripted"}, PlayStyles: commonPlayStyles,
 			StarterPolicy: "vanilla_gen1",
-			Features: []string{"decision_engine", "model_deployment", "pokemon.dex", "pokemon.items", "pokemon.starter.vanilla", "pokemon.story", "recovery.resilient"},
+			Features:      []string{"decision_engine", "model_deployment", "pokemon.dex", "pokemon.items", "pokemon.starter.vanilla", "pokemon.story", "recovery.resilient"},
 		},
 		"pokemon-yellow": {
 			Game: "pokemon-yellow", CapabilityVersion: challengeCapabilityVersion,
 			Planners: []string{"llm", "scripted"}, PlayStyles: commonPlayStyles,
 			StarterPolicy: "pikachu_scripted",
-			Features: []string{"decision_engine", "model_deployment", "pokemon.dex", "pokemon.items", "pokemon.starter.pikachu", "pokemon.story", "recovery.resilient"},
+			Features:      []string{"decision_engine", "model_deployment", "pokemon.dex", "pokemon.items", "pokemon.starter.pikachu", "pokemon.story", "recovery.resilient"},
 		},
 		"tetris": {
 			Game: "tetris", CapabilityVersion: challengeCapabilityVersion,
@@ -1133,4 +1133,3 @@ func challengeProgrammingHTTPHandler(w *Wall, next http.Handler) http.Handler {
 	controller.advance()
 	return mux
 }
-
