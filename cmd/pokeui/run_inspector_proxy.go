@@ -29,6 +29,8 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 		mux.HandleFunc("POST /v1/runs/{id}/replay/render", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/replay/video", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/live/status", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", replayUnavailable)
 		return
 	}
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", streamProxy(replayBase))
@@ -36,6 +38,8 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", proxy(replayBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", streamProxy(replayBase))
 	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", streamProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/live/status", proxy(replayBase, true))
+	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", streamProxy(replayBase))
 }
 
 func replayUnavailable(w http.ResponseWriter, _ *http.Request) {
@@ -68,7 +72,7 @@ func streamProxy(upstreamBase string) http.HandlerFunc {
 			return
 		}
 		defer res.Body.Close()
-		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition", "ETag", "Last-Modified", "Cache-Control"} {
+		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Content-Disposition", "ETag", "Last-Modified", "Cache-Control", "X-PokePilot-Live-FPS"} {
 			if value := res.Header.Get(name); value != "" {
 				w.Header().Set(name, value)
 			}
