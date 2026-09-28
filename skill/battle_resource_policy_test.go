@@ -73,3 +73,128 @@ func TestBattleResourcesPreserveWideNativeIDs(t *testing.T) {
 		t.Fatalf("portable resources narrowed native ids: %+v", resources)
 	}
 }
+
+
+func TestSacrificialBenchHealRestoresMateriallyStrongerCarry(t *testing.T) {
+	strategy := &fakeGen2CombatStrategy{
+		scores: map[uint16]int64{1: 100, 2: 1000},
+	}
+	resources := game.BattleResourcesState{
+		InBattle:   true,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{
+				NativeSpeciesID: 1,
+				Level:           30,
+				HP:              60,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 10}},
+			},
+			{
+				NativeSpeciesID: 2,
+				Level:           50,
+				HP:              10,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}},
+			},
+		},
+		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
+	}
+	battle := game.BattleState{
+		ActiveLevel:  30,
+		ActiveHP:     60,
+		ActiveMaxHP:  60,
+		EnemyLevel:   50,
+		EnemyHP:      100,
+		EnemyMaxHP:   100,
+		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+	}
+
+	choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle)
+	if !ok {
+		t.Fatal("sacrificial bench heal = no choice, want recovery turn")
+	}
+	if choice.Item != itemSuperPotion || choice.Slot != 1 {
+		t.Fatalf("sacrificial bench heal = %+v, want SUPER POTION on slot 1", choice)
+	}
+}
+
+func TestSacrificialBenchHealRejectsComparableBench(t *testing.T) {
+	strategy := &fakeGen2CombatStrategy{
+		scores: map[uint16]int64{1: 100, 2: 140},
+	}
+	resources := game.BattleResourcesState{
+		InBattle:   true,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{
+				NativeSpeciesID: 1,
+				Level:           30,
+				HP:              60,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 10}},
+			},
+			{
+				NativeSpeciesID: 2,
+				Level:           30,
+				HP:              10,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}},
+			},
+		},
+		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
+	}
+	battle := game.BattleState{
+		ActiveLevel:  30,
+		ActiveHP:     60,
+		ActiveMaxHP:  60,
+		EnemyLevel:   30,
+		EnemyHP:      60,
+		EnemyMaxHP:   60,
+		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+	}
+
+	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
+		t.Fatalf("sacrificial bench heal = %+v, true; want no sacrifice for comparable bench", choice)
+	}
+}
+
+func TestSacrificialBenchHealRequiresCriticalBenchHP(t *testing.T) {
+	strategy := &fakeGen2CombatStrategy{
+		scores: map[uint16]int64{1: 100, 2: 1000},
+	}
+	resources := game.BattleResourcesState{
+		InBattle:   true,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{
+				NativeSpeciesID: 1,
+				Level:           30,
+				HP:              60,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 10}},
+			},
+			{
+				NativeSpeciesID: 2,
+				Level:           50,
+				HP:              20,
+				MaxHP:           60,
+				Moves:           [4]game.BattlePartyMove{{NativeMoveID: 2, PP: 10}},
+			},
+		},
+		Bag: []game.InventoryItem{{NativeItemID: uint16(itemSuperPotion), Quantity: 1}},
+	}
+	battle := game.BattleState{
+		ActiveLevel:  30,
+		ActiveHP:     60,
+		ActiveMaxHP:  60,
+		EnemyLevel:   50,
+		EnemyHP:      100,
+		EnemyMaxHP:   100,
+		Moves:        [4]game.BattleMove{{ID: 1, PP: 10}},
+	}
+
+	if choice, ok := chooseSacrificialBenchHealWithStrategy(strategy, nil, resources, battle); ok {
+		t.Fatalf("sacrificial bench heal = %+v, true; want target above critical HP left alone", choice)
+	}
+}
