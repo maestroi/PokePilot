@@ -29,6 +29,7 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"UNION_CAVE_1F",
 		"ROUTE_33",
 		"AZALEA_TOWN",
+		"AZALEA_GYM",
 		"KURTS_HOUSE",
 		"SLOWPOKE_WELL_B1F",
 	} {
@@ -181,6 +182,56 @@ func executeGSSlowpokeWell(m *emu.Emu, romData []byte) error {
 	}
 	if !profile.DecodeOverworld(m).Controllable {
 		return fmt.Errorf("%w: Slowpoke Well cleared without stable overworld control", errGSSecondBadgeUnexpectedState)
+	}
+	return nil
+}
+
+
+// executeGSBugsy owns the second Johto gym after Slowpoke Well. Native routing
+// may trigger any gym-trainer sightline; those battles and Bugsy's own battle
+// are delegated to the shared semantic battle controller. The durable
+// postcondition is the Hive Badge bit, which the retail script sets before the
+// optional TM49 handoff, so a full item pocket cannot make a won badge look
+// incomplete.
+func executeGSBugsy(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 Bugsy: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHiveBadgeEarned) {
+		if profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		return driveGSSecondBadgeInterruption(m, profile, "gym:bugsy")
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
+		return fmt.Errorf("%w: Bugsy requires Slowpoke Well completion", errGSSecondBadgeUnexpectedState)
+	}
+
+	gym, err := gsOpeningMapID("AZALEA_GYM")
+	if err != nil {
+		return err
+	}
+	// Bugsy stands at (5,7). Route to the adjacent tile and let the normal
+	// native-grid path own any trainer sightline interruptions on the way.
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(gym, 5, 8)); err != nil {
+		return fmt.Errorf("gen2 Bugsy: reach leader: %w", err)
+	}
+	if err := skill.Face(m, 5, 7); err != nil {
+		return fmt.Errorf("gen2 Bugsy: face leader: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSSecondBadgeInterruption(m, profile, "gym:bugsy"); err != nil {
+		return fmt.Errorf("gen2 Bugsy: battle/script: %w", err)
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHiveBadgeEarned) {
+		return fmt.Errorf("%w: Bugsy script returned without Hive Badge", errGSSecondBadgeUnexpectedState)
+	}
+	if !profile.DecodeOverworld(m).Controllable {
+		return fmt.Errorf("%w: Bugsy completed without stable overworld control", errGSSecondBadgeUnexpectedState)
 	}
 	return nil
 }
