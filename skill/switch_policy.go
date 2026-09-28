@@ -17,6 +17,11 @@ const (
 	// replacement is different: when the active mon fainted, any live member
 	// is legal and the best remaining one must be chosen.
 	voluntaryMinHPDivisor uint16 = 5
+
+	// A clearly super-effective incoming matchup deserves an escape hatch even
+	// when a high-level carry's raw offense keeps its aggregate score above the
+	// normal 50% switch threshold. Risk is expressed in tenths (20 == 2x).
+	dangerousIncomingRisk = 20
 )
 
 // switchEvaluation explains how one party member looks against the current
@@ -141,6 +146,13 @@ func chooseTacticalSwitchWithStrategyContext(
 	if decision.Active.BestMoveSlot < 0 || decision.Active.BestMove.ExpectedScore <= 0 {
 		decision.Switch = true
 		decision.Reason = "active-has-no-effective-offense"
+		return decision
+	}
+	if decision.Active.IncomingRisk >= dangerousIncomingRisk &&
+		decision.Candidate.IncomingRisk < decision.Active.IncomingRisk &&
+		decision.Candidate.BestMove.ExpectedScore > 0 {
+		decision.Switch = true
+		decision.Reason = "escape-dangerous-matchup"
 		return decision
 	}
 	if sequenceSwitchScore(decision.Candidate)*switchGainDenominator > sequenceSwitchScore(decision.Active)*switchGainNumerator {
