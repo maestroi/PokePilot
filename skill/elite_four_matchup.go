@@ -35,7 +35,7 @@ func leagueMatchup(type1, type2 uint16) game.BattleCombatant {
 	// generation's own mechanics remain the differentiating signals.
 	return game.BattleCombatant{
 		Level: 55,
-		HP: 100, MaxHP: 100,
+		HP:    100, MaxHP: 100,
 		Attack: 100, Defense: 100, Speed: 100,
 		Special: 100, SpecialAttack: 100, SpecialDefense: 100,
 		Type1: type1, Type2: type2,
