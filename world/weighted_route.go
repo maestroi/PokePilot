@@ -397,6 +397,9 @@ func findExactWeightedRoute(
 			if bypassBandDominatedByReachableSibling(view.usable, edge, cur.entry, view.skipCanExit) {
 				continue
 			}
+			if gatedWarpDominatedByReachableSibling(view.usable, edge, cur.entry, view.skipCanExit) {
+				continue
+			}
 			if g.componentAware && len(g.exitComps[edge]) == 0 &&
 				!(view.skipCanExit[edge] && view.relaxLanding[edge]) {
 				continue
