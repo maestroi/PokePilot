@@ -102,7 +102,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 			// EVENT_RIVAL_AZALEA_TOWN is set before startbattle, so it is not
 			// sufficient after a loss. The post-win script resets the scene to
 			// NOOP; requiring both facts makes this durable and retry-safe.
-			Complete: hasGSEvent(reader, eventRivalAzaleaTown) &&
+			Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeHiveMask != 0 &&
+				hasGSEvent(reader, eventRivalAzaleaTown) &&
 				reader.Peek8(sym.AzaleaTownSceneID) == sceneAzaleaTownNoop,
 		},
 		{ID: ProgressFarfetchdHerded, Complete: hasGSEvent(reader, eventHerdedFarfetchd)},
