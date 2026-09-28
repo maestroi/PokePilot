@@ -158,7 +158,6 @@ func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
 	}
 }
 
-
 func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
 	if johtoBadgeZephyrMask != 1<<0 {
 		t.Fatalf("ENGINE_ZEPHYRBADGE mask = %#02x, want %#02x", johtoBadgeZephyrMask, 1<<0)
