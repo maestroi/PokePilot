@@ -208,6 +208,7 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("POST /v1/programming/{id}/skip", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/programming/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/programming/{id}/pin-next", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/programming/{id}/retry", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/specs", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/investigate", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/triage/{key}/solver-attempt", proxy(wallBase, false))
