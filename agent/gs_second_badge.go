@@ -1,0 +1,186 @@
+package agent
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
+	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	"github.com/maestroi/pokepilot/skill"
+)
+
+var (
+	errGSSecondBadgeStalled         = errors.New("gen2 second-badge progression made no progress")
+	errGSSecondBadgeUnexpectedState = errors.New("gen2 second-badge progression reached an unowned state")
+)
+
+const (
+	gsSecondBadgeScriptFrameBudget uint64 = 240_000
+	gsSecondBadgeMaxScriptPresses         = 1_800
+	gsSecondBadgeRouteAttempts            = 160
+)
+
+func gsSecondBadgeOwnedMap(mapID uint16) bool {
+	for _, name := range []string{
+		"VIOLET_CITY",
+		"VIOLET_POKECENTER_1F",
+		"ROUTE_32",
+		"UNION_CAVE_1F",
+		"ROUTE_33",
+		"AZALEA_TOWN",
+		"KURTS_HOUSE",
+		"SLOWPOKE_WELL_B1F",
+	} {
+		id, err := gsOpeningMapID(name)
+		if err == nil && mapID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func driveGSSecondBadgeInterruption(
+	m *emu.Emu,
+	profile *gsprofile.Profile,
+	encounter string,
+) error {
+	if m == nil || profile == nil {
+		return fmt.Errorf("%w: missing emulator/profile", errGSSecondBadgeUnexpectedState)
+	}
+	start := m.FrameCount()
+	presses := 0
+	for m.FrameCount()-start < gsSecondBadgeScriptFrameBudget {
+		world := profile.DecodeOverworld(m)
+		if !gsSecondBadgeOwnedMap(world.NativeMapID) {
+			return fmt.Errorf("%w: map=%#04x at (%d,%d)", errGSSecondBadgeUnexpectedState, world.NativeMapID, world.X, world.Y)
+		}
+		if world.InBattle {
+			battle, ok := profile.DecodeBattleState(m)
+			if !ok {
+				return fmt.Errorf("%w: battle mode has no semantic state on map %#04x", errGSSecondBadgeUnexpectedState, world.NativeMapID)
+			}
+			result, err := skill.Battle(m, skill.FirstUsableMove)
+			if err != nil {
+				return fmt.Errorf("gen2 second badge: battle %q: %w", encounter, err)
+			}
+			if battle.Kind == game.BattleTrainer {
+				if err := skill.RequireTrainerBattleWin(encounter, result); err != nil {
+					return err
+				}
+			} else if err := skill.RequireBattleWin(encounter, result); err != nil {
+				return err
+			}
+			continue
+		}
+		if world.Controllable {
+			return nil
+		}
+		if world.InDialogue && world.MovementIdle {
+			if presses >= gsSecondBadgeMaxScriptPresses {
+				return fmt.Errorf("%w: exceeded %d owned inputs on map %#04x", errGSSecondBadgeStalled, gsSecondBadgeMaxScriptPresses, world.NativeMapID)
+			}
+			m.Tap(emu.A, 3, 7)
+			presses++
+			continue
+		}
+		m.StepFrame()
+	}
+	world := profile.DecodeOverworld(m)
+	return fmt.Errorf("%w: interruption exceeded %d frames on map %#04x at (%d,%d)",
+		errGSSecondBadgeStalled, gsSecondBadgeScriptFrameBudget, world.NativeMapID, world.X, world.Y)
+}
+
+func gsSecondBadgeGoTo(
+	m *emu.Emu,
+	romData []byte,
+	profile *gsprofile.Profile,
+	dest skill.NativeDestination,
+) error {
+	for attempt := 0; attempt < gsSecondBadgeRouteAttempts; attempt++ {
+		err := skill.GoToNative(m, romData, dest)
+		if err == nil {
+			return nil
+		}
+		switch {
+		case errors.Is(err, skill.ErrBattle), errors.Is(err, skill.ErrDialogueInterrupted):
+			world := profile.DecodeOverworld(m)
+			label := fmt.Sprintf("gen2:second-badge-route:%04x", world.NativeMapID)
+			if settleErr := driveGSSecondBadgeInterruption(m, profile, label); settleErr != nil {
+				return settleErr
+			}
+		default:
+			return err
+		}
+	}
+	return fmt.Errorf("%w: route did not settle after %d interruptions", errGSSecondBadgeStalled, gsSecondBadgeRouteAttempts)
+}
+
+// executeGSSlowpokeWell continues from the durable Togepi-Egg handoff through
+// Route 32, Union Cave and Route 33. In Azalea it explicitly triggers Kurt's
+// retail story script, then clears the four-Rocket B1F corridor. Completion is
+// the cartridge EVENT_CLEARED_SLOWPOKE_WELL bit; the final Rocket script also
+// warps the player back to Kurt's house and heals the party.
+func executeGSSlowpokeWell(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 Slowpoke Well: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
+		if profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		return driveGSSecondBadgeInterruption(m, profile, "slowpoke-well:completion")
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTogepiEggReceived) {
+		return fmt.Errorf("%w: Slowpoke Well requires the post-Falkner Togepi Egg handoff", errGSSecondBadgeUnexpectedState)
+	}
+
+	kurtHouse, err := gsOpeningMapID("KURTS_HOUSE")
+	if err != nil {
+		return err
+	}
+	// Kurt's initial object is at (3,2). Talking from (3,3) makes him run to
+	// Slowpoke Well and removes the Rocket blocking Azalea's well entrance.
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(kurtHouse, 3, 3)); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: reach Kurt: %w", err)
+	}
+	if err := skill.Face(m, 3, 2); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: face Kurt: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSSecondBadgeInterruption(m, profile, "azalea:kurt"); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: Kurt script: %w", err)
+	}
+
+	well, err := gsOpeningMapID("SLOWPOKE_WELL_B1F")
+	if err != nil {
+		return err
+	}
+	// Grunt M1 at (5,2) owns the victory script. Reaching (5,3) naturally
+	// crosses the other Rocket sightlines; the shared battle controller handles
+	// each mandatory trainer battle and any wild cave encounter.
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(well, 5, 3)); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: reach final Rocket: %w", err)
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
+		return nil
+	}
+	if err := skill.Face(m, 5, 2); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: face final Rocket: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSSecondBadgeInterruption(m, profile, "slowpoke-well:rocket-grunt-m1"); err != nil {
+		return fmt.Errorf("gen2 Slowpoke Well: final Rocket: %w", err)
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
+		return fmt.Errorf("%w: final Rocket script returned without Slowpoke Well completion", errGSSecondBadgeUnexpectedState)
+	}
+	if !profile.DecodeOverworld(m).Controllable {
+		return fmt.Errorf("%w: Slowpoke Well cleared without stable overworld control", errGSSecondBadgeUnexpectedState)
+	}
+	return nil
+}
