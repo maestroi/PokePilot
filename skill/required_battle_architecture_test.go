@@ -23,7 +23,7 @@ func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 	allowedRawBattleOwners := map[string]string{
 		"Battle":                    "Compatibility facade delegates to BattleWithOptions with zero-value options; semantic ownership remains with its caller.",
 		"fightOnly":                 "Travel resolves incidental encounters into battleResolution.",
-		"fleeThenFight":             "Travel may be forced to fight an incidental trainer after RUN is refused.",
+		"fleeThenFightWithBattleOptions": "Travel may be forced to fight an incidental trainer after RUN is refused while preserving battle options.",
 		"GetStarter":                "The Oak-lab rival fight is complete on its positive story event even after a loss.",
 		"towerBattleResolver":       "Pokemon Tower travel owns incidental encounter resolution, not story victory.",
 		"recoverForcedChoiceBattle": "Boundary recovery finishes an already-owned battle and reports generic blackout.",
