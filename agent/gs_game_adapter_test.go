@@ -196,7 +196,6 @@ func TestGSPostStarterProgressUsesGenericStoryVerifier(t *testing.T) {
 	}
 }
 
-
 func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
 	for _, progress := range []ProgressID{
@@ -206,7 +205,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
 			Controllable: true,
-			Story: ProgressState{{ID: progress, Complete: true}},
+			Story:        ProgressState{{ID: progress, Complete: true}},
 		}
 		if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{}); err != nil {
 			t.Fatalf("VerifyPostcondition(%s): %v", progress, err)
@@ -228,7 +227,6 @@ func TestGSRequiredBattleLossNormalizesAsCombatDefeat(t *testing.T) {
 		t.Fatalf("context = %+v, want Falkner encounter", failure.Context)
 	}
 }
-
 
 func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 	for _, progress := range []ProgressID{
