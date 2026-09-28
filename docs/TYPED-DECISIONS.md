@@ -201,13 +201,44 @@ A run with `battles` in shadow mode is asked about every move turn:
 Shadow calls do add their latency to each battle turn's wall time.
 
 The battle suite is its own evaluation mode, separate from the planner suite
-and from live runs:
+and from live runs. The checked-in corpus covers obvious type advantages,
+exhausted/disabled PP, healing/status items, good and bad switches, wild RUN
+versus trainer battles, and an intentionally ambiguous two-attack case. Reports
+keep each disagreement, confidence/probability distribution, and call latency;
+the aggregate includes average confidence, p50/p95 latency, error rate and
+rejection rate.
 
 ```sh
 go run ./cmd/agent-eval -suite battle -list
+go run ./cmd/agent-eval -suite battle -backend deterministic -json
 go run ./cmd/agent-eval -suite battle -backend decision -url http://localhost:8001/v1 -model qwen3.5-4b -json
 TYPESAFE_API_KEY=... go run ./cmd/agent-eval -suite battle -backend jev -model jev-latest -json
 ```
+
+`deterministic` is a ROM-free **first-usable fallback comparator** expressed
+through the same checked typed-decision contract. Ordinary Red runs actually
+use `skill.StatAwareMove`; reproducing that policy exactly requires cartridge
+generation data. Therefore the built-in comparator is not presented as the
+live deterministic policy or as ground truth. Cases where a switch, item or
+RUN is accepted deliberately expose what the fallback cannot do. The shadow
+corpus's `executed` field is the authoritative record of what the real live
+deterministic policy chose.
+
+A shadow battle run also writes a bounded `battle-shadow-corpus.jsonl` finish
+artifact (up to 256 portable turns). Each row contains the portable
+`BattleDecisionState`, the action the deterministic policy actually executed,
+and the original shadow response/latency when available. That artifact can be
+replayed without a ROM or emulator:
+
+```sh
+go run ./cmd/agent-eval -suite battle -battle-corpus battle-shadow-corpus.jsonl -backend deterministic -json
+TYPESAFE_API_KEY=... go run ./cmd/agent-eval -suite battle -battle-corpus battle-shadow-corpus.jsonl -backend jev -json
+```
+
+For a replay corpus the report metric is `executed_policy_agreement`, not
+accuracy: disagreement with the historical deterministic action is evidence to
+inspect, not proof that either side was correct. The full per-turn training
+dataset remains separate work in #1826.
 
 ## Telemetry
 

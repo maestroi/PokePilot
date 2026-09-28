@@ -540,6 +540,9 @@ func collectCheckpointArtifacts(dir string) ([]farm.Artifact, error) {
 	if _, ok := files[farmBenchmarkResultName]; ok {
 		want = append(want, farmBenchmarkResultName)
 	}
+	if _, ok := files[farmBattleShadowCorpusName]; ok {
+		want = append(want, farmBattleShadowCorpusName)
+	}
 	arts, err := artifactsForFiles(want, dir)
 	if err != nil {
 		return nil, err
@@ -607,6 +610,9 @@ func collectFailureCheckpointArtifacts(dir string, failures []farm.ObjectiveFail
 	if _, ok := files[farmBenchmarkResultName]; ok {
 		wantSet[farmBenchmarkResultName] = struct{}{}
 	}
+	if _, ok := files[farmBattleShadowCorpusName]; ok {
+		wantSet[farmBattleShadowCorpusName] = struct{}{}
+	}
 
 	want := make([]string, 0, len(wantSet))
 	for name := range wantSet {
@@ -642,6 +648,9 @@ func artifactsForFiles(names []string, dir string) ([]farm.Artifact, error) {
 }
 
 func artifactMediaType(name string) string {
+	if strings.HasSuffix(name, ".jsonl") {
+		return "application/x-ndjson"
+	}
 	if strings.HasSuffix(name, ".json") {
 		return "application/json"
 	}

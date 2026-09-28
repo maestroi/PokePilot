@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
@@ -30,7 +32,7 @@ func (e *oracleBattleEngine) Decide(_ context.Context, req DecisionRequest) (Dec
 		probs[c.ID] = 0.1
 	}
 	probs[choice] = 0.9
-	return DecisionResponse{Choice: choice, Probabilities: probs, Model: "oracle"}, nil
+	return DecisionResponse{Choice: choice, Probabilities: probs, Model: "oracle", Duration: 25 * time.Millisecond}, nil
 }
 
 func TestBattleDecisionRequestDeclaresExactlyTheLegalSet(t *testing.T) {
@@ -124,13 +126,50 @@ func TestCoreBattleEvalCases(t *testing.T) {
 	i := 0
 	engine.pick = func(DecisionRequest) string { id := accept[cases[i].Name]; i++; return id }
 	report, stats := EvaluateBattleDecisions(engine, cases, 0.5)
+	if len(cases) < 10 {
+		t.Fatalf("battle corpus has %d cases, want representative coverage", len(cases))
+	}
 	if report.Passed != len(cases) || stats.Calls != len(cases) || stats.Rejected != 0 || stats.Model != "oracle" {
 		t.Fatalf("report=%+v stats=%+v", report, stats)
+	}
+	if confidence := stats.AverageConfidence(); confidence <= 0.8 || confidence >= 0.9 || stats.LatencyPercentile(0.50) != 0.025 || stats.ErrorRate() != 0 {
+		t.Fatalf("benchmark health = confidence %.3f p50 %.3f error %.3f", confidence, stats.LatencyPercentile(0.50), stats.ErrorRate())
 	}
 
 	broken := append([]BattleEvalCase(nil), cases...)
 	broken[0].Accept = []string{"switch:4"}
 	if err := ValidateBattleEvalCases(broken); err == nil {
 		t.Fatal("corpus with an illegal accepted action validated")
+	}
+}
+
+func TestBattleShadowCorpusRoundTripBecomesReplayCases(t *testing.T) {
+	state := CoreBattleEvalCases()[0].State.MoveOnly()
+	sample := BattleShadowSample{
+		Version:                 BattleShadowSampleVersion,
+		State:                   state,
+		Executed:                "move:3",
+		ObservedChoice:          "move:2",
+		ObservedConfidence:      0.72,
+		ObservedProbabilities:   map[string]float64{"move:2": 0.72, "move:3": 0.28},
+		ObservedDurationSeconds: 0.021,
+	}
+	var buf bytes.Buffer
+	if err := WriteBattleShadowCorpus(&buf, []BattleShadowSample{sample}); err != nil {
+		t.Fatal(err)
+	}
+	samples, err := ReadBattleShadowCorpus(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(samples) != 1 || samples[0].Executed != "move:3" || samples[0].ObservedChoice != "move:2" {
+		t.Fatalf("round trip = %+v", samples)
+	}
+	cases, err := BattleEvalCasesFromShadow(samples)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 1 || cases[0].Accept[0] != "move:3" || cases[0].Tags[0] != "shadow" {
+		t.Fatalf("replay cases = %+v", cases)
 	}
 }
