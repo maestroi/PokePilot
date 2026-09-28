@@ -324,6 +324,13 @@ func (b Board) deadSquares() map[Pos]bool {
 	return dead
 }
 
+// DeadSquares returns the full static dead-square set for the board, so a
+// caller that checks many cells (a solver, a batch deadlock audit) computes
+// the corners once instead of once per cell.
+func (b Board) DeadSquares() map[Pos]bool {
+	return b.deadSquares()
+}
+
 // IsDeadSquare reports whether p is an obvious static dead square (a corner
 // where a crate can never reach a goal). The executor uses this to reject a
 // push that would move a crate onto a dead square.
