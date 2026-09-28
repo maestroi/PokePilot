@@ -353,6 +353,18 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
+			if itemUses < battleItemUseCap && inBattle {
+				if choice, ok := chooseSacrificialBenchHealState(m.ROM(), resources, bs); ok {
+					if zbatDebug {
+						fmt.Printf("zbat resource=ITEM action=sacrifice-heal item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
+					}
+					if err := UseBattleMedicine(m, choice.Item, choice.Slot); err != nil {
+						return menuError(m, "sacrifice-heal stronger bench member", err)
+					}
+					itemUses++
+					continue
+				}
+			}
 			if itemUses < battleItemUseCap {
 				if choice, ok := chooseBattleMedicineState(resources); ok {
 					if zbatDebug {
