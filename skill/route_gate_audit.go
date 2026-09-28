@@ -78,6 +78,7 @@ const (
 	route23VictoryRoadWarpX     uint8 = 4
 	route23VictoryRoadWarpY     uint8 = 31
 	route23VictoryRoadApproachY uint8 = 32
+	route23Route22GateWarpY     uint8 = 139
 
 	eventFightRoute16Snorlax state.Event = 0x4C8
 	eventBeatRoute16Snorlax  state.Event = 0x4C9
@@ -168,6 +169,22 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the same fact to semantic routing so the portable graph does not stop
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+
+	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == route22GateMap &&
+		edge.WarpY == route23Route22GateWarpY && (edge.WarpX == 7 || edge.WarpX == 8):
+		// The same three full-width water bands split the reverse trip from
+		// Indigo/Victory Road back toward Route 22. Without a semantic action on
+		// this south exit, the immutable land graph searches for a route around
+		// those bands through Victory Road's other Route 23 warp and can cycle
+		// back to an already-seen map instead of using Surf (#2150). This action
+		// owns only the source-map traversal; the gate warp itself remains an
+		// ordinary landing once the player reaches y=138.
+		t := semanticTransition("red:route23_league_return", edge, capCanSurf, capCanPassRoute23BadgeChecks)
+		// Surf happens before the warp, entirely inside Route 23. The action
+		// needs source-component pivot privilege, but the Route 22 Gate landing
+		// is ordinary known geometry and must not be relaxed as a Surf seam.
+		t.PortBypass = false
+		return t, true
 
 	case edge.Kind == world.EdgeWarp && edge.To == indigoPlateauLobbyMap &&
 		(edge.From == loreleiRoomMap || edge.From == brunoRoomMap || edge.From == agathaRoomMap) &&
@@ -342,6 +359,49 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		facts := currentStoryFacts(x.m)
 		if !facts.Route23BadgeChecksComplete || facts.Route23BadgeChecksPassed != 7 {
 			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League approach completed with badge checks %d/7", facts.Route23BadgeChecksPassed)
+		}
+		return world.TransitionExecutionResult{Changed: true}, true, nil
+
+	case "red:route23_league_return":
+		var mem state.Mem
+		state.Snapshot(x.m, &mem)
+		caps := redRouteCapabilities(x.romData, &mem)
+		missing := make([]gameruntime.CapabilityID, 0, 2)
+		if !caps.Has(capCanSurf) {
+			missing = append(missing, capCanSurf)
+		}
+		if !caps.Has(capCanPassRoute23BadgeChecks) {
+			missing = append(missing, capCanPassRoute23BadgeChecks)
+		}
+		if len(missing) != 0 {
+			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{Transition: transition, Missing: missing}
+		}
+		if x.policy == nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("%w: Route 23 League return", ErrRouteTransitionNeedsBattlePolicy)
+		}
+		if got := x.m.Peek8(sym.CurMap); got != route23Map {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return started on map %#02x, want %#02x", got, route23Map)
+		}
+		_, y := playerXY(x.m)
+		if y >= route23SouthEntry.Y {
+			// Already on the south gate component; let Traverse fire the real
+			// Route 22 Gate warp instead of treating the action as another pivot.
+			return world.TransitionExecutionResult{}, true, nil
+		}
+		for i := len(route23SurfBarrierRows) - 1; i >= 0; i-- {
+			if err := crossRoute23SurfBandSouth(x.m, x.romData, x.policy, route23SurfBarrierRows[i]); err != nil {
+				return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return: %w", err)
+			}
+		}
+		if _, err := TravelFlee(x.m, x.romData, route23SouthEntry, x.policy, victoryRoadTravelBattles); err != nil {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return: reach Route 22 gate: %w", err)
+		}
+		if got := x.m.Peek8(sym.CurMap); got != route23Map {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return left Route 23 for map %#02x before the gate", got)
+		}
+		_, y = playerXY(x.m)
+		if y < route23SouthEntry.Y {
+			return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return stopped at y=%d, want >=%d", y, route23SouthEntry.Y)
 		}
 		return world.TransitionExecutionResult{Changed: true}, true, nil
 

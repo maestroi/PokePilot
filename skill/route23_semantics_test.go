@@ -29,6 +29,46 @@ func TestRoute23VictoryRoadEntranceIsSemanticPivot(t *testing.T) {
 	}
 }
 
+func TestRoute23SouthReturnIsSemanticPivot(t *testing.T) {
+	for _, x := range []uint8{7, 8} {
+		edge := world.Edge{
+			Kind:  world.EdgeWarp,
+			From:  route23Map,
+			To:    route22GateMap,
+			WarpX: x,
+			WarpY: route23Route22GateWarpY,
+		}
+		transition, ok := redRouteTransitionForEdge(edge)
+		if !ok {
+			t.Fatalf("Route 23 south warp x=%d is missing semantic return transition", x)
+		}
+		if transition.ID != "red:route23_league_return" {
+			t.Fatalf("x=%d transition id=%q", x, transition.ID)
+		}
+		if transition.Gate || transition.PivotOnly || transition.PortBypass {
+			t.Fatalf("League return must be a source action pivot, got gate=%v pivot_only=%v port_bypass=%v",
+				transition.Gate, transition.PivotOnly, transition.PortBypass)
+		}
+		if len(transition.Requires) != 2 || transition.Requires[0] != capCanSurf || transition.Requires[1] != capCanPassRoute23BadgeChecks {
+			t.Fatalf("x=%d requirements=%v, want Surf + Route 23 badge checks", x, transition.Requires)
+		}
+	}
+
+	// Entering Route 23 from the gate remains ordinary geometry. The semantic
+	// action exists only to bridge the north-side water-separated component
+	// toward the south exit.
+	reverse := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  route22GateMap,
+		To:    route23Map,
+		WarpX: 4,
+		WarpY: 0,
+	}
+	if transition, ok := redRouteTransitionForEdge(reverse); ok && transition.ID == "red:route23_league_return" {
+		t.Fatalf("Route 22 Gate -> Route 23 unexpectedly owns League return action: %+v", transition)
+	}
+}
+
 func TestRoute23NorthVictoryRoadExitIsNotCollapsedIntoLeagueApproach(t *testing.T) {
 	edge := world.Edge{
 		Kind:  world.EdgeWarp,
