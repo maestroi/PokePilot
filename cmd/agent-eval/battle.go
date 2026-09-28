@@ -51,9 +51,14 @@ func (firstUsableMoveDecisionEngine) Decide(_ context.Context, req agent.Decisio
 			break
 		}
 	}
+	probabilities := make(map[string]float64, len(req.Choices))
+	for _, candidate := range req.Choices {
+		probabilities[candidate.ID] = 0
+	}
+	probabilities[choice] = 1
 	return agent.DecisionResponse{
 		Choice:        choice,
-		Probabilities: map[string]float64{choice: 1},
+		Probabilities: probabilities,
 		Confidence:    1,
 		Backend:       "deterministic",
 		Model:         "first-usable-move",
