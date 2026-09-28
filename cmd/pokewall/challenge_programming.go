@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
+	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
 const (
@@ -72,6 +73,8 @@ type challengeQueueEntry struct {
 	ChallengeName    string   `json:"challenge_name"`
 	State            string   `json:"state"`
 	ScheduledAt      int64    `json:"scheduled_at,omitempty"`
+	RepeatEverySeconds int64   `json:"repeat_every_seconds,omitempty"`
+	RepeatUntil       int64    `json:"repeat_until,omitempty"`
 	CreatedAt        int64    `json:"created_at"`
 	StartedAt        int64    `json:"started_at,omitempty"`
 	EndedAt          int64    `json:"ended_at,omitempty"`
@@ -348,11 +351,8 @@ func validateChallengeStarter(spec *farm.Spec, cap challengeCapability) error {
 		}
 		spec.Starter = starter
 	case "red_gen1":
-		if strings.HasPrefix(starter, "random:") {
-			pool := strings.TrimPrefix(starter, "random:")
-			if pool != "reasonable" && pool != "basic" && pool != "any" {
-				return fmt.Errorf("pokemon-red random starter pool %q is unsupported; want reasonable, basic, or any", pool)
-			}
+		if _, err := redstarter.Resolve(starter, spec.Seed); err != nil {
+			return err
 		}
 		spec.Starter = starter
 	}
@@ -407,9 +407,32 @@ func (c *challengeProgrammingController) saveChallenge(in challengeDefinition) (
 }
 
 type enqueueChallengeRequest struct {
-	Version     int   `json:"version,omitempty"`
-	ScheduledAt int64 `json:"scheduled_at,omitempty"`
-	PinNext     bool  `json:"pin_next,omitempty"`
+	Version            int   `json:"version,omitempty"`
+	ScheduledAt        int64 `json:"scheduled_at,omitempty"`
+	RepeatEverySeconds int64 `json:"repeat_every_seconds,omitempty"`
+	RepeatUntil        int64 `json:"repeat_until,omitempty"`
+	PinNext            bool  `json:"pin_next,omitempty"`
+}
+
+func (c *challengeProgrammingController) validateChallengeReady(challenge challengeDefinition) error {
+	if _, err := normalizeChallengeDefinition(challenge); err != nil {
+		return fmt.Errorf("challenge no longer validates: %w", err)
+	}
+	if challenge.ExperimentRef == "" {
+		return nil
+	}
+	value, ok := wallExperimentControllers.Load(c.wall)
+	if !ok {
+		return errors.New("model experiment controller is unavailable")
+	}
+	controller := value.(*modelExperimentController)
+	controller.mu.Lock()
+	_, ok = controller.state.Experiments[challenge.ExperimentRef]
+	controller.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("experiment_ref %q was not found", challenge.ExperimentRef)
+	}
+	return nil
 }
 
 func (c *challengeProgrammingController) enqueueChallenge(id string, request enqueueChallengeRequest) (challengeQueueEntry, error) {
@@ -420,13 +443,22 @@ func (c *challengeProgrammingController) enqueueChallenge(id string, request enq
 	if !ok {
 		return challengeQueueEntry{}, fmt.Errorf("challenge %s version %d not found", id, request.Version)
 	}
-	if _, err := normalizeChallengeDefinition(challenge); err != nil {
-		return challengeQueueEntry{}, fmt.Errorf("challenge no longer validates: %w", err)
+	if err := c.validateChallengeReady(challenge); err != nil {
+		return challengeQueueEntry{}, err
 	}
 	return c.enqueueDefinition(challenge, request)
 }
 
 func (c *challengeProgrammingController) enqueueDefinition(challenge challengeDefinition, request enqueueChallengeRequest) (challengeQueueEntry, error) {
+	if request.RepeatEverySeconds < 0 {
+		return challengeQueueEntry{}, errors.New("repeat_every_seconds must be non-negative")
+	}
+	if request.RepeatUntil != 0 && request.RepeatEverySeconds == 0 {
+		return challengeQueueEntry{}, errors.New("repeat_until requires repeat_every_seconds")
+	}
+	if err := c.validateChallengeReady(challenge); err != nil {
+		return challengeQueueEntry{}, err
+	}
 	now := time.Now().Unix()
 	state := programStateQueued
 	if request.ScheduledAt > now {
@@ -438,8 +470,10 @@ func (c *challengeProgrammingController) enqueueDefinition(challenge challengeDe
 		ChallengeVersion: challenge.Version,
 		ChallengeName:    challenge.Name,
 		State:            state,
-		ScheduledAt:      request.ScheduledAt,
-		CreatedAt:        now,
+		ScheduledAt:        request.ScheduledAt,
+		RepeatEverySeconds: request.RepeatEverySeconds,
+		RepeatUntil:         request.RepeatUntil,
+		CreatedAt:           now,
 		Pinned:           request.PinNext,
 	}
 	c.mu.Lock()
@@ -555,6 +589,34 @@ func (c *challengeProgrammingController) reorder(ids []string) error {
 	return c.persistLocked()
 }
 
+func (c *challengeProgrammingController) scheduleNextOccurrenceLocked(source challengeQueueEntry, now int64) {
+	if source.RepeatEverySeconds <= 0 {
+		return
+	}
+	base := source.ScheduledAt
+	if base <= 0 {
+		base = source.CreatedAt
+	}
+	next := base + source.RepeatEverySeconds
+	for next <= now {
+		next += source.RepeatEverySeconds
+	}
+	if source.RepeatUntil > 0 && next > source.RepeatUntil {
+		return
+	}
+	c.state.Entries = append(c.state.Entries, challengeQueueEntry{
+		ID:                 "slot-" + strings.TrimPrefix(newRunID(), "run-"),
+		ChallengeID:        source.ChallengeID,
+		ChallengeVersion:   source.ChallengeVersion,
+		ChallengeName:      source.ChallengeName,
+		State:              programStateScheduled,
+		ScheduledAt:        next,
+		RepeatEverySeconds: source.RepeatEverySeconds,
+		RepeatUntil:        source.RepeatUntil,
+		CreatedAt:          now,
+	})
+}
+
 func (c *challengeProgrammingController) mutateEntry(id, action string) (challengeQueueEntry, error) {
 	now := time.Now().Unix()
 	c.mu.Lock()
@@ -577,9 +639,11 @@ func (c *challengeProgrammingController) mutateEntry(id, action string) (challen
 			return challengeQueueEntry{}, fmt.Errorf("entry %s is not pending", id)
 		}
 		entry.State, entry.EndedAt, entry.Result = programStateSkipped, now, "skipped"
+		c.scheduleNextOccurrenceLocked(*entry, now)
 	case "cancel":
 		if isPendingProgramState(entry.State) {
 			entry.State, entry.EndedAt, entry.Result = programStateCancelled, now, "cancelled"
+			c.scheduleNextOccurrenceLocked(*entry, now)
 		} else if isLiveProgramState(entry.State) {
 			for _, runID := range entry.RunIDs {
 				c.wall.mu.Lock()
@@ -705,10 +769,12 @@ func (c *challengeProgrammingController) advance() {
 		}
 		target := &c.state.Entries[current]
 		if err != nil {
+			now := time.Now().Unix()
 			target.State = programStateBlocked
 			target.Error = err.Error()
 			target.Result = "start_failed"
-			target.EndedAt = time.Now().Unix()
+			target.EndedAt = now
+			c.scheduleNextOccurrenceLocked(*target, now)
 			_ = c.persistLocked()
 			c.mu.Unlock()
 			continue
@@ -729,26 +795,39 @@ func (c *challengeProgrammingController) advance() {
 	}
 }
 
-func (c *challengeProgrammingController) launchChallenge(challenge challengeDefinition) ([]string, string, error) {
-	if challenge.ExperimentRef != "" {
-		return c.launchExperimentReference(challenge.ExperimentRef)
-	}
+func compileChallengeRun(challenge challengeDefinition, runID string) (farm.Spec, error) {
 	spec := challenge.Run
 	if err := validateChallengeRun(&spec, challenge.Requirements); err != nil {
-		return nil, "", err
+		return farm.Spec{}, err
 	}
-	c.wall.mu.Lock()
-	for {
-		spec.RunID = newRunID()
-		if c.wall.tiles[spec.RunID] == nil {
-			break
-		}
+	spec.RunID = strings.TrimSpace(runID)
+	if spec.RunID == "" {
+		return farm.Spec{}, errors.New("compiled challenge run id is required")
 	}
-	c.wall.mu.Unlock()
 	spec.Attempt = 0
 	spec.Inference = nil
 	spec.ExperimentID, spec.ExperimentArm, spec.ExperimentCase = "", "", ""
 	spec.Endless = false
+	return spec, nil
+}
+
+func (c *challengeProgrammingController) launchChallenge(challenge challengeDefinition) ([]string, string, error) {
+	if challenge.ExperimentRef != "" {
+		return c.launchExperimentReference(challenge.ExperimentRef)
+	}
+	var runID string
+	c.wall.mu.Lock()
+	for {
+		runID = newRunID()
+		if c.wall.tiles[runID] == nil {
+			break
+		}
+	}
+	c.wall.mu.Unlock()
+	spec, err := compileChallengeRun(challenge, runID)
+	if err != nil {
+		return nil, "", err
+	}
 	body, _ := json.Marshal(spec)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/specs", bytes.NewReader(body))
@@ -857,7 +936,9 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 		} else {
 			entry.State, entry.Result = programStateCompleted, "completed"
 		}
-		entry.EndedAt = time.Now().Unix()
+		now := time.Now().Unix()
+		entry.EndedAt = now
+		c.scheduleNextOccurrenceLocked(*entry, now)
 		break
 	}
 	_ = c.persistLocked()
@@ -1038,9 +1119,11 @@ func challengeProgrammingHTTPHandler(w *Wall, next http.Handler) http.Handler {
 	})
 	mux.HandleFunc("POST /v1/programming/queue", func(res http.ResponseWriter, req *http.Request) {
 		var body struct {
-			Challenge   challengeDefinition `json:"challenge"`
-			ScheduledAt int64               `json:"scheduled_at,omitempty"`
-			PinNext     bool                `json:"pin_next,omitempty"`
+			Challenge          challengeDefinition `json:"challenge"`
+			ScheduledAt        int64               `json:"scheduled_at,omitempty"`
+			RepeatEverySeconds int64               `json:"repeat_every_seconds,omitempty"`
+			RepeatUntil        int64               `json:"repeat_until,omitempty"`
+			PinNext            bool                `json:"pin_next,omitempty"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(res, req.Body, maxSmallControlBody)).Decode(&body); err != nil {
 			writeJSON(res, http.StatusBadRequest, map[string]string{"error": "invalid queue request: " + err.Error()})
@@ -1059,7 +1142,10 @@ func challengeProgrammingHTTPHandler(w *Wall, next http.Handler) http.Handler {
 			writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
-		entry, err := controller.enqueueDefinition(saved, enqueueChallengeRequest{ScheduledAt: body.ScheduledAt, PinNext: body.PinNext})
+		entry, err := controller.enqueueDefinition(saved, enqueueChallengeRequest{
+			ScheduledAt: body.ScheduledAt, RepeatEverySeconds: body.RepeatEverySeconds,
+			RepeatUntil: body.RepeatUntil, PinNext: body.PinNext,
+		})
 		if err != nil {
 			writeJSON(res, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
