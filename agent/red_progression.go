@@ -107,12 +107,20 @@ func redCutFieldUnlocked(obs Observation) bool {
 	return ok && cut.BadgeOwned && cut.HMOwned
 }
 
-// redFlyFieldUnlocked is the recovery half of Fly progression. Once HM02 is
-// in the bag, a failed/paused preparation transaction must remain offerable
-// even if it stopped outside the geographic Celadon-ready checkpoint.
-func redFlyFieldUnlocked(obs Observation) bool {
+// redFlyOptimizationAvailable decides whether the optional Fly setup belongs
+// in the ordinary progression menu. Before HM02 is owned, the Celadon+Flute
+// story state makes the safe Route 16 handoff worth attempting. After HM02 is
+// owned, Fly is not a correctness gate: do not launch PC/catch/gift roster
+// surgery just for this optimization. Re-offer it only when the current party
+// can prepare Fly (or already has it usable); a later natural party change
+// makes Preparable true and re-enables the option.
+func redFlyOptimizationAvailable(obs Observation) bool {
 	fly, ok := observedFieldCapability(obs, "fly")
-	return ok && fly.BadgeOwned && fly.HMOwned
+	if ok && fly.HMOwned {
+		return fly.BadgeOwned && (fly.Usable || fly.Preparable)
+	}
+	return obs.Story.Has(redProgressPostSurgeCeladonReady) &&
+		obs.Story.Has(redProgressPokeFluteAcquired)
 }
 
 // redProgressionObjectives exposes Red story opportunities as one portable
@@ -214,14 +222,11 @@ func redProgressionObjectives(obs Observation) []Objective {
 		// Fly is a speed optimization, not a correctness gate. Once Celadon is
 		// ready and the Poke Flute makes the Route 16 detour reversible, offer
 		// Fly alongside the mandatory story step instead of replacing it.
-		if !obs.Story.Has(redProgressFlyReady) &&
-			((obs.Story.Has(redProgressPostSurgeCeladonReady) &&
-				obs.Story.Has(redProgressPokeFluteAcquired)) ||
-				redFlyFieldUnlocked(obs)) {
+		if !obs.Story.Has(redProgressFlyReady) && redFlyOptimizationAvailable(obs) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,
-				Note:     "(optional fast-travel setup: use the declared Cut/Fly prerequisites around the Route 16 HM02 handoff; skip this optimization if roster recovery is not worthwhile)",
+				Note:     "(optional fast-travel setup: collect HM02 while the Route 16 round trip is safe; after the handoff, keep this optimization only when the current party can prepare Fly)",
 			})
 		}
 	}

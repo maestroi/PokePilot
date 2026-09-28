@@ -88,6 +88,56 @@ func TestRedProgressionWithholdsFlyWithoutPokeFlute(t *testing.T) {
 	}
 }
 
+// Regression for #2146 / run-3dtp99mx0jn3ickoqlj1k6iue. Once HM02 was
+// collected, fly_ready stayed in the normal menu even when no current-party
+// member could learn Fly. Generic prerequisite recovery then correctly proved
+// field_roster_no_recovery, but position/progression churn reopened the optional
+// parent objective until the stagnation watchdog stopped the run. Fly is an
+// optimization, so an owned-but-unpreparable HM must fall out of the menu.
+func TestRedProgressionWithholdsOwnedFlyWhenCurrentPartyCannotPrepareIt(t *testing.T) {
+	obs := postSurgeObservation(0x08)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+		ProgressFact{ID: redProgressPokeFluteAcquired, Complete: true},
+		ProgressFact{ID: redProgressRainbowBadge, Complete: true},
+	)
+	obs.FieldCapabilities = []FieldCapability{{
+		Name:       "fly",
+		BadgeOwned: true,
+		HMOwned:    true,
+		Usable:     false,
+		Preparable: false,
+	}}
+
+	got := redProgressionObjectives(obs)
+	if hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("owned but unpreparable optional Fly was re-offered: %v", got)
+	}
+}
+
+func TestRedProgressionReoffersOwnedFlyAfterNaturalPartyChangeMakesItPreparable(t *testing.T) {
+	obs := postSurgeObservation(0x08)
+	obs.Story = append(obs.Story,
+		ProgressFact{ID: redProgressPostSurgeLavenderReached, Complete: true},
+		ProgressFact{ID: redProgressPostSurgeCeladonReady, Complete: true},
+		ProgressFact{ID: redProgressPokeFluteAcquired, Complete: true},
+		ProgressFact{ID: redProgressRainbowBadge, Complete: true},
+	)
+	obs.FieldCapabilities = []FieldCapability{{
+		Name:       "fly",
+		BadgeOwned: true,
+		HMOwned:    true,
+		Usable:     false,
+		Preparable: true,
+	}}
+
+	got := redProgressionObjectives(obs)
+	if !hasProgressObjective(got, redProgressFlyReady) {
+		t.Fatalf("Fly did not return after the current party became preparable: %v", got)
+	}
+}
+
 func TestRedProgressionOffersErikaAfterFlyReady(t *testing.T) {
 	obs := postSurgeObservation(0x85)
 	obs.Story = append(obs.Story,
@@ -161,7 +211,7 @@ func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
 	}
 }
 
-func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
+func TestRedProgressionResumesPreparableFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
 	obs := postSurgeObservation(0xBC) // Route 16 Fly house: geographic Celadon-ready fact may be false mid-transaction.
 	obs.FieldCapabilities = []FieldCapability{{
 		Name:       "fly",
@@ -169,13 +219,15 @@ func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) 
 		HMOwned:    true,
 		Learned:    false,
 		Usable:     false,
+		Preparable: true,
 	}}
 
 	got := redProgressionObjectives(obs)
 	if !hasProgressObjective(got, redProgressFlyReady) {
-		t.Fatalf("HM02-owned partial Fly setup was not resumed: %v", got)
+		t.Fatalf("HM02-owned, current-party-preparable Fly setup was not resumed: %v", got)
 	}
-	// Fly recovery is now optional and may coexist with mandatory story
-	// objectives; the important invariant is that the partial HM02 setup remains
-	// resumable instead of becoming a hidden correctness gate.
+	// The geographic checkpoint may disappear mid-transaction, so HM02 +
+	// current-party preparation is enough to resume. HM02 without a preparable
+	// carrier is covered separately by #2146 and intentionally falls out of the
+	// optional menu rather than forcing roster surgery.
 }
