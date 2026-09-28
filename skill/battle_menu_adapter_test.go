@@ -42,7 +42,8 @@ func (fakeGen2BattleMenuDecoder) BattleMainMenuEntryPosition(entry game.BattleMe
 }
 
 type fakeBattleMenuMachine struct {
-	mem [64]byte
+	mem    [64]byte
+	frames int
 }
 
 func (m *fakeBattleMenuMachine) Peek8(addr uint16) byte { return m.mem[addr] }
@@ -51,7 +52,10 @@ func (m *fakeBattleMenuMachine) PeekInto(addr uint16, dst []byte) {
 	copy(dst, m.mem[int(addr):])
 }
 
-func (*fakeBattleMenuMachine) StepFrame() {}
+// fakeBattleMenuMachine steps one frame per StepFrame so the activation loop's
+// frame accounting advances. The base fake returns immediately, which is fine
+// for cursor navigation but would spin the budget loop forever.
+func (m *fakeBattleMenuMachine) StepFrame() { m.frames++ }
 
 func (*fakeBattleMenuMachine) StepFrames(int) {}
 
@@ -143,11 +147,69 @@ func TestActivateBattleMainMenuEntryRetriesDroppedPress(t *testing.T) {
 	m.mem[fakeBattleVisible] = 1
 	opened := func() bool { return m.mem[fakeBattleVisible] == 0 }
 
-	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuItems, 10, opened); err != nil {
+	// The budget must cover more than one press now that a press is charged
+	// against it; the battle driver passes moveMenuBudget (500).
+	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuItems, moveMenuBudget, opened); err != nil {
 		t.Fatalf("activate after a dropped A: %v", err)
 	}
 	if m.aPresses != 2 {
 		t.Fatalf("A presses = %d, want 2 (one dropped, one accepted)", m.aPresses)
+	}
+}
+
+// fakeReopeningBattleMenuMachine models the measured Lorelei failure: the first
+// A lands on a command menu that has been re-drawn while the enemy's multi-turn
+// attack is still resolving, so it is dropped and the menu then leaves the
+// screen entirely for a while. The menu comes back later in the same call, and
+// the retry that used to have run out of a fixed press count must still happen.
+type fakeReopeningBattleMenuMachine struct {
+	fakeBattleMenuMachine
+	hiddenFor, hidden, aPresses int
+}
+
+func (m *fakeReopeningBattleMenuMachine) Tap(btn emu.Button, hold, gap int) {
+	if btn != emu.A {
+		m.fakeBattleMenuMachine.Tap(btn, hold, gap)
+		return
+	}
+	m.aPresses++
+	switch m.aPresses {
+	case 1:
+		m.mem[fakeBattleVisible] = 0 // dropped: the press went nowhere
+		m.hidden = m.hiddenFor
+	default:
+		m.mem[fakeBattleVisible] = 0 // accepted: the submenu opened
+	}
+}
+
+func (m *fakeReopeningBattleMenuMachine) StepFrame() {
+	m.fakeBattleMenuMachine.StepFrame()
+	if m.hidden > 0 {
+		m.hidden--
+		if m.hidden == 0 {
+			m.mem[fakeBattleVisible] = 1 // the command menu comes back
+		}
+	}
+}
+
+func TestActivateBattleMainMenuEntryWaitsForMenuToComeBack(t *testing.T) {
+	m := &fakeReopeningBattleMenuMachine{hiddenFor: 40}
+	m.mem[fakeBattleVisible] = 1
+	opened := func() bool { return m.mem[fakeBattleVisible] == 0 && m.aPresses > 1 }
+
+	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuFight, moveMenuBudget, opened); err != nil {
+		t.Fatalf("activate across a menu that left the screen: %v", err)
+	}
+	if m.aPresses != 2 {
+		t.Fatalf("A presses = %d, want 2", m.aPresses)
+	}
+}
+
+func TestActivateBattleMainMenuEntryFailsWhenMenuNeverReturns(t *testing.T) {
+	m := &fakeReopeningBattleMenuMachine{hiddenFor: 10_000}
+	m.mem[fakeBattleVisible] = 1
+	if err := activateBattleMainMenuEntryWithDecoder(m, fakeGen2BattleMenuDecoder{}, game.BattleMenuFight, moveMenuBudget, func() bool { return false }); err == nil {
+		t.Fatal("a submenu that never opened was accepted")
 	}
 }
 

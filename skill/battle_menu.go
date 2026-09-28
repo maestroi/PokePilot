@@ -87,8 +87,8 @@ func selectBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenu
 }
 
 const (
-	battleMenuActivatePresses = 3
-	battleMenuActivateSettle  = 60
+	battleMenuActivateSettle    = 60
+	battleMenuActivateTapFrames = 10 // Tap's hold 3 + gap 7
 )
 
 // activateBattleMainMenuEntryWithDecoder selects entry and presses A until
@@ -96,24 +96,46 @@ const (
 // polls the joypad (PlaceMenuCursor, then Delay3), so an A that lands in that
 // window is silently dropped: Lorelei's room left UseBattleMedicine waiting
 // 500 frames on an unopened bag (run-z5ghf614serd8, triage:f6e0e5cee7099781).
+//
 // A is re-pressed only while the main menu is still up with the cursor on
 // entry, which is exactly the dropped-press state, so a retry can never act
-// inside the submenu.
+// inside the submenu. The presses are bounded by the caller's frame budget
+// rather than by a fixed press count, because a dropped press is not the only
+// way the menu can be unavailable: the command menu can be re-drawn while the
+// turn is still resolving, and every press in that window is dropped too.
+// In Lorelei's room the player's A landed on such a menu, the enemy's
+// multi-turn Wrap then played for ~325 frames with the main menu gone, and the
+// menu only came back after the fixed press count had already been spent — so
+// the submenu wait sat on a menu nobody had asked, ran out its 500 frames and
+// aborted the battle, dirtying the objective boundary and circuit-breaking the
+// run (triage:18ad741080f93b5d). Watching for the menu to come back and
+// re-pressing while the budget still has room keeps the same safety invariant
+// while tolerating a turn that has to finish first.
 func activateBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenuDecoder, entry game.BattleMenuEntry, budget int, opened func() bool) error {
 	if err := selectBattleMainMenuEntryWithDecoder(m, decoder, entry); err != nil {
 		return err
 	}
 	target, _ := decoder.BattleMainMenuEntryPosition(entry)
-	for press := 0; press < battleMenuActivatePresses; press++ {
-		m.Tap(emu.A, 3, 7)
-		if waitMenuUntil(m, battleMenuActivateSettle, opened) {
+	spent := 0
+	for spent < budget {
+		if opened() {
 			return nil
 		}
-		if live := decoder.DecodeBattleMainMenu(m); !live.Visible || live.Cursor != target {
-			break // the press was taken; let the caller's budget decide
+		if live := decoder.DecodeBattleMainMenu(m); live.Visible && live.Cursor == target {
+			m.Tap(emu.A, 3, 7)
+			spent += battleMenuActivateTapFrames
+			// Ignore frames spent inside the settle window when charging the
+			// budget: waitMenuUntil reports a dropped press by exhausting it,
+			// so charging it here would spend the whole budget on one press.
+			if waitMenuUntil(m, battleMenuActivateSettle, opened) {
+				return nil
+			}
+			continue
 		}
+		m.StepFrame()
+		spent++
 	}
-	if waitMenuUntil(m, budget, opened) {
+	if waitMenuUntil(m, battleMenuActivateSettle, opened) {
 		return nil
 	}
 	return fmt.Errorf("skill: battle menu %q did not open within %d frames: %w", entry, budget, ErrMenuStuck)

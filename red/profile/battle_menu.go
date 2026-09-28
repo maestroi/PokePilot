@@ -24,6 +24,11 @@ func (*Profile) DecodeBattleMainMenu(reader game.MemoryReader) game.BattleMainMe
 	if state.DecodeBattle(&mem) == nil || !strings.Contains(state.ScreenText(&mem), "FIGHT") {
 		return game.BattleMainMenuState{}
 	}
+	// The FIGHT marker lingers in the tilemap for the whole turn, so it is not
+	// proof the menu owns input. A drawn cursor at wMenuCursorLocation is.
+	if !state.MenuCursorDrawn(&mem) {
+		return game.BattleMainMenuState{}
+	}
 
 	column := -1
 	switch mem.U8(sym.TopMenuItemX) {

@@ -109,6 +109,10 @@ func menuCursorDrawn(m *Mem) bool {
 	return ok && (tile == menuCursorTile || tile == menuCursorSelectedTile)
 }
 
+// MenuCursorDrawn exposes menuCursorDrawn to profile decoders that must tell a
+// menu which owns input from leftover menu text still sitting in the tilemap.
+func MenuCursorDrawn(m *Mem) bool { return menuCursorDrawn(m) }
+
 // menuCursorGlyph returns the raw tile at the ROM-published cursor location.
 func menuCursorGlyph(m *Mem) (uint8, bool) {
 	offset, ok := menuCursorOffset(m)
