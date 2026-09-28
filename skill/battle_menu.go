@@ -33,6 +33,14 @@ func selectBattleMainMenuEntry(m *emu.Emu, entry game.BattleMenuEntry) error {
 	return selectBattleMainMenuEntryWithDecoder(m, decoder, entry)
 }
 
+func activateBattleMainMenuEntry(m *emu.Emu, entry game.BattleMenuEntry, budget int, opened func() bool) error {
+	decoder, err := battleMenuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	return activateBattleMainMenuEntryWithDecoder(m, decoder, entry, budget, opened)
+}
+
 func selectBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenuDecoder, entry game.BattleMenuEntry) error {
 	if decoder == nil {
 		return fmt.Errorf("skill: battle menu: nil decoder")
