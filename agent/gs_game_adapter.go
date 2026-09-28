@@ -44,7 +44,8 @@ func gsSupportedProgress(id ProgressID) bool {
 	case gsprofile.ProgressMysteryEggReturned,
 		gsprofile.ProgressSproutTowerCleared,
 		gsprofile.ProgressZephyrBadgeEarned,
-		gsprofile.ProgressTogepiEggReceived:
+		gsprofile.ProgressTogepiEggReceived,
+		gsprofile.ProgressSlowpokeWellCleared:
 		return true
 	default:
 		return false
@@ -77,7 +78,7 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 }
 
 // NormalizeBoundary is deliberately fail-closed except for the exact opening
-// and first-badge corridor this adapter owns. A retry may resume in one of
+// and early-Johto corridors this adapter owns. A retry may resume in one of
 // those deterministic scripts; answering its prompts belongs to ExecuteOwned,
 // not generic boundary cleanup.
 func (a *gsObjectiveAdapter) NormalizeBoundary() error {
@@ -98,7 +99,7 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 	if !facts.InBattle && (gsOpeningScriptMap(facts.NativeMapID) || gsErrandScriptMap(facts.NativeMapID)) {
 		return nil
 	}
-	if facts.GaveMysteryEggToElm && gsFirstBadgeOwnedMap(facts.NativeMapID) {
+	if facts.GaveMysteryEggToElm && (gsFirstBadgeOwnedMap(facts.NativeMapID) || gsSecondBadgeOwnedMap(facts.NativeMapID)) {
 		return nil
 	}
 	return fmt.Errorf("%w: map=%#04x at (%d,%d) controllable=%v battle=%v script=%v",
@@ -124,6 +125,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSFalkner(a.m, a.romData)
 		case gsprofile.ProgressTogepiEggReceived:
 			err = executeGSTogepiEggPickup(a.m, a.romData)
+		case gsprofile.ProgressSlowpokeWellCleared:
+			err = executeGSSlowpokeWell(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -143,7 +146,8 @@ const gsFirstBadgeObjectiveFrameBudget uint64 = 1_500_000
 func gsObjectiveFrameBudget(o Objective) uint64 {
 	if o.Kind == KindProgress {
 		switch o.Progress {
-		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned:
+		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
+			gsprofile.ProgressSlowpokeWellCleared:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -223,6 +227,16 @@ func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, er
 			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
 			Cause: "gen2_first_badge_unexpected_state", Recoverable: false,
 		}
+	case errors.Is(err, errGSSecondBadgeStalled):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
+			Cause: "gen2_second_badge_stalled", Recoverable: false,
+		}
+	case errors.Is(err, errGSSecondBadgeUnexpectedState):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
+			Cause: "gen2_second_badge_unexpected_state", Recoverable: false,
+		}
 	default:
 		return gameruntime.Failure{
 			Phase: phase, Class: gameruntime.FailureClassUnknown,
@@ -276,6 +290,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressTogepiEggReceived,
 			Note:     "(answer Elm's post-Falkner call, meet his aide in Violet Pokemon Center, and accept the Togepi Egg that opens Route 32)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressSlowpokeWellCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressSlowpokeWellCleared,
+			Note:     "(travel Route 32 through Union Cave to Azalea, recruit Kurt, defeat Team Rocket in Slowpoke Well, and restore the Slowpoke)",
 		}}
 	default:
 		return nil
