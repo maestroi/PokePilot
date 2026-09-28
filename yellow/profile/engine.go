@@ -28,6 +28,20 @@ func (*Profile) BattleMainMenuEntryPosition(entry game.BattleMenuEntry) (game.Ba
 	return engine.BattleMainMenuEntryPosition(entry)
 }
 
+// DecodeBattleEscapeMenu delegates the RUN-capable battle menu for the same
+// reason DecodeBattleMainMenu does: Yellow runs the Gen-I engine Red and Blue
+// share, and the ordinary and Safari command menus are engine facts, not
+// cartridge facts. Omitting this delegation made Flee hard-fail on Yellow with
+// "profile pokemon-yellow@en-us-rev0 does not expose escape-menu semantics"
+// before a single button was pressed (run-1wsyy1f75ssxsheu3o4xpui4).
+func (*Profile) DecodeBattleEscapeMenu(r game.MemoryReader) game.BattleEscapeMenuState {
+	return engine.DecodeBattleEscapeMenu(r)
+}
+
+func (*Profile) BattleEscapeRunPosition(kind game.BattleEscapeMenuKind) (game.BattleMenuPosition, bool) {
+	return engine.BattleEscapeRunPosition(kind)
+}
+
 func (*Profile) DecodeBattleResources(r game.MemoryReader) game.BattleResourcesState {
 	return engine.DecodeBattleResources(r)
 }
@@ -96,7 +110,15 @@ func (*Profile) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
 	return engine.DecodePartyMenu(r)
 }
 
-var _ game.BattleCombatStrategy = (*Profile)(nil)
+// Every capability the shared Gen-I runtime resolves from a profile must be
+// delegated explicitly. A missing method is invisible at compile time and only
+// surfaces at runtime as a "profile does not expose X semantics" stall, so the
+// assertions below turn that omission into a build failure.
+var (
+	_ game.BattleMenuDecoder       = (*Profile)(nil)
+	_ game.BattleEscapeMenuDecoder = (*Profile)(nil)
+	_ game.BattleCombatStrategy    = (*Profile)(nil)
+)
 
 func (*Profile) EvaluateCombatMove(
 	romData []byte,

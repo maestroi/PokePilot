@@ -74,6 +74,30 @@ func TestBuiltinCartridgesIncludeTetrisWithoutPokemonContract(t *testing.T) {
 	}
 }
 
+// TestGenOneProfilesExposeSharedBattleMenuSemantics pins the delegation
+// invariant that a profile regression silently breaks. Yellow runs the same
+// Gen-I engine as Red and Blue, so every battle surface the shared runtime
+// resolves through a type assertion must be reachable on all three cartridges.
+// When Yellow omitted DecodeBattleEscapeMenu, Flee failed with "profile
+// pokemon-yellow@en-us-rev0 does not expose escape-menu semantics" before
+// pressing a button, and every Yellow attempt circuit-broke on it
+// (run-1wsyy1f75ssxsheu3o4xpui4). A missing method is not visible at any call
+// site, so this test is the only deterministic guard.
+func TestGenOneProfilesExposeSharedBattleMenuSemantics(t *testing.T) {
+	for _, p := range []game.GameProfile{
+		redprofile.New(),
+		blueprofile.New(),
+		yellowprofile.New(),
+	} {
+		if _, ok := p.(game.BattleMenuDecoder); !ok {
+			t.Errorf("%s: does not expose battle-menu semantics", p.ID())
+		}
+		if _, ok := p.(game.BattleEscapeMenuDecoder); !ok {
+			t.Errorf("%s: does not expose escape-menu semantics", p.ID())
+		}
+	}
+}
+
 func TestTetrisCartridgeResolvesWhenROMAvailable(t *testing.T) {
 	path := os.Getenv("TETRIS_ROM")
 	if path == "" {
