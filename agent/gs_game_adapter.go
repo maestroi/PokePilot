@@ -46,7 +46,10 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressZephyrBadgeEarned,
 		gsprofile.ProgressTogepiEggReceived,
 		gsprofile.ProgressSlowpokeWellCleared,
-		gsprofile.ProgressHiveBadgeEarned:
+		gsprofile.ProgressHiveBadgeEarned,
+		gsprofile.ProgressAzaleaRivalResolved,
+		gsprofile.ProgressFarfetchdHerded,
+		gsprofile.ProgressHM01CutAcquired:
 		return true
 	default:
 		return false
@@ -130,6 +133,12 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSSlowpokeWell(a.m, a.romData)
 		case gsprofile.ProgressHiveBadgeEarned:
 			err = executeGSBugsy(a.m, a.romData)
+		case gsprofile.ProgressAzaleaRivalResolved:
+			err = executeGSAzaleaRival(a.m, a.romData)
+		case gsprofile.ProgressFarfetchdHerded:
+			err = executeGSFarfetchd(a.m, a.romData)
+		case gsprofile.ProgressHM01CutAcquired:
+			err = executeGSHM01Cut(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -150,7 +159,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 	if o.Kind == KindProgress {
 		switch o.Progress {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
-			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned:
+			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned,
+			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -305,6 +315,24 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressHiveBadgeEarned,
 			Note:     "(enter Azalea Gym, defeat Bugsy, and earn the Hive Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressAzaleaRivalResolved):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressAzaleaRivalResolved,
+			Note:     "(leave Azalea toward Ilex Forest, defeat the rival, and let the post-battle scene fully reset)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressFarfetchdHerded):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressFarfetchdHerded,
+			Note:     "(enter Ilex Forest and herd the Charcoal apprentice's Farfetchd back through the facing puzzle)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressHM01CutAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressHM01CutAcquired,
+			Note:     "(claim HM01 Cut from the Charcoal Master after returning Farfetchd)",
 		}}
 	default:
 		return nil
