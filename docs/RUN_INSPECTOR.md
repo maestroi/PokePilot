@@ -198,6 +198,10 @@ reconciles it every couple of minutes. The manager's `rollout-latest.sh` only
 rolls stack services — it has no SSH trust into the iGPU worker, so it must not
 try to roll the sidecar itself.
 
+The production iGPU is now on the dedicated render VM. Its Swarm overlay
+anchor, boot order, device check, and recovery procedure are documented in
+[`deploy/REPLAY_HOST.md`](../deploy/REPLAY_HOST.md).
+
 The sidecar reads its credentials from a host-owned environment file (default
 `/opt/pokefarm/replay.env`) carrying the S3 tuple, `LIBVA_DRIVER_NAME`, and
 `POKEPILOT_REPLAY_ENCODER`. Secrets stay out of the image and out of the stack

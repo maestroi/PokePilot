@@ -9,8 +9,8 @@
 # makes the device nodes visible but opening them fails with EPERM, because only
 # --device widens the device cgroup. All four measured on vm-swarm-worker-05.
 #
-# So replay stays a standalone container on the one node that exposes a render
-# node (vm-swarm-worker-05 has renderD128; worker-02/03 expose card0 only) and
+# So replay stays a standalone container on a node that exposes a render
+# device (currently vm-pokefarm-render-01) and
 # joins the attachable pokefarm_gpu overlay as `replay`, which is the name
 # pokeui and the spectator resolve.
 #
@@ -21,7 +21,8 @@
 #
 # Reconciliation is idempotent: the container carries a label holding a
 # fingerprint of this definition, so editing the definition (or rolling the
-# image) recreates the container and an unchanged definition is a no-op.
+# image) recreates the container. An unchanged, running, healthy definition is
+# a no-op; a stopped or unhealthy container must be replaced after a reboot.
 set -euo pipefail
 
 IMAGE=${FARM_IMAGE:-}
@@ -73,8 +74,14 @@ if docker inspect "$CONTAINER" >/dev/null 2>&1; then
 	have_image=$(docker inspect "$CONTAINER" --format '{{.Image}}')
 	have_spec=$(docker inspect "$CONTAINER" --format "{{index .Config.Labels \"$SPEC_LABEL\"}}")
 	if [ "$have_image" = "$want_image" ] && [ "$have_spec" = "$fingerprint" ]; then
-		printf 'pokefarm-replay: %s already current (%s, spec %s)\n' "$CONTAINER" "$IMAGE" "$fingerprint"
-		exit 0
+		running=$(docker inspect "$CONTAINER" --format '{{.State.Running}}')
+		if [ "$running" = true ]; then
+			health=$(docker exec "$CONTAINER" wget -qO- "http://127.0.0.1${LISTEN}/healthz" 2>/dev/null || true)
+			if [ -n "$health" ]; then
+				printf 'pokefarm-replay: %s already current and healthy (%s, spec %s)\n' "$CONTAINER" "$IMAGE" "$fingerprint"
+				exit 0
+			fi
+		fi
 	fi
 	printf 'pokefarm-replay: recreating %s (image %s -> %s, spec %s -> %s)\n' \
 		"$CONTAINER" "$have_image" "$want_image" "$have_spec" "$fingerprint"

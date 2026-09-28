@@ -1,0 +1,24 @@
+# Keep the attachable farm overlay present on the dedicated render VM. Docker
+# only materializes a Swarm overlay on a node while a service task uses it;
+# the standalone GPU sidecar needs that network before it can start.
+services:
+  overlay-anchor:
+    image: alpine:3.20
+    command: ["/bin/sleep", "2147483647"]
+    networks:
+      - gpu
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == vm-pokefarm-render-01
+      resources:
+        reservations:
+          memory: 4M
+        limits:
+          memory: 64M
+
+networks:
+  gpu:
+    external: true
+    name: pokefarm_gpu
