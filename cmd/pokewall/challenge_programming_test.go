@@ -403,3 +403,41 @@ func TestRecurringProgrammingSchedulesNextOccurrence(t *testing.T) {
 		t.Fatalf("next recurring occurrence scheduled_at=%d is not in the future", snapshot.UpNext.ScheduledAt)
 	}
 }
+
+func TestProgrammingUpNextSkipsFutureScheduleWhenDueEntryExists(t *testing.T) {
+	w := NewWall("")
+	h := challengeProgrammingHTTPHandler(w, w.Handler())
+
+	for _, challenge := range []challengeDefinition{
+		redChallenge("live", "Live", "squirtle"),
+		redChallenge("future", "Future", "bulbasaur"),
+		redChallenge("due", "Due now", "charmander"),
+	} {
+		if res := challengeRequest(t, h, http.MethodPost, "/v1/challenges", challenge); res.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d: %s", challenge.ID, res.Code, res.Body.String())
+		}
+	}
+
+	if res := challengeRequest(t, h, http.MethodPost, "/v1/challenges/live/queue", enqueueChallengeRequest{}); res.Code != http.StatusCreated {
+		t.Fatalf("queue live = %d: %s", res.Code, res.Body.String())
+	}
+	future := time.Now().Add(time.Hour).Unix()
+	if res := challengeRequest(t, h, http.MethodPost, "/v1/challenges/future/queue", enqueueChallengeRequest{ScheduledAt: future}); res.Code != http.StatusCreated {
+		t.Fatalf("queue future = %d: %s", res.Code, res.Body.String())
+	}
+	if res := challengeRequest(t, h, http.MethodPost, "/v1/challenges/due/queue", enqueueChallengeRequest{}); res.Code != http.StatusCreated {
+		t.Fatalf("queue due = %d: %s", res.Code, res.Body.String())
+	}
+
+	programming := challengeRequest(t, h, http.MethodGet, "/v1/programming", nil)
+	var snapshot challengeProgrammingSnapshot
+	if err := json.Unmarshal(programming.Body.Bytes(), &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.LiveNow == nil || snapshot.LiveNow.ChallengeID != "live" {
+		t.Fatalf("live now = %+v, want live", snapshot.LiveNow)
+	}
+	if snapshot.UpNext == nil || snapshot.UpNext.ChallengeID != "due" {
+		t.Fatalf("up next = %+v, want due", snapshot.UpNext)
+	}
+}
