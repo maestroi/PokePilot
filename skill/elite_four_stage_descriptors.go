@@ -60,8 +60,8 @@ func standardLeagueStageFight(m *emu.Emu, romData []byte, policy MovePolicy, sta
 	)
 }
 
-func championLeagueStageFight(m *emu.Emu, _ []byte, policy MovePolicy, _ leagueStageDescriptor) error {
-	return fightChampionStage(m, policy)
+func championLeagueStageFight(m *emu.Emu, _ []byte, policy MovePolicy, stage leagueStageDescriptor) error {
+	return fightChampionStage(m, policy, BattleOptions{Sequence: leagueSequenceContext(stage)})
 }
 
 var leagueBattleStages = []leagueStageDescriptor{
