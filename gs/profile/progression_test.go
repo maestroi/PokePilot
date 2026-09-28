@@ -132,6 +132,15 @@ func TestFirstBadgeProgressionProjectsSproutTowerZephyrAndEggBoundaries(t *testi
 	if !story.Has(ProgressSlowpokeWellCleared) {
 		t.Fatalf("Slowpoke Well event did not complete Rocket clear milestone: %+v", story)
 	}
+	if story.Has(ProgressHiveBadgeEarned) {
+		t.Fatal("Slowpoke Well completion falsely granted Hive Badge")
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgeHiveMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHiveBadgeEarned) {
+		t.Fatalf("Hive badge bit did not complete Bugsy milestone: %+v", story)
+	}
 }
 
 func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
