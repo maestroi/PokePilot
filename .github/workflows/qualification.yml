@@ -91,6 +91,26 @@ jobs:
           mkdir -p "$out"
           echo "POKEPILOT_QUALIFICATION_OUT=$out" >> "$GITHUB_ENV"
 
+      - name: Check LLM planner endpoint for benchmark qualification
+        id: llm-preflight
+        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '17 3 * * *') || (github.event_name == 'workflow_dispatch' && inputs.benchmark != 'none') }}
+        continue-on-error: ${{ github.event_name == 'schedule' }}
+        shell: bash
+        env:
+          CONFIGURED_LLM_URL: ${{ vars.POKEPILOT_LLM_URL }}
+        run: |
+          set -euo pipefail
+          base="${CONFIGURED_LLM_URL:-${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}}"
+          token="${llm_token:-}"
+          args=(--fail --silent --show-error --max-time 5)
+          if [[ -n "$token" ]]; then
+            args+=(-H "Authorization: Bearer $token")
+          fi
+          if ! curl "${args[@]}" "${base%/}/models" >/dev/null; then
+            echo "::warning::LLM planner endpoint is unavailable; scheduled benchmark qualification is infrastructure-blocked, not a gameplay failure."
+            exit 1
+          fi
+
       - name: Run qualification
         shell: bash
         env:
@@ -106,7 +126,7 @@ jobs:
           go run ./cmd/pokequal "${args[@]}"
 
       - name: Run fast benchmark qualification
-        if: ${{ (github.event_name == 'schedule' && github.event.schedule == '17 3 * * *') || (github.event_name == 'workflow_dispatch' && inputs.benchmark == 'fast') }}
+        if: ${{ steps.llm-preflight.outcome == 'success' && ((github.event_name == 'schedule' && github.event.schedule == '17 3 * * *') || (github.event_name == 'workflow_dispatch' && inputs.benchmark == 'fast')) }}
         shell: bash
         run: |
           set -euo pipefail
@@ -125,7 +145,7 @@ jobs:
             --output "$root/viridian-to-indigo"
 
       - name: Run full benchmark qualification
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.benchmark == 'full' }}
+        if: ${{ steps.llm-preflight.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.benchmark == 'full' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -264,7 +284,27 @@ jobs:
           mkdir -p "$out"
           echo "POKEPILOT_QUALIFICATION_OUT=$out" >> "$GITHUB_ENV"
 
+      - name: Check LLM planner endpoint
+        id: llm-preflight
+        continue-on-error: true
+        shell: bash
+        env:
+          CONFIGURED_LLM_URL: ${{ vars.POKEPILOT_LLM_URL }}
+        run: |
+          set -euo pipefail
+          base="${CONFIGURED_LLM_URL:-${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}}"
+          token="${llm_token:-}"
+          args=(--fail --silent --show-error --max-time 5)
+          if [[ -n "$token" ]]; then
+            args+=(-H "Authorization: Bearer $token")
+          fi
+          if ! curl "${args[@]}" "${base%/}/models" >/dev/null; then
+            echo "::warning::LLM planner endpoint is unavailable; scheduled Hall-of-Fame qualification is infrastructure-blocked, not a gameplay failure."
+            exit 1
+          fi
+
       - name: Run fresh-save Hall of Fame benchmark qualification
+        if: ${{ steps.llm-preflight.outcome == 'success' }}
         run: |
           go run ./cmd/pokebench red \
             --mode speedrun \
@@ -274,7 +314,7 @@ jobs:
             --output "$POKEPILOT_QUALIFICATION_OUT/benchmark-full"
 
       - name: Close full-chain issue after clean scheduled proof
-        if: success()
+        if: ${{ success() && steps.llm-preflight.outcome == 'success' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
