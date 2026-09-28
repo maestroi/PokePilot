@@ -80,3 +80,11 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
 	}
 }
+
+
+// DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
+// needed by the first-badge executor without leaking event numbers or badge
+// bit positions into agent policy.
+func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
+	return projectEarlyStory(reader)
+}
