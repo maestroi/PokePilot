@@ -268,13 +268,21 @@ func gsErrandScriptMap(mapID uint16) bool {
 	return false
 }
 
-// driveGSOpeningBattle is deliberately scoped to the pre-Violet opening.
-// Those encounters are one-mon wild fights plus Cherrygrove's can-lose rival
-// fight. Repeated A accepts the battle's default FIGHT/first-move path and
-// pages deterministic battle text; it is not a general Gen-II battle policy.
-func driveGSOpeningBattle(m *emu.Emu, profile *gsprofile.Profile) error {
+// driveGSEarlyBattle owns the deliberately small battle policy used by the
+// early-Johto vertical slice. It keeps the existing deterministic
+// FIGHT/current-move path, but observes real Gen-II battle state so a defeated
+// enemy cannot turn repeated A into an accidental YES on the trainer
+// "switch Pokemon?" prompt. B advances the same between-mon text while
+// selecting NO when that prompt is present.
+//
+// This is still intentionally narrower than skill.Battle: party switching,
+// bag use, move replacement and tactical scoring stay fail-closed until the
+// remaining Gen-II menu/resource decoders land. The important progression
+// improvement is that ordinary multi-mon trainers can now settle without a
+// blind prompt choice.
+func driveGSEarlyBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 	if m == nil || profile == nil {
-		return fmt.Errorf("%w: missing emulator/profile for opening battle", errGSOpeningUnexpectedState)
+		return fmt.Errorf("%w: missing emulator/profile for early battle", errGSOpeningUnexpectedState)
 	}
 	start := m.FrameCount()
 	presses := 0
@@ -283,11 +291,24 @@ func driveGSOpeningBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 		facts := profile.DecodeOpening(m)
 		if facts.InBattle {
 			sawBattle = true
-			if presses >= gsOpeningMaxBattlePresses {
-				return fmt.Errorf("%w: exceeded %d A presses in opening battle mode %d",
-					errGSOpeningStalled, gsOpeningMaxBattlePresses, facts.BattleMode)
+			state, ok := profile.DecodeBattleState(m)
+			if !ok {
+				return fmt.Errorf("%w: battle mode %d has no semantic Gen-II battle state",
+					errGSOpeningUnexpectedState, facts.BattleMode)
 			}
-			m.Tap(emu.A, 3, 7)
+			if presses >= gsOpeningMaxBattlePresses {
+				return fmt.Errorf("%w: exceeded %d inputs in early battle mode %d enemy=%d hp=%d/%d",
+					errGSOpeningStalled, gsOpeningMaxBattlePresses, facts.BattleMode,
+					state.EnemySpecies, state.EnemyHP, state.EnemyMaxHP)
+			}
+
+			button := emu.A
+			if state.EnemyHP == 0 {
+				// Between opposing mons, B is both a legal text advance and the
+				// conservative NO answer to Gen II's SHIFT-style switch prompt.
+				button = emu.B
+			}
+			m.Tap(button, 3, 7)
 			presses++
 			continue
 		}
@@ -300,11 +321,11 @@ func driveGSOpeningBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 
 		// Trainer battles resume their owning map script after the battle engine
 		// exits. A wild blackout can also leave deterministic text/transition
-		// work. Both are part of the battle interruption and contain no opening
+		// work. Both are part of the battle interruption and contain no early
 		// gameplay choice.
 		if facts.ScriptActive && facts.MovementIdle {
 			if presses >= gsOpeningMaxBattlePresses {
-				return fmt.Errorf("%w: exceeded %d post-battle A presses on map %#04x",
+				return fmt.Errorf("%w: exceeded %d post-battle inputs on map %#04x",
 					errGSOpeningStalled, gsOpeningMaxBattlePresses, facts.NativeMapID)
 			}
 			m.Tap(emu.A, 3, 7)
@@ -314,7 +335,7 @@ func driveGSOpeningBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 		m.StepFrame()
 	}
 	facts := profile.DecodeOpening(m)
-	return fmt.Errorf("%w: opening battle exceeded %d frames; map=%#04x at (%d,%d) battle=%d script=%v",
+	return fmt.Errorf("%w: early battle exceeded %d frames; map=%#04x at (%d,%d) battle=%d script=%v",
 		errGSOpeningStalled, gsOpeningBattleFrameBudget, facts.NativeMapID, facts.X, facts.Y, facts.BattleMode, facts.ScriptActive)
 }
 
@@ -331,7 +352,7 @@ func driveGSErrandScript(m *emu.Emu, profile *gsprofile.Profile) error {
 	for m.FrameCount()-start < gsOpeningScriptFrameBudget {
 		facts := profile.DecodeOpening(m)
 		if facts.InBattle {
-			if err := driveGSOpeningBattle(m, profile); err != nil {
+			if err := driveGSEarlyBattle(m, profile); err != nil {
 				return err
 			}
 			continue
@@ -377,7 +398,7 @@ func gsErrandGoTo(m *emu.Emu, romData []byte, profile *gsprofile.Profile, dest s
 		}
 		switch {
 		case errors.Is(err, skill.ErrBattle):
-			if battleErr := driveGSOpeningBattle(m, profile); battleErr != nil {
+			if battleErr := driveGSEarlyBattle(m, profile); battleErr != nil {
 				return fmt.Errorf("gen2 opening errand: settle route battle: %w", battleErr)
 			}
 		case errors.Is(err, skill.ErrDialogueInterrupted):
