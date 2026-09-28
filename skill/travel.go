@@ -95,22 +95,33 @@ func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
 // .canEscape. Five attempts is only probabilistic and caused issue #395.
 const guaranteedWildFleeAttempts = 10
 
-// fleeThenFight resolves an interrupting battle by fleeing it first and only
-// falling back to a fight when the game refuses the flee — which it does for
-// trainer battles (Flee returns ErrTrainerBattle). This is S8-7's policy:
-// wild encounters are fled, while trainer battles are fought because they
-// cannot be fled. fleeAttempts bounds one battle's flee retries; callers that
-// need deterministic wild escape should use guaranteedWildFleeAttempts.
+// fleeThenFight resolves an interrupting battle by fleeing it first. Trainer
+// refusal is expected and falls back to Battle. A RUN-controller stall or a
+// fully exhausted bounded flee also falls back to Battle because Travel owns
+// the incidental encounter and must not return while that battle is still
+// live. Returning the controller error here poisons the objective boundary:
+// the generic finish guard sees the active battle and escalates an otherwise
+// recoverable encounter to stabilization_failed/objective_boundary_dirty
+// (#2113). Other flee errors still fail closed.
 func fleeThenFightWith(
 	flee func(int) error,
 	fight fightBattle,
+	battleKind func() game.BattleKind,
 	fleeAttempts int,
 ) resolveBattle {
 	return func() (battleResolution, error) {
+		kind := game.BattleNone
+		if battleKind != nil {
+			kind = battleKind()
+		}
 		if err := flee(fleeAttempts); err != nil {
-			if errors.Is(err, ErrTrainerBattle) {
+			fallbackToFight := errors.Is(err, ErrTrainerBattle) ||
+				errors.Is(err, ErrMenuStuck) ||
+				errors.Is(err, ErrFleeExhausted)
+			if fallbackToFight {
 				outcome, berr := fight()
-				return battleResolution{outcome: outcome, trainer: true}, berr
+				trainer := kind == game.BattleTrainer || errors.Is(err, ErrTrainerBattle)
+				return battleResolution{outcome: outcome, trainer: trainer}, berr
 			}
 			return battleResolution{}, fmt.Errorf("skill: Travel: flee: %w", err)
 		}
@@ -119,9 +130,20 @@ func fleeThenFightWith(
 }
 
 func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
+	decoder, err := battleStateDecoderFor(m)
+	if err != nil {
+		return func() (battleResolution, error) { return battleResolution{}, err }
+	}
 	return fleeThenFightWith(
 		func(attempts int) error { return Flee(m, attempts) },
 		func() (game.BattleResult, error) { return Battle(m, policy) },
+		func() game.BattleKind {
+			live, ok := decoder.DecodeBattleState(m)
+			if !ok {
+				return game.BattleNone
+			}
+			return live.Kind
+		},
 		fleeAttempts,
 	)
 }
