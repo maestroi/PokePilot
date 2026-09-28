@@ -366,9 +366,15 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
+			// A sleeping or frozen mon never gets a move menu: the ROM runs the
+			// turn as soon as the main menu closes, and may clear the status
+			// mid-turn ("woke up!"), so read it while the main menu is still up
+			// (run-39etso0zuq4451wr2duvk128ph, Mewtwo asleep on POKEMON_TOWER_7F).
+			skipsMoveMenu := execution.MoveSelectionSkipped
 			if err := activateBattleMainMenuEntry(m, game.BattleMenuFight, moveMenuBudget, func() bool {
 				phase := executionDecoder.DecodeBattleExecution(m).Phase
-				return phase == game.BattleExecutionMoveMenu || phase == game.BattleExecutionMoveDisabled
+				return phase == game.BattleExecutionMoveMenu || phase == game.BattleExecutionMoveDisabled ||
+					(skipsMoveMenu && phase != game.BattleExecutionMainMenu)
 			}); err != nil {
 				return menuError(m, "select FIGHT", err)
 			}

@@ -47,3 +47,29 @@ func TestDecodeBattleExecutionMoveMenuWithCursorOnDisabledMove(t *testing.T) {
 		t.Fatalf("battle message decoded as move menu")
 	}
 }
+
+// Core.asm skips the move menu after FIGHT when the active mon is asleep or
+// frozen, or a Bide/Wrap turn is locked in (run-39etso0zuq4451wr2duvk128ph).
+func TestDecodeBattleExecutionMoveSelectionSkipped(t *testing.T) {
+	cases := []struct {
+		name string
+		addr uint16
+		val  byte
+		want bool
+	}{
+		{"healthy", sym.BattleMonStatus, 0, false},
+		{"poisoned", sym.BattleMonStatus, 1 << 3, false},
+		{"asleep", sym.BattleMonStatus, 2, true},
+		{"frozen", sym.BattleMonStatus, 1 << 5, true},
+		{"bide", sym.PlayerBattleStatus1, 1 << 0, true},
+		{"player wrap", sym.PlayerBattleStatus1, 1 << 5, true},
+		{"enemy wrap", sym.EnemyBattleStatus1, 1 << 5, true},
+	}
+	for _, c := range cases {
+		var mem fakeMemory
+		mem[int(c.addr)] = c.val
+		if got := New().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.want {
+			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.want)
+		}
+	}
+}

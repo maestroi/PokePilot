@@ -78,6 +78,8 @@ func TestAddressesMatchSymbolFile(t *testing.T) {
 		{"wLastBlackoutMap", LastBlackoutMap},
 		{"wIsInBattle", IsInBattle},
 		{"wCurOpponent", CurOpponent},
+		{"wPlayerBattleStatus1", PlayerBattleStatus1},
+		{"wEnemyBattleStatus1", EnemyBattleStatus1},
 		{"wBattleResult", BattleResult},
 		{"wPlayerMonAttackMod", PlayerMonAttackMod},
 		{"wPlayerMonDefenseMod", PlayerMonDefenseMod},
