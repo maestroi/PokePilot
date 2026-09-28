@@ -19,8 +19,6 @@ func gsTextTile(r rune) byte {
 	switch r {
 	case ' ':
 		return 0x7f
-	case ''':
-		return 0xe0
 	case '-':
 		return 0xe3
 	case '?':
@@ -98,8 +96,8 @@ func TestDecodeGoldBattleMoveMenu(t *testing.T) {
 	putGSText(&mem, "TACKLE LEER EMBER TYPE/NORMAL")
 
 	cursor := NewSilver().DecodeMenuCursor(&mem)
-	if cursor.Current != 2 || cursor.Max != 3 {
-		t.Fatalf("move cursor=%+v, want native 1-based {2 3}", cursor)
+	if cursor.Current != 2 || cursor.Max != 4 {
+		t.Fatalf("move cursor=%+v, want native 1-based {2 4}", cursor)
 	}
 	exec := NewSilver().DecodeBattleExecution(&mem)
 	if exec.Phase != game.BattleExecutionMoveMenu {
