@@ -5,9 +5,12 @@ import test from 'node:test'
 
 import {
   DEFAULT_RENDER_THEME_ID,
+  PUBLIC_RENDER_THEME_ID,
   RENDER_THEME_SCHEMA_VERSION,
   RenderThemeRegistry,
+  publicRenderThemeOptions,
   renderThemeOptions,
+  resolvePublicRenderTheme,
   resolveRenderTheme,
   validateThemePack
 } from '../src/shared/renderTheme.ts'
@@ -43,6 +46,10 @@ test('bundled theme packs are installed and independently selectable', () => {
   const gen2 = resolveRenderTheme('pokegold-gen2').theme
   const kenney = resolveRenderTheme('kenney-tiny-town').theme
   assert.equal(gen2.id, DEFAULT_RENDER_THEME_ID)
+  assert.equal(gen2.distribution, 'local')
+  assert.equal(gen2.allowGameArtFallbacks, true)
+  assert.equal(kenney.distribution, 'public')
+  assert.equal(kenney.allowGameArtFallbacks, false)
   assert.ok(gen2.assets.tiles.grass.includes('/theme-assets/pokegold-gen2/kanto.png'))
   assert.ok(gen2.assets.characters.player.includes('/theme-assets/pokegold-gen2/sprites/red.png'))
   assert.ok(kenney.assets.tiles['path.center'])
@@ -74,15 +81,26 @@ test('Kenney atlas references stay inside their licensed bundled images', () => 
   }
 })
 
-test('secondary themes inherit omitted presentation assets from the Gen-II default', () => {
-  const kenney = resolveRenderTheme('kenney-tiny-town')
-  assert.deepEqual(kenney.diagnostics, [])
-  const gen2 = resolveRenderTheme(DEFAULT_RENDER_THEME_ID).theme
-  assert.equal(kenney.theme.assets.characters.player, gen2.assets.characters.player)
-  assert.equal(kenney.theme.assets.characters.npc, gen2.assets.characters.npc)
+test('public theme resolution never inherits local-only game art', () => {
+  const options = publicRenderThemeOptions()
+  assert.deepEqual(options.map((theme) => theme.id), [PUBLIC_RENDER_THEME_ID])
+
+  const publicTheme = resolvePublicRenderTheme(PUBLIC_RENDER_THEME_ID)
+  assert.deepEqual(publicTheme.diagnostics, [])
+  assert.equal(publicTheme.theme.id, 'kenney-tiny-town')
+  assert.equal(publicTheme.theme.distribution, 'public')
+  assert.equal(publicTheme.theme.allowGameArtFallbacks, false)
+  assert.deepEqual(publicTheme.theme.assets.characters, {})
 })
 
-test('unknown theme selection fails safe with a useful diagnostic', () => {
+test('local-only theme preferences fail closed on public surfaces', () => {
+  const resolved = resolvePublicRenderTheme('pokegold-gen2')
+  assert.equal(resolved.theme.id, PUBLIC_RENDER_THEME_ID)
+  assert.match(resolved.diagnostics.join(' '), /unavailable for this surface/)
+  assert.match(resolved.diagnostics.join(' '), /Tiny Town Pixel/)
+})
+
+test('unknown private theme selection fails safe with a useful diagnostic', () => {
   const resolved = resolveRenderTheme('does-not-exist')
   assert.equal(resolved.theme.id, DEFAULT_RENDER_THEME_ID)
   assert.match(resolved.diagnostics.join(' '), /does-not-exist/)

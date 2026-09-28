@@ -21,7 +21,7 @@
     "test": "node --experimental-strip-types --test test/*.test.ts",
     "build": "npm run test && vue-tsc --noEmit && npm run build:operator && npm run build:spectator",
     "build:operator": "vite build --mode operator",
-    "build:spectator": "vite build --mode spectator",
+    "build:spectator": "vite build --mode spectator && node scripts/strip-public-theme-assets.mjs && node scripts/verify-public-theme-build.mjs",
     "typecheck": "vue-tsc --noEmit",
     "preview": "vite preview --host 0.0.0.0"
   },

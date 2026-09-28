@@ -72,6 +72,7 @@ export function validateThemeAssetFile(file: ThemeAssetFileDescriptor): string[]
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
 export const DEFAULT_RENDER_THEME_ID = 'pokegold-gen2'
+export const PUBLIC_RENDER_THEME_ID = 'kenney-tiny-town'
 
 export const REQUIRED_THEME_TILES = ['unknown', 'path', 'wall'] as const
 export const OPTIONAL_THEME_TILES = ['floor', 'grass', 'water', 'tree', 'ledge', 'door', 'warp', 'sign'] as const
@@ -102,12 +103,16 @@ export interface ThemeActorStyle {
   stroke: string
 }
 
+export type RenderThemeDistribution = 'public' | 'local'
+
 export interface RenderThemeManifest {
   schemaVersion: number
   id: string
   name: string
   version: number
   description?: string
+  distribution?: RenderThemeDistribution
+  allowGameArtFallbacks?: boolean
   tileSize: number
   tiles: Record<string, ThemeTileStyle>
   objects?: Record<string, ThemeTileStyle>
@@ -139,6 +144,8 @@ export interface RenderThemeManifest {
 }
 
 export interface ResolvedRenderTheme extends RenderThemeManifest {
+  distribution: RenderThemeDistribution
+  allowGameArtFallbacks: boolean
   objects: Record<string, ThemeTileStyle>
   actors: Record<'player' | 'npc' | 'trainer' | 'item' | 'object', ThemeActorStyle>
   animation: {
@@ -249,6 +256,12 @@ export function validateThemePack(input: unknown): ThemeValidation {
     errors.push('id must use lowercase letters, numbers, and hyphens')
   }
   if (!nonEmptyString(input.name)) errors.push('name is required')
+  if (input.distribution !== undefined && input.distribution !== 'public' && input.distribution !== 'local') {
+    errors.push('distribution must be public or local')
+  }
+  if (input.allowGameArtFallbacks !== undefined && typeof input.allowGameArtFallbacks !== 'boolean') {
+    errors.push('allowGameArtFallbacks must be boolean')
+  }
   if (typeof input.version !== 'number' || !Number.isInteger(input.version) || input.version < 1) {
     errors.push('version must be a positive integer')
   }
@@ -329,6 +342,8 @@ function actorDefaults(): Record<'player' | 'npc' | 'trainer' | 'item' | 'object
 function materializeBase(manifest: RenderThemeManifest): ResolvedRenderTheme {
   return {
     ...clone(manifest),
+    distribution: manifest.distribution || 'local',
+    allowGameArtFallbacks: manifest.allowGameArtFallbacks ?? true,
     tiles: clone(manifest.tiles),
     objects: clone(manifest.objects || {}),
     actors: { ...actorDefaults(), ...(manifest.actors || {}) },
@@ -362,6 +377,8 @@ function materializeBase(manifest: RenderThemeManifest): ResolvedRenderTheme {
 function mergeTheme(base: ResolvedRenderTheme, manifest: RenderThemeManifest): ResolvedRenderTheme {
   return {
     ...clone(manifest),
+    distribution: manifest.distribution || base.distribution,
+    allowGameArtFallbacks: manifest.allowGameArtFallbacks ?? base.allowGameArtFallbacks,
     tiles: { ...clone(base.tiles), ...clone(manifest.tiles) },
     objects: { ...clone(base.objects), ...clone(manifest.objects || {}) },
     actors: { ...clone(base.actors), ...(manifest.actors || {}) },
@@ -403,16 +420,26 @@ export class RenderThemeRegistry {
   }
 
   resolve(id?: string | null): ThemeResolution {
-    const fallbackManifest = this.manifests.get(this.defaultID)
-    if (!fallbackManifest) throw new Error('render theme registry has no default theme')
+    return this.resolveAgainst(id, this.defaultID)
+  }
+
+  resolveAgainst(
+    id: string | null | undefined,
+    fallbackID: string,
+    accept: (manifest: RenderThemeManifest) => boolean = () => true
+  ): ThemeResolution {
+    const fallbackManifest = this.manifests.get(fallbackID)
+    if (!fallbackManifest || !accept(fallbackManifest)) {
+      throw new Error(`render theme registry has no eligible fallback theme "${fallbackID}"`)
+    }
     const fallback = materializeBase(fallbackManifest)
 
     if (!id) return { theme: fallback, diagnostics: [] }
     const selected = this.manifests.get(id)
-    if (!selected) {
+    if (!selected || !accept(selected)) {
       return {
         theme: fallback,
-        diagnostics: [`Theme "${id}" is unavailable; using ${fallback.name}.`]
+        diagnostics: [`Theme "${id}" is unavailable for this surface; using ${fallback.name}.`]
       }
     }
     if (selected.id === fallback.id) return { theme: fallback, diagnostics: [] }
@@ -434,8 +461,20 @@ export function renderThemeOptions(): RenderThemeManifest[] {
   return renderThemeRegistry.list()
 }
 
+export function publicRenderThemeOptions(): RenderThemeManifest[] {
+  return renderThemeRegistry.list().filter((theme) => theme.distribution === 'public')
+}
+
 export function resolveRenderTheme(id?: string | null): ThemeResolution {
   return renderThemeRegistry.resolve(id || DEFAULT_RENDER_THEME_ID)
+}
+
+export function resolvePublicRenderTheme(id?: string | null): ThemeResolution {
+  return renderThemeRegistry.resolveAgainst(
+    id || PUBLIC_RENDER_THEME_ID,
+    PUBLIC_RENDER_THEME_ID,
+    (theme) => theme.distribution === 'public'
+  )
 }
 
 export function tileStyle(theme: ResolvedRenderTheme, kind: string, objectLayer = false): ThemeTileStyle {

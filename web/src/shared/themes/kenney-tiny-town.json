@@ -6,17 +6,61 @@
   "description": "Crisp 16-pixel town and interior art from Kenney's CC0 Tiny packs.",
   "tileSize": 32,
   "tiles": {
-    "unknown": { "fill": "#182b3a", "detail": "#4a6370", "pattern": "unknown" },
-    "path": { "fill": "#d8985d", "detail": "#b87c4f", "pattern": "path" },
-    "floor": { "fill": "#b4bcc7", "detail": "#8f9cab", "pattern": "floor" },
-    "grass": { "fill": "#5baf55", "detail": "#357744", "pattern": "grass" },
-    "water": { "fill": "#337fa7", "detail": "#a5d6d1", "pattern": "water" },
-    "tree": { "fill": "#5baf55", "detail": "#367c51", "pattern": "tree" },
-    "ledge": { "fill": "#ae6f4a", "detail": "#dfa16a", "pattern": "ledge" },
-    "wall": { "fill": "#7890a8", "detail": "#40516d", "pattern": "wall" },
-    "door": { "fill": "#c58557", "detail": "#342f4e", "pattern": "door" },
-    "warp": { "fill": "#c58557", "detail": "#342f4e", "pattern": "warp" },
-    "sign": { "fill": "#c58557", "detail": "#342f4e", "pattern": "sign" }
+    "unknown": {
+      "fill": "#182b3a",
+      "detail": "#4a6370",
+      "pattern": "unknown"
+    },
+    "path": {
+      "fill": "#d8985d",
+      "detail": "#b87c4f",
+      "pattern": "path"
+    },
+    "floor": {
+      "fill": "#b4bcc7",
+      "detail": "#8f9cab",
+      "pattern": "floor"
+    },
+    "grass": {
+      "fill": "#5baf55",
+      "detail": "#357744",
+      "pattern": "grass"
+    },
+    "water": {
+      "fill": "#337fa7",
+      "detail": "#a5d6d1",
+      "pattern": "water"
+    },
+    "tree": {
+      "fill": "#5baf55",
+      "detail": "#367c51",
+      "pattern": "tree"
+    },
+    "ledge": {
+      "fill": "#ae6f4a",
+      "detail": "#dfa16a",
+      "pattern": "ledge"
+    },
+    "wall": {
+      "fill": "#7890a8",
+      "detail": "#40516d",
+      "pattern": "wall"
+    },
+    "door": {
+      "fill": "#c58557",
+      "detail": "#342f4e",
+      "pattern": "door"
+    },
+    "warp": {
+      "fill": "#c58557",
+      "detail": "#342f4e",
+      "pattern": "warp"
+    },
+    "sign": {
+      "fill": "#c58557",
+      "detail": "#342f4e",
+      "pattern": "sign"
+    }
   },
   "effects": {
     "background": "#172a3b",
@@ -71,5 +115,7 @@
     "hpHealthy": "#64be67",
     "hpWarn": "#e8bd5c",
     "hpDanger": "#d96d73"
-  }
+  },
+  "distribution": "public",
+  "allowGameArtFallbacks": false
 }

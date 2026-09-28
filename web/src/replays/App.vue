@@ -11,7 +11,7 @@ import {
   semanticReplayStateAtMS,
   type SemanticReplayTimeline
 } from '../shared/semanticReplay'
-import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
+import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
 import {
   formatReplayDuration,
   replayResult,
@@ -35,12 +35,12 @@ type RendererMode = 'modern' | 'classic'
 type SemanticReplayStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'modern' ? 'modern' : 'classic')
-const themeOptions = renderThemeOptions()
-const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || DEFAULT_RENDER_THEME_ID
-const initialTheme = resolveRenderTheme(storedThemeID)
+const themeOptions = publicRenderThemeOptions()
+const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || PUBLIC_RENDER_THEME_ID
+const initialTheme = resolvePublicRenderTheme(storedThemeID)
 const selectedThemeID = ref(initialTheme.theme.id)
 const themeNotice = ref(initialTheme.diagnostics.join(' '))
-const activeTheme = computed(() => resolveRenderTheme(selectedThemeID.value).theme)
+const activeTheme = computed(() => resolvePublicRenderTheme(selectedThemeID.value).theme)
 
 const semanticTimeline = shallowRef<SemanticReplayTimeline | null>(null)
 const semanticState = shallowRef<RenderState | null>(null)
@@ -175,7 +175,7 @@ function setRendererMode(mode: RendererMode): void {
 }
 
 function setTheme(themeID: string): void {
-  const resolved = resolveRenderTheme(themeID)
+  const resolved = resolvePublicRenderTheme(themeID)
   selectedThemeID.value = resolved.theme.id
   themeNotice.value = resolved.diagnostics.join(' ')
   rendererMode.value = 'modern'
