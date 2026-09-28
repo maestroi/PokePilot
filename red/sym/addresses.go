@@ -99,6 +99,7 @@ const (
 // Battle
 const (
 	IsInBattle      uint16 = 0xD057
+	CurOpponent     uint16 = 0xD059 // wCurOpponent: nonzero while a queued battle has not started yet
 	EnemyMonSpecies uint16 = 0xCFE5
 	EnemyMonHP      uint16 = 0xCFE6
 	BattleMonHP     uint16 = 0xD015

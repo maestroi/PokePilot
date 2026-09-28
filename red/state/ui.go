@@ -74,6 +74,12 @@ const pendingFlyOrDungeonWarp = 1<<3 | 1<<4
 // Trade Center/Colosseum, then SpecialEnterMap zeroes the joypad and returns
 // with the old map still loaded and wJoyIgnore clear. EnterMap runs only after
 // the overworld clears wEnteringCableClub, so input before then is dropped.
+//
+// A talked-to trainer's pre-battle text closes with wCurOpponent set and
+// wIsInBattle still 0; the overworld loop starts the battle only after the
+// transition, and EndOfBattle clears wCurOpponent. Reading that window as
+// control let a story skill treat the queued battle as an already-beaten
+// trainer (run-3udyosuwldeu31xrainttlpo0s, B4F Lift Key Rocket).
 func Controllable(m *Mem) bool {
 	return m.U8(sym.StatusFlags6)&pendingFlyOrDungeonWarp == 0 &&
 		m.U8(sym.EnteringCableClub) == 0 &&
@@ -83,6 +89,7 @@ func Controllable(m *Mem) bool {
 		m.U8(sym.JoyIgnore) == 0 &&
 		m.U8(sym.WalkCounter) == 0 &&
 		m.U8(sym.IsInBattle) == 0 &&
+		m.U8(sym.CurOpponent) == 0 &&
 		m.U8(sym.StatusFlags4)&battleOverOrBlackout == 0
 }
 
