@@ -196,5 +196,7 @@
     "hpHealthy": "#58a838",
     "hpWarn": "#d8b838",
     "hpDanger": "#d84018"
-  }
+  },
+  "distribution": "local",
+  "allowGameArtFallbacks": true
 }
