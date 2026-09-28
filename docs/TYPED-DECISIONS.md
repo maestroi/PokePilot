@@ -215,10 +215,14 @@ go run ./cmd/agent-eval -suite battle -backend decision -url http://localhost:80
 TYPESAFE_API_KEY=... go run ./cmd/agent-eval -suite battle -backend jev -model jev-latest -json
 ```
 
-`deterministic` is the current first-usable-move reference expressed through
-the same checked typed-decision contract. It is a baseline, not ground truth:
-cases where a switch, item or RUN is the accepted action deliberately expose
-what that simple policy cannot do.
+`deterministic` is a ROM-free **first-usable fallback comparator** expressed
+through the same checked typed-decision contract. Ordinary Red runs actually
+use `skill.StatAwareMove`; reproducing that policy exactly requires cartridge
+generation data. Therefore the built-in comparator is not presented as the
+live deterministic policy or as ground truth. Cases where a switch, item or
+RUN is accepted deliberately expose what the fallback cannot do. The shadow
+corpus's `executed` field is the authoritative record of what the real live
+deterministic policy chose.
 
 A shadow battle run also writes a bounded `battle-shadow-corpus.jsonl` finish
 artifact (up to 256 portable turns). Each row contains the portable
