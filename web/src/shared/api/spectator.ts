@@ -156,3 +156,22 @@ export interface SpectatorSnapshot {
   summary: SpectatorSummary
   featured_run_id?: string
 }
+
+
+export interface SpectatorProgrammingEntry {
+  id: string
+  challenge_id: string
+  challenge_version: number
+  challenge_name: string
+  state: string
+  scheduled_at?: number
+  started_at?: number
+  run_ids?: string[]
+}
+
+export interface SpectatorProgrammingSnapshot {
+  paused: boolean
+  live_now?: SpectatorProgrammingEntry
+  up_next?: SpectatorProgrammingEntry
+  future: SpectatorProgrammingEntry[]
+}

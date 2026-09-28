@@ -1,4 +1,4 @@
-import type { SpectatorSnapshot } from './spectator'
+import type { SpectatorProgrammingSnapshot, SpectatorSnapshot } from './spectator'
 import { parseSemanticReplay, type SemanticReplayTimeline } from '../semanticReplay'
 
 export async function getSpectatorSnapshot(signal?: AbortSignal): Promise<SpectatorSnapshot> {
@@ -21,6 +21,20 @@ export async function getSpectatorSnapshot(signal?: AbortSignal): Promise<Specta
   }
 
   return response.json() as Promise<SpectatorSnapshot>
+}
+
+
+export async function getSpectatorProgramming(signal?: AbortSignal): Promise<SpectatorProgrammingSnapshot> {
+  const response = await fetch('/v1/watch/programming', {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+    signal
+  })
+  if (!response.ok) {
+    throw new Error('Programming feed unavailable')
+  }
+  return response.json() as Promise<SpectatorProgrammingSnapshot>
 }
 
 export function spectatorReplayVideoURL(runID: string): string {

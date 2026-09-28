@@ -160,6 +160,8 @@ func main() {
 	if postgresMode {
 		handler = wall.controlPlaneFrameHTTPHandler(handler)
 	}
+	handler = challengeProgrammingHTTPHandler(wall, handler)
+	go RunChallengeProgramming(wall, time.Second)
 	server := &http.Server{
 		Addr:              *httpAddr,
 		Handler:           handler,
