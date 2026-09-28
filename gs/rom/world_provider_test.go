@@ -140,7 +140,6 @@ func TestFirstBadgeWorldProviderIncludesSproutTowerPath(t *testing.T) {
 	}
 }
 
-
 func TestEarlyJohtoWorldProviderRoutesVioletThroughUnionCaveToAzalea(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	graph, err := world.BuildNativeGraph(provider)
