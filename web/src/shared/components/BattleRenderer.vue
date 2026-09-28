@@ -10,6 +10,7 @@ const actors = computed(() => props.state.battle?.actors || [])
 const player = computed(() => actors.value.find((actor) => actor.role === 'player') || actors.value[0])
 const opponent = computed(() => actors.value.find((actor) => actor.role === 'opponent') || actors.value[1])
 const moves = computed(() => props.state.battle?.moves || [])
+const allowGameArt = computed(() => props.theme.allowGameArtFallbacks)
 
 function hpPercent(actor: RenderBattleActor | undefined): number {
   if (!actor || !actor.max_hp || actor.max_hp <= 0) return 0
@@ -35,6 +36,11 @@ function movePP(move: RenderBattleMove): string {
   if (move.max_pp) return `PP ${move.pp || 0}/${move.max_pp}`
   return `PP ${move.pp || 0}`
 }
+
+function actorToken(actor: RenderBattleActor | undefined): string {
+  const label = actorLabel(actor).trim()
+  return label ? label.slice(0, 1).toUpperCase() : '?'
+}
 </script>
 
 <template>
@@ -59,24 +65,36 @@ function movePP(move: RenderBattleMove): string {
       </section>
 
       <PokemonSprite
-        v-if="opponent"
+        v-if="opponent && allowGameArt"
         :name="opponent.appearance || opponent.name || ''"
         :size="136"
         :fainted="opponent.defeated"
         class="battle-pokemon"
       />
+      <div
+        v-else-if="opponent"
+        class="battle-token"
+        :class="{ 'opacity-45': opponent.defeated }"
+        :aria-label="actorLabel(opponent)"
+      >{{ actorToken(opponent) }}</div>
     </div>
 
     <div class="absolute inset-x-0 bottom-0 grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(17rem,.85fr)] sm:p-6">
       <div class="flex items-end gap-3">
         <PokemonSprite
-          v-if="player"
+          v-if="player && allowGameArt"
           :name="player.appearance || player.name || ''"
           :size="148"
           :fainted="player.defeated"
           back
           class="battle-pokemon"
         />
+        <div
+          v-else-if="player"
+          class="battle-token battle-token-player"
+          :class="{ 'opacity-45': player.defeated }"
+          :aria-label="actorLabel(player)"
+        >{{ actorToken(player) }}</div>
         <section class="gen2-panel mb-2 min-w-0 flex-1 p-3" :style="{ background: theme.battle.panel || theme.ui.panel }">
           <div class="flex items-center justify-between gap-3">
             <strong class="truncate text-xs uppercase tracking-wide">{{ actorLabel(player) }}</strong>
@@ -129,5 +147,23 @@ function movePP(move: RenderBattleMove): string {
   border: 0;
   background: transparent;
   filter: drop-shadow(4px 5px 0 rgba(0,0,0,.18));
+}
+
+.battle-token {
+  display: grid;
+  width: 136px;
+  height: 136px;
+  place-items: center;
+  border: 4px solid currentColor;
+  border-radius: 9999px;
+  background: rgba(255,255,255,.12);
+  box-shadow: 5px 6px 0 rgba(0,0,0,.18);
+  font-size: 48px;
+  font-weight: 900;
+}
+
+.battle-token-player {
+  width: 148px;
+  height: 148px;
 }
 </style>
