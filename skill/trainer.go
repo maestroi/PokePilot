@@ -293,7 +293,7 @@ func ChallengeTrainerWithOptions(
 	// fights trainer interruptions and preserves ErrTrainerBlackedOut on loss.
 	// After it returns, only the requested trainer's flag can prove that this
 	// approach already completed the objective.
-	if err := talkBeside(m, romData, homeX, homeY, policy); err != nil {
+	if err := talkBesideWithBattleOptions(m, romData, homeX, homeY, policy, options); err != nil {
 		return fmt.Errorf("skill: ChallengeTrainer: approach trainer at (%d,%d): %w", homeX, homeY, err)
 	}
 	if target.flag.set(m) {
