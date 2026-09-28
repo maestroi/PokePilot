@@ -91,52 +91,52 @@ const (
 	// Live Gen-II battle structs. battle_struct is defined by the pinned
 	// pret/pokegold macros/ram.asm layout: species, item, moves, DVs, PP,
 	// happiness, level, status, HP/max HP, calculated stats, then types.
-	BattleMon           uint16 = 0xCB0C // wBattleMon
-	BattleMonSpecies           = BattleMon + 0x00
-	BattleMonMoves             = BattleMon + 0x02
-	BattleMonPP                = BattleMon + 0x08
-	BattleMonLevel             = BattleMon + 0x0D
-	BattleMonHP                = BattleMon + 0x10
-	BattleMonMaxHP             = BattleMon + 0x12
-	BattleMonAttack            = BattleMon + 0x14
-	BattleMonDefense           = BattleMon + 0x16
-	BattleMonSpeed             = BattleMon + 0x18
-	BattleMonSpclAtk           = BattleMon + 0x1A
-	BattleMonSpclDef           = BattleMon + 0x1C
-	BattleMonType1             = BattleMon + 0x1E
-	BattleMonType2             = BattleMon + 0x1F
+	BattleMon        uint16 = 0xCB0C // wBattleMon
+	BattleMonSpecies        = BattleMon + 0x00
+	BattleMonMoves          = BattleMon + 0x02
+	BattleMonPP             = BattleMon + 0x08
+	BattleMonLevel          = BattleMon + 0x0D
+	BattleMonHP             = BattleMon + 0x10
+	BattleMonMaxHP          = BattleMon + 0x12
+	BattleMonAttack         = BattleMon + 0x14
+	BattleMonDefense        = BattleMon + 0x16
+	BattleMonSpeed          = BattleMon + 0x18
+	BattleMonSpclAtk        = BattleMon + 0x1A
+	BattleMonSpclDef        = BattleMon + 0x1C
+	BattleMonType1          = BattleMon + 0x1E
+	BattleMonType2          = BattleMon + 0x1F
 
 	PlayerStatLevels uint16 = 0xCBAA // wPlayerStatLevels
 
-	EnemyMon           uint16 = 0xD0EF // wEnemyMon
-	EnemyMonSpecies           = EnemyMon + 0x00
-	EnemyMonMoves             = EnemyMon + 0x02
-	EnemyMonPP                = EnemyMon + 0x08
-	EnemyMonLevel             = EnemyMon + 0x0D
-	EnemyMonHP                = EnemyMon + 0x10
-	EnemyMonMaxHP             = EnemyMon + 0x12
-	EnemyMonAttack            = EnemyMon + 0x14
-	EnemyMonDefense           = EnemyMon + 0x16
-	EnemyMonSpeed             = EnemyMon + 0x18
-	EnemyMonSpclAtk           = EnemyMon + 0x1A
-	EnemyMonSpclDef           = EnemyMon + 0x1C
-	EnemyMonType1             = EnemyMon + 0x1E
-	EnemyMonType2             = EnemyMon + 0x1F
+	EnemyMon        uint16 = 0xD0EF // wEnemyMon
+	EnemyMonSpecies        = EnemyMon + 0x00
+	EnemyMonMoves          = EnemyMon + 0x02
+	EnemyMonPP             = EnemyMon + 0x08
+	EnemyMonLevel          = EnemyMon + 0x0D
+	EnemyMonHP             = EnemyMon + 0x10
+	EnemyMonMaxHP          = EnemyMon + 0x12
+	EnemyMonAttack         = EnemyMon + 0x14
+	EnemyMonDefense        = EnemyMon + 0x16
+	EnemyMonSpeed          = EnemyMon + 0x18
+	EnemyMonSpclAtk        = EnemyMon + 0x1A
+	EnemyMonSpclDef        = EnemyMon + 0x1C
+	EnemyMonType1          = EnemyMon + 0x1E
+	EnemyMonType2          = EnemyMon + 0x1F
 
 	EnemyStatLevels uint16 = 0xCBB2 // wEnemyStatLevels
 
-	Money        uint16 = 0xD573
-	JohtoBadges  uint16 = 0xD57C
-	KantoBadges  uint16 = 0xD57D
-	TMsHMs       uint16 = 0xD57E
-	TMsHMsCount         = 57
-	NumItems     uint16 = 0xD5B7
-	Items        uint16 = 0xD5B8
-	MaxItems            = 20
-	NumKeyItems  uint16 = 0xD5E1
-	KeyItems     uint16 = 0xD5E2
-	MaxKeyItems         = 25
-	NumBalls     uint16 = 0xD5FC
-	Balls        uint16 = 0xD5FD
-	MaxBalls            = 12
+	Money       uint16 = 0xD573
+	JohtoBadges uint16 = 0xD57C
+	KantoBadges uint16 = 0xD57D
+	TMsHMs      uint16 = 0xD57E
+	TMsHMsCount        = 57
+	NumItems    uint16 = 0xD5B7
+	Items       uint16 = 0xD5B8
+	MaxItems           = 20
+	NumKeyItems uint16 = 0xD5E1
+	KeyItems    uint16 = 0xD5E2
+	MaxKeyItems        = 25
+	NumBalls    uint16 = 0xD5FC
+	Balls       uint16 = 0xD5FD
+	MaxBalls           = 12
 )
