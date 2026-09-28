@@ -212,8 +212,14 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	staticUnavailable := failureCauseIs(result, "static_capture_unavailable")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
 	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
+	pushPuzzleSearchExhausted := failureCauseIs(result, "push_puzzle_search_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
+	purchaseBlocked := obj.Kind == KindBuy && result.Outcome == OutcomeBlocked && (
+		failureCauseIs(result, "outcome:blocked") ||
+			failureCauseIs(result, "cant_afford") ||
+			failureCauseIs(result, "not_in_stock") ||
+			failureCauseIs(result, "bag_not_risen"))
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
@@ -249,7 +255,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// the failure budget untouched. Genuine repeated navigation/controller
 	// failures still use the bounded policy below, and watchdog/round/frame
 	// budgets remain the outer guard if no prerequisite can be satisfied.
-	if routePrerequisite || routeSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable {
+	if routePrerequisite || routeSearchExhausted || pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable || purchaseBlocked {
 		// A fully bounded route-search exhaustion is also a planning boundary:
 		// GoTo already spent its local replan budget and the failure policy has
 		// recorded a same-state quarantine for this exact objective. Charging the
@@ -264,6 +270,13 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		// training rung within the bounded session. Quarantine/replanning owns
 		// the response; spending the fatal mechanical-failure budget here makes
 		// a healthy search for a better area terminate as "recovery exhausted".
+		//
+		// Bounded push-puzzle search exhaustion is equivalent route-planning
+		// feedback, and a blocked Buy is resource/shop feedback when its cause is
+		// the adapter's safe-boundary fallback or a typed economic outcome. Both
+		// still use quarantine and the normal stagnation/round/frame watchdogs;
+		// actual shop controller faults (menu_stuck, shop_*_stalled, etc.) are
+		// deliberately excluded and continue through the mechanical budget.
 		decision := runFailureDecision{Recovered: true}
 		if strategic {
 			decision.ReplanReason = "objective_failed"
