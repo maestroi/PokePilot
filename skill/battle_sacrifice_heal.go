@@ -33,7 +33,20 @@ func chooseSacrificialBenchHealState(
 	if err != nil {
 		return battleMedicineChoice{}, false
 	}
-	return chooseSacrificialBenchHealWithStrategy(strategy, romData, resources, b)
+	return chooseSacrificialBenchHealWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+}
+
+func chooseSacrificialBenchHealStateWithContext(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) (battleMedicineChoice, bool) {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return battleMedicineChoice{}, false
+	}
+	return chooseSacrificialBenchHealWithStrategyContext(strategy, romData, resources, b, context)
 }
 
 func chooseSacrificialBenchHealWithStrategy(
@@ -41,6 +54,16 @@ func chooseSacrificialBenchHealWithStrategy(
 	romData []byte,
 	resources game.BattleResourcesState,
 	b game.BattleState,
+) (battleMedicineChoice, bool) {
+	return chooseSacrificialBenchHealWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+}
+
+func chooseSacrificialBenchHealWithStrategyContext(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
 ) (battleMedicineChoice, bool) {
 	activeSlot := resources.ActiveSlot
 	if strategy == nil || !resources.InBattle || activeSlot < 0 || activeSlot >= len(resources.Party) {
@@ -50,6 +73,11 @@ func chooseSacrificialBenchHealWithStrategy(
 	if active.Fainted() || active.MaxHP == 0 {
 		return battleMedicineChoice{}, false
 	}
+	if context.MinimumViableParty > 0 &&
+		sequenceViablePartyCount(resources.Party) <= context.MinimumViableParty {
+		return battleMedicineChoice{}, false
+	}
+	futureValues := futurePreservationValues(strategy, romData, resources.Party, context)
 
 	// Compare against what the active mon would be worth at full HP. That keeps
 	// "sacrifice" about party role/strength rather than merely preferring any
@@ -58,7 +86,7 @@ func chooseSacrificialBenchHealWithStrategy(
 	if activeBaseline.ActiveMaxHP > 0 {
 		activeBaseline.ActiveHP = activeBaseline.ActiveMaxHP
 	}
-	activeEval := evaluateActiveForSwitch(strategy, romData, resources.Party, activeSlot, activeBaseline)
+	activeEval := addFutureValue(evaluateActiveForSwitch(strategy, romData, resources.Party, activeSlot, activeBaseline), futureValues)
 
 	_, defender := battleCombatants(b)
 	var best battleMedicineChoice
@@ -81,8 +109,11 @@ func chooseSacrificialBenchHealWithStrategy(
 			continue
 		}
 
-		eval := evaluatePartyMonForSwitch(strategy, romData, slot, projected, defender)
+		eval := addFutureValue(evaluatePartyMonForSwitch(strategy, romData, slot, projected, defender), futureValues)
 		if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
+			continue
+		}
+		if activeEval.FutureValue >= eval.FutureValue+futureSacrificeProtectionGap {
 			continue
 		}
 		if eval.Score*sacrificeHealGainDenominator <= activeEval.Score*sacrificeHealGainNumerator {
@@ -97,8 +128,8 @@ func chooseSacrificialBenchHealWithStrategy(
 			Item: item,
 			Slot: slot,
 			Reason: fmt.Sprintf(
-				"sacrifice-heal active slot %d baseline-score=%d to preserve stronger bench slot %d HP %d/%d->%d/%d score=%d",
-				activeSlot, activeEval.Score, slot, mon.HP, mon.MaxHP, projected.HP, projected.MaxHP, eval.Score,
+				"sacrifice-heal active slot %d baseline-score=%d future=%d to preserve stronger bench slot %d HP %d/%d->%d/%d score=%d future=%d",
+				activeSlot, activeEval.Score, activeEval.FutureValue, slot, mon.HP, mon.MaxHP, projected.HP, projected.MaxHP, eval.Score, eval.FutureValue,
 			),
 		}
 		found = true
