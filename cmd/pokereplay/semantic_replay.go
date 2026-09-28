@@ -138,6 +138,7 @@ func appendSemanticReplaySegment(builder *protocol.ReplayTimelineBuilder, produc
 			return nil
 		}
 		state, snapshotErr := producer.Snapshot(replay, protocol.FrameMeta{
+			Epoch: replay.ExecutionEpoch(),
 			Frame: frame,
 			Cycle: replay.Cycle(),
 		})
