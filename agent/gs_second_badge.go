@@ -186,7 +186,6 @@ func executeGSSlowpokeWell(m *emu.Emu, romData []byte) error {
 	return nil
 }
 
-
 // executeGSBugsy owns the second Johto gym after Slowpoke Well. Native routing
 // may trigger any gym-trainer sightline; those battles and Bugsy's own battle
 // are delegated to the shared semantic battle controller. The durable
