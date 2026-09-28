@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -280,6 +281,43 @@ func descendVictoryRoad3FHole(m *emu.Emu, romData []byte, policy MovePolicy) err
 	return fmt.Errorf("skill: Victory Road 3F hole did not land on 2F within %d frames", victoryRoadWarpBudget)
 }
 
+// victoryRoadWestSwitchRecoverable decides whether a failed 2F west-switch
+// solve is the exit-side shape rather than a real blocker.
+//
+// Both halves are required. Only a bounded search that positively proved no
+// push sequence exists (ErrPushPuzzleNoSolution) may be treated as "this side
+// cannot reach the boulders"; a state limit, an observation mismatch, or a
+// battle interruption is a different problem and must keep failing the
+// objective. And a ladder to 3F must actually be walkable, because that is the
+// evidence the player is on the cave's exit side rather than at its entrance.
+func victoryRoadWestSwitchRecoverable(err error, ladderReachable bool) bool {
+	return ladderReachable && errors.Is(err, world.ErrPushPuzzleNoSolution)
+}
+
+// victoryRoadLadderTo3F returns a 2F->3F ladder pad the player can already walk
+// to. Every 2F load resets the west switch event while leaving the player
+// wherever the last transition put them, so the switch is a prerequisite only
+// while every ladder is behind the passage it opens.
+func victoryRoadLadderTo3F(m *emu.Emu, romData []byte) (world.Edge, bool, error) {
+	h, err := rom.ParseMap(romData, victoryRoad2FMap)
+	if err != nil {
+		return world.Edge{}, false, fmt.Errorf("skill: Victory Road parse 2F: %w", err)
+	}
+	for _, w := range h.Warps {
+		if w.DestMap != victoryRoad3FMap {
+			continue
+		}
+		ladder := world.Edge{
+			Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap,
+			WarpX: w.X, WarpY: w.Y,
+		}
+		if warpEdgeReachable(m, romData, ladder) {
+			return ladder, true, nil
+		}
+	}
+	return world.Edge{}, false, nil
+}
+
 // victoryRoadLadderEdge is the ROM warp on floor from that leads to floor to.
 func victoryRoadLadderEdge(romData []byte, from, to uint8) (world.Edge, error) {
 	h, err := rom.ParseMap(romData, from)
@@ -371,7 +409,30 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				return nil
 			}
 			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad2FSwitch1); err != nil {
-				return fmt.Errorf("skill: Victory Road 2F west switch: %w", err)
+				// The west switch only gates the 2F->3F ladders, and only from
+				// the west side. The 3F-ladder pocket at (25,14) is walled off
+				// from those boulders by the east-switch door, so the push
+				// search legitimately reports "no solution" there even though
+				// the player is standing on a usable ladder to 3F. Demanding
+				// the puzzle anyway failed the whole objective
+				// (run-3dtp99mx0jn3ickoqlj1k6iue).
+				_, ladderOK, ladderErr := victoryRoadLadderTo3F(m, romData)
+				if ladderErr != nil {
+					return fmt.Errorf("skill: Victory Road 2F west switch: %w", err)
+				}
+				if !victoryRoadWestSwitchRecoverable(err, ladderOK) {
+					return fmt.Errorf("skill: Victory Road 2F west switch: %w", err)
+				}
+				// A reachable ladder with an unreachable switch means the player
+				// is on the cave's exit side, not its entrance side. Walk out to
+				// the Indigo checkpoint instead: that is the boundary's own
+				// definition of a cleared cave, and the 2F/3F switch events are
+				// reset by Route 23 anyway. Demanding the puzzle here is what
+				// failed the objective (run-3dtp99mx0jn3ickoqlj1k6iue).
+				if outErr := prepareIndigoLobby(m, romData, policy); outErr != nil {
+					return fmt.Errorf("skill: Victory Road leave the cave from the 2F exit side after an unreachable west switch: %w", outErr)
+				}
+				continue
 			}
 			if _, err := TravelFlee(m, romData, victoryRoad3FEntry, policy, victoryRoadTravelBattles); err != nil {
 				return fmt.Errorf("skill: Victory Road reach 3F: %w", err)

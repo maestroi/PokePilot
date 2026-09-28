@@ -263,6 +263,55 @@ func bypassBandDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCa
 	return false
 }
 
+// gatedWarpDominatedByReachableSibling reports a semantic gated warp whose
+// source pad ordinary walking cannot reach even though another warp of the
+// same map/destination pair is reachable from here and lands in the same
+// destination component.
+//
+// skipCanExit on a plain gated EdgeWarp is a fallback privilege: a boulder
+// switch or a scripted door may open a pad the player cannot reach yet, so the
+// search must stay allowed to select it. It must not make the search PREFER
+// such a pad over an equivalent sibling the player is already standing next
+// to. Routing hands the executor whichever edge it returns, so the
+// unreachable choice turns a step that needs no action at all into "the puzzle
+// has no solution from here" and fails the whole journey.
+//
+// MEASURED on run-3dtp99mx0jn3ickoqlj1k6iue: the player resumed inside
+// Victory Road 2F's sealed ladder pocket at (25,14), whose only exit is that
+// warp to 3F. "go to fuchsia city" was offered the same-pair warp at (23,7)
+// first (ROM order); the Red strength executor was handed that edge, could not
+// reach its pad, tried to solve the west boulder switch whose boulders the
+// pocket cannot reach either, and reported transition_execution_failed instead
+// of walking out through the ladder the player was standing on.
+//
+// Different destination components are never dominated: selecting an
+// unreachable pad can be exactly what a semantic pivot is for when it opens a
+// distinct region.
+func gatedWarpDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCanExit map[Edge]bool) bool {
+	if g == nil || !g.componentAware || e.Kind != EdgeWarp || !skipCanExit[e] {
+		return false
+	}
+	if canExit(g, e, entry) {
+		return false
+	}
+	landing := g.entryComps[e]
+	if len(landing) == 0 {
+		return false
+	}
+	for _, sibling := range g.Edges[e.From] {
+		if sibling == e || sibling.Kind != EdgeWarp || sibling.To != e.To || !skipCanExit[sibling] {
+			continue
+		}
+		if !canExit(g, sibling, entry) {
+			continue
+		}
+		if shareComp(landing, g.entryComps[sibling]) {
+			return true
+		}
+	}
+	return false
+}
+
 func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
@@ -293,6 +342,9 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 				continue
 			}
 			if bypassBandDominatedByReachableSibling(g, e, entry, skipCanExit) {
+				continue
+			}
+			if gatedWarpDominatedByReachableSibling(g, e, entry, skipCanExit) {
 				continue
 			}
 			// PortBypass / FROM-side actions may be selected even when ordinary
