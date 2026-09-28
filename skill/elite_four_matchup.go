@@ -42,20 +42,63 @@ func leagueMatchup(type1, type2 uint16) game.BattleCombatant {
 	}
 }
 
+func leagueLoreleiMatchups() []game.BattleCombatant {
+	return []game.BattleCombatant{
+		leagueMatchup(leagueTypeWater, leagueTypeIce),
+		leagueMatchup(leagueTypeWater, leagueTypePsychic),
+		leagueMatchup(leagueTypeIce, leagueTypePsychic),
+	}
+}
+
+func leagueBrunoMatchups() []game.BattleCombatant {
+	return []game.BattleCombatant{
+		leagueMatchup(leagueTypeRock, leagueTypeGround),
+		leagueMatchup(leagueTypeFighting, leagueTypeFighting),
+	}
+}
+
+func leagueAgathaMatchups() []game.BattleCombatant {
+	return []game.BattleCombatant{
+		leagueMatchup(leagueTypeGhost, leagueTypePoison),
+		leagueMatchup(leagueTypePoison, leagueTypePoison),
+	}
+}
+
+func leagueLanceMatchups() []game.BattleCombatant {
+	return []game.BattleCombatant{
+		leagueMatchup(leagueTypeWater, leagueTypeFlying),
+		leagueMatchup(leagueTypeDragon, leagueTypeDragon),
+		leagueMatchup(leagueTypeDragon, leagueTypeFlying),
+	}
+}
+
+func leagueChampionMatchups() []game.BattleCombatant {
+	return []game.BattleCombatant{
+		leagueMatchup(leagueTypeNormal, leagueTypeFlying),
+		leagueMatchup(leagueTypePsychic, leagueTypePsychic),
+		leagueMatchup(leagueTypeRock, leagueTypeGround),
+		leagueMatchup(leagueTypeFire, leagueTypeFlying),
+		leagueMatchup(leagueTypeWater, leagueTypeWater),
+		leagueMatchup(leagueTypeGrass, leagueTypePoison),
+	}
+}
+
 func leagueSequenceContext(stage leagueStageDescriptor) BattleSequenceContext {
 	context := BattleSequenceContext{MinimumViableParty: 2}
-	stageIndex := -1
-	for i := range leagueBattleStages {
-		if leagueBattleStages[i].ID == stage.ID {
-			stageIndex = i
-			break
+	appendMatchups := func(groups ...[]game.BattleCombatant) {
+		for _, group := range groups {
+			context.FutureOpponents = append(context.FutureOpponents, group...)
 		}
 	}
-	if stageIndex < 0 {
-		return context
-	}
-	for i := stageIndex + 1; i < len(leagueBattleStages); i++ {
-		context.FutureOpponents = append(context.FutureOpponents, leagueBattleStages[i].Matchups...)
+	switch stage.ID {
+	case leagueProgressLoreleiDefeated:
+		appendMatchups(leagueBrunoMatchups(), leagueAgathaMatchups(), leagueLanceMatchups(), leagueChampionMatchups())
+	case leagueProgressBrunoDefeated:
+		appendMatchups(leagueAgathaMatchups(), leagueLanceMatchups(), leagueChampionMatchups())
+	case leagueProgressAgathaDefeated:
+		appendMatchups(leagueLanceMatchups(), leagueChampionMatchups())
+	case leagueProgressLanceDefeated:
+		appendMatchups(leagueChampionMatchups())
 	}
 	return context
 }
