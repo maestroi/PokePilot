@@ -97,7 +97,10 @@ func (s *replayServer) liveSession(runID string) *liveBroadcastSession {
 	s.liveMu.Lock()
 	defer s.liveMu.Unlock()
 	if session := s.liveSessions[runID]; session != nil {
-		return session
+		if session.snapshot().State != "ended" {
+			return session
+		}
+		delete(s.liveSessions, runID)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	session := &liveBroadcastSession{
@@ -121,6 +124,18 @@ func (s *replayServer) liveSessionIfPresent(runID string) *liveBroadcastSession 
 	s.liveMu.Lock()
 	defer s.liveMu.Unlock()
 	return s.liveSessions[strings.TrimSpace(runID)]
+}
+
+func (s *replayServer) stopLiveSessions() {
+	s.liveMu.Lock()
+	sessions := make([]*liveBroadcastSession, 0, len(s.liveSessions))
+	for _, session := range s.liveSessions {
+		sessions = append(sessions, session)
+	}
+	s.liveMu.Unlock()
+	for _, session := range sessions {
+		session.cancel()
+	}
 }
 
 func (s *liveBroadcastSession) snapshot() liveBroadcastStatus {
