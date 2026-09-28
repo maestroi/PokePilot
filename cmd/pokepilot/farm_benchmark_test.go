@@ -85,7 +85,6 @@ func TestCollectCheckpointArtifactsIncludesBenchmarkResult(t *testing.T) {
 	}
 }
 
-
 func TestWriteFarmBenchmarkResultWritesBattleShadowCorpus(t *testing.T) {
 	dir := t.TempDir()
 	primary := &agent.LLMPlanner{Model: "test-model"}
