@@ -4,7 +4,11 @@ The semantic spectator renderer consumes a viewer-selected **theme pack**. A the
 
 ## Bundled themes
 
-The default presentation is **Gold / Silver** (`pokegold-gen2`). It renders Pokémon Red's semantic state with selected Pokémon Gold/Silver Kanto tiles, overworld sprites, Gen-II palettes, and Gold battle sprites. **Tiny Town Pixel** remains as the CC0 alternative. **Classic** is not a theme pack: it is the original emulator framebuffer, and the spectator opens in it by default until a viewer opts into the semantic renderer (stored under `pokepilot.spectator.renderer`).
+**Tiny Town Pixel** (`kenney-tiny-town`) is the only theme distributed by the public spectator/replay build. Its tile art comes from Kenney's CC0 Tiny Town/Tiny Dungeon packs. It disables game-art fallbacks: missing character art uses the renderer's procedural actor tokens, and battle actors use neutral semantic tokens instead of fetching Pokémon sprites.
+
+**Gold / Silver** (`pokegold-gen2`) remains available in the private/operator and local-development build as a prototype, but it is marked `distribution: local` and its asset directory is removed from the public spectator artifact. A stale public browser preference for that theme resolves to Tiny Town with a diagnostic instead of loading restricted assets.
+
+**Classic** is not a theme pack: it is the authoritative emulator framebuffer and remains a first-class spectator fallback/debug surface. The spectator opens in Classic until a viewer opts into the semantic renderer.
 
 The old `rompilot-modern` and `retro-16` packs are no longer bundled.
 
@@ -36,13 +40,13 @@ and lets the same theme machinery work for future game adapters.
 
 Theme choice is viewer-local. Spectator storage uses `pokepilot.spectator.theme`; operator storage uses `pokepilot.operator.theme`. Changing the theme does not mutate or restart a run.
 
-Unsupported or temporarily unavailable semantic scenes fall back to **Classic** without changing the viewer's selected renderer preference.
+Public spectator and replay surfaces resolve themes through the public-safe registry, whose fallback is Tiny Town. The operator surface resolves through the full local registry, whose prototype default remains Gold / Silver. Unsupported or temporarily unavailable semantic scenes fall back to **Classic** without changing the viewer's selected renderer preference.
 
 ## Gold / Silver provenance
 
 Selected graphics under `web/public/theme-assets/pokegold-gen2/` are copied from `pret/pokegold`, pinned to upstream commit `0f087a51e36cbd38f33e5055754614578246ceff`. The exact upstream path and blob SHA for every copied file are recorded in `provenance.json`.
 
-Those graphics are game-derived. PokePilot records their license as **`NOASSERTION`**: availability in the disassembly repository is not treated as a separate artwork redistribution grant. They are bundled here for the project's current non-commercial prototype use, with provenance kept explicit so they can be replaced or gated later without confusing them with CC0/original assets.
+Those graphics are game-derived. PokePilot records their license as **`NOASSERTION`**: availability in the disassembly repository is not treated as a separate artwork redistribution grant. They remain available only to the local/private operator prototype. The spectator build removes `theme-assets/pokegold-gen2/` after bundling and verifies that the directory is absent before the build succeeds.
 
 The Tiny Town/Tiny Dungeon files retain their existing CC0 provenance records.
 
@@ -54,4 +58,4 @@ The Tiny Town/Tiny Dungeon files retain their existing CC0 provenance records.
 
 Bundled asset directories must contain a machine-readable `provenance.json` with at least a source, license identifier, and an entry for every bundled image. Frontend CI walks every bundled image and every theme asset reference, so adding an unprovenanced image or a reference outside its declared local asset pack fails the test suite.
 
-Gold/Silver-derived art remains explicitly `NOASSERTION`, not “licensed because it is on GitHub.” This policy hardens provenance and ingestion but does not turn those game-derived files into redistributable assets. Deciding whether to gate, replace, or exclude that prototype pack from a public distribution remains the final #1425 distribution-policy item.
+Gold/Silver-derived art remains explicitly `NOASSERTION`, not “licensed because it is on GitHub.” The public distribution boundary therefore excludes that pack rather than treating provenance as permission. The original framebuffer and the generated Gen-I world-explorer assets remain separate ROM-derived/debug surfaces; they are not theme-pack fallbacks for the public Tiny Town semantic renderer.
