@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
+	boxxleprofile "github.com/maestroi/pokepilot/boxxle/profile"
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
@@ -40,7 +41,8 @@ func Builtin() (*game.Registry, error) {
 
 // Cartridges returns the game-agnostic ROM identity registry. Pokémon profiles
 // participate because game.GameProfile extends game.CartridgeProfile; Tetris
-// is registered here without pretending to implement Pokémon semantics.
+// and Boxxle are registered here without pretending to implement Pokémon
+// semantics.
 func Cartridges() (*game.CartridgeRegistry, error) {
 	cartridgeOnce.Do(func() {
 		cartridges, cartridgeErr = game.NewCartridgeRegistry(
@@ -50,6 +52,7 @@ func Cartridges() (*game.CartridgeRegistry, error) {
 			gsprofile.NewGold(),
 			gsprofile.NewSilver(),
 			tetrisprofile.New(),
+			boxxleprofile.New(),
 		)
 	})
 	return cartridges, cartridgeErr

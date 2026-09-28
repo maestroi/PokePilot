@@ -51,9 +51,9 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted for Pokemon, policy for Tetris; defaults from game"`
-	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, or tetris; empty lets the runner pick its mounted cartridge"`
-	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments; Tetris must leave this empty"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted for Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
+	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, tetris, or boxxle; empty lets the runner pick its mounted cartridge"`
+	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments; Tetris and Boxxle must leave this empty"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm Pokemon mode, or Tetris auto, endless, survival, complete, lines:N, or score:N"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
@@ -260,16 +260,19 @@ func mcpBearerAuth(token string, next http.Handler) http.Handler {
 func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpStartRunInput) (*mcp.CallToolResult, mcpStartRunOutput, error) {
 	gameID := strings.ToLower(strings.TrimSpace(in.Game))
 	switch gameID {
-	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow", "tetris":
+	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow", "tetris", "boxxle":
 	default:
-		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, pokemon-yellow, or tetris")
+		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, pokemon-yellow, tetris, or boxxle")
 	}
 
 	planner := strings.ToLower(strings.TrimSpace(in.Planner))
 	if planner == "" {
-		if gameID == "tetris" {
+		switch gameID {
+		case "tetris":
 			planner = "policy"
-		} else {
+		case "boxxle":
+			planner = "launch"
+		default:
 			planner = "llm"
 		}
 	}
@@ -277,14 +280,18 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		if planner != "policy" {
 			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris uses planner policy")
 		}
+	} else if gameID == "boxxle" {
+		if planner != "launch" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("boxxle uses planner launch")
+		}
 	} else if planner != "llm" && planner != "scripted" {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("planner must be llm or scripted for Pokemon")
 	}
 
 	starter := strings.ToLower(strings.TrimSpace(in.Starter))
-	if gameID == "tetris" {
+	if gameID == "tetris" || gameID == "boxxle" {
 		if starter != "" {
-			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris does not use a starter")
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s does not use a starter", gameID)
 		}
 	} else if gameID == "pokemon-yellow" {
 		if starter != "" && starter != "pikachu" {
@@ -331,11 +338,11 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	if planner == "scripted" && dest == "" {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("dest is required for scripted runs")
 	}
-	if gameID == "tetris" {
+	if gameID == "tetris" || gameID == "boxxle" {
 		if dest != "" {
-			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris does not use a destination")
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s does not use a destination", gameID)
 		}
-		if goal == "" {
+		if gameID == "tetris" && goal == "" {
 			goal = "auto"
 		}
 	} else if planner == "llm" && goal == "" {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
+	boxxlesession "github.com/maestroi/pokepilot/boxxle/session"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
@@ -153,6 +154,12 @@ func main() {
 			log.Fatalf("boot: %v", err)
 		}
 		fmt.Printf("  booted Tetris at frame %d\n", m.FrameCount())
+	} else if string(cartridgeProfile.ID()) == "boxxle" {
+		fmt.Println("booting the Boxxle cartridge (unthrottled)...")
+		if _, err := boxxlesession.Boot(cartridgeProfile, m); err != nil {
+			log.Fatalf("boot: %v", err)
+		}
+		fmt.Printf("  booted Boxxle at frame %d\n", m.FrameCount())
 	} else {
 		log.Fatalf("game %q has no runtime", cartridgeProfile.ID())
 	}
@@ -220,8 +227,15 @@ func main() {
 			tetrisGoal = "auto"
 		}
 		runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds, *maxChoices)
+	case "launch":
+		if string(cartridgeProfile.ID()) != "boxxle" {
+			log.Fatalf("planner launch currently supports Boxxle only")
+		}
+		// Boxxle is registered and launchable in this slice; autonomous puzzle
+		// play is a later slice, so the run boots the cartridge and stops.
+		runLocalBoxxle(m, *hold, served)
 	default:
-		log.Fatalf("unknown planner %q: want scripted, llm, or policy", *planner)
+		log.Fatalf("unknown planner %q: want scripted, llm, policy, or launch", *planner)
 	}
 }
 

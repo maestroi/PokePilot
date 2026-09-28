@@ -25,13 +25,15 @@ var starterExperimentRuns sync.Map // run id -> starterExperimentRunMeta
 func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	base := m.ROM() // semantic/base ROM, even when the previous lease was patched
 	cartridge, _, cartridgeErr := profiles.DetectCartridge(base)
-	if cartridgeErr == nil && string(cartridge.ID()) == "tetris" {
+	if cartridgeErr == nil && (string(cartridge.ID()) == "tetris" || string(cartridge.ID()) == "boxxle") {
+		// Non-Pokémon cartridges have no starter experiment: reload the base
+		// ROM byte-identically and skip the Red starter-patch path.
 		if strings.TrimSpace(spec.Starter) != "" {
-			return fmt.Errorf("tetris does not use a starter, got %q", spec.Starter)
+			return fmt.Errorf("%s does not use a starter, got %q", cartridge.ID(), spec.Starter)
 		}
 		starterExperimentRuns.Delete(spec.RunID)
 		if err := m.LoadROMBytes(base, string(cartridge.ID())); err != nil {
-			return fmt.Errorf("reload tetris ROM: %w", err)
+			return fmt.Errorf("reload %s ROM: %w", cartridge.ID(), err)
 		}
 		return nil
 	}

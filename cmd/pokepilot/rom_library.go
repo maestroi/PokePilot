@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/artifactstore"
+	boxxlesession "github.com/maestroi/pokepilot/boxxle/session"
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
@@ -250,6 +251,10 @@ func (l *romLibrary) bootStateFor(m *emu.Emu, id game.GameID) ([]byte, error) {
 		}
 	} else if id == "tetris" {
 		if _, err := tetrissession.BootToTitle(cartridge, m); err != nil {
+			return nil, fmt.Errorf("boot %s: %w", id, err)
+		}
+	} else if id == "boxxle" {
+		if _, err := boxxlesession.Boot(cartridge, m); err != nil {
 			return nil, fmt.Errorf("boot %s: %w", id, err)
 		}
 	} else {

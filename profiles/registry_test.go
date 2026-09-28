@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
+	boxxleprofile "github.com/maestroi/pokepilot/boxxle/profile"
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
@@ -47,8 +48,8 @@ func TestBuiltinCartridgesIncludeTetrisWithoutPokemonContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	profiles := registry.Profiles()
-	if len(profiles) != 6 {
-		t.Fatalf("built-in cartridge profile count = %d, want 6", len(profiles))
+	if len(profiles) != 7 {
+		t.Fatalf("built-in cartridge profile count = %d, want 7", len(profiles))
 	}
 	seen := map[game.GameID]bool{}
 	for _, p := range profiles {
@@ -64,6 +65,7 @@ func TestBuiltinCartridgesIncludeTetrisWithoutPokemonContract(t *testing.T) {
 		gsprofile.GoldGameID,
 		gsprofile.SilverGameID,
 		tetrisprofile.GameID,
+		boxxleprofile.GameID,
 	} {
 		if !seen[want] {
 			t.Fatalf("built-in cartridge profile ids = %v, missing %s", seen, want)
@@ -71,6 +73,9 @@ func TestBuiltinCartridgesIncludeTetrisWithoutPokemonContract(t *testing.T) {
 	}
 	if _, ok := any(tetrisprofile.New()).(game.GameProfile); ok {
 		t.Fatal("Tetris must not implement the Pokémon GameProfile contract")
+	}
+	if _, ok := any(boxxleprofile.New()).(game.GameProfile); ok {
+		t.Fatal("Boxxle must not implement the Pokémon GameProfile contract")
 	}
 }
 
@@ -116,6 +121,27 @@ func TestTetrisCartridgeResolvesWhenROMAvailable(t *testing.T) {
 	}
 	if info.SHA1 != tetrisprofile.ROMSHA1 || info.SHA256 != tetrisprofile.ROMSHA256 {
 		t.Fatalf("unexpected Tetris fingerprint: sha1=%s sha256=%s", info.SHA1, info.SHA256)
+	}
+}
+
+func TestBoxxleCartridgeResolvesWhenROMAvailable(t *testing.T) {
+	path := os.Getenv("BOXXLE_ROM")
+	if path == "" {
+		path = "roms/boxxle.gb"
+	}
+	rom, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("BOXXLE_ROM: %v", err)
+	}
+	profile, info, err := DetectCartridge(rom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.ID() != boxxleprofile.GameID {
+		t.Fatalf("Boxxle resolved to %s, want %s", profile.ID(), boxxleprofile.GameID)
+	}
+	if info.SHA1 != boxxleprofile.ROMSHA1 || info.SHA256 != boxxleprofile.ROMSHA256 {
+		t.Fatalf("unexpected Boxxle fingerprint: sha1=%s sha256=%s", info.SHA1, info.SHA256)
 	}
 }
 
