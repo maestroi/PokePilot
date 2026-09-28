@@ -15,7 +15,7 @@ const (
 	ProgressSproutTowerCleared       game.ProgressID = "gs_sprout_tower_cleared"
 	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
 	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
-	ProgressSlowpokeWellCleared       game.ProgressID = "gs_slowpoke_well_cleared"
+	ProgressSlowpokeWellCleared      game.ProgressID = "gs_slowpoke_well_cleared"
 )
 
 const (
@@ -27,7 +27,7 @@ const (
 	// directly as EventFlags + event/8 below.
 	eventGotHM05Flash             uint16 = 20
 	eventGotTogepiEggFromElmsAide uint16 = 45
-	eventClearedSlowpokeWell       uint16 = 43
+	eventClearedSlowpokeWell      uint16 = 43
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
 
