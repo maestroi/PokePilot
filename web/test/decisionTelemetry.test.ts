@@ -63,10 +63,11 @@ test('live feed is newest first with a verdict per call', () => {
 test('live view streams the feed and the archive shows only the stored summary', () => {
   const live = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
   const archive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
+  const panel = readFileSync(new URL('../src/operator/DecisionTelemetry.vue', import.meta.url), 'utf8')
   assert.match(live, /<DecisionTelemetry :stats="selectedRun\.stats" :engine="selectedRun\.decision_engine" \/>/)
   assert.match(archive, /<DecisionTelemetry :stats="run\.stats" :engine="run\.decision_engine" :show-feed="false" \/>/)
-  assert.match(live, /entry\.probabilities\.length/)
-  assert.match(live, /percent\(probability\[1\]\)/)
+  assert.match(panel, /entry\.probabilities\.length/)
+  assert.match(panel, /percent\(probability\[1\]\)/)
 })
 
 test('a run with a selected engine shows the panel before its first call', () => {
