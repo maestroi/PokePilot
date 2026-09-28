@@ -216,17 +216,24 @@ func main() {
 		}
 		runLLM(m, *goal, *llmProfile, *maxRounds, *checkpointDir, resumeFrom)
 	case "policy":
-		if string(cartridgeProfile.ID()) != "tetris" {
-			log.Fatalf("planner policy currently supports Tetris only")
+		switch string(cartridgeProfile.ID()) {
+		case "tetris":
+			if *maxChoices < 0 || *maxChoices == 1 {
+				log.Fatalf("-max-choices must be 0 or at least 2")
+			}
+			tetrisGoal := *goal
+			if tetrisGoal == defaultGoal {
+				tetrisGoal = "auto"
+			}
+			runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds, *maxChoices)
+		case "boxxle":
+			if *maxChoices < 0 || *maxChoices == 1 {
+				log.Fatalf("-max-choices must be 0 or at least 2")
+			}
+			runLocalBoxxlePlay(m, cartridgeProfile, *maxRounds, *maxChoices)
+		default:
+			log.Fatalf("planner policy currently supports Tetris and Boxxle only")
 		}
-		if *maxChoices < 0 || *maxChoices == 1 {
-			log.Fatalf("-max-choices must be 0 or at least 2")
-		}
-		tetrisGoal := *goal
-		if tetrisGoal == defaultGoal {
-			tetrisGoal = "auto"
-		}
-		runLocalTetris(m, cartridgeProfile, tetrisGoal, *maxRounds, *maxChoices)
 	case "launch":
 		if string(cartridgeProfile.ID()) != "boxxle" {
 			log.Fatalf("planner launch currently supports Boxxle only")
