@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 type publicProgrammingEntry struct {
@@ -21,10 +20,32 @@ type publicProgrammingEntry struct {
 }
 
 type publicProgrammingSnapshot struct {
-	Paused  bool                    `json:"paused"`
-	LiveNow *publicProgrammingEntry `json:"live_now,omitempty"`
-	UpNext  *publicProgrammingEntry `json:"up_next,omitempty"`
+	Paused  bool                     `json:"paused"`
+	LiveNow *publicProgrammingEntry  `json:"live_now,omitempty"`
+	UpNext  *publicProgrammingEntry  `json:"up_next,omitempty"`
 	Future  []publicProgrammingEntry `json:"future"`
+}
+
+type wallProgrammingEntry struct {
+	ID               string   `json:"id"`
+	ChallengeID      string   `json:"challenge_id"`
+	ChallengeVersion int      `json:"challenge_version"`
+	ChallengeName    string   `json:"challenge_name"`
+	State            string   `json:"state"`
+	ScheduledAt      int64    `json:"scheduled_at,omitempty"`
+	StartedAt        int64    `json:"started_at,omitempty"`
+	RunIDs           []string `json:"run_ids,omitempty"`
+}
+
+func publicProgramming(in *wallProgrammingEntry) *publicProgrammingEntry {
+	if in == nil {
+		return nil
+	}
+	return &publicProgrammingEntry{
+		ID: in.ID, ChallengeID: in.ChallengeID, ChallengeVersion: in.ChallengeVersion,
+		ChallengeName: in.ChallengeName, State: in.State, ScheduledAt: in.ScheduledAt,
+		StartedAt: in.StartedAt, RunIDs: append([]string(nil), in.RunIDs...),
+	}
 }
 
 func spectatorProgrammingHTTPHandler(wallBase string, next http.Handler) http.Handler {
@@ -50,59 +71,18 @@ func spectatorProgrammingHTTPHandler(wallBase string, next http.Handler) http.Ha
 			return
 		}
 		var source struct {
-			Paused  bool `json:"paused"`
-			LiveNow *struct {
-				ID               string   `json:"id"`
-				ChallengeID      string   `json:"challenge_id"`
-				ChallengeVersion int      `json:"challenge_version"`
-				ChallengeName    string   `json:"challenge_name"`
-				State            string   `json:"state"`
-				ScheduledAt      int64    `json:"scheduled_at,omitempty"`
-				StartedAt        int64    `json:"started_at,omitempty"`
-				RunIDs           []string `json:"run_ids,omitempty"`
-			} `json:"live_now,omitempty"`
-			UpNext *struct {
-				ID               string   `json:"id"`
-				ChallengeID      string   `json:"challenge_id"`
-				ChallengeVersion int      `json:"challenge_version"`
-				ChallengeName    string   `json:"challenge_name"`
-				State            string   `json:"state"`
-				ScheduledAt      int64    `json:"scheduled_at,omitempty"`
-				StartedAt        int64    `json:"started_at,omitempty"`
-				RunIDs           []string `json:"run_ids,omitempty"`
-			} `json:"up_next,omitempty"`
-			Queue []struct {
-				ID               string   `json:"id"`
-				ChallengeID      string   `json:"challenge_id"`
-				ChallengeVersion int      `json:"challenge_version"`
-				ChallengeName    string   `json:"challenge_name"`
-				State            string   `json:"state"`
-				ScheduledAt      int64    `json:"scheduled_at,omitempty"`
-				StartedAt        int64    `json:"started_at,omitempty"`
-				RunIDs           []string `json:"run_ids,omitempty"`
-			} `json:"queue"`
+			Paused  bool                   `json:"paused"`
+			LiveNow *wallProgrammingEntry  `json:"live_now,omitempty"`
+			UpNext  *wallProgrammingEntry  `json:"up_next,omitempty"`
+			Queue   []wallProgrammingEntry `json:"queue"`
 		}
 		if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(&source); err != nil {
 			writeUnreachable(res)
 			return
 		}
-		convert := func(in interface {
-		}) {}
-		_ = convert
-		out := publicProgrammingSnapshot{Paused: source.Paused, Future: []publicProgrammingEntry{}}
-		if source.LiveNow != nil {
-			out.LiveNow = &publicProgrammingEntry{
-				ID: source.LiveNow.ID, ChallengeID: source.LiveNow.ChallengeID, ChallengeVersion: source.LiveNow.ChallengeVersion,
-				ChallengeName: source.LiveNow.ChallengeName, State: source.LiveNow.State, ScheduledAt: source.LiveNow.ScheduledAt,
-				StartedAt: source.LiveNow.StartedAt, RunIDs: append([]string(nil), source.LiveNow.RunIDs...),
-			}
-		}
-		if source.UpNext != nil {
-			out.UpNext = &publicProgrammingEntry{
-				ID: source.UpNext.ID, ChallengeID: source.UpNext.ChallengeID, ChallengeVersion: source.UpNext.ChallengeVersion,
-				ChallengeName: source.UpNext.ChallengeName, State: source.UpNext.State, ScheduledAt: source.UpNext.ScheduledAt,
-				StartedAt: source.UpNext.StartedAt, RunIDs: append([]string(nil), source.UpNext.RunIDs...),
-			}
+		out := publicProgrammingSnapshot{
+			Paused: source.Paused, LiveNow: publicProgramming(source.LiveNow),
+			UpNext: publicProgramming(source.UpNext), Future: []publicProgrammingEntry{},
 		}
 		for _, entry := range source.Queue {
 			if entry.State != "queued" && entry.State != "scheduled" && entry.State != "voting" {
@@ -121,4 +101,3 @@ func spectatorProgrammingHTTPHandler(wallBase string, next http.Handler) http.Ha
 	return mux
 }
 
-var _ = time.Second
