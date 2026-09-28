@@ -98,6 +98,20 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		return OutcomeControllerUncertain
 	}
 
+	// The boulder planner is a bounded search just like GoTo's route replan
+	// loop. Reaching its no-solution/state-limit result on a clean overworld
+	// boundary is planning feedback, not an unknown terminal controller fault.
+	// This was previously surfaced as type:*world.PushPuzzleError and stopped
+	// Victory Road runs before the planner could choose another recovery path
+	// (#2119). An unsafe boundary remains fail-closed.
+	var pushPuzzle *world.PushPuzzleError
+	if errors.As(err, &pushPuzzle) {
+		if stableObjectiveBoundary(final) {
+			return OutcomeBlocked
+		}
+		return OutcomeControllerUncertain
+	}
+
 	if errors.Is(err, skill.ErrBattle) || errors.Is(err, skill.ErrBattleInterrupted) {
 		return OutcomeOwnershipFailure
 	}
@@ -231,6 +245,18 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 			return "route_prerequisite_missing", missing
 		}
 		return "transition_execution_failed", context
+	}
+
+	var pushPuzzle *world.PushPuzzleError
+	if errors.As(err, &pushPuzzle) {
+		context := []string(nil)
+		switch {
+		case errors.Is(pushPuzzle, world.ErrPushPuzzleNoSolution):
+			context = []string{"no_solution"}
+		case errors.Is(pushPuzzle, world.ErrPushPuzzleStateLimit):
+			context = []string{"state_limit"}
+		}
+		return "push_puzzle_search_exhausted", context
 	}
 
 	var routeBlocked *world.RouteBlockedError
