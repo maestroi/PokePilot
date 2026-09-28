@@ -97,11 +97,19 @@ export function decisionCalibration(k: DecisionKindSummary | undefined): Calibra
 export interface DecisionFeedRow {
   kind: string
   choice: string
+  probabilities: [string, number][]
   confidence: number
   executed: string
   verdict: 'agreed' | 'disagreed' | 'active' | 'unusable'
   seconds: number
   error: string
+}
+
+function decisionProbabilities(values: Record<string, number> | undefined): [string, number][] {
+  return Object.entries(values || {})
+    .map(([choice, probability]) => [choice, Number(probability)] as [string, number])
+    .filter(([, probability]) => Number.isFinite(probability))
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
 }
 
 // decisionFeed returns the live feed newest first.
@@ -110,6 +118,7 @@ export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow
   return records.slice().reverse().map((r) => ({
     kind: decisionKindLabel(r.kind),
     choice: r.choice_label || r.choice || '—',
+    probabilities: decisionProbabilities(r.probabilities),
     confidence: Number(r.confidence || 0),
     executed: r.executed || '',
     verdict: r.error
