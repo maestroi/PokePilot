@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"github.com/maestroi/pokepilot/emu"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -84,5 +85,36 @@ func TestTraversalModeUsesSemanticSurfState(t *testing.T) {
 	}
 	if got := traversalModeForFieldActionState(game.FieldActionState{Surfing: true}); got != world.TraversalWater {
 		t.Fatalf("surfing traversal mode = %v, want water", got)
+	}
+}
+
+// refusedFieldMoveMachine models the ROM returning to the field-move party
+// list after refusing a field move ("No SURFing ... here!"). B closes it.
+type refusedFieldMoveMachine struct {
+	menuOpen bool
+	kind     game.PartyMenuKind
+}
+
+func (m *refusedFieldMoveMachine) Peek8(uint16) byte          { return 0 }
+func (m *refusedFieldMoveMachine) PeekInto(uint16, []byte)    {}
+func (m *refusedFieldMoveMachine) StepFrame()                 {}
+func (m *refusedFieldMoveMachine) StepFrames(int)             {}
+func (m *refusedFieldMoveMachine) Tap(b emu.Button, _, _ int) { m.menuOpen = m.menuOpen && b != emu.B }
+func (m *refusedFieldMoveMachine) DecodeFieldAction(game.MemoryReader) game.FieldActionState {
+	return game.FieldActionState{Controllable: !m.menuOpen, ChoiceVisible: m.menuOpen}
+}
+func (m *refusedFieldMoveMachine) DecodePartyMenu(game.MemoryReader) game.PartyMenuState {
+	return game.PartyMenuState{Visible: m.menuOpen, Kind: m.kind}
+}
+
+func TestCloseFieldActionCancelsOwnFieldMovePartyMenu(t *testing.T) {
+	m := &refusedFieldMoveMachine{menuOpen: true, kind: game.PartyMenuFieldMove}
+	if err := closeFieldActionToOverworld(m, m, m); err != nil || m.menuOpen {
+		t.Fatalf("close = %v, menuOpen=%v; want the refused field-move party list cancelled", err, m.menuOpen)
+	}
+
+	foreign := &refusedFieldMoveMachine{menuOpen: true, kind: game.PartyMenuForcedBattle}
+	if err := closeFieldActionToOverworld(foreign, foreign, foreign); err == nil || !foreign.menuOpen {
+		t.Fatalf("close = %v, menuOpen=%v; a foreign choice must not be answered", err, foreign.menuOpen)
 	}
 }
