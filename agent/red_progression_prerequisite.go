@@ -81,7 +81,12 @@ func redProgressionFieldCapabilityRequirements(o Objective, obs Observation) pro
 		return progressionFieldCapabilityRequirements{}
 	}
 	switch o.Progress {
-	case redProgressThunderBadge,
+	case ProgressSaffronGateOpen,
+		// The Celadon roof is reachable from Vermilion/Cerulean only across
+		// Route 9's Cut tree while Saffron is shut, so without usable Cut
+		// the objective can only walk into "no route"
+		// (run-12vowvyawgx0b3jl0srufdx8tq rounds 21/29).
+		redProgressThunderBadge,
 		redProgressPostSurgeLavenderReached,
 		redProgressRainbowBadge:
 		return progressionFieldCapabilityRequirements{Required: []CapabilityID{"cut"}}
