@@ -35,9 +35,10 @@ type battleOutput struct {
 	Report            agent.BattleEvalReport `json:"report"`
 }
 
-// firstUsableMoveDecisionEngine is the portable benchmark representation of
-// the current deterministic battle move policy: choose the first legal move.
-// It is a reference baseline, not an oracle for switch/item/run fixtures.
+// firstUsableMoveDecisionEngine is the ROM-free fallback comparator: choose
+// the first legal move. Ordinary Red runs use skill.StatAwareMove instead, so
+// this is deliberately not labelled as the live deterministic policy. The
+// authoritative live-policy comparison comes from captured Executed actions.
 type firstUsableMoveDecisionEngine struct{}
 
 func (firstUsableMoveDecisionEngine) Decide(_ context.Context, req agent.DecisionRequest) (agent.DecisionResponse, error) {
@@ -72,7 +73,7 @@ func runBattleSuite(backend, model, baseURL, corpusPath string, minConfidence, m
 	cases := agent.CoreBattleEvalCases()
 	corpus := "built-in"
 	metric := "fixture_accuracy"
-	reference := "checked-in accepted actions"
+	reference := "checked-in accepted actions; deterministic-fallback is a ROM-free first-usable comparator, not live StatAwareMove"
 	if strings.TrimSpace(corpusPath) != "" {
 		file, err := os.Open(corpusPath)
 		if err != nil {
@@ -117,7 +118,7 @@ func runBattleSuite(backend, model, baseURL, corpusPath string, minConfidence, m
 	)
 	switch strings.ToLower(strings.TrimSpace(backend)) {
 	case "deterministic", "baseline", "first-usable":
-		engine, out.Backend, out.Model = firstUsableMoveDecisionEngine{}, "deterministic", "first-usable-move"
+		engine, out.Backend, out.Model = firstUsableMoveDecisionEngine{}, "deterministic-fallback", "first-usable-move"
 	case "decision", "typed", "system-one", "system_one":
 		e := agent.NewOpenAIDecisionEngineFromEnv()
 		if model != "" {
