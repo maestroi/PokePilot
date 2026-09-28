@@ -27,7 +27,7 @@ const (
 	eventGotHM05Flash             uint16 = 20
 	eventGotTogepiEggFromElmsAide uint16 = 45
 	statusFlagsPokedexMask               = 1 << 0
-	johtoBadgeZephyrMask               = 1 << 0
+	johtoBadgeZephyrMask                 = 1 << 0
 
 	sceneCherrygroveNoop     = 0
 	sceneMrPokemonsHouseNoop = 1
