@@ -63,11 +63,20 @@ type switchDecision struct {
 }
 
 func chooseTacticalSwitchState(romData []byte, resources game.BattleResourcesState, b game.BattleState) switchDecision {
+	return chooseTacticalSwitchStateWithContext(romData, resources, b, BattleSequenceContext{})
+}
+
+func chooseTacticalSwitchStateWithContext(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) switchDecision {
 	strategy, err := combatStrategyForROM(romData)
 	if err != nil {
 		return switchDecisionWithoutStrategy(resources, "combat-strategy-unavailable")
 	}
-	return chooseTacticalSwitchWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+	return chooseTacticalSwitchWithStrategyContext(strategy, romData, resources, b, context)
 }
 
 // chooseTacticalSwitchWithStrategy compares the active mon with every healthy
@@ -210,11 +219,20 @@ func bestReplacementSlotState(
 	resources game.BattleResourcesState,
 	b game.BattleState,
 ) (int, switchEvaluation) {
+	return bestReplacementSlotStateWithContext(romData, resources, b, BattleSequenceContext{})
+}
+
+func bestReplacementSlotStateWithContext(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) (int, switchEvaluation) {
 	strategy, err := combatStrategyForROM(romData)
 	if err != nil {
 		return firstLiveReplacement(resources)
 	}
-	return bestReplacementSlotWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+	return bestReplacementSlotWithStrategyContext(strategy, romData, resources, b, context)
 }
 
 // bestReplacementSlotWithStrategy ranks every live party member for the current
