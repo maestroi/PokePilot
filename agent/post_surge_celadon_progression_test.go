@@ -211,7 +211,7 @@ func TestFlyReadyProgressIsProjectedFromUsableFieldCapability(t *testing.T) {
 	}
 }
 
-func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
+func TestRedProgressionResumesPreparableFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) {
 	obs := postSurgeObservation(0xBC) // Route 16 Fly house: geographic Celadon-ready fact may be false mid-transaction.
 	obs.FieldCapabilities = []FieldCapability{{
 		Name:       "fly",
@@ -219,13 +219,15 @@ func TestRedProgressionResumesFlyAfterHM02AcquiredAwayFromCeladon(t *testing.T) 
 		HMOwned:    true,
 		Learned:    false,
 		Usable:     false,
+		Preparable: true,
 	}}
 
 	got := redProgressionObjectives(obs)
 	if !hasProgressObjective(got, redProgressFlyReady) {
-		t.Fatalf("HM02-owned partial Fly setup was not resumed: %v", got)
+		t.Fatalf("HM02-owned, current-party-preparable Fly setup was not resumed: %v", got)
 	}
-	// Fly recovery is now optional and may coexist with mandatory story
-	// objectives; the important invariant is that the partial HM02 setup remains
-	// resumable instead of becoming a hidden correctness gate.
+	// The geographic checkpoint may disappear mid-transaction, so HM02 +
+	// current-party preparation is enough to resume. HM02 without a preparable
+	// carrier is covered separately by #2146 and intentionally falls out of the
+	// optional menu rather than forcing roster surgery.
 }
