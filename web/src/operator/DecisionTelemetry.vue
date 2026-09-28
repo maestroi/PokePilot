@@ -122,7 +122,14 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
           <tbody>
             <tr v-for="(entry, index) in feed" :key="index" class="border-t border-[var(--poke-border)] align-top">
               <td class="py-0.5 pr-2 whitespace-nowrap text-[var(--poke-muted)]">{{ entry.kind }}</td>
-              <td class="py-0.5 pr-2 text-[var(--poke-text)]" :title="entry.error">{{ entry.error ? 'error' : entry.choice }}</td>
+              <td class="py-0.5 pr-2 text-[var(--poke-text)]">
+                <div :title="entry.error">{{ entry.error ? 'error' : entry.choice }}</div>
+                <div v-if="!entry.error && entry.probabilities.length" class="mt-0.5 flex flex-wrap gap-x-1.5 gap-y-px text-[9px] text-[var(--poke-muted)]">
+                  <span v-for="probability in entry.probabilities" :key="probability[0]" class="font-mono whitespace-nowrap">
+                    {{ probability[0] }} {{ percent(probability[1]) }}
+                  </span>
+                </div>
+              </td>
               <td class="py-0.5 pr-2 text-right font-mono">{{ entry.error ? '—' : percent(entry.confidence) }}</td>
               <td class="py-0.5 pr-2 text-[var(--poke-muted)]">{{ entry.executed ? `ran: ${entry.executed}` : '' }}</td>
               <td class="py-0.5 pr-2 text-center" :class="verdictClass[entry.verdict]">{{ verdictGlyph[entry.verdict] }}</td>
