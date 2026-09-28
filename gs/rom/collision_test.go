@@ -150,3 +150,27 @@ func TestGen2NativeGridRespectsDirectionalWallBothWays(t *testing.T) {
 		t.Fatal("entering LEFT_WALL from the left was allowed")
 	}
 }
+
+ 
+func TestGen2SecondBadgeTilesetsDecodeCaveAndKurtHouse(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+
+	for _, tc := range []struct {
+		name  string
+		block byte
+	}{
+		{name: "UNION_CAVE_1F", block: 0x02},
+		{name: "SLOWPOKE_WELL_B1F", block: 0x02},
+		{name: "KURTS_HOUSE", block: 0x04},
+	} {
+		mapID := collisionMapID(t, tc.name)
+		blocks := blocksFor(t, mapID, tc.block)
+		spec, err := provider.Grid(mapID, blocks, worldmodel.TraversalLand)
+		if err != nil {
+			t.Fatalf("%s Grid: %v", tc.name, err)
+		}
+		if len(spec.Walkable) == 0 || !spec.Walkable[0] {
+			t.Fatalf("%s representative floor block decoded non-walkable", tc.name)
+		}
+	}
+}
