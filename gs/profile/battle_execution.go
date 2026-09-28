@@ -9,7 +9,6 @@ import (
 
 var _ game.BattleExecutionDecoder = (*Profile)(nil)
 
-const gen2PartyMovesOffset uint16 = 0x02
 
 func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecutionState {
 	if reader == nil {
@@ -37,7 +36,7 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 	main := p.DecodeBattleMainMenu(reader)
 	_, _, rows, cols, filter := gsMenuCursor(reader)
 	moveMenu := reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
-		rows >= 2 && rows <= 5 && cols == 1 && filter == gen2BattleMoveFilter &&
+		rows >= 1 && rows <= 4 && cols == 1 && filter == gen2BattleMoveFilter &&
 		strings.Contains(text, "TYPE/")
 
 	switch {
