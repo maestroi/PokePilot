@@ -33,6 +33,11 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"AZALEA_GYM",
 		"KURTS_HOUSE",
 		"SLOWPOKE_WELL_B1F",
+		"ILEX_FOREST_AZALEA_GATE",
+		"ILEX_FOREST",
+		"ROUTE_34_ILEX_FOREST_GATE",
+		"ROUTE_34",
+		"GOLDENROD_CITY",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
