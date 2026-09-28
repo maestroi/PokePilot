@@ -126,7 +126,7 @@ func TestRunFailurePolicyStrategicFailureReplansOncePerStructuredState(t *testin
 		Outcome:   OutcomeBlocked,
 		Failure: &gameruntime.Failure{
 			Class:       gameruntime.FailureClassBlocked,
-			Cause:       "navigation_stalled",
+			Cause:       "menu_stuck",
 			Recoverable: true,
 		},
 		Final: Observation{Map: 1, X: 2, Y: 3},
@@ -172,7 +172,7 @@ func TestRunFailurePolicyRoutePrerequisiteDoesNotSpendFailureBudget(t *testing.T
 	mechanical := result
 	mechanical.Failure = &gameruntime.Failure{
 		Class:       gameruntime.FailureClassBlocked,
-		Cause:       "navigation_stalled",
+		Cause:       "menu_stuck",
 		Recoverable: true,
 	}
 	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {
@@ -207,7 +207,7 @@ func TestRunFailurePolicyTrainingInefficientDoesNotSpendFailureBudget(t *testing
 	mechanical := result
 	mechanical.Failure = &gameruntime.Failure{
 		Class:       gameruntime.FailureClassBlocked,
-		Cause:       "navigation_stalled",
+		Cause:       "menu_stuck",
 		Recoverable: true,
 	}
 	if got := policy.recoverable(obj, mechanical, true, 0); got.Stop != StopUnset || !got.Recovered {
@@ -297,6 +297,28 @@ func TestRunFailurePolicyRouteReplanExhaustionDoesNotSpendFailureBudget(t *testi
 		got := policy.recoverable(obj, result, true, 0)
 		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
 			t.Fatalf("route replan exhaustion %d = %+v; want recoverable strategic replan without fatal-budget spend", i+1, got)
+		}
+	}
+}
+
+func TestRunFailurePolicyNavigationStallDoesNotSpendFailureBudget(t *testing.T) {
+	policy := newRunFailurePolicy(2)
+	obj := Objective{Kind: KindGoTo, Place: "fuchsia city", Flee: true}
+	result := ObjectiveResult{
+		Objective: obj,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "navigation_stalled",
+			Recoverable: true,
+		},
+		Final: Observation{Location: "victory road 2f", Map: 0xC2, X: 23, Y: 8, Controllable: true},
+	}
+
+	for i := 0; i < 5; i++ {
+		got := policy.recoverable(obj, result, true, 0)
+		if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+			t.Fatalf("navigation stall %d = %+v; want recoverable strategic replan without fatal-budget spend", i+1, got)
 		}
 	}
 }
