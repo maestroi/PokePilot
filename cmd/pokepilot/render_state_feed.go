@@ -17,6 +17,7 @@ import (
 type renderStateFeed struct {
 	mu        sync.RWMutex
 	payload   []byte
+	lastEpoch uint64
 	lastFrame uint64
 	haveFrame bool
 }
@@ -29,6 +30,7 @@ func (f *renderStateFeed) reset() {
 	}
 	f.mu.Lock()
 	f.payload = nil
+	f.lastEpoch = 0
 	f.lastFrame = 0
 	f.haveFrame = false
 	f.mu.Unlock()
@@ -38,17 +40,21 @@ func (f *renderStateFeed) capture(m *emu.Emu, producer *redrenderstate.Producer)
 	if f == nil || m == nil || producer == nil {
 		return
 	}
+	epoch := m.ExecutionEpoch()
 	frame := m.FrameCount()
+	cycle := m.Cycle()
 
 	f.mu.RLock()
-	duplicate := f.haveFrame && f.lastFrame == frame
+	duplicate := f.haveFrame && f.lastEpoch == epoch && f.lastFrame == frame
 	f.mu.RUnlock()
 	if duplicate {
 		return
 	}
 
 	state, err := producer.Snapshot(m, protocol.FrameMeta{
+		Epoch:            epoch,
 		Frame:            frame,
+		Cycle:            cycle,
 		CapturedAtUnixMS: time.Now().UnixMilli(),
 	})
 	if err != nil {
@@ -61,6 +67,7 @@ func (f *renderStateFeed) capture(m *emu.Emu, producer *redrenderstate.Producer)
 
 	f.mu.Lock()
 	f.payload = append(f.payload[:0], payload...)
+	f.lastEpoch = epoch
 	f.lastFrame = frame
 	f.haveFrame = true
 	f.mu.Unlock()
