@@ -20,7 +20,7 @@ const (
 	eventGotPokemonFromElm      uint16 = 26
 	eventGotMysteryEggMrPokemon uint16 = 30
 	eventGaveMysteryEggToElm    uint16 = 31
-	eventGotHM05Flash            uint16 = 21
+	eventGotHM05Flash           uint16 = 21
 	statusFlagsPokedexMask             = 1 << 0
 	johtoBadgeZephyrMask               = 1 << 0
 
@@ -80,7 +80,6 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
 	}
 }
-
 
 // DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
 // needed by the first-badge executor without leaking event numbers or badge
