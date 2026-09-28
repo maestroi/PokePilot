@@ -380,7 +380,7 @@ func faceLiveMapObjectWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, rom
 	if liveX, liveY, ok := liveObjectPosition(m, objectID); ok {
 		tx, ty = liveX, liveY
 	}
-	if err := talkBesideWithDecoder(m, decoder, romData, tx, ty, policy); err != nil {
+	if err := talkBesideWithDecoder(m, decoder, romData, tx, ty, policy, nil); err != nil {
 		return tx, ty, false, fmt.Errorf("skill: TalkAt: approach object %d at (%d,%d): %w", objectID, tx, ty, err)
 	}
 
@@ -471,7 +471,7 @@ func besideDestinationWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, rom
 		return Destination{}, false, err
 	}
 	sx, sy := live.X, live.Y
-	if _, ok := directionTo(sx, sy, targetX, targetY); ok {
+	if _, ok := directionTo(sx, sy, targetX, targetY); ok && !rejected[[2]int{int(sx), int(sy)}] {
 		return Destination{}, false, nil
 	}
 	cur := live.Map
@@ -674,21 +674,27 @@ func routeGateChoiceText(text string) bool {
 // refuses to let you flee — is fought with policy; a blackout from that
 // fallback comes back as ErrBlackedOut for the caller to decide on.
 func talkBeside(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy) error {
+	return talkBesideAvoiding(m, romData, tx, ty, policy, nil)
+}
+
+// talkBesideAvoiding is talkBeside that never picks a side in avoid, e.g. the
+// tile a script is about to spawn an object on.
+func talkBesideAvoiding(m *emu.Emu, romData []byte, tx, ty uint8, policy MovePolicy, avoid map[[2]int]bool) error {
 	decoder, err := overworldDecoderFor(m)
 	if err != nil {
 		return err
 	}
-	return talkBesideWithDecoder(m, decoder, romData, tx, ty, policy)
+	return talkBesideWithDecoder(m, decoder, romData, tx, ty, policy, avoid)
 }
 
-func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, tx, ty uint8, policy MovePolicy) error {
+func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []byte, tx, ty uint8, policy MovePolicy, avoid map[[2]int]bool) error {
 	// The Museum ticket box can already be up when TalkAt starts (the
 	// player is standing on the gate). Pathing beside a counter NPC then
 	// fails with "no path" because the wall is still closed. Pay first.
 	if _, err := AnswerKnownRouteGate(m); err != nil {
 		return fmt.Errorf("skill: TalkAt: %w", err)
 	}
-	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty, nil)
+	dest, ok, err := besideDestinationWithDecoder(m, decoder, romData, tx, ty, avoid)
 	if err != nil {
 		// No ordinary neighbour of (tx,ty) is walkable — the target may be a
 		// nurse or clerk standing behind a counter, which has no adjacent
@@ -708,6 +714,9 @@ func talkBesideWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, romData []
 	// text and pushes the player back off it (Travel reports ErrTextBoxLoop).
 	// The target usually has other sides; reject that one and pick again.
 	rejected := map[[2]int]bool{}
+	for at := range avoid {
+		rejected[at] = true
+	}
 	for {
 		if _, err := TravelFlee(m, romData, dest, policy, 20); err != nil {
 			if errors.Is(err, ErrTextBoxLoop) && len(rejected) < len(counterSteps) {

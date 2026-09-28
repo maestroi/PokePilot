@@ -93,8 +93,16 @@ func acquireRocketLiftKey(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if got := m.Peek8(sym.CurMap); got != rocketHideoutB4FMap {
 		return fmt.Errorf("skill: RocketHideout: Lift Key requested on map %#04x, want B4F %#04x", got, rocketHideoutB4FMap)
 	}
-	if err := fightStoryTrainerAt(m, romData, rocketLiftKeyRocketX, rocketLiftKeyRocketY, "B4F Lift Key Rocket", policy); err != nil {
-		return err
+	// The key is shown by his AfterBattleText, which runs only when the beaten
+	// Rocket is spoken to again, and it appears on (10,2) beside him. Never
+	// stand there, or it spawns under Red and cannot be faced; the second talk
+	// is a no-op once EVENT_ROCKET_DROPPED_LIFT_KEY is set
+	// (run-12vowvyawgx0b3jl0srufdx8tq round 57).
+	keyTile := map[[2]int]bool{{int(rocketLiftKeyX), int(rocketLiftKeyY)}: true}
+	for range 2 {
+		if err := fightStoryTrainerAtAvoiding(m, romData, rocketLiftKeyRocketX, rocketLiftKeyRocketY, "B4F Lift Key Rocket", policy, keyTile); err != nil {
+			return err
+		}
 	}
 	if err := Pickup(m, romData, rocketLiftKeyX, rocketLiftKeyY, liftKeyItem, policy); err != nil {
 		return fmt.Errorf("skill: RocketHideout: collect Lift Key: %w", err)
