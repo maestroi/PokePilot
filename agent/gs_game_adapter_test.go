@@ -228,3 +228,19 @@ func TestGSRequiredBattleLossNormalizesAsCombatDefeat(t *testing.T) {
 		t.Fatalf("context = %+v, want Falkner encounter", failure.Context)
 	}
 }
+
+
+func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
+	for _, progress := range []ProgressID{
+		gsprofile.ProgressSproutTowerCleared,
+		gsprofile.ProgressZephyrBadgeEarned,
+	} {
+		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
+		if got != gsFirstBadgeObjectiveFrameBudget {
+			t.Fatalf("budget(%s) = %d, want %d", progress, got, gsFirstBadgeObjectiveFrameBudget)
+		}
+	}
+	if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: gsprofile.ProgressMysteryEggReturned}); got != objectiveFrameBudget {
+		t.Fatalf("opening errand budget = %d, want ordinary %d", got, objectiveFrameBudget)
+	}
+}
