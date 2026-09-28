@@ -41,6 +41,7 @@ type leagueStageDescriptor struct {
 	TrainerHomeY    uint8
 	PredecessorDone leagueFact
 	Done            leagueFact
+	Matchups        []gameruntime.BattleCombatant
 	Fight           leagueStageFight
 	Exit            *leagueStageExit
 }
@@ -55,6 +56,7 @@ func standardLeagueStageFight(m *emu.Emu, romData []byte, policy MovePolicy, sta
 		stage.TrainerHomeY,
 		stage.RoomMap,
 		stage.Done,
+		BattleOptions{Sequence: leagueSequenceContext(stage)},
 	)
 }
 
@@ -77,6 +79,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLoreleiDefeated
 		},
+		Matchups: []gameruntime.BattleCombatant{
+			leagueMatchup(leagueTypeWater, leagueTypeIce),
+			leagueMatchup(leagueTypeWater, leagueTypePsychic),
+			leagueMatchup(leagueTypeIce, leagueTypePsychic),
+		},
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               loreleiExitStand,
@@ -97,6 +104,10 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueBrunoDefeated
+		},
+		Matchups: []gameruntime.BattleCombatant{
+			leagueMatchup(leagueTypeRock, leagueTypeGround),
+			leagueMatchup(leagueTypeFighting, leagueTypeFighting),
 		},
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
@@ -119,6 +130,10 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueAgathaDefeated
 		},
+		Matchups: []gameruntime.BattleCombatant{
+			leagueMatchup(leagueTypeGhost, leagueTypePoison),
+			leagueMatchup(leagueTypePoison, leagueTypePoison),
+		},
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               agathaExitStand,
@@ -140,6 +155,11 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLanceDefeated
 		},
+		Matchups: []gameruntime.BattleCombatant{
+			leagueMatchup(leagueTypeWater, leagueTypeFlying),
+			leagueMatchup(leagueTypeDragon, leagueTypeDragon),
+			leagueMatchup(leagueTypeDragon, leagueTypeFlying),
+		},
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               lanceExitStand,
@@ -159,6 +179,14 @@ var leagueBattleStages = []leagueStageDescriptor{
 		},
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueChampionDefeated
+		},
+		Matchups: []gameruntime.BattleCombatant{
+			leagueMatchup(leagueTypeNormal, leagueTypeFlying),
+			leagueMatchup(leagueTypePsychic, leagueTypePsychic),
+			leagueMatchup(leagueTypeRock, leagueTypeGround),
+			leagueMatchup(leagueTypeFire, leagueTypeFlying),
+			leagueMatchup(leagueTypeWater, leagueTypeWater),
+			leagueMatchup(leagueTypeGrass, leagueTypePoison),
 		},
 		Fight: championLeagueStageFight,
 	},
@@ -215,6 +243,9 @@ func runLeagueStage(m *emu.Emu, romData []byte, policy MovePolicy, stage leagueS
 		return gameruntime.NewProgressionPrerequisiteMissing(stage.Predecessor)
 	}
 	if err := leagueReachRoom(m, romData, policy, stage.RoomMap); err != nil {
+		return fmt.Errorf("skill: %s: %w", stage.Operation, err)
+	}
+	if err := prepareLeagueStageLead(m, romData, stage); err != nil {
 		return fmt.Errorf("skill: %s: %w", stage.Operation, err)
 	}
 	if err := stage.Fight(m, romData, policy, stage); err != nil {
