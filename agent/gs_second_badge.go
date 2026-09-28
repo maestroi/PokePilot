@@ -29,6 +29,7 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"UNION_CAVE_1F",
 		"ROUTE_33",
 		"AZALEA_TOWN",
+		"AZALEA_POKECENTER_1F",
 		"AZALEA_GYM",
 		"KURTS_HOUSE",
 		"SLOWPOKE_WELL_B1F",
