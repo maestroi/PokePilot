@@ -178,13 +178,17 @@ func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActi
 	return fmt.Errorf("field move did not settle within %d frames", fieldActionBudget)
 }
 
-func closeFieldActionToOverworld(m menuMachine, decoder game.FieldActionDecoder) error {
+// closeFieldActionToOverworld backs out of the UI a field action opened. A
+// refused field move (for example Surf facing a tile the ROM rejects) returns
+// to the field-move party list this executor opened; cancelling that list is
+// ours to do. Any other choice surface is foreign and is never answered.
+func closeFieldActionToOverworld(m menuMachine, decoder game.FieldActionDecoder, party game.PartyMenuDecoder) error {
 	for i := 0; i < 80; i++ {
 		runtime := decoder.DecodeFieldAction(m)
 		if runtime.Controllable && !runtime.ResultTextActive {
 			return nil
 		}
-		if runtime.ChoiceVisible {
+		if runtime.ChoiceVisible && !ownFieldMovePartyMenu(m, party) {
 			return fmt.Errorf("unexpected choice prompt while closing field-action UI")
 		}
 		m.Tap(emu.B, 3, 7)
@@ -192,6 +196,11 @@ func closeFieldActionToOverworld(m menuMachine, decoder game.FieldActionDecoder)
 	}
 	runtime := decoder.DecodeFieldAction(m)
 	return fmt.Errorf("field-action UI did not close to overworld: %s", runtime.DebugText)
+}
+
+func ownFieldMovePartyMenu(m game.MemoryReader, party game.PartyMenuDecoder) bool {
+	s := party.DecodePartyMenu(m)
+	return s.Visible && s.Kind == game.PartyMenuFieldMove
 }
 
 // UseFieldMove executes one supported field move through the real START ->
@@ -252,7 +261,7 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 	m.StepFrames(30)
 	if err := settleFieldAction(m, spec, decoder); err != nil {
 		runtime = decoder.DecodeFieldAction(m)
-		closeErr := closeFieldActionToOverworld(m, decoder)
+		closeErr := closeFieldActionToOverworld(m, decoder, party)
 		if closeErr != nil {
 			return FieldActionResult{}, fmt.Errorf("skill: %s did not complete: %v; succeeded=%v surfing=%v strength=%v lit=%v screen=%q; cleanup: %v",
 				spec.Name, err, runtime.ActionSucceeded, runtime.Surfing, runtime.StrengthActive, runtime.Lit, runtime.DebugText, closeErr)
