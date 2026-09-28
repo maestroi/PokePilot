@@ -65,7 +65,9 @@ object key from pokewall. There is no generic arbitrary-key S3 endpoint.
 5. The broadcast compositor combines the regenerated game frames with
    deterministic objective, location, badge, party, planner, elapsed-time, and
    semantic-event overlays. Older runs without a media timeline still render
-   with unavailable telemetry instead of becoming unreplayable.
+   with unavailable telemetry instead of becoming unreplayable. Timeline changes
+   are precomposed into one sparse overlay input so FFmpeg memory does not grow
+   with the number of snapshots and event cards.
 6. FFmpeg encodes the composed 1280x720 scene to MP4.
 7. The MP4 is uploaded beside the recording under a renderer-versioned immutable
    cache key, so layout changes can re-render historical runs without colliding

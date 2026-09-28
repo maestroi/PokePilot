@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -252,20 +253,9 @@ func (c *ffmpegBroadcastCompositor) Compose(ctx context.Context, scene broadcast
 	defer os.RemoveAll(dir)
 
 	plan := buildBroadcastPlan(scene.RunID, scene.Attempt, scene.Timeline)
-	inputs := make([]string, 0, len(plan.States)+len(plan.Events))
-	for i, state := range plan.States {
-		file := filepath.Join(dir, fmt.Sprintf("state-%04d.png", i))
-		if err := writeBroadcastStatePNG(file, state); err != nil {
-			return err
-		}
-		inputs = append(inputs, file)
-	}
-	for i, event := range plan.Events {
-		file := filepath.Join(dir, fmt.Sprintf("event-%04d.png", i))
-		if err := writeBroadcastEventPNG(file, event); err != nil {
-			return err
-		}
-		inputs = append(inputs, file)
+	overlayTimeline, err := writeBroadcastOverlayTimeline(dir, plan)
+	if err != nil {
+		return err
 	}
 
 	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
@@ -276,34 +266,15 @@ func (c *ffmpegBroadcastCompositor) Compose(ctx context.Context, scene broadcast
 		}
 		args = append(args, "-init_hw_device", "vaapi=va:"+device, "-filter_hw_device", "va")
 	}
-	args = append(args, "-i", scene.RawVideo)
-	for _, input := range inputs {
-		args = append(args, "-loop", "1", "-framerate", "1", "-i", input)
-	}
+	args = append(args, "-i", scene.RawVideo, "-f", "concat", "-safe", "0", "-i", overlayTimeline)
 
 	var filters strings.Builder
 	filters.WriteString("[0:v]scale=704:634:flags=neighbor,pad=1280:720:24:43:color=0x071018[base0];")
-	current := "base0"
-	inputIndex := 1
-	stage := 1
-	for _, state := range plan.States {
-		next := fmt.Sprintf("base%d", stage)
-		fmt.Fprintf(&filters, "[%s][%d:v]overlay=0:0:shortest=1:enable='%s'[%s];", current, inputIndex, ffmpegEnable(state.StartMS, state.EndMS), next)
-		current = next
-		inputIndex++
-		stage++
-	}
-	for _, event := range plan.Events {
-		next := fmt.Sprintf("base%d", stage)
-		fmt.Fprintf(&filters, "[%s][%d:v]overlay=0:0:shortest=1:enable='%s'[%s];", current, inputIndex, ffmpegEnable(event.StartMS, event.EndMS), next)
-		current = next
-		inputIndex++
-		stage++
-	}
+	filters.WriteString("[base0][1:v]overlay=0:0:eof_action=repeat:shortest=0[composed];")
 	if scene.VAAPI {
-		fmt.Fprintf(&filters, "[%s]format=nv12,hwupload[outv]", current)
+		filters.WriteString("[composed]format=nv12,hwupload[outv]")
 	} else {
-		fmt.Fprintf(&filters, "[%s]format=yuv420p[outv]", current)
+		filters.WriteString("[composed]format=yuv420p[outv]")
 	}
 	filterPath := filepath.Join(dir, "filter.txt")
 	if err := os.WriteFile(filterPath, []byte(filters.String()), 0o600); err != nil {
@@ -327,19 +298,67 @@ func (c *ffmpegBroadcastCompositor) Compose(ctx context.Context, scene broadcast
 	return nil
 }
 
-func ffmpegEnable(startMS, endMS int64) string {
-	start := float64(startMS) / 1000
-	if endMS <= startMS {
-		return fmt.Sprintf("gte(t,%.3f)", start)
+// writeBroadcastOverlayTimeline composes the active state and event cards at
+// each semantic transition. FFmpeg reads this as one sparse video input rather
+// than keeping one endlessly looped decoder/filter per snapshot and event.
+// Memory therefore stays bounded as long recordings accumulate telemetry.
+func writeBroadcastOverlayTimeline(dir string, plan broadcastPlan) (string, error) {
+	boundaries := []int64{0}
+	for _, state := range plan.States {
+		if state.StartMS > 0 {
+			boundaries = append(boundaries, state.StartMS)
+		}
 	}
-	end := float64(endMS) / 1000
-	return fmt.Sprintf("between(t,%.3f,%.3f)", start, end)
-}
+	for _, event := range plan.Events {
+		if event.StartMS > 0 {
+			boundaries = append(boundaries, event.StartMS)
+		}
+		if event.EndMS > 0 {
+			boundaries = append(boundaries, event.EndMS)
+		}
+	}
+	sort.Slice(boundaries, func(i, j int) bool { return boundaries[i] < boundaries[j] })
+	unique := boundaries[:0]
+	for _, at := range boundaries {
+		if len(unique) == 0 || at != unique[len(unique)-1] {
+			unique = append(unique, at)
+		}
+	}
 
-func writeBroadcastStatePNG(filename string, state broadcastState) error {
-	img := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
-	drawBroadcastStateOverlay(img, state)
-	return writeScaledPNG(filename, img)
+	var concat strings.Builder
+	concat.WriteString("ffconcat version 1.0\n")
+	stateIndex := 0
+	for i, at := range unique {
+		for stateIndex+1 < len(plan.States) && plan.States[stateIndex+1].StartMS <= at {
+			stateIndex++
+		}
+		img := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
+		if len(plan.States) > 0 {
+			drawBroadcastStateOverlay(img, plan.States[stateIndex])
+		}
+		for _, event := range plan.Events {
+			if event.StartMS <= at && at < event.EndMS {
+				drawBroadcastEventOverlay(img, event)
+			}
+		}
+		name := fmt.Sprintf("overlay-%04d.png", i)
+		if err := writeScaledPNG(filepath.Join(dir, name), img); err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&concat, "file %s\n", name)
+		if i+1 < len(unique) {
+			fmt.Fprintf(&concat, "duration %.3f\n", float64(unique[i+1]-at)/1000)
+		} else {
+			// The concat demuxer needs a final file entry to present the last
+			// image before overlay repeats it through the end of the raw video.
+			fmt.Fprintf(&concat, "duration 0.001\nfile %s\n", name)
+		}
+	}
+	filename := filepath.Join(dir, "overlay.ffconcat")
+	if err := os.WriteFile(filename, []byte(concat.String()), 0o600); err != nil {
+		return "", fmt.Errorf("write broadcast overlay timeline: %w", err)
+	}
+	return filename, nil
 }
 
 func drawBroadcastStateOverlay(img stddraw.Image, state broadcastState) {
@@ -366,12 +385,6 @@ func drawBroadcastStateOverlay(img stddraw.Image, state broadcastState) {
 		}
 	}
 	_ = drawSection(img, 384, y+4, "PLANNER", state.Planner, 31)
-}
-
-func writeBroadcastEventPNG(filename string, event broadcastEventCard) error {
-	img := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
-	drawBroadcastEventOverlay(img, event)
-	return writeScaledPNG(filename, img)
 }
 
 func drawBroadcastEventOverlay(img stddraw.Image, event broadcastEventCard) {
