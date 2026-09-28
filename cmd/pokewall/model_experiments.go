@@ -114,6 +114,7 @@ func modelExperimentHTTPHandler(w *Wall, fallback http.Handler) http.Handler {
 	}
 	controller.backfillRunsFromExperiments()
 	controller.attachDeploymentsToTiles()
+	wallExperimentControllers.Store(w, controller)
 
 	mux := http.NewServeMux()
 	registerModelExperimentRoutes(mux, controller)
