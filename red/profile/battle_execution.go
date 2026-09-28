@@ -41,8 +41,9 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 	menu := state.DecodeMenu(&mem)
 
 	out := game.BattleExecutionState{
-		InBattle:    state.DecodeBattle(&mem) != nil,
-		OfferedMove: uint16(mem.U8(sym.MoveNum)),
+		InBattle:             state.DecodeBattle(&mem) != nil,
+		OfferedMove:          uint16(mem.U8(sym.MoveNum)),
+		MoveSelectionSkipped: moveSelectionSkipped(&mem),
 	}
 	party := state.DecodeParty(&mem)
 	out.PartyMoves = make([][4]uint16, len(party.Mons))
@@ -94,4 +95,21 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 		out.Phase = game.BattleExecutionMainMenu
 	}
 	return out
+}
+
+const (
+	battleStatusFrozen       = 1 << 5 // FRZ in wBattleMonStatus
+	battleStatusSleepMask    = 0b111  // SLP_MASK in wBattleMonStatus
+	battleStatusBide         = 1 << 0 // STORING_ENERGY in wPlayerBattleStatus1
+	battleStatusTrappingMove = 1 << 5 // USING_TRAPPING_MOVE in w*BattleStatus1
+)
+
+// moveSelectionSkipped mirrors the checks MainInBattleLoop makes right after
+// DisplayBattleMenu returns (engine/battle/core.asm): a sleeping or frozen
+// active mon, the player's own Bide or Wrap, or an enemy Wrap all jump to
+// .selectEnemyMove, so FIGHT runs the turn without drawing the move menu.
+func moveSelectionSkipped(mem *state.Mem) bool {
+	return mem.U8(sym.BattleMonStatus)&(battleStatusFrozen|battleStatusSleepMask) != 0 ||
+		mem.U8(sym.PlayerBattleStatus1)&(battleStatusBide|battleStatusTrappingMove) != 0 ||
+		mem.U8(sym.EnemyBattleStatus1)&battleStatusTrappingMove != 0
 }

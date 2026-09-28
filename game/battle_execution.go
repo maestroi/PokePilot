@@ -36,13 +36,17 @@ type BattleMoveLearnerState struct {
 // contract: the skill decides what to do; the profile says what the game is
 // currently asking and exposes enough state to verify the result.
 type BattleExecutionState struct {
-	InBattle     bool
-	Phase        BattleExecutionPhase
-	ForgetCursor MenuCursorState
-	ForgetReady  bool
-	OfferedMove  uint16
-	Learner      BattleMoveLearnerState
-	PartyMoves   [][4]uint16
+	InBattle bool
+	Phase    BattleExecutionPhase
+	// MoveSelectionSkipped reports that choosing FIGHT this turn runs the turn
+	// without opening the move menu (for example a sleeping or frozen active
+	// mon in Gen I), so leaving the main menu is the whole FIGHT action.
+	MoveSelectionSkipped bool
+	ForgetCursor         MenuCursorState
+	ForgetReady          bool
+	OfferedMove          uint16
+	Learner              BattleMoveLearnerState
+	PartyMoves           [][4]uint16
 }
 
 // MoveLearned is the positive postcondition used by shared execution after a

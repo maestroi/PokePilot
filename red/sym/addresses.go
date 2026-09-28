@@ -144,6 +144,10 @@ const (
 	// written back only when the mon leaves the field.
 	EnemyMonStatus  uint16 = 0xCFE9 // wEnemyMonStatus
 	BattleMonStatus uint16 = 0xD018 // wBattleMonStatus
+	// wPlayerBattleStatus1/wEnemyBattleStatus1: volatile battle status bits
+	// (Bide is bit 0, a multi-turn trapping move like Wrap is bit 5).
+	PlayerBattleStatus1 uint16 = 0xD062
+	EnemyBattleStatus1  uint16 = 0xD067
 	// BattleType is wBattleType: 0 normal, 1 the Old Man's scripted catch
 	// demo, 2 Safari Zone (which replaces FIGHT with BALL/BAIT/ROCK).
 	BattleType     uint16 = 0xD05A // wBattleType
