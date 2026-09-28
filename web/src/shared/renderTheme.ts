@@ -1,5 +1,6 @@
 import pokegoldManifest from './themes/pokegold-gen2.json' with { type: 'json' }
 import kenneyManifest from './themes/kenney-tiny-town.json' with { type: 'json' }
+import { validateThemeAssetReference } from './themeAssetPolicy'
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
 export const DEFAULT_RENDER_THEME_ID = 'pokegold-gen2'
@@ -145,8 +146,24 @@ function validateStringMap(value: unknown, path: string, errors: string[]): void
   }
   for (const [key, entry] of Object.entries(value)) {
     if (!nonEmptyString(key) || !nonEmptyString(entry) || entry.length > 512) {
-      errors.push(`${path}.${key || '<empty>'} must be a non-empty asset reference`)
+      errors.push(`${path}.${key || '<empty>'} must be a non-empty string`)
     }
+  }
+}
+
+function validateAssetMap(value: unknown, path: string, errors: string[]): void {
+  if (value === undefined) return
+  if (!record(value)) {
+    errors.push(`${path} must be an object`)
+    return
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (!nonEmptyString(key) || !nonEmptyString(entry)) {
+      errors.push(`${path}.${key || '<empty>'} must be a non-empty asset reference`)
+      continue
+    }
+    const assetError = validateThemeAssetReference(entry)
+    if (assetError) errors.push(`${path}.${key}: ${assetError}`)
   }
 }
 
@@ -218,7 +235,7 @@ export function validateThemePack(input: unknown): ThemeValidation {
       errors.push('assets must be an object')
     } else {
       for (const section of ['tiles', 'characters', 'objects', 'effects', 'ui', 'battle']) {
-        validateStringMap(input.assets[section], `assets.${section}`, errors)
+        validateAssetMap(input.assets[section], `assets.${section}`, errors)
       }
     }
   }
