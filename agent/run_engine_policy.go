@@ -215,11 +215,10 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	pushPuzzleSearchExhausted := failureCauseIs(result, "push_puzzle_search_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
-	purchaseBlocked := obj.Kind == KindBuy && result.Outcome == OutcomeBlocked && (
-		failureCauseIs(result, "outcome:blocked") ||
-			failureCauseIs(result, "cant_afford") ||
-			failureCauseIs(result, "not_in_stock") ||
-			failureCauseIs(result, "bag_not_risen"))
+	purchaseBlocked := obj.Kind == KindBuy && result.Outcome == OutcomeBlocked && (failureCauseIs(result, "outcome:blocked") ||
+		failureCauseIs(result, "cant_afford") ||
+		failureCauseIs(result, "not_in_stock") ||
+		failureCauseIs(result, "bag_not_risen"))
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
