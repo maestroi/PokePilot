@@ -20,6 +20,12 @@ const (
 	battleForgetMenuMarker    = "forgotten?"
 	battleHMCantDeleteMarker  = "HM techniques"
 	battleSwitchBoxMarker     = "SWITCH"
+
+	// PrintMenuItem replaces the TYPE/ panel with "disabled!" at hlcoord 1,10
+	// when the move cursor rests on the Disabled move. The position separates
+	// it from the "<move> was disabled!" battle message in the text box.
+	battleMovePanelDisabledMarker = "disabled!"
+	battleMovePanelDisabledOffset = 10*20 + 1
 )
 
 // DecodeBattleExecution keeps Red/Blue's battle tile markers, move-learning
@@ -81,7 +87,8 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 		out.Phase = game.BattleExecutionUseNextPrompt
 	case strings.Contains(text, battleDisabledMoveMarker):
 		out.Phase = game.BattleExecutionMoveDisabled
-	case strings.Contains(text, battleMoveMenuMarker):
+	case strings.Contains(text, battleMoveMenuMarker),
+		state.DecodeTiles(mem.Slice(sym.TileMap+battleMovePanelDisabledOffset, len(battleMovePanelDisabledMarker))) == battleMovePanelDisabledMarker:
 		out.Phase = game.BattleExecutionMoveMenu
 	case strings.Contains(text, battleMainMenuMarker):
 		out.Phase = game.BattleExecutionMainMenu
