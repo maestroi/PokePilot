@@ -114,7 +114,11 @@ func score(board boxxle.Board, p boxxle.LegalPush) Candidate {
 	before := nearestGoalDist(board, p.Crate)
 	c.DeltaGoal = before - after
 
-	if board.IsGoal(p.CrateTo) {
+	// Reward progress, not state: a crate that is already on a goal gets no
+	// bonus for moving to another goal. Without this, a crate parked on one
+	// goal oscillates between adjacent goals forever, each move scoring the
+	// full bonus, and the policy never pushes the remaining crates.
+	if board.IsGoal(p.CrateTo) && !board.IsGoal(p.Crate) {
 		c.OntoGoal = true
 		c.Score += 1000
 	}
