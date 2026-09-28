@@ -110,6 +110,14 @@ func (*Profile) DecodePartyMenu(r game.MemoryReader) game.PartyMenuState {
 	return engine.DecodePartyMenu(r)
 }
 
+// DecodeCenter delegates the shared Gen-I Pokemon Center transaction state.
+// Yellow uses the same nurse/menu/party engine as Red and Blue; omitting this
+// method made skill.Heal reject Yellow before pressing a button because the
+// detected profile did not implement game.CenterDecoder (#2127).
+func (*Profile) DecodeCenter(r game.MemoryReader) game.CenterState {
+	return engine.DecodeCenter(r)
+}
+
 // Every capability the shared Gen-I runtime resolves from a profile must be
 // delegated explicitly. A missing method is invisible at compile time and only
 // surfaces at runtime as a "profile does not expose X semantics" stall, so the
@@ -118,6 +126,7 @@ var (
 	_ game.BattleMenuDecoder       = (*Profile)(nil)
 	_ game.BattleEscapeMenuDecoder = (*Profile)(nil)
 	_ game.BattleCombatStrategy    = (*Profile)(nil)
+	_ game.CenterDecoder           = (*Profile)(nil)
 )
 
 func (*Profile) EvaluateCombatMove(
