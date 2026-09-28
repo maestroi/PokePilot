@@ -35,6 +35,29 @@ if [ -z "${DIGEST_REF}" ] || [[ "${DIGEST_REF}" != *@* ]]; then
 fi
 WANT=${DIGEST_REF##*@}
 
+# UNUSABLE_NODES is a "|host|host|" list of nodes the manager can no longer act
+# on: Down nodes, and managers it cannot reach. Their tasks keep reporting
+# Running at their old image forever, because Swarm has no agent left to stop
+# them. Such a task is not evidence of a stuck rollout (see the Running-task
+# scan below), so it must not be counted as one.
+UNUSABLE_NODES="|"
+if node_rows=$(docker node ls --format '{{.Hostname}}|{{.Status}}|{{.ManagerStatus}}' 2>/dev/null); then
+	while IFS='|' read -r node_host node_status node_manager_status; do
+		[ -n "$node_host" ] || continue
+		if [ "$node_status" != "Ready" ] || [ "$node_manager_status" = "Unreachable" ]; then
+			UNUSABLE_NODES="${UNUSABLE_NODES}${node_host}|"
+		fi
+	done <<< "$node_rows"
+fi
+
+# node_unusable reports whether host is one of those nodes.
+node_unusable() {
+	case "$UNUSABLE_NODES" in
+	*"|$1|"*) return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
 updated=0
 for name in "${SERVICES[@]}"; do
 	svc="${STACK}_${name}"
@@ -55,13 +78,24 @@ for name in "${SERVICES[@]}"; do
 	# rollout leaves an older task alive indefinitely. Looking only at .Spec made
 	# the timer print "already current" forever while old runners kept leasing
 	# work and reporting pre-fix failures. Inspect the actual Running tasks too.
+	#
+	# Only tasks on nodes the manager can still act on count. A task stranded on
+	# a Down or unreachable node stays "Running" at the old digest forever, so
+	# counting it stale made every timer tick force-roll an otherwise healthy
+	# fleet — a rollout that never converges, restarting runners (and killing
+	# their in-flight runs) every two minutes indefinitely.
 	running=0
 	stale_running=0
-	while IFS='|' read -r current_state task_image; do
+	stranded_running=0
+	while IFS='|' read -r current_state task_image task_node; do
 		case "$current_state" in
 		Running\ *) ;;
 		*) continue ;;
 		esac
+		if node_unusable "$task_node"; then
+			stranded_running=$((stranded_running + 1))
+			continue
+		fi
 		running=$((running + 1))
 		case "$task_image" in
 		*@*) task_digest=${task_image##*@} ;;
@@ -70,7 +104,11 @@ for name in "${SERVICES[@]}"; do
 		if [ "$task_digest" != "$WANT" ]; then
 			stale_running=$((stale_running + 1))
 		fi
-	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}' "$svc" 2>/dev/null || true)
+	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}|{{.Node}}' "$svc" 2>/dev/null || true)
+
+	if [ "$stranded_running" -gt 0 ]; then
+		echo "pokefarm-pull: $svc has $stranded_running Running task(s) on node(s) Swarm cannot act on; not counting them as stale"
+	fi
 
 	if [ "$cur" = "$WANT" ] && [ "$running" -gt 0 ] && [ "$stale_running" -eq 0 ]; then
 		echo "pokefarm-pull: $svc already $WANT ($running running task(s))"
