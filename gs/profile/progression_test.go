@@ -166,3 +166,52 @@ func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
 		t.Fatalf("ENGINE_HIVEBADGE mask = %#02x, want %#02x", johtoBadgeHiveMask, 1<<1)
 	}
 }
+
+
+func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
+	mem := fakeGSReader{}
+	mem[sym.JohtoBadges] = johtoBadgeHiveMask
+	setGSEvent(mem, eventRivalAzaleaTown)
+	mem[sym.AzaleaTownSceneID] = 1
+
+	story := projectEarlyStory(mem)
+	if story.Has(ProgressAzaleaRivalResolved) {
+		t.Fatal("rival event set before battle falsely completed Azalea rival")
+	}
+
+	mem[sym.AzaleaTownSceneID] = sceneAzaleaTownNoop
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressAzaleaRivalResolved) {
+		t.Fatalf("post-win NOOP scene did not complete Azalea rival: %+v", story)
+	}
+
+	setGSEvent(mem, eventHerdedFarfetchd)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressFarfetchdHerded) {
+		t.Fatalf("Farfetchd herd event not projected: %+v", story)
+	}
+	if story.Has(ProgressHM01CutAcquired) {
+		t.Fatal("Farfetchd completion falsely granted HM01")
+	}
+
+	setGSEvent(mem, eventGotHM01Cut)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHM01CutAcquired) {
+		t.Fatalf("HM01 Cut event not projected: %+v", story)
+	}
+}
+
+func TestPinnedIlexEventAndSceneConstants(t *testing.T) {
+	if eventGotHM01Cut != 16 {
+		t.Fatalf("EVENT_GOT_HM01_CUT = %d, want 16", eventGotHM01Cut)
+	}
+	if eventHerdedFarfetchd != 41 {
+		t.Fatalf("EVENT_HERDED_FARFETCHD = %d, want 41", eventHerdedFarfetchd)
+	}
+	if eventRivalAzaleaTown != 1727 {
+		t.Fatalf("EVENT_RIVAL_AZALEA_TOWN = %d, want 1727", eventRivalAzaleaTown)
+	}
+	if sym.AzaleaTownSceneID != 0xd6d4 {
+		t.Fatalf("wAzaleaTownSceneID = %#04x, want %#04x", sym.AzaleaTownSceneID, 0xd6d4)
+	}
+}
