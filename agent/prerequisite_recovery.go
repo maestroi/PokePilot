@@ -97,11 +97,8 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 		}
 
 		if prerequisite.FieldCapability != "" {
-			if fieldCapabilityRepairReady(obs, prerequisite.FieldCapability) {
-				return Objective{
-					Kind:            KindRepairFieldCapability,
-					FieldCapability: prerequisite.FieldCapability,
-				}, []Prerequisite{prerequisite}, true
+			if repair, ok := f.fieldCapabilityRecovery(obs, prerequisite.FieldCapability); ok {
+				return repair, []Prerequisite{prerequisite}, true
 			}
 			continue
 		}
@@ -125,15 +122,34 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 			}
 		}
 
-		if route.FieldCapability != "" && fieldCapabilityRepairReady(obs, route.FieldCapability) {
-			return Objective{
-				Kind:            KindRepairFieldCapability,
-				FieldCapability: route.FieldCapability,
-			}, []Prerequisite{prerequisite}, true
+		if route.FieldCapability != "" {
+			if repair, ok := f.fieldCapabilityRecovery(obs, route.FieldCapability); ok {
+				return repair, []Prerequisite{prerequisite}, true
+			}
 		}
 	}
 
 	return Objective{}, nil, false
+}
+
+// fieldCapabilityRecovery synthesizes a repair only while that exact repair is
+// still meaningful in the current roster state. Repair objectives are not part
+// of the ordinary offered menu, so prerequisiteRecovery must explicitly honor
+// the same-state quarantine that filter() applies to offered objectives. Without
+// this check an impossible roster repair can be manufactured again every time a
+// parent objective re-reports its prerequisite (#2146).
+func (f *runFailurePolicy) fieldCapabilityRecovery(obs Observation, capability CapabilityID) (Objective, bool) {
+	if !fieldCapabilityRepairReady(obs, capability) {
+		return Objective{}, false
+	}
+	objective := Objective{
+		Kind:            KindRepairFieldCapability,
+		FieldCapability: capability,
+	}
+	if f.quarantined(obs, objective, objectiveStorageKey(objective)) {
+		return Objective{}, false
+	}
+	return objective, true
 }
 
 func fieldCapabilityUsable(obs Observation, capability CapabilityID) bool {
