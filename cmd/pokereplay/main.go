@@ -99,6 +99,9 @@ type replayServer struct {
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
 
+	liveMu       sync.Mutex
+	liveSessions map[string]*liveBroadcastSession
+
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
 }
@@ -112,6 +115,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		wallHTTP:     &http.Client{Timeout: wallTimeout},
 		compositor:   &ffmpegBroadcastCompositor{binary: "ffmpeg"},
 		jobs:         make(map[string]replayStatus),
+		liveSessions: make(map[string]*liveBroadcastSession),
 	}
 }
 
@@ -125,12 +129,15 @@ func (s *replayServer) handler() http.Handler {
 			"vaapi":         s.vaapi,
 			"vaapi_reason":  s.vaapiReason,
 			"renderer":      broadcastRendererVersion,
+			"live_fps":      liveBroadcastFPS,
 		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", s.handleReplaySemantic)
+	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
+	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
 	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux
@@ -919,6 +926,7 @@ func main() {
 			log.Fatalf("pokereplay: server stopped: %v", err)
 		}
 	case <-ctx.Done():
+		serverImpl.stopLiveSessions()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

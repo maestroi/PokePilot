@@ -85,6 +85,40 @@ Deleting a derived MP4 is safe; it can be regenerated from `run.gbrun`. A
 compositor failure only fails the derived replay job; it never mutates the
 source run or recording.
 
+## Live composited media
+
+The replay sidecar also exposes an isolated live presentation path for active
+runs:
+
+- `GET /v1/runs/{id}/live/status` reports `idle`, `starting`, `live`,
+  `lagging`, `disconnected`, `encoder_error`, `ended`, or `missing`,
+  along with target FPS, the latest presented frame, reconnect count, and
+  presentation-frame drop count.
+- `GET /v1/runs/{id}/live/stream.mjpeg` serves the same 1280x720 PokePilot
+  broadcast layout as a multipart JPEG stream. This is the provider-neutral
+  live media source consumed by later RTMP/RTMPS output work.
+
+The live producer runs entirely inside `pokereplay`. It samples pokewall at a
+fixed 20 presentation frames per second, independent of emulator/planner speed.
+Pokewall's `/frame?run=...&latest=1` point read deliberately bypasses the
+viewer-oriented playback backlog, so a broadcaster that joins an already
+running game starts from the current point instead of replaying old buffered
+screens.
+
+Each live subscriber has a two-frame queue. A slow or disconnected consumer
+loses stale presentation frames and the status becomes `lagging`; the producer
+never waits for that consumer. Pokewall remains the only process talking to the
+runner, and the runner still writes its bounded frame buffer from the emulator
+stepping goroutine without waiting for HTTP/media readers. Broadcast, encoder,
+or network failure therefore cannot backpressure gameplay and does not affect
+the durable `.gbrun` recording used by historical replay.
+
+Transient wall/frame failures put the live session into `disconnected`; the
+same producer keeps polling and increments its reconnect counter after a
+successful sample. When the run stops being active, subscribers receive a clean
+multipart end-of-stream. A restarted replay sidecar simply attaches to the
+current wall frame again; it does not create a second authoritative recording.
+
 ## MCP tools for debugging agents
 
 When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, three new

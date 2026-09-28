@@ -1302,7 +1302,17 @@ func (w *Wall) handleFrame(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if live {
-		data, err := w.fetchRunnerFrameCached(req.Context(), runID, addrs)
+		var (
+			data []byte
+			err  error
+		)
+		if req.URL.Query().Get("latest") == "1" {
+			// Media sidecars join an in-progress run at its current point
+			// instead of draining the viewer-oriented emulator-time backlog.
+			data, err = fetchRunnerFrame(addrs)
+		} else {
+			data, err = w.fetchRunnerFrameCached(req.Context(), runID, addrs)
+		}
 		if err == nil {
 			w.mu.Lock()
 			if cur := w.tiles[runID]; cur != nil && !cur.Finished && cur.Status == statusRunning {

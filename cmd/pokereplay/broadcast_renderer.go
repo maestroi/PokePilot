@@ -338,6 +338,11 @@ func ffmpegEnable(startMS, endMS int64) string {
 
 func writeBroadcastStatePNG(filename string, state broadcastState) error {
 	img := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
+	drawBroadcastStateOverlay(img, state)
+	return writeScaledPNG(filename, img)
+}
+
+func drawBroadcastStateOverlay(img stddraw.Image, state broadcastState) {
 	fillRect(img, image.Rect(12, 4, 628, 20), color.RGBA{R: 9, G: 24, B: 34, A: 238})
 	fillRect(img, image.Rect(372, 24, 628, 348), color.RGBA{R: 8, G: 19, B: 28, A: 244})
 	drawFrame(img, image.Rect(10, 20, 366, 341), color.RGBA{R: 58, G: 182, B: 206, A: 220})
@@ -361,18 +366,21 @@ func writeBroadcastStatePNG(filename string, state broadcastState) error {
 		}
 	}
 	_ = drawSection(img, 384, y+4, "PLANNER", state.Planner, 31)
-	return writeScaledPNG(filename, img)
 }
 
 func writeBroadcastEventPNG(filename string, event broadcastEventCard) error {
 	img := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
+	drawBroadcastEventOverlay(img, event)
+	return writeScaledPNG(filename, img)
+}
+
+func drawBroadcastEventOverlay(img stddraw.Image, event broadcastEventCard) {
 	y := 238 + event.Lane*34
 	card := image.Rect(20, y, 354, y+30)
 	fillRect(img, card, color.RGBA{R: 14, G: 26, B: 34, A: 242})
 	fillRect(img, image.Rect(card.Min.X, card.Min.Y, card.Min.X+4, card.Max.Y), color.RGBA{R: 232, G: 178, B: 79, A: 255})
 	drawText(img, 30, y+12, color.RGBA{R: 242, G: 197, B: 108, A: 255}, clipBroadcastText(event.Kind, 22))
 	drawText(img, 30, y+25, color.RGBA{R: 232, G: 237, B: 239, A: 255}, clipBroadcastText(event.Summary, 45))
-	return writeScaledPNG(filename, img)
 }
 
 func drawSection(img stddraw.Image, x, y int, label, value string, width int) int {

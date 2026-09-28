@@ -128,3 +128,72 @@ func frameStatus(t *testing.T, base, runID string) int {
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck // test probe
 	return resp.StatusCode
 }
+
+func TestWallFrameLatestBypassesBufferedPlayback(t *testing.T) {
+	buffered := []byte{0x89, 'P', 'N', 'G', 'b', 'u', 'f'}
+	latest := []byte{0x89, 'P', 'N', 'G', 'n', 'o', 'w'}
+	runner := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/frame.png" {
+			http.NotFound(res, req)
+			return
+		}
+		res.Header().Set("Content-Type", "image/png")
+		if req.URL.Query().Get("buffered") == "1" {
+			_, _ = res.Write(buffered)
+			return
+		}
+		_, _ = res.Write(latest)
+	}))
+	t.Cleanup(runner.Close)
+
+	w := NewWall("")
+	srv := httptest.NewServer(w.Handler())
+	t.Cleanup(srv.Close)
+
+	spec := farm.Spec{RunID: "frame-latest", Planner: "scripted", Starter: "squirtle", Dest: "pallet"}
+	body, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(srv.URL+"/v1/specs", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("enqueue status=%d", resp.StatusCode)
+	}
+
+	client := farm.NewClient(srv.URL)
+	if leased, err := client.Lease(context.Background()); err != nil || leased == nil {
+		t.Fatalf("lease=%v err=%v", leased, err)
+	}
+	hb := farm.Heartbeat{RunID: spec.RunID, Frame: 500}
+	hb.WorkerAddrs = []string{runner.Listener.Addr().String()}
+	if _, err := client.Heartbeat(context.Background(), hb); err != nil {
+		t.Fatal(err)
+	}
+
+	read := func(target string) []byte {
+		t.Helper()
+		res, err := http.Get(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		data, err := io.ReadAll(res.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("%s status=%d", target, res.StatusCode)
+		}
+		return data
+	}
+	if got := read(srv.URL + "/frame?run=" + spec.RunID); !bytes.Equal(got, buffered) {
+		t.Fatalf("viewer frame=%q want buffered playback frame=%q", got, buffered)
+	}
+	if got := read(srv.URL + "/frame?run=" + spec.RunID + "&latest=1"); !bytes.Equal(got, latest) {
+		t.Fatalf("media frame=%q want latest point-in-time frame=%q", got, latest)
+	}
+}
