@@ -190,6 +190,35 @@ func TestSequenceLeadUsesSaferCurrentCounterAndPreservesLaterSpecialist(t *testi
 	}
 }
 
+func TestSequenceLeadScoresWholeCurrentMatchupEnvelope(t *testing.T) {
+	const (
+		firstType  uint16 = 10
+		secondType uint16 = 11
+	)
+	strategy := &sequenceTestStrategy{scores: map[uint16]map[uint16]int64{
+		firstType:  {1: 500, 2: 350},
+		secondType: {2: 350},
+	}}
+	resources := game.BattleResourcesState{Party: []game.BattlePartyMon{
+		sequenceTestMon(1, 1, 100),
+		sequenceTestMon(2, 2, 100),
+	}}
+
+	slot, eval := bestSequenceLeadSlotWithStrategy(
+		strategy,
+		nil,
+		resources,
+		[]game.BattleCombatant{
+			{Type1: firstType, Type2: firstType},
+			{Type1: secondType, Type2: secondType},
+		},
+		BattleSequenceContext{},
+	)
+	if slot != 1 {
+		t.Fatalf("lead slot = %d (%+v), want broad-coverage slot 1 over narrow specialist slot 0", slot, eval)
+	}
+}
+
 func TestSequenceSacrificeHealProtectsUniqueFutureCounter(t *testing.T) {
 	const (
 		currentType uint16 = 10
