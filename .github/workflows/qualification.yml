@@ -101,6 +101,9 @@ jobs:
         run: |
           set -euo pipefail
           base="${CONFIGURED_LLM_URL:-${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}}"
+          if [[ -n "${CONFIGURED_LLM_URL:-}" ]]; then
+            echo "POKEPILOT_LLM_URL=$CONFIGURED_LLM_URL" >> "$GITHUB_ENV"
+          fi
           token="${llm_token:-}"
           args=(--fail --silent --show-error --max-time 5)
           if [[ -n "$token" ]]; then
@@ -293,6 +296,9 @@ jobs:
         run: |
           set -euo pipefail
           base="${CONFIGURED_LLM_URL:-${POKEPILOT_LLM_URL:-http://192.168.50.204:8000/v1}}"
+          if [[ -n "${CONFIGURED_LLM_URL:-}" ]]; then
+            echo "POKEPILOT_LLM_URL=$CONFIGURED_LLM_URL" >> "$GITHUB_ENV"
+          fi
           token="${llm_token:-}"
           args=(--fail --silent --show-error --max-time 5)
           if [[ -n "$token" ]]; then
