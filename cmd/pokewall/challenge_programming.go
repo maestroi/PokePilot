@@ -2,17 +2,16 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -590,11 +589,23 @@ func (c *challengeProgrammingController) mutateEntry(id, action string) (challen
 				}
 				c.wall.mu.Unlock()
 			}
-			entry.State, entry.Result = programStateCancelled, "cancelling"
+			// Keep the slot live until every underlying run actually settles.
+			// Otherwise the next programmed challenge could overlap a runner that
+			// is still cooperatively cancelling.
+			entry.Result = "cancelling"
 		} else {
 			c.mu.Unlock()
 			return challengeQueueEntry{}, fmt.Errorf("entry %s cannot be cancelled from state %s", id, entry.State)
 		}
+	case "retry":
+		if entry.State != programStateBlocked && entry.State != programStateFailed {
+			c.mu.Unlock()
+			return challengeQueueEntry{}, fmt.Errorf("entry %s is not blocked or failed", id)
+		}
+		entry.State = programStateQueued
+		entry.StartedAt, entry.EndedAt = 0, 0
+		entry.RunIDs = nil
+		entry.ExperimentID, entry.Result, entry.Error = "", "", ""
 	case "pin-next":
 		if !isPendingProgramState(entry.State) {
 			c.mu.Unlock()
@@ -621,7 +632,7 @@ func (c *challengeProgrammingController) mutateEntry(id, action string) (challen
 	out := *entry
 	err := c.persistLocked()
 	c.mu.Unlock()
-	if err == nil && (action == "skip" || action == "cancel" || action == "pin-next") {
+	if err == nil && (action == "skip" || action == "cancel" || action == "pin-next" || action == "retry") {
 		c.advance()
 	}
 	return out, err
@@ -788,12 +799,12 @@ func (c *challengeProgrammingController) launchExperimentReference(reference str
 
 func (c *challengeProgrammingController) finishRun(runID string) {
 	c.advanceMu.Lock()
-	defer c.advanceMu.Unlock()
 
 	c.mu.Lock()
 	link, ok := c.state.RunLinks[runID]
 	if !ok {
 		c.mu.Unlock()
+		c.advanceMu.Unlock()
 		return
 	}
 	index := -1
@@ -803,8 +814,9 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 			break
 		}
 	}
-	if index < 0 || (!isLiveProgramState(c.state.Entries[index].State) && c.state.Entries[index].State != programStateCancelled) {
+	if index < 0 || !isLiveProgramState(c.state.Entries[index].State) {
 		c.mu.Unlock()
+		c.advanceMu.Unlock()
 		return
 	}
 	runIDs := append([]string(nil), c.state.Entries[index].RunIDs...)
@@ -827,6 +839,7 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 	}
 	c.wall.mu.Unlock()
 	if !allTerminal {
+		c.advanceMu.Unlock()
 		return
 	}
 
@@ -836,8 +849,8 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 			continue
 		}
 		entry := &c.state.Entries[i]
-		if entry.State == programStateCancelled {
-			entry.Result = "cancelled"
+		if entry.Result == "cancelling" {
+			entry.State, entry.Result = programStateCancelled, "cancelled"
 		} else if result == "failed" {
 			entry.State, entry.Result = programStateFailed, "failed"
 			entry.Error = strings.Join(failures, ", ")
@@ -849,11 +862,8 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 	}
 	_ = c.persistLocked()
 	c.mu.Unlock()
-
-	// Do not recurse while holding advanceMu.
 	c.advanceMu.Unlock()
 	c.advance()
-	c.advanceMu.Lock()
 }
 
 func (c *challengeProgrammingController) recoverLocked() {
@@ -905,7 +915,7 @@ func (c *challengeProgrammingController) loadLocked() error {
 		var raw []byte
 		err := cp.db.QueryRow(`SELECT state_json FROM challenge_programming_state WHERE id=1`).Scan(&raw)
 		if err != nil {
-			if strings.Contains(strings.ToLower(err.Error()), "no rows") {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}
 			return fmt.Errorf("load challenge programming state: %w", err)
@@ -1095,7 +1105,7 @@ func challengeProgrammingHTTPHandler(w *Wall, next http.Handler) http.Handler {
 		}
 		writeJSON(res, http.StatusOK, controller.snapshot())
 	})
-	for _, action := range []string{"skip", "cancel", "pin-next"} {
+	for _, action := range []string{"skip", "cancel", "pin-next", "retry"} {
 		action := action
 		mux.HandleFunc("POST /v1/programming/{id}/"+action, func(res http.ResponseWriter, req *http.Request) {
 			entry, err := controller.mutateEntry(req.PathValue("id"), action)
@@ -1124,7 +1134,3 @@ func challengeProgrammingHTTPHandler(w *Wall, next http.Handler) http.Handler {
 	return mux
 }
 
-func init() {
-	_ = strconv.IntSize // keep strconv available for stable Go imports if build tags trim helpers.
-	_ = log.Flags
-}
