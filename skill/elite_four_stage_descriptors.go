@@ -41,6 +41,7 @@ type leagueStageDescriptor struct {
 	TrainerHomeY    uint8
 	PredecessorDone leagueFact
 	Done            leagueFact
+	Matchups        []gameruntime.BattleCombatant
 	Fight           leagueStageFight
 	Exit            *leagueStageExit
 }
@@ -55,11 +56,12 @@ func standardLeagueStageFight(m *emu.Emu, romData []byte, policy MovePolicy, sta
 		stage.TrainerHomeY,
 		stage.RoomMap,
 		stage.Done,
+		BattleOptions{Sequence: leagueSequenceContext(stage)},
 	)
 }
 
-func championLeagueStageFight(m *emu.Emu, _ []byte, policy MovePolicy, _ leagueStageDescriptor) error {
-	return fightChampionStage(m, policy)
+func championLeagueStageFight(m *emu.Emu, _ []byte, policy MovePolicy, stage leagueStageDescriptor) error {
+	return fightChampionStage(m, policy, BattleOptions{Sequence: leagueSequenceContext(stage)})
 }
 
 var leagueBattleStages = []leagueStageDescriptor{
@@ -77,7 +79,8 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLoreleiDefeated
 		},
-		Fight: standardLeagueStageFight,
+		Matchups: leagueLoreleiMatchups(),
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               loreleiExitStand,
 			NextRoom:            brunoRoomMap,
@@ -98,7 +101,8 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueBrunoDefeated
 		},
-		Fight: standardLeagueStageFight,
+		Matchups: leagueBrunoMatchups(),
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               brunoExitStand,
 			NextRoom:            agathaRoomMap,
@@ -119,7 +123,8 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueAgathaDefeated
 		},
-		Fight: standardLeagueStageFight,
+		Matchups: leagueAgathaMatchups(),
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               agathaExitStand,
 			NextRoom:            lanceRoomMap,
@@ -140,7 +145,8 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLanceDefeated
 		},
-		Fight: standardLeagueStageFight,
+		Matchups: leagueLanceMatchups(),
+		Fight:    standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               lanceExitStand,
 			NextRoom:            championsRoomMap,
@@ -160,7 +166,8 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueChampionDefeated
 		},
-		Fight: championLeagueStageFight,
+		Matchups: leagueChampionMatchups(),
+		Fight:    championLeagueStageFight,
 	},
 }
 
@@ -215,6 +222,9 @@ func runLeagueStage(m *emu.Emu, romData []byte, policy MovePolicy, stage leagueS
 		return gameruntime.NewProgressionPrerequisiteMissing(stage.Predecessor)
 	}
 	if err := leagueReachRoom(m, romData, policy, stage.RoomMap); err != nil {
+		return fmt.Errorf("skill: %s: %w", stage.Operation, err)
+	}
+	if err := prepareLeagueStageLead(m, romData, stage); err != nil {
 		return fmt.Errorf("skill: %s: %w", stage.Operation, err)
 	}
 	if err := stage.Fight(m, romData, policy, stage); err != nil {

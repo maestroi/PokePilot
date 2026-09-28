@@ -130,13 +130,22 @@ func fleeThenFightWith(
 }
 
 func fleeThenFight(m *emu.Emu, policy MovePolicy, fleeAttempts int) resolveBattle {
+	return fleeThenFightWithBattleOptions(m, policy, fleeAttempts, BattleOptions{})
+}
+
+func fleeThenFightWithBattleOptions(
+	m *emu.Emu,
+	policy MovePolicy,
+	fleeAttempts int,
+	options BattleOptions,
+) resolveBattle {
 	decoder, err := battleStateDecoderFor(m)
 	if err != nil {
 		return func() (battleResolution, error) { return battleResolution{}, err }
 	}
 	return fleeThenFightWith(
 		func(attempts int) error { return Flee(m, attempts) },
-		func() (game.BattleResult, error) { return Battle(m, policy) },
+		func() (game.BattleResult, error) { return BattleWithOptions(m, policy, options) },
 		func() game.BattleKind {
 			live, ok := decoder.DecodeBattleState(m)
 			if !ok {
@@ -435,6 +444,17 @@ func Travel(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, max
 // healed at a center, and re-planning from the respawn spot is the caller's
 // decision.
 func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int) (TravelResult, error) {
+	return travelFleeWithBattleOptions(m, romData, dest, policy, maxBattles, BattleOptions{})
+}
+
+func travelFleeWithBattleOptions(
+	m *emu.Emu,
+	romData []byte,
+	dest Destination,
+	policy MovePolicy,
+	maxBattles int,
+	options BattleOptions,
+) (TravelResult, error) {
 	if maxBattles <= 0 {
 		return TravelResult{}, fmt.Errorf("skill: TravelFlee: maxBattles must be > 0, got %d", maxBattles)
 	}
@@ -456,7 +476,7 @@ func TravelFlee(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy,
 		recoveringGoTo(m, romData, dest, policy, &egresses),
 		func() DialogueRecoveryResult { return RecoverDialogue(m, dialogueRecoveryBudget) },
 		func() bool { return blackoutInProgress(m, blackoutDecoder) },
-		fleeThenFight(m, policy, guaranteedWildFleeAttempts),
+		fleeThenFightWithBattleOptions(m, policy, guaranteedWildFleeAttempts, options),
 	)
 	res.EmergencyEgresses = append(res.EmergencyEgresses, egresses...)
 	return res, err

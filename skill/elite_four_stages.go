@@ -135,7 +135,7 @@ func LeagueDefeatLance(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	return runLeagueStageByID(m, romData, policy, leagueProgressLanceDefeated)
 }
 
-func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
+func fightChampionStage(m *emu.Emu, policy MovePolicy, options BattleOptions) error {
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
 		return nil
@@ -157,7 +157,7 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy) error {
 		if state.DecodeBattle(&mem) == nil {
 			return fmt.Errorf("Champion room did not enter battle")
 		}
-		outcome, err := Battle(m, policy)
+		outcome, err := BattleWithOptions(m, policy, options)
 		if err != nil {
 			// A win hands control to Oak's scene and the Hall of Fame, not
 			// back to the player, so Battle's post-battle controllable

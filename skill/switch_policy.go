@@ -39,6 +39,7 @@ type switchEvaluation struct {
 	BestMove     game.BattleMoveEvaluation
 	IncomingRisk int // tenths: worst opponent STAB type into this member
 	FieldMoves   int
+	FutureValue  int64
 	Score        int64
 }
 
@@ -47,9 +48,9 @@ func (e switchEvaluation) String() string {
 	if status == "" {
 		status = "healthy"
 	}
-	return fmt.Sprintf("slot=%d species=%d level=%d hp=%d/%d status=%s best-slot=%d best={%s} incoming=%0.1fx field=%d score=%d",
+	return fmt.Sprintf("slot=%d species=%d level=%d hp=%d/%d status=%s best-slot=%d best={%s} incoming=%0.1fx field=%d future=%d score=%d",
 		e.Slot, e.Species, e.Level, e.HP, e.MaxHP, status, e.BestMoveSlot,
-		e.BestMove.String(), float64(e.IncomingRisk)/10, e.FieldMoves, e.Score)
+		e.BestMove.String(), float64(e.IncomingRisk)/10, e.FieldMoves, e.FutureValue, e.Score)
 }
 
 // switchDecision is the policy seam Battle uses before committing to FIGHT.
@@ -67,11 +68,20 @@ type switchDecision struct {
 }
 
 func chooseTacticalSwitchState(romData []byte, resources game.BattleResourcesState, b game.BattleState) switchDecision {
+	return chooseTacticalSwitchStateWithContext(romData, resources, b, BattleSequenceContext{})
+}
+
+func chooseTacticalSwitchStateWithContext(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) switchDecision {
 	strategy, err := combatStrategyForROM(romData)
 	if err != nil {
 		return switchDecisionWithoutStrategy(resources, "combat-strategy-unavailable")
 	}
-	return chooseTacticalSwitchWithStrategy(strategy, romData, resources, b)
+	return chooseTacticalSwitchWithStrategyContext(strategy, romData, resources, b, context)
 }
 
 // chooseTacticalSwitchWithStrategy compares the active mon with every healthy
@@ -82,6 +92,16 @@ func chooseTacticalSwitchWithStrategy(
 	resources game.BattleResourcesState,
 	b game.BattleState,
 ) switchDecision {
+	return chooseTacticalSwitchWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+}
+
+func chooseTacticalSwitchWithStrategyContext(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) switchDecision {
 	party := resources.Party
 	activeSlot := resources.ActiveSlot
 	decision := switchDecision{Slot: -1, Reason: "no-live-bench"}
@@ -89,7 +109,8 @@ func chooseTacticalSwitchWithStrategy(
 		return decision
 	}
 
-	decision.Active = evaluateActiveForSwitch(strategy, romData, party, activeSlot, b)
+	futureValues := futurePreservationValues(strategy, romData, party, context)
+	decision.Active = addFutureValue(evaluateActiveForSwitch(strategy, romData, party, activeSlot, b), futureValues)
 	_, defender := battleCombatants(b)
 	bestSet := false
 	liveBench := false
@@ -101,14 +122,14 @@ func chooseTacticalSwitchWithStrategy(
 		if criticallyWeak(mon) || mon.Status == "frozen" {
 			continue
 		}
-		eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
+		eval := addFutureValue(evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender), futureValues)
 		// A voluntary switch into a member that cannot currently deal known
 		// damage is not tactical recovery; emergency PP/faint handling remains
 		// responsible for its own legality/fallback behavior.
 		if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
 			continue
 		}
-		if !bestSet || betterSwitchEvaluation(eval, decision.Candidate) {
+		if !bestSet || betterSequenceSwitchEvaluation(eval, decision.Candidate) {
 			decision.Candidate = eval
 			decision.Slot = slot
 			bestSet = true
@@ -134,9 +155,13 @@ func chooseTacticalSwitchWithStrategy(
 		decision.Reason = "escape-dangerous-matchup"
 		return decision
 	}
-	if decision.Candidate.Score*switchGainDenominator > decision.Active.Score*switchGainNumerator {
+	if sequenceSwitchScore(decision.Candidate)*switchGainDenominator > sequenceSwitchScore(decision.Active)*switchGainNumerator {
 		decision.Switch = true
-		decision.Reason = "material-matchup-improvement"
+		if context.empty() {
+			decision.Reason = "material-matchup-improvement"
+		} else {
+			decision.Reason = "material-matchup-improvement-with-sequence-preservation"
+		}
 		return decision
 	}
 	decision.Reason = "candidate-not-materially-better"
@@ -206,11 +231,20 @@ func bestReplacementSlotState(
 	resources game.BattleResourcesState,
 	b game.BattleState,
 ) (int, switchEvaluation) {
+	return bestReplacementSlotStateWithContext(romData, resources, b, BattleSequenceContext{})
+}
+
+func bestReplacementSlotStateWithContext(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) (int, switchEvaluation) {
 	strategy, err := combatStrategyForROM(romData)
 	if err != nil {
 		return firstLiveReplacement(resources)
 	}
-	return bestReplacementSlotWithStrategy(strategy, romData, resources, b)
+	return bestReplacementSlotWithStrategyContext(strategy, romData, resources, b, context)
 }
 
 // bestReplacementSlotWithStrategy ranks every live party member for the current
@@ -221,7 +255,18 @@ func bestReplacementSlotWithStrategy(
 	resources game.BattleResourcesState,
 	b game.BattleState,
 ) (int, switchEvaluation) {
+	return bestReplacementSlotWithStrategyContext(strategy, romData, resources, b, BattleSequenceContext{})
+}
+
+func bestReplacementSlotWithStrategyContext(
+	strategy game.BattleCombatStrategy,
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) (int, switchEvaluation) {
 	party := resources.Party
+	futureValues := futurePreservationValues(strategy, romData, party, context)
 	_, defender := battleCombatants(b)
 	bestSlot := -1
 	var best switchEvaluation
@@ -229,8 +274,8 @@ func bestReplacementSlotWithStrategy(
 		if mon.Fainted() {
 			continue
 		}
-		eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
-		if bestSlot < 0 || betterSwitchEvaluation(eval, best) {
+		eval := addFutureValue(evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender), futureValues)
+		if bestSlot < 0 || betterSequenceSwitchEvaluation(eval, best) {
 			bestSlot, best = slot, eval
 		}
 	}

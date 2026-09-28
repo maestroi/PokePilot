@@ -199,7 +199,15 @@ func leagueMemberBoundaryReady(mem *state.Mem, roomScript uint16, done leagueFac
 	return done(leagueFacts(mem)) && mem.U8(roomScript) == 0 && state.Controllable(mem)
 }
 
-func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name string, homeX, homeY, roomMap uint8, done leagueFact) error {
+func fightLeagueMember(
+	m *emu.Emu,
+	romData []byte,
+	policy MovePolicy,
+	name string,
+	homeX, homeY, roomMap uint8,
+	done leagueFact,
+	options BattleOptions,
+) error {
 	if done(currentLeagueFacts(m)) {
 		return nil
 	}
@@ -215,7 +223,7 @@ func fightLeagueMember(m *emu.Emu, romData []byte, policy MovePolicy, name strin
 	// EndTrainerBattle, before ExecuteCurMapScriptInTable returns and writes the
 	// room's script selector back to SCRIPT_DEFAULT. A transient controllable
 	// frame in that gap therefore cannot be an objective boundary (#1953).
-	trainerErr := ChallengeTrainer(m, romData, homeX, homeY, policy)
+	trainerErr := ChallengeTrainerWithOptions(m, romData, homeX, homeY, policy, options)
 	if trainerErr != nil && !done(currentLeagueFacts(m)) {
 		return fmt.Errorf("skill: EliteFourProgression: %s: %w", name, trainerErr)
 	}

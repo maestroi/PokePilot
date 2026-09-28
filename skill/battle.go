@@ -98,11 +98,12 @@ const mainMenuMax = 1
 var zbatDebug = os.Getenv("ZBAT") != ""
 
 // BattleOptions adds narrowly-scoped battle behavior for callers that need a
-// deliberate opening switch. Ordinary Battle uses the zero value and retains
-// the normal tactical policy.
+// deliberate opening switch or major-trainer sequence awareness. Ordinary
+// Battle uses the zero value and retains the normal tactical policy.
 type BattleOptions struct {
 	OpeningTrainingSwitch bool
 	MinTrainingCarryLevel uint8
+	Sequence              BattleSequenceContext
 }
 
 func Battle(m *emu.Emu, policy MovePolicy) (game.BattleResult, error) {
@@ -334,7 +335,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// trainee's XP and defeats the estimator's two-participant contract.
 			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
 				if inBattle && len(bs.Usable()) > 0 {
-					decision := chooseTacticalSwitchState(m.ROM(), resources, bs)
+					decision := chooseTacticalSwitchStateWithContext(m.ROM(), resources, bs, options.Sequence)
 					if decision.Switch {
 						if zbatDebug {
 							fmt.Printf("zbat resource=SWITCH action=voluntary reason=%s active={%s} candidate={%s}\n",
@@ -354,7 +355,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 
 			if itemUses < battleItemUseCap && inBattle {
-				if choice, ok := chooseSacrificialBenchHealState(m.ROM(), resources, bs); ok {
+				if choice, ok := chooseSacrificialBenchHealStateWithContext(m.ROM(), resources, bs, options.Sequence); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=ITEM action=sacrifice-heal item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
 					}
@@ -514,7 +515,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			slot := resources.FirstLivePartySlot()
 			var replacement switchEvaluation
 			if current, ok := battleDecoder.DecodeBattleState(m); ok {
-				if bestSlot, best := bestReplacementSlotState(m.ROM(), resources, current); bestSlot >= 0 {
+				if bestSlot, best := bestReplacementSlotStateWithContext(m.ROM(), resources, current, options.Sequence); bestSlot >= 0 {
 					slot, replacement = bestSlot, best
 				}
 			}
