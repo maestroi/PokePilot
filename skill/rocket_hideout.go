@@ -225,6 +225,12 @@ func finishRocketBossRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // dialogue, and fight if a battle begins. Talking to an already-defeated
 // guard simply reaches controllable state with no battle and is a no-op.
 func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name string, policy MovePolicy) error {
+	return fightStoryTrainerAtAvoiding(m, romData, homeX, homeY, name, policy, nil)
+}
+
+// fightStoryTrainerAtAvoiding is fightStoryTrainerAt approaching from a side
+// not in avoid.
+func fightStoryTrainerAtAvoiding(m *emu.Emu, romData []byte, homeX, homeY uint8, name string, policy MovePolicy, avoid map[[2]int]bool) error {
 	cur := m.Peek8(sym.CurMap)
 	objectID, ok, err := mapObjectIDAt(romData, cur, homeX, homeY)
 	if err != nil {
@@ -234,7 +240,7 @@ func fightStoryTrainerAt(m *emu.Emu, romData []byte, homeX, homeY uint8, name st
 		return fmt.Errorf("skill: RocketHideout: no %s object at (%d,%d) on map %#04x", name, homeX, homeY, cur)
 	}
 
-	if err := talkBeside(m, romData, homeX, homeY, policy); err != nil {
+	if err := talkBesideAvoiding(m, romData, homeX, homeY, policy, avoid); err != nil {
 		return fmt.Errorf("skill: RocketHideout: approach %s: %w", name, err)
 	}
 	if m.Peek8(sym.IsInBattle) != 0 {

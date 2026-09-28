@@ -287,15 +287,26 @@ func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) e
 	for {
 		switch m.Peek8(sym.CurMap) {
 		case rocketHideoutB4FMap:
-			_, y := playerXY(m)
-			if y < 10 {
-				if err := walkRocketB4FLiveTo(m, romData, rocketB4FEntry); err != nil {
-					return fmt.Errorf("B4F boss room -> stair: %w", err)
-				}
+			// B4F is two halves: the stair/Lift Key side and the elevator side
+			// (boss room + lobby). Nothing walks between them, so the boss room
+			// leaves by elevator (run-12vowvyawgx0b3jl0srufdx8tq round 61).
+			stairSide, err := rocketB4FStairSideReachable(m, romData)
+			if err != nil {
+				return fmt.Errorf("B4F: inspect stair side: %w", err)
 			}
 			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB4FMap, To: rocketHideoutB3FMap, WarpX: 19, WarpY: 10}
+			if !stairSide {
+				edge = world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB4FMap, To: rocketHideoutElevatorMap, WarpX: 24, WarpY: 15}
+			}
 			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
-				return fmt.Errorf("B4F -> B3F: %w", err)
+				return fmt.Errorf("B4F -> %#04x: %w", edge.To, err)
+			}
+		case rocketHideoutElevatorMap:
+			// B2F, not B1F: B1F's elevator landing is cut off from the Game
+			// Corner stair; B2F rejoins the ordinary stair chain below.
+			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutElevatorMap, To: rocketHideoutB2FMap, WarpX: 2, WarpY: 1}
+			if err := travelRocketWarp(m, policy, func() error { return Traverse(m, romData, edge) }); err != nil {
+				return fmt.Errorf("elevator -> B2F: %w", err)
 			}
 		case rocketHideoutB3FMap:
 			edge := world.Edge{Kind: world.EdgeWarp, From: rocketHideoutB3FMap, To: rocketHideoutB2FMap, WarpX: 25, WarpY: 6}
@@ -320,24 +331,21 @@ func leaveRocketHideoutForTower(m *emu.Emu, romData []byte, policy MovePolicy) e
 	}
 }
 
-func walkRocketB4FLiveTo(m *emu.Emu, romData []byte, dest Destination) error {
-	if m.Peek8(sym.CurMap) != rocketHideoutB4FMap || dest.Map != rocketHideoutB4FMap {
-		return fmt.Errorf("skill: PokemonTower: live B4F walk requested from %#04x to %#04x", m.Peek8(sym.CurMap), dest.Map)
-	}
+// rocketB4FStairSideReachable reports whether the player can walk to the
+// B3F stair's side of B4F on the live map.
+func rocketB4FStairSideReachable(m *emu.Emu, romData []byte) (bool, error) {
 	h, err := rom.ParseMap(romData, rocketHideoutB4FMap)
 	if err != nil {
-		return err
+		return false, err
 	}
-	grid, err := world.Build(romData, h)
+	grid, err := liveMapGrid(m, romData, h)
 	if err != nil {
-		return err
+		return false, err
 	}
-	applyLiveOpenBlock(grid, 5, 12)
-
-	return walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
-		func(blocked map[[2]int]bool) ([]world.Step, error) {
-			x, y := playerXY(m)
-			return world.FindPath(grid, int(x), int(y), int(dest.X), int(dest.Y), blocked)
-		}, func(steps []world.Step) error { return WalkPath(m, steps) },
-		func() { m.StepFrames(npcWaitFrames) })
+	x, y := playerXY(m)
+	_, err = world.FindPath(grid, int(x), int(y), int(rocketB4FEntry.X), int(rocketB4FEntry.Y), nil)
+	if errors.Is(err, world.ErrNoPath) {
+		return false, nil
+	}
+	return err == nil, err
 }
