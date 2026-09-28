@@ -274,7 +274,6 @@ func TestProgrammingBlockedEntryCanRetryOrSkip(t *testing.T) {
 	}
 }
 
-
 func TestChallengeCompilationIsStableAndUsesOrdinarySpec(t *testing.T) {
 	challenge, err := normalizeChallengeDefinition(redChallenge("stable", "Stable compile", "random:reasonable"))
 	if err != nil {
