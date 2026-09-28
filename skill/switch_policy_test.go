@@ -99,15 +99,16 @@ func TestChooseTacticalSwitchPrefersMaterialMatchup(t *testing.T) {
 }
 
 func TestChooseTacticalSwitchEscapesDangerousMatchupWithoutMaterialScoreGain(t *testing.T) {
+	const flyingType uint8 = 0x02
 	strong := rom.Move{ID: 52, Power: 120, Type: typeFire, Accuracy: 255, PP: 15}
 	weak := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
 	chart := []typePair{
 		{typeRock, typeFire, 20},
-		{typeRock, typeFlying, 20},
+		{typeRock, flyingType, 20},
 		{typeRock, typeWater, 5},
 	}
 	romData := fakeROMChart(t, chart, strong, weak)
-	active := healthySwitchMon(6, 50, typeFire, typeFlying, strong.ID)
+	active := healthySwitchMon(6, 50, typeFire, flyingType, strong.ID)
 	bench := healthySwitchMon(7, 35, typeWater, typeWater, weak.ID)
 	var mem state.Mem
 	putSwitchMon(&mem, 0, active)
