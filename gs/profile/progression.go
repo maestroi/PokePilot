@@ -15,6 +15,7 @@ const (
 	ProgressSproutTowerCleared       game.ProgressID = "gs_sprout_tower_cleared"
 	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
 	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
+	ProgressSlowpokeWellCleared       game.ProgressID = "gs_slowpoke_well_cleared"
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 	// directly as EventFlags + event/8 below.
 	eventGotHM05Flash             uint16 = 20
 	eventGotTogepiEggFromElmsAide uint16 = 45
+	eventClearedSlowpokeWell       uint16 = 43
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
 
@@ -84,11 +86,12 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressSproutTowerCleared, Complete: hasGSEvent(reader, eventGotHM05Flash)},
 		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
 		{ID: ProgressTogepiEggReceived, Complete: hasGSEvent(reader, eventGotTogepiEggFromElmsAide)},
+		{ID: ProgressSlowpokeWellCleared, Complete: hasGSEvent(reader, eventClearedSlowpokeWell)},
 	}
 }
 
 // DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
-// needed by the first-badge and immediate post-Falkner executors without
+// needed by the early-Johto executors without
 // leaking event numbers or badge bit positions into agent policy.
 func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
 	return projectEarlyStory(reader)
