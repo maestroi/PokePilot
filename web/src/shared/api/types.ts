@@ -486,3 +486,28 @@ export interface RunArtifact {
   sha256?: string
   [key: string]: unknown
 }
+
+
+export interface ProgrammingEntry {
+  id: string
+  challenge_id: string
+  challenge_version: number
+  challenge_name: string
+  state: string
+  scheduled_at?: number
+  created_at?: number
+  started_at?: number
+  ended_at?: number
+  run_ids?: string[]
+  experiment_id?: string
+  result?: string
+  error?: string
+  pinned?: boolean
+}
+
+export interface ProgrammingSnapshot {
+  paused: boolean
+  live_now?: ProgrammingEntry
+  up_next?: ProgrammingEntry
+  queue: ProgrammingEntry[]
+}
