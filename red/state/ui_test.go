@@ -74,6 +74,13 @@ func TestControllable(t *testing.T) {
 	if Controllable(&m) {
 		t.Errorf("Controllable = true, want false while a dungeon warp is pending")
 	}
+	m[sym.StatusFlags6] = 0
+
+	// A trainer's pre-battle text has closed but the queued battle has not started.
+	m[sym.CurOpponent] = 0xE6
+	if Controllable(&m) {
+		t.Errorf("Controllable = true, want false while a battle is queued")
+	}
 }
 
 // startMenuFixture is the START menu shape measured from run-jxh8lk19wv6on
