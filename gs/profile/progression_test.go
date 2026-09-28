@@ -157,3 +157,13 @@ func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
 		t.Fatalf("EVENT_CLEARED_SLOWPOKE_WELL = %d, want 43", eventClearedSlowpokeWell)
 	}
 }
+
+
+func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
+	if johtoBadgeZephyrMask != 1<<0 {
+		t.Fatalf("ENGINE_ZEPHYRBADGE mask = %#02x, want %#02x", johtoBadgeZephyrMask, 1<<0)
+	}
+	if johtoBadgeHiveMask != 1<<1 {
+		t.Fatalf("ENGINE_HIVEBADGE mask = %#02x, want %#02x", johtoBadgeHiveMask, 1<<1)
+	}
+}
