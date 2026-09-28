@@ -46,6 +46,18 @@ func TestRedRouteCapabilitiesProjectSaffronGateOpen(t *testing.T) {
 	}
 }
 
+func TestRedRouteCapabilitiesProjectViridianGymOpen(t *testing.T) {
+	mem := new(state.Mem)
+	if caps := redRouteCapabilities(nil, mem); caps.Has(capCanEnterViridianGym) {
+		t.Fatalf("closed Viridian Gym unexpectedly projected %q: %v", capCanEnterViridianGym, caps)
+	}
+	setSkillTestEvent(mem, state.Event(0x028)) // EVENT_VIRIDIAN_GYM_OPEN
+	caps := redRouteCapabilities(nil, mem)
+	if !caps.Has(capCanEnterViridianGym) {
+		t.Fatalf("EVENT_VIRIDIAN_GYM_OPEN set but %q not projected: %v", capCanEnterViridianGym, caps)
+	}
+}
+
 func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -59,6 +71,7 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 		{"strength", world.Edge{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap}, capCanMoveBoulders},
 		{"saffron border", world.Edge{Kind: world.EdgeConnection, From: semanticSaffronCityMap, To: semanticRoute5Map}, capCanEnterSaffron},
 		{"saffron guardhouse", world.Edge{Kind: world.EdgeWarp, From: route5GateMap, To: semanticRoute5Map, WarpX: 3, WarpY: 5}, capCanEnterSaffron},
+		{"viridian gym door", world.Edge{Kind: world.EdgeWarp, From: semanticViridianCityMap, To: viridianGymMap}, capCanEnterViridianGym},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			transition, ok := redRouteTransitionForEdge(tc.edge)
@@ -72,6 +85,19 @@ func TestRedRouteTransitionsMapRepresentativeGates(t *testing.T) {
 				t.Fatalf("semantic locations not projected: %+v", transition)
 			}
 		})
+	}
+}
+
+func TestRedRouteTransitionViridianGymGateIsForwardOnly(t *testing.T) {
+	forward := world.Edge{Kind: world.EdgeWarp, From: semanticViridianCityMap, To: viridianGymMap}
+	transition, ok := redRouteTransitionForEdge(forward)
+	if !ok || !transition.Gate || transition.ID != "red:viridian_gym_open" {
+		t.Fatalf("forward Viridian Gym edge = %+v, ok=%v; want passive story gate", transition, ok)
+	}
+
+	reverse := world.Edge{Kind: world.EdgeWarp, From: viridianGymMap, To: semanticViridianCityMap}
+	if transition, ok := redRouteTransitionForEdge(reverse); ok {
+		t.Fatalf("reverse Viridian Gym exit unexpectedly gated: %+v", transition)
 	}
 }
 
