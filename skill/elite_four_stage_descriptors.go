@@ -79,11 +79,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLoreleiDefeated
 		},
-		Matchups: []gameruntime.BattleCombatant{
-			leagueMatchup(leagueTypeWater, leagueTypeIce),
-			leagueMatchup(leagueTypeWater, leagueTypePsychic),
-			leagueMatchup(leagueTypeIce, leagueTypePsychic),
-		},
+		Matchups: leagueLoreleiMatchups(),
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               loreleiExitStand,
@@ -105,10 +101,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueBrunoDefeated
 		},
-		Matchups: []gameruntime.BattleCombatant{
-			leagueMatchup(leagueTypeRock, leagueTypeGround),
-			leagueMatchup(leagueTypeFighting, leagueTypeFighting),
-		},
+		Matchups: leagueBrunoMatchups(),
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               brunoExitStand,
@@ -130,10 +123,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueAgathaDefeated
 		},
-		Matchups: []gameruntime.BattleCombatant{
-			leagueMatchup(leagueTypeGhost, leagueTypePoison),
-			leagueMatchup(leagueTypePoison, leagueTypePoison),
-		},
+		Matchups: leagueAgathaMatchups(),
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               agathaExitStand,
@@ -155,11 +145,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueLanceDefeated
 		},
-		Matchups: []gameruntime.BattleCombatant{
-			leagueMatchup(leagueTypeWater, leagueTypeFlying),
-			leagueMatchup(leagueTypeDragon, leagueTypeDragon),
-			leagueMatchup(leagueTypeDragon, leagueTypeFlying),
-		},
+		Matchups: leagueLanceMatchups(),
 		Fight: standardLeagueStageFight,
 		Exit: &leagueStageExit{
 			Stand:               lanceExitStand,
@@ -180,14 +166,7 @@ var leagueBattleStages = []leagueStageDescriptor{
 		Done: func(f state.StoryFacts) bool {
 			return f.LeagueChampionDefeated
 		},
-		Matchups: []gameruntime.BattleCombatant{
-			leagueMatchup(leagueTypeNormal, leagueTypeFlying),
-			leagueMatchup(leagueTypePsychic, leagueTypePsychic),
-			leagueMatchup(leagueTypeRock, leagueTypeGround),
-			leagueMatchup(leagueTypeFire, leagueTypeFlying),
-			leagueMatchup(leagueTypeWater, leagueTypeWater),
-			leagueMatchup(leagueTypeGrass, leagueTypePoison),
-		},
+		Matchups: leagueChampionMatchups(),
 		Fight: championLeagueStageFight,
 	},
 }
