@@ -176,7 +176,6 @@ func TestGen2SecondBadgeTilesetsDecodeCaveAndKurtHouse(t *testing.T) {
 	}
 }
 
-
 func TestGen2IlexCorridorUsesPinnedTilesets(t *testing.T) {
 	for _, name := range []string{"ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY"} {
 		if got, ok := firstBadgeTileset(name); !ok || got != 0x02 {
