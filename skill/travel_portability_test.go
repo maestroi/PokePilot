@@ -2,6 +2,7 @@ package skill
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -83,6 +84,7 @@ func TestPortableTravelFakeGen2WildFleeReplansFromPostEngagementWorld(t *testing
 			fightCalls++
 			return game.BattleWon, nil
 		},
+		func() game.BattleKind { return runtime.battle.Kind },
 		guaranteedWildFleeAttempts,
 	)
 
@@ -129,6 +131,7 @@ func TestPortableTravelFakeGen2TrainerFleeRefusalFallsBackToFight(t *testing.T) 
 			runtime.world = game.OverworldState{NativeMapID: 0x52, X: 4, Y: 4, Controllable: true}
 			return game.BattleWon, nil
 		},
+		func() game.BattleKind { return runtime.battle.Kind },
 		guaranteedWildFleeAttempts,
 	)
 
@@ -151,6 +154,94 @@ func TestPortableTravelFakeGen2TrainerFleeRefusalFallsBackToFight(t *testing.T) 
 	}
 	if len(res.Replans) != 1 || res.Replans[0] != (Replan{Map: 0x52, X: 4, Y: 4}) {
 		t.Fatalf("replans = %+v, want post-fight world", res.Replans)
+	}
+}
+
+func TestPortableTravelFleeMenuStallFallsBackToOwnedBattle(t *testing.T) {
+	mem := fakeTravelMemory{}
+	runtime := &fakeGen2TravelRuntime{
+		world:    game.OverworldState{NativeMapID: 0x01, X: 19, Y: 9, InBattle: true},
+		battle:   game.BattleState{Kind: game.BattleWild},
+		inBattle: true,
+	}
+
+	fightCalls := 0
+	resolve := fleeThenFightWith(
+		func(int) error {
+			return fmt.Errorf("RUN menu never became actionable: %w", ErrMenuStuck)
+		},
+		func() (game.BattleResult, error) {
+			fightCalls++
+			runtime.inBattle = false
+			runtime.world = game.OverworldState{NativeMapID: 0x01, X: 19, Y: 9, Controllable: true}
+			return game.BattleWon, nil
+		},
+		func() game.BattleKind { return runtime.battle.Kind },
+		guaranteedWildFleeAttempts,
+	)
+
+	calls := 0
+	res, err := runInterruptions(nil, 3, func() error {
+		calls++
+		if calls == 1 {
+			return ErrBattle
+		}
+		return nil
+	}, fakeGen2TravelResolvers(mem, runtime, resolve))
+	if err != nil {
+		t.Fatalf("runInterruptions: %v", err)
+	}
+	if fightCalls != 1 {
+		t.Fatalf("fight called %d time(s), want 1 after RUN-menu stall", fightCalls)
+	}
+	if res.Flees != 0 || res.Battles != 1 {
+		t.Fatalf("result = %+v, want one owned fallback fight", res)
+	}
+	if len(res.Replans) != 1 || res.Replans[0] != (Replan{Map: 0x01, X: 19, Y: 9}) {
+		t.Fatalf("replans = %+v, want stable post-fight Viridian world", res.Replans)
+	}
+}
+
+func TestPortableTravelFleeExhaustionFallsBackToFightAndKeepsTrainerKind(t *testing.T) {
+	fightCalls := 0
+	resolve := fleeThenFightWith(
+		func(int) error { return fmt.Errorf("bounded RUN attempts spent: %w", ErrFleeExhausted) },
+		func() (game.BattleResult, error) {
+			fightCalls++
+			return game.BattleLost, nil
+		},
+		func() game.BattleKind { return game.BattleTrainer },
+		guaranteedWildFleeAttempts,
+	)
+
+	got, err := resolve()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if fightCalls != 1 || got.outcome != game.BattleLost || !got.trainer || got.fled {
+		t.Fatalf("resolution = %+v, fight calls=%d; want lost trainer fallback fight", got, fightCalls)
+	}
+}
+
+func TestPortableTravelFleeUnexpectedErrorStillFailsClosed(t *testing.T) {
+	fightCalls := 0
+	want := errors.New("decoder capability missing")
+	resolve := fleeThenFightWith(
+		func(int) error { return want },
+		func() (game.BattleResult, error) {
+			fightCalls++
+			return game.BattleWon, nil
+		},
+		func() game.BattleKind { return game.BattleWild },
+		guaranteedWildFleeAttempts,
+	)
+
+	_, err := resolve()
+	if !errors.Is(err, want) {
+		t.Fatalf("err = %v, want original unexpected failure", err)
+	}
+	if fightCalls != 0 {
+		t.Fatalf("fight called %d time(s), want fail-closed without fallback", fightCalls)
 	}
 }
 
