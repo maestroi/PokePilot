@@ -17,7 +17,7 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 	}
 	y, x, rows, cols, filter := gsMenuCursor(reader)
 	if cols != 1 || rows != byte(count+1) || x != 1 ||
-		y < 1 || int(y) > count || filter != gen2PadA|gen2PadB {
+		y < 1 || int(y) > count+1 || filter != gen2PadA|gen2PadB {
 		return game.PartyMenuState{}
 	}
 	text := gsScreenText(reader)
