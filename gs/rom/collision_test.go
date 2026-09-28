@@ -162,7 +162,7 @@ func TestGen2SecondBadgeTilesetsDecodeCaveAndKurtHouse(t *testing.T) {
 		{name: "SLOWPOKE_WELL_B1F", block: 0x02},
 		{name: "KURTS_HOUSE", block: 0x04},
 		{name: "AZALEA_GYM", block: 0x01},
-		{name: "AZALEA_POKECENTER_1F", block: 0x03},
+		{name: "AZALEA_POKECENTER_1F", block: 0x04},
 	} {
 		mapID := collisionMapID(t, tc.name)
 		blocks := blocksFor(t, mapID, tc.block)
