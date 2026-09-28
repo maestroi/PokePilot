@@ -26,6 +26,16 @@ const (
 	MenuJoypadFilter        uint16 = 0xCEDF // wMenuJoypadFilter
 	MenuCursorY             uint16 = 0xCEE0 // wMenuCursorY
 	MenuCursorX             uint16 = 0xCEE1 // wMenuCursorX
+	BattleMenuCursor        uint16 = 0xCFC4 // wBattleMenuCursorPosition
+	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
+	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
+	PartyMenuCursor         uint16 = 0xCFC9 // wPartyMenuCursor
+	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
+	NumMoves                uint16 = 0xCFE3 // wNumMoves
+	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
+	StateFlags              uint16 = 0xCFE5 // wStateFlags
+	TileMap                 uint16 = 0xC4A0 // wTileMap, 20x18
+	TileMapLen                     = 20 * 18
 	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
 	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
 	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
@@ -64,6 +74,7 @@ const (
 	// Fresh-game / RTC state.
 	Options         uint16 = 0xD199 // wOptions
 	SaveFileExists  uint16 = 0xD19A // wSaveFileExists
+	TextboxFlags    uint16 = 0xD19C // wTextboxFlags
 	PlayerName      uint16 = 0xD1A3 // wPlayerName
 	PlayerNameLen          = 11
 	RivalName       uint16 = 0xD1B9 // wRivalName
@@ -85,8 +96,12 @@ const (
 	PartyMon1    uint16 = 0xDA2A
 	PartyMonSize uint16 = 0x30
 
-	BattleMode   uint16 = 0xD116
-	BattleResult uint16 = 0xCFE9
+	BattleMode            uint16 = 0xD116
+	BattleType            uint16 = 0xD119
+	ForcedSwitch          uint16 = 0xD11C
+	MoveSelectionMenuType uint16 = 0xD11F
+	BattleResult          uint16 = 0xCFE9
+	CurPartyMon           uint16 = 0xD005
 
 	// Live Gen-II battle structs. battle_struct is defined by the pinned
 	// pret/pokegold macros/ram.asm layout: species, item, moves, DVs, PP,

@@ -125,18 +125,16 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
-	resourcesDecoder, err := battleResourcesDecoderFor(m)
-	if err != nil {
-		return 0, fmt.Errorf("skill: Battle: %w", err)
-	}
+	// Resource and party-menu capabilities are optional for the core move-only
+	// battle lane. Profiles that expose them get tactical switching, medicine,
+	// PP recovery and forced-party handling; profiles that do not remain
+	// fail-closed on those optional actions rather than being unable to fight.
+	resourcesDecoder, _ := battleResourcesDecoderFor(m)
 	runtimeDecoder, err := battleRuntimeDecoderFor(m)
 	if err != nil {
 		return 0, fmt.Errorf("skill: Battle: %w", err)
 	}
-	partyDecoder, err := partyMenuDecoderFor(m)
-	if err != nil {
-		return 0, fmt.Errorf("skill: Battle: %w", err)
-	}
+	partyDecoder, _ := partyMenuDecoderFor(m)
 
 	if _, ok := battleDecoder.DecodeBattleState(m); !ok {
 		live := runtimeDecoder.DecodeBattleRuntime(m)
@@ -181,8 +179,14 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 
 		runtime := runtimeDecoder.DecodeBattleRuntime(m)
 		execution := executionDecoder.DecodeBattleExecution(m)
-		resources := resourcesDecoder.DecodeBattleResources(m)
-		partyMenu := partyDecoder.DecodePartyMenu(m)
+		resources := game.BattleResourcesState{}
+		if resourcesDecoder != nil {
+			resources = resourcesDecoder.DecodeBattleResources(m)
+		}
+		partyMenu := game.PartyMenuState{}
+		if partyDecoder != nil {
+			partyMenu = partyDecoder.DecodePartyMenu(m)
+		}
 		bs, inBattle := battleDecoder.DecodeBattleState(m)
 		if inBattle {
 			if p := progressOf(bs); p != lastProgress {
@@ -362,10 +366,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
-			if err := selectFightEntry(m); err != nil {
-				return menuError(m, "select FIGHT", err)
-			}
-			if err := SelectMenuItem(m, 0); err != nil {
+			if err := activateBattleMainMenuEntry(m, game.BattleMenuFight, moveMenuBudget, func() bool {
+				phase := executionDecoder.DecodeBattleExecution(m).Phase
+				return phase == game.BattleExecutionMoveMenu || phase == game.BattleExecutionMoveDisabled
+			}); err != nil {
 				return menuError(m, "select FIGHT", err)
 			}
 
@@ -517,6 +521,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				return 0, fmt.Errorf("skill: Battle: %s: %w", battleRuntimeContext(live), ErrForcedChoiceStuck)
 			}
 			if forcedChoiceVisits == 1 {
+				if resourcesDecoder == nil {
+					m.Tap(emu.B, 3, 7)
+					continue
+				}
 				slot := resourcesDecoder.DecodeBattleResources(m).FirstLivePartySlot()
 				if slot < 0 {
 					m.StepFrame()
