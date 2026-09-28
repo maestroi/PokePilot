@@ -12,7 +12,7 @@ import (
 // ReplayTimelineVersion versions the derived semantic replay sidecar. It is
 // independent of RenderState.SchemaVersion so the compact storage format can
 // evolve without changing the live renderer wire contract.
-const ReplayTimelineVersion = 1
+const ReplayTimelineVersion = 2
 
 // ReplayTimeline is a seekable, derived presentation artifact generated from a
 // deterministic recording. Layer grids are deduplicated because they dominate

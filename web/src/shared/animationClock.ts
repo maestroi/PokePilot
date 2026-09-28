@@ -7,6 +7,7 @@ export type AnimationDiscontinuity =
   | 'teleport'
   | 'reconnect'
   | 'rewind'
+  | 'epoch-change'
 
 export interface AnimationClockOptions {
   minTweenMs?: number
@@ -23,6 +24,7 @@ export interface PresentationSample {
   entityPositions: Map<string, RenderPosition>
   animating: boolean
   discontinuity: AnimationDiscontinuity
+  sourceEpoch: number
   sourceFrame: number
   sourceCapturedAtUnixMS?: number
 }
@@ -118,6 +120,7 @@ export class PresentationClock {
   private readonly entityTeleportDistanceTiles: number
 
   private mapID = ''
+  private sourceEpoch = 0
   private sourceFrame = -1
   private sourceCapturedAtUnixMS: number | undefined
   private lastReceivedAt = Number.NaN
@@ -140,6 +143,7 @@ export class PresentationClock {
 
   reset(): void {
     this.mapID = ''
+    this.sourceEpoch = 0
     this.sourceFrame = -1
     this.sourceCapturedAtUnixMS = undefined
     this.lastReceivedAt = Number.NaN
@@ -157,6 +161,7 @@ export class PresentationClock {
       return this.discontinuity
     }
 
+    const epoch = Number(state.clock.epoch || 0)
     const frame = Number(state.clock.frame || 0)
     const target = authoritativePosition(player)
     const receivedAt = Number.isFinite(receivedAtMs) ? receivedAtMs : 0
@@ -168,7 +173,8 @@ export class PresentationClock {
 
     const arrivalGap = Math.max(0, receivedAt - this.lastReceivedAt)
     let discontinuity: AnimationDiscontinuity = 'none'
-    if (frame < this.sourceFrame) discontinuity = 'rewind'
+    if (epoch !== this.sourceEpoch) discontinuity = 'epoch-change'
+    else if (frame < this.sourceFrame) discontinuity = 'rewind'
     else if (mapID !== this.mapID) discontinuity = 'map-change'
     else if (arrivalGap > this.reconnectGapMs) discontinuity = 'reconnect'
     else {
@@ -205,6 +211,7 @@ export class PresentationClock {
     this.retargetEntities(state.entities || [], receivedAt, durationMs)
 
     this.mapID = mapID
+    this.sourceEpoch = epoch
     this.sourceFrame = frame
     this.sourceCapturedAtUnixMS = state.clock.captured_at_unix_ms
     this.lastReceivedAt = receivedAt
@@ -229,6 +236,7 @@ export class PresentationClock {
       entityPositions,
       animating,
       discontinuity: this.discontinuity,
+      sourceEpoch: this.sourceEpoch,
       sourceFrame: Math.max(0, this.sourceFrame),
       sourceCapturedAtUnixMS: this.sourceCapturedAtUnixMS
     }
@@ -262,6 +270,7 @@ export class PresentationClock {
       this.entityTweens.set(actorKey(actor, index), this.makeTween(target, target, receivedAt, 0))
     }
     this.mapID = state.map?.id || ''
+    this.sourceEpoch = Number(state.clock.epoch || 0)
     this.sourceFrame = Number(state.clock.frame || 0)
     this.sourceCapturedAtUnixMS = state.clock.captured_at_unix_ms
     this.lastReceivedAt = receivedAt

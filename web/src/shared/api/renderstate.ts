@@ -119,6 +119,7 @@ export interface RenderState {
     revision: string
   }
   clock: {
+    epoch?: number
     frame: number
     cycle?: number
     captured_at_unix_ms?: number

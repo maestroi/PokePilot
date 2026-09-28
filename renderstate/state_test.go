@@ -13,6 +13,7 @@ func TestFromProfileObservationBuildsRepresentativeOverworldState(t *testing.T) 
 	state := FromProfileObservation(FrameMeta{
 		GameID:           game.GameID("pokemon-red"),
 		Revision:         game.RevisionID("en-us-rev0"),
+		Epoch:            9,
 		Frame:            1234,
 		Cycle:            5678,
 		CapturedAtUnixMS: 1_800_000_000_000,
@@ -37,7 +38,7 @@ func TestFromProfileObservationBuildsRepresentativeOverworldState(t *testing.T) 
 	if state.Game.ID != "pokemon-red" || state.Game.Revision != "en-us-rev0" {
 		t.Fatalf("game=%+v", state.Game)
 	}
-	if state.Clock.Frame != 1234 || state.Clock.Cycle != 5678 {
+	if state.Clock.Epoch != 9 || state.Clock.Frame != 1234 || state.Clock.Cycle != 5678 {
 		t.Fatalf("clock=%+v", state.Clock)
 	}
 	if state.Map == nil || state.Map.ID != "pallet town" || state.Map.Name != "PALLET_TOWN" {
@@ -100,7 +101,7 @@ func TestJSONRoundTripPreservesSchemaAndSemanticLayers(t *testing.T) {
 	state := RenderState{
 		SchemaVersion: SchemaVersion,
 		Game:          GameRef{ID: "pokemon-red", Revision: "en-us-rev0"},
-		Clock:         Clock{Frame: 99, Cycle: 1200},
+		Clock:         Clock{Epoch: 3, Frame: 99, Cycle: 1200},
 		Scene:         SceneOverworld,
 		Capabilities:  []Capability{CapabilityMap, CapabilityPlayer, CapabilityLayers, CapabilityEntities},
 		Map:           &MapState{ID: "viridian city", Name: "VIRIDIAN_CITY", Width: 2, Height: 1},
@@ -124,7 +125,7 @@ func TestJSONRoundTripPreservesSchemaAndSemanticLayers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SchemaVersion != SchemaVersion || got.Scene != SceneOverworld || got.Clock.Frame != 99 {
+	if got.SchemaVersion != SchemaVersion || got.Scene != SceneOverworld || got.Clock.Epoch != 3 || got.Clock.Frame != 99 {
 		t.Fatalf("got=%+v", got)
 	}
 	if len(got.Layers) != 1 || len(got.Layers[0].Cells) != 2 || got.Layers[0].Cells[1].Kind != TileGrass {

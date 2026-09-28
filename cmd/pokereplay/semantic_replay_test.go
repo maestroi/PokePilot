@@ -21,7 +21,7 @@ func TestSemanticReplayCacheKeyTracksRecordingSet(t *testing.T) {
 		},
 	}}
 	first := semanticReplayCacheKey("run-1", recordings)
-	if !strings.HasPrefix(first, "runs/run-1/attempt-1/semantic-replay-v1-") || !strings.HasSuffix(first, ".json") {
+	if !strings.HasPrefix(first, "runs/run-1/attempt-1/semantic-replay-v2-") || !strings.HasSuffix(first, ".json") {
 		t.Fatalf("semantic cache key = %q", first)
 	}
 	recordings[0].Artifact.SHA256 = strings.Repeat("b", 64)
@@ -47,7 +47,7 @@ func TestReplaySemanticEndpointServesCachedTimeline(t *testing.T) {
 		Replayable: true,
 	}
 	key := semanticReplayCacheKey("run-semantic", []replayRecording{{Attempt: 1, Artifact: recording}})
-	const payload = `{"version":1,"schema_version":1,"frames_per_second":59.7275,"duration_ms":0,"samples":[]}`
+	const payload = `{"version":2,"schema_version":1,"frames_per_second":59.7275,"duration_ms":0,"samples":[]}`
 
 	s3srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/pokepilot/"+key {

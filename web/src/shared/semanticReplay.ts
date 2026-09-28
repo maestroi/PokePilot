@@ -1,6 +1,6 @@
 import type { RenderState, RenderTileLayer } from './api/renderstate'
 
-export const SEMANTIC_REPLAY_VERSION = 1
+export const SEMANTIC_REPLAY_VERSION = 2
 
 export interface SemanticReplaySample {
   at_ms: number

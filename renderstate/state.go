@@ -125,6 +125,7 @@ type GameRef struct {
 // Clock carries authoritative emulator time plus an optional capture timestamp.
 // CapturedAtUnixMS is presentation metadata, not a gameplay time source.
 type Clock struct {
+	Epoch            uint64 `json:"epoch,omitempty"`
 	Frame            uint64 `json:"frame"`
 	Cycle            uint64 `json:"cycle,omitempty"`
 	CapturedAtUnixMS int64  `json:"captured_at_unix_ms,omitempty"`
@@ -303,6 +304,7 @@ type RenderState struct {
 type FrameMeta struct {
 	GameID           game.GameID
 	Revision         game.RevisionID
+	Epoch            uint64
 	Frame            uint64
 	Cycle            uint64
 	CapturedAtUnixMS int64
@@ -356,6 +358,7 @@ func FromProfileObservation(meta FrameMeta, obs game.ProfileObservation) RenderS
 			Revision: meta.Revision,
 		},
 		Clock: Clock{
+			Epoch:            meta.Epoch,
 			Frame:            meta.Frame,
 			Cycle:            meta.Cycle,
 			CapturedAtUnixMS: meta.CapturedAtUnixMS,

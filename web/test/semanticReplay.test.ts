@@ -16,7 +16,7 @@ function state(frame: number, x: number) {
 
 test('semantic replay seeks without replaying earlier samples', () => {
   const timeline = parseSemanticReplay({
-    version: 1,
+    version: 2,
     schema_version: 1,
     frames_per_second: 59.7275,
     duration_ms: 300,
@@ -39,7 +39,7 @@ test('semantic replay seeks without replaying earlier samples', () => {
 
 test('semantic replay parser rejects broken ordering and layer references', () => {
   assert.throws(() => parseSemanticReplay({
-    version: 1, schema_version: 1, frames_per_second: 60, duration_ms: 100,
+    version: 2, schema_version: 1, frames_per_second: 60, duration_ms: 100,
     samples: [
       { at_ms: 50, state: state(1, 0) },
       { at_ms: 40, state: state(2, 1) }
@@ -47,7 +47,7 @@ test('semantic replay parser rejects broken ordering and layer references', () =
   }), /invalid time/)
 
   assert.throws(() => parseSemanticReplay({
-    version: 1, schema_version: 1, frames_per_second: 60, duration_ms: 100,
+    version: 2, schema_version: 1, frames_per_second: 60, duration_ms: 100,
     layer_sets: [],
     samples: [{ at_ms: 0, layer_set: 1, state: state(1, 0) }]
   }), /invalid layer set/)
