@@ -61,14 +61,46 @@ func fleeControllersFor(m *emu.Emu) (fleeControllers, error) {
 	}, nil
 }
 
-func waitFleeMenuWithControllers(m *emu.Emu, controllers fleeControllers) (game.BattleEscapeMenuKind, error) {
+// fleeMenuWait is the outcome of waiting for a battle's RUN menu. Kind names
+// the RUN-capable menu once it is rendered; BattleOver reports that the
+// encounter resolved before any RUN menu appeared, which is the only other way
+// the wait can end.
+type fleeMenuWait struct {
+	Kind       game.BattleEscapeMenuKind
+	BattleOver bool
+}
+
+// fleeWaitMachine is the execution surface a RUN-menu wait needs: the generic
+// menu machine plus the frame counter its budget is measured in.
+type fleeWaitMachine interface {
+	menuMachine
+	FrameCount() uint64
+}
+
+// waitFleeMenuWithControllers waits for the RUN-capable menu of a live battle.
+// The battle ending is part of the exit condition because a menu belongs to
+// its battle: Gen I's scripted encounters (the Old Man's catch demo, Prof.
+// Oak's Pikachu) resolve themselves without ever offering the player a RUN
+// menu, and their command menu is drawn with a stale wMaxMenuItem, so the
+// escape decoder deliberately does not recognize it — recognizing it would
+// only drive a cursor the ROM is steering itself (triage:cfe63dc059a15aa5).
+// Waiting instead for a menu that cannot come spent all 3000 frames of
+// run-1wsyy1f75ssxsheu3o4xpui4 and then failed a Flee whose battle had already
+// ended 1000 frames into the wait.
+func waitFleeMenuWithControllers(m fleeWaitMachine, controllers fleeControllers) (fleeMenuWait, error) {
 	start := m.FrameCount()
 	for {
+		if !controllers.runtime.DecodeBattleRuntime(m).InBattle {
+			return fleeMenuWait{BattleOver: true}, nil
+		}
 		if live := controllers.escape.DecodeBattleEscapeMenu(m); live.Visible {
-			return live.Kind, nil
+			return fleeMenuWait{Kind: live.Kind}, nil
 		}
 		if int(m.FrameCount()-start) > bagMainMenuBudget {
-			return "", fmt.Errorf("skill: Flee: battle RUN menu did not open within %d frames", bagMainMenuBudget)
+			return fleeMenuWait{}, fmt.Errorf(
+				"skill: Flee: battle RUN menu did not open within %d frames: %w",
+				bagMainMenuBudget, ErrMenuStuck,
+			)
 		}
 
 		execution := controllers.execution.DecodeBattleExecution(m)
@@ -84,7 +116,9 @@ func waitFleeMenuWithControllers(m *emu.Emu, controllers fleeControllers) (game.
 // Flee attempts to escape a battle through the active profile's semantic RUN
 // menu. Failed wild escapes are retried up to attempts times. Success is
 // positive: the profile must report the battle ended and settleAfterBattle
-// must observe a stable controllable overworld boundary.
+// must observe a stable controllable overworld boundary. A battle that
+// resolves itself before it offers a RUN menu is the same success, because the
+// encounter's end is what the caller asked for, not the RUN press.
 func Flee(m *emu.Emu, attempts int) error {
 	if attempts <= 0 {
 		return fmt.Errorf("skill: Flee: attempts must be > 0, got %d", attempts)
@@ -119,8 +153,14 @@ const (
 )
 
 func fleeOneAttempt(m *emu.Emu, controllers fleeControllers) (fleeOutcome, error) {
-	if _, err := waitFleeMenuWithControllers(m, controllers); err != nil {
+	wait, err := waitFleeMenuWithControllers(m, controllers)
+	if err != nil {
 		return 0, err
+	}
+	if wait.BattleOver {
+		// No RUN decision ever existed; the encounter is already over, so the
+		// remaining obligation is the settled overworld boundary.
+		return fleeSucceeded, settleAfterBattle(m, controllers.runtime)
 	}
 	if err := selectBattleEscapeRunWithDecoder(m, controllers.escape); err != nil {
 		return 0, fmt.Errorf("skill: Flee: select RUN: %w", err)
