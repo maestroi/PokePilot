@@ -533,8 +533,8 @@ func validateSpec(gameID, planner, starter, dest string) error {
 		if starter != "" {
 			return fmt.Errorf("boxxle does not use a starter, got %q", starter)
 		}
-		if planner != "launch" {
-			return fmt.Errorf("boxxle uses planner %q; got %q", "launch", planner)
+		if planner != "launch" && planner != "policy" {
+			return fmt.Errorf("boxxle uses planner %q or %q; got %q", "launch", "policy", planner)
 		}
 		return nil
 	}
@@ -701,7 +701,11 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 			detail = "runner shutdown requested; stopped at safe objective boundary"
 		}
 	case "policy":
-		reason, detail = runFarmTetris(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+		if isBoxxle {
+			reason, detail = runFarmBoxxlePlay(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+		} else {
+			reason, detail = runFarmTetris(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+		}
 		if farmDrainRequested(drain) && reason == "cancelled" {
 			reason = "drained"
 			detail = "runner shutdown requested; " + detail

@@ -4,16 +4,22 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/boxxle/profile"
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 )
 
-// fakeMachine is the smallest Machine: it counts frames and records whether
-// any input hook was touched (there is none in this interface, so the point is
-// that Boot only steps frames).
+// fakeMachine is the smallest Machine: it counts frames and satisfies the
+// controller's input and memory surface with no-ops, so Boot and Run can be
+// exercised without a real emulator.
 type fakeMachine struct{ frames uint64 }
 
 func (f *fakeMachine) FrameCount() uint64 { return f.frames }
 func (f *fakeMachine) StepFrame()         { f.frames++ }
+func (f *fakeMachine) Peek8(uint16) byte  { return 0 }
+func (f *fakeMachine) PeekInto(uint16, []byte) {
+}
+func (f *fakeMachine) Press(emu.Button)   {}
+func (f *fakeMachine) Release(emu.Button) {}
 
 func TestBootStepsTheSettleBudget(t *testing.T) {
 	m := &fakeMachine{}
