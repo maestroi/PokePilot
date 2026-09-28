@@ -107,12 +107,15 @@ func redCutFieldUnlocked(obs Observation) bool {
 	return ok && cut.BadgeOwned && cut.HMOwned
 }
 
-// redFlyFieldUnlocked is the recovery half of Fly progression. Once HM02 is
-// in the bag, a failed/paused preparation transaction must remain offerable
-// even if it stopped outside the geographic Celadon-ready checkpoint.
-func redFlyFieldUnlocked(obs Observation) bool {
+// redFlyPreparationAvailable decides whether the optional Fly optimization is
+// still worth putting in the ordinary progression menu after HM02 is owned.
+// Fly is not a correctness gate. Once the handoff has happened, an unusable
+// HM should not trigger PC/catch/gift roster surgery just to preserve a speed
+// optimization: offer it again only if the current party can prepare Fly. A
+// later natural party change makes Preparable true and re-enables the option.
+func redFlyPreparationAvailable(obs Observation) bool {
 	fly, ok := observedFieldCapability(obs, "fly")
-	return ok && fly.BadgeOwned && fly.HMOwned
+	return ok && fly.BadgeOwned && fly.HMOwned && (fly.Usable || fly.Preparable)
 }
 
 // redProgressionObjectives exposes Red story opportunities as one portable
@@ -216,12 +219,16 @@ func redProgressionObjectives(obs Observation) []Objective {
 		// Fly alongside the mandatory story step instead of replacing it.
 		if !obs.Story.Has(redProgressFlyReady) &&
 			((obs.Story.Has(redProgressPostSurgeCeladonReady) &&
-				obs.Story.Has(redProgressPokeFluteAcquired)) ||
-				redFlyFieldUnlocked(obs)) {
+				obs.Story.Has(redProgressPokeFluteAcquired) &&
+				func() bool {
+					fly, ok := observedFieldCapability(obs, "fly")
+					return !ok || !fly.HMOwned
+				}()) ||
+				redFlyPreparationAvailable(obs)) {
 			out = append(out, Objective{
 				Kind:     KindProgress,
 				Progress: redProgressFlyReady,
-				Note:     "(optional fast-travel setup: use the declared Cut/Fly prerequisites around the Route 16 HM02 handoff; skip this optimization if roster recovery is not worthwhile)",
+				Note:     "(optional fast-travel setup: collect HM02 while the Route 16 round trip is safe; after the handoff, keep this optimization only when the current party can prepare Fly)",
 			})
 		}
 	}
