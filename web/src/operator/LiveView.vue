@@ -3,8 +3,8 @@ import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
 import { computed, ref, watch } from 'vue'
 import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
-import { cancelRun, cloneRun, forceEndWorker, getDashboard, getRun, pauseRun, resumeRun } from '../shared/api/client'
-import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon } from '../shared/api/types'
+import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, resumeProgramming, resumeRun } from '../shared/api/client'
+import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
 import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
@@ -86,6 +86,13 @@ const spectatorResource = usePollingResource(
   (signal) => getSpectatorControl(signal),
   { intervalMs: 5000 }
 )
+
+const programmingResource = usePollingResource(
+  (signal) => getProgramming(signal),
+  { intervalMs: 2000 }
+)
+const programmingBusy = ref('')
+const programmingError = ref('')
 
 const activeRuns = computed(() => [...(activeResource.data.value?.runs ?? [])]
   .filter((run) => run.status !== 'done')
@@ -383,6 +390,7 @@ function refresh(): void {
   void activeResource.retry()
   void recentResource.retry()
   void spectatorResource.retry()
+  void programmingResource.retry()
 }
 
 async function pauseSelected(): Promise<void> {
@@ -500,6 +508,35 @@ async function copyRunID(): Promise<void> {
   window.setTimeout(() => { copyState.value = '' }, 1500)
 }
 
+async function toggleProgrammingPause(): Promise<void> {
+  if (programmingBusy.value) return
+  programmingBusy.value = 'pause'
+  programmingError.value = ''
+  try {
+    if (programmingResource.data.value?.paused) await resumeProgramming()
+    else await pauseProgramming()
+    await programmingResource.retry()
+  } catch (cause) {
+    programmingError.value = cause instanceof Error ? cause.message : 'Programming update failed'
+  } finally {
+    programmingBusy.value = ''
+  }
+}
+
+async function actOnProgramming(entry: ProgrammingEntry, action: 'skip' | 'cancel' | 'retry'): Promise<void> {
+  if (programmingBusy.value) return
+  programmingBusy.value = entry.id + action
+  programmingError.value = ''
+  try {
+    await programmingEntryAction(entry.id, action)
+    await Promise.all([programmingResource.retry(), activeResource.retry()])
+  } catch (cause) {
+    programmingError.value = cause instanceof Error ? cause.message : 'Programming action failed'
+  } finally {
+    programmingBusy.value = ''
+  }
+}
+
 function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
   if (key === 'repeat picks') return Number(stats?.rounds || 0) > 3 && statNumber(stats, 'repeats') * 2 >= Number(stats?.rounds || 0)
   if (key === 'rejected' || key === 'transport' || key === 'fallbacks') return statNumber(stats, key) > 0
@@ -519,6 +556,47 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
         <ArrowPathIcon class="size-3.5" aria-hidden="true" /> Retry now
       </button>
     </template>
+
+    <section v-if="programmingResource.data.value" class="mb-2 grid gap-2 border border-[var(--poke-border)] bg-[#101620] p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div>
+        <div class="poke-kicker">Live now</div>
+        <div class="mt-1 text-[13px] font-semibold text-white">
+          {{ programmingResource.data.value.live_now?.challenge_name || 'No programmed challenge live' }}
+        </div>
+        <div v-if="programmingResource.data.value.live_now" class="mt-0.5 text-[10px] text-[var(--poke-muted)]">
+          {{ programmingResource.data.value.live_now.challenge_id }} · v{{ programmingResource.data.value.live_now.challenge_version }}
+        </div>
+      </div>
+      <div>
+        <div class="poke-kicker">Up next</div>
+        <div class="mt-1 text-[13px] font-semibold text-white">
+          {{ programmingResource.data.value.up_next?.challenge_name || 'Queue empty' }}
+        </div>
+        <div v-if="programmingResource.data.value.up_next" class="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--poke-muted)]">
+          <span>{{ programmingResource.data.value.up_next.challenge_id }} · v{{ programmingResource.data.value.up_next.challenge_version }}</span>
+          <button
+            v-if="programmingResource.data.value.up_next.state === 'blocked' || programmingResource.data.value.up_next.state === 'failed'"
+            type="button"
+            class="text-[var(--poke-cyan)] hover:text-white"
+            @click="actOnProgramming(programmingResource.data.value.up_next, 'retry')"
+          >Retry</button>
+          <button
+            v-else
+            type="button"
+            class="text-[var(--poke-muted)] hover:text-white"
+            @click="actOnProgramming(programmingResource.data.value.up_next, 'skip')"
+          >Skip</button>
+        </div>
+      </div>
+      <div class="flex items-center justify-end">
+        <button type="button" class="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="toggleProgrammingPause">
+          <PlayIcon v-if="programmingResource.data.value.paused" class="size-3.5" aria-hidden="true" />
+          <PauseIcon v-else class="size-3.5" aria-hidden="true" />
+          {{ programmingResource.data.value.paused ? 'Resume queue' : 'Pause queue' }}
+        </button>
+      </div>
+      <p v-if="programmingError" class="text-[11px] text-red-300 sm:col-span-3">{{ programmingError }}</p>
+    </section>
 
     <div v-if="selectedRun" class="grid grid-cols-1 gap-2 xl:grid-cols-[13.125rem_minmax(0,1fr)]">
       <aside class="overflow-hidden border border-[var(--poke-border)] bg-[#101620] xl:sticky xl:top-12 xl:h-[calc(100vh-3.5rem)]">
