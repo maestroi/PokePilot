@@ -154,24 +154,27 @@ func bestSequenceLeadSlotWithStrategy(
 		}
 		var total int64
 		var representative switchEvaluation
-		valid := 0
+		effective := 0
 		for _, defender := range currentOpponents {
 			eval := evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender)
 			if eval.BestMoveSlot < 0 || eval.BestMove.ExpectedScore <= 0 {
 				continue
 			}
 			total += eval.Score
-			valid++
+			effective++
 			if representative.BestMoveSlot < 0 || betterSwitchEvaluation(eval, representative) {
 				representative = eval
 			}
 		}
-		if valid == 0 {
+		if effective == 0 {
 			continue
 		}
 		representative.FutureValue = futureValues[slot]
-		// Average keeps stages with several representative types comparable.
-		representative.Score = total / int64(valid)
+		// Average over the whole matchup envelope, including archetypes this
+		// member cannot currently damage. Otherwise a narrow specialist looks
+		// artificially perfect because its bad matchups disappear from the
+		// denominator.
+		representative.Score = total / int64(len(currentOpponents))
 		score := sequenceSwitchScore(representative)
 		if bestSlot < 0 || score > bestScore ||
 			(score == bestScore && betterSequenceSwitchEvaluation(representative, best)) {
