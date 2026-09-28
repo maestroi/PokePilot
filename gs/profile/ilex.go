@@ -11,9 +11,9 @@ const ilexFarfetchdPosition1Event uint16 = 1769
 // events; keeping that encoding here prevents the agent from depending on
 // event ids or object slots.
 type IlexState struct {
-	Herded    bool
-	Position  int
-	HM01Cut   bool
+	Herded   bool
+	Position int
+	HM01Cut  bool
 }
 
 // DecodeIlexState reports the currently visible Farfetch'd position while the
