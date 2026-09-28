@@ -216,6 +216,106 @@ exit 0
 	}
 }
 
+// A worker node that is Down (or a manager the manager cannot reach) keeps
+// reporting its tasks as Running at their old image forever: Swarm has no agent
+// left to stop them. Counting those tasks as stale made every two-minute timer
+// tick force-roll the whole runner fleet, which restarted runners and destroyed
+// their in-flight runs indefinitely — a rollout that can never converge. They
+// must be ignored, while a genuinely stale task on a reachable node still rolls.
+func TestRolloutLatestIgnoresTasksOnNodesSwarmCannotActOn(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+
+if [ "$1" = "node" ] && [ "$2" = "ls" ]; then
+	echo 'vm-swarm-worker-02|Ready|'
+	echo 'vm-swarm-worker-04|Ready|Unreachable'
+	echo 'vm-swarm-worker-05|Down|'
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	# litellm is absent, so the script skips its config reconciliation entirely.
+	if [ "$3" = "pokefarm_litellm" ]; then
+		exit 1
+	fi
+	case "$*" in
+	*Spec.TaskTemplate.ContainerSpec.Image*) echo 'ghcr.io/maestroi/pokepilot@sha256:new' ;;
+	*UpdateStatus*) echo 'completed' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
+	svc="${!#}"
+	case "$svc" in
+	pokefarm_runner)
+		# Three tasks stranded on a Down node and one on an unreachable manager,
+		# all at the old digest, plus one healthy current task.
+		echo 'Running 4 hours ago|ghcr.io/maestroi/pokepilot@sha256:old|vm-swarm-worker-05'
+		echo 'Running 4 hours ago|ghcr.io/maestroi/pokepilot@sha256:old|vm-swarm-worker-05'
+		echo 'Running 4 hours ago|ghcr.io/maestroi/pokepilot@sha256:old|vm-swarm-worker-05'
+		echo 'Running 4 hours ago|ghcr.io/maestroi/pokepilot@sha256:old|vm-swarm-worker-04'
+		echo 'Running 1 minute ago|ghcr.io/maestroi/pokepilot@sha256:new|vm-swarm-worker-02'
+		;;
+	pokefarm_ui)
+		# A genuinely stale task on a reachable node is still a stuck rollout.
+		echo 'Running 5 minutes ago|ghcr.io/maestroi/pokepilot@sha256:old|vm-swarm-worker-02'
+		;;
+	*)
+		echo 'Running 1 minute ago|ghcr.io/maestroi/pokepilot@sha256:new|vm-swarm-worker-02'
+		;;
+	esac
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "update" ]; then
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+
+	// Positive postcondition: the four tasks the manager cannot stop are
+	// reported as stranded, not stale, so the healthy runner fleet is left alone.
+	for _, want := range []string{
+		"pokefarm_runner has 4 Running task(s) on node(s) Swarm cannot act on; not counting them as stale",
+		"pokefarm_runner already sha256:new (1 running task(s))",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker log: %v", err)
+	}
+	logText := string(logData)
+	if strings.Contains(logText, "--force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new pokefarm_runner") {
+		t.Fatalf("runner was force-rolled for tasks Swarm cannot stop:\n%s", logText)
+	}
+	// The other half: a stale task on a reachable node still forces a roll.
+	if !strings.Contains(string(out), "pokefarm_ui spec is sha256:new but 1/1 Running task(s) are stale; force-roll") {
+		t.Fatalf("a reachable stale task no longer rolls:\n%s", out)
+	}
+	if !strings.Contains(logText, "--force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new pokefarm_ui") {
+		t.Fatalf("ui was not force-rolled for a reachable stale task:\n%s", logText)
+	}
+}
+
 func TestFarmImageCarriesRolloutBundle(t *testing.T) {
 	data, err := os.ReadFile("Dockerfile")
 	if err != nil {

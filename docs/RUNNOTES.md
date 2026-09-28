@@ -2510,3 +2510,80 @@ with two 21-22s outliers).
 
 **Verified:** `go build ./...` and `go test ./agent ./skill -short -count=1`
 pass unchanged — this task measured, no code modified.
+
+## Farm: the two-minute force-roll loop — a dead node pinned the rollout
+
+**MEASURED 2026-09-28** on the production farm. Reported as "why is
+run-1j4vmwj76s6854l5gpaqen6nm restarting all the time": 61 attempts and 41
+recoveries in ~70 minutes, 32 of them `no heartbeat for 30-35s` and 9
+`drained: runner shutdown requested`, badges still 0.
+
+This is the class S10-1 recorded as "6 of 79 runs ended 'no heartbeat for
+31-33s' ... the reaper doing its job on dead or wedged runner tasks (Swarm
+restart churn), not a planner bug". The churn was real, and it was not benign:
+the runner fleet was being force-rolled every two minutes, forever.
+
+### The loop
+
+- `vm-swarm-worker-05` (192.168.50.68) was **Down** (it did not even ping), and
+  four services still had `Running 4 hours ago` tasks pinned to it at the
+  previous image digest `sha256:0d166c80`: 3 × `pokefarm_runner`, 1 × `ui`,
+  1 × `linkbroker`, 1 × `virtualtrader`. Swarm has no agent left to stop them.
+- `pokefarm-pull.timer` (`OnUnitInactiveSec=2min`) pulls `:latest` (unchanged
+  digest) and runs `deploy/rollout-latest.sh` on the manager.
+- That script counted *any* `Running` task whose image differed from the wanted
+  digest as stale. The stranded tasks can never be replaced, so `stale_running`
+  was permanently 3 and every tick took the force-roll branch:
+  `pokefarm_runner spec is sha256:432112db… but 3/13 Running task(s) are stale;
+  force-roll` → `updated 4 service(s)`, tick after tick.
+- A 10-replica roll with `Parallelism: 1, Order: stop-first, Monitor: 5s` takes
+  ~96 s (`UpdateStatus` 14:10:52 → 14:12:28 UTC) against a 120 s timer, so the
+  fleet never rested: 4-7 runner task creations per minute, every slot restarted
+  every ~2 minutes, service `ForceUpdate` at 82.
+- Each roll SIGTERMs the runner holding the run. It drains when it can
+  (`farm: runner drain requested while idle; stopping lease loop`), and is
+  SIGKILLed when it cannot — the live service had the Swarm default
+  `StopGracePeriod: 10s`. Either way the wall requeues: `drained` and `lost` are
+  both recoverable for an `endless` run on the `resilient` profile, and the
+  reaper's window is `defaultStaleExpiry = 30s` (`cmd/pokewall/wall.go`).
+- The kills landed mid-objective, so checkpoints were often missing:
+  `attempt 59 expected to resume but is starting from a fresh cartridge (no
+  checkpoint found)`. That attempt was back at "take the charmander starter" at
+  frame 6,405 while the wall still credited 17 maps, so the campaign replayed
+  its opening instead of continuing.
+
+### The fix
+
+`deploy/rollout-latest.sh` now builds the set of nodes the manager cannot act on
+(`Status != Ready`, or an unreachable manager) and does not count their tasks as
+stale; it reports them instead (`has N Running task(s) on node(s) Swarm cannot
+act on`). A stale task on a reachable node still forces a roll — that is the
+case the check exists for.
+
+Ops: `docker node rm vm-swarm-worker-05` (already down). The next tick printed
+`already current (sha256:432112db…)`, and churn stopped: after one legitimate
+roll of a newly published digest, the 16:26 tick read `pokefarm_runner already
+sha256:4889989… (10 running task(s))` and task creation went quiet.
+
+### Verification
+
+- New `deploy` test `TestRolloutLatestIgnoresTasksOnNodesSwarmCannotActOn`
+  fixtures 3 tasks on a Down node and 1 on an unreachable manager at the old
+  digest, asserts the runner is *not* force-rolled, and asserts a stale task on
+  a reachable node (ui) still is. Run against `origin/main`'s pre-fix copy it
+  fails with `5/5 Running task(s) are stale; force-roll`; it passes after.
+- `go vet ./...` clean, `gofmt` clean. `POKEMON_RED_ROM= go test -short
+  -count=1 ./...` green with `POKEPILOT_S3_*` unset: the session's partial S3
+  environment (endpoint and bucket set, access/secret keys missing) fails
+  `cmd/pokewall`'s `TestDurabilizeFinishReportKeepsSmallFinalFrameInline` with
+  `artifactstore: POKEPILOT_S3_ACCESS_KEY is required` before any change.
+
+### Left as-is (measured, not fixed)
+
+The same image-only rollout means `farm.yml` changes never reach a running
+stack: the timer only ever runs `docker service update --image`, never
+`docker stack deploy`. The live runner therefore had `StopGracePeriod: 10s`
+instead of `farm.yml`'s `stop_grace_period: 6m` (the #1933 fix) and
+`replicas: 10` instead of the file's `replicas: 2`. That is why the kills
+surfaced as heartbeat losses rather than clean drains. Reconciling the stack
+spec from the image bundle is a deployment-design change, not part of this fix.
