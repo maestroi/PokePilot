@@ -17,7 +17,7 @@ import {
   TrophyIcon,
   UserGroupIcon
 } from '@heroicons/vue/20/solid'
-import { getSpectatorSnapshot } from '../shared/api/spectator-client'
+import { getSpectatorProgramming, getSpectatorSnapshot } from '../shared/api/spectator-client'
 import type { SpectatorDecisionRecord, SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import BadgeIcon from '../shared/components/BadgeIcon.vue'
@@ -95,6 +95,11 @@ const {
     intervalMs: 2000,
     isEmpty: (value) => value.runs.length === 0
   }
+)
+
+const { data: programming } = usePollingResource(
+  (signal) => getSpectatorProgramming(signal),
+  { intervalMs: 3000 }
 )
 
 const runs = computed(() => snapshot.value?.runs ?? [])
@@ -675,6 +680,7 @@ function activityTimeAgo(item: ActivityItem): string {
     <template #summary>
       <template v-if="snapshot">
         <span><strong class="text-white">{{ snapshot.summary.live }}</strong> live run{{ snapshot.summary.live === 1 ? '' : 's' }}</span>
+        <span v-if="programming?.up_next"><strong class="text-white">Up next:</strong> {{ programming.up_next.challenge_name }}</span>
       </template>
     </template>
 
@@ -802,10 +808,20 @@ function activityTimeAgo(item: ActivityItem): string {
         </div>
         <h2 class="mt-5 text-xl font-semibold text-white">No run is broadcasting right now</h2>
         <p class="mt-2 text-sm leading-6 text-slate-400">Spectator mode is connected. It will automatically switch to the next live run when one starts.</p>
+        <div v-if="programming?.up_next" class="mt-5 rounded-xl bg-white/5 px-4 py-3 text-left ring-1 ring-white/10">
+          <div class="text-[10px] font-bold tracking-[0.12em] text-cyan-300 uppercase">Up next</div>
+          <div class="mt-1 text-sm font-semibold text-white">{{ programming.up_next.challenge_name }}</div>
+          <div class="mt-1 text-xs text-slate-500">Challenge {{ programming.up_next.challenge_id }} · v{{ programming.up_next.challenge_version }}</div>
+        </div>
       </div>
     </div>
 
     <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass, gameClass]" :style="sceneStyle">
+      <div v-if="programming?.up_next" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-300/15 bg-cyan-300/5 px-3 py-2 text-xs">
+        <span class="text-slate-400"><strong class="mr-1 text-cyan-200">Up next</strong>{{ programming.up_next.challenge_name }}</span>
+        <span class="text-[10px] text-slate-600">{{ programming.up_next.challenge_id }} · v{{ programming.up_next.challenge_version }}</span>
+      </div>
+
       <div v-if="state === 'stale'" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/20 bg-amber-300/8 px-3 py-2 text-xs text-amber-100" role="status">
         <span><strong>Connection lost.</strong> Showing the last known run state while reconnecting automatically.</span>
         <span class="flex items-center gap-2 text-amber-200/70">
