@@ -221,7 +221,6 @@ func executeGSFalkner(m *emu.Emu, romData []byte) error {
 	return nil
 }
 
- 
 // executeGSTogepiEggPickup owns the mandatory post-Falkner handoff that opens
 // Route 32. The retail script waits in Violet's Pokemon Center after Elm's
 // phone call, asks a YES/NO question, gives the egg, then advances Route 32's
