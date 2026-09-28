@@ -84,6 +84,53 @@ func TestPrerequisiteRecoverySynthesizesUnlockedFieldCapabilityRepair(t *testing
 	}
 }
 
+func TestPrerequisiteRecoveryHonorsFieldRosterQuarantine(t *testing.T) {
+	policy := newRunFailurePolicy(3)
+	repair := Objective{Kind: KindRepairFieldCapability, FieldCapability: "fly"}
+	obs := Observation{
+		Location:     "fuchsia city",
+		X:            39,
+		Y:            16,
+		Controllable: true,
+		Party: []PartyMon{
+			{Species: "venusaur", Level: 54, HP: 100, MaxHP: 100},
+			{Species: "magikarp", Level: 5, HP: 20, MaxHP: 20},
+		},
+		Bag: []Item{{Name: "hm02", Quantity: 1}},
+		FieldCapabilities: []FieldCapability{{
+			Name:       "fly",
+			BadgeOwned: true,
+			HMOwned:    true,
+			Usable:     false,
+		}},
+	}
+	policy.record(ObjectiveResult{
+		Objective: repair,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "field_roster_no_recovery",
+			Recoverable: true,
+		},
+		Final: obs,
+	})
+	policy.pendingPrerequisites = []Prerequisite{{FieldCapability: "fly"}}
+
+	if got, repaired, ok := policy.prerequisiteRecovery(obs, nil); ok {
+		t.Fatalf("same roster re-synthesized quarantined repair %+v via %+v", got, repaired)
+	}
+
+	// The field-roster quarantine is semantic rather than positional. A real
+	// roster change releases it so the newly available carrier can be tried.
+	changed := obs
+	changed.Party = append(append([]PartyMon(nil), obs.Party...),
+		PartyMon{Species: "pidgeot", Level: 40, HP: 80, MaxHP: 80})
+	got, repaired, ok := policy.prerequisiteRecovery(changed, nil)
+	if !ok || got.Key() != repair.Key() {
+		t.Fatalf("material roster change recovery = %+v repaired=%+v ok=%v; want Fly repair", got, repaired, ok)
+	}
+}
+
 func TestPrerequisiteRecoveryDoesNotRepairLockedFieldCapability(t *testing.T) {
 	for _, field := range []FieldCapability{
 		{Name: "surf", BadgeOwned: false, HMOwned: true},
