@@ -522,12 +522,24 @@ func (c *challengeProgrammingController) snapshot() challengeProgrammingSnapshot
 			continue
 		}
 	}
+	now := time.Now().Unix()
+	var firstPending *challengeQueueEntry
 	for i := range out.Queue {
-		if isPendingProgramState(out.Queue[i].State) {
-			copy := out.Queue[i]
+		if !isPendingProgramState(out.Queue[i].State) {
+			continue
+		}
+		copy := out.Queue[i]
+		if firstPending == nil {
+			fallback := copy
+			firstPending = &fallback
+		}
+		if copy.ScheduledAt <= now {
 			out.UpNext = &copy
 			break
 		}
+	}
+	if out.UpNext == nil {
+		out.UpNext = firstPending
 	}
 	return out
 }
