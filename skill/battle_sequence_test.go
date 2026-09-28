@@ -76,10 +76,10 @@ func sequenceBattle(activeMove uint16, defenderType uint16) game.BattleState {
 		EnemyAttack:   100,
 		EnemyDefense:  100,
 		EnemySpecial:  100,
-		EnemyType1:    defenderType,
-		EnemyType2:    defenderType,
+		EnemyType1:    uint8(defenderType),
+		EnemyType2:    uint8(defenderType),
 		Moves: [4]game.BattleMove{
-			{ID: activeMove, PP: 10},
+			{ID: uint8(activeMove), PP: 10},
 		},
 	}
 }
