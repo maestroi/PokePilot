@@ -35,11 +35,11 @@ func testLivePNG(t *testing.T) []byte {
 
 func TestRenderLiveBroadcastFrameUsesBroadcastLayout(t *testing.T) {
 	timeline := farm.MediaTimeline{
-		Version:          farm.MediaTimelineVersion,
-		Run:              farm.MediaRunSummary{RunID: "run-live", Goal: "beat Brock", Planner: "scripted"},
-		Attempt:          1,
-		EndFrame:         600,
-		FramesPerSecond:  farm.GameBoyFramesPerSecond,
+		Version:         farm.MediaTimelineVersion,
+		Run:             farm.MediaRunSummary{RunID: "run-live", Goal: "beat Brock", Planner: "scripted"},
+		Attempt:         1,
+		EndFrame:        600,
+		FramesPerSecond: farm.GameBoyFramesPerSecond,
 		Snapshots: []farm.MediaSnapshot{{
 			Frame:     600,
 			Objective: "battle Brock",
@@ -65,7 +65,7 @@ func TestRenderLiveBroadcastFrameUsesBroadcastLayout(t *testing.T) {
 
 func TestLiveBroadcastSessionDropsStaleFramesForSlowConsumer(t *testing.T) {
 	session := &liveBroadcastSession{
-		status: liveBroadcastStatus{RunID: "slow", State: "starting", TargetFPS: liveBroadcastFPS},
+		status:      liveBroadcastStatus{RunID: "slow", State: "starting", TargetFPS: liveBroadcastFPS},
 		subscribers: make(map[uint64]chan liveEncodedFrame),
 	}
 	frames, unsubscribe := session.subscribe()
@@ -115,7 +115,7 @@ func TestLiveBroadcastStreamReconnectsAndEndsCleanly(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"run": map[string]any{
 				"run_id": "run-live", "status": status, "goal": "beat Brock", "planner": "scripted",
 				"frame": uint64(100 + read), "map": 2, "x": 5, "y": 7, "attempts": 0,
-				"player": map[string]any{"badges": []string{"Boulder"}, "party": []map[string]any{{"name": "SQUIRTLE", "level": 12, "hp": 25, "max_hp": 30}}},
+				"player":   map[string]any{"badges": []string{"Boulder"}, "party": []map[string]any{{"name": "SQUIRTLE", "level": 12, "hp": 25, "max_hp": 30}}},
 				"activity": []map[string]any{{"source": "milestone", "kind": "badge", "frame": 100, "attempt": 1, "summary": "Boulder Badge obtained"}},
 			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/frame":
