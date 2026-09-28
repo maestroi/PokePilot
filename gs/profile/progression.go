@@ -14,14 +14,19 @@ const (
 	ProgressMysteryEggReturned       game.ProgressID = "gs_mystery_egg_returned"
 	ProgressSproutTowerCleared       game.ProgressID = "gs_sprout_tower_cleared"
 	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
+	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
 )
 
 const (
 	eventGotPokemonFromElm      uint16 = 26
 	eventGotMysteryEggMrPokemon uint16 = 30
 	eventGaveMysteryEggToElm    uint16 = 31
-	eventGotHM05Flash           uint16 = 21
-	statusFlagsPokedexMask             = 1 << 0
+	// pret/pokegold constants/event_flags.asm at gs/data.SourceRevision.
+	// Keep these zero-based event indices pinned: event flags are addressed
+	// directly as EventFlags + event/8 below.
+	eventGotHM05Flash              uint16 = 20
+	eventGotTogepiEggFromElmsAide  uint16 = 45
+	statusFlagsPokedexMask                = 1 << 0
 	johtoBadgeZephyrMask               = 1 << 0
 
 	sceneCherrygroveNoop     = 0
@@ -78,12 +83,13 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressMysteryEggReturned, Complete: f.MysteryEggReturned},
 		{ID: ProgressSproutTowerCleared, Complete: hasGSEvent(reader, eventGotHM05Flash)},
 		{ID: ProgressZephyrBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeZephyrMask != 0},
+		{ID: ProgressTogepiEggReceived, Complete: hasGSEvent(reader, eventGotTogepiEggFromElmsAide)},
 	}
 }
 
 // DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
-// needed by the first-badge executor without leaking event numbers or badge
-// bit positions into agent policy.
+// needed by the first-badge and immediate post-Falkner executors without
+// leaking event numbers or badge bit positions into agent policy.
 func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
 	return projectEarlyStory(reader)
 }
