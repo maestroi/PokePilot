@@ -37,6 +37,9 @@ inspect)
 		[ -f "$state/spec" ] || exit 1
 		cat "$state/spec"
 		;;
+	*'State.Running'*)
+		[ -f "$state/running" ] && echo true || echo false
+		;;
 	*)
 		[ -f "$state/exists" ] || exit 1
 		echo '{}'
@@ -47,6 +50,7 @@ inspect)
 run)
 	printf '%s\n' "$*" >> "$state/runs"
 	touch "$state/exists"
+	touch "$state/running"
 	echo 'sha256:newimage' > "$state/image"
 	prev=""
 	for arg in "$@"; do
@@ -60,11 +64,12 @@ run)
 	exit 0
 	;;
 exec)
+	[ ! -f "$state/unhealthy" ] || exit 1
 	echo '{"status":"ok","s3_configured":true}'
 	exit 0
 	;;
 rm)
-	rm -f "$state/exists" "$state/image" "$state/spec"
+	rm -f "$state/exists" "$state/image" "$state/spec" "$state/running" "$state/unhealthy"
 	exit 0
 	;;
 esac
@@ -224,6 +229,33 @@ func TestReplaySidecarIsIdempotentAndRecreatesOnChange(t *testing.T) {
 	}
 	if !strings.Contains(runs[1], "-http :9090") {
 		t.Errorf("recreated container kept the old listen address:\n%s", runs[1])
+	}
+}
+
+func TestReplaySidecarRecreatesStoppedOrUnhealthyContainer(t *testing.T) {
+	h := newSidecarHarness(t)
+	if out, err := h.run(t); err != nil {
+		t.Fatalf("first reconcile: %v\n%s", err, out)
+	}
+
+	// Docker can leave the container exited when the Swarm overlay is absent
+	// during boot. Its image and spec still match, but it serves no replay.
+	if err := os.Remove(filepath.Join(h.state, "running")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := h.run(t); err != nil || !strings.Contains(out, "healthy") {
+		t.Fatalf("stopped container was not recovered: %v\n%s", err, out)
+	}
+	if runs := h.runs(t); len(runs) != 2 {
+		t.Fatalf("want a new container after exit, got %d runs", len(runs))
+	}
+
+	writeTestFile(t, filepath.Join(h.state, "unhealthy"), "", 0o644)
+	if out, err := h.run(t); err != nil || !strings.Contains(out, "healthy") {
+		t.Fatalf("unhealthy container was not recovered: %v\n%s", err, out)
+	}
+	if runs := h.runs(t); len(runs) != 3 {
+		t.Fatalf("want a new container after failed health probe, got %d runs", len(runs))
 	}
 }
 
