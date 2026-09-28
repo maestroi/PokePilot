@@ -176,6 +176,7 @@ func TestEarlyJohtoWorldProviderRoutesVioletThroughUnionCaveToAzalea(t *testing.
 func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	azalea := nativeID(t, "AZALEA_TOWN")
+	center := nativeID(t, "AZALEA_POKECENTER_1F")
 	kurt := nativeID(t, "KURTS_HOUSE")
 	gym := nativeID(t, "AZALEA_GYM")
 	well := nativeID(t, "SLOWPOKE_WELL_B1F")
@@ -185,11 +186,14 @@ func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 		t.Fatalf("ParseMap(AZALEA_TOWN): %v", err)
 	}
 
+	foundCenter := false
 	foundKurt := false
 	foundGym := false
 	foundWell := false
 	for _, warp := range header.Warps {
 		switch {
+		case warp.X == 15 && warp.Y == 9 && warp.DestMap == center && warp.DestWarpID == 0:
+			foundCenter = true
 		case warp.X == 9 && warp.Y == 5 && warp.DestMap == kurt && warp.DestWarpID == 0:
 			foundKurt = true
 		case warp.X == 10 && warp.Y == 15 && warp.DestMap == gym && warp.DestWarpID == 0:
@@ -198,8 +202,8 @@ func TestEarlyJohtoWorldProviderIncludesAzaleaStoryWarps(t *testing.T) {
 			foundWell = true
 		}
 	}
-	if !foundKurt || !foundGym || !foundWell {
-		t.Fatalf("Azalea story warps: Kurt=%v Gym=%v Well=%v header=%+v", foundKurt, foundGym, foundWell, header.Warps)
+	if !foundCenter || !foundKurt || !foundGym || !foundWell {
+		t.Fatalf("Azalea story warps: Center=%v Kurt=%v Gym=%v Well=%v header=%+v", foundCenter, foundKurt, foundGym, foundWell, header.Warps)
 	}
 
 	graph, err := world.BuildNativeGraph(provider)
