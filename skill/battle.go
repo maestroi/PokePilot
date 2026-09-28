@@ -353,7 +353,6 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
-
 			if itemUses < battleItemUseCap && inBattle {
 				if choice, ok := chooseSacrificialBenchHealState(m.ROM(), resources, bs); ok {
 					if zbatDebug {
