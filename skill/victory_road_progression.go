@@ -14,6 +14,7 @@ import (
 const (
 	route22Map               uint8 = 0x21
 	route23Map               uint8 = 0x22
+	route22GateMap           uint8 = 0xC1
 	indigoPlateauMap         uint8 = 0x09
 	indigoPlateauLobbyMap    uint8 = 0xAE
 	victoryRoadTravelBattles       = 64
@@ -56,10 +57,11 @@ type route23SurfPlan struct {
 }
 
 // planRoute23SurfBand finds a real shoreline entry and a walkable landing on
-// the north side of one of Route 23's measured full-width water barriers. The
-// path is planned on the same live TraversalWater grid normal navigation uses;
-// no input sequence or fixed X coordinate is encoded here.
-func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfPlan, error) {
+// the requested side of one of Route 23's measured full-width water barriers.
+// The path is planned on the same live TraversalWater grid normal navigation
+// uses; no input sequence or fixed X coordinate is encoded here. north=true is
+// the League approach, north=false is the return toward Route 22 (#2150).
+func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int, north bool) (route23SurfPlan, error) {
 	if got := m.Peek8(sym.CurMap); got != route23Map {
 		return route23SurfPlan{}, fmt.Errorf("skill: Route23 Surf planner is on map %#02x, want %#02x", got, route23Map)
 	}
@@ -81,7 +83,10 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 	best := route23SurfPlan{steps: -1}
 	for delta := 1; delta <= 16; delta++ {
 		y := barrierY - delta
-		if y < 0 {
+		if !north {
+			y = barrierY + delta
+		}
+		if y < 0 || y >= land.Height {
 			break
 		}
 		for x := 0; x < land.Width; x++ {
@@ -122,12 +127,16 @@ func planRoute23SurfBand(m *emu.Emu, romData []byte, barrierY int) (route23SurfP
 		}
 	}
 	if best.steps < 0 {
-		return route23SurfPlan{}, fmt.Errorf("skill: Route23 Surf found no live water route north of barrier row %d from (%d,%d)", barrierY, sx, sy)
+		direction := "north"
+		if !north {
+			direction = "south"
+		}
+		return route23SurfPlan{}, fmt.Errorf("skill: Route23 Surf found no live water route %s of barrier row %d from (%d,%d)", direction, barrierY, sx, sy)
 	}
 	return best, nil
 }
 
-func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
+func crossRoute23SurfBand(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int, north bool) error {
 	fieldActions, err := fieldActionDecoderFor(m)
 	if err != nil {
 		return fmt.Errorf("skill: Route23 Surf field-action profile: %w", err)
@@ -136,11 +145,14 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 		return fmt.Errorf("skill: Route23 Surf barrier %d started on map %#02x", barrierY, got)
 	}
 	_, y := playerXY(m)
-	if int(y) < barrierY {
+	if north && int(y) < barrierY {
+		return nil
+	}
+	if !north && int(y) > barrierY {
 		return nil
 	}
 
-	plan, err := planRoute23SurfBand(m, romData, barrierY)
+	plan, err := planRoute23SurfBand(m, romData, barrierY, north)
 	if err != nil {
 		return err
 	}
@@ -168,10 +180,21 @@ func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 		return fmt.Errorf("skill: Route23 Surf barrier %d left Route 23 for map %#02x", barrierY, gotMap)
 	}
 	_, gotY := playerXY(m)
-	if int(gotY) >= barrierY {
-		return fmt.Errorf("skill: Route23 Surf barrier %d postcondition failed: y=%d", barrierY, gotY)
+	if north && int(gotY) >= barrierY {
+		return fmt.Errorf("skill: Route23 Surf barrier %d northbound postcondition failed: y=%d", barrierY, gotY)
+	}
+	if !north && int(gotY) <= barrierY {
+		return fmt.Errorf("skill: Route23 Surf barrier %d southbound postcondition failed: y=%d", barrierY, gotY)
 	}
 	return nil
+}
+
+func crossRoute23SurfBandNorth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
+	return crossRoute23SurfBand(m, romData, policy, barrierY, true)
+}
+
+func crossRoute23SurfBandSouth(m *emu.Emu, romData []byte, policy MovePolicy, barrierY int) error {
+	return crossRoute23SurfBand(m, romData, policy, barrierY, false)
 }
 
 func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
