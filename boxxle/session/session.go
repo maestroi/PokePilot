@@ -1,25 +1,29 @@
-// Package session owns the Boxxle launch boundary: the minimal runtime the
-// standard run path needs to select, boot, and identify a Boxxle cartridge.
+// Package session owns the Boxxle launch boundary and the autonomous puzzle
+// run loop that sits above the semantic policy/controller layers and below
+// farm/operator integration.
 //
-// Board decoding, autonomous puzzle execution, and state observation are later
-// slices of the Boxxle epic. This slice deliberately sends no input and reads
-// no board state, so the launch stays a pure power-on settle that any later
-// play layer can build on.
+// Boot is the pure power-on settle the run path needs to identify and start a
+// Boxxle cartridge. Run (see run.go) builds the observe/choose/execute loop on
+// top of it: a bounded selector (deterministic policy by default, or a model
+// planner) picks a legal semantic push and the deterministic controller from
+// the control package executes it, so the model never emits raw D-pad input.
 package session
 
-import "github.com/maestroi/pokepilot/game"
+import (
+	"github.com/maestroi/pokepilot/boxxle/control"
+	"github.com/maestroi/pokepilot/game"
+)
 
-// bootFrameBudget is the power-on settle budget. Boxxle reaches its title
+// bootFrameBudget is the power-on settle budget. Boxxle reaches its puzzle
 // screen well within this; the budget only bounds how long a boot may take
 // before the run path treats it as a failure.
 const bootFrameBudget = 3600
 
-// Machine is the emulator surface the launch boundary needs. emu.Emu satisfies
-// it; the surface is intentionally narrow because this slice neither sends
-// input nor observes RAM.
+// Machine is the emulator surface the session needs: the controller's input
+// and memory surface plus a frame counter. emu.Emu satisfies it.
 type Machine interface {
+	control.Machine
 	FrameCount() uint64
-	StepFrame()
 }
 
 // Boot powers on the Boxxle cartridge and lets it settle. It returns the
