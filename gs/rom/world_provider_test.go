@@ -139,3 +139,63 @@ func TestFirstBadgeWorldProviderIncludesSproutTowerPath(t *testing.T) {
 		t.Fatalf("Violet -> Sprout Tower 3F has %d transitions, want 3: %#v", len(route), route)
 	}
 }
+
+ 
+func TestEarlyJohtoWorldProviderRoutesVioletThroughUnionCaveToAzalea(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	names := []string{
+		"VIOLET_CITY",
+		"ROUTE_32",
+		"UNION_CAVE_1F",
+		"ROUTE_33",
+		"AZALEA_TOWN",
+	}
+	ids := make([]uint16, len(names))
+	for i, name := range names {
+		ids[i] = nativeID(t, name)
+	}
+
+	route, err := world.FindNativeRoute(graph, ids[0], ids[len(ids)-1])
+	if err != nil {
+		t.Fatalf("FindNativeRoute(Violet -> Azalea): %v", err)
+	}
+	if len(route) != len(ids)-1 {
+		t.Fatalf("route has %d transitions, want %d: %#v", len(route), len(ids)-1, route)
+	}
+	for i, edge := range route {
+		if edge.From != ids[i] || edge.To != ids[i+1] {
+			t.Fatalf("route[%d] = %#04x -> %#04x, want %#04x -> %#04x", i, edge.From, edge.To, ids[i], ids[i+1])
+		}
+	}
+}
+
+func TestEarlyJohtoWorldProviderIncludesKurtAndSlowpokeWellWarps(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	azalea := nativeID(t, "AZALEA_TOWN")
+	kurt := nativeID(t, "KURTS_HOUSE")
+	well := nativeID(t, "SLOWPOKE_WELL_B1F")
+
+	header, err := provider.ParseMap(azalea)
+	if err != nil {
+		t.Fatalf("ParseMap(AZALEA_TOWN): %v", err)
+	}
+
+	foundKurt := false
+	foundWell := false
+	for _, warp := range header.Warps {
+		switch {
+		case warp.X == 9 && warp.Y == 5 && warp.DestMap == kurt && warp.DestWarpID == 0:
+			foundKurt = true
+		case warp.X == 31 && warp.Y == 7 && warp.DestMap == well && warp.DestWarpID == 0:
+			foundWell = true
+		}
+	}
+	if !foundKurt || !foundWell {
+		t.Fatalf("Azalea story warps: Kurt=%v Well=%v header=%+v", foundKurt, foundWell, header.Warps)
+	}
+}
