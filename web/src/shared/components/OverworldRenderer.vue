@@ -56,6 +56,7 @@ function actorAssetReference(actor: RenderActor, player = false): string {
     const generic = props.theme.assets.characters[actor.kind] || props.theme.assets.characters.npc
     if (generic) return generic
   }
+  if (!props.theme.allowGameArtFallbacks) return ''
   const fallback = defaultSpriteAsset(actor.appearance, player)
   return fallback && fallback !== 'unknown' ? `gen1:${fallback}` : ''
 }
