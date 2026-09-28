@@ -3,8 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
-import { renderThemeOptions } from '../src/shared/renderTheme.ts'
-import { validateThemeAssetReference } from '../src/shared/themeAssetPolicy.ts'
+import { renderThemeOptions, validateThemeAssetReference } from '../src/shared/renderTheme.ts'
 
 interface Provenance {
   source?: string
