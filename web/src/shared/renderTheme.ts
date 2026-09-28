@@ -1,6 +1,6 @@
 import pokegoldManifest from './themes/pokegold-gen2.json' with { type: 'json' }
 import kenneyManifest from './themes/kenney-tiny-town.json' with { type: 'json' }
-import { validateThemeAssetReference } from './themeAssetPolicy'
+import { validateThemeAssetReference } from './themeAssetPolicy.ts'
 
 export const RENDER_THEME_SCHEMA_VERSION = 1
 export const DEFAULT_RENDER_THEME_ID = 'pokegold-gen2'
