@@ -69,6 +69,7 @@ const (
 	Route29SceneID         uint16 = 0xD6CE // wRoute29SceneID
 	CherrygroveCitySceneID uint16 = 0xD6CF // wCherrygroveCitySceneID
 	MrPokemonsHouseSceneID uint16 = 0xD6D0 // wMrPokemonsHouseSceneID
+	AzaleaTownSceneID      uint16 = 0xD6D4 // wAzaleaTownSceneID
 	EventFlags             uint16 = 0xD7B7 // wEventFlags
 
 	// Fresh-game / RTC state.
