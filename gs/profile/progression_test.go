@@ -167,7 +167,6 @@ func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
 	}
 }
 
-
 func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
 	mem := fakeGSReader{}
 	mem[sym.JohtoBadges] = johtoBadgeHiveMask
