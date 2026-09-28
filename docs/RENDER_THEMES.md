@@ -46,8 +46,12 @@ Those graphics are game-derived. PokePilot records their license as **`NOASSERTI
 
 The Tiny Town/Tiny Dungeon files retain their existing CC0 provenance records.
 
-## Validation
+## Validation and asset policy
 
-`validateThemePack` rejects incompatible schema versions, invalid IDs, invalid sizing, missing required tiles, malformed paint definitions, and malformed asset maps. `RenderThemeRegistry.install` never installs an invalid pack. Unknown theme IDs resolve to the default Gold/Silver theme with a diagnostic instead of breaking rendering.
+`validateThemePack` rejects incompatible schema versions, invalid IDs, invalid sizing, missing required tiles, malformed paint definitions, malformed asset maps, remote asset URLs, path traversal, unsafe encodings, and unsupported image types. Theme asset references are local-only under `/theme-assets/` and may use PNG or WebP files. SVG, executable content, data URLs, and arbitrary remote origins are intentionally not accepted.
 
-Safe ingestion of arbitrary/community files, path validation, upload policy, and broader provenance enforcement remain part of #1425.
+`validateThemeAssetFile` is the canonical boundary for local/community asset files: names must be safe relative paths, only PNG/WebP MIME types are accepted, and a single file is capped at 4 MiB. There is currently no public upload or shared community-theme endpoint. Custom packs are therefore developer/local-install only; any future importer must pass both the manifest and file policy before installation.
+
+Bundled asset directories must contain a machine-readable `provenance.json` with at least a source, license identifier, and an entry for every bundled image. Frontend CI walks every bundled image and every theme asset reference, so adding an unprovenanced image or a reference outside its declared local asset pack fails the test suite.
+
+Gold/Silver-derived art remains explicitly `NOASSERTION`, not “licensed because it is on GitHub.” This policy hardens provenance and ingestion but does not turn those game-derived files into redistributable assets. Deciding whether to gate, replace, or exclude that prototype pack from a public distribution remains the final #1425 distribution-policy item.
