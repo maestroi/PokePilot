@@ -145,7 +145,9 @@ func (c *challengeProgrammingController) ensureLoaded() {
 	if c.state.RunLinks == nil {
 		c.state.RunLinks = map[string]challengeRunLink{}
 	}
-	c.recoverLocked()
+	if c.recoverLocked() && c.loadErr == nil {
+		c.loadErr = c.persistLocked()
+	}
 }
 
 func challengeCapabilities() map[string]challengeCapability {
@@ -742,9 +744,11 @@ func (c *challengeProgrammingController) advance() {
 		entry := c.state.Entries[index]
 		challenge, ok := c.challengeLocked(entry.ChallengeID, entry.ChallengeVersion)
 		if !ok {
+			now := time.Now().Unix()
 			c.state.Entries[index].State = programStateBlocked
 			c.state.Entries[index].Error = "challenge definition is missing"
-			c.state.Entries[index].EndedAt = time.Now().Unix()
+			c.state.Entries[index].EndedAt = now
+			c.scheduleNextOccurrenceLocked(c.state.Entries[index], now)
 			_ = c.persistLocked()
 			c.mu.Unlock()
 			continue
@@ -947,8 +951,9 @@ func (c *challengeProgrammingController) finishRun(runID string) {
 	c.advance()
 }
 
-func (c *challengeProgrammingController) recoverLocked() {
+func (c *challengeProgrammingController) recoverLocked() bool {
 	now := time.Now().Unix()
+	changed := false
 	for i := range c.state.Entries {
 		entry := &c.state.Entries[i]
 		if !isLiveProgramState(entry.State) {
@@ -957,24 +962,46 @@ func (c *challengeProgrammingController) recoverLocked() {
 		if len(entry.RunIDs) == 0 {
 			entry.State, entry.Result, entry.EndedAt = programStateBlocked, "restart_recovery", now
 			entry.Error = "entry was starting during restart before run ids were recorded"
+			c.scheduleNextOccurrenceLocked(*entry, now)
+			changed = true
 			continue
 		}
 		allTerminal := true
+		failed := false
+		var failures []string
 		c.wall.mu.Lock()
 		for _, runID := range entry.RunIDs {
 			tile := c.wall.tiles[runID]
 			if tile == nil || !tile.Finished {
 				allTerminal = false
-				break
+				continue
+			}
+			if tile.Reason != "" && tile.Reason != "done" && tile.Reason != "goal" && tile.Reason != "completed" {
+				failed = true
+				failures = append(failures, runID+":"+tile.Reason)
 			}
 		}
 		c.wall.mu.Unlock()
-		if allTerminal {
-			entry.State, entry.Result, entry.EndedAt = programStateCompleted, "recovered_terminal", now
-		} else {
-			entry.State = programStateLive
+		if !allTerminal {
+			if entry.State != programStateLive {
+				entry.State = programStateLive
+				changed = true
+			}
+			continue
 		}
+		if entry.Result == "cancelling" {
+			entry.State, entry.Result = programStateCancelled, "cancelled"
+		} else if failed {
+			entry.State, entry.Result = programStateFailed, "failed"
+			entry.Error = strings.Join(failures, ", ")
+		} else {
+			entry.State, entry.Result = programStateCompleted, "recovered_terminal"
+		}
+		entry.EndedAt = now
+		c.scheduleNextOccurrenceLocked(*entry, now)
+		changed = true
 	}
+	return changed
 }
 
 func (c *challengeProgrammingController) runLink(runID string) (challengeRunLink, bool) {
