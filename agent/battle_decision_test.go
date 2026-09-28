@@ -143,7 +143,6 @@ func TestCoreBattleEvalCases(t *testing.T) {
 	}
 }
 
-
 func TestBattleShadowCorpusRoundTripBecomesReplayCases(t *testing.T) {
 	state := CoreBattleEvalCases()[0].State.MoveOnly()
 	sample := BattleShadowSample{
