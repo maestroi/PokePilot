@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const spectator = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
 const operator = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
+const replay = readFileSync(new URL('../src/replays/App.vue', import.meta.url), 'utf8')
 
 test('public spectator and operator live view share the semantic renderer pipeline', () => {
   for (const [name, source] of [['spectator', spectator], ['operator', operator]] as const) {
@@ -21,4 +22,14 @@ test('operator live view retains explicit classic fallback and viewer-local them
   assert.match(operator, /setRendererMode\('modern'\)/)
   assert.match(operator, /pokepilot\.operator\.theme/)
   assert.match(operator, /classic fallback/)
+})
+
+
+test('recorded replay uses the shared semantic renderer with classic fallback', () => {
+  assert.match(replay, /ModernSceneRenderer/)
+  assert.match(replay, /getSpectatorSemanticReplay/)
+  assert.match(replay, /canRenderModernScene/)
+  assert.match(replay, /resolveRenderTheme/)
+  assert.match(replay, /semanticReplayStateAtMS/)
+  assert.match(replay, /classic fallback/)
 })
