@@ -8,12 +8,12 @@ import (
 )
 
 const (
-	gen2PadA              byte = 0x01
-	gen2PadB              byte = 0x02
-	gen2PadSelect         byte = 0x04
-	gen2PadUp             byte = 0x40
-	gen2PadDown           byte = 0x80
-	gen2BattleMoveFilter       = gen2PadA | gen2PadB | gen2PadSelect | gen2PadUp | gen2PadDown
+	gen2PadA             byte = 0x01
+	gen2PadB             byte = 0x02
+	gen2PadSelect        byte = 0x04
+	gen2PadUp            byte = 0x40
+	gen2PadDown          byte = 0x80
+	gen2BattleMoveFilter      = gen2PadA | gen2PadB | gen2PadSelect | gen2PadUp | gen2PadDown
 )
 
 var (
