@@ -1,0 +1,27 @@
+---
+description: Fix one PokePilot run from its run id — pull the run's debug bundle over the pokepilot MCP, resolve its triage key, replay the failing round locally, fix at the shared point, and open a triage-keyed PR.
+globs:
+alwaysApply: false
+---
+
+Follow the procedure in @.claude/skills/pokefarm-run-fix/SKILL.md exactly. It is
+the single source of truth for this workflow; this rule only makes Cursor aware
+of it. Its reproduce-fix-verify half is
+@.claude/skills/pokefarm-triage/SKILL.md.
+
+The short version, so you know what you are opting into:
+
+1. `pokepilot_get_run_debug(run_id)` first, and classify before coding: defect,
+   stall, expected gameplay, or infrastructure. Only a defect earns a PR.
+2. The triage key is already in that bundle: `run.issue.circuit_key`. Confirm it
+   against `pokepilot_get_triage()` and claim the linked issue before editing.
+3. `pokepilot_get_run_artifact_content` for the failing round's `.state`; the
+   plain artifact route sits behind Cloudflare Access, so use the MCP tool.
+4. Replay that state in a throwaway `skill/zz_repro_scratch_test.go` before
+   editing anything: red before the patch, green after it.
+5. Fix where every caller routes through, not on the path the failure named.
+6. Gate on `make test-short` plus the repro. Never `go test ./skill/...`.
+7. Branch, commit the fix only, push, `gh pr create` with `[triage:<key>]` in
+   the title, then record it with `pokepilot_record_solver_attempt`.
+8. Do not cancel or restart the run; the wall owns recovery, and the repair is
+   what changes the next attempt.

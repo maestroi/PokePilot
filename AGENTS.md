@@ -3,6 +3,25 @@
 For the in-game agent loop (`-planner llm`, objectives, seeds) see `docs/AGENT.md`.
 This file is about working *on* this repository.
 
+## Repository skills
+
+The agent workflows for this repository are skills under `.claude/skills/`, and
+`.agents/skills` is a symlink to that directory: harnesses that scan
+`<project>/.agents/skills` (DSH's filesystem provider, among others) find them
+without per-user configuration, and there is only one copy to keep current.
+Nested skill directories are not discovered — a skill is
+`.claude/skills/<name>/SKILL.md` and nothing deeper.
+
+- `pokefarm-run-fix` — hand it one run id: classify the failure, resolve its
+  triage key, reproduce, fix, open the triage-keyed PR, record the attempt.
+- `pokefarm-run-diagnose` — the same evidence, diagnosis only, no PR.
+- `pokefarm-triage` — the reproduce-before-fix procedure and the ship gates.
+- `pokefarm-recovery-audit`, `pokefarm-cleanup`, `world-map-debug`,
+  `gomeboy-forensics` — audit, cleanup, map/routing, and RAM forensics.
+
+`.cursor/rules/*.mdc` point Cursor at the same files; keep them in step when a
+skill is renamed.
+
 ## Always deliver work as a pull request
 
 When a human asks you to fix, change, or add something in this repository,
