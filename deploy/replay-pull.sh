@@ -47,3 +47,8 @@ chmod +x "$tmpdir/${SIDECAR}"
 # Pin the sidecar to the same immutable digest whose definition we extracted, so
 # a moving :latest tag cannot change between extraction and reconcile.
 FARM_IMAGE="$DIGEST_REF" "$tmpdir/${SIDECAR}"
+
+# Every merge publishes a new :latest and leaves the previous one dangling; on
+# the render box's small disk those would fill it within weeks. Only untagged,
+# unused images go, so a deferred update's new image and the running one stay.
+docker image prune -f >/dev/null

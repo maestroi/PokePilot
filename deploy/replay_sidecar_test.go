@@ -332,6 +332,8 @@ func TestReplaySidecarIsOwnedByTheWorkerNotTheManager(t *testing.T) {
 		"BUNDLE_PATH=/usr/local/share/pokepilot/deploy",
 		"SIDECAR=replay-sidecar.sh",
 		`FARM_IMAGE="$DIGEST_REF" "$tmpdir/${SIDECAR}"`,
+		// Without this the render box fills its disk with superseded images.
+		"docker image prune -f",
 	} {
 		if !strings.Contains(pull, want) {
 			t.Errorf("replay-pull.sh missing %q", want)
