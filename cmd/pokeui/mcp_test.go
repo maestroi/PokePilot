@@ -175,6 +175,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run_artifacts",
 		"pokepilot_get_run_debug",
 		"pokepilot_get_run_recovery_audit",
+		"pokepilot_prepare_debug",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
@@ -216,6 +217,7 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}{
 		{"pokepilot_get_run", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_debug", map[string]any{"run_id": runID}},
+		{"pokepilot_prepare_debug", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_recovery_audit", map[string]any{"run_id": runID}},
 		{"pokepilot_get_run_artifacts", map[string]any{"run_id": runID}},
 		{"pokepilot_get_triage", map[string]any{}},
