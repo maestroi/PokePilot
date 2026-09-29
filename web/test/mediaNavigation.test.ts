@@ -11,6 +11,7 @@ const liveView = readFileSync(new URL('../src/operator/LiveView.vue', import.met
 const renderJobs = readFileSync(new URL('../src/operator/RenderJobsPanel.vue', import.meta.url), 'utf8')
 const spectator = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
 const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
+const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
 
 test('media is a top-level admin workspace and spectator is not', () => {
@@ -70,4 +71,11 @@ test('public completed runs resolve from the archive and surface replay state', 
   assert.match(spectator, /Replay ready/)
   assert.match(spectator, /Replay rendering/)
   assert.match(spectator, /replayRenderProgress/)
+})
+
+test('run inspector exposes render cancellation and Media handoff', () => {
+  assert.match(inspector, /cancelMediaRenderJob/)
+  assert.match(inspector, /Cancel render/)
+  assert.match(inspector, /Manage in Media/)
+  assert.match(inspector, /replay\.job_id/)
 })
