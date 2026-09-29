@@ -51,7 +51,7 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted for Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm for Gold/Silver, llm or scripted for Gen I Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
 	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, pokemon-gold, pokemon-silver, tetris, or boxxle; empty lets the runner pick its mounted cartridge"`
 	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Gold/Silver accept Chikorita/Cyndaquil/Totodile, Red/Blue accept their normal starters and supported experiments; Tetris and Boxxle must leave this empty"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
