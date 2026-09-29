@@ -13,10 +13,18 @@ import (
 // (if any) that owns it.
 func victoryRoadStrengthEdges() []world.Edge {
 	return []world.Edge{
-		{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap, WarpX: 8, WarpY: 17},
+		{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap, WarpX: 1, WarpY: 1},
 		{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad1FMap, WarpX: 0, WarpY: 8},
+
 		{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap, WarpX: 23, WarpY: 7},
+		{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap, WarpX: 25, WarpY: 14},
+		{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap, WarpX: 27, WarpY: 7},
+		{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap, WarpX: 1, WarpY: 1},
+
 		{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 23, WarpY: 7},
+		{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 26, WarpY: 8},
+		{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 27, WarpY: 15},
+		{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 2, WarpY: 0},
 	}
 }
 
