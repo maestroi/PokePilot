@@ -136,3 +136,44 @@ func TestMediaRenderJobLeaseRecoveryAndLifecycle(t *testing.T) {
 		t.Fatalf("reconciled ready job = %+v", ready)
 	}
 }
+
+
+func TestMediaRenderJobsListSummarizesAndOrdersRecentJobs(t *testing.T) {
+	w := NewWall("")
+	w.SetStatePath(filepath.Join(t.TempDir(), "wall.json"))
+	c := mediaRenderJobsFor(w)
+
+	older, _, err := c.ensure(farm.MediaRenderJobCreateRequest{
+		Identity: "older", RunID: "run-old", Attempts: []int{1}, Mode: "raw", ArtifactKey: "older.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newer, _, err := c.ensure(farm.MediaRenderJobCreateRequest{
+		Identity: "newer", RunID: "run-new", Attempts: []int{1}, Mode: "broadcast", ArtifactKey: "newer.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c.mu.Lock()
+	oldJob := c.state.Jobs[older.ID]
+	oldJob.UpdatedAt = 100
+	c.state.Jobs[older.ID] = oldJob
+	newJob := c.state.Jobs[newer.ID]
+	newJob.UpdatedAt = 200
+	c.state.Jobs[newer.ID] = newJob
+	c.mu.Unlock()
+
+	got := c.list("", "", 1)
+	if got.Total != 2 || len(got.Jobs) != 1 || got.Jobs[0].ID != newer.ID {
+		t.Fatalf("list = %+v, want newest job with total 2", got)
+	}
+	if got.States[farm.MediaRenderJobQueued] != 2 {
+		t.Fatalf("queued count = %d, want 2", got.States[farm.MediaRenderJobQueued])
+	}
+	filtered := c.list("run-old", "", 50)
+	if filtered.Total != 1 || len(filtered.Jobs) != 1 || filtered.Jobs[0].ID != older.ID {
+		t.Fatalf("filtered list = %+v", filtered)
+	}
+}

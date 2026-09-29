@@ -21,6 +21,7 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("POST /v1/runs/{id}/repro", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/repro-source", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/workers/{addr}/force-end", proxy(wallBase, false))
+	mux.HandleFunc("GET /v1/media/render-jobs", proxy(wallBase, true))
 
 	replayBase = strings.TrimRight(strings.TrimSpace(replayBase), "/")
 	if replayBase == "" {

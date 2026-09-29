@@ -17,6 +17,12 @@ func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
 		case "/v1/runs/run-1/artifacts":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"run_id":"run-1","artifacts":[]}`)
+		case "/v1/media/render-jobs":
+			if got := r.URL.Query().Get("limit"); got != "5" {
+				t.Fatalf("render job limit=%q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"jobs":[{"id":"render-1","run_id":"run-1","state":"rendering","segments_total":4,"segments_done":2}],"total":1,"states":{"rendering":1}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,6 +64,16 @@ func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("debug status=%d", res.StatusCode)
+	}
+
+	res, err = http.Get(ui.URL + "/v1/media/render-jobs?limit=5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"segments_done":2`) {
+		t.Fatalf("render jobs status=%d body=%q", res.StatusCode, body)
 	}
 
 	req, err := http.NewRequest(http.MethodGet, ui.URL+"/v1/runs/run-1/replay/video", nil)

@@ -469,6 +469,37 @@ export interface TriageGroup {
   [key: string]: unknown
 }
 
+export type MediaRenderJobState = 'queued' | 'preparing' | 'rendering' | 'assembling' | 'uploading' | 'ready' | 'failed' | 'cancelled' | string
+
+export interface MediaRenderJob {
+  version: number
+  id: string
+  identity: string
+  run_id: string
+  attempts?: number[]
+  mode: string
+  artifact_key: string
+  state: MediaRenderJobState
+  stage?: string
+  segments_total?: number
+  segments_done?: number
+  worker_id?: string
+  lease_expires_at_unix_ms?: number
+  retry_count?: number
+  last_error?: string
+  result_size?: number
+  created_at_unix_ms: number
+  updated_at_unix_ms: number
+  started_at_unix_ms?: number
+  finished_at_unix_ms?: number
+}
+
+export interface MediaRenderJobList {
+  jobs: MediaRenderJob[]
+  total: number
+  states: Record<string, number>
+}
+
 export interface ReplayStatus {
   run_id?: string
   state: string

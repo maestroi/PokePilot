@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getModels, patchDeploymentWorkers } from '../src/shared/api/client.ts'
+import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getMediaRenderJobs, getModels, patchDeploymentWorkers } from '../src/shared/api/client.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -37,6 +37,23 @@ test('dashboard query stays server-side and skips empty filters', async () => {
 
   const snapshot = await getDashboard({ status: 'done', limit: 25, starter: '' })
   assert.equal(snapshot.total, 0)
+})
+
+test('media render jobs use the operator read endpoint', async () => {
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), '/v1/media/render-jobs?limit=25')
+    assert.equal(init?.cache, 'no-store')
+    return new Response(JSON.stringify({
+      jobs: [{ id: 'render-1', run_id: 'run-1', state: 'rendering', segments_total: 4, segments_done: 2 }],
+      total: 1,
+      states: { rendering: 1 }
+    }), { status: 200 })
+  }
+
+  const jobs = await getMediaRenderJobs(25)
+  assert.equal(jobs.total, 1)
+  assert.equal(jobs.jobs[0]?.segments_done, 2)
+  assert.equal(jobs.states.rendering, 1)
 })
 
 test('createRun generates a run id and surfaces API errors', async () => {
