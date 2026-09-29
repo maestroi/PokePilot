@@ -71,6 +71,13 @@ func waitForPickupFaceInterruption(step func(), interruption func() error) error
 	return nil
 }
 
+func pickupFaceExhaustedError(x, y uint8, faceErr error) error {
+	return fmt.Errorf(
+		"skill: Pickup: face item at (%d,%d) remained interruption-prone after %d bounded attempts (last face error: %v): %w",
+		x, y, pickupFaceRecoveryAttempts, faceErr, ErrNavigationStalled,
+	)
+}
+
 // recoverPickupInteractionInterruption owns the tiny race after an approach
 // has finished but before Pickup presses A. A sighted trainer (or an ordinary
 // wild encounter that lands on the last approach step) can take control in
@@ -154,10 +161,6 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 		); interruptErr == nil {
 			return fmt.Errorf("skill: Pickup: %w", faceErr)
 		}
-		if attempt == pickupFaceRecoveryAttempts {
-			return fmt.Errorf("skill: Pickup: face item at (%d,%d) still interrupted after %d recoveries: %w",
-				x, y, pickupFaceRecoveryAttempts-1, faceErr)
-		}
 		if err := recoverPickupInteractionInterruption(m, policy); err != nil {
 			return fmt.Errorf("skill: Pickup: recover interruption before facing item at (%d,%d): %w", x, y, err)
 		}
@@ -166,6 +169,13 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 		// assuming the pre-interruption position is still valid.
 		if err := approachViaTravel(m, romData, x, y, policy); err != nil {
 			return err
+		}
+		// Never return while the interruption that stole Face is still live.
+		// If every bounded attempt was intercepted, recovery above has restored
+		// a clean boundary; report a typed navigation stall so the enclosing
+		// story objective can replan instead of terminating as unknown_failure.
+		if attempt == pickupFaceRecoveryAttempts {
+			return pickupFaceExhaustedError(x, y, faceErr)
 		}
 	}
 
