@@ -112,14 +112,63 @@ func (*Profile) DecodeTwoOption(reader game.MemoryReader) (game.TwoOptionState, 
 	return game.TwoOptionState{Current: int(y) - 1}, true
 }
 
-// Start-menu semantics are deliberately fail-closed here. This file exposes
-// the battle-facing vertical/two-option menu machinery needed by the shared
-// battle controller; the Pokégear-aware Gen-II START menu remains a separate
-// profile slice.
-func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
-	return game.StartMenuState{InBattle: reader != nil && reader.Peek8(sym.BattleMode) != 0}
+func gsStartMenuState(reader game.MemoryReader) game.StartMenuState {
+	if reader == nil {
+		return game.StartMenuState{}
+	}
+	inBattle := reader.Peek8(sym.BattleMode) != 0
+	state := game.StartMenuState{InBattle: inBattle}
+	if inBattle {
+		return state
+	}
+	text := gsScreenText(reader)
+	if !strings.Contains(text, "OPTION") || !strings.Contains(text, "SAVE") {
+		return state
+	}
+	count := 5 // PACK, STATUS, SAVE, OPTION, EXIT
+	if reader.Peek8(sym.StatusFlags)&1 != 0 {
+		count++ // POKEDEX
+	}
+	if reader.Peek8(sym.PartyCount) != 0 {
+		count++ // POKEMON
+	}
+	if reader.Peek8(sym.PokegearFlags) != 0 {
+		count++ // POKEGEAR
+	}
+	cursor := int(reader.Peek8(sym.MenuCursorPosition)) - 1
+	if cursor < 0 || cursor >= count {
+		return state
+	}
+	state.Visible = true
+	state.Ready = true
+	state.Cursor = game.MenuCursorState{Current: cursor, Max: count - 1}
+	return state
 }
 
-func (*Profile) StartMenuEntryIndex(game.MemoryReader, game.StartMenuEntry) (int, bool) {
-	return 0, false
+func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
+	return gsStartMenuState(reader)
+}
+
+func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	if reader == nil || reader.Peek8(sym.BattleMode) != 0 {
+		return 0, false
+	}
+	index := 0
+	if reader.Peek8(sym.StatusFlags)&1 != 0 {
+		index++
+	}
+	switch entry {
+	case game.StartMenuPokemon:
+		if reader.Peek8(sym.PartyCount) == 0 {
+			return 0, false
+		}
+		return index, true
+	case game.StartMenuItems:
+		if reader.Peek8(sym.PartyCount) != 0 {
+			index++
+		}
+		return index, true
+	default:
+		return 0, false
+	}
 }
