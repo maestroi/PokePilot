@@ -60,8 +60,8 @@ type MediaRenderJobProgressRequest struct {
 	WorkerID      string `json:"worker_id"`
 	State         string `json:"state,omitempty"`
 	Stage         string `json:"stage,omitempty"`
-	SegmentsTotal int    `json:"segments_total,omitempty"`
-	SegmentsDone  int    `json:"segments_done,omitempty"`
+	SegmentsTotal *int   `json:"segments_total,omitempty"`
+	SegmentsDone  *int   `json:"segments_done,omitempty"`
 }
 
 type MediaRenderJobFinishRequest struct {
