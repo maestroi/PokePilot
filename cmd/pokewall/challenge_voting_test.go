@@ -55,8 +55,8 @@ func TestAudienceVoteLifecycleDeduplicatesAndPinsWinner(t *testing.T) {
 		t.Fatalf("first ballot = %d: %s", first.Code, first.Body.String())
 	}
 	var ballotResponse struct {
-		Accepted bool                  \`json:"accepted"\`
-		Vote     challengeVoteSnapshot \`json:"vote"\`
+		Accepted bool                  `json:"accepted"`
+		Vote     challengeVoteSnapshot `json:"vote"`
 	}
 	if err := json.Unmarshal(first.Body.Bytes(), &ballotResponse); err != nil {
 		t.Fatal(err)
@@ -227,7 +227,7 @@ func TestAudienceVoteRejectsUnsupportedCandidatesAndPersists(t *testing.T) {
 		t.Fatalf("active = %d: %s", active.Code, active.Body.String())
 	}
 	var response struct {
-		Active *challengeVoteSnapshot \`json:"active"\`
+		Active *challengeVoteSnapshot `json:"active"`
 	}
 	if err := json.Unmarshal(active.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
