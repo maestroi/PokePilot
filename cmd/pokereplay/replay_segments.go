@@ -18,6 +18,7 @@ import (
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
+	mediasegment "github.com/maestroi/pokepilot/media/segment"
 )
 
 const (
@@ -440,37 +441,7 @@ func replayVideoSegmentURLs(s *replayServer, attempts []preparedReplayAttempt) (
 }
 
 func concatReplaySegmentURLs(ctx context.Context, dir string, urls []string, destination string) error {
-	if len(urls) == 0 {
-		return fmt.Errorf("concat replay segments: no segment URLs")
-	}
-	var manifest strings.Builder
-	manifest.WriteString("ffconcat version 1.0\n")
-	for _, url := range urls {
-		escaped := strings.ReplaceAll(url, "'", "'\\''")
-		fmt.Fprintf(&manifest, "file '%s'\n", escaped)
-	}
-	manifestPath := pathJoinOS(dir, "segments-remote.ffconcat")
-	if err := os.WriteFile(manifestPath, []byte(manifest.String()), 0o600); err != nil {
-		return fmt.Errorf("write remote replay concat manifest: %w", err)
-	}
-	args := []string{
-		"-hide_banner", "-loglevel", "error", "-y",
-		"-protocol_whitelist", "file,http,https,tcp,tls,crypto",
-		"-f", "concat", "-safe", "0", "-i", manifestPath,
-		"-c", "copy", "-movflags", "+faststart", destination,
-	}
-	output := &replayOutputTail{}
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Run(); err != nil {
-		detail := output.String()
-		for _, url := range urls {
-			detail = strings.ReplaceAll(detail, url, "[segment-url]")
-		}
-		return fmt.Errorf("concat remote replay segments: %w: %s", err, strings.TrimSpace(detail))
-	}
-	return nil
+	return mediasegment.ConcatURLs(ctx, dir, urls, destination, nil)
 }
 
 func totalReplayVideoSegments(attempts []preparedReplayAttempt) int {
