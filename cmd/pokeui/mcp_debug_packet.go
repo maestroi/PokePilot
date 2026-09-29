@@ -219,7 +219,7 @@ func compactFailureObjective(o farm.FailureObjective) string {
 		}
 	}
 	if o.Level != 0 {
-		args = append(args, "level="+strconv.Itoa(o.Level))
+		args = append(args, "level="+strconv.Itoa(int(o.Level)))
 	}
 	if o.Qty != 0 {
 		args = append(args, "qty="+strconv.Itoa(o.Qty))
