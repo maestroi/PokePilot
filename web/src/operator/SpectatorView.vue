@@ -77,7 +77,7 @@ function spectatorBaseURL(): string {
 function openSpectator(runID = ''): void {
   const base = spectatorBaseURL()
   if (!base) {
-    actionError.value = 'Set POKEPILOT_PUBLIC_BASE_URL on the operator UI to enable spectator links.'
+    actionError.value = 'Set POKEPILOT_PUBLIC_BASE_URL on the operator UI to enable public links.'
     return
   }
   window.open(spectatorURL(base, runID), '_blank', 'noopener,noreferrer')
@@ -139,7 +139,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
         <div>
           <h2 class="text-sm font-semibold text-white">Public site</h2>
           <p class="mt-0.5 text-[11px] text-[var(--poke-muted)]">
-            Hidden runs never cross the public RomPilot API. Featured runs become the default view for unpinned spectators.
+            Hidden runs never cross the public RomPilot API. Featured runs become the default view for unpinned public visitors.
           </p>
         </div>
         <button
@@ -211,7 +211,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
                 featuredRunID === run.run_id ? 'bg-[#31402e] text-[var(--poke-green)] ring-[#52664c]' : 'text-[var(--poke-text)] ring-[var(--poke-border-strong)]',
                 'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:bg-white/5 disabled:opacity-50'
               ]"
-              :title="featuredRunID === run.run_id ? 'Stop featuring this run' : 'Make this the default spectator run'"
+              :title="featuredRunID === run.run_id ? 'Stop featuring this run' : 'Make this the default public run'"
               @click="setFeatured(run, featuredRunID !== run.run_id)"
             >
               <StarIcon class="size-3" aria-hidden="true" />
@@ -223,7 +223,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
               class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold text-[var(--poke-cyan)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5"
               @click="openSpectator(run.run_id)"
             >
-              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> View spectator
+              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> Open public
             </button>
           </div>
         </div>
