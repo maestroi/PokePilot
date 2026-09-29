@@ -154,7 +154,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
       <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
       <section class="overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-panel)]">
-        <div class="grid grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] gap-2 border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5 py-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">
+        <div class="hidden grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] gap-2 border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5 py-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:grid">
           <span>Run</span>
           <span>Status</span>
           <span>When</span>
@@ -165,7 +165,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
         <div
           v-for="run in runs"
           :key="run.run_id"
-          class="grid grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] items-center gap-2 border-b border-[var(--poke-border)] px-2.5 py-2 last:border-b-0"
+          class="grid grid-cols-1 gap-3 border-b border-[var(--poke-border)] px-3 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] lg:items-center lg:gap-2 lg:px-2.5 lg:py-2"
         >
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
@@ -175,11 +175,20 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
             <span class="mt-0.5 block truncate text-[10px] text-[var(--poke-muted)]">{{ run.starter || 'Pokémon Red' }}</span>
           </div>
 
-          <div><StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge></div>
-          <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ formatWhen(run.status === 'done' ? run.ended_at : run.queued_at) }}</span>
-          <span class="truncate text-[11px] text-[var(--poke-text)]" :title="run.goal || ''">{{ run.goal || 'Free play' }}</span>
+          <div class="flex items-center justify-between gap-3 lg:block">
+            <span class="text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">Status</span>
+            <StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge>
+          </div>
+          <div class="flex items-center justify-between gap-3 lg:block">
+            <span class="text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">When</span>
+            <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ formatWhen(run.status === 'done' ? run.ended_at : run.queued_at) }}</span>
+          </div>
+          <div class="flex min-w-0 items-center justify-between gap-3 lg:block">
+            <span class="shrink-0 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">Goal</span>
+            <span class="truncate text-[11px] text-[var(--poke-text)]" :title="run.goal || ''">{{ run.goal || 'Free play' }}</span>
+          </div>
 
-          <div class="flex items-center justify-end gap-1">
+          <div class="flex flex-wrap items-center justify-start gap-1 lg:justify-end">
             <button
               type="button"
               :disabled="Boolean(busyRunID)"
