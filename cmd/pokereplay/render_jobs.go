@@ -274,7 +274,17 @@ func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRende
 	go s.render(claimed.ID, job.RunID, recordings, cacheKey, mode)
 }
 
-func (s *replayServer) keepRenderJobLease(ctx context.Context, jobID string) context.CancelFunc {
+func mediaRenderJobLeaseLost(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "owned by another worker") ||
+		strings.Contains(message, "not active") ||
+		strings.Contains(message, "media render job not found")
+}
+
+func (s *replayServer) keepRenderJobLease(ctx context.Context, jobID string, onLeaseLost func()) context.CancelFunc {
 	heartbeatCtx, cancel := context.WithCancel(ctx)
 	if jobID == "" {
 		return cancel
@@ -289,6 +299,12 @@ func (s *replayServer) keepRenderJobLease(ctx context.Context, jobID string) con
 			case <-ticker.C:
 				if err := s.heartbeatRenderJob(heartbeatCtx, jobID, "", "", nil, nil); err != nil {
 					log.Printf("pokereplay: heartbeat render job %s: %v", jobID, err)
+					if mediaRenderJobLeaseLost(err) {
+						if onLeaseLost != nil {
+							onLeaseLost()
+						}
+						return
+					}
 				}
 			}
 		}
