@@ -211,11 +211,14 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		failureCauseIs(result, "catch_attempt_missed") || failureCauseIs(result, "static_capture_exhausted")
 	staticUnavailable := failureCauseIs(result, "static_capture_unavailable")
 	routePrerequisite := failureCauseIs(result, "route_prerequisite_missing")
+	routeUnavailable := failureCauseIs(result, "no_route") || failureCauseIs(result, "no_path")
 	routeSearchExhausted := failureCauseIs(result, "route_replan_exhausted")
 	navigationStalled := failureCauseIs(result, "navigation_stalled")
+	transitionExecutionFailed := failureCauseIs(result, "transition_execution_failed")
 	pushPuzzleSearchExhausted := failureCauseIs(result, "push_puzzle_search_exhausted")
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
+	localInteractionUnavailable := obj.Kind == KindTalk && failureCauseIs(result, "no_dialogue")
 	purchaseBlocked := obj.Kind == KindBuy && result.Outcome == OutcomeBlocked && (failureCauseIs(result, "outcome:blocked") ||
 		failureCauseIs(result, "cant_afford") ||
 		failureCauseIs(result, "not_in_stock") ||
@@ -262,7 +265,9 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// quarantine for that journey, so charging the generic mechanical budget as
 	// well can terminate a healthy run before an alternate objective moves the
 	// player or advances progression (#2141).
-	if routePrerequisite || routeSearchExhausted || navigationStalled || pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || staticUnavailable || purchaseBlocked {
+	if routePrerequisite || routeUnavailable || routeSearchExhausted || navigationStalled || transitionExecutionFailed ||
+		pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || localInteractionUnavailable ||
+		staticUnavailable || purchaseBlocked {
 		// A fully bounded route-search exhaustion is also a planning boundary:
 		// GoTo already spent its local replan budget and the failure policy has
 		// recorded a same-state quarantine for this exact objective. Charging the
@@ -278,10 +283,21 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		// the response; spending the fatal mechanical-failure budget here makes
 		// a healthy search for a better area terminate as "recovery exhausted".
 		//
+		// A graph-level no_route/no_path and a stable transition execution failure
+		// are also route-planning evidence. The route attempt may have moved the
+		// player before discovering the dead end; that must not turn the next
+		// planner round into a second mechanical failure. #2173/#2174 measured
+		// both forms in live farm runs.
+		//
+		// A local Talk that reaches no dialogue is likewise a stale/unavailable
+		// exploration target, not a controller malfunction. Its quarantine is
+		// scoped to the semantic location rather than the player's approach tile,
+		// so movement caused by TalkAt does not immediately resurrect it (#2168).
+		//
 		// Bounded push-puzzle search exhaustion is equivalent route-planning
 		// feedback, and a blocked Buy is resource/shop feedback when its cause is
-		// the adapter's safe-boundary fallback or a typed economic outcome. Both
-		// still use quarantine and the normal stagnation/round/frame watchdogs;
+		// the adapter's safe-boundary fallback or a typed economic outcome. These
+		// all still use quarantine and the normal stagnation/round/frame watchdogs;
 		// actual shop controller faults (menu_stuck, shop_*_stalled, etc.) are
 		// deliberately excluded and continue through the mechanical budget.
 		decision := runFailureDecision{Recovered: true}
