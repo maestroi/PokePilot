@@ -60,22 +60,7 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 		return -1, err
 	}
 	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, func(native game.NativeFieldMove) error {
-		// The current move-learning executor is still Gen-I-shaped. Keep that
-		// limitation at this adapter edge instead of baking it into generic
-		// field capability/preparation semantics.
-		if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
-			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
-				native.MachineItemID, native.MoveID)
-		}
-		result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
-		if err != nil {
-			return err
-		}
-		if uint16(result.Decision.Machine.Move) != native.MoveID {
-			return fmt.Errorf("machine %#04x mapped to move %#04x, want %#04x",
-				native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
-		}
-		return nil
+		return teachNativeFieldMove(m, profile, native)
 	})
 }
 
