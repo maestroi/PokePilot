@@ -102,8 +102,12 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Trail          [][2]uint8            `json:"trail,omitempty"`
 		Attempts       int                   `json:"attempts,omitempty"`
 		Reason         string                `json:"reason,omitempty"`
-		ReplayReady    bool                  `json:"replay_ready,omitempty"`
-		Highlight      string                `json:"highlight,omitempty"`
+		ReplayReady        bool                  `json:"replay_ready,omitempty"`
+		ReplayState        string                `json:"replay_state,omitempty"`
+		ReplayStage        string                `json:"replay_stage,omitempty"`
+		ReplaySegments     int                   `json:"replay_segments,omitempty"`
+		ReplaySegmentsDone int                   `json:"replay_segments_done,omitempty"`
+		Highlight          string                `json:"highlight,omitempty"`
 	}
 
 	var player *publicPlayer
@@ -265,7 +269,11 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Trail:          append([][2]uint8(nil), run.Trail...),
 		Attempts:       run.Attempts,
 		Reason:         run.Reason,
-		ReplayReady:    run.ReplayReady,
-		Highlight:      run.Highlight,
+		ReplayReady:        run.ReplayReady,
+		ReplayState:        run.ReplayState,
+		ReplayStage:        run.ReplayStage,
+		ReplaySegments:     run.ReplaySegments,
+		ReplaySegmentsDone: run.ReplaySegmentsDone,
+		Highlight:          run.Highlight,
 	})
 }
