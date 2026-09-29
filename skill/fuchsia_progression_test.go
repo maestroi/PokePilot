@@ -119,6 +119,34 @@ func TestSafariGateJoinChoiceIndex(t *testing.T) {
 	}
 }
 
+func TestWaitForSafariRejoinPromptCatchesDelayedChoice(t *testing.T) {
+	frames := 0
+	seen := waitForSafariRejoinPrompt(
+		func() { frames++ },
+		func() bool { return frames >= 300 },
+	)
+	if !seen {
+		t.Fatal("Safari re-entry prompt appearing after the old 240-frame window was missed")
+	}
+	if frames != 300 {
+		t.Fatalf("prompt detected after %d frames, want 300", frames)
+	}
+}
+
+func TestWaitForSafariRejoinPromptStopsAtBudget(t *testing.T) {
+	frames := 0
+	seen := waitForSafariRejoinPrompt(
+		func() { frames++ },
+		func() bool { return false },
+	)
+	if seen {
+		t.Fatal("reported a Safari re-entry prompt that never appeared")
+	}
+	if frames != safariRejoinPromptSettleFrames {
+		t.Fatalf("waited %d frames, want bounded budget %d", frames, safariRejoinPromptSettleFrames)
+	}
+}
+
 func setTestBag(mem *state.Mem, entries ...[2]uint8) {
 	mem[sym.NumBagItems] = uint8(len(entries))
 	for i, entry := range entries {

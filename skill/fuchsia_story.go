@@ -404,7 +404,7 @@ const (
 	safariExitTaps         = 4
 	safariExitSettleFrames = 40
 
-	safariRejoinPromptSettleFrames = 240
+	safariRejoinPromptSettleFrames = 1200
 )
 
 func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) error {
@@ -448,18 +448,36 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	return declineSafariRejoinPrompt(m)
 }
 
+// waitForSafariRejoinPrompt passively waits for the gate script to publish its
+// known re-entry choice. The script can lag well behind the first controllable
+// frame; the old 240-frame window let a later prompt escape into the generic
+// finish boundary as objective_boundary_choice (#2215).
+func waitForSafariRejoinPrompt(step func(), ready func() bool) bool {
+	if ready() {
+		return true
+	}
+	for frame := 0; frame < safariRejoinPromptSettleFrames; frame++ {
+		step()
+		if ready() {
+			return true
+		}
+	}
+	return false
+}
+
 // declineSafariRejoinPrompt finishes a leave at a stable boundary. Leaving
 // early can stop the player on the gate's join trigger, and the gate script
-// opens "Would you like to join the hunt?" a few frames after control returns.
+// opens "Would you like to join the hunt?" after control returns.
 // Leaving owns that prompt: a caller that wants another session re-enters
 // through enterSafariZone, and one that cannot afford it must not inherit an
-// open YES/NO (run-s6v9q3t2w5rl, triage:e3a271f89ba8e843).
+// open YES/NO (run-s6v9q3t2w5rl, triage:e3a271f89ba8e843; #2215).
 func declineSafariRejoinPrompt(m *emu.Emu) error {
 	var mem state.Mem
-	if _, err := m.StepUntil(safariRejoinPromptSettleFrames, func(e *emu.Emu) bool {
-		state.Snapshot(e, &mem)
+	seen := waitForSafariRejoinPrompt(m.StepFrame, func() bool {
+		state.Snapshot(m, &mem)
 		return state.DecodeTwoOptionMenu(&mem) != nil
-	}); err != nil {
+	})
+	if !seen {
 		return nil // no prompt: the leave already ended controllable
 	}
 	handled, err := answerSafariGateJoinChoice(m, state.ScreenText(&mem), false)
