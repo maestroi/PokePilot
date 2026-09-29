@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getMediaRenderJobs, getModels, patchDeploymentWorkers } from '../src/shared/api/client.ts'
+import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getMediaRenderJobs, getModels, retryMediaRenderJob, patchDeploymentWorkers } from '../src/shared/api/client.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -54,6 +54,22 @@ test('media render jobs use the operator read endpoint', async () => {
   assert.equal(jobs.total, 1)
   assert.equal(jobs.jobs[0]?.segments_done, 2)
   assert.equal(jobs.states.rendering, 1)
+})
+
+test('media render jobs can be retried from the operator client', async () => {
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), '/v1/media/render-jobs/render%2Ffailed/retry')
+    assert.equal(init?.method, 'POST')
+    assert.equal(init?.body, '{}')
+    return new Response(JSON.stringify({
+      id: 'render/failed',
+      run_id: 'run-1',
+      state: 'queued'
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  const job = await retryMediaRenderJob('render/failed')
+  assert.equal(job.state, 'queued')
 })
 
 test('createRun generates a run id and surfaces API errors', async () => {
