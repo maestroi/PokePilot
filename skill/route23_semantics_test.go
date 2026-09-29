@@ -69,6 +69,24 @@ func TestRoute23SouthReturnIsSemanticPivot(t *testing.T) {
 	}
 }
 
+func TestRoute23LeagueReturnUsesCaveOnlyFromNorthComponent(t *testing.T) {
+	for _, tc := range []struct {
+		x, y uint8
+		want bool
+	}{
+		{14, 31, true},  // 2F exit door
+		{18, 30, true},  // north exterior
+		{14, 37, true},  // east exit pocket
+		{4, 31, false},  // 1F entrance door
+		{4, 32, false},  // south cave component
+		{7, 138, false}, // Route 22 gate approach
+	} {
+		if got := route23LeagueReturnNeedsVictoryRoad(tc.x, tc.y); got != tc.want {
+			t.Errorf("Route 23 (%d,%d) needs reverse cave=%v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
 func TestRoute23NorthVictoryRoadExitIsNotCollapsedIntoLeagueApproach(t *testing.T) {
 	edge := world.Edge{
 		Kind:  world.EdgeWarp,
