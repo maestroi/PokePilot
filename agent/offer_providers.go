@@ -89,10 +89,14 @@ func newObjectiveOfferContext(obs Observation, known *Knowledge) *objectiveOffer
 	for _, blockage := range obs.RouteBlockages {
 		ctx.semanticBlocked[string(blockage.Destination)] = true
 	}
+	// Unroutable is the execution truth for every journey consumer, including
+	// recovery ranking. RouteBlockages is richer explanatory evidence for a
+	// subset of those same destinations; it must not remove them from the
+	// unroutable set. Doing so let recovery re-offer a Pokemon Center behind a
+	// semantic one-way gate (can_leave_league) even though travel correctly
+	// withheld the same destination (#2229).
 	for _, name := range obs.Unroutable {
-		if !ctx.semanticBlocked[name] {
-			ctx.unroutable[name] = true
-		}
+		ctx.unroutable[name] = true
 	}
 	return ctx
 }
