@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,7 +33,6 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -450,7 +448,7 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		}
 		semantic := semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath}
 		semanticSegments[index] = semantic
-		prepared, err := s.prepareReplayAttempt(ctx, runID, recording, semantic, dir, maxFrames)
+		prepared, err := s.prepareReplayAttempt(runID, recording, semantic, dir, maxFrames)
 		if err != nil {
 			setError(fmt.Errorf("attempt %d segment plan: %w", recording.Attempt, err))
 			return
