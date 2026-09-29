@@ -174,3 +174,15 @@ func setTestEvent(mem *state.Mem, event state.Event) {
 	off := sym.EventFlags + uint16(event)/8
 	mem[off] |= 1 << (uint16(event) % 8)
 }
+
+func TestIsSafariGateLeaveChoice(t *testing.T) {
+	if !isSafariGateLeaveChoice(safariZoneGateMap, "YES NO Leaving early?") {
+		t.Fatal("gate Leaving early? prompt must be story-owned")
+	}
+	if isSafariGateLeaveChoice(wardensHouseMap, "Leaving early?") {
+		t.Fatal("leave prompt is only owned on the Safari gate map")
+	}
+	if isSafariGateLeaveChoice(safariZoneGateMap, "Would you like to join the hunt?") {
+		t.Fatal("join prompt is not the leave prompt")
+	}
+}

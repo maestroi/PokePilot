@@ -271,6 +271,11 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				return fmt.Errorf("skill: FuchsiaProgression: safari gold teeth place missing")
 			}
 			if _, err := TravelFlee(m, romData, teethStand, policy, fuchsiaTravelEngagements); err != nil {
+				if handled, resumeErr := settleSafariGateLeaveChoice(m, err); resumeErr != nil {
+					return fmt.Errorf("skill: FuchsiaProgression: reach Gold Teeth: %w", resumeErr)
+				} else if handled {
+					continue
+				}
 				state.Snapshot(m, &mem)
 				if !state.HasEvent(&mem, eventInSafariZone) {
 					continue
@@ -289,6 +294,11 @@ func collectSafariRewards(m *emu.Emu, romData []byte, policy MovePolicy) error {
 				return fmt.Errorf("skill: FuchsiaProgression: safari secret house place missing")
 			}
 			if _, err := TravelFlee(m, romData, secret, policy, fuchsiaTravelEngagements); err != nil {
+				if handled, resumeErr := settleSafariGateLeaveChoice(m, err); resumeErr != nil {
+					return fmt.Errorf("skill: FuchsiaProgression: reach Safari Secret House: %w", resumeErr)
+				} else if handled {
+					continue
+				}
 				state.Snapshot(m, &mem)
 				if !state.HasEvent(&mem, eventInSafariZone) {
 					continue
@@ -328,6 +338,65 @@ func safariGateJoinChoiceIndex(mapID uint8, text string, join bool) (int, bool) 
 	}
 	return 1, true // NO
 }
+
+// isSafariGateLeaveChoice recognizes the gate's "Leaving early?" prompt. The
+// LEAVING_SAFARI gate script opens it whenever the player enters the gate with
+// EVENT_IN_SAFARI_ZONE still set, e.g. from Fuchsia after blacking out mid-hunt.
+func isSafariGateLeaveChoice(mapID uint8, text string) bool {
+	return mapID == safariZoneGateMap &&
+		strings.Contains(strings.ToLower(strings.Join(strings.Fields(text), " ")), "leaving early?")
+}
+
+// safariGateLeaveSafeRow is the lowest gate row where the leave prompt's YES
+// is safe. YES walks the player Down x3; from a lower row that scripted walk
+// overruns the south warp mid-script, which corrupts the map state (measured on
+// run-2j5h6cdqt9qkmj9qk2dqop6wh). The script normally asks from the zone-side
+// rows, where the walk ends inside the gate.
+const safariGateLeaveSafeRow = 1
+
+// settleSafariGateLeaveChoice settles a travel error caused by the gate's
+// "Leaving early?" prompt, typically after blacking out mid-hunt and walking
+// back in from Fuchsia. Each NO walks the player one row north and the script
+// asks again; once on a safe row it answers YES, which ends the stale session
+// the same way leaveSafariZoneIfNeeded does, so the caller re-enters normally.
+// It reports handled=false for any other error so the caller keeps its own
+// failure.
+func settleSafariGateLeaveChoice(m *emu.Emu, err error) (bool, error) {
+	var choice *ErrDialogueChoice
+	if !errors.As(err, &choice) || !isSafariGateLeaveChoice(m.Peek8(sym.CurMap), choice.Result.Text) {
+		return false, nil
+	}
+	var mem state.Mem
+	for decline := 0; decline < safariGateRows; decline++ {
+		if !waitForSafariRejoinPrompt(m.StepFrame, func() bool {
+			state.Snapshot(m, &mem)
+			return state.DecodeTwoOptionMenu(&mem) != nil && isSafariGateLeaveChoice(mem.U8(sym.CurMap), state.ScreenText(&mem))
+		}) {
+			return true, fmt.Errorf("Safari gate did not reopen Leaving early? at (%d,%d)", mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+		}
+		if mem.U8(sym.YCoord) <= safariGateLeaveSafeRow {
+			if err := selectTwoOption(m, 0); err != nil {
+				return true, fmt.Errorf("accept Safari leave prompt: %w", err)
+			}
+			if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
+				return !state.HasEvent(mm, eventInSafariZone) && state.Controllable(mm)
+			}); err != nil {
+				return true, fmt.Errorf("leave stale Safari session: %w", err)
+			}
+			return true, declineSafariRejoinPrompt(m)
+		}
+		if err := selectTwoOption(m, 1); err != nil {
+			return true, fmt.Errorf("decline Safari leave prompt: %w", err)
+		}
+		if rec := RecoverDialogue(m, dialogueRecoveryBudget); rec.Stop != DialogueRecovered && rec.Stop != DialogueChoiceRequired {
+			return true, fmt.Errorf("Safari leave decline did not settle: stop=%d text=%q", rec.Stop, rec.Text)
+		}
+	}
+	return true, fmt.Errorf("Safari gate still asks Leaving early? after %d declines", safariGateRows)
+}
+
+// safariGateRows bounds the NO walk from the south warp row to a safe row.
+const safariGateRows = 6
 
 func answerSafariGateJoinChoice(m *emu.Emu, text string, join bool) (bool, error) {
 	index, ok := safariGateJoinChoiceIndex(m.Peek8(sym.CurMap), text, join)
