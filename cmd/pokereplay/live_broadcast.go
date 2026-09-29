@@ -1,15 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	"image/color"
-	"image/jpeg"
-	"image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -19,7 +14,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
-	"golang.org/x/image/draw"
+	"github.com/maestroi/pokepilot/media/compositor"
 )
 
 const (
@@ -371,47 +366,7 @@ func liveActivityEventType(activity liveRunActivity) string {
 }
 
 func renderLiveBroadcastFrame(rawPNG []byte, runID string, attempt int, timeline farm.MediaTimeline) ([]byte, error) {
-	raw, err := png.Decode(bytes.NewReader(rawPNG))
-	if err != nil {
-		return nil, fmt.Errorf("decode live frame: %w", err)
-	}
-	plan := buildBroadcastPlan(runID, attempt, timeline)
-	if len(plan.States) == 0 {
-		return nil, errors.New("live broadcast plan has no state")
-	}
-	nowMS := int64(0)
-	if len(timeline.Snapshots) > 0 {
-		nowMS = timeline.Snapshots[len(timeline.Snapshots)-1].TimestampMS
-	}
-	state := plan.States[0]
-	for _, candidate := range plan.States {
-		if candidate.StartMS <= nowMS {
-			state = candidate
-			continue
-		}
-		break
-	}
-
-	scene := image.NewRGBA(image.Rect(0, 0, broadcastSceneWidth, broadcastSceneHeight))
-	fillRect(scene, scene.Bounds(), color.RGBA{R: 7, G: 16, B: 24, A: 255})
-	// Match the offline ffmpeg compositor at half resolution: its raw-game
-	// scale=704:634 and pad offset=24:43 become 352x317 at roughly (12,22).
-	gameRect := image.Rect(12, 22, 364, 339)
-	draw.NearestNeighbor.Scale(scene, gameRect, raw, raw.Bounds(), draw.Src, nil)
-	drawBroadcastStateOverlay(scene, state)
-	for _, event := range plan.Events {
-		if event.StartMS <= nowMS && (event.EndMS <= event.StartMS || nowMS <= event.EndMS) {
-			drawBroadcastEventOverlay(scene, event)
-		}
-	}
-
-	out := image.NewRGBA(image.Rect(0, 0, broadcastWidth, broadcastHeight))
-	draw.NearestNeighbor.Scale(out, out.Bounds(), scene, scene.Bounds(), draw.Src, nil)
-	var encoded bytes.Buffer
-	if err := jpeg.Encode(&encoded, out, &jpeg.Options{Quality: 84}); err != nil {
-		return nil, fmt.Errorf("encode live broadcast frame: %w", err)
-	}
-	return encoded.Bytes(), nil
+	return compositor.RenderFrame(rawPNG, runID, attempt, timeline)
 }
 
 func (s *replayServer) fetchLiveRun(ctx context.Context, runID string) (liveRunView, error) {
