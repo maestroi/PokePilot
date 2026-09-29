@@ -182,3 +182,84 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	}
 	return nil, ErrNoPath
 }
+
+
+// NativePathStep is a native-grid controller displacement plus any semantic
+// action that must happen before entering the destination tile.
+type NativePathStep struct {
+	Move NativeStep
+	Cut  bool
+}
+
+// FindNativePathWithCut is the Cut-aware counterpart to FindNativePath. A
+// cuttable collision may be entered only when allowCut is true; the returned
+// step marks that Cut must be executed before the controller displacement.
+// The grid itself is not mutated: after the action the runtime replans from
+// live cartridge blocks, which is the source of truth for the replacement.
+func FindNativePathWithCut(
+	g *NativeGrid,
+	sx, sy, tx, ty int,
+	occupied map[[2]int]bool,
+	allowCut bool,
+) ([]NativePathStep, error) {
+	if g == nil {
+		return nil, fmt.Errorf("world: nil native grid")
+	}
+	if !g.InBounds(sx, sy) || !g.InBounds(tx, ty) || !g.Walkable(sx, sy) ||
+		(!g.Walkable(tx, ty) && !(allowCut && g.Cuttable(tx, ty))) {
+		return nil, ErrNoPath
+	}
+	if sx == tx && sy == ty {
+		return []NativePathStep{}, nil
+	}
+	type node struct {
+		x, y int
+		prev int
+		step NativePathStep
+	}
+	nodes := []node{{x: sx, y: sy, prev: -1}}
+	seen := map[[2]int]bool{{sx, sy}: true}
+
+	for i := 0; i < len(nodes); i++ {
+		for _, input := range nativeDirections {
+			move, ok := g.Movement(nodes[i].x, nodes[i].y, input, occupied)
+			cut := false
+			if !ok && allowCut {
+				nx, ny := nodes[i].x+input.DX, nodes[i].y+input.DY
+				if !occupied[[2]int{nx, ny}] && g.Cuttable(nx, ny) {
+					dir, opposite, dirOK := nativeDirection(input)
+					from, fromOK := g.Tile(nodes[i].x, nodes[i].y)
+					to, toOK := g.Tile(nx, ny)
+					if dirOK && fromOK && toOK &&
+						g.blocked[from]&dir == 0 && g.blocked[to]&opposite == 0 {
+						move, ok, cut = input, true, true
+					}
+				}
+			}
+			if !ok {
+				continue
+			}
+			nx, ny := nodes[i].x+move.DX, nodes[i].y+move.DY
+			key := [2]int{nx, ny}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			nodes = append(nodes, node{
+				x: nx, y: ny, prev: i,
+				step: NativePathStep{Move: move, Cut: cut},
+			})
+			j := len(nodes) - 1
+			if nx != tx || ny != ty {
+				continue
+			}
+			var path []NativePathStep
+			for nodes[j].prev >= 0 {
+				path = append([]NativePathStep{nodes[j].step}, path...)
+				j = nodes[j].prev
+			}
+			return path, nil
+		}
+	}
+	return nil, ErrNoPath
+}
