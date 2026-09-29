@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/maestroi/pokepilot/media/compositor"
 )
 
 func TestReplayCacheKeyVersionsBroadcastWithoutChangingRaw(t *testing.T) {
@@ -24,11 +26,18 @@ func TestReplayCacheKeyVersionsBroadcastWithoutChangingRaw(t *testing.T) {
 	if got := replaySetCacheKeyForMode("run-1", recordings, replayModeBroadcast, "broadcast-1280x720-v2"); got == broadcast {
 		t.Fatalf("renderer version did not change cache key: %q", got)
 	}
+	semantic := replaySetCacheKeyForMode("run-1", recordings, replayModeSemantic, compositor.PublicSemanticRendererVersion())
+	if semantic == raw || semantic == broadcast || !strings.Contains(semantic, "semantic-renderstate") || !strings.Contains(semantic, "kenney-tiny-town") {
+		t.Fatalf("semantic key=%q broadcast=%q raw=%q", semantic, broadcast, raw)
+	}
 }
 
 func TestParseReplayModeDefaultsToBroadcastAndKeepsRawFallback(t *testing.T) {
 	if got, err := parseReplayMode(""); err != nil || got != replayModeBroadcast {
 		t.Fatalf("default mode=%q err=%v", got, err)
+	}
+	if got, err := parseReplayMode("semantic"); err != nil || got != replayModeSemantic {
+		t.Fatalf("semantic mode=%q err=%v", got, err)
 	}
 	if got, err := parseReplayMode("raw"); err != nil || got != replayModeRaw {
 		t.Fatalf("raw mode=%q err=%v", got, err)
