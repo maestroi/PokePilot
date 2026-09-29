@@ -178,6 +178,22 @@ func TestDecodeObservationReadsYellowPlayerBaseline(t *testing.T) {
 	}
 }
 
+func TestQueuedScriptBattleIsNotControllable(t *testing.T) {
+	// Mt. Moon B2F Jessie/James script 12: wJoyIgnore cleared, wCurOpponent
+	// queued, wIsInBattle still 0 (run-1jc1gst1w5tv2f).
+	var mem fakeMemory
+	mem[sym.CurMap] = 0x3d
+	mem[sym.CurMapHeight], mem[sym.CurMapWidth] = 4, 4
+	mem[sym.CurOpponent] = 0xe6
+	obs, err := New().DecodeObservation(&mem, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.Controllable {
+		t.Fatal("queued script battle read as controllable")
+	}
+}
+
 func TestDecodeObservationProjectsYellowPartyMoneyAndBadges(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.CurMap] = 0x26
