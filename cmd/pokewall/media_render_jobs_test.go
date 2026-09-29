@@ -137,7 +137,6 @@ func TestMediaRenderJobLeaseRecoveryAndLifecycle(t *testing.T) {
 	}
 }
 
-
 func TestMediaRenderJobsListSummarizesAndOrdersRecentJobs(t *testing.T) {
 	w := NewWall("")
 	w.SetStatePath(filepath.Join(t.TempDir(), "wall.json"))
