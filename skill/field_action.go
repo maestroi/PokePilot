@@ -51,9 +51,9 @@ func SemanticFieldMoves() []FieldMove {
 	}
 }
 
-// EnsureFieldMove makes move usable by the current party. Capability and
-// carrier decisions are generation-neutral; the active move-learning executor
-// is only an adapter for applying the profile's native machine mapping.
+// legacyTMHMTeachingProfile is a temporary executor capability. Gen-I
+// profiles opt in because TeachTMHM still owns Gen-I RAM/menu mechanics;
+// newer profiles stay fail-closed until they expose their own native teacher.
 type legacyTMHMTeachingProfile interface {
 	SupportsLegacyTMHMTeaching() bool
 }
@@ -66,21 +66,21 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	var teach fieldMoveTeachFunc
 	if legacy, ok := profile.(legacyTMHMTeachingProfile); ok && legacy.SupportsLegacyTMHMTeaching() {
 		teach = func(native game.NativeFieldMove) error {
-		// The current move-learning executor is still Gen-I-shaped. Keep that
-		// limitation at this adapter edge instead of baking it into generic
-		// field capability/preparation semantics.
-		if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
-			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
-				native.MachineItemID, native.MoveID)
-		}
-		result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
-		if err != nil {
-			return err
-		}
-		if uint16(result.Decision.Machine.Move) != native.MoveID {
-			return fmt.Errorf("machine %#04x mapped to move %#04x, want %#04x",
-				native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
-		}
+			// The current move-learning executor is still Gen-I-shaped. Keep
+			// that limitation at this adapter edge rather than in capability
+			// decoding.
+			if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
+				return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
+					native.MachineItemID, native.MoveID)
+			}
+			result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
+			if err != nil {
+				return err
+			}
+			if uint16(result.Decision.Machine.Move) != native.MoveID {
+				return fmt.Errorf("machine %#04x mapped to move %#04x, want %#04x",
+					native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
+			}
 			return nil
 		}
 	}
