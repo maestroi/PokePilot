@@ -54,12 +54,18 @@ func SemanticFieldMoves() []FieldMove {
 // EnsureFieldMove makes move usable by the current party. Capability and
 // carrier decisions are generation-neutral; the active move-learning executor
 // is only an adapter for applying the profile's native machine mapping.
+type legacyTMHMTeachingProfile interface {
+	SupportsLegacyTMHMTeaching() bool
+}
+
 func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 	profile, err := fieldMoveProfileFor(m)
 	if err != nil {
 		return -1, err
 	}
-	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, func(native game.NativeFieldMove) error {
+	var teach fieldMoveTeachFunc
+	if legacy, ok := profile.(legacyTMHMTeachingProfile); ok && legacy.SupportsLegacyTMHMTeaching() {
+		teach = func(native game.NativeFieldMove) error {
 		// The current move-learning executor is still Gen-I-shaped. Keep that
 		// limitation at this adapter edge instead of baking it into generic
 		// field capability/preparation semantics.
@@ -75,8 +81,10 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 			return fmt.Errorf("machine %#04x mapped to move %#04x, want %#04x",
 				native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
 		}
-		return nil
-	})
+			return nil
+		}
+	}
+	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, teach)
 }
 
 type fieldMoveTeachFunc func(game.NativeFieldMove) error
