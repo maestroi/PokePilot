@@ -88,7 +88,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		RunID          string                `json:"run_id"`
 		Status         string                `json:"status"`
 		Game           string                `json:"game,omitempty"`
-		PublicCapabilities []string          `json:"public_capabilities,omitempty"`
+		Capabilities   []string          `json:"public_capabilities,omitempty"`
 		Starter        string                `json:"starter,omitempty"`
 		Dest           string                `json:"dest,omitempty"`
 		Goal           string                `json:"goal,omitempty"`
@@ -256,7 +256,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		RunID:          run.RunID,
 		Status:         run.Status,
 		Game:           run.Game,
-		PublicCapabilities: spectatorPublicCapabilities(run.Game),
+		Capabilities:   spectatorPublicCapabilities(run.Game),
 		Starter:        run.Starter,
 		Dest:           run.Dest,
 		Goal:           run.Goal,
