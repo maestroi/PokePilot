@@ -19,6 +19,7 @@ const (
 	MenuJoypad              uint16 = 0xCEAA // wMenuJoypad
 	MenuSelection           uint16 = 0xCEAB // wMenuSelection
 	WhichIndexSet           uint16 = 0xCEAD // wWhichIndexSet
+	MenuCursorPosition      uint16 = 0xCEBF // wMenuCursorPosition
 	TwoDMenuCursorInitY     uint16 = 0xCED8 // w2DMenuCursorInitY
 	TwoDMenuCursorInitX     uint16 = 0xCED9 // w2DMenuCursorInitX
 	TwoDMenuNumRows         uint16 = 0xCEDA // w2DMenuNumRows
@@ -30,6 +31,8 @@ const (
 	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
 	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
 	PartyMenuCursor         uint16 = 0xCFC9 // wPartyMenuCursor
+	TMHMPocketCursor        uint16 = 0xCFCD // wTMHMPocketCursor
+	TMHMPocketScroll        uint16 = 0xCFD2 // wTMHMPocketScrollPosition
 	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
@@ -39,6 +42,9 @@ const (
 	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
 	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
 	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
+	CurPocket               uint16 = 0xCE65 // wCurPocket (same WRAM union as title timer)
+	MenuItemsList           uint16 = 0xCEED // wMenuItemsList / wFacingTileID union base
+	FacingTileID            uint16 = 0xCEED // wFacingTileID
 	NamingScreenDestination uint16 = 0xC5D0 // wNamingScreenDestinationPointer
 	NamingScreenCurNameLen  uint16 = 0xC5D2 // wNamingScreenCurNameLength
 	NamingScreenMaxNameLen  uint16 = 0xC5D3 // wNamingScreenMaxNameLength
@@ -102,6 +108,7 @@ const (
 	ForcedSwitch          uint16 = 0xD11C
 	MoveSelectionMenuType uint16 = 0xD11F
 	BattleResult          uint16 = 0xCFE9
+	CurItem               uint16 = 0xD002 // wCurItem
 	CurPartyMon           uint16 = 0xD005
 
 	// Live Gen-II battle structs. battle_struct is defined by the pinned
