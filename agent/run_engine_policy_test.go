@@ -352,3 +352,118 @@ func TestRouteReplanExhaustionStillUsesSameStateQuarantine(t *testing.T) {
 		t.Fatalf("movement did not release route-search quarantine: %+v", got)
 	}
 }
+
+
+func TestRunFailurePolicyPlanningMissesDoNotSpendFailureBudget(t *testing.T) {
+	tests := []struct {
+		name  string
+		obj   Objective
+		cause string
+	}{
+		{name: "no route", obj: Objective{Kind: KindGoTo, Place: "fuchsia good rod house"}, cause: "no_route"},
+		{name: "no path", obj: Objective{Kind: KindGoTo, Place: "fuchsia good rod house"}, cause: "no_path"},
+		{name: "transition execution", obj: Objective{Kind: KindBuy, Item: "full restore", Qty: 1}, cause: "transition_execution_failed"},
+		{name: "local talk unavailable", obj: Objective{Kind: KindTalk, Location: "pewter pokemon center", X: 3, Y: 1}, cause: "no_dialogue"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := newRunFailurePolicy(2)
+			result := ObjectiveResult{
+				Objective: tc.obj,
+				Outcome:   OutcomeBlocked,
+				Failure: &gameruntime.Failure{
+					Class:       gameruntime.FailureClassBlocked,
+					Cause:       tc.cause,
+					Recoverable: true,
+				},
+				Final: Observation{Location: "victory road 2f", Map: 0xC2, X: 23, Y: 8, Controllable: true},
+			}
+			for i := 0; i < 5; i++ {
+				got := policy.recoverable(tc.obj, result, true, 0)
+				if got.Stop != StopUnset || !got.Recovered || got.ReplanReason != "objective_failed" {
+					t.Fatalf("%s attempt %d = %+v; want recoverable strategic replan without fatal-budget spend", tc.cause, i+1, got)
+				}
+			}
+		})
+	}
+}
+
+func TestNoRouteQuarantinesBothTravelPoliciesAcrossMovement(t *testing.T) {
+	failed := Objective{Kind: KindGoTo, Place: "fuchsia good rod house"}
+	sibling := failed
+	sibling.Flee = true
+	other := Objective{Kind: KindGoTo, Place: "pewter city"}
+	obs := Observation{
+		Location:     "route 2",
+		Map:          0x0D,
+		X:            8,
+		Y:            71,
+		Controllable: true,
+		Badges:       []string{"Boulder"},
+	}
+	policy := newRunFailurePolicy(2)
+	result := ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "no_route",
+			Recoverable: true,
+		},
+		Final: obs,
+	}
+	policy.record(result)
+
+	got := policy.filter(obs, []Objective{failed, sibling, other})
+	if len(got) != 1 || got[0].Key() != other.Key() {
+		t.Fatalf("same-state no-route filter = %+v, want only alternate objective", got)
+	}
+
+	moved := obs
+	moved.X++
+	moved.Y--
+	got = policy.filter(moved, []Objective{failed, sibling, other})
+	if len(got) != 1 || got[0].Key() != other.Key() {
+		t.Fatalf("movement resurrected no-route journey: %+v", got)
+	}
+
+	progressed := moved
+	progressed.Badges = append(progressed.Badges, "Cascade")
+	got = policy.filter(progressed, []Objective{failed, sibling, other})
+	if len(got) != 3 {
+		t.Fatalf("route-state progress did not release no-route quarantine: %+v", got)
+	}
+}
+
+func TestNoDialogueTalkQuarantineSurvivesApproachMovement(t *testing.T) {
+	failed := Objective{Kind: KindTalk, Location: "pewter pokemon center", X: 7, Y: 3}
+	other := Objective{Kind: KindGoTo, Place: "pewter city"}
+	obs := Observation{Location: "pewter pokemon center", Map: 0x3A, X: 3, Y: 3, Controllable: true}
+	policy := newRunFailurePolicy(2)
+	result := ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "no_dialogue",
+			Recoverable: true,
+		},
+		Final: obs,
+	}
+	policy.record(result)
+
+	moved := obs
+	moved.X, moved.Y = 6, 3
+	got := policy.filter(moved, []Objective{failed, other})
+	if len(got) != 1 || got[0].Key() != other.Key() {
+		t.Fatalf("approach movement resurrected failed Talk: %+v", got)
+	}
+
+	elsewhere := moved
+	elsewhere.Location = "pewter city"
+	elsewhere.Map = 0x02
+	got = policy.filter(elsewhere, []Objective{failed, other})
+	if len(got) != 2 {
+		t.Fatalf("location change did not release Talk quarantine: %+v", got)
+	}
+}
