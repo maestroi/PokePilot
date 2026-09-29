@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,11 +90,48 @@ func (c *mediaRenderJobController) ensure(req farm.MediaRenderJobCreateRequest) 
 	return job, true, nil
 }
 
+type mediaRenderJobList struct {
+	Jobs   []farm.MediaRenderJob `json:"jobs"`
+	Total  int                   `json:"total"`
+	States map[string]int        `json:"states"`
+}
+
 func (c *mediaRenderJobController) get(id string) (farm.MediaRenderJob, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	job, ok := c.state.Jobs[strings.TrimSpace(id)]
 	return job, ok
+}
+
+func (c *mediaRenderJobController) list(runID, state string, limit int) mediaRenderJobList {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	runID = strings.TrimSpace(runID)
+	state = strings.TrimSpace(state)
+	jobs := make([]farm.MediaRenderJob, 0, len(c.state.Jobs))
+	counts := map[string]int{}
+	for _, job := range c.state.Jobs {
+		if runID != "" && job.RunID != runID {
+			continue
+		}
+		if state != "" && job.State != state {
+			continue
+		}
+		jobs = append(jobs, job)
+		counts[job.State]++
+	}
+	sort.Slice(jobs, func(i, j int) bool {
+		if jobs[i].UpdatedAt == jobs[j].UpdatedAt {
+			return jobs[i].ID < jobs[j].ID
+		}
+		return jobs[i].UpdatedAt > jobs[j].UpdatedAt
+	})
+	total := len(jobs)
+	if limit > 0 && len(jobs) > limit {
+		jobs = jobs[:limit]
+	}
+	return mediaRenderJobList{Jobs: jobs, Total: total, States: counts}
 }
 
 func (c *mediaRenderJobController) claimable() []farm.MediaRenderJob {
@@ -416,11 +455,20 @@ func mediaRenderJobHTTPHandler(w *Wall, next http.Handler) http.Handler {
 		writeJSON(res, status, job)
 	})
 	mux.HandleFunc("GET /v1/media/render-jobs", func(res http.ResponseWriter, req *http.Request) {
-		if req.URL.Query().Get("claimable") != "1" {
-			writeJSON(res, http.StatusBadRequest, map[string]string{"error": "claimable=1 is required"})
+		if req.URL.Query().Get("claimable") == "1" {
+			writeJSON(res, http.StatusOK, map[string]any{"jobs": controller.claimable()})
 			return
 		}
-		writeJSON(res, http.StatusOK, map[string]any{"jobs": controller.claimable()})
+		limit := 50
+		if raw := strings.TrimSpace(req.URL.Query().Get("limit")); raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 1 || parsed > 200 {
+				writeJSON(res, http.StatusBadRequest, map[string]string{"error": "limit must be between 1 and 200"})
+				return
+			}
+			limit = parsed
+		}
+		writeJSON(res, http.StatusOK, controller.list(req.URL.Query().Get("run_id"), req.URL.Query().Get("state"), limit))
 	})
 	mux.HandleFunc("GET /v1/media/render-jobs/{id}", func(res http.ResponseWriter, req *http.Request) {
 		job, ok := controller.get(req.PathValue("id"))

@@ -9,6 +9,7 @@ import type {
   ModelDeployment,
   ModelDeploymentInput,
   ModelRegistrySnapshot,
+  MediaRenderJobList,
   ProgrammingEntry,
   ProgrammingSnapshot,
   ReplayStatus,
@@ -75,6 +76,10 @@ export function getBuildProvenance(signal?: AbortSignal): Promise<BuildProvenanc
 
 export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal): Promise<DashboardSnapshot> {
   return requestJSON<DashboardSnapshot>(`/v1/dashboard${queryString(params)}`, { signal })
+}
+
+export function getMediaRenderJobs(limit = 50, signal?: AbortSignal): Promise<MediaRenderJobList> {
+  return requestJSON<MediaRenderJobList>(`/v1/media/render-jobs?limit=${encodeURIComponent(String(limit))}`, { signal })
 }
 
 export function getProgramming(signal?: AbortSignal): Promise<ProgrammingSnapshot> {
