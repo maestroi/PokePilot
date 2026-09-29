@@ -77,9 +77,20 @@ object key from pokewall. There is no generic arbitrary-key S3 endpoint.
    semantics, so the browser's normal `<video>` controls can seek.
 
 Replay status is available from `GET /v1/runs/{id}/replay/status` with states
-`missing`, `generating`, `ready`, `error`, or `disabled`. Broadcast is
-the default mode for status, render, and video. Adding `?mode=raw` to those
-three endpoints preserves the game-only renderer and its legacy
+`missing`, `generating`, `ready`, `error`, or `disabled`. Broadcast
+remains the default mode for status, render, and video so existing cached media
+continues to resolve unchanged.
+
+Adding `?mode=semantic` to those three endpoints selects the deterministic
+headless `RenderState` renderer. It uses the same scene capability rules and
+the same public Tiny Town theme manifest/assets as the browser
+`ModernSceneRenderer`, renders overworld/dialogue/menu/battle states at an
+explicit replay timestamp, and falls back frame-by-frame to the authoritative
+Classic framebuffer when semantic support is unavailable. Its cache identity
+includes the RenderState schema, Tiny Town theme version, and headless renderer
+version, so presentation changes safely re-render historical recordings.
+
+Adding `?mode=raw` preserves the game-only renderer and its legacy
 `replay-<first-12-recording-sha256>.mp4` cache identity for debugging and
 backwards compatibility.
 

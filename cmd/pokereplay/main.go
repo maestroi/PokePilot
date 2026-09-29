@@ -91,16 +91,17 @@ type replayIdentity struct {
 }
 
 type replayServer struct {
-	wallBase     string
-	romPath      string
-	romLibrary   *replayROMLibrary
-	streamBinary string
-	vaapi        bool
-	vaapiReason  string
-	ffmpegVAAPI  string
-	store        *artifactstore.S3
-	wallHTTP     *http.Client
-	compositor   replayCompositor
+	wallBase         string
+	romPath          string
+	romLibrary       *replayROMLibrary
+	streamBinary     string
+	vaapi            bool
+	vaapiReason      string
+	ffmpegVAAPI      string
+	store            *artifactstore.S3
+	wallHTTP         *http.Client
+	compositor       replayCompositor
+	semanticRenderer *compositor.SemanticRenderer
 
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
@@ -117,15 +118,20 @@ type replayServer struct {
 }
 
 func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstore.S3) *replayServer {
+	semanticRenderer, err := compositor.NewPublicSemanticRenderer()
+	if err != nil {
+		log.Printf("pokereplay: headless semantic renderer unavailable: %v", err)
+	}
 	return &replayServer{
-		wallBase:     strings.TrimRight(wallBase, "/"),
-		romPath:      romPath,
-		streamBinary: streamBinary,
-		store:        store,
-		wallHTTP:     &http.Client{Timeout: wallTimeout},
-		compositor:   compositor.NewFFmpeg("ffmpeg", nil),
-		jobs:         make(map[string]replayStatus),
-		liveSessions: make(map[string]*liveBroadcastSession),
+		wallBase:         strings.TrimRight(wallBase, "/"),
+		romPath:          romPath,
+		streamBinary:     streamBinary,
+		store:            store,
+		wallHTTP:         &http.Client{Timeout: wallTimeout},
+		compositor:       compositor.NewFFmpeg("ffmpeg", nil),
+		semanticRenderer: semanticRenderer,
+		jobs:             make(map[string]replayStatus),
+		liveSessions:     make(map[string]*liveBroadcastSession),
 	}
 }
 
@@ -133,14 +139,15 @@ func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":         "ok",
-			"s3_configured":  s.store != nil,
-			"encoder":        s.encoderName(),
-			"vaapi":          s.vaapi,
-			"vaapi_reason":   s.vaapiReason,
-			"renderer":       broadcastRendererVersion,
-			"live_fps":       liveBroadcastFPS,
-			"active_renders": s.rendering.Load(),
+			"status":            "ok",
+			"s3_configured":     s.store != nil,
+			"encoder":           s.encoderName(),
+			"vaapi":             s.vaapi,
+			"vaapi_reason":      s.vaapiReason,
+			"renderer":          broadcastRendererVersion,
+			"semantic_renderer": compositor.PublicSemanticRendererVersion(),
+			"live_fps":          liveBroadcastFPS,
+			"active_renders":    s.rendering.Load(),
 		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
@@ -567,8 +574,14 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		}
 	}
 	for index := range attempts {
-		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady); err != nil {
-			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, err))
+		var renderErr error
+		if mode == replayModeSemantic {
+			renderErr = s.renderAttemptSemanticSegments(ctx, &attempts[index], onStart, onReady)
+		} else {
+			renderErr = s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady)
+		}
+		if renderErr != nil {
+			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, renderErr))
 			return
 		}
 	}
