@@ -56,9 +56,13 @@ func NewPublicSemanticRenderer() (*SemanticRenderer, error) {
 	}, nil
 }
 
+func PublicSemanticRendererVersion() string {
+	return fmt.Sprintf("semantic-renderstate-v%d-%s-v%d-headless-v1", protocol.SchemaVersion, SemanticThemeID, semanticThemeVersion)
+}
+
 func (r *SemanticRenderer) Version() string {
 	if r == nil {
-		return fmt.Sprintf("semantic-renderstate-v%d-%s-v%d-headless-v1", protocol.SchemaVersion, SemanticThemeID, semanticThemeVersion)
+		return PublicSemanticRendererVersion()
 	}
 	return fmt.Sprintf("semantic-renderstate-v%d-%s-v%d-headless-v1", protocol.SchemaVersion, r.theme.ID, r.theme.Version)
 }
