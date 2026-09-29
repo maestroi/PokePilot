@@ -28,11 +28,11 @@ var watchHTML []byte
 var watchJS []byte
 
 const (
-	spectatorHistoryLimit          = 12
-	spectatorReplayCacheTTL        = 30 * time.Second
+	spectatorHistoryLimit           = 12
+	spectatorReplayCacheTTL         = 30 * time.Second
 	spectatorReplayProgressCacheTTL = 5 * time.Second
-	spectatorDashboardLimit        = 4 << 20
-	spectatorDoneLookback   = 64
+	spectatorDashboardLimit         = 4 << 20
+	spectatorDoneLookback           = 64
 )
 
 var errSpectatorUnavailable = errors.New("spectator feed unavailable")
@@ -81,12 +81,12 @@ type spectatorRun struct {
 	Trail          [][2]uint8               `json:"trail,omitempty"`
 	Attempts       int                      `json:"attempts,omitempty"`
 	Reason         string                   `json:"reason,omitempty"`
-	ReplayReady        bool                     `json:"replay_ready,omitempty"`
-	ReplayState        string                   `json:"replay_state,omitempty"`
-	ReplayStage        string                   `json:"replay_stage,omitempty"`
-	ReplaySegments     int                      `json:"replay_segments,omitempty"`
-	ReplaySegmentsDone int                      `json:"replay_segments_done,omitempty"`
-	Highlight          string                   `json:"highlight,omitempty"`
+	ReplayReady    bool                     `json:"replay_ready,omitempty"`
+	ReplayState    string                   `json:"replay_state,omitempty"`
+	ReplayStage    string                   `json:"replay_stage,omitempty"`
+	ReplayTotal    int                      `json:"replay_segments,omitempty"`
+	ReplayDone     int                      `json:"replay_segments_done,omitempty"`
+	Highlight      string                   `json:"highlight,omitempty"`
 }
 
 type spectatorDecisionRecord struct {
@@ -162,7 +162,8 @@ type spectatorReplayCacheEntry struct {
 // spectatorReplayCatalog keeps replay readiness cheap enough for the 2-second
 // public watch poll and doubles as the server-side allowlist for public video
 // reads. A run becomes public only after the wall says it is noteworthy and the
-// replay sidecar confirms a cached MP4 is ready.
+// replay sidecar confirms render state. Only ready MP4s enter the media
+// allowlist; generating replays expose sanitized progress metadata only.
 type spectatorReplayCatalog struct {
 	replayBase string
 	client     *http.Client
@@ -378,8 +379,9 @@ func mergeSpectatorSources(parts ...spectatorSourceDashboard) spectatorSourceDas
 }
 
 // publicSpectatorRuns keeps only actively broadcasting runs (running or
-// leased). Finished runs are a curated replay archive rather than raw history. A finished run must both be
-// noteworthy and already have a cached video. Goal completion is inherently
+// leased). Finished runs are a curated replay archive rather than raw history.
+// A finished run must be noteworthy and either actively rendering or already
+// have a cached video. Goal completion is inherently
 // noteworthy; a linked engineering issue means the run was selected for
 // analysis. Ordinary failures and recordings still remain available privately
 // in the operator Run Inspector.
@@ -416,7 +418,7 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 		publicRun.Highlight = highlight
 		publicRun.ReplayState = status.State
 		publicRun.ReplayStage = publicReplayStage(status.Stage)
-		publicRun.ReplaySegments, publicRun.ReplaySegmentsDone = publicReplayProgress(status.Segments, status.SegmentsDone)
+		publicRun.ReplayTotal, publicRun.ReplayDone = publicReplayProgress(status.Segments, status.SegmentsDone)
 		if status.State == "ready" {
 			publicRun.ReplayReady = true
 			allowed = append(allowed, run.RunID)
