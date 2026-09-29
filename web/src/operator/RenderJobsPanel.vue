@@ -40,7 +40,7 @@ const summary = computed(() => [
   { label: 'Active', value: activeCount.value, note: 'claimed by render worker' },
   { label: 'Queued', value: Number(stateCounts.value.queued || 0), note: 'waiting for replay VM' },
   { label: 'Failed', value: Number(stateCounts.value.failed || 0), note: 'needs investigation' },
-  { label: 'Ready', value: Number(stateCounts.value.ready || 0), note: `${formatBytes(readyBytes.value)} output · ${Number(data.value?.total || 0)} jobs total` }
+  { label: 'Ready', value: Number(stateCounts.value.ready || 0), note: `${formatBytes(readyBytes.value)} shown output · ${Number(data.value?.total || 0)} jobs total` }
 ])
 
 function tone(job: MediaRenderJob): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
