@@ -304,6 +304,8 @@ func emergencyEgressCause(err error) string {
 		return "navigation_stalled"
 	case errors.Is(err, ErrReplanExhausted):
 		return "route_replan_exhausted"
+	case errors.Is(err, world.ErrTransitionExecutionStalled):
+		return "transition_execution_stalled"
 	case errors.Is(err, world.ErrNoRoute):
 		// GoTo only reaches this after its own in-map recovery (field-path
 		// bridging, component restaging) has already failed, so a bare
