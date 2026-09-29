@@ -13,6 +13,8 @@ const (
 	OverworldMap    uint16 = 0xC700 // wOverworldMapBlocks
 	OverworldMapLen        = 1300
 	PlayerStepFlags uint16 = 0xCE85 // wPlayerStepFlags
+	MenuItemsList   uint16 = 0xCF29 // wMenuItemsList in the large scratch UNION
+	FacingTileID    uint16 = MenuItemsList // wFacingTileID reuses that UNION address
 
 	// Shared menu / intro state in fixed WRAM.
 	WindowStackPointer      uint16 = 0xCEA8 // wWindowStackPointer
@@ -30,9 +32,12 @@ const (
 	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
 	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
 	PartyMenuCursor         uint16 = 0xCFC9 // wPartyMenuCursor
+	TMHMPocketCursor        uint16 = 0xCFCD // wTMHMPocketCursor
+	TMHMPocketScroll        uint16 = 0xCFD2 // wTMHMPocketScrollPosition
 	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
+	FieldMoveSucceeded      uint16 = BattlePlayerAction // wFieldMoveSucceeded alias
 	StateFlags              uint16 = 0xCFE5 // wStateFlags
 	TileMap                 uint16 = 0xC4A0 // wTileMap, 20x18
 	TileMapLen                     = 20 * 18
@@ -62,6 +67,7 @@ const (
 	ObjectStructLen         = 0x28
 	NumObjectStructs        = 13
 	PlayerState      uint16 = 0xD682 // wPlayerState
+	BikeFlags        uint16 = 0xD93F // wBikeFlags; bit 0 = Strength active
 
 	// Early Johto story state.
 	StatusFlags            uint16 = 0xD571 // wStatusFlags
