@@ -164,3 +164,8 @@ func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool
 	}
 	return game.NativeFieldMove{MachineItemID: uint16(spec.item), MoveID: uint16(spec.move)}, true
 }
+
+// SupportsLegacyTMHMTeaching opts the shared Gen-I engine into the existing
+// byte-oriented TeachTMHM executor. Newer generations deliberately omit this
+// marker until they provide their own machine-teaching controller.
+func (*Profile) SupportsLegacyTMHMTeaching() bool { return true }
