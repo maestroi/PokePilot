@@ -574,8 +574,14 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		}
 	}
 	for index := range attempts {
-		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady); err != nil {
-			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, err))
+		var renderErr error
+		if mode == replayModeSemantic {
+			renderErr = s.renderAttemptSemanticSegments(ctx, &attempts[index], onStart, onReady)
+		} else {
+			renderErr = s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady)
+		}
+		if renderErr != nil {
+			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, renderErr))
 			return
 		}
 	}
