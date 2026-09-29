@@ -245,7 +245,7 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "ready" || status.JobState != farm.MediaRenderJobReady || status.Size != 8 {
+	if status.State != "ready" || status.JobState != farm.MediaRenderJobReady || status.Size != 8 || status.JobID != jobID {
 		t.Fatalf("ready status=%+v", status)
 	}
 	mu.Lock()
