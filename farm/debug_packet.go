@@ -53,14 +53,14 @@ type DebugFailure struct {
 }
 
 type DebugTriage struct {
-	Key               string `json:"key,omitempty"`
-	Fingerprint       string `json:"fingerprint,omitempty"`
-	Count             int    `json:"count,omitempty"`
-	IssueNumber       int64  `json:"issue_number,omitempty"`
-	IssueURL          string `json:"issue_url,omitempty"`
-	Status            string `json:"status,omitempty"`
-	Resolution        string `json:"resolution,omitempty"`
-	FixedRevision     string `json:"fixed_revision,omitempty"`
+	Key               string               `json:"key,omitempty"`
+	Fingerprint       string               `json:"fingerprint,omitempty"`
+	Count             int                  `json:"count,omitempty"`
+	IssueNumber       int64                `json:"issue_number,omitempty"`
+	IssueURL          string               `json:"issue_url,omitempty"`
+	Status            string               `json:"status,omitempty"`
+	Resolution        string               `json:"resolution,omitempty"`
+	FixedRevision     string               `json:"fixed_revision,omitempty"`
 	VerificationState string               `json:"verification_state,omitempty"`
 	Actionable        bool                 `json:"actionable,omitempty"`
 	SolverAttempts    []DebugSolverAttempt `json:"solver_attempts,omitempty"`
