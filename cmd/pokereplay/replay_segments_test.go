@@ -103,3 +103,89 @@ func TestWindowBroadcastPlanPreservesBoundaryStateAndEventRemainder(t *testing.T
 		t.Fatalf("crossing event window=%+v", got.Events[0])
 	}
 }
+
+func TestProbeReplaySegmentCacheRejectsCorruptObject(t *testing.T) {
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not available")
+	}
+	body := []byte("not an mp4")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(body)
+		}
+	}))
+	defer server.Close()
+
+	store, err := artifactstore.NewS3(artifactstore.S3Config{
+		Endpoint: server.URL, Bucket: "pokepilot", AccessKey: "test", SecretKey: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newReplayServer("", "", "", store)
+	attempts := []preparedReplayAttempt{{
+		Segments: []replayVideoSegment{{
+			Attempt: 1, Index: 0, StartFrame: 0, EndFrame: 59, CacheKey: "runs/run-1/segments/bad.mp4",
+		}},
+	}}
+	ready, err := s.probeReplaySegmentCache(context.Background(), attempts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready != 0 || attempts[0].Segments[0].Cached {
+		t.Fatalf("corrupt cache marked ready: ready=%d segment=%+v", ready, attempts[0].Segments[0])
+	}
+}
+
+func TestConcatReplaySegmentURLsStreamsRemoteInputs(t *testing.T) {
+	for _, binary := range []string{"ffmpeg", "ffprobe"} {
+		if _, err := exec.LookPath(binary); err != nil {
+			t.Skip(binary + " not available")
+		}
+	}
+	dir := t.TempDir()
+	makeClip := func(name, color string) []byte {
+		t.Helper()
+		filename := filepath.Join(dir, name)
+		cmd := exec.Command("ffmpeg",
+			"-hide_banner", "-loglevel", "error", "-y",
+			"-f", "lavfi", "-i", "color=c="+color+":s=160x144:r=10",
+			"-t", "0.5",
+			"-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+			filename,
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("make clip %s: %v: %s", name, err, out)
+		}
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	clips := map[string][]byte{
+		"/a.mp4": makeClip("a.mp4", "black"),
+		"/b.mp4": makeClip("b.mp4", "white"),
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, ok := clips[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, r.URL.Path, time.Time{}, bytes.NewReader(data))
+	}))
+	defer server.Close()
+
+	destination := filepath.Join(dir, "joined.mp4")
+	if err := concatReplaySegmentURLs(context.Background(), dir, []string{
+		server.URL + "/a.mp4",
+		server.URL + "/b.mp4",
+	}, destination); err != nil {
+		t.Fatal(err)
+	}
+	if err := probeReplayVideo(context.Background(), destination, time.Second); err != nil {
+		t.Fatalf("joined replay invalid: %v", err)
+	}
+}
