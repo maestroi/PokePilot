@@ -277,7 +277,8 @@ func (s *S3) PutObjectReader(ctx context.Context, key, mediaType string, r io.Re
 		return Object{}, fmt.Errorf("artifactstore: seek %s before upload: %w", key, err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectURL(key), r)
+	// NopCloser: net/http closes an io.Closer body, and the caller owns r.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.objectURL(key), io.NopCloser(r))
 	if err != nil {
 		return Object{}, fmt.Errorf("artifactstore: build PutObject request: %w", err)
 	}
