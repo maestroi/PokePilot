@@ -206,12 +206,12 @@ func (r *SemanticRenderer) Render(state protocol.RenderState, options SemanticRe
 }
 
 type semanticViewport struct {
-	startX int
-	startY int
-	endX   int
-	endY   int
-	offsetX float64
-	offsetY float64
+	startX   int
+	startY   int
+	endX     int
+	endY     int
+	offsetX  float64
+	offsetY  float64
 	tileSize int
 }
 
@@ -255,8 +255,8 @@ func semanticCameraViewport(state protocol.RenderState, width, height, preferred
 	}
 	return semanticViewport{
 		startX: startX, startY: startY, endX: endX, endY: endY,
-		offsetX: smallOffsetX - (cameraX-float64(startX))*float64(tileSize),
-		offsetY: smallOffsetY - (cameraY-float64(startY))*float64(tileSize),
+		offsetX:  smallOffsetX - (cameraX-float64(startX))*float64(tileSize),
+		offsetY:  smallOffsetY - (cameraY-float64(startY))*float64(tileSize),
 		tileSize: tileSize,
 	}
 }
@@ -794,7 +794,7 @@ func semanticGradientColors(value string) []color.RGBA {
 
 func blendSemanticColor(a, b color.RGBA, p float64) color.RGBA {
 	p = math.Max(0, math.Min(1, p))
-	mix := func(x, y uint8) uint8 { return uint8(float64(x)+(float64(y)-float64(x))*p+0.5) }
+	mix := func(x, y uint8) uint8 { return uint8(float64(x) + (float64(y)-float64(x))*p + 0.5) }
 	return color.RGBA{R: mix(a.R, b.R), G: mix(a.G, b.G), B: mix(a.B, b.B), A: mix(a.A, b.A)}
 }
 
