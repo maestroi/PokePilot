@@ -515,8 +515,20 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			}
 		}
 	}
+	onStart := func(segment replayVideoSegment) {
+		stage := fmt.Sprintf("rendering_attempt_%d_segment_%d", segment.Attempt, segment.Index+1)
+		s.setJob(cacheKey, replayStatus{
+			RunID: runID, State: "generating", ObjectKey: cacheKey,
+			Segments: total, SegmentsDone: done, Stage: stage,
+		})
+		if jobID != "" {
+			if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, stage, &total, &done); progressErr != nil {
+				log.Printf("pokereplay: persist active segment job=%s: %v", jobID, progressErr)
+			}
+		}
+	}
 	for index := range attempts {
-		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onReady); err != nil {
+		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady); err != nil {
 			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, err))
 			return
 		}
