@@ -2,9 +2,11 @@ package agent
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -59,6 +61,56 @@ func redFishingRodID(id ItemID) (uint8, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// safariCatchOpportunistic hunts the objective's species while also accepting
+// every other unowned Dex target the same Safari habitat yields. A paid
+// session has finite balls and steps, so fleeing a missing species only to pay
+// for another session for it later wastes both. A bonus catch never satisfies
+// the objective: the hunt continues on the remaining set until the target is
+// caught or SafariCatch reports its own bounded exhaustion.
+func safariCatchOpportunistic(m *emu.Emu, romData []byte, mapID uint8, o Objective, target uint8) (skill.CatchResult, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	owned, seen := ProjectPokedex(romData, state.DecodePokedex(&mem))
+	catalog, err := BuildDexCatalog(romData, owned, seen)
+	if err != nil {
+		return skill.CatchResult{}, fmt.Errorf("Safari bonus targets: %w", err)
+	}
+	want := append([]uint8{target}, dexHabitatBonusSpecies(catalog, o.Place, o.Species)...)
+
+	var total skill.CatchResult
+	for {
+		caught, err := skill.SafariCatch(m, romData, mapID, want, skill.StatAwareMove(romData), 10)
+		total.Outcome, total.Species = caught.Outcome, caught.Species
+		total.BallsThrown += caught.BallsThrown
+		total.Encounters += caught.Encounters
+		if err != nil || caught.Outcome != skill.OutcomeCaught || caught.Species == target {
+			return total, err
+		}
+		want = slices.DeleteFunc(want, func(id uint8) bool { return id == caught.Species })
+	}
+}
+
+// dexHabitatBonusSpecies lists the unowned Dex targets, other than target,
+// that the catalog sources from wild grass at place.
+func dexHabitatBonusSpecies(catalog DexCatalog, place PlaceID, target SpeciesID) []uint8 {
+	var out []uint8
+	for _, e := range catalog.Targets {
+		if e.Species == target {
+			continue
+		}
+		for _, src := range e.Sources {
+			if src.Kind != AcquireWildGrass || src.Place != place {
+				continue
+			}
+			if id, ok := redSpeciesID(e.Species); ok {
+				out = append(out, id)
+			}
+			break
+		}
+	}
+	return out
 }
 
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
@@ -133,7 +185,7 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		if !ok || !safariRequirement(mapID) {
 			return result, fmt.Errorf("agent: %s: unknown Safari habitat %q", o, o.Place)
 		}
-		caught, err = skill.SafariCatch(m, romData, mapID, []uint8{species}, skill.StatAwareMove(romData), 10)
+		caught, err = safariCatchOpportunistic(m, romData, mapID, o, species)
 	case dexGiftIntent:
 		switch o.Species {
 		case "eevee":
