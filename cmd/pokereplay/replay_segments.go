@@ -18,16 +18,16 @@ import (
 )
 
 const (
-	replaySegmentPlanVersion     = 1
-	defaultReplaySegmentSeconds  = 300
-	replaySegmentSecondsEnv      = "POKEPILOT_REPLAY_SEGMENT_SECONDS"
-	minReplaySegmentSeconds      = 10
-	maxReplaySegmentSeconds      = 3600
+	replaySegmentPlanVersion    = 1
+	defaultReplaySegmentSeconds = 300
+	replaySegmentSecondsEnv     = "POKEPILOT_REPLAY_SEGMENT_SECONDS"
+	minReplaySegmentSeconds     = 10
+	maxReplaySegmentSeconds     = 3600
 )
 
 type replayVideoSegment struct {
-	Attempt   int
-	Index     int
+	Attempt    int
+	Index      int
 	StartFrame uint64 // relative to recording start, inclusive
 	EndFrame   uint64 // relative to recording start, inclusive
 	CacheKey   string
