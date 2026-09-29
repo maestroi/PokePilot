@@ -117,6 +117,49 @@ func TestArchiveDashboardFiltersModelDeploymentExperimentAndCompute(t *testing.T
 	}
 }
 
+func TestArchiveDashboardFiltersGameAndTreatsLegacyRunsAsRed(t *testing.T) {
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"now":   1000,
+			"total": 3,
+			"runs": []any{
+				map[string]any{"run_id": "legacy-red", "status": "done", "reason": "done", "ended_at": 900.0},
+				map[string]any{"run_id": "yellow", "status": "done", "reason": "done", "game": "pokemon-yellow", "ended_at": 800.0},
+				map[string]any{"run_id": "tetris", "status": "done", "reason": "done", "game": "tetris", "ended_at": 700.0},
+			},
+		})
+	})
+	handler := archiveHTTPHandler(NewWall(""), fallback)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&game=pokemon-red&facets=1", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", res.Code, res.Body.String())
+	}
+
+	var got struct {
+		Total  int              `json:"total"`
+		Runs   []map[string]any `json:"runs"`
+		Facets struct {
+			Games []string `json:"games"`
+		} `json:"history_facets"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 1 || len(got.Runs) != 1 || got.Runs[0]["run_id"] != "legacy-red" {
+		t.Fatalf("filtered dashboard = total %d runs %#v", got.Total, got.Runs)
+	}
+	wantGames := []string{"pokemon-red", "pokemon-yellow", "tetris"}
+	if len(got.Facets.Games) != len(wantGames) {
+		t.Fatalf("game facets = %#v, want %#v", got.Facets.Games, wantGames)
+	}
+	for i, want := range wantGames {
+		if got.Facets.Games[i] != want {
+			t.Fatalf("game facets = %#v, want %#v", got.Facets.Games, wantGames)
+		}
+	}
+}
+
 func TestArchiveLeaseCapturesExecutionStartAndRuntime(t *testing.T) {
 	var controller *archiveController
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
