@@ -100,7 +100,7 @@ async function setVisible(run: DashboardRun, visible: boolean): Promise<void> {
     await patchSpectatorRunControl(run.run_id, { visible })
     await controlResource.retry()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Spectator update failed'
+    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
   } finally {
     busyRunID.value = ''
   }
@@ -114,7 +114,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
     await patchSpectatorRunControl(run.run_id, { featured })
     await controlResource.retry()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Spectator update failed'
+    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
   } finally {
     busyRunID.value = ''
   }
@@ -124,7 +124,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
 <template>
   <ResourceState
     :state="resourceState"
-    title="Spectator controls unavailable"
+    title="Public publishing controls unavailable"
     :message="controlResource.error.value || activeResource.error.value || recentResource.error.value || 'No runs are available yet.'"
     :rows="7"
   >
@@ -159,7 +159,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
           <span>Status</span>
           <span>When</span>
           <span>Goal</span>
-          <span class="text-right">Spectator</span>
+          <span class="text-right">Public</span>
         </div>
 
         <div
@@ -196,7 +196,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
                 isVisible(run.run_id) ? 'text-[var(--poke-green)] ring-[var(--poke-green)]/40' : 'text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
                 'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:bg-white/5 disabled:opacity-50'
               ]"
-              :title="isVisible(run.run_id) ? 'Hide this run from the public spectator' : 'Show this run in the public spectator'"
+              :title="isVisible(run.run_id) ? 'Hide this run from the public site' : 'Show this run on the public site'"
               @click="setVisible(run, !isVisible(run.run_id))"
             >
               <EyeIcon v-if="isVisible(run.run_id)" class="size-3" aria-hidden="true" />
