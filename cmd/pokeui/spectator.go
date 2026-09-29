@@ -30,7 +30,7 @@ var watchJS []byte
 const (
 	spectatorHistoryLimit           = 12
 	spectatorReplayCacheTTL         = 30 * time.Second
-	spectatorReplayProgressCacheTTL = 5 * time.Second
+	spectatorReplayProgressCacheTTL = 10 * time.Second
 	spectatorDashboardLimit         = 4 << 20
 	spectatorDoneLookback           = 64
 )
@@ -196,7 +196,7 @@ func (c *spectatorReplayCatalog) status(ctx context.Context, runID string) spect
 	c.mu.RUnlock()
 	if ok {
 		ttl := spectatorReplayCacheTTL
-		if cached.Status.State == "generating" {
+		if cached.Status.State != "ready" {
 			ttl = spectatorReplayProgressCacheTTL
 		}
 		if now.Sub(cached.CheckedAt) < ttl {
