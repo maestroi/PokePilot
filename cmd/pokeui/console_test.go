@@ -83,6 +83,36 @@ func TestUIRunConsoleHasWatchingFirstWorkspace(t *testing.T) {
 	}
 }
 
+func TestUIEmbeddedLauncherSupportsGen2NormalRuns(t *testing.T) {
+	html := string(indexHTML)
+	for _, want := range []string{
+		`value="pokemon-gold">Pokémon Gold`,
+		`value="pokemon-silver">Pokémon Silver`,
+		`value="chikorita" class="gen2-starter-opt"`,
+		`value="cyndaquil" class="gen2-starter-opt"`,
+		`value="totodile" class="gen2-starter-opt"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("embedded Gen2 launcher missing %q", want)
+		}
+	}
+
+	js := string(uiJS)
+	for _, want := range []string{
+		`case "pokemon-gold": return "Pokémon Gold"`,
+		`case "pokemon-silver": return "Pokémon Silver"`,
+		`const gen2 = f.game.value === "pokemon-gold" || f.game.value === "pokemon-silver"`,
+		`scriptedOpt.disabled = gen2`,
+		`f.qualification_target.value = ""`,
+		`f.goal.value = "Earn 3 badges."`,
+		`["", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("embedded Gen2 launcher behavior missing %q", want)
+		}
+	}
+}
+
 func TestUIGameMediaKeepsStableFrameBox(t *testing.T) {
 	css := string(consoleCSS)
 	host := regexp.MustCompile(`\.game-media\{[^}]+\}`).FindString(css)
