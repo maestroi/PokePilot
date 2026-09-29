@@ -32,9 +32,9 @@ type DebugPacket struct {
 }
 
 type DebugLocation struct {
-	Map uint8 `json:"map,omitempty"`
-	X   uint8 `json:"x,omitempty"`
-	Y   uint8 `json:"y,omitempty"`
+	Map uint8 `json:"map"`
+	X   uint8 `json:"x"`
+	Y   uint8 `json:"y"`
 }
 
 type DebugFinish struct {
@@ -62,7 +62,7 @@ type DebugTriage struct {
 	Resolution        string               `json:"resolution,omitempty"`
 	FixedRevision     string               `json:"fixed_revision,omitempty"`
 	VerificationState string               `json:"verification_state,omitempty"`
-	Actionable        bool                 `json:"actionable,omitempty"`
+	Actionable        bool                 `json:"actionable"`
 	SolverAttempts    []DebugSolverAttempt `json:"solver_attempts,omitempty"`
 }
 
