@@ -16,6 +16,8 @@ export function gameTitle(run: SpectatorRun): string {
   switch ((run.game || '').toLowerCase()) {
     case 'pokemon-blue': return 'Pokémon Blue'
     case 'pokemon-yellow': return 'Pokémon Yellow'
+    case 'pokemon-gold': return 'Pokémon Gold'
+    case 'pokemon-silver': return 'Pokémon Silver'
     default: return 'Pokémon Red'
   }
 }
