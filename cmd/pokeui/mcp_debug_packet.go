@@ -253,6 +253,7 @@ func compactDebugTriage(groups []map[string]any, run map[string]any, runID strin
 			Resolution:        debugString(issue, "resolution"),
 			FixedRevision:     debugString(issue, "fixed_revision"),
 			VerificationState: debugString(issue, "verification_state"),
+			SolverAttempts:    compactDebugSolverAttempts(issue["solver_attempts"]),
 		}
 	}
 	actionable := triageGroupActionable(selected)
@@ -268,7 +269,37 @@ func compactDebugTriage(groups []map[string]any, run map[string]any, runID strin
 		FixedRevision:     debugString(issue, "fixed_revision"),
 		VerificationState: debugString(issue, "verification_state"),
 		Actionable:        actionable,
+		SolverAttempts:    compactDebugSolverAttempts(issue["solver_attempts"]),
 	}
+}
+
+func compactDebugSolverAttempts(v any) []farm.DebugSolverAttempt {
+	values, _ := v.([]any)
+	if len(values) == 0 {
+		return nil
+	}
+	start := len(values) - 3
+	if start < 0 {
+		start = 0
+	}
+	out := make([]farm.DebugSolverAttempt, 0, len(values)-start)
+	for _, raw := range values[start:] {
+		item, _ := raw.(map[string]any)
+		if item == nil {
+			continue
+		}
+		out = append(out, farm.DebugSolverAttempt{
+			Backend:  debugString(item, "backend"),
+			Model:    debugString(item, "model"),
+			State:    debugString(item, "state"),
+			RunID:    debugString(item, "run_id"),
+			Branch:   debugString(item, "branch"),
+			PRNumber: int64(mcpJSONInt(item["pr_number"])),
+			PRURL:    debugString(item, "pr_url"),
+			Note:     clipDebugText(debugString(item, "note"), 240),
+		})
+	}
+	return out
 }
 
 func debugClassificationHint(packet farm.DebugPacket) string {
