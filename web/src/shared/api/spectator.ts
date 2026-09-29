@@ -111,6 +111,7 @@ export interface SpectatorRun {
   run_id: string
   status: string
   game?: string
+  public_capabilities?: string[]
   game_state?: SpectatorTetrisState
   starter?: string
   dest?: string
