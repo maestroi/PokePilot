@@ -61,8 +61,20 @@ type DebugTriage struct {
 	Status            string `json:"status,omitempty"`
 	Resolution        string `json:"resolution,omitempty"`
 	FixedRevision     string `json:"fixed_revision,omitempty"`
-	VerificationState string `json:"verification_state,omitempty"`
-	Actionable        bool   `json:"actionable,omitempty"`
+	VerificationState string               `json:"verification_state,omitempty"`
+	Actionable        bool                 `json:"actionable,omitempty"`
+	SolverAttempts    []DebugSolverAttempt `json:"solver_attempts,omitempty"`
+}
+
+type DebugSolverAttempt struct {
+	Backend  string `json:"backend,omitempty"`
+	Model    string `json:"model,omitempty"`
+	State    string `json:"state,omitempty"`
+	RunID    string `json:"run_id,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	PRNumber int64  `json:"pr_number,omitempty"`
+	PRURL    string `json:"pr_url,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
 
 type DebugRepro struct {
