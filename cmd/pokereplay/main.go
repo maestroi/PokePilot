@@ -72,6 +72,7 @@ type replayRecording struct {
 
 type replayStatus struct {
 	RunID      string `json:"run_id"`
+	JobID      string `json:"job_id,omitempty"`
 	State      string `json:"state"`
 	ObjectKey  string `json:"object_key,omitempty"`
 	Size       int64  `json:"size,omitempty"`
@@ -437,9 +438,9 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 		if job, ok, jobErr := s.getRenderJob(ctx, jobID); jobErr == nil && ok && job.State != farm.MediaRenderJobReady {
 			s.reconcileRenderJobReady(ctx, jobID, obj.Size)
 		}
-		return replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: obj.Size, JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady}
+		return replayStatus{RunID: runID, JobID: jobID, State: "ready", ObjectKey: cacheKey, Size: obj.Size, JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady}
 	} else if !artifactstore.IsNotFound(err) {
-		return replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: err.Error()}
+		return replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: err.Error()}
 	}
 	if job, ok, err := s.getRenderJob(ctx, jobID); err == nil && ok {
 		return replayStatusFromMediaJob(job)
@@ -447,9 +448,12 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if status, ok := s.jobs[cacheKey]; ok {
+		if status.JobID == "" {
+			status.JobID = jobID
+		}
 		return status
 	}
-	return replayStatus{RunID: runID, State: "missing", ObjectKey: cacheKey}
+	return replayStatus{RunID: runID, JobID: jobID, State: "missing", ObjectKey: cacheKey}
 }
 
 func (s *replayServer) render(jobID, runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
