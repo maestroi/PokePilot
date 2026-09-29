@@ -1,242 +1,86 @@
 ---
 name: pokefarm-triage
-description: Use when investigating PokeFarm failures or fixing runs — consume one selected failure, reproduce its exact failed .state locally before changing code, fix the shared invariant, verify the same replay plus short tests, and ship a triage-keyed PR. Interactive use may inspect the actionable queue; unattended qwagent must use the packet already selected by the shell.
+description: Use for the actionable PokeFarm failure queue. Select or consume one stable failure, then use the compact one-id debugger to reproduce and localize it before editing. Fix the shared invariant, rerun the same deterministic replay, run short tests, and ship a triage-keyed PR.
 ---
 
-# PokeFarm run triage
+# PokeFarm triage
 
-The farm runs a committed build. A failure it reports is locally replayable:
-every round persists a `.state` artifact, and replaying that state through the
-same skill call should fail the same way. Never fix from the error string alone
-— reproduce first, then fix, then re-run the same repro.
+The expensive evidence-gathering path is no longer the default. Once a failure
+has a representative run id, use the one-id debugger rather than manually
+calling multiple MCP tools or constructing scratch tests.
 
-## 1. What is failing
+## Select one work item
 
-There are three entry modes.
+Interactive queue work starts with:
 
-### Starting from one run id
-
-`pokefarm-run-fix` owns this entry: it turns a run id into this run's triage key
-(`run.issue.circuit_key`), decides whether the run is a defect, a stall, expected
-gameplay, or infrastructure, then rejoins this procedure at section 3. Use it
-whenever the work item arrived as a run id rather than as a queue packet.
-
-### Interactive triage
-
-Use:
-
-```
-pokepilot_get_triage()                         # current actionable view
-pokepilot_get_triage(include_resolved=true)    # history/audit only
-pokepilot_list_runs(limit=20)                  # raw run evidence/context
+```text
+pokepilot_get_triage()
 ```
 
-PokePilot groups failures by stable fingerprint. Linked Agent Orchestrator
-metadata may include `status`, `resolution`, `occurrence_count`, and
-`fixed_revision`, but Orchestrator is not required for the local qwagent repair
-loop. Do not recreate work by grouping old `pokepilot_list_runs` detail strings:
-those rows are evidence and can describe bugs fixed by later revisions.
+Use the stable triage group and representative `run_id`. Resolved groups are
+history, not new work.
 
-### Claim the generated GitHub issue before work
+For unattended qwagent work, the shell has already selected the group. **Do not
+pick another one.** Its attached packet contains `key`, `run_id`, issue
+metadata, and normally a prepared debug result.
 
-When a triage group has `issue.issue_number`, the GitHub issue is the visible
-human/agent ownership surface. Before reproducing or editing code:
+Claim the generated GitHub issue before editing when one exists. If another
+agent already owns it, stop rather than duplicate work.
 
-1. inspect the issue assignees;
-2. if it is already assigned, treat it as claimed and choose another issue
-   unless the user explicitly asked you to resume that issue/repair;
-3. otherwise assign it to the authenticated GitHub user (for example
-   `gh issue edit <number> --add-assignee @me`);
-4. keep the assignment while a repair PR is open;
-5. if you abandon/fail the attempt before a PR exists, remove your assignment.
+## Prepare/reproduce
 
-This claim happens earlier than the `[triage:<key>]` PR marker, so another
-agent can immediately see that the issue is being worked. The unattended
-`qwagent-triage.sh` loop performs this claim/release automatically.
-
-### Unattended qwagent triage
-
-The shell has already selected exactly one failure and attached a packet with
-`key`, `run_id`, `example`, `count`, and `fingerprint`. **Do not call
-`pokepilot_get_triage` to choose another item.** The packet is the work item.
-
-The selector uses a deterministic local lifecycle so it can keep working while
-Agent Orchestrator is missing or stale:
-
-- assigned generated GitHub issue for a key -> claimed, skip before coding starts;
-- no issue assignment and no triage PR for a key -> actionable;
-- open PR containing `[triage:<key>]` whose checks are still pending or green -> claimed, skip;
-- open PR containing `[triage:<key>]` whose checks have failed -> repair that PR before any new farm failure;
-- merged PR containing `[triage:<key>]`, while the fingerprint's `last_observed_revision` does not contain that repair -> repaired, skip;
-- the same key reproduced by a `last_observed_revision` whose Git history contains the merged repair -> regression, actionable again.
-
-A proven post-fix regression is stronger evidence than stale remote
-`resolved/fixed` metadata. The revision that counts is the one that produced
-this fingerprint, not a later attempt of the same run. Missing observation or
-Git ancestry proof must fail closed: do not create a duplicate repair merely
-because remote issue state is unavailable.
-
-`reason` values commonly include `failed`/`error` for an objective failure and
-`budget` for a planner loop. A live run with no terminal reason is not a repair
-item yet.
-
-## 2. Evidence for one run
-
-```
-pokepilot_get_run_debug(run_id)
-```
-
-Use `finish.detail`, `finish.runner_version`, `trace_tail`, progress, artifacts,
-and the last model exchange to understand what actually happened. The top-level
-map can be stale; prefer final progress/debug evidence when they disagree.
-
-For unattended work, do not use the debug payload to reconsider whether the
-packet should have been selected. Use it to reproduce and diagnose that packet.
-
-## 3. Pull the failing round's state
-
-Artifacts are per round: `round-<N>-frame-<F>-<objective>.state`. Take the one
-whose objective matches `finish.detail`.
-
-`admin.rompilot.app`'s plain `GET /v1/runs/{id}/artifacts/{name}/content` route
-sits behind Cloudflare Access for browser sessions — a bare
-`Authorization: Bearer $POKEPILOT_MCP_TOKEN` curl to it 302s to the Access
-login page, it does not download the artifact. Use the MCP tool instead, which
-reaches `pokewall`/`pokereplay` server-to-server and never crosses that edge:
-
-```
-pokepilot_get_run_artifact_content(run_id=<run-id>, name=<artifact-name>)
-```
-
-It returns `content_base64` for small artifacts (`.state`, `.ram`,
-knowledge/failure JSON) bounded by the MCP response cap, whether pokewall
-still holds it inline or — as happens within minutes of a run ending — has
-already durabilized it to S3; decode it to a local file, e.g.:
+If the unattended packet already contains a current **Prepared debug packet**,
+use it directly. Otherwise run:
 
 ```bash
-python3 -c "import base64,sys; open('/tmp/r46.state','wb').write(base64.b64decode(sys.argv[1]))" "$CONTENT_BASE64"
+make -s debug RUN=<run-id>
 ```
 
-Only artifacts too large for the response cap (`run.gbrun`) are out of reach
-here; see `docs/RUN_INSPECTOR.md`'s `.gbrun` replay player section — it is not
-part of the state repro this skill needs.
+The result resolves the exact structured failure contract, downloads only the
+small state/knowledge/repro artifacts needed, runs deterministic executor replay
+when supported, and localizes likely source lines.
 
-`.state` files load with `emu.LoadState`; the ROM is normally
-`roms/pokemon_red.gb` or the checkout-independent configured ROM path.
-Never commit ROMs, saves, or replay states.
+A repair should normally start from `reproduction.state == reproduced`.
+Infrastructure-only loss, expected gameplay, cancellation, and unfinished live
+runs do not become code bugs merely because they appear in the queue.
 
-## 4. Reproduce it locally
+## Fix
 
-Write a throwaway `skill/zz_repro_scratch_test.go` (delete it when done) that
-loads the state and calls the same skill the objective calls. See
-`agent/objective.go` for the mapping.
+Start from `source_matches`; inspect the immediate producer/caller and fix the
+shared invariant at its owning layer. Do not add a named-map/NPC special case
+unless the game rule itself is genuinely map-specific.
 
-Example shape:
+Use specialized skills only when the packet demands them:
 
-```go
-m, _ := emu.Open(os.Getenv("POKEMON_RED_ROM"))
-m.LoadState(stateBytes)
-dest, _ := skill.Place("cerulean city")
-res, err := skill.TravelFlee(m, rom, dest, skill.StatAwareMove(rom), 20)
-```
+- `world-map-debug` for measured geometry/routing;
+- `gomeboy-forensics` for instruction-level RAM/CPU questions;
+- `pokefarm-recovery-audit` when an earlier recovery poisoned the checkpoint.
 
-Then run only the exact repro:
+## Verify and ship
+
+Rerun:
 
 ```bash
-POKEMON_RED_ROM=$PWD/roms/pokemon_red.gb REPRO_STATE=/tmp/r46.state \
-  go test ./skill -run TestScratchRepro -v
+make -s debug RUN=<run-id>
+make test-short
 ```
 
-The same replay is the proof of the fix: it must fail before the patch and pass
-after it.
+For a structured Red failure, the deterministic replay should move from the
+same captured failure to `objective_succeeded`.
 
-When the reason is not obvious, instrument only the relevant return path, replay
-again, then remove the instrumentation.
+Push a `fix/<slug>` branch and open a PR titled:
 
-For map/routing/location failures, use the `world-map-debug` skill before
-guessing spatial relationships. Open a stable World Explorer link for context,
-then use `skill/probe_test.go` for any exact walkability/reachability claim.
-The public map is an orientation surface, not collision proof. Do not reason
-from a collision grid by hand; follow `AGENTS.md`.
-
-### Do not reproduce a failure through the planner
-
-The `.state` replay pins the objective that failed and calls its skill directly.
-A live planner can choose something else, which turns the reproduction into a
-different experiment.
-
-Use `.state` + a focused scratch test to prove the defect and fix. Use
-`pokerepro -play` only when you specifically need to ask whether a run gets past
-an earlier boundary after the change.
-
-### When the failing round does not contain the bug
-
-If the failing round arrives already poisoned — for example by an earlier party
-wipe, bad knowledge, or planner decision — replay from an earlier objective
-checkpoint with its paired knowledge instead of guessing how the state formed.
-
-```bash
-W=https://admin.rompilot.app
-curl -sS "$W/v1/runs/<run-id>/checkpoints"
-go run ./cmd/pokerepro -wall $W -run <run-id> -checkpoint latest
-```
-
-This is slower and may involve a live LLM, so use it only when the exact failing
-round cannot reproduce the causal defect.
-
-## 5. Fix at the shared point
-
-Follow `docs/ARCHITECTURE.md` and `AGENTS.md`. Fix the invariant at its owning
-layer rather than adding a named-map/story exception. Grep callers before
-editing: one correct guard in a shared skill is better than compensating patches
-in every caller.
-
-Then:
-
-1. re-run the exact failed-state repro;
-2. delete `skill/zz_repro_scratch_test.go`;
-3. run `make test-short`.
-
-Do not use bare `go test ./skill/...` as the regression gate; that boots the ROM
-for long journey tests. The exact state replay supplies the ROM-backed evidence,
-and `make test-short` supplies the broad deterministic gate.
-
-If either gate is red, stop. A failing gate is not a shippable repair.
-
-## 6. Ship it
-
-Only once both gates are green:
-
-```bash
-git switch -c fix/<short-slug>
-git add <only the files changed for the repair>
-git commit
-git push -u origin HEAD
-```
-
-Never commit or push `main`, never `git add -A` over unrelated work, and never
-commit `.gb`, `.sav`, `.state`, or `skill/zz_*_test.go`.
-
-For an unattended qwagent packet, always open a PR whose title includes the
-stable claim marker:
-
-```
+```text
 fix(farm): <short symptom> [triage:<key>]
 ```
 
-The body must name the run id and fingerprint and summarize the reproduction,
-root cause, fix, and verification. Do not merge the PR; the repository's normal
-merge/deploy machinery owns that step.
+Include the run id, root cause, replay before/after, and short-test result.
+Never commit ROMs, saves, states, cached repro bundles, or scratch tests.
+Record the solver attempt through `pokepilot_record_solver_attempt`.
 
-For an interactive human-requested investigation, follow the user's requested
-shipping boundary; if they asked only for diagnosis, do not push merely because
-this skill can.
+## Escalate only when necessary
 
-## Known map
-
-- `.claude/skills/pokefarm-run-fix/SKILL.md` — work item is a run id: resolve the key and drive this procedure to a PR.
-- `.claude/skills/world-map-debug/SKILL.md` — World Explorer → probe → worldverify workflow for map/routing failures.
-- `docs/RUN_INSPECTOR.md` — artifact/replay endpoints and run inspection.
-- `docs/RAM_FORENSICS.md` + `gomeboy-forensics` — instruction-level probes.
-- `skill/probe_test.go` — measured walkability/route/state questions.
-- `skill/goto.go` / place facts — measured destinations; do not invent literals.
+If the one-id packet cannot establish the cause, expand progressively:
+`pokepilot_get_run_debug`, then recovery audit if relevant, then one named
+artifact. Raw recordings and broad source searches are last-resort evidence,
+not the starting context.
