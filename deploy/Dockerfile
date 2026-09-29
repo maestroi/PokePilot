@@ -22,6 +22,8 @@ COPY pokered/data/maps/headers/ /src/pokered/data/maps/headers/
 COPY pokered/data/maps/objects/ /src/pokered/data/maps/objects/
 # web tests read renderstate fixtures at build time (headlessSemanticContract).
 COPY renderstate/testdata/ /src/renderstate/testdata/
+# mediaNavigation test asserts against the Go proxy source.
+COPY cmd/pokeui/run_inspector_proxy.go /src/cmd/pokeui/run_inspector_proxy.go
 RUN npm run build
 
 FROM golang:1.26 AS build
