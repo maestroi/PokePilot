@@ -199,6 +199,12 @@ func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux.HandleFunc("GET /v1/challenges", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/challenges", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/challenges/{id}/queue", proxy(wallBase, false))
+	mux.HandleFunc("GET /v1/votes", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/votes/active", proxy(wallBase, true))
+	mux.HandleFunc("POST /v1/votes", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/votes/{id}/ballots", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/votes/{id}/close", proxy(wallBase, false))
+	mux.HandleFunc("POST /v1/votes/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/programming", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/programming/runs/{id}", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/programming/queue", proxy(wallBase, false))
@@ -320,7 +326,7 @@ func main() {
 		}
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorProgrammingHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase)))
 		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))
-		log.Printf("pokeui proxying %s on http://%s (public spectator mode; read-only; replay=%t)", *wall, *httpAddr, replayBase != "")
+		log.Printf("pokeui proxying %s on http://%s (public spectator mode; voting enabled; replay=%t)", *wall, *httpAddr, replayBase != "")
 	} else {
 		httpHandler = adminCORS(withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator"))
 		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
