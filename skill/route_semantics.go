@@ -350,6 +350,22 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		return t, true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
+		// red:victory_road_strength is a pivot: it grants skipCanExit, so the
+		// router may offer the crossing even when the player's walkable
+		// component cannot reach its pad. That privilege is only sound when the
+		// adapter can actually perform an action that opens the pad. Descending
+		// 2F -> 1F owns no boulder objective — the 1F switch gates the climb
+		// into 2F, not the drop back out — so annotating it turned its (0,8) pad
+		// into a phantom first hop at MAP level. MEASURED on
+		// run-2fgn1nak1rmjho8sqyiogre6h and run-3dtp99mx0jn3ickoqlj1k6iue: from
+		// Victory Road 2F's sealed ladder pocket at (25,14) the router offered
+		// that pad, the executor had nothing to do, and every recovery route out
+		// of the pocket was priced through a crossing the player could not make.
+		// Ask the executor which crossings it owns instead of assuming the map
+		// pair is symmetric, so the two can never drift apart again.
+		if _, ok := victoryRoadSectionForTransition(edge); !ok {
+			return gameruntime.Transition{}, false
+		}
 		return semanticTransition("red:victory_road_strength", edge, capCanMoveBoulders), true
 	case edge.From == rocketHideoutB1FMap && edge.Kind == world.EdgeWarp &&
 		((edge.To == gameCornerMap && edge.WarpX == rocketB1FGameCornerWarpX && edge.WarpY == rocketB1FGameCornerWarpY) ||
