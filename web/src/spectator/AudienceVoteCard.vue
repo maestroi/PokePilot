@@ -22,7 +22,6 @@ interface AudienceVote {
 }
 
 const vote = ref<AudienceVote | null>(null)
-const state = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const message = ref('')
 const pending = ref('')
 const votedFor = ref('')
@@ -47,7 +46,6 @@ function candidatePercent(candidate: VoteCandidate): number {
 }
 
 async function refresh(): Promise<void> {
-  if (state.value === 'idle') state.value = 'loading'
   try {
     const response = await fetch('/v1/watch/vote', {
       method: 'GET',
@@ -57,9 +55,7 @@ async function refresh(): Promise<void> {
     if (!response.ok) throw new Error('Vote feed unavailable')
     const payload = await response.json() as { active?: AudienceVote | null }
     vote.value = payload.active || null
-    state.value = 'ready'
   } catch {
-    state.value = 'error'
   }
 }
 
