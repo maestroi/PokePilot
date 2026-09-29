@@ -265,6 +265,13 @@ func TestChooseFastTravelByCostCanBypassBlockedOrdinaryRoute(t *testing.T) {
 // find a route from a component with no outgoing edges, so only the same
 // Fly/Teleport/Dig emergency egress that already rescues a stalled or
 // replan-exhausted journey can get it unstuck.
+func TestEmergencyEgressCauseCoversSemanticTransitionStall(t *testing.T) {
+	wrapped := fmt.Errorf("skill: GoTo: transition failed: %w", world.ErrTransitionExecutionStalled)
+	if got := emergencyEgressCause(wrapped); got != "transition_execution_stalled" {
+		t.Fatalf("emergencyEgressCause(%v) = %q, want transition_execution_stalled", wrapped, got)
+	}
+}
+
 func TestEmergencyEgressCauseCoversNoRoute(t *testing.T) {
 	wrapped := fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 		0x05, 12, 23, 0x08, 11, 12, world.ErrNoRoute)
