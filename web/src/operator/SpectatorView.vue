@@ -77,7 +77,7 @@ function spectatorBaseURL(): string {
 function openSpectator(runID = ''): void {
   const base = spectatorBaseURL()
   if (!base) {
-    actionError.value = 'Set POKEPILOT_PUBLIC_BASE_URL on the operator UI to enable spectator links.'
+    actionError.value = 'Set POKEPILOT_PUBLIC_BASE_URL on the operator UI to enable public links.'
     return
   }
   window.open(spectatorURL(base, runID), '_blank', 'noopener,noreferrer')
@@ -100,7 +100,7 @@ async function setVisible(run: DashboardRun, visible: boolean): Promise<void> {
     await patchSpectatorRunControl(run.run_id, { visible })
     await controlResource.retry()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Spectator update failed'
+    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
   } finally {
     busyRunID.value = ''
   }
@@ -114,7 +114,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
     await patchSpectatorRunControl(run.run_id, { featured })
     await controlResource.retry()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Spectator update failed'
+    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
   } finally {
     busyRunID.value = ''
   }
@@ -124,7 +124,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
 <template>
   <ResourceState
     :state="resourceState"
-    title="Spectator controls unavailable"
+    title="Public publishing controls unavailable"
     :message="controlResource.error.value || activeResource.error.value || recentResource.error.value || 'No runs are available yet.'"
     :rows="7"
   >
@@ -139,7 +139,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
         <div>
           <h2 class="text-sm font-semibold text-white">Public site</h2>
           <p class="mt-0.5 text-[11px] text-[var(--poke-muted)]">
-            Hidden runs never cross the public RomPilot API. Featured runs become the default view for unpinned spectators.
+            Hidden runs never cross the public RomPilot API. Featured runs become the default view for unpinned public visitors.
           </p>
         </div>
         <button
@@ -154,18 +154,18 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
       <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
       <section class="overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-panel)]">
-        <div class="grid grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] gap-2 border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5 py-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">
+        <div class="hidden grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] gap-2 border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5 py-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:grid">
           <span>Run</span>
           <span>Status</span>
           <span>When</span>
           <span>Goal</span>
-          <span class="text-right">Spectator</span>
+          <span class="text-right">Public</span>
         </div>
 
         <div
           v-for="run in runs"
           :key="run.run_id"
-          class="grid grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] items-center gap-2 border-b border-[var(--poke-border)] px-2.5 py-2 last:border-b-0"
+          class="grid grid-cols-1 gap-3 border-b border-[var(--poke-border)] px-3 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] lg:items-center lg:gap-2 lg:px-2.5 lg:py-2"
         >
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
@@ -175,11 +175,20 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
             <span class="mt-0.5 block truncate text-[10px] text-[var(--poke-muted)]">{{ run.starter || 'Pokémon Red' }}</span>
           </div>
 
-          <div><StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge></div>
-          <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ formatWhen(run.status === 'done' ? run.ended_at : run.queued_at) }}</span>
-          <span class="truncate text-[11px] text-[var(--poke-text)]" :title="run.goal || ''">{{ run.goal || 'Free play' }}</span>
+          <div class="flex items-center justify-between gap-3 lg:block">
+            <span class="text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">Status</span>
+            <StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge>
+          </div>
+          <div class="flex items-center justify-between gap-3 lg:block">
+            <span class="text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">When</span>
+            <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ formatWhen(run.status === 'done' ? run.ended_at : run.queued_at) }}</span>
+          </div>
+          <div class="flex min-w-0 items-center justify-between gap-3 lg:block">
+            <span class="shrink-0 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase lg:hidden">Goal</span>
+            <span class="truncate text-[11px] text-[var(--poke-text)]" :title="run.goal || ''">{{ run.goal || 'Free play' }}</span>
+          </div>
 
-          <div class="flex items-center justify-end gap-1">
+          <div class="flex flex-wrap items-center justify-start gap-1 lg:justify-end">
             <button
               type="button"
               :disabled="Boolean(busyRunID)"
@@ -187,7 +196,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
                 isVisible(run.run_id) ? 'text-[var(--poke-green)] ring-[var(--poke-green)]/40' : 'text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
                 'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:bg-white/5 disabled:opacity-50'
               ]"
-              :title="isVisible(run.run_id) ? 'Hide this run from the public spectator' : 'Show this run in the public spectator'"
+              :title="isVisible(run.run_id) ? 'Hide this run from the public site' : 'Show this run on the public site'"
               @click="setVisible(run, !isVisible(run.run_id))"
             >
               <EyeIcon v-if="isVisible(run.run_id)" class="size-3" aria-hidden="true" />
@@ -202,7 +211,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
                 featuredRunID === run.run_id ? 'bg-[#31402e] text-[var(--poke-green)] ring-[#52664c]' : 'text-[var(--poke-text)] ring-[var(--poke-border-strong)]',
                 'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:bg-white/5 disabled:opacity-50'
               ]"
-              :title="featuredRunID === run.run_id ? 'Stop featuring this run' : 'Make this the default spectator run'"
+              :title="featuredRunID === run.run_id ? 'Stop featuring this run' : 'Make this the default public run'"
               @click="setFeatured(run, featuredRunID !== run.run_id)"
             >
               <StarIcon class="size-3" aria-hidden="true" />
@@ -214,7 +223,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
               class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold text-[var(--poke-cyan)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5"
               @click="openSpectator(run.run_id)"
             >
-              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> View spectator
+              <ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /> Open public
             </button>
           </div>
         </div>

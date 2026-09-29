@@ -137,7 +137,61 @@ function refresh(): void {
         </div>
       </div>
 
-      <div class="-mx-3 overflow-x-auto sm:-mx-4">
+      <div class="space-y-2 md:hidden">
+        <article
+          v-for="job in jobs"
+          :key="`mobile-${job.id}`"
+          class="rounded-lg border border-white/8 bg-black/15 p-3"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <a
+                :href="`/?run=${encodeURIComponent(job.run_id)}#live`"
+                class="block truncate font-mono text-xs text-cyan-300 hover:underline"
+                :title="job.run_id"
+              >{{ shortID(job.run_id) }}</a>
+              <div class="mt-1 font-mono text-[9px] text-slate-600" :title="job.id">{{ job.id.slice(0, 18) }}</div>
+            </div>
+            <StatusBadge :tone="tone(job)">{{ job.state }}</StatusBadge>
+          </div>
+
+          <div class="mt-3">
+            <div class="flex items-center justify-between gap-2 font-mono text-[10px] text-slate-400">
+              <span>{{ progressLabel(job) }}</span>
+              <span v-if="job.result_size" class="text-slate-600">{{ formatBytes(job.result_size) }}</span>
+            </div>
+            <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/8">
+              <div
+                class="h-full rounded-full bg-cyan-300/80 transition-[width] duration-300"
+                :style="{ width: `${progressPercent(job)}%` }"
+              />
+            </div>
+          </div>
+
+          <p v-if="job.last_error" class="mt-2 line-clamp-2 text-[10px] text-rose-300" :title="job.last_error">{{ job.last_error }}</p>
+
+          <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
+            <div>
+              <dt class="text-slate-600">Worker</dt>
+              <dd class="mt-0.5 truncate font-mono text-slate-400" :title="workerLabel(job)">{{ workerLabel(job) }}</dd>
+            </div>
+            <div>
+              <dt class="text-slate-600">Mode</dt>
+              <dd class="mt-0.5 text-slate-400">{{ job.mode }}</dd>
+            </div>
+            <div>
+              <dt class="text-slate-600">Runtime</dt>
+              <dd class="mt-0.5 font-mono text-slate-400">{{ runtimeLabel(job) }}</dd>
+            </div>
+            <div>
+              <dt class="text-slate-600">Updated</dt>
+              <dd class="mt-0.5 font-mono text-slate-400">{{ ageLabel(job.updated_at_unix_ms) }}</dd>
+            </div>
+          </dl>
+        </article>
+      </div>
+
+      <div class="-mx-3 hidden overflow-x-auto sm:-mx-4 md:block">
         <table class="min-w-full divide-y divide-white/10 text-left">
           <thead>
             <tr>

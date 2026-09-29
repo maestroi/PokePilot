@@ -12,6 +12,7 @@ import {
   TrophyIcon
 } from '@heroicons/vue/20/solid'
 import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
+import { supportsPublicCapability } from '../shared/publicCapabilities'
 import AudienceVoteCard from './AudienceVoteCard.vue'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
@@ -46,6 +47,7 @@ const tetrisLines = computed(() => Number(props.run.game_state?.lines_cleared ||
 const tetrisLevel = computed(() => Number(props.run.game_state?.level || 0))
 const tetrisPiece = computed(() => props.run.game_state?.active?.piece || '—')
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
+const canExploreWorld = computed(() => supportsPublicCapability(props.run, 'worldMap'))
 const goal = computed(() => {
   if (!isTetris.value) return goalProgress(props.run)
   if (props.run.game_state?.complete) return 100
@@ -106,6 +108,7 @@ function watch(run: SpectatorRun): void {
             <ArrowRightIcon class="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
           </button>
           <a
+            v-if="canExploreWorld"
             href="/explore"
             class="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/6 px-5 py-3 text-sm font-bold text-slate-100 transition hover:border-cyan-300/25 hover:bg-white/10"
           >
@@ -342,7 +345,7 @@ function watch(run: SpectatorRun): void {
       </div>
 
       <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <a href="/explore" class="public-feature group">
+        <a v-if="canExploreWorld" href="/explore" class="public-feature group">
           <GlobeAltIcon class="size-5 text-cyan-300" aria-hidden="true" />
           <div>
             <strong>World explorer</strong>

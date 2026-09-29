@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
 import { Bars3Icon, XMarkIcon } from '@heroicons/vue/24/outline'
+import type { PublicCapability } from '../publicCapabilities'
 import type { AppNavItem } from '../types'
 
 const props = withDefaults(defineProps<{
@@ -10,20 +11,29 @@ const props = withDefaults(defineProps<{
   subtitle: string
   mode: 'private' | 'public'
   navigation?: AppNavItem[]
+  publicCapabilities?: PublicCapability[]
   showIntro?: boolean
 }>(), {
   navigation: () => [],
+  publicCapabilities: () => ['live', 'replay'] as PublicCapability[],
   showIntro: true
 })
 
 const publicNavigation = computed<AppNavItem[]>(() => {
   if (props.mode !== 'public') return []
   const path = window.location.pathname
-  return [
-    { name: 'Watch', href: '/', current: path === '/' || path.startsWith('/runs/') },
-    { name: 'Explore', href: '/explore', current: path === '/explore' || path === '/explore/' || path === '/world' || path === '/world/' },
-    { name: 'Replays', href: '/replays', current: path === '/replays' || path.startsWith('/replays/') }
-  ]
+  const capabilities = new Set(props.publicCapabilities)
+  const items: AppNavItem[] = []
+  if (capabilities.has('live')) {
+    items.push({ name: 'Watch', href: '/', current: path === '/' || path.startsWith('/runs/') })
+  }
+  if (capabilities.has('worldMap')) {
+    items.push({ name: 'Explore', href: '/explore', current: path === '/explore' || path === '/explore/' || path === '/world' || path === '/world/' })
+  }
+  if (capabilities.has('replay')) {
+    items.push({ name: 'Replays', href: '/replays', current: path === '/replays' || path.startsWith('/replays/') })
+  }
+  return items
 })
 
 const effectiveNavigation = computed(() => props.navigation.length ? props.navigation : publicNavigation.value)

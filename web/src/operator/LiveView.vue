@@ -466,7 +466,7 @@ async function toggleSpectatorSelected(): Promise<void> {
     await patchSpectatorRunControl(run.run_id, { visible: !spectatorVisible.value })
     await spectatorResource.retry()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Spectator visibility update failed'
+    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
   } finally {
     spectatorUpdating.value = false
   }
@@ -917,7 +917,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <button
               type="button"
               :disabled="spectatorUpdating || !spectatorControlReady"
-              :title="spectatorControlReady ? (spectatorVisible ? 'Visible in spectator mode. Click to hide.' : 'Hidden from spectator mode. Click to show.') : 'Spectator controls unavailable.'"
+              :title="spectatorControlReady ? (spectatorVisible ? 'Visible on the public site. Click to hide.' : 'Hidden from the public site. Click to show.') : 'Public visibility controls unavailable.'"
               :class="[
                 spectatorVisible ? 'bg-[#18362f] text-[var(--poke-green)] ring-[#315f52]' : 'bg-[#2b3038] text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
                 'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:brightness-110 disabled:opacity-50'
@@ -926,7 +926,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             >
               <EyeIcon v-if="spectatorVisible" class="size-3" aria-hidden="true" />
               <EyeSlashIcon v-else class="size-3" aria-hidden="true" />
-              {{ spectatorUpdating ? 'Updating…' : (spectatorVisible ? 'Spectator visible' : 'Spectator hidden') }}
+              {{ spectatorUpdating ? 'Updating…' : (spectatorVisible ? 'Public visible' : 'Public hidden') }}
             </button>
             <button v-if="isPausable" type="button" :disabled="pausing" class="inline-flex items-center gap-1 rounded-sm bg-[#3b3222] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-amber)] ring-1 ring-[#6b5632] hover:brightness-110 disabled:opacity-50" @click="pauseSelected">
               <PauseIcon class="size-3" aria-hidden="true" /> {{ pausing ? 'Pausing…' : 'Pause' }}

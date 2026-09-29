@@ -7,6 +7,7 @@ import AppShell from '../shared/components/AppShell.vue'
 import SemanticMap from '../shared/components/SemanticMap.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { MAP_CATALOG, mapEntry, resolveMapQuery } from '../shared/mapCatalog'
+import type { PublicCapability } from '../shared/publicCapabilities'
 
 interface MapWarp {
   x: number
@@ -25,6 +26,8 @@ interface MapPayload {
 }
 
 type WorldView = 'explorer' | 'debug'
+
+const publicCapabilities: PublicCapability[] = ['live', 'replay', 'worldMap']
 
 const initialParams = new URLSearchParams(window.location.search)
 const initialEntry = resolveMapQuery(initialParams.get('map')) || MAP_CATALOG[0]
@@ -227,6 +230,7 @@ async function copyLink(): Promise<void> {
     title="World explorer"
     subtitle="Browse Kanto freely, open connected places, or attach a live agent without giving up control of the map."
     mode="public"
+    :public-capabilities="publicCapabilities"
   >
     <template #summary>
       <span><strong class="text-white">{{ MAP_CATALOG.length }}</strong> named maps</span>
