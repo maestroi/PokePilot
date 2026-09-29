@@ -99,7 +99,7 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 	// can return with the script still owning the objective boundary. The real
 	// FIGHT/ITEM/PKMN/RUN menu is exactly one row of two columns (max item 1),
 	// the same positive shape DecodeBattleEscapeMenu already requires.
-	case strings.Contains(text, battleMainMenuMarker) && menu.Max == redBattleMenuCommandMax:
+	case strings.Contains(text, battleMainMenuMarker) && menu.Max == int(redBattleMenuCommandMax):
 		out.Phase = game.BattleExecutionMainMenu
 	}
 	return out
