@@ -12,6 +12,7 @@ import {
   TrophyIcon
 } from '@heroicons/vue/20/solid'
 import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
+import AudienceVoteCard from './AudienceVoteCard.vue'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
   goalProgress,
@@ -295,6 +296,8 @@ function watch(run: SpectatorRun): void {
     </div>
 
     <div class="relative px-5 py-6 sm:px-7 xl:px-10">
+      <AudienceVoteCard class="mb-6" />
+
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div class="flex items-center gap-2">
