@@ -99,8 +99,9 @@ type replayServer struct {
 	vaapiReason  string
 	ffmpegVAAPI  string
 	store        *artifactstore.S3
-	wallHTTP     *http.Client
-	compositor   replayCompositor
+	wallHTTP         *http.Client
+	compositor       replayCompositor
+	semanticRenderer *compositor.SemanticRenderer
 
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
@@ -117,15 +118,20 @@ type replayServer struct {
 }
 
 func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstore.S3) *replayServer {
+	semanticRenderer, err := compositor.NewPublicSemanticRenderer()
+	if err != nil {
+		log.Printf("pokereplay: headless semantic renderer unavailable: %v", err)
+	}
 	return &replayServer{
-		wallBase:     strings.TrimRight(wallBase, "/"),
-		romPath:      romPath,
-		streamBinary: streamBinary,
-		store:        store,
-		wallHTTP:     &http.Client{Timeout: wallTimeout},
-		compositor:   compositor.NewFFmpeg("ffmpeg", nil),
-		jobs:         make(map[string]replayStatus),
-		liveSessions: make(map[string]*liveBroadcastSession),
+		wallBase:         strings.TrimRight(wallBase, "/"),
+		romPath:          romPath,
+		streamBinary:     streamBinary,
+		store:            store,
+		wallHTTP:         &http.Client{Timeout: wallTimeout},
+		compositor:       compositor.NewFFmpeg("ffmpeg", nil),
+		semanticRenderer: semanticRenderer,
+		jobs:             make(map[string]replayStatus),
+		liveSessions:     make(map[string]*liveBroadcastSession),
 	}
 }
 
@@ -138,7 +144,8 @@ func (s *replayServer) handler() http.Handler {
 			"encoder":        s.encoderName(),
 			"vaapi":          s.vaapi,
 			"vaapi_reason":   s.vaapiReason,
-			"renderer":       broadcastRendererVersion,
+			"renderer":          broadcastRendererVersion,
+			"semantic_renderer": compositor.PublicSemanticRendererVersion(),
 			"live_fps":       liveBroadcastFPS,
 			"active_renders": s.rendering.Load(),
 		})
