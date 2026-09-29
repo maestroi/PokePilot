@@ -98,36 +98,11 @@ services:
     deploy:
       replicas: 1
 
-  replay:
-    image: ${FARM_IMAGE:-pokepilot-farm:local}
-    # Replay is intentionally a separate trust boundary. It needs the mounted
-    # ROM library and S3 credentials to verify/render .gbrun recordings;
-    # pokewall does not. -rom remains the compatibility fallback for corrupt or
-    # pre-profile recordings; valid recordings select a cartridge from -rom-dir
-    # by their recorded game identity and exact ROM hash.
-    command: ["pokereplay", "-http", ":8080", "-wall", "http://wall:8080", "-rom", "/rom/pokemon_red.gb", "-rom-dir", "/rom"]
-    environment:
-      POKEPILOT_S3_ENDPOINT: ${POKEPILOT_S3_ENDPOINT:-}
-      POKEPILOT_S3_BUCKET: ${POKEPILOT_S3_BUCKET:-}
-      POKEPILOT_S3_REGION: ${POKEPILOT_S3_REGION:-us-east-1}
-      POKEPILOT_S3_ACCESS_KEY: ${POKEPILOT_S3_ACCESS_KEY:-}
-      POKEPILOT_S3_SECRET_KEY: ${POKEPILOT_S3_SECRET_KEY:-}
-      # Rendering a long recording can legitimately take longer than a normal
-      # runner artifact PUT, so replay gets its own configurable S3 timeout.
-      POKEPILOT_S3_TIMEOUT: ${POKEPILOT_REPLAY_S3_TIMEOUT:-10m}
-      # auto: h264_vaapi when /dev/dri/renderD128 exists; set off for libx264.
-      POKEPILOT_REPLAY_ENCODER: ${POKEPILOT_REPLAY_ENCODER:-auto}
-      LIBVA_DRIVER_NAME: ${LIBVA_DRIVER_NAME:-iHD}
-    volumes:
-      - ${POKEPILOT_ROM_DIR}:/rom:ro
-    deploy:
-      replicas: 1
-
   ui:
     image: ${FARM_IMAGE:-pokepilot-farm:local}
     # Private operator only: same-origin proxy to wall metadata plus the replay
     # sidecar for artifact bytes/video. The public spectator never mounts these.
-    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "http://replay:8080"]
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "${FARM_REPLAY_URL:-http://192.168.50.203:8080}"]
     environment:
       # Empty disables /mcp entirely. Keep this operator service private even
       # when MCP is disabled: its HTTP UI can queue, cancel, and delete runs.
@@ -145,7 +120,7 @@ services:
     # The public process still mounts only the sanitized spectator route table.
     # It can read cached replay status/video from the replay sidecar, but cannot
     # trigger renders, browse artifacts, inspect debug data, or mutate runs.
-    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "http://replay:8080", "-spectator"]
+    command: ["pokeui", "-http", ":8080", "-wall", "http://wall:8080", "-replay", "${FARM_REPLAY_URL:-http://192.168.50.203:8080}", "-spectator"]
     ports:
       - target: 8080
         published: ${FARM_SPECTATOR_PORT:-18081}
