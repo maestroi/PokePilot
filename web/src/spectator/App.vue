@@ -44,6 +44,7 @@ import {
   runTone,
   splitSpectatorRuns
 } from './model'
+import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
@@ -741,15 +742,8 @@ function activityTimeAgo(item: ActivityItem): string {
       </button>
     </template>
 
-    <div v-if="!snapshot && state === 'loading'" class="mx-auto max-w-7xl space-y-3 py-3" aria-label="Loading spectator feed" aria-busy="true">
-      <div class="h-28 animate-pulse rounded-xl bg-white/5 ring-1 ring-white/8" />
-      <div class="grid gap-3 xl:grid-cols-[minmax(0,2.2fr)_minmax(19rem,0.8fr)]">
-        <div class="h-[36rem] animate-pulse rounded-xl bg-white/5 ring-1 ring-white/8" />
-        <div class="space-y-3">
-          <div class="h-44 animate-pulse rounded-xl bg-white/5 ring-1 ring-white/8" />
-          <div class="h-60 animate-pulse rounded-xl bg-white/5 ring-1 ring-white/8" />
-        </div>
-      </div>
+    <div v-if="!snapshot && state === 'loading'" class="mx-auto max-w-7xl py-3">
+      <BroadcastLoadingScene mode="page" state="loading" />
     </div>
 
     <div v-else-if="!snapshot && state === 'error'" class="grid min-h-[70vh] place-items-center px-3 py-12">
@@ -894,6 +888,7 @@ function activityTimeAgo(item: ActivityItem): string {
         :live-runs="groupedRuns.live"
         :summary="snapshot.summary"
         :frame-url="frameURL"
+        :frame-state="frameState"
         @select="selectRun"
       />
 
