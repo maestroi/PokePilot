@@ -36,52 +36,52 @@ var (
 )
 
 type challengeVoteCandidateRef struct {
-	ChallengeID string \`json:"challenge_id"\`
-	Version     int    \`json:"version,omitempty"\`
+	ChallengeID string `json:"challenge_id"`
+	Version     int    `json:"version,omitempty"`
 }
 
 type challengeVoteCandidate struct {
-	ChallengeID      string \`json:"challenge_id"\`
-	ChallengeVersion int    \`json:"challenge_version"\`
-	ChallengeName    string \`json:"challenge_name"\`
-	Votes             int    \`json:"votes"\`
+	ChallengeID      string `json:"challenge_id"`
+	ChallengeVersion int    `json:"challenge_version"`
+	ChallengeName    string `json:"challenge_name"`
+	Votes             int    `json:"votes"`
 }
 
 type challengeVoteBallot struct {
-	CandidateID string \`json:"candidate_id"\`
-	Source      string \`json:"source"\`
+	CandidateID string `json:"candidate_id"`
+	Source      string `json:"source"`
 }
 
 type challengeVoteSession struct {
-	ID           string                   \`json:"id"\`
-	Status       string                   \`json:"status"\`
-	OpenedAt     int64                    \`json:"opened_at"\`
-	ClosesAt     int64                    \`json:"closes_at,omitempty"\`
-	ClosedAt     int64                    \`json:"closed_at,omitempty"\`
-	TiePolicy    string                   \`json:"tie_policy"\`
-	Candidates   []challengeVoteCandidate \`json:"candidates"\`
-	WinnerID     string                   \`json:"winner_id,omitempty"\`
-	QueueEntryID string                   \`json:"queue_entry_id,omitempty"\`
-	SourceTotals map[string]int           \`json:"source_totals,omitempty"\`
-	SourceLimits map[string]int           \`json:"source_limits,omitempty"\`
-	Ballots      map[string]challengeVoteBallot \`json:"ballots,omitempty"\`
+	ID           string                   `json:"id"`
+	Status       string                   `json:"status"`
+	OpenedAt     int64                    `json:"opened_at"`
+	ClosesAt     int64                    `json:"closes_at,omitempty"`
+	ClosedAt     int64                    `json:"closed_at,omitempty"`
+	TiePolicy    string                   `json:"tie_policy"`
+	Candidates   []challengeVoteCandidate `json:"candidates"`
+	WinnerID     string                   `json:"winner_id,omitempty"`
+	QueueEntryID string                   `json:"queue_entry_id,omitempty"`
+	SourceTotals map[string]int           `json:"source_totals,omitempty"`
+	SourceLimits map[string]int           `json:"source_limits,omitempty"`
+	Ballots      map[string]challengeVoteBallot `json:"ballots,omitempty"`
 }
 
 type challengeVoteSnapshot struct {
-	ID           string                   \`json:"id"\`
-	Status       string                   \`json:"status"\`
-	OpenedAt     int64                    \`json:"opened_at"\`
-	ClosesAt     int64                    \`json:"closes_at,omitempty"\`
-	ClosedAt     int64                    \`json:"closed_at,omitempty"\`
-	TiePolicy    string                   \`json:"tie_policy"\`
-	Candidates   []challengeVoteCandidate \`json:"candidates"\`
-	WinnerID     string                   \`json:"winner_id,omitempty"\`
-	QueueEntryID string                   \`json:"queue_entry_id,omitempty"\`
-	SourceTotals map[string]int           \`json:"source_totals,omitempty"\`
+	ID           string                   `json:"id"`
+	Status       string                   `json:"status"`
+	OpenedAt     int64                    `json:"opened_at"`
+	ClosesAt     int64                    `json:"closes_at,omitempty"`
+	ClosedAt     int64                    `json:"closed_at,omitempty"`
+	TiePolicy    string                   `json:"tie_policy"`
+	Candidates   []challengeVoteCandidate `json:"candidates"`
+	WinnerID     string                   `json:"winner_id,omitempty"`
+	QueueEntryID string                   `json:"queue_entry_id,omitempty"`
+	SourceTotals map[string]int           `json:"source_totals,omitempty"`
 }
 
 type challengeVotingState struct {
-	Sessions []challengeVoteSession \`json:"sessions"\`
+	Sessions []challengeVoteSession `json:"sessions"`
 }
 
 type challengeVotingController struct {
@@ -95,20 +95,20 @@ type challengeVotingController struct {
 }
 
 type createChallengeVoteRequest struct {
-	Candidates   []challengeVoteCandidateRef \`json:"candidates"\`
-	ClosesAt     int64                       \`json:"closes_at,omitempty"\`
-	TiePolicy    string                      \`json:"tie_policy,omitempty"\`
-	SourceLimits map[string]int              \`json:"source_limits,omitempty"\`
+	Candidates   []challengeVoteCandidateRef `json:"candidates"`
+	ClosesAt     int64                       `json:"closes_at,omitempty"`
+	TiePolicy    string                      `json:"tie_policy,omitempty"`
+	SourceLimits map[string]int              `json:"source_limits,omitempty"`
 }
 
 type castChallengeVoteRequest struct {
-	Source      string \`json:"source"\`
-	VoterID     string \`json:"voter_id"\`
-	CandidateID string \`json:"candidate_id"\`
+	Source      string `json:"source"`
+	VoterID     string `json:"voter_id"`
+	CandidateID string `json:"candidate_id"`
 }
 
 type closeChallengeVoteRequest struct {
-	WinnerID string \`json:"winner_id,omitempty"\`
+	WinnerID string `json:"winner_id,omitempty"`
 }
 
 var challengeVotingControllers sync.Map // *Wall -> *challengeVotingController
