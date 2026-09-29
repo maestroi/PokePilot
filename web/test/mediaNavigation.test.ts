@@ -12,6 +12,7 @@ const renderJobs = readFileSync(new URL('../src/operator/RenderJobsPanel.vue', i
 const spectator = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
 const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
 const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue', import.meta.url), 'utf8')
+const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
 
 test('media is a top-level admin workspace and spectator is not', () => {
@@ -78,4 +79,13 @@ test('run inspector exposes render cancellation and Media handoff', () => {
   assert.match(inspector, /Cancel render/)
   assert.match(inspector, /Manage in Media/)
   assert.match(inspector, /replay\.job_id/)
+})
+
+test('runs archive exposes replay video and render actions without opening inspector', () => {
+  assert.match(runArchive, /replayVideoURL/)
+  assert.match(runArchive, /Watch replay/)
+  assert.match(runArchive, /Render replay/)
+  assert.match(runArchive, /Retry replay/)
+  assert.match(runArchive, /replayProgressLabel/)
+  assert.match(runArchive, /href="#media"/)
 })

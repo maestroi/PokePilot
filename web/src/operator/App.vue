@@ -30,7 +30,7 @@ const labels: Record<OperatorView, string> = {
 
 const descriptions: Record<OperatorView, string> = {
   live: 'Watch a selected run, inspect game state and semantic position, and open its persisted evidence and deterministic replay.',
-  runs: 'Search completed runs, then bulk-delete older history or every run that still matches one failure.',
+  runs: 'Search completed runs, watch or render replay video directly, and clean up older history.',
   failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
   analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
   media: 'Manage public replays, durable render jobs, publishing controls, and renderer assets and themes.',

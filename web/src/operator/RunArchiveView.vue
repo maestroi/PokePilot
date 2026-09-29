@@ -2,9 +2,9 @@
 import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
 import { computed, reactive, ref, watch } from 'vue'
-import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, TrashIcon } from '@heroicons/vue/20/solid'
-import { deleteRun, getDashboard } from '../shared/api/client'
-import type { DashboardQuery, DashboardRun } from '../shared/api/types'
+import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, FilmIcon, PlayIcon, TrashIcon } from '@heroicons/vue/20/solid'
+import { deleteRun, getDashboard, getMediaRenderJobs, renderReplay, replayVideoURL, retryMediaRenderJob } from '../shared/api/client'
+import type { DashboardQuery, DashboardRun, MediaRenderJob } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
@@ -77,6 +77,8 @@ const deleteError = ref('')
 const deleteSelectedOpen = ref(false)
 const deletingSelected = ref(false)
 const deleteSelectedStatus = ref('')
+const replayActionRunID = ref('')
+const replayActionError = ref<{ runID: string; message: string } | null>(null)
 
 const resource = usePollingResource(
   (signal) => {
@@ -107,7 +109,22 @@ const resource = usePollingResource(
   }
 )
 
+const mediaResource = usePollingResource(
+  (signal) => getMediaRenderJobs(250, signal),
+  { intervalMs: 5000 }
+)
+
 const rows = computed(() => resource.data.value?.runs ?? [])
+const mediaJobByRun = computed(() => {
+  const result = new Map<string, MediaRenderJob>()
+  for (const job of mediaResource.data.value?.jobs || []) {
+    const current = result.get(job.run_id)
+    if (!current || Number(job.updated_at_unix_ms || 0) > Number(current.updated_at_unix_ms || 0)) {
+      result.set(job.run_id, job)
+    }
+  }
+  return result
+})
 const selectedCount = computed(() => selectedRunIDs.value.size)
 const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((run) => selectedRunIDs.value.has(run.run_id)))
 const total = computed(() => Number(resource.data.value?.total || 0))
@@ -195,6 +212,61 @@ function toggleExpanded(runID: string): void {
   if (next.has(runID)) next.delete(runID)
   else next.add(runID)
   expanded.value = next
+}
+
+function replayJob(run: DashboardRun): MediaRenderJob | undefined {
+  return mediaJobByRun.value.get(run.run_id)
+}
+
+function replayReady(run: DashboardRun): boolean {
+  return Boolean(run.replay_available) || replayJob(run)?.state === 'ready'
+}
+
+function replayActive(run: DashboardRun): boolean {
+  const state = replayJob(run)?.state || ''
+  return state === 'queued' || state === 'preparing' || state === 'rendering' || state === 'assembling' || state === 'uploading'
+}
+
+function replayRetryable(run: DashboardRun): boolean {
+  const state = replayJob(run)?.state || ''
+  return state === 'failed' || state === 'cancelled'
+}
+
+function replayProgressLabel(run: DashboardRun): string {
+  const job = replayJob(run)
+  if (!job) return 'Rendering'
+  if (job.state === 'queued') return 'Replay queued'
+  const total = Number(job.segments_total || 0)
+  const done = Number(job.segments_done || 0)
+  if (total > 0) {
+    const percent = Math.max(0, Math.min(100, Math.round(done * 100 / total)))
+    return `Rendering ${percent}%`
+  }
+  if (job.state === 'assembling') return 'Assembling replay'
+  if (job.state === 'uploading') return 'Uploading replay'
+  return 'Rendering replay'
+}
+
+async function requestReplayRender(run: DashboardRun): Promise<void> {
+  if (replayActionRunID.value) return
+  replayActionRunID.value = run.run_id
+  replayActionError.value = null
+  try {
+    const job = replayJob(run)
+    if (job && (job.state === 'failed' || job.state === 'cancelled')) {
+      await retryMediaRenderJob(job.id)
+    } else {
+      await renderReplay(run.run_id)
+    }
+    await Promise.allSettled([mediaResource.retry(), resource.retry()])
+  } catch (cause) {
+    replayActionError.value = {
+      runID: run.run_id,
+      message: cause instanceof Error ? cause.message : 'Replay render request failed'
+    }
+  } finally {
+    replayActionRunID.value = ''
+  }
 }
 
 function toggleRunSelection(runID: string): void {
@@ -626,7 +698,39 @@ function experimentLabel(run: DashboardRun): string {
                     <p v-if="run.detail" class="mt-1.5 line-clamp-2 text-xs text-slate-400" :title="archiveOutcome(run)">{{ run.detail }}</p>
                   </td>
                   <td class="px-3 py-3 sm:pr-4">
-                    <div class="flex justify-end gap-1.5">
+                    <div class="flex flex-wrap justify-end gap-1.5">
+                      <a
+                        v-if="replayReady(run)"
+                        :href="replayVideoURL(run.run_id)"
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex items-center gap-1 rounded-md bg-violet-300/10 px-2 py-1.5 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-300/20 hover:bg-violet-300/15"
+                        title="Open the rendered replay video directly"
+                      >
+                        <PlayIcon class="size-3.5" aria-hidden="true" />
+                        Watch replay
+                      </a>
+                      <a
+                        v-else-if="replayActive(run)"
+                        href="#media"
+                        class="inline-flex items-center gap-1 rounded-md bg-cyan-300/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-300/12"
+                        title="Open Media to inspect or cancel this render job"
+                      >
+                        <ArrowPathIcon class="size-3.5" aria-hidden="true" />
+                        {{ replayProgressLabel(run) }}
+                      </a>
+                      <button
+                        v-else
+                        type="button"
+                        :disabled="Boolean(replayActionRunID)"
+                        class="inline-flex items-center gap-1 rounded-md bg-cyan-400/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-400/12 disabled:opacity-50"
+                        :title="replayRetryable(run) ? 'Retry the failed replay render' : 'Queue a replay render for this finished run'"
+                        @click="requestReplayRender(run)"
+                      >
+                        <ArrowPathIcon v-if="replayRetryable(run)" class="size-3.5" aria-hidden="true" />
+                        <FilmIcon v-else class="size-3.5" aria-hidden="true" />
+                        {{ replayActionRunID === run.run_id ? (replayRetryable(run) ? 'Retrying…' : 'Queueing…') : (replayRetryable(run) ? 'Retry replay' : 'Render replay') }}
+                      </button>
                       <button type="button" class="rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white" @click="toggleExpanded(run.run_id)">
                         {{ expanded.has(run.run_id) ? 'Less' : 'Details' }}
                       </button>
@@ -691,6 +795,14 @@ function experimentLabel(run: DashboardRun): string {
           </table>
         </div>
       </ResourceState>
+
+      <p
+        v-if="replayActionError"
+        class="mt-3 rounded-md border border-amber-300/15 bg-amber-300/5 px-3 py-2 text-xs text-amber-200"
+        role="alert"
+      >
+        Replay {{ replayActionError.runID }}: {{ replayActionError.message }}
+      </p>
 
       <div class="mt-4 flex flex-col gap-3 border-t border-white/8 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-xs text-slate-500">{{ rangeStart }}–{{ rangeEnd }} of {{ total }}</p>
