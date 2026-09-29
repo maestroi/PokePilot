@@ -3,6 +3,10 @@ import { test } from 'node:test'
 import type { SpectatorRun } from '../src/shared/api/spectator.ts'
 import {
   formatReplayDuration,
+  replayIsRendering,
+  replayRenderPercent,
+  replayRenderProgress,
+  replayRenderStage,
   replayResult,
   replayRuns,
   replayRuntimeSeconds,
@@ -25,14 +29,30 @@ function run(overrides: Partial<SpectatorRun> = {}): SpectatorRun {
   }
 }
 
-test('replayRuns keeps only ready completed runs and orders newest first', () => {
+test('replayRuns includes public renders in progress and orders newest first', () => {
   const got = replayRuns([
     run({ run_id: 'old', ended_at: 200 }),
     run({ run_id: 'live', status: 'running', ended_at: undefined }),
-    run({ run_id: 'missing', replay_ready: false, ended_at: 400 }),
+    run({ run_id: 'missing', replay_ready: false, ended_at: 500 }),
+    run({ run_id: 'rendering', replay_ready: false, replay_state: 'generating', ended_at: 400 }),
     run({ run_id: 'new', ended_at: 300 })
   ])
-  assert.deepEqual(got.map((item) => item.run_id), ['new', 'old'])
+  assert.deepEqual(got.map((item) => item.run_id), ['rendering', 'new', 'old'])
+})
+
+test('render helpers expose safe progress and stage labels', () => {
+  const item = run({
+    replay_ready: false,
+    replay_state: 'generating',
+    replay_stage: 'assembling',
+    replay_segments: 52,
+    replay_segments_done: 39
+  })
+  assert.equal(replayIsRendering(item), true)
+  assert.equal(replayRenderPercent(item), 75)
+  assert.equal(replayRenderProgress(item), '39/52 segments · 75%')
+  assert.equal(replayRenderStage(item), 'Assembling replay')
+  assert.equal(replayRenderPercent(run({ replay_segments: 0 })), null)
 })
 
 test('replay helpers expose searchable metadata and human runtime', () => {

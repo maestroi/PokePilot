@@ -49,6 +49,58 @@ func TestSpectatorSnapshotReportsReplayArchiveState(t *testing.T) {
 	}
 }
 
+func TestSpectatorSnapshotPublishesSanitizedRenderProgress(t *testing.T) {
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		if req.URL.Query().Get("status") == "done" {
+			_, _ = io.WriteString(res, `{"now":2,"runs":[{"run_id":"run-render","status":"done","reason":"goal","ended_at":2}]}`)
+			return
+		}
+		_, _ = io.WriteString(res, `{"now":2,"runs":[]}`)
+	}))
+	defer wall.Close()
+
+	replay := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(res, `{"run_id":"run-render","state":"generating","stage":"rendering_attempt_4_segment_13","segments":52,"segments_done":12,"error":"private /tmp/render path"}`)
+	}))
+	defer replay.Close()
+
+	catalog := newSpectatorReplayCatalog(replay.URL)
+	handler := spectatorSnapshotWithReplay(wall.URL, catalog)
+	rec := httptest.NewRecorder()
+	handler(rec, httptest.NewRequest(http.MethodGet, "/v1/watch", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var got spectatorDashboard
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	if len(got.Runs) != 1 {
+		t.Fatalf("runs = %d, want 1: %s", len(got.Runs), rec.Body.String())
+	}
+	run := got.Runs[0]
+	if run.ReplayReady {
+		t.Error("replay_ready = true while render is still generating")
+	}
+	if run.ReplayState != "generating" || run.ReplayStage != "rendering" {
+		t.Errorf("replay state/stage = %q/%q, want generating/rendering", run.ReplayState, run.ReplayStage)
+	}
+	if run.ReplayTotal != 52 || run.ReplayDone != 12 {
+		t.Errorf("replay progress = %d/%d, want 12/52", run.ReplayDone, run.ReplayTotal)
+	}
+	if catalog.isAllowed("run-render") {
+		t.Error("generating replay must not be allowlisted for public video reads")
+	}
+	body := rec.Body.String()
+	for _, private := range []string{"private /tmp/render path", "rendering_attempt_4_segment_13"} {
+		if strings.Contains(body, private) {
+			t.Errorf("public replay snapshot leaked %q: %s", private, body)
+		}
+	}
+}
+
 // The startup warning is the only thing that tells an operator the public
 // archive is switched off, so lock its presence and its cause.
 func TestSpectatorWithoutReplayWarnsAtStartup(t *testing.T) {

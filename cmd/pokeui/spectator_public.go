@@ -103,6 +103,10 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Attempts       int                   `json:"attempts,omitempty"`
 		Reason         string                `json:"reason,omitempty"`
 		ReplayReady    bool                  `json:"replay_ready,omitempty"`
+		ReplayState    string                `json:"replay_state,omitempty"`
+		ReplayStage    string                `json:"replay_stage,omitempty"`
+		ReplayTotal    int                   `json:"replay_segments,omitempty"`
+		ReplayDone     int                   `json:"replay_segments_done,omitempty"`
 		Highlight      string                `json:"highlight,omitempty"`
 	}
 
@@ -266,6 +270,10 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		Attempts:       run.Attempts,
 		Reason:         run.Reason,
 		ReplayReady:    run.ReplayReady,
+		ReplayState:    run.ReplayState,
+		ReplayStage:    run.ReplayStage,
+		ReplayTotal:    run.ReplayTotal,
+		ReplayDone:     run.ReplayDone,
 		Highlight:      run.Highlight,
 	})
 }
