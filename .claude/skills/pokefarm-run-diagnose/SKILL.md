@@ -36,6 +36,7 @@ regression.
 Only if the compact result is genuinely ambiguous, expand in this order:
 
 ```text
+make -s debug RUN=<run-id> DEBUG_MODE=deep
 pokepilot_get_run_debug(run_id)
 pokepilot_get_run_recovery_audit(run_id)   # only for recovery-history questions
 specific artifact content                  # only when named by the evidence
