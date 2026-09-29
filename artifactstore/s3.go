@@ -186,6 +186,63 @@ func (s *S3) Bucket() string {
 	return s.bucket
 }
 
+// PresignGetObject returns a short-lived signed GET URL for key. It does not
+// perform any network I/O and never exposes credentials outside the URL query.
+// Callers should treat the returned URL as a secret and avoid logging it.
+func (s *S3) PresignGetObject(key string, ttl time.Duration) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("artifactstore: nil S3 client")
+	}
+	key, err := cleanObjectKey(key)
+	if err != nil {
+		return "", err
+	}
+	if ttl <= 0 || ttl > 7*24*time.Hour {
+		return "", fmt.Errorf("artifactstore: presign ttl must be > 0 and <= 168h")
+	}
+
+	raw := s.objectURL(key)
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("artifactstore: parse object URL: %w", err)
+	}
+	now := s.now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	date := now.Format("20060102")
+	scope := date + "/" + s.region + "/s3/aws4_request"
+
+	q := u.Query()
+	q.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	q.Set("X-Amz-Credential", s.accessKey+"/"+scope)
+	q.Set("X-Amz-Date", amzDate)
+	q.Set("X-Amz-Expires", strconv.FormatInt(int64(ttl/time.Second), 10))
+	q.Set("X-Amz-SignedHeaders", "host")
+	u.RawQuery = q.Encode()
+
+	canonicalHeaders := "host:" + strings.ToLower(u.Host) + "\n"
+	canonicalRequest := strings.Join([]string{
+		http.MethodGet,
+		u.EscapedPath(),
+		u.RawQuery,
+		canonicalHeaders,
+		"host",
+		"UNSIGNED-PAYLOAD",
+	}, "\n")
+	canonicalHash := sha256.Sum256([]byte(canonicalRequest))
+	stringToSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex.EncodeToString(canonicalHash[:])
+
+	kDate := hmacSHA256([]byte("AWS4"+s.secretKey), date)
+	kRegion := hmacSHA256(kDate, s.region)
+	kService := hmacSHA256(kRegion, "s3")
+	kSigning := hmacSHA256(kService, "aws4_request")
+	signature := hex.EncodeToString(hmacSHA256(kSigning, stringToSign))
+
+	q = u.Query()
+	q.Set("X-Amz-Signature", signature)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
 // PutObject stores data under key and returns its stable object metadata.
 func (s *S3) PutObject(ctx context.Context, key, mediaType string, data []byte) (Object, error) {
 	return s.PutObjectReader(ctx, key, mediaType, bytes.NewReader(data))
