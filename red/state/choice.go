@@ -158,6 +158,11 @@ func DecodeTwoOptionMenu(m *Mem) *TwoOptionMenu {
 	if m.U8(sym.MaxMenuItem) != 1 {
 		return nil
 	}
+	// A two-entry list (bag with one item + CANCEL) also has wMaxMenuItem=1
+	// and a filled cursor; the list controller's watched keys tell them apart.
+	if liveListMenu(m) {
+		return nil
+	}
 	// Only the FILLED cursor is a prompt waiting for an answer. Two-option
 	// menus never draw '▷' while waiting; callers draw it after
 	// HandleMenuInput has already returned a choice. The item menu's USE/TOSS
