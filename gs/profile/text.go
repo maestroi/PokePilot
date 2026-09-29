@@ -63,3 +63,10 @@ func gsScreenText(reader game.MemoryReader) string {
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
 }
+
+
+// ScreenText exposes the already-rendered GS tilemap to generation-specific
+// execution adapters without leaking glyph encodings into skill code.
+func (*Profile) ScreenText(reader game.MemoryReader) string {
+	return gsScreenText(reader)
+}
