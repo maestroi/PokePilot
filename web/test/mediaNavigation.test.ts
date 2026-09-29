@@ -14,6 +14,7 @@ const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue',
 const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue', import.meta.url), 'utf8')
 const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
+const loadingScene = readFileSync(new URL('../src/spectator/BroadcastLoadingScene.vue', import.meta.url), 'utf8')
 
 test('media is a top-level admin workspace and spectator is not', () => {
   assert.match(operator, /media: 'Media'/)
@@ -88,4 +89,14 @@ test('runs archive exposes replay video and render actions without opening inspe
   assert.match(runArchive, /Retry replay/)
   assert.match(runArchive, /replayProgressLabel/)
   assert.match(runArchive, /href="#media"/)
+})
+
+test('public spectator shows an intentional loading scene before snapshot and first frame', () => {
+  assert.match(spectator, /<BroadcastLoadingScene mode="page" state="loading"/)
+  assert.match(home, /<BroadcastLoadingScene/)
+  assert.match(home, /:frame-state="frameState"|frameState/)
+  assert.match(loadingScene, /Tuning into RomPilot/)
+  assert.match(loadingScene, /Syncing live frame/)
+  assert.match(loadingScene, /prefers-reduced-motion/)
+  assert.match(loadingScene, /loader-scan/)
 })
