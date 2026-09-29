@@ -46,11 +46,12 @@ import {
 } from './model'
 import PublicHome from './PublicHome.vue'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
-import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
+import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import { canRenderModernScene } from '../shared/semanticRenderer'
 import { publicCapabilitiesForRun } from '../shared/publicCapabilities'
 import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
+import { replayIsRendering, replayRenderProgress, replayRenderStage } from '../replays/model'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
@@ -105,10 +106,17 @@ const { data: programming } = usePollingResource(
 
 const runs = computed(() => snapshot.value?.runs ?? [])
 const groupedRuns = computed(() => splitSpectatorRuns(runs.value))
-const selectedRun = computed(() => preferredRun(
-  groupedRuns.value.live,
-  selectionPinned.value ? selectedRunID.value : ''
-))
+const selectedRun = computed(() => {
+  if (selectionPinned.value && selectedRunID.value) {
+    return runs.value.find((run) => run.run_id === selectedRunID.value) || null
+  }
+  return preferredRun(groupedRuns.value.live, '')
+})
+const selectedReplayHref = computed(() => {
+  const run = selectedRun.value
+  return run?.replay_ready ? replayPath(run.run_id) : ''
+})
+const selectedReplayRendering = computed(() => Boolean(selectedRun.value && replayIsRendering(selectedRun.value)))
 const selectedPublicCapabilities = computed(() => publicCapabilitiesForRun(selectedRun.value))
 const isTetrisSelected = computed(() => isTetrisRun(selectedRun.value))
 const tetrisState = computed(() => selectedRun.value?.game_state)
@@ -688,8 +696,24 @@ function activityTimeAgo(item: ActivityItem): string {
     </template>
 
     <template #actions>
+      <a
+        v-if="selectionPinned && selectedReplayHref"
+        :href="selectedReplayHref"
+        class="inline-flex items-center gap-1.5 rounded-md bg-violet-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+      >
+        <PlayIcon class="size-3.5" aria-hidden="true" />
+        Watch replay
+      </a>
+      <span
+        v-else-if="selectionPinned && selectedReplayRendering && selectedRun"
+        class="inline-flex items-center gap-1.5 rounded-md bg-violet-300/10 px-2.5 py-1.5 text-xs font-bold text-violet-100 ring-1 ring-violet-300/20"
+        role="status"
+      >
+        <ArrowPathIcon class="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
+        {{ replayRenderProgress(selectedRun) }}
+      </span>
       <button
-        v-if="groupedRuns.live[0] && selectedRun?.run_id !== groupedRuns.live[0].run_id"
+        v-if="(!selectionPinned || selectedRun?.status !== 'done') && groupedRuns.live[0] && selectedRun?.run_id !== groupedRuns.live[0].run_id"
         type="button"
         class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
         @click="selectRun(groupedRuns.live[0])"
@@ -698,7 +722,7 @@ function activityTimeAgo(item: ActivityItem): string {
         Watch live
       </button>
       <button
-        v-else-if="groupedRuns.live[0]"
+        v-else-if="(!selectionPinned || selectedRun?.status !== 'done') && groupedRuns.live[0]"
         type="button"
         class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300/15 px-2.5 py-1.5 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-300/25"
         @click="selectRun(groupedRuns.live[0])"
@@ -832,6 +856,37 @@ function activityTimeAgo(item: ActivityItem): string {
           <button type="button" class="font-semibold text-amber-100 hover:text-white" @click="refresh">Retry now</button>
         </span>
       </div>
+
+      <section
+        v-if="selectionPinned && selectedRun.status === 'done'"
+        class="flex flex-col gap-3 rounded-xl border border-violet-300/15 bg-violet-300/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div class="min-w-0">
+          <div class="text-[10px] font-black tracking-[0.1em] text-violet-200 uppercase">
+            {{ selectedRun.replay_ready ? 'Replay ready' : selectedReplayRendering ? 'Replay rendering' : 'Run complete' }}
+          </div>
+          <p class="mt-1 text-xs text-slate-400">
+            <template v-if="selectedRun.replay_ready">This completed run is available in the public replay player.</template>
+            <template v-else-if="selectedReplayRendering">{{ replayRenderStage(selectedRun) }} · {{ replayRenderProgress(selectedRun) }}</template>
+            <template v-else>The run has ended. Replay media is not available yet.</template>
+          </p>
+        </div>
+        <a
+          v-if="selectedReplayHref"
+          :href="selectedReplayHref"
+          class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-violet-300 px-3 py-2 text-xs font-black text-[#101820] hover:brightness-110"
+        >
+          <PlayIcon class="size-4" aria-hidden="true" />
+          Watch replay
+        </a>
+        <span
+          v-else-if="selectedReplayRendering"
+          class="shrink-0 font-mono text-[10px] text-violet-200"
+          role="status"
+        >
+          {{ replayRenderProgress(selectedRun) }}
+        </span>
+      </section>
 
       <PublicHome
         v-if="!selectionPinned && snapshot"
