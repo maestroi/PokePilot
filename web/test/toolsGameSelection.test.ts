@@ -19,7 +19,7 @@ test('tools run form shows Yellow scripted Pikachu explicitly', () => {
   assert.ok(toolsSource.includes("form.game === 'pokemon-yellow'"))
   assert.ok(toolsSource.includes("if (isYellow.value) return 'pikachu'"))
   assert.ok(toolsSource.includes('value="Pikachu · scripted"'))
-  assert.ok(toolsSource.includes('!isYellow.value && isSpecificStarter.value'))
+  assert.ok(toolsSource.includes('!isYellow.value && !isGen2.value && isSpecificStarter.value'))
 })
 
 
