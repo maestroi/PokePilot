@@ -193,9 +193,29 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 		if interrupted == nil {
 			interrupted = movementInterruption(m)
 		}
+		if interrupted == nil && openErr != nil {
+			// The encounter transition can lag beyond Talk's ordinary open
+			// budget. Keep passively observing this owned race before returning:
+			// either the intended item text finally appears, or the battle/dialogue
+			// becomes semantic and can be resolved inside Pickup.
+			_, _ = m.StepUntil(pickupFaceInterruptionSettleFrames, func(mm *emu.Emu) bool {
+				if mm.Peek8(sym.FontLoaded) != 0 {
+					opened = true
+					return true
+				}
+				if err := movementInterruption(mm); err != nil {
+					interrupted = err
+					return true
+				}
+				return false
+			})
+			if opened {
+				break
+			}
+		}
 		if interrupted == nil {
 			if openErr != nil {
-				return fmt.Errorf("skill: Pickup: A at (%d,%d) opened no text box: %w", x, y, ErrNoDialogue)
+				return fmt.Errorf("skill: Pickup: A at (%d,%d) opened no text box after passive settle: %w", x, y, ErrNoDialogue)
 			}
 			return fmt.Errorf("skill: Pickup: A at (%d,%d) returned without text or interruption: %w", x, y, ErrNavigationStalled)
 		}
