@@ -64,7 +64,7 @@ func TestPrepareDebugBuildsBoundedDeterministicPacket(t *testing.T) {
 				"finish": map[string]any{
 					"attempt": 2, "reason": "error", "detail": "objective failed",
 					"runner_version": "deadbeef",
-					"trace_tail": []string{"skill: Travel: text box interrupted movement"},
+					"trace_tail":     []string{"skill: Travel: text box interrupted movement"},
 				},
 				"artifacts": []map[string]any{
 					{"name": checkpoint},
