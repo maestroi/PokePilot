@@ -25,6 +25,22 @@ const (
 // FuchsiaProgression executes issue #33 as one resumable story verb. Its
 // positive postcondition is intentionally delegated to
 // FuchsiaProgressionComplete: Soul Badge + HM03 + HM04 must all be present.
+func fuchsiaCompleteNeedsGateCleanup(mem *state.Mem) bool {
+	return mem != nil && FuchsiaProgressionComplete(mem) && mem.U8(sym.CurMap) == safariZoneGateMap
+}
+
+func settleFuchsiaCompleteBoundary(m *emu.Emu) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !fuchsiaCompleteNeedsGateCleanup(&mem) {
+		return nil
+	}
+	if err := declineSafariRejoinPrompt(m); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: settle completed Safari gate boundary: %w", err)
+	}
+	return nil
+}
+
 func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if policy == nil {
 		return fmt.Errorf("skill: FuchsiaProgression: nil policy")
@@ -32,7 +48,10 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	if FuchsiaProgressionComplete(&mem) {
-		return nil
+		// A resumed farm retry can already satisfy Soul+Surf+Strength while the
+		// Safari gate's known re-entry choice is still live. Returning nil here
+		// hands that story-owned prompt to the generic finish boundary (#2215).
+		return settleFuchsiaCompleteBoundary(m)
 	}
 	if !FuchsiaProgressionReady(&mem) {
 		return fmt.Errorf("skill: FuchsiaProgression: POKE FLUTE is required")
@@ -107,7 +126,7 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: FuchsiaProgression: incomplete after execution: soul=%v surf=%v strength=%v",
 			state.DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem), hasBagItem(&mem, hm04StrengthItem))
 	}
-	return nil
+	return settleFuchsiaCompleteBoundary(m)
 }
 
 // fuchsiaKogaOutcomeErr maps the Koga battle outcome to the skill's error. A
