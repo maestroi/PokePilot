@@ -26,7 +26,7 @@ import { decisionEngineLabel, gameTitle } from './operations'
 
 const PAGE_SIZE = 25
 
-type StringFilterKey = 'outcome' | 'how' | 'starter' | 'model' | 'deployment' | 'goal' | 'playStyle' | 'compute' | 'experiment'
+type StringFilterKey = 'game' | 'outcome' | 'how' | 'starter' | 'model' | 'deployment' | 'goal' | 'playStyle' | 'compute' | 'experiment'
 
 interface ArchiveDashboardQuery extends DashboardQuery {
   model?: string
@@ -41,6 +41,7 @@ interface ArchiveDashboardQuery extends DashboardQuery {
 }
 
 interface ArchiveFacets {
+  games: string[]
   outcomes: string[]
   hows: string[]
   starters: string[]
@@ -54,6 +55,7 @@ interface ArchiveFacets {
 
 const page = ref(0)
 const filters = reactive({
+  game: '',
   outcome: '',
   how: '',
   starter: '',
@@ -83,6 +85,7 @@ const resource = usePollingResource(
       limit: PAGE_SIZE,
       offset: page.value * PAGE_SIZE,
       facets: true,
+      game: filters.game,
       outcome: filters.outcome,
       how: filters.how,
       starter: filters.starter,
@@ -111,6 +114,7 @@ const total = computed(() => Number(resource.data.value?.total || 0))
 const facets = computed<ArchiveFacets>(() => {
   const raw = resource.data.value?.history_facets as unknown as Partial<ArchiveFacets> | undefined
   return {
+    games: raw?.games ?? [],
     outcomes: raw?.outcomes ?? [],
     hows: raw?.hows ?? [],
     starters: raw?.starters ?? [],
@@ -126,7 +130,7 @@ const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE))
 const rangeStart = computed(() => total.value ? page.value * PAGE_SIZE + 1 : 0)
 const rangeEnd = computed(() => Math.min(total.value, (page.value + 1) * PAGE_SIZE))
 const hasFilters = computed(() => Boolean(
-  filters.outcome || filters.how || filters.starter || filters.model || filters.deployment ||
+  filters.game || filters.outcome || filters.how || filters.starter || filters.model || filters.deployment ||
   filters.goal || filters.playStyle || filters.compute || filters.experiment || successOnly.value
 ))
 const emptyTitle = computed(() => hasFilters.value ? 'No runs match these filters' : 'Nothing finished yet')
@@ -134,6 +138,7 @@ const emptyTitle = computed(() => hasFilters.value ? 'No runs match these filter
 watch(
   [
     page,
+    () => filters.game,
     () => filters.outcome,
     () => filters.how,
     () => filters.starter,
@@ -409,6 +414,14 @@ function experimentLabel(run: DashboardRun): string {
 
       <div class="grid grid-cols-1 gap-2 border-b border-white/8 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <label class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
+          <select :value="filters.game" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('game', ($event.target as HTMLSelectElement).value)">
+            <option value="">All games</option>
+            <option v-for="value in facets.games" :key="value" :value="value">{{ gameTitle(value) }}</option>
+          </select>
+        </label>
+
+        <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</span>
           <select :value="filters.outcome" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('outcome', ($event.target as HTMLSelectElement).value)">
             <option value="">All outcomes</option>
@@ -562,7 +575,9 @@ function experimentLabel(run: DashboardRun): string {
                     <a :href="legacyRunURL(run.run_id)" class="font-mono text-xs text-cyan-200 hover:text-cyan-100" :title="run.run_id">{{ run.run_id }}</a>
                     <div class="mt-1.5 flex flex-wrap gap-1.5">
                       <StatusBadge tone="neutral">{{ archiveHow(run) }}</StatusBadge>
-                      <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
+                      <button type="button" @click="setFilter('game', run.game || 'pokemon-red')">
+                        <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
+                      </button>
                       <button v-if="isPlayStyleRun(run)" type="button" @click="setFilter('playStyle', run.play_style || '')">
                         <StatusBadge tone="info">{{ playStyleLabel(run) }}</StatusBadge>
                       </button>
