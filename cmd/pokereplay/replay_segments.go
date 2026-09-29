@@ -381,3 +381,52 @@ func replaySegmentWindowDuration(segment replayVideoSegment) time.Duration {
 	}
 	return time.Duration(end-start) * time.Millisecond
 }
+
+func (s *replayServer) renderLegacyReplay(
+	ctx context.Context,
+	runID string,
+	recordings []replayRecording,
+	semantic []semanticReplaySegment,
+	dir string,
+	mode replayMode,
+	onReady func(done, total int),
+) (int64, error) {
+	if len(recordings) == 0 || len(recordings) != len(semantic) {
+		return 0, fmt.Errorf("legacy replay inputs do not match")
+	}
+	videos := make([]string, len(recordings))
+	for index, recording := range recordings {
+		video, err := s.renderCachedSegment(ctx, runID, recording, semantic[index], dir, index, mode)
+		if err != nil {
+			return 0, fmt.Errorf("attempt %d: %w", recording.Attempt, err)
+		}
+		videos[index] = video
+		if onReady != nil {
+			onReady(index+1, len(recordings))
+		}
+	}
+	if len(videos) == 1 {
+		info, err := os.Stat(videos[0])
+		if err != nil {
+			return 0, err
+		}
+		return info.Size(), nil
+	}
+	videoPath := pathJoinOS(dir, "replay-legacy.mp4")
+	if err := concatReplaySegments(ctx, dir, videos, videoPath); err != nil {
+		return 0, err
+	}
+	file, err := os.Open(videoPath)
+	if err != nil {
+		return 0, err
+	}
+	obj, putErr := s.store.PutObjectReader(ctx, s.replayCacheKeyForMode(runID, recordings, mode), "video/mp4", file)
+	closeErr := file.Close()
+	if putErr != nil {
+		return 0, putErr
+	}
+	if closeErr != nil {
+		return 0, closeErr
+	}
+	return obj.Size, nil
+}
