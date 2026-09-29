@@ -14,6 +14,10 @@ import {
 import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
 import {
   formatReplayDuration,
+  replayIsRendering,
+  replayRenderPercent,
+  replayRenderProgress,
+  replayRenderStage,
   replayResult,
   replayRuns,
   replayRuntimeSeconds,
@@ -83,7 +87,9 @@ const selectedRun = computed(() => {
   return filteredReplays.value[0] || allReplays.value[0] || null
 })
 
-const selectedVideoURL = computed(() => selectedRun.value ? spectatorReplayVideoURL(selectedRun.value.run_id) : '')
+const selectedReplayReady = computed(() => Boolean(selectedRun.value?.replay_ready))
+const selectedRenderPercent = computed(() => selectedRun.value ? replayRenderPercent(selectedRun.value) : null)
+const selectedVideoURL = computed(() => selectedReplayReady.value && selectedRun.value ? spectatorReplayVideoURL(selectedRun.value.run_id) : '')
 const showModern = computed(() =>
   rendererMode.value === 'modern' &&
   semanticStatus.value === 'ready' &&
@@ -104,8 +110,8 @@ watch(selectedRun, (run) => {
 }, { immediate: true })
 
 watch(
-  () => selectedRun.value?.run_id || '',
-  (runID) => { void loadSemanticReplay(runID) },
+  () => `${selectedRun.value?.run_id || ''}:${selectedReplayReady.value ? 'ready' : 'pending'}`,
+  () => { void loadSemanticReplay(selectedReplayReady.value ? (selectedRun.value?.run_id || '') : '') },
   { immediate: true }
 )
 
@@ -355,6 +361,7 @@ onBeforeUnmount(() => {
           <div>
             <div class="chips">
               <span class="chip accent">{{ replayResult(selectedRun) }}</span>
+              <span v-if="replayIsRendering(selectedRun)" class="chip rendering">Rendering{{ selectedRenderPercent === null ? '' : ` · ${selectedRenderPercent}%` }}</span>
               <span v-if="selectedRun.llm_profile" class="chip">{{ selectedRun.llm_profile }}</span>
               <span v-if="selectedRun.play_style" class="chip">{{ selectedRun.play_style }}</span>
             </div>
@@ -365,7 +372,23 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="player-wrap">
+          <div v-if="!selectedReplayReady" class="render-pending" role="status" aria-live="polite">
+            <span class="render-kicker">Replay is being rendered</span>
+            <strong>{{ replayRenderStage(selectedRun) }}</strong>
+            <div
+              class="render-progress-track"
+              role="progressbar"
+              :aria-valuemin="0"
+              :aria-valuemax="100"
+              :aria-valuenow="selectedRenderPercent ?? undefined"
+            >
+              <span :style="{ width: `${selectedRenderPercent ?? 6}%` }"></span>
+            </div>
+            <span class="render-progress-copy">{{ replayRenderProgress(selectedRun) }}</span>
+            <small>Progress refreshes automatically. The replay will become watchable here when rendering finishes.</small>
+          </div>
           <video
+            v-if="selectedReplayReady"
             ref="videoRef"
             :key="selectedRun.run_id"
             :class="['replay-player', { 'semantic-video-clock': showModern }]"
@@ -387,7 +410,7 @@ onBeforeUnmount(() => {
             :theme="activeTheme"
           />
 
-          <div class="renderer-controls" aria-label="Replay renderer controls">
+          <div v-if="selectedReplayReady" class="renderer-controls" aria-label="Replay renderer controls">
             <div class="renderer-switch">
               <button
                 type="button"
@@ -430,7 +453,7 @@ onBeforeUnmount(() => {
             </label>
           </div>
 
-          <label v-if="!showModern" class="speed-control">Speed
+          <label v-if="selectedReplayReady && !showModern" class="speed-control">Speed
             <select v-model.number="playbackRate">
               <option :value="1">1×</option>
               <option :value="2">2×</option>
@@ -439,8 +462,8 @@ onBeforeUnmount(() => {
               <option :value="16">16×</option>
             </select>
           </label>
-          <div v-if="modernFallbackLabel" class="renderer-notice">{{ modernFallbackLabel }}</div>
-          <div v-if="themeNotice && rendererMode === 'modern'" class="theme-notice">{{ themeNotice }}</div>
+          <div v-if="selectedReplayReady && modernFallbackLabel" class="renderer-notice">{{ modernFallbackLabel }}</div>
+          <div v-if="selectedReplayReady && themeNotice && rendererMode === 'modern'" class="theme-notice">{{ themeNotice }}</div>
         </div>
       </div>
 
@@ -514,7 +537,8 @@ onBeforeUnmount(() => {
         >
           <div class="card-top">
             <span class="result-pill">{{ replayResult(run) }}</span>
-            <span>{{ formatDate(run.ended_at) }}</span>
+            <span v-if="replayIsRendering(run)" class="render-pill">{{ replayRenderProgress(run) }}</span>
+            <span class="card-date">{{ formatDate(run.ended_at) }}</span>
           </div>
           <strong class="card-title">{{ replayTitle(run) }}</strong>
           <span class="card-run">{{ run.run_id }}</span>
@@ -552,8 +576,17 @@ h2 { margin: 0; font-size: clamp(20px, 3vw, 30px); letter-spacing: -.025em; }
 .run-id, .card-run { color: #8797b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; overflow-wrap: anywhere; }
 .chip, .result-pill, .card-tags span { display: inline-flex; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 4px 8px; background: rgba(255,255,255,.035); color: #afbbd4; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .chip.accent, .result-pill { color: #ffd84a; border-color: rgba(255,216,74,.3); background: rgba(255,216,74,.07); }
+.chip.rendering, .render-pill { color: #a5f3fc; border-color: rgba(103,232,249,.32); background: rgba(103,232,249,.09); }
+.render-pill { display: inline-flex; border: 1px solid rgba(103,232,249,.32); border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .player-wrap { position: relative; min-height: 320px; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; overflow: hidden; background: #04070d; display: grid; place-items: center; }
 .replay-player { width: 100%; max-height: 650px; aspect-ratio: 160 / 144; object-fit: contain; background: #04070d; }
+.render-pending { width: min(520px, calc(100% - 36px)); display: grid; gap: 12px; text-align: center; color: #b9c6df; }
+.render-pending strong { color: #f4f8ff; font-size: 22px; }
+.render-pending small { color: #7f90b0; line-height: 1.5; }
+.render-kicker { color: #67e8f9; font-size: 11px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.render-progress-track { height: 10px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.08); }
+.render-progress-track span { display: block; height: 100%; min-width: 6px; border-radius: inherit; background: linear-gradient(90deg, #22d3ee, #a5f3fc); transition: width .35s ease; }
+.render-progress-copy { color: #a5b4cf; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .semantic-video-clock { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
 .speed-control { position: absolute; top: 12px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; background: rgba(4,7,13,.86); color: #aab8d3; font-size: 11px; font-weight: 750; }
 .speed-control select, .theme-control select, .semantic-transport select { border: 0; background: #111a2d; color: white; border-radius: 6px; padding: 2px 4px; }
@@ -583,7 +616,8 @@ h2 { margin: 0; font-size: clamp(20px, 3vw, 30px); letter-spacing: -.025em; }
 .replay-card { display: block; width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(255,255,255,.025); color: inherit; text-align: left; padding: 14px; cursor: pointer; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
 .replay-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.045); }
 .replay-card.selected { border-color: rgba(255,216,74,.5); background: rgba(255,216,74,.06); }
-.card-top { justify-content: space-between; color: #7f8eab; font-size: 10px; }
+.card-top { justify-content: flex-start; color: #7f8eab; font-size: 10px; }
+.card-date { margin-left: auto; text-align: right; }
 .card-title { display: block; margin: 12px 0 4px; font-size: 16px; line-height: 1.25; }
 .card-run { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-tags { flex-wrap: wrap; margin: 12px 0; }
