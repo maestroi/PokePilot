@@ -19,5 +19,17 @@ test('tools run form shows Yellow scripted Pikachu explicitly', () => {
   assert.ok(toolsSource.includes("form.game === 'pokemon-yellow'"))
   assert.ok(toolsSource.includes("if (isYellow.value) return 'pikachu'"))
   assert.ok(toolsSource.includes('value="Pikachu · scripted"'))
-  assert.ok(toolsSource.includes('!isYellow.value && isSpecificStarter.value'))
+  assert.ok(toolsSource.includes('!isYellow.value && !isGen2.value && isSpecificStarter.value'))
+})
+
+
+test('tools run form exposes Gold and Silver with native Gen2 starters', () => {
+  assert.match(toolsSource, /<option value="pokemon-gold">Pokémon Gold<\/option>/)
+  assert.match(toolsSource, /<option value="pokemon-silver">Pokémon Silver<\/option>/)
+  assert.ok(toolsSource.includes("form.game === 'pokemon-gold' || form.game === 'pokemon-silver'"))
+  assert.ok(toolsSource.includes('<option value="chikorita">Chikorita</option>'))
+  assert.ok(toolsSource.includes('<option value="cyndaquil">Cyndaquil</option>'))
+  assert.ok(toolsSource.includes('<option value="totodile">Totodile</option>'))
+  assert.ok(toolsSource.includes("form.goal = 'Earn 3 badges.'"))
+  assert.ok(toolsSource.includes("isGen2.value) return starterMode.value === 'default' ? '' : starterMode.value"))
 })

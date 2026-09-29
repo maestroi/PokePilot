@@ -35,6 +35,8 @@ export function gameTitle(game: string | undefined): string {
   switch ((game || 'pokemon-red').toLowerCase()) {
     case 'pokemon-blue': return 'Pokémon Blue'
     case 'pokemon-yellow': return 'Pokémon Yellow'
+    case 'pokemon-gold': return 'Pokémon Gold'
+    case 'pokemon-silver': return 'Pokémon Silver'
     case 'tetris': return 'Tetris'
     case 'pokemon-red':
     default: return 'Pokémon Red'

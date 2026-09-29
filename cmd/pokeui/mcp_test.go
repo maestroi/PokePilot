@@ -73,6 +73,44 @@ func TestMCPRequiresBearerToken(t *testing.T) {
 	}
 }
 
+func TestMCPStartRunAcceptsGen2(t *testing.T) {
+	var queued farm.Spec
+	wall := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost || req.URL.Path != "/v1/specs" {
+			http.NotFound(res, req)
+			return
+		}
+		if err := json.NewDecoder(req.Body).Decode(&queued); err != nil {
+			http.Error(res, err.Error(), http.StatusBadRequest)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(res).Encode(map[string]string{"status": "queued"})
+	}))
+	t.Cleanup(wall.Close)
+
+	control := &mcpControl{
+		wallBase: wall.URL,
+		http:     wall.Client(),
+	}
+	_, out, err := control.startRun(context.Background(), nil, mcpStartRunInput{
+		Game:    "Pokemon-Gold",
+		Starter: "cyndaquil",
+	})
+	if err != nil {
+		t.Fatalf("start Gold run: %v", err)
+	}
+	if out.RunID == "" || out.Status != "queued" {
+		t.Fatalf("Gold launch output = %+v", out)
+	}
+	if queued.Game != "pokemon-gold" || queued.Planner != "llm" || queued.Starter != "cyndaquil" {
+		t.Fatalf("Gold queued spec = %+v", queued)
+	}
+	if queued.Goal.String() != "Earn 3 badges." {
+		t.Fatalf("Gold default goal = %q, want Earn 3 badges.", queued.Goal.String())
+	}
+}
+
 func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	var mu sync.Mutex
 	var queued farm.Spec

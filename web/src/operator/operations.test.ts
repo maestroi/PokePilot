@@ -37,5 +37,7 @@ test('run game ids have stable operator labels', () => {
   assert.equal(gameTitle('pokemon-red'), 'Pokémon Red')
   assert.equal(gameTitle('pokemon-blue'), 'Pokémon Blue')
   assert.equal(gameTitle('pokemon-yellow'), 'Pokémon Yellow')
+  assert.equal(gameTitle('pokemon-gold'), 'Pokémon Gold')
+  assert.equal(gameTitle('pokemon-silver'), 'Pokémon Silver')
   assert.equal(gameTitle(undefined), 'Pokémon Red')
 })

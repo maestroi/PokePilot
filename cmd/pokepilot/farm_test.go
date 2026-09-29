@@ -174,6 +174,22 @@ func TestApplySpec(t *testing.T) {
 	}
 }
 
+func TestValidateSpecAcceptsGen2NormalRuns(t *testing.T) {
+	for _, gameID := range []string{"pokemon-gold", "pokemon-silver"} {
+		for _, starter := range []string{"", "chikorita", "cyndaquil", "totodile"} {
+			if err := validateSpec(gameID, "llm", starter, ""); err != nil {
+				t.Fatalf("%s starter %q rejected: %v", gameID, starter, err)
+			}
+		}
+		if err := validateSpec(gameID, "llm", "squirtle", ""); err == nil {
+			t.Fatalf("%s unexpectedly accepted a Gen-I starter", gameID)
+		}
+		if err := validateSpec(gameID, "scripted", "cyndaquil", "new bark town"); err == nil {
+			t.Fatalf("%s unexpectedly accepted scripted travel before Gen2 destinations are portable", gameID)
+		}
+	}
+}
+
 func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 	src, err := os.ReadFile("farm.go")
 	if err != nil {

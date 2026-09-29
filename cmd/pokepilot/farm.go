@@ -538,6 +538,15 @@ func validateSpec(gameID, planner, starter, dest string) error {
 		}
 		return nil
 	}
+	if isGen2GameID(gameID) {
+		if planner != "llm" {
+			return fmt.Errorf("%s currently uses planner %q; got %q", gameID, "llm", planner)
+		}
+		if !isGen2StarterRequest(starter) {
+			return fmt.Errorf("%s starter must be chikorita, cyndaquil, or totodile; got %q", gameID, starter)
+		}
+		return nil
+	}
 	if gameID == "pokemon-yellow" {
 		if starter != "" && starter != "pikachu" {
 			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", starter)

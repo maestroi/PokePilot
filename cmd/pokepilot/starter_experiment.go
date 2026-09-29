@@ -38,6 +38,21 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 		return nil
 	}
 
+	if cartridgeErr == nil && isGen2GameID(string(cartridge.ID())) {
+		starter := strings.ToLower(strings.TrimSpace(spec.Starter))
+		if !isGen2StarterRequest(starter) {
+			return fmt.Errorf("%s starter must be chikorita, cyndaquil, or totodile; got %q", cartridge.ID(), spec.Starter)
+		}
+		// Gold/Silver starter selection is owned by the cartridge opening script
+		// and the GS objective adapter. Never run the Gen-I ROM-patch experiment
+		// path against a Gen-II cartridge.
+		starterExperimentRuns.Delete(spec.RunID)
+		if err := m.LoadROMBytes(base, string(cartridge.ID())); err != nil {
+			return fmt.Errorf("reload %s ROM: %w", cartridge.ID(), err)
+		}
+		return nil
+	}
+
 	profile, _, detectErr := profiles.Detect(base)
 
 	var selection redstarter.Selection

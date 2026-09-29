@@ -51,9 +51,9 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm or scripted for Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
-	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, tetris, or boxxle; empty lets the runner pick its mounted cartridge"`
-	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Red/Blue accept their normal starters and supported experiments; Tetris and Boxxle must leave this empty"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm for Gold/Silver, llm or scripted for Gen I Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
+	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, pokemon-gold, pokemon-silver, tetris, or boxxle; empty lets the runner pick its mounted cartridge"`
+	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Gold/Silver accept Chikorita/Cyndaquil/Totodile, Red/Blue accept their normal starters and supported experiments; Tetris and Boxxle must leave this empty"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
 	Goal       string `json:"goal,omitempty" jsonschema:"task statement for llm Pokemon mode, or Tetris auto, endless, survival, complete, lines:N, or score:N"`
 	Seed       int64  `json:"seed,omitempty" jsonschema:"deterministic run seed; zero is the bit-identical baseline"`
@@ -183,7 +183,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_start_run",
-		Description: "Queue one PokePilot run and return its generated run id. Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Tetris uses the deterministic policy runtime.",
+		Description: "Queue one PokePilot run and return its generated run id. Gen I Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Gold/Silver use the cartridge-native starter flow and default to a 3-badge frontier run; Tetris uses the deterministic policy runtime.",
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
@@ -264,9 +264,9 @@ func mcpBearerAuth(token string, next http.Handler) http.Handler {
 func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpStartRunInput) (*mcp.CallToolResult, mcpStartRunOutput, error) {
 	gameID := strings.ToLower(strings.TrimSpace(in.Game))
 	switch gameID {
-	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow", "tetris", "boxxle":
+	case "", "pokemon-red", "pokemon-blue", "pokemon-yellow", "pokemon-gold", "pokemon-silver", "tetris", "boxxle":
 	default:
-		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, pokemon-yellow, tetris, or boxxle")
+		return nil, mcpStartRunOutput{}, fmt.Errorf("game must be pokemon-red, pokemon-blue, pokemon-yellow, pokemon-gold, pokemon-silver, tetris, or boxxle")
 	}
 
 	planner := strings.ToLower(strings.TrimSpace(in.Planner))
@@ -288,6 +288,10 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		if planner != "launch" {
 			return nil, mcpStartRunOutput{}, fmt.Errorf("boxxle uses planner launch")
 		}
+	} else if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
+		if planner != "llm" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s currently uses planner llm", gameID)
+		}
 	} else if planner != "llm" && planner != "scripted" {
 		return nil, mcpStartRunOutput{}, fmt.Errorf("planner must be llm or scripted for Pokemon")
 	}
@@ -302,6 +306,12 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 			return nil, mcpStartRunOutput{}, fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter")
 		}
 		starter = "pikachu"
+	} else if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
+		switch starter {
+		case "", "chikorita", "cyndaquil", "totodile":
+		default:
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s starter must be chikorita, cyndaquil, or totodile", gameID)
+		}
 	} else {
 		if starter == "" {
 			starter = "squirtle"
@@ -350,7 +360,11 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 			goal = "auto"
 		}
 	} else if planner == "llm" && goal == "" {
-		goal = "Earn the Boulder Badge."
+		if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
+			goal = "Earn 3 badges."
+		} else {
+			goal = "Earn the Boulder Badge."
+		}
 	}
 
 	runID := fmt.Sprintf("mcp-%s-%04x", time.Now().UTC().Format("20060102-150405"), mcpRunSequence.Add(1)&0xffff)
