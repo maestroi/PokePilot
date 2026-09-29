@@ -308,3 +308,15 @@ done
 		t.Fatalf("segment not cached under its attempt key: %v", objects)
 	}
 }
+
+// The host updater reads active_renders to avoid replacing the container while
+// a video is mid-encode, so the count must be on /healthz.
+func TestHealthzReportsActiveRenders(t *testing.T) {
+	s := newReplayServer("http://wall.invalid", "", "", nil)
+	s.rendering.Add(2)
+	rec := httptest.NewRecorder()
+	s.handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if !strings.Contains(rec.Body.String(), `"active_renders":2`) {
+		t.Fatalf("healthz missing active_renders=2: %s", rec.Body.String())
+	}
+}
