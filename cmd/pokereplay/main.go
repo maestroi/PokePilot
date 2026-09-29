@@ -515,8 +515,20 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			}
 		}
 	}
+	onStart := func(segment replayVideoSegment) {
+		stage := fmt.Sprintf("rendering_attempt_%d_segment_%d", segment.Attempt, segment.Index+1)
+		s.setJob(cacheKey, replayStatus{
+			RunID: runID, State: "generating", ObjectKey: cacheKey,
+			Segments: total, SegmentsDone: done, Stage: stage,
+		})
+		if jobID != "" {
+			if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, stage, &total, &done); progressErr != nil {
+				log.Printf("pokereplay: persist active segment job=%s: %v", jobID, progressErr)
+			}
+		}
+	}
 	for index := range attempts {
-		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onReady); err != nil {
+		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onStart, onReady); err != nil {
 			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, err))
 			return
 		}
@@ -525,22 +537,23 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	if jobID != "" {
 		_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobAssembling, farm.MediaRenderJobAssembling, nil, nil)
 	}
-	segmentVideos, err := materializeReplayVideoSegments(ctx, s, attempts)
+	segmentURLs, err := replayVideoSegmentURLs(s, attempts)
 	if err != nil {
 		setError(err)
 		return
 	}
-	if len(segmentVideos) == 0 {
+	if len(segmentURLs) == 0 {
 		setError(fmt.Errorf("replay segment plan produced no video"))
 		return
 	}
-	videoPath := segmentVideos[0]
-	if len(segmentVideos) > 1 {
-		videoPath = pathJoinOS(dir, "replay.mp4")
-		if err := concatReplaySegments(ctx, dir, segmentVideos, videoPath); err != nil {
-			setError(err)
-			return
-		}
+	videoPath := pathJoinOS(dir, "replay.mp4")
+	if err := concatReplaySegmentURLs(ctx, dir, segmentURLs, videoPath); err != nil {
+		setError(err)
+		return
+	}
+	if err := probeReplayVideo(ctx, videoPath, replayAttemptsDuration(attempts)); err != nil {
+		setError(fmt.Errorf("validate assembled replay: %w", err))
+		return
 	}
 
 	file, err := os.Open(videoPath)

@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +26,7 @@ const (
 	replaySegmentSecondsEnv     = "POKEPILOT_REPLAY_SEGMENT_SECONDS"
 	minReplaySegmentSeconds     = 10
 	maxReplaySegmentSeconds     = 3600
+	replaySegmentURLTTL         = 12 * time.Hour
 )
 
 type replayVideoSegment struct {
@@ -130,6 +134,17 @@ func (s *replayServer) probeReplaySegmentCache(ctx context.Context, attempts []p
 				if obj.Size <= 0 {
 					continue
 				}
+				url, err := s.store.PresignGetObject(segment.CacheKey, replaySegmentURLTTL)
+				if err != nil {
+					return ready, err
+				}
+				if err := probeReplayVideo(ctx, url, replaySegmentWindowDuration(*segment)); err != nil {
+					// A malformed/truncated cached object is derived state. Treat it as
+					// missing so the deterministic source recording regenerates only
+					// this segment under the same cache key.
+					log.Printf("pokereplay: cached segment invalid key=%s attempt=%d segment=%d: %v", segment.CacheKey, segment.Attempt, segment.Index, err)
+					continue
+				}
 				segment.Cached = true
 				ready++
 				continue
@@ -140,6 +155,52 @@ func (s *replayServer) probeReplaySegmentCache(ctx context.Context, attempts []p
 		}
 	}
 	return ready, nil
+}
+
+type replayVideoProbe struct {
+	Streams []struct {
+		CodecType string `json:"codec_type"`
+	} `json:"streams"`
+	Format struct {
+		Duration string `json:"duration"`
+	} `json:"format"`
+}
+
+func probeReplayVideo(ctx context.Context, source string, expected time.Duration) error {
+	cmd := exec.CommandContext(ctx,
+		"ffprobe",
+		"-v", "error",
+		"-select_streams", "v:0",
+		"-show_entries", "stream=codec_type:format=duration",
+		"-of", "json",
+		source,
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("ffprobe rejected segment: %w", err)
+	}
+	var probe replayVideoProbe
+	if err := json.Unmarshal(output, &probe); err != nil {
+		return fmt.Errorf("decode ffprobe output: %w", err)
+	}
+	if len(probe.Streams) == 0 || probe.Streams[0].CodecType != "video" {
+		return fmt.Errorf("segment has no video stream")
+	}
+	durationSeconds, err := strconv.ParseFloat(strings.TrimSpace(probe.Format.Duration), 64)
+	if err != nil || durationSeconds <= 0 || math.IsNaN(durationSeconds) || math.IsInf(durationSeconds, 0) {
+		return fmt.Errorf("segment has invalid duration %q", probe.Format.Duration)
+	}
+	if expected > 0 {
+		got := time.Duration(durationSeconds * float64(time.Second))
+		delta := got - expected
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > time.Second {
+			return fmt.Errorf("segment duration %s differs from expected %s", got.Round(time.Millisecond), expected.Round(time.Millisecond))
+		}
+	}
+	return nil
 }
 
 type replayRGBEncoder struct {
@@ -204,6 +265,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 	runID string,
 	mode replayMode,
 	attempt *preparedReplayAttempt,
+	onStart func(replayVideoSegment),
 	onReady func(),
 ) error {
 	if attempt == nil || attempt.Parsed == nil {
@@ -273,6 +335,9 @@ func (s *replayServer) renderAttemptVideoSegments(
 		}
 
 		if encoder == nil {
+			if onStart != nil {
+				onStart(*segment)
+			}
 			rawPath := segment.LocalPath
 			if mode == replayModeBroadcast {
 				rawPath += ".raw.mp4"
@@ -318,6 +383,9 @@ func (s *replayServer) renderAttemptVideoSegments(
 			_ = os.Remove(rawPath)
 		}
 
+		if err := probeReplayVideo(ctx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
+			return fmt.Errorf("validate replay segment %d: %w", segment.Index, err)
+		}
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
 			return err
@@ -329,6 +397,9 @@ func (s *replayServer) renderAttemptVideoSegments(
 		}
 		if closeErr != nil {
 			return closeErr
+		}
+		if err := os.Remove(segment.LocalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove uploaded replay segment %d: %w", segment.Index, err)
 		}
 		segment.Cached = true
 		if onReady != nil {
@@ -347,22 +418,59 @@ func (s *replayServer) renderAttemptVideoSegments(
 	return nil
 }
 
-func materializeReplayVideoSegments(ctx context.Context, s *replayServer, attempts []preparedReplayAttempt) ([]string, error) {
-	var videos []string
+func replayVideoSegmentURLs(s *replayServer, attempts []preparedReplayAttempt) ([]string, error) {
+	if s == nil || s.store == nil {
+		return nil, fmt.Errorf("replay segment storage is not configured")
+	}
+	var urls []string
 	for ai := range attempts {
 		for si := range attempts[ai].Segments {
 			segment := &attempts[ai].Segments[si]
-			if _, err := os.Stat(segment.LocalPath); err == nil {
-				videos = append(videos, segment.LocalPath)
-				continue
+			if !segment.Cached {
+				return nil, fmt.Errorf("replay segment attempt=%d segment=%d is not cached", segment.Attempt, segment.Index)
 			}
-			if err := s.downloadObject(ctx, segment.CacheKey, segment.LocalPath); err != nil {
-				return nil, fmt.Errorf("download cached segment attempt=%d segment=%d: %w", segment.Attempt, segment.Index, err)
+			url, err := s.store.PresignGetObject(segment.CacheKey, replaySegmentURLTTL)
+			if err != nil {
+				return nil, fmt.Errorf("presign replay segment attempt=%d segment=%d: %w", segment.Attempt, segment.Index, err)
 			}
-			videos = append(videos, segment.LocalPath)
+			urls = append(urls, url)
 		}
 	}
-	return videos, nil
+	return urls, nil
+}
+
+func concatReplaySegmentURLs(ctx context.Context, dir string, urls []string, destination string) error {
+	if len(urls) == 0 {
+		return fmt.Errorf("concat replay segments: no segment URLs")
+	}
+	var manifest strings.Builder
+	manifest.WriteString("ffconcat version 1.0\n")
+	for _, url := range urls {
+		escaped := strings.ReplaceAll(url, "'", "'\\''")
+		fmt.Fprintf(&manifest, "file '%s'\n", escaped)
+	}
+	manifestPath := pathJoinOS(dir, "segments-remote.ffconcat")
+	if err := os.WriteFile(manifestPath, []byte(manifest.String()), 0o600); err != nil {
+		return fmt.Errorf("write remote replay concat manifest: %w", err)
+	}
+	args := []string{
+		"-hide_banner", "-loglevel", "error", "-y",
+		"-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+		"-f", "concat", "-safe", "0", "-i", manifestPath,
+		"-c", "copy", "-movflags", "+faststart", destination,
+	}
+	output := &replayOutputTail{}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		detail := output.String()
+		for _, url := range urls {
+			detail = strings.ReplaceAll(detail, url, "[segment-url]")
+		}
+		return fmt.Errorf("concat remote replay segments: %w: %s", err, strings.TrimSpace(detail))
+	}
+	return nil
 }
 
 func totalReplayVideoSegments(attempts []preparedReplayAttempt) int {
@@ -380,6 +488,16 @@ func replaySegmentWindowDuration(segment replayVideoSegment) time.Duration {
 		return 0
 	}
 	return time.Duration(end-start) * time.Millisecond
+}
+
+func replayAttemptsDuration(attempts []preparedReplayAttempt) time.Duration {
+	var total time.Duration
+	for _, attempt := range attempts {
+		for _, segment := range attempt.Segments {
+			total += replaySegmentWindowDuration(segment)
+		}
+	}
+	return total
 }
 
 func (s *replayServer) renderLegacyReplay(
