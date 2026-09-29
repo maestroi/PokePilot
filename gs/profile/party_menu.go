@@ -48,3 +48,33 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 }
 
 var _ game.PartyMenuDecoder = (*Profile)(nil)
+
+
+// TMHMCompatiblePartySlots reads Gold/Silver's native ABLE/NOT ABLE labels.
+// The game has already evaluated the species compatibility bitset by the time
+// this screen is visible, so the executor can select a cartridge-confirmed
+// recipient without reimplementing the ROM's compatibility table.
+func (*Profile) TMHMCompatiblePartySlots(reader game.MemoryReader) []int {
+	if reader == nil {
+		return nil
+	}
+	state := (&Profile{}).DecodePartyMenu(reader)
+	if !state.Visible || state.Kind != game.PartyMenuTMHMTeach {
+		return nil
+	}
+	count := int(reader.Peek8(sym.PartyCount))
+	if count > 6 {
+		count = 6
+	}
+	out := make([]int, 0, count)
+	for slot := 0; slot < count; slot++ {
+		// PlacePartyMonTMHMCompatibility draws at hlcoord 12, 2 and then
+		// advances by two tile rows. "ABLE" starts with tile $80 ('A');
+		// "NOT ABLE" starts with $8d ('N').
+		addr := sym.TileMap + uint16((2+2*slot)*20+12)
+		if reader.Peek8(addr) == 0x80 {
+			out = append(out, slot)
+		}
+	}
+	return out
+}
