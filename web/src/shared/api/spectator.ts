@@ -140,6 +140,10 @@ export interface SpectatorRun {
   attempts?: number
   reason?: string
   replay_ready?: boolean
+  replay_state?: 'generating' | 'ready' | string
+  replay_stage?: 'preparing' | 'rendering' | 'assembling' | 'uploading' | string
+  replay_segments?: number
+  replay_segments_done?: number
   highlight?: string
   featured?: boolean
 }
