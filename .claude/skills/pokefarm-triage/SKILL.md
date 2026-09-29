@@ -80,7 +80,7 @@ Record the solver attempt through `pokepilot_record_solver_attempt`.
 
 ## Escalate only when necessary
 
-If the one-id packet cannot establish the cause, expand progressively:
-`pokepilot_get_run_debug`, then recovery audit if relevant, then one named
-artifact. Raw recordings and broad source searches are last-resort evidence,
-not the starting context.
+If the one-id packet cannot establish the cause, first rerun it with
+`DEBUG_MODE=deep`; only then expand to `pokepilot_get_run_debug`, recovery
+audit if relevant, and finally one named artifact. Raw recordings and broad
+source searches are last-resort evidence, not the starting context.
