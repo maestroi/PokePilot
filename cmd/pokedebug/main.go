@@ -29,23 +29,23 @@ import (
 const debugTimeout = 90 * time.Second
 
 type debugOutput struct {
-	Packet        farm.DebugPacket    `json:"packet"`
-	PacketPath    string              `json:"packet_path,omitempty"`
-	BundlePath    string              `json:"bundle_path,omitempty"`
-	Reproduction debugReproduction   `json:"reproduction"`
-	SourceMatches []debugSourceMatch  `json:"source_matches,omitempty"`
-	Notes         []string            `json:"notes,omitempty"`
+	Packet        farm.DebugPacket   `json:"packet"`
+	PacketPath    string             `json:"packet_path,omitempty"`
+	BundlePath    string             `json:"bundle_path,omitempty"`
+	Reproduction  debugReproduction  `json:"reproduction"`
+	SourceMatches []debugSourceMatch `json:"source_matches,omitempty"`
+	Notes         []string           `json:"notes,omitempty"`
 }
 
 type debugReproduction struct {
-	State         string `json:"state"`
-	Classification string `json:"classification,omitempty"`
+	State               string `json:"state"`
+	Classification      string `json:"classification,omitempty"`
 	ObservedFingerprint string `json:"observed_fingerprint,omitempty"`
-	Outcome       string `json:"outcome,omitempty"`
-	Cause         string `json:"cause,omitempty"`
-	Diagnostic    string `json:"diagnostic,omitempty"`
-	ResultPath    string `json:"result_path,omitempty"`
-	Output        string `json:"output,omitempty"`
+	Outcome             string `json:"outcome,omitempty"`
+	Cause               string `json:"cause,omitempty"`
+	Diagnostic          string `json:"diagnostic,omitempty"`
+	ResultPath          string `json:"result_path,omitempty"`
+	Output              string `json:"output,omitempty"`
 }
 
 type debugSourceMatch struct {
@@ -126,8 +126,8 @@ func run(args []string, stdout io.Writer) error {
 	}
 
 	out := debugOutput{
-		Packet:     packet,
-		PacketPath: packetPath,
+		Packet:       packet,
+		PacketPath:   packetPath,
 		Reproduction: debugReproduction{State: "not_available"},
 	}
 	if rootErr == nil {
