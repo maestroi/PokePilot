@@ -85,7 +85,7 @@ func TestRunInspectorRoutesUseWallForMetadataAndReplayForMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := io.ReadAll(res.Body)
+	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != http.StatusPartialContent || string(body) != "fake" || res.Header.Get("Content-Range") != "bytes 0-3/8" {
 		t.Fatalf("video status=%d range=%q body=%q", res.StatusCode, res.Header.Get("Content-Range"), body)
