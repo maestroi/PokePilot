@@ -232,6 +232,7 @@ export interface DashboardWorker {
 }
 
 export interface DashboardFacets {
+  games: string[]
   outcomes: string[]
   hows: string[]
   starters: string[]
@@ -252,6 +253,7 @@ export interface DashboardQuery {
   limit?: number
   offset?: number
   facets?: boolean
+  game?: string
   outcome?: string
   how?: string
   starter?: string
