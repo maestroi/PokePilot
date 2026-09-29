@@ -176,11 +176,11 @@ func (c *mediaRenderJobController) progress(id string, req farm.MediaRenderJobPr
 	} else {
 		job.Stage = job.State
 	}
-	if req.SegmentsTotal >= 0 {
-		job.SegmentsTotal = req.SegmentsTotal
+	if req.SegmentsTotal != nil {
+		job.SegmentsTotal = *req.SegmentsTotal
 	}
-	if req.SegmentsDone >= 0 {
-		job.SegmentsDone = req.SegmentsDone
+	if req.SegmentsDone != nil {
+		job.SegmentsDone = *req.SegmentsDone
 	}
 	if job.SegmentsTotal > 0 && job.SegmentsDone > job.SegmentsTotal {
 		job.SegmentsDone = job.SegmentsTotal
