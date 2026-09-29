@@ -28,11 +28,12 @@ var watchHTML []byte
 var watchJS []byte
 
 const (
-	spectatorHistoryLimit           = 12
-	spectatorReplayCacheTTL         = 30 * time.Second
-	spectatorReplayProgressCacheTTL = 10 * time.Second
-	spectatorDashboardLimit         = 4 << 20
-	spectatorDoneLookback           = 64
+	spectatorHistoryLimit            = 12
+	spectatorReplayCacheTTL          = 30 * time.Second
+	spectatorReplayProgressCacheTTL  = 10 * time.Second
+	spectatorDashboardLimit          = 4 << 20
+	spectatorDoneLookback            = 64
+	spectatorReplayStatusParallelism = 16
 )
 
 var errSpectatorUnavailable = errors.New("spectator feed unavailable")
@@ -399,6 +400,30 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 		return active
 	}
 
+	// Each status is a round trip to the replay sidecar (slow for runs it has no
+	// render for). Asked one at a time, ~40 candidates outlast the request
+	// budget and every later run reads as "unavailable", hiding ready replays.
+	statuses := make(map[string]spectatorReplayStatus)
+	var statusMu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, spectatorReplayStatusParallelism)
+	for _, run := range runs {
+		if run.Status != "done" || spectatorHighlight(run) == "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(runID string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			status := catalog.status(ctx, runID)
+			statusMu.Lock()
+			statuses[runID] = status
+			statusMu.Unlock()
+		}(run.RunID)
+	}
+	wg.Wait()
+
 	done := make([]spectatorRun, 0, spectatorHistoryLimit)
 	allowed := make([]string, 0, spectatorHistoryLimit)
 	for i := len(runs) - 1; i >= 0 && len(done) < spectatorHistoryLimit; i-- {
@@ -410,7 +435,7 @@ func publicSpectatorRuns(ctx context.Context, runs []spectatorSourceRun, catalog
 		if highlight == "" {
 			continue
 		}
-		status := catalog.status(ctx, run.RunID)
+		status := statuses[run.RunID]
 		if status.State != "ready" && status.State != "generating" {
 			continue
 		}
