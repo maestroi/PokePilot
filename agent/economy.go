@@ -19,12 +19,12 @@ const (
 )
 
 const (
-	bagItemCapacity         = 20
-	targetCaptureStock      = 10
-	minimumCaptureStock     = 5
-	targetEmergencyHeals    = 2
+	bagItemCapacity          = 20
+	targetCaptureStock       = 10
+	minimumCaptureStock      = 5
+	targetEmergencyHeals     = 2
 	saffronGuardDrinkReserve = 200  // Cheapest valid guard drink is FRESH WATER.
-	maxSafariEntryReserve   = 1500 // FuchsiaProgression permits at most 3 x ¥500 Safari sessions.
+	maxSafariEntryReserve    = 1500 // FuchsiaProgression permits at most 3 x ¥500 Safari sessions.
 )
 
 type ItemEconomySpec struct {
