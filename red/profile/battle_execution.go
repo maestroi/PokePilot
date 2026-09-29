@@ -91,7 +91,15 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 	case strings.Contains(text, battleMoveMenuMarker),
 		state.DecodeTiles(mem.Slice(sym.TileMap+battleMovePanelDisabledOffset, len(battleMovePanelDisabledMarker))) == battleMovePanelDisabledMarker:
 		out.Phase = game.BattleExecutionMoveMenu
-	case strings.Contains(text, battleMainMenuMarker):
+	// FIGHT tiles alone are not proof that the player owns the command menu.
+	// Gen-I scripted battles (notably Viridian's Old Man catch demo) draw the
+	// same command-menu text while the ROM is supplying simulated input, but
+	// leave wMaxMenuItem at the prior list shape (measured as 4). Reporting that
+	// screen as player-actionable makes Battle() fight the ROM for the cursor and
+	// can return with the script still owning the objective boundary. The real
+	// FIGHT/ITEM/PKMN/RUN menu is exactly one row of two columns (max item 1),
+	// the same positive shape DecodeBattleEscapeMenu already requires.
+	case strings.Contains(text, battleMainMenuMarker) && menu.Max == redBattleMenuCommandMax:
 		out.Phase = game.BattleExecutionMainMenu
 	}
 	return out
