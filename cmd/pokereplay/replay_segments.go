@@ -93,7 +93,7 @@ func (s *replayServer) replayVideoSegmentCacheKey(runID string, recording replay
 	)
 }
 
-func (s *replayServer) prepareReplayAttempt(ctx context.Context, runID string, recording replayRecording, semantic semanticReplaySegment, dir string, maxFrames uint64) (preparedReplayAttempt, error) {
+func (s *replayServer) prepareReplayAttempt(runID string, recording replayRecording, semantic semanticReplaySegment, dir string, maxFrames uint64) (preparedReplayAttempt, error) {
 	parsed, err := gomeboy.LoadRecording(semantic.RecordingPath)
 	if err != nil {
 		return preparedReplayAttempt{}, fmt.Errorf("load recording: %w", err)
