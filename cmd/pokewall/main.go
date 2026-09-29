@@ -161,6 +161,7 @@ func main() {
 		handler = wall.controlPlaneFrameHTTPHandler(handler)
 	}
 	handler = challengeProgrammingHTTPHandler(wall, handler)
+	handler = mediaRenderJobHTTPHandler(wall, handler)
 	go RunChallengeProgramming(wall, time.Second)
 	server := &http.Server{
 		Addr:              *httpAddr,
