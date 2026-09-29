@@ -44,6 +44,7 @@ Treat that token as a compute-control credential: holders can start and cancel r
 | `pokepilot_get_triage` | Read the actionable grouped failures. Resolved issue groups are hidden by default; pass `include_resolved: true` to audit history. |
 | `pokepilot_investigate_failure` | Trigger the existing failure-investigation handoff |
 | `pokepilot_get_run_debug` | Read the compact finish/trace/progress/artifact-reference bundle for one run |
+| `pokepilot_prepare_debug` | Build a bounded coding-agent packet from one run id: stable failure/triage identity, exact repro references, targeted source-search terms, and only the most relevant timeline evidence |
 | `pokepilot_get_run_recovery_audit` | Read one run's recovery-focused audit packet: full bounded recovery/failure activity (without the normal 40-event MCP compaction), attempt revisions when available, and related triage groups including resolved history |
 | `pokepilot_get_run_artifacts` | List one run's artifact names/media types/storage references, without bytes |
 | `pokepilot_get_run_artifact_content` | Fetch one small artifact's bytes as base64 (a `.state`/`.ram`/JSON checkpoint) for local reproduction, whether pokewall still holds it inline or has durabilized it to S3; artifacts too large for the MCP response cap (e.g. `run.gbrun`) still need the operator UI/replay service |
@@ -53,13 +54,38 @@ MCP intentionally does **not** expose runner leases, heartbeats, finish/checkpoi
 
 ### Diagnosing one run
 
-To answer "what went wrong in run X", start from `pokepilot_get_run_debug(run_id)`: the last `finish.trace_tail` line is the full wrapped error chain, and `run.issue` shows whether the fingerprint is already tracked. The repository workflow (evidence order, tracing the chain into code, report shape) is documented in `.claude/skills/pokefarm-run-diagnose/SKILL.md`; it diagnoses only and hands repairs to `pokefarm-run-fix`.
+For coding-agent work, start from `pokepilot_prepare_debug(run_id)`, not the
+larger generic debug bundle. It folds the terminal error chain, stable triage
+identity, structured failure-repro contract, paired checkpoint/knowledge names,
+targeted source-search terms, and a small relevant timeline into one bounded
+response. Modes `tiny`, `normal`, and `deep` change only the amount of
+relevant timeline evidence; `normal` is the default.
+
+Inside a checkout the preferred entry point is even simpler:
+
+```sh
+make -s debug RUN=run-...
+```
+
+`cmd/pokedebug` calls the compact MCP tool, localizes those search terms against
+the checkout, fetches only the exact repro artifacts, builds a local portable
+bundle, and for supported Pokémon Red failures invokes the deterministic
+`pokerepro -verify` path without an LLM. Full
+`pokepilot_get_run_debug(run_id)` is the escalation path when the prepared
+packet leaves a specific ambiguity.
 
 ### Fixing one run
 
-`.claude/skills/pokefarm-run-fix/SKILL.md` takes the same run id through to a PR. Two facts make the run id enough: `run.issue.circuit_key` is already the 16-hex triage key the rest of the farm uses (`run.issue.fingerprint` is the full fingerprint), and `pokepilot_get_triage()` confirms whether that key is actionable or already resolved.
+`.claude/skills/pokefarm-run-fix/SKILL.md` takes just the run id through the
+same compact preparation → deterministic replay → localized edit → replay →
+`make test-short` → PR flow. The model should not independently rediscover
+triage state, download the same artifacts, or create a throwaway reproduction
+test when the structured verifier already covers the failure.
 
-`pokepilot_investigate_failure(key)` marks the group investigating and requires a linked issue; `pokepilot_record_solver_attempt` records the attempt that followed. Neither declares a fix successful — a later occurrence reopens the group and the wall's verification decides.
+`pokepilot_investigate_failure(key)` marks the group investigating and requires
+a linked issue; `pokepilot_record_solver_attempt` records the attempt that
+followed. Neither declares a fix successful — a later occurrence reopens the
+group and the wall's verification decides.
 
 ### Run recovery audits
 

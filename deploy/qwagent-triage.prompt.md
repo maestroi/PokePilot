@@ -1,52 +1,37 @@
 # Farm triage attempt
 
-You are running unattended in a dedicated worktree. The shell already
-chose the failure. Do not call pokepilot_get_triage to pick another one.
+You are unattended in a dedicated worktree. The shell already chose exactly
+one failure. Do not call `pokepilot_get_triage` to pick another one.
 
-First load the repository triage instructions from
-`.claude/skills/pokefarm-triage/SKILL.md`. If your agent runtime exposes a
-native skill tool, you may load `pokefarm-triage` through that tool instead.
-Then read and follow `docs/ARCHITECTURE.md`.
+Read `.claude/skills/pokefarm-triage/SKILL.md` and follow it. The attached
+Packet owns `key`, `run_id`, issue/claim state, and queue eligibility. Do not
+re-evaluate queue selection from stale remote metadata.
 
-The packet JSON is attached. Use its `key`, `run_id`, and `example`. When
-`issue_number` is present, it is the generated GitHub farm issue linked to this
-failure group. For a fresh repair, the shell has already assigned that issue to
-the authenticated GitHub user as the visible claim; do not remove or replace
-that assignment. The shell has also applied the local PokéWall + GitHub
-claim/repair/regression state machine; do not second-guess queue eligibility
-from stale Orchestrator status.
+When a **Prepared debug packet** is attached, start from it. It already contains
+the bounded farm evidence, deterministic replay result when supported, and
+localized source snippets. Do not repeat `get_run_debug`, artifact downloads,
+or broad repository searches unless that packet explicitly leaves an ambiguity.
 
-If `mode` is `repair_pr`, this attempt is a pull request this loop already
-opened and whose checks failed. Do not investigate a new farm failure.
+If `mode` is `repair_pr`, this is an existing PR with failed checks. Stay on
+`head_ref`, fix `failing_checks`, run `make test-short`, commit, and push.
+Do not open another PR.
 
-1. The shell has checked out `head_ref`. Stay on that branch.
-2. Fix the checks named in `failing_checks`. `make test-short` must pass.
-3. Commit on `head_ref` and `git push`.
-4. Do not open a new pull request and do not switch to `main`.
+For a fresh failure:
 
-Otherwise do:
+1. Confirm the prepared reproduction is still a software defect. A live run,
+   cancellation, expected gameplay, or infrastructure-only loss does not earn a
+   gameplay patch.
+2. Start from the packet's `source_matches`; read only the producer/caller
+   needed to understand the owning invariant.
+3. Fix the shared invariant, not a named-map/NPC/run special case.
+4. Rerun `make -s debug RUN=<run_id>`; a structured Red repro should move
+   from the same failure to `objective_succeeded`.
+5. Run `make test-short`. If either gate is red, do not ship.
+6. Create/push `fix/<short-slug>` and open
+   `fix(farm): <short symptom> [triage:<key>]`.
+7. The PR body names the run, fingerprint, root cause, replay before/after, and
+   test result. If `issue_number` exists, include
+   `[farm-issue:<issue_number>]`.
 
-1. `pokepilot_get_run_debug` / `pokepilot_get_run_artifacts` for `run_id`.
-2. Download the failing round `.state` (objective matching finish.detail).
-3. Write `skill/zz_repro_scratch_test.go`, reproduce, then fix the shared
-   invariant — not a named-map special case.
-4. Re-run the repro. Delete the scratch test.
-5. `make test-short`. Never `go test ./skill/...`.
-6. If either gate is red, stop. Do not commit.
-7. `git switch -c fix/<short-slug>` from this worktree's `main`.
-8. Commit only the fix. Message: symptom, root cause, run id.
-9. `git push -u origin HEAD`
-10. `gh pr create` with title
-    `fix(farm): <short symptom> [triage:<key>]`
-    Body: run id, fingerprint, what you reproduced, what you changed. If the
-    packet contains `issue_number`, also include `[farm-issue:<issue_number>]`
-    in the body so the merge lifecycle closes that exact generated farm issue.
-
-Do not:
-
-- commit or push `main`
-- commit `.gb`, `.sav`, `.state`, or `skill/zz_*_test.go`
-- `git add -A` when unrelated files are dirty
-- merge the PR
-- start another farm run unless you need an artifact URL you cannot get
-  from the existing run
+Do not commit/push `main`, ROM/save/state/cache files, or scratch tests. Do
+not `git add -A` over unrelated work. Do not merge the PR.

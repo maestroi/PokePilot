@@ -198,6 +198,10 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "Get the compact persisted debug bundle for one run: finish reason, trace tail, progress deltas, latest planner decision, timeline markers and artifact references. Large artifact bytes are never embedded.",
 	}, control.getRunDebug)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_prepare_debug",
+		Description: "Prepare a bounded coding-agent debug packet from one run id: stable failure identity, compact error chain, exact repro artifact references, triage state, targeted search terms and only the most relevant timeline evidence. Prefer this before pokepilot_get_run_debug when token cost matters.",
+	}, control.prepareDebug)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_recovery_audit",
 		Description: "Get a recovery-focused audit packet for one run. Returns the wall's full bounded recovery/failure activity history without the normal 40-event MCP timeline truncation, annotates recovery events with attempt runner revisions when available, and includes related triage groups including resolved history for stale/duplicate/regression analysis.",
 	}, control.getRunRecoveryAudit)

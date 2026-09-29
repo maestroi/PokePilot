@@ -513,11 +513,33 @@ if [ "$MODE" = "repair_pr" ]; then
 fi
 
 printf '%s\n' "$PICK_JSON" >"$POKEPILOT_TRIAGE_STATE/packet.json"
+DEBUG_PACKET="$POKEPILOT_TRIAGE_STATE/debug-packet.json"
+rm -f "$DEBUG_PACKET"
+if [ "$MODE" != "repair_pr" ] && [ -n "$RUN_ID" ]; then
+	set +e
+	(
+		cd "$POKEPILOT_TRIAGE_TREE"
+		make -s debug RUN="$RUN_ID" DEBUG_MODE=tiny
+	) >"$DEBUG_PACKET"
+	debug_status=$?
+	set -e
+	if [ "$debug_status" -eq 0 ]; then
+		log "prepared compact debug packet for $RUN_ID"
+	else
+		log "compact debug preparation failed (exit $debug_status); agent may use the escalation path"
+		rm -f "$DEBUG_PACKET"
+	fi
+fi
 {
 	cat "$PROMPT"
 	printf '\n\n## Packet\n\n```json\n'
 	cat "$POKEPILOT_TRIAGE_STATE/packet.json"
 	printf '```\n'
+	if [ -f "$DEBUG_PACKET" ]; then
+		printf '\n## Prepared debug packet\n\nUse this directly; do not repeat its MCP/artifact/source-discovery work.\n\n```json\n'
+		cat "$DEBUG_PACKET"
+		printf '```\n'
+	fi
 } >"$POKEPILOT_TRIAGE_STATE/packet.md"
 
 ATTEMPT_STARTED_AT=$(date +%s)

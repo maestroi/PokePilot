@@ -123,15 +123,31 @@ current wall frame again; it does not create a second authoritative recording.
 
 ## MCP tools for debugging agents
 
-When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, three new
-read-only tools are available:
+When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, the
+debugging tools are:
 
-- `pokepilot_get_run_debug(run_id)`
-- `pokepilot_get_run_recovery_audit(run_id)`
-- `pokepilot_get_run_artifacts(run_id)`
-- `pokepilot_get_run_artifact_content(run_id, name)`
+- `pokepilot_prepare_debug(run_id, mode?)` — preferred coding-agent entry point;
+- `pokepilot_get_run_debug(run_id)` — broader compacted run inspection;
+- `pokepilot_get_run_recovery_audit(run_id)` — recovery-history escalation;
+- `pokepilot_get_run_artifacts(run_id)` — artifact metadata;
+- `pokepilot_get_run_artifact_content(run_id, name)` — one bounded artifact.
 
-The run-debug and recovery-audit tools deliberately return structured metadata rather than giant recording bytes. `pokepilot_get_run_debug` remains compact and keeps only the newest timeline events for general debugging; `pokepilot_get_run_recovery_audit` bypasses that 40-event MCP compaction, filters the wall's full bounded activity history down to recovery/failure evidence, annotates attempt revisions when available, and attaches related triage groups including resolved history. This lets an agent audit a long successful campaign without re-investigating already-fixed recovery noise.
+`pokepilot_prepare_debug` deliberately performs the cheap deterministic
+selection work before a model sees the result: stable triage identity, terminal
+error chain, structured failure-repro/checkpoint references, targeted source
+search terms, and only relevant recent evidence. In a checkout,
+`make -s debug RUN=<id>` adds local source snippets and deterministic replay
+when supported, so a coding model normally starts from one small packet rather
+than several tool responses.
+
+The broader run-debug and recovery-audit tools still return structured metadata
+rather than giant recording bytes. `pokepilot_get_run_debug` keeps only the
+newest timeline events for general debugging;
+`pokepilot_get_run_recovery_audit` bypasses that 40-event MCP compaction,
+filters the wall's full bounded activity history down to recovery/failure
+evidence, annotates attempt revisions when available, and attaches related
+triage groups including resolved history. Use those only when the prepared
+packet leaves a concrete ambiguity.
 
 `pokepilot_get_run_artifact_content` is that deeper step — the
 `.state`/`.ram`/knowledge/failure-repro JSON a triage agent needs to

@@ -89,15 +89,14 @@ func TestRunFixSkillCoversTheRunIDEntryPoint(t *testing.T) {
 	s := string(body)
 	for _, want := range []string{
 		"name: pokefarm-run-fix",
-		"pokepilot_get_run_debug",
-		"circuit_key",
-		"pokepilot_get_triage",
+		"make -s debug RUN=<run-id>",
+		"source_matches",
+		"reproduction",
 		"pokepilot_investigate_failure",
 		"pokepilot_record_solver_attempt",
 		"[triage:<key>]",
 		"make test-short",
-		"pokefarm-triage",
-		"Do not cancel",
+		"pokepilot_get_run_debug",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("run-fix skill missing %q", want)

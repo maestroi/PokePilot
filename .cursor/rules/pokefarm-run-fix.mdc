@@ -1,27 +1,21 @@
 ---
-description: Fix one PokePilot run from its run id — pull the run's debug bundle over the pokepilot MCP, resolve its triage key, replay the failing round locally, fix at the shared point, and open a triage-keyed PR.
+description: Fix one PokePilot run from its run id using the compact one-id debugger before expanding context.
 globs:
 alwaysApply: false
 ---
 
-Follow the procedure in @.claude/skills/pokefarm-run-fix/SKILL.md exactly. It is
-the single source of truth for this workflow; this rule only makes Cursor aware
-of it. Its reproduce-fix-verify half is
-@.claude/skills/pokefarm-triage/SKILL.md.
+Follow @.claude/skills/pokefarm-run-fix/SKILL.md. The cheap/default path is:
 
-The short version, so you know what you are opting into:
+1. `make -s debug RUN=<run-id>`.
+2. Use its `packet`, measured `reproduction`, and bounded
+   `source_matches`; do not repeat those MCP/artifact/search steps.
+3. Only a real software defect earns a patch. Claim the linked issue when one
+   exists.
+4. Fix the shared owning invariant.
+5. Rerun the same `make -s debug RUN=<run-id>`, then `make test-short`.
+6. Push a `fix/*` branch, open the triage-keyed PR, and record the solver
+   attempt.
 
-1. `pokepilot_get_run_debug(run_id)` first, and classify before coding: defect,
-   stall, expected gameplay, or infrastructure. Only a defect earns a PR.
-2. The triage key is already in that bundle: `run.issue.circuit_key`. Confirm it
-   against `pokepilot_get_triage()` and claim the linked issue before editing.
-3. `pokepilot_get_run_artifact_content` for the failing round's `.state`; the
-   plain artifact route sits behind Cloudflare Access, so use the MCP tool.
-4. Replay that state in a throwaway `skill/zz_repro_scratch_test.go` before
-   editing anything: red before the patch, green after it.
-5. Fix where every caller routes through, not on the path the failure named.
-6. Gate on `make test-short` plus the repro. Never `go test ./skill/...`.
-7. Branch, commit the fix only, push, `gh pr create` with `[triage:<key>]` in
-   the title, then record it with `pokepilot_record_solver_attempt`.
-8. Do not cancel or restart the run; the wall owns recovery, and the repair is
-   what changes the next attempt.
+Use full run-debug/recovery/artifact reads only when the prepared packet is
+genuinely insufficient. Do not create throwaway repro tests for structured Red
+failures; `pokedebug` already drives the deterministic executor verifier.
