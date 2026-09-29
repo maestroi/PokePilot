@@ -8,6 +8,8 @@ import {
   liveHTTPURL,
   localSpectatorBase,
   publicBaseURL,
+  replayPath,
+  replayURL,
   resolveSpectatorBase,
   runIDFromLocation,
   spectatorRunPath,
@@ -24,6 +26,7 @@ test('production spectator URLs use rompilot.app', () => {
   }
   assert.equal(publicBaseURL(config), PRODUCTION_PUBLIC_ORIGIN)
   assert.equal(spectatorURL(config.public_base_url, 'run-123'), 'https://rompilot.app/runs/run-123')
+  assert.equal(replayURL(config.public_base_url, 'run-123'), 'https://rompilot.app/replays/run-123')
   assert.doesNotMatch(spectatorURL(config.public_base_url, 'run-123'), /maestroi\.cc/)
   assert.equal(PRODUCTION_ADMIN_ORIGIN, 'https://admin.rompilot.app')
 })
@@ -32,6 +35,7 @@ test('local development keeps localhost ports', () => {
   assert.equal(resolveSpectatorBase({}, 'http://127.0.0.1:18080/#live'), 'http://127.0.0.1:18081')
   assert.equal(resolveSpectatorBase({}, 'https://admin.rompilot.app/'), '')
   assert.equal(spectatorRunPath('run-9'), '/runs/run-9')
+  assert.equal(replayPath('run-9'), '/replays/run-9')
   assert.equal(runIDFromLocation('/runs/run-9'), 'run-9')
   assert.equal(runIDFromLocation('/', '?run=legacy'), 'legacy')
 })
