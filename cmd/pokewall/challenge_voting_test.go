@@ -135,8 +135,8 @@ func TestAudienceVoteOperatorTieAndSourceLimit(t *testing.T) {
 	_ = challengeRequest(t, h, http.MethodPost, "/v1/programming/pause", map[string]any{})
 
 	create := challengeRequest(t, h, http.MethodPost, "/v1/votes", map[string]any{
-		"candidates": []map[string]any{{"challenge_id": "a"}, {"challenge_id": "b"}},
-		"tie_policy": "operator",
+		"candidates":    []map[string]any{{"challenge_id": "a"}, {"challenge_id": "b"}},
+		"tie_policy":    "operator",
 		"source_limits": map[string]int{"twitch": 1},
 	})
 	if create.Code != http.StatusCreated {
@@ -204,7 +204,7 @@ func TestAudienceVoteRejectsUnsupportedCandidatesAndPersists(t *testing.T) {
 	closesAt := time.Now().Add(time.Hour).Unix()
 	create := challengeRequest(t, h, http.MethodPost, "/v1/votes", map[string]any{
 		"candidates": []map[string]any{{"challenge_id": "one"}, {"challenge_id": "two"}},
-		"closes_at": closesAt,
+		"closes_at":  closesAt,
 	})
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create = %d: %s", create.Code, create.Body.String())
