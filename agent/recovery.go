@@ -22,6 +22,7 @@ type recoveryStateScope uint8
 const (
 	recoveryStateScopeObjective recoveryStateScope = iota
 	recoveryStateScopeRoutePrerequisite
+	recoveryStateScopeLocalInteraction
 	recoveryStateScopeCombatLoss
 	recoveryStateScopeFieldRoster
 	recoveryStateScopeHuntExhausted
@@ -153,6 +154,18 @@ func routePrerequisiteStateKey(obs Observation) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+func localInteractionStateKey(obs Observation) string {
+	data, _ := json.Marshal(struct {
+		Location LocationID `json:"location,omitempty"`
+		Map      uint8      `json:"map,omitempty"`
+	}{
+		Location: obs.Location,
+		Map:      obs.Map,
+	})
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
 // combatLossStateKey treats every battle defeat as a combat-state failure.
 // Ordinary GoTo/progression failures intentionally ignore party drift, but a
 // blackout can become retryable after training, evolution, PP recovery, or
@@ -250,21 +263,30 @@ func huntQuarantineKey(o Objective, obs Observation) (string, bool) {
 }
 
 func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
-	if failureCauseIs(result, "route_prerequisite_missing") {
+	if failureCauseIs(result, "route_prerequisite_missing") ||
+		failureCauseIs(result, "no_route") ||
+		failureCauseIs(result, "no_path") {
 		// Capability-only quarantine is safe for direct travel objectives: moving
-		// elsewhere does not satisfy a missing badge/HM/story gate, and the
-		// plain/flee sibling would otherwise immediately retry the same route.
+		// elsewhere does not satisfy a missing badge/HM/story gate or a graph-level
+		// absence of route, and the plain/flee sibling would otherwise immediately
+		// retry the same journey.
 		//
 		// Compound objectives are different. Progress, catch, gym, gift/trade
 		// execution and similar transactions can own multiple internal journeys,
-		// so a route prerequisite may describe only the approach that failed.
-		// Their ordinary objective state includes position and lets a materially
+		// so a route failure may describe only the approach that failed. Their
+		// ordinary objective state includes position and lets a materially
 		// different route reopen the transaction. #1109 exposed this for
 		// progression; #1084 exposed the same permanent quarantine for a Route 2
 		// catch after recovery had moved Red elsewhere.
 		if _, direct := routePolicySibling(result.Objective); direct {
 			return recoveryStateScopeRoutePrerequisite
 		}
+	}
+	if result.Objective.Kind == KindTalk && failureCauseIs(result, "no_dialogue") {
+		// TalkAt commonly moves the player while proving that the target cannot
+		// currently produce dialogue. Player-position drift is therefore the
+		// failure's own side effect, not evidence that retry became meaningful.
+		return recoveryStateScopeLocalInteraction
 	}
 	if failureCauseIs(result, "trainer_blacked_out") ||
 		failureCauseIs(result, failureCauseCombatDefeat) {
@@ -283,6 +305,8 @@ func recoveryStateKeyForScope(o Objective, obs Observation, scope recoveryStateS
 	switch scope {
 	case recoveryStateScopeRoutePrerequisite:
 		return routePrerequisiteStateKey(obs)
+	case recoveryStateScopeLocalInteraction:
+		return localInteractionStateKey(obs)
 	case recoveryStateScopeCombatLoss:
 		return combatLossStateKey(obs)
 	case recoveryStateScopeFieldRoster:
@@ -405,12 +429,15 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 		StateScope:  scope,
 	}
 
-	// A missing route prerequisite is a property of the destination and the
-	// current semantic route state, not of position or how wild encounters are
-	// handled while walking. Quarantine the plain/flee sibling together so
-	// recovery cannot immediately retry the same impossible route under the
-	// other travel policy, and retain both entries across unrelated movement.
-	if failureCauseIs(result, "route_prerequisite_missing") {
+	// A direct route prerequisite or graph-level no-route result is a property
+	// of the destination and current semantic route state, not of position or
+	// how wild encounters are handled while walking. Quarantine the plain/flee
+	// sibling together so recovery cannot immediately retry the same impossible
+	// route under the other travel policy, and retain both entries across
+	// unrelated movement.
+	if failureCauseIs(result, "route_prerequisite_missing") ||
+		failureCauseIs(result, "no_route") ||
+		failureCauseIs(result, "no_path") {
 		if sibling, ok := routePolicySibling(result.Objective); ok {
 			siblingResult := result
 			siblingResult.Objective = sibling
