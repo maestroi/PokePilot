@@ -26,7 +26,7 @@ const (
 	replaySegmentSecondsEnv     = "POKEPILOT_REPLAY_SEGMENT_SECONDS"
 	minReplaySegmentSeconds     = 10
 	maxReplaySegmentSeconds     = 3600
-	replaySegmentURLTTL          = 12 * time.Hour
+	replaySegmentURLTTL         = 12 * time.Hour
 )
 
 type replayVideoSegment struct {
