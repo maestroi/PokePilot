@@ -19,11 +19,12 @@ const (
 )
 
 const (
-	bagItemCapacity       = 20
-	targetCaptureStock    = 10
-	minimumCaptureStock   = 5
-	targetEmergencyHeals  = 2
-	maxSafariEntryReserve = 1500 // FuchsiaProgression permits at most 3 x ¥500 Safari sessions.
+	bagItemCapacity         = 20
+	targetCaptureStock      = 10
+	minimumCaptureStock     = 5
+	targetEmergencyHeals    = 2
+	saffronGuardDrinkReserve = 200  // Cheapest valid guard drink is FRESH WATER.
+	maxSafariEntryReserve   = 1500 // FuchsiaProgression permits at most 3 x ¥500 Safari sessions.
 )
 
 type ItemEconomySpec struct {
@@ -164,7 +165,8 @@ func ItemEconomy(name string) (ItemEconomySpec, bool) {
 // fixed Red prices and capacities.
 func EconomyContext(o Observation) *EconomyDecisionContext {
 	relevant := o.Money > 0 || o.BlackedOut || len(o.Bag) > 0 || len(o.MartStock) > 0 ||
-		(len(o.WildGrass) > 0 && normalBallStock(o) < minimumCaptureStock) || partyHurt(o) || pendingFuchsiaSpend(o)
+		(len(o.WildGrass) > 0 && normalBallStock(o) < minimumCaptureStock) || partyHurt(o) ||
+		pendingSaffronGateSpend(o) || pendingFuchsiaSpend(o)
 	if !relevant {
 		return nil
 	}
@@ -181,6 +183,12 @@ func EconomyContext(o Observation) *EconomyDecisionContext {
 		ctx.BagSlotsFree = 0
 	}
 
+	if pendingSaffronGateSpend(o) {
+		ctx.Reservations = append(ctx.Reservations, MoneyReservation{
+			Reason: "reserve ¥200 for the Fresh Water that opens Saffron's guardhouses",
+			Amount: saffronGuardDrinkReserve,
+		})
+	}
 	if pendingFuchsiaSpend(o) {
 		ctx.Reservations = append(ctx.Reservations, MoneyReservation{
 			Reason: "reserve up to three ¥500 Safari Zone entries required by the current Fuchsia progression skill",
@@ -216,6 +224,22 @@ func EconomyContext(o Observation) *EconomyDecisionContext {
 
 	ctx.Purchases = purchaseAdvice(o, ctx)
 	return ctx
+}
+
+func saffronGuardDrinkOwned(o Observation) bool {
+	return bagQuantity(o, "fresh water") > 0 ||
+		bagQuantity(o, "soda pop") > 0 ||
+		bagQuantity(o, "lemonade") > 0
+}
+
+func pendingSaffronGateSpend(o Observation) bool {
+	return o.Story.Has(redProgressHM01Acquired) &&
+		!o.Story.Has(ProgressSaffronGateOpen) &&
+		!saffronGuardDrinkOwned(o)
+}
+
+func saffronGateFundingReady(o Observation) bool {
+	return saffronGuardDrinkOwned(o) || o.Money >= saffronGuardDrinkReserve
 }
 
 func pendingFuchsiaSpend(o Observation) bool {
