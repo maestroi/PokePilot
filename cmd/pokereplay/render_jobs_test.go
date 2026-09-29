@@ -55,6 +55,9 @@ func TestRecordingsForAttemptsUsesPersistedAttemptSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(recordings) != 2 {
+		t.Fatalf("recordings=%d, want 2", len(recordings))
+	}
 	if got := []int{recordings[0].Attempt, recordings[1].Attempt}; !reflect.DeepEqual(got, []int{1, 2}) {
 		t.Fatalf("recording attempts=%v, want [1 2]", got)
 	}
@@ -169,12 +172,12 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 	}))
 	defer s3srv.Close()
 	store, err := artifactstore.NewS3(artifactstore.S3Config{
-		Endpoint: s3srv.URL,
-		Bucket: "pokepilot",
-		Region: "us-east-1",
+		Endpoint:  s3srv.URL,
+		Bucket:    "pokepilot",
+		Region:    "us-east-1",
 		AccessKey: "test",
 		SecretKey: "secret",
-		Timeout: 2 * time.Second,
+		Timeout:   2 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -184,21 +187,21 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/runs/run-1/artifacts":
 			_ = json.NewEncoder(w).Encode(artifactList{
-				RunID: "run-1",
-				Attempt: 1,
+				RunID:     "run-1",
+				Attempt:   1,
 				Artifacts: []artifactRef{artifact},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/media/render-jobs/"+jobID:
 			_ = json.NewEncoder(w).Encode(farm.MediaRenderJob{
-				Version: farm.MediaRenderJobVersion,
-				ID: jobID,
-				Identity: cacheKey,
-				RunID: "run-1",
-				Attempts: []int{1},
-				Mode: string(replayModeRaw),
+				Version:     farm.MediaRenderJobVersion,
+				ID:          jobID,
+				Identity:    cacheKey,
+				RunID:       "run-1",
+				Attempts:    []int{1},
+				Mode:        string(replayModeRaw),
 				ArtifactKey: cacheKey,
-				State: farm.MediaRenderJobUploading,
-				Stage: farm.MediaRenderJobUploading,
+				State:       farm.MediaRenderJobUploading,
+				Stage:       farm.MediaRenderJobUploading,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/media/render-jobs/"+jobID+"/reconcile-ready":
 			_, _ = io.Copy(io.Discard, r.Body)
@@ -206,16 +209,16 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 			reconcileCalls++
 			mu.Unlock()
 			_ = json.NewEncoder(w).Encode(farm.MediaRenderJob{
-				Version: farm.MediaRenderJobVersion,
-				ID: jobID,
-				Identity: cacheKey,
-				RunID: "run-1",
-				Attempts: []int{1},
-				Mode: string(replayModeRaw),
+				Version:     farm.MediaRenderJobVersion,
+				ID:          jobID,
+				Identity:    cacheKey,
+				RunID:       "run-1",
+				Attempts:    []int{1},
+				Mode:        string(replayModeRaw),
 				ArtifactKey: cacheKey,
-				State: farm.MediaRenderJobReady,
-				Stage: farm.MediaRenderJobReady,
-				ResultSize: 8,
+				State:       farm.MediaRenderJobReady,
+				Stage:       farm.MediaRenderJobReady,
+				ResultSize:  8,
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/media/render-jobs":
 			mu.Lock()
@@ -259,12 +262,12 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 
 func TestReplayStatusFromMediaJobIncludesLastFailure(t *testing.T) {
 	status := replayStatusFromMediaJob(farm.MediaRenderJob{
-		RunID:      "run-1",
+		RunID:       "run-1",
 		ArtifactKey: "artifact",
-		State:      farm.MediaRenderJobRendering,
-		Stage:      "segment-2",
-		RetryCount: 1,
-		LastError:  "recovered after expired worker lease",
+		State:       farm.MediaRenderJobRendering,
+		Stage:       "segment-2",
+		RetryCount:  1,
+		LastError:   "recovered after expired worker lease",
 	})
 	if status.State != "generating" {
 		t.Fatalf("state=%q, want generating", status.State)
