@@ -8,9 +8,10 @@ import (
 	"github.com/maestroi/pokepilot/world"
 )
 
-// victoryRoadStrengthEdges lists every floor crossing the Red adapter maps onto
-// the red:victory_road_strength semantic transition, plus the boulder section
-// (if any) that owns it.
+// victoryRoadStrengthEdges lists every real Victory Road floor crossing between
+// 1F/2F and 2F/3F. The invariant below decides which exact pads may carry
+// red:victory_road_strength by asking the executor whether that edge owns a
+// boulder action; sibling ladders must remain ordinary geometry.
 func victoryRoadStrengthEdges() []world.Edge {
 	return []world.Edge{
 		{Kind: world.EdgeWarp, From: victoryRoad1FMap, To: victoryRoad2FMap, WarpX: 1, WarpY: 1},
