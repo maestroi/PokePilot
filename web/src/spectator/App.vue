@@ -49,6 +49,7 @@ import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import { canRenderModernScene } from '../shared/semanticRenderer'
+import { publicCapabilitiesForRun } from '../shared/publicCapabilities'
 import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
 import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
@@ -108,6 +109,7 @@ const selectedRun = computed(() => preferredRun(
   groupedRuns.value.live,
   selectionPinned.value ? selectedRunID.value : ''
 ))
+const selectedPublicCapabilities = computed(() => publicCapabilitiesForRun(selectedRun.value))
 const isTetrisSelected = computed(() => isTetrisRun(selectedRun.value))
 const tetrisState = computed(() => selectedRun.value?.game_state)
 const tetrisBoardRows = computed(() =>
@@ -675,6 +677,7 @@ function activityTimeAgo(item: ActivityItem): string {
     title="Watch"
     subtitle=""
     mode="public"
+    :public-capabilities="selectedPublicCapabilities"
     :show-intro="false"
   >
     <template #summary>
