@@ -84,3 +84,12 @@ test('Pokémon spectator labels keep their existing presentation', () => {
   assert.equal(isTetrisRun(pokemon), false)
   assert.equal(gameTitle(pokemon), 'Pokémon Red')
 })
+
+
+test('Gen2 spectator labels preserve cartridge identity', () => {
+  const gold: SpectatorRun = { run_id: 'gold-live', status: 'running', game: 'pokemon-gold' }
+  const silver: SpectatorRun = { run_id: 'silver-live', status: 'running', game: 'pokemon-silver' }
+
+  assert.equal(gameTitle(gold), 'Pokémon Gold')
+  assert.equal(gameTitle(silver), 'Pokémon Silver')
+})
