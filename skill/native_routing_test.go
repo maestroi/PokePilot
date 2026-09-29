@@ -114,3 +114,47 @@ func TestNativeRuntimeBlockersAvoidWarpsAndObjects(t *testing.T) {
 		t.Fatal("live object was not blocked")
 	}
 }
+
+
+func TestNativeCutPathMarksTreeEntry(t *testing.T) {
+	spec := worldmodel.NativeGridSpec{
+		MapID: 0x032c,
+		Width: 5,
+		Height: 1,
+		Walkable: []bool{true, true, false, true, true},
+		CollisionTile: []uint8{0, 0, 0x12, 0, 0},
+		Cuttable: []bool{false, false, true, false, false},
+	}
+	grid, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatalf("NativeGridFromSpec: %v", err)
+	}
+	if _, err := world.FindNativePath(grid, 0, 0, 4, 0, nil); err == nil {
+		t.Fatal("ordinary path unexpectedly crossed Cut tree")
+	}
+	path, err := world.FindNativePathWithCut(grid, 0, 0, 4, 0, nil, true)
+	if err != nil {
+		t.Fatalf("FindNativePathWithCut: %v", err)
+	}
+	if len(path) != 4 || path[0].Cut || path[1].Cut != true || path[2].Cut || path[3].Cut {
+		t.Fatalf("cut path=%+v, want only entry into x=2 marked Cut", path)
+	}
+}
+
+func TestNativeCutPathStaysClosedWithoutCapability(t *testing.T) {
+	spec := worldmodel.NativeGridSpec{
+		MapID: 0x032c,
+		Width: 3,
+		Height: 1,
+		Walkable: []bool{true, false, true},
+		CollisionTile: []uint8{0, 0x1a, 0},
+		Cuttable: []bool{false, true, false},
+	}
+	grid, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatalf("NativeGridFromSpec: %v", err)
+	}
+	if _, err := world.FindNativePathWithCut(grid, 0, 0, 2, 0, nil, false); err == nil {
+		t.Fatal("Cut-sealed path opened without Cut capability")
+	}
+}
