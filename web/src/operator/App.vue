@@ -174,7 +174,7 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
         @click="openSelectedSpectator"
       >
         <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
-        View spectator
+        Open public
       </button>
       <a
         v-if="activeView === 'live'"
