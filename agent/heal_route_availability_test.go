@@ -54,6 +54,22 @@ func TestOfferWithholdsUnroutableHealDestination(t *testing.T) {
 	if !found {
 		t.Fatalf("withheld Center produced no route_unroutable evidence: %+v", offer.Blocked)
 	}
+
+	// A semantic blockage is richer evidence about WHY the exact same live route
+	// is unavailable; it must not make recovery forget the destination is still
+	// unroutable. #2229 reproduced this inside Lorelei's room: the Center appeared
+	// in both Unroutable and RouteBlockages(can_leave_league), and recovery
+	// accidentally offered the impossible heal again.
+	obs.RouteBlockages = []RouteBlockage{{
+		Destination: "indigo plateau pokemon center",
+		Missing:     []CapabilityID{"can_leave_league"},
+	}}
+	offer = OfferWithEvidence(obs, known)
+	for _, o := range offer.Candidates {
+		if o.Kind == KindHeal {
+			t.Fatalf("semantic route blockage made an unroutable Center heal reappear: %s", o)
+		}
+	}
 }
 
 // TestRecoveryFallsBackToRoutableCenter: the active blackout checkpoint is the
