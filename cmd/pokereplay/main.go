@@ -435,6 +435,7 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	maxFrames := replaySegmentFrames()
 	semanticSegments := make([]semanticReplaySegment, len(recordings))
 	attempts := make([]preparedReplayAttempt, len(recordings))
+	var segmentPlanErr error
 	for index, recording := range recordings {
 		recordingPath := pathJoinOS(dir, fmt.Sprintf("attempt-%03d.gbrun", recording.Attempt))
 		if err := s.downloadRecording(ctx, runID, recording.Artifact, recordingPath, recording.Attempt); err != nil {
@@ -450,11 +451,43 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		semanticSegments[index] = semantic
 		prepared, err := s.prepareReplayAttempt(runID, recording, semantic, dir, maxFrames)
 		if err != nil {
-			setError(fmt.Errorf("attempt %d segment plan: %w", recording.Attempt, err))
-			return
+			if segmentPlanErr == nil {
+				segmentPlanErr = fmt.Errorf("attempt %d segment plan: %w", recording.Attempt, err)
+			}
+			continue
 		}
 		s.applyReplaySegmentMode(runID, mode, maxFrames, &prepared)
 		attempts[index] = prepared
+	}
+
+	if segmentPlanErr != nil {
+		log.Printf("pokereplay: bounded segment planning unavailable for run=%s; using whole-attempt compatibility path: %v", runID, segmentPlanErr)
+		total, ready := len(recordings), 0
+		s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total})
+		if jobID != "" {
+			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready)
+		}
+		size, err := s.renderLegacyReplay(ctx, runID, recordings, semanticSegments, dir, mode, func(done, total int) {
+			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: done})
+			if jobID != "" {
+				_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done)
+			}
+		})
+		if err != nil {
+			setError(err)
+			return
+		}
+		log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d legacy=true", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size)
+		s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size, Segments: total, SegmentsDone: total})
+		if jobID != "" {
+			if err := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobReady, farm.MediaRenderJobReady, "", size); err != nil {
+				log.Printf("pokereplay: persist ready legacy render job %s: %v", jobID, err)
+			}
+		}
+		if err := s.renderSemanticReplay(ctx, runID, recordings, semanticSegments); err != nil {
+			log.Printf("pokereplay semantic replay unavailable run=%s err=%v", runID, err)
+		}
+		return
 	}
 
 	total := totalReplayVideoSegments(attempts)
