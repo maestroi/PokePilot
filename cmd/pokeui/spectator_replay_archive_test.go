@@ -87,8 +87,8 @@ func TestSpectatorSnapshotPublishesSanitizedRenderProgress(t *testing.T) {
 	if run.ReplayState != "generating" || run.ReplayStage != "rendering" {
 		t.Errorf("replay state/stage = %q/%q, want generating/rendering", run.ReplayState, run.ReplayStage)
 	}
-	if run.ReplaySegments != 52 || run.ReplaySegmentsDone != 12 {
-		t.Errorf("replay progress = %d/%d, want 12/52", run.ReplaySegmentsDone, run.ReplaySegments)
+	if run.ReplayTotal != 52 || run.ReplayDone != 12 {
+		t.Errorf("replay progress = %d/%d, want 12/52", run.ReplayDone, run.ReplayTotal)
 	}
 	if catalog.isAllowed("run-render") {
 		t.Error("generating replay must not be allowlisted for public video reads")
