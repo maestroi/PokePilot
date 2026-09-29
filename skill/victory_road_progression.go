@@ -198,6 +198,108 @@ func crossRoute23SurfBandSouth(m *emu.Emu, romData []byte, policy MovePolicy, ba
 	return crossRoute23SurfBand(m, romData, policy, barrierY, false)
 }
 
+func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
+	return state.Route23NorthOfVictoryRoad(int(x), int(y))
+}
+
+func traverseVictoryRoadReturnEdge(m *emu.Emu, romData []byte, policy MovePolicy, name string, edge world.Edge) error {
+	if m.Peek8(sym.CurMap) != edge.From {
+		return fmt.Errorf("skill: %s started on map %#02x, want %#02x", name, m.Peek8(sym.CurMap), edge.From)
+	}
+	if !warpEdgeReachable(m, romData, edge) {
+		return fmt.Errorf("%w: skill: %s warp at (%d,%d) is not reachable from the live component",
+			world.ErrTransitionExecutionStalled, name, edge.WarpX, edge.WarpY)
+	}
+	_, err := RunInterruptible(m, policy, InterruptibleAction{
+		Name:           name,
+		MaxEngagements: victoryRoadTravelBattles,
+		Run: func() error {
+			if m.Peek8(sym.CurMap) != edge.From {
+				return nil
+			}
+			return Traverse(m, romData, edge)
+		},
+	})
+	return err
+}
+
+// returnRoute23NorthPocketThroughVictoryRoad bridges Route 23's two physically
+// disconnected cave-door components. The 2F exit at (14,31) lands in the
+// Indigo-side pocket; no amount of Surf can reach the southern water bands
+// from there. A southbound journey must re-enter the cave, cross to the west
+// side, descend to 1F, and leave through the original entrance (#2221).
+func returnRoute23NorthPocketThroughVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if got := m.Peek8(sym.CurMap); got != route23Map {
+		return fmt.Errorf("skill: Route 23 League return bridge started on map %#02x, want %#02x", got, route23Map)
+	}
+	x, y := playerXY(m)
+	if !route23LeagueReturnNeedsVictoryRoad(x, y) {
+		return nil
+	}
+
+	enter2F := world.Edge{
+		Kind: world.EdgeWarp, From: route23Map, To: victoryRoad2FMap,
+		WarpX: 14, WarpY: 31,
+	}
+	if err := traverseVictoryRoadReturnEdge(m, romData, policy, "Route 23 north-pocket cave re-entry", enter2F); err != nil {
+		return err
+	}
+
+	ladder, ok, err := victoryRoadLadderTo3F(m, romData)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: skill: Route 23 League return found no reachable 2F->3F ladder from the exit side",
+			world.ErrTransitionExecutionStalled)
+	}
+	if err := traverseVictoryRoadReturnEdge(m, romData, policy, "Victory Road reverse 2F->3F", ladder); err != nil {
+		return err
+	}
+
+	// The far-west 3F ladder lands on 2F's west side, from which the ordinary
+	// 2F->1F ladder is reachable. If the 3F switch has reset, solve only that
+	// live gate before taking the ladder.
+	west3F := world.Edge{
+		Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap,
+		WarpX: 2, WarpY: 0,
+	}
+	if !warpEdgeReachable(m, romData, west3F) {
+		if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad3FSwitch); err != nil {
+			return fmt.Errorf("skill: Route 23 League return open 3F west ladder: %w", err)
+		}
+	}
+	if err := traverseVictoryRoadReturnEdge(m, romData, policy, "Victory Road reverse 3F->2F west", west3F); err != nil {
+		return err
+	}
+
+	down1F := world.Edge{
+		Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad1FMap,
+		WarpX: 0, WarpY: 8,
+	}
+	if err := traverseVictoryRoadReturnEdge(m, romData, policy, "Victory Road reverse 2F->1F", down1F); err != nil {
+		return err
+	}
+	exit1F, err := victoryRoadExitEdge(romData, victoryRoad1FMap)
+	if err != nil {
+		return err
+	}
+	if err := traverseVictoryRoadReturnEdge(m, romData, policy, "Victory Road reverse 1F->Route 23", exit1F); err != nil {
+		return err
+	}
+
+	if got := m.Peek8(sym.CurMap); got != route23Map {
+		return fmt.Errorf("%w: skill: Route 23 League return bridge ended on map %#02x",
+			world.ErrTransitionExecutionStalled, got)
+	}
+	x, y = playerXY(m)
+	if route23LeagueReturnNeedsVictoryRoad(x, y) {
+		return fmt.Errorf("%w: skill: Route 23 League return bridge remained on the north cave component at (%d,%d)",
+			world.ErrTransitionExecutionStalled, x, y)
+	}
+	return nil
+}
+
 func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !currentStoryFacts(m).Route22RivalResolved {
 		if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
