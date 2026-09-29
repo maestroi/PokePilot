@@ -91,14 +91,14 @@ type replayIdentity struct {
 }
 
 type replayServer struct {
-	wallBase     string
-	romPath      string
-	romLibrary   *replayROMLibrary
-	streamBinary string
-	vaapi        bool
-	vaapiReason  string
-	ffmpegVAAPI  string
-	store        *artifactstore.S3
+	wallBase         string
+	romPath          string
+	romLibrary       *replayROMLibrary
+	streamBinary     string
+	vaapi            bool
+	vaapiReason      string
+	ffmpegVAAPI      string
+	store            *artifactstore.S3
 	wallHTTP         *http.Client
 	compositor       replayCompositor
 	semanticRenderer *compositor.SemanticRenderer
@@ -139,15 +139,15 @@ func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":         "ok",
-			"s3_configured":  s.store != nil,
-			"encoder":        s.encoderName(),
-			"vaapi":          s.vaapi,
-			"vaapi_reason":   s.vaapiReason,
+			"status":            "ok",
+			"s3_configured":     s.store != nil,
+			"encoder":           s.encoderName(),
+			"vaapi":             s.vaapi,
+			"vaapi_reason":      s.vaapiReason,
 			"renderer":          broadcastRendererVersion,
 			"semantic_renderer": compositor.PublicSemanticRendererVersion(),
-			"live_fps":       liveBroadcastFPS,
-			"active_renders": s.rendering.Load(),
+			"live_fps":          liveBroadcastFPS,
+			"active_renders":    s.rendering.Load(),
 		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
