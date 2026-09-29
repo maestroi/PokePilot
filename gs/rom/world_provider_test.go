@@ -251,3 +251,106 @@ func TestEarlyJohtoWorldProviderRoutesAzaleaThroughIlexToGoldenrod(t *testing.T)
 		}
 	}
 }
+
+func TestEarlyJohtoWorldProviderRoutesGoldenrodToEcruteak(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	names := []string{
+		"GOLDENROD_CITY",
+		"ROUTE_35",
+		"ROUTE_36",
+		"ROUTE_37",
+		"ECRUTEAK_CITY",
+	}
+	ids := make([]uint16, len(names))
+	for i, name := range names {
+		ids[i] = nativeID(t, name)
+	}
+	route, err := world.FindNativeRoute(graph, ids[0], ids[len(ids)-1])
+	if err != nil {
+		t.Fatalf("FindNativeRoute(Goldenrod -> Ecruteak): %v", err)
+	}
+	if len(route) != len(ids)-1 {
+		t.Fatalf("route has %d transitions, want %d: %#v", len(route), len(ids)-1, route)
+	}
+	for i, edge := range route {
+		if edge.From != ids[i] || edge.To != ids[i+1] {
+			t.Fatalf("route[%d] = %#04x -> %#04x, want %#04x -> %#04x", i, edge.From, edge.To, ids[i], ids[i+1])
+		}
+	}
+}
+
+func TestEarlyJohtoWorldProviderGoldenrodAndEcruteakServices(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	for _, pair := range [][2]string{
+		{"GOLDENROD_CITY", "GOLDENROD_GYM"},
+		{"GOLDENROD_CITY", "GOLDENROD_POKECENTER_1F"},
+		{"GOLDENROD_CITY", "GOLDENROD_DEPT_STORE_1F"},
+		{"ECRUTEAK_CITY", "ECRUTEAK_GYM"},
+		{"ECRUTEAK_CITY", "ECRUTEAK_POKECENTER_1F"},
+		{"ECRUTEAK_CITY", "ECRUTEAK_MART"},
+	} {
+		from := nativeID(t, pair[0])
+		to := nativeID(t, pair[1])
+		route, err := world.FindNativeRoute(graph, from, to)
+		if err != nil {
+			t.Fatalf("FindNativeRoute(%s -> %s): %v", pair[0], pair[1], err)
+		}
+		if len(route) != 1 || route[0].From != from || route[0].To != to {
+			t.Fatalf("%s -> %s route = %#v, want one transition", pair[0], pair[1], route)
+		}
+	}
+}
+
+func TestEarlyJohtoWorldProviderKeepsRealRoute36VioletConnection(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	route36 := nativeID(t, "ROUTE_36")
+	violet := nativeID(t, "VIOLET_CITY")
+
+	header, err := provider.ParseMap(route36)
+	if err != nil {
+		t.Fatalf("ParseMap(ROUTE_36): %v", err)
+	}
+	for _, connection := range header.Connections {
+		if connection.MapID == violet && connection.Dir == dirEast && connection.Offset == 0 {
+			return
+		}
+	}
+	t.Fatal("ROUTE_36 missing decomp east connection to VIOLET_CITY")
+}
+
+func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	for _, name := range []string{
+		"GOLDENROD_GYM",
+		"GOLDENROD_POKECENTER_1F",
+		"GOLDENROD_DEPT_STORE_1F",
+		"ROUTE_35_GOLDENROD_GATE",
+		"ROUTE_35",
+		"ROUTE_36",
+		"ROUTE_37",
+		"ECRUTEAK_CITY",
+		"ECRUTEAK_GYM",
+		"ECRUTEAK_POKECENTER_1F",
+		"ECRUTEAK_MART",
+	} {
+		id := nativeID(t, name)
+		info, ok := gsdata.Map(id)
+		if !ok {
+			t.Fatalf("generated catalog has no map %q", name)
+		}
+		blocks := make([]byte, int(info.WidthBlocks)*int(info.HeightBlocks))
+		if _, err := provider.Grid(id, blocks, 0); err != nil {
+			t.Fatalf("Grid(%s): %v", name, err)
+		}
+	}
+}

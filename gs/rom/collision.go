@@ -356,7 +356,7 @@ var gen2CollisionPermission = [256]uint8{
 func firstBadgeTileset(mapName string) (uint8, bool) {
 	switch mapName {
 	case "NEW_BARK_TOWN", "ROUTE_29", "CHERRYGROVE_CITY", "ROUTE_30", "ROUTE_31", "VIOLET_CITY",
-		"ROUTE_32":
+		"ROUTE_32", "ROUTE_35", "ROUTE_36", "ROUTE_37", "ECRUTEAK_CITY":
 		return 0x01, true
 	case "ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY":
 		return 0x02, true
@@ -364,23 +364,25 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x04, true
 	case "PLAYERS_HOUSE_1F":
 		return 0x05, true
-	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F":
+	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F",
+		"GOLDENROD_POKECENTER_1F", "ECRUTEAK_POKECENTER_1F":
 		return 0x06, true
-	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE":
+	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE",
+		"ROUTE_35_GOLDENROD_GATE":
 		return 0x07, true
 	case "ELMS_LAB":
 		return 0x09, true
 	case "MR_POKEMONS_HOUSE":
 		return 0x0a, true
-	case "CHERRYGROVE_MART", "VIOLET_MART":
+	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART":
 		return 0x0b, true
-	case "VIOLET_GYM", "AZALEA_GYM":
+	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM":
 		return 0x0e, true
 	case "KURTS_HOUSE":
 		return 0x0f, true
 	case "PLAYERS_HOUSE_2F":
 		return 0x13, true
-	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F":
+	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM":
 		return 0x14, true
 	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F":
 		return 0x15, true
