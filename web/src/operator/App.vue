@@ -10,12 +10,12 @@ import type { AppNavItem } from '../shared/types'
 import AnalyticsView from './AnalyticsView.vue'
 import FailuresView from './FailuresView.vue'
 import LiveView from './LiveView.vue'
+import MediaView from './MediaView.vue'
 import OperationsView from './OperationsView.vue'
 import RunArchiveView from './RunArchiveView.vue'
-import SpectatorView from './SpectatorView.vue'
 import ToolsView from './ToolsView.vue'
 
-const views = ['live', 'runs', 'failures', 'analytics', 'operations', 'spectator', 'tools'] as const
+const views = ['live', 'runs', 'failures', 'analytics', 'media', 'operations', 'tools'] as const
 type OperatorView = typeof views[number]
 
 const labels: Record<OperatorView, string> = {
@@ -23,8 +23,8 @@ const labels: Record<OperatorView, string> = {
   runs: 'Runs',
   failures: 'Failures',
   analytics: 'Analytics',
+  media: 'Media',
   operations: 'Operations',
-  spectator: 'Spectator',
   tools: 'Tools'
 }
 
@@ -33,8 +33,8 @@ const descriptions: Record<OperatorView, string> = {
   runs: 'Search completed runs, then bulk-delete older history or every run that still matches one failure.',
   failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
   analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
-  operations: 'Fleet health, workers, LLM deployments, paired experiments, and recent outcomes.',
-  spectator: 'Choose which runs are public, feature one as the default audience view, or open a run directly in spectator mode.',
+  media: 'Manage public replays, durable render jobs, publishing controls, and renderer assets and themes.',
+  operations: 'Fleet health, workers, LLM deployments, paired experiments, queues, and recent outcomes.',
   tools: 'Queue a new scripted or goal-driven run.'
 }
 
@@ -43,8 +43,8 @@ const eyebrows: Record<OperatorView, string> = {
   runs: 'Archive',
   failures: 'Triage',
   analytics: 'Telemetry',
+  media: 'Library',
   operations: 'System',
-  spectator: 'Audience',
   tools: 'Control'
 }
 
@@ -190,8 +190,8 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
     <RunArchiveView v-else-if="activeView === 'runs'" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" />
+    <MediaView v-else-if="activeView === 'media'" />
     <OperationsView v-else-if="activeView === 'operations'" />
-    <SpectatorView v-else-if="activeView === 'spectator'" />
     <ToolsView v-else-if="activeView === 'tools'" />
   </AppShell>
 </template>
