@@ -210,10 +210,13 @@ func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error)
 
 // normalizeRedOwnedExecutionResult gives validated, bounded owned actions a
 // portable fallback outcome when their native controller path returns an
-// untyped error. UseFieldItem/TeachTMHM, Buy, and Catch can all fail after
-// bounded work even though their owning controller has already returned the
-// game to a safe boundary. Marking that owned action blocked prevents a clean
-// controller/acquisition miss from becoming terminal unknown_failure. Typed
+// untyped error. UseFieldItem/TeachTMHM, Buy, Catch, and Heal can all fail
+// after bounded work even though their owning controller has already returned
+// the game to a safe boundary. Heal includes bounded Travel to a center, so an
+// untyped clean navigation/controller miss is a replan signal just like a
+// clean catch/acquisition miss, not a terminal runtime defect. Marking that
+// owned action blocked prevents a clean controller/acquisition miss from
+// becoming terminal unknown_failure. Typed
 // failures still win in NormalizeFailure, and an unsafe finish boundary or
 // unreadable final observation still overrides this fallback in the transaction
 // runtime.
@@ -224,7 +227,7 @@ func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err e
 			result.Battle = requiredBattleEvidenceFromRed(required.Outcome.Encounter, required.Outcome.Result)
 			result.Outcome = OutcomeBlocked
 		}
-		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindCatch) && result.Outcome == "" {
+		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindCatch || o.Kind == KindHeal) && result.Outcome == "" {
 			result.Outcome = OutcomeBlocked
 		}
 	}
