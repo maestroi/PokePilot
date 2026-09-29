@@ -12,7 +12,6 @@ import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import LLMDeploymentsPanel from './LLMDeploymentsPanel.vue'
 import PairedExperimentPanel from './PairedExperimentPanel.vue'
-import RenderJobsPanel from './RenderJobsPanel.vue'
 import {
   ageLabel,
   formatFrame,
@@ -288,8 +287,6 @@ async function confirmForceEnd(): Promise<void> {
         </Panel>
       </div>
     </ResourceState>
-
-    <RenderJobsPanel />
 
     <div class="space-y-3">
       <LLMDeploymentsPanel />
