@@ -116,3 +116,69 @@ func TestS3FromEnvRejectsPartialConfig(t *testing.T) {
 		t.Fatalf("error = %v, want missing access key", err)
 	}
 }
+
+func TestPresignGetObjectIsDeterministicAndScoped(t *testing.T) {
+	store, err := NewS3(S3Config{
+		Endpoint:  "https://objects.example.test:9443/base",
+		Bucket:    "pokepilot",
+		Region:    "eu-west-1",
+		AccessKey: "test-access",
+		SecretKey: "test-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.now = func() time.Time {
+		return time.Date(2026, 9, 29, 7, 30, 0, 0, time.UTC)
+	}
+
+	got, err := store.PresignGetObject("runs/run-1/segment 01.mp4", 2*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Scheme != "https" || u.Host != "objects.example.test:9443" {
+		t.Fatalf("url host=%s://%s", u.Scheme, u.Host)
+	}
+	if u.Path != "/base/pokepilot/runs/run-1/segment 01.mp4" {
+		t.Fatalf("path=%q", u.Path)
+	}
+	q := u.Query()
+	if q.Get("X-Amz-Algorithm") != "AWS4-HMAC-SHA256" {
+		t.Fatalf("algorithm=%q", q.Get("X-Amz-Algorithm"))
+	}
+	if q.Get("X-Amz-Credential") != "test-access/20260929/eu-west-1/s3/aws4_request" {
+		t.Fatalf("credential=%q", q.Get("X-Amz-Credential"))
+	}
+	if q.Get("X-Amz-Date") != "20260929T073000Z" || q.Get("X-Amz-Expires") != "7200" {
+		t.Fatalf("date/expires=%q/%q", q.Get("X-Amz-Date"), q.Get("X-Amz-Expires"))
+	}
+	if q.Get("X-Amz-SignedHeaders") != "host" || q.Get("X-Amz-Signature") == "" {
+		t.Fatalf("signed headers/signature=%q/%q", q.Get("X-Amz-SignedHeaders"), q.Get("X-Amz-Signature"))
+	}
+
+	again, err := store.PresignGetObject("runs/run-1/segment 01.mp4", 2*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != got {
+		t.Fatalf("presigned URL changed for same inputs:\n%s\n%s", got, again)
+	}
+}
+
+func TestPresignGetObjectRejectsInvalidTTL(t *testing.T) {
+	store, err := NewS3(S3Config{
+		Endpoint: "https://objects.example.test", Bucket: "pokepilot", AccessKey: "a", SecretKey: "b",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ttl := range []time.Duration{0, -time.Second, 8 * 24 * time.Hour} {
+		if _, err := store.PresignGetObject("x", ttl); err == nil {
+			t.Fatalf("ttl %s unexpectedly accepted", ttl)
+		}
+	}
+}
