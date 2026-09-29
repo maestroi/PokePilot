@@ -14,6 +14,9 @@ type StarterMode =
   | 'squirtle'
   | 'charmander'
   | 'bulbasaur'
+  | 'chikorita'
+  | 'cyndaquil'
+  | 'totodile'
   | 'random'
   | 'random:basic'
   | 'random:any'
@@ -134,9 +137,12 @@ const specificStarter = ref('')
 const isLLM = computed(() => form.planner === 'llm')
 const isTetris = computed(() => form.game === 'tetris')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
+const isGen2 = computed(() => form.game === 'pokemon-gold' || form.game === 'pokemon-silver')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
 
 watch(() => form.game, (game, previous) => {
+  starterMode.value = 'default'
+  specificStarter.value = ''
   if (game === 'tetris') {
     form.planner = 'policy'
     form.starter = ''
@@ -161,6 +167,12 @@ watch(() => form.game, (game, previous) => {
     decision.failures = true
     decision.placements = false
   }
+  if (game === 'pokemon-gold' || game === 'pokemon-silver') {
+    form.planner = 'llm'
+    form.goal = 'Earn 3 badges.'
+  } else if (previous === 'pokemon-gold' || previous === 'pokemon-silver') {
+    form.goal = defaultGoalForPlayStyle('adventure')
+  }
 })
 
 const tetrisGoals = [
@@ -176,6 +188,7 @@ const tetrisGoals = [
 function starterRequest(): string {
   if (isTetris.value) return ''
   if (isYellow.value) return 'pikachu'
+  if (isGen2.value) return starterMode.value === 'default' ? '' : starterMode.value
   if (starterMode.value === 'specific') return specificStarter.value.trim()
   if (starterMode.value === 'default') return isLLM.value ? '' : 'squirtle'
   return starterMode.value
@@ -191,7 +204,7 @@ function runURL(runID: string): string {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (!isTetris.value && !isYellow.value && isSpecificStarter.value && !specificStarter.value.trim()) {
+  if (!isTetris.value && !isYellow.value && !isGen2.value && isSpecificStarter.value && !specificStarter.value.trim()) {
     error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
     return
   }
@@ -241,8 +254,9 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
-          <select v-model="form.planner" :disabled="isTetris" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 disabled:opacity-60">
+          <select v-model="form.planner" :disabled="isTetris || isGen2" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 disabled:opacity-60">
             <option v-if="isTetris" value="policy">Play Tetris · bounded placement policy</option>
+            <option v-else-if="isGen2" value="llm">Play Gen2 · supported progression frontier</option>
             <template v-else>
               <option value="llm">Play the game</option>
               <option value="scripted">Walk to a place</option>
@@ -256,6 +270,8 @@ async function submit(): Promise<void> {
             <option value="pokemon-red">Pokémon Red</option>
             <option value="pokemon-blue">Pokémon Blue</option>
             <option value="pokemon-yellow">Pokémon Yellow</option>
+            <option value="pokemon-gold">Pokémon Gold</option>
+            <option value="pokemon-silver">Pokémon Silver</option>
             <option value="tetris">Tetris</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">The worker leases the matching mounted cartridge. Only games with a registered runtime profile are selectable.</span>
@@ -265,6 +281,12 @@ async function submit(): Promise<void> {
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
           <input v-if="isTetris" value="Not used" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
           <input v-else-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
+          <select v-else-if="isGen2" v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="default">Let LLM decide</option>
+            <option value="chikorita">Chikorita</option>
+            <option value="cyndaquil">Cyndaquil</option>
+            <option value="totodile">Totodile</option>
+          </select>
           <select v-else v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <optgroup label="Default">
               <option value="default">{{ isLLM ? 'Let LLM decide' : 'Default · Squirtle' }}</option>
@@ -283,10 +305,10 @@ async function submit(): Promise<void> {
               <option value="specific">Specific Pokémon…</option>
             </optgroup>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Tetris starts directly through its native mode menus.' : (isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Tetris starts directly through its native mode menus.' : (isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : (isGen2 ? 'Gold/Silver use the cartridge-native Elm starter flow; no ROM patching is used.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.')) }}</span>
         </label>
 
-        <label v-if="isSpecificStarter && !isYellow && !isTetris" class="block">
+        <label v-if="isSpecificStarter && !isYellow && !isGen2 && !isTetris" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Specific Pokémon</span>
           <input v-model="specificStarter" placeholder="e.g. pikachu, dragonite, snorlax" autocomplete="off" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
           <span class="mt-1 block text-[11px] text-slate-600">Enter any valid Generation I Pokémon name.</span>
