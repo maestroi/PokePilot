@@ -34,6 +34,11 @@ export function spectatorRunPath(runID = ''): string {
   return id ? `/runs/${encodeURIComponent(id)}` : '/'
 }
 
+export function replayPath(runID = ''): string {
+  const id = runID.trim()
+  return id ? `/replays/${encodeURIComponent(id)}` : '/replays'
+}
+
 export function runIDFromLocation(pathname: string, search = ''): string {
   const prefix = '/runs/'
   if (pathname.startsWith(prefix)) {
@@ -51,6 +56,12 @@ export function spectatorURL(base: string, runID = ''): string {
   const origin = normalizeBase(base)
   if (!origin) return spectatorRunPath(runID)
   return `${origin}${spectatorRunPath(runID)}`
+}
+
+export function replayURL(base: string, runID = ''): string {
+  const origin = normalizeBase(base)
+  if (!origin) return replayPath(runID)
+  return `${origin}${replayPath(runID)}`
 }
 
 export function localSpectatorBase(currentHref: string): string {

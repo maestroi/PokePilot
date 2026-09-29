@@ -186,7 +186,7 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
       </a>
     </template>
 
-    <LiveView v-if="activeView === 'live'" />
+    <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
     <RunArchiveView v-else-if="activeView === 'runs'" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" />

@@ -45,8 +45,13 @@ import {
 import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
 import { canRenderModernScene } from '../shared/semanticRenderer'
 import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
+import { replayURL } from '../shared/urls'
 
 type RendererMode = 'modern' | 'classic'
+
+const props = defineProps<{
+  publicBase?: string
+}>()
 
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
@@ -128,6 +133,12 @@ watch(selectedRunID, async (runID) => {
     if (id === detailSerial) historicalError.value = cause instanceof Error ? cause.message : 'Run not found'
   }
 }, { immediate: true })
+
+const publicReplayHref = computed(() => {
+  const run = selectedRun.value
+  if (!run?.replay_available || !props.publicBase) return ''
+  return replayURL(props.publicBase, run.run_id)
+})
 
 const selectedFrameID = computed(() => selectedRun.value?.run_id || '')
 const isLiveFrame = computed(() => isLiveStatus(selectedRun.value?.status))
@@ -910,6 +921,17 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
             <strong class="mt-0.5 block font-mono text-[11px]">{{ selectedRun.stats?.round ?? selectedRun.stats?.rounds ?? '—' }}</strong>
           </div>
           <div class="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
+            <a
+              v-if="publicReplayHref"
+              :href="publicReplayHref"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1 rounded-sm bg-violet-300/12 px-1.5 py-1 text-[10px] font-bold text-violet-100 ring-1 ring-violet-300/25 hover:bg-violet-300/18"
+              title="Open this run's public replay"
+            >
+              <PlayIcon class="size-3" aria-hidden="true" />
+              Watch replay
+            </a>
             <button type="button" class="rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5" @click="copyRunID">{{ copyState || 'Copy' }}</button>
             <button type="button" :disabled="cloning" class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 disabled:opacity-50" @click="cloneSelected">
               <Square2StackIcon class="size-3" aria-hidden="true" /> {{ cloning ? 'Cloning…' : (cloneState || 'Clone') }}

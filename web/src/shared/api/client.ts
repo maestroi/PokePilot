@@ -9,6 +9,7 @@ import type {
   ModelDeployment,
   ModelDeploymentInput,
   ModelRegistrySnapshot,
+  MediaRenderJob,
   MediaRenderJobList,
   ProgrammingEntry,
   ProgrammingSnapshot,
@@ -80,6 +81,14 @@ export function getDashboard(params: DashboardQuery = {}, signal?: AbortSignal):
 
 export function getMediaRenderJobs(limit = 50, signal?: AbortSignal): Promise<MediaRenderJobList> {
   return requestJSON<MediaRenderJobList>(`/v1/media/render-jobs?limit=${encodeURIComponent(String(limit))}`, { signal })
+}
+
+export function retryMediaRenderJob(id: string, signal?: AbortSignal): Promise<MediaRenderJob> {
+  return requestJSON<MediaRenderJob>(`/v1/media/render-jobs/${encodeURIComponent(id)}/retry`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
 }
 
 export function getProgramming(signal?: AbortSignal): Promise<ProgrammingSnapshot> {
