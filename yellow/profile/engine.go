@@ -155,6 +155,10 @@ func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool
 	return engine.NativeFieldMove(id)
 }
 
+func (*Profile) SupportsLegacyTMHMTeaching() bool {
+	return engine.SupportsLegacyTMHMTeaching()
+}
+
 // Every capability the shared Gen-I runtime resolves from a profile must be
 // delegated explicitly. A missing method is invisible at compile time and only
 // surfaces at runtime as a "profile does not expose X semantics" stall, so the
