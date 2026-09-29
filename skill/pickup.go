@@ -50,7 +50,7 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 
 const (
 	pickupFaceRecoveryAttempts         = 3
-	pickupFaceInterruptionSettleFrames = 240
+	pickupFaceInterruptionSettleFrames = 1200
 )
 
 // waitForPickupFaceInterruption passively owns the short gap after Face gives
@@ -145,45 +145,72 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 		return fmt.Errorf("skill: Pickup: make room for item %#02x: %w", want, err)
 	}
 	var faceErr error
+	opened := false
 	for attempt := 1; attempt <= pickupFaceRecoveryAttempts; attempt++ {
 		faceErr = Face(m, x, y)
-		if faceErr == nil {
-			break
+		if faceErr != nil {
+			// Face can time out just before an encounter becomes semantically
+			// live. Passively settle that race before deciding this was a genuine
+			// local navigation failure.
+			if interruptErr := waitForPickupFaceInterruption(
+				m.StepFrame,
+				func() error { return movementInterruption(m) },
+			); interruptErr == nil {
+				return fmt.Errorf("skill: Pickup: face item at (%d,%d): %v: %w", x, y, faceErr, ErrNavigationStalled)
+			}
+			if err := recoverPickupInteractionInterruption(m, policy); err != nil {
+				return fmt.Errorf("skill: Pickup: recover interruption before facing item at (%d,%d): %w", x, y, err)
+			}
+			if err := approachViaTravel(m, romData, x, y, policy); err != nil {
+				return err
+			}
+			if attempt == pickupFaceRecoveryAttempts {
+				return pickupFaceExhaustedError(x, y, faceErr)
+			}
+			continue
 		}
 
-		// Face can time out just before an encounter becomes semantically live.
-		// Passively settle that race before deciding this was a genuine idle
-		// interaction/controller failure. No input is sent and arbitrary choices
-		// remain untouched.
-		if interruptErr := waitForPickupFaceInterruption(
-			m.StepFrame,
-			func() error { return movementInterruption(m) },
-		); interruptErr == nil {
-			return fmt.Errorf("skill: Pickup: %w", faceErr)
+		// The same race also exists after Face succeeds: the last turn/approach
+		// step can commit an encounter whose battle state becomes visible only
+		// after we press A. Wait for either the intended item text or a semantic
+		// ownership change, and recover the latter before retrying (#2213).
+		m.Tap(emu.A, 3, 7)
+		var interrupted error
+		_, openErr := m.StepUntil(talkOpenBudget, func(mm *emu.Emu) bool {
+			if mm.Peek8(sym.FontLoaded) != 0 {
+				return true
+			}
+			if err := movementInterruption(mm); err != nil {
+				interrupted = err
+				return true
+			}
+			return false
+		})
+		if m.Peek8(sym.FontLoaded) != 0 {
+			opened = true
+			break
+		}
+		if interrupted == nil {
+			interrupted = movementInterruption(m)
+		}
+		if interrupted == nil {
+			if openErr != nil {
+				return fmt.Errorf("skill: Pickup: A at (%d,%d) opened no text box: %w", x, y, ErrNoDialogue)
+			}
+			return fmt.Errorf("skill: Pickup: A at (%d,%d) returned without text or interruption: %w", x, y, ErrNavigationStalled)
 		}
 		if err := recoverPickupInteractionInterruption(m, policy); err != nil {
-			return fmt.Errorf("skill: Pickup: recover interruption before facing item at (%d,%d): %w", x, y, err)
+			return fmt.Errorf("skill: Pickup: recover interruption before item text at (%d,%d): %w", x, y, err)
 		}
-		// A trainer fight can move the player a tile and a blackout can move
-		// maps entirely. Re-establish the normal Pickup approach rather than
-		// assuming the pre-interruption position is still valid.
 		if err := approachViaTravel(m, romData, x, y, policy); err != nil {
 			return err
 		}
-		// Never return while the interruption that stole Face is still live.
-		// If every bounded attempt was intercepted, recovery above has restored
-		// a clean boundary; report a typed navigation stall so the enclosing
-		// story objective can replan instead of terminating as unknown_failure.
 		if attempt == pickupFaceRecoveryAttempts {
-			return pickupFaceExhaustedError(x, y, faceErr)
+			return pickupFaceExhaustedError(x, y, fmt.Errorf("item text opening interrupted: %w", interrupted))
 		}
 	}
-
-	m.Tap(emu.A, 3, 7)
-	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		return m.Peek8(sym.FontLoaded) != 0
-	}); err != nil {
-		return fmt.Errorf("skill: Pickup: A at (%d,%d) opened no text box: %w", x, y, ErrNoDialogue)
+	if !opened {
+		return pickupFaceExhaustedError(x, y, faceErr)
 	}
 
 	// Page the box closed. Before every A, check for a two-option menu and
