@@ -49,7 +49,7 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 }
 
 const (
-	pickupFaceRecoveryAttempts          = 3
+	pickupFaceRecoveryAttempts         = 3
 	pickupFaceInterruptionSettleFrames = 240
 )
 
