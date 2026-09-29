@@ -24,6 +24,13 @@ func TestWaitForPickupFaceInterruptionCatchesDelayedBattle(t *testing.T) {
 	}
 }
 
+func TestPickupFaceExhaustionIsRecoverableNavigationStall(t *testing.T) {
+	err := pickupFaceExhaustedError(6, 8, errors.New("face timed out"))
+	if !errors.Is(err, ErrNavigationStalled) {
+		t.Fatalf("exhaustion = %v, want ErrNavigationStalled", err)
+	}
+}
+
 func TestWaitForPickupFaceInterruptionReturnsNilAfterIdleSettle(t *testing.T) {
 	frames := 0
 	err := waitForPickupFaceInterruption(
