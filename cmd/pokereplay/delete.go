@@ -29,6 +29,7 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
 				keySet[replayCacheKey(runID, artifact)] = struct{}{}
 				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
+				keySet[s.replayCacheKeyForMode(runID, recording, replayModeSemantic)] = struct{}{}
 			}
 			continue
 		}
@@ -62,6 +63,7 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
 				keySet[replayCacheKey(runID, artifact)] = struct{}{}
 				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
+				keySet[s.replayCacheKeyForMode(runID, recording, replayModeSemantic)] = struct{}{}
 			}
 			continue
 		}
