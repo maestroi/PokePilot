@@ -1,6 +1,20 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
+
+func spectatorPublicCapabilities(game string) []string {
+	switch strings.ToLower(strings.TrimSpace(game)) {
+	case "pokemon-red", "red":
+		return []string{"live", "replay", "worldMap", "stats"}
+	case "pokemon-blue", "blue", "pokemon-yellow", "yellow", "pokemon-gold", "gold", "pokemon-silver", "silver", "tetris":
+		return []string{"live", "replay", "stats"}
+	default:
+		return []string{"live", "replay"}
+	}
+}
 
 // MarshalJSON is deliberately explicit at the public trust boundary. In
 // particular, spectatorRun currently holds farm.Player internally so it can
@@ -74,6 +88,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		RunID          string                `json:"run_id"`
 		Status         string                `json:"status"`
 		Game           string                `json:"game,omitempty"`
+		PublicCapabilities []string          `json:"public_capabilities,omitempty"`
 		Starter        string                `json:"starter,omitempty"`
 		Dest           string                `json:"dest,omitempty"`
 		Goal           string                `json:"goal,omitempty"`
@@ -241,6 +256,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		RunID:          run.RunID,
 		Status:         run.Status,
 		Game:           run.Game,
+		PublicCapabilities: spectatorPublicCapabilities(run.Game),
 		Starter:        run.Starter,
 		Dest:           run.Dest,
 		Goal:           run.Goal,
