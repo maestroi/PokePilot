@@ -44,7 +44,7 @@ type challengeVoteCandidate struct {
 	ChallengeID      string `json:"challenge_id"`
 	ChallengeVersion int    `json:"challenge_version"`
 	ChallengeName    string `json:"challenge_name"`
-	Votes             int    `json:"votes"`
+	Votes            int    `json:"votes"`
 }
 
 type challengeVoteBallot struct {
@@ -53,17 +53,17 @@ type challengeVoteBallot struct {
 }
 
 type challengeVoteSession struct {
-	ID           string                   `json:"id"`
-	Status       string                   `json:"status"`
-	OpenedAt     int64                    `json:"opened_at"`
-	ClosesAt     int64                    `json:"closes_at,omitempty"`
-	ClosedAt     int64                    `json:"closed_at,omitempty"`
-	TiePolicy    string                   `json:"tie_policy"`
-	Candidates   []challengeVoteCandidate `json:"candidates"`
-	WinnerID     string                   `json:"winner_id,omitempty"`
-	QueueEntryID string                   `json:"queue_entry_id,omitempty"`
-	SourceTotals map[string]int           `json:"source_totals,omitempty"`
-	SourceLimits map[string]int           `json:"source_limits,omitempty"`
+	ID           string                         `json:"id"`
+	Status       string                         `json:"status"`
+	OpenedAt     int64                          `json:"opened_at"`
+	ClosesAt     int64                          `json:"closes_at,omitempty"`
+	ClosedAt     int64                          `json:"closed_at,omitempty"`
+	TiePolicy    string                         `json:"tie_policy"`
+	Candidates   []challengeVoteCandidate       `json:"candidates"`
+	WinnerID     string                         `json:"winner_id,omitempty"`
+	QueueEntryID string                         `json:"queue_entry_id,omitempty"`
+	SourceTotals map[string]int                 `json:"source_totals,omitempty"`
+	SourceLimits map[string]int                 `json:"source_limits,omitempty"`
 	Ballots      map[string]challengeVoteBallot `json:"ballots,omitempty"`
 }
 
@@ -153,7 +153,7 @@ func voteSnapshot(in challengeVoteSession) challengeVoteSnapshot {
 		ID: in.ID, Status: in.Status, OpenedAt: in.OpenedAt, ClosesAt: in.ClosesAt,
 		ClosedAt: in.ClosedAt, TiePolicy: in.TiePolicy, WinnerID: in.WinnerID,
 		QueueEntryID: in.QueueEntryID,
-		Candidates: append([]challengeVoteCandidate(nil), in.Candidates...),
+		Candidates:   append([]challengeVoteCandidate(nil), in.Candidates...),
 		SourceTotals: cloneStringIntMap(in.SourceTotals),
 	}
 }
