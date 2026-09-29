@@ -110,3 +110,28 @@ func putBattlePP(mem *fakeMemory, pp [4]byte) {
 		mem[int(sym.BattleMonPP)+slot] = value
 	}
 }
+
+// TestDecodeBattleExecutionIgnoresScriptedOldManMenu pins the Viridian catch
+// tutorial shape seen in run-1jc1gst1w5tv2f. The Old Man battle renders the
+// ordinary FIGHT label, but its menu registers still belong to the scripted
+// item-list sequence (wMaxMenuItem=4). Battle must leave that screen to the ROM
+// instead of treating it as a player-owned command menu. A real command menu
+// with the same tiles and wMaxMenuItem=1 remains actionable.
+func TestDecodeBattleExecutionIgnoresScriptedOldManMenu(t *testing.T) {
+	var mem fakeMemory
+	for i := 0; i < 360; i++ {
+		mem[int(sym.TileMap)+i] = 0x7f
+	}
+	mem[int(sym.IsInBattle)] = 1
+	putTileText(&mem, 14*20+9, battleMainMenuMarker)
+
+	mem[int(sym.MaxMenuItem)] = 4
+	if got := New().DecodeBattleExecution(&mem).Phase; got == game.BattleExecutionMainMenu {
+		t.Fatalf("scripted Old Man menu decoded as player command menu: phase=%q", got)
+	}
+
+	mem[int(sym.MaxMenuItem)] = redBattleMenuCommandMax
+	if got := New().DecodeBattleExecution(&mem).Phase; got != game.BattleExecutionMainMenu {
+		t.Fatalf("real command menu phase=%q want %q", got, game.BattleExecutionMainMenu)
+	}
+}
