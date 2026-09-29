@@ -10,10 +10,10 @@
   let historyTotal=0;
   let historyPage=0;
   let historyLoaded=false;
-  let historyFacets={outcomes:[],hows:[],starters:[]};
+  let historyFacets={games:[],outcomes:[],hows:[],starters:[]};
   let selected="";
   let loadSerial=0;
-  const filters={outcome:"",how:"",starter:""};
+  const filters={game:"",outcome:"",how:"",starter:""};
 
   const esc=(v)=>String(v??"").replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const activeURL="/v1/dashboard?active=1";
@@ -43,6 +43,7 @@
     q.set("limit",String(PAGE));
     q.set("offset",String(Math.max(0,page)*PAGE));
     q.set("facets","1");
+    if(filters.game)q.set("game",filters.game);
     if(filters.outcome)q.set("outcome",filters.outcome);
     if(filters.how)q.set("how",filters.how);
     if(filters.starter)q.set("starter",filters.starter);
@@ -141,6 +142,16 @@
     try{return new Date(sec*1000).toLocaleString();}catch(_){return "—";}
   }
   function howLabel(run){return run&&run.planner==="scripted"?"walk":"play"}
+  function gameLabel(run){
+    switch(String(run&&run.game||"pokemon-red").toLowerCase()){
+      case "pokemon-blue":return "Pokémon Blue";
+      case "pokemon-yellow":return "Pokémon Yellow";
+      case "pokemon-gold":return "Pokémon Gold";
+      case "pokemon-silver":return "Pokémon Silver";
+      case "tetris":return "Tetris";
+      default:return "Pokémon Red";
+    }
+  }
   function starterLabel(run){return String(run&&run.starter|| (run&&run.game==="pokemon-yellow"?"pikachu":(run&&run.planner==="scripted"?"squirtle":"LLM picks")));}
   function whereLabel(run){
     if(run&&run.planner==="scripted"&&run.dest)return run.dest;
@@ -165,11 +176,13 @@
 
   function renderFilters(){
     const el=document.getElementById("hist-filters");if(!el)return;
+    const games=historyFacets.games||[];
     const outcomes=historyFacets.outcomes||[];
     const hows=historyFacets.hows||[];
     const starters=historyFacets.starters||[];
-    if(!outcomes.length&&!hows.length&&!starters.length){el.innerHTML='<i data-paged-history-owner hidden></i>';return;}
+    if(!games.length&&!outcomes.length&&!hows.length&&!starters.length){el.innerHTML='<i data-paged-history-owner hidden></i>';return;}
     let html='<i data-paged-history-owner hidden></i>';
+    html+=`<div class="filter-group"><span>game</span>${filterButton("game","","all")}`+games.map((v)=>filterButton("game",v,gameLabel({game:v}))).join("")+`</div>`;
     html+=`<div class="filter-group"><span>ended</span>${filterButton("outcome","","all")}`+outcomes.map((v)=>filterButton("outcome",v,v)).join("")+`</div>`;
     html+=`<div class="filter-group"><span>how</span>${filterButton("how","","all")}`+hows.map((v)=>filterButton("how",v,v)).join("")+`</div>`;
     html+=`<div class="filter-group"><span>starter</span>${filterButton("starter","","all")}`+starters.map((v)=>filterButton("starter",v,v)).join("")+`</div>`;
@@ -178,14 +191,14 @@
 
   function renderRows(){
     const el=document.getElementById("history");if(!el)return;
-    const hasFilter=Boolean(filters.outcome||filters.how||filters.starter);
+    const hasFilter=Boolean(filters.game||filters.outcome||filters.how||filters.starter);
     if(!historyRows.length){
       el.innerHTML=`<i data-paged-history-owner hidden></i><p class="empty">${historyTotal===0&&hasFilter?"No runs match these filters":"Nothing finished yet"}</p>`;
       return;
     }
     el.innerHTML='<i data-paged-history-owner hidden></i>'+historyRows.map((run)=>{
       const id=runID(run);const chosen=id===selected?" selected":"";const out=outcomeLabel(run);
-      return `<div class="hist-row${chosen}"><button type="button" class="hist" data-run="${esc(id)}"><span class="hist-who"><span class="hist-when">${esc(whenLabel(run))}</span><span class="hist-id">${esc(id)}</span></span><span class="chips"><span class="chip">${esc(howLabel(run))}</span><span class="chip">${esc(starterLabel(run))}</span></span><span class="hist-where">${esc(whereLabel(run))}</span><span class="hist-out">${issueHTML(run.issue)}<span class="hist-outcome" title="${esc(out)}">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(id)}">Delete</button></div>`;
+      return `<div class="hist-row${chosen}"><button type="button" class="hist" data-run="${esc(id)}"><span class="hist-who"><span class="hist-when">${esc(whenLabel(run))}</span><span class="hist-id">${esc(id)}</span></span><span class="chips"><span class="chip">${esc(gameLabel(run))}</span><span class="chip">${esc(howLabel(run))}</span><span class="chip">${esc(starterLabel(run))}</span></span><span class="hist-where">${esc(whereLabel(run))}</span><span class="hist-out">${issueHTML(run.issue)}<span class="hist-outcome" title="${esc(out)}">${esc(out)}</span></span></button><button type="button" class="hist-del" data-delete="${esc(id)}">Delete</button></div>`;
     }).join("");
   }
 
