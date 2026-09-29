@@ -84,6 +84,12 @@ func TestPrepareDebugBuildsBoundedDeterministicPacket(t *testing.T) {
 				"issue": map[string]any{
 					"issue_number": 42, "issue_url": "https://example.test/issues/42",
 					"status": "open", "verification_state": "regressed",
+					"solver_attempts": []map[string]any{
+						{"backend": "old", "state": "no_pr", "note": "oldest"},
+						{"backend": "qwen", "state": "no_pr", "note": "wrong layer"},
+						{"backend": "cursor", "state": "pr_opened", "pr_number": 40},
+						{"backend": "qwen", "state": "agent_failed", "note": "timeout"},
+					},
 				},
 			}})
 		case "/v1/runs/run-debug/artifacts/" + reproArtifact.Name + "/content":
@@ -111,6 +117,9 @@ func TestPrepareDebugBuildsBoundedDeterministicPacket(t *testing.T) {
 	}
 	if packet.Triage.Key != "family-key" || packet.Triage.IssueNumber != 42 || !packet.Triage.Actionable {
 		t.Fatalf("triage = %+v", packet.Triage)
+	}
+	if len(packet.Triage.SolverAttempts) != 3 || packet.Triage.SolverAttempts[0].Note != "wrong layer" {
+		t.Fatalf("solver attempts = %+v", packet.Triage.SolverAttempts)
 	}
 	if packet.Failure.Cause != "navigation_stalled" || packet.Failure.Objective == "" {
 		t.Fatalf("failure = %+v", packet.Failure)
