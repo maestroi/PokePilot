@@ -483,6 +483,16 @@ func replaySegmentWindowDuration(segment replayVideoSegment) time.Duration {
 	return time.Duration(end-start) * time.Millisecond
 }
 
+func replayAttemptsDuration(attempts []preparedReplayAttempt) time.Duration {
+	var total time.Duration
+	for _, attempt := range attempts {
+		for _, segment := range attempt.Segments {
+			total += replaySegmentWindowDuration(segment)
+		}
+	}
+	return total
+}
+
 func (s *replayServer) renderLegacyReplay(
 	ctx context.Context,
 	runID string,
