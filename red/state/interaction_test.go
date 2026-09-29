@@ -142,3 +142,10 @@ func TestDecodeInteractionBattleBagWithoutFontLoaded(t *testing.T) {
 		t.Fatalf("DecodeInteraction kind = %q, want no list without drawn text outside battle", got.Kind)
 	}
 }
+
+func TestDecodeTwoOptionMenuRejectsShortBagList(t *testing.T) {
+	m := interactionMenuFixture(1, 0, itemListMenuID, listMenuWatchedKeys)
+	if got := DecodeTwoOptionMenu(m); got != nil {
+		t.Fatalf("DecodeTwoOptionMenu = %+v, want nil for a one-item bag list", got)
+	}
+}
