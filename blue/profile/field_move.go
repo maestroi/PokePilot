@@ -13,3 +13,7 @@ func (p *Profile) DecodeFieldMoveMenu(r game.MemoryReader) game.FieldMoveMenuSta
 func (p *Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool) {
 	return p.engine.NativeFieldMove(id)
 }
+
+func (p *Profile) SupportsLegacyTMHMTeaching() bool {
+	return p.engine.SupportsLegacyTMHMTeaching()
+}
