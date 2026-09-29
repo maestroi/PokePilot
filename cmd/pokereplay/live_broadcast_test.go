@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/media/compositor"
 )
 
 func testLivePNG(t *testing.T) []byte {
@@ -58,8 +59,8 @@ func TestRenderLiveBroadcastFrameUsesBroadcastLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode live jpeg: %v", err)
 	}
-	if got := img.Bounds().Size(); got.X != broadcastWidth || got.Y != broadcastHeight {
-		t.Fatalf("live frame size=%v want=%dx%d", got, broadcastWidth, broadcastHeight)
+	if got := img.Bounds().Size(); got.X != compositor.OutputWidth || got.Y != compositor.OutputHeight {
+		t.Fatalf("live frame size=%v want=%dx%d", got, compositor.OutputWidth, compositor.OutputHeight)
 	}
 }
 
@@ -172,7 +173,7 @@ func TestLiveBroadcastStreamReconnectsAndEndsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first live frame is not jpeg: %v", err)
 	}
-	if got := img.Bounds().Size(); got.X != broadcastWidth || got.Y != broadcastHeight {
+	if got := img.Bounds().Size(); got.X != compositor.OutputWidth || got.Y != compositor.OutputHeight {
 		t.Fatalf("stream frame size=%v", got)
 	}
 

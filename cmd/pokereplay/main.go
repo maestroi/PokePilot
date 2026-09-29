@@ -33,6 +33,8 @@ import (
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/media/compositor"
+	mediasegment "github.com/maestroi/pokepilot/media/segment"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
 
@@ -121,7 +123,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		streamBinary: streamBinary,
 		store:        store,
 		wallHTTP:     &http.Client{Timeout: wallTimeout},
-		compositor:   &ffmpegBroadcastCompositor{binary: "ffmpeg"},
+		compositor:   compositor.NewFFmpeg("ffmpeg", nil),
 		jobs:         make(map[string]replayStatus),
 		liveSessions: make(map[string]*liveBroadcastSession),
 	}
@@ -711,23 +713,7 @@ func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, reco
 }
 
 func concatReplaySegments(ctx context.Context, dir string, videos []string, destination string) error {
-	var manifest strings.Builder
-	for _, video := range videos {
-		escaped := strings.ReplaceAll(video, "'", "'\\''")
-		fmt.Fprintf(&manifest, "file '%s'\n", escaped)
-	}
-	manifestPath := pathJoinOS(dir, "segments.txt")
-	if err := os.WriteFile(manifestPath, []byte(manifest.String()), 0o600); err != nil {
-		return fmt.Errorf("write replay concat manifest: %w", err)
-	}
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", manifestPath, "-c", "copy", "-movflags", "+faststart", destination)
-	output := &replayOutputTail{}
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("concat replay segments: %w: %s", err, strings.TrimSpace(output.String()))
-	}
-	return nil
+	return mediasegment.ConcatFiles(ctx, dir, videos, destination, nil)
 }
 
 func (s *replayServer) downloadRecording(ctx context.Context, runID string, recording artifactRef, destination string, attempts ...int) error {

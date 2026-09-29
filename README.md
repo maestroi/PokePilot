@@ -185,6 +185,7 @@ Details in `deploy/README.md`.
 | `docs/RAM_FORENSICS.md` | Failure RAM capture |
 | `docs/S3_ARTIFACT_STORAGE.md` | Farm artifact object storage |
 | `docs/RUN_INSPECTOR.md` | Run inspector, artifacts, and deterministic replay |
+| `docs/MEDIA_ENGINE.md` | Replay/media package boundaries and dependency direction |
 | `docs/ROAD-TO-ELITE-FOUR.md` | Everything between Cerulean City and the Pokémon League |
 | `docs/RUNNOTES.md` | Permanent per-task measurements |
 | `RUNNOTES.md` | Short handoff for the next task |
