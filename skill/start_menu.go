@@ -68,6 +68,13 @@ func waitForStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error 
 
 // openStartMenuEntry opens the active game's START menu and selects an entry
 // by semantic identity. The profile owns the current cursor index.
+// OpenStartMenuEntry opens and selects one semantic START-menu entry using
+// the active profile. Game adapters may use it for generation-specific flows
+// without duplicating menu ordering or RAM assumptions.
+func OpenStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
+	return openStartMenuEntry(m, entry)
+}
+
 func openStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
 	decoder, err := menuDecoderFor(m)
 	if err != nil {
