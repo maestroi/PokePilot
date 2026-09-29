@@ -76,6 +76,14 @@ func appendDexVirtualTradeObjectives(obs Observation, known *Knowledge, out []Ob
 			continue
 		}
 
+		// Synthetic trading should bridge the unavailable root, not shortcut
+		// evolutions that can become ordinary in-game work. This keeps one
+		// remote acquisition per inaccessible evolution line and avoids
+		// impossible low-level evolved forms such as a level-7 Venusaur.
+		if virtualTradeDeferredToLocalEvolution(obs, entry) {
+			continue
+		}
+
 		slot, ok := virtualTradeDonorSlot(obs)
 		if !ok {
 			continue
@@ -101,6 +109,27 @@ func appendDexVirtualTradeObjectives(obs Observation, known *Knowledge, out []Ob
 		added++
 	}
 	return out
+}
+
+func virtualTradeDeferredToLocalEvolution(obs Observation, entry DexEntry) bool {
+	for _, src := range entry.Sources {
+		if src.From == "" || (src.Kind != AcquireLevelEvo && src.Kind != AcquireItemEvo) {
+			continue
+		}
+		if _, _, ok := partySpeciesSlot(obs.Party, src.From); ok {
+			return true
+		}
+		for _, base := range obs.Dex.Unavailable {
+			if base.Species != src.From {
+				continue
+			}
+			if base.Unavailable == UnavailableNoLocalSource ||
+				strings.HasPrefix(base.Unavailable, UnavailableForfeited+":") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func virtualTradeDonorSlot(obs Observation) (int, bool) {
@@ -179,6 +208,26 @@ func virtualTradeEvolutionSource(obs Observation, target SpeciesID) SpeciesID {
 	return ""
 }
 
+func virtualTradeOfferLevel(obs Observation, species SpeciesID, donorLevel uint8) int {
+	level := int(donorLevel)
+	if level < 1 {
+		level = 1
+	}
+	for _, entries := range [][]DexEntry{obs.Dex.Owned, obs.Dex.Targets, obs.Dex.Unavailable} {
+		for _, entry := range entries {
+			if entry.Species != species {
+				continue
+			}
+			for _, src := range entry.Sources {
+				if src.Kind == AcquireLevelEvo && int(src.Level) > level {
+					level = int(src.Level)
+				}
+			}
+		}
+	}
+	return level
+}
+
 func executeDexVirtualTrade(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	serviceURL := strings.TrimSpace(os.Getenv(virtualTraderURLEnv))
 	broker := strings.TrimSpace(os.Getenv(linkBrokerEnv))
@@ -224,10 +273,7 @@ func executeDexVirtualTrade(m *emu.Emu, romData []byte, o Objective, result Obje
 	if err != nil {
 		return result, fmt.Errorf("agent: %s: allocate trade session: %w", o, err)
 	}
-	level := int(initial.Party[o.Slot].Level)
-	if level < 1 {
-		level = 1
-	}
+	level := virtualTradeOfferLevel(initial, offerSpecies, initial.Party[o.Slot].Level)
 	client := gen1trade.ServiceClient{BaseURL: serviceURL}
 	setupCtx, cancelSetup := context.WithTimeout(context.Background(), virtualTradeSetupTimeout)
 	defer cancelSetup()

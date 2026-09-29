@@ -25,7 +25,8 @@ const (
 // provider so trade-only species can become executable even when there are no
 // remaining locally obtainable Dex targets.
 func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
-	if len(obs.Dex.Targets) == 0 {
+	entries := dexEvolutionCandidateEntries(obs)
+	if len(entries) == 0 {
 		return appendDexVirtualTradeObjectives(obs, known, out)
 	}
 	out = appendDexDuplicateEvolutionBaseObjectives(obs, known, out)
@@ -40,7 +41,7 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 	}
 
 	added := 0
-	for _, entry := range obs.Dex.Targets {
+	for _, entry := range entries {
 		if added >= dexEvolutionLimit || owned[entry.Species] {
 			continue
 		}
@@ -119,6 +120,35 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 		}
 	}
 	return appendDexVirtualTradeObjectives(obs, known, out)
+}
+
+func dexEvolutionCandidateEntries(obs Observation) []DexEntry {
+	out := append([]DexEntry(nil), obs.Dex.Targets...)
+	seen := make(map[SpeciesID]bool, len(out))
+	for _, entry := range out {
+		seen[entry.Species] = true
+	}
+	for _, entry := range obs.Dex.Unavailable {
+		if entry.Species == "" || seen[entry.Species] {
+			continue
+		}
+		if entry.Unavailable != UnavailableNoLocalSource &&
+			!strings.HasPrefix(entry.Unavailable, UnavailableForfeited+":") {
+			continue
+		}
+		for _, src := range entry.Sources {
+			if src.From == "" || (src.Kind != AcquireLevelEvo && src.Kind != AcquireItemEvo) {
+				continue
+			}
+			if _, _, ok := partySpeciesSlot(obs.Party, src.From); !ok {
+				continue
+			}
+			out = append(out, entry)
+			seen[entry.Species] = true
+			break
+		}
+	}
+	return out
 }
 
 func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item ItemID) bool {
