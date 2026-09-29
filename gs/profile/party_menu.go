@@ -32,6 +32,8 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 		}
 	case strings.Contains(text, "Use on which"):
 		kind = game.PartyMenuItemUse
+	case !inBattle && strings.Contains(text, "Teach which POK"):
+		kind = game.PartyMenuFieldMove
 	case !inBattle && strings.Contains(text, "Choose a POK"):
 		kind = game.PartyMenuFieldMove
 	default:
