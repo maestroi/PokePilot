@@ -72,6 +72,7 @@ type replayRecording struct {
 
 type replayStatus struct {
 	RunID      string `json:"run_id"`
+	JobID      string `json:"job_id,omitempty"`
 	State      string `json:"state"`
 	ObjectKey  string `json:"object_key,omitempty"`
 	Size       int64  `json:"size,omitempty"`
@@ -437,9 +438,9 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 		if job, ok, jobErr := s.getRenderJob(ctx, jobID); jobErr == nil && ok && job.State != farm.MediaRenderJobReady {
 			s.reconcileRenderJobReady(ctx, jobID, obj.Size)
 		}
-		return replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: obj.Size, JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady}
+		return replayStatus{RunID: runID, JobID: jobID, State: "ready", ObjectKey: cacheKey, Size: obj.Size, JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady}
 	} else if !artifactstore.IsNotFound(err) {
-		return replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: err.Error()}
+		return replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: err.Error()}
 	}
 	if job, ok, err := s.getRenderJob(ctx, jobID); err == nil && ok {
 		return replayStatusFromMediaJob(job)
@@ -447,9 +448,12 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if status, ok := s.jobs[cacheKey]; ok {
+		if status.JobID == "" {
+			status.JobID = jobID
+		}
 		return status
 	}
-	return replayStatus{RunID: runID, State: "missing", ObjectKey: cacheKey}
+	return replayStatus{RunID: runID, JobID: jobID, State: "missing", ObjectKey: cacheKey}
 }
 
 func (s *replayServer) render(jobID, runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
@@ -457,13 +461,23 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	defer s.rendering.Add(-1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stopLease := s.keepRenderJobLease(ctx, jobID)
+	var cancelledByControl atomic.Bool
+	cancelForControl := func() {
+		cancelledByControl.Store(true)
+		cancel()
+	}
+	stopLease := s.keepRenderJobLease(ctx, jobID, cancelForControl)
 	defer stopLease()
 	started := time.Now()
 	encoder := s.encoderName()
 	setError := func(err error) {
+		if cancelledByControl.Load() {
+			log.Printf("pokereplay render cancelled run=%s key=%s dur=%s", runID, cacheKey, time.Since(started).Round(time.Millisecond))
+			s.setJob(cacheKey, replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: "render cancelled", JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled})
+			return
+		}
 		log.Printf("pokereplay render fail run=%s key=%s encoder=%s dur=%s err=%v", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), err)
-		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
+		s.setJob(cacheKey, replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
 		if jobID != "" {
 			if finishErr := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, clipError(err), 0); finishErr != nil {
 				log.Printf("pokereplay: persist failed render job %s: %v", jobID, finishErr)
@@ -511,12 +525,24 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		total, ready := len(recordings), 0
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total})
 		if jobID != "" {
-			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready)
+			if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready); err != nil {
+				if mediaRenderJobLeaseLost(err) {
+					cancelForControl()
+					return
+				}
+				log.Printf("pokereplay: persist legacy render start job=%s: %v", jobID, err)
+			}
 		}
 		size, err := s.renderLegacyReplay(ctx, runID, recordings, semanticSegments, dir, mode, func(done, total int) {
 			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: done})
 			if jobID != "" {
-				_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done)
+				if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done); err != nil {
+					if mediaRenderJobLeaseLost(err) {
+						cancelForControl()
+					} else {
+						log.Printf("pokereplay: persist legacy render progress job=%s: %v", jobID, err)
+					}
+				}
 			}
 		})
 		if err != nil {
@@ -558,6 +584,9 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		if jobID != "" {
 			if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, farm.MediaRenderJobRendering, &total, &done); progressErr != nil {
 				log.Printf("pokereplay: persist render progress job=%s: %v", jobID, progressErr)
+				if mediaRenderJobLeaseLost(progressErr) {
+					cancelForControl()
+				}
 			}
 		}
 	}
@@ -570,6 +599,9 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		if jobID != "" {
 			if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, stage, &total, &done); progressErr != nil {
 				log.Printf("pokereplay: persist active segment job=%s: %v", jobID, progressErr)
+				if mediaRenderJobLeaseLost(progressErr) {
+					cancelForControl()
+				}
 			}
 		}
 	}
@@ -587,7 +619,13 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	}
 
 	if jobID != "" {
-		_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobAssembling, farm.MediaRenderJobAssembling, nil, nil)
+		if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobAssembling, farm.MediaRenderJobAssembling, nil, nil); err != nil {
+			if mediaRenderJobLeaseLost(err) {
+				cancelForControl()
+				return
+			}
+			log.Printf("pokereplay: persist assembling job=%s: %v", jobID, err)
+		}
 	}
 	segmentURLs, err := replayVideoSegmentURLs(s, attempts)
 	if err != nil {
@@ -614,7 +652,14 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		return
 	}
 	if jobID != "" {
-		_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobUploading, farm.MediaRenderJobUploading, nil, nil)
+		if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobUploading, farm.MediaRenderJobUploading, nil, nil); err != nil {
+			if mediaRenderJobLeaseLost(err) {
+				file.Close()
+				cancelForControl()
+				return
+			}
+			log.Printf("pokereplay: persist uploading job=%s: %v", jobID, err)
+		}
 	}
 	obj, err := s.store.PutObjectReader(ctx, cacheKey, "video/mp4", file)
 	file.Close()

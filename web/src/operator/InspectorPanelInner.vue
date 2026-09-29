@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ArrowDownTrayIcon, ArrowPathIcon, FilmIcon } from '@heroicons/vue/20/solid'
 import {
   artifactContentURL,
+  cancelMediaRenderJob,
   getReplayStatus,
   getRunArtifacts,
   getRunCheckpoints,
@@ -28,6 +29,7 @@ const checkpoints = ref<unknown[]>([])
 const replay = ref<ReplayStatus | null>(null)
 const replayError = ref('')
 const rendering = ref(false)
+const cancellingReplay = ref(false)
 const selectedEvent = ref(-1)
 const video = ref<HTMLVideoElement | null>(null)
 const playbackRate = ref(Number(localStorage.getItem('pokepilot.replayPlaybackRate') || 1))
@@ -180,6 +182,23 @@ async function requestReplay(): Promise<void> {
   }
 }
 
+async function cancelReplayRender(): Promise<void> {
+  const jobID = String(replay.value?.job_id || '')
+  if (!jobID || cancellingReplay.value) return
+  const ok = window.confirm(`Cancel replay rendering for ${props.runID}? You can retry it later from this card or Media.`)
+  if (!ok) return
+  cancellingReplay.value = true
+  replayError.value = ''
+  try {
+    await cancelMediaRenderJob(jobID)
+    await refreshReplay()
+  } catch (cause) {
+    replayError.value = cause instanceof Error ? cause.message : 'Replay render cancel failed'
+  } finally {
+    cancellingReplay.value = false
+  }
+}
+
 function clearReplayTimer(): void {
   if (replayTimer) window.clearTimeout(replayTimer)
   replayTimer = 0
@@ -296,19 +315,46 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer() })
               @loadedmetadata="applyPlaybackRate"
               @timeupdate="syncEventFromVideo"
             />
-            <label class="mt-2 flex items-center justify-end gap-2 text-[10px] text-slate-500">
-              Speed
-              <select v-model.number="playbackRate" class="rounded-md border-0 bg-white/6 px-2 py-1 text-[11px] text-slate-200 outline-1 -outline-offset-1 outline-white/10">
-                <option :value="1">1×</option><option :value="2">2×</option><option :value="4">4×</option><option :value="8">8×</option><option :value="16">16×</option>
-              </select>
-            </label>
+            <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+              <a href="#media" class="text-[10px] font-semibold text-cyan-300 hover:text-cyan-200">Manage in Media</a>
+              <label class="flex items-center gap-2 text-[10px] text-slate-500">
+                Speed
+                <select v-model.number="playbackRate" class="rounded-md border-0 bg-white/6 px-2 py-1 text-[11px] text-slate-200 outline-1 -outline-offset-1 outline-white/10">
+                  <option :value="1">1×</option><option :value="2">2×</option><option :value="4">4×</option><option :value="8">8×</option><option :value="16">16×</option>
+                </select>
+              </label>
+            </div>
           </template>
           <div v-else class="mt-3 rounded-md border border-dashed border-white/10 px-4 py-6 text-center">
             <FilmIcon class="mx-auto size-6 text-slate-600" aria-hidden="true" />
-            <p class="mt-2 text-xs text-slate-500">{{ replay?.state === 'generating' ? `Replay is being rendered${replay.segments ? ` (${replay.segments_done || 0}/${replay.segments} attempts)` : ''}.` : 'Render the canonical .gbrun recording into a seekable MP4 when available.' }}</p>
-            <button v-if="replay?.state !== 'disabled'" type="button" class="mt-3 rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:opacity-50" :disabled="rendering || replay?.state === 'generating'" @click="requestReplay">
-              {{ rendering ? 'Requesting…' : replay?.state === 'generating' ? 'Generating…' : 'Render replay' }}
-            </button>
+            <p class="mt-2 text-xs text-slate-500">{{ replay?.state === 'generating' ? `Replay is being rendered${replay.segments ? ` (${replay.segments_done || 0}/${replay.segments} segments)` : ''}.` : 'Render the canonical .gbrun recording into a seekable MP4 when available.' }}</p>
+            <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <button
+                v-if="replay?.state !== 'disabled' && replay?.state !== 'generating'"
+                type="button"
+                class="rounded-md bg-cyan-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:opacity-50"
+                :disabled="rendering"
+                @click="requestReplay"
+              >
+                {{ rendering ? 'Requesting…' : 'Render replay' }}
+              </button>
+              <button
+                v-if="replay?.state === 'generating' && replay.job_id"
+                type="button"
+                class="rounded-md bg-rose-400/10 px-2.5 py-1.5 text-xs font-semibold text-rose-200 ring-1 ring-rose-300/20 hover:bg-rose-400/15 disabled:opacity-50"
+                :disabled="cancellingReplay"
+                @click="cancelReplayRender"
+              >
+                {{ cancellingReplay ? 'Cancelling…' : 'Cancel render' }}
+              </button>
+              <a
+                v-if="replay?.job_id"
+                href="#media"
+                class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
+              >
+                Manage in Media
+              </a>
+            </div>
           </div>
           <p v-if="replayError" class="mt-2 text-xs text-amber-300/80">{{ replayError }}</p>
         </section>

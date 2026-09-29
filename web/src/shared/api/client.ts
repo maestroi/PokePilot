@@ -91,6 +91,21 @@ export function retryMediaRenderJob(id: string, signal?: AbortSignal): Promise<M
   })
 }
 
+export function cancelMediaRenderJob(id: string, signal?: AbortSignal): Promise<MediaRenderJob> {
+  return requestJSON<MediaRenderJob>(`/v1/media/render-jobs/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
+export async function deleteMediaRenderJob(id: string, signal?: AbortSignal): Promise<void> {
+  await requestJSON<MediaRenderJob>(`/v1/media/render-jobs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal
+  })
+}
+
 export function getProgramming(signal?: AbortSignal): Promise<ProgrammingSnapshot> {
   return requestJSON<ProgrammingSnapshot>('/v1/programming', { signal })
 }

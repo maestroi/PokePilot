@@ -135,6 +135,34 @@ func TestMediaRenderJobLeaseRecoveryAndLifecycle(t *testing.T) {
 	if ready.State != farm.MediaRenderJobReady || ready.ResultSize != 12345 || ready.WorkerID != "" || ready.LeaseExpiresAt != 0 {
 		t.Fatalf("reconciled ready job = %+v", ready)
 	}
+	removed, err := c.remove(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.ID != job.ID {
+		t.Fatalf("removed job = %+v", removed)
+	}
+	if _, ok := c.get(job.ID); ok {
+		t.Fatalf("job %s still present after removal", job.ID)
+	}
+}
+
+func TestMediaRenderJobRemoveRejectsQueuedWork(t *testing.T) {
+	w := NewWall("")
+	w.SetStatePath(filepath.Join(t.TempDir(), "wall.json"))
+	c := mediaRenderJobsFor(w)
+	job, _, err := c.ensure(farm.MediaRenderJobCreateRequest{
+		Identity: "queued", RunID: "run-q", Attempts: []int{1}, Mode: "broadcast", ArtifactKey: "queued.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.remove(job.ID); err == nil {
+		t.Fatal("remove queued job unexpectedly succeeded")
+	}
+	if _, ok := c.get(job.ID); !ok {
+		t.Fatal("queued job disappeared after rejected removal")
+	}
 }
 
 func TestMediaRenderJobsListSummarizesAndOrdersRecentJobs(t *testing.T) {

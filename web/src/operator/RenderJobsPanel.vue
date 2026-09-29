@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
-import { getMediaRenderJobs, retryMediaRenderJob } from '../shared/api/client'
+import { cancelMediaRenderJob, deleteMediaRenderJob, getMediaRenderJobs, retryMediaRenderJob } from '../shared/api/client'
 import type { MediaRenderJob } from '../shared/api/types'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
@@ -29,7 +29,8 @@ const jobs = computed(() => data.value?.jobs ?? [])
 const stateCounts = computed(() => data.value?.states ?? {})
 const activeCount = computed(() => [...ACTIVE_STATES].reduce((sum, name) => sum + Number(stateCounts.value[name] || 0), 0))
 const lastUpdatedLabel = computed(() => lastUpdatedAt.value ? new Date(lastUpdatedAt.value).toLocaleTimeString() : '—')
-const retryingJobID = ref('')
+const busyJobID = ref('')
+const busyAction = ref<'retry' | 'cancel' | 'remove' | ''>('')
 const actionError = ref('')
 const readyBytes = computed(() => jobs.value
   .filter((job) => job.state === 'ready')
@@ -111,18 +112,70 @@ function retryable(job: MediaRenderJob): boolean {
   return job.state === 'failed' || job.state === 'cancelled'
 }
 
-async function retryJob(job: MediaRenderJob): Promise<void> {
-  if (!retryable(job) || retryingJobID.value) return
-  retryingJobID.value = job.id
+function cancellable(job: MediaRenderJob): boolean {
+  return job.state === 'queued' || ACTIVE_STATES.has(job.state)
+}
+
+function removable(job: MediaRenderJob): boolean {
+  return job.state === 'ready' || job.state === 'failed' || job.state === 'cancelled'
+}
+
+function rendererLabel(job: MediaRenderJob): string {
+  if (job.mode === 'broadcast') return 'Composited'
+  if (job.mode === 'semantic') return 'Semantic'
+  if (job.mode === 'raw') return 'Raw'
+  return job.mode || 'Default'
+}
+
+function rendererTitle(job: MediaRenderJob): string {
+  if (job.mode === 'broadcast') return 'Composited replay renderer. “Broadcast” is the internal compatibility mode name; it does not publish the replay.'
+  if (job.mode === 'semantic') return 'Headless semantic replay renderer.'
+  return `Replay renderer mode: ${job.mode || 'default'}`
+}
+
+async function runJobAction(job: MediaRenderJob, action: 'retry' | 'cancel' | 'remove'): Promise<void> {
+  if (busyJobID.value) return
+  if (action === 'retry' && !retryable(job)) return
+  if (action === 'cancel' && !cancellable(job)) return
+  if (action === 'remove' && !removable(job)) return
+
+  if (action === 'cancel') {
+    const ok = window.confirm(`Cancel replay rendering for ${job.run_id}? The current render attempt will stop and can be retried later.`)
+    if (!ok) return
+  }
+  if (action === 'remove') {
+    const detail = job.state === 'ready'
+      ? 'The rendered replay file and run stay intact; only this durable job record is removed.'
+      : 'This removes the terminal job record. The run itself is not deleted.'
+    const ok = window.confirm(`Remove render job for ${job.run_id}?\n\n${detail}`)
+    if (!ok) return
+  }
+
+  busyJobID.value = job.id
+  busyAction.value = action
   actionError.value = ''
   try {
-    await retryMediaRenderJob(job.id)
+    if (action === 'retry') await retryMediaRenderJob(job.id)
+    else if (action === 'cancel') await cancelMediaRenderJob(job.id)
+    else await deleteMediaRenderJob(job.id)
     await refreshJobs()
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Replay render retry failed'
+    actionError.value = cause instanceof Error ? cause.message : `Replay render ${action} failed`
   } finally {
-    retryingJobID.value = ''
+    busyJobID.value = ''
+    busyAction.value = ''
   }
+}
+
+function actionLabel(job: MediaRenderJob, action: 'retry' | 'cancel' | 'remove'): string {
+  if (busyJobID.value === job.id && busyAction.value === action) {
+    if (action === 'retry') return 'Retrying…'
+    if (action === 'cancel') return 'Cancelling…'
+    return 'Removing…'
+  }
+  if (action === 'retry') return 'Retry'
+  if (action === 'cancel') return 'Cancel'
+  return 'Remove'
 }
 
 function refresh(): void {
@@ -205,8 +258,8 @@ function refresh(): void {
               <dd class="mt-0.5 truncate font-mono text-slate-400" :title="workerLabel(job)">{{ workerLabel(job) }}</dd>
             </div>
             <div>
-              <dt class="text-slate-600">Mode</dt>
-              <dd class="mt-0.5 text-slate-400">{{ job.mode }}</dd>
+              <dt class="text-slate-600">Renderer</dt>
+              <dd class="mt-0.5 text-slate-400" :title="rendererTitle(job)">{{ rendererLabel(job) }}</dd>
             </div>
             <div>
               <dt class="text-slate-600">Runtime</dt>
@@ -218,15 +271,35 @@ function refresh(): void {
             </div>
           </dl>
 
-          <div v-if="retryable(job)" class="mt-3 flex justify-end">
+          <div v-if="retryable(job) || cancellable(job) || removable(job)" class="mt-3 flex flex-wrap justify-end gap-1.5">
             <button
+              v-if="retryable(job)"
               type="button"
-              :disabled="Boolean(retryingJobID)"
+              :disabled="Boolean(busyJobID)"
               class="inline-flex items-center gap-1.5 rounded-md bg-amber-300/10 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 ring-1 ring-amber-300/20 hover:bg-amber-300/15 disabled:opacity-50"
-              @click="retryJob(job)"
+              @click="runJobAction(job, 'retry')"
             >
               <ArrowPathIcon class="size-3.5" aria-hidden="true" />
-              {{ retryingJobID === job.id ? 'Retrying…' : 'Retry render' }}
+              {{ actionLabel(job, 'retry') }}
+            </button>
+            <button
+              v-if="cancellable(job)"
+              type="button"
+              :disabled="Boolean(busyJobID)"
+              class="rounded-md bg-rose-300/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-100 ring-1 ring-rose-300/20 hover:bg-rose-300/15 disabled:opacity-50"
+              @click="runJobAction(job, 'cancel')"
+            >
+              {{ actionLabel(job, 'cancel') }}
+            </button>
+            <button
+              v-if="removable(job)"
+              type="button"
+              :disabled="Boolean(busyJobID)"
+              class="rounded-md bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-white/10 disabled:opacity-50"
+              :title="job.state === 'ready' ? 'Remove the job record only; keep the replay file and run.' : 'Remove this terminal job record.'"
+              @click="runJobAction(job, 'remove')"
+            >
+              {{ actionLabel(job, 'remove') }}
             </button>
           </div>
         </article>
@@ -240,7 +313,7 @@ function refresh(): void {
               <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">State</th>
               <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
               <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Worker</th>
-              <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</th>
+              <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Renderer</th>
               <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Runtime</th>
               <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Updated</th>
               <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Action</th>
@@ -277,21 +350,42 @@ function refresh(): void {
                 </div>
               </td>
               <td class="max-w-[15rem] px-3 py-2.5 font-mono text-[10px] text-slate-500" :title="workerLabel(job)">{{ workerLabel(job) }}</td>
-              <td class="px-3 py-2.5 text-xs text-slate-500">{{ job.mode }}</td>
+              <td class="px-3 py-2.5 text-xs text-slate-500" :title="rendererTitle(job)">{{ rendererLabel(job) }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-[10px] whitespace-nowrap text-slate-500">{{ runtimeLabel(job) }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-[10px] whitespace-nowrap text-slate-500">{{ ageLabel(job.updated_at_unix_ms) }}</td>
               <td class="px-3 py-2.5 text-right sm:pr-4">
-                <button
-                  v-if="retryable(job)"
-                  type="button"
-                  :disabled="Boolean(retryingJobID)"
-                  class="inline-flex items-center gap-1 rounded-md bg-amber-300/10 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-amber-300/20 hover:bg-amber-300/15 disabled:opacity-50"
-                  @click="retryJob(job)"
-                >
-                  <ArrowPathIcon class="size-3" aria-hidden="true" />
-                  {{ retryingJobID === job.id ? 'Retrying…' : 'Retry' }}
-                </button>
-                <span v-else class="text-[10px] text-slate-700">—</span>
+                <div class="flex flex-wrap justify-end gap-1">
+                  <button
+                    v-if="retryable(job)"
+                    type="button"
+                    :disabled="Boolean(busyJobID)"
+                    class="inline-flex items-center gap-1 rounded-md bg-amber-300/10 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-amber-300/20 hover:bg-amber-300/15 disabled:opacity-50"
+                    @click="runJobAction(job, 'retry')"
+                  >
+                    <ArrowPathIcon class="size-3" aria-hidden="true" />
+                    {{ actionLabel(job, 'retry') }}
+                  </button>
+                  <button
+                    v-if="cancellable(job)"
+                    type="button"
+                    :disabled="Boolean(busyJobID)"
+                    class="rounded-md bg-rose-300/10 px-2 py-1 text-[10px] font-bold text-rose-100 ring-1 ring-rose-300/20 hover:bg-rose-300/15 disabled:opacity-50"
+                    @click="runJobAction(job, 'cancel')"
+                  >
+                    {{ actionLabel(job, 'cancel') }}
+                  </button>
+                  <button
+                    v-if="removable(job)"
+                    type="button"
+                    :disabled="Boolean(busyJobID)"
+                    class="rounded-md bg-white/5 px-2 py-1 text-[10px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-white/10 disabled:opacity-50"
+                    :title="job.state === 'ready' ? 'Remove the job record only; keep the replay file and run.' : 'Remove this terminal job record.'"
+                    @click="runJobAction(job, 'remove')"
+                  >
+                    {{ actionLabel(job, 'remove') }}
+                  </button>
+                  <span v-if="!retryable(job) && !cancellable(job) && !removable(job)" class="text-[10px] text-slate-700">—</span>
+                </div>
               </td>
             </tr>
           </tbody>

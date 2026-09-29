@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,21 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 )
+
+func TestMediaRenderJobLeaseLostRecognizesControlCancellation(t *testing.T) {
+	for _, message := range []string{
+		"media render job is owned by another worker",
+		"media render job is not active (state cancelled)",
+		"media render job not found",
+	} {
+		if !mediaRenderJobLeaseLost(errors.New(message)) {
+			t.Fatalf("lease error %q was not recognized", message)
+		}
+	}
+	if mediaRenderJobLeaseLost(errors.New("temporary network timeout")) {
+		t.Fatal("transient error incorrectly treated as lost lease")
+	}
+}
 
 func TestRecordingsForAttemptsUsesPersistedAttemptSet(t *testing.T) {
 	var mu sync.Mutex
@@ -245,7 +261,7 @@ func TestReplayRenderReadyArtifactShortCircuitsAndReconcilesJob(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&status); err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "ready" || status.JobState != farm.MediaRenderJobReady || status.Size != 8 {
+	if status.State != "ready" || status.JobState != farm.MediaRenderJobReady || status.Size != 8 || status.JobID != jobID {
 		t.Fatalf("ready status=%+v", status)
 	}
 	mu.Lock()

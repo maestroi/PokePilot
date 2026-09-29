@@ -324,6 +324,30 @@ func (c *mediaRenderJobController) cancel(id string) (farm.MediaRenderJob, error
 	return job, nil
 }
 
+func (c *mediaRenderJobController) remove(id string) (farm.MediaRenderJob, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.loadErr != nil {
+		return farm.MediaRenderJob{}, c.loadErr
+	}
+	id = strings.TrimSpace(id)
+	job, ok := c.state.Jobs[id]
+	if !ok {
+		return farm.MediaRenderJob{}, os.ErrNotExist
+	}
+	switch job.State {
+	case farm.MediaRenderJobReady, farm.MediaRenderJobFailed, farm.MediaRenderJobCancelled:
+	default:
+		return job, fmt.Errorf("media render job cannot be removed from state %s; cancel it first", job.State)
+	}
+	delete(c.state.Jobs, id)
+	if err := c.persistLocked(); err != nil {
+		c.state.Jobs[id] = job
+		return farm.MediaRenderJob{}, err
+	}
+	return job, nil
+}
+
 func (c *mediaRenderJobController) retry(id string) (farm.MediaRenderJob, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -566,6 +590,18 @@ func mediaRenderJobHTTPHandler(w *Wall, next http.Handler) http.Handler {
 	})
 	mux.HandleFunc("POST /v1/media/render-jobs/{id}/retry", func(res http.ResponseWriter, req *http.Request) {
 		job, err := controller.retry(req.PathValue("id"))
+		if errors.Is(err, os.ErrNotExist) {
+			writeJSON(res, http.StatusNotFound, map[string]string{"error": "media render job not found"})
+			return
+		}
+		if err != nil {
+			writeJSON(res, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(res, http.StatusOK, job)
+	})
+	mux.HandleFunc("DELETE /v1/media/render-jobs/{id}", func(res http.ResponseWriter, req *http.Request) {
+		job, err := controller.remove(req.PathValue("id"))
 		if errors.Is(err, os.ErrNotExist) {
 			writeJSON(res, http.StatusNotFound, map[string]string{"error": "media render job not found"})
 			return

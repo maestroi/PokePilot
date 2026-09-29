@@ -502,6 +502,7 @@ export interface MediaRenderJobList {
 
 export interface ReplayStatus {
   run_id?: string
+  job_id?: string
   state: string
   size?: number
   error?: string
