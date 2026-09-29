@@ -50,6 +50,25 @@ func (s *replayServer) encoderName() string {
 	return "libx264"
 }
 
+func (s *replayServer) streamRGBArgs(videoPath string) []string {
+	args := []string{
+		"-output", videoPath,
+		"-format", "mp4",
+	}
+	if !s.vaapi {
+		return args
+	}
+	ffmpeg := s.ffmpegVAAPI
+	if ffmpeg == "" {
+		ffmpeg = defaultFFmpegVAAPI
+	}
+	return append(args,
+		"-codec", "h264_vaapi",
+		"-preset", "",
+		"-ffmpeg", ffmpeg,
+	)
+}
+
 func (s *replayServer) streamArgs(romPath, recordingPath, videoPath string) []string {
 	if romPath == "" {
 		romPath = s.romPath
