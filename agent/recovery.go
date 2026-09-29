@@ -156,8 +156,8 @@ func routePrerequisiteStateKey(obs Observation) string {
 
 func localInteractionStateKey(obs Observation) string {
 	data, _ := json.Marshal(struct {
-		Location LocationID `json:"location,omitempty"`
-		Map      uint8      `json:"map,omitempty"`
+		Location PlaceID `json:"location,omitempty"`
+		Map      uint8   `json:"map,omitempty"`
 	}{
 		Location: obs.Location,
 		Map:      obs.Map,
