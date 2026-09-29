@@ -8,7 +8,8 @@ import (
 
 func TestRedProgressionKeepsThunderBadgeAheadOfLaterStory(t *testing.T) {
 	obs := Observation{
-		Map: route12Map,
+		Map:   route12Map,
+		Money: saffronGuardDrinkReserve,
 		Story: ProgressState{
 			{ID: redProgressHM01Acquired, Complete: true},
 			// The guardhouses are already open: this observation is past the
