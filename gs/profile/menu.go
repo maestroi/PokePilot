@@ -70,9 +70,12 @@ func (*Profile) BattleMainMenuEntryPosition(entry game.BattleMenuEntry) (game.Ba
 // driver. The ordinary battle move list deliberately preserves its native
 // 1-based selection index because skill.Battle's move slot contract is
 // slot+1 in both supported generations.
-func (*Profile) DecodeMenuCursor(reader game.MemoryReader) game.MenuCursorState {
+func (p *Profile) DecodeMenuCursor(reader game.MemoryReader) game.MenuCursorState {
 	if reader == nil {
 		return game.MenuCursorState{}
+	}
+	if start := p.DecodeStartMenu(reader); start.Visible {
+		return start.Cursor
 	}
 	y, _, rows, cols, filter := gsMenuCursor(reader)
 	if reader.Peek8(sym.BattleMode) != 0 &&
@@ -112,14 +115,63 @@ func (*Profile) DecodeTwoOption(reader game.MemoryReader) (game.TwoOptionState, 
 	return game.TwoOptionState{Current: int(y) - 1}, true
 }
 
-// Start-menu semantics are deliberately fail-closed here. This file exposes
-// the battle-facing vertical/two-option menu machinery needed by the shared
-// battle controller; the Pokégear-aware Gen-II START menu remains a separate
-// profile slice.
+const (
+	gen2StartMenuPokemon byte = 1
+	gen2StartMenuPack    byte = 2
+)
+
+// DecodeStartMenu uses the retail menu-item list rather than assuming a fixed
+// row ordering. Gold/Silver insert POKEDEX and POKEGEAR dynamically, so the
+// list is the stable semantic source while rendered PACK/OPTION text proves
+// the union-backed bytes belong to the live START menu.
 func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
-	return game.StartMenuState{InBattle: reader != nil && reader.Peek8(sym.BattleMode) != 0}
+	if reader == nil {
+		return game.StartMenuState{}
+	}
+	inBattle := reader.Peek8(sym.BattleMode) != 0
+	out := game.StartMenuState{InBattle: inBattle}
+	if inBattle {
+		return out
+	}
+	count := int(reader.Peek8(sym.MenuItemsList))
+	if count < 2 || count > 9 {
+		return out
+	}
+	text := gsScreenText(reader)
+	if !strings.Contains(text, "PACK") || !strings.Contains(text, "OPTION") {
+		return out
+	}
+	cursor := int(reader.Peek8(sym.MenuCursorPosition)) - 1
+	if cursor < 0 || cursor >= count {
+		return out
+	}
+	out.Visible = true
+	out.Ready = true
+	out.Cursor = game.MenuCursorState{Current: cursor, Max: count - 1}
+	return out
 }
 
-func (*Profile) StartMenuEntryIndex(game.MemoryReader, game.StartMenuEntry) (int, bool) {
+func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	if reader == nil {
+		return 0, false
+	}
+	want := byte(0xff)
+	switch entry {
+	case game.StartMenuPokemon:
+		want = gen2StartMenuPokemon
+	case game.StartMenuItems:
+		want = gen2StartMenuPack
+	default:
+		return 0, false
+	}
+	count := int(reader.Peek8(sym.MenuItemsList))
+	if count < 1 || count > 9 {
+		return 0, false
+	}
+	for i := 0; i < count; i++ {
+		if reader.Peek8(sym.MenuItemsList+1+uint16(i)) == want {
+			return i, true
+		}
+	}
 	return 0, false
 }
