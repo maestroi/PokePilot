@@ -175,10 +175,10 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run_artifacts",
 		"pokepilot_get_run_debug",
 		"pokepilot_get_run_recovery_audit",
-		"pokepilot_prepare_debug",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
 		"pokepilot_list_runs",
+		"pokepilot_prepare_debug",
 		"pokepilot_record_solver_attempt",
 		"pokepilot_start_run",
 	}
