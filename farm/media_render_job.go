@@ -22,26 +22,26 @@ const (
 )
 
 type MediaRenderJob struct {
-	Version        int      `json:"version"`
-	ID             string   `json:"id"`
-	Identity       string   `json:"identity"`
-	RunID          string   `json:"run_id"`
-	Attempts       []int    `json:"attempts,omitempty"`
-	Mode           string   `json:"mode"`
-	ArtifactKey    string   `json:"artifact_key"`
-	State          string   `json:"state"`
-	Stage          string   `json:"stage,omitempty"`
-	SegmentsTotal  int      `json:"segments_total,omitempty"`
-	SegmentsDone   int      `json:"segments_done,omitempty"`
-	WorkerID       string   `json:"worker_id,omitempty"`
-	LeaseExpiresAt int64    `json:"lease_expires_at_unix_ms,omitempty"`
-	RetryCount     int      `json:"retry_count,omitempty"`
-	LastError      string   `json:"last_error,omitempty"`
-	ResultSize     int64    `json:"result_size,omitempty"`
-	CreatedAt      int64    `json:"created_at_unix_ms"`
-	UpdatedAt      int64    `json:"updated_at_unix_ms"`
-	StartedAt      int64    `json:"started_at_unix_ms,omitempty"`
-	FinishedAt     int64    `json:"finished_at_unix_ms,omitempty"`
+	Version        int    `json:"version"`
+	ID             string `json:"id"`
+	Identity       string `json:"identity"`
+	RunID          string `json:"run_id"`
+	Attempts       []int  `json:"attempts,omitempty"`
+	Mode           string `json:"mode"`
+	ArtifactKey    string `json:"artifact_key"`
+	State          string `json:"state"`
+	Stage          string `json:"stage,omitempty"`
+	SegmentsTotal  int    `json:"segments_total,omitempty"`
+	SegmentsDone   int    `json:"segments_done,omitempty"`
+	WorkerID       string `json:"worker_id,omitempty"`
+	LeaseExpiresAt int64  `json:"lease_expires_at_unix_ms,omitempty"`
+	RetryCount     int    `json:"retry_count,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+	ResultSize     int64  `json:"result_size,omitempty"`
+	CreatedAt      int64  `json:"created_at_unix_ms"`
+	UpdatedAt      int64  `json:"updated_at_unix_ms"`
+	StartedAt      int64  `json:"started_at_unix_ms,omitempty"`
+	FinishedAt     int64  `json:"finished_at_unix_ms,omitempty"`
 }
 
 type MediaRenderJobCreateRequest struct {
