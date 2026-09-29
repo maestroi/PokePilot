@@ -59,3 +59,32 @@ docker exec pokefarm-replay wget -qO- http://127.0.0.1:8080/healthz
 After a reboot, also verify the anchor task, sidecar container state, and timer.
 If Docker starts replay before the overlay exists, the timer must recreate the
 exited container once the anchor has restored the network.
+
+
+## Long replay scratch and segment cache
+
+Completed replays are rendered as deterministic frame segments. The default
+segment window is five minutes and can be changed with
+`POKEPILOT_REPLAY_SEGMENT_SECONDS` (10–3600 seconds). Each completed segment is
+validated with `ffprobe`, uploaded to S3, and removed from local scratch before
+the next missing segment is encoded. On restart, cached segments are probed
+again; a zero-length, truncated, or otherwise invalid MP4 is treated as missing
+and regenerated from the authoritative `.gbrun`.
+
+Final assembly does **not** download every cached segment to the replay VM.
+FFmpeg reads the ordered segment list directly from short-lived presigned S3 GET
+URLs and stream-copies them into one local final MP4, which is validated before
+upload. Presigned URLs are written only to the temporary concat manifest and
+must never be logged.
+
+The expected scratch envelope for a bounded render is therefore approximately:
+
+- the source `.gbrun` and replay ROM working files for each attempt;
+- at most one actively encoded segment (plus one raw segment while the broadcast
+  compositor is producing its corresponding composed segment);
+- one final assembled MP4 during the assembly/upload stage;
+- small manifests/overlay PNGs.
+
+Scratch no longer scales as "all rendered segments + final MP4". Segment
+artifacts are durable derived cache entries in S3 and can be regenerated from
+the source recording if an individual object fails validation.
