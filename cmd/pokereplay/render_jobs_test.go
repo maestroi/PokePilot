@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -15,6 +16,21 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 )
+
+func TestMediaRenderJobLeaseLostRecognizesControlCancellation(t *testing.T) {
+	for _, message := range []string{
+		"media render job is owned by another worker",
+		"media render job is not active (state cancelled)",
+		"media render job not found",
+	} {
+		if !mediaRenderJobLeaseLost(errors.New(message)) {
+			t.Fatalf("lease error %q was not recognized", message)
+		}
+	}
+	if mediaRenderJobLeaseLost(errors.New("temporary network timeout")) {
+		t.Fatal("transient error incorrectly treated as lost lease")
+	}
+}
 
 func TestRecordingsForAttemptsUsesPersistedAttemptSet(t *testing.T) {
 	var mu sync.Mutex
