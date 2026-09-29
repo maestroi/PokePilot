@@ -96,6 +96,9 @@ func (c *mcpControl) prepareDebug(ctx context.Context, _ *mcp.CallToolRequest, i
 					packet.Failure.Cause = bundle.Identity.Cause
 					packet.Failure.Outcome = bundle.Identity.Outcome
 					packet.SearchTerms = appendUniqueDebugTerms(packet.SearchTerms, debugSearchTerms(bundle.Diagnostic, bundle.Identity.Cause, packet.Failure.Objective)...)
+					if len(packet.SearchTerms) > 8 {
+						packet.SearchTerms = packet.SearchTerms[:8]
+					}
 				}
 			}
 		}
