@@ -466,3 +466,70 @@ func TestNoDialogueTalkQuarantineSurvivesApproachMovement(t *testing.T) {
 		t.Fatalf("location change did not release Talk quarantine: %+v", got)
 	}
 }
+
+func TestNoDialogueTalkNeverFailsOpenAsOnlyCandidate(t *testing.T) {
+	failed := Objective{Kind: KindTalk, Location: "viridian pokemon center", X: 10, Y: 5}
+	obs := Observation{Location: "viridian pokemon center", Map: 0x29, X: 9, Y: 5, Controllable: true}
+	policy := newRunFailurePolicy(2)
+	policy.record(ObjectiveResult{
+		Objective: failed,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "no_dialogue",
+			Recoverable: true,
+		},
+		Final: obs,
+	})
+
+	if got := policy.filter(obs, []Objective{failed}); len(got) != 0 {
+		t.Fatalf("sole no-dialogue Talk failed open: %+v", got)
+	}
+
+	changed := obs
+	changed.Location = "viridian city"
+	changed.Map = 0x01
+	got := policy.filter(changed, []Objective{failed})
+	if len(got) != 1 || got[0].Key() != failed.Key() {
+		t.Fatalf("location change did not release no-dialogue quarantine: %+v", got)
+	}
+}
+
+func TestNoDialogueTalkDoesNotDisplaceSoftFailOpenFallback(t *testing.T) {
+	talk := Objective{Kind: KindTalk, Location: "pewter pokemon center", X: 7, Y: 3}
+	travel := Objective{Kind: KindGoTo, Place: "route 3"}
+	obs := Observation{
+		Location:     "pewter pokemon center",
+		Map:          0x3A,
+		X:            3,
+		Y:            3,
+		Controllable: true,
+		Badges:       []string{"Boulder"},
+	}
+	policy := newRunFailurePolicy(2)
+	policy.record(ObjectiveResult{
+		Objective: talk,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "no_dialogue",
+			Recoverable: true,
+		},
+		Final: obs,
+	})
+	policy.record(ObjectiveResult{
+		Objective: travel,
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "route_replan_exhausted",
+			Recoverable: true,
+		},
+		Final: obs,
+	})
+
+	got := policy.filter(obs, []Objective{talk, travel})
+	if len(got) != 1 || got[0].Key() != travel.Key() {
+		t.Fatalf("mixed hard/soft quarantine fallback = %+v, want only soft travel retry", got)
+	}
+}

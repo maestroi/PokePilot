@@ -29,9 +29,10 @@ const (
 )
 
 type failureQuarantineEntry struct {
-	Fingerprint string
-	StateKey    string
-	StateScope  recoveryStateScope
+	Fingerprint   string
+	StateKey      string
+	StateScope    recoveryStateScope
+	NeverFailOpen bool
 }
 
 // recoveryState is the objective-scoped semantic projection used by retry
@@ -424,9 +425,10 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 		}
 	}
 	f.quarantine[quarantineKey] = failureQuarantineEntry{
-		Fingerprint: fingerprint.Key,
-		StateKey:    fingerprint.StateKey,
-		StateScope:  scope,
+		Fingerprint:   fingerprint.Key,
+		StateKey:      fingerprint.StateKey,
+		StateScope:    scope,
+		NeverFailOpen: result.Objective.Kind == KindTalk && failureCauseIs(result, "no_dialogue"),
 	}
 
 	// A direct route prerequisite or graph-level no-route result is a property
@@ -451,42 +453,68 @@ func (f *runFailurePolicy) record(result ObjectiveResult) {
 	}
 }
 
-// filter suppresses an exact failed objective while the state relevant to that
-// objective is unchanged and alternatives exist. A material scoped state change
-// expires the entry; unrelated drift does not. If every option is quarantined
-// it fails open, leaving the bounded retry policy as the final loop ceiling.
+// filter suppresses exact failed objectives while the state relevant to each
+// failure is unchanged. Most quarantine entries are soft: if every offered
+// objective is soft-quarantined, fail open so the bounded retry policy remains
+// the final loop ceiling. Some failures are stronger evidence, though. A local
+// Talk that already reached a stable boundary with no dialogue has proven that
+// the advertised interaction is not currently actionable; resurrecting it just
+// because it is the last candidate creates a deterministic stagnation loop
+// (#2166, #2167, #2183). Those entries never participate in fail-open fallback.
 func (f *runFailurePolicy) filter(obs Observation, offered []Objective) []Objective {
-	if f == nil || len(f.quarantine) == 0 || len(offered) <= 1 {
+	if f == nil || len(f.quarantine) == 0 || len(offered) == 0 {
 		return offered
 	}
 	out := make([]Objective, 0, len(offered))
+	fallback := make([]Objective, 0, len(offered))
 	for _, o := range offered {
-		if f.quarantined(obs, o, objectiveStorageKey(o)) {
+		blocked := false
+		neverFailOpen := false
+		if entry, ok := f.activeQuarantine(obs, o, objectiveStorageKey(o)); ok {
+			blocked = true
+			neverFailOpen = entry.NeverFailOpen
+		}
+		if key, ok := huntQuarantineKey(o, obs); ok {
+			if entry, active := f.activeQuarantine(obs, o, key); active {
+				blocked = true
+				neverFailOpen = neverFailOpen || entry.NeverFailOpen
+			}
+		}
+		if !blocked {
+			out = append(out, o)
 			continue
 		}
-		if key, ok := huntQuarantineKey(o, obs); ok && f.quarantined(obs, o, key) {
-			continue
+		if !neverFailOpen {
+			fallback = append(fallback, o)
 		}
-		out = append(out, o)
 	}
-	if len(out) == 0 {
-		return offered
+	if len(out) != 0 {
+		return out
 	}
-	return out
+	if len(fallback) != 0 {
+		return fallback
+	}
+	return nil
 }
 
-// quarantined reports whether the entry under key still matches the scoped
-// state; a material scoped change expires it.
-func (f *runFailurePolicy) quarantined(obs Observation, o Objective, key string) bool {
+// activeQuarantine reports the still-valid entry under key. A material scoped
+// state change expires it.
+func (f *runFailurePolicy) activeQuarantine(obs Observation, o Objective, key string) (failureQuarantineEntry, bool) {
 	entry, ok := f.quarantine[key]
 	if !ok {
-		return false
+		return failureQuarantineEntry{}, false
 	}
 	if entry.StateKey != recoveryStateKeyForScope(o, obs, entry.StateScope) {
 		delete(f.quarantine, key)
-		return false
+		return failureQuarantineEntry{}, false
 	}
-	return true
+	return entry, true
+}
+
+// quarantined is the compact compatibility helper used by focused tests.
+func (f *runFailurePolicy) quarantined(obs Observation, o Objective, key string) bool {
+	_, ok := f.activeQuarantine(obs, o, key)
+	return ok
 }
 
 func (f *runFailurePolicy) clear(o Objective) {
