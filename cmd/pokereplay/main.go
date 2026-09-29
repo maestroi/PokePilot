@@ -32,6 +32,7 @@ import (
 
 	"github.com/maestroi/gomeboy/pkg/gomeboy"
 	"github.com/maestroi/pokepilot/artifactstore"
+	"github.com/maestroi/pokepilot/farm"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 	"golang.org/x/sync/errgroup"
 )
