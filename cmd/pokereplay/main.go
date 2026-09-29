@@ -26,7 +26,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,7 +33,6 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -417,7 +415,6 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	defer stopLease()
 	started := time.Now()
 	encoder := s.encoderName()
-	log.Printf("pokereplay render start run=%s key=%s encoder=%s vaapi=%t segments=%d", runID, cacheKey, encoder, s.vaapi, len(recordings))
 	setError := func(err error) {
 		log.Printf("pokereplay render fail run=%s key=%s encoder=%s dur=%s err=%v", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), err)
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
@@ -434,9 +431,13 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		return
 	}
 	defer os.RemoveAll(dir)
+
+	maxFrames := replaySegmentFrames()
 	semanticSegments := make([]semanticReplaySegment, len(recordings))
+	attempts := make([]preparedReplayAttempt, len(recordings))
+	var segmentPlanErr error
 	for index, recording := range recordings {
-		recordingPath := pathJoinOS(dir, fmt.Sprintf("segment-%03d.gbrun", index+1))
+		recordingPath := pathJoinOS(dir, fmt.Sprintf("attempt-%03d.gbrun", recording.Attempt))
 		if err := s.downloadRecording(ctx, runID, recording.Artifact, recordingPath, recording.Attempt); err != nil {
 			setError(fmt.Errorf("attempt %d recording: %w", recording.Attempt, err))
 			return
@@ -446,75 +447,121 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			setError(fmt.Errorf("attempt %d replay ROM: %w", recording.Attempt, err))
 			return
 		}
-		semanticSegments[index] = semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath}
+		semantic := semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath}
+		semanticSegments[index] = semantic
+		prepared, err := s.prepareReplayAttempt(runID, recording, semantic, dir, maxFrames)
+		if err != nil {
+			if segmentPlanErr == nil {
+				segmentPlanErr = fmt.Errorf("attempt %d segment plan: %w", recording.Attempt, err)
+			}
+			continue
+		}
+		s.applyReplaySegmentMode(runID, mode, maxFrames, &prepared)
+		attempts[index] = prepared
 	}
 
-	// Each attempt is rendered and cached in S3 under its own key, so a
-	// restarted sidecar (every image roll recreates it) or a failed segment
-	// only costs the segments still in flight: the next request reuses the rest.
-	segmentVideos := make([]string, len(recordings))
-	if jobID != "" {
-		total, done := len(recordings), 0
-		if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, farm.MediaRenderJobRendering, &total, &done); err != nil {
-			log.Printf("pokereplay: persist render start job=%s: %v", jobID, err)
+	if segmentPlanErr != nil {
+		log.Printf("pokereplay: bounded segment planning unavailable for run=%s; using whole-attempt compatibility path: %v", runID, segmentPlanErr)
+		total, ready := len(recordings), 0
+		s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total})
+		if jobID != "" {
+			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready)
 		}
-	}
-	var done atomic.Int32
-	g, gctx := errgroup.WithContext(ctx)
-	for index, recording := range recordings {
-		g.Go(func() error {
-			video, err := s.renderCachedSegment(gctx, runID, recording, semanticSegments[index], dir, index, mode)
-			if err != nil {
-				return fmt.Errorf("attempt %d: %w", recording.Attempt, err)
-			}
-			segmentVideos[index] = video
-			finished := int(done.Add(1))
-			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: len(recordings), SegmentsDone: finished})
+		size, err := s.renderLegacyReplay(ctx, runID, recordings, semanticSegments, dir, mode, func(done, total int) {
+			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: done})
 			if jobID != "" {
-				total := len(recordings)
-				if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, farm.MediaRenderJobRendering, &total, &finished); progressErr != nil {
-					log.Printf("pokereplay: persist render progress job=%s: %v", jobID, progressErr)
-				}
+				_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done)
 			}
-			return nil
 		})
-	}
-	if err := g.Wait(); err != nil {
-		setError(err)
+		if err != nil {
+			setError(err)
+			return
+		}
+		log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d legacy=true", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size)
+		s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size, Segments: total, SegmentsDone: total})
+		if jobID != "" {
+			if err := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobReady, farm.MediaRenderJobReady, "", size); err != nil {
+				log.Printf("pokereplay: persist ready legacy render job %s: %v", jobID, err)
+			}
+		}
+		if err := s.renderSemanticReplay(ctx, runID, recordings, semanticSegments); err != nil {
+			log.Printf("pokereplay semantic replay unavailable run=%s err=%v", runID, err)
+		}
 		return
 	}
 
-	size := int64(0)
-	if len(segmentVideos) > 1 {
-		if jobID != "" {
-			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobAssembling, farm.MediaRenderJobAssembling, nil, nil)
+	total := totalReplayVideoSegments(attempts)
+	ready, err := s.probeReplaySegmentCache(ctx, attempts)
+	if err != nil {
+		setError(fmt.Errorf("probe replay segment cache: %w", err))
+		return
+	}
+	log.Printf("pokereplay render start run=%s key=%s encoder=%s vaapi=%t attempts=%d segments=%d cached=%d segment_frames=%d",
+		runID, cacheKey, encoder, s.vaapi, len(recordings), total, ready, maxFrames)
+	s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: ready})
+	if jobID != "" {
+		if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, farm.MediaRenderJobRendering, &total, &ready); err != nil {
+			log.Printf("pokereplay: persist render start job=%s: %v", jobID, err)
 		}
-		videoPath := pathJoinOS(dir, "replay.mp4")
+	}
+
+	done := ready
+	onReady := func() {
+		done++
+		s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: done})
+		if jobID != "" {
+			if progressErr := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, farm.MediaRenderJobRendering, &total, &done); progressErr != nil {
+				log.Printf("pokereplay: persist render progress job=%s: %v", jobID, progressErr)
+			}
+		}
+	}
+	for index := range attempts {
+		if err := s.renderAttemptVideoSegments(ctx, runID, mode, &attempts[index], onReady); err != nil {
+			setError(fmt.Errorf("attempt %d: %w", attempts[index].Recording.Attempt, err))
+			return
+		}
+	}
+
+	if jobID != "" {
+		_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobAssembling, farm.MediaRenderJobAssembling, nil, nil)
+	}
+	segmentVideos, err := materializeReplayVideoSegments(ctx, s, attempts)
+	if err != nil {
+		setError(err)
+		return
+	}
+	if len(segmentVideos) == 0 {
+		setError(fmt.Errorf("replay segment plan produced no video"))
+		return
+	}
+	videoPath := segmentVideos[0]
+	if len(segmentVideos) > 1 {
+		videoPath = pathJoinOS(dir, "replay.mp4")
 		if err := concatReplaySegments(ctx, dir, segmentVideos, videoPath); err != nil {
 			setError(err)
 			return
 		}
-		file, err := os.Open(videoPath)
-		if err != nil {
-			setError(err)
-			return
-		}
-		if jobID != "" {
-			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobUploading, farm.MediaRenderJobUploading, nil, nil)
-		}
-		obj, err := s.store.PutObjectReader(ctx, cacheKey, "video/mp4", file)
-		file.Close()
-		if err != nil {
-			setError(err)
-			return
-		}
-		size = obj.Size
-	} else if info, err := os.Stat(segmentVideos[0]); err == nil {
-		// A single segment's cache key is the replay key; it is already uploaded.
-		size = info.Size()
 	}
-	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size)
-	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size})
+
+	file, err := os.Open(videoPath)
+	if err != nil {
+		setError(err)
+		return
+	}
+	if jobID != "" {
+		_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobUploading, farm.MediaRenderJobUploading, nil, nil)
+	}
+	obj, err := s.store.PutObjectReader(ctx, cacheKey, "video/mp4", file)
+	file.Close()
+	if err != nil {
+		setError(err)
+		return
+	}
+	size := obj.Size
+
+	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d segments=%d",
+		runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size, total)
+	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size, Segments: total, SegmentsDone: total})
 	if jobID != "" {
 		if err := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobReady, farm.MediaRenderJobReady, "", size); err != nil {
 			log.Printf("pokereplay: persist ready render job %s: %v", jobID, err)

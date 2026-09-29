@@ -60,6 +60,8 @@ type broadcastScene struct {
 	RawVideo    string
 	Destination string
 	Timeline    farm.MediaTimeline
+	StartMS     int64 // optional source-timeline window start, inclusive
+	EndMS       int64 // optional source-timeline window end, exclusive
 	VAAPI       bool
 	VAAPIDevice string
 }
@@ -169,6 +171,72 @@ func buildBroadcastPlan(runID string, attempt int, timeline farm.MediaTimeline) 
 	return plan
 }
 
+func windowBroadcastPlan(plan broadcastPlan, startMS, endMS int64) broadcastPlan {
+	if startMS <= 0 && endMS <= 0 {
+		return plan
+	}
+	if startMS < 0 {
+		startMS = 0
+	}
+	if endMS <= startMS {
+		return broadcastPlan{}
+	}
+	duration := endMS - startMS
+	out := broadcastPlan{}
+
+	active := -1
+	for i := range plan.States {
+		if plan.States[i].StartMS <= startMS {
+			active = i
+			continue
+		}
+		break
+	}
+	if active >= 0 {
+		state := plan.States[active]
+		state.StartMS = 0
+		state.EndMS = duration
+		out.States = append(out.States, state)
+	}
+	for i := range plan.States {
+		state := plan.States[i]
+		if state.StartMS <= startMS || state.StartMS >= endMS {
+			continue
+		}
+		state.StartMS -= startMS
+		if state.EndMS == 0 || state.EndMS > endMS {
+			state.EndMS = duration
+		} else {
+			state.EndMS -= startMS
+		}
+		out.States = append(out.States, state)
+	}
+	for i := 0; i+1 < len(out.States); i++ {
+		out.States[i].EndMS = out.States[i+1].StartMS
+	}
+	if len(out.States) > 0 {
+		out.States[len(out.States)-1].EndMS = duration
+	}
+
+	for _, event := range plan.Events {
+		if event.EndMS <= startMS || event.StartMS >= endMS {
+			continue
+		}
+		event.StartMS -= startMS
+		event.EndMS -= startMS
+		if event.StartMS < 0 {
+			event.StartMS = 0
+		}
+		if event.EndMS > duration {
+			event.EndMS = duration
+		}
+		if event.EndMS > event.StartMS {
+			out.Events = append(out.Events, event)
+		}
+	}
+	return out
+}
+
 func broadcastStateAt(runID string, attempt int, timeline farm.MediaTimeline, snapshot *farm.MediaSnapshot, timestampMS int64) broadcastState {
 	state := broadcastState{
 		StartMS:   timestampMS,
@@ -253,6 +321,7 @@ func (c *ffmpegBroadcastCompositor) Compose(ctx context.Context, scene broadcast
 	defer os.RemoveAll(dir)
 
 	plan := buildBroadcastPlan(scene.RunID, scene.Attempt, scene.Timeline)
+	plan = windowBroadcastPlan(plan, scene.StartMS, scene.EndMS)
 	overlayTimeline, err := writeBroadcastOverlayTimeline(dir, plan)
 	if err != nil {
 		return err
