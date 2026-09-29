@@ -18,6 +18,9 @@ export POKEPILOT_ROM_DIR
 
 # Extra flags, e.g. make run ARGS='-goto "pallet town"'
 ARGS ?=
+# One-id coding-agent debugging. Example: make debug RUN=run-abc123
+RUN ?=
+DEBUG_MODE ?= normal
 
 # Local single-node Swarm farm (docs/archive/2026-08-26-farm-design.md 6).
 # The image is built locally and loaded into this node's image store;
@@ -83,7 +86,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto debug test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -150,6 +153,14 @@ run-llm-auto:
 	POKEPILOT_LLM_TIMEOUT=$(AUTO_LLM_TIMEOUT) \
 	llm_token= \
 	go run ./cmd/pokepilot -planner llm -fps 0 $(ARGS)
+
+# Build one bounded model-facing packet from a run id. The command performs
+# source localization itself and, when a structured failure repro plus Red ROM
+# are available, replays it deterministically through the current checkout.
+debug:
+	@test -n "$(RUN)" || { echo "usage: make debug RUN=run-... [DEBUG_MODE=tiny|normal|deep]"; exit 2; }
+	$(load_env) \
+	go run ./cmd/pokedebug -mode "$(DEBUG_MODE)" "$(RUN)" $(ARGS)
 
 test:
 	go test ./... $(ARGS)
