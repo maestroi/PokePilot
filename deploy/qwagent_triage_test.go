@@ -119,10 +119,11 @@ func TestPromptLoadsTriageInstructions(t *testing.T) {
 		"[triage:<key>]",
 		"[farm-issue:<issue_number>]",
 		"make test-short",
-		"Do not call pokepilot_get_triage",
+		"Do not call `pokepilot_get_triage`",
 		".claude/skills/pokefarm-triage/SKILL.md",
-		"native skill tool",
-		"do not second-guess queue eligibility",
+		"Prepared debug packet",
+		"source_matches",
+		"make -s debug RUN=<run_id>",
 		"repair_pr",
 		"failing_checks",
 	} {
@@ -140,12 +141,13 @@ func TestTriageSkillDocumentsLocalLifecycle(t *testing.T) {
 	s := string(body)
 	for _, want := range []string{
 		"name: pokefarm-triage",
-		"Unattended qwagent triage",
-		"open PR containing `[triage:<key>]`",
-		"merged PR containing `[triage:<key>]`",
-		"last_observed_revision",
-		"fail closed",
-		"whose checks have failed",
+		"make -s debug RUN=<run-id>",
+		"Prepared debug packet",
+		"source_matches",
+		"reproduction.state == reproduced",
+		"make test-short",
+		"[triage:<key>]",
+		"pokepilot_get_run_debug",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("triage skill missing %q", want)
@@ -191,6 +193,9 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"POKEPILOT_MCP_URL",
 		"POKEMON_RED_ROM",
 		"roms/pokemon_red.gb",
+		"make -s debug",
+		"DEBUG_PACKET",
+		"Prepared debug packet",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)
