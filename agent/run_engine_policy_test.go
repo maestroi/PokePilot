@@ -467,7 +467,6 @@ func TestNoDialogueTalkQuarantineSurvivesApproachMovement(t *testing.T) {
 	}
 }
 
-
 func TestNoDialogueTalkNeverFailsOpenAsOnlyCandidate(t *testing.T) {
 	failed := Objective{Kind: KindTalk, Location: "viridian pokemon center", X: 10, Y: 5}
 	obs := Observation{Location: "viridian pokemon center", Map: 0x29, X: 9, Y: 5, Controllable: true}
