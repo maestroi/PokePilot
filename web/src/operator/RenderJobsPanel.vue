@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
-import { getMediaRenderJobs } from '../shared/api/client'
+import { getMediaRenderJobs, retryMediaRenderJob } from '../shared/api/client'
 import type { MediaRenderJob } from '../shared/api/types'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
@@ -16,7 +16,7 @@ const {
   error,
   lastUpdatedAt,
   state,
-  retry
+  retry: refreshJobs
 } = usePollingResource(
   (signal) => getMediaRenderJobs(50, signal),
   {
@@ -29,12 +29,18 @@ const jobs = computed(() => data.value?.jobs ?? [])
 const stateCounts = computed(() => data.value?.states ?? {})
 const activeCount = computed(() => [...ACTIVE_STATES].reduce((sum, name) => sum + Number(stateCounts.value[name] || 0), 0))
 const lastUpdatedLabel = computed(() => lastUpdatedAt.value ? new Date(lastUpdatedAt.value).toLocaleTimeString() : '—')
+const retryingJobID = ref('')
+const actionError = ref('')
+const readyBytes = computed(() => jobs.value
+  .filter((job) => job.state === 'ready')
+  .reduce((sum, job) => sum + Number(job.result_size || 0), 0)
+)
 
 const summary = computed(() => [
   { label: 'Active', value: activeCount.value, note: 'claimed by render worker' },
   { label: 'Queued', value: Number(stateCounts.value.queued || 0), note: 'waiting for replay VM' },
   { label: 'Failed', value: Number(stateCounts.value.failed || 0), note: 'needs investigation' },
-  { label: 'Ready', value: Number(stateCounts.value.ready || 0), note: `${Number(data.value?.total || 0)} durable jobs total` }
+  { label: 'Ready', value: Number(stateCounts.value.ready || 0), note: `${formatBytes(readyBytes.value)} output · ${Number(data.value?.total || 0)} jobs total` }
 ])
 
 function tone(job: MediaRenderJob): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
@@ -101,8 +107,27 @@ function workerLabel(job: MediaRenderJob): string {
   return job.worker_id
 }
 
+function retryable(job: MediaRenderJob): boolean {
+  return job.state === 'failed' || job.state === 'cancelled'
+}
+
+async function retryJob(job: MediaRenderJob): Promise<void> {
+  if (!retryable(job) || retryingJobID.value) return
+  retryingJobID.value = job.id
+  actionError.value = ''
+  try {
+    await retryMediaRenderJob(job.id)
+    await refreshJobs()
+  } catch (cause) {
+    actionError.value = cause instanceof Error ? cause.message : 'Replay render retry failed'
+  } finally {
+    retryingJobID.value = ''
+  }
+}
+
 function refresh(): void {
-  void retry()
+  actionError.value = ''
+  void refreshJobs()
 }
 </script>
 
@@ -135,6 +160,10 @@ function refresh(): void {
           <dd class="mt-1 font-mono text-lg font-semibold tabular-nums text-white">{{ item.value }}</dd>
           <p class="mt-0.5 text-[10px] text-slate-600">{{ item.note }}</p>
         </div>
+      </div>
+
+      <div v-if="actionError" class="mb-3 rounded-md border border-rose-300/20 bg-rose-400/8 px-3 py-2 text-xs text-rose-200" role="alert">
+        {{ actionError }}
       </div>
 
       <div class="space-y-2 md:hidden">
@@ -188,6 +217,18 @@ function refresh(): void {
               <dd class="mt-0.5 font-mono text-slate-400">{{ ageLabel(job.updated_at_unix_ms) }}</dd>
             </div>
           </dl>
+
+          <div v-if="retryable(job)" class="mt-3 flex justify-end">
+            <button
+              type="button"
+              :disabled="Boolean(retryingJobID)"
+              class="inline-flex items-center gap-1.5 rounded-md bg-amber-300/10 px-2.5 py-1.5 text-[10px] font-bold text-amber-100 ring-1 ring-amber-300/20 hover:bg-amber-300/15 disabled:opacity-50"
+              @click="retryJob(job)"
+            >
+              <ArrowPathIcon class="size-3.5" aria-hidden="true" />
+              {{ retryingJobID === job.id ? 'Retrying…' : 'Retry render' }}
+            </button>
+          </div>
         </article>
       </div>
 
@@ -201,7 +242,8 @@ function refresh(): void {
               <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Worker</th>
               <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</th>
               <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Runtime</th>
-              <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Updated</th>
+              <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Updated</th>
+              <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Action</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-white/8">
@@ -237,7 +279,20 @@ function refresh(): void {
               <td class="max-w-[15rem] px-3 py-2.5 font-mono text-[10px] text-slate-500" :title="workerLabel(job)">{{ workerLabel(job) }}</td>
               <td class="px-3 py-2.5 text-xs text-slate-500">{{ job.mode }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-[10px] whitespace-nowrap text-slate-500">{{ runtimeLabel(job) }}</td>
-              <td class="px-3 py-2.5 text-right font-mono text-[10px] whitespace-nowrap text-slate-500 sm:pr-4">{{ ageLabel(job.updated_at_unix_ms) }}</td>
+              <td class="px-3 py-2.5 text-right font-mono text-[10px] whitespace-nowrap text-slate-500">{{ ageLabel(job.updated_at_unix_ms) }}</td>
+              <td class="px-3 py-2.5 text-right sm:pr-4">
+                <button
+                  v-if="retryable(job)"
+                  type="button"
+                  :disabled="Boolean(retryingJobID)"
+                  class="inline-flex items-center gap-1 rounded-md bg-amber-300/10 px-2 py-1 text-[10px] font-bold text-amber-100 ring-1 ring-amber-300/20 hover:bg-amber-300/15 disabled:opacity-50"
+                  @click="retryJob(job)"
+                >
+                  <ArrowPathIcon class="size-3" aria-hidden="true" />
+                  {{ retryingJobID === job.id ? 'Retrying…' : 'Retry' }}
+                </button>
+                <span v-else class="text-[10px] text-slate-700">—</span>
+              </td>
             </tr>
           </tbody>
         </table>
