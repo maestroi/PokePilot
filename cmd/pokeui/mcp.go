@@ -183,7 +183,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_start_run",
-		Description: "Queue one PokePilot run and return its generated run id. Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Tetris uses the deterministic policy runtime.",
+		Description: "Queue one PokePilot run and return its generated run id. Gen I Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Gold/Silver use the cartridge-native starter flow and default to a 3-badge frontier run; Tetris uses the deterministic policy runtime.",
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
