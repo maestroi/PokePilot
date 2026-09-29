@@ -16,12 +16,17 @@ func readBytes(reader game.MemoryReader, addr uint16, n int) []byte {
 	return buf
 }
 
+// A script-queued battle (wCurOpponent set, wIsInBattle still 0) clears
+// wJoyIgnore before the overworld loop runs the battle transition, e.g. Mt.
+// Moon B2F's Jessie/James script 12. That window is ROM-owned, not control
+// (run-1jc1gst1w5tv2f); Red's state.Controllable carries the same guard.
 func yellowControllable(reader game.MemoryReader) bool {
 	return reader.Peek8(sym.CurMapWidth) != 0 &&
 		reader.Peek8(sym.CurMapHeight) != 0 &&
 		reader.Peek8(sym.FontLoaded) == 0 &&
 		reader.Peek8(sym.JoyIgnore) == 0 &&
-		reader.Peek8(sym.WalkCounter) == 0
+		reader.Peek8(sym.WalkCounter) == 0 &&
+		reader.Peek8(sym.CurOpponent) == 0
 }
 
 // DecodeBootState is Yellow's implementation of the shared semantic fresh-game
