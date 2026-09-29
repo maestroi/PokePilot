@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { ApiError, createExperiment, createRun, getBuildProvenance, getDashboard, getMediaRenderJobs, getModels, retryMediaRenderJob, patchDeploymentWorkers } from '../src/shared/api/client.ts'
+import { ApiError, cancelMediaRenderJob, createExperiment, createRun, deleteMediaRenderJob, getBuildProvenance, getDashboard, getMediaRenderJobs, getModels, retryMediaRenderJob, patchDeploymentWorkers } from '../src/shared/api/client.ts'
 
 const originalFetch = globalThis.fetch
 
@@ -70,6 +70,25 @@ test('media render jobs can be retried from the operator client', async () => {
 
   const job = await retryMediaRenderJob('render/failed')
   assert.equal(job.state, 'queued')
+})
+
+test('media render jobs can be cancelled and removed from operator history', async () => {
+  const seen: string[] = []
+  globalThis.fetch = async (input, init) => {
+    seen.push(`${init?.method || 'GET'} ${String(input)}`)
+    return new Response(JSON.stringify({
+      id: 'render-1',
+      run_id: 'run-1',
+      state: init?.method === 'DELETE' ? 'cancelled' : 'cancelled'
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  await cancelMediaRenderJob('render-1')
+  await deleteMediaRenderJob('render-1')
+  assert.deepEqual(seen, [
+    'POST /v1/media/render-jobs/render-1/cancel',
+    'DELETE /v1/media/render-jobs/render-1'
+  ])
 })
 
 test('createRun generates a run id and surfaces API errors', async () => {
