@@ -12,6 +12,7 @@ import {
   TrophyIcon
 } from '@heroicons/vue/20/solid'
 import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
+import { supportsPublicCapability } from '../shared/publicCapabilities'
 import AudienceVoteCard from './AudienceVoteCard.vue'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
@@ -106,6 +107,7 @@ function watch(run: SpectatorRun): void {
             <ArrowRightIcon class="size-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
           </button>
           <a
+            v-if="canExploreWorld"
             href="/explore"
             class="inline-flex items-center gap-2 rounded-xl border border-white/12 bg-white/6 px-5 py-3 text-sm font-bold text-slate-100 transition hover:border-cyan-300/25 hover:bg-white/10"
           >
@@ -342,7 +344,7 @@ function watch(run: SpectatorRun): void {
       </div>
 
       <div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <a href="/explore" class="public-feature group">
+        <a v-if="canExploreWorld" href="/explore" class="public-feature group">
           <GlobeAltIcon class="size-5 text-cyan-300" aria-hidden="true" />
           <div>
             <strong>World explorer</strong>
