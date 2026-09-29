@@ -7,6 +7,7 @@ import (
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
+	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
 // offerWithTMHM is the candidate-only compatibility facade for Red-owned
@@ -28,10 +29,10 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 		// through their own registered adapter's progression planner.
 		if factory, err := objectiveAdapterFactoryFor(obs.GameID); err == nil {
 			if planner, ok := factory(m, romData, RoutePriorityConservative).(ProgressionPlanner); ok {
-				return OfferWithProgressionEvidence(obs, known, planner)
+				return filterGen1EngineServiceTalk(romData, obs, OfferWithProgressionEvidence(obs, known, planner))
 			}
 		}
-		return OfferWithEvidence(obs, known)
+		return filterGen1EngineServiceTalk(romData, obs, OfferWithEvidence(obs, known))
 	}
 	obs.TrainingAreaChoices = redTrainingAreaAssessments(m, romData, obs, known)
 	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
@@ -169,6 +170,18 @@ func filterRedServiceTalkObjectives(romData []byte, obs Observation, out []Objec
 		filtered = append(filtered, o)
 	}
 	return filtered
+}
+
+// filterGen1EngineServiceTalk applies the service-talk ownership filter to
+// Gen-I cartridges that offer through their own adapter (Yellow). They execute
+// Talk through the shared Gen-I engine, whose executor already refuses
+// service-owned actors, so offering a nurse or clerk as generic Talk only
+// produces a blocked no_dialogue objective on every replan.
+func filterGen1EngineServiceTalk(romData []byte, obs Observation, offer ObjectiveOffer) ObjectiveOffer {
+	if obs.GameID == yellowprofile.GameID {
+		offer.Candidates = filterRedServiceTalkObjectives(romData, obs, offer.Candidates)
+	}
+	return offer
 }
 
 // redOwnedChoiceActor identifies Red NPCs whose interaction immediately asks a
