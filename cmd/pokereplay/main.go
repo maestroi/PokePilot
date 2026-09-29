@@ -525,12 +525,24 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		total, ready := len(recordings), 0
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total})
 		if jobID != "" {
-			_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready)
+			if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &ready); err != nil {
+				if mediaRenderJobLeaseLost(err) {
+					cancelForControl()
+					return
+				}
+				log.Printf("pokereplay: persist legacy render start job=%s: %v", jobID, err)
+			}
 		}
 		size, err := s.renderLegacyReplay(ctx, runID, recordings, semanticSegments, dir, mode, func(done, total int) {
 			s.setJob(cacheKey, replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Segments: total, SegmentsDone: done})
 			if jobID != "" {
-				_ = s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done)
+				if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobRendering, "legacy_attempts", &total, &done); err != nil {
+					if mediaRenderJobLeaseLost(err) {
+						cancelForControl()
+					} else {
+						log.Printf("pokereplay: persist legacy render progress job=%s: %v", jobID, err)
+					}
+				}
 			}
 		})
 		if err != nil {
