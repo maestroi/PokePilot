@@ -48,7 +48,28 @@ func approachViaTravel(m *emu.Emu, romData []byte, targetX, targetY uint8, polic
 	return nil
 }
 
-const pickupFaceRecoveryAttempts = 3
+const (
+	pickupFaceRecoveryAttempts          = 3
+	pickupFaceInterruptionSettleFrames = 240
+)
+
+// waitForPickupFaceInterruption passively owns the short gap after Face gives
+// up. An encounter can already be committed by the last approach/turn step
+// while the semantic overworld decoder still reports idle; a few frames later
+// the battle/dialogue becomes visible. Returning the Face error in that gap
+// leaks the interruption into the objective finish boundary (#2213).
+func waitForPickupFaceInterruption(step func(), interruption func() error) error {
+	if err := interruption(); err != nil {
+		return err
+	}
+	for frame := 0; frame < pickupFaceInterruptionSettleFrames; frame++ {
+		step()
+		if err := interruption(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // recoverPickupInteractionInterruption owns the tiny race after an approach
 // has finished but before Pickup presses A. A sighted trainer (or an ordinary
@@ -123,11 +144,14 @@ func Pickup(m *emu.Emu, romData []byte, x, y uint8, want uint8, policy MovePolic
 			break
 		}
 
-		// If the face failed while the overworld is still idle, this is a
-		// genuine interaction/controller failure. Recovery is only justified
-		// when live RAM proves a battle/dialogue stole control after the
-		// approach completed.
-		if movementInterruption(m) == nil {
+		// Face can time out just before an encounter becomes semantically live.
+		// Passively settle that race before deciding this was a genuine idle
+		// interaction/controller failure. No input is sent and arbitrary choices
+		// remain untouched.
+		if interruptErr := waitForPickupFaceInterruption(
+			m.StepFrame,
+			func() error { return movementInterruption(m) },
+		); interruptErr == nil {
 			return fmt.Errorf("skill: Pickup: %w", faceErr)
 		}
 		if attempt == pickupFaceRecoveryAttempts {
