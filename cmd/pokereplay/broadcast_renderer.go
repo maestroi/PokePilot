@@ -14,6 +14,7 @@ type replayMode string
 
 const (
 	replayModeBroadcast replayMode = "broadcast"
+	replayModeSemantic  replayMode = "semantic"
 	replayModeRaw       replayMode = "raw"
 )
 
@@ -21,10 +22,12 @@ func parseReplayMode(value string) (replayMode, error) {
 	switch replayMode(strings.ToLower(strings.TrimSpace(value))) {
 	case "", replayModeBroadcast:
 		return replayModeBroadcast, nil
+	case replayModeSemantic:
+		return replayModeSemantic, nil
 	case replayModeRaw:
 		return replayModeRaw, nil
 	default:
-		return "", fmt.Errorf("unsupported replay mode %q (want broadcast or raw)", value)
+		return "", fmt.Errorf("unsupported replay mode %q (want broadcast, semantic, or raw)", value)
 	}
 }
 
@@ -35,8 +38,16 @@ type broadcastScene = compositor.Scene
 
 func (s *replayServer) replayCacheKeyForMode(runID string, recordings []replayRecording, mode replayMode) string {
 	version := broadcastRendererVersion
-	if s.compositor != nil {
-		version = s.compositor.Version()
+	switch mode {
+	case replayModeSemantic:
+		version = compositor.PublicSemanticRendererVersion()
+		if s.semanticRenderer != nil {
+			version = s.semanticRenderer.Version()
+		}
+	case replayModeBroadcast:
+		if s.compositor != nil {
+			version = s.compositor.Version()
+		}
 	}
 	return replaySetCacheKeyForMode(runID, recordings, mode, version)
 }
