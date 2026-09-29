@@ -40,6 +40,8 @@
     switch (game) {
       case "pokemon-blue": return "Pokémon Blue";
       case "pokemon-yellow": return "Pokémon Yellow";
+      case "pokemon-gold": return "Pokémon Gold";
+      case "pokemon-silver": return "Pokémon Silver";
       case "pokemon-red": return "Pokémon Red";
       default: return game || "Pokémon Red";
     }
@@ -310,20 +312,36 @@
   }
   function syncPlannerFields() {
     const f = $("spec-form");
+    const gen2 = f.game.value === "pokemon-gold" || f.game.value === "pokemon-silver";
+    const scriptedOpt = f.planner.querySelector('option[value="scripted"]');
+    if (scriptedOpt) scriptedOpt.disabled = gen2;
+    if (gen2 && f.planner.value === "scripted") f.planner.value = "llm";
     const scripted = f.planner.value === "scripted";
     document.querySelectorAll(".scripted-only").forEach((el) => { el.hidden = !scripted; });
     document.querySelectorAll(".llm-only").forEach((el) => { el.hidden = scripted; });
     document.querySelectorAll(".endless-only").forEach((el) => { el.hidden = !f.endless.checked; });
+    if (gen2 && f.qualification_target) f.qualification_target.value = "";
     syncQualificationFields();
+    if (f.qualification_target) {
+      const qualificationLabel = f.qualification_target.closest("label");
+      if (qualificationLabel) qualificationLabel.hidden = gen2 || scripted;
+    }
     const llmOpt = f.starter.querySelector('option[value=""]');
     if (llmOpt) llmOpt.hidden = scripted;
     if (scripted && f.starter.value === "") f.starter.value = "squirtle";
     const yellow = f.game.value === "pokemon-yellow";
     const pikaOpt = f.starter.querySelector('option[value="pikachu"]');
     if (pikaOpt) pikaOpt.hidden = !yellow;
+    f.starter.querySelectorAll(".gen1-starter-opt").forEach((opt) => { opt.hidden = yellow || gen2; });
+    f.starter.querySelectorAll(".gen2-starter-opt").forEach((opt) => { opt.hidden = !gen2; });
     f.starter.disabled = yellow;
     if (yellow) f.starter.value = "pikachu";
-    else if (f.starter.value === "pikachu") f.starter.value = scripted ? "squirtle" : "";
+    else if (gen2) {
+      if (!["", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) f.starter.value = "";
+      if (f.goal.value === "Earn the Boulder Badge.") f.goal.value = "Earn 3 badges.";
+    } else if (["pikachu", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) {
+      f.starter.value = scripted ? "squirtle" : "";
+    }
   }
   function fillDefaults() {
     const f = $("spec-form");
