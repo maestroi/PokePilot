@@ -208,15 +208,16 @@ func gitRoot() (string, error) {
 }
 
 func localizeSource(root string, terms []string, mode string) []debugSourceMatch {
-	maxMatches, radius := 6, 7
+	maxMatches, radius := 4, 5
 	switch mode {
 	case "tiny":
-		maxMatches, radius = 3, 4
+		maxMatches, radius = 2, 3
 	case "deep":
-		maxMatches, radius = 12, 14
+		maxMatches, radius = 10, 12
 	}
 	var out []debugSourceMatch
 	seen := map[string]bool{}
+	nearby := map[string][]int{}
 	for _, term := range terms {
 		term = strings.TrimSpace(term)
 		if term == "" {
@@ -236,7 +237,22 @@ func localizeSource(root string, terms []string, mode string) []debugSourceMatch
 			if seen[key] {
 				continue
 			}
+			tooClose := false
+			for _, previous := range nearby[path] {
+				delta := previous - lineNo
+				if delta < 0 {
+					delta = -delta
+				}
+				if delta <= radius*2 {
+					tooClose = true
+					break
+				}
+			}
+			if tooClose {
+				continue
+			}
 			seen[key] = true
+			nearby[path] = append(nearby[path], lineNo)
 			snippet, err := sourceSnippet(filepath.Join(root, path), lineNo, radius)
 			if err != nil {
 				continue
@@ -279,7 +295,7 @@ func sourceSnippet(path string, line, radius int) (string, error) {
 	var b strings.Builder
 	for i := start; i <= end; i++ {
 		fmt.Fprintf(&b, "%d:%s\n", i, lines[i-1])
-		if b.Len() > 3200 {
+		if b.Len() > 2200 {
 			break
 		}
 	}
@@ -401,7 +417,7 @@ func verifyDebugBundle(root, bundlePath, cacheDir string, packet farm.DebugPacke
 		return debugReproduction{State: "skipped", Diagnostic: "not inside a git checkout"}
 	}
 	game := strings.ToLower(strings.TrimSpace(packet.Game))
-	if game != "" && game != "pokemon-red" {
+	if game != "" && game != "pokemon-red" && game != "pokemon" && game != "red" {
 		return debugReproduction{State: "skipped", Diagnostic: "deterministic pokerepro verification currently uses POKEMON_RED_ROM"}
 	}
 	rom := strings.TrimSpace(os.Getenv("POKEMON_RED_ROM"))
