@@ -38,6 +38,20 @@ func TestFuchsiaProgressionReady(t *testing.T) {
 	}
 }
 
+func TestFuchsiaCompleteNeedsGateCleanup(t *testing.T) {
+	var mem state.Mem
+	setTestBag(&mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{hm04StrengthItem, 1})
+	mem[sym.ObtainedBadges] = soulBadgeMask
+	mem[sym.CurMap] = safariZoneGateMap
+	if !fuchsiaCompleteNeedsGateCleanup(&mem) {
+		t.Fatal("completed Fuchsia state at Safari gate must keep ownership long enough to settle the gate prompt")
+	}
+	mem[sym.CurMap] = wardensHouseMap
+	if fuchsiaCompleteNeedsGateCleanup(&mem) {
+		t.Fatal("completed Fuchsia state away from Safari gate does not need gate cleanup")
+	}
+}
+
 func TestFuchsiaProgressionComplete(t *testing.T) {
 	var mem state.Mem
 	setTestBag(&mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{hm04StrengthItem, 1})
