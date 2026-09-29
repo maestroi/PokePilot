@@ -1,0 +1,829 @@
+{
+  "overworld": {
+    "schema_version": 1,
+    "game": {
+      "id": "pokemon-red",
+      "revision": "red-us"
+    },
+    "clock": {
+      "epoch": 2,
+      "frame": 600
+    },
+    "scene": "overworld",
+    "capabilities": [
+      "map",
+      "player",
+      "layers",
+      "entities"
+    ],
+    "map": {
+      "id": "pewter-city",
+      "name": "Pewter City",
+      "width": 5,
+      "height": 5
+    },
+    "player": {
+      "id": "player",
+      "kind": "player",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "facing": "down",
+      "movement": {
+        "kind": "idle",
+        "from": {
+          "x": 2,
+          "y": 2
+        },
+        "to": {
+          "x": 2,
+          "y": 2
+        }
+      }
+    },
+    "entities": [
+      {
+        "id": "npc-1",
+        "kind": "npc",
+        "label": "Guide",
+        "appearance": "youngster",
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "facing": "right"
+      },
+      {
+        "id": "trainer-1",
+        "kind": "trainer",
+        "label": "Trainer",
+        "appearance": "cooltrainer_m",
+        "position": {
+          "x": 3,
+          "y": 3
+        },
+        "facing": "up"
+      }
+    ],
+    "layers": [
+      {
+        "id": "terrain",
+        "kind": "terrain",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "tree"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          }
+        ]
+      },
+      {
+        "id": "objects",
+        "kind": "objects",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "sign"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          }
+        ]
+      }
+    ]
+  },
+  "dialogue": {
+    "schema_version": 1,
+    "game": {
+      "id": "pokemon-red",
+      "revision": "red-us"
+    },
+    "clock": {
+      "epoch": 2,
+      "frame": 600
+    },
+    "scene": "dialogue",
+    "capabilities": [
+      "map",
+      "player",
+      "layers",
+      "entities",
+      "dialogue"
+    ],
+    "map": {
+      "id": "pewter-city",
+      "name": "Pewter City",
+      "width": 5,
+      "height": 5
+    },
+    "player": {
+      "id": "player",
+      "kind": "player",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "facing": "down",
+      "movement": {
+        "kind": "idle",
+        "from": {
+          "x": 2,
+          "y": 2
+        },
+        "to": {
+          "x": 2,
+          "y": 2
+        }
+      }
+    },
+    "entities": [
+      {
+        "id": "npc-1",
+        "kind": "npc",
+        "label": "Guide",
+        "appearance": "youngster",
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "facing": "right"
+      },
+      {
+        "id": "trainer-1",
+        "kind": "trainer",
+        "label": "Trainer",
+        "appearance": "cooltrainer_m",
+        "position": {
+          "x": 3,
+          "y": 3
+        },
+        "facing": "up"
+      }
+    ],
+    "layers": [
+      {
+        "id": "terrain",
+        "kind": "terrain",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "tree"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          }
+        ]
+      },
+      {
+        "id": "objects",
+        "kind": "objects",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "sign"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          }
+        ]
+      }
+    ],
+    "dialogue": {
+      "speaker": "Gym Guide",
+      "text": "You can do it! Keep your Pokemon healthy."
+    }
+  },
+  "menu": {
+    "schema_version": 1,
+    "game": {
+      "id": "pokemon-red",
+      "revision": "red-us"
+    },
+    "clock": {
+      "epoch": 2,
+      "frame": 600
+    },
+    "scene": "menu",
+    "capabilities": [
+      "map",
+      "player",
+      "layers",
+      "entities",
+      "menu"
+    ],
+    "map": {
+      "id": "pewter-city",
+      "name": "Pewter City",
+      "width": 5,
+      "height": 5
+    },
+    "player": {
+      "id": "player",
+      "kind": "player",
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "facing": "down",
+      "movement": {
+        "kind": "idle",
+        "from": {
+          "x": 2,
+          "y": 2
+        },
+        "to": {
+          "x": 2,
+          "y": 2
+        }
+      }
+    },
+    "entities": [
+      {
+        "id": "npc-1",
+        "kind": "npc",
+        "label": "Guide",
+        "appearance": "youngster",
+        "position": {
+          "x": 1,
+          "y": 2
+        },
+        "facing": "right"
+      },
+      {
+        "id": "trainer-1",
+        "kind": "trainer",
+        "label": "Trainer",
+        "appearance": "cooltrainer_m",
+        "position": {
+          "x": 3,
+          "y": 3
+        },
+        "facing": "up"
+      }
+    ],
+    "layers": [
+      {
+        "id": "terrain",
+        "kind": "terrain",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "tree"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "grass"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "water"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "wall"
+          },
+          {
+            "kind": "path"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          },
+          {
+            "kind": "floor"
+          }
+        ]
+      },
+      {
+        "id": "objects",
+        "kind": "objects",
+        "origin": {
+          "x": 0,
+          "y": 0
+        },
+        "width": 5,
+        "height": 5,
+        "cells": [
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "sign"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          },
+          {
+            "kind": "unknown"
+          }
+        ]
+      }
+    ],
+    "menu": {
+      "id": "start",
+      "title": "Menu",
+      "cursor": 1,
+      "entries": [
+        {
+          "id": "pokemon",
+          "label": "POKEMON"
+        },
+        {
+          "id": "bag",
+          "label": "ITEM"
+        },
+        {
+          "id": "save",
+          "label": "SAVE"
+        }
+      ]
+    }
+  },
+  "battle": {
+    "schema_version": 1,
+    "game": {
+      "id": "pokemon-red",
+      "revision": "red-us"
+    },
+    "clock": {
+      "epoch": 2,
+      "frame": 900
+    },
+    "scene": "battle",
+    "capabilities": [
+      "battle"
+    ],
+    "battle": {
+      "kind": "trainer",
+      "phase": "fight",
+      "turn": 3,
+      "actors": [
+        {
+          "id": "player",
+          "role": "player",
+          "name": "PIKACHU",
+          "appearance": "pikachu",
+          "level": 18,
+          "hp": 31,
+          "max_hp": 45,
+          "status": "",
+          "active": true
+        },
+        {
+          "id": "opponent",
+          "role": "opponent",
+          "name": "GEODUDE",
+          "appearance": "geodude",
+          "level": 12,
+          "hp": 9,
+          "max_hp": 34,
+          "status": "",
+          "active": true
+        }
+      ],
+      "moves": [
+        {
+          "id": "thundershock",
+          "name": "THUNDERSHOCK",
+          "pp": 22,
+          "max_pp": 30
+        },
+        {
+          "id": "quick-attack",
+          "name": "QUICK ATTACK",
+          "pp": 27,
+          "max_pp": 30
+        },
+        {
+          "id": "growl",
+          "name": "GROWL",
+          "pp": 38,
+          "max_pp": 40
+        },
+        {
+          "id": "tail-whip",
+          "name": "TAIL WHIP",
+          "pp": 28,
+          "max_pp": 30
+        }
+      ]
+    }
+  }
+}
