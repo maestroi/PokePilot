@@ -542,7 +542,17 @@ func clearVictoryRoad(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 		case victoryRoad3FMap:
 			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad3FSwitch); err != nil {
-				return fmt.Errorf("skill: Victory Road 3F switch: %w", err)
+				// Same exit-side pocket as the 2F west switch: the 3F->2F ladder
+				// the player arrived by sits behind the switch door, so the
+				// boulders are unreachable and the search proves it. Walk out to
+				// Indigo, which is the cleared-cave checkpoint anyway.
+				if !errors.Is(err, world.ErrPushPuzzleNoSolution) {
+					return fmt.Errorf("skill: Victory Road 3F switch: %w", err)
+				}
+				if outErr := prepareIndigoLobby(m, romData, policy); outErr != nil {
+					return fmt.Errorf("skill: Victory Road leave the cave from the 3F exit side after an unreachable switch: %w", outErr)
+				}
+				continue
 			}
 			if _, err := SolveVictoryRoadBoulderSection(m, romData, policy, VictoryRoad3FHole); err != nil {
 				return fmt.Errorf("skill: Victory Road 3F hole: %w", err)
