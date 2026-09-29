@@ -74,3 +74,32 @@ func TestReplaySegmentFramesConfig(t *testing.T) {
 		t.Fatalf("10-second segment frames=%d, want about 597", got)
 	}
 }
+
+func TestWindowBroadcastPlanPreservesBoundaryStateAndEventRemainder(t *testing.T) {
+	plan := broadcastPlan{
+		States: []broadcastState{
+			{StartMS: 0, EndMS: 5000, Elapsed: "00:00", Objective: "first"},
+			{StartMS: 5000, EndMS: 10000, Elapsed: "00:05", Objective: "second"},
+		},
+		Events: []broadcastEventCard{
+			{StartMS: 3500, EndMS: 7500, Lane: 1, Kind: "BADGE", Summary: "crosses"},
+			{StartMS: 8000, EndMS: 9000, Lane: 0, Kind: "ITEM", Summary: "inside"},
+		},
+	}
+	got := windowBroadcastPlan(plan, 4000, 8000)
+	if len(got.States) != 2 {
+		t.Fatalf("states=%+v", got.States)
+	}
+	if got.States[0].StartMS != 0 || got.States[0].EndMS != 1000 || got.States[0].Objective != "first" {
+		t.Fatalf("initial boundary state=%+v", got.States[0])
+	}
+	if got.States[1].StartMS != 1000 || got.States[1].EndMS != 4000 || got.States[1].Objective != "second" {
+		t.Fatalf("later state=%+v", got.States[1])
+	}
+	if len(got.Events) != 1 {
+		t.Fatalf("events=%+v, want only crossing event", got.Events)
+	}
+	if got.Events[0].StartMS != 0 || got.Events[0].EndMS != 3500 || got.Events[0].Lane != 1 {
+		t.Fatalf("crossing event window=%+v", got.Events[0])
+	}
+}
