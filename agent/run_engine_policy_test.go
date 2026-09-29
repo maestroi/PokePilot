@@ -353,7 +353,6 @@ func TestRouteReplanExhaustionStillUsesSameStateQuarantine(t *testing.T) {
 	}
 }
 
-
 func TestRunFailurePolicyPlanningMissesDoNotSpendFailureBudget(t *testing.T) {
 	tests := []struct {
 		name  string
