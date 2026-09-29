@@ -218,6 +218,9 @@ func (c *archiveController) enrichRuntime(run map[string]any) {
 }
 
 func archiveRunMatches(run map[string]any, query mapQuery) bool {
+	if value := strings.TrimSpace(query.Get("game")); value != "" && !archiveEqual(value, archiveGameID(run)) {
+		return false
+	}
 	if value := strings.TrimSpace(query.Get("model")); value != "" && !archiveEqual(value, archiveModelID(run)) {
 		return false
 	}
@@ -353,6 +356,7 @@ func archiveProgress(run map[string]any) (float64, bool) {
 }
 
 type archiveFacetView struct {
+	Games       []string
 	Models      []string
 	Deployments []string
 	Goals       []string
@@ -362,6 +366,7 @@ type archiveFacetView struct {
 }
 
 func archiveFacets(rows []map[string]any) archiveFacetView {
+	games := map[string]struct{}{}
 	models := map[string]struct{}{}
 	deployments := map[string]struct{}{}
 	goals := map[string]struct{}{}
@@ -369,6 +374,7 @@ func archiveFacets(rows []map[string]any) archiveFacetView {
 	computes := map[string]struct{}{}
 	experiments := map[string]struct{}{}
 	for _, run := range rows {
+		archiveAddFacet(games, archiveGameID(run))
 		archiveAddFacet(models, archiveModelID(run))
 		archiveAddFacet(deployments, archiveDeploymentID(run))
 		archiveAddFacet(goals, archiveString(run["goal"]))
@@ -377,6 +383,7 @@ func archiveFacets(rows []map[string]any) archiveFacetView {
 		archiveAddFacet(experiments, archiveString(run["experiment_id"]))
 	}
 	return archiveFacetView{
+		Games:       archiveSortedFacet(games),
 		Models:      archiveSortedFacet(models),
 		Deployments: archiveSortedFacet(deployments),
 		Goals:       archiveSortedFacet(goals),
@@ -392,12 +399,21 @@ func mergeArchiveFacets(document map[string]any, view archiveFacetView) {
 		facets = map[string]any{}
 		document["history_facets"] = facets
 	}
+	facets["games"] = view.Games
 	facets["models"] = view.Models
 	facets["deployments"] = view.Deployments
 	facets["goals"] = view.Goals
 	facets["play_styles"] = view.PlayStyles
 	facets["computes"] = view.Computes
 	facets["experiments"] = view.Experiments
+}
+
+func archiveGameID(run map[string]any) string {
+	if value := strings.TrimSpace(archiveString(run["game"])); value != "" {
+		return value
+	}
+	// Runs created before game identity was persisted are Pokémon Red runs.
+	return "pokemon-red"
 }
 
 func archiveModelID(run map[string]any) string {
