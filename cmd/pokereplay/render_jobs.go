@@ -188,6 +188,7 @@ func (s *replayServer) mediaJobRequest(ctx context.Context, method, endpoint str
 func replayStatusFromMediaJob(job farm.MediaRenderJob) replayStatus {
 	status := replayStatus{
 		RunID:        job.RunID,
+		JobID:        job.ID,
 		ObjectKey:    job.ArtifactKey,
 		Size:         job.ResultSize,
 		Segments:     job.SegmentsTotal,
