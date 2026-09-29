@@ -24,15 +24,15 @@ import (
 )
 
 const (
-	BroadcastVersion       = "broadcast-1280x720-v1"
-	OutputWidth            = 1280
-	OutputHeight           = 720
-	sceneWidth             = 640
-	sceneHeight            = 360
-	eventDurationMS        = int64(4000)
-	eventLanes             = 3
-	defaultVAAPIDevice     = "/dev/dri/renderD128"
-	defaultJPEGQuality     = 84
+	BroadcastVersion   = "broadcast-1280x720-v1"
+	OutputWidth        = 1280
+	OutputHeight       = 720
+	sceneWidth         = 640
+	sceneHeight        = 360
+	eventDurationMS    = int64(4000)
+	eventLanes         = 3
+	defaultVAAPIDevice = "/dev/dri/renderD128"
+	defaultJPEGQuality = 84
 )
 
 // Compositor turns an already-rendered raw video plus semantic presentation
