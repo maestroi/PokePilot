@@ -112,6 +112,17 @@ func TestMediaRenderJobLeaseRecoveryAndLifecycle(t *testing.T) {
 	if retried.State != farm.MediaRenderJobQueued || retried.FinishedAt != 0 {
 		t.Fatalf("retried job = %+v", retried)
 	}
+	cancelled, err := c.cancel(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.State != farm.MediaRenderJobCancelled {
+		t.Fatalf("cancelled job = %+v", cancelled)
+	}
+	retried, err = c.retry(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	claimed, ok, err = c.claim(job.ID, "worker-c")
 	if err != nil || !ok {
