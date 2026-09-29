@@ -208,16 +208,18 @@ makes the device nodes visible but opening them fails with `EPERM`, because only
 `--device` widens the device cgroup.
 
 So `deploy/replay-sidecar.sh` is the single source of truth for a standalone
-container on the one worker that exposes a render node, and it joins the
-attachable `pokefarm_gpu` overlay as `replay` for `pokeui` and the spectator.
+container on the dedicated render box, which is not a Swarm node. It publishes
+port 8080 on that host for `pokeui` and the spectator (`-replay
+http://<render-box>:8080`) and reaches pokewall through the stack's published
+wall port (`FARM_REPLAY_WALL`).
 That script ships inside the image; `deploy/replay-pull.sh` extracts and runs it
 from the exact pulled digest, and `pokefarm-replay-pull.timer` on that worker
 reconciles it every couple of minutes. The manager's `rollout-latest.sh` only
-rolls stack services — it has no SSH trust into the iGPU worker, so it must not
+rolls stack services — it has no SSH trust into the render box, so it must not
 try to roll the sidecar itself.
 
-The production iGPU is now on the dedicated render VM. Its Swarm overlay
-anchor, boot order, device check, and recovery procedure are documented in
+The production iGPU is on the dedicated render VM. Its host setup, device
+check, and recovery procedure are documented in
 [`deploy/REPLAY_HOST.md`](../deploy/REPLAY_HOST.md).
 
 The sidecar reads its credentials from a host-owned environment file (default

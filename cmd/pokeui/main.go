@@ -322,7 +322,7 @@ func main() {
 			// what keeps finished runs in the public snapshot at all, so without
 			// -replay the public page shows only live runs and the archive looks
 			// empty rather than unconfigured.
-			log.Printf("pokeui: WARNING spectator mode without -replay: finished runs and their cached replays are omitted from the public archive; pass -replay http://replay:8080 and make sure this service shares an overlay network with the replay sidecar")
+			log.Printf("pokeui: WARNING spectator mode without -replay: finished runs and their cached replays are omitted from the public archive; pass -replay with the replay sidecar's URL")
 		}
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorProgrammingHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase)))
 		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))

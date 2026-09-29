@@ -117,7 +117,7 @@ func newSidecarHarness(t *testing.T) *sidecarHarness {
 		"FARM_REPLAY_ROM="+h.rom,
 		"FARM_REPLAY_RENDER_DEVICE="+h.render,
 		"FARM_REPLAY_CARD_DEVICE="+h.card,
-		"FARM_REPLAY_NETWORK=pokefarm_gpu",
+		"FARM_REPLAY_WALL=http://192.0.2.10:18080",
 		"FARM_REPLAY_HEALTH_TIMEOUT=5",
 	)
 	return h
@@ -179,19 +179,20 @@ func TestReplaySidecarReconcilesTheIgpuContainer(t *testing.T) {
 		"--device " + h.card,
 		"--group-add 44",
 		"--group-add 993",
-		// pokeui and the spectator resolve this name over the attachable overlay.
-		"--network pokefarm_gpu",
-		"--network-alias replay",
+		// The render box is not a Swarm node: pokeui reaches it by host port.
+		"--publish 8080:8080",
 		"--env-file " + h.envFile,
 		"--volume " + h.rom + ":/rom/pokemon_red.gb:ro",
-		"ghcr.io/maestroi/pokepilot:test pokereplay -http :8080 -wall http://wall:8080 -rom /rom/pokemon_red.gb",
+		"ghcr.io/maestroi/pokepilot:test pokereplay -http :8080 -wall http://192.0.2.10:18080 -rom /rom/pokemon_red.gb",
 	} {
 		if !strings.Contains(run, want) {
 			t.Errorf("docker run missing %q:\n%s", want, run)
 		}
 	}
-	if strings.Contains(run, "--privileged") {
-		t.Errorf("sidecar must not need --privileged:\n%s", run)
+	for _, banned := range []string{"--privileged", "--network"} {
+		if strings.Contains(run, banned) {
+			t.Errorf("sidecar must not use %s:\n%s", banned, run)
+		}
 	}
 }
 
@@ -238,8 +239,8 @@ func TestReplaySidecarRecreatesStoppedOrUnhealthyContainer(t *testing.T) {
 		t.Fatalf("first reconcile: %v\n%s", err, out)
 	}
 
-	// Docker can leave the container exited when the Swarm overlay is absent
-	// during boot. Its image and spec still match, but it serves no replay.
+	// Docker can leave the container exited after a crash or reboot. Its image
+	// and spec still match, but it serves no replay.
 	if err := os.Remove(filepath.Join(h.state, "running")); err != nil {
 		t.Fatal(err)
 	}
@@ -276,6 +277,12 @@ func TestReplaySidecarRequiresTheRenderNodeAndImage(t *testing.T) {
 		t.Fatalf("missing render node still started a container: %v", runs)
 	}
 
+	// Off Swarm there is no `wall` DNS name, so an unset URL must fail loudly.
+	out, err = h.run(t, "FARM_REPLAY_WALL=")
+	if err == nil || !strings.Contains(out, "FARM_REPLAY_WALL") {
+		t.Fatalf("missing FARM_REPLAY_WALL did not fail clearly: %v\n%s", err, out)
+	}
+
 	out, err = h.run(t, "FARM_IMAGE=")
 	if err == nil {
 		t.Fatalf("missing FARM_IMAGE did not fail:\n%s", out)
@@ -309,6 +316,9 @@ func TestReplaySidecarIsOwnedByTheWorkerNotTheManager(t *testing.T) {
 	service := readDeployFile(t, "pokefarm-replay-pull.service")
 	if !strings.Contains(service, "ExecStart=/usr/local/sbin/pokefarm-replay-pull") {
 		t.Error("pokefarm-replay-pull.service must run the worker bootstrap")
+	}
+	if !strings.Contains(service, "EnvironmentFile=/etc/default/pokefarm-replay") {
+		t.Error("pokefarm-replay-pull.service must load the host's FARM_REPLAY_WALL")
 	}
 	timer := readDeployFile(t, "pokefarm-replay-pull.timer")
 	if !strings.Contains(timer, "WantedBy=timers.target") {

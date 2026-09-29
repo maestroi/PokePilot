@@ -20,31 +20,34 @@ docker run --rm --device /dev/dri/renderD128 -e LIBVA_DRIVER_NAME=iHD \
   -vf format=nv12,hwupload -c:v h264_vaapi -frames:v 30 -f null -
 ```
 
-Replay remains a standalone Docker container because the Swarm service API
-does not pass through `/dev/dri` in this deployment. The VM joins Swarm as a
-worker so its container can use the attachable `pokefarm_gpu` overlay and the
-`replay` DNS alias expected by the UI and spectator. Keep this node **active**:
-pausing or draining it removes the overlay anchor after a reboot. The anchor
-is deployed from `deploy/replay-overlay-anchor.yml` as the `pokefarm-render`
-stack. It uses no GPU and only keeps the network present. Verify it is running
-before starting the sidecar:
+Replay is a standalone Docker container because the Swarm service API does not
+pass through `/dev/dri` in this deployment. The VM is a dedicated render box and
+is **not** a Swarm node: as a worker it attracted farm tasks (runners, ui, …)
+that starved the encoder. If it was joined before, remove it:
 
 ```sh
-docker stack deploy -c deploy/replay-overlay-anchor.yml pokefarm-render
-docker service ps pokefarm-render_overlay-anchor
 # On the render VM:
-docker network inspect pokefarm_gpu --format '{{.Name}} {{.Attachable}}'
+docker swarm leave
+# On a manager:
+docker node rm vm-pokefarm-render-01
+docker stack rm pokefarm-render   # the old overlay anchor, no longer needed
 ```
+
+The sidecar publishes `8080` on the VM. The farm stack's `ui` and `spectator`
+use `-replay http://192.168.50.203:8080`, and the stack publishes pokewall on
+`18080` so replay can reach it. pokewall has no authentication of its own, so
+that port must stay on the private LAN.
 
 Provision `/opt/pokefarm/roms/pokemon_red.gb` and root-readable-only
 `/opt/pokefarm/replay.env` on the VM through the existing private operations
 channel. Never put ROM or S3 credentials in Git or the image. Install
 `deploy/replay-pull.sh` as `/usr/local/sbin/pokefarm-replay-pull` and the
 `deploy/pokefarm-replay-pull.{service,timer}` units under `/etc/systemd/system`.
-Enable the timer and run the service once. The bootstrap pulls the published
+Write `/etc/default/pokefarm-replay` with
+`FARM_REPLAY_WALL=http://192.168.50.100:18080` (any Swarm node works through the
+ingress mesh). Enable the timer and run the service once. The bootstrap pulls the published
 image digest, extracts its matching sidecar definition, and reconciles the
-container. Disable the old worker's replay timer before leaving the new alias
-in production.
+container.
 
 ```sh
 systemctl daemon-reload
@@ -55,10 +58,9 @@ docker exec pokefarm-replay wget -qO- http://127.0.0.1:8080/healthz
 
 `/healthz` must report `status: ok`, `s3_configured: true`, `vaapi: true`, and
 `encoder: h264_vaapi`. From an operator UI container, request
-`http://replay:8080/healthz` to verify overlay DNS and the full network path.
-After a reboot, also verify the anchor task, sidecar container state, and timer.
-If Docker starts replay before the overlay exists, the timer must recreate the
-exited container once the anchor has restored the network.
+`http://192.168.50.203:8080/healthz` to verify the full network path. After a
+reboot, verify the sidecar container state and timer; the timer recreates an
+exited container.
 
 
 ## Long replay scratch and segment cache

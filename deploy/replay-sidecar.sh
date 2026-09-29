@@ -9,10 +9,11 @@
 # makes the device nodes visible but opening them fails with EPERM, because only
 # --device widens the device cgroup. All four measured on vm-swarm-worker-05.
 #
-# So replay stays a standalone container on a node that exposes a render
-# device (currently vm-pokefarm-render-01) and
-# joins the attachable pokefarm_gpu overlay as `replay`, which is the name
-# pokeui and the spectator resolve.
+# So replay is a standalone container on a dedicated render box
+# (vm-pokefarm-render-01) that is NOT a Swarm node: as a worker it attracted
+# farm tasks that starved the encoder. It publishes its HTTP port on the host,
+# pokeui/spectator reach it by host address, and it reaches pokewall through
+# the port the farm stack publishes (FARM_REPLAY_WALL).
 #
 # This file is the single source of truth for that container. It ships inside
 # the farm image and pokefarm-replay-pull executes it from there, so the
@@ -27,15 +28,14 @@ set -euo pipefail
 
 IMAGE=${FARM_IMAGE:-}
 CONTAINER=${FARM_REPLAY_CONTAINER:-pokefarm-replay}
-NETWORK=${FARM_REPLAY_NETWORK:-pokefarm_gpu}
-ALIAS=${FARM_REPLAY_ALIAS:-replay}
+PUBLISH=${FARM_REPLAY_PUBLISH:-8080:8080}
 ENV_FILE=${FARM_REPLAY_ENV_FILE:-/opt/pokefarm/replay.env}
 ROM=${FARM_REPLAY_ROM:-/opt/pokefarm/roms/pokemon_red.gb}
 RENDER_DEVICE=${FARM_REPLAY_RENDER_DEVICE:-/dev/dri/renderD128}
 CARD_DEVICE=${FARM_REPLAY_CARD_DEVICE:-/dev/dri/card1}
 GROUP_ADD=${FARM_REPLAY_GROUP_ADD:-44 993}
 LISTEN=${FARM_REPLAY_LISTEN:-:8080}
-WALL=${FARM_REPLAY_WALL:-http://wall:8080}
+WALL=${FARM_REPLAY_WALL:-}
 HEALTH_TIMEOUT=${FARM_REPLAY_HEALTH_TIMEOUT:-30}
 SPEC_LABEL=pokefarm.replay.spec
 
@@ -45,19 +45,17 @@ die() {
 }
 
 [ -n "$IMAGE" ] || die "FARM_IMAGE must name the farm image (tag or digest reference)"
+[ -n "$WALL" ] || die "FARM_REPLAY_WALL must name pokewall's published URL (set it in /etc/default/pokefarm-replay)"
 [ -f "$ENV_FILE" ] || die "missing $ENV_FILE (S3 tuple and encoder settings for the replay trust boundary)"
 [ -f "$ROM" ] || die "missing ROM $ROM"
 [ -e "$RENDER_DEVICE" ] || die "missing $RENDER_DEVICE: this sidecar must run on the iGPU node"
-docker network inspect "$NETWORK" >/dev/null 2>&1 ||
-	die "overlay network $NETWORK is absent; deploy the pokefarm stack first"
 docker image inspect "$IMAGE" >/dev/null 2>&1 ||
 	die "image $IMAGE is not present locally; pull it first"
 
 spec=$(
 	cat <<SPEC
 image=$IMAGE
-network=$NETWORK
-alias=$ALIAS
+publish=$PUBLISH
 env_file=$ENV_FILE
 rom=$ROM
 render=$RENDER_DEVICE
@@ -95,8 +93,7 @@ args=(
 	--name "$CONTAINER"
 	--restart unless-stopped
 	--label "$SPEC_LABEL=$fingerprint"
-	--network "$NETWORK"
-	--network-alias "$ALIAS"
+	--publish "$PUBLISH"
 	--env-file "$ENV_FILE"
 	--device "$RENDER_DEVICE"
 	--volume "$ROM:/rom/pokemon_red.gb:ro"
@@ -118,7 +115,7 @@ docker run "${args[@]}" "$IMAGE" \
 
 # Positive postcondition: the sidecar must answer its own health endpoint before
 # this run counts as good. A container that is merely "started" but cannot reach
-# wall or S3 would otherwise leave pokeui with a dead `replay` name.
+# wall or S3 would otherwise leave pokeui pointing at a dead replay URL.
 deadline=$((SECONDS + HEALTH_TIMEOUT))
 while :; do
 	health=$(docker exec "$CONTAINER" wget -qO- "http://127.0.0.1${LISTEN}/healthz" 2>/dev/null || true)

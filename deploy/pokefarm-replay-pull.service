@@ -1,9 +1,11 @@
 [Unit]
-Description=Reconcile the PokePilot replay sidecar on the iGPU worker
+Description=Reconcile the PokePilot replay sidecar on the render box
 After=docker.service
 Requires=docker.service
 
 [Service]
 Type=oneshot
+# FARM_REPLAY_WALL=http://<swarm-node>:18080 (pokewall's published port).
+EnvironmentFile=/etc/default/pokefarm-replay
 ExecStart=/usr/local/sbin/pokefarm-replay-pull
 Nice=10
