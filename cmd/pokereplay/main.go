@@ -641,8 +641,8 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	}
 	if jobID != "" {
 		if err := s.heartbeatRenderJob(ctx, jobID, farm.MediaRenderJobUploading, farm.MediaRenderJobUploading, nil, nil); err != nil {
-			file.Close()
 			if mediaRenderJobLeaseLost(err) {
+				file.Close()
 				cancelForControl()
 				return
 			}
