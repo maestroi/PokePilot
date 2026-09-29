@@ -265,6 +265,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 	runID string,
 	mode replayMode,
 	attempt *preparedReplayAttempt,
+	onStart func(replayVideoSegment),
 	onReady func(),
 ) error {
 	if attempt == nil || attempt.Parsed == nil {
@@ -334,6 +335,9 @@ func (s *replayServer) renderAttemptVideoSegments(
 		}
 
 		if encoder == nil {
+			if onStart != nil {
+				onStart(*segment)
+			}
 			rawPath := segment.LocalPath
 			if mode == replayModeBroadcast {
 				rawPath += ".raw.mp4"
