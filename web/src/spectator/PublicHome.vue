@@ -47,6 +47,7 @@ const tetrisLines = computed(() => Number(props.run.game_state?.lines_cleared ||
 const tetrisLevel = computed(() => Number(props.run.game_state?.level || 0))
 const tetrisPiece = computed(() => props.run.game_state?.active?.piece || '—')
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
+const canExploreWorld = computed(() => supportsPublicCapability(props.run, 'worldMap'))
 const goal = computed(() => {
   if (!isTetris.value) return goalProgress(props.run)
   if (props.run.game_state?.complete) return 100
