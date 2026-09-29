@@ -30,7 +30,7 @@ func TestRawVideoArgsUseVAAPIWithoutSoftwarePixelFormat(t *testing.T) {
 		InputWidth: 640, InputHeight: 360,
 		OutputWidth: 1280, OutputHeight: 720,
 		FramesPerSec: 60,
-		VAAPI: true, VAAPIDevice: "/dev/dri/test",
+		VAAPI:        true, VAAPIDevice: "/dev/dri/test",
 	})
 	joined := strings.Join(args, " ")
 	for _, want := range []string{
