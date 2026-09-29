@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -102,6 +103,10 @@ type replayServer struct {
 	mu   sync.Mutex
 	jobs map[string]replayStatus // cache object key -> latest local render state
 
+	// rendering counts render goroutines in flight. /healthz exposes it so the
+	// host updater only replaces this container when no video is mid-encode.
+	rendering atomic.Int64
+
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
@@ -126,13 +131,14 @@ func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":        "ok",
-			"s3_configured": s.store != nil,
-			"encoder":       s.encoderName(),
-			"vaapi":         s.vaapi,
-			"vaapi_reason":  s.vaapiReason,
-			"renderer":      broadcastRendererVersion,
-			"live_fps":      liveBroadcastFPS,
+			"status":         "ok",
+			"s3_configured":  s.store != nil,
+			"encoder":        s.encoderName(),
+			"vaapi":          s.vaapi,
+			"vaapi_reason":   s.vaapiReason,
+			"renderer":       broadcastRendererVersion,
+			"live_fps":       liveBroadcastFPS,
+			"active_renders": s.rendering.Load(),
 		})
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
@@ -438,6 +444,8 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 }
 
 func (s *replayServer) render(jobID, runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
+	s.rendering.Add(1)
+	defer s.rendering.Add(-1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	stopLease := s.keepRenderJobLease(ctx, jobID)

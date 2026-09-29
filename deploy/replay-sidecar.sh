@@ -22,8 +22,10 @@
 #
 # Reconciliation is idempotent: the container carries a label holding a
 # fingerprint of this definition, so editing the definition (or rolling the
-# image) recreates the container. An unchanged, running, healthy definition is
-# a no-op; a stopped or unhealthy container must be replaced after a reboot.
+# image) recreates the container -- but only once /healthz reports no
+# active_renders, so an image published mid-encode waits for the render to
+# finish. An unchanged, running, healthy definition is a no-op; a stopped or
+# unhealthy container is replaced immediately.
 set -euo pipefail
 
 IMAGE=${FARM_IMAGE:-}
@@ -71,14 +73,22 @@ want_image=$(docker image inspect "$IMAGE" --format '{{.Id}}')
 if docker inspect "$CONTAINER" >/dev/null 2>&1; then
 	have_image=$(docker inspect "$CONTAINER" --format '{{.Image}}')
 	have_spec=$(docker inspect "$CONTAINER" --format "{{index .Config.Labels \"$SPEC_LABEL\"}}")
-	if [ "$have_image" = "$want_image" ] && [ "$have_spec" = "$fingerprint" ]; then
-		running=$(docker inspect "$CONTAINER" --format '{{.State.Running}}')
-		if [ "$running" = true ]; then
-			health=$(docker exec "$CONTAINER" wget -qO- "http://127.0.0.1${LISTEN}/healthz" 2>/dev/null || true)
-			if [ -n "$health" ]; then
-				printf 'pokefarm-replay: %s already current and healthy (%s, spec %s)\n' "$CONTAINER" "$IMAGE" "$fingerprint"
-				exit 0
-			fi
+	health=
+	if [ "$(docker inspect "$CONTAINER" --format '{{.State.Running}}')" = true ]; then
+		health=$(docker exec "$CONTAINER" wget -qO- "http://127.0.0.1${LISTEN}/healthz" 2>/dev/null || true)
+	fi
+	if [ -n "$health" ]; then
+		if [ "$have_image" = "$want_image" ] && [ "$have_spec" = "$fingerprint" ]; then
+			printf 'pokefarm-replay: %s already current and healthy (%s, spec %s)\n' "$CONTAINER" "$IMAGE" "$fingerprint"
+			exit 0
+		fi
+		# Never swap a healthy container mid-render: the next timer tick retries.
+		# ponytail: an always-busy renderer defers updates indefinitely; add a max
+		# deferral if the render queue ever stays non-empty for days.
+		active=$(printf '%s' "$health" | sed -n 's/.*"active_renders":\([0-9][0-9]*\).*/\1/p')
+		if [ "${active:-0}" -gt 0 ]; then
+			printf 'pokefarm-replay: deferring update of %s: %s render(s) in flight\n' "$CONTAINER" "$active"
+			exit 0
 		fi
 	fi
 	printf 'pokefarm-replay: recreating %s (image %s -> %s, spec %s -> %s)\n' \

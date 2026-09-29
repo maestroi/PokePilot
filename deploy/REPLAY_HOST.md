@@ -57,7 +57,13 @@ docker exec pokefarm-replay wget -qO- http://127.0.0.1:8080/healthz
 ```
 
 `/healthz` must report `status: ok`, `s3_configured: true`, `vaapi: true`, and
-`encoder: h264_vaapi`. From an operator UI container, request
+`encoder: h264_vaapi`.
+
+Updates are not Swarm-driven: the timer pulls `:latest` every two minutes, but
+it only replaces a healthy container when `/healthz` reports
+`active_renders: 0`. A new image published mid-encode is logged as `deferring
+update` and applied on the first idle tick. A stopped or unhealthy container is
+replaced immediately. From an operator UI container, request
 `http://192.168.50.203:8080/healthz` to verify the full network path. After a
 reboot, verify the sidecar container state and timer; the timer recreates an
 exited container.

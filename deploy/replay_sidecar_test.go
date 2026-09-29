@@ -65,7 +65,7 @@ run)
 	;;
 exec)
 	[ ! -f "$state/unhealthy" ] || exit 1
-	echo '{"status":"ok","s3_configured":true}'
+	echo "{\"status\":\"ok\",\"s3_configured\":true,\"active_renders\":$(cat "$state/busy" 2>/dev/null || echo 0)}"
 	exit 0
 	;;
 rm)
@@ -332,6 +332,8 @@ func TestReplaySidecarIsOwnedByTheWorkerNotTheManager(t *testing.T) {
 		"BUNDLE_PATH=/usr/local/share/pokepilot/deploy",
 		"SIDECAR=replay-sidecar.sh",
 		`FARM_IMAGE="$DIGEST_REF" "$tmpdir/${SIDECAR}"`,
+		// Without this the render box fills its disk with superseded images.
+		"docker image prune -f",
 	} {
 		if !strings.Contains(pull, want) {
 			t.Errorf("replay-pull.sh missing %q", want)
@@ -346,4 +348,33 @@ func readDeployFile(t *testing.T, name string) string {
 		t.Fatalf("read %s: %v", name, err)
 	}
 	return string(data)
+}
+
+// An image published while a video is encoding must wait: every merge to main
+// publishes one, and recreating mid-render is what kept killing long replays.
+func TestReplaySidecarDefersUpdateWhileRendering(t *testing.T) {
+	h := newSidecarHarness(t)
+	if out, err := h.run(t); err != nil {
+		t.Fatalf("first reconcile: %v\n%s", err, out)
+	}
+	writeTestFile(t, filepath.Join(h.state, "image"), "sha256:oldimage", 0o644)
+	writeTestFile(t, filepath.Join(h.state, "busy"), "2", 0o644)
+
+	out, err := h.run(t)
+	if err != nil || !strings.Contains(out, "deferring update") {
+		t.Fatalf("busy renderer was not deferred: %v\n%s", err, out)
+	}
+	if runs := h.runs(t); len(runs) != 1 {
+		t.Fatalf("busy renderer was recreated: %d runs", len(runs))
+	}
+
+	if err := os.Remove(filepath.Join(h.state, "busy")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := h.run(t); err != nil || !strings.Contains(out, "recreating") {
+		t.Fatalf("idle renderer did not take the update: %v\n%s", err, out)
+	}
+	if runs := h.runs(t); len(runs) != 2 {
+		t.Fatalf("want the deferred update applied once idle, got %d runs", len(runs))
+	}
 }
