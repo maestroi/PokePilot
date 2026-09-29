@@ -105,11 +105,13 @@ stable attempt id as its state advances.
 
 ## Escalation path
 
-Use this only when `make debug` says the compact evidence is insufficient:
+Use this only when the default packet is insufficient:
 
-1. `pokepilot_get_run_debug(run_id)` for the full compacted timeline;
-2. `pokepilot_get_run_recovery_audit(run_id)` when earlier recovery may have
+1. rerun `make -s debug RUN=<run-id> DEBUG_MODE=deep`; this expands only the
+   relevant evidence/source window while keeping the same one-id workflow;
+2. `pokepilot_get_run_debug(run_id)` only if that still leaves an ambiguity;
+3. `pokepilot_get_run_recovery_audit(run_id)` when earlier recovery may have
    poisoned the failing checkpoint;
-3. fetch a specific artifact only when one of those packets points to it.
+4. fetch a specific artifact only when one of those packets points to it.
 
 Do not jump straight to raw recordings, full logs, or broad repository reads.
