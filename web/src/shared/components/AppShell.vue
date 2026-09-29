@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   showIntro?: boolean
 }>(), {
   navigation: () => [],
-  publicCapabilities: () => ['live', 'replay'],
+  publicCapabilities: () => ['live', 'replay'] as PublicCapability[],
   showIntro: true
 })
 
