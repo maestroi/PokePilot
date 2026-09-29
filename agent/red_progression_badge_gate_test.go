@@ -54,6 +54,7 @@ func TestRedProgressionWithholdsThunderBadgeBeforeCascadeBadge(t *testing.T) {
 	base := Observation{
 		PartyCount: 1,
 		Party:      []PartyMon{{Level: 20, HP: 60, MaxHP: 60}},
+		Money:      saffronGuardDrinkReserve,
 		Story:      ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
 		FieldCapabilities: []FieldCapability{{
 			Name:    "cut",
