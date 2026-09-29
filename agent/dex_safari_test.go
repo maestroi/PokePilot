@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,5 +86,33 @@ func TestAppendDexCatchObjectivesDoesNotTreatSafariGrassAsOrdinaryCatch(t *testi
 	got := appendDexCatchObjectives(obs, NewKnowledge(nil), nil)
 	if len(got) != 1 || got[0].Intent != dexSafariIntent {
 		t.Fatalf("Safari grass misclassified = %+v", got)
+	}
+}
+
+func TestDexHabitatBonusSpeciesCollectsOtherUnownedHabitatTargets(t *testing.T) {
+	grass := func(place PlaceID) []DexSource {
+		return []DexSource{{Kind: AcquireWildGrass, Place: place, Requirement: "safari_zone"}}
+	}
+	catalog := DexCatalog{
+		Owned: []DexEntry{{Species: "nidorino", Sources: grass("safari zone center")}},
+		Targets: []DexEntry{
+			{Species: "nidorina", Sources: grass("safari zone center")},
+			{Species: "exeggcute", Sources: grass("safari zone center")},
+			{Species: "tauros", Sources: grass("safari zone east")},
+			{Species: "rhyhorn", Sources: append(grass("safari zone east"), grass("safari zone center")...)},
+		},
+	}
+
+	got := dexHabitatBonusSpecies(catalog, "safari zone center", "nidorina")
+	var want []uint8
+	for _, s := range []SpeciesID{"exeggcute", "rhyhorn"} {
+		id, ok := redSpeciesID(s)
+		if !ok {
+			t.Fatalf("species %q missing", s)
+		}
+		want = append(want, id)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("bonus species = %v, want %v (exeggcute, rhyhorn; not the target, owned, or other-habitat species)", got, want)
 	}
 }
