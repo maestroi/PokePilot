@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { FramePumpState } from '../shared/composables/useFramePump'
 import {
   ArrowRightIcon,
   BoltIcon,
@@ -14,6 +15,7 @@ import {
 import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
 import { supportsPublicCapability } from '../shared/publicCapabilities'
 import AudienceVoteCard from './AudienceVoteCard.vue'
+import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
   goalProgress,
@@ -33,6 +35,7 @@ const props = defineProps<{
   liveRuns: SpectatorRun[]
   summary: SpectatorSummary
   frameUrl: string
+  frameState: FramePumpState
 }>()
 
 const emit = defineEmits<{
@@ -157,18 +160,14 @@ function watch(run: SpectatorRun): void {
                 v-if="frameUrl"
                 :src="frameUrl"
                 :alt="`Live frame for ${run.run_id}`"
-                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
+                class="home-live-frame absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
               />
-              <div v-else class="absolute inset-0 grid place-items-center">
-                <div class="text-center">
-                  <div class="mx-auto flex size-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
-                    <PlayIcon class="size-5 text-cyan-300" aria-hidden="true" />
-                  </div>
-                  <p class="mt-3 text-xs font-semibold text-slate-400">
-                    Waiting for the next public frame
-                  </p>
-                </div>
-              </div>
+              <BroadcastLoadingScene
+                v-else
+                mode="frame"
+                :state="frameState"
+                class="absolute inset-0 rounded-none border-0"
+              />
 
               <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-3 py-3">
                 <span class="rounded-md bg-black/55 px-2 py-1 text-[9px] font-bold tracking-[0.08em] text-white uppercase ring-1 ring-white/10">{{ isTetris ? 'Tetris' : playStyleLabel(run) }}</span>
@@ -402,6 +401,15 @@ function watch(run: SpectatorRun): void {
   text-shadow: 0 0 38px rgba(93, 124, 255, 0.18);
 }
 
+.home-live-frame {
+  animation: home-frame-arrive 320ms ease-out both;
+}
+
+@keyframes home-frame-arrive {
+  from { opacity: 0; transform: scale(1.012); filter: saturate(0.7) brightness(0.7); }
+  to { opacity: 1; transform: scale(1); filter: saturate(1) brightness(1); }
+}
+
 .public-stat {
   display: flex;
   min-height: 5.25rem;
@@ -511,6 +519,12 @@ a.public-feature:hover {
   color: #64748b;
   font-size: 0.675rem;
   line-height: 1.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-live-frame {
+    animation: none;
+  }
 }
 
 @media (max-width: 639px) {
