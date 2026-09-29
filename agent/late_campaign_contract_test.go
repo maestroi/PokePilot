@@ -66,6 +66,12 @@ func TestRedLateCampaignHandoffsFiveBadgesThroughVictoryRoad(t *testing.T) {
 			obs: Observation{
 				Badges: lateCampaignBadges(),
 				Story:  lateCampaignStory(),
+				Money:  saffronGuardDrinkReserve,
+				FieldCapabilities: []FieldCapability{{
+					Name:       "cut",
+					BadgeOwned: true,
+					HMOwned:    true,
+				}},
 			},
 			wantProgress: ProgressSaffronGateOpen,
 			forbid:       []ProgressID{ProgressCardKeyOwned, redProgressSilphRescueComplete, ProgressSecretKeyOwned, redProgressVolcanoBadge, redProgressEarthBadge},

@@ -19,6 +19,7 @@ func twoBadgeEasternObservation() Observation {
 		Map:        celadonCityMap,
 		MapName:    "CELADON_CITY",
 		PartyCount: 1,
+		Money:      200,
 		Story:      ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
 		FieldCapabilities: []FieldCapability{{
 			Name:       "cut",
@@ -64,6 +65,41 @@ func TestOfferSaffronGateWaitsForHM01(t *testing.T) {
 	after := twoBadgeEasternObservation()
 	if got := redProgressionObjectives(after); !offeredProgressID(got, ProgressSaffronGateOpen) {
 		t.Fatalf("Saffron gate not offered with HM01 in hand: %v", got)
+	}
+}
+
+func TestOfferSaffronGateWaitsForCutUnlock(t *testing.T) {
+	obs := twoBadgeEasternObservation()
+	obs.FieldCapabilities[0].BadgeOwned = false
+	if got := redProgressionObjectives(obs); offeredProgressID(got, ProgressSaffronGateOpen) {
+		t.Fatalf("Saffron gate offered before Cut's badge prerequisite was owned: %v", got)
+	}
+
+	obs = twoBadgeEasternObservation()
+	obs.FieldCapabilities[0].HMOwned = false
+	if got := redProgressionObjectives(obs); offeredProgressID(got, ProgressSaffronGateOpen) {
+		t.Fatalf("Saffron gate offered before HM01 was visible in field capability state: %v", got)
+	}
+}
+
+func TestOfferSaffronGateWaitsForGuardDrinkFunding(t *testing.T) {
+	underfunded := twoBadgeEasternObservation()
+	underfunded.Money = 199
+	if got := redProgressionObjectives(underfunded); offeredProgressID(got, ProgressSaffronGateOpen) {
+		t.Fatalf("Saffron gate offered with only ¥%d and no guard drink: %v", underfunded.Money, got)
+	}
+
+	funded := underfunded
+	funded.Money = 200
+	if got := redProgressionObjectives(funded); !offeredProgressID(got, ProgressSaffronGateOpen) {
+		t.Fatalf("Saffron gate missing at the exact Fresh Water funding floor: %v", got)
+	}
+
+	withDrink := underfunded
+	withDrink.Money = 0
+	withDrink.Bag = []Item{{Name: "fresh water", Quantity: 1}}
+	if got := redProgressionObjectives(withDrink); !offeredProgressID(got, ProgressSaffronGateOpen) {
+		t.Fatalf("Saffron gate missing with a valid guard drink already owned: %v", got)
 	}
 }
 

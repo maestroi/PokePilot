@@ -175,7 +175,21 @@ func redProgressionObjectives(obs Observation) []Objective {
 	// the only action that satisfies it stayed unoffered
 	// (run-jxh8lk19wv6on, run-1biaubd9xooqm). Serve the small always-available
 	// prerequisite first; Fuchsia keeps its own later ordering below.
-	if obs.Story.Has(redProgressHM01Acquired) && !obs.Story.Has(ProgressSaffronGateOpen) {
+	// The transaction itself only needs a drink, but from the ordinary HM01
+	// handoff states the Celadon roof is behind Route 9's Cut tree until Saffron
+	// is open. Do not advertise an objective whose validation can only report an
+	// unrecoverable Cut prerequisite (missing badge/HM). Once badge+HM exist, a
+	// missing carrier is recoverable through KindRepairFieldCapability.
+	//
+	// Likewise, do not send the executor to a vending machine when the run has
+	// already spent below the ¥200 floor. EconomyContext reserves that amount
+	// prospectively; this funding gate lets an already-underfunded checkpoint
+	// earn money from other objectives instead of retrying the same impossible
+	// purchase until the farm watchdog fires (#2169-#2171).
+	if obs.Story.Has(redProgressHM01Acquired) &&
+		redCutFieldUnlocked(obs) &&
+		saffronGateFundingReady(obs) &&
+		!obs.Story.Has(ProgressSaffronGateOpen) {
 		out = append(out, Objective{
 			Kind:     KindProgress,
 			Progress: ProgressSaffronGateOpen,

@@ -34,6 +34,49 @@ func TestEconomyContextReservesKnownSafariSpend(t *testing.T) {
 	}
 }
 
+func TestEconomyContextReservesSaffronGuardDrinkSpend(t *testing.T) {
+	obs := Observation{
+		Money: 500,
+		Story: ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
+	}
+	ctx := EconomyContext(obs)
+	if ctx == nil {
+		t.Fatal("EconomyContext = nil, want Saffron reserve")
+	}
+	if ctx.ReservedMoney != saffronGuardDrinkReserve || ctx.SpendableMoney != 300 {
+		t.Fatalf("reserve/spendable = %d/%d, want %d/300", ctx.ReservedMoney, ctx.SpendableMoney, saffronGuardDrinkReserve)
+	}
+
+	withDrink := obs
+	withDrink.Bag = []Item{{Name: "fresh water", Quantity: 1}}
+	if got := EconomyContext(withDrink); got == nil || got.ReservedMoney != 0 {
+		t.Fatalf("guard drink already owned reserve = %+v, want zero reservation", got)
+	}
+
+	open := obs
+	open.Story = append(open.Story, ProgressFact{ID: ProgressSaffronGateOpen, Complete: true})
+	if got := EconomyContext(open); got == nil || got.ReservedMoney != 0 {
+		t.Fatalf("open Saffron gate reserve = %+v, want zero reservation", got)
+	}
+}
+
+func TestEconomySaffronReserveProtectsCriticalCashFromShopping(t *testing.T) {
+	obs := Observation{
+		Money:     500,
+		Story:     ProgressState{{ID: redProgressHM01Acquired, Complete: true}},
+		WildGrass: []WildSpecies{{Name: "pidgey", MinLevel: 2, MaxLevel: 5, Slots: 10}},
+		MartStock: []string{"pokeball"},
+	}
+	ctx := EconomyContext(obs)
+	p := purchase(t, ctx, "pokeball")
+	if !p.ShouldBuy || p.SuggestedQty != 1 {
+		t.Fatalf("Pokeball advice with Saffron reserve = %+v, want one ball from the ¥300 spendable remainder", p)
+	}
+	if p.SuggestedCost > ctx.SpendableMoney {
+		t.Fatalf("purchase cost %d exceeds spendable money %d", p.SuggestedCost, ctx.SpendableMoney)
+	}
+}
+
 func TestEconomyCanAffordButShouldNotSpendReservedMoney(t *testing.T) {
 	obs := Observation{
 		Money:      1600,
