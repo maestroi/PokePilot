@@ -35,9 +35,9 @@ type mapSpec struct {
 	connections []connectionSpec
 }
 
-// firstBadgeTopology is the verified early-Johto corridor needed to leave the
-// player's room, run Elm's opening errand, clear Violet, then continue through
-// Route 32 / Union Cave into Azalea, then through Ilex Forest to Route 34.
+// firstBadgeTopology is the verified early-Johto topology currently covered by
+// the native provider: opening maps through Violet/Azalea, Ilex Forest and
+// Goldenrod, then Routes 35/36/37 through Ecruteak.
 //
 // Facts are projected from pret/pokegold at gs/data.SourceRevision. Keeping the
 // names here (rather than raw group/number ids) makes the generated gs/data
@@ -344,8 +344,170 @@ var firstBadgeTopology = []mapSpec{
 	},
 	{
 		name: "GOLDENROD_CITY",
+		warps: []warpSpec{
+			{x: 24, y: 7, dest: "GOLDENROD_GYM", destWarp: 1},
+			{x: 29, y: 29, dest: "GOLDENROD_BIKE_SHOP", destWarp: 1},
+			{x: 31, y: 21, dest: "GOLDENROD_HAPPINESS_RATER", destWarp: 1},
+			{x: 5, y: 25, dest: "BILLS_FAMILYS_HOUSE", destWarp: 1},
+			{x: 9, y: 13, dest: "GOLDENROD_MAGNET_TRAIN_STATION", destWarp: 2},
+			{x: 33, y: 5, dest: "GOLDENROD_FLOWER_SHOP", destWarp: 1},
+			{x: 15, y: 27, dest: "GOLDENROD_POKECENTER_1F", destWarp: 1},
+			{x: 33, y: 9, dest: "GOLDENROD_PP_SPEECH_HOUSE", destWarp: 1},
+			{x: 15, y: 7, dest: "GOLDENROD_NAME_RATER", destWarp: 1},
+			{x: 24, y: 27, dest: "GOLDENROD_DEPT_STORE_1F", destWarp: 1},
+			{x: 14, y: 21, dest: "GOLDENROD_GAME_CORNER", destWarp: 1},
+			{x: 5, y: 15, dest: "RADIO_TOWER_1F", destWarp: 1},
+			{x: 19, y: 1, dest: "ROUTE_35_GOLDENROD_GATE", destWarp: 3},
+			{x: 9, y: 5, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 8},
+			{x: 11, y: 29, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 5},
+		},
 		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_35", offset: 5},
 			{dir: dirSouth, dest: "ROUTE_34", offset: 5},
+		},
+	},
+	{
+		name: "GOLDENROD_GYM",
+		warps: []warpSpec{
+			{x: 2, y: 17, dest: "GOLDENROD_CITY", destWarp: 1},
+			{x: 3, y: 17, dest: "GOLDENROD_CITY", destWarp: 1},
+		},
+	},
+	{
+		name: "GOLDENROD_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 7},
+			{x: 4, y: 7, dest: "GOLDENROD_CITY", destWarp: 7},
+			{x: 0, y: 7, dest: "POKECENTER_2F", destWarp: 1},
+		},
+	},
+	{
+		name: "GOLDENROD_DEPT_STORE_1F",
+		warps: []warpSpec{
+			{x: 7, y: 7, dest: "GOLDENROD_CITY", destWarp: 10},
+			{x: 8, y: 7, dest: "GOLDENROD_CITY", destWarp: 10},
+			{x: 15, y: 0, dest: "GOLDENROD_DEPT_STORE_2F", destWarp: 2},
+			{x: 2, y: 0, dest: "GOLDENROD_DEPT_STORE_ELEVATOR", destWarp: 1},
+		},
+	},
+	{
+		name: "ROUTE_35_GOLDENROD_GATE",
+		warps: []warpSpec{
+			{x: 4, y: 0, dest: "ROUTE_35", destWarp: 1},
+			{x: 5, y: 0, dest: "ROUTE_35", destWarp: 2},
+			{x: 4, y: 7, dest: "GOLDENROD_CITY", destWarp: 13},
+			{x: 5, y: 7, dest: "GOLDENROD_CITY", destWarp: 13},
+		},
+	},
+	{
+		name: "ROUTE_35",
+		warps: []warpSpec{
+			{x: 9, y: 33, dest: "ROUTE_35_GOLDENROD_GATE", destWarp: 1},
+			{x: 10, y: 33, dest: "ROUTE_35_GOLDENROD_GATE", destWarp: 2},
+			{x: 3, y: 5, dest: "ROUTE_35_NATIONAL_PARK_GATE", destWarp: 3},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_36", offset: 0},
+			{dir: dirSouth, dest: "GOLDENROD_CITY", offset: -5},
+		},
+	},
+	{
+		name: "ROUTE_36",
+		warps: []warpSpec{
+			{x: 18, y: 8, dest: "ROUTE_36_NATIONAL_PARK_GATE", destWarp: 3},
+			{x: 18, y: 9, dest: "ROUTE_36_NATIONAL_PARK_GATE", destWarp: 4},
+			{x: 47, y: 13, dest: "ROUTE_36_RUINS_OF_ALPH_GATE", destWarp: 1},
+			{x: 48, y: 13, dest: "ROUTE_36_RUINS_OF_ALPH_GATE", destWarp: 2},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_37", offset: 10},
+			{dir: dirSouth, dest: "ROUTE_35", offset: 0},
+			{dir: dirEast, dest: "VIOLET_CITY", offset: 0},
+		},
+	},
+	{
+		name: "ROUTE_37",
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ECRUTEAK_CITY", offset: -5},
+			{dir: dirSouth, dest: "ROUTE_36", offset: -10},
+		},
+	},
+	{
+		name: "ECRUTEAK_CITY",
+		warps: []warpSpec{
+			{x: 35, y: 26, dest: "ROUTE_42_ECRUTEAK_GATE", destWarp: 1},
+			{x: 35, y: 27, dest: "ROUTE_42_ECRUTEAK_GATE", destWarp: 2},
+			{x: 18, y: 11, dest: "ECRUTEAK_TIN_TOWER_ENTRANCE", destWarp: 1},
+			{x: 20, y: 2, dest: "ECRUTEAK_TIN_TOWER_BACK_ENTRANCE", destWarp: 1},
+			{x: 20, y: 3, dest: "ECRUTEAK_TIN_TOWER_BACK_ENTRANCE", destWarp: 2},
+			{x: 23, y: 27, dest: "ECRUTEAK_POKECENTER_1F", destWarp: 1},
+			{x: 5, y: 21, dest: "ECRUTEAK_LUGIA_SPEECH_HOUSE", destWarp: 1},
+			{x: 23, y: 21, dest: "DANCE_THEATER", destWarp: 1},
+			{x: 29, y: 21, dest: "ECRUTEAK_MART", destWarp: 2},
+			{x: 6, y: 27, dest: "ECRUTEAK_GYM", destWarp: 1},
+			{x: 13, y: 27, dest: "ECRUTEAK_ITEMFINDER_HOUSE", destWarp: 1},
+			{x: 37, y: 7, dest: "TIN_TOWER_1F", destWarp: 1},
+			{x: 5, y: 5, dest: "BURNED_TOWER_1F", destWarp: 1},
+			{x: 0, y: 18, dest: "ROUTE_38_ECRUTEAK_GATE", destWarp: 3},
+			{x: 0, y: 19, dest: "ROUTE_38_ECRUTEAK_GATE", destWarp: 4},
+		},
+		connections: []connectionSpec{
+			{dir: dirSouth, dest: "ROUTE_37", offset: 5},
+			{dir: dirWest, dest: "ROUTE_38", offset: 5},
+			{dir: dirEast, dest: "ROUTE_42", offset: 9},
+		},
+	},
+	{
+		name: "ECRUTEAK_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "ECRUTEAK_CITY", destWarp: 6},
+			{x: 4, y: 7, dest: "ECRUTEAK_CITY", destWarp: 6},
+			{x: 0, y: 7, dest: "POKECENTER_2F", destWarp: 1},
+		},
+	},
+	{
+		name: "ECRUTEAK_MART",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "ECRUTEAK_CITY", destWarp: 9},
+			{x: 3, y: 7, dest: "ECRUTEAK_CITY", destWarp: 9},
+		},
+	},
+	{
+		name: "ECRUTEAK_GYM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "ECRUTEAK_CITY", destWarp: 10},
+			{x: 5, y: 17, dest: "ECRUTEAK_CITY", destWarp: 10},
+			{x: 4, y: 14, dest: "ECRUTEAK_GYM", destWarp: 4},
+			{x: 2, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 3, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 5, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 6, y: 7, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 3, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 5, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 7, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 8, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 5, y: 8, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 6, y: 8, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 8, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 8, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 9, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 10, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 11, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 10, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 5, y: 10, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 2, y: 12, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 3, y: 12, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 4, y: 12, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 5, y: 12, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 10, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 11, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 12, dest: "ECRUTEAK_GYM", destWarp: 3},
+			{x: 7, y: 13, dest: "ECRUTEAK_GYM", destWarp: 3},
 		},
 	},
 }
@@ -356,7 +518,7 @@ type firstBadgeWorldProvider struct {
 }
 
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
-// for the fresh-save -> Violet -> Azalea -> Ilex Forest / Route 34 vertical slice.
+// for the verified early-Johto slice from a fresh save through Ecruteak.
 //
 // romData is accepted now so this constructor can grow into the real #973 ROM
 // parser without changing its profile-facing shape. The current slice uses
