@@ -12,10 +12,11 @@ without per-user configuration, and there is only one copy to keep current.
 Nested skill directories are not discovered — a skill is
 `.claude/skills/<name>/SKILL.md` and nothing deeper.
 
-- `pokefarm-run-fix` — hand it one run id: classify the failure, resolve its
-  triage key, reproduce, fix, open the triage-keyed PR, record the attempt.
-- `pokefarm-run-diagnose` — the same evidence, diagnosis only, no PR.
-- `pokefarm-triage` — the reproduce-before-fix procedure and the ship gates.
+- `pokefarm-run-fix` — hand it one run id. It starts with
+  `make -s debug RUN=<id>`, which prepares bounded evidence, deterministic
+  replay when supported, and localized source context before the model edits.
+- `pokefarm-run-diagnose` — the same one-id prepared evidence, diagnosis only.
+- `pokefarm-triage` — queue ownership plus the same compact reproduce/fix gates.
 - `pokefarm-recovery-audit`, `pokefarm-cleanup`, `world-map-debug`,
   `gomeboy-forensics` — audit, cleanup, map/routing, and RAM forensics.
 
