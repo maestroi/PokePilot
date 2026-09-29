@@ -1,27 +1,18 @@
 ---
-description: Investigate PokeFarm runs and fix what makes them fail — pull the actionable failure queue over the pokepilot MCP, replay the failing round's .state locally, fix at the shared point, commit and push once the tests pass.
+description: Triage PokeFarm failures with a compact precomputed packet; expand context only when the one-id debugger cannot establish the defect.
 globs:
 alwaysApply: false
 ---
 
-Follow the procedure in @.claude/skills/pokefarm-triage/SKILL.md exactly. It is
-the single source of truth for this workflow; this rule only makes Cursor aware
-of it.
+Follow @.claude/skills/pokefarm-triage/SKILL.md.
 
-The short version, so you know what you are opting into:
+For interactive queue work, select one group with `pokepilot_get_triage()`,
+then run `make -s debug RUN=<representative-run-id>`. For unattended work the
+shell already selected the group and normally attaches a **Prepared debug
+packet**; consume it directly and do not pick another failure.
 
-1. Start with `pokepilot_get_triage()`. It is the actionable queue and hides
-   linked issues already marked resolved/fixed. Use `include_resolved=true`
-   only to audit history. `pokepilot_list_runs` is raw evidence, not a backlog;
-   never recreate work just by grouping old `detail` strings.
-2. `pokepilot_get_run_debug(run_id)` for `trace_tail`, `progress_final`, and the
-   artifact list.
-3. `curl` the failing round's `.state` artifact from the pokewall endpoint.
-4. Replay it in a throwaway `skill/zz_repro_scratch_test.go` before editing
-   anything — the farm runs committed HEAD, so a farm failure reproduces
-   locally in seconds and deterministically.
-5. Fix where every caller routes through, not on the path the failure named.
-6. Gate on `make test-short` (~6s) plus the repro. Never run the bare
-   `go test ./skill/...`: those tests boot the emulator and play the game for
-   tens of minutes.
-7. Branch, commit the fix only, push. Leave unrelated dirty files unstaged.
+Start from the packet's deterministic replay and `source_matches`, fix the
+shared invariant, rerun the same one-id debug command, then `make test-short`.
+Only expand to full run debug, recovery audit, or a named artifact when the
+compact packet leaves a specific ambiguity. Raw recordings and broad repository
+search are last-resort evidence.
