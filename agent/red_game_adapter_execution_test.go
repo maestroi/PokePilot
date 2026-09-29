@@ -48,6 +48,17 @@ func TestNormalizeRedOwnedExecutionResultMenuFallback(t *testing.T) {
 			want:   OutcomeStabilizationFailed,
 		},
 		{
+			name: "unclassified heal becomes blocked",
+			obj:  Objective{Kind: KindHeal, Place: PlaceID("pewter pokemon center")},
+			want: OutcomeBlocked,
+		},
+		{
+			name:   "specific heal outcome is preserved",
+			obj:    Objective{Kind: KindHeal, Place: PlaceID("pewter pokemon center")},
+			result: ObjectiveResult{Outcome: OutcomeStabilizationFailed},
+			want:   OutcomeStabilizationFailed,
+		},
+		{
 			name: "other objective kinds are not reclassified",
 			obj:  Objective{Kind: KindGoTo, Place: PlaceID("route 1")},
 			want: "",
