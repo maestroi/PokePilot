@@ -195,6 +195,7 @@ func replayStatusFromMediaJob(job farm.MediaRenderJob) replayStatus {
 		JobState:     job.State,
 		Stage:        job.Stage,
 		RetryCount:   job.RetryCount,
+		LastError:    job.LastError,
 	}
 	switch job.State {
 	case farm.MediaRenderJobReady:
@@ -253,7 +254,7 @@ func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRende
 		}
 		return
 	}
-	recordings, err := s.recordings(ctx, job.RunID)
+	recordings, err := s.recordingsForAttempts(ctx, job.RunID, job.Attempts)
 	if err != nil {
 		return
 	}

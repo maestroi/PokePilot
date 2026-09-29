@@ -73,6 +73,7 @@ type replayStatus struct {
 	ObjectKey  string `json:"object_key,omitempty"`
 	Size       int64  `json:"size,omitempty"`
 	Error      string `json:"error,omitempty"`
+	LastError  string `json:"last_error,omitempty"`
 	JobState   string `json:"job_state,omitempty"`
 	Stage      string `json:"stage,omitempty"`
 	RetryCount int    `json:"retry_count,omitempty"`
@@ -338,6 +339,34 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 	}
 	if len(recordings) == 0 {
 		return nil, errRecordingNotFound
+	}
+	return recordings, nil
+}
+
+func (s *replayServer) recordingsForAttempts(ctx context.Context, runID string, attempts []int) ([]replayRecording, error) {
+	if len(attempts) == 0 {
+		return nil, errors.New("media render job has no persisted source attempts")
+	}
+	recordings := make([]replayRecording, 0, len(attempts))
+	seen := make(map[int]struct{}, len(attempts))
+	for _, attempt := range attempts {
+		if attempt < 1 {
+			return nil, fmt.Errorf("invalid persisted replay attempt %d", attempt)
+		}
+		if _, ok := seen[attempt]; ok {
+			return nil, fmt.Errorf("duplicate persisted replay attempt %d", attempt)
+		}
+		seen[attempt] = struct{}{}
+
+		list, err := s.artifactsAttempt(ctx, runID, attempt)
+		if err != nil {
+			return nil, fmt.Errorf("attempt %d: %w", attempt, err)
+		}
+		artifact, ok := findArtifact(list.Artifacts, "run.gbrun")
+		if !ok || !artifact.Replayable {
+			return nil, fmt.Errorf("attempt %d: %w", attempt, errRecordingNotFound)
+		}
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
 	}
 	return recordings, nil
 }
