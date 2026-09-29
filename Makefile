@@ -160,7 +160,7 @@ run-llm-auto:
 debug:
 	@test -n "$(RUN)" || { echo "usage: make debug RUN=run-... [DEBUG_MODE=tiny|normal|deep]"; exit 2; }
 	$(load_env) \
-	go run ./cmd/pokedebug -mode "$(DEBUG_MODE)" "$(RUN)" $(ARGS)
+	go run ./cmd/pokedebug -run "$(RUN)" -mode "$(DEBUG_MODE)" $(ARGS)
 
 test:
 	go test ./... $(ARGS)
