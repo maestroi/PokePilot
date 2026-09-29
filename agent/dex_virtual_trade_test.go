@@ -52,6 +52,79 @@ func TestVirtualTradeOffersVersionAssistedSpeciesWithReplaceableDonor(t *testing
 	}
 }
 
+func TestVirtualTradeOffersOnlyRootOfForfeitedEvolutionFamily(t *testing.T) {
+	obs := Observation{
+		Services: &RuntimeServices{VirtualTrader: true},
+		Party: []PartyMon{
+			{Species: "charmander", Level: 28, HP: 50, MaxHP: 50},
+			{Species: "pidgey", Level: 7, HP: 20, MaxHP: 20},
+		},
+		Dex: DexCatalog{
+			Owned: []DexEntry{
+				{Species: "charmander", Owned: true, Sources: []DexSource{{Kind: AcquireStarter}}},
+				{Species: "pidgey", Owned: true, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}},
+			},
+			Unavailable: []DexEntry{
+				{Species: "bulbasaur", Unavailable: UnavailableForfeited + ":starter", Sources: []DexSource{{Kind: AcquireStarter}}},
+				{Species: "ivysaur", Unavailable: UnavailableForfeited + ":starter", Sources: []DexSource{{Kind: AcquireLevelEvo, From: "bulbasaur", Level: 16}}},
+				{Species: "venusaur", Unavailable: UnavailableForfeited + ":starter", Sources: []DexSource{{Kind: AcquireLevelEvo, From: "ivysaur", Level: 32}}},
+			},
+		},
+	}
+	got := appendDexVirtualTradeObjectives(obs, nil, nil)
+	if len(got) != 1 {
+		t.Fatalf("objectives = %+v, want only the inaccessible family root", got)
+	}
+	if got[0].Species != "bulbasaur" || got[0].Intent != dexVirtualPokedexIntent {
+		t.Fatalf("objective = %+v, want only a Bulbasaur virtual trade", got[0])
+	}
+}
+
+func TestVirtualTradeDefersEvolvedFamilyMembersToLocalEvolution(t *testing.T) {
+	obs := Observation{
+		Services: &RuntimeServices{VirtualTrader: true},
+		HasGrass: true,
+		Party: []PartyMon{
+			{Species: "bulbasaur", Level: 15, HP: 40, MaxHP: 40},
+			{Species: "pidgey", Level: 7, HP: 20, MaxHP: 20},
+		},
+		Dex: DexCatalog{
+			Owned: []DexEntry{
+				{Species: "bulbasaur", Owned: true, Sources: []DexSource{{Kind: AcquireStarter}}},
+				{Species: "pidgey", Owned: true, Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}}},
+			},
+			Unavailable: []DexEntry{
+				{Species: "ivysaur", Unavailable: UnavailableForfeited + ":starter", Sources: []DexSource{{Kind: AcquireLevelEvo, From: "bulbasaur", Level: 16}}},
+				{Species: "venusaur", Unavailable: UnavailableForfeited + ":starter", Sources: []DexSource{{Kind: AcquireLevelEvo, From: "ivysaur", Level: 32}}},
+			},
+		},
+	}
+
+	if got := appendDexVirtualTradeObjectives(obs, nil, nil); len(got) != 0 {
+		t.Fatalf("virtual objectives = %+v, want the owned Bulbasaur line evolved locally", got)
+	}
+	got := appendDexEvolutionObjectives(obs, NewKnowledge(nil), nil)
+	if len(got) != 1 {
+		t.Fatalf("evolution objectives = %+v, want one local Ivysaur evolution", got)
+	}
+	if got[0].Kind != KindTrain || got[0].Species != "bulbasaur" || got[0].Level != 16 || got[0].Intent != "dex-evolution" {
+		t.Fatalf("objective = %+v, want Bulbasaur trained to level 16", got[0])
+	}
+}
+
+func TestVirtualTradeOfferLevelFloorsLevelEvolution(t *testing.T) {
+	obs := Observation{Dex: DexCatalog{Unavailable: []DexEntry{{
+		Species: "venusaur",
+		Sources: []DexSource{{Kind: AcquireLevelEvo, From: "ivysaur", Level: 32}},
+	}}}}
+	if got := virtualTradeOfferLevel(obs, "venusaur", 7); got != 32 {
+		t.Fatalf("offer level = %d, want legal evolution floor 32", got)
+	}
+	if got := virtualTradeOfferLevel(obs, "venusaur", 40); got != 40 {
+		t.Fatalf("offer level = %d, want donor level 40 to remain unchanged", got)
+	}
+}
+
 func TestVirtualTradePokedexPolicyCoversForfeitedChoice(t *testing.T) {
 	obs := Observation{
 		Services: &RuntimeServices{VirtualTrader: true},
