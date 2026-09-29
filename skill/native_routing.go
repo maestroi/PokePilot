@@ -133,6 +133,88 @@ func walkNativePath(m *emu.Emu, decoder game.OverworldDecoder, path []world.Nati
 	return nil
 }
 
+
+func nativeCutUsable(
+	reader game.MemoryReader,
+	romData []byte,
+	profile nativeRoutingProfile,
+) (bool, error) {
+	field, ok := any(profile).(game.FieldMoveDecoder)
+	if !ok {
+		return false, nil
+	}
+	capability, supported, err := field.DecodeFieldMoveCapability(reader, romData, game.FieldMoveCut)
+	if err != nil || !supported {
+		return false, err
+	}
+	return capability.Usable && capability.PartySlot >= 0, nil
+}
+
+func walkNativeFieldPath(
+	m *emu.Emu,
+	decoder game.OverworldDecoder,
+	path []world.NativePathStep,
+) error {
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	for _, step := range path {
+		move := nativeStepToWorld(step.Move)
+		if step.Cut {
+			state := decoder.DecodeOverworld(m)
+			tx, ty := int(state.X)+step.Move.DX, int(state.Y)+step.Move.DY
+			if tx < 0 || ty < 0 || tx > 255 || ty > 255 {
+				return fmt.Errorf("skill: native routing: Cut target (%d,%d) is out of range", tx, ty)
+			}
+			if err := faceWithOverworldDecoder(m, decoder, uint8(tx), uint8(ty)); err != nil {
+				return fmt.Errorf("skill: native routing: face Cut target (%d,%d): %w", tx, ty, err)
+			}
+			// Refresh the cartridge's facing-tile observation by attempting the
+			// blocked step once, matching the mature Gen-I field-path contract.
+			if btn, ok := buttonFor(move); ok {
+				m.Tap(btn, 3, 7)
+				m.StepFrames(8)
+			}
+			if !fieldActions.DecodeFieldAction(m).CuttableAhead {
+				return fmt.Errorf("skill: native routing: planned Cut at (%d,%d), but live front target is not cuttable", tx, ty)
+			}
+			if _, err := useFieldMoveWithDecoder(m, FieldCut, fieldActions); err != nil {
+				return fmt.Errorf("skill: native routing: Cut at (%d,%d): %w", tx, ty, err)
+			}
+		}
+		if err := stepOnceWithOverworldDecoder(m, move, decoder); err != nil {
+			return err
+		}
+		if err := movementInterruptionWithDecoder(m, decoder); err != nil {
+			if errors.Is(err, ErrBattleInterrupted) {
+				return ErrBattle
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func nativePathWithCutFallback(
+	grid *world.NativeGrid,
+	sx, sy, tx, ty int,
+	blocked map[[2]int]bool,
+	allowCut bool,
+) ([]world.NativePathStep, error) {
+	if path, err := world.FindNativePath(grid, sx, sy, tx, ty, blocked); err == nil {
+		out := make([]world.NativePathStep, len(path))
+		for i, step := range path {
+			out[i].Move = step
+		}
+		return out, nil
+	}
+	if !allowCut {
+		return nil, world.ErrNoPath
+	}
+	return world.FindNativePathWithCut(grid, sx, sy, tx, ty, blocked, true)
+}
+
 func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, dest NativeDestination) error {
 	const attempts = 12
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -157,11 +239,15 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 		blocked := nativeRuntimeBlockers(live, header, nil)
 		delete(blocked, [2]int{int(liveWorld.X), int(liveWorld.Y)})
 		delete(blocked, [2]int{int(dest.X), int(dest.Y)})
-		path, err := world.FindNativePath(grid, int(liveWorld.X), int(liveWorld.Y), int(dest.X), int(dest.Y), blocked)
+		canCut, err := nativeCutUsable(m, m.ROM(), profile)
 		if err != nil {
 			return err
 		}
-		if err := walkNativePath(m, profile, path); err != nil {
+		path, err := nativePathWithCutFallback(grid, int(liveWorld.X), int(liveWorld.Y), int(dest.X), int(dest.Y), blocked, canCut)
+		if err != nil {
+			return err
+		}
+		if err := walkNativeFieldPath(m, profile, path); err != nil {
 			var blockedStep *ErrBlocked
 			if errors.As(err, &blockedStep) {
 				m.StepFrames(npcWaitFrames)
@@ -270,6 +356,106 @@ func nativeConnectionApproach(
 	return best, push, nil
 }
 
+
+func nativeAdjacentApproachWithCut(
+	grid *world.NativeGrid,
+	sx, sy, wx, wy int,
+	blocked map[[2]int]bool,
+	allowCut bool,
+) ([]world.NativePathStep, world.NativeStep, error) {
+	type candidate struct {
+		x, y int
+		push world.NativeStep
+		path []world.NativePathStep
+	}
+	var best *candidate
+	for _, cand := range []candidate{
+		{x: wx, y: wy - 1, push: world.NativeStep{DY: 1}},
+		{x: wx - 1, y: wy, push: world.NativeStep{DX: 1}},
+		{x: wx + 1, y: wy, push: world.NativeStep{DX: -1}},
+		{x: wx, y: wy + 1, push: world.NativeStep{DY: -1}},
+	} {
+		if blocked[[2]int{cand.x, cand.y}] || !grid.Walkable(cand.x, cand.y) {
+			continue
+		}
+		path, err := nativePathWithCutFallback(grid, sx, sy, cand.x, cand.y, blocked, allowCut)
+		if err != nil {
+			continue
+		}
+		cand.path = path
+		if best == nil || len(cand.path) < len(best.path) {
+			copy := cand
+			best = &copy
+		}
+	}
+	if best == nil {
+		return nil, world.NativeStep{}, world.ErrNoPath
+	}
+	return best.path, best.push, nil
+}
+
+func nativeConnectionApproachWithCut(
+	provider worldmodel.NativeMapTopologyProvider,
+	grid *world.NativeGrid,
+	edge world.NativeEdge,
+	sx, sy int,
+	blocked map[[2]int]bool,
+	allowCut bool,
+) ([]world.NativePathStep, world.NativeStep, error) {
+	dest, err := provider.ParseMap(edge.To)
+	if err != nil {
+		return nil, world.NativeStep{}, err
+	}
+	sourceWidth, sourceHeight := grid.Width, grid.Height
+	destWidth, destHeight := int(dest.WidthBlocks)*2, int(dest.HeightBlocks)*2
+
+	limit := sourceWidth
+	destLimit := destWidth
+	push := world.NativeStep{DY: -1}
+	switch edge.Dir {
+	case 1:
+		push = world.NativeStep{DY: 1}
+	case 2:
+		limit, destLimit = sourceHeight, destHeight
+		push = world.NativeStep{DX: -1}
+	case 3:
+		limit, destLimit = sourceHeight, destHeight
+		push = world.NativeStep{DX: 1}
+	}
+
+	var best []world.NativePathStep
+	found := false
+	for i := 0; i < limit; i++ {
+		if j := i + int(edge.Offset); j < 0 || j >= destLimit {
+			continue
+		}
+		tx, ty := i, 0
+		switch edge.Dir {
+		case 1:
+			ty = sourceHeight - 1
+		case 2:
+			tx, ty = 0, i
+		case 3:
+			tx, ty = sourceWidth - 1, i
+		}
+		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
+			continue
+		}
+		path, pathErr := nativePathWithCutFallback(grid, sx, sy, tx, ty, blocked, allowCut)
+		if pathErr != nil {
+			continue
+		}
+		if !found || len(path) < len(best) {
+			best = path
+			found = true
+		}
+	}
+	if !found {
+		return nil, world.NativeStep{}, world.ErrNoPath
+	}
+	return best, push, nil
+}
+
 func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.NativeEdge, push world.NativeStep) error {
 	btn, ok := buttonFor(nativeStepToWorld(push))
 	if !ok {
@@ -348,20 +534,24 @@ func traverseNativeEdge(
 		blocked := nativeRuntimeBlockers(live, header, nil)
 		delete(blocked, [2]int{int(state.X), int(state.Y)})
 
-		var path []world.NativeStep
+		canCut, err := nativeCutUsable(m, m.ROM(), profile)
+		if err != nil {
+			return err
+		}
+		var path []world.NativePathStep
 		var push world.NativeStep
 		switch edge.Kind {
 		case world.EdgeWarp:
-			path, push, err = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked)
+			path, push, err = nativeAdjacentApproachWithCut(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked, canCut)
 		case world.EdgeConnection:
-			path, push, err = nativeConnectionApproach(provider, grid, edge, int(state.X), int(state.Y), blocked)
+			path, push, err = nativeConnectionApproachWithCut(provider, grid, edge, int(state.X), int(state.Y), blocked, canCut)
 		default:
 			return fmt.Errorf("skill: native routing: unsupported edge kind %d", edge.Kind)
 		}
 		if err != nil {
 			return fmt.Errorf("skill: native routing: approach edge %#04x -> %#04x: %w", edge.From, edge.To, err)
 		}
-		if err := walkNativePath(m, profile, path); err != nil {
+		if err := walkNativeFieldPath(m, profile, path); err != nil {
 			var blockedStep *ErrBlocked
 			if errors.As(err, &blockedStep) {
 				m.StepFrames(npcWaitFrames)
