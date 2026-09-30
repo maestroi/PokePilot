@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
+	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/skill"
@@ -51,12 +52,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
-	if !hasWorldAdapter(string(profile.ID())) {
+	worldProfile, ok := profile.(gameruntime.WorldProfile)
+	if !ok {
 		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
 		os.Exit(2)
 	}
+	provider := worldProfile.MapProvider(romData)
+	if provider == nil {
+		fmt.Fprintf(os.Stderr, "worldverify: profile %q returned no map provider\n", profile.ID())
+		os.Exit(2)
+	}
 
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v\n", err)
 		os.Exit(1)
@@ -147,10 +154,4 @@ func normalizeGameFlag(value string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported -game %q (supported: auto, red, blue, yellow)", value)
 	}
-}
-
-func hasWorldAdapter(gameID string) bool {
-	return gameID == string(redprofile.GameID) ||
-		gameID == string(blueprofile.GameID) ||
-		gameID == string(yellowprofile.GameID)
 }
