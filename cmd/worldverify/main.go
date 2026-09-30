@@ -155,3 +155,13 @@ func normalizeGameFlag(value string) (string, error) {
 		return "", fmt.Errorf("unsupported -game %q (supported: auto, red, blue, yellow)", value)
 	}
 }
+
+
+func hasWorldAdapter(gameID string) bool {
+	switch gameID {
+	case string(redprofile.GameID), string(blueprofile.GameID), string(yellowprofile.GameID):
+		return true
+	default:
+		return false
+	}
+}
