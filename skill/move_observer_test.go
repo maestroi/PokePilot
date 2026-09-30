@@ -30,6 +30,32 @@ func TestWithMoveObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
 	}
 }
 
+func TestMoveSelectorIsScopedPerEmulatorAndRestores(t *testing.T) {
+	a, b := &emu.Emu{}, &emu.Emu{}
+	state := testGen1Snapshot().Battle
+
+	restoreOuter := WithMoveSelector(a, func(_ game.BattleState, deterministic int) int { return deterministic + 1 })
+	if got := selectMove(a, state, 0); got != 1 {
+		t.Fatalf("outer selector = %d, want 1", got)
+	}
+	if got := selectMove(b, state, 0); got != 0 {
+		t.Fatalf("unscoped selector = %d, want deterministic 0", got)
+	}
+
+	restoreInner := WithMoveSelector(a, func(_ game.BattleState, deterministic int) int { return deterministic + 2 })
+	if got := selectMove(a, state, 0); got != 2 {
+		t.Fatalf("inner selector = %d, want 2", got)
+	}
+	restoreInner()
+	if got := selectMove(a, state, 0); got != 1 {
+		t.Fatalf("restored selector = %d, want 1", got)
+	}
+	restoreOuter()
+	if got := selectMove(a, state, 0); got != 0 {
+		t.Fatalf("removed selector = %d, want deterministic 0", got)
+	}
+}
+
 func TestBattleResultObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
 	a, b := &emu.Emu{}, &emu.Emu{}
 	var outer, inner []game.BattleResult
