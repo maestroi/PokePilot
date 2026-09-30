@@ -91,6 +91,17 @@ export interface DashboardStats {
   [key: string]: unknown
 }
 
+export interface BattleDecisionOutcome {
+  kind: 'next_turn' | 'battle_result' | string
+  active_species?: string
+  active_hp?: number
+  active_max_hp?: number
+  opponent_species?: string
+  opponent_hp?: number
+  opponent_max_hp?: number
+  result?: 'won' | 'lost' | 'draw' | string
+}
+
 // One typed-decision call in a run's live feed (only the most recent calls
 // travel; see DecisionSummary for the whole run).
 export interface TypedDecisionRecord {
@@ -106,6 +117,9 @@ export interface TypedDecisionRecord {
   shadow?: boolean
   executed?: string
   agreed?: boolean
+  decision_index?: number
+  state_fingerprint?: string
+  battle_outcome?: BattleDecisionOutcome
   error?: string
 }
 
