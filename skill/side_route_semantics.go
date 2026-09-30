@@ -1,12 +1,8 @@
 package skill
 
 import (
-	"fmt"
-
 	gameruntime "github.com/maestroi/pokepilot/game"
-	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -86,20 +82,18 @@ func redSideRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, boo
 
 func (x *redRouteTransitionExecutor) executeSideRouteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, bool, error) {
 	switch transition.ID {
-	case "red:route2_gate_cut", "red:route2_diglett_cut":
+	case "red:route2_gate_cut", "red:route2_diglett_cut",
+		"red:power_plant_surf", "red:cerulean_cave_b1f_surf":
 		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
 			return world.TransitionExecutionResult{}, true, blockage
 		}
-		// Traverse will approach the selected gate warp with the shared field
-		// planner and therefore Cut only a tree that actually unlocks this door.
+		// These are component pivots, not action executors. Traverse already
+		// approaches warp edges through the shared destination-aware field
+		// planner (approachWarpWithFieldPath), which owns both Cut and Surf,
+		// refreshes the live grid after the field action, and then retries the
+		// concrete warp. Keeping the semantic transition capability-only avoids
+		// planning a whole approach in water mode before Surf is actually active.
 		return world.TransitionExecutionResult{}, true, nil
-
-	case "red:power_plant_surf", "red:cerulean_cave_b1f_surf":
-		if blockage := x.liveTransitionBlockage(transition); blockage != nil {
-			return world.TransitionExecutionResult{}, true, blockage
-		}
-		result, err := x.executeSurfWarpApproach(edge)
-		return result, true, err
 	}
 	return world.TransitionExecutionResult{}, false, nil
 }
@@ -112,76 +106,4 @@ func (x *redRouteTransitionExecutor) liveTransitionBlockage(transition gamerunti
 		return nil
 	}
 	return &blockage
-}
-
-// executeSurfWarpApproach enters Surf at the first water-only step on a path
-// to a real warp. It deliberately does not traverse the warp itself. Once Surf
-// is positively observed, Changed makes GoTo overlay the live water topology;
-// the ordinary Traverse path can then reach and own the door normally.
-func (x *redRouteTransitionExecutor) executeSurfWarpApproach(edge world.Edge) (world.TransitionExecutionResult, error) {
-	if edge.Kind != world.EdgeWarp {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach %02x->%02x is not a warp", edge.From, edge.To)
-	}
-	if got := x.m.Peek8(sym.CurMap); got != edge.From {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach starts on %02x, current map is %02x", edge.From, got)
-	}
-	h, err := rom.ParseMap(x.romData, edge.From)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach parse map %02x: %w", edge.From, err)
-	}
-	land, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalLand)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach land grid: %w", err)
-	}
-	water, err := liveMapGridForTraversal(x.m, x.romData, h, world.TraversalWater)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach water grid: %w", err)
-	}
-	sx, sy := playerXY(x.m)
-	blocked := spriteBlockers(x.m)
-	if _, _, _, _, err := warpTarget(h, edge, land, int(sx), int(sy), blocked, nil, x.romData); err == nil {
-		return world.TransitionExecutionResult{}, nil
-	}
-	_, _, steps, _, err := warpTarget(h, edge, water, int(sx), int(sy), blocked, nil, x.romData)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach cannot reach %02x even in water mode: %w", edge.To, err)
-	}
-	fieldActions, err := x.fieldActionDecoder()
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach field-action profile: %w", err)
-	}
-	if fieldActions.DecodeFieldAction(x.m).Surfing {
-		return world.TransitionExecutionResult{}, nil
-	}
-
-	px, py := int(sx), int(sy)
-	standX, standY, waterX, waterY := 0, 0, 0, 0
-	found := false
-	for _, step := range steps {
-		nx, ny := px+step.DX, py+step.DY
-		if !land.Passable(px, py, nx, ny) && water.Passable(px, py, nx, ny) {
-			standX, standY, waterX, waterY = px, py, nx, ny
-			found = true
-			break
-		}
-		px, py = nx, ny
-	}
-	if !found {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach to %02x has no water-entry step", edge.To)
-	}
-	if err := walkWithinMap(x.m, x.romData, Destination{Map: edge.From, X: uint8(standX), Y: uint8(standY)}); err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach reach shoreline (%d,%d): %w", standX, standY, err)
-	}
-	if err := Face(x.m, uint8(waterX), uint8(waterY)); err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach face water (%d,%d): %w", waterX, waterY, err)
-	}
-	x.m.StepFrames(2)
-	result, err := useFieldMoveWithDecoder(x.m, FieldSurf, fieldActions)
-	if err != nil {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach enter mode: %w", err)
-	}
-	if !result.Surfing || !fieldActions.DecodeFieldAction(x.m).Surfing {
-		return world.TransitionExecutionResult{}, fmt.Errorf("skill: Surf warp approach returned without verified surfing state")
-	}
-	return world.TransitionExecutionResult{Changed: true}, nil
 }
