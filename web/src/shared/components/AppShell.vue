@@ -44,7 +44,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
     :class="[
       'min-h-screen text-[var(--poke-text)]',
       mode === 'public'
-        ? 'bg-[radial-gradient(circle_at_18%_-8%,rgba(37,99,235,.16),transparent_28rem),radial-gradient(circle_at_82%_0%,rgba(124,58,237,.12),transparent_30rem),#040812]'
+        ? 'public-shell bg-[radial-gradient(circle_at_15%_-10%,rgba(239,68,68,.13),transparent_24rem),radial-gradient(circle_at_82%_2%,rgba(250,204,21,.08),transparent_25rem),radial-gradient(circle_at_50%_100%,rgba(67,56,202,.13),transparent_35rem),#070a16]'
         : 'bg-transparent'
     ]"
   >
@@ -53,7 +53,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
       :class="[
         'sticky top-0 z-40 border-b',
         mode === 'public'
-          ? 'border-white/8 bg-[#050914]/90 shadow-lg shadow-black/20 backdrop-blur-xl'
+          ? 'border-[#3b4167]/55 bg-[#080b18]/92 shadow-lg shadow-black/25 backdrop-blur-xl'
           : 'border-[var(--poke-border)] bg-[#0f141c]'
       ]"
       v-slot="{ open }"
@@ -66,12 +66,13 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
           ]"
         >
           <span
-            :class="[
-              'shrink-0',
-              mode === 'public'
-                ? 'size-7 rounded-lg bg-gradient-to-br from-cyan-300 via-blue-500 to-violet-500 shadow-[0_0_24px_rgba(59,130,246,.28)] ring-1 ring-white/15'
-                : 'size-2 rounded-sm bg-[var(--poke-cyan)]'
-            ]"
+            v-if="mode === 'public'"
+            class="public-pokeball shrink-0"
+            aria-hidden="true"
+          ><span /></span>
+          <span
+            v-else
+            class="size-2 shrink-0 rounded-sm bg-[var(--poke-cyan)]"
             aria-hidden="true"
           />
           <div class="min-w-0 leading-tight">
@@ -92,8 +93,8 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
             :aria-current="item.current ? 'page' : undefined"
             :class="[
               item.current
-                ? (mode === 'public' ? 'border-cyan-300 text-white' : 'border-[var(--poke-cyan)] text-white')
-                : (mode === 'public' ? 'border-transparent text-slate-400 hover:bg-white/5 hover:text-white' : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white'),
+                ? (mode === 'public' ? 'border-amber-300 text-white' : 'border-[var(--poke-cyan)] text-white')
+                : (mode === 'public' ? 'border-transparent text-slate-400 hover:bg-white/5 hover:text-amber-100' : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white'),
               'inline-flex items-center border-b-2 px-3 text-[13px] font-semibold transition-colors'
             ]"
           >
@@ -155,3 +156,46 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
     </main>
   </div>
 </template>
+
+
+<style scoped>
+.public-shell {
+  font-family: ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+
+.public-pokeball {
+  position: relative;
+  display: inline-block;
+  width: 1.75rem;
+  height: 1.75rem;
+  overflow: hidden;
+  border: 2px solid #f8fafc;
+  border-radius: 9999px;
+  background: linear-gradient(to bottom, #e84a4a 0 45%, #202641 45% 55%, #f5f1df 55% 100%);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 45%), 0 0 20px rgb(239 68 68 / 18%);
+}
+
+.public-pokeball::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: #11152a;
+  content: "";
+  transform: translateY(-50%);
+}
+
+.public-pokeball > span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 2px solid #11152a;
+  border-radius: 9999px;
+  background: #f8fafc;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+</style>
