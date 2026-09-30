@@ -60,7 +60,7 @@ func TestBuildMergesOverlappingAndNearbyEvents(t *testing.T) {
 
 func TestBuildDurationCapUsesDeterministicPriority(t *testing.T) {
 	policy := DefaultPolicy()
-	policy.TargetDurationMS = 35_000
+	policy.TargetDurationMS = 36_000
 	policy.MergeGapMS = 0
 	timeline := testTimeline(
 		farm.MediaEvent{Type: "checkpoint", Frame: 60 * 60},
