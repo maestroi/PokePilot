@@ -866,63 +866,65 @@ function activityTimeAgo(item: ActivityItem): string {
               <RouteLine :line="routeLine" />
             </section>
 
-            <dl class="facts">
-              <div v-for="stat in statCards" :key="stat.key">
-                <dt>{{ stat.label }}</dt>
-                <dd>{{ stat.value }}</dd>
-              </div>
-            </dl>
-
-            <section v-if="isTetrisSelected" class="board-block" aria-label="Board">
-              <div class="block-head">
-                <h2>Board</h2>
-                <span>{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</span>
-              </div>
-              <div class="board-row">
-                <div v-if="tetrisBoardRows.length" class="tetris-board" aria-label="Tetris board">
-                  <div v-for="(row, y) in tetrisBoardRows" :key="y" class="tetris-board-row">
-                    <span
-                      v-for="(cell, x) in row"
-                      :key="x"
-                      :class="['tetris-cell', cell === '#' ? 'tetris-cell-filled' : 'tetris-cell-empty']"
-                    />
-                  </div>
+            <div class="readout">
+              <dl class="facts">
+                <div v-for="stat in statCards" :key="stat.key">
+                  <dt>{{ stat.label }}</dt>
+                  <dd>{{ stat.value }}</dd>
                 </div>
-                <p v-else class="muted">Waiting for board</p>
-                <dl class="pieces">
-                  <div><dt>Active</dt><dd class="piece-active">{{ tetrisActivePiece }}</dd></div>
-                  <div><dt>Next</dt><dd class="piece-next">{{ tetrisNextPiece }}</dd></div>
-                </dl>
-              </div>
-            </section>
+              </dl>
 
-            <section v-if="!isTetrisSelected" class="party" aria-label="Party">
-              <div class="block-head">
-                <h2>Party</h2>
-                <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
-              </div>
-              <ul v-if="selectedRun.player?.party?.length" class="roster">
-                <li v-for="(mon, index) in selectedRun.player.party" :key="mon.name + '-' + index">
-                  <PokemonSprite :name="mon.name" :size="48" :fainted="mon.hp <= 0" />
-                  <div class="mon">
-                    <span class="mon-name">
-                      <strong>{{ mon.name || 'Unknown' }}</strong>
-                      <span>Lv {{ mon.level }}</span>
-                    </span>
-                    <span class="hp" role="img" :aria-label="'HP ' + mon.hp + ' of ' + mon.max_hp">
-                      <i :class="hpTone(mon)" :style="{ width: hpPercent(mon) + '%' }" />
-                    </span>
-                    <span class="mon-meta">
-                      {{ mon.hp }}/{{ mon.max_hp }}
-                      <template v-if="mon.hp <= 0"> · fainted</template>
-                      <template v-else-if="mon.status && mon.status.toLowerCase() !== 'healthy'"> · {{ mon.status }}</template>
-                      <template v-if="index === 0"> · lead</template>
-                    </span>
+              <section v-if="isTetrisSelected" class="board-block" aria-label="Board">
+                <div class="block-head">
+                  <h2>Board</h2>
+                  <span>{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</span>
+                </div>
+                <div class="board-row">
+                  <div v-if="tetrisBoardRows.length" class="tetris-board" aria-label="Tetris board">
+                    <div v-for="(row, y) in tetrisBoardRows" :key="y" class="tetris-board-row">
+                      <span
+                        v-for="(cell, x) in row"
+                        :key="x"
+                        :class="['tetris-cell', cell === '#' ? 'tetris-cell-filled' : 'tetris-cell-empty']"
+                      />
+                    </div>
                   </div>
-                </li>
-              </ul>
-              <p v-else class="muted">Party data is not available yet.</p>
-            </section>
+                  <p v-else class="muted">Waiting for board</p>
+                  <dl class="pieces">
+                    <div><dt>Active</dt><dd class="piece-active">{{ tetrisActivePiece }}</dd></div>
+                    <div><dt>Next</dt><dd class="piece-next">{{ tetrisNextPiece }}</dd></div>
+                  </dl>
+                </div>
+              </section>
+
+              <section v-if="!isTetrisSelected" class="party" aria-label="Party">
+                <div class="block-head">
+                  <h2>Party</h2>
+                  <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
+                </div>
+                <ul v-if="selectedRun.player?.party?.length" class="roster">
+                  <li v-for="(mon, index) in selectedRun.player.party" :key="mon.name + '-' + index">
+                    <PokemonSprite :name="mon.name" :size="48" :fainted="mon.hp <= 0" />
+                    <div class="mon">
+                      <span class="mon-name">
+                        <strong>{{ mon.name || 'Unknown' }}</strong>
+                        <span>Lv {{ mon.level }}</span>
+                      </span>
+                      <span class="hp" role="img" :aria-label="'HP ' + mon.hp + ' of ' + mon.max_hp">
+                        <i :class="hpTone(mon)" :style="{ width: hpPercent(mon) + '%' }" />
+                      </span>
+                      <span class="mon-meta">
+                        {{ mon.hp }}/{{ mon.max_hp }}
+                        <template v-if="mon.hp <= 0"> · fainted</template>
+                        <template v-else-if="mon.status && mon.status.toLowerCase() !== 'healthy'"> · {{ mon.status }}</template>
+                        <template v-if="index === 0"> · lead</template>
+                      </span>
+                    </div>
+                  </li>
+                </ul>
+                <p v-else class="muted">Party data is not available yet.</p>
+              </section>
+            </div>
           </div>
 
           <aside class="side">
@@ -1330,15 +1332,15 @@ function activityTimeAgo(item: ActivityItem): string {
 
 .screen {
   position: relative;
-  width: min(100%, calc(72vh * 10 / 9));
+  width: 100%;
   margin-inline: auto;
   overflow: hidden;
   background: #000;
 }
 
 .screen.is-gb { aspect-ratio: 10 / 9; }
-.screen.is-wide { aspect-ratio: 4 / 3; width: min(100%, calc(72vh * 4 / 3)); }
-.screen.is-theater { width: 100%; max-height: 88vh; }
+.screen.is-wide { aspect-ratio: 4 / 3; }
+.screen.is-theater { max-height: 88vh; }
 
 .screen-wait {
   position: absolute;
@@ -1509,6 +1511,13 @@ select:focus-visible {
   padding: 0;
   border-top: 1px solid var(--dusk);
   list-style: none;
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+  min-width: 0;
 }
 
 .roster li {
@@ -1763,6 +1772,27 @@ select:focus-visible {
 .others button span {
   color: var(--dusk);
   font-size: 0.85rem;
+}
+
+/* Wide screens: the game screen is sized to leave room for the readout beside it and the route below. */
+@media (min-width: 64rem) {
+  .screen-col {
+    grid-template-columns: min(100%, max(20rem, calc(52vh * 10 / 9 + 1.5rem))) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .screen-col > .bezel { grid-column: 1; grid-row: 1; }
+  .screen-col > .readout { grid-column: 2; grid-row: 1; }
+  .screen-col > .route-block { grid-column: 1 / -1; grid-row: 2; }
+
+  .readout .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .readout .roster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /* Theater mode gives the screen the whole column back. */
+  .screen-col:has(.is-theater) { grid-template-columns: minmax(0, 1fr); }
+  .screen-col:has(.is-theater) > .bezel,
+  .screen-col:has(.is-theater) > .readout,
+  .screen-col:has(.is-theater) > .route-block { grid-column: 1; grid-row: auto; }
 }
 
 @media (max-width: 64rem) {
