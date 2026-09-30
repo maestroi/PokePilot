@@ -41,15 +41,9 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
-	graph, err := world.BuildGraph(romData)
+	nativeAdjacency, err := buildNativeAdjacency(profile, romData)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
-	}
-	nativeAdjacency := make(map[uint8][]uint8, len(graph.Edges))
-	for from, edges := range graph.Edges {
-		for _, e := range edges {
-			nativeAdjacency[from] = append(nativeAdjacency[from], e.To)
-		}
 	}
 	topology := knowledgeTopologyFor(profile.ID(), nativeAdjacency)
 
@@ -426,6 +420,28 @@ runLoop:
 		res.PromptTokens, res.CompletionTokens = up.Usage()
 	}
 	return res
+}
+
+// buildNativeAdjacency asks the game profile for the static map adjacency in
+// the portable uint16 width. Profiles that implement game.MapTopologyProvider
+// own how to build it (Gen I widens its uint8 graph; Gen II builds the native
+// wide-id graph); any other profile falls back to the historical uint8 world
+// graph so an adapter without the hook still boots.
+func buildNativeAdjacency(profile gameruntime.GameProfile, romData []byte) (map[uint16][]uint16, error) {
+	if provider, ok := profile.(gameruntime.MapTopologyProvider); ok {
+		return provider.MapAdjacency(romData)
+	}
+	graph, err := world.BuildGraph(romData)
+	if err != nil {
+		return nil, err
+	}
+	adjacency := make(map[uint16][]uint16, len(graph.Edges))
+	for from, edges := range graph.Edges {
+		for _, e := range edges {
+			adjacency[uint16(from)] = append(adjacency[uint16(from)], uint16(e.To))
+		}
+	}
+	return adjacency, nil
 }
 
 func observeRunInitial(m *emu.Emu, romData []byte) (Observation, error) {
