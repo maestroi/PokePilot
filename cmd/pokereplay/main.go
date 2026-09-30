@@ -257,6 +257,9 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 			}
 			s.renderRetries.Add(1)
 			job = retried
+		} else if job.Active() {
+			writeJSON(w, http.StatusAccepted, replayStatusFromMediaJob(job))
+			return
 		}
 
 		release, reason, detail := s.tryAdmitRenderJob(job.ID)
