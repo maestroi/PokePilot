@@ -197,4 +197,3 @@ func isRegisteredGen1WorldROM(romData []byte) bool {
 	title := strings.TrimRight(string(romData[0x134:0x144]), "\x00 ")
 	return title == "POKEMON RED" || title == "POKEMON BLUE"
 }
-
