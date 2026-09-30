@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strings"
 
@@ -37,6 +38,21 @@ func BattleDecisionRequest(s game.BattleDecisionState) (DecisionRequest, error) 
 
 // ResolveBattleDecision is the execution gate: a validated response is mapped
 // back through the state's legal set before any caller acts on it.
+// BattleDecisionFingerprint is a stable hash of the portable state sent to a
+// fast decision backend. It deliberately excludes backend answers and runtime
+// addresses so the same semantic turn has the same identity offline.
+func BattleDecisionFingerprint(s game.BattleDecisionState) (string, error) {
+	if err := s.Validate(); err != nil {
+		return "", err
+	}
+	raw, err := DecisionState(s)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return fmt.Sprintf("sha256:%x", sum), nil
+}
+
 func ResolveBattleDecision(s game.BattleDecisionState, resp DecisionResponse) (game.BattleAction, error) {
 	action, err := s.Legal(resp.Choice)
 	if err != nil {
