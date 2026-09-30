@@ -63,6 +63,7 @@ const decision = reactive({
 })
 const decisionSelected = computed(() => decisionTarget.value !== 'off')
 const decisionShadow = computed(() => decision.mode === 'shadow')
+const decisionBattleMode = computed(() => decision.mode === 'shadow' || decision.mode === 'active')
 
 function decisionRequest(): DecisionEngineSpec | undefined {
   if (!(isLLM.value || isTetris.value) || !decisionSelected.value) return undefined
@@ -79,9 +80,8 @@ function decisionRequest(): DecisionEngineSpec | undefined {
       max_choices: decision.max_choices
     }
   }
-  // Battle decisions are observational only; active runs never send them.
   const { max_choices: _, ...pokemon } = decision
-  return { ...target, ...pokemon, placements: false, battles: decisionShadow.value && decision.battles }
+  return { ...target, ...pokemon, placements: false, battles: decisionBattleMode.value && decision.battles }
 }
 
 function splitDecisionTarget(target: string): [string, string] {
@@ -453,7 +453,7 @@ async function submit(): Promise<void> {
           </template>
           <template v-else>
             <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
-              <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
+              <input v-model="decision.battles" type="checkbox" :disabled="!decisionBattleMode" class="rounded border-white/10 bg-white/6" />
               Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
             </label>
             <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
