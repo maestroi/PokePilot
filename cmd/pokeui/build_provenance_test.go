@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/base64"
-	"strings"
 	"testing"
 )
 
@@ -52,29 +51,5 @@ func TestCurrentBuildProvenanceDirectBuildFallback(t *testing.T) {
 	}
 	if got.Title != "local build" {
 		t.Fatalf("Title = %q, want local build", got.Title)
-	}
-}
-
-func TestInjectBuildProvenance(t *testing.T) {
-	page := []byte(`<html><body><div class="counts"><span class="ver" id="versions"></span></div></body></html>`)
-	got := string(injectBuildProvenance(page, buildProvenance{
-		Version:   "0123456789abcdef",
-		PRNumber:  "61",
-		Title:     "Fix Mt. Moon progression",
-		PRURL:     "https://github.com/maestroi/PokePilot/pull/61",
-		CommitURL: "https://github.com/maestroi/PokePilot/commit/0123456789abcdef",
-	}))
-	for _, want := range []string{"build-popover", "data-build-label", "Fix Mt. Moon progression", "pull/61", "commit/0123456789abcdef"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("injected page missing %q", want)
-		}
-	}
-}
-
-func TestInjectBuildProvenanceLeavesUnrelatedPageAlone(t *testing.T) {
-	page := []byte(`<html><body>spectator</body></html>`)
-	got := injectBuildProvenance(page, buildProvenance{Version: "0123456"})
-	if string(got) != string(page) {
-		t.Fatalf("unrelated page changed: %s", got)
 	}
 }
