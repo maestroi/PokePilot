@@ -8,6 +8,7 @@ const (
 	PartyMenuVoluntaryBattle PartyMenuKind = "voluntary_battle"
 	PartyMenuItemUse         PartyMenuKind = "item_use"
 	PartyMenuFieldMove       PartyMenuKind = "field_move"
+	PartyMenuMachineTeach    PartyMenuKind = "machine_teach"
 )
 
 // PartyMenuState is the semantic state generic party-slot navigation needs.
