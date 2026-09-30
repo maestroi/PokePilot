@@ -60,7 +60,7 @@ func TestRealYellowWorldParsesEveryPlayableMap(t *testing.T) {
 
 func TestRealYellowGraphIncludesBeachHouse(t *testing.T) {
 	data := loadRealYellowROM(t)
-	graph, err := world.BuildGraph(data)
+	graph, err := world.BuildGraph(NewWorldProvider(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestRealYellowOverworldCollisionUsesYellowCollisionBank(t *testing.T) {
 	if blocked < len(spec.Walkable)/4 {
 		t.Fatalf("Pallet Town has %d/%d blocked tiles; collision list read from the wrong bank", blocked, len(spec.Walkable))
 	}
-	graph, err := world.BuildGraph(data)
+	graph, err := world.BuildGraph(NewWorldProvider(data))
 	if err != nil {
 		t.Fatal(err)
 	}
