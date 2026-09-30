@@ -150,7 +150,7 @@ func main() {
 	// persistence layers observe the final paused transition, not the temporary
 	// cancelled/queued state used to cooperate with existing runners.
 	operator = pauseHTTPHandler(wall, operator)
-	baseHandler := wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, operator))))
+	baseHandler := wall.localOutcomesHTTPHandler(wall.catalogOperatorOverlay(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, operator))))
 	modelHandler := controlPlaneModelExperimentHTTPHandler(wall, baseHandler)
 	handler := archiveHTTPHandler(wall, modelHandler)
 	if postgresMode {

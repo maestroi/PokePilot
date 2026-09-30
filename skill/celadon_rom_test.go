@@ -23,7 +23,7 @@ func badgeFourROM(t *testing.T) []byte {
 
 func TestBadgeFourRoute10ToLavenderUsesRockTunnel(t *testing.T) {
 	romData := badgeFourROM(t)
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

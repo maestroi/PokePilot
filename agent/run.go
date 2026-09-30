@@ -10,7 +10,12 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
+
+type worldProfile interface {
+	MapProvider([]byte) worldmodel.MapHeaderProvider
+}
 
 // Run drives observe -> plan -> execute until the run-owned deterministic
 // goal is done, a prompt-only planner is done, policy stops the run, or a
@@ -41,7 +46,15 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
-	graph, err := world.BuildGraph(romData)
+	worldProfile, ok := profile.(worldProfile)
+	if !ok {
+		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s does not expose world topology", profile.ID(), profile.Revision())}
+	}
+	provider := worldProfile.MapProvider(romData)
+	if provider == nil {
+		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s returned nil map provider", profile.ID(), profile.Revision())}
+	}
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
 	}

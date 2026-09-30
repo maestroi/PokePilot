@@ -107,8 +107,9 @@ type outboxEntry struct {
 func failureIdentity(pattern string) (key, fingerprint string) {
 	// New farm runs put a prose-free canonical fingerprint marker in Detail.
 	// Recover it directly so the wall/MCP/issue handoff all share the exact
-	// identity persisted in objective-failures.json. Historical dumps keep the
-	// old normalized-prose SHA fallback below.
+	// identity persisted in objective-failures.json. Historical finish dumps
+	// inside the supported archive window can predate that marker, so they keep
+	// the normalized-prose SHA fallback until those dumps leave support.
 	if key, fingerprint, ok := farm.ParseFailureDetailMarker(pattern); ok {
 		return key, fingerprint
 	}

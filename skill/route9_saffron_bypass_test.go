@@ -40,7 +40,7 @@ func TestRoute9RoutesToCeladonWithoutSaffron(t *testing.T) {
 	mem[sym.BagItems+3] = 1
 	mem[sym.BagItems+4] = 0xff
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

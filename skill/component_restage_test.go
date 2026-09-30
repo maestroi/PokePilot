@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // TestTileOpensDestRejectsUnwalkable pins the Route 16 gate wall pitfall from
@@ -29,7 +28,7 @@ func TestTileOpensDestRejectsUnwalkable(t *testing.T) {
 	}
 	defer m.Close()
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		t.Fatal(err)
 	}

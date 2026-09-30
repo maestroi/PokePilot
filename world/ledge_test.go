@@ -40,7 +40,7 @@ func TestRoute4ExitCanReachEasternGrassButNotReturn(t *testing.T) {
 	if _, err := FindPath(g, 64, 14, 24, 5, nil); err == nil {
 		t.Fatal("uphill ledges must remain impassable")
 	}
-	graph, err := BuildGraph(data)
+	graph, err := BuildGraph(testRedWorldProvider(data))
 	if err != nil {
 		t.Fatal(err)
 	}

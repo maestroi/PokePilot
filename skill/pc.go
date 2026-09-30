@@ -45,7 +45,7 @@ var (
 // from a one-hop neighbour. Travel owns exiting the pocket onto that
 // neighbour — including component restaging through a gate before Cut.
 func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, error) {
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		return Destination{}, "", err
 	}
@@ -171,7 +171,7 @@ func mandatoryWarpExitEdge(g *world.Graph, m *emu.Emu) (world.Edge, bool) {
 // room exit first and re-runs selection from the measured landing. This is
 // bounded and generic; no map id or Route 16 coordinate is special-cased.
 func reachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, maxBattles int) (TravelResult, string, error) {
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		return TravelResult{}, "", err
 	}

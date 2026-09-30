@@ -32,7 +32,7 @@ func TestCatalogTriageSurvivesFinishedTileEviction(t *testing.T) {
 	}
 	w.mu.Unlock()
 
-	handler := w.catalogOperatorCompatibility(w.catalogHTTPHandler(runtimeOperatorHTTPHandler(w)))
+	handler := w.catalogOperatorOverlay(w.catalogHTTPHandler(runtimeOperatorHTTPHandler(w)))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/triage", nil))
 	if res.Code != http.StatusOK {
@@ -71,7 +71,7 @@ func TestCatalogHistoryUsesCurrentIssueLink(t *testing.T) {
 	w.issueLinks[key] = IssueLink{IssueID: "github-313", Status: "closed", Resolution: "fixed"}
 	w.mu.Unlock()
 
-	handler := w.catalogOperatorCompatibility(w.catalogHTTPHandler(runtimeOperatorHTTPHandler(w)))
+	handler := w.catalogOperatorOverlay(w.catalogHTTPHandler(runtimeOperatorHTTPHandler(w)))
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&limit=10", nil))
 	if res.Code != http.StatusOK {

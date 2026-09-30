@@ -250,43 +250,18 @@ func TestPokeuiWallUnreachable(t *testing.T) {
 	}
 }
 
-func TestPokeuiServesIndex(t *testing.T) {
+func TestPokeuiDoesNotServeRetiredVanillaConsole(t *testing.T) {
 	ui := httptest.NewServer(handler("http://127.0.0.1:1"))
 	t.Cleanup(ui.Close)
-	res, err := http.Get(ui.URL + "/")
-	if err != nil {
-		t.Fatalf("GET /: %v", err)
-	}
-	body, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("GET / = %d, want 200", res.StatusCode)
-	}
-	if ct := res.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q", ct)
-	}
-	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
-		t.Errorf("Cache-Control = %q, want no-store", cc)
-	}
-	for _, want := range []string{"RomPilot", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, `id="failures"`, "/ui.js"} {
-		if !bytes.Contains(body, []byte(want)) {
-			t.Errorf("index missing %q", want)
-		}
-	}
 
-	res, err = http.Get(ui.URL + "/ui.js")
-	if err != nil {
-		t.Fatalf("GET /ui.js: %v", err)
-	}
-	js, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("GET /ui.js = %d, want 200", res.StatusCode)
-	}
-	if !bytes.Contains(js, []byte("/v1/dashboard")) {
-		t.Errorf("ui.js missing /v1/dashboard")
-	}
-	if !bytes.Contains(js, []byte("/v1/triage")) {
-		t.Errorf("ui.js missing /v1/triage")
+	for _, path := range []string{"/", "/ui.js"} {
+		res, err := http.Get(ui.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Fatalf("GET %s = %d, want 404 after vanilla console retirement", path, res.StatusCode)
+		}
 	}
 }
