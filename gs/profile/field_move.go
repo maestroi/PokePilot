@@ -213,7 +213,7 @@ func (*Profile) DecodeFieldMoveCapability(reader game.MemoryReader, romData []by
 }
 
 // DecodeFieldMoveMenu mirrors GetMonSubmenuItems from the pinned Gen-II ROM:
- // field moves are appended in the selected Pokémon's move-slot order before
+// field moves are appended in the selected Pokémon's move-slot order before
  // STATS/SWITCH/MOVE/ITEM/CANCEL. Unsupported-but-native field moves are kept
  // as empty semantic entries so later supported moves retain their real row.
 func (*Profile) DecodeFieldMoveMenu(reader game.MemoryReader) game.FieldMoveMenuState {
@@ -270,7 +270,43 @@ func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool
 	if !ok {
 		return game.NativeFieldMove{}, false
 	}
-	return game.NativeFieldMove{MachineItemID: uint16(item), MoveID: uint16(spec.move)}, true
+	return game.NativeFieldMove{
+		MachineItemID: uint16(item),
+		MoveID:        uint16(spec.move),
+		MachineNumber: uint16(spec.machineNumber),
+	}, true
 }
 
-var _ game.FieldMoveDecoder = (*Profile)(nil)
+// DecodeMachinePocket recognizes Gen II's five-row numbered TM/HM pocket.
+// wCurItem carries the currently hovered machine number while TMHMPocket is
+// active; the rendered TM POCKET heading is the liveness proof that keeps the
+// persistent cursor bytes from being mistaken for an open pocket.
+func (*Profile) DecodeMachinePocket(reader game.MemoryReader) game.MachinePocketState {
+	if reader == nil {
+		return game.MachinePocketState{}
+	}
+	y, x, rows, cols, filter := gsMenuCursor(reader)
+	text := gsScreenText(reader)
+	const tmhmFilter = gen2PadA | gen2PadB | 0x10 | 0x20 | gen2PadUp | gen2PadDown
+	if cols != 1 || rows == 0 || rows > 5 || x != 1 || y < 1 || y > rows ||
+		filter != tmhmFilter || !strings.Contains(text, "TM POCKET") {
+		return game.MachinePocketState{}
+	}
+	number := uint16(reader.Peek8(sym.CurItem))
+	if number < 1 || number > sym.TMsHMsCount {
+		number = 0
+	}
+	return game.MachinePocketState{
+		Visible:       true,
+		MachineNumber: number,
+		Cursor: game.MenuCursorState{
+			Current: int(y) - 1,
+			Max:     int(rows) - 1,
+		},
+	}
+}
+
+var (
+	_ game.FieldMoveDecoder         = (*Profile)(nil)
+	_ game.FieldMoveTeachingDecoder = (*Profile)(nil)
+)
