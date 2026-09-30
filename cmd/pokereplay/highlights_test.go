@@ -24,7 +24,7 @@ func testHighlightPlan(hash string) mediahighlight.Plan {
 
 func testHighlightRecordings() []replayRecording {
 	return []replayRecording{{
-		Attempt: 1,
+		Attempt:  1,
 		Artifact: artifactRef{SHA256: strings.Repeat("a", 64), ObjectKey: "runs/run-1/attempt-1/run.gbrun"},
 		Timeline: artifactRef{SHA256: strings.Repeat("b", 64), ObjectKey: "runs/run-1/attempt-1/media-timeline.json"},
 	}}
