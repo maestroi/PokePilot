@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	redrom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -82,7 +83,7 @@ func TestVictoryRoad2FPocketRouteDoesNotUseUnreachableOneFPad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := world.BuildGraph(redrom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("build graph: %v", err)
 	}
