@@ -96,3 +96,46 @@ The expected scratch envelope for a bounded render is therefore approximately:
 Scratch no longer scales as "all rendered segments + final MP4". Segment
 artifacts are durable derived cache entries in S3 and can be regenerated from
 the source recording if an individual object fails validation.
+
+
+## Render capacity and admission control
+
+Offline replay work is admitted separately from live spectator media. Live MJPEG
+sessions keep their bounded subscriber queues and frame dropping behavior and do
+not consume offline render-job slots.
+
+The replay worker uses these capacity knobs:
+
+- `POKEPILOT_REPLAY_MAX_JOBS` — maximum claimed offline render jobs at once
+  (default 2). Excess durable jobs remain `queued` in pokewall.
+- `POKEPILOT_REPLAY_WORKERS` — maximum attempt/segment workers that can hold an
+  emulator + encoder pipeline at once (default 3).
+- `POKEPILOT_REPLAY_MIN_SCRATCH_BYTES` — free-space floor required before a
+  new offline job is claimed (default 1 GiB). Low space leaves work queued and
+  does not affect ready artifacts or API health.
+- `POKEPILOT_REPLAY_SCRATCH_DIR` — dedicated temp root (default
+  `$TMPDIR/pokepilot-replay`). Orphan `job-*` directories are removed when
+  the replay worker starts.
+- `POKEPILOT_REPLAY_JOB_TIMEOUT` — maximum lifetime of one claimed render job
+  (Go duration, default `8h`).
+- `POKEPILOT_REPLAY_SEGMENT_TIMEOUT` — maximum lifetime of an individual
+  segment encoder/compositor pipeline (Go duration, default `2h`).
+
+For the current 4-vCPU/6-GiB render VM, start conservatively with the defaults.
+Raise `POKEPILOT_REPLAY_WORKERS` or `POKEPILOT_REPLAY_MAX_JOBS` only after
+watching memory, file descriptors, scratch free space, and encoder utilization
+under long multi-attempt renders.
+
+`/healthz` exposes the worker envelope without credentials: offline job limit
+and active count, queued depth/reasons, active segment workers, active encoder
+processes, scratch free/use/floor, oldest render age, failures/retries/completed
+renders, rendered bytes and average throughput. A healthy but saturated worker
+continues to return `status: ok`; saturation is represented by queued jobs
+rather than by spawning additional work.
+
+Cancellation is durable in pokewall. Active workers heartbeat frequently and
+cancel their render context when the durable job is cancelled; the replay API
+also exposes `POST /v1/runs/{id}/replay/cancel?mode=...` for immediate local
+propagation. A cancelled or timed-out subprocess cannot publish a ready artifact
+because assembly/upload only runs after the segment has completed and passed
+validation.
