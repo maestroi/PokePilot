@@ -36,6 +36,9 @@ type redObjectiveAdapter struct {
 	// battleTurns, when set, is told about every move turn skill.Battle
 	// presses while this adapter executes an objective.
 	battleTurns BattleTurnObserver
+	// battleMoves, when set, may replace an eligible deterministic move
+	// through the portable active-control seam.
+	battleMoves BattleMoveController
 	// gameID is set only on instances bound at registration. Execution helpers
 	// build from an emulator and ROM and never need it: the caller already
 	// selected this adapter through the per-game registry lookup.
@@ -201,9 +204,16 @@ func (a *redObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver) {
 	a.battleTurns = observer
 }
 
+// ControlBattleMoves implements BattleMoveControllingAdapter.
+func (a *redObjectiveAdapter) ControlBattleMoves(controller BattleMoveController) {
+	a.battleMoves = controller
+}
+
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	restoreMoveObserver := skill.WithMoveObserver(a.m, gen1MoveObserver(a.romData, a.battleTurns))
 	defer restoreMoveObserver()
+	restoreMoveSelector := skill.WithMoveSelector(a.m, gen1MoveSelector(a.romData, a.battleMoves))
+	defer restoreMoveSelector()
 	restoreBattleResultObserver := skill.WithBattleResultObserver(a.m, gen1BattleResultObserver(a.battleTurns))
 	defer restoreBattleResultObserver()
 	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
