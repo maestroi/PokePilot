@@ -234,25 +234,52 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
 	job, jobErr := s.ensureRenderJob(r.Context(), runID, recordings, mode, cacheKey)
 	if jobErr == nil {
-		if job.State == "failed" || job.State == "cancelled" {
-			if retried, retryErr := s.retryRenderJob(r.Context(), job.ID); retryErr == nil {
-				job = retried
-			} else {
+		if job.State == farm.MediaRenderJobFailed {
+			if !job.Retryable() {
+				writeJSON(w, http.StatusConflict, replayStatusFromMediaJob(job))
+				return
+			}
+			retried, retryErr := s.retryRenderJob(r.Context(), job.ID)
+			if retryErr != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": retryErr.Error()})
 				return
 			}
+			s.renderRetries.Add(1)
+			job = retried
+		} else if job.State == farm.MediaRenderJobCancelled {
+			retried, retryErr := s.retryRenderJob(r.Context(), job.ID)
+			if retryErr != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": retryErr.Error()})
+				return
+			}
+			s.renderRetries.Add(1)
+			job = retried
+		}
+
+		release, reason, detail := s.tryAdmitRenderJob(job.ID)
+		if release == nil {
+			status = replayStatusFromMediaJob(job)
+			status.Stage = "queued_" + reason
+			status.LastError = detail
+			writeJSON(w, http.StatusAccepted, status)
+			return
 		}
 		claimed, ok, claimErr := s.claimRenderJob(r.Context(), job.ID)
 		if claimErr != nil {
+			release()
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": claimErr.Error()})
 			return
 		}
 		if !ok {
+			release()
 			writeJSON(w, http.StatusAccepted, replayStatusFromMediaJob(claimed))
 			return
 		}
 		status = replayStatusFromMediaJob(claimed)
-		go s.render(claimed.ID, runID, recordings, cacheKey, mode)
+		go func() {
+			defer release()
+			s.render(claimed.ID, runID, recordings, cacheKey, mode)
+		}()
 		writeJSON(w, http.StatusAccepted, status)
 		return
 	}
@@ -264,16 +291,67 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 	// Compatibility with an older/local wall that does not expose durable media
 	// jobs yet. Production uses the wall-backed job authority above.
 	s.mu.Lock()
-	if current, ok := s.jobs[cacheKey]; ok && current.State == "generating" {
+	if current, ok := s.jobs[cacheKey]; ok && current.State == "generating" && current.Stage != "queued_max_jobs" && current.Stage != "queued_low_scratch" && current.Stage != "queued_scratch_unavailable" {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusAccepted, current)
 		return
 	}
-	status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey}
-	s.jobs[cacheKey] = status
 	s.mu.Unlock()
-	go s.render("", runID, recordings, cacheKey, mode)
+
+	release, reason, detail := s.tryAdmitRenderJob(cacheKey)
+	if release == nil {
+		status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Stage: "queued_" + reason, LastError: detail}
+		s.setJob(cacheKey, status)
+		writeJSON(w, http.StatusAccepted, status)
+		return
+	}
+	status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Stage: farm.MediaRenderJobPreparing}
+	s.setJob(cacheKey, status)
+	go func() {
+		defer release()
+		s.render("", runID, recordings, cacheKey, mode)
+	}()
 	writeJSON(w, http.StatusAccepted, status)
+}
+
+func (s *replayServer) handleReplayCancel(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	recordings, err := s.recordings(r.Context(), runID)
+	if err != nil {
+		writeReplayError(w, err)
+		return
+	}
+	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
+	jobID := farm.MediaRenderJobID(cacheKey)
+	job, err := s.cancelRenderJob(r.Context(), jobID)
+	if err == nil {
+		s.clearDeferredRenderJob(job.ID)
+		s.cancelActiveRender(job.ID)
+		writeJSON(w, http.StatusOK, replayStatusFromMediaJob(job))
+		return
+	}
+	if !errors.Is(err, errMediaRenderJobAPIUnavailable) {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+
+	cancelled := s.cancelActiveRender(cacheKey)
+	s.clearDeferredRenderJob(cacheKey)
+	status := replayStatus{
+		RunID: runID, State: "error", ObjectKey: cacheKey, Error: "render cancelled",
+		JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled,
+		FailureClass: farm.MediaRenderFailureCancelled,
+	}
+	s.setJob(cacheKey, status)
+	if !cancelled {
+		status.LastError = "render was queued or not active"
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *replayServer) handleReplayVideo(w http.ResponseWriter, r *http.Request) {
