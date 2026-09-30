@@ -14,7 +14,7 @@ const (
 
 	gsPlainBadgeMask   byte = 1 << 2
 	gsFogBadgeMask    byte = 1 << 3
-	gsStormBadgeMask  byte = 1 << 4
+	gsStormBadgeMask  byte = 1 << 5
 	gsGlacierBadgeMask byte = 1 << 6
 	gsRisingBadgeMask byte = 1 << 7
 )
@@ -66,7 +66,7 @@ func gsMachineOwned(reader game.MemoryReader, machineNumber int) bool {
 
 func gsPartyCount(reader game.MemoryReader) (int, error) {
 	count := int(reader.Peek8(sym.PartyCount))
-	if count < 0 || count > 6 {
+	if count > 6 {
 		return 0, fmt.Errorf("gs profile: party count %d outside 0..6", count)
 	}
 	return count, nil
