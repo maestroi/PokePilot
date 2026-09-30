@@ -444,7 +444,7 @@ onBeforeUnmount(() => {
           <video
             v-if="selectedReplayReady"
             ref="videoRef"
-            :key="selectedRun.run_id"
+            :key="`${selectedRun.run_id}:${mediaMode}`"
             :class="['replay-player', { 'semantic-video-clock': showModern }]"
             :src="selectedVideoURL"
             :controls="!showModern"
@@ -468,6 +468,19 @@ onBeforeUnmount(() => {
             <div class="renderer-switch">
               <button
                 type="button"
+                :class="{ active: mediaMode === 'full' }"
+                @click="setMediaMode('full')"
+              >Full run</button>
+              <button
+                v-if="selectedHighlightReady"
+                type="button"
+                :class="{ active: mediaMode === 'highlights' }"
+                @click="setMediaMode('highlights')"
+              >Highlights · {{ highlightStatus?.windows || 0 }}</button>
+            </div>
+            <div v-if="mediaMode === 'full'" class="renderer-switch">
+              <button
+                type="button"
                 :class="{ active: rendererMode === 'modern' }"
                 @click="setRendererMode('modern')"
               >Modern</button>
@@ -477,11 +490,14 @@ onBeforeUnmount(() => {
                 @click="setRendererMode('classic')"
               >Classic</button>
             </div>
-            <label v-if="rendererMode === 'modern'" class="theme-control">Theme
+            <label v-if="mediaMode === 'full' && rendererMode === 'modern'" class="theme-control">Theme
               <select :value="selectedThemeID" @change="onThemeSelect">
                 <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.name }}</option>
               </select>
             </label>
+          </div>
+          <div v-if="selectedReplayReady && mediaMode === 'highlights' && highlightStatus" class="renderer-notice">
+            Semantic highlight reel · {{ highlightStatus.windows || 0 }} moment{{ Number(highlightStatus.windows || 0) === 1 ? '' : 's' }} · {{ formatPlaybackTime(Number(highlightStatus.duration_ms || 0) / 1000) }}
           </div>
 
           <div v-if="showModern" class="semantic-transport">
@@ -517,7 +533,7 @@ onBeforeUnmount(() => {
             </select>
           </label>
           <div v-if="selectedReplayReady && modernFallbackLabel" class="renderer-notice">{{ modernFallbackLabel }}</div>
-          <div v-if="selectedReplayReady && themeNotice && rendererMode === 'modern'" class="theme-notice">{{ themeNotice }}</div>
+          <div v-if="selectedReplayReady && mediaMode === 'full' && themeNotice && rendererMode === 'modern'" class="theme-notice">{{ themeNotice }}</div>
         </div>
       </div>
 
