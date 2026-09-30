@@ -2540,6 +2540,12 @@ select:focus-visible {
     overflow: visible;
   }
 
+  .game-pokemon .rail-others,
+  .game-pokemon .rail-others ul {
+    max-height: none;
+    overflow: visible;
+  }
+
   .game-pokemon .screen-col {
     order: 1;
     max-width: 52rem;
