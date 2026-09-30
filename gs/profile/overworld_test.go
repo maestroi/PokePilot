@@ -87,6 +87,34 @@ func TestDecodeOverworldRejectsScriptBattleAndMovement(t *testing.T) {
 	}
 }
 
+// A running script that still owns movement is a transition or cutscene, not a
+// dialogue. Gold's bedroom stair warp sets exactly this pair for the frames
+// between stepping onto the warp tile and the map actually changing; decoding
+// it as InDialogue made native edge crossing return ErrDialogueInterrupted
+// before the warp could land, which surfaced as
+// "route interrupted by unowned script on map 0x1807 at (7,0)".
+func TestDecodeOverworldScriptInMotionIsNotDialogue(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.ScriptRunning] = 1
+	reader[sym.PlayerStepFlags] = gen2PlayerStepContinue
+
+	state := NewGold().DecodeOverworld(reader)
+	if state.InDialogue {
+		t.Fatalf("scripted movement decoded as dialogue: %+v", state)
+	}
+	if state.Controllable || state.MovementIdle {
+		t.Fatalf("scripted movement must still own the machine: %+v", state)
+	}
+	if !gsScriptActive(reader) {
+		t.Fatal("script activity must stay observable independently of dialogue")
+	}
+	// The Gen-II opening driver still has to see the transition as a script it
+	// may wait out, so the broad fact must survive the narrower dialogue.
+	if facts := NewGold().DecodeOpening(reader); !facts.ScriptActive {
+		t.Fatalf("opening facts lost the transition script: %+v", facts)
+	}
+}
+
 func TestDecodeLiveTopologyExtractsPaddedBlocksAndObjects(t *testing.T) {
 	reader := readyGSReader()
 	reader[sym.MapWidth] = 2
