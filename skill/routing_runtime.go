@@ -11,9 +11,10 @@ import (
 )
 
 type routingProfile interface {
-	game.WorldProfile
+	game.GameProfile
 	game.RoutingDecoder
 	game.OverworldDecoder
+	MapProvider([]byte) worldmodel.MapHeaderProvider
 }
 
 type routingRuntimeState struct {
