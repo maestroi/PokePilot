@@ -275,9 +275,12 @@ const BattleShadowSampleVersion = 1
 // is sufficient to replay a different backend without a ROM. The original
 // shadow answer is retained only as benchmark evidence, not as training data.
 type BattleShadowSample struct {
-	Version                 int                      `json:"version"`
-	State                   game.BattleDecisionState `json:"state"`
-	Executed                string                   `json:"executed"`
+	Version                 int                         `json:"version"`
+	DecisionIndex           int                         `json:"decision_index,omitempty"`
+	StateFingerprint        string                      `json:"state_fingerprint,omitempty"`
+	State                   game.BattleDecisionState    `json:"state"`
+	Executed                string                      `json:"executed"`
+	Outcome                 *game.BattleDecisionOutcome `json:"outcome,omitempty"`
 	ObservedChoice          string                   `json:"observed_choice,omitempty"`
 	ObservedConfidence      float64                  `json:"observed_confidence,omitempty"`
 	ObservedProbabilities   map[string]float64       `json:"observed_probabilities,omitempty"`
