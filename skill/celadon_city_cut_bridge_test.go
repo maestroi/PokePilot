@@ -30,7 +30,7 @@ func TestCeladonCutPocketBlocksLandRouteToGameCorner(t *testing.T) {
 	mem[sym.BagItems+1] = 1
 	mem[sym.BagItems+2] = 0xff
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestCeladonCutPocketBlocksLandRouteToCenter(t *testing.T) {
 	mem[sym.BagItems+1] = 1
 	mem[sym.BagItems+2] = 0xff
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
