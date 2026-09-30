@@ -22,6 +22,18 @@ type battleTurnPlanner struct {
 	recordingBattleTurns
 }
 
+type battleMovePlanner struct {
+	blockingPlannerForBattleTurns
+	choice game.BattleAction
+}
+
+func (p *battleMovePlanner) ControlBattleMove(_ game.BattleDecisionState, deterministic game.BattleAction) game.BattleAction {
+	if p.choice.ID() == "" {
+		return deterministic
+	}
+	return p.choice
+}
+
 type blockingPlannerForBattleTurns struct{}
 
 func (blockingPlannerForBattleTurns) Next(Observation, []Objective) (Objective, error) {
@@ -51,6 +63,47 @@ func TestGen1MoveObserverReportsPortableMoveTurn(t *testing.T) {
 	}
 	if _, err := rec.states[0].Legal(rec.executed[0].ID()); err != nil {
 		t.Fatalf("executed action is not legal in the reported state: %v", err)
+	}
+}
+
+func TestGen1MoveSelectorKeepsControllerInsideLegalMoveSet(t *testing.T) {
+	b := state.BattleState{
+		Kind:          state.BattleWild,
+		ActiveSpecies: 0xB1, ActiveLevel: 14, ActiveHP: 38, ActiveMaxHP: 40,
+		EnemySpecies: 0xA9, EnemyLevel: 12, EnemyHP: 33, EnemyMaxHP: 33,
+	}
+	b.Moves[0] = state.Move{ID: 0x21, PP: 30}
+	b.Moves[1] = state.Move{ID: 0x37, PP: 25}
+
+	if gen1MoveSelector(nil, nil) != nil {
+		t.Fatal("nil controller must not install a move selector")
+	}
+	controller := &battleMovePlanner{choice: game.BattleAction{Kind: game.BattleActionMove, Slot: 1}}
+	selectMove := gen1MoveSelector(nil, controller)
+	if got := selectMove(b, 0); got != 1 {
+		t.Fatalf("legal active choice = %d, want 1", got)
+	}
+
+	controller.choice = game.BattleAction{Kind: game.BattleActionMove, Slot: 3}
+	if got := selectMove(b, 0); got != 0 {
+		t.Fatalf("illegal active choice escaped gate: got %d, want deterministic 0", got)
+	}
+	controller.choice = game.BattleAction{Kind: game.BattleActionRun}
+	if got := selectMove(b, 0); got != 0 {
+		t.Fatalf("non-move active choice escaped gate: got %d, want deterministic 0", got)
+	}
+}
+
+func TestBindBattleMoveControllerAttachesPlannerToAdapter(t *testing.T) {
+	adapter := newRedObjectiveAdapter(nil, nil)
+	bindBattleMoveController(adapter, blockingPlannerForBattleTurns{})
+	if adapter.battleMoves != nil {
+		t.Fatal("planner without active-control seam must not attach a controller")
+	}
+	p := &battleMovePlanner{}
+	bindBattleMoveController(adapter, p)
+	if adapter.battleMoves != BattleMoveController(p) {
+		t.Fatal("active battle controller was not attached to the adapter")
 	}
 }
 
