@@ -202,6 +202,27 @@ func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
 	return state.Route23NorthOfVictoryRoad(int(x), int(y))
 }
 
+// route23LeagueReturnPivotAvailable reports whether the southbound semantic
+// action can honestly own the current source state. Its executable behavior is
+// the three Route 23 Surf bands; it cannot manufacture a path from Indigo's
+// disconnected Victory Road exit pocket back onto the south cave component.
+//
+// This is deliberately current-state scoped. A player already south of Victory
+// Road still needs the action to bridge the water bands. A player in another
+// part of Kanto may also route through Route 23 normally. Only states already
+// committed to the Indigo/north pocket suppress the pivot and let component
+// routing (or Travel's earlier legal fast-travel step) decide what is possible.
+func route23LeagueReturnPivotAvailable(mapID, x, y uint8) bool {
+	switch mapID {
+	case indigoPlateauMap, indigoPlateauLobbyMap:
+		return false
+	case route23Map:
+		return !route23LeagueReturnNeedsVictoryRoad(x, y)
+	default:
+		return true
+	}
+}
+
 func traverseVictoryRoadReturnEdge(m *emu.Emu, romData []byte, policy MovePolicy, name string, edge world.Edge) error {
 	if m.Peek8(sym.CurMap) != edge.From {
 		return fmt.Errorf("skill: %s started on map %#02x, want %#02x", name, m.Peek8(sym.CurMap), edge.From)
