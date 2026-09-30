@@ -156,7 +156,6 @@ func normalizeGameFlag(value string) (string, error) {
 	}
 }
 
-
 func hasWorldAdapter(gameID string) bool {
 	switch gameID {
 	case string(redprofile.GameID), string(blueprofile.GameID), string(yellowprofile.GameID):
