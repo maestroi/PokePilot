@@ -863,7 +863,7 @@ func playerSnapshot(g state.GameState, facts state.StoryFacts) *farm.Player {
 
 func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *heartbeatSnap, mem *state.Mem, addrs []string, trail *heartbeatTrail) {
 	base, err := profile.DecodeObservation(m, m.ROM())
-	if err != nil || base.NativeMapID > 0xff {
+	if err != nil {
 		return
 	}
 
@@ -879,14 +879,10 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 	hb := farm.Heartbeat{
 		RunID:       runID,
 		Frame:       m.FrameCount(),
-		Map:         uint8(base.NativeMapID),
-		X:           base.X,
-		Y:           base.Y,
 		WorkerAddrs: addrs,
-		Trail:       trail.add(uint8(base.NativeMapID), base.X, base.Y),
 		Player:      player,
 	}
-	hb.MapsVisited = trail.mapsVisited()
+	applyHeartbeatPosition(&hb, base, trail)
 	// Sprite telemetry has not yet moved into ProfileObservation. Only profiles
 	// advertising the existing trainer/map-object runtime use the legacy decoder.
 	if profile.Features().Has(game.FeatureTrainerFlags) {
@@ -905,6 +901,19 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 	}
 	snap.storeStatus(hb)
 	m.TracePlayer(hb.Player)
+}
+
+// applyHeartbeatPosition fills the one-byte map/position fields. A wider native
+// ID (Gen 2 is group<<8|map) cannot be represented without aliasing another
+// map, so it leaves them unset instead of dropping the whole heartbeat: the
+// heartbeat also carries WorkerAddrs, without which the wall cannot proxy
+// /frame and the run has no video.
+func applyHeartbeatPosition(hb *farm.Heartbeat, base game.ProfileObservation, trail *heartbeatTrail) {
+	if base.NativeMapID <= 0xff {
+		hb.Map, hb.X, hb.Y = uint8(base.NativeMapID), base.X, base.Y
+		hb.Trail = trail.add(hb.Map, base.X, base.Y)
+	}
+	hb.MapsVisited = trail.mapsVisited()
 }
 
 // workerAddrs lists every non-loopback local address as "host:port", so the

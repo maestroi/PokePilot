@@ -13,6 +13,7 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
@@ -643,5 +644,18 @@ func TestValidateSpecKeepsRedScriptedStarterRequirement(t *testing.T) {
 	}
 	if err := validateSpec("pokemon-red", "scripted", "squirtle", "viridian city"); err != nil {
 		t.Fatalf("Red scripted Squirtle rejected: %v", err)
+	}
+}
+
+func TestApplyHeartbeatPositionKeepsWideNativeMapHeartbeat(t *testing.T) {
+	trail := &heartbeatTrail{}
+	var hb farm.Heartbeat
+	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x1807, X: 3, Y: 3}, trail)
+	if hb.Map != 0 || hb.Trail != nil {
+		t.Fatalf("wide native map must not alias into the one-byte field: map=%d trail=%v", hb.Map, hb.Trail)
+	}
+	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x25, X: 4, Y: 5}, trail)
+	if hb.Map != 0x25 || hb.X != 4 || hb.Y != 5 || len(hb.Trail) != 1 {
+		t.Fatalf("one-byte map should still report position: %+v", hb)
 	}
 }
