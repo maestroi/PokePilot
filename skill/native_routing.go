@@ -77,13 +77,22 @@ const (
 // waitLiveMapSettled drives the current map toward a decoded live topology that
 // the profile is willing to vouch for. It returns the settled state, and
 // errLiveMapNotSettled when the budget runs out with a script still owning the
-// overworld.
-func waitLiveMapSettled(m *emu.Emu, routing game.RoutingDecoder) (game.LiveTopologyState, error) {
+// overworld. A battle or a dialogue waiting on the player is not a map shell
+// that is still loading: neither hands the overworld back without input, so
+// waiting on them only burns the budget and hides the interruption the caller
+// can actually settle. They return ErrBattle / ErrDialogueInterrupted at once.
+func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopologyState, error) {
 	var live game.LiveTopologyState
 	if m == nil || routing == nil {
 		return live, fmt.Errorf("skill: native routing: incomplete live-map runtime")
 	}
 	for waited := 0; waited <= liveMapSettleFrameBudget; waited += liveMapSettlePollFrames {
+		switch world := routing.DecodeOverworld(m); {
+		case world.InBattle:
+			return game.LiveTopologyState{}, ErrBattle
+		case world.InDialogue:
+			return game.LiveTopologyState{}, ErrDialogueInterrupted
+		}
 		decoded, err := routing.DecodeLiveTopology(m)
 		if err != nil {
 			return game.LiveTopologyState{}, err
@@ -196,6 +205,9 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			return nil
 		}
 
+		if _, err := waitLiveMapSettled(m, profile); err != nil {
+			return err
+		}
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, dest.Map)
 		if err != nil {
 			return err
@@ -287,7 +299,11 @@ func nativeConnectionApproach(
 	var best []world.NativeStep
 	found := false
 	for i := 0; i < limit; i++ {
-		if j := i + int(edge.Offset); j < 0 || j >= destLimit {
+		// Native (Gen-II) offsets are the decomp's: blocks, positive when the
+		// neighbour's origin lies further along the shared edge than ours. A
+		// source tile i therefore lands on neighbour tile i - 2*Offset. (Gen-I
+		// graphs carry the ROM's pre-negated tile alignment, hence i + Offset.)
+		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
 			continue
 		}
 		tx, ty := i, 0
@@ -385,8 +401,14 @@ func traverseNativeEdge(
 	const attempts = 12
 	for attempt := 0; attempt < attempts; attempt++ {
 		state := profile.DecodeOverworld(m)
+		if state.InBattle {
+			return ErrBattle
+		}
 		if state.NativeMapID != edge.From {
 			return fmt.Errorf("skill: native routing: on map %#04x, edge starts on %#04x", state.NativeMapID, edge.From)
+		}
+		if _, err := waitLiveMapSettled(m, profile); err != nil {
+			return err
 		}
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, edge.From)
 		if err != nil {

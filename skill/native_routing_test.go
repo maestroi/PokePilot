@@ -77,7 +77,7 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 		From:   0x1804,
 		To:     0x1803,
 		Dir:    0,
-		Offset: -2,
+		Offset: 2,
 	}
 	live := game.LiveTopologyState{NativeMapID: 0x1804, WidthBlocks: 3, HeightBlocks: 2}
 	path, push, err := nativeConnectionApproach(provider, grid, live, edge, 5, 3, nil)
@@ -87,8 +87,9 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 	if push != (world.NativeStep{DY: -1}) {
 		t.Fatalf("push = %+v, want up", push)
 	}
-	// Destination width is four tiles. With offset -2 only source x=2..5
-	// are valid; from (5,3), x=5 is the nearest valid north-edge crossing.
+	// Destination width is four tiles. Offset 2 is in blocks, so destination
+	// x = source x - 4 and only source x=4..7 (of 0..5) are valid; from (5,3),
+	// x=5 is the nearest valid north-edge crossing.
 	if len(path) != 3 {
 		t.Fatalf("path length = %d, want 3 to north edge at x=5: %+v", len(path), path)
 	}

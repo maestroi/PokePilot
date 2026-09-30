@@ -12,8 +12,9 @@ type NativeWarp struct {
 }
 
 // NativeConnection is an adjacent-map seam keyed by the cartridge's native
-// map identity. Offset uses the same signed tile/block-relative convention as
-// the existing narrow Connection type.
+// map identity. Offset is the decomp's own value: signed blocks, positive when
+// the neighbour's origin lies further along the shared edge than this map's.
+// The narrow Gen-I Connection type carries a pre-negated tile alignment instead.
 type NativeConnection struct {
 	Dir    uint8
 	MapID  uint16
