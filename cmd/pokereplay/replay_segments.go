@@ -368,8 +368,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 			}
 			encoder, err = s.startReplayRGBEncoder(segmentCtx, rawPath)
 			if err != nil {
-				closeSegment()
-				return err
+				return replayContextError(segmentCtx, err)
 			}
 			encoderSegment = index
 		}
@@ -377,15 +376,14 @@ func (s *replayServer) renderAttemptVideoSegments(
 			return fmt.Errorf("replay segment encoder advanced from %d to %d without closing", encoderSegment, index)
 		}
 		if err := encoder.Write(image); err != nil {
-			return err
+			return replayContextError(segmentCtx, err)
 		}
 		if relative != segment.EndFrame {
 			return nil
 		}
 		if err := encoder.Close(); err != nil {
 			encoder = nil
-			closeSegment()
-			return err
+			return replayContextError(segmentCtx, err)
 		}
 		encoder = nil
 
@@ -407,15 +405,13 @@ func (s *replayServer) renderAttemptVideoSegments(
 			})
 			s.encoderProcesses.Add(-1)
 			if composeErr != nil {
-				closeSegment()
-				return fmt.Errorf("broadcast segment %d: %w", segment.Index, composeErr)
+				return replayContextError(segmentCtx, fmt.Errorf("broadcast segment %d: %w", segment.Index, composeErr))
 			}
 			_ = os.Remove(rawPath)
 		}
 
 		if err := probeReplayVideo(segmentCtx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
-			closeSegment()
-			return fmt.Errorf("validate replay segment %d: %w", segment.Index, err)
+			return replayContextError(segmentCtx, fmt.Errorf("validate replay segment %d: %w", segment.Index, err))
 		}
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
@@ -425,8 +421,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 		_, putErr := s.store.PutObjectReader(segmentCtx, segment.CacheKey, "video/mp4", file)
 		closeErr := file.Close()
 		if putErr != nil {
-			closeSegment()
-			return fmt.Errorf("cache replay segment %d: %w", segment.Index, putErr)
+			return replayContextError(segmentCtx, fmt.Errorf("cache replay segment %d: %w", segment.Index, putErr))
 		}
 		if closeErr != nil {
 			closeSegment()
