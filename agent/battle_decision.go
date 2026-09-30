@@ -112,20 +112,38 @@ type BattleOutcomeObserver interface {
 	ObserveBattleResult(game.BattleResult)
 }
 
+// BattleMoveController is the active-control seam. The adapter supplies the
+// same portable move-only state used by shadow evaluation plus the
+// deterministic action that would otherwise execute. Implementations may
+// return a different legal move, or the deterministic action to fall back.
+type BattleMoveController interface {
+	DecideBattleMove(game.BattleDecisionState, game.BattleAction) game.BattleAction
+}
+
 // BattleTurnObservingAdapter is implemented by game adapters that can report
 // battle turns. An adapter without it simply reports none.
 type BattleTurnObservingAdapter interface {
 	ObserveBattleTurns(BattleTurnObserver)
 }
 
+// BattleMoveControllingAdapter is implemented by adapters that can let a
+// planner replace eligible deterministic move choices while retaining
+// deterministic menu execution.
+type BattleMoveControllingAdapter interface {
+	ControlBattleMoves(BattleMoveController)
+}
+
 // bindBattleTurnObserver attaches the planner's observer, if it has one, to
 // the adapter executing the next objective.
 func bindBattleTurnObserver(a ObjectiveGameAdapter, p Planner) {
-	observer, ok := p.(BattleTurnObserver)
-	if !ok {
-		return
+	if observer, ok := p.(BattleTurnObserver); ok {
+		if target, ok := a.(BattleTurnObservingAdapter); ok {
+			target.ObserveBattleTurns(observer)
+		}
 	}
-	if target, ok := a.(BattleTurnObservingAdapter); ok {
-		target.ObserveBattleTurns(observer)
+	if controller, ok := p.(BattleMoveController); ok {
+		if target, ok := a.(BattleMoveControllingAdapter); ok {
+			target.ControlBattleMoves(controller)
+		}
 	}
 }

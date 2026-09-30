@@ -25,6 +25,7 @@ export interface DecisionKindRow {
   agreement: number | null
   judged: number
   fallbacks: number
+  controlled: number
   errors: number
   p50: number
   p95: number
@@ -66,6 +67,7 @@ function kindRow(kind: string, k: DecisionKindSummary): DecisionKindRow {
     agreement: judged > 0 ? agreements / judged : null,
     judged,
     fallbacks: Number(k.fallbacks || 0),
+    controlled: Number(k.controlled || 0),
     errors: Number(k.errors || 0),
     p50: Number(k.p50_seconds || 0),
     p95: Number(k.p95_seconds || 0),
@@ -100,7 +102,7 @@ export interface DecisionFeedRow {
   probabilities: [string, number][]
   confidence: number
   executed: string
-  verdict: 'agreed' | 'disagreed' | 'active' | 'unusable'
+  verdict: 'agreed' | 'disagreed' | 'controlled' | 'fallback' | 'active' | 'unusable'
   seconds: number
   error: string
 }
@@ -121,11 +123,13 @@ export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow
     probabilities: decisionProbabilities(r.probabilities),
     confidence: Number(r.confidence || 0),
     executed: r.executed || '',
-    verdict: r.error
-      ? 'unusable'
-      : r.shadow
-        ? (r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
-        : 'active',
+    verdict: r.shadow
+      ? (r.error ? 'unusable' : r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
+      : r.kind === 'battle_turn'
+        ? (r.controlled ? 'controlled' : r.fallback ? 'fallback' : 'active')
+        : r.error
+          ? 'unusable'
+          : 'active',
     seconds: Number(r.duration_seconds || 0),
     error: r.error || ''
   }))
@@ -153,7 +157,7 @@ export function decisionIdleNote(engine: DecisionEngineSpec | undefined): string
   if (!decisionEngineSelected(engine)) return 'No fast decision engine selected.'
   const points = [
     engine?.objectives ? 'every objective choice' : '',
-    engine?.battles && engine?.mode === 'shadow' ? 'every battle move' : '',
+    engine?.battles ? (engine?.mode === 'active' ? 'eligible battle moves (active)' : 'every battle move (shadow)') : '',
     engine?.failures ? 'recoverable failures' : '',
     engine?.placements ? 'every Tetris placement' : ''
   ].filter(Boolean)

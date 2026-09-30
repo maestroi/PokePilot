@@ -30,6 +30,21 @@ func TestWithMoveObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
 	}
 }
 
+func TestBattleMoveControllerIsScopedAndFallsBackWhenAbsent(t *testing.T) {
+	a, b := &emu.Emu{}, &emu.Emu{}
+	restore := WithBattleMoveController(a, func(_ game.BattleState, deterministic int) int { return deterministic + 1 })
+	if got := controlBattleMove(a, game.BattleState{}, 0); got != 1 {
+		t.Fatalf("controlled slot = %d, want 1", got)
+	}
+	if got := controlBattleMove(b, game.BattleState{}, 2); got != 2 {
+		t.Fatalf("other emulator slot = %d, want deterministic 2", got)
+	}
+	restore()
+	if got := controlBattleMove(a, game.BattleState{}, 3); got != 3 {
+		t.Fatalf("restored slot = %d, want deterministic 3", got)
+	}
+}
+
 func TestBattleResultObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
 	a, b := &emu.Emu{}, &emu.Emu{}
 	var outer, inner []game.BattleResult

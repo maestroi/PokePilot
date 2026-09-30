@@ -17,8 +17,8 @@ type DecisionSettings struct {
 	Backend            string
 	ObjectiveSelection bool
 	FailureRecovery    bool
-	// Battles asks the engine at battle turns; battle answers are only ever
-	// observed, never executed.
+	// Battles asks the engine at eligible battle turns. Shadow only observes;
+	// active may replace validated move actions and falls back deterministically.
 	Battles       bool
 	MinConfidence float64
 	// Shadow consults the engine at every enabled decision point and records
@@ -83,10 +83,10 @@ func DecisionSettingsFromEnv() DecisionSettings {
 	settings.Backend = name
 	settings.FailureRecovery = decisionEnvBool("POKEPILOT_DECISION_FAILURES", true)
 	settings.ObjectiveSelection = decisionEnvBool("POKEPILOT_DECISION_OBJECTIVES", false)
+	settings.Battles = decisionEnvBool("POKEPILOT_DECISION_BATTLES", false)
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_MODE"))) {
 	case "shadow":
 		settings.Shadow = true
-		settings.Battles = decisionEnvBool("POKEPILOT_DECISION_BATTLES", false)
 	case "off":
 		return DecisionSettings{Backend: "off", MinConfidence: settings.MinConfidence}
 	}
@@ -120,9 +120,6 @@ func DecisionSettingsFor(sel DecisionSelection) (DecisionSettings, error) {
 	}
 	if backend == "off" {
 		return settings, nil
-	}
-	if sel.Battles && !shadow {
-		return settings, fmt.Errorf("%w: battle decisions support only shadow mode", ErrDecisionDisabled)
 	}
 	engine, name := newDecisionEngineFromEnv(backend)
 	if engine == nil {
