@@ -34,7 +34,7 @@ const (
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
 	StateFlags              uint16 = 0xCFE5 // wStateFlags
-	TileMap                 uint16 = 0xC4A0 // wTileMap, 20x18
+	TileMap                 uint16 = 0xC3A0 // wTileMap, 20x18 (Crystal moved it to 0xC4A0)
 	TileMapLen                     = 20 * 18
 	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
 	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption

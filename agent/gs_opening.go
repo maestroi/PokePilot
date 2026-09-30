@@ -24,7 +24,9 @@ const (
 	gsOpeningMaxBattlePresses           = 900
 	gsOpeningRouteAttempts              = 8
 	gsErrandRouteAttempts               = 32
-	gsErrandMaxNamePresses              = 16
+	// gsEncounterTransitionFrames bounds a wild encounter's pre-battle script.
+	gsEncounterTransitionFrames = 180
+	gsErrandMaxNamePresses      = 16
 
 	// gsScriptFrozenPresses is how many consecutive A presses may leave the
 	// rendered dialogue page unchanged before a script is called stuck.
@@ -321,7 +323,7 @@ func executeGSOpening(m *emu.Emu, romData []byte, starter skill.Starter) error {
 }
 
 func gsErrandScriptMap(mapID uint16) bool {
-	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "CHERRYGROVE_CITY"} {
+	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "ROUTE_30", "CHERRYGROVE_CITY"} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
 			return true
@@ -419,6 +421,16 @@ func gsErrandGoTo(m *emu.Emu, romData []byte, profile *gsprofile.Profile, dest s
 		case errors.Is(err, skill.ErrDialogueInterrupted):
 			facts := profile.DecodeOpening(m)
 			if !gsErrandScriptMap(facts.NativeMapID) {
+				// A wild encounter runs a script with idle movement and a blank
+				// screen for ~30 frames before BattleMode is set, which the
+				// overworld decoder reads as a dialogue. Let that transition
+				// resolve; anything still scripted afterwards really is unowned.
+				if _, waitErr := m.StepUntil(gsEncounterTransitionFrames, func(m *emu.Emu) bool {
+					f := profile.DecodeOpening(m)
+					return f.InBattle || f.Controllable
+				}); waitErr == nil {
+					continue
+				}
 				return fmt.Errorf("%w: route interrupted by unowned script on map %#04x at (%d,%d)",
 					errGSOpeningUnexpectedState, facts.NativeMapID, facts.X, facts.Y)
 			}

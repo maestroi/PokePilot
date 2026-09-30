@@ -18,6 +18,7 @@ const (
 
 	gen2PlayerStepMidair   = 1 << 4
 	gen2PlayerStepContinue = 1 << 5
+	gen2PlayerStepStop     = 1 << 6
 	gen2PlayerStepStart    = 1 << 7
 	gen2ScriptRunningFlag  = 1 << 2
 )
@@ -45,6 +46,14 @@ func gsMovementIdle(reader game.MemoryReader) bool {
 		return false
 	}
 	flags := reader.Peek8(sym.PlayerStepFlags)
+	// A script that takes the overworld as a step finishes (Elm's phone call)
+	// freezes the flags at CONTINUE|STOP: the player is not moving however long
+	// its text stays up. STOP alone is not idle, it is also set on the last
+	// frames of an ordinary step, so this needs the script and its text box.
+	if flags&gen2PlayerStepStop != 0 && flags&(gen2PlayerStepMidair|gen2PlayerStepStart) == 0 &&
+		reader.Peek8(sym.MapStatus) == gen2MapStatusHandle && gsScriptActive(reader) && gsTextboxVisible(reader) {
+		return true
+	}
 	return flags&(gen2PlayerStepMidair|gen2PlayerStepContinue|gen2PlayerStepStart) == 0
 }
 
@@ -87,4 +96,11 @@ func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
 		// surface is a dialogue the caller must answer.
 		InDialogue: scriptActive && movementIdle,
 	}
+}
+
+// gsTextboxVisible reports the standard bottom dialogue frame: its four corner
+// tiles, which no overworld metatile row draws together.
+func gsTextboxVisible(reader game.MemoryReader) bool {
+	at := func(col, row uint16) byte { return reader.Peek8(sym.TileMap + row*20 + col) }
+	return at(0, 12) == 0x79 && at(19, 12) == 0x7b && at(0, 17) == 0x7d && at(19, 17) == 0x7e
 }

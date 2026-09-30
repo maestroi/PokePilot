@@ -32,7 +32,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wBattlePlayerAction", BattlePlayerAction, 0xCFE4},
 		{"wCurPartyMon", CurPartyMon, 0xD005},
 		{"wTextboxFlags", TextboxFlags, 0xD19C},
-		{"wTileMap", TileMap, 0xC4A0},
+		{"wTileMap", TileMap, 0xC3A0},
 		{"wBattleMon", BattleMon, 0xCB0C},
 		{"wPlayerStatLevels", PlayerStatLevels, 0xCBAA},
 		{"wEnemyStatLevels", EnemyStatLevels, 0xCBB2},

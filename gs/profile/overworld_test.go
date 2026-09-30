@@ -213,3 +213,38 @@ func TestDecodeLiveTopologyWithholdsBlocksWithoutDimensions(t *testing.T) {
 		t.Fatal("BlocksSettled = true for a map with no dimensions")
 	}
 }
+
+// Elm's phone call takes the overworld as a step finishes, freezing the step
+// flags at CONTINUE|STOP under a dialogue frame. That is a dialogue, not a
+// walk; the same flags with no text box (or no script) are still a step.
+func TestDecodeOverworldFrozenStepUnderTextboxIsDialogue(t *testing.T) {
+	frame := func(r fakeGSReader) {
+		r[sym.TileMap+12*20+0], r[sym.TileMap+12*20+19] = 0x79, 0x7b
+		r[sym.TileMap+17*20+0], r[sym.TileMap+17*20+19] = 0x7d, 0x7e
+	}
+	tests := []struct {
+		name         string
+		script, text bool
+		wantDialogue bool
+	}{
+		{"script and text box", true, true, true},
+		{"script without text box", true, false, false},
+		{"text box without script", false, true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := readyGSReader()
+			r[sym.PlayerStepFlags] = gen2PlayerStepContinue | gen2PlayerStepStop
+			if tc.script {
+				r[sym.ScriptRunning] = 0xff
+				r[sym.ScriptMode] = 1
+			}
+			if tc.text {
+				frame(r)
+			}
+			if got := NewGold().DecodeOverworld(r).InDialogue; got != tc.wantDialogue {
+				t.Fatalf("InDialogue = %v, want %v", got, tc.wantDialogue)
+			}
+		})
+	}
+}
