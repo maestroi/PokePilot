@@ -25,6 +25,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wBattleType", BattleType, 0xD119},
 		{"wForcedSwitch", ForcedSwitch, 0xD11C},
 		{"wMoveSelectionMenuType", MoveSelectionMenuType, 0xD11F},
+		{"wFacingTileID", FacingTileID, 0xCF29},
 		{"wBattleMenuCursorPosition", BattleMenuCursor, 0xCFC4},
 		{"wCurBattleMon", CurBattleMon, 0xCFC6},
 		{"wCurMoveNum", CurMoveNum, 0xCFC7},
