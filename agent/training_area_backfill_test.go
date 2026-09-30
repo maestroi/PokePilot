@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	redrom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -21,7 +22,7 @@ func TestBackfillVisitedTrainingAreasSeedsObservedHabitatsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraph(redrom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatal(err)
 	}
