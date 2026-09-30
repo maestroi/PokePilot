@@ -205,3 +205,44 @@ func TestGSFieldMoveMenuFailsClosedUntilNativeMenuDecoderLands(t *testing.T) {
 		t.Fatalf("field move menu=%v, want fail-closed empty projection", menu.Entries)
 	}
 }
+
+func TestGoldFieldMoveMenuPreservesUnknownNativeRows(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 0
+	base := sym.PartyMon1 + gsPartyMovesOffset
+	mem[base+0] = 0x5b // DIG: native field move, intentionally not portable here.
+	mem[base+1] = 0x0f // CUT
+	mem[base+2] = 0x1d // HEADBUTT
+	mem[sym.TwoDMenuNumRows] = 7 // DIG, CUT, HEADBUTT, STATS, SWITCH, ITEM, CANCEL
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 2
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "DIG CUT HEADBUTT STATS SWITCH ITEM CANCEL")
+
+	got := NewGold().DecodeFieldMoveMenu(&mem)
+	if len(got.Entries) != 7 {
+		t.Fatalf("entries = %#v, want seven live menu rows", got.Entries)
+	}
+	if got.Entries[0] != "" || got.Entries[1] != game.FieldMoveCut || got.Entries[2] != game.FieldMoveHeadbutt {
+		t.Fatalf("field rows = %#v, want unknown/Cut/Headbutt", got.Entries[:3])
+	}
+}
+
+func TestGoldFieldMoveMenuFailsClosedWithoutRenderedMove(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 0
+	mem[sym.PartyMon1+gsPartyMovesOffset] = 0x0f
+	mem[sym.TwoDMenuNumRows] = 5
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "STATS SWITCH MOVE ITEM CANCEL")
+
+	if got := NewGold().DecodeFieldMoveMenu(&mem); len(got.Entries) != 0 {
+		t.Fatalf("stale/non-field submenu decoded as field menu: %#v", got.Entries)
+	}
+}
