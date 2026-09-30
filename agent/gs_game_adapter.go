@@ -198,7 +198,7 @@ func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Obs
 func normalizeGSNavigationFailure(phase gameruntime.FailurePhase, cause string, final Observation) gameruntime.Failure {
 	failure := gameruntime.Failure{
 		Phase: phase, Cause: cause,
-		Class: gameruntime.FailureClassControllerUncertain,
+		Class:       gameruntime.FailureClassControllerUncertain,
 		Recoverable: false,
 	}
 	if stableObjectiveBoundary(final) {
