@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/emu"
-	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // Run drives observe -> plan -> execute until the run-owned deterministic
@@ -41,7 +41,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
-	worldProfile, ok := profile.(gameruntime.WorldProfile)
+	worldProfile, ok := profile.(interface { MapProvider([]byte) worldmodel.MapHeaderProvider })
 	if !ok {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s does not expose world topology", profile.ID(), profile.Revision())}
 	}
