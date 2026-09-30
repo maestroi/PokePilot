@@ -169,4 +169,3 @@ func IsCartridge(romData []byte) bool {
 	sum := sha1.Sum(romData)
 	return hex.EncodeToString(sum[:]) == sym.ROMSHA1
 }
-
