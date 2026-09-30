@@ -244,6 +244,7 @@ func (s *replayServer) runRenderJobRecovery(ctx context.Context, interval time.D
 			log.Printf("pokereplay: list recoverable render jobs: %v", err)
 			return
 		}
+		s.syncDeferredRenderJobs(jobs)
 		for _, job := range jobs {
 			s.recoverRenderJob(ctx, job)
 		}
