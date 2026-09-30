@@ -19,7 +19,6 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	mediaartifact "github.com/maestroi/pokepilot/media/artifact"
-	"github.com/maestroi/pokepilot/media/compositor"
 	mediahighlight "github.com/maestroi/pokepilot/media/highlight"
 )
 
@@ -622,4 +621,3 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 	log.Printf("pokereplay highlights ok run=%s key=%s windows=%d duration=%s size=%d dur=%s", runID, videoKey, total, expected.Round(time.Millisecond), obj.Size, elapsed.Round(time.Millisecond))
 }
 
-var _ = compositor.BroadcastVersion
