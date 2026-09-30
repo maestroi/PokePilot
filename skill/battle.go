@@ -227,6 +227,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// a blackout respawn, which clears wBattleResult and would report
 			// the loss as a win.
 			result := battleDecoder.DecodeBattleResult(m)
+			observeBattleResult(m, result)
 			if err := settleAfterBattle(m, runtimeDecoder); err != nil {
 				return 0, err
 			}
