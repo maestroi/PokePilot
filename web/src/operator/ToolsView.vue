@@ -79,9 +79,8 @@ function decisionRequest(): DecisionEngineSpec | undefined {
       max_choices: decision.max_choices
     }
   }
-  // Battle decisions are observational only; active runs never send them.
   const { max_choices: _, ...pokemon } = decision
-  return { ...target, ...pokemon, placements: false, battles: decisionShadow.value && decision.battles }
+  return { ...target, ...pokemon, placements: false, battles: decision.battles }
 }
 
 function splitDecisionTarget(target: string): [string, string] {
@@ -440,7 +439,7 @@ async function submit(): Promise<void> {
             <option value="shadow">Shadow</option>
             <option value="active">Active</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Active lets Jev choose from placements already proven legal by the deterministic Tetris policy; Shadow measures agreement while policy executes.' : 'Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Active lets Jev choose from placements already proven legal by the deterministic Tetris policy; Shadow measures agreement while policy executes.' : 'Shadow records accepted answers without changing gameplay. Active lets accepted answers steer enabled objectives, recovery, and legal battle moves above the confidence threshold.' }}</span>
         </label>
 
         <fieldset v-if="(isLLM || isTetris) && decisionSelected" class="block">
@@ -452,9 +451,9 @@ async function submit(): Promise<void> {
             </label>
           </template>
           <template v-else>
-            <label class="mt-2 flex items-center gap-2 text-sm" :class="decisionShadow ? 'text-slate-300' : 'text-slate-600'">
-              <input v-model="decision.battles" type="checkbox" :disabled="!decisionShadow" class="rounded border-white/10 bg-white/6" />
-              Battles <span v-if="!decisionShadow" class="text-[11px]">(shadow only)</span>
+            <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="decision.battles" type="checkbox" class="rounded border-white/10 bg-white/6" />
+              Battles <span class="text-[11px]">({{ decisionShadow ? 'observe legal moves' : 'active legal moves with fallback' }})</span>
             </label>
             <label class="mt-1 flex items-center gap-2 text-sm text-slate-300">
               <input v-model="decision.objectives" type="checkbox" class="rounded border-white/10 bg-white/6" />
@@ -473,7 +472,7 @@ async function submit(): Promise<void> {
             <span class="text-[11px] text-slate-500">Max choices <span class="text-slate-600">(policy's best N; 0 = all)</span></span>
             <input v-model.number="decision.max_choices" type="number" min="0" step="1" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
           </label>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : 'Answers below the threshold fall back to the strategist and deterministic policy.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : 'Answers below the threshold, invalid actions, timeouts, or backend failures fall back to the deterministic policy. Active battle control currently applies to move selection only; switches, items, and RUN remain deterministic.' }}</span>
         </fieldset>
 
         <label class="block">
