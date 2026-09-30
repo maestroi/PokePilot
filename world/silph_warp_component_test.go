@@ -6,7 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/red/rom"
 
-	redrom "github.com/maestroi/pokepilot/red/rom")
+)
 
 // Teleporter pads are walkable floor bytes, but stepping on one leaves the
 // map. Component flood-fill must not treat them as ordinary corridors, or
@@ -45,7 +45,7 @@ func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := BuildGraph(redrom.NewWorldProvider(romData))
+	g, err := BuildGraph(rom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
