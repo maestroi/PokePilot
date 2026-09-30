@@ -82,6 +82,7 @@ type replayStatus struct {
 	JobState       string `json:"job_state,omitempty"`
 	Stage          string `json:"stage,omitempty"`
 	RetryCount     int    `json:"retry_count,omitempty"`
+	FailureClass   string `json:"failure_class,omitempty"`
 	LegacyIdentity bool   `json:"legacy_identity,omitempty"`
 	// Segments/SegmentsDone report per-attempt progress while generating.
 	Segments     int `json:"segments,omitempty"`
@@ -113,6 +114,20 @@ type replayServer struct {
 	// host updater only replaces this container when no video is mid-encode.
 	rendering atomic.Int64
 
+	capacity          replayCapacityConfig
+	jobSlots          chan struct{}
+	scratchFree       func(string) (uint64, error)
+	resourceMu        sync.Mutex
+	deferredJobs      map[string]replayDeferredJob
+	activeJobs        map[string]time.Time
+	activeCancels     map[string]context.CancelFunc
+	encoderProcesses  atomic.Int64
+	renderFailures    atomic.Uint64
+	renderRetries     atomic.Uint64
+	renderCompleted   atomic.Uint64
+	renderBytes       atomic.Uint64
+	renderNanos       atomic.Uint64
+
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
@@ -125,6 +140,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 	if err != nil {
 		log.Printf("pokereplay: headless semantic renderer unavailable: %v", err)
 	}
+	capacity := replayCapacityFromEnv()
 	return &replayServer{
 		wallBase:         strings.TrimRight(wallBase, "/"),
 		romPath:          romPath,
@@ -134,6 +150,12 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		compositor:       compositor.NewFFmpeg("ffmpeg", nil),
 		semanticRenderer: semanticRenderer,
 		jobs:             make(map[string]replayStatus),
+		capacity:         capacity,
+		jobSlots:         make(chan struct{}, capacity.MaxJobs),
+		scratchFree:      freeDiskBytes,
+		deferredJobs:     make(map[string]replayDeferredJob),
+		activeJobs:       make(map[string]time.Time),
+		activeCancels:    make(map[string]context.CancelFunc),
 		liveSessions:     make(map[string]*liveBroadcastSession),
 	}
 }
@@ -141,7 +163,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
+		health := map[string]any{
 			"status":            "ok",
 			"s3_configured":     s.store != nil,
 			"encoder":           s.encoderName(),
@@ -151,10 +173,18 @@ func (s *replayServer) handler() http.Handler {
 			"semantic_renderer": compositor.PublicSemanticRendererVersion(),
 			"live_fps":          liveBroadcastFPS,
 			"active_renders":    s.rendering.Load(),
-		})
+		}
+		for key, value := range s.replayResourceHealth() {
+			health[key] = value
+		}
+		s.liveMu.Lock()
+		health["live_sessions"] = len(s.liveSessions)
+		s.liveMu.Unlock()
+		writeJSON(w, http.StatusOK, health)
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
+	mux.HandleFunc("POST /v1/runs/{id}/replay/cancel", s.handleReplayCancel)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", s.handleReplaySemantic)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
