@@ -45,11 +45,11 @@ func appendDexGameCornerObjectives(obs Observation, known *Knowledge, out []Obje
 
 	place := PlaceID(skill.PorygonPrizePlace())
 	blocked := dexCatchBlockedPlaces(obs)
-	var adjacency map[uint8][]uint8
-	var hops map[uint8]int
+	var adjacency map[uint16][]uint16
+	var hops map[uint16]int
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 	if _, ok := dexCatchPlaceDistance(obs, place, blocked, hops, adjacency); !ok {
 		return out

@@ -16,7 +16,7 @@ func TestOfferKeepsDoorsSeenFromVisitedMaps(t *testing.T) {
 		mtMoon1F = 0x3B
 		cerulean = 0x03
 	)
-	known := testKnowledge(map[uint8][]uint8{
+	known := testKnowledge(map[uint16][]uint16{
 		route4:   {mtMoon1F, cerulean},
 		mtMoon1F: {route4},
 	})
@@ -37,8 +37,8 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 	// The road as the game connects it: Pallet - Route 1 - Viridian -
 	// Route 2 - Pewter - Route 3 - Route 4 - Cerulean, with Mt. Moon's three
 	// floors hanging off Route 4.
-	chain := []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x03}
-	adjacency := map[uint8][]uint8{}
+	chain := []uint16{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x03}
+	adjacency := map[uint16][]uint16{}
 	for i, m := range chain {
 		if i > 0 {
 			adjacency[m] = append(adjacency[m], chain[i-1])
@@ -48,9 +48,9 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 		}
 	}
 	adjacency[0x0F] = append(adjacency[0x0F], 0x3B) // Route 4 -> Mt. Moon 1F
-	adjacency[0x3B] = []uint8{0x0F, 0x3C}
-	adjacency[0x3C] = []uint8{0x3B, 0x3D}
-	adjacency[0x3D] = []uint8{0x3C}
+	adjacency[0x3B] = []uint16{0x0F, 0x3C}
+	adjacency[0x3C] = []uint16{0x3B, 0x3D}
+	adjacency[0x3D] = []uint16{0x3C}
 	// Buildings, so the known world is bigger than the road.
 	adjacency[0x01] = append(adjacency[0x01], 0x29, 0x2A) // Viridian center, mart
 	adjacency[0x02] = append(adjacency[0x02], 0x3A, 0x36) // Pewter center, gym
@@ -94,8 +94,8 @@ func TestOfferNarrowsTravelMenuToNearestPlaces(t *testing.T) {
 // Route 3 (the visited door onto unvisited Route 4). Unvisited-first is discovery,
 // but it must not erase the visited frontier.
 func TestOfferKeepsVisitedFrontierWhenNearPlacesFillTheCap(t *testing.T) {
-	chain := []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x03}
-	adjacency := map[uint8][]uint8{}
+	chain := []uint16{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x0F, 0x03}
+	adjacency := map[uint16][]uint16{}
 	for i, m := range chain {
 		if i > 0 {
 			adjacency[m] = append(adjacency[m], chain[i-1])
@@ -105,15 +105,15 @@ func TestOfferKeepsVisitedFrontierWhenNearPlacesFillTheCap(t *testing.T) {
 		}
 	}
 	adjacency[0x00] = append(adjacency[0x00], 0x28, 0x25) // Oak's lab, Red's house
-	adjacency[0x28] = []uint8{0x00}
-	adjacency[0x25] = []uint8{0x00}
+	adjacency[0x28] = []uint16{0x00}
+	adjacency[0x25] = []uint16{0x00}
 	adjacency[0x01] = append(adjacency[0x01], 0x29, 0x2A, 0x21) // center, mart, Route 22
-	adjacency[0x29] = []uint8{0x01}
-	adjacency[0x2A] = []uint8{0x01}
-	adjacency[0x21] = []uint8{0x01}
+	adjacency[0x29] = []uint16{0x01}
+	adjacency[0x2A] = []uint16{0x01}
+	adjacency[0x21] = []uint16{0x01}
 	adjacency[0x02] = append(adjacency[0x02], 0x3A, 0x36)
-	adjacency[0x3A] = []uint8{0x02}
-	adjacency[0x36] = []uint8{0x02}
+	adjacency[0x3A] = []uint16{0x02}
+	adjacency[0x36] = []uint16{0x02}
 
 	known := testKnowledge(adjacency)
 	for _, m := range []uint8{0x00, 0x0C, 0x01, 0x0D, 0x02, 0x0E, 0x29, 0x2A, 0x3A, 0x36, 0x28, 0x25, 0x21} {

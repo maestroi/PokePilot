@@ -17,7 +17,7 @@ import (
 // route 1 0x0c, viridian city 0x01, viridian pokemon center 0x29,
 // viridian mart 0x2a, pewter city 0x02, pewter gym 0x36.
 func TestOfferTable(t *testing.T) {
-	adj := map[uint8][]uint8{
+	adj := map[uint16][]uint16{
 		0x00: {0x0c},
 		0x0c: {0x00, 0x01},
 		0x01: {0x0c, 0x29},
@@ -428,7 +428,7 @@ func TestGenericOfferDoesNotInjectGameProgression(t *testing.T) {
 }
 
 func TestOfferMenuChangesWithSituation(t *testing.T) {
-	adj := map[uint8][]uint8{0x00: {0x0c}, 0x0c: {0x00, 0x01}}
+	adj := map[uint16][]uint16{0x00: {0x0c}, 0x0c: {0x00, 0x01}}
 
 	fresh := Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0}
 	later := Observation{GameID: testGameID,
@@ -549,7 +549,7 @@ func TestKnowledgeRequirementShapesAndCap(t *testing.T) {
 }
 
 func TestOfferJourneyVariants(t *testing.T) {
-	adj := map[uint8][]uint8{0x0c: {0x00, 0x01, 0x29}}
+	adj := map[uint16][]uint16{0x0c: {0x00, 0x01, 0x29}}
 	obs := Observation{GameID: testGameID,
 		Map: 0x0c, MapName: "ROUTE_1", X: 5, Y: 14, PartyCount: 1,
 		Party: []PartyMon{{Level: 6, HP: 4, MaxHP: 20}},
@@ -680,7 +680,7 @@ func TestOfferTrainingTargetTracksTheLead(t *testing.T) {
 }
 
 func TestOfferWithholdsTrainBelowRetreatLine(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{0x0c: {0x00}})
+	known := testKnowledge(map[uint16][]uint16{0x0c: {0x00}})
 	known.SawMap(0x0c)
 	known.SawMap(0x00)
 	mk := func(hp, maxHP uint16) Observation {
@@ -761,7 +761,7 @@ func TestOfferGymIsNotPewterOnly(t *testing.T) {
 }
 
 func TestOfferWithholdsTrainBelowTheRetreatLine(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{})
+	known := testKnowledge(map[uint16][]uint16{})
 	offersTrain := func(hp, maxHP uint16) bool {
 		obs := Observation{GameID: testGameID,
 			Map: 0x0c, HasGrass: true, PartyCount: 1,

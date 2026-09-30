@@ -7,7 +7,7 @@ import (
 )
 
 func TestYellowKnowledgeTopologyUsesYellowMapVocabulary(t *testing.T) {
-	topology := knowledgeTopologyFor(yellowprofile.GameID, map[uint8][]uint8{
+	topology := knowledgeTopologyFor(yellowprofile.GameID, map[uint16][]uint16{
 		0x00: {0x0c},
 		0xf8: {0x00},
 	})

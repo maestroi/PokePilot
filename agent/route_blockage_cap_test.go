@@ -39,7 +39,7 @@ func TestSemanticRouteBlockerBeyondPromptCapStillFiltersOffer(t *testing.T) {
 	planner[targetDest] = blockedRoute("portable:gate", "can_surf")
 
 	const sourceMap = uint8(0x0c) // Route 1
-	known := testKnowledge(map[uint8][]uint8{sourceMap: {targetDest.Map}, targetDest.Map: {sourceMap}})
+	known := testKnowledge(map[uint16][]uint16{uint16(sourceMap): {uint16(targetDest.Map)}, uint16(targetDest.Map): {uint16(sourceMap)}})
 	known.SawMap(sourceMap)
 	known.SawMap(targetDest.Map)
 	base := Observation{GameID: testGameID, Map: sourceMap, MapName: "ROUTE_1", X: 0, Y: 0, PartyCount: 1}

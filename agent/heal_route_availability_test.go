@@ -16,7 +16,7 @@ import "testing"
 // so the objective could never complete. The run re-picked it for 80 matching
 // failures and surfaced as unknown_failure/unknown_error.
 func TestOfferWithholdsUnroutableHealDestination(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{0xAE: {0xF5}, 0xF5: {0xAE}})
+	known := testKnowledge(map[uint16][]uint16{0xAE: {0xF5}, 0xF5: {0xAE}})
 	known.SawMap(0xAE)
 	known.SawMap(0xF5)
 
