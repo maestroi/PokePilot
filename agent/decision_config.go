@@ -83,10 +83,10 @@ func DecisionSettingsFromEnv() DecisionSettings {
 	settings.Backend = name
 	settings.FailureRecovery = decisionEnvBool("POKEPILOT_DECISION_FAILURES", true)
 	settings.ObjectiveSelection = decisionEnvBool("POKEPILOT_DECISION_OBJECTIVES", false)
+	settings.Battles = decisionEnvBool("POKEPILOT_DECISION_BATTLES", false)
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("POKEPILOT_DECISION_MODE"))) {
 	case "shadow":
 		settings.Shadow = true
-		settings.Battles = decisionEnvBool("POKEPILOT_DECISION_BATTLES", false)
 	case "off":
 		return DecisionSettings{Backend: "off", MinConfidence: settings.MinConfidence}
 	}
