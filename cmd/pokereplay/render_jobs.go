@@ -31,6 +31,10 @@ func newReplayWorkerID() string {
 }
 
 func (s *replayServer) ensureRenderJob(ctx context.Context, runID string, recordings []replayRecording, mode replayMode, artifactKey string) (farm.MediaRenderJob, error) {
+	return s.ensureRenderJobMode(ctx, runID, recordings, string(mode), artifactKey)
+}
+
+func (s *replayServer) ensureRenderJobMode(ctx context.Context, runID string, recordings []replayRecording, mode, artifactKey string) (farm.MediaRenderJob, error) {
 	attempts := make([]int, 0, len(recordings))
 	for _, recording := range recordings {
 		attempts = append(attempts, recording.Attempt)
@@ -39,7 +43,7 @@ func (s *replayServer) ensureRenderJob(ctx context.Context, runID string, record
 		Identity:    artifactKey,
 		RunID:       runID,
 		Attempts:    attempts,
-		Mode:        string(mode),
+		Mode:        strings.TrimSpace(mode),
 		ArtifactKey: artifactKey,
 	}
 	var job farm.MediaRenderJob
@@ -264,6 +268,10 @@ func (s *replayServer) runRenderJobRecovery(ctx context.Context, interval time.D
 
 func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRenderJob) {
 	if s.store == nil {
+		return
+	}
+	if job.Mode == highlightRenderMode {
+		s.recoverHighlightRenderJob(ctx, job)
 		return
 	}
 	mode, err := parseReplayMode(job.Mode)
