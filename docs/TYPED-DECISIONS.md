@@ -210,6 +210,37 @@ step emulator frames or gain controller access. A ROM-gated regression replays
 one restored Route 1 battle with shadow disabled and with a deliberately
 disagreeing backend; result, final frame and emulator-state digest must match.
 
+### Active battle control (#1460)
+
+Active battle mode reuses the same portable move-only state and never gives the
+backend an emulator or controller handle. The normal deterministic
+`MovePolicy` chooses a legal baseline slot first. An active
+`BattleMoveController` may replace that slot only when all gates pass:
+
+1. the backend response passes `DecideChecked` and names a declared choice;
+2. reported confidence is at or above the run's threshold;
+3. `ResolveBattleDecision` maps it back through the portable legal set;
+4. the action is a move (switch/item/RUN remain deterministic-only);
+5. `skill.Battle` independently verifies the final slot is still in
+   `BattleState.Usable()` immediately before menu execution.
+
+Any failed gate, backend error, or timeout executes the deterministic slot
+instead. Active battle calls have a 2-second deadline; after three consecutive
+backend failures, model calls are suspended for the rest of the run and battles
+continue deterministically. This is a circuit breaker, not a run failure.
+
+Telemetry marks accepted active turns with `controlled: true`. Fallback turns
+keep `controlled` false and `fallback` true, while still carrying decision
+index, state fingerprint, executed action, latency/error, and downstream
+turn/battle outcome. Run summaries count controlled turns and fallbacks
+separately.
+
+Active is opt-in and does not change the Pokémon launch defaults. Shadow remains
+the default mode shown for Pokémon when a fast backend is selected. A ROM-gated
+regression restores one Route 1 checkpoint twice and requires identical battle
+result, final frame, and emulator-state digest when a high-confidence backend
+tries an undeclared move; the active run must fall back on every such call.
+
 The battle suite is its own evaluation mode, separate from the planner suite
 and from live runs. The checked-in corpus covers obvious type advantages,
 exhausted/disabled PP, healing/status items, good and bad switches, wild RUN
