@@ -214,6 +214,7 @@ type replayRGBEncoder struct {
 
 func (s *replayServer) startReplayRGBEncoder(ctx context.Context, destination string) (*replayRGBEncoder, error) {
 	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamRGBArgs(destination)...)
+	configureReplayProcessGroup(cmd)
 	output := &replayOutputTail{}
 	cmd.Stdout = output
 	cmd.Stderr = output
