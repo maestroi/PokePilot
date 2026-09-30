@@ -1029,16 +1029,6 @@ function activityTimeAgo(item: ActivityItem): string {
   </AppShell>
 </template>
 
-<style>
-@font-face {
-  font-family: 'Archivo';
-  src: url('./assets/archivo-wdth.woff2') format('woff2');
-  font-weight: 100 900;
-  font-stretch: 62% 125%;
-  font-display: swap;
-}
-</style>
-
 <style scoped>
 :fullscreen {
   background: #05070a;
@@ -1119,7 +1109,7 @@ function activityTimeAgo(item: ActivityItem): string {
   display: grid;
   gap: 1.5rem;
   color: var(--bone);
-  font-family: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  font-family: ui-rounded, "Avenir Next", "Segoe UI", system-ui, sans-serif;
   font-size: 0.95rem;
   line-height: 1.5;
 }
@@ -1810,6 +1800,425 @@ select:focus-visible {
 
   .goal-bar i {
     transition: none;
+  }
+}
+
+/* Pokémon run detail: a modern trainer HUD rather than a generic dashboard. */
+.game-pokemon .stage {
+  --page: #080b18;
+  --bone: #f3efd9;
+  --dusk: #9ca7c6;
+  --rule: #323b62;
+  --accent: #f2ca52;
+  --live: #ef5e57;
+  --bezel: #232947;
+  gap: 1rem;
+  padding: clamp(0.8rem, 1.6vw, 1.45rem);
+  border: 1px solid rgba(99, 111, 168, 0.34);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 9% 0%, rgba(239, 94, 87, 0.09), transparent 21rem),
+    radial-gradient(circle at 88% 6%, rgba(242, 202, 82, 0.06), transparent 20rem),
+    linear-gradient(180deg, rgba(19, 24, 49, 0.82), rgba(8, 11, 24, 0.96));
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.game-pokemon .stage-head {
+  position: relative;
+  align-items: center;
+  padding: 0.85rem 1rem 0.95rem;
+  overflow: hidden;
+  border: 1px solid rgba(110, 123, 183, 0.34);
+  border-radius: 1rem;
+  background:
+    linear-gradient(90deg, rgba(239, 94, 87, 0.09), transparent 28%),
+    rgba(11, 15, 32, 0.7);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.game-pokemon .stage-head::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #e84f4a 0 16%, #f2ca52 16% 38%, #5968a8 38% 100%);
+  content: "";
+  opacity: 0.9;
+}
+
+.game-pokemon .stage-title {
+  gap: 0.35rem 0.8rem;
+}
+
+.game-pokemon .stage-title h1 {
+  color: #fffaf0;
+  font-family: ui-rounded, "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-stretch: normal;
+  font-weight: 850;
+  letter-spacing: -0.045em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.24);
+}
+
+.game-pokemon .stage-sub {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid rgba(242, 202, 82, 0.16);
+  border-radius: 999px;
+  background: rgba(242, 202, 82, 0.065);
+  color: #d5cda9;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.game-pokemon .stage-status {
+  gap: 0.4rem;
+}
+
+.game-pokemon .stage-status > span {
+  padding: 0.27rem 0.55rem;
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #aeb8d4;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.game-pokemon .stage-status .live-tag {
+  border-color: rgba(239, 94, 87, 0.24);
+  background: rgba(239, 94, 87, 0.09);
+  color: #ffe5df;
+}
+
+.game-pokemon .stage-body {
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 22rem);
+  gap: 1rem;
+}
+
+.game-pokemon .screen-col,
+.game-pokemon .side {
+  gap: 1rem;
+}
+
+.game-pokemon .bezel {
+  position: relative;
+  padding: 0.85rem 0.85rem 1rem;
+  overflow: hidden;
+  border: 1px solid rgba(126, 139, 198, 0.38);
+  border-top: 3px solid rgba(242, 202, 82, 0.76);
+  border-radius: 1rem 1rem 1.85rem 1rem;
+  background:
+    linear-gradient(145deg, rgba(61, 70, 117, 0.94), rgba(30, 35, 65, 0.98)),
+    var(--bezel);
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.28),
+    inset 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.game-pokemon .bezel::after {
+  position: absolute;
+  right: 1.2rem;
+  bottom: 0.5rem;
+  width: 2.5rem;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(239, 94, 87, 0.72);
+  box-shadow: -0.8rem 0 rgba(242, 202, 82, 0.72);
+  content: "";
+}
+
+.game-pokemon .screen {
+  border: 1px solid rgba(0, 0, 0, 0.8);
+  border-radius: 0.55rem;
+  box-shadow:
+    0 0 0 3px rgba(4, 7, 18, 0.62),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.game-pokemon .bezel-label {
+  color: #b8c0da;
+  font-size: 0.72rem;
+  font-stretch: normal;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .route-block,
+.game-pokemon .party,
+.game-pokemon .board-block {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(101, 114, 172, 0.28);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 45%),
+    rgba(9, 13, 29, 0.62);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.game-pokemon .route-block {
+  border-top-color: rgba(242, 202, 82, 0.46);
+}
+
+.game-pokemon .party {
+  border-top-color: rgba(239, 94, 87, 0.4);
+}
+
+.game-pokemon .block-head {
+  margin-bottom: 0.7rem;
+}
+
+.game-pokemon .route-block .block-head h2,
+.game-pokemon .party .block-head h2 {
+  color: #f3efd9;
+  font-family: ui-rounded, "Avenir Next", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+
+.game-pokemon .facts {
+  gap: 0.55rem;
+  border-top: 0;
+}
+
+.game-pokemon .facts div {
+  min-width: 0;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid rgba(101, 114, 172, 0.24);
+  border-radius: 0.75rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent),
+    rgba(12, 16, 34, 0.66);
+}
+
+.game-pokemon .facts dt {
+  color: #8f9bbb;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .facts dd {
+  margin-top: 0.18rem;
+  color: #fffaf0;
+  font-size: 1.35rem;
+  font-stretch: normal;
+  font-weight: 850;
+}
+
+.game-pokemon .roster {
+  gap: 0.55rem;
+  border-top: 0;
+}
+
+.game-pokemon .roster li {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(101, 114, 172, 0.2);
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.023);
+}
+
+.game-pokemon .mon-name strong {
+  color: #f8f3df;
+  font-size: 0.92rem;
+}
+
+.game-pokemon .hp {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #252e4e;
+}
+
+.game-pokemon .hp i {
+  border-radius: inherit;
+}
+
+.game-pokemon .side > section {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(101, 114, 172, 0.25);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.024), transparent 48%),
+    rgba(9, 13, 29, 0.64);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.game-pokemon .side > section > h2,
+.game-pokemon .side > section .block-head h2 {
+  color: #aeb9d7;
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .side .now {
+  border-top: 3px solid rgba(242, 202, 82, 0.78);
+  background:
+    radial-gradient(circle at 95% 0%, rgba(242, 202, 82, 0.08), transparent 9rem),
+    rgba(12, 16, 34, 0.74);
+}
+
+.game-pokemon .now-place {
+  margin-top: 0.2rem;
+  color: #fffaf0;
+  font-size: clamp(1.45rem, 3vw, 1.85rem);
+  font-stretch: normal;
+  font-weight: 850;
+  letter-spacing: -0.025em;
+}
+
+.game-pokemon .goal {
+  border-top: 3px solid rgba(239, 94, 87, 0.72);
+}
+
+.game-pokemon .goal-row span {
+  color: #d4daf0;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.game-pokemon .goal-row strong {
+  color: #f2ca52;
+  font-size: 1.65rem;
+  font-stretch: normal;
+}
+
+.game-pokemon .goal-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #242d4b;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.game-pokemon .goal-bar i {
+  border-radius: inherit;
+  background: linear-gradient(90deg, #e8544f, #f2ca52);
+  box-shadow: 0 0 12px rgba(242, 202, 82, 0.18);
+}
+
+.game-pokemon .say {
+  max-width: none;
+  margin-top: 0.2rem;
+  color: #eef1ff;
+  font-size: 0.96rem;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.game-pokemon .tabs {
+  gap: 0.7rem;
+}
+
+.game-pokemon .tabs button {
+  padding: 0.2rem 0;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.game-pokemon .log li {
+  grid-template-columns: 3.2rem minmax(0, 1fr);
+  padding: 0.55rem 0;
+  border-top-color: rgba(101, 114, 172, 0.2);
+  font-size: 0.82rem;
+}
+
+.game-pokemon .log li:first-child {
+  border-top-color: rgba(242, 202, 82, 0.2);
+}
+
+.game-pokemon .log time {
+  color: #7f8aaa;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-pokemon .others ul {
+  border-top-color: rgba(101, 114, 172, 0.28);
+}
+
+.game-pokemon .others button {
+  border-bottom-color: rgba(101, 114, 172, 0.2);
+}
+
+@media (max-width: 64rem) {
+  .game-pokemon .stage-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-pokemon .side {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 42rem) {
+  .game-pokemon .stage {
+    padding: 0.65rem;
+    border-radius: 1rem;
+  }
+
+  .game-pokemon .stage-head {
+    align-items: flex-start;
+    padding: 0.75rem;
+  }
+
+  .game-pokemon .stage-title h1 {
+    font-size: 1.85rem;
+  }
+
+  .game-pokemon .stage-sub {
+    width: 100%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  .game-pokemon .stage-status {
+    width: 100%;
+  }
+
+  .game-pokemon .side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others {
+    grid-column: auto;
+  }
+
+  .game-pokemon .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-pokemon .facts dd {
+    font-size: 1.15rem;
+  }
+
+  .game-pokemon .bezel {
+    padding: 0.55rem 0.55rem 0.8rem;
+    border-radius: 0.8rem 0.8rem 1.4rem 0.8rem;
+  }
+
+  .game-pokemon .screen-controls {
+    top: 0.35rem;
+    right: 0.35rem;
+  }
+
+  .game-pokemon .route-block,
+  .game-pokemon .party,
+  .game-pokemon .side > section {
+    padding: 0.75rem;
   }
 }
 </style>
