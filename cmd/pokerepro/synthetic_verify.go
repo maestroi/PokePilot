@@ -7,7 +7,8 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/world"
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 )
 
 const verdictObjectiveFailed = "objective_failed"
@@ -55,18 +56,27 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		return verdict, fmt.Errorf("load checkpoint: %w", err)
 	}
 
-	graph, err := world.BuildGraph(m.ROM())
+	profile, _, err := profiles.Detect(m.ROM())
 	if err != nil {
 		verdict.Classification = verdictHarnessError
 		verdict.Diagnostic = err.Error()
 		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
-		return verdict, fmt.Errorf("build map graph: %w", err)
+		return verdict, fmt.Errorf("detect ROM profile: %w", err)
 	}
-	adjacency := make(map[uint16][]uint16, len(graph.Edges))
-	for from, edges := range graph.Edges {
-		for _, edge := range edges {
-			adjacency[uint16(from)] = append(adjacency[uint16(from)], uint16(edge.To))
-		}
+	topologyProvider, ok := profile.(gameruntime.MapTopologyProvider)
+	if !ok {
+		err = fmt.Errorf("profile %s@%s does not expose map topology", profile.ID(), profile.Revision())
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, err
+	}
+	adjacency, err := topologyProvider.MapAdjacency(m.ROM())
+	if err != nil {
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, fmt.Errorf("build map topology: %w", err)
 	}
 	obs, err := readReproObservation("checkpoint", func() (agent.Observation, error) {
 		return agent.ObserveChecked(m, m.ROM())
