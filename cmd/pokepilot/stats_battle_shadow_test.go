@@ -39,6 +39,13 @@ func battleShadowPlanner(engine agent.DecisionEngine) *statsPlanner {
 	}
 }
 
+func battleActivePlanner(engine agent.DecisionEngine) *statsPlanner {
+	return &statsPlanner{
+		decision: agent.DecisionSettings{Engine: engine, Backend: "jev", Battles: true, Shadow: false, MinConfidence: 0.65},
+		counts:   map[string]int{},
+	}
+}
+
 func TestObserveBattleTurnRecordsShadowAgreement(t *testing.T) {
 	engine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:1", Probabilities: map[string]float64{"move:0": 0.1, "move:1": 0.9}}}
 	planner := battleShadowPlanner(engine)
@@ -79,6 +86,108 @@ func TestObserveBattleTurnRecordsShadowAgreement(t *testing.T) {
 	}
 }
 
+func TestControlBattleMoveUsesConfidentLegalAnswerAndRecordsOutcome(t *testing.T) {
+	engine := &countingDecisionEngine{resp: agent.DecisionResponse{
+		Choice: "move:1", Confidence: 0.92,
+		Probabilities: map[string]float64{"move:0": 0.08, "move:1": 0.92},
+	}}
+	planner := battleActivePlanner(engine)
+	fallback := game.BattleAction{Kind: game.BattleActionMove, Slot: 0}
+
+	first := battleShadowTurn()
+	got := planner.ControlBattleMove(first, fallback)
+	if got != (game.BattleAction{Kind: game.BattleActionMove, Slot: 1}) {
+		t.Fatalf("active move = %+v, want move:1", got)
+	}
+
+	second := battleShadowTurn()
+	second.Active.HP = 30
+	second.Opponent.HP = 12
+	engine.resp = agent.DecisionResponse{
+		Choice: "move:0", Confidence: 0.88,
+		Probabilities: map[string]float64{"move:0": 0.88, "move:1": 0.12},
+	}
+	_ = planner.ControlBattleMove(second, fallback)
+	planner.ObserveBattleResult(game.BattleWon)
+
+	if engine.calls != 2 {
+		t.Fatalf("engine calls = %d, want 2", engine.calls)
+	}
+	if len(planner.stats.DecisionRecords) != 2 {
+		t.Fatalf("records = %d, want 2", len(planner.stats.DecisionRecords))
+	}
+	firstRecord, lastRecord := planner.stats.DecisionRecords[0], planner.stats.DecisionRecords[1]
+	if !firstRecord.Controlled || firstRecord.Fallback || firstRecord.Shadow ||
+		firstRecord.DecisionIndex != 1 || firstRecord.StateFingerprint == "" ||
+		firstRecord.BattleOutcome == nil || firstRecord.BattleOutcome.Kind != "next_turn" ||
+		firstRecord.BattleOutcome.ActiveHP != 30 || firstRecord.BattleOutcome.OpponentHP != 12 {
+		t.Fatalf("first active record = %+v", firstRecord)
+	}
+	if !lastRecord.Controlled || lastRecord.Fallback || lastRecord.BattleOutcome == nil ||
+		lastRecord.BattleOutcome.Kind != "battle_result" || lastRecord.BattleOutcome.Result != "won" {
+		t.Fatalf("last active record = %+v", lastRecord)
+	}
+	kind := planner.stats.DecisionSummary.Kinds[agent.DecisionKindBattleTurn]
+	if kind == nil || kind.Calls != 2 || kind.Controlled != 2 || kind.Fallbacks != 0 {
+		t.Fatalf("active summary = %+v", kind)
+	}
+}
+
+func TestControlBattleMoveFallsBackOnLowConfidenceInvalidAndDisabled(t *testing.T) {
+	fallback := game.BattleAction{Kind: game.BattleActionMove, Slot: 0}
+	turn := battleShadowTurn()
+
+	low := &countingDecisionEngine{resp: agent.DecisionResponse{
+		Choice: "move:1", Confidence: 0.40,
+		Probabilities: map[string]float64{"move:0": 0.6, "move:1": 0.4},
+	}}
+	lowPlanner := battleActivePlanner(low)
+	if got := lowPlanner.ControlBattleMove(turn, fallback); got != fallback {
+		t.Fatalf("low-confidence move = %+v, want fallback %+v", got, fallback)
+	}
+	rec := lowPlanner.stats.DecisionRecords[0]
+	if rec.Controlled || !rec.Fallback || rec.Error == "" {
+		t.Fatalf("low-confidence record = %+v, want deterministic fallback", rec)
+	}
+
+	invalid := &countingDecisionEngine{resp: agent.DecisionResponse{
+		Choice: "move:99", Confidence: 0.99,
+		Probabilities: map[string]float64{"move:99": 1},
+	}}
+	invalidPlanner := battleActivePlanner(invalid)
+	if got := invalidPlanner.ControlBattleMove(turn, fallback); got != fallback {
+		t.Fatalf("invalid move = %+v, want fallback %+v", got, fallback)
+	}
+	rec = invalidPlanner.stats.DecisionRecords[0]
+	if rec.Controlled || !rec.Fallback || rec.Error == "" {
+		t.Fatalf("invalid record = %+v, want rejected deterministic fallback", rec)
+	}
+
+	offEngine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:1", Confidence: 1}}
+	offPlanner := battleActivePlanner(offEngine)
+	offPlanner.decision.Battles = false
+	if got := offPlanner.ControlBattleMove(turn, fallback); got != fallback || offEngine.calls != 0 {
+		t.Fatalf("battles-off move=%+v calls=%d, want untouched fallback and zero calls", got, offEngine.calls)
+	}
+}
+
+func TestControlBattleMoveSuspendsAfterRepeatedBackendFailures(t *testing.T) {
+	engine := &countingDecisionEngine{err: errors.New("dial tcp: connection refused")}
+	planner := battleActivePlanner(engine)
+	fallback := game.BattleAction{Kind: game.BattleActionMove, Slot: 0}
+	for i := 0; i < battleDecisionMaxFailures+3; i++ {
+		if got := planner.ControlBattleMove(battleShadowTurn(), fallback); got != fallback {
+			t.Fatalf("iteration %d active move = %+v, want fallback", i, got)
+		}
+	}
+	if engine.calls != battleDecisionMaxFailures {
+		t.Fatalf("engine called %d times, want suspension after %d", engine.calls, battleDecisionMaxFailures)
+	}
+	if planner.stats.DecisionCalls != battleDecisionMaxFailures || planner.stats.DecisionFallbacks != battleDecisionMaxFailures {
+		t.Fatalf("decision calls/fallbacks = %d/%d", planner.stats.DecisionCalls, planner.stats.DecisionFallbacks)
+	}
+}
+
 func TestObserveBattleTurnOnlyRunsForShadowBattles(t *testing.T) {
 	for name, settings := range map[string]agent.DecisionSettings{
 		"battles off": {Battles: false, Shadow: true},
@@ -97,19 +206,19 @@ func TestObserveBattleTurnOnlyRunsForShadowBattles(t *testing.T) {
 func TestObserveBattleTurnSuspendsAfterConsecutiveTransportFailures(t *testing.T) {
 	engine := &countingDecisionEngine{err: errors.New("dial tcp: connection refused")}
 	planner := battleShadowPlanner(engine)
-	for i := 0; i < battleShadowMaxFailures+3; i++ {
+	for i := 0; i < battleDecisionMaxFailures+3; i++ {
 		planner.ObserveBattleTurn(battleShadowTurn(), game.BattleAction{Kind: game.BattleActionMove})
 	}
-	if engine.calls != battleShadowMaxFailures {
-		t.Fatalf("engine called %d times, want suspension after %d", engine.calls, battleShadowMaxFailures)
+	if engine.calls != battleDecisionMaxFailures {
+		t.Fatalf("engine called %d times, want suspension after %d", engine.calls, battleDecisionMaxFailures)
 	}
-	if planner.stats.DecisionCalls != battleShadowMaxFailures {
+	if planner.stats.DecisionCalls != battleDecisionMaxFailures {
 		t.Fatalf("recorded %d calls, want each failed call recorded", planner.stats.DecisionCalls)
 	}
 }
 
 func TestReportingPlannerForwardsBattleTurns(t *testing.T) {
-	engine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:0", Probabilities: map[string]float64{"move:0": 1}}}
+	engine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:0", Confidence: 1, Probabilities: map[string]float64{"move:0": 1}}}
 	inner := battleShadowPlanner(engine)
 	decorator := reportingPlanner{inner: inner}
 	var observer agent.BattleTurnObserver = decorator
@@ -122,5 +231,13 @@ func TestReportingPlannerForwardsBattleTurns(t *testing.T) {
 	last := inner.stats.DecisionRecords[len(inner.stats.DecisionRecords)-1]
 	if last.BattleOutcome == nil || last.BattleOutcome.Result != "won" {
 		t.Fatalf("forwarded battle result = %+v", last.BattleOutcome)
+	}
+
+	activeEngine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:1", Confidence: 1, Probabilities: map[string]float64{"move:1": 1}}}
+	active := battleActivePlanner(activeEngine)
+	controller := reportingPlanner{inner: active}
+	fallback := game.BattleAction{Kind: game.BattleActionMove, Slot: 0}
+	if got := controller.ControlBattleMove(battleShadowTurn(), fallback); got.Slot != 1 || activeEngine.calls != 1 {
+		t.Fatalf("farm planner controller move=%+v calls=%d, want move:1 / 1 call", got, activeEngine.calls)
 	}
 }
