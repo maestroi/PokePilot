@@ -31,11 +31,11 @@ func gsFieldAllowMachine(rom []byte, species uint8, machineNumber int) {
 func TestGSFieldMoveNativeMappings(t *testing.T) {
 	p := NewGold()
 	tests := []struct {
-		id       game.FieldMoveID
-		item     uint16
-		move     uint16
-		badge    string
-		machine  int
+		id      game.FieldMoveID
+		item    uint16
+		move    uint16
+		badge   string
+		machine int
 	}{
 		{game.FieldMoveCut, 0xf3, 0x0f, "Hive", 51},
 		{game.FieldMoveFly, 0xf4, 0x13, "Storm", 52},
@@ -60,6 +60,28 @@ func TestGSFieldMoveNativeMappings(t *testing.T) {
 				t.Fatalf("field spec %s=%+v ok=%v, want badge=%q machine=%d", tc.id, spec, ok, tc.badge, tc.machine)
 			}
 		})
+	}
+}
+
+func TestGSFieldMoveBadgeMasksMatchEngineFlags(t *testing.T) {
+	tests := map[game.FieldMoveID]byte{
+		game.FieldMoveCut:       1 << 1, // ENGINE_HIVEBADGE
+		game.FieldMoveFly:       1 << 5, // ENGINE_STORMBADGE
+		game.FieldMoveSurf:      1 << 3, // ENGINE_FOGBADGE
+		game.FieldMoveStrength:  1 << 2, // ENGINE_PLAINBADGE
+		game.FieldMoveFlash:     1 << 0, // ENGINE_ZEPHYRBADGE
+		game.FieldMoveWhirlpool: 1 << 6, // ENGINE_GLACIERBADGE
+		game.FieldMoveWaterfall: 1 << 7, // ENGINE_RISINGBADGE
+		game.FieldMoveHeadbutt:  0,
+	}
+	for id, want := range tests {
+		spec, ok := gsFieldMoveByID(id)
+		if !ok {
+			t.Fatalf("%s missing field-move spec", id)
+		}
+		if spec.badgeMask != want {
+			t.Fatalf("%s badge mask=%#02x, want %#02x", id, spec.badgeMask, want)
+		}
 	}
 }
 
