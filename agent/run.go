@@ -41,7 +41,15 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
-	graph, err := world.BuildGraph(romData)
+	worldProfile, ok := profile.(gameruntime.WorldProfile)
+	if !ok {
+		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s does not expose world topology", profile.ID(), profile.Revision())}
+	}
+	provider := worldProfile.MapProvider(romData)
+	if provider == nil {
+		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s returned nil map provider", profile.ID(), profile.Revision())}
+	}
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: build map graph: %w", err)}
 	}
