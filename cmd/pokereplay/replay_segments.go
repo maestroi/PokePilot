@@ -205,10 +205,11 @@ func probeReplayVideo(ctx context.Context, source string, expected time.Duration
 }
 
 type replayRGBEncoder struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	output *replayOutputTail
-	closed bool
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	output  *replayOutputTail
+	release func()
+	closed  bool
 }
 
 func (s *replayServer) startReplayRGBEncoder(ctx context.Context, destination string) (*replayRGBEncoder, error) {
@@ -224,7 +225,11 @@ func (s *replayServer) startReplayRGBEncoder(ctx context.Context, destination st
 		_ = stdin.Close()
 		return nil, fmt.Errorf("start gomeboy segment encoder: %w", err)
 	}
-	return &replayRGBEncoder{cmd: cmd, stdin: stdin, output: output}, nil
+	s.encoderProcesses.Add(1)
+	return &replayRGBEncoder{
+		cmd: cmd, stdin: stdin, output: output,
+		release: func() { s.encoderProcesses.Add(-1) },
+	}, nil
 }
 
 func (e *replayRGBEncoder) Write(frame gomeboy.Frame) error {
@@ -250,6 +255,10 @@ func (e *replayRGBEncoder) Close() error {
 		return nil
 	}
 	e.closed = true
+	if e.release != nil {
+		defer e.release()
+		e.release = nil
+	}
 	closeErr := e.stdin.Close()
 	waitErr := e.cmd.Wait()
 	if closeErr != nil {
@@ -311,14 +320,27 @@ func (s *replayServer) renderAttemptVideoSegments(
 	}
 
 	var encoder *replayRGBEncoder
-	var encoderSegment int = -1
+	var encoderSegment = -1
+	var segmentCtx context.Context
+	var segmentCancel context.CancelFunc
+	closeSegment := func() {
+		if segmentCancel != nil {
+			segmentCancel()
+			segmentCancel = nil
+			segmentCtx = nil
+		}
+	}
 	defer func() {
 		if encoder != nil {
 			_ = encoder.Close()
 		}
+		closeSegment()
 	}()
 
 	err = emu.ReplayRecordingFrames(attempt.Parsed, func(frame uint64, image gomeboy.Frame) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if frame < attempt.Parsed.StartFrame {
 			return nil
 		}
@@ -339,12 +361,14 @@ func (s *replayServer) renderAttemptVideoSegments(
 			if onStart != nil {
 				onStart(*segment)
 			}
+			segmentCtx, segmentCancel = withReplayTimeout(ctx, s.capacity.SegmentTimeout)
 			rawPath := segment.LocalPath
 			if mode == replayModeBroadcast {
 				rawPath += ".raw.mp4"
 			}
-			encoder, err = s.startReplayRGBEncoder(ctx, rawPath)
+			encoder, err = s.startReplayRGBEncoder(segmentCtx, rawPath)
 			if err != nil {
+				closeSegment()
 				return err
 			}
 			encoderSegment = index
@@ -360,6 +384,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 		}
 		if err := encoder.Close(); err != nil {
 			encoder = nil
+			closeSegment()
 			return err
 		}
 		encoder = nil
@@ -368,7 +393,8 @@ func (s *replayServer) renderAttemptVideoSegments(
 			rawPath := segment.LocalPath + ".raw.mp4"
 			startMS := replayFrameTimeMS(segment.StartFrame)
 			endMS := replayFrameTimeMS(segment.EndFrame + 1)
-			if err := s.compositor.Compose(ctx, broadcastScene{
+			s.encoderProcesses.Add(1)
+			composeErr := s.compositor.Compose(segmentCtx, broadcastScene{
 				RunID:       runID,
 				Attempt:     attempt.Recording.Attempt,
 				RawVideo:    rawPath,
@@ -378,31 +404,40 @@ func (s *replayServer) renderAttemptVideoSegments(
 				EndMS:       endMS,
 				VAAPI:       s.vaapi,
 				VAAPIDevice: vaapiDevice(),
-			}); err != nil {
-				return fmt.Errorf("broadcast segment %d: %w", segment.Index, err)
+			})
+			s.encoderProcesses.Add(-1)
+			if composeErr != nil {
+				closeSegment()
+				return fmt.Errorf("broadcast segment %d: %w", segment.Index, composeErr)
 			}
 			_ = os.Remove(rawPath)
 		}
 
-		if err := probeReplayVideo(ctx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
+		if err := probeReplayVideo(segmentCtx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
+			closeSegment()
 			return fmt.Errorf("validate replay segment %d: %w", segment.Index, err)
 		}
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
+			closeSegment()
 			return err
 		}
-		_, putErr := s.store.PutObjectReader(ctx, segment.CacheKey, "video/mp4", file)
+		_, putErr := s.store.PutObjectReader(segmentCtx, segment.CacheKey, "video/mp4", file)
 		closeErr := file.Close()
 		if putErr != nil {
+			closeSegment()
 			return fmt.Errorf("cache replay segment %d: %w", segment.Index, putErr)
 		}
 		if closeErr != nil {
+			closeSegment()
 			return closeErr
 		}
 		if err := os.Remove(segment.LocalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			closeSegment()
 			return fmt.Errorf("remove uploaded replay segment %d: %w", segment.Index, err)
 		}
 		segment.Cached = true
+		closeSegment()
 		if onReady != nil {
 			onReady()
 		}
