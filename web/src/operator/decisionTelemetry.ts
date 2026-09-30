@@ -102,7 +102,7 @@ export interface DecisionFeedRow {
   probabilities: [string, number][]
   confidence: number
   executed: string
-  verdict: 'agreed' | 'disagreed' | 'active' | 'unusable'
+  verdict: 'agreed' | 'disagreed' | 'active' | 'fallback' | 'unusable'
   seconds: number
   error: string
 }
@@ -123,11 +123,9 @@ export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow
     probabilities: decisionProbabilities(r.probabilities),
     confidence: Number(r.confidence || 0),
     executed: r.executed || '',
-    verdict: r.error || r.fallback
-      ? 'unusable'
-      : r.shadow
-        ? (r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
-        : 'active',
+    verdict: r.shadow
+      ? (r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
+      : (r.error || r.fallback ? 'fallback' : 'active'),
     seconds: Number(r.duration_seconds || 0),
     error: r.error || ''
   }))
