@@ -8,7 +8,7 @@ import (
 )
 
 func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
-	adj := map[uint8][]uint8{
+	adj := map[uint16][]uint16{
 		0x02: {0x0d, 0x0e, 0x36, 0x3a},
 	}
 	known := testKnowledge(adj)
@@ -48,7 +48,7 @@ func TestOfferMarksUnvisitedAdjacentJourney(t *testing.T) {
 }
 
 func TestOfferPutsLocalWildBandOnTrainChoiceAndKeepsHistory(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{0x0d: {0x02}})
+	known := testKnowledge(map[uint16][]uint16{0x0d: {0x02}})
 	known.SawMap(0x0d)
 	train := Objective{Kind: KindTrain, Level: 22}.String()
 	known.Failures[train] = Failure{Objective: train, Times: 1, Last: "target not reached"}

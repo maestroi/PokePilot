@@ -1729,7 +1729,7 @@ const (
 // is the number of completed generations.
 func resilientGoalRecoveryReason(reason string) bool {
 	switch reason {
-	case "error", "failed", "stuck", "budget":
+	case "error", "failed", "stuck", "budget", "lost":
 		return true
 	default:
 		return false

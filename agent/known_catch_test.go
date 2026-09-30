@@ -33,6 +33,7 @@ func TestAppendKnownCatchObjectivesOffersVisitedHabitatAwayFromGrass(t *testing.
 	}
 
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(route1.Map)
 	obs := Observation{GameID: testGameID,
 		Map:        pewterCenter.Map,
@@ -74,6 +75,7 @@ func TestAppendKnownCatchObjectivesRequiresBallsAndOpenPartySlot(t *testing.T) {
 		t.Fatal("route 1 place missing")
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(route1.Map)
 	wildFor := knownCatchTestWild(t)
 
@@ -122,6 +124,7 @@ func TestAppendKnownCatchObjectivesSkipsPokedexOwned(t *testing.T) {
 		t.Fatal("route 1 place missing")
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(route1.Map)
 	obs := Observation{GameID: testGameID,
 		Map:          0xff,

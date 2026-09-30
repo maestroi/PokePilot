@@ -23,3 +23,12 @@ func MapByName(name string) (MapInfo, bool) {
 	}
 	return MapInfo{}, false
 }
+
+// MapByNative resolves a cartridge-native (group, number) map identity to its
+// catalog entry. The wide uint16 key is the same identity the native topology
+// uses, so a run can translate a live map id to a semantic location without
+// narrowing the Gen-II namespace.
+func MapByNative(native uint16) (MapInfo, bool) {
+	info, ok := mapsByNative[native]
+	return info, ok
+}

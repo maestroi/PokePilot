@@ -11,7 +11,7 @@ import (
 
 func memoryFixture(t *testing.T) (*Knowledge, string, int) {
 	t.Helper()
-	k := testKnowledge(map[uint8][]uint8{0x01: {0x02}, 0x02: {0x01}})
+	k := testKnowledge(map[uint16][]uint16{0x01: {0x02}, 0x02: {0x01}})
 	k.SawMap(0x01)
 	k.SawMap(0x03)
 	k.Places["pallet town"] = true
@@ -58,11 +58,11 @@ func TestMemoryRoundTrip(t *testing.T) {
 	}
 
 	var log bytes.Buffer
-	topology := knowledgeTopologyFor(testGameID, map[uint8][]uint8{0x09: {0x0a}})
+	topology := knowledgeTopologyFor(testGameID, map[uint16][]uint16{0x09: {0x0a}})
 	got := LoadCheckpointMemory(statePath, &topology, &log)
 
 	for _, id := range []uint8{0x01, 0x03} {
-		location := legacyLocationID(id)
+		location := locationForNativeGame(testGameID, uint16(id))
 		if !got.Knowledge.Visited[location] {
 			t.Errorf("Visited missing %q", location)
 		}
@@ -83,11 +83,11 @@ func TestMemoryRoundTrip(t *testing.T) {
 			t.Errorf("Completed missing semantic objective %q", objective)
 		}
 	}
-	talked28 := legacyLocationID(0x28)
+	talked28 := locationForNativeGame(testGameID, 0x28)
 	if len(got.Knowledge.Talked[talked28]) != 1 || !got.Knowledge.Talked[talked28][[2]uint8{6, 3}] {
 		t.Errorf("Talked[%q] = %v, want (6,3)", talked28, got.Knowledge.Talked[talked28])
 	}
-	talked36 := legacyLocationID(0x36)
+	talked36 := locationForNativeGame(testGameID, 0x36)
 	if len(got.Knowledge.Talked[talked36]) != 1 || !got.Knowledge.Talked[talked36][[2]uint8{7, 10}] {
 		t.Errorf("Talked[%q] = %v, want (7,10)", talked36, got.Knowledge.Talked[talked36])
 	}
@@ -104,7 +104,7 @@ func TestMemoryRoundTrip(t *testing.T) {
 	if wall.Place != "ROUTE_23" || wall.X != 4 || wall.Y != 57 || wall.Times != 1 {
 		t.Errorf("Requirement = %+v, want it located at ROUTE_23 (4,57), heard once", wall)
 	}
-	from, to := legacyLocationID(0x09), legacyLocationID(0x0a)
+	from, to := locationForNativeGame(testGameID, 0x09), locationForNativeGame(testGameID, 0x0a)
 	if len(got.Knowledge.Adjacency) != 1 || len(got.Knowledge.Adjacency[from]) != 1 || got.Knowledge.Adjacency[from][0] != to {
 		t.Errorf("Adjacency = %v, want the caller's semantic geometry, not the file's", got.Knowledge.Adjacency)
 	}
