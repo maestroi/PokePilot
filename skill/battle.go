@@ -278,11 +278,17 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 				continue
 			}
-			slot := policy(bs)
-			if !containsInt(usable, slot) {
+			deterministicSlot := policy(bs)
+			if !containsInt(usable, deterministicSlot) {
 				live := runtimeDecoder.DecodeBattleRuntime(m)
 				return 0, fmt.Errorf("skill: Battle: %s battle %+v: policy returned slot %d, usable %v",
-					battleRuntimeContext(live), bs, slot, usable)
+					battleRuntimeContext(live), bs, deterministicSlot, usable)
+			}
+			slot := controlBattleMove(m, bs, deterministicSlot)
+			if !containsInt(usable, slot) {
+				// A controller can never escape the deterministic legal move
+				// set. Fail closed to the policy's already-validated slot.
+				slot = deterministicSlot
 			}
 			observeMove(m, bs, slot)
 			if err := SelectMenuItem(m, slot+1); err != nil {
