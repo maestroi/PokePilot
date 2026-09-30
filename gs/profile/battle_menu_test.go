@@ -204,3 +204,24 @@ func TestDecodeGoldStartMenuWithoutPokedexKeepsPackOrdering(t *testing.T) {
 		t.Fatalf("PACK-less menu reported as START menu: %+v", start)
 	}
 }
+
+func TestGoldMoveLearningPromptsDecodeOutsideBattle(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	putGSText(&mem, "CYNDAQUIL is trying to learn CUT")
+	if got := NewGold().DecodeBattleExecution(&mem).Phase; got != game.BattleExecutionTryLearnPrompt {
+		t.Fatalf("try-learn phase = %q outside battle", got)
+	}
+
+	mem[sym.TwoDMenuNumRows] = 4
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 2
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "Which move should be forgotten?")
+	got := NewGold().DecodeBattleExecution(&mem)
+	if got.Phase != game.BattleExecutionForgetMove || !got.ForgetReady ||
+		got.ForgetCursor.Current != 1 || got.ForgetCursor.Max != 3 {
+		t.Fatalf("forget state = %+v outside battle", got)
+	}
+}
