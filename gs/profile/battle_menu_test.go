@@ -153,3 +153,54 @@ func TestDecodeGoldBattleRuntime(t *testing.T) {
 		t.Fatal("battle runtime omitted rendered debug text")
 	}
 }
+
+func TestDecodeGoldStartMenuAndSemanticEntries(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 2
+	mem[sym.TwoDMenuNumRows] = 7
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuCursorY] = 2
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "DEX MON PACK POKEGEAR GOLD SAVE OPTION EXIT")
+
+	p := NewGold()
+	start := p.DecodeStartMenu(&mem)
+	if !start.Visible || !start.Ready || start.InBattle {
+		t.Fatalf("start menu = %+v, want visible/ready overworld menu", start)
+	}
+	if start.Cursor.Current != 1 || start.Cursor.Max != 6 {
+		t.Fatalf("start cursor = %+v, want 1/6", start.Cursor)
+	}
+	if got := p.DecodeMenuCursor(&mem); got != start.Cursor {
+		t.Fatalf("generic cursor = %+v, want start cursor %+v", got, start.Cursor)
+	}
+	if index, ok := p.StartMenuEntryIndex(&mem, game.StartMenuPokemon); !ok || index != 1 {
+		t.Fatalf("pokemon index = %d,%v, want 1,true", index, ok)
+	}
+	if index, ok := p.StartMenuEntryIndex(&mem, game.StartMenuItems); !ok || index != 2 {
+		t.Fatalf("pack index = %d,%v, want 2,true", index, ok)
+	}
+}
+
+func TestDecodeGoldStartMenuWithoutPokedexKeepsPackOrdering(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.TwoDMenuNumRows] = 6
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "MON PACK GOLD SAVE OPTION EXIT")
+
+	p := NewGold()
+	if index, ok := p.StartMenuEntryIndex(&mem, game.StartMenuPokemon); !ok || index != 0 {
+		t.Fatalf("pokemon index = %d,%v, want 0,true", index, ok)
+	}
+	if index, ok := p.StartMenuEntryIndex(&mem, game.StartMenuItems); !ok || index != 1 {
+		t.Fatalf("pack index = %d,%v, want 1,true", index, ok)
+	}
+
+	putGSText(&mem, "MON GOLD SAVE OPTION EXIT")
+	if start := p.DecodeStartMenu(&mem); start.Visible || start.Ready {
+		t.Fatalf("PACK-less menu reported as START menu: %+v", start)
+	}
+}
