@@ -40,7 +40,10 @@ that port must stay on the private LAN.
 
 Provision `/opt/pokefarm/roms/pokemon_red.gb` and root-readable-only
 `/opt/pokefarm/replay.env` on the VM through the existing private operations
-channel. Never put ROM or S3 credentials in Git or the image. Install
+channel. Never put ROM or S3 credentials in Git or the image. Use
+[`deploy/replay.env.example`](./replay.env.example) as the canonical variable
+reference and starting capacity envelope; replace the placeholder S3 values and
+keep the host copy mode `0600`. Install
 `deploy/replay-pull.sh` as `/usr/local/sbin/pokefarm-replay-pull` and the
 `deploy/pokefarm-replay-pull.{service,timer}` units under `/etc/systemd/system`.
 Write `/etc/default/pokefarm-replay` with
@@ -99,6 +102,20 @@ the source recording if an individual object fails validation.
 
 
 ## Render capacity and admission control
+
+The copy-paste configuration reference is
+[`deploy/replay.env.example`](./replay.env.example). The table below explains
+what each capacity knob controls and when to change it.
+
+| Variable | Default / recommended start | What it bounds | Raise it when | Lower it when |
+| --- | --- | --- | --- | --- |
+| `POKEPILOT_REPLAY_MAX_JOBS` | `2` | Claimed offline render jobs | Jobs queue while CPU/RAM/scratch still have headroom | Multiple jobs push host memory/disk pressure too high |
+| `POKEPILOT_REPLAY_WORKERS` | `3` | Concurrent emulator + encoder segment pipelines | GPU/CPU is underutilized during long renders | RSS, FDs, encoder load, or contention rises |
+| `POKEPILOT_REPLAY_MIN_SCRATCH_BYTES` | `1073741824` (1 GiB) | Minimum free scratch before claiming new work | Only after measuring worst-case assembly size and preserving safety margin | Increase this value—not decrease it—when final MP4s or temp work get larger |
+| `POKEPILOT_REPLAY_SCRATCH_DIR` | `/tmp/pokepilot-replay` | Location of transient job directories | Move to a larger/faster dedicated volume | N/A; choose a filesystem with enough free space |
+| `POKEPILOT_REPLAY_JOB_TIMEOUT` | `8h` | Whole claimed job lifetime | Legitimate very long jobs hit timeout despite healthy progress | Hung/stuck jobs occupy admission slots too long |
+| `POKEPILOT_REPLAY_SEGMENT_TIMEOUT` | `2h` | One segment encoder/compositor lifetime | Legitimate slow software renders exceed the bound | A stuck segment holds an encoder worker too long |
+| `POKEPILOT_REPLAY_SEGMENT_SECONDS` | `300` | Source duration per resumable segment | Segment overhead dominates and retries are cheap | Failures/restarts redo too much work per segment |
 
 Offline replay work is admitted separately from live spectator media. Live MJPEG
 sessions keep their bounded subscriber queues and frame dropping behavior and do
