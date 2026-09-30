@@ -361,7 +361,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		}
 	} else if planner == "llm" && goal == "" {
 		if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
-			goal = "progress:gs_supported_frontier"
+			goal = "Play through the current supported Gen 2 frontier."
 		} else {
 			goal = "Earn the Boulder Badge."
 		}
