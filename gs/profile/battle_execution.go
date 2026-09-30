@@ -27,14 +27,10 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 			out.PartyMoves[i][slot] = uint16(reader.Peek8(base + uint16(slot)))
 		}
 	}
-	if !inBattle {
-		return out
-	}
-
 	text := gsScreenText(reader)
 	main := p.DecodeBattleMainMenu(reader)
 	_, _, rows, cols, filter := gsMenuCursor(reader)
-	moveMenu := reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
+	moveMenu := inBattle && reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
 		rows >= 1 && rows <= 4 && cols == 1 && filter == gen2BattleMoveFilter &&
 		strings.Contains(text, "TYPE/")
 
@@ -52,6 +48,11 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		cursor.Max = 3
 		out.ForgetCursor = cursor
 		out.ForgetReady = true
+	case !inBattle:
+		// Move-learning prompts also occur when a TM/HM is used from the Pack.
+		// The cases above remain meaningful outside battle; ordinary field text
+		// owns no BattleExecution phase.
+		return out
 	case strings.Contains(text, "Can't escape!"):
 		out.Phase = game.BattleExecutionRunRefused
 	case strings.Contains(text, "is about to use") && strings.Contains(text, "change POK"):
