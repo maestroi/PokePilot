@@ -544,7 +544,7 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	if m == nil || len(romData) == 0 {
 		return nil, nil
 	}
-	g, err := world.BuildGraph(routingMapProvider(romData))
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		return nil, err
 	}
