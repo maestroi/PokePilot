@@ -114,6 +114,7 @@ export interface TypedDecisionRecord {
   backend?: string
   model?: string
   fallback?: boolean
+  controlled?: boolean
   shadow?: boolean
   executed?: string
   agreed?: boolean
@@ -128,6 +129,7 @@ export interface DecisionKindSummary {
   calls: number
   fallbacks?: number
   errors?: number
+  controlled?: number
   shadow?: number
   agreements?: number
   disagreements?: number
