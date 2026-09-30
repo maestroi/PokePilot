@@ -47,3 +47,22 @@ func TestNewMediaRenderJobRejectsInvalidAttempts(t *testing.T) {
 		t.Fatal("expected invalid attempt error")
 	}
 }
+
+func TestMediaRenderJobRetryableFailureClass(t *testing.T) {
+	job := MediaRenderJob{State: MediaRenderJobFailed, FailureClass: MediaRenderFailureInfrastructure}
+	if !job.Retryable() {
+		t.Fatal("infrastructure failure should be retryable")
+	}
+	job.FailureClass = MediaRenderFailureTimeout
+	if !job.Retryable() {
+		t.Fatal("timeout failure should be retryable")
+	}
+	job.FailureClass = MediaRenderFailureInvalidRequest
+	if job.Retryable() {
+		t.Fatal("deterministic invalid request should not auto-retry")
+	}
+	job.State = MediaRenderJobCancelled
+	if !job.Retryable() {
+		t.Fatal("cancelled job should be restartable on explicit render request")
+	}
+}

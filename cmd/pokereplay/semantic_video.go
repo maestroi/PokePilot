@@ -80,13 +80,38 @@ func (s *replayServer) renderAttemptSemanticSegments(
 	encoderSegment := -1
 	var semanticFrame *image.RGBA
 	semanticSupported := false
-	defer func() {
-		if encoder != nil {
-			_ = encoder.Close()
+	var segmentCtx context.Context
+	var segmentCancel context.CancelFunc
+	encoderCounted := false
+	closeEncoder := func() error {
+		if encoder == nil {
+			return nil
 		}
+		err := encoder.Close()
+		encoder = nil
+		encoderSegment = -1
+		if encoderCounted {
+			s.encoderProcesses.Add(-1)
+			encoderCounted = false
+		}
+		return err
+	}
+	closeSegment := func() {
+		if segmentCancel != nil {
+			segmentCancel()
+			segmentCancel = nil
+			segmentCtx = nil
+		}
+	}
+	defer func() {
+		_ = closeEncoder()
+		closeSegment()
 	}()
 
 	err = emu.ReplayRecordingFrames(attempt.Parsed, func(frame uint64, raw gomeboy.Frame) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if frame < attempt.Parsed.StartFrame {
 			return nil
 		}
@@ -136,7 +161,8 @@ func (s *replayServer) renderAttemptSemanticSegments(
 			if onStart != nil {
 				onStart(*segment)
 			}
-			encoder, err = mediaencode.StartRawVideo(ctx, segment.LocalPath, mediaencode.RawVideoOptions{
+			segmentCtx, segmentCancel = withReplayTimeout(ctx, s.capacity.SegmentTimeout)
+			encoder, err = mediaencode.StartRawVideo(segmentCtx, segment.LocalPath, mediaencode.RawVideoOptions{
 				Binary:       "ffmpeg",
 				InputWidth:   compositor.SemanticVideoWidth,
 				InputHeight:  compositor.SemanticVideoHeight,
@@ -147,8 +173,10 @@ func (s *replayServer) renderAttemptSemanticSegments(
 				VAAPIDevice:  vaapiDevice(),
 			})
 			if err != nil {
-				return err
+				return replayContextError(segmentCtx, err)
 			}
+			s.encoderProcesses.Add(1)
+			encoderCounted = true
 			encoderSegment = index
 		}
 		if encoderSegment != index {
@@ -168,37 +196,38 @@ func (s *replayServer) renderAttemptSemanticSegments(
 			presentation = fallback
 		}
 		if err := encoder.WriteImage(presentation); err != nil {
-			return err
+			return replayContextError(segmentCtx, err)
 		}
 		if relative != segment.EndFrame {
 			return nil
 		}
-		if err := encoder.Close(); err != nil {
-			encoder = nil
-			return err
+		if err := closeEncoder(); err != nil {
+			return replayContextError(segmentCtx, err)
 		}
-		encoder = nil
-		encoderSegment = -1
 
-		if err := probeReplayVideo(ctx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
-			return fmt.Errorf("validate semantic replay segment %d: %w", segment.Index, err)
+		if err := probeReplayVideo(segmentCtx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
+			return replayContextError(segmentCtx, fmt.Errorf("validate semantic replay segment %d: %w", segment.Index, err))
 		}
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
+			closeSegment()
 			return err
 		}
-		_, putErr := s.store.PutObjectReader(ctx, segment.CacheKey, "video/mp4", file)
+		_, putErr := s.store.PutObjectReader(segmentCtx, segment.CacheKey, "video/mp4", file)
 		closeErr := file.Close()
 		if putErr != nil {
-			return fmt.Errorf("cache semantic replay segment %d: %w", segment.Index, putErr)
+			return replayContextError(segmentCtx, fmt.Errorf("cache semantic replay segment %d: %w", segment.Index, putErr))
 		}
 		if closeErr != nil {
+			closeSegment()
 			return closeErr
 		}
 		if err := os.Remove(segment.LocalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			closeSegment()
 			return fmt.Errorf("remove uploaded semantic replay segment %d: %w", segment.Index, err)
 		}
 		segment.Cached = true
+		closeSegment()
 		if onReady != nil {
 			onReady()
 		}

@@ -109,7 +109,9 @@ function workerLabel(job: MediaRenderJob): string {
 }
 
 function retryable(job: MediaRenderJob): boolean {
-  return job.state === 'failed' || job.state === 'cancelled'
+  if (job.state === 'cancelled') return true
+  if (job.state !== 'failed') return false
+  return job.failure_class !== 'invalid_request'
 }
 
 function cancellable(job: MediaRenderJob): boolean {
@@ -250,7 +252,8 @@ function refresh(): void {
             </div>
           </div>
 
-          <p v-if="job.last_error" class="mt-2 line-clamp-2 text-[10px] text-rose-300" :title="job.last_error">{{ job.last_error }}</p>
+          <p v-if="job.failure_class" class="mt-2 font-mono text-[9px] text-amber-300">{{ job.failure_class }}</p>
+          <p v-if="job.last_error" class="mt-1 line-clamp-2 text-[10px] text-rose-300" :title="job.last_error">{{ job.last_error }}</p>
 
           <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
             <div>
@@ -335,6 +338,7 @@ function refresh(): void {
                   <span v-if="job.retry_count" class="font-mono text-[9px] text-amber-300">{{ job.retry_count }} retry</span>
                 </div>
                 <p v-if="job.stage && job.stage !== job.state" class="mt-1 text-[10px] text-slate-500">{{ job.stage }}</p>
+                <p v-if="job.failure_class" class="mt-1 font-mono text-[9px] text-amber-300">{{ job.failure_class }}</p>
                 <p v-if="job.last_error" class="mt-1 max-w-xs truncate text-[10px] text-rose-300" :title="job.last_error">{{ job.last_error }}</p>
               </td>
               <td class="min-w-[10rem] px-3 py-2.5">
