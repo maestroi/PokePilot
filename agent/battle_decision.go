@@ -105,6 +105,13 @@ type BattleTurnObserver interface {
 	ObserveBattleTurn(s game.BattleDecisionState, executed game.BattleAction)
 }
 
+// BattleOutcomeObserver optionally completes the last observed turn with the
+// portable terminal result. Keeping it separate preserves adapters/planners
+// that only need the turn stream.
+type BattleOutcomeObserver interface {
+	ObserveBattleResult(game.BattleResult)
+}
+
 // BattleTurnObservingAdapter is implemented by game adapters that can report
 // battle turns. An adapter without it simply reports none.
 type BattleTurnObservingAdapter interface {
