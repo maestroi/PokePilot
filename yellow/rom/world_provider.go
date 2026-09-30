@@ -150,8 +150,6 @@ func yellowLedges(romData []byte, tileset uint8) []worldmodel.Ledge {
 	return gen1rom.LedgesAt(romData, yellowLedgeTiles, tileset)
 }
 
-func isYellowWorldROM(romData []byte) bool { return IsCartridge(romData) }
-
 // IsCartridge reports whether romData is the supported Yellow image. A
 // structural probe (MapHeaderBanks/MapHeaderPointers name PalletTown_h at
 // 06:42a1, pokeyellow.sym) rejects other cartridges in three byte reads, so
@@ -168,4 +166,24 @@ func IsCartridge(romData []byte) bool {
 	}
 	sum := sha1.Sum(romData)
 	return hex.EncodeToString(sum[:]) == sym.ROMSHA1
+}
+
+func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
+	if spec == nil {
+		return
+	}
+	var tile uint8
+	switch tileset {
+	case 0: // OVERWORLD
+		tile = 0x3d
+	case 7: // GYM
+		tile = 0x50
+	default:
+		return
+	}
+	spec.Cuttable = make([]bool, len(spec.Walkable))
+	for i := range spec.Cuttable {
+		spec.Cuttable[i] = (i < len(spec.FieldTile) && spec.FieldTile[i] == tile) ||
+			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == tile)
+	}
 }
