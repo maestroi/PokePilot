@@ -1183,6 +1183,13 @@ func (p reportingPlanner) ObserveBattleResult(result game.BattleResult) {
 	}
 }
 
+func (p reportingPlanner) DecideBattleMove(turn game.BattleDecisionState, deterministic game.BattleAction) game.BattleAction {
+	if c, ok := p.inner.(agent.BattleMoveController); ok {
+		return c.DecideBattleMove(turn, deterministic)
+	}
+	return deterministic
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
