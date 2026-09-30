@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
-
 )
 
 // TestSaffronGymExitDoorRoutesViaReachableTeleporter is the ROM-backed pin for
