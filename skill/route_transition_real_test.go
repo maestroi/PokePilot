@@ -11,7 +11,7 @@ import (
 
 func preparedSemanticEdge(t *testing.T, m *emu.Emu, transitionID string) (world.Edge, gameruntime.Transition) {
 	t.Helper()
-	g, err := world.BuildGraph(m.ROM())
+	g, err := buildRouteGraph(m.ROM())
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
