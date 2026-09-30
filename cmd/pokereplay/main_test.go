@@ -27,7 +27,7 @@ func TestReplayRenderCachesMP4AndServesRanges(t *testing.T) {
 	recordingBytes := []byte("recording")
 	sum := sha256.Sum256(recordingBytes)
 	recordingSHA := hex.EncodeToString(sum[:])
-	cacheKey := "runs/run-1/attempt-1/replay-" + recordingSHA[:12] + ".mp4"
+	var cacheKey string
 	var mu sync.Mutex
 	var cached []byte
 
@@ -69,6 +69,9 @@ func TestReplayRenderCachesMP4AndServesRanges(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "video/mp4")
 			_, _ = w.Write(body)
+		case r.Method == http.MethodHead:
+			// Canonical status lookup also probes the pre-profile legacy key.
+			http.NotFound(w, r)
 		default:
 			t.Fatalf("unexpected S3 request: %s %s", r.Method, r.URL.Path)
 		}
@@ -121,6 +124,13 @@ printf 'fake-mp4' > "$out"
 	}
 
 	replay := newReplayServer(wall.URL, rom, stream, store)
+	cacheKey = replay.replayCacheKeyForMode("run-1", []replayRecording{{
+		Attempt: 1,
+		Artifact: artifactRef{
+			SHA256:    recordingSHA,
+			ObjectKey: "runs/run-1/attempt-1/run.gbrun",
+		},
+	}}, replayModeRaw)
 	srv := httptest.NewServer(replay.handler())
 	defer srv.Close()
 
