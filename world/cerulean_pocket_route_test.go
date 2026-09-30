@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
-)
+
+	redrom "github.com/maestroi/pokepilot/red/rom")
 
 // TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit is the
 // regression behind farm triage aaf93af50f5e9d50 (run-27p5q00agjl0p180cgtm32v2d1)
@@ -27,7 +28,7 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := BuildGraph(data)
+	g, err := BuildGraph(redrom.NewWorldProvider(data))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
