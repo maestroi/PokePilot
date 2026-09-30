@@ -1,7 +1,5 @@
 package game
 
-import "github.com/maestroi/pokepilot/worldmodel"
-
 // TraversalMode is the live movement mode observed by a game profile. Static
 // collision interpretation remains owned by the routing adapter.
 type TraversalMode uint8
@@ -45,13 +43,6 @@ type LiveTopologyState struct {
 // and object-event runtime state.
 type RoutingDecoder interface {
 	DecodeLiveTopology(MemoryReader) (LiveTopologyState, error)
-}
-
-// WorldProfile is the optional static-world capability implemented by game
-// profiles whose ROM adapter can supply generic routing topology.
-type WorldProfile interface {
-	GameProfile
-	MapProvider([]byte) worldmodel.MapHeaderProvider
 }
 
 // ElevatorTransition is the portable postcondition for a profile-owned
