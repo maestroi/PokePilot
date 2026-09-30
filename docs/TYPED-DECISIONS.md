@@ -83,13 +83,14 @@ Modes:
   `decision_mode`, `decision_agreements`, `decision_disagreements`). The
   strategist still picks objectives and deterministic recovery policy still
   handles failures; a shadow `pause`/`impossible` never stops the run.
-- `active` lets accepted answers steer objective selection and tighten
-  failure recovery, as before. A selection without `mode` is active, so
-  older specs are unchanged.
+- `active` lets accepted answers steer enabled objective selection, recovery,
+  and battle move selection. A selection without `mode` is active, so older
+  specs are unchanged; battles still require the explicit `battles` toggle.
 - `off` is the same as backend `off`.
-- `battles` is shadow-only (the wall answers 400 for active battles). The
-  run carries it to the runner as `DecisionSettings.Battles`, and every move
-  turn a battle presses is scored live (see "Live battle shadow" below).
+- `battles` is available in both modes. Shadow observes every eligible move
+  turn; active may replace the deterministic move only after legality,
+  confidence, and action-kind gates accept the backend answer. Switches,
+  items, and RUN remain deterministic-only.
 
 Every runner uses the same image. `deploy/farm.yml` gives every runner
 `TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
@@ -111,7 +112,8 @@ Runner defaults, used only by runs without a registered deployment:
   typed backend choose from the already-valid objective menu before falling
   back to the existing planner.
 - `POKEPILOT_DECISION_MODE` is the runner default mode (`active` when unset;
-  `shadow` or `off`). `POKEPILOT_DECISION_BATTLES=1` applies only in shadow.
+  `shadow` or `off`). `POKEPILOT_DECISION_BATTLES=1` enables eligible
+  battle move decisions in either active or shadow mode.
 - `POKEPILOT_DECISION_MIN_CONFIDENCE` defaults to `0.65`. A lower-confidence
   answer is recorded and falls back to the existing deterministic/generative
   path.
@@ -170,12 +172,11 @@ legal only in wild battles. Safari Zone and the Old Man demo are reported as
 `ResolveBattleDecision` re-checks the reply against it before anything could
 execute.
 
-This PR only defines the contract. Execution stays with `skill.Battle`,
-`SwitchActive` and `UseBattleMedicine`, and ordinary runs are unchanged:
-`agent.BattleMoveDecider` adapts a `DecisionEngine` to the existing
-`skill.MovePolicy` seam (move-only, falls back to the deterministic policy on
-any error or low confidence) but nothing installs it yet: battle answers are
-never executed.
+Execution stays with `skill.Battle`, `SwitchActive` and
+`UseBattleMedicine`. The portable contract never presses buttons itself:
+shadow mode observes the deterministic action, while active mode can only
+replace the already-computed deterministic move through the guarded move
+selector described below.
 
 ### Live battle shadow (#1456)
 
