@@ -30,6 +30,8 @@ const (
 	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
 	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
 	PartyMenuCursor         uint16 = 0xCFC9 // wPartyMenuCursor
+	TMHMPocketCursor        uint16 = 0xCFCD // wTMHMPocketCursor
+	TMHMPocketScroll        uint16 = 0xCFD2 // wTMHMPocketScrollPosition
 	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
@@ -97,6 +99,7 @@ const (
 	PartyMon1    uint16 = 0xDA2A
 	PartyMonSize uint16 = 0x30
 
+	CurItem               uint16 = 0xD002 // wCurItem; numbered TM/HM while browsing that pocket
 	BattleMode            uint16 = 0xD116
 	BattleType            uint16 = 0xD119
 	ForcedSwitch          uint16 = 0xD11C
