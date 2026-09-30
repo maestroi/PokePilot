@@ -366,21 +366,12 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
 		caps := redRouteCapabilities(x.romData, &mem)
-		missing := make([]gameruntime.CapabilityID, 0, 3)
+		missing := make([]gameruntime.CapabilityID, 0, 2)
 		if !caps.Has(capCanSurf) {
 			missing = append(missing, capCanSurf)
 		}
 		if !caps.Has(capCanPassRoute23BadgeChecks) {
 			missing = append(missing, capCanPassRoute23BadgeChecks)
-		}
-		// Route 23's north Victory Road exit is a sealed component. Returning
-		// south from there must cross the cave's 3F Strength gate before Surf
-		// can reach the southern bands, so Strength is a conditional runtime
-		// prerequisite rather than a requirement on every League-return edge.
-		if mem.U8(sym.CurMap) == route23Map &&
-			route23LeagueReturnNeedsVictoryRoad(mem.U8(sym.XCoord), mem.U8(sym.YCoord)) &&
-			!caps.Has(capCanMoveBoulders) {
-			missing = append(missing, capCanMoveBoulders)
 		}
 		if len(missing) != 0 {
 			return world.TransitionExecutionResult{}, true, &gameruntime.TransitionBlockage{Transition: transition, Missing: missing}
@@ -393,10 +384,15 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		}
 		xPos, y := playerXY(x.m)
 		if route23LeagueReturnNeedsVictoryRoad(xPos, y) {
-			if err := returnRoute23NorthPocketThroughVictoryRoad(x.m, x.romData, x.policy); err != nil {
-				return world.TransitionExecutionResult{}, true, fmt.Errorf("skill: Route 23 League return: %w", err)
-			}
-			_, y = playerXY(x.m)
+			// This transition owns the Route 23 Surf bands, not a reverse
+			// Victory Road solve. Route 23 resets the relevant boulder events on
+			// load, and the measured exit-side 3F switch can be unsolvable. The
+			// route catalog suppresses this pivot from north-pocket/Indigo starts;
+			// keep direct executor calls fail-closed and, critically, do not mutate
+			// the player into Victory Road before reporting the mismatch.
+			return world.TransitionExecutionResult{}, true, fmt.Errorf(
+				"%w: skill: Route 23 League return cannot bridge the north Victory Road exit pocket",
+				world.ErrTransitionExecutionStalled)
 		}
 		if y >= route23SouthEntry.Y {
 			// Already on the south gate component; let Traverse fire the real
