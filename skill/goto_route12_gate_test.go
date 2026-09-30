@@ -23,7 +23,7 @@ func TestVisitedMapPreferenceAllowsRoute12GateComponentBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := world.BuildGraph(data)
+	g, err := buildRouteGraph(data)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestCeruleanBadgeHouseUnfilteredRouteChoosesPlazaExit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := world.BuildGraph(data)
+	g, err := buildRouteGraph(data)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
