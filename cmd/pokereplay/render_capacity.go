@@ -11,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/maestroi/pokepilot/farm"
 )
 
 const (
@@ -225,6 +227,20 @@ func (s *replayServer) deferRenderJob(id, reason, detail string) {
 	existing.Reason = reason
 	existing.Detail = detail
 	s.deferredJobs[id] = existing
+}
+
+func (s *replayServer) syncDeferredRenderJobs(claimable []farm.MediaRenderJob) {
+	keep := make(map[string]struct{}, len(claimable))
+	for _, job := range claimable {
+		keep[job.ID] = struct{}{}
+	}
+	s.resourceMu.Lock()
+	for id := range s.deferredJobs {
+		if _, ok := keep[id]; !ok {
+			delete(s.deferredJobs, id)
+		}
+	}
+	s.resourceMu.Unlock()
 }
 
 func (s *replayServer) clearDeferredRenderJob(id string) {
