@@ -333,7 +333,8 @@ func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Decisi
 // few consecutive failures. Active mode then falls back deterministically for
 // the rest of the run rather than repeatedly stalling on a dead backend.
 const (
-	battleDecisionTimeout     = 15 * time.Second
+	battleShadowTimeout       = 15 * time.Second
+	battleActiveTimeout       = 2 * time.Second
 	battleDecisionMaxFailures = 3
 	maxBattleShadowSamples    = 256
 )
@@ -344,12 +345,16 @@ const (
 // matches the move the deterministic policy is pressing. The answer never
 // reaches execution.
 func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
-	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow || s.battleDecisionSuspended {
+	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow {
 		return
 	}
 	// Reaching the next actionable turn is the observable outcome of the
-	// previously recorded shadow decision.
+	// previously recorded shadow decision, even after future calls have been
+	// suspended because the backend failed repeatedly.
 	s.finishBattleDecisionOutcome(nextBattleTurnOutcome(turn))
+	if s.battleDecisionSuspended {
+		return
+	}
 	req, err := agent.BattleDecisionRequest(turn)
 	if err != nil {
 		return
@@ -360,7 +365,7 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 	}
 	s.battleDecisionIndex++
 	decisionIndex := s.battleDecisionIndex
-	ctx, cancel := context.WithTimeout(context.Background(), battleDecisionTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), battleShadowTimeout)
 	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
 	cancel()
 	transportErr := err
@@ -417,12 +422,15 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 // or suspension failure. Switch/item/run decisions are intentionally outside
 // this first active slice and remain deterministic-only.
 func (s *statsPlanner) ControlBattleMove(turn game.BattleDecisionState, deterministic game.BattleAction) game.BattleAction {
-	if s.decision.Engine == nil || !s.decision.Battles || s.decision.Shadow || s.battleDecisionSuspended {
+	if s.decision.Engine == nil || !s.decision.Battles || s.decision.Shadow {
 		return deterministic
 	}
 	// The arrival of this actionable turn is the outcome boundary for the
-	// previous active decision.
+	// previous active decision, even if future model calls are suspended.
 	s.finishBattleDecisionOutcome(nextBattleTurnOutcome(turn))
+	if s.battleDecisionSuspended {
+		return deterministic
+	}
 
 	req, err := agent.BattleDecisionRequest(turn)
 	if err != nil {
@@ -435,7 +443,7 @@ func (s *statsPlanner) ControlBattleMove(turn game.BattleDecisionState, determin
 	s.battleDecisionIndex++
 	decisionIndex := s.battleDecisionIndex
 
-	ctx, cancel := context.WithTimeout(context.Background(), battleDecisionTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), battleActiveTimeout)
 	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
 	cancel()
 	transportErr := err
@@ -476,9 +484,9 @@ func (s *statsPlanner) ControlBattleMove(turn game.BattleDecisionState, determin
 	return executed
 }
 
-// ObserveBattleResult completes the final recorded turn when the battle exits.
-// It is observational only and is called before post-battle settling can clear
-// the cartridge's result byte.
+// ObserveBattleResult completes the final recorded shadow or active turn when
+// the battle exits. It is called before post-battle settling can clear the
+// cartridge's result byte.
 func (s *statsPlanner) ObserveBattleResult(result game.BattleResult) {
 	s.finishBattleDecisionOutcome(terminalBattleOutcome(result))
 }
@@ -566,8 +574,8 @@ const maxDecisionFeed = 32
 // recordDecision records one finished backend call: it feeds the running
 // counters and the run's fixed-size summary, and pushes the call onto the
 // bounded live feed. An error means the existing path decided instead, so
-// it is also a fallback. shadow is nil for calls whose answer was allowed
-// to act.
+// it is also a fallback. outcome is non-nil for shadow comparisons and active
+// battle turns that need execution identity/outcome evidence.
 func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.DecisionResponse, err error, shadow *shadowOutcome) {
 	fallback := err != nil
 	s.benchmarkDecisionCalls = append(s.benchmarkDecisionCalls, benchmark.DecisionCall{
