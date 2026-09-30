@@ -355,17 +355,23 @@ func (x *redRouteTransitionExecutor) executeRocketB1FTrainerDoor() (world.Transi
 }
 
 func victoryRoadSectionForTransition(edge world.Edge) (VictoryRoadBoulderSection, bool) {
+	// Victory Road has several sibling ladders between the same floor pairs.
+	// Only the pads whose approach is actually opened by a boulder switch may
+	// receive the semantic pivot/skipCanExit privilege. Matching only From/To
+	// made an ordinary reachable ladder ask the wrong floor's switch solver to
+	// manufacture access; from the 3F exit-side pocket that solver correctly
+	// proved no solution and killed unrelated journeys (#2233).
 	switch {
-	case edge.From == victoryRoad1FMap && edge.To == victoryRoad2FMap:
+	case edge.From == victoryRoad1FMap && edge.To == victoryRoad2FMap &&
+		edge.WarpX == 1 && edge.WarpY == 1:
 		return VictoryRoad1FSwitch, true
-	case edge.From == victoryRoad2FMap && edge.To == victoryRoad3FMap:
+	case edge.From == victoryRoad2FMap && edge.To == victoryRoad3FMap &&
+		edge.WarpX == 23 && edge.WarpY == 7:
 		return VictoryRoad2FSwitch1, true
-	case edge.From == victoryRoad3FMap && edge.To == victoryRoad2FMap:
+	case edge.From == victoryRoad3FMap && edge.To == victoryRoad2FMap &&
+		edge.WarpX == 2 && edge.WarpY == 0:
 		return VictoryRoad3FSwitch, true
 	default:
-		// Descending 2F -> 1F is geometrically traversable and does not own a
-		// new boulder objective; the coarse bidirectional semantic annotation
-		// remains harmless until the route-fact model is made directional.
 		return 0, false
 	}
 }
