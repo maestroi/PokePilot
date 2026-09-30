@@ -59,6 +59,30 @@ func TestBattleDecisionRequestDeclaresExactlyTheLegalSet(t *testing.T) {
 	}
 }
 
+func TestBattleDecisionFingerprintIsStableAndStateSensitive(t *testing.T) {
+	state := CoreBattleEvalCases()[0].State.MoveOnly()
+	first, err := BattleDecisionFingerprint(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BattleDecisionFingerprint(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == "" || first != second {
+		t.Fatalf("fingerprints = %q / %q, want stable non-empty identity", first, second)
+	}
+	changed := state
+	changed.Opponent.HP--
+	third, err := BattleDecisionFingerprint(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == first {
+		t.Fatalf("fingerprint did not change after opponent HP changed: %q", first)
+	}
+}
+
 func TestResolveBattleDecisionRejectsUndeclaredAction(t *testing.T) {
 	s := CoreBattleEvalCases()[3].State
 	if _, err := ResolveBattleDecision(s, DecisionResponse{Choice: "switch:2"}); !errors.Is(err, ErrInvalidDecision) || !errors.Is(err, game.ErrIllegalBattleAction) {

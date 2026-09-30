@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 )
 
@@ -26,6 +27,28 @@ func TestWithMoveObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
 	}
 	if len(inner) != 1 || inner[0] != 2 {
 		t.Fatalf("inner observer saw %v, want [2]", inner)
+	}
+}
+
+func TestBattleResultObserverIsScopedPerEmulatorAndRestores(t *testing.T) {
+	a, b := &emu.Emu{}, &emu.Emu{}
+	var outer, inner []game.BattleResult
+	restoreOuter := WithBattleResultObserver(a, func(result game.BattleResult) { outer = append(outer, result) })
+
+	observeBattleResult(a, game.BattleWon)
+	observeBattleResult(b, game.BattleLost)
+	restoreInner := WithBattleResultObserver(a, func(result game.BattleResult) { inner = append(inner, result) })
+	observeBattleResult(a, game.BattleLost)
+	restoreInner()
+	observeBattleResult(a, game.BattleDraw)
+	restoreOuter()
+	observeBattleResult(a, game.BattleWon)
+
+	if len(outer) != 2 || outer[0] != game.BattleWon || outer[1] != game.BattleDraw {
+		t.Fatalf("outer result observer saw %v", outer)
+	}
+	if len(inner) != 1 || inner[0] != game.BattleLost {
+		t.Fatalf("inner result observer saw %v", inner)
 	}
 }
 

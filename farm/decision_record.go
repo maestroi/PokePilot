@@ -1,5 +1,7 @@
 package farm
 
+import "github.com/maestroi/pokepilot/game"
+
 // TypedDecisionRecord is one constrained decision made by the experimental
 // backend. It is intentionally independent of LLM strategic records so runs can
 // compare latency, confidence and serving cost across backend types.
@@ -23,8 +25,11 @@ type TypedDecisionRecord struct {
 	// Shadow marks an answer that was only observed. Executed is what the
 	// existing policy did instead, and Agreed compares it with Choice; it is
 	// nil when the shadow answer was unusable.
-	Shadow   bool   `json:"shadow,omitempty"`
-	Executed string `json:"executed,omitempty"`
-	Agreed   *bool  `json:"agreed,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Shadow           bool                        `json:"shadow,omitempty"`
+	Executed         string                      `json:"executed,omitempty"`
+	Agreed           *bool                       `json:"agreed,omitempty"`
+	DecisionIndex    int                         `json:"decision_index,omitempty"`
+	StateFingerprint string                      `json:"state_fingerprint,omitempty"`
+	BattleOutcome    *game.BattleDecisionOutcome `json:"battle_outcome,omitempty"`
+	Error            string                      `json:"error,omitempty"`
 }

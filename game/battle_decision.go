@@ -155,6 +155,20 @@ type BattleDecisionState struct {
 	Recent     []string             `json:"recent,omitempty"`
 }
 
+// BattleDecisionOutcome is the portable evidence observed after one battle
+// decision. A next-turn outcome captures the combatants at the next actionable
+// boundary; a terminal outcome carries the battle result instead.
+type BattleDecisionOutcome struct {
+	Kind            string    `json:"kind"`
+	ActiveSpecies   SpeciesID `json:"active_species,omitempty"`
+	ActiveHP        int       `json:"active_hp,omitempty"`
+	ActiveMaxHP     int       `json:"active_max_hp,omitempty"`
+	OpponentSpecies SpeciesID `json:"opponent_species,omitempty"`
+	OpponentHP      int       `json:"opponent_hp,omitempty"`
+	OpponentMaxHP   int       `json:"opponent_max_hp,omitempty"`
+	Result          string    `json:"result,omitempty"`
+}
+
 // Actions derives the complete legal action set from the adapter-declared
 // options, in a stable order: moves, switches, items, run.
 func (s BattleDecisionState) Actions() []BattleAction {

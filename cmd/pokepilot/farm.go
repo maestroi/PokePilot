@@ -1177,6 +1177,12 @@ func (p reportingPlanner) ObserveBattleTurn(turn game.BattleDecisionState, execu
 	}
 }
 
+func (p reportingPlanner) ObserveBattleResult(result game.BattleResult) {
+	if o, ok := p.inner.(agent.BattleOutcomeObserver); ok {
+		o.ObserveBattleResult(result)
+	}
+}
+
 func (p reportingPlanner) ask(obs agent.Observation, offered []agent.Objective, r agent.Retry) (agent.Objective, error) {
 	q := planQuestion(offered)
 	if p.snap != nil {
