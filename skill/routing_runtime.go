@@ -86,17 +86,19 @@ func routingProfileFor(m *emu.Emu) (routingProfile, error) {
 }
 
 func routingProviderForROM(romData []byte) (worldmodel.MapHeaderProvider, error) {
-	if profile, _, err := profiles.Detect(romData); err == nil {
-		if routing, ok := profile.(routingProfile); ok {
-			if provider := routing.MapProvider(romData); provider != nil {
-				return provider, nil
-			}
-		}
+	profile, _, err := profiles.Detect(romData)
+	if err != nil {
+		return nil, fmt.Errorf("skill: routing: detect profile: %w", err)
 	}
-	if provider, ok := worldmodel.ProviderForROM(romData); ok && provider != nil {
-		return provider, nil
+	routing, ok := profile.(routingProfile)
+	if !ok {
+		return nil, fmt.Errorf("skill: routing: profile %s@%s does not expose routing semantics", profile.ID(), profile.Revision())
 	}
-	return nil, fmt.Errorf("skill: routing: no map provider for ROM")
+	provider := routing.MapProvider(romData)
+	if provider == nil {
+		return nil, fmt.Errorf("skill: routing: profile %s@%s returned nil map provider", profile.ID(), profile.Revision())
+	}
+	return provider, nil
 }
 
 func routingHeaderFor(m *emu.Emu, mapID uint8) (worldmodel.MapHeader, error) {
