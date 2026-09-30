@@ -49,7 +49,7 @@ func TestRoute12SnorlaxRequiresReachablePort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRoute13TrainerPocketRoutesOldRodHouseViaRoute14(t *testing.T) {
 	if !ok {
 		t.Fatal("vermilion old rod house place missing")
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
