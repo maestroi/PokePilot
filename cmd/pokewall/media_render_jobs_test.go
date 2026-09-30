@@ -98,25 +98,26 @@ func TestMediaRenderJobLeaseRecoveryAndLifecycle(t *testing.T) {
 
 	failed, err := c.finish(job.ID, farm.MediaRenderJobFinishRequest{
 		WorkerID: "worker-b", State: farm.MediaRenderJobFailed, LastError: "encoder failed",
+		FailureClass: farm.MediaRenderFailureInfrastructure,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if failed.State != farm.MediaRenderJobFailed || failed.LastError != "encoder failed" {
+	if failed.State != farm.MediaRenderJobFailed || failed.LastError != "encoder failed" || failed.FailureClass != farm.MediaRenderFailureInfrastructure {
 		t.Fatalf("failed job = %+v", failed)
 	}
 	retried, err := c.retry(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if retried.State != farm.MediaRenderJobQueued || retried.FinishedAt != 0 {
+	if retried.State != farm.MediaRenderJobQueued || retried.FinishedAt != 0 || retried.FailureClass != "" {
 		t.Fatalf("retried job = %+v", retried)
 	}
 	cancelled, err := c.cancel(job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cancelled.State != farm.MediaRenderJobCancelled {
+	if cancelled.State != farm.MediaRenderJobCancelled || cancelled.FailureClass != farm.MediaRenderFailureCancelled {
 		t.Fatalf("cancelled job = %+v", cancelled)
 	}
 	retried, err = c.retry(job.ID)
@@ -162,6 +163,38 @@ func TestMediaRenderJobRemoveRejectsQueuedWork(t *testing.T) {
 	}
 	if _, ok := c.get(job.ID); !ok {
 		t.Fatal("queued job disappeared after rejected removal")
+	}
+}
+
+func TestMediaRenderJobsClaimableOrdersOldestFirst(t *testing.T) {
+	w := NewWall("")
+	w.SetStatePath(filepath.Join(t.TempDir(), "wall.json"))
+	c := mediaRenderJobsFor(w)
+
+	first, _, err := c.ensure(farm.MediaRenderJobCreateRequest{
+		Identity: "first", RunID: "run-1", Attempts: []int{1}, Mode: "raw", ArtifactKey: "first.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := c.ensure(farm.MediaRenderJobCreateRequest{
+		Identity: "second", RunID: "run-2", Attempts: []int{1}, Mode: "raw", ArtifactKey: "second.mp4",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	a := c.state.Jobs[first.ID]
+	a.CreatedAt = 100
+	c.state.Jobs[first.ID] = a
+	b := c.state.Jobs[second.ID]
+	b.CreatedAt = 200
+	c.state.Jobs[second.ID] = b
+	c.mu.Unlock()
+
+	jobs := c.claimable()
+	if len(jobs) != 2 || jobs[0].ID != first.ID || jobs[1].ID != second.ID {
+		t.Fatalf("claimable order=%+v", jobs)
 	}
 }
 
