@@ -88,7 +88,7 @@ func planReplayVideoSegments(attempt int, recording *gomeboy.Recording, maxFrame
 }
 
 func (s *replayServer) replayVideoSegmentCacheKey(runID string, recording replayRecording, mode replayMode, maxFrames uint64, segment replayVideoSegment) string {
-	base := s.replayCacheKeyForMode(runID, []replayRecording{recording}, mode)
+	base := s.replayCacheKeyForModeWithSegmentFrames(runID, []replayRecording{recording}, mode, maxFrames)
 	stem := strings.TrimSuffix(path.Base(base), path.Ext(base))
 	return path.Join(
 		path.Dir(base),
