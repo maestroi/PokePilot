@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	highlightRenderMode = "highlight"
-	highlightTargetSecondsEnv = "POKEPILOT_HIGHLIGHT_TARGET_SECONDS"
+	highlightRenderMode         = "highlight"
+	highlightTargetSecondsEnv   = "POKEPILOT_HIGHLIGHT_TARGET_SECONDS"
 	highlightMergeGapSecondsEnv = "POKEPILOT_HIGHLIGHT_MERGE_GAP_SECONDS"
-	highlightPolicyJSONEnv = "POKEPILOT_HIGHLIGHT_POLICY_JSON"
+	highlightPolicyJSONEnv      = "POKEPILOT_HIGHLIGHT_POLICY_JSON"
 )
 
 type highlightStatus struct {
@@ -154,7 +154,7 @@ func (s *replayServer) highlightIdentity(runID string, recordings []replayRecord
 			input.Timelines = append(input.Timelines, mediaartifact.Content{
 				Attempt: recording.Attempt,
 				Version: fmt.Sprintf("media-timeline-v%d", farm.MediaTimelineVersion),
-				SHA256: recording.Timeline.SHA256, FallbackID: recording.Timeline.ObjectKey,
+				SHA256:  recording.Timeline.SHA256, FallbackID: recording.Timeline.ObjectKey,
 			})
 		}
 	}
@@ -396,7 +396,9 @@ func (s *replayServer) recoverHighlightRenderJob(ctx context.Context, job farm.M
 		claimed, ok, claimErr := s.claimRenderJob(ctx, job.ID)
 		if claimErr == nil && ok {
 			message := "highlight plan has no eligible events"
-			if err != nil { message = err.Error() }
+			if err != nil {
+				message = err.Error()
+			}
 			_ = s.finishRenderJob(context.Background(), claimed.ID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, message, 0, farm.MediaRenderFailureInvalidRequest)
 		}
 		return
@@ -494,10 +496,12 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 				continue
 			}
 			end := window.EndFrame
-			if end > maxFrame { end = maxFrame }
+			if end > maxFrame {
+				end = maxFrame
+			}
 			segment := replayVideoSegment{
 				Attempt: recording.Attempt, Index: window.Index, StartFrame: window.StartFrame, EndFrame: end,
-				CacheKey: highlightClipCacheKey(videoKey, window),
+				CacheKey:  highlightClipCacheKey(videoKey, window),
 				LocalPath: pathJoinOS(dir, fmt.Sprintf("highlight-%03d-a%d.mp4", window.Index, recording.Attempt)),
 			}
 			segments = append(segments, segment)
@@ -507,8 +511,8 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 		}
 		attempts = append(attempts, preparedReplayAttempt{
 			Recording: recording,
-			Semantic: semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath},
-			Parsed: parsed, Segments: segments,
+			Semantic:  semanticReplaySegment{Attempt: recording.Attempt, RecordingPath: recordingPath, ReplayROMPath: romPath},
+			Parsed:    parsed, Segments: segments,
 		})
 	}
 	if len(attempts) == 0 {
@@ -593,7 +597,9 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 
 	manifest := highlightManifest{Version: 1, RunID: runID, Plan: plan, ObjectKey: videoKey}
 	windowByIndex := make(map[int]mediahighlight.Window, len(plan.Windows))
-	for _, window := range plan.Windows { windowByIndex[window.Index] = window }
+	for _, window := range plan.Windows {
+		windowByIndex[window.Index] = window
+	}
 	for _, attempt := range attempts {
 		for _, segment := range attempt.Segments {
 			window := windowByIndex[segment.Index]
@@ -623,4 +629,3 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 	}
 	log.Printf("pokereplay highlights ok run=%s key=%s windows=%d duration=%s size=%d dur=%s", runID, videoKey, total, expected.Round(time.Millisecond), obj.Size, elapsed.Round(time.Millisecond))
 }
-
