@@ -68,6 +68,7 @@ type artifactList struct {
 type replayRecording struct {
 	Attempt  int
 	Artifact artifactRef
+	Timeline artifactRef
 }
 
 type replayStatus struct {
@@ -80,7 +81,8 @@ type replayStatus struct {
 	LastError  string `json:"last_error,omitempty"`
 	JobState   string `json:"job_state,omitempty"`
 	Stage      string `json:"stage,omitempty"`
-	RetryCount int    `json:"retry_count,omitempty"`
+	RetryCount     int  `json:"retry_count,omitempty"`
+	LegacyIdentity bool `json:"legacy_identity,omitempty"`
 	// Segments/SegmentsDone report per-attempt progress while generating.
 	Segments     int `json:"segments,omitempty"`
 	SegmentsDone int `json:"segments_done,omitempty"`
@@ -195,7 +197,7 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 		return
 	}
 	status := s.replayStatus(r.Context(), runID, recordings, mode)
-	if status.State == "ready" {
+	if status.State == "ready" && !status.LegacyIdentity {
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
@@ -335,7 +337,8 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 		if !ok || !artifact.Replayable {
 			return nil, errRecordingNotFound
 		}
-		return []replayRecording{{Attempt: 1, Artifact: artifact}}, nil
+		timeline, _ := findArtifact(latest.Artifacts, farm.MediaTimelineArtifactName)
+		return []replayRecording{{Attempt: 1, Artifact: artifact, Timeline: timeline}}, nil
 	}
 
 	recordings := make([]replayRecording, 0, latestAttempt)
@@ -351,7 +354,8 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 		if !ok || !artifact.Replayable {
 			continue
 		}
-		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
+		timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact, Timeline: timeline})
 	}
 	if len(recordings) == 0 {
 		return nil, errRecordingNotFound
@@ -382,7 +386,8 @@ func (s *replayServer) recordingsForAttempts(ctx context.Context, runID string, 
 		if !ok || !artifact.Replayable {
 			return nil, fmt.Errorf("attempt %d: %w", attempt, errRecordingNotFound)
 		}
-		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
+		timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact, Timeline: timeline})
 	}
 	return recordings, nil
 }
@@ -445,13 +450,31 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 	if job, ok, err := s.getRenderJob(ctx, jobID); err == nil && ok {
 		return replayStatusFromMediaJob(job)
 	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if status, ok := s.jobs[cacheKey]; ok {
 		if status.JobID == "" {
 			status.JobID = jobID
 		}
+		s.mu.Unlock()
 		return status
+	}
+	s.mu.Unlock()
+
+	// Artifacts from before media identity-v1 remain readable. They are marked
+	// explicitly so a render request can migrate to the canonical identity
+	// instead of silently treating the legacy key as equivalent.
+	legacyKey := s.legacyReplayCacheKeyForMode(runID, recordings, mode)
+	if legacyKey != cacheKey {
+		legacyJobID := farm.MediaRenderJobID(legacyKey)
+		if obj, err := s.store.HeadObject(ctx, legacyKey); err == nil {
+			return replayStatus{
+				RunID: runID, JobID: legacyJobID, State: "ready", ObjectKey: legacyKey, Size: obj.Size,
+				JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady, LegacyIdentity: true,
+			}
+		} else if !artifactstore.IsNotFound(err) {
+			return replayStatus{RunID: runID, JobID: legacyJobID, State: "error", ObjectKey: legacyKey, Error: err.Error(), LegacyIdentity: true}
+		}
 	}
 	return replayStatus{RunID: runID, JobID: jobID, State: "missing", ObjectKey: cacheKey}
 }
