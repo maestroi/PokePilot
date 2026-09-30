@@ -124,9 +124,9 @@ func TestDecisionSettingsForRunMode(t *testing.T) {
 	if err != nil || settings.Engine != nil || settings.Mode() != "off" {
 		t.Fatalf("mode off = %+v, %v", settings, err)
 	}
-	// Battle decisions are observational only.
-	if _, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "active", Battles: true}); !errors.Is(err, ErrDecisionDisabled) {
-		t.Fatalf("active battles err = %v", err)
+	settings, err = DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "active", Battles: true, MinConfidence: 0.8})
+	if err != nil || settings.Shadow || !settings.Battles || settings.Mode() != "active" || settings.MinConfidence != 0.8 {
+		t.Fatalf("active battles = %+v, %v", settings, err)
 	}
 	if _, err := DecisionSettingsFor(DecisionSelection{Backend: "jev", Mode: "yolo"}); !errors.Is(err, ErrDecisionDisabled) {
 		t.Fatalf("unknown mode err = %v", err)
