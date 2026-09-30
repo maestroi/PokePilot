@@ -228,8 +228,8 @@ func route23LeagueReturnPivotAvailable(mapID, x, y uint8) bool {
 // the exit pocket as an executable reverse corridor moved failed journeys into
 // an unsolvable 3F switch state. Southbound Route 23 execution owns only the
 // Surf bands below the cave. See route23LeagueReturnPivotAvailable.
-//
-// func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
+
+func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !currentStoryFacts(m).Route22RivalResolved {
 		if _, err := TravelFlee(m, romData, route22RivalApproach, policy, victoryRoadTravelBattles); err != nil {
 			// The after-battle script sets the durable event before its closing
