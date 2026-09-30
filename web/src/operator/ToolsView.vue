@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { ArrowPathIcon, ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { createRun, getModels } from '../shared/api/client'
 import type { DecisionEngineSpec, ModelDeployment, RunSpec } from '../shared/api/types'
 import { GOAL_OPTIONS } from '../shared/goals'
@@ -185,6 +185,12 @@ const tetrisGoals = [
   ['complete', 'Complete · Type B']
 ] as const
 
+function randomizeSeed(): void {
+  const values = new Uint32Array(1)
+  crypto.getRandomValues(values)
+  form.seed = values[0] & 0x7fffffff
+}
+
 function starterRequest(): string {
   if (isTetris.value) return ''
   if (isYellow.value) return 'pikachu'
@@ -245,26 +251,9 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-    <Panel title="New run" description="Queue a scripted walk or goal-driven LLM run without leaving the console." compact>
+    <Panel title="New run" description="Choose a game, then queue a run with only the controls that apply to it." compact>
       <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" @submit.prevent="submit">
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run id</span>
-          <input v-model="form.run_id" placeholder="Leave blank to generate one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
-          <select v-model="form.planner" :disabled="isTetris || isGen2" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 disabled:opacity-60">
-            <option v-if="isTetris" value="policy">Play Tetris · bounded placement policy</option>
-            <option v-else-if="isGen2" value="llm">Play Gen2 · supported progression frontier</option>
-            <template v-else>
-              <option value="llm">Play the game</option>
-              <option value="scripted">Walk to a place</option>
-            </template>
-          </select>
-        </label>
-
-        <label class="block">
+        <label class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
           <select v-model="form.game" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="pokemon-red">Pokémon Red</option>
@@ -274,13 +263,25 @@ async function submit(): Promise<void> {
             <option value="pokemon-silver">Pokémon Silver</option>
             <option value="tetris">Tetris</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">The worker leases the matching mounted cartridge. Only games with a registered runtime profile are selectable.</span>
+          <span class="mt-1 block text-[11px] text-slate-600">Choose the cartridge first; the launch options below adapt to the selected game.</span>
         </label>
 
         <label class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run id</span>
+          <input v-model="form.run_id" placeholder="Leave blank to generate one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+        </label>
+
+        <label v-if="!isTetris && !isGen2" class="block">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
+          <select v-model="form.planner" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+            <option value="llm">Play the game</option>
+            <option value="scripted">Walk to a place</option>
+          </select>
+        </label>
+
+        <label v-if="!isTetris" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <input v-if="isTetris" value="Not used" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
-          <input v-else-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
+          <input v-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
           <select v-else-if="isGen2" v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="default">Let LLM decide</option>
             <option value="chikorita">Chikorita</option>
@@ -305,7 +306,7 @@ async function submit(): Promise<void> {
               <option value="specific">Specific Pokémon…</option>
             </optgroup>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Tetris starts directly through its native mode menus.' : (isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : (isGen2 ? 'Gold/Silver use the cartridge-native Elm starter flow; no ROM patching is used.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.')) }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : (isGen2 ? 'Gold/Silver use the cartridge-native Elm starter flow; no ROM patching is used.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.') }}</span>
         </label>
 
         <label v-if="isSpecificStarter && !isYellow && !isGen2 && !isTetris" class="block">
@@ -478,7 +479,14 @@ async function submit(): Promise<void> {
 
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Seed</span>
-          <input v-model.number="form.seed" type="number" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+          <div class="mt-1 flex gap-2">
+            <input v-model.number="form.seed" type="number" class="block min-w-0 flex-1 rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
+            <button type="button" class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-white/8 px-3 py-2 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" title="Generate a random seed" @click="randomizeSeed">
+              <ArrowPathIcon class="size-3.5" aria-hidden="true" />
+              Random
+            </button>
+          </div>
+          <span class="mt-1 block text-[11px] text-slate-600">Starts at 0 for repeatable runs. Random generates a new explicit seed before queueing.</span>
         </label>
 
         <label class="block">
@@ -500,18 +508,6 @@ async function submit(): Promise<void> {
             <option value="strict">Strict · stop after bounded recovery</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Resilient escalates from local resume to progressively older milestone checkpoints instead of ending the campaign on a stuck/failed attempt.</span>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Max rounds</span>
-          <input v-model.number="form.max_rounds" type="number" min="0" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-          <span class="mt-1 block text-[11px] text-slate-600">0 = normal goal-driven / uncapped.</span>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Max frames</span>
-          <input v-model.number="form.max_frames" type="number" min="0" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 font-mono text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris && form.goal === 'endless' ? '0 = uncapped; play continues until game over or cancellation.' : '0 = runner safety default.' }}</span>
         </label>
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">
