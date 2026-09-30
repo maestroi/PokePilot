@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/maestroi/pokepilot/farm"
 )
 
 // handleArtifactDelete removes the S3 objects owned by one finished run. The
@@ -22,14 +24,12 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 
 	prefixSet := make(map[string]struct{})
 	keySet := make(map[string]struct{})
+	timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
 	for _, artifact := range list.Artifacts {
 		if artifact.Store == "" {
 			// Inline recordings can still have a derived MP4 in S3.
 			if artifact.Replayable && s.store != nil {
-				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
-				keySet[replayCacheKey(runID, artifact)] = struct{}{}
-				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
-				keySet[s.replayCacheKeyForMode(runID, recording, replayModeSemantic)] = struct{}{}
+				s.addReplayDerivedKeys(keySet, runID, replayRecording{Attempt: max(1, list.Attempt), Artifact: artifact, Timeline: timeline})
 			}
 			continue
 		}
@@ -60,10 +60,7 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 				prefixSet[prefix] = struct{}{}
 			} else {
 				keySet[key] = struct{}{}
-				recording := []replayRecording{{Attempt: max(1, list.Attempt), Artifact: artifact}}
-				keySet[replayCacheKey(runID, artifact)] = struct{}{}
-				keySet[s.replayCacheKeyForMode(runID, recording, replayModeBroadcast)] = struct{}{}
-				keySet[s.replayCacheKeyForMode(runID, recording, replayModeSemantic)] = struct{}{}
+				s.addReplayDerivedKeys(keySet, runID, replayRecording{Attempt: max(1, list.Attempt), Artifact: artifact, Timeline: timeline})
 			}
 			continue
 		}
@@ -118,6 +115,14 @@ func (s *replayServer) handleArtifactDelete(w http.ResponseWriter, r *http.Reque
 		"status":          "purged",
 		"deleted_objects": deleted,
 	})
+}
+
+func (s *replayServer) addReplayDerivedKeys(keySet map[string]struct{}, runID string, recording replayRecording) {
+	recordings := []replayRecording{recording}
+	for _, mode := range []replayMode{replayModeRaw, replayModeBroadcast, replayModeSemantic} {
+		keySet[s.replayCacheKeyForMode(runID, recordings, mode)] = struct{}{}
+		keySet[s.legacyReplayCacheKeyForMode(runID, recordings, mode)] = struct{}{}
+	}
 }
 
 // recordingRunPrefix accepts only the canonical runner-owned key shape. This
