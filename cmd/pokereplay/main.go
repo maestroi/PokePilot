@@ -860,7 +860,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 		raw = pathJoinOS(dir, fmt.Sprintf("segment-%03d-raw.mp4", index+1))
 	}
 	if err := s.renderRecordingSegment(ctx, segment.ReplayROMPath, segment.RecordingPath, raw); err != nil {
-		return "", err
+		return "", replayContextError(ctx, err)
 	}
 	if mode == replayModeBroadcast {
 		if s.compositor == nil {
@@ -882,7 +882,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 		})
 		s.encoderProcesses.Add(-1)
 		if err != nil {
-			return "", fmt.Errorf("broadcast renderer: %w", err)
+			return "", replayContextError(ctx, fmt.Errorf("broadcast renderer: %w", err))
 		}
 		_ = os.Remove(raw)
 	}
@@ -892,7 +892,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 	}
 	defer file.Close()
 	if _, err := s.store.PutObjectReader(ctx, key, "video/mp4", file); err != nil {
-		return "", fmt.Errorf("cache segment: %w", err)
+		return "", replayContextError(ctx, fmt.Errorf("cache segment: %w", err))
 	}
 	return video, nil
 }
