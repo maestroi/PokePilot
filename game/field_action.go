@@ -27,3 +27,11 @@ type FieldActionProfile interface {
 	GameProfile
 	FieldActionDecoder
 }
+
+// FieldActionSupportDecoder lets a profile that is migrating field actions
+// incrementally advertise only the actions whose live verification semantics
+// are implemented. Profiles that do not implement it retain the historical
+// all-actions behavior.
+type FieldActionSupportDecoder interface {
+	SupportsFieldAction(FieldMoveID) bool
+}
