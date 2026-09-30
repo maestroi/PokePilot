@@ -221,6 +221,12 @@ func UseFieldMove(m *emu.Emu, move FieldMove) (FieldActionResult, error) {
 }
 
 func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActionDecoder) (FieldActionResult, error) {
+	if support, ok := decoder.(game.FieldActionSupportDecoder); ok {
+		id, known := semanticFieldMove(move)
+		if !known || !support.SupportsFieldAction(id) {
+			return FieldActionResult{}, fmt.Errorf("skill: %s field-action execution is not implemented by the active profile", move)
+		}
+	}
 	menu, err := menuDecoderFor(m)
 	if err != nil {
 		return FieldActionResult{}, err
