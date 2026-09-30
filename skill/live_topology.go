@@ -105,9 +105,9 @@ func buildLiveMapGrid(romData []byte, h worldmodel.HeaderView, blocks []byte, mo
 		}
 		return world.GridFromSpec(spec)
 	}
-	provider, ok := worldmodel.ProviderForROM(romData)
-	if !ok || provider == nil {
-		return nil, fmt.Errorf("skill: live map grid: no map provider for ROM")
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
 	}
 	spec, err := provider.Grid(h.WorldMapHeader().ID, blocks, mode)
 	if err != nil {
