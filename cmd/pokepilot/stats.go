@@ -243,8 +243,9 @@ func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Obj
 	return objective, true
 }
 
-// shadowOutcome is what the existing policy did instead of a shadow answer.
-// agreed is nil when the shadow answer was unusable.
+// shadowOutcome carries the execution reference shared by shadow comparisons
+// and active battle decisions. agreed is only used by shadow mode; active marks
+// a call whose accepted answer is allowed to supply the executed move.
 type shadowOutcome struct {
 	executed         string
 	agreed           *bool
