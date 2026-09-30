@@ -141,6 +141,9 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		log.Printf("pokereplay: headless semantic renderer unavailable: %v", err)
 	}
 	capacity := replayCapacityFromEnv()
+	if err := os.MkdirAll(capacity.ScratchDir, 0o755); err != nil {
+		log.Printf("pokereplay: create scratch directory %s: %v", capacity.ScratchDir, err)
+	}
 	return &replayServer{
 		wallBase:         strings.TrimRight(wallBase, "/"),
 		romPath:          romPath,
