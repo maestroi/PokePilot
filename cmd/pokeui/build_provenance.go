@@ -74,4 +74,3 @@ func validGitSHA(sha string) bool {
 	}
 	return true
 }
-
