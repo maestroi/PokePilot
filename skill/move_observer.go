@@ -15,7 +15,14 @@ import (
 // count, so frame neutrality is what keeps observation side-effect free).
 type MoveObserver func(b game.BattleState, executed int)
 
-var scopedMoveObservers sync.Map
+// BattleResultObserver receives the portable result at the exact battle exit
+// boundary. Like MoveObserver it has no emulator and cannot affect inputs.
+type BattleResultObserver func(result game.BattleResult)
+
+var (
+	scopedMoveObservers         sync.Map
+	scopedBattleResultObservers sync.Map
+)
 
 // WithMoveObserver installs observe for one emulator until the returned
 // restore function is called. No observer is the historical behavior, which
@@ -36,6 +43,36 @@ func WithMoveObserver(m *emu.Emu, observe MoveObserver) func() {
 		} else {
 			scopedMoveObservers.Delete(m)
 		}
+	}
+}
+
+// WithBattleResultObserver installs a battle-exit observer for one emulator.
+func WithBattleResultObserver(m *emu.Emu, observe BattleResultObserver) func() {
+	if m == nil {
+		return func() {}
+	}
+	previous, hadPrevious := scopedBattleResultObservers.Load(m)
+	if observe != nil {
+		scopedBattleResultObservers.Store(m, observe)
+	} else {
+		scopedBattleResultObservers.Delete(m)
+	}
+	return func() {
+		if hadPrevious {
+			scopedBattleResultObservers.Store(m, previous)
+		} else {
+			scopedBattleResultObservers.Delete(m)
+		}
+	}
+}
+
+func observeBattleResult(m *emu.Emu, result game.BattleResult) {
+	raw, ok := scopedBattleResultObservers.Load(m)
+	if !ok {
+		return
+	}
+	if observe, ok := raw.(BattleResultObserver); ok {
+		observe(result)
 	}
 }
 
