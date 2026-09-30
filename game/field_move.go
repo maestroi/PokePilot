@@ -59,6 +59,25 @@ type FieldMoveCapability struct {
 type NativeFieldMove struct {
 	MachineItemID uint16
 	MoveID        uint16
+	// MachineNumber is the game's numbered TM/HM position when the machine
+	// pocket is numbered independently from item ids (Gen II). Zero means the
+	// item id itself is sufficient for the active teaching executor.
+	MachineNumber uint16
+}
+
+// MachinePocketState is the semantic cursor state of a numbered TM/HM pocket.
+// MachineNumber is 1-based; zero means CANCEL/no numbered machine is selected.
+type MachinePocketState struct {
+	Visible       bool
+	MachineNumber uint16
+	Cursor        MenuCursorState
+}
+
+// FieldMoveTeachingDecoder exposes only the native machine-pocket state needed
+// by the generic teaching transaction. Compatibility and move identity remain
+// in FieldMoveDecoder.
+type FieldMoveTeachingDecoder interface {
+	DecodeMachinePocket(MemoryReader) MachinePocketState
 }
 
 // FieldMoveMenuState is the semantic projection of the selected party member's
