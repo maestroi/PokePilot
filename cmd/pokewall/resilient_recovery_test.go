@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -203,5 +204,70 @@ func TestResilientRecoveryDexOwnedIsItsOwnFrontierAxis(t *testing.T) {
 	noteRecoveryProgressLocked(tile, &farm.Progress{Badges: 8, Events: 7, Maps: 129, Coverage: &farm.Coverage{DexOwned: 10}})
 	if tile.RecoveryAttempts != 0 || tile.RecoveryEvents != 7 || tile.RecoveryDexOwned != 23 {
 		t.Fatalf("story progress = attempts %d events %d dex %d", tile.RecoveryAttempts, tile.RecoveryEvents, tile.RecoveryDexOwned)
+	}
+}
+
+// A "lost" (no-heartbeat) reap must spend resilient rollback depth so a
+// deterministic wedge that masquerades as worker loss cannot requeue from the
+// same deepest checkpoint forever. Progress resets the depth, so genuine
+// infrastructure churn still does not escalate.
+func TestResilientLostIncrementsRecoveryDepth(t *testing.T) {
+	w := NewWall("")
+	tile := &Tile{
+		RunID: "lost-run", Status: statusRunning, Planner: "llm", Goal: "beat the game",
+		RecoveryProfile: farm.RecoveryProfileResilient,
+	}
+	w.tiles["lost-run"] = tile
+	w.settleRun(tile, "lost", "no heartbeat for 33s", time.Now())
+	if tile.Finished || tile.Status != statusQueued {
+		t.Fatalf("lost became terminal: status=%q finished=%v", tile.Status, tile.Finished)
+	}
+	if tile.LossRecoveries != 1 {
+		t.Fatalf("loss recoveries=%d, want 1", tile.LossRecoveries)
+	}
+	if tile.RecoveryAttempts != 1 {
+		t.Fatalf("lost recovery depth=%d, want 1", tile.RecoveryAttempts)
+	}
+}
+
+// After enough no-progress losses, a resilient lost resume backs up the major
+// checkpoint ladder instead of restoring the same objective pair that keeps
+// re-wedging.
+func TestResilientLostResumeRollsBackAfterNoProgress(t *testing.T) {
+	w := NewWall(t.TempDir())
+	const runID = "lost-resume"
+	w.tiles[runID] = &Tile{
+		RunID: runID, Status: statusQueued, Planner: "llm", Attempts: 1,
+		Detail:           "attempt 1 failed: no heartbeat for 33s",
+		RecoveryProfile:  farm.RecoveryProfileResilient,
+		RecoveryAttempts: 3,
+	}
+
+	dir := checkpointAttemptDir(w.dumpsDir, runID, 1)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for badge := 1; badge <= 3; badge++ {
+		base := fmt.Sprintf("major-badge-%d-test", badge)
+		if err := os.WriteFile(filepath.Join(dir, base+".state"), []byte(fmt.Sprintf("state-%d", badge)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, base+".knowledge-v4.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res := httptest.NewRecorder()
+	w.handleCheckpointResume(res, runID, 2)
+	if res.Code != http.StatusOK {
+		t.Fatalf("resume status = %d body=%s", res.Code, res.Body.String())
+	}
+	var cp farm.ResumeCheckpoint
+	if err := json.NewDecoder(res.Body).Decode(&cp); err != nil {
+		t.Fatal(err)
+	}
+	// recoveryAttempts 3 -> rollback 1 -> latest major at or below badge 2.
+	if got, ok := majorCheckpointBadge(cp.State.Name); !ok || got != 2 {
+		t.Fatalf("resume state = %q (badge %d), want major-badge-2 rollback", cp.State.Name, got)
 	}
 }
