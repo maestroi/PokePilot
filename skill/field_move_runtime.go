@@ -31,6 +31,26 @@ func semanticFieldMove(move FieldMove) (game.FieldMoveID, bool) {
 	}
 }
 
+type fieldMoveDecoderProfile interface {
+	game.GameProfile
+	game.FieldMoveDecoder
+}
+
+func fieldMoveDecoderProfileFor(m *emu.Emu) (fieldMoveDecoderProfile, error) {
+	if m == nil {
+		return nil, fmt.Errorf("skill: field move: nil emulator")
+	}
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		return nil, fmt.Errorf("skill: field move: detect profile: %w", err)
+	}
+	field, ok := profile.(fieldMoveDecoderProfile)
+	if !ok {
+		return nil, fmt.Errorf("skill: field move: profile %s@%s does not expose field-move capability semantics", profile.ID(), profile.Revision())
+	}
+	return field, nil
+}
+
 func fieldMoveProfileFor(m *emu.Emu) (game.FieldMoveProfile, error) {
 	if m == nil {
 		return nil, fmt.Errorf("skill: field move: nil emulator")
