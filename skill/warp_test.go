@@ -3,6 +3,7 @@ package skill_test
 import (
 	"testing"
 
+	rom "github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -131,7 +132,7 @@ func TestTravelRoute1ToPallet(t *testing.T) {
 // graphFor builds the map-level graph from the live ROM.
 func graphFor(t *testing.T, romData []byte) *world.Graph {
 	t.Helper()
-	g, err := buildRoutingGraph(romData)
+	g, err := world.BuildGraph(rom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
