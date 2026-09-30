@@ -168,3 +168,22 @@ func TestGoldForcedPartyMenuIncludesCancelCursor(t *testing.T) {
 		t.Fatalf("cursor = %+v, want cancel current 2 with party max 1", got.Cursor)
 	}
 }
+
+func TestGoldTMHMTeachingPartyMenuIsDistinct(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 2
+	mem[sym.TwoDMenuNumRows] = 3
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorX] = 1
+	mem[sym.MenuCursorY] = 1
+	putGSScreenText(&mem, "Teach which POKEMON?")
+
+	got := NewGold().DecodePartyMenu(&mem)
+	if !got.Visible || got.Kind != game.PartyMenuMachineTeach {
+		t.Fatalf("party menu = %+v, want machine_teach", got)
+	}
+	if got.Cursor.Current != 0 || got.Cursor.Max != 1 {
+		t.Fatalf("cursor = %+v, want party slot 0 max 1", got.Cursor)
+	}
+}
