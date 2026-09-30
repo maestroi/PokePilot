@@ -278,6 +278,9 @@ func spectatorHandlerWithReplay(wallBase, replayBase string) http.Handler {
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/status", spectatorReplayStatusHandler(catalog))
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/video", spectatorReplayVideo(catalog))
 		mux.HandleFunc("GET /v1/watch/runs/{id}/replay/semantic", spectatorReplaySemantic(catalog))
+		mux.HandleFunc("GET /v1/watch/runs/{id}/highlights/status", spectatorHighlightJSON(catalog, "/highlights/status"))
+		mux.HandleFunc("GET /v1/watch/runs/{id}/highlights/manifest", spectatorHighlightJSON(catalog, "/highlights/manifest"))
+		mux.HandleFunc("GET /v1/watch/runs/{id}/highlights/video", spectatorHighlightVideo(catalog))
 	}
 	return spectatorSecurityHeaders(mux)
 }
@@ -622,6 +625,87 @@ func spectatorReplayVideo(catalog *spectatorReplayCatalog) http.HandlerFunc {
 		res.Header().Set("Cache-Control", "public, max-age=60")
 		res.WriteHeader(resp.StatusCode)
 		io.Copy(res, resp.Body) //nolint:errcheck // streamed response
+	}
+}
+
+func spectatorHighlightJSON(catalog *spectatorReplayCatalog, suffix string) http.HandlerFunc {
+	client := &http.Client{Timeout: proxyTimeout}
+	return func(res http.ResponseWriter, req *http.Request) {
+		runID := strings.TrimSpace(req.PathValue("id"))
+		if runID == "" || len(runID) > 256 || !catalog.isAllowed(runID) {
+			http.NotFound(res, req)
+			return
+		}
+		up, err := http.NewRequestWithContext(req.Context(), http.MethodGet, catalog.replayBase+"/v1/runs/"+url.PathEscape(runID)+suffix, nil)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		resp, err := client.Do(up)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			if status < 400 || status > 599 {
+				status = http.StatusBadGateway
+			}
+			writeSpectatorReplayUnavailable(res, status)
+			return
+		}
+		if contentType := resp.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "application/json") {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "public, max-age=30")
+		res.WriteHeader(http.StatusOK)
+		io.Copy(res, resp.Body) //nolint:errcheck // streamed derived highlight data
+	}
+}
+
+func spectatorHighlightVideo(catalog *spectatorReplayCatalog) http.HandlerFunc {
+	client := &http.Client{}
+	return func(res http.ResponseWriter, req *http.Request) {
+		runID := strings.TrimSpace(req.PathValue("id"))
+		if runID == "" || len(runID) > 256 || !catalog.isAllowed(runID) {
+			http.NotFound(res, req)
+			return
+		}
+		up, err := http.NewRequestWithContext(req.Context(), http.MethodGet, catalog.replayBase+"/v1/runs/"+url.PathEscape(runID)+"/highlights/video", nil)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		for _, name := range []string{"Range", "If-Range"} {
+			if value := req.Header.Get(name); value != "" {
+				up.Header.Set(name, value)
+			}
+		}
+		resp, err := client.Do(up)
+		if err != nil {
+			writeSpectatorReplayUnavailable(res, http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+			status := resp.StatusCode
+			if status < 400 || status > 599 {
+				status = http.StatusBadGateway
+			}
+			writeSpectatorReplayUnavailable(res, status)
+			return
+		}
+		for _, name := range []string{"Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified"} {
+			if value := resp.Header.Get(name); value != "" {
+				res.Header().Set(name, value)
+			}
+		}
+		res.Header().Set("Cache-Control", "public, max-age=60")
+		res.WriteHeader(resp.StatusCode)
+		io.Copy(res, resp.Body) //nolint:errcheck // streamed highlight video
 	}
 }
 

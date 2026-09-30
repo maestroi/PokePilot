@@ -517,6 +517,25 @@ export interface MediaRenderJobList {
   states: Record<string, number>
 }
 
+export interface HighlightStatus {
+  run_id: string
+  job_id?: string
+  state: string
+  object_key?: string
+  manifest_key?: string
+  size?: number
+  error?: string
+  last_error?: string
+  job_state?: string
+  stage?: string
+  retry_count?: number
+  failure_class?: string
+  windows?: number
+  windows_done?: number
+  duration_ms?: number
+  plan_hash?: string
+}
+
 export interface ReplayStatus {
   run_id?: string
   job_id?: string
