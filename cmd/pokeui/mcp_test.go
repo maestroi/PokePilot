@@ -106,8 +106,8 @@ func TestMCPStartRunAcceptsGen2(t *testing.T) {
 	if queued.Game != "pokemon-gold" || queued.Planner != "llm" || queued.Starter != "cyndaquil" {
 		t.Fatalf("Gold queued spec = %+v", queued)
 	}
-	if queued.Goal.String() != "Earn 3 badges." {
-		t.Fatalf("Gold default goal = %q, want Earn 3 badges.", queued.Goal.String())
+	if queued.Goal.String() != "progress:gs_supported_frontier" {
+		t.Fatalf("Gold default goal = %q, want supported frontier", queued.Goal.String())
 	}
 }
 
