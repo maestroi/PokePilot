@@ -55,16 +55,18 @@ func SemanticFieldMoves() []FieldMove {
 // carrier decisions are generation-neutral; the active move-learning executor
 // is only an adapter for applying the profile's native machine mapping.
 func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
-	profile, err := fieldMoveProfileFor(m)
+	profile, err := fieldMoveDecoderProfileFor(m)
 	if err != nil {
 		return -1, err
 	}
-	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, func(native game.NativeFieldMove) error {
-		// The current move-learning executor is still Gen-I-shaped. Keep that
-		// limitation at this adapter edge instead of baking it into generic
-		// field capability/preparation semantics.
+	teach := func(native game.NativeFieldMove) error {
+		if numbered, ok := profile.(numberedMachineTeachingProfile); ok && native.MachineNumber != 0 {
+			return teachNumberedMachine(m, numbered, move, native)
+		}
+		// Red/Blue retain the mature bag-based executor. The capability check
+		// above is profile-owned; this fallback is only the mutation adapter.
 		if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
-			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
+			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed legacy move-learning executor range",
 				native.MachineItemID, native.MoveID)
 		}
 		result, err := TeachTMHM(m, uint8(native.MachineItemID), true)
@@ -76,7 +78,8 @@ func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
 				native.MachineItemID, result.Decision.Machine.Move, native.MoveID)
 		}
 		return nil
-	})
+	}
+	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, teach)
 }
 
 type fieldMoveTeachFunc func(game.NativeFieldMove) error
