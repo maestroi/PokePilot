@@ -344,12 +344,18 @@ const (
 // matches the move the deterministic policy is pressing. The answer never
 // reaches execution.
 func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if !s.decision.Shadow {
+		// In active mode the observer runs immediately after DecideBattleMove
+		// for the same turn. Outcome advancement belongs to the next active
+		// decision (or terminal result), not this same-turn observation.
+		return
+	}
 	// Reaching the next actionable turn is the observable outcome of the
-	// previously recorded decision. Do this before checking suspension so the
-	// last recorded call still gets outcome evidence when a dead backend is
-	// disabled for the rest of the battle.
+	// previously recorded shadow decision. Do this before checking suspension
+	// so the last recorded call still gets outcome evidence when a dead
+	// backend is disabled for the rest of the battle.
 	s.finishBattleShadowOutcome(nextBattleTurnOutcome(turn))
-	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow || s.battleShadowSuspended {
+	if s.decision.Engine == nil || !s.decision.Battles || s.battleShadowSuspended {
 		return
 	}
 	req, err := agent.BattleDecisionRequest(turn)
