@@ -156,3 +156,37 @@ also exposes `POST /v1/runs/{id}/replay/cancel?mode=...` for immediate local
 propagation. A cancelled or timed-out subprocess cannot publish a ready artifact
 because assembly/upload only runs after the segment has completed and passed
 validation.
+
+
+## Event-driven highlight reels
+
+Completed runs with a `media-timeline.json` can produce a short deterministic
+highlight reel without a second event-detection system. The highlight planner
+selects versioned semantic events, expands them with pre/post-roll, merges
+overlapping or nearby windows, ranks them deterministically, and keeps the
+stitched reel under a duration budget.
+
+The built-in policy currently recognizes run completion/failure, Champion and
+Elite Four events, badges and gym battles, rival battles, rare/important
+catches, evolutions, blackouts, planner/failure recovery, milestones, and
+checkpoints. Event types that are not emitted by a game yet are harmless and
+become active automatically once that game's timeline starts producing them.
+
+Configuration lives in `deploy/replay.env.example`:
+
+- `POKEPILOT_HIGHLIGHT_TARGET_SECONDS` defaults to 480 seconds.
+- `POKEPILOT_HIGHLIGHT_MERGE_GAP_SECONDS` defaults to 3 seconds.
+- `POKEPILOT_HIGHLIGHT_POLICY_JSON` can replace the complete policy for
+  experiments; production policy changes should increment the policy version.
+
+Each selected window is rendered through the normal broadcast compositor and is
+cached as an independently resumable derived clip. The final reel is assembled
+from those cached clips, then a JSON manifest is persisted beside it with the
+plan hash, source frame ranges, event references, and clip artifact keys.
+Changing the source recording, media timeline, renderer/profile, or highlight
+plan produces a different canonical artifact identity.
+
+Operator endpoints can inspect or request generation under
+`/v1/runs/{id}/highlights/...`. The public spectator exposes only read-only
+status/video/manifest routes for runs already admitted to the public replay
+archive; it cannot trigger a render.
