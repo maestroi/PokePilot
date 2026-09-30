@@ -1177,6 +1177,13 @@ func (p reportingPlanner) ObserveBattleTurn(turn game.BattleDecisionState, execu
 	}
 }
 
+func (p reportingPlanner) ControlBattleMove(turn game.BattleDecisionState, deterministic game.BattleAction) game.BattleAction {
+	if controller, ok := p.inner.(agent.BattleMoveController); ok {
+		return controller.ControlBattleMove(turn, deterministic)
+	}
+	return deterministic
+}
+
 func (p reportingPlanner) ObserveBattleResult(result game.BattleResult) {
 	if o, ok := p.inner.(agent.BattleOutcomeObserver); ok {
 		o.ObserveBattleResult(result)
