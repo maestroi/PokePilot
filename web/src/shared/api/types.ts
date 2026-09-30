@@ -114,6 +114,7 @@ export interface TypedDecisionRecord {
   backend?: string
   model?: string
   fallback?: boolean
+  controlled?: boolean
   shadow?: boolean
   executed?: string
   agreed?: boolean
@@ -159,7 +160,7 @@ export interface DecisionEngineSpec {
   // Shadow records the backend's answers without acting on them; omitted
   // means active, which is how selections made before modes behaved.
   mode?: 'off' | 'shadow' | 'active'
-  // Battle turns are observed only, so battles requires shadow mode.
+  // Battle turns may run in shadow or confidence-gated active mode.
   battles?: boolean
   objectives?: boolean
   failures?: boolean
