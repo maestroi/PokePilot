@@ -229,7 +229,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			result := battleDecoder.DecodeBattleResult(m)
 			observeBattleResult(m, result)
 			if err := settleAfterBattle(m, runtimeDecoder); err != nil {
-				return 0, err
+				// The battle result is already authoritative at this boundary.
+				// Preserve it even when aftermath settlement fails so callers can
+				// distinguish a real combat loss from a control/settlement defect.
+				return result, err
 			}
 			return result, nil
 		}
