@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
-
 	redrom "github.com/maestroi/pokepilot/red/rom"
 )
 
