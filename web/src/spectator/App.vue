@@ -811,6 +811,21 @@ function activityTimeAgo(item: ActivityItem): string {
                 <dd>{{ stat.value }}</dd>
               </div>
             </dl>
+
+            <section v-if="otherLiveRuns.length" class="others rail-others">
+              <div class="block-head">
+                <h2>Other live runs</h2>
+                <span>{{ groupedRuns.live.length }} live</span>
+              </div>
+              <ul>
+                <li v-for="run in otherLiveRuns" :key="run.run_id">
+                  <button type="button" @click="selectRun(run)">
+                    <strong>{{ runTitle(run) }}</strong>
+                    <span>{{ displayLocation(run) }}</span>
+                  </button>
+                </li>
+              </ul>
+            </section>
           </aside>
 
           <div class="screen-col">
@@ -938,6 +953,10 @@ function activityTimeAgo(item: ActivityItem): string {
                 <i :style="{ width: goalPercent + '%' }" />
               </div>
               <p class="muted">{{ goalProgressCopy.label }} · {{ goalProgressCopy.detail }}</p>
+              <div v-if="!isTetrisSelected" class="next-goal">
+                <span>Next goal</span>
+                <strong>{{ routeLine.nextGoal }}</strong>
+              </div>
             </section>
 
             <section>
@@ -995,27 +1014,14 @@ function activityTimeAgo(item: ActivityItem): string {
               <p v-else class="muted">Waiting for the next live event.</p>
             </section>
 
-            <section v-if="otherLiveRuns.length" class="others">
-              <div class="block-head">
-                <h2>Other live runs</h2>
-                <span>{{ groupedRuns.live.length }} live</span>
-              </div>
-              <ul>
-                <li v-for="run in otherLiveRuns" :key="run.run_id">
-                  <button type="button" @click="selectRun(run)">
-                    <strong>{{ runTitle(run) }}</strong>
-                    <span>{{ displayLocation(run) }}</span>
-                  </button>
-                </li>
-              </ul>
-            </section>
+
           </aside>
         </div>
 
             <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
               <div class="block-head">
                 <h2>Road to the League</h2>
-                <span>{{ routeLine.earnedCount }} of 8 badges</span>
+                <span>{{ routeLine.completedGoals }} of {{ routeLine.goalCount }} goals</span>
               </div>
               <RouteLine :line="routeLine" />
             </section>
@@ -1973,7 +1979,7 @@ select:focus-visible {
 .game-pokemon .route-block,
 .game-pokemon .party,
 .game-pokemon .board-block {
-  padding: 0.9rem 1rem;
+  padding: 0.72rem 0.9rem;
   border: 1px solid rgba(101, 114, 172, 0.28);
   border-radius: 0.9rem;
   background:
@@ -1991,7 +1997,7 @@ select:focus-visible {
 }
 
 .game-pokemon .block-head {
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.5rem;
 }
 
 .game-pokemon .route-block .block-head h2,
@@ -2383,22 +2389,91 @@ select:focus-visible {
   55%, 100% { transform: translateX(75%); }
 }
 
+.game-pokemon .rail-others {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(101, 114, 172, 0.25);
+  border-radius: 0.8rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 50%),
+    rgba(9, 13, 29, 0.62);
+}
+
+.game-pokemon .rail-others .block-head {
+  margin-bottom: 0.35rem;
+}
+
+.game-pokemon .rail-others .block-head h2 {
+  color: #aeb9d7;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .rail-others button {
+  padding: 0.5rem 0;
+}
+
+.game-pokemon .rail-others button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-pokemon .next-goal {
+  display: grid;
+  gap: 0.12rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(101, 114, 172, 0.22);
+}
+
+.game-pokemon .next-goal span {
+  color: #7f8aaa;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .next-goal strong {
+  color: #f5e9b6;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.game-pokemon .activity .log {
+  line-height: 1.42;
+}
+
+.game-pokemon .activity .log li {
+  grid-template-columns: 2.7rem minmax(0, 1fr);
+}
+
+.game-pokemon .activity .tabs {
+  gap: 0.55rem;
+}
+
 @media (min-width: 72rem) {
   .game-pokemon .stage-body {
-    grid-template-columns: minmax(13rem, 18rem) minmax(30rem, 48rem) minmax(13rem, 18rem);
+    width: 100%;
+    grid-template-columns: minmax(15rem, 20rem) minmax(34rem, 52rem) minmax(21rem, 26rem);
     justify-content: center;
-    gap: 1rem;
+    gap: 0.9rem;
+  }
+
+  .game-pokemon .screen-col {
+    max-width: 52rem;
   }
 
   /*
-   * Keep the context rail visually tied to the game viewport. Without an
-   * explicit cap, long activity/other-run lists make the grid row thousands
-   * of pixels tall and push league/party far below a large empty area.
+   * Keep the context rail tied to the gameplay viewport, but give Activity
+   * enough horizontal room to read like a feed rather than a narrow log.
    */
   .game-pokemon .side {
-    height: min(40.5rem, calc(100vh - 10rem));
-    min-height: 34rem;
-    grid-template-rows: max-content max-content max-content minmax(0, 1fr) max-content;
+    height: min(38rem, calc(100vh - 11rem));
+    min-height: 31rem;
+    grid-template-rows: max-content max-content max-content minmax(0, 1fr);
     overflow: hidden;
   }
 
@@ -2413,18 +2488,25 @@ select:focus-visible {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
-    padding-right: 0.25rem;
+    padding-right: 0.3rem;
     scrollbar-width: thin;
     scrollbar-color: rgba(242, 202, 82, 0.28) transparent;
   }
 
-  .game-pokemon .side .others {
-    max-height: 9.5rem;
+  .game-pokemon .stat-rail {
+    display: grid;
+    align-content: start;
+    gap: 0.8rem;
+  }
+
+  .game-pokemon .rail-others {
+    min-height: 0;
+    max-height: 12rem;
     overflow: hidden;
   }
 
-  .game-pokemon .side .others ul {
-    max-height: 6.5rem;
+  .game-pokemon .rail-others ul {
+    max-height: 8.5rem;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 0.2rem;
@@ -2454,6 +2536,12 @@ select:focus-visible {
   .game-pokemon .side .others,
   .game-pokemon .side .activity .log,
   .game-pokemon .side .others ul {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .game-pokemon .rail-others,
+  .game-pokemon .rail-others ul {
     max-height: none;
     overflow: visible;
   }
