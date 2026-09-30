@@ -6,13 +6,10 @@ import (
 	"net/http"
 )
 
-// outcomesCompatibility keeps the narrow analytics feed available when a
-// running stack has not yet been redeployed with pokewall's -catalog flag.
-// Image-only farm rollouts update the binary but do not change an existing
-// Docker service command, so such a wall can be current while /v1/outcomes is
-// otherwise still missing. When the catalog is enabled, the normal catalog
-// handler remains authoritative.
-func (w *Wall) outcomesCompatibility(next http.Handler) http.Handler {
+// localOutcomesHTTPHandler serves the narrow analytics feed from RAM in the
+// supported local/dev mode where no catalog is configured. Catalog and
+// PostgreSQL deployments keep their durable history handlers authoritative.
+func (w *Wall) localOutcomesHTTPHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodGet && req.URL.Path == "/v1/outcomes" && catalogFor(w) == nil {
 			w.handleRAMOutcomes(res)
