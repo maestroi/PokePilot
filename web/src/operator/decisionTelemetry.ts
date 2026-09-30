@@ -26,6 +26,7 @@ export interface DecisionKindRow {
   judged: number
   fallbacks: number
   errors: number
+  controlled: number
   p50: number
   p95: number
   avgSeconds: number
@@ -67,6 +68,7 @@ function kindRow(kind: string, k: DecisionKindSummary): DecisionKindRow {
     judged,
     fallbacks: Number(k.fallbacks || 0),
     errors: Number(k.errors || 0),
+    controlled: Number(k.controlled || 0),
     p50: Number(k.p50_seconds || 0),
     p95: Number(k.p95_seconds || 0),
     avgSeconds: calls > 0 ? Number(k.latency_seconds || 0) / calls : 0,
@@ -121,7 +123,7 @@ export function decisionFeed(stats: DashboardStats | undefined): DecisionFeedRow
     probabilities: decisionProbabilities(r.probabilities),
     confidence: Number(r.confidence || 0),
     executed: r.executed || '',
-    verdict: r.error
+    verdict: r.error || r.fallback
       ? 'unusable'
       : r.shadow
         ? (r.agreed === true ? 'agreed' : r.agreed === false ? 'disagreed' : 'unusable')
@@ -153,7 +155,7 @@ export function decisionIdleNote(engine: DecisionEngineSpec | undefined): string
   if (!decisionEngineSelected(engine)) return 'No fast decision engine selected.'
   const points = [
     engine?.objectives ? 'every objective choice' : '',
-    engine?.battles && engine?.mode === 'shadow' ? 'every battle move' : '',
+    engine?.battles ? (engine?.mode === 'shadow' ? 'every battle move (shadow)' : 'every eligible battle move (active)') : '',
     engine?.failures ? 'recoverable failures' : '',
     engine?.placements ? 'every Tetris placement' : ''
   ].filter(Boolean)
