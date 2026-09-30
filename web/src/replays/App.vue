@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { getSpectatorSemanticReplay, getSpectatorSnapshot, spectatorReplayVideoURL } from '../shared/api/spectator-client'
+import {
+  getSpectatorHighlightStatus,
+  getSpectatorSemanticReplay,
+  getSpectatorSnapshot,
+  spectatorHighlightVideoURL,
+  spectatorReplayVideoURL,
+  type SpectatorHighlightStatus
+} from '../shared/api/spectator-client'
 import type { RenderState } from '../shared/api/renderstate'
 import type { SpectatorRun, SpectatorSnapshot } from '../shared/api/spectator'
 import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
@@ -36,9 +43,11 @@ const copyState = ref('')
 const playbackRate = ref(1)
 const videoRef = ref<HTMLVideoElement | null>(null)
 type RendererMode = 'modern' | 'classic'
+type MediaMode = 'full' | 'highlights'
 type SemanticReplayStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.spectator.renderer') === 'modern' ? 'modern' : 'classic')
+const mediaMode = ref<MediaMode>('full')
 const themeOptions = publicRenderThemeOptions()
 const storedThemeID = window.localStorage.getItem('pokepilot.spectator.theme') || PUBLIC_RENDER_THEME_ID
 const initialTheme = resolvePublicRenderTheme(storedThemeID)
@@ -50,10 +59,12 @@ const semanticTimeline = shallowRef<SemanticReplayTimeline | null>(null)
 const semanticState = shallowRef<RenderState | null>(null)
 const semanticStatus = ref<SemanticReplayStatus>('idle')
 const semanticError = ref('')
+const highlightStatus = ref<SpectatorHighlightStatus | null>(null)
 const currentTime = ref(0)
 const videoDuration = ref(0)
 const playing = ref(false)
 let semanticAbort: AbortController | null = null
+let highlightAbort: AbortController | null = null
 let playbackRAF = 0
 let lastSemanticSampleAt = -1
 
@@ -88,16 +99,22 @@ const selectedRun = computed(() => {
 })
 
 const selectedReplayReady = computed(() => Boolean(selectedRun.value?.replay_ready))
+const selectedHighlightReady = computed(() => highlightStatus.value?.state === 'ready')
 const selectedRenderPercent = computed(() => selectedRun.value ? replayRenderPercent(selectedRun.value) : null)
-const selectedVideoURL = computed(() => selectedReplayReady.value && selectedRun.value ? spectatorReplayVideoURL(selectedRun.value.run_id) : '')
+const selectedVideoURL = computed(() => {
+  if (!selectedReplayReady.value || !selectedRun.value) return ''
+  if (mediaMode.value === 'highlights' && selectedHighlightReady.value) return spectatorHighlightVideoURL(selectedRun.value.run_id)
+  return spectatorReplayVideoURL(selectedRun.value.run_id)
+})
 const showModern = computed(() =>
+  mediaMode.value === 'full' &&
   rendererMode.value === 'modern' &&
   semanticStatus.value === 'ready' &&
   semanticState.value !== null &&
   canRenderModernScene(semanticState.value)
 )
 const modernFallbackLabel = computed(() => {
-  if (rendererMode.value !== 'modern' || showModern.value) return ''
+  if (mediaMode.value !== 'full' || rendererMode.value !== 'modern' || showModern.value) return ''
   if (semanticStatus.value === 'loading') return 'Loading modern replay · classic fallback'
   if (semanticStatus.value === 'error') return 'Modern replay unavailable · classic fallback'
   if (semanticState.value) return `Modern unsupported for ${semanticState.value.scene} · classic fallback`
@@ -108,6 +125,15 @@ watch(selectedRun, (run) => {
   if (!run || selectedRunID.value) return
   selectedRunID.value = run.run_id
 }, { immediate: true })
+
+watch(
+  () => selectedRun.value?.run_id || '',
+  (runID) => {
+    mediaMode.value = 'full'
+    void loadHighlightStatus(runID)
+  },
+  { immediate: true }
+)
 
 watch(
   () => `${selectedRun.value?.run_id || ''}:${selectedReplayReady.value ? 'ready' : 'pending'}`,
@@ -192,6 +218,33 @@ function setTheme(themeID: string): void {
 function onThemeSelect(event: Event): void {
   const target = event.target as HTMLSelectElement | null
   if (target) setTheme(target.value)
+}
+
+async function loadHighlightStatus(runID: string): Promise<void> {
+  highlightAbort?.abort()
+  highlightAbort = null
+  highlightStatus.value = null
+  if (!runID) return
+  const controller = new AbortController()
+  highlightAbort = controller
+  try {
+    const status = await getSpectatorHighlightStatus(runID, controller.signal)
+    if (controller.signal.aborted || selectedRun.value?.run_id !== runID) return
+    highlightStatus.value = status
+  } catch {
+    if (!controller.signal.aborted) highlightStatus.value = null
+  } finally {
+    if (highlightAbort === controller) highlightAbort = null
+  }
+}
+
+function setMediaMode(mode: MediaMode): void {
+  if (mode === 'highlights' && !selectedHighlightReady.value) return
+  mediaMode.value = mode
+  currentTime.value = 0
+  videoDuration.value = 0
+  playing.value = false
+  stopPlaybackClock()
 }
 
 async function loadSemanticReplay(runID: string): Promise<void> {
@@ -337,6 +390,7 @@ onMounted(() => window.addEventListener('popstate', syncPath))
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', syncPath)
   semanticAbort?.abort()
+  highlightAbort?.abort()
   stopPlaybackClock()
 })
 </script>
