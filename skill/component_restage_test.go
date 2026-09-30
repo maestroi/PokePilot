@@ -29,7 +29,7 @@ func TestTileOpensDestRejectsUnwalkable(t *testing.T) {
 	}
 	defer m.Close()
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatal(err)
 	}
