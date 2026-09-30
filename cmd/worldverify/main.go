@@ -11,12 +11,12 @@ import (
 	"strings"
 
 	blueprofile "github.com/maestroi/pokepilot/blue/profile"
-	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
 	verifier "github.com/maestroi/pokepilot/worldverify"
+	"github.com/maestroi/pokepilot/worldmodel"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
@@ -52,7 +52,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
-	worldProfile, ok := profile.(gameruntime.WorldProfile)
+	worldProfile, ok := profile.(interface { MapProvider([]byte) worldmodel.MapHeaderProvider })
 	if !ok {
 		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
 		os.Exit(2)
