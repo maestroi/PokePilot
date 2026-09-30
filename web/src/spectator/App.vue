@@ -2389,6 +2389,48 @@ select:focus-visible {
     justify-content: center;
     gap: 1rem;
   }
+
+  /*
+   * Keep the context rail visually tied to the game viewport. Without an
+   * explicit cap, long activity/other-run lists make the grid row thousands
+   * of pixels tall and push league/party far below a large empty area.
+   */
+  .game-pokemon .side {
+    height: min(40.5rem, calc(100vh - 10rem));
+    min-height: 34rem;
+    grid-template-rows: max-content max-content max-content minmax(0, 1fr) max-content;
+    overflow: hidden;
+  }
+
+  .game-pokemon .side .activity {
+    display: grid;
+    min-height: 0;
+    grid-template-rows: max-content minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .game-pokemon .side .activity .log {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(242, 202, 82, 0.28) transparent;
+  }
+
+  .game-pokemon .side .others {
+    max-height: 9.5rem;
+    overflow: hidden;
+  }
+
+  .game-pokemon .side .others ul {
+    max-height: 6.5rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.2rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+  }
 }
 
 @media (max-width: 90rem) {
@@ -2400,6 +2442,20 @@ select:focus-visible {
 @media (max-width: 72rem) {
   .game-pokemon .stage-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-pokemon .side {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others,
+  .game-pokemon .side .activity .log,
+  .game-pokemon .side .others ul {
+    max-height: none;
+    overflow: visible;
   }
 
   .game-pokemon .screen-col {
