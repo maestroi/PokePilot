@@ -2,8 +2,6 @@
 // It contains no game-specific ROM layout knowledge.
 package worldmodel
 
-import "sync"
-
 // TraversalMode selects movement-specific collision semantics supplied by a game adapter.
 type TraversalMode uint8
 
@@ -92,8 +90,8 @@ type MapHeader struct {
 	Objects       []MapObject
 }
 
-// HeaderView lets compatibility callers pass a richer game-specific map
-// header to generic routing without exposing that concrete type here.
+// HeaderView lets game adapters expose a richer map header to generic routing
+// without making generic code depend on the concrete type.
 type HeaderView interface {
 	WorldMapHeader() MapHeader
 }
@@ -117,7 +115,7 @@ type GridSpec struct {
 	Traversal TraversalMode
 }
 
-// GridHeader is the compatibility boundary used by world.Build and
+// GridHeader is the adapter boundary used by world.Build and
 // world.BuildFromBlocks. Concrete game map-header types implement it without
 // making world depend on those concrete types.
 type GridHeader interface {
@@ -154,38 +152,4 @@ type MapHeaderProvider interface {
 // fatal to normal graph construction.
 type MapParseFailureClassifier interface {
 	ExpectedMapParseFailure(mapID uint8, err error) (reason string, ok bool)
-}
-
-// ROMProviderFactory is retained as a compatibility bridge for callers that
-// still pass raw ROM bytes to world.BuildGraph. New adapters/callers should
-// pass a MapHeaderProvider directly.
-type ROMProviderFactory func(romData []byte) (MapHeaderProvider, bool)
-
-var (
-	factoryMu sync.RWMutex
-	factories []ROMProviderFactory
-)
-
-// RegisterROMProviderFactory registers a game-owned ROM detector/provider.
-// It is intended for adapter package init functions.
-func RegisterROMProviderFactory(factory ROMProviderFactory) {
-	if factory == nil {
-		return
-	}
-	factoryMu.Lock()
-	factories = append(factories, factory)
-	factoryMu.Unlock()
-}
-
-// ProviderForROM resolves a legacy raw-ROM call through registered adapters.
-func ProviderForROM(romData []byte) (MapHeaderProvider, bool) {
-	factoryMu.RLock()
-	copyFactories := append([]ROMProviderFactory(nil), factories...)
-	factoryMu.RUnlock()
-	for _, factory := range copyFactories {
-		if provider, ok := factory(romData); ok && provider != nil {
-			return provider, true
-		}
-	}
-	return nil, false
 }
