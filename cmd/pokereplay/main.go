@@ -72,17 +72,17 @@ type replayRecording struct {
 }
 
 type replayStatus struct {
-	RunID      string `json:"run_id"`
-	JobID      string `json:"job_id,omitempty"`
-	State      string `json:"state"`
-	ObjectKey  string `json:"object_key,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	Error      string `json:"error,omitempty"`
-	LastError  string `json:"last_error,omitempty"`
-	JobState   string `json:"job_state,omitempty"`
-	Stage      string `json:"stage,omitempty"`
-	RetryCount     int  `json:"retry_count,omitempty"`
-	LegacyIdentity bool `json:"legacy_identity,omitempty"`
+	RunID          string `json:"run_id"`
+	JobID          string `json:"job_id,omitempty"`
+	State          string `json:"state"`
+	ObjectKey      string `json:"object_key,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	Error          string `json:"error,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+	JobState       string `json:"job_state,omitempty"`
+	Stage          string `json:"stage,omitempty"`
+	RetryCount     int    `json:"retry_count,omitempty"`
+	LegacyIdentity bool   `json:"legacy_identity,omitempty"`
 	// Segments/SegmentsDone report per-attempt progress while generating.
 	Segments     int `json:"segments,omitempty"`
 	SegmentsDone int `json:"segments_done,omitempty"`
