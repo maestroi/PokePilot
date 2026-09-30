@@ -26,6 +26,7 @@ const (
 	MenuJoypadFilter        uint16 = 0xCEDF // wMenuJoypadFilter
 	MenuCursorY             uint16 = 0xCEE0 // wMenuCursorY
 	MenuCursorX             uint16 = 0xCEE1 // wMenuCursorX
+	FacingTileID            uint16 = 0xCF29 // wFacingTileID (wCurInput union)
 	BattleMenuCursor        uint16 = 0xCFC4 // wBattleMenuCursorPosition
 	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
 	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
