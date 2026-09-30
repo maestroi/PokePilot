@@ -76,6 +76,17 @@ func (d *BattleMoveDecider) decide(b game.BattleState) (int, error) {
 // BattleTurnObserver as the same move-only state BattleMoveDecider asks
 // about, paired with the slot the deterministic policy chose. Turns the
 // adapter cannot describe (Safari Zone, the Old Man demo) are not reported.
+func gen1BattleResultObserver(observer BattleTurnObserver) skill.BattleResultObserver {
+	if observer == nil {
+		return nil
+	}
+	outcomes, ok := observer.(BattleOutcomeObserver)
+	if !ok {
+		return nil
+	}
+	return outcomes.ObserveBattleResult
+}
+
 func gen1MoveObserver(romData []byte, observer BattleTurnObserver) skill.MoveObserver {
 	if observer == nil {
 		return nil
