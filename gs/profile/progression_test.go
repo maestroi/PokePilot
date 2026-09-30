@@ -200,6 +200,26 @@ func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
 	}
 }
 
+func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
+	mem := fakeGSReader{}
+	story := projectEarlyStory(mem)
+	if story.Has(ProgressSupportedFrontier) {
+		t.Fatal("fresh save already reports the experimental Gen-II frontier complete")
+	}
+
+	setGSEvent(mem, eventHerdedFarfetchd)
+	story = projectEarlyStory(mem)
+	if story.Has(ProgressSupportedFrontier) {
+		t.Fatal("Farfetchd completion reached frontier before HM01 was acquired")
+	}
+
+	setGSEvent(mem, eventGotHM01Cut)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHM01CutAcquired) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("HM01 boundary did not complete supported frontier: %+v", story)
+	}
+}
+
 func TestPinnedIlexEventAndSceneConstants(t *testing.T) {
 	if eventGotHM01Cut != 16 {
 		t.Fatalf("EVENT_GOT_HM01_CUT = %d, want 16", eventGotHM01Cut)
