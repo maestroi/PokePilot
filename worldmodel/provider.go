@@ -153,4 +153,3 @@ type MapHeaderProvider interface {
 type MapParseFailureClassifier interface {
 	ExpectedMapParseFailure(mapID uint8, err error) (reason string, ok bool)
 }
-
