@@ -72,9 +72,9 @@ type MediaRenderJobProgressRequest struct {
 }
 
 type MediaRenderJobFinishRequest struct {
-	WorkerID   string `json:"worker_id"`
-	State      string `json:"state"`
-	Stage      string `json:"stage,omitempty"`
+	WorkerID     string `json:"worker_id"`
+	State        string `json:"state"`
+	Stage        string `json:"stage,omitempty"`
 	LastError    string `json:"last_error,omitempty"`
 	FailureClass string `json:"failure_class,omitempty"`
 	ResultSize   int64  `json:"result_size,omitempty"`
