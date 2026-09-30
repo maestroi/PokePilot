@@ -10,6 +10,7 @@ func TestNamedProfiles(t *testing.T) {
 		ProfileReplayFull,
 		ProfileLiveBroadcast,
 		ProfileHighlight,
+		ProfileClip,
 		ProfileShortVertical,
 		ProfileDebugRaw,
 	} {
@@ -26,6 +27,21 @@ func TestNamedProfiles(t *testing.T) {
 	}
 	if _, err := NewProfile("unknown"); err == nil {
 		t.Fatal("expected unknown profile error")
+	}
+}
+
+func TestClipAndHighlightProfilesShareMaterialIdentity(t *testing.T) {
+	highlight, err := NewProfile(ProfileHighlight)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip, err := NewProfile(ProfileClip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := []Source{{Attempt: 1, SHA256: strings.Repeat("a", 64)}}
+	if got, want := Fingerprint(IdentityInput{Sources: source, Profile: clip}), Fingerprint(IdentityInput{Sources: source, Profile: highlight}); got != want {
+		t.Fatalf("clip alias changed material identity: got %s want %s", got, want)
 	}
 }
 
