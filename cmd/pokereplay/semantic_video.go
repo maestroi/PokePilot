@@ -173,8 +173,7 @@ func (s *replayServer) renderAttemptSemanticSegments(
 				VAAPIDevice:  vaapiDevice(),
 			})
 			if err != nil {
-				closeSegment()
-				return err
+				return replayContextError(segmentCtx, err)
 			}
 			s.encoderProcesses.Add(1)
 			encoderCounted = true
@@ -197,19 +196,17 @@ func (s *replayServer) renderAttemptSemanticSegments(
 			presentation = fallback
 		}
 		if err := encoder.WriteImage(presentation); err != nil {
-			return err
+			return replayContextError(segmentCtx, err)
 		}
 		if relative != segment.EndFrame {
 			return nil
 		}
 		if err := closeEncoder(); err != nil {
-			closeSegment()
-			return err
+			return replayContextError(segmentCtx, err)
 		}
 
 		if err := probeReplayVideo(segmentCtx, segment.LocalPath, replaySegmentWindowDuration(*segment)); err != nil {
-			closeSegment()
-			return fmt.Errorf("validate semantic replay segment %d: %w", segment.Index, err)
+			return replayContextError(segmentCtx, fmt.Errorf("validate semantic replay segment %d: %w", segment.Index, err))
 		}
 		file, err := os.Open(segment.LocalPath)
 		if err != nil {
@@ -219,8 +216,7 @@ func (s *replayServer) renderAttemptSemanticSegments(
 		_, putErr := s.store.PutObjectReader(segmentCtx, segment.CacheKey, "video/mp4", file)
 		closeErr := file.Close()
 		if putErr != nil {
-			closeSegment()
-			return fmt.Errorf("cache semantic replay segment %d: %w", segment.Index, putErr)
+			return replayContextError(segmentCtx, fmt.Errorf("cache semantic replay segment %d: %w", segment.Index, putErr))
 		}
 		if closeErr != nil {
 			closeSegment()
