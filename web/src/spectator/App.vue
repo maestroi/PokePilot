@@ -1,27 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ArrowPathIcon,
   ArrowsPointingOutIcon,
-  BanknotesIcon,
-  BookOpenIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  FlagIcon,
   LinkIcon,
-  MapIcon,
-  MapPinIcon,
   PlayIcon,
-  SignalIcon,
-  SparklesIcon,
-  TrophyIcon,
-  UserGroupIcon
+  SignalIcon
 } from '@heroicons/vue/20/solid'
 import { getSpectatorProgramming, getSpectatorSnapshot } from '../shared/api/spectator-client'
 import type { SpectatorDecisionRecord, SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
-import BadgeIcon from '../shared/components/BadgeIcon.vue'
-import PokemonPartyCard from '../shared/components/PokemonPartyCard.vue'
+import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
@@ -46,6 +35,8 @@ import {
 } from './model'
 import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
+import RouteLine from './RouteLine.vue'
+import { kantoRouteLine } from './routeLine'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
@@ -54,7 +45,6 @@ import { publicCapabilitiesForRun } from '../shared/publicCapabilities'
 import { PUBLIC_RENDER_THEME_ID, publicRenderThemeOptions, resolvePublicRenderTheme } from '../shared/renderTheme'
 import { replayIsRendering, replayRenderProgress, replayRenderStage } from '../replays/model'
 import spectatorNightscapeUrl from './assets/spectator-nightscape.svg'
-import spectatorLeagueBannerUrl from './assets/spectator-league-banner.svg'
 
 type ActivityKind = 'decision' | 'area' | 'badge' | 'party' | 'dex' | 'milestone' | 'game' | 'state'
 type ActivityFilter = 'all' | 'milestones' | 'decisions'
@@ -343,108 +333,40 @@ const goalProgressCopy = computed(() => {
   }
 })
 
-type StatTone = 'cyan' | 'violet' | 'emerald' | 'amber'
-
-interface PremiumStat {
+interface StageFact {
   key: string
   label: string
   value: string
-  hint: string
-  icon: Component
-  tone: StatTone
 }
 
-const statCards = computed<PremiumStat[]>(() => {
+const statCards = computed<StageFact[]>(() => {
   const run = selectedRun.value
   if (!run) return []
   if (isTetrisRun(run)) {
     return [
-      { key: 'score', label: 'Score', value: Number(run.game_state?.score || 0).toLocaleString(), hint: 'Points', icon: TrophyIcon, tone: 'amber' },
-      { key: 'lines', label: 'Lines cleared', value: String(Number(run.game_state?.lines_cleared || 0)), hint: 'Stack', icon: FlagIcon, tone: 'cyan' },
-      { key: 'level', label: 'Level', value: String(Number(run.game_state?.level || 0)), hint: 'Speed', icon: SparklesIcon, tone: 'violet' },
-      { key: 'runtime', label: 'Runtime', value: runtimeLabel.value, hint: 'Live', icon: ClockIcon, tone: 'emerald' }
+      { key: 'score', label: 'Score', value: Number(run.game_state?.score || 0).toLocaleString() },
+      { key: 'lines', label: 'Lines cleared', value: String(Number(run.game_state?.lines_cleared || 0)) },
+      { key: 'level', label: 'Level', value: String(Number(run.game_state?.level || 0)) },
+      { key: 'runtime', label: 'Runtime', value: runtimeLabel.value }
     ]
   }
   return [
-    { key: 'maps', label: 'Maps visited', value: mapsLabel.value, hint: 'World', icon: MapIcon, tone: 'cyan' },
-    { key: 'party', label: 'Party', value: `${run.player?.party?.length || 0}/6`, hint: 'Team', icon: UserGroupIcon, tone: 'violet' },
-    { key: 'runtime', label: 'Runtime', value: runtimeLabel.value, hint: 'Live', icon: ClockIcon, tone: 'emerald' },
-    { key: 'money', label: 'Money', value: moneyLabel(run), hint: 'Funds', icon: BanknotesIcon, tone: 'amber' }
+    { key: 'maps', label: 'Maps visited', value: mapsLabel.value },
+    { key: 'party', label: 'Party', value: `${run.player?.party?.length || 0}/6` },
+    { key: 'runtime', label: 'Runtime', value: runtimeLabel.value },
+    { key: 'money', label: 'Money', value: moneyLabel(run) }
   ]
 })
 
-type StretchState = 'done' | 'active' | 'todo'
+const routeLine = computed(() => kantoRouteLine(selectedRun.value))
 
-interface StretchStep {
-  key: string
-  title: string
-  detail: string
-  value?: string
-  state: StretchState
-  icon: Component
+function hpPercent(mon: { hp: number, max_hp: number }): number {
+  return mon.max_hp > 0 ? Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp)) : 0
 }
 
-const finalStretchSteps = computed<StretchStep[]>(() => {
-  const run = selectedRun.value
-  if (!run || isTetrisRun(run)) return []
-
-  const badges = run.player?.badges?.length || 0
-  const location = currentLocation.value.toLowerCase()
-  const milestones = (run.player?.milestones || []).map((value) => value.toLowerCase())
-  const hasMilestone = (...needles: string[]) => milestones.some((value) => needles.some((needle) => value.includes(needle)))
-
-  const hallOfFameDone = Boolean(run.stats?.goal_complete) || hasMilestone('hall of fame', 'main story complete')
-  const championDone = hallOfFameDone || hasMilestone('champion defeated', 'league champion', 'champion')
-  const eliteFourDone = championDone || hasMilestone('elite four')
-  const plateauReached = eliteFourDone || championDone || hallOfFameDone || location.includes('indigo plateau')
-  const victoryRoadActive = location.includes('victory road')
-
-  return [
-    {
-      key: 'badges',
-      title: 'Gym Badges',
-      detail: badges >= 8 ? 'All eight badges are earned.' : `${8 - badges} badge${8 - badges === 1 ? '' : 's'} remain.`,
-      value: `${badges}/8`,
-      state: badges >= 8 ? 'done' : 'active',
-      icon: CheckCircleIcon
-    },
-    {
-      key: 'victory-road',
-      title: 'Victory Road',
-      detail: plateauReached ? 'Route to Indigo Plateau cleared.' : 'Navigate the final cave and reach Indigo Plateau.',
-      state: plateauReached ? 'done' : badges >= 8 || victoryRoadActive ? 'active' : 'todo',
-      icon: MapPinIcon
-    },
-    {
-      key: 'elite-four',
-      title: 'Elite Four',
-      detail: 'Defeat all four members in sequence.',
-      state: eliteFourDone ? 'done' : plateauReached ? 'active' : 'todo',
-      icon: FlagIcon
-    },
-    {
-      key: 'champion',
-      title: 'Champion',
-      detail: 'Win the final Champion battle.',
-      state: championDone ? 'done' : eliteFourDone ? 'active' : 'todo',
-      icon: TrophyIcon
-    },
-    {
-      key: 'hall-of-fame',
-      title: 'Hall of Fame',
-      detail: 'The full speedrun objective finishes here.',
-      state: hallOfFameDone ? 'done' : championDone ? 'active' : 'todo',
-      icon: SparklesIcon
-    }
-  ]
-})
-
-function statToneClass(tone: StatTone): string {
-  return `stat-tone-${tone}`
-}
-
-function stretchToneClass(state: StretchState): string {
-  return `stretch-step-${state}`
+function hpTone(mon: { hp: number, max_hp: number }): string {
+  const percent = hpPercent(mon)
+  return percent <= 20 ? 'hp-low' : percent <= 50 ? 'hp-mid' : 'hp-high'
 }
 
 function percentLabel(value: number | null | undefined): string {
@@ -573,32 +495,6 @@ function pushActivity(runID: string, kind: ActivityKind, label: string, detail: 
       { id: `${Date.now()}-${kind}-${label}-${detail}`, at: Date.now(), kind, label, detail },
       ...current
     ].slice(0, 24)
-  }
-}
-
-function activityIcon(kind: ActivityKind) {
-  switch (kind) {
-    case 'decision': return SparklesIcon
-    case 'area': return MapPinIcon
-    case 'badge': return TrophyIcon
-    case 'party': return UserGroupIcon
-    case 'dex': return BookOpenIcon
-    case 'milestone': return FlagIcon
-    case 'game': return SparklesIcon
-    default: return SignalIcon
-  }
-}
-
-function activityTone(kind: ActivityKind): string {
-  switch (kind) {
-    case 'decision': return 'text-cyan-300 bg-cyan-300/10 ring-cyan-300/20'
-    case 'area': return 'text-blue-300 bg-blue-300/10 ring-blue-300/20'
-    case 'badge': return 'text-amber-300 bg-amber-300/10 ring-amber-300/20'
-    case 'party': return 'text-violet-300 bg-violet-300/10 ring-violet-300/20'
-    case 'dex': return 'text-rose-300 bg-rose-300/10 ring-rose-300/20'
-    case 'milestone': return 'text-emerald-300 bg-emerald-300/10 ring-emerald-300/20'
-    case 'game': return 'text-amber-300 bg-amber-300/10 ring-amber-300/20'
-    default: return 'text-slate-300 bg-white/5 ring-white/10'
   }
 }
 
@@ -837,7 +733,7 @@ function activityTimeAgo(item: ActivityItem): string {
       </div>
     </div>
 
-    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass, gameClass]" :style="sceneStyle">
+    <div v-else-if="selectedRun" :class="['spectator-theme mx-auto max-w-[112rem] space-y-3', modeClass, gameClass, { 'is-stage': selectionPinned }]" :style="sceneStyle">
       <div v-if="programming?.up_next" class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-cyan-300/15 bg-cyan-300/5 px-3 py-2 text-xs">
         <span class="text-slate-400"><strong class="mr-1 text-cyan-200">Up next</strong>{{ programming.up_next.challenge_name }}</span>
         <span class="text-[10px] text-slate-600">{{ programming.up_next.challenge_id }} · v{{ programming.up_next.challenge_version }}</span>
@@ -892,293 +788,97 @@ function activityTimeAgo(item: ActivityItem): string {
         @select="selectRun"
       />
 
-      <div v-if="selectionPinned" class="spectator-stage grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)_21rem]">
-        <aside class="space-y-3">
-          <section class="spectator-card spectator-hero-card overflow-hidden rounded-2xl border p-4 shadow-xl shadow-black/20">
-            <div class="flex flex-wrap items-center gap-2">
-              <span v-if="isLiveRun(selectedRun)" class="inline-flex items-center gap-1.5 rounded-full bg-red-500/12 px-2.5 py-1 text-[10px] font-black tracking-[0.11em] text-red-300 uppercase ring-1 ring-red-400/20">
-                <span class="size-1.5 animate-pulse rounded-full bg-red-400" />
-                Live run
-              </span>
-              <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
-              <span class="mode-chip">{{ isTetrisSelected ? tetrisModeLabel : playStyleLabel(selectedRun) }}</span>
-              <span v-if="selectedRun.purpose === 'debug_coverage'" class="mode-chip">Debug coverage</span>
-            </div>
+      <div v-if="selectionPinned" class="stage">
+        <header class="stage-head">
+          <div class="stage-title">
+            <span :class="isTetrisSelected ? 'tetris-mark' : 'pokeball-mark'" aria-hidden="true" />
+            <h1>{{ gameTitle(selectedRun) }}</h1>
+            <span class="stage-sub">{{ isTetrisSelected ? tetrisModeLabel : playStyleLabel(selectedRun) + ' · ' + (selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer') }}</span>
+          </div>
+          <div class="stage-status">
+            <span v-if="isLiveRun(selectedRun)" class="live-tag"><i />Live</span>
+            <StatusBadge v-else :tone="runTone(selectedRun)">{{ runStatusLabel(selectedRun) }}</StatusBadge>
+            <span>{{ playSpeedLabel(selectedRun) }}</span>
+            <span v-if="selectedRun.purpose === 'debug_coverage'">Debug coverage</span>
+          </div>
+        </header>
 
-            <div class="mt-4 flex items-start gap-3">
-              <div class="game-mark grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-white/10" aria-hidden="true">
-                <span v-if="isTetrisSelected" class="tetris-mark" />
-                <span v-else class="pokeball-mark" />
-              </div>
-              <div class="min-w-0">
-                <h1 class="text-2xl font-black tracking-tight text-white">{{ gameTitle(selectedRun) }}</h1>
-                <p v-if="isTetrisSelected" class="mt-0.5 truncate text-sm text-slate-400">
-                  {{ tetrisModeLabel }} · autonomous stack
-                </p>
-                <p v-else class="mt-0.5 truncate text-sm text-slate-400">
-                  {{ playStyleLabel(selectedRun) }} · {{ selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer' }}
-                </p>
-                <p class="mt-1 flex items-center gap-1.5 truncate text-[11px] text-slate-500">
-                  <component :is="isTetrisSelected ? SparklesIcon : MapPinIcon" class="size-3 shrink-0 text-cyan-200/60" aria-hidden="true" />
-                  {{ currentLocation }}
-                </p>
-              </div>
-            </div>
-
-            <div v-if="isTetrisSelected" class="spectator-art-banner tetris-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
-              <div class="tetris-art-grid" />
-              <div class="spectator-art-banner-caption">
-                <span>Stack in progress</span>
-                <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }} pts · {{ Number(tetrisState?.lines_cleared || 0) }} lines</strong>
-              </div>
-            </div>
-            <div v-else class="spectator-art-banner mt-4 overflow-hidden rounded-xl border" aria-hidden="true">
-              <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover" />
-              <div class="spectator-art-banner-glow" />
-              <div class="spectator-art-banner-caption">
-                <span>Road to the League</span>
-                <strong>{{ currentLocation }}</strong>
-              </div>
-            </div>
-
-            <div class="mt-5">
-              <p class="text-sm leading-6 text-slate-300">{{ objectiveLabel(selectedRun) }}</p>
-            </div>
-
-            <div class="goal-progress-card mt-4 rounded-xl border p-3">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-1.5 text-[9px] font-black tracking-[0.11em] text-[var(--mode-accent)] uppercase">
-                    <FlagIcon class="size-3.5" aria-hidden="true" />
-                    Goal progress
-                  </div>
-                  <div class="mt-1 truncate text-[11px] text-slate-400">{{ goalProgressCopy.detail }}</div>
-                </div>
-                <div class="shrink-0 text-right">
-                  <strong class="block font-mono text-lg text-white">{{ goalPercent.toFixed(0) }}%</strong>
-                  <span class="text-[9px] text-slate-500">{{ goalProgressCopy.label }}</span>
-                </div>
-              </div>
-              <div class="mt-3 h-2 overflow-hidden rounded-full bg-white/8 ring-1 ring-white/5">
-                <div class="mode-progress goal-progress-fill h-full rounded-full transition-[width]" :style="{ width: goalPercent + '%' }" />
-              </div>
-            </div>
-
-            <div v-if="!isTetrisSelected" class="mt-5">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Gym badges</div>
-                <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.badges?.length || 0 }}/8</span>
-              </div>
-              <div class="grid grid-cols-8 gap-1.5">
-                <div
-                  v-for="slot in 8"
-                  :key="slot"
-                  :class="[
-                    selectedRun.player?.badges?.[slot - 1] ? 'badge-earned' : 'badge-empty',
-                    'grid aspect-square place-items-center rounded-full'
-                  ]"
-                  :title="selectedRun.player?.badges?.[slot - 1] || 'Badge not earned yet'"
-                >
-                  <BadgeIcon
-                    v-if="selectedRun.player?.badges?.[slot - 1]"
-                    :name="selectedRun.player.badges[slot - 1]"
-                    :size="26"
-                  />
-                </div>
-              </div>
-            </div>
-            <div v-else class="mt-5">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-[9px] font-black tracking-[0.11em] text-slate-500 uppercase">Piece queue</div>
-                <span class="font-mono text-[10px] text-slate-500">{{ tetrisState?.screen || 'playing' }}</span>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div class="tetris-piece-card rounded-xl border p-3">
-                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Active</span>
-                  <div class="mt-1 flex items-end justify-between gap-2">
-                    <strong class="font-mono text-2xl text-yellow-200">{{ tetrisActivePiece }}</strong>
-                    <span class="font-mono text-[9px] text-slate-500">r{{ Number(tetrisState?.active?.rotation || 0) }}</span>
-                  </div>
-                </div>
-                <div class="tetris-piece-card rounded-xl border p-3">
-                  <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next</span>
-                  <strong class="mt-1 block font-mono text-2xl text-cyan-200">{{ tetrisNextPiece }}</strong>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-5 grid grid-cols-2 gap-2">
+        <div class="stage-body">
+          <div class="screen-col">
+            <section class="bezel" :aria-label="'Game screen for ' + gameTitle(selectedRun)">
               <div
-                v-for="stat in statCards"
-                :key="stat.key"
-                :class="['premium-stat rounded-xl border p-3', statToneClass(stat.tone)]"
+                ref="playerRef"
+                :class="['screen group', showModern ? 'is-wide' : 'is-gb', { 'is-theater': theaterMode }]"
               >
-                <div class="flex items-start justify-between gap-2">
-                  <span :class="['premium-stat-icon', statToneClass(stat.tone)]">
-                    <component :is="stat.icon" class="size-4" aria-hidden="true" />
-                  </span>
-                  <span class="text-[8px] font-bold tracking-[0.08em] text-slate-700 uppercase">{{ stat.hint }}</span>
+                <ModernSceneRenderer
+                  v-if="showModern && renderState"
+                  :state="renderState"
+                  :theme="activeTheme"
+                />
+
+                <img
+                  v-else-if="frameURL"
+                  :src="frameURL"
+                  :alt="'Live frame for ' + selectedRun.run_id"
+                  class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
+                />
+
+                <div v-else class="screen-wait">
+                  <p>Waiting for the live stream</p>
+                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="warn">{{ renderStateError }}</p>
+                  <p v-else-if="frameState === 'error' && frameError" class="warn">{{ frameError }}</p>
                 </div>
-                <strong class="mt-2 block font-mono text-base text-white">{{ stat.value }}</strong>
-                <span class="text-[10px] text-slate-500">{{ stat.label }}</span>
-              </div>
-            </div>
-          </section>
 
-          <section v-if="otherLiveRuns.length" class="spectator-card rounded-2xl border p-3">
-            <div class="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <h2 class="text-xs font-bold text-white">Other live runs</h2>
-                <p class="mt-0.5 text-[10px] text-slate-600">Switch streams instantly.</p>
-              </div>
-              <span class="rounded-full bg-emerald-300/10 px-2 py-1 font-mono text-[9px] text-emerald-200 ring-1 ring-emerald-300/20">{{ groupedRuns.live.length }} live</span>
-            </div>
-            <div class="space-y-1.5">
-              <button
-                v-for="run in otherLiveRuns"
-                :key="run.run_id"
-                type="button"
-                class="w-full rounded-lg bg-black/15 px-2.5 py-2 text-left ring-1 ring-white/8 transition hover:bg-white/6 hover:ring-white/15"
-                @click="selectRun(run)"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <strong class="truncate text-[11px] text-slate-300">{{ runTitle(run) }}</strong>
-                  <span class="size-1.5 shrink-0 rounded-full bg-emerald-300" />
-                </div>
-                <div class="mt-1 truncate text-[9px] text-slate-600">{{ displayLocation(run) }}</div>
-              </button>
-            </div>
-          </section>
-        </aside>
-
-        <main class="min-w-0 space-y-3">
-          <section class="player-card overflow-hidden rounded-2xl border shadow-2xl shadow-black/30">
-            <div
-              ref="playerRef"
-              :class="[
-                'player-shell group relative overflow-hidden bg-black',
-                theaterMode ? 'min-h-[78vh]' : 'min-h-[34rem] sm:min-h-[42rem] xl:min-h-[46rem]'
-              ]"
-            >
-              <ModernSceneRenderer
-                v-if="showModern && renderState"
-                :state="renderState"
-                :theme="activeTheme"
-              />
-
-              <img
-                v-else-if="frameURL"
-                :src="frameURL"
-                :alt="'Live frame for ' + selectedRun.run_id"
-                class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
-              />
-
-              <div v-else class="absolute inset-0 grid place-items-center px-6 py-12 text-center">
-                <div>
-                  <div class="mx-auto flex size-14 items-center justify-center rounded-full border border-white/10 bg-white/5">
-                    <span :class="['size-3 rounded-full', isLiveRun(selectedRun) ? 'animate-pulse bg-emerald-300' : 'bg-slate-600']" />
+                <div class="screen-controls">
+                  <div v-if="!isTetrisSelected" class="seg" role="group" aria-label="Renderer">
+                    <button type="button" :aria-pressed="rendererMode === 'modern'" title="Render the live semantic world" @click="setRendererMode('modern')">Gold / Silver</button>
+                    <button type="button" :aria-pressed="rendererMode === 'classic'" title="Show the classic emulator framebuffer" @click="setRendererMode('classic')">Classic</button>
                   </div>
-                  <p class="mt-3 text-sm font-semibold text-slate-300">Waiting for the live stream</p>
-                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-xs text-amber-300/80">{{ renderStateError }}</p>
-                  <p v-else-if="frameState === 'error' && frameError" class="mt-1 text-xs text-amber-300/80">{{ frameError }}</p>
+                  <label v-if="!isTetrisSelected && rendererMode === 'modern'" class="theme-pick">
+                    <span>Theme</span>
+                    <select :value="selectedThemeID" title="Choose your spectator theme" @change="onThemeSelect">
+                      <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.name }}</option>
+                    </select>
+                  </label>
+                  <p v-if="!isTetrisSelected && themeNotice" class="warn-chip">{{ themeNotice }}</p>
+                  <button type="button" class="icon-btn" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
+                    <PlayIcon class="size-4" aria-hidden="true" />
+                  </button>
+                  <button type="button" class="icon-btn" title="Fullscreen" @click="fullscreenPlayer">
+                    <ArrowsPointingOutIcon class="size-4" aria-hidden="true" />
+                  </button>
                 </div>
-              </div>
 
-              <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 bg-gradient-to-b from-black/75 via-black/30 to-transparent px-3 py-3 sm:px-4">
-                <div class="flex items-center gap-2">
-                  <span class="inline-flex items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-black tracking-[0.1em] text-white uppercase ring-1 ring-white/12">
-                    <span class="size-1.5 animate-pulse rounded-full bg-red-400" />
-                    Live
-                  </span>
-                  <span class="rounded-full bg-black/55 px-2.5 py-1 font-mono text-[10px] text-slate-200 ring-1 ring-white/12">{{ playSpeedLabel(selectedRun) }}</span>
-                </div>
-                <span class="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-bold text-slate-200 ring-1 ring-white/12">{{ currentLocation }}</span>
+                <p v-if="modernFallbackLabel && frameURL" class="screen-note">{{ modernFallbackLabel }}</p>
+                <p v-else-if="!showModern && frameURL && frameState === 'error'" class="screen-note warn">Last frame · reconnecting</p>
               </div>
+              <div class="bezel-label">
+                <span>{{ isTetrisSelected || !showModern ? 'Classic framebuffer' : activeTheme.name }}</span>
+                <span>{{ currentLocation }}</span>
+              </div>
+            </section>
 
-              <div class="absolute right-3 top-14 z-10 flex flex-col items-end gap-2 opacity-85 transition-opacity group-hover:opacity-100 sm:right-4">
-                <div v-if="!isTetrisSelected" class="flex overflow-hidden rounded-lg bg-black/65 text-[9px] font-black uppercase tracking-[0.08em] ring-1 ring-white/15 backdrop-blur-md">
-                  <button
-                    type="button"
-                    :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
-                    title="Render the live semantic world"
-                    @click="setRendererMode('modern')"
-                  >Gold / Silver</button>
-                  <button
-                    type="button"
-                    :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white', 'px-2.5 py-1.5 transition-colors']"
-                    title="Show the classic emulator framebuffer"
-                    @click="setRendererMode('classic')"
-                  >Classic</button>
-                </div>
-                <label v-if="!isTetrisSelected && rendererMode === 'modern'" class="flex items-center gap-2 rounded-lg bg-black/65 px-2 py-1.5 text-[9px] text-slate-400 ring-1 ring-white/12 backdrop-blur-md">
-                  <span class="font-black uppercase tracking-[0.08em]">Theme</span>
-                  <select
-                    :value="selectedThemeID"
-                    class="max-w-36 bg-transparent text-[10px] font-semibold text-white outline-none"
-                    title="Choose your spectator theme"
-                    @change="onThemeSelect"
-                  >
-                    <option
-                      v-for="theme in themeOptions"
-                      :key="theme.id"
-                      :value="theme.id"
-                      class="bg-slate-950 text-white"
-                    >{{ theme.name }}</option>
-                  </select>
-                </label>
-                <div
-                  v-if="!isTetrisSelected && themeNotice"
-                  class="max-w-56 rounded-lg bg-amber-950/80 px-2.5 py-1.5 text-right text-[9px] font-semibold text-amber-200 ring-1 ring-amber-300/20"
-                >{{ themeNotice }}</div>
-                <div v-if="isTetrisSelected" class="rounded-lg bg-yellow-300/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-[0.08em] text-yellow-100 ring-1 ring-yellow-300/20 backdrop-blur-md">
-                  Classic framebuffer
-                </div>
-                <button type="button" class="player-control" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
-                  <PlayIcon class="size-4" aria-hidden="true" />
-                </button>
-                <button type="button" class="player-control" title="Fullscreen" @click="fullscreenPlayer">
-                  <ArrowsPointingOutIcon class="size-4" aria-hidden="true" />
-                </button>
+            <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
+              <div class="block-head">
+                <h2>Road to the League</h2>
+                <span>{{ routeLine.earnedCount }} of 8 badges</span>
               </div>
+              <RouteLine :line="routeLine" />
+            </section>
 
-              <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-20 sm:px-4 sm:pb-4">
-                <div v-if="plannerState" class="inline-flex max-w-[90%] items-center gap-3 rounded-xl bg-black/60 px-3 py-2.5 ring-1 ring-cyan-300/20 backdrop-blur-md">
-                  <div class="planner-spinner grid size-8 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10">
-                    <SparklesIcon class="size-4 text-cyan-200" aria-hidden="true" />
-                  </div>
-                  <div class="min-w-0">
-                    <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200 uppercase">{{ plannerState.title }}</div>
-                    <div class="mt-0.5 flex items-center gap-2 text-xs text-white sm:text-sm">
-                      <span class="truncate">{{ plannerState.detail }}</span>
-                      <span class="planner-dots inline-flex shrink-0 gap-1" aria-hidden="true"><span /><span /><span /></span>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="inline-block max-w-[92%] rounded-xl bg-black/60 px-3 py-2.5 ring-1 ring-white/12 backdrop-blur-md">
-                  <div class="text-[9px] font-black tracking-[0.1em] text-slate-400 uppercase">Latest decision</div>
-                  <div class="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-white sm:text-sm">{{ selectedRun.decision || 'Preparing the next objective' }}</div>
-                </div>
+            <dl class="facts">
+              <div v-for="stat in statCards" :key="stat.key">
+                <dt>{{ stat.label }}</dt>
+                <dd>{{ stat.value }}</dd>
               </div>
+            </dl>
 
-              <div v-if="modernFallbackLabel && frameURL" class="absolute left-3 top-14 rounded-full bg-black/70 px-2.5 py-1 text-[10px] font-semibold text-cyan-100 ring-1 ring-cyan-300/20">
-                {{ modernFallbackLabel }}
+            <section v-if="isTetrisSelected" class="board-block" aria-label="Board">
+              <div class="block-head">
+                <h2>Board</h2>
+                <span>{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</span>
               </div>
-              <div v-else-if="!showModern && frameURL && frameState === 'error'" class="absolute left-3 top-14 rounded-full bg-amber-950/80 px-2.5 py-1 text-[10px] font-semibold text-amber-200 ring-1 ring-amber-300/20">
-                Last frame · reconnecting
-              </div>
-            </div>
-          </section>
-
-          <section v-if="isTetrisSelected" class="spectator-card rounded-2xl border p-3 sm:p-4">
-            <div class="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <h2 class="text-sm font-black text-white">Tetris state</h2>
-                <p class="mt-0.5 text-[10px] text-slate-600">Live board telemetry from the running game.</p>
-              </div>
-              <span class="font-mono text-[10px] text-yellow-200">{{ tetrisModeLabel }} · {{ tetrisState?.screen || 'playing' }}</span>
-            </div>
-            <div class="grid gap-4 md:grid-cols-[10rem_minmax(0,1fr)] md:items-start">
-              <div class="tetris-board-shell mx-auto w-full max-w-[10rem] rounded-xl border p-2">
+              <div class="board-row">
                 <div v-if="tetrisBoardRows.length" class="tetris-board" aria-label="Tetris board">
                   <div v-for="(row, y) in tetrisBoardRows" :key="y" class="tetris-board-row">
                     <span
@@ -1188,510 +888,174 @@ function activityTimeAgo(item: ActivityItem): string {
                     />
                   </div>
                 </div>
-                <div v-else class="grid aspect-[10/18] place-items-center text-[10px] text-slate-600">Waiting for board</div>
+                <p v-else class="muted">Waiting for board</p>
+                <dl class="pieces">
+                  <div><dt>Active</dt><dd class="piece-active">{{ tetrisActivePiece }}</dd></div>
+                  <div><dt>Next</dt><dd class="piece-next">{{ tetrisNextPiece }}</dd></div>
+                </dl>
               </div>
-              <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Score</span>
-                  <strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong>
-                </div>
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Lines</span>
-                  <strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong>
-                </div>
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Level</span>
-                  <strong>{{ Number(tetrisState?.level || 0) }}</strong>
-                </div>
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Active</span>
-                  <strong>{{ tetrisActivePiece }}</strong>
-                </div>
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Next</span>
-                  <strong>{{ tetrisNextPiece }}</strong>
-                </div>
-                <div class="tetris-state-tile rounded-xl border p-3">
-                  <span>Status</span>
-                  <strong class="text-sm">{{ tetrisState?.game_over ? 'Game over' : tetrisState?.paused ? 'Paused' : tetrisState?.clearing ? 'Clearing' : 'Playing' }}</strong>
-                </div>
-              </div>
-            </div>
-          </section>
+            </section>
 
-          <section v-else class="spectator-card rounded-2xl border p-3 sm:p-4">
-            <div class="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <h2 class="text-sm font-black text-white">Current Party</h2>
-                <p class="mt-0.5 text-[10px] text-slate-600">Live health and levels.</p>
+            <section v-if="!isTetrisSelected" class="party" aria-label="Party">
+              <div class="block-head">
+                <h2>Party</h2>
+                <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
               </div>
-              <span class="font-mono text-[10px] text-slate-500">{{ selectedRun.player?.party?.length || 0 }} / 6 slots</span>
-            </div>
-            <div v-if="selectedRun.player?.party?.length" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              <PokemonPartyCard
-                v-for="(mon, index) in selectedRun.player.party"
-                :key="mon.name + '-' + index"
-                :name="mon.name"
-                :level="mon.level"
-                :hp="mon.hp"
-                :max-hp="mon.max_hp"
-                :status="mon.status"
-                :lead="index === 0"
-              />
-            </div>
-            <p v-else class="py-5 text-center text-sm text-slate-500">Party data is not available yet.</p>
-          </section>
-        </main>
-
-        <aside class="space-y-3">
-          <section class="spectator-card rounded-2xl border p-4">
-            <div class="flex items-center justify-between gap-3">
-              <div class="flex items-center gap-2">
-                <span class="size-2 animate-pulse rounded-full bg-red-400" />
-                <div>
-                  <h2 class="text-sm font-black text-white">Live Activity</h2>
-                  <p class="mt-0.5 text-[10px] text-slate-600">What the run is doing right now.</p>
-                </div>
-              </div>
-              <div class="flex rounded-lg bg-black/20 p-0.5 ring-1 ring-white/8">
-                <button
-                  v-for="filter in activityFilters"
-                  :key="filter"
-                  type="button"
-                  :title="'Show ' + filter + ' activity'"
-                  :class="[
-                    activityFilter === filter ? 'bg-white/10 text-white' : 'text-slate-600 hover:text-slate-300',
-                    'rounded-md px-2 py-1 text-[9px] font-bold capitalize transition-colors'
-                  ]"
-                  @click="activityFilter = filter"
-                >
-                  {{ filter === 'milestones' ? 'Progress' : filter }}
-                </button>
-              </div>
-            </div>
-
-            <div v-if="selectedActivity.length" class="activity-list relative mt-4 space-y-1">
-              <div v-for="item in selectedActivity.slice(0, 9)" :key="item.id" class="activity-item relative grid grid-cols-[2rem_minmax(0,1fr)] gap-2.5 py-2">
-                <span :class="[activityTone(item.kind), 'relative z-10 grid size-7 place-items-center rounded-lg ring-1']" :title="item.label">
-                  <component :is="activityIcon(item.kind)" class="size-3.5" aria-hidden="true" />
-                </span>
-                <div class="min-w-0">
-                  <div class="flex items-baseline justify-between gap-2">
-                    <strong class="truncate text-[11px] text-slate-300">{{ item.label }}</strong>
-                    <time class="shrink-0 font-mono text-[9px] text-slate-700">{{ activityTimeAgo(item) }}</time>
+              <ul v-if="selectedRun.player?.party?.length" class="roster">
+                <li v-for="(mon, index) in selectedRun.player.party" :key="mon.name + '-' + index">
+                  <PokemonSprite :name="mon.name" :size="48" :fainted="mon.hp <= 0" />
+                  <div class="mon">
+                    <span class="mon-name">
+                      <strong>{{ mon.name || 'Unknown' }}</strong>
+                      <span>Lv {{ mon.level }}</span>
+                    </span>
+                    <span class="hp" role="img" :aria-label="'HP ' + mon.hp + ' of ' + mon.max_hp">
+                      <i :class="hpTone(mon)" :style="{ width: hpPercent(mon) + '%' }" />
+                    </span>
+                    <span class="mon-meta">
+                      {{ mon.hp }}/{{ mon.max_hp }}
+                      <template v-if="mon.hp <= 0"> · fainted</template>
+                      <template v-else-if="mon.status && mon.status.toLowerCase() !== 'healthy'"> · {{ mon.status }}</template>
+                      <template v-if="index === 0"> · lead</template>
+                    </span>
                   </div>
-                  <p class="mt-0.5 text-[11px] leading-4 text-slate-500">{{ item.detail }}</p>
-                </div>
-              </div>
-            </div>
-            <div v-else class="mt-4 rounded-xl border border-dashed border-white/10 px-3 py-8 text-center">
-              <SignalIcon class="mx-auto size-5 text-slate-700" aria-hidden="true" />
-              <p class="mt-2 text-xs text-slate-500">Waiting for the next live event.</p>
-            </div>
-          </section>
+                </li>
+              </ul>
+              <p v-else class="muted">Party data is not available yet.</p>
+            </section>
+          </div>
 
-          <section v-if="tetrisDecisionVisible" class="spectator-card rounded-2xl border p-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">Placement model</div>
-                <h2 class="mt-1 truncate text-sm font-black text-white">{{ tetrisDecisionIdentity }}</h2>
-                <p class="mt-0.5 text-[10px] text-slate-600">
-                  {{ formatGameToken(tetrisDecisionBackend || 'jev') }} · {{ formatGameToken(tetrisDecisionMode) }}
-                </p>
-              </div>
-              <span class="rounded-full bg-cyan-300/10 px-2 py-1 font-mono text-[9px] text-cyan-100 ring-1 ring-cyan-300/20">
-                {{ tetrisDecisionCalls }} calls
-              </span>
-            </div>
+          <aside class="side">
+            <section class="now">
+              <h2>Now</h2>
+              <p class="now-place">{{ currentLocation }}</p>
+              <p v-if="plannerState" class="muted">{{ plannerState.title }} · {{ plannerState.detail }}</p>
+            </section>
 
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <div class="tetris-state-tile rounded-xl border p-3">
-                <span>Latest confidence</span>
-                <strong>{{ tetrisDecisionCalls ? percentLabel(tetrisDecisionConfidence) : '—' }}</strong>
+            <section class="goal" aria-label="Goal progress">
+              <h2>Goal</h2>
+              <div class="goal-row">
+                <span>{{ objectiveLabel(selectedRun) }}</span>
+                <strong>{{ goalPercent.toFixed(0) }}%</strong>
               </div>
-              <div class="tetris-state-tile rounded-xl border p-3">
-                <span>Policy agreement</span>
-                <strong>{{ percentLabel(tetrisDecisionAgreement) }}</strong>
-                <small v-if="tetrisDecisionReference.judged" class="mt-0.5 block font-mono text-[8px] text-slate-600">
-                  {{ tetrisDecisionReference.agreed }}/{{ tetrisDecisionReference.judged }}
-                </small>
-              </div>
-              <div class="tetris-state-tile rounded-xl border p-3">
-                <span>Fallback rate</span>
-                <strong>{{ percentLabel(tetrisDecisionFallbackRate) }}</strong>
-              </div>
-              <div class="tetris-state-tile rounded-xl border p-3">
-                <span>Avg latency</span>
-                <strong>{{ decisionLatencyLabel(selectedRun.stats?.decision_avg_seconds) }}</strong>
-              </div>
-            </div>
-
-            <div class="mt-3 rounded-xl bg-black/15 p-3 ring-1 ring-white/8">
-              <div class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Latest Jev choice</div>
-              <div class="mt-1 text-[11px] font-semibold text-slate-200">{{ tetrisLatestChoice }}</div>
-              <div v-if="selectedRun.stats?.decision_reference" class="mt-1 text-[9px] text-slate-600">
-                scorer: {{ selectedRun.stats.decision_reference }}
-                <span v-if="selectedRun.stats.decision_reference_agreed !== undefined">
-                  · {{ selectedRun.stats.decision_reference_agreed ? 'match' : 'different' }}
-                </span>
-              </div>
-            </div>
-
-            <div v-if="tetrisDecisionRecords.length" class="mt-3">
-              <div class="mb-1 text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Recent Jev choices</div>
-              <div class="space-y-1">
-                <div
-                  v-for="(decision, index) in tetrisDecisionRecords.slice(0, 4)"
-                  :key="`${decision.choice || decision.choice_label}-${index}`"
-                  class="flex items-center justify-between gap-2 rounded-lg bg-black/10 px-2.5 py-1.5 ring-1 ring-white/6"
-                >
-                  <span class="min-w-0 truncate text-[10px] text-slate-400">{{ decision.choice_label || decision.choice || 'fallback' }}</span>
-                  <span class="shrink-0 font-mono text-[9px]" :class="decision.fallback ? 'text-amber-300' : 'text-cyan-200'">
-                    {{ decision.fallback ? 'fallback' : percentLabel(Number(decision.confidence || 0)) }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <p class="mt-3 text-[9px] leading-4 text-slate-600">
-              Policy agreement compares Jev with PokePilot's deterministic best-placement scorer. It is a reference metric, not ground-truth accuracy.
-            </p>
-          </section>
-
-          <section v-if="isTetrisSelected" class="milestone-card tetris-goal-card overflow-hidden rounded-2xl border p-4">
-            <div class="tetris-goal-visual mb-4 rounded-xl border" aria-hidden="true">
-              <span class="tetris-goal-piece" />
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-[9px] font-black tracking-[0.11em] text-yellow-200/70 uppercase">Run target</div>
-                <h2 class="mt-2 text-base font-black text-white">{{ selectedRun.goal || 'Keep stacking' }}</h2>
-                <p class="mt-1 text-[11px] leading-5 text-slate-400">{{ goalProgressCopy.detail }}</p>
-              </div>
-              <div class="tetris-goal-mark grid size-11 shrink-0 place-items-center rounded-xl">
-                <TrophyIcon class="size-5" aria-hidden="true" />
-              </div>
-            </div>
-            <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/8 ring-1 ring-white/5">
-              <div class="mode-progress goal-progress-fill h-full rounded-full transition-[width]" :style="{ width: goalPercent + '%' }" />
-            </div>
-            <div class="mt-4 grid grid-cols-3 gap-2">
-              <div class="tetris-goal-stat"><span>Score</span><strong>{{ Number(tetrisState?.score || 0).toLocaleString() }}</strong></div>
-              <div class="tetris-goal-stat"><span>Lines</span><strong>{{ Number(tetrisState?.lines_cleared || 0) }}</strong></div>
-              <div class="tetris-goal-stat"><span>Level</span><strong>{{ Number(tetrisState?.level || 0) }}</strong></div>
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <div class="tetris-piece-card rounded-xl border p-3">
-                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Current piece</span>
-                <strong class="mt-1 block font-mono text-xl text-yellow-200">{{ tetrisActivePiece }}</strong>
-              </div>
-              <div class="tetris-piece-card rounded-xl border p-3">
-                <span class="text-[8px] font-black tracking-[0.1em] text-slate-600 uppercase">Next piece</span>
-                <strong class="mt-1 block font-mono text-xl text-cyan-200">{{ tetrisNextPiece }}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section v-else class="milestone-card overflow-hidden rounded-2xl border p-4">
-            <div class="final-stretch-art mb-4 overflow-hidden rounded-xl border" aria-hidden="true">
-              <img :src="spectatorLeagueBannerUrl" alt="" class="h-full w-full object-cover object-[72%_54%]" />
-              <div class="final-stretch-art-shade" />
-              <SparklesIcon class="final-stretch-art-sparkle size-5" />
-            </div>
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <div class="text-[9px] font-black tracking-[0.11em] text-cyan-200/70 uppercase">{{ leagueGoal ? 'Final stretch' : 'Main story' }}</div>
-                <h2 class="mt-2 text-base font-black text-white">Elite Four & Hall of Fame</h2>
-                <p class="mt-1 text-[11px] leading-5 text-slate-400">
-                  {{ leagueGoal ? 'The run only reaches 100% after the Hall of Fame.' : 'Story milestones are tracked separately from the overall run goal.' }}
-                </p>
-              </div>
-              <div class="final-stretch-mark grid size-11 shrink-0 place-items-center rounded-xl">
-                <TrophyIcon class="size-5" aria-hidden="true" />
-              </div>
-            </div>
-
-            <div class="stretch-list relative mt-4 space-y-2">
               <div
-                v-for="step in finalStretchSteps"
-                :key="step.key"
-                :class="['stretch-step relative rounded-xl border p-3', stretchToneClass(step.state)]"
+                :class="['goal-bar', { 'is-blocks': isTetrisSelected }]"
+                role="progressbar"
+                aria-label="Goal progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="Math.round(goalPercent)"
               >
-                <div class="flex items-start gap-3">
-                  <span :class="['stretch-step-icon relative z-10', stretchToneClass(step.state)]">
-                    <component :is="step.icon" class="size-4" aria-hidden="true" />
-                  </span>
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center justify-between gap-2">
-                      <strong class="text-[11px] text-slate-200">{{ step.title }}</strong>
-                      <span v-if="step.value" class="font-mono text-[9px] text-slate-500">{{ step.value }}</span>
-                      <span v-else-if="step.state === 'active'" class="rounded-full bg-cyan-300/10 px-1.5 py-0.5 text-[8px] font-bold text-cyan-200 ring-1 ring-cyan-300/15">In progress</span>
-                      <span v-else-if="step.state === 'done'" class="text-[8px] font-bold text-emerald-300">Complete</span>
-                      <span v-else class="text-[8px] font-bold text-slate-700">Pending</span>
-                    </div>
-                    <p class="mt-0.5 text-[10px] leading-4 text-slate-500">{{ step.detail }}</p>
-                  </div>
+                <i :style="{ width: goalPercent + '%' }" />
+              </div>
+              <p class="muted">{{ goalProgressCopy.label }} · {{ goalProgressCopy.detail }}</p>
+            </section>
+
+            <section>
+              <h2>Latest decision</h2>
+              <p class="say">{{ isTetrisSelected && tetrisDecisionVisible ? tetrisLatestChoice : selectedRun.decision || 'Preparing the next objective' }}</p>
+            </section>
+
+            <section v-if="tetrisDecisionVisible" class="jev">
+              <div class="block-head">
+                <h2>Placement model</h2>
+                <span>{{ tetrisDecisionCalls }} calls</span>
+              </div>
+              <p class="muted">{{ tetrisDecisionIdentity }} · {{ formatGameToken(tetrisDecisionBackend || 'jev') }} · {{ formatGameToken(tetrisDecisionMode) }}</p>
+              <dl class="ruled">
+                <div><dt>Latest confidence</dt><dd>{{ tetrisDecisionCalls ? percentLabel(tetrisDecisionConfidence) : '—' }}</dd></div>
+                <div>
+                  <dt>Policy agreement</dt>
+                  <dd>
+                    {{ percentLabel(tetrisDecisionAgreement) }}
+                    <small v-if="tetrisDecisionReference.judged">{{ tetrisDecisionReference.agreed }}/{{ tetrisDecisionReference.judged }}</small>
+                  </dd>
+                </div>
+                <div><dt>Fallback rate</dt><dd>{{ percentLabel(tetrisDecisionFallbackRate) }}</dd></div>
+                <div><dt>Avg latency</dt><dd>{{ decisionLatencyLabel(selectedRun.stats?.decision_avg_seconds) }}</dd></div>
+              </dl>
+              <h3 v-if="tetrisDecisionRecords.length" class="sub-head">Recent Jev choices</h3>
+              <ul v-if="tetrisDecisionRecords.length" class="ruled choices">
+                <li v-for="(decision, index) in tetrisDecisionRecords.slice(0, 4)" :key="`${decision.choice || decision.choice_label}-${index}`">
+                  <span>{{ decision.choice_label || decision.choice || 'fallback' }}</span>
+                  <span :class="{ warn: decision.fallback }">{{ decision.fallback ? 'fallback' : percentLabel(Number(decision.confidence || 0)) }}</span>
+                </li>
+              </ul>
+              <p class="muted fine">Policy agreement compares Jev with PokePilot's deterministic best-placement scorer. It is a reference metric, not ground-truth accuracy.</p>
+            </section>
+
+            <section class="activity">
+              <div class="block-head">
+                <h2>Activity</h2>
+                <div class="tabs" role="group" aria-label="Filter activity">
+                  <button
+                    v-for="filter in activityFilters"
+                    :key="filter"
+                    type="button"
+                    :aria-pressed="activityFilter === filter"
+                    @click="activityFilter = filter"
+                  >{{ filter === 'milestones' ? 'Progress' : filter }}</button>
                 </div>
               </div>
-            </div>
-          </section>
+              <ol v-if="selectedActivity.length" class="log">
+                <li v-for="item in selectedActivity.slice(0, 9)" :key="item.id">
+                  <time>{{ activityTimeAgo(item) }}</time>
+                  <span><strong>{{ item.label }}</strong> {{ item.detail }}</span>
+                </li>
+              </ol>
+              <p v-else class="muted">Waiting for the next live event.</p>
+            </section>
 
-          <section class="watching-card rounded-2xl border px-4 py-3">
-            <div class="flex items-center gap-3">
-              <div class="flex -space-x-1.5">
-                <span class="viewer-dot bg-cyan-300" />
-                <span class="viewer-dot bg-violet-300" />
-                <span class="viewer-dot bg-emerald-300" />
+            <section v-if="otherLiveRuns.length" class="others">
+              <div class="block-head">
+                <h2>Other live runs</h2>
+                <span>{{ groupedRuns.live.length }} live</span>
               </div>
-              <div>
-                <strong class="block text-[11px] text-slate-300">Watching AI play classic games</strong>
-                <span class="text-[10px] text-slate-600">Real gameplay · real progress · no operator controls</span>
-              </div>
-            </div>
-          </section>
-        </aside>
+              <ul>
+                <li v-for="run in otherLiveRuns" :key="run.run_id">
+                  <button type="button" @click="selectRun(run)">
+                    <strong>{{ runTitle(run) }}</strong>
+                    <span>{{ displayLocation(run) }}</span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+          </aside>
+        </div>
       </div>
     </div>
   </AppShell>
 </template>
 
+<style>
+@font-face {
+  font-family: 'Archivo';
+  src: url('./assets/archivo-wdth.woff2') format('woff2');
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+</style>
+
 <style scoped>
-
-.spectator-stage {
-  align-items: start;
-}
-
-.spectator-card,
-.player-card,
-.milestone-card,
-.watching-card {
-  border-color: rgba(148, 163, 184, 0.12);
-  background:
-    linear-gradient(180deg, rgba(19, 30, 48, 0.92), rgba(8, 15, 28, 0.94)),
-    rgba(8, 15, 28, 0.95);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
-}
-
-.player-card {
-  border-color: rgba(96, 165, 250, 0.22);
-  background: rgba(3, 7, 18, 0.96);
-}
-
-.player-shell {
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
-    inset 0 0 5rem rgba(15, 23, 42, 0.24);
-}
-
-.game-mark {
-  color: #f8fafc;
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.2), transparent 35%),
-    linear-gradient(145deg, rgba(251,113,133,.88), rgba(59,130,246,.78));
-}
-
-.audience-stat {
-  background: rgba(2, 6, 23, 0.28);
-}
-
-.badge-earned {
-  background: rgba(251, 191, 36, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.2);
-}
-
-.badge-empty {
-  background: rgba(255, 255, 255, 0.025);
-  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
-}
-
-.player-control {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: .65rem;
-  background: rgba(2, 6, 23, .72);
-  color: rgb(226 232 240);
-  backdrop-filter: blur(10px);
-  transition: background .15s ease, border-color .15s ease, transform .15s ease;
-}
-
-.player-control:hover {
-  border-color: rgba(103, 232, 249, .28);
-  background: rgba(15, 23, 42, .9);
-  transform: translateY(-1px);
-}
-
-.activity-list::before {
-  position: absolute;
-  top: .9rem;
-  bottom: .9rem;
-  left: .84rem;
-  width: 1px;
-  background: linear-gradient(to bottom, rgba(103,232,249,.38), rgba(148,163,184,.10));
-  content: '';
-}
-
-.milestone-card {
-  border-color: rgba(103, 232, 249, 0.16);
-  background:
-    radial-gradient(circle at 0% 0%, rgba(56, 189, 248, .12), transparent 18rem),
-    linear-gradient(180deg, rgba(19, 30, 48, 0.94), rgba(8, 15, 28, 0.96));
-}
-
-.watching-card {
-  background:
-    linear-gradient(135deg, rgba(16,185,129,.07), rgba(59,130,246,.04)),
-    rgba(8, 15, 28, 0.9);
-}
-
-.viewer-dot {
-  display: block;
-  width: 1.3rem;
-  height: 1.3rem;
-  border: 2px solid #0b1220;
-  border-radius: 9999px;
-  opacity: .9;
-}
-
-@media (min-width: 80rem) {
-  .spectator-stage > aside {
-    position: sticky;
-    top: 4.5rem;
-  }
-}
-
-.spectator-theme {
-  --mode-accent: #67e8f9;
-  --mode-soft: rgba(103, 232, 249, 0.1);
-  --mode-border: rgba(103, 232, 249, 0.28);
-}
-
-.mode-speedrun {
-  --mode-accent: #fb7185;
-  --mode-soft: rgba(251, 113, 133, 0.1);
-  --mode-border: rgba(251, 113, 133, 0.28);
-}
-
-.mode-adventure {
-  --mode-accent: #67e8f9;
-  --mode-soft: rgba(103, 232, 249, 0.1);
-  --mode-border: rgba(103, 232, 249, 0.28);
-}
-
-.mode-completionist {
-  --mode-accent: #c084fc;
-  --mode-soft: rgba(192, 132, 252, 0.1);
-  --mode-border: rgba(192, 132, 252, 0.3);
-}
-
-.mode-team_builder {
-  --mode-accent: #6ee7b7;
-  --mode-soft: rgba(110, 231, 183, 0.1);
-  --mode-border: rgba(110, 231, 183, 0.28);
-}
-
-.mode-hero {
-  border-color: var(--mode-border);
-  background:
-    radial-gradient(circle at 85% 0%, var(--mode-soft), transparent 32rem),
-    #0d131c;
-}
-
-.mode-chip {
-  border: 1px solid var(--mode-border);
-  border-radius: 9999px;
-  background: var(--mode-soft);
-  padding: 0.2rem 0.55rem;
-  color: var(--mode-accent);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.mode-text {
-  color: var(--mode-accent);
-}
-
-.mode-dot,
-.mode-progress {
-  background: var(--mode-accent);
-}
-
-.mode-metric {
-  border-color: var(--mode-border);
-}
-
-.planner-spinner {
-  position: relative;
-  animation: planner-breathe 1.7s ease-in-out infinite;
-}
-
-.planner-spinner::after {
-  position: absolute;
-  inset: -0.35rem;
-  border: 1px solid rgba(103, 232, 249, 0.22);
-  border-radius: 9999px;
-  content: '';
-  animation: planner-ring 1.7s ease-out infinite;
-}
-
-.planner-dots > span {
-  width: 0.25rem;
-  height: 0.25rem;
-  border-radius: 9999px;
-  background: rgb(165 243 252);
-  animation: planner-dot 1.15s ease-in-out infinite;
-}
-
-.planner-dots > span:nth-child(2) {
-  animation-delay: 0.16s;
-}
-
-.planner-dots > span:nth-child(3) {
-  animation-delay: 0.32s;
-}
-
-.live-radar {
-  position: relative;
-}
-
-.live-radar::before,
-.live-radar::after {
-  position: absolute;
-  inset: -0.55rem;
-  border: 1px solid rgba(103, 232, 249, 0.18);
-  border-radius: 9999px;
-  content: '';
-  animation: planner-ring 2.2s ease-out infinite;
-}
-
-.live-radar::after {
-  animation-delay: 1.1s;
-}
-
-@keyframes planner-breathe {
-  0%, 100% { transform: scale(0.96); box-shadow: 0 0 0 rgba(34, 211, 238, 0); }
-  50% { transform: scale(1.04); box-shadow: 0 0 1.25rem rgba(34, 211, 238, 0.18); }
-}
-
-@keyframes planner-ring {
-  0% { opacity: 0.75; transform: scale(0.72); }
-  100% { opacity: 0; transform: scale(1.35); }
-}
-
-@keyframes planner-dot {
-  0%, 70%, 100% { opacity: 0.3; transform: translateY(0); }
-  35% { opacity: 1; transform: translateY(-0.18rem); }
-}
-
 :fullscreen {
   background: #05070a;
 }
 
+/* The stage sits directly on the page; only PublicHome keeps the night-scape backdrop. */
+.spectator-theme.is-stage {
+  background: none;
+  box-shadow: none;
+}
+
+.spectator-theme.is-stage::before {
+  display: none;
+}
+
 .spectator-theme {
+  --mode-accent: #67e8f9;
+  --mode-soft: rgba(103, 232, 249, 0.1);
+  --mode-border: rgba(103, 232, 249, 0.28);
   position: relative;
   border-radius: 1.5rem;
   background:
@@ -1713,113 +1077,134 @@ function activityTimeAgo(item: ActivityItem): string {
   pointer-events: none;
 }
 
-.spectator-card,
-.milestone-card,
-.watching-card {
-  backdrop-filter: blur(14px);
-}
+.mode-speedrun { --mode-accent: #fb7185; --mode-soft: rgba(251, 113, 133, 0.1); --mode-border: rgba(251, 113, 133, 0.28); }
+.mode-adventure { --mode-accent: #67e8f9; --mode-soft: rgba(103, 232, 249, 0.1); --mode-border: rgba(103, 232, 249, 0.28); }
+.mode-completionist { --mode-accent: #c084fc; --mode-soft: rgba(192, 132, 252, 0.1); --mode-border: rgba(192, 132, 252, 0.3); }
+.mode-team_builder { --mode-accent: #6ee7b7; --mode-soft: rgba(110, 231, 183, 0.1); --mode-border: rgba(110, 231, 183, 0.28); }
 
-.spectator-art-banner {
+.live-radar {
   position: relative;
-  height: 5.5rem;
-  border-color: rgba(103,232,249,.16);
-  background: #07101d;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.04),
-    0 10px 24px rgba(0,0,0,.18);
 }
 
-.spectator-art-banner img {
-  opacity: .94;
-  filter: saturate(1.08) contrast(1.03);
-}
-
-.spectator-art-banner-glow {
+.live-radar::before,
+.live-radar::after {
   position: absolute;
-  inset: 0;
+  inset: -0.55rem;
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 9999px;
+  content: '';
+  animation: radar-ring 2.2s ease-out infinite;
+}
+
+.live-radar::after {
+  animation-delay: 1.1s;
+}
+
+@keyframes radar-ring {
+  0% { opacity: 0.75; transform: scale(0.72); }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+
+/* Stage tokens. Pokémon is the default; Tetris overrides them below. */
+.stage {
+  --page: var(--poke-bg);
+  --bone: #e8e6dc;
+  --dusk: #9098b3;
+  --rule: #2a3254;
+  --accent: #f0c43a;
+  --live: #ef6a5e;
+  --bezel: #2b3050;
+  display: grid;
+  gap: 1.5rem;
+  color: var(--bone);
+  font-family: 'Archivo', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.game-tetris .stage {
+  --rule: #26303a;
+  --accent: #4fd6e8;
+  --bezel: #1a1d26;
+  --i: #4fd6e8;
+  --o: #f0c43a;
+  --t: #a77bdb;
+  --s: #5fd068;
+  --z: #ef5a5a;
+  --j: #4a7be0;
+  --l: #f0903a;
+  padding: 1.25rem;
   background:
-    linear-gradient(90deg, rgba(6,12,24,.08), rgba(6,12,24,.04) 55%, rgba(6,12,24,.16)),
-    linear-gradient(180deg, transparent 38%, rgba(4,8,16,.72));
+    linear-gradient(var(--rule) 1px, transparent 1px) 0 0 / 1.5rem 1.5rem,
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px) 0 0 / 1.5rem 1.5rem;
+  background-color: color-mix(in srgb, var(--page) 88%, black);
+  background-blend-mode: soft-light;
 }
 
-.spectator-art-banner-caption {
-  position: absolute;
-  right: .65rem;
-  bottom: .55rem;
-  left: .65rem;
+.stage h1,
+.stage h2 {
+  margin: 0;
+}
+
+.stage-head {
   display: flex;
-  align-items: end;
+  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
-  gap: .5rem;
-  text-shadow: 0 1px 8px rgba(0,0,0,.8);
+  gap: 0.5rem 1.5rem;
 }
 
-.spectator-art-banner-caption span {
-  color: rgb(165 243 252 / .72);
-  font-size: .48rem;
+.stage-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-width: 0;
+}
+
+.stage-title h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-stretch: 68%;
   font-weight: 800;
-  letter-spacing: .11em;
-  text-transform: uppercase;
+  line-height: 1;
 }
 
-.spectator-art-banner-caption strong {
-  max-width: 62%;
-  overflow: hidden;
-  color: rgba(248,250,252,.9);
-  font-size: .55rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.game-tetris .stage-title h1 {
+  letter-spacing: 0.06em;
+  font-stretch: 85%;
 }
 
-.final-stretch-art {
-  position: relative;
-  height: 5rem;
-  border-color: rgba(103,232,249,.15);
-  background: #07101d;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+.stage-sub {
+  color: var(--dusk);
 }
 
-.final-stretch-art img {
-  opacity: .9;
-  filter: saturate(1.12) contrast(1.04);
+.stage-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  color: var(--dusk);
+  font-size: 0.875rem;
 }
 
-.final-stretch-art-shade {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 82% 38%, rgba(103,232,249,.02), rgba(2,6,23,.06) 42%, rgba(2,6,23,.62)),
-    linear-gradient(180deg, transparent 22%, rgba(3,7,18,.62));
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--bone);
+  font-weight: 600;
 }
 
-.final-stretch-art-sparkle {
-  position: absolute;
-  top: .7rem;
-  right: .8rem;
-  color: rgb(207 250 254 / .9);
-  filter: drop-shadow(0 0 10px rgba(103,232,249,.5));
+.live-tag i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--live);
+  animation: live-pulse 1.8s ease-in-out infinite;
 }
 
-.spectator-hero-card {
-  border-color: var(--mode-border);
-  background:
-    linear-gradient(180deg, rgba(13, 23, 40, .74), rgba(6, 12, 24, .91)),
-    var(--spectator-art) 24% 70% / 52rem auto no-repeat;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.04),
-    0 18px 44px rgba(0,0,0,.22);
-}
-
-.goal-progress-card {
-  border-color: var(--mode-border);
-  background:
-    radial-gradient(circle at 100% 0%, var(--mode-soft), transparent 12rem),
-    rgba(2, 6, 23, .48);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
-}
-
-.goal-progress-fill {
-  box-shadow: 0 0 18px color-mix(in srgb, var(--mode-accent) 38%, transparent);
+@keyframes live-pulse {
+  50% { opacity: 0.3; }
 }
 
 .pokeball-mark {
@@ -1828,10 +1213,9 @@ function activityTimeAgo(item: ActivityItem): string {
   width: 1.65rem;
   height: 1.65rem;
   overflow: hidden;
-  border: 2px solid rgba(255,255,255,.9);
+  border: 2px solid var(--bone);
   border-radius: 9999px;
-  background: linear-gradient(to bottom, #fb7185 0 46%, #e2e8f0 46% 54%, #f8fafc 54% 100%);
-  box-shadow: 0 0 18px rgba(251,113,133,.2);
+  background: linear-gradient(to bottom, #ef6a5e 0 46%, #e2e8f0 46% 54%, #f8fafc 54% 100%);
 }
 
 .pokeball-mark::before {
@@ -1840,7 +1224,7 @@ function activityTimeAgo(item: ActivityItem): string {
   left: 0;
   width: 100%;
   height: 2px;
-  background: rgba(15,23,42,.86);
+  background: #0c1020;
   content: '';
   transform: translateY(-50%);
 }
@@ -1849,233 +1233,392 @@ function activityTimeAgo(item: ActivityItem): string {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: .52rem;
-  height: .52rem;
-  border: 2px solid rgba(15,23,42,.9);
+  width: 0.52rem;
+  height: 0.52rem;
+  border: 2px solid #0c1020;
   border-radius: 9999px;
   background: white;
   content: '';
   transform: translate(-50%, -50%);
 }
 
-.premium-stat {
-  position: relative;
-  overflow: hidden;
-  border-color: rgba(255,255,255,.08);
-  background:
-    linear-gradient(155deg, rgba(255,255,255,.035), transparent 55%),
-    rgba(2,6,23,.35);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
-}
-
-.premium-stat::after {
-  position: absolute;
-  right: -1.6rem;
-  bottom: -1.8rem;
-  width: 5rem;
-  height: 5rem;
-  border-radius: 9999px;
-  content: '';
-  opacity: .12;
-  filter: blur(10px);
-}
-
-.premium-stat-icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: .7rem;
-  background: rgba(255,255,255,.035);
-}
-
-.stat-tone-cyan { color: rgb(165 243 252); }
-.stat-tone-violet { color: rgb(221 214 254); }
-.stat-tone-emerald { color: rgb(167 243 208); }
-.stat-tone-amber { color: rgb(253 230 138); }
-.premium-stat.stat-tone-cyan::after { background: rgb(34 211 238); }
-.premium-stat.stat-tone-violet::after { background: rgb(168 85 247); }
-.premium-stat.stat-tone-emerald::after { background: rgb(16 185 129); }
-.premium-stat.stat-tone-amber::after { background: rgb(245 158 11); }
-
-.final-stretch-mark {
-  border: 1px solid rgba(103,232,249,.18);
-  background:
-    radial-gradient(circle at 35% 20%, rgba(255,255,255,.15), transparent 45%),
-    rgba(34,211,238,.09);
-  color: rgb(207 250 254);
-  box-shadow: 0 0 26px rgba(34,211,238,.08);
-}
-
-.stretch-list::before {
-  position: absolute;
-  top: 1rem;
-  bottom: 1rem;
-  left: 1rem;
-  width: 1px;
-  background: linear-gradient(to bottom, rgba(52,211,153,.35), rgba(103,232,249,.22), rgba(148,163,184,.08));
-  content: '';
-}
-
-.stretch-step {
-  border-color: rgba(255,255,255,.075);
-  background: rgba(2,6,23,.34);
-  transition: border-color .15s ease, background .15s ease, transform .15s ease;
-}
-
-.stretch-step-icon {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
-  place-items: center;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: .72rem;
-  background: rgba(15,23,42,.92);
-}
-
-.stretch-step-done {
-  border-color: rgba(52,211,153,.18);
-}
-.stretch-step-done .stretch-step-icon {
-  border-color: rgba(52,211,153,.25);
-  background: rgba(16,185,129,.11);
-  color: rgb(167 243 208);
-}
-.stretch-step-active {
-  border-color: rgba(103,232,249,.22);
-  background:
-    radial-gradient(circle at 0% 50%, rgba(103,232,249,.09), transparent 10rem),
-    rgba(2,6,23,.4);
-}
-.stretch-step-active .stretch-step-icon {
-  border-color: rgba(103,232,249,.28);
-  background: rgba(34,211,238,.1);
-  color: rgb(165 243 252);
-  box-shadow: 0 0 18px rgba(34,211,238,.08);
-}
-.stretch-step-todo {
-  opacity: .78;
-}
-.stretch-step-todo .stretch-step-icon {
-  color: rgb(100 116 139);
-}
-
-.milestone-card {
-  background:
-    linear-gradient(180deg, rgba(13, 23, 40, .80), rgba(6, 12, 24, .93)),
-    var(--spectator-art) 80% 68% / 48rem auto no-repeat;
-}
-
-
-
-
-/* Tetris gets its own visual language. Keep this below the play-style rules so
-   the active game, not a Pokémon policy default, owns the spectator chrome. */
-.spectator-theme.game-tetris {
-  --mode-accent: #fde047;
-  --mode-soft: rgba(253, 224, 71, 0.1);
-  --mode-border: rgba(253, 224, 71, 0.28);
-  background:
-    radial-gradient(circle at 80% 8%, rgba(34, 211, 238, .08), transparent 24rem),
-    radial-gradient(circle at 12% 70%, rgba(253, 224, 71, .08), transparent 22rem),
-    linear-gradient(rgba(148, 163, 184, .035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, .035) 1px, transparent 1px),
-    linear-gradient(180deg, #05070c, #080d16);
-  background-size: auto, auto, 26px 26px, 26px 26px, auto;
-}
-
-.spectator-theme.game-tetris::before {
-  background:
-    radial-gradient(circle at 12% 72%, rgba(253, 224, 71, .1), transparent 22rem),
-    radial-gradient(circle at 88% 18%, rgba(34, 211, 238, .08), transparent 20rem);
-}
-
-.game-tetris .spectator-hero-card {
-  background:
-    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .08), transparent 17rem),
-    linear-gradient(180deg, rgba(12, 16, 25, .95), rgba(5, 8, 14, .98));
-}
-
-.game-tetris .game-mark {
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.18), transparent 35%),
-    linear-gradient(145deg, rgba(250, 204, 21, .88), rgba(8, 145, 178, .7));
-}
-
+/* A T-tetromino in the piece colors. */
 .tetris-mark {
   display: block;
-  width: .48rem;
-  height: .48rem;
-  border-radius: .08rem;
-  background: #fde047;
-  box-shadow:
-    .55rem 0 #fde047,
-    1.1rem 0 #fde047,
-    .55rem .55rem #fde047;
-  transform: translate(-.55rem, -.25rem);
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 1.1rem;
+  background: var(--t);
+  box-shadow: 0.6rem 0 var(--t), 1.2rem 0 var(--t), 0.6rem 0.6rem var(--t);
 }
 
-.tetris-art-banner {
-  border-color: rgba(253, 224, 71, .18);
-  background:
-    linear-gradient(180deg, rgba(250, 204, 21, .05), transparent 62%),
-    #05070c;
+.stage-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22rem;
+  gap: 2rem;
+  align-items: start;
 }
 
-.tetris-art-grid {
+.screen-col,
+.side {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.block-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  color: var(--dusk);
+  font-size: 0.85rem;
+}
+
+.stage h2 {
+  color: var(--dusk);
+  font-size: 0.95rem;
+  font-stretch: 85%;
+  font-weight: 700;
+}
+
+.route-block .block-head h2,
+.party .block-head h2 {
+  color: var(--bone);
+  font-size: 1rem;
+}
+
+.muted {
+  margin: 0.25rem 0 0;
+  color: var(--dusk);
+  font-size: 0.875rem;
+}
+
+.sub-head {
+  margin: 0.75rem 0 0;
+  color: var(--dusk);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.sub-head + .ruled {
+  margin-top: 0.25rem;
+}
+
+.muted.fine {
+  font-size: 0.75rem;
+}
+
+.warn {
+  color: #f0c43a;
+}
+
+/* Game screen */
+.bezel {
+  padding: 0.75rem 0.75rem 1rem;
+  border-radius: 6px 6px 22px 6px;
+  background: var(--bezel);
+}
+
+.game-tetris .bezel {
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--rule);
+}
+
+.screen {
+  position: relative;
+  width: min(100%, calc(72vh * 10 / 9));
+  margin-inline: auto;
+  overflow: hidden;
+  background: #000;
+}
+
+.screen.is-gb { aspect-ratio: 10 / 9; }
+.screen.is-wide { aspect-ratio: 4 / 3; width: min(100%, calc(72vh * 4 / 3)); }
+.screen.is-theater { width: 100%; max-height: 88vh; }
+
+.screen-wait {
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, .08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, .08) 1px, transparent 1px);
-  background-size: 14px 14px;
-  mask-image: linear-gradient(to right, black, transparent 78%);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.25rem;
+  padding: 1.5rem;
+  color: var(--dusk);
+  text-align: center;
 }
 
-.tetris-art-banner::before {
+.screen-wait p { margin: 0; }
+
+.screen-controls {
   position: absolute;
-  top: 1rem;
-  left: 2rem;
-  width: .72rem;
-  height: .72rem;
-  border-radius: .08rem;
-  background: #fde047;
-  box-shadow:
-    .78rem 0 #fde047,
-    1.56rem 0 #fde047,
-    .78rem .78rem #fde047,
-    4.5rem 1.2rem #67e8f9,
-    5.28rem 1.2rem #67e8f9,
-    5.28rem .42rem #67e8f9,
-    6.06rem .42rem #67e8f9;
-  content: '';
-  filter: drop-shadow(0 0 10px rgba(253, 224, 71, .2));
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  opacity: 0.85;
+  transition: opacity 0.15s;
 }
 
-.game-tetris .spectator-art-banner-caption span {
-  color: rgb(254 240 138 / .78);
+.screen:hover .screen-controls,
+.screen:focus-within .screen-controls {
+  opacity: 1;
 }
 
-.tetris-piece-card,
-.tetris-board-shell,
-.tetris-state-tile {
-  border-color: rgba(148, 163, 184, .1);
-  background: rgba(2, 6, 23, .42);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+.seg,
+.theme-pick {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 70%);
+  font-size: 0.7rem;
 }
 
-.tetris-board-shell {
-  border-color: rgba(253, 224, 71, .16);
-  background:
-    linear-gradient(180deg, rgba(253, 224, 71, .035), transparent),
-    rgba(1, 4, 9, .78);
+.seg button {
+  padding: 0.35rem 0.6rem;
+  color: var(--dusk);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed='true'] {
+  color: var(--page);
+  background: var(--bone);
+}
+
+.theme-pick {
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--dusk);
+}
+
+.theme-pick select {
+  max-width: 9rem;
+  background: transparent;
+  color: var(--bone);
+  border: 0;
+  font-size: 0.75rem;
+}
+
+.icon-btn {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  color: var(--bone);
+  background: rgb(0 0 0 / 70%);
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.icon-btn:hover,
+.seg button:hover {
+  background: rgb(255 255 255 / 15%);
+}
+
+.warn-chip {
+  max-width: 14rem;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  background: rgb(60 40 0 / 85%);
+  color: #f0c43a;
+  font-size: 0.7rem;
+  text-align: right;
+}
+
+.screen-note {
+  position: absolute;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  margin: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  background: rgb(0 0 0 / 70%);
+  color: var(--bone);
+  font-size: 0.7rem;
+}
+
+.bezel-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.6rem;
+  color: var(--dusk);
+  font-size: 0.8rem;
+  font-stretch: 75%;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Facts, party, side column */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--dusk);
+}
+
+.facts div {
+  padding: 0.75rem 1rem 0.75rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.facts dt {
+  color: var(--dusk);
+  font-size: 0.8rem;
+}
+
+.facts dd {
+  margin: 0.125rem 0 0;
+  font-size: 1.6rem;
+  font-stretch: 78%;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.game-tetris .facts dd {
+  font-size: 2rem;
+}
+
+.game-tetris .facts div:nth-child(1) { box-shadow: inset 0 -3px var(--o); }
+.game-tetris .facts div:nth-child(2) { box-shadow: inset 0 -3px var(--i); }
+.game-tetris .facts div:nth-child(3) { box-shadow: inset 0 -3px var(--t); }
+.game-tetris .facts div:nth-child(4) { box-shadow: inset 0 -3px var(--s); }
+
+.roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--dusk);
+  list-style: none;
+}
+
+.roster li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.mon {
+  display: grid;
+  flex: 1;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.mon-name {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mon-name span,
+.mon-meta {
+  color: var(--dusk);
+  font-size: 0.8rem;
+}
+
+.hp {
+  display: block;
+  height: 5px;
+  background: var(--rule);
+}
+
+.hp i {
+  display: block;
+  height: 100%;
+}
+
+.hp .hp-high { background: #7bc96f; }
+.hp .hp-mid { background: #f0c43a; }
+.hp .hp-low { background: #ef6a5e; }
+
+.now-place {
+  margin: 0;
+  font-size: 1.9rem;
+  font-stretch: 78%;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.goal-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.goal-row strong {
+  font-size: 2rem;
+  font-stretch: 78%;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.goal-bar {
+  height: 6px;
+  margin: 0.6rem 0 0.25rem;
+  background: var(--rule);
+}
+
+.goal-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+
+/* Tetris progress is drawn as a row of tetromino-colored blocks. */
+.goal-bar.is-blocks {
+  height: 12px;
+}
+
+.goal-bar.is-blocks i {
+  background: linear-gradient(90deg, var(--i) 0 14.28%, var(--j) 0 28.56%, var(--t) 0 42.84%, var(--s) 0 57.12%, var(--o) 0 71.4%, var(--l) 0 85.68%, var(--z) 0);
+  background-size: 100% 100%;
+}
+
+.say {
+  max-width: 34ch;
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
+.board-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
 }
 
 .tetris-board {
   display: grid;
+  flex: none;
   gap: 1px;
+  width: 8rem;
+  padding: 4px;
+  background: #06080d;
+  box-shadow: inset 0 0 0 2px var(--rule);
 }
 
 .tetris-board-row {
@@ -2086,85 +1629,157 @@ function activityTimeAgo(item: ActivityItem): string {
 
 .tetris-cell {
   aspect-ratio: 1;
-  border-radius: 1px;
 }
 
 .tetris-cell-empty {
-  background: rgba(148, 163, 184, .045);
+  background: rgb(148 163 184 / 5%);
 }
 
 .tetris-cell-filled {
-  background: linear-gradient(145deg, #fef08a, #eab308);
-  box-shadow:
-    inset 0 0 0 1px rgba(255,255,255,.24),
-    0 0 6px rgba(250, 204, 21, .12);
+  background: var(--o);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 25%);
 }
 
-.tetris-state-tile span,
-.tetris-goal-stat span {
-  display: block;
-  color: #64748b;
-  font-size: .5rem;
+.pieces {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.pieces dt {
+  color: var(--dusk);
+  font-size: 0.8rem;
+}
+
+.pieces dd {
+  margin: 0;
+  font-size: 2rem;
+  font-stretch: 78%;
   font-weight: 800;
-  letter-spacing: .09em;
-  text-transform: uppercase;
+  line-height: 1.1;
 }
 
-.tetris-state-tile strong,
-.tetris-goal-stat strong {
-  display: block;
-  margin-top: .35rem;
-  color: #f8fafc;
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 1rem;
-  font-weight: 900;
+.piece-active { color: var(--o); }
+.piece-next { color: var(--i); }
+
+.ruled {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  border-top: 1px solid var(--dusk);
+  list-style: none;
 }
 
-.tetris-goal-card {
-  border-color: rgba(253, 224, 71, .16);
-  background:
-    radial-gradient(circle at 100% 0%, rgba(253, 224, 71, .09), transparent 14rem),
-    linear-gradient(180deg, rgba(16, 20, 29, .96), rgba(5, 8, 14, .98));
+.ruled > div,
+.ruled > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.875rem;
 }
 
-.tetris-goal-visual {
-  position: relative;
-  height: 5rem;
-  overflow: hidden;
-  border-color: rgba(253, 224, 71, .14);
-  background:
-    linear-gradient(rgba(148, 163, 184, .06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, .06) 1px, transparent 1px),
-    #05070c;
-  background-size: 14px 14px;
+.ruled dt,
+.ruled small {
+  color: var(--dusk);
 }
 
-.tetris-goal-piece {
-  position: absolute;
-  top: 1.1rem;
-  left: calc(50% - 1.35rem);
-  width: .78rem;
-  height: .78rem;
-  border-radius: .08rem;
-  background: #fde047;
-  box-shadow:
-    .86rem 0 #fde047,
-    1.72rem 0 #fde047,
-    .86rem .86rem #fde047;
-  filter: drop-shadow(0 0 12px rgba(253, 224, 71, .28));
+.ruled dd {
+  margin: 0;
 }
 
-.tetris-goal-mark {
-  border: 1px solid rgba(253, 224, 71, .2);
-  background: rgba(253, 224, 71, .09);
-  color: #fef08a;
+.tabs {
+  display: flex;
+  gap: 0.875rem;
 }
 
-.tetris-goal-stat {
-  border: 1px solid rgba(148, 163, 184, .09);
-  border-radius: .75rem;
-  background: rgba(2, 6, 23, .38);
-  padding: .65rem;
+.tabs button {
+  padding: 2px 0;
+  color: var(--dusk);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-transform: capitalize;
 }
 
+.tabs button[aria-pressed='true'] {
+  color: var(--bone);
+  border-bottom-color: var(--accent);
+}
+
+.log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log li {
+  display: grid;
+  grid-template-columns: 3.4rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9rem;
+}
+
+.log li:first-child {
+  border-top-color: var(--dusk);
+}
+
+.log time {
+  color: var(--dusk);
+}
+
+.log strong {
+  font-weight: 600;
+}
+
+.others ul {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--dusk);
+  list-style: none;
+}
+
+.others button {
+  display: grid;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.6rem 0;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.others button:hover strong {
+  text-decoration: underline;
+}
+
+.others button span {
+  color: var(--dusk);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 64rem) {
+  .stage-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-tag i,
+  .live-radar::before,
+  .live-radar::after {
+    animation: none;
+  }
+
+  .goal-bar i {
+    transition: none;
+  }
+}
 </style>
