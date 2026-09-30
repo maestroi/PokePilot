@@ -29,6 +29,7 @@ type DecisionKindSummary struct {
 	Fallbacks  int `json:"fallbacks,omitempty"`
 	Errors     int `json:"errors,omitempty"`
 	Controlled int `json:"controlled,omitempty"`
+	// Controlled counts active answers that supplied the executed action.
 	// Shadow counts observed-only answers. Agreements and Disagreements are
 	// the shadow answers that could be compared with what executed.
 	Shadow        int `json:"shadow,omitempty"`
@@ -49,8 +50,8 @@ type DecisionKindSummary struct {
 	P95Seconds       float64                            `json:"p95_seconds,omitempty"`
 	PromptTokens     int                                `json:"prompt_tokens,omitempty"`
 	CompletionTokens int                                `json:"completion_tokens,omitempty"`
-	// EngineChoices tallies the engine's picks; ExecutedChoices what the
-	// existing policy ran on shadow calls. Keys are choice labels.
+	// EngineChoices tallies the engine's picks; ExecutedChoices what actually
+	// ran when an execution reference is available. Keys are choice labels.
 	EngineChoices   map[string]int `json:"engine_choices,omitempty"`
 	ExecutedChoices map[string]int `json:"executed_choices,omitempty"`
 }
