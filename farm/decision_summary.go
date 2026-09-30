@@ -25,9 +25,10 @@ type DecisionSummary struct {
 // DecisionKindSummary aggregates one decision kind (objective selection,
 // failure recovery, and battle turns once those are consulted).
 type DecisionKindSummary struct {
-	Calls     int `json:"calls"`
-	Fallbacks int `json:"fallbacks,omitempty"`
-	Errors    int `json:"errors,omitempty"`
+	Calls      int `json:"calls"`
+	Fallbacks  int `json:"fallbacks,omitempty"`
+	Errors     int `json:"errors,omitempty"`
+	Controlled int `json:"controlled,omitempty"`
 	// Shadow counts observed-only answers. Agreements and Disagreements are
 	// the shadow answers that could be compared with what executed.
 	Shadow        int `json:"shadow,omitempty"`
@@ -70,6 +71,9 @@ func (s *DecisionSummary) Observe(r TypedDecisionRecord) {
 	}
 	if r.Error != "" {
 		k.Errors++
+	}
+	if r.Controlled {
+		k.Controlled++
 	}
 	bucket := confidenceBucket(r.Confidence)
 	if r.Error == "" {
