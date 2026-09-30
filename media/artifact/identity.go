@@ -20,6 +20,7 @@ const (
 	ProfileReplayFull    ProfileName = "replay-full"
 	ProfileLiveBroadcast ProfileName = "live-broadcast"
 	ProfileHighlight     ProfileName = "highlight"
+	ProfileClip          ProfileName = "clip"
 	ProfileShortVertical ProfileName = "short-vertical"
 	ProfileDebugRaw      ProfileName = "debug-raw"
 )
@@ -109,7 +110,7 @@ func NewProfile(name ProfileName) (Profile, error) {
 		profile.OverlayPolicy = "timeline-v1"
 		profile.EventPolicy = "events-v1"
 		profile.SegmentPolicy = Component{ID: "live", Version: "v1"}
-	case ProfileHighlight:
+	case ProfileHighlight, ProfileClip:
 		profile.Presentation = Presentation{
 			Renderer: Component{ID: "classic", Version: "v1"},
 			Layout:   Component{ID: "landscape", Version: "v1"},
