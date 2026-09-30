@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
-
 )
 
 // Teleporter pads are walkable floor bytes, but stepping on one leaves the
