@@ -41,8 +41,9 @@ type DecisionEngineSpec struct {
 	// Mode is off, shadow or active. Empty means active, which is how every
 	// selection made before modes existed behaved.
 	Mode string `json:"mode,omitempty"`
-	// Battles asks the backend at battle turns. Battle decisions are
-	// observational only, so this requires shadow mode.
+	// Battles asks the backend at eligible battle move turns. Shadow records
+	// the answer only; active may replace the deterministic move after the
+	// runner validates legality and confidence.
 	Battles bool `json:"battles,omitempty"`
 	// Objectives lets the backend pick from the already-valid objective menu.
 	Objectives bool `json:"objectives,omitempty"`
@@ -89,8 +90,7 @@ func NormalizeDecisionMode(mode string) string {
 }
 
 // Normalized returns a canonical copy, or an error for an unknown backend or
-// mode, an out-of-range confidence, or battle decisions outside shadow mode.
-// A nil spec stays nil.
+// mode or an out-of-range confidence. A nil spec stays nil.
 func (d *DecisionEngineSpec) Normalized() (*DecisionEngineSpec, error) {
 	if d == nil {
 		return nil, nil
@@ -122,9 +122,6 @@ func (d *DecisionEngineSpec) Normalized() (*DecisionEngineSpec, error) {
 	if out.Inference != nil {
 		identity := *out.Inference
 		out.Inference = &identity
-	}
-	if out.Battles && out.Mode != DecisionModeShadow {
-		return nil, fmt.Errorf("decision_engine.battles requires mode shadow (got %q)", out.Mode)
 	}
 	return &out, nil
 }
