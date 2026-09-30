@@ -43,6 +43,19 @@ func gsMovementIdle(reader game.MemoryReader) bool {
 	return flags&(gen2PlayerStepMidair|gen2PlayerStepContinue|gen2PlayerStepStart) == 0
 }
 
+// gsScriptActive reports that a map script owns the machine, whether or not it
+// is waiting on the player. It is deliberately broader than InDialogue: warps,
+// stair transitions and cutscene force-walks run scripts while the ROM still
+// owns movement.
+func gsScriptActive(reader game.MemoryReader) bool {
+	if reader == nil {
+		return false
+	}
+	return reader.Peek8(sym.ScriptMode) != gen2ScriptOff ||
+		reader.Peek8(sym.ScriptRunning) != 0 ||
+		reader.Peek8(sym.ScriptFlags)&gen2ScriptRunningFlag != 0
+}
+
 // DecodeOverworld keeps Gen-II control-state and map-group semantics behind
 // the Gold/Silver profile boundary.
 func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
@@ -50,17 +63,23 @@ func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
 		return game.OverworldState{}
 	}
 	nativeMap := gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber))
-	scriptActive := reader.Peek8(sym.ScriptMode) != gen2ScriptOff ||
-		reader.Peek8(sym.ScriptRunning) != 0 ||
-		reader.Peek8(sym.ScriptFlags)&gen2ScriptRunningFlag != 0
+	scriptActive := gsScriptActive(reader)
+	movementIdle := gsMovementIdle(reader)
 	return game.OverworldState{
 		NativeMapID:  nativeMap,
 		X:            reader.Peek8(sym.XCoord),
 		Y:            reader.Peek8(sym.YCoord),
 		Facing:       decodeFacing(reader.Peek8(sym.PlayerDirection)),
 		Controllable: gsControllable(reader),
-		MovementIdle: gsMovementIdle(reader),
+		MovementIdle: movementIdle,
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
-		InDialogue:   scriptActive,
+		// InDialogue means a script is waiting for the player, not merely
+		// running. A warp, stair transition or scripted force-walk runs a
+		// script while it still owns movement; reporting that as a dialogue
+		// made generic edge crossing abort with ErrDialogueInterrupted in the
+		// frames between stepping onto a warp and the map actually changing.
+		// Only a script that has stopped moving and is idle on a text/prompt
+		// surface is a dialogue the caller must answer.
+		InDialogue: scriptActive && movementIdle,
 	}
 }
