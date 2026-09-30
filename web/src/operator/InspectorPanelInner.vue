@@ -416,6 +416,47 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTime
               </a>
             </div>
           </div>
+          <div class="mt-3 rounded-md border border-white/8 bg-black/15 p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Highlights</span>
+                <p class="mt-1 text-[11px] text-slate-400">
+                  <template v-if="highlights?.state === 'empty'">No highlight-worthy semantic events were found.</template>
+                  <template v-else-if="highlights">
+                    {{ highlights.windows || 0 }} window{{ Number(highlights.windows || 0) === 1 ? '' : 's' }} · {{ highlightDurationLabel() }}
+                    <span v-if="highlights.state === 'generating'"> · {{ highlights.windows_done || 0 }}/{{ highlights.windows || 0 }} rendered</span>
+                  </template>
+                  <template v-else>Build a short semantic reel from badges, gyms, evolutions, blackouts, recoveries, and run completion.</template>
+                </p>
+              </div>
+              <StatusBadge
+                v-if="highlights"
+                :tone="highlights.state === 'ready' ? 'success' : highlights.state === 'error' ? 'danger' : highlights.state === 'generating' ? 'warning' : 'neutral'"
+              >{{ highlights.state }}</StatusBadge>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                v-if="highlights?.state !== 'ready' && highlights?.state !== 'generating' && highlights?.state !== 'empty' && highlights?.state !== 'disabled'"
+                type="button"
+                class="rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/20 hover:bg-amber-400/15 disabled:opacity-50"
+                :disabled="renderingHighlights"
+                @click="requestHighlights"
+              >
+                {{ renderingHighlights ? 'Requesting…' : 'Render highlights' }}
+              </button>
+              <a
+                v-if="highlights?.state === 'ready'"
+                :href="highlightVideoURL(runID)"
+                class="rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/20 hover:bg-amber-400/15"
+              >Open highlight reel</a>
+              <a
+                v-if="highlights?.state === 'ready'"
+                :href="highlightManifestURL(runID)"
+                class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
+              >Manifest</a>
+            </div>
+            <p v-if="highlightError" class="mt-2 text-xs text-amber-300/80">{{ highlightError }}</p>
+          </div>
           <p v-if="replayError" class="mt-2 text-xs text-amber-300/80">{{ replayError }}</p>
         </section>
       </div>
