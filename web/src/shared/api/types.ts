@@ -128,6 +128,7 @@ export interface TypedDecisionRecord {
 export interface DecisionKindSummary {
   calls: number
   fallbacks?: number
+  controlled?: number
   errors?: number
   shadow?: number
   agreements?: number
