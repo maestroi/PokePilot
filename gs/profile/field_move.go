@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/game"
 	gsdata "github.com/maestroi/pokepilot/gs/data"
@@ -46,6 +47,40 @@ func gsFieldMoveByID(id game.FieldMoveID) (gsFieldMoveSpec, bool) {
 		}
 	}
 	return gsFieldMoveSpec{}, false
+}
+
+func gsFieldMoveByNativeMove(move uint8) (gsFieldMoveSpec, bool) {
+	for _, spec := range gsFieldMoves {
+		if spec.move == move {
+			return spec, true
+		}
+	}
+	return gsFieldMoveSpec{}, false
+}
+
+// Gen II's Pokémon submenu contains more field moves than the portable
+// progression set. Unknown-but-real entries must still occupy a semantic menu
+// position or a later supported move would be selected at the wrong row.
+func gsNativeMonMenuFieldMove(move uint8) bool {
+	switch move {
+	case 0x0f, // Cut
+		0x13, // Fly
+		0x1d, // Headbutt
+		0x39, // Surf
+		0x46, // Strength
+		0x5b, // Dig
+		0x64, // Teleport
+		0x7f, // Waterfall
+		0x87, // Softboiled
+		0x94, // Flash
+		0xd0, // Milk Drink
+		0xe6, // Sweet Scent
+		0xf9, // Rock Smash
+		0xfa: // Whirlpool
+		return true
+	default:
+		return false
+	}
 }
 
 func gsMachineItem(spec gsFieldMoveSpec) (uint8, bool) {
@@ -177,11 +212,53 @@ func (*Profile) DecodeFieldMoveCapability(reader game.MemoryReader, romData []by
 	return capability, true, nil
 }
 
-// DecodeFieldMoveMenu is deliberately fail-closed until the Gen-II party
-// submenu cursor/list encoding is pinned. Capability decoding can ship
-// independently without making generic execution guess a menu position.
-func (*Profile) DecodeFieldMoveMenu(game.MemoryReader) game.FieldMoveMenuState {
-	return game.FieldMoveMenuState{}
+// DecodeFieldMoveMenu mirrors GetMonSubmenuItems from the pinned Gen-II ROM:
+ // field moves are appended in the selected Pokémon's move-slot order before
+ // STATS/SWITCH/MOVE/ITEM/CANCEL. Unsupported-but-native field moves are kept
+ // as empty semantic entries so later supported moves retain their real row.
+func (*Profile) DecodeFieldMoveMenu(reader game.MemoryReader) game.FieldMoveMenuState {
+	if reader == nil {
+		return game.FieldMoveMenuState{}
+	}
+	count, err := gsPartyCount(reader)
+	if err != nil || count == 0 {
+		return game.FieldMoveMenuState{}
+	}
+	partySlot := int(reader.Peek8(sym.CurPartyMon))
+	if partySlot < 0 || partySlot >= count {
+		return game.FieldMoveMenuState{}
+	}
+	y, x, rows, cols, filter := gsMenuCursor(reader)
+	if cols != 1 || rows == 0 || x != 1 || y < 1 || y > rows ||
+		filter != gen2PadA|gen2PadB {
+		return game.FieldMoveMenuState{}
+	}
+
+	entries := make([]game.FieldMoveID, 0, rows)
+	base := sym.PartyMon1 + uint16(partySlot)*sym.PartyMonSize + gsPartyMovesOffset
+	knownNameVisible := false
+	text := gsScreenText(reader)
+	for moveSlot := 0; moveSlot < 4; moveSlot++ {
+		move := reader.Peek8(base + uint16(moveSlot))
+		if !gsNativeMonMenuFieldMove(move) {
+			continue
+		}
+		if spec, ok := gsFieldMoveByNativeMove(move); ok {
+			entries = append(entries, spec.id)
+			if spec.name != "" && strings.Contains(text, spec.name) {
+				knownNameVisible = true
+			}
+		} else {
+			entries = append(entries, "")
+		}
+	}
+	if len(entries) == 0 || !knownNameVisible || len(entries) > int(rows) {
+		return game.FieldMoveMenuState{}
+	}
+	for len(entries) < int(rows) {
+		entries = append(entries, "")
+	}
+	return game.FieldMoveMenuState{Entries: entries}
 }
 
 func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool) {
