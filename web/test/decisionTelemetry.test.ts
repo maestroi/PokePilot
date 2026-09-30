@@ -48,12 +48,22 @@ test('calibration reports agreement per confidence bucket and null where no verd
 })
 
 test('live feed is newest first with a verdict per call', () => {
-  const feed = decisionFeed(stats)
-  assert.deepEqual(feed.map((row) => row.verdict), ['unusable', 'active', 'disagreed'])
-  assert.equal(feed[2].choice, 'heal')
-  assert.deepEqual(feed[2].probabilities, [['1', 0.8], ['0', 0.2]])
-  assert.deepEqual(feed[1].probabilities, [])
-  assert.equal(feed[0].error, 'timeout')
+  const activeStats: DashboardStats = {
+    ...stats,
+    decision_records: [
+      ...(stats.decision_records || []),
+      { kind: 'battle_turn', choice: 'move:1', controlled: true, executed: 'use water gun', confidence: 0.95 },
+      { kind: 'battle_turn', choice: 'move:1', fallback: true, executed: 'use tackle', error: 'low confidence', confidence: 0.4 }
+    ]
+  }
+  const feed = decisionFeed(activeStats)
+  assert.deepEqual(feed.map((row) => row.verdict), ['fallback', 'active', 'unusable', 'active', 'disagreed'])
+  assert.equal(feed[4].choice, 'heal')
+  assert.deepEqual(feed[4].probabilities, [['1', 0.8], ['0', 0.2]])
+  assert.deepEqual(feed[3].probabilities, [])
+  assert.equal(feed[2].error, 'timeout')
+  assert.equal(feed[0].executed, 'use tackle')
+  assert.equal(feed[1].executed, 'use water gun')
   assert.ok(hasDecisionTelemetry(stats))
   assert.ok(!hasDecisionTelemetry({}))
   assert.equal(percent(null), '—')
@@ -77,7 +87,8 @@ test('a run with a selected engine shows the panel before its first call', () =>
   assert.equal(showDecisionTelemetry(undefined, { ...jev, mode: 'off' }), false)
   assert.equal(showDecisionTelemetry(undefined, undefined), false)
   assert.equal(showDecisionTelemetry(stats, undefined), true)
-  assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move, recoverable failures.')
+  assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move (shadow), recoverable failures.')
+  assert.equal(decisionIdleNote({ ...jev, mode: 'active' }), 'No calls yet. The engine is asked on every eligible battle move (active), recoverable failures.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'shadow' }), 'No decision points enabled, so the engine is never asked.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', placements: true }), 'No calls yet. The engine is asked on every Tetris placement.')
 })
