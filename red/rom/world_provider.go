@@ -1,7 +1,6 @@
 package rom
 
 import (
-
 	"github.com/maestroi/pokepilot/gen1rom"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -188,7 +187,6 @@ func redTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.Tra
 	}
 	return gen1rom.TilePairsAt(romData, off, tileset)
 }
-
 
 func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
 	if spec == nil {
