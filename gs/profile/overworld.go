@@ -7,7 +7,12 @@ import (
 )
 
 const (
+	// pret/pokegold constants/ram_constants.asm MAPSTATUS_*: the overworld map
+	// shell is rebuilt during ENTER and only readable as geometry from HANDLE.
+	gen2MapStatusStart  = 0
+	gen2MapStatusEnter  = 1
 	gen2MapStatusHandle = 2
+	gen2MapStatusDone   = 3
 	gen2MapEventsOn     = 0
 	gen2ScriptOff       = 0
 

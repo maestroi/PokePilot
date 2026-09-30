@@ -44,6 +44,26 @@ func gen2Traversal(reader game.MemoryReader) game.TraversalMode {
 	}
 }
 
+// gen2MapShellPhase maps wMapStatus onto the cartridge's own map entry
+// sequence (constants/ram_constants.asm: MAPSTATUS_START..MAPSTATUS_DONE).
+// The block buffer is only rebuilt during MAPSTATUS_ENTER, so a reader that
+// observes the new map identity before the phase reaches MAPSTATUS_HANDLE is
+// looking at a half-written buffer rather than at map data.
+func gen2MapShellPhase(reader game.MemoryReader) game.MapShellPhase {
+	switch reader.Peek8(sym.MapStatus) {
+	case gen2MapStatusStart:
+		return game.MapShellStarting
+	case gen2MapStatusEnter:
+		return game.MapShellEntering
+	case gen2MapStatusHandle:
+		return game.MapShellSettled
+	case gen2MapStatusDone:
+		return game.MapShellDone
+	default:
+		return game.MapShellUnknown
+	}
+}
+
 func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[int]game.MapPoint) {
 	objects := make([]game.LiveMapObject, 0, sym.NumObjectStructs-1)
 	positions := make(map[int]game.MapPoint)
@@ -78,6 +98,13 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 	if err != nil {
 		return game.LiveTopologyState{}, err
 	}
+	phase := gen2MapShellPhase(reader)
+	// The block buffer is decodable exactly when the overworld has handed
+	// control back: MapStatus reaches HANDLE *before* the shell is rebuilt, so
+	// it is necessary but not sufficient. A field script that still owns the
+	// overworld leaves the previous map's bytes in the buffer while the map
+	// identity already names the new map.
+	controllable := gsControllable(reader)
 	objects, positions := decodeGen2LiveObjects(reader)
 	return game.LiveTopologyState{
 		NativeMapID:     gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber)),
@@ -85,6 +112,8 @@ func (*Profile) DecodeLiveTopology(reader game.MemoryReader) (game.LiveTopologyS
 		HeightBlocks:    height,
 		Blocks:          blocks,
 		Traversal:       gen2Traversal(reader),
+		MapShellPhase:   phase,
+		BlocksSettled:   controllable && width > 0 && height > 0,
 		LiveObjects:     objects,
 		ObjectPositions: positions,
 		HiddenObjects:   map[int]bool{},

@@ -164,3 +164,52 @@ func TestDecodeGen2LiveMapBlocksRejectsOversizedMap(t *testing.T) {
 		t.Fatal("oversized live map unexpectedly decoded")
 	}
 }
+
+// A map's identity becomes current while a field script still owns the
+// overworld; the block buffer keeps the previous map's bytes until the script
+// returns control. Gold reaches MAPSTATUS_HANDLE before that rebuild, so the
+// phase alone cannot be the readiness signal: a consumer that treated it as one
+// read unwritten blocks (0xff) as collision and aborted routing on a map that
+// had not been loaded.
+func TestDecodeLiveTopologyWithholdsBlocksWhileScriptOwnsOverworld(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.ScriptMode] = 1
+	reader[sym.ScriptRunning] = 0xff
+
+	state, err := NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if state.MapShellPhase != game.MapShellSettled {
+		t.Fatalf("MapShellPhase = %d, want the handle phase: the phase must not be mistaken for readiness", state.MapShellPhase)
+	}
+	if state.BlocksSettled {
+		t.Fatal("BlocksSettled = true while a field script still owns the overworld")
+	}
+
+	reader[sym.ScriptMode] = gen2ScriptOff
+	reader[sym.ScriptRunning] = 0
+	state, err = NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if !state.BlocksSettled {
+		t.Fatal("BlocksSettled = false for a controllable overworld")
+	}
+}
+
+// A map with no dimensions has no blocks to decode yet, whatever the script
+// state says.
+func TestDecodeLiveTopologyWithholdsBlocksWithoutDimensions(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.MapWidth] = 0
+	reader[sym.MapHeight] = 0
+
+	state, err := NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if state.BlocksSettled {
+		t.Fatal("BlocksSettled = true for a map with no dimensions")
+	}
+}
