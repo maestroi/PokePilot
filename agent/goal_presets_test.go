@@ -45,3 +45,29 @@ func TestPlannerGoalArbitraryProseRemainsPromptOnly(t *testing.T) {
 		t.Fatal("arbitrary prose unexpectedly became a deterministic goal")
 	}
 }
+
+func TestPlannerGoalPresetGen2SupportedFrontier(t *testing.T) {
+	const goal = "Play through the current supported Gen 2 frontier."
+
+	got, structured, err := PlannerGoal(goal)
+	if err != nil {
+		t.Fatalf("PlannerGoal: %v", err)
+	}
+	if !structured {
+		t.Fatal("Gen2 supported-frontier preset remained prompt-only")
+	}
+	want := Goal{Kind: GoalProgress, Target: "gs_supported_frontier"}
+	if got != want {
+		t.Fatalf("PlannerGoal(%q) = %+v, want %+v", goal, got, want)
+	}
+
+	status, structured, err := PlannerGoalStatus(goal, Observation{
+		Story: ProgressState{{ID: "gs_supported_frontier", Complete: true}},
+	})
+	if err != nil {
+		t.Fatalf("PlannerGoalStatus: %v", err)
+	}
+	if !structured || !status.Complete || status.Current != 1 || status.Target != 1 {
+		t.Fatalf("Gen2 supported-frontier status = %+v structured=%v", status, structured)
+	}
+}
