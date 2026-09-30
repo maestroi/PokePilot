@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -273,11 +274,21 @@ func TestGSNavigationFailuresNormalizeAsRecoverableBlocks(t *testing.T) {
 		{errors.Join(errors.New("johto route"), world.ErrNoRoute), "no_route"},
 		{errors.Join(errors.New("native walk"), skill.ErrNavigationStalled), "navigation_stalled"},
 		{errors.Join(errors.New("native replan"), skill.ErrReplanExhausted), "route_replan_exhausted"},
+		{errors.Join(errors.New("native edge"), skill.ErrLegUnwalkable), "leg_unwalkable"},
 	} {
 		failure := adapter.NormalizeFailure(game.FailurePhaseExecution, tc.err, final)
 		if failure.Class != game.FailureClassBlocked || !failure.Recoverable || failure.Cause != tc.cause {
 			t.Fatalf("NormalizeFailure(%v) = %+v, want recoverable blocked cause %q", tc.err, failure, tc.cause)
 		}
+	}
+}
+
+func TestGSReplanExhaustionTakesPrecedenceOverWrappedLegFailure(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	err := fmt.Errorf("native replan: %w: %w", skill.ErrReplanExhausted, skill.ErrLegUnwalkable)
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{Controllable: true})
+	if failure.Cause != "route_replan_exhausted" {
+		t.Fatalf("failure = %+v, want route_replan_exhausted precedence", failure)
 	}
 }
 
