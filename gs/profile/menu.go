@@ -14,6 +14,10 @@ const (
 	gen2PadUp            byte = 0x40
 	gen2PadDown          byte = 0x80
 	gen2BattleMoveFilter      = gen2PadA | gen2PadB | gen2PadSelect | gen2PadUp | gen2PadDown
+
+	// gen2BattleTypeTutorial is BATTLETYPE_TUTORIAL: the Route 29 Dude's
+	// catching demo.
+	gen2BattleTypeTutorial byte = 3
 )
 
 var (
@@ -34,6 +38,12 @@ func gsMenuCursor(reader game.MemoryReader) (y, x, rows, cols, filter byte) {
 
 func (*Profile) DecodeBattleMainMenu(reader game.MemoryReader) game.BattleMainMenuState {
 	if reader == nil || reader.Peek8(sym.BattleMode) == 0 {
+		return game.BattleMainMenuState{}
+	}
+	// The demo draws a command menu the ROM steers itself, with no player
+	// mon loaded: pressing FIGHT on it never opens a move list
+	// (run-1lf849uc4815y2tkvu2odh07vc, triage:3956fc7778cd88cf).
+	if reader.Peek8(sym.BattleType) == gen2BattleTypeTutorial {
 		return game.BattleMainMenuState{}
 	}
 	y, x, rows, cols, filter := gsMenuCursor(reader)
