@@ -8,12 +8,16 @@ import (
 )
 
 // MoveObserver is told about every move Battle is about to press: the decoded
-// turn and the slot the MovePolicy chose. It observes only. It receives a copy
-// of the battle state and no emulator, cannot change the slot, and runs
-// without stepping a frame, so an observed battle presses exactly the inputs
-// on exactly the frames an unobserved one would (the RNG mixes in the cycle
-// count, so frame neutrality is what keeps observation side-effect free).
+// turn and the final slot selected for execution. It observes only. It receives
+// a copy of the battle state and no emulator, cannot change the slot, and runs
+// without stepping a frame.
 type MoveObserver func(b game.BattleState, executed int)
+
+// MoveSelector is the narrow active-control seam. Battle first asks its normal
+// deterministic MovePolicy, then gives that legal slot to the selector. The
+// selector has no emulator/controller access; Battle validates the returned
+// slot against the same usable set before any input is pressed.
+type MoveSelector func(b game.BattleState, deterministic int) int
 
 // BattleResultObserver receives the portable result at the exact battle exit
 // boundary. Like MoveObserver it has no emulator and cannot affect inputs.
@@ -21,6 +25,7 @@ type BattleResultObserver func(result game.BattleResult)
 
 var (
 	scopedMoveObservers         sync.Map
+	scopedMoveSelectors         sync.Map
 	scopedBattleResultObservers sync.Map
 )
 
@@ -44,6 +49,38 @@ func WithMoveObserver(m *emu.Emu, observe MoveObserver) func() {
 			scopedMoveObservers.Delete(m)
 		}
 	}
+}
+
+// WithMoveSelector installs an active move selector for one emulator until
+// the returned restore function is called. Nil preserves deterministic policy.
+func WithMoveSelector(m *emu.Emu, selectMove MoveSelector) func() {
+	if m == nil {
+		return func() {}
+	}
+	previous, hadPrevious := scopedMoveSelectors.Load(m)
+	if selectMove != nil {
+		scopedMoveSelectors.Store(m, selectMove)
+	} else {
+		scopedMoveSelectors.Delete(m)
+	}
+	return func() {
+		if hadPrevious {
+			scopedMoveSelectors.Store(m, previous)
+		} else {
+			scopedMoveSelectors.Delete(m)
+		}
+	}
+}
+
+func selectMove(m *emu.Emu, b game.BattleState, deterministic int) int {
+	raw, ok := scopedMoveSelectors.Load(m)
+	if !ok {
+		return deterministic
+	}
+	if selector, ok := raw.(MoveSelector); ok {
+		return selector(b, deterministic)
+	}
+	return deterministic
 }
 
 // WithBattleResultObserver installs a battle-exit observer for one emulator.
