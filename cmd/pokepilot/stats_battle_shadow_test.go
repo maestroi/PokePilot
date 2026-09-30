@@ -44,8 +44,14 @@ func TestObserveBattleTurnRecordsShadowAgreement(t *testing.T) {
 	planner := battleShadowPlanner(engine)
 	move := func(slot int) game.BattleAction { return game.BattleAction{Kind: game.BattleActionMove, Slot: slot} }
 
-	planner.ObserveBattleTurn(battleShadowTurn(), move(1))
-	planner.ObserveBattleTurn(battleShadowTurn(), move(0))
+	firstTurn := battleShadowTurn()
+	secondTurn := battleShadowTurn()
+	secondTurn.Active.HP = 31
+	secondTurn.Opponent.HP = 18
+
+	planner.ObserveBattleTurn(firstTurn, move(1))
+	planner.ObserveBattleTurn(secondTurn, move(0))
+	planner.ObserveBattleResult(game.BattleWon)
 
 	if engine.calls != 2 || planner.stats.DecisionAgreements != 1 || planner.stats.DecisionDisagreements != 1 {
 		t.Fatalf("calls %d agreements %d disagreements %d, want 2/1/1", engine.calls, planner.stats.DecisionAgreements, planner.stats.DecisionDisagreements)
@@ -54,9 +60,22 @@ func TestObserveBattleTurnRecordsShadowAgreement(t *testing.T) {
 	if kind == nil || kind.Calls != 2 {
 		t.Fatalf("battle_turn summary = %+v, want 2 calls", kind)
 	}
-	last := planner.stats.DecisionRecords[len(planner.stats.DecisionRecords)-1]
-	if !last.Shadow || last.Agreed == nil || *last.Agreed || last.Executed == "" || last.Executed == "move:0" {
-		t.Fatalf("last record = %+v, want a labelled shadow disagreement", last)
+	if len(planner.stats.DecisionRecords) != 2 {
+		t.Fatalf("decision records = %d, want 2", len(planner.stats.DecisionRecords))
+	}
+	first, last := planner.stats.DecisionRecords[0], planner.stats.DecisionRecords[1]
+	if first.DecisionIndex != 1 || first.StateFingerprint == "" || first.BattleOutcome == nil || first.BattleOutcome.Kind != "next_turn" ||
+		first.BattleOutcome.ActiveHP != 31 || first.BattleOutcome.OpponentHP != 18 {
+		t.Fatalf("first record = %+v, want indexed/fingerprinted next-turn outcome", first)
+	}
+	if !last.Shadow || last.DecisionIndex != 2 || last.StateFingerprint == "" || last.Agreed == nil || *last.Agreed ||
+		last.Executed == "" || last.Executed == "move:0" || last.BattleOutcome == nil ||
+		last.BattleOutcome.Kind != "battle_result" || last.BattleOutcome.Result != "won" {
+		t.Fatalf("last record = %+v, want a labelled terminal shadow disagreement", last)
+	}
+	if len(planner.battleShadowSamples) != 2 || planner.battleShadowSamples[0].Outcome == nil ||
+		planner.battleShadowSamples[1].Outcome == nil || planner.battleShadowSamples[1].Outcome.Result != "won" {
+		t.Fatalf("shadow samples = %+v, want outcomes on both rows", planner.battleShadowSamples)
 	}
 }
 
@@ -91,9 +110,17 @@ func TestObserveBattleTurnSuspendsAfterConsecutiveTransportFailures(t *testing.T
 
 func TestReportingPlannerForwardsBattleTurns(t *testing.T) {
 	engine := &countingDecisionEngine{resp: agent.DecisionResponse{Choice: "move:0", Probabilities: map[string]float64{"move:0": 1}}}
-	var observer agent.BattleTurnObserver = reportingPlanner{inner: battleShadowPlanner(engine)}
+	inner := battleShadowPlanner(engine)
+	decorator := reportingPlanner{inner: inner}
+	var observer agent.BattleTurnObserver = decorator
 	observer.ObserveBattleTurn(battleShadowTurn(), game.BattleAction{Kind: game.BattleActionMove})
+	var outcomes agent.BattleOutcomeObserver = decorator
+	outcomes.ObserveBattleResult(game.BattleWon)
 	if engine.calls != 1 {
 		t.Fatalf("farm planner decorator forwarded %d battle turns, want 1", engine.calls)
+	}
+	last := inner.stats.DecisionRecords[len(inner.stats.DecisionRecords)-1]
+	if last.BattleOutcome == nil || last.BattleOutcome.Result != "won" {
+		t.Fatalf("forwarded battle result = %+v", last.BattleOutcome)
 	}
 }
