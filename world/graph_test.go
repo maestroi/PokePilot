@@ -4,7 +4,8 @@ import (
 	"os"
 	"testing"
 
-	redrom "github.com/maestroi/pokepilot/red/rom")
+	redrom "github.com/maestroi/pokepilot/red/rom"
+)
 
 func loadGraph(t *testing.T) *Graph {
 	t.Helper()
