@@ -29,7 +29,7 @@ func TestSecretKeyPalletRouteUsesRoute21(t *testing.T) {
 	mem[sym.BagItems+3] = 1
 	mem[sym.BagItems+4] = 0xff
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestSecretKeyRoute20ResumeComponentsExitAwayFromSeafoam(t *testing.T) {
 	mem[sym.ObtainedBadges] = 1<<state.BadgeBoulder | 1<<state.BadgeCascade |
 		1<<state.BadgeThunder | 1<<state.BadgeRainbow | 1<<state.BadgeSoul |
 		1<<state.BadgeMarsh
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestSecretKeyRoute19ResumeStagesNorthBeforePallet(t *testing.T) {
 		1<<state.BadgeThunder | 1<<state.BadgeRainbow | 1<<state.BadgeSoul |
 		1<<state.BadgeMarsh
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestSurfSeaTopologyRoutesFuchsiaToPalletOverland(t *testing.T) {
 	mem[sym.PartyMon1+sym.MonMoves+1] = cut.MoveID
 	setTestBag(mem, [2]uint8{hm03SurfItem, 1}, [2]uint8{cut.HMItem, 1})
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
