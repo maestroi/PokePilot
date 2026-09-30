@@ -354,7 +354,7 @@ func (s *replayServer) renderAttemptVideoSegments(
 			index++
 		}
 		segment := &attempt.Segments[index]
-		if segment.Cached {
+		if relative < segment.StartFrame || segment.Cached {
 			return nil
 		}
 
