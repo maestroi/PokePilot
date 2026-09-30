@@ -281,11 +281,11 @@ type BattleShadowSample struct {
 	State                   game.BattleDecisionState    `json:"state"`
 	Executed                string                      `json:"executed"`
 	Outcome                 *game.BattleDecisionOutcome `json:"outcome,omitempty"`
-	ObservedChoice          string                   `json:"observed_choice,omitempty"`
-	ObservedConfidence      float64                  `json:"observed_confidence,omitempty"`
-	ObservedProbabilities   map[string]float64       `json:"observed_probabilities,omitempty"`
-	ObservedDurationSeconds float64                  `json:"observed_duration_seconds,omitempty"`
-	ObservedError           string                   `json:"observed_error,omitempty"`
+	ObservedChoice          string                      `json:"observed_choice,omitempty"`
+	ObservedConfidence      float64                     `json:"observed_confidence,omitempty"`
+	ObservedProbabilities   map[string]float64          `json:"observed_probabilities,omitempty"`
+	ObservedDurationSeconds float64                     `json:"observed_duration_seconds,omitempty"`
+	ObservedError           string                      `json:"observed_error,omitempty"`
 }
 
 func (s BattleShadowSample) Validate() error {
