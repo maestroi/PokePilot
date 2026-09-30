@@ -145,6 +145,67 @@ func TestBattleShadowROMDoesNotChangeGameplay(t *testing.T) {
 	}
 }
 
+// TestBattleActiveROMRejectsIllegalControllerOutput is the checkpoint-backed
+// #1460 safety proof. A malicious active controller returns an impossible move
+// slot on every turn. skill.Battle must clamp that output back to the already
+// validated deterministic slot, producing exactly the same result, frame and
+// emulator-state digest as the control replay.
+func TestBattleActiveROMRejectsIllegalControllerOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("ROM-backed active legality proof")
+	}
+	rom := os.Getenv("POKEMON_RED_ROM")
+	if rom == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	base, err := fixture.LoadState("route1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := base.SaveState()
+	if err != nil {
+		base.Close()
+		t.Fatal(err)
+	}
+	base.Close()
+
+	type runResult struct {
+		battle game.BattleResult
+		frame  uint64
+		digest [32]byte
+	}
+	run := func(active bool) runResult {
+		t.Helper()
+		m, err := emu.Open(rom)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if err := m.LoadState(snapshot); err != nil {
+			t.Fatal(err)
+		}
+		if active {
+			restore := skill.WithBattleMoveController(m, func(_ game.BattleState, _ int) int { return 99 })
+			defer restore()
+		}
+		for i := 0; i < 18; i++ {
+			m.Tap(emu.Right, 3, 7)
+		}
+		m.StepFrames(300)
+		result, err := skill.Battle(m, skill.StatAwareMove(m.ROM()))
+		if err != nil {
+			t.Fatalf("Battle(active=%t): %v", active, err)
+		}
+		return runResult{battle: result, frame: m.FrameCount(), digest: battleShadowDigest(m)}
+	}
+
+	control := run(false)
+	malicious := run(true)
+	if control != malicious {
+		t.Fatalf("illegal active output escaped the legal gate: control=%+v malicious=%+v", control, malicious)
+	}
+}
+
 func battleShadowDigest(m *emu.Emu) [32]byte {
 	h := sha256.New()
 	buf := make([]byte, 0x2000)
