@@ -114,19 +114,19 @@ type replayServer struct {
 	// host updater only replaces this container when no video is mid-encode.
 	rendering atomic.Int64
 
-	capacity          replayCapacityConfig
-	jobSlots          chan struct{}
-	scratchFree       func(string) (uint64, error)
-	resourceMu        sync.Mutex
-	deferredJobs      map[string]replayDeferredJob
-	activeJobs        map[string]time.Time
-	activeCancels     map[string]context.CancelFunc
-	encoderProcesses  atomic.Int64
-	renderFailures    atomic.Uint64
-	renderRetries     atomic.Uint64
-	renderCompleted   atomic.Uint64
-	renderBytes       atomic.Uint64
-	renderNanos       atomic.Uint64
+	capacity         replayCapacityConfig
+	jobSlots         chan struct{}
+	scratchFree      func(string) (uint64, error)
+	resourceMu       sync.Mutex
+	deferredJobs     map[string]replayDeferredJob
+	activeJobs       map[string]time.Time
+	activeCancels    map[string]context.CancelFunc
+	encoderProcesses atomic.Int64
+	renderFailures   atomic.Uint64
+	renderRetries    atomic.Uint64
+	renderCompleted  atomic.Uint64
+	renderBytes      atomic.Uint64
+	renderNanos      atomic.Uint64
 
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
