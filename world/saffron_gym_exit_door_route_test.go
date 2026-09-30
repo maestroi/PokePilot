@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
-)
+
+	redrom "github.com/maestroi/pokepilot/red/rom")
 
 // TestSaffronGymExitDoorRoutesViaReachableTeleporter is the ROM-backed pin for
 // the go_to saffron gym route_replan_exhausted burst measured on:
@@ -29,7 +30,7 @@ func TestSaffronGymExitDoorRoutesViaReachableTeleporter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := BuildGraph(romData)
+	g, err := BuildGraph(redrom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
