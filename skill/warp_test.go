@@ -131,7 +131,7 @@ func TestTravelRoute1ToPallet(t *testing.T) {
 // graphFor builds the map-level graph from the live ROM.
 func graphFor(t *testing.T, romData []byte) *world.Graph {
 	t.Helper()
-	g, err := world.BuildGraph(romData)
+	g, err := buildRoutingGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
