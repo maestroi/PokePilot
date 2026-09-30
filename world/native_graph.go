@@ -9,13 +9,15 @@ import (
 // NativeEdge is the map-level edge equivalent of Edge for cartridges whose
 // native map identity needs more than eight bits.
 type NativeEdge struct {
-	Kind   EdgeKind
-	From   uint16
-	To     uint16
-	WarpX  uint8
-	WarpY  uint8
-	Dir    uint8
-	Offset int8
+	Kind  EdgeKind
+	From  uint16
+	To    uint16
+	WarpX uint8
+	WarpY uint8
+	// DestWarp is the warp the player arrives on, for EdgeWarp.
+	DestWarp uint8
+	Dir      uint8
+	Offset   int8
 }
 
 // NativeGraph is a topology-only graph keyed by native cartridge map ids.
@@ -62,7 +64,7 @@ func BuildNativeGraph(provider worldmodel.NativeMapTopologyProvider) (*NativeGra
 				continue
 			}
 			graph.Edges[id] = append(graph.Edges[id], NativeEdge{
-				Kind: EdgeWarp, From: id, To: warp.DestMap, WarpX: warp.X, WarpY: warp.Y,
+				Kind: EdgeWarp, From: id, To: warp.DestMap, WarpX: warp.X, WarpY: warp.Y, DestWarp: warp.DestWarpID,
 			})
 		}
 		for _, connection := range header.Connections {
@@ -114,6 +116,81 @@ func FindNativeRoute(graph *NativeGraph, from, to uint16) ([]NativeEdge, error) 
 			}
 			var route []NativeEdge
 			for j := next; nodes[j].prev >= 0; j = nodes[j].prev {
+				route = append([]NativeEdge{nodes[j].edge}, route...)
+			}
+			return route, nil
+		}
+	}
+	return nil, ErrNoRoute
+}
+
+// NativeEntryUnknown is the entry of a map the player was already standing on.
+const NativeEntryUnknown = -1
+
+// Entry names how an edge lands on its destination: the warp arrived on, or
+// the seam direction. Two entries into one map can sit in different
+// walkable components (Sprout Tower 2F), so a route is searched over
+// (map, entry) rather than over maps alone.
+func (e NativeEdge) Entry() int {
+	if e.Kind == EdgeWarp {
+		return int(e.DestWarp)
+	}
+	return -2 - int(e.Dir)
+}
+
+// NativeUnreachable records an edge whose approach had no walkable path from
+// the component a given entry lands in.
+type NativeUnreachable struct {
+	Map   uint16
+	Entry int
+	Edge  NativeEdge
+}
+
+// FindNativeRouteFrom is FindNativeRoute for a player who entered `from`
+// through `entry`, skipping edges already proven unreachable from that entry.
+// The graph is topology-only, so such proofs come from live tile geometry;
+// the route then leaves the map and re-enters through another entry.
+func FindNativeRouteFrom(graph *NativeGraph, from uint16, entry int, to uint16, bad map[NativeUnreachable]bool) ([]NativeEdge, error) {
+	if graph == nil {
+		return nil, fmt.Errorf("world: nil native graph")
+	}
+	if from == to {
+		return []NativeEdge{}, nil
+	}
+	if _, ok := graph.Edges[from]; !ok {
+		return nil, fmt.Errorf("%w: native start map %#04x is unavailable", ErrNoRoute, from)
+	}
+	if _, ok := graph.Edges[to]; !ok {
+		return nil, fmt.Errorf("%w: native destination map %#04x is unavailable", ErrNoRoute, to)
+	}
+
+	type state struct {
+		mapID uint16
+		entry int
+	}
+	type node struct {
+		state state
+		prev  int
+		edge  NativeEdge
+	}
+	start := state{from, entry}
+	nodes := []node{{state: start, prev: -1}}
+	seen := map[state]bool{start: true}
+
+	for i := 0; i < len(nodes); i++ {
+		cur := nodes[i].state
+		for _, edge := range graph.Edges[cur.mapID] {
+			next := state{edge.To, edge.Entry()}
+			if seen[next] || bad[NativeUnreachable{cur.mapID, cur.entry, edge}] {
+				continue
+			}
+			seen[next] = true
+			nodes = append(nodes, node{state: next, prev: i, edge: edge})
+			if edge.To != to {
+				continue
+			}
+			var route []NativeEdge
+			for j := len(nodes) - 1; nodes[j].prev >= 0; j = nodes[j].prev {
 				route = append([]NativeEdge{nodes[j].edge}, route...)
 			}
 			return route, nil

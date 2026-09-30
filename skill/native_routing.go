@@ -457,6 +457,26 @@ func traverseNativeEdge(
 // It is deliberately independent of the Gen-I Destination/Graph contracts so
 // a recognized Gen-II cartridge is never narrowed or routed through Red.
 func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
+	return GoToNativeRemembering(m, romData, dest, NewNativeRouteMemory())
+}
+
+// NativeRouteMemory is what a journey has learned about the map graph: which
+// edges its live geometry proved unreachable from which entry into a map, and
+// how the current map was entered. A caller that retries GoToNativeRemembering
+// after a battle or dialogue interruption passes the same memory so the retry
+// does not walk back into an edge already proven a dead end.
+type NativeRouteMemory struct {
+	unreachable map[world.NativeUnreachable]bool
+	entry       int
+	last        *world.NativeEdge
+}
+
+func NewNativeRouteMemory() *NativeRouteMemory {
+	return &NativeRouteMemory{unreachable: map[world.NativeUnreachable]bool{}, entry: world.NativeEntryUnknown}
+}
+
+// GoToNativeRemembering is GoToNative with caller-owned route memory.
+func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, mem *NativeRouteMemory) error {
 	profile, err := nativeRoutingProfileFor(m)
 	if err != nil {
 		return err
@@ -497,6 +517,13 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 		if !state.Controllable {
 			return ErrDialogueInterrupted
 		}
+		// An interruption can land after the edge was crossed, so the entry is
+		// settled from where the player actually is, not from what finished.
+		if e := mem.last; e != nil && e.To != e.From && state.NativeMapID == e.To {
+			mem.entry = e.Entry()
+		}
+		mem.last = nil
+
 		if state.NativeMapID == dest.Map {
 			if dest.MapOnly {
 				return nil
@@ -510,14 +537,25 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 		}
 		seen[key] = true
 
-		route, routeErr := world.FindNativeRoute(graph, state.NativeMapID, dest.Map)
+		route, routeErr := world.FindNativeRouteFrom(graph, state.NativeMapID, mem.entry, dest.Map, mem.unreachable)
 		if routeErr != nil {
 			return fmt.Errorf("skill: native routing: route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, routeErr)
 		}
 		if len(route) == 0 {
 			return fmt.Errorf("skill: native routing: empty cross-map route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, ErrNavigationStalled)
 		}
+		mem.last = &route[0]
 		if err := traverseNativeEdge(m, profile, provider, route[0]); err != nil {
+			// The edge exists in the map graph but this arrival's walkable
+			// component cannot reach it (a sealed seam, or stairs that only
+			// the other entry into the map connects to): remember that and
+			// re-route, which leaves the map and re-enters elsewhere.
+			if errors.Is(err, world.ErrNoPath) {
+				mem.unreachable[world.NativeUnreachable{Map: state.NativeMapID, Entry: mem.entry, Edge: route[0]}] = true
+				mem.last = nil
+				delete(seen, key)
+				continue
+			}
 			return err
 		}
 	}
