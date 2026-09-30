@@ -97,7 +97,7 @@ func TestUIEmbeddedLauncherSupportsGen2NormalRuns(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(string(goalPresetHTML), `value="progress:gs_supported_frontier"`) {
+	if !strings.Contains(string(goalPresetHTML), `value="Play through the current supported Gen 2 frontier."`) {
 		t.Error("embedded goal presets missing Gen2 experimental frontier")
 	}
 
@@ -108,8 +108,8 @@ func TestUIEmbeddedLauncherSupportsGen2NormalRuns(t *testing.T) {
 		`const gen2 = f.game.value === "pokemon-gold" || f.game.value === "pokemon-silver"`,
 		`scriptedOpt.disabled = gen2`,
 		`f.qualification_target.value = ""`,
-		`f.goal.value = "progress:gs_supported_frontier"`,
-		`f.goal.value === "progress:gs_supported_frontier"`,
+		`f.goal.value = "Play through the current supported Gen 2 frontier."`,
+		`f.goal.value === "Play through the current supported Gen 2 frontier."`,
 		`["", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)`,
 	} {
 		if !strings.Contains(js, want) {
