@@ -6,14 +6,14 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
+	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 type routingProfile interface {
-	game.GameProfile
+	game.WorldProfile
 	game.RoutingDecoder
 	game.OverworldDecoder
-	MapProvider([]byte) worldmodel.MapHeaderProvider
 }
 
 type routingRuntimeState struct {
@@ -86,17 +86,27 @@ func routingProfileFor(m *emu.Emu) (routingProfile, error) {
 }
 
 func routingProviderForROM(romData []byte) (worldmodel.MapHeaderProvider, error) {
-	if profile, _, err := profiles.Detect(romData); err == nil {
-		if routing, ok := profile.(routingProfile); ok {
-			if provider := routing.MapProvider(romData); provider != nil {
-				return provider, nil
-			}
-		}
+	profile, _, err := profiles.Detect(romData)
+	if err != nil {
+		return nil, fmt.Errorf("skill: routing: detect profile: %w", err)
 	}
-	if provider, ok := worldmodel.ProviderForROM(romData); ok && provider != nil {
-		return provider, nil
+	routing, ok := profile.(routingProfile)
+	if !ok {
+		return nil, fmt.Errorf("skill: routing: profile %s@%s does not expose routing semantics", profile.ID(), profile.Revision())
 	}
-	return nil, fmt.Errorf("skill: routing: no map provider for ROM")
+	provider := routing.MapProvider(romData)
+	if provider == nil {
+		return nil, fmt.Errorf("skill: routing: profile %s@%s returned nil map provider", profile.ID(), profile.Revision())
+	}
+	return provider, nil
+}
+
+func buildRoutingGraph(romData []byte) (*world.Graph, error) {
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
+	}
+	return world.BuildGraph(provider)
 }
 
 func routingHeaderFor(m *emu.Emu, mapID uint8) (worldmodel.MapHeader, error) {
