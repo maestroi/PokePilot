@@ -69,7 +69,7 @@ func TestRoute23SouthReturnIsSemanticPivot(t *testing.T) {
 	}
 }
 
-func TestRoute23LeagueReturnUsesCaveOnlyFromNorthComponent(t *testing.T) {
+func TestRoute23LeagueReturnNorthComponentDiscriminator(t *testing.T) {
 	for _, tc := range []struct {
 		x, y uint8
 		want bool
@@ -82,8 +82,31 @@ func TestRoute23LeagueReturnUsesCaveOnlyFromNorthComponent(t *testing.T) {
 		{7, 138, false}, // Route 22 gate approach
 	} {
 		if got := route23LeagueReturnNeedsVictoryRoad(tc.x, tc.y); got != tc.want {
-			t.Errorf("Route 23 (%d,%d) needs reverse cave=%v, want %v", tc.x, tc.y, got, tc.want)
+			t.Errorf("Route 23 (%d,%d) north component=%v, want %v", tc.x, tc.y, got, tc.want)
 		}
+	}
+}
+
+func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		mapID, x, y uint8
+		want        bool
+	}{
+		{name: "north exit door", mapID: route23Map, x: 14, y: 31, want: false},
+		{name: "north exterior", mapID: route23Map, x: 18, y: 30, want: false},
+		{name: "south cave door", mapID: route23Map, x: 4, y: 31, want: true},
+		{name: "south surf approach", mapID: route23Map, x: 8, y: 80, want: true},
+		{name: "route 22 gate approach", mapID: route23Map, x: 7, y: 138, want: true},
+		{name: "indigo exterior", mapID: indigoPlateauMap, want: false},
+		{name: "indigo lobby", mapID: indigoPlateauLobbyMap, want: false},
+		{name: "unrelated map", mapID: semanticVermilionCityMap, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := route23LeagueReturnPivotAvailable(tc.mapID, tc.x, tc.y); got != tc.want {
+				t.Fatalf("pivot available=%v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
