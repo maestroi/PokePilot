@@ -12,6 +12,10 @@ import (
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
+type worldProfile interface {
+	MapProvider([]byte) worldmodel.MapHeaderProvider
+}
+
 // Run drives observe -> plan -> execute until the run-owned deterministic
 // goal is done, a prompt-only planner is done, policy stops the run, or a
 // safety guard fires. Gameplay state mutation remains inside objective
@@ -41,7 +45,7 @@ func Run(m *emu.Emu, romData []byte, p Planner, budget Budget) Result {
 	if err != nil {
 		return Result{Stop: StopError, Err: err}
 	}
-	worldProfile, ok := profile.(interface { MapProvider([]byte) worldmodel.MapHeaderProvider })
+	worldProfile, ok := profile.(worldProfile)
 	if !ok {
 		return Result{Stop: StopError, Err: fmt.Errorf("agent: Run: profile %s@%s does not expose world topology", profile.ID(), profile.Revision())}
 	}
