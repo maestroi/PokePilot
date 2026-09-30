@@ -215,9 +215,10 @@ func (w *Wall) reportObjectiveFailure(dump farm.FinishReport, f farm.ObjectiveFa
 	existing := w.outbox[ext]
 	prior := w.issueLinks[key]
 	if prior.IssueID == "" && occurrenceKey != key {
-		// Rollout compatibility: issue links created before family fingerprints
-		// are keyed by the exact occurrence. Alias the first recurrence onto its
-		// new family key so deployment does not create one transitional duplicate.
+		// Persisted-state compatibility: issue links written before family
+		// fingerprints are keyed by the exact occurrence. Alias the first
+		// recurrence onto its family key while those wall-state records remain
+		// inside the supported persistence window.
 		if exactPrior := w.issueLinks[occurrenceKey]; exactPrior.IssueID != "" {
 			prior = exactPrior
 			prior.Fingerprint = fp
