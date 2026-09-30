@@ -120,6 +120,9 @@ func (s *replayServer) highlightPlan(ctx context.Context, runID string, recordin
 		if err != nil {
 			return mediahighlight.Plan{}, err
 		}
+		if timeline.Attempt <= 0 {
+			timeline.Attempt = recording.Attempt
+		}
 		timelines = append(timelines, timeline)
 	}
 	return mediahighlight.Build(timelines, highlightPolicyFromEnv()), nil
