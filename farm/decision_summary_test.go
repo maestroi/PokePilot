@@ -16,7 +16,7 @@ func TestDecisionSummaryObserve(t *testing.T) {
 	s.Observe(TypedDecisionRecord{Kind: "objective_selection", Choice: "1", ChoiceLabel: "heal", Confidence: 0.95, DurationSeconds: 0.15, Shadow: true, Executed: "go to pewter city", Agreed: agreed(false)})
 	s.Observe(TypedDecisionRecord{Kind: "objective_selection", Choice: "1", ChoiceLabel: "heal", Confidence: 0.41, DurationSeconds: 0.3, Shadow: true, Executed: "go to route 2", Agreed: agreed(false)})
 	s.Observe(TypedDecisionRecord{Kind: "objective_selection", Error: "timeout", Fallback: true, DurationSeconds: 9, Shadow: true, Executed: "go to route 2"})
-	s.Observe(TypedDecisionRecord{Kind: "failure_recovery", Choice: "retry", ChoiceLabel: "retry", Confidence: 0.7, DurationSeconds: 0.05})
+	s.Observe(TypedDecisionRecord{Kind: "failure_recovery", Choice: "retry", ChoiceLabel: "retry", Confidence: 0.7, DurationSeconds: 0.05, Controlled: true})
 
 	obj := s.Kinds["objective_selection"]
 	if obj.Calls != 4 || obj.Shadow != 4 || obj.Agreements != 1 || obj.Disagreements != 2 || obj.Errors != 1 || obj.Fallbacks != 1 {
@@ -38,7 +38,7 @@ func TestDecisionSummaryObserve(t *testing.T) {
 	if obj.P50Seconds != 0.2 || obj.P95Seconds != DecisionLatencyEdges[len(DecisionLatencyEdges)-1] {
 		t.Fatalf("p50=%v p95=%v latency=%v", obj.P50Seconds, obj.P95Seconds, obj.Latency)
 	}
-	if rec := s.Kinds["failure_recovery"]; rec.Calls != 1 || rec.Shadow != 0 || rec.Agreements+rec.Disagreements != 0 {
+	if rec := s.Kinds["failure_recovery"]; rec.Calls != 1 || rec.Controlled != 1 || rec.Shadow != 0 || rec.Agreements+rec.Disagreements != 0 {
 		t.Fatalf("recovery = %+v", rec)
 	}
 }
