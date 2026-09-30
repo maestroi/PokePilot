@@ -15,8 +15,8 @@ import (
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
-	verifier "github.com/maestroi/pokepilot/worldverify"
 	"github.com/maestroi/pokepilot/worldmodel"
+	verifier "github.com/maestroi/pokepilot/worldverify"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
