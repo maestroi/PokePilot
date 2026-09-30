@@ -251,7 +251,7 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-    <Panel title="New run" description="Queue a scripted walk or goal-driven LLM run without leaving the console." compact>
+    <Panel title="New run" description="Choose a game, then queue a run with only the controls that apply to it." compact>
       <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" @submit.prevent="submit">
         <label class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
