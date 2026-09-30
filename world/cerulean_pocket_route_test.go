@@ -6,7 +6,8 @@ import (
 
 	gameruntime "github.com/maestroi/pokepilot/game"
 
-	redrom "github.com/maestroi/pokepilot/red/rom")
+	redrom "github.com/maestroi/pokepilot/red/rom"
+)
 
 // TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit is the
 // regression behind farm triage aaf93af50f5e9d50 (run-27p5q00agjl0p180cgtm32v2d1)
