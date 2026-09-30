@@ -161,7 +161,9 @@ export interface DecisionEngineSpec {
   // Shadow records the backend's answers without acting on them; omitted
   // means active, which is how selections made before modes behaved.
   mode?: 'off' | 'shadow' | 'active'
-  // Battle turns are observed only, so battles requires shadow mode.
+  // Battle turns use the same legal move set in both modes: shadow observes
+  // them, while active may replace the deterministic move above the configured
+  // confidence threshold. Non-move actions remain deterministic.
   battles?: boolean
   objectives?: boolean
   failures?: boolean
