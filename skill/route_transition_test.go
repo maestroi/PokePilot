@@ -32,7 +32,7 @@ func TestVictoryRoadTransitionDelegatesOnlyOwnedStrengthSections(t *testing.T) {
 		got, ok := victoryRoadSectionForTransition(tt.edge)
 		if ok != tt.ok || got != tt.want {
 			t.Fatalf("edge %02x->%02x warp(%d,%d) = (%v,%v), want (%v,%v)",
-				t.edge.From, tt.edge.To, tt.edge.WarpX, tt.edge.WarpY, got, ok, tt.want, tt.ok)
+				tt.edge.From, tt.edge.To, tt.edge.WarpX, tt.edge.WarpY, got, ok, tt.want, tt.ok)
 		}
 	}
 }
