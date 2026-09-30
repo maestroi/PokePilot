@@ -70,11 +70,14 @@ func (*Profile) BattleMainMenuEntryPosition(entry game.BattleMenuEntry) (game.Ba
 // driver. The ordinary battle move list deliberately preserves its native
 // 1-based selection index because skill.Battle's move slot contract is
 // slot+1 in both supported generations.
-func (*Profile) DecodeMenuCursor(reader game.MemoryReader) game.MenuCursorState {
+func (p *Profile) DecodeMenuCursor(reader game.MemoryReader) game.MenuCursorState {
 	if reader == nil {
 		return game.MenuCursorState{}
 	}
 	y, _, rows, cols, filter := gsMenuCursor(reader)
+	if start := p.decodeStartMenu(reader); start.Ready {
+		return start.Cursor
+	}
 	if reader.Peek8(sym.BattleMode) != 0 &&
 		reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
 		cols == 1 && rows >= 1 && rows <= 4 &&
@@ -112,14 +115,72 @@ func (*Profile) DecodeTwoOption(reader game.MemoryReader) (game.TwoOptionState, 
 	return game.TwoOptionState{Current: int(y) - 1}, true
 }
 
-// Start-menu semantics are deliberately fail-closed here. This file exposes
-// the battle-facing vertical/two-option menu machinery needed by the shared
-// battle controller; the Pokégear-aware Gen-II START menu remains a separate
-// profile slice.
-func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
-	return game.StartMenuState{InBattle: reader != nil && reader.Peek8(sym.BattleMode) != 0}
+func (p *Profile) decodeStartMenu(reader game.MemoryReader) game.StartMenuState {
+	if reader == nil {
+		return game.StartMenuState{}
+	}
+	inBattle := reader.Peek8(sym.BattleMode) != 0
+	if inBattle {
+		return game.StartMenuState{InBattle: true}
+	}
+	y, x, rows, cols, _ := gsMenuCursor(reader)
+	text := gsScreenText(reader)
+	visible := cols == 1 && rows >= 5 && rows <= 8 && x == 1 &&
+		y >= 1 && y <= rows &&
+		strings.Contains(text, "PACK") &&
+		strings.Contains(text, "OPTION") &&
+		strings.Contains(text, "EXIT")
+	if !visible {
+		return game.StartMenuState{}
+	}
+	return game.StartMenuState{
+		Visible: true,
+		Ready:   true,
+		Cursor: game.MenuCursorState{
+			Current: int(y) - 1,
+			Max:     int(rows) - 1,
+		},
+	}
 }
 
-func (*Profile) StartMenuEntryIndex(game.MemoryReader, game.StartMenuEntry) (int, bool) {
-	return 0, false
+// DecodeStartMenu recognizes the retail Gen-II variable-length START menu
+// from its rendered labels plus live one-column cursor shape. Pokedex and
+// Pokegear are optional, so callers receive the current semantic ordering
+// instead of assuming a fixed row number.
+func (p *Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
+	return p.decodeStartMenu(reader)
+}
+
+func (p *Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	state := p.decodeStartMenu(reader)
+	if !state.Ready {
+		return 0, false
+	}
+	text := gsScreenText(reader)
+	hasDex := strings.Contains(text, "DEX")
+	hasPokemon := reader.Peek8(sym.PartyCount) > 0 && strings.Contains(text, "MON")
+	switch entry {
+	case game.StartMenuPokemon:
+		if !hasPokemon {
+			return 0, false
+		}
+		if hasDex {
+			return 1, true
+		}
+		return 0, true
+	case game.StartMenuItems:
+		if !strings.Contains(text, "PACK") {
+			return 0, false
+		}
+		index := 0
+		if hasDex {
+			index++
+		}
+		if hasPokemon {
+			index++
+		}
+		return index, true
+	default:
+		return 0, false
+	}
 }
