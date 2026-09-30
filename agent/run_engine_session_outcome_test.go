@@ -89,6 +89,7 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 		{cause: "catch_attempt_missed", want: true},
 		{cause: "static_capture_exhausted", want: true},
 		{cause: "train_progress_shortfall", want: true},
+		{cause: failureCauseCombatDefeat, want: true},
 		{cause: "fishing_no_shoreline", want: false},
 		{cause: "navigation_stalled", want: false},
 	}
@@ -105,6 +106,36 @@ func TestRunFailurePolicyMarksProductiveBoundedSessions(t *testing.T) {
 				t.Fatalf("%s ProductiveSession=%v, want %v (decision=%+v)", tc.cause, got.ProductiveSession, tc.want, got)
 			}
 		})
+	}
+}
+
+func TestCombatDefeatRefreshesLivenessBeforeRecoveryRound(t *testing.T) {
+	known := NewKnowledge(nil)
+	initial := Observation{
+		Map:        0x40,
+		Location:   "cerulean pokemon center",
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: SpeciesID("wartortle"), Level: 21}},
+	}
+	known.SawMap(initial.Map)
+	watchdog := newRunWatchdogPolicy(Budget{StagnationAfter: 1}, initial, known)
+
+	first := watchdog.roundBoundary(2, initial, known, 0, true)
+	if first.ReplanReason != "stagnation" || first.Stop != StopUnset {
+		t.Fatalf("pre-defeat stagnation decision = %+v, want strategic replan", first)
+	}
+
+	obj := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	result := recoverableSessionResult(obj, failureCauseCombatDefeat, initial)
+	decision := newRunFailurePolicy(3).recoverable(obj, result, true, 21)
+	if !decision.Recovered || !decision.ProductiveSession || decision.ReplanReason != "blackout" {
+		t.Fatalf("combat defeat decision = %+v, want recovered productive blackout replan", decision)
+	}
+	watchdog.productiveSession(2)
+
+	next := watchdog.roundBoundary(3, initial, known, 0, true)
+	if next.Stop != StopUnset || next.ReplanReason != "" || next.StagnantRounds != 0 {
+		t.Fatalf("first combat-recovery round was preempted by stagnation: %+v", next)
 	}
 }
 

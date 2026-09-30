@@ -320,7 +320,13 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		f.consecutive = 0
 		f.lastFailKey = ""
 		f.retreatStreak, f.lastRetreatLevel = 0, 0
-		decision := runFailureDecision{Recovered: true}
+		// A required-battle defeat starts a new, deterministic recovery
+		// campaign (heal/restock/train before the retry). Refresh liveness here
+		// so a boss reached near the long-stagnation threshold still gets a
+		// chance to execute that campaign on the next round. Without this, the
+		// watchdog can stop immediately after the blackout, before combat
+		// preparation receives a single turn (#2254).
+		decision := runFailureDecision{Recovered: true, ProductiveSession: true}
 		if strategic {
 			decision.ReplanReason = "blackout"
 		}
