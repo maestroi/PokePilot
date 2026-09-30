@@ -47,9 +47,10 @@ const verdictClass: Record<string, string> = {
   agreed: 'text-[var(--poke-green)]',
   disagreed: 'text-[var(--poke-amber)]',
   active: 'text-[var(--poke-cyan)]',
+  fallback: 'text-[var(--poke-amber)]',
   unusable: 'text-[var(--poke-muted)]'
 }
-const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', active: 'acted', unusable: '—' }
+const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', active: 'acted', fallback: 'fallback', unusable: '—' }
 </script>
 
 <template>
@@ -71,6 +72,7 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
             <th class="py-0.5 pr-2 text-right font-normal">calls</th>
             <th class="py-0.5 pr-2 text-right font-normal">agreement</th>
             <th class="py-0.5 pr-2 text-right font-normal">p50 / p95</th>
+            <th class="py-0.5 pr-2 text-right font-normal">controlled</th>
             <th class="py-0.5 pr-2 text-right font-normal">fallbacks</th>
             <th class="py-0.5 font-normal">engine picks most</th>
           </tr>
@@ -89,6 +91,7 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
               {{ percent(row.agreement) }}<span v-if="row.judged" class="text-[var(--poke-muted)]"> of {{ row.judged }}</span>
             </td>
             <td class="py-0.5 pr-2 text-right font-mono">{{ latency(row.p50) }} / {{ latency(row.p95) }}</td>
+            <td class="py-0.5 pr-2 text-right font-mono" :class="row.controlled ? 'text-[var(--poke-cyan)]' : ''">{{ row.controlled || '—' }}</td>
             <td class="py-0.5 pr-2 text-right font-mono" :class="row.fallbacks ? 'text-[var(--poke-amber)]' : ''">{{ row.fallbacks }}</td>
             <td class="max-w-[14rem] truncate py-0.5 text-[var(--poke-muted)]">
               {{ row.topEngine.map(([label, count]) => `${label} ×${count}`).join(', ') || '—' }}
