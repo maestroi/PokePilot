@@ -169,14 +169,14 @@ watch(() => form.game, (game, previous) => {
   }
   if (game === 'pokemon-gold' || game === 'pokemon-silver') {
     form.planner = 'llm'
-    form.goal = 'progress:gs_supported_frontier'
+    form.goal = 'Play through the current supported Gen 2 frontier.'
   } else if (previous === 'pokemon-gold' || previous === 'pokemon-silver') {
     form.goal = defaultGoalForPlayStyle('adventure')
   }
 })
 
 const gen2Goals = [
-  ['progress:gs_supported_frontier', 'Experimental · play as far as currently supported'],
+  ['Play through the current supported Gen 2 frontier.', 'Experimental · play as far as currently supported'],
   ['Earn 1 badge.', 'Earn 1 badge · Falkner'],
   ['Earn 2 badges.', 'Earn 2 badges · Bugsy'],
   ['', 'Free play · no automatic stop']
