@@ -204,6 +204,8 @@ func (a *redObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver) {
 func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	restoreMoveObserver := skill.WithMoveObserver(a.m, gen1MoveObserver(a.romData, a.battleTurns))
 	defer restoreMoveObserver()
+	restoreBattleResultObserver := skill.WithBattleResultObserver(a.m, gen1BattleResultObserver(a.battleTurns))
+	defer restoreBattleResultObserver()
 	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
 	return normalizeRedOwnedExecutionResult(o, result, err)
 }
