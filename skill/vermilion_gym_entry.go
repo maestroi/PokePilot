@@ -39,11 +39,24 @@ func enterVermilionGymViaRouteGate(m *emu.Emu, romData []byte, policy MovePolicy
 	// Travel owns transient live-path failures: ErrLegUnwalkable is evidence
 	// for one attempted approach, so GoTo bans/replans it instead of turning a
 	// single NPC/tree-side obstruction into a failed Thunder Badge objective.
-	if _, err := TravelFlee(m, romData, MapDestination(vermilionGymMap), policy, surgeProgressionTravelEngagements); err != nil {
-		return fmt.Errorf("skill: Vermilion Gym entry: travel through Cut gate: %w", err)
+	//
+	// A successful Travel return must also satisfy the map postcondition. Farm
+	// #2253 ended back on Vermilion City with an untyped Gym failure, and this
+	// was the only city-side postcondition in this path that could collapse to
+	// unknown_error. Give that transient boundary one fresh journey after Cut
+	// has already been prepared, then surface a typed navigation stall instead
+	// of terminating the whole run on generic prose.
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := TravelFlee(m, romData, MapDestination(vermilionGymMap), policy, surgeProgressionTravelEngagements); err != nil {
+			return fmt.Errorf("skill: Vermilion Gym entry: travel through Cut gate: %w", err)
+		}
+		if got := m.Peek8(sym.CurMap); got == vermilionGymMap {
+			return nil
+		} else if got != vermilionCity {
+			return fmt.Errorf("%w: skill: Vermilion Gym entry arrived on map %#04x, want %#04x",
+				ErrNavigationStalled, got, vermilionGymMap)
+		}
 	}
-	if got := m.Peek8(sym.CurMap); got != vermilionGymMap {
-		return fmt.Errorf("skill: Vermilion Gym entry: arrived on map %#04x, want %#04x", got, vermilionGymMap)
-	}
-	return nil
+	return fmt.Errorf("%w: skill: Vermilion Gym entry remained on Vermilion City after two completed journeys",
+		ErrNavigationStalled)
 }
