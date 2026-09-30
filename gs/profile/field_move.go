@@ -13,10 +13,10 @@ const (
 	gsPartyMovesOffset uint16 = 0x02
 
 	gsPlainBadgeMask   byte = 1 << 2
-	gsFogBadgeMask    byte = 1 << 3
-	gsStormBadgeMask  byte = 1 << 5
+	gsFogBadgeMask     byte = 1 << 3
+	gsStormBadgeMask   byte = 1 << 5
 	gsGlacierBadgeMask byte = 1 << 6
-	gsRisingBadgeMask byte = 1 << 7
+	gsRisingBadgeMask  byte = 1 << 7
 )
 
 type gsFieldMoveSpec struct {
