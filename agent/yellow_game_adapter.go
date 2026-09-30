@@ -88,6 +88,11 @@ func (a *yellowObjectiveAdapter) ObserveBattleTurns(observer BattleTurnObserver)
 	a.gen1.ObserveBattleTurns(observer)
 }
 
+// ControlBattleMoves implements BattleMoveControllingAdapter.
+func (a *yellowObjectiveAdapter) ControlBattleMoves(controller BattleMoveController) {
+	a.gen1.ControlBattleMoves(controller)
+}
+
 func (a *yellowObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
 	switch o.Kind {
