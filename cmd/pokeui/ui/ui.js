@@ -338,12 +338,12 @@
     if (yellow) f.starter.value = "pikachu";
     else if (gen2) {
       if (!["", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) f.starter.value = "";
-      if (f.goal.value === "Earn the Boulder Badge.") f.goal.value = "progress:gs_supported_frontier";
+      if (f.goal.value === "Earn the Boulder Badge.") f.goal.value = "Play through the current supported Gen 2 frontier.";
     } else {
       if (["pikachu", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) {
         f.starter.value = scripted ? "squirtle" : "";
       }
-      if (f.goal.value === "progress:gs_supported_frontier") f.goal.value = "Earn the Boulder Badge.";
+      if (f.goal.value === "Play through the current supported Gen 2 frontier.") f.goal.value = "Earn the Boulder Badge.";
     }
   }
   function fillDefaults() {
