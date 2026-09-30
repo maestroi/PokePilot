@@ -429,6 +429,20 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
 					continue
 				}
+				// The southbound Route 23 action owns the three Surf bands only.
+				// It must not claim that it can bridge the disconnected Indigo-side
+				// Victory Road exit pocket. Route 23 resets the cave's 2F/3F switch
+				// events on load, and the measured exit-side 3F state cannot solve
+				// the west switch (#2237). The older reverse-cave helper therefore
+				// turned otherwise valid travel into a transition failure on 3F
+				// (#2247/#2251/#2252). From the north pocket (or Indigo itself),
+				// leave this edge as ordinary geometry so component routing reports
+				// no walking route; Travel's legal fast-travel layer may still
+				// bypass the pocket before GoTo runs.
+				if transition.ID == "red:route23_league_return" &&
+					!route23LeagueReturnPivotAvailable(mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord)) {
+					continue
+				}
 				if redRouteTransitionEffectComplete(mem, transition) {
 					continue
 				}
