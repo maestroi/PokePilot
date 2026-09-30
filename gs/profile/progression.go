@@ -24,7 +24,7 @@ const (
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
 	// semantic fact instead of changing every launch surface and saved preset.
-	ProgressSupportedFrontier        game.ProgressID = "gs_supported_frontier"
+	ProgressSupportedFrontier game.ProgressID = "gs_supported_frontier"
 )
 
 const (
