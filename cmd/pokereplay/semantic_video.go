@@ -243,4 +243,3 @@ func (s *replayServer) renderAttemptSemanticSegments(
 	}
 	return nil
 }
-
