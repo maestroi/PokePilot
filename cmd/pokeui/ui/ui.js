@@ -339,8 +339,11 @@
     else if (gen2) {
       if (!["", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) f.starter.value = "";
       if (f.goal.value === "Earn the Boulder Badge.") f.goal.value = "progress:gs_supported_frontier";
-    } else if (["pikachu", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) {
-      f.starter.value = scripted ? "squirtle" : "";
+    } else {
+      if (["pikachu", "chikorita", "cyndaquil", "totodile"].includes(f.starter.value)) {
+        f.starter.value = scripted ? "squirtle" : "";
+      }
+      if (f.goal.value === "progress:gs_supported_frontier") f.goal.value = "Earn the Boulder Badge.";
     }
   }
   function fillDefaults() {
