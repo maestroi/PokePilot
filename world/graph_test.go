@@ -15,7 +15,7 @@ func loadGraph(t *testing.T) *Graph {
 	if err != nil {
 		t.Fatalf("reading ROM: %v", err)
 	}
-	g, err := BuildGraph(romData)
+	g, err := BuildGraph(testRedWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
