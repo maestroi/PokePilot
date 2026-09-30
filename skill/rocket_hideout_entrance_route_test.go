@@ -65,7 +65,7 @@ func TestGameCornerPosterStairIsClosedUntilFound(t *testing.T) {
 // pushing into the wall at (17,4).
 func TestSpeedrunRouteLeavesClosedPosterStair(t *testing.T) {
 	romData := badgeFourROM(t)
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
