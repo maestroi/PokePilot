@@ -198,31 +198,3 @@ func isRegisteredGen1WorldROM(romData []byte) bool {
 	return title == "POKEMON RED" || title == "POKEMON BLUE"
 }
 
-func init() {
-	worldmodel.RegisterROMProviderFactory(func(romData []byte) (worldmodel.MapHeaderProvider, bool) {
-		if !isRegisteredGen1WorldROM(romData) {
-			return nil, false
-		}
-		return NewWorldProvider(romData), true
-	})
-}
-
-func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {
-	if spec == nil {
-		return
-	}
-	var tile uint8
-	switch tileset {
-	case 0: // OVERWORLD
-		tile = 0x3d
-	case 7: // GYM
-		tile = 0x50
-	default:
-		return
-	}
-	spec.Cuttable = make([]bool, len(spec.Walkable))
-	for i := range spec.Cuttable {
-		spec.Cuttable[i] = (i < len(spec.FieldTile) && spec.FieldTile[i] == tile) ||
-			(i < len(spec.CollisionTile) && spec.CollisionTile[i] == tile)
-	}
-}
