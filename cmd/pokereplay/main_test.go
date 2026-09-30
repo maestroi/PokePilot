@@ -304,8 +304,10 @@ done
 	if got, _ := os.ReadFile(calls); strings.Count(string(got), "x") != 1 {
 		t.Fatalf("stream renders=%d, want 1 (second pass must reuse the S3 segment)", strings.Count(string(got), "x"))
 	}
-	if _, ok := objects["/pokepilot/runs/run-1/attempt-2/replay-abababababab.mp4"]; !ok {
-		t.Fatalf("segment not cached under its attempt key: %v", objects)
+	wantKey := newReplayServer("http://wall.invalid", segment.ReplayROMPath, stream, store).
+		replayCacheKeyForMode("run-1", []replayRecording{recording}, replayModeRaw)
+	if _, ok := objects["/pokepilot/"+wantKey]; !ok {
+		t.Fatalf("segment not cached under canonical attempt key %q: %v", wantKey, objects)
 	}
 }
 
