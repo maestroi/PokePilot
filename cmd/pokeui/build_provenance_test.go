@@ -53,4 +53,3 @@ func TestCurrentBuildProvenanceDirectBuildFallback(t *testing.T) {
 		t.Fatalf("Title = %q, want local build", got.Title)
 	}
 }
-
