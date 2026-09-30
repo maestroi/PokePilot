@@ -919,6 +919,7 @@ func (s *replayServer) downloadObject(ctx context.Context, key, destination stri
 
 func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, recordingPath, videoPath string) error {
 	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(romPath, recordingPath, videoPath)...)
+	configureReplayProcessGroup(cmd)
 	output := &replayOutputTail{}
 	cmd.Stdout = output
 	cmd.Stderr = output
