@@ -79,7 +79,12 @@ func (s *replayServer) replayIdentityInput(runID string, recordings []replayReco
 		case replayModeSemantic:
 			input.RenderStates = append(input.RenderStates, mediaartifact.Content{
 				Attempt: recording.Attempt,
-				Version: fmt.Sprintf("renderstate-v%d", protocol.SchemaVersion),
+				Version: fmt.Sprintf(
+					"renderstate-v%d-replay-timeline-v%d-sample-f%d",
+					protocol.SchemaVersion,
+					protocol.ReplayTimelineVersion,
+					semanticReplaySampleEveryFrames,
+				),
 			})
 		}
 	}
