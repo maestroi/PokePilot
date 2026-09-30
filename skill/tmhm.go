@@ -204,6 +204,16 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: item %#02x is not in the bag or Player PC", item)
 	}
 
+	// The TM/HM party-select prompt is worded per game (Red/Blue "Use TM",
+	// Yellow "Teach to which"). Resolve the marker once here, before opening any
+	// menu, and thread it into the per-frame predicate below: detecting the
+	// profile hashes the ROM and must not run inside a StepUntil loop.
+	marker, err := tmhmPartyMenuMarker(m)
+	if err != nil {
+		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: %w", err)
+	}
+	partyMenuUp := func(m *emu.Emu) bool { return cutScreenHas(m, marker) }
+
 	menuMayBeOpen := false
 	defer func() {
 		if retErr == nil || !menuMayBeOpen {
@@ -255,10 +265,10 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 	if err := SelectMenuItem(m, 0); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: answer teach prompt: %w", err)
 	}
-	if _, err := m.StepUntil(1000, tmhmPartyMenuUp); err != nil {
+	if _, err := m.StepUntil(1000, partyMenuUp); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: TM/HM party menu did not appear")
 	}
-	if err := selectTMHMPartySlot(m, decision.PartySlot); err != nil {
+	if err := selectTMHMPartySlot(m, marker, decision.PartySlot); err != nil {
 		return TMHMResult{}, fmt.Errorf("skill: TeachTMHM: select party slot %d: %w", decision.PartySlot, err)
 	}
 	if err := finishTeachingTMHM(m, decision); err != nil {
@@ -287,6 +297,10 @@ func TeachTMHM(m *emu.Emu, item uint8, required bool) (result TMHMResult, retErr
 
 func finishTeachingTMHM(m *emu.Emu, decision TMHMDecision) error {
 	var mem state.Mem
+	marker, err := tmhmPartyMenuMarker(m)
+	if err != nil {
+		return fmt.Errorf("skill: TeachTMHM: %w", err)
+	}
 	for frames := 0; frames < cutMenuBudget; frames += 20 {
 		state.Snapshot(m, &mem)
 		party := state.DecodeParty(&mem)
@@ -312,7 +326,7 @@ func finishTeachingTMHM(m *emu.Emu, decision TMHMDecision) error {
 			} else {
 				m.Tap(emu.A, 3, 7)
 			}
-		case tmhmPartyMenuUp(m):
+		case cutScreenHas(m, marker):
 			return fmt.Errorf("skill: TeachTMHM: teaching move %d returned to party menu without changing party slot %d", decision.Machine.Move, decision.PartySlot)
 		default:
 			m.Tap(emu.A, 3, 7)

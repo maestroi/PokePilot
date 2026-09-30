@@ -48,6 +48,8 @@ func (p *Profile) DecodeObservation(r game.MemoryReader, rom []byte) (game.Profi
 	return p.engine.DecodeObservation(r, rom)
 }
 
+func (p *Profile) TMHMPartyMenuMarker() string { return p.engine.TMHMPartyMenuMarker() }
+
 func (p *Profile) BuildDexCatalog(rom []byte, owned, seen []game.SpeciesID) (game.DexCatalog, error) {
 	return p.engine.BuildDexCatalog(rom, owned, seen)
 }
