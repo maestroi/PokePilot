@@ -20,6 +20,10 @@ import (
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
 
+type worldProfile interface {
+	MapProvider([]byte) worldmodel.MapHeaderProvider
+}
+
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
 	game := flag.String("game", "auto", "game profile (auto, red, blue, yellow)")
@@ -52,7 +56,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
-	worldProfile, ok := profile.(interface { MapProvider([]byte) worldmodel.MapHeaderProvider })
+	worldProfile, ok := profile.(worldProfile)
 	if !ok {
 		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
 		os.Exit(2)
