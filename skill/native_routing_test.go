@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -78,7 +79,8 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 		Dir:    0,
 		Offset: -2,
 	}
-	path, push, err := nativeConnectionApproach(provider, grid, edge, 5, 3, nil)
+	live := game.LiveTopologyState{NativeMapID: 0x1804, WidthBlocks: 3, HeightBlocks: 2}
+	path, push, err := nativeConnectionApproach(provider, grid, live, edge, 5, 3, nil)
 	if err != nil {
 		t.Fatalf("nativeConnectionApproach: %v", err)
 	}
@@ -112,5 +114,77 @@ func TestNativeRuntimeBlockersAvoidWarpsAndObjects(t *testing.T) {
 	}
 	if !blocked[[2]int{3, 4}] {
 		t.Fatal("live object was not blocked")
+	}
+}
+
+// nativeShellTestProvider is a one-map provider that can build a spec, so the
+// settled-map gate can be exercised without a cartridge: the question is only
+// whether routing is willing to read a block buffer the profile does not vouch
+// for.
+type nativeShellTestProvider struct {
+	header worldmodel.NativeMapHeader
+}
+
+func (p nativeShellTestProvider) MapIDs() []uint16 { return []uint16{p.header.ID} }
+
+func (p nativeShellTestProvider) ParseMap(id uint16) (worldmodel.NativeMapHeader, error) {
+	return p.header, nil
+}
+
+func (p nativeShellTestProvider) Grid(mapID uint16, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
+	width, height := int(p.header.WidthBlocks), int(p.header.HeightBlocks)
+	spec := worldmodel.NativeGridSpec{
+		MapID:         mapID,
+		Width:         width * 2,
+		Height:        height * 2,
+		Walkable:      make([]bool, width*height*4),
+		CollisionTile: make([]uint8, width*height*4),
+		Traversal:     mode,
+	}
+	for i := range spec.Walkable {
+		spec.Walkable[i] = true
+	}
+	return spec, nil
+}
+
+// nativeShellTestReader is an empty memory surface: the gate under test reads
+// the decoder, not RAM.
+type nativeShellTestReader struct{}
+
+func (nativeShellTestReader) Peek8(uint16) byte { return 0 }
+
+func (nativeShellTestReader) PeekInto(uint16, []byte) {}
+
+type nativeShellTestDecoder struct {
+	live game.LiveTopologyState
+}
+
+func (d nativeShellTestDecoder) DecodeLiveTopology(game.MemoryReader) (game.LiveTopologyState, error) {
+	return d.live, nil
+}
+
+// A map whose identity is current while a field script still owns the
+// overworld has a block buffer holding the previous map's bytes. Routing must
+// report that as a not-ready map instead of decoding it as collision.
+func TestNativeLiveGridRefusesUnsettledMapShell(t *testing.T) {
+	provider := nativeShellTestProvider{header: worldmodel.NativeMapHeader{ID: 0x1803, WidthBlocks: 2, HeightBlocks: 2}}
+	live := game.LiveTopologyState{
+		NativeMapID:   0x1803,
+		WidthBlocks:   2,
+		HeightBlocks:  2,
+		Blocks:        []byte{0xff, 0xff, 0xff, 0xff},
+		MapShellPhase: game.MapShellSettled,
+	}
+	_, _, _, err := nativeLiveGrid(nativeShellTestReader{}, nativeShellTestDecoder{live: live}, provider, 0x1803)
+	if err == nil {
+		t.Fatal("nativeLiveGrid decoded an unsettled map shell")
+	}
+	if !errors.Is(err, errLiveMapNotSettled) {
+		t.Fatalf("nativeLiveGrid err = %v, want %v", err, errLiveMapNotSettled)
+	}
+
+	live.BlocksSettled = true
+	if _, _, _, err := nativeLiveGrid(nativeShellTestReader{}, nativeShellTestDecoder{live: live}, provider, 0x1803); err != nil {
+		t.Fatalf("nativeLiveGrid on a settled map: %v", err)
 	}
 }
