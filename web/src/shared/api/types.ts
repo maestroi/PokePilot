@@ -503,6 +503,7 @@ export interface MediaRenderJob {
   lease_expires_at_unix_ms?: number
   retry_count?: number
   last_error?: string
+  failure_class?: string
   result_size?: number
   created_at_unix_ms: number
   updated_at_unix_ms: number
