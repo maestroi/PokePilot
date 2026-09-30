@@ -158,6 +158,16 @@ func replayScratchUsage(root string) (uint64, error) {
 	return total, nil
 }
 
+func replayContextError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx != nil && ctx.Err() != nil {
+		return fmt.Errorf("%w: %v", ctx.Err(), err)
+	}
+	return err
+}
+
 func withReplayTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
 	if timeout <= 0 {
 		return context.WithCancel(parent)
