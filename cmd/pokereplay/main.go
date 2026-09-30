@@ -350,10 +350,10 @@ func (s *replayServer) handleReplayCancel(w http.ResponseWriter, r *http.Request
 		JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled,
 		FailureClass: farm.MediaRenderFailureCancelled,
 	}
-	s.setJob(cacheKey, status)
 	if !cancelled {
 		status.LastError = "render was queued or not active"
 	}
+	s.setJob(cacheKey, status)
 	writeJSON(w, http.StatusOK, status)
 }
 
