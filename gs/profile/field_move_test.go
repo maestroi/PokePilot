@@ -52,8 +52,8 @@ func TestGSFieldMoveNativeMappings(t *testing.T) {
 			if !ok {
 				t.Fatalf("NativeFieldMove(%s) unsupported", tc.id)
 			}
-			if native.MachineItemID != tc.item || native.MoveID != tc.move {
-				t.Fatalf("NativeFieldMove(%s)=%+v, want item=%#x move=%#x", tc.id, native, tc.item, tc.move)
+			if native.MachineItemID != tc.item || native.MoveID != tc.move || native.MachineNumber != uint16(tc.machine) {
+				t.Fatalf("NativeFieldMove(%s)=%+v, want item=%#x move=%#x machine=%d", tc.id, native, tc.item, tc.move, tc.machine)
 			}
 			spec, ok := gsFieldMoveByID(tc.id)
 			if !ok || spec.badgeName != tc.badge || spec.machineNumber != tc.machine {
@@ -244,5 +244,26 @@ func TestGoldFieldMoveMenuFailsClosedWithoutRenderedMove(t *testing.T) {
 
 	if got := NewGold().DecodeFieldMoveMenu(&mem); len(got.Entries) != 0 {
 		t.Fatalf("stale/non-field submenu decoded as field menu: %#v", got.Entries)
+	}
+}
+
+func TestGoldMachinePocketDecodesNumberedTMHMSelection(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.TwoDMenuNumRows] = 5
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB | 0x10 | 0x20 | gen2PadUp | gen2PadDown
+	mem[sym.MenuCursorY] = 3
+	mem[sym.MenuCursorX] = 1
+	mem[sym.CurItem] = 51
+	putGSText(&mem, "TM POCKET H1 CUT")
+
+	got := NewGold().DecodeMachinePocket(&mem)
+	if !got.Visible || got.MachineNumber != 51 || got.Cursor.Current != 2 || got.Cursor.Max != 4 {
+		t.Fatalf("machine pocket = %+v", got)
+	}
+
+	putGSText(&mem, "ITEM POCKET")
+	if stale := NewGold().DecodeMachinePocket(&mem); stale.Visible {
+		t.Fatalf("ordinary item pocket decoded as TM pocket: %+v", stale)
 	}
 }
