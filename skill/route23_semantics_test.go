@@ -89,9 +89,9 @@ func TestRoute23LeagueReturnNorthComponentDiscriminator(t *testing.T) {
 
 func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
+		name        string
 		mapID, x, y uint8
-		want       bool
+		want        bool
 	}{
 		{name: "north exit door", mapID: route23Map, x: 14, y: 31, want: false},
 		{name: "north exterior", mapID: route23Map, x: 18, y: 30, want: false},
