@@ -168,9 +168,10 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	lostPrefix := retryPrefix + "no heartbeat for "
 	drainedPrefix := fmt.Sprintf("attempt %d drained: ", previous)
 	planner := t.Planner
+	resilient := t.RecoveryProfile.Resilient()
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
 	drainedRetry := previous > 0 && strings.HasPrefix(t.Detail, drainedPrefix)
-	resilientRetry := previous > 0 && t.RecoveryProfile.Resilient() && planner == "llm" &&
+	resilientRetry := previous > 0 && resilient && planner == "llm" &&
 		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	recoveryAttempts := t.RecoveryAttempts
 	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
@@ -189,11 +190,25 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		if err == nil {
 			cp.Attempt = previous
 		}
-	case lostRetry || drainedRetry:
-		// Worker loss and graceful deploy drain both continue from the deepest
-		// safe pair in the lineage. A drain has already flushed the final
-		// objective pair before Finish, so this normally resumes exactly at the
-		// safe boundary where SIGTERM was observed (#1933).
+	case drainedRetry:
+		// A graceful deploy drain continues from the deepest safe pair in the
+		// lineage. A drain has already flushed the final objective pair before
+		// Finish, so this normally resumes exactly at the safe boundary where
+		// SIGTERM was observed (#1933).
+		cp, err = w.latestLineageResumeCheckpoint(id, planner)
+		if os.IsNotExist(err) {
+			cp, err = w.latestLineageMajorCheckpoint(id)
+		}
+	case lostRetry && resilient:
+		// Worker loss is normally infrastructure churn and should keep its
+		// deepest checkpoint. But a deterministic wedge presents the same
+		// "no heartbeat" shape while making zero frontier progress, and
+		// RecoveryAttempts only accumulates when the frontier did not advance.
+		// Route the loss through the rollback ladder so healthy churn resets
+		// on progress while a wedged checkpoint backs up instead of re-wedging
+		// forever.
+		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
+	case lostRetry:
 		cp, err = w.latestLineageResumeCheckpoint(id, planner)
 		if os.IsNotExist(err) {
 			cp, err = w.latestLineageMajorCheckpoint(id)
