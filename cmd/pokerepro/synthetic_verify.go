@@ -7,6 +7,8 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/emu"
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -55,7 +57,30 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		return verdict, fmt.Errorf("load checkpoint: %w", err)
 	}
 
-	graph, err := world.BuildGraph(m.ROM())
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, fmt.Errorf("detect ROM profile: %w", err)
+	}
+	worldProfile, ok := profile.(gameruntime.WorldProfile)
+	if !ok {
+		err = fmt.Errorf("profile %s@%s does not expose world topology", profile.ID(), profile.Revision())
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, err
+	}
+	provider := worldProfile.MapProvider(m.ROM())
+	if provider == nil {
+		err = fmt.Errorf("profile %s@%s returned nil map provider", profile.ID(), profile.Revision())
+		verdict.Classification = verdictHarnessError
+		verdict.Diagnostic = err.Error()
+		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
+		return verdict, err
+	}
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		verdict.Classification = verdictHarnessError
 		verdict.Diagnostic = err.Error()
