@@ -23,6 +23,10 @@ func TestDecisionSelectionForRunSpec(t *testing.T) {
 	if got.Mode != farm.DecisionModeShadow || !got.Battles {
 		t.Fatalf("shadow selection = %+v", got)
 	}
+	got = decisionSelectionFor(&farm.DecisionEngineSpec{Backend: "jev", Mode: "active", Battles: true, MinConfidence: 0.8})
+	if got.Mode != farm.DecisionModeActive || !got.Battles || got.MinConfidence != 0.8 {
+		t.Fatalf("active battle selection = %+v", got)
+	}
 	got = decisionSelectionFor(&farm.DecisionEngineSpec{Backend: "jev", Deployment: "typesafe-jev", Inference: &farm.InferenceIdentity{
 		Endpoint: "https://api.typesafe.ai/v1", APIModel: "jev-2", TokenEnv: "JEV_KEY",
 	}})
