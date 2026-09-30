@@ -9,7 +9,7 @@ func (p fixedProgressionPlanner) ProgressionObjectives(Observation) []Objective 
 }
 
 func TestOfferWithProgressionDropsKnownBadJourneysWhenStoryCanAdvance(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{
+	known := testKnowledge(map[uint16][]uint16{
 		0x3B: {0x0F, 0x3C},
 		0x0F: {0x3B},
 		0x3C: {0x3B},

@@ -17,18 +17,33 @@ type LocationID string
 // boundary to migrate old checkpoints and translate transient emulator samples.
 type KnowledgeTopology struct {
 	Adjacency       map[LocationID][]LocationID
-	NativeLocations map[uint8]LocationID
+	NativeLocations map[uint16]LocationID
+	GameID          game.GameID
 }
 
-func (t KnowledgeTopology) locationForNative(id uint8) LocationID {
+func (t KnowledgeTopology) locationForNative(id uint16) LocationID {
 	if location := t.NativeLocations[id]; location != "" {
 		return location
 	}
-	return legacyLocationID(id)
+	return locationForNativeGame(t.GameID, id)
 }
 
-func rawLegacyLocationID(id uint8) LocationID {
-	return LocationID(fmt.Sprintf("legacy-map/%02x", id))
+func rawLegacyLocationID(id uint16) LocationID {
+	return LocationID(fmt.Sprintf("legacy-map/%04x", id))
+}
+
+// locationForNativeGame resolves a native map id through the provider for the
+// named game. When the game is unknown or has no provider, it falls back to
+// the legacy all-provider consensus path.
+func locationForNativeGame(id game.GameID, native uint16) LocationID {
+	if id != "" {
+		if provider := knowledgeTopologyProviders[id]; provider != nil {
+			if location := provider.KnowledgeTopology(map[uint16][]uint16{native: nil}).NativeLocations[native]; location != "" {
+				return location
+			}
+		}
+	}
+	return legacyLocationID(native)
 }
 
 // legacyLocationID is the compatibility translation for callers that still
@@ -37,10 +52,10 @@ func rawLegacyLocationID(id uint8) LocationID {
 // LocationID: an unidentified observation then stays unambiguous instead of
 // silently picking a game. Games that disagree — or no game at all — fall
 // back to the raw id, and the caller must identify its game.
-func legacyLocationID(id uint8) LocationID {
+func legacyLocationID(id uint16) LocationID {
 	var first LocationID
 	for _, provider := range knowledgeTopologyProviders {
-		location := provider.KnowledgeTopology(map[uint8][]uint8{id: nil}).NativeLocations[id]
+		location := provider.KnowledgeTopology(map[uint16][]uint16{id: nil}).NativeLocations[id]
 		switch {
 		case location == "":
 			return rawLegacyLocationID(id)
@@ -56,10 +71,10 @@ func legacyLocationID(id uint8) LocationID {
 	return first
 }
 
-func rawLegacyKnowledgeTopology(adjacency map[uint8][]uint8) KnowledgeTopology {
+func rawLegacyKnowledgeTopology(adjacency map[uint16][]uint16) KnowledgeTopology {
 	topology := KnowledgeTopology{
 		Adjacency:       map[LocationID][]LocationID{},
-		NativeLocations: map[uint8]LocationID{},
+		NativeLocations: map[uint16]LocationID{},
 	}
 	for from, neighbors := range adjacency {
 		fromID := rawLegacyLocationID(from)
@@ -78,7 +93,7 @@ func normalizeKnowledgeTopology(t KnowledgeTopology) KnowledgeTopology {
 		t.Adjacency = map[LocationID][]LocationID{}
 	}
 	if t.NativeLocations == nil {
-		t.NativeLocations = map[uint8]LocationID{}
+		t.NativeLocations = map[uint16]LocationID{}
 	}
 	for from, neighbors := range t.Adjacency {
 		seen := map[LocationID]bool{}
@@ -97,7 +112,7 @@ func normalizeKnowledgeTopology(t KnowledgeTopology) KnowledgeTopology {
 }
 
 type KnowledgeTopologyProvider interface {
-	KnowledgeTopology(map[uint8][]uint8) KnowledgeTopology
+	KnowledgeTopology(map[uint16][]uint16) KnowledgeTopology
 }
 
 var knowledgeTopologyProviders = map[game.GameID]KnowledgeTopologyProvider{}
@@ -116,14 +131,16 @@ func registerKnowledgeTopologyProvider(id game.GameID, provider KnowledgeTopolog
 // topology accepted by NewKnowledge and checkpoint loading. Callers must name
 // the game explicitly; unsupported or empty game IDs stay raw rather than
 // guessing from whichever adapters happen to be registered in this process.
-func KnowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
+func KnowledgeTopologyFor(id game.GameID, native map[uint16][]uint16) KnowledgeTopology {
 	if provider := knowledgeTopologyProviders[id]; provider != nil {
-		return normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
+		topology := normalizeKnowledgeTopology(provider.KnowledgeTopology(native))
+		topology.GameID = id
+		return topology
 	}
 	return rawLegacyKnowledgeTopology(native)
 }
 
-func knowledgeTopologyFor(id game.GameID, native map[uint8][]uint8) KnowledgeTopology {
+func knowledgeTopologyFor(id game.GameID, native map[uint16][]uint16) KnowledgeTopology {
 	return KnowledgeTopologyFor(id, native)
 }
 
@@ -132,7 +149,7 @@ func observationLocation(obs Observation, k *Knowledge) LocationID {
 		return LocationID(obs.Location)
 	}
 	if k != nil {
-		return k.locationForNative(obs.Map)
+		return k.locationForNative(uint16(obs.Map))
 	}
-	return legacyLocationID(obs.Map)
+	return locationForNativeGame(obs.GameID, uint16(obs.Map))
 }

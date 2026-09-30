@@ -45,6 +45,17 @@ type RoutingDecoder interface {
 	DecodeLiveTopology(MemoryReader) (LiveTopologyState, error)
 }
 
+// MapTopologyProvider exposes the static map-level adjacency in the game's
+// native map-id width. The returned map uses uint16 keys and values so a
+// cartridge's native identity is never narrowed: Gen I fits in the low byte,
+// while Gen II's (group, number) namespace needs the full 16 bits. Generic
+// routing consumes only this adjacency and lets the owning adapter decide how
+// to build it, so a wide-id game does not have to fit the historical uint8
+// world graph.
+type MapTopologyProvider interface {
+	MapAdjacency(romData []byte) (map[uint16][]uint16, error)
+}
+
 // ElevatorTransition is the portable postcondition for a profile-owned
 // elevator transition. Generic routing owns the requested destination and door
 // coordinates; the profile owns how a cartridge represents the mutable live

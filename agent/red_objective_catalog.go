@@ -37,7 +37,7 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 // ROM tables, so Red, Blue and Yellow build it with one function.
 type gen1CatalogFacts struct {
 	// Location names a native map in the game's knowledge topology.
-	Location func(game.GameID, uint8) LocationID
+	Location func(game.GameID, uint16) LocationID
 	// Starters are the starter choices the game's opening offers.
 	Starters []CatalogStarter
 	// ChallengeProfiles are the story challenges the game's adapter can run.
@@ -58,7 +58,7 @@ func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCata
 		}
 		entry := CatalogDestination{
 			Place:    PlaceID(name),
-			Location: facts.Location(obs.GameID, destination.Map),
+			Location: facts.Location(obs.GameID, uint16(destination.Map)),
 			Kind:     destination.Kind,
 			Center:   strings.HasSuffix(name, "pokemon center") || isCenter(state.MapName(destination.Map)),
 		}
@@ -74,7 +74,7 @@ func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCata
 	if gym, ok := skill.GymAt(obs.Map); ok {
 		catalog.Challenges = append(catalog.Challenges, CatalogChallenge{
 			Place:     gym.Place,
-			Location:  facts.Location(obs.GameID, gym.Map),
+			Location:  facts.Location(obs.GameID, uint16(gym.Map)),
 			Complete:  hasBadge(obs, gym.Badge),
 			Readiness: redGymReadinessProfile(gym.Badge),
 		})

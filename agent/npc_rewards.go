@@ -49,12 +49,12 @@ var redCustomChoiceActors = []struct {
 func appendRedNPCRewardObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
 	blocked := dexCatchBlockedPlaces(obs)
 	var (
-		hops      map[uint8]int
-		adjacency map[uint8][]uint8
+		hops      map[uint16]int
+		adjacency map[uint16][]uint16
 	)
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 
 	for _, reward := range skill.ChoiceRewards() {
