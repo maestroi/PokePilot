@@ -63,6 +63,25 @@ func TestFailureCauseCarriesSemanticRoutePrerequisites(t *testing.T) {
 	}
 }
 
+// TestFailureObjectiveForPreservesIntent guards the agent-side source of the
+// portable failure contract. Intent is semantic execution identity (it selects
+// the deterministic adapter path, e.g. Safari vs. plain catch), not
+// presentation, so dropping it collapsed distinct objectives in the
+// fingerprint and made deterministic replay of an intent-owned catch execute
+// the wrong adapter path.
+func TestFailureObjectiveForPreservesIntent(t *testing.T) {
+	got := FailureObjectiveFor(Objective{
+		Kind:    KindCatch,
+		Place:   "safari zone center",
+		Species: SpeciesID("exeggcute"),
+		Flee:    true,
+		Intent:  "dex-safari",
+	})
+	if got.Intent != "dex-safari" {
+		t.Fatalf("FailureObjectiveFor dropped intent: %+v", got)
+	}
+}
+
 func TestFailureStateDoesNotCarryRawRedMapIdentity(t *testing.T) {
 	base := Observation{
 		Map:          0x17,

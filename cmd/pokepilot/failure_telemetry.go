@@ -189,6 +189,7 @@ func farmObjectiveFromAgent(o agent.FailureObjective) farm.FailureObjective {
 		Slot:            o.Slot,
 		Qty:             o.Qty,
 		Flee:            o.Flee,
+		Intent:          o.Intent,
 	}
 }
 
