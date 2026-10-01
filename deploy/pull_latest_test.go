@@ -155,7 +155,7 @@ exit 0
 		t.Fatalf("read docker log: %v", err)
 	}
 	logText := string(logData)
-	want := "service update --force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new --stop-grace-period 6m --update-order start-first --update-parallelism 0 pokefarm_runner"
+	want := "service update --force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new --update-failure-action rollback --update-monitor 60s --stop-grace-period 6m --update-order start-first --update-parallelism 0 pokefarm_runner"
 	if !strings.Contains(logText, want) {
 		t.Fatalf("docker calls did not force-roll stale runner; want %q in:\n%s", want, logText)
 	}
@@ -304,14 +304,14 @@ exit 0
 		t.Fatalf("read docker log: %v", err)
 	}
 	logText := string(logData)
-	if strings.Contains(logText, "--force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new pokefarm_runner") {
+	if strings.Contains(logText, "--update-parallelism 0 pokefarm_runner") {
 		t.Fatalf("runner was force-rolled for tasks Swarm cannot stop:\n%s", logText)
 	}
 	// The other half: a stale task on a reachable node still forces a roll.
 	if !strings.Contains(string(out), "pokefarm_ui spec is sha256:new but 1/1 Running task(s) are stale; force-roll") {
 		t.Fatalf("a reachable stale task no longer rolls:\n%s", out)
 	}
-	if !strings.Contains(logText, "--force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new pokefarm_ui") {
+	if !strings.Contains(logText, "--force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new --update-failure-action rollback --update-monitor 60s pokefarm_ui") {
 		t.Fatalf("ui was not force-rolled for a reachable stale task:\n%s", logText)
 	}
 }
@@ -339,5 +339,56 @@ func TestPullLatestShellSyntax(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("bash -n %s: %v\n%s", script, err, out)
 		}
+	}
+}
+
+// Swarm rolled the wall back from the published digest because its new task
+// crash-looped inside the update monitor. The timer must not re-roll that same
+// digest every two minutes; it waits for a newer image.
+func TestRolloutLatestHoldsDigestSwarmRolledBack(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	case "$*" in
+	*PreviousSpec*)
+		if [ "$3" = "pokefarm_wall" ]; then
+			echo 'rollback_completed|ghcr.io/maestroi/pokepilot@sha256:new'
+		else
+			echo 'completed|ghcr.io/maestroi/pokepilot@sha256:old'
+		fi
+		;;
+	*Spec.TaskTemplate.ContainerSpec.Image*)
+		echo 'ghcr.io/maestroi/pokepilot@sha256:old'
+		;;
+	esac
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "rolled pokefarm_wall back from sha256:new") {
+		t.Fatalf("rollback hold not reported:\n%s", out)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker log: %v", err)
+	}
+	if strings.Contains(string(logData), "service update") {
+		t.Fatalf("re-rolled a digest Swarm already rejected:\n%s", logData)
 	}
 }
