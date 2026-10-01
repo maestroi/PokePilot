@@ -151,17 +151,17 @@ const (
 
 	EnemyStatLevels uint16 = 0xCBB2 // wEnemyStatLevels
 
-	Money       uint16 = 0xD573
-	JohtoBadges uint16 = 0xD57C
-	KantoBadges uint16 = 0xD57D
-	TMsHMs      uint16 = 0xD57E
-	TMsHMsCount        = 57
-	NumItems    uint16 = 0xD5B7
-	Items       uint16 = 0xD5B8
-	MaxItems           = 20
-	NumKeyItems uint16 = 0xD5E1
-	KeyItems    uint16 = 0xD5E2
-	MaxKeyItems        = 25
+	Money         uint16 = 0xD573
+	JohtoBadges   uint16 = 0xD57C
+	KantoBadges   uint16 = 0xD57D
+	TMsHMs        uint16 = 0xD57E
+	TMsHMsCount          = 57
+	NumItems      uint16 = 0xD5B7
+	Items         uint16 = 0xD5B8
+	MaxItems             = 20
+	NumKeyItems   uint16 = 0xD5E1
+	KeyItems      uint16 = 0xD5E2
+	MaxKeyItems          = 25
 	NumBalls      uint16 = 0xD5FC
 	Balls         uint16 = 0xD5FD
 	MaxBalls             = 12
