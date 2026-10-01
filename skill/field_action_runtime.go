@@ -27,11 +27,11 @@ func fieldActionDecoderFor(m *emu.Emu) (game.FieldActionDecoder, error) {
 func validateFieldActionRuntime(state game.FieldActionState, spec FieldMoveSpec) error {
 	switch spec.Move {
 	case FieldCut:
-		if !state.CuttableAhead {
+		if state.CutTargetKnown && !state.CuttableAhead {
 			return fmt.Errorf("no Cut target is directly in front of the player")
 		}
 	case FieldStrength:
-		if !state.BoulderAhead {
+		if state.BoulderTargetKnown && !state.BoulderAhead {
 			return fmt.Errorf("no boulder is directly in front of the player")
 		}
 	case FieldSurf:
