@@ -649,6 +649,35 @@ func TestValidateSpecKeepsRedScriptedStarterRequirement(t *testing.T) {
 	}
 }
 
+func TestValidateSpecRejectsNonRedStarterExperiment(t *testing.T) {
+	// The Red starter experiment (random/fixed species) patches Red's
+	// Oak's-lab script, so only the exact Red cartridge can run it. A Blue
+	// lease with an experiment starter must be rejected before a run is
+	// spent, not die inside Patch with "unknown ROM" (run-1qef1hkcr7f7v,
+	// triage:5f7bc4d7b45f8bda).
+	for _, starter := range []string{"random", "random:reasonable", "fixed:mewtwo", "mewtwo"} {
+		if err := validateSpec("pokemon-blue", "llm", starter, ""); err == nil {
+			t.Fatalf("Blue accepted the Red starter experiment %q", starter)
+		}
+	}
+	// Canonical Blue starters and no starter remain valid.
+	for _, starter := range []string{"", "charmander", "squirtle", "bulbasaur"} {
+		if err := validateSpec("pokemon-blue", "llm", starter, ""); err != nil {
+			t.Fatalf("Blue rejected canonical starter %q: %v", starter, err)
+		}
+	}
+	// Red still runs the experiment.
+	if err := validateSpec("pokemon-red", "llm", "random:reasonable", ""); err != nil {
+		t.Fatalf("Red rejected the starter experiment: %v", err)
+	}
+	// An empty game keeps the worker's current cartridge, so the declared
+	// game cannot decide at spec time; the ROM-authoritative check in
+	// prepareStarterExperiment owns that case.
+	if err := validateSpec("", "llm", "random:reasonable", ""); err != nil {
+		t.Fatalf("empty game rejected the starter experiment at spec time: %v", err)
+	}
+}
+
 func TestApplyHeartbeatPositionKeepsWideNativeMapHeartbeat(t *testing.T) {
 	trail := &heartbeatTrail{}
 	var hb farm.Heartbeat
