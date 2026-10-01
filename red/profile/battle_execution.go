@@ -21,9 +21,13 @@ const (
 	battleHMCantDeleteMarker  = "HM techniques"
 	battleSwitchBoxMarker     = "SWITCH"
 
-	// PrintMenuItem replaces the TYPE/ panel with "disabled!" at hlcoord 1,10
-	// when the move cursor rests on the Disabled move. The position separates
-	// it from the "<move> was disabled!" battle message in the text box.
+	// PrintMenuItem replaces the TYPE/ panel with the Disabled marker at
+	// hlcoord 1,10 when the move cursor rests on the Disabled move. The
+	// position separates it from the "<move> was disabled!" battle message in
+	// the text box. Red draws "disabled!"; Yellow draws "Disabled!" — match
+	// case-insensitively so the shared Gen-I decoder accepts both cartridges
+	// (run-2wka7km6oqsz62cajfp6yl6cuo stalled on select FIGHT while the Yellow
+	// move menu was already open with the cursor on Slam).
 	battleMovePanelDisabledMarker = "disabled!"
 	battleMovePanelDisabledOffset = 10*20 + 1
 )
@@ -89,7 +93,7 @@ func (*Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExecu
 	case strings.Contains(text, battleDisabledMoveMarker):
 		out.Phase = game.BattleExecutionMoveDisabled
 	case strings.Contains(text, battleMoveMenuMarker),
-		state.DecodeTiles(mem.Slice(sym.TileMap+battleMovePanelDisabledOffset, len(battleMovePanelDisabledMarker))) == battleMovePanelDisabledMarker:
+		movePanelShowsDisabled(&mem):
 		out.Phase = game.BattleExecutionMoveMenu
 	// FIGHT tiles alone are not proof that the player owns the command menu.
 	// Gen-I scripted battles (notably Viridian's Old Man catch demo) draw the
@@ -111,6 +115,16 @@ const (
 	battleStatusBide         = 1 << 0 // STORING_ENERGY in wPlayerBattleStatus1
 	battleStatusTrappingMove = 1 << 5 // USING_TRAPPING_MOVE in w*BattleStatus1
 )
+
+// movePanelShowsDisabled reports PrintMenuItem's Disabled panel at hlcoord
+// 1,10. Red's DisabledText is "disabled!"; Yellow's is "Disabled!".
+func movePanelShowsDisabled(mem *state.Mem) bool {
+	if mem == nil {
+		return false
+	}
+	panel := state.DecodeTiles(mem.Slice(sym.TileMap+battleMovePanelDisabledOffset, len(battleMovePanelDisabledMarker)))
+	return strings.EqualFold(panel, battleMovePanelDisabledMarker)
+}
 
 // moveSelectionSkipped mirrors the checks MainInBattleLoop makes right after
 // DisplayBattleMenu returns (engine/battle/core.asm): a sleeping or frozen

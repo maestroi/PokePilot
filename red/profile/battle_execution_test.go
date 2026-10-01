@@ -23,18 +23,21 @@ func putTileText(mem *fakeMemory, offset int, text string) {
 	}
 }
 
-// With the cursor on the Disabled move, PrintMenuItem draws "disabled!" at
-// hlcoord 1,10 instead of the TYPE/ panel. That is still the move menu
+// With the cursor on the Disabled move, PrintMenuItem draws the Disabled
+// panel at hlcoord 1,10 instead of TYPE/. That is still the move menu
 // (run-3udyosuwldeu31xrainttlpo0s stalled on "select FIGHT" without this).
+// Red draws "disabled!"; Yellow draws "Disabled!" (run-2wka7km6oqsz62cajfp6yl6cuo).
 func TestDecodeBattleExecutionMoveMenuWithCursorOnDisabledMove(t *testing.T) {
-	var mem fakeMemory
-	for i := 0; i < 360; i++ {
-		mem[int(sym.TileMap)+i] = 0x7f
-	}
-	putTileText(&mem, 10*20+1, "disabled!")
-	putTileText(&mem, 12*20+6, "CONFUSION")
-	if got := New().DecodeBattleExecution(&mem).Phase; got != game.BattleExecutionMoveMenu {
-		t.Fatalf("phase=%q want %q", got, game.BattleExecutionMoveMenu)
+	for _, panel := range []string{"disabled!", "Disabled!"} {
+		var mem fakeMemory
+		for i := 0; i < 360; i++ {
+			mem[int(sym.TileMap)+i] = 0x7f
+		}
+		putTileText(&mem, 10*20+1, panel)
+		putTileText(&mem, 12*20+6, "CONFUSION")
+		if got := New().DecodeBattleExecution(&mem).Phase; got != game.BattleExecutionMoveMenu {
+			t.Fatalf("panel %q: phase=%q want %q", panel, got, game.BattleExecutionMoveMenu)
+		}
 	}
 
 	// The same word inside the battle message box is not the move panel.
