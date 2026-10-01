@@ -67,6 +67,9 @@ type spectatorRun struct {
 	EndedAt        int64                    `json:"ended_at,omitempty"`
 	Frame          uint64                   `json:"frame"`
 	Map            uint8                    `json:"map"`
+	NativeMapID    uint16                   `json:"native_map_id,omitempty"`
+	Location       string                   `json:"location,omitempty"`
+	MapName        string                   `json:"map_name,omitempty"`
 	X              uint8                    `json:"x"`
 	Y              uint8                    `json:"y"`
 	MapsVisited    int                      `json:"maps_visited,omitempty"`
