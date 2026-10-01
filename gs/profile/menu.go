@@ -132,14 +132,68 @@ func (*Profile) DecodeTwoOption(reader game.MemoryReader) (game.TwoOptionState, 
 	return game.TwoOptionState{Current: int(y) - 1}, true
 }
 
-// Start-menu semantics are deliberately fail-closed here. This file exposes
-// the battle-facing vertical/two-option menu machinery needed by the shared
-// battle controller; the Pokégear-aware Gen-II START menu remains a separate
-// profile slice.
+// DecodeStartMenu recognizes the normal Gen-II overworld START menu from
+// rendered labels plus its live vertical cursor shape. Menu RAM persists after
+// ExitMenu, so RAM alone is never treated as visibility proof.
 func (*Profile) DecodeStartMenu(reader game.MemoryReader) game.StartMenuState {
-	return game.StartMenuState{InBattle: reader != nil && reader.Peek8(sym.BattleMode) != 0}
+	if reader == nil {
+		return game.StartMenuState{}
+	}
+	inBattle := reader.Peek8(sym.BattleMode) != 0
+	text := gsScreenText(reader)
+	visible := strings.Contains(text, "PACK") &&
+		strings.Contains(text, "SAVE") &&
+		strings.Contains(text, "OPTION") &&
+		strings.Contains(text, "EXIT")
+	y, _, rows, cols, _ := gsMenuCursor(reader)
+	ready := visible && !inBattle && cols == 1 && rows >= 6 && y >= 1 && y <= rows
+	current := int(y) - 1
+	if current < 0 {
+		current = 0
+	}
+	max := int(rows) - 1
+	if max < 0 {
+		max = 0
+	}
+	return game.StartMenuState{
+		Visible:  visible,
+		Ready:    ready,
+		InBattle: inBattle,
+		Cursor:   game.MenuCursorState{Current: current, Max: max},
+	}
 }
 
-func (*Profile) StartMenuEntryIndex(game.MemoryReader, game.StartMenuEntry) (int, bool) {
-	return 0, false
+// StartMenuEntryIndex maps the two entries generic execution currently needs.
+// In Gen II the optional Pokédex precedes POKéMON, while PACK immediately
+// follows POKéMON in ordinary overworld play. Pokégear is inserted later and
+// therefore does not shift either index.
+func (*Profile) StartMenuEntryIndex(reader game.MemoryReader, entry game.StartMenuEntry) (int, bool) {
+	if reader == nil {
+		return 0, false
+	}
+	pokedexOffset := 0
+	if reader.Peek8(sym.StatusFlags)&1 != 0 { // STATUSFLAGS_POKEDEX_F
+		pokedexOffset = 1
+	}
+	partyPresent := reader.Peek8(sym.PartyCount) > 0
+	switch entry {
+	case game.StartMenuPokemon:
+		if !partyPresent {
+			return 0, false
+		}
+		return pokedexOffset, true
+	case game.StartMenuItems:
+		// Bug Contest/link variants can omit PACK. Only advertise it when the
+		// currently rendered START menu positively contains the entry.
+		if !strings.Contains(gsScreenText(reader), "PACK") {
+			return 0, false
+		}
+		index := pokedexOffset
+		if partyPresent {
+			index++
+		}
+		return index, true
+	default:
+		return 0, false
+	}
 }
