@@ -206,6 +206,9 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		!strings.Contains(s, "--\n\"Follow the attached farm triage packet") {
 		t.Error("opencode --file is an array flag; the prompt message must come after --")
 	}
+	if strings.Contains(s, "--dir \"$POKEPILOT_TRIAGE_TREE\"") {
+		t.Error("opencode v2 rejects run --dir; every qwen attempt exits 1 before starting")
+	}
 	if strings.Contains(s, "investigate failed; skip") {
 		t.Error("investigate must be best-effort; an already-investigating 409/502 must not skip the local agent")
 	}
