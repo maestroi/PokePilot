@@ -74,6 +74,8 @@ func run(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("pokedebug", flag.ContinueOnError)
 	runFlag := fs.String("run", "", "PokePilot run id")
 	mode := fs.String("mode", "normal", "packet/source context size: tiny, normal, or deep")
+	attempt := fs.Int("attempt", 0, "attempt whose failure evidence to prepare; 0 uses the run's latest attempt")
+	key := fs.String("key", "", "triage failure key identifying the failed attempt; ignored when -attempt is set")
 	endpoint := fs.String("endpoint", strings.TrimSpace(os.Getenv("POKEPILOT_MCP_URL")), "PokePilot MCP endpoint")
 	token := fs.String("token", strings.TrimSpace(os.Getenv("POKEPILOT_MCP_TOKEN")), "PokePilot MCP bearer token")
 	verify := fs.Bool("verify", true, "run the deterministic structured failure replay when supported")
@@ -97,10 +99,21 @@ func run(args []string, stdout io.Writer) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), debugTimeout)
 	defer cancel()
-	raw, err := deploy.CallMCPTool(nil, *endpoint, *token, "pokepilot_prepare_debug", map[string]any{
+	prepareArgs := map[string]any{
 		"run_id": runID,
 		"mode":   strings.TrimSpace(*mode),
-	})
+	}
+	// Evidence is scoped to the attempt that failed, not the run's latest
+	// attempt, because an endless run keeps attempts after a failure. Both
+	// fields are omitted when unset so the wall's latest-attempt default is
+	// unchanged.
+	if *attempt > 0 {
+		prepareArgs["attempt"] = *attempt
+	}
+	if keyValue := strings.TrimSpace(*key); keyValue != "" {
+		prepareArgs["key"] = keyValue
+	}
+	raw, err := deploy.CallMCPTool(nil, *endpoint, *token, "pokepilot_prepare_debug", prepareArgs)
 	if err != nil {
 		return err
 	}
@@ -303,7 +316,12 @@ func sourceSnippet(path string, line, radius int) (string, error) {
 }
 
 func materializeDebugBundle(ctx context.Context, endpoint, token, dir string, packet farm.DebugPacket) (string, error) {
-	failureData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.ContractArtifact)
+	// Every byte of the bundle must come from the attempt the packet
+	// describes. Fetching without the attempt would resolve the artifact name
+	// against the run's latest attempt, so an older failing attempt's bundle
+	// would come back 404 even though the packet named it.
+	attempt := packet.Repro.Attempt
+	failureData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.ContractArtifact, attempt)
 	if err != nil {
 		return "", err
 	}
@@ -314,11 +332,11 @@ func materializeDebugBundle(ctx context.Context, endpoint, token, dir string, pa
 	if failure.Checkpoint.Name != packet.Repro.Checkpoint {
 		return "", fmt.Errorf("prepared checkpoint %q disagrees with failure contract %q", packet.Repro.Checkpoint, failure.Checkpoint.Name)
 	}
-	stateData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.Checkpoint)
+	stateData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.Checkpoint, attempt)
 	if err != nil {
 		return "", err
 	}
-	knowledgeData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.Knowledge)
+	knowledgeData, err := fetchDebugArtifact(ctx, endpoint, token, packet.RunID, packet.Repro.Knowledge, attempt)
 	if err != nil {
 		return "", err
 	}
@@ -390,14 +408,18 @@ func portableFile(name string, data []byte) farm.PortableReproFile {
 	return farm.PortableReproFile{Name: name, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(data))}
 }
 
-func fetchDebugArtifact(ctx context.Context, endpoint, token, runID, name string) ([]byte, error) {
+func fetchDebugArtifact(ctx context.Context, endpoint, token, runID, name string, attempt int) ([]byte, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("artifact name is empty")
 	}
-	raw, err := deploy.CallMCPTool(nil, endpoint, token, "pokepilot_get_run_artifact_content", map[string]any{
+	args := map[string]any{
 		"run_id": runID,
 		"name":   name,
-	})
+	}
+	if attempt > 0 {
+		args["attempt"] = attempt
+	}
+	raw, err := deploy.CallMCPTool(nil, endpoint, token, "pokepilot_get_run_artifact_content", args)
 	if err != nil {
 		return nil, err
 	}

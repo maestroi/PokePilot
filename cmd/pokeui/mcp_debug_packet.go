@@ -17,6 +17,13 @@ import (
 type mcpPrepareDebugInput struct {
 	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
 	Mode  string `json:"mode,omitempty" jsonschema:"packet size: tiny, normal, or deep; defaults to normal"`
+	// Attempt and Key scope the evidence to the attempt that failed instead of
+	// the run's latest attempt. An endless run keeps failing and recovering, so
+	// the latest attempt routinely has no repro bundle while an earlier one
+	// does. Attempt wins when both are set; Key resolves through the run's
+	// per-attempt problems.
+	Attempt int    `json:"attempt,omitempty" jsonschema:"attempt whose failure evidence to prepare; 0 uses the run's latest attempt"`
+	Key     string `json:"key,omitempty" jsonschema:"triage failure key identifying the failed attempt; ignored when attempt is set"`
 }
 
 var debugIdentifierRE = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]{2,}\b`)
@@ -36,8 +43,14 @@ func (c *mcpControl) prepareDebug(ctx context.Context, _ *mcp.CallToolRequest, i
 		return nil, farm.DebugPacket{}, fmt.Errorf("mode must be tiny, normal, or deep")
 	}
 
+	attempt := c.resolveDebugAttempt(ctx, id, in.Attempt, in.Key)
+
+	debugPath := "/v1/runs/" + url.PathEscape(id) + "/debug"
+	if attempt > 0 {
+		debugPath += "?attempt=" + strconv.Itoa(attempt)
+	}
 	var debug map[string]any
-	if err := c.requestJSON(ctx, "GET", "/v1/runs/"+url.PathEscape(id)+"/debug", nil, &debug); err != nil {
+	if err := c.requestJSON(ctx, "GET", debugPath, nil, &debug); err != nil {
 		return nil, farm.DebugPacket{}, err
 	}
 
@@ -79,10 +92,14 @@ func (c *mcpControl) prepareDebug(ctx context.Context, _ *mcp.CallToolRequest, i
 	}
 	packet.SearchTerms = debugSearchTerms(packet.Failure.ErrorChain, packet.Failure.LeafError, packet.Finish.Detail)
 
+	// Record which attempt the repro evidence was taken from, so a packet
+	// prepared for an older attempt cannot be misread as the latest one.
+	packet.Repro.Attempt = attempt
+
 	artifactNames := debugArtifactNames(debug["artifacts"])
 	if reproName := latestArtifactWithSuffix(artifactNames, "."+farm.FailureReproArtifactName); reproName != "" {
 		packet.Repro.ContractArtifact = reproName
-		if _, artifact, err := c.getRunArtifactContent(ctx, nil, mcpArtifactContentInput{RunID: id, Name: reproName}); err == nil {
+		if _, artifact, err := c.getRunArtifactContent(ctx, nil, mcpArtifactContentInput{RunID: id, Name: reproName, Attempt: attempt}); err == nil {
 			if data, decodeErr := base64.StdEncoding.DecodeString(artifact.ContentBase64); decodeErr == nil {
 				if bundle, bundleErr := farm.DecodeFailureRepro(data); bundleErr == nil {
 					packet.Repro.Checkpoint = bundle.Checkpoint.Name
@@ -124,6 +141,47 @@ func (c *mcpControl) prepareDebug(ctx context.Context, _ *mcp.CallToolRequest, i
 	packet.Evidence = compactDebugEvidence(debug["timeline"], debugEvidenceLimit(mode))
 	packet.Next = debugNextSteps(packet)
 	return nil, packet, nil
+}
+
+// resolveDebugAttempt picks the attempt whose failure evidence the packet
+// should describe. An explicit attempt is authoritative; a triage key resolves
+// through the run's per-attempt problems to the highest attempt that carried
+// it; zero means "the run's latest attempt", which is the historical default.
+// A key that matches no attempt also falls back to the latest attempt rather
+// than failing the whole evidence handoff.
+func (c *mcpControl) resolveDebugAttempt(ctx context.Context, runID string, attempt int, key string) int {
+	if attempt > 0 {
+		return attempt
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return 0
+	}
+	var attempts []map[string]any
+	if err := c.requestJSON(ctx, "GET", "/v1/runs/"+url.PathEscape(runID)+"/attempts", nil, &attempts); err != nil {
+		return 0
+	}
+	best := 0
+	for _, entry := range attempts {
+		if !attemptProblemsContainKey(entry["problems"], key) {
+			continue
+		}
+		if candidate := mcpJSONInt(entry["attempt"]); candidate > best {
+			best = candidate
+		}
+	}
+	return best
+}
+
+func attemptProblemsContainKey(v any, key string) bool {
+	problems, _ := v.([]any)
+	for _, problem := range problems {
+		item, _ := problem.(map[string]any)
+		if debugString(item, "triage_key") == key {
+			return true
+		}
+	}
+	return false
 }
 
 func clampByte(n int) int {

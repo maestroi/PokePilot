@@ -157,10 +157,12 @@ run-llm-auto:
 # Build one bounded model-facing packet from a run id. The command performs
 # source localization itself and, when a structured failure repro plus Red ROM
 # are available, replays it deterministically through the current checkout.
+# ATTEMPT/KEY scope the evidence to the attempt that failed; both default to
+# the run's latest attempt.
 debug:
-	@test -n "$(RUN)" || { echo "usage: make debug RUN=run-... [DEBUG_MODE=tiny|normal|deep]"; exit 2; }
+	@test -n "$(RUN)" || { echo "usage: make debug RUN=run-... [DEBUG_MODE=tiny|normal|deep] [ATTEMPT=N] [KEY=triage-key]"; exit 2; }
 	$(load_env) \
-	go run ./cmd/pokedebug -run "$(RUN)" -mode "$(DEBUG_MODE)" $(ARGS)
+	go run ./cmd/pokedebug -run "$(RUN)" -mode "$(DEBUG_MODE)" $(if $(ATTEMPT),-attempt "$(ATTEMPT)") $(if $(KEY),-key "$(KEY)") $(ARGS)
 
 test:
 	go test ./... $(ARGS)

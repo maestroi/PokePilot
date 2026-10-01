@@ -148,6 +148,21 @@ func (w *Wall) handleRunDebug(res http.ResponseWriter, req *http.Request) {
 		writeRunInspectError(res, err)
 		return
 	}
+	// Evidence is scoped to the attempt that failed, not to the run's latest
+	// attempt: an endless run that recovered or drained after a failure still
+	// has that failure's repro bundle in the artifact store, and the fixer's
+	// debug handoff must describe the attempt it is diagnosing. Without an
+	// explicit attempt the latest one stays the default.
+	if requested, ok, parseErr := requestedArtifactAttempt(req); parseErr != nil {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": parseErr.Error()})
+		return
+	} else if ok {
+		report, err = w.loadFinishReport(run.RunID, requested)
+		if err != nil {
+			writeRunInspectError(res, err)
+			return
+		}
+	}
 	view := runDebugView{
 		Run:       run,
 		Artifacts: []runArtifactView{},
