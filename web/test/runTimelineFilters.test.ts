@@ -20,6 +20,16 @@ test('recovery source remains recovery when its copy mentions a failure', () => 
   assert.equal(eventMatchesFilter(event, 'attention'), true)
 })
 
+test('a stopped attempt needs attention but a drain resume does not', () => {
+  const stopped = { source: 'recovery', kind: 'failure', message: 'Attempt 3 stopped: lost' }
+  const drained = { source: 'recovery', kind: 'retry', message: 'Recovery queued attempt 3', detail: 'drained' }
+  const resumed = { source: 'recovery', kind: 'resume', message: 'Resuming from checkpoint' }
+
+  assert.equal(eventMatchesFilter(stopped, 'attention'), true)
+  assert.equal(eventMatchesFilter(drained, 'attention'), false)
+  assert.equal(eventMatchesFilter(resumed, 'attention'), false)
+})
+
 test('failure-like events are included in the attention focus', () => {
   const event = {
     source: 'skill',
@@ -44,7 +54,7 @@ test('timeline filter counts keep semantic event categories separate', () => {
 
   assert.deepEqual(counts, {
     all: 5,
-    attention: 2,
+    attention: 1,
     decision: 1,
     checkpoint: 1,
     progress: 1,

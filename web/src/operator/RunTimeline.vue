@@ -137,7 +137,7 @@ const filterOptions = computed<FilterOption[]>(() => {
   const counts = filterCounts.value
   const options: FilterOption[] = [
     { value: 'all', label: 'All', count: counts.all },
-    { value: 'attention', label: 'Needs attention', count: counts.attention, title: 'Failures and recovery events' },
+    { value: 'attention', label: 'Needs attention', count: counts.attention, title: 'Failures and attempts that stopped; routine deploy recoveries are under Recovery' },
     { value: 'recovery', label: 'Recovery', count: counts.recovery },
     { value: 'failure', label: 'Failures', count: counts.failure },
     { value: 'decision', label: 'LLM', count: counts.decision },
