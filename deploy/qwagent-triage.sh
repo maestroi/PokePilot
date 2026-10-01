@@ -653,12 +653,14 @@ claude)
 	rm -f "$claude_packet"
 	;;
 opencode)
-	opencode run --auto --model "$POKEPILOT_OPENCODE_MODEL" \
-		--dir "$POKEPILOT_TRIAGE_TREE" \
+	# opencode v2 dropped `run --dir`: the session works in the current
+	# directory, and --standalone keeps a shared background server (rooted
+	# elsewhere) from owning the session.
+	(cd "$POKEPILOT_TRIAGE_TREE" && opencode run --auto --standalone --model "$POKEPILOT_OPENCODE_MODEL" \
 		--title "farm triage ${KEY}" \
 		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
 		-- \
-		"Follow the attached farm triage packet. Do not pick a different failure."
+		"Follow the attached farm triage packet. Do not pick a different failure.")
 	agent_status=$?
 	;;
 esac
