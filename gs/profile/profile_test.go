@@ -22,6 +22,12 @@ func TestGoldSilverProfilesSatisfyContract(t *testing.T) {
 		if !p.Features().Has(game.FeatureBankedMemory) {
 			t.Fatalf("%s: banked-memory feature not advertised", p.ID())
 		}
+		if !p.Features().Has(game.FeatureFieldMoves) {
+			t.Fatalf("%s: field-move feature not advertised", p.ID())
+		}
+		if _, ok := any(p).(game.FieldMoveProfile); !ok {
+			t.Fatalf("%s: field-move feature advertised without FieldMoveProfile", p.ID())
+		}
 		for _, name := range []string{
 			"player.map", "player.x", "player.y", "player.direction",
 			"party.count", "party.members", "battle.mode", "badges", "bag", "money",
