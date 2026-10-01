@@ -50,11 +50,41 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		}
 	}
 
+	text := gsScreenText(reader)
+
+	// LearnMove is shared by battle level-ups and out-of-battle TM/HM teaching.
+	// Classify those surfaces before the battle-only early return so a native
+	// machine executor can reuse the same semantic prompts and forget menu.
+	switch {
+	case strings.Contains(text, "HM moves can't be"):
+		out.Phase = game.BattleExecutionHMForgetRejected
+		return out
+	case strings.Contains(text, "Which move should") && strings.Contains(text, "be forgotten?"):
+		out.Phase = game.BattleExecutionForgetMove
+		cursor := p.DecodeMenuCursor(reader)
+		// Battle move-list decoding deliberately preserves Gen-II's native
+		// 1-based cursor, while ordinary/out-of-battle vertical menus are
+		// already normalized to zero-based. Only the battle form needs the
+		// extra decrement here.
+		if inBattle && cursor.Current > 0 {
+			cursor.Current--
+		}
+		cursor.Max = 3
+		out.ForgetCursor = cursor
+		out.ForgetReady = true
+		return out
+	case strings.Contains(text, "Stop learning"):
+		out.Phase = game.BattleExecutionAbandonLearn
+		return out
+	case strings.Contains(text, "trying to learn"):
+		out.Phase = game.BattleExecutionTryLearnPrompt
+		return out
+	}
+
 	if !inBattle {
 		return out
 	}
 
-	text := gsScreenText(reader)
 	main := p.DecodeBattleMainMenu(reader)
 	_, _, rows, cols, filter := gsMenuCursor(reader)
 	moveMenu := reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
@@ -62,19 +92,6 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		strings.Contains(text, "TYPE/")
 
 	switch {
-	case strings.Contains(text, "HM moves can't be"):
-		out.Phase = game.BattleExecutionHMForgetRejected
-	case strings.Contains(text, "Which move should") && strings.Contains(text, "be forgotten?"):
-		out.Phase = game.BattleExecutionForgetMove
-		cursor := p.DecodeMenuCursor(reader)
-		// The forget list is four real move rows. Normalize it to 0..3 for
-		// the portable replacement policy.
-		if cursor.Current > 0 {
-			cursor.Current--
-		}
-		cursor.Max = 3
-		out.ForgetCursor = cursor
-		out.ForgetReady = true
 	case strings.Contains(text, "Can't escape!"):
 		out.Phase = game.BattleExecutionRunRefused
 	// The switch-confirmation prompt is recognized by its own marker, the
@@ -86,10 +103,6 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 	// (run-11dd5ya1qev0ry, triage:e1ef45bf25e3b946).
 	case strings.Contains(text, "change POK"):
 		out.Phase = game.BattleExecutionTrainerSwitch
-	case strings.Contains(text, "Stop learning"):
-		out.Phase = game.BattleExecutionAbandonLearn
-	case strings.Contains(text, "trying to learn"):
-		out.Phase = game.BattleExecutionTryLearnPrompt
 	case strings.Contains(text, "Use next POK"):
 		out.Phase = game.BattleExecutionUseNextPrompt
 	case strings.Contains(text, "The move is") && strings.Contains(text, "DISABLED!"):

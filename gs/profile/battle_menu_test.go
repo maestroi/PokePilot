@@ -277,3 +277,104 @@ func TestDecodeGoldBattleMainMenuIgnoresTutorialBattle(t *testing.T) {
 		t.Fatalf("tutorial battle menu reported visible: %+v", got)
 	}
 }
+
+func TestDecodeGoldStartMenuAndSemanticEntries(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.StatusFlags] = 1 // STATUSFLAGS_POKEDEX_F
+	mem[sym.PartyCount] = 2
+	mem[sym.TwoDMenuNumRows] = 8
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuCursorY] = 3
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "PACK SAVE OPTION EXIT")
+
+	menu := NewGold().DecodeStartMenu(&mem)
+	if !menu.Visible || !menu.Ready || menu.InBattle {
+		t.Fatalf("start menu=%+v, want visible ready overworld menu", menu)
+	}
+	if menu.Cursor != (game.MenuCursorState{Current: 2, Max: 7}) {
+		t.Fatalf("start cursor=%+v, want {2 7}", menu.Cursor)
+	}
+	if got, ok := NewGold().StartMenuEntryIndex(&mem, game.StartMenuPokemon); !ok || got != 1 {
+		t.Fatalf("POKEMON index=%d,%v want 1,true", got, ok)
+	}
+	if got, ok := NewGold().StartMenuEntryIndex(&mem, game.StartMenuItems); !ok || got != 2 {
+		t.Fatalf("PACK index=%d,%v want 2,true", got, ok)
+	}
+
+	// Without the optional Pokedex both entries shift left by one.
+	mem[sym.StatusFlags] = 0
+	if got, ok := NewGold().StartMenuEntryIndex(&mem, game.StartMenuPokemon); !ok || got != 0 {
+		t.Fatalf("POKEMON no-dex index=%d,%v want 0,true", got, ok)
+	}
+	if got, ok := NewGold().StartMenuEntryIndex(&mem, game.StartMenuItems); !ok || got != 1 {
+		t.Fatalf("PACK no-dex index=%d,%v want 1,true", got, ok)
+	}
+
+	// Persistent menu RAM without the rendered labels is not a live START menu.
+	putGSText(&mem, "CYNDAQUIL used CUT!")
+	if stale := NewGold().DecodeStartMenu(&mem); stale.Visible || stale.Ready {
+		t.Fatalf("stale start-menu RAM reported live: %+v", stale)
+	}
+}
+
+func TestDecodeGoldMachineTeachingPartyMenu(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 2
+	mem[sym.MenuCursorY] = 2
+	mem[sym.MenuCursorX] = 1
+	mem[sym.TwoDMenuNumRows] = 3
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	putGSText(&mem, "BAYLEEF TOGEPI CANCEL Teach which POKEMON?")
+
+	menu := NewGold().DecodePartyMenu(&mem)
+	if !menu.Visible || menu.Kind != game.PartyMenuTeachMachine {
+		t.Fatalf("TM/HM teaching party menu=%+v", menu)
+	}
+	if menu.Cursor != (game.MenuCursorState{Current: 1, Max: 1}) {
+		t.Fatalf("TM/HM teaching cursor=%+v, want {1 1}", menu.Cursor)
+	}
+}
+
+func TestDecodeGoldTMHMMoveLearningOutsideBattle(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 0
+	mem[sym.PutativeTMHMMove] = 0x0f // Cut
+	base := sym.PartyMon1
+	mem[base+gen2PartyMovesOffset+0] = 0x21
+	mem[base+gen2PartyMovesOffset+1] = 0x2d
+	mem[base+gen2PartyMovesOffset+2] = 0x49
+	mem[base+gen2PartyMovesOffset+3] = 0x4b
+
+	mem[sym.TwoDMenuNumRows] = 2
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "BAYLEEF is trying to learn CUT! YES NO")
+
+	exec := NewGold().DecodeBattleExecution(&mem)
+	if exec.InBattle || exec.Phase != game.BattleExecutionTryLearnPrompt {
+		t.Fatalf("out-of-battle try-learn=%+v", exec)
+	}
+	if exec.OfferedMove != 0x0f || !exec.Learner.Valid || exec.Learner.PartySlot != 0 {
+		t.Fatalf("TM/HM learner projection=%+v", exec)
+	}
+
+	mem[sym.TwoDMenuNumRows] = 4
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 3
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "Which move should be forgotten?")
+
+	exec = NewGold().DecodeBattleExecution(&mem)
+	if exec.Phase != game.BattleExecutionForgetMove || !exec.ForgetReady {
+		t.Fatalf("out-of-battle forget phase=%+v", exec)
+	}
+	if exec.ForgetCursor.Current != 2 || exec.ForgetCursor.Max != 3 {
+		t.Fatalf("out-of-battle forget cursor=%+v, want {2 3}", exec.ForgetCursor)
+	}
+}
