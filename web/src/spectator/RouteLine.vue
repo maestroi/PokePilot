@@ -14,7 +14,7 @@ const filled = computed(() => `${props.line.fill * 90}%`)
     <ol class="route" :style="{ '--filled': filled }">
       <li class="stop is-town is-earned">
         <span class="dot" aria-hidden="true" />
-        <span class="label"><b>Pallet Town</b><span class="sr-only">Start</span></span>
+        <span class="label"><b>{{ line.startTown }}</b><span class="sr-only">Start</span></span>
       </li>
       <li
         v-for="stop in line.stops"
@@ -39,7 +39,7 @@ const filled = computed(() => `${props.line.fill * 90}%`)
       >
         <span class="dot" aria-hidden="true" />
         <span class="label">
-          <b>Indigo League</b>
+          <b>{{ line.leagueTown }}</b>
           Hall of Fame
           <span class="sr-only">{{ line.leagueEarned ? ', goal complete' : line.leagueNext ? ', next goal' : ', final goal' }}</span>
           <em v-if="line.leagueNext" aria-hidden="true">Next</em>
