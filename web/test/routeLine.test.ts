@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { kantoRouteLine } from '../src/spectator/routeLine.ts'
+import { gameRouteLine, kantoRouteLine } from '../src/spectator/routeLine.ts'
 
 test('route line marks earned badges and the first missing gym as next', () => {
   const line = kantoRouteLine({ player: { badges: ['Boulder', 'Cascade Badge', 'thunder'] } } as never)
@@ -46,4 +46,27 @@ test('route line fill follows the furthest earned badge', () => {
   assert.equal(skipped.earnedCount, 1)
   assert.equal(skipped.fill, 5 / 9)
   assert.equal(kantoRouteLine(null).fill, 0)
+})
+
+
+test('Gen2 route line uses Johto gyms and towns', () => {
+  const line = gameRouteLine({
+    game: 'pokemon-gold',
+    player: { badges: ['zephyr', 'Hive Badge', 'plain'] }
+  } as never)
+  assert.equal(line.startTown, 'New Bark Town')
+  assert.equal(line.leagueTown, 'Indigo Plateau')
+  assert.deepEqual(line.stops.slice(0, 4).map((stop) => stop.badge), ['Zephyr', 'Hive', 'Plain', 'Fog'])
+  assert.deepEqual(line.stops.slice(0, 4).map((stop) => stop.town), ['Violet', 'Azalea', 'Goldenrod', 'Ecruteak'])
+  assert.equal(line.earnedCount, 3)
+  assert.equal(line.nextGoal, 'Fog Badge · Ecruteak')
+})
+
+test('Gen2 route line sends eight Johto badges to Indigo Plateau', () => {
+  const line = gameRouteLine({
+    game: 'pokemon-silver',
+    player: { badges: ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising'] }
+  } as never)
+  assert.equal(line.leagueNext, true)
+  assert.equal(line.nextGoal, 'Indigo Plateau · Hall of Fame')
 })
