@@ -459,13 +459,13 @@ type FinishReport struct {
 	RunID string `json:"run_id"`
 	// Attempt echoes the spec's attempt number; 0 from older runners is
 	// accepted without validation.
-	Attempt   int      `json:"attempt,omitempty"`
+	Attempt      int                `json:"attempt,omitempty"`
 	Reason       string             `json:"reason"`
 	Detail       string             `json:"detail"`
 	FailureClass FinishFailureClass `json:"failure_class,omitempty"`
 	TraceTail    []string           `json:"trace_tail"`
-	SaveState []byte   `json:"save_state"`
-	FramePNG  []byte   `json:"frame_png,omitempty"`
+	SaveState    []byte             `json:"save_state"`
+	FramePNG     []byte             `json:"frame_png,omitempty"`
 	// RunnerVersion is the leased runner's build identity (git SHA). Empty
 	// from older runners.
 	RunnerVersion string `json:"runner_version,omitempty"`
