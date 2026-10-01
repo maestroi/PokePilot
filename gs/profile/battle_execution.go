@@ -62,7 +62,11 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 	case strings.Contains(text, "Which move should") && strings.Contains(text, "be forgotten?"):
 		out.Phase = game.BattleExecutionForgetMove
 		cursor := p.DecodeMenuCursor(reader)
-		if cursor.Current > 0 {
+		// Battle move-list decoding deliberately preserves Gen-II's native
+		// 1-based cursor, while ordinary/out-of-battle vertical menus are
+		// already normalized to zero-based. Only the battle form needs the
+		// extra decrement here.
+		if inBattle && cursor.Current > 0 {
 			cursor.Current--
 		}
 		cursor.Max = 3
