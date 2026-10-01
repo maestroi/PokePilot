@@ -1814,7 +1814,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 	case "lost":
 		t.LossRecoveries++
 	}
-	if resilient && resilientGoalRecoveryReason(reason) && !inferenceTransport {
+	if resilient && resilientGoalRecoveryReason(reason) && !inferenceTransport && reason != "lost" {
 		t.RecoveryAttempts++
 	}
 	t.lastUpdate = now
