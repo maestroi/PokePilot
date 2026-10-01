@@ -189,3 +189,58 @@ func TestNativeLiveGridRefusesUnsettledMapShell(t *testing.T) {
 		t.Fatalf("nativeLiveGrid on a settled map: %v", err)
 	}
 }
+
+// TestNativeArrivalRequiresControlHandoff pins the arrival half of the native
+// route postcondition. Reaching the destination tile while a player event still
+// owns the overworld is not arrival: the step that got there can roll a wild
+// encounter, cross a trainer sightline or start a forced map script, and the
+// caller must settle that typed interruption before anything presses a button.
+// Regression for farm run run-11dd5ya1qev0ry, where Ilex Forest (20,23) was
+// reached mid-encounter and the following Face then polled a direction the
+// encounter script would never apply.
+func TestNativeArrivalRequiresControlHandoff(t *testing.T) {
+	const mapIlex uint16 = 0x032c
+	dest := ExactNativeDestination(mapIlex, 20, 23)
+
+	tests := []struct {
+		name  string
+		state game.OverworldState
+		want  nativeArrivalState
+	}{
+		{
+			name:  "different tile",
+			state: game.OverworldState{NativeMapID: mapIlex, X: 20, Y: 24, Controllable: true},
+			want:  nativeArrivalPending,
+		},
+		{
+			name:  "different map",
+			state: game.OverworldState{NativeMapID: 0x032b, X: 20, Y: 23, Controllable: true},
+			want:  nativeArrivalPending,
+		},
+		{
+			name:  "destination with control handed back",
+			state: game.OverworldState{NativeMapID: mapIlex, X: 20, Y: 23, Controllable: true, MovementIdle: true},
+			want:  nativeArrivalComplete,
+		},
+		{
+			// Measured on the replayed checkpoint: the encounter script is
+			// running (SCRIPT_READ, SCRIPT_RUNNING) while BattleMode is not set
+			// yet, so this is neither a dialogue nor a battle the caller can see.
+			name:  "destination during a wild encounter transition",
+			state: game.OverworldState{NativeMapID: mapIlex, X: 20, Y: 23, Controllable: false},
+			want:  nativeArrivalInterrupted,
+		},
+		{
+			name:  "destination owned by a scripted movement",
+			state: game.OverworldState{NativeMapID: mapIlex, X: 20, Y: 23, Controllable: false, MovementIdle: false},
+			want:  nativeArrivalInterrupted,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nativeArrival(tc.state, dest); got != tc.want {
+				t.Fatalf("nativeArrival(%+v) = %d, want %d", tc.state, got, tc.want)
+			}
+		})
+	}
+}
