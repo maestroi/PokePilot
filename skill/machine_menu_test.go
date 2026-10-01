@@ -130,3 +130,38 @@ func TestSemanticMachineMenuRejectsUnownedMachine(t *testing.T) {
 		t.Fatal("unowned machine changed selection state")
 	}
 }
+
+
+func TestNativeMachineReplacementPreservesSemanticFieldMoves(t *testing.T) {
+	field := fakeGen2FieldMoveDecoder{}
+	moves := [4]uint16{0x21, 0x150, 0x22, 0x23} // Whirlpool is protected
+	if got := nativeMachineReplacementSlot(field, moves); got != 3 {
+		t.Fatalf("replacement slot=%d, want last non-field slot 3", got)
+	}
+
+	moves = [4]uint16{0x21, 0, 0x150, 0x23}
+	if got := nativeMachineReplacementSlot(field, moves); got != -1 {
+		t.Fatalf("empty-slot replacement=%d, want -1", got)
+	}
+}
+
+func TestNativeMachineCarrierPrefersEmptyBenchForUtilityMove(t *testing.T) {
+	field := fakeGen2FieldMoveDecoder{}
+	capability := game.FieldMoveCapability{
+		CompatiblePartySlots: []int{0, 1},
+	}
+	execution := game.BattleExecutionState{
+		PartyMoves: [][4]uint16{
+			{0x21, 0x22, 0x23, 0x24},
+			{0x21, 0x22, 0, 0},
+		},
+	}
+
+	slot, replace, err := nativeMachineCarrier(field, capability, FieldCut, execution)
+	if err != nil {
+		t.Fatalf("choose native carrier: %v", err)
+	}
+	if slot != 1 || replace != -1 {
+		t.Fatalf("carrier=(slot=%d replace=%d), want bench slot 1 with empty placement", slot, replace)
+	}
+}
