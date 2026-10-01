@@ -120,6 +120,12 @@ func (w *Wall) reportObjectiveFailureDump(path string) (retry bool, retErr error
 // the synthetic fallback covers older runners and telemetry gaps without
 // duplicating a more specific terminal failure.
 func terminalRunFailure(dump farm.FinishReport, failures []farm.ObjectiveFailure) (farm.ObjectiveFailure, bool) {
+	// The runner already classified an unreachable/unfinished model call as
+	// infrastructure; settleRun retries it without spending error budget. It
+	// is not a gameplay blocker, and filing it sends fixers after a dead GPU.
+	if dump.FailureClass == farm.FinishFailureClassInferenceTransport {
+		return farm.ObjectiveFailure{}, false
+	}
 	for _, failure := range failures {
 		if failure.Blocking || failure.TerminalCount > 0 {
 			return farm.ObjectiveFailure{}, false
