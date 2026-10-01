@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
@@ -55,5 +56,34 @@ func TestGoldPostStarterErrandRealROM(t *testing.T) {
 	if !facts.GaveMysteryEggToElm || !facts.CherrygroveRivalResolved ||
 		!facts.HasPokedex || !facts.Controllable {
 		t.Fatalf("final opening facts = %+v, want stable completed Elm errand", facts)
+	}
+}
+
+// TestGoldStarterKeepsSpeciesName pins the nickname prompt: GivePoke defaults
+// "Give a nickname?" to YES, and the opening's dialogue A used to accept it,
+// type 'A' into the keyboard and confirm a starter named "AAAAAAAAAA".
+func TestGoldStarterKeepsSpeciesName(t *testing.T) {
+	path := os.Getenv("POKEMON_GOLD_ROM")
+	if path == "" {
+		t.Skip("POKEMON_GOLD_ROM not set")
+	}
+	e, err := emu.Open(path)
+	if err != nil {
+		t.Fatalf("emu.Open Gold: %v", err)
+	}
+	t.Cleanup(func() { e.Close() })
+
+	if _, err := skill.BootToOverworld(e); err != nil {
+		t.Fatalf("BootToOverworld: %v", err)
+	}
+	if err := executeGSOpening(e, e.ROM(), skill.StarterChikorita); err != nil {
+		t.Fatalf("executeGSOpening: %v", err)
+	}
+	// wPartyMonNicknames: "CHIKORITA" then terminators.
+	want := []byte{0x82, 0x87, 0x88, 0x8a, 0x8e, 0x91, 0x88, 0x93, 0x80, 0x50}
+	got := make([]byte, len(want))
+	e.PeekInto(0xdb8c, got)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("starter nickname = % x, want CHIKORITA % x", got, want)
 	}
 }

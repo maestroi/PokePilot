@@ -58,6 +58,13 @@ func driveGSSecondBadgeInterruption(
 	start := m.FrameCount()
 	presses := 0
 	for m.FrameCount()-start < gsSecondBadgeScriptFrameBudget {
+		if answerGSNicknameSurface(m, profile) {
+			if presses >= gsSecondBadgeMaxScriptPresses {
+				return fmt.Errorf("%w: exceeded %d owned inputs at a nickname prompt", errGSSecondBadgeStalled, gsSecondBadgeMaxScriptPresses)
+			}
+			presses++
+			continue
+		}
 		world := profile.DecodeOverworld(m)
 		if !gsSecondBadgeOwnedMap(world.NativeMapID) {
 			return fmt.Errorf("%w: map=%#04x at (%d,%d)", errGSSecondBadgeUnexpectedState, world.NativeMapID, world.X, world.Y)

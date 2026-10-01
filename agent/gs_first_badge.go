@@ -53,6 +53,24 @@ func gsFirstBadgeProgressComplete(profile *gsprofile.Profile, m *emu.Emu, id gam
 	return profile.DecodeFirstBadgeProgress(m).Has(id)
 }
 
+// answerGSNicknameSurface keeps a driver's dialogue A off the naming keyboard.
+// Egg hatches (mid-walk, on any map) ask "Give a nickname?" with YES as the
+// default; B cancels the YesNoBox, which InterpretTwoOptionMenu treats as NO.
+// If the keyboard is already open, START jumps to END and A keeps the species
+// name. It reports whether it consumed input.
+func answerGSNicknameSurface(m *emu.Emu, profile *gsprofile.Profile) bool {
+	if profile.NamingKeyboardOpen(m) {
+		m.Tap(emu.Start, 3, 7)
+		m.Tap(emu.A, 3, 7)
+		return true
+	}
+	if profile.DecodePrompt(m).Kind == game.PromptNickname {
+		m.Tap(emu.B, 3, 7)
+		return true
+	}
+	return false
+}
+
 // driveGSFirstBadgeInterruption owns only mandatory scripts and encounters on
 // the verified Elm -> Violet -> Sprout Tower -> Falkner corridor. Trainer
 // sightlines, the Sprout rival scene and leader introductions are deterministic
@@ -70,6 +88,13 @@ func driveGSFirstBadgeInterruption(
 	start := m.FrameCount()
 	presses := 0
 	for m.FrameCount()-start < gsFirstBadgeScriptFrameBudget {
+		if answerGSNicknameSurface(m, profile) {
+			if presses >= gsFirstBadgeMaxScriptPresses {
+				return fmt.Errorf("%w: exceeded %d owned inputs at a nickname prompt", errGSFirstBadgeStalled, gsFirstBadgeMaxScriptPresses)
+			}
+			presses++
+			continue
+		}
 		world := profile.DecodeOverworld(m)
 		if !gsFirstBadgeOwnedMap(world.NativeMapID) {
 			return fmt.Errorf("%w: map=%#04x at (%d,%d)", errGSFirstBadgeUnexpectedState, world.NativeMapID, world.X, world.Y)
