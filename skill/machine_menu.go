@@ -52,6 +52,8 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 	if decoder == nil {
 		return fmt.Errorf("skill: machine menu: nil decoder")
 	}
+	// A just-opened machine menu can be visible before its input loop is polling.
+	m.StepFrames(talkSettle)
 	state := decoder.DecodeMachineMenu(m)
 	if !state.Visible {
 		return fmt.Errorf("skill: machine menu is not visible")
@@ -67,11 +69,15 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 	for attempts := 0; state.Pocket != game.MachinePocketTMHM && attempts < 4; attempts++ {
 		previous := state.Pocket
 		m.Tap(emu.Left, 3, 7)
-		if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
+		moved := waitMenuUntil(m, machineMenuSettleBudget, func() bool {
 			next := decoder.DecodeMachineMenu(m)
 			return next.Visible && next.Pocket != previous
-		}) {
-			return fmt.Errorf("skill: machine menu pocket did not move left from %q", previous)
+		})
+		// Ensure the menu's joypad handler has settled before the next tap.
+		m.StepFrames(menuSettleFrames)
+		if !moved {
+			// The menu's input handler may not be ready yet; settle and retry.
+			continue
 		}
 		state = decoder.DecodeMachineMenu(m)
 	}
@@ -100,10 +106,13 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 			btn = emu.Up
 		}
 		m.Tap(btn, 3, 7)
-		if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
+		moved := waitMenuUntil(m, machineMenuSettleBudget, func() bool {
 			next := decoder.DecodeMachineMenu(m)
 			return next.Ready && next.Position != previous
-		}) {
+		})
+		// Ensure the menu's joypad handler has settled before the next tap.
+		m.StepFrames(menuSettleFrames)
+		if !moved {
 			stuck++
 			if stuck >= stuckLimit {
 				return fmt.Errorf("skill: machine menu cursor stuck at %d, wanted %d: %w", previous, target, ErrMenuStuck)

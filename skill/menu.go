@@ -92,9 +92,15 @@ func selectMenuItemWithDecoder(m menuMachine, decoder game.MenuDecoder, index in
 			btn = emu.Up
 		}
 		m.Tap(btn, 3, 7)
-		if !waitMenuUntil(m, menuSettleFrames, func() bool {
+		moved := waitMenuUntil(m, menuSettleFrames, func() bool {
 			return decoder.DecodeMenuCursor(m).Current != previous
-		}) {
+		})
+		// Ensure the menu's joypad handler has settled before the next tap.
+		// waitMenuUntil returns as soon as the cursor RAM changes, which can
+		// be before the menu's internal debounce has elapsed; without this,
+		// the next directional press is swallowed (observed in Gen-2 START menu).
+		m.StepFrames(menuSettleFrames)
+		if !moved {
 			stuck++
 			if stuck >= stuckLimit {
 				cur := decoder.DecodeMenuCursor(m).Current
@@ -146,9 +152,12 @@ func selectTwoOptionWithDecoder(m menuMachine, decoder game.MenuDecoder, index i
 			btn = emu.Up
 		}
 		m.Tap(btn, 3, 7)
-		if !waitMenuUntil(m, menuSettleFrames, func() bool {
+		moved := waitMenuUntil(m, menuSettleFrames, func() bool {
 			return decoder.DecodeMenuCursor(m).Current != previous
-		}) {
+		})
+		// Ensure the menu's joypad handler has settled before the next tap.
+		m.StepFrames(menuSettleFrames)
+		if !moved {
 			stuck++
 			if stuck >= stuckLimit {
 				return fmt.Errorf("skill: selectTwoOption: cursor stuck at %d, wanted %d: %w", previous, index, ErrMenuStuck)
