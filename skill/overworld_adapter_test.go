@@ -52,10 +52,11 @@ func (fakeGen2OverworldDecoder) DecodeOverworld(r game.MemoryReader) game.Overwo
 }
 
 type fakeOverworldMachine struct {
-	mem       [256]byte
-	held      emu.Button
-	move      bool
-	stepCount int
+	mem          [256]byte
+	held         emu.Button
+	move         bool
+	stepCount    int
+	battleAtStep int
 }
 
 func (m *fakeOverworldMachine) Peek8(addr uint16) byte { return m.mem[addr] }
@@ -88,6 +89,9 @@ func (m *fakeOverworldMachine) Release(btn emu.Button) {
 
 func (m *fakeOverworldMachine) StepFrame() {
 	m.stepCount++
+	if m.battleAtStep > 0 && m.stepCount >= m.battleAtStep {
+		m.mem[fakeOverworldFlags] |= fakeOverworldBattle
+	}
 	if !m.move || m.held == 0 {
 		return
 	}
@@ -155,6 +159,19 @@ func TestGenericMovementInterruptionUsesSemanticDialogueState(t *testing.T) {
 	m.mem[fakeOverworldFlags] = fakeOverworldDialogue
 	if err := movementInterruptionWithDecoder(m, fakeGen2OverworldDecoder{}); !errors.Is(err, ErrDialogueInterrupted) {
 		t.Fatalf("error = %v, want ErrDialogueInterrupted", err)
+	}
+}
+
+func TestGenericFaceReportsBattleBeforeFacingSuccess(t *testing.T) {
+	m := &fakeOverworldMachine{battleAtStep: 1}
+	m.mem[fakeOverworldMap] = 0x0c
+	m.mem[fakeOverworldX] = 5
+	m.mem[fakeOverworldY] = 25
+	m.mem[fakeOverworldFlags] = fakeOverworldIdle | fakeOverworldControllable
+
+	err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 5, 24)
+	if !errors.Is(err, ErrBattle) {
+		t.Fatalf("face error = %v, want ErrBattle when encounter starts during turn tap", err)
 	}
 }
 
