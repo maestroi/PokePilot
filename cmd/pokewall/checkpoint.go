@@ -171,7 +171,8 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	resilient := t.RecoveryProfile.Resilient()
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
 	drainedRetry := previous > 0 && strings.HasPrefix(t.Detail, drainedPrefix)
-	inferenceTransportRetry := previous > 0 && resilient && planner == "llm" &&
+	inferenceTransportRetry := previous > 0 && planner == "llm" &&
+		t.RecoveryProfile != farm.RecoveryProfileStrict &&
 		t.FailureClass == farm.FinishFailureClassInferenceTransport &&
 		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	resilientRetry := previous > 0 && resilient && planner == "llm" &&
