@@ -50,7 +50,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressHiveBadgeEarned,
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
-		gsprofile.ProgressHM01CutAcquired:
+		gsprofile.ProgressHM01CutAcquired,
+		gsprofile.ProgressTM02HeadbuttAcquired:
 		return true
 	default:
 		return false
@@ -140,6 +141,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSFarfetchd(a.m, a.romData)
 		case gsprofile.ProgressHM01CutAcquired:
 			err = executeGSHM01Cut(a.m, a.romData)
+		case gsprofile.ProgressTM02HeadbuttAcquired:
+			err = executeGSTM02Headbutt(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -161,7 +164,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 		switch o.Progress {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
 			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned,
-			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded:
+			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded,
+			gsprofile.ProgressTM02HeadbuttAcquired:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -360,6 +364,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressHM01CutAcquired,
 			Note:     "(claim HM01 Cut from the Charcoal Master after returning Farfetchd)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressTM02HeadbuttAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressTM02HeadbuttAcquired,
+			Note:     "(teach and use Cut to cross north Ilex Forest, then receive TM02 Headbutt from the tutor)",
 		}}
 	default:
 		return nil

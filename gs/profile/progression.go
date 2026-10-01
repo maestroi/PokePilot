@@ -20,6 +20,7 @@ const (
 	ProgressAzaleaRivalResolved      game.ProgressID = "gs_azalea_rival_resolved"
 	ProgressFarfetchdHerded          game.ProgressID = "gs_farfetchd_herded"
 	ProgressHM01CutAcquired          game.ProgressID = "gs_hm01_cut_acquired"
+	ProgressTM02HeadbuttAcquired     game.ProgressID = "gs_tm02_headbutt_acquired"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -36,6 +37,7 @@ const (
 	// directly as EventFlags + event/8 below.
 	eventGotHM05Flash             uint16 = 20
 	eventGotHM01Cut               uint16 = 16
+	eventGotTM02Headbutt          uint16 = 95
 	eventHerdedFarfetchd          uint16 = 41
 	eventGotTogepiEggFromElmsAide uint16 = 45
 	eventClearedSlowpokeWell      uint16 = 43
@@ -113,7 +115,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		},
 		{ID: ProgressFarfetchdHerded, Complete: hasGSEvent(reader, eventHerdedFarfetchd)},
 		{ID: ProgressHM01CutAcquired, Complete: hasGSEvent(reader, eventGotHM01Cut)},
-		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotHM01Cut)},
+		{ID: ProgressTM02HeadbuttAcquired, Complete: hasGSEvent(reader, eventGotTM02Headbutt)},
+		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotTM02Headbutt)},
 	}
 }
 

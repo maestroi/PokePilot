@@ -184,8 +184,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressHM01CutAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressTM02HeadbuttAcquired {
+		t.Fatalf("after HM01 progression = %+v, want north-Ilex TM02 Headbutt", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressTM02HeadbuttAcquired, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed Ilex HM01 slice still offered: %+v", got)
+		t.Fatalf("completed north-Ilex Headbutt slice still offered: %+v", got)
 	}
 }
 
@@ -215,6 +221,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
+		gsprofile.ProgressTM02HeadbuttAcquired,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -251,6 +258,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
+		gsprofile.ProgressTM02HeadbuttAcquired,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -323,6 +331,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressHiveBadgeEarned,
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
+		gsprofile.ProgressTM02HeadbuttAcquired,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {

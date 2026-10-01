@@ -70,3 +70,13 @@ func facingFromStandToBird(step gsIlexBirdStep) (string, bool) {
 	}
 	return "", false
 }
+
+func TestGSIlexHeadbuttTutorStagingIsAdjacent(t *testing.T) {
+	dx := int(gsIlexHeadbuttTutorX) - int(gsIlexHeadbuttStandX)
+	dy := int(gsIlexHeadbuttTutorY) - int(gsIlexHeadbuttStandY)
+	if (dx == 0 && (dy == 1 || dy == -1)) || (dy == 0 && (dx == 1 || dx == -1)) {
+		return
+	}
+	t.Fatalf("Headbutt tutor (%d,%d) and staging tile (%d,%d) are not orthogonally adjacent",
+		gsIlexHeadbuttTutorX, gsIlexHeadbuttTutorY, gsIlexHeadbuttStandX, gsIlexHeadbuttStandY)
+}
