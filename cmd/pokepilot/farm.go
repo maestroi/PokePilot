@@ -697,11 +697,12 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	var reason, detail string
 	var progEarly, progFinal *farm.Progress
 	var emulatorPoisoned bool
+	var failureClass farm.FinishFailureClass
 	switch planner {
 	case "scripted":
 		reason, detail, progEarly, progFinal = runFarmScripted(m, starter, dest, seed, drain)
 	case "llm":
-		reason, detail, progEarly, progFinal, emulatorPoisoned = runFarmLLM(m, spec, farm.RunPolicyFor(spec), starter, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
+		reason, detail, progEarly, progFinal, emulatorPoisoned, failureClass = runFarmLLM(m, spec, farm.RunPolicyFor(spec), starter, spec.LLMProfile, spec.ReasoningEffort, maxRounds, maxFrames, seed, cancel, snap, checkpointDir)
 		// agent.Run deliberately reports cooperative cancellation as StopBudget.
 		// Only rewrite the empty-detail budget stop when SIGTERM actually fired;
 		// a genuine frame/round budget remains a gameplay budget result.
@@ -746,7 +747,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 			close(stopUploader)
 			<-uploaderDone
 		}
-		finishRunWithRecording(nil, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, nil)
+		finishRunWithRecording(nil, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, nil, failureClass)
 		return true
 	}
 
@@ -770,7 +771,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	}
 
 	recording := stopFarmRecording(spec.RunID, recorder)
-	finishRunWithRecording(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, recording)
+	finishRunWithRecording(m, client, spec, reason, detail, burn, checkpointDir, progEarly, progFinal, recording, failureClass)
 	return false
 }
 
@@ -1000,7 +1001,7 @@ func runFarmScripted(m *emu.Emu, starter, dest string, seed int64, drain <-chan 
 // wall's cooperative stop. The run's gameplay policy and inference identity
 // arrive already extracted from the leased Spec, so this path never consults
 // process-global state.
-func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool) {
+func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmProfile, reasoningEffort string, maxRounds, maxFrames int, seed int64, cancel <-chan struct{}, snap *heartbeatSnap, checkpointDir string) (string, string, *farm.Progress, *farm.Progress, bool, farm.FinishFailureClass) {
 	resumeFrom := farmResumePath(checkpointDir)
 	romSum := sha256.Sum256(m.ROM())
 	romSHA256 := fmt.Sprintf("%x", romSum[:])
@@ -1011,12 +1012,12 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	if starter != "" && resumeFrom == "" {
 		starterObj, objErr := scriptedStarterObjective(m, starter, seed)
 		if objErr != nil {
-			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false
+			return "error", fmt.Sprintf("starter objective: %v", objErr), nil, nil, false, ""
 		}
 		starterResult, execErr := executeScriptedObjective(m, starterObj)
 		if execErr != nil {
 			captureScriptedObjectiveTelemetry(agent.StopError, []agent.ObjectiveResult{starterResult}, execErr)
-			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil, errors.Is(execErr, skill.ErrLinkStalled)
+			return "error", scriptedObjectiveDetail(starterResult, execErr), nil, nil, errors.Is(execErr, skill.ErrLinkStalled), ""
 		}
 	}
 	fmt.Println("planner: llm — the model picks from a menu rebuilt every round")
@@ -1026,7 +1027,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	// before any emulation instead of silently running without it.
 	decision, err := agent.DecisionSettingsFor(decisionSelectionFor(spec.DecisionEngine))
 	if err != nil {
-		return "error", fmt.Sprintf("decision engine: %v", err), nil, nil, false
+		return "error", fmt.Sprintf("decision engine: %v", err), nil, nil, false, ""
 	}
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
@@ -1078,7 +1079,11 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 		fmt.Printf("  error: %v\n", res.Err)
 		detail = res.Err.Error()
 	}
-	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled)
+	failureClass := farm.FinishFailureClass("")
+	if errors.Is(res.Err, agent.ErrTransport) {
+		failureClass = farm.FinishFailureClassInferenceTransport
+	}
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled), failureClass
 }
 
 // farmProgress lifts one of the run's progress samples onto the wire type.
