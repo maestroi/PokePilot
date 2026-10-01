@@ -946,6 +946,7 @@ func farmObjective(in agent.FailureObjective) farm.FailureObjective {
 		Kind: in.Kind, Place: string(in.Place), X: in.X, Y: in.Y, Starter: in.Starter,
 		Progress: string(in.Progress), FieldCapability: string(in.FieldCapability), Level: in.Level,
 		Species: string(in.Species), Item: string(in.Item), Slot: in.Slot, Qty: in.Qty, Flee: in.Flee,
+		Intent: in.Intent,
 	}
 }
 

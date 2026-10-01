@@ -187,6 +187,7 @@ func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 		Slot:            in.Slot,
 		Qty:             in.Qty,
 		Flee:            in.Flee,
+		Intent:          strings.TrimSpace(in.Intent),
 	}
 	switch strings.ToLower(strings.TrimSpace(in.Kind)) {
 	case "go_to":

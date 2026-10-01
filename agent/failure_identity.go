@@ -23,6 +23,13 @@ type FailureObjective struct {
 	Slot            int
 	Qty             int
 	Flee            bool
+	// Intent is semantic execution identity, not presentation: it selects the
+	// deterministic adapter path (Safari vs. plain catch, fishing, water,
+	// gift, trade, fossil, static, virtual). Excluding it made the portable
+	// contract and its fingerprint collapse distinct objectives, and made the
+	// deterministic replay of an intent-owned catch execute the plain-catch
+	// path and fail on a place the plain path cannot reach.
+	Intent string
 }
 
 type FailurePartyMember struct {
@@ -84,6 +91,7 @@ func FailureObjectiveFor(o Objective) FailureObjective {
 		Slot:            o.Slot,
 		Qty:             o.Qty,
 		Flee:            o.Flee,
+		Intent:          o.Intent,
 	}
 }
 

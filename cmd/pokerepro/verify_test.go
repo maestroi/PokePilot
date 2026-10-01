@@ -78,3 +78,24 @@ func TestObjectiveFromFailureRejectsUnknownKind(t *testing.T) {
 		t.Fatal("expected unsupported objective kind error")
 	}
 }
+
+// TestObjectiveFromFailurePreservesIntent guards the replay reconstruction of
+// an intent-owned catch. The Safari catch for run-1mey4xe5t2w04 failed replay
+// with `unknown catch habitat "safari zone center"` because the portable
+// contract dropped the intent, so the plain-catch path ran on a place only the
+// Safari path can reach.
+func TestObjectiveFromFailurePreservesIntent(t *testing.T) {
+	got, err := objectiveFromFailure(farm.FailureObjective{
+		Kind:    "catch",
+		Place:   "safari zone center",
+		Species: "exeggcute",
+		Flee:    true,
+		Intent:  "dex-safari",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Kind != agent.KindCatch || got.Intent != "dex-safari" {
+		t.Fatalf("objective=%+v, want kind=catch intent=dex-safari", got)
+	}
+}

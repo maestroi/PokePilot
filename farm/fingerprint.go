@@ -23,7 +23,9 @@ const (
 )
 
 // FailureObjective is the portable, planner-selected operation that failed.
-// It deliberately excludes presentation-only fields such as notes and intent.
+// It excludes presentation-only fields such as notes, but retains Intent: the
+// intent is semantic execution identity that selects the deterministic adapter
+// path, so it must be part of the identity and the replay input.
 type FailureObjective struct {
 	Kind            string `json:"kind"`
 	Place           string `json:"place,omitempty"`
@@ -38,6 +40,7 @@ type FailureObjective struct {
 	Slot            int    `json:"slot,omitempty"`
 	Qty             int    `json:"qty,omitempty"`
 	Flee            bool   `json:"flee,omitempty"`
+	Intent          string `json:"intent,omitempty"`
 }
 
 type FailurePartyMember struct {
@@ -430,6 +433,7 @@ func canonicalFailureIdentity(in FailureIdentity) FailureIdentity {
 	out.Objective.FieldCapability = canonicalFailureString(in.Objective.FieldCapability)
 	out.Objective.Species = canonicalFailureString(in.Objective.Species)
 	out.Objective.Item = canonicalFailureString(in.Objective.Item)
+	out.Objective.Intent = canonicalFailureString(in.Objective.Intent)
 	out.Outcome = canonicalFailureString(in.Outcome)
 	out.Cause = canonicalFailureString(in.Cause)
 	out.CauseContext = append([]string(nil), in.CauseContext...)
