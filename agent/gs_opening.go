@@ -239,6 +239,12 @@ func driveGSStarterSelection(m *emu.Emu, profile *gsprofile.Profile, spec gsStar
 			return fmt.Errorf("%w: starter ball at (%d,%d) did not start a script", errGSOpeningStalled, spec.BallX, spec.BallY)
 		}
 
+		// The starter's GivePoke asks "Give a nickname?" with YES as default;
+		// blind A here produced a starter named "AAAAAAAAAA".
+		if answerGSNicknameSurface(m, profile) {
+			progress.reset()
+			continue
+		}
 		if facts.ScriptActive && facts.MovementIdle {
 			if progress.frozen(m, profile) {
 				return fmt.Errorf("%w: dialogue page frozen for %d consecutive A presses (of %d sent) while selecting %s",
