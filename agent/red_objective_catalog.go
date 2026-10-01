@@ -47,7 +47,7 @@ type gen1CatalogFacts struct {
 func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCatalog {
 	catalog := ObjectiveCatalog{
 		Starters:          facts.Starters,
-		ChallengeProfiles: facts.ChallengeProfiles,
+		ChallengeProfiles: append(append([]CatalogChallengeProfile(nil), facts.ChallengeProfiles...), redGymChallengeProfiles()...),
 		CurrentCenter:     isCenter(obs.MapName),
 	}
 

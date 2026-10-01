@@ -375,3 +375,53 @@ func TestGymLossGateSurvivesCheckpointMemory(t *testing.T) {
 		t.Fatal("resumed retry-due state allowed another Train rung")
 	}
 }
+
+func electricLeadMoves() []Move {
+	return []Move{
+		{Power: 40, Type: "electric"},
+		{Power: 0, Type: "normal"},
+		{Power: 40, Type: "normal"},
+		{Power: 0, Type: "electric"},
+	}
+}
+
+// TestGymRetryStaysLockedWithoutCoverage pins run-acduyt1qbev9c: Yellow Pikachu
+// lost Brock, Forest grass was "outside_budget" for a +2 session, Offer
+// fail-opened the gym, and Train vanished. The planner then spent the IOR on
+// flee-travel. Weak grass that still yields XP is a grind path, not proof the
+// Electric lead can damage Rock/Ground.
+func TestGymRetryStaysLockedWithoutCoverage(t *testing.T) {
+	known := NewKnowledge(nil)
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	known.Failed(gym, gymOutcomeErr(gym, state.ResultLost))
+
+	grass := Observation{
+		GameID:     testGameID,
+		Map:        0x33,
+		MapName:    "VIRIDIAN_FOREST",
+		HasGrass:   true,
+		PartyCount: 2,
+		Party: []PartyMon{
+			{Level: 15, HP: 41, MaxHP: 41},
+			{Level: 7, HP: 25, MaxHP: 25},
+		},
+		LeadMoves: electricLeadMoves(),
+		Training: &TrainingEstimate{
+			CurrentLevel: 15, TargetLevel: 17,
+			Viability: TrainingOutsideBudget, SessionBudget: 20,
+			EstimatedEncounters: 27, XPRemaining: 1003, XPPerEncounter: 38,
+		},
+	}
+	OfferWithEvidence(grass, known)
+	if !hasKind(Offer(grass, known), KindTrain) {
+		t.Fatal("Train missing on grass that still yields XP")
+	}
+
+	inside := pewterGymObservation()
+	inside.Party = grass.Party
+	inside.PartyCount = grass.PartyCount
+	inside.LeadMoves = grass.LeadMoves
+	if _, ok := offeredGym(inside, known); ok {
+		t.Fatal("Pewter Gym fail-opened for an Electric lead with no Rock/Ground coverage")
+	}
+}

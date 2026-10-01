@@ -97,17 +97,27 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueLanceDefeated}).Key():    62 * 4,
 		(Objective{Kind: KindProgress, Progress: gen1.ProgressLeagueChampionDefeated}).Key(): 65 * 4,
 	}
-	if len(catalog.ChallengeProfiles) != len(wantLeagueProfiles) {
-		t.Fatalf("Yellow challenge profiles = %+v, want only the five implemented League fights", catalog.ChallengeProfiles)
-	}
+	league := 0
+	gyms := 0
 	for _, profile := range catalog.ChallengeProfiles {
-		want, ok := wantLeagueProfiles[profile.Objective]
-		if !ok {
-			t.Fatalf("unexpected non-League Yellow challenge profile: %+v", profile)
+		if want, ok := wantLeagueProfiles[profile.Objective]; ok {
+			league++
+			if profile.Readiness.MinimumReadiness != want {
+				t.Fatalf("Yellow readiness for %+v = %+v, want %d", profile.Objective, profile.Readiness, want)
+			}
+			continue
 		}
-		if profile.Readiness.MinimumReadiness != want {
-			t.Fatalf("Yellow readiness for %+v = %+v, want %d", profile.Objective, profile.Readiness, want)
+		if profile.Objective.Kind == KindGym {
+			gyms++
+			continue
 		}
+		t.Fatalf("unexpected non-League Yellow challenge profile: %+v", profile)
+	}
+	if league != len(wantLeagueProfiles) {
+		t.Fatalf("Yellow League challenge profiles = %d, want %d: %+v", league, len(wantLeagueProfiles), catalog.ChallengeProfiles)
+	}
+	if gyms == 0 {
+		t.Fatal("Yellow catalog missing gym challenge profiles")
 	}
 	found := false
 	for _, d := range catalog.Destinations {

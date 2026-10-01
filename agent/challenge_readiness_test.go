@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
+)
 
 func readinessTestChallenge() Objective {
 	return Objective{Kind: KindGym, Place: "test gym"}
@@ -107,6 +111,30 @@ func TestEvaluateChallengeReadinessUsesKnownMoveCoverage(t *testing.T) {
 	})
 	if got.Action != ChallengeReady {
 		t.Fatalf("action = %q, want ready with preferred coverage: %+v", got.Action, got)
+	}
+}
+
+func TestBoulderReadinessRejectsElectricLead(t *testing.T) {
+	profile := redGymReadinessProfile(state.BadgeBoulder)
+	if len(profile.PreferredMoveTypes) == 0 {
+		t.Fatal("Boulder profile has no preferred move types; Electric vs Ground would look ready")
+	}
+
+	obs := readinessTestObservation(15)
+	obs.LeadMoves = []Move{
+		{Power: 40, Type: "electric"},
+		{Power: 40, Type: "normal"},
+	}
+	gym := Objective{Kind: KindGym, Place: "pewter gym"}
+	got := EvaluateChallengeReadiness(obs, NewKnowledge(nil), gym, profile)
+	if got.Action != ChallengeChangeParty {
+		t.Fatalf("electric/normal lead action = %q, want change_party: %+v", got.Action, got)
+	}
+
+	obs.LeadMoves = []Move{{Power: 40, Type: "fire"}}
+	got = EvaluateChallengeReadiness(obs, NewKnowledge(nil), gym, profile)
+	if got.Action != ChallengeReady && got.Action != ChallengeTrain {
+		t.Fatalf("fire lead action = %q, want ready or train: %+v", got.Action, got)
 	}
 }
 

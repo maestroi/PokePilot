@@ -2,6 +2,7 @@ package skill
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -47,6 +48,21 @@ var gyms = map[uint8]GymInfo{
 func GymAt(mapID uint8) (GymInfo, bool) {
 	g, ok := gyms[mapID]
 	return g, ok
+}
+
+// Gyms returns one GymInfo per unique gym place. City aliases collapse to the
+// same challenge, so catalog readiness can name every gym without standing in it.
+func Gyms() []GymInfo {
+	seen := map[string]GymInfo{}
+	for _, gym := range gyms {
+		seen[gym.Place] = gym
+	}
+	out := make([]GymInfo, 0, len(seen))
+	for _, gym := range seen {
+		out = append(out, gym)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Place < out[j].Place })
+	return out
 }
 
 const gymBattleWaitBudget = 10000
