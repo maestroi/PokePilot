@@ -11,6 +11,19 @@ const KANTO_BADGES = [
   { name: 'Earth Badge', slug: 'earth', id: 8 }
 ] as const
 
+const JOHTO_BADGES = [
+  { name: 'Zephyr Badge', slug: 'zephyr', id: 9 },
+  { name: 'Hive Badge', slug: 'hive', id: 10 },
+  { name: 'Plain Badge', slug: 'plain', id: 11 },
+  { name: 'Fog Badge', slug: 'fog', id: 12 },
+  { name: 'Storm Badge', slug: 'storm', id: 13 },
+  { name: 'Mineral Badge', slug: 'mineral', id: 14 },
+  { name: 'Glacier Badge', slug: 'glacier', id: 15 },
+  { name: 'Rising Badge', slug: 'rising', id: 16 }
+] as const
+
+const BADGES = [...KANTO_BADGES, ...JOHTO_BADGES]
+
 const MILESTONE_ITEMS: { aliases: string[]; item: string }[] = [
   { aliases: ['ss-ticket', 's-s-ticket'], item: 'S.S. Ticket' },
   { aliases: ['dome-fossil'], item: 'Dome Fossil' },
@@ -51,13 +64,13 @@ function normalizeProgressName(value: string): string {
 
 export function badgeName(value: string): string | null {
   const normalized = normalizeProgressName(value).replace(/-badge$/, '')
-  const badge = KANTO_BADGES.find((entry) => normalized === entry.slug || normalized.includes(entry.slug))
+  const badge = BADGES.find((entry) => normalized === entry.slug || normalized.includes(entry.slug))
   return badge?.name || null
 }
 
 export function badgeID(value: string): number | null {
   const name = badgeName(value)
-  const badge = KANTO_BADGES.find((entry) => entry.name === name)
+  const badge = BADGES.find((entry) => entry.name === name)
   return badge?.id || null
 }
 
