@@ -200,12 +200,19 @@ branch, and PR. The operator failure view shows the latest solver plus the
 attempt count; GitHub resolution and PokePilot verification still decide
 whether a repair actually succeeded.
 
-OpenCode defaults to `qwen3.8-27b/qwen3.8-27b`. Escalation is deliberately
-manual. For a one-off stronger attempt, invoke the script directly so the
-model override is scoped to that process, for example
-`POKEPILOT_TRIAGE_AGENT=opencode POKEPILOT_OPENCODE_MODEL=<model> ./deploy/qwagent-triage.sh`.
-The systemd timer never changes models on its own; `qwtriage-once` continues to
-use the defaults from `~/.config/pokepilot/env`.
+The default `POKEPILOT_TRIAGE_AGENT=ladder` escalates per failure key: free
+local qwen (`opencode`) first, then Cursor, then Claude Code
+(`POKEPILOT_CLAUDE_MODEL`, default `claude-opus-5-5`), each for
+`POKEPILOT_TRIAGE_LADDER` attempts (default `opencode:2,cursor:2,claude:2`).
+Unavailable or logged-out backends are skipped. Paid tiers share
+`POKEPILOT_PAID_DAILY_CAP` starts per rolling 24h (default 20). Attempts are
+counted in `$POKEPILOT_TRIAGE_STATE/ledger.tsv`; a start without an opened or
+updated PR is a failure, and an opened PR resets the key. A key that spends
+every tier is no longer picked until its ledger lines are removed. Set
+`POKEPILOT_TRIAGE_AGENT=opencode|cursor|claude` to pin one backend.
+
+The service runs from `~/.local/share/pokepilot/fixer-src`, reset to
+`origin/main` before every tick, so merged fixer changes apply unattended.
 
 ```sh
 make qwagent-triage-install   # units + zsh helpers; timer stays off

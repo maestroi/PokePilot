@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/maestroi/pokepilot/deploy"
 )
@@ -27,7 +28,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate|record-attempt ...")
+		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate|record-attempt|ladder ...")
 	}
 	switch args[0] {
 	case "pick":
@@ -44,6 +45,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return investigateCmd(args[1:], stdout)
 	case "record-attempt":
 		return recordAttemptCmd(args[1:], stdout)
+	case "ladder":
+		return ladderCmd(args[1:], stdout, time.Now())
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -271,6 +274,49 @@ func parseMCPFlagsWith(fs *flag.FlagSet, args []string) (endpoint, token string,
 		return "", "", fmt.Errorf("POKEPILOT_MCP_TOKEN is required")
 	}
 	return endpoint, token, nil
+}
+
+// ladderCmd prints the backend for --key's next attempt (exit 2 when none
+// may run), or without --key every ledger key that is spent or paid-capped.
+func ladderCmd(args []string, stdout io.Writer, now time.Time) error {
+	fs := flag.NewFlagSet("ladder", flag.ContinueOnError)
+	ledger := fs.String("ledger", "", "fixer attempt ledger (TSV)")
+	spec := fs.String("tiers", "opencode:2,cursor:2,claude:2", "backend:attempts escalation order")
+	availableCSV := fs.String("available", "", "comma-separated usable backends")
+	paidCap := fs.Int("paid-daily-cap", 20, "paid attempt starts per rolling 24h")
+	key := fs.String("key", "", "triage key to choose a backend for")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	tiers, err := deploy.ParseLadder(*spec)
+	if err != nil {
+		return err
+	}
+	var rows []deploy.LedgerRow
+	if f, err := os.Open(*ledger); err == nil {
+		rows = deploy.ReadLedger(f)
+		f.Close()
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	available := map[string]bool{}
+	for _, b := range strings.Split(*availableCSV, ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			available[b] = true
+		}
+	}
+	if *key == "" {
+		for _, k := range deploy.BlockedKeys(rows, tiers, available, *paidCap, now) {
+			fmt.Fprintln(stdout, k)
+		}
+		return nil
+	}
+	backend := deploy.NextBackend(rows, tiers, *key, available, *paidCap, now)
+	if backend == "" {
+		return errNothing
+	}
+	fmt.Fprintln(stdout, backend)
+	return nil
 }
 
 type repeatFlags []string
