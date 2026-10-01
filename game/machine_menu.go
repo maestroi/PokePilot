@@ -6,11 +6,11 @@ package game
 type MachinePocket string
 
 const (
-	MachinePocketUnknown MachinePocket = ""
-	MachinePocketItems   MachinePocket = "items"
-	MachinePocketBalls   MachinePocket = "balls"
+	MachinePocketUnknown  MachinePocket = ""
+	MachinePocketItems    MachinePocket = "items"
+	MachinePocketBalls    MachinePocket = "balls"
 	MachinePocketKeyItems MachinePocket = "key_items"
-	MachinePocketTMHM    MachinePocket = "tm_hm"
+	MachinePocketTMHM     MachinePocket = "tm_hm"
 )
 
 // MachineMenuState is the portable live state needed to navigate to an owned
