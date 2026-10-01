@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 )
@@ -43,7 +45,33 @@ func cutScreenHas(m *emu.Emu, marker string) bool {
 	return strings.Contains(state.ScreenText(&mem), marker)
 }
 
-func tmhmPartyMenuUp(m *emu.Emu) bool   { return cutScreenHas(m, "Use TM") }
+// tmhmPartyMenuMarker resolves the active profile's TM/HM party-select marker.
+// It hashes the ROM to detect the profile, so resolve it once per teach flow and
+// thread the result into the per-frame predicate; never call it inside a
+// StepUntil loop.
+func tmhmPartyMenuMarker(m *emu.Emu) (string, error) {
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		return "", fmt.Errorf("skill: tmhm: detect profile: %w", err)
+	}
+	decoder, ok := profile.(game.TMHMMenuDecoder)
+	if !ok {
+		return "", fmt.Errorf("skill: tmhm: profile %s@%s does not expose TM/HM menu wording", profile.ID(), profile.Revision())
+	}
+	return decoder.TMHMPartyMenuMarker(), nil
+}
+
+// tmhmPartyMenuUp reports whether the TM/HM party-select menu is on screen,
+// matching the active profile's marker. It re-resolves the marker per call, so
+// callers in a per-frame loop should resolve it once and use cutScreenHas.
+func tmhmPartyMenuUp(m *emu.Emu) bool {
+	marker, err := tmhmPartyMenuMarker(m)
+	if err != nil {
+		return false
+	}
+	return cutScreenHas(m, marker)
+}
+
 func normalPartyMenuUp(m *emu.Emu) bool { return cutScreenHas(m, "Choose") }
 func fieldMoveMenuUp(m *emu.Emu) bool {
 	return cutScreenHas(m, "STATS") && m.Peek8(sym.FieldMoves) != 0
@@ -73,15 +101,15 @@ func movePartyCursor(m *emu.Emu, index int) error {
 	return fmt.Errorf("skill: party cursor at %d, want %d", m.Peek8(sym.CurrentMenuItem), index)
 }
 
-func selectTMHMPartySlot(m *emu.Emu, index int) error {
+func selectTMHMPartySlot(m *emu.Emu, marker string, index int) error {
 	if err := movePartyCursor(m, index); err != nil {
 		return err
 	}
-	for i := 0; i < 24 && tmhmPartyMenuUp(m); i++ {
+	for i := 0; i < 24 && cutScreenHas(m, marker); i++ {
 		m.Tap(emu.A, 3, 7)
-		_, _ = m.StepUntil(25, func(m *emu.Emu) bool { return !tmhmPartyMenuUp(m) })
+		_, _ = m.StepUntil(25, func(m *emu.Emu) bool { return !cutScreenHas(m, marker) })
 	}
-	if tmhmPartyMenuUp(m) {
+	if cutScreenHas(m, marker) {
 		return fmt.Errorf("skill: TM/HM party menu still up after selecting slot %d", index)
 	}
 	return nil
