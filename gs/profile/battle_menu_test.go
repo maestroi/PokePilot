@@ -278,7 +278,6 @@ func TestDecodeGoldBattleMainMenuIgnoresTutorialBattle(t *testing.T) {
 	}
 }
 
-
 func TestDecodeGoldStartMenuAndSemanticEntries(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.StatusFlags] = 1 // STATUSFLAGS_POKEDEX_F
@@ -337,7 +336,6 @@ func TestDecodeGoldMachineTeachingPartyMenu(t *testing.T) {
 		t.Fatalf("TM/HM teaching cursor=%+v, want {1 1}", menu.Cursor)
 	}
 }
-
 
 func TestDecodeGoldTMHMMoveLearningOutsideBattle(t *testing.T) {
 	var mem fakeMemory
