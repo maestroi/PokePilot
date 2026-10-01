@@ -312,7 +312,7 @@ runLoop:
 					decision, decisionErr := decider.DecideFailure(objectiveResult)
 					if decisionErr == nil {
 						stop, mappingErr := FailureDecisionStops(decision.Choice)
-						if mappingErr == nil && stop {
+						if mappingErr == nil && stop && FailureDecisionStopAllowed(objectiveResult) {
 							markLastOutcomeTerminal(&res)
 							res.Stop = StopError
 							sentinel := ErrDecisionImpossible
