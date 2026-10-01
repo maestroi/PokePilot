@@ -652,12 +652,25 @@ func TestValidateSpecKeepsRedScriptedStarterRequirement(t *testing.T) {
 func TestApplyHeartbeatPositionKeepsWideNativeMapHeartbeat(t *testing.T) {
 	trail := &heartbeatTrail{}
 	var hb farm.Heartbeat
-	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x1807, X: 3, Y: 3}, trail)
-	if hb.Map != 0 || hb.Trail != nil {
-		t.Fatalf("wide native map must not alias into the one-byte field: map=%d trail=%v", hb.Map, hb.Trail)
+	applyHeartbeatPosition(&hb, game.ProfileObservation{
+		NativeMapID: 0x1807,
+		Location:    "violet city",
+		MapName:     "VIOLET_CITY",
+		X:           3,
+		Y:           3,
+	}, trail)
+	if hb.Map != 0 {
+		t.Fatalf("wide native map aliased into the one-byte field: map=%d", hb.Map)
 	}
+	if hb.NativeMapID != 0x1807 || hb.Location != "violet city" || hb.MapName != "VIOLET_CITY" || hb.X != 3 || hb.Y != 3 || len(hb.Trail) != 1 {
+		t.Fatalf("wide native map telemetry = %+v", hb)
+	}
+	if hb.MapsVisited != 1 {
+		t.Fatalf("wide native map was not counted as visited: %d", hb.MapsVisited)
+	}
+
 	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x25, X: 4, Y: 5}, trail)
-	if hb.Map != 0x25 || hb.X != 4 || hb.Y != 5 || len(hb.Trail) != 1 {
+	if hb.Map != 0x25 || hb.NativeMapID != 0x25 || hb.X != 4 || hb.Y != 5 || len(hb.Trail) != 1 || hb.MapsVisited != 2 {
 		t.Fatalf("one-byte map should still report position: %+v", hb)
 	}
 }
