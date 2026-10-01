@@ -208,7 +208,13 @@ type ActivityEvent struct {
 type Heartbeat struct {
 	RunID       string `json:"run_id"`
 	Frame       uint64 `json:"frame"`
+	// Map is the historical one-byte Gen-I map id. NativeMapID preserves the
+	// full profile-owned id (Gen II uses group<<8|map) while Location/MapName
+	// give presentation code a game-independent semantic identity.
 	Map         uint8  `json:"map"`
+	NativeMapID uint16 `json:"native_map_id,omitempty"`
+	Location    string `json:"location,omitempty"`
+	MapName     string `json:"map_name,omitempty"`
 	X           uint8  `json:"x"`
 	Y           uint8  `json:"y"`
 	MapsVisited int    `json:"maps_visited,omitempty"`
