@@ -324,7 +324,7 @@ func TestResilientInferenceTransportPreservesGameplayRecoveryState(t *testing.T)
 		RunID: "inference-outage", Status: statusRunning, Planner: "llm",
 		Goal: "beat the game", Seed: 4242,
 		RecoveryProfile: farm.RecoveryProfileResilient,
-		ErrorAttempts: 2, RecoveryAttempts: 3,
+		ErrorAttempts:   2, RecoveryAttempts: 3,
 	}
 	w.tiles[tile.RunID] = tile
 
