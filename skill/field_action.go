@@ -55,14 +55,17 @@ func SemanticFieldMoves() []FieldMove {
 // carrier decisions are generation-neutral; the active move-learning executor
 // is only an adapter for applying the profile's native machine mapping.
 func EnsureFieldMove(m *emu.Emu, move FieldMove) (int, error) {
-	profile, err := fieldMoveProfileFor(m)
+	profile, err := fieldMoveDecoderFor(m)
 	if err != nil {
 		return -1, err
 	}
 	return ensureFieldMoveWithProfile(profile, m, m.ROM(), move, func(native game.NativeFieldMove) error {
-		// The current move-learning executor is still Gen-I-shaped. Keep that
-		// limitation at this adapter edge instead of baking it into generic
-		// field capability/preparation semantics.
+		// Profiles with a semantic machine-menu decoder use the portable native
+		// teaching transaction. Gen-I profiles retain their established bag
+		// executor until that engine is migrated onto the same menu contract.
+		if machines, ok := profile.(game.MachineMenuDecoder); ok {
+			return teachFieldMoveWithMachineMenu(m, profile, machines, move, native)
+		}
 		if native.MachineItemID == 0 || native.MachineItemID > 0xff || native.MoveID == 0 || native.MoveID > 0xff {
 			return fmt.Errorf("native machine/item ids %#04x/%#04x exceed current move-learning executor range",
 				native.MachineItemID, native.MoveID)
