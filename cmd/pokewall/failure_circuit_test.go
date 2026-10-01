@@ -767,3 +767,38 @@ func TestResilientCircuitDoesNotBlockUnrelatedWorkOnOldRevision(t *testing.T) {
 		t.Fatalf("queue = %v, want blocked run still parked", w.queue)
 	}
 }
+
+func insertRecoveredFailure(t *testing.T, db *sql.DB, run string, attempt, count, badges int) {
+	t.Helper()
+	identity := farm.FailureIdentity{Final: farm.FailureState{Badges: make([]string, badges)}}
+	raw, _ := json.Marshal(farm.ObjectiveFailure{
+		Objective: "beat the gym leader here", Error: "lost", Count: count, Recovered: true, RecoveredCount: count,
+		Identity: &identity,
+	})
+	if _, err := db.Exec(`INSERT INTO objective_failures(run_id,attempt,failure_key,fingerprint,family_key,family_fingerprint,blocking,terminal_count,failure_json) VALUES(?,?,?,?,?,?,FALSE,0,?)`,
+		run, attempt, "occ", "sha256:occ", "family", "sha256:family", raw); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestObjectiveFailureTriagePromotesRecurringNonTerminalFailures(t *testing.T) {
+	db := newFailureCircuitTestDB(t)
+	cp := &controlPlane{db: db}
+	// run-loop: 12 recovered losses over four attempts, still one badge.
+	for attempt := 1; attempt <= 4; attempt++ {
+		insertRecoveredFailure(t, db, "run-loop", attempt, 3, 1)
+	}
+	// run-progress: same volume, but a badge was earned in between.
+	insertRecoveredFailure(t, db, "run-progress", 1, 6, 1)
+	insertRecoveredFailure(t, db, "run-progress", 2, 6, 2)
+	// run-few: below threshold.
+	insertRecoveredFailure(t, db, "run-few", 1, 9, 1)
+
+	groups, err := cp.objectiveFailureTriage(NewWall(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || !groups[0].Recurring || groups[0].Count != 4 || len(groups[0].RunIDs) != 1 || groups[0].RunIDs[0] != "run-loop" {
+		t.Fatalf("groups = %+v, want only run-loop promoted as recurring", groups)
+	}
+}

@@ -59,6 +59,13 @@ func circuitObjectiveFailures(report farm.FinishReport) ([]farm.ObjectiveFailure
 	return failures, nil
 }
 
+// recurringFailureThreshold is how many non-terminal occurrences of one failure
+// family a single run may accumulate, with no badge change across them, before
+// triage treats the family as work. Architecture §3: the same failure repeating
+// without a relevant state change is a defect or a missing planning concept,
+// even when the planner keeps recovering from it.
+const recurringFailureThreshold = 10
+
 func circuitFailureEligible(f farm.ObjectiveFailure) bool {
 	return f.Blocking || f.TerminalCount > 0
 }
@@ -628,10 +635,9 @@ func (w *Wall) requestCircuitInvestigation(c *issueClient, issueID string, decis
 // terminal stuck/failed failures and survives wall restarts.
 func (cp *controlPlane) objectiveFailureTriage(w *Wall) ([]triageGroup, error) {
 	rows, err := cp.db.Query(`
-SELECT failure_key, fingerprint, family_key, family_fingerprint, run_id, failure_json
+SELECT failure_key, fingerprint, family_key, family_fingerprint, run_id, failure_json, (blocking=TRUE OR terminal_count>0)
 FROM objective_failures
-WHERE (blocking=TRUE OR terminal_count>0)
-  AND delivery_status<>'dismissed'
+WHERE delivery_status<>'dismissed'
 ORDER BY updated_at DESC`)
 	if err != nil {
 		return nil, err
@@ -646,25 +652,65 @@ ORDER BY updated_at DESC`)
 		seenRuns      map[string]bool
 		issueKeys     []string
 		seenIssueKeys map[string]bool
+		terminal      bool
 	}
-	groups := map[string]*acc{}
+	type triageRow struct {
+		occurrenceKey, occurrenceFingerprint, familyKey, familyFingerprint, runID string
+		failure                                                                   farm.ObjectiveFailure
+		terminal                                                                  bool
+	}
+	var all []triageRow
 	for rows.Next() {
-		var occurrenceKey, occurrenceFingerprint, familyKey, familyFingerprint, runID string
+		var r triageRow
 		var raw []byte
-		if err := rows.Scan(&occurrenceKey, &occurrenceFingerprint, &familyKey, &familyFingerprint, &runID, &raw); err != nil {
+		if err := rows.Scan(&r.occurrenceKey, &r.occurrenceFingerprint, &r.familyKey, &r.familyFingerprint, &r.runID, &raw, &r.terminal); err != nil {
 			return nil, err
 		}
-		var failure farm.ObjectiveFailure
-		if json.Unmarshal(raw, &failure) != nil {
+		if json.Unmarshal(raw, &r.failure) != nil {
 			continue
 		}
-		if familyKey == "" || familyFingerprint == "" {
+		if r.familyKey == "" || r.familyFingerprint == "" {
 			var err error
-			familyKey, familyFingerprint, _, err = objectiveFailureFingerprint(failure)
+			r.familyKey, r.familyFingerprint, _, err = objectiveFailureFingerprint(r.failure)
 			if err != nil {
 				// Historical/corrupt rows remain visible under their exact key
 				// rather than disappearing from the triage queue.
-				familyKey, familyFingerprint = occurrenceKey, occurrenceFingerprint
+				r.familyKey, r.familyFingerprint = r.occurrenceKey, r.occurrenceFingerprint
+			}
+		}
+		all = append(all, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// ponytail: loads every non-dismissed row; push the recurring test into SQL if this gets slow.
+	type runFamily struct{ run, family string }
+	type recurrence struct {
+		count  int
+		badges map[int]bool
+	}
+	recurring := map[runFamily]*recurrence{}
+	for _, r := range all {
+		if r.terminal || r.failure.Identity == nil {
+			continue
+		}
+		k := runFamily{r.runID, r.familyKey}
+		rec := recurring[k]
+		if rec == nil {
+			rec = &recurrence{badges: map[int]bool{}}
+			recurring[k] = rec
+		}
+		rec.count += max(1, r.failure.Count)
+		rec.badges[len(r.failure.Identity.Final.Badges)] = true
+	}
+
+	groups := map[string]*acc{}
+	for _, r := range all {
+		occurrenceKey, familyKey, familyFingerprint, runID, failure := r.occurrenceKey, r.familyKey, r.familyFingerprint, r.runID, r.failure
+		if !r.terminal {
+			if rec := recurring[runFamily{runID, familyKey}]; rec == nil || rec.count < recurringFailureThreshold || len(rec.badges) > 1 {
+				continue
 			}
 		}
 		group := groups[familyKey]
@@ -679,6 +725,7 @@ ORDER BY updated_at DESC`)
 			groups[familyKey] = group
 		}
 		group.count++
+		group.terminal = group.terminal || r.terminal
 		// Family fingerprints were introduced after many exact occurrence
 		// fingerprints already owned GitHub issues. Keep those legacy keys with
 		// the family so historical closed issues can still suppress stale work
@@ -692,9 +739,6 @@ ORDER BY updated_at DESC`)
 			group.runIDs = append(group.runIDs, runID)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -703,7 +747,8 @@ ORDER BY updated_at DESC`)
 		item := triageGroup{
 			Pattern: group.pattern, Key: key, Fingerprint: group.fingerprint,
 			Count: group.count, Example: group.example, RunIDs: group.runIDs,
-			Outbox: outboxStatusForKey(w.outbox, key),
+			Recurring: !group.terminal,
+			Outbox:    outboxStatusForKey(w.outbox, key),
 		}
 		if link, ok := triageIssueLinkForFamily(w.issueLinks, key, group.issueKeys); ok {
 			copy := link
