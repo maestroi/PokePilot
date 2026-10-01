@@ -71,7 +71,6 @@ func facingFromStandToBird(step gsIlexBirdStep) (string, bool) {
 	return "", false
 }
 
-
 func TestGSIlexHeadbuttTutorStagingIsAdjacent(t *testing.T) {
 	dx := int(gsIlexHeadbuttTutorX) - int(gsIlexHeadbuttStandX)
 	dy := int(gsIlexHeadbuttTutorY) - int(gsIlexHeadbuttStandY)
