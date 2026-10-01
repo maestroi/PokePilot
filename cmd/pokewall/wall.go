@@ -105,6 +105,9 @@ type Tile struct {
 	Activity    []runActivityEvent
 	Frame       uint64
 	Map         uint8
+	NativeMapID uint16
+	Location    string
+	MapName     string
 	X           uint8
 	Y           uint8
 	MapsVisited int
@@ -203,6 +206,9 @@ type tileRow struct {
 	EndedAt            int64                    `json:"ended_at,omitempty"`
 	Frame              uint64                   `json:"frame"`
 	Map                uint8                    `json:"map"`
+	NativeMapID        uint16                   `json:"native_map_id,omitempty"`
+	Location           string                   `json:"location,omitempty"`
+	MapName            string                   `json:"map_name,omitempty"`
 	X                  uint8                    `json:"x"`
 	Y                  uint8                    `json:"y"`
 	MapsVisited        int                      `json:"maps_visited,omitempty"`
@@ -329,6 +335,9 @@ type persistedTile struct {
 	Activity           []runActivityEvent       `json:"activity,omitempty"`
 	Frame              uint64                   `json:"frame"`
 	Map                uint8                    `json:"map"`
+	NativeMapID        uint16                   `json:"native_map_id,omitempty"`
+	Location           string                   `json:"location,omitempty"`
+	MapName            string                   `json:"map_name,omitempty"`
 	X                  uint8                    `json:"x"`
 	Y                  uint8                    `json:"y"`
 	Trace              string                   `json:"trace,omitempty"`
@@ -415,6 +424,9 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Activity:           copyRunActivity(t.Activity),
 			Frame:              t.Frame,
 			Map:                t.Map,
+			NativeMapID:        t.NativeMapID,
+			Location:           t.Location,
+			MapName:            t.MapName,
 			X:                  t.X,
 			Y:                  t.Y,
 			Trace:              t.Trace,
@@ -523,6 +535,9 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		Activity:           copyRunActivity(p.Activity),
 		Frame:              p.Frame,
 		Map:                p.Map,
+		NativeMapID:        p.NativeMapID,
+		Location:           p.Location,
+		MapName:            p.MapName,
 		X:                  p.X,
 		Y:                  p.Y,
 		Trace:              p.Trace,
@@ -998,6 +1013,9 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Status = statusRunning
 	t.Frame = hb.Frame
 	t.Map = hb.Map
+	t.NativeMapID = hb.NativeMapID
+	t.Location = hb.Location
+	t.MapName = hb.MapName
 	t.X = hb.X
 	t.Y = hb.Y
 	t.Trace = hb.Trace
