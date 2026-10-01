@@ -261,7 +261,7 @@ farm-down:
 # systemd units and zsh helpers; does not enable the timer.
 qwagent-triage-install:
 	mkdir -p "$(HOME)/.config/systemd/user"
-	sed 's|@@POKEPILOT_ROOT@@|$(CURDIR)|g' deploy/qwagent-triage.service.in \
+	sed 's|@@POKEPILOT_ORIGIN@@|$(shell git remote get-url origin)|g' deploy/qwagent-triage.service.in \
 		> "$(HOME)/.config/systemd/user/qwagent-triage.service"
 	cp deploy/qwagent-triage.timer "$(HOME)/.config/systemd/user/qwagent-triage.timer"
 	systemctl --user daemon-reload
@@ -271,4 +271,4 @@ qwagent-triage-install:
 		echo "appended source line to ~/.zshrc (open a new shell)"; \
 	fi
 	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."
-	@echo "Cursor subscription backend: run 'agent login' once; auto mode prefers authenticated Cursor CLI."
+	@echo "ladder mode: qwen first, then Cursor ('agent login'), then Claude Code ('claude auth login')."

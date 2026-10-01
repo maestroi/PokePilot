@@ -20,9 +20,15 @@ POKEPILOT_MCP_URL=${POKEPILOT_MCP_URL:-https://admin.rompilot.app/mcp}
 POKEPILOT_TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 POKEPILOT_TRIAGE_TREE=${POKEPILOT_TRIAGE_TREE:-$HOME/Documents/projects/PokePilot-qwagent-triage}
 PROMPT=${POKEPILOT_TRIAGE_PROMPT:-$SCRIPT_DIR/qwagent-triage.prompt.md}
-POKEPILOT_TRIAGE_AGENT=${POKEPILOT_TRIAGE_AGENT:-auto}
+POKEPILOT_TRIAGE_AGENT=${POKEPILOT_TRIAGE_AGENT:-ladder}
 POKEPILOT_CURSOR_MODEL=${POKEPILOT_CURSOR_MODEL:-}
 POKEPILOT_OPENCODE_MODEL=${POKEPILOT_OPENCODE_MODEL:-qwen3.8-27b/qwen3.8-27b}
+POKEPILOT_CLAUDE_MODEL=${POKEPILOT_CLAUDE_MODEL:-claude-opus-5-5}
+# ladder: free local qwen first, then paid tiers, per triage key. A key that
+# spends every tier stops being picked until it opens a PR or the ledger is
+# cleared; paid tiers share one rolling 24h start cap.
+POKEPILOT_TRIAGE_LADDER=${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}
+POKEPILOT_PAID_DAILY_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
 export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
@@ -60,8 +66,50 @@ cursor_authenticated() {
 	[ -n "$status" ]
 }
 
+claude_authenticated() {
+	command -v claude >/dev/null 2>&1 || return 1
+	[ -n "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && return 0
+	claude auth status 2>/dev/null | grep -q '"loggedIn": *true'
+}
+
+available_backends() {
+	local out=()
+	command -v opencode >/dev/null 2>&1 && out+=(opencode)
+	cursor_authenticated && out+=(cursor)
+	claude_authenticated && out+=(claude)
+	local IFS=,
+	printf '%s' "${out[*]}"
+}
+
+# ladder_args is shared by key selection and the picker's blocked-key list.
+ladder_args() {
+	printf '%s\n' --ledger "$POKEPILOT_TRIAGE_STATE/ledger.tsv" \
+		--tiers "$POKEPILOT_TRIAGE_LADDER" \
+		--paid-daily-cap "$POKEPILOT_PAID_DAILY_CAP" \
+		--available "$LADDER_AVAILABLE"
+}
+
+ladder_backend() {
+	local args
+	mapfile -t args < <(ladder_args)
+	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" ladder "${args[@]}" --key "$1"
+}
+
 select_agent_backend() {
 	case "$POKEPILOT_TRIAGE_AGENT" in
+	ladder)
+		if ! ladder_backend "$KEY"; then
+			log "ladder has no backend for $KEY now (tiers spent or paid cap reached)"
+			return 1
+		fi
+		;;
+	claude)
+		if ! claude_authenticated; then
+			log "Claude Code is not installed or not logged in; skip"
+			return 1
+		fi
+		echo claude
+		;;
 	auto)
 		if cursor_authenticated; then
 			echo cursor
@@ -93,7 +141,7 @@ select_agent_backend() {
 		echo opencode
 		;;
 	*)
-		log "unknown POKEPILOT_TRIAGE_AGENT=$POKEPILOT_TRIAGE_AGENT; want auto, cursor, or opencode"
+		log "unknown POKEPILOT_TRIAGE_AGENT=$POKEPILOT_TRIAGE_AGENT; want ladder, auto, cursor, opencode, or claude"
 		return 1
 		;;
 	esac
@@ -109,11 +157,18 @@ selected_agent_model() {
 		fi
 		;;
 	opencode) printf '%s' "$POKEPILOT_OPENCODE_MODEL" ;;
+	claude) printf '%s' "$POKEPILOT_CLAUDE_MODEL" ;;
 	esac
 }
 
 record_solver_attempt() {
 	local state=$1 note=${2:-} branch_name=${3:-} pr_number=${4:-0} pr_url=${5:-} exit_code=${6:-0}
+	# Local ladder ledger: a start without a later "pr" is a failed attempt,
+	# including a 50m timeout kill that never reaches a terminal record.
+	case "$state" in
+	started) printf '%s\t%s\t%s\tstarted\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv" ;;
+	pr_opened | pr_updated) printf '%s\t%s\t%s\tpr\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv" ;;
+	esac
 	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" record-attempt \
 		--endpoint "$POKEPILOT_MCP_URL" \
 		--key "$KEY" \
@@ -283,6 +338,11 @@ pick_next() {
 	own_pr=$(printf '%s' "$open_prs" | "$bin" pick-own-pr 2>"$own_err")
 	own_status=$?
 	set -e
+	if [ "$own_status" -eq 0 ] && [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] &&
+		! ladder_backend "$(printf '%s' "$own_pr" | json_field key)" >/dev/null 2>&1; then
+		log "own PR repair key is spent or paid-capped; picking a fresh failure"
+		own_status=2
+	fi
 	if [ "$own_status" -eq 0 ]; then
 		rm -f "$own_err"
 		printf '%s' "$own_pr"
@@ -297,6 +357,13 @@ pick_next() {
 	assigned_issues=$(gh issue list --repo "$(gh_repo)" --state open --limit 200 --json body,assignees 2>/dev/null || printf '[]')
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
+	if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ]; then
+		local ladder_list
+		mapfile -t ladder_list < <(ladder_args)
+		while IFS= read -r key; do
+			[ -n "$key" ] && pick_args+=(--claimed "[triage:$key]")
+		done < <("$bin" ladder "${ladder_list[@]}")
+	fi
 	while IFS= read -r title; do
 		[ -z "$title" ] && continue
 		pick_args+=(--claimed "$title")
@@ -428,6 +495,8 @@ for row in json.load(sys.stdin):
 	printf '%s' "$PICK_JSON"
 }
 
+# Probed once per tick: cursor/claude auth checks are slow CLI calls.
+LADDER_AVAILABLE=$(available_backends)
 if ! PICK_JSON=$(pick_next); then
 	exit 0
 fi
@@ -462,6 +531,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	case "$AGENT_BACKEND" in
 	cursor) echo "would run: Cursor CLI model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	opencode) echo "would run: OpenCode model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
+	claude) echo "would run: Claude Code model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	esac
 	exit 0
 fi
@@ -566,6 +636,21 @@ cursor)
 		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure."
 	agent_status=$?
 	rm -f "$cursor_packet"
+	;;
+claude)
+	claude_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
+	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+		printf '%s\n' '.pokepilot-triage-packet.md' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+	fi
+	cp "$POKEPILOT_TRIAGE_STATE/packet.md" "$claude_packet"
+	# IS_SANDBOX lets skip-permissions run as root inside the fixer container.
+	(cd "$POKEPILOT_TRIAGE_TREE" && IS_SANDBOX=1 claude -p \
+		--model "$POKEPILOT_CLAUDE_MODEL" \
+		--dangerously-skip-permissions \
+		--output-format text \
+		"Read .pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure.")
+	agent_status=$?
+	rm -f "$claude_packet"
 	;;
 opencode)
 	opencode run --auto --model "$POKEPILOT_OPENCODE_MODEL" \
