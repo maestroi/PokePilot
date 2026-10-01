@@ -131,7 +131,6 @@ func TestSemanticMachineMenuRejectsUnownedMachine(t *testing.T) {
 	}
 }
 
-
 func TestNativeMachineReplacementPreservesSemanticFieldMoves(t *testing.T) {
 	field := fakeGen2FieldMoveDecoder{}
 	moves := [4]uint16{0x21, 0x150, 0x22, 0x23} // Whirlpool is protected
