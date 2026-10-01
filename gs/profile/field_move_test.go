@@ -199,9 +199,72 @@ func TestGSFieldMoveCapabilityDoesNotReplaceFourHMs(t *testing.T) {
 	}
 }
 
-func TestGSFieldMoveMenuFailsClosedUntilNativeMenuDecoderLands(t *testing.T) {
-	menu := NewGold().DecodeFieldMoveMenu(&fakeMemory{})
+func TestGSFieldMoveMenuProjectsSelectedMonsNativeMoveOrder(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 2
+	mem[sym.CurPartyMon] = 1
+	base := sym.PartyMon1 + sym.PartyMonSize + gsPartyMovesOffset
+	mem[base+0] = 0x1d // Headbutt
+	mem[base+1] = 0x5b // Dig: native field action outside portable progression vocabulary
+	mem[base+2] = 0xfa // Whirlpool
+	mem[base+3] = 0xe6 // Sweet Scent: native field action outside portable progression vocabulary
+
+	menu := NewGold().DecodeFieldMoveMenu(&mem)
+	want := []game.FieldMoveID{game.FieldMoveHeadbutt, "", game.FieldMoveWhirlpool, ""}
+	if len(menu.Entries) != len(want) {
+		t.Fatalf("field move menu=%v, want %v", menu.Entries, want)
+	}
+	for i := range want {
+		if menu.Entries[i] != want[i] {
+			t.Fatalf("field move menu[%d]=%q, want %q; full=%v", i, menu.Entries[i], want[i], menu.Entries)
+		}
+	}
+}
+
+func TestGSFieldMoveMenuSkipsOrdinaryMovesAndPreservesUnknownFieldSlots(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 0
+	base := sym.PartyMon1 + gsPartyMovesOffset
+	mem[base+0] = 0x21 // Tackle: ordinary move, omitted from mon submenu
+	mem[base+1] = 0x0f // Cut
+	mem[base+2] = 0xf9 // Rock Smash: field action without portable progression id
+	mem[base+3] = 0x39 // Surf
+
+	menu := NewSilver().DecodeFieldMoveMenu(&mem)
+	want := []game.FieldMoveID{game.FieldMoveCut, "", game.FieldMoveSurf}
+	if len(menu.Entries) != len(want) {
+		t.Fatalf("field move menu=%v, want %v", menu.Entries, want)
+	}
+	for i := range want {
+		if menu.Entries[i] != want[i] {
+			t.Fatalf("field move menu[%d]=%q, want %q; full=%v", i, menu.Entries[i], want[i], menu.Entries)
+		}
+	}
+}
+
+func TestGSFieldMoveMenuRejectsInvalidSelectedPartySlot(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 1
+	mem[sym.PartyMon1+sym.PartyMonSize+gsPartyMovesOffset] = 0x0f
+
+	menu := NewGold().DecodeFieldMoveMenu(&mem)
 	if len(menu.Entries) != 0 {
-		t.Fatalf("field move menu=%v, want fail-closed empty projection", menu.Entries)
+		t.Fatalf("invalid selected slot projected field moves: %v", menu.Entries)
+	}
+}
+
+func TestGSMenuFieldMoveSetMatchesPinnedGen2Actions(t *testing.T) {
+	for _, move := range []uint8{
+		0x0f, 0x13, 0x39, 0x46, 0x94, 0x7f, 0xfa, // HMs
+		0x5b, 0x64, 0x87, 0x1d, 0xf9, 0xd0, 0xe6, // utility field moves
+	} {
+		if !gsIsMenuFieldMove(move) {
+			t.Fatalf("move %#02x missing from Gen-II mon-menu field-move set", move)
+		}
+	}
+	if gsIsMenuFieldMove(0x21) {
+		t.Fatal("ordinary move Tackle was treated as a Gen-II field move")
 	}
 }
