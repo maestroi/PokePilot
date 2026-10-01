@@ -271,3 +271,83 @@ func TestResilientLostResumeRollsBackAfterNoProgress(t *testing.T) {
 		t.Fatalf("resume state = %q (badge %d), want major-badge-2 rollback", cp.State.Name, got)
 	}
 }
+
+func TestInferenceTransportPreservesGameplayRecoveryState(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		profile farm.RecoveryProfile
+	}{
+		{name: "unspecified legacy profile"},
+		{name: "resilient", profile: farm.RecoveryProfileResilient},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := NewWall("")
+			tile := &Tile{
+				RunID: "inference-outage", Status: statusRunning, Planner: "llm",
+				Goal: "beat the game", Seed: 4242,
+				RecoveryProfile: tc.profile,
+				ErrorAttempts:   2, RecoveryAttempts: 3,
+			}
+			w.tiles[tile.RunID] = tile
+
+			w.settleRun(tile, "error", "planner endpoint unavailable", time.Now(), farm.FinishFailureClassInferenceTransport)
+
+			if tile.Status != statusQueued || tile.Finished {
+				t.Fatalf("transport outage became terminal: status=%q finished=%v", tile.Status, tile.Finished)
+			}
+			if tile.ErrorAttempts != 2 {
+				t.Fatalf("error attempts = %d, want unchanged 2", tile.ErrorAttempts)
+			}
+			if tile.RecoveryAttempts != 3 {
+				t.Fatalf("recovery attempts = %d, want unchanged 3", tile.RecoveryAttempts)
+			}
+			if tile.Seed != 4242 {
+				t.Fatalf("seed = %d, want preserved 4242", tile.Seed)
+			}
+			if tile.FailureClass != farm.FinishFailureClassInferenceTransport {
+				t.Fatalf("failure class = %q, want inference transport", tile.FailureClass)
+			}
+			if !strings.Contains(tile.StopSoFar, "inference transport") {
+				t.Fatalf("stop_so_far = %q, want inference transport recovery status", tile.StopSoFar)
+			}
+		})
+	}
+}
+
+func TestInferenceTransportResumesLatestMajorCheckpoint(t *testing.T) {
+	w := NewWall(t.TempDir())
+	const runID = "inference-resume"
+	w.tiles[runID] = &Tile{
+		RunID: runID, Status: statusQueued, Planner: "llm", Attempts: 1,
+		Detail:           "attempt 1 failed: planner endpoint unavailable",
+		RecoveryAttempts: 3,
+		FailureClass:     farm.FinishFailureClassInferenceTransport,
+	}
+
+	dir := checkpointAttemptDir(w.dumpsDir, runID, 1)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for badge := 1; badge <= 3; badge++ {
+		base := fmt.Sprintf("major-badge-%d-test", badge)
+		if err := os.WriteFile(filepath.Join(dir, base+".state"), []byte(fmt.Sprintf("state-%d", badge)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, base+".knowledge-v4.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	res := httptest.NewRecorder()
+	w.handleCheckpointResume(res, runID, 2)
+	if res.Code != http.StatusOK {
+		t.Fatalf("resume status = %d body=%s", res.Code, res.Body.String())
+	}
+	var cp farm.ResumeCheckpoint
+	if err := json.NewDecoder(res.Body).Decode(&cp); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := majorCheckpointBadge(cp.State.Name); !ok || got != 3 {
+		t.Fatalf("resume state = %q (badge %d), want latest major badge 3", cp.State.Name, got)
+	}
+}

@@ -131,6 +131,7 @@ type Tile struct {
 	GameDecision map[string]any
 	Reason       string
 	Detail       string
+	FailureClass farm.FinishFailureClass
 	Finished     bool
 	// workerAddrs is where this run's runner watch server is reachable,
 	// last reported by its heartbeats. Unexported: it is proxy input, not
@@ -340,6 +341,7 @@ type persistedTile struct {
 	GameDecision       map[string]any           `json:"game_decision,omitempty"`
 	Reason             string                   `json:"reason,omitempty"`
 	Detail             string                   `json:"detail,omitempty"`
+	FailureClass       farm.FinishFailureClass  `json:"failure_class,omitempty"`
 	Finished           bool                     `json:"finished"`
 	WorkerAddrs        []string                 `json:"worker_addrs,omitempty"`
 	ReplayAvailable    bool                     `json:"replay_available,omitempty"`
@@ -425,6 +427,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			GameDecision:       cloneJSONMap(t.GameDecision),
 			Reason:             t.Reason,
 			Detail:             t.Detail,
+			FailureClass:       t.FailureClass,
 			Finished:           t.Finished,
 			WorkerAddrs:        append([]string(nil), t.workerAddrs...),
 			ReplayAvailable:    t.ReplayAvailable,
@@ -532,6 +535,7 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		GameDecision:       cloneJSONMap(p.GameDecision),
 		Reason:             p.Reason,
 		Detail:             p.Detail,
+		FailureClass:       p.FailureClass,
 		Finished:           p.Finished,
 		workerAddrs:        append([]string(nil), p.WorkerAddrs...),
 		ReplayAvailable:    p.ReplayAvailable,
@@ -841,6 +845,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.GameDecision = nil
 	t.Reason = ""
 	t.Detail = ""
+	t.FailureClass = ""
 	t.workerAddrs = nil
 	t.lastFrame = nil
 	t.Finished = false
@@ -1160,6 +1165,10 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if !report.FailureClass.Valid() {
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "invalid finish failure_class"})
+		return
+	}
 
 	var addrs []string
 	var completedAttempt int
@@ -1192,7 +1201,7 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 	} else {
 		addrs = append([]string(nil), t.workerAddrs...)
 		noteRecoveryProgressLocked(t, report.ProgressFinal)
-		completedAttempt = w.settleRun(t, report.Reason, report.Detail, time.Now())
+		completedAttempt = w.settleRun(t, report.Reason, report.Detail, time.Now(), report.FailureClass)
 		terminal = t.Finished
 	}
 	if terminal && hasReplayableArtifact(report.Artifacts) {
@@ -1785,17 +1794,27 @@ func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
 	clearTileCircuit(t)
 }
 
-func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
+func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureClasses ...farm.FinishFailureClass) int {
 	t.Attempts++
 	completed := t.Attempts
+	failureClass := farm.FinishFailureClass("")
+	if len(failureClasses) > 0 {
+		failureClass = failureClasses[0]
+	}
+	t.FailureClass = failureClass
+	resilient := t.RecoveryProfile.Resilient()
+	inferenceTransport := reason == "error" &&
+		failureClass == farm.FinishFailureClassInferenceTransport &&
+		t.RecoveryProfile != farm.RecoveryProfileStrict
 	switch reason {
 	case "error":
-		t.ErrorAttempts++
+		if !inferenceTransport {
+			t.ErrorAttempts++
+		}
 	case "lost":
 		t.LossRecoveries++
 	}
-	resilient := t.RecoveryProfile.Resilient()
-	if resilient && resilientGoalRecoveryReason(reason) {
+	if resilient && resilientGoalRecoveryReason(reason) && !inferenceTransport {
 		t.RecoveryAttempts++
 	}
 	t.lastUpdate = now
@@ -1883,7 +1902,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	// A deploy drain is expected to continue bit-for-bit from the flushed
 	// checkpoint. Keep the campaign seed too, so a rare fresh-start fallback
 	// does not turn infrastructure churn into different gameplay.
-	if reason != "drained" {
+	if reason != "drained" && !inferenceTransport {
 		t.Seed = rand.Int64()
 	}
 	t.Frame = 0
@@ -1894,7 +1913,9 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time) int {
 	t.Question = ""
 	t.Decision = ""
 	t.Raw = ""
-	if resilient {
+	if inferenceTransport {
+		t.StopSoFar = "inference transport unavailable; retry queued from latest checkpoint"
+	} else if resilient {
 		t.StopSoFar = fmt.Sprintf("goal recovery %d queued after %s", t.RecoveryAttempts, reason)
 	} else {
 		t.StopSoFar = ""
