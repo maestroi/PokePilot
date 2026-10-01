@@ -135,7 +135,7 @@ func ensureFieldMoveWithProfile(
 }
 
 func fieldMoveMenuIndex(m *emu.Emu, move FieldMove) int {
-	profile, err := fieldMoveProfileFor(m)
+	profile, err := fieldMoveDecoderFor(m)
 	if err != nil {
 		return -1
 	}
