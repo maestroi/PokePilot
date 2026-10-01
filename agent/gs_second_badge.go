@@ -74,7 +74,7 @@ func driveGSSecondBadgeInterruption(
 			if !ok {
 				return fmt.Errorf("%w: battle mode has no semantic state on map %#04x", errGSSecondBadgeUnexpectedState, world.NativeMapID)
 			}
-			result, err := skill.Battle(m, skill.FirstUsableMove)
+			result, err := skill.Battle(m, skill.StatAwareMove(m.ROM()))
 			if err != nil {
 				return fmt.Errorf("gen2 second badge: battle %q: %w", encounter, err)
 			}
@@ -221,6 +221,9 @@ func executeGSBugsy(m *emu.Emu, romData []byte) error {
 	}
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
 		return fmt.Errorf("%w: Bugsy requires Slowpoke Well completion", errGSSecondBadgeUnexpectedState)
+	}
+	if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Bugsy: recover party: %w", err)
 	}
 
 	gym, err := gsOpeningMapID("AZALEA_GYM")

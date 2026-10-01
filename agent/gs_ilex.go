@@ -63,6 +63,9 @@ func executeGSAzaleaRival(m *emu.Emu, romData []byte) error {
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHiveBadgeEarned) {
 		return fmt.Errorf("%w: Azalea rival requires the Hive Badge", errGSSecondBadgeUnexpectedState)
 	}
+	if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Azalea rival: recover party: %w", err)
+	}
 
 	azalea, err := gsOpeningMapID("AZALEA_TOWN")
 	if err != nil {

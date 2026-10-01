@@ -350,7 +350,7 @@ func driveGSEarlyBattle(m *emu.Emu, profile *gsprofile.Profile) error {
 	if !profile.DecodeOpening(m).InBattle {
 		return nil
 	}
-	if _, err := skill.Battle(m, skill.FirstUsableMove); err != nil {
+	if _, err := skill.Battle(m, skill.StatAwareMove(m.ROM())); err != nil {
 		facts := profile.DecodeOpening(m)
 		return fmt.Errorf("%w: shared Gen-II battle failed on map %#04x at (%d,%d): %v",
 			errGSOpeningStalled, facts.NativeMapID, facts.X, facts.Y, err)

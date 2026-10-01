@@ -149,6 +149,28 @@ func TestGoldBattleResourcesProjectPartyWithoutGen1BagIDs(t *testing.T) {
 	}
 }
 
+func TestGoldDecodeBattleExecutionMoveSelectionSkippedWithoutPP(t *testing.T) {
+	cases := []struct {
+		name string
+		pp   [4]byte
+		want bool
+	}{
+		{"one move with pp", [4]byte{1, 0, 0, 0}, false},
+		{"all moves spent", [4]byte{0, 0, 0, 0}, true},
+		{"pp up bits do not count as pp", [4]byte{0xc0, 0, 0, 0}, true},
+	}
+	for _, c := range cases {
+		var mem fakeMemory
+		mem[sym.BattleMode] = 2
+		for slot, value := range c.pp {
+			mem[sym.BattleMonPP+uint16(slot)] = value
+		}
+		if got := NewGold().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.want {
+			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.want)
+		}
+	}
+}
+
 func TestGoldForcedPartyMenuIncludesCancelCursor(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.BattleMode] = 1

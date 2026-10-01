@@ -54,6 +54,11 @@ func Heal(m *emu.Emu) error {
 	if err != nil {
 		return err
 	}
+	overworld := runtime.DecodeOverworld(m)
+	if overworld.NativeMapID > 0xff {
+		return healOnNativeMap(m, runtime, overworld)
+	}
+
 	live, err := healRuntimeStateWithDecoder(m, runtime)
 	if err != nil {
 		return err
@@ -103,6 +108,56 @@ func Heal(m *emu.Emu) error {
 	}
 	if !live.Controllable {
 		return fmt.Errorf("skill: Heal: not controllable after the heal: map=%#04x at (%d,%d)", live.Map, live.X, live.Y)
+	}
+	return nil
+}
+
+func healOnNativeMap(m *emu.Emu, runtime pokemonCenterRuntime, overworld game.OverworldState) error {
+	if !overworld.Controllable {
+		return fmt.Errorf("skill: Heal: player not controllable: map=%#04x at (%d,%d)", overworld.NativeMapID, overworld.X, overworld.Y)
+	}
+	if !runtime.DecodeCenter(m).PartyPresent {
+		return fmt.Errorf("skill: Heal: no party to heal: map=%#04x at (%d,%d)", overworld.NativeMapID, overworld.X, overworld.Y)
+	}
+
+	routing, err := nativeRoutingProfileFor(m)
+	if err != nil {
+		return err
+	}
+	grid, _, _, err := nativeLiveGrid(m, routing, routing.NativeMapProvider(m.ROM()), overworld.NativeMapID)
+	if err != nil {
+		return fmt.Errorf("skill: Heal: native counter: %w", err)
+	}
+	x, y := int(overworld.X), int(overworld.Y)
+	var solid []world.Step
+	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
+		nx, ny := x+s.DX, y+s.DY
+		if !grid.InBounds(nx, ny) {
+			continue
+		}
+		if !grid.Walkable(nx, ny) {
+			solid = append(solid, s)
+		}
+	}
+	if len(solid) != 1 {
+		return fmt.Errorf("skill: Heal: map %#04x at (%d,%d): expected exactly one non-walkable neighbor (the counter), found %d",
+			overworld.NativeMapID, overworld.X, overworld.Y, len(solid))
+	}
+	step := solid[0]
+	if err := Face(m, uint8(x+step.DX), uint8(y+step.DY)); err != nil {
+		return fmt.Errorf("skill: Heal: face the counter %s from (%d,%d): %w", step, x, y, err)
+	}
+	if err := healAtNurse(m, runtime); err != nil {
+		return err
+	}
+
+	live := runtime.DecodeOverworld(m)
+	center := runtime.DecodeCenter(m)
+	if !center.Recovered {
+		return fmt.Errorf("skill: Heal: party not fully recovered after the heal: map=%#04x at (%d,%d)", live.NativeMapID, live.X, live.Y)
+	}
+	if !live.Controllable {
+		return fmt.Errorf("skill: Heal: not controllable after the heal: map=%#04x at (%d,%d)", live.NativeMapID, live.X, live.Y)
 	}
 	return nil
 }
