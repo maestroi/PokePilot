@@ -14,7 +14,7 @@ func TestVerbsDoNotSinkAsTheWorldGrows(t *testing.T) {
 		Party:  []PartyMon{{Level: 5, HP: 19, MaxHP: 19}},
 		Events: []string{state.EventBattledRivalInOaksLab.String()},
 	}
-	adj := map[uint8][]uint8{0x28: {0x00}, 0x00: {0x0c, 0x25, 0x28}, 0x0c: {0x00, 0x01}}
+	adj := map[uint16][]uint16{0x28: {0x00}, 0x00: {0x0c, 0x25, 0x28}, 0x0c: {0x00, 0x01}}
 	planner := &redObjectiveAdapter{}
 
 	indexOfProgression := func(visited ...uint8) (int, int) {
@@ -67,7 +67,7 @@ func TestMenuCarriesItsOwnHistory(t *testing.T) {
 		Party:  []PartyMon{{Level: 5, HP: 19, MaxHP: 19}},
 		Events: []string{state.EventBattledRivalInOaksLab.String()},
 	}
-	k := testKnowledge(map[uint8][]uint8{0x00: {0x0c}})
+	k := testKnowledge(map[uint16][]uint16{0x00: {0x0c}})
 	k.SawMap(0x00)
 
 	lab := Objective{Kind: KindGoTo, Place: "oak's lab"}

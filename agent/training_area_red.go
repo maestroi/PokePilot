@@ -172,10 +172,10 @@ func backfillVisitedTrainingAreas(romData []byte, obs Observation, known *Knowle
 		if _, ok := known.TrainingAreas[location]; ok {
 			continue
 		}
-		if grass, err := skill.HasGrass(romData, mapID); err != nil || !grass {
+		if grass, err := skill.HasGrass(romData, uint8(mapID)); err != nil || !grass {
 			continue
 		}
-		wild, err := skill.WildGrass(romData, mapID)
+		wild, err := skill.WildGrass(romData, uint8(mapID))
 		if err != nil {
 			continue
 		}

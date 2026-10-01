@@ -69,9 +69,9 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	mem[sym.PlayerDirection] = 0x04 // up
 	mem[sym.BattleMode] = 1
 	mem[sym.PartyCount] = 2
-	mem[sym.Money+0] = 0x01
-	mem[sym.Money+1] = 0x23
-	mem[sym.Money+2] = 0x45
+	mem[sym.Money+0] = 0x00
+	mem[sym.Money+1] = 0x30
+	mem[sym.Money+2] = 0x39
 	mem[sym.JohtoBadges] = 0x83 // Zephyr, Hive, Rising
 	mem[sym.KantoBadges] = 0x01 // Boulder
 
@@ -151,10 +151,17 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	}
 }
 
-func TestDecodeObservationRejectsMalformedMoney(t *testing.T) {
+func TestDecodeObservationDecodesBinaryMoney(t *testing.T) {
 	var mem fakeMemory
-	mem[sym.Money] = 0xfa
-	if _, err := NewSilver().DecodeObservation(&mem, nil); err == nil {
-		t.Fatal("invalid packed BCD money accepted")
+	mem[sym.Money+0] = 0x00
+	mem[sym.Money+1] = 0x0b
+	mem[sym.Money+2] = 0xb8 // START_MONEY = 3000 in the pinned pokegold revision
+
+	obs, err := NewSilver().DecodeObservation(&mem, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.Money != 3000 {
+		t.Fatalf("money=%d, want 3000", obs.Money)
 	}
 }

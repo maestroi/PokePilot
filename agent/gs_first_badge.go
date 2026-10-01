@@ -116,8 +116,9 @@ func gsFirstBadgeGoTo(
 	profile *gsprofile.Profile,
 	dest skill.NativeDestination,
 ) error {
+	mem := skill.NewNativeRouteMemory()
 	for attempt := 0; attempt < gsFirstBadgeRouteAttempts; attempt++ {
-		err := skill.GoToNative(m, romData, dest)
+		err := skill.GoToNativeRemembering(m, romData, dest, mem)
 		if err == nil {
 			return nil
 		}

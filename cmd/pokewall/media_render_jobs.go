@@ -144,6 +144,12 @@ func (c *mediaRenderJobController) claimable() []farm.MediaRenderJob {
 			out = append(out, job)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt == out[j].CreatedAt {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt < out[j].CreatedAt
+	})
 	return out
 }
 
@@ -259,6 +265,10 @@ func (c *mediaRenderJobController) finish(id string, req farm.MediaRenderJobFini
 		job.Stage = req.State
 	}
 	job.LastError = strings.TrimSpace(req.LastError)
+	job.FailureClass = strings.TrimSpace(req.FailureClass)
+	if req.State == farm.MediaRenderJobReady {
+		job.FailureClass = ""
+	}
 	job.ResultSize = req.ResultSize
 	job.WorkerID = ""
 	job.LeaseExpiresAt = 0
@@ -286,6 +296,7 @@ func (c *mediaRenderJobController) reconcileReady(id string, size int64) (farm.M
 	job.Stage = farm.MediaRenderJobReady
 	job.ResultSize = size
 	job.LastError = ""
+	job.FailureClass = ""
 	job.WorkerID = ""
 	job.LeaseExpiresAt = 0
 	job.UpdatedAt = now
@@ -313,6 +324,7 @@ func (c *mediaRenderJobController) cancel(id string) (farm.MediaRenderJob, error
 	now := time.Now().UnixMilli()
 	job.State = farm.MediaRenderJobCancelled
 	job.Stage = farm.MediaRenderJobCancelled
+	job.FailureClass = farm.MediaRenderFailureCancelled
 	job.WorkerID = ""
 	job.LeaseExpiresAt = 0
 	job.UpdatedAt = now
@@ -367,6 +379,7 @@ func (c *mediaRenderJobController) retry(id string) (farm.MediaRenderJob, error)
 	job.WorkerID = ""
 	job.LeaseExpiresAt = 0
 	job.LastError = ""
+	job.FailureClass = ""
 	job.ResultSize = 0
 	job.UpdatedAt = now
 	job.FinishedAt = 0

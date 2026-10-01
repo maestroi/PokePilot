@@ -18,17 +18,27 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
-// stepFrameBudget is the number of emulator frames to step after pressing a
-// D-pad button before checking whether the player or crate moved.
-const stepFrameBudget = 12
+// Movement timing, measured on the real ROM: a tap of any length moves the
+// player exactly one cell, and the sprite needs about 21 frames to land. Holding
+// the button longer does not go further, so the controller taps and waits.
+const (
+	// tapFrames is how long a D-pad button is held for one cell.
+	tapFrames = 2
+	// moveFrames is the wait after a press before the move is checked.
+	moveFrames = 24
+	// tapAttempts bounds how often one step is tapped; see tapUntil.
+	tapAttempts = 3
+	// settleFrames bounds the extra wait when the board is still animating:
+	// the decoder reports no player while the sprite is between cells, and a
+	// pushed crate is a sprite too, so the background briefly shows one crate
+	// fewer than the board really has.
+	settleFrames = 90
+)
 
 // walkFrameBudget is the total frame budget for a full walk to the pre-push
 // square. It is a safety bound; the walk terminates early when the player
 // reaches the target.
-const walkFrameBudget = 600
-
-// pushFrameBudget is the total frame budget for the push step itself.
-const pushFrameBudget = 60
+const walkFrameBudget = 64 * moveFrames
 
 var (
 	// ErrNotReady is returned when the board is not a usable puzzle.
@@ -113,29 +123,23 @@ func Push(m Machine, dec Decoder, push boxxle.LegalPush) (Result, error) {
 		dir := directionBetween(cur, step)
 		btn := dirButton(dir)
 
-		m.Press(btn)
-		for i := 0; i < stepFrameBudget; i++ {
-			m.StepFrame()
-			frames++
-		}
-		m.Release(btn)
-
-		if frames > walkFrameBudget {
-			return Result{Before: before, Frames: frames, PlayerWalked: walked},
-				fmt.Errorf("%w: walk frame budget exhausted at step %v", ErrTimeout, step)
-		}
-
-		// Re-decode and check the player moved.
-		state, err := dec.DecodeBoxxleState(m)
+		state, used, ok, err := tapUntil(m, dec, btn, len(before.Crates), func(s boxxle.State) bool {
+			return s.Player != nil && *s.Player == step
+		})
+		frames += used
 		if err != nil {
 			return Result{Before: before, Frames: frames, PlayerWalked: walked},
 				fmt.Errorf("decode after walk step: %v", err)
+		}
+		if frames > walkFrameBudget {
+			return Result{Before: before, Frames: frames, PlayerWalked: walked},
+				fmt.Errorf("%w: walk frame budget exhausted at step %v", ErrTimeout, step)
 		}
 		if state.Player == nil {
 			return Result{Before: state, Frames: frames, PlayerWalked: walked},
 				fmt.Errorf("%w: player disappeared after walk step", ErrBlocked)
 		}
-		if *state.Player != step {
+		if !ok {
 			return Result{Before: state, Frames: frames, PlayerWalked: walked},
 				fmt.Errorf("%w: player at %v, expected %v after step %v", ErrBlocked, *state.Player, step, dir)
 		}
@@ -147,26 +151,18 @@ func Push(m Machine, dec Decoder, push boxxle.LegalPush) (Result, error) {
 	// Push the crate.
 	dir := push.Dir
 	btn := dirButton(dir)
-	m.Press(btn)
-	for i := 0; i < pushFrameBudget; i++ {
-		m.StepFrame()
-		frames++
-	}
-	m.Release(btn)
-
-	after, err := dec.DecodeBoxxleState(m)
+	after, used, crateMoved, err := tapUntil(m, dec, btn, len(before.Crates), func(s boxxle.State) bool {
+		for _, c := range s.Crates {
+			if c == push.CrateTo {
+				return true
+			}
+		}
+		return false
+	})
+	frames += used
 	if err != nil {
 		return Result{Before: before, Frames: frames, PlayerWalked: walked},
 			fmt.Errorf("decode after push: %v", err)
-	}
-
-	// Verify the crate moved to the expected cell.
-	crateMoved := false
-	for _, c := range after.Crates {
-		if c == push.CrateTo {
-			crateMoved = true
-			break
-		}
 	}
 	if !crateMoved {
 		return Result{Before: before, After: after, Frames: frames, PlayerWalked: walked},
@@ -181,6 +177,64 @@ func Push(m Machine, dec Decoder, push boxxle.LegalPush) (Result, error) {
 		CrateMoved:   true,
 		PlayerWalked: walked,
 	}, nil
+}
+
+// tap presses a D-pad button briefly, releases it, and steps until the move
+// it started has had time to land. It returns the frames stepped.
+func tap(m Machine, btn emu.Button) int {
+	m.Press(btn)
+	for i := 0; i < tapFrames; i++ {
+		m.StepFrame()
+	}
+	m.Release(btn)
+	for i := tapFrames; i < moveFrames; i++ {
+		m.StepFrame()
+	}
+	return moveFrames
+}
+
+// tapUntil taps btn until done holds for the settled board, at most
+// tapAttempts times. The game drops D-pad input for a short while after a push
+// animation, so a tap that changed nothing is retried, and only the decoded
+// board decides whether a step really happened. A step into a wall or an
+// unpushable crate changes nothing on every attempt and comes back not ok.
+func tapUntil(m Machine, dec Decoder, btn emu.Button, crates int, done func(boxxle.State) bool) (boxxle.State, int, bool, error) {
+	var (
+		state  boxxle.State
+		frames int
+	)
+	for attempt := 0; attempt < tapAttempts; attempt++ {
+		frames += tap(m, btn)
+		var (
+			extra int
+			err   error
+		)
+		state, extra, err = decodeSettled(m, dec, crates)
+		frames += extra
+		if err != nil {
+			return state, frames, false, err
+		}
+		if done(state) {
+			return state, frames, true, nil
+		}
+	}
+	return state, frames, false, nil
+}
+
+// decodeSettled decodes the board, waiting up to settleFrames for the move to
+// finish: the player has landed and every crate is back on the background.
+// Moves never add or remove crates, so crates is the count before the move.
+// It returns the extra frames stepped.
+func decodeSettled(m Machine, dec Decoder, crates int) (boxxle.State, int, error) {
+	extra := 0
+	for {
+		state, err := dec.DecodeBoxxleState(m)
+		if err != nil || (state.Player != nil && len(state.Crates) == crates) || extra >= settleFrames {
+			return state, extra, err
+		}
+		m.StepFrame()
+		extra++
+	}
 }
 
 // directionBetween returns the direction from a to b, assuming they are

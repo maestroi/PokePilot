@@ -68,7 +68,7 @@ func runFarmBoxxlePlay(
 		},
 	})
 
-	detail := fmt.Sprintf("%d push(es)", result.Pushes)
+	detail := fmt.Sprintf("%d push(es), %d puzzle(s) solved", result.Pushes, result.Levels)
 	if result.Telemetry != nil && result.Telemetry.Backend != "" {
 		detail += fmt.Sprintf(", backend=%s model=%s replans=%d fallbacks=%d invalid=%d",
 			result.Telemetry.Backend, result.Telemetry.Model, result.Telemetry.Replans,

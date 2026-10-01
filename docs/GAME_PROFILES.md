@@ -142,3 +142,17 @@ Issue #55's reverse-engineering tools discover and verify symbols; `GameProfile`
 4. profile tests make the mapping executable and regression-safe.
 
 This keeps emulator introspection game-agnostic, profile knowledge game-owned, and planner behavior semantic.
+
+## Boxxle
+
+Boxxle (USA, Europe) (Rev 1) is a second non-Pokémon cartridge. Its profile is identity only; gameplay state is exposed through the optional `boxxle.StateProfile` capability, and the memory layout lives in `boxxle/sym`.
+
+The layout below was measured on the real cartridge, not assumed. Fixtures in `boxxle/state_test.go` encode the same layout, so only the ROM-gated tests in `boxxle/session` (`BOXXLE_ROM`, default `roms/boxxle.gb`, skipped without it) can catch a decoder that disagrees with the cartridge.
+
+- The level is the 32×32 background map (`0x9800`, or `0x9C00` when LCDC bit 3 is set) laid out in 2×2-tile cells. A cell's kind is its top-left tile id: wall `A8`, crate `A4`, goal `A0`, crate on goal `AC`.
+- Floor and the area outside the walls share one tile id (`D4`), so the playable interior is recovered by flood fill from the player. Cells the player cannot reach are reported as walls.
+- The player is OAM sprite 0. A pushed crate is also a sprite (OAM tiles `A4`..`A7`, or `AC`..`AF` on a goal) and stays one, so crates are read from both the background and OAM.
+- One D-pad tap moves exactly one cell and the sprite lands about 21 frames later; holding longer does not go further. The game ignores the D-pad for a short while after a push, so the controller verifies every step against the decoded board and retries a bounded number of times.
+- Boot: let the title draw (~300 frames), Start (menu), Start (PLAY), then A to skip the intro. After a solve, A alone walks the level-complete screens into the next puzzle.
+
+Run specs for Boxxle use `planner: policy`, which plays puzzles with the deterministic solver (or a typed model selector when a decision engine is configured) and advances after each solve. `planner: launch` only boots and registers the cartridge.

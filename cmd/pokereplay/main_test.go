@@ -27,7 +27,7 @@ func TestReplayRenderCachesMP4AndServesRanges(t *testing.T) {
 	recordingBytes := []byte("recording")
 	sum := sha256.Sum256(recordingBytes)
 	recordingSHA := hex.EncodeToString(sum[:])
-	cacheKey := "runs/run-1/attempt-1/replay-" + recordingSHA[:12] + ".mp4"
+	var cacheKey string
 	var mu sync.Mutex
 	var cached []byte
 
@@ -69,6 +69,9 @@ func TestReplayRenderCachesMP4AndServesRanges(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "video/mp4")
 			_, _ = w.Write(body)
+		case r.Method == http.MethodHead:
+			// Canonical status lookup also probes the pre-profile legacy key.
+			http.NotFound(w, r)
 		default:
 			t.Fatalf("unexpected S3 request: %s %s", r.Method, r.URL.Path)
 		}
@@ -121,6 +124,13 @@ printf 'fake-mp4' > "$out"
 	}
 
 	replay := newReplayServer(wall.URL, rom, stream, store)
+	cacheKey = replay.replayCacheKeyForMode("run-1", []replayRecording{{
+		Attempt: 1,
+		Artifact: artifactRef{
+			SHA256:    recordingSHA,
+			ObjectKey: "runs/run-1/attempt-1/run.gbrun",
+		},
+	}}, replayModeRaw)
 	srv := httptest.NewServer(replay.handler())
 	defer srv.Close()
 
@@ -304,8 +314,10 @@ done
 	if got, _ := os.ReadFile(calls); strings.Count(string(got), "x") != 1 {
 		t.Fatalf("stream renders=%d, want 1 (second pass must reuse the S3 segment)", strings.Count(string(got), "x"))
 	}
-	if _, ok := objects["/pokepilot/runs/run-1/attempt-2/replay-abababababab.mp4"]; !ok {
-		t.Fatalf("segment not cached under its attempt key: %v", objects)
+	wantKey := newReplayServer("http://wall.invalid", segment.ReplayROMPath, stream, store).
+		replayCacheKeyForMode("run-1", []replayRecording{recording}, replayModeRaw)
+	if _, ok := objects["/pokepilot/"+wantKey]; !ok {
+		t.Fatalf("segment not cached under canonical attempt key %q: %v", wantKey, objects)
 	}
 }
 

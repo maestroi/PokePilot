@@ -8,6 +8,7 @@ import (
 	gameruntime "github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 var (
@@ -194,7 +195,20 @@ func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Obs
 	return err
 }
 
-func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, _ Observation) gameruntime.Failure {
+func normalizeGSNavigationFailure(phase gameruntime.FailurePhase, cause string, final Observation) gameruntime.Failure {
+	failure := gameruntime.Failure{
+		Phase: phase, Cause: cause,
+		Class:       gameruntime.FailureClassControllerUncertain,
+		Recoverable: false,
+	}
+	if stableObjectiveBoundary(final) {
+		failure.Class = gameruntime.FailureClassBlocked
+		failure.Recoverable = true
+	}
+	return failure
+}
+
+func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {
 	var required *skill.RequiredBattleError
 	switch {
 	case errors.As(err, &required):
@@ -250,6 +264,19 @@ func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, er
 			Phase: phase, Class: gameruntime.FailureClassControllerUncertain,
 			Cause: "gen2_second_badge_unexpected_state", Recoverable: false,
 		}
+	case errors.Is(err, skill.ErrReplanExhausted):
+		// Check exhaustion before the wrapped last-leg cause. Replan errors keep
+		// that lower-level identity for diagnostics, but policy must see that
+		// the bounded route search itself is exhausted.
+		return normalizeGSNavigationFailure(phase, "route_replan_exhausted", final)
+	case errors.Is(err, skill.ErrNavigationStalled):
+		return normalizeGSNavigationFailure(phase, "navigation_stalled", final)
+	case errors.Is(err, world.ErrNoPath):
+		return normalizeGSNavigationFailure(phase, "no_path", final)
+	case errors.Is(err, world.ErrNoRoute):
+		return normalizeGSNavigationFailure(phase, "no_route", final)
+	case errors.Is(err, skill.ErrLegUnwalkable):
+		return normalizeGSNavigationFailure(phase, "leg_unwalkable", final)
 	default:
 		return gameruntime.Failure{
 			Phase: phase, Class: gameruntime.FailureClassUnknown,

@@ -78,12 +78,12 @@ func verifyPortableBundle(mat portableMaterialized, resultPath string) (portable
 		_ = write()
 		return verdict, err
 	}
-	romPath := strings.TrimSpace(os.Getenv("POKEMON_RED_ROM"))
+	romPath, romEnv := farm.ReproROMPath(failure.Identity.Adapter, failure.Identity.Game)
 	if romPath == "" {
 		verdict.Classification = verdictHarnessError
-		verdict.Diagnostic = "POKEMON_RED_ROM is not set"
+		verdict.Diagnostic = romEnv + " is not set"
 		_ = write()
-		return verdict, fmt.Errorf("POKEMON_RED_ROM is not set")
+		return verdict, fmt.Errorf("%s is not set", romEnv)
 	}
 	stateBytes, err := os.ReadFile(mat.StatePath)
 	if err != nil {
@@ -151,6 +151,29 @@ func writePortableReproVerdict(path, dir string, verdict portableReproVerdict) e
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
+// starterByName maps a failure contract's starter name to the shared semantic
+// enum. Both generations are listed: a Gen-II run's structured failure names
+// Chikorita/Cyndaquil/Totodile, and refusing them made the deterministic replay
+// of every Gold/Silver starter objective a harness error.
+func starterByName(name string) (skill.Starter, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "charmander":
+		return skill.StarterCharmander, true
+	case "squirtle":
+		return skill.StarterSquirtle, true
+	case "bulbasaur":
+		return skill.StarterBulbasaur, true
+	case "chikorita":
+		return skill.StarterChikorita, true
+	case "cyndaquil":
+		return skill.StarterCyndaquil, true
+	case "totodile":
+		return skill.StarterTotodile, true
+	default:
+		return 0, false
+	}
+}
+
 func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 	o := agent.Objective{
 		Place:           agent.PlaceID(strings.TrimSpace(in.Place)),
@@ -174,16 +197,11 @@ func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 		o.Kind = agent.KindTrainer
 	case "starter":
 		o.Kind = agent.KindStarter
-		switch strings.ToLower(strings.TrimSpace(in.Starter)) {
-		case "charmander":
-			o.Starter = skill.StarterCharmander
-		case "squirtle":
-			o.Starter = skill.StarterSquirtle
-		case "bulbasaur":
-			o.Starter = skill.StarterBulbasaur
-		default:
+		starter, ok := starterByName(in.Starter)
+		if !ok {
 			return agent.Objective{}, fmt.Errorf("failure repro has unknown starter %q", in.Starter)
 		}
+		o.Starter = starter
 	case "train":
 		o.Kind = agent.KindTrain
 	case "heal":

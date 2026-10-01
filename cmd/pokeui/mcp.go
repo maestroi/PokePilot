@@ -51,7 +51,7 @@ type mcpControl struct {
 }
 
 type mcpStartRunInput struct {
-	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm for Gold/Silver, llm or scripted for Gen I Pokemon, policy for Tetris, launch for Boxxle; defaults from game"`
+	Planner    string `json:"planner,omitempty" jsonschema:"planner mode: llm for Gold/Silver, llm or scripted for Gen I Pokemon, policy for Tetris and Boxxle (launch boots Boxxle without playing); defaults from game"`
 	Game       string `json:"game,omitempty" jsonschema:"game to play: pokemon-red, pokemon-blue, pokemon-yellow, pokemon-gold, pokemon-silver, tetris, or boxxle; empty lets the runner pick its mounted cartridge"`
 	Starter    string `json:"starter,omitempty" jsonschema:"starter Pokemon; pokemon-yellow uses Pikachu, Gold/Silver accept Chikorita/Cyndaquil/Totodile, Red/Blue accept their normal starters and supported experiments; Tetris and Boxxle must leave this empty"`
 	Dest       string `json:"dest,omitempty" jsonschema:"destination for scripted Pokemon mode"`
@@ -275,7 +275,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		case "tetris":
 			planner = "policy"
 		case "boxxle":
-			planner = "launch"
+			planner = "policy"
 		default:
 			planner = "llm"
 		}
@@ -285,8 +285,8 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 			return nil, mcpStartRunOutput{}, fmt.Errorf("tetris uses planner policy")
 		}
 	} else if gameID == "boxxle" {
-		if planner != "launch" {
-			return nil, mcpStartRunOutput{}, fmt.Errorf("boxxle uses planner launch")
+		if planner != "policy" && planner != "launch" {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("boxxle uses planner policy (play) or launch (boot only)")
 		}
 	} else if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
 		if planner != "llm" {

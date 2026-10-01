@@ -68,19 +68,22 @@ type artifactList struct {
 type replayRecording struct {
 	Attempt  int
 	Artifact artifactRef
+	Timeline artifactRef
 }
 
 type replayStatus struct {
-	RunID      string `json:"run_id"`
-	JobID      string `json:"job_id,omitempty"`
-	State      string `json:"state"`
-	ObjectKey  string `json:"object_key,omitempty"`
-	Size       int64  `json:"size,omitempty"`
-	Error      string `json:"error,omitempty"`
-	LastError  string `json:"last_error,omitempty"`
-	JobState   string `json:"job_state,omitempty"`
-	Stage      string `json:"stage,omitempty"`
-	RetryCount int    `json:"retry_count,omitempty"`
+	RunID          string `json:"run_id"`
+	JobID          string `json:"job_id,omitempty"`
+	State          string `json:"state"`
+	ObjectKey      string `json:"object_key,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	Error          string `json:"error,omitempty"`
+	LastError      string `json:"last_error,omitempty"`
+	JobState       string `json:"job_state,omitempty"`
+	Stage          string `json:"stage,omitempty"`
+	RetryCount     int    `json:"retry_count,omitempty"`
+	FailureClass   string `json:"failure_class,omitempty"`
+	LegacyIdentity bool   `json:"legacy_identity,omitempty"`
 	// Segments/SegmentsDone report per-attempt progress while generating.
 	Segments     int `json:"segments,omitempty"`
 	SegmentsDone int `json:"segments_done,omitempty"`
@@ -111,6 +114,20 @@ type replayServer struct {
 	// host updater only replaces this container when no video is mid-encode.
 	rendering atomic.Int64
 
+	capacity         replayCapacityConfig
+	jobSlots         chan struct{}
+	scratchFree      func(string) (uint64, error)
+	resourceMu       sync.Mutex
+	deferredJobs     map[string]replayDeferredJob
+	activeJobs       map[string]time.Time
+	activeCancels    map[string]context.CancelFunc
+	encoderProcesses atomic.Int64
+	renderFailures   atomic.Uint64
+	renderRetries    atomic.Uint64
+	renderCompleted  atomic.Uint64
+	renderBytes      atomic.Uint64
+	renderNanos      atomic.Uint64
+
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
@@ -123,6 +140,10 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 	if err != nil {
 		log.Printf("pokereplay: headless semantic renderer unavailable: %v", err)
 	}
+	capacity := replayCapacityFromEnv()
+	if err := os.MkdirAll(capacity.ScratchDir, 0o755); err != nil {
+		log.Printf("pokereplay: create scratch directory %s: %v", capacity.ScratchDir, err)
+	}
 	return &replayServer{
 		wallBase:         strings.TrimRight(wallBase, "/"),
 		romPath:          romPath,
@@ -132,6 +153,12 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		compositor:       compositor.NewFFmpeg("ffmpeg", nil),
 		semanticRenderer: semanticRenderer,
 		jobs:             make(map[string]replayStatus),
+		capacity:         capacity,
+		jobSlots:         make(chan struct{}, capacity.MaxJobs),
+		scratchFree:      freeDiskBytes,
+		deferredJobs:     make(map[string]replayDeferredJob),
+		activeJobs:       make(map[string]time.Time),
+		activeCancels:    make(map[string]context.CancelFunc),
 		liveSessions:     make(map[string]*liveBroadcastSession),
 	}
 }
@@ -139,7 +166,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 func (s *replayServer) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
+		health := map[string]any{
 			"status":            "ok",
 			"s3_configured":     s.store != nil,
 			"encoder":           s.encoderName(),
@@ -149,12 +176,24 @@ func (s *replayServer) handler() http.Handler {
 			"semantic_renderer": compositor.PublicSemanticRendererVersion(),
 			"live_fps":          liveBroadcastFPS,
 			"active_renders":    s.rendering.Load(),
-		})
+		}
+		for key, value := range s.replayResourceHealth() {
+			health[key] = value
+		}
+		s.liveMu.Lock()
+		health["live_sessions"] = len(s.liveSessions)
+		s.liveMu.Unlock()
+		writeJSON(w, http.StatusOK, health)
 	})
 	mux.HandleFunc("GET /v1/runs/{id}/replay/status", s.handleReplayStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/replay/render", s.handleReplayRender)
+	mux.HandleFunc("POST /v1/runs/{id}/replay/cancel", s.handleReplayCancel)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/video", s.handleReplayVideo)
 	mux.HandleFunc("GET /v1/runs/{id}/replay/semantic", s.handleReplaySemantic)
+	mux.HandleFunc("GET /v1/runs/{id}/highlights/status", s.handleHighlightStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/highlights/render", s.handleHighlightRender)
+	mux.HandleFunc("GET /v1/runs/{id}/highlights/video", s.handleHighlightVideo)
+	mux.HandleFunc("GET /v1/runs/{id}/highlights/manifest", s.handleHighlightManifest)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
@@ -195,32 +234,62 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 		return
 	}
 	status := s.replayStatus(r.Context(), runID, recordings, mode)
-	if status.State == "ready" {
+	if status.State == "ready" && !status.LegacyIdentity {
 		writeJSON(w, http.StatusOK, status)
 		return
 	}
 	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
 	job, jobErr := s.ensureRenderJob(r.Context(), runID, recordings, mode, cacheKey)
 	if jobErr == nil {
-		if job.State == "failed" || job.State == "cancelled" {
-			if retried, retryErr := s.retryRenderJob(r.Context(), job.ID); retryErr == nil {
-				job = retried
-			} else {
+		if job.State == farm.MediaRenderJobFailed {
+			if !job.Retryable() {
+				writeJSON(w, http.StatusConflict, replayStatusFromMediaJob(job))
+				return
+			}
+			retried, retryErr := s.retryRenderJob(r.Context(), job.ID)
+			if retryErr != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": retryErr.Error()})
 				return
 			}
+			s.renderRetries.Add(1)
+			job = retried
+		} else if job.State == farm.MediaRenderJobCancelled {
+			retried, retryErr := s.retryRenderJob(r.Context(), job.ID)
+			if retryErr != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": retryErr.Error()})
+				return
+			}
+			s.renderRetries.Add(1)
+			job = retried
+		} else if job.Active() {
+			writeJSON(w, http.StatusAccepted, replayStatusFromMediaJob(job))
+			return
+		}
+
+		release, reason, detail := s.tryAdmitRenderJob(job.ID)
+		if release == nil {
+			status = replayStatusFromMediaJob(job)
+			status.Stage = "queued_" + reason
+			status.LastError = detail
+			writeJSON(w, http.StatusAccepted, status)
+			return
 		}
 		claimed, ok, claimErr := s.claimRenderJob(r.Context(), job.ID)
 		if claimErr != nil {
+			release()
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": claimErr.Error()})
 			return
 		}
 		if !ok {
+			release()
 			writeJSON(w, http.StatusAccepted, replayStatusFromMediaJob(claimed))
 			return
 		}
 		status = replayStatusFromMediaJob(claimed)
-		go s.render(claimed.ID, runID, recordings, cacheKey, mode)
+		go func() {
+			defer release()
+			s.render(claimed.ID, runID, recordings, cacheKey, mode)
+		}()
 		writeJSON(w, http.StatusAccepted, status)
 		return
 	}
@@ -232,16 +301,67 @@ func (s *replayServer) handleReplayRender(w http.ResponseWriter, r *http.Request
 	// Compatibility with an older/local wall that does not expose durable media
 	// jobs yet. Production uses the wall-backed job authority above.
 	s.mu.Lock()
-	if current, ok := s.jobs[cacheKey]; ok && current.State == "generating" {
+	if current, ok := s.jobs[cacheKey]; ok && current.State == "generating" && current.Stage != "queued_max_jobs" && current.Stage != "queued_low_scratch" && current.Stage != "queued_scratch_unavailable" {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusAccepted, current)
 		return
 	}
-	status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey}
-	s.jobs[cacheKey] = status
 	s.mu.Unlock()
-	go s.render("", runID, recordings, cacheKey, mode)
+
+	release, reason, detail := s.tryAdmitRenderJob(cacheKey)
+	if release == nil {
+		status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Stage: "queued_" + reason, LastError: detail}
+		s.setJob(cacheKey, status)
+		writeJSON(w, http.StatusAccepted, status)
+		return
+	}
+	status = replayStatus{RunID: runID, State: "generating", ObjectKey: cacheKey, Stage: farm.MediaRenderJobPreparing}
+	s.setJob(cacheKey, status)
+	go func() {
+		defer release()
+		s.render("", runID, recordings, cacheKey, mode)
+	}()
 	writeJSON(w, http.StatusAccepted, status)
+}
+
+func (s *replayServer) handleReplayCancel(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	recordings, err := s.recordings(r.Context(), runID)
+	if err != nil {
+		writeReplayError(w, err)
+		return
+	}
+	cacheKey := s.replayCacheKeyForMode(runID, recordings, mode)
+	jobID := farm.MediaRenderJobID(cacheKey)
+	job, err := s.cancelRenderJob(r.Context(), jobID)
+	if err == nil {
+		s.clearDeferredRenderJob(job.ID)
+		s.cancelActiveRender(job.ID)
+		writeJSON(w, http.StatusOK, replayStatusFromMediaJob(job))
+		return
+	}
+	if !errors.Is(err, errMediaRenderJobAPIUnavailable) {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+
+	cancelled := s.cancelActiveRender(cacheKey)
+	s.clearDeferredRenderJob(cacheKey)
+	status := replayStatus{
+		RunID: runID, State: "error", ObjectKey: cacheKey, Error: "render cancelled",
+		JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled,
+		FailureClass: farm.MediaRenderFailureCancelled,
+	}
+	if !cancelled {
+		status.LastError = "render was queued or not active"
+	}
+	s.setJob(cacheKey, status)
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *replayServer) handleReplayVideo(w http.ResponseWriter, r *http.Request) {
@@ -335,7 +455,8 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 		if !ok || !artifact.Replayable {
 			return nil, errRecordingNotFound
 		}
-		return []replayRecording{{Attempt: 1, Artifact: artifact}}, nil
+		timeline, _ := findArtifact(latest.Artifacts, farm.MediaTimelineArtifactName)
+		return []replayRecording{{Attempt: 1, Artifact: artifact, Timeline: timeline}}, nil
 	}
 
 	recordings := make([]replayRecording, 0, latestAttempt)
@@ -351,7 +472,8 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 		if !ok || !artifact.Replayable {
 			continue
 		}
-		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
+		timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact, Timeline: timeline})
 	}
 	if len(recordings) == 0 {
 		return nil, errRecordingNotFound
@@ -382,7 +504,8 @@ func (s *replayServer) recordingsForAttempts(ctx context.Context, runID string, 
 		if !ok || !artifact.Replayable {
 			return nil, fmt.Errorf("attempt %d: %w", attempt, errRecordingNotFound)
 		}
-		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact})
+		timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
+		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact, Timeline: timeline})
 	}
 	return recordings, nil
 }
@@ -445,13 +568,31 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 	if job, ok, err := s.getRenderJob(ctx, jobID); err == nil && ok {
 		return replayStatusFromMediaJob(job)
 	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if status, ok := s.jobs[cacheKey]; ok {
 		if status.JobID == "" {
 			status.JobID = jobID
 		}
+		s.mu.Unlock()
 		return status
+	}
+	s.mu.Unlock()
+
+	// Artifacts from before media identity-v1 remain readable. They are marked
+	// explicitly so a render request can migrate to the canonical identity
+	// instead of silently treating the legacy key as equivalent.
+	legacyKey := s.legacyReplayCacheKeyForMode(runID, recordings, mode)
+	if legacyKey != cacheKey {
+		legacyJobID := farm.MediaRenderJobID(legacyKey)
+		if obj, err := s.store.HeadObject(ctx, legacyKey); err == nil {
+			return replayStatus{
+				RunID: runID, JobID: legacyJobID, State: "ready", ObjectKey: legacyKey, Size: obj.Size,
+				JobState: farm.MediaRenderJobReady, Stage: farm.MediaRenderJobReady, LegacyIdentity: true,
+			}
+		} else if !artifactstore.IsNotFound(err) {
+			return replayStatus{RunID: runID, JobID: legacyJobID, State: "error", ObjectKey: legacyKey, Error: err.Error(), LegacyIdentity: true}
+		}
 	}
 	return replayStatus{RunID: runID, JobID: jobID, State: "missing", ObjectKey: cacheKey}
 }
@@ -459,13 +600,16 @@ func (s *replayServer) replayStatus(ctx context.Context, runID string, recording
 func (s *replayServer) render(jobID, runID string, recordings []replayRecording, cacheKey string, mode replayMode) {
 	s.rendering.Add(1)
 	defer s.rendering.Add(-1)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := withReplayTimeout(context.Background(), s.capacity.JobTimeout)
 	defer cancel()
 	var cancelledByControl atomic.Bool
 	cancelForControl := func() {
 		cancelledByControl.Store(true)
 		cancel()
 	}
+	controlID := firstNonEmpty(jobID, cacheKey)
+	s.registerRenderCancel(controlID, cancelForControl)
+	defer s.unregisterRenderCancel(controlID)
 	stopLease := s.keepRenderJobLease(ctx, jobID, cancelForControl)
 	defer stopLease()
 	started := time.Now()
@@ -473,19 +617,27 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	setError := func(err error) {
 		if cancelledByControl.Load() {
 			log.Printf("pokereplay render cancelled run=%s key=%s dur=%s", runID, cacheKey, time.Since(started).Round(time.Millisecond))
-			s.setJob(cacheKey, replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: "render cancelled", JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled})
+			s.setJob(cacheKey, replayStatus{
+				RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: "render cancelled",
+				JobState: farm.MediaRenderJobCancelled, Stage: farm.MediaRenderJobCancelled, FailureClass: farm.MediaRenderFailureCancelled,
+			})
 			return
 		}
-		log.Printf("pokereplay render fail run=%s key=%s encoder=%s dur=%s err=%v", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), err)
-		s.setJob(cacheKey, replayStatus{RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: clipError(err)})
+		failureClass := classifyRenderFailure(err, ctx.Err())
+		s.renderFailures.Add(1)
+		log.Printf("pokereplay render fail run=%s key=%s encoder=%s class=%s dur=%s err=%v", runID, cacheKey, encoder, failureClass, time.Since(started).Round(time.Millisecond), err)
+		s.setJob(cacheKey, replayStatus{
+			RunID: runID, JobID: jobID, State: "error", ObjectKey: cacheKey, Error: clipError(err),
+			JobState: farm.MediaRenderJobFailed, Stage: farm.MediaRenderJobFailed, FailureClass: failureClass,
+		})
 		if jobID != "" {
-			if finishErr := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, clipError(err), 0); finishErr != nil {
+			if finishErr := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, clipError(err), 0, failureClass); finishErr != nil {
 				log.Printf("pokereplay: persist failed render job %s: %v", jobID, finishErr)
 			}
 		}
 	}
 
-	dir, err := os.MkdirTemp("", "pokereplay-*")
+	dir, err := os.MkdirTemp(s.capacity.ScratchDir, replayScratchJobPrefix)
 	if err != nil {
 		setError(err)
 		return
@@ -549,7 +701,9 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 			setError(err)
 			return
 		}
-		log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d legacy=true", runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size)
+		elapsed := time.Since(started)
+		log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d legacy=true", runID, cacheKey, encoder, elapsed.Round(time.Millisecond), size)
+		s.recordRenderSuccess(size, elapsed)
 		s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size, Segments: total, SegmentsDone: total})
 		if jobID != "" {
 			if err := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobReady, farm.MediaRenderJobReady, "", size); err != nil {
@@ -637,8 +791,11 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 		return
 	}
 	videoPath := pathJoinOS(dir, "replay.mp4")
-	if err := concatReplaySegmentURLs(ctx, dir, segmentURLs, videoPath); err != nil {
-		setError(err)
+	s.encoderProcesses.Add(1)
+	concatErr := concatReplaySegmentURLs(ctx, dir, segmentURLs, videoPath)
+	s.encoderProcesses.Add(-1)
+	if concatErr != nil {
+		setError(concatErr)
 		return
 	}
 	if err := probeReplayVideo(ctx, videoPath, replayAttemptsDuration(attempts)); err != nil {
@@ -669,8 +826,10 @@ func (s *replayServer) render(jobID, runID string, recordings []replayRecording,
 	}
 	size := obj.Size
 
+	elapsed := time.Since(started)
 	log.Printf("pokereplay render ok run=%s key=%s encoder=%s dur=%s size=%d segments=%d",
-		runID, cacheKey, encoder, time.Since(started).Round(time.Millisecond), size, total)
+		runID, cacheKey, encoder, elapsed.Round(time.Millisecond), size, total)
+	s.recordRenderSuccess(size, elapsed)
 	s.setJob(cacheKey, replayStatus{RunID: runID, State: "ready", ObjectKey: cacheKey, Size: size, Segments: total, SegmentsDone: total})
 	if jobID != "" {
 		if err := s.finishRenderJob(context.Background(), jobID, farm.MediaRenderJobReady, farm.MediaRenderJobReady, "", size); err != nil {
@@ -700,7 +859,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 		return "", fmt.Errorf("wait for replay render slot: %w", err)
 	}
 	defer release()
-	ctx, cancel := context.WithTimeout(ctx, renderTimeout)
+	ctx, cancel := withReplayTimeout(ctx, s.capacity.SegmentTimeout)
 	defer cancel()
 
 	raw := video
@@ -708,7 +867,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 		raw = pathJoinOS(dir, fmt.Sprintf("segment-%03d-raw.mp4", index+1))
 	}
 	if err := s.renderRecordingSegment(ctx, segment.ReplayROMPath, segment.RecordingPath, raw); err != nil {
-		return "", err
+		return "", replayContextError(ctx, err)
 	}
 	if mode == replayModeBroadcast {
 		if s.compositor == nil {
@@ -718,7 +877,8 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 		if err != nil {
 			return "", fmt.Errorf("media timeline: %w", err)
 		}
-		if err := s.compositor.Compose(ctx, broadcastScene{
+		s.encoderProcesses.Add(1)
+		err = s.compositor.Compose(ctx, broadcastScene{
 			RunID:       runID,
 			Attempt:     recording.Attempt,
 			RawVideo:    raw,
@@ -726,8 +886,10 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 			Timeline:    timeline,
 			VAAPI:       s.vaapi,
 			VAAPIDevice: vaapiDevice(),
-		}); err != nil {
-			return "", fmt.Errorf("broadcast renderer: %w", err)
+		})
+		s.encoderProcesses.Add(-1)
+		if err != nil {
+			return "", replayContextError(ctx, fmt.Errorf("broadcast renderer: %w", err))
 		}
 		_ = os.Remove(raw)
 	}
@@ -737,7 +899,7 @@ func (s *replayServer) renderCachedSegment(ctx context.Context, runID string, re
 	}
 	defer file.Close()
 	if _, err := s.store.PutObjectReader(ctx, key, "video/mp4", file); err != nil {
-		return "", fmt.Errorf("cache segment: %w", err)
+		return "", replayContextError(ctx, fmt.Errorf("cache segment: %w", err))
 	}
 	return video, nil
 }
@@ -761,9 +923,12 @@ func (s *replayServer) downloadObject(ctx context.Context, key, destination stri
 
 func (s *replayServer) renderRecordingSegment(ctx context.Context, romPath, recordingPath, videoPath string) error {
 	cmd := exec.CommandContext(ctx, s.streamBinary, s.streamArgs(romPath, recordingPath, videoPath)...)
+	configureReplayProcessGroup(cmd)
 	output := &replayOutputTail{}
 	cmd.Stdout = output
 	cmd.Stderr = output
+	s.encoderProcesses.Add(1)
+	defer s.encoderProcesses.Add(-1)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("gomeboy replay render: %w: %s", err, strings.TrimSpace(output.String()))
 	}
@@ -1116,6 +1281,9 @@ func main() {
 		log.Printf("pokereplay: S3 not configured; artifact metadata remains browsable but replay cache is disabled")
 	}
 	serverImpl := newReplayServer(*wallBase, *romPath, *streamBinary, store)
+	if err := prepareReplayScratch(serverImpl.capacity.ScratchDir); err != nil {
+		log.Fatalf("pokereplay: prepare scratch directory: %v", err)
+	}
 	serverImpl.romLibrary = buildReplayROMLibrary(*romPath, *romDir)
 	on, encoder, reason := currentVAAPI()
 	serverImpl.vaapi = on

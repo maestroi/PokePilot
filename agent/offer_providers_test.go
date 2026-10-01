@@ -43,7 +43,7 @@ func TestObjectiveProvidersReturnStructuredBlockEvidence(t *testing.T) {
 
 func TestOfferWithEvidenceIsDeterministic(t *testing.T) {
 	obs := Observation{Map: 0x00, MapName: "PALLET_TOWN", X: 4, Y: 7, PartyCount: 1}
-	adjacency := map[uint8][]uint8{0x00: {0x0c}, 0x0c: {0x00}}
+	adjacency := map[uint16][]uint16{0x00: {0x0c}, 0x0c: {0x00}}
 
 	first := OfferWithEvidence(obs, testKnowledge(adjacency))
 	second := OfferWithEvidence(obs, testKnowledge(adjacency))

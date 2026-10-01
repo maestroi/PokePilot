@@ -87,9 +87,10 @@ Modes:
   failure recovery, as before. A selection without `mode` is active, so
   older specs are unchanged.
 - `off` is the same as backend `off`.
-- `battles` is shadow-only (the wall answers 400 for active battles). The
-  run carries it to the runner as `DecisionSettings.Battles`, and every move
-  turn a battle presses is scored live (see "Live battle shadow" below).
+- `battles` works in shadow or active mode. Shadow scores every observed move
+  turn. Active may replace only a legal move action after validation and the
+  configured confidence gate; switches, items, RUN, forced-switch handling and
+  menu/controller execution remain deterministic.
 
 Every runner uses the same image. `deploy/farm.yml` gives every runner
 `TYPESAFE_API_KEY` from the stack environment; nothing calls Jev unless the
@@ -111,7 +112,8 @@ Runner defaults, used only by runs without a registered deployment:
   typed backend choose from the already-valid objective menu before falling
   back to the existing planner.
 - `POKEPILOT_DECISION_MODE` is the runner default mode (`active` when unset;
-  `shadow` or `off`). `POKEPILOT_DECISION_BATTLES=1` applies only in shadow.
+  `shadow` or `off`). `POKEPILOT_DECISION_BATTLES=1` enables battle decisions
+  in either shadow or confidence-gated active mode.
 - `POKEPILOT_DECISION_MIN_CONFIDENCE` defaults to `0.65`. A lower-confidence
   answer is recorded and falls back to the existing deterministic/generative
   path.
@@ -194,11 +196,20 @@ A run with `battles` in shadow mode is asked about every move turn:
   executed `game.BattleAction`.
 - The runner asks the backend, re-checks the answer through
   `ResolveBattleDecision`, and records it as a `battle_turn` decision with
-  agreement against the executed move. Calls get a 15s deadline; after three
-  consecutive transport failures the run stops asking for battle turns, so
-  a dead endpoint cannot add its timeout to every remaining turn.
+  agreement against the executed move. Every recorded turn has a monotonic
+  decision index and a SHA-256 fingerprint of the portable decision state.
+  When the next actionable turn arrives, the prior row is completed with the
+  next active/opponent species and HP; the final row is completed with the
+  portable battle result (won/lost/draw).
+- Calls get a 15s deadline; after three consecutive transport failures the run
+  stops asking for battle turns, so a dead endpoint cannot add its timeout to
+  every remaining turn. Outcome observation remains active long enough to
+  finish the last recorded row.
 
-Shadow calls do add their latency to each battle turn's wall time.
+Shadow calls do add their latency to each battle turn's wall time. They do not
+step emulator frames or gain controller access. A ROM-gated regression replays
+one restored Route 1 battle with shadow disabled and with a deliberately
+disagreeing backend; result, final frame and emulator-state digest must match.
 
 The battle suite is its own evaluation mode, separate from the planner suite
 and from live runs. The checked-in corpus covers obvious type advantages,
@@ -226,8 +237,9 @@ deterministic policy chose.
 
 A shadow battle run also writes a bounded `battle-shadow-corpus.jsonl` finish
 artifact (up to 256 portable turns). Each row contains the portable
-`BattleDecisionState`, the action the deterministic policy actually executed,
-and the original shadow response/latency when available. That artifact can be
+`BattleDecisionState`, decision index, state fingerprint, downstream outcome,
+the action the deterministic policy actually executed, and the original shadow
+response/latency when available. That artifact can be
 replayed without a ROM or emulator:
 
 ```sh

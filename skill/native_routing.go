@@ -54,6 +54,58 @@ func nativeRoutingProfileFor(m *emu.Emu) (nativeRoutingProfile, error) {
 	return nativeRoutingProfileForROM(m.ROM())
 }
 
+// errLiveMapNotSettled means the cartridge has not handed control back for
+// the current map yet, so the live block buffer is not the map's geometry: a
+// connection or warp makes the map identity current while a field script still
+// owns the overworld, and during that window the block buffer still holds the
+// previous map's bytes. Decoding collision there answers a question about a map
+// that is not loaded, so this is a retryable interruption rather than a
+// geometry failure.
+var errLiveMapNotSettled = errors.New("skill: native routing: live map is not ready to route")
+
+const (
+	// liveMapSettleFrameBudget bounds waiting for the cartridge to hand back
+	// control on the current map. It is generous next to a field script's own
+	// text pages while still making a wedged map observable.
+	liveMapSettleFrameBudget = 900
+	// liveMapSettlePollFrames is how many frames one poll advances. The
+	// cartridge's own map entry borrows the same frame loop, so checking more
+	// often than this cannot observe anything new.
+	liveMapSettlePollFrames = 2
+)
+
+// waitLiveMapSettled drives the current map toward a decoded live topology that
+// the profile is willing to vouch for. It returns the settled state, and
+// errLiveMapNotSettled when the budget runs out with a script still owning the
+// overworld. A battle or a dialogue waiting on the player is not a map shell
+// that is still loading: neither hands the overworld back without input, so
+// waiting on them only burns the budget and hides the interruption the caller
+// can actually settle. They return ErrBattle / ErrDialogueInterrupted at once.
+func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopologyState, error) {
+	var live game.LiveTopologyState
+	if m == nil || routing == nil {
+		return live, fmt.Errorf("skill: native routing: incomplete live-map runtime")
+	}
+	for waited := 0; waited <= liveMapSettleFrameBudget; waited += liveMapSettlePollFrames {
+		switch world := routing.DecodeOverworld(m); {
+		case world.InBattle:
+			return game.LiveTopologyState{}, ErrBattle
+		case world.InDialogue:
+			return game.LiveTopologyState{}, ErrDialogueInterrupted
+		}
+		decoded, err := routing.DecodeLiveTopology(m)
+		if err != nil {
+			return game.LiveTopologyState{}, err
+		}
+		if decoded.BlocksSettled {
+			return decoded, nil
+		}
+		live = decoded
+		m.StepFrames(liveMapSettlePollFrames)
+	}
+	return live, fmt.Errorf("%w: map %#04x phase %d after %d frames", errLiveMapNotSettled, live.NativeMapID, live.MapShellPhase, liveMapSettleFrameBudget)
+}
+
 func nativeLiveGrid(
 	reader game.MemoryReader,
 	routing game.RoutingDecoder,
@@ -73,6 +125,9 @@ func nativeLiveGrid(
 	}
 	if live.NativeMapID != mapID {
 		return nil, live, header, fmt.Errorf("skill: native routing: live map is %#04x, want %#04x", live.NativeMapID, mapID)
+	}
+	if !live.BlocksSettled {
+		return nil, live, header, fmt.Errorf("%w: map %#04x phase %d", errLiveMapNotSettled, live.NativeMapID, live.MapShellPhase)
 	}
 	if live.WidthBlocks != int(header.WidthBlocks) || live.HeightBlocks != int(header.HeightBlocks) {
 		return nil, live, header, fmt.Errorf(
@@ -150,6 +205,9 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			return nil
 		}
 
+		if _, err := waitLiveMapSettled(m, profile); err != nil {
+			return err
+		}
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, dest.Map)
 		if err != nil {
 			return err
@@ -212,6 +270,7 @@ func nativeAdjacentApproach(
 func nativeConnectionApproach(
 	provider worldmodel.NativeMapTopologyProvider,
 	grid *world.NativeGrid,
+	live game.LiveTopologyState,
 	edge world.NativeEdge,
 	sx, sy int,
 	blocked map[[2]int]bool,
@@ -220,7 +279,7 @@ func nativeConnectionApproach(
 	if err != nil {
 		return nil, world.NativeStep{}, err
 	}
-	sourceWidth, sourceHeight := grid.Width, grid.Height
+	sourceWidth, sourceHeight := live.WidthBlocks*2, live.HeightBlocks*2
 	destWidth, destHeight := int(dest.WidthBlocks)*2, int(dest.HeightBlocks)*2
 
 	limit := sourceWidth
@@ -240,7 +299,11 @@ func nativeConnectionApproach(
 	var best []world.NativeStep
 	found := false
 	for i := 0; i < limit; i++ {
-		if j := i + int(edge.Offset); j < 0 || j >= destLimit {
+		// Native (Gen-II) offsets are the decomp's: blocks, positive when the
+		// neighbour's origin lies further along the shared edge than ours. A
+		// source tile i therefore lands on neighbour tile i - 2*Offset. (Gen-I
+		// graphs carry the ROM's pre-negated tile alignment, hence i + Offset.)
+		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
 			continue
 		}
 		tx, ty := i, 0
@@ -338,8 +401,14 @@ func traverseNativeEdge(
 	const attempts = 12
 	for attempt := 0; attempt < attempts; attempt++ {
 		state := profile.DecodeOverworld(m)
+		if state.InBattle {
+			return ErrBattle
+		}
 		if state.NativeMapID != edge.From {
 			return fmt.Errorf("skill: native routing: on map %#04x, edge starts on %#04x", state.NativeMapID, edge.From)
+		}
+		if _, err := waitLiveMapSettled(m, profile); err != nil {
+			return err
 		}
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, edge.From)
 		if err != nil {
@@ -354,7 +423,10 @@ func traverseNativeEdge(
 		case world.EdgeWarp:
 			path, push, err = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked)
 		case world.EdgeConnection:
-			path, push, err = nativeConnectionApproach(provider, grid, edge, int(state.X), int(state.Y), blocked)
+			// The connection approach works in the destination's block
+			// dimensions. They are read from the same settled topology as the
+			// grid so the two can never describe different maps.
+			path, push, err = nativeConnectionApproach(provider, grid, live, edge, int(state.X), int(state.Y), blocked)
 		default:
 			return fmt.Errorf("skill: native routing: unsupported edge kind %d", edge.Kind)
 		}
@@ -385,6 +457,26 @@ func traverseNativeEdge(
 // It is deliberately independent of the Gen-I Destination/Graph contracts so
 // a recognized Gen-II cartridge is never narrowed or routed through Red.
 func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
+	return GoToNativeRemembering(m, romData, dest, NewNativeRouteMemory())
+}
+
+// NativeRouteMemory is what a journey has learned about the map graph: which
+// edges its live geometry proved unreachable from which entry into a map, and
+// how the current map was entered. A caller that retries GoToNativeRemembering
+// after a battle or dialogue interruption passes the same memory so the retry
+// does not walk back into an edge already proven a dead end.
+type NativeRouteMemory struct {
+	unreachable map[world.NativeUnreachable]bool
+	entry       int
+	last        *world.NativeEdge
+}
+
+func NewNativeRouteMemory() *NativeRouteMemory {
+	return &NativeRouteMemory{unreachable: map[world.NativeUnreachable]bool{}, entry: world.NativeEntryUnknown}
+}
+
+// GoToNativeRemembering is GoToNative with caller-owned route memory.
+func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, mem *NativeRouteMemory) error {
 	profile, err := nativeRoutingProfileFor(m)
 	if err != nil {
 		return err
@@ -403,6 +495,13 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
+		// A connection or warp makes the destination map current while the
+		// cartridge is still rebuilding its blocks. Routing on those bytes
+		// would answer a geometry question about a map that does not exist
+		// yet, so wait for the shell to settle before reading it as collision.
+		if _, err := waitLiveMapSettled(m, profile); err != nil {
+			return err
+		}
 		state := profile.DecodeOverworld(m)
 		if state.InBattle {
 			return ErrBattle
@@ -410,6 +509,21 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 		if state.InDialogue {
 			return ErrDialogueInterrupted
 		}
+		// Map entry itself can run a script (SetUpScriptedMovement), which is a
+		// different interruption from the tile-level dialogue check above: the
+		// map identity is already the destination's while a text box still owns
+		// the overworld. Report it as the interruption it is so the caller can
+		// settle the script instead of routing through stale map bytes.
+		if !state.Controllable {
+			return ErrDialogueInterrupted
+		}
+		// An interruption can land after the edge was crossed, so the entry is
+		// settled from where the player actually is, not from what finished.
+		if e := mem.last; e != nil && e.To != e.From && state.NativeMapID == e.To {
+			mem.entry = e.Entry()
+		}
+		mem.last = nil
+
 		if state.NativeMapID == dest.Map {
 			if dest.MapOnly {
 				return nil
@@ -423,14 +537,25 @@ func GoToNative(m *emu.Emu, romData []byte, dest NativeDestination) error {
 		}
 		seen[key] = true
 
-		route, routeErr := world.FindNativeRoute(graph, state.NativeMapID, dest.Map)
+		route, routeErr := world.FindNativeRouteFrom(graph, state.NativeMapID, mem.entry, dest.Map, mem.unreachable)
 		if routeErr != nil {
 			return fmt.Errorf("skill: native routing: route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, routeErr)
 		}
 		if len(route) == 0 {
 			return fmt.Errorf("skill: native routing: empty cross-map route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, ErrNavigationStalled)
 		}
+		mem.last = &route[0]
 		if err := traverseNativeEdge(m, profile, provider, route[0]); err != nil {
+			// The edge exists in the map graph but this arrival's walkable
+			// component cannot reach it (a sealed seam, or stairs that only
+			// the other entry into the map connects to): remember that and
+			// re-route, which leaves the map and re-enters elsewhere.
+			if errors.Is(err, world.ErrNoPath) {
+				mem.unreachable[world.NativeUnreachable{Map: state.NativeMapID, Entry: mem.entry, Edge: route[0]}] = true
+				mem.last = nil
+				delete(seen, key)
+				continue
+			}
 			return err
 		}
 	}

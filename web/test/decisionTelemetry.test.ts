@@ -77,7 +77,7 @@ test('a run with a selected engine shows the panel before its first call', () =>
   assert.equal(showDecisionTelemetry(undefined, { ...jev, mode: 'off' }), false)
   assert.equal(showDecisionTelemetry(undefined, undefined), false)
   assert.equal(showDecisionTelemetry(stats, undefined), true)
-  assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move, recoverable failures.')
+  assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move (shadow), recoverable failures.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'shadow' }), 'No decision points enabled, so the engine is never asked.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', placements: true }), 'No calls yet. The engine is asked on every Tetris placement.')
 })
@@ -88,6 +88,17 @@ test('the live and archive views gate the panel on the run selection too', () =>
     assert.match(source, /showDecisionTelemetry\(\w+\.stats, \w+\.decision_engine\)/, view)
     assert.match(source, /:engine="\w+\.decision_engine"/, view)
   }
+})
+
+test('active battle feed distinguishes controlled turns from deterministic fallback', () => {
+  const active: DashboardStats = {
+    decision_records: [
+      { kind: 'battle_turn', choice: 'move:1', controlled: true, executed: 'use water gun' },
+      { kind: 'battle_turn', choice: 'move:1', fallback: true, executed: 'use tackle', error: 'low confidence' }
+    ]
+  }
+  assert.deepEqual(decisionFeed(active).map((row) => row.verdict), ['fallback', 'controlled'])
+  assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', battles: true }), 'No calls yet. The engine is asked on eligible battle moves (active).')
 })
 
 test('Tetris placement summaries get a readable label', () => {

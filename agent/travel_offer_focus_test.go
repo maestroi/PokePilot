@@ -17,7 +17,7 @@ func TestOfferKeepsVisitedDestinationsBeyondTheCurrentMap(t *testing.T) {
 	far := mustPlaceForTravelFocusTest(t, "route 3")
 
 	known := NewKnowledge(nil)
-	known.SawLocation(redLocationID(redprofile.GameID, far.Map))
+	known.SawLocation(redLocationID(redprofile.GameID, uint16(far.Map)))
 	obs := Observation{GameID: testGameID,
 		Map: here.Map,
 		X:   here.X,

@@ -11,6 +11,7 @@ import type {
   ModelRegistrySnapshot,
   MediaRenderJob,
   MediaRenderJobList,
+  HighlightStatus,
   ProgrammingEntry,
   ProgrammingSnapshot,
   ReplayStatus,
@@ -319,3 +320,24 @@ export function artifactContentURL(runID: string, name: string): string {
 export function replayVideoURL(runID: string): string {
   return `/v1/runs/${encodeURIComponent(runID)}/replay/video`
 }
+
+export function getHighlightStatus(runID: string, signal?: AbortSignal): Promise<HighlightStatus> {
+  return requestJSON<HighlightStatus>(`/v1/runs/${encodeURIComponent(runID)}/highlights/status`, { signal })
+}
+
+export function renderHighlights(runID: string, signal?: AbortSignal): Promise<HighlightStatus> {
+  return requestJSON<HighlightStatus>(`/v1/runs/${encodeURIComponent(runID)}/highlights/render`, {
+    method: 'POST',
+    body: '{}',
+    signal
+  })
+}
+
+export function highlightVideoURL(runID: string): string {
+  return `/v1/runs/${encodeURIComponent(runID)}/highlights/video`
+}
+
+export function highlightManifestURL(runID: string): string {
+  return `/v1/runs/${encodeURIComponent(runID)}/highlights/manifest`
+}
+

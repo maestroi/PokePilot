@@ -153,3 +153,24 @@ func TestDecodeGoldBattleRuntime(t *testing.T) {
 		t.Fatal("battle runtime omitted rendered debug text")
 	}
 }
+
+// The Route 29 Dude's catching demo draws a live-looking command menu that
+// the ROM steers itself; it must never be reported as a player decision
+// (run-1lf849uc4815y2tkvu2odh07vc).
+func TestDecodeGoldBattleMainMenuIgnoresTutorialBattle(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 1
+	mem[sym.TwoDMenuNumRows] = 2
+	mem[sym.TwoDMenuNumCols] = 2
+	mem[sym.MenuJoypadFilter] = gen2PadA
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "FIGHT PKMN PACK RUN")
+	if !NewGold().DecodeBattleMainMenu(&mem).Visible {
+		t.Fatal("ordinary battle menu should be visible")
+	}
+	mem[sym.BattleType] = gen2BattleTypeTutorial
+	if got := NewGold().DecodeBattleMainMenu(&mem); got.Visible {
+		t.Fatalf("tutorial battle menu reported visible: %+v", got)
+	}
+}

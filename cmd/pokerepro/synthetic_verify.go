@@ -62,10 +62,10 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		_ = writePortableReproVerdict(resultPath, mat.Dir, verdict)
 		return verdict, fmt.Errorf("build map graph: %w", err)
 	}
-	adjacency := make(map[uint8][]uint8, len(graph.Edges))
+	adjacency := make(map[uint16][]uint16, len(graph.Edges))
 	for from, edges := range graph.Edges {
 		for _, edge := range edges {
-			adjacency[from] = append(adjacency[from], edge.To)
+			adjacency[uint16(from)] = append(adjacency[uint16(from)], uint16(edge.To))
 		}
 	}
 	obs, err := readReproObservation("checkpoint", func() (agent.Observation, error) {

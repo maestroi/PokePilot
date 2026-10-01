@@ -73,6 +73,9 @@ type statsPlanner struct {
 	// portable state + executed reference only; it is not the sampled training
 	// dataset tracked separately by #1826.
 	battleShadowSamples []agent.BattleShadowSample
+
+	battleShadowDecisionIndex int
+	battleShadowPending       *battleShadowPending
 }
 
 // newStatsPlannerWithRunPolicy builds the planner for one run from the policy
@@ -243,8 +246,17 @@ func (s *statsPlanner) typedObjective(obs agent.Observation, offered []agent.Obj
 // shadowOutcome is what the existing policy did instead of a shadow answer.
 // agreed is nil when the shadow answer was unusable.
 type shadowOutcome struct {
-	executed string
-	agreed   *bool
+	executed         string
+	agreed           *bool
+	decisionIndex    int
+	stateFingerprint string
+	shadow           bool
+	controlled       bool
+}
+
+type battleShadowPending struct {
+	decisionIndex int
+	sampleIndex   int
 }
 
 // shadowObjective asks the typed backend, then lets the existing planner
@@ -253,7 +265,7 @@ type shadowOutcome struct {
 func (s *statsPlanner) shadowObjective(obs agent.Observation, offered []agent.Objective) (agent.Objective, error) {
 	req, resp, shadow, shadowErr := s.consultObjective(obs, offered)
 	objective, err := s.router.Next(obs, offered)
-	outcome := &shadowOutcome{}
+	outcome := &shadowOutcome{shadow: true}
 	if err == nil {
 		outcome.executed = objective.String()
 		if shadowErr == nil {
@@ -303,7 +315,7 @@ func (s *statsPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Decisi
 	if s.decision.Shadow {
 		// Deterministic policy already chose to continue through recovery;
 		// the backend agrees unless it asked to stop the run.
-		outcome := &shadowOutcome{executed: "continue"}
+		outcome := &shadowOutcome{executed: "continue", shadow: true}
 		if err == nil {
 			if stop, mapErr := agent.FailureDecisionStops(resp.Choice); mapErr == nil {
 				same := !stop
@@ -332,13 +344,30 @@ const (
 // matches the move the deterministic policy is pressing. The answer never
 // reaches execution.
 func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
-	if s.decision.Engine == nil || !s.decision.Battles || !s.decision.Shadow || s.battleShadowSuspended {
+	if !s.decision.Shadow {
+		// In active mode the observer runs immediately after DecideBattleMove
+		// for the same turn. Outcome advancement belongs to the next active
+		// decision (or terminal result), not this same-turn observation.
+		return
+	}
+	// Reaching the next actionable turn is the observable outcome of the
+	// previously recorded shadow decision. Do this before checking suspension
+	// so the last recorded call still gets outcome evidence when a dead
+	// backend is disabled for the rest of the battle.
+	s.finishBattleShadowOutcome(nextBattleTurnOutcome(turn))
+	if s.decision.Engine == nil || !s.decision.Battles || s.battleShadowSuspended {
 		return
 	}
 	req, err := agent.BattleDecisionRequest(turn)
 	if err != nil {
 		return
 	}
+	stateFingerprint, err := agent.BattleDecisionFingerprint(turn)
+	if err != nil {
+		return
+	}
+	s.battleShadowDecisionIndex++
+	decisionIndex := s.battleShadowDecisionIndex
 	ctx, cancel := context.WithTimeout(context.Background(), battleShadowTimeout)
 	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
 	cancel()
@@ -346,7 +375,12 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
 		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
 	}
-	outcome := &shadowOutcome{executed: decisionChoiceLabel(req, executed.ID())}
+	outcome := &shadowOutcome{
+		executed:         decisionChoiceLabel(req, executed.ID()),
+		decisionIndex:    decisionIndex,
+		stateFingerprint: stateFingerprint,
+		shadow:           true,
+	}
 	if outcome.executed == "" {
 		outcome.executed = executed.ID()
 	}
@@ -363,9 +397,12 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 	} else {
 		s.battleShadowFailures = 0
 	}
+	sampleIndex := -1
 	if len(s.battleShadowSamples) < maxBattleShadowSamples {
 		sample := agent.BattleShadowSample{
 			Version:                 agent.BattleShadowSampleVersion,
+			DecisionIndex:           decisionIndex,
+			StateFingerprint:        stateFingerprint,
 			State:                   turn,
 			Executed:                executed.ID(),
 			ObservedChoice:          resp.Choice,
@@ -377,8 +414,123 @@ func (s *statsPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed
 			sample.ObservedError = err.Error()
 		}
 		s.battleShadowSamples = append(s.battleShadowSamples, sample)
+		sampleIndex = len(s.battleShadowSamples) - 1
 	}
 	s.recordDecision(req, resp, err, outcome)
+	s.battleShadowPending = &battleShadowPending{decisionIndex: decisionIndex, sampleIndex: sampleIndex}
+}
+
+// DecideBattleMove implements agent.BattleMoveController for active battle
+// mode. Only move actions are eligible in this first active slice. The
+// deterministic action is always the fallback and remains the executor-owned
+// choice on any transport, validation, confidence, or policy-gate failure.
+func (s *statsPlanner) DecideBattleMove(turn game.BattleDecisionState, deterministic game.BattleAction) game.BattleAction {
+	s.finishBattleShadowOutcome(nextBattleTurnOutcome(turn))
+	if s.decision.Engine == nil || !s.decision.Battles || s.decision.Shadow || s.battleShadowSuspended {
+		return deterministic
+	}
+	req, err := agent.BattleDecisionRequest(turn)
+	if err != nil {
+		return deterministic
+	}
+	stateFingerprint, err := agent.BattleDecisionFingerprint(turn)
+	if err != nil {
+		return deterministic
+	}
+	s.battleShadowDecisionIndex++
+	decisionIndex := s.battleShadowDecisionIndex
+
+	ctx, cancel := context.WithTimeout(context.Background(), battleShadowTimeout)
+	resp, err := agent.DecideChecked(ctx, s.decision.Engine, req)
+	cancel()
+	transportErr := err
+	var chosen game.BattleAction
+	if err == nil && s.decision.MinConfidence > 0 && resp.Confidence < s.decision.MinConfidence {
+		err = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.decision.MinConfidence)
+	}
+	if err == nil {
+		chosen, err = agent.ResolveBattleDecision(turn, resp)
+		if err == nil && chosen.Kind != game.BattleActionMove {
+			err = fmt.Errorf("%w: active battle policy currently permits move actions only, got %q", agent.ErrInvalidDecision, chosen.ID())
+		}
+	}
+	if transportErr != nil {
+		s.battleShadowFailures++
+		s.battleShadowSuspended = s.battleShadowFailures >= battleShadowMaxFailures
+	} else {
+		s.battleShadowFailures = 0
+	}
+
+	executed := deterministic
+	controlled := false
+	if err == nil {
+		executed = chosen
+		controlled = true
+	}
+	outcome := &shadowOutcome{
+		executed:         decisionChoiceLabel(req, executed.ID()),
+		decisionIndex:    decisionIndex,
+		stateFingerprint: stateFingerprint,
+		controlled:       controlled,
+	}
+	if outcome.executed == "" {
+		outcome.executed = executed.ID()
+	}
+	s.recordDecision(req, resp, err, outcome)
+	s.battleShadowPending = &battleShadowPending{decisionIndex: decisionIndex, sampleIndex: -1}
+	return executed
+}
+
+// ObserveBattleResult completes the final recorded turn when the battle exits.
+// It is observational only and is called before post-battle settling can clear
+// the cartridge's result byte.
+func (s *statsPlanner) ObserveBattleResult(result game.BattleResult) {
+	s.finishBattleShadowOutcome(terminalBattleOutcome(result))
+}
+
+func nextBattleTurnOutcome(turn game.BattleDecisionState) *game.BattleDecisionOutcome {
+	return &game.BattleDecisionOutcome{
+		Kind:            "next_turn",
+		ActiveSpecies:   turn.Active.Species,
+		ActiveHP:        turn.Active.HP,
+		ActiveMaxHP:     turn.Active.MaxHP,
+		OpponentSpecies: turn.Opponent.Species,
+		OpponentHP:      turn.Opponent.HP,
+		OpponentMaxHP:   turn.Opponent.MaxHP,
+	}
+}
+
+func terminalBattleOutcome(result game.BattleResult) *game.BattleDecisionOutcome {
+	name := "draw"
+	switch result {
+	case game.BattleWon:
+		name = "won"
+	case game.BattleLost:
+		name = "lost"
+	}
+	return &game.BattleDecisionOutcome{Kind: "battle_result", Result: name}
+}
+
+func (s *statsPlanner) finishBattleShadowOutcome(outcome *game.BattleDecisionOutcome) {
+	pending := s.battleShadowPending
+	if pending == nil || outcome == nil {
+		return
+	}
+	if pending.sampleIndex >= 0 && pending.sampleIndex < len(s.battleShadowSamples) {
+		copyOutcome := *outcome
+		s.battleShadowSamples[pending.sampleIndex].Outcome = &copyOutcome
+	}
+	for i := len(s.stats.DecisionRecords) - 1; i >= 0; i-- {
+		rec := &s.stats.DecisionRecords[i]
+		if rec.Kind != agent.DecisionKindBattleTurn || rec.DecisionIndex != pending.decisionIndex {
+			continue
+		}
+		copyOutcome := *outcome
+		rec.BattleOutcome = &copyOutcome
+		break
+	}
+	s.battleShadowPending = nil
+	s.publish()
 }
 
 func (s *statsPlanner) recordTypedObjectiveChoice(obs agent.Observation, objective agent.Objective) {
@@ -477,7 +629,10 @@ func (s *statsPlanner) recordDecision(req agent.DecisionRequest, resp agent.Deci
 		record.Error = err.Error()
 	}
 	if shadow != nil {
-		record.Shadow, record.Executed, record.Agreed = true, shadow.executed, shadow.agreed
+		record.Shadow, record.Controlled = shadow.shadow, shadow.controlled
+		record.Executed, record.Agreed = shadow.executed, shadow.agreed
+		record.DecisionIndex = shadow.decisionIndex
+		record.StateFingerprint = shadow.stateFingerprint
 		if shadow.agreed != nil {
 			if *shadow.agreed {
 				s.stats.DecisionAgreements++
