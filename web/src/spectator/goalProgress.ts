@@ -1,4 +1,5 @@
 import type { SpectatorRun } from '../shared/api/spectator'
+import { pokemonRouteLine } from './routeLine'
 
 export interface GoalProgressMeta {
   percent: number
@@ -43,7 +44,9 @@ export function isGoalComplete(run: SpectatorRun): boolean {
 
 export function goalProgressMeta(run: SpectatorRun): GoalProgressMeta {
   const stats = run.stats
-  const badges = run.player?.badges?.length || 0
+  const route = pokemonRouteLine(run)
+  const badges = route.earnedCount
+  const badgeTarget = route.stops.length
 
   if (isGoalComplete(run)) {
     return {
@@ -58,13 +61,13 @@ export function goalProgressMeta(run: SpectatorRun): GoalProgressMeta {
   // of the meter for Victory Road, the Elite Four, the Champion, and Hall of
   // Fame so 8/8 never visually reads as a finished run.
   if (isLeagueCompletionGoal(run)) {
-    const badgePercent = Math.min(88, (Math.min(8, badges) / 8) * 88)
+    const badgePercent = Math.min(88, (Math.min(badgeTarget, badges) / badgeTarget) * 88)
     return {
       percent: badgePercent,
-      label: `${badges}/8 badges earned`,
-      detail: badges >= 8
+      label: `${badges}/${badgeTarget} ${route.region} badges earned`,
+      detail: badges >= badgeTarget
         ? 'Next: Elite Four, Champion & Hall of Fame'
-        : 'Full-game goal in progress',
+        : `Next: ${route.nextGoal}`,
       complete: false
     }
   }
