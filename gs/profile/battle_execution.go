@@ -15,7 +15,10 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 	}
 
 	inBattle := reader.Peek8(sym.BattleMode) != 0
-	out := game.BattleExecutionState{InBattle: inBattle}
+	out := game.BattleExecutionState{
+		InBattle:    inBattle,
+		OfferedMove: uint16(reader.Peek8(sym.PutativeTMHMMove)),
+	}
 	count := int(reader.Peek8(sym.PartyCount))
 	if count > 6 {
 		count = 6
@@ -27,6 +30,26 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 			out.PartyMoves[i][slot] = uint16(reader.Peek8(base + uint16(slot)))
 		}
 	}
+
+	// Experience / LearnMove address a party slot via wCurPartyMon, which is
+	// not always the active battler. Project that learner so shared Battle
+	// execution can answer try-learn / forget prompts without Red WRAM.
+	learnerSlot := int(reader.Peek8(sym.CurPartyMon))
+	if learnerSlot >= 0 && learnerSlot < count {
+		out.Learner = game.BattleMoveLearnerState{
+			Valid:     true,
+			PartySlot: learnerSlot,
+			Moves:     out.PartyMoves[learnerSlot],
+		}
+		// Party structs omit types. Prefer the live battle struct when the
+		// learner is the active mon; otherwise leave types unknown rather
+		// than inventing BaseData reconstruction in the execution decoder.
+		if inBattle && learnerSlot == int(reader.Peek8(sym.CurBattleMon)) {
+			out.Learner.Type1 = uint16(reader.Peek8(sym.BattleMonType1))
+			out.Learner.Type2 = uint16(reader.Peek8(sym.BattleMonType2))
+		}
+	}
+
 	if !inBattle {
 		return out
 	}

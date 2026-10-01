@@ -136,6 +136,49 @@ func TestDecodeGoldBattleTwoOption(t *testing.T) {
 	}
 }
 
+func TestDecodeGoldBattleMoveLearnerProjection(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 1
+	mem[sym.PartyCount] = 2
+	mem[sym.CurPartyMon] = 1
+	mem[sym.CurBattleMon] = 1
+	mem[sym.PutativeTMHMMove] = 79 // PoisonPowder
+	mem[sym.BattleMonType1] = 0x16
+	mem[sym.BattleMonType2] = 0x16
+
+	base := sym.PartyMon1 + sym.PartyMonSize
+	mem[base+gen2PartyMovesOffset+0] = 33
+	mem[base+gen2PartyMovesOffset+1] = 45
+	mem[base+gen2PartyMovesOffset+2] = 75
+	mem[base+gen2PartyMovesOffset+3] = 115
+
+	putGSText(&mem, "CHIKORITA is trying to learn POISONPOWDER!")
+	exec := NewGold().DecodeBattleExecution(&mem)
+	if exec.Phase != game.BattleExecutionTryLearnPrompt {
+		t.Fatalf("phase=%q want try_learn_prompt; text=%q", exec.Phase, gsScreenText(&mem))
+	}
+	if exec.OfferedMove != 79 {
+		t.Fatalf("OfferedMove=%d want 79", exec.OfferedMove)
+	}
+	if !exec.Learner.Valid || exec.Learner.PartySlot != 1 {
+		t.Fatalf("learner=%+v want valid slot 1", exec.Learner)
+	}
+	if exec.Learner.Moves != [4]uint16{33, 45, 75, 115} {
+		t.Fatalf("learner moves=%v", exec.Learner.Moves)
+	}
+	if exec.Learner.Type1 != 0x16 || exec.Learner.Type2 != 0x16 {
+		t.Fatalf("learner types=(%#02x,%#02x) want battle-mon grass", exec.Learner.Type1, exec.Learner.Type2)
+	}
+
+	// A non-active learner still projects moves/offered move, but types stay
+	// unknown because party structs do not carry them.
+	mem[sym.CurBattleMon] = 0
+	exec = NewGold().DecodeBattleExecution(&mem)
+	if !exec.Learner.Valid || exec.Learner.PartySlot != 1 || exec.Learner.Type1 != 0 || exec.Learner.Type2 != 0 {
+		t.Fatalf("non-active learner=%+v", exec.Learner)
+	}
+}
+
 func TestDecodeGoldBattleRuntime(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.BattleMode] = 1

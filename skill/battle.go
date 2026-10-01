@@ -481,8 +481,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				return menuError(m, "confirm decline of natural move", err)
 			}
 
-		case execution.Phase == game.BattleExecutionUseNextPrompt ||
-			execution.Phase == game.BattleExecutionTryLearnPrompt ||
+		case execution.Phase == game.BattleExecutionTryLearnPrompt ||
 			pendingTryLearn && func() bool {
 				_, ready := menuDecoder.DecodeTwoOption(m)
 				return ready
@@ -517,7 +516,21 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					pendingTryLearn = false
 				}
 			}
-			if err := selectTwoOption(m, choice); err != nil {
+			// Gen II (and Gen I TM/HM teach paths) chain YesNoBox prompts:
+			// try-learn YES opens "make room?", try-learn NO opens "stop
+			// learning?". Requiring the two-option surface to vanish would
+			// treat that successor prompt as a stuck answer. SelectMenuItem
+			// commits the choice and lets the next loop own the successor.
+			if err := SelectMenuItem(m, choice); err != nil {
+				return menuError(m, "answer try-learn prompt", err)
+			}
+
+		case execution.Phase == game.BattleExecutionUseNextPrompt:
+			if _, ready := menuDecoder.DecodeTwoOption(m); !ready {
+				m.Tap(emu.A, 3, 7)
+				continue
+			}
+			if err := selectTwoOption(m, 0); err != nil {
 				return menuError(m, "answer two-option prompt", err)
 			}
 
