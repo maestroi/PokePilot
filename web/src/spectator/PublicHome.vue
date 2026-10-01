@@ -61,7 +61,10 @@ const goal = computed(() => {
   const current = match[1] === 'score' ? tetrisScore.value : tetrisLines.value
   return Math.max(0, Math.min(100, 100 * current / target))
 })
-const mapProgress = computed(() => `${Number(props.run.maps_visited || 0)}/${MAP_CATALOG.length}`)
+const mapProgress = computed(() => {
+  const visited = Number(props.run.maps_visited || 0)
+  return canExploreWorld.value ? `${visited}/${MAP_CATALOG.length}` : String(visited)
+})
 const plannerState = computed(() => {
   if (props.run.decision) return null
   if (props.run.planner_waiting) {
