@@ -3,6 +3,8 @@ package agent
 import (
 	"errors"
 	"testing"
+
+	gameruntime "github.com/maestroi/pokepilot/game"
 )
 
 func TestDecisionObjectivePlannerCanOnlyReturnOfferedObjective(t *testing.T) {
@@ -39,6 +41,34 @@ func TestDecisionObjectivePlannerRejectsLowConfidence(t *testing.T) {
 	}
 	if _, err := planner.Next(Observation{}, offered); !errors.Is(err, ErrDecisionLowConfidence) {
 		t.Fatalf("error = %v, want ErrDecisionLowConfidence", err)
+	}
+}
+
+func TestFailureDecisionStopAllowedKeepsCombatDefeatRecoverable(t *testing.T) {
+	combat := ObjectiveResult{
+		Objective: Objective{Kind: KindGym, Place: PlaceID("cerulean gym")},
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       failureCauseCombatDefeat,
+			Recoverable: true,
+		},
+	}
+	if FailureDecisionStopAllowed(combat) {
+		t.Fatal("combat defeat allowed typed decision to bypass deterministic recovery")
+	}
+
+	navigation := ObjectiveResult{
+		Objective: Objective{Kind: KindGoTo, Place: PlaceID("pewter city")},
+		Outcome:   OutcomeBlocked,
+		Failure: &gameruntime.Failure{
+			Class:       gameruntime.FailureClassBlocked,
+			Cause:       "no_path",
+			Recoverable: true,
+		},
+	}
+	if !FailureDecisionStopAllowed(navigation) {
+		t.Fatal("non-combat recoverable failure unexpectedly forbids conservative typed stop")
 	}
 }
 
