@@ -451,6 +451,35 @@ func trainingUnviableHere(obs Observation) bool {
 	return obs.Training != nil && obs.Training.Viability == TrainingOutsideBudget
 }
 
+func trainingYieldsXP(obs Observation) bool {
+	return obs.Training != nil && obs.Training.XPPerEncounter > 0
+}
+
+// combatPreparationNeedsCoverage reports that a recorded combat loss still
+// lacks adapter-preferred damaging types. Fail-opening that fight because
+// local grass is a slow grind just retries an unwinnable matchup.
+func combatPreparationNeedsCoverage(obs Observation, known *Knowledge) bool {
+	if known == nil {
+		return false
+	}
+	for storage := range known.Failures {
+		key, mode, ok := parseFailureStorageKey(storage)
+		if !ok {
+			continue
+		}
+		switch mode {
+		case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
+		default:
+			continue
+		}
+		obj := key.Objective()
+		if EvaluateChallengeReadiness(obs, known, obj, challengeProfileFor(obs, obj)).Action == ChallengeChangeParty {
+			return true
+		}
+	}
+	return false
+}
+
 // combatPreparationTrainingExhausted reports that the current area cannot
 // train and no assessed habitat can advance readiness. When local training is
 // outside budget and there are no assessed training areas at all, the agent

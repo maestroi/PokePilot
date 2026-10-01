@@ -125,12 +125,13 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 		known = NewKnowledge(nil)
 	}
 	switch {
-	case combatPreparationTrainingExhausted(obs):
+	case combatPreparationTrainingExhausted(obs) && !combatPreparationNeedsCoverage(obs, known):
 		// No local training and no learned habitat can advance readiness: the
 		// target is unreachable, so a locked fight would strand the planner
 		// wandering between towns. Retrying is the only remaining progress.
+		// A coverage gap is not solved by replaying the same fight.
 		known.promoteCombatLossesToRetry()
-	case trainingUnviableHere(obs):
+	case trainingUnviableHere(obs) && !combatPreparationNeedsCoverage(obs, known):
 		// Old checkpoints did not persist a readiness target and historically
 		// escaped a dead-end weak grass patch by scheduling a retry. New combat
 		// losses carry a target and stay locked so the planner seeks a stronger
@@ -318,10 +319,10 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 	if obs.HasGrass && len(obs.Party) > 0 {
 		lead := obs.Party[0]
 		switch {
-		case trainingUnviableHere(obs):
-			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "outside_training_budget", nil, "", "better_training_area"))
 		case skill.BelowRetreatLine(lead.HP, lead.MaxHP):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "party_needs_recovery", nil, "", "healing"))
+		case trainingUnviableHere(obs) && !(trainingYieldsXP(obs) && ctx.known.hasCombatLossEvidence()):
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "outside_training_budget", nil, "", "better_training_area"))
 		default:
 			if target := int(lead.Level) + trainStep; target <= 100 {
 				out = append(out, Objective{Kind: KindTrain, Level: uint8(target), Note: trainingChoiceNote(lead, obs.WildGrass, obs.Training)})

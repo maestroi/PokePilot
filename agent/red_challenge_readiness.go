@@ -1,6 +1,9 @@
 package agent
 
-import "github.com/maestroi/pokepilot/red/state"
+import (
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/skill"
+)
 
 // Red/Blue boss level ceilings below come from the vendored Gen I trainer
 // tables (pokered/data/trainers/parties.asm). Generic readiness never knows
@@ -13,6 +16,11 @@ func redReadinessFloor(maxEnemyLevel int) int {
 	return maxEnemyLevel * 4
 }
 
+// boulderPreferredMoveTypes are damaging types that are not immune or merely
+// resisted against Rock/Ground. Electric is Ground-immune; Normal is Rock-
+// resisted. Fire is NVE vs Rock but is how Charmander actually beats Brock.
+var boulderPreferredMoveTypes = []string{"water", "grass", "fighting", "ground", "ice", "fire", "psychic", "bug"}
+
 func redGymReadinessProfile(badge state.Badge) ChallengeReadinessProfile {
 	maxLevel := map[state.Badge]int{
 		state.BadgeBoulder: 14,
@@ -24,7 +32,23 @@ func redGymReadinessProfile(badge state.Badge) ChallengeReadinessProfile {
 		state.BadgeVolcano: 47,
 		state.BadgeEarth:   50,
 	}[badge]
-	return ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(maxLevel)}
+	profile := ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(maxLevel)}
+	if badge == state.BadgeBoulder {
+		profile.PreferredMoveTypes = append([]string(nil), boulderPreferredMoveTypes...)
+	}
+	return profile
+}
+
+func redGymChallengeProfiles() []CatalogChallengeProfile {
+	gyms := skill.Gyms()
+	out := make([]CatalogChallengeProfile, 0, len(gyms))
+	for _, gym := range gyms {
+		out = append(out, CatalogChallengeProfile{
+			Objective: (Objective{Kind: KindGym, Place: PlaceID(gym.Place)}).Key(),
+			Readiness: redGymReadinessProfile(gym.Badge),
+		})
+	}
+	return out
 }
 
 func redProgressionChallengeProfiles() []CatalogChallengeProfile {
@@ -59,9 +83,13 @@ func redProgressionChallengeProfiles() []CatalogChallengeProfile {
 	}
 	out := make([]CatalogChallengeProfile, 0, len(specs))
 	for _, spec := range specs {
+		readiness := ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(spec.maxLevel)}
+		if spec.objective.Progress == redProgressBoulderBadge {
+			readiness.PreferredMoveTypes = append([]string(nil), boulderPreferredMoveTypes...)
+		}
 		out = append(out, CatalogChallengeProfile{
 			Objective: spec.objective.Key(),
-			Readiness: ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(spec.maxLevel)},
+			Readiness: readiness,
 		})
 	}
 	return out
