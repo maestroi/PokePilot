@@ -16,8 +16,9 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 
 	inBattle := reader.Peek8(sym.BattleMode) != 0
 	out := game.BattleExecutionState{
-		InBattle:    inBattle,
-		OfferedMove: uint16(reader.Peek8(sym.PutativeTMHMMove)),
+		InBattle:             inBattle,
+		OfferedMove:          uint16(reader.Peek8(sym.PutativeTMHMMove)),
+		MoveSelectionSkipped: inBattle && !gsPlayerHasUsableMoves(reader),
 	}
 	count := int(reader.Peek8(sym.PartyCount))
 	if count > 6 {
@@ -113,4 +114,24 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		out.Phase = game.BattleExecutionMainMenu
 	}
 	return out
+}
+
+// gsPlayerHasUsableMoves mirrors MoveSelectionScreen.CheckPlayerHasUsableMoves
+// in pret/pokegold engine/battle/core.asm: when every current-PP nibble is
+// zero, FIGHT selects STRUGGLE and never draws the move menu. Shared Battle
+// must treat that as MoveSelectionSkipped or it waits for a menu that will
+// not open (run-1p7ixxdreiam630odlwlg1xf35, triage:20d487bea54de661).
+//
+// Disable's scratch byte is not projected yet (see DecodeBattleState). The
+// no-disable path matches the ROM: OR the four PP bytes, then mask. PP Up
+// bits must not count as remaining PP.
+func gsPlayerHasUsableMoves(reader game.MemoryReader) bool {
+	if reader == nil {
+		return false
+	}
+	var pp byte
+	for slot := 0; slot < 4; slot++ {
+		pp |= reader.Peek8(sym.BattleMonPP + uint16(slot))
+	}
+	return pp&gen2PPMask != 0
 }

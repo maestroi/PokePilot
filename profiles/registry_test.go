@@ -103,6 +103,20 @@ func TestGenOneProfilesExposeSharedBattleMenuSemantics(t *testing.T) {
 	}
 }
 
+func TestGenTwoProfilesExposeSharedCenterSemantics(t *testing.T) {
+	for _, p := range []game.GameProfile{
+		gsprofile.NewGold(),
+		gsprofile.NewSilver(),
+	} {
+		if _, ok := p.(game.CenterDecoder); !ok {
+			t.Errorf("%s: does not expose Pokemon Center semantics", p.ID())
+		}
+		if _, ok := p.(game.BattleCombatStrategy); !ok {
+			t.Errorf("%s: does not expose generation combat mechanics", p.ID())
+		}
+	}
+}
+
 func TestGenOneProfilesExposeSharedCenterSemantics(t *testing.T) {
 	for _, p := range []game.GameProfile{
 		redprofile.New(),

@@ -104,7 +104,7 @@ func driveGSFirstBadgeInterruption(
 			if !ok {
 				return fmt.Errorf("%w: battle mode has no semantic state on map %#04x", errGSFirstBadgeUnexpectedState, world.NativeMapID)
 			}
-			result, err := skill.Battle(m, skill.FirstUsableMove)
+			result, err := skill.Battle(m, skill.StatAwareMove(m.ROM()))
 			if err != nil {
 				return fmt.Errorf("gen2 first badge: battle %q: %w", encounter, err)
 			}
