@@ -337,3 +337,46 @@ func TestDecodeGoldMachineTeachingPartyMenu(t *testing.T) {
 		t.Fatalf("TM/HM teaching cursor=%+v, want {1 1}", menu.Cursor)
 	}
 }
+
+
+func TestDecodeGoldTMHMMoveLearningOutsideBattle(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 1
+	mem[sym.CurPartyMon] = 0
+	mem[sym.PutativeTMHMMove] = 0x0f // Cut
+	base := sym.PartyMon1
+	mem[base+gen2PartyMovesOffset+0] = 0x21
+	mem[base+gen2PartyMovesOffset+1] = 0x2d
+	mem[base+gen2PartyMovesOffset+2] = 0x49
+	mem[base+gen2PartyMovesOffset+3] = 0x4b
+
+	mem[sym.TwoDMenuNumRows] = 2
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "BAYLEEF is trying to learn CUT! YES NO")
+
+	exec := NewGold().DecodeBattleExecution(&mem)
+	if exec.InBattle || exec.Phase != game.BattleExecutionTryLearnPrompt {
+		t.Fatalf("out-of-battle try-learn=%+v", exec)
+	}
+	if exec.OfferedMove != 0x0f || !exec.Learner.Valid || exec.Learner.PartySlot != 0 {
+		t.Fatalf("TM/HM learner projection=%+v", exec)
+	}
+
+	mem[sym.TwoDMenuNumRows] = 4
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 3
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "Which move should be forgotten?")
+
+	exec = NewGold().DecodeBattleExecution(&mem)
+	if exec.Phase != game.BattleExecutionForgetMove || !exec.ForgetReady {
+		t.Fatalf("out-of-battle forget phase=%+v", exec)
+	}
+	if exec.ForgetCursor.Current != 2 || exec.ForgetCursor.Max != 3 {
+		t.Fatalf("out-of-battle forget cursor=%+v, want {2 3}", exec.ForgetCursor)
+	}
+}
