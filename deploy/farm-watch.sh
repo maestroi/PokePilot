@@ -6,7 +6,9 @@
 #
 # Required in ~/.config/pokepilot/env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID,
 # POKEPILOT_WALL_URL (http://<swarm-node>:18080). Optional:
-# POKEPILOT_SWARM_MANAGER (ssh target) enables the rollback check.
+# POKEPILOT_SWARM_MANAGER (ssh target) enables the rollback and manager-disk
+# checks. Optional: POKEPILOT_WATCH_MIN_FREE_GB (default 20) is the free space
+# below which a filesystem pages.
 set -uo pipefail
 
 ENV_FILE=${POKEPILOT_ENV:-$HOME/.config/pokepilot/env}
@@ -85,6 +87,66 @@ print(len(live), sum(int(r.get("frame") or 0) for r in live))
 	fi
 else
 	report wall 2 "wall $POKEPILOT_WALL_URL unreachable"
+fi
+
+# --- disk: a full filesystem stops the farm, and silently ------------------
+# The Swarm manager's root filesystem carries the control plane and
+# pokefarm_postgres. On 2026-10-01 it reached 99M free while holding 296
+# untagged image layers, and nothing noticed, because no check measured free
+# space; the farm would have died with no page. Absolute free space is the
+# metric that generalizes: a percentage threshold means nothing across a 49G VM
+# and a 1.8T workstation.
+MIN_FREE_GB=${POKEPILOT_WATCH_MIN_FREE_GB:-20}
+
+# free_gb prints whole gigabytes available on a mount, or nothing if df failed.
+free_gb() {
+	df -Pk "$1" 2>/dev/null | awk 'NR == 2 {printf "%d", $4 / 1048576}'
+}
+
+if [ -n "${POKEPILOT_SWARM_MANAGER:-}" ]; then
+	# ssh can drop a connection mid-deploy, so this one keeps a grace tick.
+	manager_free=$(timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$POKEPILOT_SWARM_MANAGER" 'df -Pk /' 2>/dev/null |
+		awk 'NR == 2 {printf "%d", $4 / 1048576}')
+	if [ -n "$manager_free" ] && [ "$manager_free" -lt "$MIN_FREE_GB" ]; then
+		report disk-manager 2 "swarm manager ${POKEPILOT_SWARM_MANAGER#*@} has ${manager_free}G free (under ${MIN_FREE_GB}G); it holds the control plane and pokefarm_postgres"
+	else
+		report disk-manager 2 ""
+	fi
+fi
+
+# A local df cannot flake, so no grace: a full disk here breaks the fixer.
+local_free=$(free_gb /)
+if [ -n "$local_free" ] && [ "$local_free" -lt "$MIN_FREE_GB" ]; then
+	report disk-local 1 "$(hostname) has ${local_free}G free (under ${MIN_FREE_GB}G); the fixer builds and runs here"
+else
+	report disk-local 1 ""
+fi
+
+# --- llm: the planner endpoint is a single point of failure ----------------
+# Every campaign's planner talks to one endpoint, and nothing fails over when it
+# goes away: runs simply stall until it returns. The dashboard already reports
+# the endpoint each live run is actually using, so probe those exact addresses
+# rather than hardcoding a host that a config change would silently invalidate.
+if [ -f "$dash" ]; then
+	endpoints=$(python3 -c '
+import json, sys
+try:
+    runs = json.load(open(sys.argv[1]))["runs"]
+except Exception:
+    runs = []
+seen = []
+for r in runs:
+    ep = ((r.get("stats") or {}).get("endpoint") or "").rstrip("/")
+    if ep.startswith("http") and ep not in seen:
+        seen.append(ep)
+print("\n".join(seen))
+' "$dash" 2>/dev/null)
+	dead=""
+	while read -r ep; do
+		[ -n "$ep" ] || continue
+		curl -fsS -m 15 -o /dev/null "$ep/health" >/dev/null 2>&1 || dead="${dead:+$dead, }$ep"
+	done <<<"$endpoints"
+	report llm-endpoint 2 "${dead:+planner endpoint unreachable: $dead (runs stall until it returns)}"
 fi
 
 # --- fixer: timer enabled and its last tick did not crash -----------------
