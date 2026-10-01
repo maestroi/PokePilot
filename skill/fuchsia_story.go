@@ -79,31 +79,41 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	state.Snapshot(m, &mem)
 	if !state.DecodeProgress(&mem).Has(state.BadgeSoul) {
 		// Establish Fuchsia as the recovery checkpoint before Koga. This also
-		// gives the trainer-heavy eastern route a clean heal.
+		// gives the trainer-heavy eastern route a clean heal. A single Koga
+		// loss (often a missed Slam after Special drops on Venomoth) blackouts
+		// back to this Center; retry once from a fresh party before surfacing
+		// the typed trainer-blackout so the Lavender/Fuchsia slice is not
+		// terminal on one accuracy roll.
 		center, ok := Place("fuchsia pokemon center")
 		if !ok {
 			return fmt.Errorf("skill: FuchsiaProgression: fuchsia pokemon center place missing")
 		}
-		if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
-			return fmt.Errorf("skill: FuchsiaProgression: reach Fuchsia Pokemon Center: %w", err)
-		}
-		if err := Heal(m); err != nil {
-			return fmt.Errorf("skill: FuchsiaProgression: heal in Fuchsia: %w", err)
-		}
-
 		gym, ok := Place("fuchsia gym")
 		if !ok {
 			return fmt.Errorf("skill: FuchsiaProgression: fuchsia gym place missing")
 		}
-		if _, err := Travel(m, romData, gym, policy, 30); err != nil {
-			return fmt.Errorf("skill: FuchsiaProgression: enter Fuchsia Gym: %w", err)
-		}
-		outcome, err := Gym(m, romData, policy)
-		if err != nil {
-			return fmt.Errorf("skill: FuchsiaProgression: Koga: %w", err)
-		}
-		if outcome != state.ResultWon {
-			return fuchsiaKogaOutcomeErr(outcome)
+		var outcome state.BattleResult
+		for attempt := 0; attempt < 2; attempt++ {
+			if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
+				return fmt.Errorf("skill: FuchsiaProgression: reach Fuchsia Pokemon Center: %w", err)
+			}
+			if err := Heal(m); err != nil {
+				return fmt.Errorf("skill: FuchsiaProgression: heal in Fuchsia: %w", err)
+			}
+			if _, err := Travel(m, romData, gym, policy, 30); err != nil {
+				return fmt.Errorf("skill: FuchsiaProgression: enter Fuchsia Gym: %w", err)
+			}
+			var err error
+			outcome, err = Gym(m, romData, policy)
+			if err != nil {
+				return fmt.Errorf("skill: FuchsiaProgression: Koga: %w", err)
+			}
+			if outcome == state.ResultWon {
+				break
+			}
+			if attempt == 1 {
+				return fuchsiaKogaOutcomeErr(outcome)
+			}
 		}
 	}
 

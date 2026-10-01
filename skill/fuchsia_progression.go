@@ -7,11 +7,19 @@ import (
 
 const (
 	fuchsiaCityMap               uint8 = 0x07
+	route11Map                   uint8 = 0x16
 	route12Map                   uint8 = 0x17
 	route13Map                   uint8 = 0x18
 	route14Map                   uint8 = 0x19
 	route15Map                   uint8 = 0x1A
+	route11Gate1FMap             uint8 = 0x54
+	route11Gate2FMap             uint8 = 0x56
+	route12Gate1FMap             uint8 = 0x57
+	vermilionPokemonCenterMap    uint8 = 0x59
+	vermilionMartMap             uint8 = 0x5B
 	route15Gate1FMap             uint8 = 0xB8
+	route12SuperRodHouseMap      uint8 = 0xBD
+	route12Gate2FMap             uint8 = 0xC3
 	fuchsiaMartMap               uint8 = 0x98
 	fuchsiaPokemonCenterMap      uint8 = 0x9A
 	wardensHouseMap              uint8 = 0x9B
@@ -39,12 +47,21 @@ const (
 // slice can sensibly begin or resume on mapID. The route deliberately uses
 // Lavender -> Route 12 -> Routes 13/14/15 -> Fuchsia: it exercises the Poké
 // Flute Snorlax gate without introducing the Bicycle/Cycling Road dependency.
+//
+// Vermilion City and the Route 11/12 gate corridor are included because the
+// first owned action is Travel to the Route 12 Snorlax stand: after the Poké
+// Flute handoff a run commonly blackouts, flies, or wanders back to Vermilion
+// (the SS Anne / Thunder Badge hub) and must still be able to enter the
+// eastern corridor rather than fail as an unknown out-of-slice error.
 // Every Safari rest house is included because an interrupted run can be saved
 // there while EVENT_IN_SAFARI_ZONE and the finite step budget are still live.
 func FuchsiaProgressionAvailable(mapID uint8) bool {
 	switch mapID {
 	case mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
-		route12Map, route13Map, route14Map, route15Map, route15Gate1FMap,
+		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
+		route11Map, route11Gate1FMap, route11Gate2FMap,
+		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
+		route13Map, route14Map, route15Map, route15Gate1FMap,
 		fuchsiaCityMap, fuchsiaMartMap, fuchsiaPokemonCenterMap, wardensHouseMap,
 		safariZoneGateMap, fuchsiaGymMap,
 		safariZoneEastMap, safariZoneNorthMap, safariZoneWestMap, safariZoneCenterMap,
