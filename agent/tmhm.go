@@ -34,6 +34,10 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 		}
 		return filterGen1EngineServiceTalk(romData, obs, OfferWithEvidence(obs, known))
 	}
+	// A stale retry marker (a readiness target recorded but never reached) must
+	// return to the preparation campaign before the assessments below are priced
+	// against a multi-session budget.
+	known.demoteUnreadyCombatRetries(obs)
 	obs.TrainingAreaChoices = redTrainingAreaAssessments(m, romData, obs, known)
 	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
 	out := offer.Candidates
@@ -54,7 +58,7 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	party := state.DecodeParty(&mem)
 	out = enhancePickupObjectives(romData, party, obs, out)
 	estimate := func(slot, targetLevel int) (TrainingEstimate, error) {
-		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
+		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, campaignAwareTrainingBudget(obs, known))
 	}
 	out = insertPartyTrainingObjectives(obs, known, out, estimate)
 	out = dropUnviableTargetedTraining(out, estimate)

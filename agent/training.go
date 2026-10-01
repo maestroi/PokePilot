@@ -16,6 +16,54 @@ import (
 // skill will actually receive.
 const trainSessionBattleBudget = 20
 
+// preparationSessionCeiling is how many bounded Train sessions one
+// combat-preparation campaign may spend on a single habitat before it concludes
+// that the assessed environments cannot deliver the escalated readiness target.
+// A campaign deliberately asks for three or more lead levels
+// (combatPreparationLevelGain), so one 20-battle session rarely finishes it.
+// Measuring every habitat against a single session classed all of them as
+// "outside budget", which released the lost fight straight back into a retry
+// the party could not win (run-1qtjk6v1dzvfam: Cerulean Gym retried at
+// readiness 179/199, twice). Habitats that would need dozens of sessions (an
+// L89 lead grinding L5 grass, run-3r9pgu3arq0ls358ehdw2khxo8) still measure as
+// outside budget, so the documented dead-end escape keeps firing.
+const preparationSessionCeiling = 8
+
+// preparationTrainingBudget is the battle allowance a campaign may assume
+// across its bounded sessions. Execution still spends only
+// trainSessionBattleBudget per Train objective; this only answers whether the
+// remaining readiness gap is closable in the assessed environment at all.
+func preparationTrainingBudget() int { return trainSessionBattleBudget * preparationSessionCeiling }
+
+// campaignAwareTrainingBudget returns the allowance training estimates should
+// be measured against: one bounded session ordinarily, the campaign's
+// multi-session allowance while a quantified combat-loss campaign is open.
+func campaignAwareTrainingBudget(obs Observation, known *Knowledge) int {
+	if combatPreparationCampaignOpen(known, obs) {
+		return preparationTrainingBudget()
+	}
+	return trainSessionBattleBudget
+}
+
+// budgetedTrainingEstimate re-reads a measured estimate against the campaign
+// allowance when one is open. The measured XP facts do not change; only the
+// allowance, and therefore the cost class, does. It returns a copy so callers
+// never mutate an observation another layer is still holding.
+func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowledge) *TrainingEstimate {
+	if e == nil || !combatPreparationCampaignOpen(known, obs) {
+		return e
+	}
+	if e.XPRemaining == 0 || e.XPPerEncounter == 0 {
+		// Nothing was measured to re-price, or the band awards no XP at all.
+		// Keep the adapter's verdict: an unsafe/empty band stays blocked.
+		return e
+	}
+	budgeted := *e
+	budgeted.SessionBudget = preparationTrainingBudget()
+	classifyTrainingEstimate(&budgeted)
+	return &budgeted
+}
+
 // TrainingViability is a compact planner-facing cost class for the default
 // local training objective. It is derived from current cumulative XP and ROM
 // encounter/base-stat data, never gym-specific strategy.

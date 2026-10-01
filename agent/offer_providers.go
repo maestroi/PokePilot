@@ -124,6 +124,15 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	if known == nil {
 		known = NewKnowledge(nil)
 	}
+	// A retry marker whose recorded readiness target is still unmet is a stale
+	// gate release (see demoteUnreadyCombatRetries). Normalize it before any
+	// campaign-aware decision below reads the failure state.
+	known.demoteUnreadyCombatRetries(obs)
+	// The observation's local training estimate is measured against one bounded
+	// session and cannot know an open campaign may grind across several. Re-read
+	// it so the campaign's real allowance decides whether the loss stays locked
+	// and whether a training leg is offered here.
+	obs.Training = budgetedTrainingEstimate(obs.Training, obs, known)
 	switch {
 	case combatPreparationTrainingExhausted(obs):
 		// No local training and no learned habitat can advance readiness: the

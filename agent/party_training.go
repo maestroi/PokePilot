@@ -186,6 +186,20 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 	return nil
 }
 
+// trainingSessionExecutable reports whether a bounded Train session may start in
+// the measured habitat. Only a band that can award no wild XP at all (unsafe
+// encounter band with no usable carry, or no encounter table) is a hard block:
+// a target that needs more than one session is exactly what a multi-session
+// preparation campaign spends, and Train reports such a session as a productive
+// shortfall (ErrTrainProgress) instead of failing. Whether training here is
+// worth starting is the provider's campaign-aware decision, not the executor's.
+func trainingSessionExecutable(estimate TrainingEstimate, estimateErr error) bool {
+	if estimateErr != nil {
+		return true
+	}
+	return estimate.Viability != TrainingOutsideBudget || estimate.XPPerEncounter > 0
+}
+
 // executeTrainingObjective temporarily promotes the requested party member to
 // slot 0 because Red only awards battle XP to participating slots. A clean or
 // progress-making session swaps the original lead back afterward. Retreats and
@@ -203,7 +217,7 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 		return result, err
 	}
 	estimate, estimateErr := currentPartyTrainingEstimate(&mem, romData, m.Peek8(sym.CurMap), slot, int(o.Level), trainSessionBattleBudget)
-	if estimateErr == nil && estimate.Viability == TrainingOutsideBudget {
+	if !trainingSessionExecutable(estimate, estimateErr) {
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, &TrainingInefficientError{Estimate: estimate})
 	}
