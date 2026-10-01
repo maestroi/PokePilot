@@ -212,6 +212,7 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 
 	next := b
 	legs := 0
+	dialogueRecoveries := 0
 	encountersAtStart := res.Encounters
 	for res.Encounters-encountersAtStart < catchHuntCap && legs < safariCatchLegsPerSession {
 		var mem state.Mem
@@ -221,12 +222,13 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 		}
 
 		d := Destination{Map: targetMap, X: uint8(next.x), Y: uint8(next.y)}
-		if err := GoTo(m, romData, d); err != nil && !errors.Is(err, ErrBattle) {
+		moveErr := GoTo(m, romData, d)
+		if moveErr != nil && !errors.Is(moveErr, ErrBattle) {
 			state.Snapshot(m, &mem)
 			if !state.HasEvent(&mem, eventInSafariZone) {
 				return false, true, nil
 			}
-			if safariTimedEjectionInterrupted(targetMap, mem.U8(sym.CurMap), err) {
+			if safariTimedEjectionInterrupted(targetMap, mem.U8(sym.CurMap), moveErr) {
 				// The Safari timer can expire while a same-map grass step is in
 				// flight. The ROM warps the player to the gate and starts the
 				// ejection dialogue before EVENT_IN_SAFARI_ZONE is cleared, so
@@ -241,13 +243,48 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 				}
 				return false, true, nil
 			}
-			na, nb, ok := repickGrindPair(m, grass, grid, a, b)
-			if !ok {
-				return false, false, fmt.Errorf("Safari hunt leg %d: %w", legs+1, err)
+			// A text box that interrupts a same-map grass hunt leg is the
+			// wild-encounter intro: the ROM stopped the walk to show "A wild X
+			// appeared!". GoTo aborts on text boxes by design and hands the box
+			// back, so the hunt pages it to start the battle it is hunting for.
+			// This is the hunt's own encounter, not a navigation failure — the
+			// ordinary Catch skill owns the same box the same way. Paging it here,
+			// in the skill layer, is what keeps a battle-intro box from leaking
+			// into the objective boundary, where the normalizer correctly refuses
+			// to start a battle on the objective's behalf (triage 558b8fb74355bff6).
+			if errors.Is(moveErr, ErrDialogueInterrupted) {
+				if dialogueRecoveries >= maxDialogueRecoveries {
+					return false, false, fmt.Errorf("Safari hunt leg %d: still interrupted by dialogue after %d recoveries: %w", legs+1, maxDialogueRecoveries, moveErr)
+				}
+				dialogueRecoveries++
+				battleStarted, recErr := catchDialogueResolution(RecoverDialogue(m, dialogueRecoveryBudget))
+				if recErr != nil {
+					return false, false, fmt.Errorf("Safari hunt leg %d: recover hunt dialogue: %w", legs+1, recErr)
+				}
+				if !battleStarted {
+					// The box closed without starting a battle (an ordinary sign,
+					// not an encounter). Re-route the same bounded grass leg from
+					// live state; the dialogue budget prevents a repeated
+					// non-progressing box from spinning forever.
+					na, nb, ok := repickGrindPair(m, grass, grid, a, b)
+					if !ok {
+						return false, false, fmt.Errorf("Safari hunt leg %d: %w", legs+1, moveErr)
+					}
+					a, b, next = na, nb, nb
+					legs++
+					continue
+				}
+				moveErr = ErrBattleInterrupted
 			}
-			a, b, next = na, nb, nb
-			legs++
-			continue
+			if moveErr != nil && !errors.Is(moveErr, ErrBattleInterrupted) {
+				na, nb, ok := repickGrindPair(m, grass, grid, a, b)
+				if !ok {
+					return false, false, fmt.Errorf("Safari hunt leg %d: %w", legs+1, moveErr)
+				}
+				a, b, next = na, nb, nb
+				legs++
+				continue
+			}
 		}
 		legs++
 		next = flip(a, b, next)
