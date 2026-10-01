@@ -1,0 +1,8 @@
+[Unit]
+Description=PokePilot farm watchdog (Telegram alerts)
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/go/bin:%h/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin
+# Same self-updating checkout as qwagent-triage.service; that unit resets it.
+ExecStart=%h/.local/share/pokepilot/fixer-src/deploy/farm-watch.sh
