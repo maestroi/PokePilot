@@ -188,6 +188,42 @@ func walkNativePath(m *emu.Emu, decoder game.OverworldDecoder, path []world.Nati
 	return nil
 }
 
+// nativeArrivalState classifies a live overworld observation against a native
+// destination. Standing on the destination tile is not by itself arrival: the
+// step that got there can start a player event (a wild encounter, a trainer
+// sightline, a warp, a forced map script) that keeps the machine after the step
+// finishes.
+type nativeArrivalState int
+
+const (
+	// nativeArrivalPending means the player is not on the destination tile yet.
+	nativeArrivalPending nativeArrivalState = iota
+	// nativeArrivalComplete means the player is on the destination tile and the
+	// cartridge has handed control back.
+	nativeArrivalComplete
+	// nativeArrivalInterrupted means the player is on the destination tile but a
+	// player event still owns the overworld.
+	nativeArrivalInterrupted
+)
+
+// nativeArrival decides nativeWalkTo's arrival branch. Reporting success from a
+// frozen overworld hands the caller a game that ignores input, so the next
+// interaction fails as an untyped "facing did not change" instead of the
+// interruption it is (farm run run-11dd5ya1qev0ry: the step onto Ilex Forest
+// (20,23) rolled a wild encounter, and Face then polled a direction the
+// encounter script would never apply). The controllability requirement matches
+// the one GoToNativeRemembering already applies between transitions, and the
+// typed outcome lets the owning caller settle the event and re-route.
+func nativeArrival(state game.OverworldState, dest NativeDestination) nativeArrivalState {
+	if state.NativeMapID != dest.Map || int(state.X) != int(dest.X) || int(state.Y) != int(dest.Y) {
+		return nativeArrivalPending
+	}
+	if state.Controllable {
+		return nativeArrivalComplete
+	}
+	return nativeArrivalInterrupted
+}
+
 func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, dest NativeDestination) error {
 	const attempts = 12
 	for attempt := 0; attempt < attempts; attempt++ {
@@ -201,8 +237,11 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 		if liveWorld.NativeMapID != dest.Map {
 			return fmt.Errorf("skill: native routing: local walk on map %#04x while destination is %#04x", liveWorld.NativeMapID, dest.Map)
 		}
-		if liveWorld.X == dest.X && liveWorld.Y == dest.Y {
+		switch nativeArrival(liveWorld, dest) {
+		case nativeArrivalComplete:
 			return nil
+		case nativeArrivalInterrupted:
+			return ErrDialogueInterrupted
 		}
 
 		if _, err := waitLiveMapSettled(m, profile); err != nil {
