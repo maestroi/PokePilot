@@ -182,3 +182,80 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	}
 	return nil, ErrNoPath
 }
+
+// NativeCutApproach is the walkable prefix leading to one Cut obstacle whose
+// removal makes the target reachable. Approach stops on the tile beside the
+// tree; Cut is the one-tile direction the player must face/use Cut toward.
+// Runtime routing replans from fresh live blocks after the cartridge mutates
+// the map, so this planner never assumes the replacement collision itself.
+type NativeCutApproach struct {
+	Approach []NativeStep
+	Cut      NativeStep
+	TreeX    int
+	TreeY    int
+}
+
+// FindNativeCutApproach finds one cuttable tile that bridges the current
+// walkable component to the target. It evaluates each live cuttable tile by
+// making only that tile virtually walkable, asks the ordinary pathfinder
+// whether the destination would then connect, and returns the shortest
+// pre-Cut approach. At most one tree is assumed removed; a second tree is
+// handled by the caller's post-action replan.
+func FindNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool) (NativeCutApproach, error) {
+	if g == nil || !g.InBounds(sx, sy) || !g.InBounds(tx, ty) ||
+		!g.Walkable(sx, sy) || !g.Walkable(tx, ty) {
+		return NativeCutApproach{}, ErrNoPath
+	}
+
+	bestCost := int(^uint(0) >> 1)
+	var best NativeCutApproach
+	found := false
+	for y := 0; y < g.Height; y++ {
+		for x := 0; x < g.Width; x++ {
+			if !g.Cuttable(x, y) || occupied[[2]int{x, y}] {
+				continue
+			}
+
+			virtual := *g
+			virtual.walkable = append([]bool(nil), g.walkable...)
+			virtual.walkable[y*g.Width+x] = true
+			full, err := FindNativePath(&virtual, sx, sy, tx, ty, occupied)
+			if err != nil {
+				continue
+			}
+
+			cx, cy := sx, sy
+			for i, step := range full {
+				nx, ny := cx+step.DX, cy+step.DY
+				if nx == x && ny == y {
+					if absNative(step.DX)+absNative(step.DY) != 1 {
+						break
+					}
+					if len(full) < bestCost {
+						bestCost = len(full)
+						best = NativeCutApproach{
+							Approach: append([]NativeStep(nil), full[:i]...),
+							Cut:      step,
+							TreeX:    x,
+							TreeY:    y,
+						}
+						found = true
+					}
+					break
+				}
+				cx, cy = nx, ny
+			}
+		}
+	}
+	if !found {
+		return NativeCutApproach{}, ErrNoPath
+	}
+	return best, nil
+}
+
+func absNative(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
