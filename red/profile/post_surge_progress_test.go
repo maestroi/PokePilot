@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 func TestPostSurgeLavenderReachedIncludesForwardCorridor(t *testing.T) {
@@ -39,6 +40,51 @@ func TestPostSurgeCeladonAreaIncludesRelevantInteriors(t *testing.T) {
 		if postSurgeCeladonArea(mapID) {
 			t.Errorf("map %#04x (%s) incorrectly counted as Celadon area", mapID, state.MapName(mapID))
 		}
+	}
+}
+
+// Regression for #2304: Rainbow Badge must complete the bounded post-Surge
+// stages even with an unrecovered party, matching PostSurgeReachCeladon /
+// PostSurgeReachLavender early-return once Erika is already beaten.
+func TestPostSurgeStagesSupersededByRainbowBadge(t *testing.T) {
+	var mem state.Mem
+	mem[sym.CurMap] = 0x06 // CELADON_CITY
+	mem[sym.ObtainedBadges] = 1 << uint8(state.BadgeRainbow)
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonHP+1] = 10
+	mem[base+sym.MonMaxHP+1] = 20
+	mem[base+sym.MonStatus] = 1 << 6 // paralyzed
+
+	story := ProjectStory(&mem, state.StoryFacts{})
+	if !story.Has(ProgressPostSurgeLavenderReached) {
+		t.Fatal("Rainbow Badge did not supersede post_surge_lavender_reached")
+	}
+	if !story.Has(ProgressPostSurgeCeladonReady) {
+		t.Fatal("Rainbow Badge with unrecovered Celadon party left post_surge_celadon_ready incomplete")
+	}
+	if !story.Has(ProgressRainbowBadge) {
+		t.Fatal("Rainbow Badge bit was not projected")
+	}
+}
+
+func TestPostSurgeCeladonReadyStillRequiresRecoveryBeforeRainbow(t *testing.T) {
+	var mem state.Mem
+	mem[sym.CurMap] = 0x06
+	mem[sym.ObtainedBadges] = 1 << uint8(state.BadgeThunder)
+	mem[sym.PartyCount] = 1
+	base := sym.PartyMon1
+	mem[base+sym.MonHP+1] = 10
+	mem[base+sym.MonMaxHP+1] = 20
+	mem[base+sym.MonMoves] = 1
+	mem[base+sym.MonPP] = 10
+
+	if ProjectStory(&mem, state.StoryFacts{}).Has(ProgressPostSurgeCeladonReady) {
+		t.Fatal("unrecovered Celadon party counted as ready before Rainbow Badge")
+	}
+	mem[base+sym.MonHP+1] = 20
+	if !ProjectStory(&mem, state.StoryFacts{}).Has(ProgressPostSurgeCeladonReady) {
+		t.Fatal("fully recovered Celadon party did not project post_surge_celadon_ready")
 	}
 }
 

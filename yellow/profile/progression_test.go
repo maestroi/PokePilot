@@ -243,6 +243,57 @@ func TestYellowMainStoryUsesDurableElite4Flag(t *testing.T) {
 	}
 }
 
+// Regression for #2304 / run-2wka7km6oqsz62cajfp6yl6cuo: after Erika, a hurt
+// party in Celadon must not keep post_surge_celadon_ready incomplete. The
+// shared PostSurgeReachCeladon skill no-ops once Rainbow is owned, so the
+// progression fact has to treat the badge as stage completion.
+func TestYellowPostSurgeStagesSupersededByRainbowBadge(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.ObtainedBadges] = 1<<badgeThunder | 1<<badgeRainbow
+	mem[sym.PartyCount] = 1
+	base := uint16(sym.PartyMon1)
+	mem[base+0x01], mem[base+0x02] = 0, 10 // HP damaged
+	mem[base+0x22], mem[base+0x23] = 0, 20
+	mem[base+0x04] = 1 << 6 // paralyzed
+	mem[base+0x08] = 33
+	mem[base+0x1d] = 10
+
+	story := projectYellowStory(&mem, 0x06) // CELADON_CITY
+	if !story.Has(gen1.ProgressPostSurgeLavenderReached) {
+		t.Fatal("Rainbow Badge did not supersede post_surge_lavender_reached")
+	}
+	if !story.Has(gen1.ProgressPostSurgeCeladonReady) {
+		t.Fatal("Rainbow Badge with unrecovered Celadon party left post_surge_celadon_ready incomplete")
+	}
+	if !story.Has(gen1.ProgressRainbowBadge) {
+		t.Fatal("Rainbow Badge bit was not projected")
+	}
+	if next, ok := gen1.FirstIncomplete(story, gen1.MiddleCampaignStages()); ok {
+		t.Fatalf("middle campaign still incomplete at %q after Rainbow Badge", next)
+	}
+}
+
+func TestYellowPostSurgeCeladonReadyStillRequiresRecoveryBeforeRainbow(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.ObtainedBadges] = 1 << badgeThunder
+	mem[sym.PartyCount] = 1
+	base := uint16(sym.PartyMon1)
+	mem[base+0x01], mem[base+0x02] = 0, 10
+	mem[base+0x22], mem[base+0x23] = 0, 20
+	mem[base+0x08] = 33
+	mem[base+0x1d] = 10
+
+	story := projectYellowStory(&mem, 0x06)
+	if story.Has(gen1.ProgressPostSurgeCeladonReady) {
+		t.Fatal("unrecovered Celadon party counted as ready before Rainbow Badge")
+	}
+	mem[base+0x01], mem[base+0x02] = 0, 20
+	story = projectYellowStory(&mem, 0x06)
+	if !story.Has(gen1.ProgressPostSurgeCeladonReady) {
+		t.Fatal("fully recovered Celadon party did not project post_surge_celadon_ready")
+	}
+}
+
 // yellowDecompEventIndices evaluates the vendored pokeyellow event constant
 // table (const_def / const / const_skip / const_next) so event bit indices are
 // checked against the decomp rather than hand-counted.

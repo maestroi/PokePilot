@@ -305,8 +305,11 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
 		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},
 		{ID: gen1.ProgressThunderBadge, Complete: yellowHasBadge(reader, badgeThunder)},
-		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowPostSurgeLavenderReached(mapID)},
-		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader)},
+		// Rainbow Badge supersedes the bounded post-Surge travel stages: the
+		// shared skill early-returns once Erika is beaten, so FirstIncomplete
+		// must not re-offer a recovery checkpoint the executor will no-op.
+		{ID: gen1.ProgressPostSurgeLavenderReached, Complete: yellowHasBadge(reader, badgeRainbow) || yellowPostSurgeLavenderReached(mapID)},
+		{ID: gen1.ProgressPostSurgeCeladonReady, Complete: yellowHasBadge(reader, badgeRainbow) || (yellowPostSurgeCeladonArea(mapID) && yellowPartyRecovered(reader))},
 		{ID: gen1.ProgressRainbowBadge, Complete: yellowHasBadge(reader, badgeRainbow)},
 		{ID: gen1.ProgressMarshBadge, Complete: yellowHasBadge(reader, badgeMarsh)},
 		{ID: gen1.ProgressSilphScopeAcquired, Complete: yellowHasItem(reader, itemSilphScope)},

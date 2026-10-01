@@ -285,8 +285,11 @@ func ProjectStory(mem *state.Mem, facts state.StoryFacts) game.ProgressState {
 	return append(progress,
 		game.ProgressFact{ID: ProgressBoulderBadge, Complete: badges.Has(state.BadgeBoulder)},
 		game.ProgressFact{ID: ProgressThunderBadge, Complete: badges.Has(state.BadgeThunder)},
-		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: postSurgeLavenderReached(mapID)},
-		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem))},
+		// Rainbow Badge supersedes the bounded post-Surge travel stages: the
+		// shared skill early-returns once Erika is beaten, so FirstIncomplete
+		// must not re-offer a recovery checkpoint the executor will no-op.
+		game.ProgressFact{ID: ProgressPostSurgeLavenderReached, Complete: badges.Has(state.BadgeRainbow) || postSurgeLavenderReached(mapID)},
+		game.ProgressFact{ID: ProgressPostSurgeCeladonReady, Complete: badges.Has(state.BadgeRainbow) || (postSurgeCeladonArea(mapID) && partyCenterRecovered(state.DecodeParty(mem)))},
 		game.ProgressFact{ID: ProgressRainbowBadge, Complete: badges.Has(state.BadgeRainbow)},
 		game.ProgressFact{ID: ProgressMarshBadge, Complete: badges.Has(state.BadgeMarsh)},
 		game.ProgressFact{ID: ProgressVolcanoBadge, Complete: badges.Has(state.BadgeVolcano)},
