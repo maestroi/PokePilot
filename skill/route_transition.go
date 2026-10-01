@@ -13,6 +13,11 @@ import (
 
 var ErrRouteTransitionNeedsBattlePolicy = errors.New("skill: semantic route transition requires a battle policy")
 
+// ErrTransitionUnavailableHere reports that a semantic action cannot be
+// performed from the player's current tile, although it may be from another
+// part of the same map. GoTo bans the edge for this tile only.
+var ErrTransitionUnavailableHere = errors.New("skill: semantic route transition is not executable from this tile")
+
 type redRouteTransitionExecutor struct {
 	m            *emu.Emu
 	romData      []byte
@@ -316,6 +321,14 @@ func (x *redRouteTransitionExecutor) executeRoute12Snorlax() (world.TransitionEx
 	}
 	if x.policy == nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("%w: Route 12 Snorlax", ErrRouteTransitionNeedsBattlePolicy)
+	}
+	if x.m.Peek8(sym.CurMap) == route12Map {
+		if _, ok, err := route12SnorlaxLocalStand(x.m, x.romData); err != nil {
+			return world.TransitionExecutionResult{}, err
+		} else if !ok {
+			px, py := playerXY(x.m)
+			return world.TransitionExecutionResult{}, fmt.Errorf("%w: no Route 12 Snorlax flute stand reachable from (%d,%d)", ErrTransitionUnavailableHere, px, py)
+		}
 	}
 	if err := clearRoute12Snorlax(x.m, x.romData, x.policy); err != nil {
 		return world.TransitionExecutionResult{}, err
