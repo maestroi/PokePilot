@@ -23,6 +23,19 @@ func (p RecoveryProfile) Resilient() bool {
 	return p == RecoveryProfileResilient
 }
 
+// FinishFailureClass classifies the small set of run-ending failures whose
+// recovery semantics differ from gameplay failures. It is carried separately
+// from Detail so the wall never has to parse human error prose.
+type FinishFailureClass string
+
+const (
+	FinishFailureClassInferenceTransport FinishFailureClass = "inference_transport"
+)
+
+func (c FinishFailureClass) Valid() bool {
+	return c == "" || c == FinishFailureClassInferenceTransport
+}
+
 // RunPurpose describes why the run exists independently from how it plays and
 // what terminal goal it pursues. Empty is the backwards-compatible normal run.
 type RunPurpose string
@@ -446,12 +459,13 @@ type FinishReport struct {
 	RunID string `json:"run_id"`
 	// Attempt echoes the spec's attempt number; 0 from older runners is
 	// accepted without validation.
-	Attempt   int      `json:"attempt,omitempty"`
-	Reason    string   `json:"reason"`
-	Detail    string   `json:"detail"`
-	TraceTail []string `json:"trace_tail"`
-	SaveState []byte   `json:"save_state"`
-	FramePNG  []byte   `json:"frame_png,omitempty"`
+	Attempt      int                `json:"attempt,omitempty"`
+	Reason       string             `json:"reason"`
+	Detail       string             `json:"detail"`
+	FailureClass FinishFailureClass `json:"failure_class,omitempty"`
+	TraceTail    []string           `json:"trace_tail"`
+	SaveState    []byte             `json:"save_state"`
+	FramePNG     []byte             `json:"frame_png,omitempty"`
 	// RunnerVersion is the leased runner's build identity (git SHA). Empty
 	// from older runners.
 	RunnerVersion string `json:"runner_version,omitempty"`

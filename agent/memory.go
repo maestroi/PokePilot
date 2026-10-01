@@ -282,10 +282,10 @@ func migrateLegacyMemory(legacy legacyMemoryFile, k *Knowledge) (memoryFile, boo
 		Plan:         plan,
 	}
 	for _, native := range legacy.Visited {
-		mem.Visited = append(mem.Visited, k.locationForNative(native))
+		mem.Visited = append(mem.Visited, k.locationForNative(uint16(native)))
 	}
 	for _, talked := range legacy.Talked {
-		mem.Talked = append(mem.Talked, talkedKey{Location: k.locationForNative(talked.Map), X: talked.X, Y: talked.Y})
+		mem.Talked = append(mem.Talked, talkedKey{Location: k.locationForNative(uint16(talked.Map)), X: talked.X, Y: talked.Y})
 	}
 	return mem, droppedPlan
 }

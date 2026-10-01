@@ -46,10 +46,14 @@ const hasVerdicts = computed(() => calibration.value.some((bin) => bin.judged > 
 const verdictClass: Record<string, string> = {
   agreed: 'text-[var(--poke-green)]',
   disagreed: 'text-[var(--poke-amber)]',
+  controlled: 'text-[var(--poke-cyan)]',
+  fallback: 'text-[var(--poke-amber)]',
   active: 'text-[var(--poke-cyan)]',
   unusable: 'text-[var(--poke-muted)]'
 }
-const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', active: 'acted', unusable: '—' }
+const verdictGlyph: Record<string, string> = {
+  agreed: '✓', disagreed: '✗', controlled: 'model', fallback: 'fallback', active: 'acted', unusable: '—'
+}
 </script>
 
 <template>
@@ -71,7 +75,7 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
             <th class="py-0.5 pr-2 text-right font-normal">calls</th>
             <th class="py-0.5 pr-2 text-right font-normal">agreement</th>
             <th class="py-0.5 pr-2 text-right font-normal">p50 / p95</th>
-            <th class="py-0.5 pr-2 text-right font-normal">fallbacks</th>
+            <th class="py-0.5 pr-2 text-right font-normal">model / fallback</th>
             <th class="py-0.5 font-normal">engine picks most</th>
           </tr>
         </thead>
@@ -89,7 +93,11 @@ const verdictGlyph: Record<string, string> = { agreed: '✓', disagreed: '✗', 
               {{ percent(row.agreement) }}<span v-if="row.judged" class="text-[var(--poke-muted)]"> of {{ row.judged }}</span>
             </td>
             <td class="py-0.5 pr-2 text-right font-mono">{{ latency(row.p50) }} / {{ latency(row.p95) }}</td>
-            <td class="py-0.5 pr-2 text-right font-mono" :class="row.fallbacks ? 'text-[var(--poke-amber)]' : ''">{{ row.fallbacks }}</td>
+            <td class="py-0.5 pr-2 text-right font-mono">
+              <span class="text-[var(--poke-cyan)]">{{ row.controlled }}</span>
+              <span class="text-[var(--poke-muted)]"> / </span>
+              <span :class="row.fallbacks ? 'text-[var(--poke-amber)]' : ''">{{ row.fallbacks }}</span>
+            </td>
             <td class="max-w-[14rem] truncate py-0.5 text-[var(--poke-muted)]">
               {{ row.topEngine.map(([label, count]) => `${label} ×${count}`).join(', ') || '—' }}
             </td>

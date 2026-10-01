@@ -165,11 +165,11 @@ func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item 
 	}
 
 	blocked := dexCatchBlockedPlaces(obs)
-	hops := map[uint8]int{}
-	var adjacency map[uint8][]uint8
+	hops := map[uint16]int{}
+	var adjacency map[uint16][]uint16
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 	_, reachable := dexCatchPlaceDistance(obs, dexEvolutionStoneShop, blocked, hops, adjacency)
 	return reachable

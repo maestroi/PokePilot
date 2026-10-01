@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -32,7 +33,8 @@ type Knowledge struct {
 	// build-unaware (their historical pre-feature behavior).
 	Build string
 
-	nativeLocations map[uint8]LocationID
+	nativeLocations map[uint16]LocationID
+	gameID          game.GameID
 }
 
 // NewKnowledge builds run-owned evidence from semantic topology. Native byte
@@ -55,24 +57,35 @@ func NewKnowledge(topology *KnowledgeTopology) *Knowledge {
 		Failures:        map[string]Failure{},
 		TrainingAreas:   map[LocationID]TrainingAreaKnowledge{},
 		nativeLocations: resolved.NativeLocations,
+		gameID:          resolved.GameID,
 	}
 }
 
-func (k *Knowledge) locationForNative(id uint8) LocationID {
+// SetGameID records the active game so that native map resolution can use
+// the game-specific provider. Call this before SawMap when the Knowledge was
+// built from a nil topology (tests, transient samplers).
+func (k *Knowledge) SetGameID(id game.GameID) {
+	if k != nil && id != "" {
+		k.gameID = id
+	}
+}
+
+func (k *Knowledge) locationForNative(id uint16) LocationID {
 	if k != nil {
 		if location := k.nativeLocations[id]; location != "" {
 			return location
 		}
+		return locationForNativeGame(k.gameID, id)
 	}
 	return legacyLocationID(id)
 }
 
-func (k *Knowledge) nativeAdjacency() map[uint8][]uint8 {
-	out := map[uint8][]uint8{}
+func (k *Knowledge) nativeAdjacency() map[uint16][]uint16 {
+	out := map[uint16][]uint16{}
 	if k == nil || len(k.nativeLocations) == 0 {
 		return out
 	}
-	inverse := make(map[LocationID]uint8, len(k.nativeLocations))
+	inverse := make(map[LocationID]uint16, len(k.nativeLocations))
 	for native, semantic := range k.nativeLocations {
 		inverse[semantic] = native
 	}
@@ -204,10 +217,10 @@ func (k *Knowledge) SawMap(id any) {
 	case string:
 		k.SawLocation(LocationID(value))
 	case uint8:
-		k.SawLocation(k.locationForNative(value))
+		k.SawLocation(k.locationForNative(uint16(value)))
 	case int:
-		if value >= 0 && value <= 0xff {
-			k.SawLocation(k.locationForNative(uint8(value)))
+		if value >= 0 && value <= 0xffff {
+			k.SawLocation(k.locationForNative(uint16(value)))
 		}
 	}
 }
@@ -396,10 +409,10 @@ func (k *Knowledge) TalkedTo(location any, x, y uint8) {
 	case string:
 		k.TalkedAt(LocationID(value), x, y)
 	case uint8:
-		k.TalkedAt(k.locationForNative(value), x, y)
+		k.TalkedAt(k.locationForNative(uint16(value)), x, y)
 	case int:
-		if value >= 0 && value <= 0xff {
-			k.TalkedAt(k.locationForNative(uint8(value)), x, y)
+		if value >= 0 && value <= 0xffff {
+			k.TalkedAt(k.locationForNative(uint16(value)), x, y)
 		}
 	}
 }

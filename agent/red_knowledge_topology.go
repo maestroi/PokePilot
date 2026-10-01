@@ -13,19 +13,19 @@ func init() {
 	}
 }
 
-func redLocationID(id game.GameID, native uint8) LocationID {
-	if name := state.MapName(native); name != "" {
+func redLocationID(id game.GameID, native uint16) LocationID {
+	if name := state.MapName(uint8(native)); name != "" {
 		return LocationID(semanticLocation(name))
 	}
 	return LocationID(fmt.Sprintf("%s/map/%02x", id, native))
 }
 
-func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint8][]uint8) KnowledgeTopology {
+func (a *redObjectiveAdapter) KnowledgeTopology(native map[uint16][]uint16) KnowledgeTopology {
 	topology := KnowledgeTopology{
 		Adjacency:       map[LocationID][]LocationID{},
-		NativeLocations: map[uint8]LocationID{},
+		NativeLocations: map[uint16]LocationID{},
 	}
-	location := func(id uint8) LocationID {
+	location := func(id uint16) LocationID {
 		if known := topology.NativeLocations[id]; known != "" {
 			return known
 		}

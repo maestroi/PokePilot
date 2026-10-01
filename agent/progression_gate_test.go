@@ -23,7 +23,7 @@ func TestJourneyProgressionBlockedRoute3UntilBoulderBadge(t *testing.T) {
 }
 
 func TestOfferSuppressesPewterRoute3UntilBoulderBadge(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{0x02: {route3Map}})
+	known := testKnowledge(map[uint16][]uint16{0x02: {uint16(route3Map)}})
 	known.SawMap(0x02)
 	obs := Observation{GameID: testGameID,
 		Map:        0x02,
@@ -113,7 +113,7 @@ func TestOfferNeverAdvertisesRoute12SnorlaxInteractionAsJourney(t *testing.T) {
 	}
 	route12Map := dest.Map
 
-	known := testKnowledge(map[uint8][]uint8{route12Map: {}})
+	known := testKnowledge(map[uint16][]uint16{uint16(route12Map): {}})
 	known.SawMap(route12Map)
 	obs := Observation{GameID: testGameID,
 		Map:        route12Map,
@@ -137,7 +137,7 @@ func TestOfferNeverAdvertisesRoute12SnorlaxInteractionAsJourney(t *testing.T) {
 }
 
 func TestOfferSuppressesSaffronGymUntilSilphRescue(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{saffronCityMap: {saffronGymMap}})
+	known := testKnowledge(map[uint16][]uint16{uint16(saffronCityMap): {uint16(saffronGymMap)}})
 	known.SawMap(saffronCityMap)
 	obs := Observation{GameID: testGameID,
 		Map:        saffronCityMap,

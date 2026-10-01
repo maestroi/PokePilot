@@ -5,13 +5,17 @@ import {
   artifactContentURL,
   cancelMediaRenderJob,
   getReplayStatus,
+  getHighlightStatus,
   getRunArtifacts,
   getRunCheckpoints,
   getRunDebug,
   renderReplay,
-  replayVideoURL
+  renderHighlights,
+  replayVideoURL,
+  highlightVideoURL,
+  highlightManifestURL
 } from '../shared/api/client'
-import type { ReplayStatus, RunArtifact } from '../shared/api/types'
+import type { HighlightStatus, ReplayStatus, RunArtifact } from '../shared/api/types'
 import Panel from '../shared/components/Panel.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import RunTimeline from './RunTimeline.vue'
@@ -28,7 +32,10 @@ const artifacts = ref<RunArtifact[]>([])
 const checkpoints = ref<unknown[]>([])
 const replay = ref<ReplayStatus | null>(null)
 const replayError = ref('')
+const highlights = ref<HighlightStatus | null>(null)
+const highlightError = ref('')
 const rendering = ref(false)
+const renderingHighlights = ref(false)
 const cancellingReplay = ref(false)
 const selectedEvent = ref(-1)
 const video = ref<HTMLVideoElement | null>(null)
@@ -36,6 +43,7 @@ const playbackRate = ref(Number(localStorage.getItem('pokepilot.replayPlaybackRa
 let serial = 0
 let liveTimer = 0
 let replayTimer = 0
+let highlightTimer = 0
 
 function object(value: unknown): Row {
   return value && typeof value === 'object' ? value as Row : {}
@@ -141,11 +149,12 @@ async function load(): Promise<void> {
   error.value = ''
   replayError.value = ''
 
-  const [debugResult, artifactsResult, checkpointsResult, replayResult] = await Promise.allSettled([
+  const [debugResult, artifactsResult, checkpointsResult, replayResult, highlightResult] = await Promise.allSettled([
     getRunDebug(runID),
     getRunArtifacts(runID),
     getRunCheckpoints(runID),
-    getReplayStatus(runID)
+    getReplayStatus(runID),
+    getHighlightStatus(runID)
   ])
   if (id !== serial) return
 
@@ -162,10 +171,16 @@ async function load(): Promise<void> {
     replay.value = null
     replayError.value = replayResult.reason instanceof Error ? replayResult.reason.message : 'Replay service unavailable'
   }
+  if (highlightResult.status === 'fulfilled') highlights.value = highlightResult.value
+  else {
+    highlights.value = null
+    highlightError.value = highlightResult.reason instanceof Error ? highlightResult.reason.message : 'Highlight service unavailable'
+  }
   selectedEvent.value = timeline.value.length ? timeline.value.length - 1 : -1
   loading.value = false
   scheduleLiveRefresh()
   scheduleReplayRefresh()
+  scheduleHighlightRefresh()
 }
 
 async function requestReplay(): Promise<void> {
@@ -229,6 +244,50 @@ async function refreshReplay(): Promise<void> {
   scheduleReplayRefresh()
 }
 
+function clearHighlightTimer(): void {
+  if (highlightTimer) window.clearTimeout(highlightTimer)
+  highlightTimer = 0
+}
+
+function scheduleHighlightRefresh(): void {
+  clearHighlightTimer()
+  if (highlights.value?.state === 'generating') highlightTimer = window.setTimeout(() => { void refreshHighlights() }, 5000)
+}
+
+async function refreshHighlights(): Promise<void> {
+  const runID = props.runID
+  try {
+    const next = await getHighlightStatus(runID)
+    if (runID !== props.runID) return
+    highlights.value = next
+    highlightError.value = ''
+  } catch (cause) {
+    highlightError.value = cause instanceof Error ? cause.message : 'Highlight status unavailable'
+  }
+  scheduleHighlightRefresh()
+}
+
+async function requestHighlights(): Promise<void> {
+  if (!props.runID || renderingHighlights.value) return
+  renderingHighlights.value = true
+  highlightError.value = ''
+  try {
+    highlights.value = await renderHighlights(props.runID)
+    scheduleHighlightRefresh()
+  } catch (cause) {
+    highlightError.value = cause instanceof Error ? cause.message : 'Highlight render failed'
+  } finally {
+    renderingHighlights.value = false
+  }
+}
+
+function highlightDurationLabel(): string {
+  const total = Math.max(0, Math.round(Number(highlights.value?.duration_ms || 0) / 1000))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`
+}
+
 function checkpointLabel(value: unknown, index: number): string {
   const row = object(value)
   return String(row.name || row.kind || row.label || row.key || `checkpoint ${index + 1}`)
@@ -264,10 +323,11 @@ function applyPlaybackRate(): void {
 watch(() => props.runID, () => {
   clearLiveTimer()
   clearReplayTimer()
+  clearHighlightTimer()
   void load()
 }, { immediate: true })
 watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
-onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer() })
+onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTimer() })
 </script>
 
 <template>
@@ -355,6 +415,47 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer() })
                 Manage in Media
               </a>
             </div>
+          </div>
+          <div class="mt-3 rounded-md border border-white/8 bg-black/15 p-3">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Highlights</span>
+                <p class="mt-1 text-[11px] text-slate-400">
+                  <template v-if="highlights?.state === 'empty'">No highlight-worthy semantic events were found.</template>
+                  <template v-else-if="highlights">
+                    {{ highlights.windows || 0 }} window{{ Number(highlights.windows || 0) === 1 ? '' : 's' }} · {{ highlightDurationLabel() }}
+                    <span v-if="highlights.state === 'generating'"> · {{ highlights.windows_done || 0 }}/{{ highlights.windows || 0 }} rendered</span>
+                  </template>
+                  <template v-else>Build a short semantic reel from badges, gyms, evolutions, blackouts, recoveries, and run completion.</template>
+                </p>
+              </div>
+              <StatusBadge
+                v-if="highlights"
+                :tone="highlights.state === 'ready' ? 'success' : highlights.state === 'error' ? 'danger' : highlights.state === 'generating' ? 'warning' : 'neutral'"
+              >{{ highlights.state }}</StatusBadge>
+            </div>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                v-if="highlights?.state !== 'ready' && highlights?.state !== 'generating' && highlights?.state !== 'empty' && highlights?.state !== 'disabled'"
+                type="button"
+                class="rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/20 hover:bg-amber-400/15 disabled:opacity-50"
+                :disabled="renderingHighlights"
+                @click="requestHighlights"
+              >
+                {{ renderingHighlights ? 'Requesting…' : 'Render highlights' }}
+              </button>
+              <a
+                v-if="highlights?.state === 'ready'"
+                :href="highlightVideoURL(runID)"
+                class="rounded-md bg-amber-400/10 px-2.5 py-1.5 text-xs font-semibold text-amber-200 ring-1 ring-amber-300/20 hover:bg-amber-400/15"
+              >Open highlight reel</a>
+              <a
+                v-if="highlights?.state === 'ready'"
+                :href="highlightManifestURL(runID)"
+                class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
+              >Manifest</a>
+            </div>
+            <p v-if="highlightError" class="mt-2 text-xs text-amber-300/80">{{ highlightError }}</p>
           </div>
           <p v-if="replayError" class="mt-2 text-xs text-amber-300/80">{{ replayError }}</p>
         </section>

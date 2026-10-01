@@ -25,11 +25,11 @@ func appendDexFossilObjectives(obs Observation, known *Knowledge, out []Objectiv
 
 	place := PlaceID(skill.FossilRevivalPlace())
 	blocked := dexCatchBlockedPlaces(obs)
-	var adjacency map[uint8][]uint8
-	var hops map[uint8]int
+	var adjacency map[uint16][]uint16
+	var hops map[uint16]int
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 	if _, ok := dexCatchPlaceDistance(obs, place, blocked, hops, adjacency); !ok {
 		return out

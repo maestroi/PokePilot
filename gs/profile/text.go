@@ -7,6 +7,14 @@ import (
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
+// ScreenText exposes the decoded window text so a script driver can tell a
+// dialogue page that is still being drawn from one that has frozen on a
+// prompt. Text that keeps changing is progress; frozen text is the stuck
+// signal. See agent.gsScriptProgress.
+func (*Profile) ScreenText(reader game.MemoryReader) string {
+	return gsScreenText(reader)
+}
+
 // gsScreenText decodes the rendered 20x18 Gold/Silver tilemap, not script
 // source bytes. The battle text engine has already expanded names and control
 // codes by the time they reach wTileMap, so a compact display-glyph decoder is

@@ -31,6 +31,10 @@ func newReplayWorkerID() string {
 }
 
 func (s *replayServer) ensureRenderJob(ctx context.Context, runID string, recordings []replayRecording, mode replayMode, artifactKey string) (farm.MediaRenderJob, error) {
+	return s.ensureRenderJobMode(ctx, runID, recordings, string(mode), artifactKey)
+}
+
+func (s *replayServer) ensureRenderJobMode(ctx context.Context, runID string, recordings []replayRecording, mode, artifactKey string) (farm.MediaRenderJob, error) {
 	attempts := make([]int, 0, len(recordings))
 	for _, recording := range recordings {
 		attempts = append(attempts, recording.Attempt)
@@ -39,7 +43,7 @@ func (s *replayServer) ensureRenderJob(ctx context.Context, runID string, record
 		Identity:    artifactKey,
 		RunID:       runID,
 		Attempts:    attempts,
-		Mode:        string(mode),
+		Mode:        strings.TrimSpace(mode),
 		ArtifactKey: artifactKey,
 	}
 	var job farm.MediaRenderJob
@@ -80,6 +84,18 @@ func (s *replayServer) claimRenderJob(ctx context.Context, id string) (farm.Medi
 	return job, true, nil
 }
 
+func (s *replayServer) cancelRenderJob(ctx context.Context, id string) (farm.MediaRenderJob, error) {
+	var job farm.MediaRenderJob
+	status, err := s.mediaJobRequest(ctx, http.MethodPost, "/v1/media/render-jobs/"+id+"/cancel", struct{}{}, &job)
+	if status == http.StatusNotFound {
+		return farm.MediaRenderJob{}, errMediaRenderJobAPIUnavailable
+	}
+	if err != nil {
+		return farm.MediaRenderJob{}, err
+	}
+	return job, nil
+}
+
 func (s *replayServer) retryRenderJob(ctx context.Context, id string) (farm.MediaRenderJob, error) {
 	var job farm.MediaRenderJob
 	status, err := s.mediaJobRequest(ctx, http.MethodPost, "/v1/media/render-jobs/"+id+"/retry", struct{}{}, &job)
@@ -104,14 +120,19 @@ func (s *replayServer) heartbeatRenderJob(ctx context.Context, id, state, stage 
 	return err
 }
 
-func (s *replayServer) finishRenderJob(ctx context.Context, id, state, stage, lastError string, resultSize int64) error {
+func (s *replayServer) finishRenderJob(ctx context.Context, id, state, stage, lastError string, resultSize int64, failureClass ...string) error {
+	class := ""
+	if len(failureClass) > 0 {
+		class = failureClass[0]
+	}
 	var job farm.MediaRenderJob
 	_, err := s.mediaJobRequest(ctx, http.MethodPost, "/v1/media/render-jobs/"+id+"/finish", farm.MediaRenderJobFinishRequest{
-		WorkerID:   replayWorkerID,
-		State:      state,
-		Stage:      stage,
-		LastError:  lastError,
-		ResultSize: resultSize,
+		WorkerID:     replayWorkerID,
+		State:        state,
+		Stage:        stage,
+		LastError:    lastError,
+		FailureClass: class,
+		ResultSize:   resultSize,
 	}, &job)
 	return err
 }
@@ -197,6 +218,7 @@ func replayStatusFromMediaJob(job farm.MediaRenderJob) replayStatus {
 		Stage:        job.Stage,
 		RetryCount:   job.RetryCount,
 		LastError:    job.LastError,
+		FailureClass: job.FailureClass,
 	}
 	switch job.State {
 	case farm.MediaRenderJobReady:
@@ -226,6 +248,7 @@ func (s *replayServer) runRenderJobRecovery(ctx context.Context, interval time.D
 			log.Printf("pokereplay: list recoverable render jobs: %v", err)
 			return
 		}
+		s.syncDeferredRenderJobs(jobs)
 		for _, job := range jobs {
 			s.recoverRenderJob(ctx, job)
 		}
@@ -247,11 +270,15 @@ func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRende
 	if s.store == nil {
 		return
 	}
+	if job.Mode == highlightRenderMode {
+		s.recoverHighlightRenderJob(ctx, job)
+		return
+	}
 	mode, err := parseReplayMode(job.Mode)
 	if err != nil {
 		claimed, ok, claimErr := s.claimRenderJob(ctx, job.ID)
 		if claimErr == nil && ok {
-			_ = s.finishRenderJob(context.Background(), claimed.ID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, err.Error(), 0)
+			_ = s.finishRenderJob(context.Background(), claimed.ID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, err.Error(), 0, farm.MediaRenderFailureInvalidRequest)
 		}
 		return
 	}
@@ -263,15 +290,24 @@ func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRende
 	if cacheKey != job.ArtifactKey {
 		claimed, ok, claimErr := s.claimRenderJob(ctx, job.ID)
 		if claimErr == nil && ok {
-			_ = s.finishRenderJob(context.Background(), claimed.ID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, "render identity no longer matches source recordings", 0)
+			_ = s.finishRenderJob(context.Background(), claimed.ID, farm.MediaRenderJobFailed, farm.MediaRenderJobFailed, "render identity no longer matches source recordings", 0, farm.MediaRenderFailureInvalidRequest)
 		}
+		return
+	}
+
+	release, _, _ := s.tryAdmitRenderJob(job.ID)
+	if release == nil {
 		return
 	}
 	claimed, ok, err := s.claimRenderJob(ctx, job.ID)
 	if err != nil || !ok {
+		release()
 		return
 	}
-	go s.render(claimed.ID, job.RunID, recordings, cacheKey, mode)
+	go func() {
+		defer release()
+		s.render(claimed.ID, job.RunID, recordings, cacheKey, mode)
+	}()
 }
 
 func mediaRenderJobLeaseLost(err error) bool {
@@ -290,7 +326,7 @@ func (s *replayServer) keepRenderJobLease(ctx context.Context, jobID string, onL
 		return cancel
 	}
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {

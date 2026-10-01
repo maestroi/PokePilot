@@ -262,10 +262,15 @@ func TestCombatPreparationReleasesWhenNoTrainingPathExists(t *testing.T) {
 	}{
 		{"no usable area", []TrainingAreaAssessment{unusable}, true},
 		{"usable area known", []TrainingAreaAssessment{unusable, usable}, false},
+		// run-2wka7km6oqsz62cajfp6yl6cuo: no assessed training areas at all
+		// (the agent never learned a habitat) used to read as "not exhausted",
+		// which deadlocked the preparation loop on heal/resupply/reposition.
+		{"no areas assessed", nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			known := NewKnowledge(nil)
 			obs := combatPreparationTestObservation(36, 89, 27, 37)
+			obs.Training = &TrainingEstimate{Viability: TrainingOutsideBudget}
 			recordStructuredCombatLoss(t, known, obj, obs)
 			obs.TrainingAreaChoices = tc.choices
 

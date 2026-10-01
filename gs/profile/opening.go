@@ -79,7 +79,7 @@ func (p *Profile) DecodeOpening(reader game.MemoryReader) OpeningFacts {
 		Controllable:             ow.Controllable,
 		MovementIdle:             ow.MovementIdle,
 		InBattle:                 ow.InBattle,
-		ScriptActive:             ow.InDialogue,
+		ScriptActive:             gsScriptActive(reader),
 		GotStarter:               story.StarterReceived,
 		GotMysteryEgg:            story.MysteryEggReceived,
 		HasPokedex:               story.PokedexAcquired,

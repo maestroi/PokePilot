@@ -162,7 +162,7 @@ func sanitizeObjectSegment(s string) string {
 // .gbrun artifact and the run's structured objective-failure summary. It
 // keeps diagnostic evidence best-effort: losing telemetry/recording must
 // never change the gameplay result or prevent the lease from settling.
-func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string, progEarly, progFinal *farm.Progress, recording []byte) {
+func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, reason, detail string, burn int, checkpointDir string, progEarly, progFinal *farm.Progress, recording []byte, failureClasses ...farm.FinishFailureClass) {
 	report := farm.FinishReport{
 		RunID:         spec.RunID,
 		Attempt:       spec.Attempt,
@@ -172,6 +172,9 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 		SeedBurn:      burn,
 		ProgressEarly: progEarly,
 		ProgressFinal: progFinal,
+	}
+	if len(failureClasses) > 0 {
+		report.FailureClass = failureClasses[0]
 	}
 	// A nil emulator is deliberate for terminal faults such as
 	// skill.ErrLinkStalled where another goroutine may still be inside

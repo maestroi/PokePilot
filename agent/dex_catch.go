@@ -46,11 +46,11 @@ func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective
 	}
 
 	blocked := dexCatchBlockedPlaces(obs)
-	hops := map[uint8]int{}
-	var adjacency map[uint8][]uint8
+	hops := map[uint16]int{}
+	var adjacency map[uint16][]uint16
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 
 	best := map[SpeciesID]dexCatchHabitat{}
@@ -116,7 +116,7 @@ func appendDexCatchObjectives(obs Observation, known *Knowledge, out []Objective
 	return out
 }
 
-func dexCatchSource(obs Observation, species SpeciesID, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (dexCatchHabitat, bool) {
+func dexCatchSource(obs Observation, species SpeciesID, src DexSource, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (dexCatchHabitat, bool) {
 	if place, distance, ok := dexCatchGrassSource(obs, src, blocked, hops, adjacency); ok {
 		return dexCatchHabitat{Species: species, Place: place, Hops: distance}, true
 	}
@@ -161,14 +161,14 @@ func dexCatchMethodRank(candidate dexCatchHabitat) int {
 	}
 }
 
-func dexCatchGrassSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+func dexCatchGrassSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (PlaceID, int, bool) {
 	if !hasBalls(obs) || src.Kind != AcquireWildGrass || src.Requirement != "" || src.Place == "" {
 		return "", 0, false
 	}
 	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
 }
 
-func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, ItemID, bool) {
+func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (PlaceID, int, ItemID, bool) {
 	if !hasBalls(obs) || src.Kind != AcquireFishing {
 		return "", 0, "", false
 	}
@@ -190,14 +190,14 @@ func dexCatchFishingSource(obs Observation, src DexSource, blocked map[PlaceID]b
 	return place, distance, rod, true
 }
 
-func dexCatchWaterSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+func dexCatchWaterSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (PlaceID, int, bool) {
 	if !hasBalls(obs) || src.Kind != AcquireWildWater || src.Requirement != "surf" || src.Place == "" || !dexSurfAvailable(obs) {
 		return "", 0, false
 	}
 	return dexCatchPlace(obs, src.Place, blocked, hops, adjacency)
 }
 
-func dexCatchSafariSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+func dexCatchSafariSource(obs Observation, src DexSource, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (PlaceID, int, bool) {
 	if src.Kind != AcquireWildGrass || src.Place == "" || strings.TrimSpace(src.Requirement) != "safari_zone" {
 		return "", 0, false
 	}
@@ -256,12 +256,12 @@ func dexFishingRod(requirement string) (ItemID, bool) {
 	}
 }
 
-func dexCatchPlace(obs Observation, place PlaceID, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (PlaceID, int, bool) {
+func dexCatchPlace(obs Observation, place PlaceID, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (PlaceID, int, bool) {
 	distance, ok := dexCatchPlaceDistance(obs, place, blocked, hops, adjacency)
 	return place, distance, ok
 }
 
-func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]bool, hops map[uint8]int, adjacency map[uint8][]uint8) (int, bool) {
+func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]bool, hops map[uint16]int, adjacency map[uint16][]uint16) (int, bool) {
 	if place == "" || blocked[place] {
 		return 0, false
 	}
@@ -275,7 +275,7 @@ func dexCatchPlaceDistance(obs Observation, place PlaceID, blocked map[PlaceID]b
 	if dest.Map == obs.Map {
 		return 0, true
 	}
-	distance, reachable := hops[dest.Map]
+	distance, reachable := hops[uint16(dest.Map)]
 	if len(adjacency) > 0 && !reachable {
 		return 0, false
 	}

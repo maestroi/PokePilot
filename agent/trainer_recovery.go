@@ -452,11 +452,20 @@ func trainingUnviableHere(obs Observation) bool {
 }
 
 // combatPreparationTrainingExhausted reports that the current area cannot
-// train and every assessed learned habitat is unusable. No assessments means
-// no evidence either way, so it never counts as exhausted.
+// train and no assessed habitat can advance readiness. When local training is
+// outside budget and there are no assessed training areas at all, the agent
+// has no known route to the readiness target, so the preparation loop would
+// force heal/resupply/reposition forever; promoting the loss to retry is the
+// only remaining progress, so that state counts as exhausted. Standing where
+// there is no grass (a city commute) is not exhausted: the agent can still
+// travel to a known training area, and unlocking the gym there would let the
+// commute loop return.
 func combatPreparationTrainingExhausted(obs Observation) bool {
-	if (obs.HasGrass && !trainingUnviableHere(obs)) || len(obs.TrainingAreaChoices) == 0 {
+	if !trainingUnviableHere(obs) {
 		return false
+	}
+	if len(obs.TrainingAreaChoices) == 0 {
+		return true
 	}
 	for _, area := range obs.TrainingAreaChoices {
 		if area.Selected {

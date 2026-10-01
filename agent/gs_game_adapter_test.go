@@ -2,11 +2,13 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 func TestGSObjectiveCatalogOffersThreeSemanticStarters(t *testing.T) {
@@ -258,6 +260,43 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		if err := adapter.VerifyPostcondition(o, Observation{}, final, ObjectiveResult{}); err != nil {
 			t.Fatalf("VerifyPostcondition(%s): %v", progress, err)
 		}
+	}
+}
+
+func TestGSNavigationFailuresNormalizeAsRecoverableBlocks(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	final := Observation{Controllable: true}
+	for _, tc := range []struct {
+		err   error
+		cause string
+	}{
+		{errors.Join(errors.New("sprout route"), world.ErrNoPath), "no_path"},
+		{errors.Join(errors.New("johto route"), world.ErrNoRoute), "no_route"},
+		{errors.Join(errors.New("native walk"), skill.ErrNavigationStalled), "navigation_stalled"},
+		{errors.Join(errors.New("native replan"), skill.ErrReplanExhausted), "route_replan_exhausted"},
+		{errors.Join(errors.New("native edge"), skill.ErrLegUnwalkable), "leg_unwalkable"},
+	} {
+		failure := adapter.NormalizeFailure(game.FailurePhaseExecution, tc.err, final)
+		if failure.Class != game.FailureClassBlocked || !failure.Recoverable || failure.Cause != tc.cause {
+			t.Fatalf("NormalizeFailure(%v) = %+v, want recoverable blocked cause %q", tc.err, failure, tc.cause)
+		}
+	}
+}
+
+func TestGSReplanExhaustionTakesPrecedenceOverWrappedLegFailure(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	err := fmt.Errorf("native replan: %w: %w", skill.ErrReplanExhausted, skill.ErrLegUnwalkable)
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{Controllable: true})
+	if failure.Cause != "route_replan_exhausted" {
+		t.Fatalf("failure = %+v, want route_replan_exhausted precedence", failure)
+	}
+}
+
+func TestGSNavigationFailureFailsClosedOnUnsafeBoundary(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, world.ErrNoPath, Observation{InBattle: true})
+	if failure.Class != game.FailureClassControllerUncertain || failure.Recoverable || failure.Cause != "no_path" {
+		t.Fatalf("failure = %+v, want non-recoverable controller uncertainty with no_path cause", failure)
 	}
 }
 

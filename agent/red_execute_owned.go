@@ -104,6 +104,23 @@ func requiredBattleEvidenceFromRed(encounter string, result state.BattleResult) 
 	return &BattleEvidence{Encounter: encounter, Result: name, Won: result == state.ResultWon}
 }
 
+func attachGymBattleEvidence(result *ObjectiveResult, encounter string, outcome state.BattleResult, executionErr error) {
+	if result == nil {
+		return
+	}
+	// ResultWon is the zero value, so on an execution error it is ambiguous:
+	// the gym may have failed before any leader battle began. Lost/draw are
+	// unambiguous resolved-battle evidence and must survive later settlement
+	// errors so generic failure normalization can recover combat_defeat.
+	if executionErr != nil && outcome == state.ResultWon {
+		return
+	}
+	result.Battle = requiredBattleEvidenceFromRed(encounter, outcome)
+	if outcome != state.ResultWon {
+		result.Outcome = OutcomeBlocked
+	}
+}
+
 // executeRedOwned is the Red adapter's action dispatcher. All semantic entity
 // ids are translated here, immediately before a Red skill consumes its native
 // numeric/index representation.
@@ -251,14 +268,13 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 
 	case KindGym:
 		gym, err := skill.Gym(m, romData, skill.StatAwareMove(romData))
+		attachGymBattleEvidence(&result, string(o.Place), gym, err)
 		if err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
-		result.Battle = requiredBattleEvidenceFromRed(string(o.Place), gym)
 		if gym == state.ResultWon {
 			return result, nil
 		}
-		result.Outcome = OutcomeBlocked
 		return result, gymOutcomeErr(o, gym)
 
 	case KindCatch:

@@ -109,3 +109,18 @@ func TestFindNativeRoute(t *testing.T) {
 		t.Fatalf("route = %#v, want %#04x -> %#04x", route, b, c)
 	}
 }
+
+func TestFindNativeRouteFromReentersThroughOtherEntry(t *testing.T) {
+	// Map 2 has two stairs in from 1; only entry 1 can reach the stairs to 3.
+	up0 := NativeEdge{Kind: EdgeWarp, From: 1, To: 2, DestWarp: 0}
+	up1 := NativeEdge{Kind: EdgeWarp, From: 1, To: 2, DestWarp: 1}
+	down := NativeEdge{Kind: EdgeWarp, From: 2, To: 1}
+	top := NativeEdge{Kind: EdgeWarp, From: 2, To: 3}
+	g := &NativeGraph{Edges: map[uint16][]NativeEdge{1: {up0, up1}, 2: {down, top}, 3: nil}}
+
+	bad := map[NativeUnreachable]bool{{Map: 2, Entry: 0, Edge: top}: true}
+	route, err := FindNativeRouteFrom(g, 2, 0, 3, bad)
+	if err != nil || len(route) != 3 || route[0] != down || route[1] != up1 || route[2] != top {
+		t.Fatalf("route = %v, %v; want down, re-enter via entry 1, top", route, err)
+	}
+}

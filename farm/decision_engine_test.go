@@ -43,7 +43,11 @@ func TestDecisionEngineSpecMode(t *testing.T) {
 	if err != nil || *got != (DecisionEngineSpec{Backend: DecisionBackendOff, Mode: DecisionModeOff}) || got.Enabled() {
 		t.Fatalf("mode off = %+v, %v", got, err)
 	}
-	for _, bad := range []DecisionEngineSpec{{Backend: "jev", Mode: "yolo"}, {Backend: "jev", Mode: "active", Battles: true}, {Backend: "jev", Battles: true}} {
+	active, err := (&DecisionEngineSpec{Backend: "jev", Mode: "active", Battles: true, MinConfidence: 0.8}).Normalized()
+	if err != nil || active.Mode != DecisionModeActive || !active.Battles || active.MinConfidence != 0.8 {
+		t.Fatalf("active battles = %+v, %v", active, err)
+	}
+	for _, bad := range []DecisionEngineSpec{{Backend: "jev", Mode: "yolo"}} {
 		if _, err := bad.Normalized(); err == nil || !strings.Contains(err.Error(), "decision_engine") {
 			t.Errorf("Normalized(%+v) err = %v", bad, err)
 		}

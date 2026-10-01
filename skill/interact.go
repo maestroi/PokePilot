@@ -162,18 +162,19 @@ func faceWithOverworldDecoder(m faceMachine, decoder game.OverworldDecoder, tx, 
 		m.StepFrame()
 	}
 	for frame := 0; frame < faceTurnBudget; frame++ {
-		if decoder.DecodeOverworld(m).Facing == want {
+		after := decoder.DecodeOverworld(m)
+		// The step onto this tile can roll a wild encounter that starts after
+		// the walk returned; the turn tap then lands in the battle intro. Check
+		// battle before facing: battle mode may preserve the requested facing
+		// byte, which must not make a live encounter look like a successful Face.
+		if after.InBattle {
+			return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
+				want, live.NativeMapID, live.X, live.Y, ErrBattle)
+		}
+		if after.Facing == want {
 			return nil
 		}
 		m.StepFrame()
-	}
-
-	// The step onto this tile can roll a wild encounter that starts after
-	// the walk returned; the turn tap then lands in the battle intro.
-	after := decoder.DecodeOverworld(m)
-	if after.InBattle {
-		return fmt.Errorf("skill: Face: battle started before turning %s from map %#04x at (%d,%d): %w",
-			want, live.NativeMapID, live.X, live.Y, ErrBattle)
 	}
 	return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
 }
@@ -300,9 +301,19 @@ func TalkAt(m *emu.Emu, romData []byte, homeX, homeY uint8, policy MovePolicy) (
 
 	const attempts = 4
 	for attempt := 1; attempt <= attempts; attempt++ {
-		tx, ty, facing, err := faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+		var tx, ty uint8
+		var facing bool
+		_, err := RunInterruptible(m, policy, InterruptibleAction{
+			Name:           "TalkAt face live object",
+			MaxEngagements: attempts,
+			Run: func() error {
+				var faceErr error
+				tx, ty, facing, faceErr = faceLiveMapObjectWithDecoder(m, decoder, romData, h, objectID, homeX, homeY, policy)
+				return faceErr
+			},
+		})
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("skill: TalkAt: face object %d at (%d,%d): %w", objectID, tx, ty, err)
 		}
 		if !facing {
 			m.StepFrames(npcWaitFrames)
@@ -394,6 +405,14 @@ func faceLiveMapObjectWithDecoder(m *emu.Emu, decoder game.OverworldDecoder, rom
 		return tx, ty, false, nil
 	}
 	if err := faceWithOverworldDecoder(m, decoder, faceX, faceY); err != nil {
+		// A wandering NPC can vacate the target tile between the live-position
+		// refresh above and the direction tap. If that lets the player step into
+		// grass, the delayed encounter belongs to this approach and must escape
+		// to TalkAt's interruption runner instead of being mistaken for ordinary
+		// NPC motion (#2279).
+		if errors.Is(err, ErrBattle) {
+			return tx, ty, false, err
+		}
 		return tx, ty, false, nil
 	}
 	return tx, ty, true, nil
