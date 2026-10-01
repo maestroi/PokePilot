@@ -136,6 +136,9 @@ const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
 const isLLM = computed(() => form.planner === 'llm')
 const isTetris = computed(() => form.game === 'tetris')
+// Boxxle is a puzzle cartridge with no starter, destination, or goal: the
+// deterministic policy plays it and the run ends when the puzzle round does.
+const isBoxxle = computed(() => form.game === 'boxxle')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isGen2 = computed(() => form.game === 'pokemon-gold' || form.game === 'pokemon-silver')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
@@ -157,7 +160,15 @@ watch(() => form.game, (game, previous) => {
     decisionTarget.value = jev ? `deployment:${jev.id}` : (deployments.value.length ? 'off' : 'env:jev')
     return
   }
-  if (previous === 'tetris' && form.planner === 'policy') {
+  if (game === 'boxxle') {
+    form.planner = 'policy'
+    form.starter = ''
+    form.dest = ''
+    form.goal = ''
+    decisionTarget.value = 'off'
+    return
+  }
+  if ((previous === 'tetris' || previous === 'boxxle') && form.planner === 'policy') {
     form.planner = 'llm'
     form.goal = defaultGoalForPlayStyle('adventure')
     decisionTarget.value = 'off'
@@ -192,7 +203,7 @@ function randomizeSeed(): void {
 }
 
 function starterRequest(): string {
-  if (isTetris.value) return ''
+  if (isTetris.value || isBoxxle.value) return ''
   if (isYellow.value) return 'pikachu'
   if (isGen2.value) return starterMode.value === 'default' ? '' : starterMode.value
   if (starterMode.value === 'specific') return specificStarter.value.trim()
@@ -210,7 +221,7 @@ function runURL(runID: string): string {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (!isTetris.value && !isYellow.value && !isGen2.value && isSpecificStarter.value && !specificStarter.value.trim()) {
+  if (!isTetris.value && !isBoxxle.value && !isYellow.value && !isGen2.value && isSpecificStarter.value && !specificStarter.value.trim()) {
     error.value = 'Enter the Gen I Pokémon you want to use as the starter.'
     return
   }
@@ -262,6 +273,7 @@ async function submit(): Promise<void> {
             <option value="pokemon-gold">Pokémon Gold</option>
             <option value="pokemon-silver">Pokémon Silver</option>
             <option value="tetris">Tetris</option>
+            <option value="boxxle">Boxxle</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Choose the cartridge first; the launch options below adapt to the selected game.</span>
         </label>
@@ -271,7 +283,7 @@ async function submit(): Promise<void> {
           <input v-model="form.run_id" placeholder="Leave blank to generate one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
-        <label v-if="!isTetris && !isGen2" class="block">
+        <label v-if="!isTetris && !isGen2 && !isBoxxle" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="form.planner" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="llm">Play the game</option>
@@ -279,7 +291,7 @@ async function submit(): Promise<void> {
           </select>
         </label>
 
-        <label v-if="!isTetris" class="block">
+        <label v-if="!isTetris && !isBoxxle" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
           <input v-if="isYellow" value="Pikachu · scripted" disabled class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10" />
           <select v-else-if="isGen2" v-model="starterMode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
@@ -309,13 +321,13 @@ async function submit(): Promise<void> {
           <span class="mt-1 block text-[11px] text-slate-600">{{ isYellow ? 'Yellow always starts with Pikachu through its scripted opening.' : (isGen2 ? 'Gold/Silver use the cartridge-native Elm starter flow; no ROM patching is used.' : 'Random choices are deterministic from the run seed. Pick Specific Pokémon for any other Gen I species.') }}</span>
         </label>
 
-        <label v-if="isSpecificStarter && !isYellow && !isGen2 && !isTetris" class="block">
+        <label v-if="isSpecificStarter && !isYellow && !isGen2 && !isTetris && !isBoxxle" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Specific Pokémon</span>
           <input v-model="specificStarter" placeholder="e.g. pikachu, dragonite, snorlax" autocomplete="off" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
           <span class="mt-1 block text-[11px] text-slate-600">Enter any valid Generation I Pokémon name.</span>
         </label>
 
-        <label v-if="!isLLM && !isTetris" class="block">
+        <label v-if="!isLLM && !isTetris && !isBoxxle" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Destination</span>
           <input v-model="form.dest" placeholder="viridian pokemon center" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>

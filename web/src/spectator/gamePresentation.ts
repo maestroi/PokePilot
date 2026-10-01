@@ -11,6 +11,10 @@ export function isTetrisRun(run: SpectatorRun | null | undefined): boolean {
   return Boolean(run && (run.game === 'tetris' || run.game_state?.kind === 'tetris'))
 }
 
+export function isBoxxleRun(run: SpectatorRun | null | undefined): boolean {
+  return Boolean(run && run.game === 'boxxle')
+}
+
 export function gameTitle(run: SpectatorRun): string {
   if (isTetrisRun(run)) return 'Tetris'
   switch ((run.game || '').toLowerCase()) {
@@ -18,6 +22,7 @@ export function gameTitle(run: SpectatorRun): string {
     case 'pokemon-yellow': return 'Pokémon Yellow'
     case 'pokemon-gold': return 'Pokémon Gold'
     case 'pokemon-silver': return 'Pokémon Silver'
+    case 'boxxle': return 'Boxxle'
     default: return 'Pokémon Red'
   }
 }

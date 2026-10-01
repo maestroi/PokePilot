@@ -38,6 +38,7 @@ export function gameTitle(game: string | undefined): string {
     case 'pokemon-gold': return 'Pokémon Gold'
     case 'pokemon-silver': return 'Pokémon Silver'
     case 'tetris': return 'Tetris'
+    case 'boxxle': return 'Boxxle'
     case 'pokemon-red':
     default: return 'Pokémon Red'
   }
@@ -136,7 +137,7 @@ export function howText(run: DashboardRun): string {
 }
 
 export function starterLabel(run: DashboardRun): string {
-  if (run.game === 'tetris') return '—'
+  if (run.game === 'tetris' || run.game === 'boxxle') return '—'
   return run.starter || (run.game === 'pokemon-yellow' ? 'pikachu' : (run.planner === 'scripted' ? 'squirtle' : 'LLM picks'))
 }
 
@@ -175,6 +176,7 @@ export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'> & Partial<P
     const mode = String(run.game_state?.mode || '').replace('type-', 'Type ').toUpperCase()
     return mode ? `${mode} · ${screen.replaceAll('-', ' ')}` : screen.replaceAll('-', ' ')
   }
+  if (run.game === 'boxxle') return 'Puzzle'
   const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
   return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`
 }

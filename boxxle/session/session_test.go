@@ -27,11 +27,11 @@ func TestBootStepsTheSettleBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stepped != bootFrameBudget {
-		t.Fatalf("Boot stepped %d frames, want %d", stepped, bootFrameBudget)
+	if stepped != launchSettleFrames {
+		t.Fatalf("Boot stepped %d frames, want %d", stepped, launchSettleFrames)
 	}
-	if m.frames != bootFrameBudget {
-		t.Fatalf("machine advanced %d frames, want %d", m.frames, bootFrameBudget)
+	if m.frames != launchSettleFrames {
+		t.Fatalf("machine advanced %d frames, want %d", m.frames, launchSettleFrames)
 	}
 }
 

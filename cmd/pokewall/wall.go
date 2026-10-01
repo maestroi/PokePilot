@@ -756,11 +756,13 @@ func normalizeGameStarter(spec *farm.Spec) error {
 			return fmt.Errorf("boxxle does not use a starter, got %q", spec.Starter)
 		}
 		spec.Starter = ""
+		// policy plays the puzzles; launch only boots and registers the
+		// cartridge, which is a smoke test and never the default.
 		if strings.TrimSpace(spec.Planner) == "" {
-			spec.Planner = "launch"
+			spec.Planner = "policy"
 		}
-		if spec.Planner != "launch" {
-			return fmt.Errorf("boxxle uses planner %q, got %q", "launch", spec.Planner)
+		if spec.Planner != "policy" && spec.Planner != "launch" {
+			return fmt.Errorf("boxxle uses planner %q or %q, got %q", "policy", "launch", spec.Planner)
 		}
 		return nil
 	}

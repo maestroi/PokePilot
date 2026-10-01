@@ -563,9 +563,11 @@ func TestValidateSpecAcceptsTetrisPolicy(t *testing.T) {
 	}
 }
 
-func TestValidateSpecAcceptsBoxxleLaunch(t *testing.T) {
-	if err := validateSpec("boxxle", "launch", "", ""); err != nil {
-		t.Fatalf("Boxxle launch rejected: %v", err)
+func TestValidateSpecAcceptsBoxxlePolicyAndLaunch(t *testing.T) {
+	for _, planner := range []string{"policy", "launch"} {
+		if err := validateSpec("boxxle", planner, "", ""); err != nil {
+			t.Fatalf("Boxxle %s rejected: %v", planner, err)
+		}
 	}
 	if err := validateSpec("boxxle", "llm", "", ""); err == nil {
 		t.Fatal("Boxxle unexpectedly accepted the Pokemon LLM planner")
