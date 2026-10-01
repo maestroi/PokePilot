@@ -428,6 +428,35 @@ func TestClassifyRepairsUsesFingerprintRevision(t *testing.T) {
 	}
 }
 
+// #2108: the [triage:key] repair merged, the failure recurred on a revision
+// containing it, and a later fix without the marker closed the issue. A
+// recurrence before that closure baseline is stale, exactly as pokeissues
+// judges it; only one on or after the baseline is a regression.
+func TestClassifyRepairsHonorsIssueResolutionBaseline(t *testing.T) {
+	repo := t.TempDir()
+	git := testGit(t, repo)
+	git("init", "-b", "main")
+	commit := func(content string) string {
+		if err := os.WriteFile(filepath.Join(repo, "note"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git("add", "note")
+		git("commit", "-m", content)
+		return strings.TrimSpace(git("rev-parse", "HEAD"))
+	}
+	repair := commit("triage repair")
+	observedBeforeLaterFix := commit("observed")
+	baseline := commit("later fix, issue closed")
+
+	repaired, regressed := ClassifyRepairs(repo, []RepairObservation{
+		{Key: "stale", MergeSHA: repair, ObservedRevision: observedBeforeLaterFix, FixedRevision: baseline},
+		{Key: "real", MergeSHA: repair, ObservedRevision: baseline, FixedRevision: baseline},
+	})
+	if !sameKeys(repaired, []string{"stale"}) || !sameKeys(regressed, []string{"real"}) {
+		t.Fatalf("repaired = %v, regressed = %v", repaired, regressed)
+	}
+}
+
 func TestFalseRegressionDoesNotBeatOpenIssue(t *testing.T) {
 	repo := t.TempDir()
 	git := testGit(t, repo)
@@ -511,6 +540,28 @@ func TestPickOwnPRFailureIgnoresPendingAndUntagged(t *testing.T) {
 	}
 	if _, ok := PickOwnPRFailure(prs); ok {
 		t.Fatal("pending or untagged PRs are not own failures")
+	}
+}
+
+// A conflicting fixer PR can sit with pending or absent checks forever; it is
+// repaired like a red check instead of blocking its triage key.
+func TestPickOwnPRFailureRepairsMergeConflicts(t *testing.T) {
+	raw := []byte(`[
+	  {"number":5,"title":"fix(farm): stuck [triage:aaa]","headRefName":"fix/stuck","mergeable":"CONFLICTING","statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"ci / test","status":"QUEUED","conclusion":null}
+	  ]},
+	  {"number":6,"title":"fix(farm): fine [triage:bbb]","headRefName":"fix/fine","mergeable":"MERGEABLE","statusCheckRollup":[]}
+	]`)
+	prs, err := DecodePullRequests(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := PickOwnPRFailure(prs)
+	if !ok || got.Number != 5 {
+		t.Fatalf("conflicting triage PR not picked: %+v ok=%v", got, ok)
+	}
+	if !strings.Contains(got.FailingChecks(), "merge conflict with main") {
+		t.Fatalf("repair instruction missing: %q", got.FailingChecks())
 	}
 }
 

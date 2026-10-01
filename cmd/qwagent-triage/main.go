@@ -85,6 +85,16 @@ func pickCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	if g.Issue != nil && g.Issue.IssueNumber > 0 {
 		out["issue_number"] = g.Issue.IssueNumber
 	}
+	for _, k := range regressed {
+		if strings.TrimSpace(k) == g.Key {
+			// Picked because the fingerprint recurred on a revision that
+			// contains its merged [triage:key] repair: the fix did not hold.
+			out["regressed"] = true
+			if g.Issue != nil {
+				out["observed_revision"] = g.Issue.LastObservedRevision
+			}
+		}
+	}
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)

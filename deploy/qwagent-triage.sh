@@ -318,6 +318,12 @@ seed_rom() {
 	fi
 	mkdir -p "$POKEPILOT_TRIAGE_TREE/roms"
 	ln -sfn "$src" "$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+	# Blue/Yellow/Gen 2 failures replay only when their cartridge sits in the
+	# same ROM dir (POKEPILOT_ROM_DIR follows POKEMON_RED_ROM). Link siblings.
+	local rom
+	for rom in "$(dirname "$src")"/*.gb "$(dirname "$src")"/*.gbc; do
+		[ -f "$rom" ] && [ "$rom" != "$src" ] && ln -sfn "$rom" "$POKEPILOT_TRIAGE_TREE/roms/$(basename "$rom")"
+	done
 	if ! grep -qxF 'roms/pokemon_red.gb' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
 		printf '%s\n' 'roms/pokemon_red.gb' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
 	fi
@@ -332,7 +338,7 @@ pick_next() {
 		log "MCP triage unreachable; skip"
 		return 2
 	fi
-	open_prs=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json number,title,headRefName,url,statusCheckRollup 2>/dev/null || printf '[]')
+	open_prs=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json number,title,headRefName,url,statusCheckRollup,mergeable 2>/dev/null || printf '[]')
 	own_err=$(mktemp)
 	set +e
 	own_pr=$(printf '%s' "$open_prs" | "$bin" pick-own-pr 2>"$own_err")
@@ -429,7 +435,8 @@ for pr in prs:
 
 rows = []
 for key, (_, merge_sha, observed) in latest.items():
-    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed})
+    fixed = str((groups[key].get("issue") or {}).get("fixed_revision") or "").strip()
+    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed, "fixed_revision": fixed})
 json.dump(rows, sys.stdout)
 PY
 )
