@@ -128,11 +128,39 @@ print(",".join("#" + n for n in old))
 report stuck-prs 1 "${stuck:+fixer PRs open over 12h (CI failing?): $stuck}"
 
 # --- deploy: Swarm rolled a service back from a crash-looping image -------
+# Repeated rollbacks mean merged fixes keep shipping broken images. Freeze only
+# the DEPLOY path (pokefarm-pull.timer): runs keep playing on the image that is
+# up, so the farm stays busy, and deploys resume by themselves after the freeze.
+FREEZE_ROLLBACKS=${POKEPILOT_FREEZE_ROLLBACKS:-3}
+FREEZE_SECONDS=${POKEPILOT_FREEZE_SECONDS:-86400}
+deploy_note=""
 if [ -n "${POKEPILOT_SWARM_MANAGER:-}" ]; then
-	rolled=$(timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$POKEPILOT_SWARM_MANAGER" \
-		'for s in $(docker service ls --filter label=com.docker.stack.namespace=pokefarm -q); do docker service inspect "$s" --format "{{.Spec.Name}} {{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}"; done' 2>/dev/null |
-		awk '$2 ~ /^rollback/ {print $1}' | paste -sd, -)
+	ssh_manager() { timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$POKEPILOT_SWARM_MANAGER" "$@" 2>/dev/null; }
+	svc=$(ssh_manager 'for s in $(docker service ls --filter label=com.docker.stack.namespace=pokefarm -q); do docker service inspect "$s" --format "{{.Spec.Name}} {{if .UpdateStatus}}{{.UpdateStatus.State}} {{.UpdateStatus.CompletedAt}}{{end}}"; done')
+	rolled=$(awk '$2 ~ /^rollback/ {print $1}' <<<"$svc" | paste -sd, -)
 	report rollback 1 "${rolled:+Swarm rolled back a crash-looping image: $rolled (rollout holds until the next merge)}"
+
+	# One event per (service, completion time); the status stays until the next update.
+	events="$STATE/rollback-events"
+	while read -r name state completed; do
+		case "$state" in rollback*) ;; *) continue ;; esac
+		grep -qF " $name $completed" "$events" 2>/dev/null || echo "$now $name $completed" >>"$events"
+	done <<<"$svc"
+	recent=$(awk -v since=$((now - FREEZE_SECONDS)) '$1 >= since' "$events" 2>/dev/null | wc -l)
+
+	frozen_at=$(cat "$STATE/deploy-frozen" 2>/dev/null || echo 0)
+	if [ "$frozen_at" -gt 0 ]; then
+		deploy_note="deploys frozen since $(date -d "@$frozen_at" +%H:%M) after $FREEZE_ROLLBACKS+ rollbacks; runs unaffected"
+		if [ $((now - frozen_at)) -ge "$FREEZE_SECONDS" ] && ssh_manager 'systemctl start pokefarm-pull.timer'; then
+			rm -f "$STATE/deploy-frozen"
+			deploy_note=""
+			notify "▶️ PokePilot: deploys resumed after the ${FREEZE_SECONDS}s freeze"
+		fi
+	elif [ "$recent" -ge "$FREEZE_ROLLBACKS" ] && ssh_manager 'systemctl stop pokefarm-pull.timer'; then
+		echo "$now" >"$STATE/deploy-frozen"
+		deploy_note="deploys frozen; runs unaffected"
+		notify "🛑 PokePilot: $recent Swarm rollbacks in the last ${FREEZE_SECONDS}s. Deploys are frozen (pokefarm-pull.timer stopped); runs keep going on the current image and deploys resume automatically after the freeze."
+	fi
 fi
 
 # --- daily digest ----------------------------------------------------------
@@ -169,7 +197,8 @@ json.dump(cur, open(prev_path, "w"))
 	free_today=$(awk -F'\t' -v since=$((now - 86400)) '$4 == "started" && $3 == "opencode" && $1 >= since' "$ledger" 2>/dev/null | wc -l)
 	notify "📊 PokePilot daily
 PRs merged: $merged · farm issues opened: $opened, closed: $closed
-fixer starts: qwen $free_today, paid $paid_today/$PAID_CAP
+fixer starts: qwen $free_today, paid $paid_today/$PAID_CAP${deploy_note:+
+$deploy_note}
 $runs"
 	echo "$today" >"$STATE/digest-day"
 fi
