@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,28 @@ func TestValidateStrategicPlanRequiresObjectiveSentences(t *testing.T) {
 	}
 	if got.Steps[0] != "go to route 1" || got.Round != 4 || got.Step != 0 {
 		t.Fatalf("canonical plan = %+v", got)
+	}
+}
+
+// TestValidateStrategicPlanCapsCanonicalNotRawWording is the regression for
+// run-2letnd1jgfh1f: the strategist emitted a plan step whose raw wording was
+// 367 bytes — a canonical objective plus a long trailing menu note — over the
+// 320-byte cap, yet Chosen would have recovered the short canonical objective
+// from it. The cap must bound the stored canonical form, not the discarded raw
+// wording: capping the raw text made this a hard stop (not ErrPlanStepUnresolved)
+// that killed the run after 3 asks.
+func TestValidateStrategicPlanCapsCanonicalNotRawWording(t *testing.T) {
+	offered := []Objective{{Kind: KindGoTo, Place: "route 1"}}
+	raw := "go to route 1 (unvisited adjacent map; " + strings.Repeat("x", 300) + ")"
+	if len(raw) <= PlanStepCap {
+		t.Fatalf("test setup: raw step is %d bytes, want > %d", len(raw), PlanStepCap)
+	}
+	got, err := validateStrategicPlan(Plan{Goal: "north", Steps: []string{raw}}, offered, 4)
+	if err != nil {
+		t.Fatalf("decorated step was rejected: %v", err)
+	}
+	if got.Steps[0] != "go to route 1" {
+		t.Fatalf("canonical step = %q, want %q", got.Steps[0], "go to route 1")
 	}
 }
 

@@ -115,9 +115,6 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 		if step == "" {
 			return Plan{}, fmt.Errorf("agent: strategist: plan step %d is empty", i+1)
 		}
-		if len(step) > PlanStepCap {
-			return Plan{}, fmt.Errorf("agent: strategist: plan step %d is %d bytes, over cap %d", i+1, len(step), PlanStepCap)
-		}
 		if _, err := strconv.Atoi(step); err == nil {
 			return Plan{}, fmt.Errorf("agent: strategist: plan step %d is menu index %q; steps must be objective sentences", i+1, step)
 		}
@@ -125,7 +122,22 @@ func validateStrategicPlan(p Plan, offered []Objective, round int) (Plan, error)
 		if err != nil {
 			return Plan{}, fmt.Errorf("agent: strategist: plan step %d does not resolve: %w: %w", i+1, ErrPlanStepUnresolved, err)
 		}
-		canonical = append(canonical, obj.String())
+		// The cap bounds the durable step, which is the canonical form stored
+		// below — not the model's raw wording, which Chosen discards once it
+		// resolves. Capping the raw text turned a decorated sentence (a
+		// trailing menu note, a leading "N: " prefix) that Chosen is built to
+		// recover into a hard stop: the rejection fires before Chosen runs, and
+		// it is not ErrPlanStepUnresolved, so the run dies instead of falling
+		// back to the cheap chooser. MEASURED run-2letnd1jgfh1f: a 367-byte
+		// step resolved to a short canonical form but died on the raw-text cap
+		// after 3 asks. A raw sentence too long to match now degrades to
+		// ErrPlanStepUnresolved, and a genuinely oversized canonical form is
+		// the only thing that still hard-stops.
+		sentence := obj.String()
+		if len(sentence) > PlanStepCap {
+			return Plan{}, fmt.Errorf("agent: strategist: plan step %d is %d bytes, over cap %d", i+1, len(sentence), PlanStepCap)
+		}
+		canonical = append(canonical, sentence)
 		keys = append(keys, obj.Key())
 		// A strategic leg must not pre-commit through a world-state boundary.
 		// New maps and progression transactions can expose objectives that were
