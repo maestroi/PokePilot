@@ -1,254 +1,311 @@
 package boxxle
 
 import (
-	"reflect"
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/boxxle/sym"
 )
 
-// fakeReader is a ROM-free MemoryReader backed by a byte slice.
+// fakeReader is a ROM-free MemoryReader backed by a 64 KiB address space.
 type fakeReader struct {
 	mem []byte
 }
 
-func (f *fakeReader) Peek8(addr uint16) byte {
-	if int(addr) >= len(f.mem) {
-		return 0
-	}
-	return f.mem[addr]
-}
+func newFakeReader() *fakeReader { return &fakeReader{mem: make([]byte, 0x10000)} }
+
+func (f *fakeReader) Peek8(addr uint16) byte { return f.mem[addr] }
 
 func (f *fakeReader) PeekInto(addr uint16, dst []byte) {
 	for i := range dst {
-		a := addr + uint16(i)
-		if int(a) >= len(f.mem) {
-			dst[i] = 0
-		} else {
-			dst[i] = f.mem[a]
-		}
+		dst[i] = f.mem[addr+uint16(i)]
 	}
 }
 
-// newTileMapReader builds a fakeReader whose 0xC000 region contains the given
-// tile map. The tile map is 20 wide × 18 tall, rows 32 bytes apart.
-func newTileMapReader(tm [sym.TileMapHeight][sym.TileMapWidth]byte) *fakeReader {
-	mem := make([]byte, 0x10000) // 64 KiB, covers 0xC000-0xC3FF
-	for y := 0; y < sym.TileMapHeight; y++ {
-		for x := 0; x < sym.TileMapWidth; x++ {
-			addr := sym.TileMapTopLeft + uint16(y)*sym.TileMapStride + uint16(x)
-			mem[addr] = tm[y][x]
+// boardOrigin is where fixtures place cell (0,0) in the 32x32 background map,
+// in tiles. Real levels are not anchored at the map corner (level 1-1 starts at
+// tile column 1), so the fixtures are not either.
+const boardOriginCol, boardOriginRow = 1, 2
+
+// newBoardReader lays out a Sokoban text board the way the ROM draws it: 2x2
+// background cells, floor and exterior both the empty tile, and the player as
+// OAM sprite 0. Legend: # wall, $ crate, . goal, * crate on goal, @ player,
+// + player on goal, space floor. Crates drawn as sprites are added separately.
+func newBoardReader(rows ...string) *fakeReader {
+	f := newFakeReader()
+	f.mem[sym.LCDC] = 0x91
+	for y := 0; y < sym.BGMapSize; y++ {
+		for x := 0; x < sym.BGMapSize; x++ {
+			f.mem[int(sym.BGMapLow)+y*sym.BGMapSize+x] = sym.TileEmpty
 		}
 	}
-	return &fakeReader{mem: mem}
+	for y, row := range rows {
+		for x, ch := range row {
+			switch ch {
+			case '#':
+				f.putCell(x, y, sym.TileWall)
+			case '$':
+				f.putCell(x, y, sym.TileCrate)
+			case '.', '+':
+				f.putCell(x, y, sym.TileGoal)
+			case '*':
+				f.putCell(x, y, sym.TileCrateOnGoal)
+			}
+			if ch == '@' || ch == '+' {
+				f.setPlayer(x, y)
+			}
+		}
+	}
+	return f
 }
 
-// TestDecodeStatePuzzle verifies the decoder classifies a synthetic Sokoban
-// board: walls on the border, player/goal/crate in the interior.
-func TestDecodeStatePuzzle(t *testing.T) {
-	// Build a 7×7 Sokoban board:
-	//   #######
-	//   #     #
-	//   # @$. #
-	//   #  $  #
-	//   #  .  #
-	//   #     #
-	//   #######
-	//
-	// Tile ids: 0x01=wall, 0x02=player, 0x03=crate, 0x04=goal, 0x00=empty.
-	var tm [sym.TileMapHeight][sym.TileMapWidth]byte
-	board := [7][7]byte{
-		{1, 1, 1, 1, 1, 1, 1},
-		{1, 0, 0, 0, 0, 0, 1},
-		{1, 0, 2, 3, 4, 0, 1},
-		{1, 0, 0, 3, 0, 0, 1},
-		{1, 0, 0, 4, 0, 0, 1},
-		{1, 0, 0, 0, 0, 0, 1},
-		{1, 1, 1, 1, 1, 1, 1},
-	}
-	for y := 0; y < 7; y++ {
-		for x := 0; x < 7; x++ {
-			tm[y][x] = board[y][x]
-		}
-	}
+func (f *fakeReader) putCell(x, y int, tl byte) {
+	col, row := boardOriginCol+2*x, boardOriginRow+2*y
+	base := int(sym.BGMapLow)
+	f.mem[base+row*sym.BGMapSize+col] = tl
+	f.mem[base+row*sym.BGMapSize+col+1] = tl + 1
+	f.mem[base+(row+1)*sym.BGMapSize+col] = tl + 2
+	f.mem[base+(row+1)*sym.BGMapSize+col+1] = tl + 3
+}
 
-	reader := newTileMapReader(tm)
-	state, err := DecodeState(reader)
+// spritePx is the OAM (y, x) of cell (x, y)'s top-left sprite.
+func spritePx(x, y int) (byte, byte) {
+	return byte(16 + (boardOriginRow+2*y)*8), byte(8 + (boardOriginCol+2*x)*8)
+}
+
+func (f *fakeReader) setPlayer(x, y int) {
+	oy, ox := spritePx(x, y)
+	f.mem[sym.PlayerSprite], f.mem[sym.PlayerSprite+1], f.mem[sym.PlayerSprite+2] = oy, ox, 0x98
+}
+
+// putSpriteCrate draws a crate as four sprites in OAM slots 4-7.
+func (f *fakeReader) putSpriteCrate(x, y int, tile byte) {
+	oy, ox := spritePx(x, y)
+	at := int(sym.OAMBase) + 4*sym.OAMEntry
+	for i, o := range [][2]byte{{0, 0}, {0, 8}, {8, 0}, {8, 8}} {
+		f.mem[at+i*sym.OAMEntry] = oy + o[0]
+		f.mem[at+i*sym.OAMEntry+1] = ox + o[1]
+		f.mem[at+i*sym.OAMEntry+2] = tile + byte(i)
+	}
+}
+
+func mustDecode(t *testing.T, f *fakeReader) State {
+	t.Helper()
+	state, err := DecodeState(f)
 	if err != nil {
 		t.Fatalf("DecodeState: %v", err)
 	}
+	return state
+}
 
+func TestDecodeBoard(t *testing.T) {
+	state := mustDecode(t, newBoardReader(
+		"#######",
+		"#     #",
+		"# @$. #",
+		"#  $  #",
+		"#  .  #",
+		"#     #",
+		"#######",
+	))
 	if state.Screen != ScreenPuzzle {
-		t.Fatalf("Screen = %s, want %s", state.Screen, ScreenPuzzle)
+		t.Fatalf("Screen = %s, want puzzle", state.Screen)
 	}
 	if state.Width != 7 || state.Height != 7 {
-		t.Fatalf("Width×Height = %d×%d, want 7×7", state.Width, state.Height)
+		t.Fatalf("size = %dx%d, want 7x7", state.Width, state.Height)
 	}
-
-	// Verify the raw tile map is the ground truth.
-	if state.Tiles == nil {
-		t.Fatal("Tiles is nil, want the raw tile map")
+	if state.Player == nil || *state.Player != (Pos{2, 2}) {
+		t.Fatalf("Player = %v, want (2,2)", state.Player)
 	}
-	if len(state.Tiles) != 7 {
-		t.Fatalf("len(Tiles) = %d, want 7", len(state.Tiles))
+	if want := []Pos{{3, 2}, {3, 3}}; !samePosSet(state.Crates, want) {
+		t.Fatalf("Crates = %v, want %v", state.Crates, want)
 	}
-	for y := 0; y < 7; y++ {
-		if len(state.Tiles[y]) != 7 {
-			t.Fatalf("len(Tiles[%d]) = %d, want 7", y, len(state.Tiles[y]))
-		}
-		for x := 0; x < 7; x++ {
-			if state.Tiles[y][x] != board[y][x] {
-				t.Fatalf("Tiles[%d][%d] = 0x%02x, want 0x%02x", y, x, state.Tiles[y][x], board[y][x])
-			}
-		}
+	if want := []Pos{{4, 2}, {3, 4}}; !samePosSet(state.Goals, want) {
+		t.Fatalf("Goals = %v, want %v", state.Goals, want)
 	}
-
-	// Verify walls: the border of the 7×7 board.
-	wantWalls := []Pos{
-		{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}, {6, 0}, // top
-		{0, 1}, {6, 1}, // left/right
-		{0, 2}, {6, 2},
-		{0, 3}, {6, 3},
-		{0, 4}, {6, 4},
-		{0, 5}, {6, 5},
-		{0, 6}, {1, 6}, {2, 6}, {3, 6}, {4, 6}, {5, 6}, {6, 6}, // bottom
-	}
-	if !samePosSet(state.Walls, wantWalls) {
-		t.Errorf("Walls = %v, want %v", state.Walls, wantWalls)
-	}
-
-	// Verify player: (2, 2).
-	if state.Player == nil {
-		t.Fatal("Player is nil, want (2, 2)")
-	}
-	if state.Player.X != 2 || state.Player.Y != 2 {
-		t.Errorf("Player = (%d, %d), want (2, 2)", state.Player.X, state.Player.Y)
-	}
-
-	// Verify the board is not solved (crates are not on goals).
 	if state.Solved {
-		t.Error("Solved = true, want false")
+		t.Fatal("board with loose crates reported solved")
 	}
 }
 
-// TestDecodeStateSolved verifies the decoder detects a solved board: every
-// crate sits on a goal.
-func TestDecodeStateSolved(t *testing.T) {
-	// Build a 5×5 solved board:
-	//   #####
-	//   #   #
-	//   #$# #  (crate on goal)
-	//   #   #
-	//   #####
-	//
-	// In a solved state, the crate and goal overlap. The tile id for a
-	// crate-on-goal is a distinct tile (0x05).
-	var tm [sym.TileMapHeight][sym.TileMapWidth]byte
-	board := [5][5]byte{
-		{1, 1, 1, 1, 1},
-		{1, 0, 0, 0, 1},
-		{1, 2, 5, 0, 1}, // player at (1,2), crate-on-goal at (2,2)
-		{1, 0, 0, 0, 1},
-		{1, 1, 1, 1, 1},
-	}
-	for y := 0; y < 5; y++ {
-		for x := 0; x < 5; x++ {
-			tm[y][x] = board[y][x]
+// Floor and the area outside the walls are drawn identically, so the decoder
+// must seal what the player cannot reach; otherwise a crate could be planned
+// into the exterior.
+func TestDecodeSealsExterior(t *testing.T) {
+	state := mustDecode(t, newBoardReader(
+		"#####  ",
+		"#@$.# ##",
+		"#####  ",
+	))
+	for _, outside := range []Pos{{5, 0}, {6, 0}, {5, 2}} {
+		if !containsPos(state.Walls, outside) {
+			t.Errorf("exterior cell %v not sealed as wall; walls = %v", outside, state.Walls)
 		}
 	}
-
-	reader := newTileMapReader(tm)
-	state, err := DecodeState(reader)
-	if err != nil {
-		t.Fatalf("DecodeState: %v", err)
-	}
-
-	if state.Screen != ScreenPuzzle {
-		t.Fatalf("Screen = %s, want %s", state.Screen, ScreenPuzzle)
-	}
-
-	// The crate-on-goal tile (0x05) appears once, so it's classified as the
-	// player by the frequency heuristic. This is a known limitation: the
-	// decoder cannot distinguish a crate-on-goal from a player without the
-	// VRAM tile graphics. The raw Tiles field is the ground truth.
-	if state.Tiles == nil {
-		t.Fatal("Tiles is nil")
-	}
-	if state.Tiles[2][2] != 5 {
-		t.Errorf("Tiles[2][2] = 0x%02x, want 0x05", state.Tiles[2][2])
-	}
-}
-
-// TestDecodeStateMenu verifies the decoder classifies a sparse, tall tile map
-// as a menu.
-func TestDecodeStateMenu(t *testing.T) {
-	var tm [sym.TileMapHeight][sym.TileMapWidth]byte
-	// A vertical list of 5 tiles in column 5, rows 5-9.
-	for y := 5; y <= 9; y++ {
-		tm[y][5] = 0x10
-	}
-
-	reader := newTileMapReader(tm)
-	state, err := DecodeState(reader)
-	if err != nil {
-		t.Fatalf("DecodeState: %v", err)
-	}
-
-	if state.Screen != ScreenMenu {
-		t.Fatalf("Screen = %s, want %s", state.Screen, ScreenMenu)
-	}
-	// No board on the menu.
-	if state.Width != 0 || state.Height != 0 {
-		t.Errorf("Width×Height = %d×%d, want 0×0", state.Width, state.Height)
-	}
-}
-
-// TestDecodeStateTitle verifies the decoder classifies a dense tile map as a
-// title screen.
-func TestDecodeStateTitle(t *testing.T) {
-	var tm [sym.TileMapHeight][sym.TileMapWidth]byte
-	// Scatter 60 non-empty tiles across the full 20×18 map.
-	count := 0
-	for y := 0; y < sym.TileMapHeight && count < 60; y++ {
-		for x := 0; x < sym.TileMapWidth && count < 60; x++ {
-			if (x+y)%3 == 0 {
-				tm[y][x] = 0x20
-				count++
-			}
+	for _, inside := range []Pos{{1, 1}, {2, 1}, {3, 1}} {
+		if containsPos(state.Walls, inside) {
+			t.Errorf("interior cell %v wrongly sealed", inside)
 		}
 	}
+}
 
-	reader := newTileMapReader(tm)
-	state, err := DecodeState(reader)
-	if err != nil {
-		t.Fatalf("DecodeState: %v", err)
+// A pushed crate is a sprite, not a background cell, and it stays one.
+func TestDecodeSpriteCrate(t *testing.T) {
+	f := newBoardReader(
+		"########",
+		"#@    .#",
+		"########",
+		"########",
+	)
+	f.putSpriteCrate(3, 1, sym.TileCrate)
+	state := mustDecode(t, f)
+	if want := []Pos{{3, 1}}; !samePosSet(state.Crates, want) {
+		t.Fatalf("Crates = %v, want %v", state.Crates, want)
 	}
-
-	if state.Screen != ScreenTitle {
-		t.Fatalf("Screen = %s, want %s", state.Screen, ScreenTitle)
+	if state.Solved {
+		t.Fatal("crate off its goal reported solved")
 	}
 }
 
-// TestDecodeStateEmpty verifies the decoder returns ScreenUnknown for an empty
-// tile map.
-func TestDecodeStateEmpty(t *testing.T) {
-	var tm [sym.TileMapHeight][sym.TileMapWidth]byte
-	reader := newTileMapReader(tm)
-	state, err := DecodeState(reader)
-	if err != nil {
-		t.Fatalf("DecodeState: %v", err)
+func TestDecodeSolved(t *testing.T) {
+	f := newBoardReader(
+		"########",
+		"#@    .#",
+		"########",
+		"########",
+	)
+	f.putSpriteCrate(6, 1, sym.TileCrateOnGoal)
+	state := mustDecode(t, f)
+	if !state.Solved || state.Screen != ScreenSolved {
+		t.Fatalf("Solved=%v Screen=%s, want solved", state.Solved, state.Screen)
 	}
-	if state.Screen != ScreenUnknown {
-		t.Fatalf("Screen = %s, want %s", state.Screen, ScreenUnknown)
+	if len(state.Goals) != 1 || len(state.Crates) != 1 {
+		t.Fatalf("goals=%v crates=%v, want one of each (no duplicate goal)", state.Goals, state.Crates)
+	}
+}
+
+func TestDecodeBackgroundCrateOnGoal(t *testing.T) {
+	state := mustDecode(t, newBoardReader(
+		"#####",
+		"#@ *#",
+		"#####",
+		"#####",
+	))
+	if !state.Solved {
+		t.Fatalf("crate on goal not solved: crates=%v goals=%v", state.Crates, state.Goals)
+	}
+}
+
+// Screens that reuse the background map (title, menu, cutscene) have no wall
+// grid and must not decode as a puzzle.
+func TestDecodeNonBoardScreens(t *testing.T) {
+	f := newFakeReader()
+	f.mem[sym.LCDC] = 0x91
+	for i := 0; i < sym.BGMapSize*sym.BGMapSize; i++ {
+		f.mem[int(sym.BGMapLow)+i] = byte(i) // text-like noise, no wall cells
+	}
+	state := mustDecode(t, f)
+	if state.Screen != ScreenUnknown || state.Player != nil {
+		t.Fatalf("non-board decoded as %s player=%v", state.Screen, state.Player)
+	}
+}
+
+// Wall cells that do not share one 2x2 grid are not a board the decoder
+// understands; that is an error, not a guess.
+func TestDecodeMisaligned(t *testing.T) {
+	f := newBoardReader(
+		"#####",
+		"#@ $#",
+		"#####",
+		"#####",
+	)
+	f.putStray(sym.TileWall, 20, 20) // odd offset from the board's grid
+	if _, err := DecodeState(f); !errors.Is(err, ErrMisaligned) {
+		t.Fatalf("err = %v, want ErrMisaligned", err)
+	}
+}
+
+func (f *fakeReader) putStray(tl byte, col, row int) {
+	base := int(sym.BGMapLow)
+	f.mem[base+row*sym.BGMapSize+col] = tl
+	f.mem[base+row*sym.BGMapSize+col+1] = tl + 1
+	f.mem[base+(row+1)*sym.BGMapSize+col] = tl + 2
+	f.mem[base+(row+1)*sym.BGMapSize+col+1] = tl + 3
+}
+
+// Mid-step the sprite sits between cells: report no player rather than a
+// wrong cell, so the controller waits instead of acting on a bad position.
+func TestDecodePlayerBetweenCells(t *testing.T) {
+	f := newBoardReader(
+		"#####",
+		"#@ $#",
+		"#####",
+		"#####",
+	)
+	f.mem[sym.PlayerSprite] += 5
+	state := mustDecode(t, f)
+	if state.Player != nil {
+		t.Fatalf("Player = %v mid-step, want nil", state.Player)
+	}
+}
+
+func TestDecodeHonoursScroll(t *testing.T) {
+	f := newBoardReader(
+		"#####",
+		"#@ $#",
+		"#####",
+		"#####",
+	)
+	// Scrolling the view 16px right slides the map left under the screen, so a
+	// sprite that stays put on screen is now one cell further along the map.
+	f.mem[sym.SCX] = 16
+	state := mustDecode(t, f)
+	if state.Player == nil || *state.Player != (Pos{2, 1}) {
+		t.Fatalf("Player = %v, want (2,1) after scroll", state.Player)
+	}
+}
+
+func TestDecodeReadsSelectedBackgroundMap(t *testing.T) {
+	f := newBoardReader(
+		"#####",
+		"#@ $#",
+		"#####",
+		"#####",
+	)
+	// Move the board to the high map and select it; the low map is blank.
+	for i := 0; i < sym.BGMapSize*sym.BGMapSize; i++ {
+		f.mem[int(sym.BGMapHigh)+i] = f.mem[int(sym.BGMapLow)+i]
+		f.mem[int(sym.BGMapLow)+i] = sym.TileEmpty
+	}
+	if st := mustDecode(t, f); st.Screen != ScreenUnknown {
+		t.Fatalf("low map selected but blank decoded as %s", st.Screen)
+	}
+	f.mem[sym.LCDC] |= sym.LCDCBGMapHigh
+	if st := mustDecode(t, f); st.Screen != ScreenPuzzle {
+		t.Fatalf("high map selected decoded as %s, want puzzle", st.Screen)
+	}
+}
+
+func TestDecodeNilReader(t *testing.T) {
+	if _, err := DecodeState(nil); err == nil {
+		t.Fatal("DecodeState(nil) = nil error")
 	}
 }
 
 // TestObserveNilProfile verifies Observe returns an error for a nil profile.
 func TestObserveNilProfile(t *testing.T) {
-	_, err := Observe(nil, &fakeReader{})
-	if err == nil {
+	if _, err := Observe(nil, newFakeReader()); err == nil {
 		t.Fatal("Observe(nil) = nil error, want an error")
 	}
+}
+
+func containsPos(ps []Pos, p Pos) bool {
+	for _, q := range ps {
+		if q == p {
+			return true
+		}
+	}
+	return false
 }
 
 // samePosSet reports whether two []Pos contain the same positions (order-
@@ -268,5 +325,3 @@ func samePosSet(a, b []Pos) bool {
 	}
 	return true
 }
-
-var _ = reflect.DeepEqual // keep reflect import for future use
