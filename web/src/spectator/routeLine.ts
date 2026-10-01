@@ -1,7 +1,5 @@
 import type { SpectatorRun } from '../shared/api/spectator.ts'
 
-// Kanto's eight gyms in the order the route strip draws them. The ninth goal
-// is the League / Hall of Fame. Pallet Town is only the visual starting point.
 const KANTO_GYMS = [
   { badge: 'Boulder', town: 'Pewter', color: '#a08d78' },
   { badge: 'Cascade', town: 'Cerulean', color: '#4aa3e0' },
@@ -13,6 +11,19 @@ const KANTO_GYMS = [
   { badge: 'Earth', town: 'Viridian', color: '#5fa35b' }
 ] as const
 
+const JOHTO_GYMS = [
+  { badge: 'Zephyr', town: 'Violet', color: '#8fb7cc' },
+  { badge: 'Hive', town: 'Azalea', color: '#d5b659' },
+  { badge: 'Plain', town: 'Goldenrod', color: '#d7a9c7' },
+  { badge: 'Fog', town: 'Ecruteak', color: '#9f83c8' },
+  { badge: 'Storm', town: 'Cianwood', color: '#d89055' },
+  { badge: 'Mineral', town: 'Olivine', color: '#b5bcc4' },
+  { badge: 'Glacier', town: 'Mahogany', color: '#79b8d8' },
+  { badge: 'Rising', town: 'Blackthorn', color: '#5f78b9' }
+] as const
+
+type GymDefinition = { badge: string, town: string, color: string }
+
 export interface RouteStop {
   key: string
   town: string
@@ -23,6 +34,10 @@ export interface RouteStop {
 }
 
 export interface RouteLine {
+  region: 'Kanto' | 'Johto'
+  startTown: string
+  leagueTown: string
+  leagueGoal: string
   stops: RouteStop[]
   earnedCount: number
   leagueEarned: boolean
@@ -30,7 +45,6 @@ export interface RouteLine {
   completedGoals: number
   goalCount: number
   nextGoal: string
-  // 0..1 share of the line between Pallet Town and Indigo League that is filled.
   fill: number
 }
 
@@ -40,11 +54,16 @@ function leagueComplete(run: Pick<SpectatorRun, 'player' | 'stats'> | null | und
     .some((milestone) => String(milestone).toLowerCase().includes('hall of fame'))
 }
 
-export function kantoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined): RouteLine {
+function buildRouteLine(
+  run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined,
+  gyms: readonly GymDefinition[],
+  region: 'Kanto' | 'Johto',
+  startTown: string
+): RouteLine {
   const owned = (run?.player?.badges || []).map((name) => String(name).toLowerCase())
   let nextTaken = false
   let lastEarned = -1
-  const stops = KANTO_GYMS.map((gym, index) => {
+  const stops = gyms.map((gym, index) => {
     const earned = owned.some((name) => name.includes(gym.badge.toLowerCase()))
     if (earned) lastEarned = index
     const next = !earned && !nextTaken
@@ -54,12 +73,16 @@ export function kantoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | nul
 
   const earnedCount = stops.filter((stop) => stop.earned).length
   const leagueEarned = leagueComplete(run)
-  const leagueNext = !leagueEarned && earnedCount === KANTO_GYMS.length
+  const leagueNext = !leagueEarned && earnedCount === gyms.length
   const nextBadge = stops.find((stop) => stop.next)
   const completedGoals = earnedCount + (leagueEarned ? 1 : 0)
-  const goalCount = KANTO_GYMS.length + 1
+  const goalCount = gyms.length + 1
 
   return {
+    region,
+    startTown,
+    leagueTown: 'Indigo League',
+    leagueGoal: 'Hall of Fame',
     stops,
     earnedCount,
     leagueEarned,
@@ -72,7 +95,22 @@ export function kantoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | nul
         ? 'Indigo League · Hall of Fame'
         : leagueEarned
           ? 'Hall of Fame reached'
-          : 'Boulder Badge · Pewter',
+          : `${gyms[0]?.badge || 'First'} Badge · ${gyms[0]?.town || startTown}`,
     fill: leagueEarned ? 1 : (lastEarned + 1) / goalCount
   }
+}
+
+export function kantoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined): RouteLine {
+  return buildRouteLine(run, KANTO_GYMS, 'Kanto', 'Pallet Town')
+}
+
+export function johtoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined): RouteLine {
+  return buildRouteLine(run, JOHTO_GYMS, 'Johto', 'New Bark Town')
+}
+
+export function pokemonRouteLine(run: Pick<SpectatorRun, 'game' | 'player' | 'stats'> | null | undefined): RouteLine {
+  const game = String(run?.game || '').trim().toLowerCase()
+  return game === 'pokemon-gold' || game === 'gold' || game === 'pokemon-silver' || game === 'silver'
+    ? johtoRouteLine(run)
+    : kantoRouteLine(run)
 }
