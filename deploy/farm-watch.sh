@@ -17,6 +17,8 @@ if [ -f "$ENV_FILE" ]; then
 	set +a
 fi
 
+# systemd starts this in $HOME, where gh cannot infer the repository.
+export GH_REPO=${GH_REPO:-${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}}
 STATE=${POKEPILOT_WATCH_STATE:-$HOME/.local/share/pokepilot/farm-watch}
 TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 PAID_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
