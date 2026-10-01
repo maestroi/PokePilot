@@ -36,7 +36,7 @@ import {
 import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
 import RouteLine from './RouteLine.vue'
-import { kantoRouteLine } from './routeLine'
+import { gameRouteLine } from './routeLine'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
@@ -74,7 +74,6 @@ const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
 const activityByRun = ref<Record<string, ActivityItem[]>>({})
 const previousRuns = new Map<string, SpectatorRun>()
-const GYM_BADGES = ['Boulder', 'Cascade', 'Thunder', 'Rainbow', 'Soul', 'Marsh', 'Volcano', 'Earth'] as const
 
 const {
   data: snapshot,
@@ -226,8 +225,11 @@ const plannerState = computed(() => {
   }
 })
 const mapsLabel = computed(() => {
-  const visited = Number(selectedRun.value?.maps_visited || 0)
-  return visited > 0 ? `${visited}/${MAP_CATALOG.length}` : `0/${MAP_CATALOG.length}`
+  const run = selectedRun.value
+  const visited = Number(run?.maps_visited || 0)
+  const game = String(run?.game || '').trim().toLowerCase()
+  const redCatalog = game === 'pokemon-red' || game === 'red'
+  return redCatalog ? `${visited}/${MAP_CATALOG.length}` : String(visited)
 })
 const lastRefreshLabel = computed(() => {
   if (!lastUpdatedAt.value) return ''
@@ -318,10 +320,10 @@ const goalProgressCopy = computed(() => {
   }
 
   if (leagueGoal.value && badges < 8) {
-    const badgeName = GYM_BADGES[badges] || 'Next'
+    const line = gameRouteLine(run)
     return {
       label: `${badges}/8 badges earned`,
-      detail: `Next: ${badgeName} Badge`
+      detail: `Next: ${line.nextGoal}`
     }
   }
 
@@ -358,7 +360,7 @@ const statCards = computed<StageFact[]>(() => {
   ]
 })
 
-const routeLine = computed(() => kantoRouteLine(selectedRun.value))
+const routeLine = computed(() => gameRouteLine(selectedRun.value))
 
 function hpPercent(mon: { hp: number, max_hp: number }): number {
   return mon.max_hp > 0 ? Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp)) : 0
@@ -507,7 +509,11 @@ function formatGameToken(value: string): string {
 
 function displayLocation(run: SpectatorRun): string {
   if (isTetrisRun(run)) return locationLabel(run)
-  return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+  const game = String(run.game || '').trim().toLowerCase()
+  if (game === 'pokemon-red' || game === 'red') {
+    return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
+  }
+  return locationLabel(run)
 }
 
 function selectRun(run: SpectatorRun): void {
