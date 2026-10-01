@@ -224,7 +224,46 @@ func nativeArrival(state game.OverworldState, dest NativeDestination) nativeArri
 	return nativeArrivalInterrupted
 }
 
-func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, dest NativeDestination) error {
+
+func nativeCutAvailable(profile nativeRoutingProfile, reader game.MemoryReader, romData []byte) (bool, error) {
+	field, ok := any(profile).(game.FieldMoveDecoder)
+	if !ok {
+		return false, nil
+	}
+	capability, err := fieldMoveCapabilityWithProfile(field, reader, romData, FieldCut)
+	if err != nil {
+		if errors.Is(err, ErrFieldMovePrerequisite) {
+			return false, nil
+		}
+		return false, err
+	}
+	if !capability.BadgeOwned {
+		return false, nil
+	}
+	return capability.Usable || (capability.MachineOwned && capability.Preparable), nil
+}
+
+func executeNativeCutApproach(
+	m *emu.Emu,
+	profile nativeRoutingProfile,
+	plan world.NativeCutApproach,
+) error {
+	if err := walkNativePath(m, profile, plan.Approach); err != nil {
+		return err
+	}
+	if plan.TreeX < 0 || plan.TreeY < 0 || plan.TreeX > 255 || plan.TreeY > 255 {
+		return fmt.Errorf("skill: native routing: Cut target (%d,%d) outside byte coordinate range", plan.TreeX, plan.TreeY)
+	}
+	if err := Face(m, uint8(plan.TreeX), uint8(plan.TreeY)); err != nil {
+		return fmt.Errorf("skill: native routing: face Cut target (%d,%d): %w", plan.TreeX, plan.TreeY, err)
+	}
+	if _, err := UseFieldMove(m, FieldCut); err != nil {
+		return fmt.Errorf("skill: native routing: Cut target (%d,%d): %w", plan.TreeX, plan.TreeY, err)
+	}
+	return nil
+}
+
+func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, romData []byte, dest NativeDestination) error {
 	const attempts = 12
 	for attempt := 0; attempt < attempts; attempt++ {
 		liveWorld := profile.DecodeOverworld(m)
@@ -256,7 +295,31 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 		delete(blocked, [2]int{int(dest.X), int(dest.Y)})
 		path, err := world.FindNativePath(grid, int(liveWorld.X), int(liveWorld.Y), int(dest.X), int(dest.Y), blocked)
 		if err != nil {
-			return err
+			if !errors.Is(err, world.ErrNoPath) {
+				return err
+			}
+			canCut, cutErr := nativeCutAvailable(profile, m, romData)
+			if cutErr != nil {
+				return fmt.Errorf("skill: native routing: decode Cut capability: %w", cutErr)
+			}
+			if !canCut {
+				return err
+			}
+			cutPlan, cutErr := world.FindNativeCutApproach(
+				grid,
+				int(liveWorld.X), int(liveWorld.Y),
+				int(dest.X), int(dest.Y),
+				blocked,
+			)
+			if cutErr != nil {
+				return err
+			}
+			if cutErr := executeNativeCutApproach(m, profile, cutPlan); cutErr != nil {
+				return cutErr
+			}
+			// Cut mutates the live block buffer. Re-read the map instead of
+			// assuming which replacement tile the cartridge installed.
+			continue
 		}
 		if err := walkNativePath(m, profile, path); err != nil {
 			var blockedStep *ErrBlocked
@@ -567,7 +630,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 			if dest.MapOnly {
 				return nil
 			}
-			return nativeWalkTo(m, profile, provider, dest)
+			return nativeWalkTo(m, profile, provider, romData, dest)
 		}
 
 		key := [3]uint16{state.NativeMapID, uint16(state.X), uint16(state.Y)}
