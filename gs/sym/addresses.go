@@ -29,14 +29,19 @@ const (
 	BattleMenuCursor        uint16 = 0xCFC4 // wBattleMenuCursorPosition
 	CurBattleMon            uint16 = 0xCFC6 // wCurBattleMon
 	CurMoveNum              uint16 = 0xCFC7 // wCurMoveNum
+	LastPocket              uint16 = 0xCFC8 // wLastPocket
 	PartyMenuCursor         uint16 = 0xCFC9 // wPartyMenuCursor
+	TMHMPocketCursor        uint16 = 0xCFCD // wTMHMPocketCursor
+	TMHMPocketScroll        uint16 = 0xCFD2 // wTMHMPocketScrollPosition
 	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
 	StateFlags              uint16 = 0xCFE5 // wStateFlags
 	TileMap                 uint16 = 0xC3A0 // wTileMap, 20x18 (Crystal moved it to 0xC4A0)
 	TileMapLen                     = 20 * 18
-	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex
+	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex / wPackJumptableIndex
+	CurPocket               uint16 = 0xCE64 // wCurPocket (union with title-screen state)
+	PackUsedItem            uint16 = 0xCE65 // wPackUsedItem
 	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
 	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
 	NamingScreenDestination uint16 = 0xC5D0 // wNamingScreenDestinationPointer
@@ -65,6 +70,7 @@ const (
 
 	// Early Johto story state.
 	StatusFlags            uint16 = 0xD571 // wStatusFlags
+	StatusFlags2           uint16 = 0xD572 // wStatusFlags2
 	ElmsLabSceneID         uint16 = 0xD6CC // wElmsLabSceneID
 	Route29SceneID         uint16 = 0xD6CE // wRoute29SceneID
 	CherrygroveCitySceneID uint16 = 0xD6CF // wCherrygroveCitySceneID
@@ -156,7 +162,8 @@ const (
 	NumKeyItems uint16 = 0xD5E1
 	KeyItems    uint16 = 0xD5E2
 	MaxKeyItems        = 25
-	NumBalls    uint16 = 0xD5FC
-	Balls       uint16 = 0xD5FD
-	MaxBalls           = 12
+	NumBalls      uint16 = 0xD5FC
+	Balls         uint16 = 0xD5FD
+	MaxBalls             = 12
+	PokegearFlags uint16 = 0xD67C // wPokegearFlags
 )
