@@ -125,6 +125,17 @@ func FailureDecisionStopAllowed(result ObjectiveResult) bool {
 	return !failureCauseIs(result, failureCauseCombatDefeat)
 }
 
+// failureDecisionStopsRun applies the typed choice to the current structured
+// failure. Keep FailureDecisionStops as the backend-choice decoder used by
+// shadow evaluation; only the live run needs this deterministic safety fence.
+func failureDecisionStopsRun(result ObjectiveResult, choice string) (bool, error) {
+	stop, err := FailureDecisionStops(choice)
+	if err != nil {
+		return false, err
+	}
+	return stop && FailureDecisionStopAllowed(result), nil
+}
+
 // FailureDecisionStops maps only conservative typed outcomes to a stop. Retry,
 // recover, replan, and unknown all continue through the existing deterministic
 // quarantine/recovery policy; the model never performs recovery itself.
