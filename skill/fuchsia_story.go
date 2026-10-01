@@ -161,10 +161,44 @@ func needsSafariRewards(mem *state.Mem) bool {
 	return needSurf || needTeeth
 }
 
+// route12SnorlaxFluteStands is pokered's Route12SnorlaxFluteCoords: the four
+// tiles from which the Poké Flute wakes Route 12's Snorlax.
+var route12SnorlaxFluteStands = [...][2]uint8{{9, 62}, {10, 61}, {10, 63}, {11, 62}}
+
+// route12SnorlaxLocalStand finds a flute stand the player can walk to on
+// Route 12 without leaving the map. Asleep, Snorlax splits Route 12 into
+// pockets that each touch a different stand; the stretch between Lavender and
+// the Route 12 gate touches none.
+func route12SnorlaxLocalStand(m *emu.Emu, romData []byte) (Destination, bool, error) {
+	if m.Peek8(sym.CurMap) != route12Map {
+		return Destination{}, false, nil
+	}
+	h, err := routingHeaderFor(m, route12Map)
+	if err != nil {
+		return Destination{}, false, fmt.Errorf("skill: Route 12 Snorlax stand: %w", err)
+	}
+	for _, at := range route12SnorlaxFluteStands {
+		stand := Destination{Map: route12Map, X: at[0], Y: at[1]}
+		reachable, err := fieldPathReachableOnCurrentMap(m, romData, h, stand)
+		if err != nil {
+			return Destination{}, false, fmt.Errorf("skill: Route 12 Snorlax stand (%d,%d): %w", at[0], at[1], err)
+		}
+		if reachable {
+			return stand, true, nil
+		}
+	}
+	return Destination{}, false, nil
+}
+
 func clearRoute12Snorlax(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	dest, ok := Place("route 12 snorlax")
+	dest, ok, err := route12SnorlaxLocalStand(m, romData)
+	if err != nil {
+		return err
+	}
 	if !ok {
-		return fmt.Errorf("skill: FuchsiaProgression: route 12 snorlax place missing")
+		if dest, ok = Place("route 12 snorlax"); !ok {
+			return fmt.Errorf("skill: FuchsiaProgression: route 12 snorlax place missing")
+		}
 	}
 	if _, err := TravelFlee(m, romData, dest, policy, fuchsiaTravelEngagements); err != nil {
 		return fmt.Errorf("skill: FuchsiaProgression: reach Route 12 Snorlax: %w", err)

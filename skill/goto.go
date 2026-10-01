@@ -861,6 +861,13 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if step.Transition != nil {
 			execution, execErr := world.ExecuteTransition(executor, e, *step.Transition)
 			if execErr != nil {
+				if k := (legAt{e: e, m: cur, x: x, y: y}); errors.Is(execErr, ErrTransitionUnavailableHere) && !failed[k] {
+					if replans++; replans > maxReplans {
+						return newReplanExhaustedError(maxReplans, cur, x, y, dest, execErr)
+					}
+					failed[k] = true
+					continue
+				}
 				if errors.Is(execErr, world.ErrTransitionExecutionStalled) {
 					forced := newLegFromMap(e, cur)
 					if !deadEnds[forced] {

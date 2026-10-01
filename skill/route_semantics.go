@@ -345,8 +345,17 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// transition wake/battle Snorlax and relax the landing after that world
 		// change. This keeps Route 13's west trainer pocket from selecting an
 		// unreachable north seam without turning the action into a passive gate.
+		//
+		// Leaving Route 12 southward additionally skips source canExit: the
+		// asleep sprite splits Route 12 into the Route 11 landing pocket, the
+		// north road and the south road, and each reaches one of the ROM's
+		// flute stands but only the south road reaches Route 13's port. Without
+		// the bypass the Route 11 pocket had no forward edge and GoTo walked
+		// straight back out to Route 11 (run-1mey4xe5t2w04, triage
+		// 1abf42a379bea7c3). The executor picks the stand in the player's pocket.
 		t := semanticTransition("red:route12_snorlax", edge, capCanClearSnorlax)
 		t.PivotOnly = true
+		t.PortBypass = edge.From == route12Map
 		return t, true
 	case pair(victoryRoad1FMap, victoryRoad2FMap),
 		pair(victoryRoad2FMap, victoryRoad3FMap):
@@ -398,15 +407,16 @@ func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Tra
 	// lower road can select the crossing. Once he is gone the pivot must drop:
 	// leaving it attached waives port reachability for the upper passage,
 	// which still reaches Celadon only by Cut.
-	if transition.ID == "red:route16_snorlax" {
+	switch transition.ID {
+	case "red:route16_snorlax":
 		return state.HasEvent(mem, eventBeatRoute16Snorlax)
+	case "red:route12_snorlax":
+		return state.HasEvent(mem, eventBeatRoute12Snorlax)
 	}
 	if transition.Gate || transition.PortBypass {
 		return false
 	}
 	switch transition.ID {
-	case "red:route12_snorlax":
-		return state.HasEvent(mem, eventBeatRoute12Snorlax)
 	case "red:rocket_b1f_trainer_door":
 		return state.HasEvent(mem, eventBeatRocketB1FTrainer4)
 	default:
@@ -426,7 +436,10 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// other semantic action must still use a physically real border
 				// port; otherwise an interior Cut/Snorlax/switch action can turn
 				// solid padding into an executable map transition.
-				if edge.Kind == world.EdgeConnection && !transition.PortBypass && !g.ConnectionExitWalkable(edge) {
+				// PortBypass alone is not seam creation: Route 9's Cut bridge and
+				// the Snorlax clears skip source canExit but still cross the one
+				// real band.
+				if edge.Kind == world.EdgeConnection && !transitionCreatesSeam(transition) && !g.ConnectionExitWalkable(edge) {
 					continue
 				}
 				// The southbound Route 23 action owns the three Surf bands only.
@@ -458,6 +471,10 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 		Transitions:  transitions,
 		Capabilities: redRouteCapabilities(romData, mem),
 	}
+}
+
+func transitionCreatesSeam(t gameruntime.Transition) bool {
+	return t.PortBypass && slices.Contains(t.Requires, capCanSurf)
 }
 
 // withObservedSurfTopology drops a Surf seam's routing privileges once both
