@@ -1,9 +1,9 @@
 package skill
 
 import (
-	"github.com/maestroi/pokepilot/emu"
 	"testing"
 
+	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/world"
 )
@@ -27,13 +27,15 @@ type fakeGen2FieldActionDecoder struct{}
 func (fakeGen2FieldActionDecoder) DecodeFieldAction(r game.MemoryReader) game.FieldActionState {
 	flags := r.Peek8(fakeFieldFlags)
 	return game.FieldActionState{
-		Controllable:    flags&fakeFieldControllable != 0,
-		CuttableAhead:   flags&fakeFieldCuttable != 0,
-		BoulderAhead:    flags&fakeFieldBoulder != 0,
-		Surfing:         flags&fakeFieldSurfing != 0,
-		StrengthActive:  flags&fakeFieldStrength != 0,
-		Lit:             flags&fakeFieldLit != 0,
-		ActionSucceeded: flags&fakeFieldSucceeded != 0,
+		Controllable:       flags&fakeFieldControllable != 0,
+		CutTargetKnown:     true,
+		CuttableAhead:      flags&fakeFieldCuttable != 0,
+		BoulderTargetKnown: true,
+		BoulderAhead:       flags&fakeFieldBoulder != 0,
+		Surfing:            flags&fakeFieldSurfing != 0,
+		StrengthActive:     flags&fakeFieldStrength != 0,
+		Lit:                flags&fakeFieldLit != 0,
+		ActionSucceeded:    flags&fakeFieldSucceeded != 0,
 	}
 }
 
@@ -54,15 +56,18 @@ func TestFieldActionRuntimeAcceptsFakeGen2State(t *testing.T) {
 
 func TestFieldActionRuntimeValidatesSemanticTargets(t *testing.T) {
 	cut, _ := FieldMoveSpecFor(FieldCut)
-	if err := validateFieldActionRuntime(game.FieldActionState{}, cut); err == nil {
-		t.Fatal("Cut without semantic target unexpectedly validated")
+	if err := validateFieldActionRuntime(game.FieldActionState{CutTargetKnown: true}, cut); err == nil {
+		t.Fatal("Cut with known-absent semantic target unexpectedly validated")
 	}
-	if err := validateFieldActionRuntime(game.FieldActionState{CuttableAhead: true}, cut); err != nil {
+	if err := validateFieldActionRuntime(game.FieldActionState{}, cut); err != nil {
+		t.Fatalf("Cut with profile-unknown target should defer to cartridge: %v", err)
+	}
+	if err := validateFieldActionRuntime(game.FieldActionState{CutTargetKnown: true, CuttableAhead: true}, cut); err != nil {
 		t.Fatalf("Cut target rejected: %v", err)
 	}
 
 	strength, _ := FieldMoveSpecFor(FieldStrength)
-	if err := validateFieldActionRuntime(game.FieldActionState{BoulderAhead: true}, strength); err != nil {
+	if err := validateFieldActionRuntime(game.FieldActionState{BoulderTargetKnown: true, BoulderAhead: true}, strength); err != nil {
 		t.Fatalf("Strength target rejected: %v", err)
 	}
 }

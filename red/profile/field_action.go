@@ -55,15 +55,17 @@ func (*Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionStat
 
 	choiceVisible := state.DecodeTwoOptionMenu(&mem) != nil
 	return game.FieldActionState{
-		Controllable:     state.Controllable(&mem),
-		CuttableAhead:    cuttable,
-		BoulderAhead:     boulderAhead,
-		Surfing:          mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
-		StrengthActive:   mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
-		Lit:              mem.U8(sym.MapPalOffset) == 0,
-		ActionSucceeded:  mem.U8(sym.ActionResult) == 1,
-		ResultTextActive: mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(&mem),
-		ChoiceVisible:    choiceVisible,
-		DebugText:        state.ScreenText(&mem),
+		Controllable:       state.Controllable(&mem),
+		CutTargetKnown:     true,
+		CuttableAhead:      cuttable,
+		BoulderTargetKnown: true,
+		BoulderAhead:       boulderAhead,
+		Surfing:            mem.U8(sym.WalkBikeSurfState) == fieldSurfingState,
+		StrengthActive:     mem.U8(sym.StatusFlags1)&fieldStrengthActiveBit != 0,
+		Lit:                mem.U8(sym.MapPalOffset) == 0,
+		ActionSucceeded:    mem.U8(sym.ActionResult) == 1,
+		ResultTextActive:   mem.U8(sym.FontLoaded) != 0 && !state.MenuUp(&mem),
+		ChoiceVisible:      choiceVisible,
+		DebugText:          state.ScreenText(&mem),
 	}
 }

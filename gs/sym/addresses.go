@@ -36,6 +36,7 @@ const (
 	SwitchMon               uint16 = 0xCFD3 // wSwitchMon
 	NumMoves                uint16 = 0xCFE3 // wNumMoves
 	BattlePlayerAction      uint16 = 0xCFE4 // wBattlePlayerAction
+	FieldMoveSucceeded      uint16 = 0xCFE4 // wFieldMoveSucceeded (overworld alias)
 	StateFlags              uint16 = 0xCFE5 // wStateFlags
 	TileMap                 uint16 = 0xC3A0 // wTileMap, 20x18 (Crystal moved it to 0xC4A0)
 	TileMapLen                     = 20 * 18
@@ -69,6 +70,7 @@ const (
 	PlayerState      uint16 = 0xD682 // wPlayerState
 
 	// Early Johto story state.
+	TimeOfDayPalset        uint16 = 0xD56E // wTimeOfDayPalset
 	StatusFlags            uint16 = 0xD571 // wStatusFlags
 	StatusFlags2           uint16 = 0xD572 // wStatusFlags2
 	ElmsLabSceneID         uint16 = 0xD6CC // wElmsLabSceneID
@@ -92,6 +94,7 @@ const (
 	StartSecond     uint16 = 0xD1DF // wStartSecond
 	CurDay          uint16 = 0xD1F2 // wCurDay
 	GameTimerPaused uint16 = 0xD8B8 // wGameTimerPaused
+	BikeFlags       uint16 = 0xD93F // wBikeFlags
 
 	MapGroup  uint16 = 0xDA00
 	MapNumber uint16 = 0xDA01
