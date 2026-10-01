@@ -58,6 +58,22 @@ node_unusable() {
 	esac
 }
 
+# Every update below asks Swarm to roll a service back when its new tasks fail
+# inside the monitor window (an image that crash-loops at boot). PreviousSpec
+# is then the rejected image. Re-rolling that digest every tick would crash the
+# farm forever, so hold until a newer image is published: the next merge gets
+# a fresh digest and is tried normally.
+for name in "${SERVICES[@]}"; do
+	rolled=$(docker service inspect "${STACK}_${name}" \
+		--format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}|{{if .PreviousSpec}}{{.PreviousSpec.TaskTemplate.ContainerSpec.Image}}{{end}}' 2>/dev/null || true)
+	case "$rolled" in
+	rollback_*"|"*"@$WANT")
+		echo "pokefarm-pull: Swarm rolled ${STACK}_${name} back from $WANT; holding rollout until a newer image"
+		exit 0
+		;;
+	esac
+done
+
 updated=0
 for name in "${SERVICES[@]}"; do
 	svc="${STACK}_${name}"
@@ -75,9 +91,9 @@ for name in "${SERVICES[@]}"; do
 	# carries the same 6m, but the swarm stack file is host-local and drifted,
 	# so the image-owned rollout enforces it. start-first with parallelism 0
 	# brings up every replacement at once instead of serializing 10 drains.
-	lifecycle=()
+	lifecycle=(--update-failure-action rollback --update-monitor 60s)
 	if [ "$name" = runner ]; then
-		lifecycle=(--stop-grace-period 6m --update-order start-first --update-parallelism 0)
+		lifecycle+=(--stop-grace-period 6m --update-order start-first --update-parallelism 0)
 	fi
 	img=$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
 	case "$img" in
