@@ -351,3 +351,27 @@ func TestInferenceTransportResumesLatestMajorCheckpoint(t *testing.T) {
 		t.Fatalf("resume state = %q (badge %d), want latest major badge 3", cp.State.Name, got)
 	}
 }
+
+// run-1mey4xe5t2w04: a long no-progress wedge walked the ladder off the end and
+// booted fresh cartridges four times. It must clamp to a retained checkpoint.
+func TestResilientResumeNeverBootsFreshWhenCheckpointRetained(t *testing.T) {
+	w := NewWall(t.TempDir())
+	w.tiles["r"] = &Tile{RunID: "r", Attempts: 1}
+	dir := checkpointAttemptDir(w.dumpsDir, "r", 1)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	base := "major-badge-2-test"
+	for name, data := range map[string]string{base + ".state": "s", base + ".knowledge-v4.json": "{}"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// ladder target (badge 2-4 < 1) is exhausted; badge-1 is not retained, so
+	// the deepest retained checkpoint must be used.
+	for attempts := 2; attempts <= 8; attempts++ {
+		if _, err := resilientResumeCheckpoint(fileResumeStore{w}, "r", "llm", attempts); err != nil {
+			t.Fatalf("recoveryAttempts %d = %v, want a retained checkpoint", attempts, err)
+		}
+	}
+}

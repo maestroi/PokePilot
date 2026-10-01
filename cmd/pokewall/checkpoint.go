@@ -314,13 +314,21 @@ func (w *Wall) serveCheckpointResume(res http.ResponseWriter, id string, request
 // resilientResumeCheckpoint turns repeated no-progress failures into a
 // deterministic rollback ladder. First retry stays near the fault so a changed
 // planner decision/seed can recover cheaply. Further failures back up across
-// major milestones one at a time; once no older retained milestone exists the
-// 204 path deliberately falls back to a fresh cartridge.
+// major milestones one at a time. When the ladder runs out it clamps to the
+// oldest retained checkpoint instead of booting a fresh cartridge: a wedge
+// before the first badge must not erase hours of campaign progress.
 func resilientResumeCheckpoint(store resumeCheckpointStore, startID, planner string, recoveryAttempts int) (farm.ResumeCheckpoint, error) {
 	if recoveryAttempts <= 1 {
 		return deepestResumeCheckpoint(store, startID, planner)
 	}
-	return lineageMajorCheckpointRollback(store, startID, recoveryAttempts-2)
+	cp, err := lineageMajorCheckpointRollback(store, startID, recoveryAttempts-2)
+	if !errors.Is(err, os.ErrNotExist) {
+		return cp, err
+	}
+	if cp, err = store.lineageMajorAtOrBelow(startID, 1); !errors.Is(err, os.ErrNotExist) {
+		return cp, err
+	}
+	return deepestResumeCheckpoint(store, startID, planner)
 }
 
 func lineageMajorCheckpointRollback(store resumeCheckpointStore, startID string, rollback int) (farm.ResumeCheckpoint, error) {
