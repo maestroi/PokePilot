@@ -28,9 +28,17 @@ var routeGraphCache = struct {
 	entries map[routeGraphROMKey]routeGraphCacheEntry
 }{entries: make(map[routeGraphROMKey]routeGraphCacheEntry)}
 
+func buildRouteGraph(romData []byte) (*world.Graph, error) {
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
+	}
+	return world.BuildGraph(provider)
+}
+
 func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if len(romData) == 0 {
-		return world.BuildGraph(romData)
+		return buildRouteGraph(romData)
 	}
 	key := routeGraphROMKey{first: &romData[0], length: len(romData)}
 	routeGraphCache.Lock()
@@ -38,7 +46,7 @@ func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if cached, ok := routeGraphCache.entries[key]; ok {
 		return cached.graph, cached.err
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := buildRouteGraph(romData)
 	routeGraphCache.entries[key] = routeGraphCacheEntry{graph: graph, err: err}
 	return graph, err
 }

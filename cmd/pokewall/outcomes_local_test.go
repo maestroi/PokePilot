@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestOutcomesCompatibilityServesRAMWhenCatalogDisabled(t *testing.T) {
+func TestLocalOutcomesServesRAMWhenCatalogDisabled(t *testing.T) {
 	w := NewWall(t.TempDir())
 	w.mu.Lock()
 	w.order = []string{"done-1", "live-1"}
@@ -25,7 +25,7 @@ func TestOutcomesCompatibilityServesRAMWhenCatalogDisabled(t *testing.T) {
 	next := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		http.NotFound(res, req)
 	})
-	handler := w.outcomesCompatibility(w.catalogHTTPHandler(next))
+	handler := w.localOutcomesHTTPHandler(w.catalogHTTPHandler(next))
 
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/outcomes", nil))

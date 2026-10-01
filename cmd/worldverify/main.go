@@ -15,9 +15,14 @@ import (
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/skill"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 	verifier "github.com/maestroi/pokepilot/worldverify"
 	yellowprofile "github.com/maestroi/pokepilot/yellow/profile"
 )
+
+type worldProfile interface {
+	MapProvider([]byte) worldmodel.MapHeaderProvider
+}
 
 func main() {
 	romPath := flag.String("rom", defaultROMPath(), "path to ROM (defaults to POKEMON_ROM, then POKEMON_RED_ROM)")
@@ -51,12 +56,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "worldverify: -game %q does not match detected ROM profile %q\n", *game, profile.ID())
 		os.Exit(2)
 	}
-	if !hasWorldAdapter(string(profile.ID())) {
+	worldProfile, ok := profile.(worldProfile)
+	if !ok {
 		fmt.Fprintf(os.Stderr, "worldverify: no world adapter for detected profile %q\n", profile.ID())
 		os.Exit(2)
 	}
+	provider := worldProfile.MapProvider(romData)
+	if provider == nil {
+		fmt.Fprintf(os.Stderr, "worldverify: profile %q returned no map provider\n", profile.ID())
+		os.Exit(2)
+	}
 
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v\n", err)
 		os.Exit(1)

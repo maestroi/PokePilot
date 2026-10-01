@@ -488,7 +488,7 @@ func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h worldmodel.H
 // logical journey (see navigationMemory); nil gets a fresh one, matching a
 // single self-contained GoTo call.
 func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor, nav *navigationMemory) error {
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,8 @@ package world
 import (
 	"os"
 	"testing"
+
+	redrom "github.com/maestroi/pokepilot/red/rom"
 )
 
 func loadGraph(t *testing.T) *Graph {
@@ -15,7 +17,7 @@ func loadGraph(t *testing.T) *Graph {
 	if err != nil {
 		t.Fatalf("reading ROM: %v", err)
 	}
-	g, err := BuildGraph(romData)
+	g, err := BuildGraph(redrom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

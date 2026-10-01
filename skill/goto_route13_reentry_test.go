@@ -18,7 +18,7 @@ func TestRoute13StationaryTrainerMakesRow8FreshReentry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := world.BuildGraph(data)
+	g, err := buildRouteGraph(data)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestNavigationMemoryRetainsRoute13TopologyAcrossGoToCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := world.BuildGraph(data)
+	base, err := buildRouteGraph(data)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

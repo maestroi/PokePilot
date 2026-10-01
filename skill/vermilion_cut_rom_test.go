@@ -27,7 +27,7 @@ func TestVermilionGymWarpHasDestinationAwareCutRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build(vermilion): %v", err)
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

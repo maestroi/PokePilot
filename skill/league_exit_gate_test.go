@@ -119,7 +119,7 @@ func setEvent(mem *state.Mem, event state.Event) {
 
 func leagueRoutePrereqs(t *testing.T, romData []byte, mem *state.Mem) leagueRoute {
 	t.Helper()
-	graph, err := world.BuildGraph(romData)
+	graph, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("build graph: %v", err)
 	}

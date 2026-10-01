@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	redrom "github.com/maestroi/pokepilot/red/rom"
 )
 
 // TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit is the
@@ -27,7 +28,7 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := BuildGraph(data)
+	g, err := BuildGraph(redrom.NewWorldProvider(data))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

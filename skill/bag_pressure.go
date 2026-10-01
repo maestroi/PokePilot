@@ -73,7 +73,7 @@ func firstStoredTM(inv state.InventoryState) (uint8, bool) {
 // The standard-mart table includes every standalone Red mart that shares the
 // (2,5) player / (1,5) counter geometry.
 func nearestUsableMart(romData []byte, mem *state.Mem) (standardMartRecoveryTarget, bool, error) {
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		return standardMartRecoveryTarget{}, false, err
 	}

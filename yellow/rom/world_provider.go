@@ -150,8 +150,6 @@ func yellowLedges(romData []byte, tileset uint8) []worldmodel.Ledge {
 	return gen1rom.LedgesAt(romData, yellowLedgeTiles, tileset)
 }
 
-func isYellowWorldROM(romData []byte) bool { return IsCartridge(romData) }
-
 // IsCartridge reports whether romData is the supported Yellow image. A
 // structural probe (MapHeaderBanks/MapHeaderPointers name PalletTown_h at
 // 06:42a1, pokeyellow.sym) rejects other cartridges in three byte reads, so
@@ -168,15 +166,6 @@ func IsCartridge(romData []byte) bool {
 	}
 	sum := sha1.Sum(romData)
 	return hex.EncodeToString(sum[:]) == sym.ROMSHA1
-}
-
-func init() {
-	worldmodel.RegisterROMProviderFactory(func(romData []byte) (worldmodel.MapHeaderProvider, bool) {
-		if !isYellowWorldROM(romData) {
-			return nil, false
-		}
-		return NewWorldProvider(romData), true
-	})
 }
 
 func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {

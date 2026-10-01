@@ -55,7 +55,7 @@ func TestRoute16FlyHouseRejectsLowerGateTeleport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestRoute16WestPocketGrassIsAGateHop(t *testing.T) {
 		t.Fatal("Route 16 (24,3) has no tall grass in its component")
 	}
 
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestRoute16EastComponentReachesCeladonWithoutFlute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, err := world.BuildGraph(romData)
+	base, err := buildRouteGraph(romData)
 	if err != nil {
 		t.Fatal(err)
 	}

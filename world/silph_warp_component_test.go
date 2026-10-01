@@ -44,7 +44,7 @@ func TestSilphCo5FWarpPadSplitsCardKeyComponent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := BuildGraph(romData)
+	g, err := BuildGraph(rom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

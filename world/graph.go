@@ -122,33 +122,14 @@ type Graph struct {
 	parseFailures []MapParseFailure
 }
 
-// BuildGraph builds a map-level graph from an adapter-supplied provider. A
-// raw []byte ROM is accepted as a compatibility bridge and is resolved through
-// registered game adapters; new callers should pass MapHeaderProvider directly.
-func BuildGraph(source any) (*Graph, error) {
-	provider, err := graphProvider(source)
-	if err != nil {
-		return nil, err
+// BuildGraph builds the Gen-I map-level graph from an adapter-supplied
+// provider. Cartridge detection belongs to profiles/adapters; generic world
+// construction never guesses a provider from raw ROM bytes.
+func BuildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
+	if provider == nil {
+		return nil, fmt.Errorf("nil map header provider")
 	}
 	return buildGraph(provider)
-}
-
-func graphProvider(source any) (worldmodel.MapHeaderProvider, error) {
-	switch v := source.(type) {
-	case worldmodel.MapHeaderProvider:
-		if v == nil {
-			return nil, fmt.Errorf("nil map header provider")
-		}
-		return v, nil
-	case []byte:
-		provider, ok := worldmodel.ProviderForROM(v)
-		if !ok {
-			return nil, fmt.Errorf("no registered map provider for ROM of %d bytes", len(v))
-		}
-		return provider, nil
-	default:
-		return nil, fmt.Errorf("unsupported map graph source %T", source)
-	}
 }
 
 func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {

@@ -1,8 +1,6 @@
 package rom
 
 import (
-	"strings"
-
 	"github.com/maestroi/pokepilot/gen1rom"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -188,23 +186,6 @@ func redTilePairsForTraversal(romData []byte, tileset uint8, mode worldmodel.Tra
 		return map[[2]uint8]bool{}
 	}
 	return gen1rom.TilePairsAt(romData, off, tileset)
-}
-
-func isRegisteredGen1WorldROM(romData []byte) bool {
-	if len(romData) < 0x144 {
-		return false
-	}
-	title := strings.TrimRight(string(romData[0x134:0x144]), "\x00 ")
-	return title == "POKEMON RED" || title == "POKEMON BLUE"
-}
-
-func init() {
-	worldmodel.RegisterROMProviderFactory(func(romData []byte) (worldmodel.MapHeaderProvider, bool) {
-		if !isRegisteredGen1WorldROM(romData) {
-			return nil, false
-		}
-		return NewWorldProvider(romData), true
-	})
 }
 
 func markGen1Cuttable(spec *worldmodel.GridSpec, tileset uint8) {

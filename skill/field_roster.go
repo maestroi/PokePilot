@@ -402,7 +402,7 @@ func findWildFieldCandidate(m *emu.Emu, romData []byte, target FieldMove, requir
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
 	cur := mem.U8(sym.CurMap)
-	g, err := world.BuildGraph(romData)
+	g, err := buildRouteGraph(romData)
 	if err != nil {
 		return wildFieldCandidate{}, false, err
 	}
