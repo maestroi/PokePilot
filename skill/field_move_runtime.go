@@ -31,7 +31,7 @@ func semanticFieldMove(move FieldMove) (game.FieldMoveID, bool) {
 	}
 }
 
-func fieldMoveProfileFor(m *emu.Emu) (game.FieldMoveProfile, error) {
+func fieldMoveDecoderFor(m *emu.Emu) (game.FieldMoveDecoder, error) {
 	if m == nil {
 		return nil, fmt.Errorf("skill: field move: nil emulator")
 	}
@@ -39,9 +39,9 @@ func fieldMoveProfileFor(m *emu.Emu) (game.FieldMoveProfile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: field move: detect profile: %w", err)
 	}
-	field, ok := profile.(game.FieldMoveProfile)
+	field, ok := profile.(game.FieldMoveDecoder)
 	if !ok {
-		return nil, fmt.Errorf("skill: field move: profile %s@%s does not expose field-move semantics", profile.ID(), profile.Revision())
+		return nil, fmt.Errorf("skill: field move: profile %s@%s does not expose field-move capability semantics", profile.ID(), profile.Revision())
 	}
 	return field, nil
 }
@@ -99,7 +99,7 @@ func selectFieldMoveMenuEntryWithDecoders(m menuMachine, fieldDecoder game.Field
 }
 
 func selectFieldMoveMenuEntry(m *emu.Emu, move FieldMove) error {
-	field, err := fieldMoveProfileFor(m)
+	field, err := fieldMoveDecoderFor(m)
 	if err != nil {
 		return err
 	}
