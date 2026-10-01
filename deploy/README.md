@@ -182,6 +182,19 @@ request comment to the GitHub issue. The local qwagent loop still claims work
 from MCP `pokepilot_get_triage`, so it does not depend on GitHub issue state
 to run.
 
+## Farm watchdog (Telegram)
+
+`deploy/farm-watch.sh` runs every 15 minutes from a user timer installed by
+`make qwagent-triage-install`. It messages a Telegram chat when a check turns
+bad, every 12h while it stays bad, and when it recovers, plus one daily digest
+(PRs merged, farm issues opened/closed, fixer starts, per-run progress).
+Checks: wall reachable, live runs advancing frames (30m), fixer timer active
+and ticks not failing, paid fixer cap, triage keys every ladder tier failed
+on, `[triage:]` PRs open over 12h, and Swarm rollbacks (when
+`POKEPILOT_SWARM_MANAGER` is an ssh target). Set `TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_CHAT_ID`, and `POKEPILOT_WALL_URL` in `~/.config/pokepilot/env`,
+then `systemctl --user enable --now farm-watch.timer`.
+
 ## Local qwagent triage (optional)
 
 A user systemd timer can offer one unused MCP `pokepilot_get_triage` group to

@@ -264,6 +264,8 @@ qwagent-triage-install:
 	sed 's|@@POKEPILOT_ORIGIN@@|$(shell git remote get-url origin)|g' deploy/qwagent-triage.service.in \
 		> "$(HOME)/.config/systemd/user/qwagent-triage.service"
 	cp deploy/qwagent-triage.timer "$(HOME)/.config/systemd/user/qwagent-triage.timer"
+	cp deploy/farm-watch.service.in "$(HOME)/.config/systemd/user/farm-watch.service"
+	cp deploy/farm-watch.timer "$(HOME)/.config/systemd/user/farm-watch.timer"
 	systemctl --user daemon-reload
 	@marker='# PokePilot qwagent-triage helpers'; \
 	if [ -f "$(HOME)/.zshrc" ] && ! grep -q "$$marker" "$(HOME)/.zshrc"; then \
@@ -271,4 +273,5 @@ qwagent-triage-install:
 		echo "appended source line to ~/.zshrc (open a new shell)"; \
 	fi
 	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."
+	@echo "watchdog: set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, POKEPILOT_WALL_URL in ~/.config/pokepilot/env, then systemctl --user enable --now farm-watch.timer"
 	@echo "ladder mode: qwen first, then Cursor ('agent login'), then Claude Code ('claude auth login')."

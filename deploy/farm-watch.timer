@@ -1,0 +1,10 @@
+[Unit]
+Description=Check PokePilot farm health
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
