@@ -144,16 +144,27 @@ if [ "$(date +%H)" -ge "$DIGEST_HOUR" ] && [ "$(cat "$STATE/digest-day" 2>/dev/n
 	closed=$(gh issue list --state closed --search "\"[farm]\" in:title closed:>=$since" --limit 200 --json number | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo "?")
 	runs=$(python3 -c '
 import json, sys
+prev_path = sys.argv[2]
+try:
+    prev = json.load(open(prev_path))
+except Exception:
+    prev = {}
+cur = {}
 for r in json.load(open(sys.argv[1]))["runs"]:
     if r.get("status") == "done":
         continue
     # player resets to empty while an attempt is requeued; recovery_badges is durable.
     badges = max(len((r.get("player") or {}).get("badges") or []), int(r.get("recovery_badges") or 0))
     goal = (r.get("stats") or {}).get("goal_summary") or r.get("goal") or ""
-    print("• %s %s: %d badges, %s, attempt %s, lost %s" % (
-        r.get("game"), r.get("play_style") or "", badges, goal,
+    rid = r.get("run_id")
+    cur[rid] = badges
+    # vs the previous digest: a flat badge count for a day is the stuck signal.
+    delta = "" if rid not in prev else (" (%+d)" % (badges - prev[rid]) if badges != prev[rid] else " (no change)")
+    print("• %s %s: %d badges%s, %s, attempt %s, lost %s" % (
+        r.get("game"), r.get("play_style") or "", badges, delta, goal,
         r.get("attempts"), r.get("loss_recoveries") or 0))
-' "$dash" 2>/dev/null || echo "• dashboard unavailable")
+json.dump(cur, open(prev_path, "w"))
+' "$dash" "$STATE/digest-badges.json" 2>/dev/null || echo "• dashboard unavailable")
 	paid_today=$(awk -F'\t' -v since=$((now - 86400)) '$4 == "started" && $3 != "opencode" && $1 >= since' "$ledger" 2>/dev/null | wc -l)
 	free_today=$(awk -F'\t' -v since=$((now - 86400)) '$4 == "started" && $3 == "opencode" && $1 >= since' "$ledger" 2>/dev/null | wc -l)
 	notify "📊 PokePilot daily
