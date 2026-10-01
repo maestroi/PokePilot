@@ -224,7 +224,6 @@ func nativeArrival(state game.OverworldState, dest NativeDestination) nativeArri
 	return nativeArrivalInterrupted
 }
 
-
 func nativeCutAvailable(profile nativeRoutingProfile, reader game.MemoryReader, romData []byte) (bool, error) {
 	field, ok := any(profile).(game.FieldMoveDecoder)
 	if !ok {
