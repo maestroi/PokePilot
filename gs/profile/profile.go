@@ -71,6 +71,7 @@ func (*Profile) Features() game.ProfileFeatures {
 	return game.ProfileFeatures{
 		game.FeatureInventory:       true,
 		game.FeatureStoryProgress:   true,
+		game.FeatureFieldMoves:      true,
 		game.FeatureBankedMemory:    true,
 		game.FeatureSemanticSpecies: true,
 	}
