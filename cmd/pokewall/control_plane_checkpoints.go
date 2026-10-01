@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -108,7 +109,7 @@ func (w *Wall) controlPlaneCheckpointHTTPHandler(next http.Handler) http.Handler
 		}
 		incoming.RunID = id
 		if incoming.Resume {
-			w.handleControlPlaneCheckpointResume(res, incoming.CheckpointReport)
+			w.serveCheckpointResume(res, id, incoming.Attempt, storedResumeStore{w})
 			return
 		}
 		if err := w.storeControlPlaneCheckpoint(incoming.CheckpointReport); err != nil {
@@ -346,7 +347,7 @@ func (cp *controlPlane) latestStoredObjective(runID string, attempt int) (farm.R
 // latestStoredMajor ranks the run's badge checkpoints from metadata and only
 // materializes the best candidates, for the same reason as
 // latestStoredLineageObjective.
-func (cp *controlPlane) latestStoredMajor(runID string, throughAttempt int) (farm.ResumeCheckpoint, error) {
+func (cp *controlPlane) latestStoredMajor(runID string, throughAttempt, maxBadge int) (farm.ResumeCheckpoint, error) {
 	candidates, err := cp.storedCheckpointCandidates(runID, throughAttempt, majorCheckpointPrefix)
 	if err != nil {
 		return farm.ResumeCheckpoint{}, err
@@ -356,6 +357,9 @@ func (cp *controlPlane) latestStoredMajor(runID string, throughAttempt int) (far
 	for _, c := range candidates {
 		if badge(c) == 0 {
 			break
+		}
+		if badge(c) > maxBadge {
+			continue
 		}
 		arts, err := cp.storedCheckpointArtifacts(c.runID, c.attempt)
 		if err != nil {
@@ -484,7 +488,7 @@ func (cp *controlPlane) storedCheckpointCandidates(runID string, through int, pr
 	return out, rows.Err()
 }
 
-func (w *Wall) latestStoredLineageMajor(startID string) (farm.ResumeCheckpoint, error) {
+func (w *Wall) latestStoredLineageMajor(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
 	cp := controlPlaneFor(w)
 	seen := map[string]struct{}{}
 	bestBadge := 0
@@ -503,7 +507,7 @@ func (w *Wall) latestStoredLineageMajor(startID string) (farm.ResumeCheckpoint, 
 		}
 		w.mu.Unlock()
 		if through > 0 {
-			candidate, err := cp.latestStoredMajor(id, through)
+			candidate, err := cp.latestStoredMajor(id, through, maxBadge)
 			if err == nil {
 				badge, ok := majorCheckpointBadge(candidate.State.Name)
 				if ok && (!found || badge > bestBadge) {
@@ -521,74 +525,27 @@ func (w *Wall) latestStoredLineageMajor(startID string) (farm.ResumeCheckpoint, 
 	return best, nil
 }
 
-func (w *Wall) handleControlPlaneCheckpointResume(res http.ResponseWriter, report farm.CheckpointReport) {
-	cp := controlPlaneFor(w)
-	w.mu.Lock()
-	t := w.tiles[report.RunID]
-	if t == nil {
-		w.mu.Unlock()
-		writeJSON(res, http.StatusNotFound, map[string]string{"error": "unknown run " + report.RunID})
-		return
-	}
-	if t.Finished {
-		w.mu.Unlock()
-		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already finished: " + report.RunID})
-		return
-	}
-	attempt := t.Attempts + 1
-	if report.Attempt != 0 && report.Attempt != attempt {
-		w.mu.Unlock()
-		writeJSON(res, http.StatusConflict, map[string]string{"error": fmt.Sprintf("stale resume: run is on attempt %d, request claims %d", attempt, report.Attempt)})
-		return
-	}
-	previous := attempt - 1
-	retryPrefix := fmt.Sprintf("attempt %d failed: ", previous)
-	lostPrefix := retryPrefix + "no heartbeat for "
-	planner := t.Planner
-	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
-	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
-	gymRetry := previous > 0 && !t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
-	lineageRetry := previous == 0 && t.Endless && planner == "llm" && t.ResumeFromRunID != ""
-	resumeParent := t.ResumeFromRunID
-	w.mu.Unlock()
+// storedResumeStore serves resume candidates from PostgreSQL/S3 for the
+// shared serveCheckpointResume routing.
+type storedResumeStore struct{ w *Wall }
 
-	var candidate farm.ResumeCheckpoint
-	var err error
-	switch {
-	case lostRetry && planner != "llm":
-		candidate, err = cp.latestStoredObjective(report.RunID, previous)
-	case lostRetry, endlessRetry:
-		// A lost worker resumes the deepest pair in the lineage, not merely
-		// the previous attempt's: if that attempt had itself fallen back to a
-		// fresh cartridge before dying, its early checkpoints would otherwise
-		// lock the campaign's restart in permanently.
-		candidate, err = w.latestStoredLineageObjective(report.RunID)
-		if errors.Is(err, errStoredCheckpointNotFound) {
-			candidate, err = w.latestStoredLineageMajor(report.RunID)
-		}
-	case gymRetry:
-		candidate, err = w.latestStoredLineageMajor(report.RunID)
-	case lineageRetry:
-		candidate, err = w.latestStoredLineageObjective(resumeParent)
-		if errors.Is(err, errStoredCheckpointNotFound) {
-			candidate, err = w.latestStoredLineageMajor(resumeParent)
-		}
-	default:
-		res.WriteHeader(http.StatusNoContent)
-		return
-	}
+func storedResumeResult(cp farm.ResumeCheckpoint, err error) (farm.ResumeCheckpoint, error) {
 	if errors.Is(err, errStoredCheckpointNotFound) {
-		res.WriteHeader(http.StatusNoContent)
-		return
+		return farm.ResumeCheckpoint{}, os.ErrNotExist
 	}
-	if err != nil {
-		// 204 means "nothing to resume; boot fresh". A lookup that failed
-		// has not proven that, so it must not erase the campaign's progress.
-		log.Printf("pokewall: %s attempt %d PostgreSQL/S3 resume checkpoint: %v", report.RunID, previous, err)
-		writeJSON(res, http.StatusServiceUnavailable, map[string]string{"error": "resume checkpoint lookup failed: " + err.Error()})
-		return
-	}
-	writeJSON(res, http.StatusOK, candidate)
+	return cp, err
+}
+
+func (s storedResumeStore) previousObjective(runID string, attempt int, _ string) (farm.ResumeCheckpoint, error) {
+	return storedResumeResult(controlPlaneFor(s.w).latestStoredObjective(runID, attempt))
+}
+
+func (s storedResumeStore) lineageObjective(startID, _ string) (farm.ResumeCheckpoint, error) {
+	return storedResumeResult(s.w.latestStoredLineageObjective(startID))
+}
+
+func (s storedResumeStore) lineageMajorAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
+	return storedResumeResult(s.w.latestStoredLineageMajor(startID, maxBadge))
 }
 
 func (cp *controlPlane) retainStoredCheckpointWindow(runID string, attempt int, store *artifactstore.S3) {

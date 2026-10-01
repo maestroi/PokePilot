@@ -140,8 +140,57 @@ func TestControlPlaneResumeLookupFailureIsNotFreshStart(t *testing.T) {
 	w.mu.Unlock()
 
 	rec := httptest.NewRecorder()
-	w.handleControlPlaneCheckpointResume(rec, farm.CheckpointReport{RunID: "broken", Attempt: 5})
+	w.serveCheckpointResume(rec, "broken", 5, storedResumeStore{w})
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (204 would boot a fresh cartridge)", rec.Code)
+	}
+}
+
+// A deploy drain must resume the PostgreSQL/S3 store's deepest pair. Only the
+// file-backed route used to know drains, so production answered 204 and every
+// drained campaign restarted from the starter.
+func TestControlPlaneDrainedRetryResumesDeepestPair(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE artifacts (
+ run_id TEXT NOT NULL, attempt INTEGER NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL,
+ metadata_json BLOB NOT NULL, inline_data BLOB)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, art := range []farm.Artifact{
+		wallResumeArtifact("round-037-frame-0006051234-x.state", []byte("deep"), "application/octet-stream"),
+		wallResumeArtifact("round-037-frame-0006051234-x.knowledge-v6.json", []byte(`{"p":"deep"}`), "application/json"),
+	} {
+		meta := art
+		meta.Data = nil
+		raw, _ := json.Marshal(meta)
+		if _, err := db.Exec(`INSERT INTO artifacts(run_id,attempt,kind,name,metadata_json,inline_data) VALUES(?,?,'checkpoint',?,?,?)`,
+			"drained", 1, art.Name, raw, art.Data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := NewWall("")
+	wallControlPlanes.Store(w, &controlPlane{db: db})
+	t.Cleanup(func() { wallControlPlanes.Delete(w) })
+	w.mu.Lock()
+	w.tiles["drained"] = &Tile{RunID: "drained", Planner: "llm", Endless: true, Attempts: 2,
+		RecoveryProfile: farm.RecoveryProfileResilient, RecoveryAttempts: 1,
+		Detail: "attempt 2 drained: runner shutdown requested; stopped at safe objective boundary"}
+	w.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	w.serveCheckpointResume(rec, "drained", 3, storedResumeStore{w})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (204 boots a fresh cartridge)", rec.Code)
+	}
+	var cp farm.ResumeCheckpoint
+	if err := json.Unmarshal(rec.Body.Bytes(), &cp); err != nil {
+		t.Fatal(err)
+	}
+	if cp.State.Name != "round-037-frame-0006051234-x.state" {
+		t.Fatalf("resume = %s, want deepest stored pair", cp.State.Name)
 	}
 }

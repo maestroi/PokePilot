@@ -35,7 +35,7 @@ func TestLatestLineageMajorCheckpointPrefersHighestBadgeAcrossParents(t *testing
 	writeMajorPairToAttempt(t, dumps, "parent", 1, 3, 30, "badge-three")
 	writeMajorPairToAttempt(t, dumps, "child", 1, 2, 40, "child-badge-two")
 
-	cp, err := w.latestLineageMajorCheckpoint("child")
+	cp, err := w.latestLineageMajorCheckpointAtOrBelow("child", 8)
 	if err != nil {
 		t.Fatal(err)
 	}
