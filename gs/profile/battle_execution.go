@@ -77,7 +77,14 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		out.ForgetReady = true
 	case strings.Contains(text, "Can't escape!"):
 		out.Phase = game.BattleExecutionRunRefused
-	case strings.Contains(text, "is about to use") && strings.Contains(text, "change POK"):
+	// The switch-confirmation prompt is recognized by its own marker, the
+	// same way the Gen-I adapter does. "<TRAINER> is about to use <MON>." is
+	// long enough to scroll off the 4-line battle box before the YES/NO
+	// cursor is drawn, so by the time the prompt is answerable only "Will
+	// <PLAYER> change POKéMON?" is on screen; requiring the scrolled-off
+	// half left the prompt unowned and the blind A-tap confirmed YES
+	// (run-11dd5ya1qev0ry, triage:e1ef45bf25e3b946).
+	case strings.Contains(text, "change POK"):
 		out.Phase = game.BattleExecutionTrainerSwitch
 	case strings.Contains(text, "Stop learning"):
 		out.Phase = game.BattleExecutionAbandonLearn

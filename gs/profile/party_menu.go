@@ -24,14 +24,18 @@ func (*Profile) DecodePartyMenu(reader game.MemoryReader) game.PartyMenuState {
 	inBattle := reader.Peek8(sym.BattleMode) != 0
 	kind := game.PartyMenuKind("")
 	switch {
-	case inBattle && strings.Contains(text, "Which POK"):
+	case inBattle && strings.Contains(text, "Use on which"):
+		kind = game.PartyMenuItemUse
+	case inBattle && strings.Contains(text, "CANCEL"):
+		// The battle party list renders a CANCEL row. The bottom prompt is
+		// "Which  ?" — no species word — so the list row, not the prompt, is
+		// the stable identity of the surface (measured on the live stall
+		// screen, run-11dd5ya1qev0ry, triage:e1ef45bf25e3b946).
 		if battleBE16(reader, sym.BattleMonHP) == 0 {
 			kind = game.PartyMenuForcedBattle
 		} else {
 			kind = game.PartyMenuVoluntaryBattle
 		}
-	case strings.Contains(text, "Use on which"):
-		kind = game.PartyMenuItemUse
 	case !inBattle && strings.Contains(text, "Choose a POK"):
 		kind = game.PartyMenuFieldMove
 	default:

@@ -96,7 +96,8 @@ func TestGoldUseNextPromptIsTwoOption(t *testing.T) {
 	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
 	mem[sym.MenuCursorY] = 2
 	mem[sym.MenuCursorX] = 1
-	putGSScreenText(&mem, "Use next POKEMON?")
+	// The answerable prompt renders the YES/NO box on the screen.
+	putGSScreenText(&mem, "Use next POKEMON? YES NO")
 
 	p := NewGold()
 	prompt, ok := p.DecodeTwoOption(&mem)
@@ -158,7 +159,9 @@ func TestGoldForcedPartyMenuIncludesCancelCursor(t *testing.T) {
 	mem[sym.MenuCursorX] = 1
 	mem[sym.MenuCursorY] = 3 // CANCEL row
 	putBattleBE16(&mem, sym.BattleMonHP, 0)
-	putGSScreenText(&mem, "Which POKEMON?")
+	// The live screen renders the party list with a CANCEL row; the bottom
+	// prompt is "Which  ?" with no species word.
+	putGSScreenText(&mem, "SQUIRTLE 25/ 32 12 CANCEL Which ?")
 
 	got := NewGold().DecodePartyMenu(&mem)
 	if !got.Visible || got.Kind != game.PartyMenuForcedBattle {
