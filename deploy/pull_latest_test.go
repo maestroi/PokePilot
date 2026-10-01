@@ -438,3 +438,142 @@ exit 0
 		t.Fatalf("force-rolled for a draining task:\n%s\n%s", out, logData)
 	}
 }
+
+// TestRolloutLatestPrunesUntaggedImagesButKeepsReferencedDigests pins the
+// reclaim the manager relies on to survive unattended weeks. Every merge
+// publishes a digest that the timer pulls within ~2 minutes; without a prune
+// the untagged predecessors accumulate until the filesystem holding the Swarm
+// control plane and pokefarm_postgres is full.
+//
+// The keep-set must include the rollback target (PreviousSpec) and any digest a
+// live task still runs, because dropping those forces `docker service rollback`
+// to re-pull from the registry.
+func TestRolloutLatestPrunesUntaggedImagesButKeepsReferencedDigests(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	if [ "$3" = "pokefarm_litellm" ]; then
+		exit 1
+	fi
+	case "$*" in
+	# Keep-set query passes both in one template; the rollout loop passes only
+	# the spec image and the rollback-hold check passes only PreviousSpec.
+	*ContainerSpec.Image*PreviousSpec*) echo 'ghcr.io/maestroi/pokepilot@sha256:live'; echo 'ghcr.io/maestroi/pokepilot@sha256:prev' ;;
+	*ContainerSpec.Image*) echo 'ghcr.io/maestroi/pokepilot@sha256:live' ;;
+	*PreviousSpec*) echo 'completed|ghcr.io/maestroi/pokepilot@sha256:live' ;;
+	*UpdateStatus*) echo 'completed' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
+	case "$*" in
+	*'{{.Image}}'*) echo 'ghcr.io/maestroi/pokepilot@sha256:task' ;;
+	*) echo 'Running 1 minute ago|ghcr.io/maestroi/pokepilot@sha256:live|worker-1|Running' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "images" ]; then
+	echo 'sha256:aaa <none>'
+	echo 'sha256:bbb <none>'
+	echo 'sha256:ccc <none>'
+	echo 'sha256:ddd latest'
+	exit 0
+fi
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+	case "$3" in
+	sha256:aaa) echo 'ghcr.io/maestroi/pokepilot@sha256:live' ;;
+	sha256:bbb) echo 'ghcr.io/maestroi/pokepilot@sha256:prev' ;;
+	sha256:ccc) echo 'ghcr.io/maestroi/pokepilot@sha256:orphan' ;;
+	esac
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:live",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker log: %v", err)
+	}
+	logText := string(logData)
+
+	if !strings.Contains(string(out), "pruned 1 untagged ghcr.io/maestroi/pokepilot image(s)") {
+		t.Fatalf("did not report a prune:\n%s", out)
+	}
+	if !strings.Contains(logText, "rmi sha256:ccc") {
+		t.Fatalf("unreferenced untagged image was not reclaimed:\n%s", logText)
+	}
+	for _, keep := range []string{"sha256:aaa", "sha256:bbb"} {
+		if strings.Contains(logText, "rmi "+keep) {
+			t.Fatalf("removed referenced image %s (rollback target or live task):\n%s", keep, logText)
+		}
+	}
+	if strings.Contains(logText, "rmi sha256:ddd") {
+		t.Fatalf("removed the tagged :latest image:\n%s", logText)
+	}
+}
+
+// TestRolloutLatestSurvivesAnEmptyImageList guards the prune against turning a
+// quiet registry into a failed timer tick: with nothing to reclaim the script
+// must still exit 0.
+func TestRolloutLatestSurvivesAnEmptyImageList(t *testing.T) {
+	tmp := t.TempDir()
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	if [ "$3" = "pokefarm_litellm" ]; then
+		exit 1
+	fi
+	case "$*" in
+	*ContainerSpec.Image*PreviousSpec*) echo 'ghcr.io/maestroi/pokepilot@sha256:live'; echo 'ghcr.io/maestroi/pokepilot@sha256:prev' ;;
+	*ContainerSpec.Image*) echo 'ghcr.io/maestroi/pokepilot@sha256:live' ;;
+	*PreviousSpec*) echo 'completed|ghcr.io/maestroi/pokepilot@sha256:live' ;;
+	*UpdateStatus*) echo 'completed' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
+	case "$*" in
+	*'{{.Image}}'*) ;;
+	*) echo 'Running 1 minute ago|ghcr.io/maestroi/pokepilot@sha256:live|worker-1|Running' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "images" ]; then
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:live",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "pruned") {
+		t.Fatalf("reported a prune with no candidates:\n%s", out)
+	}
+}
