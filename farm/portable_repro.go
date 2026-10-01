@@ -2,10 +2,41 @@ package farm
 
 import (
 	"fmt"
+	"os"
 	"strings"
 )
 
 const PortableReproVersion = 1
+
+// ReproROMEnv names the environment variable that holds the cartridge a
+// captured failure needs for deterministic replay. Gen-I tooling has always
+// exported POKEMON_RED_ROM, so that stays the default and keeps working for
+// every existing run; each additional supported cartridge names its own so a
+// Gold failure can never be replayed against a Red ROM.
+func ReproROMEnv(adapter, game string) string {
+	for _, id := range []string{adapter, game} {
+		switch strings.ToLower(strings.TrimSpace(id)) {
+		case "pokemon-gold":
+			return "POKEMON_GOLD_ROM"
+		case "pokemon-silver":
+			return "POKEMON_SILVER_ROM"
+		case "pokemon-yellow":
+			return "POKEMON_YELLOW_ROM"
+		case "pokemon-blue":
+			return "POKEMON_BLUE_ROM"
+		case "pokemon-red", "pokemon", "red":
+			return "POKEMON_RED_ROM"
+		}
+	}
+	return "POKEMON_RED_ROM"
+}
+
+// ReproROMPath resolves ReproROMEnv. The variable name is returned even when it
+// is unset so the caller can tell the operator exactly what to export.
+func ReproROMPath(adapter, game string) (path, env string) {
+	env = ReproROMEnv(adapter, game)
+	return strings.TrimSpace(os.Getenv(env)), env
+}
 
 // PortableReproFile identifies one file embedded in a portable GitHub-hosted
 // repro bundle. The SHA-256 is checked again by pokerepro after download so a

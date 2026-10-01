@@ -91,6 +91,17 @@ export interface DashboardStats {
   [key: string]: unknown
 }
 
+export interface BattleDecisionOutcome {
+  kind: 'next_turn' | 'battle_result' | string
+  active_species?: string
+  active_hp?: number
+  active_max_hp?: number
+  opponent_species?: string
+  opponent_hp?: number
+  opponent_max_hp?: number
+  result?: 'won' | 'lost' | 'draw' | string
+}
+
 // One typed-decision call in a run's live feed (only the most recent calls
 // travel; see DecisionSummary for the whole run).
 export interface TypedDecisionRecord {
@@ -103,9 +114,13 @@ export interface TypedDecisionRecord {
   backend?: string
   model?: string
   fallback?: boolean
+  controlled?: boolean
   shadow?: boolean
   executed?: string
   agreed?: boolean
+  decision_index?: number
+  state_fingerprint?: string
+  battle_outcome?: BattleDecisionOutcome
   error?: string
 }
 
@@ -113,6 +128,7 @@ export interface TypedDecisionRecord {
 export interface DecisionKindSummary {
   calls: number
   fallbacks?: number
+  controlled?: number
   errors?: number
   shadow?: number
   agreements?: number
@@ -145,7 +161,7 @@ export interface DecisionEngineSpec {
   // Shadow records the backend's answers without acting on them; omitted
   // means active, which is how selections made before modes behaved.
   mode?: 'off' | 'shadow' | 'active'
-  // Battle turns are observed only, so battles requires shadow mode.
+  // Battle turns may run in shadow or confidence-gated active mode.
   battles?: boolean
   objectives?: boolean
   failures?: boolean
@@ -487,6 +503,7 @@ export interface MediaRenderJob {
   lease_expires_at_unix_ms?: number
   retry_count?: number
   last_error?: string
+  failure_class?: string
   result_size?: number
   created_at_unix_ms: number
   updated_at_unix_ms: number
@@ -498,6 +515,25 @@ export interface MediaRenderJobList {
   jobs: MediaRenderJob[]
   total: number
   states: Record<string, number>
+}
+
+export interface HighlightStatus {
+  run_id: string
+  job_id?: string
+  state: string
+  object_key?: string
+  manifest_key?: string
+  size?: number
+  error?: string
+  last_error?: string
+  job_state?: string
+  stage?: string
+  retry_count?: number
+  failure_class?: string
+  windows?: number
+  windows_done?: number
+  duration_ms?: number
+  plan_hash?: string
 }
 
 export interface ReplayStatus {

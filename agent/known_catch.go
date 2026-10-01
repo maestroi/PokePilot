@@ -58,12 +58,12 @@ func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observat
 	}
 
 	adjacency := known.nativeAdjacency()
-	hops := mapHops(adjacency, obs.Map)
+	hops := mapHops(adjacency, uint16(obs.Map))
 	best := map[SpeciesID]knownCatchHabitat{}
-	seenNative := map[uint8]bool{}
+	seenNative := map[uint16]bool{}
 	for location := range known.Visited {
 		mapID, ok := redNativeMapForLocation(obs.GameID, known, location)
-		if !ok || seenNative[mapID] || mapID == obs.Map {
+		if !ok || seenNative[mapID] || mapID == uint16(obs.Map) {
 			continue // local catches already came from Offer.
 		}
 		seenNative[mapID] = true
@@ -71,14 +71,14 @@ func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observat
 		if len(adjacency) > 0 && !reachable {
 			continue
 		}
-		if reachableMaps != nil && !reachableMaps[mapID] {
+		if reachableMaps != nil && !reachableMaps[uint8(mapID)] {
 			continue
 		}
-		place, ok := catchPlaceOnMap(mapID)
+		place, ok := catchPlaceOnMap(uint8(mapID))
 		if !ok {
 			continue
 		}
-		wild, err := wildFor(romData, mapID)
+		wild, err := wildFor(romData, uint8(mapID))
 		if err != nil || len(wild) == 0 {
 			continue
 		}
@@ -129,7 +129,7 @@ func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observat
 	return out
 }
 
-func redNativeMapForLocation(gameID game.GameID, known *Knowledge, location LocationID) (uint8, bool) {
+func redNativeMapForLocation(gameID game.GameID, known *Knowledge, location LocationID) (uint16, bool) {
 	if known != nil {
 		for native, semantic := range known.nativeLocations {
 			if semantic == location {
@@ -138,7 +138,7 @@ func redNativeMapForLocation(gameID game.GameID, known *Knowledge, location Loca
 		}
 	}
 	for i := 0; i <= 0xff; i++ {
-		id := uint8(i)
+		id := uint16(i)
 		if redLocationID(gameID, id) == location {
 			return id, true
 		}

@@ -55,14 +55,13 @@ test('deployment registry editor declares the wire protocol', () => {
   assert.match(experimentSource, /strategistDeployments\(modelsData\.value\?\.deployments/)
 })
 
-test('tools run form selects decision mode and shadow-only battles', () => {
+test('tools run form selects decision mode and supports shadow or active battles', () => {
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*mode\?: 'off' \| 'shadow' \| 'active'/)
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*battles\?: boolean/)
   assert.match(toolsSource, /v-model="decision\.mode"/)
   assert.match(toolsSource, /<option value="shadow">Shadow<\/option>/)
-  assert.match(toolsSource, /v-model="decision\.battles" type="checkbox" :disabled="!decisionShadow"/)
-  // Active runs never send battle decisions; the wall would reject them.
-  assert.match(toolsSource, /battles: decisionShadow\.value && decision\.battles/)
+  assert.match(toolsSource, /v-model="decision\.battles" type="checkbox" :disabled="!decisionBattleMode"/)
+  assert.match(toolsSource, /battles: decisionBattleMode\.value && decision\.battles/)
 })
 
 test('live and archive views show the run decision engine', () => {

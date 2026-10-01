@@ -64,7 +64,7 @@ func runLocalBoxxlePlay(m *emu.Emu, profile game.CartridgeProfile, maxPushes, ma
 			}
 		},
 	})
-	fmt.Printf("boxxle stopped: %s after %d push(es)\n", result.Reason, result.Pushes)
+	fmt.Printf("boxxle stopped: %s after %d push(es), %d puzzle(s) solved\n", result.Reason, result.Pushes, result.Levels)
 	if result.Telemetry != nil {
 		fmt.Printf("boxxle telemetry: backend=%s model=%s replans=%d fallbacks=%d invalid=%d latency=%s\n",
 			result.Telemetry.Backend, result.Telemetry.Model, result.Telemetry.Replans,

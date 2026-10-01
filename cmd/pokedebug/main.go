@@ -416,16 +416,16 @@ func verifyDebugBundle(root, bundlePath, cacheDir string, packet farm.DebugPacke
 	if root == "" {
 		return debugReproduction{State: "skipped", Diagnostic: "not inside a git checkout"}
 	}
-	game := strings.ToLower(strings.TrimSpace(packet.Game))
-	if game != "" && game != "pokemon-red" && game != "pokemon" && game != "red" {
-		return debugReproduction{State: "skipped", Diagnostic: "deterministic pokerepro verification currently uses POKEMON_RED_ROM"}
-	}
-	rom := strings.TrimSpace(os.Getenv("POKEMON_RED_ROM"))
+	// Deterministic replay is owned by pokerepro, which resolves the cartridge
+	// from the failure contract's own adapter. Do not narrow that to Gen-I
+	// here: a Gold/Silver run's replay was previously reported as "skipped"
+	// purely because its game was not Red, so no fix could be verified.
+	rom, romEnv := farm.ReproROMPath("", packet.Game)
 	if rom == "" {
-		return debugReproduction{State: "skipped", Diagnostic: "POKEMON_RED_ROM is not set"}
+		return debugReproduction{State: "skipped", Diagnostic: romEnv + " is not set"}
 	}
 	if _, err := os.Stat(rom); err != nil {
-		return debugReproduction{State: "skipped", Diagnostic: "POKEMON_RED_ROM is not readable: " + err.Error()}
+		return debugReproduction{State: "skipped", Diagnostic: romEnv + " is not readable: " + err.Error()}
 	}
 
 	verifyDir := filepath.Join(cacheDir, "verify")

@@ -21,7 +21,7 @@ func TestLeadOutOfPPRequiresHardExhaustion(t *testing.T) {
 }
 
 func TestOfferPPItemOnlyAtHardExhaustion(t *testing.T) {
-	known := testKnowledge(map[uint8][]uint8{})
+	known := testKnowledge(map[uint16][]uint16{})
 	base := Observation{GameID: testGameID,
 		Map:        0xfe,
 		MapName:    "ROUTE_TEST",
@@ -64,7 +64,7 @@ func TestOfferPrefersFreeCenterWhenAlreadyThere(t *testing.T) {
 		Bag:        []Item{{Name: "ether", Quantity: 1}},
 	}
 	foundHeal := false
-	for _, o := range Offer(obs, testKnowledge(map[uint8][]uint8{})) {
+	for _, o := range Offer(obs, testKnowledge(map[uint16][]uint16{})) {
 		if o.Kind == KindUseItem && o.Item == ItemID("ether") {
 			t.Fatalf("finite ether offered while already in a Center: %+v", o)
 		}
@@ -90,7 +90,7 @@ func TestOfferKnownCenterForHealthyPPExhaustedParty(t *testing.T) {
 		fieldMap = 0xfd
 	}
 	fieldLocation := LocationID("test/route")
-	centerLocation := redLocationID(redprofile.GameID, center.Map)
+	centerLocation := redLocationID(redprofile.GameID, uint16(center.Map))
 	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
 		fieldLocation:  {centerLocation},
 		centerLocation: {fieldLocation},

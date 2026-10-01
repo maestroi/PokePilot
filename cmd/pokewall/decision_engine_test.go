@@ -26,7 +26,6 @@ func TestWallRejectsUnknownDecisionEngine(t *testing.T) {
 		`{"run_id":"bad-backend","planner":"llm","decision_engine":{"backend":"gpt"}}`,
 		`{"run_id":"bad-confidence","planner":"llm","decision_engine":{"backend":"jev","min_confidence":1.5}}`,
 		`{"run_id":"bad-mode","planner":"llm","decision_engine":{"backend":"jev","mode":"yolo"}}`,
-		`{"run_id":"active-battles","planner":"llm","decision_engine":{"backend":"jev","mode":"active","battles":true}}`,
 	} {
 		if res := postSpec(t, h, body); res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "decision_engine") {
 			t.Fatalf("POST %s = %d %s, want 400 naming decision_engine", body, res.Code, res.Body.String())

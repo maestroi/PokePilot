@@ -40,7 +40,10 @@ that port must stay on the private LAN.
 
 Provision `/opt/pokefarm/roms/pokemon_red.gb` and root-readable-only
 `/opt/pokefarm/replay.env` on the VM through the existing private operations
-channel. Never put ROM or S3 credentials in Git or the image. Install
+channel. Never put ROM or S3 credentials in Git or the image. Use
+[`deploy/replay.env.example`](./replay.env.example) as the canonical variable
+reference and starting capacity envelope; replace the placeholder S3 values and
+keep the host copy mode `0600`. Install
 `deploy/replay-pull.sh` as `/usr/local/sbin/pokefarm-replay-pull` and the
 `deploy/pokefarm-replay-pull.{service,timer}` units under `/etc/systemd/system`.
 Write `/etc/default/pokefarm-replay` with
@@ -96,3 +99,94 @@ The expected scratch envelope for a bounded render is therefore approximately:
 Scratch no longer scales as "all rendered segments + final MP4". Segment
 artifacts are durable derived cache entries in S3 and can be regenerated from
 the source recording if an individual object fails validation.
+
+
+## Render capacity and admission control
+
+The copy-paste configuration reference is
+[`deploy/replay.env.example`](./replay.env.example). The table below explains
+what each capacity knob controls and when to change it.
+
+| Variable | Default / recommended start | What it bounds | Raise it when | Lower it when |
+| --- | --- | --- | --- | --- |
+| `POKEPILOT_REPLAY_MAX_JOBS` | `2` | Claimed offline render jobs | Jobs queue while CPU/RAM/scratch still have headroom | Multiple jobs push host memory/disk pressure too high |
+| `POKEPILOT_REPLAY_WORKERS` | `3` | Concurrent emulator + encoder segment pipelines | GPU/CPU is underutilized during long renders | RSS, FDs, encoder load, or contention rises |
+| `POKEPILOT_REPLAY_MIN_SCRATCH_BYTES` | `1073741824` (1 GiB) | Minimum free scratch before claiming new work | Only after measuring worst-case assembly size and preserving safety margin | Increase this value—not decrease it—when final MP4s or temp work get larger |
+| `POKEPILOT_REPLAY_SCRATCH_DIR` | `/tmp/pokepilot-replay` | Location of transient job directories | Move to a larger/faster dedicated volume | N/A; choose a filesystem with enough free space |
+| `POKEPILOT_REPLAY_JOB_TIMEOUT` | `8h` | Whole claimed job lifetime | Legitimate very long jobs hit timeout despite healthy progress | Hung/stuck jobs occupy admission slots too long |
+| `POKEPILOT_REPLAY_SEGMENT_TIMEOUT` | `2h` | One segment encoder/compositor lifetime | Legitimate slow software renders exceed the bound | A stuck segment holds an encoder worker too long |
+| `POKEPILOT_REPLAY_SEGMENT_SECONDS` | `300` | Source duration per resumable segment | Segment overhead dominates and retries are cheap | Failures/restarts redo too much work per segment |
+
+Offline replay work is admitted separately from live spectator media. Live MJPEG
+sessions keep their bounded subscriber queues and frame dropping behavior and do
+not consume offline render-job slots.
+
+The replay worker uses these capacity knobs:
+
+- `POKEPILOT_REPLAY_MAX_JOBS` — maximum claimed offline render jobs at once
+  (default 2). Excess durable jobs remain `queued` in pokewall.
+- `POKEPILOT_REPLAY_WORKERS` — maximum attempt/segment workers that can hold an
+  emulator + encoder pipeline at once (default 3).
+- `POKEPILOT_REPLAY_MIN_SCRATCH_BYTES` — free-space floor required before a
+  new offline job is claimed (default 1 GiB). Low space leaves work queued and
+  does not affect ready artifacts or API health.
+- `POKEPILOT_REPLAY_SCRATCH_DIR` — dedicated temp root (default
+  `$TMPDIR/pokepilot-replay`). Orphan `job-*` directories are removed when
+  the replay worker starts.
+- `POKEPILOT_REPLAY_JOB_TIMEOUT` — maximum lifetime of one claimed render job
+  (Go duration, default `8h`).
+- `POKEPILOT_REPLAY_SEGMENT_TIMEOUT` — maximum lifetime of an individual
+  segment encoder/compositor pipeline (Go duration, default `2h`).
+
+For the current 4-vCPU/6-GiB render VM, start conservatively with the defaults.
+Raise `POKEPILOT_REPLAY_WORKERS` or `POKEPILOT_REPLAY_MAX_JOBS` only after
+watching memory, file descriptors, scratch free space, and encoder utilization
+under long multi-attempt renders.
+
+`/healthz` exposes the worker envelope without credentials: offline job limit
+and active count, queued depth/reasons, active segment workers, active encoder
+processes, scratch free/use/floor, oldest render age, failures/retries/completed
+renders, rendered bytes and average throughput. A healthy but saturated worker
+continues to return `status: ok`; saturation is represented by queued jobs
+rather than by spawning additional work.
+
+Cancellation is durable in pokewall. Active workers heartbeat frequently and
+cancel their render context when the durable job is cancelled; the replay API
+also exposes `POST /v1/runs/{id}/replay/cancel?mode=...` for immediate local
+propagation. A cancelled or timed-out subprocess cannot publish a ready artifact
+because assembly/upload only runs after the segment has completed and passed
+validation.
+
+
+## Event-driven highlight reels
+
+Completed runs with a `media-timeline.json` can produce a short deterministic
+highlight reel without a second event-detection system. The highlight planner
+selects versioned semantic events, expands them with pre/post-roll, merges
+overlapping or nearby windows, ranks them deterministically, and keeps the
+stitched reel under a duration budget.
+
+The built-in policy currently recognizes run completion/failure, Champion and
+Elite Four events, badges and gym battles, rival battles, rare/important
+catches, evolutions, blackouts, planner/failure recovery, milestones, and
+checkpoints. Event types that are not emitted by a game yet are harmless and
+become active automatically once that game's timeline starts producing them.
+
+Configuration lives in `deploy/replay.env.example`:
+
+- `POKEPILOT_HIGHLIGHT_TARGET_SECONDS` defaults to 480 seconds.
+- `POKEPILOT_HIGHLIGHT_MERGE_GAP_SECONDS` defaults to 3 seconds.
+- `POKEPILOT_HIGHLIGHT_POLICY_JSON` can replace the complete policy for
+  experiments; production policy changes should increment the policy version.
+
+Each selected window is rendered through the normal broadcast compositor and is
+cached as an independently resumable derived clip. The final reel is assembled
+from those cached clips, then a JSON manifest is persisted beside it with the
+plan hash, source frame ranges, event references, and clip artifact keys.
+Changing the source recording, media timeline, renderer/profile, or highlight
+plan produces a different canonical artifact identity.
+
+Operator endpoints can inspect or request generation under
+`/v1/runs/{id}/highlights/...`. The public spectator exposes only read-only
+status/video/manifest routes for runs already admitted to the public replay
+archive; it cannot trigger a render.

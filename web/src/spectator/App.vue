@@ -804,6 +804,30 @@ function activityTimeAgo(item: ActivityItem): string {
         </header>
 
         <div class="stage-body">
+          <aside v-if="!isTetrisSelected" class="stat-rail" aria-label="Run stats">
+            <dl class="facts">
+              <div v-for="stat in statCards" :key="stat.key">
+                <dt>{{ stat.label }}</dt>
+                <dd>{{ stat.value }}</dd>
+              </div>
+            </dl>
+
+            <section v-if="otherLiveRuns.length" class="others rail-others">
+              <div class="block-head">
+                <h2>Other live runs</h2>
+                <span>{{ groupedRuns.live.length }} live</span>
+              </div>
+              <ul>
+                <li v-for="run in otherLiveRuns" :key="run.run_id">
+                  <button type="button" @click="selectRun(run)">
+                    <strong>{{ runTitle(run) }}</strong>
+                    <span>{{ displayLocation(run) }}</span>
+                  </button>
+                </li>
+              </ul>
+            </section>
+          </aside>
+
           <div class="screen-col">
             <section class="bezel" :aria-label="'Game screen for ' + gameTitle(selectedRun)">
               <div
@@ -827,6 +851,22 @@ function activityTimeAgo(item: ActivityItem): string {
                   <p>Waiting for the live stream</p>
                   <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="warn">{{ renderStateError }}</p>
                   <p v-else-if="frameState === 'error' && frameError" class="warn">{{ frameError }}</p>
+                </div>
+
+                <div
+                  v-if="plannerState && !isTetrisSelected"
+                  class="thinking-overlay"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <div class="thinking-card">
+                    <span class="thinking-dots" aria-hidden="true"><i /><i /><i /></span>
+                    <span class="thinking-copy">
+                      <strong>{{ plannerState.title }}</strong>
+                      <small>{{ plannerState.detail }}</small>
+                    </span>
+                  </div>
                 </div>
 
                 <div class="screen-controls">
@@ -857,23 +897,13 @@ function activityTimeAgo(item: ActivityItem): string {
                 <span>{{ currentLocation }}</span>
               </div>
             </section>
-
-            <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
-              <div class="block-head">
-                <h2>Road to the League</h2>
-                <span>{{ routeLine.earnedCount }} of 8 badges</span>
-              </div>
-              <RouteLine :line="routeLine" />
-            </section>
-
-            <div class="readout">
+            <div v-if="isTetrisSelected" class="readout">
               <dl class="facts">
                 <div v-for="stat in statCards" :key="stat.key">
                   <dt>{{ stat.label }}</dt>
                   <dd>{{ stat.value }}</dd>
                 </div>
               </dl>
-
               <section v-if="isTetrisSelected" class="board-block" aria-label="Board">
                 <div class="block-head">
                   <h2>Board</h2>
@@ -895,34 +925,6 @@ function activityTimeAgo(item: ActivityItem): string {
                     <div><dt>Next</dt><dd class="piece-next">{{ tetrisNextPiece }}</dd></div>
                   </dl>
                 </div>
-              </section>
-
-              <section v-if="!isTetrisSelected" class="party" aria-label="Party">
-                <div class="block-head">
-                  <h2>Party</h2>
-                  <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
-                </div>
-                <ul v-if="selectedRun.player?.party?.length" class="roster">
-                  <li v-for="(mon, index) in selectedRun.player.party" :key="mon.name + '-' + index">
-                    <PokemonSprite :name="mon.name" :size="48" :fainted="mon.hp <= 0" />
-                    <div class="mon">
-                      <span class="mon-name">
-                        <strong>{{ mon.name || 'Unknown' }}</strong>
-                        <span>Lv {{ mon.level }}</span>
-                      </span>
-                      <span class="hp" role="img" :aria-label="'HP ' + mon.hp + ' of ' + mon.max_hp">
-                        <i :class="hpTone(mon)" :style="{ width: hpPercent(mon) + '%' }" />
-                      </span>
-                      <span class="mon-meta">
-                        {{ mon.hp }}/{{ mon.max_hp }}
-                        <template v-if="mon.hp <= 0"> · fainted</template>
-                        <template v-else-if="mon.status && mon.status.toLowerCase() !== 'healthy'"> · {{ mon.status }}</template>
-                        <template v-if="index === 0"> · lead</template>
-                      </span>
-                    </div>
-                  </li>
-                </ul>
-                <p v-else class="muted">Party data is not available yet.</p>
               </section>
             </div>
           </div>
@@ -951,6 +953,10 @@ function activityTimeAgo(item: ActivityItem): string {
                 <i :style="{ width: goalPercent + '%' }" />
               </div>
               <p class="muted">{{ goalProgressCopy.label }} · {{ goalProgressCopy.detail }}</p>
+              <div v-if="!isTetrisSelected" class="next-goal">
+                <span>Next goal</span>
+                <strong>{{ routeLine.nextGoal }}</strong>
+              </div>
             </section>
 
             <section>
@@ -1008,22 +1014,45 @@ function activityTimeAgo(item: ActivityItem): string {
               <p v-else class="muted">Waiting for the next live event.</p>
             </section>
 
-            <section v-if="otherLiveRuns.length" class="others">
-              <div class="block-head">
-                <h2>Other live runs</h2>
-                <span>{{ groupedRuns.live.length }} live</span>
-              </div>
-              <ul>
-                <li v-for="run in otherLiveRuns" :key="run.run_id">
-                  <button type="button" @click="selectRun(run)">
-                    <strong>{{ runTitle(run) }}</strong>
-                    <span>{{ displayLocation(run) }}</span>
-                  </button>
-                </li>
-              </ul>
-            </section>
+
           </aside>
         </div>
+
+            <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
+              <div class="block-head">
+                <h2>Road to the League</h2>
+                <span>{{ routeLine.completedGoals }} of {{ routeLine.goalCount }} goals</span>
+              </div>
+              <RouteLine :line="routeLine" />
+            </section>
+
+        <section v-if="!isTetrisSelected" class="party" aria-label="Party">
+          <div class="block-head">
+            <h2>Party</h2>
+            <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
+          </div>
+          <ul v-if="selectedRun.player?.party?.length" class="roster">
+            <li v-for="(mon, index) in selectedRun.player.party" :key="mon.name + '-' + index">
+              <PokemonSprite :name="mon.name" :size="48" :fainted="mon.hp <= 0" />
+              <div class="mon">
+                <span class="mon-name">
+                  <strong>{{ mon.name || 'Unknown' }}</strong>
+                  <span>Lv {{ mon.level }}</span>
+                </span>
+                <span class="hp" role="img" :aria-label="'HP ' + mon.hp + ' of ' + mon.max_hp">
+                  <i :class="hpTone(mon)" :style="{ width: hpPercent(mon) + '%' }" />
+                </span>
+                <span class="mon-meta">
+                  {{ mon.hp }}/{{ mon.max_hp }}
+                  <template v-if="mon.hp <= 0"> · fainted</template>
+                  <template v-else-if="mon.status && mon.status.toLowerCase() !== 'healthy'"> · {{ mon.status }}</template>
+                  <template v-if="index === 0"> · lead</template>
+                </span>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="muted">Party data is not available yet.</p>
+        </section>
       </div>
     </div>
   </AppShell>
@@ -1950,7 +1979,7 @@ select:focus-visible {
 .game-pokemon .route-block,
 .game-pokemon .party,
 .game-pokemon .board-block {
-  padding: 0.9rem 1rem;
+  padding: 0.72rem 0.9rem;
   border: 1px solid rgba(101, 114, 172, 0.28);
   border-radius: 0.9rem;
   background:
@@ -1968,7 +1997,7 @@ select:focus-visible {
 }
 
 .game-pokemon .block-head {
-  margin-bottom: 0.7rem;
+  margin-bottom: 0.5rem;
 }
 
 .game-pokemon .route-block .block-head h2,
@@ -2219,6 +2248,365 @@ select:focus-visible {
   .game-pokemon .party,
   .game-pokemon .side > section {
     padding: 0.75rem;
+  }
+}
+
+
+/* Centered Pokémon stage: equal support rails keep the game screen on the visual axis. */
+.game-pokemon .stage-body {
+  align-items: start;
+}
+
+.game-pokemon .stat-rail {
+  min-width: 0;
+}
+
+.game-pokemon .stat-rail .facts {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.game-pokemon .stat-rail .facts div {
+  display: flex;
+  min-height: 5.2rem;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.8rem 0.9rem;
+}
+
+.game-pokemon .stat-rail .facts div:nth-child(1) { border-left: 3px solid rgba(239, 94, 87, 0.9); }
+.game-pokemon .stat-rail .facts div:nth-child(2) { border-left: 3px solid rgba(242, 202, 82, 0.9); }
+.game-pokemon .stat-rail .facts div:nth-child(3) { border-left: 3px solid rgba(72, 179, 255, 0.9); }
+.game-pokemon .stat-rail .facts div:nth-child(4) { border-left: 3px solid rgba(192, 132, 252, 0.9); }
+
+.game-pokemon .screen-col {
+  width: 100%;
+  max-width: 48rem;
+  grid-template-columns: minmax(0, 1fr);
+  justify-self: center;
+  gap: 1rem;
+}
+
+.game-pokemon .stage > .route-block,
+.game-pokemon .stage > .party {
+  width: 100%;
+}
+
+.game-pokemon .stage > .party .roster {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.game-pokemon .stage > .party .roster li {
+  align-items: center;
+  min-width: 0;
+  padding: 0.65rem 0.7rem;
+}
+
+.thinking-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: end center;
+  padding: 1rem;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 45%, rgba(5, 8, 19, 0.12) 72%, rgba(5, 8, 19, 0.48));
+}
+
+.thinking-overlay::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(242, 202, 82, 0.07) 48%, transparent 61%);
+  content: "";
+  transform: translateX(-70%);
+  animation: thinking-scan 2.4s ease-in-out infinite;
+}
+
+.thinking-card {
+  position: relative;
+  display: flex;
+  max-width: min(28rem, 92%);
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(242, 202, 82, 0.36);
+  border-radius: 0.8rem;
+  background: rgba(8, 11, 24, 0.84);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.34), inset 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(8px);
+}
+
+.thinking-dots {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.24rem;
+  width: 2.35rem;
+  justify-content: center;
+}
+
+.thinking-dots i {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #f2ca52;
+  box-shadow: 0 0 10px rgba(242, 202, 82, 0.32);
+  animation: thinking-dot 1.15s ease-in-out infinite;
+}
+
+.thinking-dots i:nth-child(2) { animation-delay: 0.14s; }
+.thinking-dots i:nth-child(3) { animation-delay: 0.28s; }
+
+.thinking-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.thinking-copy strong {
+  color: #fff7dc;
+  font-size: 0.8rem;
+  font-weight: 850;
+  letter-spacing: 0.025em;
+}
+
+.thinking-copy small {
+  overflow: hidden;
+  color: #aab5d2;
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes thinking-dot {
+  0%, 60%, 100% { opacity: 0.4; transform: translateY(0) scale(0.9); }
+  30% { opacity: 1; transform: translateY(-0.28rem) scale(1); }
+}
+
+@keyframes thinking-scan {
+  0% { transform: translateX(-75%); }
+  55%, 100% { transform: translateX(75%); }
+}
+
+.game-pokemon .rail-others {
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(101, 114, 172, 0.25);
+  border-radius: 0.8rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 50%),
+    rgba(9, 13, 29, 0.62);
+}
+
+.game-pokemon .rail-others .block-head {
+  margin-bottom: 0.35rem;
+}
+
+.game-pokemon .rail-others .block-head h2 {
+  color: #aeb9d7;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .rail-others button {
+  padding: 0.5rem 0;
+}
+
+.game-pokemon .rail-others button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-pokemon .next-goal {
+  display: grid;
+  gap: 0.12rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(101, 114, 172, 0.22);
+}
+
+.game-pokemon .next-goal span {
+  color: #7f8aaa;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.game-pokemon .next-goal strong {
+  color: #f5e9b6;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.game-pokemon .activity .log {
+  line-height: 1.42;
+}
+
+.game-pokemon .activity .log li {
+  grid-template-columns: 2.7rem minmax(0, 1fr);
+}
+
+.game-pokemon .activity .tabs {
+  gap: 0.55rem;
+}
+
+@media (min-width: 72rem) {
+  .game-pokemon .stage-body {
+    width: 100%;
+    grid-template-columns: minmax(15rem, 20rem) minmax(34rem, 52rem) minmax(21rem, 26rem);
+    justify-content: center;
+    gap: 0.9rem;
+  }
+
+  .game-pokemon .screen-col {
+    max-width: 52rem;
+  }
+
+  /*
+   * Keep the context rail tied to the gameplay viewport, but give Activity
+   * enough horizontal room to read like a feed rather than a narrow log.
+   */
+  .game-pokemon .side {
+    height: min(38rem, calc(100vh - 11rem));
+    min-height: 31rem;
+    grid-template-rows: max-content max-content max-content minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .game-pokemon .side .activity {
+    display: grid;
+    min-height: 0;
+    grid-template-rows: max-content minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .game-pokemon .side .activity .log {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.3rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(242, 202, 82, 0.28) transparent;
+  }
+
+  .game-pokemon .stat-rail {
+    display: grid;
+    align-content: start;
+    gap: 0.8rem;
+  }
+
+  .game-pokemon .rail-others {
+    min-height: 0;
+    max-height: 12rem;
+    overflow: hidden;
+  }
+
+  .game-pokemon .rail-others ul {
+    max-height: 8.5rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.2rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+  }
+}
+
+@media (max-width: 90rem) {
+  .game-pokemon .stage > .party .roster {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 72rem) {
+  .game-pokemon .stage-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-pokemon .side {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others,
+  .game-pokemon .side .activity .log,
+  .game-pokemon .side .others ul {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .game-pokemon .rail-others,
+  .game-pokemon .rail-others ul {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .game-pokemon .screen-col {
+    order: 1;
+    max-width: 52rem;
+  }
+
+  .game-pokemon .stat-rail {
+    order: 2;
+  }
+
+  .game-pokemon .stat-rail .facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .game-pokemon .side {
+    order: 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 42rem) {
+  .game-pokemon .stat-rail .facts,
+  .game-pokemon .stage > .party .roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-pokemon .side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-pokemon .side .activity,
+  .game-pokemon .side .others {
+    grid-column: auto;
+  }
+
+  .thinking-overlay {
+    padding: 0.6rem;
+  }
+
+  .thinking-card {
+    max-width: 100%;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .thinking-copy small {
+    white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking-overlay::before,
+  .thinking-dots i {
+    animation: none;
+  }
+
+  .thinking-dots i {
+    opacity: 0.85;
   }
 }
 </style>

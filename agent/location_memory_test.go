@@ -86,7 +86,7 @@ func TestMemoryMigratesV5NativeGeographyToSemanticLocations(t *testing.T) {
 	lab := LocationID("kanto/interior/oaks-lab")
 	topology := KnowledgeTopology{
 		Adjacency: map[LocationID][]LocationID{pallet: {lab}},
-		NativeLocations: map[uint8]LocationID{
+		NativeLocations: map[uint16]LocationID{
 			0x01: pallet,
 			0x28: lab,
 		},

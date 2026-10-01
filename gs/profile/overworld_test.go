@@ -87,6 +87,34 @@ func TestDecodeOverworldRejectsScriptBattleAndMovement(t *testing.T) {
 	}
 }
 
+// A running script that still owns movement is a transition or cutscene, not a
+// dialogue. Gold's bedroom stair warp sets exactly this pair for the frames
+// between stepping onto the warp tile and the map actually changing; decoding
+// it as InDialogue made native edge crossing return ErrDialogueInterrupted
+// before the warp could land, which surfaced as
+// "route interrupted by unowned script on map 0x1807 at (7,0)".
+func TestDecodeOverworldScriptInMotionIsNotDialogue(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.ScriptRunning] = 1
+	reader[sym.PlayerStepFlags] = gen2PlayerStepContinue
+
+	state := NewGold().DecodeOverworld(reader)
+	if state.InDialogue {
+		t.Fatalf("scripted movement decoded as dialogue: %+v", state)
+	}
+	if state.Controllable || state.MovementIdle {
+		t.Fatalf("scripted movement must still own the machine: %+v", state)
+	}
+	if !gsScriptActive(reader) {
+		t.Fatal("script activity must stay observable independently of dialogue")
+	}
+	// The Gen-II opening driver still has to see the transition as a script it
+	// may wait out, so the broad fact must survive the narrower dialogue.
+	if facts := NewGold().DecodeOpening(reader); !facts.ScriptActive {
+		t.Fatalf("opening facts lost the transition script: %+v", facts)
+	}
+}
+
 func TestDecodeLiveTopologyExtractsPaddedBlocksAndObjects(t *testing.T) {
 	reader := readyGSReader()
 	reader[sym.MapWidth] = 2
@@ -134,5 +162,89 @@ func TestDecodeGen2LiveMapBlocksRejectsOversizedMap(t *testing.T) {
 	reader := readyGSReader()
 	if _, err := decodeGen2LiveMapBlocks(reader, 255, 255); err == nil {
 		t.Fatal("oversized live map unexpectedly decoded")
+	}
+}
+
+// A map's identity becomes current while a field script still owns the
+// overworld; the block buffer keeps the previous map's bytes until the script
+// returns control. Gold reaches MAPSTATUS_HANDLE before that rebuild, so the
+// phase alone cannot be the readiness signal: a consumer that treated it as one
+// read unwritten blocks (0xff) as collision and aborted routing on a map that
+// had not been loaded.
+func TestDecodeLiveTopologyWithholdsBlocksWhileScriptOwnsOverworld(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.ScriptMode] = 1
+	reader[sym.ScriptRunning] = 0xff
+
+	state, err := NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if state.MapShellPhase != game.MapShellSettled {
+		t.Fatalf("MapShellPhase = %d, want the handle phase: the phase must not be mistaken for readiness", state.MapShellPhase)
+	}
+	if state.BlocksSettled {
+		t.Fatal("BlocksSettled = true while a field script still owns the overworld")
+	}
+
+	reader[sym.ScriptMode] = gen2ScriptOff
+	reader[sym.ScriptRunning] = 0
+	state, err = NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if !state.BlocksSettled {
+		t.Fatal("BlocksSettled = false for a controllable overworld")
+	}
+}
+
+// A map with no dimensions has no blocks to decode yet, whatever the script
+// state says.
+func TestDecodeLiveTopologyWithholdsBlocksWithoutDimensions(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.MapWidth] = 0
+	reader[sym.MapHeight] = 0
+
+	state, err := NewGold().DecodeLiveTopology(reader)
+	if err != nil {
+		t.Fatalf("DecodeLiveTopology: %v", err)
+	}
+	if state.BlocksSettled {
+		t.Fatal("BlocksSettled = true for a map with no dimensions")
+	}
+}
+
+// Elm's phone call takes the overworld as a step finishes, freezing the step
+// flags at CONTINUE|STOP under a dialogue frame. That is a dialogue, not a
+// walk; the same flags with no text box (or no script) are still a step.
+func TestDecodeOverworldFrozenStepUnderTextboxIsDialogue(t *testing.T) {
+	frame := func(r fakeGSReader) {
+		r[sym.TileMap+12*20+0], r[sym.TileMap+12*20+19] = 0x79, 0x7b
+		r[sym.TileMap+17*20+0], r[sym.TileMap+17*20+19] = 0x7d, 0x7e
+	}
+	tests := []struct {
+		name         string
+		script, text bool
+		wantDialogue bool
+	}{
+		{"script and text box", true, true, true},
+		{"script without text box", true, false, false},
+		{"text box without script", false, true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := readyGSReader()
+			r[sym.PlayerStepFlags] = gen2PlayerStepContinue | gen2PlayerStepStop
+			if tc.script {
+				r[sym.ScriptRunning] = 0xff
+				r[sym.ScriptMode] = 1
+			}
+			if tc.text {
+				frame(r)
+			}
+			if got := NewGold().DecodeOverworld(r).InDialogue; got != tc.wantDialogue {
+				t.Fatalf("InDialogue = %v, want %v", got, tc.wantDialogue)
+			}
+		})
 	}
 }

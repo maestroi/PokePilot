@@ -177,11 +177,11 @@ func dexCleanupTravelCost(obs Observation, known *Knowledge, place PlaceID, meth
 		place = dexSafariAccessPlace
 	}
 	blocked := dexCatchBlockedPlaces(obs)
-	hops := map[uint8]int{}
-	var adjacency map[uint8][]uint8
+	hops := map[uint16]int{}
+	var adjacency map[uint16][]uint16
 	if known != nil {
 		adjacency = known.nativeAdjacency()
-		hops = mapHops(adjacency, obs.Map)
+		hops = mapHops(adjacency, uint16(obs.Map))
 	}
 	if distance, ok := dexCatchPlaceDistance(obs, place, blocked, hops, adjacency); ok {
 		return distance

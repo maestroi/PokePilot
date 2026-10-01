@@ -138,10 +138,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 	if err != nil {
 		return game.ProfileObservation{}, err
 	}
-	money, err := decodeBCD(moneyBytes)
-	if err != nil {
-		return game.ProfileObservation{}, fmt.Errorf("gs profile: money: %w", err)
-	}
+	money := decodeUint24BE(moneyBytes)
 
 	obs := game.ProfileObservation{
 		NativeMapID:  nativeMap,
@@ -280,14 +277,10 @@ func decodeStatus(raw byte) string {
 	}
 }
 
-func decodeBCD(raw []byte) (uint32, error) {
+func decodeUint24BE(raw []byte) uint32 {
 	var out uint32
 	for _, b := range raw {
-		hi, lo := b>>4, b&0x0f
-		if hi > 9 || lo > 9 {
-			return 0, fmt.Errorf("invalid packed BCD byte %#02x", b)
-		}
-		out = out*100 + uint32(hi)*10 + uint32(lo)
+		out = out<<8 | uint32(b)
 	}
-	return out, nil
+	return out
 }

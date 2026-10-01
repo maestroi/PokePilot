@@ -16,6 +16,10 @@ const (
 	semanticThemeVersion = 1
 )
 
+func PublicSemanticThemeVersion() string {
+	return strconv.Itoa(semanticThemeVersion)
+}
+
 type semanticTileStyle struct {
 	Fill    string `json:"fill"`
 	Detail  string `json:"detail,omitempty"`

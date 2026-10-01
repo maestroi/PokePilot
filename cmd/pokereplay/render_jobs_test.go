@@ -89,6 +89,55 @@ func TestRecordingsForAttemptsUsesPersistedAttemptSet(t *testing.T) {
 	}
 }
 
+func TestRecoverRenderJobLeavesExcessWorkQueued(t *testing.T) {
+	artifact := artifactRef{
+		Name: "run.gbrun", SHA256: strings.Repeat("ab", 32),
+		ObjectKey: "runs/run-1/attempt-1/run.gbrun", Replayable: true,
+	}
+	var claims int
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/runs/run-1/artifacts" && r.URL.Query().Get("attempt") == "1":
+			_ = json.NewEncoder(w).Encode(artifactList{RunID: "run-1", Attempt: 1, Artifacts: []artifactRef{artifact}})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/claim"):
+			claims++
+			http.Error(w, "should remain queued", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer wall.Close()
+
+	replay := newReplayServer(wall.URL, "", "", &artifactstore.S3{})
+	replay.capacity.ScratchDir = t.TempDir()
+	replay.capacity.MinScratchBytes = 1
+	replay.scratchFree = func(string) (uint64, error) { return 1 << 30, nil }
+	replay.jobSlots = make(chan struct{}, 1)
+	release, _, _ := replay.tryAdmitRenderJob("already-running")
+	if release == nil {
+		t.Fatal("failed to occupy first render slot")
+	}
+	defer release()
+
+	recordings := []replayRecording{{Attempt: 1, Artifact: artifact}}
+	cacheKey := replay.replayCacheKeyForMode("run-1", recordings, replayModeRaw)
+	job := farm.MediaRenderJob{
+		Version: farm.MediaRenderJobVersion, ID: farm.MediaRenderJobID(cacheKey), Identity: cacheKey,
+		RunID: "run-1", Attempts: []int{1}, Mode: string(replayModeRaw), ArtifactKey: cacheKey,
+		State: farm.MediaRenderJobQueued, Stage: farm.MediaRenderJobQueued,
+	}
+	replay.recoverRenderJob(context.Background(), job)
+	if claims != 0 {
+		t.Fatalf("saturated recovery claimed %d jobs, want 0", claims)
+	}
+	replay.resourceMu.Lock()
+	deferred := replay.deferredJobs[job.ID]
+	replay.resourceMu.Unlock()
+	if deferred.Reason != "max_jobs" {
+		t.Fatalf("deferred reason=%q, want max_jobs", deferred.Reason)
+	}
+}
+
 func TestRunRenderJobRecoveryClaimsPersistedJobOnStartup(t *testing.T) {
 	job := farm.MediaRenderJob{
 		Version:     farm.MediaRenderJobVersion,

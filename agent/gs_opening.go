@@ -21,12 +21,77 @@ const (
 	gsOpeningScriptFrameBudget   uint64 = 120_000
 	gsOpeningBattleFrameBudget   uint64 = 180_000
 	gsStarterReactionFrameBudget uint64 = 1_200
-	gsOpeningMaxScriptPresses           = 160
-	gsErrandMaxScriptPresses            = 480
 	gsOpeningMaxBattlePresses           = 900
 	gsOpeningRouteAttempts              = 8
 	gsErrandRouteAttempts               = 32
+	// gsEncounterTransitionFrames bounds a wild encounter's pre-battle script.
+	gsEncounterTransitionFrames = 180
+	gsErrandMaxNamePresses      = 16
+
+	// gsScriptFrozenPresses is how many consecutive A presses may leave the
+	// rendered dialogue page unchanged before a script is called stuck.
+	//
+	// A total-press cap cannot bound scripted dialogue. The mandatory
+	// PlayersHouse1F MeetMom scene spends A presses that never reach the game
+	// at all: taps that only accelerate the drawing of a long paragraph, taps
+	// that land while an applymovement/showemote owns the machine, and taps
+	// into the clock/day-of-week and YES/NO prompts. The scene is finite and
+	// finishes, but it legitimately needs more presses than the opening ever
+	// budgeted for, so the old 160-press cap aborted a scene that was making
+	// progress the whole time (the same failure mode skill.dialoguePagingStuck
+	// already fixed for Gen-I dialogue). Frozen text is the stuck signal.
+	//
+	// MEASURED on run-nk4u8m5acmn5's captured checkpoint, by replaying
+	// "take the chikorita starter" through cmd/pokerepro with this value
+	// varied: the full opening completes at 24 and still aborts at 20, so the
+	// longest legitimate frozen run is 21-23 presses (a scripted walk-in that
+	// ignores input while it owns the machine). 48 keeps a full text box of
+	// margin over that.
+	gsScriptFrozenPresses = 48
 )
+
+// gsScriptProgress tracks whether A presses are still moving a script forward.
+// It is deliberately measured on the observable dialogue page rather than on a
+// press count, so a long text, a forced walk, or a prompt that eats several
+// taps does not look like a stall.
+type gsScriptProgress struct {
+	page      string
+	seen      bool
+	unchanged int
+	presses   int
+}
+
+// observe records one observed dialogue page and reports whether the scene has
+// stopped responding to A. It must be consulted immediately before the press it
+// is judging.
+func (p *gsScriptProgress) observe(page string) bool {
+	switch {
+	case !p.seen:
+		p.seen = true
+		p.unchanged = 0
+	case page == p.page:
+		p.unchanged++
+	default:
+		p.unchanged = 0
+	}
+	p.page = page
+	p.presses++
+	return p.unchanged >= gsScriptFrozenPresses
+}
+
+// reset forgets the observed page, so the next press is judged against the
+// surface the current input produces rather than one a different input replaced
+// (an A-tap progress run crossing a START/A naming screen).
+func (p *gsScriptProgress) reset() {
+	p.page = ""
+	p.seen = false
+	p.unchanged = 0
+	p.presses = 0
+}
+
+func (p *gsScriptProgress) frozen(m *emu.Emu, profile *gsprofile.Profile) bool {
+	return p.observe(profile.ScreenText(m))
+}
 
 type gsStarterSpec struct {
 	Starter              skill.Starter
@@ -92,7 +157,7 @@ func driveGSOpeningScript(m *emu.Emu, profile *gsprofile.Profile) error {
 		return fmt.Errorf("%w: missing emulator/profile", errGSOpeningUnexpectedState)
 	}
 	start := m.FrameCount()
-	presses := 0
+	var progress gsScriptProgress
 	for m.FrameCount()-start < gsOpeningScriptFrameBudget {
 		facts := profile.DecodeOpening(m)
 		if facts.InBattle {
@@ -109,11 +174,11 @@ func driveGSOpeningScript(m *emu.Emu, profile *gsprofile.Profile) error {
 		// input into them. Script-owned idle states are the text/prompt surfaces
 		// verified in PlayersHouse1F.asm and ElmsLab.asm.
 		if facts.ScriptActive && facts.MovementIdle {
-			if presses >= gsOpeningMaxScriptPresses {
-				return fmt.Errorf("%w: exceeded %d owned A presses on map %#04x", errGSOpeningStalled, gsOpeningMaxScriptPresses, facts.NativeMapID)
+			if progress.frozen(m, profile) {
+				return fmt.Errorf("%w: dialogue page frozen for %d consecutive A presses (of %d sent) on map %#04x at (%d,%d)",
+					errGSOpeningStalled, gsScriptFrozenPresses, progress.presses, facts.NativeMapID, facts.X, facts.Y)
 			}
 			m.Tap(emu.A, 3, 7)
-			presses++
 			continue
 		}
 		m.StepFrame()
@@ -151,7 +216,7 @@ func gsOpeningReachElmLab(m *emu.Emu, romData []byte, profile *gsprofile.Profile
 func driveGSStarterSelection(m *emu.Emu, profile *gsprofile.Profile, spec gsStarterSpec) error {
 	start := m.FrameCount()
 	started := false
-	presses := 0
+	var progress gsScriptProgress
 	for m.FrameCount()-start < gsOpeningScriptFrameBudget {
 		facts := profile.DecodeOpening(m)
 		if facts.HasSpecies(spec.Species) && facts.Controllable {
@@ -175,12 +240,11 @@ func driveGSStarterSelection(m *emu.Emu, profile *gsprofile.Profile, spec gsStar
 		}
 
 		if facts.ScriptActive && facts.MovementIdle {
-			if presses >= gsOpeningMaxScriptPresses {
-				return fmt.Errorf("%w: exceeded %d owned A presses while selecting %s",
-					errGSOpeningStalled, gsOpeningMaxScriptPresses, spec.Species)
+			if progress.frozen(m, profile) {
+				return fmt.Errorf("%w: dialogue page frozen for %d consecutive A presses (of %d sent) while selecting %s",
+					errGSOpeningStalled, gsScriptFrozenPresses, progress.presses, spec.Species)
 			}
 			m.Tap(emu.A, 3, 7)
-			presses++
 			continue
 		}
 		m.StepFrame()
@@ -259,7 +323,7 @@ func executeGSOpening(m *emu.Emu, romData []byte, starter skill.Starter) error {
 }
 
 func gsErrandScriptMap(mapID uint16) bool {
-	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "CHERRYGROVE_CITY"} {
+	for _, name := range []string{"ELMS_LAB", "MR_POKEMONS_HOUSE", "ROUTE_30", "CHERRYGROVE_CITY"} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
 			return true
@@ -297,7 +361,8 @@ func driveGSErrandScript(m *emu.Emu, profile *gsprofile.Profile) error {
 		return fmt.Errorf("%w: missing emulator/profile for errand script", errGSOpeningUnexpectedState)
 	}
 	start := m.FrameCount()
-	presses := 0
+	var progress gsScriptProgress
+	namePresses := 0
 	for m.FrameCount()-start < gsOpeningScriptFrameBudget {
 		facts := profile.DecodeOpening(m)
 		if facts.InBattle {
@@ -314,22 +379,25 @@ func driveGSErrandScript(m *emu.Emu, profile *gsprofile.Profile) error {
 				errGSOpeningUnexpectedState, facts.NativeMapID, facts.X, facts.Y)
 		}
 		if facts.RivalNamePrompt {
-			if presses+2 > gsErrandMaxScriptPresses {
+			// Naming-screen input is START (jump the cursor to END) then A
+			// (accept the version's default name). It is not dialogue paging,
+			// so it keeps its own small, explicit bound.
+			if namePresses+2 > gsErrandMaxNamePresses {
 				return fmt.Errorf("%w: exceeded %d errand inputs at rival naming screen",
-					errGSOpeningStalled, gsErrandMaxScriptPresses)
+					errGSOpeningStalled, gsErrandMaxNamePresses)
 			}
+			progress.reset()
 			m.Tap(emu.Start, 3, 7)
 			m.Tap(emu.A, 3, 7)
-			presses += 2
+			namePresses += 2
 			continue
 		}
 		if facts.ScriptActive && facts.MovementIdle {
-			if presses >= gsErrandMaxScriptPresses {
-				return fmt.Errorf("%w: exceeded %d owned errand A presses on map %#04x",
-					errGSOpeningStalled, gsErrandMaxScriptPresses, facts.NativeMapID)
+			if progress.frozen(m, profile) {
+				return fmt.Errorf("%w: dialogue page frozen for %d consecutive A presses (of %d sent) on map %#04x",
+					errGSOpeningStalled, gsScriptFrozenPresses, progress.presses, facts.NativeMapID)
 			}
 			m.Tap(emu.A, 3, 7)
-			presses++
 			continue
 		}
 		m.StepFrame()
@@ -353,6 +421,16 @@ func gsErrandGoTo(m *emu.Emu, romData []byte, profile *gsprofile.Profile, dest s
 		case errors.Is(err, skill.ErrDialogueInterrupted):
 			facts := profile.DecodeOpening(m)
 			if !gsErrandScriptMap(facts.NativeMapID) {
+				// A wild encounter runs a script with idle movement and a blank
+				// screen for ~30 frames before BattleMode is set, which the
+				// overworld decoder reads as a dialogue. Let that transition
+				// resolve; anything still scripted afterwards really is unowned.
+				if _, waitErr := m.StepUntil(gsEncounterTransitionFrames, func(m *emu.Emu) bool {
+					f := profile.DecodeOpening(m)
+					return f.InBattle || f.Controllable
+				}); waitErr == nil {
+					continue
+				}
 				return fmt.Errorf("%w: route interrupted by unowned script on map %#04x at (%d,%d)",
 					errGSOpeningUnexpectedState, facts.NativeMapID, facts.X, facts.Y)
 			}

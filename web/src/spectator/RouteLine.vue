@@ -33,9 +33,17 @@ const filled = computed(() => `${props.line.fill * 90}%`)
           <em v-if="stop.next" aria-hidden="true">Next</em>
         </span>
       </li>
-      <li class="stop is-town">
+      <li
+        :class="['stop', 'is-town', 'is-league', { 'is-earned': line.leagueEarned, 'is-next': line.leagueNext }]"
+        :aria-current="line.leagueNext ? 'step' : undefined"
+      >
         <span class="dot" aria-hidden="true" />
-        <span class="label"><b>Indigo League</b></span>
+        <span class="label">
+          <b>Indigo League</b>
+          Hall of Fame
+          <span class="sr-only">{{ line.leagueEarned ? ', goal complete' : line.leagueNext ? ', next goal' : ', final goal' }}</span>
+          <em v-if="line.leagueNext" aria-hidden="true">Next</em>
+        </span>
       </li>
     </ol>
   </div>
@@ -111,6 +119,16 @@ const filled = computed(() => `${props.line.fill * 90}%`)
 
 .is-town.is-earned .dot {
   background: var(--accent);
+}
+
+.is-league .dot {
+  width: 1.45rem;
+  height: 1.45rem;
+  margin: 0.15rem;
+}
+
+.is-league.is-earned .dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .is-earned:not(.is-town) .dot {

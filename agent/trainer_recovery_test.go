@@ -46,6 +46,7 @@ func TestTrainerLossBlocksSameJourneyUntilTraining(t *testing.T) {
 		Events: []string{state.EventGotPokedex.String()},
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(obs.Map)
 	known.SawMap(route2.Map)
 	known.SawMap(route3.Map)
@@ -90,6 +91,7 @@ func TestTrainerLossNormalizesFleeVariantAndIgnoresOrdinaryBlackout(t *testing.T
 	}
 
 	trainer := NewKnowledge(nil)
+	trainer.SetGameID(testGameID)
 	trainer.SawMap(obs.Map)
 	trainer.SawMap(route3.Map)
 	fleeObj := Objective{Kind: KindGoTo, Place: "route 3", Flee: true}
@@ -100,6 +102,7 @@ func TestTrainerLossNormalizesFleeVariantAndIgnoresOrdinaryBlackout(t *testing.T
 	}
 
 	ordinary := NewKnowledge(nil)
+	ordinary.SetGameID(testGameID)
 	ordinary.SawMap(obs.Map)
 	ordinary.SawMap(route3.Map)
 	plainObj := Objective{Kind: KindGoTo, Place: "route 3"}
@@ -126,6 +129,7 @@ func TestTrainerLossUnlocksOnIncidentalLevelGain(t *testing.T) {
 		Events: []string{state.EventGotPokedex.String()},
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(obs.Map)
 	known.SawMap(route3.Map)
 	failed := Objective{Kind: KindGoTo, Place: "route 3"}
@@ -159,6 +163,7 @@ func TestTrainerLossUnlocksWhenLocalTrainingIsOutsideBudget(t *testing.T) {
 		},
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(0x02)
 	known.SawMap(route3.Map)
 	failed := Objective{Kind: KindGoTo, Place: "route 3"}
@@ -182,6 +187,7 @@ func TestTrainerLossUnlocksOnTrainProgressShortfall(t *testing.T) {
 		Events: []string{state.EventGotPokedex.String()},
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(obs.Map)
 	known.SawMap(route3.Map)
 	failed := Objective{Kind: KindGoTo, Place: "route 3"}
@@ -208,6 +214,7 @@ func TestTrainerLossGateSurvivesCheckpointMemory(t *testing.T) {
 		Badges: []string{state.BadgeBoulder.String()},
 	}
 	known := NewKnowledge(nil)
+	known.SetGameID(testGameID)
 	known.SawMap(obs.Map)
 	known.SawMap(route3.Map)
 	failed := Objective{Kind: KindGoTo, Place: "route 3"}

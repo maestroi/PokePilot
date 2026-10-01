@@ -190,7 +190,7 @@ func TestTetrisSpecAndHeartbeatSurfaceGameTelemetry(t *testing.T) {
 	}
 }
 
-func TestBoxxleSpecNormalizesToLaunch(t *testing.T) {
+func TestBoxxleSpecNormalizesToPolicy(t *testing.T) {
 	srv := newTestServer(t, "")
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
 		RunID: "boxxle-run",
@@ -206,10 +206,16 @@ func TestBoxxleSpecNormalizesToLaunch(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&leased); err != nil {
 		t.Fatalf("decode Boxxle lease: %v", err)
 	}
-	if leased.Game != "boxxle" || leased.Planner != "launch" || leased.Starter != "" {
+	if leased.Game != "boxxle" || leased.Planner != "policy" || leased.Starter != "" {
 		t.Fatalf("Boxxle lease = game %q planner %q starter %q", leased.Game, leased.Planner, leased.Starter)
 	}
-	// A Boxxle spec with a non-launch planner or a Pokemon starter is rejected.
+	// launch stays available as an explicit boot-only smoke test.
+	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
+		RunID: "boxxle-launch", Game: "boxxle", Planner: "launch",
+	}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("Boxxle launch spec: status %d, want 200", resp.StatusCode)
+	}
+	// A Boxxle spec with a Pokemon planner or a Pokemon starter is rejected.
 	if resp := postJSON(t, srv.URL+"/v1/specs", farm.Spec{
 		RunID: "bad-boxxle-planner", Game: "boxxle", Planner: "llm",
 	}); resp.StatusCode != http.StatusBadRequest {

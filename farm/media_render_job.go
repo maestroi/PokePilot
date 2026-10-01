@@ -19,6 +19,12 @@ const (
 	MediaRenderJobReady      = "ready"
 	MediaRenderJobFailed     = "failed"
 	MediaRenderJobCancelled  = "cancelled"
+
+	MediaRenderFailureInfrastructure = "infrastructure"
+	MediaRenderFailureInvalidRequest = "invalid_request"
+	MediaRenderFailureResource       = "resource"
+	MediaRenderFailureTimeout        = "timeout"
+	MediaRenderFailureCancelled      = "cancelled"
 )
 
 type MediaRenderJob struct {
@@ -37,6 +43,7 @@ type MediaRenderJob struct {
 	LeaseExpiresAt int64  `json:"lease_expires_at_unix_ms,omitempty"`
 	RetryCount     int    `json:"retry_count,omitempty"`
 	LastError      string `json:"last_error,omitempty"`
+	FailureClass   string `json:"failure_class,omitempty"`
 	ResultSize     int64  `json:"result_size,omitempty"`
 	CreatedAt      int64  `json:"created_at_unix_ms"`
 	UpdatedAt      int64  `json:"updated_at_unix_ms"`
@@ -65,11 +72,12 @@ type MediaRenderJobProgressRequest struct {
 }
 
 type MediaRenderJobFinishRequest struct {
-	WorkerID   string `json:"worker_id"`
-	State      string `json:"state"`
-	Stage      string `json:"stage,omitempty"`
-	LastError  string `json:"last_error,omitempty"`
-	ResultSize int64  `json:"result_size,omitempty"`
+	WorkerID     string `json:"worker_id"`
+	State        string `json:"state"`
+	Stage        string `json:"stage,omitempty"`
+	LastError    string `json:"last_error,omitempty"`
+	FailureClass string `json:"failure_class,omitempty"`
+	ResultSize   int64  `json:"result_size,omitempty"`
 }
 
 func MediaRenderJobID(identity string) string {
@@ -128,6 +136,17 @@ func (j MediaRenderJob) Active() bool {
 func (j MediaRenderJob) Terminal() bool {
 	switch j.State {
 	case MediaRenderJobReady, MediaRenderJobFailed, MediaRenderJobCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func (j MediaRenderJob) Retryable() bool {
+	switch j.State {
+	case MediaRenderJobFailed:
+		return j.FailureClass != MediaRenderFailureInvalidRequest
+	case MediaRenderJobCancelled:
 		return true
 	default:
 		return false
