@@ -89,16 +89,18 @@ ladder_args() {
 		--available "$LADDER_AVAILABLE"
 }
 
+# ladder_backend KEY [COUNT]: COUNT is the group's occurrence count, which
+# lifts a parked verdict once the failure occurs again.
 ladder_backend() {
 	local args
 	mapfile -t args < <(ladder_args)
-	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" ladder "${args[@]}" --key "$1"
+	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" ladder "${args[@]}" --key "$1" --count "${2:-0}"
 }
 
 select_agent_backend() {
 	case "$POKEPILOT_TRIAGE_AGENT" in
 	ladder)
-		if ! ladder_backend "$KEY"; then
+		if ! ladder_backend "$KEY" "$COUNT"; then
 			log "ladder has no backend for $KEY now (tiers spent or paid cap reached)"
 			return 1
 		fi
@@ -364,11 +366,14 @@ pick_next() {
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ]; then
-		local ladder_list
+		local ladder_list ladder_triage
 		mapfile -t ladder_list < <(ladder_args)
+		ladder_triage=$(mktemp)
+		printf '%s' "$triage" >"$ladder_triage"
 		while IFS= read -r key; do
 			[ -n "$key" ] && pick_args+=(--claimed "[triage:$key]")
-		done < <("$bin" ladder "${ladder_list[@]}")
+		done < <("$bin" ladder "${ladder_list[@]}" --triage "$ladder_triage")
+		rm -f "$ladder_triage"
 	fi
 	while IFS= read -r title; do
 		[ -z "$title" ] && continue
@@ -516,6 +521,7 @@ HEAD_REF=$(printf '%s' "$PICK_JSON" | json_field head_ref)
 PR_NUMBER=$(printf '%s' "$PICK_JSON" | json_field pr_number)
 PR_URL=$(printf '%s' "$PICK_JSON" | json_field pr_url)
 ISSUE_NUMBER=$(printf '%s' "$PICK_JSON" | json_field issue_number)
+COUNT=$(printf '%s' "$PICK_JSON" | json_field count)
 if [ -z "$KEY" ]; then
 	log "picker returned empty key; skip"
 	exit 0
@@ -622,6 +628,11 @@ fi
 ATTEMPT_STARTED_AT=$(date +%s)
 ATTEMPT_ID="${KEY}-${ATTEMPT_STARTED_AT}-${BASHPID}"
 SOLVER_MODEL=$(selected_agent_model)
+VERDICT_FILE="$POKEPILOT_TRIAGE_TREE/.pokepilot-verdict.json"
+rm -f "$VERDICT_FILE"
+if ! grep -qxF '.pokepilot-verdict.json' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
+	printf '%s\n' '.pokepilot-verdict.json' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
+fi
 record_solver_attempt started "coding agent launched"
 
 set +e
@@ -697,8 +708,35 @@ fi
 case "$branch" in
 fix/*) ;;
 *)
-	record_solver_attempt no_pr "agent did not leave a fix/* branch" "$branch"
-	log "agent left branch $branch; refuse PR"
+	# A structured "not shipping" verdict. From a paid tier it parks the key
+	# until the failure occurs again, so no tier redoes the same conclusion.
+	# The free tier's verdict escalates once for a paid confirmation.
+	verdict="" reason=""
+	if [ "$MODE" != repair_pr ] && [ -f "$VERDICT_FILE" ]; then
+		verdict=$(json_field verdict <"$VERDICT_FILE" 2>/dev/null || true)
+		reason=$(json_field reason <"$VERDICT_FILE" 2>/dev/null || true)
+	fi
+	case "$verdict" in
+	already_fixed | cannot_reproduce | not_a_defect | needs_human)
+		if [ -n "$ISSUE_NUMBER" ]; then
+			gh issue comment "$ISSUE_NUMBER" --repo "$(gh_repo)" --body "Fixer verdict from ${AGENT_BACKEND} (\`${SOLVER_MODEL}\`) on run \`${RUN_ID}\`: **${verdict}**
+
+${reason}" >/dev/null 2>&1 || log "could not comment verdict on #$ISSUE_NUMBER"
+		fi
+		if [ "$AGENT_BACKEND" != opencode ]; then
+			printf '%s\t%s\t%s\tparked\t%s\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" "${COUNT:-0}" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv"
+			record_solver_attempt parked "$verdict: $reason" "$branch"
+			log "parked $KEY ($verdict) until it occurs again"
+		else
+			record_solver_attempt no_pr "free-tier verdict $verdict; escalating for confirmation" "$branch"
+			log "free-tier verdict $verdict on $KEY; next tier confirms"
+		fi
+		;;
+	*)
+		record_solver_attempt no_pr "agent did not leave a fix/* branch" "$branch"
+		log "agent left branch $branch; refuse PR"
+		;;
+	esac
 	exit 0
 	;;
 esac

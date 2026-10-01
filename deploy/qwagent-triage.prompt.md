@@ -31,7 +31,14 @@ For a fresh failure:
    with the fixing commit and the replay result, then
    `gh issue close <issue_number> --reason completed`. A closed issue is not
    picked again, and a later recurrence on a revision containing the fix
-   reopens it. Without a replay, do not close: report what blocked it.
+   reopens it. Without a replay, do not close.
+   Whenever you do not ship a PR, write `.pokepilot-verdict.json` at the
+   repository root: `{"verdict": "<v>", "reason": "<evidence>"}` where `<v>`
+   is `already_fixed`, `cannot_reproduce`, `not_a_defect`, or `needs_human`.
+   Name the commits, replay results, or missing artifacts in `reason`. A
+   confirmed verdict stops further attempts until the failure occurs again;
+   omit the file only when you simply ran out of ideas, so a stronger model
+   tries next.
 2. Start from the packet's `source_matches`; read only the producer/caller
    needed to understand the owning invariant.
 3. Fix the shared invariant, not a named-map/NPC/run special case.
