@@ -100,3 +100,18 @@ test('non-league goals keep using structured goal current and target', () => {
   assert.equal(goalProgress(value), 50)
   assert.equal(goalProgressMeta(value).label, '75/150')
 })
+
+
+test('Gold league progress uses Johto badges instead of Kanto badge names', () => {
+  const value = run({
+    game: 'pokemon-gold',
+    player: {
+      money: 0,
+      badges: ['zephyr', 'hive', 'plain'],
+      party: []
+    }
+  })
+
+  assert.equal(goalProgressMeta(value).label, '3/8 Johto badges earned')
+  assert.match(goalProgressMeta(value).detail, /Fog Badge/)
+})
