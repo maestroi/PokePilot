@@ -244,15 +244,15 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 // heartbeatTrail owns the recent map-local position samples. It is only
 // touched on the stepping goroutine; snapshots get a copied slice.
 type heartbeatTrail struct {
-	mapID   uint8
+	mapID   uint16
 	set     bool
 	pts     [][2]uint8
-	visited map[uint8]struct{}
+	visited map[uint16]struct{}
 }
 
-func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
+func (t *heartbeatTrail) add(mapID uint16, x, y uint8) [][2]uint8 {
 	if t.visited == nil {
-		t.visited = make(map[uint8]struct{})
+		t.visited = make(map[uint16]struct{})
 	}
 	t.visited[mapID] = struct{}{}
 	if !t.set || t.mapID != mapID {
@@ -904,15 +904,18 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 	m.TracePlayer(hb.Player)
 }
 
-// applyHeartbeatPosition fills the one-byte map/position fields. A wider native
-// ID (Gen 2 is group<<8|map) cannot be represented without aliasing another
-// map, so it leaves them unset instead of dropping the whole heartbeat: the
-// heartbeat also carries WorkerAddrs, without which the wall cannot proxy
-// /frame and the run has no video.
+// applyHeartbeatPosition publishes the profile-owned location without forcing
+// newer games through Gen-I's one-byte map id. Map remains a compatibility
+// field for legacy consumers; NativeMapID + Location/MapName are authoritative
+// for game-aware presentation.
 func applyHeartbeatPosition(hb *farm.Heartbeat, base game.ProfileObservation, trail *heartbeatTrail) {
+	hb.NativeMapID = base.NativeMapID
+	hb.Location = string(base.Location)
+	hb.MapName = base.MapName
+	hb.X, hb.Y = base.X, base.Y
+	hb.Trail = trail.add(base.NativeMapID, base.X, base.Y)
 	if base.NativeMapID <= 0xff {
-		hb.Map, hb.X, hb.Y = uint8(base.NativeMapID), base.X, base.Y
-		hb.Trail = trail.add(hb.Map, base.X, base.Y)
+		hb.Map = uint8(base.NativeMapID)
 	}
 	hb.MapsVisited = trail.mapsVisited()
 }
