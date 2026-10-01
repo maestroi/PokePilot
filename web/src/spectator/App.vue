@@ -36,7 +36,7 @@ import {
 import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
 import RouteLine from './RouteLine.vue'
-import { kantoRouteLine } from './routeLine'
+import { pokemonRouteLine } from './routeLine'
 import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
@@ -74,7 +74,6 @@ const activityFilter = ref<ActivityFilter>('all')
 const activityFilters: ActivityFilter[] = ['all', 'milestones', 'decisions']
 const activityByRun = ref<Record<string, ActivityItem[]>>({})
 const previousRuns = new Map<string, SpectatorRun>()
-const GYM_BADGES = ['Boulder', 'Cascade', 'Thunder', 'Rainbow', 'Soul', 'Marsh', 'Volcano', 'Earth'] as const
 
 const {
   data: snapshot,
@@ -227,7 +226,9 @@ const plannerState = computed(() => {
 })
 const mapsLabel = computed(() => {
   const visited = Number(selectedRun.value?.maps_visited || 0)
-  return visited > 0 ? `${visited}/${MAP_CATALOG.length}` : `0/${MAP_CATALOG.length}`
+  return selectedPublicCapabilities.value.includes('worldMap')
+    ? `${visited}/${MAP_CATALOG.length}`
+    : String(visited)
 })
 const lastRefreshLabel = computed(() => {
   if (!lastUpdatedAt.value) return ''
@@ -271,6 +272,8 @@ const leagueGoal = computed(() => {
   return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
 })
 
+const routeLine = computed(() => pokemonRouteLine(selectedRun.value))
+
 const goalProgressCopy = computed(() => {
   const run = selectedRun.value
   if (!run) return { label: 'Waiting for goal', detail: 'Run objective is loading.' }
@@ -302,7 +305,8 @@ const goalProgressCopy = computed(() => {
     }
   }
 
-  const badges = run.player?.badges?.length || 0
+  const badges = routeLine.value.earnedCount
+  const badgeTarget = routeLine.value.stops.length
   if (stats?.goal_complete) {
     return {
       label: 'Goal complete',
@@ -310,18 +314,17 @@ const goalProgressCopy = computed(() => {
     }
   }
 
-  if (leagueGoal.value && badges >= 8) {
+  if (leagueGoal.value && badges >= badgeTarget) {
     return {
-      label: '8/8 badges earned',
+      label: `${badges}/${badgeTarget} ${routeLine.value.region} badges earned`,
       detail: 'Next: Elite Four, Champion & Hall of Fame'
     }
   }
 
-  if (leagueGoal.value && badges < 8) {
-    const badgeName = GYM_BADGES[badges] || 'Next'
+  if (leagueGoal.value && badges < badgeTarget) {
     return {
-      label: `${badges}/8 badges earned`,
-      detail: `Next: ${badgeName} Badge`
+      label: `${badges}/${badgeTarget} ${routeLine.value.region} badges earned`,
+      detail: `Next: ${routeLine.value.nextGoal}`
     }
   }
 
@@ -357,8 +360,6 @@ const statCards = computed<StageFact[]>(() => {
     { key: 'money', label: 'Money', value: moneyLabel(run) }
   ]
 })
-
-const routeLine = computed(() => kantoRouteLine(selectedRun.value))
 
 function hpPercent(mon: { hp: number, max_hp: number }): number {
   return mon.max_hp > 0 ? Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp)) : 0
@@ -507,6 +508,7 @@ function formatGameToken(value: string): string {
 
 function displayLocation(run: SpectatorRun): string {
   if (isTetrisRun(run)) return locationLabel(run)
+  if (run.map_name || run.location || Number(run.native_map_id || 0) > 0xff) return locationLabel(run)
   return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
 }
 
