@@ -102,6 +102,9 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		EndedAt        int64                 `json:"ended_at,omitempty"`
 		Frame          uint64                `json:"frame"`
 		Map            uint8                 `json:"map"`
+		NativeMapID    uint16                `json:"native_map_id,omitempty"`
+		Location       string                `json:"location,omitempty"`
+		MapName        string                `json:"map_name,omitempty"`
 		X              uint8                 `json:"x"`
 		Y              uint8                 `json:"y"`
 		MapsVisited    int                   `json:"maps_visited,omitempty"`
@@ -270,6 +273,9 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		EndedAt:        run.EndedAt,
 		Frame:          run.Frame,
 		Map:            run.Map,
+		NativeMapID:    run.NativeMapID,
+		Location:       run.Location,
+		MapName:        run.MapName,
 		X:              run.X,
 		Y:              run.Y,
 		MapsVisited:    run.MapsVisited,
