@@ -31,6 +31,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wNumMoves", NumMoves, 0xCFE3},
 		{"wBattlePlayerAction", BattlePlayerAction, 0xCFE4},
 		{"wCurPartyMon", CurPartyMon, 0xD005},
+		{"wPutativeTMHMMove", PutativeTMHMMove, 0xD14D},
 		{"wTextboxFlags", TextboxFlags, 0xD19C},
 		{"wTileMap", TileMap, 0xC3A0},
 		{"wBattleMon", BattleMon, 0xCB0C},

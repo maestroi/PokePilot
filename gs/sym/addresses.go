@@ -103,6 +103,10 @@ const (
 	MoveSelectionMenuType uint16 = 0xD11F
 	BattleResult          uint16 = 0xCFE9
 	CurPartyMon           uint16 = 0xD005
+	// PutativeTMHMMove is wPutativeTMHMMove: LearnLevelMoves / LearnMove keep
+	// the currently offered natural (or TM/HM) move id here, analogous to
+	// Gen-I wMoveNum. Verified against pret/pokegold symbols at 01:d14d.
+	PutativeTMHMMove uint16 = 0xD14D
 
 	// Live Gen-II battle structs. battle_struct is defined by the pinned
 	// pret/pokegold macros/ram.asm layout: species, item, moves, DVs, PP,
