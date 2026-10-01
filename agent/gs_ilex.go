@@ -173,7 +173,6 @@ func executeGSHM01Cut(m *emu.Emu, romData []byte) error {
 	return nil
 }
 
-
 // executeGSTM02Headbutt is the first progression boundary that proves HM01 is
 // not merely owned but executable. The Headbutt tutor stands north of Ilex
 // Forest's mandatory Cut tree, so reaching his adjacent tile exercises native
