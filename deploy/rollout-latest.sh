@@ -74,8 +74,30 @@ for name in "${SERVICES[@]}"; do
 	esac
 done
 
+# Every rollout drains every runner, so a stream of merged fixes would keep the
+# whole farm restarting. Batch them: once the runners have finished an update,
+# hold the next one for FARM_ROLLOUT_MIN_GAP seconds (0 disables) and roll the
+# newest image then. Only a COMPLETED update starts the clock, so a rollback
+# never delays the fix for it, and repair of stale tasks (runner already on
+# WANT) is never deferred.
+MIN_GAP=${FARM_ROLLOUT_MIN_GAP:-10800}
+DEFER=0
+if [ "$MIN_GAP" -gt 0 ]; then
+	runner_img=$(docker service inspect "${STACK}_runner" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 2>/dev/null || true)
+	runner_update=$(docker service inspect "${STACK}_runner" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}|{{.UpdateStatus.CompletedAt}}{{end}}' 2>/dev/null || true)
+	if [ "${runner_img##*@}" != "$WANT" ] && [ "${runner_update%%|*}" = completed ] &&
+		done_at=$(date -d "${runner_update#*|}" +%s 2>/dev/null); then
+		age=$(($(date +%s) - done_at))
+		if [ "$age" -ge 0 ] && [ "$age" -lt "$MIN_GAP" ]; then
+			DEFER=1
+			echo "pokefarm-pull: runners finished an update ${age}s ago; deferring rollout to $WANT for $((MIN_GAP - age))s to batch fixes"
+		fi
+	fi
+fi
+
 updated=0
 for name in "${SERVICES[@]}"; do
+	[ "$DEFER" = 1 ] && continue
 	svc="${STACK}_${name}"
 	# New service roles can land in the stack file before an operator has run
 	# the next docker stack deploy. Skip those rather than making the timer fail;
@@ -170,7 +192,9 @@ for name in "${SERVICES[@]}"; do
 	updated=$((updated + 1))
 done
 
-if [ "$updated" -eq 0 ]; then
+if [ "$DEFER" = 1 ]; then
+	: # deferral already reported above
+elif [ "$updated" -eq 0 ]; then
 	echo "pokefarm-pull: already current ($WANT)"
 else
 	echo "pokefarm-pull: updated $updated service(s) to $WANT"

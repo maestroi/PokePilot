@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPullLatestBootstrapsRolloutFromPublishedDigest(t *testing.T) {
@@ -436,5 +437,56 @@ exit 0
 	}
 	if strings.Contains(string(logData), "--image") {
 		t.Fatalf("force-rolled for a draining task:\n%s\n%s", out, logData)
+	}
+}
+
+func runRolloutBatching(t *testing.T, completedAgo time.Duration) (out string, updated bool) {
+	t.Helper()
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	case "$*" in
+	*CompletedAt*) echo "completed|$MOCK_COMPLETED_AT" ;;
+	*PreviousSpec*) echo 'completed|ghcr.io/maestroi/pokepilot@sha256:old' ;;
+	*Spec.TaskTemplate.ContainerSpec.Image*) echo 'ghcr.io/maestroi/pokepilot@sha256:old' ;;
+	esac
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"MOCK_COMPLETED_AT="+time.Now().Add(-completedAgo).UTC().Format(time.RFC3339Nano),
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, b)
+	}
+	logData, _ := os.ReadFile(logPath)
+	return string(b), strings.Contains(string(logData), "--image")
+}
+
+// A runner update that finished minutes ago holds the next image back so a run
+// of merged fixes costs one drain, not one per merge.
+func TestRolloutLatestBatchesRecentRunnerUpdate(t *testing.T) {
+	out, updated := runRolloutBatching(t, 10*time.Minute)
+	if updated || !strings.Contains(out, "deferring rollout") {
+		t.Fatalf("rolled a new image 10m after the last update (updated=%v):\n%s", updated, out)
+	}
+}
+
+func TestRolloutLatestRollsAfterBatchWindow(t *testing.T) {
+	out, updated := runRolloutBatching(t, 4*time.Hour)
+	if !updated || strings.Contains(out, "deferring") {
+		t.Fatalf("did not roll after the batch window (updated=%v):\n%s", updated, out)
 	}
 }
