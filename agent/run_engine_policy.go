@@ -219,10 +219,15 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	progressionPrerequisite := failureCauseIs(result, "progression_prerequisite_missing")
 	trainingInefficient := failureCauseIs(result, "training_inefficient_area")
 	localInteractionUnavailable := obj.Kind == KindTalk && failureCauseIs(result, "no_dialogue")
-	purchaseBlocked := obj.Kind == KindBuy && result.Outcome == OutcomeBlocked && (failureCauseIs(result, "outcome:blocked") ||
-		failureCauseIs(result, "cant_afford") ||
+	// Economic blockages are resource/planning feedback, not mechanical
+	// recovery failure. KindBuy owns the generic "outcome:blocked" shop
+	// boundary; typed money/stock causes must also spare KindGym /
+	// KindProgress when a nested restock (Cut-carrier balls before Vermilion
+	// Gym, Saffron drinks, etc.) reports cant_afford without a Buy objective.
+	economicBlocked := result.Outcome == OutcomeBlocked && (failureCauseIs(result, "cant_afford") ||
 		failureCauseIs(result, "not_in_stock") ||
-		failureCauseIs(result, "bag_not_risen"))
+		failureCauseIs(result, "bag_not_risen") ||
+		(obj.Kind == KindBuy && failureCauseIs(result, "outcome:blocked")))
 	combatDefeat := failureCauseIs(result, failureCauseCombatDefeat)
 
 	// These are successful bounded gameplay sessions whose requested terminal
@@ -267,7 +272,7 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 	// player or advances progression (#2141).
 	if routePrerequisite || routeUnavailable || routeSearchExhausted || navigationStalled || transitionExecutionFailed ||
 		pushPuzzleSearchExhausted || progressionPrerequisite || trainingInefficient || localInteractionUnavailable ||
-		staticUnavailable || purchaseBlocked {
+		staticUnavailable || economicBlocked {
 		// A fully bounded route-search exhaustion is also a planning boundary:
 		// GoTo already spent its local replan budget and the failure policy has
 		// recorded a same-state quarantine for this exact objective. Charging the
@@ -295,8 +300,9 @@ func (f *runFailurePolicy) recoverable(obj Objective, result ObjectiveResult, st
 		// so movement caused by TalkAt does not immediately resurrect it (#2168).
 		//
 		// Bounded push-puzzle search exhaustion is equivalent route-planning
-		// feedback, and a blocked Buy is resource/shop feedback when its cause is
-		// the adapter's safe-boundary fallback or a typed economic outcome. These
+		// feedback, and a blocked economic purchase is resource/shop feedback
+		// whether the planner asked to Buy or a nested restock under Gym/
+		// Progress reported cant_afford / not_in_stock / bag_not_risen. These
 		// all still use quarantine and the normal stagnation/round/frame watchdogs;
 		// actual shop controller faults (menu_stuck, shop_*_stalled, etc.) are
 		// deliberately excluded and continue through the mechanical budget.
