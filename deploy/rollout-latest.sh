@@ -114,11 +114,18 @@ for name in "${SERVICES[@]}"; do
 	running=0
 	stale_running=0
 	stranded_running=0
-	while IFS='|' read -r current_state task_image task_node; do
+	while IFS='|' read -r current_state task_image task_node desired_state; do
 		case "$current_state" in
 		Running\ *) ;;
 		*) continue ;;
 		esac
+		# A replaced runner keeps Running at the old digest for up to its 6m
+		# drain while Swarm already wants it Shutdown (start-first). Counting
+		# it stale force-rolled every fresh runner each tick, re-draining
+		# busy runs every two minutes. It is leaving, not stuck.
+		if [ -n "$desired_state" ] && [ "$desired_state" != Running ]; then
+			continue
+		fi
 		if node_unusable "$task_node"; then
 			stranded_running=$((stranded_running + 1))
 			continue
@@ -131,7 +138,7 @@ for name in "${SERVICES[@]}"; do
 		if [ "$task_digest" != "$WANT" ]; then
 			stale_running=$((stale_running + 1))
 		fi
-	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}|{{.Node}}' "$svc" 2>/dev/null || true)
+	done < <(docker service ps --no-trunc --format '{{.CurrentState}}|{{.Image}}|{{.Node}}|{{.DesiredState}}' "$svc" 2>/dev/null || true)
 
 	if [ "$stranded_running" -gt 0 ]; then
 		echo "pokefarm-pull: $svc has $stranded_running Running task(s) on node(s) Swarm cannot act on; not counting them as stale"

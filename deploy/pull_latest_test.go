@@ -392,3 +392,49 @@ exit 0
 		t.Fatalf("re-rolled a digest Swarm already rejected:\n%s", logData)
 	}
 }
+
+// With start-first and a 6m drain window, replaced runners stay Running at
+// the old digest while Swarm wants them Shutdown. They must not count as
+// stale: force-rolling for them restarted every fresh runner each tick.
+func TestRolloutLatestIgnoresDrainingTasks(t *testing.T) {
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	mockDocker := `#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	case "$*" in
+	*PreviousSpec*) echo 'completed|ghcr.io/maestroi/pokepilot@sha256:old' ;;
+	*Spec.TaskTemplate.ContainerSpec.Image*) echo 'ghcr.io/maestroi/pokepilot@sha256:new' ;;
+	*UpdateStatus*) echo 'completed' ;;
+	esac
+	exit 0
+fi
+if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
+	echo 'Running 1 minute ago|ghcr.io/maestroi/pokepilot@sha256:new|worker-1|Running'
+	echo 'Running 9 minutes ago|ghcr.io/maestroi/pokepilot@sha256:old|worker-2|Shutdown'
+	exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatalf("write docker mock: %v", err)
+	}
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read docker log: %v", err)
+	}
+	if strings.Contains(string(logData), "--image") {
+		t.Fatalf("force-rolled for a draining task:\n%s\n%s", out, logData)
+	}
+}
