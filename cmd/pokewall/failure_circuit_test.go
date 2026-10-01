@@ -60,6 +60,18 @@ func TestTerminalRunFailureSynthesizesError(t *testing.T) {
 	}
 }
 
+func TestTerminalRunFailureSkipsInferenceTransport(t *testing.T) {
+	report := farm.FinishReport{
+		RunID: "run-gpu-down", Attempt: 21, Reason: "error",
+		Detail:        "agent: llm planner: transport failure: dial tcp 192.168.50.130:8002: connect: no route to host",
+		FailureClass:  farm.FinishFailureClassInferenceTransport,
+		RunnerVersion: "build-a", ProgressFinal: &farm.Progress{Round: 146, Map: 0x21},
+	}
+	if failure, ok := terminalRunFailure(report, nil); ok {
+		t.Fatalf("inference transport became a gameplay failure: %+v", failure)
+	}
+}
+
 func TestFailureCircuitOpensOnSecondCanonicalOccurrence(t *testing.T) {
 	db := newFailureCircuitTestDB(t)
 	cp := &controlPlane{db: db}
