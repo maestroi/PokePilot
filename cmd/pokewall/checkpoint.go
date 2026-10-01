@@ -245,16 +245,9 @@ func (w *Wall) serveCheckpointResume(res http.ResponseWriter, id string, request
 		// Inference availability did not invalidate gameplay state. Resume the
 		// deepest safe pair without consuming the gameplay rollback ladder.
 		cp, err = deepestResumeCheckpoint(store, id, planner)
-	case lostRetry && resilient:
-		// Worker loss is normally infrastructure churn and should keep its
-		// deepest checkpoint. But a deterministic wedge presents the same
-		// "no heartbeat" shape while making zero frontier progress, and
-		// RecoveryAttempts only accumulates when the frontier did not advance.
-		// Route the loss through the rollback ladder so healthy churn resets
-		// on progress while a wedged checkpoint backs up instead of re-wedging
-		// forever.
-		cp, err = resilientResumeCheckpoint(store, id, planner, recoveryAttempts)
 	case lostRetry:
+		// Worker loss is infrastructure churn (usually a deploy), never a
+		// gameplay wedge: keep the deepest checkpoint and spend no rollback depth.
 		cp, err = deepestResumeCheckpoint(store, id, planner)
 	case resilientRetry:
 		cp, err = resilientResumeCheckpoint(store, id, planner, recoveryAttempts)
