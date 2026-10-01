@@ -152,6 +152,9 @@ func controlPlanePersistedStateLocked(w *Wall) persistedState {
 	for id, pt := range ps.Tiles {
 		pt.Frame = 0
 		pt.Map = 0
+		pt.NativeMapID = 0
+		pt.Location = ""
+		pt.MapName = ""
 		pt.X = 0
 		pt.Y = 0
 		pt.Trace = ""
