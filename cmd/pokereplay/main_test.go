@@ -332,3 +332,29 @@ func TestHealthzReportsActiveRenders(t *testing.T) {
 		t.Fatalf("healthz missing active_renders=2: %s", rec.Body.String())
 	}
 }
+
+// A lost-worker attempt has no recording; the replay must report the gap
+// instead of silently covering only part of the run.
+func TestReplayRecordingsReportMissingAttempts(t *testing.T) {
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempt := 3
+		if raw := r.URL.Query().Get("attempt"); raw != "" {
+			attempt, _ = strconv.Atoi(raw)
+		}
+		list := artifactList{RunID: "gap-run", Attempt: attempt}
+		if attempt != 2 {
+			list.Artifacts = []artifactRef{{Name: "run.gbrun", ObjectKey: "runs/gap-run/" + strconv.Itoa(attempt), Replayable: true}}
+		}
+		_ = json.NewEncoder(w).Encode(list)
+	}))
+	defer wall.Close()
+
+	replay := newReplayServer(wall.URL, "", "", nil)
+	recordings, missing, err := replay.recordingsWithGaps(context.Background(), "gap-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recordings) != 2 || len(missing) != 1 || missing[0] != 2 {
+		t.Fatalf("recordings=%d missing=%v, want 2 recordings and missing=[2]", len(recordings), missing)
+	}
+}

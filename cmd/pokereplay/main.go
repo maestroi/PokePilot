@@ -87,6 +87,11 @@ type replayStatus struct {
 	// Segments/SegmentsDone report per-attempt progress while generating.
 	Segments     int `json:"segments,omitempty"`
 	SegmentsDone int `json:"segments_done,omitempty"`
+	// MissingAttempts lists attempts with no replayable recording (lost
+	// worker, failed upload). When non-empty the replay covers only part of
+	// the run and Partial is true.
+	Partial         bool  `json:"partial,omitempty"`
+	MissingAttempts []int `json:"missing_attempts,omitempty"`
 }
 
 type replayIdentity struct {
@@ -208,12 +213,13 @@ func (s *replayServer) handleReplayStatus(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	recordings, err := s.recordings(r.Context(), runID)
+	recordings, missing, err := s.recordingsWithGaps(r.Context(), runID)
 	if err != nil {
 		writeReplayError(w, err)
 		return
 	}
 	status := s.replayStatus(r.Context(), runID, recordings, mode)
+	status.Partial, status.MissingAttempts = len(missing) > 0, missing
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -442,9 +448,16 @@ func (s *replayServer) recording(ctx context.Context, runID string) (artifactRef
 }
 
 func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRecording, error) {
+	recordings, _, err := s.recordingsWithGaps(ctx, runID)
+	return recordings, err
+}
+
+// recordingsWithGaps is recordings plus the attempts that had no replayable
+// recording, so callers can say the replay is partial instead of hiding it.
+func (s *replayServer) recordingsWithGaps(ctx context.Context, runID string) ([]replayRecording, []int, error) {
 	latest, err := s.artifacts(ctx, runID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	latestAttempt := latest.Attempt
 	if latestAttempt < 1 {
@@ -453,32 +466,35 @@ func (s *replayServer) recordings(ctx context.Context, runID string) ([]replayRe
 	if latestAttempt == 1 {
 		artifact, ok := findArtifact(latest.Artifacts, "run.gbrun")
 		if !ok || !artifact.Replayable {
-			return nil, errRecordingNotFound
+			return nil, nil, errRecordingNotFound
 		}
 		timeline, _ := findArtifact(latest.Artifacts, farm.MediaTimelineArtifactName)
-		return []replayRecording{{Attempt: 1, Artifact: artifact, Timeline: timeline}}, nil
+		return []replayRecording{{Attempt: 1, Artifact: artifact, Timeline: timeline}}, nil, nil
 	}
 
 	recordings := make([]replayRecording, 0, latestAttempt)
+	var missing []int
 	for attempt := 1; attempt <= latestAttempt; attempt++ {
 		list, err := s.artifactsAttempt(ctx, runID, attempt)
 		if errors.Is(err, errRunNotFound) {
+			missing = append(missing, attempt)
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		artifact, ok := findArtifact(list.Artifacts, "run.gbrun")
 		if !ok || !artifact.Replayable {
+			missing = append(missing, attempt)
 			continue
 		}
 		timeline, _ := findArtifact(list.Artifacts, farm.MediaTimelineArtifactName)
 		recordings = append(recordings, replayRecording{Attempt: attempt, Artifact: artifact, Timeline: timeline})
 	}
 	if len(recordings) == 0 {
-		return nil, errRecordingNotFound
+		return nil, nil, errRecordingNotFound
 	}
-	return recordings, nil
+	return recordings, missing, nil
 }
 
 func (s *replayServer) recordingsForAttempts(ctx context.Context, runID string, attempts []int) ([]replayRecording, error) {
