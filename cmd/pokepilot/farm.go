@@ -1079,11 +1079,14 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 		fmt.Printf("  error: %v\n", res.Err)
 		detail = res.Err.Error()
 	}
-	failureClass := farm.FinishFailureClass("")
-	if errors.Is(res.Err, agent.ErrTransport) {
-		failureClass = farm.FinishFailureClassInferenceTransport
+	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled), farmFinishFailureClass(res.Err)
+}
+
+func farmFinishFailureClass(err error) farm.FinishFailureClass {
+	if errors.Is(err, agent.ErrTransport) {
+		return farm.FinishFailureClassInferenceTransport
 	}
-	return stopName(res.Stop), detail, farmProgress(res.ProgressEarly), farmProgress(res.ProgressFinal), errors.Is(res.Err, skill.ErrLinkStalled), failureClass
+	return ""
 }
 
 // farmProgress lifts one of the run's progress samples onto the wire type.
