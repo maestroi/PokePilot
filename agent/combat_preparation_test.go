@@ -284,3 +284,187 @@ func TestCombatPreparationReleasesWhenNoTrainingPathExists(t *testing.T) {
 		})
 	}
 }
+
+// campaignTestTrainingEstimate mirrors the measured live shape of
+// run-1qtjk6v1dzvfam on Route 25: ~102 XP per encounter, 45 encounters for the
+// next two lead levels and 127 for the whole escalated campaign gap.
+func campaignTestTrainingEstimate(targetLevel uint8, xpRemaining uint32) TrainingEstimate {
+	const xpPerEncounter = 102
+	return TrainingEstimate{
+		CurrentLevel: 27, TargetLevel: targetLevel, XPRemaining: xpRemaining,
+		XPPerEncounter: xpPerEncounter, EstimatedEncounters: int((xpRemaining + xpPerEncounter - 1) / xpPerEncounter),
+		SessionBudget: trainSessionBattleBudget, Viability: TrainingOutsideBudget, Method: TrainingDirect,
+	}
+}
+
+func campaignTestObservation(t *testing.T, known *Knowledge, challenge Objective) Observation {
+	t.Helper()
+	obs := combatPreparationTestObservation(27, 26, 23) // readiness 183
+	recordStructuredCombatLoss(t, known, challenge, obs)
+	obs.HasGrass = true
+	obs.WildGrass = []WildSpecies{{Name: "oddish", MinLevel: 12, MaxLevel: 14}}
+	local := campaignTestTrainingEstimate(29, 4519)
+	obs.Training = &local
+	obs.TrainingAreaChoices = []TrainingAreaAssessment{{
+		Place: "route 25", Location: "route 25", Routable: true,
+		Estimate: campaignTestTrainingEstimate(32, 12898),
+	}}
+	return obs
+}
+
+// run-1qtjk6v1dzvfam: Cerulean Gym was lost twice with the party at readiness
+// 179/199. Every assessed habitat needed more than one 20-battle session, so
+// every habitat measured "outside budget", the loss was released as
+// unreachable, and the run walked straight back into the fight it had just
+// lost. A campaign that is allowed several sessions must keep the gate locked
+// and offer a bounded training leg instead.
+func TestCombatPreparationCampaignKeepsGateLockedAcrossSessions(t *testing.T) {
+	known := NewKnowledge(nil)
+	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	obs := campaignTestObservation(t, known, challenge)
+	if failure := known.Failures[combatLossFailureKey(challenge)]; failure.ReadinessBaseline != 183 || failure.ReadinessTarget != 195 {
+		t.Fatalf("campaign readiness = %d -> %d, want 183 -> 195", failure.ReadinessBaseline, failure.ReadinessTarget)
+	}
+
+	offer := OfferWithEvidence(obs, known)
+
+	if !combatLossRecorded(known, challenge) {
+		t.Fatal("gate opened below the campaign readiness target")
+	}
+	if combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("retry became due below the campaign readiness target")
+	}
+	trainingOffered := false
+	for _, o := range offer.Candidates {
+		if o.Kind == KindTrain {
+			trainingOffered = true
+		}
+		if o.Kind == KindGym && o.Place == challenge.Place {
+			t.Fatalf("lost challenge re-offered below its readiness target: %+v", o)
+		}
+	}
+	if !trainingOffered {
+		t.Fatalf("locked campaign offered no executable training leg: %+v", offer.Candidates)
+	}
+
+	// Reaching the target still releases the gate: retry is earned, not banned.
+	ready := combatPreparationTestObservation(29, 28, 23) // readiness 195
+	known.notePartyCombatResult(obs, ready, ObjectiveResult{Objective: Objective{Kind: KindTrain, Level: 29}})
+	if !combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("retry was not scheduled once the campaign target was reached")
+	}
+}
+
+// A habitat that would need dozens of bounded sessions is still a dead end, so
+// the documented escape must keep firing: the locked fight becomes retryable
+// rather than stranding the planner between towns
+// (run-3r9pgu3arq0ls358ehdw2khxo8, an L89 lead over L2-L12 grass).
+func TestCombatPreparationStillReleasesWhenNoHabitatClosesTheGap(t *testing.T) {
+	known := NewKnowledge(nil)
+	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	obs := campaignTestObservation(t, known, challenge)
+	deadEnd := campaignTestTrainingEstimate(52, 45000) // ~442 encounters
+	obs.Training = &deadEnd
+	obs.TrainingAreaChoices = []TrainingAreaAssessment{{
+		Place: "route 2", Location: "route 2", Routable: true, Estimate: deadEnd,
+	}}
+
+	OfferWithEvidence(obs, known)
+
+	if combatLossRecorded(known, challenge) {
+		t.Fatal("dead-end campaign kept the gate locked")
+	}
+	if !combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("dead-end campaign did not release the fight to retry")
+	}
+}
+
+// run-1qtjk6v1dzvfam's knowledge already held a retry marker that an older
+// build wrote while the party was far below its recorded target. Retry mode
+// means "the target is met, test the stronger party"; an unmet marker has to
+// return to the campaign or the same lost fight is re-offered forever.
+func TestStaleRetryMarkerReturnsToPreparationCampaign(t *testing.T) {
+	known := NewKnowledge(nil)
+	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	obs := campaignTestObservation(t, known, challenge)
+	delete(known.Failures, combatLossFailureKey(challenge))
+	known.Failures[combatRetryReadyKey(challenge)] = Failure{
+		Objective: challenge.String(), Times: 2, ReadinessBaseline: 179, ReadinessTarget: 199,
+		Last: "combat preparation target reached after defeat; retry is due",
+	}
+
+	OfferWithEvidence(obs, known)
+
+	if !combatLossRecorded(known, challenge) {
+		t.Fatal("stale retry marker did not return to the preparation campaign")
+	}
+	if combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("stale retry marker stayed retry-ready below its target")
+	}
+	demoted := known.Failures[combatLossFailureKey(challenge)]
+	if demoted.Times != 2 || demoted.ReadinessTarget != 199 {
+		t.Fatalf("demoted campaign = %+v, want the original 2 losses and target 199", demoted)
+	}
+	if strings.Contains(demoted.Last, "retry is due") {
+		t.Fatalf("demoted campaign kept the stale retry text %q", demoted.Last)
+	}
+
+	// A marker the party has actually reached stays retry-ready.
+	reached := NewKnowledge(nil)
+	reached.Failures[combatRetryReadyKey(challenge)] = Failure{
+		Objective: challenge.String(), Times: 1, ReadinessBaseline: 179, ReadinessTarget: 183,
+		Last: "combat preparation target reached after defeat; retry is due",
+	}
+	OfferWithEvidence(obs, reached)
+	if !combatRetryKeys(reached)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("satisfied retry marker was demoted back into preparation")
+	}
+}
+
+func TestCampaignTrainingBudgetOnlyWidensMeasuredEstimates(t *testing.T) {
+	known := NewKnowledge(nil)
+	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	obs := campaignTestObservation(t, known, challenge)
+
+	if got := campaignAwareTrainingBudget(obs, known); got != preparationTrainingBudget() {
+		t.Fatalf("campaign budget = %d, want %d", got, preparationTrainingBudget())
+	}
+	if got := campaignAwareTrainingBudget(obs, NewKnowledge(nil)); got != trainSessionBattleBudget {
+		t.Fatalf("idle budget = %d, want %d", got, trainSessionBattleBudget)
+	}
+
+	gap := campaignTestTrainingEstimate(32, 12898)
+	budgeted := budgetedTrainingEstimate(&gap, obs, known)
+	if budgeted == &gap {
+		t.Fatal("measured estimate was not re-read against the campaign budget")
+	}
+	if budgeted.Viability != TrainingExpensive || budgeted.SessionBudget != preparationTrainingBudget() {
+		t.Fatalf("budgeted estimate = %q/%d, want expensive/%d",
+			budgeted.Viability, budgeted.SessionBudget, preparationTrainingBudget())
+	}
+
+	unsafe := TrainingEstimate{Viability: TrainingOutsideBudget}
+	if got := budgetedTrainingEstimate(&unsafe, obs, known); got != &unsafe {
+		t.Fatal("a band with no measured XP was re-priced")
+	}
+}
+
+func TestTrainingSessionExecutableOnlyBlocksBandsWithoutXP(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		estimate TrainingEstimate
+		err      error
+		want     bool
+	}{
+		{"viable session", TrainingEstimate{Viability: TrainingViable, XPPerEncounter: 40}, nil, true},
+		{"multi-session band", TrainingEstimate{Viability: TrainingOutsideBudget, XPPerEncounter: 102}, nil, true},
+		{"unsafe band with no carry", TrainingEstimate{Viability: TrainingOutsideBudget}, nil, false},
+		{"unmeasurable habitat", TrainingEstimate{}, errors.New("no party"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := trainingSessionExecutable(tc.estimate, tc.err); got != tc.want {
+				t.Fatalf("trainingSessionExecutable = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

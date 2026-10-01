@@ -211,6 +211,9 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 	if targetLevel <= int(obs.Party[0].Level) {
 		return nil
 	}
+	// Measured against the campaign's multi-session allowance while a quantified
+	// combat loss is being prepared for; otherwise one bounded session decides.
+	budget := campaignAwareTrainingBudget(obs, known)
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -241,7 +244,7 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 			continue
 		}
 
-		estimate, err := currentPartyTrainingEstimate(&mem, romData, destination.Map, 0, targetLevel, trainSessionBattleBudget)
+		estimate, err := currentPartyTrainingEstimate(&mem, romData, destination.Map, 0, targetLevel, budget)
 		if err != nil {
 			assessment.Reason = fmt.Sprintf("training estimate unavailable: %v", err)
 			out = append(out, assessment)
@@ -267,7 +270,10 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 
 		switch assessment.Estimate.Viability {
 		case TrainingOutsideBudget:
-			assessment.Reason = "exact XP/safety estimate is outside the bounded training session"
+			assessment.Reason = fmt.Sprintf(
+				"exact XP/safety estimate is outside the active %d-battle training budget",
+				assessment.Estimate.SessionBudget,
+			)
 		case TrainingSatisfied:
 			assessment.Reason = "training target is already satisfied"
 		default:

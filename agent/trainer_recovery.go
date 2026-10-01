@@ -172,6 +172,50 @@ func combatPreparationFor(k *Knowledge, obs Observation) combatPreparationState 
 	return state
 }
 
+// combatPreparationCampaignOpen reports that a recorded combat loss still owes
+// party readiness. Only quantified (target-carrying) losses qualify: a legacy
+// loss without a target keeps its historical one-material-change behavior.
+func combatPreparationCampaignOpen(k *Knowledge, obs Observation) bool {
+	prep := combatPreparationFor(k, obs)
+	return prep.Active && prep.Target > prep.Current
+}
+
+// demoteUnreadyCombatRetries returns retry-ready markers whose recorded
+// readiness target is still unmet to the combat-loss mode. Retry mode means
+// "the party reached its target; test it again", so a marker written while the
+// party was below its own target must keep the preparation campaign open
+// instead of sending the same party back into a fight it already lost. Older
+// builds released the gate as soon as no single bounded training session could
+// finish the campaign and persisted that marker with the unmet target intact
+// (run-1qtjk6v1dzvfam: Cerulean Gym retried at readiness 179/199). Markers
+// without a target stay retry-ready: they are the legacy escape from a
+// dead-end habitat and carry no quantitative obligation.
+func (k *Knowledge) demoteUnreadyCombatRetries(obs Observation) {
+	if k == nil {
+		return
+	}
+	readiness := partyCombatReadiness(obs)
+	for storage, failure := range k.Failures {
+		key, mode, ok := parseFailureStorageKey(storage)
+		if !ok || (mode != failureModeCombatRetry && mode != legacyFailureModeGymRetry) {
+			continue
+		}
+		if failure.ReadinessTarget <= 0 || readiness >= failure.ReadinessTarget {
+			continue
+		}
+		o := key.Objective()
+		failure.Objective = o.String()
+		failure.Last = fmt.Sprintf(
+			"combat preparation still owed after %d loss(es); readiness %d/%d before retry",
+			failure.Times, readiness, failure.ReadinessTarget)
+		loss := failureStorageKey(combatRecoveryObjective(o).Key(), failureModeCombatLoss)
+		// mergeCombatRetryFailure keeps the higher-count record for the same
+		// objective, which is also what a fresh loss beside a stale marker needs.
+		k.Failures[loss] = mergeCombatRetryFailure(k.Failures[loss], failure)
+		delete(k.Failures, storage)
+	}
+}
+
 // hasCombatLossEvidence reports any typed combat loss not yet cleared by a win,
 // including losses already promoted to retry-ready. Done() clears both modes.
 func (k *Knowledge) hasCombatLossEvidence() bool {
