@@ -14,6 +14,13 @@ type gsIlexBirdStep struct {
 	standX, standY uint8
 }
 
+const (
+	gsIlexHeadbuttTutorX uint8 = 15
+	gsIlexHeadbuttTutorY uint8 = 14
+	gsIlexHeadbuttStandX uint8 = 15
+	gsIlexHeadbuttStandY uint8 = 15
+)
+
 var gsIlexBirdSteps = map[int]gsIlexBirdStep{
 	// Each staging tile must leave the player facing the bird from a side whose
 	// branch in maps/IlexForest.asm sends the bird forward. Facing from a bounce
@@ -200,10 +207,10 @@ func executeGSTM02Headbutt(m *emu.Emu, romData []byte) error {
 	// The tutor is fixed at (15,14). His south neighbour is on the north side
 	// of the mandatory Cut tree; GoToNative can only reach it after executing
 	// Cut and rebuilding the live forest grid.
-	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, 15, 15)); err != nil {
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, gsIlexHeadbuttStandX, gsIlexHeadbuttStandY)); err != nil {
 		return fmt.Errorf("gen2 TM02 Headbutt: cross Ilex Cut tree: %w", err)
 	}
-	if err := skill.Face(m, 15, 14); err != nil {
+	if err := skill.Face(m, gsIlexHeadbuttTutorX, gsIlexHeadbuttTutorY); err != nil {
 		return fmt.Errorf("gen2 TM02 Headbutt: face tutor: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
