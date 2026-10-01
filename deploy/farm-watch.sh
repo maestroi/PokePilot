@@ -111,7 +111,9 @@ if [ -f "$ledger" ]; then
 			--tiers "${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}" \
 			--available opencode,cursor,claude --paid-daily-cap 1000000 2>/dev/null | paste -sd, -)
 	fi
-	report needs-human 1 "${spent:+every fixer tier failed on triage keys: $spent}"
+	# Spent (every tier failed) or parked (a paid tier's verdict; see the
+	# issue comment). Parks lift on their own when the failure recurs.
+	report needs-human 1 "${spent:+fixer stopped on triage keys (all tiers failed or verdict parked, see issue comments): $spent}"
 fi
 
 # --- merges: a fixer PR stuck open means CI keeps failing ------------------

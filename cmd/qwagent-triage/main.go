@@ -295,6 +295,8 @@ func ladderCmd(args []string, stdout io.Writer, now time.Time) error {
 	availableCSV := fs.String("available", "", "comma-separated usable backends")
 	paidCap := fs.Int("paid-daily-cap", 20, "paid attempt starts per rolling 24h")
 	key := fs.String("key", "", "triage key to choose a backend for")
+	count := fs.Int("count", 0, "the key's current occurrence count (unparks on growth)")
+	triageFile := fs.String("triage", "", "triage JSON with current occurrence counts for the blocked list")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -316,12 +318,26 @@ func ladderCmd(args []string, stdout io.Writer, now time.Time) error {
 		}
 	}
 	if *key == "" {
-		for _, k := range deploy.BlockedKeys(rows, tiers, available, *paidCap, now) {
+		counts := map[string]int{}
+		if *triageFile != "" {
+			raw, err := os.ReadFile(*triageFile)
+			if err != nil {
+				return err
+			}
+			groups, err := deploy.DecodeTriageGroups(raw)
+			if err != nil {
+				return err
+			}
+			for _, g := range groups {
+				counts[g.Key] = g.Count
+			}
+		}
+		for _, k := range deploy.BlockedKeys(rows, tiers, counts, available, *paidCap, now) {
 			fmt.Fprintln(stdout, k)
 		}
 		return nil
 	}
-	backend := deploy.NextBackend(rows, tiers, *key, available, *paidCap, now)
+	backend := deploy.NextBackend(rows, tiers, *key, *count, available, *paidCap, now)
 	if backend == "" {
 		return errNothing
 	}

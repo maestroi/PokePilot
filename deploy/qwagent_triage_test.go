@@ -196,6 +196,10 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"make -s debug",
 		"DEBUG_PACKET",
 		"Prepared debug packet",
+		".pokepilot-verdict.json",
+		"\\tparked\\t",
+		"--count",
+		"--triage",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)
