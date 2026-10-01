@@ -514,6 +514,28 @@ func TestPickOwnPRFailureIgnoresPendingAndUntagged(t *testing.T) {
 	}
 }
 
+// A conflicting fixer PR can sit with pending or absent checks forever; it is
+// repaired like a red check instead of blocking its triage key.
+func TestPickOwnPRFailureRepairsMergeConflicts(t *testing.T) {
+	raw := []byte(`[
+	  {"number":5,"title":"fix(farm): stuck [triage:aaa]","headRefName":"fix/stuck","mergeable":"CONFLICTING","statusCheckRollup":[
+	    {"__typename":"CheckRun","name":"ci / test","status":"QUEUED","conclusion":null}
+	  ]},
+	  {"number":6,"title":"fix(farm): fine [triage:bbb]","headRefName":"fix/fine","mergeable":"MERGEABLE","statusCheckRollup":[]}
+	]`)
+	prs, err := DecodePullRequests(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := PickOwnPRFailure(prs)
+	if !ok || got.Number != 5 {
+		t.Fatalf("conflicting triage PR not picked: %+v ok=%v", got, ok)
+	}
+	if !strings.Contains(got.FailingChecks(), "merge conflict with main") {
+		t.Fatalf("repair instruction missing: %q", got.FailingChecks())
+	}
+}
+
 func TestDecodePullRequestFailureConclusion(t *testing.T) {
 	raw := []byte(`[{
 	  "number":7,"title":"fix(farm): red [triage:abc]","headRefName":"fix/red","url":"https://example/7",

@@ -60,7 +60,7 @@ func TestPickCLI(t *testing.T) {
 func TestPickCLILocalRepairAndRegression(t *testing.T) {
 	in := strings.NewReader(`[
 	  {"key":"fixed","count":9,"example":"old","run_ids":["old"]},
-	  {"key":"regressed","count":4,"example":"again","run_ids":["new"],"issue":{"status":"resolved","resolution":"fixed"}}
+	  {"key":"regressed","count":4,"example":"again","run_ids":["new"],"issue":{"status":"resolved","resolution":"fixed","last_observed_revision":"705a685"}}
 	]`)
 	var out bytes.Buffer
 	err := run([]string{"pick", "--repaired", "fixed", "--regressed", "regressed"}, in, &out)
@@ -69,6 +69,11 @@ func TestPickCLILocalRepairAndRegression(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"key": "regressed"`) {
 		t.Fatalf("output = %s", out.String())
+	}
+	// The agent must learn the merged fix did not hold, or it reports the
+	// closed issue as "already fixed" and the attempt is wasted.
+	if !strings.Contains(out.String(), `"regressed": true`) || !strings.Contains(out.String(), `"observed_revision": "705a685"`) {
+		t.Fatalf("regression context missing: %s", out.String())
 	}
 }
 

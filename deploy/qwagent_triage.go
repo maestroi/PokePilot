@@ -239,10 +239,22 @@ type OpenPullRequest struct {
 	HeadRef string      `json:"headRefName"`
 	URL     string      `json:"url"`
 	Checks  []PullCheck `json:"checks,omitempty"`
+	// Mergeable is GitHub's MERGEABLE, CONFLICTING, or UNKNOWN.
+	Mergeable string `json:"mergeable,omitempty"`
+}
+
+// mergeConflictCheck is the repair instruction for a PR that cannot merge.
+const mergeConflictCheck = "merge conflict with main (merge origin/main into the branch, resolve, re-test, push)"
+
+func (pr OpenPullRequest) conflicting() bool {
+	return strings.EqualFold(strings.TrimSpace(pr.Mergeable), "CONFLICTING")
 }
 
 func (pr OpenPullRequest) FailingChecks() string {
-	names := make([]string, 0, len(pr.Checks))
+	names := make([]string, 0, len(pr.Checks)+1)
+	if pr.conflicting() {
+		names = append(names, mergeConflictCheck)
+	}
 	for _, check := range pr.Checks {
 		if !check.Failed() {
 			continue
@@ -280,6 +292,11 @@ func ownPRFailed(pr OpenPullRequest) bool {
 	if TriageKeyFromTitle(pr.Title) == "" {
 		return false
 	}
+	// A conflicting PR never merges, and GitHub may never run its checks, so
+	// it must not wait for them: repair it like a red check.
+	if pr.conflicting() {
+		return true
+	}
 	failed := false
 	for _, check := range pr.Checks {
 		if check.Pending() {
@@ -298,12 +315,13 @@ func DecodePullRequests(raw []byte) ([]OpenPullRequest, error) {
 		return nil, fmt.Errorf("empty pull request payload")
 	}
 	var rows []struct {
-		Number  int              `json:"number"`
-		Title   string           `json:"title"`
-		HeadRef string           `json:"headRefName"`
-		URL     string           `json:"url"`
-		Rollup  []map[string]any `json:"statusCheckRollup"`
-		Checks  []PullCheck      `json:"checks"`
+		Number    int              `json:"number"`
+		Title     string           `json:"title"`
+		HeadRef   string           `json:"headRefName"`
+		URL       string           `json:"url"`
+		Rollup    []map[string]any `json:"statusCheckRollup"`
+		Checks    []PullCheck      `json:"checks"`
+		Mergeable string           `json:"mergeable"`
 	}
 	if err := json.Unmarshal(trimmed, &rows); err != nil {
 		return nil, err
@@ -311,10 +329,11 @@ func DecodePullRequests(raw []byte) ([]OpenPullRequest, error) {
 	out := make([]OpenPullRequest, 0, len(rows))
 	for _, row := range rows {
 		pr := OpenPullRequest{
-			Number:  row.Number,
-			Title:   row.Title,
-			HeadRef: row.HeadRef,
-			URL:     row.URL,
+			Number:    row.Number,
+			Title:     row.Title,
+			HeadRef:   row.HeadRef,
+			URL:       row.URL,
+			Mergeable: row.Mergeable,
 		}
 		if len(row.Checks) > 0 {
 			pr.Checks = row.Checks

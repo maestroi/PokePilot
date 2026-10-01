@@ -12,6 +12,12 @@ the bounded farm evidence, deterministic replay result when supported, and
 localized source snippets. Do not repeat `get_run_debug`, artifact downloads,
 or broad repository searches unless that packet explicitly leaves an ambiguity.
 
+If `regressed` is true, the linked issue was closed by a merged
+`[triage:<key>]` PR, but this failure was observed again on
+`observed_revision`, which already contains that merge. The earlier fix did not
+hold. "Already fixed" is not a valid outcome: find the merged PR, work out why
+its invariant did not cover this occurrence, and fix it.
+
 If `mode` is `repair_pr`, this is an existing PR with failed checks. Stay on
 `head_ref`, fix `failing_checks`, run `make test-short`, commit, and push.
 Do not open another PR.
