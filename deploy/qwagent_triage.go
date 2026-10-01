@@ -166,6 +166,11 @@ type RepairObservation struct {
 	Key              string `json:"key"`
 	MergeSHA         string `json:"merge_sha"`
 	ObservedRevision string `json:"observed_revision"`
+	// FixedRevision is the issue system's resolution baseline: the default
+	// branch head when the issue was closed. It covers fixes that landed
+	// after the [triage:key] PR or without its marker (a manual close naming
+	// a later commit), so it is the same rule pokeissues uses to reopen.
+	FixedRevision string `json:"fixed_revision,omitempty"`
 }
 
 // ClassifyRepairs marks a merged repair as a regression only when git can
@@ -195,8 +200,14 @@ func repairRegressed(repo string, row RepairObservation) bool {
 	if observed == "" || merge == "" || strings.TrimSpace(repo) == "" {
 		return false
 	}
-	cmd := exec.Command("git", "-C", repo, "merge-base", "--is-ancestor", merge, observed)
-	return cmd.Run() == nil
+	contains := func(rev string) bool {
+		return exec.Command("git", "-C", repo, "merge-base", "--is-ancestor", rev, observed).Run() == nil
+	}
+	if !contains(merge) {
+		return false
+	}
+	fixed := strings.TrimSpace(row.FixedRevision)
+	return fixed == "" || contains(fixed)
 }
 
 var triageKeyPattern = regexp.MustCompile(`\[triage:([^\]]+)\]`)

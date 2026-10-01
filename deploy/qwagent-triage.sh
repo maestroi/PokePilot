@@ -435,7 +435,8 @@ for pr in prs:
 
 rows = []
 for key, (_, merge_sha, observed) in latest.items():
-    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed})
+    fixed = str((groups[key].get("issue") or {}).get("fixed_revision") or "").strip()
+    rows.append({"key": key, "merge_sha": merge_sha, "observed_revision": observed, "fixed_revision": fixed})
 json.dump(rows, sys.stdout)
 PY
 )

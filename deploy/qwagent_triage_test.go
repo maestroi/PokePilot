@@ -428,6 +428,35 @@ func TestClassifyRepairsUsesFingerprintRevision(t *testing.T) {
 	}
 }
 
+// #2108: the [triage:key] repair merged, the failure recurred on a revision
+// containing it, and a later fix without the marker closed the issue. A
+// recurrence before that closure baseline is stale, exactly as pokeissues
+// judges it; only one on or after the baseline is a regression.
+func TestClassifyRepairsHonorsIssueResolutionBaseline(t *testing.T) {
+	repo := t.TempDir()
+	git := testGit(t, repo)
+	git("init", "-b", "main")
+	commit := func(content string) string {
+		if err := os.WriteFile(filepath.Join(repo, "note"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		git("add", "note")
+		git("commit", "-m", content)
+		return strings.TrimSpace(git("rev-parse", "HEAD"))
+	}
+	repair := commit("triage repair")
+	observedBeforeLaterFix := commit("observed")
+	baseline := commit("later fix, issue closed")
+
+	repaired, regressed := ClassifyRepairs(repo, []RepairObservation{
+		{Key: "stale", MergeSHA: repair, ObservedRevision: observedBeforeLaterFix, FixedRevision: baseline},
+		{Key: "real", MergeSHA: repair, ObservedRevision: baseline, FixedRevision: baseline},
+	})
+	if !sameKeys(repaired, []string{"stale"}) || !sameKeys(regressed, []string{"real"}) {
+		t.Fatalf("repaired = %v, regressed = %v", repaired, regressed)
+	}
+}
+
 func TestFalseRegressionDoesNotBeatOpenIssue(t *testing.T) {
 	repo := t.TempDir()
 	git := testGit(t, repo)
