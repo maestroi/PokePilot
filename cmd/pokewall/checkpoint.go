@@ -171,8 +171,11 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	resilient := t.RecoveryProfile.Resilient()
 	lostRetry := previous > 0 && strings.HasPrefix(t.Detail, lostPrefix)
 	drainedRetry := previous > 0 && strings.HasPrefix(t.Detail, drainedPrefix)
-	resilientRetry := previous > 0 && resilient && planner == "llm" &&
+	inferenceTransportRetry := previous > 0 && resilient && planner == "llm" &&
+		t.FailureClass == farm.FinishFailureClassInferenceTransport &&
 		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
+	resilientRetry := previous > 0 && resilient && planner == "llm" &&
+		strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry && !inferenceTransportRetry
 	recoveryAttempts := t.RecoveryAttempts
 	endlessRetry := previous > 0 && t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
 	gymRetry := previous > 0 && !t.Endless && planner == "llm" && strings.HasPrefix(t.Detail, retryPrefix) && !lostRetry
@@ -195,6 +198,13 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		// lineage. A drain has already flushed the final objective pair before
 		// Finish, so this normally resumes exactly at the safe boundary where
 		// SIGTERM was observed (#1933).
+		cp, err = w.latestLineageResumeCheckpoint(id, planner)
+		if os.IsNotExist(err) {
+			cp, err = w.latestLineageMajorCheckpoint(id)
+		}
+	case inferenceTransportRetry:
+		// Inference availability did not invalidate gameplay state. Resume the
+		// deepest safe pair without consuming the gameplay rollback ladder.
 		cp, err = w.latestLineageResumeCheckpoint(id, planner)
 		if os.IsNotExist(err) {
 			cp, err = w.latestLineageMajorCheckpoint(id)
