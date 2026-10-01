@@ -25,6 +25,7 @@ import (
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
+	redstarter "github.com/maestroi/pokepilot/red/starter"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -552,6 +553,16 @@ func validateSpec(gameID, planner, starter, dest string) error {
 			return fmt.Errorf("pokemon-yellow uses the scripted Pikachu starter, got %q", starter)
 		}
 	} else {
+		// The Red starter experiment (random/fixed species) patches Red's
+		// Oak's-lab script, so only the exact Red cartridge can run it.
+		// Other Gen I games (Blue) select their starter by cartridge script.
+		// An empty game keeps the worker's current cartridge, so the declared
+		// game cannot decide here; prepareStarterExperiment checks the ROM.
+		if starter != "" && gameID != "" && gameID != "pokemon-red" {
+			if sel, err := redstarter.Resolve(starter, 0); err == nil && sel.Experiment() {
+				return fmt.Errorf("%s cannot run the Red starter experiment %q; use a canonical starter or none", gameID, starter)
+			}
+		}
 		switch planner {
 		case "scripted":
 			if _, ok := starterFromName(starter); !ok {

@@ -73,6 +73,13 @@ func prepareStarterExperiment(m *emu.Emu, spec farm.Spec) error {
 	if err != nil {
 		return err
 	}
+	// The patch offsets are Red's, so an experiment selection can only run
+	// on the exact Red cartridge. This ROM-authoritative gate also covers
+	// leases whose declared game is empty or disagrees with the loaded
+	// cartridge, where validateSpec cannot decide.
+	if selection.Experiment() && detectErr == nil && string(profile.ID()) != "pokemon-red" {
+		return fmt.Errorf("%s cannot run the Red starter experiment %q: the patch offsets are Red's", profile.ID(), spec.Starter)
+	}
 	derived, patch, err := redstarter.Patch(base, selection)
 	if err != nil {
 		return err
