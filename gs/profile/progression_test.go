@@ -198,6 +198,15 @@ func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
 	if !story.Has(ProgressHM01CutAcquired) {
 		t.Fatalf("HM01 Cut event not projected: %+v", story)
 	}
+	if story.Has(ProgressTM02HeadbuttAcquired) {
+		t.Fatal("HM01 acquisition falsely crossed the north-Ilex Cut boundary")
+	}
+
+	setGSEvent(mem, eventGotTM02Headbutt)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressTM02HeadbuttAcquired) {
+		t.Fatalf("TM02 Headbutt event not projected: %+v", story)
+	}
 }
 
 func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
@@ -215,8 +224,17 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 
 	setGSEvent(mem, eventGotHM01Cut)
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressHM01CutAcquired) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("HM01 boundary did not complete supported frontier: %+v", story)
+	if !story.Has(ProgressHM01CutAcquired) {
+		t.Fatalf("HM01 boundary missing from story: %+v", story)
+	}
+	if story.Has(ProgressSupportedFrontier) {
+		t.Fatal("owning HM01 reached frontier before proving Cut traversal")
+	}
+
+	setGSEvent(mem, eventGotTM02Headbutt)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressTM02HeadbuttAcquired) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("north-Ilex Headbutt boundary did not complete supported frontier: %+v", story)
 	}
 }
 
@@ -226,6 +244,9 @@ func TestPinnedIlexEventAndSceneConstants(t *testing.T) {
 	}
 	if eventHerdedFarfetchd != 41 {
 		t.Fatalf("EVENT_HERDED_FARFETCHD = %d, want 41", eventHerdedFarfetchd)
+	}
+	if eventGotTM02Headbutt != 95 {
+		t.Fatalf("EVENT_GOT_TM02_HEADBUTT = %d, want 95", eventGotTM02Headbutt)
 	}
 	if eventRivalAzaleaTown != 1727 {
 		t.Fatalf("EVENT_RIVAL_AZALEA_TOWN = %d, want 1727", eventRivalAzaleaTown)
