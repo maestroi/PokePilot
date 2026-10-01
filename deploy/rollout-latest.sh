@@ -209,3 +209,66 @@ if docker service inspect "$LITELLM_SVC" >/dev/null 2>&1 && [ -f "$LITELLM_YAML"
 elif [ -f "$LITELLM_YAML" ]; then
 	echo "pokefarm-pull: $LITELLM_SVC not deployed; skip"
 fi
+
+# --- reclaim untagged images ------------------------------------------------
+# Every merge publishes a new digest and this timer pulls it within ~2 minutes,
+# which leaves the previous digest untagged and nothing ever removed it. On
+# 2026-10-01 the manager's 49G root filesystem reached 99M free holding 296
+# untagged pokepilot images (33.75G reclaimed). The Swarm control plane and
+# pokefarm_postgres share that filesystem, so filling it takes the whole farm
+# down -- and it did so silently, because nothing measured free space. Reclaim
+# on every tick rather than waiting for a human to notice.
+#
+# Only untagged tags of IMAGE are candidates, and the keep-set is every digest
+# the stack can still be asked to run: each service's spec, its PreviousSpec
+# (the rollback target the hold logic above depends on), and any live task.
+# Dropping a rollback target would force `docker service rollback` to re-pull
+# from the registry, which is the exact situation that logic exists to avoid.
+prune_untagged_images() {
+	local keep=$'\n' svc ref id digest referenced removed=0
+	local -a candidates=()
+	for svc in "${SERVICES[@]}" litellm; do
+		svc="${STACK}_${svc}"
+		docker service inspect "$svc" >/dev/null 2>&1 || continue
+		while read -r ref; do
+			case "$ref" in
+			*@*) keep="${keep}${ref##*@}"$'\n' ;;
+			esac
+		done < <(docker service inspect "$svc" --format \
+			'{{.Spec.TaskTemplate.ContainerSpec.Image}}
+{{if .PreviousSpec}}{{.PreviousSpec.TaskTemplate.ContainerSpec.Image}}{{end}}' 2>/dev/null || true)
+		while read -r ref; do
+			case "$ref" in
+			*@*) keep="${keep}${ref##*@}"$'\n' ;;
+			esac
+		done < <(docker service ps --no-trunc --format '{{.Image}}' "$svc" 2>/dev/null || true)
+	done
+
+	# Collect first: removing images while the listing command that produced
+	# them is still running reads a half-mutated list.
+	while read -r id; do
+		[ -n "$id" ] && candidates+=("$id")
+	done < <(docker images --no-trunc --filter "reference=${IMAGE}" \
+		--format '{{.ID}} {{.Tag}}' 2>/dev/null | awk '$2 == "<none>" {print $1}')
+
+	for id in ${candidates[@]+"${candidates[@]}"}; do
+		referenced=0
+		while read -r digest; do
+			[ -n "$digest" ] || continue
+			case "$keep" in
+			*$'\n'"$digest"$'\n'*)
+				referenced=1
+				break
+				;;
+			esac
+		done < <(docker image inspect "$id" --format '{{range .RepoDigests}}{{.}}
+{{end}}' 2>/dev/null | sed 's/.*@//' || true)
+		[ "$referenced" -eq 0 ] || continue
+		docker rmi "$id" >/dev/null 2>&1 && removed=$((removed + 1))
+	done
+	if [ "$removed" -gt 0 ]; then
+		echo "pokefarm-pull: pruned $removed untagged ${IMAGE} image(s)"
+	fi
+	return 0
+}
+prune_untagged_images
