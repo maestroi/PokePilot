@@ -11,7 +11,10 @@ import (
 func TestFuchsiaProgressionAvailable(t *testing.T) {
 	for _, mapID := range []uint8{
 		mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
-		route12Map, route13Map, route14Map, route15Map, route15Gate1FMap,
+		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
+		route11Map, route11Gate1FMap, route11Gate2FMap,
+		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
+		route13Map, route14Map, route15Map, route15Gate1FMap,
 		fuchsiaCityMap, fuchsiaPokemonCenterMap, wardensHouseMap,
 		safariZoneGateMap, fuchsiaGymMap, safariZoneEastMap, safariZoneNorthMap,
 		safariZoneWestMap, safariZoneCenterMap, safariZoneCenterRestHouseMap,
