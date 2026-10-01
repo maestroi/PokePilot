@@ -200,6 +200,9 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"\\tparked\\t",
 		"--count",
 		"--triage",
+		"agent_opened_pr",
+		"killed by the 50m attempt timeout",
+		"timeout -k 60 50m",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)
@@ -209,6 +212,12 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		!strings.Contains(s, "--\n\t\"Follow the attached farm triage packet") &&
 		!strings.Contains(s, "--\n\"Follow the attached farm triage packet") {
 		t.Error("opencode --file is an array flag; the prompt message must come after --")
+	}
+	if strings.Contains(s, "timeout --foreground") {
+		t.Error("--foreground spares the agent from the timeout; bash then defers its TERM trap until the agent exits")
+	}
+	if strings.Contains(s, "main moved; refuse PR") {
+		t.Error("a verified fix must not be discarded because main advanced during the attempt")
 	}
 	if strings.Contains(s, "--dir \"$POKEPILOT_TRIAGE_TREE\"") {
 		t.Error("opencode v2 rejects run --dir; every qwen attempt exits 1 before starting")

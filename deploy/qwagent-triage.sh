@@ -233,7 +233,10 @@ if [ "$DRY_RUN" -eq 0 ] && [ "$LOCKED" -eq 0 ]; then
 		log "lock held; skip"
 		exit 0
 	fi
-	timeout --foreground 50m "$0" --locked "$@"
+	# No --foreground: the TERM must reach the agent CLI too, or bash defers its
+	# TERM trap until the agent finishes by itself (a 50m budget ran 61m and never
+	# recorded a terminal attempt). -k hard-kills a hung agent.
+	timeout -k 60 50m "$0" --locked "$@"
 	exit $?
 fi
 
@@ -297,7 +300,13 @@ claim_issue() {
 
 trap 'release_issue_claim' EXIT
 trap 'exit 130' INT
-trap 'exit 143' TERM
+on_term() {
+	if [ -n "${ATTEMPT_ID:-}" ]; then
+		record_solver_attempt agent_failed "killed by the 50m attempt timeout" "" 0 "" 124
+	fi
+	exit 143
+}
+trap on_term TERM
 
 triage_bin() {
 	local bin="$POKEPILOT_TRIAGE_STATE/qwagent-triage"
@@ -689,7 +698,24 @@ if [ "$agent_status" -ne 0 ]; then
 	exit 0
 fi
 
+# The prompt has the agent push and `gh pr create` itself, often ending back
+# on main. Judge the attempt by the PR it opened, not by the branch it left.
+agent_opened_pr() {
+	gh pr list --repo "$(gh_repo)" --state open --limit 100 --json number,url,headRefName,title \
+		--jq "[.[] | select(.title | contains(\"[triage:${KEY}]\"))][0] // empty" 2>/dev/null || true
+}
+
 branch=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse --abbrev-ref HEAD)
+if [ "$MODE" != "repair_pr" ]; then
+	agent_pr=$(agent_opened_pr)
+	if [ -n "$agent_pr" ]; then
+		record_solver_attempt pr_opened "agent opened the triage PR itself" "$(printf '%s' "$agent_pr" | json_field headRefName)" \
+			"$(printf '%s' "$agent_pr" | json_field number)" "$(printf '%s' "$agent_pr" | json_field url)"
+		KEEP_ISSUE_CLAIM=1
+		log "PR already open for $KEY"
+		exit 0
+	fi
+fi
 if [ "$MODE" = "repair_pr" ]; then
 	if [ "$branch" != "$HEAD_REF" ]; then
 		record_solver_attempt no_pr "repair left the expected PR branch" "$branch"
@@ -741,12 +767,12 @@ ${reason}" >/dev/null 2>&1 || log "could not comment verdict on #$ISSUE_NUMBER"
 	;;
 esac
 
-main_head=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse main)
-origin_main=$(git -C "$POKEPILOT_TRIAGE_TREE" rev-parse origin/main)
-if [ "$main_head" != "$origin_main" ]; then
-	record_solver_attempt no_pr "triage worktree main moved during the attempt" "$branch"
-	log "main moved; refuse PR"
-	exit 0
+# main merges every few minutes, so a fix that took an hour is usually behind
+# it. Refusing threw away verified fixes; open the PR and let CI and the
+# merge-conflict repair path (pick-own-pr) deal with the drift.
+git -C "$POKEPILOT_TRIAGE_TREE" fetch -q origin main || true
+if ! git -C "$POKEPILOT_TRIAGE_TREE" merge-base --is-ancestor origin/main HEAD; then
+	log "$branch is behind origin/main; opening the PR anyway"
 fi
 
 bad=$(git -C "$POKEPILOT_TRIAGE_TREE" diff --name-only origin/main...HEAD | grep -E '\.(state|gb|sav)$|^skill/zz_.*_test\.go$' || true)
