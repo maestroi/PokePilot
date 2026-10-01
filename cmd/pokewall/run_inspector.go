@@ -26,6 +26,7 @@ func wallHTTPHandler(w *Wall) http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}", w.handleRunInspect)
 	mux.HandleFunc("GET /v1/runs/{id}/debug", w.handleRunDebug)
 	mux.HandleFunc("GET /v1/runs/{id}/attempts", w.handleRunAttempts)
+	mux.HandleFunc("GET /v1/runs/{id}/recoveries", w.handleRunRecoveries)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts", w.handleRunArtifacts)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", w.handleInlineArtifactContent)
 	mux.Handle("/", w.Handler())
