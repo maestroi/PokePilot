@@ -155,7 +155,7 @@ exit 0
 		t.Fatalf("read docker log: %v", err)
 	}
 	logText := string(logData)
-	want := "service update --force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new pokefarm_runner"
+	want := "service update --force --detach --with-registry-auth --image ghcr.io/maestroi/pokepilot@sha256:new --stop-grace-period 6m --update-order start-first --update-parallelism 0 pokefarm_runner"
 	if !strings.Contains(logText, want) {
 		t.Fatalf("docker calls did not force-roll stale runner; want %q in:\n%s", want, logText)
 	}

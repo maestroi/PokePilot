@@ -68,6 +68,17 @@ for name in "${SERVICES[@]}"; do
 		echo "pokefarm-pull: $svc not deployed; skip"
 		continue
 	fi
+	# Runners drain on SIGTERM: finish the in-flight model round, flush the
+	# checkpoint, and report Finish(reason=drained). Swarm's default 10s stop
+	# grace SIGKILLs a busy runner mid-round, so every deploy surfaced as
+	# "lost: no heartbeat" and spent resilient recovery budget. deploy/farm.yml
+	# carries the same 6m, but the swarm stack file is host-local and drifted,
+	# so the image-owned rollout enforces it. start-first with parallelism 0
+	# brings up every replacement at once instead of serializing 10 drains.
+	lifecycle=()
+	if [ "$name" = runner ]; then
+		lifecycle=(--stop-grace-period 6m --update-order start-first --update-parallelism 0)
+	fi
 	img=$(docker service inspect "$svc" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
 	case "$img" in
 	*@*) cur=${img##*@} ;;
@@ -126,13 +137,13 @@ for name in "${SERVICES[@]}"; do
 		else
 			echo "pokefarm-pull: $svc spec is $WANT but $stale_running/$running Running task(s) are stale; force-roll"
 		fi
-		docker service update --force --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
+		docker service update --force --detach --with-registry-auth --image "$DIGEST_REF" ${lifecycle[@]+"${lifecycle[@]}"} "$svc" >/dev/null
 		updated=$((updated + 1))
 		continue
 	fi
 
 	echo "pokefarm-pull: $svc $img -> $DIGEST_REF"
-	docker service update --detach --with-registry-auth --image "$DIGEST_REF" "$svc" >/dev/null
+	docker service update --detach --with-registry-auth --image "$DIGEST_REF" ${lifecycle[@]+"${lifecycle[@]}"} "$svc" >/dev/null
 	updated=$((updated + 1))
 done
 
