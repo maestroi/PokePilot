@@ -272,7 +272,6 @@ func TestResilientLostResumeRollsBackAfterNoProgress(t *testing.T) {
 	}
 }
 
-
 func TestGoalDrivenLLMDefaultsToResilientRecovery(t *testing.T) {
 	w := NewWall("")
 	srv := httptest.NewServer(w.Handler())
