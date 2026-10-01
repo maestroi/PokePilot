@@ -60,7 +60,11 @@ export function objectiveLabel(run: SpectatorRun): string {
 export function locationLabel(run: SpectatorRun): string {
   if (isTetrisRun(run)) return tetrisLocationLabel(run)
   if (isBoxxleRun(run)) return 'Puzzle'
-  const map = Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase()
+  if (run.map_name) return run.map_name.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+  if (run.location) return run.location.replace(/\b\w/g, (letter) => letter.toUpperCase())
+  const native = Number(run.native_map_id || 0)
+  if (native > 0xff) return `0x${native.toString(16).padStart(4, '0').toUpperCase()} · ${run.x ?? 0},${run.y ?? 0}`
+  const map = Number(run.map || native || 0).toString(16).padStart(2, '0').toUpperCase()
   return `0x${map} · ${run.x ?? 0},${run.y ?? 0}`
 }
 
