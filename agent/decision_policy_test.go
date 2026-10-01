@@ -57,6 +57,9 @@ func TestFailureDecisionStopAllowedKeepsCombatDefeatRecoverable(t *testing.T) {
 	if FailureDecisionStopAllowed(combat) {
 		t.Fatal("combat defeat allowed typed decision to bypass deterministic recovery")
 	}
+	if stop, err := failureDecisionStopsRun(combat, "pause"); err != nil || stop {
+		t.Fatalf("combat pause => stop=%v err=%v, want deterministic recovery", stop, err)
+	}
 
 	navigation := ObjectiveResult{
 		Objective: Objective{Kind: KindGoTo, Place: PlaceID("pewter city")},
@@ -69,6 +72,9 @@ func TestFailureDecisionStopAllowedKeepsCombatDefeatRecoverable(t *testing.T) {
 	}
 	if !FailureDecisionStopAllowed(navigation) {
 		t.Fatal("non-combat recoverable failure unexpectedly forbids conservative typed stop")
+	}
+	if stop, err := failureDecisionStopsRun(navigation, "pause"); err != nil || !stop {
+		t.Fatalf("navigation pause => stop=%v err=%v, want conservative stop allowed", stop, err)
 	}
 }
 
