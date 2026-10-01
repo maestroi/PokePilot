@@ -99,6 +99,8 @@ func plannerGoalPreset(raw string) (Goal, bool) {
 		return Goal{Kind: GoalEliteFour}, true
 	case "complete the obtainable pokedex", "complete the obtainable pokédex", "complete the pokedex", "complete the pokédex":
 		return Goal{Kind: GoalDex}, true
+	case "play through the current supported gen 2 frontier", "play through the current supported gen2 frontier":
+		return Goal{Kind: GoalProgress, Target: "gs_supported_frontier"}, true
 	default:
 		return Goal{}, false
 	}

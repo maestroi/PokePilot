@@ -180,11 +180,18 @@ watch(() => form.game, (game, previous) => {
   }
   if (game === 'pokemon-gold' || game === 'pokemon-silver') {
     form.planner = 'llm'
-    form.goal = 'Earn 3 badges.'
+    form.goal = 'Play through the current supported Gen 2 frontier.'
   } else if (previous === 'pokemon-gold' || previous === 'pokemon-silver') {
     form.goal = defaultGoalForPlayStyle('adventure')
   }
 })
+
+const gen2Goals = [
+  ['Play through the current supported Gen 2 frontier.', 'Experimental · play as far as currently supported'],
+  ['Earn 1 badge.', 'Earn 1 badge · Falkner'],
+  ['Earn 2 badges.', 'Earn 2 badges · Bugsy'],
+  ['', 'Free play · no automatic stop']
+] as const
 
 const tetrisGoals = [
   ['endless', 'Endless high score · Type A · until game over'],
@@ -338,11 +345,14 @@ async function submit(): Promise<void> {
             <template v-if="isTetris">
               <option v-for="[value, label] in tetrisGoals" :key="value" :value="value">{{ label }}</option>
             </template>
+            <template v-else-if="isGen2">
+              <option v-for="[value, label] in gen2Goals" :key="value || 'free'" :value="value">{{ label }}</option>
+            </template>
             <template v-else>
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : 'What ends the run. Goal is independent from play style and run purpose.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : (isGen2 ? 'Experimental frontier runs stop successfully at the furthest Gen 2 progression boundary implemented by this build; they do not imply the full game is complete.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">

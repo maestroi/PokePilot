@@ -183,7 +183,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_start_run",
-		Description: "Queue one PokePilot run and return its generated run id. Gen I Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Gold/Silver use the cartridge-native starter flow and default to a 3-badge frontier run; Tetris uses the deterministic policy runtime.",
+		Description: "Queue one PokePilot run and return its generated run id. Gen I Pokemon defaults to an LLM Squirtle run for the Boulder Badge; Gold/Silver launch as experimental runs to the current supported progression frontier; Tetris uses the deterministic policy runtime.",
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
@@ -361,7 +361,7 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		}
 	} else if planner == "llm" && goal == "" {
 		if gameID == "pokemon-gold" || gameID == "pokemon-silver" {
-			goal = "Earn 3 badges."
+			goal = "Play through the current supported Gen 2 frontier."
 		} else {
 			goal = "Earn the Boulder Badge."
 		}
