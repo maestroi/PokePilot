@@ -78,6 +78,22 @@ func executeScriptedProgressTrigger(m *emu.Emu, romData []byte, spec scriptedPro
 			continue
 		}
 
+		// GoTo can be interrupted by a wild battle or dialogue before it
+		// reaches the trigger tile, leaving the player controllable but
+		// off-tile. Re-navigate to the destination instead of idling to
+		// failure: navigation and resumption are shared here, so this
+		// invariant holds for every scripted trigger, not just the one that
+		// exposed it. The outer frame budget bounds the loop.
+		if !spec.Destination.Reached(obs.Map, obs.X, obs.Y) {
+			idle = 0
+			if err := skill.GoTo(m, romData, spec.Destination); err != nil &&
+				!errors.Is(err, skill.ErrBattleInterrupted) &&
+				!errors.Is(err, skill.ErrDialogueInterrupted) && !errors.Is(err, skill.ErrBattle) {
+				return fmt.Errorf("%s: re-reach trigger: %w", spec.Name, err)
+			}
+			continue
+		}
+
 		// Coordinate-triggered scripts can start a few frames after GoTo
 		// reaches its boundary. Give them a bounded grace period, but fail
 		// instead of blindly pressing input once normal control is stable.
