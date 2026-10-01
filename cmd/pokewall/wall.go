@@ -707,13 +707,6 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "recovery_profile must be strict or resilient"})
 		return
 	}
-	// Newly submitted goal-driven LLM runs should survive worker/inference
-	// outages by default. Explicit Free play and explicit strict experiments
-	// keep their historic bounded/terminal behavior.
-	if spec.RecoveryProfile == "" && strings.EqualFold(strings.TrimSpace(spec.Planner), "llm") &&
-		(!spec.Goal.Provided() || spec.Goal.NormalizedGoal() != "") {
-		spec.RecoveryProfile = farm.RecoveryProfileResilient
-	}
 	if !spec.Purpose.Valid() {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal or debug_coverage"})
 		return
@@ -1810,7 +1803,9 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 	}
 	t.FailureClass = failureClass
 	resilient := t.RecoveryProfile.Resilient()
-	inferenceTransport := resilient && reason == "error" && failureClass == farm.FinishFailureClassInferenceTransport
+	inferenceTransport := reason == "error" &&
+		failureClass == farm.FinishFailureClassInferenceTransport &&
+		t.RecoveryProfile != farm.RecoveryProfileStrict
 	switch reason {
 	case "error":
 		if !inferenceTransport {
