@@ -126,6 +126,9 @@ export interface SpectatorRun {
   ended_at?: number
   frame?: number
   map?: number
+  native_map_id?: number
+  location?: string
+  map_name?: string
   x?: number
   y?: number
   maps_visited?: number
