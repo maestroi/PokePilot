@@ -331,6 +331,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressHiveBadgeEarned,
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
+		gsprofile.ProgressTM02HeadbuttAcquired,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {
