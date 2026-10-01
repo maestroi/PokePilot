@@ -29,10 +29,22 @@ export function eventKind(event: TimelineRow): EventKind {
   return 'event'
 }
 
+// Needs attention means something actually went wrong: a failure, or a recovery
+// event that records an attempt stopping (lost, budget) or a circuit opening.
+// Routine drain/retry/
+// resume events from deploys stay under the Recovery filter, otherwise every
+// healthy run shows a non-zero badge.
+function needsAttention(event: TimelineRow, kind: EventKind): boolean {
+  if (kind === 'failure') return true
+  if (kind !== 'recovery') return false
+  const recoveryKind = text(event.kind).toLowerCase()
+  return recoveryKind === 'failure' || recoveryKind === 'circuit'
+}
+
 export function eventMatchesFilter(event: TimelineRow, filter: TimelineFilter): boolean {
   if (filter === 'all') return true
   const kind = eventKind(event)
-  if (filter === 'attention') return kind === 'failure' || kind === 'recovery'
+  if (filter === 'attention') return needsAttention(event, kind)
   return kind === filter
 }
 
@@ -54,7 +66,7 @@ export function timelineFilterCounts(events: TimelineRow[]): TimelineFilterCount
   for (const event of events) {
     const kind = eventKind(event)
     if (kind !== 'event') counts[kind] += 1
-    if (kind === 'failure' || kind === 'recovery') counts.attention += 1
+    if (needsAttention(event, kind)) counts.attention += 1
   }
   return counts
 }
