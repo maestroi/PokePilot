@@ -15,11 +15,19 @@ type gsIlexBirdStep struct {
 }
 
 var gsIlexBirdSteps = map[int]gsIlexBirdStep{
+	// Each staging tile must leave the player facing the bird from a side whose
+	// branch in maps/IlexForest.asm sends the bird forward. Facing from a bounce
+	// side only moves the bird back to a position already solved, and the puzzle
+	// then ping-pongs between the two until the interaction budget is spent.
+	//
 	// Position 1 has two legal branches. Approaching from below faces UP and
 	// skips directly to position 3, which is the shorter retail solution.
-	1:  {position: 1, birdX: 14, birdY: 31, standX: 14, standY: 32},
-	3:  {position: 3, birdX: 20, birdY: 24, standX: 20, standY: 23},
-	4:  {position: 4, birdX: 29, birdY: 22, standX: 29, standY: 23},
+	1: {position: 1, birdX: 14, birdY: 31, standX: 14, standY: 32},
+	3: {position: 3, birdX: 20, birdY: 24, standX: 20, standY: 23},
+	// FarfetchdPosition4 bounces on UP, and (29,22)'s only other walkable
+	// neighbour is (28,22): standing below the bird sent it back to position 3
+	// forever, so stage beside it and face RIGHT instead.
+	4:  {position: 4, birdX: 29, birdY: 22, standX: 28, standY: 22},
 	5:  {position: 5, birdX: 28, birdY: 31, standX: 28, standY: 30},
 	6:  {position: 6, birdX: 24, birdY: 35, standX: 25, standY: 35},
 	7:  {position: 7, birdX: 22, birdY: 31, standX: 22, standY: 32},
