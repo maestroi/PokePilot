@@ -165,3 +165,53 @@ func executeGSHM01Cut(m *emu.Emu, romData []byte) error {
 	}
 	return nil
 }
+
+
+// executeGSTM02Headbutt is the first progression boundary that proves HM01 is
+// not merely owned but executable. The Headbutt tutor stands north of Ilex
+// Forest's mandatory Cut tree, so reaching his adjacent tile exercises native
+// Cut teaching/execution and live-block re-planning before the reward script.
+func executeGSTM02Headbutt(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTM02HeadbuttAcquired) {
+		if profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		return driveGSSecondBadgeInterruption(m, profile, "ilex:tm02-headbutt")
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHM01CutAcquired) {
+		return fmt.Errorf("%w: TM02 Headbutt requires HM01 Cut", errGSSecondBadgeUnexpectedState)
+	}
+
+	if _, err := skill.EnsureFieldMove(m, skill.FieldCut); err != nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: prepare Cut: %w", err)
+	}
+	forest, err := gsOpeningMapID("ILEX_FOREST")
+	if err != nil {
+		return err
+	}
+
+	// The tutor is fixed at (15,14). His south neighbour is on the north side
+	// of the mandatory Cut tree; GoToNative can only reach it after executing
+	// Cut and rebuilding the live forest grid.
+	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, 15, 15)); err != nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: cross Ilex Cut tree: %w", err)
+	}
+	if err := skill.Face(m, 15, 14); err != nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: face tutor: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSSecondBadgeInterruption(m, profile, "ilex:tm02-headbutt"); err != nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: reward script: %w", err)
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTM02HeadbuttAcquired) {
+		return fmt.Errorf("%w: Headbutt tutor returned control without TM02", errGSSecondBadgeUnexpectedState)
+	}
+	return nil
+}
