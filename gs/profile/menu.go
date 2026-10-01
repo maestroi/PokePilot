@@ -119,6 +119,16 @@ func (*Profile) DecodeTwoOption(reader game.MemoryReader) (game.TwoOptionState, 
 		y < 1 || y > 2 || x != 1 {
 		return game.TwoOptionState{}, false
 	}
+	// Gen-II's menu RAM persists after a menu closes, so the 2x1 A|B shape
+	// alone is not proof the box is on screen; reading it as a live prompt
+	// makes the answer postcondition in selectTwoOption fail closed on
+	// stale state (run-11dd5ya1qev0ry, triage:e1ef45bf25e3b946). The rendered
+	// YES/NO words are the positive liveness proof, the same role Red's
+	// drawn cursor glyph plays.
+	text := gsScreenText(reader)
+	if !strings.Contains(text, "YES") || !strings.Contains(text, "NO") {
+		return game.TwoOptionState{}, false
+	}
 	return game.TwoOptionState{Current: int(y) - 1}, true
 }
 

@@ -113,6 +113,7 @@ func TestDecodeGoldBattleTwoOption(t *testing.T) {
 	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
 	mem[sym.MenuCursorY] = 2
 	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "Will GOLD change POKEMON? YES NO")
 
 	prompt, ok := NewGold().DecodeTwoOption(&mem)
 	if !ok || prompt.Current != 1 {
@@ -121,6 +122,13 @@ func TestDecodeGoldBattleTwoOption(t *testing.T) {
 	cursor := NewGold().DecodeMenuCursor(&mem)
 	if cursor.Current != 1 || cursor.Max != 1 {
 		t.Fatalf("normalized prompt cursor=%+v", cursor)
+	}
+
+	// Menu RAM persists after the box closes; without the rendered YES/NO
+	// words the stale 2x1 A|B shape must not read as a live prompt.
+	putGSText(&mem, "MACHOP is about to use LOW KICK!")
+	if _, ok := NewGold().DecodeTwoOption(&mem); ok {
+		t.Fatal("stale two-option RAM reported as a live prompt")
 	}
 
 	putGSText(&mem, "FALKNER is about to use PIDGEOTTO. Will GOLD change POKEMON?")
@@ -133,6 +141,58 @@ func TestDecodeGoldBattleTwoOption(t *testing.T) {
 	exec = NewGold().DecodeBattleExecution(&mem)
 	if exec.Phase != game.BattleExecutionUseNextPrompt {
 		t.Fatalf("use-next phase=%q text=%q", exec.Phase, gsScreenText(&mem))
+	}
+}
+
+// The trainer-switch prompt must stay recognized after the "is about to use"
+// line scrolls off the 4-line box: by the time the YES/NO cursor is drawn the
+// only remaining marker is "Will <PLAYER> change POKéMON?"
+// (run-11dd5ya1qev0ry, triage:e1ef45bf25e3b946).
+func TestDecodeGoldTrainerSwitchPromptScrolled(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 2
+	mem[sym.TwoDMenuNumRows] = 2
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	putGSText(&mem, "Will GOLD change POKEMON?")
+
+	exec := NewGold().DecodeBattleExecution(&mem)
+	if exec.Phase != game.BattleExecutionTrainerSwitch {
+		t.Fatalf("scrolled prompt phase=%q, want trainer_switch; text=%q", exec.Phase, gsScreenText(&mem))
+	}
+}
+
+// The live stall screen: a two-mon party's voluntary battle party menu. The
+// bottom prompt renders "Which  ?" with no species word, so recognition must
+// come from the CANCEL row plus the list's cursor shape, not the prompt.
+func TestDecodeGoldVoluntaryBattlePartyMenu(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 2
+	mem[sym.PartyCount] = 2
+	mem[sym.BattleMonHP+1] = 39 // active mon alive: voluntary, not forced
+	mem[sym.MenuCursorY] = 1
+	mem[sym.MenuCursorX] = 1
+	mem[sym.TwoDMenuNumRows] = 3 // two mons + CANCEL
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	putGSText(&mem, "BAYLEEF 39/ 64 23 TOGEPI 19/ 19 5 CANCEL Which ?")
+
+	menu := NewGold().DecodePartyMenu(&mem)
+	if !menu.Visible || menu.Kind != game.PartyMenuVoluntaryBattle {
+		t.Fatalf("voluntary party menu=%+v, want visible voluntary_battle", menu)
+	}
+	if menu.Cursor != (game.MenuCursorState{Current: 0, Max: 1}) {
+		t.Fatalf("cursor=%+v, want {0 1}", menu.Cursor)
+	}
+
+	// The same surface with the active mon fainted is the forced switch.
+	mem[sym.BattleMonHP] = 0
+	mem[sym.BattleMonHP+1] = 0
+	menu = NewGold().DecodePartyMenu(&mem)
+	if !menu.Visible || menu.Kind != game.PartyMenuForcedBattle {
+		t.Fatalf("fainted-active party menu=%+v, want visible forced_battle", menu)
 	}
 }
 
