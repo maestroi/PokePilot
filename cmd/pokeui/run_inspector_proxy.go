@@ -16,6 +16,7 @@ import (
 func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/debug", proxy(wallBase, true))
+	mux.HandleFunc("GET /v1/runs/{id}/attempts", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts", proxy(wallBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/checkpoints", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/runs/{id}/repro", proxy(wallBase, true))

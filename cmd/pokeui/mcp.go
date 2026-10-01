@@ -109,6 +109,9 @@ type mcpSolverAttemptInput struct {
 type mcpArtifactContentInput struct {
 	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
 	Name  string `json:"name" jsonschema:"artifact name, exactly as pokepilot_get_run_artifacts listed it"`
+	// Attempt scopes the read to one attempt's artifacts. Zero reads the run's
+	// latest attempt, which is the historical default.
+	Attempt int `json:"attempt,omitempty" jsonschema:"attempt whose artifact to read; 0 uses the run's latest attempt"`
 }
 
 type mcpArtifactContentOutput struct {
@@ -695,6 +698,9 @@ func (c *mcpControl) getRunArtifactContent(ctx context.Context, _ *mcp.CallToolR
 		return nil, mcpArtifactContentOutput{}, fmt.Errorf("name is required")
 	}
 	path := "/v1/runs/" + url.PathEscape(id) + "/artifacts/" + url.PathEscape(name) + "/content"
+	if in.Attempt > 0 {
+		path += "?attempt=" + strconv.Itoa(in.Attempt)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.artifactBase+path, nil)
 	if err != nil {
 		return nil, mcpArtifactContentOutput{}, fmt.Errorf("build wall request: %w", err)

@@ -396,10 +396,33 @@ func (s *replayServer) handleReplayVideo(w http.ResponseWriter, r *http.Request)
 	copyObjectResponse(w, obj, "video/mp4", "")
 }
 
+// artifactAttemptQuery parses an optional ?attempt= artifact selector. Zero
+// means the run's latest artifact generation, which is the historical default.
+func artifactAttemptQuery(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	attempt, err := strconv.Atoi(raw)
+	if err != nil || attempt < 1 {
+		return 0, fmt.Errorf("invalid attempt %q: want a positive integer", raw)
+	}
+	return attempt, nil
+}
+
 func (s *replayServer) handleArtifactContent(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
 	name := r.PathValue("name")
-	list, err := s.artifacts(r.Context(), runID)
+	// ?attempt= scopes the read to one attempt's artifact generation, so
+	// evidence captured for an earlier failing attempt of an endless run is
+	// still downloadable after the run moved on. Zero keeps the historical
+	// latest-attempt behaviour.
+	attempt, err := artifactAttemptQuery(r.URL.Query().Get("attempt"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	list, err := s.artifactsAttempt(r.Context(), runID, attempt)
 	if err != nil {
 		writeReplayError(w, err)
 		return
@@ -410,7 +433,7 @@ func (s *replayServer) handleArtifactContent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if artifact.Store == "" {
-		s.proxyInlineArtifact(w, r, runID, name)
+		s.proxyInlineArtifact(w, r, runID, name, attempt)
 		return
 	}
 	if artifact.Store != "s3" {
@@ -1010,8 +1033,11 @@ func (s *replayServer) downloadRecording(ctx context.Context, runID string, reco
 	return file.Sync()
 }
 
-func (s *replayServer) proxyInlineArtifact(w http.ResponseWriter, r *http.Request, runID, name string) {
+func (s *replayServer) proxyInlineArtifact(w http.ResponseWriter, r *http.Request, runID, name string, attempt int) {
 	endpoint := s.wallBase + "/v1/runs/" + url.PathEscape(runID) + "/artifacts/" + url.PathEscape(name) + "/content"
+	if attempt > 0 {
+		endpoint += "?attempt=" + strconv.Itoa(attempt)
+	}
 	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, endpoint, nil)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

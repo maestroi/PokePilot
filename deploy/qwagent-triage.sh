@@ -602,7 +602,7 @@ if [ "$MODE" != "repair_pr" ] && [ -n "$RUN_ID" ]; then
 	set +e
 	(
 		cd "$POKEPILOT_TRIAGE_TREE"
-		make -s debug RUN="$RUN_ID" DEBUG_MODE=tiny
+		make -s debug RUN="$RUN_ID" DEBUG_MODE=tiny KEY="$KEY"
 	) >"$DEBUG_PACKET"
 	debug_status=$?
 	set -e

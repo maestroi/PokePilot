@@ -78,6 +78,10 @@ type DebugSolverAttempt struct {
 }
 
 type DebugRepro struct {
+	// Attempt is the attempt whose failure evidence this repro came from.
+	// Zero means the packet did not name one and the run's latest attempt was
+	// used, which is the historical default.
+	Attempt          int    `json:"attempt,omitempty"`
 	ContractArtifact string `json:"contract_artifact,omitempty"`
 	Checkpoint       string `json:"checkpoint,omitempty"`
 	Knowledge        string `json:"knowledge,omitempty"`
