@@ -167,7 +167,7 @@ func TestResilientMajorRollbackWalksBackwardThenFresh(t *testing.T) {
 	}
 
 	for rollback, wantBadge := range map[int]int{0: 3, 1: 2, 2: 1} {
-		cp, err := w.latestLineageMajorCheckpointRollback("r", rollback)
+		cp, err := lineageMajorCheckpointRollback(fileResumeStore{w}, "r", rollback)
 		if err != nil {
 			t.Fatalf("rollback %d: %v", rollback, err)
 		}
@@ -176,7 +176,7 @@ func TestResilientMajorRollbackWalksBackwardThenFresh(t *testing.T) {
 			t.Fatalf("rollback %d -> %q badge %d, want %d", rollback, cp.State.Name, got, wantBadge)
 		}
 	}
-	if _, err := w.latestLineageMajorCheckpointRollback("r", 3); !errors.Is(err, os.ErrNotExist) {
+	if _, err := lineageMajorCheckpointRollback(fileResumeStore{w}, "r", 3); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("rollback past retained milestones = %v, want os.ErrNotExist for fresh boot", err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -142,7 +143,50 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
+	w.serveCheckpointResume(res, id, requestedAttempt, fileResumeStore{w})
+}
 
+// resumeCheckpointStore is one backing store of resume candidates: the
+// file-backed dumps directory or the PostgreSQL/S3 control plane. Both routes
+// share serveCheckpointResume, so a retry class taught to one store cannot be
+// forgotten by the other (a deploy drain once booted production runs from a
+// fresh cartridge because only the file route knew drains resume). A missing
+// candidate is reported as os.ErrNotExist; any other error is a failed lookup.
+type resumeCheckpointStore interface {
+	previousObjective(runID string, attempt int, planner string) (farm.ResumeCheckpoint, error)
+	lineageObjective(startID, planner string) (farm.ResumeCheckpoint, error)
+	lineageMajorAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error)
+}
+
+type fileResumeStore struct{ w *Wall }
+
+func (s fileResumeStore) previousObjective(runID string, attempt int, planner string) (farm.ResumeCheckpoint, error) {
+	cp, err := latestResumeCheckpoint(checkpointAttemptDir(s.w.dumpsDir, runID, attempt), planner)
+	if err == nil {
+		cp.Attempt = attempt
+	}
+	return cp, err
+}
+
+func (s fileResumeStore) lineageObjective(startID, planner string) (farm.ResumeCheckpoint, error) {
+	return s.w.latestLineageResumeCheckpoint(startID, planner)
+}
+
+func (s fileResumeStore) lineageMajorAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
+	return s.w.latestLineageMajorCheckpointAtOrBelow(startID, maxBadge)
+}
+
+// deepestResumeCheckpoint is the deepest objective pair in the lineage, with
+// the deepest badge checkpoint as its fallback.
+func deepestResumeCheckpoint(store resumeCheckpointStore, startID, planner string) (farm.ResumeCheckpoint, error) {
+	cp, err := store.lineageObjective(startID, planner)
+	if errors.Is(err, os.ErrNotExist) {
+		return store.lineageMajorAtOrBelow(startID, 8)
+	}
+	return cp, err
+}
+
+func (w *Wall) serveCheckpointResume(res http.ResponseWriter, id string, requestedAttempt int, store resumeCheckpointStore) {
 	w.mu.Lock()
 	t, ok := w.tiles[id]
 	if !ok {
@@ -190,26 +234,17 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 	)
 	switch {
 	case (lostRetry || drainedRetry) && planner != "llm":
-		cp, err = latestResumeCheckpoint(checkpointAttemptDir(w.dumpsDir, id, previous), planner)
-		if err == nil {
-			cp.Attempt = previous
-		}
+		cp, err = store.previousObjective(id, previous, planner)
 	case drainedRetry:
 		// A graceful deploy drain continues from the deepest safe pair in the
 		// lineage. A drain has already flushed the final objective pair before
 		// Finish, so this normally resumes exactly at the safe boundary where
 		// SIGTERM was observed (#1933).
-		cp, err = w.latestLineageResumeCheckpoint(id, planner)
-		if os.IsNotExist(err) {
-			cp, err = w.latestLineageMajorCheckpoint(id)
-		}
+		cp, err = deepestResumeCheckpoint(store, id, planner)
 	case inferenceTransportRetry:
 		// Inference availability did not invalidate gameplay state. Resume the
 		// deepest safe pair without consuming the gameplay rollback ladder.
-		cp, err = w.latestLineageResumeCheckpoint(id, planner)
-		if os.IsNotExist(err) {
-			cp, err = w.latestLineageMajorCheckpoint(id)
-		}
+		cp, err = deepestResumeCheckpoint(store, id, planner)
 	case lostRetry && resilient:
 		// Worker loss is normally infrastructure churn and should keep its
 		// deepest checkpoint. But a deterministic wedge presents the same
@@ -218,31 +253,22 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 		// Route the loss through the rollback ladder so healthy churn resets
 		// on progress while a wedged checkpoint backs up instead of re-wedging
 		// forever.
-		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
+		cp, err = resilientResumeCheckpoint(store, id, planner, recoveryAttempts)
 	case lostRetry:
-		cp, err = w.latestLineageResumeCheckpoint(id, planner)
-		if os.IsNotExist(err) {
-			cp, err = w.latestLineageMajorCheckpoint(id)
-		}
+		cp, err = deepestResumeCheckpoint(store, id, planner)
 	case resilientRetry:
-		cp, err = w.resilientResumeCheckpoint(id, planner, recoveryAttempts)
+		cp, err = resilientResumeCheckpoint(store, id, planner, recoveryAttempts)
 	case endlessRetry:
-		cp, err = w.latestLineageResumeCheckpoint(id, planner)
-		if os.IsNotExist(err) {
-			cp, err = w.latestLineageMajorCheckpoint(id)
-		}
+		cp, err = deepestResumeCheckpoint(store, id, planner)
 	case gymRetry:
-		cp, err = w.latestLineageMajorCheckpoint(id)
+		cp, err = store.lineageMajorAtOrBelow(id, 8)
 	case lineageRetry:
-		cp, err = w.latestLineageResumeCheckpoint(resumeParent, planner)
-		if os.IsNotExist(err) {
-			cp, err = w.latestLineageMajorCheckpoint(resumeParent)
-		}
+		cp, err = deepestResumeCheckpoint(store, resumeParent, planner)
 	default:
 		res.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		// 204 means "nothing to resume; boot fresh". A lookup that failed
 		// has not proven that, so it must not erase the campaign's progress.
 		log.Printf("pokewall: %s attempt %d resume checkpoint: %v", id, previous, err)
@@ -290,22 +316,15 @@ func (w *Wall) handleCheckpointResume(res http.ResponseWriter, id string, reques
 // planner decision/seed can recover cheaply. Further failures back up across
 // major milestones one at a time; once no older retained milestone exists the
 // 204 path deliberately falls back to a fresh cartridge.
-func (w *Wall) resilientResumeCheckpoint(startID, planner string, recoveryAttempts int) (farm.ResumeCheckpoint, error) {
+func resilientResumeCheckpoint(store resumeCheckpointStore, startID, planner string, recoveryAttempts int) (farm.ResumeCheckpoint, error) {
 	if recoveryAttempts <= 1 {
-		cp, err := w.latestLineageResumeCheckpoint(startID, planner)
-		if err == nil {
-			return cp, nil
-		}
-		if !os.IsNotExist(err) {
-			return farm.ResumeCheckpoint{}, err
-		}
-		return w.latestLineageMajorCheckpoint(startID)
+		return deepestResumeCheckpoint(store, startID, planner)
 	}
-	return w.latestLineageMajorCheckpointRollback(startID, recoveryAttempts-2)
+	return lineageMajorCheckpointRollback(store, startID, recoveryAttempts-2)
 }
 
-func (w *Wall) latestLineageMajorCheckpointRollback(startID string, rollback int) (farm.ResumeCheckpoint, error) {
-	latest, err := w.latestLineageMajorCheckpoint(startID)
+func lineageMajorCheckpointRollback(store resumeCheckpointStore, startID string, rollback int) (farm.ResumeCheckpoint, error) {
+	latest, err := store.lineageMajorAtOrBelow(startID, 8)
 	if err != nil {
 		return farm.ResumeCheckpoint{}, err
 	}
@@ -316,7 +335,7 @@ func (w *Wall) latestLineageMajorCheckpointRollback(startID string, rollback int
 	if !ok || badge-rollback < 1 {
 		return farm.ResumeCheckpoint{}, os.ErrNotExist
 	}
-	return w.latestLineageMajorCheckpointAtOrBelow(startID, badge-rollback)
+	return store.lineageMajorAtOrBelow(startID, badge-rollback)
 }
 
 // objectiveFrame is the cumulative emulator frame embedded in an objective
@@ -440,10 +459,6 @@ func majorCheckpointBadge(name string) (int, bool) {
 		return 0, false
 	}
 	return badge, true
-}
-
-func (w *Wall) latestLineageMajorCheckpoint(startID string) (farm.ResumeCheckpoint, error) {
-	return w.latestLineageMajorCheckpointAtOrBelow(startID, 8)
 }
 
 func (w *Wall) latestLineageMajorCheckpointAtOrBelow(startID string, maxBadge int) (farm.ResumeCheckpoint, error) {
