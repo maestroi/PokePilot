@@ -311,7 +311,7 @@ runLoop:
 				if decider, ok := p.(FailureDecisionPlanner); ok {
 					decision, decisionErr := decider.DecideFailure(objectiveResult)
 					if decisionErr == nil {
-						stop, mappingErr := FailureDecisionStops(decision.Choice)
+						stop, mappingErr := failureDecisionStopsRun(objectiveResult, decision.Choice)
 						if mappingErr == nil && stop {
 							markLastOutcomeTerminal(&res)
 							res.Stop = StopError

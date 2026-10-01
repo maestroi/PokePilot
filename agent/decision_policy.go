@@ -115,6 +115,27 @@ func FailureDecisionRequest(result ObjectiveResult) (DecisionRequest, error) {
 	return req, ValidateDecisionRequest(req)
 }
 
+// FailureDecisionStopAllowed keeps ordinary bounded gameplay outcomes inside
+// deterministic recovery even when an active typed decision backend asks to
+// pause. A combat defeat is explicit evidence that the game/controller worked
+// and the requested fight simply lost; runFailurePolicy owns the heal/train/
+// retry response and marks that session productive. Letting a model turn one
+// such loss into StopError defeats that recovery contract (#2287).
+func FailureDecisionStopAllowed(result ObjectiveResult) bool {
+	return !failureCauseIs(result, failureCauseCombatDefeat)
+}
+
+// failureDecisionStopsRun applies the typed choice to the current structured
+// failure. Keep FailureDecisionStops as the backend-choice decoder used by
+// shadow evaluation; only the live run needs this deterministic safety fence.
+func failureDecisionStopsRun(result ObjectiveResult, choice string) (bool, error) {
+	stop, err := FailureDecisionStops(choice)
+	if err != nil {
+		return false, err
+	}
+	return stop && FailureDecisionStopAllowed(result), nil
+}
+
 // FailureDecisionStops maps only conservative typed outcomes to a stop. Retry,
 // recover, replan, and unknown all continue through the existing deterministic
 // quarantine/recovery policy; the model never performs recovery itself.
