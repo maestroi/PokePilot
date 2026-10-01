@@ -35,3 +35,17 @@ test('leaves ordinary story milestones as story visuals', () => {
   assert.equal(milestoneItemName('helped Bill'), null)
   assert.equal(milestoneVisualKind('helped Bill'), 'story')
 })
+
+
+test('maps the eight Johto badges to PokéAPI badge artwork', () => {
+  assert.equal(badgeName('Zephyr'), 'Zephyr Badge')
+  assert.equal(badgeID('Hive Badge'), 10)
+  assert.equal(badgeID('Mineral'), 14)
+  assert.equal(badgeID('Rising Badge'), 16)
+  assert.match(badgeSpriteUrl('Fog Badge') || '', /sprites\/badges\/12\.png$/)
+})
+
+test('recognizes Johto badge milestones', () => {
+  assert.equal(milestoneBadgeName('earned the Glacier Badge'), 'Glacier Badge')
+  assert.equal(milestoneVisualKind('Plain Badge'), 'badge')
+})
