@@ -266,6 +266,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
 		gsprofile.ProgressTM02HeadbuttAcquired,
+		gsprofile.ProgressPlainBadgeEarned,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -339,6 +340,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressTM02HeadbuttAcquired,
+		gsprofile.ProgressPlainBadgeEarned,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {
