@@ -325,7 +325,7 @@ async function copyLink(): Promise<void> {
             <div class="min-w-0">
               <div class="max-w-72 truncate text-[10px] font-semibold text-slate-200">{{ selectedRun.goal || selectedRun.run_id }}</div>
               <div class="mt-0.5 text-[9px] text-slate-500">
-                Agent on {{ mapEntry(Number(selectedRun.map || 0))?.label || 'unknown map' }}
+                Agent on {{ mapEntryForGame(selectedRun.game, spectatorNativeMap(selectedRun))?.label || 'unknown map' }}
               </div>
             </div>
             <button type="button" class="rounded bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12" @click="jumpToAgent">
@@ -478,7 +478,7 @@ async function copyLink(): Promise<void> {
             :show-sprites="Boolean(overlaySprites.length)"
             :show-warps="showWarps"
             :show-pois="false"
-            :agent-map="selectedRun?.map"
+            :agent-map="selectedRun ? spectatorNativeMap(selectedRun) : undefined"
             :agent-x="selectedRun?.x"
             :agent-y="selectedRun?.y"
             :show-agent-marker="Boolean(selectedRun)"
