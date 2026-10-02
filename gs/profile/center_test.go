@@ -36,6 +36,31 @@ func TestGoldDecodeCenterReportsPartyRecovery(t *testing.T) {
 func TestGoldDecodeCenterIgnoresEggsForRecovery(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.PartyCount] = 2
+	mem[sym.PartySpecies+0] = 0x99 // Bayleef
+	mem[sym.PartySpecies+1] = 0xfd // Egg
+	lead := sym.PartyMon1
+	mem[lead] = 0x99
+	mem[lead+gen2PartyMovesOffset] = 33
+	mem[lead+gen2PartyPPOffset] = 10
+	putBattleBE16(&mem, lead+gen2PartyHPOffset, 80)
+	putBattleBE16(&mem, lead+gen2PartyMaxHPOffset, 80)
+
+	// Retail layout: hatch species lives in party_struct with 0 HP; only
+	// wPartySpecies carries SPECIES_EGG.
+	egg := lead + sym.PartyMonSize
+	mem[egg] = 0xaf // Togepi
+	putBattleBE16(&mem, egg+gen2PartyHPOffset, 0)
+	putBattleBE16(&mem, egg+gen2PartyMaxHPOffset, 19)
+
+	if !NewGold().DecodeCenter(&mem).Recovered {
+		t.Fatal("healthy lead plus egg should count as recovered")
+	}
+}
+
+func TestGoldDecodeCenterStillRecoversWhenPartyStructStoresEggSpecies(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.PartyCount] = 2
+	mem[sym.PartySpecies+0] = 0x99
 	lead := sym.PartyMon1
 	mem[lead] = 0x99
 	mem[lead+gen2PartyMovesOffset] = 33
@@ -47,7 +72,7 @@ func TestGoldDecodeCenterIgnoresEggsForRecovery(t *testing.T) {
 	mem[egg] = 0xfd
 
 	if !NewGold().DecodeCenter(&mem).Recovered {
-		t.Fatal("healthy lead plus egg should count as recovered")
+		t.Fatal("party_struct SPECIES_EGG should also be skipped")
 	}
 }
 

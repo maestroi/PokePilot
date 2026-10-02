@@ -16,6 +16,11 @@ func gsLookupMove(nativeMoveID uint16) (power, moveType, accuracy uint8, ok bool
 	return meta[0], meta[1], meta[2], true
 }
 
+const (
+	gsMoveGrowl   uint16 = 45
+	gsMoveReflect uint16 = 115
+)
+
 func (*Profile) EvaluateCombatMove(
 	_ []byte,
 	attacker, defender game.BattleCombatant,
@@ -43,7 +48,16 @@ func (*Profile) EvaluateCombatMove(
 		DebugText:     fmt.Sprintf("move=%d power=%d type=%d eff=%d stab=%v score=%d", nativeMoveID, power, moveType, eff, stab, score),
 	}
 	if power == 0 {
-		return eval, game.BattleMoveRoleOther, nil
+		switch nativeMoveID {
+		case gsMoveReflect:
+			eval.PolicyPriority = 40
+			return eval, game.BattleMoveRoleSetup, nil
+		case gsMoveGrowl:
+			eval.PolicyPriority = 30
+			return eval, game.BattleMoveRoleSetup, nil
+		default:
+			return eval, game.BattleMoveRoleOther, nil
+		}
 	}
 	return eval, game.BattleMoveRoleDirectDamage, nil
 }
@@ -58,8 +72,22 @@ func (*Profile) IncomingTypeRisk(_ []byte, enemy, candidate game.BattleCombatant
 	return risk
 }
 
-func (*Profile) PreferSetupMove(game.BattleState, game.BattleMoveEvaluation, game.BattleMoveEvaluation) bool {
-	return false
+// PreferSetupMove spends Reflect/Growl only against threats that outpace a
+// healthy lead's neutral Tackle. Weak gym-trainer bugs should be KO'd with
+// damage immediately; Scyther-class Fury Cutter snowballs need the screen.
+func (*Profile) PreferSetupMove(b game.BattleState, setup, _ game.BattleMoveEvaluation) bool {
+	healthy := b.ActiveMaxHP == 0 || b.ActiveHP*2 > b.ActiveMaxHP
+	if !healthy || b.EnemyLevel < 16 {
+		return false
+	}
+	switch setup.NativeMoveID {
+	case gsMoveReflect:
+		return !b.ActiveReflect
+	case gsMoveGrowl:
+		return b.EnemyAttackMod >= game.StatStageNeutral
+	default:
+		return false
+	}
 }
 
 func (*Profile) IsFieldMove(nativeMoveID uint16) bool {

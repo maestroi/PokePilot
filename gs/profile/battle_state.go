@@ -99,6 +99,7 @@ func (*Profile) DecodeBattleState(reader game.MemoryReader) (game.BattleState, b
 		EnemyType2:           enemyType2,
 		ActiveType1:          activeType1,
 		ActiveType2:          activeType2,
+		ActiveReflect:        reader.Peek8(sym.PlayerScreens)&(1<<sym.PlayerScreensReflectBit) != 0,
 	}, true
 }
 

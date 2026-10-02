@@ -126,7 +126,7 @@ func gsIsHMMove(move uint8) bool {
 func gsMonCanPlaceMachine(reader game.MemoryReader, romData []byte, baseData int, slot int, spec gsFieldMoveSpec) (bool, error) {
 	base := sym.PartyMon1 + uint16(slot)*sym.PartyMonSize
 	species := reader.Peek8(base)
-	if species == 0 || gsdata.IsEgg(species) {
+	if species == 0 || gsPartySlotIsEgg(reader, slot) {
 		return false, nil
 	}
 	compatible, err := gsrom.CanLearnTMHMAt(romData, baseData, species, spec.machineNumber)
