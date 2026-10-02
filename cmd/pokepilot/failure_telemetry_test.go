@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/farm"
 )
 
 func structuredFailureResult(cause agent.FailureCauseID, level uint8) agent.ObjectiveResult {
@@ -156,6 +157,29 @@ func TestObjectiveFailureTelemetryCountsRecoveredAndTerminalOccurrences(t *testi
 	}
 	if terminal == nil || terminal.Fingerprint != f.Fingerprint {
 		t.Fatalf("terminal = %+v, want group fingerprint %q", terminal, f.Fingerprint)
+	}
+}
+
+// run-acduyt1qbev9c lost its failure-repro contract twice: a mixed-case
+// "type:*emu.ErrTimeout" cause and a recovered+terminal occurrence both failed
+// validateObjectiveFailure.
+func TestObjectiveFailureTelemetryStaysValidForReproContract(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	t.Cleanup(resetObjectiveFailureTelemetry)
+
+	failure := structuredFailureResult("type:*emu.ErrTimeout", 10)
+	failure.Recovered = true
+	failure.Terminal = true
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure}})
+	got, _ := drainObjectiveFailureTelemetry("error", "build-a", "")
+	if len(got) != 1 {
+		t.Fatalf("failures = %+v, want one group", got)
+	}
+	if _, err := farm.NewObjectiveFailureArtifact(got); err != nil {
+		t.Fatalf("objective failure artifact rejected: %v", err)
+	}
+	if got[0].RecoveredCount != 0 || got[0].TerminalCount != 1 {
+		t.Fatalf("impact counts = %+v, want recovered=0 terminal=1", got[0])
 	}
 }
 

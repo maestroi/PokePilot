@@ -72,26 +72,31 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 		if g == nil {
 			id := occurrence.Identity
 			g = &grouped{failure: farm.ObjectiveFailure{
-				Objective:    result.Objective.String(),
-				Error:        result.Summary,
-				FirstRound:   i + 1,
-				Map:          result.Final.Map,
-				X:            result.Final.X,
-				Y:            result.Final.Y,
-				ObservedAt:   observedAt,
-				Key:          occurrence.Key,
-				Fingerprint:  occurrence.Fingerprint,
-				Identity:     &id,
-				Build:        occurrence.Build,
-				Outcome:      string(result.Outcome),
-				Cause:        string(result.Cause),
-				CauseContext: append([]string(nil), result.CauseContext...),
+				Objective:   result.Objective.String(),
+				Error:       result.Summary,
+				FirstRound:  i + 1,
+				Map:         result.Final.Map,
+				X:           result.Final.X,
+				Y:           result.Final.Y,
+				ObservedAt:  observedAt,
+				Key:         occurrence.Key,
+				Fingerprint: occurrence.Fingerprint,
+				Identity:    &id,
+				Build:       occurrence.Build,
+				// Canonical identity fields, never the raw result: a mixed-case
+				// cause such as "type:*emu.ErrTimeout" otherwise fails
+				// validateObjectiveFailure and drops the repro contract.
+				Outcome:      id.Outcome,
+				Cause:        id.Cause,
+				CauseContext: append([]string(nil), id.CauseContext...),
 				Checkpoint:   occurrence.Checkpoint,
 			}}
 			groups[occurrence.Fingerprint] = g
 		}
 		g.failure.Count++
-		if result.Recovered {
+		// Terminal wins: one occurrence counts once, or recovered+terminal
+		// exceeds Count and the whole group fails validation.
+		if result.Recovered && !result.Terminal {
 			g.failure.RecoveredCount++
 		}
 		if result.Terminal {

@@ -453,6 +453,9 @@ func verifyDebugBundle(root, bundlePath, cacheDir string, packet farm.DebugPacke
 	verifyDir := filepath.Join(cacheDir, "verify")
 	resultPath := filepath.Join(cacheDir, "repro-result.json")
 	_ = os.RemoveAll(verifyDir)
+	// The cache is per run, not per failure: a result left by an earlier
+	// triage group must never be read back as this replay's verdict.
+	_ = os.Remove(resultPath)
 	cmd := exec.Command("go", "run", "./cmd/pokerepro", "-bundle", bundlePath, "-verify", "-out", verifyDir, "-result", resultPath)
 	cmd.Dir = root
 	cmd.Env = os.Environ()
