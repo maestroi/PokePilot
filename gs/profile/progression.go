@@ -26,6 +26,9 @@ const (
 	ProgressSudowoodoCleared         game.ProgressID = "gs_sudowoodo_cleared"
 	ProgressBurnedTowerCleared       game.ProgressID = "gs_burned_tower_cleared"
 	ProgressFogBadgeEarned           game.ProgressID = "gs_fog_badge_earned"
+	ProgressHM03SurfAcquired         game.ProgressID = "gs_hm03_surf_acquired"
+	ProgressHM04StrengthAcquired     game.ProgressID = "gs_hm04_strength_acquired"
+	ProgressStormBadgeEarned         game.ProgressID = "gs_storm_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -42,6 +45,8 @@ const (
 	// directly as EventFlags + event/8 below.
 	eventGotHM05Flash             uint16 = 20
 	eventGotHM01Cut               uint16 = 16
+	eventGotHM03Surf              uint16 = 18
+	eventGotHM04Strength          uint16 = 19
 	eventGotTM02Headbutt          uint16 = 95
 	eventHerdedFarfetchd          uint16 = 41
 	eventGotTogepiEggFromElmsAide uint16 = 45
@@ -55,6 +60,7 @@ const (
 	johtoBadgeHiveMask                   = 1 << 1
 	johtoBadgePlainMask                  = 1 << 2
 	johtoBadgeFogMask                    = 1 << 3
+	johtoBadgeStormMask                  = 1 << 5
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -131,7 +137,10 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressSudowoodoCleared, Complete: hasGSEvent(reader, eventFoughtSudowoodo)},
 		{ID: ProgressBurnedTowerCleared, Complete: hasGSEvent(reader, eventReleasedTheBeasts)},
 		{ID: ProgressFogBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
-		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
+		{ID: ProgressHM03SurfAcquired, Complete: hasGSEvent(reader, eventGotHM03Surf)},
+		{ID: ProgressHM04StrengthAcquired, Complete: hasGSEvent(reader, eventGotHM04Strength)},
+		{ID: ProgressStormBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeStormMask != 0},
+		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeStormMask != 0},
 	}
 }
 
