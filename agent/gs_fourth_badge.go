@@ -176,8 +176,9 @@ func executeGSBurnedTower(m *emu.Emu, romData []byte) error {
 }
 
 // executeGSMorty owns the fourth Johto gym through the Fog Badge. The native
-// provider includes the gym's retail self-warps, so GoToNative can re-plan
-// after an invisible-floor reset instead of hard-coding a screen-space route.
+// provider marks the two landing-only warp records inert while keeping the
+// actual pit warps blocked, so ordinary live-grid routing follows the legal
+// invisible-floor path without a hard-coded input script.
 func executeGSMorty(m *emu.Emu, romData []byte) error {
 	if m == nil {
 		return fmt.Errorf("gen2 Morty: nil emulator")
