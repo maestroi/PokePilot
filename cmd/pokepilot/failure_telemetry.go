@@ -72,17 +72,17 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 		if g == nil {
 			id := occurrence.Identity
 			g = &grouped{failure: farm.ObjectiveFailure{
-				Objective:    result.Objective.String(),
-				Error:        result.Summary,
-				FirstRound:   i + 1,
-				Map:          result.Final.Map,
-				X:            result.Final.X,
-				Y:            result.Final.Y,
-				ObservedAt:   observedAt,
-				Key:          occurrence.Key,
-				Fingerprint:  occurrence.Fingerprint,
-				Identity:     &id,
-				Build:        occurrence.Build,
+				Objective:   result.Objective.String(),
+				Error:       result.Summary,
+				FirstRound:  i + 1,
+				Map:         result.Final.Map,
+				X:           result.Final.X,
+				Y:           result.Final.Y,
+				ObservedAt:  observedAt,
+				Key:         occurrence.Key,
+				Fingerprint: occurrence.Fingerprint,
+				Identity:    &id,
+				Build:       occurrence.Build,
 				// Canonical identity fields, never the raw result: a mixed-case
 				// cause such as "type:*emu.ErrTimeout" otherwise fails
 				// validateObjectiveFailure and drops the repro contract.
