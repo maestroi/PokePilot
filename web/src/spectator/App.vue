@@ -2652,6 +2652,44 @@ select:focus-visible {
 }
 
 @media (max-width: 42rem) {
+  .game-pokemon .stage,
+  .game-pokemon .stage-body,
+  .game-pokemon .screen-col,
+  .game-pokemon .stat-rail,
+  .game-pokemon .side,
+  .game-pokemon .route-block,
+  .game-pokemon .party {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .game-pokemon .screen {
+    max-width: 100%;
+  }
+
+  .game-pokemon .now-place,
+  .game-pokemon .goal-row,
+  .game-pokemon .goal-row strong,
+  .game-pokemon .say,
+  .game-pokemon .next-goal strong,
+  .game-pokemon .ruled dd,
+  .game-pokemon .others strong,
+  .game-pokemon .others span {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .game-pokemon .goal-row {
+    align-items: flex-start;
+  }
+
+  .game-pokemon .goal-row strong {
+    font-size: 1.45rem;
+    line-height: 1.2;
+  }
+
   .game-pokemon .stat-rail .facts,
   .game-pokemon .stage > .party .roster {
     grid-template-columns: repeat(2, minmax(0, 1fr));

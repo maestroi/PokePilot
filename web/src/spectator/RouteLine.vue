@@ -51,8 +51,15 @@ const filled = computed(() => `${props.line.fill * 90}%`)
 
 <style scoped>
 .route-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-bottom: 0.5rem;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .route {
