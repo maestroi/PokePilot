@@ -47,6 +47,8 @@ func (k GoalKind) String() string {
 	}
 }
 
+const maxPokemonBadgeGoal = 16
+
 type Goal struct {
 	Kind   GoalKind
 	Target string
@@ -85,8 +87,8 @@ func ParseGoal(raw string) (Goal, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "badges", "badge-count":
 		n, err := strconv.Atoi(arg)
-		if err != nil || n < 1 || n > 8 {
-			return Goal{}, fmt.Errorf("agent: invalid badge goal %q: want 1..8", arg)
+		if err != nil || n < 1 || n > maxPokemonBadgeGoal {
+			return Goal{}, fmt.Errorf("agent: invalid badge goal %q: want 1..%d", arg, maxPokemonBadgeGoal)
 		}
 		return Goal{Kind: GoalBadges, Count: n}, nil
 	case "reach", "place":
@@ -111,23 +113,17 @@ func ParseGoal(raw string) (Goal, error) {
 func plannerGoalPreset(raw string) (Goal, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	normalized = strings.TrimSpace(strings.TrimSuffix(normalized, "."))
-	switch normalized {
-	case "earn the boulder badge", "earn 1 badge", "earn one badge":
+	if normalized == "earn the boulder badge" || normalized == "earn 1 badge" || normalized == "earn one badge" {
 		return Goal{Kind: GoalBadges, Count: 1}, true
-	case "earn 2 badges":
-		return Goal{Kind: GoalBadges, Count: 2}, true
-	case "earn 3 badges":
-		return Goal{Kind: GoalBadges, Count: 3}, true
-	case "earn 4 badges":
-		return Goal{Kind: GoalBadges, Count: 4}, true
-	case "earn 5 badges":
-		return Goal{Kind: GoalBadges, Count: 5}, true
-	case "earn 6 badges":
-		return Goal{Kind: GoalBadges, Count: 6}, true
-	case "earn 7 badges":
-		return Goal{Kind: GoalBadges, Count: 7}, true
-	case "earn 8 badges", "earn all 8 badges":
-		return Goal{Kind: GoalBadges, Count: 8}, true
+	}
+	if strings.HasPrefix(normalized, "earn ") && strings.HasSuffix(normalized, " badges") {
+		count := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(normalized, "earn "), " badges"))
+		count = strings.TrimSpace(strings.TrimPrefix(count, "all "))
+		if n, err := strconv.Atoi(count); err == nil && n >= 1 && n <= maxPokemonBadgeGoal {
+			return Goal{Kind: GoalBadges, Count: n}, true
+		}
+	}
+	switch normalized {
 	case "beat the elite four and champion", "beat the elite four and the champion":
 		return Goal{Kind: GoalEliteFour}, true
 	case "complete the obtainable pokedex", "complete the obtainable pokédex", "complete the pokedex", "complete the pokédex":
