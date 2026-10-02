@@ -201,8 +201,8 @@ func TestScriptHasDryRunAndLock(t *testing.T) {
 		"--count",
 		"--triage",
 		"agent_opened_pr",
-		"killed by the 50m attempt timeout",
-		"timeout -k 60 50m",
+		"killed by the $POKEPILOT_ATTEMPT_TIMEOUT attempt timeout",
+		"timeout -k 60 \"$POKEPILOT_ATTEMPT_TIMEOUT\"",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script missing %q", want)

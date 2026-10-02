@@ -81,3 +81,24 @@ func TestParkedKeyWaitsForNewEvidence(t *testing.T) {
 		t.Fatalf("new occurrence got %q, want a fresh free-tier attempt", got)
 	}
 }
+
+// A qwen-busy replica sees opencode unavailable and takes Cursor auto; the
+// pinned Opus tier counts its own budget and is paid.
+func TestCursorModelTierSharesCursorAvailability(t *testing.T) {
+	tiers, err := ParseLadder("opencode:1,cursor:1,cursor/claude-opus-5-5-high:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tiers[2].Paid {
+		t.Fatal("cursor/<model> tier must be paid")
+	}
+	now := time.Unix(1_000_000, 0)
+	qwenBusy := map[string]bool{"cursor": true}
+	if got := NextBackend(nil, tiers, "k", 0, qwenBusy, 20, now); got != "cursor" {
+		t.Fatalf("got %q, want cursor auto while qwen is busy", got)
+	}
+	rows := []LedgerRow{{At: now, Key: "k", Backend: "cursor", Event: "started"}}
+	if got := NextBackend(rows, tiers, "k", 0, qwenBusy, 20, now); got != "cursor/claude-opus-5-5-high" {
+		t.Fatalf("got %q, want the pinned opus tier", got)
+	}
+}

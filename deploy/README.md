@@ -242,3 +242,29 @@ Needs `POKEPILOT_MCP_TOKEN` in `~/.config/pokepilot/env`, `gh` auth, Qwen on
 `~/.config/pokepilot/pokemon_red.gb` (symlinked into the worktree each tick).
 Open PRs are titled `fix(farm): … [triage:<key>]` so a later tick skips that
 key.
+
+## Swarm fixer
+
+`deploy/fixer.yml` runs the same ladder as `FIXER_REPLICAS` (default 2)
+containers on the node labeled `pokepilot.fixer=true`. The default ladder is
+`opencode:2,cursor:2,cursor/claude-opus-5-5-high:2`: a `cursor/<model>` tier
+is the Cursor CLI pinned to that model, with its own budget, and it counts
+as paid. Replicas share the ledger, a claims dir (two replicas never take
+one key), and a qwen lock. The replica that finds qwen busy, either locked
+by the other replica or showing `is_processing` on `/slots`, starts at
+Cursor auto instead of waiting.
+
+Add to `~/.config/pokepilot/env`: `POKEPILOT_FIXER_GITHUB_TOKEN`,
+`POKEPILOT_FIXER_CURSOR_API_KEY` and `POKEPILOT_QWEN_URL` (for example
+`http://192.168.50.81:8002/v1`). Then:
+
+```sh
+qwtriage-off                                   # the desktop timer would compete
+docker node update --label-add pokepilot.fixer=true <node>
+make fixer-up                                  # build, copy ROMs, deploy pokefixer
+docker service logs -f pokefixer_fixer
+```
+
+For the watchdog, set `POKEPILOT_FIXER_SERVICE=pokefixer_fixer`,
+`POKEPILOT_TRIAGE_LEDGER=~/.local/share/pokepilot/fixer-swarm/ledger.tsv` and
+`POKEPILOT_TRIAGE_STATE=~/.local/share/pokepilot/fixer-swarm/slot-1/state`.

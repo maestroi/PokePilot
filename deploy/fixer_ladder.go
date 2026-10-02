@@ -33,7 +33,8 @@ type LedgerRow struct {
 }
 
 // ParseLadder reads "opencode:2,cursor:2,claude:2". opencode is the free
-// local model; every other backend is paid.
+// local model; every other backend is paid. "cursor/<model>" is the Cursor
+// CLI pinned to one model: its own tier and budget, available with cursor.
 func ParseLadder(spec string) ([]LadderTier, error) {
 	var tiers []LadderTier
 	for _, part := range strings.Split(spec, ",") {
@@ -46,12 +47,19 @@ func ParseLadder(spec string) ([]LadderTier, error) {
 		if !ok || err != nil || n < 1 || name == "" {
 			return nil, fmt.Errorf("ladder tier %q: want backend:attempts", part)
 		}
-		tiers = append(tiers, LadderTier{Backend: name, Budget: n, Paid: name != "opencode"})
+		tiers = append(tiers, LadderTier{Backend: name, Budget: n, Paid: BackendBase(name) != "opencode"})
 	}
 	if len(tiers) == 0 {
 		return nil, fmt.Errorf("empty ladder %q", spec)
 	}
 	return tiers, nil
+}
+
+// BackendBase strips a "/<model>" pin: "cursor/claude-opus-5-5-high" runs
+// on the cursor binary.
+func BackendBase(backend string) string {
+	base, _, _ := strings.Cut(backend, "/")
+	return base
 }
 
 // ReadLedger skips malformed lines: a torn append must not stop the fixer.
@@ -113,7 +121,7 @@ func NextBackend(rows []LedgerRow, tiers []LadderTier, key string, count int, av
 		return ""
 	}
 	for _, t := range tiers {
-		if !available[t.Backend] || used[t.Backend] >= t.Budget {
+		if !available[BackendBase(t.Backend)] || used[t.Backend] >= t.Budget {
 			continue
 		}
 		if t.Paid && paidToday >= paidDailyCap {
