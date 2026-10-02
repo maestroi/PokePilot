@@ -100,3 +100,12 @@ test('public spectator shows an intentional loading scene before snapshot and fi
   assert.match(loadingScene, /prefers-reduced-motion/)
   assert.match(loadingScene, /loader-scan/)
 })
+
+test('public spectator keeps the mobile viewport bounded and prioritizes live context', () => {
+  assert.match(shell, /overflow-x-clip/)
+  assert.match(shell, /DisclosurePanel[^>]+w-full max-w-full/)
+  assert.match(spectator, /spectator-action-label/)
+  assert.match(spectator, /mobile-other-runs/)
+  assert.match(spectator, /\.game-pokemon \.rail-others \{\s*display: none;/)
+  assert.match(spectator, /\.game-pokemon \.mobile-other-runs \{\s*display: block;/)
+})
