@@ -2,9 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { publicCapabilitiesForRun, supportsPublicCapability } from '../src/shared/publicCapabilities.ts'
 
-test('only the current Red profile exposes the Red world explorer fallback', () => {
+test('supported Pokemon world profiles expose the world explorer', () => {
   assert.equal(supportsPublicCapability({ game: 'pokemon-red' }, 'worldMap'), true)
-  for (const game of ['pokemon-blue', 'pokemon-yellow', 'pokemon-gold', 'pokemon-silver', 'tetris']) {
+  assert.equal(supportsPublicCapability({ game: 'pokemon-gold' }, 'worldMap'), true)
+  assert.equal(supportsPublicCapability({ game: 'pokemon-silver' }, 'worldMap'), true)
+  for (const game of ['pokemon-blue', 'pokemon-yellow', 'tetris']) {
     assert.equal(supportsPublicCapability({ game }, 'worldMap'), false, game)
   }
 })
