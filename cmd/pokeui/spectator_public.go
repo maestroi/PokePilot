@@ -7,9 +7,9 @@ import (
 
 func spectatorPublicCapabilities(game string) []string {
 	switch strings.ToLower(strings.TrimSpace(game)) {
-	case "pokemon-red", "red":
+	case "pokemon-red", "red", "pokemon-gold", "gold", "pokemon-silver", "silver":
 		return []string{"live", "replay", "worldMap", "stats"}
-	case "pokemon-blue", "blue", "pokemon-yellow", "yellow", "pokemon-gold", "gold", "pokemon-silver", "silver", "tetris":
+	case "pokemon-blue", "blue", "pokemon-yellow", "yellow", "tetris":
 		return []string{"live", "replay", "stats"}
 	default:
 		return []string{"live", "replay"}
@@ -48,6 +48,19 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	type publicSprite struct {
 		X uint8 `json:"x"`
 		Y uint8 `json:"y"`
+	}
+	type publicMapWarp struct {
+		X    uint8  `json:"x"`
+		Y    uint8  `json:"y"`
+		Dest uint16 `json:"dest"`
+	}
+	type publicMapAsset struct {
+		ID          uint16          `json:"id"`
+		Width       int             `json:"width"`
+		Height      int             `json:"height"`
+		Cells       string          `json:"cells"`
+		Warps       []publicMapWarp `json:"warps,omitempty"`
+		Connections []string        `json:"connections,omitempty"`
 	}
 	type publicTetrisPiece struct {
 		Piece    string `json:"piece,omitempty"`
@@ -102,6 +115,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		EndedAt        int64                 `json:"ended_at,omitempty"`
 		Frame          uint64                `json:"frame"`
 		Map            uint8                 `json:"map"`
+		NativeMap      uint16                `json:"native_map,omitempty"`
 		X              uint8                 `json:"x"`
 		Y              uint8                 `json:"y"`
 		MapsVisited    int                   `json:"maps_visited,omitempty"`
@@ -115,6 +129,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		GameState      *publicTetrisState    `json:"game_state,omitempty"`
 		Sprites        []publicSprite        `json:"sprites,omitempty"`
 		Trail          [][2]uint8            `json:"trail,omitempty"`
+		MapAsset       *publicMapAsset       `json:"map_asset,omitempty"`
 		Attempts       int                   `json:"attempts,omitempty"`
 		Reason         string                `json:"reason,omitempty"`
 		ReplayReady    bool                  `json:"replay_ready,omitempty"`
@@ -158,6 +173,21 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 	sprites := make([]publicSprite, len(run.Sprites))
 	for i, sp := range run.Sprites {
 		sprites[i] = publicSprite{X: sp.X, Y: sp.Y}
+	}
+
+	var mapAsset *publicMapAsset
+	if asset := run.MapAsset; asset != nil && asset.ID == run.NativeMap && asset.Width > 0 && asset.Height > 0 && len(asset.Cells) == asset.Width*asset.Height {
+		mapAsset = &publicMapAsset{
+			ID: asset.ID, Width: asset.Width, Height: asset.Height, Cells: asset.Cells,
+			Connections: append([]string(nil), asset.Connections...),
+			Warps: make([]publicMapWarp, 0, len(asset.Warps)),
+		}
+		for _, warp := range asset.Warps {
+			if int(warp.X) >= asset.Width || int(warp.Y) >= asset.Height {
+				continue
+			}
+			mapAsset.Warps = append(mapAsset.Warps, publicMapWarp{X: warp.X, Y: warp.Y, Dest: warp.Dest})
+		}
 	}
 
 	// game_state is a game-owned envelope on the private wall. Only copy the
@@ -270,6 +300,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		EndedAt:        run.EndedAt,
 		Frame:          run.Frame,
 		Map:            run.Map,
+		NativeMap:      run.NativeMap,
 		X:              run.X,
 		Y:              run.Y,
 		MapsVisited:    run.MapsVisited,
@@ -283,6 +314,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		GameState:      gameState,
 		Sprites:        sprites,
 		Trail:          append([][2]uint8(nil), run.Trail...),
+		MapAsset:       mapAsset,
 		Attempts:       run.Attempts,
 		Reason:         run.Reason,
 		ReplayReady:    run.ReplayReady,
