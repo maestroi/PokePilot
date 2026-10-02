@@ -17,9 +17,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	gsdata "github.com/maestroi/pokepilot/gs/data"
 )
 
 // version is this build's identity (git SHA), stamped by the Dockerfile via
@@ -240,6 +243,30 @@ func mountMaps(mux *http.ServeMux) {
 	if err != nil {
 		return
 	}
+	mux.HandleFunc("GET /maps/gen2/{name}", func(res http.ResponseWriter, req *http.Request) {
+		name := strings.ToLower(strings.TrimSpace(req.PathValue("name")))
+		if len(name) != len("0000.json") || !strings.HasSuffix(name, ".json") {
+			http.NotFound(res, req)
+			return
+		}
+		raw, parseErr := strconv.ParseUint(strings.TrimSuffix(name, ".json"), 16, 16)
+		if parseErr != nil {
+			http.NotFound(res, req)
+			return
+		}
+		info, ok := gsdata.Map(uint16(raw))
+		if !ok {
+			http.NotFound(res, req)
+			return
+		}
+		width, height := int(info.WidthBlocks)*2, int(info.HeightBlocks)*2
+		res.Header().Set("Content-Type", "application/json")
+		res.Header().Set("Cache-Control", "no-store")
+		json.NewEncoder(res).Encode(map[string]any{
+			"id": uint16(raw), "width": width, "height": height,
+			"cells": strings.Repeat(".", width*height), "fallback": true,
+		}) //nolint:errcheck // best effort
+	})
 	mux.HandleFunc("GET /maps/{name}", func(res http.ResponseWriter, req *http.Request) {
 		name := req.PathValue("name")
 		if data, err := fs.ReadFile(maps, name); err == nil {
