@@ -40,6 +40,9 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 		mux.HandleFunc("GET /v1/runs/{id}/highlights/manifest", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/live/status", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/live/broadcast/status", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", replayUnavailable)
 		return
 	}
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", streamProxy(replayBase))
@@ -53,6 +56,9 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}/highlights/manifest", streamProxy(replayBase))
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", proxy(replayBase, true))
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", streamProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/live/broadcast/status", proxy(replayBase, true))
+	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", proxy(replayBase, false))
+	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", proxy(replayBase, false))
 }
 
 func replayUnavailable(w http.ResponseWriter, _ *http.Request) {
