@@ -79,6 +79,21 @@ export interface SpectatorMapSprite {
   y: number
 }
 
+export interface SpectatorMapWarp {
+  x: number
+  y: number
+  dest: number
+}
+
+export interface SpectatorMapAsset {
+  id: number
+  width: number
+  height: number
+  cells: string
+  warps?: SpectatorMapWarp[]
+  connections?: string[]
+}
+
 export interface SpectatorTetrisPiece {
   piece?: string
   rotation?: number
@@ -126,6 +141,7 @@ export interface SpectatorRun {
   ended_at?: number
   frame?: number
   map?: number
+  native_map?: number
   x?: number
   y?: number
   maps_visited?: number
@@ -138,6 +154,7 @@ export interface SpectatorRun {
   player?: SpectatorPlayer
   sprites?: SpectatorMapSprite[]
   trail?: [number, number][]
+  map_asset?: SpectatorMapAsset
   attempts?: number
   reason?: string
   replay_ready?: boolean
