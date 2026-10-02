@@ -15,6 +15,7 @@ const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue'
 const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
 const loadingScene = readFileSync(new URL('../src/spectator/BroadcastLoadingScene.vue', import.meta.url), 'utf8')
+const routeLine = readFileSync(new URL('../src/spectator/RouteLine.vue', import.meta.url), 'utf8')
 
 test('media is a top-level admin workspace and spectator is not', () => {
   assert.match(operator, /media: 'Media'/)
@@ -108,4 +109,12 @@ test('public spectator keeps the mobile viewport bounded and prioritizes live co
   assert.match(spectator, /mobile-other-runs/)
   assert.match(spectator, /\.game-pokemon \.rail-others \{\s*display: none;/)
   assert.match(spectator, /\.game-pokemon \.mobile-other-runs \{\s*display: block;/)
+})
+
+test('mobile spectator contains wide content instead of widening the page', () => {
+  assert.match(spectator, /\.game-pokemon \.stage,[\s\S]+width: 100%;[\s\S]+max-width: 100%;[\s\S]+min-width: 0;/)
+  assert.match(spectator, /overflow-wrap: anywhere/)
+  assert.match(routeLine, /max-width: 100%/)
+  assert.match(routeLine, /overflow-x: auto/)
+  assert.match(routeLine, /overscroll-behavior-inline: contain/)
 })
