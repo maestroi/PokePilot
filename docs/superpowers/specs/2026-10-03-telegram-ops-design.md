@@ -188,10 +188,11 @@ group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
   `UpdateStatus.State = rollback_*`), GitHub fixtures; freeze set/lift.
 - `node`: ledger fixture → paid/free counts and spent/parked keys, matching
   the current `farm-watch.sh` results on the same file.
-- Flag stuck: wall handler + heartbeat reply test; runner test that
-  `Stop: "stuck"` finishes with outcome `stuck` and the operator detail; wall
-  fallback settles after the timeout; `terminalRunFailure` produces the
-  blocking failure for that dump.
+- Flag stuck: wall handler sets the cancel flag and the attempt; the flagged
+  cancel stop (`budget` with no detail, or `cancelled`) is rewritten to
+  `stuck` while other outcomes and other attempts are not; a flagged run does
+  not settle as a user cancel; the reaper settles a flagged run that keeps
+  heartbeating past 10 min.
 - Bot interface: callback routing, paging, number/reply resolution, HTML
   escaping, message-edit fallback, using a fake Telegram server.
 - `rollout-latest.sh`: existing Go test harness extended for the freeze label.
