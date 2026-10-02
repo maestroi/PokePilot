@@ -62,6 +62,8 @@ const (
 	silphPresidentX uint8 = 7
 	silphPresidentY uint8 = 5
 
+	cardKeyDoorOpenBudget = 60 // frames for an accepted Card Key block to reach the live map
+
 	silphStoryTravelBattles = 160
 	silphStoryDriveBudget   = 12000
 )
@@ -229,7 +231,11 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 			last = err
 			continue
 		}
-		if reachable() {
+		// Control returns before the Card Key routine's ReplaceTileBlock
+		// reaches wOverworldMap — MEASURED on Yellow SILPH_CO_11F, where the
+		// door opened ~20 frames after the player was controllable. Checking
+		// once moved on to an already-open cell whose A press opens nothing.
+		if _, err := m.StepUntil(cardKeyDoorOpenBudget, func(*emu.Emu) bool { return reachable() }); err == nil {
 			return nil
 		}
 	}
