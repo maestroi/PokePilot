@@ -445,7 +445,22 @@ pick_next() {
 	rm -f "$own_err"
 
 	titles=$(gh pr list --repo "$(gh_repo)" --state open --limit 100 --json title --jq '.[].title' 2>/dev/null || true)
-	assigned_issues=$(gh issue list --repo "$(gh_repo)" --state open --limit 200 --json body,assignees 2>/dev/null || printf '[]')
+	local repo
+	repo=$(gh_repo)
+	# timelineItems: when the claim was made, so a leaked one can expire.
+	assigned_issues=$(gh api graphql -F owner="${repo%%/*}" -F name="${repo#*/}" -f query='
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    issues(states: OPEN, first: 100, filterBy: {assignee: "*"}) {
+      nodes {
+        number
+        body
+        assignees(first: 10) { nodes { login } }
+        timelineItems(last: 1, itemTypes: [ASSIGNED_EVENT]) { nodes { ... on AssignedEvent { createdAt } } }
+      }
+    }
+  }
+}' 2>/dev/null || printf '{}')
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	if [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
@@ -470,27 +485,28 @@ pick_next() {
 		[ -z "$title" ] && continue
 		pick_args+=(--claimed "$title")
 	done <<<"$titles"
-	while IFS= read -r key; do
-		[ -z "$key" ] && continue
-		# Reuse the picker's existing stable marker parser: an assigned generated
-		# farm issue is an earlier claim than an eventual [triage:key] PR.
-		pick_args+=(--claimed "[triage:$key]")
-	done < <(printf '%s' "$assigned_issues" | python3 -c '
-import json
-import sys
-
-tick = chr(96)
-for issue in json.load(sys.stdin):
-    if not issue.get("assignees"):
-        continue
-    for line in (issue.get("body") or "").splitlines():
-        if not line.startswith("- **Triage key:**"):
-            continue
-        parts = line.split(tick)
-        if len(parts) >= 3 and parts[1].strip():
-            print(parts[1].strip())
-            break
-')
+	# An assigned generated farm issue is an earlier claim than an eventual
+	# [triage:key] PR, but only while it is live (see deploy.IssueClaims): a
+	# leaked one is released here so claim_issue can take it.
+	local claim_args=(issue-claims)
+	while IFS= read -r title; do
+		[ -n "$title" ] && claim_args+=(--pr-title "$title")
+	done <<<"$titles"
+	while IFS=$'\t' read -r kind key number logins; do
+		case "$kind" in
+		claimed) pick_args+=(--claimed "[triage:$key]") ;;
+		stale)
+			if [ "$DRY_RUN" -eq 1 ]; then
+				log "would release leaked claim on issue #$number (@$logins)"
+			elif gh issue edit "$number" --repo "$repo" --remove-assignee "$logins" >/dev/null 2>&1; then
+				log "released leaked claim on issue #$number (@$logins): no open PR and older than the claim TTL"
+			else
+				log "could not release leaked claim on issue #$number; it stays claimed this tick"
+				pick_args+=(--claimed "[triage:$key]")
+			fi
+			;;
+		esac
+	done < <(printf '%s' "$assigned_issues" | "$bin" "${claim_args[@]}" || true)
 
 	# A merged [triage:key] PR suppresses that key unless the fingerprint's
 	# last_observed_revision contains the merge. The run's latest finish is
