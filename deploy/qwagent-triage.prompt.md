@@ -41,6 +41,10 @@ For a fresh failure:
    tries next.
 2. Start from the packet's `source_matches`; read only the producer/caller
    needed to understand the owning invariant.
+   Probe with the run's own cartridge: for a `pokemon-yellow` packet run
+   `PROBE_ROM=$POKEMON_YELLOW_ROM ... go test ./skill -run '^TestProbe$'`
+   (likewise `$POKEMON_BLUE_ROM`, `$POKEMON_GOLD_ROM`, `$POKEMON_SILVER_ROM`).
+   Never probe a non-Red failure with the Red ROM; map data differs.
 3. Fix the shared invariant, not a named-map/NPC/run special case.
 4. Rerun `make -s debug RUN=<run_id>`; a structured Red repro should move
    from the same failure to `objective_succeeded`.
