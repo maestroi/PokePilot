@@ -16,8 +16,8 @@ func TestBroadcastDestinationsStayServerSide(t *testing.T) {
 	const twitchKey = "twitch-super-secret"
 	const genericKey = "generic-super-secret"
 	destinations := broadcastDestinationsFromEnv(testBroadcastEnv(map[string]string{
-		"POKEPILOT_BROADCAST_TWITCH_STREAM_KEY": twitchKey,
-		"POKEPILOT_BROADCAST_GENERIC_ENDPOINT":  "rtmps://relay.example.test/live",
+		"POKEPILOT_BROADCAST_TWITCH_STREAM_KEY":  twitchKey,
+		"POKEPILOT_BROADCAST_GENERIC_ENDPOINT":   "rtmps://relay.example.test/live",
 		"POKEPILOT_BROADCAST_GENERIC_STREAM_KEY": genericKey,
 	}))
 
@@ -122,7 +122,7 @@ func TestReplayRestartKeepsDestinationConfigButNotActiveBroadcasts(t *testing.T)
 		t.Fatal("first server did not load configured Twitch destination")
 	}
 	first.rtmpSessions["run-live"] = &rtmpBroadcastSession{
-		runID: "run-live",
+		runID:  "run-live",
 		status: rtmpBroadcastStatus{RunID: "run-live", State: "live"},
 	}
 
