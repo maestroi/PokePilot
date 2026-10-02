@@ -190,8 +190,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressTM02HeadbuttAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressPlainBadgeEarned {
+		t.Fatalf("after north-Ilex Headbutt progression = %+v, want Plain Badge", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed north-Ilex Headbutt slice still offered: %+v", got)
+		t.Fatalf("completed Plain Badge slice still offered: %+v", got)
 	}
 }
 
@@ -222,6 +228,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
 		gsprofile.ProgressTM02HeadbuttAcquired,
+		gsprofile.ProgressPlainBadgeEarned,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
