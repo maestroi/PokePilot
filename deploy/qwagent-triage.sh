@@ -29,6 +29,14 @@ POKEPILOT_CLAUDE_MODEL=${POKEPILOT_CLAUDE_MODEL:-claude-opus-5-5}
 # cleared; paid tiers share one rolling 24h start cap.
 POKEPILOT_TRIAGE_LADDER=${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}
 POKEPILOT_PAID_DAILY_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
+# Replicas (deploy/fixer.yml) keep per-replica state but share the ledger,
+# so budgets and the paid cap stay global, and a claims dir, so two replicas
+# never work one key. POKEPILOT_QWEN_LOCK serializes the single qwen slot;
+# POKEPILOT_QWEN_URL also sees it busy with work outside this fixer.
+POKEPILOT_TRIAGE_LEDGER=${POKEPILOT_TRIAGE_LEDGER:-$POKEPILOT_TRIAGE_STATE/ledger.tsv}
+POKEPILOT_TRIAGE_CLAIMS=${POKEPILOT_TRIAGE_CLAIMS:-}
+POKEPILOT_QWEN_LOCK=${POKEPILOT_QWEN_LOCK:-}
+POKEPILOT_QWEN_URL=${POKEPILOT_QWEN_URL:-}
 # Local qwen PRs land in 20-31m; runs past that die on context blowups
 # ("Compaction summary reached the output token limit", socket closed) after
 # burning the full 50m. Cut it loose early so the ladder escalates sooner.
@@ -76,9 +84,25 @@ claude_authenticated() {
 	claude auth status 2>/dev/null | grep -q '"loggedIn": *true'
 }
 
+# qwen_free runs in the main shell: fd 8 holds the qwen lock until the
+# opencode attempt exits. A busy slot drops opencode from this tick's ladder,
+# so the next tier (Cursor auto) runs instead of queueing behind it.
+qwen_free() {
+	command -v opencode >/dev/null 2>&1 || return 1
+	if [ -n "$POKEPILOT_QWEN_LOCK" ]; then
+		exec 8>"$POKEPILOT_QWEN_LOCK"
+		flock -n 8 || { exec 8>&-; return 1; }
+	fi
+	if [ -n "$POKEPILOT_QWEN_URL" ] &&
+		curl -fsS -m 5 "${POKEPILOT_QWEN_URL%/v1}/slots" 2>/dev/null | grep -q '"is_processing":true'; then
+		exec 8>&-
+		return 1
+	fi
+}
+
 available_backends() {
 	local out=()
-	command -v opencode >/dev/null 2>&1 && out+=(opencode)
+	[ "$QWEN_FREE" -eq 1 ] && out+=(opencode)
 	cursor_authenticated && out+=(cursor)
 	claude_authenticated && out+=(claude)
 	local IFS=,
@@ -87,7 +111,7 @@ available_backends() {
 
 # ladder_args is shared by key selection and the picker's blocked-key list.
 ladder_args() {
-	printf '%s\n' --ledger "$POKEPILOT_TRIAGE_STATE/ledger.tsv" \
+	printf '%s\n' --ledger "$POKEPILOT_TRIAGE_LEDGER" \
 		--tiers "$POKEPILOT_TRIAGE_LADDER" \
 		--paid-daily-cap "$POKEPILOT_PAID_DAILY_CAP" \
 		--available "$LADDER_AVAILABLE"
@@ -155,6 +179,7 @@ select_agent_backend() {
 
 selected_agent_model() {
 	case "$AGENT_BACKEND" in
+	cursor/*) printf '%s' "${AGENT_BACKEND#cursor/}" ;;
 	cursor)
 		if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
 			printf '%s' "$POKEPILOT_CURSOR_MODEL"
@@ -172,8 +197,8 @@ record_solver_attempt() {
 	# Local ladder ledger: a start without a later "pr" is a failed attempt,
 	# including a 50m timeout kill that never reaches a terminal record.
 	case "$state" in
-	started) printf '%s\t%s\t%s\tstarted\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv" ;;
-	pr_opened | pr_updated) printf '%s\t%s\t%s\tpr\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv" ;;
+	started) printf '%s\t%s\t%s\tstarted\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_LEDGER" ;;
+	pr_opened | pr_updated) printf '%s\t%s\t%s\tpr\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" >>"$POKEPILOT_TRIAGE_LEDGER" ;;
 	esac
 	"$POKEPILOT_TRIAGE_STATE/qwagent-triage" record-attempt \
 		--endpoint "$POKEPILOT_MCP_URL" \
@@ -302,7 +327,8 @@ claim_issue() {
 	return 0
 }
 
-trap 'release_issue_claim' EXIT
+CLAIM_DIR=""
+trap 'release_issue_claim; [ -z "$CLAIM_DIR" ] || rm -rf "$CLAIM_DIR"' EXIT
 trap 'exit 130' INT
 on_term() {
 	if [ -n "${ATTEMPT_ID:-}" ]; then
@@ -364,6 +390,11 @@ pick_next() {
 		log "own PR repair key is spent or paid-capped; picking a fresh failure"
 		own_status=2
 	fi
+	if [ "$own_status" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ] &&
+		[ -d "$POKEPILOT_TRIAGE_CLAIMS/$(printf '%s' "$own_pr" | json_field key)" ]; then
+		log "own PR repair is held by another replica; picking a fresh failure"
+		own_status=2
+	fi
 	if [ "$own_status" -eq 0 ]; then
 		rm -f "$own_err"
 		printf '%s' "$own_pr"
@@ -378,6 +409,13 @@ pick_next() {
 	assigned_issues=$(gh issue list --repo "$(gh_repo)" --state open --limit 200 --json body,assignees 2>/dev/null || printf '[]')
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
+	if [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
+		# A claim outlives its 50m attempt only when the replica was killed.
+		find "$POKEPILOT_TRIAGE_CLAIMS" -mindepth 1 -maxdepth 1 -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+		for claim in "$POKEPILOT_TRIAGE_CLAIMS"/*; do
+			[ -d "$claim" ] && pick_args+=(--claimed "[triage:$(basename "$claim")]")
+		done
+	fi
 	if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ]; then
 		local ladder_list ladder_triage
 		mapfile -t ladder_list < <(ladder_args)
@@ -521,6 +559,10 @@ for row in json.load(sys.stdin):
 }
 
 # Probed once per tick: cursor/claude auth checks are slow CLI calls.
+QWEN_FREE=0
+if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] && qwen_free; then
+	QWEN_FREE=1
+fi
 LADDER_AVAILABLE=$(available_backends)
 if ! PICK_JSON=$(pick_next); then
 	exit 0
@@ -543,6 +585,17 @@ fi
 if ! AGENT_BACKEND=$(select_agent_backend); then
 	exit 0
 fi
+[ "$AGENT_BACKEND" = opencode ] || exec 8>&-
+
+# mkdir is the atomic cross-replica claim; the loser idles one tick.
+if [ "$DRY_RUN" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
+	mkdir -p "$POKEPILOT_TRIAGE_CLAIMS"
+	if ! mkdir "$POKEPILOT_TRIAGE_CLAIMS/$KEY" 2>/dev/null; then
+		log "another fixer replica holds $KEY; idle"
+		exit 0
+	fi
+	CLAIM_DIR="$POKEPILOT_TRIAGE_CLAIMS/$KEY"
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
@@ -555,7 +608,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
 	fi
 	SOLVER_MODEL=$(selected_agent_model)
 	case "$AGENT_BACKEND" in
-	cursor) echo "would run: Cursor CLI model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
+	cursor | cursor/*) echo "would run: Cursor CLI model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	opencode) echo "would run: OpenCode model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	claude) echo "would run: Claude Code model=$SOLVER_MODEL in $POKEPILOT_TRIAGE_TREE" ;;
 	esac
@@ -650,14 +703,12 @@ record_solver_attempt started "coding agent launched"
 
 set +e
 case "$AGENT_BACKEND" in
-cursor)
+cursor | cursor/*)
 	CURSOR_BIN=$(cursor_binary)
 	cursor_args=(-p --force --trust --approve-mcps
 		--workspace "$POKEPILOT_TRIAGE_TREE"
-		--output-format text)
-	if [ -n "$POKEPILOT_CURSOR_MODEL" ]; then
-		cursor_args+=(--model "$POKEPILOT_CURSOR_MODEL")
-	fi
+		--output-format text
+		--model "$SOLVER_MODEL")
 	cursor_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
 	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
 		printf '%s\n' '.pokepilot-triage-packet.md' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
@@ -686,8 +737,11 @@ claude)
 opencode)
 	# opencode v2 dropped `run --dir`: the session works in the current
 	# directory, and --standalone keeps a shared background server (rooted
-	# elsewhere) from owning the session.
-	(cd "$POKEPILOT_TRIAGE_TREE" && timeout -k 30 "$POKEPILOT_OPENCODE_BUDGET" opencode run --auto --standalone --model "$POKEPILOT_OPENCODE_MODEL" \
+	# elsewhere) from owning the session. 1.x (the fixer image) has neither a
+	# background server nor the flag.
+	opencode_args=()
+	opencode run --help 2>&1 | grep -q -- --standalone && opencode_args+=(--standalone)
+	(cd "$POKEPILOT_TRIAGE_TREE" && timeout -k 30 "$POKEPILOT_OPENCODE_BUDGET" opencode run --auto "${opencode_args[@]}" --model "$POKEPILOT_OPENCODE_MODEL" \
 		--title "farm triage ${KEY}" \
 		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
 		-- \
@@ -754,7 +808,7 @@ fix/*) ;;
 ${reason}" >/dev/null 2>&1 || log "could not comment verdict on #$ISSUE_NUMBER"
 		fi
 		if [ "$AGENT_BACKEND" != opencode ]; then
-			printf '%s\t%s\t%s\tparked\t%s\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" "${COUNT:-0}" >>"$POKEPILOT_TRIAGE_STATE/ledger.tsv"
+			printf '%s\t%s\t%s\tparked\t%s\n' "$(date +%s)" "$KEY" "$AGENT_BACKEND" "${COUNT:-0}" >>"$POKEPILOT_TRIAGE_LEDGER"
 			record_solver_attempt parked "$verdict: $reason" "$branch"
 			log "parked $KEY ($verdict) until it occurs again"
 		else

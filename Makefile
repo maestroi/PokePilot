@@ -86,7 +86,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto debug test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto debug test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install fixer-image fixer-up fixer-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -258,6 +258,29 @@ roms-upload:
 farm-down:
 	docker rm -f pokefarm_ui >/dev/null 2>&1 || true
 	docker stack rm pokefarm
+
+# Swarm fixer (deploy/fixer.yml): FIXER_REPLICAS containers running the
+# qwagent ladder in parallel. Secrets and POKEPILOT_QWEN_URL come from
+# ~/.config/pokepilot/env. Stop the desktop qwtriage timer first, or three
+# fixers compete for qwen and the same keys.
+FIXER_IMAGE ?= pokepilot-fixer:local
+FIXER_STATE_DIR ?= $(HOME)/.local/share/pokepilot/fixer-swarm
+# Cartridges only: POKEPILOT_ROM_DIR can be ~/.config/pokepilot, which also
+# holds the env file, and the agent must not see those secrets.
+FIXER_ROM_DIR ?= $(HOME)/.local/share/pokepilot/fixer-roms
+fixer-image:
+	docker buildx build --load -t $(FIXER_IMAGE) -f deploy/fixer.Dockerfile .
+
+fixer-up: fixer-image
+	$(require-rom)
+	mkdir -p "$(FIXER_STATE_DIR)" "$(FIXER_ROM_DIR)"
+	cp -u "$(POKEPILOT_ROM_DIR)"/pokemon_*.gb* "$(FIXER_ROM_DIR)/"
+	$(load_env) FIXER_IMAGE=$(FIXER_IMAGE) FIXER_STATE_DIR="$(FIXER_STATE_DIR)" \
+		POKEPILOT_ROM_DIR="$(FIXER_ROM_DIR)" \
+		docker stack deploy -c deploy/fixer.yml pokefixer
+
+fixer-down:
+	docker stack rm pokefixer
 
 # Opt-in local qwagent loop against MCP pokepilot_get_triage. Installs user
 # systemd units and zsh helpers; does not enable the timer.

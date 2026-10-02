@@ -23,6 +23,10 @@ fi
 export GH_REPO=${GH_REPO:-${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}}
 STATE=${POKEPILOT_WATCH_STATE:-$HOME/.local/share/pokepilot/farm-watch}
 TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
+# Swarm fixer (deploy/fixer.yml): set the service name; point TRIAGE_STATE at
+# one replica's state dir and the ledger at the shared one.
+FIXER_SERVICE=${POKEPILOT_FIXER_SERVICE:-}
+ledger=${POKEPILOT_TRIAGE_LEDGER:-$TRIAGE_STATE/ledger.tsv}
 PAID_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
 STALL_SECONDS=${POKEPILOT_WATCH_STALL_SECONDS:-1800}
 REMIND_SECONDS=43200
@@ -150,7 +154,15 @@ print("\n".join(seen))
 fi
 
 # --- fixer: timer enabled and its last tick did not crash -----------------
-if ! systemctl --user is-active -q qwagent-triage.timer; then
+if [ -n "$FIXER_SERVICE" ]; then
+	replicas=$(docker service ls --filter "name=$FIXER_SERVICE" --format '{{.Replicas}}' 2>/dev/null | head -1)
+	running=${replicas%%/*} want=${replicas#*/}
+	if [ -z "$replicas" ] || [ "$running" != "${want%% *}" ]; then
+		report fixer 3 "swarm fixer $FIXER_SERVICE at ${replicas:-no} replicas (docker service ps $FIXER_SERVICE)"
+	else
+		report fixer 1 ""
+	fi
+elif ! systemctl --user is-active -q qwagent-triage.timer; then
 	report fixer 1 "fixer timer qwagent-triage.timer is not active"
 elif [ "$(systemctl --user show -p Result --value qwagent-triage.service)" != success ]; then
 	report fixer 3 "fixer tick keeps failing (journalctl --user -u qwagent-triage.service)"
@@ -159,7 +171,6 @@ else
 fi
 
 # --- fixer ladder: paid cap and keys every tier failed on ------------------
-ledger="$TRIAGE_STATE/ledger.tsv"
 if [ -f "$ledger" ]; then
 	paid=$(awk -F'\t' -v since=$((now - 86400)) '$4 == "started" && $3 != "opencode" && $1 >= since' "$ledger" | wc -l)
 	if [ "$paid" -ge "$PAID_CAP" ]; then
