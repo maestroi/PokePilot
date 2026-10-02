@@ -376,6 +376,13 @@ var firstBadgeTopology = []mapSpec{
 		},
 	},
 	{
+		name: "GOLDENROD_FLOWER_SHOP",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "GOLDENROD_CITY", destWarp: 6},
+			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 6},
+		},
+	},
+	{
 		name: "GOLDENROD_POKECENTER_1F",
 		warps: []warpSpec{
 			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 7},
@@ -457,6 +464,36 @@ var firstBadgeTopology = []mapSpec{
 			{dir: dirSouth, dest: "ROUTE_37", offset: 5},
 			{dir: dirWest, dest: "ROUTE_38", offset: 5},
 			{dir: dirEast, dest: "ROUTE_42", offset: 9},
+		},
+	},
+	{
+		name: "BURNED_TOWER_1F",
+		warps: []warpSpec{
+			{x: 9, y: 15, dest: "ECRUTEAK_CITY", destWarp: 13},
+			{x: 10, y: 15, dest: "ECRUTEAK_CITY", destWarp: 13},
+			{x: 5, y: 4, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 5, y: 5, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 5, y: 6, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 4, y: 6, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 15, y: 4, dest: "BURNED_TOWER_B1F", destWarp: 2},
+			{x: 15, y: 5, dest: "BURNED_TOWER_B1F", destWarp: 2},
+			{x: 10, y: 7, dest: "BURNED_TOWER_B1F", destWarp: 3},
+			{x: 5, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 4},
+			{x: 4, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 4},
+			{x: 14, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 5},
+			{x: 15, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 5},
+			{x: 7, y: 15, dest: "BURNED_TOWER_B1F", destWarp: 6},
+		},
+	},
+	{
+		name: "BURNED_TOWER_B1F",
+		warps: []warpSpec{
+			{x: 3, y: 3, dest: "BURNED_TOWER_1F", destWarp: 3},
+			{x: 17, y: 7, dest: "BURNED_TOWER_1F", destWarp: 7},
+			{x: 10, y: 8, dest: "BURNED_TOWER_1F", destWarp: 9},
+			{x: 3, y: 13, dest: "BURNED_TOWER_1F", destWarp: 10},
+			{x: 17, y: 14, dest: "BURNED_TOWER_1F", destWarp: 12},
+			{x: 7, y: 15, dest: "BURNED_TOWER_1F", destWarp: 14},
 		},
 	},
 	{
