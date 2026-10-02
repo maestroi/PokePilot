@@ -29,6 +29,10 @@ POKEPILOT_CLAUDE_MODEL=${POKEPILOT_CLAUDE_MODEL:-claude-opus-5-5}
 # cleared; paid tiers share one rolling 24h start cap.
 POKEPILOT_TRIAGE_LADDER=${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}
 POKEPILOT_PAID_DAILY_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
+# Local qwen PRs land in 20-31m; runs past that die on context blowups
+# ("Compaction summary reached the output token limit", socket closed) after
+# burning the full 50m. Cut it loose early so the ladder escalates sooner.
+POKEPILOT_OPENCODE_BUDGET=${POKEPILOT_OPENCODE_BUDGET:-35m}
 export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
@@ -683,7 +687,7 @@ opencode)
 	# opencode v2 dropped `run --dir`: the session works in the current
 	# directory, and --standalone keeps a shared background server (rooted
 	# elsewhere) from owning the session.
-	(cd "$POKEPILOT_TRIAGE_TREE" && opencode run --auto --standalone --model "$POKEPILOT_OPENCODE_MODEL" \
+	(cd "$POKEPILOT_TRIAGE_TREE" && timeout -k 30 "$POKEPILOT_OPENCODE_BUDGET" opencode run --auto --standalone --model "$POKEPILOT_OPENCODE_MODEL" \
 		--title "farm triage ${KEY}" \
 		--file "$POKEPILOT_TRIAGE_STATE/packet.md" \
 		-- \
