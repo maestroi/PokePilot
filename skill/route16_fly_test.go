@@ -266,3 +266,30 @@ func TestRoute16EastComponentReachesCeladonWithoutFlute(t *testing.T) {
 		t.Fatal("beaten Route 16 Snorlax must drop the port-bypass pivot")
 	}
 }
+
+// TestSemanticTransitionReentryIsUnavailableHere pins run-1mey4xe5t2w04: the
+// Route 16 Snorlax approach routed back through red:route16_snorlax and
+// recursed without stepping until the runner was OOM-killed. A nested entry
+// of the same transition on the same emulator must fail typed instead.
+func TestSemanticTransitionReentryIsUnavailableHere(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	m, err := emu.Open(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	edge := world.Edge{Kind: world.EdgeConnection, From: route16Map, To: celadonCityMap}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok {
+		t.Fatal("route16_snorlax transition missing")
+	}
+	key := activeTransitionKey{m: m, id: transition.ID}
+	activeTransitions.Store(key, struct{}{})
+	defer activeTransitions.Delete(key)
+	if _, err := newRedRouteTransitionExecutor(m, m.ROM(), StatAwareMove(m.ROM())).ExecuteTransition(edge, transition); !errors.Is(err, ErrTransitionUnavailableHere) {
+		t.Fatalf("nested %s err=%v, want ErrTransitionUnavailableHere", transition.ID, err)
+	}
+}

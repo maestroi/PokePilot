@@ -521,6 +521,30 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 	return world.TransitionExecutionResult{}, false, nil
 }
 
+// route16SnorlaxFluteStands is pokered's Route16SnorlaxFluteCoords: one tile
+// east and west of the sleeping Snorlax.
+var route16SnorlaxFluteStands = [...][2]uint8{{27, 10}, {25, 10}}
+
+// route16SnorlaxLocalStand finds a flute stand reachable on Route 16 without
+// leaving the map, mirroring route12SnorlaxLocalStand.
+func (x *redRouteTransitionExecutor) route16SnorlaxLocalStand() (Destination, bool, error) {
+	h, err := routingHeaderFor(x.m, route16Map)
+	if err != nil {
+		return Destination{}, false, fmt.Errorf("skill: Route 16 Snorlax stand: %w", err)
+	}
+	for _, at := range route16SnorlaxFluteStands {
+		stand := Destination{Map: route16Map, X: at[0], Y: at[1]}
+		reachable, err := fieldPathReachableOnCurrentMap(x.m, x.romData, h, stand)
+		if err != nil {
+			return Destination{}, false, fmt.Errorf("skill: Route 16 Snorlax stand (%d,%d): %w", at[0], at[1], err)
+		}
+		if reachable {
+			return stand, true, nil
+		}
+	}
+	return Destination{}, false, nil
+}
+
 func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 	var before state.Mem
 	state.Snapshot(x.m, &before)
@@ -534,21 +558,15 @@ func (x *redRouteTransitionExecutor) clearRoute16Snorlax() (bool, error) {
 		return false, fmt.Errorf("skill: Route 16 Snorlax transition started outside Route 16")
 	}
 
-	// The Poké Flute effect accepts one tile east or west of Snorlax. Choose
-	// the stand on the player's current side so the approach itself never has
-	// to path through the sleeping sprite.
-	xPos, _ := playerXY(x.m)
-	standX := uint8(27)
-	if xPos <= 25 {
-		standX = 25
+	stand, ok, err := x.route16SnorlaxLocalStand()
+	if err != nil {
+		return false, err
 	}
-	stand := Destination{Map: route16Map, X: standX, Y: 10}
-	// The west stand (25,10) is sealed behind the bike-gated gate corridor, so
-	// a Fly-house player without a bicycle cannot reach it. When the coordinate
-	// stand is unreachable, approach from the east stand instead: the graph
-	// routes through the upper gate passage and the Cut tree at (34,9).
-	if planner, perr := NewRoutePlanner(x.m, x.romData); perr != nil || !planner.CanReach(stand) {
-		stand = Destination{Map: route16Map, X: 27, Y: 10}
+	if !ok {
+		// The approach must stay on this map: a cross-map route to a stand
+		// re-enters this same Snorlax transition and recurses without stepping.
+		px, py := playerXY(x.m)
+		return false, fmt.Errorf("%w: no Route 16 Snorlax flute stand reachable from (%d,%d)", ErrTransitionUnavailableHere, px, py)
 	}
 	if _, err := TravelFlee(x.m, x.romData, stand, x.policy, fuchsiaTravelEngagements); err != nil {
 		return false, fmt.Errorf("skill: Route 16 Snorlax approach: %w", err)
