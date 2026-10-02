@@ -22,9 +22,13 @@ type giftPokemonSpec struct {
 // consume when no owned or wild Pokemon can carry a missing field move. Gift
 // skills register themselves, so the repair itself holds no species or story
 // facts; HM compatibility still comes from the ROM.
+//
+// Ready receives the live save and ROM so cartridge-specific gifts (Yellow's
+// Officer Jenny Squirtle) can gate on badge bits and cartridge identity without
+// teaching the generic repair engine those facts.
 type fieldCarrierGift struct {
 	Species uint8
-	Ready   func(facts state.StoryFacts) bool
+	Ready   func(mem *state.Mem, romData []byte, facts state.StoryFacts) bool
 	Receive func(m *emu.Emu, romData []byte, policy MovePolicy) (CatchResult, error)
 }
 

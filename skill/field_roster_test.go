@@ -1,11 +1,13 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	yellowrom "github.com/maestroi/pokepilot/yellow/rom"
 )
 
 func setTestMachineMove(t *testing.T, romData []byte, item, move uint8) {
@@ -246,8 +248,8 @@ func TestFindGiftFieldCandidateNeedsReadyUnownedCompatibleGift(t *testing.T) {
 	saved := fieldCarrierGifts
 	t.Cleanup(func() { fieldCarrierGifts = saved })
 	fieldCarrierGifts = []fieldCarrierGift{
-		{Species: 0x10, Ready: func(state.StoryFacts) bool { return true }}, // no HM bits
-		{Species: carrier, Ready: func(state.StoryFacts) bool { return ready }},
+		{Species: 0x10, Ready: func(*state.Mem, []byte, state.StoryFacts) bool { return true }}, // no HM bits
+		{Species: carrier, Ready: func(*state.Mem, []byte, state.StoryFacts) bool { return ready }},
 	}
 
 	var mem state.Mem
@@ -263,5 +265,38 @@ func TestFindGiftFieldCandidateNeedsReadyUnownedCompatibleGift(t *testing.T) {
 	ready = false
 	if _, ok, _ := findGiftFieldCandidate(&mem, romData, FieldSurf, []FieldMove{FieldSurf}); ok {
 		t.Fatal("gift offered before its story prerequisites hold")
+	}
+}
+
+func TestFindGiftFieldCandidateOffersYellowSquirtleAfterThunder(t *testing.T) {
+	romPath := os.Getenv("POKEMON_YELLOW_ROM")
+	if romPath == "" {
+		romPath = "../roms/pokemon_yellow.gb"
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Skipf("POKEMON_YELLOW_ROM: %v", err)
+	}
+	if !yellowrom.IsCartridge(romData) {
+		t.Fatalf("%s is not the supported Yellow cartridge", romPath)
+	}
+
+	var mem state.Mem
+	mem[sym.PartyCount] = 1
+	mem[sym.PartySpecies] = 0x54 // Pikachu: cannot learn Surf
+	mem[sym.PartyMon1+sym.MonSpecies] = 0x54
+	mem[sym.ObtainedBadges] = 1 << uint8(state.BadgeThunder)
+
+	gift, ok, err := findGiftFieldCandidate(&mem, romData, FieldSurf, []FieldMove{FieldSurf})
+	if err != nil {
+		t.Fatalf("findGiftFieldCandidate: %v", err)
+	}
+	if !ok || gift.Species != yellowSquirtleGiftSpecies {
+		t.Fatalf("gift = %#02x ok=%v, want Squirtle %#02x", gift.Species, ok, yellowSquirtleGiftSpecies)
+	}
+
+	mem[sym.ObtainedBadges] = 0
+	if _, ok, err := findGiftFieldCandidate(&mem, romData, FieldSurf, []FieldMove{FieldSurf}); err != nil || ok {
+		t.Fatalf("Squirtle gift offered without Thunder Badge: ok=%v err=%v", ok, err)
 	}
 }

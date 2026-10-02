@@ -265,8 +265,11 @@ func pcMainMenuUp(mem *state.Mem) bool {
 // out further" and keep pressing B straight past the destination.
 func billsPCMenuScreen(mem *state.Mem) bool {
 	text := state.ScreenText(mem)
+	max := mem.U8(sym.MaxMenuItem)
+	// Red's Bill's PC ends at SEE YA! (max=4). Yellow inserts PRINT BOX before
+	// SEE YA! (max=5). WITHDRAW/DEPOSIT stay at indices 0/1 either way.
 	return mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 &&
-		mem.U8(sym.MaxMenuItem) == 4 && strings.Contains(text, "WITHDRAW") && strings.Contains(text, "DEPOSIT")
+		(max == 4 || max == 5) && strings.Contains(text, "WITHDRAW") && strings.Contains(text, "DEPOSIT")
 }
 
 func billsPCMenuUp(mem *state.Mem) bool {
