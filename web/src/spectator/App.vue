@@ -597,45 +597,55 @@ function activityTimeAgo(item: ActivityItem): string {
       <a
         v-if="selectionPinned && selectedReplayHref"
         :href="selectedReplayHref"
-        class="inline-flex items-center gap-1.5 rounded-md bg-violet-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+        class="spectator-action inline-flex items-center gap-1.5 rounded-md bg-violet-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+        aria-label="Watch replay"
+        title="Watch replay"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
-        Watch replay
+        <span class="spectator-action-label">Watch replay</span>
       </a>
       <span
         v-else-if="selectionPinned && selectedReplayRendering && selectedRun"
-        class="inline-flex items-center gap-1.5 rounded-md bg-violet-300/10 px-2.5 py-1.5 text-xs font-bold text-violet-100 ring-1 ring-violet-300/20"
+        class="spectator-action spectator-action-status inline-flex items-center gap-1.5 rounded-md bg-violet-300/10 px-2.5 py-1.5 text-xs font-bold text-violet-100 ring-1 ring-violet-300/20"
         role="status"
+        aria-label="Replay rendering"
+        title="Replay rendering"
       >
         <ArrowPathIcon class="size-3.5 motion-safe:animate-spin" aria-hidden="true" />
-        {{ replayRenderProgress(selectedRun) }}
+        <span class="spectator-action-label">{{ replayRenderProgress(selectedRun) }}</span>
       </span>
       <button
         v-if="(!selectionPinned || selectedRun?.status !== 'done') && groupedRuns.live[0] && selectedRun?.run_id !== groupedRuns.live[0].run_id"
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+        class="spectator-action inline-flex items-center gap-1.5 rounded-md bg-cyan-300 px-2.5 py-1.5 text-xs font-bold text-[#101820] hover:brightness-110"
+        aria-label="Watch live"
+        title="Watch live"
         @click="selectRun(groupedRuns.live[0])"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
-        Watch live
+        <span class="spectator-action-label">Watch live</span>
       </button>
       <button
         v-else-if="(!selectionPinned || selectedRun?.status !== 'done') && groupedRuns.live[0]"
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-md bg-cyan-300/15 px-2.5 py-1.5 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-300/25"
+        class="spectator-action inline-flex items-center gap-1.5 rounded-md bg-cyan-300/15 px-2.5 py-1.5 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-300/25"
+        aria-label="Watch live"
+        title="Watch live"
         @click="selectRun(groupedRuns.live[0])"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
-        Watch live
+        <span class="spectator-action-label">Watch live</span>
       </button>
       <button
         v-if="selectedRun && selectionPinned"
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12"
+        class="spectator-action inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12"
+        :aria-label="copyState || 'Share'"
+        :title="copyState || 'Share'"
         @click="copyLink"
       >
         <LinkIcon class="size-3.5" aria-hidden="true" />
-        {{ copyState || 'Share' }}
+        <span class="spectator-action-label">{{ copyState || 'Share' }}</span>
       </button>
     </template>
 
@@ -1015,7 +1025,20 @@ function activityTimeAgo(item: ActivityItem): string {
               <p v-else class="muted">Waiting for the next live event.</p>
             </section>
 
-
+            <section v-if="!isTetrisSelected && otherLiveRuns.length" class="others mobile-other-runs">
+              <div class="block-head">
+                <h2>Other live runs</h2>
+                <span>{{ groupedRuns.live.length }} live</span>
+              </div>
+              <ul>
+                <li v-for="run in otherLiveRuns" :key="run.run_id">
+                  <button type="button" @click="selectRun(run)">
+                    <strong>{{ runTitle(run) }}</strong>
+                    <span>{{ displayLocation(run) }}</span>
+                  </button>
+                </li>
+              </ul>
+            </section>
           </aside>
         </div>
 
@@ -1062,6 +1085,14 @@ function activityTimeAgo(item: ActivityItem): string {
 <style scoped>
 :fullscreen {
   background: #05070a;
+}
+
+.spectator-action-label {
+  display: inline;
+}
+
+.game-pokemon .mobile-other-runs {
+  display: none;
 }
 
 /* The stage sits directly on the page; only PublicHome keeps the night-scape backdrop. */
@@ -2193,18 +2224,41 @@ select:focus-visible {
 }
 
 @media (max-width: 42rem) {
+  .spectator-action {
+    width: 2.25rem;
+    height: 2.25rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .spectator-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .game-pokemon .stage {
-    padding: 0.65rem;
-    border-radius: 1rem;
+    gap: 0.75rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
   }
 
   .game-pokemon .stage-head {
     align-items: flex-start;
-    padding: 0.75rem;
+    padding: 0.7rem 0.75rem 0.8rem;
+    border-radius: 0.85rem;
   }
 
   .game-pokemon .stage-title h1 {
-    font-size: 1.85rem;
+    font-size: 1.55rem;
   }
 
   .game-pokemon .stage-sub {
@@ -2236,13 +2290,39 @@ select:focus-visible {
   }
 
   .game-pokemon .bezel {
-    padding: 0.55rem 0.55rem 0.8rem;
-    border-radius: 0.8rem 0.8rem 1.4rem 0.8rem;
+    padding: 0.4rem 0.4rem 0.7rem;
+    border-radius: 0.75rem 0.75rem 1.2rem 0.75rem;
   }
 
   .game-pokemon .screen-controls {
-    top: 0.35rem;
-    right: 0.35rem;
+    top: 0.3rem;
+    right: 0.3rem;
+    gap: 0.25rem;
+  }
+
+  .game-pokemon .screen-controls .seg {
+    font-size: 0.62rem;
+  }
+
+  .game-pokemon .screen-controls .seg button {
+    padding: 0.25rem 0.4rem;
+  }
+
+  .game-pokemon .screen-controls .icon-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .game-pokemon .bezel-label {
+    gap: 0.5rem;
+    font-size: 0.62rem;
+  }
+
+  .game-pokemon .bezel-label span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .game-pokemon .route-block,
@@ -2575,6 +2655,24 @@ select:focus-visible {
   .game-pokemon .stat-rail .facts,
   .game-pokemon .stage > .party .roster {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-pokemon .stat-rail .facts div {
+    min-height: 4rem;
+    padding: 0.6rem 0.7rem;
+  }
+
+  .game-pokemon .rail-others {
+    display: none;
+  }
+
+  .game-pokemon .mobile-other-runs {
+    display: block;
+  }
+
+  .game-pokemon .screen-col,
+  .game-pokemon .side {
+    gap: 0.75rem;
   }
 
   .game-pokemon .side {
