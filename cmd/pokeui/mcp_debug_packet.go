@@ -302,12 +302,17 @@ func compactDebugTriage(groups []map[string]any, run map[string]any, runID strin
 	}
 	if selected == nil {
 		issue, _ := run["issue"].(map[string]any)
+		status := debugString(issue, "status")
+		if key == "" && issue == nil {
+			// No group is not "not actionable": nothing was ever filed for this run.
+			status = "no_triage_record"
+		}
 		return farm.DebugTriage{
 			Key:               key,
 			Fingerprint:       debugString(issue, "fingerprint"),
 			IssueNumber:       int64(mcpJSONInt(issue["issue_number"])),
 			IssueURL:          debugString(issue, "issue_url"),
-			Status:            debugString(issue, "status"),
+			Status:            status,
 			Resolution:        debugString(issue, "resolution"),
 			FixedRevision:     debugString(issue, "fixed_revision"),
 			VerificationState: debugString(issue, "verification_state"),

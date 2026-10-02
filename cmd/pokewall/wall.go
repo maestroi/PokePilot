@@ -1459,6 +1459,9 @@ type triageGroup struct {
 	Issue       *IssueLink `json:"issue,omitempty"`
 	Outbox      string     `json:"outbox,omitempty"`
 	Dismissable bool       `json:"dismissable,omitempty"`
+	// Recurring marks a family with no terminal occurrence: the run kept
+	// recovering, but the same failure repeated without progress.
+	Recurring bool `json:"recurring,omitempty"`
 }
 
 // triageGroups groups finished, failed runs (reason error or lost) with a
