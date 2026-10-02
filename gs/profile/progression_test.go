@@ -165,6 +165,9 @@ func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
 	if johtoBadgeHiveMask != 1<<1 {
 		t.Fatalf("ENGINE_HIVEBADGE mask = %#02x, want %#02x", johtoBadgeHiveMask, 1<<1)
 	}
+	if johtoBadgePlainMask != 1<<2 {
+		t.Fatalf("ENGINE_PLAINBADGE mask = %#02x, want %#02x", johtoBadgePlainMask, 1<<2)
+	}
 }
 
 func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
@@ -207,6 +210,9 @@ func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
 	if !story.Has(ProgressTM02HeadbuttAcquired) {
 		t.Fatalf("TM02 Headbutt event not projected: %+v", story)
 	}
+	if story.Has(ProgressPlainBadgeEarned) {
+		t.Fatal("north-Ilex Headbutt boundary falsely granted Plain Badge")
+	}
 }
 
 func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
@@ -233,8 +239,17 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 
 	setGSEvent(mem, eventGotTM02Headbutt)
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressTM02HeadbuttAcquired) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("north-Ilex Headbutt boundary did not complete supported frontier: %+v", story)
+	if !story.Has(ProgressTM02HeadbuttAcquired) {
+		t.Fatalf("north-Ilex Headbutt boundary missing from story: %+v", story)
+	}
+	if story.Has(ProgressSupportedFrontier) {
+		t.Fatal("north-Ilex Headbutt boundary reached frontier before Plain Badge")
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgePlainMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressPlainBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Plain Badge boundary did not complete supported frontier: %+v", story)
 	}
 }
 
