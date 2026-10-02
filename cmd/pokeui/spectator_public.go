@@ -180,7 +180,7 @@ func (run spectatorRun) MarshalJSON() ([]byte, error) {
 		mapAsset = &publicMapAsset{
 			ID: asset.ID, Width: asset.Width, Height: asset.Height, Cells: asset.Cells,
 			Connections: append([]string(nil), asset.Connections...),
-			Warps: make([]publicMapWarp, 0, len(asset.Warps)),
+			Warps:       make([]publicMapWarp, 0, len(asset.Warps)),
 		}
 		for _, warp := range asset.Warps {
 			if int(warp.X) >= asset.Width || int(warp.Y) >= asset.Height {
