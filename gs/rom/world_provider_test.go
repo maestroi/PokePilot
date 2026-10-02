@@ -332,6 +332,7 @@ func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	for _, name := range []string{
 		"GOLDENROD_GYM",
+		"GOLDENROD_FLOWER_SHOP",
 		"GOLDENROD_POKECENTER_1F",
 		"GOLDENROD_DEPT_STORE_1F",
 		"ROUTE_35_GOLDENROD_GATE",
@@ -340,6 +341,8 @@ func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
 		"ROUTE_37",
 		"ECRUTEAK_CITY",
 		"ECRUTEAK_GYM",
+		"BURNED_TOWER_1F",
+		"BURNED_TOWER_B1F",
 		"ECRUTEAK_POKECENTER_1F",
 		"ECRUTEAK_MART",
 	} {
@@ -351,6 +354,32 @@ func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
 		blocks := make([]byte, int(info.WidthBlocks)*int(info.HeightBlocks))
 		if _, err := provider.Grid(id, blocks, 0); err != nil {
 			t.Fatalf("Grid(%s): %v", name, err)
+		}
+	}
+}
+
+
+func TestEarlyJohtoWorldProviderRoutesStoryServicesForFogBadgeSlice(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	for _, pair := range [][2]string{
+		{"GOLDENROD_CITY", "GOLDENROD_FLOWER_SHOP"},
+		{"ECRUTEAK_CITY", "BURNED_TOWER_1F"},
+		{"BURNED_TOWER_1F", "BURNED_TOWER_B1F"},
+		{"ECRUTEAK_CITY", "ECRUTEAK_GYM"},
+	} {
+		from := nativeID(t, pair[0])
+		to := nativeID(t, pair[1])
+		route, err := world.FindNativeRoute(graph, from, to)
+		if err != nil {
+			t.Fatalf("FindNativeRoute(%s -> %s): %v", pair[0], pair[1], err)
+		}
+		if len(route) == 0 {
+			t.Fatalf("%s -> %s returned empty route", pair[0], pair[1])
 		}
 	}
 }
