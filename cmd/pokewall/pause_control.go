@@ -376,6 +376,7 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	t.Seed = before.row.Seed
 	t.Frame = before.row.Frame
 	t.Map = before.row.Map
+	t.NativeMap = before.row.NativeMap
 	t.X = before.row.X
 	t.Y = before.row.Y
 	t.Trace = before.row.Trace
@@ -384,6 +385,7 @@ func (w *Wall) maybeAutoPauseRepeatedFailure(id string, before pauseFinishSnapsh
 	t.Raw = before.row.Raw
 	t.Sprites = append(t.Sprites[:0], before.row.Sprites...)
 	t.Trail = append(t.Trail[:0], before.row.Trail...)
+	t.MapAsset = before.row.MapAsset
 	t.Stats = before.row.Stats
 	t.Player = before.row.Player
 	t.GameState = cloneJSONMap(before.row.GameState)
