@@ -13,7 +13,8 @@ func TestSpectatorMarshalAdvertisesPublicCapabilities(t *testing.T) {
 	}{
 		{game: "pokemon-red", wantWorldMap: true},
 		{game: "pokemon-yellow", wantWorldMap: false},
-		{game: "pokemon-gold", wantWorldMap: false},
+		{game: "pokemon-gold", wantWorldMap: true},
+		{game: "pokemon-silver", wantWorldMap: true},
 		{game: "tetris", wantWorldMap: false},
 		{game: "future-game", wantWorldMap: false},
 	}
