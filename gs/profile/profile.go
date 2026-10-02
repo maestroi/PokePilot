@@ -162,8 +162,14 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 		base := sym.PartyMon1 + uint16(i)*sym.PartyMonSize
 		raw := make([]byte, sym.PartyMonSize)
 		reader.PeekInto(base, raw)
+		listSpecies := reader.Peek8(sym.PartySpecies + uint16(i))
 		rawSpecies := raw[0]
-		species, ok := gsdata.Species(rawSpecies)
+		isEgg := gsdata.IsEgg(listSpecies) || gsdata.IsEgg(rawSpecies)
+		speciesSource := rawSpecies
+		if isEgg {
+			speciesSource = 0xfd
+		}
+		species, ok := gsdata.Species(speciesSource)
 		if !ok {
 			species = game.SpeciesID("unknown")
 		}
@@ -171,7 +177,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 		obs.Party[i] = game.ProfilePartyMon{
 			Species:    species,
 			HeldItem:   held,
-			IsEgg:      gsdata.IsEgg(rawSpecies),
+			IsEgg:      isEgg,
 			Level:      raw[0x1f],
 			Experience: uint32(raw[0x08])<<16 | uint32(raw[0x09])<<8 | uint32(raw[0x0a]),
 			HP:         uint16(raw[0x22])<<8 | uint16(raw[0x23]),

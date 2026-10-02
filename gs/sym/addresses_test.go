@@ -41,6 +41,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wBattleMon", BattleMon, 0xCB0C},
 		{"wPlayerStatLevels", PlayerStatLevels, 0xCBAA},
 		{"wEnemyStatLevels", EnemyStatLevels, 0xCBB2},
+		{"wPlayerScreens", PlayerScreens, 0xCBDD},
 		{"wEnemyMon", EnemyMon, 0xD0EF},
 		{"wMenuCursorY", MenuCursorY, 0xCEE0},
 		{"w2DMenuNumRows", TwoDMenuNumRows, 0xCEDA},

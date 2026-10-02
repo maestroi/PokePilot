@@ -75,6 +75,8 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	mem[sym.PlayerDirection] = 0x04 // up
 	mem[sym.BattleMode] = 1
 	mem[sym.PartyCount] = 2
+	mem[sym.PartySpecies+0] = 0x98 // Chikorita
+	mem[sym.PartySpecies+1] = 0xfd // Egg
 	mem[sym.Money+0] = 0x00
 	mem[sym.Money+1] = 0x30
 	mem[sym.Money+2] = 0x39
@@ -94,8 +96,12 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	mem[first+0x25] = 20
 
 	second := first + sym.PartyMonSize
-	mem[second+0x00] = 0xfd // Egg
+	mem[second+0x00] = 0xaf // Togepi hatch species under the egg
 	mem[second+0x1f] = 5
+	mem[second+0x22] = 0
+	mem[second+0x23] = 0
+	mem[second+0x24] = 0
+	mem[second+0x25] = 19
 
 	mem[sym.NumItems] = 2
 	mem[sym.Items+0] = 0x12 // Potion

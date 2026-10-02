@@ -155,6 +155,13 @@ const (
 
 	EnemyStatLevels uint16 = 0xCBB2 // wEnemyStatLevels
 
+	// PlayerScreens is wPlayerScreens. Bit layout from pret/pokegold
+	// constants/battle_constants.asm: spikes, unused, safeguard, light
+	// screen, reflect. Address is PlayerStatLevels (0xCBAA) plus the 51
+	// intervening battle scratch bytes through wPlayerMinimized.
+	PlayerScreens           uint16 = 0xCBDD
+	PlayerScreensReflectBit        = 4
+
 	Money         uint16 = 0xD573
 	JohtoBadges   uint16 = 0xD57C
 	KantoBadges   uint16 = 0xD57D

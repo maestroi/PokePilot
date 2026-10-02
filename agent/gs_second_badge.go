@@ -222,8 +222,8 @@ func executeGSBugsy(m *emu.Emu, romData []byte) error {
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSlowpokeWellCleared) {
 		return fmt.Errorf("%w: Bugsy requires Slowpoke Well completion", errGSSecondBadgeUnexpectedState)
 	}
-	if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
-		return fmt.Errorf("gen2 Bugsy: recover party: %w", err)
+	if err := gsEnsureLeadReadyForBugsy(m, romData, profile); err != nil {
+		return fmt.Errorf("gen2 Bugsy: prepare lead: %w", err)
 	}
 
 	gym, err := gsOpeningMapID("AZALEA_GYM")
@@ -234,6 +234,16 @@ func executeGSBugsy(m *emu.Emu, romData []byte) error {
 	// native-grid path own any trainer sightline interruptions on the way.
 	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(gym, 5, 8)); err != nil {
 		return fmt.Errorf("gen2 Bugsy: reach leader: %w", err)
+	}
+	// Gym trainers can leave the party injured. Re-heal before the leader so
+	// Reflect/Growl setup still sees a healthy active mon against Scyther.
+	if !profile.DecodeCenter(m).Recovered {
+		if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
+			return fmt.Errorf("gen2 Bugsy: recover party before leader: %w", err)
+		}
+		if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(gym, 5, 8)); err != nil {
+			return fmt.Errorf("gen2 Bugsy: return to leader: %w", err)
+		}
 	}
 	if err := skill.Face(m, 5, 7); err != nil {
 		return fmt.Errorf("gen2 Bugsy: face leader: %w", err)

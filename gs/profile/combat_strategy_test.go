@@ -39,12 +39,55 @@ func TestGoldCombatPrefersRazorLeafOverTackleVsGastly(t *testing.T) {
 	}
 }
 
-func TestGoldGrowlIsNotDirectDamage(t *testing.T) {
-	_, role, err := NewGold().EvaluateCombatMove(nil, game.BattleCombatant{}, game.BattleCombatant{}, 45, 40)
+func TestGoldGrowlAndReflectAreSetupMoves(t *testing.T) {
+	p := NewGold()
+	_, growlRole, err := p.EvaluateCombatMove(nil, game.BattleCombatant{}, game.BattleCombatant{}, gsMoveGrowl, 40)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if role != game.BattleMoveRoleOther {
-		t.Fatalf("Growl role = %v, want other", role)
+	if growlRole != game.BattleMoveRoleSetup {
+		t.Fatalf("Growl role = %v, want setup", growlRole)
+	}
+	_, reflectRole, err := p.EvaluateCombatMove(nil, game.BattleCombatant{}, game.BattleCombatant{}, gsMoveReflect, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflectRole != game.BattleMoveRoleSetup {
+		t.Fatalf("Reflect role = %v, want setup", reflectRole)
+	}
+}
+
+func TestGoldPreferSetupMoveUsesReflectThenGrowl(t *testing.T) {
+	p := NewGold()
+	b := game.BattleState{
+		ActiveHP:       50,
+		ActiveMaxHP:    62,
+		EnemyLevel:     16,
+		EnemyAttackMod: game.StatStageNeutral,
+		ActiveReflect:  false,
+	}
+	reflectEval := game.BattleMoveEvaluation{NativeMoveID: gsMoveReflect, PolicyPriority: 40}
+	growlEval := game.BattleMoveEvaluation{NativeMoveID: gsMoveGrowl, PolicyPriority: 30}
+	attack := game.BattleMoveEvaluation{NativeMoveID: 33, ExpectedScore: 350}
+
+	if !p.PreferSetupMove(b, reflectEval, attack) {
+		t.Fatal("want Reflect before the screen is up")
+	}
+	b.ActiveReflect = true
+	if p.PreferSetupMove(b, reflectEval, attack) {
+		t.Fatal("Reflect must stop once the screen is up")
+	}
+	if !p.PreferSetupMove(b, growlEval, attack) {
+		t.Fatal("want Growl while enemy attack stage is neutral")
+	}
+	b.EnemyAttackMod = game.StatStageNeutral - 1
+	if p.PreferSetupMove(b, growlEval, attack) {
+		t.Fatal("Growl must stop after the enemy attack stage drops")
+	}
+	b.EnemyLevel = 14
+	b.EnemyAttackMod = game.StatStageNeutral
+	b.ActiveReflect = false
+	if p.PreferSetupMove(b, reflectEval, attack) {
+		t.Fatal("setup must not stall against sub-Scyther bugs")
 	}
 }

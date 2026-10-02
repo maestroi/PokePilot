@@ -63,6 +63,11 @@ type BattleState struct {
 	EnemyType2  uint8
 	ActiveType1 uint8
 	ActiveType2 uint8
+
+	// ActiveReflect is true when the active side currently has Reflect up.
+	// Gen-II projects this from wPlayerScreens; other adapters may leave it
+	// false when they do not model screens.
+	ActiveReflect bool
 }
 
 // StatStageNeutral is the Gen-I neutral stage representation. It remains here
