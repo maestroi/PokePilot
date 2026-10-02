@@ -92,7 +92,7 @@ origin="https://github.com/${POKEPILOT_GITHUB_REPO}.git"
 mkdir -p "$(dirname "$POKEPILOT_ROOT")" "$POKEPILOT_TRIAGE_STATE" "$GOCACHE" "$GOMODCACHE"
 if [ ! -d "$POKEPILOT_ROOT/.git" ]; then
 	log "cloning $origin"
-	git clone "$origin" "$POKEPILOT_ROOT"
+	git clone -q "$origin" "$POKEPILOT_ROOT"
 fi
 git -C "$POKEPILOT_ROOT" remote set-url origin "$origin"
 
@@ -104,7 +104,7 @@ triage_script="${POKEPILOT_TRIAGE_SCRIPT:-$script_dir/qwagent-triage.sh}"
 
 log "ladder=${POKEPILOT_TRIAGE_LADDER:-default} qwen=${POKEPILOT_QWEN_URL:-off} cursor model=$POKEPILOT_CURSOR_MODEL interval=$POKEPILOT_FIXER_INTERVAL rom=$POKEMON_RED_ROM"
 while true; do
-	if git -C "$POKEPILOT_ROOT" fetch --prune origin && git -C "$POKEPILOT_ROOT" checkout -f main && git -C "$POKEPILOT_ROOT" reset --hard origin/main; then
+	if git -C "$POKEPILOT_ROOT" fetch --prune origin && git -C "$POKEPILOT_ROOT" checkout -q -f main && git -C "$POKEPILOT_ROOT" reset -q --hard origin/main; then
 		set +e
 		"$triage_script"
 		status=$?

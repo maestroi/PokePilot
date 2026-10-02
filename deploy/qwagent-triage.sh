@@ -565,8 +565,11 @@ for row in json.load(sys.stdin):
 }
 
 # Probed once per tick: cursor/claude auth checks are slow CLI calls.
+# Picking assumes qwen is usable; qwen_free takes the real lock only once
+# this replica owns a key. Locking during the pick made a replica that was
+# only picking (or then lost the claim) push the other one off qwen.
 QWEN_FREE=0
-if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] && qwen_free; then
+if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] && command -v opencode >/dev/null 2>&1; then
 	QWEN_FREE=1
 fi
 LADDER_AVAILABLE=$(available_backends)
@@ -588,11 +591,6 @@ if [ -z "$KEY" ]; then
 	exit 0
 fi
 
-if ! AGENT_BACKEND=$(select_agent_backend); then
-	exit 0
-fi
-[ "$AGENT_BACKEND" = opencode ] || exec 8>&-
-
 # mkdir is the atomic cross-replica claim; the loser idles one tick.
 if [ "$DRY_RUN" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
 	mkdir -p "$POKEPILOT_TRIAGE_CLAIMS"
@@ -602,6 +600,17 @@ if [ "$DRY_RUN" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
 	fi
 	CLAIM_DIR="$POKEPILOT_TRIAGE_CLAIMS/$KEY"
 fi
+
+if [ "$QWEN_FREE" -eq 1 ] && ! qwen_free; then
+	QWEN_FREE=0
+	LADDER_AVAILABLE=$(available_backends)
+	log "qwen busy; ladder skips opencode for $KEY this tick"
+fi
+if ! AGENT_BACKEND=$(select_agent_backend); then
+	exit 0
+fi
+[ "$AGENT_BACKEND" = opencode ] || exec 8>&-
+
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
