@@ -26,8 +26,11 @@ the bit.
   byte-identical to `roms/pokemon_red.gb` (sha1
   `ea9bcae617fdf159b045185467ae58b2e4a48b9a`). `pokeyellow/` is the
   pokeyellow decompilation, byte-identical to `roms/pokemon_yellow.gb`
-  (sha1 `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`). `docs/POKERED.md` and
-  `docs/POKEYELLOW.md` map question → file.
+  (sha1 `cc7d03262ebfaf2f06772c1a480c7d9d5f4a38e1`). `pokegold/` is the
+  Gold/Silver decompilation (Silver shares that tree; see
+  `pokesilver/UPSTREAM.md`), byte-identical to the supported USA/Europe
+  rev0 ROMs. `docs/POKERED.md`, `docs/POKEYELLOW.md`, and `docs/POKEGOLD.md`
+  map question → file.
 - **Game facts do not define the core.** Generic layers own objective
   lifecycle, structured outcomes, semantic capabilities, and recovery policy;
   game-specific maps, RAM, menus, dialogue, and story mechanics belong behind
@@ -40,6 +43,7 @@ the bit.
 | `game/` | Game-agnostic objective transaction runtime and adapter contract; forbidden from importing Red/emulator/skill/world implementations |
 | `emu/` | The only package that talks to GomeBoy: open, step, input, save states, watch |
 | `red/rom/` | Static game data parsed out of the ROM image: maps, warps, connections, collision |
+| `gs/rom/` | Gold/Silver static ROM tables (map headers, objects, species, encounters, mechanics); live routing stays the first-badge slice |
 | `red/state/` | A RAM snapshot decoded into typed game state: party, inventory, badges, player, menus, text |
 | `red/sym/` | Generated RAM/HRAM addresses, verified against a committed `pokered.sym` snapshot |
 | `world/` | The map graph, collision grids, and BFS pathfinding |
@@ -52,6 +56,8 @@ the bit.
 | `cmd/pokeui` | Operator console; the browser talks only to this |
 | `pokered/` | The vendored Red decompilation — see `pokered/UPSTREAM.md` |
 | `pokeyellow/` | The vendored Yellow decompilation — see `pokeyellow/UPSTREAM.md` |
+| `pokegold/` | The vendored Gold/Silver decompilation — see `pokegold/UPSTREAM.md` |
+| `pokesilver/` | Silver provenance only; Silver is the `_SILVER` half of `pokegold/` |
 | `deploy/` | Docker image and Swarm stack for the local farm (`deploy/README.md`) |
 | `docs/` | Design, agent-loop notes, decomp map, slice plans |
 | `roms/` | Gitignored; your ROM lives here |
