@@ -43,7 +43,6 @@ func TestSpectatorMarshalAdvertisesPublicCapabilities(t *testing.T) {
 	}
 }
 
-
 func TestSpectatorMarshalSanitizesGen2SemanticMap(t *testing.T) {
 	run := spectatorRun{
 		RunID: "gold", Status: "running", Game: "pokemon-gold",
@@ -51,7 +50,7 @@ func TestSpectatorMarshalSanitizesGen2SemanticMap(t *testing.T) {
 		Sprites: []farm.MapSprite{{X: 4, Y: 4, PictureID: 0xaa, Slot: 2}},
 		MapAsset: &farm.SemanticMapAsset{
 			ID: 0x1807, Width: 3, Height: 2, Cells: ".#W...",
-			Warps: []farm.SemanticMapWarp{{X: 2, Y: 0, Dest: 0x1808}},
+			Warps:       []farm.SemanticMapWarp{{X: 2, Y: 0, Dest: 0x1808}},
 			Connections: []string{"1808"},
 		},
 	}
@@ -61,10 +60,12 @@ func TestSpectatorMarshalSanitizesGen2SemanticMap(t *testing.T) {
 	}
 	var got struct {
 		NativeMap uint16 `json:"native_map"`
-		MapAsset *struct {
-			ID uint16 `json:"id"`
+		MapAsset  *struct {
+			ID    uint16 `json:"id"`
 			Cells string `json:"cells"`
-			Warps []struct{ Dest uint16 `json:"dest"` } `json:"warps"`
+			Warps []struct {
+				Dest uint16 `json:"dest"`
+			} `json:"warps"`
 		} `json:"map_asset"`
 		Sprites []map[string]any `json:"sprites"`
 	}
