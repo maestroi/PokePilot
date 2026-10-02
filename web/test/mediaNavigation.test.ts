@@ -33,6 +33,11 @@ test('public world navigation is capability-gated', () => {
   assert.match(home, /v-if="canExploreWorld"/)
 })
 
+test('pokemon run details keep the world explorer mounted', () => {
+  assert.match(spectator, /import WorldExplorer from '\.\/WorldExplorer\.vue'/)
+  assert.match(spectator, /<WorldExplorer[\s\S]+selectedPublicCapabilities\.includes\('worldMap'\)[\s\S]+:run="selectedRun"/)
+})
+
 test('legacy floating replay shortcut is removed', () => {
   assert.doesNotMatch(spectatorHTML, /position:fixed[^\n]+Replay library/)
 })
