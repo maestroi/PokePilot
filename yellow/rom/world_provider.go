@@ -48,7 +48,10 @@ func (p *worldProvider) ParseMap(mapID uint8) (worldmodel.MapHeader, error) {
 func projectWorldHeader(h MapHeader) worldmodel.MapHeader {
 	warps := make([]worldmodel.Warp, len(h.Warps))
 	for i, w := range h.Warps {
-		warps[i] = worldmodel.Warp{X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: w.DestMap}
+		warps[i] = worldmodel.Warp{
+			X: w.X, Y: w.Y, DestWarpID: w.DestWarpID, DestMap: w.DestMap,
+			Inert: IsInertWarp(h.ID, w.X, w.Y),
+		}
 	}
 	connections := make([]worldmodel.Connection, len(h.Connections))
 	for i, c := range h.Connections {
