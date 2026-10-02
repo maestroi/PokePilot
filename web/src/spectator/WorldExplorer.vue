@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { SpectatorRun } from '../shared/api/spectator'
+import { mapHexForGame, spectatorNativeMap } from '../shared/mapCatalog'
 import SemanticMap from '../shared/components/SemanticMap.vue'
 import { locationLabel } from './model'
 
@@ -8,7 +9,7 @@ const props = defineProps<{
   run: SpectatorRun
 }>()
 
-const selectedMap = ref(Number(props.run.map || 0))
+const selectedMap = ref(spectatorNativeMap(props.run))
 const history = ref<number[]>([])
 const followLive = ref(true)
 const showTrail = ref(true)
@@ -16,14 +17,14 @@ const showSprites = ref(true)
 const showWarps = ref(true)
 const developerOverlay = ref(false)
 
-const liveMap = computed(() => Number(props.run.map || 0))
+const liveMap = computed(() => spectatorNativeMap(props.run))
 const isLiveMap = computed(() => selectedMap.value === liveMap.value)
-const mapID = computed(() => Math.max(0, selectedMap.value).toString(16).padStart(2, '0').toUpperCase())
+const mapID = computed(() => mapHexForGame(props.run.game, selectedMap.value))
 const mapTrail = computed<[number, number][]>(() => isLiveMap.value ? props.run.trail || [] : [])
 const mapSprites = computed(() => isLiveMap.value ? props.run.sprites || [] : [])
 
 watch(() => props.run.run_id, () => {
-  selectedMap.value = Number(props.run.map || 0)
+  selectedMap.value = spectatorNativeMap(props.run)
   history.value = []
   followLive.value = true
 })
@@ -33,7 +34,7 @@ watch(liveMap, (next) => {
 })
 
 function exploreMap(destination: number): void {
-  const next = Math.max(0, Math.min(255, Math.trunc(Number(destination))))
+  const next = Math.max(0, Math.min(0xffff, Math.trunc(Number(destination))))
   if (!Number.isFinite(next) || next === selectedMap.value) return
   history.value.push(selectedMap.value)
   selectedMap.value = next
@@ -90,7 +91,9 @@ function returnToLive(): void {
 
     <div class="grid min-h-[30rem] grid-rows-[minmax(0,1fr)_auto] lg:min-h-[36rem]">
       <SemanticMap
+        :game="run.game"
         :map="selectedMap"
+        :inline-map="isLiveMap ? run.map_asset || null : null"
         :x="run.x"
         :y="run.y"
         :trail="mapTrail"
