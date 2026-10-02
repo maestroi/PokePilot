@@ -382,3 +382,28 @@ func TestEarlyJohtoWorldProviderRoutesStoryServicesForFogBadgeSlice(t *testing.T
 		}
 	}
 }
+
+
+func TestEarlyJohtoEcruteakGymLandingWarpsAreInert(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	gym := nativeID(t, "ECRUTEAK_GYM")
+	header, err := provider.ParseMap(gym)
+	if err != nil {
+		t.Fatalf("ParseMap(ECRUTEAK_GYM): %v", err)
+	}
+
+	inert := map[[2]uint8]bool{}
+	for _, warp := range header.Warps {
+		if warp.Inert {
+			inert[[2]uint8{warp.X, warp.Y}] = true
+		}
+	}
+	for _, at := range [][2]uint8{{4, 14}, {6, 7}} {
+		if !inert[at] {
+			t.Fatalf("Ecruteak Gym landing warp (%d,%d) is not inert", at[0], at[1])
+		}
+	}
+	if inert[[2]uint8{2, 4}] {
+		t.Fatal("Ecruteak Gym pit warp (2,4) was incorrectly marked inert")
+	}
+}
