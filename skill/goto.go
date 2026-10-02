@@ -544,6 +544,15 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
 		}
+		// A warp or connection makes the destination map's identity current
+		// while the block buffer still holds the previous map's bytes. Decoding
+		// collision there answers a geometry question about a map that is not
+		// loaded, so wait for the shell to settle before reading it. Gen-I
+		// regular warps leave wJoyIgnore clear through the window, so this is
+		// the gate that catches them (see waitLiveMapDimsSettled).
+		if _, err := waitLiveMapDimsSettled(m, romData); err != nil {
+			return err
+		}
 		now, stateErr := navigationStateWithDecoder(m, overworld)
 		if stateErr != nil {
 			return stateErr
