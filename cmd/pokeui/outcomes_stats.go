@@ -210,7 +210,7 @@ func writeOutcomeStatsWarming(res http.ResponseWriter) {
 func summarizeOutcomeStream(dec *json.Decoder) (farmOutcomeStats, error) {
 	var out farmOutcomeStats
 	reasons := map[string]int{}
-	badges := make([]int, 9)
+	badges := make([]int, maxTrackedPokemonBadges+1)
 	groups := map[string]*endlessExperimentStats{}
 	profiles := map[string]*llmProfileAccumulator{}
 	models := map[string]*llmModelStats{}
@@ -303,8 +303,8 @@ func addOutcomeRun(
 	}
 	if settled && run.Player != nil {
 		n := len(run.Player.Badges)
-		if n > 8 {
-			n = 8
+		if n > maxTrackedPokemonBadges {
+			n = maxTrackedPokemonBadges
 		}
 		out.UsableProgressRuns++
 		badges[n]++
