@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -58,10 +59,27 @@ func evaluateRedRouteGate(romData []byte, mem *state.Mem, transition gameruntime
 	return &blockage, true
 }
 
+// activeTransitions records the semantic transitions executing on each
+// emulator. An executor whose approach travel routes back through its own
+// transition would otherwise recurse without stepping until the runner is
+// OOM-killed (run-1mey4xe5t2w04).
+var activeTransitions sync.Map // activeTransitionKey -> struct{}
+
+type activeTransitionKey struct {
+	m  *emu.Emu
+	id string
+}
+
 func (x *redRouteTransitionExecutor) ExecuteTransition(edge world.Edge, transition gameruntime.Transition) (world.TransitionExecutionResult, error) {
 	if x == nil || x.m == nil {
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: nil Red semantic transition executor")
 	}
+	key := activeTransitionKey{m: x.m, id: transition.ID}
+	if _, nested := activeTransitions.LoadOrStore(key, struct{}{}); nested {
+		px, py := playerXY(x.m)
+		return world.TransitionExecutionResult{}, fmt.Errorf("%w: %s re-entered while approaching itself from (%d,%d)", ErrTransitionUnavailableHere, transition.ID, px, py)
+	}
+	defer activeTransitions.Delete(key)
 	if transition.Gate {
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
