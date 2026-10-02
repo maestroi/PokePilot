@@ -113,10 +113,28 @@ func dexHabitatBonusSpecies(catalog DexCatalog, place PlaceID, target SpeciesID)
 	return out
 }
 
+// safariCatchIntentForPlace returns the adapter intent a catch at place must
+// run under when the place itself determines the path. A Safari Zone map is
+// reachable only through a paid session, so a catch there is a Safari catch
+// even when the offer omitted the intent: failure contracts written before
+// the intent field joined FailureObjective reconstruct without it, and
+// generic travel cannot name a Safari place.
+func safariCatchIntentForPlace(place PlaceID) string {
+	if mapID, ok := dexPlaceMapID(place); ok && safariRequirement(mapID) {
+		return dexSafariIntent
+	}
+	return ""
+}
+
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	species, ok := redSpeciesID(o.Species)
 	if !ok {
 		return result, fmt.Errorf("agent: %s: unknown Red species %q", o, o.Species)
+	}
+
+	// The place can determine the adapter path when the offer did not name it.
+	if o.Intent == "" {
+		o.Intent = safariCatchIntentForPlace(o.Place)
 	}
 
 	// Acquisition storage follows the game mechanic instead of forcing every

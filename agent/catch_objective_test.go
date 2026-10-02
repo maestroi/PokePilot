@@ -53,6 +53,21 @@ func TestCatchObjectivePartySlotOnlyForDirectPartyAdditions(t *testing.T) {
 	}
 }
 
+func TestSafariCatchIntentDerivesFromHabitatPlace(t *testing.T) {
+	for _, place := range []PlaceID{"safari zone east", "safari zone north", "safari zone west", "safari zone center"} {
+		if got := safariCatchIntentForPlace(place); got != dexSafariIntent {
+			t.Fatalf("safariCatchIntentForPlace(%q) = %q, want %q", place, got, dexSafariIntent)
+		}
+	}
+	// The gate building and ordinary maps are not session habitats: a catch
+	// there is not a Safari catch, and the offer's intent stays authoritative.
+	for _, place := range []PlaceID{"", "route 2", "fuchsia city", "safari zone gate"} {
+		if got := safariCatchIntentForPlace(place); got != "" {
+			t.Fatalf("safariCatchIntentForPlace(%q) = %q, want empty", place, got)
+		}
+	}
+}
+
 func TestCatchObjectiveFrameBudgetReservesControllerCleanup(t *testing.T) {
 	catchBudget := objectiveFrameBudgetFor(Objective{Kind: KindCatch, Species: "zubat"})
 	if catchBudget != catchObjectiveFrameBudget {
