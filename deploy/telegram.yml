@@ -1,0 +1,47 @@
+# Optional Telegram operator overlay for an existing PokePilot Swarm.
+#
+# Deploy after deploy/farm.yml so the external farm network exists:
+#   docker stack deploy -c deploy/telegram.yml pokefarm-telegram
+#
+# The bot is deliberately not part of deploy/farm.yml: an unset Telegram token
+# must never make the core farm fail to deploy.
+services:
+  telegram:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["poketelegram"]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_TOKEN_FILE: ${TELEGRAM_BOT_TOKEN_FILE:-}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      TELEGRAM_NOTIFY_CHAT_IDS: ${TELEGRAM_NOTIFY_CHAT_IDS:-}
+      # Backward-compatible single private chat; also authorizes that chat.
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      POKEPILOT_OPERATOR_URL: ${POKEPILOT_OPERATOR_URL:-http://wall:8080}
+      # The replay worker is normally an external sidecar. Reuse FARM_REPLAY_URL
+      # when present; leave empty to disable /replay and replay-health details.
+      POKEPILOT_REPLAY_URL: ${FARM_REPLAY_URL:-}
+      POKEPILOT_ALERTMANAGER_URL: ${POKEPILOT_ALERTMANAGER_URL:-}
+      POKEPILOT_ADMIN_BASE_URL: ${POKEPILOT_ADMIN_BASE_URL:-https://admin.rompilot.app}
+      POKEPILOT_SPECTATOR_BASE_URL: ${POKEPILOT_SPECTATOR_BASE_URL:-https://rompilot.app/runs}
+      POKETELEGRAM_EVENT_INTERVAL: ${POKETELEGRAM_EVENT_INTERVAL:-15s}
+      POKETELEGRAM_STALL_AFTER: ${POKETELEGRAM_STALL_AFTER:-15m}
+      POKETELEGRAM_CONTROL_SPACING: ${POKETELEGRAM_CONTROL_SPACING:-2s}
+    networks:
+      - farm
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+networks:
+  farm:
+    external: true
+    name: ${POKEPILOT_FARM_NETWORK:-pokefarm_default}

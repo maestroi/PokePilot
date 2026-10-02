@@ -42,6 +42,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepil
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui && \
     CGO_ENABLED=0 go build -o /out/pokereplay ./cmd/pokereplay && \
     CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
+    CGO_ENABLED=0 go build -o /out/poketelegram ./cmd/poketelegram && \
     CGO_ENABLED=0 go build -o /out/gen1-trade-peer ./cmd/gen1-trade-peer
 
 # Both GomeBoy helpers MUST come from the release PokePilot itself compiles
@@ -69,6 +70,7 @@ COPY --from=build /out/pokewall /usr/local/bin/pokewall
 COPY --from=build /out/pokeui /usr/local/bin/pokeui
 COPY --from=build /out/pokereplay /usr/local/bin/pokereplay
 COPY --from=build /out/pokeissues /usr/local/bin/pokeissues
+COPY --from=build /out/poketelegram /usr/local/bin/poketelegram
 COPY --from=build /out/gen1-trade-peer /usr/local/bin/gen1-trade-peer
 COPY --from=build /out/gomeboy-link-broker /usr/local/bin/gomeboy-link-broker
 COPY --from=build /out/gomeboy-stream /usr/local/bin/gomeboy-stream
