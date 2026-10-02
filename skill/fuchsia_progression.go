@@ -48,6 +48,13 @@ const (
 // Lavender -> Route 12 -> Routes 13/14/15 -> Fuchsia: it exercises the Poké
 // Flute Snorlax gate without introducing the Bicycle/Cycling Road dependency.
 //
+// The Poké Flute handoff region is a legal resume point. Pokemon Tower's
+// slice already includes Lavender, the Route 7/8 underground path, and the
+// Celadon hub where a run heals, shops, or flies after the flute. From that
+// hub the first owned action is Travel east through the underground path to
+// Route 12, so those maps must enter this verb instead of failing as an
+// unknown out-of-slice error.
+//
 // Vermilion City and the Route 11/12 gate corridor are included because the
 // first owned action is Travel to the Route 12 Snorlax stand: after the Poké
 // Flute handoff a run commonly blackouts, flies, or wanders back to Vermilion
@@ -56,6 +63,9 @@ const (
 // Every Safari rest house is included because an interrupted run can be saved
 // there while EVENT_IN_SAFARI_ZONE and the finite step budget are still live.
 func FuchsiaProgressionAvailable(mapID uint8) bool {
+	if PokemonTowerAvailable(mapID) {
+		return true
+	}
 	switch mapID {
 	case mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
