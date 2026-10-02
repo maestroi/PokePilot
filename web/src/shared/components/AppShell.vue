@@ -42,7 +42,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
 <template>
   <div
     :class="[
-      'min-h-screen text-[var(--poke-text)]',
+      'min-h-screen w-full max-w-full overflow-x-clip text-[var(--poke-text)]',
       mode === 'public'
         ? 'public-shell bg-[radial-gradient(circle_at_15%_-10%,rgba(239,68,68,.13),transparent_24rem),radial-gradient(circle_at_82%_2%,rgba(250,204,21,.08),transparent_25rem),radial-gradient(circle_at_50%_100%,rgba(67,56,202,.13),transparent_35rem),#070a16]'
         : 'bg-transparent'
@@ -51,18 +51,18 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
     <Disclosure
       as="nav"
       :class="[
-        'sticky top-0 z-40 border-b',
+        'sticky top-0 z-40 w-full max-w-full border-b',
         mode === 'public'
           ? 'border-[#3b4167]/55 bg-[#080b18]/92 shadow-lg shadow-black/25 backdrop-blur-xl'
           : 'border-[var(--poke-border)] bg-[#0f141c]'
       ]"
       v-slot="{ open }"
     >
-      <div :class="['flex items-center gap-2 px-2 sm:px-3', mode === 'public' ? 'h-14' : 'h-11']">
+      <div :class="['flex w-full min-w-0 items-center gap-2 px-2 sm:px-3', mode === 'public' ? 'h-14' : 'h-11']">
         <div
           :class="[
             'flex min-w-0 items-center gap-2',
-            mode === 'public' ? 'pr-4 sm:min-w-[12rem]' : 'border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]'
+            mode === 'public' ? 'pr-2 sm:min-w-[12rem] sm:pr-4' : 'border-r border-[var(--poke-border)] pr-3 sm:w-[13.125rem]'
           ]"
         >
           <span
@@ -112,7 +112,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
           <slot name="summary" />
         </div>
 
-        <div class="flex shrink-0 items-center gap-1.5">
+        <div class="flex min-w-0 shrink-0 items-center gap-1 sm:gap-1.5">
           <slot name="actions" />
           <DisclosureButton
             v-if="effectiveNavigation.length"
@@ -125,7 +125,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
         </div>
       </div>
 
-      <DisclosurePanel v-if="effectiveNavigation.length" class="border-t border-[var(--poke-border)] sm:hidden">
+      <DisclosurePanel v-if="effectiveNavigation.length" class="w-full max-w-full border-t border-[var(--poke-border)] sm:hidden">
         <a
           v-for="item in effectiveNavigation"
           :key="item.name"
@@ -135,7 +135,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
             item.current
               ? 'border-[var(--poke-cyan)] bg-[var(--poke-panel)] text-white'
               : 'border-transparent text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
-            'block border-l-2 px-3 py-2 text-sm font-semibold'
+            'block border-l-2 px-3 py-3 text-sm font-semibold'
           ]"
         >
           {{ item.name }}
@@ -146,7 +146,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
       </DisclosurePanel>
     </Disclosure>
 
-    <main :class="mode === 'public' ? 'px-2.5 py-3 sm:px-4 sm:py-4 xl:px-5' : 'px-2.5 py-2 sm:px-3'">
+    <main :class="mode === 'public' ? 'w-full min-w-0 max-w-full px-2.5 py-3 sm:px-4 sm:py-4 xl:px-5' : 'w-full min-w-0 max-w-full px-2.5 py-2 sm:px-3'">
       <div v-if="showIntro && (title || subtitle)" class="mb-3 max-w-4xl">
         <span v-if="eyebrow && effectiveNavigation.length" class="poke-kicker block">{{ eyebrow }}</span>
         <h1 v-if="effectiveNavigation.length" class="text-xl font-semibold text-white">{{ title }}</h1>
