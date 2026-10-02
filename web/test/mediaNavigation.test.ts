@@ -67,6 +67,21 @@ test('operator proxy allowlists media render mutations', () => {
   assert.match(runInspectorProxy, /DELETE \/v1\/media\/render-jobs\/\{id\}/)
 })
 
+test('media workspace exposes safe live broadcast controls', () => {
+  assert.match(mediaView, /Broadcasts/)
+  assert.match(mediaView, /<BroadcastPanel/)
+  assert.match(broadcasts, /Start broadcast/)
+  assert.match(broadcasts, /Stop broadcast/)
+  assert.match(broadcasts, /Credentials stay on the replay host/)
+  assert.doesNotMatch(broadcastAPI, /stream_key/)
+})
+
+test('operator proxy exposes private broadcast controls', () => {
+  assert.match(runInspectorProxy, /GET \/v1\/live\/broadcast\/config/)
+  assert.match(runInspectorProxy, /live\/broadcast\/start/)
+  assert.match(runInspectorProxy, /live\/broadcast\/stop/)
+})
+
 test('public publishing controls describe what is actually public', () => {
   assert.match(publicControls, /Publish on start/)
   assert.match(publicControls, /Public live/)
