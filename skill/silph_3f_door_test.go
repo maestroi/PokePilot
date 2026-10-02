@@ -66,3 +66,60 @@ func TestSilphCo3FDoorConstantsMatchDecomp(t *testing.T) {
 		}
 	}
 }
+
+// TestSilphCo3FClosedDoorKeepsFloorCells locks the geometry that made #2420's
+// "any walkable cell => door open" check false-succeed on 3F: a closed $5f
+// door only blocks two of the four ReplaceTileBlock cells. unlockSilphDoor
+// must require the whole block walkable (silphDoorBlockOpen), or it skips the
+// Card Key A-press and ClearSilphCo dies with leg_unwalkable to the 3F pad.
+func TestSilphCo3FClosedDoorKeepsFloorCells(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := rom.ParseMap(romData, silphCo3FMap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grid, err := world.Build(romData, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Closed-door geometry from SilphCo3FGateCallbackScript's $5f replacements.
+	for _, p := range [][2]int{{9, 8}, {9, 9}, {17, 8}, {17, 9}} {
+		grid.Set(p[0], p[1], false)
+	}
+
+	for _, block := range [][2]int{
+		{silph3FCorridorDoorBlockX, silph3FCorridorDoorBlockY},
+		{silph3FDoorBlockX, silph3FDoorBlockY},
+	} {
+		cells := replacedBlockCells(block[1], block[0])
+		walkable := 0
+		for _, c := range cells {
+			if grid.Walkable(c[0], c[1]) {
+				walkable++
+			}
+		}
+		if walkable == 0 {
+			t.Fatalf("door block (%d,%d): closed geometry left no floor cells; A-skip heuristic unneeded",
+				block[0], block[1])
+		}
+		if walkable == len(cells) {
+			t.Fatalf("door block (%d,%d): closed geometry left all cells walkable; would false-open",
+				block[0], block[1])
+		}
+		// silphDoorBlockOpen must reject this partial state.
+		for _, c := range cells {
+			if !grid.Walkable(c[0], c[1]) {
+				goto partialOK
+			}
+		}
+		t.Fatalf("door block (%d,%d): expected at least one closed cell", block[0], block[1])
+	partialOK:
+	}
+}

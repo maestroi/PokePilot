@@ -181,12 +181,19 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // and success is the caller's newly-reachable destination, not a press count or
 // a particular text page.
 //
-// A cell that is already walkable in the live grid is positive evidence the
-// door is open: the map-load callback has already replaced the block with
-// open-door tiles. Pressing A on a walkable non-object tile produces no text,
-// so the StepUntil would time out and the loop would burn all four cells.
+// Closed Silph Card Key doors are a $5f ReplaceTileBlock that leaves half of
+// the 2x2 walkable floor. A single walkable cell is therefore NOT proof the
+// door is open — only the whole block being walkable is (map-load callback
+// already restored open-door tiles). Pressing A on a walkable non-object tile
+// produces no text, so those cells are skipped; closed cells still get an
+// A-press. When the whole block is already open but the caller's destination
+// tile is occupied by a sprite (11F Giovanni trigger), return success: A
+// cannot help and the caller walks beside the sprite instead.
 func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy MovePolicy, reachable func() bool) error {
 	if reachable() {
+		return nil
+	}
+	if silphDoorBlockOpen(m, romData, blockX, blockY) {
 		return nil
 	}
 	var last error
@@ -196,7 +203,7 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 		}
 		tx, ty := uint8(p[0]), uint8(p[1])
 		if silphDoorCellOpen(m, romData, tx, ty) {
-			return nil
+			continue
 		}
 		dest, move, err := besideDestination(m, romData, tx, ty)
 		if err != nil {
@@ -246,6 +253,12 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 		if _, err := m.StepUntil(cardKeyDoorOpenBudget, func(*emu.Emu) bool { return reachable() }); err == nil {
 			return nil
 		}
+		if silphDoorBlockOpen(m, romData, blockX, blockY) {
+			return nil
+		}
+	}
+	if reachable() || silphDoorBlockOpen(m, romData, blockX, blockY) {
+		return nil
 	}
 	if last == nil {
 		last = errors.New("no Card Key cell accepted the interaction")
@@ -270,10 +283,9 @@ func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
 	return err == nil
 }
 
-// silphDoorCellOpen reports whether a Card Key block cell is already walkable
-// in the live grid. The map-load callback replaces the closed-door block with
-// open-door tiles once the unlock event flag is set, so a walkable cell is
-// positive evidence the door is open and no A-press is needed.
+// silphDoorCellOpen reports whether one Card Key block cell is walkable in the
+// live grid. Closed $5f door blocks keep two of their four cells as floor, so
+// callers must not treat a single walkable cell as "door open".
 func silphDoorCellOpen(m *emu.Emu, romData []byte, tx, ty uint8) bool {
 	mapID := m.Peek8(sym.CurMap)
 	h, err := rom.ParseMap(romData, mapID)
@@ -285,6 +297,18 @@ func silphDoorCellOpen(m *emu.Emu, romData []byte, tx, ty uint8) bool {
 		return false
 	}
 	return grid.Walkable(int(tx), int(ty))
+}
+
+// silphDoorBlockOpen is the positive postcondition for an already-unlocked
+// Card Key door: every cell of the ReplaceTileBlock 2x2 is walkable. Partial
+// walkability is the closed-door geometry (see TestSilphCo3FClosedDoorKeepsFloorCells).
+func silphDoorBlockOpen(m *emu.Emu, romData []byte, blockX, blockY int) bool {
+	for _, p := range replacedBlockCells(blockY, blockX) {
+		if !silphDoorCellOpen(m, romData, uint8(p[0]), uint8(p[1])) {
+			return false
+		}
+	}
+	return true
 }
 
 func traverseSilphWarp(m *emu.Emu, romData []byte, edge world.Edge, policy MovePolicy, unlock func() error) error {
