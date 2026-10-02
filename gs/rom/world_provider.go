@@ -43,9 +43,11 @@ type mapSpec struct {
 // names here (rather than raw group/number ids) makes the generated gs/data
 // catalog the single source of native map identity.
 //
-// This deliberately is not the full #973 parser yet. Unsupported destinations
-// may appear in a source map's warp/connection table, but BuildNativeGraph
-// drops an edge unless the destination is also enumerated by MapIDs.
+// Live routing still uses this verified early-Johto slice. The full #973
+// ROM parser is NewWorldProvider: it enumerates every catalog map. Unsupported
+// destinations may appear in a source map's warp/connection table, but
+// BuildNativeGraph drops an edge unless the destination is also enumerated
+// by MapIDs.
 var firstBadgeTopology = []mapSpec{
 	{
 		name: "PLAYERS_HOUSE_2F",
@@ -520,9 +522,9 @@ type firstBadgeWorldProvider struct {
 // NewFirstBadgeWorldProvider returns the verified Gold/Silver topology needed
 // for the verified early-Johto slice from a fresh save through Ecruteak.
 //
-// romData is accepted now so this constructor can grow into the real #973 ROM
-// parser without changing its profile-facing shape. The current slice uses
-// only generated catalog identities plus decomp-verified topology facts.
+// romData is accepted so the profile-facing constructor stays stable while
+// NewWorldProvider owns the full ROM parse. The current slice uses generated
+// catalog identities plus decomp-verified topology facts.
 func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeGridProvider {
 	_ = romData
 	specs := make(map[uint16]mapSpec, len(firstBadgeTopology))

@@ -392,6 +392,23 @@ packages without checking they hold on Blue — encounter tables and NPC trades
 must stay ROM-owned (`rom.WildEncounters`, `rom.NPCTrades`, …) so both images
 read their own data.
 
+## Gen II: Gold and Silver
+
+Pokémon Gold and Silver share one engine and one pret/pokegold tree
+(`_GOLD` / `_SILVER` ifdefs). Native map identity is `(group, number)` packed
+as `uint16`, so the adapter exposes `worldmodel.NativeMapTopologyProvider`
+instead of the historical uint8 Red graph.
+
+`gs/rom` is the Gold/Silver equivalent of `red/rom`: it locates static tables
+from ROM structure (Gold and Silver differ in address) and decodes map
+headers, objects, species, encounters, moves, evolutions, TMs/HMs, marts,
+and items. Generic packages consume that only through
+`worldmodel.NativeMapTopologyProvider` and `game.ROMParser`. Do not import
+`gs/rom` types into `game/`, `world/`, or `skill/`.
+
+Live early-Johto routing stays on `NewFirstBadgeWorldProvider`. The full
+Johto+Kanto graph is `NewWorldProvider`, gated on a Gold or Silver ROM.
+
 ## Design gate for every change
 
 Before implementing a gameplay/runtime fix, answer these questions:
