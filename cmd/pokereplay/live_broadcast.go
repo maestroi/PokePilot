@@ -255,6 +255,12 @@ func (s *liveBroadcastSession) run(ctx context.Context) {
 			s.setUnavailable("disconnected", err)
 			continue
 		}
+		if liveRunBetweenAttempts(run.Status) {
+			// A deploy drain or retry hands the run to its next attempt through
+			// queued/leased; the run is still live, only its frame source is not.
+			s.setUnavailable("waiting", nil)
+			continue
+		}
 		if !strings.EqualFold(strings.TrimSpace(run.Status), "running") {
 			return
 		}
@@ -273,6 +279,14 @@ func (s *liveBroadcastSession) run(ctx context.Context) {
 		s.markReconnected()
 		s.publish(liveEncodedFrame{frame: run.Frame, jpeg: rendered})
 	}
+}
+
+func liveRunBetweenAttempts(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "queued", "leased":
+		return true
+	}
+	return false
 }
 
 func liveRunAttempt(run liveRunView) int {
