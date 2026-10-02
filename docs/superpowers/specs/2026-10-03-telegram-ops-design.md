@@ -27,7 +27,7 @@ farm image (`ghcr.io/maestroi/pokepilot`).
 | Service | Mode / placement | Privilege | Owns |
 |---|---|---|---|
 | `telegram` (`poketelegram`) | 1 replica, any node | none | All Telegram I/O, the alert state machine, digest, interface, live board |
-| `watch` (`pokewatch`) | 1 replica, `node.role == manager` | `/var/run/docker.sock` | Swarm, GitHub, planner endpoint and deploy-freeze checks; aggregates `node` reports; pushes check results to `telegram` |
+| `watch` (`pokewatch`) | 1 replica, `node.role == manager` | `/var/run/docker.sock` | Swarm, GitHub and deploy-freeze checks; aggregates `node` reports; pushes check results to `telegram` |
 | `node` (`pokewatch -node`) | `mode: global` | host `/` read-only at `/host` | Its node's free disk; on the fixer node, the fixer ledger summary |
 
 `watch` reschedules to any reachable manager on node loss. `telegram` keeps the
@@ -71,7 +71,7 @@ open alerts. Mutes do not survive a restart.
 | deploy frozen | watch | 1 | informational while frozen |
 | disk free < 20G (per node, per mount) | node → watch | 2 | `POKEPILOT_WATCH_MIN_FREE_GB` |
 | node report missing | watch | 1 | |
-| planner endpoint unreachable | watch | 2 | probes each live run's `stats.endpoint` + `/health` |
+| planner endpoint unreachable | telegram | 2 | probes each live run's `stats.endpoint` + `/health`; the bot already holds the run list, so `watch` needs no wall access |
 | paid fixer cap reached | node (fixer) → watch | 1 | `POKEPILOT_PAID_DAILY_CAP` |
 | spent / parked triage keys | node (fixer) → watch | 1 | links each key's issue |
 | `[triage:]` PRs open > 12h | watch (GitHub) | 1 | |
@@ -111,7 +111,14 @@ group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
    resumes the run from its checkpoint, unlike a cancel.
 4. Fallback: if the runner does not finish within 10 min of the flag (for
    example a wedged emulator loop), the wall settles the attempt as `stuck`
-   itself with the same detail, so the flag is never silently lost.
+   itself with the same detail plus "runner did not stop; no finish dump".
+   Without a dump no issue is filed; the bot says so after an hour, so the
+   flag is never silently lost.
+6. Implementation note: no runner or heartbeat change is needed. A wall
+   cancel already stops the runner (the LLM path reports it as `budget` with
+   no detail, the policy paths as `cancelled`); the wall rewrites exactly
+   that stop of the flagged attempt to `stuck` in both finish paths
+   (`handleFinish` and the control-plane wrapper before `persistFinish`).
 5. Bot: confirmation, optional note via a reply prompt with a Skip button,
    then a follow-up message with the issue link once the wall reports it.
 
@@ -124,8 +131,8 @@ group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
   ‹ ›. Lists also number runs; `/run 2`, `/flag 2` resolve against the
   last list shown in that chat.
 - **Run card**: badges bar (`🏅 ●●●●●○○○ 5/8`), maps visited, time since last
-  new map, frames/min over 15 min, attempts and recoveries with the latest
-  recovery reason, planner state, goal. Buttons: Frame, Replay, Triage,
+  new map, frames/min over 15 min, attempt / lost / recovery-event counts,
+  planner state, goal, and the run's result or triage group when present. Buttons: Frame, Replay, Triage,
   🚩 Flag stuck, Stop, Restart (Stop/Restart/Flag confirmed), Admin, Spectator.
 - **Reply shortcuts**: replying `flag`, `stop`, `frame` or `run` to any bot
   message that concerns one run acts on that run. The bot keeps a bounded
