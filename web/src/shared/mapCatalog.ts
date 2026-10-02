@@ -1,4 +1,4 @@
-import { GEN2_WORLD_MANIFEST } from './gen2WorldManifest.generated'
+import { GEN2_WORLD_MANIFEST } from './gen2WorldManifest.generated.ts'
 
 export interface MapCatalogEntry {
   id: number
