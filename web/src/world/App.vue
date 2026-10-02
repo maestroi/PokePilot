@@ -6,7 +6,15 @@ import type { SpectatorRun } from '../shared/api/spectator'
 import AppShell from '../shared/components/AppShell.vue'
 import SemanticMap from '../shared/components/SemanticMap.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { MAP_CATALOG, mapEntry, resolveMapQuery } from '../shared/mapCatalog'
+import {
+  mapAssetURL,
+  mapCatalogForGame,
+  mapEntryForGame,
+  mapHexForGame,
+  normalizeWorldMapGame,
+  resolveMapQueryForGame,
+  spectatorNativeMap
+} from '../shared/mapCatalog'
 import type { PublicCapability } from '../shared/publicCapabilities'
 
 interface MapWarp {
@@ -30,9 +38,11 @@ type WorldView = 'explorer' | 'debug'
 const publicCapabilities: PublicCapability[] = ['live', 'replay', 'worldMap']
 
 const initialParams = new URLSearchParams(window.location.search)
-const initialEntry = resolveMapQuery(initialParams.get('map')) || MAP_CATALOG[0]
-const selectedMap = ref(initialEntry.id)
-const search = ref(initialEntry.name)
+const initialGame = normalizeWorldMapGame(initialParams.get('game')) || 'pokemon-red'
+const initialCatalog = mapCatalogForGame(initialGame)
+const initialEntry = resolveMapQueryForGame(initialGame, initialParams.get('map')) || initialCatalog[0]
+const selectedMap = ref(initialEntry?.id || 0)
+const search = ref(initialEntry?.name || '')
 const xInput = ref(initialParams.get('x') || '')
 const yInput = ref(initialParams.get('y') || '')
 const runID = ref(initialParams.get('run') || '')
@@ -54,14 +64,18 @@ const spectator = usePollingResource(
   { intervalMs: 3000, isEmpty: () => false }
 )
 
-const liveRuns = computed(() => (spectator.data.value?.runs || []).filter((run) => run.status !== 'done' && run.status !== 'queued'))
+const liveRuns = computed(() => (spectator.data.value?.runs || []).filter((run) => {
+  return run.status !== 'done' && run.status !== 'queued' && mapCatalogForGame(run.game).length > 0
+}))
 const selectedRun = computed<SpectatorRun | null>(() => {
   if (!runID.value) return null
   return (spectator.data.value?.runs || []).find((run) => run.run_id === runID.value) || null
 })
-const selectedEntry = computed(() => mapEntry(selectedMap.value))
-const mapID = computed(() => selectedMap.value.toString(16).padStart(2, '0').toUpperCase())
-const isRunMap = computed(() => Boolean(selectedRun.value) && Number(selectedRun.value?.map) === selectedMap.value)
+const selectedGame = computed(() => normalizeWorldMapGame(selectedRun.value?.game) || initialGame)
+const activeCatalog = computed(() => mapCatalogForGame(selectedGame.value))
+const selectedEntry = computed(() => mapEntryForGame(selectedGame.value, selectedMap.value))
+const mapID = computed(() => mapHexForGame(selectedGame.value, selectedMap.value))
+const isRunMap = computed(() => Boolean(selectedRun.value) && spectatorNativeMap(selectedRun.value) === selectedMap.value)
 const target = computed<[number, number] | null>(() => {
   if (xInput.value.trim() === '' || yInput.value.trim() === '') return null
   const x = Number(xInput.value)
@@ -76,8 +90,8 @@ const overlayTrail = computed<[number, number][]>(() => {
 const overlaySprites = computed(() => isRunMap.value && showSprites.value ? selectedRun.value?.sprites || [] : [])
 const filteredMaps = computed(() => {
   const needle = search.value.trim().toLowerCase()
-  if (!needle) return MAP_CATALOG.slice(0, 24)
-  return MAP_CATALOG.filter((entry) => {
+  if (!needle) return activeCatalog.value.slice(0, 24)
+  return activeCatalog.value.filter((entry) => {
     return entry.name.toLowerCase().includes(needle) || entry.label.toLowerCase().includes(needle) || entry.hex.toLowerCase().includes(needle)
   }).slice(0, 24)
 })
@@ -101,9 +115,10 @@ watch(selectedMap, () => {
 }, { immediate: true })
 watch([xInput, yInput, viewMode, runID, followAgent], syncURL)
 watch(selectedRun, (run) => {
-  if (!run || !Number.isFinite(Number(run.map))) return
+  if (!run) return
+  const nativeMap = spectatorNativeMap(run)
   if (followAgent.value || !initialRunCentered) {
-    chooseMap(Number(run.map), true)
+    chooseMap(nativeMap, true)
     initialRunCentered = true
   }
 })
@@ -113,7 +128,12 @@ async function loadMap(): Promise<void> {
   loadingMap.value = true
   mapError.value = ''
   try {
-    const response = await fetch(`/maps/${selectedMap.value.toString(16).padStart(2, '0')}.json`, { cache: 'no-store' })
+    if (isRunMap.value && selectedRun.value?.map_asset && Number(selectedRun.value.map_asset.id) === selectedMap.value) {
+      if (serial !== mapSerial) return
+      mapAsset.value = selectedRun.value.map_asset
+      return
+    }
+    const response = await fetch(mapAssetURL(selectedGame.value, selectedMap.value), { cache: 'no-store' })
     if (!response.ok) throw new Error(`map request failed (${response.status})`)
     const payload = await response.json() as MapPayload
     if (serial !== mapSerial) return
@@ -129,13 +149,13 @@ async function loadMap(): Promise<void> {
 
 function chooseMap(id: number, keepFollowing = false): void {
   if (!keepFollowing) followAgent.value = false
-  selectedMap.value = Math.max(0, Math.min(255, Math.trunc(id)))
-  search.value = mapEntry(selectedMap.value)?.name || `0x${selectedMap.value.toString(16).padStart(2, '0').toUpperCase()}`
+  selectedMap.value = Math.max(0, Math.min(0xffff, Math.trunc(id)))
+  search.value = mapEntryForGame(selectedGame.value, selectedMap.value)?.name || `0x${mapHexForGame(selectedGame.value, selectedMap.value)}`
 }
 
 function applySearch(): void {
   mapHistory.value = []
-  const exact = resolveMapQuery(search.value)
+  const exact = resolveMapQueryForGame(selectedGame.value, search.value)
   if (exact) {
     chooseMap(exact.id)
     return
@@ -145,7 +165,7 @@ function applySearch(): void {
 }
 
 function followWarp(destination: number): void {
-  if (Number(destination) === 0xff) {
+  if (normalizeWorldMapGame(selectedGame.value) === 'pokemon-red' && Number(destination) === 0xff) {
     const previous = mapHistory.value.pop()
     if (previous == null) return
     chooseMap(previous)
@@ -158,8 +178,8 @@ function followWarp(destination: number): void {
 }
 
 function warpDestinationLabel(destination: number): string {
-  if (Number(destination) === 0xff) return 'Return to previous map'
-  return mapEntry(destination)?.label || ('0x' + Number(destination).toString(16).padStart(2, '0').toUpperCase())
+  if (normalizeWorldMapGame(selectedGame.value) === 'pokemon-red' && Number(destination) === 0xff) return 'Return to previous map'
+  return mapEntryForGame(selectedGame.value, destination)?.label || ('0x' + mapHexForGame(selectedGame.value, destination))
 }
 
 function followRun(run: SpectatorRun): void {
@@ -167,7 +187,7 @@ function followRun(run: SpectatorRun): void {
   runID.value = run.run_id
   followAgent.value = false
   initialRunCentered = true
-  chooseMap(Number(run.map || 0), true)
+  chooseMap(spectatorNativeMap(run), true)
   xInput.value = ''
   yInput.value = ''
 }
@@ -175,8 +195,8 @@ function followRun(run: SpectatorRun): void {
 function jumpToAgent(): void {
   mapHistory.value = []
   const run = selectedRun.value
-  if (!run || !Number.isFinite(Number(run.map))) return
-  chooseMap(Number(run.map), true)
+  if (!run) return
+  chooseMap(spectatorNativeMap(run), true)
   xInput.value = ''
   yInput.value = ''
 }
@@ -198,8 +218,9 @@ function clearTarget(): void {
 
 function syncURL(): void {
   const url = new URL(window.location.href)
-  const entry = mapEntry(selectedMap.value)
+  const entry = mapEntryForGame(selectedGame.value, selectedMap.value)
   url.searchParams.set('map', entry?.name || `0x${mapID.value}`)
+  url.searchParams.set('game', selectedGame.value)
   if (xInput.value.trim() !== '') url.searchParams.set('x', xInput.value.trim())
   else url.searchParams.delete('x')
   if (yInput.value.trim() !== '') url.searchParams.set('y', yInput.value.trim())
@@ -228,12 +249,12 @@ async function copyLink(): Promise<void> {
   <AppShell
     eyebrow="Public world data"
     title="World explorer"
-    subtitle="Browse Kanto freely, open connected places, or attach a live agent without giving up control of the map."
+    :subtitle="selectedGame === 'pokemon-red' ? 'Browse Kanto freely, open connected places, or attach a live agent.' : 'Browse the Gen 2 world with game-qualified map identities and live semantic overlays.'"
     mode="public"
     :public-capabilities="publicCapabilities"
   >
     <template #summary>
-      <span><strong class="text-white">{{ MAP_CATALOG.length }}</strong> named maps</span>
+      <span><strong class="text-white">{{ activeCatalog.length }}</strong> named maps</span>
       <span v-if="liveRuns.length"><strong class="text-white">{{ liveRuns.length }}</strong> live</span>
     </template>
 
@@ -340,7 +361,9 @@ async function copyLink(): Promise<void> {
 
       <section class="h-[calc(100vh-13rem)] min-h-[42rem] overflow-hidden rounded-2xl border border-white/10 bg-[#07100c] shadow-2xl shadow-black/25">
         <SemanticMap
+          :game="selectedGame"
           :map="selectedMap"
+          :inline-map="isRunMap ? selectedRun?.map_asset || null : null"
           :x="selectedRun?.x"
           :y="selectedRun?.y"
           :trail="overlayTrail"
@@ -350,7 +373,7 @@ async function copyLink(): Promise<void> {
           :show-sprites="Boolean(overlaySprites.length)"
           :show-warps="showWarps"
           show-pois
-          :agent-map="selectedRun?.map"
+          :agent-map="selectedRun ? spectatorNativeMap(selectedRun) : undefined"
           :agent-x="selectedRun?.x"
           :agent-y="selectedRun?.y"
           :show-agent-marker="Boolean(selectedRun)"
@@ -417,7 +440,7 @@ async function copyLink(): Promise<void> {
                 <span class="truncate text-[10px] font-semibold text-slate-300">{{ run.goal || run.run_id }}</span>
                 <span v-if="run.run_id === runID" class="size-1.5 shrink-0 rounded-full bg-emerald-300" />
               </div>
-              <div class="mt-0.5 font-mono text-[9px] text-slate-600">map 0x{{ Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase() }} @ {{ run.x }},{{ run.y }}</div>
+              <div class="mt-0.5 font-mono text-[9px] text-slate-600">map 0x{{ mapHexForGame(run.game, spectatorNativeMap(run)) }} @ {{ run.x }},{{ run.y }}</div>
             </button>
           </div>
           <div v-if="selectedRun" class="mt-2 flex gap-1.5">
@@ -443,7 +466,9 @@ async function copyLink(): Promise<void> {
 
         <div class="h-[calc(68vh-3rem)] min-h-[34rem]">
           <SemanticMap
+            :game="selectedGame"
             :map="selectedMap"
+            :inline-map="isRunMap ? selectedRun?.map_asset || null : null"
             :x="selectedRun?.x"
             :y="selectedRun?.y"
             :trail="overlayTrail"
