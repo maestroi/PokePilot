@@ -460,8 +460,11 @@ func (c *githubClient) findIssue(ctx context.Context, fingerprint, externalID st
 	}
 }
 
+// reopenIssue also drops assignees: they claimed the earlier fix, and the
+// fixer treats any assigned issue as taken, so a kept assignee would park the
+// regression forever.
 func (c *githubClient) reopenIssue(ctx context.Context, number int64) error {
-	payload := map[string]string{"state": "open"}
+	payload := map[string]any{"state": "open", "assignees": []string{}}
 	return c.doJSON(ctx, http.MethodPatch, c.repoPath("issues", strconv.FormatInt(number, 10)), payload, nil)
 }
 
