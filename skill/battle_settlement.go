@@ -15,6 +15,12 @@ const settleStableFrames = 20
 // walk. The run goal check, not the interrupted objective, owns what follows.
 var ErrCampaignComplete = errors.New("skill: Battle: campaign complete; the ending never returns control")
 
+// errBattleRestarted reports that the aftermath of a battle was another battle:
+// a script that queues back-to-back trainers (Mt. Moon B2F Jessie then James,
+// run-acduyt1qbev9c) clears wIsInBattle between them. Settling cannot play a
+// battle, so the caller that owns the battle loop must resume it.
+var errBattleRestarted = errors.New("skill: Battle: a new battle began while settling")
+
 func settleAfterBattle(m *emu.Emu, decoder game.BattleRuntimeDecoder) error {
 	if decoder == nil {
 		var err error
@@ -28,6 +34,9 @@ func settleAfterBattle(m *emu.Emu, decoder game.BattleRuntimeDecoder) error {
 	stable := 0
 	for int(m.FrameCount()-startFrame) < settleBudget {
 		live := decoder.DecodeBattleRuntime(m)
+		if live.InBattle {
+			return errBattleRestarted
+		}
 		if live.Controllable {
 			stable++
 			if stable >= settleStableFrames {
