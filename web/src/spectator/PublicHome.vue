@@ -16,7 +16,7 @@ import type { SpectatorRun, SpectatorSummary } from '../shared/api/spectator'
 import { supportsPublicCapability } from '../shared/publicCapabilities'
 import AudienceVoteCard from './AudienceVoteCard.vue'
 import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
-import { MAP_CATALOG } from '../shared/mapCatalog'
+import { mapCatalogForGame } from '../shared/mapCatalog'
 import {
   goalProgress,
   isLiveRun,
@@ -61,7 +61,11 @@ const goal = computed(() => {
   const current = match[1] === 'score' ? tetrisScore.value : tetrisLines.value
   return Math.max(0, Math.min(100, 100 * current / target))
 })
-const mapProgress = computed(() => `${Number(props.run.maps_visited || 0)}/${MAP_CATALOG.length}`)
+const mapProgress = computed(() => {
+  const visited = Number(props.run.maps_visited || 0)
+  const total = mapCatalogForGame(props.run.game).length
+  return total > 0 ? `${visited}/${total}` : String(visited)
+})
 const plannerState = computed(() => {
   if (props.run.decision) return null
   if (props.run.planner_waiting) {
