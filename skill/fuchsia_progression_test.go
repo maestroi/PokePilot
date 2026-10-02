@@ -20,6 +20,9 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 		safariZoneWestMap, safariZoneCenterMap, safariZoneCenterRestHouseMap,
 		safariZoneSecretHouse, safariZoneWestRestHouseMap, safariZoneEastRestHouseMap,
 		safariZoneNorthRestHouseMap,
+		// Flute handoff: Celadon and the Route 7/8 underground path back to Lavender.
+		celadonCityMap, celadonPokemonCenterMap, gameCornerMap,
+		route7Map, undergroundRoute7Map, undergroundWestEastMap, undergroundRoute8Map, route8Map,
 	} {
 		if !FuchsiaProgressionAvailable(mapID) {
 			t.Fatalf("expected map %#02x to be resumable", mapID)
@@ -27,6 +30,9 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 	}
 	if FuchsiaProgressionAvailable(0x00) {
 		t.Fatal("Pallet Town must not be part of the Fuchsia progression slice")
+	}
+	if FuchsiaProgressionAvailable(0x01) {
+		t.Fatal("Viridian City must not be part of the Fuchsia progression slice")
 	}
 }
 
