@@ -55,6 +55,19 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 
 	if tx.ValidationErr != nil {
 		attachNormalizedFailure(a, &result, gameruntime.FailurePhaseValidation, tx.ValidationErr, tx.Final)
+		// Validation runs before any gameplay input is sent (tx.Final ==
+		// tx.Initial), so a failure that would stop the run is the adapter
+		// telling the planner its proposed objective is not executable from the
+		// current, stable state. That is planner feedback, never a terminal
+		// runtime defect: reclassify it as blocked/recoverable so the run
+		// replans instead of dying (#2388).
+		if validationFailureIsTerminal(result.Failure) {
+			result.Failure.Class = gameruntime.FailureClassBlocked
+			result.Failure.Recoverable = true
+			if result.Failure.Cause == "" || result.Failure.Cause == "unknown_error" {
+				result.Failure.Cause = "objective_validation_failed"
+			}
+		}
 		result = finalizeObjectiveResult(o, result, tx.Final, tx.ValidationErr)
 		return result, tx.ValidationErr
 	}
@@ -123,6 +136,18 @@ func executeObjectiveWithAdapter(a ObjectiveGameAdapter, o Objective) (Objective
 		reportObjectiveCaptureFailure(a, o, retErr)
 	}
 	return result, retErr
+}
+
+// validationFailureIsTerminal reports whether a normalized validation-phase
+// failure would stop the run. Validation runs before any gameplay input is
+// sent, so a failure that maps to a stop action is a misclassification: the
+// adapter is reporting that the proposed objective is not executable from the
+// current stable state, which the run can recover from by replanning.
+func validationFailureIsTerminal(f *gameruntime.Failure) bool {
+	if f == nil {
+		return false
+	}
+	return actionFor(outcomeForFailureClass(f.Class)) == actionStop
 }
 
 func attachNormalizedFailure(a ObjectiveGameAdapter, result *ObjectiveResult, phase gameruntime.FailurePhase, err error, final Observation) {
