@@ -114,13 +114,13 @@ group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
    itself with the same detail plus "runner did not stop; no finish dump".
    Without a dump no issue is filed; the bot says so after an hour, so the
    flag is never silently lost.
+5. Bot: confirmation, optional note via a reply prompt with a Skip button,
+   then a follow-up message with the issue link once the wall reports it.
 6. Implementation note: no runner or heartbeat change is needed. A wall
    cancel already stops the runner (the LLM path reports it as `budget` with
    no detail, the policy paths as `cancelled`); the wall rewrites exactly
    that stop of the flagged attempt to `stuck` in both finish paths
    (`handleFinish` and the control-plane wrapper before `persistFinish`).
-5. Bot: confirmation, optional note via a reply prompt with a Skip button,
-   then a follow-up message with the issue link once the wall reports it.
 
 ## Interface
 
