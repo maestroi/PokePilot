@@ -102,7 +102,7 @@ export interface SpectatorTetrisPiece {
 }
 
 export interface SpectatorTetrisState {
-  kind?: 'tetris' | string
+  kind?: 'tetris' | 'boxxle' | string
   mode?: string
   screen?: string
   board?: string[]
@@ -120,6 +120,15 @@ export interface SpectatorTetrisState {
   ready_for_piece_input?: boolean
   active?: SpectatorTetrisPiece
   next?: SpectatorTetrisPiece
+  width?: number
+  height?: number
+  solved?: boolean
+  pushes?: number
+  levels?: number
+  crates?: number
+  goals?: number
+  crates_on_goal?: number
+  player?: { x?: number; y?: number }
 }
 
 export interface SpectatorRun {

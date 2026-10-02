@@ -369,3 +369,29 @@ func TestLegalPushesRequiresReachablePlayerFrom(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderBoardAndCratesOnGoal(t *testing.T) {
+	g := gridSpec{
+		"######",
+		"#@$*+#",
+		"#...##",
+		"######",
+	}
+	state := buildState(t, g)
+	rows := RenderBoard(state)
+	if len(rows) != len(g) {
+		t.Fatalf("got %d rows, want %d", len(rows), len(g))
+	}
+	for y, row := range rows {
+		if row != g[y] {
+			t.Errorf("row %d = %q, want %q", y, row, g[y])
+		}
+	}
+	if got := CratesOnGoal(state); got != 1 {
+		t.Fatalf("CratesOnGoal = %d, want 1", got)
+	}
+	onGoal := buildState(t, gridSpec{"#@+#", "#*$#", "####"})
+	if rows := RenderBoard(onGoal); rows[0] != "#@+#" {
+		t.Fatalf("player on empty goal = %q, want #@+#", rows[0])
+	}
+}

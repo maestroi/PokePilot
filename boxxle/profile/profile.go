@@ -1,9 +1,9 @@
 // Package profile implements the Game Boy Boxxle cartridge adapter.
 //
 // The base contract remains game-agnostic cartridge identity. Boxxle is a
-// puzzle game, not a Pokémon title, so this slice registers identity only:
-// board decoding, autonomous play, and state observation are later slices of
-// the Boxxle epic and must not leak Pokémon-shaped observation fields here.
+// puzzle game, not a Pokémon title, so this profile registers identity only.
+// Board decoding and autonomous play live in the boxxle package and must not
+// leak Pokémon-shaped observation fields here.
 package profile
 
 import "github.com/maestroi/pokepilot/game"

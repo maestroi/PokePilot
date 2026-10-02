@@ -8,6 +8,36 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
+func TestParseGoal(t *testing.T) {
+	cases := []struct {
+		raw     string
+		kind    GoalKind
+		levels  int
+		endless bool
+	}{
+		{"", GoalFirst, 1, false},
+		{"first", GoalFirst, 1, false},
+		{"early", GoalEarly, EarlyLevels, false},
+		{"levels:3", GoalLevels, 3, false},
+		{"endless", GoalEndless, 0, true},
+	}
+	for _, tc := range cases {
+		got, err := ParseGoal(tc.raw)
+		if err != nil {
+			t.Fatalf("ParseGoal(%q): %v", tc.raw, err)
+		}
+		if got.Kind != tc.kind || got.WantedLevels() != tc.levels || got.Endless() != tc.endless {
+			t.Fatalf("ParseGoal(%q) = %+v wanted=%d endless=%v", tc.raw, got, got.WantedLevels(), got.Endless())
+		}
+	}
+	if _, err := ParseGoal("score:10"); err == nil {
+		t.Fatal("ParseGoal accepted a Tetris goal")
+	}
+	if EarlyLevels != 5 {
+		t.Fatalf("EarlyLevels = %d, want the first-room batch of 5", EarlyLevels)
+	}
+}
+
 // fakeMachine is the smallest Machine: it counts frames and satisfies the
 // controller's input and memory surface with no-ops, so Boot and Run can be
 // exercised without a real emulator.
