@@ -21,6 +21,7 @@ const (
 	ProgressFarfetchdHerded          game.ProgressID = "gs_farfetchd_herded"
 	ProgressHM01CutAcquired          game.ProgressID = "gs_hm01_cut_acquired"
 	ProgressTM02HeadbuttAcquired     game.ProgressID = "gs_tm02_headbutt_acquired"
+	ProgressPlainBadgeEarned          game.ProgressID = "gs_plain_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -45,6 +46,7 @@ const (
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
 	johtoBadgeHiveMask                   = 1 << 1
+	johtoBadgePlainMask                  = 1 << 2
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -116,7 +118,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressFarfetchdHerded, Complete: hasGSEvent(reader, eventHerdedFarfetchd)},
 		{ID: ProgressHM01CutAcquired, Complete: hasGSEvent(reader, eventGotHM01Cut)},
 		{ID: ProgressTM02HeadbuttAcquired, Complete: hasGSEvent(reader, eventGotTM02Headbutt)},
-		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotTM02Headbutt)},
+		{ID: ProgressPlainBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgePlainMask != 0},
+		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgePlainMask != 0},
 	}
 }
 
