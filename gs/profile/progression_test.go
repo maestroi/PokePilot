@@ -278,7 +278,6 @@ func TestPinnedIlexEventAndSceneConstants(t *testing.T) {
 	}
 }
 
-
 func TestPinnedEcruteakEventConstants(t *testing.T) {
 	if eventFoughtSudowoodo != 42 {
 		t.Fatalf("EVENT_FOUGHT_SUDOWOODO = %d, want 42", eventFoughtSudowoodo)
