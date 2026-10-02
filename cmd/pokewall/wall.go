@@ -102,16 +102,23 @@ type Tile struct {
 	RecoveryDexOwned int
 	// Activity is the bounded operator-facing causal story. It survives
 	// retries so one resilient campaign remains understandable as a whole.
-	Activity    []runActivityEvent
-	Frame       uint64
-	Map         uint8
-	NativeMap   uint16
-	X           uint8
-	Y           uint8
-	MapsVisited int
-	Trace       string
-	Question    string
-	Decision    string
+	Activity []runActivityEvent
+	// OperatorFlag is the note an operator attached when flagging this run
+	// as stuck ("no note" when none). OperatorFlagAttempt is the attempt the
+	// flag applies to, so a duplicate finish after settlement rewrites the
+	// same way and a later attempt is never affected.
+	OperatorFlag        string
+	OperatorFlagAttempt int
+	OperatorFlaggedAt   int64
+	Frame               uint64
+	Map                 uint8
+	NativeMap           uint16
+	X                   uint8
+	Y                   uint8
+	MapsVisited         int
+	Trace               string
+	Question            string
+	Decision            string
 	// Raw is the last verbatim model exchange from the heartbeat. Live
 	// only: it is deliberately absent from persistedTile, so a wall
 	// restart drops it rather than growing the state file.
@@ -175,75 +182,78 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID              string                   `json:"run_id"`
-	Status             string                   `json:"status"`
-	Game               string                   `json:"game,omitempty"`
-	Planner            string                   `json:"planner"`
-	Starter            string                   `json:"starter"`
-	Dest               string                   `json:"dest"`
-	Goal               string                   `json:"goal,omitempty"`
-	GoalProvided       bool                     `json:"goal_provided,omitempty"`
-	PlayStyle          string                   `json:"play_style,omitempty"`
-	Purpose            farm.RunPurpose          `json:"purpose,omitempty"`
-	RiskTolerance      string                   `json:"risk_tolerance,omitempty"`
-	WildEncounters     string                   `json:"wild_encounters,omitempty"`
-	LLMProfile         string                   `json:"llm_profile,omitempty"`
-	LLMDeployment      string                   `json:"llm_deployment,omitempty"`
-	ExperimentID       string                   `json:"experiment_id,omitempty"`
-	ExperimentArm      string                   `json:"experiment_arm,omitempty"`
-	ExperimentCase     string                   `json:"experiment_case,omitempty"`
-	ReasoningEffort    string                   `json:"reasoning_effort,omitempty"`
-	DecisionEngine     *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
-	Seed               int64                    `json:"seed"`
-	FPS                int                      `json:"fps"`
-	MaxRounds          int                      `json:"max_rounds"`
-	MaxFrames          int                      `json:"max_frames"`
-	RecoveryProfile    farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
-	Endless            bool                     `json:"endless,omitempty"`
-	RandomSeed         bool                     `json:"random_seed,omitempty"`
-	QueuedAt           int64                    `json:"queued_at,omitempty"`
-	EndedAt            int64                    `json:"ended_at,omitempty"`
-	Frame              uint64                   `json:"frame"`
-	Map                uint8                    `json:"map"`
-	NativeMap          uint16                   `json:"native_map,omitempty"`
-	X                  uint8                    `json:"x"`
-	Y                  uint8                    `json:"y"`
-	MapsVisited        int                      `json:"maps_visited,omitempty"`
-	Trace              string                   `json:"trace"`
-	Question           string                   `json:"question,omitempty"`
-	Decision           string                   `json:"decision,omitempty"`
-	Raw                string                   `json:"raw,omitempty"`
-	StopSoFar          string                   `json:"stop_so_far"`
-	Sprites            []farm.MapSprite         `json:"sprites,omitempty"`
-	Trail              [][2]uint8               `json:"trail,omitempty"`
-	MapAsset           *farm.SemanticMapAsset   `json:"map_asset,omitempty"`
-	Stats              *farm.LLMStats           `json:"stats,omitempty"`
-	Player             *farm.Player             `json:"player,omitempty"`
-	GameState          map[string]any           `json:"game_state,omitempty"`
-	GameDecision       map[string]any           `json:"game_decision,omitempty"`
-	Attempts           int                      `json:"attempts"`
-	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
-	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
-	RecoveryAttempts   int                      `json:"recovery_attempts,omitempty"`
-	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
-	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
-	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
-	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
-	Activity           []runActivityEvent       `json:"activity,omitempty"`
-	Reason             string                   `json:"reason"`
-	Detail             string                   `json:"detail"`
-	Issue              *IssueLink               `json:"issue,omitempty"`
-	ReplayAvailable    bool                     `json:"replay_available,omitempty"`
-	ResumeFromRunID    string                   `json:"resume_from_run_id,omitempty"`
-	ResumeProtected    bool                     `json:"resume_protected,omitempty"`
-	CircuitKey         string                   `json:"circuit_key,omitempty"`
-	CircuitFingerprint string                   `json:"circuit_fingerprint,omitempty"`
-	CircuitKind        string                   `json:"circuit_kind,omitempty"`
-	CircuitCount       int                      `json:"circuit_count,omitempty"`
-	CircuitBadges      int                      `json:"circuit_badges,omitempty"`
-	CircuitEvents      int                      `json:"circuit_events,omitempty"`
-	CircuitMaps        int                      `json:"circuit_maps,omitempty"`
-	CircuitRevision    string                   `json:"circuit_revision,omitempty"`
+	RunID               string                   `json:"run_id"`
+	Status              string                   `json:"status"`
+	Game                string                   `json:"game,omitempty"`
+	Planner             string                   `json:"planner"`
+	Starter             string                   `json:"starter"`
+	Dest                string                   `json:"dest"`
+	Goal                string                   `json:"goal,omitempty"`
+	GoalProvided        bool                     `json:"goal_provided,omitempty"`
+	PlayStyle           string                   `json:"play_style,omitempty"`
+	Purpose             farm.RunPurpose          `json:"purpose,omitempty"`
+	RiskTolerance       string                   `json:"risk_tolerance,omitempty"`
+	WildEncounters      string                   `json:"wild_encounters,omitempty"`
+	LLMProfile          string                   `json:"llm_profile,omitempty"`
+	LLMDeployment       string                   `json:"llm_deployment,omitempty"`
+	ExperimentID        string                   `json:"experiment_id,omitempty"`
+	ExperimentArm       string                   `json:"experiment_arm,omitempty"`
+	ExperimentCase      string                   `json:"experiment_case,omitempty"`
+	ReasoningEffort     string                   `json:"reasoning_effort,omitempty"`
+	DecisionEngine      *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
+	Seed                int64                    `json:"seed"`
+	FPS                 int                      `json:"fps"`
+	MaxRounds           int                      `json:"max_rounds"`
+	MaxFrames           int                      `json:"max_frames"`
+	RecoveryProfile     farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
+	Endless             bool                     `json:"endless,omitempty"`
+	RandomSeed          bool                     `json:"random_seed,omitempty"`
+	QueuedAt            int64                    `json:"queued_at,omitempty"`
+	EndedAt             int64                    `json:"ended_at,omitempty"`
+	Frame               uint64                   `json:"frame"`
+	Map                 uint8                    `json:"map"`
+	NativeMap           uint16                   `json:"native_map,omitempty"`
+	X                   uint8                    `json:"x"`
+	Y                   uint8                    `json:"y"`
+	MapsVisited         int                      `json:"maps_visited,omitempty"`
+	Trace               string                   `json:"trace"`
+	Question            string                   `json:"question,omitempty"`
+	Decision            string                   `json:"decision,omitempty"`
+	Raw                 string                   `json:"raw,omitempty"`
+	StopSoFar           string                   `json:"stop_so_far"`
+	Sprites             []farm.MapSprite         `json:"sprites,omitempty"`
+	Trail               [][2]uint8               `json:"trail,omitempty"`
+	MapAsset            *farm.SemanticMapAsset   `json:"map_asset,omitempty"`
+	Stats               *farm.LLMStats           `json:"stats,omitempty"`
+	Player              *farm.Player             `json:"player,omitempty"`
+	GameState           map[string]any           `json:"game_state,omitempty"`
+	GameDecision        map[string]any           `json:"game_decision,omitempty"`
+	Attempts            int                      `json:"attempts"`
+	ErrorAttempts       int                      `json:"error_attempts,omitempty"`
+	LossRecoveries      int                      `json:"loss_recoveries,omitempty"`
+	RecoveryAttempts    int                      `json:"recovery_attempts,omitempty"`
+	RecoveryBadges      int                      `json:"recovery_badges,omitempty"`
+	RecoveryEvents      int                      `json:"recovery_events,omitempty"`
+	RecoveryMaps        int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned    int                      `json:"recovery_dex_owned,omitempty"`
+	Activity            []runActivityEvent       `json:"activity,omitempty"`
+	OperatorFlag        string                   `json:"operator_flag,omitempty"`
+	OperatorFlagAttempt int                      `json:"operator_flag_attempt,omitempty"`
+	OperatorFlaggedAt   int64                    `json:"operator_flagged_at,omitempty"`
+	Reason              string                   `json:"reason"`
+	Detail              string                   `json:"detail"`
+	Issue               *IssueLink               `json:"issue,omitempty"`
+	ReplayAvailable     bool                     `json:"replay_available,omitempty"`
+	ResumeFromRunID     string                   `json:"resume_from_run_id,omitempty"`
+	ResumeProtected     bool                     `json:"resume_protected,omitempty"`
+	CircuitKey          string                   `json:"circuit_key,omitempty"`
+	CircuitFingerprint  string                   `json:"circuit_fingerprint,omitempty"`
+	CircuitKind         string                   `json:"circuit_kind,omitempty"`
+	CircuitCount        int                      `json:"circuit_count,omitempty"`
+	CircuitBadges       int                      `json:"circuit_badges,omitempty"`
+	CircuitEvents       int                      `json:"circuit_events,omitempty"`
+	CircuitMaps         int                      `json:"circuit_maps,omitempty"`
+	CircuitRevision     string                   `json:"circuit_revision,omitempty"`
 }
 
 // Wall owns the spec queue, the tile map, cancel flags, the optional dump
@@ -294,71 +304,74 @@ func (w *Wall) SetStatePath(path string) {
 // a restarted wall can resume proxying frames without waiting for the next
 // heartbeat; lastUpdate is not (see Tile.lastUpdate).
 type persistedTile struct {
-	RunID              string                   `json:"run_id"`
-	Status             string                   `json:"status"`
-	Game               string                   `json:"game,omitempty"`
-	Planner            string                   `json:"planner,omitempty"`
-	Starter            string                   `json:"starter,omitempty"`
-	Dest               string                   `json:"dest,omitempty"`
-	Goal               string                   `json:"goal,omitempty"`
-	GoalProvided       bool                     `json:"goal_provided,omitempty"`
-	PlayStyle          string                   `json:"play_style,omitempty"`
-	Purpose            farm.RunPurpose          `json:"purpose,omitempty"`
-	RiskTolerance      string                   `json:"risk_tolerance,omitempty"`
-	WildEncounters     string                   `json:"wild_encounters,omitempty"`
-	LLMProfile         string                   `json:"llm_profile,omitempty"`
-	LLMDeployment      string                   `json:"llm_deployment,omitempty"`
-	ExperimentID       string                   `json:"experiment_id,omitempty"`
-	ExperimentArm      string                   `json:"experiment_arm,omitempty"`
-	ExperimentCase     string                   `json:"experiment_case,omitempty"`
-	ReasoningEffort    string                   `json:"reasoning_effort,omitempty"`
-	DecisionEngine     *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
-	Seed               int64                    `json:"seed"`
-	FPS                int                      `json:"fps"`
-	MaxRounds          int                      `json:"max_rounds"`
-	MaxFrames          int                      `json:"max_frames"`
-	RecoveryProfile    farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
-	Endless            bool                     `json:"endless,omitempty"`
-	RandomSeed         bool                     `json:"random_seed,omitempty"`
-	QueuedAt           int64                    `json:"queued_at,omitempty"`
-	EndedAt            int64                    `json:"ended_at,omitempty"`
-	Attempts           int                      `json:"attempts"`
-	ErrorAttempts      int                      `json:"error_attempts,omitempty"`
-	LossRecoveries     int                      `json:"loss_recoveries,omitempty"`
-	RecoveryAttempts   int                      `json:"recovery_attempts,omitempty"`
-	RecoveryBadges     int                      `json:"recovery_badges,omitempty"`
-	RecoveryEvents     int                      `json:"recovery_events,omitempty"`
-	RecoveryMaps       int                      `json:"recovery_maps,omitempty"`
-	RecoveryDexOwned   int                      `json:"recovery_dex_owned,omitempty"`
-	Activity           []runActivityEvent       `json:"activity,omitempty"`
-	Frame              uint64                   `json:"frame"`
-	Map                uint8                    `json:"map"`
-	NativeMap          uint16                   `json:"native_map,omitempty"`
-	X                  uint8                    `json:"x"`
-	Y                  uint8                    `json:"y"`
-	Trace              string                   `json:"trace,omitempty"`
-	Question           string                   `json:"question,omitempty"`
-	Decision           string                   `json:"decision,omitempty"`
-	StopSoFar          string                   `json:"stop_so_far,omitempty"`
-	Stats              *farm.LLMStats           `json:"stats,omitempty"`
-	Player             *farm.Player             `json:"player,omitempty"`
-	GameState          map[string]any           `json:"game_state,omitempty"`
-	GameDecision       map[string]any           `json:"game_decision,omitempty"`
-	Reason             string                   `json:"reason,omitempty"`
-	Detail             string                   `json:"detail,omitempty"`
-	FailureClass       farm.FinishFailureClass  `json:"failure_class,omitempty"`
-	Finished           bool                     `json:"finished"`
-	WorkerAddrs        []string                 `json:"worker_addrs,omitempty"`
-	ReplayAvailable    bool                     `json:"replay_available,omitempty"`
-	ResumeFromRunID    string                   `json:"resume_from_run_id,omitempty"`
-	CircuitKey         string                   `json:"circuit_key,omitempty"`
-	CircuitFingerprint string                   `json:"circuit_fingerprint,omitempty"`
-	CircuitKind        string                   `json:"circuit_kind,omitempty"`
-	CircuitCount       int                      `json:"circuit_count,omitempty"`
-	CircuitBadges      int                      `json:"circuit_badges,omitempty"`
-	CircuitEvents      int                      `json:"circuit_events,omitempty"`
-	CircuitMaps        int                      `json:"circuit_maps,omitempty"`
-	CircuitRevision    string                   `json:"circuit_revision,omitempty"`
+	RunID               string                   `json:"run_id"`
+	Status              string                   `json:"status"`
+	Game                string                   `json:"game,omitempty"`
+	Planner             string                   `json:"planner,omitempty"`
+	Starter             string                   `json:"starter,omitempty"`
+	Dest                string                   `json:"dest,omitempty"`
+	Goal                string                   `json:"goal,omitempty"`
+	GoalProvided        bool                     `json:"goal_provided,omitempty"`
+	PlayStyle           string                   `json:"play_style,omitempty"`
+	Purpose             farm.RunPurpose          `json:"purpose,omitempty"`
+	RiskTolerance       string                   `json:"risk_tolerance,omitempty"`
+	WildEncounters      string                   `json:"wild_encounters,omitempty"`
+	LLMProfile          string                   `json:"llm_profile,omitempty"`
+	LLMDeployment       string                   `json:"llm_deployment,omitempty"`
+	ExperimentID        string                   `json:"experiment_id,omitempty"`
+	ExperimentArm       string                   `json:"experiment_arm,omitempty"`
+	ExperimentCase      string                   `json:"experiment_case,omitempty"`
+	ReasoningEffort     string                   `json:"reasoning_effort,omitempty"`
+	DecisionEngine      *farm.DecisionEngineSpec `json:"decision_engine,omitempty"`
+	Seed                int64                    `json:"seed"`
+	FPS                 int                      `json:"fps"`
+	MaxRounds           int                      `json:"max_rounds"`
+	MaxFrames           int                      `json:"max_frames"`
+	RecoveryProfile     farm.RecoveryProfile     `json:"recovery_profile,omitempty"`
+	Endless             bool                     `json:"endless,omitempty"`
+	RandomSeed          bool                     `json:"random_seed,omitempty"`
+	QueuedAt            int64                    `json:"queued_at,omitempty"`
+	EndedAt             int64                    `json:"ended_at,omitempty"`
+	Attempts            int                      `json:"attempts"`
+	ErrorAttempts       int                      `json:"error_attempts,omitempty"`
+	LossRecoveries      int                      `json:"loss_recoveries,omitempty"`
+	RecoveryAttempts    int                      `json:"recovery_attempts,omitempty"`
+	RecoveryBadges      int                      `json:"recovery_badges,omitempty"`
+	RecoveryEvents      int                      `json:"recovery_events,omitempty"`
+	RecoveryMaps        int                      `json:"recovery_maps,omitempty"`
+	RecoveryDexOwned    int                      `json:"recovery_dex_owned,omitempty"`
+	Activity            []runActivityEvent       `json:"activity,omitempty"`
+	OperatorFlag        string                   `json:"operator_flag,omitempty"`
+	OperatorFlagAttempt int                      `json:"operator_flag_attempt,omitempty"`
+	OperatorFlaggedAt   int64                    `json:"operator_flagged_at,omitempty"`
+	Frame               uint64                   `json:"frame"`
+	Map                 uint8                    `json:"map"`
+	NativeMap           uint16                   `json:"native_map,omitempty"`
+	X                   uint8                    `json:"x"`
+	Y                   uint8                    `json:"y"`
+	Trace               string                   `json:"trace,omitempty"`
+	Question            string                   `json:"question,omitempty"`
+	Decision            string                   `json:"decision,omitempty"`
+	StopSoFar           string                   `json:"stop_so_far,omitempty"`
+	Stats               *farm.LLMStats           `json:"stats,omitempty"`
+	Player              *farm.Player             `json:"player,omitempty"`
+	GameState           map[string]any           `json:"game_state,omitempty"`
+	GameDecision        map[string]any           `json:"game_decision,omitempty"`
+	Reason              string                   `json:"reason,omitempty"`
+	Detail              string                   `json:"detail,omitempty"`
+	FailureClass        farm.FinishFailureClass  `json:"failure_class,omitempty"`
+	Finished            bool                     `json:"finished"`
+	WorkerAddrs         []string                 `json:"worker_addrs,omitempty"`
+	ReplayAvailable     bool                     `json:"replay_available,omitempty"`
+	ResumeFromRunID     string                   `json:"resume_from_run_id,omitempty"`
+	CircuitKey          string                   `json:"circuit_key,omitempty"`
+	CircuitFingerprint  string                   `json:"circuit_fingerprint,omitempty"`
+	CircuitKind         string                   `json:"circuit_kind,omitempty"`
+	CircuitCount        int                      `json:"circuit_count,omitempty"`
+	CircuitBadges       int                      `json:"circuit_badges,omitempty"`
+	CircuitEvents       int                      `json:"circuit_events,omitempty"`
+	CircuitMaps         int                      `json:"circuit_maps,omitempty"`
+	CircuitRevision     string                   `json:"circuit_revision,omitempty"`
 }
 
 // persistedState is the wall's whole on-disk memory: run order, tiles, and
@@ -381,71 +394,74 @@ func (w *Wall) persistedStateLocked() persistedState {
 	}
 	for id, t := range w.tiles {
 		ps.Tiles[id] = persistedTile{
-			RunID:              t.RunID,
-			Status:             t.Status,
-			Game:               t.Game,
-			Planner:            t.Planner,
-			Starter:            t.Starter,
-			Dest:               t.Dest,
-			Goal:               t.Goal,
-			GoalProvided:       t.GoalProvided,
-			PlayStyle:          t.PlayStyle,
-			Purpose:            t.Purpose,
-			RiskTolerance:      t.RiskTolerance,
-			WildEncounters:     t.WildEncounters,
-			LLMProfile:         t.LLMProfile,
-			LLMDeployment:      t.LLMDeployment,
-			ExperimentID:       t.ExperimentID,
-			ExperimentArm:      t.ExperimentArm,
-			ExperimentCase:     t.ExperimentCase,
-			ReasoningEffort:    t.ReasoningEffort,
-			DecisionEngine:     t.DecisionEngine.Clone(),
-			Seed:               t.Seed,
-			FPS:                t.FPS,
-			MaxRounds:          t.MaxRounds,
-			MaxFrames:          t.MaxFrames,
-			RecoveryProfile:    t.RecoveryProfile,
-			Endless:            t.Endless,
-			RandomSeed:         t.RandomSeed,
-			QueuedAt:           unixTime(t.QueuedAt),
-			EndedAt:            unixTime(t.EndedAt),
-			Attempts:           t.Attempts,
-			ErrorAttempts:      t.ErrorAttempts,
-			LossRecoveries:     t.LossRecoveries,
-			RecoveryAttempts:   t.RecoveryAttempts,
-			RecoveryBadges:     t.RecoveryBadges,
-			RecoveryEvents:     t.RecoveryEvents,
-			RecoveryMaps:       t.RecoveryMaps,
-			RecoveryDexOwned:   t.RecoveryDexOwned,
-			Activity:           copyRunActivity(t.Activity),
-			Frame:              t.Frame,
-			Map:                t.Map,
-			NativeMap:          t.NativeMap,
-			X:                  t.X,
-			Y:                  t.Y,
-			Trace:              t.Trace,
-			Question:           t.Question,
-			Decision:           t.Decision,
-			StopSoFar:          t.StopSoFar,
-			Stats:              t.Stats,
-			Player:             t.Player,
-			GameState:          cloneJSONMap(t.GameState),
-			GameDecision:       cloneJSONMap(t.GameDecision),
-			Reason:             t.Reason,
-			Detail:             t.Detail,
-			FailureClass:       t.FailureClass,
-			Finished:           t.Finished,
-			WorkerAddrs:        append([]string(nil), t.workerAddrs...),
-			ReplayAvailable:    t.ReplayAvailable,
-			ResumeFromRunID:    t.ResumeFromRunID,
-			CircuitKey:         t.CircuitKey,
-			CircuitFingerprint: t.CircuitFingerprint,
-			CircuitKind:        t.CircuitKind,
-			CircuitCount:       t.CircuitCount,
-			CircuitBadges:      t.CircuitBadges,
-			CircuitEvents:      t.CircuitEvents,
-			CircuitMaps:        t.CircuitMaps,
-			CircuitRevision:    t.CircuitRevision,
+			RunID:               t.RunID,
+			Status:              t.Status,
+			Game:                t.Game,
+			Planner:             t.Planner,
+			Starter:             t.Starter,
+			Dest:                t.Dest,
+			Goal:                t.Goal,
+			GoalProvided:        t.GoalProvided,
+			PlayStyle:           t.PlayStyle,
+			Purpose:             t.Purpose,
+			RiskTolerance:       t.RiskTolerance,
+			WildEncounters:      t.WildEncounters,
+			LLMProfile:          t.LLMProfile,
+			LLMDeployment:       t.LLMDeployment,
+			ExperimentID:        t.ExperimentID,
+			ExperimentArm:       t.ExperimentArm,
+			ExperimentCase:      t.ExperimentCase,
+			ReasoningEffort:     t.ReasoningEffort,
+			DecisionEngine:      t.DecisionEngine.Clone(),
+			Seed:                t.Seed,
+			FPS:                 t.FPS,
+			MaxRounds:           t.MaxRounds,
+			MaxFrames:           t.MaxFrames,
+			RecoveryProfile:     t.RecoveryProfile,
+			Endless:             t.Endless,
+			RandomSeed:          t.RandomSeed,
+			QueuedAt:            unixTime(t.QueuedAt),
+			EndedAt:             unixTime(t.EndedAt),
+			Attempts:            t.Attempts,
+			ErrorAttempts:       t.ErrorAttempts,
+			LossRecoveries:      t.LossRecoveries,
+			RecoveryAttempts:    t.RecoveryAttempts,
+			RecoveryBadges:      t.RecoveryBadges,
+			RecoveryEvents:      t.RecoveryEvents,
+			RecoveryMaps:        t.RecoveryMaps,
+			RecoveryDexOwned:    t.RecoveryDexOwned,
+			Activity:            copyRunActivity(t.Activity),
+			OperatorFlag:        t.OperatorFlag,
+			OperatorFlagAttempt: t.OperatorFlagAttempt,
+			OperatorFlaggedAt:   t.OperatorFlaggedAt,
+			Frame:               t.Frame,
+			Map:                 t.Map,
+			NativeMap:           t.NativeMap,
+			X:                   t.X,
+			Y:                   t.Y,
+			Trace:               t.Trace,
+			Question:            t.Question,
+			Decision:            t.Decision,
+			StopSoFar:           t.StopSoFar,
+			Stats:               t.Stats,
+			Player:              t.Player,
+			GameState:           cloneJSONMap(t.GameState),
+			GameDecision:        cloneJSONMap(t.GameDecision),
+			Reason:              t.Reason,
+			Detail:              t.Detail,
+			FailureClass:        t.FailureClass,
+			Finished:            t.Finished,
+			WorkerAddrs:         append([]string(nil), t.workerAddrs...),
+			ReplayAvailable:     t.ReplayAvailable,
+			ResumeFromRunID:     t.ResumeFromRunID,
+			CircuitKey:          t.CircuitKey,
+			CircuitFingerprint:  t.CircuitFingerprint,
+			CircuitKind:         t.CircuitKind,
+			CircuitCount:        t.CircuitCount,
+			CircuitBadges:       t.CircuitBadges,
+			CircuitEvents:       t.CircuitEvents,
+			CircuitMaps:         t.CircuitMaps,
+			CircuitRevision:     t.CircuitRevision,
 		}
 	}
 	return ps
@@ -490,72 +506,75 @@ func (w *Wall) saveState() {
 // restored by one and silently dropped by the other.
 func (p persistedTile) tile(now time.Time) *Tile {
 	return &Tile{
-		RunID:              p.RunID,
-		Status:             p.Status,
-		Game:               p.Game,
-		Planner:            p.Planner,
-		Starter:            p.Starter,
-		Dest:               p.Dest,
-		Goal:               p.Goal,
-		GoalProvided:       p.GoalProvided,
-		PlayStyle:          p.PlayStyle,
-		Purpose:            p.Purpose,
-		RiskTolerance:      p.RiskTolerance,
-		WildEncounters:     p.WildEncounters,
-		LLMProfile:         p.LLMProfile,
-		LLMDeployment:      p.LLMDeployment,
-		ExperimentID:       p.ExperimentID,
-		ExperimentArm:      p.ExperimentArm,
-		ExperimentCase:     p.ExperimentCase,
-		ReasoningEffort:    p.ReasoningEffort,
-		DecisionEngine:     p.DecisionEngine.Clone(),
-		Seed:               p.Seed,
-		FPS:                p.FPS,
-		MaxRounds:          p.MaxRounds,
-		MaxFrames:          p.MaxFrames,
-		RecoveryProfile:    p.RecoveryProfile,
-		Endless:            p.Endless,
-		RandomSeed:         p.RandomSeed,
-		QueuedAt:           timeFromUnix(p.QueuedAt),
-		EndedAt:            timeFromUnix(p.EndedAt),
-		Attempts:           p.Attempts,
-		ErrorAttempts:      p.ErrorAttempts,
-		LossRecoveries:     p.LossRecoveries,
-		RecoveryAttempts:   p.RecoveryAttempts,
-		RecoveryBadges:     p.RecoveryBadges,
-		RecoveryEvents:     p.RecoveryEvents,
-		RecoveryMaps:       p.RecoveryMaps,
-		RecoveryDexOwned:   p.RecoveryDexOwned,
-		Activity:           copyRunActivity(p.Activity),
-		Frame:              p.Frame,
-		Map:                p.Map,
-		NativeMap:          p.NativeMap,
-		X:                  p.X,
-		Y:                  p.Y,
-		Trace:              p.Trace,
-		Question:           p.Question,
-		Decision:           p.Decision,
-		StopSoFar:          p.StopSoFar,
-		Stats:              p.Stats,
-		Player:             p.Player,
-		GameState:          cloneJSONMap(p.GameState),
-		GameDecision:       cloneJSONMap(p.GameDecision),
-		Reason:             p.Reason,
-		Detail:             p.Detail,
-		FailureClass:       p.FailureClass,
-		Finished:           p.Finished,
-		workerAddrs:        append([]string(nil), p.WorkerAddrs...),
-		ReplayAvailable:    p.ReplayAvailable,
-		ResumeFromRunID:    p.ResumeFromRunID,
-		CircuitKey:         p.CircuitKey,
-		CircuitFingerprint: p.CircuitFingerprint,
-		CircuitKind:        p.CircuitKind,
-		CircuitCount:       p.CircuitCount,
-		CircuitBadges:      p.CircuitBadges,
-		CircuitEvents:      p.CircuitEvents,
-		CircuitMaps:        p.CircuitMaps,
-		CircuitRevision:    p.CircuitRevision,
-		lastUpdate:         now,
+		RunID:               p.RunID,
+		Status:              p.Status,
+		Game:                p.Game,
+		Planner:             p.Planner,
+		Starter:             p.Starter,
+		Dest:                p.Dest,
+		Goal:                p.Goal,
+		GoalProvided:        p.GoalProvided,
+		PlayStyle:           p.PlayStyle,
+		Purpose:             p.Purpose,
+		RiskTolerance:       p.RiskTolerance,
+		WildEncounters:      p.WildEncounters,
+		LLMProfile:          p.LLMProfile,
+		LLMDeployment:       p.LLMDeployment,
+		ExperimentID:        p.ExperimentID,
+		ExperimentArm:       p.ExperimentArm,
+		ExperimentCase:      p.ExperimentCase,
+		ReasoningEffort:     p.ReasoningEffort,
+		DecisionEngine:      p.DecisionEngine.Clone(),
+		Seed:                p.Seed,
+		FPS:                 p.FPS,
+		MaxRounds:           p.MaxRounds,
+		MaxFrames:           p.MaxFrames,
+		RecoveryProfile:     p.RecoveryProfile,
+		Endless:             p.Endless,
+		RandomSeed:          p.RandomSeed,
+		QueuedAt:            timeFromUnix(p.QueuedAt),
+		EndedAt:             timeFromUnix(p.EndedAt),
+		Attempts:            p.Attempts,
+		ErrorAttempts:       p.ErrorAttempts,
+		LossRecoveries:      p.LossRecoveries,
+		RecoveryAttempts:    p.RecoveryAttempts,
+		RecoveryBadges:      p.RecoveryBadges,
+		RecoveryEvents:      p.RecoveryEvents,
+		RecoveryMaps:        p.RecoveryMaps,
+		RecoveryDexOwned:    p.RecoveryDexOwned,
+		Activity:            copyRunActivity(p.Activity),
+		OperatorFlag:        p.OperatorFlag,
+		OperatorFlagAttempt: p.OperatorFlagAttempt,
+		OperatorFlaggedAt:   p.OperatorFlaggedAt,
+		Frame:               p.Frame,
+		Map:                 p.Map,
+		NativeMap:           p.NativeMap,
+		X:                   p.X,
+		Y:                   p.Y,
+		Trace:               p.Trace,
+		Question:            p.Question,
+		Decision:            p.Decision,
+		StopSoFar:           p.StopSoFar,
+		Stats:               p.Stats,
+		Player:              p.Player,
+		GameState:           cloneJSONMap(p.GameState),
+		GameDecision:        cloneJSONMap(p.GameDecision),
+		Reason:              p.Reason,
+		Detail:              p.Detail,
+		FailureClass:        p.FailureClass,
+		Finished:            p.Finished,
+		workerAddrs:         append([]string(nil), p.WorkerAddrs...),
+		ReplayAvailable:     p.ReplayAvailable,
+		ResumeFromRunID:     p.ResumeFromRunID,
+		CircuitKey:          p.CircuitKey,
+		CircuitFingerprint:  p.CircuitFingerprint,
+		CircuitKind:         p.CircuitKind,
+		CircuitCount:        p.CircuitCount,
+		CircuitBadges:       p.CircuitBadges,
+		CircuitEvents:       p.CircuitEvents,
+		CircuitMaps:         p.CircuitMaps,
+		CircuitRevision:     p.CircuitRevision,
+		lastUpdate:          now,
 	}
 }
 
@@ -657,6 +676,7 @@ func (w *Wall) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers", w.handleWorkers)
 	mux.HandleFunc("POST /v1/runs/{id}/heartbeat", w.handleHeartbeat)
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", w.handleCancel)
+	mux.HandleFunc("POST /v1/runs/{id}/flag-stuck", w.handleFlagStuck)
 	mux.HandleFunc("POST /v1/runs/{id}/clone", w.handleCloneRun)
 	mux.HandleFunc("DELETE /v1/runs/{id}", w.handleDelete)
 	mux.HandleFunc("POST /v1/runs/{id}/finish", w.handleFinish)
@@ -1179,6 +1199,7 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "invalid finish failure_class"})
 		return
 	}
+	w.operatorFlagFinish(&report)
 
 	var addrs []string
 	var completedAttempt int
@@ -1832,6 +1853,11 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 	}
 	t.lastUpdate = now
 	_, cancelled := w.cancel[t.RunID]
+	// A flag stops the runner through the cancel flag, but it is a stuck
+	// outcome, not a user cancel: recovery must still apply.
+	if t.OperatorFlag != "" && t.OperatorFlagAttempt == completed {
+		cancelled = false
+	}
 	delete(w.cancel, t.RunID)
 
 	// A graceful runner drain is infrastructure lifecycle, not gameplay
@@ -2032,6 +2058,10 @@ func (w *Wall) reapStale(now time.Time) []string {
 	for _, id := range w.order {
 		t := w.tiles[id]
 		if t.Finished || t.Status == statusQueued {
+			continue
+		}
+		if w.reapFlaggedLocked(t, now) {
+			reaped = append(reaped, id)
 			continue
 		}
 		age := now.Sub(t.lastUpdate)

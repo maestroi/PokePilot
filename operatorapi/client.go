@@ -236,6 +236,12 @@ func triagePath(key string) string {
 	return "/v1/triage/" + url.PathEscape(strings.TrimSpace(key))
 }
 
+// FlagStuck asks the wall to stop an active run as stuck so the failure
+// reaches triage like a stagnation-watchdog stop.
+func (c *Client) FlagStuck(ctx context.Context, id, note string) error {
+	return c.wallJSON(ctx, http.MethodPost, runPath(id)+"/flag-stuck", map[string]string{"note": note}, &map[string]any{})
+}
+
 // CancelRun cooperatively cancels one run and returns the wall's decoded
 // response. Callers that surface the upstream payload (the admin control
 // plane) and callers that only need the outcome (the Telegram bot) share this
