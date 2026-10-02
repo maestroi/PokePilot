@@ -1,4 +1,5 @@
 import type { SpectatorRun } from '../shared/api/spectator'
+import { mapHexForGame, spectatorNativeMap } from '../shared/mapCatalog'
 import {
   normalizePlayStyle,
   playSpeedLabel as configuredPlaySpeedLabel,
@@ -60,7 +61,7 @@ export function objectiveLabel(run: SpectatorRun): string {
 export function locationLabel(run: SpectatorRun): string {
   if (isTetrisRun(run)) return tetrisLocationLabel(run)
   if (isBoxxleRun(run)) return 'Puzzle'
-  const map = Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase()
+  const map = mapHexForGame(run.game, spectatorNativeMap(run))
   return `0x${map} · ${run.x ?? 0},${run.y ?? 0}`
 }
 
