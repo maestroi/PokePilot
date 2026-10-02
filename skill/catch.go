@@ -107,7 +107,10 @@ type captureExecutionSemantics struct {
 	battle     game.BattleStateDecoder
 	runtime    game.BattleRuntimeDecoder
 	battleMenu game.BattleMenuDecoder
+	execution  game.BattleExecutionDecoder
+	resources  game.BattleResourcesDecoder
 	menu       game.MenuDecoder
+	party      game.PartyMenuDecoder
 	prompt     game.PromptDecoder
 }
 
@@ -124,7 +127,19 @@ func captureExecutionFor(m *emu.Emu) (captureExecutionSemantics, error) {
 	if err != nil {
 		return captureExecutionSemantics{}, err
 	}
+	execution, err := battleExecutionDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	resources, err := battleResourcesDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
 	menu, err := menuDecoderFor(m)
+	if err != nil {
+		return captureExecutionSemantics{}, err
+	}
+	party, err := partyMenuDecoderFor(m)
 	if err != nil {
 		return captureExecutionSemantics{}, err
 	}
@@ -136,7 +151,10 @@ func captureExecutionFor(m *emu.Emu) (captureExecutionSemantics, error) {
 		battle:     battle,
 		runtime:    runtime,
 		battleMenu: battleMenu,
+		execution:  execution,
+		resources:  resources,
 		menu:       menu,
+		party:      party,
 		prompt:     prompt,
 	}, nil
 }
@@ -421,7 +439,8 @@ func waitThrowResult(m *emu.Emu) (bool, error) {
 }
 
 func waitThrowResultWithSemantics(m menuMachine, exec captureExecutionSemantics) (bool, error) {
-	if exec.battle == nil || exec.runtime == nil || exec.battleMenu == nil || exec.menu == nil || exec.prompt == nil {
+	if exec.battle == nil || exec.runtime == nil || exec.battleMenu == nil || exec.execution == nil ||
+		exec.resources == nil || exec.menu == nil || exec.party == nil || exec.prompt == nil {
 		return false, fmt.Errorf("incomplete capture execution capability")
 	}
 
@@ -429,6 +448,12 @@ func waitThrowResultWithSemantics(m menuMachine, exec captureExecutionSemantics)
 	// menu taps A. A successful catch is different: the nickname choice
 	// defaults to YES, so only a profile-classified nickname prompt may be
 	// answered automatically, and it is deliberately answered NO.
+	//
+	// A broken ball still spends the enemy's turn. If that faints the active
+	// mon, Gen I asks "Use next #MON?" before returning to the battle menu.
+	// Capture owns that forced switch the same way Battle/Flee do: answer YES
+	// and send a live replacement so the throw settlement does not leak a
+	// mid-battle choice onto the objective boundary.
 	for spent := 0; spent < battleEndSettle; spent += throwPollFrames {
 		if !exec.runtime.DecodeBattleRuntime(m).InBattle {
 			return true, nil
@@ -436,6 +461,32 @@ func waitThrowResultWithSemantics(m menuMachine, exec captureExecutionSemantics)
 		if exec.battleMenu.DecodeBattleMainMenu(m).Visible {
 			return false, nil
 		}
+
+		phase := exec.execution.DecodeBattleExecution(m).Phase
+		partyMenu := exec.party.DecodePartyMenu(m)
+		switch {
+		case phase == game.BattleExecutionUseNextPrompt:
+			if _, ready := exec.menu.DecodeTwoOption(m); !ready {
+				m.Tap(emu.A, 3, 7)
+				continue
+			}
+			if err := selectTwoOptionWithDecoder(m, exec.menu, 0); err != nil {
+				return false, fmt.Errorf("answering use-next prompt during capture: %w", err)
+			}
+			continue
+
+		case partyMenu.Visible && partyMenu.Kind == game.PartyMenuForcedBattle:
+			slot := exec.resources.DecodeBattleResources(m).FirstLivePartySlot()
+			if slot < 0 {
+				m.StepFrame()
+				continue
+			}
+			if err := selectPartySlotWithDecoder(m, exec.party, slot); err != nil {
+				return false, fmt.Errorf("selecting replacement during capture: %w", err)
+			}
+			continue
+		}
+
 		if _, open := exec.menu.DecodeTwoOption(m); open {
 			livePrompt := exec.prompt.DecodePrompt(m)
 			if !livePrompt.Visible || livePrompt.Kind != game.PromptNickname {

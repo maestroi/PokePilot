@@ -49,6 +49,25 @@ func (m *fakeGen2ItemMachine) Tap(btn emu.Button, hold, gap int) {
 	if hold+gap > 0 {
 		m.frames += uint64(hold + gap)
 	}
+	if m.mem[fakePartyVisible] != 0 {
+		switch btn {
+		case emu.Up:
+			if m.mem[fakePartyCursor] > 0 {
+				m.mem[fakePartyCursor]--
+			}
+		case emu.Down:
+			if m.mem[fakePartyCursor] < m.mem[fakePartyMax] {
+				m.mem[fakePartyCursor]++
+			}
+		case emu.A:
+			m.mem[fakePartyVisible] = 0
+			m.mem[fakeItemMainVisible] = 1
+			m.mem[fakeItemBattleColumn] = 0
+			m.mem[fakeItemBattleRow] = 0
+			m.mem[fakeItemMode] = 0
+		}
+		return
+	}
 	if m.mem[fakeItemPromptOpen] != 0 {
 		switch btn {
 		case emu.Down:
@@ -56,7 +75,15 @@ func (m *fakeGen2ItemMachine) Tap(btn emu.Button, hold, gap int) {
 		case emu.Up:
 			m.mem[fakeItemPromptCurrent] = 0
 		case emu.A:
-			if m.mem[fakeItemPromptCurrent] == 1 {
+			switch {
+			case m.mem[fakeItemMode] == 2 && m.mem[fakeItemPromptCurrent] == 0:
+				// Use-next YES opens the forced battle party menu.
+				m.mem[fakeItemPromptOpen] = 0
+				m.mem[fakePartyVisible] = 1
+				m.mem[fakePartyKind] = 0
+				m.mem[fakePartyCursor] = 0
+				m.mem[fakePartyMax] = 3
+			case m.mem[fakeItemPromptCurrent] == 1:
 				m.mem[fakeItemPromptOpen] = 0
 				if m.mem[fakeItemQuantity] > 0 {
 					m.mem[fakeItemQuantity]--
@@ -222,12 +249,39 @@ func (d fakeGen2PromptDecoder) DecodePrompt(r game.MemoryReader) game.PromptStat
 	return game.PromptState{Visible: true, Kind: d.kind}
 }
 
+type fakeGen2CaptureExecutionDecoder struct{}
+
+func (fakeGen2CaptureExecutionDecoder) DecodeBattleExecution(r game.MemoryReader) game.BattleExecutionState {
+	out := game.BattleExecutionState{InBattle: r.Peek8(fakeItemBattle) != 0}
+	if r.Peek8(fakeItemPromptOpen) != 0 && r.Peek8(fakeItemMode) == 2 {
+		out.Phase = game.BattleExecutionUseNextPrompt
+	}
+	return out
+}
+
+type fakeGen2CaptureResourcesDecoder struct{}
+
+func (fakeGen2CaptureResourcesDecoder) DecodeBattleResources(r game.MemoryReader) game.BattleResourcesState {
+	return game.BattleResourcesState{
+		InBattle:   r.Peek8(fakeItemBattle) != 0,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			{HP: 0, MaxHP: 20},
+			{HP: 12, MaxHP: 20},
+			{HP: 8, MaxHP: 16},
+		},
+	}
+}
+
 func fakeGen2CaptureExecution() captureExecutionSemantics {
 	return captureExecutionSemantics{
 		battle:     fakeGen2ItemBattleDecoder{},
 		runtime:    fakeGen2ItemRuntimeDecoder{},
 		battleMenu: fakeGen2ItemBattleMenuDecoder{},
+		execution:  fakeGen2CaptureExecutionDecoder{},
+		resources:  fakeGen2CaptureResourcesDecoder{},
 		menu:       fakeGen2ItemMenuDecoder{},
+		party:      fakeGen2PartyMenuDecoder{},
 		prompt:     fakeGen2PromptDecoder{kind: game.PromptNickname},
 	}
 }
@@ -327,5 +381,36 @@ func TestGenericCatchThrowRecognizesProfileBattleMenu(t *testing.T) {
 	}
 	if ended {
 		t.Fatal("visible semantic battle menu should classify the throw as broken, not ended")
+	}
+}
+
+func TestGenericCatchThrowOwnsUseNextForcedSwitch(t *testing.T) {
+	m := &fakeGen2ItemMachine{}
+	m.mem[fakeItemBattle] = 1
+	m.mem[fakeItemPromptOpen] = 1
+	m.mem[fakeItemPromptCurrent] = 0
+	m.mem[fakeItemMode] = 2
+
+	exec := fakeGen2CaptureExecution()
+	exec.prompt = fakeGen2PromptDecoder{} // unclassified two-option; phase names use-next
+
+	ended, err := waitThrowResultWithSemantics(m, exec)
+	if err != nil {
+		t.Fatalf("resolve fake Gen-II use-next after broken ball: %v", err)
+	}
+	if ended {
+		t.Fatal("forced switch after a broken ball should return to the battle menu, not end the encounter")
+	}
+	if m.mem[fakeItemPromptOpen] != 0 {
+		t.Fatal("use-next prompt remained open")
+	}
+	if m.mem[fakePartyVisible] != 0 {
+		t.Fatal("forced party menu remained open")
+	}
+	if m.mem[fakeItemMainVisible] == 0 {
+		t.Fatal("battle main menu did not return after sending a replacement")
+	}
+	if got := m.mem[fakePartyCursor]; got != 1 {
+		t.Fatalf("replacement slot = %d, want first live party slot 1", got)
 	}
 }
