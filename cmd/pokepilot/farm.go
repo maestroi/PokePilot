@@ -22,6 +22,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 	"github.com/maestroi/pokepilot/profiles"
 	redprofile "github.com/maestroi/pokepilot/red/profile"
 	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
@@ -29,6 +30,7 @@ import (
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 const (
@@ -245,15 +247,15 @@ func (s *heartbeatSnap) load() farm.Heartbeat {
 // heartbeatTrail owns the recent map-local position samples. It is only
 // touched on the stepping goroutine; snapshots get a copied slice.
 type heartbeatTrail struct {
-	mapID   uint8
+	mapID   uint16
 	set     bool
 	pts     [][2]uint8
-	visited map[uint8]struct{}
+	visited map[uint16]struct{}
 }
 
-func (t *heartbeatTrail) add(mapID, x, y uint8) [][2]uint8 {
+func (t *heartbeatTrail) add(mapID uint16, x, y uint8) [][2]uint8 {
 	if t.visited == nil {
-		t.visited = make(map[uint8]struct{})
+		t.visited = make(map[uint16]struct{})
 	}
 	t.visited[mapID] = struct{}{}
 	if !t.set || t.mapID != mapID {
@@ -895,8 +897,9 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 		Player:      player,
 	}
 	applyHeartbeatPosition(&hb, base, trail)
-	// Sprite telemetry has not yet moved into ProfileObservation. Only profiles
-	// advertising the existing trainer/map-object runtime use the legacy decoder.
+	hb.MapAsset = semanticHeartbeatMap(m, profile, base)
+	// Sprite telemetry has not yet moved into ProfileObservation. Gen I keeps
+	// its legacy decoder; wide-id profiles use their generic live topology.
 	if profile.Features().Has(game.FeatureTrainerFlags) {
 		state.Snapshot(m, mem)
 		for _, sp := range state.DecodeSprites(mem) {
@@ -907,6 +910,17 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 				X: uint8(sp.X), Y: uint8(sp.Y), PictureID: sp.PictureID, Slot: uint8(sp.Slot),
 			})
 		}
+	} else if routing, ok := profile.(game.RoutingDecoder); ok {
+		if live, liveErr := routing.DecodeLiveTopology(m); liveErr == nil && live.NativeMapID == base.NativeMapID {
+			for _, object := range live.LiveObjects {
+				if object.X < 0 || object.Y < 0 || object.X > 255 || object.Y > 255 || object.Slot < 0 || object.Slot > 255 {
+					continue
+				}
+				hb.Sprites = append(hb.Sprites, farm.MapSprite{
+					X: uint8(object.X), Y: uint8(object.Y), Slot: uint8(object.Slot),
+				})
+			}
+		}
 	}
 	if tail := m.TraceTail(1); len(tail) > 0 {
 		hb.Trace = tail[len(tail)-1]
@@ -915,17 +929,67 @@ func sampleHeartbeat(m *emu.Emu, profile game.GameProfile, runID string, snap *h
 	m.TracePlayer(hb.Player)
 }
 
-// applyHeartbeatPosition fills the one-byte map/position fields. A wider native
-// ID (Gen 2 is group<<8|map) cannot be represented without aliasing another
-// map, so it leaves them unset instead of dropping the whole heartbeat: the
-// heartbeat also carries WorkerAddrs, without which the wall cannot proxy
-// /frame and the run has no video.
+// applyHeartbeatPosition preserves the native cartridge map identity while
+// retaining the legacy one-byte field for Gen-I consumers.
 func applyHeartbeatPosition(hb *farm.Heartbeat, base game.ProfileObservation, trail *heartbeatTrail) {
+	hb.NativeMap = base.NativeMapID
+	hb.X, hb.Y = base.X, base.Y
+	hb.Trail = trail.add(base.NativeMapID, base.X, base.Y)
 	if base.NativeMapID <= 0xff {
-		hb.Map, hb.X, hb.Y = uint8(base.NativeMapID), base.X, base.Y
-		hb.Trail = trail.add(hb.Map, base.X, base.Y)
+		hb.Map = uint8(base.NativeMapID)
 	}
 	hb.MapsVisited = trail.mapsVisited()
+}
+
+func semanticHeartbeatMap(m *emu.Emu, profile game.GameProfile, base game.ProfileObservation) *farm.SemanticMapAsset {
+	if m == nil || profile == nil {
+		return nil
+	}
+	gameID := strings.ToLower(strings.TrimSpace(string(profile.ID())))
+	if gameID != "pokemon-gold" && gameID != "pokemon-silver" {
+		return nil
+	}
+	routing, ok := profile.(game.RoutingDecoder)
+	if !ok {
+		return nil
+	}
+	live, err := routing.DecodeLiveTopology(m)
+	if err != nil || !live.BlocksSettled || live.NativeMapID != base.NativeMapID {
+		return nil
+	}
+	provider := gsrom.NewFirstBadgeWorldProvider(m.ROM())
+	header, err := provider.ParseMap(live.NativeMapID)
+	if err != nil {
+		return nil
+	}
+	grid, err := provider.Grid(live.NativeMapID, live.Blocks, worldmodel.TraversalMode(live.Traversal))
+	if err != nil || grid.Width <= 0 || grid.Height <= 0 || len(grid.Walkable) != grid.Width*grid.Height {
+		return nil
+	}
+	cells := make([]byte, len(grid.Walkable))
+	for i, walkable := range grid.Walkable {
+		if walkable {
+			cells[i] = '.'
+		} else {
+			cells[i] = '#'
+		}
+	}
+	warps := make([]farm.SemanticMapWarp, 0, len(header.Warps))
+	for _, warp := range header.Warps {
+		if warp.Inert || int(warp.X) >= grid.Width || int(warp.Y) >= grid.Height {
+			continue
+		}
+		cells[int(warp.Y)*grid.Width+int(warp.X)] = 'W'
+		warps = append(warps, farm.SemanticMapWarp{X: warp.X, Y: warp.Y, Dest: warp.DestMap})
+	}
+	connections := make([]string, 0, len(header.Connections))
+	for _, connection := range header.Connections {
+		connections = append(connections, fmt.Sprintf("%04X", connection.MapID))
+	}
+	return &farm.SemanticMapAsset{
+		ID: live.NativeMapID, Width: grid.Width, Height: grid.Height,
+		Cells: string(cells), Warps: warps, Connections: connections,
+	}
 }
 
 // workerAddrs lists every non-loopback local address as "host:port", so the
