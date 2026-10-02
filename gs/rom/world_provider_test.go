@@ -383,7 +383,6 @@ func TestEarlyJohtoWorldProviderRoutesStoryServicesForFogBadgeSlice(t *testing.T
 	}
 }
 
-
 func TestEarlyJohtoEcruteakGymLandingWarpsAreInert(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	gym := nativeID(t, "ECRUTEAK_GYM")
