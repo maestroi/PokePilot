@@ -473,7 +473,7 @@ function draw(): void {
         const x = Number(warp.x)
         const y = Number(warp.y)
         if (x < 0 || y < 0 || x >= width || y >= height) continue
-        const warpLabel = Number(warp.dest) === 0xff ? '↩' : `→${hexByte(warp.dest)}`
+        const warpLabel = isGen1World.value && Number(warp.dest) === 0xff ? '↩' : `→${mapHexForGame(props.game, Number(warp.dest))}`
         drawDebugText(ctx, warpLabel, (x + 0.5) * px, (y + 0.5) * px, px)
       }
     }
