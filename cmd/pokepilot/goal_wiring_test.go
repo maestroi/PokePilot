@@ -36,6 +36,37 @@ func TestStatsPlannerMirrorsCompletedRuntimeGoalOnce(t *testing.T) {
 	}
 }
 
+// The wall publishes goal_kind/goal_id so operator surfaces can branch on the
+// structured goal identity instead of the status prose. That only works if
+// stats actually records it.
+func TestStatsPlannerRecordsStructuredGoalIdentity(t *testing.T) {
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "progress:gs_supported_frontier"}, "", "", nil, nil, nil, nil)
+	goal, err := agent.ParseGoal("progress:gs_supported_frontier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := agent.EvaluateGoal(goal, agent.Observation{
+		Round: 1,
+		Story: agent.ProgressState{{ID: "gs_supported_frontier", Complete: true}},
+	})
+	p.ObserveRunGoal(agent.Observation{Round: 1}, status, true)
+
+	if p.stats.GoalKind != "progress" || p.stats.GoalID != "gs_supported_frontier" {
+		t.Fatalf("goal identity = (%q, %q), want (progress, gs_supported_frontier)", p.stats.GoalKind, p.stats.GoalID)
+	}
+	if !p.stats.GoalComplete {
+		t.Fatalf("goal completion not recorded: %+v", p.stats)
+	}
+}
+
+func TestStatsPlannerClearsGoalIdentityForPromptOnlyGoal(t *testing.T) {
+	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Explore Kanto."}, "", "", nil, nil, nil, nil)
+	p.ObserveRunGoal(agent.Observation{Round: 1}, agent.GoalStatus{}, false)
+	if p.stats.GoalKind != "" || p.stats.GoalID != "" {
+		t.Fatalf("prompt-only goal left identity behind: %+v", p.stats)
+	}
+}
+
 func TestStatsPlannerExposesRawRunGoal(t *testing.T) {
 	p := newStatsPlannerWithRunPolicy(farm.RunPolicy{Goal: "Earn the Boulder Badge."}, "", "", nil, nil, nil, nil)
 	if got := p.RunGoal(); got != "Earn the Boulder Badge." {

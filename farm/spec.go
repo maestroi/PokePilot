@@ -402,10 +402,16 @@ type LLMStats struct {
 	// deterministic syntax. Summary is the human/model-facing status; the
 	// numeric fields make dashboards able to render progress without parsing
 	// prose. Complete becomes true on the final pre-model stop snapshot.
+	//
+	// GoalKind and GoalID are the goal's structured identity (the agent.Goal
+	// kind and semantic target). Operator surfaces branch on these instead of
+	// matching Summary text, so "which goal finished" stays a typed fact.
 	GoalSummary  string `json:"goal_summary,omitempty"`
 	GoalCurrent  int    `json:"goal_current,omitempty"`
 	GoalTarget   int    `json:"goal_target,omitempty"`
 	GoalComplete bool   `json:"goal_complete,omitempty"`
+	GoalKind     string `json:"goal_kind,omitempty"`
+	GoalID       string `json:"goal_id,omitempty"`
 
 	Choices []ChoiceCount `json:"choices"`
 }

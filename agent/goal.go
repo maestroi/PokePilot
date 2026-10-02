@@ -20,6 +20,33 @@ const (
 	GoalCapability
 )
 
+// String is the stable machine-readable identity of a goal kind. It is the
+// value run statistics and operator surfaces record so that dashboards and
+// notifications can branch on what a run was asked to achieve instead of
+// parsing GoalStatus.Summary prose.
+func (k GoalKind) String() string {
+	switch k {
+	case GoalEliteFour:
+		return "elite-four"
+	case GoalBadges:
+		return "badges"
+	case GoalReach:
+		return "reach"
+	case GoalLevel:
+		return "level"
+	case GoalItem:
+		return "item"
+	case GoalDex:
+		return "dex"
+	case GoalProgress:
+		return "progress"
+	case GoalCapability:
+		return "capability"
+	default:
+		return "none"
+	}
+}
+
 type Goal struct {
 	Kind   GoalKind
 	Target string
@@ -31,6 +58,12 @@ type GoalStatus struct {
 	Summary  string
 	Current  int
 	Target   int
+	// Kind and ID are the structured identity of the goal this status
+	// describes. Summary is prose for humans and models; operator surfaces
+	// branch on Kind/ID so a semantic fact is never recovered by matching
+	// strings out of a status sentence.
+	Kind GoalKind
+	ID   string
 }
 
 func ParseGoal(raw string) (Goal, error) {
@@ -143,6 +176,15 @@ func PlannerGoalStatus(raw string, obs Observation) (status GoalStatus, structur
 // EvaluateGoal depends only on portable planner facts. It does not inspect a
 // Red event constant or map byte to decide completion.
 func EvaluateGoal(g Goal, obs Observation) GoalStatus {
+	status := evaluateGoal(g, obs)
+	// Stamp the goal's own identity onto its result so callers never have to
+	// re-derive which goal produced this status.
+	status.Kind = g.Kind
+	status.ID = g.Target
+	return status
+}
+
+func evaluateGoal(g Goal, obs Observation) GoalStatus {
 	switch g.Kind {
 	case GoalNone:
 		return GoalStatus{Summary: "no deterministic goal"}

@@ -63,6 +63,10 @@ type statsLLM struct {
 	GoalCurrent  int    `json:"goal_current"`
 	GoalTarget   int    `json:"goal_target"`
 	GoalComplete bool   `json:"goal_complete"`
+	// GoalKind/GoalID mirror farm.LLMStats so the admin UI decodes the same
+	// structured goal identity the wall publishes.
+	GoalKind string `json:"goal_kind"`
+	GoalID   string `json:"goal_id"`
 }
 
 type statsPlayer struct {

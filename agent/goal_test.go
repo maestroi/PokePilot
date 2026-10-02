@@ -190,3 +190,43 @@ func TestEvaluateGoalEliteFourCompletesOnSemanticProgress(t *testing.T) {
 		t.Fatalf("elite-four complete without the main-story progress fact: %+v", got)
 	}
 }
+
+// Operator surfaces must learn "which goal finished" from structured identity,
+// never by matching the status sentence. The Gen-II supported-frontier preset
+// is the case that motivated the fields: a completed progress goal is how the
+// agent reports it reached the end of its supported progression track.
+func TestEvaluateGoalStampsStructuredIdentity(t *testing.T) {
+	g, ok := plannerGoalPreset("Play through the current supported Gen 2 frontier.")
+	if !ok {
+		t.Fatal("Gen 2 supported-frontier preset did not resolve to a goal")
+	}
+	status := EvaluateGoal(g, Observation{Story: ProgressState{{ID: "gs_supported_frontier", Complete: true}}})
+	if !status.Complete {
+		t.Fatalf("frontier preset did not complete on its progress fact: %+v", status)
+	}
+	if status.Kind != GoalProgress || status.ID != "gs_supported_frontier" {
+		t.Fatalf("structured identity = (%v, %q), want (GoalProgress, gs_supported_frontier)", status.Kind, status.ID)
+	}
+	if got := status.Kind.String(); got != "progress" {
+		t.Fatalf("GoalKind.String() = %q, want progress", got)
+	}
+}
+
+func TestGoalKindString(t *testing.T) {
+	cases := map[GoalKind]string{
+		GoalNone:       "none",
+		GoalEliteFour:  "elite-four",
+		GoalBadges:     "badges",
+		GoalReach:      "reach",
+		GoalLevel:      "level",
+		GoalItem:       "item",
+		GoalDex:        "dex",
+		GoalProgress:   "progress",
+		GoalCapability: "capability",
+	}
+	for kind, want := range cases {
+		if got := kind.String(); got != want {
+			t.Fatalf("GoalKind(%d).String() = %q, want %q", kind, got, want)
+		}
+	}
+}

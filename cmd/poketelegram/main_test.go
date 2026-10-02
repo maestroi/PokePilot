@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -138,5 +140,182 @@ func TestControlRateLimit(t *testing.T) {
 	}
 	if b.controlAllowed(42) {
 		t.Fatal("second action was not rate-limited")
+	}
+}
+
+// captureTransport answers Telegram API calls locally and records the message
+// text, so notification content is asserted without network access or a token.
+type captureTransport struct {
+	mu    sync.Mutex
+	texts []string
+}
+
+func (c *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, _ := io.ReadAll(req.Body)
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err == nil {
+		if text, ok := payload["text"].(string); ok {
+			c.mu.Lock()
+			c.texts = append(c.texts, text)
+			c.mu.Unlock()
+		}
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"message_id":1}}`)),
+		Request:    req,
+	}, nil
+}
+
+func (c *captureTransport) all() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.texts...)
+}
+
+func newCaptureBot(op *operatorapi.Client) (*bot, *captureTransport) {
+	capture := &captureTransport{}
+	return &bot{
+		cfg: config{
+			NotifyChats:    []int64{7},
+			AdminBaseURL:   "https://admin.example",
+			StallAfter:     time.Hour,
+			ControlSpacing: time.Minute,
+		},
+		tg:   &telegramClient{token: "test", http: &http.Client{Transport: capture}},
+		op:   op,
+		runs: make(map[string]runWatch),
+	}, capture
+}
+
+// A run that completes a declared progression goal has reached the end of that
+// progression track. This is the Gen-II supported-frontier case the operator
+// needs, and it is decided from goal_kind/goal_id rather than goal prose.
+func TestCompletedProgressGoalNotifiesFrontier(t *testing.T) {
+	b, capture := newCaptureBot(operatorapi.New("", "", ""))
+	ctx := context.Background()
+	b.observeRuns(ctx, []operatorapi.Run{{RunID: "run-frontier", Status: "running", Game: "pokemon-gold", Seed: 7, Frame: 10}})
+	b.observeRuns(ctx, []operatorapi.Run{{
+		RunID: "run-frontier", Status: "done", Reason: "goal", Game: "pokemon-gold", Seed: 7, Frame: 99,
+		Stats: &operatorapi.RunStats{
+			GoalKind: "progress", GoalID: "gs_supported_frontier", GoalComplete: true,
+			GoalSummary: "progress gs_supported_frontier",
+		},
+	}})
+
+	texts := capture.all()
+	if len(texts) != 1 {
+		t.Fatalf("notifications = %d, want 1: %v", len(texts), texts)
+	}
+	for _, want := range []string{"run-frontier", "progression goal complete", "gs_supported_frontier", "frontier"} {
+		if !strings.Contains(texts[0], want) {
+			t.Fatalf("frontier notification missing %q: %s", want, texts[0])
+		}
+	}
+}
+
+func TestOrdinaryCompletionIsNotAFrontierNotification(t *testing.T) {
+	b, capture := newCaptureBot(operatorapi.New("", "", ""))
+	ctx := context.Background()
+	b.observeRuns(ctx, []operatorapi.Run{{RunID: "run-badges", Status: "running", Frame: 10}})
+	b.observeRuns(ctx, []operatorapi.Run{{
+		RunID: "run-badges", Status: "done", Reason: "goal", Frame: 99,
+		Stats: &operatorapi.RunStats{GoalKind: "badges", GoalComplete: true, GoalSummary: "badges 1/1"},
+	}})
+
+	texts := capture.all()
+	if len(texts) != 1 || !strings.Contains(texts[0], "finished") {
+		t.Fatalf("notifications = %v, want a plain finished notice", texts)
+	}
+	if strings.Contains(texts[0], "frontier") {
+		t.Fatalf("badge goal misreported as a progression frontier: %s", texts[0])
+	}
+}
+
+// The dashboard list does not always carry stats, so a completion transition
+// must still find the structured goal identity on the single-run endpoint.
+func TestFrontierDetectionFallsBackToRunDetail(t *testing.T) {
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runs/run-frontier" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"run": map[string]any{
+			"run_id": "run-frontier", "status": "done",
+			"stats": map[string]any{"goal_kind": "progress", "goal_id": "gs_supported_frontier", "goal_complete": true},
+		}})
+	}))
+	defer wall.Close()
+
+	b, capture := newCaptureBot(operatorapi.New(wall.URL, "", ""))
+	ctx := context.Background()
+	b.observeRuns(ctx, []operatorapi.Run{{RunID: "run-frontier", Status: "running", Frame: 10}})
+	b.observeRuns(ctx, []operatorapi.Run{{RunID: "run-frontier", Status: "done", Reason: "goal", Frame: 99}})
+
+	texts := capture.all()
+	if len(texts) != 1 || !strings.Contains(texts[0], "gs_supported_frontier") {
+		t.Fatalf("notifications = %v, want the frontier notice from run detail", texts)
+	}
+}
+
+func TestAlertsTextIncludesRecentlyResolved(t *testing.T) {
+	var mu sync.Mutex
+	var queries []string
+	alertmanager := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/alerts" {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		queries = append(queries, r.URL.RawQuery)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.RawQuery, "active=false") {
+			_ = json.NewEncoder(w).Encode([]map[string]any{{
+				"status":      map[string]any{"state": "suppressed"},
+				"labels":      map[string]string{"alertname": "FarmDown"},
+				"annotations": map[string]string{"summary": "farm recovered"},
+			}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"status":      map[string]any{"state": "active"},
+			"labels":      map[string]string{"alertname": "DiskFull"},
+			"annotations": map[string]string{"summary": "disk almost full"},
+		}})
+	}))
+	defer alertmanager.Close()
+
+	b, _ := newCaptureBot(operatorapi.New("", "", alertmanager.URL))
+	text, err := b.alertsText(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Active alerts (1)", "DiskFull", "Recently resolved (1)", "FarmDown"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("alerts text missing %q: %s", want, text)
+		}
+	}
+}
+
+func TestAlertsTextWhenAlertmanagerIsNotConfigured(t *testing.T) {
+	b, _ := newCaptureBot(operatorapi.New("", "", ""))
+	text, err := b.alertsText(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "not configured") {
+		t.Fatalf("alerts text = %q", text)
+	}
+}
+
+func TestFrontierDetailNamesTheGoal(t *testing.T) {
+	if got := frontierDetail(&operatorapi.RunStats{GoalID: "gs_supported_frontier"}); !strings.Contains(got, "gs_supported_frontier") {
+		t.Fatalf("frontier detail = %q", got)
+	}
+	if got := frontierDetail(nil); strings.TrimSpace(got) == "" {
+		t.Fatal("frontier detail for a goal without an id is empty")
 	}
 }

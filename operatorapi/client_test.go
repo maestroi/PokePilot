@@ -3,8 +3,11 @@ package operatorapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -135,5 +138,119 @@ func TestFrameAndAlerts(t *testing.T) {
 	}
 	if jobs.Total != 1 || len(jobs.Jobs) != 1 || jobs.Jobs[0].State != "ready" {
 		t.Fatalf("render jobs = %+v", jobs)
+	}
+}
+
+// The Telegram bot and the admin/MCP control plane perform the same two
+// mutating operator actions. They must not drift onto separate endpoints or
+// separate error handling, so both spellings of each action are asserted here.
+func TestControlOperationsShareEndpointAndReturnBody(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/runs/run-1/cancel":
+			_ = json.NewEncoder(w).Encode(map[string]any{"cancel": true, "run_id": "run-1"})
+		case "/v1/triage/deadbeef/investigate":
+			_ = json.NewEncoder(w).Encode(map[string]any{"issue_number": 42})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL, "", "")
+	body, err := client.CancelRun(context.Background(), " run-1 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["cancel"] != true || body["run_id"] != "run-1" {
+		t.Fatalf("cancel body = %v", body)
+	}
+	if err := client.Stop(context.Background(), "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	investigated, err := client.InvestigateFailure(context.Background(), "deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if investigated["issue_number"] != float64(42) {
+		t.Fatalf("investigate body = %v", investigated)
+	}
+	if err := client.Investigate(context.Background(), "deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{
+		"POST /v1/runs/run-1/cancel",
+		"POST /v1/runs/run-1/cancel",
+		"POST /v1/triage/deadbeef/investigate",
+		"POST /v1/triage/deadbeef/investigate",
+	}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
+func TestControlOperationsSurfaceWallErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"run is not cancellable"}`, http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	client := New(srv.URL, "", "")
+	if _, err := client.CancelRun(context.Background(), "run-1"); err == nil {
+		t.Fatal("cancel of a rejected run reported success")
+	}
+	if err := client.Stop(context.Background(), "run-1"); err == nil {
+		t.Fatal("stop of a rejected run reported success")
+	}
+}
+
+func TestResolvedAlertsRequestsNonActiveAlerts(t *testing.T) {
+	var mu sync.Mutex
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/alerts" {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		query = r.URL.RawQuery
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"status":      map[string]any{"state": "suppressed"},
+			"labels":      map[string]string{"alertname": "FarmDown"},
+			"annotations": map[string]string{"summary": "farm recovered"},
+			"fingerprint": "abc",
+		}})
+	}))
+	defer srv.Close()
+
+	alerts, err := New("", "", srv.URL).ResolvedAlerts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alerts) != 1 || alerts[0].Labels["alertname"] != "FarmDown" {
+		t.Fatalf("resolved alerts = %+v", alerts)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{"active=false", "silenced=false", "inhibited=false", "unprocessed=false"} {
+		if !strings.Contains(query, want) {
+			t.Fatalf("query %q missing %q", query, want)
+		}
+	}
+}
+
+func TestResolvedAlertsRequiresAlertmanager(t *testing.T) {
+	if _, err := New("", "", "").ResolvedAlerts(context.Background()); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("err = %v, want ErrNotConfigured", err)
 	}
 }
