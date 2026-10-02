@@ -30,6 +30,9 @@ import (
 //	PROBE_STATE=fixture/testdata/fixtures/post_starter.v4.state \
 //		PROBE_ROUTE=0x02 go test ./skill -run TestProbe -v
 //
+// PROBE_ROM names the cartridge explicitly and wins over POKEMON_*_ROM: a
+// Yellow failure must be probed with the Yellow ROM, never Red's map data.
+//
 // PROBE_STATE resolves relative to skill/ — go test runs a test in its own
 // package directory, so a repo-root-relative path silently does not exist.
 //
@@ -58,7 +61,7 @@ func TestProbe(t *testing.T) {
 	}
 	romPath := probeROMPath()
 	if romPath == "" {
-		t.Skip("set POKEMON_RED_ROM, POKEMON_GOLD_ROM, or POKEMON_SILVER_ROM")
+		t.Skip("set PROBE_ROM (or POKEMON_RED/YELLOW/BLUE/GOLD/SILVER_ROM) to the failing run's cartridge")
 	}
 	romData, err := os.ReadFile(romPath)
 	if err != nil {
@@ -298,8 +301,11 @@ func livePlayer(t *testing.T, romPath, statePath string) liveState {
 	return liveState{p.MapID, p.X, p.Y, p.Facing.String(), state.Controllable(&mem)}
 }
 
+// probeROMPath prefers PROBE_ROM so a Yellow/Blue/Gen-2 failure is probed on
+// its own cartridge even where POKEMON_RED_ROM is also exported (the fixer
+// exports every cartridge it has).
 func probeROMPath() string {
-	for _, key := range []string{"POKEMON_RED_ROM", "POKEMON_GOLD_ROM", "POKEMON_SILVER_ROM"} {
+	for _, key := range []string{"PROBE_ROM", "POKEMON_RED_ROM", "POKEMON_YELLOW_ROM", "POKEMON_BLUE_ROM", "POKEMON_GOLD_ROM", "POKEMON_SILVER_ROM"} {
 		if path := os.Getenv(key); path != "" {
 			return path
 		}

@@ -400,6 +400,14 @@ seed_rom() {
 		printf '%s\n' 'roms/pokemon_red.gb' >>"$POKEPILOT_TRIAGE_TREE/.git/info/exclude"
 	fi
 	export POKEMON_RED_ROM="$POKEPILOT_TRIAGE_TREE/roms/pokemon_red.gb"
+	# Name each sibling by its own env var (farm.ReproROMEnv) so tools never
+	# fall back to Red's map data for a Yellow/Blue/Gen-2 failure.
+	local game
+	for game in blue yellow gold silver; do
+		for rom in "$POKEPILOT_TRIAGE_TREE"/roms/pokemon_"$game".gb "$POKEPILOT_TRIAGE_TREE"/roms/pokemon_"$game".gbc; do
+			if [ -e "$rom" ]; then export "POKEMON_${game^^}_ROM=$rom"; fi
+		done
+	done
 }
 
 pick_next() {
