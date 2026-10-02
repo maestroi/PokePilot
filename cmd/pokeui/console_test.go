@@ -208,6 +208,9 @@ func TestUIStatsBelongToAnalytics(t *testing.T) {
 	if strings.Contains(js, `run-outcomes`) {
 		t.Error("stats.js must not render campaign statistics in Operations")
 	}
+	if strings.Contains(js, `best_badges)} / 8`) {
+		t.Error("stats.js must not cap mixed Gen I/Gen II badge progress at eight")
+	}
 }
 
 func TestUIOperationsAreOwnedByDashboardRender(t *testing.T) {
