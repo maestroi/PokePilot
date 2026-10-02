@@ -268,8 +268,10 @@ FIXER_STATE_DIR ?= $(HOME)/.local/share/pokepilot/fixer-swarm
 # Cartridges only: POKEPILOT_ROM_DIR can be ~/.config/pokepilot, which also
 # holds the env file, and the agent must not see those secrets.
 FIXER_ROM_DIR ?= $(HOME)/.local/share/pokepilot/fixer-roms
+OPENCODE_BIN_DIR ?= $(HOME)/.opencode/bin
 fixer-image:
-	docker buildx build --load -t $(FIXER_IMAGE) -f deploy/fixer.Dockerfile .
+	@test -x "$(OPENCODE_BIN_DIR)/opencode" || { echo "no opencode in $(OPENCODE_BIN_DIR)"; exit 1; }
+	docker buildx build --load -t $(FIXER_IMAGE) --build-context opencode="$(OPENCODE_BIN_DIR)" -f deploy/fixer.Dockerfile .
 
 fixer-up: fixer-image
 	$(require-rom)

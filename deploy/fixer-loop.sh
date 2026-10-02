@@ -47,13 +47,20 @@ if ! command -v agent >/dev/null 2>&1; then
 	exit 1
 fi
 
-# OpenCode reaches qwen over the LAN; without a URL the qwen tier is skipped
-# and the ladder starts at Cursor.
+# Both agents get the PokePilot MCP the skills call (pokepilot_get_run_debug,
+# pokepilot_record_solver_attempt, ...). OpenCode reaches qwen over the LAN;
+# without a URL the qwen tier is skipped and the ladder starts at Cursor.
+mkdir -p "$HOME/.cursor" "$HOME/.config/opencode"
+cat >"$HOME/.cursor/mcp.json" <<EOF
+{ "mcpServers": { "pokepilot": { "url": "$POKEPILOT_MCP_URL", "headers": { "Authorization": "Bearer $POKEPILOT_MCP_TOKEN" } } } }
+EOF
 if [ -n "$POKEPILOT_QWEN_URL" ]; then
 	provider=${POKEPILOT_OPENCODE_MODEL%%/*} model=${POKEPILOT_OPENCODE_MODEL#*/}
-	mkdir -p "$HOME/.config/opencode"
 	cat >"$HOME/.config/opencode/opencode.json" <<EOF
 {
+  "mcp": {
+    "pokepilot": { "type": "remote", "url": "$POKEPILOT_MCP_URL", "enabled": true, "headers": { "Authorization": "Bearer $POKEPILOT_MCP_TOKEN" } }
+  },
   "provider": {
     "$provider": {
       "npm": "@ai-sdk/openai-compatible",

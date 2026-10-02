@@ -7,9 +7,6 @@
 
 FROM golang:1.26-bookworm
 
-# Pinned so an upstream release cannot change `opencode run` flags under us.
-ARG OPENCODE_VERSION=1.18.34
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		ca-certificates curl git make python3 tini \
 	&& curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -18,8 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 		>/etc/apt/sources.list.d/github-cli.list \
 	&& apt-get update && apt-get install -y --no-install-recommends gh \
 	&& rm -rf /var/lib/apt/lists/* \
-	&& curl -fsSL https://cursor.com/install | bash \
-	&& curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION" --no-modify-path
+	&& curl -fsSL https://cursor.com/install | bash
+
+# OpenCode 2.x (what the qwen tier is tuned on) is not published; make
+# fixer-image passes the operator's binary as the "opencode" build context.
+COPY --from=opencode opencode /root/.opencode/bin/opencode
 
 ENV PATH="/root/.local/bin:/root/.cursor/bin:/root/.opencode/bin:/usr/local/go/bin:${PATH}"
 RUN command -v agent && command -v opencode && command -v gh && command -v go && command -v flock

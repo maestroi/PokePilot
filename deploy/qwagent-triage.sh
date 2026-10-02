@@ -71,6 +71,8 @@ cursor_binary() {
 cursor_authenticated() {
 	local bin status
 	bin=$(cursor_binary) || return 1
+	# `agent status` reports "Not logged in" for an API key that -p accepts.
+	[ -n "${CURSOR_API_KEY:-}" ] && return 0
 	status=$("$bin" status 2>&1 || true)
 	if printf '%s' "$status" | grep -Eiq 'not authenticated|not logged|logged out'; then
 		return 1
