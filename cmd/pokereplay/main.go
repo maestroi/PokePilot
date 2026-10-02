@@ -136,8 +136,9 @@ type replayServer struct {
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
-	rtmpMu       sync.Mutex
-	rtmpSessions map[string]*rtmpBroadcastSession
+	rtmpMu                sync.Mutex
+	rtmpSessions          map[string]*rtmpBroadcastSession
+	broadcastDestinations map[string]broadcastDestination
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
@@ -167,8 +168,9 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		deferredJobs:     make(map[string]replayDeferredJob),
 		activeJobs:       make(map[string]time.Time),
 		activeCancels:    make(map[string]context.CancelFunc),
-		liveSessions:     make(map[string]*liveBroadcastSession),
-		rtmpSessions:     make(map[string]*rtmpBroadcastSession),
+		liveSessions:          make(map[string]*liveBroadcastSession),
+		rtmpSessions:          make(map[string]*rtmpBroadcastSession),
+		broadcastDestinations: broadcastDestinationsFromEnv(os.Getenv),
 	}
 }
 
@@ -208,6 +210,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/highlights/manifest", s.handleHighlightManifest)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
+	mux.HandleFunc("GET /v1/live/broadcast/config", s.handleRTMPBroadcastConfig)
 	mux.HandleFunc("GET /v1/runs/{id}/live/broadcast/status", s.handleRTMPBroadcastStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", s.handleRTMPBroadcastStart)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
