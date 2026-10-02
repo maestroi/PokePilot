@@ -27,7 +27,9 @@ func init() {
 	// an already-cleared Silph is the Red-native one.
 	fieldCarrierGifts = append(fieldCarrierGifts, fieldCarrierGift{
 		Species: laprasGiftSpecies,
-		Ready:   func(f state.StoryFacts) bool { return f.SaffronGateOpen && f.CardKeyOwned },
+		Ready: func(_ *state.Mem, _ []byte, f state.StoryFacts) bool {
+			return f.SaffronGateOpen && f.CardKeyOwned
+		},
 		Receive: ReceiveLaprasGift,
 	})
 }

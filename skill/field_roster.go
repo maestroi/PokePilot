@@ -500,7 +500,7 @@ func findGiftFieldCandidate(mem *state.Mem, romData []byte, target FieldMove, re
 	facts := state.DecodeStoryFacts(mem, state.DecodeInventory(mem))
 	party := state.DecodeParty(mem)
 	for _, gift := range fieldCarrierGifts {
-		if !gift.Ready(facts) || giftPokemonAlreadyOwned(mem, romData, gift.Species) {
+		if !gift.Ready(mem, romData, facts) || giftPokemonAlreadyOwned(mem, romData, gift.Species) {
 			continue
 		}
 		incoming := state.Mon{Species: gift.Species}

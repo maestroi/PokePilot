@@ -148,6 +148,7 @@ var redOwnedStoryPolicyExceptions = fileSet(
 	"gift_dojo.go",
 	"gift_eevee.go",
 	"gift_lapras.go",
+	"gift_yellow_squirtle.go",
 	"gym.go",
 	"inventory_recovery.go",
 	"league_items.go",
