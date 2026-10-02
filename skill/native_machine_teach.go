@@ -7,7 +7,31 @@ import (
 	"github.com/maestroi/pokepilot/game"
 )
 
-const nativeMachineTeachBudget = 5000
+const (
+	nativeMachineTeachBudget = 5000
+
+	// Leaving the pack and then the START menu is two answered screens. Either
+	// answer can land inside the game's post-press input blackout and vanish,
+	// so each step proves its own semantic postcondition and repeats the press
+	// instead of trusting a single one.
+	packExitAttempts     = 4
+	packExitWindowFrames = 200
+)
+
+// returnToStartMenu answers the carried-items PACK and waits for the START menu
+// to become live again, repeating the press while an earlier one was swallowed
+// by the game's post-press input blackout.
+func returnToStartMenu(m menuMachine, decoder game.MenuDecoder, press int) bool {
+	for attempt := 0; attempt < packExitAttempts; attempt++ {
+		m.Tap(emu.B, press, 7)
+		if waitMenuUntil(m, packExitWindowFrames, func() bool {
+			return decoder.DecodeStartMenu(m).Ready
+		}) {
+			return true
+		}
+	}
+	return false
+}
 
 func nativeMachineProtectedMoves(field game.FieldMoveDecoder) map[uint16]bool {
 	protected := map[uint16]bool{}
@@ -99,6 +123,11 @@ func teachFieldMoveWithMachineMenu(
 	if err != nil {
 		return err
 	}
+	// Every press below lands on Gold/Silver's native menus, so it needs the
+	// profile's press hold rather than the Gen-I default. A dropped press here
+	// is invisible: the pack, the START menu and the paging loop all look the
+	// same whether the game ignored the key or never sampled it.
+	press := menuPressHold(menu)
 	party, err := partyMenuDecoderFor(m)
 	if err != nil {
 		return err
@@ -143,7 +172,7 @@ func teachFieldMoveWithMachineMenu(
 			}
 			continue
 		}
-		m.Tap(emu.A, 3, 7)
+		m.Tap(emu.A, press, 7)
 		m.StepFrames(20)
 	}
 	liveParty := party.DecodePartyMenu(m)
@@ -161,21 +190,15 @@ func teachFieldMoveWithMachineMenu(
 			for settle := 0; settle < 120; settle++ {
 				pack := machines.DecodeMachineMenu(m)
 				if pack.Visible && pack.Pocket == game.MachinePocketTMHM && pack.Ready {
-					m.Tap(emu.B, 3, 7)
-					if !waitMenuUntil(m, 600, func() bool {
-						return menu.DecodeStartMenu(m).Ready
-					}) {
+					if !returnToStartMenu(m, menu, press) {
 						return fmt.Errorf("skill: native machine teach: PACK did not return to START menu")
 					}
-					m.Tap(emu.B, 3, 7)
-					if !waitMenuUntil(m, 300, func() bool {
-						return !menu.DecodeStartMenu(m).Visible
-					}) {
-						return fmt.Errorf("skill: native machine teach: START menu did not close")
+					if err := closeStartMenuWithDecoder(m, menu); err != nil {
+						return fmt.Errorf("skill: native machine teach: %w", err)
 					}
 					return nil
 				}
-				m.Tap(emu.A, 3, 7)
+				m.Tap(emu.A, press, 7)
 				m.StepFrames(20)
 			}
 			return fmt.Errorf("skill: native machine teach: learned move but PACK did not recover")
@@ -188,7 +211,7 @@ func teachFieldMoveWithMachineMenu(
 					return fmt.Errorf("skill: native machine teach: accept replacement: %w", err)
 				}
 			} else {
-				m.Tap(emu.A, 3, 7)
+				m.Tap(emu.A, press, 7)
 			}
 		case game.BattleExecutionForgetMove:
 			if replaceSlot < 0 {
@@ -202,7 +225,7 @@ func teachFieldMoveWithMachineMenu(
 		case game.BattleExecutionAbandonLearn:
 			return fmt.Errorf("skill: native machine teach: move-learning flow reached abandon prompt unexpectedly")
 		default:
-			m.Tap(emu.A, 3, 7)
+			m.Tap(emu.A, press, 7)
 		}
 		m.StepFrames(20)
 	}

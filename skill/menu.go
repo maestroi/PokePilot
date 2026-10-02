@@ -17,6 +17,24 @@ var ErrMenuStuck = errors.New("skill: menu cursor did not reach the target")
 // joypad poll and cursor redraw.
 const menuSettleFrames = 30
 
+// defaultMenuPressHoldFrames is the press length generic menu navigation has
+// always used. Profiles whose menus need a longer press to sample it declare
+// that through game.MenuPressTiming; everything else stays frame-identical.
+const defaultMenuPressHoldFrames = 3
+
+// menuPressHold reports how long a press must be held for the active decoder's
+// menus to read it. A press shorter than the game's input pipeline is dropped
+// silently, so the driver cannot tell "menu ignored the key" from "menu never
+// saw the key" and repeating the same short tap reproduces the same miss.
+func menuPressHold(decoder any) int {
+	if timing, ok := decoder.(game.MenuPressTiming); ok {
+		if frames := timing.MenuPressHoldFrames(); frames > 0 {
+			return frames
+		}
+	}
+	return defaultMenuPressHoldFrames
+}
+
 // twoOptionConsumedFrames bounds the wait for an answered YES/NO prompt to
 // leave the screen. The answer opens the script's next text box, which is
 // drawn well inside this window; a prompt still up at the end of it is not
@@ -91,7 +109,7 @@ func selectMenuItemWithDecoder(m menuMachine, decoder game.MenuDecoder, index in
 		if previous > index {
 			btn = emu.Up
 		}
-		m.Tap(btn, 3, 7)
+		m.Tap(btn, menuPressHold(decoder), 7)
 		moved := waitMenuUntil(m, menuSettleFrames, func() bool {
 			return decoder.DecodeMenuCursor(m).Current != previous
 		})
@@ -113,7 +131,7 @@ func selectMenuItemWithDecoder(m menuMachine, decoder game.MenuDecoder, index in
 		menu = decoder.DecodeMenuCursor(m)
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(decoder), 7)
 	return nil
 }
 
@@ -151,7 +169,7 @@ func selectTwoOptionWithDecoder(m menuMachine, decoder game.MenuDecoder, index i
 		if previous > index {
 			btn = emu.Up
 		}
-		m.Tap(btn, 3, 7)
+		m.Tap(btn, menuPressHold(decoder), 7)
 		moved := waitMenuUntil(m, menuSettleFrames, func() bool {
 			return decoder.DecodeMenuCursor(m).Current != previous
 		})
@@ -171,7 +189,7 @@ func selectTwoOptionWithDecoder(m menuMachine, decoder game.MenuDecoder, index i
 		}
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(decoder), 7)
 	// Positive postcondition: the profile no longer observes the prompt.
 	if !waitMenuUntil(m, twoOptionConsumedFrames, func() bool {
 		_, open := decoder.DecodeTwoOption(m)

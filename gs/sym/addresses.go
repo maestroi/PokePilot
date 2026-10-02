@@ -40,11 +40,12 @@ const (
 	StateFlags              uint16 = 0xCFE5 // wStateFlags
 	TileMap                 uint16 = 0xC3A0 // wTileMap, 20x18 (Crystal moved it to 0xC4A0)
 	TileMapLen                     = 20 * 18
-	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex / wPackJumptableIndex
-	CurPocket               uint16 = 0xCE64 // wCurPocket (union with title-screen state)
-	PackUsedItem            uint16 = 0xCE65 // wPackUsedItem
-	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption
-	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer
+	JumptableIndex          uint16 = 0xCE63 // wJumptableIndex; opens the pack/title union
+	PackJumptableIndex      uint16 = 0xCE64 // wPackJumptableIndex (pack union arm)
+	CurPocket               uint16 = 0xCE65 // wCurPocket (pack union arm)
+	PackUsedItem            uint16 = 0xCE66 // wPackUsedItem (pack union arm)
+	TitleScreenSelected     uint16 = 0xCE64 // wTitleScreenSelectedOption (title union arm)
+	TitleScreenTimer        uint16 = 0xCE65 // wTitleScreenTimer (title union arm)
 	NamingScreenDestination uint16 = 0xC5D0 // wNamingScreenDestinationPointer
 	NamingScreenCurNameLen  uint16 = 0xC5D2 // wNamingScreenCurNameLength
 	NamingScreenMaxNameLen  uint16 = 0xC5D3 // wNamingScreenMaxNameLength

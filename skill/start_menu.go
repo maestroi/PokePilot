@@ -9,6 +9,7 @@ import (
 
 const (
 	startMenuOpenBudget   = 500
+	startMenuCloseBudget  = 500
 	startMenuRetryWindow  = 25
 	startMenuSettleBudget = 100
 
@@ -51,7 +52,7 @@ func waitForStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error 
 			return fmt.Errorf("skill: start menu cannot open during battle")
 		}
 
-		m.Tap(emu.Start, 3, 7)
+		m.Tap(emu.Start, menuPressHold(decoder), 7)
 		if waitMenuUntil(m, startMenuRetryWindow, func() bool {
 			return decoder.DecodeStartMenu(m).Ready
 		}) {
@@ -63,6 +64,37 @@ func waitForStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error 
 	return fmt.Errorf(
 		"skill: start menu did not appear after repeated START presses: visible=%v ready=%v in_battle=%v cursor=%d max=%d",
 		state.Visible, state.Ready, state.InBattle, state.Cursor.Current, state.Cursor.Max,
+	)
+}
+
+// closeStartMenuWithDecoder answers the active game's START menu and verifies
+// that its decoder no longer observes it. A press that lands inside the game's
+// post-press input blackout is dropped with no observable trace, so "one B press
+// was sent" is not evidence that the menu closed: the decoder is the oracle and
+// the press is repeated until it answers. This is the mirror of
+// waitForStartMenuWithDecoder, which already retries against Ready.
+func closeStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error {
+	if decoder == nil {
+		return fmt.Errorf("skill: start menu: nil menu decoder")
+	}
+
+	attempts := startMenuCloseBudget / startMenuRetryWindow
+	for i := 0; i < attempts; i++ {
+		if !decoder.DecodeStartMenu(m).Visible {
+			return nil
+		}
+		m.Tap(emu.B, menuPressHold(decoder), 7)
+		if waitMenuUntil(m, startMenuRetryWindow, func() bool {
+			return !decoder.DecodeStartMenu(m).Visible
+		}) {
+			return nil
+		}
+	}
+
+	state := decoder.DecodeStartMenu(m)
+	return fmt.Errorf(
+		"skill: start menu did not close after %d B presses: visible=%v ready=%v cursor=%d max=%d",
+		attempts, state.Visible, state.Ready, state.Cursor.Current, state.Cursor.Max,
 	)
 }
 

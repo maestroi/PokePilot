@@ -44,8 +44,10 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wEnemyMon", EnemyMon, 0xD0EF},
 		{"wMenuCursorY", MenuCursorY, 0xCEE0},
 		{"w2DMenuNumRows", TwoDMenuNumRows, 0xCEDA},
-		{"wCurPocket", CurPocket, 0xCE64},
-		{"wPackUsedItem", PackUsedItem, 0xCE65},
+		{"wJumptableIndex", JumptableIndex, 0xCE63},
+		{"wPackJumptableIndex", PackJumptableIndex, 0xCE64},
+		{"wCurPocket", CurPocket, 0xCE65},
+		{"wPackUsedItem", PackUsedItem, 0xCE66},
 		{"wSaveFileExists", SaveFileExists, 0xD19A},
 		{"wPlayerName", PlayerName, 0xD1A3},
 		{"wRivalName", RivalName, 0xD1B9},
@@ -77,5 +79,31 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 func TestOverworldBlockBufferMatchesRetailRange(t *testing.T) {
 	if got := int(OverworldMap) + OverworldMapLen; got != 0xCC14 {
 		t.Fatalf("wOverworldMapBlocks end = %#04x, want 0xcc14", got)
+	}
+}
+
+// TestGoldPackUnionArmOffsetsFollowWram pins the pack arm of the wJumptableIndex
+// union against ram/wram.asm, which declares wPackJumptableIndex, wCurPocket and
+// wPackUsedItem as consecutive NEXTU fields starting one byte after
+// wJumptableIndex. Reading wCurPocket at the title arm's offset reported the
+// pack's jumptable state as the pocket, so the items pocket decoded as "balls"
+// and the TM/HM pocket as unknown, which made every Gen-II field-move teach fail
+// with "machine menu could not reach TM/HM pocket".
+func TestGoldPackUnionArmOffsetsFollowWram(t *testing.T) {
+	if PackJumptableIndex != JumptableIndex+1 {
+		t.Fatalf("wPackJumptableIndex = %#04x, want wJumptableIndex+1 = %#04x", PackJumptableIndex, JumptableIndex+1)
+	}
+	if CurPocket != PackJumptableIndex+1 {
+		t.Fatalf("wCurPocket = %#04x, want wPackJumptableIndex+1 = %#04x", CurPocket, PackJumptableIndex+1)
+	}
+	if PackUsedItem != CurPocket+1 {
+		t.Fatalf("wPackUsedItem = %#04x, want wCurPocket+1 = %#04x", PackUsedItem, CurPocket+1)
+	}
+	// The title arm shares the union base but not the pack fields.
+	if TitleScreenSelected != PackJumptableIndex {
+		t.Fatalf("wTitleScreenSelectedOption = %#04x, want %#04x", TitleScreenSelected, PackJumptableIndex)
+	}
+	if TitleScreenTimer != CurPocket {
+		t.Fatalf("wTitleScreenTimer = %#04x, want %#04x", TitleScreenTimer, CurPocket)
 	}
 }
