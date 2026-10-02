@@ -72,4 +72,24 @@ func TestRunSolvesAndAdvances(t *testing.T) {
 	if res.State.Screen != boxxle.ScreenPuzzle || res.State.Solved {
 		t.Fatalf("ended on %s solved=%v, want an unsolved next puzzle", res.State.Screen, res.State.Solved)
 	}
+	if res.UsedFallback {
+		t.Fatal("first-milestone solve used solver fallback; the deterministic solver should own these boards")
+	}
+}
+
+// TestEarlyLevelBatch is the post-milestone qualification: solve the first
+// five puzzles and advance after each one.
+func TestEarlyLevelBatch(t *testing.T) {
+	m := openBoxxleCartridge(t)
+	res := Run(profile.New(), m, RunOptions{Goal: Goal{Kind: GoalEarly, Levels: EarlyLevels}, MaxPushes: 800, MaxFrames: 250000})
+	if res.Err != nil || res.Reason != "done" {
+		t.Fatalf("Run = %s err=%v after %d push(es), want done", res.Reason, res.Err, res.Pushes)
+	}
+	if res.Levels != EarlyLevels {
+		t.Fatalf("Levels = %d, want %d", res.Levels, EarlyLevels)
+	}
+	if res.State.Screen != boxxle.ScreenPuzzle || res.State.Solved {
+		t.Fatalf("ended on %s solved=%v, want an unsolved next puzzle", res.State.Screen, res.State.Solved)
+	}
+	t.Logf("early batch: %d pushes, fallback=%v", res.Pushes, res.UsedFallback)
 }

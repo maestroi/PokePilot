@@ -19,6 +19,7 @@ import { usePollingResource } from '../shared/composables/usePollingResource'
 import {
   gameTitle,
   goalProgress,
+  isBoxxleRun,
   isLiveRun,
   isTetrisRun,
   locationLabel,
@@ -110,7 +111,11 @@ const selectedReplayHref = computed(() => {
 const selectedReplayRendering = computed(() => Boolean(selectedRun.value && replayIsRendering(selectedRun.value)))
 const selectedPublicCapabilities = computed(() => publicCapabilitiesForRun(selectedRun.value))
 const isTetrisSelected = computed(() => isTetrisRun(selectedRun.value))
+const isBoxxleSelected = computed(() => isBoxxleRun(selectedRun.value))
+const isPuzzleSelected = computed(() => isTetrisSelected.value || isBoxxleSelected.value)
 const tetrisState = computed(() => selectedRun.value?.game_state)
+const boxxleState = computed(() => selectedRun.value?.game_state)
+const boxxleBoardRows = computed(() => (boxxleState.value?.board || []).map((row) => String(row).split('')))
 const tetrisBoardRows = computed(() =>
   (tetrisState.value?.board || []).slice(0, 18).map((row) => row.slice(0, 10).split(''))
 )
@@ -185,20 +190,20 @@ const {
 } = useRenderStatePump(frameRunID, renderEnabled, 100, frameContinuous)
 const semanticReady = computed(() => canRenderModernScene(renderState.value))
 const showModern = computed(() =>
-  selectionPinned.value && !isTetrisSelected.value && rendererMode.value === 'modern' && semanticReady.value
+  selectionPinned.value && !isPuzzleSelected.value && rendererMode.value === 'modern' && semanticReady.value
 )
 const frameEnabled = computed(() =>
-  Boolean(frameRunID.value) && (isTetrisSelected.value || !selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
+  Boolean(frameRunID.value) && (isPuzzleSelected.value || !selectionPinned.value || rendererMode.value === 'classic' || !semanticReady.value)
 )
 const { frameURL, state: frameState, error: frameError } = useFramePump(frameRunID, frameEnabled, 50, frameContinuous)
 const modernFallbackLabel = computed(() => {
-  if (isTetrisSelected.value || rendererMode.value !== 'modern' || showModern.value) return ''
+  if (isPuzzleSelected.value || rendererMode.value !== 'modern' || showModern.value) return ''
   if (renderStateStatus.value === 'error') return `${activeTheme.value.name} · semantic state reconnecting`
   if (renderState.value?.scene) return `${activeTheme.value.name} · classic compatibility · ${renderState.value.scene}`
   return ''
 })
 const modeClass = computed(() => `mode-${normalizePlayStyle(selectedRun.value)}`)
-const gameClass = computed(() => isTetrisSelected.value ? 'game-tetris' : 'game-pokemon')
+const gameClass = computed(() => isTetrisSelected.value ? 'game-tetris' : isBoxxleSelected.value ? 'game-boxxle' : 'game-pokemon')
 const selectedActivity = computed(() => {
   const run = selectedRun.value
   const activity = run ? activityByRun.value[run.run_id] || [] : []
@@ -246,12 +251,17 @@ const runtimeLabel = computed(() => {
   return seconds > 0 ? formatDuration(seconds) : 'Just started'
 })
 const sceneStyle = computed(() => ({
-  '--spectator-art': isTetrisSelected.value ? 'none' : `url("${spectatorNightscapeUrl}")`
+  '--spectator-art': isPuzzleSelected.value ? 'none' : `url("${spectatorNightscapeUrl}")`
 }))
 
 const goalPercent = computed(() => {
   const run = selectedRun.value
   if (!run) return 0
+  if (isBoxxleRun(run)) {
+    const crates = Number(run.game_state?.crates || 0)
+    if (crates <= 0) return run.game_state?.solved ? 100 : 0
+    return Math.max(0, Math.min(100, 100 * Number(run.game_state?.crates_on_goal || 0) / crates))
+  }
   if (!isTetrisRun(run)) return goalProgress(run)
   if (run.game_state?.complete) return 100
   const match = (run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
@@ -266,7 +276,7 @@ const goalPercent = computed(() => {
 
 const leagueGoal = computed(() => {
   const run = selectedRun.value
-  if (!run || isTetrisRun(run)) return false
+  if (!run || isTetrisRun(run) || isBoxxleRun(run)) return false
   const text = [run.goal, run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
   return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
 })
@@ -276,6 +286,16 @@ const goalProgressCopy = computed(() => {
   if (!run) return { label: 'Waiting for goal', detail: 'Run objective is loading.' }
 
   const stats = run.stats
+  if (isBoxxleRun(run)) {
+    const state = run.game_state
+    const levels = Number(state?.levels || 0)
+    const onGoal = Number(state?.crates_on_goal || 0)
+    const crates = Number(state?.crates || 0)
+    return {
+      label: `${levels} puzzle${levels === 1 ? '' : 's'} solved`,
+      detail: crates > 0 ? `${onGoal}/${crates} crates on goal` : 'Autonomous puzzle play'
+    }
+  }
   if (isTetrisRun(run)) {
     const state = run.game_state
     const score = Number(state?.score || 0)
@@ -342,6 +362,14 @@ interface StageFact {
 const statCards = computed<StageFact[]>(() => {
   const run = selectedRun.value
   if (!run) return []
+  if (isBoxxleRun(run)) {
+    return [
+      { key: 'solved', label: 'Puzzles solved', value: String(Number(run.game_state?.levels || 0)) },
+      { key: 'crates', label: 'On goal', value: `${Number(run.game_state?.crates_on_goal || 0)}/${Number(run.game_state?.crates || 0)}` },
+      { key: 'pushes', label: 'Pushes', value: String(Number(run.game_state?.pushes || 0)) },
+      { key: 'runtime', label: 'Runtime', value: runtimeLabel.value }
+    ]
+  }
   if (isTetrisRun(run)) {
     return [
       { key: 'score', label: 'Score', value: Number(run.game_state?.score || 0).toLocaleString() },
@@ -791,9 +819,9 @@ function activityTimeAgo(item: ActivityItem): string {
       <div v-if="selectionPinned" class="stage">
         <header class="stage-head">
           <div class="stage-title">
-            <span :class="isTetrisSelected ? 'tetris-mark' : 'pokeball-mark'" aria-hidden="true" />
+            <span :class="isPuzzleSelected ? 'tetris-mark' : 'pokeball-mark'" aria-hidden="true" />
             <h1>{{ gameTitle(selectedRun) }}</h1>
-            <span class="stage-sub">{{ isTetrisSelected ? tetrisModeLabel : playStyleLabel(selectedRun) + ' · ' + (selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer') }}</span>
+            <span class="stage-sub">{{ isTetrisSelected ? tetrisModeLabel : isBoxxleSelected ? 'Autonomous puzzle play' : playStyleLabel(selectedRun) + ' · ' + (selectedRun.player?.party?.[0]?.name || selectedRun.starter || 'new trainer') }}</span>
           </div>
           <div class="stage-status">
             <span v-if="isLiveRun(selectedRun)" class="live-tag"><i />Live</span>
@@ -804,7 +832,7 @@ function activityTimeAgo(item: ActivityItem): string {
         </header>
 
         <div class="stage-body">
-          <aside v-if="!isTetrisSelected" class="stat-rail" aria-label="Run stats">
+          <aside v-if="!isPuzzleSelected" class="stat-rail" aria-label="Run stats">
             <dl class="facts">
               <div v-for="stat in statCards" :key="stat.key">
                 <dt>{{ stat.label }}</dt>
@@ -870,17 +898,17 @@ function activityTimeAgo(item: ActivityItem): string {
                 </div>
 
                 <div class="screen-controls">
-                  <div v-if="!isTetrisSelected" class="seg" role="group" aria-label="Renderer">
+                  <div v-if="!isPuzzleSelected" class="seg" role="group" aria-label="Renderer">
                     <button type="button" :aria-pressed="rendererMode === 'modern'" title="Render the live semantic world" @click="setRendererMode('modern')">Gold / Silver</button>
                     <button type="button" :aria-pressed="rendererMode === 'classic'" title="Show the classic emulator framebuffer" @click="setRendererMode('classic')">Classic</button>
                   </div>
-                  <label v-if="!isTetrisSelected && rendererMode === 'modern'" class="theme-pick">
+                  <label v-if="!isPuzzleSelected && rendererMode === 'modern'" class="theme-pick">
                     <span>Theme</span>
                     <select :value="selectedThemeID" title="Choose your spectator theme" @change="onThemeSelect">
                       <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id">{{ theme.name }}</option>
                     </select>
                   </label>
-                  <p v-if="!isTetrisSelected && themeNotice" class="warn-chip">{{ themeNotice }}</p>
+                  <p v-if="!isPuzzleSelected && themeNotice" class="warn-chip">{{ themeNotice }}</p>
                   <button type="button" class="icon-btn" :title="theaterMode ? 'Exit theater mode' : 'Theater mode'" @click="theaterMode = !theaterMode">
                     <PlayIcon class="size-4" aria-hidden="true" />
                   </button>
@@ -893,17 +921,35 @@ function activityTimeAgo(item: ActivityItem): string {
                 <p v-else-if="!showModern && frameURL && frameState === 'error'" class="screen-note warn">Last frame · reconnecting</p>
               </div>
               <div class="bezel-label">
-                <span>{{ isTetrisSelected || !showModern ? 'Classic framebuffer' : activeTheme.name }}</span>
+                <span>{{ isPuzzleSelected || !showModern ? 'Classic framebuffer' : activeTheme.name }}</span>
                 <span>{{ currentLocation }}</span>
               </div>
             </section>
-            <div v-if="isTetrisSelected" class="readout">
+            <div v-if="isPuzzleSelected" class="readout">
               <dl class="facts">
                 <div v-for="stat in statCards" :key="stat.key">
                   <dt>{{ stat.label }}</dt>
                   <dd>{{ stat.value }}</dd>
                 </div>
               </dl>
+              <section v-if="isBoxxleSelected" class="board-block" aria-label="Board">
+                <div class="block-head">
+                  <h2>Board</h2>
+                  <span>{{ boxxleState?.solved ? 'Solved' : (boxxleState?.screen || 'puzzle') }}</span>
+                </div>
+                <div class="board-row">
+                  <div v-if="boxxleBoardRows.length" class="boxxle-board" aria-label="Boxxle board">
+                    <div v-for="(row, y) in boxxleBoardRows" :key="y" class="boxxle-board-row">
+                      <span
+                        v-for="(cell, x) in row"
+                        :key="x"
+                        :class="['boxxle-cell', 'boxxle-cell-' + (cell === '#' ? 'wall' : cell === '$' ? 'crate' : cell === '*' ? 'crate-goal' : cell === '+' ? 'goal' : cell === '@' ? 'player' : 'floor')]"
+                      >{{ cell === '.' || cell === '#' ? '' : cell }}</span>
+                    </div>
+                  </div>
+                  <p v-else class="muted">Waiting for board</p>
+                </div>
+              </section>
               <section v-if="isTetrisSelected" class="board-block" aria-label="Board">
                 <div class="block-head">
                   <h2>Board</h2>
@@ -943,7 +989,7 @@ function activityTimeAgo(item: ActivityItem): string {
                 <strong>{{ goalPercent.toFixed(0) }}%</strong>
               </div>
               <div
-                :class="['goal-bar', { 'is-blocks': isTetrisSelected }]"
+                :class="['goal-bar', { 'is-blocks': isPuzzleSelected }]"
                 role="progressbar"
                 aria-label="Goal progress"
                 aria-valuemin="0"
@@ -953,7 +999,7 @@ function activityTimeAgo(item: ActivityItem): string {
                 <i :style="{ width: goalPercent + '%' }" />
               </div>
               <p class="muted">{{ goalProgressCopy.label }} · {{ goalProgressCopy.detail }}</p>
-              <div v-if="!isTetrisSelected" class="next-goal">
+              <div v-if="!isPuzzleSelected" class="next-goal">
                 <span>Next goal</span>
                 <strong>{{ routeLine.nextGoal }}</strong>
               </div>
@@ -1018,7 +1064,7 @@ function activityTimeAgo(item: ActivityItem): string {
           </aside>
         </div>
 
-            <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
+            <section v-if="!isPuzzleSelected" class="route-block" aria-label="Road to the League">
               <div class="block-head">
                 <h2>Road to the League</h2>
                 <span>{{ routeLine.completedGoals }} of {{ routeLine.goalCount }} goals</span>
@@ -1026,7 +1072,7 @@ function activityTimeAgo(item: ActivityItem): string {
               <RouteLine :line="routeLine" />
             </section>
 
-        <section v-if="!isTetrisSelected" class="party" aria-label="Party">
+        <section v-if="!isPuzzleSelected" class="party" aria-label="Party">
           <div class="block-head">
             <h2>Party</h2>
             <span>{{ selectedRun.player?.party?.length || 0 }} of 6</span>
@@ -1662,6 +1708,40 @@ select:focus-visible {
 .tetris-cell-empty {
   background: rgb(148 163 184 / 5%);
 }
+
+
+.game-boxxle .stage {
+  --o: #67e8f9;
+  --i: #fbbf24;
+  --t: #34d399;
+  --s: #a78bfa;
+}
+.boxxle-board {
+  display: grid;
+  gap: 1px;
+  background: rgba(255,255,255,0.08);
+  padding: 1px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.boxxle-board-row {
+  display: flex;
+}
+.boxxle-cell {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, monospace;
+  font-size: 9px;
+  line-height: 1;
+}
+.boxxle-cell-wall { background: rgba(100,116,139,0.9); }
+.boxxle-cell-floor { background: rgba(255,255,255,0.04); }
+.boxxle-cell-crate { background: rgba(251,191,36,0.8); color: #422006; }
+.boxxle-cell-crate-goal { background: rgba(52,211,153,0.8); color: #064e3b; }
+.boxxle-cell-goal { background: rgba(6,78,59,0.8); color: #a7f3d0; }
+.boxxle-cell-player { background: rgba(103,232,249,0.9); color: #083344; }
 
 .tetris-cell-filled {
   background: var(--o);

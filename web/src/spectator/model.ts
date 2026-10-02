@@ -6,11 +6,11 @@ import {
   playStyleTagline,
   type PlayStyle
 } from '../shared/playstyle'
-import { gameTitle, isBoxxleRun, isTetrisRun, tetrisLocationLabel, tetrisRouteLabel, tetrisRunTitle } from './gamePresentation'
+import { boxxleLocationLabel, boxxleRouteLabel, boxxleRunTitle, gameTitle, isBoxxleRun, isTetrisRun, tetrisLocationLabel, tetrisRouteLabel, tetrisRunTitle } from './gamePresentation'
 import { preferredRun } from './preferredRun'
 
 export type SpectatorPlayStyle = PlayStyle
-export { gameTitle, isTetrisRun, normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
+export { gameTitle, isBoxxleRun, isTetrisRun, normalizePlayStyle, playStyleLabel, playStyleTagline, preferredRun }
 
 export type SpectatorTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -48,7 +48,7 @@ export function playSpeedLabel(run: SpectatorRun): string {
 
 export function routeLabel(run: SpectatorRun): string {
   if (isTetrisRun(run)) return tetrisRouteLabel(run)
-  if (isBoxxleRun(run)) return 'Boxxle puzzles'
+  if (isBoxxleRun(run)) return boxxleRouteLabel(run)
   const route = [run.starter, run.dest].filter(Boolean).join(' → ')
   return route || run.goal || `${gameTitle(run)} run`
 }
@@ -59,7 +59,7 @@ export function objectiveLabel(run: SpectatorRun): string {
 
 export function locationLabel(run: SpectatorRun): string {
   if (isTetrisRun(run)) return tetrisLocationLabel(run)
-  if (isBoxxleRun(run)) return 'Puzzle'
+  if (isBoxxleRun(run)) return boxxleLocationLabel(run)
   const map = Number(run.map || 0).toString(16).padStart(2, '0').toUpperCase()
   return `0x${map} · ${run.x ?? 0},${run.y ?? 0}`
 }
@@ -73,7 +73,7 @@ export {
 
 export function runTitle(run: SpectatorRun): string {
   if (isTetrisRun(run)) return tetrisRunTitle(run)
-  if (isBoxxleRun(run)) return 'Boxxle · autonomous puzzle play'
+  if (isBoxxleRun(run)) return boxxleRunTitle(run)
   const lead = run.starter || run.player?.party?.[0]?.name || gameTitle(run)
   const badges = run.player?.badges?.length || 0
   const badgeText = badges === 1 ? '1 badge' : `${badges} badges`

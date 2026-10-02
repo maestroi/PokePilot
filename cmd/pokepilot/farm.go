@@ -653,6 +653,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 	// Compose the sample callback on this (stepping) goroutine: the dialogue
 	// tracer plus the heartbeat snapshot, sharing one hoisted Mem buffer.
 	trail := &heartbeatTrail{}
+	boxxleCounts := &boxxleProgress{}
 	sampleRunHeartbeat := func(em *emu.Emu) {
 		if isPokemon {
 			if pokemonProfile.Features().Has(game.FeatureBattles) {
@@ -663,6 +664,10 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		}
 		if isTetris {
 			sampleTetrisHeartbeat(em, cartridge, spec.RunID, snap, addrs)
+			return
+		}
+		if isBoxxle {
+			sampleBoxxleHeartbeat(em, cartridge, spec.RunID, snap, addrs, boxxleCounts)
 		}
 	}
 	m.OnSample(func(em *emu.Emu) {
@@ -711,7 +716,7 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 		}
 	case "policy":
 		if isBoxxle {
-			reason, detail = runFarmBoxxlePlay(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
+			reason, detail = runFarmBoxxlePlay(m, cartridge, spec, maxRounds, maxFrames, cancel, snap, boxxleCounts)
 		} else {
 			reason, detail = runFarmTetris(m, cartridge, spec, maxRounds, maxFrames, cancel, snap)
 		}
@@ -724,9 +729,8 @@ func runOne(m *emu.Emu, client *farm.Client, spec farm.Spec, planner, starter, d
 			reason, detail = "error", "planner launch is Boxxle-only"
 			break
 		}
-		// The cartridge is already booted by prepareFarmAttempt. This slice
-		// registers and launches Boxxle but does not play it: autonomous puzzle
-		// play is a later slice, so the run finishes as registered.
+		// The cartridge is already booted by prepareFarmAttempt. Launch only
+		// registers the cartridge; policy is the autonomous play path.
 		reason, detail = runFarmBoxxle(m, spec)
 		if farmDrainRequested(drain) && reason == "cancelled" {
 			reason = "drained"

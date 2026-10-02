@@ -155,4 +155,4 @@ The layout below was measured on the real cartridge, not assumed. Fixtures in `b
 - One D-pad tap moves exactly one cell and the sprite lands about 21 frames later; holding longer does not go further. The game ignores the D-pad for a short while after a push, so the controller verifies every step against the decoded board and retries a bounded number of times.
 - Boot: let the title draw (~300 frames), Start (menu), Start (PLAY), then A to skip the intro. After a solve, A alone walks the level-complete screens into the next puzzle.
 
-Run specs for Boxxle use `planner: policy`, which plays puzzles with the deterministic solver (or a typed model selector when a decision engine is configured) and advances after each solve. `planner: launch` only boots and registers the cartridge.
+Run specs for Boxxle use `planner: policy`, which plays puzzles with the deterministic solver (or a typed model selector when a decision engine is configured) and advances after each solve. Goals are `first` (one puzzle), `early` (first five), `levels:N`, or `endless`. `planner: launch` only boots and registers the cartridge. See `docs/BOXXLE.md`.

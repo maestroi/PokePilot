@@ -19,6 +19,7 @@ import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import { MAP_CATALOG } from '../shared/mapCatalog'
 import {
   goalProgress,
+  isBoxxleRun,
   isLiveRun,
   isTetrisRun,
   locationLabel,
@@ -43,15 +44,24 @@ const emit = defineEmits<{
 }>()
 
 const isTetris = computed(() => isTetrisRun(props.run))
+const isBoxxle = computed(() => isBoxxleRun(props.run))
 const badges = computed(() => props.run.player?.badges?.length || 0)
 const party = computed(() => props.run.player?.party?.length || 0)
 const tetrisScore = computed(() => Number(props.run.game_state?.score || 0))
 const tetrisLines = computed(() => Number(props.run.game_state?.lines_cleared || 0))
 const tetrisLevel = computed(() => Number(props.run.game_state?.level || 0))
 const tetrisPiece = computed(() => props.run.game_state?.active?.piece || '—')
+const boxxleSolved = computed(() => Number(props.run.game_state?.levels || 0))
+const boxxleOnGoal = computed(() => Number(props.run.game_state?.crates_on_goal || 0))
+const boxxleCrates = computed(() => Number(props.run.game_state?.crates || 0))
+const boxxlePushes = computed(() => Number(props.run.game_state?.pushes || 0))
 const visibleLiveRuns = computed(() => props.liveRuns.filter((run) => isLiveRun(run)).slice(0, 5))
 const canExploreWorld = computed(() => supportsPublicCapability(props.run, 'worldMap'))
 const goal = computed(() => {
+  if (isBoxxle.value) {
+    if (boxxleCrates.value <= 0) return props.run.game_state?.solved ? 100 : 0
+    return Math.max(0, Math.min(100, 100 * boxxleOnGoal.value / boxxleCrates.value))
+  }
   if (!isTetris.value) return goalProgress(props.run)
   if (props.run.game_state?.complete) return 100
   const match = (props.run.goal || '').trim().toLowerCase().match(/^(score|lines):(\d+)$/)
@@ -206,7 +216,29 @@ function watch(run: SpectatorRun): void {
               </div>
 
               <div class="grid grid-cols-2 gap-2">
-                <template v-if="isTetris">
+                <template v-if="isBoxxle">
+                  <div class="rounded-xl border border-yellow-300/12 bg-yellow-300/[0.035] p-3">
+                    <TrophyIcon class="size-4 text-amber-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ boxxleSolved }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Solved</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <QueueListIcon class="size-4 text-violet-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ boxxleOnGoal }}/{{ boxxleCrates }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">On goal</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <BoltIcon class="size-4 text-cyan-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ boxxlePushes }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Pushes</div>
+                  </div>
+                  <div class="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                    <SignalIcon class="size-4 text-emerald-300" aria-hidden="true" />
+                    <div class="mt-2 font-mono text-xl font-black text-white">{{ runStatusLabel(run) }}</div>
+                    <div class="text-[9px] font-bold tracking-[0.1em] text-slate-500 uppercase">Status</div>
+                  </div>
+                </template>
+                <template v-else-if="isTetris">
                   <div class="rounded-xl border border-yellow-300/12 bg-yellow-300/[0.035] p-3">
                     <TrophyIcon class="size-4 text-amber-300" aria-hidden="true" />
                     <div class="mt-2 font-mono text-xl font-black text-white">{{ tetrisScore.toLocaleString() }}</div>
@@ -277,22 +309,22 @@ function watch(run: SpectatorRun): void {
       <div class="public-stat">
         <GlobeAltIcon class="size-5 text-blue-300" aria-hidden="true" />
         <div>
-          <strong>{{ isTetris ? tetrisScore.toLocaleString() : mapProgress }}</strong>
-          <span>{{ isTetris ? 'Tetris score' : 'Maps explored' }}</span>
+          <strong>{{ isBoxxle ? boxxleSolved : isTetris ? tetrisScore.toLocaleString() : mapProgress }}</strong>
+          <span>{{ isBoxxle ? 'Puzzles solved' : isTetris ? 'Tetris score' : 'Maps explored' }}</span>
         </div>
       </div>
       <div class="public-stat">
         <BoltIcon class="size-5 text-violet-300" aria-hidden="true" />
         <div>
-          <strong>{{ isTetris ? tetrisLines : (run.stats?.round ?? 0) }}</strong>
-          <span>{{ isTetris ? 'Lines cleared' : 'Planner rounds' }}</span>
+          <strong>{{ isBoxxle ? boxxlePushes : isTetris ? tetrisLines : (run.stats?.round ?? 0) }}</strong>
+          <span>{{ isBoxxle ? 'Pushes' : isTetris ? 'Lines cleared' : 'Planner rounds' }}</span>
         </div>
       </div>
       <div class="public-stat">
         <TrophyIcon class="size-5 text-amber-300" aria-hidden="true" />
         <div>
-          <strong>{{ isTetris ? tetrisPiece : badges }}</strong>
-          <span>{{ isTetris ? 'Active piece' : 'Badges' }}</span>
+          <strong>{{ isBoxxle ? `${boxxleOnGoal}/${boxxleCrates}` : isTetris ? tetrisPiece : badges }}</strong>
+          <span>{{ isBoxxle ? 'On goal' : isTetris ? 'Active piece' : 'Badges' }}</span>
         </div>
       </div>
     </div>
@@ -334,7 +366,7 @@ function watch(run: SpectatorRun): void {
           <div class="mt-3 line-clamp-2 text-xs font-extrabold leading-5 text-white">{{ runTitle(candidate) }}</div>
           <div class="mt-1 truncate text-[10px] text-slate-500">{{ routeLabel(candidate) }}</div>
           <div class="mt-3 flex items-center justify-between gap-2 text-[9px] text-slate-500">
-            <span>{{ isTetrisRun(candidate) ? `${Number(candidate.game_state?.score || 0).toLocaleString()} pts · ${Number(candidate.game_state?.lines_cleared || 0)} lines` : `${candidate.player?.badges?.length || 0} badges` }}</span>
+            <span>{{ isBoxxleRun(candidate) ? `${Number(candidate.game_state?.levels || 0)} solved · ${Number(candidate.game_state?.pushes || 0)} pushes` : isTetrisRun(candidate) ? `${Number(candidate.game_state?.score || 0).toLocaleString()} pts · ${Number(candidate.game_state?.lines_cleared || 0)} lines` : `${candidate.player?.badges?.length || 0} badges` }}</span>
             <ArrowRightIcon class="size-3 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-cyan-200" aria-hidden="true" />
           </div>
         </button>

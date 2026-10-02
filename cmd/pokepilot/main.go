@@ -230,7 +230,11 @@ func main() {
 			if *maxChoices < 0 || *maxChoices == 1 {
 				log.Fatalf("-max-choices must be 0 or at least 2")
 			}
-			runLocalBoxxlePlay(m, cartridgeProfile, *maxRounds, *maxChoices)
+			boxxleGoal := *goal
+			if boxxleGoal == defaultGoal {
+				boxxleGoal = "first"
+			}
+			runLocalBoxxlePlay(m, cartridgeProfile, boxxleGoal, *maxRounds, *maxChoices)
 		default:
 			log.Fatalf("planner policy currently supports Tetris and Boxxle only")
 		}
@@ -238,8 +242,6 @@ func main() {
 		if string(cartridgeProfile.ID()) != "boxxle" {
 			log.Fatalf("planner launch currently supports Boxxle only")
 		}
-		// Boxxle is registered and launchable in this slice; autonomous puzzle
-		// play is a later slice, so the run boots the cartridge and stops.
 		runLocalBoxxle(m, *hold, served)
 	default:
 		log.Fatalf("unknown planner %q: want scripted, llm, policy, or launch", *planner)

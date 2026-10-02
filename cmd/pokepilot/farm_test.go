@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/agent"
+	"github.com/maestroi/pokepilot/boxxle"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/state"
@@ -574,6 +575,34 @@ func TestValidateSpecAcceptsBoxxlePolicyAndLaunch(t *testing.T) {
 	}
 	if err := validateSpec("boxxle", "launch", "squirtle", ""); err == nil {
 		t.Fatal("Boxxle unexpectedly accepted a Pokemon starter")
+	}
+}
+
+func TestBoxxleStateEnvelopeIsPuzzleOwned(t *testing.T) {
+	player := boxxle.Pos{X: 1, Y: 1}
+	state := boxxle.State{
+		Screen: boxxle.ScreenPuzzle,
+		Width:  4,
+		Height: 3,
+		Walls:  []boxxle.Pos{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 2, Y: 0}, {X: 3, Y: 0}},
+		Goals:  []boxxle.Pos{{X: 2, Y: 1}},
+		Crates: []boxxle.Pos{{X: 2, Y: 1}},
+		Player: &player,
+		Solved: true,
+	}
+	got := boxxleStateEnvelope(state, 7, 2)
+	if got["kind"] != "boxxle" {
+		t.Fatalf("kind = %v", got["kind"])
+	}
+	if got["levels"] != 2 || got["pushes"] != 7 || got["crates_on_goal"] != 1 {
+		t.Fatalf("progress = %#v", got)
+	}
+	if _, ok := got["badges"]; ok {
+		t.Fatal("boxxle envelope leaked a Pokémon field")
+	}
+	board, _ := got["board"].([]string)
+	if len(board) != 3 {
+		t.Fatalf("board rows = %d, want 3", len(board))
 	}
 }
 

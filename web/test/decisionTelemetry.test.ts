@@ -79,7 +79,7 @@ test('a run with a selected engine shows the panel before its first call', () =>
   assert.equal(showDecisionTelemetry(stats, undefined), true)
   assert.equal(decisionIdleNote(jev), 'No calls yet. The engine is asked on every battle move (shadow), recoverable failures.')
   assert.equal(decisionIdleNote({ backend: 'jev', mode: 'shadow' }), 'No decision points enabled, so the engine is never asked.')
-  assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', placements: true }), 'No calls yet. The engine is asked on every Tetris placement.')
+  assert.equal(decisionIdleNote({ backend: 'jev', mode: 'active', placements: true }), 'No calls yet. The engine is asked on every Tetris placement or Boxxle push.')
 })
 
 test('the live and archive views gate the panel on the run selection too', () => {

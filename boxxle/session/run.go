@@ -20,9 +20,12 @@ var ErrBootTimeout = errors.New("boxxle session: boot timed out")
 
 // RunOptions configures an autonomous Boxxle puzzle run.
 type RunOptions struct {
-	// Levels is how many puzzles to solve; zero means one. Every solved puzzle
-	// is followed by an advance to the next, so a run that finishes has proven
-	// the cartridge moves on, not just that one board was solved.
+	// Goal is how many puzzles to solve. The zero value is the first-puzzle
+	// milestone. Every solved puzzle is followed by an advance to the next, so
+	// a run that finishes has proven the cartridge moves on.
+	Goal Goal
+	// Levels is how many puzzles to solve when Goal is unset; zero means one.
+	// Prefer Goal. Kept so existing callers keep compiling.
 	Levels int
 	// MaxPushes caps the number of executed pushes; zero means no cap.
 	MaxPushes int
@@ -38,6 +41,9 @@ type RunOptions struct {
 	// OnDecision, when non-nil, is called after each selection so a caller can
 	// record telemetry.
 	OnDecision func(decision.Selection)
+	// OnProgress, when non-nil, is called after each observed board so a
+	// heartbeat can publish the live puzzle without Pokémon-shaped fields.
+	OnProgress func(state boxxle.State, pushes, levels int)
 }
 
 // Result records the outcome of an autonomous Boxxle puzzle run.
@@ -47,6 +53,7 @@ type Result struct {
 	// Levels is the number of puzzles solved, each followed by a verified
 	// advance to the next puzzle's board.
 	Levels        int                 `json:"levels"`
+	UsedFallback  bool                `json:"used_fallback"`
 	State         boxxle.State        `json:"state"`
 	LastSelection *decision.Selection `json:"last_selection,omitempty"`
 	Telemetry     *decision.Snapshot  `json:"telemetry,omitempty"`
@@ -61,16 +68,19 @@ func (decoder) DecodeBoxxleState(r game.MemoryReader) (boxxle.State, error) {
 	return boxxle.DecodeState(r)
 }
 
-// solverChooser is the deterministic selector: it solves the live board once
+// SolverChooser is the deterministic selector: it solves the live board once
 // and replays that plan, one push per call. Each planned push is re-validated
 // against the freshly decoded board (the crate is there, the push is legal from
 // where the player now is), and anything that no longer holds drops the plan
 // and re-solves, so a run never commits to a stale push. The greedy policy is
 // the fallback only for a board the solver declares unsolvable, where it still
 // yields a legal, non-deadlocking push.
-type solverChooser struct{ plan []solver.Push }
+type SolverChooser struct{ plan []solver.Push }
 
-func (c *solverChooser) choose(state boxxle.State) (decision.Selection, error) {
+// NewSolverChooser returns a fresh deterministic solver selector.
+func NewSolverChooser() *SolverChooser { return &SolverChooser{} }
+
+func (c *SolverChooser) Choose(state boxxle.State) (decision.Selection, error) {
 	selection := func(push boxxle.LegalPush) decision.Selection {
 		plan := decision.Plan{Push: push}
 		return decision.Selection{Plan: plan, Deterministic: plan}
@@ -94,7 +104,9 @@ func (c *solverChooser) choose(state boxxle.State) (decision.Selection, error) {
 	if err != nil {
 		return decision.Selection{}, err
 	}
-	return selection(d.Candidate.Push), nil
+	sel := selection(d.Candidate.Push)
+	sel.Fallback = true
+	return sel, nil
 }
 
 // Run plays a Boxxle puzzle: it boots the cartridge to the puzzle screen, then
@@ -120,17 +132,34 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 	if err != nil {
 		return Result{Reason: "error", State: state, Telemetry: snapshot(), Err: err}
 	}
+	if opts.OnProgress != nil {
+		opts.OnProgress(state, 0, 0)
+	}
 
 	choose := opts.Choose
 	if choose == nil {
-		choose = (&solverChooser{}).choose
+		choose = NewSolverChooser().Choose
 	}
-	want := max(opts.Levels, 1)
+	goal := opts.Goal
+	if goal.Kind == "" && opts.Levels > 0 {
+		goal = Goal{Kind: GoalLevels, Levels: opts.Levels}
+	}
+	want := goal.WantedLevels()
 	startFrame := m.FrameCount()
 	pushes, levels := 0, 0
 	var lastSelection *decision.Selection
+	progress := func(state boxxle.State) {
+		if opts.OnProgress != nil {
+			opts.OnProgress(state, pushes, levels)
+		}
+	}
 	result := func(reason string, state boxxle.State, err error) Result {
-		return Result{Reason: reason, Pushes: pushes, Levels: levels, State: state, LastSelection: lastSelection, Telemetry: snapshot(), Err: err}
+		snap := snapshot()
+		usedFallback := snap != nil && snap.Fallbacks > 0
+		return Result{
+			Reason: reason, Pushes: pushes, Levels: levels, UsedFallback: usedFallback,
+			State: state, LastSelection: lastSelection, Telemetry: snap, Err: err,
+		}
 	}
 	for {
 		if cancelled(opts.Cancel) {
@@ -144,6 +173,7 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 		if err != nil {
 			return result("error", state, err)
 		}
+		progress(state)
 		if state.Solved {
 			levels++
 			// Advance even after the last level: leaving the solved screen
@@ -152,7 +182,8 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 			if err != nil {
 				return result("error", state, err)
 			}
-			if levels >= want {
+			progress(next)
+			if want > 0 && levels >= want {
 				return result("done", next, nil)
 			}
 			continue

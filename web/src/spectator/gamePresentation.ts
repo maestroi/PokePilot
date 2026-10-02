@@ -12,7 +12,7 @@ export function isTetrisRun(run: SpectatorRun | null | undefined): boolean {
 }
 
 export function isBoxxleRun(run: SpectatorRun | null | undefined): boolean {
-  return Boolean(run && run.game === 'boxxle')
+  return Boolean(run && (run.game === 'boxxle' || run.game_state?.kind === 'boxxle'))
 }
 
 export function gameTitle(run: SpectatorRun): string {
@@ -48,4 +48,27 @@ export function tetrisRunTitle(run: SpectatorRun): string {
   const score = Number(run.game_state?.score || 0).toLocaleString()
   const lines = Number(run.game_state?.lines_cleared || 0)
   return `Tetris · ${score} pts · ${lines} lines`
+}
+
+export function boxxleRouteLabel(run: SpectatorRun): string {
+  if (run.goal) return run.goal
+  return 'Boxxle puzzles'
+}
+
+export function boxxleLocationLabel(run: SpectatorRun): string {
+  const state = run.game_state
+  const levels = Number(state?.levels || 0)
+  const crates = Number(state?.crates || 0)
+  const onGoal = Number(state?.crates_on_goal || 0)
+  if (state?.solved) return `Puzzle ${levels} solved`
+  if (state?.screen && state.screen !== 'puzzle') return titleCase(String(state.screen))
+  if (crates > 0) return `Puzzle ${levels + 1} · ${onGoal}/${crates} on goal`
+  return levels > 0 ? `Puzzle ${levels + 1}` : 'Puzzle'
+}
+
+export function boxxleRunTitle(run: SpectatorRun): string {
+  const levels = Number(run.game_state?.levels || 0)
+  const pushes = Number(run.game_state?.pushes || 0)
+  if (levels || pushes) return `Boxxle · ${levels} solved · ${pushes} pushes`
+  return 'Boxxle · autonomous puzzle play'
 }

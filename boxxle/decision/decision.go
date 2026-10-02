@@ -163,7 +163,7 @@ func pushRequest(state boxxle.State, candidates []policy.Candidate) (agent.Decis
 		Screen: state.Screen,
 		Width:  state.Width,
 		Height: state.Height,
-		Board:  boardRows(state),
+		Board:  boxxle.RenderBoard(state),
 		Player: *state.Player,
 		Crates: state.Crates,
 		Goals:  state.Goals,
@@ -235,45 +235,9 @@ func goalText(c policy.Candidate) string {
 	}
 }
 
-// boardRows renders the board as compact ASCII rows for the model:
-//
-//	# wall, . floor, @ player, $ crate, * crate on goal, + goal.
+// boardRows is the compact ASCII board fed to the planner.
 func boardRows(state boxxle.State) []string {
-	walls := make(map[boxxle.Pos]bool, len(state.Walls))
-	for _, w := range state.Walls {
-		walls[w] = true
-	}
-	goals := make(map[boxxle.Pos]bool, len(state.Goals))
-	for _, g := range state.Goals {
-		goals[g] = true
-	}
-	crates := make(map[boxxle.Pos]bool, len(state.Crates))
-	for _, c := range state.Crates {
-		crates[c] = true
-	}
-	rows := make([]string, state.Height)
-	for y := 0; y < state.Height; y++ {
-		row := make([]byte, state.Width)
-		for x := 0; x < state.Width; x++ {
-			p := boxxle.Pos{X: x, Y: y}
-			switch {
-			case walls[p]:
-				row[x] = '#'
-			case crates[p] && goals[p]:
-				row[x] = '*'
-			case crates[p]:
-				row[x] = '$'
-			case goals[p]:
-				row[x] = '+'
-			case state.Player != nil && *state.Player == p:
-				row[x] = '@'
-			default:
-				row[x] = '.'
-			}
-		}
-		rows[y] = string(row)
-	}
-	return rows
+	return boxxle.RenderBoard(state)
 }
 
 // Telemetry accumulates planner statistics across a run: how often the planner
