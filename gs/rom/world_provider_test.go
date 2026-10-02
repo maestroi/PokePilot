@@ -358,7 +358,6 @@ func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
 	}
 }
 
-
 func TestEarlyJohtoWorldProviderRoutesStoryServicesForFogBadgeSlice(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	graph, err := world.BuildNativeGraph(provider)
