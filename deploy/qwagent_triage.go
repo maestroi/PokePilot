@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -218,6 +219,87 @@ func TriageKeyFromTitle(title string) string {
 		return ""
 	}
 	return strings.TrimSpace(match[1])
+}
+
+// AssignedIssue is an open generated farm issue with at least one assignee.
+type AssignedIssue struct {
+	Number     int64
+	Key        string
+	Assignees  []string
+	AssignedAt time.Time // latest assignment; zero when unknown
+}
+
+// DecodeAssignedIssues reads the GraphQL issue listing in qwagent-triage.sh
+// and keeps assigned issues that carry a generated "Triage key" line.
+func DecodeAssignedIssues(raw []byte) ([]AssignedIssue, error) {
+	var resp struct {
+		Data struct {
+			Repository struct {
+				Issues struct {
+					Nodes []struct {
+						Number    int64  `json:"number"`
+						Body      string `json:"body"`
+						Assignees struct {
+							Nodes []struct {
+								Login string `json:"login"`
+							} `json:"nodes"`
+						} `json:"assignees"`
+						TimelineItems struct {
+							Nodes []struct {
+								CreatedAt time.Time `json:"createdAt"`
+							} `json:"nodes"`
+						} `json:"timelineItems"`
+					} `json:"nodes"`
+				} `json:"issues"`
+			} `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("decode assigned issues: %w (%s)", err, jsonPreview(raw))
+	}
+	var out []AssignedIssue
+	for _, n := range resp.Data.Repository.Issues.Nodes {
+		issue := AssignedIssue{Number: n.Number, Key: issueTriageKey(n.Body)}
+		for _, a := range n.Assignees.Nodes {
+			issue.Assignees = append(issue.Assignees, a.Login)
+		}
+		if items := n.TimelineItems.Nodes; len(items) > 0 {
+			issue.AssignedAt = items[len(items)-1].CreatedAt
+		}
+		if issue.Key != "" && len(issue.Assignees) > 0 {
+			out = append(out, issue)
+		}
+	}
+	return out, nil
+}
+
+func issueTriageKey(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, "- **Triage key:**") {
+			continue
+		}
+		if parts := strings.Split(line, "`"); len(parts) >= 3 {
+			return strings.TrimSpace(parts[1])
+		}
+	}
+	return ""
+}
+
+// IssueClaims splits assigned farm issues into live claims and leaked ones.
+// An assignment is the fixer's cross-machine claim, but nothing expires it: a
+// hard-killed attempt skips its release, and a fixer PR closed unmerged leaves
+// the claim it kept. So an assignment holds only while a [triage:key] PR is
+// open or it is younger than ttl; anything older parks the failure forever.
+// ponytail: a hand fix with no PR after ttl loses its claim; open a draft PR.
+func IssueClaims(issues []AssignedIssue, prTitles []string, now time.Time, ttl time.Duration) (claimed []string, stale []AssignedIssue) {
+	for _, issue := range issues {
+		if Claimed(issue.Key, prTitles) || issue.AssignedAt.IsZero() || now.Sub(issue.AssignedAt) < ttl {
+			claimed = append(claimed, issue.Key)
+			continue
+		}
+		stale = append(stale, issue)
+	}
+	return claimed, stale
 }
 
 type PullCheck struct {

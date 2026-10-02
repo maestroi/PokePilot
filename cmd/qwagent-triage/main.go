@@ -28,7 +28,7 @@ func main() {
 
 func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate|record-attempt|ladder ...")
+		return fmt.Errorf("usage: qwagent-triage pick|pick-own-pr|classify-repairs|fetch-triage|fetch-debug|investigate|record-attempt|ladder|issue-claims ...")
 	}
 	switch args[0] {
 	case "pick":
@@ -47,6 +47,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return recordAttemptCmd(args[1:], stdout)
 	case "ladder":
 		return ladderCmd(args[1:], stdout, time.Now())
+	case "issue-claims":
+		return issueClaimsCmd(args[1:], stdin, stdout, time.Now())
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -129,6 +131,34 @@ func pickOwnPRCmd(args []string, stdin io.Reader, stdout io.Writer) error {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+// issueClaimsCmd prints "claimed\t<key>" for live assignments and
+// "stale\t<key>\t<issue>\t<login,...>" for leaked ones the caller should release.
+func issueClaimsCmd(args []string, stdin io.Reader, stdout io.Writer, now time.Time) error {
+	fs := flag.NewFlagSet("issue-claims", flag.ContinueOnError)
+	var titles repeatFlags
+	fs.Var(&titles, "pr-title", "open PR title; a [triage:key] PR keeps its issue's assignment live")
+	ttl := fs.Duration("ttl", 3*time.Hour, "age after which an assignment without an open PR is leaked")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(stdin)
+	if err != nil {
+		return err
+	}
+	issues, err := deploy.DecodeAssignedIssues(raw)
+	if err != nil {
+		return err
+	}
+	claimed, stale := deploy.IssueClaims(issues, titles, now, *ttl)
+	for _, key := range claimed {
+		fmt.Fprintf(stdout, "claimed\t%s\n", key)
+	}
+	for _, issue := range stale {
+		fmt.Fprintf(stdout, "stale\t%s\t%d\t%s\n", issue.Key, issue.Number, strings.Join(issue.Assignees, ","))
+	}
+	return nil
 }
 
 func classifyRepairsCmd(args []string, stdin io.Reader, stdout io.Writer) error {
