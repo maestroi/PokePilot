@@ -95,7 +95,7 @@ func (parser) Species(raw uint16) (game.SpeciesID, bool) {
 }
 
 var johtoBadgeNames = [...]string{
-	"zephyr", "hive", "plain", "fog", "storm", "mineral", "glacier", "rising",
+	"zephyr", "hive", "plain", "fog", "mineral", "storm", "glacier", "rising",
 }
 var kantoBadgeNames = [...]string{
 	"boulder", "cascade", "thunder", "rainbow", "soul", "marsh", "volcano", "earth",
