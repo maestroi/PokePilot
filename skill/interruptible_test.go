@@ -201,6 +201,62 @@ func TestRunInterruptionsDialogueBlackoutEndsAction(t *testing.T) {
 	}
 }
 
+// A cursor menu that interrupts a walk is a dismissible surface, not an
+// unanswered question: the loop backs out of it and re-plans instead of
+// returning the terminal choice outcome. This is the shared fix for the shop
+// item list, the PC menu, and the elevator (triage:6631a3ec0e68cc30).
+func TestRunInterruptionsDismissesOpenMenuAndReplans(t *testing.T) {
+	f := &fakeInterruptionWorld{world: Replan{Map: 0x2a, X: 5, Y: 5}}
+	f.onBox = func(int) DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueMenuOpen, Text: "POKé BALL × 7 DOME FOSSIL S.S.TICKET HM01 EXIT"}
+	}
+	resolvers := f.resolvers("Travel")
+	dismissals := 0
+	resolvers.dismissMenu = func() (bool, error) {
+		dismissals++
+		return true, nil
+	}
+	calls := 0
+	res, err := runInterruptions(nil, 5, func() error {
+		calls++
+		if calls == 1 {
+			return ErrDialogueInterrupted
+		}
+		return nil
+	}, resolvers)
+	if err != nil {
+		t.Fatalf("runInterruptions: %v", err)
+	}
+	if dismissals != 1 {
+		t.Fatalf("dismissMenu called %d time(s), want 1", dismissals)
+	}
+	if calls != 2 {
+		t.Fatalf("action called %d time(s), want 2 (interrupted, then re-planned)", calls)
+	}
+	if res.Dialogues != 1 {
+		t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+	}
+}
+
+// When the menu will not close, the loop fails closed to the typed choice
+// outcome rather than looping: dismissal is a bounded repair, not a promise.
+func TestRunInterruptionsFailsClosedWhenMenuWillNotDismiss(t *testing.T) {
+	f := &fakeInterruptionWorld{world: Replan{Map: 0x2a, X: 5, Y: 5}}
+	f.onBox = func(int) DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueMenuOpen, Text: "POKé BALL × 7"}
+	}
+	resolvers := f.resolvers("Travel")
+	resolvers.dismissMenu = func() (bool, error) { return false, nil }
+	_, err := runInterruptions(nil, 5, func() error { return ErrDialogueInterrupted }, resolvers)
+	var choice *ErrDialogueChoice
+	if !errors.As(err, &choice) {
+		t.Fatalf("err = %v, want *ErrDialogueChoice (fail closed)", err)
+	}
+	if choice.Result.Stop != DialogueMenuOpen {
+		t.Fatalf("choice.Result.Stop = %d, want DialogueMenuOpen", choice.Result.Stop)
+	}
+}
+
 func TestRunInterruptibleValidatesBudgetAndAction(t *testing.T) {
 	policy := MovePolicy(FirstUsableMove)
 	if _, err := RunInterruptible(nil, policy, InterruptibleAction{Name: "x", Run: func() error { return nil }}); err == nil {

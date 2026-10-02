@@ -77,6 +77,10 @@ type interruptionResolvers struct {
 	recoverBox    func() DialogueRecoveryResult
 	blackout      func() bool
 	resolveBattle resolveBattle
+	// dismissMenu backs out of a cursor menu that interrupted the walk (a shop
+	// item list, the PC menu, an elevator) and reports whether the overworld is
+	// controllable again. It never answers a two-option prompt.
+	dismissMenu func() (bool, error)
 	// observe reads the pre-battle world; settle waits for the post-battle
 	// world (including a blackout respawn) to stand still and returns it.
 	observe func() (Replan, error)
@@ -84,6 +88,12 @@ type interruptionResolvers struct {
 }
 
 func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) (interruptionResolvers, error) {
+	// dismissMenu is installed before the observe/settle early return so it is
+	// never nil, even for resolvers that supply both world defaults. With a nil
+	// emulator it fails closed (returns false), which is the ROM-free contract.
+	if r.dismissMenu == nil {
+		r.dismissMenu = func() (bool, error) { return dismissMenu(m) }
+	}
 	if r.observe != nil && r.settle != nil {
 		return r, nil
 	}
