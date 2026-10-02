@@ -37,7 +37,7 @@ import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
 import RouteLine from './RouteLine.vue'
 import { gameRouteLine } from './routeLine'
-import { MAP_CATALOG, mapEntry } from '../shared/mapCatalog'
+import { mapCatalogForGame, mapEntryForGame, spectatorNativeMap } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
 import { elapsedRunSeconds, formatDuration } from '../shared/runTiming'
 import { canRenderModernScene } from '../shared/semanticRenderer'
@@ -227,9 +227,8 @@ const plannerState = computed(() => {
 const mapsLabel = computed(() => {
   const run = selectedRun.value
   const visited = Number(run?.maps_visited || 0)
-  const game = String(run?.game || '').trim().toLowerCase()
-  const redCatalog = game === 'pokemon-red' || game === 'red'
-  return redCatalog ? `${visited}/${MAP_CATALOG.length}` : String(visited)
+  const total = mapCatalogForGame(run?.game).length
+  return total > 0 ? `${visited}/${total}` : String(visited)
 })
 const lastRefreshLabel = computed(() => {
   if (!lastUpdatedAt.value) return ''
@@ -509,11 +508,7 @@ function formatGameToken(value: string): string {
 
 function displayLocation(run: SpectatorRun): string {
   if (isTetrisRun(run)) return locationLabel(run)
-  const game = String(run.game || '').trim().toLowerCase()
-  if (game === 'pokemon-red' || game === 'red') {
-    return mapEntry(Number(run.map || 0))?.label || locationLabel(run)
-  }
-  return locationLabel(run)
+  return mapEntryForGame(run.game, spectatorNativeMap(run))?.label || locationLabel(run)
 }
 
 function selectRun(run: SpectatorRun): void {
