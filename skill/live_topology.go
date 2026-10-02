@@ -52,6 +52,63 @@ func liveMapBlocksWithDecoder(reader game.MemoryReader, decoder game.RoutingDeco
 	return append([]byte(nil), live.Blocks...), nil
 }
 
+// waitLiveMapDimsSettled drives the current map toward a live topology whose
+// dimensions match the ROM header, so the block buffer can be decoded as the
+// current map's collision. It is the Gen-I half of the same invariant
+// waitLiveMapSettled enforces for native routing: a connection or warp makes
+// the destination map's identity current before its shell is rebuilt, and the
+// block buffer still holds the previous map's bytes through that window.
+//
+// Gen-I regular warps are the case no other signal catches. They write
+// wCurMap to the destination before wCurMapWidth/Height are updated, and they
+// leave wJoyIgnore clear through the whole window (measured: ~11 frames,
+// run-1mey4xe5t2w04), so Controllable reports true and waitOutScriptedMovement
+// does not wait. The fly/dungeon-warp bits are only set by Fly and hole warps,
+// not by a door. The dimension match against the ROM header is the positive
+// assertion that the new map's shell is installed; it is the only signal a
+// regular warp produces.
+//
+// It returns the settled state, and errLiveMapNotSettled when the budget runs
+// out with the dimensions still describing the previous map. A battle or a
+// dialogue waiting on the player is not a map shell that is still loading:
+// neither hands the overworld back without input, so waiting on them only
+// burns the budget and hides the interruption the caller can actually settle.
+// They return ErrBattle / ErrDialogueInterrupted at once.
+func waitLiveMapDimsSettled(m *emu.Emu, romData []byte) (game.LiveTopologyState, error) {
+	routing, err := routingProfileFor(m)
+	if err != nil {
+		return game.LiveTopologyState{}, err
+	}
+	var live game.LiveTopologyState
+	var header worldmodel.MapHeader
+	for waited := 0; waited <= liveMapSettleFrameBudget; waited += liveMapSettlePollFrames {
+		overworld := routing.DecodeOverworld(m)
+		if overworld.InBattle {
+			return game.LiveTopologyState{}, ErrBattle
+		}
+		if overworld.InDialogue {
+			return game.LiveTopologyState{}, ErrDialogueInterrupted
+		}
+		decoded, err := routing.DecodeLiveTopology(m)
+		if err != nil {
+			return game.LiveTopologyState{}, err
+		}
+		h, err := routingHeaderForROM(romData, uint8(decoded.NativeMapID))
+		if err != nil {
+			return game.LiveTopologyState{}, err
+		}
+		header = h
+		if decoded.WidthBlocks == int(h.WidthBlocks) && decoded.HeightBlocks == int(h.HeightBlocks) {
+			return decoded, nil
+		}
+		live = decoded
+		m.StepFrames(liveMapSettlePollFrames)
+	}
+	return live, fmt.Errorf("%w: map %#04x is %dx%d blocks, ROM header says %dx%d after %d frames",
+		errLiveMapNotSettled, live.NativeMapID, live.WidthBlocks, live.HeightBlocks,
+		header.WidthBlocks, header.HeightBlocks, liveMapSettleFrameBudget)
+}
+
 // liveMapGrid decodes current post-script geometry using the traversal mode the
 // active profile reports. Static collision interpretation stays in the ROM
 // provider; skill never reads a concrete game's ROM tables.
