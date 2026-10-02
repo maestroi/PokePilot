@@ -21,7 +21,7 @@ const (
 	ProgressFarfetchdHerded          game.ProgressID = "gs_farfetchd_herded"
 	ProgressHM01CutAcquired          game.ProgressID = "gs_hm01_cut_acquired"
 	ProgressTM02HeadbuttAcquired     game.ProgressID = "gs_tm02_headbutt_acquired"
-	ProgressPlainBadgeEarned          game.ProgressID = "gs_plain_badge_earned"
+	ProgressPlainBadgeEarned         game.ProgressID = "gs_plain_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
