@@ -41,6 +41,9 @@ POKEPILOT_QWEN_URL=${POKEPILOT_QWEN_URL:-}
 # ("Compaction summary reached the output token limit", socket closed) after
 # burning the full 50m. Cut it loose early so the ladder escalates sooner.
 POKEPILOT_OPENCODE_BUDGET=${POKEPILOT_OPENCODE_BUDGET:-35m}
+# Whole-attempt kill (prep, agent, PR). The Swarm fixer raises both: with two
+# replicas a slow qwen attempt no longer holds up the queue.
+POKEPILOT_ATTEMPT_TIMEOUT=${POKEPILOT_ATTEMPT_TIMEOUT:-50m}
 export PATH="$HOME/.cursor/bin:$HOME/.opencode/bin:$HOME/go/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"
 
 DRY_RUN=0
@@ -267,7 +270,7 @@ if [ "$DRY_RUN" -eq 0 ] && [ "$LOCKED" -eq 0 ]; then
 	# No --foreground: the TERM must reach the agent CLI too, or bash defers its
 	# TERM trap until the agent finishes by itself (a 50m budget ran 61m and never
 	# recorded a terminal attempt). -k hard-kills a hung agent.
-	timeout -k 60 50m "$0" --locked "$@"
+	timeout -k 60 "$POKEPILOT_ATTEMPT_TIMEOUT" "$0" --locked "$@"
 	exit $?
 fi
 
@@ -334,7 +337,7 @@ trap 'release_issue_claim; [ -z "$CLAIM_DIR" ] || rm -rf "$CLAIM_DIR"' EXIT
 trap 'exit 130' INT
 on_term() {
 	if [ -n "${ATTEMPT_ID:-}" ]; then
-		record_solver_attempt agent_failed "killed by the 50m attempt timeout" "" 0 "" 124
+		record_solver_attempt agent_failed "killed by the $POKEPILOT_ATTEMPT_TIMEOUT attempt timeout" "" 0 "" 124
 	fi
 	exit 143
 }
@@ -412,8 +415,9 @@ pick_next() {
 	merged_prs=$(gh pr list --repo "$(gh_repo)" --state closed --limit 200 --json title,mergedAt,mergeCommit 2>/dev/null || printf '[]')
 	pick_args=(pick)
 	if [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
-		# A claim outlives its 50m attempt only when the replica was killed.
-		find "$POKEPILOT_TRIAGE_CLAIMS" -mindepth 1 -maxdepth 1 -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+		# A claim outlives its attempt only when the replica was killed.
+		# ponytail: fixed 3h, above any sane POKEPILOT_ATTEMPT_TIMEOUT.
+		find "$POKEPILOT_TRIAGE_CLAIMS" -mindepth 1 -maxdepth 1 -mmin +180 -exec rm -rf {} + 2>/dev/null || true
 		for claim in "$POKEPILOT_TRIAGE_CLAIMS"/*; do
 			[ -d "$claim" ] && pick_args+=(--claimed "[triage:$(basename "$claim")]")
 		done

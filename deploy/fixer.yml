@@ -32,6 +32,10 @@ services:
       POKEPILOT_PAID_DAILY_CAP: ${POKEPILOT_PAID_DAILY_CAP:-20}
       POKEPILOT_CURSOR_MODEL: ${POKEPILOT_CURSOR_MODEL:-auto}
       POKEPILOT_QWEN_URL: ${POKEPILOT_QWEN_URL:?POKEPILOT_QWEN_URL is required (llama.cpp /v1 base serving qwen)}
+      # qwen is the slowest tier, so it gets the longest window; Cursor
+      # tiers stop at their own pace inside the same attempt timeout.
+      POKEPILOT_ATTEMPT_TIMEOUT: ${POKEPILOT_ATTEMPT_TIMEOUT:-100m}
+      POKEPILOT_OPENCODE_BUDGET: ${POKEPILOT_OPENCODE_BUDGET:-90m}
       POKEPILOT_OPENCODE_MODEL: ${POKEPILOT_OPENCODE_MODEL:-qwen3.8-27b/qwen3.8-27b}
       POKEPILOT_FIXER_INTERVAL: ${POKEPILOT_FIXER_INTERVAL:-2m}
       POKEMON_RED_ROM: /rom/pokemon_red.gb
