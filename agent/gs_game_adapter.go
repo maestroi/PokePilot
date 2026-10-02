@@ -52,7 +52,11 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
 		gsprofile.ProgressTM02HeadbuttAcquired,
-		gsprofile.ProgressPlainBadgeEarned:
+		gsprofile.ProgressPlainBadgeEarned,
+		gsprofile.ProgressSquirtBottleAcquired,
+		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressBurnedTowerCleared,
+		gsprofile.ProgressFogBadgeEarned:
 		return true
 	default:
 		return false
@@ -146,6 +150,14 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSTM02Headbutt(a.m, a.romData)
 		case gsprofile.ProgressPlainBadgeEarned:
 			err = executeGSWhitney(a.m, a.romData)
+		case gsprofile.ProgressSquirtBottleAcquired:
+			err = executeGSSquirtBottle(a.m, a.romData)
+		case gsprofile.ProgressSudowoodoCleared:
+			err = executeGSSudowoodo(a.m, a.romData)
+		case gsprofile.ProgressBurnedTowerCleared:
+			err = executeGSBurnedTower(a.m, a.romData)
+		case gsprofile.ProgressFogBadgeEarned:
+			err = executeGSMorty(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -168,7 +180,9 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
 			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned,
 			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded,
-			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned:
+			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned,
+			gsprofile.ProgressSudowoodoCleared, gsprofile.ProgressBurnedTowerCleared,
+			gsprofile.ProgressFogBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -379,6 +393,30 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressPlainBadgeEarned,
 			Note:     "(continue through Route 34 to Goldenrod, defeat Whitney, settle her crying scene, and receive the Plain Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressSquirtBottleAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressSquirtBottleAcquired,
+			Note:     "(visit the Goldenrod Flower Shop after Whitney and receive the SquirtBottle)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressSudowoodoCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressSudowoodoCleared,
+			Note:     "(take the north route from Goldenrod, water the Route 36 Sudowoodo, and win the required battle)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressBurnedTowerCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressBurnedTowerCleared,
+			Note:     "(reach Ecruteak, defeat the Burned Tower rival, descend to B1F, and release the legendary beasts)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressFogBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressFogBadgeEarned,
+			Note:     "(cross Ecruteak Gym's invisible floor, defeat Morty, and earn the Fog Badge)",
 		}}
 	default:
 		return nil
