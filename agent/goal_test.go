@@ -37,7 +37,6 @@ func TestParseGoalRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
-
 func TestPlannerGoalRecognizesSixteenBadgePreset(t *testing.T) {
 	g, deterministic, err := PlannerGoal("Earn all 16 badges.")
 	if err != nil {
