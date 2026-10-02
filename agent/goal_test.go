@@ -13,6 +13,7 @@ func TestParseGoal(t *testing.T) {
 		{"pokedex", GoalDex},
 		{"pokédex", GoalDex},
 		{"badges:8", GoalBadges},
+		{"badges:16", GoalBadges},
 		{"reach:Cerulean City", GoalReach},
 		{"level:25", GoalLevel},
 		{"item:Potion", GoalItem},
@@ -29,10 +30,24 @@ func TestParseGoal(t *testing.T) {
 }
 
 func TestParseGoalRejectsInvalidTargets(t *testing.T) {
-	for _, in := range []string{"unknown:x", "badges:0", "badges:9", "level:101", "reach:"} {
+	for _, in := range []string{"unknown:x", "badges:0", "badges:17", "level:101", "reach:"} {
 		if _, err := ParseGoal(in); err == nil {
 			t.Fatalf("ParseGoal(%q) unexpectedly succeeded", in)
 		}
+	}
+}
+
+
+func TestPlannerGoalRecognizesSixteenBadgePreset(t *testing.T) {
+	g, deterministic, err := PlannerGoal("Earn all 16 badges.")
+	if err != nil {
+		t.Fatalf("PlannerGoal: %v", err)
+	}
+	if !deterministic {
+		t.Fatal("16-badge preset resolved as prompt-only")
+	}
+	if g.Kind != GoalBadges || g.Count != 16 {
+		t.Fatalf("16-badge preset = %+v, want GoalBadges count 16", g)
 	}
 }
 
