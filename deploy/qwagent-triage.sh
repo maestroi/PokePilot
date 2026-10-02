@@ -274,6 +274,32 @@ if [ "$DRY_RUN" -eq 0 ] && [ "$LOCKED" -eq 0 ]; then
 	exit $?
 fi
 
+# cursor_log turns Cursor's stream-json into one log line per assistant
+# message and tool call (text mode prints nothing until the agent exits).
+cursor_log() {
+	python3 -u -c '
+import json, sys
+for line in sys.stdin:
+    try:
+        e = json.loads(line)
+    except ValueError:
+        print(line.rstrip()[:300])
+        continue
+    t = e.get("type")
+    if t == "assistant":
+        text = " ".join(c.get("text", "") for c in e["message"]["content"]).strip()
+        if text:
+            print("cursor: " + text.replace("\n", " ")[:300])
+    elif t == "tool_call" and e.get("subtype") == "started":
+        name, call = next(iter(e["tool_call"].items()))
+        args = call.get("args") or {} if isinstance(call, dict) else {}
+        hint = next((str(args[k]) for k in ("command", "path", "pattern", "query", "toolName", "name") if args.get(k)), "")
+        print("cursor > " + name.replace("ToolCall", "") + " " + hint.replace("\n", " ")[:200])
+    elif t == "result":
+        print("cursor: finished in %ss error=%s" % (e.get("duration_ms", 0) // 1000, e.get("is_error")))
+'
+}
+
 json_field() {
 	python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1],"") or "")' "$1"
 }
@@ -565,8 +591,11 @@ for row in json.load(sys.stdin):
 }
 
 # Probed once per tick: cursor/claude auth checks are slow CLI calls.
+# Picking assumes qwen is usable; qwen_free takes the real lock only once
+# this replica owns a key. Locking during the pick made a replica that was
+# only picking (or then lost the claim) push the other one off qwen.
 QWEN_FREE=0
-if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] && qwen_free; then
+if [ "$POKEPILOT_TRIAGE_AGENT" = ladder ] && command -v opencode >/dev/null 2>&1; then
 	QWEN_FREE=1
 fi
 LADDER_AVAILABLE=$(available_backends)
@@ -588,11 +617,6 @@ if [ -z "$KEY" ]; then
 	exit 0
 fi
 
-if ! AGENT_BACKEND=$(select_agent_backend); then
-	exit 0
-fi
-[ "$AGENT_BACKEND" = opencode ] || exec 8>&-
-
 # mkdir is the atomic cross-replica claim; the loser idles one tick.
 if [ "$DRY_RUN" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
 	mkdir -p "$POKEPILOT_TRIAGE_CLAIMS"
@@ -602,6 +626,17 @@ if [ "$DRY_RUN" -eq 0 ] && [ -n "$POKEPILOT_TRIAGE_CLAIMS" ]; then
 	fi
 	CLAIM_DIR="$POKEPILOT_TRIAGE_CLAIMS/$KEY"
 fi
+
+if [ "$QWEN_FREE" -eq 1 ] && ! qwen_free; then
+	QWEN_FREE=0
+	LADDER_AVAILABLE=$(available_backends)
+	log "qwen busy; ladder skips opencode for $KEY this tick"
+fi
+if ! AGENT_BACKEND=$(select_agent_backend); then
+	exit 0
+fi
+[ "$AGENT_BACKEND" = opencode ] || exec 8>&-
+
 
 if [ "$DRY_RUN" -eq 1 ]; then
 	printf '%s\n' "$PICK_JSON"
@@ -713,7 +748,7 @@ cursor | cursor/*)
 	CURSOR_BIN=$(cursor_binary)
 	cursor_args=(-p --force --trust --approve-mcps
 		--workspace "$POKEPILOT_TRIAGE_TREE"
-		--output-format text
+		--output-format stream-json
 		--model "$SOLVER_MODEL")
 	cursor_packet="$POKEPILOT_TRIAGE_TREE/.pokepilot-triage-packet.md"
 	if ! grep -qxF '.pokepilot-triage-packet.md' "$POKEPILOT_TRIAGE_TREE/.git/info/exclude" 2>/dev/null; then
@@ -721,8 +756,8 @@ cursor | cursor/*)
 	fi
 	cp "$POKEPILOT_TRIAGE_STATE/packet.md" "$cursor_packet"
 	"$CURSOR_BIN" "${cursor_args[@]}" \
-		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure."
-	agent_status=$?
+		"Read @.pokepilot-triage-packet.md and follow it exactly. Do not pick a different failure." | cursor_log
+	agent_status=${PIPESTATUS[0]}
 	rm -f "$cursor_packet"
 	;;
 claude)
