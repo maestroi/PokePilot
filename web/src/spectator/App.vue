@@ -36,6 +36,7 @@ import {
 import BroadcastLoadingScene from './BroadcastLoadingScene.vue'
 import PublicHome from './PublicHome.vue'
 import RouteLine from './RouteLine.vue'
+import WorldExplorer from './WorldExplorer.vue'
 import { gameRouteLine } from './routeLine'
 import { mapCatalogForGame, mapEntryForGame, spectatorNativeMap } from '../shared/mapCatalog'
 import { replayPath, runIDFromLocation, spectatorRunPath } from '../shared/urls'
@@ -1041,6 +1042,11 @@ function activityTimeAgo(item: ActivityItem): string {
             </section>
           </aside>
         </div>
+
+        <WorldExplorer
+          v-if="!isTetrisSelected && selectedPublicCapabilities.includes('worldMap')"
+          :run="selectedRun"
+        />
 
             <section v-if="!isTetrisSelected" class="route-block" aria-label="Road to the League">
               <div class="block-head">
