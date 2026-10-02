@@ -314,7 +314,18 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 				return err
 			}
 			if cutErr := executeNativeCutApproach(m, profile, cutPlan); cutErr != nil {
-				return cutErr
+				// The approach walk is a walk: a transient sprite can stand on
+				// its route just as it can on the main path below. A raw step
+				// block is retryable — re-read the live map and re-plan the
+				// approach from wherever the player actually is — so it must
+				// not surface as a terminal failure the way a real Cut refusal
+				// would.
+				var blockedStep *ErrBlocked
+				if !errors.As(cutErr, &blockedStep) {
+					return cutErr
+				}
+				m.StepFrames(npcWaitFrames)
+				continue
 			}
 			// Cut mutates the live block buffer. Re-read the map instead of
 			// assuming which replacement tile the cartridge installed.
