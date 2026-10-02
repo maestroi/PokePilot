@@ -5,13 +5,15 @@
 # on that same network (the `pokefarm_default` overlay created by
 # deploy/farm.yml) — it does not need the Docker socket for this job.
 #
-# This file is a scrape_configs *entry*, not a complete prometheus.yml. Merge it
-# into the `scrape_configs:` list of your Prometheus configuration:
+# This file IS one scrape_configs list entry (note the leading `- job_name`),
+# not a complete prometheus.yml. Paste it into the `scrape_configs:` list of
+# your Prometheus configuration at the same indentation as the other entries:
 #
 #   scrape_configs:
 #     - job_name: existing
 #       ...
-#     - job_name: poketelegram      # <- the block below, de-indented to match
+#     - job_name: poketelegram      # <- this file, pasted verbatim
+#       metrics_path: /metrics
 #       ...
 #
 # Swarm gives each service an aggregate DNS name `tasks.<service>`, which
