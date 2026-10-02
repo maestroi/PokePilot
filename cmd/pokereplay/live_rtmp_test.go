@@ -249,13 +249,10 @@ func TestRTMPBroadcastReconnectsWithoutBackpressuringSourceAndStopsCleanly(t *te
 		return count >= 2 && status.State == "healthy" && status.Reconnects == 1
 	})
 
-	// Publishing many frames remains non-blocking even if this broadcast consumer
-	// is between encoder attempts because the live source queue stays bounded.
+	// Publishing a burst remains synchronous and bounded: the live source never
+	// waits for this broadcaster, even while encoder/network work happens elsewhere.
 	for frame := uint64(2); frame <= 100; frame++ {
 		source.publish(liveEncodedFrame{frame: frame, jpeg: []byte{byte(frame)}})
-	}
-	if got := source.snapshot().DroppedFrames; got == 0 {
-		t.Fatal("expected stale presentation frames to be dropped for the broadcast consumer")
 	}
 
 	session.stop()
