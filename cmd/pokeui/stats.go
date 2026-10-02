@@ -78,6 +78,8 @@ type outcomeCount struct {
 	Count int    `json:"count"`
 }
 
+const maxTrackedPokemonBadges = 16
+
 type badgeBucket struct {
 	Badges int `json:"badges"`
 	Count  int `json:"count"`
@@ -213,7 +215,7 @@ func statsHandler(wallBase string) http.HandlerFunc {
 func summarizeOutcomes(runs []statsRun) farmOutcomeStats {
 	var out farmOutcomeStats
 	reasons := map[string]int{}
-	badges := make([]int, 9)
+	badges := make([]int, maxTrackedPokemonBadges+1)
 	groups := map[string]*endlessExperimentStats{}
 	profiles := map[string]*llmProfileAccumulator{}
 	models := map[string]*llmModelStats{}
@@ -237,8 +239,8 @@ func summarizeOutcomes(runs []statsRun) farmOutcomeStats {
 
 		if settled && run.Player != nil {
 			n := len(run.Player.Badges)
-			if n > 8 {
-				n = 8
+			if n > maxTrackedPokemonBadges {
+				n = maxTrackedPokemonBadges
 			}
 			out.UsableProgressRuns++
 			badges[n]++
@@ -428,8 +430,8 @@ func addRunToEndless(g *endlessExperimentStats, run statsRun, attempts int) {
 
 	if run.Player != nil {
 		n := len(run.Player.Badges)
-		if n > 8 {
-			n = 8
+		if n > maxTrackedPokemonBadges {
+			n = maxTrackedPokemonBadges
 		}
 		g.UsableProgressRuns++
 		if n > 0 {
