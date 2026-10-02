@@ -11,6 +11,9 @@ const liveView = readFileSync(new URL('../src/operator/LiveView.vue', import.met
 const renderJobs = readFileSync(new URL('../src/operator/RenderJobsPanel.vue', import.meta.url), 'utf8')
 const spectator = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
 const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
+const broadcasts = readFileSync(new URL('../src/operator/BroadcastPanel.vue', import.meta.url), 'utf8')
+const mediaView = readFileSync(new URL('../src/operator/MediaView.vue', import.meta.url), 'utf8')
+const broadcastAPI = readFileSync(new URL('../src/shared/api/broadcast.ts', import.meta.url), 'utf8')
 const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue', import.meta.url), 'utf8')
 const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
@@ -62,6 +65,21 @@ test('operator proxy allowlists media render mutations', () => {
   assert.match(runInspectorProxy, /POST \/v1\/media\/render-jobs\/\{id\}\/retry/)
   assert.match(runInspectorProxy, /POST \/v1\/media\/render-jobs\/\{id\}\/cancel/)
   assert.match(runInspectorProxy, /DELETE \/v1\/media\/render-jobs\/\{id\}/)
+})
+
+test('media workspace exposes safe live broadcast controls', () => {
+  assert.match(mediaView, /Broadcasts/)
+  assert.match(mediaView, /<BroadcastPanel/)
+  assert.match(broadcasts, /Start broadcast/)
+  assert.match(broadcasts, /Stop broadcast/)
+  assert.match(broadcasts, /Credentials stay on the replay host/)
+  assert.doesNotMatch(broadcastAPI, /stream_key/)
+})
+
+test('operator proxy exposes private broadcast controls', () => {
+  assert.match(runInspectorProxy, /GET \/v1\/live\/broadcast\/config/)
+  assert.match(runInspectorProxy, /live\/broadcast\/start/)
+  assert.match(runInspectorProxy, /live\/broadcast\/stop/)
 })
 
 test('public publishing controls describe what is actually public', () => {

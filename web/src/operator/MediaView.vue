@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { FilmIcon, PaintBrushIcon, QueueListIcon } from '@heroicons/vue/20/solid'
+import { FilmIcon, PaintBrushIcon, QueueListIcon, SignalIcon } from '@heroicons/vue/20/solid'
 import Panel from '../shared/components/Panel.vue'
 import { publicRenderThemeOptions, renderThemeOptions } from '../shared/renderTheme'
+import BroadcastPanel from './BroadcastPanel.vue'
 import RenderJobsPanel from './RenderJobsPanel.vue'
 import SpectatorView from './SpectatorView.vue'
 
-type MediaTab = 'replays' | 'render-jobs' | 'themes'
+type MediaTab = 'replays' | 'broadcasts' | 'render-jobs' | 'themes'
 
 const activeTab = ref<MediaTab>('replays')
 const tabs: Array<{ id: MediaTab; label: string; description: string }> = [
   { id: 'replays', label: 'Replays', description: 'Public publishing and replay visibility' },
+  { id: 'broadcasts', label: 'Broadcasts', description: 'Twitch, YouTube Live and RTMP controls' },
   { id: 'render-jobs', label: 'Render Jobs', description: 'Queue, progress, workers and failures' },
   { id: 'themes', label: 'Assets / Themes', description: 'Renderer inventory and public-safe themes' }
 ]
@@ -27,7 +29,7 @@ function selectTab(tab: MediaTab): void {
 <template>
   <div class="space-y-3">
     <nav
-      class="grid grid-cols-1 gap-1 rounded-lg border border-[var(--poke-border)] bg-[var(--poke-panel)] p-1 sm:grid-cols-3"
+      class="grid grid-cols-1 gap-1 rounded-lg border border-[var(--poke-border)] bg-[var(--poke-panel)] p-1 sm:grid-cols-2 xl:grid-cols-4"
       aria-label="Media management"
     >
       <button
@@ -64,6 +66,20 @@ function selectTab(tab: MediaTab): void {
         </div>
       </Panel>
       <SpectatorView />
+    </div>
+
+    <div v-else-if="activeTab === 'broadcasts'" class="space-y-3">
+      <Panel
+        title="Live destinations"
+        description="Broadcasting is independent from gameplay and uses server-side credentials on the replay host."
+        compact
+      >
+        <div class="flex items-start gap-2.5 text-xs leading-5 text-[var(--poke-muted)]">
+          <SignalIcon class="mt-0.5 size-4 shrink-0 text-fuchsia-300" aria-hidden="true" />
+          <p>Choose a running run and a configured destination. Stream keys are never stored in run metadata or returned to this browser.</p>
+        </div>
+      </Panel>
+      <BroadcastPanel />
     </div>
 
     <div v-else-if="activeTab === 'render-jobs'" class="space-y-3">

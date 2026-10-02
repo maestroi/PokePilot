@@ -581,7 +581,7 @@ func (s *replayServer) handleRTMPBroadcastStart(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var req rtmpBroadcastRequest
+	var req rtmpBroadcastStartRequest
 	decoder := json.NewDecoder(io.LimitReader(r.Body, rtmpRequestLimit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
@@ -594,11 +594,34 @@ func (s *replayServer) handleRTMPBroadcastStart(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cfg, err := normalizeRTMPBroadcastRequest(req)
+	provider := strings.ToLower(strings.TrimSpace(req.Provider))
+	if provider == "youtube_live" {
+		provider = "youtube"
+	}
+	if destination, ok := s.broadcastDestinations[provider]; ok && !destination.Configured {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": destination.Reason})
+		return
+	}
+
+	cfg, err := s.resolveRTMPBroadcastStart(req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	run, err := s.fetchLiveRun(r.Context(), runID)
+	if errors.Is(err, errRunNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "run not found"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "run status is unavailable"})
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(run.Status), "running") {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "broadcast can only start for a running run"})
+		return
+	}
+
 	session, err := s.startRTMPBroadcast(runID, cfg)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
