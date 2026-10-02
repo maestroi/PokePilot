@@ -91,7 +91,10 @@ func (f *fakeGitHub) handler() http.Handler {
 	})
 	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
 		n := mustNumber(r.PathValue("number"))
-		var payload map[string]string
+		var payload struct {
+			State *string `json:"state"`
+			Body  *string `json:"body"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			testHTTPError(w, http.StatusBadRequest, err.Error())
 			return
@@ -100,14 +103,14 @@ func (f *fakeGitHub) handler() http.Handler {
 		defer f.mu.Unlock()
 		for i := range f.issues {
 			if f.issues[i].Number == n {
-				if state, ok := payload["state"]; ok {
-					f.issues[i].State = state
-					if state == "open" {
+				if payload.State != nil {
+					f.issues[i].State = *payload.State
+					if *payload.State == "open" {
 						f.issues[i].StateReason = "reopened"
 					}
 				}
-				if body, ok := payload["body"]; ok {
-					f.issues[i].Body = body
+				if payload.Body != nil {
+					f.issues[i].Body = *payload.Body
 				}
 				f.patched++
 				_ = json.NewEncoder(w).Encode(f.issues[i])

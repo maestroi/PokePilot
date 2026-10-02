@@ -18,6 +18,7 @@ type revisionGateGitHub struct {
 	fixedRevision  string
 	compareStatus  string
 	patched        int
+	assignees      []string
 	comments       []githubComment
 	commitLookups  int
 	compareLookups int
@@ -38,21 +39,28 @@ func (f *revisionGateGitHub) handler() http.Handler {
 		})
 	})
 	mux.HandleFunc("PATCH /repos/o/r/issues/{number}", func(w http.ResponseWriter, r *http.Request) {
-		var payload map[string]string
+		var payload struct {
+			State     *string   `json:"state"`
+			Body      *string   `json:"body"`
+			Assignees *[]string `json:"assignees"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		f.mu.Lock()
 		f.patched++
-		if state, ok := payload["state"]; ok {
-			f.issue.State = state
-			if state == "open" {
+		if payload.State != nil {
+			f.issue.State = *payload.State
+			if *payload.State == "open" {
 				f.issue.StateReason = "reopened"
 			}
 		}
-		if body, ok := payload["body"]; ok {
-			f.issue.Body = body
+		if payload.Body != nil {
+			f.issue.Body = *payload.Body
+		}
+		if payload.Assignees != nil {
+			f.assignees = *payload.Assignees
 		}
 		issue := f.issue
 		f.mu.Unlock()
@@ -149,6 +157,7 @@ func TestReportReopensWhenFixedBuildItselfReproduces(t *testing.T) {
 		issue:         closedGateIssue(t, "original"),
 		closedAt:      time.Date(2026, 9, 14, 5, 32, 52, 0, time.UTC),
 		fixedRevision: "fix-sha",
+		assignees:     []string{"earlier-fixer"},
 	}
 	client := newRevisionGateClient(t, fake)
 	manifest := sampleManifest("same-build-run")
@@ -165,6 +174,10 @@ func TestReportReopensWhenFixedBuildItselfReproduces(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.patched != 2 {
 		t.Fatalf("fixed build recurrence patched=%d, want reopen + latest-observation update", fake.patched)
+	}
+	// The fixer skips assigned issues, so the earlier fix's claim must not survive.
+	if fake.assignees == nil || len(fake.assignees) != 0 {
+		t.Fatalf("assignees after reopen = %v, want cleared", fake.assignees)
 	}
 	if fake.compareLookups != 0 {
 		t.Fatalf("equal revisions should not need compare API, got %d calls", fake.compareLookups)
