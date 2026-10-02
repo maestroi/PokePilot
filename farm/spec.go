@@ -223,17 +223,17 @@ type ActivityEvent struct {
 // Heartbeat is the small, frequent status push a runner sends while a
 // leased run is in progress.
 type Heartbeat struct {
-	RunID       string `json:"run_id"`
-	Frame       uint64 `json:"frame"`
+	RunID string `json:"run_id"`
+	Frame uint64 `json:"frame"`
 	// Map is the legacy Gen-I one-byte identity. NativeMap preserves the
 	// cartridge identity for wide namespaces such as Gen II group<<8|number.
-	Map         uint8  `json:"map"`
-	NativeMap   uint16 `json:"native_map,omitempty"`
-	X           uint8  `json:"x"`
-	Y           uint8  `json:"y"`
-	MapsVisited int    `json:"maps_visited,omitempty"`
+	Map         uint8             `json:"map"`
+	NativeMap   uint16            `json:"native_map,omitempty"`
+	X           uint8             `json:"x"`
+	Y           uint8             `json:"y"`
+	MapsVisited int               `json:"maps_visited,omitempty"`
 	MapAsset    *SemanticMapAsset `json:"map_asset,omitempty"`
-	Trace       string `json:"trace"`
+	Trace       string            `json:"trace"`
 	// Sprites are the current live map objects (slots 1..15). Trail is a
 	// bounded history of recent positions on this map, oldest first. Both
 	// are live-only and optional for compatibility with older runners.
