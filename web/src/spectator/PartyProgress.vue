@@ -6,6 +6,7 @@ import ItemIcon from '../shared/components/ItemIcon.vue'
 import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
 import SemanticMap from '../shared/components/SemanticMap.vue'
 import { mapHexForGame, spectatorNativeMap } from '../shared/mapCatalog'
+import { supportsPublicCapability } from '../shared/publicCapabilities'
 import { itemDescription, itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { playSpeedLabel } from '../shared/playstyle'
@@ -53,7 +54,7 @@ const dexPercent = computed(() => {
 
 const bag = computed(() => props.run.player?.bag || [])
 const milestones = computed(() => props.run.player?.milestones || [])
-const hasMap = computed(() => Number.isFinite(spectatorNativeMap(props.run)))
+const hasMap = computed(() => supportsPublicCapability(props.run, 'worldMap') && (props.run.native_map !== undefined || props.run.map !== undefined))
 const mapID = computed(() => mapHexForGame(props.run.game, spectatorNativeMap(props.run)))
 function itemTooltip(item: { name: string; quantity: number }): string {
   return `${itemDisplayName(item.name)} ×${item.quantity}\n${itemDescription(item.name)}`
