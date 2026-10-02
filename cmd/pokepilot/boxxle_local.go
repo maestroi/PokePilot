@@ -18,7 +18,7 @@ import (
 // it, keeping the screen server up so a human can watch the title screen, then
 // stops.
 func runLocalBoxxle(m *emu.Emu, hold time.Duration, served string) {
-	fmt.Println("Boxxle is registered and launched; autonomous puzzle play is a later slice.")
+	fmt.Println("Boxxle is registered and launched without autonomous play (-planner policy to solve).")
 	fmt.Printf("still serving http://%s for %s, ctrl-c to quit\n", served, hold)
 	m.Pace(60)
 	for deadline := time.Now().Add(hold); time.Now().Before(deadline); {
@@ -32,7 +32,7 @@ func runLocalBoxxle(m *emu.Emu, hold time.Duration, served string) {
 // default, or a model planner from the decision settings) picks a legal
 // semantic push and the deterministic controller executes it. The model never
 // emits raw D-pad input.
-func runLocalBoxxlePlay(m *emu.Emu, profile game.CartridgeProfile, maxPushes, maxChoices int) {
+func runLocalBoxxlePlay(m *emu.Emu, profile game.CartridgeProfile, rawGoal string, maxPushes, maxChoices int) {
 	settings := agent.DecisionSettingsFromEnv()
 	var (
 		choose        func(boxxle.State) (boxxledecision.Selection, error)
@@ -43,17 +43,29 @@ func runLocalBoxxlePlay(m *emu.Emu, profile game.CartridgeProfile, maxPushes, ma
 			Engine: settings.Engine, MinConfidence: settings.MinConfidence,
 			Shadow: settings.Shadow, MaxChoices: maxChoices,
 		}
+		solver := boxxlsession.NewSolverChooser()
 		fmt.Printf("boxxle typed pushes: backend=%s mode=%s max_choices=%d\n", settings.Backend, settings.Mode(), maxChoices)
 		choose = func(state boxxle.State) (boxxledecision.Selection, error) {
 			selection, err := selector.Choose(context.Background(), state)
 			if err != nil {
 				return boxxledecision.Selection{}, err
 			}
+			if selection.Fallback {
+				solved, solverErr := solver.Choose(state)
+				if solverErr == nil {
+					selection.Plan = solved.Plan
+				}
+			}
 			lastSelection = &selection
 			return selection, nil
 		}
 	}
+	goal, err := boxxlsession.ParseGoal(rawGoal)
+	if err != nil {
+		panic(fmt.Sprintf("boxxle goal: %v", err))
+	}
 	result := boxxlsession.Run(profile, m, boxxlsession.RunOptions{
+		Goal:      goal,
 		MaxPushes: maxPushes,
 		Choose:    choose,
 		OnDecision: func(sel boxxledecision.Selection) {

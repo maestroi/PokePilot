@@ -66,12 +66,12 @@ const decisionShadow = computed(() => decision.mode === 'shadow')
 const decisionBattleMode = computed(() => decision.mode === 'shadow' || decision.mode === 'active')
 
 function decisionRequest(): DecisionEngineSpec | undefined {
-  if (!(isLLM.value || isTetris.value) || !decisionSelected.value) return undefined
+  if (!(isLLM.value || isTetris.value || isBoxxle.value) || !decisionSelected.value) return undefined
   const [kind, id] = splitDecisionTarget(decisionTarget.value)
   const target: Pick<DecisionEngineSpec, 'backend' | 'deployment'> = kind === 'deployment'
     ? { backend: decisionBackendFor(deployments.value.find((d) => d.id === id)), deployment: id }
     : { backend: id as DecisionEngineSpec['backend'] }
-  if (isTetris.value) {
+  if (isTetris.value || isBoxxle.value) {
     return {
       ...target,
       mode: decision.mode,
@@ -136,8 +136,8 @@ const starterMode = ref<StarterMode>('default')
 const specificStarter = ref('')
 const isLLM = computed(() => form.planner === 'llm')
 const isTetris = computed(() => form.game === 'tetris')
-// Boxxle is a puzzle cartridge with no starter, destination, or goal: the
-// deterministic policy plays it and the run ends when the puzzle round does.
+// Boxxle is a puzzle cartridge with no starter or destination: the
+// deterministic solver plays it and the chosen goal ends the run.
 const isBoxxle = computed(() => form.game === 'boxxle')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isGen2 = computed(() => form.game === 'pokemon-gold' || form.game === 'pokemon-silver')
@@ -164,7 +164,12 @@ watch(() => form.game, (game, previous) => {
     form.planner = 'policy'
     form.starter = ''
     form.dest = ''
-    form.goal = ''
+    form.goal = 'first'
+    decision.mode = 'active'
+    decision.battles = false
+    decision.objectives = false
+    decision.failures = false
+    decision.placements = true
     decisionTarget.value = 'off'
     return
   }
@@ -201,6 +206,13 @@ const tetrisGoals = [
   ['score:50000', 'Score · 50,000'],
   ['lines:25', 'Lines · 25 (Type B)'],
   ['complete', 'Complete · Type B']
+] as const
+
+const boxxleGoals = [
+  ['first', 'First puzzle · solve and advance'],
+  ['early', 'Early batch · first 5 puzzles'],
+  ['levels:10', 'Ten puzzles'],
+  ['endless', 'Endless · until budget or cancel']
 ] as const
 
 function randomizeSeed(): void {
@@ -241,8 +253,8 @@ async function submit(): Promise<void> {
       run_id: form.run_id.trim(),
       game: form.game,
       starter: starterRequest(),
-      dest: (isLLM.value || isTetris.value) ? '' : form.dest.trim(),
-      goal: (isLLM.value || isTetris.value) ? form.goal.trim() : '',
+      dest: (isLLM.value || isTetris.value || isBoxxle.value) ? '' : form.dest.trim(),
+      goal: (isLLM.value || isTetris.value || isBoxxle.value) ? form.goal.trim() : '',
       llm_profile: isLLM.value && !hasDeployments.value ? form.llm_profile : '',
       llm_deployment: isLLM.value && hasDeployments.value ? form.llm_deployment : undefined,
       play_style: isLLM.value ? form.play_style : '',
@@ -339,11 +351,14 @@ async function submit(): Promise<void> {
           <input v-model="form.dest" placeholder="viridian pokemon center" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
-        <label v-if="isLLM || isTetris" class="block sm:col-span-2">
+        <label v-if="isLLM || isTetris || isBoxxle" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
           <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <template v-if="isTetris">
               <option v-for="[value, label] in tetrisGoals" :key="value" :value="value">{{ label }}</option>
+            </template>
+            <template v-else-if="isBoxxle">
+              <option v-for="[value, label] in boxxleGoals" :key="value" :value="value">{{ label }}</option>
             </template>
             <template v-else-if="isGen2">
               <option v-for="[value, label] in gen2Goals" :key="value || 'free'" :value="value">{{ label }}</option>
@@ -352,7 +367,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : (isGen2 ? 'Experimental frontier runs stop successfully at the furthest Gen 2 progression boundary implemented by this build; they do not imply the full game is complete.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Experimental frontier runs stop successfully at the furthest Gen 2 progression boundary implemented by this build; they do not imply the full game is complete.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
@@ -433,7 +448,7 @@ async function submit(): Promise<void> {
           </select>
         </label>
 
-        <label v-if="isLLM || isTetris" class="block">
+        <label v-if="isLLM || isTetris || isBoxxle" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Fast decision engine</span>
           <select v-model="decisionTarget" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="off">Off</option>
@@ -457,21 +472,27 @@ async function submit(): Promise<void> {
           </span>
         </label>
 
-        <label v-if="(isLLM || isTetris) && decisionSelected" class="block">
+        <label v-if="(isLLM || isTetris || isBoxxle) && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
           <select v-model="decision.mode" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="shadow">Shadow</option>
             <option value="active">Active</option>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Active lets Jev choose from placements already proven legal by the deterministic Tetris policy; Shadow measures agreement while policy executes.' : 'Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Active lets Jev choose from placements already proven legal by the deterministic Tetris policy; Shadow measures agreement while policy executes.' : isBoxxle ? 'Active lets the model choose from crate pushes already proven legal; Shadow measures agreement while the solver executes.' : 'Shadow asks the engine and records its answer and agreement; the strategist and deterministic policy still decide. Active lets accepted answers steer objectives and recovery.' }}</span>
         </label>
 
-        <fieldset v-if="(isLLM || isTetris) && decisionSelected" class="block">
+        <fieldset v-if="(isLLM || isTetris || isBoxxle) && decisionSelected" class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ decisionShadow ? 'Decision engine observes' : 'Decision engine decides' }}</span>
           <template v-if="isTetris">
             <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
               <input v-model="decision.placements" type="checkbox" disabled class="rounded border-white/10 bg-white/6" />
               Tetris placements <span class="text-[11px]">(legal candidates only)</span>
+            </label>
+          </template>
+          <template v-else-if="isBoxxle">
+            <label class="mt-2 flex items-center gap-2 text-sm text-slate-300">
+              <input v-model="decision.placements" type="checkbox" disabled class="rounded border-white/10 bg-white/6" />
+              Boxxle pushes <span class="text-[11px]">(legal candidates only)</span>
             </label>
           </template>
           <template v-else>
@@ -492,11 +513,11 @@ async function submit(): Promise<void> {
             <span class="text-[11px] text-slate-500">Min confidence</span>
             <input v-model.number="decision.min_confidence" type="number" min="0" max="1" step="0.05" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
           </label>
-          <label v-if="isTetris" class="mt-2 block">
+          <label v-if="isTetris || isBoxxle" class="mt-2 block">
             <span class="text-[11px] text-slate-500">Max choices <span class="text-slate-600">(policy's best N; 0 = all)</span></span>
             <input v-model.number="decision.max_choices" type="number" min="0" step="1" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400 font-mono" />
           </label>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : 'Answers below the threshold fall back to the strategist and deterministic policy.' }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Answers below the threshold or backend failures fall back to the deterministic Tetris scorer.' : isBoxxle ? 'Answers below the threshold or backend failures fall back to the deterministic solver.' : 'Answers below the threshold fall back to the strategist and deterministic policy.' }}</span>
         </fieldset>
 
         <label class="block">

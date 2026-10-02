@@ -27,7 +27,7 @@ test('tools run form picks the decision engine from registered deployments', () 
   assert.match(toolsSource, /v-model="decision\.failures"/)
   assert.match(toolsSource, /v-model\.number="decision\.min_confidence"/)
   // Off (and scripted runs) send no selection, keeping the runner default.
-  assert.match(toolsSource, /if \(!\(isLLM\.value \|\| isTetris\.value\) \|\| !decisionSelected\.value\) return undefined/)
+  assert.match(toolsSource, /if \(!\(isLLM\.value \|\| isTetris\.value \|\| isBoxxle\.value\) \|\| !decisionSelected\.value\) return undefined/)
   assert.match(toolsSource, /decision_engine: decisionRequest\(\)/)
   // Clients name a deployment; only the wall writes its identity.
   assert.doesNotMatch(toolsSource, /inference:/)
@@ -35,7 +35,7 @@ test('tools run form picks the decision engine from registered deployments', () 
 
 test('Tetris uses the fast engine only for bounded legal placements', () => {
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*placements\?: boolean/)
-  assert.match(toolsSource, /if \(isTetris\.value\) \{[\s\S]*placements: true/)
+  assert.match(toolsSource, /if \(isTetris\.value \|\| isBoxxle\.value\) \{[\s\S]*placements: true/)
   assert.match(typesSource, /export interface DecisionEngineSpec[\s\S]*max_choices\?: number/)
   assert.match(toolsSource, /max_choices: decision\.max_choices/)
   assert.match(toolsSource, /d\.protocol === 'typesafe-choice'/)
@@ -45,6 +45,8 @@ test('Tetris uses the fast engine only for bounded legal placements', () => {
   assert.match(toolsSource, /\['endless', 'Endless high score/)
   assert.match(toolsSource, /form\.goal = 'endless'/)
   assert.match(toolsSource, /Tetris placements[\s\S]*legal candidates only/)
+  assert.match(toolsSource, /Boxxle pushes[\s\S]*legal candidates only/)
+  assert.match(toolsSource, /\['first', 'First puzzle/)
 })
 
 test('deployment registry editor declares the wire protocol', () => {

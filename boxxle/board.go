@@ -364,3 +364,69 @@ func (b Board) Deadlocked() []Pos {
 func (b Board) PushDeadlock(push LegalPush) bool {
 	return b.deadSquares()[push.CrateTo]
 }
+
+// RenderBoard draws the compact ASCII board used by planners, heartbeats and
+// the operator/spectator UI:
+//
+//	# wall, . floor, @ player, $ crate, * crate on goal, + goal.
+//
+// A player standing on a goal is drawn as @ so the live position is never
+// hidden behind the goal mark.
+func RenderBoard(state State) []string {
+	if state.Width <= 0 || state.Height <= 0 {
+		return nil
+	}
+	walls := make(map[Pos]bool, len(state.Walls))
+	for _, w := range state.Walls {
+		walls[w] = true
+	}
+	goals := make(map[Pos]bool, len(state.Goals))
+	for _, g := range state.Goals {
+		goals[g] = true
+	}
+	crates := make(map[Pos]bool, len(state.Crates))
+	for _, c := range state.Crates {
+		crates[c] = true
+	}
+	rows := make([]string, state.Height)
+	for y := 0; y < state.Height; y++ {
+		row := make([]byte, state.Width)
+		for x := 0; x < state.Width; x++ {
+			p := Pos{X: x, Y: y}
+			switch {
+			case walls[p]:
+				row[x] = '#'
+			case crates[p] && goals[p]:
+				row[x] = '*'
+			case crates[p]:
+				row[x] = '$'
+			case state.Player != nil && *state.Player == p:
+				row[x] = '@'
+			case goals[p]:
+				row[x] = '+'
+			default:
+				row[x] = '.'
+			}
+		}
+		rows[y] = string(row)
+	}
+	return rows
+}
+
+// CratesOnGoal counts crates that currently sit on a goal cell.
+func CratesOnGoal(state State) int {
+	if len(state.Crates) == 0 || len(state.Goals) == 0 {
+		return 0
+	}
+	goals := make(map[Pos]bool, len(state.Goals))
+	for _, g := range state.Goals {
+		goals[g] = true
+	}
+	n := 0
+	for _, c := range state.Crates {
+		if goals[c] {
+			n++
+		}
+	}
+	return n
+}

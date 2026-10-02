@@ -15,7 +15,8 @@ const GAME_CAPABILITY_PROFILES: Record<string, PublicCapability[]> = {
   yellow: ['live', 'replay', 'stats'],
   gold: ['live', 'replay', 'worldMap', 'stats'],
   silver: ['live', 'replay', 'worldMap', 'stats'],
-  tetris: ['live', 'replay', 'stats']
+  tetris: ['live', 'replay', 'stats'],
+  boxxle: ['live', 'replay', 'stats']
 }
 
 function isPublicCapability(value: string): value is PublicCapability {
@@ -33,6 +34,7 @@ export function publicCapabilitiesForRun(run?: Pick<SpectatorRun, 'game' | 'game
   const game = (run?.game || '').trim().toLowerCase()
   const stateKind = (run?.game_state?.kind || '').trim().toLowerCase()
   if (stateKind === 'tetris') return [...GAME_CAPABILITY_PROFILES.tetris]
+  if (stateKind === 'boxxle') return [...GAME_CAPABILITY_PROFILES.boxxle]
 
   return [...(GAME_CAPABILITY_PROFILES[game] || DEFAULT_CAPABILITIES)]
 }

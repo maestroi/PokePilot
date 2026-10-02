@@ -176,11 +176,22 @@ const partySlots = computed<(PartyMon | null)[]>(() => {
 })
 const badges = computed(() => selectedRun.value?.player?.badges ?? [])
 const isTetrisRun = computed(() => selectedRun.value?.game === 'tetris')
+const isBoxxleRun = computed(() => selectedRun.value?.game === 'boxxle')
 const tetrisState = computed<Record<string, unknown>>(() => selectedRun.value?.game_state ?? {})
 const tetrisDecision = computed<Record<string, unknown>>(() => selectedRun.value?.game_decision ?? {})
 const tetrisBoard = computed<string[]>(() => {
   const board = tetrisState.value.board
   return Array.isArray(board) ? board.map((row) => String(row)) : []
+})
+const boxxleState = tetrisState
+const boxxleDecision = tetrisDecision
+const boxxleBoard = computed<string[]>(() => {
+  const board = boxxleState.value.board
+  return Array.isArray(board) ? board.map((row) => String(row)) : []
+})
+const boxxleBoardWidth = computed(() => {
+  const width = Number(boxxleState.value.width || 0)
+  return width > 0 ? width : (boxxleBoard.value[0]?.length || 1)
 })
 const tetrisActive = computed<Record<string, unknown> | null>(() => {
   const active = tetrisState.value.active
@@ -762,7 +773,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
 
           <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
             <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
-              <h3 class="text-xs font-semibold text-white">{{ isTetrisRun ? 'Tetris board' : 'Semantic map' }}</h3>
+              <h3 class="text-xs font-semibold text-white">{{ isTetrisRun ? 'Tetris board' : isBoxxleRun ? 'Puzzle board' : 'Semantic map' }}</h3>
               <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ tileLabel(selectedRun) }}</span>
             </header>
             <div v-if="isTetrisRun" class="flex h-64 min-h-52 items-center justify-center bg-[#0c1118] p-2 xl:h-auto xl:min-h-0 xl:flex-1">
@@ -777,6 +788,30 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               </div>
               <p v-else class="text-[11px] text-[var(--poke-muted)]">Waiting for Tetris semantic state…</p>
             </div>
+            <div v-else-if="isBoxxleRun" class="flex h-64 min-h-52 items-center justify-center bg-[#0c1118] p-2 xl:h-auto xl:min-h-0 xl:flex-1">
+              <div
+                v-if="boxxleBoard.length"
+                class="grid h-full max-h-full gap-px border border-white/10 bg-black/60 p-px"
+                :style="{ gridTemplateColumns: `repeat(${boxxleBoardWidth}, minmax(0, 1fr))` }"
+              >
+                <template v-for="(row, y) in boxxleBoard" :key="y">
+                  <span
+                    v-for="(cell, x) in row.split('')"
+                    :key="`${y}-${x}`"
+                    :class="[
+                      'flex min-h-0 min-w-0 items-center justify-center font-mono text-[10px] leading-none',
+                      cell === '#' ? 'bg-slate-600/90 text-slate-300' : '',
+                      cell === '$' ? 'bg-amber-400/80 text-amber-950' : '',
+                      cell === '*' ? 'bg-emerald-400/80 text-emerald-950' : '',
+                      cell === '+' ? 'bg-emerald-900/80 text-emerald-200' : '',
+                      cell === '@' ? 'bg-cyan-300/90 text-cyan-950' : '',
+                      cell === '.' ? 'bg-white/[0.035] text-transparent' : ''
+                    ]"
+                  >{{ cell === '.' || cell === '#' ? '' : cell }}</span>
+                </template>
+              </div>
+              <p v-else class="text-[11px] text-[var(--poke-muted)]">Waiting for Boxxle semantic state…</p>
+            </div>
             <div v-else class="h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
               <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
             </div>
@@ -784,6 +819,12 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
               <span><b class="text-cyan-200">■</b> locked cell</span>
               <span>active {{ tetrisActive?.piece || '—' }} r{{ tetrisActive?.rotation ?? '—' }}</span>
               <span>next {{ tetrisNext?.piece || '—' }}</span>
+            </div>
+            <div v-else-if="isBoxxleRun" class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
+              <span><b class="text-cyan-200">@</b> player</span>
+              <span><b class="text-amber-300">$</b> crate</span>
+              <span><b class="text-emerald-300">*</b> on goal</span>
+              <span><b class="text-emerald-200">+</b> goal</span>
             </div>
             <div v-else class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
               <span><b class="text-[var(--poke-text)]">@</b> player</span>
@@ -801,6 +842,11 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <span>score {{ Number(tetrisState.score || 0).toLocaleString() }}</span>
                 <span>lines {{ Number(tetrisState.lines_cleared || 0) }}</span>
                 <span>level {{ Number(tetrisState.level || 0) }}</span>
+              </span>
+              <span v-else-if="isBoxxleRun" class="flex max-w-[75%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
+                <span>{{ Number(boxxleState.crates_on_goal || 0) }}/{{ Number(boxxleState.crates || 0) }} on goal</span>
+                <span>{{ Number(boxxleState.levels || 0) }} solved</span>
+                <span>{{ Number(boxxleState.pushes || 0) }} pushes</span>
               </span>
               <span v-else class="flex max-w-[70%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
                 <span>₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }}</span>
@@ -832,6 +878,17 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
                 <div v-if="tetrisMetrics" class="mt-1 border-t border-[var(--poke-border)] pt-1 text-[var(--poke-muted)]">
                   holes {{ tetrisMetrics.holes ?? 0 }} · height {{ tetrisMetrics.max_height ?? 0 }} · bump {{ tetrisMetrics.bumpiness ?? 0 }}
                 </div>
+              </div>
+            </div>
+            <div v-else-if="isBoxxleRun" class="grid min-h-52 flex-1 content-start gap-px overflow-auto bg-[var(--poke-border)] xl:min-h-0">
+              <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px] leading-5">
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Screen</span><strong>{{ boxxleState.screen || '—' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Solved</span><strong>{{ boxxleState.solved ? 'yes' : 'no' }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Crates</span><strong>{{ boxxleState.crates_on_goal ?? 0 }}/{{ boxxleState.crates ?? 0 }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Pushes</span><strong>{{ boxxleState.pushes ?? 0 }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Puzzles solved</span><strong>{{ boxxleState.levels ?? 0 }}</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Push</span><strong class="font-mono">{{ boxxleDecision.dir || '—' }} ({{ (boxxleDecision.crate as { x?: number } | undefined)?.x ?? '—' }},{{ (boxxleDecision.crate as { y?: number } | undefined)?.y ?? '—' }})</strong></div>
+                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Fallback</span><strong>{{ boxxleDecision.fallback || boxxleDecision.decision_fallback ? 'solver/policy' : 'none' }}</strong></div>
               </div>
             </div>
             <div v-else class="flex min-h-52 flex-1 flex-col overflow-auto xl:min-h-0">

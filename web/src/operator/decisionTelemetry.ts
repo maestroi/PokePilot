@@ -8,7 +8,8 @@ const KIND_LABELS: Record<string, string> = {
   objective_selection: 'Objectives',
   failure_recovery: 'Recovery',
   battle_turn: 'Battles',
-  tetris_placement: 'Tetris placements'
+  tetris_placement: 'Tetris placements',
+  boxxle_push: 'Boxxle pushes'
 }
 
 export function decisionKindLabel(kind: string | undefined): string {
@@ -159,7 +160,7 @@ export function decisionIdleNote(engine: DecisionEngineSpec | undefined): string
     engine?.objectives ? 'every objective choice' : '',
     engine?.battles ? (engine?.mode === 'active' ? 'eligible battle moves (active)' : 'every battle move (shadow)') : '',
     engine?.failures ? 'recoverable failures' : '',
-    engine?.placements ? 'every Tetris placement' : ''
+    engine?.placements ? 'every Tetris placement or Boxxle push' : ''
   ].filter(Boolean)
   if (!points.length) return 'No decision points enabled, so the engine is never asked.'
   return `No calls yet. The engine is asked on ${points.join(', ')}.`

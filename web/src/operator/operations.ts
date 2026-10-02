@@ -176,7 +176,14 @@ export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'> & Partial<P
     const mode = String(run.game_state?.mode || '').replace('type-', 'Type ').toUpperCase()
     return mode ? `${mode} · ${screen.replaceAll('-', ' ')}` : screen.replaceAll('-', ' ')
   }
-  if (run.game === 'boxxle') return 'Puzzle'
+  if (run.game === 'boxxle') {
+    const screen = String(run.game_state?.screen || 'puzzle')
+    const levels = Number(run.game_state?.levels || 0)
+    const crates = Number(run.game_state?.crates || 0)
+    const onGoal = Number(run.game_state?.crates_on_goal || 0)
+    if (crates > 0) return `${screen} · ${onGoal}/${crates} · ${levels} solved`
+    return screen.replaceAll('-', ' ')
+  }
   const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
   return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`
 }
