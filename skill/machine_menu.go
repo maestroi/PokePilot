@@ -25,6 +25,33 @@ func machineMenuDecoderFor(m *emu.Emu) (game.MachineMenuDecoder, error) {
 	return decoder, nil
 }
 
+func ensureMachineMenuOpenWithDecoder(m menuMachine, menu game.MenuDecoder, machines game.MachineMenuDecoder) error {
+	if machines == nil {
+		return fmt.Errorf("skill: machine menu: nil decoder")
+	}
+
+	// Resume a live carried-items menu instead of trying to open START again.
+	// Failure checkpoints can be captured with PACK already owning input; the
+	// rendered pack state is the positive liveness proof that this transaction
+	// can continue from the current pocket.
+	if machines.DecodeMachineMenu(m).Visible {
+		m.StepFrames(talkSettle)
+		if machines.DecodeMachineMenu(m).Visible {
+			return nil
+		}
+	}
+
+	if err := openStartMenuEntryWithDecoder(m, menu, startMenuItems); err != nil {
+		return fmt.Errorf("skill: machine menu: open items: %w", err)
+	}
+	if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
+		return machines.DecodeMachineMenu(m).Visible
+	}) {
+		return fmt.Errorf("skill: machine menu: carried-items menu did not appear")
+	}
+	return nil
+}
+
 // openMachineEntry opens the active game's carried-items menu and selects one
 // owned native TM/HM entry. It deliberately stops at the machine's action
 // submenu; answering USE/teach prompts belongs to the teaching transaction.
@@ -37,13 +64,8 @@ func openMachineEntry(m *emu.Emu, native game.NativeFieldMove) error {
 	if err != nil {
 		return err
 	}
-	if err := openStartMenuEntryWithDecoder(m, menu, startMenuItems); err != nil {
-		return fmt.Errorf("skill: machine menu: open items: %w", err)
-	}
-	if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
-		return machines.DecodeMachineMenu(m).Visible
-	}) {
-		return fmt.Errorf("skill: machine menu: carried-items menu did not appear")
+	if err := ensureMachineMenuOpenWithDecoder(m, menu, machines); err != nil {
+		return err
 	}
 	return selectMachineEntryWithDecoder(m, machines, native)
 }
