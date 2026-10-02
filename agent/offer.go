@@ -585,3 +585,18 @@ func leadOutOfPP(obs Observation) bool {
 	}
 	return true
 }
+
+// healCanRecover reports whether a heal at the current Center can change
+// observable state: some party mon is below full HP or carries a status, or
+// the lead has exhausted its PP. A heal offered in any other state is a no-op
+// that reports success, and because KindHeal is exempt from the
+// repeated-successful-filler breaker (run_policy.go) a stuck planner can loop
+// it until the stagnation watchdog stops the run (issue #492).
+func healCanRecover(obs Observation, ppExhausted bool) bool {
+	for _, mon := range obs.Party {
+		if mon.MaxHP > 0 && (mon.HP < mon.MaxHP || mon.Status != "") {
+			return true
+		}
+	}
+	return ppExhausted
+}

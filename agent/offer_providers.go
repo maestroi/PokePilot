@@ -244,11 +244,18 @@ func (recoveryObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 	blocked := make([]ObjectiveBlockEvidence, 0, 2)
 	ppExhausted := leadOutOfPP(obs)
 	if ctx.catalog.CurrentCenter {
-		heal := Objective{Kind: KindHeal}
-		if ppExhausted {
-			heal.Note = "(lead has no PP; Center restores PP without spending finite items)"
+		// Only offer the local heal when it can change state. A Center heal of
+		// a fully healed, status-free party with PP is a no-op that reports
+		// success, and KindHeal is exempt from the repeated-successful-filler
+		// breaker, so offering it lets a stuck planner repeat it until the
+		// stagnation watchdog stops the run (issue #492).
+		if healCanRecover(obs, ppExhausted) {
+			heal := Objective{Kind: KindHeal}
+			if ppExhausted {
+				heal.Note = "(lead has no PP; Center restores PP without spending finite items)"
+			}
+			out = append(out, heal)
 		}
-		out = append(out, heal)
 	} else if partyHurt(obs) || ppExhausted {
 		ranked := rankRecoveryCheckpoints(obs, known, ctx.knownLocations, ctx.catalog, ctx.unroutable)
 		var selected *RecoveryCheckpointAssessment
