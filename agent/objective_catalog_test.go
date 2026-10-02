@@ -103,6 +103,42 @@ func TestCatalogCurrentCenterControlsRecoveryProvider(t *testing.T) {
 	}
 }
 
+func TestCatalogCurrentCenterDoesNotOfferNoopHeal(t *testing.T) {
+	healthy := Observation{
+		Map: 1, PartyCount: 1,
+		Party: []PartyMon{{Species: "testmon", Level: 10, HP: 30, MaxHP: 30}},
+	}
+	healthy.Catalog = ObjectiveCatalog{CurrentCenter: true}
+	if got := OfferWithEvidence(healthy, NewKnowledge(nil)).Candidates; hasCatalogObjective(got, Objective{Kind: KindHeal}) {
+		t.Fatalf("fully healed, status-free party with PP at Center was offered a no-op heal: %+v", got)
+	}
+
+	cases := []struct {
+		name string
+		obs  Observation
+	}{
+		{"damaged", Observation{
+			Map: 1, PartyCount: 1,
+			Party: []PartyMon{{Species: "testmon", Level: 10, HP: 5, MaxHP: 30}},
+		}},
+		{"status", Observation{
+			Map: 1, PartyCount: 1,
+			Party: []PartyMon{{Species: "testmon", Level: 10, HP: 30, MaxHP: 30, Status: "par"}},
+		}},
+		{"pp", Observation{
+			Map: 1, PartyCount: 1,
+			Party:  []PartyMon{{Species: "testmon", Level: 10, HP: 30, MaxHP: 30}},
+			LeadPP: []uint8{0, 0},
+		}},
+	}
+	for _, tc := range cases {
+		tc.obs.Catalog = ObjectiveCatalog{CurrentCenter: true}
+		if got := OfferWithEvidence(tc.obs, NewKnowledge(nil)).Candidates; !hasCatalogObjective(got, Objective{Kind: KindHeal}) {
+			t.Fatalf("%s: Center did not offer heal: %+v", tc.name, got)
+		}
+	}
+}
+
 func TestCatalogNormalizationKeepsOffersDeterministic(t *testing.T) {
 	obs := Observation{Map: 1, Location: "alpha", PartyCount: 1}
 	obs.Catalog = ObjectiveCatalog{Destinations: []CatalogDestination{

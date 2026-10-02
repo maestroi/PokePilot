@@ -260,6 +260,7 @@ func TestOfferTable(t *testing.T) {
 			name: "inside a center: heal joins; no balls, so no catch",
 			obs: Observation{GameID: testGameID,
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *Knowledge {
@@ -281,6 +282,32 @@ func TestOfferTable(t *testing.T) {
 				"go to viridian pokemon center, fleeing wild battles",
 			},
 			mustNot: []string{"catch", "train", "gym", "progress"},
+		},
+		{
+			name: "healthy party inside a center: no heal — a no-op heal loops the planner until the watchdog fires",
+			obs: Observation{GameID: testGameID,
+				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 20, MaxHP: 20}},
+				Events: []string{"BattledRivalInOaksLab"},
+			},
+			known: func() *Knowledge {
+				k := testKnowledge(adj)
+				for _, m := range []uint8{0x00, 0x0c, 0x01, 0x29} {
+					k.SawMap(m)
+				}
+				return k
+			},
+			want: []string{
+				"go to pallet town",
+				"go to pallet town, fleeing wild battles",
+				"go to route 1",
+				"go to route 1, fleeing wild battles",
+				"go to viridian city",
+				"go to viridian city, fleeing wild battles",
+				"go to viridian pokemon center",
+				"go to viridian pokemon center, fleeing wild battles",
+			},
+			mustNot: []string{"heal", "catch", "train", "gym", "progress"},
 		},
 		{
 			name: "at the gym underlevelled: the gym is STILL offered — Offer never filters on wisdom",
@@ -377,6 +404,7 @@ func TestOfferTable(t *testing.T) {
 			name: "repeatable verbs remain available without campaign knowledge",
 			obs: Observation{GameID: testGameID,
 				Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
+				Party:  []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
 				Events: []string{"BattledRivalInOaksLab"},
 			},
 			known: func() *Knowledge {
@@ -433,7 +461,8 @@ func TestOfferMenuChangesWithSituation(t *testing.T) {
 	fresh := Observation{GameID: testGameID, Map: 0x00, MapName: "PALLET_TOWN", X: 5, Y: 6, PartyCount: 0}
 	later := Observation{GameID: testGameID,
 		Map: 0x29, MapName: "VIRIDIAN_POKECENTER", X: 4, Y: 5, PartyCount: 1,
-		Bag: []Item{{Name: "pokeball", Quantity: 3}},
+		Party: []PartyMon{{Species: SpeciesID("rhydon"), Level: 6, HP: 4, MaxHP: 20}},
+		Bag:   []Item{{Name: "pokeball", Quantity: 3}},
 	}
 
 	k := testKnowledge(adj)
