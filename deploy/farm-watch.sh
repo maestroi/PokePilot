@@ -24,9 +24,18 @@ export GH_REPO=${GH_REPO:-${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}}
 STATE=${POKEPILOT_WATCH_STATE:-$HOME/.local/share/pokepilot/farm-watch}
 TRIAGE_STATE=${POKEPILOT_TRIAGE_STATE:-$HOME/.local/share/pokepilot/qwagent-triage}
 # Swarm fixer (deploy/fixer.yml): set the service name; point TRIAGE_STATE at
-# one replica's state dir and the ledger at the shared one.
+# one replica's state dir and the ledger at the shared one. Both paths are on
+# POKEPILOT_FIXER_NODE (ssh target) when the fixer runs on another host.
 FIXER_SERVICE=${POKEPILOT_FIXER_SERVICE:-}
+FIXER_NODE=${POKEPILOT_FIXER_NODE:-}
 ledger=${POKEPILOT_TRIAGE_LEDGER:-$TRIAGE_STATE/ledger.tsv}
+fixer_sh() {
+	if [ -n "$FIXER_NODE" ]; then
+		timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$FIXER_NODE" "$1" 2>/dev/null
+	else
+		bash -c "$1" 2>/dev/null
+	fi
+}
 PAID_CAP=${POKEPILOT_PAID_DAILY_CAP:-20}
 STALL_SECONDS=${POKEPILOT_WATCH_STALL_SECONDS:-1800}
 REMIND_SECONDS=43200
@@ -155,7 +164,12 @@ fi
 
 # --- fixer: timer enabled and its last tick did not crash -----------------
 if [ -n "$FIXER_SERVICE" ]; then
-	replicas=$(docker service ls --filter "name=$FIXER_SERVICE" --format '{{.Replicas}}' 2>/dev/null | head -1)
+	ls_cmd="docker service ls --filter name=$FIXER_SERVICE --format '{{.Replicas}}'"
+	if [ -n "${POKEPILOT_SWARM_MANAGER:-}" ]; then
+		replicas=$(timeout 60 ssh -o BatchMode=yes -o ConnectTimeout=10 "$POKEPILOT_SWARM_MANAGER" "$ls_cmd" 2>/dev/null | head -1)
+	else
+		replicas=$(bash -c "$ls_cmd" 2>/dev/null | head -1)
+	fi
 	running=${replicas%%/*} want=${replicas#*/}
 	if [ -z "$replicas" ] || [ "$running" != "${want%% *}" ]; then
 		report fixer 3 "swarm fixer $FIXER_SERVICE at ${replicas:-no} replicas (docker service ps $FIXER_SERVICE)"
@@ -171,6 +185,12 @@ else
 fi
 
 # --- fixer ladder: paid cap and keys every tier failed on ------------------
+remote_ledger=$ledger
+if [ -n "$FIXER_NODE" ]; then
+	# Local copy: the digest below reads it too.
+	ledger="$STATE/fixer-ledger.tsv"
+	fixer_sh "cat '$remote_ledger'" >"$ledger.tmp" && mv "$ledger.tmp" "$ledger"
+fi
 if [ -f "$ledger" ]; then
 	paid=$(awk -F'\t' -v since=$((now - 86400)) '$4 == "started" && $3 != "opencode" && $1 >= since' "$ledger" | wc -l)
 	if [ "$paid" -ge "$PAID_CAP" ]; then
@@ -179,11 +199,9 @@ if [ -f "$ledger" ]; then
 		report paid-cap 1 ""
 	fi
 	spent=""
-	if [ -x "$TRIAGE_STATE/qwagent-triage" ]; then
-		spent=$("$TRIAGE_STATE/qwagent-triage" ladder --ledger "$ledger" \
-			--tiers "${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}" \
-			--available opencode,cursor,claude --paid-daily-cap 1000000 2>/dev/null | paste -sd, -)
-	fi
+	spent=$(fixer_sh "'$TRIAGE_STATE/qwagent-triage' ladder --ledger '$remote_ledger' \
+		--tiers '${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,claude:2}' \
+		--available opencode,cursor,claude --paid-daily-cap 1000000" | paste -sd, -)
 	# Spent (every tier failed) or parked (a paid tier's verdict; see the
 	# issue comment). Parks lift on their own when the failure recurs.
 	report needs-human 1 "${spent:+fixer stopped on triage keys (all tiers failed or verdict parked, see issue comments): $spent}"
