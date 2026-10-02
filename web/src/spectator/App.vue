@@ -433,7 +433,7 @@ watch(runs, (nextRuns) => {
     if (run.decision && run.decision !== previous.decision) {
       pushActivity(run.run_id, 'decision', 'Decision', run.decision)
     }
-    if (!isTetrisRun(run) && run.map !== previous.map) {
+    if (!isTetrisRun(run) && spectatorNativeMap(run) !== spectatorNativeMap(previous)) {
       pushActivity(run.run_id, 'area', 'Entered area', displayLocation(run))
     }
     if (isTetrisRun(run)) {
