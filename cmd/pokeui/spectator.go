@@ -67,6 +67,7 @@ type spectatorRun struct {
 	EndedAt        int64                    `json:"ended_at,omitempty"`
 	Frame          uint64                   `json:"frame"`
 	Map            uint8                    `json:"map"`
+	NativeMap      uint16                   `json:"native_map,omitempty"`
 	X              uint8                    `json:"x"`
 	Y              uint8                    `json:"y"`
 	MapsVisited    int                      `json:"maps_visited,omitempty"`
@@ -80,6 +81,7 @@ type spectatorRun struct {
 	GameState      map[string]any           `json:"game_state,omitempty"`
 	Sprites        []farm.MapSprite         `json:"sprites,omitempty"`
 	Trail          [][2]uint8               `json:"trail,omitempty"`
+	MapAsset       *farm.SemanticMapAsset   `json:"map_asset,omitempty"`
 	Attempts       int                      `json:"attempts,omitempty"`
 	Reason         string                   `json:"reason,omitempty"`
 	ReplayReady    bool                     `json:"replay_ready,omitempty"`

@@ -105,6 +105,7 @@ type Tile struct {
 	Activity    []runActivityEvent
 	Frame       uint64
 	Map         uint8
+	NativeMap   uint16
 	X           uint8
 	Y           uint8
 	MapsVisited int
@@ -119,8 +120,9 @@ type Tile struct {
 	// Sprites and Trail are the live map overlay. Like Raw, they are
 	// deliberately absent from persistedTile: blockers are ephemeral RAM
 	// observations, and the trail belongs to the current runner attempt.
-	Sprites []farm.MapSprite
-	Trail   [][2]uint8
+	Sprites  []farm.MapSprite
+	Trail    [][2]uint8
+	MapAsset *farm.SemanticMapAsset
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
 	// finish (the final tally explains the outcome), nilled on retry.
 	Stats *farm.LLMStats
@@ -203,6 +205,7 @@ type tileRow struct {
 	EndedAt            int64                    `json:"ended_at,omitempty"`
 	Frame              uint64                   `json:"frame"`
 	Map                uint8                    `json:"map"`
+	NativeMap          uint16                   `json:"native_map,omitempty"`
 	X                  uint8                    `json:"x"`
 	Y                  uint8                    `json:"y"`
 	MapsVisited        int                      `json:"maps_visited,omitempty"`
@@ -213,6 +216,7 @@ type tileRow struct {
 	StopSoFar          string                   `json:"stop_so_far"`
 	Sprites            []farm.MapSprite         `json:"sprites,omitempty"`
 	Trail              [][2]uint8               `json:"trail,omitempty"`
+	MapAsset           *farm.SemanticMapAsset   `json:"map_asset,omitempty"`
 	Stats              *farm.LLMStats           `json:"stats,omitempty"`
 	Player             *farm.Player             `json:"player,omitempty"`
 	GameState          map[string]any           `json:"game_state,omitempty"`
@@ -329,6 +333,7 @@ type persistedTile struct {
 	Activity           []runActivityEvent       `json:"activity,omitempty"`
 	Frame              uint64                   `json:"frame"`
 	Map                uint8                    `json:"map"`
+	NativeMap          uint16                   `json:"native_map,omitempty"`
 	X                  uint8                    `json:"x"`
 	Y                  uint8                    `json:"y"`
 	Trace              string                   `json:"trace,omitempty"`
@@ -415,6 +420,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Activity:           copyRunActivity(t.Activity),
 			Frame:              t.Frame,
 			Map:                t.Map,
+			NativeMap:          t.NativeMap,
 			X:                  t.X,
 			Y:                  t.Y,
 			Trace:              t.Trace,
@@ -523,6 +529,7 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		Activity:           copyRunActivity(p.Activity),
 		Frame:              p.Frame,
 		Map:                p.Map,
+		NativeMap:          p.NativeMap,
 		X:                  p.X,
 		Y:                  p.Y,
 		Trace:              p.Trace,
@@ -839,6 +846,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.StopSoFar = ""
 	t.Sprites = nil
 	t.Trail = nil
+	t.MapAsset = nil
 	t.Stats = nil
 	t.Player = nil
 	t.GameState = nil
@@ -998,6 +1006,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Status = statusRunning
 	t.Frame = hb.Frame
 	t.Map = hb.Map
+	t.NativeMap = hb.NativeMap
 	t.X = hb.X
 	t.Y = hb.Y
 	t.Trace = hb.Trace
@@ -1007,6 +1016,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.StopSoFar = hb.StopSoFar
 	t.Sprites = append(t.Sprites[:0], hb.Sprites...)
 	t.Trail = append(t.Trail[:0], hb.Trail...)
+	t.MapAsset = hb.MapAsset
 	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats
 	t.Player = hb.Player

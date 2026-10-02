@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import type { MapSprite } from '../api/types'
-import { mapEntry } from '../mapCatalog'
+import { mapAssetURL, mapEntryForGame, mapHexForGame, normalizeWorldMapGame } from '../mapCatalog'
 import { drawGen1TextureMap, loadGen1TextureMap, type Gen1TextureMap } from '../gen1Texture'
 import { drawGen1Sprite, gen1SpriteURL, loadGen1Sprite } from '../gen1Sprite'
-import { worldConnections, worldPois, type WorldPoi } from '../worldManifest'
+import { worldConnectionsForGame, worldPoisForGame, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
 interface MapWarp {
@@ -24,7 +24,9 @@ interface MapPayload {
 }
 
 const props = withDefaults(defineProps<{
+  game?: string
   map?: number
+  inlineMap?: MapPayload | null
   x?: number
   y?: number
   trail?: [number, number][]
@@ -43,7 +45,9 @@ const props = withDefaults(defineProps<{
   appearance?: 'semantic' | 'explorer'
   showDebugToggle?: boolean
 }>(), {
+  game: 'pokemon-red',
   map: 0,
+  inlineMap: null,
   x: 0,
   y: 0,
   trail: () => [],
@@ -86,9 +90,10 @@ const localDebug = ref(params.get('debug') === '1' || savedDebug)
 const atlasMode = ref(params.get('atlas') === '1')
 const debugEnabled = computed(() => props.debug || localDebug.value)
 const explorerAppearance = computed(() => props.appearance === 'explorer')
-const atlasAvailable = computed(() => props.interactive && window.location.pathname.startsWith('/world'))
-const currentConnections = computed(() => worldConnections(Number(props.map || 0)))
-const currentPois = computed(() => worldPois(Number(props.map || 0)))
+const isGen1World = computed(() => normalizeWorldMapGame(props.game) === 'pokemon-red')
+const atlasAvailable = computed(() => isGen1World.value && props.interactive && window.location.pathname.startsWith('/world'))
+const currentConnections = computed(() => worldConnectionsForGame(props.game, Number(props.map || 0)))
+const currentPois = computed(() => worldPoisForGame(props.game, Number(props.map || 0)))
 const atlasMarkers = computed<WorldAtlasMarker[]>(() => {
   if (!props.showAgentMarker || !Number.isFinite(Number(props.agentMap))) return []
   const map = Number(props.agentMap)
@@ -117,16 +122,16 @@ let observer: ResizeObserver | null = null
 let tileSize = 0
 
 function mapName(): string {
-  return `${Number(props.map || 0).toString(16).padStart(2, '0')}.json`
+  return mapAssetURL(props.game, Number(props.map || 0))
 }
 
 function mapLabel(value: number): string {
-  return `Map ${Math.max(0, Number(value || 0)).toString(16).padStart(2, '0').toUpperCase()}`
+  return `Map ${mapHexForGame(props.game, value)}`
 }
 
 function friendlyMapLabel(value: number): string {
-  if (Number(value) === 0xff) return 'Previous map'
-  return mapEntry(Number(value))?.label || mapLabel(Number(value))
+  if (isGen1World.value && Number(value) === 0xff) return 'Previous map'
+  return mapEntryForGame(props.game, Number(value))?.label || mapLabel(Number(value))
 }
 
 function cellAt(data: MapPayload, x: number, y: number): string {
@@ -165,11 +170,13 @@ function drawDebugText(ctx: CanvasRenderingContext2D, text: string, x: number, y
 }
 
 function isOutdoorMap(): boolean {
+  if (!isGen1World.value) return false
   const id = Number(props.map || 0)
   return id <= 0x24
 }
 
 function isCityMap(): boolean {
+  if (!isGen1World.value) return false
   const id = Number(props.map || 0)
   return id <= 0x0a
 }
@@ -466,7 +473,7 @@ function draw(): void {
         const x = Number(warp.x)
         const y = Number(warp.y)
         if (x < 0 || y < 0 || x >= width || y >= height) continue
-        const warpLabel = Number(warp.dest) === 0xff ? '↩' : `→${hexByte(warp.dest)}`
+        const warpLabel = isGen1World.value && Number(warp.dest) === 0xff ? '↩' : `→${mapHexForGame(props.game, Number(warp.dest))}`
         drawDebugText(ctx, warpLabel, (x + 0.5) * px, (y + 0.5) * px, px)
       }
     }
@@ -572,7 +579,7 @@ async function loadTexture(): Promise<void> {
   const id = ++textureSerial
   authenticTexture.value = null
   textureError.value = ''
-  if (!explorerAppearance.value) {
+  if (!explorerAppearance.value || !isGen1World.value) {
     textureLoading.value = false
     return
   }
@@ -598,8 +605,18 @@ async function loadMap(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const response = await fetch(`/maps/${mapName()}`, { cache: 'no-store' })
-    if (!response.ok) throw new Error(`Map ${mapName()} unavailable (${response.status})`)
+    const inline = props.inlineMap
+    if (inline && Number(inline.id) === Number(props.map)) {
+      if (id !== serial) return
+      payload.value = inline
+      selectedPoi.value = null
+      zoomLevel.value = 1
+      requestAnimationFrame(draw)
+      return
+    }
+    const path = mapName()
+    const response = await fetch(path, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`Map ${mapHexForGame(props.game, Number(props.map || 0))} unavailable (${response.status})`)
     const next = await response.json() as MapPayload
     if (id !== serial) return
     payload.value = next
@@ -692,11 +709,11 @@ function syncAtlasURL(): void {
   history.replaceState(null, '', url)
 }
 
-watch(() => props.map, () => {
+watch([() => props.game, () => props.map, () => props.inlineMap], () => {
   void loadMap()
   void loadTexture()
   void loadPoiSprites()
-}, { immediate: true })
+}, { immediate: true, deep: false })
 watch(() => props.appearance, (appearance) => {
   if (appearance === 'explorer') {
     void loadTexture()
@@ -746,7 +763,7 @@ onUnmounted(() => {
     <div v-if="interactive" class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-black/20 px-2.5 py-2">
       <div class="flex min-w-0 items-center gap-2">
         <strong class="truncate text-[11px] text-white">{{ friendlyMapLabel(map) }}</strong>
-        <span v-if="debugEnabled" class="shrink-0 font-mono text-[9px] text-slate-600">0x{{ hexByte(map) }}</span>
+        <span v-if="debugEnabled" class="shrink-0 font-mono text-[9px] text-slate-600">0x{{ mapHexForGame(game, map) }}</span>
         <span v-if="!atlasMode && currentConnections.length" class="hidden truncate text-[10px] text-slate-500 sm:inline">{{ currentConnections.length }} connected exit{{ currentConnections.length === 1 ? '' : 's' }}</span>
         <span v-if="explorerAppearance && !atlasMode && authenticTexture" class="hidden rounded-full bg-emerald-300/8 px-2 py-0.5 text-[9px] font-semibold text-emerald-100 ring-1 ring-emerald-300/15 sm:inline">Decomp art</span>
         <span v-else-if="explorerAppearance && !atlasMode && textureLoading" class="hidden text-[9px] text-slate-600 sm:inline">Loading map art…</span>

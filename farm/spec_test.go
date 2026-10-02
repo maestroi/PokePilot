@@ -103,9 +103,14 @@ func TestHeartbeatCarriesLLMStats(t *testing.T) {
 
 func TestHeartbeatCarriesMapOverlay(t *testing.T) {
 	want := Heartbeat{
-		RunID: "map-run", Map: 0x0d, X: 7, Y: 31,
+		RunID: "map-run", Map: 0x0d, NativeMap: 0x1807, X: 7, Y: 31,
 		Sprites: []MapSprite{{X: 8, Y: 31, PictureID: 0x22, Slot: 3}},
 		Trail:   [][2]uint8{{5, 31}, {6, 31}, {7, 31}},
+		MapAsset: &SemanticMapAsset{
+			ID: 0x1807, Width: 3, Height: 2, Cells: ".#W...",
+			Warps:       []SemanticMapWarp{{X: 2, Y: 0, Dest: 0x1808}},
+			Connections: []string{"1808"},
+		},
 	}
 	b, err := json.Marshal(want)
 	if err != nil {
@@ -115,10 +120,10 @@ func TestHeartbeatCarriesMapOverlay(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !reflect.DeepEqual(got.Sprites, want.Sprites) || !reflect.DeepEqual(got.Trail, want.Trail) {
-		t.Fatalf("map overlay round trip = sprites %#v trail %#v, want %#v %#v", got.Sprites, got.Trail, want.Sprites, want.Trail)
+	if got.NativeMap != want.NativeMap || !reflect.DeepEqual(got.Sprites, want.Sprites) || !reflect.DeepEqual(got.Trail, want.Trail) || !reflect.DeepEqual(got.MapAsset, want.MapAsset) {
+		t.Fatalf("map overlay round trip = native %#x sprites %#v trail %#v asset %#v, want %#x %#v %#v %#v", got.NativeMap, got.Sprites, got.Trail, got.MapAsset, want.NativeMap, want.Sprites, want.Trail, want.MapAsset)
 	}
-	for _, field := range []string{`"sprites"`, `"trail"`, `"picture_id"`, `"slot"`} {
+	for _, field := range []string{`"native_map"`, `"sprites"`, `"trail"`, `"picture_id"`, `"slot"`, `"map_asset"`, `"cells"`, `"warps"`} {
 		if !contains(string(b), field) {
 			t.Errorf("marshaled heartbeat missing %s: %s", field, b)
 		}
@@ -128,7 +133,7 @@ func TestHeartbeatCarriesMapOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if contains(string(b), `"sprites"`) || contains(string(b), `"trail"`) {
+	if contains(string(b), `"sprites"`) || contains(string(b), `"trail"`) || contains(string(b), `"map_asset"`) || contains(string(b), `"native_map"`) {
 		t.Errorf("empty overlay must be omitted: %s", b)
 	}
 }

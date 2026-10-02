@@ -682,11 +682,14 @@ func TestApplyHeartbeatPositionKeepsWideNativeMapHeartbeat(t *testing.T) {
 	trail := &heartbeatTrail{}
 	var hb farm.Heartbeat
 	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x1807, X: 3, Y: 3}, trail)
-	if hb.Map != 0 || hb.Trail != nil {
-		t.Fatalf("wide native map must not alias into the one-byte field: map=%d trail=%v", hb.Map, hb.Trail)
+	if hb.NativeMap != 0x1807 || hb.Map != 0 || hb.X != 3 || hb.Y != 3 || len(hb.Trail) != 1 {
+		t.Fatalf("wide native map heartbeat = %+v, want native 0x1807 without one-byte alias", hb)
 	}
 	applyHeartbeatPosition(&hb, game.ProfileObservation{NativeMapID: 0x25, X: 4, Y: 5}, trail)
-	if hb.Map != 0x25 || hb.X != 4 || hb.Y != 5 || len(hb.Trail) != 1 {
-		t.Fatalf("one-byte map should still report position: %+v", hb)
+	if hb.NativeMap != 0x25 || hb.Map != 0x25 || hb.X != 4 || hb.Y != 5 || len(hb.Trail) != 1 {
+		t.Fatalf("one-byte map should report legacy and native identity: %+v", hb)
+	}
+	if hb.MapsVisited != 2 {
+		t.Fatalf("maps visited = %d, want 2 distinct native maps", hb.MapsVisited)
 	}
 }

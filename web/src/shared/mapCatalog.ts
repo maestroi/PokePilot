@@ -1,3 +1,5 @@
+import { GEN2_WORLD_MANIFEST } from './gen2WorldManifest.generated.ts'
+
 export interface MapCatalogEntry {
   id: number
   hex: string
@@ -301,4 +303,88 @@ export function resolveMapQuery(value: string | null | undefined): MapCatalogEnt
         ? Number.parseInt(raw, 10)
         : Number.NaN
   return Number.isFinite(numeric) ? mapEntry(numeric) : undefined
+}
+
+
+export type WorldMapGame = 'pokemon-red' | 'pokemon-gold' | 'pokemon-silver'
+
+export function normalizeWorldMapGame(game: string | null | undefined): WorldMapGame | undefined {
+  switch (String(game || '').trim().toLowerCase()) {
+    case 'red':
+    case 'pokemon-red':
+      return 'pokemon-red'
+    case 'gold':
+    case 'pokemon-gold':
+      return 'pokemon-gold'
+    case 'silver':
+    case 'pokemon-silver':
+      return 'pokemon-silver'
+    default:
+      return undefined
+  }
+}
+
+const GEN2_MAP_CATALOG: MapCatalogEntry[] = GEN2_WORLD_MANIFEST.map((map) => ({
+  id: map.id,
+  hex: map.id.toString(16).padStart(4, '0').toUpperCase(),
+  name: map.name,
+  label: displayName(map.name)
+}))
+const GEN2_BY_ID = new Map(GEN2_MAP_CATALOG.map((entry) => [entry.id, entry]))
+const GEN2_BY_NAME = new Map(GEN2_MAP_CATALOG.map((entry) => [entry.name.toUpperCase(), entry]))
+
+export function mapCatalogForGame(game: string | null | undefined): readonly MapCatalogEntry[] {
+  const normalized = normalizeWorldMapGame(game)
+  if (normalized === 'pokemon-gold' || normalized === 'pokemon-silver') return GEN2_MAP_CATALOG
+  if (normalized === 'pokemon-red') return MAP_CATALOG
+  return []
+}
+
+export function mapEntryForGame(game: string | null | undefined, id: number): MapCatalogEntry | undefined {
+  const normalized = normalizeWorldMapGame(game)
+  if (normalized === 'pokemon-gold' || normalized === 'pokemon-silver') {
+    return GEN2_BY_ID.get(Math.max(0, Math.min(0xffff, Math.trunc(id))))
+  }
+  if (normalized === 'pokemon-red') return mapEntry(id)
+  return undefined
+}
+
+export function mapHexForGame(game: string | null | undefined, id: number): string {
+  const width = normalizeWorldMapGame(game) === 'pokemon-red' ? 2 : 4
+  return Math.max(0, Math.min(0xffff, Math.trunc(Number(id) || 0))).toString(16).padStart(width, '0').toUpperCase()
+}
+
+export function resolveMapQueryForGame(game: string | null | undefined, value: string | null | undefined): MapCatalogEntry | undefined {
+  const normalizedGame = normalizeWorldMapGame(game)
+  if (!normalizedGame) return undefined
+  if (normalizedGame === 'pokemon-red') return resolveMapQuery(value)
+
+  const raw = String(value || '').trim()
+  if (!raw) return undefined
+  const normalizedName = raw.toUpperCase().replace(/[\s-]+/g, '_')
+  const named = GEN2_BY_NAME.get(normalizedName)
+  if (named) return named
+  const numeric = /^0X[0-9A-F]+$/i.test(raw)
+    ? Number.parseInt(raw.slice(2), 16)
+    : /^[0-9A-F]{4}$/i.test(raw)
+      ? Number.parseInt(raw, 16)
+      : /^\d+$/.test(raw)
+        ? Number.parseInt(raw, 10)
+        : Number.NaN
+  return Number.isFinite(numeric) ? GEN2_BY_ID.get(numeric) : undefined
+}
+
+export function mapAssetURL(game: string | null | undefined, id: number): string {
+  const normalized = normalizeWorldMapGame(game)
+  const hex = mapHexForGame(game, id).toLowerCase()
+  return normalized === 'pokemon-gold' || normalized === 'pokemon-silver'
+    ? '/maps/gen2/' + hex + '.json'
+    : '/maps/' + hex + '.json'
+}
+
+export function spectatorNativeMap(run: { map?: number; native_map?: number } | null | undefined): number {
+  const native = Number(run?.native_map)
+  if (Number.isInteger(native) && native >= 0 && native <= 0xffff) return native
+  const legacy = Number(run?.map)
+  return Number.isInteger(legacy) && legacy >= 0 ? legacy : 0
 }

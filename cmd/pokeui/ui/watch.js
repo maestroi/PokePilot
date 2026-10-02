@@ -227,14 +227,31 @@
     bar.style.transform = `scaleX(${pct / 100})`;
   }
 
-  function mapAssetURL(id) {
-    return "/maps/" + Number(id).toString(16).padStart(2, "0") + ".json";
+  function nativeMapID(run) {
+    const native = Number(run?.native_map);
+    if (Number.isInteger(native) && native >= 0 && native <= 0xffff) return native;
+    const legacy = Number(run?.map);
+    return Number.isInteger(legacy) && legacy >= 0 ? legacy : 0;
   }
 
-  function loadMapAsset(id) {
-    const key = Number(id);
+  function isGen2Game(game) {
+    const id = String(game || "").trim().toLowerCase();
+    return id === "pokemon-gold" || id === "gold" || id === "pokemon-silver" || id === "silver";
+  }
+
+  function mapHex(run) {
+    return nativeMapID(run).toString(16).padStart(isGen2Game(run?.game) ? 4 : 2, "0").toUpperCase();
+  }
+
+  function mapAssetURL(run) {
+    const hex = mapHex(run).toLowerCase();
+    return isGen2Game(run?.game) ? "/maps/gen2/" + hex + ".json" : "/maps/" + hex + ".json";
+  }
+
+  function loadMapAsset(run) {
+    const key = String(run?.game || "") + ":" + nativeMapID(run);
     if (!mapAssets.has(key)) {
-      mapAssets.set(key, fetch(mapAssetURL(key), { cache: "force-cache" })
+      mapAssets.set(key, fetch(mapAssetURL(run), { cache: "force-cache" })
         .then((r) => r.ok ? r.json() : null)
         .catch(() => null));
     }
@@ -304,13 +321,15 @@
     const status = $("map-status");
     const canvas = $("live-map");
     const serial = ++mapRenderSerial;
-    if (!run || (run.status !== "running" && run.status !== "done")) {
+    const capabilities = Array.isArray(run?.public_capabilities) ? run.public_capabilities : [];
+    if (!run || (run.status !== "running" && run.status !== "done") || (capabilities.length && !capabilities.includes("worldMap"))) {
       panel.hidden = true;
       return;
     }
     panel.hidden = false;
-    status.textContent = `0x${Number(run.map || 0).toString(16).padStart(2, "0").toUpperCase()} · ${run.x ?? 0},${run.y ?? 0}`;
-    loadMapAsset(run.map).then((asset) => {
+    status.textContent = `0x${mapHex(run)} · ${run.x ?? 0},${run.y ?? 0}`;
+    const inline = run.map_asset && Number(run.map_asset.id) === nativeMapID(run) ? run.map_asset : null;
+    Promise.resolve(inline || loadMapAsset(run)).then((asset) => {
       if (serial !== mapRenderSerial) return;
       requestAnimationFrame(() => {
         if (serial !== mapRenderSerial) return;
@@ -342,7 +361,7 @@
     setText("run-title", run.run_id);
     const route = [run.starter, run.dest].filter(Boolean).join(" → ");
     setText("run-sub", route || (isLive(run) ? "Pokémon Red autonomous run" : "Completed run · replay when available"));
-    setText("map", `0x${Number(run.map || 0).toString(16).padStart(2, "0").toUpperCase()}`);
+    setText("map", `0x${mapHex(run)}`);
     setText("position", `${run.x ?? 0}, ${run.y ?? 0}`);
     setText("round", run.stats ? `${run.stats.round || 0}${run.stats.rounds_left >= 0 ? ` · ${run.stats.rounds_left} left` : ""}` : "—");
     setText("badges-count", run.player?.badges?.length ?? 0);

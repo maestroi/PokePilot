@@ -20,6 +20,7 @@ COPY web/ ./
 COPY pokered/constants/map_constants.asm /src/pokered/constants/map_constants.asm
 COPY pokered/data/maps/headers/ /src/pokered/data/maps/headers/
 COPY pokered/data/maps/objects/ /src/pokered/data/maps/objects/
+COPY gs/data/catalog.go /src/gs/data/catalog.go
 # web tests read renderstate fixtures at build time (headlessSemanticContract).
 COPY renderstate/testdata/ /src/renderstate/testdata/
 # mediaNavigation test asserts against the Go proxy source.

@@ -5,6 +5,8 @@ import BadgeIcon from '../shared/components/BadgeIcon.vue'
 import ItemIcon from '../shared/components/ItemIcon.vue'
 import MilestoneIcon from '../shared/components/MilestoneIcon.vue'
 import SemanticMap from '../shared/components/SemanticMap.vue'
+import { mapHexForGame, spectatorNativeMap } from '../shared/mapCatalog'
+import { supportsPublicCapability } from '../shared/publicCapabilities'
 import { itemDescription, itemDisplayName } from '../shared/pokemonAssets'
 import { bagMeter, dexMeter } from '../shared/playerProgress'
 import { playSpeedLabel } from '../shared/playstyle'
@@ -52,8 +54,8 @@ const dexPercent = computed(() => {
 
 const bag = computed(() => props.run.player?.bag || [])
 const milestones = computed(() => props.run.player?.milestones || [])
-const hasMap = computed(() => Number.isFinite(Number(props.run.map)))
-const mapID = computed(() => Math.max(0, Number(props.run.map || 0)).toString(16).padStart(2, '0').toUpperCase())
+const hasMap = computed(() => supportsPublicCapability(props.run, 'worldMap') && (props.run.native_map !== undefined || props.run.map !== undefined))
+const mapID = computed(() => mapHexForGame(props.run.game, spectatorNativeMap(props.run)))
 function itemTooltip(item: { name: string; quantity: number }): string {
   return `${itemDisplayName(item.name)} ×${item.quantity}\n${itemDescription(item.name)}`
 }
@@ -61,6 +63,7 @@ function itemTooltip(item: { name: string; quantity: number }): string {
 const worldHref = computed(() => {
   const url = new URL('/world', window.location.origin)
   url.searchParams.set('map', `0x${mapID.value}`)
+  if (props.run.game) url.searchParams.set('game', props.run.game)
   if (props.run.run_id) url.searchParams.set('run', props.run.run_id)
   if (Number.isFinite(Number(props.run.x))) url.searchParams.set('x', String(Number(props.run.x)))
   if (Number.isFinite(Number(props.run.y))) url.searchParams.set('y', String(Number(props.run.y)))
@@ -117,7 +120,9 @@ const worldHref = computed(() => {
     </div>
     <div v-if="mapOpen" class="h-[22rem] min-h-0 overflow-hidden rounded-lg border border-white/10 bg-[#080d14] sm:h-[28rem]">
       <SemanticMap
-        :map="Number(run.map || 0)"
+        :game="run.game"
+        :map="spectatorNativeMap(run)"
+        :inline-map="run.map_asset || null"
         :x="run.x"
         :y="run.y"
         :trail="run.trail || []"

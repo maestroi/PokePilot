@@ -8,13 +8,13 @@ const GAME_CAPABILITY_PROFILES: Record<string, PublicCapability[]> = {
   'pokemon-red': ['live', 'replay', 'worldMap', 'stats'],
   'pokemon-blue': ['live', 'replay', 'stats'],
   'pokemon-yellow': ['live', 'replay', 'stats'],
-  'pokemon-gold': ['live', 'replay', 'stats'],
-  'pokemon-silver': ['live', 'replay', 'stats'],
+  'pokemon-gold': ['live', 'replay', 'worldMap', 'stats'],
+  'pokemon-silver': ['live', 'replay', 'worldMap', 'stats'],
   red: ['live', 'replay', 'worldMap', 'stats'],
   blue: ['live', 'replay', 'stats'],
   yellow: ['live', 'replay', 'stats'],
-  gold: ['live', 'replay', 'stats'],
-  silver: ['live', 'replay', 'stats'],
+  gold: ['live', 'replay', 'worldMap', 'stats'],
+  silver: ['live', 'replay', 'worldMap', 'stats'],
   tetris: ['live', 'replay', 'stats']
 }
 
