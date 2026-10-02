@@ -14,6 +14,7 @@ type fakeObjectiveGame struct {
 	obs   Observation
 
 	initialObserveErr error
+	validateErr       error
 	finalObserveErr   error
 	startBoundaryErr  error
 	finishBoundaryErr error
@@ -40,6 +41,9 @@ func (f *fakeObjectiveGame) Observe() (Observation, error) {
 
 func (f *fakeObjectiveGame) Validate(_ Objective, initial Observation) error {
 	f.calls = append(f.calls, "validate")
+	if f.validateErr != nil {
+		return f.validateErr
+	}
 	if initial.MapName != f.obs.MapName {
 		return errors.New("validation did not receive initial observation")
 	}
@@ -112,10 +116,13 @@ func (f *fakeObjectiveGame) NormalizeFailure(phase gameruntime.FailurePhase, err
 	case errors.Is(err, ErrObjectivePostconditionFailed):
 		out = OutcomePostconditionFailed
 	}
+	// The default cause mirrors the real Red adapter's fallback for an
+	// untyped error so the runtime's stable-cause reclassification is exercised.
+	cause := "unknown_error"
 	return gameruntime.Failure{
 		Phase:       phase,
 		Class:       failureClassForOutcome(out),
-		Cause:       "fake_failure",
+		Cause:       cause,
 		Recoverable: actionFor(out) == actionReplan,
 	}
 }
@@ -288,6 +295,46 @@ func TestObjectiveRuntimeInitialObservationFailureIsControllerUncertain(t *testi
 	}
 	if countCall(adapter.calls, "validate") != 0 || countCall(adapter.calls, "execute") != 0 {
 		t.Fatalf("gameplay continued after failed initial observation: %#v", adapter.calls)
+	}
+}
+
+// A validation-phase failure happens before any gameplay input is sent, so it
+// is the adapter telling the planner its proposed objective is not executable
+// from the current stable state. It must be classified as blocked/recoverable
+// (replan) and never as a terminal unknown failure (#2388: an untyped
+// "unknown Red item" validation error used to stop the whole run).
+func TestObjectiveRuntimeValidationFailureIsPlannerFeedbackNotTerminal(t *testing.T) {
+	validateErr := errors.New(`unknown Red item "carbos"`)
+	adapter := &fakeObjectiveGame{
+		obs:         Observation{MapName: "ROOM_A", Controllable: true},
+		validateErr: validateErr,
+	}
+	o := Objective{Kind: KindPickup, Item: "carbos", X: 20, Y: 13}
+
+	got, err := executeObjectiveWithAdapter(adapter, o)
+	if !errors.Is(err, validateErr) {
+		t.Fatalf("error = %v, want validation error identity", err)
+	}
+	if got.Outcome != OutcomeBlocked {
+		t.Fatalf("Outcome = %q, want blocked (replan), not a terminal stop", got.Outcome)
+	}
+	if got.Failure == nil {
+		t.Fatalf("Failure = nil, want a normalized failure record")
+	}
+	if got.Failure.Class != gameruntime.FailureClassBlocked {
+		t.Fatalf("Failure.Class = %q, want blocked", got.Failure.Class)
+	}
+	if !got.Failure.Recoverable {
+		t.Fatalf("Failure.Recoverable = false, want true so the run replans")
+	}
+	if got.Failure.Cause != "objective_validation_failed" {
+		t.Fatalf("Failure.Cause = %q, want the stable objective_validation_failed cause", got.Failure.Cause)
+	}
+	if countCall(adapter.calls, "execute") != 0 {
+		t.Fatalf("execution ran after a validation failure: %#v", adapter.calls)
+	}
+	if got.Final.MapName != "ROOM_A" {
+		t.Fatalf("Final = %+v, want the unchanged initial observation", got.Final)
 	}
 }
 
