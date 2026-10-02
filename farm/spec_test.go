@@ -108,7 +108,7 @@ func TestHeartbeatCarriesMapOverlay(t *testing.T) {
 		Trail:   [][2]uint8{{5, 31}, {6, 31}, {7, 31}},
 		MapAsset: &SemanticMapAsset{
 			ID: 0x1807, Width: 3, Height: 2, Cells: ".#W...",
-			Warps: []SemanticMapWarp{{X: 2, Y: 0, Dest: 0x1808}},
+			Warps:       []SemanticMapWarp{{X: 2, Y: 0, Dest: 0x1808}},
 			Connections: []string{"1808"},
 		},
 	}
