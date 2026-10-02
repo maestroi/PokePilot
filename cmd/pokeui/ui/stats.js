@@ -51,7 +51,7 @@
       ["Completed attempts",nfmt(s.completed_attempts),`${nfmt(s.settled_runs)} settled run records`],
       ["Objective wins",ratio(s.goal_wins,s.goal_tracked_runs),"structured goals with a known completion signal"],
       ["Reached ≥1 badge",ratio(s.at_least_one_badge,s.usable_progress_runs),"among runs with a final player snapshot"],
-      ["Best badge count",`${nfmt(s.best_badges)} / 8`,"highest final badge count observed"],
+      ["Best badge count",nfmt(s.best_badges),"highest final badge count observed across Gen I and Gen II runs"],
       ["Retry failures",nfmt(s.retryable_failure_attempts),"error/lost attempts, including failures hidden by retries"],
       ["No progress data",nfmt(missing),"settled runs without a usable final player snapshot"],
     ];
@@ -119,7 +119,7 @@
       const goal=(r.goal||r.planner||"endless run").trim();
       const config=[r.llm_profile||"",r.random_seed?"random seed":"same seed",r.max_rounds?`${r.max_rounds} rounds`:""].filter(Boolean).join(" · ");
       const reasons=(r.terminal_reasons||[]).map((x)=>`${x.name} ${x.count}`).join(" · ")||"—";
-      return `<tr><td><div class="endless-goal">${esc(goal)}</div><div class="endless-key">${esc(r.key)} · ${esc(config)}</div></td><td>${nfmt(r.completed_attempts)}</td><td>${nfmt(r.best_badges)} / 8</td><td>${esc(ratio(r.at_least_one_badge,r.usable_progress_runs))}</td><td>${esc(ratio(r.goal_wins,r.goal_tracked_runs))}</td><td>${nfmt(r.retryable_failure_attempts)}</td><td class="endless-reasons">${esc(reasons)}</td></tr>`;
+      return `<tr><td><div class="endless-goal">${esc(goal)}</div><div class="endless-key">${esc(r.key)} · ${esc(config)}</div></td><td>${nfmt(r.completed_attempts)}</td><td>${nfmt(r.best_badges)}</td><td>${esc(ratio(r.at_least_one_badge,r.usable_progress_runs))}</td><td>${esc(ratio(r.goal_wins,r.goal_tracked_runs))}</td><td>${nfmt(r.retryable_failure_attempts)}</td><td class="endless-reasons">${esc(reasons)}</td></tr>`;
     }).join("")}</tbody></table></div>`;
   }
 

@@ -69,6 +69,23 @@ func TestSummarizeOutcomesCountsProgressAndRetryFailures(t *testing.T) {
 	}
 }
 
+func TestSummarizeOutcomesPreservesGen2BadgeCountsBeyondEight(t *testing.T) {
+	twelve := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}
+	got := summarizeOutcomes([]statsRun{{
+		RunID: "gen2", Status: "done", Reason: "budget",
+		Player: &statsPlayer{Badges: twelve},
+	}})
+	if got.BestBadges != 12 {
+		t.Fatalf("best badges = %d, want 12", got.BestBadges)
+	}
+	if len(got.BadgeDistribution) != maxTrackedPokemonBadges+1 {
+		t.Fatalf("badge distribution buckets = %d, want %d", len(got.BadgeDistribution), maxTrackedPokemonBadges+1)
+	}
+	if got.BadgeDistribution[12].Count != 1 {
+		t.Fatalf("12-badge bucket = %d, want 1", got.BadgeDistribution[12].Count)
+	}
+}
+
 func TestSummarizeOutcomesTreatsOldSettledTileAsOneAttempt(t *testing.T) {
 	got := summarizeOutcomes([]statsRun{{Status: "done", Reason: "budget", Attempts: 0}})
 	if got.CompletedAttempts != 1 {

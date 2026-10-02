@@ -14,7 +14,7 @@ var (
 
 	pokemonSpritePath = regexp.MustCompile(`^sprites/pokemon/versions/generation-i/red-blue/[0-9]{1,3}\.png$`)
 	pokemonItemPath   = regexp.MustCompile(`^sprites/items/[a-z0-9-]+\.png$`)
-	pokemonBadgePath  = regexp.MustCompile(`^sprites/badges/[1-8]\.png$`)
+	pokemonBadgePath  = regexp.MustCompile(`^sprites/badges/(?:[1-9]|1[0-6])\.png$`)
 )
 
 func validPokemonAssetPath(name string) bool {
