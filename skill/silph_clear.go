@@ -178,6 +178,11 @@ func reachSilphRivalRoom(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // approached through the live grid; A is pressed only while still adjacent,
 // and success is the caller's newly-reachable destination, not a press count or
 // a particular text page.
+//
+// A cell that is already walkable in the live grid is positive evidence the
+// door is open: the map-load callback has already replaced the block with
+// open-door tiles. Pressing A on a walkable non-object tile produces no text,
+// so the StepUntil would time out and the loop would burn all four cells.
 func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy MovePolicy, reachable func() bool) error {
 	if reachable() {
 		return nil
@@ -188,6 +193,9 @@ func unlockSilphDoor(m *emu.Emu, romData []byte, blockX, blockY int, policy Move
 			return nil
 		}
 		tx, ty := uint8(p[0]), uint8(p[1])
+		if silphDoorCellOpen(m, romData, tx, ty) {
+			return nil
+		}
 		dest, move, err := besideDestination(m, romData, tx, ty)
 		if err != nil {
 			last = err
@@ -254,6 +262,23 @@ func silphTileReachable(m *emu.Emu, romData []byte, mapID, tx, ty uint8) bool {
 	x, y := playerXY(m)
 	_, err = world.FindPath(grid, int(x), int(y), int(tx), int(ty), spriteBlockers(m))
 	return err == nil
+}
+
+// silphDoorCellOpen reports whether a Card Key block cell is already walkable
+// in the live grid. The map-load callback replaces the closed-door block with
+// open-door tiles once the unlock event flag is set, so a walkable cell is
+// positive evidence the door is open and no A-press is needed.
+func silphDoorCellOpen(m *emu.Emu, romData []byte, tx, ty uint8) bool {
+	mapID := m.Peek8(sym.CurMap)
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return false
+	}
+	grid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return false
+	}
+	return grid.Walkable(int(tx), int(ty))
 }
 
 func traverseSilphWarp(m *emu.Emu, romData []byte, edge world.Edge, policy MovePolicy, unlock func() error) error {
