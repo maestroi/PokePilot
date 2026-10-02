@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/operatorapi"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -48,6 +49,22 @@ type mcpControl struct {
 	// mountRunInspectorRoutes makes for the browser's identical route.
 	artifactBase string
 	http         *http.Client
+}
+
+// operator returns an operator API client over wallBase. Operating through it
+// is what keeps the two mutating operator actions (cancel a run, investigate a
+// failure) identical to the ones the Telegram bot performs, instead of a
+// second hand-rolled copy of the endpoint and its error handling.
+//
+// The client is built per call rather than cached on mcpControl: one
+// mcpControl serves every MCP tool call and those calls can be concurrent, so
+// a lazily assigned field would be a data race.
+func (c *mcpControl) operator() *operatorapi.Client {
+	op := operatorapi.New(c.wallBase, "", "")
+	if c.http != nil {
+		op.HTTP = c.http
+	}
+	return op
 }
 
 type mcpStartRunInput struct {
@@ -739,8 +756,8 @@ func (c *mcpControl) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, in m
 	if id == "" {
 		return nil, nil, fmt.Errorf("run_id is required")
 	}
-	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(id)+"/cancel", nil, &out); err != nil {
+	out, err := c.operator().CancelRun(ctx, id)
+	if err != nil {
 		return nil, nil, err
 	}
 	out["run_id"] = id
@@ -817,8 +834,8 @@ func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequ
 	if key == "" {
 		return nil, nil, fmt.Errorf("key is required")
 	}
-	var out map[string]any
-	if err := c.requestJSON(ctx, http.MethodPost, "/v1/triage/"+url.PathEscape(key)+"/investigate", nil, &out); err != nil {
+	out, err := c.operator().InvestigateFailure(ctx, key)
+	if err != nil {
 		return nil, nil, err
 	}
 	out["key"] = key

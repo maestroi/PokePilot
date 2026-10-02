@@ -716,12 +716,16 @@ func (s *statsPlanner) setGoalStats(status agent.GoalStatus, structured bool) {
 		s.stats.GoalCurrent = 0
 		s.stats.GoalTarget = 0
 		s.stats.GoalComplete = false
+		s.stats.GoalKind = ""
+		s.stats.GoalID = ""
 		return
 	}
 	s.stats.GoalSummary = status.Summary
 	s.stats.GoalCurrent = status.Current
 	s.stats.GoalTarget = status.Target
 	s.stats.GoalComplete = status.Complete
+	s.stats.GoalKind = status.Kind.String()
+	s.stats.GoalID = status.ID
 }
 
 func (s *statsPlanner) prepareStrategyWithGoal(obs agent.Observation, goal agent.GoalStatus, structuredGoal bool) {

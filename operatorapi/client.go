@@ -72,11 +72,16 @@ type Run struct {
 }
 
 type RunStats struct {
-	Round       int    `json:"round"`
-	RoundsLeft  int    `json:"rounds_left"`
-	GoalSummary string `json:"goal_summary,omitempty"`
-	Endpoint    string `json:"endpoint,omitempty"`
-	Model       string `json:"model,omitempty"`
+	Round        int    `json:"round"`
+	RoundsLeft   int    `json:"rounds_left"`
+	GoalSummary  string `json:"goal_summary,omitempty"`
+	GoalKind     string `json:"goal_kind,omitempty"`
+	GoalID       string `json:"goal_id,omitempty"`
+	GoalComplete bool   `json:"goal_complete,omitempty"`
+	GoalCurrent  int    `json:"goal_current,omitempty"`
+	GoalTarget   int    `json:"goal_target,omitempty"`
+	Endpoint     string `json:"endpoint,omitempty"`
+	Model        string `json:"model,omitempty"`
 }
 
 type Player struct {
@@ -209,7 +214,7 @@ func (c *Client) Dashboard(ctx context.Context, active bool, limit int) (Dashboa
 
 func (c *Client) Run(ctx context.Context, id string) (RunInspection, error) {
 	var out RunInspection
-	err := c.wallJSON(ctx, http.MethodGet, "/v1/runs/"+url.PathEscape(strings.TrimSpace(id)), nil, &out)
+	err := c.wallJSON(ctx, http.MethodGet, runPath(id), nil, &out)
 	return out, err
 }
 
@@ -219,14 +224,48 @@ func (c *Client) Triage(ctx context.Context) ([]TriageGroup, error) {
 	return out, err
 }
 
+// runPath and triagePath are the single owner of the operator endpoint shapes
+// that the Telegram bot and the admin/MCP control plane both call. Keeping
+// them here is what makes the control operations reusable rather than
+// re-spelled per surface.
+func runPath(id string) string {
+	return "/v1/runs/" + url.PathEscape(strings.TrimSpace(id))
+}
+
+func triagePath(key string) string {
+	return "/v1/triage/" + url.PathEscape(strings.TrimSpace(key))
+}
+
+// CancelRun cooperatively cancels one run and returns the wall's decoded
+// response. Callers that surface the upstream payload (the admin control
+// plane) and callers that only need the outcome (the Telegram bot) share this
+// one implementation of the endpoint, request shape and error decoding.
+func (c *Client) CancelRun(ctx context.Context, id string) (map[string]any, error) {
+	out := map[string]any{}
+	if err := c.wallJSON(ctx, http.MethodPost, runPath(id)+"/cancel", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// InvestigateFailure queues the existing triage investigation for one failure
+// key and returns the wall's decoded response.
+func (c *Client) InvestigateFailure(ctx context.Context, key string) (map[string]any, error) {
+	out := map[string]any{}
+	if err := c.wallJSON(ctx, http.MethodPost, triagePath(key)+"/investigate", nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) Investigate(ctx context.Context, key string) error {
-	var out map[string]any
-	return c.wallJSON(ctx, http.MethodPost, "/v1/triage/"+url.PathEscape(strings.TrimSpace(key))+"/investigate", nil, &out)
+	_, err := c.InvestigateFailure(ctx, key)
+	return err
 }
 
 func (c *Client) Stop(ctx context.Context, id string) error {
-	var out map[string]any
-	return c.wallJSON(ctx, http.MethodPost, "/v1/runs/"+url.PathEscape(strings.TrimSpace(id))+"/cancel", nil, &out)
+	_, err := c.CancelRun(ctx, id)
+	return err
 }
 
 func (c *Client) QueueReplay(ctx context.Context, id string) error {
@@ -235,7 +274,7 @@ func (c *Client) QueueReplay(ctx context.Context, id string) error {
 		return ErrNotConfigured
 	}
 	var out map[string]any
-	return c.baseJSON(ctx, base, http.MethodPost, "/v1/runs/"+url.PathEscape(strings.TrimSpace(id))+"/replay/render", nil, &out)
+	return c.baseJSON(ctx, base, http.MethodPost, runPath(id)+"/replay/render", nil, &out)
 }
 
 func (c *Client) ReplayHealth(ctx context.Context) (ReplayHealth, error) {
@@ -280,6 +319,19 @@ func (c *Client) Alerts(ctx context.Context) ([]Alert, error) {
 	}
 	var out []Alert
 	err := c.baseJSON(ctx, c.AlertmanagerBase, http.MethodGet, "/api/v2/alerts", nil, &out)
+	return out, err
+}
+
+// ResolvedAlerts returns the alerts Alertmanager still retains but that are no
+// longer firing. Alertmanager's default /api/v2/alerts query reports active
+// alerts only, so a recent recovery is invisible without asking explicitly.
+func (c *Client) ResolvedAlerts(ctx context.Context) ([]Alert, error) {
+	if c.AlertmanagerBase == "" {
+		return nil, ErrNotConfigured
+	}
+	var out []Alert
+	err := c.baseJSON(ctx, c.AlertmanagerBase, http.MethodGet,
+		"/api/v2/alerts?active=false&silenced=false&inhibited=false&unprocessed=false", nil, &out)
 	return out, err
 }
 

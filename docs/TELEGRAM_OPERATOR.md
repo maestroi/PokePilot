@@ -14,16 +14,28 @@ Commands are intentionally compact for phone use:
 | `/runs` | Active run IDs, game, seed, frame, badge count and current goal |
 | `/run <id>` | Run progress, map/position, planner state, party, result, recent trace, triage summary, latest frame |
 | `/failures` | Grouped recent failure/triage patterns and linked GitHub issues |
-| `/alerts` | Active Alertmanager alerts when configured |
+| `/alerts` | Active Alertmanager alerts plus recently resolved ones, when configured |
 | `/triage <id>` | Queue the existing PokéWall investigation for the run's failure group |
 | `/replay <id>` | Queue a replay render when a replay endpoint is configured |
 | `/stop <id>` | Cooperative cancel, with a two-step confirmation |
 | `/restart <id>` | Restart from the newest replayable checkpoint when possible, otherwise fresh-clone the run; confirmation required |
 
+Alertmanager omits resolved alerts from its default query, so `/alerts` asks for
+them explicitly and lists recent recoveries under a separate heading. A failure
+to fetch resolved alerts never hides the active ones.
+
 The monitor sends notifications for completed/failed runs, frame stalls,
 PokéWall outages/recovery, replay render ready/failed transitions, and
 Alertmanager firing/resolved transitions. Point Alertmanager at the bot for
 Swarm/update/service alerts already produced by the observability stack.
+
+It also reports a **completed progression goal** separately. A run finishing the
+progress goal it was given has reached the end of that progression track: the
+experimental Gen-II preset points one at `gs_supported_frontier`, so this is how
+the operator learns the agent will not advance until more content is supported.
+The decision reads the structured `goal_kind`/`goal_id` fields on the run's
+stats, never the goal's prose summary, and it includes the goal ID in the
+message.
 
 ## Create the bot
 
@@ -111,6 +123,10 @@ or replay services.
   newest replayable checkpoint, creates a reproduction run, then cooperatively
   cancels the original. If no replayable checkpoint exists it uses PokéWall's
   clone endpoint.
+- The two mutating control operations the bot performs (`/stop` and `/triage`)
+  go through the same `operatorapi.Client` the admin/MCP control plane uses, so
+  the endpoint, request shape and error handling have one owner instead of one
+  copy per surface.
 - Existing pokeui/MCP flows are unchanged; the bot consumes the same supported
   APIs.
 
@@ -123,6 +139,17 @@ The service exposes:
   unauthorized attempts, Telegram/operator errors, notifications, actions,
   action failures, pending confirmations, wall health, and last successful
   operator poll.
+
+Scrape and dashboard assets live in `deploy/monitoring/`:
+
+- `prometheus-poketelegram.yml` — a scrape job to merge into your Prometheus
+  `scrape_configs` (DNS discovery of `tasks.telegram`; no Docker socket needed).
+- `grafana-poketelegram.json` — a dashboard with a panel for every metric above.
+- `README.md` — metric reference, suggested alert rules, and the current gap.
+
+Note that **this repository deploys no Prometheus/Grafana/Alertmanager stack**,
+so nothing scrapes these metrics or feeds `/alerts` until one is wired up
+alongside the farm. The bot never requires it.
 
 Useful checks:
 

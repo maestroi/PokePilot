@@ -572,16 +572,36 @@ func (b *bot) alertsText(ctx context.Context) (string, error) {
 			active = append(active, alert)
 		}
 	}
-	if len(active) == 0 {
-		return "No active Alertmanager alerts.", nil
+	// Alertmanager leaves resolved alerts out of the default query, so a
+	// recent recovery is invisible unless it is requested explicitly. A
+	// failure here must not hide the active alerts, so it degrades to "none".
+	resolved, resolvedErr := b.op.ResolvedAlerts(ctx)
+	if resolvedErr != nil {
+		resolved = nil
 	}
-	lines := []string{fmt.Sprintf("Active alerts (%d):", len(active))}
-	for i, alert := range active {
-		if i >= 15 {
-			lines = append(lines, "…more alerts omitted")
-			break
+
+	lines := make([]string, 0, 6)
+	if len(active) == 0 {
+		lines = append(lines, "No active Alertmanager alerts.")
+	} else {
+		lines = append(lines, fmt.Sprintf("Active alerts (%d):", len(active)))
+		for i, alert := range active {
+			if i >= 15 {
+				lines = append(lines, "…more alerts omitted")
+				break
+			}
+			lines = append(lines, "• "+formatAlert(alert))
 		}
-		lines = append(lines, "• "+formatAlert(alert))
+	}
+	if len(resolved) > 0 {
+		lines = append(lines, "", fmt.Sprintf("Recently resolved (%d):", len(resolved)))
+		for i, alert := range resolved {
+			if i >= 5 {
+				lines = append(lines, "…more resolved alerts omitted")
+				break
+			}
+			lines = append(lines, "• "+formatAlert(alert))
+		}
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -692,11 +712,17 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 			b.notifyRun(ctx, "🟠", "stalled", run, fmt.Sprintf("No frame progress for %s", durationShort(now.Sub(prev.LastProgress))))
 		}
 		if prev.Status != run.Status && run.Status == "done" {
-			kind, icon := "finished", "✅"
+			kind, icon, extra := "finished", "✅", run.Reason+detailSuffix(run.Detail)
 			if !successfulReason(run.Reason) {
 				kind, icon = "failed", "🔴"
+			} else if stats := b.finishedGoalStats(ctx, run.RunID, run.Stats); completedProgressGoal(stats) {
+				// The run finished the progression track it was given, so the
+				// agent will not advance further until more content is
+				// supported. The experimental Gen-II preset points a progress
+				// goal at its supported frontier, which is exactly this case.
+				kind, icon, extra = "progression goal complete", "🏁", frontierDetail(stats)
 			}
-			b.notifyRun(ctx, icon, kind, run, run.Reason+detailSuffix(run.Detail))
+			b.notifyRun(ctx, icon, kind, run, extra)
 		}
 		prev.Status = run.Status
 		prev.Reason = run.Reason
@@ -710,6 +736,45 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 			delete(b.runs, id)
 		}
 	}
+}
+
+// completedProgressGoal reports whether a finished run completed the
+// progression goal it was given. Progress goals are the generic
+// "progress:<id>" form; the experimental Gen-II preset points one at its
+// supported frontier, so completion means the agent has reached the end of
+// that progression track and will not advance until more content is
+// supported. This reads the structured goal identity and never the goal's
+// prose summary.
+func completedProgressGoal(stats *operatorapi.RunStats) bool {
+	return stats != nil &&
+		stats.GoalComplete &&
+		strings.EqualFold(strings.TrimSpace(stats.GoalKind), "progress")
+}
+
+// finishedGoalStats returns a completed run's goal statistics. The dashboard
+// list does not always carry stats, so fall back to the single-run endpoint:
+// one extra call on a completion transition, never once per poll.
+func (b *bot) finishedGoalStats(ctx context.Context, runID string, stats *operatorapi.RunStats) *operatorapi.RunStats {
+	if stats != nil {
+		return stats
+	}
+	detail, err := b.op.Run(ctx, runID)
+	if err != nil {
+		b.m.operatorErrs.Add(1)
+		return nil
+	}
+	return detail.Run.Stats
+}
+
+func frontierDetail(stats *operatorapi.RunStats) string {
+	id := ""
+	if stats != nil {
+		id = strings.TrimSpace(stats.GoalID)
+	}
+	if id == "" {
+		return "The agent completed a declared progression goal and will not advance past it until more content is supported."
+	}
+	return fmt.Sprintf("Progression goal %s reached. The agent will not advance past this frontier until more content is supported.", id)
 }
 
 func (b *bot) observeRenderJobs(ctx context.Context) {
