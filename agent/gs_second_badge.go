@@ -39,7 +39,17 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"ROUTE_34",
 		"GOLDENROD_CITY",
 		"GOLDENROD_GYM",
+		"GOLDENROD_FLOWER_SHOP",
 		"GOLDENROD_POKECENTER_1F",
+		"ROUTE_35_GOLDENROD_GATE",
+		"ROUTE_35",
+		"ROUTE_36",
+		"ROUTE_37",
+		"ECRUTEAK_CITY",
+		"ECRUTEAK_POKECENTER_1F",
+		"ECRUTEAK_GYM",
+		"BURNED_TOWER_1F",
+		"BURNED_TOWER_B1F",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {

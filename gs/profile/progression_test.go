@@ -168,6 +168,9 @@ func TestEarlyJohtoBadgeMasksMatchPinnedPokegoldEngineFlags(t *testing.T) {
 	if johtoBadgePlainMask != 1<<2 {
 		t.Fatalf("ENGINE_PLAINBADGE mask = %#02x, want %#02x", johtoBadgePlainMask, 1<<2)
 	}
+	if johtoBadgeFogMask != 1<<3 {
+		t.Fatalf("ENGINE_FOGBADGE mask = %#02x, want %#02x", johtoBadgeFogMask, 1<<3)
+	}
 }
 
 func TestIlexProgressionRequiresPostWinAzaleaScene(t *testing.T) {
@@ -222,34 +225,38 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 		t.Fatal("fresh save already reports the experimental Gen-II frontier complete")
 	}
 
-	setGSEvent(mem, eventHerdedFarfetchd)
-	story = projectEarlyStory(mem)
-	if story.Has(ProgressSupportedFrontier) {
-		t.Fatal("Farfetchd completion reached frontier before HM01 was acquired")
-	}
-
-	setGSEvent(mem, eventGotHM01Cut)
-	story = projectEarlyStory(mem)
-	if !story.Has(ProgressHM01CutAcquired) {
-		t.Fatalf("HM01 boundary missing from story: %+v", story)
-	}
-	if story.Has(ProgressSupportedFrontier) {
-		t.Fatal("owning HM01 reached frontier before proving Cut traversal")
-	}
-
 	setGSEvent(mem, eventGotTM02Headbutt)
-	story = projectEarlyStory(mem)
-	if !story.Has(ProgressTM02HeadbuttAcquired) {
-		t.Fatalf("north-Ilex Headbutt boundary missing from story: %+v", story)
-	}
-	if story.Has(ProgressSupportedFrontier) {
-		t.Fatal("north-Ilex Headbutt boundary reached frontier before Plain Badge")
-	}
-
 	mem[sym.JohtoBadges] |= johtoBadgePlainMask
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressPlainBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("Plain Badge boundary did not complete supported frontier: %+v", story)
+	if !story.Has(ProgressPlainBadgeEarned) {
+		t.Fatalf("Plain Badge boundary missing from story: %+v", story)
+	}
+	if story.Has(ProgressSupportedFrontier) {
+		t.Fatal("Plain Badge reached frontier before Ecruteak slice")
+	}
+
+	setGSEvent(mem, eventGotSquirtBottle)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressSquirtBottleAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("SquirtBottle boundary = %+v, want acquired but not frontier", story)
+	}
+
+	setGSEvent(mem, eventFoughtSudowoodo)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressSudowoodoCleared) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Sudowoodo boundary = %+v, want cleared but not frontier", story)
+	}
+
+	setGSEvent(mem, eventReleasedTheBeasts)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressBurnedTowerCleared) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Burned Tower boundary = %+v, want cleared but not frontier", story)
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgeFogMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressFogBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Fog Badge boundary did not complete supported frontier: %+v", story)
 	}
 }
 
@@ -268,5 +275,17 @@ func TestPinnedIlexEventAndSceneConstants(t *testing.T) {
 	}
 	if sym.AzaleaTownSceneID != 0xd6d4 {
 		t.Fatalf("wAzaleaTownSceneID = %#04x, want %#04x", sym.AzaleaTownSceneID, 0xd6d4)
+	}
+}
+
+func TestPinnedEcruteakEventConstants(t *testing.T) {
+	if eventFoughtSudowoodo != 42 {
+		t.Fatalf("EVENT_FOUGHT_SUDOWOODO = %d, want 42", eventFoughtSudowoodo)
+	}
+	if eventGotSquirtBottle != 92 {
+		t.Fatalf("EVENT_GOT_SQUIRTBOTTLE = %d, want 92", eventGotSquirtBottle)
+	}
+	if eventReleasedTheBeasts != 123 {
+		t.Fatalf("EVENT_RELEASED_THE_BEASTS = %d, want 123", eventReleasedTheBeasts)
 	}
 }

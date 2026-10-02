@@ -21,6 +21,7 @@ type warpSpec struct {
 	x, y     uint8
 	dest     string
 	destWarp uint8 // decomp warp ids are 1-based
+	inert    bool  // landing-only record whose collision tile cannot trigger a warp
 }
 
 type connectionSpec struct {
@@ -376,6 +377,13 @@ var firstBadgeTopology = []mapSpec{
 		},
 	},
 	{
+		name: "GOLDENROD_FLOWER_SHOP",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "GOLDENROD_CITY", destWarp: 6},
+			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 6},
+		},
+	},
+	{
 		name: "GOLDENROD_POKECENTER_1F",
 		warps: []warpSpec{
 			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 7},
@@ -460,6 +468,36 @@ var firstBadgeTopology = []mapSpec{
 		},
 	},
 	{
+		name: "BURNED_TOWER_1F",
+		warps: []warpSpec{
+			{x: 9, y: 15, dest: "ECRUTEAK_CITY", destWarp: 13},
+			{x: 10, y: 15, dest: "ECRUTEAK_CITY", destWarp: 13},
+			{x: 5, y: 4, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 5, y: 5, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 5, y: 6, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 4, y: 6, dest: "BURNED_TOWER_B1F", destWarp: 1},
+			{x: 15, y: 4, dest: "BURNED_TOWER_B1F", destWarp: 2},
+			{x: 15, y: 5, dest: "BURNED_TOWER_B1F", destWarp: 2},
+			{x: 10, y: 7, dest: "BURNED_TOWER_B1F", destWarp: 3},
+			{x: 5, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 4},
+			{x: 4, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 4},
+			{x: 14, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 5},
+			{x: 15, y: 14, dest: "BURNED_TOWER_B1F", destWarp: 5},
+			{x: 7, y: 15, dest: "BURNED_TOWER_B1F", destWarp: 6},
+		},
+	},
+	{
+		name: "BURNED_TOWER_B1F",
+		warps: []warpSpec{
+			{x: 3, y: 3, dest: "BURNED_TOWER_1F", destWarp: 3},
+			{x: 17, y: 7, dest: "BURNED_TOWER_1F", destWarp: 7},
+			{x: 10, y: 8, dest: "BURNED_TOWER_1F", destWarp: 9},
+			{x: 3, y: 13, dest: "BURNED_TOWER_1F", destWarp: 10},
+			{x: 17, y: 14, dest: "BURNED_TOWER_1F", destWarp: 12},
+			{x: 7, y: 15, dest: "BURNED_TOWER_1F", destWarp: 14},
+		},
+	},
+	{
 		name: "ECRUTEAK_POKECENTER_1F",
 		warps: []warpSpec{
 			{x: 3, y: 7, dest: "ECRUTEAK_CITY", destWarp: 6},
@@ -479,12 +517,16 @@ var firstBadgeTopology = []mapSpec{
 		warps: []warpSpec{
 			{x: 4, y: 17, dest: "ECRUTEAK_CITY", destWarp: 10},
 			{x: 5, y: 17, dest: "ECRUTEAK_CITY", destWarp: 10},
-			{x: 4, y: 14, dest: "ECRUTEAK_GYM", destWarp: 4},
+			// Warp 3 is the landing point for every invisible-floor pit. Its
+			// collision is ordinary floor (0x00), so it cannot trigger as a source.
+			{x: 4, y: 14, dest: "ECRUTEAK_GYM", destWarp: 4, inert: true},
 			{x: 2, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
 			{x: 3, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
 			{x: 4, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
 			{x: 4, y: 5, dest: "ECRUTEAK_GYM", destWarp: 3},
-			{x: 6, y: 7, dest: "ECRUTEAK_GYM", destWarp: 3},
+			// Warp 8 is also declared in the event table but sits on ordinary
+			// floor (0x00); blocking it would sever the legal path to Morty.
+			{x: 6, y: 7, dest: "ECRUTEAK_GYM", destWarp: 3, inert: true},
 			{x: 7, y: 4, dest: "ECRUTEAK_GYM", destWarp: 3},
 			{x: 2, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
 			{x: 3, y: 6, dest: "ECRUTEAK_GYM", destWarp: 3},
@@ -582,6 +624,7 @@ func (p *firstBadgeWorldProvider) ParseMap(mapID uint16) (worldmodel.NativeMapHe
 			Y:          warp.y,
 			DestWarpID: warp.destWarp - 1,
 			DestMap:    gsdata.NativeMapID(dest.Group, dest.Number),
+			Inert:      warp.inert,
 		})
 	}
 	for _, connection := range spec.connections {

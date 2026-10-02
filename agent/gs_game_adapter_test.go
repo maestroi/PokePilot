@@ -196,8 +196,32 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressSquirtBottleAcquired {
+		t.Fatalf("after Plain Badge progression = %+v, want SquirtBottle", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSquirtBottleAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressSudowoodoCleared {
+		t.Fatalf("after SquirtBottle progression = %+v, want Sudowoodo", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSudowoodoCleared, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressBurnedTowerCleared {
+		t.Fatalf("after Sudowoodo progression = %+v, want Burned Tower", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressBurnedTowerCleared, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressFogBadgeEarned {
+		t.Fatalf("after Burned Tower progression = %+v, want Fog Badge", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressFogBadgeEarned, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed Plain Badge slice still offered: %+v", got)
+		t.Fatalf("completed Fog Badge slice still offered: %+v", got)
 	}
 }
 
@@ -229,6 +253,10 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressHM01CutAcquired,
 		gsprofile.ProgressTM02HeadbuttAcquired,
 		gsprofile.ProgressPlainBadgeEarned,
+		gsprofile.ProgressSquirtBottleAcquired,
+		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressBurnedTowerCleared,
+		gsprofile.ProgressFogBadgeEarned,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -267,6 +295,10 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressHM01CutAcquired,
 		gsprofile.ProgressTM02HeadbuttAcquired,
 		gsprofile.ProgressPlainBadgeEarned,
+		gsprofile.ProgressSquirtBottleAcquired,
+		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressBurnedTowerCleared,
+		gsprofile.ProgressFogBadgeEarned,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -341,6 +373,9 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressTM02HeadbuttAcquired,
 		gsprofile.ProgressPlainBadgeEarned,
+		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressBurnedTowerCleared,
+		gsprofile.ProgressFogBadgeEarned,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {
@@ -351,6 +386,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressMysteryEggReturned,
 		gsprofile.ProgressTogepiEggReceived,
 		gsprofile.ProgressHM01CutAcquired,
+		gsprofile.ProgressSquirtBottleAcquired,
 	} {
 		if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress}); got != objectiveFrameBudget {
 			t.Fatalf("%s budget = %d, want ordinary %d", progress, got, objectiveFrameBudget)

@@ -360,7 +360,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x01, true
 	case "ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY":
 		return 0x02, true
-	case "ROUTE_30_BERRY_HOUSE":
+	case "ROUTE_30_BERRY_HOUSE", "GOLDENROD_FLOWER_SHOP":
 		return 0x04, true
 	case "PLAYERS_HOUSE_1F":
 		return 0x05, true
@@ -382,9 +382,9 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x0f, true
 	case "PLAYERS_HOUSE_2F":
 		return 0x13, true
-	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM":
+	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM", "BURNED_TOWER_1F":
 		return 0x14, true
-	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F":
+	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F":
 		return 0x15, true
 	case "ILEX_FOREST":
 		return 0x1c, true
