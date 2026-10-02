@@ -51,7 +51,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressAzaleaRivalResolved,
 		gsprofile.ProgressFarfetchdHerded,
 		gsprofile.ProgressHM01CutAcquired,
-		gsprofile.ProgressTM02HeadbuttAcquired:
+		gsprofile.ProgressTM02HeadbuttAcquired,
+		gsprofile.ProgressPlainBadgeEarned:
 		return true
 	default:
 		return false
@@ -143,6 +144,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSHM01Cut(a.m, a.romData)
 		case gsprofile.ProgressTM02HeadbuttAcquired:
 			err = executeGSTM02Headbutt(a.m, a.romData)
+		case gsprofile.ProgressPlainBadgeEarned:
+			err = executeGSWhitney(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -165,7 +168,7 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
 			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned,
 			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded,
-			gsprofile.ProgressTM02HeadbuttAcquired:
+			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -370,6 +373,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressTM02HeadbuttAcquired,
 			Note:     "(teach and use Cut to cross north Ilex Forest, then receive TM02 Headbutt from the tutor)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressPlainBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressPlainBadgeEarned,
+			Note:     "(continue through Route 34 to Goldenrod, defeat Whitney, settle her crying scene, and receive the Plain Badge)",
 		}}
 	default:
 		return nil
