@@ -132,6 +132,51 @@ successful sample. When the run stops being active, subscribers receive a clean
 multipart end-of-stream. A restarted replay sidecar simply attaches to the
 current wall frame again; it does not create a second authoritative recording.
 
+### Optional RTMP/RTMPS broadcast sink
+
+The live media source can also feed an optional provider-neutral FFmpeg RTMP
+sink. Nothing starts automatically: an operator must explicitly call
+`POST /v1/runs/{id}/live/broadcast/start`, and
+`POST /v1/runs/{id}/live/broadcast/stop` disables it again. Current
+non-secret lifecycle/encoder diagnostics are available from
+`GET /v1/runs/{id}/live/broadcast/status`. These private routes are also
+allowlisted through `pokeui`; the public spectator relay does not expose them.
+
+The start body accepts `provider` (`generic`, `twitch`, or `youtube`),
+`endpoint`, `stream_key`, target width/height/FPS/video bitrate,
+codec/preset/keyframe interval, and optional silent AAC audio settings. Twitch
+and YouTube only provide ingest/encoder defaults around the same generic RTMP
+primitive; custom values can override the presets. Generic mode requires an
+RTMP(S) endpoint and can either use a complete target URL or append a separately
+supplied `stream_key`.
+
+Broadcast credentials exist only in the in-memory broadcaster configuration.
+The status response exposes the destination host and encoder settings but never
+the endpoint path or stream key. FFmpeg stdout/stderr are discarded so provider
+errors cannot echo credentials into service logs, and status errors redact the
+configured endpoint/target/key defensively. No stream credential is written to
+run metadata, replay artifacts, or S3.
+
+Each broadcaster subscribes to the existing two-frame live presentation queue,
+so a stalled network or encoder only drops presentation frames for that
+subscriber. Encoder exits trigger bounded exponential reconnect attempts; after
+the configured retry budget the broadcast becomes `failed` while the live run
+continues. Run completion, explicit stop, and replay-sidecar shutdown cancel the
+encoder and leave the broadcast in `stopped`.
+
+Example request (placeholder credential only):
+
+```json
+{
+  "provider": "twitch",
+  "stream_key": "<stream-key>",
+  "width": 1280,
+  "height": 720,
+  "fps": 30,
+  "video_bitrate_kbps": 4500
+}
+```
+
 ## MCP tools for debugging agents
 
 When `POKEPILOT_MCP_TOKEN` enables the existing private MCP server, the
