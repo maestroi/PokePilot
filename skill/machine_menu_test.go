@@ -48,9 +48,13 @@ func (fakeMachineMenuDecoder) MachineMenuEntryIndex(r game.MemoryReader, native 
 
 type fakeMachineMenuMachine struct {
 	fakeMenuMachine
+	startTaps int
 }
 
 func (m *fakeMachineMenuMachine) Tap(btn emu.Button, hold, gap int) {
+	if btn == emu.Start {
+		m.startTaps++
+	}
 	switch btn {
 	case emu.Left:
 		pocket := m.mem[fakeMachinePocket]
@@ -80,6 +84,22 @@ func (m *fakeMachineMenuMachine) Tap(btn emu.Button, hold, gap int) {
 		}
 	default:
 		m.fakeMenuMachine.Tap(btn, hold, gap)
+	}
+}
+
+func TestEnsureMachineMenuOpenResumesExistingPackWithoutReopeningStart(t *testing.T) {
+	m := &fakeMachineMenuMachine{}
+	m.mem[fakeMachinePocket] = 0 // Items pocket: Gen-II PACKSTATE_ITEMSPOCKETMENU.
+	m.mem[fakeMachineCount] = 3
+
+	// A live pack is sufficient to resume the transaction. Passing a nil
+	// START-menu decoder makes the regression fail if the helper tries to
+	// reopen START instead of accepting the existing PACK.
+	if err := ensureMachineMenuOpenWithDecoder(m, nil, fakeMachineMenuDecoder{}); err != nil {
+		t.Fatalf("resume existing machine menu: %v", err)
+	}
+	if m.startTaps != 0 {
+		t.Fatalf("START taps=%d, want 0 while PACK already owns input", m.startTaps)
 	}
 }
 

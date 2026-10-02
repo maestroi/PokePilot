@@ -118,13 +118,8 @@ func teachFieldMoveWithMachineMenu(
 		return fmt.Errorf("skill: native machine teach: choose carrier: %w", err)
 	}
 
-	if err := openStartMenuEntryWithDecoder(m, menu, startMenuItems); err != nil {
+	if err := ensureMachineMenuOpenWithDecoder(m, menu, machines); err != nil {
 		return fmt.Errorf("skill: native machine teach: open PACK: %w", err)
-	}
-	if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
-		return machines.DecodeMachineMenu(m).Visible
-	}) {
-		return fmt.Errorf("skill: native machine teach: PACK did not appear")
 	}
 	if err := selectMachineEntryWithDecoder(m, machines, native); err != nil {
 		return fmt.Errorf("skill: native machine teach: select machine: %w", err)
