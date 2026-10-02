@@ -90,7 +90,7 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 	// never knows native pocket numbers.
 	for attempts := 0; state.Pocket != game.MachinePocketTMHM && attempts < 4; attempts++ {
 		previous := state.Pocket
-		m.Tap(emu.Left, 3, 7)
+		m.Tap(emu.Left, menuPressHold(decoder), 7)
 		moved := waitMenuUntil(m, machineMenuSettleBudget, func() bool {
 			next := decoder.DecodeMachineMenu(m)
 			return next.Visible && next.Pocket != previous
@@ -127,7 +127,7 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 		if previous > target {
 			btn = emu.Up
 		}
-		m.Tap(btn, 3, 7)
+		m.Tap(btn, menuPressHold(decoder), 7)
 		moved := waitMenuUntil(m, machineMenuSettleBudget, func() bool {
 			next := decoder.DecodeMachineMenu(m)
 			return next.Ready && next.Position != previous
@@ -148,7 +148,7 @@ func selectMachineEntryWithDecoder(m menuMachine, decoder game.MachineMenuDecode
 		}
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(decoder), 7)
 	if !waitMenuUntil(m, machineMenuSettleBudget, func() bool {
 		return !decoder.DecodeMachineMenu(m).Ready
 	}) {
