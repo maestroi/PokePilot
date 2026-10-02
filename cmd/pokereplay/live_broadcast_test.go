@@ -237,3 +237,48 @@ func TestLiveStatusDoesNotStartProducer(t *testing.T) {
 		t.Fatal("status probe started a live media producer")
 	}
 }
+
+func TestLiveBroadcastSessionSurvivesAttemptHandoff(t *testing.T) {
+	pngData := testLivePNG(t)
+	// A deploy drain re-queues the run and leases its next attempt; only the
+	// terminal status may end the shared live source (and any RTMP broadcast).
+	statuses := []string{"running", "leased", "queued", "running", "running", "done"}
+	var mu sync.Mutex
+	runReads := 0
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/runs/run-live":
+			mu.Lock()
+			read := runReads
+			runReads++
+			mu.Unlock()
+			status := statuses[min(read, len(statuses)-1)]
+			_ = json.NewEncoder(w).Encode(map[string]any{"run": map[string]any{
+				"run_id": "run-live", "status": status, "frame": uint64(100 + read),
+			}})
+		case "/frame":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngData)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer wall.Close()
+
+	replay := newReplayServer(wall.URL, "", "", nil)
+	defer replay.stopLiveSessions()
+	session := replay.liveSession("run-live")
+	frames, unsubscribe := session.subscribe()
+	defer unsubscribe()
+
+	var last uint64
+	for frame := range frames {
+		last = frame.frame
+	}
+	if want := uint64(100 + 4); last != want {
+		t.Fatalf("last live frame=%d, want %d from the attempt after the handoff", last, want)
+	}
+	if got := session.snapshot().State; got != "ended" {
+		t.Fatalf("final live state=%q, want ended once the run is done", got)
+	}
+}
