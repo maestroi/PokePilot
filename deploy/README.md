@@ -267,4 +267,6 @@ docker service logs -f pokefixer_fixer
 
 For the watchdog, set `POKEPILOT_FIXER_SERVICE=pokefixer_fixer`,
 `POKEPILOT_TRIAGE_LEDGER=~/.local/share/pokepilot/fixer-swarm/ledger.tsv` and
-`POKEPILOT_TRIAGE_STATE=~/.local/share/pokepilot/fixer-swarm/slot-1/state`.
+`POKEPILOT_TRIAGE_STATE=~/.local/share/pokepilot/fixer-swarm/slot-1/state`. When the stack
+runs on another host, also set `POKEPILOT_FIXER_NODE` (ssh target holding
+those paths); replicas are then checked through `POKEPILOT_SWARM_MANAGER`.
