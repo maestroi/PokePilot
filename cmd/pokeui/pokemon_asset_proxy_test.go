@@ -52,6 +52,21 @@ func TestVuePokemonAssetProxyServesWhitelistedArtwork(t *testing.T) {
 	}
 }
 
+func TestPokemonAssetProxyAllowsGen2BadgeArtwork(t *testing.T) {
+	for _, path := range []string{
+		"sprites/badges/9.png",
+		"sprites/badges/12.png",
+		"sprites/badges/16.png",
+	} {
+		if !validPokemonAssetPath(path) {
+			t.Errorf("%s should be allowed", path)
+		}
+	}
+	if validPokemonAssetPath("sprites/badges/17.png") {
+		t.Fatal("badge 17 should remain outside the supported Pokémon badge sprite range")
+	}
+}
+
 func TestPokemonAssetProxyRejectsUnapprovedPaths(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -71,7 +86,7 @@ func TestPokemonAssetProxyRejectsUnapprovedPaths(t *testing.T) {
 	for _, path := range []string{
 		"/poke-assets/../../README.md",
 		"/poke-assets/sprites/pokemon/9999.png",
-		"/poke-assets/sprites/badges/9.png",
+		"/poke-assets/sprites/badges/17.png",
 		"/poke-assets/sprites/items/not-an-image.svg",
 	} {
 		res := httptest.NewRecorder()
