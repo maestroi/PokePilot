@@ -99,13 +99,14 @@ no behaviour change). The ladder tiers come from the same
 A running run that the stagnation watchdog has not stopped has no failure
 group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
 
-1. Wall: `POST /v1/runs/{id}/flag-stuck {note}` records the flag next to the
-   existing cooperative cancel flag. `farm.HeartbeatReply` gains
-   `Stop string` (`"stuck"`) and `Note string`.
-2. Runner: on `Stop == "stuck"` it ends the run with the existing `stuck`
-   outcome and detail `operator flagged: <note>`, writing the usual finish
-   dump and checkpoint. This is the same typed outcome the stagnation watchdog
-   produces; triage, issues and the fixer need no change.
+1. Wall: `POST /v1/runs/{id}/flag-stuck {note}` records the note and the
+   attempt it applies to on the run, and sets the existing cooperative cancel
+   flag so the runner stops at its next safe boundary.
+2. Runner: unchanged. The wall rewrites exactly that cancel stop of the
+   flagged attempt into the existing `stuck` outcome with detail
+   `operator flagged: <note>`, and recovery applies as for any stuck stop
+   (a flag is not a user cancel). This is the same typed outcome the
+   stagnation watchdog produces; triage, issues and the fixer need no change.
 3. Wall: `terminalRunFailure` already turns `stuck` into a blocking objective
    failure → `[farm]` issue → triage key → fixer. The normal recovery ladder
    resumes the run from its checkpoint, unlike a cancel.
@@ -114,8 +115,9 @@ group, so `/triage` cannot reach it. Flagging makes it fail the normal way.
    itself with the same detail plus "runner did not stop; no finish dump".
    Without a dump no issue is filed; the bot says so after an hour, so the
    flag is never silently lost.
-5. Bot: confirmation, optional note via a reply prompt with a Skip button,
-   then a follow-up message with the issue link once the wall reports it.
+5. Bot: two-step confirmation. Replying to the confirmation message with
+   text flags with that text as the note; tapping Confirm flags with no
+   note. The bot then posts the issue link once triage files it.
 6. Implementation note: no runner or heartbeat change is needed. A wall
    cancel already stops the runner (the LLM path reports it as `budget` with
    no detail, the policy paths as `cancelled`); the wall rewrites exactly
