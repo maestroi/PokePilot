@@ -122,3 +122,64 @@ func recoverDialogue(m frameClock, budget int) DialogueRecoveryResult {
 	}
 	return res
 }
+
+// menuDismissBudget bounds one menu dismissal in key presses. Each iteration
+// is one press (B on a cursor menu, A on a plain box) plus a settle. The
+// deepest dismissal this layer meets is the shop's item list — B back to the
+// "Anything else?" box, A to the action menu, B to the overworld: three
+// presses. The budget leaves headroom for a menu that needs a moment to
+// redraw between presses without spinning long on a menu that will not close.
+const menuDismissBudget = 12
+
+// dismissMenu closes a cursor menu that interrupted a walk by backing out of
+// it, and reports true only once the overworld is positively controllable.
+//
+// It is the shared fix for every list menu a walk can stumble into — a shop
+// item list, the PC menu, an elevator, the START menu — none of which is a
+// question this layer is allowed to answer. The safety comes from pressing the
+// key that matches the surface actually on screen:
+//
+//   - a cursor menu (MenuUp) is pressed with B, the Gen-I cancel key, which
+//     never selects an item and never answers a prompt — it only backs out;
+//   - a plain text box with no cursor (the shop's "Anything else?" between the
+//     item list and the action menu) is paged with A, the same primitive
+//     RecoverDialogue uses;
+//   - a two-option prompt is never touched: the instant one appears, B has led
+//     into a question the caller owns, so the dismissal stops and fails closed.
+//
+// This is deliberately NOT the shop's exitToOverworld, which decides B vs A
+// from DecodeShop's phase: that misclassifies the PC menu and the elevator as
+// a greeting and would press A on them, selecting an entry. Here the decision
+// is the cursor glyph itself, which is portable across every Gen-I menu.
+//
+// It fails closed on every path it cannot positively confirm: a screen that is
+// neither a menu, a box, nor a controllable overworld returns false, and so
+// does a menu that is still up when the budget runs out.
+func dismissMenu(m *emu.Emu) (bool, error) {
+	if m == nil {
+		return false, nil
+	}
+	for i := 0; i < menuDismissBudget; i++ {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		if state.DecodeTwoOptionMenu(&mem) != nil {
+			// B led into a question. It is the caller's to answer, not this
+			// layer's to dismiss; stop before touching it.
+			return false, nil
+		}
+		switch {
+		case state.MenuUp(&mem):
+			m.Tap(emu.B, 3, 7)
+		case state.DecodeDialogue(&mem) != nil:
+			m.Tap(emu.A, 3, 7)
+		case state.Controllable(&mem):
+			return true, nil
+		default:
+			// Neither a menu, a box, nor a controllable overworld. Do not
+			// guess which key would clear it.
+			return false, nil
+		}
+		m.StepFrames(talkSettle)
+	}
+	return false, nil
+}

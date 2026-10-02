@@ -600,6 +600,21 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 						continue
 					}
 				}
+				if rec.Stop == DialogueMenuOpen {
+					// A cursor menu interrupted the walk. Unlike a two-option
+					// prompt it is not a question: it is a surface (a shop item
+					// list, the PC menu, an elevator) that B backs out of
+					// without selecting anything. Dismiss it and re-plan from
+					// the overworld; only when it will not close do we fall
+					// through to the typed choice outcome and fail closed.
+					dismissed, derr := r.dismissMenu()
+					if derr != nil {
+						return res, fmt.Errorf("skill: %s: dismiss menu: %w", label, derr)
+					}
+					if dismissed {
+						continue
+					}
+				}
 				return res, &ErrDialogueChoice{Result: rec}
 			case DialogueBudgetExhausted:
 				// The box did not clear within the budget and is still up,
