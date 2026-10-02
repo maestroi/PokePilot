@@ -221,19 +221,38 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 		need = 99
 	}
 
-	var lastErr error
-	for qty := need; qty >= 1; qty-- {
-		err := Buy(m, item, qty)
-		if err == nil {
-			break
+	// buy tries the largest affordable quantity first. ErrCantAfford
+	// guarantees Buy backed out to the overworld, so a smaller quantity is
+	// safe to try: low money degrades the reserve instead of turning a
+	// recoverable catch into a planner failure.
+	buy := func() (lastErr error, hard bool) {
+		for qty := need; qty >= 1; qty-- {
+			err := Buy(m, item, qty)
+			if err == nil {
+				return nil, false
+			}
+			lastErr = err
+			if !errors.Is(err, ErrCantAfford) {
+				return err, true
+			}
 		}
-		lastErr = err
-		if !errors.Is(err, ErrCantAfford) {
-			return softFail(fmt.Errorf("skill: EnsureItemStock: buy item %#02x x%d at %s: %w", item, qty, mart.name, err))
+		return lastErr, false
+	}
+	lastErr, hard := buy()
+	if hard {
+		return softFail(fmt.Errorf("skill: EnsureItemStock: buy item %#02x at %s: %w", item, mart.name, lastErr))
+	}
+	// Broke at the counter with a NUGGET in the bag (run-1qtjk6v1dzvfam sat at
+	// ¥39 with no Poke Balls for 7M frames). Sell it at this same counter and
+	// retry; bag-pressure already treats NUGGET as pure money.
+	state.Snapshot(m, &mem)
+	if _, nuggets := bagEntry(&mem, nuggetItem); errors.Is(lastErr, ErrCantAfford) && nuggets > 0 && !state.HasEvent(&mem, eventInSafariZone) {
+		if err := Sell(m, nuggetItem, nuggets); err != nil {
+			return softFail(fmt.Errorf("skill: EnsureItemStock: sell NUGGET x%d at %s: %w", nuggets, mart.name, err))
 		}
-		// ErrCantAfford guarantees Buy backed out to the overworld. Try a
-		// smaller quantity so low money degrades the reserve instead of
-		// turning a recoverable catch into a planner failure.
+		if lastErr, hard = buy(); hard {
+			return softFail(fmt.Errorf("skill: EnsureItemStock: buy item %#02x at %s: %w", item, mart.name, lastErr))
+		}
 	}
 
 	state.Snapshot(m, &mem)
