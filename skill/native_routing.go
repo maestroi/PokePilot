@@ -379,24 +379,21 @@ func nativeAdjacentApproach(
 	return best.path, best.push, nil
 }
 
-func nativeConnectionApproach(
+func nativeConnectionEdgeBand(
 	provider worldmodel.NativeMapTopologyProvider,
-	grid *world.NativeGrid,
 	live game.LiveTopologyState,
 	edge world.NativeEdge,
-	sx, sy int,
-	blocked map[[2]int]bool,
-) ([]world.NativeStep, world.NativeStep, error) {
+) (limit, destLimit, sourceWidth, sourceHeight int, push world.NativeStep, err error) {
 	dest, err := provider.ParseMap(edge.To)
 	if err != nil {
-		return nil, world.NativeStep{}, err
+		return 0, 0, 0, 0, world.NativeStep{}, err
 	}
-	sourceWidth, sourceHeight := live.WidthBlocks*2, live.HeightBlocks*2
+	sourceWidth, sourceHeight = live.WidthBlocks*2, live.HeightBlocks*2
 	destWidth, destHeight := int(dest.WidthBlocks)*2, int(dest.HeightBlocks)*2
 
-	limit := sourceWidth
-	destLimit := destWidth
-	push := world.NativeStep{DY: -1}
+	limit = sourceWidth
+	destLimit = destWidth
+	push = world.NativeStep{DY: -1}
 	switch edge.Dir {
 	case 1:
 		push = world.NativeStep{DY: 1}
@@ -406,6 +403,34 @@ func nativeConnectionApproach(
 	case 3:
 		limit, destLimit = sourceHeight, destHeight
 		push = world.NativeStep{DX: 1}
+	}
+	return limit, destLimit, sourceWidth, sourceHeight, push, nil
+}
+
+func nativeConnectionEdgeTile(edge world.NativeEdge, i, sourceWidth, sourceHeight int) (tx, ty int) {
+	tx, ty = i, 0
+	switch edge.Dir {
+	case 1:
+		ty = sourceHeight - 1
+	case 2:
+		tx, ty = 0, i
+	case 3:
+		tx, ty = sourceWidth-1, i
+	}
+	return tx, ty
+}
+
+func nativeConnectionApproach(
+	provider worldmodel.NativeMapTopologyProvider,
+	grid *world.NativeGrid,
+	live game.LiveTopologyState,
+	edge world.NativeEdge,
+	sx, sy int,
+	blocked map[[2]int]bool,
+) ([]world.NativeStep, world.NativeStep, error) {
+	limit, destLimit, sourceWidth, sourceHeight, push, err := nativeConnectionEdgeBand(provider, live, edge)
+	if err != nil {
+		return nil, world.NativeStep{}, err
 	}
 
 	var best []world.NativeStep
@@ -418,15 +443,7 @@ func nativeConnectionApproach(
 		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
 			continue
 		}
-		tx, ty := i, 0
-		switch edge.Dir {
-		case 1:
-			ty = sourceHeight - 1
-		case 2:
-			tx, ty = 0, i
-		case 3:
-			tx, ty = sourceWidth-1, i
-		}
+		tx, ty := nativeConnectionEdgeTile(edge, i, sourceWidth, sourceHeight)
 		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
 			continue
 		}
@@ -443,6 +460,50 @@ func nativeConnectionApproach(
 		return nil, world.NativeStep{}, world.ErrNoPath
 	}
 	return best, push, nil
+}
+
+// nativeConnectionCutApproach finds a Cut that opens a currently sealed path
+// onto the connection band. Same-map nativeWalkTo already owns this for tile
+// goals; cross-map edges need the same bridge or a Cut tree on Route 35 seals
+// the north exit forever and routing bounces back through the Goldenrod gate.
+func nativeConnectionCutApproach(
+	provider worldmodel.NativeMapTopologyProvider,
+	grid *world.NativeGrid,
+	live game.LiveTopologyState,
+	edge world.NativeEdge,
+	sx, sy int,
+	blocked map[[2]int]bool,
+) (world.NativeCutApproach, error) {
+	limit, destLimit, sourceWidth, sourceHeight, _, err := nativeConnectionEdgeBand(provider, live, edge)
+	if err != nil {
+		return world.NativeCutApproach{}, err
+	}
+	bestCost := int(^uint(0) >> 1)
+	var best world.NativeCutApproach
+	found := false
+	for i := 0; i < limit; i++ {
+		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
+			continue
+		}
+		tx, ty := nativeConnectionEdgeTile(edge, i, sourceWidth, sourceHeight)
+		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
+			continue
+		}
+		plan, planErr := world.FindNativeCutApproach(grid, sx, sy, tx, ty, blocked)
+		if planErr != nil {
+			continue
+		}
+		cost := len(plan.Approach) + 1
+		if !found || cost < bestCost {
+			bestCost = cost
+			best = plan
+			found = true
+		}
+	}
+	if !found {
+		return world.NativeCutApproach{}, world.ErrNoPath
+	}
+	return best, nil
 }
 
 func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.NativeEdge, push world.NativeStep) error {
@@ -508,6 +569,7 @@ func traverseNativeEdge(
 	m *emu.Emu,
 	profile nativeRoutingProfile,
 	provider worldmodel.NativeGridProvider,
+	romData []byte,
 	edge world.NativeEdge,
 ) error {
 	const attempts = 12
@@ -539,6 +601,27 @@ func traverseNativeEdge(
 			// dimensions. They are read from the same settled topology as the
 			// grid so the two can never describe different maps.
 			path, push, err = nativeConnectionApproach(provider, grid, live, edge, int(state.X), int(state.Y), blocked)
+			if errors.Is(err, world.ErrNoPath) {
+				canCut, cutErr := nativeCutAvailable(profile, m, romData)
+				if cutErr != nil {
+					return fmt.Errorf("skill: native routing: decode Cut capability: %w", cutErr)
+				}
+				if canCut {
+					cutPlan, cutErr := nativeConnectionCutApproach(provider, grid, live, edge, int(state.X), int(state.Y), blocked)
+					if cutErr == nil {
+						if execErr := executeNativeCutApproach(m, profile, cutPlan); execErr != nil {
+							var blockedStep *ErrBlocked
+							if !errors.As(execErr, &blockedStep) {
+								return execErr
+							}
+							m.StepFrames(npcWaitFrames)
+							continue
+						}
+						// Cut mutates live blocks; re-read and replan the edge.
+						continue
+					}
+				}
+			}
 		default:
 			return fmt.Errorf("skill: native routing: unsupported edge kind %d", edge.Kind)
 		}
@@ -657,7 +740,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 			return fmt.Errorf("skill: native routing: empty cross-map route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, ErrNavigationStalled)
 		}
 		mem.last = &route[0]
-		if err := traverseNativeEdge(m, profile, provider, route[0]); err != nil {
+		if err := traverseNativeEdge(m, profile, provider, romData, route[0]); err != nil {
 			// The edge exists in the map graph but this arrival's walkable
 			// component cannot reach it (a sealed seam, or stairs that only
 			// the other entry into the map connects to): remember that and
