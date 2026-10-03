@@ -119,8 +119,10 @@ type bot struct {
 	plannerAt    time.Time
 	plannerLast  []operatorapi.CheckResult
 
-	alertMu sync.Mutex
-	book    *alertBook
+	alertMu        sync.Mutex
+	book           *alertBook
+	restartAdopted []*alertState // guarded by alertMu; see applyAlertList
+	restartSent    bool          // guarded by alertMu
 }
 
 func newBot(cfg config, tg *telegramClient, op *operatorapi.Client) *bot {
@@ -212,11 +214,14 @@ func loadConfig() (config, error) {
 		GitHubRepo:     envDefault("POKEPILOT_GITHUB_REPO", "maestroi/PokePilot"),
 		OpsToken:       operatorapi.ReadSecretFile(os.Getenv("POKEPILOT_OPS_TOKEN_FILE")),
 	}
-	if n, err := strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9")); err == nil {
+	if n, err := strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9")); err == nil && n >= 0 && n <= 23 {
 		cfg.DigestHour = n
 	} else {
 		cfg.DigestHour = 9
-		log.Printf("poketelegram: POKEPILOT_WATCH_DIGEST_HOUR invalid (%v); using 9", err)
+		log.Printf("poketelegram: POKEPILOT_WATCH_DIGEST_HOUR must be an hour 0-23; using 9")
+	}
+	if cfg.OpsToken == "" {
+		log.Printf("poketelegram: warning: POKEPILOT_OPS_TOKEN_FILE unset or empty; watcher pushes to /v1/ops will be rejected")
 	}
 	if cfg.BotToken == "" {
 		return config{}, errors.New("TELEGRAM_BOT_TOKEN is required")
@@ -1078,13 +1083,12 @@ func (b *bot) httpHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// Liveness only: a wall outage must not make Swarm restart the bot
+		// (each restart re-adopts alerts). Wall state is reported, not failed.
 		status := "ok"
-		code := http.StatusOK
 		if b.m.wallHealthy.Load() == 0 {
 			status = "degraded"
-			code = http.StatusServiceUnavailable
 		}
-		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":             status,
 			"wall_healthy":       b.m.wallHealthy.Load() == 1,

@@ -116,7 +116,8 @@ func TestNavigationEditsInPlace(t *testing.T) {
 }
 
 func TestBadgeBar(t *testing.T) {
-	if got := badgeBar(5, 8); got != "🏅 ●●●●●○○○ 5/8" {
+	// No game-specific total: just the count.
+	if got := badgeBar(5); got != "🏅 5" {
 		t.Fatalf("%q", got)
 	}
 }

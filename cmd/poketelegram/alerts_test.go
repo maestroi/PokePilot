@@ -86,3 +86,36 @@ func TestAlertMuteSuppressesOpenAndRemind(t *testing.T) {
 		t.Fatalf("mute expired → remind: %v", kinds(acts))
 	}
 }
+
+func TestColdObserveKeepsAbsentChecks(t *testing.T) {
+	a := newAlertBook(12 * time.Hour)
+	t0 := time.Unix(1_800_000_000, 0)
+	a.Observe("watch", nil, t0)
+	a.Observe("watch", []operatorapi.CheckResult{bad("disk", 1)}, t0)
+	if acts, _ := a.ObserveCold("watch", nil, t0.Add(time.Minute)); len(acts) != 0 || len(a.Open()) != 1 {
+		t.Fatalf("cold snapshot resolved an absent check: %v open=%d", kinds(acts), len(a.Open()))
+	}
+	if acts, _ := a.ObserveCold("watch", []operatorapi.CheckResult{ok("disk")}, t0.Add(2*time.Minute)); len(acts) != 1 || acts[0].Kind != alertResolve {
+		t.Fatalf("cold snapshot must still resolve a present OK check: %v", kinds(acts))
+	}
+}
+
+func TestResolveClearsMuteAndAbsenceClosesState(t *testing.T) {
+	a := newAlertBook(12 * time.Hour)
+	t0 := time.Unix(1_800_000_000, 0)
+	a.Observe("watch", nil, t0)
+	a.Observe("watch", []operatorapi.CheckResult{bad("disk", 1), bad("gone", 1)}, t0)
+	a.Mute("disk", t0.Add(12*time.Hour))
+	acts, _ := a.Observe("watch", []operatorapi.CheckResult{ok("disk")}, t0.Add(time.Minute))
+	for _, act := range acts {
+		if act.State.Open {
+			t.Fatalf("resolved state still open: %+v", act.State)
+		}
+		if act.State.Name == "disk" && !act.State.MutedUntil.IsZero() {
+			t.Fatalf("resolve kept the mute: %+v", act.State)
+		}
+	}
+	if len(acts) != 2 {
+		t.Fatalf("both resolve: %v", kinds(acts))
+	}
+}

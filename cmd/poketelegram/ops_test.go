@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,6 +87,7 @@ func TestAlertCardOpenThenResolveEditsAndReplies(t *testing.T) {
 func TestRestartSummaryIsOneMessage(t *testing.T) {
 	b, f := uiBot(t, nil)
 	b.cfg.NotifyChats = []int64{1}
+	b.applyAlerts(context.Background(), "bot", nil, time.Now())
 	b.applyAlerts(context.Background(), "watch", []operatorapi.CheckResult{
 		{Name: "quorum", Grace: 2, Message: "2/3 managers reachable"},
 		{Name: "paid-cap", Grace: 1, Message: "cap"},
@@ -203,5 +205,193 @@ func TestResolveWithCardGoneSendsFullText(t *testing.T) {
 	}
 	if b.m.telegramErrs.Load() != errs {
 		t.Fatal("gone card is not a telegram error")
+	}
+}
+
+func TestHealthzIsLivenessWhileWallDown(t *testing.T) {
+	b, _ := uiBot(t, nil)
+	b.m.wallHealthy.Store(0)
+	rec := httptest.NewRecorder()
+	b.httpHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusOK || body["wall_healthy"] != false || body["status"] != "degraded" {
+		t.Fatalf("healthz: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRestartSummaryCollectsAllSourcesIntoOneMessage(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	ctx := context.Background()
+	now := time.Now()
+	b.started = now
+	b.applyAlerts(ctx, "bot", []operatorapi.CheckResult{{Name: "wall", Grace: 2, Message: "wall down"}}, now)
+	b.applyAlerts(ctx, "runs", []operatorapi.CheckResult{{Name: "stall:r1", Grace: 1, Message: "r1 stalled"}}, now)
+	if len(f.calls) != 0 {
+		t.Fatalf("summary must wait for the watcher or the window: %+v", f.calls)
+	}
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "quorum", Grace: 2, Message: "2/3"}}, now)
+	if len(f.calls) != 1 || !strings.Contains(f.calls[0]["text"].(string), "3 checks failing") {
+		t.Fatalf("one summary for all sources: %+v", f.calls)
+	}
+	// A source first seen after the window pages its failures as cards.
+	b.applyAlerts(ctx, "late", []operatorapi.CheckResult{{Name: "x", Grace: 1, Message: "late failure"}}, now)
+	if len(f.calls) != 2 || !strings.Contains(f.calls[1]["text"].(string), "late failure") || f.calls[1]["reply_markup"] == nil {
+		t.Fatalf("late adoption: %+v", f.calls)
+	}
+}
+
+func TestRestartSummaryWindowAndEmpty(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	ctx := context.Background()
+	now := time.Now()
+	b.started = now
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "quorum", Message: "2/3"}}, now)
+	if len(f.calls) != 0 {
+		t.Fatalf("a push before the first monitor pass must not flush: %+v", f.calls)
+	}
+	b.applyAlerts(ctx, "bot", nil, now)
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "quorum", OK: true}}, now)
+	if len(f.calls) != 0 {
+		t.Fatalf("nothing adopted: nothing posted: %+v", f.calls)
+	}
+
+	b2, f2 := uiBot(t, nil)
+	b2.cfg.NotifyChats = []int64{1}
+	b2.started = now
+	b2.applyAlerts(ctx, "bot", []operatorapi.CheckResult{{Name: "wall", Message: "wall down"}}, now)
+	b2.applyAlerts(ctx, "bot", []operatorapi.CheckResult{{Name: "wall", Message: "wall down"}}, now.Add(3*time.Minute))
+	if len(f2.calls) != 1 || !strings.Contains(f2.calls[0]["text"].(string), "1 checks failing") {
+		t.Fatalf("window expiry must flush the summary: %+v", f2.calls)
+	}
+}
+
+func TestRestartSummaryIsCapped(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	var checks []operatorapi.CheckResult
+	for i := 0; i < 30; i++ {
+		checks = append(checks, operatorapi.CheckResult{Name: fmt.Sprintf("c%02d", i), Message: strings.Repeat("x", 300)})
+	}
+	b.applyAlerts(context.Background(), "bot", nil, time.Now())
+	b.applyAlerts(context.Background(), "watch", checks, time.Now())
+	text := f.calls[0]["text"].(string)
+	if !strings.Contains(text, "…15 more") || strings.Count(text, "\n") > 17 {
+		t.Fatalf("summary not capped (%d lines):\n%s", strings.Count(text, "\n"), text)
+	}
+}
+
+func TestAlertsCardIsCapped(t *testing.T) {
+	b, _ := uiBot(t, nil)
+	var checks []operatorapi.CheckResult
+	for i := 0; i < 30; i++ {
+		checks = append(checks, operatorapi.CheckResult{Name: fmt.Sprintf("c%02d", i), Message: strings.Repeat("x", 300)})
+	}
+	b.alertMu.Lock()
+	b.book.Observe("watch", checks, time.Now())
+	b.alertMu.Unlock()
+	c, _ := b.alertsCard(context.Background())
+	if !strings.Contains(c.Text, "…15 more") || strings.Count(c.Text, "🔴") != 15 {
+		t.Fatalf("alerts card not capped:\n%s", c.Text)
+	}
+}
+
+func TestAdoptedAlertResolveNotifiesChats(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	ctx := context.Background()
+	t0 := time.Now()
+	b.applyAlerts(ctx, "bot", nil, t0)
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "disk:n1:/", Message: "low"}}, t0) // adopted
+	n := len(f.calls)
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "disk:n1:/", OK: true}}, t0.Add(time.Minute))
+	if len(f.calls) != n+1 || !strings.Contains(f.calls[n]["text"].(string), "disk:n1:/") || !strings.Contains(f.calls[n]["text"].(string), "resolved after") {
+		t.Fatalf("adopted resolve must notify: %+v", f.calls[n:])
+	}
+}
+
+func TestFailedAlertCardIsRetried(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	ctx := context.Background()
+	t0 := time.Now()
+	b.applyAlerts(ctx, "watch", nil, t0)
+	f.reply = func(string, map[string]any) (int, string) { return 502, `{"ok":false,"description":"Bad Gateway"}` }
+	fail := []operatorapi.CheckResult{{Name: "disk:n1:/", Grace: 1, Message: "low"}}
+	b.applyAlerts(ctx, "watch", fail, t0)
+	f.reply = func(string, map[string]any) (int, string) { return 200, `{"ok":true,"result":{"message_id":42}}` }
+	b.applyAlerts(ctx, "watch", fail, t0.Add(time.Minute))
+	b.alertMu.Lock()
+	cards := len(b.book.states["disk:n1:/"].Cards)
+	b.alertMu.Unlock()
+	if cards != 1 {
+		t.Fatalf("failed page must be re-sent next tick; calls=%+v", f.calls)
+	}
+}
+
+func TestColdWatchSnapshotDoesNotResolveAbsentChecks(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	b.cfg.OpsToken = "tok"
+	post := func(s operatorapi.OpsSnapshot) {
+		body, _ := json.Marshal(s)
+		req := httptest.NewRequest(http.MethodPost, "/v1/ops", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer tok")
+		b.httpHandler().ServeHTTP(httptest.NewRecorder(), req)
+	}
+	post(operatorapi.OpsSnapshot{Warm: true})
+	post(operatorapi.OpsSnapshot{Warm: true, Checks: []operatorapi.CheckResult{{Name: "paid-cap", Grace: 1, Message: "cap"}}})
+	post(operatorapi.OpsSnapshot{Warm: false}) // restarted watcher, no fixer report yet
+	for _, c := range f.calls {
+		if c["_method"] == "editMessageText" {
+			t.Fatalf("cold snapshot resolved paid-cap: %+v", c)
+		}
+	}
+	if len(b.book.Open()) != 1 {
+		t.Fatal("paid-cap must stay open")
+	}
+}
+
+func TestBoardTextConcurrentWithAlerts(t *testing.T) {
+	b, _ := uiBot(t, nil)
+	ctx := context.Background()
+	b.applyAlerts(ctx, "watch", nil, time.Now())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "a", Grace: 1, Message: fmt.Sprint("m", i)}}, time.Now())
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		_ = b.boardText()
+	}
+	<-done
+}
+
+func TestFlagFollowUpNeedsOperatorFlaggedGroup(t *testing.T) {
+	var triage atomic.Value
+	triage.Store(`[{"key":"old","pattern":"stuck in menu","example":"older failure","run_ids":["r1"],"issue":{"issue_number":7}}]`)
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/triage") {
+			_, _ = w.Write([]byte(triage.Load().(string)))
+		}
+	}))
+	t.Cleanup(wall.Close)
+	f := newFakeTG(t)
+	b := newBot(config{GitHubRepo: "o/r"}, f.client(), operatorapi.New(wall.URL, "", ""))
+	now := time.Now()
+	b.flags["r1"] = flagWatch{Chat: 1, Since: now}
+	b.observeFlags(context.Background(), now)
+	if len(f.calls) != 0 {
+		t.Fatalf("older group for the same run must not be posted: %+v", f.calls)
+	}
+	triage.Store(`[{"key":"old","pattern":"stuck in menu","run_ids":["r1"],"issue":{"issue_number":7}},` +
+		`{"key":"new","pattern":"stuck","example":"operator flagged: looping","run_ids":["r1"],"issue":{"issue_number":9}}]`)
+	b.observeFlags(context.Background(), now)
+	if len(f.calls) != 1 || !strings.Contains(f.calls[0]["text"].(string), "issue #9") {
+		t.Fatalf("matching group must be posted: %+v", f.calls)
 	}
 }

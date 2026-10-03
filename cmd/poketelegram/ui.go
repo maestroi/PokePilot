@@ -160,14 +160,10 @@ func (b *bot) editCard(ctx context.Context, chat, msgID int64, c card) {
 	}
 }
 
-func badgeBar(n, total int) string {
-	if total <= 0 {
-		total = 8
-	}
-	if n > total {
-		total = n
-	}
-	return fmt.Sprintf("🏅 %s%s %d/%d", strings.Repeat("●", n), strings.Repeat("○", total-n), n, total)
+// badgeBar shows the count only: the total is a game fact the generic bot
+// does not know.
+func badgeBar(n int) string {
+	return fmt.Sprintf("🏅 %d", n)
 }
 
 // placeName is game-agnostic: the runtime's generic map_name when the game
@@ -258,7 +254,7 @@ func (b *bot) runCard(ctx context.Context, runID string) (card, error) {
 	run := inspection.Run
 	lines := []string{
 		fmt.Sprintf("%s <b>%s</b> · <code>%s</code>", statusDot(run.Status), h(emptyDash(run.Game)), h(run.RunID)),
-		badgeBar(badges(run), 8),
+		badgeBar(badges(run)),
 		fmt.Sprintf("📍 %s · %d maps visited%s", h(placeName(run)), run.MapsVisited, b.lastNewMapSuffix(run.RunID)),
 		fmt.Sprintf("🎞 frame %d%s", run.Frame, b.rateSuffix(run.RunID)),
 		fmt.Sprintf("🔁 attempt %d · lost %d · recoveries %d", run.Attempts, run.LossRecoveries, run.RecoveryEvents),
@@ -387,6 +383,10 @@ func (b *bot) alertsCard(ctx context.Context) (card, error) {
 		lines = append(lines, "No open watcher alerts.")
 	}
 	for i, a := range snap {
+		if i == maxListLines {
+			lines = append(lines, fmt.Sprintf("…%d more", len(snap)-maxListLines))
+			break
+		}
 		lines = append(lines, "🔴 <b>"+h(a.name)+"</b>: "+h(clip(a.msg, 200)))
 		if i < 8 {
 			rows = append(rows, []inlineButton{btn("🔕 Mute 12h · "+clip(a.name, 30), "mute:"+b.handle(a.name))})

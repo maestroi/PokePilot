@@ -50,6 +50,17 @@ func TestLoadConfigLegacyChatIsAuthorizedAndNotified(t *testing.T) {
 	}
 }
 
+func TestLoadConfigDigestHourRange(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	for in, want := range map[string]int{"25": 9, "-1": 9, "x": 9, "0": 0, "23": 23} {
+		t.Setenv("POKEPILOT_WATCH_DIGEST_HOUR", in)
+		cfg, err := loadConfig()
+		if err != nil || cfg.DigestHour != want {
+			t.Fatalf("digest hour %q: %d %v", in, cfg.DigestHour, err)
+		}
+	}
+}
+
 func TestStatusAndRunTextUseOperatorAPI(t *testing.T) {
 	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

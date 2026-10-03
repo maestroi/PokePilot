@@ -44,6 +44,16 @@ func newAlertBook(remind time.Duration) *alertBook {
 // from the same source but absent now count as OK. The first call per source
 // adopts bad results as open without paging and returns them as `adopted`.
 func (a *alertBook) Observe(source string, results []operatorapi.CheckResult, now time.Time) ([]alertAction, []*alertState) {
+	return a.observe(source, results, now, true)
+}
+
+// ObserveCold is Observe for a partial list (a freshly restarted watcher):
+// absent checks are unknown, not OK, so they keep their state.
+func (a *alertBook) ObserveCold(source string, results []operatorapi.CheckResult, now time.Time) ([]alertAction, []*alertState) {
+	return a.observe(source, results, now, false)
+}
+
+func (a *alertBook) observe(source string, results []operatorapi.CheckResult, now time.Time, resolveAbsent bool) ([]alertAction, []*alertState) {
 	var actions []alertAction
 	var adopted []*alertState
 	first := !a.seeded[source]
@@ -59,6 +69,7 @@ func (a *alertBook) Observe(source string, results []operatorapi.CheckResult, no
 		if r.OK {
 			if st.Open {
 				st.Open = false
+				st.MutedUntil = time.Time{} // a mute covers one episode
 				actions = append(actions, alertAction{Kind: alertResolve, State: st})
 			}
 			st.Bad = 0
@@ -89,10 +100,11 @@ func (a *alertBook) Observe(source string, results []operatorapi.CheckResult, no
 		}
 	}
 	for name, st := range a.states {
-		if st.Source != source || present[name] {
+		if !resolveAbsent || st.Source != source || present[name] {
 			continue
 		}
 		if st.Open {
+			st.Open = false
 			actions = append(actions, alertAction{Kind: alertResolve, State: st})
 		}
 		delete(a.states, name)

@@ -14,7 +14,15 @@ import (
 	"github.com/maestroi/pokepilot/operatorapi"
 )
 
-const watcherSilentAfter = 5 * time.Minute
+const (
+	watcherSilentAfter = 5 * time.Minute
+	// restartWindow bounds how long adopted alerts are collected into the
+	// single "Bot restarted" summary when the watcher does not push first.
+	restartWindow = 2 * time.Minute
+	// maxListLines caps alert lists so a message stays under Telegram's
+	// 4096-character limit.
+	maxListLines = 15
+)
 
 func (b *bot) handleOps(w http.ResponseWriter, r *http.Request) {
 	if !operatorapi.OpsAuthorized(r, b.cfg.OpsToken) {
@@ -30,7 +38,9 @@ func (b *bot) handleOps(w http.ResponseWriter, r *http.Request) {
 	b.ops = &snap // replace, never mutate: cards read the old pointer unlocked
 	b.opsAt = time.Now()
 	b.mu.Unlock()
-	b.applyAlerts(context.WithoutCancel(r.Context()), "watch", snap.Checks, time.Now())
+	// A cold watcher (just restarted) may not know every check yet; absent
+	// ones are unknown, not resolved.
+	b.applyAlertList(context.WithoutCancel(r.Context()), "watch", snap.Checks, time.Now(), snap.Warm)
 }
 
 // localChecks are the checks the bot computes itself each monitor tick.
@@ -111,15 +121,35 @@ func (b *bot) probePlanners(runs []operatorapi.Run) []operatorapi.CheckResult {
 // applyAlerts is called from the monitor loop and from the /v1/ops handler,
 // so b.alertMu serializes all alertBook access and alert-card bookkeeping.
 func (b *bot) applyAlerts(ctx context.Context, source string, results []operatorapi.CheckResult, now time.Time) {
+	b.applyAlertList(ctx, source, results, now, true)
+}
+
+func (b *bot) applyAlertList(ctx context.Context, source string, results []operatorapi.CheckResult, now time.Time, resolveAbsent bool) {
 	b.alertMu.Lock()
 	defer b.alertMu.Unlock()
-	actions, adopted := b.book.Observe(source, results, now)
-	if len(adopted) > 0 {
-		lines := []string{fmt.Sprintf("🔁 <b>Bot restarted</b>: %d checks failing", len(adopted))}
+	observe := b.book.Observe
+	if !resolveAbsent {
+		observe = b.book.ObserveCold
+	}
+	actions, adopted := observe(source, results, now)
+	// Before the restart summary went out, adopted alerts were never
+	// announced, so their resolution is not either.
+	announced := b.restartSent
+	if b.restartSent {
+		// A source first seen after the restart window pages normally.
 		for _, st := range adopted {
-			lines = append(lines, "🔴 "+h(clip(firstNonEmpty(st.Message, st.Name), 200)))
+			b.sendAlertCard(ctx, st, now)
 		}
-		b.notifyHTML(ctx, outgoing{Text: strings.Join(lines, "\n"), HTML: true, Keyboard: &inlineKeyboard{InlineKeyboard: [][]inlineButton{{btn("🚨 Alerts", "nav:alerts"), btn("🩺 Health", "nav:health")}}}})
+	} else {
+		// One summary per restart: collect every source's adoptions until
+		// the watcher pushes (after the first monitor pass, so a push racing
+		// it cannot split the summary) or the window closes.
+		b.restartAdopted = append(b.restartAdopted, adopted...)
+		if (source == "watch" && b.book.seeded["bot"]) || now.Sub(b.started) >= restartWindow {
+			b.restartSent = true
+			b.sendRestartSummary(ctx)
+			b.restartAdopted = nil
+		}
 	}
 	for _, a := range actions {
 		switch a.Kind {
@@ -135,6 +165,10 @@ func (b *bot) applyAlerts(ctx context.Context, source string, results []operator
 			}
 		case alertResolve:
 			text := fmt.Sprintf("✅ <b>%s</b> resolved after %s\n<s>%s</s>", h(a.State.Name), durationShort(now.Sub(a.State.Since)), h(clip(a.State.Message, 300)))
+			if len(a.State.Cards) == 0 && announced {
+				// Adopted (or never delivered): no card to edit, say it plainly.
+				b.notifyHTML(ctx, outgoing{Text: text, HTML: true})
+			}
 			for chat, msg := range a.State.Cards {
 				err := b.tg.edit(ctx, chat, msg, outgoing{Text: text, HTML: true})
 				if errors.Is(err, errMessageGone) {
@@ -148,6 +182,29 @@ func (b *bot) applyAlerts(ctx context.Context, source string, results []operator
 			}
 		}
 	}
+}
+
+// sendRestartSummary posts the alerts adopted since start that are still
+// open, or nothing. Caller holds b.alertMu.
+func (b *bot) sendRestartSummary(ctx context.Context) {
+	var open []*alertState
+	for _, st := range b.restartAdopted {
+		if st.Open {
+			open = append(open, st)
+		}
+	}
+	if len(open) == 0 {
+		return
+	}
+	lines := []string{fmt.Sprintf("🔁 <b>Bot restarted</b>: %d checks failing", len(open))}
+	for i, st := range open {
+		if i == maxListLines {
+			lines = append(lines, fmt.Sprintf("…%d more", len(open)-maxListLines))
+			break
+		}
+		lines = append(lines, "🔴 "+h(clip(firstNonEmpty(st.Message, st.Name), 200)))
+	}
+	b.notifyHTML(ctx, outgoing{Text: strings.Join(lines, "\n"), HTML: true, Keyboard: &inlineKeyboard{InlineKeyboard: [][]inlineButton{{btn("🚨 Alerts", "nav:alerts"), btn("🩺 Health", "nav:health")}}}})
 }
 
 func (b *bot) sendAlertCard(ctx context.Context, st *alertState, now time.Time) {
@@ -174,6 +231,9 @@ func (b *bot) sendAlertCard(ctx context.Context, st *alertState, now time.Time) 
 		st.Cards[chat] = id // caller holds b.alertMu
 		b.rememberRunMessage(chat, id, st.RunID)
 	}
+	if len(st.Cards) == 0 {
+		st.Notified = time.Time{} // nothing delivered: the remind branch retries next tick
+	}
 }
 
 func (b *bot) notifyOne(ctx context.Context, chat int64, m outgoing) {
@@ -199,10 +259,17 @@ func (b *bot) observeFlags(ctx context.Context, now time.Time) {
 		pending[k] = v
 	}
 	b.mu.Unlock()
+	if len(pending) == 0 {
+		return
+	}
+	groups, err := b.op.Triage(ctx) // once per tick for every pending flag
 	for runID, f := range pending {
-		group, err := b.op.FindTriageForRun(ctx, runID)
+		var group *operatorapi.TriageGroup
+		if err == nil {
+			group = flaggedGroup(groups, runID)
+		}
 		done := false
-		if err == nil && group != nil && group.Issue != nil && group.Issue.IssueNumber > 0 {
+		if group != nil && group.Issue != nil && group.Issue.IssueNumber > 0 {
 			b.notifyOne(ctx, f.Chat, outgoing{HTML: true, Text: fmt.Sprintf(`🧯 Flagged run <code>%s</code> is filed as <a href="https://github.com/%s/issues/%d">issue #%d</a> (triage key <code>%s</code>).`,
 				h(runID), h(b.cfg.GitHubRepo), group.Issue.IssueNumber, group.Issue.IssueNumber, h(group.Key))})
 			done = true
@@ -218,6 +285,24 @@ func (b *bot) observeFlags(ctx context.Context, now time.Time) {
 	}
 }
 
+// flaggedGroup is the triage group filed for the operator flag on runID. The
+// run may also belong to older groups (earlier attempts); only the one whose
+// failure the wall rewrote as "operator flagged: <note>" is the flag's issue.
+func flaggedGroup(groups []operatorapi.TriageGroup, runID string) *operatorapi.TriageGroup {
+	for i := range groups {
+		g := &groups[i]
+		if !strings.Contains(g.Pattern, "operator flagged") && !strings.Contains(g.Example, "operator flagged") {
+			continue
+		}
+		for _, id := range g.RunIDs {
+			if id == runID {
+				return g
+			}
+		}
+	}
+	return nil
+}
+
 func (b *bot) boardText() string {
 	lines := []string{"📌 <b>PokePilot live</b> · " + time.Now().UTC().Format("15:04 UTC")}
 	b.mu.Lock()
@@ -225,7 +310,10 @@ func (b *bot) boardText() string {
 	snap := b.ops
 	b.mu.Unlock()
 	b.alertMu.Lock()
-	open := b.book.Open()
+	var open []string // copied under alertMu: Observe mutates states
+	for _, st := range b.book.Open() {
+		open = append(open, firstNonEmpty(st.Message, st.Name))
+	}
 	b.alertMu.Unlock()
 	active := 0
 	for _, r := range runs {
@@ -242,11 +330,11 @@ func (b *bot) boardText() string {
 		lines = append(lines, "✅ no open alerts")
 	} else {
 		lines = append(lines, fmt.Sprintf("🔴 %d open alerts", len(open)))
-		for i, st := range open {
+		for i, msg := range open {
 			if i == 5 {
 				break
 			}
-			lines = append(lines, "• "+h(clip(firstNonEmpty(st.Message, st.Name), 120)))
+			lines = append(lines, "• "+h(clip(msg, 120)))
 		}
 	}
 	if snap != nil && snap.Fixer != nil {
