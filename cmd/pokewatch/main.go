@@ -59,10 +59,6 @@ func runNode(ctx context.Context, token string) {
 	}
 }
 
-func runWatch(ctx context.Context, token string) {
-	<-ctx.Done()
-}
-
 func env(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
