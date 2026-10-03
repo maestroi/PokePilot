@@ -187,17 +187,26 @@ func promoteToLeadStable(m *emu.Emu, slot int) error {
 }
 
 // trainingSessionExecutable reports whether a bounded Train session may start in
-// the measured habitat. Only a band that can award no wild XP at all (unsafe
-// encounter band with no usable carry, or no encounter table) is a hard block:
-// a target that needs more than one session is exactly what a multi-session
-// preparation campaign spends, and Train reports such a session as a productive
+// the measured habitat. A session is executable only if it can make progress:
+// it must award wild XP and be able to reach at least the next level within its
+// budget. Two classes make zero progress and are typed strategic blocks: a band
+// that awards no XP at all (unsafe encounter band with no usable carry, or no
+// encounter table), and a band whose XP rate cannot deliver even one level in
+// the budget. A target that needs more than one session is still executable:
+// it reaches the next level, and Train reports the remainder as a productive
 // shortfall (ErrTrainProgress) instead of failing. Whether training here is
 // worth starting is the provider's campaign-aware decision, not the executor's.
 func trainingSessionExecutable(estimate TrainingEstimate, estimateErr error) bool {
 	if estimateErr != nil {
 		return true
 	}
-	return estimate.Viability != TrainingOutsideBudget || estimate.XPPerEncounter > 0
+	if estimate.Viability == TrainingSatisfied {
+		return true
+	}
+	if estimate.XPPerEncounter == 0 {
+		return false
+	}
+	return estimate.NextLevelEncounters <= estimate.SessionBudget
 }
 
 // executeTrainingObjective temporarily promotes the requested party member to

@@ -92,11 +92,17 @@ const (
 // TrainingEstimate explains whether the current grass can plausibly deliver a
 // concrete level target within one bounded Train session.
 type TrainingEstimate struct {
-	CurrentLevel        uint8             `json:"current_level"`
-	TargetLevel         uint8             `json:"target_level"`
-	XPRemaining         uint32            `json:"xp_remaining"`
-	XPPerEncounter      uint32            `json:"xp_per_encounter"`
-	EstimatedEncounters int               `json:"estimated_encounters"`
+	CurrentLevel        uint8  `json:"current_level"`
+	TargetLevel         uint8  `json:"target_level"`
+	XPRemaining         uint32 `json:"xp_remaining"`
+	XPPerEncounter      uint32 `json:"xp_per_encounter"`
+	EstimatedEncounters int    `json:"estimated_encounters"`
+	// NextLevelXP and NextLevelEncounters measure the work to the very next
+	// level, independent of the objective's target. A bounded session that
+	// cannot deliver even one level makes no progress, so the executor uses
+	// this to refuse a guaranteed zero-level grind as a typed strategic block.
+	NextLevelXP         uint32            `json:"next_level_xp,omitempty"`
+	NextLevelEncounters int               `json:"next_level_encounters,omitempty"`
 	SessionBudget       int               `json:"session_budget"`
 	Viability           TrainingViability `json:"viability"`
 	Method              TrainingMethod    `json:"method,omitempty"`
@@ -244,6 +250,17 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 		estimate.Viability = TrainingOutsideBudget
 		return estimate, nil
 	}
+	// Work to the very next level, independent of the objective's target: a
+	// bounded session that cannot deliver even one level makes no progress, so
+	// the executor needs this to refuse a guaranteed zero-level grind.
+	nextLevelXP, err := rom.ExperienceAtLevel(leadXP.Growth, int(currentLevel)+1)
+	if err != nil {
+		return TrainingEstimate{}, err
+	}
+	if nextLevelXP > currentXP {
+		estimate.NextLevelXP = nextLevelXP - currentXP
+		estimate.NextLevelEncounters = int((uint64(estimate.NextLevelXP) + uint64(estimate.XPPerEncounter) - 1) / uint64(estimate.XPPerEncounter))
+	}
 	estimate.EstimatedEncounters = int((uint64(estimate.XPRemaining) + uint64(estimate.XPPerEncounter) - 1) / uint64(estimate.XPPerEncounter))
 
 	switch {
@@ -327,9 +344,15 @@ func classifyTrainingEstimate(e *TrainingEstimate) {
 	if e.XPPerEncounter == 0 {
 		e.Viability = TrainingOutsideBudget
 		e.EstimatedEncounters = 0
+		e.NextLevelEncounters = 0
 		return
 	}
 	e.EstimatedEncounters = int((uint64(e.XPRemaining) + uint64(e.XPPerEncounter) - 1) / uint64(e.XPPerEncounter))
+	if e.NextLevelXP > 0 {
+		e.NextLevelEncounters = int((uint64(e.NextLevelXP) + uint64(e.XPPerEncounter) - 1) / uint64(e.XPPerEncounter))
+	} else {
+		e.NextLevelEncounters = 0
+	}
 	switch {
 	case e.EstimatedEncounters > e.SessionBudget:
 		e.Viability = TrainingOutsideBudget

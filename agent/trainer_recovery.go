@@ -180,6 +180,36 @@ func combatPreparationCampaignOpen(k *Knowledge, obs Observation) bool {
 	return prep.Active && prep.Target > prep.Current
 }
 
+// owesCombatReadiness reports that a recorded combat loss still obligates the
+// party to make material progress before the lost fight is re-offered. A
+// quantified loss owes readiness while its target is unmet; a legacy loss
+// without a target never quantitatively closes, so it keeps its historical
+// one-material-change behavior. A quantified loss whose target is met no longer
+// owes readiness: the party earned the retry, and the outside-budget grind
+// exception must stop firing for it (run-308b846qumo5yw0f80ollii5r kept burning
+// a guaranteed zero-level session against a met 493/494 target).
+func owesCombatReadiness(k *Knowledge, obs Observation) bool {
+	if k == nil {
+		return false
+	}
+	readiness := partyCombatReadiness(obs)
+	for storage, failure := range k.Failures {
+		_, mode, ok := parseFailureStorageKey(storage)
+		if !ok {
+			continue
+		}
+		switch mode {
+		case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
+		default:
+			continue
+		}
+		if failure.ReadinessTarget == 0 || failure.ReadinessTarget > readiness {
+			return true
+		}
+	}
+	return false
+}
+
 // demoteUnreadyCombatRetries returns retry-ready markers whose recorded
 // readiness target is still unmet to the combat-loss mode. Retry mode means
 // "the party reached its target; test it again", so a marker written while the
