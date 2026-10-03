@@ -523,3 +523,23 @@ func countText(n int) string {
 	}
 	return strconv.Itoa(n)
 }
+
+// setConfirmNote attaches a note to the pending confirmation behind kb.
+func (b *bot) setConfirmNote(k *inlineKeyboard, note string) {
+	if k == nil {
+		return
+	}
+	for _, row := range k.InlineKeyboard {
+		for _, bt := range row {
+			if token, ok := strings.CutPrefix(bt.CallbackData, "confirm:"); ok {
+				b.mu.Lock()
+				if p, ok := b.confirmations[token]; ok {
+					p.Note = note
+					b.confirmations[token] = p
+				}
+				b.mu.Unlock()
+				return
+			}
+		}
+	}
+}

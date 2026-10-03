@@ -155,7 +155,9 @@ func main() {
 
 	b := newBot(cfg, &telegramClient{token: cfg.BotToken, http: &http.Client{Timeout: 65 * time.Second}},
 		operatorapi.New(cfg.OperatorURL, cfg.ReplayURL, cfg.Alertmanager))
-	_ = b.tg.setCommands(ctx, botCommands)
+	if err := b.tg.setCommands(ctx, botCommands); err != nil {
+		log.Printf("poketelegram: setMyCommands: %v", err)
+	}
 	b.m.wallHealthy.Store(1)
 
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: b.httpHandler(), ReadHeaderTimeout: 5 * time.Second}
@@ -309,6 +311,11 @@ func (b *bot) handleMessage(ctx context.Context, msg telegramMessage) {
 			out = "Usage: /" + cmd + " <run-id or list number>"
 			break
 		}
+		note := ""
+		if cmd == "flag" {
+			arg, note, _ = strings.Cut(arg, " ")
+			note = strings.TrimSpace(note)
+		}
 		arg = b.resolveRun(chat, arg)
 		switch cmd {
 		case "run":
@@ -321,6 +328,9 @@ func (b *bot) handleMessage(ctx context.Context, msg telegramMessage) {
 			out, err = b.queueReplay(ctx, msg.From.ID, chat, arg)
 		default:
 			out, keyboard, err = b.askConfirmation(ctx, msg.From.ID, chat, cmd, arg)
+			if err == nil && note != "" {
+				b.setConfirmNote(keyboard, note)
+			}
 		}
 	case "failures":
 		out, err = b.failuresText(ctx)
@@ -364,6 +374,8 @@ func (b *bot) reply(ctx context.Context, chat int64, text string, keyboard *inli
 	return id
 }
 
+var errUnknownView = errors.New("unknown view")
+
 // render builds the card for a nav:/ref:/pg: callback.
 func (b *bot) render(ctx context.Context, chat int64, kind string, page int) (card, error) {
 	switch kind {
@@ -383,7 +395,7 @@ func (b *bot) render(ctx context.Context, chat int64, kind string, page int) (ca
 		text, err := b.statusText(ctx)
 		return card{Text: h(text), Keyboard: kb(backRow("nav:status"))}, err
 	}
-	return card{}, fmt.Errorf("unknown view %q", kind)
+	return card{}, fmt.Errorf("%w %q", errUnknownView, kind)
 }
 
 func (b *bot) handleCallback(ctx context.Context, cb callbackQuery) {
@@ -424,6 +436,10 @@ func (b *bot) handleCallback(ctx context.Context, cb callbackQuery) {
 			return
 		}
 		c, err := b.render(ctx, chat, kind, page)
+		if errors.Is(err, errUnknownView) {
+			b.editCard(ctx, chat, msgID, expired)
+			return
+		}
 		if err != nil {
 			b.m.operatorErrs.Add(1)
 			c = card{Text: "Operator request failed: " + h(clip(err.Error(), 300)), Keyboard: kb(backRow("nav:" + kind))}
@@ -457,7 +473,7 @@ func (b *bot) handleCallback(ctx context.Context, cb callbackQuery) {
 			b.editCard(ctx, chat, msgID, expired)
 			return
 		}
-		b.editCard(ctx, chat, msgID, card{Text: h(cb.Message.Text) + "\n🔕 muted until " + until.UTC().Format("15:04") + " UTC"})
+		b.editCard(ctx, chat, msgID, card{Text: h(cb.Message.Text) + "\n🔕 muted until " + until.UTC().Format("15:04") + " UTC", Keyboard: cb.Message.ReplyMarkup})
 	}
 }
 
@@ -504,11 +520,13 @@ func (b *bot) runAction(ctx context.Context, actor, chat int64, action, runID st
 func (b *bot) confirm(ctx context.Context, actor, chat int64, token, note string) string {
 	b.mu.Lock()
 	pending, ok := b.confirmations[token]
-	if ok {
+	expired := ok && pending.Expires.Before(time.Now())
+	valid := ok && !expired && pending.ActorID == actor && pending.ChatID == chat
+	if valid || expired {
 		delete(b.confirmations, token)
 	}
 	b.mu.Unlock()
-	if !ok || pending.Expires.Before(time.Now()) || pending.ActorID != actor || pending.ChatID != chat {
+	if !valid {
 		return "That confirmation expired or belongs to another operator."
 	}
 	if !b.controlAllowed(actor) {
@@ -884,6 +902,14 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 			delete(b.runs, id)
 		}
 	}
+	b.mu.Lock()
+	for id := range b.samples {
+		if _, ok := current[id]; !ok {
+			delete(b.samples, id)
+			delete(b.lastNewMap, id)
+		}
+	}
+	b.mu.Unlock()
 }
 
 // completedProgressGoal reports whether a finished run completed the
@@ -1132,15 +1158,22 @@ func parseCommand(text string) (string, string) {
 func helpText() string {
 	return strings.Join([]string{
 		"PokePilot remote operator",
-		"/status — farm, queue, worker and replay summary",
-		"/runs — active runs",
-		"/run <id> — run state, progress, party and latest frame",
+		"/menu — tap-driven menu",
+		"/runs — active runs (numbered; use the number as N below)",
+		"/run N (or id) — run state, progress, party and latest frame",
+		"/flag N [note] — flag a run as stuck so triage files an issue",
+		"/stop N — confirmed cooperative stop",
+		"/restart N — confirmed restart from latest replayable checkpoint, else fresh clone",
+		"/frame N — latest frame",
+		"/triage N — queue the existing investigation for a run",
+		"/replay N — queue a replay render",
+		"/health — swarm, disk and deploy health",
+		"/fixer — fixer budget, blocked keys and PRs",
 		"/failures — active failure/triage groups",
-		"/alerts — active Alertmanager alerts",
-		"/triage <id> — queue the existing investigation for a run",
-		"/replay <id> — queue a replay render",
-		"/stop <id> — confirmed cooperative stop",
-		"/restart <id> — confirmed restart from latest replayable checkpoint, else fresh clone",
+		"/alerts — open alerts",
+		"/board — post a live board to pin",
+		"/status — farm, queue, worker and replay summary",
+		"Shortcuts: reply flag, stop, restart, frame, run, replay or triage to any bot message about a run. Reply with text to a flag confirmation to add a note.",
 	}, "\n")
 }
 

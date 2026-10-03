@@ -31,6 +31,7 @@ type telegramMessage struct {
 	Text      string       `json:"text"`
 
 	ReplyToMessage *telegramMessage `json:"reply_to_message,omitempty"`
+	ReplyMarkup    *inlineKeyboard  `json:"reply_markup,omitempty"`
 }
 
 type callbackQuery struct {

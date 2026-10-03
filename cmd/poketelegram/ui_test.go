@@ -149,3 +149,41 @@ func TestHealthAndFixerCardsWithoutData(t *testing.T) {
 		t.Fatal("fixer")
 	}
 }
+
+func TestHelpTextListsCommandsAndShortcuts(t *testing.T) {
+	for _, want := range []string{"/menu", "/flag N [note]", "/frame N", "/health", "/fixer", "/board", "Reply with text to a flag confirmation"} {
+		if !strings.Contains(helpText(), want) {
+			t.Fatalf("help missing %q", want)
+		}
+	}
+}
+
+func TestOtherUserReplyDoesNotConsumeFlagConfirmation(t *testing.T) {
+	b, _ := uiBot(t, []operatorapi.Run{{RunID: "r1", Status: "running", Game: "red"}})
+	b.cfg.AllowedUsers[2] = struct{}{}
+	_, kb, err := b.askConfirmation(context.Background(), 1, 1, "flag", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.rememberConfirmMessage(1, 300, kb)
+	b.handleMessage(context.Background(), telegramMessage{
+		MessageID: 301, From: telegramUser{ID: 2}, Chat: telegramChat{ID: 1}, Text: "me too",
+		ReplyToMessage: &telegramMessage{MessageID: 300},
+	})
+	if _, ok := b.flags["r1"]; ok {
+		t.Fatal("other user flagged the run")
+	}
+	token := strings.TrimPrefix(kb.InlineKeyboard[0][0].CallbackData, "confirm:")
+	if got := b.confirm(context.Background(), 1, 1, token, ""); !strings.Contains(got, "Flagged r1") {
+		t.Fatalf("owner confirmation lost: %q", got)
+	}
+}
+
+func TestUnknownNavViewIsExpiredNotError(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.handleCallback(context.Background(), callbackQuery{ID: "q", From: telegramUser{ID: 1}, Data: "nav:bogus",
+		Message: telegramMessage{MessageID: 5, Chat: telegramChat{ID: 1}}})
+	if b.m.operatorErrs.Load() != 0 || !strings.Contains(f.calls[len(f.calls)-1]["text"].(string), "expired") {
+		t.Fatalf("%+v", f.calls)
+	}
+}
