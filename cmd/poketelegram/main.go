@@ -40,6 +40,8 @@ type config struct {
 	UpdateTimeout  time.Duration
 	ControlSpacing time.Duration
 	GitHubRepo     string
+	OpsToken       string
+	DigestHour     int
 }
 
 type confirmation struct {
@@ -52,11 +54,10 @@ type confirmation struct {
 }
 
 type runWatch struct {
-	Status        string
-	Reason        string
-	Frame         uint64
-	LastProgress  time.Time
-	StallNotified bool
+	Status       string
+	Reason       string
+	Frame        uint64
+	LastProgress time.Time
 }
 
 type alertWatch struct {
@@ -98,7 +99,6 @@ type bot struct {
 	wallSeeded    bool
 	alertSeeded   bool
 	mediaSeeded   bool
-	wallDown      bool
 
 	handles     map[string]string
 	lastList    map[int64][]string
@@ -109,6 +109,13 @@ type bot struct {
 	flags       map[string]flagWatch
 	ops         *operatorapi.OpsSnapshot
 	opsAt       time.Time
+	started     time.Time
+	lastDash    []operatorapi.Run
+	boards      map[int64]int64
+	boardAt     time.Time
+
+	digestBadges map[string]int
+	digestDay    string
 
 	alertMu sync.Mutex
 	book    *alertBook
@@ -131,6 +138,8 @@ func newBot(cfg config, tg *telegramClient, op *operatorapi.Client) *bot {
 		samples:       make(map[string][]runSample),
 		lastNewMap:    make(map[string]time.Time),
 		flags:         make(map[string]flagWatch),
+		boards:        make(map[int64]int64),
+		started:       time.Now(),
 		book:          newAlertBook(12 * time.Hour),
 	}
 }
@@ -199,7 +208,9 @@ func loadConfig() (config, error) {
 		UpdateTimeout:  envDuration("POKETELEGRAM_UPDATE_TIMEOUT", 50*time.Second),
 		ControlSpacing: envDuration("POKETELEGRAM_CONTROL_SPACING", 2*time.Second),
 		GitHubRepo:     envDefault("POKEPILOT_GITHUB_REPO", "maestroi/PokePilot"),
+		OpsToken:       operatorapi.ReadSecretFile(os.Getenv("POKEPILOT_OPS_TOKEN_FILE")),
 	}
+	cfg.DigestHour, _ = strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9"))
 	if cfg.BotToken == "" {
 		return config{}, errors.New("TELEGRAM_BOT_TOKEN is required")
 	}
@@ -342,6 +353,9 @@ func (b *bot) handleMessage(ctx context.Context, msg telegramMessage) {
 	case "fixer":
 		fc := b.fixerCard(ctx)
 		c = &fc
+	case "board":
+		b.startBoard(ctx, chat)
+		return
 	default:
 		out = "Unknown command. Use /help."
 	}
@@ -829,25 +843,28 @@ func (b *bot) monitor(ctx context.Context) {
 }
 
 func (b *bot) monitorOnce(ctx context.Context) {
+	now := time.Now()
 	dash, err := b.op.Dashboard(ctx, false, 200)
 	if err != nil {
 		b.m.operatorErrs.Add(1)
 		b.m.wallHealthy.Store(0)
-		if !b.wallDown {
-			b.wallDown = true
-			b.notifyAll(ctx, "🔴 PokePilot wall/operator API is unreachable: "+clip(err.Error(), 300))
-		}
 	} else {
 		b.m.wallHealthy.Store(1)
-		b.m.lastPollUnix.Store(time.Now().Unix())
-		if b.wallDown {
-			b.wallDown = false
-			b.notifyAll(ctx, "✅ PokePilot wall/operator API recovered")
-		}
+		b.m.lastPollUnix.Store(now.Unix())
+		b.mu.Lock()
+		b.lastDash = dash.Runs
+		b.mu.Unlock()
 		b.observeRuns(ctx, dash.Runs)
 		b.observeRenderJobs(ctx)
+		b.observeFlags(ctx, now)
 	}
+	b.applyAlerts(ctx, "bot", b.localChecks(dash.Runs, err, now), now)
 	b.observeAlerts(ctx)
+	if now.Sub(b.boardAt) >= time.Minute {
+		b.boardAt = now
+		b.refreshBoards(ctx)
+	}
+	b.maybeDigest(ctx, now)
 }
 
 func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
@@ -868,14 +885,9 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 		if run.Frame != prev.Frame {
 			prev.Frame = run.Frame
 			prev.LastProgress = now
-			prev.StallNotified = false
 		}
 		if active && prev.LastProgress.IsZero() {
 			prev.LastProgress = now
-		}
-		if active && !prev.StallNotified && now.Sub(prev.LastProgress) >= b.cfg.StallAfter {
-			prev.StallNotified = true
-			b.notifyRun(ctx, "🟠", "stalled", run, fmt.Sprintf("No frame progress for %s", durationShort(now.Sub(prev.LastProgress))))
 		}
 		if prev.Status != run.Status && run.Status == "done" {
 			kind, icon, extra := "finished", "✅", run.Reason+detailSuffix(run.Detail)
@@ -1064,6 +1076,7 @@ func (b *bot) httpHandler() http.Handler {
 			"notification_chats": len(b.cfg.NotifyChats),
 		})
 	})
+	mux.HandleFunc("POST /v1/ops", b.handleOps)
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		b.mu.Lock()
