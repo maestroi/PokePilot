@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // CatchOutcome is how a Catch call ended. The outcomes that are part of the
@@ -157,6 +158,47 @@ func captureExecutionFor(m *emu.Emu) (captureExecutionSemantics, error) {
 		party:      party,
 		prompt:     prompt,
 	}, nil
+}
+
+// CatchHabitatDestination refines a place destination for a wild-grass catch.
+//
+// A broad habitat name such as "route 10" resolves to a map-arrival goal
+// (DestinationMap): arriving anywhere on the map satisfies it. That is the
+// right semantics for a journey, but a wild-grass catch needs the player in the
+// walkable component that actually holds the encounter cells, and a map's grass
+// can sit in a different component from where a map arrival lands the player.
+// Route 10 is the measured case: its grass is in the north component, while the
+// Route 9 seam lands the player in the south component, which reaches the grass
+// only through the Rock Tunnel. Left as a map goal, Travel is a no-op on the
+// south component and Catch reports "no encounter cells reachable".
+//
+// The place table stores each habitat's canonical tile as a deterministic
+// navigation hint. When that tile is inside the map's encounter-cell component
+// (ROM-measured), a catch must travel to it as an exact tile, not just the map.
+// When it is not, the destination is returned unchanged so a habitat whose hint
+// sits off-grass keeps its historical map-arrival behavior.
+func CatchHabitatDestination(romData []byte, d Destination) Destination {
+	if d.Kind != DestinationMap {
+		return d
+	}
+	grass, grid, err := grassCells(romData, d.Map)
+	if err != nil || grid == nil || len(grass) == 0 {
+		return d
+	}
+	if !grid.InBounds(int(d.X), int(d.Y)) {
+		return d
+	}
+	comps := world.Components(grid)
+	hint := comps[int(d.Y)][int(d.X)]
+	if hint == 0 {
+		return d
+	}
+	for _, c := range grass {
+		if comps[c.y][c.x] == hint {
+			return ExactDestination(d.Map, d.X, d.Y)
+		}
+	}
+	return d
 }
 
 // Catch hunts the tall grass on the current map until it meets a wild
