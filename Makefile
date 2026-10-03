@@ -86,7 +86,7 @@ AUTO_LLM_FALLBACK_URL ?= http://192.168.50.204:8000/v1
 AUTO_LLM_FALLBACK_MODEL ?= qwen3.5-4b
 AUTO_LLM_FALLBACK_TIMEOUT ?= 60s
 
-.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto debug test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload qwagent-triage-install fixer-image fixer-up fixer-down
+.PHONY: run run-60 run-0 run-llm run-llm-local run-llm-auto debug test test-short test-race test-farm test-agent test-state test-yellow-rom verify-yellow-rom fmt-check vet verify farm-image farm-up farm-down roms-upload fixer-image fixer-up fixer-down
 
 require-rom = @test -f "$(POKEMON_RED_ROM)" || { \
 	echo "POKEMON_RED_ROM not found: $(POKEMON_RED_ROM)"; \
@@ -283,22 +283,3 @@ fixer-up: fixer-image
 
 fixer-down:
 	docker stack rm pokefixer
-
-# Opt-in local qwagent loop against MCP pokepilot_get_triage. Installs user
-# systemd units and zsh helpers; does not enable the timer.
-qwagent-triage-install:
-	mkdir -p "$(HOME)/.config/systemd/user"
-	sed 's|@@POKEPILOT_ORIGIN@@|$(shell git remote get-url origin)|g' deploy/qwagent-triage.service.in \
-		> "$(HOME)/.config/systemd/user/qwagent-triage.service"
-	cp deploy/qwagent-triage.timer "$(HOME)/.config/systemd/user/qwagent-triage.timer"
-	cp deploy/farm-watch.service.in "$(HOME)/.config/systemd/user/farm-watch.service"
-	cp deploy/farm-watch.timer "$(HOME)/.config/systemd/user/farm-watch.timer"
-	systemctl --user daemon-reload
-	@marker='# PokePilot qwagent-triage helpers'; \
-	if [ -f "$(HOME)/.zshrc" ] && ! grep -q "$$marker" "$(HOME)/.zshrc"; then \
-		printf '\n%s\nsource %s/deploy/qwagent-triage.zsh\n' "$$marker" "$(CURDIR)" >> "$(HOME)/.zshrc"; \
-		echo "appended source line to ~/.zshrc (open a new shell)"; \
-	fi
-	@echo "timer installed but not enabled. qwtriage-on to start, qwtriage-off to stop."
-	@echo "watchdog: set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, POKEPILOT_WALL_URL in ~/.config/pokepilot/env, then systemctl --user enable --now farm-watch.timer"
-	@echo "ladder mode: qwen first, then Cursor ('agent login'), then Claude Code ('claude auth login')."
