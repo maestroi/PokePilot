@@ -51,21 +51,72 @@ func TestFlagStuckRequestsCancelAndRecordsAttempt(t *testing.T) {
 }
 
 func TestFlaggedCancelFinishBecomesStuck(t *testing.T) {
-	w, id := flagTestWall(t)
-	postFlag(t, w, id, "")
-	report := farm.FinishReport{RunID: id, Attempt: 1, Reason: "budget"}
-	w.operatorFlagFinish(&report)
-	if report.Reason != "stuck" || report.Detail != "operator flagged: no note" {
-		t.Fatalf("rewrite: %q %q", report.Reason, report.Detail)
+	for _, viaPlane := range []bool{false, true} {
+		name := "handleFinish"
+		if viaPlane {
+			name = "controlPlaneWrapper"
+		}
+		t.Run(name, func(t *testing.T) {
+			w := NewWall("")
+			if viaPlane {
+				wallControlPlanes.Store(w, &controlPlane{})
+				t.Cleanup(func() { wallControlPlanes.Delete(w) })
+			}
+			h := w.Handler()
+			sp := spec("flag-fin")
+			sp.RecoveryProfile = farm.RecoveryProfileResilient
+			serveWallJSON(t, h, http.MethodPost, "/v1/specs", sp)
+			serveWallJSON(t, h, http.MethodPost, "/v1/lease", struct{}{})
+			if rec := postFlag(t, w, "flag-fin", "looping"); rec.Code != http.StatusOK {
+				t.Fatalf("flag: %d %s", rec.Code, rec.Body)
+			}
+			// The LLM path reports a cooperative cancel as budget, no detail.
+			rep := farm.FinishReport{RunID: "flag-fin", Attempt: 1, Reason: "budget"}
+			if res := serveWallJSON(t, h, http.MethodPost, "/v1/runs/flag-fin/finish", rep); res.Code != http.StatusOK {
+				t.Fatalf("finish: %d %s", res.Code, res.Body)
+			}
+			w.mu.Lock()
+			tile := w.tiles["flag-fin"]
+			reason, detail, finished, status, attempts := tile.Reason, tile.Detail, tile.Finished, tile.Status, tile.Attempts
+			w.mu.Unlock()
+			// A recovered attempt clears Reason and records the settled detail.
+			if reason == "cancelled" || detail != "attempt 1 failed: operator flagged: looping" {
+				t.Fatalf("outcome %q %q", reason, detail)
+			}
+			if finished || status != statusQueued || attempts != 1 {
+				t.Fatalf("flagged stuck must be recovered, not cancelled: finished=%v status=%q attempts=%d", finished, status, attempts)
+			}
+		})
 	}
+}
+
+func TestFlagRowFieldsVisibleOverHTTP(t *testing.T) {
+	w, id := flagTestWall(t)
+	postFlag(t, w, id, "visible")
+	rec := httptest.NewRecorder()
+	w.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/dashboard", nil))
+	var view dashboardView
+	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range view.Runs {
+		if row.RunID == id {
+			if row.OperatorFlag != "visible" || row.OperatorFlagAttempt != 1 || row.OperatorFlaggedAt == 0 {
+				t.Fatalf("dashboard row: %+v", row)
+			}
+			return
+		}
+	}
+	t.Fatal("run missing from dashboard")
+}
+
+func TestFlagFinishedRunConflicts(t *testing.T) {
+	w, id := flagTestWall(t)
 	w.mu.Lock()
-	w.settleRun(w.tiles[id], report.Reason, report.Detail, time.Now())
+	w.tiles[id].Finished = true
 	w.mu.Unlock()
-	w.mu.Lock()
-	tile := w.tiles[id]
-	w.mu.Unlock()
-	if tile.Reason == "cancelled" {
-		t.Fatal("a flagged run must not settle as a user cancel")
+	if rec := postFlag(t, w, id, "late"); rec.Code != http.StatusConflict {
+		t.Fatalf("finished run: %d", rec.Code)
 	}
 }
 

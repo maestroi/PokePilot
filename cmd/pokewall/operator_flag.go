@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -24,7 +26,7 @@ func (w *Wall) handleFlagStuck(res http.ResponseWriter, req *http.Request) {
 		Note string `json:"note"`
 	}
 	req.Body = http.MaxBytesReader(res, req.Body, 4<<10)
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "bad flag body: " + err.Error()})
 		return
 	}
@@ -33,7 +35,7 @@ func (w *Wall) handleFlagStuck(res http.ResponseWriter, req *http.Request) {
 		note = "no note"
 	}
 	if len(note) > 500 {
-		note = note[:500]
+		note = strings.ToValidUTF8(note[:500], "")
 	}
 	w.mu.Lock()
 	t, ok := w.tiles[id]
