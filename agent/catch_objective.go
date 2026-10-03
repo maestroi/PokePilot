@@ -20,6 +20,20 @@ func catchObjectiveOwnsTravel(o Objective) bool {
 	}
 }
 
+// plainWildCatchIntent reports whether the catch objective hunts ordinary tall
+// grass via skill.Catch, as opposed to a specialized executor that approaches
+// its habitat differently (fishing and water within the travel block; the
+// scripted sources are already excluded by catchObjectiveOwnsTravel). Only the
+// plain grass hunt needs the player inside the encounter-cell component.
+func plainWildCatchIntent(intent string) bool {
+	switch intent {
+	case dexFishingIntent, dexWaterIntent:
+		return false
+	default:
+		return true
+	}
+}
+
 func virtualTradeIntent(intent string) bool {
 	switch intent {
 	case dexVirtualTradebackIntent, dexVirtualVersionIntent, dexVirtualPokedexIntent:
@@ -167,6 +181,17 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 		dest, ok := skill.Place(string(o.Place))
 		if !ok {
 			return result, fmt.Errorf("agent: %s: unknown catch habitat %q", o, o.Place)
+		}
+		// A wild-grass catch needs the encounter component, not map arrival:
+		// a broad habitat name resolves to a map-arrival goal, which is a no-op
+		// when the player is already on the map but in a component with no
+		// grass (Route 10's south seam reaches its grass only via the Rock
+		// Tunnel). Refine the goal to the habitat's canonical tile when that
+		// tile is inside the grass component, so Travel lands the player where
+		// Catch can actually hunt. Scripted executors (fishing, water, ...) own
+		// their approach and keep the map goal.
+		if plainWildCatchIntent(o.Intent) {
+			dest = skill.CatchHabitatDestination(romData, dest)
 		}
 		var (
 			travel skill.TravelResult
