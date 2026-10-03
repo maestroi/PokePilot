@@ -156,3 +156,65 @@ func TestReaperSettlesFlaggedRunThatNeverStops(t *testing.T) {
 		t.Fatalf("activity detail: %+v", last)
 	}
 }
+
+func TestRequeueSameIDClearsOperatorFlag(t *testing.T) {
+	w, id := flagTestWall(t)
+	postFlag(t, w, id, "old flag")
+	h := w.Handler()
+	w.mu.Lock()
+	w.tiles[id].Finished = true
+	w.tiles[id].Attempts = 1
+	w.mu.Unlock()
+	serveWallJSON(t, h, http.MethodPost, "/v1/specs", spec(id))
+	serveWallJSON(t, h, http.MethodPost, "/v1/lease", struct{}{})
+	w.mu.Lock()
+	tile := w.tiles[id]
+	flag, attempt, at := tile.OperatorFlag, tile.OperatorFlagAttempt, tile.OperatorFlaggedAt
+	w.mu.Unlock()
+	if flag != "" || attempt != 0 || at != 0 {
+		t.Fatalf("re-queue kept flag: %q %d %d", flag, attempt, at)
+	}
+	rep := farm.FinishReport{RunID: id, Attempt: 1, Reason: "cancelled"}
+	w.operatorFlagFinish(&rep)
+	if rep.Reason != "cancelled" {
+		t.Fatalf("fresh attempt rewritten: %+v", rep)
+	}
+	w.mu.Lock()
+	w.tiles[id].OperatorFlaggedAt = time.Now().Add(-time.Hour).Unix()
+	settled := w.reapFlaggedLocked(w.tiles[id], time.Now())
+	w.mu.Unlock()
+	if settled {
+		t.Fatal("reaper settled a re-queued run on a stale flag")
+	}
+}
+
+func TestFlagQueuedRunConflicts(t *testing.T) {
+	w := NewWall("")
+	serveWallJSON(t, w.Handler(), http.MethodPost, "/v1/specs", spec("q1"))
+	rec := postFlag(t, w, "q1", "x")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "run is queued; nothing to stop") {
+		t.Fatalf("queued run: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCancelAfterFlagStaysUserCancel(t *testing.T) {
+	w, id := flagTestWall(t)
+	postFlag(t, w, id, "x")
+	rec := httptest.NewRecorder()
+	w.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/runs/"+id+"/cancel", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel: %d %s", rec.Code, rec.Body)
+	}
+	w.mu.Lock()
+	tile := w.tiles[id]
+	flag := tile.OperatorFlag
+	w.mu.Unlock()
+	if flag != "" {
+		t.Fatalf("cancel kept flag %q", flag)
+	}
+	rep := farm.FinishReport{RunID: id, Attempt: 1, Reason: "cancelled"}
+	w.operatorFlagFinish(&rep)
+	if rep.Reason != "cancelled" {
+		t.Fatalf("user cancel rewritten: %+v", rep)
+	}
+}

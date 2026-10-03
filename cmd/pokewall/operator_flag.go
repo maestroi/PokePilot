@@ -49,6 +49,11 @@ func (w *Wall) handleFlagStuck(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusConflict, map[string]string{"error": "run already finished: " + id})
 		return
 	}
+	if t.Status == statusQueued {
+		w.mu.Unlock()
+		writeJSON(res, http.StatusConflict, map[string]string{"error": "run is queued; nothing to stop"})
+		return
+	}
 	now := time.Now()
 	t.OperatorFlag = note
 	t.OperatorFlagAttempt = t.Attempts + 1

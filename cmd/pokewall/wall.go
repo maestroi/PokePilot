@@ -877,6 +877,9 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.workerAddrs = nil
 	t.lastFrame = nil
 	t.Finished = false
+	t.OperatorFlag = ""
+	t.OperatorFlagAttempt = 0
+	t.OperatorFlaggedAt = 0
 	t.ResumeFromRunID = ""
 	clearTileCircuit(t)
 	appendRunActivityLocked(t, runActivityEvent{
@@ -1129,6 +1132,8 @@ func (w *Wall) handleCancel(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.cancel[id] = true
+	// A deliberate Stop after a Flag is a user cancel, not a stuck outcome.
+	t.OperatorFlag, t.OperatorFlagAttempt, t.OperatorFlaggedAt = "", 0, 0
 	w.mu.Unlock()
 	writeJSON(res, http.StatusOK, map[string]bool{"cancel": true})
 }
