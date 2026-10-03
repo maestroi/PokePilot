@@ -223,6 +223,31 @@ func TestPortableTravelFleeExhaustionFallsBackToFightAndKeepsTrainerKind(t *test
 	}
 }
 
+func TestPortableTravelFleeSettlementRestartFallsBackToOwnedTrainerBattle(t *testing.T) {
+	// A battle that restarts while settling (scripted back-to-back trainers
+	// clear wIsInBattle between the two) leaves a live battle behind. The
+	// journey owns that encounter and must hand it to the fight loop, not
+	// fail closed into a dirty objective boundary (triage:f3a1128235845bdd).
+	fightCalls := 0
+	resolve := fleeThenFightWith(
+		func(int) error { return errBattleRestarted },
+		func() (game.BattleResult, error) {
+			fightCalls++
+			return game.BattleWon, nil
+		},
+		func() game.BattleKind { return game.BattleWild },
+		guaranteedWildFleeAttempts,
+	)
+
+	got, err := resolve()
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if fightCalls != 1 || got.outcome != game.BattleWon || !got.trainer || got.fled {
+		t.Fatalf("resolution = %+v, fight calls=%d; want the restarted battle fought as a trainer battle", got, fightCalls)
+	}
+}
+
 func TestPortableTravelFleeUnexpectedErrorStillFailsClosed(t *testing.T) {
 	fightCalls := 0
 	want := errors.New("decoder capability missing")
