@@ -50,7 +50,18 @@ func selectBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenu
 		return fmt.Errorf("skill: battle menu entry %q is not available", entry)
 	}
 
+	// A dropped directional press is not a stuck cursor: the game's input
+	// pipeline (text delay, a slower-than-Gen-I menu cadence) can silently
+	// swallow a tap, and the cursor simply does not move. The other cursor
+	// drivers (selectMenuItemWithDecoder, selectTwoOptionWithDecoder) already
+	// retry a no-move tap up to stuckLimit times before declaring the menu
+	// stuck; the battle main menu must honor the same invariant or a single
+	// dropped press aborts the whole switch (run-1or7lhbp9yldp,
+	// triage:b0bc0ff9e322ad58). The press length comes from the profile's
+	// menu cadence: Gen-II menus swallow a 3-frame press that Gen-I reads.
 	const attempts = 12
+	const stuckLimit = 5
+	stuck := 0
 	for i := 0; i < attempts; i++ {
 		state := decoder.DecodeBattleMainMenu(m)
 		if !state.Visible {
@@ -75,15 +86,24 @@ func selectBattleMainMenuEntryWithDecoder(m menuMachine, decoder game.BattleMenu
 			return nil
 		}
 
-		m.Tap(btn, 3, 7)
-		if !waitMenuUntil(m, menuSettleFrames, func() bool {
+		m.Tap(btn, menuPressHold(decoder), 7)
+		moved := waitMenuUntil(m, menuSettleFrames, func() bool {
 			next := decoder.DecodeBattleMainMenu(m)
 			return next.Visible && next.Cursor != previous
-		}) {
-			return fmt.Errorf(
-				"skill: battle main menu cursor stuck at col=%d row=%d, want %q at col=%d row=%d: %w",
-				previous.Column, previous.Row, entry, target.Column, target.Row, ErrMenuStuck,
-			)
+		})
+		// Let the menu's joypad handler settle before the next tap; a press
+		// that lands while the previous one is still debounced is dropped.
+		m.StepFrames(menuSettleFrames)
+		if !moved {
+			stuck++
+			if stuck >= stuckLimit {
+				return fmt.Errorf(
+					"skill: battle main menu cursor stuck at col=%d row=%d, want %q at col=%d row=%d: %w",
+					previous.Column, previous.Row, entry, target.Column, target.Row, ErrMenuStuck,
+				)
+			}
+		} else {
+			stuck = 0
 		}
 	}
 
