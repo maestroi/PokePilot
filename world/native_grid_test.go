@@ -70,6 +70,35 @@ func TestFindNativeCutApproachRejectsOccupiedTree(t *testing.T) {
 	}
 }
 
+// TestFindNativePathLeavesSolidWarpStart pins the Sprout Tower stairs contract:
+// Gen II stair/door landings are solid collision tiles the player is already
+// standing on. FindNativePath must leave them the same way FindPath does, or
+// the router proves every sibling stair unreachable and loops the entrance
+// (farm run-x330xhsmcfod).
+func TestFindNativePathLeavesSolidWarpStart(t *testing.T) {
+	spec := worldmodel.NativeGridSpec{
+		MapID:         0x0301,
+		Width:         5,
+		Height:        1,
+		Walkable:      []bool{false, true, true, true, true},
+		CollisionTile: make([]uint8, 5),
+	}
+	grid, err := NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatalf("NativeGridFromSpec: %v", err)
+	}
+	path, err := FindNativePath(grid, 0, 0, 4, 0, nil)
+	if err != nil {
+		t.Fatalf("FindNativePath from solid warp start: %v", err)
+	}
+	if len(path) != 4 {
+		t.Fatalf("path=%+v, want 4 steps off the solid landing", path)
+	}
+	if grid.Walkable(0, 0) {
+		t.Fatal("solid start tile became walkable")
+	}
+}
+
 func findNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool) (NativeObstacleApproach, error) {
 	return FindNativeObstacleApproach(g, sx, sy, tx, ty, occupied, func(k worldmodel.NativeObstacle) bool { return k == worldmodel.ObstacleCutTree })
 }

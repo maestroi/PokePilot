@@ -116,6 +116,84 @@ func TestNativeRuntimeBlockersAvoidWarpsAndObjects(t *testing.T) {
 	if !blocked[[2]int{3, 4}] {
 		t.Fatal("live object was not blocked")
 	}
+	static := nativeStaticBlockers(header, &allow)
+	if static[[2]int{3, 4}] {
+		t.Fatal("static blockers must omit live sprites")
+	}
+	if !static[[2]int{5, 6}] {
+		t.Fatal("static blockers must still include warps")
+	}
+}
+
+// TestNativeErrNoPathCausedBySprites pins the Sprout Tower entrance contract:
+// a corridor that opens when sprites are ignored is a transient block, not a
+// sealed (map, entry, edge) proof. Marking those edges permanently unreachable
+// is what looped run-x330xhsmcfod at SPROUT_TOWER_1F (9,15).
+func TestNativeErrNoPathCausedBySprites(t *testing.T) {
+	if !nativeErrNoPathCausedBySprites(world.ErrNoPath, nil) {
+		t.Fatal("sprite-only seal must be treated as transient")
+	}
+	if nativeErrNoPathCausedBySprites(world.ErrNoPath, world.ErrNoPath) {
+		t.Fatal("geometry that stays sealed without sprites is permanent")
+	}
+	if nativeErrNoPathCausedBySprites(nil, nil) {
+		t.Fatal("a successful approach is not a sprite-caused miss")
+	}
+	if nativeErrNoPathCausedBySprites(errors.New("other"), nil) {
+		t.Fatal("non-ErrNoPath failures are not sprite-caused misses")
+	}
+
+	// Concrete floor: NPC on the only approach tile to a warp. With the sprite
+	// the adjacent approach fails; without it the south tile is free.
+	grid := nativeTestGrid(t, 5, 5, []bool{
+		true, true, true, true, true,
+		true, true, true, true, true,
+		true, true, true, true, true,
+		true, true, true, true, true,
+		true, true, true, true, true,
+	})
+	header := worldmodel.NativeMapHeader{Warps: []worldmodel.NativeWarp{{X: 2, Y: 2}}}
+	live := game.LiveTopologyState{LiveObjects: []game.LiveMapObject{
+		{Slot: 1, X: 2, Y: 3},
+		{Slot: 2, X: 1, Y: 2},
+		{Slot: 3, X: 3, Y: 2},
+		{Slot: 4, X: 2, Y: 1},
+	}}
+	withSprites := nativeRuntimeBlockers(live, header, nil)
+	delete(withSprites, [2]int{0, 2})
+	_, _, errSprites := nativeAdjacentApproach(grid, 0, 2, 2, 2, withSprites)
+	withoutSprites := nativeStaticBlockers(header, nil)
+	delete(withoutSprites, [2]int{0, 2})
+	_, _, errStatic := nativeAdjacentApproach(grid, 0, 2, 2, 2, withoutSprites)
+	if !nativeErrNoPathCausedBySprites(errSprites, errStatic) {
+		t.Fatalf("surrounded warp approach: with=%v without=%v; want sprite-caused ErrNoPath", errSprites, errStatic)
+	}
+}
+
+// TestNativeAvoidUnderfootLeave pins the Sprout Tower 2F contract: after the
+// center landing proves 3F unreachable, the graph ties between reversing
+// through those stairs and leaving via a side stair. Standing on the chosen
+// warp must prefer the sibling route (farm run-x330xhsmcfod).
+func TestNativeAvoidUnderfootLeave(t *testing.T) {
+	underfoot := world.NativeEdge{Kind: world.EdgeWarp, From: 0x0302, To: 0x0301, WarpX: 6, WarpY: 4, DestWarp: 2}
+	sibling := world.NativeEdge{Kind: world.EdgeWarp, From: 0x0302, To: 0x0301, WarpX: 17, WarpY: 3, DestWarp: 4}
+	route := []world.NativeEdge{underfoot, {Kind: world.EdgeWarp, From: 0x0301, To: 0x0302, WarpX: 2, WarpY: 6}}
+	got := nativeAvoidUnderfootLeave(route, 6, 4, func(avoid world.NativeEdge) ([]world.NativeEdge, error) {
+		if avoid != underfoot {
+			t.Fatalf("avoid = %+v, want underfoot edge", avoid)
+		}
+		return []world.NativeEdge{sibling, route[1]}, nil
+	})
+	if len(got) == 0 || got[0] != sibling {
+		t.Fatalf("route = %+v, want sibling leave %+v", got, sibling)
+	}
+	kept := nativeAvoidUnderfootLeave(route, 5, 4, func(world.NativeEdge) ([]world.NativeEdge, error) {
+		t.Fatal("alternate must not run when not standing on the leave warp")
+		return nil, nil
+	})
+	if len(kept) == 0 || kept[0] != underfoot {
+		t.Fatalf("off-warp route = %+v, want original", kept)
+	}
 }
 
 // nativeShellTestProvider is a one-map provider that can build a spec, so the

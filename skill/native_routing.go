@@ -177,6 +177,46 @@ func nativeRuntimeBlockers(live game.LiveTopologyState, header worldmodel.Native
 	return blocked
 }
 
+// nativeStaticBlockers is the subset of nativeRuntimeBlockers that outlives one
+// plan: warps. Live sprites are omitted so a caller can ask whether an
+// ErrNoPath is geometric (still sealed with an empty floor) or only explained
+// by a sprite that may move.
+func nativeStaticBlockers(header worldmodel.NativeMapHeader, allowWarp *[2]int) map[[2]int]bool {
+	return nativeRuntimeBlockers(game.LiveTopologyState{}, header, allowWarp)
+}
+
+// nativeErrNoPathCausedBySprites reports whether a no-path result would clear
+// if live map objects were not treated as occupied. That is the shared signal
+// that the router should wait for a sprite to move and replan, instead of
+// proving an edge permanently unreachable for the current entry.
+func nativeErrNoPathCausedBySprites(withSprites, withoutSprites error) bool {
+	return errors.Is(withSprites, world.ErrNoPath) && withoutSprites == nil
+}
+
+// nativeAvoidUnderfootLeave prefers a sibling leave edge when the graph's
+// shortest route reverses through the warp the player is already standing on.
+// Split-floor maps (Sprout Tower 2F) often tie between that reverse and a side
+// stair whose destination entry can reach the goal component; taking the
+// reverse drops the player into a pocket that cannot climb the required stairs.
+func nativeAvoidUnderfootLeave(
+	route []world.NativeEdge,
+	x, y uint8,
+	alternate func(avoid world.NativeEdge) ([]world.NativeEdge, error),
+) []world.NativeEdge {
+	if len(route) == 0 || alternate == nil {
+		return route
+	}
+	first := route[0]
+	if first.Kind != world.EdgeWarp || int(first.WarpX) != int(x) || int(first.WarpY) != int(y) {
+		return route
+	}
+	alt, err := alternate(first)
+	if err != nil || len(alt) == 0 {
+		return route
+	}
+	return alt
+}
+
 func nativeStepToWorld(step world.NativeStep) world.Step {
 	return world.Step{DX: step.DX, DY: step.DY}
 }
@@ -378,10 +418,18 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			if bridgeErr != nil {
 				return bridgeErr
 			}
-			if !cleared {
-				return err
+			if cleared {
+				continue
 			}
-			continue
+			staticBlocked := nativeStaticBlockers(header, nil)
+			delete(staticBlocked, [2]int{int(liveWorld.X), int(liveWorld.Y)})
+			delete(staticBlocked, [2]int{int(dest.X), int(dest.Y)})
+			_, staticErr := world.FindNativePath(grid, int(liveWorld.X), int(liveWorld.Y), int(dest.X), int(dest.Y), staticBlocked)
+			if nativeErrNoPathCausedBySprites(err, staticErr) {
+				m.StepFrames(npcWaitFrames)
+				continue
+			}
+			return err
 		}
 		if err := walkNativePath(m, profile, path); err != nil {
 			var blockedStep *ErrBlocked
@@ -669,6 +717,7 @@ func traverseNativeEdge(
 	edge world.NativeEdge,
 ) error {
 	const attempts = 12
+	spriteApproachBlocked := false
 	for attempt := 0; attempt < attempts; attempt++ {
 		state := profile.DecodeOverworld(m)
 		if state.InBattle {
@@ -732,8 +781,29 @@ func traverseNativeEdge(
 			return fmt.Errorf("skill: native routing: unsupported edge kind %d", edge.Kind)
 		}
 		if err != nil {
+			// A wandering sprite on the approach corridor is not proof that this
+			// entry can never take the edge. Wait and replan; only a path that
+			// stays sealed with sprites removed is a permanent unreachable for
+			// the caller's route memory.
+			if errors.Is(err, world.ErrNoPath) {
+				staticBlocked := nativeStaticBlockers(header, nil)
+				delete(staticBlocked, [2]int{int(state.X), int(state.Y)})
+				var staticErr error
+				switch edge.Kind {
+				case world.EdgeWarp:
+					_, _, staticErr = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), staticBlocked)
+				case world.EdgeConnection:
+					_, _, staticErr = nativeConnectionApproach(provider, grid, live, edge, int(state.X), int(state.Y), staticBlocked)
+				}
+				if nativeErrNoPathCausedBySprites(err, staticErr) {
+					spriteApproachBlocked = true
+					m.StepFrames(npcWaitFrames)
+					continue
+				}
+			}
 			return fmt.Errorf("skill: native routing: approach edge %#04x -> %#04x: %w", edge.From, edge.To, err)
 		}
+		spriteApproachBlocked = false
 		if err := walkNativePath(m, profile, path); err != nil {
 			var blockedStep *ErrBlocked
 			if errors.As(err, &blockedStep) {
@@ -750,6 +820,9 @@ func traverseNativeEdge(
 			return err
 		}
 		return nil
+	}
+	if spriteApproachBlocked {
+		return fmt.Errorf("skill: native routing: approach edge %#04x -> %#04x: %w", edge.From, edge.To, world.ErrNoPath)
 	}
 	return fmt.Errorf("skill: native routing: edge %#04x -> %#04x exhausted retries: %w", edge.From, edge.To, ErrLegUnwalkable)
 }
@@ -901,6 +974,14 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		if len(route) == 0 {
 			return fmt.Errorf("skill: native routing: empty cross-map route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, ErrNavigationStalled)
 		}
+		route = nativeAvoidUnderfootLeave(route, state.X, state.Y, func(avoid world.NativeEdge) ([]world.NativeEdge, error) {
+			trialBad := make(map[world.NativeUnreachable]bool, len(mem.unreachable)+1)
+			for k, v := range mem.unreachable {
+				trialBad[k] = v
+			}
+			trialBad[world.NativeUnreachable{Map: state.NativeMapID, Entry: mem.entry, Edge: avoid}] = true
+			return world.FindNativeRouteToEntry(graph, state.NativeMapID, mem.entry, dest.Map, accept, trialBad)
+		})
 		mem.last = &route[0]
 		if err := traverseNativeEdge(m, profile, provider, romData, route[0]); err != nil {
 			// The edge exists in the map graph but this arrival's walkable
