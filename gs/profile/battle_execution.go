@@ -88,9 +88,15 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 
 	main := p.DecodeBattleMainMenu(reader)
 	_, _, rows, cols, filter := gsMenuCursor(reader)
+	// MoveInfoBox draws "TYPE/" for a selectable move and "Disabled!" at
+	// hlcoord 1,10 when the cursor rests on the Disabled slot. The panel
+	// position separates that from "<move> was DISABLED!" in the text box;
+	// matching the word anywhere made the announcement look like a move menu
+	// and stuck SelectMenuItem (run-1or7lhbp9yldp, triage:77cfbd2342cb276e).
+	moveInfo := strings.Contains(text, "TYPE/") || gsMovePanelShowsDisabled(reader)
 	moveMenu := reader.Peek8(sym.MoveSelectionMenuType) == 0 &&
 		rows >= 1 && rows <= 4 && cols == 1 && filter == gen2BattleMoveFilter &&
-		strings.Contains(text, "TYPE/")
+		moveInfo
 
 	switch {
 	case strings.Contains(text, "Can't escape!"):
@@ -116,22 +122,42 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 	return out
 }
 
-// gsPlayerHasUsableMoves mirrors MoveSelectionScreen.CheckPlayerHasUsableMoves
-// in pret/pokegold engine/battle/core.asm: when every current-PP nibble is
-// zero, FIGHT selects STRUGGLE and never draws the move menu. Shared Battle
-// must treat that as MoveSelectionSkipped or it waits for a menu that will
-// not open (run-1p7ixxdreiam630odlwlg1xf35, triage:20d487bea54de661).
-//
-// Disable's scratch byte is not projected yet (see DecodeBattleState). The
-// no-disable path matches the ROM: OR the four PP bytes, then mask. PP Up
-// bits must not count as remaining PP.
+// gsPlayerHasUsableMoves mirrors MoveSelectionScreen's usable-move check in
+// pret/pokegold engine/battle/core.asm: when every non-Disabled move's
+// current-PP nibble is zero, FIGHT selects STRUGGLE and never draws the move
+// menu. Shared Battle must treat that as MoveSelectionSkipped or it waits for
+// a menu that will not open (run-1p7ixxdreiam630odlwlg1xf35,
+// triage:20d487bea54de661). PP Up bits must not count as remaining PP.
 func gsPlayerHasUsableMoves(reader game.MemoryReader) bool {
 	if reader == nil {
 		return false
 	}
+	disabled := gsDisabledMoveSlot(reader)
 	var pp byte
 	for slot := 0; slot < 4; slot++ {
+		if slot == disabled {
+			continue
+		}
 		pp |= reader.Peek8(sym.BattleMonPP + uint16(slot))
 	}
 	return pp&gen2PPMask != 0
+}
+
+const (
+	// MoveInfoBox's Disabled string is placed at hlcoord 1,10
+	// (engine/battle/core.asm), the same panel corner Gen I uses.
+	gsMovePanelDisabledOffset = 10*20 + 1
+	gsMovePanelDisabledMarker = "Disabled!"
+)
+
+// gsMovePanelShowsDisabled reports MoveInfoBox's Disabled panel. Matching the
+// word case-insensitively at that coordinate accepts the retail string without
+// treating "<move> was DISABLED!" in the battle text box as the move menu.
+func gsMovePanelShowsDisabled(reader game.MemoryReader) bool {
+	if reader == nil {
+		return false
+	}
+	raw := make([]byte, len(gsMovePanelDisabledMarker))
+	reader.PeekInto(sym.TileMap+gsMovePanelDisabledOffset, raw)
+	return strings.EqualFold(gsDecodeTiles(raw), gsMovePanelDisabledMarker)
 }

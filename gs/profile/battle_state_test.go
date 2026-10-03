@@ -86,6 +86,35 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	}
 }
 
+func TestDecodeGoldBattleStateProjectsDisabledMove(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 2
+	mem[sym.BattleMonMoves+0] = 33
+	mem[sym.BattleMonMoves+1] = 45
+	mem[sym.BattleMonMoves+2] = 75
+	mem[sym.BattleMonMoves+3] = 15
+	mem[sym.BattleMonPP+0] = 35
+	mem[sym.BattleMonPP+1] = 39
+	mem[sym.BattleMonPP+2] = 16
+	mem[sym.BattleMonPP+3] = 27
+	// High nibble is the 1-based Disabled slot (CUT); low nibble is turns left.
+	mem[sym.PlayerDisableCount] = 0x45
+
+	state, ok := NewGold().DecodeBattleState(&mem)
+	if !ok {
+		t.Fatal("trainer battle was not decoded")
+	}
+	if !state.Moves[3].Disabled {
+		t.Fatalf("moves=%+v, want slot 3 Disabled", state.Moves)
+	}
+	if state.Moves[0].Disabled || state.Moves[1].Disabled || state.Moves[2].Disabled {
+		t.Fatalf("unexpected Disabled flags: %+v", state.Moves)
+	}
+	if got := state.Usable(); len(got) != 3 || got[0] != 0 || got[1] != 1 || got[2] != 2 {
+		t.Fatalf("usable=%v, want [0 1 2]", got)
+	}
+}
+
 func TestDecodeGoldBattleStateBoundaries(t *testing.T) {
 	var mem fakeMemory
 	p := NewSilver()

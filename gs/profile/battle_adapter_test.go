@@ -88,6 +88,58 @@ func TestGoldBattleMoveMenuKeepsFourthNativeCursor(t *testing.T) {
 	}
 }
 
+func putGSTileText(mem *fakeMemory, offset int, text string) {
+	for i := 0; i < len(text); i++ {
+		mem[sym.TileMap+uint16(offset+i)] = gsTile(text[i])
+	}
+}
+
+// MoveInfoBox replaces TYPE/ with "Disabled!" at hlcoord 1,10 while the
+// cursor rests on the Disabled move. That surface is still the move menu;
+// requiring TYPE/ alone made activateBattleMainMenuEntry report FIGHT never
+// opened (run-1or7lhbp9yldp, triage:77cfbd2342cb276e).
+func TestGoldBattleMoveMenuWithCursorOnDisabledMove(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 2
+	mem[sym.MoveSelectionMenuType] = 0
+	mem[sym.TwoDMenuNumRows] = 4
+	mem[sym.TwoDMenuNumCols] = 1
+	mem[sym.MenuJoypadFilter] = gen2BattleMoveFilter
+	mem[sym.MenuCursorY] = 4
+	mem[sym.MenuCursorX] = 1
+	mem[sym.PlayerDisableCount] = 0x45
+	for i := 0; i < sym.TileMapLen; i++ {
+		mem[sym.TileMap+uint16(i)] = 0x7f
+	}
+	putGSTileText(&mem, gsMovePanelDisabledOffset, "Disabled!")
+	putGSTileText(&mem, 12*20+6, "CUT")
+
+	p := NewGold()
+	if got := p.DecodeMenuCursor(&mem); got.Current != 4 || got.Max != 4 {
+		t.Fatalf("move cursor = %+v, want native 4/4", got)
+	}
+	if got := p.DecodeBattleExecution(&mem).Phase; got != game.BattleExecutionMoveMenu {
+		t.Fatalf("phase = %q, want move menu", got)
+	}
+
+	// The Disable announcement lives in the text box, not the info panel.
+	var msg fakeMemory
+	msg[sym.BattleMode] = 2
+	msg[sym.MoveSelectionMenuType] = 0
+	msg[sym.TwoDMenuNumRows] = 4
+	msg[sym.TwoDMenuNumCols] = 1
+	msg[sym.MenuJoypadFilter] = gen2BattleMoveFilter
+	msg[sym.MenuCursorY] = 4
+	msg[sym.MenuCursorX] = 1
+	for i := 0; i < sym.TileMapLen; i++ {
+		msg[sym.TileMap+uint16(i)] = 0x7f
+	}
+	putGSTileText(&msg, 16*20+1, "CUT was DISABLED!")
+	if got := NewGold().DecodeBattleExecution(&msg).Phase; got == game.BattleExecutionMoveMenu {
+		t.Fatalf("Disable announcement decoded as move menu")
+	}
+}
+
 func TestGoldUseNextPromptIsTwoOption(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.BattleMode] = 1
@@ -151,22 +203,26 @@ func TestGoldBattleResourcesProjectPartyWithoutGen1BagIDs(t *testing.T) {
 
 func TestGoldDecodeBattleExecutionMoveSelectionSkippedWithoutPP(t *testing.T) {
 	cases := []struct {
-		name string
-		pp   [4]byte
-		want bool
+		name     string
+		pp       [4]byte
+		disable  byte
+		wantSkip bool
 	}{
-		{"one move with pp", [4]byte{1, 0, 0, 0}, false},
-		{"all moves spent", [4]byte{0, 0, 0, 0}, true},
-		{"pp up bits do not count as pp", [4]byte{0xc0, 0, 0, 0}, true},
+		{"one move with pp", [4]byte{1, 0, 0, 0}, 0, false},
+		{"all moves spent", [4]byte{0, 0, 0, 0}, 0, true},
+		{"pp up bits do not count as pp", [4]byte{0xc0, 0, 0, 0}, 0, true},
+		{"only disabled move has pp", [4]byte{0, 0, 0, 10}, 0x45, true},
+		{"disabled move ignored when others have pp", [4]byte{5, 0, 0, 10}, 0x45, false},
 	}
 	for _, c := range cases {
 		var mem fakeMemory
 		mem[sym.BattleMode] = 2
+		mem[sym.PlayerDisableCount] = c.disable
 		for slot, value := range c.pp {
 			mem[sym.BattleMonPP+uint16(slot)] = value
 		}
-		if got := NewGold().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.want {
-			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.want)
+		if got := NewGold().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.wantSkip {
+			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.wantSkip)
 		}
 	}
 }
