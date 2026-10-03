@@ -182,18 +182,13 @@ request comment to the GitHub issue. The local qwagent loop still claims work
 from MCP `pokepilot_get_triage`, so it does not depend on GitHub issue state
 to run.
 
-## Farm watchdog (Telegram)
+## Ops (Telegram, watcher)
 
-`deploy/farm-watch.sh` runs every 15 minutes from a user timer installed by
-`make qwagent-triage-install`. It messages a Telegram chat when a check turns
-bad, every 12h while it stays bad, and when it recovers, plus one daily digest
-(PRs merged, farm issues opened/closed, fixer starts, per-run progress).
-Checks: wall reachable, live runs advancing frames (30m), fixer timer active
-and ticks not failing, paid fixer cap, triage keys every ladder tier failed
-on, `[triage:]` PRs open over 12h, and Swarm rollbacks (when
-`POKEPILOT_SWARM_MANAGER` is an ssh target). Set `TELEGRAM_BOT_TOKEN`,
-`TELEGRAM_CHAT_ID`, and `POKEPILOT_WALL_URL` in `~/.config/pokepilot/env`,
-then `systemctl --user enable --now farm-watch.timer`.
+`deploy/ops.yml` is the `pokefarm-ops` stack: the Telegram bot, `pokewatch`
+(Swarm/disk/fixer/PR checks, deploy freeze; Docker socket, manager only) and a
+global per-node reporter. It replaces the retired desktop `farm-watch` timer.
+Deploy it after `deploy/farm.yml`; commands, secrets, and the check list are in
+`docs/TELEGRAM_OPERATOR.md`.
 
 ## Local qwagent triage (optional)
 
@@ -228,12 +223,6 @@ The service runs from `~/.local/share/pokepilot/fixer-src`, reset to
 `origin/main` before every tick, so merged fixer changes apply unattended.
 
 ```sh
-make qwagent-triage-install   # units + zsh helpers; timer stays off
-qwtriage-on                   # enable the 30-minute timer
-qwtriage-off                  # disable and stop
-qwtriage-once                 # one attempt, timer unchanged
-qwtriage-status
-qwtriage-logs
 ./deploy/qwagent-triage.sh --dry-run   # print the next key; do not claim
 ```
 
@@ -259,7 +248,7 @@ Add to `~/.config/pokepilot/env`: `POKEPILOT_FIXER_GITHUB_TOKEN`,
 `http://192.168.50.81:8002/v1`). Then:
 
 ```sh
-qwtriage-off                                   # the desktop timer would compete
+# retired desktop timer, if an old install exists: systemctl --user disable --now qwagent-triage.timer
 docker node update --label-add pokepilot.fixer=true <node>
 make fixer-up                                  # build, copy ROMs, deploy pokefixer
 docker service logs -f pokefixer_fixer

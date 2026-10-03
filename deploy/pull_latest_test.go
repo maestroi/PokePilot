@@ -1,11 +1,13 @@
 package deploy_test
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPullLatestBootstrapsRolloutFromPublishedDigest(t *testing.T) {
@@ -576,4 +578,69 @@ exit 0
 	if strings.Contains(string(out), "pruned") {
 		t.Fatalf("reported a prune with no candidates:\n%s", out)
 	}
+}
+
+// The freeze label lives on the watcher's own service: a label-only update
+// of a farm service would reset its UpdateStatus and break rollback holds.
+func TestRolloutLatestSkipsWhileDeploysAreFrozen(t *testing.T) {
+	out, logData := runFrozenRollout(t, true)
+	if !strings.Contains(out, "deploys frozen until") {
+		t.Fatalf("missing freeze message:\n%s", out)
+	}
+	if !strings.Contains(logData, "service inspect pokefarm-ops_watch") {
+		t.Fatalf("freeze label must be read from the watch service:\n%s", logData)
+	}
+	if strings.Contains(logData, "service update") {
+		t.Fatalf("frozen rollout must not update services:\n%s", logData)
+	}
+}
+
+func TestRolloutLatestProceedsWhenWatchServiceMissing(t *testing.T) {
+	out, logData := runFrozenRollout(t, false)
+	if strings.Contains(out, "deploys frozen") {
+		t.Fatalf("missing watch service must not freeze:\n%s", out)
+	}
+	if !strings.Contains(logData, "service update") {
+		t.Fatalf("rollout must proceed without the ops stack:\n%s", logData)
+	}
+}
+
+func runFrozenRollout(t *testing.T, watchDeployed bool) (string, string) {
+	t.Helper()
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "docker.log")
+	until := time.Now().Add(time.Hour).Unix()
+	mockDocker := fmt.Sprintf(`#!/usr/bin/env bash
+set -eu
+printf '%%s\n' "$*" >> "$MOCK_DOCKER_LOG"
+if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
+	case "$*" in
+	*pokefarm-ops_watch*)
+		[ "$WATCH_DEPLOYED" = 1 ] || { echo "no such service" >&2; exit 1; }
+		echo '%d' ;;
+	esac
+	exit 0
+fi
+exit 0
+`, until)
+	if err := os.WriteFile(filepath.Join(tmp, "docker"), []byte(mockDocker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deployed := "0"
+	if watchDeployed {
+		deployed = "1"
+	}
+	cmd := exec.Command("bash", "./rollout-latest.sh")
+	cmd.Env = append(os.Environ(),
+		"PATH="+tmp+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"MOCK_DOCKER_LOG="+logPath,
+		"WATCH_DEPLOYED="+deployed,
+		"FARM_IMAGE_DIGEST_REF=ghcr.io/maestroi/pokepilot@sha256:new",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rollout-latest.sh: %v\n%s", err, out)
+	}
+	logData, _ := os.ReadFile(logPath)
+	return string(out), string(logData)
 }

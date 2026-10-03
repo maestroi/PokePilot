@@ -18,7 +18,7 @@
 #
 # Swarm gives each service an aggregate DNS name `tasks.<service>`, which
 # resolves to every running task of that service. The Telegram service is named
-# `telegram` (see deploy/telegram.yml), so `tasks.telegram` works without a
+# `telegram` (see deploy/ops.yml), so `tasks.telegram` works without a
 # Docker socket and without a service-discovery relabel chain.
 - job_name: poketelegram
   metrics_path: /metrics

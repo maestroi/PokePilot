@@ -1,0 +1,104 @@
+# Ops overlay: Telegram bot, Swarm watcher, per-node reporter. Deploy after
+# deploy/farm.yml so the farm network exists:
+#
+#   printf %s "$TOKEN" | docker secret create poketelegram_bot_token -
+#   openssl rand -hex 32 | docker secret create pokefarm_ops_token -
+#   printf %s "$GH_READONLY_TOKEN" | docker secret create pokewatch_github_token -
+#   docker stack deploy -c deploy/ops.yml pokefarm-ops
+#
+# Separate from farm.yml: a missing Telegram token must never block the farm.
+# Only `watch` sees the Docker socket; `telegram` stays unprivileged.
+services:
+  telegram:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["poketelegram"]
+    environment:
+      TELEGRAM_BOT_TOKEN_FILE: /run/secrets/poketelegram_bot_token
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
+      TELEGRAM_NOTIFY_CHAT_IDS: ${TELEGRAM_NOTIFY_CHAT_IDS:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      POKEPILOT_OPERATOR_URL: ${POKEPILOT_OPERATOR_URL:-http://wall:8080}
+      POKEPILOT_REPLAY_URL: ${FARM_REPLAY_URL:-}
+      POKEPILOT_ALERTMANAGER_URL: ${POKEPILOT_ALERTMANAGER_URL:-}
+      POKEPILOT_ADMIN_BASE_URL: ${POKEPILOT_ADMIN_BASE_URL:-https://admin.rompilot.app}
+      POKEPILOT_SPECTATOR_BASE_URL: ${POKEPILOT_SPECTATOR_BASE_URL:-https://rompilot.app/runs}
+      POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}
+      POKEPILOT_OPS_TOKEN_FILE: /run/secrets/pokefarm_ops_token
+      POKEPILOT_WATCH_DIGEST_HOUR: ${POKEPILOT_WATCH_DIGEST_HOUR:-9}
+      POKETELEGRAM_STALL_AFTER: ${POKETELEGRAM_STALL_AFTER:-30m}
+    secrets: [poketelegram_bot_token, pokefarm_ops_token]
+    networks: [farm, ops]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy: {condition: any, delay: 5s}
+
+  watch:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["pokewatch"]
+    environment:
+      POKEPILOT_OPS_TOKEN_FILE: /run/secrets/pokefarm_ops_token
+      POKEPILOT_GITHUB_TOKEN_FILE: /run/secrets/pokewatch_github_token
+      POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}
+      POKEWATCH_STACKS: ${POKEWATCH_STACKS:-pokefarm,pokefixer}
+      POKEPILOT_WATCH_MIN_FREE_GB: ${POKEPILOT_WATCH_MIN_FREE_GB:-20}
+      # The deploy-freeze label lives on this service (rollout-latest.sh reads
+      # FARM_FREEZE_SERVICE, same default). Change both if the stack is renamed.
+      POKEWATCH_FREEZE_SERVICE: ${POKEWATCH_FREEZE_SERVICE:-pokefarm-ops_watch}
+      POKEPILOT_TELEGRAM_URL: http://telegram:8080
+    secrets: [pokefarm_ops_token, pokewatch_github_token]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [ops]
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy: {condition: any, delay: 10s}
+
+  node:
+    image: ${FARM_IMAGE:-pokepilot-farm:local}
+    command: ["pokewatch", "-node"]
+    environment:
+      NODE_NAME: "{{.Node.Hostname}}"
+      POKEPILOT_OPS_TOKEN_FILE: /run/secrets/pokefarm_ops_token
+      POKEPILOT_FIXER_LEDGER: ${POKEPILOT_FIXER_LEDGER:-/opt/pokefixer/state/ledger.tsv}
+      POKEPILOT_TRIAGE_LADDER: ${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,cursor/claude-opus-5-5-high:2}
+      POKEPILOT_PAID_DAILY_CAP: ${POKEPILOT_PAID_DAILY_CAP:-20}
+      POKEWATCH_URL: http://watch:8080
+      # label=containerPath; statfs only. /usr/share stands in for the host
+      # root filesystem without exposing /run (the Docker socket) or /etc.
+      POKEWATCH_MOUNTS: ${POKEWATCH_MOUNTS:-/=/host/rootfs}
+    secrets: [pokefarm_ops_token]
+    # Runs as root: the fixer ledger dir (/opt/pokefixer) is 0700 root.
+    # Both mounts are read-only and narrow; never mount the whole host root.
+    volumes:
+      - /usr/share:/host/rootfs:ro
+      - /opt:/host/opt:ro
+    networks: [ops]
+    deploy:
+      mode: global
+      resources:
+        limits: {memory: 64M}
+      restart_policy: {condition: any, delay: 10s}
+
+networks:
+  farm:
+    external: true
+    name: ${POKEPILOT_FARM_NETWORK:-pokefarm_default}
+  ops:
+    driver: overlay
+
+secrets:
+  poketelegram_bot_token:
+    external: true
+  pokefarm_ops_token:
+    external: true
+  pokewatch_github_token:
+    external: true

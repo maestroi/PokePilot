@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,9 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,55 +39,9 @@ type config struct {
 	StallAfter     time.Duration
 	UpdateTimeout  time.Duration
 	ControlSpacing time.Duration
-}
-
-type telegramUser struct {
-	ID int64 `json:"id"`
-}
-
-type telegramChat struct {
-	ID int64 `json:"id"`
-}
-
-type telegramMessage struct {
-	MessageID int64        `json:"message_id"`
-	From      telegramUser `json:"from"`
-	Chat      telegramChat `json:"chat"`
-	Text      string       `json:"text"`
-}
-
-type callbackQuery struct {
-	ID      string          `json:"id"`
-	From    telegramUser    `json:"from"`
-	Message telegramMessage `json:"message"`
-	Data    string          `json:"data"`
-}
-
-type telegramUpdate struct {
-	UpdateID      int64            `json:"update_id"`
-	Message       *telegramMessage `json:"message,omitempty"`
-	CallbackQuery *callbackQuery   `json:"callback_query,omitempty"`
-}
-
-type telegramResponse[T any] struct {
-	OK          bool   `json:"ok"`
-	Description string `json:"description,omitempty"`
-	Result      T      `json:"result"`
-}
-
-type inlineKeyboard struct {
-	InlineKeyboard [][]inlineButton `json:"inline_keyboard"`
-}
-
-type inlineButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"`
-}
-
-type telegramClient struct {
-	token string
-	http  *http.Client
+	GitHubRepo     string
+	OpsToken       string
+	DigestHour     int
 }
 
 type confirmation struct {
@@ -98,15 +49,15 @@ type confirmation struct {
 	ChatID  int64
 	Action  string
 	Target  string
+	Note    string
 	Expires time.Time
 }
 
 type runWatch struct {
-	Status        string
-	Reason        string
-	Frame         uint64
-	LastProgress  time.Time
-	StallNotified bool
+	Status       string
+	Reason       string
+	Frame        uint64
+	LastProgress time.Time
 }
 
 type alertWatch struct {
@@ -148,7 +99,53 @@ type bot struct {
 	wallSeeded    bool
 	alertSeeded   bool
 	mediaSeeded   bool
-	wallDown      bool
+
+	handles     map[string]string
+	lastList    map[int64][]string
+	msgRuns     map[int64]map[int64]string
+	confirmMsgs map[int64]map[int64]string // chat → confirmation message id → token
+	samples     map[string][]runSample
+	lastNewMap  map[string]time.Time
+	flags       map[string]flagWatch
+	ops         *operatorapi.OpsSnapshot
+	opsAt       time.Time
+	started     time.Time
+	lastDash    []operatorapi.Run
+	boards      map[int64]int64
+	boardAt     time.Time
+
+	digestBadges map[string]int
+	digestDay    string
+	plannerAt    time.Time
+	plannerLast  []operatorapi.CheckResult
+
+	alertMu        sync.Mutex
+	book           *alertBook
+	restartAdopted []*alertState // guarded by alertMu; see applyAlertList
+	restartSent    bool          // guarded by alertMu
+}
+
+func newBot(cfg config, tg *telegramClient, op *operatorapi.Client) *bot {
+	return &bot{
+		cfg:           cfg,
+		tg:            tg,
+		op:            op,
+		confirmations: make(map[string]confirmation),
+		lastControl:   make(map[int64]time.Time),
+		runs:          make(map[string]runWatch),
+		alerts:        make(map[string]alertWatch),
+		mediaJobs:     make(map[string]mediaWatch),
+		handles:       make(map[string]string),
+		lastList:      make(map[int64][]string),
+		msgRuns:       make(map[int64]map[int64]string),
+		confirmMsgs:   make(map[int64]map[int64]string),
+		samples:       make(map[string][]runSample),
+		lastNewMap:    make(map[string]time.Time),
+		flags:         make(map[string]flagWatch),
+		boards:        make(map[int64]int64),
+		started:       time.Now(),
+		book:          newAlertBook(12 * time.Hour),
+	}
 }
 
 func main() {
@@ -169,15 +166,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	b := &bot{
-		cfg:           cfg,
-		tg:            &telegramClient{token: cfg.BotToken, http: &http.Client{Timeout: 65 * time.Second}},
-		op:            operatorapi.New(cfg.OperatorURL, cfg.ReplayURL, cfg.Alertmanager),
-		confirmations: make(map[string]confirmation),
-		lastControl:   make(map[int64]time.Time),
-		runs:          make(map[string]runWatch),
-		alerts:        make(map[string]alertWatch),
-		mediaJobs:     make(map[string]mediaWatch),
+	b := newBot(cfg, &telegramClient{token: cfg.BotToken, http: &http.Client{Timeout: 65 * time.Second}},
+		operatorapi.New(cfg.OperatorURL, cfg.ReplayURL, cfg.Alertmanager))
+	if err := b.tg.setCommands(ctx, botCommands); err != nil {
+		log.Printf("poketelegram: setMyCommands: %v", err)
 	}
 	b.m.wallHealthy.Store(1)
 
@@ -219,6 +211,17 @@ func loadConfig() (config, error) {
 		StallAfter:     envDuration("POKETELEGRAM_STALL_AFTER", 15*time.Minute),
 		UpdateTimeout:  envDuration("POKETELEGRAM_UPDATE_TIMEOUT", 50*time.Second),
 		ControlSpacing: envDuration("POKETELEGRAM_CONTROL_SPACING", 2*time.Second),
+		GitHubRepo:     envDefault("POKEPILOT_GITHUB_REPO", "maestroi/PokePilot"),
+		OpsToken:       operatorapi.ReadSecretFile(os.Getenv("POKEPILOT_OPS_TOKEN_FILE")),
+	}
+	if n, err := strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9")); err == nil && n >= 0 && n <= 23 {
+		cfg.DigestHour = n
+	} else {
+		cfg.DigestHour = 9
+		log.Printf("poketelegram: POKEPILOT_WATCH_DIGEST_HOUR must be an hour 0-23; using 9")
+	}
+	if cfg.OpsToken == "" {
+		log.Printf("poketelegram: warning: POKEPILOT_OPS_TOKEN_FILE unset or empty; watcher pushes to /v1/ops will be rejected")
 	}
 	if cfg.BotToken == "" {
 		return config{}, errors.New("TELEGRAM_BOT_TOKEN is required")
@@ -284,102 +287,279 @@ func (b *bot) handleMessage(ctx context.Context, msg telegramMessage) {
 		b.audit(msg.From.ID, msg.Chat.ID, "unauthorized", "", "denied", nil)
 		return
 	}
-	cmd, arg := parseCommand(msg.Text)
+	chat := msg.Chat.ID
+	text := msg.Text
+	if r := msg.ReplyToMessage; r != nil {
+		b.mu.Lock()
+		token := b.confirmMsgs[chat][r.MessageID]
+		pending, pendingOK := b.confirmations[token]
+		b.mu.Unlock()
+		if pendingOK && pending.Action == "flag" && strings.TrimSpace(text) != "" && !strings.HasPrefix(strings.TrimSpace(text), "/") {
+			b.m.commands.Add(1)
+			b.reply(ctx, chat, b.confirm(ctx, msg.From.ID, chat, token, strings.TrimSpace(text)), nil)
+			return
+		}
+		if runID := b.runForMessage(chat, r.MessageID); runID != "" {
+			switch word := strings.ToLower(strings.TrimSpace(text)); word {
+			case "flag", "stop", "restart", "frame", "run", "replay", "triage":
+				text = "/" + word + " " + runID
+			}
+		}
+	}
+	cmd, arg := parseCommand(text)
 	if cmd == "" {
 		return
 	}
 	b.m.commands.Add(1)
 
-	var text string
+	var out string
 	var keyboard *inlineKeyboard
+	var c *card
 	var err error
 	switch cmd {
-	case "start", "help":
-		text = helpText()
+	case "start", "menu":
+		hc := b.homeCard()
+		c = &hc
+	case "help":
+		out = helpText()
 	case "status":
-		text, err = b.statusText(ctx)
+		out, err = b.statusText(ctx)
 	case "runs":
-		text, err = b.runsText(ctx)
-	case "run":
+		var rc card
+		if rc, err = b.runsCard(ctx, chat, 0); err == nil {
+			c = &rc
+		}
+	case "run", "flag", "stop", "restart", "triage", "replay", "frame":
 		if arg == "" {
-			text = "Usage: /run <run-id>"
+			out = "Usage: /" + cmd + " <run-id or list number>"
 			break
 		}
-		text, keyboard, err = b.runText(ctx, arg)
+		note := ""
+		if cmd == "flag" {
+			arg, note, _ = strings.Cut(arg, " ")
+			note = strings.TrimSpace(note)
+		}
+		arg = b.resolveRun(chat, arg)
+		switch cmd {
+		case "run":
+			out, keyboard, err = b.runText(ctx, arg)
+		case "frame":
+			b.sendRunFrame(ctx, chat, arg)
+		case "triage":
+			out, err = b.runTriage(ctx, msg.From.ID, chat, arg)
+		case "replay":
+			out, err = b.queueReplay(ctx, msg.From.ID, chat, arg)
+		default:
+			out, keyboard, err = b.askConfirmation(ctx, msg.From.ID, chat, cmd, arg)
+			if err == nil && note != "" {
+				b.setConfirmNote(keyboard, note)
+			}
+		}
 	case "failures":
-		text, err = b.failuresText(ctx)
+		out, err = b.failuresText(ctx)
 	case "alerts":
-		text, err = b.alertsText(ctx)
-	case "triage":
-		if arg == "" {
-			text = "Usage: /triage <run-id>"
-			break
-		}
-		text, err = b.runTriage(ctx, msg.From.ID, msg.Chat.ID, arg)
-	case "replay":
-		if arg == "" {
-			text = "Usage: /replay <run-id>"
-			break
-		}
-		text, err = b.queueReplay(ctx, msg.From.ID, msg.Chat.ID, arg)
-	case "stop", "restart":
-		if arg == "" {
-			text = "Usage: /" + cmd + " <run-id>"
-			break
-		}
-		text, keyboard, err = b.askConfirmation(ctx, msg.From.ID, msg.Chat.ID, cmd, arg)
+		out, err = b.alertsText(ctx)
+	case "health":
+		hc := b.healthCard()
+		c = &hc
+	case "fixer":
+		fc := b.fixerCard(ctx)
+		c = &fc
+	case "board":
+		b.startBoard(ctx, chat)
+		return
 	default:
-		text = "Unknown command. Use /help."
+		out = "Unknown command. Use /help."
 	}
 	if err != nil {
 		b.m.operatorErrs.Add(1)
-		text = "Operator request failed: " + clip(err.Error(), 500)
+		c, out, keyboard = nil, "Operator request failed: "+clip(err.Error(), 500), nil
 	}
-	if text != "" {
-		if sendErr := b.tg.sendMessage(ctx, msg.Chat.ID, text, keyboard); sendErr != nil {
-			b.m.telegramErrs.Add(1)
-			log.Printf("poketelegram: sendMessage: %v", sendErr)
+	switch {
+	case c != nil:
+		b.sendCard(ctx, chat, *c)
+	case out != "":
+		id := b.reply(ctx, chat, out, keyboard)
+		b.rememberConfirmMessage(chat, id, keyboard)
+		if cmd == "run" && err == nil {
+			b.rememberRunMessage(chat, id, arg)
 		}
 	}
 	if cmd == "run" && err == nil && arg != "" {
-		b.sendRunFrame(ctx, msg.Chat.ID, arg)
+		b.sendRunFrame(ctx, chat, arg)
 	}
+}
+
+// reply sends plain text and returns the Telegram message id (0 on failure).
+func (b *bot) reply(ctx context.Context, chat int64, text string, keyboard *inlineKeyboard) int64 {
+	id, err := b.tg.send(ctx, chat, outgoing{Text: text, Keyboard: keyboard})
+	if err != nil {
+		b.m.telegramErrs.Add(1)
+		log.Printf("poketelegram: sendMessage: %v", err)
+	}
+	return id
+}
+
+var errUnknownView = errors.New("unknown view")
+
+// render builds the card for a nav:/ref:/pg: callback.
+func (b *bot) render(ctx context.Context, chat int64, kind string, page int) (card, error) {
+	switch kind {
+	case "home":
+		return b.homeCard(), nil
+	case "runs":
+		return b.runsCard(ctx, chat, page)
+	case "failures", "fail":
+		return b.failuresCard(ctx, page)
+	case "health":
+		return b.healthCard(), nil
+	case "fixer":
+		return b.fixerCard(ctx), nil
+	case "alerts":
+		return b.alertsCard(ctx)
+	case "status":
+		text, err := b.statusText(ctx)
+		return card{Text: h(text), Keyboard: kb(backRow("nav:status"))}, err
+	}
+	return card{}, fmt.Errorf("%w %q", errUnknownView, kind)
 }
 
 func (b *bot) handleCallback(ctx context.Context, cb callbackQuery) {
 	_ = b.tg.answerCallback(ctx, cb.ID)
-	if !b.authorized(cb.From.ID, cb.Message.Chat.ID) {
+	chat, msgID := cb.Message.Chat.ID, cb.Message.MessageID
+	if !b.authorized(cb.From.ID, chat) {
 		b.m.unauthorized.Add(1)
 		return
 	}
 	parts := strings.Split(cb.Data, ":")
-	if len(parts) != 2 {
-		return
-	}
-	if parts[0] == "cancel" {
+	expired := card{Text: "That button expired. Tap ↻ Refresh.", Keyboard: kb(backRow("nav:home"))}
+	switch parts[0] {
+	case "cancel":
+		if len(parts) != 2 {
+			return
+		}
 		b.mu.Lock()
 		delete(b.confirmations, parts[1])
 		b.mu.Unlock()
-		_ = b.tg.sendMessage(ctx, cb.Message.Chat.ID, "Action cancelled.", nil)
+		b.reply(ctx, chat, "Action cancelled.", nil)
+	case "confirm":
+		if len(parts) != 2 {
+			return
+		}
+		b.reply(ctx, chat, b.confirm(ctx, cb.From.ID, chat, parts[1], ""), nil)
+	case "nav", "pg", "ref":
+		kind, page := "", 0
+		switch {
+		case parts[0] == "pg" && len(parts) == 3:
+			kind = parts[1]
+			page, _ = strconv.Atoi(parts[2])
+		case parts[0] == "ref" && len(parts) == 3 && parts[1] == "run":
+			b.editRun(ctx, chat, msgID, b.unhandle(parts[2]), expired)
+			return
+		case len(parts) >= 2:
+			kind = parts[1]
+		default:
+			return
+		}
+		c, err := b.render(ctx, chat, kind, page)
+		if errors.Is(err, errUnknownView) {
+			b.editCard(ctx, chat, msgID, expired)
+			return
+		}
+		if err != nil {
+			b.m.operatorErrs.Add(1)
+			c = card{Text: "Operator request failed: " + h(clip(err.Error(), 300)), Keyboard: kb(backRow("nav:" + kind))}
+		}
+		b.editCard(ctx, chat, msgID, c)
+	case "run":
+		if len(parts) != 2 {
+			return
+		}
+		b.editRun(ctx, chat, msgID, b.unhandle(parts[1]), expired)
+	case "act":
+		if len(parts) != 3 {
+			return
+		}
+		runID := b.unhandle(parts[2])
+		if runID == "" {
+			b.editCard(ctx, chat, msgID, expired)
+			return
+		}
+		b.runAction(ctx, cb.From.ID, chat, parts[1], runID)
+	case "mute":
+		if len(parts) != 2 {
+			return
+		}
+		name := b.unhandle(parts[1])
+		until := time.Now().Add(12 * time.Hour)
+		b.alertMu.Lock()
+		ok := name != "" && b.book.Mute(name, until)
+		b.alertMu.Unlock()
+		if !ok {
+			b.editCard(ctx, chat, msgID, expired)
+			return
+		}
+		b.editCard(ctx, chat, msgID, card{Text: h(cb.Message.Text) + "\n🔕 muted until " + until.UTC().Format("15:04") + " UTC", Keyboard: cb.Message.ReplyMarkup})
+	}
+}
+
+func (b *bot) editRun(ctx context.Context, chat, msgID int64, runID string, expired card) {
+	if runID == "" {
+		b.editCard(ctx, chat, msgID, expired)
 		return
 	}
-	if parts[0] != "confirm" {
+	c, err := b.runCard(ctx, runID)
+	if err != nil {
+		b.m.operatorErrs.Add(1)
+		c = card{Text: "Operator request failed: " + h(clip(err.Error(), 300)), Keyboard: kb(backRow("nav:runs"))}
+	}
+	b.editCard(ctx, chat, msgID, c)
+}
+
+func (b *bot) runAction(ctx context.Context, actor, chat int64, action, runID string) {
+	var out string
+	var keyboard *inlineKeyboard
+	var err error
+	switch action {
+	case "frame":
+		b.sendRunFrame(ctx, chat, runID)
+		return
+	case "replay":
+		out, err = b.queueReplay(ctx, actor, chat, runID)
+	case "triage":
+		out, err = b.runTriage(ctx, actor, chat, runID)
+	case "flag", "stop", "restart":
+		out, keyboard, err = b.askConfirmation(ctx, actor, chat, action, runID)
+	default:
 		return
 	}
-	token := parts[1]
+	if err != nil {
+		b.m.operatorErrs.Add(1)
+		out, keyboard = "Operator request failed: "+clip(err.Error(), 500), nil
+	}
+	id := b.reply(ctx, chat, out, keyboard)
+	b.rememberConfirmMessage(chat, id, keyboard)
+}
+
+// confirm completes a pending confirmation (button tap or flag note reply)
+// and returns the text to post.
+func (b *bot) confirm(ctx context.Context, actor, chat int64, token, note string) string {
 	b.mu.Lock()
 	pending, ok := b.confirmations[token]
-	if ok {
+	expired := ok && pending.Expires.Before(time.Now())
+	valid := ok && !expired && pending.ActorID == actor && pending.ChatID == chat
+	if valid || expired {
 		delete(b.confirmations, token)
 	}
 	b.mu.Unlock()
-	if !ok || pending.Expires.Before(time.Now()) || pending.ActorID != cb.From.ID || pending.ChatID != cb.Message.Chat.ID {
-		_ = b.tg.sendMessage(ctx, cb.Message.Chat.ID, "That confirmation expired or belongs to another operator.", nil)
-		return
+	if !valid {
+		return "That confirmation expired or belongs to another operator."
 	}
-	if !b.controlAllowed(cb.From.ID) {
-		_ = b.tg.sendMessage(ctx, cb.Message.Chat.ID, "Control action rate-limited; try again in a moment.", nil)
-		return
+	if !b.controlAllowed(actor) {
+		return "Control action rate-limited; try again in a moment."
+	}
+	if note != "" {
+		pending.Note = note
 	}
 
 	b.m.actions.Add(1)
@@ -400,17 +580,23 @@ func (b *bot) handleCallback(ctx context.Context, cb callbackQuery) {
 				text += " Checkpoint: " + result.Checkpoint
 			}
 		}
+	case "flag":
+		err = b.op.FlagStuck(ctx, pending.Target, pending.Note)
+		if err == nil {
+			text = "🚩 Flagged " + pending.Target + " as stuck. I'll post the issue link when triage files it."
+			b.watchFlag(pending.Target, chat)
+		}
 	default:
 		err = errors.New("unknown confirmation action")
 	}
 	if err != nil {
 		b.m.actionErrs.Add(1)
 		text = "Action failed: " + clip(err.Error(), 500)
-		b.audit(cb.From.ID, cb.Message.Chat.ID, pending.Action, pending.Target, "error", err)
+		b.audit(actor, chat, pending.Action, pending.Target, "error", err)
 	} else {
-		b.audit(cb.From.ID, cb.Message.Chat.ID, pending.Action, pending.Target, "ok", nil)
+		b.audit(actor, chat, pending.Action, pending.Target, "ok", nil)
 	}
-	_ = b.tg.sendMessage(ctx, cb.Message.Chat.ID, text, nil)
+	return text
 }
 
 func (b *bot) askConfirmation(ctx context.Context, actor, chat int64, action, runID string) (string, *inlineKeyboard, error) {
@@ -425,6 +611,9 @@ func (b *bot) askConfirmation(ctx context.Context, actor, chat int64, action, ru
 	b.mu.Unlock()
 	verb := strings.ToUpper(action[:1]) + action[1:]
 	text := fmt.Sprintf("%s run %s?\n%s · %s · frame %d\nGoal: %s", verb, runID, emptyDash(inspection.Run.Game), emptyDash(inspection.Run.Status), inspection.Run.Frame, emptyDash(runGoal(inspection.Run)))
+	if action == "flag" {
+		text = fmt.Sprintf("🚩 Flag run %s as stuck?\n%s · %s · frame %d\nTo add a note, reply to this message with it. Otherwise tap Confirm.", runID, emptyDash(inspection.Run.Game), emptyDash(inspection.Run.Status), inspection.Run.Frame)
+	}
 	keyboard := &inlineKeyboard{InlineKeyboard: [][]inlineButton{{
 		{Text: "Confirm " + action, CallbackData: "confirm:" + token},
 		{Text: "Cancel", CallbackData: "cancel:" + token},
@@ -666,25 +855,39 @@ func (b *bot) monitor(ctx context.Context) {
 }
 
 func (b *bot) monitorOnce(ctx context.Context) {
+	now := time.Now()
 	dash, err := b.op.Dashboard(ctx, false, 200)
 	if err != nil {
 		b.m.operatorErrs.Add(1)
 		b.m.wallHealthy.Store(0)
-		if !b.wallDown {
-			b.wallDown = true
-			b.notifyAll(ctx, "🔴 PokePilot wall/operator API is unreachable: "+clip(err.Error(), 300))
-		}
 	} else {
 		b.m.wallHealthy.Store(1)
-		b.m.lastPollUnix.Store(time.Now().Unix())
-		if b.wallDown {
-			b.wallDown = false
-			b.notifyAll(ctx, "✅ PokePilot wall/operator API recovered")
-		}
+		b.m.lastPollUnix.Store(now.Unix())
+		b.mu.Lock()
+		b.lastDash = dash.Runs
+		b.mu.Unlock()
 		b.observeRuns(ctx, dash.Runs)
 		b.observeRenderJobs(ctx)
+		b.observeFlags(ctx, now)
+	}
+	var botChecks, runChecks []operatorapi.CheckResult
+	for _, c := range b.localChecks(dash.Runs, err, now) {
+		if strings.HasPrefix(c.Name, "stall:") || strings.HasPrefix(c.Name, "planner:") {
+			runChecks = append(runChecks, c)
+		} else {
+			botChecks = append(botChecks, c)
+		}
+	}
+	b.applyAlerts(ctx, "bot", botChecks, now)
+	if err == nil { // a failed read must not resolve (then re-page) run alerts
+		b.applyAlerts(ctx, "runs", runChecks, now)
 	}
 	b.observeAlerts(ctx)
+	if now.Sub(b.boardAt) >= time.Minute {
+		b.boardAt = now
+		b.refreshBoards(ctx)
+	}
+	b.maybeDigest(ctx, now)
 }
 
 func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
@@ -692,6 +895,9 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 	current := make(map[string]struct{}, len(runs))
 	for _, run := range runs {
 		current[run.RunID] = struct{}{}
+		if isActive(run.Status) {
+			b.recordSample(run, now)
+		}
 		prev, seen := b.runs[run.RunID]
 		active := isActive(run.Status)
 		if !seen {
@@ -702,14 +908,9 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 		if run.Frame != prev.Frame {
 			prev.Frame = run.Frame
 			prev.LastProgress = now
-			prev.StallNotified = false
 		}
 		if active && prev.LastProgress.IsZero() {
 			prev.LastProgress = now
-		}
-		if active && !prev.StallNotified && now.Sub(prev.LastProgress) >= b.cfg.StallAfter {
-			prev.StallNotified = true
-			b.notifyRun(ctx, "🟠", "stalled", run, fmt.Sprintf("No frame progress for %s", durationShort(now.Sub(prev.LastProgress))))
 		}
 		if prev.Status != run.Status && run.Status == "done" {
 			kind, icon, extra := "finished", "✅", run.Reason+detailSuffix(run.Detail)
@@ -736,6 +937,14 @@ func (b *bot) observeRuns(ctx context.Context, runs []operatorapi.Run) {
 			delete(b.runs, id)
 		}
 	}
+	b.mu.Lock()
+	for id := range b.samples {
+		if _, ok := current[id]; !ok {
+			delete(b.samples, id)
+			delete(b.lastNewMap, id)
+		}
+	}
+	b.mu.Unlock()
 }
 
 // completedProgressGoal reports whether a finished run completed the
@@ -874,13 +1083,12 @@ func (b *bot) httpHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// Liveness only: a wall outage must not make Swarm restart the bot
+		// (each restart re-adopts alerts). Wall state is reported, not failed.
 		status := "ok"
-		code := http.StatusOK
 		if b.m.wallHealthy.Load() == 0 {
 			status = "degraded"
-			code = http.StatusServiceUnavailable
 		}
-		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":             status,
 			"wall_healthy":       b.m.wallHealthy.Load() == 1,
@@ -890,6 +1098,7 @@ func (b *bot) httpHandler() http.Handler {
 			"notification_chats": len(b.cfg.NotifyChats),
 		})
 	})
+	mux.HandleFunc("POST /v1/ops", b.handleOps)
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		b.mu.Lock()
@@ -961,122 +1170,6 @@ func (b *bot) spectatorRunURL(runID string) string {
 	return b.cfg.SpectatorBase + "/" + url.PathEscape(runID)
 }
 
-func (t *telegramClient) getUpdates(ctx context.Context, offset int64, timeout time.Duration) ([]telegramUpdate, error) {
-	form := url.Values{}
-	form.Set("offset", strconv.FormatInt(offset, 10))
-	form.Set("timeout", strconv.Itoa(int(timeout.Seconds())))
-	form.Set("allowed_updates", `["message","callback_query"]`)
-	var out telegramResponse[[]telegramUpdate]
-	if err := t.callForm(ctx, "getUpdates", form, &out); err != nil {
-		return nil, err
-	}
-	if !out.OK {
-		return nil, errors.New(out.Description)
-	}
-	return out.Result, nil
-}
-
-func (t *telegramClient) sendMessage(ctx context.Context, chatID int64, text string, keyboard *inlineKeyboard) error {
-	payload := map[string]any{
-		"chat_id":                  chatID,
-		"text":                     clip(text, 3900),
-		"disable_web_page_preview": true,
-	}
-	if keyboard != nil {
-		payload["reply_markup"] = keyboard
-	}
-	var out telegramResponse[json.RawMessage]
-	if err := t.callJSON(ctx, "sendMessage", payload, &out); err != nil {
-		return err
-	}
-	if !out.OK {
-		return errors.New(out.Description)
-	}
-	return nil
-}
-
-func (t *telegramClient) sendPhoto(ctx context.Context, chatID int64, data []byte, mediaType, caption string) error {
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	_ = mw.WriteField("chat_id", strconv.FormatInt(chatID, 10))
-	_ = mw.WriteField("caption", clip(caption, 900))
-	part, err := mw.CreateFormFile("photo", "frame.png")
-	if err != nil {
-		return err
-	}
-	if _, err := part.Write(data); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint("sendPhoto"), &body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if mediaType != "" {
-		req.Header.Set("X-PokePilot-Source-Media-Type", mediaType)
-	}
-	res, err := t.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	var out telegramResponse[json.RawMessage]
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&out); err != nil {
-		return err
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 || !out.OK {
-		return fmt.Errorf("telegram sendPhoto %s: %s", res.Status, out.Description)
-	}
-	return nil
-}
-
-func (t *telegramClient) answerCallback(ctx context.Context, id string) error {
-	var out telegramResponse[bool]
-	return t.callJSON(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": id}, &out)
-}
-
-func (t *telegramClient) callForm(ctx context.Context, method string, form url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint(method), strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return t.do(req, out)
-}
-
-func (t *telegramClient) callJSON(ctx context.Context, method string, payload any, out any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint(method), bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return t.do(req, out)
-}
-
-func (t *telegramClient) do(req *http.Request, out any) error {
-	res, err := t.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(res.Body, 32<<10))
-		return fmt.Errorf("telegram API %s: %s", res.Status, strings.TrimSpace(string(data)))
-	}
-	return json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(out)
-}
-
-func (t *telegramClient) endpoint(method string) string {
-	return "https://api.telegram.org/bot" + t.token + "/" + method
-}
-
 func parseCommand(text string) (string, string) {
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "/") {
@@ -1100,15 +1193,22 @@ func parseCommand(text string) (string, string) {
 func helpText() string {
 	return strings.Join([]string{
 		"PokePilot remote operator",
-		"/status — farm, queue, worker and replay summary",
-		"/runs — active runs",
-		"/run <id> — run state, progress, party and latest frame",
+		"/menu — tap-driven menu",
+		"/runs — active runs (numbered; use the number as N below)",
+		"/run N (or id) — run state, progress, party and latest frame",
+		"/flag N [note] — flag a run as stuck so triage files an issue",
+		"/stop N — confirmed cooperative stop",
+		"/restart N — confirmed restart from latest replayable checkpoint, else fresh clone",
+		"/frame N — latest frame",
+		"/triage N — queue the existing investigation for a run",
+		"/replay N — queue a replay render",
+		"/health — swarm, disk and deploy health",
+		"/fixer — fixer budget, blocked keys and PRs",
 		"/failures — active failure/triage groups",
-		"/alerts — active Alertmanager alerts",
-		"/triage <id> — queue the existing investigation for a run",
-		"/replay <id> — queue a replay render",
-		"/stop <id> — confirmed cooperative stop",
-		"/restart <id> — confirmed restart from latest replayable checkpoint, else fresh clone",
+		"/alerts — open alerts",
+		"/board — post a live board to pin",
+		"/status — farm, queue, worker and replay summary",
+		"Shortcuts: reply flag, stop, restart, frame, run, replay or triage to any bot message about a run. Reply with text to a flag confirmation to add a note.",
 	}, "\n")
 }
 

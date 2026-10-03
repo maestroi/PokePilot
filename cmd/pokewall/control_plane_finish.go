@@ -174,6 +174,7 @@ func (w *Wall) controlPlaneHTTPHandler(next http.Handler) http.Handler {
 				if len(parsed.FramePNG) == 0 {
 					parsed.FramePNG = w.captureFinishFrame(parsed.RunID)
 				}
+				w.operatorFlagFinish(&parsed)
 				finish = &parsed
 				req = withFinishReport(req, parsed)
 			}
