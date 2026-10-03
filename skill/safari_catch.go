@@ -205,7 +205,7 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 	if len(grass) == 0 {
 		return false, false, fmt.Errorf("habitat map %#04x has no reachable encounter grass from (%d,%d)", targetMap, now.X, now.Y)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), grindBlockers(m))
 	if !ok {
 		return false, false, fmt.Errorf("habitat map %#04x has no usable grass pair", targetMap)
 	}

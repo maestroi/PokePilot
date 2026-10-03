@@ -150,3 +150,40 @@ func mergeBlockers(live, fixed map[[2]int]bool) map[[2]int]bool {
 	}
 	return out
 }
+
+// activeWarpBlockers marks every non-inert warp tile on the header. Those
+// tiles are transition ports, not ordinary standing destinations: GoTo's
+// warpAvoidance refuses them on same-map walks.
+func activeWarpBlockers(h worldmodel.HeaderView) map[[2]int]bool {
+	header := h.WorldMapHeader()
+	out := make(map[[2]int]bool, len(header.Warps))
+	for _, w := range header.Warps {
+		if w.Inert {
+			continue
+		}
+		out[[2]int{int(w.X), int(w.Y)}] = true
+	}
+	return out
+}
+
+// grindBlockers returns tiles a grass/cave/Surf hunt must not choose as GoTo
+// destinations. It unions live sprite occupations with active warp tiles.
+// GoTo applies warpAvoidance on every same-map walk, so a grind partner on a
+// door fails with "no path" the same way a sprite-occupied cell does —
+// MEASURED on Rock Tunnel 1F where (15,4)→(15,3) is the Route 10 exit warp
+// (run-d6dokr184ky81).
+func grindBlockers(m *emu.Emu) map[[2]int]bool {
+	blocked := spriteBlockers(m)
+	if m == nil {
+		return blocked
+	}
+	now, err := currentWorld(m)
+	if err != nil {
+		return blocked
+	}
+	h, err := routingHeaderFor(m, now.Map)
+	if err != nil {
+		return blocked
+	}
+	return mergeBlockers(blocked, activeWarpBlockers(h))
+}

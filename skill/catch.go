@@ -281,7 +281,7 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 	if len(grass) == 0 {
 		return res, fmt.Errorf("skill: Catch: no encounter cells reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), grindBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: Catch: map %#04x has no two walkable grass cells close enough to hunt between", now.Map)
 	}
