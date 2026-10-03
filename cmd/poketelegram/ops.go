@@ -30,7 +30,7 @@ func (b *bot) handleOps(w http.ResponseWriter, r *http.Request) {
 	b.ops = &snap // replace, never mutate: cards read the old pointer unlocked
 	b.opsAt = time.Now()
 	b.mu.Unlock()
-	b.applyAlerts(r.Context(), "watch", snap.Checks, time.Now())
+	b.applyAlerts(context.WithoutCancel(r.Context()), "watch", snap.Checks, time.Now())
 }
 
 // localChecks are the checks the bot computes itself each monitor tick.
@@ -68,9 +68,19 @@ func (b *bot) localChecks(runs []operatorapi.Run, wallErr error, now time.Time) 
 }
 
 // plannerChecks probes each live run's planner endpoint /health, as the
-// retired farm-watch.sh did. Endpoints are cached for 60s per tick cadence by
-// the caller only running this on the monitor tick.
+// retired farm-watch.sh did. Probes run at most once a minute (monitor
+// goroutine only); in between the last results are reused so the "runs"
+// source stays complete.
 func (b *bot) plannerChecks(runs []operatorapi.Run) []operatorapi.CheckResult {
+	if !b.plannerAt.IsZero() && time.Since(b.plannerAt) < time.Minute {
+		return b.plannerLast
+	}
+	b.plannerAt = time.Now()
+	b.plannerLast = b.probePlanners(runs)
+	return b.plannerLast
+}
+
+func (b *bot) probePlanners(runs []operatorapi.Run) []operatorapi.CheckResult {
 	seen := map[string]bool{}
 	var out []operatorapi.CheckResult
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -83,7 +93,8 @@ func (b *bot) plannerChecks(runs []operatorapi.Run) []operatorapi.CheckResult {
 			continue
 		}
 		seen[ep] = true
-		res, err := client.Get(ep + "/health")
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ep+"/health", nil)
+		res, err := client.Do(req)
 		healthy := err == nil && res.StatusCode < 500
 		if res != nil {
 			res.Body.Close()
@@ -113,6 +124,7 @@ func (b *bot) applyAlerts(ctx context.Context, source string, results []operator
 	for _, a := range actions {
 		switch a.Kind {
 		case alertOpen:
+			a.State.Cards = map[int64]int64{} // a new episode never edits an old card
 			b.sendAlertCard(ctx, a.State, now)
 		case alertRemind:
 			for chat, msg := range a.State.Cards {
@@ -122,9 +134,14 @@ func (b *bot) applyAlerts(ctx context.Context, source string, results []operator
 				b.sendAlertCard(ctx, a.State, now)
 			}
 		case alertResolve:
+			text := fmt.Sprintf("✅ <b>%s</b> resolved after %s\n<s>%s</s>", h(a.State.Name), durationShort(now.Sub(a.State.Since)), h(clip(a.State.Message, 300)))
 			for chat, msg := range a.State.Cards {
-				text := fmt.Sprintf("✅ <b>%s</b> resolved after %s\n<s>%s</s>", h(a.State.Name), durationShort(now.Sub(a.State.Since)), h(clip(a.State.Message, 300)))
-				if err := b.tg.edit(ctx, chat, msg, outgoing{Text: text, HTML: true}); err != nil && !errors.Is(err, errNotModified) {
+				err := b.tg.edit(ctx, chat, msg, outgoing{Text: text, HTML: true})
+				if errors.Is(err, errMessageGone) {
+					b.notifyOne(ctx, chat, outgoing{Text: text, HTML: true})
+					continue
+				}
+				if err != nil && !errors.Is(err, errNotModified) {
 					b.m.telegramErrs.Add(1)
 				}
 				b.notifyOne(ctx, chat, outgoing{Text: "✅ resolved", ReplyTo: msg, Silent: true})
@@ -333,8 +350,8 @@ func (b *bot) digestText(now time.Time) (string, *inlineKeyboard) {
 }
 
 func (b *bot) maybeDigest(ctx context.Context, now time.Time) {
-	day := now.Format("2006-01-02")
-	if now.Hour() < b.cfg.DigestHour || b.digestDay == day {
+	day := now.UTC().Format("2006-01-02")
+	if now.UTC().Hour() < b.cfg.DigestHour || b.digestDay == day {
 		return
 	}
 	b.digestDay = day

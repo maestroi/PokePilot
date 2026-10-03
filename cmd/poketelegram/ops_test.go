@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -135,5 +136,72 @@ func TestBoardDroppedWhenMessageGone(t *testing.T) {
 	b.refreshBoards(context.Background())
 	if _, ok := b.boards[1]; ok {
 		t.Fatal("a deleted board must be forgotten, not retried forever")
+	}
+}
+
+func TestWallBlipLeavesStallAlertUntouched(t *testing.T) {
+	var down atomic.Bool
+	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/v1/dashboard") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"runs": []operatorapi.Run{{RunID: "r1", Status: "running", Frame: 10}}})
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(wall.Close)
+	f := newFakeTG(t)
+	b := newBot(config{NotifyChats: []int64{1}, StallAfter: 15 * time.Minute}, f.client(), operatorapi.New(wall.URL, "", ""))
+	ctx := context.Background()
+	b.applyAlerts(ctx, "runs", nil, time.Now()) // seed
+	b.runs["r1"] = runWatch{Status: "running", Frame: 10, LastProgress: time.Now().Add(-20 * time.Minute)}
+	b.monitorOnce(ctx)
+	if open := b.book.Open(); len(open) != 1 || open[0].Name != "stall:r1" {
+		t.Fatalf("stall should be open: %+v", open)
+	}
+	down.Store(true)
+	b.monitorOnce(ctx)
+	down.Store(false)
+	b.monitorOnce(ctx)
+	for _, c := range f.calls {
+		if c["_method"] == "editMessageText" && strings.Contains(c["text"].(string), "stall:r1") {
+			t.Fatalf("wall blip resolved the stall card: %+v", c)
+		}
+	}
+	n := 0
+	for _, c := range f.calls {
+		if c["_method"] == "sendMessage" && strings.Contains(c["text"].(string), "stall:r1") {
+			n++
+		}
+	}
+	if n != 1 || len(b.book.Open()) == 0 {
+		t.Fatalf("stall card sent %d times, open=%d", n, len(b.book.Open()))
+	}
+}
+
+func TestResolveWithCardGoneSendsFullText(t *testing.T) {
+	b, f := uiBot(t, nil)
+	b.cfg.NotifyChats = []int64{1}
+	ctx := context.Background()
+	t0 := time.Now()
+	b.applyAlerts(ctx, "watch", nil, t0)
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "disk:n1:/", Grace: 1, Message: "low"}}, t0)
+	errs := b.m.telegramErrs.Load()
+	f.reply = func(m string, _ map[string]any) (int, string) {
+		if m == "editMessageText" {
+			return 400, `{"ok":false,"description":"Bad Request: message to edit not found"}`
+		}
+		return 200, `{"ok":true,"result":{"message_id":43}}`
+	}
+	b.applyAlerts(ctx, "watch", []operatorapi.CheckResult{{Name: "disk:n1:/", OK: true}}, t0.Add(time.Minute))
+	last := f.calls[len(f.calls)-1]
+	if last["_method"] != "sendMessage" || !strings.Contains(last["text"].(string), "disk:n1:/") || !strings.Contains(last["text"].(string), "resolved after") {
+		t.Fatalf("full resolve text expected: %+v", last)
+	}
+	if b.m.telegramErrs.Load() != errs {
+		t.Fatal("gone card is not a telegram error")
 	}
 }

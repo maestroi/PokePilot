@@ -116,6 +116,8 @@ type bot struct {
 
 	digestBadges map[string]int
 	digestDay    string
+	plannerAt    time.Time
+	plannerLast  []operatorapi.CheckResult
 
 	alertMu sync.Mutex
 	book    *alertBook
@@ -210,7 +212,12 @@ func loadConfig() (config, error) {
 		GitHubRepo:     envDefault("POKEPILOT_GITHUB_REPO", "maestroi/PokePilot"),
 		OpsToken:       operatorapi.ReadSecretFile(os.Getenv("POKEPILOT_OPS_TOKEN_FILE")),
 	}
-	cfg.DigestHour, _ = strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9"))
+	if n, err := strconv.Atoi(envDefault("POKEPILOT_WATCH_DIGEST_HOUR", "9")); err == nil {
+		cfg.DigestHour = n
+	} else {
+		cfg.DigestHour = 9
+		log.Printf("poketelegram: POKEPILOT_WATCH_DIGEST_HOUR invalid (%v); using 9", err)
+	}
 	if cfg.BotToken == "" {
 		return config{}, errors.New("TELEGRAM_BOT_TOKEN is required")
 	}
@@ -858,7 +865,18 @@ func (b *bot) monitorOnce(ctx context.Context) {
 		b.observeRenderJobs(ctx)
 		b.observeFlags(ctx, now)
 	}
-	b.applyAlerts(ctx, "bot", b.localChecks(dash.Runs, err, now), now)
+	var botChecks, runChecks []operatorapi.CheckResult
+	for _, c := range b.localChecks(dash.Runs, err, now) {
+		if strings.HasPrefix(c.Name, "stall:") || strings.HasPrefix(c.Name, "planner:") {
+			runChecks = append(runChecks, c)
+		} else {
+			botChecks = append(botChecks, c)
+		}
+	}
+	b.applyAlerts(ctx, "bot", botChecks, now)
+	if err == nil { // a failed read must not resolve (then re-page) run alerts
+		b.applyAlerts(ctx, "runs", runChecks, now)
+	}
 	b.observeAlerts(ctx)
 	if now.Sub(b.boardAt) >= time.Minute {
 		b.boardAt = now
