@@ -135,8 +135,16 @@ func (d *dockerClient) SetServiceLabel(name, key, value string) error {
 		Version struct{ Index uint64 }
 		Spec    map[string]any
 	}
-	if err := d.get("/services/"+url.PathEscape(name), &svc); err != nil {
+	res0, err := d.http.Get(d.base + "/services/" + url.PathEscape(name))
+	if err != nil {
 		return err
+	}
+	dec := json.NewDecoder(res0.Body)
+	dec.UseNumber() // keep int64 spec values exact
+	err = dec.Decode(&svc)
+	res0.Body.Close()
+	if err != nil || res0.StatusCode != http.StatusOK {
+		return fmt.Errorf("docker GET service %s: %s %v", name, res0.Status, err)
 	}
 	labels, _ := svc.Spec["Labels"].(map[string]any)
 	if labels == nil {

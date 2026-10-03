@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/operatorapi"
@@ -60,6 +61,9 @@ func (g *githubClient) TriagePRs() ([]operatorapi.PullRequest, error) {
 	}
 	prs := make([]operatorapi.PullRequest, 0, len(out.Items))
 	for _, it := range out.Items {
+		if !strings.Contains(it.Title, "[triage:") { // search ignores punctuation
+			continue
+		}
 		prs = append(prs, operatorapi.PullRequest{Number: it.Number, Title: it.Title, URL: it.HTMLURL, CreatedAt: it.CreatedAt.Unix()})
 	}
 	return prs, nil

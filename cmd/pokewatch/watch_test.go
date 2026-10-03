@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -149,5 +151,103 @@ func newWatcherForTest() *watcher {
 		token: "test", minFreeGB: 20, freezeRollbacks: 3, freezeFor: 24 * time.Hour,
 		reports: map[string]operatorapi.NodeReport{}, started: time.Unix(0, 0),
 		mergedCount: -1, farmOpened: -1, farmClosed: -1,
+	}
+}
+
+type fakeDocker struct {
+	t         *testing.T
+	failLabel bool
+	posted    []byte
+	postPath  string
+	query     string
+}
+
+func (f *fakeDocker) start() (*dockerClient, func()) {
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		switch {
+		case strings.HasSuffix(p, "/nodes"):
+			_, _ = rw.Write([]byte(`[]`))
+		case strings.HasSuffix(p, "/services"):
+			f.query = r.URL.RawQuery
+			_, _ = rw.Write([]byte(`[]`))
+		case strings.HasSuffix(p, "/update"):
+			f.postPath = p + "?" + r.URL.RawQuery
+			f.posted, _ = io.ReadAll(r.Body)
+		case strings.Contains(p, "/services/"):
+			if f.failLabel {
+				rw.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, _ = rw.Write([]byte(`{"ID":"x","Version":{"Index":7},"Spec":{"Name":"pokefarm_wall","Labels":{"keep":"1"},"Mode":{"Replicated":{"Replicas":1}},"TaskTemplate":{"ForceUpdate":9007199254740993}}}`))
+		}
+	}))
+	return &dockerClient{http: srv.Client(), base: srv.URL + "/v1.43"}, srv.Close
+}
+
+func freezeWatcher(d *dockerClient) *watcher {
+	w := newWatcherForTest()
+	w.docker, w.freezeService = d, "pokefarm_wall"
+	w.seen = map[string]time.Time{}
+	return w
+}
+
+func TestTickWritesFreezeLabelPreservingSpec(t *testing.T) {
+	f := &fakeDocker{t: t}
+	d, stop := f.start()
+	defer stop()
+	w := freezeWatcher(d)
+	now := time.Unix(1_800_000_000, 0)
+	w.seen = map[string]time.Time{"a|1": now.Add(-3 * time.Hour), "b|1": now.Add(-2 * time.Hour), "c|1": now.Add(-time.Hour)}
+	w.tick(now)
+	if f.postPath != "/v1.43/services/pokefarm_wall/update?version=7" {
+		t.Fatalf("post path: %q", f.postPath)
+	}
+	var spec map[string]any
+	dec := json.NewDecoder(strings.NewReader(string(f.posted)))
+	dec.UseNumber()
+	if err := dec.Decode(&spec); err != nil {
+		t.Fatal(err)
+	}
+	labels := spec["Labels"].(map[string]any)
+	if labels["keep"] != "1" || labels[frozenLabel] != strconv.FormatInt(now.Add(24*time.Hour).Unix(), 10) || len(labels) != 2 {
+		t.Fatalf("labels: %v", labels)
+	}
+	if !strings.Contains(string(f.posted), `"ForceUpdate":9007199254740993`) || spec["Mode"] == nil || spec["Name"] != "pokefarm_wall" {
+		t.Fatalf("spec not preserved: %s", f.posted)
+	}
+	if !strings.Contains(f.query, "status=true") {
+		t.Fatalf("services query: %q", f.query)
+	}
+}
+
+func TestTickLabelReadFailureDoesNotWriteAndFails(t *testing.T) {
+	f := &fakeDocker{t: t, failLabel: true}
+	d, stop := f.start()
+	defer stop()
+	w := freezeWatcher(d)
+	now := time.Unix(1_800_000_000, 0)
+	w.seen = map[string]time.Time{"a|1": now.Add(-3 * time.Hour), "b|1": now.Add(-2 * time.Hour), "c|1": now.Add(-time.Hour)}
+	s := w.tick(now)
+	if f.posted != nil {
+		t.Fatalf("wrote label despite read failure: %s", f.posted)
+	}
+	if c, _ := check(s, "deploy-frozen"); c.OK || !strings.Contains(c.Message, "cannot read freeze label") {
+		t.Fatalf("deploy-frozen: %+v", c)
+	}
+}
+
+func TestTickDockerFailureKeepsCachedChecks(t *testing.T) {
+	f := &fakeDocker{t: t}
+	d, stop := f.start()
+	w := freezeWatcher(d)
+	w.lastNodes = []operatorapi.SwarmNode{{Hostname: "w1", Status: "ready"}}
+	stop() // every Docker call now fails
+	s := w.tick(time.Unix(1_800_000_000, 0))
+	if _, ok := check(s, "node:w1"); !ok {
+		t.Fatal("node check vanished on docker outage")
+	}
+	if c, _ := check(s, "docker-api"); c.OK || !strings.Contains(c.Message, "Swarm state") || !strings.Contains(c.Message, "services") {
+		t.Fatalf("docker-api: %+v", c)
 	}
 }
