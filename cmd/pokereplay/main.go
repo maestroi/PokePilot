@@ -142,6 +142,9 @@ type replayServer struct {
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
+	// fetchROM supplies a cartridge the local library does not have. Tests set
+	// it directly; production uses the ROM store via replayROMLibrary.fetchStored.
+	fetchROM func(metadata map[string]string) (string, error)
 }
 
 func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstore.S3) *replayServer {
@@ -1270,6 +1273,17 @@ func (s *replayServer) prepareStreamROM(workDir, recordingPath string) (string, 
 		candidates = s.romLibrary.candidates(ident.Metadata)
 	}
 	if len(candidates) == 0 {
+		// The render host mounts the fallback cartridge only. Other games live
+		// in the same ROM store the farm workers already fetch from.
+		fetched, fetchErr := s.ensureRecordingROM(ident.Metadata)
+		if fetchErr != nil {
+			return "", fetchErr
+		}
+		if fetched != "" {
+			candidates = []string{fetched}
+		}
+	}
+	if len(candidates) == 0 {
 		return "", fmt.Errorf("no mounted replay ROM for game %q", strings.TrimSpace(ident.Metadata["game"]))
 	}
 
@@ -1306,6 +1320,16 @@ func (s *replayServer) prepareStreamROM(workDir, recordingPath string) (string, 
 		return "", fmt.Errorf("no mounted replay ROM matched recording sha256 %s", ident.ROMSHA256)
 	}
 	return "", fmt.Errorf("no mounted replay ROM matched recording sha256 %s: %s", ident.ROMSHA256, strings.Join(candidateErrors, "; "))
+}
+
+func (s *replayServer) ensureRecordingROM(metadata map[string]string) (string, error) {
+	if s.fetchROM != nil {
+		return s.fetchROM(metadata)
+	}
+	if s.romLibrary == nil {
+		return "", nil
+	}
+	return s.romLibrary.fetchStored(context.Background(), s.store, metadata)
 }
 
 // pathJoinOS is intentionally tiny: temp paths are local filesystem paths,

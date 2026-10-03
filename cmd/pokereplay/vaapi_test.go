@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -190,6 +191,59 @@ func TestPrepareStreamROMFailsClosedWhenRecordedGameIsNotMounted(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "pokemon-yellow") {
 		t.Fatalf("error = %q, want recorded game identity", err)
+	}
+}
+
+func TestPrepareStreamROMFetchesUnmountedGame(t *testing.T) {
+	dir := t.TempDir()
+	red := filepath.Join(dir, "red.gb")
+	if err := os.WriteFile(red, []byte("red-rom"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	recording := filepath.Join(dir, "run.gbrun")
+	if err := os.WriteFile(recording, []byte("identity supplied by test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blue := []byte("blue-rom")
+	sum := sha256.Sum256(blue)
+	fetched := filepath.Join(dir, "fetched-blue.gb")
+
+	s := newReplayServer("", red, "", nil)
+	s.romLibrary = &replayROMLibrary{
+		primary: red,
+		paths:   map[game.GameID]string{game.GameID("pokemon-red"): red},
+	}
+	s.fetchROM = func(metadata map[string]string) (string, error) {
+		if metadata["game"] != "pokemon-blue" {
+			t.Fatalf("fetch game = %q", metadata["game"])
+		}
+		if err := os.WriteFile(fetched, blue, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return fetched, nil
+	}
+	s.deriveROM = func(base []byte, _ map[string]string, want string) ([]byte, error) {
+		if !bytes.Equal(base, blue) {
+			t.Fatalf("derive base = %q", base)
+		}
+		if want != hex.EncodeToString(sum[:]) {
+			t.Fatalf("derive hash = %s", want)
+		}
+		return append([]byte(nil), base...), nil
+	}
+	s.parseRecording = func([]byte) (replayIdentity, error) {
+		return replayIdentity{
+			ROMSHA256: hex.EncodeToString(sum[:]),
+			Metadata:  map[string]string{"game": "pokemon-blue"},
+		}, nil
+	}
+
+	got, err := s.prepareStreamROM(dir, recording)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != fetched {
+		t.Fatalf("prepareStreamROM = %q, want fetched Blue ROM %q", got, fetched)
 	}
 }
 
