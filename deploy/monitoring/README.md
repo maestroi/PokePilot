@@ -35,8 +35,9 @@ the farm.
 
 1. Merge the job from `prometheus-poketelegram.yml` into your Prometheus
    `scrape_configs:` list. It discovers `tasks.telegram` over DNS (the `telegram` service of the
-   `pokefarm-ops` stack; attach Prometheus to its `ops` network) and needs no
-   Docker socket.
+   `pokefarm-ops` stack) on the farm network (`pokefarm_default`, which the bot
+   joins) and needs no Docker socket. The stack's private `ops` overlay is not
+   attachable, so Prometheus cannot join it.
 2. If your Prometheus already uses Docker Swarm service discovery with the
    Docker socket mounted, use the commented `dockerswarm_sd_configs` variant in
    that file instead and label the service:

@@ -57,15 +57,25 @@ check is reminded every 12h, and a recovery posts a resolved note. The card's
 **Mute 12h** and **Details** buttons (plus an Open link); stall alerts add
 **Flag stuck**, **Open run** and **Frame** buttons. When the bot itself restarts
 and finds checks already failing, it adopts them without paging each one and
-posts a single "Bot restarted: N checks failing" message.
+posts a single "Bot restarted: N checks failing" message (collected from all
+sources until the first watcher push or two minutes after start; nothing is
+posted when nothing is failing). An adopted check that later recovers posts a
+plain resolved note. A source first seen after that window pages its failures
+as ordinary cards. An alert card that could not be delivered to any chat is
+retried on the next evaluation. While `pokewatch` is warming up after its own
+restart (`warm: false` in its snapshot), checks missing from its report keep
+their state instead of resolving.
 
 ## Flag stuck
 
 `/flag` (or the Flag button) asks the wall to stop that run with reason
 `stuck`: the wall rewrites the cancel stop of the flagged attempt into a normal
 `stuck` failure, so the usual finish dump, triage, GitHub issue and fixer pick
-it up (`POST /v1/runs/{id}/flag-stuck`). The bot follows up with the issue link
-when it is filed. If the runner never stops, the wall settles the attempt as
+it up (`POST /v1/runs/{id}/flag-stuck`). A queued run cannot be flagged (409,
+nothing to stop); a Stop after a Flag is an ordinary user cancel; re-queueing
+the same run id clears the flag. The bot follows up with the issue link once a
+triage group for that run carrying the wall's `operator flagged: <note>`
+failure has an issue (older groups for the same run are ignored). If the runner never stops, the wall settles the attempt as
 stuck after 10 minutes with no finish dump, so **no issue is filed**; the bot
 says so after an hour.
 
@@ -75,15 +85,33 @@ says so after an hour.
 node ready and manager quorum, service replicas for the `POKEWATCH_STACKS`
 stacks, Swarm rollbacks, disk free per node mount (`POKEPILOT_WATCH_MIN_FREE_GB`),
 node reports arriving, the fixer paid cap, triage keys that exhausted every
-ladder tier, `[triage:]` PRs open over 12h, and Docker API access. It pushes the
-snapshot to the bot's `POST /v1/ops`. `pokewatch -node` (service `node`, global,
-host `/` read-only at `/host`) reports each node's disks and the fixer ledger.
+ladder tier, a running `pokefixer_*` service with no node reporting its ledger
+(`fixer-report`), `[triage:]` PRs open over 12h, and Docker API access. It
+pushes the snapshot to the bot's `POST /v1/ops`. The snapshot is `warm` once
+the watcher has read Docker successfully and heard from every ready node (or
+run 15 minutes); `fixer-report` is only evaluated when warm.
+
+`pokewatch -node` (service `node`, global) reports each node's disk free and,
+on the fixer node, the fixer ledger summary. It runs as root (the ledger
+directory `/opt/pokefixer` is `0700 root`) but sees only two read-only host
+mounts: `/usr/share` at `/host/rootfs` (any directory on the root filesystem;
+used only for `statfs`) and `/opt` at `/host/opt`. `POKEWATCH_MOUNTS` lists
+`label=containerPath` pairs (default `/=/host/rootfs`); the label is what
+alerts show. The ledger is read from `POKEPILOT_FIXER_LEDGER` (default
+`/opt/pokefixer/state/ledger.tsv`, the production fixer path) under
+`POKEWATCH_HOST_ROOT` (`/host`). A missing ledger is normal on non-fixer
+nodes; any other read error and a bad `POKEPILOT_TRIAGE_LADDER` are logged.
 
 **Deploy freeze:** after `POKEPILOT_FREEZE_ROLLBACKS` (3) rollbacks within
 `POKEPILOT_FREEZE_SECONDS` (24h) the watcher sets the label
-`pokepilot.deploy-frozen-until=<unix>` on `pokefarm_wall` (`POKEWATCH_FREEZE_SERVICE`);
-`deploy/rollout-latest.sh` skips while it is in the future. Runs are unaffected,
-and the watcher clears the label when it expires.
+`pokepilot.deploy-frozen-until=<unix>` on its own service, `pokefarm-ops_watch`
+(`POKEWATCH_FREEZE_SERVICE`). It never labels a farm service: a label-only
+update resets that service's update status and would break the rollout's
+rollback hold. `deploy/rollout-latest.sh` reads the label from
+`${FARM_FREEZE_SERVICE:-pokefarm-ops_watch}` and skips while it is in the
+future; if that service does not exist the rollout is not frozen. If you deploy
+the ops stack under another name, set both variables. Runs are unaffected, and
+the watcher clears the label when it expires.
 
 ## Create the bot
 
@@ -120,8 +148,8 @@ commands.
 | `POKEPILOT_ALERTMANAGER_URL` | empty | Alertmanager base URL; optional |
 | `TELEGRAM_CHAT_ID` | empty | Legacy single private chat (authorized and notified) |
 | `POKEPILOT_GITHUB_REPO` | `maestroi/PokePilot` | Repo for issue links |
-| `POKEPILOT_OPS_TOKEN_FILE` | empty | Shared secret authorizing `POST /v1/ops` from `pokewatch` |
-| `POKEPILOT_WATCH_DIGEST_HOUR` | `9` | UTC hour of the daily digest |
+| `POKEPILOT_OPS_TOKEN_FILE` | empty | Shared secret authorizing `POST /v1/ops` from `pokewatch` (empty: every push is rejected; a warning is logged at startup) |
+| `POKEPILOT_WATCH_DIGEST_HOUR` | `9` | UTC hour (0-23) of the daily digest; anything else logs a warning and uses 9 |
 | `POKEPILOT_ADMIN_BASE_URL` | `https://admin.rompilot.app` | Admin links in messages |
 | `POKEPILOT_SPECTATOR_BASE_URL` | `https://rompilot.app/runs` | Public run links |
 | `POKETELEGRAM_HTTP_ADDR` | `:8080` | Health/metrics listener |
@@ -138,6 +166,13 @@ One stack, `pokefarm-ops` (`deploy/ops.yml`), holds the bot, `pokewatch` and
 the node reporter. It is separate from `farm.yml` so a missing Telegram token
 can never prevent the core farm from deploying. Only `watch` mounts the Docker
 socket; `telegram` is unprivileged.
+
+**Migrating from `pokefarm-telegram`:** remove the old bot stack first. Two
+bots on one token fight over `getUpdates` and each sees only some updates.
+
+```sh
+docker stack rm pokefarm-telegram   # once, before the first pokefarm-ops deploy
+```
 
 ```sh
 export FARM_IMAGE=ghcr.io/maestroi/pokepilot:<digest-or-tag>
@@ -179,7 +214,9 @@ the `poketelegram_bot_token` secret file; do not add it to other services.
 
 The service exposes:
 
-- `GET /healthz` — 200 while the operator API is reachable, 503 while degraded.
+- `GET /healthz` — liveness: always 200 while the process serves HTTP. The
+  JSON body reports `status` (`ok`/`degraded`) and `wall_healthy`; a wall
+  outage must not make Swarm restart the bot.
 - `GET /metrics` — Prometheus text metrics for updates, commands,
   unauthorized attempts, Telegram/operator errors, notifications, actions,
   action failures, pending confirmations, wall health, and last successful
