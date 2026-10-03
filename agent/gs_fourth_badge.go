@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	"github.com/maestroi/pokepilot/skill"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -18,6 +20,9 @@ const (
 	gsSudowoodoY      uint8 = 9
 	gsSudowoodoStandX uint8 = 35
 	gsSudowoodoStandY uint8 = 10
+
+	gsRockSmashGuyX uint8 = 44
+	gsRockSmashGuyY uint8 = 9
 
 	gsBurnedTowerBeastsX uint8 = 9
 	gsBurnedTowerBeastsY uint8 = 5
@@ -158,8 +163,21 @@ func executeGSBurnedTower(m *emu.Emu, romData []byte) error {
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSudowoodoCleared) {
 		return fmt.Errorf("%w: Burned Tower requires the Route 36 blocker cleared", errGSSecondBadgeUnexpectedState)
 	}
+	// 1F's corridor to the beasts' pit is sealed by a rock. The planner orders
+	// TM08 first; an objective chosen out of order collects it here, like the
+	// party recovery below, instead of failing on a prerequisite it can meet.
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTM08RockSmashAcquired) {
+		if err := executeGSTM08RockSmash(m, romData); err != nil {
+			return fmt.Errorf("gen2 Burned Tower: acquire Rock Smash: %w", err)
+		}
+	}
 	if err := gsRecoverAtEcruteakCenter(m, romData, profile); err != nil {
 		return fmt.Errorf("gen2 Burned Tower: recover party: %w", err)
+	}
+	// Teach Rock Smash from a safe overworld spot rather than mid-route: the
+	// native router clears rocks it meets, but only with a carrier ready.
+	if _, err := skill.EnsureFieldMove(m, skill.FieldRockSmash); err != nil {
+		return fmt.Errorf("gen2 Burned Tower: prepare Rock Smash: %w", err)
 	}
 
 	b1f, err := gsOpeningMapID("BURNED_TOWER_B1F")
@@ -171,6 +189,63 @@ func executeGSBurnedTower(m *emu.Emu, romData []byte) error {
 	}
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressBurnedTowerCleared) {
 		return fmt.Errorf("%w: Burned Tower trigger returned without releasing the beasts", errGSSecondBadgeUnexpectedState)
+	}
+	return nil
+}
+
+// executeGSTM08RockSmash collects TM08 from the Route 36 Rock Smash guy, who
+// only hands it over once Sudowoodo has been fought. Burned Tower 1F's
+// corridor to the beasts' pit is sealed by a smashable rock, so this is a
+// story prerequisite of that tower rather than something routing can invent.
+// Completion is the cartridge's EVENT_GOT_TM08_ROCK_SMASH bit.
+func executeGSTM08RockSmash(m *emu.Emu, romData []byte) error {
+	if m == nil {
+		return fmt.Errorf("gen2 TM08 Rock Smash: nil emulator")
+	}
+	profile, err := gsOpeningProfile(romData)
+	if err != nil {
+		return err
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTM08RockSmashAcquired) {
+		if profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		return driveGSSecondBadgeInterruption(m, profile, "route36:rock-smash")
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressSudowoodoCleared) {
+		return fmt.Errorf("%w: the Rock Smash guy requires the Route 36 blocker cleared", errGSSecondBadgeUnexpectedState)
+	}
+
+	route36, err := gsOpeningMapID("ROUTE_36")
+	if err != nil {
+		return err
+	}
+	// He faces west, so the tile west of him is the intended stand tile; the
+	// others cover a blocked or unwalkable neighbour without guessing at geometry.
+	var reachErr error
+	reached := false
+	for _, stand := range gsRockSmashGuyStandTiles {
+		reachErr = gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(route36, stand[0], stand[1]))
+		if reachErr == nil {
+			reached = true
+			break
+		}
+		if !errors.Is(reachErr, world.ErrNoPath) && !errors.Is(reachErr, skill.ErrLegUnwalkable) {
+			return fmt.Errorf("gen2 TM08 Rock Smash: reach guy: %w", reachErr)
+		}
+	}
+	if !reached {
+		return fmt.Errorf("gen2 TM08 Rock Smash: reach guy: %w", reachErr)
+	}
+	if err := skill.Face(m, gsRockSmashGuyX, gsRockSmashGuyY); err != nil {
+		return fmt.Errorf("gen2 TM08 Rock Smash: face guy: %w", err)
+	}
+	m.Tap(emu.A, 3, 7)
+	if err := driveGSSecondBadgeInterruption(m, profile, "route36:rock-smash"); err != nil {
+		return fmt.Errorf("gen2 TM08 Rock Smash: reward script: %w", err)
+	}
+	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressTM08RockSmashAcquired) {
+		return fmt.Errorf("%w: Rock Smash guy returned control without TM08", errGSSecondBadgeUnexpectedState)
 	}
 	return nil
 }
@@ -234,3 +309,7 @@ func executeGSMorty(m *emu.Emu, romData []byte) error {
 	}
 	return nil
 }
+
+// gsRockSmashGuyStandTiles are the tiles beside the Route 36 Rock Smash guy,
+// west (the way he faces) first.
+var gsRockSmashGuyStandTiles = [][2]uint8{{43, 9}, {44, 10}, {44, 8}, {45, 9}}

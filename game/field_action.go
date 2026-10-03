@@ -17,6 +17,7 @@ type FieldActionState struct {
 	Lit                bool
 	ActionSucceeded    bool
 	ResultTextActive   bool
+	InBattle           bool // a field action can start a wild battle (Rock Smash)
 	ChoiceVisible      bool
 	DebugText          string
 }

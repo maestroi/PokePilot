@@ -247,6 +247,15 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 		t.Fatalf("Sudowoodo boundary = %+v, want cleared but not frontier", story)
 	}
 
+	if story.Has(ProgressTM08RockSmashAcquired) {
+		t.Fatal("TM08 reported before the Route 36 guy hands it over")
+	}
+	setGSEvent(mem, eventGotTM08RockSmash)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressTM08RockSmashAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("TM08 boundary = %+v, want acquired but not frontier", story)
+	}
+
 	setGSEvent(mem, eventReleasedTheBeasts)
 	story = projectEarlyStory(mem)
 	if !story.Has(ProgressBurnedTowerCleared) || story.Has(ProgressSupportedFrontier) {

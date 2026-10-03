@@ -20,7 +20,9 @@ type NativeGrid struct {
 	Width, Height int
 	walkable      []bool
 	collisionTile []uint8
-	cuttable      []bool
+	obstacle      []worldmodel.NativeObstacle
+	byObject      map[[2]int]bool // obstacle cells that are live objects, not tiles
+	warpTrigger   []bool
 	blocked       map[uint8]worldmodel.NativeDirectionMask
 	jumps         map[uint8]worldmodel.NativeDirectionMask
 	Traversal     TraversalMode
@@ -35,8 +37,11 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 	if len(spec.Walkable) != want || len(spec.CollisionTile) != want {
 		return nil, fmt.Errorf("native map %#04x: invalid grid payload for %dx%d", spec.MapID, spec.Width, spec.Height)
 	}
-	if len(spec.Cuttable) != 0 && len(spec.Cuttable) != want {
-		return nil, fmt.Errorf("native map %#04x: invalid cuttable payload for %dx%d", spec.MapID, spec.Width, spec.Height)
+	if len(spec.WarpTrigger) != 0 && len(spec.WarpTrigger) != want {
+		return nil, fmt.Errorf("native map %#04x: invalid warp-trigger payload for %dx%d", spec.MapID, spec.Width, spec.Height)
+	}
+	if len(spec.Obstacles) != 0 && len(spec.Obstacles) != want {
+		return nil, fmt.Errorf("native map %#04x: invalid obstacle payload for %dx%d", spec.MapID, spec.Width, spec.Height)
 	}
 	blocked := make(map[uint8]worldmodel.NativeDirectionMask, len(spec.Blocked))
 	for collision, mask := range spec.Blocked {
@@ -50,7 +55,8 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 		MapID: spec.MapID, Width: spec.Width, Height: spec.Height,
 		walkable:      append([]bool(nil), spec.Walkable...),
 		collisionTile: append([]uint8(nil), spec.CollisionTile...),
-		cuttable:      append([]bool(nil), spec.Cuttable...),
+		obstacle:      append([]worldmodel.NativeObstacle(nil), spec.Obstacles...),
+		warpTrigger:   append([]bool(nil), spec.WarpTrigger...),
 		blocked:       blocked, jumps: jumps, Traversal: spec.Traversal,
 	}, nil
 }
@@ -70,8 +76,40 @@ func (g *NativeGrid) Tile(x, y int) (uint8, bool) {
 	return g.collisionTile[y*g.Width+x], true
 }
 
-func (g *NativeGrid) Cuttable(x, y int) bool {
-	return g.InBounds(x, y) && len(g.cuttable) == g.Width*g.Height && g.cuttable[y*g.Width+x]
+// WarpTriggers reports whether standing on (x,y) fires a warp event. Adapters
+// that do not describe it leave every tile triggering.
+func (g *NativeGrid) WarpTriggers(x, y int) bool {
+	if !g.InBounds(x, y) || len(g.warpTrigger) != g.Width*g.Height {
+		return true
+	}
+	return g.warpTrigger[y*g.Width+x]
+}
+
+// Obstacle reports the field-move obstacle standing on (x,y), if any.
+func (g *NativeGrid) Obstacle(x, y int) worldmodel.NativeObstacle {
+	if !g.InBounds(x, y) || len(g.obstacle) != g.Width*g.Height {
+		return ""
+	}
+	return g.obstacle[y*g.Width+x]
+}
+
+func (g *NativeGrid) Cuttable(x, y int) bool { return g.Obstacle(x, y) == worldmodel.ObstacleCutTree }
+
+// SetObjectObstacle marks a live object (a smashable rock) as an obstacle.
+// Unlike a tile obstacle it stays in the caller's occupied set: it blocks
+// ordinary pathing and only an obstacle approach may plan through it.
+func (g *NativeGrid) SetObjectObstacle(x, y int, kind worldmodel.NativeObstacle) {
+	if !g.InBounds(x, y) {
+		return
+	}
+	if len(g.obstacle) != g.Width*g.Height {
+		g.obstacle = make([]worldmodel.NativeObstacle, g.Width*g.Height)
+	}
+	g.obstacle[y*g.Width+x] = kind
+	if g.byObject == nil {
+		g.byObject = map[[2]int]bool{}
+	}
+	g.byObject[[2]int{x, y}] = true
 }
 
 func nativeDirection(step NativeStep) (worldmodel.NativeDirectionMask, worldmodel.NativeDirectionMask, bool) {
@@ -183,43 +221,56 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	return nil, ErrNoPath
 }
 
-// NativeCutApproach is the walkable prefix leading to one Cut obstacle whose
-// removal makes the target reachable. Approach stops on the tile beside the
-// tree; Cut is the one-tile direction the player must face/use Cut toward.
-// Runtime routing replans from fresh live blocks after the cartridge mutates
-// the map, so this planner never assumes the replacement collision itself.
-type NativeCutApproach struct {
+// NativeObstacleApproach is the walkable prefix leading to one obstacle whose
+// removal connects the start to the target. Clear is the final step INTO the
+// obstacle cell; the caller faces it, uses Kind's field move, then re-reads
+// the live map instead of assuming what replaced it.
+type NativeObstacleApproach struct {
 	Approach []NativeStep
-	Cut      NativeStep
-	TreeX    int
-	TreeY    int
+	Clear    NativeStep
+	X, Y     int
+	Kind     worldmodel.NativeObstacle
 }
 
-// FindNativeCutApproach finds one cuttable tile that bridges the current
-// walkable component to the target. It evaluates each live cuttable tile by
-// making only that tile virtually walkable, asks the ordinary pathfinder
-// whether the destination would then connect, and returns the shortest
-// pre-Cut approach. At most one tree is assumed removed; a second tree is
-// handled by the caller's post-action replan.
-func FindNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool) (NativeCutApproach, error) {
+// FindNativeObstacleApproach finds one usable obstacle that bridges the
+// current walkable component to the target. It evaluates each obstacle cell
+// whose kind usable() accepts by making only that cell virtually walkable,
+// asks the ordinary pathfinder whether the destination would then connect, and
+// returns the shortest pre-clear approach. At most one obstacle is assumed
+// removed; a second is handled by the caller's post-action replan. A tile
+// obstacle occupied by a sprite is rejected; an object obstacle is occupied by
+// definition and is exempt from its own cell.
+func FindNativeObstacleApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool, usable func(worldmodel.NativeObstacle) bool) (NativeObstacleApproach, error) {
 	if g == nil || !g.InBounds(sx, sy) || !g.InBounds(tx, ty) ||
 		!g.Walkable(sx, sy) || !g.Walkable(tx, ty) {
-		return NativeCutApproach{}, ErrNoPath
+		return NativeObstacleApproach{}, ErrNoPath
 	}
 
 	bestCost := int(^uint(0) >> 1)
-	var best NativeCutApproach
+	var best NativeObstacleApproach
 	found := false
 	for y := 0; y < g.Height; y++ {
 		for x := 0; x < g.Width; x++ {
-			if !g.Cuttable(x, y) || occupied[[2]int{x, y}] {
+			kind := g.Obstacle(x, y)
+			if kind == "" || !usable(kind) {
+				continue
+			}
+			at := [2]int{x, y}
+			blocked := occupied
+			if g.byObject[at] {
+				blocked = make(map[[2]int]bool, len(occupied))
+				for k, v := range occupied {
+					blocked[k] = v
+				}
+				delete(blocked, at)
+			} else if occupied[at] {
 				continue
 			}
 
 			virtual := *g
 			virtual.walkable = append([]bool(nil), g.walkable...)
 			virtual.walkable[y*g.Width+x] = true
-			full, err := FindNativePath(&virtual, sx, sy, tx, ty, occupied)
+			full, err := FindNativePath(&virtual, sx, sy, tx, ty, blocked)
 			if err != nil {
 				continue
 			}
@@ -233,11 +284,10 @@ func FindNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]in
 					}
 					if len(full) < bestCost {
 						bestCost = len(full)
-						best = NativeCutApproach{
+						best = NativeObstacleApproach{
 							Approach: append([]NativeStep(nil), full[:i]...),
-							Cut:      step,
-							TreeX:    x,
-							TreeY:    y,
+							Clear:    step,
+							X:        x, Y: y, Kind: kind,
 						}
 						found = true
 					}
@@ -248,7 +298,7 @@ func FindNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]in
 		}
 	}
 	if !found {
-		return NativeCutApproach{}, ErrNoPath
+		return NativeObstacleApproach{}, ErrNoPath
 	}
 	return best, nil
 }

@@ -24,6 +24,7 @@ const (
 	ProgressPlainBadgeEarned         game.ProgressID = "gs_plain_badge_earned"
 	ProgressSquirtBottleAcquired     game.ProgressID = "gs_squirtbottle_acquired"
 	ProgressSudowoodoCleared         game.ProgressID = "gs_sudowoodo_cleared"
+	ProgressTM08RockSmashAcquired    game.ProgressID = "gs_tm08_rock_smash_acquired"
 	ProgressBurnedTowerCleared       game.ProgressID = "gs_burned_tower_cleared"
 	ProgressFogBadgeEarned           game.ProgressID = "gs_fog_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -49,6 +50,7 @@ const (
 	eventRivalAzaleaTown          uint16 = 1727
 	eventGotSquirtBottle          uint16 = 92
 	eventFoughtSudowoodo          uint16 = 42
+	eventGotTM08RockSmash         uint16 = 75
 	eventReleasedTheBeasts        uint16 = 123
 	statusFlagsPokedexMask               = 1 << 0
 	johtoBadgeZephyrMask                 = 1 << 0
@@ -129,6 +131,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressPlainBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgePlainMask != 0},
 		{ID: ProgressSquirtBottleAcquired, Complete: hasGSEvent(reader, eventGotSquirtBottle)},
 		{ID: ProgressSudowoodoCleared, Complete: hasGSEvent(reader, eventFoughtSudowoodo)},
+		{ID: ProgressTM08RockSmashAcquired, Complete: hasGSEvent(reader, eventGotTM08RockSmash)},
 		{ID: ProgressBurnedTowerCleared, Complete: hasGSEvent(reader, eventReleasedTheBeasts)},
 		{ID: ProgressFogBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},

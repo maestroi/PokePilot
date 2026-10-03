@@ -17,10 +17,14 @@ type MapPoint struct {
 
 // LiveMapObject is one currently loaded map object as observed from runtime
 // memory. Slot is the profile's 1-based object-event identity for the map.
+//
+// Clearable, when set, names the field move that removes the object (a
+// smashable rock). Profiles own which sprite or movement type earns it.
 type LiveMapObject struct {
-	Slot int
-	X    int
-	Y    int
+	Slot      int
+	X         int
+	Y         int
+	Clearable FieldMoveID
 }
 
 // MapShellPhase is where a cartridge's overworld map shell is in its own entry

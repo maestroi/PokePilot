@@ -58,6 +58,17 @@ type NativeJump struct {
 	DirectionMask NativeDirectionMask
 }
 
+// NativeObstacle names the field move that clears a blocking tile or object
+// ("" means no obstacle). Which collision byte or sprite is an obstacle is
+// adapter-owned; generic routing only sees the semantic kind.
+type NativeObstacle string
+
+const (
+	ObstacleCutTree   NativeObstacle = "cut"
+	ObstacleSmashRock NativeObstacle = "rock_smash"
+	ObstacleWhirlpool NativeObstacle = "whirlpool"
+)
+
 // NativeGridSpec is the wide-id counterpart to GridSpec. Collision decoding is
 // adapter-owned; generic native routing receives only tile-level semantics.
 type NativeGridSpec struct {
@@ -66,10 +77,15 @@ type NativeGridSpec struct {
 	Height        int
 	Walkable      []bool
 	CollisionTile []uint8
-	Cuttable      []bool
-	Blocked       map[uint8]NativeDirectionMask
-	Jumps         []NativeJump
-	Traversal     TraversalMode
+	Obstacles     []NativeObstacle // per cell; nil when the map has none
+	// WarpTrigger says, per cell, whether standing there fires a warp event
+	// from the map's warp table. Nil means the adapter does not say and every
+	// warp is assumed to trigger. A warp table entry on a non-triggering tile
+	// is only a landing spot for warps from elsewhere.
+	WarpTrigger []bool
+	Blocked     map[uint8]NativeDirectionMask
+	Jumps       []NativeJump
+	Traversal   TraversalMode
 }
 
 // NativeGridProvider is an optional extension of NativeMapTopologyProvider for

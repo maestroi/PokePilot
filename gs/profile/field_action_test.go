@@ -97,3 +97,14 @@ func TestGSProfilesImplementFieldActionAndMoveContracts(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeFieldActionReportsBattle(t *testing.T) {
+	var mem fakeMemory
+	if NewGold().DecodeFieldAction(&mem).InBattle {
+		t.Fatal("idle overworld reported as battle")
+	}
+	mem[sym.BattleMode] = 1
+	if !NewGold().DecodeFieldAction(&mem).InBattle {
+		t.Fatal("a Rock Smash wild battle must be visible to the field-action settle loop")
+	}
+}

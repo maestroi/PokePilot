@@ -13,6 +13,7 @@ func TestProgressionFieldMovesIncludeGenIISemantics(t *testing.T) {
 		FieldMoveWhirlpool,
 		FieldMoveWaterfall,
 		FieldMoveHeadbutt,
+		FieldMoveRockSmash,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("field move vocabulary len=%d, want %d: %v", len(got), len(want), got)

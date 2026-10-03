@@ -55,6 +55,7 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressPlainBadgeEarned,
 		gsprofile.ProgressSquirtBottleAcquired,
 		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned:
 		return true
@@ -154,6 +155,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSSquirtBottle(a.m, a.romData)
 		case gsprofile.ProgressSudowoodoCleared:
 			err = executeGSSudowoodo(a.m, a.romData)
+		case gsprofile.ProgressTM08RockSmashAcquired:
+			err = executeGSTM08RockSmash(a.m, a.romData)
 		case gsprofile.ProgressBurnedTowerCleared:
 			err = executeGSBurnedTower(a.m, a.romData)
 		case gsprofile.ProgressFogBadgeEarned:
@@ -181,8 +184,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressSlowpokeWellCleared, gsprofile.ProgressHiveBadgeEarned,
 			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded,
 			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned,
-			gsprofile.ProgressSudowoodoCleared, gsprofile.ProgressBurnedTowerCleared,
-			gsprofile.ProgressFogBadgeEarned:
+			gsprofile.ProgressSudowoodoCleared, gsprofile.ProgressTM08RockSmashAcquired,
+			gsprofile.ProgressBurnedTowerCleared, gsprofile.ProgressFogBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -405,6 +408,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressSudowoodoCleared,
 			Note:     "(take the north route from Goldenrod, water the Route 36 Sudowoodo, and win the required battle)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressTM08RockSmashAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressTM08RockSmashAcquired,
+			Note:     "(talk to the Route 36 Rock Smash guy after Sudowoodo; Burned Tower's 1F rocks need TM08)",
 		}}
 	case !obs.Story.Has(gsprofile.ProgressBurnedTowerCleared):
 		return []Objective{{
