@@ -83,3 +83,19 @@ func TestSetCommands(t *testing.T) {
 		t.Fatalf("%+v", f.calls)
 	}
 }
+
+func TestTransportErrorsDoNotLeakToken(t *testing.T) {
+	f := newFakeTG(t)
+	c := f.client()
+	c.token = "SECRET123"
+	f.srv.Close() // connection refused
+	ctx := context.Background()
+	_, e1 := c.getUpdates(ctx, 0, 0)
+	_, e2 := c.send(ctx, 1, outgoing{Text: "x"})
+	e3 := c.sendPhoto(ctx, 1, []byte("p"), "", "c")
+	for i, err := range []error{e1, e2, e3} {
+		if err == nil || strings.Contains(err.Error(), "SECRET123") {
+			t.Fatalf("%d: %v", i, err)
+		}
+	}
+}

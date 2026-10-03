@@ -111,7 +111,7 @@ func (t *telegramClient) sendPhoto(ctx context.Context, chatID int64, data []byt
 	if mediaType != "" {
 		req.Header.Set("X-PokePilot-Source-Media-Type", mediaType)
 	}
-	res, err := t.http.Do(req)
+	res, err := t.roundTrip(req)
 	if err != nil {
 		return err
 	}
@@ -153,8 +153,18 @@ func (t *telegramClient) callJSON(ctx context.Context, method string, payload an
 	return t.do(req, out)
 }
 
-func (t *telegramClient) do(req *http.Request, out any) error {
+// roundTrip strips the request URL (which embeds the bot token) from transport errors.
+func (t *telegramClient) roundTrip(req *http.Request) (*http.Response, error) {
 	res, err := t.http.Do(req)
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return nil, fmt.Errorf("telegram %s: %w", req.URL.Path[strings.LastIndex(req.URL.Path, "/")+1:], ue.Err)
+	}
+	return res, err
+}
+
+func (t *telegramClient) do(req *http.Request, out any) error {
+	res, err := t.roundTrip(req)
 	if err != nil {
 		return err
 	}
@@ -249,7 +259,13 @@ func (t *telegramClient) edit(ctx context.Context, chatID, messageID int64, m ou
 	delete(p, "reply_parameters")
 	delete(p, "disable_notification")
 	var out telegramResponse[json.RawMessage]
-	return t.callJSON(ctx, "editMessageText", p, &out)
+	if err := t.callJSON(ctx, "editMessageText", p, &out); err != nil {
+		return err
+	}
+	if !out.OK {
+		return classifyTelegramError(errors.New(out.Description))
+	}
+	return nil
 }
 
 func (t *telegramClient) setCommands(ctx context.Context, cmds [][2]string) error {
