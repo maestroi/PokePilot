@@ -81,6 +81,7 @@ func TestSemanticFieldMovesIncludeGenIISet(t *testing.T) {
 		game.FieldMoveWhirlpool,
 		game.FieldMoveWaterfall,
 		game.FieldMoveHeadbutt,
+		game.FieldMoveRockSmash,
 	}
 	if len(moves) != len(want) {
 		t.Fatalf("semantic moves len=%d, want %d", len(moves), len(want))

@@ -32,6 +32,7 @@ const (
 	FieldWhirlpool
 	FieldWaterfall
 	FieldHeadbutt
+	FieldRockSmash
 )
 
 func (m FieldMove) String() string {
@@ -47,7 +48,7 @@ func (m FieldMove) String() string {
 func SemanticFieldMoves() []FieldMove {
 	return []FieldMove{
 		FieldCut, FieldFly, FieldSurf, FieldStrength, FieldFlash,
-		FieldWhirlpool, FieldWaterfall, FieldHeadbutt,
+		FieldWhirlpool, FieldWaterfall, FieldHeadbutt, FieldRockSmash,
 	}
 }
 
@@ -164,6 +165,10 @@ func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActi
 		if fieldActionCompleteState(runtime, spec) {
 			return nil
 		}
+		if runtime.InBattle {
+			// Rock Smash can start a wild battle; battle text is never ours to page.
+			return ErrBattle
+		}
 		if runtime.ChoiceVisible {
 			return fmt.Errorf("field move exposed an unexpected choice prompt")
 		}
@@ -231,7 +236,12 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 	}
 	spec, ok := FieldMoveSpecFor(move)
 	if !ok {
-		return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
+		// Gen-II-only moves have no Red compatibility spec; the semantic id
+		// is all the shared executor needs.
+		if _, known := semanticFieldMove(move); !known {
+			return FieldActionResult{}, fmt.Errorf("skill: field move %d is unknown", move)
+		}
+		spec = FieldMoveSpec{Move: move, Name: move.String()}
 	}
 	runtime := decoder.DecodeFieldAction(m)
 	if !runtime.Controllable {
@@ -263,6 +273,9 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 	}
 	m.StepFrames(30)
 	if err := settleFieldAction(m, spec, decoder); err != nil {
+		if errors.Is(err, ErrBattle) {
+			return FieldActionResult{}, err
+		}
 		runtime = decoder.DecodeFieldAction(m)
 		closeErr := closeFieldActionToOverworld(m, decoder, party)
 		if closeErr != nil {

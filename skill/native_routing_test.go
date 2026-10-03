@@ -244,3 +244,41 @@ func TestNativeArrivalRequiresControlHandoff(t *testing.T) {
 		})
 	}
 }
+
+func TestMarkNativeObjectObstaclesLeavesRockOccupied(t *testing.T) {
+	grid := nativeTestGrid(t, 5, 1, []bool{true, true, true, true, true})
+	live := game.LiveTopologyState{LiveObjects: []game.LiveMapObject{
+		{Slot: 1, X: 2, Y: 0, Clearable: game.FieldMoveRockSmash},
+		{Slot: 2, X: 3, Y: 0}, // an ordinary NPC is not an obstacle
+	}}
+	markNativeObjectObstacles(grid, live)
+	blocked := nativeRuntimeBlockers(live, worldmodel.NativeMapHeader{}, nil)
+	if grid.Obstacle(2, 0) != worldmodel.ObstacleSmashRock || grid.Obstacle(3, 0) != "" {
+		t.Fatalf("obstacles = %q/%q, want rock_smash/none", grid.Obstacle(2, 0), grid.Obstacle(3, 0))
+	}
+	if _, err := world.FindNativePath(grid, 0, 0, 4, 0, blocked); !errors.Is(err, world.ErrNoPath) {
+		t.Fatalf("ordinary path through a rock = %v, want ErrNoPath", err)
+	}
+	// An NPC two tiles later keeps the route sealed even when the rock is usable.
+	smash := func(k worldmodel.NativeObstacle) bool { return k == worldmodel.ObstacleSmashRock }
+	if _, err := world.FindNativeObstacleApproach(grid, 0, 0, 4, 0, blocked, smash); !errors.Is(err, world.ErrNoPath) {
+		t.Fatalf("smashing the rock must not path through the NPC behind it: %v", err)
+	}
+}
+
+func TestNativeObstacleFieldMoveCoversEveryKind(t *testing.T) {
+	want := map[worldmodel.NativeObstacle]FieldMove{
+		worldmodel.ObstacleCutTree:   FieldCut,
+		worldmodel.ObstacleSmashRock: FieldRockSmash,
+		worldmodel.ObstacleWhirlpool: FieldWhirlpool,
+	}
+	for kind, move := range want {
+		got, ok := nativeObstacleFieldMove(kind)
+		if !ok || got != move {
+			t.Fatalf("%s -> %v,%v; want %v", kind, got, ok, move)
+		}
+	}
+	if _, ok := nativeObstacleFieldMove("strength_boulder"); ok {
+		t.Fatal("an unmodelled obstacle kind must not map to a field move")
+	}
+}

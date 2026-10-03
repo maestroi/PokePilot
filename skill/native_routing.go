@@ -147,6 +147,15 @@ func nativeLiveGrid(
 	if err != nil {
 		return nil, live, header, err
 	}
+	// A warp-table entry on a tile that cannot fire it is plain floor here:
+	// it must not be treated as a wall to avoid, nor as an exit to take.
+	warps := append([]worldmodel.NativeWarp(nil), header.Warps...)
+	for i := range warps {
+		if !grid.WarpTriggers(int(warps[i].X), int(warps[i].Y)) {
+			warps[i].Inert = true
+		}
+	}
+	header.Warps = warps
 	return grid, live, header, nil
 }
 
@@ -224,42 +233,109 @@ func nativeArrival(state game.OverworldState, dest NativeDestination) nativeArri
 	return nativeArrivalInterrupted
 }
 
-func nativeCutAvailable(profile nativeRoutingProfile, reader game.MemoryReader, romData []byte) (bool, error) {
-	field, ok := any(profile).(game.FieldMoveDecoder)
-	if !ok {
-		return false, nil
+// nativeObstacleFieldMove maps an obstacle kind to the field move that clears it.
+func nativeObstacleFieldMove(kind worldmodel.NativeObstacle) (FieldMove, bool) {
+	switch kind {
+	case worldmodel.ObstacleCutTree:
+		return FieldCut, true
+	case worldmodel.ObstacleSmashRock:
+		return FieldRockSmash, true
+	case worldmodel.ObstacleWhirlpool:
+		return FieldWhirlpool, true
+	default:
+		return 0, false
 	}
-	capability, err := fieldMoveCapabilityWithProfile(field, reader, romData, FieldCut)
-	if err != nil {
-		if errors.Is(err, ErrFieldMovePrerequisite) {
-			return false, nil
-		}
-		return false, err
-	}
-	if !capability.BadgeOwned {
-		return false, nil
-	}
-	return capability.Usable || (capability.MachineOwned && capability.Preparable), nil
 }
 
-func executeNativeCutApproach(
+// nativeObstacleUsable reports which obstacle kinds the party can clear right
+// now: the badge is owned and the move is learned or teachable. A missing
+// prerequisite is a stable "not usable", never an error.
+func nativeObstacleUsable(profile nativeRoutingProfile, reader game.MemoryReader, romData []byte) (func(worldmodel.NativeObstacle) bool, error) {
+	field, ok := any(profile).(game.FieldMoveDecoder)
+	usable := map[worldmodel.NativeObstacle]bool{}
+	if ok {
+		for _, kind := range []worldmodel.NativeObstacle{worldmodel.ObstacleCutTree, worldmodel.ObstacleSmashRock, worldmodel.ObstacleWhirlpool} {
+			move, _ := nativeObstacleFieldMove(kind)
+			capability, err := fieldMoveCapabilityWithProfile(field, reader, romData, move)
+			if err != nil {
+				if errors.Is(err, ErrFieldMovePrerequisite) {
+					continue
+				}
+				return nil, err
+			}
+			usable[kind] = capability.BadgeOwned && (capability.Usable || (capability.MachineOwned && capability.Preparable))
+		}
+	}
+	return func(kind worldmodel.NativeObstacle) bool { return usable[kind] }, nil
+}
+
+// markNativeObjectObstacles overlays live clearable objects (smashable rocks)
+// onto the tile grid. They stay in the occupied set; see SetObjectObstacle.
+func markNativeObjectObstacles(grid *world.NativeGrid, live game.LiveTopologyState) {
+	for _, object := range live.LiveObjects {
+		switch object.Clearable {
+		case game.FieldMoveRockSmash:
+			grid.SetObjectObstacle(object.X, object.Y, worldmodel.ObstacleSmashRock)
+		}
+	}
+}
+
+// ErrObstacleNotCleared reports that a field move ran but the live map still
+// shows the obstacle: the move's success byte is not proof the route opened.
+var ErrObstacleNotCleared = errors.New("skill: native routing: obstacle still present after field move")
+
+const obstacleClearSettleFrames = 600
+
+func executeNativeObstacleApproach(
 	m *emu.Emu,
 	profile nativeRoutingProfile,
-	plan world.NativeCutApproach,
+	provider worldmodel.NativeGridProvider,
+	mapID uint16,
+	plan world.NativeObstacleApproach,
 ) error {
+	move, ok := nativeObstacleFieldMove(plan.Kind)
+	if !ok {
+		return fmt.Errorf("skill: native routing: unknown obstacle kind %q", plan.Kind)
+	}
 	if err := walkNativePath(m, profile, plan.Approach); err != nil {
 		return err
 	}
-	if plan.TreeX < 0 || plan.TreeY < 0 || plan.TreeX > 255 || plan.TreeY > 255 {
-		return fmt.Errorf("skill: native routing: Cut target (%d,%d) outside byte coordinate range", plan.TreeX, plan.TreeY)
+	if plan.X < 0 || plan.Y < 0 || plan.X > 255 || plan.Y > 255 {
+		return fmt.Errorf("skill: native routing: %s target (%d,%d) outside byte coordinate range", move, plan.X, plan.Y)
 	}
-	if err := Face(m, uint8(plan.TreeX), uint8(plan.TreeY)); err != nil {
-		return fmt.Errorf("skill: native routing: face Cut target (%d,%d): %w", plan.TreeX, plan.TreeY, err)
+	if err := Face(m, uint8(plan.X), uint8(plan.Y)); err != nil {
+		return fmt.Errorf("skill: native routing: face %s target (%d,%d): %w", move, plan.X, plan.Y, err)
 	}
-	if _, err := UseFieldMove(m, FieldCut); err != nil {
-		return fmt.Errorf("skill: native routing: Cut target (%d,%d): %w", plan.TreeX, plan.TreeY, err)
+	if _, err := UseFieldMove(m, move); err != nil {
+		if errors.Is(err, ErrBattle) {
+			return ErrBattle
+		}
+		return fmt.Errorf("skill: native routing: %s target (%d,%d): %w", move, plan.X, plan.Y, err)
 	}
-	return nil
+	// The success byte is set when the script is queued, not when the map
+	// changed. Wait for the live map to show the obstacle gone (a Rock Smash
+	// can also start a wild battle first).
+	for spent := 0; spent < obstacleClearSettleFrames; spent += 10 {
+		if profile.DecodeOverworld(m).InBattle {
+			return ErrBattle
+		}
+		if grid, live, _, err := nativeLiveGrid(m, profile, provider, mapID); err == nil {
+			if grid.Obstacle(plan.X, plan.Y) == "" && nativeObjectAt(live, plan.X, plan.Y) == "" {
+				return nil
+			}
+		}
+		m.StepFrames(10)
+	}
+	return fmt.Errorf("%w: %s at (%d,%d)", ErrObstacleNotCleared, move, plan.X, plan.Y)
+}
+
+func nativeObjectAt(live game.LiveTopologyState, x, y int) game.FieldMoveID {
+	for _, object := range live.LiveObjects {
+		if object.X == x && object.Y == y {
+			return object.Clearable
+		}
+	}
+	return ""
 }
 
 func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, romData []byte, dest NativeDestination) error {
@@ -297,38 +373,14 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			if !errors.Is(err, world.ErrNoPath) {
 				return err
 			}
-			canCut, cutErr := nativeCutAvailable(profile, m, romData)
-			if cutErr != nil {
-				return fmt.Errorf("skill: native routing: decode Cut capability: %w", cutErr)
+			cleared, bridgeErr := nativeObstacleBridge(m, profile, provider, romData, dest.Map, grid, live,
+				int(liveWorld.X), int(liveWorld.Y), blocked, [][2]int{{int(dest.X), int(dest.Y)}})
+			if bridgeErr != nil {
+				return bridgeErr
 			}
-			if !canCut {
+			if !cleared {
 				return err
 			}
-			cutPlan, cutErr := world.FindNativeCutApproach(
-				grid,
-				int(liveWorld.X), int(liveWorld.Y),
-				int(dest.X), int(dest.Y),
-				blocked,
-			)
-			if cutErr != nil {
-				return err
-			}
-			if cutErr := executeNativeCutApproach(m, profile, cutPlan); cutErr != nil {
-				// The approach walk is a walk: a transient sprite can stand on
-				// its route just as it can on the main path below. A raw step
-				// block is retryable — re-read the live map and re-plan the
-				// approach from wherever the player actually is — so it must
-				// not surface as a terminal failure the way a real Cut refusal
-				// would.
-				var blockedStep *ErrBlocked
-				if !errors.As(cutErr, &blockedStep) {
-					return cutErr
-				}
-				m.StepFrames(npcWaitFrames)
-				continue
-			}
-			// Cut mutates the live block buffer. Re-read the map instead of
-			// assuming which replacement tile the cartridge installed.
 			continue
 		}
 		if err := walkNativePath(m, profile, path); err != nil {
@@ -462,25 +514,20 @@ func nativeConnectionApproach(
 	return best, push, nil
 }
 
-// nativeConnectionCutApproach finds a Cut that opens a currently sealed path
-// onto the connection band. Same-map nativeWalkTo already owns this for tile
-// goals; cross-map edges need the same bridge or a Cut tree on Route 35 seals
-// the north exit forever and routing bounces back through the Goldenrod gate.
-func nativeConnectionCutApproach(
+// nativeConnectionTargets lists the walkable, unblocked tiles of a connection
+// band: any one of them leaves the map.
+func nativeConnectionTargets(
 	provider worldmodel.NativeMapTopologyProvider,
 	grid *world.NativeGrid,
 	live game.LiveTopologyState,
 	edge world.NativeEdge,
-	sx, sy int,
 	blocked map[[2]int]bool,
-) (world.NativeCutApproach, error) {
+) ([][2]int, error) {
 	limit, destLimit, sourceWidth, sourceHeight, _, err := nativeConnectionEdgeBand(provider, live, edge)
 	if err != nil {
-		return world.NativeCutApproach{}, err
+		return nil, err
 	}
-	bestCost := int(^uint(0) >> 1)
-	var best world.NativeCutApproach
-	found := false
+	var targets [][2]int
 	for i := 0; i < limit; i++ {
 		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
 			continue
@@ -489,21 +536,70 @@ func nativeConnectionCutApproach(
 		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
 			continue
 		}
-		plan, planErr := world.FindNativeCutApproach(grid, sx, sy, tx, ty, blocked)
+		targets = append(targets, [2]int{tx, ty})
+	}
+	return targets, nil
+}
+
+// nativeWarpTargets lists the walkable, unblocked tiles beside a warp from
+// which one push steps onto it.
+func nativeWarpTargets(grid *world.NativeGrid, wx, wy int, blocked map[[2]int]bool) [][2]int {
+	var targets [][2]int
+	for _, at := range [][2]int{{wx, wy - 1}, {wx - 1, wy}, {wx + 1, wy}, {wx, wy + 1}} {
+		if !blocked[at] && grid.Walkable(at[0], at[1]) {
+			targets = append(targets, at)
+		}
+	}
+	return targets
+}
+
+// nativeObstacleBridge finds the cheapest single field-move clear that opens a
+// sealed path to any of targets, runs it, and reports cleared=true so the
+// caller re-reads the live map. Same-map nativeWalkTo, connection edges (a Cut
+// tree on Route 35 sealing the north exit) and warp edges (Rock Smash rocks on
+// the Burned Tower 1F approach to its pit) all share it. cleared=false with a
+// nil error means no usable obstacle bridges the gap.
+func nativeObstacleBridge(
+	m *emu.Emu,
+	profile nativeRoutingProfile,
+	provider worldmodel.NativeGridProvider,
+	romData []byte,
+	mapID uint16,
+	grid *world.NativeGrid,
+	live game.LiveTopologyState,
+	sx, sy int,
+	blocked map[[2]int]bool,
+	targets [][2]int,
+) (cleared bool, err error) {
+	usable, err := nativeObstacleUsable(profile, m, romData)
+	if err != nil {
+		return false, fmt.Errorf("skill: native routing: decode field-move capability: %w", err)
+	}
+	markNativeObjectObstacles(grid, live)
+	var best world.NativeObstacleApproach
+	found := false
+	for _, at := range targets {
+		plan, planErr := world.FindNativeObstacleApproach(grid, sx, sy, at[0], at[1], blocked, usable)
 		if planErr != nil {
 			continue
 		}
-		cost := len(plan.Approach) + 1
-		if !found || cost < bestCost {
-			bestCost = cost
-			best = plan
-			found = true
+		if !found || len(plan.Approach) < len(best.Approach) {
+			best, found = plan, true
 		}
 	}
 	if !found {
-		return world.NativeCutApproach{}, world.ErrNoPath
+		return false, nil
 	}
-	return best, nil
+	if execErr := executeNativeObstacleApproach(m, profile, provider, mapID, best); execErr != nil {
+		// The approach walk is a walk: a transient sprite can stand on its
+		// route. A raw step block is retryable, so re-read the map and replan.
+		var blockedStep *ErrBlocked
+		if !errors.As(execErr, &blockedStep) {
+			return false, execErr
+		}
+		m.StepFrames(npcWaitFrames)
+	}
+	return true, nil
 }
 
 func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.NativeEdge, push world.NativeStep) error {
@@ -595,31 +691,41 @@ func traverseNativeEdge(
 		var push world.NativeStep
 		switch edge.Kind {
 		case world.EdgeWarp:
+			if !grid.WarpTriggers(int(edge.WarpX), int(edge.WarpY)) {
+				// Landing-only warp: stepping on it does nothing. Report it as
+				// unreachable so the router tries a sibling warp, instead of
+				// pushing onto the tile until retries run out.
+				return fmt.Errorf("skill: native routing: warp (%d,%d) on %#04x does not trigger from its own tile: %w",
+					edge.WarpX, edge.WarpY, edge.From, world.ErrNoPath)
+			}
 			path, push, err = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked)
+			if errors.Is(err, world.ErrNoPath) {
+				cleared, bridgeErr := nativeObstacleBridge(m, profile, provider, romData, edge.From, grid, live,
+					int(state.X), int(state.Y), blocked, nativeWarpTargets(grid, int(edge.WarpX), int(edge.WarpY), blocked))
+				if bridgeErr != nil {
+					return bridgeErr
+				}
+				if cleared {
+					continue
+				}
+			}
 		case world.EdgeConnection:
 			// The connection approach works in the destination's block
 			// dimensions. They are read from the same settled topology as the
 			// grid so the two can never describe different maps.
 			path, push, err = nativeConnectionApproach(provider, grid, live, edge, int(state.X), int(state.Y), blocked)
 			if errors.Is(err, world.ErrNoPath) {
-				canCut, cutErr := nativeCutAvailable(profile, m, romData)
-				if cutErr != nil {
-					return fmt.Errorf("skill: native routing: decode Cut capability: %w", cutErr)
+				targets, targetErr := nativeConnectionTargets(provider, grid, live, edge, blocked)
+				if targetErr != nil {
+					return targetErr
 				}
-				if canCut {
-					cutPlan, cutErr := nativeConnectionCutApproach(provider, grid, live, edge, int(state.X), int(state.Y), blocked)
-					if cutErr == nil {
-						if execErr := executeNativeCutApproach(m, profile, cutPlan); execErr != nil {
-							var blockedStep *ErrBlocked
-							if !errors.As(execErr, &blockedStep) {
-								return execErr
-							}
-							m.StepFrames(npcWaitFrames)
-							continue
-						}
-						// Cut mutates live blocks; re-read and replan the edge.
-						continue
-					}
+				cleared, bridgeErr := nativeObstacleBridge(m, profile, provider, romData, edge.From, grid, live,
+					int(state.X), int(state.Y), blocked, targets)
+				if bridgeErr != nil {
+					return bridgeErr
+				}
+				if cleared {
+					continue
 				}
 			}
 		default:
@@ -648,6 +754,33 @@ func traverseNativeEdge(
 	return fmt.Errorf("skill: native routing: edge %#04x -> %#04x exhausted retries: %w", edge.From, edge.To, ErrLegUnwalkable)
 }
 
+// nativeEntriesReaching returns the warp entries into dest.Map whose landing
+// tile can walk to dest on the current live geometry. It must be called while
+// standing on dest.Map so the live blocks describe the map being reasoned
+// about. Connection entries are not considered: their landing is a band, not a
+// tile.
+func nativeEntriesReaching(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.NativeGridProvider, dest NativeDestination) (map[int]bool, error) {
+	grid, live, header, err := nativeLiveGrid(m, profile, provider, dest.Map)
+	if err != nil {
+		return nil, err
+	}
+	blocked := nativeRuntimeBlockers(live, header, nil)
+	delete(blocked, [2]int{int(dest.X), int(dest.Y)})
+	entries := map[int]bool{}
+	for i, warp := range header.Warps {
+		landing := [2]int{int(warp.X), int(warp.Y)}
+		blockedHere := make(map[[2]int]bool, len(blocked))
+		for k, v := range blocked {
+			blockedHere[k] = v
+		}
+		delete(blockedHere, landing)
+		if _, err := world.FindNativePath(grid, landing[0], landing[1], int(dest.X), int(dest.Y), blockedHere); err == nil {
+			entries[i] = true
+		}
+	}
+	return entries, nil
+}
+
 // GoToNative executes map and tile routing through the wide-id native graph.
 // It is deliberately independent of the Gen-I Destination/Graph contracts so
 // a recognized Gen-II cartridge is never narrowed or routed through Red.
@@ -664,6 +797,11 @@ type NativeRouteMemory struct {
 	unreachable map[world.NativeUnreachable]bool
 	entry       int
 	last        *world.NativeEdge
+	// goal/goodEntries remember, across interrupted retries, that goal is in
+	// a different walkable component of its own map and may only be reached
+	// by entering through these warp entries.
+	goal        NativeDestination
+	goodEntries map[int]bool
 }
 
 func NewNativeRouteMemory() *NativeRouteMemory {
@@ -686,6 +824,13 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 	}
 
 	seen := map[[3]uint16]bool{}
+	// goodEntries, once set, restricts how dest.Map may be entered: the warp
+	// landings whose walkable component contains the goal tile. It survives
+	// battle/dialogue retries through mem.
+	var goodEntries map[int]bool
+	if mem.goal == dest {
+		goodEntries = mem.goodEntries
+	}
 	for transitions := 0; transitions <= maxNavigationTransitions; transitions++ {
 		if err := waitOutScriptedMovement(m); err != nil {
 			return err
@@ -719,11 +864,24 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		}
 		mem.last = nil
 
-		if state.NativeMapID == dest.Map {
+		if state.NativeMapID == dest.Map && (goodEntries == nil || goodEntries[mem.entry]) {
 			if dest.MapOnly {
 				return nil
 			}
-			return nativeWalkTo(m, profile, provider, romData, dest)
+			walkErr := nativeWalkTo(m, profile, provider, romData, dest)
+			if !errors.Is(walkErr, world.ErrNoPath) || goodEntries != nil {
+				return walkErr
+			}
+			// The goal tile is in another walkable component of this map
+			// (Burned Tower B1F is separate pockets joined only through 1F
+			// pits). Leave and re-enter through a warp whose landing reaches it.
+			entries, entriesErr := nativeEntriesReaching(m, profile, provider, dest)
+			if entriesErr != nil || len(entries) == 0 {
+				return walkErr
+			}
+			goodEntries = entries
+			mem.goal, mem.goodEntries = dest, entries
+			continue
 		}
 
 		key := [3]uint16{state.NativeMapID, uint16(state.X), uint16(state.Y)}
@@ -732,7 +890,11 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		}
 		seen[key] = true
 
-		route, routeErr := world.FindNativeRouteFrom(graph, state.NativeMapID, mem.entry, dest.Map, mem.unreachable)
+		var accept func(world.NativeEdge) bool
+		if goodEntries != nil {
+			accept = func(e world.NativeEdge) bool { return e.Kind == world.EdgeWarp && goodEntries[e.Entry()] }
+		}
+		route, routeErr := world.FindNativeRouteToEntry(graph, state.NativeMapID, mem.entry, dest.Map, accept, mem.unreachable)
 		if routeErr != nil {
 			return fmt.Errorf("skill: native routing: route %#04x -> %#04x: %w", state.NativeMapID, dest.Map, routeErr)
 		}

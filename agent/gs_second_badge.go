@@ -123,8 +123,11 @@ func gsSecondBadgeGoTo(
 	profile *gsprofile.Profile,
 	dest skill.NativeDestination,
 ) error {
+	// One route memory per journey: a battle interruption must not make the
+	// retry forget which edges and entries it already proved dead.
+	mem := skill.NewNativeRouteMemory()
 	for attempt := 0; attempt < gsSecondBadgeRouteAttempts; attempt++ {
-		err := skill.GoToNative(m, romData, dest)
+		err := skill.GoToNativeRemembering(m, romData, dest, mem)
 		if err == nil {
 			return nil
 		}

@@ -124,3 +124,30 @@ func TestFindNativeRouteFromReentersThroughOtherEntry(t *testing.T) {
 		t.Fatalf("route = %v, %v; want down, re-enter via entry 1, top", route, err)
 	}
 }
+
+// A goal tile can sit in a different walkable component of the player's own
+// map. FindNativeRouteToEntry routes map -> other map -> back in through the
+// one entry whose landing reaches it, rather than reporting an empty route.
+func TestFindNativeRouteToEntryReentersThroughAcceptedWarp(t *testing.T) {
+	const a, b uint16 = 0x0301, 0x0302
+	graph := &NativeGraph{Edges: map[uint16][]NativeEdge{
+		a: {{Kind: EdgeWarp, From: a, To: b, WarpX: 1, WarpY: 1, DestWarp: 0}},
+		b: {
+			{Kind: EdgeWarp, From: b, To: a, WarpX: 2, WarpY: 2, DestWarp: 0},
+			{Kind: EdgeWarp, From: b, To: a, WarpX: 3, WarpY: 3, DestWarp: 1},
+		},
+	}}
+	if route, err := FindNativeRouteFrom(graph, a, 0, a, nil); err != nil || len(route) != 0 {
+		t.Fatalf("same-map route = %v, %v; want empty", route, err)
+	}
+	onlyLanding1 := func(e NativeEdge) bool { return e.Entry() == 1 }
+	route, err := FindNativeRouteToEntry(graph, a, 0, a, onlyLanding1, nil)
+	if err != nil || len(route) != 2 || route[0].To != b || route[1].To != a || route[1].DestWarp != 1 {
+		t.Fatalf("route = %+v, %v; want a->b then b->a via warp 1", route, err)
+	}
+	// A warp proven dead from this entry is skipped, so no accepted route remains.
+	bad := map[NativeUnreachable]bool{{Map: b, Entry: 0, Edge: graph.Edges[b][1]}: true}
+	if _, err := FindNativeRouteToEntry(graph, a, 0, a, onlyLanding1, bad); err == nil {
+		t.Fatal("route through a dead edge unexpectedly found")
+	}
+}

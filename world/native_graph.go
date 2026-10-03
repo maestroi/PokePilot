@@ -151,11 +151,21 @@ type NativeUnreachable struct {
 // The graph is topology-only, so such proofs come from live tile geometry;
 // the route then leaves the map and re-enters through another entry.
 func FindNativeRouteFrom(graph *NativeGraph, from uint16, entry int, to uint16, bad map[NativeUnreachable]bool) ([]NativeEdge, error) {
+	if graph != nil && from == to {
+		return []NativeEdge{}, nil
+	}
+	return FindNativeRouteToEntry(graph, from, entry, to, nil, bad)
+}
+
+// FindNativeRouteToEntry is FindNativeRouteFrom with a goal on HOW the
+// destination map is entered: the route must end with an edge into `to` that
+// entryOK accepts (nil accepts any). Unlike FindNativeRouteFrom it also routes
+// from a map to itself, which is how a goal tile stranded in another walkable
+// component of the player's own map is reached: leave, then re-enter through
+// the entry whose landing connects to it.
+func FindNativeRouteToEntry(graph *NativeGraph, from uint16, entry int, to uint16, entryOK func(NativeEdge) bool, bad map[NativeUnreachable]bool) ([]NativeEdge, error) {
 	if graph == nil {
 		return nil, fmt.Errorf("world: nil native graph")
-	}
-	if from == to {
-		return []NativeEdge{}, nil
 	}
 	if _, ok := graph.Edges[from]; !ok {
 		return nil, fmt.Errorf("%w: native start map %#04x is unavailable", ErrNoRoute, from)
@@ -186,7 +196,7 @@ func FindNativeRouteFrom(graph *NativeGraph, from uint16, entry int, to uint16, 
 			}
 			seen[next] = true
 			nodes = append(nodes, node{state: next, prev: i, edge: edge})
-			if edge.To != to {
+			if edge.To != to || (entryOK != nil && !entryOK(edge)) {
 				continue
 			}
 			var route []NativeEdge

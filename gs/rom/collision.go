@@ -393,6 +393,14 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	}
 }
 
+// gen2WarpCollision mirrors pokegold's CheckWarpCollision
+// (engine/overworld/tile_events.asm): a warp-table entry fires only when the
+// tile under the player is COLL_PIT, COLL_PIT_68 or has the $7_ warp nybble
+// (doors, ladders, stairs, caves, carpets). Everything else is landing-only.
+func gen2WarpCollision(collision uint8) bool {
+	return collision == 0x60 || collision == 0x68 || collision&0xf0 == 0x70
+}
+
 func gen2BlockedDirections() map[uint8]worldmodel.NativeDirectionMask {
 	d, u := worldmodel.NativeBlockDown, worldmodel.NativeBlockUp
 	l, r := worldmodel.NativeBlockLeft, worldmodel.NativeBlockRight
@@ -456,7 +464,8 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	out.Traversal = mode
 	out.Walkable = make([]bool, width*height)
 	out.CollisionTile = make([]uint8, width*height)
-	out.Cuttable = make([]bool, width*height)
+	out.Obstacles = make([]worldmodel.NativeObstacle, width*height)
+	out.WarpTrigger = make([]bool, width*height)
 	out.Blocked = gen2BlockedDirections()
 	out.Jumps = gen2Jumps()
 
@@ -473,9 +482,21 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 			}
 			i := y*width + x
 			out.CollisionTile[i] = collision
+			out.WarpTrigger[i] = gen2WarpCollision(collision)
 			permission := gen2CollisionPermission[collision] & 0x0f
 			out.Walkable[i] = permission == 0 || (mode == worldmodel.TraversalWater && permission == 1)
-			out.Cuttable[i] = collision == 0x12 || collision == 0x1a
+			switch collision {
+			case 0x12, 0x1a: // COLL_CUT_TREE, COLL_CUT_TREE_1A
+				out.Obstacles[i] = worldmodel.ObstacleCutTree
+			case 0x24, 0x2c: // COLL_WHIRLPOOL, COLL_WHIRLPOOL_2C
+				// A whirlpool is water to the permission table but the
+				// ROM refuses to enter it until Whirlpool clears it. Only a
+				// surfing player can use that move, so land grids ignore it.
+				if mode == worldmodel.TraversalWater {
+					out.Walkable[i] = false
+					out.Obstacles[i] = worldmodel.ObstacleWhirlpool
+				}
+			}
 		}
 	}
 	return out, nil

@@ -45,6 +45,7 @@ func TestGSFieldMoveNativeMappings(t *testing.T) {
 		{game.FieldMoveWhirlpool, 0xf8, 0xfa, "Glacier", 56},
 		{game.FieldMoveWaterfall, 0xf9, 0x7f, "Rising", 57},
 		{game.FieldMoveHeadbutt, 0xc0, 0x1d, "", 2},
+		{game.FieldMoveRockSmash, 0xc7, 0xf9, "", 8},
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.id), func(t *testing.T) {
@@ -228,7 +229,7 @@ func TestGSFieldMoveMenuSkipsOrdinaryMovesAndPreservesUnknownFieldSlots(t *testi
 	base := sym.PartyMon1 + gsPartyMovesOffset
 	mem[base+0] = 0x21 // Tackle: ordinary move, omitted from mon submenu
 	mem[base+1] = 0x0f // Cut
-	mem[base+2] = 0xf9 // Rock Smash: field action without portable progression id
+	mem[base+2] = 0x5b // Dig: field action without portable progression id
 	mem[base+3] = 0x39 // Surf
 
 	menu := NewSilver().DecodeFieldMoveMenu(&mem)

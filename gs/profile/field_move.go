@@ -37,6 +37,7 @@ var gsFieldMoves = [...]gsFieldMoveSpec{
 	{id: game.FieldMoveWhirlpool, name: "WHIRLPOOL", move: 0xfa, machineNumber: 56, badgeName: "Glacier", badgeMask: gsGlacierBadgeMask},
 	{id: game.FieldMoveWaterfall, name: "WATERFALL", move: 0x7f, machineNumber: 57, badgeName: "Rising", badgeMask: gsRisingBadgeMask},
 	{id: game.FieldMoveHeadbutt, name: "HEADBUTT", move: 0x1d, machineNumber: 2},
+	{id: game.FieldMoveRockSmash, name: "ROCK SMASH", move: 0xf9, machineNumber: 8},
 }
 
 func gsFieldMoveByID(id game.FieldMoveID) (gsFieldMoveSpec, bool) {
@@ -69,7 +70,6 @@ func gsIsMenuFieldMove(move uint8) bool {
 	case 0x5b, // Dig
 		0x64, // Teleport
 		0x87, // Softboiled
-		0xf9, // Rock Smash
 		0xd0, // Milk Drink
 		0xe6: // Sweet Scent
 		return true

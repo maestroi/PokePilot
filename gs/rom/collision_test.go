@@ -98,8 +98,8 @@ func TestGen2GridMarksCutTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Grid: %v", err)
 	}
-	if !spec.Cuttable[1] || spec.Walkable[1] {
-		t.Fatalf("cut tree = cuttable %v walkable %v, want true/false", spec.Cuttable[1], spec.Walkable[1])
+	if spec.Obstacles[1] != worldmodel.ObstacleCutTree || spec.Walkable[1] {
+		t.Fatalf("cut tree = cuttable %v walkable %v, want true/false", spec.Obstacles[1], spec.Walkable[1])
 	}
 }
 
@@ -197,8 +197,53 @@ func TestGen2IlexForestMarksRetailCutTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Grid: %v", err)
 	}
-	if !spec.Cuttable[spec.Width] || spec.Walkable[spec.Width] {
+	if spec.Obstacles[spec.Width] != worldmodel.ObstacleCutTree || spec.Walkable[spec.Width] {
 		t.Fatalf("forest Cut tree = cuttable %v walkable %v, want true/false",
-			spec.Cuttable[spec.Width], spec.Walkable[spec.Width])
+			spec.Obstacles[spec.Width], spec.Walkable[spec.Width])
+	}
+}
+
+// A whirlpool is water to the permission table, but the ROM refuses to enter
+// it until Whirlpool clears it, so a surfing grid must treat it as an obstacle
+// instead of open water. A land grid never offers it (only a surfer can use it).
+func TestGen2GridMarksWhirlpoolOnlyWhileSurfing(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	mapID := collisionMapID(t, "NEW_BARK_TOWN")
+	blocks := blocksFor(t, mapID, 0x01)
+	blocks[0] = 0x07 // top-left subtile is COLL_WHIRLPOOL ($24)
+
+	water, err := provider.Grid(mapID, blocks, worldmodel.TraversalWater)
+	if err != nil {
+		t.Fatalf("water Grid: %v", err)
+	}
+	if water.CollisionTile[0] != 0x24 || water.Obstacles[0] != worldmodel.ObstacleWhirlpool || water.Walkable[0] {
+		t.Fatalf("surfing whirlpool = collision %#02x obstacle %q walkable %v, want 24/whirlpool/false",
+			water.CollisionTile[0], water.Obstacles[0], water.Walkable[0])
+	}
+	land, err := provider.Grid(mapID, blocks, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatalf("land Grid: %v", err)
+	}
+	if land.Obstacles[0] != "" {
+		t.Fatalf("land grid offers obstacle %q on a whirlpool tile", land.Obstacles[0])
+	}
+}
+
+func TestGen2WarpCollisionMatchesCheckWarpCollision(t *testing.T) {
+	for collision, want := range map[uint8]bool{
+		0x00: false, // floor: a warp entry here is landing-only (Burned Tower B1F)
+		0x07: false,
+		0x60: true, // COLL_PIT
+		0x68: true, // COLL_PIT_68
+		0x71: true, // COLL_DOOR
+		0x72: true, // COLL_LADDER
+		0x7a: true, // COLL_STAIRCASE
+		0x7b: true, // COLL_CAVE
+		0x61: false,
+		0xa3: false,
+	} {
+		if got := gen2WarpCollision(collision); got != want {
+			t.Fatalf("gen2WarpCollision(%#02x) = %v, want %v", collision, got, want)
+		}
 	}
 }

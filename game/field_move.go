@@ -14,6 +14,7 @@ const (
 	FieldMoveWhirlpool FieldMoveID = "whirlpool"
 	FieldMoveWaterfall FieldMoveID = "waterfall"
 	FieldMoveHeadbutt  FieldMoveID = "headbutt"
+	FieldMoveRockSmash FieldMoveID = "rock_smash"
 )
 
 // ProgressionFieldMoves is the generation-neutral semantic vocabulary shared
@@ -28,6 +29,7 @@ func ProgressionFieldMoves() []FieldMoveID {
 		FieldMoveWhirlpool,
 		FieldMoveWaterfall,
 		FieldMoveHeadbutt,
+		FieldMoveRockSmash,
 	}
 }
 

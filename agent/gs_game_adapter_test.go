@@ -209,8 +209,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSudowoodoCleared, Complete: true})
 	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressTM08RockSmashAcquired {
+		t.Fatalf("after Sudowoodo progression = %+v, want TM08 Rock Smash", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressTM08RockSmashAcquired, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
 	if len(got) != 1 || got[0].Progress != gsprofile.ProgressBurnedTowerCleared {
-		t.Fatalf("after Sudowoodo progression = %+v, want Burned Tower", got)
+		t.Fatalf("after TM08 progression = %+v, want Burned Tower", got)
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressBurnedTowerCleared, Complete: true})
@@ -255,6 +261,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressPlainBadgeEarned,
 		gsprofile.ProgressSquirtBottleAcquired,
 		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
 	} {
@@ -297,6 +304,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressPlainBadgeEarned,
 		gsprofile.ProgressSquirtBottleAcquired,
 		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
 	} {
@@ -374,6 +382,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressTM02HeadbuttAcquired,
 		gsprofile.ProgressPlainBadgeEarned,
 		gsprofile.ProgressSudowoodoCleared,
+		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
 	} {

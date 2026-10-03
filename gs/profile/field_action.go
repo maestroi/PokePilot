@@ -47,6 +47,7 @@ func (p *Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionSt
 		Lit:                !darkArea || flashActive,
 		ActionSucceeded:    reader.Peek8(sym.FieldMoveSucceeded) == gen2FieldMoveSucceeded,
 		ResultTextActive:   textVisible,
+		InBattle:           reader.Peek8(sym.BattleMode) != 0,
 		ChoiceVisible:      choiceVisible,
 		DebugText:          gsScreenText(reader),
 	}

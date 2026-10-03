@@ -26,6 +26,8 @@ func semanticFieldMove(move FieldMove) (game.FieldMoveID, bool) {
 		return game.FieldMoveWaterfall, true
 	case FieldHeadbutt:
 		return game.FieldMoveHeadbutt, true
+	case FieldRockSmash:
+		return game.FieldMoveRockSmash, true
 	default:
 		return "", false
 	}

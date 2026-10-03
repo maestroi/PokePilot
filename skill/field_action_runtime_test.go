@@ -1,6 +1,7 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -121,5 +122,38 @@ func TestCloseFieldActionCancelsOwnFieldMovePartyMenu(t *testing.T) {
 	foreign := &refusedFieldMoveMachine{menuOpen: true, kind: game.PartyMenuForcedBattle}
 	if err := closeFieldActionToOverworld(foreign, foreign, foreign); err == nil || !foreign.menuOpen {
 		t.Fatalf("close = %v, menuOpen=%v; a foreign choice must not be answered", err, foreign.menuOpen)
+	}
+}
+
+func TestObstacleFieldMovesCompleteOnROMSuccessByte(t *testing.T) {
+	for _, move := range []FieldMove{FieldCut, FieldRockSmash, FieldWhirlpool} {
+		spec := FieldMoveSpec{Move: move, Name: move.String()}
+		if fieldActionCompleteState(game.FieldActionState{Controllable: true}, spec) {
+			t.Fatalf("%s completed without the ROM success byte", move)
+		}
+		if !fieldActionCompleteState(game.FieldActionState{Controllable: true, ActionSucceeded: true}, spec) {
+			t.Fatalf("%s did not complete after the ROM success byte", move)
+		}
+	}
+}
+
+type battleFieldActionMachine struct{ taps int }
+
+func (m *battleFieldActionMachine) Peek8(uint16) byte        { return 0 }
+func (m *battleFieldActionMachine) PeekInto(uint16, []byte)  {}
+func (m *battleFieldActionMachine) StepFrame()               {}
+func (m *battleFieldActionMachine) StepFrames(int)           {}
+func (m *battleFieldActionMachine) Tap(emu.Button, int, int) { m.taps++ }
+func (m *battleFieldActionMachine) DecodeFieldAction(game.MemoryReader) game.FieldActionState {
+	return game.FieldActionState{ActionSucceeded: true, ResultTextActive: true, InBattle: true}
+}
+
+// Rock Smash can start a wild battle. The settle loop must surface that as
+// ErrBattle without paging the battle's text boxes with A.
+func TestSettleFieldActionYieldsToBattle(t *testing.T) {
+	m := &battleFieldActionMachine{}
+	err := settleFieldAction(m, FieldMoveSpec{Move: FieldRockSmash, Name: "ROCK SMASH"}, m)
+	if !errors.Is(err, ErrBattle) || m.taps != 0 {
+		t.Fatalf("settle = %v with %d taps, want ErrBattle and no taps", err, m.taps)
 	}
 }

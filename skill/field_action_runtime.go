@@ -50,7 +50,7 @@ func validateFieldActionRuntime(state game.FieldActionState, spec FieldMoveSpec)
 
 func fieldActionEffectObservedState(state game.FieldActionState, spec FieldMoveSpec) bool {
 	switch spec.Move {
-	case FieldCut:
+	case FieldCut, FieldRockSmash, FieldWhirlpool:
 		return state.ActionSucceeded
 	case FieldSurf:
 		return state.ActionSucceeded && state.Surfing
