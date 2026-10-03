@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,9 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,55 +39,6 @@ type config struct {
 	StallAfter     time.Duration
 	UpdateTimeout  time.Duration
 	ControlSpacing time.Duration
-}
-
-type telegramUser struct {
-	ID int64 `json:"id"`
-}
-
-type telegramChat struct {
-	ID int64 `json:"id"`
-}
-
-type telegramMessage struct {
-	MessageID int64        `json:"message_id"`
-	From      telegramUser `json:"from"`
-	Chat      telegramChat `json:"chat"`
-	Text      string       `json:"text"`
-}
-
-type callbackQuery struct {
-	ID      string          `json:"id"`
-	From    telegramUser    `json:"from"`
-	Message telegramMessage `json:"message"`
-	Data    string          `json:"data"`
-}
-
-type telegramUpdate struct {
-	UpdateID      int64            `json:"update_id"`
-	Message       *telegramMessage `json:"message,omitempty"`
-	CallbackQuery *callbackQuery   `json:"callback_query,omitempty"`
-}
-
-type telegramResponse[T any] struct {
-	OK          bool   `json:"ok"`
-	Description string `json:"description,omitempty"`
-	Result      T      `json:"result"`
-}
-
-type inlineKeyboard struct {
-	InlineKeyboard [][]inlineButton `json:"inline_keyboard"`
-}
-
-type inlineButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"`
-}
-
-type telegramClient struct {
-	token string
-	http  *http.Client
 }
 
 type confirmation struct {
@@ -959,122 +907,6 @@ func (b *bot) adminRunURL(runID string) string {
 
 func (b *bot) spectatorRunURL(runID string) string {
 	return b.cfg.SpectatorBase + "/" + url.PathEscape(runID)
-}
-
-func (t *telegramClient) getUpdates(ctx context.Context, offset int64, timeout time.Duration) ([]telegramUpdate, error) {
-	form := url.Values{}
-	form.Set("offset", strconv.FormatInt(offset, 10))
-	form.Set("timeout", strconv.Itoa(int(timeout.Seconds())))
-	form.Set("allowed_updates", `["message","callback_query"]`)
-	var out telegramResponse[[]telegramUpdate]
-	if err := t.callForm(ctx, "getUpdates", form, &out); err != nil {
-		return nil, err
-	}
-	if !out.OK {
-		return nil, errors.New(out.Description)
-	}
-	return out.Result, nil
-}
-
-func (t *telegramClient) sendMessage(ctx context.Context, chatID int64, text string, keyboard *inlineKeyboard) error {
-	payload := map[string]any{
-		"chat_id":                  chatID,
-		"text":                     clip(text, 3900),
-		"disable_web_page_preview": true,
-	}
-	if keyboard != nil {
-		payload["reply_markup"] = keyboard
-	}
-	var out telegramResponse[json.RawMessage]
-	if err := t.callJSON(ctx, "sendMessage", payload, &out); err != nil {
-		return err
-	}
-	if !out.OK {
-		return errors.New(out.Description)
-	}
-	return nil
-}
-
-func (t *telegramClient) sendPhoto(ctx context.Context, chatID int64, data []byte, mediaType, caption string) error {
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	_ = mw.WriteField("chat_id", strconv.FormatInt(chatID, 10))
-	_ = mw.WriteField("caption", clip(caption, 900))
-	part, err := mw.CreateFormFile("photo", "frame.png")
-	if err != nil {
-		return err
-	}
-	if _, err := part.Write(data); err != nil {
-		return err
-	}
-	if err := mw.Close(); err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint("sendPhoto"), &body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	if mediaType != "" {
-		req.Header.Set("X-PokePilot-Source-Media-Type", mediaType)
-	}
-	res, err := t.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	var out telegramResponse[json.RawMessage]
-	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&out); err != nil {
-		return err
-	}
-	if res.StatusCode < 200 || res.StatusCode >= 300 || !out.OK {
-		return fmt.Errorf("telegram sendPhoto %s: %s", res.Status, out.Description)
-	}
-	return nil
-}
-
-func (t *telegramClient) answerCallback(ctx context.Context, id string) error {
-	var out telegramResponse[bool]
-	return t.callJSON(ctx, "answerCallbackQuery", map[string]any{"callback_query_id": id}, &out)
-}
-
-func (t *telegramClient) callForm(ctx context.Context, method string, form url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint(method), strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return t.do(req, out)
-}
-
-func (t *telegramClient) callJSON(ctx context.Context, method string, payload any, out any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.endpoint(method), bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return t.do(req, out)
-}
-
-func (t *telegramClient) do(req *http.Request, out any) error {
-	res, err := t.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(res.Body, 32<<10))
-		return fmt.Errorf("telegram API %s: %s", res.Status, strings.TrimSpace(string(data)))
-	}
-	return json.NewDecoder(io.LimitReader(res.Body, 2<<20)).Decode(out)
-}
-
-func (t *telegramClient) endpoint(method string) string {
-	return "https://api.telegram.org/bot" + t.token + "/" + method
 }
 
 func parseCommand(text string) (string, string) {
