@@ -254,3 +254,23 @@ func TestResolvedAlertsRequiresAlertmanager(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotConfigured", err)
 	}
 }
+
+func TestDashboardNamesAnOversizedBody(t *testing.T) {
+	// One JSON value larger than the operator decode cap. A mid-value cut used
+	// to surface as "unexpected EOF", which the Telegram poll reports as the
+	// wall being down.
+	payload := []byte(`{"now":1,"runs":[{"run_id":"` + strings.Repeat("x", 4<<20) + `"}]}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	_, err := New(srv.URL, "", "").Dashboard(context.Background(), true, 5)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("err = %v, want a size-cap error", err)
+	}
+	if strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("oversized body reported as a transport EOF: %v", err)
+	}
+}

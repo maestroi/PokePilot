@@ -140,12 +140,26 @@ func (w *Wall) snapshotFiltered(status string, limit int) dashboardView {
 		if t == nil || (status != "" && t.Status != status) {
 			continue
 		}
-		rows = append(rows, w.tileRowWithLineageLocked(t, lineage))
+		rows = append(rows, dashboardListRow(w.tileRowWithLineageLocked(t, lineage)))
 		if limit > 0 && len(rows) >= limit {
 			break
 		}
 	}
 	return dashboardView{Now: now.Unix(), WallVersion: w.Version, Runs: rows, Workers: workers}
+}
+
+// dashboardListRow drops per-call planner observations from a catalog list.
+// Those records are about 270KB per run and no list reader uses them; history
+// dashboards already omit them. The live tile and the single-run snapshot keep
+// the records, so this copies stats instead of clearing the tile.
+func dashboardListRow(row tileRow) tileRow {
+	if row.Stats == nil || len(row.Stats.StrategicRecords) == 0 {
+		return row
+	}
+	copied := *row.Stats
+	copied.StrategicRecords = nil
+	row.Stats = &copied
+	return row
 }
 
 func (w *Wall) snapshotRun(runID string) (tileRow, bool) {

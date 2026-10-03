@@ -457,9 +457,18 @@ func (c *Client) baseJSON(ctx context.Context, base, method, path string, body a
 	if out == nil || res.StatusCode == http.StatusNoContent {
 		return nil
 	}
-	if err := json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(out); err != nil {
+	// A live dashboard used to embed every run's planner observations and blow
+	// past this cap mid-value. json.Decoder then reports io.ErrUnexpectedEOF,
+	// which callers were treating as a dead wall. Name the cap when the read
+	// actually hit it; a short body that ends early is still a transport EOF.
+	const maxOperatorJSONBytes = 4 << 20
+	limited := &io.LimitedReader{R: res.Body, N: int64(maxOperatorJSONBytes) + 1}
+	if err := json.NewDecoder(limited).Decode(out); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if limited.N <= 0 {
+			return fmt.Errorf("operator response exceeds %d bytes", maxOperatorJSONBytes)
 		}
 		return err
 	}
