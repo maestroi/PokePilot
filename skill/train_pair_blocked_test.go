@@ -40,3 +40,29 @@ func TestGrindPairAllBlocked(t *testing.T) {
 		t.Fatal("grindPair returned a pair with every grass cell occupied")
 	}
 }
+
+// Cave floors treat every walkable tile as an encounter cell, including the
+// door/warp tile GoTo's warpAvoidance refuses. Rock Tunnel 1F at (15,4) always
+// drew adjacent warp (15,3) and died on hunt leg 1 with "no path" while free
+// floor sat beside the player (run-d6dokr184ky81). Active warps must be
+// blocked the same way sprites are.
+func TestGrindPairAvoidsWarps(t *testing.T) {
+	grass := []cell{
+		{15, 3}, {14, 4}, {15, 4}, {16, 4}, {15, 5},
+	}
+	blocked := map[[2]int]bool{{15, 3}: true}
+
+	a, b, ok := grindPair(grass, nil, 15, 4, blocked)
+	if !ok {
+		t.Fatal("grindPair returned no pair; free adjacent floor exists")
+	}
+	if a == (cell{15, 3}) || b == (cell{15, 3}) {
+		t.Fatalf("pair %+v -> %+v uses the warp tile (15,3)", a, b)
+	}
+	if a != (cell{15, 4}) {
+		t.Fatalf("a = %+v, want the player's own free cell (15,4)", a)
+	}
+	if dist(a, b) != 1 {
+		t.Fatalf("pair %+v -> %+v, distance %d; want one-tile ping-pong", a, b, dist(a, b))
+	}
+}

@@ -111,7 +111,7 @@ func CatchWater(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, max
 	if len(water) == 0 {
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no Surf water cells reachable from (%d,%d)", mapID, now.X, now.Y)
 	}
-	a, b, ok := grindPair(water, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(water, grid, int(now.X), int(now.Y), grindBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: CatchWater: map %#04x has no two reachable Surf water cells close enough to hunt between", mapID)
 	}

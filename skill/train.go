@@ -206,7 +206,7 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 	if grass = grassInPlayerComponent(grass, grid, int(now.X), int(now.Y)); len(grass) == 0 {
 		return res, fmt.Errorf("skill: Train: no tall grass reachable from (%d,%d) on map %#04x without leaving it", now.X, now.Y, now.Map)
 	}
-	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	a, b, ok := grindPair(grass, grid, int(now.X), int(now.Y), grindBlockers(m))
 	if !ok {
 		return res, fmt.Errorf("skill: Train: map %#04x has no two walkable grass cells close enough to grind between", now.Map)
 	}
@@ -754,7 +754,7 @@ func HasReachableGrassLive(m *emu.Emu, romData []byte) (bool, error) {
 	if len(grass) == 0 {
 		return false, nil
 	}
-	_, _, ok := grindPair(grass, grid, int(now.X), int(now.Y), spriteBlockers(m))
+	_, _, ok := grindPair(grass, grid, int(now.X), int(now.Y), grindBlockers(m))
 	return ok, nil
 }
 
@@ -839,16 +839,20 @@ func grassCells(romData []byte, mapID uint8) ([]cell, *world.Grid, error) {
 // the densest grass path and then the shorter distance. Every fallback path
 // cell is walkable.
 //
-// blocked carries the tiles live sprites occupy right now (spriteBlockers);
-// it may be nil. Cells under a sprite are dropped before anything is chosen,
-// because the choice here is DETERMINISTIC — grass is row-major, so the same
-// map and the same standing position always name the same pair — and GoTo
-// refuses a destination another sprite is standing on. MEASURED: on Route 1
-// a player standing in the grass at (14,14) always drew (14,13), which is
-// inside a wandering NPC's patrol, and the hunt died on leg 1 with "no path"
-// while (15,14), (14,15) and (16,14) sat free. A blocked snapshot is only an
-// observation, not a guarantee — the sprite can step back on before GoTo
-// walks — but it costs nothing to not pick the one tile known to be taken.
+// blocked carries the tiles GoTo will refuse right now (grindBlockers: live
+// sprites plus active warp tiles); it may be nil. Those cells are dropped
+// before anything is chosen, because the choice here is DETERMINISTIC —
+// grass is row-major, so the same map and the same standing position always
+// name the same pair — and GoTo refuses a destination another sprite is
+// standing on or that warpAvoidance bans. MEASURED: on Route 1 a player
+// standing in the grass at (14,14) always drew (14,13), which is inside a
+// wandering NPC's patrol, and the hunt died on leg 1 with "no path" while
+// (15,14), (14,15) and (16,14) sat free. The same shape hits cave doors:
+// Rock Tunnel 1F at (15,4) drew adjacent warp (15,3) and GoTo failed while
+// free floor sat at (14,4)/(16,4)/(15,5) (run-d6dokr184ky81). A blocked
+// snapshot is only an observation, not a guarantee — a sprite can step back
+// on before GoTo walks — but it costs nothing to not pick the tile known to
+// be taken or to fire a warp.
 // grassInPlayerComponent restricts grass to the tiles actually reachable from
 // (px,py) without leaving the map: Walkable alone (what grassCells already
 // filtered on) says a tile is standable, not that a walk from here reaches
@@ -966,7 +970,7 @@ func grindPair(grass []cell, grid *world.Grid, px, py int, blocked map[[2]int]bo
 // report the original error rather than spin.
 func repickGrindPair(m *emu.Emu, grass []cell, grid *world.Grid, a, b cell) (cell, cell, bool) {
 	x, y := playerXY(m)
-	na, nb, ok := grindPair(grass, grid, int(x), int(y), spriteBlockers(m))
+	na, nb, ok := grindPair(grass, grid, int(x), int(y), grindBlockers(m))
 	if !ok || (na == a && nb == b) {
 		return a, b, false
 	}
