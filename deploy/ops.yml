@@ -48,6 +48,9 @@ services:
       POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}
       POKEWATCH_STACKS: ${POKEWATCH_STACKS:-pokefarm,pokefixer}
       POKEPILOT_WATCH_MIN_FREE_GB: ${POKEPILOT_WATCH_MIN_FREE_GB:-20}
+      # The deploy-freeze label lives on this service (rollout-latest.sh reads
+      # FARM_FREEZE_SERVICE, same default). Change both if the stack is renamed.
+      POKEWATCH_FREEZE_SERVICE: ${POKEWATCH_FREEZE_SERVICE:-pokefarm-ops_watch}
       POKEPILOT_TELEGRAM_URL: http://telegram:8080
     secrets: [pokefarm_ops_token, pokewatch_github_token]
     volumes:
@@ -69,9 +72,15 @@ services:
       POKEPILOT_TRIAGE_LADDER: ${POKEPILOT_TRIAGE_LADDER:-opencode:2,cursor:2,cursor/claude-opus-5-5-high:2}
       POKEPILOT_PAID_DAILY_CAP: ${POKEPILOT_PAID_DAILY_CAP:-20}
       POKEWATCH_URL: http://watch:8080
+      # label=containerPath; statfs only. /usr/share stands in for the host
+      # root filesystem without exposing /run (the Docker socket) or /etc.
+      POKEWATCH_MOUNTS: ${POKEWATCH_MOUNTS:-/=/host/rootfs}
     secrets: [pokefarm_ops_token]
+    # Runs as root: the fixer ledger dir (/opt/pokefixer) is 0700 root.
+    # Both mounts are read-only and narrow; never mount the whole host root.
     volumes:
-      - /:/host:ro
+      - /usr/share:/host/rootfs:ro
+      - /opt:/host/opt:ro
     networks: [ops]
     deploy:
       mode: global

@@ -38,7 +38,7 @@ func runNode(ctx context.Context, token string) {
 		host, _ = os.Hostname()
 	}
 	root := env("POKEWATCH_HOST_ROOT", "/host")
-	mounts := strings.Split(env("POKEWATCH_MOUNTS", "/"), ",")
+	mounts := splitList(env("POKEWATCH_MOUNTS", "/=/host/rootfs"))
 	ledger := env("POKEPILOT_FIXER_LEDGER", "/opt/pokefixer/state/ledger.tsv")
 	ladder := env("POKEPILOT_TRIAGE_LADDER", "opencode:2,cursor:2,cursor/claude-opus-5-5-high:2")
 	paidCap := envInt("POKEPILOT_PAID_DAILY_CAP", 20)

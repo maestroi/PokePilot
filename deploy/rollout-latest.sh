@@ -24,9 +24,12 @@ if ! docker service inspect "${STACK}_wall" >/dev/null 2>&1; then
 fi
 
 # pokewatch (deploy/ops.yml) freezes deploys after repeated Swarm rollbacks by
-# labeling the wall service. Runs keep playing on the current image; the
-# freeze lifts by itself at the timestamp.
-frozen_until=$(docker service inspect "${STACK}_wall" --format '{{index .Spec.Labels "pokepilot.deploy-frozen-until"}}' 2>/dev/null || true)
+# labeling its own service (never a farm service: a label-only update resets
+# that service's UpdateStatus and would break the rollback hold below). Runs
+# keep playing on the current image; the freeze lifts by itself at the
+# timestamp. No ops stack means no freeze.
+FREEZE_SERVICE=${FARM_FREEZE_SERVICE:-pokefarm-ops_watch}
+frozen_until=$(docker service inspect "$FREEZE_SERVICE" --format '{{index .Spec.Labels "pokepilot.deploy-frozen-until"}}' 2>/dev/null || true)
 if [[ "$frozen_until" =~ ^[0-9]+$ ]] && [ "$frozen_until" -gt "$(date +%s)" ]; then
 	echo "pokefarm-pull: deploys frozen until $(date -u -d "@$frozen_until" '+%F %T UTC') after repeated rollbacks; skip"
 	exit 0

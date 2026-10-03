@@ -74,6 +74,11 @@ type OpsSnapshot struct {
 	Merged24h   int            `json:"merged_24h"`  // -1 = unknown
 	FarmOpened  int            `json:"farm_opened"` // -1 = unknown
 	FarmClosed  int            `json:"farm_closed"` // -1 = unknown
+	// Warm is false while the watcher has not yet read Docker once and heard
+	// from every ready node (or run 15 minutes). A cold snapshot may lack
+	// checks that are merely unknown yet, so the bot must not resolve
+	// absent checks from it.
+	Warm bool `json:"warm"`
 }
 
 // PostOps sends v to url with the shared bearer token.

@@ -38,8 +38,17 @@ func TestOpsStackPrivilegeBoundaries(t *testing.T) {
 		t.Fatal("watch needs the socket and a manager placement")
 	}
 	n := section("node")
-	if !strings.Contains(n, "mode: global") || !strings.Contains(n, "/:/host:ro") {
-		t.Fatal("node must be global with a read-only host root")
+	if !strings.Contains(n, "mode: global") || !strings.Contains(n, "/usr/share:/host/rootfs:ro") || !strings.Contains(n, "/opt:/host/opt:ro") {
+		t.Fatal("node must be global with narrow read-only host mounts")
+	}
+	// The whole host root would expose /run/docker.sock and host secrets to a
+	// root process.
+	if strings.Contains(n, "- /:") || strings.Contains(n, "docker.sock") {
+		t.Fatal("node must not mount the host root or the Docker socket")
+	}
+	w := section("watch")
+	if !strings.Contains(w, "POKEWATCH_FREEZE_SERVICE: ${POKEWATCH_FREEZE_SERVICE:-pokefarm-ops_watch}") {
+		t.Fatal("watch must label its own service for the deploy freeze")
 	}
 	if !strings.Contains(text, "pokefarm_ops_token") {
 		t.Fatal("shared ops token secret missing")

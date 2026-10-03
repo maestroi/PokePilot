@@ -157,6 +157,7 @@ func newWatcherForTest() *watcher {
 type fakeDocker struct {
 	t         *testing.T
 	failLabel bool
+	nodes     string
 	posted    []byte
 	postPath  string
 	query     string
@@ -167,7 +168,10 @@ func (f *fakeDocker) start() (*dockerClient, func()) {
 		p := r.URL.Path
 		switch {
 		case strings.HasSuffix(p, "/nodes"):
-			_, _ = rw.Write([]byte(`[]`))
+			if f.nodes == "" {
+				f.nodes = `[]`
+			}
+			_, _ = rw.Write([]byte(f.nodes))
 		case strings.HasSuffix(p, "/services"):
 			f.query = r.URL.RawQuery
 			_, _ = rw.Write([]byte(`[]`))
@@ -187,7 +191,7 @@ func (f *fakeDocker) start() (*dockerClient, func()) {
 
 func freezeWatcher(d *dockerClient) *watcher {
 	w := newWatcherForTest()
-	w.docker, w.freezeService = d, "pokefarm_wall"
+	w.docker, w.freezeService = d, "pokefarm-ops_watch"
 	w.seen = map[string]time.Time{}
 	return w
 }
@@ -200,7 +204,7 @@ func TestTickWritesFreezeLabelPreservingSpec(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	w.seen = map[string]time.Time{"a|1": now.Add(-3 * time.Hour), "b|1": now.Add(-2 * time.Hour), "c|1": now.Add(-time.Hour)}
 	w.tick(now)
-	if f.postPath != "/v1.43/services/pokefarm_wall/update?version=7" {
+	if f.postPath != "/v1.43/services/pokefarm-ops_watch/update?version=7" {
 		t.Fatalf("post path: %q", f.postPath)
 	}
 	var spec map[string]any
@@ -249,5 +253,59 @@ func TestTickDockerFailureKeepsCachedChecks(t *testing.T) {
 	}
 	if c, _ := check(s, "docker-api"); c.OK || !strings.Contains(c.Message, "Swarm state") || !strings.Contains(c.Message, "services") {
 		t.Fatalf("docker-api: %+v", c)
+	}
+}
+
+func TestDefaultFreezeServiceIsWatcherOwn(t *testing.T) {
+	t.Setenv("POKEWATCH_FREEZE_SERVICE", "")
+	if got := defaultFreezeService(); got != "pokefarm-ops_watch" {
+		t.Fatalf("freeze service default %q", got)
+	}
+}
+
+func TestSnapshotWarmth(t *testing.T) {
+	f := &fakeDocker{t: t, nodes: `[{"Description":{"Hostname":"n1"},"Spec":{"Role":"worker"},"Status":{"State":"ready"}}]`}
+	d, stop := f.start()
+	defer stop()
+	w := freezeWatcher(d)
+	now := time.Unix(1_800_000_000, 0)
+	w.started = now
+	if s := w.tick(now); s.Warm {
+		t.Fatal("fresh watcher without node reports must be cold")
+	}
+	w.reports["n1"] = operatorapi.NodeReport{Node: "n1", At: now.Unix()}
+	if s := w.tick(now.Add(time.Minute)); !s.Warm {
+		t.Fatal("every ready node reported and Docker read: warm")
+	}
+
+	// Docker never read: cold even after 15 minutes.
+	f2 := &fakeDocker{t: t}
+	d2, stop2 := f2.start()
+	w2 := freezeWatcher(d2)
+	w2.started = now
+	stop2()
+	if s := w2.tick(now.Add(time.Hour)); s.Warm {
+		t.Fatal("no successful Docker read: must stay cold")
+	}
+}
+
+func TestEvaluateFixerReportMissing(t *testing.T) {
+	w := newWatcherForTest()
+	w.warm = true
+	now := time.Now()
+	svcs := []operatorapi.ServiceState{{Name: "pokefixer_fixer", Running: 1, Desired: 1}}
+	w.reports["n1"] = operatorapi.NodeReport{Node: "n1", At: now.Unix()}
+	s := w.evaluate(now, nil, svcs, nil)
+	if c, ok := check(s, "fixer-report"); !ok || c.OK || c.Grace != 2 {
+		t.Fatalf("fixer running without ledger summary: %+v %v", c, ok)
+	}
+	w.reports["n1"] = operatorapi.NodeReport{Node: "n1", At: now.Unix(), Fixer: &operatorapi.FixerSummary{}}
+	if c, _ := check(w.evaluate(now, nil, svcs, nil), "fixer-report"); !c.OK {
+		t.Fatalf("summary present: %+v", c)
+	}
+	svcs[0].Desired = 0
+	delete(w.reports, "n1")
+	if c, _ := check(w.evaluate(now, nil, svcs, nil), "fixer-report"); !c.OK {
+		t.Fatalf("fixer scaled to zero: %+v", c)
 	}
 }

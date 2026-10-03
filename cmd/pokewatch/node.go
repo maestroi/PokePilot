@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -10,24 +14,35 @@ import (
 	"github.com/maestroi/pokepilot/operatorapi"
 )
 
-// nodeReport is one node's local facts: free space on each mount (read
-// through the read-only host root) and, on the fixer node, the ledger summary.
+// nodeReport is one node's local facts: free space per mount and, on the
+// fixer node, the ledger summary. Each mount entry is "label=containerPath":
+// the path is any directory bind-mounted read-only from the host filesystem
+// being measured (statfs only), the label is what the operator sees. The
+// ledger is read under the read-only host root.
 func nodeReport(host, root string, mounts []string, ledgerPath, ladder string, paidCap int, now time.Time) operatorapi.NodeReport {
 	r := operatorapi.NodeReport{Node: host, At: now.Unix()}
 	for _, m := range mounts {
+		label, path, ok := strings.Cut(m, "=")
+		if !ok {
+			path = label
+		}
 		var st syscall.Statfs_t
-		if err := syscall.Statfs(filepath.Join(root, m), &st); err != nil {
+		if err := syscall.Statfs(path, &st); err != nil {
 			continue
 		}
-		r.Disks = append(r.Disks, operatorapi.DiskFree{Mount: m, FreeGB: int(st.Bavail * uint64(st.Bsize) >> 30)})
+		r.Disks = append(r.Disks, operatorapi.DiskFree{Mount: label, FreeGB: int(st.Bavail * uint64(st.Bsize) >> 30)})
 	}
 	f, err := os.Open(filepath.Join(root, ledgerPath))
 	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("pokewatch node: fixer ledger: %v", err)
+		}
 		return r
 	}
 	defer f.Close()
 	tiers, err := deploy.ParseLadder(ladder)
 	if err != nil {
+		log.Printf("pokewatch node: POKEPILOT_TRIAGE_LADDER: %v", err)
 		return r
 	}
 	s := fixerSummary(deploy.ReadLedger(f), tiers, paidCap, now)

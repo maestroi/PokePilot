@@ -36,14 +36,15 @@ func TestFixerSummaryCountsPaidFreeAndBlocked(t *testing.T) {
 
 func TestNodeReportReadsDiskAndOptionalLedger(t *testing.T) {
 	root := t.TempDir()
-	r := nodeReport("n1", root, []string{"/"}, "/opt/pokefixer/state/ledger.tsv", "opencode:2", 20, time.Now())
+	mounts := []string{"/=" + root, "/data=" + filepath.Join(root, "missing")}
+	r := nodeReport("n1", root, mounts, "/opt/pokefixer/state/ledger.tsv", "opencode:2", 20, time.Now())
 	if r.Node != "n1" || len(r.Disks) != 1 || r.Disks[0].Mount != "/" || r.Fixer != nil {
 		t.Fatalf("no ledger on this node: %+v", r)
 	}
 	p := filepath.Join(root, "opt/pokefixer/state/ledger.tsv")
 	_ = os.MkdirAll(filepath.Dir(p), 0o755)
 	_ = os.WriteFile(p, []byte(""), 0o644)
-	r = nodeReport("n1", root, []string{"/"}, "/opt/pokefixer/state/ledger.tsv", "opencode:2", 20, time.Now())
+	r = nodeReport("n1", root, mounts, "/opt/pokefixer/state/ledger.tsv", "opencode:2", 20, time.Now())
 	if r.Fixer == nil {
 		t.Fatal("ledger present: fixer summary expected")
 	}

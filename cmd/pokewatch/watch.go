@@ -33,6 +33,8 @@ type watcher struct {
 	lastNodes    []operatorapi.SwarmNode
 	lastServices []operatorapi.ServiceState
 	lastFrozen   int64
+	dockerRead   bool // Nodes and Services both succeeded at least once
+	warm         bool // sticky; see operatorapi.OpsSnapshot.Warm
 
 	mu      sync.Mutex
 	reports map[string]operatorapi.NodeReport
@@ -52,7 +54,7 @@ func runWatch(ctx context.Context, token string) {
 		minFreeGB:       envInt("POKEPILOT_WATCH_MIN_FREE_GB", 20),
 		freezeRollbacks: envInt("POKEPILOT_FREEZE_ROLLBACKS", 3),
 		freezeFor:       time.Duration(envInt("POKEPILOT_FREEZE_SECONDS", 86400)) * time.Second,
-		freezeService:   env("POKEWATCH_FREEZE_SERVICE", "pokefarm_wall"),
+		freezeService:   defaultFreezeService(),
 		stacks:          splitList(env("POKEWATCH_STACKS", "pokefarm,pokefixer")),
 		docker:          newDockerClient(env("DOCKER_SOCKET", "/var/run/docker.sock")),
 		gh: &githubClient{http: &http.Client{Timeout: 20 * time.Second}, base: "https://api.github.com",
@@ -80,6 +82,12 @@ func runWatch(ctx context.Context, token string) {
 		case <-tick.C:
 		}
 	}
+}
+
+// defaultFreezeService is the watcher's own service: labeling a farm service
+// would reset its UpdateStatus and break rollout's rollback hold.
+func defaultFreezeService() string {
+	return env("POKEWATCH_FREEZE_SERVICE", "pokefarm-ops_watch")
 }
 
 func (w *watcher) handler() http.Handler {
@@ -110,6 +118,7 @@ func (w *watcher) handler() http.Handler {
 func (w *watcher) tick(now time.Time) operatorapi.OpsSnapshot {
 	var dockerErrs []string
 	nodes, err := w.docker.Nodes()
+	nodesOK := err == nil
 	if err != nil {
 		dockerErrs = append(dockerErrs, "watcher cannot read Swarm state: "+err.Error())
 		nodes = w.lastNodes
@@ -122,6 +131,9 @@ func (w *watcher) tick(now time.Time) operatorapi.OpsSnapshot {
 		services, rolls = w.lastServices, nil
 	} else {
 		w.lastServices = services
+		if nodesOK {
+			w.dockerRead = true
+		}
 	}
 	events := w.recordRollbacks(rolls, now)
 
@@ -279,13 +291,32 @@ func (w *watcher) evaluate(now time.Time, nodes []operatorapi.SwarmNode, service
 		}
 	}
 	warm := now.Sub(w.started) >= 15*time.Minute
+	allReported := true
 	for _, n := range nodes {
 		if n.Status != "ready" {
 			continue // node:<host> already pages
 		}
 		r, ok := byNode[n.Hostname]
+		allReported = allReported && ok
 		stale := (ok && now.Unix()-r.At > 15*60) || (!ok && warm)
 		add("node-report:"+n.Hostname, 1, stale, fmt.Sprintf("no node report from %s for 15m (pokefarm-ops_node task down?)", n.Hostname))
+	}
+
+	if w.dockerRead && (allReported || warm) {
+		w.warm = true
+	}
+	s.Warm = w.warm
+
+	// The ledger only reaches the bot through a node report; a running fixer
+	// with no summary means the node reporter cannot read it. Unknown until
+	// warm, so the check is omitted rather than failed while cold.
+	if s.Warm {
+		fixerRunning := false
+		for _, svc := range services {
+			fixerRunning = fixerRunning || (strings.HasPrefix(svc.Name, "pokefixer_") && svc.Desired > 0)
+		}
+		add("fixer-report", 2, fixerRunning && s.Fixer == nil,
+			"pokefixer is running but no node reports a fixer ledger summary (POKEPILOT_FIXER_LEDGER path or /opt mount?)")
 	}
 
 	if s.Fixer != nil {
