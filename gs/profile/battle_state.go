@@ -45,14 +45,24 @@ func decodeBattleMon(reader game.MemoryReader, base uint16) (species, level uint
 	return
 }
 
+// gsDisabledMoveSlot returns the zero-based player move slot currently
+// Disabled by Disable, or -1 when none is. wPlayerDisableCount's high nibble
+// stores the 1-based index (engine/battle/core.asm MoveInfoBox /
+// MoveSelectionScreen).
+func gsDisabledMoveSlot(reader game.MemoryReader) int {
+	if reader == nil {
+		return -1
+	}
+	slot := int(reader.Peek8(sym.PlayerDisableCount) >> 4)
+	if slot < 1 || slot > 4 {
+		return -1
+	}
+	return slot - 1
+}
+
 // DecodeBattleState projects Gold/Silver's live battle_struct values onto the
 // portable combat state. The struct layout and stat-level bases are pinned to
 // the supported retail Gold/Silver rev0 builds through gs/sym.
-//
-// Disable's scratch slot is intentionally not projected yet. This decoder is
-// currently consumed by the bounded early-Johto battle lane for live HP,
-// species, moves, stats and battle kind; wiring the full reusable Battle skill
-// still requires the Gen-II execution/menu/resource decoders.
 func (*Profile) DecodeBattleState(reader game.MemoryReader) (game.BattleState, bool) {
 	if reader == nil {
 		return game.BattleState{}, false
@@ -67,6 +77,9 @@ func (*Profile) DecodeBattleState(reader game.MemoryReader) (game.BattleState, b
 		decodeBattleMon(reader, sym.BattleMon)
 	enemySpecies, enemyLevel, enemyHP, enemyMaxHP, enemyAttack, enemyDefense, enemySpeed, enemySpAtk, enemySpDef, enemyType1, enemyType2, _ :=
 		decodeBattleMon(reader, sym.EnemyMon)
+	if disabled := gsDisabledMoveSlot(reader); disabled >= 0 {
+		moves[disabled].Disabled = true
+	}
 
 	return game.BattleState{
 		Kind:                 kind,

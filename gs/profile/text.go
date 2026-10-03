@@ -25,6 +25,12 @@ func gsScreenText(reader game.MemoryReader) string {
 	}
 	raw := make([]byte, sym.TileMapLen)
 	reader.PeekInto(sym.TileMap, raw)
+	return strings.Join(strings.Fields(gsDecodeTiles(raw)), " ")
+}
+
+// gsDecodeTiles turns raw wTileMap glyphs into display characters without
+// collapsing whitespace, so callers can inspect a fixed panel offset.
+func gsDecodeTiles(raw []byte) string {
 	var b strings.Builder
 	for _, ch := range raw {
 		switch {
@@ -69,5 +75,5 @@ func gsScreenText(reader game.MemoryReader) string {
 			}
 		}
 	}
-	return strings.Join(strings.Fields(b.String()), " ")
+	return b.String()
 }

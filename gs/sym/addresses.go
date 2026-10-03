@@ -136,6 +136,12 @@ const (
 	BattleMonType1          = BattleMon + 0x1E
 	BattleMonType2          = BattleMon + 0x1F
 
+	// PlayerDisableCount is wPlayerDisableCount. The high nibble is the
+	// 1-based disabled move index (matching wMenuCursorY); the low nibble is
+	// remaining Disable turns. Measured from pret/pokegold wBattle layout:
+	// BattleMon (0xCB0C) through the trainer/substatus scratch to 0xCB53.
+	PlayerDisableCount uint16 = 0xCB53
+
 	PlayerStatLevels uint16 = 0xCBAA // wPlayerStatLevels
 
 	EnemyMon        uint16 = 0xD0EF // wEnemyMon
