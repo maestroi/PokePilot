@@ -337,7 +337,7 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		switch {
 		case skill.BelowRetreatLine(lead.HP, lead.MaxHP):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "party_needs_recovery", nil, "", "healing"))
-		case trainingUnviableHere(obs) && !(trainingYieldsXP(obs) && ctx.known.hasCombatLossEvidence()):
+		case trainingUnviableHere(obs) && !(trainingYieldsXP(obs) && owesCombatReadiness(ctx.known, obs)):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "outside_training_budget", nil, "", "better_training_area"))
 		default:
 			if target := int(lead.Level) + trainStep; target <= 100 {
