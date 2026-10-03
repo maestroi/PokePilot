@@ -55,9 +55,11 @@ func TestDecodeOverworldRejectsScriptBattleAndMovement(t *testing.T) {
 		check func(game.OverworldState) bool
 	}{
 		{
-			name:  "script",
-			edit:  func(r fakeGSReader) { r[sym.ScriptRunning] = 1 },
-			check: func(s game.OverworldState) bool { return !s.Controllable && s.InDialogue },
+			name: "script",
+			edit: func(r fakeGSReader) { r[sym.ScriptRunning] = 1 },
+			// A script with no textbox still owns the machine, but it is a
+			// transition settle — not a dialogue the caller should answer.
+			check: func(s game.OverworldState) bool { return !s.Controllable && !s.InDialogue },
 		},
 		{
 			name:  "battle",
@@ -112,6 +114,38 @@ func TestDecodeOverworldScriptInMotionIsNotDialogue(t *testing.T) {
 	// may wait out, so the broad fact must survive the narrower dialogue.
 	if facts := NewGold().DecodeOpening(reader); !facts.ScriptActive {
 		t.Fatalf("opening facts lost the transition script: %+v", facts)
+	}
+}
+
+// After a Gen-II warp lands, ScriptRunning can stay set with idle step flags
+// while the map shell finishes and no textbox is up. That is still a settle,
+// not a Yes/No the interruption driver should mash A through — doing so walked
+// Route 35 ↔ Goldenrod Gate forever on the Sudowoodo route.
+func TestDecodeOverworldPostWarpIdleScriptWithoutTextboxIsNotDialogue(t *testing.T) {
+	reader := readyGSReader()
+	reader[sym.ScriptRunning] = 1
+	reader[sym.ScriptMode] = 1
+
+	state := NewGold().DecodeOverworld(reader)
+	if state.InDialogue {
+		t.Fatalf("post-warp idle script without textbox decoded as dialogue: %+v", state)
+	}
+	if state.Controllable {
+		t.Fatalf("post-warp script must still own the machine: %+v", state)
+	}
+	if !state.MovementIdle {
+		t.Fatalf("idle step flags must remain idle: %+v", state)
+	}
+	if !gsScriptActive(reader) {
+		t.Fatal("script activity must stay observable independently of dialogue")
+	}
+
+	// The same idle script with the standard dialogue frame is a real prompt.
+	reader[sym.TileMap+12*20+0], reader[sym.TileMap+12*20+19] = 0x79, 0x7b
+	reader[sym.TileMap+17*20+0], reader[sym.TileMap+17*20+19] = 0x7d, 0x7e
+	state = NewGold().DecodeOverworld(reader)
+	if !state.InDialogue || state.Controllable {
+		t.Fatalf("idle script with textbox must be dialogue: %+v", state)
 	}
 }
 

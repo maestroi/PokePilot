@@ -87,14 +87,18 @@ func (*Profile) DecodeOverworld(reader game.MemoryReader) game.OverworldState {
 		Controllable: gsControllable(reader),
 		MovementIdle: movementIdle,
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
-		// InDialogue means a script is waiting for the player, not merely
-		// running. A warp, stair transition or scripted force-walk runs a
-		// script while it still owns movement; reporting that as a dialogue
-		// made generic edge crossing abort with ErrDialogueInterrupted in the
-		// frames between stepping onto a warp and the map actually changing.
-		// Only a script that has stopped moving and is idle on a text/prompt
-		// surface is a dialogue the caller must answer.
-		InDialogue: scriptActive && movementIdle,
+		// InDialogue means a script is waiting for the player on a text or
+		// prompt surface, not merely running. A warp, stair transition or
+		// scripted force-walk runs a script while it still owns movement;
+		// reporting that as a dialogue made generic edge crossing abort with
+		// ErrDialogueInterrupted in the frames between stepping onto a warp
+		// and the map actually changing. After landing, the cartridge can
+		// keep ScriptRunning with idle step flags and no textbox while the
+		// map shell finishes — treating that as dialogue made Gen-II route
+		// settlers mash A and walk straight back through the warp they just
+		// crossed (Route 35 ↔ Goldenrod Gate). Only a script that is idle on
+		// a visible text/prompt surface is a dialogue the caller must answer.
+		InDialogue: scriptActive && movementIdle && gsTextboxVisible(reader),
 	}
 }
 
