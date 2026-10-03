@@ -96,13 +96,15 @@ func fightOnly(m *emu.Emu, policy MovePolicy) resolveBattle {
 const guaranteedWildFleeAttempts = 10
 
 // fleeThenFight resolves an interrupting battle by fleeing it first. Trainer
-// refusal is expected and falls back to Battle. A RUN-controller stall or a
-// fully exhausted bounded flee also falls back to Battle because Travel owns
-// the incidental encounter and must not return while that battle is still
-// live. Returning the controller error here poisons the objective boundary:
-// the generic finish guard sees the active battle and escalates an otherwise
-// recoverable encounter to stabilization_failed/objective_boundary_dirty
-// (#2113). Other flee errors still fail closed.
+// refusal is expected and falls back to Battle. A RUN-controller stall, a
+// fully exhausted bounded flee, and a battle that restarts while settling
+// (scripted back-to-back trainers clear wIsInBattle between the two) also
+// fall back to Battle because Travel owns the incidental encounter and must
+// not return while that battle is still live. Returning the controller error
+// here poisons the objective boundary: the generic finish guard sees the
+// active battle and escalates an otherwise recoverable encounter to
+// stabilization_failed/objective_boundary_dirty (#2113). Other flee errors
+// still fail closed.
 func fleeThenFightWith(
 	flee func(int) error,
 	fight fightBattle,
@@ -117,10 +119,16 @@ func fleeThenFightWith(
 		if err := flee(fleeAttempts); err != nil {
 			fallbackToFight := errors.Is(err, ErrTrainerBattle) ||
 				errors.Is(err, ErrMenuStuck) ||
-				errors.Is(err, ErrFleeExhausted)
+				errors.Is(err, ErrFleeExhausted) ||
+				errors.Is(err, errBattleRestarted)
 			if fallbackToFight {
 				outcome, berr := fight()
-				trainer := kind == game.BattleTrainer || errors.Is(err, ErrTrainerBattle)
+				// A restarted battle is the one now live, and only trainer
+				// scripts queue back-to-back battles, so it is trainer-owned
+				// even when the fled one was not.
+				trainer := kind == game.BattleTrainer ||
+					errors.Is(err, ErrTrainerBattle) ||
+					errors.Is(err, errBattleRestarted)
 				return battleResolution{outcome: outcome, trainer: trainer}, berr
 			}
 			return battleResolution{}, fmt.Errorf("skill: Travel: flee: %w", err)
