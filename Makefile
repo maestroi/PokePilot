@@ -261,8 +261,9 @@ farm-down:
 
 # Swarm fixer (deploy/fixer.yml): FIXER_REPLICAS containers running the
 # qwagent ladder in parallel. Secrets and POKEPILOT_QWEN_URL come from
-# ~/.config/pokepilot/env. Stop the desktop qwtriage timer first, or three
-# fixers compete for qwen and the same keys.
+# ~/.config/pokepilot/env. The retired desktop qwagent-triage timer
+# must be disabled (systemctl --user disable --now qwagent-triage.timer), or it
+# competes with the fixers for qwen and the same keys.
 FIXER_IMAGE ?= pokepilot-fixer:local
 FIXER_STATE_DIR ?= $(HOME)/.local/share/pokepilot/fixer-swarm
 # Cartridges only: POKEPILOT_ROM_DIR can be ~/.config/pokepilot, which also

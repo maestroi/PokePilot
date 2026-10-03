@@ -34,7 +34,8 @@ published to the host, so Prometheus must run on the same overlay network as
 the farm.
 
 1. Merge the job from `prometheus-poketelegram.yml` into your Prometheus
-   `scrape_configs:` list. It discovers `tasks.telegram` over DNS (the `telegram` service of the `pokefarm-ops` stack; attach Prometheus to its `ops` network) and needs no
+   `scrape_configs:` list. It discovers `tasks.telegram` over DNS (the `telegram` service of the
+   `pokefarm-ops` stack; attach Prometheus to its `ops` network) and needs no
    Docker socket.
 2. If your Prometheus already uses Docker Swarm service discovery with the
    Docker socket mounted, use the commented `dockerswarm_sd_configs` variant in

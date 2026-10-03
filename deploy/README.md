@@ -248,7 +248,7 @@ Add to `~/.config/pokepilot/env`: `POKEPILOT_FIXER_GITHUB_TOKEN`,
 `http://192.168.50.81:8002/v1`). Then:
 
 ```sh
-qwtriage-off                                   # the desktop timer would compete
+# retired desktop timer, if an old install exists: systemctl --user disable --now qwagent-triage.timer
 docker node update --label-add pokepilot.fixer=true <node>
 make fixer-up                                  # build, copy ROMs, deploy pokefixer
 docker service logs -f pokefixer_fixer

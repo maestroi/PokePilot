@@ -53,8 +53,11 @@ reports) has a grace count: it must be bad that many consecutive evaluations
 before the bot posts an alert card, so one blip does not page you. A still-bad
 check is reminded every 12h, and a recovery posts a resolved note. The card's
 **Mute 12h** button silences reminders for that check (a mute is shown on
-`/alerts` and the reminder comes due when it expires). Cards for run-specific
-alerts carry a restart summary/button where a restart makes sense.
+`/alerts` and the reminder comes due when it expires). Alert cards carry
+**Mute 12h** and **Details** buttons (plus an Open link); stall alerts add
+**Flag stuck**, **Open run** and **Frame** buttons. When the bot itself restarts
+and finds checks already failing, it adopts them without paging each one and
+posts a single "Bot restarted: N checks failing" message.
 
 ## Flag stuck
 
