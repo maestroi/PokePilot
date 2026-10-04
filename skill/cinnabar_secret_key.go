@@ -287,6 +287,15 @@ func AcquireCinnabarSecretKey(m *emu.Emu, romData []byte, policy MovePolicy) err
 		return err
 	}
 
+	// The key hunt ends in a B1F pocket the shared statue state often seals
+	// from the stairs. Own that handoff: leave the stairs walkable so ordinary
+	// Travel/EnsureItemStock are not stranded on a world: no_route the static
+	// graph still believes is three hops from Cinnabar mart
+	// (run-3dxv0agt5di8x1ddvib3x0enk5 / triage d3a8d73bd07ae38d).
+	if err := openMansionBasementExit(m, romData, policy); err != nil {
+		return fmt.Errorf("skill: AcquireCinnabarSecretKey: open Mansion B1F exit after Secret Key: %w", err)
+	}
+
 	// Secret Key ownership is the objective's semantic postcondition, verified
 	// once by the objective runtime (#1655); this skill owns only the mechanics.
 	return nil

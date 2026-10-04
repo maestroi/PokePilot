@@ -149,6 +149,9 @@ func CinnabarProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 // mansionB1FExitX/Y is the B1F stairs tile up to 1F.
 const mansionB1FExitX, mansionB1FExitY uint8 = 23, 22
 
+// mansion1FExitX/Y is one outdoor door pad on Mansion 1F (map 0xff warps).
+const mansion1FExitX, mansion1FExitY uint8 = 5, 27
+
 // openMansionBasementExit handles the normal handoff from the Secret Key
 // objective, which ends beside the key on B1F. The global map graph knows the
 // staircase but not which statue state currently exposes its corridor, so try
@@ -194,16 +197,16 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	return nil
 }
 
-// returnToCinnabarIsland leaves the Mansion. The B1F stairs land in a 1F
-// pocket that is sealed in one of the two shared switch states, and the 1F
-// statue sits outside that pocket; the key hunt usually leaves the switch in
-// the sealing state. Flip it from wherever a statue is reachable (1F, else
-// B1F without sealing the B1F stairs) and retry.
-func returnToCinnabarIsland(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	island := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
-	_, err := TravelFlee(m, romData, island, policy, mansionTravelBattles)
-	if err == nil || m.Peek8(sym.CurMap) != pokemonMansion1FMap || !errors.Is(err, world.ErrNoRoute) {
-		return err
+// openMansion1FExit restores a walkable path to the outdoor door when the
+// shared statue state has sealed the 1F landing pocket. The 1F statue often
+// sits outside that pocket, so recovery may flip a B1F statue that keeps the
+// basement stairs open.
+func openMansion1FExit(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	if m.Peek8(sym.CurMap) != pokemonMansion1FMap {
+		return nil
+	}
+	if mansionTileReachable(m, romData, mansion1FExitX, mansion1FExitY) {
+		return nil
 	}
 	want := !currentMansionSwitchOn(m)
 	if mansionTileReachable(m, romData, mansion1FSwitch.StandX, mansion1FSwitch.StandY) {
@@ -217,6 +220,27 @@ func returnToCinnabarIsland(m *emu.Emu, romData []byte, policy MovePolicy) error
 		if err := setMansionSwitchKeepingBasementExit(m, romData, want, policy); err != nil {
 			return err
 		}
+	}
+	if !mansionTileReachable(m, romData, mansion1FExitX, mansion1FExitY) &&
+		m.Peek8(sym.CurMap) == pokemonMansion1FMap {
+		return fmt.Errorf("Mansion 1F outdoor door (%d,%d) remains unreachable after switch recovery", mansion1FExitX, mansion1FExitY)
+	}
+	return nil
+}
+
+// returnToCinnabarIsland leaves the Mansion. The B1F stairs land in a 1F
+// pocket that is sealed in one of the two shared switch states, and the 1F
+// statue sits outside that pocket; the key hunt usually leaves the switch in
+// the sealing state. Flip it from wherever a statue is reachable (1F, else
+// B1F without sealing the B1F stairs) and retry.
+func returnToCinnabarIsland(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	island := Destination{Map: cinnabarIslandMap, X: 11, Y: 12}
+	_, err := TravelFlee(m, romData, island, policy, mansionTravelBattles)
+	if err == nil || m.Peek8(sym.CurMap) != pokemonMansion1FMap || !errors.Is(err, world.ErrNoRoute) {
+		return err
+	}
+	if err := openMansion1FExit(m, romData, policy); err != nil {
+		return err
 	}
 	_, err = TravelFlee(m, romData, island, policy, mansionTravelBattles)
 	return err
