@@ -57,7 +57,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressSudowoodoCleared,
 		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
-		gsprofile.ProgressFogBadgeEarned:
+		gsprofile.ProgressFogBadgeEarned,
+		gsprofile.ProgressHM03SurfAcquired:
 		return true
 	default:
 		return false
@@ -161,6 +162,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSBurnedTower(a.m, a.romData)
 		case gsprofile.ProgressFogBadgeEarned:
 			err = executeGSMorty(a.m, a.romData)
+		case gsprofile.ProgressHM03SurfAcquired:
+			err = executeGSHM03Surf(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -185,7 +188,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressAzaleaRivalResolved, gsprofile.ProgressFarfetchdHerded,
 			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned,
 			gsprofile.ProgressSudowoodoCleared, gsprofile.ProgressTM08RockSmashAcquired,
-			gsprofile.ProgressBurnedTowerCleared, gsprofile.ProgressFogBadgeEarned:
+			gsprofile.ProgressBurnedTowerCleared, gsprofile.ProgressFogBadgeEarned,
+			gsprofile.ProgressHM03SurfAcquired:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -426,6 +430,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressFogBadgeEarned,
 			Note:     "(cross Ecruteak Gym's invisible floor, defeat Morty, and earn the Fog Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressHM03SurfAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressHM03SurfAcquired,
+			Note:     "(defeat all five Ecruteak Dance Theater Kimono Girls and receive HM03 Surf from the gentleman)",
 		}}
 	default:
 		return nil
