@@ -395,12 +395,23 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 			if !ok {
 				break
 			}
-			x, y := routingPlayerXY(m)
-			steps, ferr := world.FindPath(grid, int(x), int(y), nx, ny, nil)
-			if ferr != nil {
-				break
-			}
-			if werr := WalkPath(m, steps); werr != nil {
+			// The walk to the retry approach must re-plan around live sprite
+			// blockers exactly like the initial warp walk does: a wandering
+			// sprite can cross the corridor between the plan and the walk, and
+			// a one-shot FindPath+WalkPath then dies on a tile the planner
+			// believed was open. MEASURED on run-esnv8siq53af1t8tw2b8awjwc: the
+			// Saffron Mart exit, where a customer steps from (4,5) onto (4,6)
+			// mid-walk and the static-grid path through it never re-plans, so
+			// the down-approach to the door is never reached and the edge
+			// reports "did not cross within budget".
+			werr := walkAroundAvoidingObjects(func() error { return movementInterruption(m) }, m, h,
+				func(blocked map[[2]int]bool) ([]world.Step, error) {
+					x, y := routingPlayerXY(m)
+					blocked = mergeBlockedTiles(blocked, extraBlocked)
+					return world.FindPath(grid, int(x), int(y), nx, ny, blocked)
+				}, func(steps []world.Step) error { return WalkPath(m, steps) },
+				func() { m.StepFrames(npcWaitFrames) })
+			if werr != nil {
 				if errors.Is(werr, ErrBattleInterrupted) {
 					px, py := routingPlayerXY(m)
 					return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, px, py, ErrBattle)
