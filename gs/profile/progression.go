@@ -27,6 +27,7 @@ const (
 	ProgressTM08RockSmashAcquired    game.ProgressID = "gs_tm08_rock_smash_acquired"
 	ProgressBurnedTowerCleared       game.ProgressID = "gs_burned_tower_cleared"
 	ProgressFogBadgeEarned           game.ProgressID = "gs_fog_badge_earned"
+	ProgressHM03SurfAcquired         game.ProgressID = "gs_hm03_surf_acquired"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -41,6 +42,7 @@ const (
 	// pret/pokegold constants/event_flags.asm at gs/data.SourceRevision.
 	// Keep these zero-based event indices pinned: event flags are addressed
 	// directly as EventFlags + event/8 below.
+	eventGotHM03Surf              uint16 = 18
 	eventGotHM05Flash             uint16 = 20
 	eventGotHM01Cut               uint16 = 16
 	eventGotTM02Headbutt          uint16 = 95
@@ -134,7 +136,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressTM08RockSmashAcquired, Complete: hasGSEvent(reader, eventGotTM08RockSmash)},
 		{ID: ProgressBurnedTowerCleared, Complete: hasGSEvent(reader, eventReleasedTheBeasts)},
 		{ID: ProgressFogBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
-		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
+		{ID: ProgressHM03SurfAcquired, Complete: hasGSEvent(reader, eventGotHM03Surf)},
+		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotHM03Surf)},
 	}
 }
 
