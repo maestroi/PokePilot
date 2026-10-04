@@ -114,15 +114,13 @@ func executeGSFarfetchd(m *emu.Emu, romData []byte) error {
 		if !ok {
 			return fmt.Errorf("%w: Ilex Farfetchd has no active semantic position (decoded %d)", errGSSecondBadgeUnexpectedState, state.Position)
 		}
-		if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, step.standX, step.standY)); err != nil {
-			return fmt.Errorf("gen2 Farfetchd: reach position %d: %w", state.Position, err)
-		}
-		if err := skill.Face(m, step.birdX, step.birdY); err != nil {
-			return fmt.Errorf("gen2 Farfetchd: face position %d: %w", state.Position, err)
-		}
 		before := state.Position
+		label := fmt.Sprintf("ilex:farfetchd:%d", before)
+		if err := gsSecondBadgeFaceFrom(m, romData, profile, skill.ExactNativeDestination(forest, step.standX, step.standY), step.birdX, step.birdY, label); err != nil {
+			return fmt.Errorf("gen2 Farfetchd: stage position %d: %w", before, err)
+		}
 		m.Tap(emu.A, 3, 7)
-		if err := driveGSSecondBadgeInterruption(m, profile, fmt.Sprintf("ilex:farfetchd:%d", before)); err != nil {
+		if err := driveGSSecondBadgeInterruption(m, profile, label); err != nil {
 			return fmt.Errorf("gen2 Farfetchd: position %d script: %w", before, err)
 		}
 		after := profile.DecodeIlexState(m)
@@ -160,11 +158,8 @@ func executeGSHM01Cut(m *emu.Emu, romData []byte) error {
 	}
 	// After position 10 the Charcoal Master appears at (5,28). Talk from below
 	// so the returned Farfetch'd at (6,28) cannot occupy our staging tile.
-	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, 5, 29)); err != nil {
-		return fmt.Errorf("gen2 HM01 Cut: reach Charcoal Master: %w", err)
-	}
-	if err := skill.Face(m, 5, 28); err != nil {
-		return fmt.Errorf("gen2 HM01 Cut: face Charcoal Master: %w", err)
+	if err := gsSecondBadgeFaceFrom(m, romData, profile, skill.ExactNativeDestination(forest, 5, 29), 5, 28, "ilex:hm01-cut"); err != nil {
+		return fmt.Errorf("gen2 HM01 Cut: stage Charcoal Master: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
 	if err := driveGSSecondBadgeInterruption(m, profile, "ilex:hm01-cut"); err != nil {
@@ -209,11 +204,8 @@ func executeGSTM02Headbutt(m *emu.Emu, romData []byte) error {
 	// The tutor is fixed at (15,14). His south neighbour is on the north side
 	// of the mandatory Cut tree; GoToNative can only reach it after executing
 	// Cut and rebuilding the live forest grid.
-	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(forest, gsIlexHeadbuttStandX, gsIlexHeadbuttStandY)); err != nil {
-		return fmt.Errorf("gen2 TM02 Headbutt: cross Ilex Cut tree: %w", err)
-	}
-	if err := skill.Face(m, gsIlexHeadbuttTutorX, gsIlexHeadbuttTutorY); err != nil {
-		return fmt.Errorf("gen2 TM02 Headbutt: face tutor: %w", err)
+	if err := gsSecondBadgeFaceFrom(m, romData, profile, skill.ExactNativeDestination(forest, gsIlexHeadbuttStandX, gsIlexHeadbuttStandY), gsIlexHeadbuttTutorX, gsIlexHeadbuttTutorY, "ilex:tm02-headbutt"); err != nil {
+		return fmt.Errorf("gen2 TM02 Headbutt: cross Ilex Cut tree to tutor: %w", err)
 	}
 	m.Tap(emu.A, 3, 7)
 	if err := driveGSSecondBadgeInterruption(m, profile, "ilex:tm02-headbutt"); err != nil {
