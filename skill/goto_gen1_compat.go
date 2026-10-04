@@ -1,9 +1,12 @@
 package skill
 
 import (
+	"fmt"
+
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -73,4 +76,37 @@ func goToRoutePrerequisites(m *emu.Emu, g *world.Graph, romData []byte) world.Ro
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	return redRoutePrerequisites(g, romData, &mem)
+}
+
+// recoverGoToCompatibilitySwitchSeal opens a Gen-I Mansion switch-sealed
+// pocket when Travel's recoveringGoTo sees world.ErrNoRoute. The static graph
+// still knows the stairs/door warps, but statue state can leave the player in
+// a component with no walkable path to those pads — measured after Secret Key
+// ownership on Mansion B1F (run-3dxv0agt5di8x1ddvib3x0enk5). This stays out of
+// plain GoTo so story helpers that intentionally handle ErrNoRoute
+// (returnToCinnabarIsland) keep that signal.
+func recoverGoToCompatibilitySwitchSeal(m *emu.Emu, romData []byte, policy MovePolicy) (bool, error) {
+	if !gen1GoToCompatibilityEnabled(m) || policy == nil || m == nil {
+		return false, nil
+	}
+	switch m.Peek8(sym.CurMap) {
+	case pokemonMansionB1FMap:
+		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+			return false, nil
+		}
+		if err := openMansionBasementExit(m, romData, policy); err != nil {
+			return false, fmt.Errorf("skill: Travel: open Mansion B1F switch exit: %w", err)
+		}
+		return true, nil
+	case pokemonMansion1FMap:
+		if mansionTileReachable(m, romData, mansion1FExitX, mansion1FExitY) {
+			return false, nil
+		}
+		if err := openMansion1FExit(m, romData, policy); err != nil {
+			return false, fmt.Errorf("skill: Travel: open Mansion 1F switch exit: %w", err)
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }

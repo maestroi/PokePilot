@@ -331,20 +331,37 @@ func emergencyEgressCause(err error) string {
 	}
 }
 
-// recoveringGoTo adds one bounded resilience step around ordinary journey
-// navigation. A controller-confirmed cycle/exhaustion may evacuate to the last
-// safe healing landing, then the entire GoTo navigation memory is rebuilt from
-// that landing. This is intentionally one-shot per Travel call: if the fresh
-// route stalls again, the real pathing error is returned to the agent instead
-// of hiding a persistent defect behind repeated escapes.
+// recoveringGoTo adds bounded resilience around ordinary journey navigation.
+// Gen-I Mansion switch-sealed pockets are opened before Dig/Fly emergency
+// egress: the static graph still offers the door/stairs, but live statue state
+// can leave the player with no walkable path to those pads
+// (run-3dxv0agt5di8x1ddvib3x0enk5). Plain GoTo stays unaware so story helpers
+// like returnToCinnabarIsland can still observe world.ErrNoRoute and own the
+// flip themselves. A controller-confirmed cycle/exhaustion may then evacuate
+// to the last safe healing landing. Switch-seal recovery and emergency egress
+// are each bounded so a persistent pathing defect is not hidden behind
+// repeated escapes.
 func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, recovered *[]EmergencyEgress) func() error {
 	goTo := cutAwareGoTo(m, romData, dest, policy)
 	egresses := 0
+	sealRecoveries := 0
+	const maxSealRecoveries = 2
 	return func() error {
 		for {
 			err := goTo()
 			if err == nil {
 				return nil
+			}
+			if errors.Is(err, world.ErrNoRoute) && sealRecoveries < maxSealRecoveries {
+				changed, sealErr := recoverGoToCompatibilitySwitchSeal(m, romData, policy)
+				if sealErr != nil {
+					return sealErr
+				}
+				if changed {
+					sealRecoveries++
+					goTo = cutAwareGoTo(m, romData, dest, policy)
+					continue
+				}
 			}
 			cause := emergencyEgressCause(err)
 			if cause == "" || egresses >= maxEmergencyEgressesPerJourney || m == nil {
