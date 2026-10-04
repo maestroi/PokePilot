@@ -58,7 +58,14 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	party := state.DecodeParty(&mem)
 	out = enhancePickupObjectives(romData, party, obs, out)
 	estimate := func(slot, targetLevel int) (TrainingEstimate, error) {
-		return currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, campaignAwareTrainingBudget(obs, known))
+		est, err := currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
+		if err != nil {
+			return TrainingEstimate{}, err
+		}
+		// Re-read against the campaign's multi-session allowance while a
+		// quantified combat loss is being prepared for, and enforce the
+		// per-session progress contract the executor will hold the session to.
+		return *budgetedTrainingEstimate(&est, obs, known), nil
 	}
 	out = insertPartyTrainingObjectives(obs, known, out, estimate)
 	out = dropUnviableTargetedTraining(out, estimate)

@@ -35,20 +35,21 @@ const preparationSessionCeiling = 8
 // remaining readiness gap is closable in the assessed environment at all.
 func preparationTrainingBudget() int { return trainSessionBattleBudget * preparationSessionCeiling }
 
-// campaignAwareTrainingBudget returns the allowance training estimates should
-// be measured against: one bounded session ordinarily, the campaign's
-// multi-session allowance while a quantified combat-loss campaign is open.
-func campaignAwareTrainingBudget(obs Observation, known *Knowledge) int {
-	if combatPreparationCampaignOpen(known, obs) {
-		return preparationTrainingBudget()
-	}
-	return trainSessionBattleBudget
-}
-
 // budgetedTrainingEstimate re-reads a measured estimate against the campaign
 // allowance when one is open. The measured XP facts do not change; only the
 // allowance, and therefore the cost class, does. It returns a copy so callers
 // never mutate an observation another layer is still holding.
+//
+// The campaign allowance answers "can the whole readiness gap be closed across
+// several sessions here?", but the Train executor only runs a session that can
+// deliver at least one level within a single bounded session. A habitat that
+// cannot do that makes zero progress per session, so no number of campaign
+// sessions can use it. The re-pricing must therefore keep the single-session
+// OutsideBudget verdict when the next level is out of reach in one session;
+// otherwise the offer layer prices a multi-session grind as viable and forces
+// a session the executor refuses every round, stalling the campaign
+// (run-otfpwf3802q31tv1pju7x3mme: Rock Tunnel 1F, L49 Venusaur needed 47
+// encounters for one level against a 20-battle session).
 func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowledge) *TrainingEstimate {
 	if e == nil || !combatPreparationCampaignOpen(known, obs) {
 		return e
@@ -61,6 +62,9 @@ func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowl
 	budgeted := *e
 	budgeted.SessionBudget = preparationTrainingBudget()
 	classifyTrainingEstimate(&budgeted)
+	if budgeted.NextLevelEncounters > trainSessionBattleBudget {
+		budgeted.Viability = TrainingOutsideBudget
+	}
 	return &budgeted
 }
 

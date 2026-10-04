@@ -211,10 +211,6 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 	if targetLevel <= int(obs.Party[0].Level) {
 		return nil
 	}
-	// Measured against the campaign's multi-session allowance while a quantified
-	// combat loss is being prepared for; otherwise one bounded session decides.
-	budget := campaignAwareTrainingBudget(obs, known)
-
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	catalog := objectiveCatalogForObservation(obs)
@@ -244,13 +240,17 @@ func redTrainingAreaAssessments(m *emu.Emu, romData []byte, obs Observation, kno
 			continue
 		}
 
-		estimate, err := currentPartyTrainingEstimate(&mem, romData, destination.Map, 0, targetLevel, budget)
+		estimate, err := currentPartyTrainingEstimate(&mem, romData, destination.Map, 0, targetLevel, trainSessionBattleBudget)
 		if err != nil {
 			assessment.Reason = fmt.Sprintf("training estimate unavailable: %v", err)
 			out = append(out, assessment)
 			continue
 		}
-		assessment.Estimate = estimate
+		// Re-read against the campaign's multi-session allowance while a
+		// quantified combat loss is being prepared for; otherwise the single
+		// bounded session above already decided. The re-read also enforces the
+		// per-session progress contract the executor will hold the session to.
+		assessment.Estimate = *budgetedTrainingEstimate(&estimate, obs, known)
 
 		if location == current {
 			assessment.Routable = true
