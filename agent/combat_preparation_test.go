@@ -426,11 +426,8 @@ func TestCampaignTrainingBudgetOnlyWidensMeasuredEstimates(t *testing.T) {
 	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
 	obs := campaignTestObservation(t, known, challenge)
 
-	if got := campaignAwareTrainingBudget(obs, known); got != preparationTrainingBudget() {
-		t.Fatalf("campaign budget = %d, want %d", got, preparationTrainingBudget())
-	}
-	if got := campaignAwareTrainingBudget(obs, NewKnowledge(nil)); got != trainSessionBattleBudget {
-		t.Fatalf("idle budget = %d, want %d", got, trainSessionBattleBudget)
+	if got := preparationTrainingBudget(); got != trainSessionBattleBudget*preparationSessionCeiling {
+		t.Fatalf("campaign budget = %d, want %d", got, trainSessionBattleBudget*preparationSessionCeiling)
 	}
 
 	gap := campaignTestTrainingEstimate(32, 12898)
@@ -446,6 +443,61 @@ func TestCampaignTrainingBudgetOnlyWidensMeasuredEstimates(t *testing.T) {
 	unsafe := TrainingEstimate{Viability: TrainingOutsideBudget}
 	if got := budgetedTrainingEstimate(&unsafe, obs, known); got != &unsafe {
 		t.Fatal("a band with no measured XP was re-priced")
+	}
+}
+
+// TestBudgetedTrainingEstimateKeepsSingleSessionContract is the regression for
+// run-otfpwf3802q31tv1pju7x3mme: a habitat whose full target fits the campaign's
+// multi-session allowance but whose next level needs more than one bounded
+// session. The executor refuses such a session (it would deliver zero levels),
+// so the campaign re-pricing must keep the single-session OutsideBudget verdict
+// instead of flipping it to viable and forcing a guaranteed-blocked train.
+func TestBudgetedTrainingEstimateKeepsSingleSessionContract(t *testing.T) {
+	known := NewKnowledge(nil)
+	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
+	obs := campaignTestObservation(t, known, challenge)
+
+	// The full target (10000 XP) fits the 160-battle campaign allowance
+	// (~99 encounters), so a naive re-pricing would call it viable. But the
+	// next level alone needs 2500 XP (~25 encounters), more than one 20-battle
+	// session can deliver, so no session here makes progress.
+	const xpPerEncounter = 102
+	stalled := TrainingEstimate{
+		CurrentLevel: 49, TargetLevel: 51, XPRemaining: 10000,
+		XPPerEncounter:      xpPerEncounter,
+		EstimatedEncounters: int((10000 + xpPerEncounter - 1) / xpPerEncounter),
+		NextLevelXP:         2500,
+		NextLevelEncounters: int((2500 + xpPerEncounter - 1) / xpPerEncounter),
+		SessionBudget:       trainSessionBattleBudget,
+		Viability:           TrainingOutsideBudget,
+		Method:              TrainingDirect,
+	}
+	if stalled.NextLevelEncounters <= trainSessionBattleBudget {
+		t.Fatalf("test setup: next level needs %d encounters, want > %d", stalled.NextLevelEncounters, trainSessionBattleBudget)
+	}
+	budgeted := budgetedTrainingEstimate(&stalled, obs, known)
+	if budgeted.Viability != TrainingOutsideBudget {
+		t.Fatalf("stalled habitat re-priced to %q, want outside_budget (next level out of one session)", budgeted.Viability)
+	}
+
+	// A habitat that CAN deliver one level per session keeps the campaign
+	// widening: the full target fits the allowance and the next level fits one
+	// session, so the re-pricing legitimately moves it into the viable class.
+	flowing := TrainingEstimate{
+		CurrentLevel: 49, TargetLevel: 51, XPRemaining: 10000,
+		XPPerEncounter:      xpPerEncounter,
+		EstimatedEncounters: int((10000 + xpPerEncounter - 1) / xpPerEncounter),
+		NextLevelXP:         1500,
+		NextLevelEncounters: int((1500 + xpPerEncounter - 1) / xpPerEncounter),
+		SessionBudget:       trainSessionBattleBudget,
+		Viability:           TrainingOutsideBudget,
+		Method:              TrainingDirect,
+	}
+	if flowing.NextLevelEncounters > trainSessionBattleBudget {
+		t.Fatalf("test setup: next level needs %d encounters, want <= %d", flowing.NextLevelEncounters, trainSessionBattleBudget)
+	}
+	if got := budgetedTrainingEstimate(&flowing, obs, known); got.Viability == TrainingOutsideBudget {
+		t.Fatalf("productive habitat stayed outside_budget; the campaign widening was lost")
 	}
 }
 
