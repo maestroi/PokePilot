@@ -226,8 +226,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressFogBadgeEarned, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressHM03SurfAcquired {
+		t.Fatalf("after Fog Badge progression = %+v, want HM03 Surf", got)
+	}
+
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressHM03SurfAcquired, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed Fog Badge slice still offered: %+v", got)
+		t.Fatalf("completed HM03 Surf slice still offered: %+v", got)
 	}
 }
 
@@ -264,6 +270,7 @@ func TestGSPostStarterProgressValidationIsNarrow(t *testing.T) {
 		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
+		gsprofile.ProgressHM03SurfAcquired,
 	} {
 		if err := adapter.Validate(Objective{Kind: KindProgress, Progress: progress}, Observation{}); err != nil {
 			t.Fatalf("Validate %s: %v", progress, err)
@@ -307,6 +314,7 @@ func TestGSFirstBadgeProgressUsesGenericStoryVerifier(t *testing.T) {
 		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
+		gsprofile.ProgressHM03SurfAcquired,
 	} {
 		o := Objective{Kind: KindProgress, Progress: progress}
 		final := Observation{
@@ -385,6 +393,7 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
+		gsprofile.ProgressHM03SurfAcquired,
 	} {
 		got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress})
 		if got != gsFirstBadgeObjectiveFrameBudget {
