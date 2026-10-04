@@ -147,6 +147,9 @@ func TestEarlyJohtoEventIndicesMatchPinnedPokegoldConstants(t *testing.T) {
 	// constants/event_flags.asm at gs/data.SourceRevision. These literals are
 	// intentional: using the production constants as both setup and expected
 	// value would not catch an off-by-one event binding.
+	if eventGotHM03Surf != 18 {
+		t.Fatalf("EVENT_GOT_HM03_SURF = %d, want 18", eventGotHM03Surf)
+	}
 	if eventGotHM05Flash != 20 {
 		t.Fatalf("EVENT_GOT_HM05_FLASH = %d, want 20", eventGotHM05Flash)
 	}
@@ -264,8 +267,17 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 
 	mem[sym.JohtoBadges] |= johtoBadgeFogMask
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressFogBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("Fog Badge boundary did not complete supported frontier: %+v", story)
+	if !story.Has(ProgressFogBadgeEarned) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Fog Badge boundary = %+v, want earned but not frontier", story)
+	}
+	if story.Has(ProgressHM03SurfAcquired) {
+		t.Fatal("HM03 Surf reported before the Dance Theater handoff")
+	}
+
+	setGSEvent(mem, eventGotHM03Surf)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHM03SurfAcquired) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("HM03 Surf boundary did not complete supported frontier: %+v", story)
 	}
 }
 
