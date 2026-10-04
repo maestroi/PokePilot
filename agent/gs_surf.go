@@ -9,8 +9,8 @@ import (
 )
 
 type gsKimonoTrainer struct {
-	name          string
-	x, y          uint8
+	name           string
+	x, y           uint8
 	standX, standY uint8
 }
 
