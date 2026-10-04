@@ -48,6 +48,7 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"ECRUTEAK_CITY",
 		"ECRUTEAK_POKECENTER_1F",
 		"ECRUTEAK_GYM",
+		"DANCE_THEATER",
 		"BURNED_TOWER_1F",
 		"BURNED_TOWER_B1F",
 	} {
