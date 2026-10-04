@@ -57,10 +57,14 @@ func talkMenuUp(m *emu.Emu) (bool, string) {
 // 40-frame cadence and 6 at a 100-frame cadence, so each press is followed
 // by a settle interval that keeps the cadence in the cheaper regime.
 const (
-	faceTurnBudget = 60  // frames for a direction tap to register as a turn
-	talkOpenBudget = 120 // frames for a text box to open after pressing A
-	talkSettle     = 40  // frames stepped after each A press while the box is up
-	talkPressCap   = 30  // consecutive no-progress A presses before Talk gives up
+	faceTurnBudget = 60 // frames for a direction tap to register as a turn
+	// faceSettleBudget bounds the wait for control after the turn registered:
+	// a pending wild encounter has already taken control away but has not yet
+	// entered battle mode.
+	faceSettleBudget = 240
+	talkOpenBudget   = 120 // frames for a text box to open after pressing A
+	talkSettle       = 40  // frames stepped after each A press while the box is up
+	talkPressCap     = 30  // consecutive no-progress A presses before Talk gives up
 
 	// talkPressBudget is a backstop on TOTAL A presses so a box whose text
 	// keeps changing can still not run forever. Bill's S.S. Ticket speech
@@ -172,11 +176,32 @@ func faceWithOverworldDecoder(m faceMachine, decoder game.OverworldDecoder, tx, 
 				want, live.NativeMapID, live.X, live.Y, ErrBattle)
 		}
 		if after.Facing == want {
-			return nil
+			return settleFaced(m, decoder, live, want)
 		}
 		m.StepFrame()
 	}
 	return fmt.Errorf("skill: Face: not facing %s within %d frames", want, faceTurnBudget)
+}
+
+// settleFaced holds Face's success until the facing is usable. A facing that
+// matches while the overworld is not controllable is either the tail of a
+// step onto an open tile or a wild encounter that has taken control but not
+// yet entered battle mode; an A press in that window lands in the battle
+// intro instead of on the target. Without a battle, the facing promise stands
+// even if control never returns within the budget.
+func settleFaced(m faceMachine, decoder game.OverworldDecoder, live game.OverworldState, want string) error {
+	for frame := 0; frame < faceSettleBudget; frame++ {
+		after := decoder.DecodeOverworld(m)
+		if after.InBattle {
+			return fmt.Errorf("skill: Face: battle started after turning %s from map %#04x at (%d,%d): %w",
+				want, live.NativeMapID, live.X, live.Y, ErrBattle)
+		}
+		if after.Controllable {
+			return nil
+		}
+		m.StepFrame()
+	}
+	return nil
 }
 
 // Talk presses A to open a text box, then keeps pressing A while a box is

@@ -57,6 +57,9 @@ type fakeOverworldMachine struct {
 	move         bool
 	stepCount    int
 	battleAtStep int
+	// lostControlAtStep models an encounter that clears control before it
+	// enters battle mode.
+	lostControlAtStep int
 }
 
 func (m *fakeOverworldMachine) Peek8(addr uint16) byte { return m.mem[addr] }
@@ -89,6 +92,9 @@ func (m *fakeOverworldMachine) Release(btn emu.Button) {
 
 func (m *fakeOverworldMachine) StepFrame() {
 	m.stepCount++
+	if m.lostControlAtStep > 0 && m.stepCount == m.lostControlAtStep {
+		m.mem[fakeOverworldFlags] &^= fakeOverworldControllable
+	}
 	if m.battleAtStep > 0 && m.stepCount >= m.battleAtStep {
 		m.mem[fakeOverworldFlags] |= fakeOverworldBattle
 	}
@@ -172,6 +178,33 @@ func TestGenericFaceReportsBattleBeforeFacingSuccess(t *testing.T) {
 	err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 5, 24)
 	if !errors.Is(err, ErrBattle) {
 		t.Fatalf("face error = %v, want ErrBattle when encounter starts during turn tap", err)
+	}
+}
+
+// The turn registers while a wild encounter has already taken control but has
+// not entered battle mode yet; an A press then would land in the battle intro.
+func TestGenericFaceReportsBattlePendingAfterFacing(t *testing.T) {
+	m := &fakeOverworldMachine{lostControlAtStep: 1, battleAtStep: 60}
+	m.mem[fakeOverworldMap] = 0x0c
+	m.mem[fakeOverworldX] = 15
+	m.mem[fakeOverworldY] = 28
+	m.mem[fakeOverworldFlags] = fakeOverworldIdle | fakeOverworldControllable
+
+	err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 15, 29)
+	if !errors.Is(err, ErrBattle) {
+		t.Fatalf("face error = %v, want ErrBattle when an encounter is pending after the turn", err)
+	}
+}
+
+func TestGenericFaceWithoutControlKeepsFacingPromise(t *testing.T) {
+	m := &fakeOverworldMachine{lostControlAtStep: 1}
+	m.mem[fakeOverworldMap] = 7
+	m.mem[fakeOverworldX] = 20
+	m.mem[fakeOverworldY] = 11
+	m.mem[fakeOverworldFlags] = fakeOverworldIdle | fakeOverworldControllable
+
+	if err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 20, 10); err != nil {
+		t.Fatalf("face up without control and without battle: %v", err)
 	}
 }
 

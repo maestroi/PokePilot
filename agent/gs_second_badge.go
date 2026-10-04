@@ -145,6 +145,37 @@ func gsSecondBadgeGoTo(
 	return fmt.Errorf("%w: route did not settle after %d interruptions", errGSSecondBadgeStalled, gsSecondBadgeRouteAttempts)
 }
 
+// gsSecondBadgeFaceFrom stages on dest and turns toward (tx,ty), leaving the
+// player controllable and ready for the interaction press. A wild encounter
+// rolled by the arrival step surfaces as Face's ErrBattle; it is fought by the
+// owned interruption driver and the staging is retried, because neither the
+// tile nor the target changed.
+func gsSecondBadgeFaceFrom(
+	m *emu.Emu,
+	romData []byte,
+	profile *gsprofile.Profile,
+	dest skill.NativeDestination,
+	tx, ty uint8,
+	encounter string,
+) error {
+	for attempt := 0; attempt < gsSecondBadgeRouteAttempts; attempt++ {
+		if err := gsSecondBadgeGoTo(m, romData, profile, dest); err != nil {
+			return fmt.Errorf("reach staging tile: %w", err)
+		}
+		err := skill.Face(m, tx, ty)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, skill.ErrBattle) {
+			return fmt.Errorf("face (%d,%d): %w", tx, ty, err)
+		}
+		if settleErr := driveGSSecondBadgeInterruption(m, profile, encounter); settleErr != nil {
+			return settleErr
+		}
+	}
+	return fmt.Errorf("%w: facing (%d,%d) did not settle after %d interruptions", errGSSecondBadgeStalled, tx, ty, gsSecondBadgeRouteAttempts)
+}
+
 // executeGSSlowpokeWell continues from the durable Togepi-Egg handoff through
 // Route 32, Union Cave and Route 33. In Azalea it explicitly triggers Kurt's
 // retail story script, then clears the four-Rocket B1F corridor. Completion is
