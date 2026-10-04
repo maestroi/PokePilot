@@ -142,6 +142,18 @@ const (
 	// BattleMon (0xCB0C) through the trainer/substatus scratch to 0xCB53.
 	PlayerDisableCount uint16 = 0xCB53
 
+	// PlayerCharging is wPlayerCharging: non-zero while the active mon is
+	// locked in a multi-turn "charging" move (Bide, Fly, Dive, Solar Beam,
+	// Skull Bash, Sky Attack, …). The ROM auto-executes the next phase and
+	// skips the move-selection menu entirely.
+	PlayerCharging uint16 = 0xCC10
+
+	// PlayerTrappingMove is wPlayerTrappingMove: non-zero (stores the move
+	// id) while the active mon is in a recharge turn after a move such as
+	// Hyper Beam, Overheat, Thrash, or Spin Out. The move-selection menu is
+	// skipped for the duration of the recharge turn.
+	PlayerTrappingMove uint16 = 0xCC0C
+
 	PlayerStatLevels uint16 = 0xCBAA // wPlayerStatLevels
 
 	EnemyMon        uint16 = 0xD0EF // wEnemyMon

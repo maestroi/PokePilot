@@ -128,8 +128,23 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 // menu. Shared Battle must treat that as MoveSelectionSkipped or it waits for
 // a menu that will not open (run-1p7ixxdreiam630odlwlg1xf35,
 // triage:20d487bea54de661). PP Up bits must not count as remaining PP.
+//
+// The check also covers multi-turn move locks: when the active mon is in a
+// "charging" move (Bide, Fly, Dive, Solar Beam, …) or a recharge turn
+// (Hyper Beam, Thrash, …), the ROM auto-executes the next phase and skips
+// the move-selection menu entirely, regardless of PP. Without this, a mon
+// that randomly selects Bide via Metronome leaves the agent waiting for a
+// menu that will never open (run-b8p83zrdrdya3b1px3mcln8nm,
+// triage:0d1ce8bc52e0f7a6).
 func gsPlayerHasUsableMoves(reader game.MemoryReader) bool {
 	if reader == nil {
+		return false
+	}
+	// A mon locked in a multi-turn move skips the move-selection menu.
+	if reader.Peek8(sym.PlayerCharging) != 0 {
+		return false
+	}
+	if reader.Peek8(sym.PlayerTrappingMove) != 0 {
 		return false
 	}
 	disabled := gsDisabledMoveSlot(reader)

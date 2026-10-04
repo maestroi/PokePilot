@@ -227,6 +227,34 @@ func TestGoldDecodeBattleExecutionMoveSelectionSkippedWithoutPP(t *testing.T) {
 	}
 }
 
+func TestGoldDecodeBattleExecutionMoveSelectionSkippedMultiTurnLock(t *testing.T) {
+	cases := []struct {
+		name         string
+		charging     byte
+		trappingMove byte
+		pp           [4]byte
+		wantSkip     bool
+	}{
+		{"no lock, moves have pp", 0, 0, [4]byte{5, 0, 0, 0}, false},
+		{"charging lock skips menu despite pp", 2, 0, [4]byte{10, 10, 10, 10}, true},
+		{"recharge lock skips menu despite pp", 0, 45, [4]byte{10, 10, 10, 10}, true},
+		{"no lock, all pp spent", 0, 0, [4]byte{0, 0, 0, 0}, true},
+		{"charging lock and no pp", 1, 0, [4]byte{0, 0, 0, 0}, true},
+	}
+	for _, c := range cases {
+		var mem fakeMemory
+		mem[sym.BattleMode] = 2
+		mem[sym.PlayerCharging] = c.charging
+		mem[sym.PlayerTrappingMove] = c.trappingMove
+		for slot, value := range c.pp {
+			mem[sym.BattleMonPP+uint16(slot)] = value
+		}
+		if got := NewGold().DecodeBattleExecution(&mem).MoveSelectionSkipped; got != c.wantSkip {
+			t.Errorf("%s: MoveSelectionSkipped=%v want %v", c.name, got, c.wantSkip)
+		}
+	}
+}
+
 func TestGoldForcedPartyMenuIncludesCancelCursor(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.BattleMode] = 1
