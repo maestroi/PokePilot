@@ -317,6 +317,12 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 			}, func(steps []world.Step) error { return WalkPath(m, steps) },
 			func() { m.StepFrames(npcWaitFrames) })
 		if err != nil {
+			// The walk to the approach tile can fire a warp as a side effect,
+			// crossing to the destination before the explicit push is ever
+			// attempted. That is a success, not a walk failure.
+			if crossedToDestination(m, e) {
+				return finishArrival(m, e)
+			}
 			if err == unwalkable {
 				// Land-only FindPath still treats Cut trees as solid. Local
 				// field pathing already owns those trees for same-map walks;
@@ -412,6 +418,19 @@ func TraverseAvoiding(m *emu.Emu, romData []byte, e world.Edge, extraBlocked map
 				}, func(steps []world.Step) error { return WalkPath(m, steps) },
 				func() { m.StepFrames(npcWaitFrames) })
 			if werr != nil {
+				// The walk to the approach tile can fire a warp as a side
+				// effect: the approach tile is itself a warp port of this same
+				// edge, and stepping onto it crosses to the destination. The
+				// walk then reports "no path" only because the player now stands
+				// on a different map, where the source-map grid has no route.
+				// That crossing is a success, not a walk failure — MEASURED on
+				// run-2q3qbwd5pz02q2r2ldyesk95ma (Pewter Mart): the retry walk
+				// to the (4,7) door fired that door's warp and landed the player
+				// in Pewter City, but the stale "did not cross" error was
+				// returned and the edge failed.
+				if crossedToDestination(m, e) {
+					return finishArrival(m, e)
+				}
 				if errors.Is(werr, ErrBattleInterrupted) {
 					px, py := routingPlayerXY(m)
 					return fmt.Errorf("skill: Traverse: battle on map %02x at (%d,%d): %w", e.From, px, py, ErrBattle)
@@ -500,6 +519,22 @@ func walkToConnectionEdge(m *emu.Emu, h worldmodel.HeaderView, grid *world.Grid,
 // map flipping. It is a sentinel distinct from ErrBattle: the caller can
 // retry with a different approach on this, but must propagate a battle.
 var errDidNotCross = errors.New("skill: Traverse: did not cross within budget")
+
+// crossedToDestination reports whether the player is now standing on the
+// edge's destination map. A warp fires the instant the player steps onto its
+// tile, so the walk to an approach tile can cross as a side effect: the
+// approach tile is itself a warp port of this same edge, and stepping onto it
+// lands the player on e.To. The crossing is a success for this edge no matter
+// which of the edge's warp tiles fired it, so the check is positive — the
+// player is on the destination, full stop — rather than the absence of the
+// source map.
+func crossedToDestination(m *emu.Emu, e world.Edge) bool {
+	live, err := currentRoutingRuntime(m)
+	if err != nil {
+		return false
+	}
+	return live.Map == e.To
+}
 
 // pushAcrossEdge holds btn until wCurMap flips off e.From, or reports
 // errDidNotCross if crossBudget runs out first. A wild encounter fires on
