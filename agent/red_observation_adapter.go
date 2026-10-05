@@ -336,7 +336,14 @@ func personReachableOnGrid(g *world.Grid, px, py, x, y uint8, blocked map[[2]int
 	for _, s := range []world.Step{world.StepUp, world.StepDown, world.StepLeft, world.StepRight} {
 		midX, midY := int(x)+s.DX, int(y)+s.DY
 		farX, farY := int(x)+2*s.DX, int(y)+2*s.DY
-		if g.Walkable(midX, midY) || !g.Walkable(farX, farY) || blocked[[2]int{farX, farY}] {
+		// The two-tile approach is the service-counter case: the game extends
+		// talk range across a tileset counter (IsSpriteOrSignInFrontOfPlayer),
+		// which is the only tile the executor's counterBeside will cross. A
+		// wall, fence, or water tile between the player and the person does
+		// not extend talk range, so offering the person across it is an
+		// objective no walk can complete — Fuchsia City's Voltorb ball sits
+		// behind the Safari Zone fence exactly like this (run-5cijq1efy87e).
+		if !g.IsCounterTile(midX, midY) || !g.Walkable(farX, farY) || blocked[[2]int{farX, farY}] {
 			continue
 		}
 		if farX == int(px) && farY == int(py) {
