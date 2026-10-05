@@ -133,3 +133,31 @@ func TestCanonicalFlagInvertsRenumbering(t *testing.T) {
 		t.Fatal("address outside every flag array translated")
 	}
 }
+
+func TestByteMapRenumbersSpritePictureIDs(t *testing.T) {
+	v := testView()
+	// slot stride 4 at canonical 0xC012..: native ids 5->2, 9->7, others pass through.
+	n2c := make([]int16, 16)
+	for i := range n2c {
+		n2c[i] = -1
+	}
+	n2c[5], n2c[9] = 2, 7
+	v.Bytes = []ByteMap{{Canon: 0xC012, Stride: 4, Count: 3, NativeToCanon: n2c}}
+	var mem [0x10000]byte
+	mem[0xC011], mem[0xC015], mem[0xC019], mem[0xC01D] = 5, 9, 3, 5 // native = canon-1
+	check := func(buf []byte) {
+		t.Helper()
+		want := map[int]byte{0: 2, 4: 7, 8: 3, 12: 5} // 12 is past Count: untouched
+		for off, w := range want {
+			if buf[off] != w {
+				t.Errorf("canonical %#04x = %d, want %d", 0xC011+off+1, buf[off], w)
+			}
+		}
+	}
+	small := make([]byte, 16)
+	v.ReadInto(nativeReader(&mem), 0xC012, small)
+	check(small)
+	big := make([]byte, 0x100)
+	v.ReadInto(nativeReader(&mem), 0xC012, big)
+	check(big[:16])
+}

@@ -217,7 +217,88 @@ func Generate(canonical, native Tree) (Result, error) {
 		Len: 16*2 + 1, Stride: 2, ValueOffset: 1, Terminator: 0xff,
 		NativeToCanon: toggles.nativeToCanon,
 	}}
+	sprites, err := spriteBytes(canonical, native, cs)
+	if err != nil {
+		return res, err
+	}
+	res.View.Bytes = []canon.ByteMap{sprites}
+	// Native slot 15 is Yellow's reserved Pikachu slot. Its picture id is the
+	// literal $49 (CalculatePikachuFacingDirection), which merely equals
+	// Yellow's SPRITE_BOULDER, and the rest of the slot has no canonical
+	// layout. Present the whole slot as absent so no decoder reads Pikachu as
+	// a boulder or an NPC.
+	res.View.Spans = cutByte(res.View.Spans, uint16(cs["wSpriteStateData1"]+15*0x10))
+	res.Dropped = append(res.Dropped, "wSprite15StateData1PictureID")
 	return res, nil
+}
+
+// cutByte removes canonical addr from spans, splitting the span holding it.
+func cutByte(spans []canon.Span, addr uint16) []canon.Span {
+	var out []canon.Span
+	for _, s := range spans {
+		if addr < s.Canon || int(addr) >= int(s.Canon)+int(s.Len) {
+			out = append(out, s)
+			continue
+		}
+		if head := addr - s.Canon; head > 0 {
+			out = append(out, canon.Span{Canon: s.Canon, Native: s.Native, Len: head})
+		}
+		if tail := s.Len - (addr - s.Canon) - 1; tail > 0 {
+			out = append(out, canon.Span{Canon: addr + 1, Native: s.Native + (addr - s.Canon) + 1, Len: tail})
+		}
+	}
+	return out
+}
+
+// spriteBytes renumbers each overworld sprite slot's picture id (byte 0 of
+// wSpriteStateData1's slots 0-14) by SPRITE_* constant name. Yellow inserted
+// sprites, so e.g. SPRITE_BOULDER is $3f in Red and $49 in Yellow. Native-only
+// sprites get unused canonical ids so they cannot alias a canonical sprite.
+func spriteBytes(canonical, native Tree, cs map[string]int) (canon.ByteMap, error) {
+	base, ok := cs["wSpriteStateData1"]
+	if !ok {
+		return canon.ByteMap{}, fmt.Errorf("wSpriteStateData1 missing from canonical symbol table")
+	}
+	ct, err := constTable(filepath.Join(canonical.Dir, "constants", "sprite_constants.asm"))
+	if err != nil {
+		return canon.ByteMap{}, err
+	}
+	nt, err := constTable(filepath.Join(native.Dir, "constants", "sprite_constants.asm"))
+	if err != nil {
+		return canon.ByteMap{}, err
+	}
+	n2c := make([]int16, 256)
+	for i := range n2c {
+		n2c[i] = -1
+	}
+	used := make([]bool, 256)
+	for name, c := range ct {
+		if c >= 0 && c < 256 {
+			used[c] = true
+			if n, ok := nt[name]; ok && n >= 0 && n < 256 {
+				n2c[n] = int16(c)
+			}
+		}
+	}
+	var only []string
+	for name, n := range nt {
+		if _, ok := ct[name]; !ok && n >= 0 && n < 256 {
+			only = append(only, name)
+		}
+	}
+	sort.Slice(only, func(i, j int) bool { return nt[only[i]] < nt[only[j]] })
+	free := 0
+	for _, name := range only {
+		for free < 256 && used[free] {
+			free++
+		}
+		if free == 256 {
+			return canon.ByteMap{}, fmt.Errorf("sprite_constants: no free canonical id for native-only %s", name)
+		}
+		used[free] = true
+		n2c[nt[name]] = int16(free)
+	}
+	return canon.ByteMap{Canon: uint16(base), Stride: 0x10, Count: 15, NativeToCanon: n2c}, nil
 }
 
 // appendSpan merges s into the previous span when both are contiguous.
@@ -341,6 +422,10 @@ func Source(pkg, name, generator string, r Result) ([]byte, error) {
 	for _, l := range r.View.Lists {
 		fmt.Fprintf(&b, "\t\t{Canon: %#04x, Native: %#04x, Len: %d, Stride: %d, ValueOffset: %d, Terminator: %#02x, NativeToCanon: %s},\n",
 			l.Canon, l.Native, l.Len, l.Stride, l.ValueOffset, l.Terminator, int16s(l.NativeToCanon))
+	}
+	fmt.Fprintf(&b, "\t},\n\tBytes: []canon.ByteMap{\n")
+	for _, m := range r.View.Bytes {
+		fmt.Fprintf(&b, "\t\t{Canon: %#04x, Stride: %d, Count: %d, NativeToCanon: %s},\n", m.Canon, m.Stride, m.Count, int16s(m.NativeToCanon))
 	}
 	fmt.Fprintf(&b, "\t},\n}\n")
 	return format.Source(b.Bytes())
