@@ -195,11 +195,52 @@ func storeTMForBagSpace(m *emu.Emu, romData []byte, policy MovePolicy) (bool, er
 	return true, nil
 }
 
+// teachTMForBagSpace is the in-place counterpart to storeTMForBagSpace. Storing
+// a TM in the Player PC preserves it but requires reaching a Pokemon Center;
+// teaching it consumes it into a learned move and frees the bag slot where the
+// player already stands. A bag full of machines with no reachable Center is
+// otherwise a dead end, because every machine stack is protected from the toss
+// whitelist. It teaches the first bag TM some party member can legally learn
+// (an empty slot, or a replaceable non-HM move) and verifies a slot actually
+// freed. required=true so a machine is taught even without a material move-set
+// gain: under bag pressure the goal is to consume a finite TM, not to optimize
+// the party.
+func teachTMForBagSpace(m *emu.Emu, romData []byte) (bool, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return false, fmt.Errorf("skill: bag pressure: player not controllable on map %#04x at (%d,%d)",
+			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	party := state.DecodeParty(&mem)
+	for _, it := range state.DecodeInventory(&mem).Items {
+		if it.ID < rom.TM01Item || it.ID > rom.TM50Item || it.Quantity == 0 {
+			continue
+		}
+		decision, err := DecideTMHM(romData, party, it.ID, true)
+		if err != nil || decision.Existing {
+			// No legal recipient for this TM, or it is already known (teaching
+			// it would be a no-op that consumes nothing). Try the next machine.
+			continue
+		}
+		if _, err := TeachTMHM(m, it.ID, true); err != nil {
+			return false, fmt.Errorf("skill: bag pressure: teach TM %#02x: %w", it.ID, err)
+		}
+		state.Snapshot(m, &mem)
+		if bagFreeSlots(&mem) < 1 {
+			return false, fmt.Errorf("skill: bag pressure: taught TM %#02x but no bag slot freed", it.ID)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // ensureBagFreeSlotsManaged resolves bag pressure with productive actions before
 // discarding anything. NUGGET is converted to money, a single safe RARE CANDY
-// is converted to a level, and a finite TM can be preserved in Player PC
-// storage. Only when none of those can create the required capacity does the
-// legacy explicit toss whitelist run.
+// is converted to a level, a finite TM can be preserved in Player PC storage,
+// and — when that Center detour cannot complete — a TM can be taught in place.
+// Only when none of those can create the required capacity does the legacy
+// explicit toss whitelist run.
 func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 	if minFree < 0 || minFree > gen1BagCapacity {
 		return fmt.Errorf("skill: ensureBagFreeSlotsManaged: requested %d free slots, want 0..%d", minFree, gen1BagCapacity)
@@ -252,6 +293,23 @@ func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 		// Storage is a preservation optimization. If it cannot be completed
 		// cleanly, fall through to the explicit toss whitelist rather than
 		// blocking progression solely on optional PC capacity.
+		state.Snapshot(m, &mem)
+		if !state.Controllable(&mem) {
+			return err
+		}
+	}
+	state.Snapshot(m, &mem)
+	if bagFreeSlots(&mem) >= minFree {
+		return nil
+	}
+
+	// PC storage preserves a TM but needs a Pokemon Center, which a dungeon
+	// deep in the late game may not be able to reach. Teaching is the reliable
+	// in-place fallback: it consumes a finite TM into a learned move and frees
+	// the slot where the player stands, so the caller's coordinates stay valid.
+	// Like storage it is a productive optimization, not a hard requirement: a
+	// teach that cannot complete cleanly falls through to the toss whitelist.
+	if _, err := teachTMForBagSpace(m, romData); err != nil {
 		state.Snapshot(m, &mem)
 		if !state.Controllable(&mem) {
 			return err
