@@ -160,6 +160,61 @@ func TestObservedPersonsRespectStationaryBlockers(t *testing.T) {
 	}
 }
 
+// TestObservedPersonsExcludeNonCounterTwoTileApproach pins Fuchsia City
+// (map 0x07). Its north strip holds the Safari Zone's roaming sprites — the
+// Voltorb ball at (25,6), the Chansey at (31,5), the Kangaskhan at (12,6) —
+// each inside a fence-sealed pocket: the tile between the city and the sprite
+// is a solid fence, not floor. The game extends talk range to two tiles only
+// across a tileset counter (IsSpriteOrSignInFrontOfPlayer), so a sprite behind
+// a fence is not talkable from two tiles away. The old filter treated any
+// non-walkable tile as a counter and offered "talk at (25,6)", which TalkAt
+// can never complete — run-5cijq1efy87e looped on it until the stagnation
+// watchdog stopped the run. Pure ROM data plus the collision grid: no emulator.
+func TestObservedPersonsExcludeNonCounterTwoTileApproach(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	const fuchsiaCity = 0x07
+	voltorbX, voltorbY := uint8(25), uint8(6)
+	// The run's final standing tile, in the city proper.
+	px, py := uint8(5), uint8(2)
+
+	// Test assumptions, measured against the grid: the Voltorb's tile is floor
+	// (so this is a reachability question, not a solid-tile one), and the tile
+	// between it and the city is a solid that is NOT a service counter — the
+	// fence of the Safari Zone gate.
+	g := mapObjectReachabilityGrid(romData, fuchsiaCity)
+	if g == nil {
+		t.Fatal("could not build the Fuchsia City grid")
+	}
+	if !g.Walkable(int(voltorbX), int(voltorbY)) {
+		t.Fatalf("assumption wrong: (%d,%d) is not floor in the collision grid", voltorbX, voltorbY)
+	}
+	if g.IsCounterTile(int(voltorbX), int(voltorbY)+1) {
+		t.Fatalf("assumption wrong: (%d,%d) is a counter tile; the fence is not a counter", voltorbX, voltorbY+1)
+	}
+
+	// The Voltorb sits behind the fence: no walk from the city can stand beside
+	// it, and the fence does not extend talk range, so it must not be offered.
+	if personReachable(romData, fuchsiaCity, px, py, voltorbX, voltorbY) {
+		t.Error("Voltorb at (25,6) reported reachable from the city; it is behind the Safari Zone fence")
+	}
+	// The Kangaskhan is in the other sealed pocket of the same strip.
+	if personReachable(romData, fuchsiaCity, px, py, 12, 6) {
+		t.Error("Kangaskhan at (12,6) reported reachable from the city; it is in the sealed west pocket")
+	}
+	// A person in the city proper is still offered: the filter is about the
+	// fence, not about suppressing Fuchsia City talk objectives wholesale.
+	if !personReachable(romData, fuchsiaCity, px, py, 10, 12) {
+		t.Error("Youngster at (10,12) reported unreachable from the city; it is in the city proper")
+	}
+}
+
 func TestMapObjectReachabilityUsesLiveBlockReplacement(t *testing.T) {
 	path := os.Getenv("POKEMON_RED_ROM")
 	if path == "" {
