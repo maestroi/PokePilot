@@ -139,3 +139,31 @@ func decompRAMSymbols(t *testing.T, path string) map[string]uint16 {
 	}
 	return out
 }
+
+// Yellow inserted sprites, so SPRITE_BOULDER is $49 natively but $3f in the
+// canonical engine the shared Gen-I decoders compare against. Victory Road's
+// push solver saw boulders=[] on Yellow until picture ids were renumbered.
+func TestCanonicalViewRenumbersBoulderSprite(t *testing.T) {
+	const nativeBoulder, canonBoulder = 0x49, 0x3f
+	var mem [0x10000]byte
+	mem[0xC100+0x10*2] = nativeBoulder // wSpriteStateData1 slot 2 picture id
+	read := func(addr uint16, dst []byte) { copy(dst, mem[addr:]) }
+	var got [1]byte
+	Canonical.ReadInto(read, 0xC100+0x10*2, got[:])
+	if got[0] != canonBoulder {
+		t.Fatalf("canonical picture id = %#02x, want %#02x", got[0], canonBoulder)
+	}
+}
+
+// Slot 15 is Yellow's Pikachu slot; its hard-coded picture id $49 equals
+// SPRITE_BOULDER and must never read as a canonical sprite.
+func TestCanonicalViewHidesPikachuSlot(t *testing.T) {
+	var mem [0x10000]byte
+	mem[0xC1F0] = 0x49
+	read := func(addr uint16, dst []byte) { copy(dst, mem[addr:]) }
+	var got [1]byte
+	Canonical.ReadInto(read, 0xC1F0, got[:])
+	if got[0] != 0 {
+		t.Fatalf("canonical slot 15 picture id = %#02x, want 0", got[0])
+	}
+}

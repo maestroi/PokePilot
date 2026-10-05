@@ -53,11 +53,36 @@ type IndexList struct {
 	NativeToCanon []int16
 }
 
+// ByteMap renumbers the value of a table of single-byte ids whose constants
+// differ between the canonical and native games (overworld sprite picture
+// ids). Entry i sits at canonical Canon+i*Stride; the byte itself is located
+// through Spans and its value translated through NativeToCanon. Values past
+// the table pass through unchanged.
+type ByteMap struct {
+	Canon         uint16
+	Stride        uint16
+	Count         uint16
+	NativeToCanon []int16
+}
+
+func (b ByteMap) covers(addr int) bool {
+	off := addr - int(b.Canon)
+	return off >= 0 && off%int(b.Stride) == 0 && off/int(b.Stride) < int(b.Count)
+}
+
+func (b ByteMap) apply(val byte) byte {
+	if int(val) < len(b.NativeToCanon) && b.NativeToCanon[val] >= 0 {
+		return byte(b.NativeToCanon[val])
+	}
+	return val
+}
+
 // View is one game's canonical Gen-I memory mapping.
 type View struct {
 	Spans []Span // sorted by Canon, non-overlapping
 	Flags []FlagArray
 	Lists []IndexList
+	Bytes []ByteMap
 }
 
 const (
@@ -181,7 +206,13 @@ func (v *View) byteAt(r *nativeByte, addr int) byte {
 	if !ok {
 		return 0
 	}
-	return r.at(int(nat))
+	val := r.at(int(nat))
+	for _, b := range v.Bytes {
+		if b.covers(addr) {
+			return b.apply(val)
+		}
+	}
+	return val
 }
 
 // touches reports whether canonical [start,end) needs translation.
@@ -228,6 +259,12 @@ func (v *View) compose(raw *[0x10000]byte, start int, dst []byte) {
 				out = byte(l.NativeToCanon[val])
 			}
 			canon[int(l.Canon)+int(off+l.ValueOffset)] = out
+		}
+	}
+	for _, b := range v.Bytes {
+		for i := 0; i < int(b.Count); i++ {
+			at := int(b.Canon) + i*int(b.Stride)
+			canon[at] = b.apply(canon[at])
 		}
 	}
 	copy(canon[echoStart:echoEnd], canon[wramStart:wramStart+(echoEnd-echoStart)])

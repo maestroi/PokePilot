@@ -367,6 +367,7 @@ func TestYellowEventIndicesMatchDecomp(t *testing.T) {
 		"EVENT_PASSED_VOLCANOBADGE_CHECK":          eventPassedVolcanoBadgeCheck,
 		"EVENT_PASSED_EARTHBADGE_CHECK":            eventPassedEarthBadgeCheck,
 		"EVENT_54F":                                eventGotCharmanderRoute24, // Route24.asm Charmander gift
+		"EVENT_VICTORY_ROAD_2_BOULDER_ON_SWITCH2":  eventVictoryRoad2Switch2,
 		"EVENT_GOT_DOME_FOSSIL":                    eventGotDomeFossil,
 		"EVENT_BEAT_MT_MOON_EXIT_SUPER_NERD":       eventBeatMtMoonSuperNerd,
 		"EVENT_BEAT_MT_MOON_3_JESSIE_JAMES":        eventBeatMtMoonJessieJames,
@@ -398,5 +399,20 @@ func TestYellowEventIndicesMatchDecomp(t *testing.T) {
 		if event != want {
 			t.Errorf("%s = %d, decomp says %d", name, event, want)
 		}
+	}
+}
+
+// The shared VictoryRoadClearCave skill finishes at the 2F east switch, so the
+// Yellow fact must already be true inside the cave (the replay of
+// run-acduyt1qbev9c failed "finished but progression fact is false").
+func TestYellowVictoryRoadClearedAtEastSwitchInsideCave(t *testing.T) {
+	const victoryRoad2F = 0xc2
+	var mem fakeMemory
+	if projectYellowStory(&mem, victoryRoad2F).Has(gen1.ProgressVictoryRoadCleared) {
+		t.Fatal("victory_road_cleared true inside the cave before the east switch")
+	}
+	setYellowEvent(&mem, eventVictoryRoad2Switch2)
+	if !projectYellowStory(&mem, victoryRoad2F).Has(gen1.ProgressVictoryRoadCleared) {
+		t.Fatal("victory_road_cleared false after the 2F east switch")
 	}
 }

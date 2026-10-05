@@ -33,6 +33,7 @@ const (
 	eventPassedVolcanoBadgeCheck yellowEvent = 1333
 	eventPassedEarthBadgeCheck   yellowEvent = 1334
 	eventGotCharmanderRoute24    yellowEvent = 0x54f
+	eventVictoryRoad2Switch2     yellowEvent = 1343
 	eventGotDomeFossil           yellowEvent = 1400
 	eventBeatMtMoonSuperNerd     yellowEvent = 1401
 	eventBeatMtMoonJessieJames   yellowEvent = 1402
@@ -229,6 +230,12 @@ func yellowPostSurgeLavenderReached(mapID uint8) bool {
 
 func yellowVictoryRoadCleared(reader game.MemoryReader, mapID uint8, badgeChecksComplete, leagueStarted, champion, mainComplete bool) bool {
 	if leagueStarted || champion || mainComplete {
+		return true
+	}
+	// The final 2F east switch is the cave's own clear boundary, matching the
+	// shared VictoryRoadClearCave skill (and Red's profile). Route 23 resets
+	// it on load, so post-cave geography below covers the later states.
+	if yellowHasEvent(reader, eventVictoryRoad2Switch2) {
 		return true
 	}
 	if !badgeChecksComplete {
