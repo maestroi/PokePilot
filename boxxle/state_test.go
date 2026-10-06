@@ -325,3 +325,49 @@ func samePosSet(a, b []Pos) bool {
 	}
 	return true
 }
+
+// Boards too large for 16x16 cells are drawn one tile per cell with a
+// one-tile player and crate sprites (the sixth puzzle on). Stale tiles below
+// the visible window must not join the board.
+func TestDecodeSmallScaleBoard(t *testing.T) {
+	f := newFakeReader()
+	f.mem[sym.LCDC] = 0x91
+	base := int(sym.BGMapLow)
+	for i := 0; i < sym.BGMapSize*sym.BGMapSize; i++ {
+		f.mem[base+i] = sym.TileEmpty
+	}
+	rows := []string{
+		"######",
+		"#  . #",
+		"# $  #",
+		"#  * #",
+		"######",
+	}
+	const col0, row0 = 4, 3
+	for y, row := range rows {
+		for x, ch := range row {
+			tile := map[rune]byte{'#': sym.SmallTileWall, '$': sym.SmallTileCrate, '.': sym.SmallTileGoal, '*': sym.SmallTileCrateOnGoal}[ch]
+			if tile != 0 {
+				f.mem[base+(row0+y)*sym.BGMapSize+col0+x] = tile
+			}
+		}
+	}
+	for x := 0; x < 12; x++ { // stale off-screen walls
+		f.mem[base+25*sym.BGMapSize+x] = sym.SmallTileWall
+	}
+	// Player one-tile sprite at cell (1,1); a pushed crate sprite at (4,2).
+	f.mem[sym.PlayerSprite], f.mem[sym.PlayerSprite+1], f.mem[sym.PlayerSprite+2] = byte(16+8*(row0+1)), byte(8+8*(col0+1)), 0xB0
+	crate := sym.OAMBase + sym.OAMEntry
+	f.mem[crate], f.mem[crate+1], f.mem[crate+2] = byte(16+8*(row0+2)), byte(8+8*(col0+4)), sym.SmallTileCrate
+
+	state := mustDecode(t, f)
+	if state.Screen != ScreenPuzzle || state.Width != 6 || state.Height != 5 {
+		t.Fatalf("decoded %s %dx%d, want puzzle 6x5", state.Screen, state.Width, state.Height)
+	}
+	if state.Player == nil || *state.Player != (Pos{X: 1, Y: 1}) {
+		t.Fatalf("player = %v, want (1,1)", state.Player)
+	}
+	if len(state.Crates) != 3 || len(state.Goals) != 2 {
+		t.Fatalf("crates=%v goals=%v, want 3 crates and 2 goals", state.Crates, state.Goals)
+	}
+}
