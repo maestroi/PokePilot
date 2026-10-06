@@ -57,3 +57,21 @@ const (
 	// TileEmpty is both floor and the exterior; see the package comment.
 	TileEmpty byte = 0xD4
 )
+
+// Boards too large for 16x16 cells (from the sixth puzzle on) are drawn at
+// 8x8 scale instead: one tile per cell, a one-tile player sprite, and these
+// cell tile ids, in the same goal/crate/wall/crate-on-goal order as above.
+// MEASURED on the real ROM's sixth puzzle: a pushed 0xB9 moves, and pushing
+// the crate off 0xBB leaves 0xB8 behind.
+const (
+	SmallTileGoal        byte = 0xB8
+	SmallTileCrate       byte = 0xB9
+	SmallTileWall        byte = 0xBA
+	SmallTileCrateOnGoal byte = 0xBB
+)
+
+// Visible screen size in tiles; the rest of the 32x32 map can hold stale tiles.
+const (
+	ScreenTilesW int = 20
+	ScreenTilesH int = 18
+)

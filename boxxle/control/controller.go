@@ -26,8 +26,10 @@ const (
 	tapFrames = 2
 	// moveFrames is the wait after a press before the move is checked.
 	moveFrames = 24
-	// tapAttempts bounds how often one step is tapped; see tapUntil.
-	tapAttempts = 3
+	// tapAttempts bounds how often one step is tapped; see tapUntil. The
+	// post-push input lockout outlasts three taps on 8x8-scale boards (the
+	// sixth puzzle on), measured on the real ROM; six clears ten puzzles.
+	tapAttempts = 6
 	// settleFrames bounds the extra wait when the board is still animating:
 	// the decoder reports no player while the sprite is between cells, and a
 	// pushed crate is a sprite too, so the background briefly shows one crate

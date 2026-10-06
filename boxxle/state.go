@@ -46,7 +46,8 @@ type State struct {
 	Height int `json:"height"`
 
 	// Tiles holds the top-left tile id of each board cell, relative to the
-	// board bounding box, as the game drew it. It is evidence for diagnosis;
+	// board bounding box, as the game drew it at 16x16 scale (8x8-scale
+	// boards are normalized to the same ids). It is evidence for diagnosis;
 	// the Walls/Goals/Crates/Player fields are the classification.
 	Tiles [][]byte `json:"tiles,omitempty"`
 
@@ -93,10 +94,37 @@ var ErrMisaligned = errors.New("boxxle: board cells are not on one 2x2 grid")
 // as puzzles.
 const minWalls = 8
 
-// cell is one classified 2x2 block of the background map, in tile coordinates.
+// cell is one classified block of the background map, in tile coordinates.
 type cell struct {
 	col, row int
-	kind     byte // top-left tile id
+	kind     byte // top-left tile id, normalized to the 16x16-scale ids
+}
+
+// cellScale is one scale Boxxle draws a board at: tiles per cell side and the
+// top-left tile id of each cell kind.
+type cellScale struct {
+	tiles                          int
+	wall, crate, goal, crateOnGoal byte
+}
+
+var (
+	largeCells = cellScale{sym.CellTiles, sym.TileWall, sym.TileCrate, sym.TileGoal, sym.TileCrateOnGoal}
+	smallCells = cellScale{1, sym.SmallTileWall, sym.SmallTileCrate, sym.SmallTileGoal, sym.SmallTileCrateOnGoal}
+)
+
+// normalize maps one of this scale's cell ids to the 16x16-scale id.
+func (s cellScale) normalize(tl byte) (byte, bool) {
+	switch tl {
+	case s.wall:
+		return sym.TileWall, true
+	case s.crate:
+		return sym.TileCrate, true
+	case s.goal:
+		return sym.TileGoal, true
+	case s.crateOnGoal:
+		return sym.TileCrateOnGoal, true
+	}
+	return 0, false
 }
 
 // DecodeState translates the supported Boxxle memory layout into semantic
@@ -107,19 +135,28 @@ func DecodeState(reader game.MemoryReader) (State, error) {
 	}
 
 	bg := readBackground(reader)
-	cells := findCells(bg)
-	walls := 0
-	for _, c := range cells {
-		if c.kind == sym.TileWall {
-			walls++
+	scx, scy := int(reader.Peek8(sym.SCX)), int(reader.Peek8(sym.SCY))
+	var cells []cell
+	var scale cellScale
+	for _, s := range []cellScale{largeCells, smallCells} {
+		found := findCells(bg, s, scx, scy)
+		walls := 0
+		for _, c := range found {
+			if c.kind == sym.TileWall {
+				walls++
+			}
+		}
+		if walls >= minWalls {
+			cells, scale = found, s
+			break
 		}
 	}
-	if walls < minWalls {
+	if cells == nil {
 		return State{Screen: ScreenUnknown}, nil
 	}
 
 	state := State{Screen: ScreenPuzzle}
-	if err := decodeBoard(&state, reader, cells); err != nil {
+	if err := decodeBoard(&state, reader, cells, scale); err != nil {
 		return State{Screen: ScreenUnknown}, err
 	}
 	return state, nil
@@ -138,20 +175,28 @@ func readBackground(reader game.MemoryReader) [sym.BGMapSize][sym.BGMapSize]byte
 	return bg
 }
 
-// findCells returns every 2x2 block that is exactly a known cell kind: four
-// consecutive tile ids, top-left first.
-func findCells(bg [sym.BGMapSize][sym.BGMapSize]byte) []cell {
+// findCells returns every block that is exactly a known cell kind at scale s:
+// a 2x2 block is four consecutive tile ids, top-left first. An 8x8-scale board
+// fits on screen by construction and the off-screen map holds a stale board,
+// so at that scale only the visible window counts.
+func findCells(bg [sym.BGMapSize][sym.BGMapSize]byte, s cellScale, scx, scy int) []cell {
+	visible := func(col, row int) bool {
+		return s.tiles > 1 ||
+			(col-scx/8)&(sym.BGMapSize-1) < sym.ScreenTilesW && (row-scy/8)&(sym.BGMapSize-1) < sym.ScreenTilesH
+	}
 	var cells []cell
-	for row := 0; row+1 < sym.BGMapSize; row++ {
-		for col := 0; col+1 < sym.BGMapSize; col++ {
-			tl := bg[row][col]
-			switch tl {
-			case sym.TileWall, sym.TileCrate, sym.TileGoal, sym.TileCrateOnGoal:
-			default:
+	for row := 0; row+s.tiles-1 < sym.BGMapSize; row++ {
+		for col := 0; col+s.tiles-1 < sym.BGMapSize; col++ {
+			if !visible(col, row) {
 				continue
 			}
-			if bg[row][col+1] == tl+1 && bg[row+1][col] == tl+2 && bg[row+1][col+1] == tl+3 {
-				cells = append(cells, cell{col: col, row: row, kind: tl})
+			tl := bg[row][col]
+			kind, ok := s.normalize(tl)
+			if !ok {
+				continue
+			}
+			if s.tiles == 1 || bg[row][col+1] == tl+1 && bg[row+1][col] == tl+2 && bg[row+1][col+1] == tl+3 {
+				cells = append(cells, cell{col: col, row: row, kind: kind})
 			}
 		}
 	}
@@ -160,24 +205,24 @@ func findCells(bg [sym.BGMapSize][sym.BGMapSize]byte) []cell {
 
 // decodeBoard classifies cells into walls, goals, crates and the player, then
 // seals everything the player cannot reach.
-func decodeBoard(state *State, reader game.MemoryReader, cells []cell) error {
+func decodeBoard(state *State, reader game.MemoryReader, cells []cell, scale cellScale) error {
 	col0, row0 := cells[0].col, cells[0].row
 	minX, minY, maxX, maxY := 1<<30, 1<<30, -1, -1
 	for _, c := range cells {
-		if (c.col-col0)%sym.CellTiles != 0 || (c.row-row0)%sym.CellTiles != 0 {
+		if (c.col-col0)%scale.tiles != 0 || (c.row-row0)%scale.tiles != 0 {
 			return fmt.Errorf("%w: cell at tile (%d,%d) vs origin (%d,%d)", ErrMisaligned, c.col, c.row, col0, row0)
 		}
-		x, y := floorDiv(c.col-col0, sym.CellTiles), floorDiv(c.row-row0, sym.CellTiles)
+		x, y := floorDiv(c.col-col0, scale.tiles), floorDiv(c.row-row0, scale.tiles)
 		minX, minY, maxX, maxY = min(minX, x), min(minY, y), max(maxX, x), max(maxY, y)
 	}
 
 	oam := readOAM(reader)
 	scx, scy := int(reader.Peek8(sym.SCX)), int(reader.Peek8(sym.SCY))
-	player, hasPlayer := spriteCell(oam[0], scx, scy, col0, row0)
+	player, hasPlayer := spriteCell(oam[0], scx, scy, col0, row0, scale.tiles)
 	if hasPlayer {
 		minX, minY, maxX, maxY = min(minX, player.X), min(minY, player.Y), max(maxX, player.X), max(maxY, player.Y)
 	}
-	movedCrates := spriteCrates(oam, scx, scy, col0, row0)
+	movedCrates := spriteCrates(oam, scx, scy, col0, row0, scale)
 	for _, c := range movedCrates {
 		p := c.pos
 		minX, minY, maxX, maxY = min(minX, p.X), min(minY, p.Y), max(maxX, p.X), max(maxY, p.Y)
@@ -194,7 +239,7 @@ func decodeBoard(state *State, reader game.MemoryReader, cells []cell) error {
 
 	wall := make(map[Pos]bool)
 	for _, c := range cells {
-		p := Pos{X: floorDiv(c.col-col0, sym.CellTiles) - minX, Y: floorDiv(c.row-row0, sym.CellTiles) - minY}
+		p := Pos{X: floorDiv(c.col-col0, scale.tiles) - minX, Y: floorDiv(c.row-row0, scale.tiles) - minY}
 		state.Tiles[p.Y][p.X] = c.kind
 		switch c.kind {
 		case sym.TileWall:
@@ -275,10 +320,11 @@ func readOAM(reader game.MemoryReader) [sym.OAMEntries]sprite {
 	return oam
 }
 
-// spriteCell maps the top-left sprite of a 16x16 object onto the board grid.
+// spriteCell maps the top-left sprite of an object onto a board grid of
+// tiles-wide cells.
 // It reports false while the sprite is off screen or between cells, so a
 // mid-step frame is "not there yet" rather than a wrong cell.
-func spriteCell(s sprite, scx, scy, col0, row0 int) (Pos, bool) {
+func spriteCell(s sprite, scx, scy, col0, row0, tiles int) (Pos, bool) {
 	y, x := int(s.y), int(s.x)
 	if y < 16 || y >= 160 || x < 8 || x >= 168 {
 		return Pos{}, false
@@ -289,10 +335,10 @@ func spriteCell(s sprite, scx, scy, col0, row0 int) (Pos, bool) {
 		return Pos{}, false
 	}
 	dx, dy := px/8-col0, py/8-row0
-	if dx%sym.CellTiles != 0 || dy%sym.CellTiles != 0 {
+	if dx%tiles != 0 || dy%tiles != 0 {
 		return Pos{}, false
 	}
-	return Pos{X: floorDiv(dx, sym.CellTiles), Y: floorDiv(dy, sym.CellTiles)}, true
+	return Pos{X: floorDiv(dx, tiles), Y: floorDiv(dy, tiles)}, true
 }
 
 // spriteCrate is a crate drawn as a sprite.
@@ -301,14 +347,20 @@ type spriteCrate struct {
 	onGoal bool
 }
 
-// spriteCrates returns the crates drawn as sprites: four entries carrying the
-// crate's consecutive tile ids in a 2x2 block. Entry 0 is the player and is
-// skipped.
-func spriteCrates(oam [sym.OAMEntries]sprite, scx, scy, col0, row0 int) []spriteCrate {
+// spriteCrates returns the crates drawn as sprites: at 16x16 scale four
+// entries carrying the crate's consecutive tile ids in a 2x2 block, at 8x8
+// scale one entry. Entry 0 is the player and is skipped.
+func spriteCrates(oam [sym.OAMEntries]sprite, scx, scy, col0, row0 int, scale cellScale) []spriteCrate {
 	var out []spriteCrate
 	for i := 1; i < len(oam); i++ {
 		tl := oam[i]
-		if tl.tile != sym.TileCrate && tl.tile != sym.TileCrateOnGoal {
+		if tl.tile != scale.crate && tl.tile != scale.crateOnGoal {
+			continue
+		}
+		if scale.tiles == 1 {
+			if p, ok := spriteCell(tl, scx, scy, col0, row0, 1); ok {
+				out = append(out, spriteCrate{pos: p, onGoal: tl.tile == scale.crateOnGoal})
+			}
 			continue
 		}
 		var have [3]bool
@@ -325,8 +377,8 @@ func spriteCrates(oam [sym.OAMEntries]sprite, scx, scy, col0, row0 int) []sprite
 		if !have[0] || !have[1] || !have[2] {
 			continue
 		}
-		if p, ok := spriteCell(tl, scx, scy, col0, row0); ok {
-			out = append(out, spriteCrate{pos: p, onGoal: tl.tile == sym.TileCrateOnGoal})
+		if p, ok := spriteCell(tl, scx, scy, col0, row0, sym.CellTiles); ok {
+			out = append(out, spriteCrate{pos: p, onGoal: tl.tile == scale.crateOnGoal})
 		}
 	}
 	return out
