@@ -142,18 +142,28 @@ func PokemonTower(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		}
 	}
 
-	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, rareCandyItem); count < 1 {
+	if m.Peek8(sym.CurMap) != pokemonTower7FMap {
 		// Pickup approaches within the CURRENT map only; it does not cross
 		// maps on its own. Reach 6F's own 5F-side warp landing first (always
 		// walkable and always reachable, whatever floor the climb resumes
 		// from), then Pickup's local approach can find a tile beside the ball.
-		sixFLanding := Destination{Map: pokemonTower6FMap, X: 18, Y: 9}
-		if _, err := travelPokemonTower(m, romData, sixFLanding, policy, pokemonTowerTravelEngagements); err != nil {
-			return fmt.Errorf("skill: PokemonTower: reach 6F for the Rare Candy: %w", err)
+		if m.Peek8(sym.CurMap) != pokemonTower6FMap {
+			sixFLanding := Destination{Map: pokemonTower6FMap, X: 18, Y: 9}
+			if _, err := travelPokemonTower(m, romData, sixFLanding, policy, pokemonTowerTravelEngagements); err != nil {
+				return fmt.Errorf("skill: PokemonTower: reach 6F for the Rare Candy: %w", err)
+			}
 		}
-		if err := Pickup(m, romData, pokemonTower6FRareCandyX, pokemonTower6FRareCandyY, rareCandyItem, policy); err != nil {
-			return fmt.Errorf("skill: PokemonTower: collect 6F's Rare Candy (blocks the only route through): %w", err)
+		// The ball's toggleable-object flag, not the bag, says whether the
+		// corridor is still sealed: a Rare Candy from anywhere else must not
+		// skip the pickup (run-d6dokr184ky81 walked out of the Tower instead).
+		live, err := pokemonTower6FRareCandyLive(m, romData)
+		if err != nil {
+			return err
+		}
+		if live {
+			if err := Pickup(m, romData, pokemonTower6FRareCandyX, pokemonTower6FRareCandyY, rareCandyItem, policy); err != nil {
+				return fmt.Errorf("skill: PokemonTower: collect 6F's Rare Candy (blocks the only route through): %w", err)
+			}
 		}
 	}
 
@@ -203,6 +213,19 @@ func towerBattleResolver(m *emu.Emu, policy MovePolicy) resolveBattle {
 		outcome, err := Battle(m, policy)
 		return battleResolution{outcome: outcome}, err
 	}
+}
+
+// pokemonTower6FRareCandyLive reports whether 6F's corridor-sealing Rare
+// Candy ball is still on the map. It must be called on 6F: the toggleable
+// object list only describes the current map.
+func pokemonTower6FRareCandyLive(m *emu.Emu, romData []byte) (bool, error) {
+	id, ok, err := mapObjectIDAt(romData, pokemonTower6FMap, pokemonTower6FRareCandyX, pokemonTower6FRareCandyY)
+	if err != nil || !ok {
+		return false, fmt.Errorf("skill: PokemonTower: resolve 6F Rare Candy object: ok=%v err=%v", ok, err)
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return !state.HiddenObjectIDs(&mem)[uint8(id)], nil
 }
 
 func travelPokemonTower(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxEngagements int) (TravelResult, error) {
