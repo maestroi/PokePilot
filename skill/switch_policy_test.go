@@ -131,6 +131,55 @@ func TestChooseTacticalSwitchEscapesDangerousMatchupWithoutMaterialScoreGain(t *
 	}
 }
 
+// Escape into a safer but powerless fodder mon is how Lance softlocked in
+// run-1y01b57y5to0u2se2d2ns3t02z: Lapras faced Aerodactyl's 2x Rock, pivoted to
+// Kabuto, then only a frozen Vileplume remained for Dragonite's Barrier loop.
+func TestChooseTacticalSwitchStaysInsteadOfEscapingIntoFodder(t *testing.T) {
+	const flyingType uint8 = 0x02
+	surf := rom.Move{ID: 57, Power: 95, Type: typeWater, Accuracy: 255, PP: 15}
+	scratch := rom.Move{ID: 10, Power: 40, Type: typeNormal, Accuracy: 255, PP: 35}
+	chart := []typePair{
+		// Aerodactyl-shaped Rock/Flying: 2x into Water, neutral/resist into Rock.
+		{typeRock, typeWater, 20},
+		{flyingType, typeWater, 10},
+		{typeRock, typeRock, 10},
+		{flyingType, typeRock, 5},
+		{typeWater, typeRock, 20},
+		{typeWater, flyingType, 20},
+		{typeNormal, typeRock, 5},
+		{typeNormal, flyingType, 10},
+	}
+	romData := fakeROMChart(t, chart, surf, scratch)
+	active := healthySwitchMon(19, 64, typeWater, typeWater, surf.ID)
+	active.HP, active.MaxHP = 143, 277
+	active.Attack, active.Defense, active.Speed, active.Special = 176, 160, 120, 180
+	fodder := healthySwitchMon(90, 30, typeRock, typeRock, scratch.ID)
+	fodder.HP, fodder.MaxHP = 59, 59
+	fodder.Attack, fodder.Defense, fodder.Speed, fodder.Special = 50, 90, 40, 40
+	var mem state.Mem
+	putSwitchMon(&mem, 0, active)
+	putSwitchMon(&mem, 1, fodder)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(active, [2]uint8{typeRock, flyingType}, surf.ID)
+	b.ActiveHP, b.ActiveMaxHP = active.HP, active.MaxHP
+	b.ActiveAttack, b.ActiveDefense, b.ActiveSpecial = active.Attack, active.Defense, active.Special
+
+	decision := chooseTacticalSwitch(romData, &mem, b)
+	if decision.Switch {
+		t.Fatalf("decision = %+v, want stay with SE Surf carry instead of fodder escape", decision)
+	}
+	if decision.Active.IncomingRisk < dangerousIncomingRisk {
+		t.Fatalf("active incoming risk = %d, want dangerous matchup setup", decision.Active.IncomingRisk)
+	}
+	if decision.Candidate.IncomingRisk >= decision.Active.IncomingRisk {
+		t.Fatalf("candidate risk = %d, active risk = %d; test setup needs safer fodder",
+			decision.Candidate.IncomingRisk, decision.Active.IncomingRisk)
+	}
+	if decision.Reason != "candidate-not-materially-better" {
+		t.Fatalf("reason = %q, want candidate-not-materially-better", decision.Reason)
+	}
+}
+
 func TestChooseTacticalSwitchStaysForEquivalentCandidate(t *testing.T) {
 	move := rom.Move{ID: 33, Power: 50, Type: typeNormal, Accuracy: 255, PP: 20}
 	romData := fakeROM(t, move)

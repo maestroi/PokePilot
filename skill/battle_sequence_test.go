@@ -126,6 +126,48 @@ func TestSequenceSwitchPreservesUniqueFutureCounter(t *testing.T) {
 	}
 }
 
+// Future-preservation must not rotate a winning carry onto fodder. The Lance
+// repro had Lapras at Dragonite 15 HP; sequence math preferred Kabuto and the
+// AI Hyper Potion'd back to full.
+func TestSequenceSwitchDoesNotPivotWinningActiveOntoWeakerBench(t *testing.T) {
+	const (
+		currentType uint16 = 10
+		futureType  uint16 = 20
+	)
+	strategy := &sequenceTestStrategy{scores: map[uint16]map[uint16]int64{
+		currentType: {1: 800, 2: 100},
+		futureType:  {1: 1000, 2: 100},
+	}}
+	resources := game.BattleResourcesState{
+		InBattle:   true,
+		ActiveSlot: 0,
+		Party: []game.BattlePartyMon{
+			sequenceTestMon(1, 1, 80),
+			sequenceTestMon(2, 2, 100),
+		},
+	}
+	context := BattleSequenceContext{
+		FutureOpponents: []game.BattleCombatant{{Type1: futureType, Type2: futureType}},
+	}
+
+	decision := chooseTacticalSwitchWithStrategyContext(
+		strategy,
+		nil,
+		resources,
+		sequenceBattle(1, currentType),
+		context,
+	)
+	if decision.Switch {
+		t.Fatalf("decision = %+v, want stay with winning future specialist instead of fodder pivot", decision)
+	}
+	if decision.Reason != "candidate-not-materially-better" {
+		t.Fatalf("reason = %q, want candidate-not-materially-better", decision.Reason)
+	}
+	if decision.Active.Score <= decision.Candidate.Score {
+		t.Fatalf("test setup: active score %d should beat candidate %d", decision.Active.Score, decision.Candidate.Score)
+	}
+}
+
 func TestSequenceSwitchStillUsesFutureSpecialistWhenCurrentNeedIsLarge(t *testing.T) {
 	const (
 		currentType uint16 = 10
