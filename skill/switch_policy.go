@@ -22,6 +22,17 @@ const (
 	// when a high-level carry's raw offense keeps its aggregate score above the
 	// normal 50% switch threshold. Risk is expressed in tenths (20 == 2x).
 	dangerousIncomingRisk = 20
+
+	// Escape still spends the turn, so the safer bench member must remain a
+	// credible fighter. Composite Score already folds offense, HP, status and
+	// the incoming-risk defense factor; requiring one third of the active's
+	// sequenced score blocks fodder pivots (a L30 scratcher into Aerodactyl)
+	// while still allowing a real resist switch that trades some raw offense.
+	// Measured: run-1y01b57y5to0u2se2d2ns3t02z Lance softlocked after escaping
+	// into Kabuto, leaving only a frozen Vileplume against Dragonite's
+	// Barrier/Agility AI.
+	escapeScoreNumerator   int64 = 1
+	escapeScoreDenominator int64 = 3
 )
 
 // switchEvaluation explains how one party member looks against the current
@@ -150,12 +161,25 @@ func chooseTacticalSwitchWithStrategyContext(
 	}
 	if decision.Active.IncomingRisk >= dangerousIncomingRisk &&
 		decision.Candidate.IncomingRisk < decision.Active.IncomingRisk &&
-		decision.Candidate.BestMove.ExpectedScore > 0 {
+		decision.Candidate.BestMove.ExpectedScore > 0 &&
+		sequenceSwitchScore(decision.Candidate)*escapeScoreDenominator >
+			sequenceSwitchScore(decision.Active)*escapeScoreNumerator {
 		decision.Switch = true
 		decision.Reason = "escape-dangerous-matchup"
 		return decision
 	}
 	if sequenceSwitchScore(decision.Candidate)*switchGainDenominator > sequenceSwitchScore(decision.Active)*switchGainNumerator {
+		// Future-preservation discounts the active so a specialist can be
+		// rotated out of a bad matchup. That discount must not pivot a winning
+		// active onto a worse raw scorer: against Lance, Lapras had Dragonite
+		// at 15 HP and sequence math switched to Kabuto, which gifted the AI a
+		// Hyper Potion turn and left only a frozen Vileplume
+		// (run-1y01b57y5to0u2se2d2ns3t02z).
+		if decision.Candidate.Score < decision.Active.Score &&
+			decision.Active.IncomingRisk < dangerousIncomingRisk {
+			decision.Reason = "candidate-not-materially-better"
+			return decision
+		}
 		decision.Switch = true
 		if context.empty() {
 			decision.Reason = "material-matchup-improvement"
