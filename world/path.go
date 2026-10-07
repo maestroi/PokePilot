@@ -77,6 +77,8 @@ func (o *astarOpen) Pop() any {
 // The start tile is treated as walkable regardless of the grid: a player
 // that arrived through a warp stands on a solid tile, and the path simply
 // leaves it. This is a local special case — the Grid is never mutated.
+// The same holds for blocked: the player already occupies the start, so a
+// sprite recorded on that tile cannot stop the player leaving it.
 func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, error) {
 	if !g.InBounds(dx, dy) || !g.Walkable(dx, dy) || blocked[[2]int{dx, dy}] {
 		return nil, ErrNoPath
@@ -84,7 +86,7 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 	if sx == dx && sy == dy {
 		return []Step{}, nil
 	}
-	if !g.InBounds(sx, sy) || blocked[[2]int{sx, sy}] {
+	if !g.InBounds(sx, sy) {
 		return nil, ErrNoPath
 	}
 
@@ -133,13 +135,13 @@ func FindPath(g *Grid, sx, sy, dx, dy int, blocked map[[2]int]bool) ([]Step, err
 // walkable: warps and stairs are solid, and the player takes one by
 // standing on the adjacent walkable tile and pushing toward it.
 //
-// As in FindPath, the start tile is walkable regardless of the grid and
-// the Grid is never mutated. If several neighbours are reachable, the one
+// As in FindPath, the start tile is walkable regardless of the grid or
+// blocked, and the Grid is never mutated. If several neighbours are reachable, the one
 // with the shortest path wins; ties break toward the lowest y, then the
 // lowest x, so the result is reproducible. ErrNoPath is returned when no
 // neighbour is reachable.
 func FindPathAdjacent(g *Grid, sx, sy, tx, ty int, blocked map[[2]int]bool) ([]Step, Step, error) {
-	if !g.InBounds(sx, sy) || !g.InBounds(tx, ty) || blocked[[2]int{sx, sy}] {
+	if !g.InBounds(sx, sy) || !g.InBounds(tx, ty) {
 		return nil, Step{}, ErrNoPath
 	}
 

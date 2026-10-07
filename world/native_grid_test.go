@@ -99,6 +99,21 @@ func TestFindNativePathLeavesSolidWarpStart(t *testing.T) {
 	}
 }
 
+func TestFindNativePathLeavesOccupiedStart(t *testing.T) {
+	grid := nativeCutTestGrid(t, []bool{true, true, true, true, true}, nil)
+	occupied := map[[2]int]bool{{0, 0}: true}
+	path, err := FindNativePath(grid, 0, 0, 4, 0, occupied)
+	if err != nil {
+		t.Fatalf("FindNativePath from occupied start: %v", err)
+	}
+	if len(path) != 4 {
+		t.Fatalf("path=%+v, want 4 steps off the occupied start", path)
+	}
+	if _, err := FindNativePath(grid, 4, 0, 0, 0, occupied); !errors.Is(err, ErrNoPath) {
+		t.Fatalf("path INTO an occupied tile: err = %v, want ErrNoPath", err)
+	}
+}
+
 func findNativeCutApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool) (NativeObstacleApproach, error) {
 	return FindNativeObstacleApproach(g, sx, sy, tx, ty, occupied, func(k worldmodel.NativeObstacle) bool { return k == worldmodel.ObstacleCutTree })
 }
