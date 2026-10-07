@@ -251,6 +251,18 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
 		return nil, err
 	}
+	if errors.Is(geometricErr, ErrRouteReplanRequired) && len(geometric) > 0 {
+		// The diagnostic route stopped at a frontier. If everything past it
+		// leads back only through the frontier's own source map, it is a dead
+		// end: no capability on it explains the failure, and blaming it sends
+		// the planner after the wrong prerequisite (Lance's exit was reported
+		// as the blocker for every Kanto destination from Indigo's sealed
+		// Victory Road pocket, run-1nnzti2l332xm2pdodobrapjlh).
+		frontier := geometric[len(geometric)-1]
+		if !mapsConnectedAvoiding(g, frontier.To, to, frontier.From) {
+			return nil, err
+		}
+	}
 	var blockages []gameruntime.TransitionBlockage
 	for _, edge := range geometric {
 		if blockage, ok := denied[edge]; ok {
@@ -265,7 +277,16 @@ func FindRoutePlanAtDestinationWithCapabilities(
 
 // mapsConnected is a component-blind BFS over g's edges.
 func mapsConnected(g *Graph, from, to uint8) bool {
+	return mapsConnectedAvoiding(g, from, to, from)
+}
+
+// mapsConnectedAvoiding is mapsConnected that never steps into avoid, unless
+// avoid is the target itself.
+func mapsConnectedAvoiding(g *Graph, from, to, avoid uint8) bool {
 	seen := map[uint8]bool{from: true}
+	if avoid != to {
+		seen[avoid] = true
+	}
 	queue := []uint8{from}
 	for len(queue) > 0 {
 		cur := queue[0]

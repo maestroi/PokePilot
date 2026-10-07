@@ -202,17 +202,21 @@ func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
 	return state.Route23NorthOfVictoryRoad(int(x), int(y))
 }
 
-// route23LeagueReturnPivotAvailable reports whether the southbound semantic
-// action can honestly own the current source state. Its executable behavior is
-// the three Route 23 Surf bands; it cannot manufacture a path from Indigo's
-// disconnected Victory Road exit pocket back onto the south cave component.
+// route23SurfPivotAvailable reports whether either Route 23 Surf-band action
+// (northbound red:route23_league_approach or southbound
+// red:route23_league_return) can honestly own the current source state. Their
+// executable behavior is the three Route 23 Surf bands; neither can manufacture
+// a path from Indigo's disconnected Victory Road exit pocket onto the south
+// cave component. The northbound action targets the 1F door at (4,31), which
+// the pocket cannot walk to either (run-1nnzti2l332xm2pdodobrapjlh: every
+// Kanto mart priced as replan-reachable from Indigo through that door).
 //
 // This is deliberately current-state scoped. A player already south of Victory
 // Road still needs the action to bridge the water bands. A player in another
 // part of Kanto may also route through Route 23 normally. Only states already
 // committed to the Indigo/north pocket suppress the pivot and let component
 // routing (or Travel's earlier legal fast-travel step) decide what is possible.
-func route23LeagueReturnPivotAvailable(mapID, x, y uint8) bool {
+func route23SurfPivotAvailable(mapID, x, y uint8) bool {
 	switch mapID {
 	case indigoPlateauMap, indigoPlateauLobbyMap:
 		return false
@@ -227,7 +231,7 @@ func route23LeagueReturnPivotAvailable(mapID, x, y uint8) bool {
 // resets Victory Road's boulder events when the north exterior loads; treating
 // the exit pocket as an executable reverse corridor moved failed journeys into
 // an unsolvable 3F switch state. Southbound Route 23 execution owns only the
-// Surf bands below the cave. See route23LeagueReturnPivotAvailable.
+// Surf bands below the cave. See route23SurfPivotAvailable.
 
 func resolveRoute22LeagueRival(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if !currentStoryFacts(m).Route22RivalResolved {
