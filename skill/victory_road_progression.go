@@ -202,14 +202,22 @@ func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
 	return state.Route23NorthOfVictoryRoad(int(x), int(y))
 }
 
-// route23SurfPivotAvailable reports whether either Route 23 Surf-band action
-// (northbound red:route23_league_approach or southbound
-// red:route23_league_return) can honestly own the current source state. Their
-// executable behavior is the three Route 23 Surf bands; neither can manufacture
-// a path from Indigo's disconnected Victory Road exit pocket onto the south
-// cave component. The northbound action targets the 1F door at (4,31), which
-// the pocket cannot walk to either (run-1nnzti2l332xm2pdodobrapjlh: every
-// Kanto mart priced as replan-reachable from Indigo through that door).
+// route23SouthOfSurfBands reports whether a Route 23 Y coordinate is already
+// south of every water band the League return/approach actions own. The
+// southernmost barrier row is route23SurfBarrierRows[0] (101); land south of
+// that row reaches the Route 22 Gate warps by ordinary walking.
+func route23SouthOfSurfBands(y uint8) bool {
+	return int(y) > route23SurfBarrierRows[0]
+}
+
+// route23SurfPivotAvailable reports whether the northbound Route 23 Surf-band
+// action (red:route23_league_approach) can honestly own the current source
+// state. Its executable behavior is the three Route 23 Surf bands; it cannot
+// manufacture a path from Indigo's disconnected Victory Road exit pocket onto
+// the south cave component. The northbound action targets the 1F door at
+// (4,31), which the pocket cannot walk to either
+// (run-1nnzti2l332xm2pdodobrapjlh: every Kanto mart priced as replan-reachable
+// from Indigo through that door).
 //
 // This is deliberately current-state scoped. A player already south of Victory
 // Road still needs the action to bridge the water bands. A player in another
@@ -223,6 +231,11 @@ func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
 // on the 2F exit door still priced every Kanto mart through the return action
 // (run-1gzyx3twnqj6d3hz6yzt02io3g looped "buy 1 POTION" -> no_route and
 // "go to victory road 2f" until the stagnation watchdog stopped it).
+//
+// Southbound red:route23_league_return uses route23LeagueReturnPivotAvailable:
+// once the player is already south of the Surf bands, the Route 22 Gate exit
+// is ordinary geometry and must not require Surf/badge checks
+// (run-3w50i60f631u41je7v36wsudzt stood at (9,137) with only Boulder Badge).
 func route23SurfPivotAvailable(g *world.Graph, mapID, x, y uint8) bool {
 	switch mapID {
 	case indigoPlateauMap, indigoPlateauLobbyMap:
@@ -234,6 +247,20 @@ func route23SurfPivotAvailable(g *world.Graph, mapID, x, y uint8) bool {
 	default:
 		return true
 	}
+}
+
+// route23LeagueReturnPivotAvailable reports whether southbound
+// red:route23_league_return should attach. Same Indigo/north-pocket
+// suppression as the approach action, plus: when the player is already south
+// of every Surf band, leave the Route 22 Gate warps as ordinary geometry so a
+// badge-incomplete party can walk out. The executor already treats
+// y >= route23SouthEntry.Y as a no-op for the same reason; routing must match
+// or the edge stays Surf-gated and soft-locks the south pocket.
+func route23LeagueReturnPivotAvailable(g *world.Graph, mapID, x, y uint8) bool {
+	if !route23SurfPivotAvailable(g, mapID, x, y) {
+		return false
+	}
+	return mapID != route23Map || !route23SouthOfSurfBands(y)
 }
 
 // victoryRoad2FExitSide reports whether (x,y) on Victory Road 2F walks to the

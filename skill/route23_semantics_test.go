@@ -102,6 +102,8 @@ func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
 		{name: "north exterior", mapID: route23Map, x: 18, y: 30, want: false},
 		{name: "south cave door", mapID: route23Map, x: 4, y: 31, want: true},
 		{name: "south surf approach", mapID: route23Map, x: 8, y: 80, want: true},
+		// Approach may still attach at the south gate (Surf north to the League).
+		// Return must not: see TestRoute23LeagueReturnOrdinaryAtSouthGate.
 		{name: "route 22 gate approach", mapID: route23Map, x: 7, y: 138, want: true},
 		{name: "indigo exterior", mapID: indigoPlateauMap, want: false},
 		{name: "indigo lobby", mapID: indigoPlateauLobbyMap, want: false},
@@ -109,7 +111,35 @@ func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := route23SurfPivotAvailable(nil, tc.mapID, tc.x, tc.y); got != tc.want {
-				t.Fatalf("pivot available=%v, want %v", got, tc.want)
+				t.Fatalf("approach pivot available=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRoute23LeagueReturnOrdinaryAtSouthGate pins run-3w50i60f631u41je7v36wsudzt:
+// a player already south of every Surf band must see the Route 22 Gate warps as
+// ordinary geometry. Attaching red:route23_league_return there required Surf +
+// seven badge checks and soft-locked Boulder-only parties out of Kanto.
+func TestRoute23LeagueReturnOrdinaryAtSouthGate(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		mapID, x, y uint8
+		want        bool
+	}{
+		{name: "south gate player", mapID: route23Map, x: 9, y: 137, want: false},
+		{name: "route 22 gate approach", mapID: route23Map, x: 7, y: 138, want: false},
+		{name: "just south of last water band", mapID: route23Map, x: 8, y: 102, want: false},
+		{name: "on southernmost barrier row", mapID: route23Map, x: 8, y: 101, want: true},
+		{name: "between surf bands", mapID: route23Map, x: 8, y: 80, want: true},
+		{name: "south cave door", mapID: route23Map, x: 4, y: 31, want: true},
+		{name: "north exit door", mapID: route23Map, x: 14, y: 31, want: false},
+		{name: "indigo lobby", mapID: indigoPlateauLobbyMap, want: false},
+		{name: "unrelated map", mapID: semanticVermilionCityMap, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := route23LeagueReturnPivotAvailable(nil, tc.mapID, tc.x, tc.y); got != tc.want {
+				t.Fatalf("return pivot available=%v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -158,6 +188,40 @@ func TestRoute23NorthVictoryRoadExitIsNotCollapsedIntoLeagueApproach(t *testing.
 	transition, ok := redAuditedRouteTransitionForEdge(edge)
 	if ok && transition.ID == "red:route23_league_approach" {
 		t.Fatal("north Route 23 <-> Victory Road 2F exit must remain ordinary geometry")
+	}
+}
+
+// TestRoute23SouthGateLeavesWithoutSurf is the routing regression for
+// run-3w50i60f631u41je7v36wsudzt: from the south gate pocket with only the
+// Boulder Badge, Viridian must price as an ordinary walking route. The Catch
+// objective that exposed the soft-lock still cannot reach grass without Surf;
+// escaping south is the recoverable postcondition.
+func TestRoute23SouthGateLeavesWithoutSurf(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		t.Fatalf("route graph: %v", err)
+	}
+	var mem state.Mem
+	mem[sym.CurMap], mem[sym.XCoord], mem[sym.YCoord] = route23Map, 9, 137
+	mem[sym.ObtainedBadges] = 1 << state.BadgeBoulder
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	for edge, tr := range prereqs.Transitions {
+		if tr.ID == "red:route23_league_return" && edge.From == route23Map {
+			t.Fatalf("south gate still attaches %s on warp (%d,%d)", tr.ID, edge.WarpX, edge.WarpY)
+		}
+	}
+	viridian := uint8(0x01)
+	if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, route23Map, viridian, 9, 137, -1, -1, nil, prereqs); err != nil {
+		t.Fatalf("Viridian from south gate without Surf: %v", err)
 	}
 }
 
