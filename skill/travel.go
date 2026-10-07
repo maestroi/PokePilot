@@ -251,26 +251,27 @@ const maxDialogueRecoveries = 30
 // appearing this many times in a row is a loop, while a run of distinct boxes
 // (Rock Tunnel's Hikers) is legitimate progress.
 //
-// "In a row" is bounded by sameBoxStallFrames, not just by text equality: a
-// box whose trigger tile resets on exit (Pokemon Tower 5F's purified-zone
-// heal, which reruns on every fresh entry) can legitimately recur several
-// times while the walk is genuinely re-planning around an unrelated battle,
-// not stuck. MEASURED on run-3anwzvms26fjy32alh211qa4fn's round-001 state
-// (skill.PokemonTower, "ASH's POKéMON are fully healed!" on POKEMON_TOWER_5F):
-// a recovery with real walking and a trainer battle in between the previous
-// same-text recovery measured 1504 frames; the box's own first-entry cost
-// (walk in, fade, heal, text, fade out) measured 466. A recurrence within
-// sameBoxStallFrames of the last one is the box refiring with essentially no
-// intervening progress — the actual stuck case this guard exists for.
+// "In a row" is bounded by the action's progress, not just by text equality:
+// a repeated box counts only when the walk between boxes made no real
+// progress (see sameBoxMinActionFrames). A box whose trigger tile resets on
+// exit (Pokemon Tower 5F's purified-zone heal, which reruns on every fresh
+// entry) can legitimately recur several times while the walk is genuinely
+// re-planning around an unrelated battle, not stuck; the long action between
+// those recurrences is what keeps it from tripping the guard.
 const maxSameBoxRepeats = 3
 
-// sameBoxStallFrames bounds how soon the SAME box text may recur and still
-// count toward maxSameBoxRepeats. See maxSameBoxRepeats for the measurement;
-// 600 sits above the 466-frame single-entry cost and comfortably below the
-// 1504-frame genuinely-active recurrence, so a real stall (near-zero walking
-// between hits) still counts while a walk that is actually covering ground
-// does not.
-const sameBoxStallFrames = 600
+// sameBoxMinActionFrames is the minimum action duration (frames) for a
+// repeated box to count as real progress rather than a stall. A GoTo that
+// walks only a few steps before the same box reappears — a guarded gate the
+// player cannot pass — takes on the order of 100 frames; a GoTo that covers
+// real ground takes hundreds to thousands of frames. MEASURED on
+// run-3w50i60f631u41je7v36wsudzt's round-002 state (Route 23's guard
+// badge-check gate, "…it to get to POKéMON LEAGUE!"): the stuck walk measured
+// ~112 frames per action, while the legitimate Pokemon Tower 5F heal
+// recurrence (run-3anwzvms26fjy32alh211qa4fn) measured 1504. 300 sits
+// comfortably between them: a near-zero-walking stall counts, a walk that is
+// actually covering ground does not.
+const sameBoxMinActionFrames = 300
 
 // cutRecoverableNavigationError is retained as the navigation-error
 // classification used by tests and diagnostics. Travel no longer responds to
@@ -538,10 +539,17 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 		label = "Travel"
 	}
 	var lastBoxText string
-	var lastBoxFrame uint64
 	var sameBoxRepeats int
 	for {
+		frameBeforeAction := uint64(0)
+		var actionDur uint64
+		if m != nil {
+			frameBeforeAction = m.FrameCount()
+		}
 		err := normalizeInterruption(action())
+		if m != nil {
+			actionDur = m.FrameCount() - frameBeforeAction
+		}
 		if err == nil {
 			return res, nil
 		}
@@ -674,22 +682,30 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 				// legitimate progress (a route's signs and gate NPCs differ,
 				// and a defeated trainer never re-triggers), so only a run of
 				// the same text trips the guard — not the total count.
+				//
+				// "In a row" is bounded by the action's progress, not just by
+				// a fixed time between boxes: a repeated box is a stall only
+				// when the walk between boxes made no real progress — the
+				// player took a few steps before the same box reappeared (a
+				// guarded gate the player cannot pass). A long action means
+				// the player actually covered ground, so the same text
+				// reappearing is legitimate (a heal spot revisited on a long
+				// route). A fixed time-between-boxes gate is defeated by any
+				// cycle longer than the gate — a multi-page box plus a
+				// re-plan can exceed it and reset the counter every turn —
+				// which is how Route 23's guard badge-check gate burned all 30
+				// recoveries and surfaced as an untyped failure.
 				if t := rec.LastText; t != "" {
 					// m is nil in tests that drive this loop with fakes
-					// instead of an emulator; frame-gating is meaningless
-					// there, so every same-text recurrence still counts,
-					// matching this guard's behavior before the gate existed.
-					var now uint64
-					if m != nil {
-						now = m.FrameCount()
-					}
-					if t == lastBoxText && now-lastBoxFrame < sameBoxStallFrames {
+					// instead of an emulator; actionDur is 0 there, so every
+					// same-text recurrence still counts, matching this
+					// guard's behavior before the progress gate existed.
+					if t == lastBoxText && actionDur < sameBoxMinActionFrames {
 						sameBoxRepeats++
 					} else {
 						sameBoxRepeats = 1
 						lastBoxText = t
 					}
-					lastBoxFrame = now
 					if sameBoxRepeats >= maxSameBoxRepeats {
 						return res, fmt.Errorf("skill: %s: %w after %d repeats: %q",
 							label, ErrTextBoxLoop, sameBoxRepeats, t)

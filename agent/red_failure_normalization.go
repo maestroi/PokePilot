@@ -159,6 +159,7 @@ func classifyObjectiveOutcome(_ Objective, err error, final Observation) Outcome
 		errors.Is(err, skill.ErrLegUnwalkable) ||
 		errors.Is(err, skill.ErrNoDialogue) ||
 		errors.Is(err, skill.ErrDialogueInterrupted) ||
+		errors.Is(err, skill.ErrTextBoxLoop) ||
 		errors.Is(err, skill.ErrFieldMovePrerequisite) ||
 		errors.Is(err, skill.ErrInventoryDetourStranded) ||
 		errors.As(err, &blocked) ||
@@ -426,6 +427,9 @@ func failureCauseFor(err error) (FailureCauseID, []string) {
 	}
 	if errors.Is(err, skill.ErrDialogueInterrupted) {
 		return "dialogue_interrupted", nil
+	}
+	if errors.Is(err, skill.ErrTextBoxLoop) {
+		return "text_box_loop", nil
 	}
 	if errors.Is(err, skill.ErrFieldMovePrerequisite) || errors.Is(err, skill.ErrFieldRosterPrerequisite) {
 		return "field_move_prerequisite_missing", nil
