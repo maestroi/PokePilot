@@ -178,7 +178,8 @@ var nativeDirections = []NativeStep{{DX: 1}, {DX: -1}, {DY: 1}, {DY: -1}}
 //
 // The start tile is treated as walkable regardless of the grid: a player that
 // arrived through a warp stands on a solid stairs/door tile, and the path
-// simply leaves it. This mirrors FindPath and must not mutate the grid.
+// simply leaves it. An occupant recorded on the start tile does not stop the
+// player leaving it either. This mirrors FindPath and must not mutate the grid.
 func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool) ([]NativeStep, error) {
 	if g == nil {
 		return nil, fmt.Errorf("world: nil native grid")
@@ -189,7 +190,7 @@ func FindNativePath(g *NativeGrid, sx, sy, tx, ty int, occupied map[[2]int]bool)
 	if sx == tx && sy == ty {
 		return []NativeStep{}, nil
 	}
-	if !g.Walkable(tx, ty) || occupied[[2]int{tx, ty}] || occupied[[2]int{sx, sy}] {
+	if !g.Walkable(tx, ty) || occupied[[2]int{tx, ty}] {
 		return nil, ErrNoPath
 	}
 	type node struct {
@@ -251,7 +252,7 @@ func FindNativeObstacleApproach(g *NativeGrid, sx, sy, tx, ty int, occupied map[
 	if g == nil || !g.InBounds(sx, sy) || !g.InBounds(tx, ty) || !g.Walkable(tx, ty) {
 		return NativeObstacleApproach{}, ErrNoPath
 	}
-	if occupied[[2]int{sx, sy}] || occupied[[2]int{tx, ty}] {
+	if occupied[[2]int{tx, ty}] {
 		return NativeObstacleApproach{}, ErrNoPath
 	}
 

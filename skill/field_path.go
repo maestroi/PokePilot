@@ -172,7 +172,7 @@ func planFieldPathWithCost(
 	if len(rules) > 0 {
 		rule = rules[0]
 	}
-	if land == nil || !land.InBounds(sx, sy) || !land.InBounds(dx, dy) || blocked[[2]int{sx, sy}] || blocked[[2]int{dx, dy}] {
+	if land == nil || !land.InBounds(sx, sy) || !land.InBounds(dx, dy) || blocked[[2]int{dx, dy}] {
 		return nil, fieldPathCost{}, world.ErrNoPath
 	}
 	if sx == dx && sy == dy {

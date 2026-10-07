@@ -89,6 +89,35 @@ func TestFindPathNoRoute(t *testing.T) {
 	}
 }
 
+// A sprite recorded on the player's own tile (a cutscene NPC whose RAM
+// position overlaps the player) must not make every route from there
+// unplannable (farm run-1y01b57y5to0u2se2d2ns3t02z, issue #2290).
+func TestFindPathLeavesBlockedStart(t *testing.T) {
+	g := testGrid(5, 5)
+	blocked := map[[2]int]bool{{2, 1}: true, {2, 2}: true}
+
+	steps, err := FindPath(g, 2, 1, 0, 3, blocked)
+	if err != nil {
+		t.Fatalf("FindPath from occupied start: %v", err)
+	}
+	if x, y := replayPath(t, g, 2, 1, blocked, steps); x != 0 || y != 3 {
+		t.Fatalf("replay ended at (%d,%d), want (0,3)", x, y)
+	}
+
+	steps, push, err := FindPathAdjacent(g, 2, 1, 0, 3, blocked)
+	if err != nil {
+		t.Fatalf("FindPathAdjacent from occupied start: %v", err)
+	}
+	x, y := replayPath(t, g, 2, 1, blocked, steps)
+	if x+push.DX != 0 || y+push.DY != 3 {
+		t.Fatalf("approach ended at (%d,%d) pushing %s, want to push into (0,3)", x, y, push)
+	}
+
+	if _, err := FindPath(g, 0, 3, 2, 1, blocked); !errors.Is(err, ErrNoPath) {
+		t.Fatalf("path INTO an occupied tile: err = %v, want ErrNoPath", err)
+	}
+}
+
 func TestFindPathSameTile(t *testing.T) {
 	g := testGrid(5, 5)
 
