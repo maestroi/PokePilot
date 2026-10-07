@@ -108,6 +108,17 @@ func findRouteAtDestinationAllowingSemantic(g *Graph, from, to uint8, x, y, tx, 
 	return findRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding)
 }
 
+// routePastFrontier returns a route that could reach the destination once
+// every semantic frontier on the way has been executed; see searchRoute.
+func routePastFrontier(g *Graph, from, to uint8, x, y, tx, ty int, blockedHere map[Edge]bool, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
+	first := componentSetAt(g, from, x, y)
+	target := standingComponentAt(g, to, tx, ty)
+	if !g.componentAware {
+		target = nil
+	}
+	return searchRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding, true)
+}
+
 func componentSetAt(g *Graph, mapID uint8, x, y int) []int {
 	return g.expandComponents(mapID, standingComponentAt(g, mapID, x, y))
 }
@@ -313,6 +324,18 @@ func gatedWarpDominatedByReachableSibling(g *Graph, e Edge, entry []int, skipCan
 }
 
 func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool) ([]Edge, error) {
+	return searchRoute(g, from, to, blockedHere, first, target, skipCanExit, relaxLanding, false)
+}
+
+// searchRoute is findRoute's BFS. With pastFrontier set it answers a different
+// question: could the target be reachable once every semantic frontier has
+// been executed? A frontier's landing topology is unknown until live geometry
+// is refreshed, so the search continues past it with an unknown (nil) entry
+// component on the landing map only; every other map keeps its component
+// constraints. That is an over-approximation of post-action reachability that,
+// unlike a component-blind map BFS, still refuses an edge whose port no
+// ordinary walking can reach (a capability-less Surf shore).
+func searchRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, target []int, skipCanExit, relaxLanding map[Edge]bool, pastFrontier bool) ([]Edge, error) {
 	if from == to && (len(target) == 0 || shareComp(first, target)) {
 		return []Edge{}, nil
 	}
@@ -393,6 +416,10 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			return reconstruct(i), nil
 		}
 		if nodes[i].boundary {
+			if pastFrontier {
+				expand(nodes[i].edge.To, i, nil)
+				continue
+			}
 			if boundary < 0 {
 				boundary = i
 			}

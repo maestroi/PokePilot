@@ -156,3 +156,50 @@ func TestSemanticFrontierDoesNotHideBlockedDestination(t *testing.T) {
 		t.Fatalf("error = %v, want no-route (the frontier cannot reach map 4)", err)
 	}
 }
+
+// A missing PivotOnly capability keeps its edge as ordinary geometry, so a
+// component-blind check past an unrelated frontier treated a Surf-only shore as
+// connected and GoTo walked to the frontier before failing on the shore
+// (run-d6dokr184ky81: a Route 2 Cut tree made the Power Plant look routable
+// without Surf). Only the frontier's own landing is unknown topology; the
+// shore's port on map 3 is still unreachable by walking, so the answer must be
+// the structured Surf blockage before any movement.
+func TestSemanticFrontierDoesNotBridgeMissingPivotOnlyShore(t *testing.T) {
+	pivot := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	onward := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
+	shore := Edge{Kind: EdgeWarp, From: 3, To: 4}
+	g := &Graph{
+		Edges:          map[uint8][]Edge{1: {pivot}, 2: {onward}, 3: {shore}, 4: nil},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1, 2}},
+			3: {{1, 2}}, // land is component 1; the shore port is island component 2
+			4: {{1}},
+		},
+		exitComps:  map[Edge][]int{pivot: {1}, onward: {2}, shore: {2}},
+		entryComps: map[Edge][]int{pivot: {1}, onward: {1}, shore: {1}},
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			pivot: {ID: "fake:local-cut", Requires: []gameruntime.CapabilityID{"can_cut"}, PivotOnly: true},
+			shore: {ID: "fake:surf-shore", Requires: []gameruntime.CapabilityID{"can_surf"}, PivotOnly: true, PortBypass: true},
+		},
+		Capabilities: gameruntime.NewCapabilitySet("can_cut"),
+	}
+
+	_, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 4, 0, 0, -1, -1, nil, prereqs)
+	var blocked *RouteBlockedError
+	if errors.Is(err, ErrRouteReplanRequired) || !errors.As(err, &blocked) {
+		t.Fatalf("error = %T %v, want *RouteBlockedError for the Surf shore", err, err)
+	}
+	if missing := blocked.MissingCapabilities(); len(missing) != 1 || missing[0] != "can_surf" {
+		t.Fatalf("missing = %v, want [can_surf]", missing)
+	}
+
+	// With Surf the shore is an executable pivot again, so the frontier defers.
+	prereqs.Capabilities = gameruntime.NewCapabilitySet("can_cut", "can_surf")
+	if _, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 4, 0, 0, -1, -1, nil, prereqs); !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("with can_surf error = %v, want ErrRouteReplanRequired", err)
+	}
+}

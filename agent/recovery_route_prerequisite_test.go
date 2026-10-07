@@ -334,3 +334,35 @@ func TestHuntExhaustionQuarantineCoversPlacedAndLocalOffers(t *testing.T) {
 		t.Fatalf("want the local spelling suppressed and a different hunt method kept, got %+v", got)
 	}
 }
+
+func TestStaticCatchRoutePrerequisiteQuarantineSurvivesPositionDrift(t *testing.T) {
+	failed := Objective{Kind: KindCatch, Species: "zapdos", Place: "power plant zapdos", Intent: dexStaticIntent, Flee: true}
+	alternative := Objective{Kind: KindProgress, Progress: "fuchsia_progression_complete"}
+	obs := Observation{
+		Location:     "route 2",
+		X:            12,
+		Y:            10,
+		Controllable: true,
+		Bag:          []Item{{Name: "ultra ball", Quantity: 9}},
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.record(ObjectiveResult{
+		Objective:    failed,
+		Outcome:      OutcomeBlocked,
+		Cause:        "route_prerequisite_missing",
+		CauseContext: []string{"can_surf"},
+		Final:        obs,
+	})
+
+	// run-d6dokr184ky81: the failed approach left Red on Route 2, the next
+	// objective walked to Fuchsia, and the Surf-gated static was offered again.
+	// A fixed encounter tile has one journey; moving does not grant Surf.
+	moved := obs
+	moved.Location = "fuchsia good rod house"
+	moved.X, moved.Y = 4, 3
+	got := policy.filter(moved, []Objective{failed, alternative})
+	if len(got) != 1 || got[0].Key() != alternative.Key() {
+		t.Fatalf("position drift reopened a Surf-gated static catch: %+v", got)
+	}
+}

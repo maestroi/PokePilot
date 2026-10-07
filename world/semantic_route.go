@@ -228,11 +228,12 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	}
 	if errors.Is(err, ErrRouteReplanRequired) {
 		// A frontier only defers the answer when something past it could lead
-		// to the target. Map-level adjacency over the usable edges ignores
-		// every component restriction, so it over-approximates any post-action
-		// topology: if even it cannot reach the target, no replan will, and the
-		// honest answer is the blocked/no-route diagnosis below.
-		if mapsConnected(usable, from, to) {
+		// to the target. A plain map BFS let a capability-less Surf shore look
+		// connected, so an unrelated Route 2 Cut tree made the Power Plant
+		// "replan required" and travel walked there before failing
+		// (run-d6dokr184ky81). If even this over-approximation cannot reach the
+		// target, no replan will, and the honest answer is the diagnosis below.
+		if mayReachPastFrontier(usable, from, to, x, y, denied, skipCanExit, relaxLanding) {
 			return routeSteps(route, executable), err
 		}
 		err = ErrNoRoute
@@ -251,10 +252,12 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
 		return nil, err
 	}
-	var blockages []gameruntime.TransitionBlockage
-	for _, edge := range geometric {
-		if blockage, ok := denied[edge]; ok {
-			blockages = append(blockages, blockage)
+	blockages := deniedOn(geometric, denied)
+	if len(blockages) == 0 && geometricErr != nil {
+		// A frontier prefix names only the actions before the unknown landing;
+		// look past it for the blockage beyond.
+		if past, pastErr := routePastFrontier(g, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax); pastErr == nil {
+			blockages = deniedOn(past, denied)
 		}
 	}
 	if len(blockages) == 0 {
@@ -263,24 +266,72 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	return nil, &RouteBlockedError{Blockages: blockages}
 }
 
-// mapsConnected is a component-blind BFS over g's edges.
-func mapsConnected(g *Graph, from, to uint8) bool {
-	seen := map[uint8]bool{from: true}
-	queue := []uint8{from}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		if cur == to {
-			return true
-		}
-		for _, e := range g.Edges[cur] {
-			if !seen[e.To] {
-				seen[e.To] = true
-				queue = append(queue, e.To)
+// mayReachPastFrontier is a component-blind map search that over-approximates
+// any post-action topology, with one exception. A capability-denied PivotOnly
+// edge remains in usable as ordinary geometry, so it is crossed only when some
+// landing already reached on its map shares a component with its port: without
+// the capability, ordinary walking is the only way onto it. Landings count only
+// from maps the search has reached, so a destination's own exit warp (the
+// Power Plant door onto its Surf island) cannot vouch for the edge into it. A
+// map or edge without component evidence is not proof and stays crossable.
+func mayReachPastFrontier(g *Graph, from, to uint8, x, y int, denied map[Edge]gameruntime.TransitionBlockage, skipCanExit, relaxLanding map[Edge]bool) bool {
+	landings := map[uint8][]int{from: componentSetAt(g, from, x, y)}
+	unknown := map[uint8]bool{from: len(landings[from]) == 0}
+	for changed := true; changed; {
+		changed = false
+		for cur := range landings {
+			for _, e := range g.Edges[cur] {
+				// Same phantom-band rule as findRoute: a connection band with no
+				// walkable exit port is not a hop unless an action bridges it.
+				if g.componentAware && len(g.exitComps[e]) == 0 && !(skipCanExit[e] && relaxLanding[e]) {
+					continue
+				}
+				if _, ok := denied[e]; ok && g.componentAware && !unknown[cur] &&
+					len(g.exitComps[e]) > 0 && !shareComp(g.exitComps[e], landings[cur]) {
+					continue
+				}
+				entry := g.entryComps[e]
+				if len(entry) == 0 && !unknown[e.To] {
+					unknown[e.To] = true
+					changed = true
+				}
+				if known, seen := landings[e.To]; !seen || !containsComps(known, entry) {
+					landings[e.To] = append(known, entry...)
+					changed = true
+				}
 			}
 		}
 	}
-	return false
+	// Component-blind at the destination: in-map actions (a Cut tree inside
+	// Celadon Gym) can reshape the target map without being graph edges.
+	_, ok := landings[to]
+	return ok
+}
+
+func containsComps(set, want []int) bool {
+	for _, c := range want {
+		found := false
+		for _, have := range set {
+			if have == c {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func deniedOn(route []Edge, denied map[Edge]gameruntime.TransitionBlockage) []gameruntime.TransitionBlockage {
+	var blockages []gameruntime.TransitionBlockage
+	for _, edge := range route {
+		if blockage, ok := denied[edge]; ok {
+			blockages = append(blockages, blockage)
+		}
+	}
+	return blockages
 }
 
 func routeSteps(route []Edge, transitions map[Edge]gameruntime.Transition) []RouteStep {

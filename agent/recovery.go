@@ -279,7 +279,13 @@ func recoveryStateScopeFor(result ObjectiveResult) recoveryStateScope {
 		// different route reopen the transaction. #1109 exposed this for
 		// progression; #1084 exposed the same permanent quarantine for a Route 2
 		// catch after recovery had moved Red elsewhere.
-		if _, direct := routePolicySibling(result.Objective); direct {
+		//
+		// A one-time static encounter is the exception among catches: it owns
+		// exactly one journey, to a fixed tile, so its route failure is the same
+		// fact as a direct GoTo's. Position-scoped quarantine let
+		// run-d6dokr184ky81 retry Surf-gated Zapdos/Moltres/Mewtwo ~30 times,
+		// each failed approach walking Red somewhere new.
+		if _, direct := routePolicySibling(result.Objective); direct || fixedSiteCatch(result.Objective) {
 			return recoveryStateScopeRoutePrerequisite
 		}
 	}
@@ -363,6 +369,12 @@ func fingerprintRecoverableFailure(obj Objective, result ObjectiveResult) recove
 // diagnostics/tests; all live recovery decisions consume the fingerprint above.
 func recoverableFailureKey(obj Objective, result ObjectiveResult) string {
 	return fingerprintRecoverableFailure(obj, result).Key
+}
+
+// fixedSiteCatch reports a catch whose only travel is to one fixed encounter
+// tile (a one-time static), unlike a habitat hunt reachable from many sides.
+func fixedSiteCatch(o Objective) bool {
+	return o.Kind == KindCatch && o.Intent == dexStaticIntent
 }
 
 func routePolicySibling(o Objective) (Objective, bool) {
