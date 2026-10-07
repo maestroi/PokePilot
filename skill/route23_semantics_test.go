@@ -1,8 +1,13 @@
 package skill
 
 import (
+	"errors"
+	"os"
 	"testing"
 
+	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -103,7 +108,7 @@ func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
 		{name: "unrelated map", mapID: semanticVermilionCityMap, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := route23LeagueReturnPivotAvailable(tc.mapID, tc.x, tc.y); got != tc.want {
+			if got := route23SurfPivotAvailable(tc.mapID, tc.x, tc.y); got != tc.want {
 				t.Fatalf("pivot available=%v, want %v", got, tc.want)
 			}
 		})
@@ -121,5 +126,56 @@ func TestRoute23NorthVictoryRoadExitIsNotCollapsedIntoLeagueApproach(t *testing.
 	transition, ok := redAuditedRouteTransitionForEdge(edge)
 	if ok && transition.ID == "red:route23_league_approach" {
 		t.Fatal("north Route 23 <-> Victory Road 2F exit must remain ordinary geometry")
+	}
+}
+
+// TestIndigoSidePricesKantoAsUnreachable is the regression for
+// run-1nnzti2l332xm2pdodobrapjlh. After a Lorelei blackout at Indigo, the
+// northbound Route 23 Surf action still bridged the sealed Victory Road exit
+// pocket to the 1F door, so every Kanto mart priced as replan-reachable, and
+// EnsureItemStock walked to (14,32) and failed. Once the pocket honestly has
+// no walking route, the diagnosis must not blame Lance's exit either: the
+// Champion's side is a dead end that cannot lead back to Kanto.
+func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		t.Fatalf("route graph: %v", err)
+	}
+	cinnabarMart := uint8(0xAC)
+	for _, start := range []struct {
+		name        string
+		mapID, x, y uint8
+	}{
+		{"indigo lobby", indigoPlateauLobbyMap, 7, 7},
+		{"indigo exterior", indigoPlateauMap, 9, 6},
+		{"route 23 exit pocket", route23Map, 14, 32},
+	} {
+		t.Run(start.name, func(t *testing.T) {
+			var mem state.Mem
+			mem[sym.CurMap], mem[sym.XCoord], mem[sym.YCoord] = start.mapID, start.x, start.y
+			prereqs := redRoutePrerequisites(g, romData, &mem)
+			// Everything but Fly: no walking capability crosses the pocket.
+			prereqs.Capabilities = gameruntime.NewCapabilitySet(
+				capCanSurf, capCanMoveBoulders, capCanPassRoute23BadgeChecks, capCanCut)
+			_, err := world.FindRoutePlanAtDestinationWithCapabilities(
+				g, start.mapID, cinnabarMart, int(start.x), int(start.y), -1, -1, nil, prereqs)
+			var blocked *world.RouteBlockedError
+			switch {
+			case errors.Is(err, world.ErrRouteReplanRequired) || err == nil:
+				t.Fatalf("Cinnabar Mart priced reachable from the Indigo side: %v", err)
+			case errors.As(err, &blocked):
+				t.Fatalf("dead-end frontier reported as the blocker: %v", err)
+			case !errors.Is(err, world.ErrNoRoute):
+				t.Fatalf("err = %v, want world.ErrNoRoute", err)
+			}
+		})
 	}
 }
