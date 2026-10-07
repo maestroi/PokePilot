@@ -452,9 +452,20 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// Victory Road's exit side, leave this edge as ordinary geometry so
 				// component routing reports no walking route; Travel's legal
 				// fast-travel layer may still bypass the pocket before GoTo runs.
-				if (transition.ID == "red:route23_league_return" || transition.ID == "red:route23_league_approach") &&
-					!route23SurfPivotAvailable(g, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord)) {
-					continue
+				//
+				// League return is stricter than approach: once the player is
+				// already south of the Surf bands, the Route 22 Gate warps are
+				// ordinary walking and must not inherit Surf/badge requirements.
+				curMap, curX, curY := mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord)
+				switch transition.ID {
+				case "red:route23_league_return":
+					if !route23LeagueReturnPivotAvailable(g, curMap, curX, curY) {
+						continue
+					}
+				case "red:route23_league_approach":
+					if !route23SurfPivotAvailable(g, curMap, curX, curY) {
+						continue
+					}
 				}
 				if redRouteTransitionEffectComplete(mem, transition) {
 					continue
