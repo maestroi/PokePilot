@@ -448,12 +448,12 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// events on load, and the measured exit-side 3F state cannot solve
 				// the west switch (#2237). The older reverse-cave helper therefore
 				// turned otherwise valid travel into a transition failure on 3F
-				// (#2247/#2251/#2252). From the north pocket (or Indigo itself),
-				// leave this edge as ordinary geometry so component routing reports
-				// no walking route; Travel's legal fast-travel layer may still
-				// bypass the pocket before GoTo runs.
+				// (#2247/#2251/#2252). From the north pocket, Indigo itself, or
+				// Victory Road's exit side, leave this edge as ordinary geometry so
+				// component routing reports no walking route; Travel's legal
+				// fast-travel layer may still bypass the pocket before GoTo runs.
 				if (transition.ID == "red:route23_league_return" || transition.ID == "red:route23_league_approach") &&
-					!route23SurfPivotAvailable(mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord)) {
+					!route23SurfPivotAvailable(g, mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord)) {
 					continue
 				}
 				if redRouteTransitionEffectComplete(mem, transition) {
