@@ -108,7 +108,39 @@ func TestRoute23LeagueReturnPivotUnavailableFromIndigoSide(t *testing.T) {
 		{name: "unrelated map", mapID: semanticVermilionCityMap, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := route23SurfPivotAvailable(tc.mapID, tc.x, tc.y); got != tc.want {
+			if got := route23SurfPivotAvailable(nil, tc.mapID, tc.x, tc.y); got != tc.want {
+				t.Fatalf("pivot available=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRoute23SurfPivotUnavailableFromVictoryRoad2FExitSide(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		t.Fatalf("route graph: %v", err)
+	}
+	for _, tc := range []struct {
+		name string
+		x, y uint8
+		want bool
+	}{
+		{name: "exit door", x: 29, y: 7, want: false},
+		{name: "3f east ladder", x: 27, y: 7, want: false},
+		{name: "1f ladder landing", x: 0, y: 8, want: true},
+		{name: "3f west ladder", x: 23, y: 7, want: true},
+		{name: "sealed 3f ladder pocket", x: 25, y: 14, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := route23SurfPivotAvailable(g, victoryRoad2FMap, tc.x, tc.y); got != tc.want {
 				t.Fatalf("pivot available=%v, want %v", got, tc.want)
 			}
 		})
@@ -136,6 +168,10 @@ func TestRoute23NorthVictoryRoadExitIsNotCollapsedIntoLeagueApproach(t *testing.
 // EnsureItemStock walked to (14,32) and failed. Once the pocket honestly has
 // no walking route, the diagnosis must not blame Lance's exit either: the
 // Champion's side is a dead end that cannot lead back to Kanto.
+//
+// Victory Road 2F's exit door reaches Route 23 only through the same pocket
+// (run-1gzyx3twnqj6d3hz6yzt02io3g stood there and looped "buy 1 POTION" ->
+// no_route), so it must price Kanto the same way, in both routers.
 func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
@@ -157,6 +193,7 @@ func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
 		{"indigo lobby", indigoPlateauLobbyMap, 7, 7},
 		{"indigo exterior", indigoPlateauMap, 9, 6},
 		{"route 23 exit pocket", route23Map, 14, 32},
+		{"victory road 2f exit door", victoryRoad2FMap, 29, 7},
 	} {
 		t.Run(start.name, func(t *testing.T) {
 			var mem state.Mem
@@ -175,6 +212,11 @@ func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
 				t.Fatalf("dead-end frontier reported as the blocker: %v", err)
 			case !errors.Is(err, world.ErrNoRoute):
 				t.Fatalf("err = %v, want world.ErrNoRoute", err)
+			}
+			weighted, err := world.FindWeightedRoutePlanAtDestinationWithCapabilities(
+				g, start.mapID, cinnabarMart, int(start.x), int(start.y), -1, -1, nil, prereqs, world.DefaultRouteCostPolicy())
+			if err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+				t.Fatalf("weighted router priced Cinnabar Mart from the Indigo side: %v %+v", err, weighted.Steps)
 			}
 		})
 	}

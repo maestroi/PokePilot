@@ -216,15 +216,39 @@ func route23LeagueReturnNeedsVictoryRoad(x, y uint8) bool {
 // part of Kanto may also route through Route 23 normally. Only states already
 // committed to the Indigo/north pocket suppress the pivot and let component
 // routing (or Travel's earlier legal fast-travel step) decide what is possible.
-func route23SurfPivotAvailable(mapID, x, y uint8) bool {
+//
+// Victory Road 2F's exit door component is committed to that pocket as well:
+// its only other way out is the 3F east side, which cannot work back through
+// the cave once Route 23 has reset the switches. Without it, a player standing
+// on the 2F exit door still priced every Kanto mart through the return action
+// (run-1gzyx3twnqj6d3hz6yzt02io3g looped "buy 1 POTION" -> no_route and
+// "go to victory road 2f" until the stagnation watchdog stopped it).
+func route23SurfPivotAvailable(g *world.Graph, mapID, x, y uint8) bool {
 	switch mapID {
 	case indigoPlateauMap, indigoPlateauLobbyMap:
 		return false
 	case route23Map:
 		return !route23LeagueReturnNeedsVictoryRoad(x, y)
+	case victoryRoad2FMap:
+		return !victoryRoad2FExitSide(g, x, y)
 	default:
 		return true
 	}
+}
+
+// victoryRoad2FExitSide reports whether (x,y) on Victory Road 2F walks to the
+// cave's Route 23 exit door, measured on the route graph rather than listed.
+func victoryRoad2FExitSide(g *world.Graph, x, y uint8) bool {
+	if g == nil {
+		return false
+	}
+	for _, edge := range g.Edges[victoryRoad2FMap] {
+		if edge.Kind == world.EdgeWarp && edge.To == route23Map &&
+			world.EdgePortReachableFrom(g, victoryRoad2FMap, int(x), int(y), edge, world.DefaultRouteCostPolicy()) {
+			return true
+		}
+	}
+	return false
 }
 
 // The former reverse-cave bridge intentionally does not live here. Route 23
