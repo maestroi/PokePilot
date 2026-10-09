@@ -110,3 +110,29 @@ func recoverGoToCompatibilitySwitchSeal(m *emu.Emu, romData []byte, policy MoveP
 		return false, nil
 	}
 }
+
+// enterGoToCompatibilitySealedDestination owns the one Gen-I destination the
+// static graph cannot route into: Mansion B1F. The graph links the 1F door
+// straight to the B1F stairs, but that stairs pocket is only entered through
+// the 3F fall, so plain GoTo walked in, back out, and wandered Kanto until it
+// stalled (run-4dzrf942k1sii0tpd3jygf1m). Travel first reaches 1F, then the
+// Secret Key skill's own basement descent; ordinary GoTo owns the B1F tile.
+func enterGoToCompatibilitySealedDestination(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy) error {
+	if dest.Map != pokemonMansionB1FMap || policy == nil || !gen1GoToCompatibilityEnabled(m) {
+		return nil
+	}
+	switch m.Peek8(sym.CurMap) {
+	case pokemonMansionB1FMap:
+		return nil
+	case pokemonMansion1FMap:
+		if mansionTileReachable(m, romData, mansion1FToB1FWarp.WarpX, mansion1FToB1FWarp.WarpY) {
+			return nil
+		}
+	case pokemonMansion2FMap, pokemonMansion3FMap:
+	default:
+		if err := cutAwareGoTo(m, romData, Destination{Map: pokemonMansion1FMap, X: mansion1FExitX, Y: mansion1FExitY}, policy)(); err != nil {
+			return err
+		}
+	}
+	return reachMansionBasement(m, romData, policy)
+}
