@@ -306,3 +306,35 @@ func TestMapObjectReachabilityUsesLiveBlockReplacement(t *testing.T) {
 		t.Fatal("live object reachability silently fell back to static ROM geometry")
 	}
 }
+
+// TestPushedBoulderBlocksItemAccess pins run-acduyt1qbev9c: Victory Road 1F's
+// RARE CANDY at (9,2) has one walkable neighbour, (10,2). Once a Strength
+// boulder is pushed there the ball is unreachable and must stop being offered;
+// the boulder's ROM home tile no longer blocks anything.
+func TestPushedBoulderBlocksItemAccess(t *testing.T) {
+	path := os.Getenv("POKEMON_RED_ROM")
+	if path == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	const victoryRoad1F = 0x6c
+	g := mapObjectReachabilityGrid(romData, victoryRoad1F)
+	if g == nil {
+		t.Fatal("no grid for Victory Road 1F")
+	}
+	var mem state.Mem
+	mem[sym.CurMap] = victoryRoad1F
+	if !reachableOnGrid(g, 11, 2, 9, 2, liveStationaryTiles(romData, victoryRoad1F, &mem)) {
+		t.Fatal("RARE CANDY at (9,2) unreachable with no boulder on (10,2)")
+	}
+	const slot = 6
+	mem[sym.SpritePlayerStateData1+slot*0x10] = state.BoulderPictureID
+	mem[sym.SpriteStateData2+slot*0x10+0x04] = 2 + 4
+	mem[sym.SpriteStateData2+slot*0x10+0x05] = 10 + 4
+	if reachableOnGrid(g, 11, 2, 9, 2, liveStationaryTiles(romData, victoryRoad1F, &mem)) {
+		t.Fatal("RARE CANDY at (9,2) reported reachable with a boulder pushed onto its only access tile (10,2)")
+	}
+}
