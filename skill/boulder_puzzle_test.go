@@ -1,8 +1,10 @@
 package skill
 
 import (
+	"os"
 	"testing"
 
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -77,5 +79,33 @@ func TestVictoryRoadBoulderSpecsMatchROMScriptGoals(t *testing.T) {
 				t.Fatalf("terminal target = %v, want %v", got, tc.terminal)
 			}
 		})
+	}
+}
+
+// The exit-side ladder chain must be real ROM warps on both cartridges, or
+// leaveVictoryRoadExitSide silently hands the cave back to GoTo.
+func TestVictoryRoadExitSideLaddersMatchROMWarps(t *testing.T) {
+	for _, env := range []string{"POKEMON_RED_ROM", "POKEMON_YELLOW_ROM"} {
+		path := os.Getenv(env)
+		if path == "" {
+			continue
+		}
+		romData, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range []world.Edge{victoryRoad2FExitSideLadder, victoryRoad3FExitSideLadder} {
+			h, err := rom.ParseMap(romData, e.From)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, w := range h.Warps {
+				found = found || (w.X == e.WarpX && w.Y == e.WarpY && w.DestMap == e.To)
+			}
+			if !found {
+				t.Errorf("%s: map %#02x has no warp (%d,%d) -> %#02x", env, e.From, e.WarpX, e.WarpY, e.To)
+			}
+		}
 	}
 }
