@@ -94,7 +94,15 @@ func RocketHideout(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	cur := m.Peek8(sym.CurMap)
 	if !RocketHideoutAvailable(cur) {
-		return fmt.Errorf("skill: RocketHideout: map %#04x is outside the Celadon/Hideout progression slice", cur)
+		// The objective is offered from any map once the Rainbow Badge is
+		// owned (the story-state gate), so own the journey to the hideout's
+		// only entrance rather than rejecting a distant resume. The Game
+		// Corner is a stable, walkable destination from anywhere in Kanto,
+		// and the descent below takes over once the player stands in it.
+		if _, err := TravelFlee(m, romData, gameCornerStand, policy, postSurgeCeladonTravelEngagements); err != nil {
+			return fmt.Errorf("skill: RocketHideout: reach Game Corner from map %#04x: %w", cur, err)
+		}
+		cur = m.Peek8(sym.CurMap)
 	}
 
 	// A resume north of B4F's boss door can only happen after that live door
