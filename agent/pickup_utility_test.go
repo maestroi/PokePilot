@@ -147,6 +147,21 @@ func TestEnhancePickupObjectivesAllowsStackWhenBagIsFull(t *testing.T) {
 	}
 }
 
+// NPC rewards make their own bag space, so a full bag must not hide them
+// (run-d6dokr184ky81 never got the Good Rod with 20/20 slots).
+func TestEnhancePickupObjectivesKeepsNPCRewardWhenBagIsFull(t *testing.T) {
+	bag := make([]Item, bagItemCapacity)
+	for i := range bag {
+		bag[i] = Item{Name: "occupied", Quantity: 1}
+	}
+	out := enhancePickupObjectives(nil, state.PartyState{}, Observation{Bag: bag}, []Objective{{
+		Kind: KindPickup, Item: ItemID("good rod"), X: 5, Y: 3, Intent: redNPCRewardIntent,
+	}})
+	if len(out) != 1 {
+		t.Fatalf("NPC reward withheld with full bag: %+v", out)
+	}
+}
+
 func TestEnhancePickupObjectivesPreservesExistingHistoryNote(t *testing.T) {
 	potion, _ := ItemByName("potion")
 	out := enhancePickupObjectives(nil, state.PartyState{}, Observation{}, []Objective{{
