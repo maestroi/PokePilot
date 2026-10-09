@@ -2,6 +2,7 @@ package skill
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -193,5 +194,18 @@ func TestIsSafariGateLeaveChoice(t *testing.T) {
 	}
 	if isSafariGateLeaveChoice(safariZoneGateMap, "Would you like to join the hunt?") {
 		t.Fatal("join prompt is not the leave prompt")
+	}
+}
+
+// TestSafariEntryUnaffordableErr pins triage 30c64c6573b54175: underfunded
+// Safari entry must unwrap to ErrCantAfford so the planner replans for money
+// instead of burning the story budget on the gate's "not enough money" script.
+func TestSafariEntryUnaffordableErr(t *testing.T) {
+	err := safariEntryUnaffordableErr(229)
+	if !errors.Is(err, ErrCantAfford) {
+		t.Fatalf("safariEntryUnaffordableErr = %v, want ErrCantAfford", err)
+	}
+	if !strings.Contains(err.Error(), "229") || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("error %q must name have/need yen amounts", err)
 	}
 }
