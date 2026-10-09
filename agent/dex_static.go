@@ -24,7 +24,32 @@ func hasStaticBalls(obs Observation) bool {
 	return false
 }
 
-func staticObjectiveQuarantined(known *Knowledge, objective Objective) bool {
+// staticRouteCapabilityMissing reports that the last journey to this static
+// site was blocked on field capabilities that are still neither usable nor
+// repairable. Run-level quarantine reopens a compound catch on movement, so
+// without this the planner re-picked Surf-locked Zapdos/Moltres/Mewtwo 700+
+// times, walking halfway across Kanto each time (run-d6dokr184ky81).
+func staticRouteCapabilityMissing(obs Observation, last string) bool {
+	_, rest, ok := strings.Cut(last, "missing capabilities [")
+	if !ok {
+		return false
+	}
+	list, _, _ := strings.Cut(rest, "]")
+	missing := false
+	for _, raw := range strings.Fields(list) {
+		link, ok := redRoutePrerequisiteLink(CapabilityID(raw))
+		if !ok || link.FieldCapability == "" {
+			return false // not a field move we can observe; keep offering
+		}
+		if fieldCapabilityUsable(obs, link.FieldCapability) || fieldCapabilityRepairReady(obs, link.FieldCapability) {
+			return false
+		}
+		missing = true
+	}
+	return missing
+}
+
+func staticObjectiveQuarantined(known *Knowledge, objective Objective, obs Observation) bool {
 	if known == nil {
 		return false
 	}
@@ -38,7 +63,8 @@ func staticObjectiveQuarantined(known *Knowledge, objective Objective) bool {
 		return false
 	}
 	last := strings.ToLower(failure.Last)
-	return strings.Contains(last, "static capture attempts exhausted") || strings.Contains(last, "one-time static source unavailable")
+	return strings.Contains(last, "static capture attempts exhausted") || strings.Contains(last, "one-time static source unavailable") ||
+		staticRouteCapabilityMissing(obs, failure.Last)
 }
 
 func appendDexStaticObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
@@ -102,7 +128,7 @@ func appendDexStaticObjectives(obs Observation, known *Knowledge, out []Objectiv
 			Flee:    true,
 			Note:    fmt.Sprintf("(one-time static %s; checkpoint + bounded RNG-phase retries; rollback on every failed capture)", site.Name),
 		}
-		if staticObjectiveQuarantined(known, objective) {
+		if staticObjectiveQuarantined(known, objective, obs) {
 			continue
 		}
 		out = append(out, objective)

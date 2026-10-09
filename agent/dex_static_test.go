@@ -66,3 +66,19 @@ func TestAppendDexStaticObjectivesQuarantinesConsumedOrExhaustedSource(t *testin
 		t.Fatalf("quarantined Mewtwo = %+v, want none", got)
 	}
 }
+
+func TestAppendDexStaticObjectivesHidesSiteUntilMissingFieldMoveIsReachable(t *testing.T) {
+	obs := staticDexObservation("zapdos", 0x53, "")
+	obs.FieldCapabilities = []FieldCapability{{Name: "surf", Badge: "Soul"}}
+	known := NewKnowledge(nil)
+	key := appendDexStaticObjectives(obs, known, nil)[0].String()
+	known.Failures[key] = Failure{Objective: key, Times: 475, Last: `skill: static Zapdos: reach encounter: skill: GoTo: no route from map 0d at (12,10) to map 53 at (4,10): world: no route: transition "red:power_plant_surf" from "route 10" to "power plant" is missing capabilities [can_surf]`}
+	if got := appendDexStaticObjectives(obs, known, nil); len(got) != 0 {
+		t.Fatalf("Surf-locked Zapdos re-offered without Surf: %+v", got)
+	}
+	// Badge + HM in hand: field repair can teach Surf, so the site reopens.
+	obs.FieldCapabilities[0].BadgeOwned, obs.FieldCapabilities[0].HMOwned = true, true
+	if got := appendDexStaticObjectives(obs, known, nil); len(got) != 1 {
+		t.Fatalf("Zapdos stayed hidden once Surf was repairable: %+v", got)
+	}
+}
