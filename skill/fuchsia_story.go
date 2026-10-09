@@ -475,6 +475,16 @@ func recoverAfterSafariGateChoice(m *emu.Emu) error {
 }
 
 func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	// The gate script charges ¥500 before setting EVENT_IN_SAFARI_ZONE. Without
+	// a money preflight, YES still advances the dialogue, prints "Oops! Not
+	// enough money!", auto-walks the player one tile south, and returns control
+	// on the gate — while driveStoryUntil keeps tapping A for the full story
+	// budget waiting for an entry that can never happen (run-d6dokr184ky81).
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if money := state.DecodeInventory(&mem).Money; money < safariCatchEntryFee {
+		return safariEntryUnaffordableErr(money)
+	}
 	gate, ok := Place("safari zone gate")
 	if !ok {
 		return fmt.Errorf("safari zone gate place missing")
@@ -491,24 +501,55 @@ func enterSafariZone(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		if !handled {
 			return err
 		}
-		return driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-			return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
-		})
+		return awaitSafariZoneEntry(m, fuchsiaStoryBudget)
 	}
 	if m.Peek8(sym.CurMap) != safariZoneGateMap {
 		return fmt.Errorf("expected Safari gate, on %#04x", m.Peek8(sym.CurMap))
 	}
-	// The gate's YES/NO prompt defaults to YES; driveStoryUntil advances
-	// that script until EVENT_IN_SAFARI_ZONE and the center warp.
+	// The gate's YES/NO prompt defaults to YES; awaitSafariZoneEntry advances
+	// that script until EVENT_IN_SAFARI_ZONE and the center warp, or reports a
+	// structured cant_afford if the payment script returns control on the gate.
 	if err := stepOntoSafariJoinTrigger(m); err != nil {
 		return err
 	}
-	if err := driveStoryUntil(m, fuchsiaStoryBudget, func(mm *state.Mem) bool {
-		return state.HasEvent(mm, eventInSafariZone) && mm.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(mm)
-	}); err != nil {
-		return err
+	return awaitSafariZoneEntry(m, fuchsiaStoryBudget)
+}
+
+func safariEntryUnaffordableErr(money uint32) error {
+	return fmt.Errorf("skill: enter Safari Zone: %w: need ¥%d entry fee, have ¥%d",
+		ErrCantAfford, safariCatchEntryFee, money)
+}
+
+// awaitSafariZoneEntry drives the paid gate script until the player is
+// controllable inside Safari Zone Center. If the script returns control on the
+// gate without EVENT_IN_SAFARI_ZONE — the ROM's not-enough-money / please-come-
+// again path — report ErrCantAfford instead of burning the story budget.
+func awaitSafariZoneEntry(m *emu.Emu, budget int) error {
+	var mem state.Mem
+	sawScript := false
+	for spent := 0; spent < budget; spent += 10 {
+		state.Snapshot(m, &mem)
+		if state.HasEvent(&mem, eventInSafariZone) && mem.U8(sym.CurMap) == safariZoneCenterMap && state.Controllable(&mem) {
+			return nil
+		}
+		text := strings.ToLower(strings.Join(strings.Fields(state.ScreenText(&mem)), " "))
+		if strings.Contains(text, "not enough money") {
+			return safariEntryUnaffordableErr(state.DecodeInventory(&mem).Money)
+		}
+		if !state.Controllable(&mem) {
+			sawScript = true
+		} else if sawScript && mem.U8(sym.CurMap) == safariZoneGateMap && !state.HasEvent(&mem, eventInSafariZone) {
+			money := state.DecodeInventory(&mem).Money
+			if money < safariCatchEntryFee {
+				return safariEntryUnaffordableErr(money)
+			}
+			return fmt.Errorf("skill: enter Safari Zone: gate script returned control without entering")
+		}
+		m.Tap(emu.A, 3, 7)
 	}
-	return nil
+	state.Snapshot(m, &mem)
+	return fmt.Errorf("story transition exceeded %d frames on map %#04x at (%d,%d)", budget,
+		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
 }
 
 // stepOntoSafariJoinTrigger moves from the stable (3,3) gate target onto the
