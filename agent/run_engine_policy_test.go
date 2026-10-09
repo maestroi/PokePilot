@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"testing"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
@@ -531,5 +532,45 @@ func TestNoDialogueTalkDoesNotDisplaceSoftFailOpenFallback(t *testing.T) {
 	got := policy.filter(obs, []Objective{talk, travel})
 	if len(got) != 1 || got[0].Key() != travel.Key() {
 		t.Fatalf("mixed hard/soft quarantine fallback = %+v, want only soft travel retry", got)
+	}
+}
+
+// Deploys drain and resume runs far more often than the stagnation threshold;
+// the stagnant-round count must survive the checkpoint knowledge round trip.
+func TestRunWatchdogStagnationSurvivesResume(t *testing.T) {
+	known := NewKnowledge(nil)
+	initial := Observation{Map: 1, X: 1, Y: 1, PartyCount: 1}
+	known.SawMap(initial.Map)
+	policy := newRunWatchdogPolicy(Budget{StagnationAfter: 4}, initial, known)
+	obs := initial
+	for round := 2; round <= 4; round++ {
+		obs.X = uint8(round)
+		if got := policy.roundBoundary(round, obs, known, 0, false); got.Stop != StopUnset {
+			t.Fatalf("round %d stopped early: %+v", round, got)
+		}
+	}
+
+	data, err := encodeMemoryFile(known, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mem memoryFile
+	if err := json.Unmarshal(data, &mem); err != nil {
+		t.Fatal(err)
+	}
+	resumed := NewKnowledge(nil)
+	resumed.restore(mem)
+
+	// Rounds restart at 1 after a resume; three stagnant rounds carry over.
+	policy = newRunWatchdogPolicy(Budget{StagnationAfter: 4}, obs, resumed)
+	obs.X = 9
+	if got := policy.roundBoundary(2, obs, resumed, 0, false); got.Stop != StopStuck {
+		t.Fatalf("resumed stagnation decision = %+v; want StopStuck", got)
+	}
+
+	// Real progress on the resumed state still resets the carried count.
+	policy = newRunWatchdogPolicy(Budget{StagnationAfter: 4}, Observation{Map: 1, PartyCount: 2}, resumed)
+	if got := policy.roundBoundary(2, Observation{Map: 1, X: 3, PartyCount: 2}, resumed, 0, false); got.Stop != StopUnset {
+		t.Fatalf("progress after resume still stopped: %+v", got)
 	}
 }

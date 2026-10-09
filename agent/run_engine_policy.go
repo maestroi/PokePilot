@@ -67,11 +67,20 @@ func newRunWatchdogPolicy(budget Budget, initial Observation, known *Knowledge) 
 	if stagnationAfter <= 0 {
 		stagnationAfter = defaultStagnationAfter
 	}
-	return &runWatchdogPolicy{
+	w := &runWatchdogPolicy{
 		stuckAfter:      stuckAfter,
 		stagnationAfter: stagnationAfter,
 		majorProgress:   majorProgressMarkOf(initial, known),
 	}
+	if known != nil && known.Stagnation.Mark != (majorProgressMark{}) {
+		// Resume: keep counting from the checkpoint's stagnant rounds unless
+		// the resumed state already beats the remembered high-water mark.
+		w.majorProgress = known.Stagnation.Mark
+		if !w.majorProgress.absorb(majorProgressMarkOf(initial, known)) {
+			w.lastMajorProgressRound = -known.Stagnation.Rounds
+		}
+	}
+	return w
 }
 
 // roundBoundary evaluates the long stagnation watchdog and the dead-position
@@ -89,6 +98,11 @@ func (w *runWatchdogPolicy) roundBoundary(round int, obs Observation, known *Kno
 
 	completedRounds := round - 1
 	decision.StagnantRounds = completedRounds - w.lastMajorProgressRound
+	if known != nil {
+		defer func() {
+			known.Stagnation = StagnationMemory{Mark: w.majorProgress, Rounds: completedRounds - w.lastMajorProgressRound}
+		}()
+	}
 	if decision.StagnantRounds >= w.stagnationAfter {
 		if strategic {
 			if !replanOnce(&w.stagnationEscalated) {

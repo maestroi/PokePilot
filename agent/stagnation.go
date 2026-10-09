@@ -38,14 +38,21 @@ func roundsLeft(round, maxRounds int) int {
 // a new party member count. DexOwned also counts successful collection when the
 // party is already full and the newly caught species is sent to storage, which
 // is essential progress for Dex and Completionist runs.
+// StagnationMemory is the persisted watchdog state: the major-progress
+// high-water mark and how many completed rounds have passed without beating it.
+type StagnationMemory struct {
+	Mark   majorProgressMark `json:"mark"`
+	Rounds int               `json:"rounds,omitempty"`
+}
+
 type majorProgressMark struct {
-	Badges          int
-	Events          int
-	Maps            int
-	PartyCount      int
-	DexOwned        int
-	MaxLevel        uint8
-	CombatReadiness int
+	Badges          int   `json:"badges,omitempty"`
+	Events          int   `json:"events,omitempty"`
+	Maps            int   `json:"maps,omitempty"`
+	PartyCount      int   `json:"party_count,omitempty"`
+	DexOwned        int   `json:"dex_owned,omitempty"`
+	MaxLevel        uint8 `json:"max_level,omitempty"`
+	CombatReadiness int   `json:"combat_readiness,omitempty"`
 }
 
 func majorProgressMarkOf(obs Observation, k *Knowledge) majorProgressMark {
