@@ -85,6 +85,12 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 		}
 		return nil
+	case KindTrain:
+		// Only "train the lead": the Gen-II grinder levels party slot 0.
+		if o.Species != "" || o.Slot != 0 || o.Intent != "" {
+			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
+		}
+		return nil
 	default:
 		return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 	}
@@ -172,6 +178,11 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindTrain:
+		if err := executeGSTrain(a.m, a.romData, o.Level); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	default:
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -181,6 +192,9 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 const gsFirstBadgeObjectiveFrameBudget uint64 = 1_500_000
 
 func gsObjectiveFrameBudget(o Objective) uint64 {
+	if o.Kind == KindTrain {
+		return gsFirstBadgeObjectiveFrameBudget
+	}
 	if o.Kind == KindProgress {
 		switch o.Progress {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
@@ -216,7 +230,7 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
-	if o.Kind != KindStarter && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
+	if o.Kind != KindStarter && o.Kind != KindTrain && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
 		return fmt.Errorf("%w: %s has no Gold/Silver verifier yet", ErrObjectivePostconditionUnavailable, o)
 	}
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
@@ -331,6 +345,10 @@ func (a *gsObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog 
 }
 
 func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
+	return append(gsStoryObjectives(obs), gsTrainingObjectives(obs)...)
+}
+
+func gsStoryObjectives(obs Observation) []Objective {
 	if obs.PartyCount == 0 || !obs.Story.Has(gsprofile.ProgressStarterReceived) {
 		return nil
 	}
