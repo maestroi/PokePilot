@@ -29,9 +29,12 @@ func enhancePickupObjectives(romData []byte, party state.PartyState, obs Observa
 			enhanced = append(enhanced, o)
 			continue
 		}
-		if !pickupCanStore(obs, o.Item) {
+		if !pickupCanStore(obs, o.Item) && o.Intent != redNPCRewardIntent {
 			// Red's 20-entry bag cannot accept a new item kind. Existing kinds
 			// still stack, so a full bag only blocks a pickup not already owned.
+			// NPC rewards make their own space (receiveChoiceReward ->
+			// EnsureBagSpaceFor); dropping them left run-d6dokr184ky81 walking
+			// to the Good Rod house 32 times without ever being offered the rod.
 			continue
 		}
 
