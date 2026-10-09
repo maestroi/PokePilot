@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 )
 
 const (
@@ -119,6 +120,38 @@ func teachFieldMoveWithMachineMenu(
 	move FieldMove,
 	native game.NativeFieldMove,
 ) error {
+	execution, err := battleExecutionDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	capability, err := fieldMoveCapabilityWithProfile(field, m, m.ROM(), move)
+	if err != nil {
+		return err
+	}
+	partySlot, replaceSlot, err := nativeMachineCarrier(field, capability, move, execution.DecodeBattleExecution(m))
+	if err != nil {
+		return fmt.Errorf("skill: native machine teach: choose carrier: %w", err)
+	}
+	return teachNativeMachine(m, machines, native, partySlot, replaceSlot)
+}
+
+// TeachNativeMachine teaches one owned TM/HM to partySlot through a profile's
+// semantic machine menu, forgetting replaceSlot when the move list is full
+// (-1 when an empty slot is expected). The carrier and replacement are the
+// caller's decision; success is proven by the party slot knowing the move.
+func TeachNativeMachine(m *emu.Emu, native game.NativeFieldMove, partySlot, replaceSlot int) error {
+	profile, _, err := profiles.Detect(m.ROM())
+	if err != nil {
+		return err
+	}
+	machines, ok := profile.(game.MachineMenuDecoder)
+	if !ok {
+		return fmt.Errorf("skill: native machine teach: profile %s has no machine menu", profile.ID())
+	}
+	return teachNativeMachine(m, machines, native, partySlot, replaceSlot)
+}
+
+func teachNativeMachine(m *emu.Emu, machines game.MachineMenuDecoder, native game.NativeFieldMove, partySlot, replaceSlot int) error {
 	menu, err := menuDecoderFor(m)
 	if err != nil {
 		return err
@@ -136,15 +169,8 @@ func teachFieldMoveWithMachineMenu(
 	if err != nil {
 		return err
 	}
-
-	capability, err := fieldMoveCapabilityWithProfile(field, m, m.ROM(), move)
-	if err != nil {
-		return err
-	}
-	before := execution.DecodeBattleExecution(m)
-	partySlot, replaceSlot, err := nativeMachineCarrier(field, capability, move, before)
-	if err != nil {
-		return fmt.Errorf("skill: native machine teach: choose carrier: %w", err)
+	if battleStateKnowsMove(execution.DecodeBattleExecution(m), partySlot, native.MoveID) {
+		return nil
 	}
 
 	if err := ensureMachineMenuOpenWithDecoder(m, menu, machines); err != nil {

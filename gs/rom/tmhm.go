@@ -85,3 +85,19 @@ func CanLearnTMHM(romData []byte, species uint8, machineNumber int) (bool, error
 	}
 	return CanLearnTMHMAt(romData, base, species, machineNumber)
 }
+
+// gen2BaseDataTypesOffset is BASE_TYPES: after BASE_DEX_NO and six stats.
+const gen2BaseDataTypesOffset = 7
+
+// SpeciesTypesAt returns species' two type bytes (equal for a single-typed
+// species) from a previously located BaseData table.
+func SpeciesTypesAt(romData []byte, base int, species uint8) (uint8, uint8, error) {
+	if species == 0 || int(species) > gen2PokemonCount {
+		return 0, 0, fmt.Errorf("gs rom: species %#02x is outside 1..%d", species, gen2PokemonCount)
+	}
+	if base < 0 || base+gen2PokemonCount*gen2BaseDataEntrySize > len(romData) {
+		return 0, 0, fmt.Errorf("gs rom: BaseData offset %#x is outside ROM size %#x", base, len(romData))
+	}
+	off := base + (int(species)-1)*gen2BaseDataEntrySize + gen2BaseDataTypesOffset
+	return romData[off], romData[off+1], nil
+}
