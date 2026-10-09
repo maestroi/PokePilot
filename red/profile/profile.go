@@ -47,6 +47,10 @@ const (
 	ProgressRoute23BadgeChecks         = gen1.ProgressRoute23BadgeChecks
 	ProgressVictoryRoadCleared         = gen1.ProgressVictoryRoadCleared
 	ProgressLeagueChallengeStarted     = gen1.ProgressLeagueChallengeStarted
+	ProgressLeagueLoreleiDefeated      = gen1.ProgressLeagueLoreleiDefeated
+	ProgressLeagueBrunoDefeated        = gen1.ProgressLeagueBrunoDefeated
+	ProgressLeagueAgathaDefeated       = gen1.ProgressLeagueAgathaDefeated
+	ProgressLeagueLanceDefeated        = gen1.ProgressLeagueLanceDefeated
 	ProgressLeagueChampionDefeated     = gen1.ProgressLeagueChampionDefeated
 	ProgressMainStoryComplete          = gen1.ProgressMainStoryComplete
 	ProgressVolcanoBadge               = gen1.ProgressVolcanoBadge
@@ -265,6 +269,14 @@ func ProjectStoryFacts(facts state.StoryFacts) game.ProgressState {
 		{ID: ProgressRoute22RivalResolved, Complete: facts.Route22RivalResolved},
 		{ID: ProgressRoute23BadgeChecks, Complete: facts.Route23BadgeChecksComplete, Value: facts.Route23BadgeChecksPassed},
 		{ID: ProgressLeagueChallengeStarted, Complete: facts.LeagueChallengeStarted},
+		// Intermediate Elite Four stages are portable campaign facts. Observe
+		// and FirstIncomplete must see them, or a sealed League room keeps
+		// re-offering an already-committed predecessor while the next fight is
+		// invisible (run-a4wn4o17ztx91zgnezctug9t3).
+		{ID: ProgressLeagueLoreleiDefeated, Complete: facts.LeagueLoreleiDefeated},
+		{ID: ProgressLeagueBrunoDefeated, Complete: facts.LeagueBrunoDefeated},
+		{ID: ProgressLeagueAgathaDefeated, Complete: facts.LeagueAgathaDefeated},
+		{ID: ProgressLeagueLanceDefeated, Complete: facts.LeagueLanceDefeated},
 		{ID: ProgressLeagueChampionDefeated, Complete: facts.LeagueChampionDefeated},
 		{ID: ProgressMainStoryComplete, Complete: facts.MainStoryComplete},
 	}

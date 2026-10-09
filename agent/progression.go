@@ -71,7 +71,23 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	progress := annotate(filterCombatRecoveryBlocked(provided.Candidates, known), known)
 	base.Blocked = append(base.Blocked, provided.Blocked...)
 	if len(progress) == 0 {
-		return base
+		// Sealed corridors (Elite Four rooms, one-way script pockets) report live
+		// route refusals while local grass is absent, so the combat-loss gate
+		// empties both menus and the run dies with "nothing is possible from
+		// here" (run-a4wn4o17ztx91zgnezctug9t3). An ordinary commute with an
+		// empty synthetic menu must keep the fight locked — only a sealed
+		// topology (unroutable / route-blockage evidence) plus no remaining
+		// preparation candidate earns the retry promotion.
+		sealed := len(obs.Unroutable) > 0 || len(obs.RouteBlockages) > 0
+		if sealed && len(base.Candidates) == 0 &&
+			owesCombatReadiness(known, obs) &&
+			!combatPreparationNeedsCoverage(obs, known) {
+			known.promoteCombatLossesToRetry()
+			progress = annotate(filterCombatRecoveryBlocked(provided.Candidates, known), known)
+		}
+		if len(progress) == 0 {
+			return base
+		}
 	}
 
 	base.Candidates = withoutKnownUnroutableJourneys(base.Candidates, obs.Unroutable)
