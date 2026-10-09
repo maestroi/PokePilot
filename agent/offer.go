@@ -28,6 +28,12 @@ type Knowledge struct {
 	// forgotten as unreachable is not re-seeded.
 	TrainingAreasBackfilled bool
 
+	// Stagnation carries the long watchdog across resumes. Every deploy
+	// drains and resumes runs, and an attempt-local counter never reached its
+	// threshold: Red dex and Yellow E4 loops ran 6-8 days without a stop or
+	// a triage issue (run-d6dokr184ky81, run-acduyt1qbev9c).
+	Stagnation StagnationMemory
+
 	// Build is this process's running binary identity (e.g. a git SHA), set
 	// by the caller. Empty means unknown, which leaves failure tallies
 	// build-unaware (their historical pre-feature behavior).
@@ -455,6 +461,7 @@ func (k *Knowledge) restore(mem memoryFile) {
 		k.TrainingAreas = map[LocationID]TrainingAreaKnowledge{}
 	}
 	k.TrainingAreasBackfilled = mem.TrainingAreasBackfilled
+	k.Stagnation = mem.Stagnation
 	for _, area := range mem.TrainingAreas {
 		if area.Location != "" && area.Place != "" && area.MaxLevel > 0 {
 			k.TrainingAreas[area.Location] = area

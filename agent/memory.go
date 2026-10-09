@@ -79,6 +79,7 @@ type memoryFile struct {
 	Intent                  string                  `json:"intent,omitempty"`
 	IntentAge               int                     `json:"intent_age,omitempty"`
 	Plan                    Plan                    `json:"plan,omitempty"`
+	Stagnation              StagnationMemory        `json:"stagnation,omitempty"`
 }
 
 type talkedKey struct {
@@ -161,6 +162,7 @@ func encodeMemoryFileForProfile(k *Knowledge, gameID game.GameID, revision game.
 	mem.Requirements = append(mem.Requirements, k.Requirements...)
 
 	mem.TrainingAreasBackfilled = k.TrainingAreasBackfilled
+	mem.Stagnation = k.Stagnation
 	trainingLocations := make([]LocationID, 0, len(k.TrainingAreas))
 	for location := range k.TrainingAreas {
 		trainingLocations = append(trainingLocations, location)
