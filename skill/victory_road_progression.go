@@ -565,9 +565,65 @@ func indigoLobbyNurseDestination(romData []byte) (Destination, error) {
 	return nurse, nil
 }
 
+// Victory Road's Route 23 exit sits in a 2F pocket reached only through 3F:
+// 2F (25,14) -> 3F (27,15) -> 3F (26,8) -> 2F (27,7) -> exit. The east switch
+// is what opens 2F's (25,14) pocket. Static geometry also connects 3F (23,7)
+// to (26,8), but only across VICTORYROAD3F_BOULDER3's home tile (24,10), which
+// a push cannot clear; the generic router took that ladder, found no route,
+// escaped to Viridian and re-entered through Route 23, whose map script resets
+// every switch (run-acduyt1qbev9c looped 485 times). Ladder pads are the
+// shared pokered/pokeyellow VictoryRoad2F/3F warp_event coordinates.
+var (
+	victoryRoad2FExitSideLadder = world.Edge{Kind: world.EdgeWarp, From: victoryRoad2FMap, To: victoryRoad3FMap, WarpX: 25, WarpY: 14}
+	victoryRoad3FExitSideLadder = world.Edge{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 26, WarpY: 8}
+)
+
+// leaveVictoryRoadExitSide walks the exit-side ladder chain while each next
+// pad is live-reachable. Anywhere else it stops and leaves routing to GoTo.
+func leaveVictoryRoadExitSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	for phase := 0; phase < 4; phase++ {
+		var next world.Edge
+		switch m.Peek8(sym.CurMap) {
+		case victoryRoad2FMap:
+			exit, err := victoryRoadExitEdge(romData, victoryRoad2FMap)
+			if err != nil {
+				return err
+			}
+			next = exit
+			if !warpEdgeReachable(m, romData, exit) {
+				next = victoryRoad2FExitSideLadder
+			}
+		case victoryRoad3FMap:
+			next = victoryRoad3FExitSideLadder
+		default:
+			return nil
+		}
+		if !warpEdgeReachable(m, romData, next) {
+			return nil
+		}
+		from := next.From
+		if _, err := RunInterruptible(m, policy, InterruptibleAction{
+			Name:           "Victory Road exit-side ladder",
+			MaxEngagements: victoryRoadTravelBattles,
+			Run: func() error {
+				if m.Peek8(sym.CurMap) != from {
+					return nil
+				}
+				return Traverse(m, romData, next)
+			},
+		}); err != nil {
+			return fmt.Errorf("skill: Victory Road leave by the exit side: %w", err)
+		}
+	}
+	return nil
+}
+
 func prepareIndigoLobby(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	nurse, err := indigoLobbyNurseDestination(romData)
 	if err != nil {
+		return fmt.Errorf("skill: VictoryRoadProgression: %w", err)
+	}
+	if err := leaveVictoryRoadExitSide(m, romData, policy); err != nil {
 		return fmt.Errorf("skill: VictoryRoadProgression: %w", err)
 	}
 	if _, err := TravelFlee(m, romData, nurse, policy, victoryRoadTravelBattles); err != nil {
