@@ -106,7 +106,7 @@ func recoveryStateFor(o Objective, obs Observation) recoveryState {
 		includeCombat()
 		includeInventory()
 		includeRoute()
-	case KindBuy:
+	case KindBuy, KindSell:
 		out.Money = full.Money
 		includeInventory()
 	case KindPickup:

@@ -352,7 +352,7 @@ type economyObjectiveProvider struct{}
 
 func (economyObjectiveProvider) Family() ObjectiveFamily { return ObjectiveFamilyEconomy }
 func (economyObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiveProviderResult {
-	out := repelUseObjectives(ctx.obs)
+	out := append(repelUseObjectives(ctx.obs), fundingSaleObjectives(ctx.obs)...)
 	if ctx.catalog.Shop == nil {
 		return objectiveProviderResult{Candidates: append(out, restockHealingObjectives(ctx.obs)...)}
 	}

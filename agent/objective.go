@@ -29,6 +29,7 @@ const (
 	KindProgress
 	KindTrainer
 	KindRepairFieldCapability
+	KindSell
 )
 
 // Objective carries semantic planner arguments. Game-specific encodings stay
@@ -109,7 +110,7 @@ func (o Objective) Validate() error {
 		if o.Slot < 0 || o.Slot > 5 {
 			return fmt.Errorf("agent: %s: party slot %d out of range 0..5", o, o.Slot)
 		}
-	case KindBuy:
+	case KindBuy, KindSell:
 		if o.Qty < 1 || o.Qty > 99 {
 			return fmt.Errorf("agent: %s: quantity %d out of range 1..99", o, o.Qty)
 		}
@@ -180,6 +181,8 @@ func (o Objective) String() string {
 		return fmt.Sprintf("use %s %s on party slot %d", article(name), strings.ToUpper(name), o.Slot)
 	case KindBuy:
 		return fmt.Sprintf("buy %d %s", o.Qty, strings.ToUpper(string(o.Item)))
+	case KindSell:
+		return fmt.Sprintf("sell %d %s", o.Qty, strings.ToUpper(string(o.Item)))
 	}
 	return fmt.Sprintf("unknown kind %d", int(o.Kind))
 }

@@ -449,7 +449,7 @@ func objectiveBucket(o agent.Objective) string {
 		return "battle"
 	case agent.KindHeal:
 		return "healing"
-	case agent.KindBuy:
+	case agent.KindBuy, agent.KindSell:
 		return "shopping_inventory"
 	case agent.KindUseItem, agent.KindPickup, agent.KindRepairFieldCapability:
 		return "field_actions"

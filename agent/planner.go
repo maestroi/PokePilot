@@ -139,7 +139,7 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		species = id
 	}
 	if a.Item != "" {
-		if o.Kind != KindBuy {
+		if o.Kind != KindBuy && o.Kind != KindSell {
 			return o, fmt.Errorf("agent: item argument %q does not apply to %s", a.Item, o)
 		}
 		id, ok := semanticItem(a.Item)
@@ -152,7 +152,7 @@ func WithArgs(o Objective, a ReplyArgs) (Objective, error) {
 		item = id
 	}
 	if a.Quantity != nil {
-		if o.Kind != KindBuy {
+		if o.Kind != KindBuy && o.Kind != KindSell {
 			return o, fmt.Errorf("agent: quantity argument %d does not apply to %s", *a.Quantity, o)
 		}
 		if *a.Quantity < 1 || *a.Quantity > 99 {

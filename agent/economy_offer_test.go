@@ -77,3 +77,44 @@ func TestRestockCaptureObjectivesOffersReachableDexBallSupply(t *testing.T) {
 		t.Fatalf("completed Dex still offered remote restock: %+v", got)
 	}
 }
+
+// run-d6dokr184ky81: ¥229 below the ¥500 Safari entry, Fuchsia still owed
+// Surf/Strength, and nothing offered could raise money for 73 attempts.
+func TestFundingSaleObjectivesCoverUnaffordableStoryPayment(t *testing.T) {
+	obs := Observation{
+		Money:        229,
+		RestockStock: []string{"pokeball"},
+		Bag: []Item{
+			{Name: "poke flute", Quantity: 1},
+			{Name: "hm05", Quantity: 1},
+			{Name: "moon stone", Quantity: 1},
+			{Name: "ultra ball", Quantity: 9},
+			{Name: "nugget", Quantity: 1},
+		},
+	}
+	got := map[string]int{}
+	for _, o := range fundingSaleObjectives(obs) {
+		if o.Kind != KindSell || o.Validate() != nil {
+			t.Fatalf("funding offer %+v is not a valid sale", o)
+		}
+		if _, ok := redItemID(o.Item); !ok {
+			t.Fatalf("funding offer %+v does not resolve to a Red item", o)
+		}
+		got[string(o.Item)] = o.Qty
+	}
+	// ¥271 short: one ULTRA BALL (¥600) or the NUGGET (¥5000) covers it.
+	// Key items and the zero-price MOON STONE are never offered.
+	if len(got) != 2 || got["ultra ball"] != 1 || got["nugget"] != 1 {
+		t.Fatalf("funding sales = %v, want 1 ULTRA BALL and 1 NUGGET", got)
+	}
+
+	obs.Money = 500
+	if got := fundingSaleObjectives(obs); len(got) != 0 {
+		t.Fatalf("funded checkpoint still offered sales: %+v", got)
+	}
+	obs.Money = 229
+	obs.RestockStock = nil
+	if got := fundingSaleObjectives(obs); len(got) != 0 {
+		t.Fatalf("sales offered with no reachable mart: %+v", got)
+	}
+}

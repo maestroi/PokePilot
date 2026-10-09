@@ -342,6 +342,16 @@ func verifyObjectivePostcondition(o Objective, initial, final Observation, resul
 		}
 		return OutcomeCompleted, nil
 
+	case KindSell:
+		before := bagItemQuantity(initial.Bag, o.Item)
+		after := bagItemQuantity(final.Bag, o.Item)
+		if after != before-o.Qty || final.Money <= initial.Money {
+			return OutcomePostconditionFailed, fmt.Errorf(
+				"%w: %s finished but bag quantity changed %d -> %d (want %d) and money %d -> %d",
+				ErrObjectivePostconditionFailed, o, before, after, before-o.Qty, initial.Money, final.Money)
+		}
+		return OutcomeCompleted, nil
+
 	default:
 		return OutcomePostconditionUnavailable, fmt.Errorf(
 			"%w: no positive verifier registered for executable objective kind %d",

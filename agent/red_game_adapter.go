@@ -151,7 +151,7 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 		if _, ok := a.resolvePickupItemID(obs.Map, o); !ok {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
-	case KindUseItem, KindBuy:
+	case KindUseItem, KindBuy, KindSell:
 		if _, ok := a.resolveItemID(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
 		}
@@ -239,7 +239,7 @@ func normalizeRedOwnedExecutionResult(o Objective, result ObjectiveResult, err e
 			result.Battle = requiredBattleEvidenceFromRed(required.Outcome.Encounter, required.Outcome.Result)
 			result.Outcome = OutcomeBlocked
 		}
-		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindCatch || o.Kind == KindHeal) && result.Outcome == "" {
+		if (o.Kind == KindUseItem || o.Kind == KindBuy || o.Kind == KindSell || o.Kind == KindCatch || o.Kind == KindHeal) && result.Outcome == "" {
 			result.Outcome = OutcomeBlocked
 		}
 	}
