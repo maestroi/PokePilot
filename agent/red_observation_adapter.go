@@ -217,7 +217,7 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 	objects := MapObjects(romData, obs.Map)
 	hidden := state.HiddenObjectIDs(&mem)
 	objectGrid := mapObjectReachabilityGridLive(romData, obs.Map, &mem)
-	stationary := stationaryHomeTiles(romData, obs.Map)
+	stationary := liveStationaryTiles(romData, obs.Map, &mem)
 	obs.MapObjects = make([]MapObject, 0, len(objects))
 	for i, object := range objects {
 		if hidden[uint8(i+1)] || object.Kind == "boulder" {
@@ -317,6 +317,29 @@ func stationaryHomeTiles(romData []byte, mapID uint8) map[[2]int]bool {
 		if o.Movement == rom.MovementStay {
 			blocked[[2]int{int(o.X), int(o.Y)}] = true
 		}
+	}
+	return blocked
+}
+
+// liveStationaryTiles is stationaryHomeTiles with Strength boulders taken
+// from live sprite RAM instead of their ROM home: a pushed boulder blocks the
+// tile it now sits on, not the one it left. Without this an item whose only
+// access tile holds a pushed boulder stays offered forever (Victory Road 1F's
+// RARE CANDY, run-acduyt1qbev9c).
+func liveStationaryTiles(romData []byte, mapID uint8, mem *state.Mem) map[[2]int]bool {
+	blocked := stationaryHomeTiles(romData, mapID)
+	if blocked == nil || mem == nil || mem.U8(sym.CurMap) != mapID {
+		return blocked
+	}
+	if h, err := rom.ParseMap(romData, mapID); err == nil {
+		for _, o := range h.Objects {
+			if o.SpriteID == state.BoulderPictureID {
+				delete(blocked, [2]int{int(o.X), int(o.Y)})
+			}
+		}
+	}
+	for _, b := range state.DecodeBoulders(mem) {
+		blocked[[2]int{b.X, b.Y}] = true
 	}
 	return blocked
 }
