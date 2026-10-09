@@ -209,3 +209,23 @@ func TestSafariEntryUnaffordableErr(t *testing.T) {
 		t.Fatalf("error %q must name have/need yen amounts", err)
 	}
 }
+
+// TestSafariGateJoinTriggerTile pins the regression on the same triage key:
+// awaitSafariZoneEntry must not treat the Welcome→YesNo Controllable flicker on
+// the join trigger as a settled refusal. ROM refusal paths walk south first.
+func TestSafariGateJoinTriggerTile(t *testing.T) {
+	for _, tc := range []struct {
+		x, y uint8
+		want bool
+	}{
+		{3, 2, true},
+		{4, 2, true},
+		{3, 3, false},
+		{4, 3, false},
+		{2, 2, false},
+	} {
+		if got := safariGateJoinTriggerTile(tc.x, tc.y); got != tc.want {
+			t.Fatalf("safariGateJoinTriggerTile(%d,%d) = %v, want %v", tc.x, tc.y, got, tc.want)
+		}
+	}
+}

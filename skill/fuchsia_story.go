@@ -524,6 +524,13 @@ func safariEntryUnaffordableErr(money uint32) error {
 // controllable inside Safari Zone Center. If the script returns control on the
 // gate without EVENT_IN_SAFARI_ZONE — the ROM's not-enough-money / please-come-
 // again path — report ErrCantAfford instead of burning the story budget.
+//
+// Controllable alone is not proof the refusal settled. SafariZoneGate.asm clears
+// wJoyIgnore for a frame between the Welcome text and the YesNo join prompt
+// while the player is still on the join trigger (3,2)/(4,2). Treating that
+// flicker as "returned without entering" aborted funded entries
+// (run-a4wn4o17ztx91zgnezctug9t3). Both ROM refusal paths auto-walk south off
+// the trigger before restoring control; only then is the outcome settled.
 func awaitSafariZoneEntry(m *emu.Emu, budget int) error {
 	var mem state.Mem
 	sawScript := false
@@ -539,6 +546,10 @@ func awaitSafariZoneEntry(m *emu.Emu, budget int) error {
 		if !state.Controllable(&mem) {
 			sawScript = true
 		} else if sawScript && mem.U8(sym.CurMap) == safariZoneGateMap && !state.HasEvent(&mem, eventInSafariZone) {
+			if safariGateJoinTriggerTile(mem.U8(sym.XCoord), mem.U8(sym.YCoord)) {
+				m.Tap(emu.A, 3, 7)
+				continue
+			}
 			money := state.DecodeInventory(&mem).Money
 			if money < safariCatchEntryFee {
 				return safariEntryUnaffordableErr(money)
@@ -550,6 +561,13 @@ func awaitSafariZoneEntry(m *emu.Emu, budget int) error {
 	state.Snapshot(m, &mem)
 	return fmt.Errorf("story transition exceeded %d frames on map %#04x at (%d,%d)", budget,
 		mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+}
+
+// safariGateJoinTriggerTile is the SafariZoneGateDefaultScript coordinate array:
+// standing here starts (or continues) the paid join script. Refusal paths walk
+// the player one tile south before control returns.
+func safariGateJoinTriggerTile(x, y uint8) bool {
+	return y == 2 && (x == 3 || x == 4)
 }
 
 // stepOntoSafariJoinTrigger moves from the stable (3,3) gate target onto the
