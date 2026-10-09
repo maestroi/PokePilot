@@ -343,7 +343,16 @@ func emergencyEgressCause(err error) string {
 // are each bounded so a persistent pathing defect is not hidden behind
 // repeated escapes.
 func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, recovered *[]EmergencyEgress) func() error {
-	goTo := cutAwareGoTo(m, romData, dest, policy)
+	journey := func() func() error {
+		inner := cutAwareGoTo(m, romData, dest, policy)
+		return func() error {
+			if err := enterGoToCompatibilitySealedDestination(m, romData, dest, policy); err != nil {
+				return err
+			}
+			return inner()
+		}
+	}
+	goTo := journey()
 	egresses := 0
 	sealRecoveries := 0
 	const maxSealRecoveries = 2
@@ -360,7 +369,7 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 				}
 				if changed {
 					sealRecoveries++
-					goTo = cutAwareGoTo(m, romData, dest, policy)
+					goTo = journey()
 					continue
 				}
 			}
@@ -400,7 +409,7 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 			// The old guard/dead-end/banned-leg memory describes the map graph
 			// before the forced warp. Rebuild it rather than carrying stale
 			// local evidence across the emergency transition.
-			goTo = cutAwareGoTo(m, romData, dest, policy)
+			goTo = journey()
 		}
 	}
 }
