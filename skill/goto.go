@@ -795,6 +795,19 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			route, err = retry, retryErr
 		}
 		if err != nil {
+			// A structured capability blockage is already the answer. Local
+			// Cut/Surf bridging and restaging cannot create can_leave_league
+			// (or any other missing route prerequisite); trying them just
+			// burns frames and can launder RouteBlockedError into a bare
+			// ErrNoRoute after an unrelated recovery path fails.
+			var routeBlocked *world.RouteBlockedError
+			if errors.As(err, &routeBlocked) {
+				if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
+					return newReplanExhaustedError(replans, cur, x, y, dest, err)
+				}
+				return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
+					cur, x, y, dest.Map, dest.X, dest.Y, err)
+			}
 			if errors.Is(err, world.ErrNoRoute) && cur != dest.Map {
 				// Cross-map routing dies on static components even when local
 				// Cut/Surf pathing can open an ordinary exit on this map.

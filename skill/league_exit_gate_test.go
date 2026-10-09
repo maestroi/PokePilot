@@ -38,6 +38,52 @@ func TestLeagueRoomExitIsOneWayWhileChallengeIsRunning(t *testing.T) {
 	}
 }
 
+// TestLeagueRoomExitBlocksOverworldDestinations is the Agatha-room half of
+// run-a4wn4o17ztx91zgnezctug9t3: Lance's north exit is a diagnostic dead end
+// for any Kanto destination, and must not swallow the south-door
+// can_leave_league gate into a bare world.ErrNoRoute. The lobby already had
+// the structured blockage; Celadon Gym is the destination that previously
+// lost it. Production GoTo also overlays Surf-sea water grids while Surf is
+// usable, so this pins the same invariant on that topology.
+func TestLeagueRoomExitBlocksOverworldDestinations(t *testing.T) {
+	romData := romBytesForLeagueGate(t)
+	mem := leagueMem(t, false)
+	// Mirror the failing run's field moves: Surf (so withSurfSeaTopology is
+	// live, as in production GoTo) and Cut (Celadon Gym's entrance action).
+	surf := fieldTestMem(FieldSurf, true, true, true)
+	cut := fieldTestMem(FieldCut, true, true, true)
+	mem[sym.ObtainedBadges] = 0xff
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonMoves] = surf[sym.PartyMon1+sym.MonMoves]
+	mem[sym.PartyMon1+sym.MonMoves+1] = cut[sym.PartyMon1+sym.MonMoves]
+	setTestBag(mem, [2]uint8{surf[sym.BagItems], 1}, [2]uint8{cut[sym.BagItems], 1})
+	g := leagueRoutePrereqs(t, romData, mem).graph
+	var err error
+	g, err = withSurfSeaTopology(g, romData, mem)
+	if err != nil {
+		t.Fatalf("withSurfSeaTopology: %v", err)
+	}
+	prereqs := redRoutePrerequisites(g, romData, mem)
+	for _, capability := range []gameruntime.CapabilityID{capCanSurf, capCanCut} {
+		if !prereqs.Capabilities.Has(capability) {
+			t.Fatalf("test setup missing %q for overlay regression", capability)
+		}
+	}
+	celadon, ok := Place("celadon gym")
+	if !ok {
+		t.Fatal("celadon gym place is not registered")
+	}
+	_, err = findRoutePlanForDestination(g, agathaRoomMap, 4, 2, celadon, nil, prereqs)
+	var routeBlocked *world.RouteBlockedError
+	if !errors.As(err, &routeBlocked) {
+		t.Fatalf("Agatha -> Celadon Gym err = %v, want RouteBlockedError missing can_leave_league", err)
+	}
+	if !routeBlockageNames(routeBlocked, "red:league_room_exit", capCanLeaveLeague) {
+		t.Fatalf("Agatha -> Celadon Gym blockage = %+v, want transition red:league_room_exit missing %s",
+			routeBlocked.Blockages, capCanLeaveLeague)
+	}
+}
+
 // TestLeagueRoomExitOpensAfterHallOfFame is the other half of the gate: the
 // durable completion bit has to reopen the door, or a finished campaign would
 // be permanently sealed in the League it just won.
