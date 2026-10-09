@@ -25,6 +25,7 @@ const (
 	targetEmergencyHeals     = 2
 	saffronGuardDrinkReserve = 200  // Cheapest valid guard drink is FRESH WATER.
 	maxSafariEntryReserve    = 1500 // FuchsiaProgression permits at most 3 x ¥500 Safari sessions.
+	safariEntryFee           = 500
 )
 
 type ItemEconomySpec struct {
@@ -505,4 +506,54 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// progressionFundingShortfall is how much money the next pending scripted
+// payment still lacks. Reservations above protect money a run already has;
+// this covers a checkpoint that is already below the floor (run-d6dokr184ky81
+// sat at ¥229 below the ¥500 Safari entry for 73 attempts with sellable stock
+// in the bag and no objective that could raise money).
+func progressionFundingShortfall(o Observation) uint32 {
+	var need uint32
+	if pendingSaffronGateSpend(o) {
+		need += saffronGuardDrinkReserve
+	}
+	if pendingFuchsiaSpend(o) {
+		need += safariEntryFee
+	}
+	return subtractFloor(need, o.Money)
+}
+
+// fundingSaleObjectives offers the smallest sale of each sellable,
+// non-progression bag item that covers the shortfall. Gen-I clerks pay half
+// the list price. A reachable mart is required (RestockStock is only filled
+// from live-reachable marts), so the offer stays executable.
+func fundingSaleObjectives(o Observation) []Objective {
+	shortfall := progressionFundingShortfall(o)
+	if shortfall == 0 || len(o.RestockStock) == 0 {
+		return nil
+	}
+	var out []Objective
+	for _, bagged := range o.Bag {
+		spec, ok := ItemEconomy(bagged.Name)
+		if !ok || spec.UnitPrice < 2 || spec.Category == InventoryProgressionCritical || bagged.Quantity < 1 {
+			continue
+		}
+		sale := spec.UnitPrice / 2
+		qty := int((shortfall + sale - 1) / sale)
+		if qty > bagged.Quantity {
+			continue
+		}
+		item, ok := ItemByName(spec.Name)
+		if !ok {
+			if item = semanticItemFromRed(spec.ID); item == "unknown" {
+				continue
+			}
+		}
+		out = append(out, Objective{
+			Kind: KindSell, Item: item, Qty: qty,
+			Note: fmt.Sprintf("(raise ¥%d for a required story payment the run cannot afford; sells for ¥%d at the nearest reachable mart)", shortfall, uint32(qty)*sale),
+		})
+	}
+	return out
 }

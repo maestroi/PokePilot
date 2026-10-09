@@ -100,6 +100,12 @@ func reachableStockMarts(romData []byte, mem *state.Mem) (map[standardMartRecove
 }
 
 func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartRecoveryTarget, bool, error) {
+	return nearestMartWhere(romData, mem, func(target standardMartRecoveryTarget) bool {
+		return martStocksItem(romData, target.mapID, item)
+	})
+}
+
+func nearestMartWhere(romData []byte, mem *state.Mem, keep func(standardMartRecoveryTarget) bool) (standardMartRecoveryTarget, bool, error) {
 	marts, err := reachableStockMarts(romData, mem)
 	if err != nil {
 		return standardMartRecoveryTarget{}, false, err
@@ -109,7 +115,7 @@ func nearestStockMart(romData []byte, mem *state.Mem, item uint8) (standardMartR
 	found := false
 	for _, target := range standardMartRecoveryTargets {
 		hops, ok := marts[target]
-		if !ok || !martStocksItem(romData, target.mapID, item) {
+		if !ok || !keep(target) {
 			continue
 		}
 		if !found || hops < bestLen {
@@ -264,6 +270,33 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 		return have, fmt.Errorf("skill: EnsureItemStock: item %#02x remains at %d (need at least %d): %w", item, have, minimum, lastErr)
 	}
 	return have, fmt.Errorf("skill: EnsureItemStock: item %#02x remains at %d, need at least %d", item, have, minimum)
+}
+
+// SellAtNearestMart sells qty of one native item at the nearest reachable
+// recovery mart. Every Gen-I clerk buys any sellable item, so unlike
+// EnsureItemStock the choice of mart ignores stock. Sell verifies the bag and
+// money deltas and returns at a stable overworld boundary.
+func SellAtNearestMart(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, qty int) error {
+	if policy == nil {
+		return fmt.Errorf("skill: SellAtNearestMart: nil move policy")
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	mart, ok, err := nearestMartWhere(romData, &mem, func(standardMartRecoveryTarget) bool { return true })
+	if err != nil {
+		return fmt.Errorf("skill: SellAtNearestMart: choose mart: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: no mart reachable from map %#04x", ErrNoReachableStock, mem.U8(sym.CurMap))
+	}
+	// Same counter geometry as EnsureItemStock.
+	if _, err := TravelFlee(m, romData, Destination{Map: mart.mapID, X: 2, Y: 5}, policy, inventoryRecoveryBattles); err != nil {
+		return fmt.Errorf("skill: SellAtNearestMart: reach %s: %w", mart.name, err)
+	}
+	if err := Face(m, 1, 5); err != nil {
+		return fmt.Errorf("skill: SellAtNearestMart: face %s counter: %w", mart.name, err)
+	}
+	return Sell(m, item, qty)
 }
 
 // EnsureProgressionPokeBalls handles the hard zero-ball prerequisite for a

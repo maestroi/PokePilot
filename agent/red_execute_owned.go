@@ -366,6 +366,16 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+
+	case KindSell:
+		item, ok := adapter.resolveItemID(o.Item)
+		if !ok {
+			return result, fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+		if err := skill.SellAtNearestMart(m, romData, skill.StatAwareMove(romData), item, o.Qty); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	}
 	return result, fmt.Errorf("agent: unknown objective kind %d", int(o.Kind))
 }

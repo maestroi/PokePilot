@@ -291,7 +291,7 @@ func objectiveDriveContributions(o Objective) map[Drive]float64 {
 	case KindCatch:
 		add(DriveParty, 0.85)
 		add(DriveExploration, 0.30)
-	case KindBuy:
+	case KindBuy, KindSell:
 		add(DriveResources, 0.90)
 		add(DrivePreparation, 0.20)
 	case KindPickup:
