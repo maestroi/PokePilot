@@ -316,6 +316,14 @@ func emergencyEgressCause(err error) string {
 	case errors.Is(err, world.ErrTransitionExecutionStalled):
 		return "transition_execution_stalled"
 	case errors.Is(err, world.ErrNoRoute):
+		// A RouteBlockedError unwraps to ErrNoRoute but names a missing
+		// capability on a real retreat path (league room exit, Mt Moon
+		// fossil gate, …). Dig/Fly cannot satisfy that prerequisite and
+		// must not fire as if the player were in a zero-exit pocket.
+		var blocked *world.RouteBlockedError
+		if errors.As(err, &blocked) {
+			return ""
+		}
 		// GoTo only reaches this after its own in-map recovery (field-path
 		// bridging, component restaging) has already failed, so a bare
 		// world.ErrNoRoute here means the player's current walkable
@@ -362,7 +370,8 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 			if err == nil {
 				return nil
 			}
-			if errors.Is(err, world.ErrNoRoute) && sealRecoveries < maxSealRecoveries {
+			var routeBlocked *world.RouteBlockedError
+			if errors.Is(err, world.ErrNoRoute) && !errors.As(err, &routeBlocked) && sealRecoveries < maxSealRecoveries {
 				changed, sealErr := recoverGoToCompatibilitySwitchSeal(m, romData, policy)
 				if sealErr != nil {
 					return sealErr

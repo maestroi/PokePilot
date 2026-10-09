@@ -247,32 +247,102 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	// preserves prerequisite evidence for PivotOnly actions when ordinary
 	// geometry cannot reach the annotated edge and the missing capability is
 	// exactly what would have allowed the component pivot.
-	geometric, geometricErr := findRouteAtDestinationAllowingSemantic(g, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax)
-	if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
-		return nil, err
-	}
-	if errors.Is(geometricErr, ErrRouteReplanRequired) && len(geometric) > 0 {
-		// The diagnostic route stopped at a frontier. If everything past it
-		// leads back only through the frontier's own source map, it is a dead
-		// end: no capability on it explains the failure, and blaming it sends
-		// the planner after the wrong prerequisite (Lance's exit was reported
-		// as the blocker for every Kanto destination from Indigo's sealed
-		// Victory Road pocket, run-1nnzti2l332xm2pdodobrapjlh).
-		frontier := geometric[len(geometric)-1]
-		if !mapsConnectedAvoiding(g, frontier.To, to, frontier.From) {
-			return nil, err
-		}
-	}
+	//
+	// A diagnostic frontier that cannot lead to the destination is a dead end:
+	// no capability on it explains the failure, and blaming it sends the
+	// planner after the wrong prerequisite (Lance's exit was reported as the
+	// blocker for every Kanto destination from Indigo's sealed Victory Road
+	// pocket, run-1nnzti2l332xm2pdodobrapjlh). Skipping that edge and
+	// continuing the search is required too: otherwise the dead-end warp
+	// swallows an actionable gate on the real retreat path (league room exit)
+	// and every overworld destination collapses to a bare ErrNoRoute
+	// (run-a4wn4o17ztx91zgnezctug9t3 from Agatha's room).
+	diag := g
+	deadEndFrontiers := map[Edge]bool{}
 	var blockages []gameruntime.TransitionBlockage
-	for _, edge := range geometric {
-		if blockage, ok := denied[edge]; ok {
-			blockages = append(blockages, blockage)
+	for {
+		geometric, geometricErr := findRouteAtDestinationAllowingSemantic(diag, from, to, x, y, tx, ty, blockedHere, allSkip, allRelax)
+		if geometricErr != nil && !errors.Is(geometricErr, ErrRouteReplanRequired) {
+			break
 		}
+		if errors.Is(geometricErr, ErrRouteReplanRequired) && len(geometric) > 0 {
+			frontier := geometric[len(geometric)-1]
+			if !mapsConnectedAvoiding(g, frontier.To, to, frontier.From) {
+				if deadEndFrontiers[frontier] {
+					break
+				}
+				deadEndFrontiers[frontier] = true
+				diag = graphWithoutSemanticEdges(diag, map[Edge]gameruntime.TransitionBlockage{frontier: {}})
+				continue
+			}
+		}
+		for _, edge := range geometric {
+			if blockage, ok := denied[edge]; ok {
+				blockages = append(blockages, blockage)
+			}
+		}
+		break
+	}
+	if len(blockages) == 0 {
+		// Geometric diagnosis can miss an actionable gate when overlays
+		// (for example Gen-I Surf-sea water grids) make the full-graph
+		// search stop at unrelated PortBypass frontiers that are then
+		// discarded as dead ends — or when no diagnostic route remains at
+		// all. If restoring a single denied edge would connect from→to on
+		// the usable graph, that missing capability is still honest
+		// prerequisite evidence.
+		blockages = deniedEdgesThatRestoreConnectivity(usable, from, to, denied)
 	}
 	if len(blockages) == 0 {
 		return nil, err
 	}
 	return nil, &RouteBlockedError{Blockages: blockages}
+}
+
+// deniedEdgesThatRestoreConnectivity reports denied transitions whose single
+// restored edge would make to reachable from from on usable. usable is the
+// capability-filtered graph that already failed to route; adding one denied
+// edge back is the cheapest proof that edge's missing capability is why.
+func deniedEdgesThatRestoreConnectivity(
+	usable *Graph,
+	from, to uint8,
+	denied map[Edge]gameruntime.TransitionBlockage,
+) []gameruntime.TransitionBlockage {
+	if usable == nil || len(denied) == 0 || mapsConnected(usable, from, to) {
+		return nil
+	}
+	var blockages []gameruntime.TransitionBlockage
+	for edge, blockage := range denied {
+		restored := graphWithSemanticEdge(usable, edge)
+		if mapsConnected(restored, from, to) {
+			blockages = append(blockages, blockage)
+		}
+	}
+	return blockages
+}
+
+// graphWithSemanticEdge returns a shallow edge-list copy of g that also
+// includes edge on its source map. Used only for connectivity diagnosis.
+func graphWithSemanticEdge(g *Graph, edge Edge) *Graph {
+	if g == nil {
+		return nil
+	}
+	copyGraph := *g
+	copyGraph.Edges = make(map[uint8][]Edge, len(g.Edges))
+	for mapID, edges := range g.Edges {
+		if mapID != edge.From {
+			copyGraph.Edges[mapID] = edges
+			continue
+		}
+		with := make([]Edge, len(edges)+1)
+		copy(with, edges)
+		with[len(edges)] = edge
+		copyGraph.Edges[mapID] = with
+	}
+	if _, ok := copyGraph.Edges[edge.From]; !ok {
+		copyGraph.Edges[edge.From] = []Edge{edge}
+	}
+	return &copyGraph
 }
 
 // mapsConnected is a component-blind BFS over g's edges.

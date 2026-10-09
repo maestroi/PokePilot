@@ -284,3 +284,94 @@ func TestSemanticRouteDoesNotInventPrerequisiteForGeometricFailure(t *testing.T)
 		t.Fatalf("error = %v, want ErrNoRoute", err)
 	}
 }
+
+// TestDeadEndFrontierDoesNotHideActionableGate is the generic shape of
+// run-a4wn4o17ztx91zgnezctug9t3: a one-way story warp is offered first as a
+// PortBypass frontier, but nothing past it reaches the destination. The real
+// retreat path is an ordinary gate with a missing capability. Diagnosis must
+// skip the dead-end frontier and keep the gate's structured blockage instead
+// of collapsing to a bare ErrNoRoute.
+func TestDeadEndFrontierDoesNotHideActionableGate(t *testing.T) {
+	dead := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	gated := Edge{Kind: EdgeWarp, From: 1, To: 3, WarpX: 1, WarpY: 0}
+	onward := Edge{Kind: EdgeConnection, From: 3, To: 4, Dir: dirEast}
+	g := &Graph{
+		componentAware: true,
+		// Dead-end frontier first so BFS prefers it before the gated retreat.
+		Edges: map[uint8][]Edge{
+			1: {dead, gated},
+			2: {},
+			3: {onward},
+			4: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1, 1}},
+			2: {{1}},
+			3: {{1}},
+			4: {{1}},
+		},
+		tiles:      map[uint8]dim{1: {w: 2, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}, 4: {w: 1, h: 1}},
+		warps:      map[uint8][]worldmodel.Warp{1: {{X: 0, Y: 0, DestMap: 2}, {X: 1, Y: 0, DestMap: 3}}},
+		exitComps:  map[Edge][]int{dead: {1}, gated: {1}, onward: {1}},
+		entryComps: map[Edge][]int{dead: {1}, gated: {1}, onward: {1}},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_enter_dead_end"),
+		Transitions: map[Edge]gameruntime.Transition{
+			dead: {
+				ID:         "story_one_way",
+				Requires:   []gameruntime.CapabilityID{"can_enter_dead_end"},
+				PortBypass: true,
+			},
+			gated: {
+				ID:       "retreat_gate",
+				Requires: []gameruntime.CapabilityID{"can_retreat"},
+				Gate:     true,
+			},
+		},
+	}
+
+	_, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 4, 0, 0, 0, 0, nil, prereqs)
+	var blocked *RouteBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("error = %T %v, want *RouteBlockedError naming the retreat gate", err, err)
+	}
+	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_retreat"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("missing = %v, want %v", got, want)
+	}
+	if len(blocked.Blockages) != 1 || blocked.Blockages[0].Transition.ID != "retreat_gate" {
+		t.Fatalf("blockages = %+v, want retreat_gate only", blocked.Blockages)
+	}
+}
+
+// TestDeniedEdgeConnectivityFallback covers the Surf-sea overlay shape:
+// geometric diagnosis finds no usable route and no blockage-bearing
+// diagnostic path, but restoring one denied gate reconnects from→to on the
+// capability-filtered graph. That gate must still surface as structured
+// prerequisite evidence.
+func TestDeniedEdgeConnectivityFallback(t *testing.T) {
+	gated := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 0, WarpY: 0}
+	onward := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
+	g := &Graph{Edges: map[uint8][]Edge{
+		1: {gated},
+		2: {onward},
+		3: {},
+	}}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			gated: {
+				ID:       "retreat_gate",
+				Requires: []gameruntime.CapabilityID{"can_retreat"},
+				Gate:     true,
+			},
+		},
+	}
+	_, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 0, 0, 0, 0, nil, prereqs)
+	var blocked *RouteBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("error = %T %v, want *RouteBlockedError", err, err)
+	}
+	if got, want := blocked.MissingCapabilities(), []gameruntime.CapabilityID{"can_retreat"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("missing = %v, want %v", got, want)
+	}
+}
