@@ -64,7 +64,11 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 	}
 	ctx := newObjectiveOfferContext(obs, known)
 	provided := (progressionObjectiveProvider{planner: p}).Provide(ctx)
-	progress := annotate(provided.Candidates, known)
+	// Progression is appended after OfferWithEvidence filtered the provider
+	// menu, so it needs the same combat-loss gate: without it a progression
+	// battle lost with an unchanged party is re-offered every round
+	// (run-1auv5rq62ou1i16n25pxcc2izv: 70 Burned Tower blackouts).
+	progress := annotate(filterCombatRecoveryBlocked(provided.Candidates, known), known)
 	base.Blocked = append(base.Blocked, provided.Blocked...)
 	if len(progress) == 0 {
 		return base
