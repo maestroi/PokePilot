@@ -612,3 +612,62 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	}
 	return reachable, nil
 }
+
+// GrassHabitatReachable returns a predicate answering, for the live state,
+// whether any wild-encounter cell on a map can be routed to with the
+// capabilities usable now. Map-level reachability (ReachableMaps) is not
+// enough for a catch: Route 23's south gate pocket is an ordinary map arrival
+// while all of its grass sits behind Surf and the badge checks, so a catch
+// offered there lands the player where Catch can never hunt
+// (run-3w50i60f631u41je7v36wsudzt). Maps without encounter cells answer true
+// and keep their callers' existing behavior. The predicate is nil when no
+// live state is available.
+func GrassHabitatReachable(m *emu.Emu, romData []byte) (func(mapID uint8) bool, error) {
+	if m == nil || len(romData) == 0 {
+		return nil, nil
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		return nil, err
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
+		return nil, err
+	}
+	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+		return nil, err
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	cur, x, y := mem.U8(sym.CurMap), int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord))
+	cache := map[uint8]bool{}
+	return func(mapID uint8) bool {
+		if ok, seen := cache[mapID]; seen {
+			return ok
+		}
+		ok := grassRoutable(g, prereqs, cur, x, y, romData, mapID)
+		cache[mapID] = ok
+		return ok
+	}, nil
+}
+
+func grassRoutable(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, x, y int, romData []byte, mapID uint8) bool {
+	grass, grid, err := grassCells(romData, mapID)
+	if err != nil || grid == nil || len(grass) == 0 {
+		return true
+	}
+	comps := world.Components(grid)
+	tried := map[int]bool{}
+	for _, c := range grass {
+		comp := comps[c.y][c.x]
+		if tried[comp] {
+			continue
+		}
+		tried[comp] = true
+		_, err := world.FindRoutePlanAtDestinationWithCapabilities(g, cur, mapID, x, y, c.x, c.y, nil, prereqs)
+		if err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+			return true
+		}
+	}
+	return false
+}

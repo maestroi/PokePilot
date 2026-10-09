@@ -160,3 +160,28 @@ func catchPlaceOnMap(mapID uint8) (PlaceID, bool) {
 	}
 	return "", false
 }
+
+// filterUnreachableGrassCatches drops remote plain-grass catches whose map is
+// reachable but whose encounter cells are not with the capabilities usable now
+// (#2480/#2482). Scripted hunts (fishing, Surf, Safari, trades) own their own
+// approach and are left alone.
+func filterUnreachableGrassCatches(m *emu.Emu, romData []byte, offered []Objective) []Objective {
+	reachable, err := skill.GrassHabitatReachable(m, romData)
+	if err != nil || reachable == nil {
+		return offered
+	}
+	return filterGrassCatches(offered, reachable)
+}
+
+func filterGrassCatches(offered []Objective, reachable func(uint8) bool) []Objective {
+	out := offered[:0:0]
+	for _, o := range offered {
+		if o.Kind == KindCatch && o.Place != "" && o.Intent == "" {
+			if dest, ok := skill.Place(string(o.Place)); ok && !reachable(dest.Map) {
+				continue
+			}
+		}
+		out = append(out, o)
+	}
+	return out
+}
