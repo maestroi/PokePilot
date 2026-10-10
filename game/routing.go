@@ -25,6 +25,9 @@ type LiveMapObject struct {
 	X         int
 	Y         int
 	Clearable FieldMoveID
+	// Pushable is true only for live movable boulders, never ordinary NPCs
+	// or static scenery sharing the same sprite. Profiles own that distinction.
+	Pushable bool
 }
 
 // MapShellPhase is where a cartridge's overworld map shell is in its own entry
