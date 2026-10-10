@@ -76,6 +76,9 @@ func UseNativeFly(m *emu.Emu, nativeDestination uint16) error {
 	if !waitMenuUntil(m, nativeFlyPickerBudget, func() bool {
 		return fly.DecodeFlyMenu(m).Visible
 	}) {
+		if cleanupErr := closeNativeFlyPicker(m, fly, party, menu, overworld); cleanupErr != nil {
+			return fmt.Errorf("skill: Fly: destination picker did not open; cleanup: %w", cleanupErr)
+		}
 		return fmt.Errorf("skill: Fly: destination picker did not open")
 	}
 
@@ -102,7 +105,9 @@ func UseNativeFly(m *emu.Emu, nativeDestination uint16) error {
 		}
 	}
 	if !choice {
-		closeNativeFlyPicker(m, fly, overworld)
+		if cleanupErr := closeNativeFlyPicker(m, fly, party, menu, overworld); cleanupErr != nil {
+			return fmt.Errorf("%w: Fly landing %q not selectable; cleanup: %v", ErrFieldMovePrerequisite, desiredLabel, cleanupErr)
+		}
 		return fmt.Errorf("%w: Fly landing %q is unvisited or outside the active region", ErrFieldMovePrerequisite, desiredLabel)
 	}
 
@@ -123,15 +128,26 @@ func UseNativeFly(m *emu.Emu, nativeDestination uint16) error {
 
 // Only the Fly picker opened by this executor is dismissible here. Never
 // answer unrelated post-Fly gameplay dialogue or battle choices.
-func closeNativeFlyPicker(m *emu.Emu, fly game.FlyDestinationDecoder, overworld game.OverworldDecoder) {
+func closeNativeFlyPicker(
+	m *emu.Emu,
+	fly game.FlyDestinationDecoder,
+	party game.PartyMenuDecoder,
+	menu game.MenuDecoder,
+	overworld game.OverworldDecoder,
+) error {
 	for i := 0; i < 50; i++ {
 		if overworld.DecodeOverworld(m).Controllable {
-			return
+			return nil
 		}
-		if !fly.DecodeFlyMenu(m).Visible && i > 10 {
-			return
+		// Only dismiss the Fly map, party selection, or START menu we
+		// opened. Never send B to an unexpected battle or story choice.
+		if !fly.DecodeFlyMenu(m).Visible &&
+			!party.DecodePartyMenu(m).Visible &&
+			!menu.DecodeStartMenu(m).Visible {
+			return fmt.Errorf("skill: Fly: cleanup found an unowned UI state")
 		}
 		m.Tap(emu.B, 3, 7)
 		m.StepFrames(10)
 	}
+	return fmt.Errorf("skill: Fly: destination picker cleanup never returned control")
 }
