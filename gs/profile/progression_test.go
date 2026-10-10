@@ -276,8 +276,24 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 
 	setGSEvent(mem, eventGotHM03Surf)
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressHM03SurfAcquired) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("HM03 Surf boundary did not complete supported frontier: %+v", story)
+	if !story.Has(ProgressHM03SurfAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("HM03 Surf is acquired but must not finish the Olivine/Cianwood frontier: %+v", story)
+	}
+
+	setGSEvent(mem, eventJasmineExplainedAmphysSickness)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressLighthouseSicknessExplained) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Lighthouse request must not finish medicine quest: %+v", story)
+	}
+	setGSEvent(mem, eventGotSecretPotionFromPharmacy)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressSecretPotionAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("SecretPotion pickup is not Jasmine's cure: %+v", story)
+	}
+	setGSEvent(mem, eventJasmineReturnedToGym)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressJasmineReturnedToGym) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Jasmine cure must complete the supported frontier: %+v", story)
 	}
 }
 
@@ -308,5 +324,33 @@ func TestPinnedEcruteakEventConstants(t *testing.T) {
 	}
 	if eventReleasedTheBeasts != 123 {
 		t.Fatalf("EVENT_RELEASED_THE_BEASTS = %d, want 123", eventReleasedTheBeasts)
+	}
+}
+
+func TestPinnedOlivineCianwoodEventConstants(t *testing.T) {
+	// Independently counted from the vendored pokegold event_flags.asm,
+	// including the unused flags before the early story indices.
+	if eventJasmineExplainedAmphysSickness != 55 ||
+		eventGotSecretPotionFromPharmacy != 35 ||
+		eventJasmineReturnedToGym != 32 {
+		t.Fatalf("Olivine/Cianwood event indices = (%d,%d,%d), want (55,35,32)",
+			eventJasmineExplainedAmphysSickness,
+			eventGotSecretPotionFromPharmacy, eventJasmineReturnedToGym)
+	}
+}
+
+func TestMedicineEventDoesNotRequireItemStillInBag(t *testing.T) {
+	mem := fakeGSReader{}
+	setGSEvent(mem, eventJasmineExplainedAmphysSickness)
+	setGSEvent(mem, eventGotSecretPotionFromPharmacy)
+	// Jasmine consumes the SecretPotion. Its historical acquisition remains
+	// true while the proof of completed treatment is her separate event.
+	story := projectEarlyStory(mem)
+	if !story.Has(ProgressSecretPotionAcquired) || story.Has(ProgressJasmineReturnedToGym) {
+		t.Fatalf("SecretPotion provenance was coupled to current inventory: %+v", story)
+	}
+	setGSEvent(mem, eventJasmineReturnedToGym)
+	if !projectEarlyStory(mem).Has(ProgressSupportedFrontier) {
+		t.Fatal("Jasmine's gym return should complete the new supported frontier")
 	}
 }
