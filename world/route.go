@@ -365,7 +365,16 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			}
 
 			nextEntry := g.entryComps[e]
-			boundary := g.componentAware && relaxLanding[e] && !occupied[e.To]
+			// First relaxLanding hop onto a map is a frontier. Later hops onto
+			// an already-occupied map normally expand with the physical
+			// landing (PivotOnly leave-and-return). Full PortBypass
+			// (skipCanExit+relaxLanding) must stay a frontier on every band:
+			// empty Surf landing comps made "same map, new band" look like a
+			// safe re-entry and teleported across Route 20's Seafoam split
+			// (run-jc853qns2lmc109wx2hs96btk). GoTo executes the shore prefix
+			// and replans on live water topology instead.
+			boundary := g.componentAware && relaxLanding[e] &&
+				(!occupied[e.To] || skipCanExit[e])
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue

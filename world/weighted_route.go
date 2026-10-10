@@ -417,7 +417,9 @@ func findExactWeightedRoute(
 			}
 
 			nextEntry := g.entryComps[edge]
-			boundary := g.componentAware && view.relaxLanding[edge] && !cur.occupied.has(edge.To)
+			// Match findRoute: full PortBypass stays a frontier on every band.
+			boundary := g.componentAware && view.relaxLanding[edge] &&
+				(!cur.occupied.has(edge.To) || view.skipCanExit[edge])
 
 			next := weightedRouteNode{
 				mapID:    edge.To,
