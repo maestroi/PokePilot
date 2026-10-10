@@ -6,28 +6,31 @@ import (
 )
 
 const (
-	ProgressStarterReceived          game.ProgressID = "gs_starter_received"
-	ProgressMysteryEggReceived       game.ProgressID = "gs_mystery_egg_received"
-	ProgressPokedexAcquired          game.ProgressID = "gs_pokedex_acquired"
-	ProgressCherrygroveRivalResolved game.ProgressID = "gs_cherrygrove_rival_resolved"
-	ProgressRivalNamed               game.ProgressID = "gs_rival_named"
-	ProgressMysteryEggReturned       game.ProgressID = "gs_mystery_egg_returned"
-	ProgressSproutTowerCleared       game.ProgressID = "gs_sprout_tower_cleared"
-	ProgressZephyrBadgeEarned        game.ProgressID = "gs_zephyr_badge_earned"
-	ProgressTogepiEggReceived        game.ProgressID = "gs_togepi_egg_received"
-	ProgressSlowpokeWellCleared      game.ProgressID = "gs_slowpoke_well_cleared"
-	ProgressHiveBadgeEarned          game.ProgressID = "gs_hive_badge_earned"
-	ProgressAzaleaRivalResolved      game.ProgressID = "gs_azalea_rival_resolved"
-	ProgressFarfetchdHerded          game.ProgressID = "gs_farfetchd_herded"
-	ProgressHM01CutAcquired          game.ProgressID = "gs_hm01_cut_acquired"
-	ProgressTM02HeadbuttAcquired     game.ProgressID = "gs_tm02_headbutt_acquired"
-	ProgressPlainBadgeEarned         game.ProgressID = "gs_plain_badge_earned"
-	ProgressSquirtBottleAcquired     game.ProgressID = "gs_squirtbottle_acquired"
-	ProgressSudowoodoCleared         game.ProgressID = "gs_sudowoodo_cleared"
-	ProgressTM08RockSmashAcquired    game.ProgressID = "gs_tm08_rock_smash_acquired"
-	ProgressBurnedTowerCleared       game.ProgressID = "gs_burned_tower_cleared"
-	ProgressFogBadgeEarned           game.ProgressID = "gs_fog_badge_earned"
-	ProgressHM03SurfAcquired         game.ProgressID = "gs_hm03_surf_acquired"
+	ProgressStarterReceived             game.ProgressID = "gs_starter_received"
+	ProgressMysteryEggReceived          game.ProgressID = "gs_mystery_egg_received"
+	ProgressPokedexAcquired             game.ProgressID = "gs_pokedex_acquired"
+	ProgressCherrygroveRivalResolved    game.ProgressID = "gs_cherrygrove_rival_resolved"
+	ProgressRivalNamed                  game.ProgressID = "gs_rival_named"
+	ProgressMysteryEggReturned          game.ProgressID = "gs_mystery_egg_returned"
+	ProgressSproutTowerCleared          game.ProgressID = "gs_sprout_tower_cleared"
+	ProgressZephyrBadgeEarned           game.ProgressID = "gs_zephyr_badge_earned"
+	ProgressTogepiEggReceived           game.ProgressID = "gs_togepi_egg_received"
+	ProgressSlowpokeWellCleared         game.ProgressID = "gs_slowpoke_well_cleared"
+	ProgressHiveBadgeEarned             game.ProgressID = "gs_hive_badge_earned"
+	ProgressAzaleaRivalResolved         game.ProgressID = "gs_azalea_rival_resolved"
+	ProgressFarfetchdHerded             game.ProgressID = "gs_farfetchd_herded"
+	ProgressHM01CutAcquired             game.ProgressID = "gs_hm01_cut_acquired"
+	ProgressTM02HeadbuttAcquired        game.ProgressID = "gs_tm02_headbutt_acquired"
+	ProgressPlainBadgeEarned            game.ProgressID = "gs_plain_badge_earned"
+	ProgressSquirtBottleAcquired        game.ProgressID = "gs_squirtbottle_acquired"
+	ProgressSudowoodoCleared            game.ProgressID = "gs_sudowoodo_cleared"
+	ProgressTM08RockSmashAcquired       game.ProgressID = "gs_tm08_rock_smash_acquired"
+	ProgressBurnedTowerCleared          game.ProgressID = "gs_burned_tower_cleared"
+	ProgressFogBadgeEarned              game.ProgressID = "gs_fog_badge_earned"
+	ProgressHM03SurfAcquired            game.ProgressID = "gs_hm03_surf_acquired"
+	ProgressLighthouseSicknessExplained game.ProgressID = "gs_lighthouse_sickness_explained"
+	ProgressSecretPotionAcquired        game.ProgressID = "gs_secretpotion_acquired"
+	ProgressJasmineReturnedToGym        game.ProgressID = "gs_jasmine_returned_to_gym"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -42,23 +45,28 @@ const (
 	// pret/pokegold constants/event_flags.asm at gs/data.SourceRevision.
 	// Keep these zero-based event indices pinned: event flags are addressed
 	// directly as EventFlags + event/8 below.
-	eventGotHM03Surf              uint16 = 18
-	eventGotHM05Flash             uint16 = 20
-	eventGotHM01Cut               uint16 = 16
-	eventGotTM02Headbutt          uint16 = 95
-	eventHerdedFarfetchd          uint16 = 41
-	eventGotTogepiEggFromElmsAide uint16 = 45
-	eventClearedSlowpokeWell      uint16 = 43
-	eventRivalAzaleaTown          uint16 = 1727
-	eventGotSquirtBottle          uint16 = 92
-	eventFoughtSudowoodo          uint16 = 42
-	eventGotTM08RockSmash         uint16 = 75
-	eventReleasedTheBeasts        uint16 = 123
-	statusFlagsPokedexMask               = 1 << 0
-	johtoBadgeZephyrMask                 = 1 << 0
-	johtoBadgeHiveMask                   = 1 << 1
-	johtoBadgePlainMask                  = 1 << 2
-	johtoBadgeFogMask                    = 1 << 3
+	eventGotHM03Surf uint16 = 18
+	// Event indices from pokegold/constants/event_flags.asm. Keep these
+	// cartridge-owned facts out of the generic objective executor.
+	eventJasmineExplainedAmphysSickness uint16 = 55
+	eventGotSecretPotionFromPharmacy    uint16 = 35
+	eventJasmineReturnedToGym           uint16 = 32
+	eventGotHM05Flash                   uint16 = 20
+	eventGotHM01Cut                     uint16 = 16
+	eventGotTM02Headbutt                uint16 = 95
+	eventHerdedFarfetchd                uint16 = 41
+	eventGotTogepiEggFromElmsAide       uint16 = 45
+	eventClearedSlowpokeWell            uint16 = 43
+	eventRivalAzaleaTown                uint16 = 1727
+	eventGotSquirtBottle                uint16 = 92
+	eventFoughtSudowoodo                uint16 = 42
+	eventGotTM08RockSmash               uint16 = 75
+	eventReleasedTheBeasts              uint16 = 123
+	statusFlagsPokedexMask                     = 1 << 0
+	johtoBadgeZephyrMask                       = 1 << 0
+	johtoBadgeHiveMask                         = 1 << 1
+	johtoBadgePlainMask                        = 1 << 2
+	johtoBadgeFogMask                          = 1 << 3
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -137,7 +145,10 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressBurnedTowerCleared, Complete: hasGSEvent(reader, eventReleasedTheBeasts)},
 		{ID: ProgressFogBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
 		{ID: ProgressHM03SurfAcquired, Complete: hasGSEvent(reader, eventGotHM03Surf)},
-		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotHM03Surf)},
+		{ID: ProgressLighthouseSicknessExplained, Complete: hasGSEvent(reader, eventJasmineExplainedAmphysSickness)},
+		{ID: ProgressSecretPotionAcquired, Complete: hasGSEvent(reader, eventGotSecretPotionFromPharmacy)},
+		{ID: ProgressJasmineReturnedToGym, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
+		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
 	}
 }
 
