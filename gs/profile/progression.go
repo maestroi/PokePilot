@@ -55,8 +55,8 @@ const (
 	eventJasmineExplainedAmphysSickness uint16 = 55
 	eventGotSecretPotionFromPharmacy    uint16 = 35
 	eventJasmineReturnedToGym           uint16 = 32
-	eventGotHM04Strength               uint16 = 19
-	eventGotHM02Fly                    uint16 = 17
+	eventGotHM04Strength                uint16 = 19
+	eventGotHM02Fly                     uint16 = 17
 	eventGotHM05Flash                   uint16 = 20
 	eventGotHM01Cut                     uint16 = 16
 	eventGotTM02Headbutt                uint16 = 95
