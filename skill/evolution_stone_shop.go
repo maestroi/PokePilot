@@ -26,10 +26,12 @@ func init() {
 }
 
 // BuyEvolutionStone travels to Celadon Mart 4F, proves from the ROM-backed mart
-// table that this clerk stocks item, faces the clerk, and buys exactly one.
+// table that this clerk stocks item, faces the clerk, and buys qty (a Dex run
+// stocks every stone it will need in one trip). A new stone kind first frees
+// a bag slot through the managed bag-pressure chain.
 // Buy owns the menu controller and positively verifies both the bag increment
 // and the money debit before returning to a controllable overworld boundary.
-func BuyEvolutionStone(m *emu.Emu, romData []byte, item uint8, policy MovePolicy) (TravelResult, error) {
+func BuyEvolutionStone(m *emu.Emu, romData []byte, item uint8, qty int, policy MovePolicy) (TravelResult, error) {
 	if policy == nil {
 		return TravelResult{}, fmt.Errorf("skill: BuyEvolutionStone: nil policy")
 	}
@@ -77,7 +79,13 @@ func BuyEvolutionStone(m *emu.Emu, romData []byte, item uint8, policy MovePolicy
 	if err := Face(m, faceX, faceY); err != nil {
 		return travel, fmt.Errorf("skill: BuyEvolutionStone: face clerk: %w", err)
 	}
-	if err := Buy(m, item, 1); err != nil {
+	if err := EnsureBagSpaceFor(m, item); err != nil {
+		return travel, fmt.Errorf("skill: BuyEvolutionStone: bag space: %w", err)
+	}
+	if err := Face(m, faceX, faceY); err != nil {
+		return travel, fmt.Errorf("skill: BuyEvolutionStone: face clerk after bag space: %w", err)
+	}
+	if err := Buy(m, item, qty); err != nil {
 		return travel, fmt.Errorf("skill: BuyEvolutionStone: %w", err)
 	}
 	return travel, nil
