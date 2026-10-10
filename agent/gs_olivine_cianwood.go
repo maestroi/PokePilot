@@ -10,14 +10,14 @@ import (
 )
 
 const (
-	gsJasmineLighthouseX uint8 = 8
-	gsJasmineLighthouseY uint8 = 8
+	gsJasmineLighthouseX      uint8 = 8
+	gsJasmineLighthouseY      uint8 = 8
 	gsJasmineLighthouseStandX uint8 = 8
 	gsJasmineLighthouseStandY uint8 = 9
-	gsCianwoodPharmacistX uint8 = 2
-	gsCianwoodPharmacistY uint8 = 3
-	gsCianwoodPharmacyStandX uint8 = 2
-	gsCianwoodPharmacyStandY uint8 = 4
+	gsCianwoodPharmacistX     uint8 = 2
+	gsCianwoodPharmacistY     uint8 = 3
+	gsCianwoodPharmacyStandX  uint8 = 2
+	gsCianwoodPharmacyStandY  uint8 = 4
 )
 
 // executeGSLighthouseSickness advances the first Olivine story gate.
