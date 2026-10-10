@@ -103,7 +103,7 @@ func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCata
 	for _, object := range obs.MapObjects {
 		entry := CatalogInteractable{
 			X: object.X, Y: object.Y, Kind: CatalogInteractableKind(object.Kind),
-			Challengeable: object.Challengeable, Defeated: object.Defeated, PrizeMoney: object.PrizeMoney,
+			Challengeable: object.Challengeable, Defeated: object.Defeated, PrizeMoney: object.PrizeMoney, GiftItem: ItemID(object.GiftItem),
 		}
 		if object.Kind == string(CatalogInteractableItem) {
 			item, ok := ItemByName(object.Item)

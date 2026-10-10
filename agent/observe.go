@@ -110,6 +110,9 @@ type MapObject struct {
 	Challengeable bool
 	Defeated      bool
 	PrizeMoney    uint32
+	// GiftItem names an item this person still hands over for free when
+	// talked to (adapter-decoded from its script; empty once received).
+	GiftItem string
 }
 
 type Move struct {

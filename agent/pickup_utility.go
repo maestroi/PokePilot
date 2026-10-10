@@ -62,6 +62,32 @@ func enhancePickupObjectives(romData []byte, party state.PartyState, obs Observa
 	return enhanced
 }
 
+const (
+	// freeGiftIntent marks a Talk whose adapter-decoded script hands over an
+	// item the player has not received yet.
+	freeGiftIntent = "free-gift"
+	// freeCollectionRadius matches pickupDetourClass's "small local detour".
+	freeCollectionRadius = 8
+)
+
+// freeCollectionObjective takes a free item on the current map without asking
+// the planner: the nearest offered pickup or pending NPC gift within a small
+// detour. Offered objectives are already reachable, storable and not
+// quarantined, so this only removes an LLM round-trip for an action that
+// costs a few steps and is never worse than skipping it.
+func freeCollectionObjective(obs Observation, offered []Objective) (Objective, bool) {
+	best, bestDistance := Objective{}, freeCollectionRadius+1
+	for _, o := range offered {
+		if o.Kind != KindPickup && !(o.Kind == KindTalk && o.Intent == freeGiftIntent) {
+			continue
+		}
+		if d := absInt(int(obs.X)-int(o.X)) + absInt(int(obs.Y)-int(o.Y)); d < bestDistance {
+			best, bestDistance = o, d
+		}
+	}
+	return best, bestDistance <= freeCollectionRadius
+}
+
 func pickupCanStore(obs Observation, item ItemID) bool {
 	if bagQuantity(obs, string(item)) > 0 {
 		return true

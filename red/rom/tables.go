@@ -35,6 +35,8 @@ var redTables = gen1rom.TableLayout{
 	GoodRodMons:    gen1rom.Symbol{Bank: 0x03, Addr: 0x627F},
 	SuperRod:       gen1rom.Symbol{Bank: 0x03, Addr: 0x6919},
 	SuperRodFormat: gen1rom.SuperRodGrouped,
+
+	GiveItem: 0x3E2E,
 }
 
 // Tables returns the table layout bound to romData, or Red's.
