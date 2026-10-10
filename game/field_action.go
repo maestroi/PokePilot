@@ -11,9 +11,9 @@ type FieldActionState struct {
 	// cartridge's current map and coordinates. Scripted movement field
 	// actions (Waterfall) must verify displacement from their start tile,
 	// not only a success byte set when the script was queued.
-	PositionKnown       bool
-	NativeMapID         uint16
-	X, Y                uint8
+	PositionKnown      bool
+	NativeMapID        uint16
+	X, Y               uint8
 	Controllable       bool
 	CutTargetKnown     bool
 	CuttableAhead      bool
