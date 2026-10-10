@@ -51,6 +51,23 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"DANCE_THEATER",
 		"BURNED_TOWER_1F",
 		"BURNED_TOWER_B1F",
+		// The next supported Johto corridor: west of Ecruteak through
+		// Olivine Lighthouse, then the water route to Cianwood Pharmacy.
+		"ROUTE_38",
+		"ROUTE_39",
+		"OLIVINE_CITY",
+		"OLIVINE_POKECENTER_1F",
+		"OLIVINE_LIGHTHOUSE_1F",
+		"OLIVINE_LIGHTHOUSE_2F",
+		"OLIVINE_LIGHTHOUSE_3F",
+		"OLIVINE_LIGHTHOUSE_4F",
+		"OLIVINE_LIGHTHOUSE_5F",
+		"OLIVINE_LIGHTHOUSE_6F",
+		"ROUTE_40",
+		"ROUTE_41",
+		"CIANWOOD_CITY",
+		"CIANWOOD_POKECENTER_1F",
+		"CIANWOOD_PHARMACY",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
