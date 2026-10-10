@@ -108,6 +108,14 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 		}
 	}
 
+	for i, mon := range gs.Party.Mons {
+		if i >= len(obs.Party) {
+			break
+		}
+		facts := gen1MatchupMon(romData, mon)
+		obs.Party[i].Types, obs.Party[i].Moves = facts.Types, facts.Moves
+	}
+
 	if len(gs.Party.Mons) > 0 {
 		lead := gs.Party.Mons[0]
 		hasDamagingMove := false
@@ -240,6 +248,8 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}
+	obs.ChallengeProfiles = gen1ChallengeProfiles(romData)
+	obs.Learnsets = gen1Learnsets(romData)
 	obs.Catalog = facts.Catalog(obs)
 	for i := range obs.Catalog.Destinations {
 		destination := &obs.Catalog.Destinations[i]

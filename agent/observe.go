@@ -66,6 +66,15 @@ type Observation struct {
 	PokedexSeen  []SpeciesID
 	Dex          DexCatalog       `json:"-"`
 	Catalog      ObjectiveCatalog `json:"-"`
+	// ChallengeProfiles are the adapter's ROM-derived challenge matchups,
+	// carried so a rebuilt catalog keeps them.
+	ChallengeProfiles []CatalogChallengeProfile `json:"-"`
+	// Learnsets are the adapter's ROM-derived damaging moves per species.
+	Learnsets map[SpeciesID][]LearnableMove `json:"-"`
+	// CounterNeed/CounterCandidates describe an open counter campaign and the
+	// known, reachable catches that would become a counter.
+	CounterNeed       *CounterNeed `json:"-"`
+	CounterCandidates []SpeciesID  `json:"-"`
 
 	WildGrass []WildSpecies
 	HasGrass  bool
@@ -134,6 +143,16 @@ type PartyMon struct {
 	HP         uint16
 	MaxHP      uint16
 	Status     string
+	// Types and Moves are the member's species types and known moves (with
+	// remaining PP), for whole-party matchup readiness.
+	Types []string
+	Moves []PartyMove
+}
+
+// PartyMove is one known move of a party member.
+type PartyMove struct {
+	Move
+	PP uint8
 }
 
 type WildSpecies struct {

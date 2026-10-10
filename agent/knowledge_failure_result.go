@@ -30,6 +30,9 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	f.Objective, f.Last = o.String(), conciseObjectiveError(o, nativeErr)
 	if combatLoss {
 		stampCombatPreparation(&f, result.Final)
+		key := combatRecoveryObjective(o).Key()
+		f.Key = &key
+		f.CounterGap = !challengeCounterReady(result.Final, o)
 		if f.ReadinessTarget > 0 {
 			f.Last += fmt.Sprintf("; combat preparation readiness %d -> %d before retry",
 				f.ReadinessBaseline, f.ReadinessTarget)

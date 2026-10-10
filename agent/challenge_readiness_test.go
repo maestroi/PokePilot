@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/game"
 )
 
 func readinessTestChallenge() Objective {
@@ -96,45 +96,66 @@ func TestEvaluateChallengeReadinessChangesUndersizedParty(t *testing.T) {
 	}
 }
 
-func TestEvaluateChallengeReadinessUsesKnownMoveCoverage(t *testing.T) {
-	obs := readinessTestObservation(20)
-	got := EvaluateChallengeReadiness(obs, NewKnowledge(nil), readinessTestChallenge(), ChallengeReadinessProfile{
-		PreferredMoveTypes: []string{"water", "grass"},
+// A Brock-shaped team: Electric is useless, Water/Grass are preferred.
+func readinessTestMatchup() ChallengeReadinessProfile {
+	return matchupReadinessProfile(game.Matchup{
+		Opponents: []game.ChallengeOpponent{{Species: "onix", Level: 14, Types: []game.TypeID{"rock", "ground"}}},
+		MaxLevel:  14,
+		Preferred: []game.TypeID{"water", "grass"},
+		Useless:   []game.TypeID{"electric"},
 	})
-	if got.Action != ChallengeChangeParty {
-		t.Fatalf("action = %q, want change_party for known coverage gap: %+v", got.Action, got)
-	}
+}
 
-	obs.LeadMoves = []Move{{Power: 40, Type: "water"}}
-	got = EvaluateChallengeReadiness(obs, NewKnowledge(nil), readinessTestChallenge(), ChallengeReadinessProfile{
-		PreferredMoveTypes: []string{"water", "grass"},
-	})
-	if got.Action != ChallengeReady {
-		t.Fatalf("action = %q, want ready with preferred coverage: %+v", got.Action, got)
+func withMoves(mon PartyMon, moves ...PartyMove) PartyMon {
+	mon.Moves = moves
+	return mon
+}
+
+func TestMatchupReadinessAcquiresCounterWhenEveryAttackIsUseless(t *testing.T) {
+	obs := readinessTestObservation(20)
+	obs.Party[0] = withMoves(obs.Party[0], PartyMove{Move: Move{Power: 40, Type: "electric"}, PP: 30})
+	got := EvaluateChallengeReadiness(obs, NewKnowledge(nil), readinessTestChallenge(), readinessTestMatchup())
+	if got.Action != ChallengeAcquireCounter || got.Counters != 0 {
+		t.Fatalf("electric-only party = %+v, want acquire_counter", got)
 	}
 }
 
-func TestBoulderReadinessRejectsElectricLead(t *testing.T) {
-	profile := redGymReadinessProfile(state.BadgeBoulder)
-	if len(profile.PreferredMoveTypes) == 0 {
-		t.Fatal("Boulder profile has no preferred move types; Electric vs Ground would look ready")
+func TestMatchupReadinessTriesLevelsBeforeDemandingACounter(t *testing.T) {
+	challenge := readinessTestChallenge()
+	obs := readinessTestObservation(20)
+	obs.Party[0] = withMoves(obs.Party[0], PartyMove{Move: Move{Power: 40, Type: "normal"}, PP: 30})
+	got := EvaluateChallengeReadiness(obs, NewKnowledge(nil), challenge, readinessTestMatchup())
+	if got.Action == ChallengeAcquireCounter || got.Action == ChallengeTrainCounter {
+		t.Fatalf("first attempt with a neutral attack = %+v, want no counter demand", got)
 	}
 
-	obs := readinessTestObservation(15)
-	obs.LeadMoves = []Move{
-		{Power: 40, Type: "electric"},
-		{Power: 40, Type: "normal"},
+	known := NewKnowledge(nil)
+	known.Failures[combatLossFailureKey(challenge)] = Failure{Objective: challenge.String(), Times: 1}
+	got = EvaluateChallengeReadiness(obs, known, challenge, readinessTestMatchup())
+	if got.Action != ChallengeAcquireCounter {
+		t.Fatalf("after a loss = %+v, want acquire_counter", got)
 	}
-	gym := Objective{Kind: KindGym, Place: "pewter gym"}
-	got := EvaluateChallengeReadiness(obs, NewKnowledge(nil), gym, profile)
-	if got.Action != ChallengeChangeParty {
-		t.Fatalf("electric/normal lead action = %q, want change_party: %+v", got.Action, got)
+}
+
+func TestMatchupReadinessTrainsTheCounterNotTheLead(t *testing.T) {
+	challenge := readinessTestChallenge()
+	known := NewKnowledge(nil)
+	known.Failures[combatLossFailureKey(challenge)] = Failure{Objective: challenge.String(), Times: 1}
+	obs := readinessTestObservation(30)
+	obs.PartyCount = 2
+	obs.Party[0] = withMoves(obs.Party[0], PartyMove{Move: Move{Power: 40, Type: "electric"}, PP: 30})
+	obs.Party = append(obs.Party, withMoves(PartyMon{Species: "squirtle", Level: 9, HP: 30, MaxHP: 30},
+		PartyMove{Move: Move{Power: 40, Type: "water"}, PP: 25}))
+
+	got := EvaluateChallengeReadiness(obs, known, challenge, readinessTestMatchup())
+	if got.Action != ChallengeTrainCounter || got.CounterSlot != 1 || got.CounterTarget != 11 {
+		t.Fatalf("under-level counter = %+v, want train_counter slot 1 to 11", got)
 	}
 
-	obs.LeadMoves = []Move{{Power: 40, Type: "fire"}}
-	got = EvaluateChallengeReadiness(obs, NewKnowledge(nil), gym, profile)
-	if got.Action != ChallengeReady && got.Action != ChallengeTrain {
-		t.Fatalf("fire lead action = %q, want ready or train: %+v", got.Action, got)
+	obs.Party[1].Level = 12
+	got = EvaluateChallengeReadiness(obs, known, challenge, readinessTestMatchup())
+	if got.Action == ChallengeTrainCounter || got.Action == ChallengeAcquireCounter || got.Counters != 1 {
+		t.Fatalf("leveled counter = %+v, want counter accepted", got)
 	}
 }
 

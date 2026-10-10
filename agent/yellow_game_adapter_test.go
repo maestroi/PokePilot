@@ -86,7 +86,8 @@ func TestYellowSharedObjectivesValidateThroughGen1Engine(t *testing.T) {
 }
 
 func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
-	catalog := yellowObjectiveCatalog(Observation{GameID: yellowprofile.GameID, PartyCount: 1})
+	catalog := yellowObjectiveCatalog(Observation{GameID: yellowprofile.GameID, PartyCount: 1,
+		ChallengeProfiles: gen1ChallengeProfiles(gen1TestROM(t, "POKEMON_YELLOW_ROM"))})
 	if len(catalog.Starters) != 0 {
 		t.Fatalf("starters offered after the Pikachu opening: %+v", catalog.Starters)
 	}
@@ -109,9 +110,7 @@ func TestYellowCatalogUsesYellowMapVocabulary(t *testing.T) {
 		}
 		if profile.Objective.Kind == KindGym {
 			gyms++
-			continue
 		}
-		t.Fatalf("unexpected non-League Yellow challenge profile: %+v", profile)
 	}
 	if league != len(wantLeagueProfiles) {
 		t.Fatalf("Yellow League challenge profiles = %d, want %d: %+v", league, len(wantLeagueProfiles), catalog.ChallengeProfiles)

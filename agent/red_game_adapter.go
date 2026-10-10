@@ -216,6 +216,9 @@ func (a *redObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error)
 	defer restoreMoveController()
 	restoreBattleResultObserver := skill.WithBattleResultObserver(a.m, gen1BattleResultObserver(a.battleTurns))
 	defer restoreBattleResultObserver()
+	if err := prepareChallengeLead(a.m, a.romData, o); err != nil {
+		return normalizeRedOwnedExecutionResult(o, ObjectiveResult{Objective: o, Outcome: OutcomeBlocked}, err)
+	}
 	result, err := executeRedOwned(a.m, a.romData, o, a.routePriority)
 	return normalizeRedOwnedExecutionResult(o, result, err)
 }

@@ -23,22 +23,30 @@ func offerWithTMHM(m *emu.Emu, romData []byte, obs Observation, known *Knowledge
 // known-habitat catch transitions, and owned machines while preserving the
 // portable providers' structured block evidence alongside the enriched menu.
 func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) ObjectiveOffer {
-	if !redLayoutGame(obs.GameID) {
-		// Everything below is Red/Blue-owned story, Dex-source and training
-		// enrichment. Other games (Yellow included, whose story differs) offer
-		// through their own registered adapter's progression planner.
-		if factory, err := objectiveAdapterFactoryFor(obs.GameID); err == nil {
-			if planner, ok := factory(m, romData, RoutePriorityConservative).(ProgressionPlanner); ok {
-				return filterGen1EngineServiceTalk(romData, obs, OfferWithProgressionEvidence(obs, known, planner))
-			}
-		}
-		return filterGen1EngineServiceTalk(romData, obs, OfferWithEvidence(obs, known))
-	}
 	// A stale retry marker (a readiness target recorded but never reached) must
 	// return to the preparation campaign before the assessments below are priced
 	// against a multi-session budget.
 	known.demoteUnreadyCombatRetries(obs)
 	obs.TrainingAreaChoices = redTrainingAreaAssessments(m, romData, obs, known)
+	obs = withCounterCampaign(m, romData, obs, known)
+	if !redLayoutGame(obs.GameID) {
+		// Red/Blue-owned story, Dex-source and NPC enrichment below stays
+		// Red's. Other Gen-I games (Yellow, whose story differs) offer through
+		// their own progression planner plus the shared engine's catch and
+		// party-training enrichment, which counter campaigns depend on.
+		var offer ObjectiveOffer
+		if factory, err := objectiveAdapterFactoryFor(obs.GameID); err == nil {
+			if planner, ok := factory(m, romData, RoutePriorityConservative).(ProgressionPlanner); ok {
+				offer = OfferWithProgressionEvidence(obs, known, planner)
+			} else {
+				offer = OfferWithEvidence(obs, known)
+			}
+		} else {
+			offer = OfferWithEvidence(obs, known)
+		}
+		offer.Candidates = appendGen1EngineEnrichment(m, romData, obs, known, offer.Candidates)
+		return filterGen1EngineServiceTalk(romData, obs, offer)
+	}
 	offer := OfferWithProgressionEvidence(obs, known, newRedObjectiveAdapter(m, romData))
 	out := offer.Candidates
 	out = filterRedProgressionStageObjectives(obs, out)
@@ -360,4 +368,56 @@ func waitOutInputLockout(m *emu.Emu, budget int) (reevaluate bool, steps int) {
 		steps++
 	}
 	return false, steps
+}
+
+// appendGen1EngineEnrichment is the engine-shared slice of Red's enrichment:
+// known-habitat catches and per-slot party training. It reads only canonical
+// Gen-I RAM and the cartridge's own tables, so every Gen-I game can use it.
+func appendGen1EngineEnrichment(m *emu.Emu, romData []byte, obs Observation, known *Knowledge, out []Objective) []Objective {
+	out = appendKnownCatchObjectives(m, romData, obs, known, out)
+	out = filterUnreachableGrassCatches(m, romData, out)
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	estimate := func(slot, targetLevel int) (TrainingEstimate, error) {
+		est, err := currentPartyTrainingEstimate(&mem, romData, obs.Map, slot, targetLevel, trainSessionBattleBudget)
+		if err != nil {
+			return TrainingEstimate{}, err
+		}
+		return *budgetedTrainingEstimate(&est, obs, known), nil
+	}
+	out = insertPartyTrainingObjectives(obs, known, out, estimate)
+	return dropUnviableTargetedTraining(out, estimate)
+}
+
+// withCounterCampaign opens the counter campaign for a lost matchup and lists
+// the known catches (local grass or a visited, reachable habitat) that learn
+// a preferred-type attack by the counter's level target.
+func withCounterCampaign(m *emu.Emu, romData []byte, obs Observation, known *Knowledge) Observation {
+	need, ok := counterNeedFor(obs, known)
+	if !ok {
+		return obs
+	}
+	obs.CounterNeed = &need
+	if need.Action != ChallengeAcquireCounter {
+		return obs
+	}
+	seen := map[SpeciesID]bool{}
+	consider := func(sp SpeciesID) {
+		if seen[sp] {
+			return
+		}
+		seen[sp] = true
+		if _, ok := counterLearnLevel(obs.Learnsets, sp, need.Matchup, need.Target); ok {
+			obs.CounterCandidates = append(obs.CounterCandidates, sp)
+		}
+	}
+	for _, wild := range obs.WildGrass {
+		if sp, ok := SpeciesByName(wild.Name); ok {
+			consider(sp)
+		}
+	}
+	for _, o := range appendKnownCatchObjectives(m, romData, obs, known, nil) {
+		consider(o.Species)
+	}
+	return obs
 }

@@ -60,6 +60,9 @@ type TableLayout struct {
 	BaseStats             Symbol
 	TradeMons             Symbol
 	TypeEffects           Symbol
+	// TrainerDataPointers is the per-class party list table; trainer map
+	// objects store OPP_ID = class + OppIDOffset.
+	TrainerDataPointers Symbol
 
 	// ItemUseOldRod is the Old Rod item handler; its `lb bc, level, species`
 	// immediate is the Old Rod's only encounter.

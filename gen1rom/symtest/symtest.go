@@ -30,6 +30,7 @@ func Labels(layout gen1rom.TableLayout, superRodLabel string) map[string]gen1rom
 		"BaseStats":               layout.BaseStats,
 		"TradeMons":               layout.TradeMons,
 		"TypeEffects":             layout.TypeEffects,
+		"TrainerDataPointers":     layout.TrainerDataPointers,
 		"ItemUseOldRod":           layout.ItemUseOldRod,
 		"GoodRodMons":             layout.GoodRodMons,
 		superRodLabel:             layout.SuperRod,

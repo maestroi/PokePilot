@@ -117,6 +117,9 @@ func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
 			catalog = provider.ObjectiveCatalog(obs)
 		}
 	}
+	if len(catalog.ChallengeProfiles) == 0 {
+		catalog.ChallengeProfiles = append([]CatalogChallengeProfile(nil), obs.ChallengeProfiles...)
+	}
 	if len(catalog.LocalEncounters) == 0 {
 		for _, wild := range obs.WildGrass {
 			name := strings.ToLower(strings.TrimSpace(wild.Name))

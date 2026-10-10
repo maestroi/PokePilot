@@ -28,6 +28,7 @@ var redTables = gen1rom.TableLayout{
 	BaseStats:             gen1rom.Symbol{Bank: 0x0E, Addr: 0x43DE},
 	TradeMons:             gen1rom.Symbol{Bank: 0x1C, Addr: 0x5B7B},
 	TypeEffects:           gen1rom.Symbol{Bank: 0x0F, Addr: 0x6474},
+	TrainerDataPointers:   gen1rom.Symbol{Bank: 0x0E, Addr: 0x5D3B},
 
 	ItemUseOldRod:  gen1rom.Symbol{Bank: 0x03, Addr: 0x624C},
 	GoodRodMons:    gen1rom.Symbol{Bank: 0x03, Addr: 0x627F},

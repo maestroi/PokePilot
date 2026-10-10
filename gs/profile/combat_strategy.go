@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/game"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 )
 
 var _ game.BattleCombatStrategy = (*Profile)(nil)
@@ -21,8 +22,13 @@ const (
 	gsMoveReflect uint16 = 115
 )
 
+// gsTypeEffectiveness reads the cartridge's own TypeMatchups table.
+func gsTypeEffectiveness(rom []byte, moveType, def1, def2 uint8) (int, error) {
+	return gsrom.TypeEffectiveness(rom, moveType, def1, def2)
+}
+
 func (*Profile) EvaluateCombatMove(
-	_ []byte,
+	rom []byte,
 	attacker, defender game.BattleCombatant,
 	nativeMoveID uint16,
 	currentPP uint8,
@@ -31,7 +37,14 @@ func (*Profile) EvaluateCombatMove(
 	if !ok {
 		return game.BattleMoveEvaluation{NativeMoveID: nativeMoveID, CurrentPP: currentPP}, game.BattleMoveRoleOther, nil
 	}
-	eff := gsTypeEffectiveness(moveType, uint8(defender.Type1), uint8(defender.Type2))
+	// Status moves never touch the chart (their effectiveness is unused).
+	eff := gsrom.TypeNeutralEffect
+	if power > 0 {
+		var err error
+		if eff, err = gsTypeEffectiveness(rom, moveType, uint8(defender.Type1), uint8(defender.Type2)); err != nil {
+			return game.BattleMoveEvaluation{NativeMoveID: nativeMoveID, CurrentPP: currentPP}, game.BattleMoveRoleOther, err
+		}
+	}
 	stab := moveType == uint8(attacker.Type1) || moveType == uint8(attacker.Type2)
 	score := int64(power) * int64(eff)
 	if stab {
@@ -62,10 +75,15 @@ func (*Profile) EvaluateCombatMove(
 	return eval, game.BattleMoveRoleDirectDamage, nil
 }
 
-func (*Profile) IncomingTypeRisk(_ []byte, enemy, candidate game.BattleCombatant) int {
-	risk := gsTypeEffectiveness(uint8(enemy.Type1), uint8(candidate.Type1), uint8(candidate.Type2))
+// IncomingTypeRisk is neutral when the chart cannot be read: risk only ranks
+// switch candidates, and an unreadable ROM fails louder in EvaluateCombatMove.
+func (*Profile) IncomingTypeRisk(rom []byte, enemy, candidate game.BattleCombatant) int {
+	risk, err := gsTypeEffectiveness(rom, uint8(enemy.Type1), uint8(candidate.Type1), uint8(candidate.Type2))
+	if err != nil {
+		return gsrom.TypeNeutralEffect
+	}
 	if enemy.Type2 != enemy.Type1 {
-		if v := gsTypeEffectiveness(uint8(enemy.Type2), uint8(candidate.Type1), uint8(candidate.Type2)); v > risk {
+		if v, err := gsTypeEffectiveness(rom, uint8(enemy.Type2), uint8(candidate.Type1), uint8(candidate.Type2)); err == nil && v > risk {
 			risk = v
 		}
 	}

@@ -72,6 +72,18 @@ func proactiveChallengePreparationObjective(
 				}
 			}
 
+		case ChallengeAcquireCounter, ChallengeTrainCounter:
+			need := CounterNeed{
+				Challenge: assessment.Objective,
+				Action:    assessment.Action,
+				Matchup:   challengeProfileFor(obs, assessment.Objective.Objective()).Matchup,
+				Slot:      assessment.CounterSlot,
+				Target:    assessment.CounterTarget,
+			}
+			if objective, ok := counterPreparationObjective(obs, offered, known, need); ok {
+				return objective, assessment, true
+			}
+
 		case ChallengeChangeParty:
 			// Party composition is strategic: a random catch or arbitrary
 			// reorder is not a safe deterministic substitute. Keep the
