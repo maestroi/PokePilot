@@ -37,8 +37,10 @@ var (
 )
 
 // nearestPokemonCenter chooses the known Center requiring the fewest map
-// transitions from fromMap. PlaceNames is sorted, so equal-length ties are
-// deterministic. Tile-level reachability is still verified by TravelFlee.
+// transitions from fromMap over the pure ROM graph. PlaceNames is sorted, so
+// equal-length ties are deterministic. Tile-level reachability is still verified
+// by TravelFlee. It is the static probe: no standing tile, no live blockers, no
+// route capabilities. The live path uses nearestPokemonCenterAt instead.
 //
 // When the standing map's component-aware graph cannot reach any Center
 // (Route 16 Fly house / west-north pocket), fall back to Centers reachable
@@ -49,14 +51,32 @@ func nearestPokemonCenter(romData []byte, fromMap uint8) (Destination, string, e
 	if err != nil {
 		return Destination{}, "", err
 	}
-	return nearestPokemonCenterInGraph(g, fromMap)
+	return nearestPokemonCenterInGraph(g, fromMap, -1, -1, world.RoutePrerequisites{})
 }
 
-func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, string, error) {
+// nearestPokemonCenterInGraph chooses the known Center requiring the fewest map
+// transitions from fromMap, answering each candidate with the capability-aware
+// router over g. (x, y) is the standing tile on fromMap (or -1, -1 for a
+// map-level/static probe) and prereqs carries the live route capabilities and
+// transition facts; an empty prereqs with no tile reduces exactly to the pure
+// map-graph route. Tile-level reachability is still verified by TravelFlee.
+//
+// A Center the pure graph reaches but the live boulder layout and current
+// capabilities cannot is deliberately not a choice: selecting it strands the
+// caller (the standing component cannot reach any descent), and a stranded
+// caller cannot fall back to an in-place action such as teaching a TM
+// (run-j1lgrfvixz7j1bgxlgsfptofu, bag pressure on Victory Road 3F). Selection
+// must reflect what Travel can actually reach from where the player stands.
+//
+// When the standing map's component-aware graph cannot reach any Center
+// (Route 16 Fly house / west-north pocket), fall back to Centers reachable
+// from a one-hop neighbour. Travel owns exiting the pocket onto that
+// neighbour — including component restaging through a gate before Cut.
+func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8, x, y int, prereqs world.RoutePrerequisites) (Destination, string, error) {
 	bestLen := int(^uint(0) >> 1)
 	var best Destination
 	bestName := ""
-	consider := func(via uint8, hopPenalty int) {
+	consider := func(via uint8, sx, sy, hopPenalty int) {
 		for _, name := range PlaceNames() {
 			if !strings.HasSuffix(name, "pokemon center") {
 				continue
@@ -65,7 +85,9 @@ func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, st
 			if !ok {
 				continue
 			}
-			route, err := world.FindRoute(g, via, d.Map)
+			// Route to the Center's destination tile, the same target TravelFlee
+			// will use, so a Center the router cannot land on is not a choice.
+			route, err := world.FindRoutePlanAtDestinationWithCapabilities(g, via, d.Map, sx, sy, int(d.X), int(d.Y), nil, prereqs)
 			if err != nil {
 				continue
 			}
@@ -75,7 +97,7 @@ func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, st
 			}
 		}
 	}
-	consider(fromMap, 0)
+	consider(fromMap, x, y, 0)
 	if bestName == "" {
 		seen := map[uint8]bool{fromMap: true}
 		for _, e := range g.Edges[fromMap] {
@@ -83,13 +105,49 @@ func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8) (Destination, st
 				continue
 			}
 			seen[e.To] = true
-			consider(e.To, 1)
+			consider(e.To, -1, -1, 1)
 		}
 	}
 	if bestName == "" {
 		return Destination{}, "", fmt.Errorf("%w from map %#04x", ErrPCNoKnownCenter, fromMap)
 	}
 	return best, bestName, nil
+}
+
+// nearestPokemonCenterAt selects the nearest Center from the player's live
+// position on cur. It overlays the standing map's live blockers and the player's
+// route capabilities so the choice reflects what Travel can actually reach from
+// the standing component, not just what the pure ROM graph touches.
+//
+// The live overlay mirrors GoTo's exact sequence: the WRAM collision grid plus
+// the present stationary-object blockers (boulders). NewRoutePlanner's snapshot
+// omits the boulders, so a selection that trusts it can name a Center the
+// standing component cannot reach once the boulders are in the way
+// (run-j1lgrfvixz7j1bgxlgsfptofu, bag pressure on Victory Road 3F).
+func nearestPokemonCenterAt(m *emu.Emu, romData []byte, cur uint8) (Destination, string, error) {
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		return Destination{}, "", fmt.Errorf("skill: PC selection: build graph: %w", err)
+	}
+	h, err := routingHeaderFor(m, cur)
+	if err != nil {
+		return Destination{}, "", fmt.Errorf("skill: PC selection: parse map %02x: %w", cur, err)
+	}
+	liveGrid, err := liveMapGrid(m, romData, h)
+	if err != nil {
+		return Destination{}, "", fmt.Errorf("skill: PC selection: build live map %02x: %w", cur, err)
+	}
+	blockers := presentStationaryObjectBlockers(m, h)
+	blockers = applyGoToCompatibilityLocalTopology(m, cur, blockers, liveGrid, romData)
+	for at := range blockers {
+		liveGrid.Set(at[0], at[1], false)
+	}
+	routeGraph, prereqs, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
+	if err != nil {
+		return Destination{}, "", fmt.Errorf("skill: PC selection: overlay live topology for map %02x: %w", cur, err)
+	}
+	x, y := routingPlayerXY(m)
+	return nearestPokemonCenterInGraph(routeGraph, cur, int(x), int(y), prereqs)
 }
 
 // singleDestinationWarpExit reports the mandatory first hop of a room whose
@@ -181,7 +239,7 @@ func reachNearestPokemonCenter(m *emu.Emu, romData []byte, policy MovePolicy, ma
 			return TravelResult{}, "", nil
 		}
 
-		center, name, selectErr := nearestPokemonCenterInGraph(g, cur)
+		center, name, selectErr := nearestPokemonCenterAt(m, romData, cur)
 		if selectErr == nil {
 			travel, travelErr := TravelFlee(m, romData, center, policy, maxBattles)
 			return travel, name, travelErr

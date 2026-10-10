@@ -53,7 +53,7 @@ func TestRoute16FlyHouseCenterRecoveryUsesMandatoryExit(t *testing.T) {
 	// static component routing may be unable to prove a complete route to any
 	// Center while the player is still inside the house. A future graph that
 	// can prove that route directly is also valid; any other error is not.
-	if _, _, err := nearestPokemonCenterInGraph(g, route16FlyHouseMap); err != nil && !errors.Is(err, ErrPCNoKnownCenter) {
+	if _, _, err := nearestPokemonCenterInGraph(g, route16FlyHouseMap, -1, -1, world.RoutePrerequisites{}); err != nil && !errors.Is(err, ErrPCNoKnownCenter) {
 		t.Fatalf("Fly House static Center selection err = %v, want nil or ErrPCNoKnownCenter", err)
 	}
 
@@ -68,7 +68,7 @@ func TestRoute16FlyHouseCenterRecoveryUsesMandatoryExit(t *testing.T) {
 	// Re-planning after that measured hop is enough to select a Center. The
 	// live TravelFlee call then owns the Route 16 Cut bridge from the actual
 	// landing component.
-	center, name, err := nearestPokemonCenterInGraph(g, route16Map)
+	center, name, err := nearestPokemonCenterInGraph(g, route16Map, -1, -1, world.RoutePrerequisites{})
 	if err != nil {
 		t.Fatalf("Center selection after mandatory Fly House exit: %v", err)
 	}
