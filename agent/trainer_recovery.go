@@ -589,15 +589,19 @@ func combatPreparationNeedsCoverage(obs Observation, known *Knowledge) bool {
 // has no known route to the readiness target, so the preparation loop would
 // force heal/resupply/reposition forever; promoting the loss to retry is the
 // only remaining progress, so that state counts as exhausted. Standing where
-// there is no grass (a city commute) is not exhausted: the agent can still
-// travel to a known training area, and unlocking the gym there would let the
-// commute loop return.
+// there is no grass (a city commute) is exhausted only when learned areas
+// exist and none is selected: otherwise the planner commutes between towns
+// forever under a "seek stronger encounters" note it cannot act on
+// (run-1asbzwfi9ce9t2mdviheibccoa). With no learned habitat at all the lock
+// stays so exploration can find one.
 func combatPreparationTrainingExhausted(obs Observation) bool {
-	if !trainingUnviableHere(obs) {
+	if obs.Training != nil && !trainingUnviableHere(obs) {
 		return false
 	}
 	if len(obs.TrainingAreaChoices) == 0 {
-		return true
+		// Without local grass and with no learned habitat there is nothing
+		// measured yet; keep the lock so exploration can find one.
+		return obs.Training != nil
 	}
 	for _, area := range obs.TrainingAreaChoices {
 		if area.Selected {

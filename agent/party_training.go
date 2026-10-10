@@ -206,7 +206,7 @@ func trainingSessionExecutable(estimate TrainingEstimate, estimateErr error) boo
 	if estimate.XPPerEncounter == 0 {
 		return false
 	}
-	return estimate.NextLevelEncounters <= estimate.SessionBudget
+	return estimate.NextLevelEncounters <= trainSessionBattles(estimate)
 }
 
 // executeTrainingObjective temporarily promotes the requested party member to
@@ -243,7 +243,11 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 		trainOptions.Mode = skill.TrainSwitch
 		trainOptions.MinCarryLevel = estimate.MinCarryLevel
 	}
-	train, trainErr := skill.TrainWithOptions(m, romData, int(o.Level), skill.StatAwareMove(romData), trainSessionBattleBudget, trainOptions)
+	battles := trainSessionBattleBudget
+	if estimateErr == nil {
+		battles = trainSessionBattles(estimate)
+	}
+	train, trainErr := skill.TrainWithOptions(m, romData, int(o.Level), skill.StatAwareMove(romData), battles, trainOptions)
 	result.Train = trainingEvidenceFromRed(train)
 
 	// PromoteToLead is a symmetric swap: the original lead is still at the
