@@ -10,21 +10,21 @@ import (
 )
 
 const (
-	gsStrengthSailorX     uint8 = 4
-	gsStrengthSailorY     uint8 = 3
+	gsStrengthSailorX      uint8 = 4
+	gsStrengthSailorY      uint8 = 3
 	gsStrengthSailorStandX uint8 = 4
 	gsStrengthSailorStandY uint8 = 4
-	gsChuckX              uint8 = 4
-	gsChuckY              uint8 = 1
-	gsChuckStandX         uint8 = 4
-	gsChuckStandY         uint8 = 2
-	gsChucksWifeSlot      int   = 10
-	gsChucksWifeStandX    uint8 = 10
-	gsChucksWifeStandY    uint8 = 45
-	gsJasmineGymX         uint8 = 5
-	gsJasmineGymY         uint8 = 3
-	gsJasmineGymStandX    uint8 = 5
-	gsJasmineGymStandY    uint8 = 4
+	gsChuckX               uint8 = 4
+	gsChuckY               uint8 = 1
+	gsChuckStandX          uint8 = 4
+	gsChuckStandY          uint8 = 2
+	gsChucksWifeSlot       int = 10
+	gsChucksWifeStandX     uint8 = 10
+	gsChucksWifeStandY     uint8 = 45
+	gsJasmineGymX          uint8 = 5
+	gsJasmineGymY          uint8 = 3
+	gsJasmineGymStandX     uint8 = 5
+	gsJasmineGymStandY     uint8 = 4
 )
 
 // gsCoastalProfile holds the cartridge-specific story state required by
