@@ -185,34 +185,35 @@ func pokemonTowerMarowakBattle(mapID uint8, b *state.BattleState) bool {
 }
 
 // towerBattleResolver flees ordinary Tower wild encounters but fights every
-// trainer and the scripted Marowak. That preserves PP/HP for mandatory fights
-// without teaching Travel itself anything about Pokémon Tower story state.
+// trainer and the scripted Marowak. Ordinary wilds reuse Travel's fleeThenFight
+// owner so settle-time battle restarts, exhausted RUN budgets, and RUN-menu
+// stalls fall back to the fight loop instead of poisoning the objective
+// boundary (triage:447f3af8ec0ece15). Story Marowak stays a forced fight.
 func towerBattleResolver(m *emu.Emu, policy MovePolicy) resolveBattle {
+	ordinaryWild := fleeThenFight(m, policy, guaranteedWildFleeAttempts)
 	return func() (battleResolution, error) {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
 		b := state.DecodeBattle(&mem)
-		if b == nil {
-			return battleResolution{}, fmt.Errorf("skill: PokemonTower: battle resolver called outside battle")
-		}
-		if b.Kind == state.BattleWild && !pokemonTowerMarowakBattle(mem.U8(sym.CurMap), b) {
-			// Use the same deterministic escape bound as TravelFlee. Five tries
-			// is only probabilistic (issue #395); a failed fifth roll would turn
-			// an ordinary Tower encounter into an untyped unknown_failure and
-			// terminate progression even though nothing is actually blocked.
-			if err := Flee(m, guaranteedWildFleeAttempts); err != nil {
-				if !errors.Is(err, ErrTrainerBattle) {
-					return battleResolution{}, fmt.Errorf("skill: PokemonTower: flee wild encounter: %w", err)
-				}
-				// Defensive fallback if the battle kind changed between the RAM
-				// snapshot and Flee's own check.
-			} else {
-				return battleResolution{fled: true}, nil
-			}
-		}
-		outcome, err := Battle(m, policy)
-		return battleResolution{outcome: outcome}, err
+		return resolvePokemonTowerBattle(mem.U8(sym.CurMap), b, ordinaryWild, func() (battleResolution, error) {
+			outcome, err := Battle(m, policy)
+			trainer := b != nil && b.Kind == state.BattleTrainer
+			return battleResolution{outcome: outcome, trainer: trainer}, err
+		})
 	}
+}
+
+// resolvePokemonTowerBattle chooses the incidental-encounter owner for one
+// Tower battle. Ordinary wilds keep Travel's flee-then-fight contract; the
+// scripted Marowak and every trainer are forced fights.
+func resolvePokemonTowerBattle(mapID uint8, b *state.BattleState, ordinaryWild, storyFight resolveBattle) (battleResolution, error) {
+	if b == nil {
+		return battleResolution{}, fmt.Errorf("skill: PokemonTower: battle resolver called outside battle")
+	}
+	if b.Kind == state.BattleWild && !pokemonTowerMarowakBattle(mapID, b) {
+		return ordinaryWild()
+	}
+	return storyFight()
 }
 
 // pokemonTower6FRareCandyLive reports whether 6F's corridor-sealing Rare
