@@ -451,21 +451,21 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 		}}
 	case !obs.Story.Has(gsprofile.ProgressLighthouseSicknessExplained):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressLighthouseSicknessExplained,
-			Note: "(travel Route 38/39 to Olivine, climb the Lighthouse, and hear Jasmine's request to cure Ampharos)",
+			Note:     "(travel Route 38/39 to Olivine, climb the Lighthouse, and hear Jasmine's request to cure Ampharos)",
 		}}
 	case !obs.Story.Has(gsprofile.ProgressSecretPotionAcquired):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressSecretPotionAcquired,
-			Note: "(surf Route 40/41 to Cianwood, reach the pharmacy, and receive SecretPotion for Ampharos)",
+			Note:     "(surf Route 40/41 to Cianwood, reach the pharmacy, and receive SecretPotion for Ampharos)",
 		}}
 	case !obs.Story.Has(gsprofile.ProgressJasmineReturnedToGym):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressJasmineReturnedToGym,
-			Note: "(return to Lighthouse 6F, give SecretPotion to Jasmine, and see her return to Olivine Gym)",
+			Note:     "(return to Lighthouse 6F, give SecretPotion to Jasmine, and see her return to Olivine Gym)",
 		}}
 	default:
 		return nil
