@@ -130,4 +130,3 @@ func nativeStrengthBridge(
 	return false, fmt.Errorf("skill: native Strength: boulder slot %d disappeared after push (terminal hole needs an event postcondition): %w",
 		push.MovableID, ErrNavigationStalled)
 }
-
