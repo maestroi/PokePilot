@@ -235,6 +235,7 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 			if status, err := skill.TrainerStatusAtLive(romData, &mem, obs.Map, object.X, object.Y); err == nil {
 				object.Challengeable = status.Challengeable
 				object.Defeated = status.Defeated
+				object.PrizeMoney = status.PrizeMoney
 			}
 			if objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
 				continue

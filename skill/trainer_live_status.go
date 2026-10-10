@@ -25,6 +25,7 @@ func TrainerStatusAtLive(romData []byte, mem *state.Mem, mapID, homeX, homeY uin
 	return TrainerStatus{
 		Defeated:      target.flag.setMem(mem),
 		Challengeable: ordinaryTrainerClass(target.object.TrainerClass) && genericTrainerReachableLive(romData, mem, h, homeX, homeY),
+		PrizeMoney:    trainerPrizeMoney(romData, target.object.TrainerClass, target.object.TrainerSet),
 	}, nil
 }
 

@@ -28,6 +28,8 @@ var (
 type TrainerStatus struct {
 	Defeated      bool
 	Challengeable bool
+	// PrizeMoney is the ¥ this trainer pays when beaten (0 when unknown).
+	PrizeMoney uint32
 }
 
 // trainerFlagRef is the exact RAM bit a trainer header uses as its defeated
@@ -155,6 +157,20 @@ func trainerTargetAt(romData []byte, h rom.MapHeader, homeX, homeY uint8) (train
 	return target, nil
 }
 
+// trainerPrizeMoney decodes the ROM prize for a map object's OPP_ID/set; it
+// is advisory planner evidence, so an undecodable class reads as 0.
+func trainerPrizeMoney(romData []byte, opponent, set uint8) uint32 {
+	const opponentOffset = 200
+	if opponent <= opponentOffset {
+		return 0
+	}
+	money, err := rom.TrainerPrizeMoney(romData, opponent-opponentOffset, set)
+	if err != nil {
+		return 0
+	}
+	return money
+}
+
 // ordinaryTrainerClass excludes trainer classes whose win is only one part of
 // a larger story contract: rivals, Giovanni, gym leaders, Elite Four/Champion,
 // and unused boss classes. Their owning story skills may call ChallengeTrainer
@@ -230,6 +246,7 @@ func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) 
 	return TrainerStatus{
 		Defeated:      target.flag.setMem(mem),
 		Challengeable: ordinaryTrainerClass(target.object.TrainerClass) && genericTrainerReachable(romData, mem, h, homeX, homeY),
+		PrizeMoney:    trainerPrizeMoney(romData, target.object.TrainerClass, target.object.TrainerSet),
 	}, nil
 }
 

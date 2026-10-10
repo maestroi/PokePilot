@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestEconomyContextReservesKnownSafariSpend(t *testing.T) {
 	obs := Observation{
@@ -255,4 +258,35 @@ func purchase(t *testing.T, ctx *EconomyDecisionContext, name string) PurchaseAd
 	}
 	t.Fatalf("purchase advice for %q not found in %+v", name, ctx.Purchases)
 	return PurchaseAdvice{}
+}
+
+// A Dex run stocks for its remaining targets with cheap Poke Balls instead
+// of topping up to a flat 10 (run-d6dokr184ky81 drained cash on Safari fees
+// once its few balls ran out).
+func TestDexCaptureStockSizedToRemainingTargets(t *testing.T) {
+	obs := Observation{
+		Money:     20000,
+		MartStock: []string{"pokeball", "great ball", "ultra ball"},
+		Bag:       []Item{{Name: "pokeball", Quantity: 4}},
+	}
+	for i := 0; i < 20; i++ {
+		obs.Dex.Targets = append(obs.Dex.Targets, DexEntry{Species: SpeciesID(fmt.Sprintf("mon%d", i))})
+	}
+	if got := captureStockTarget(obs); got != 60 {
+		t.Fatalf("capture target = %d, want 20 targets x 3 = 60", got)
+	}
+	var ball *PurchaseAdvice
+	for _, advice := range EconomyContext(obs).Purchases {
+		if advice.ShouldBuy && advice.Category == InventoryCapture {
+			ball = &advice
+		}
+	}
+	if ball == nil || ball.Item != "pokeball" || ball.SuggestedQty != 56 {
+		t.Fatalf("capture purchase = %+v, want 56 POKE BALLs", ball)
+	}
+
+	obs.Dex.Targets = nil
+	if got := captureStockTarget(obs); got != targetCaptureStock {
+		t.Fatalf("non-Dex target = %d, want %d", got, targetCaptureStock)
+	}
 }
