@@ -41,7 +41,10 @@ func TestSecretKeyPalletRouteUsesRoute21(t *testing.T) {
 	route, err := world.FindRoutePlanAtDestinationWithCapabilities(
 		g, semanticPalletTownMap, cinnabarIslandMap, 5, 6, 11, 12, nil, prereqs,
 	)
-	if err != nil {
+	// Full PortBypass Surf seams are live-topology frontiers: a complete
+	// Pallet -> Route 21 -> Cinnabar plan is not claimed up front. The Secret
+	// Key invariant is that the chosen corridor is Route 21, never Route 20.
+	if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
 		t.Fatalf("Pallet -> Cinnabar with Surf: %v", err)
 	}
 	if len(route) == 0 {

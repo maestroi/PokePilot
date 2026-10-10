@@ -116,6 +116,61 @@ func TestSurfPortBypassPrefersReachableEquivalentBand(t *testing.T) {
 	}
 }
 
+// TestSurfPortBypassMultiBandDoesNotTeleportAcrossSplitComponents locks the
+// shared invariant behind run-jc853qns2lmc109wx2hs96btk: two PortBypass Surf
+// bands onto the same map must not let a disjoint landing expand as a re-entry
+// after the first band marked that map occupied. Same-component bands may still
+// continue (Pallet -> Route 21); split water (Route 20 / Seafoam) must not.
+func TestSurfPortBypassMultiBandDoesNotTeleportAcrossSplitComponents(t *testing.T) {
+	westShore := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandStart: 0, BandEnd: 1, BandScoped: true}
+	eastShore := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast, BandStart: 2, BandEnd: 3, BandScoped: true}
+	eastExit := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast, BandStart: 0, BandEnd: 0, BandScoped: true}
+
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {westShore, eastShore},
+			2: {eastExit},
+			3: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1}},
+			2: {{1, 2}}, // component 1 = west water, 2 = east water
+			3: {{1}},
+		},
+		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 2, h: 1}, 3: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			eastExit: {2},
+		},
+		entryComps: map[Edge][]int{
+			westShore: {1},
+			eastShore: {2},
+			eastExit:  {1},
+		},
+	}
+
+	surf := gameruntime.Transition{
+		ID:         "surf_shore",
+		Requires:   []gameruntime.CapabilityID{"can_surf"},
+		PortBypass: true,
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_surf"),
+		Transitions: map[Edge]gameruntime.Transition{
+			westShore: surf,
+			eastShore: surf,
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 3, 0, 0, 0, 0, nil, prereqs)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("error = %v plan=%+v, want Surf frontier ErrRouteReplanRequired (not a completed teleport past the split)", err, plan)
+	}
+	if len(plan) != 1 || (plan[0].Edge != westShore && plan[0].Edge != eastShore) {
+		t.Fatalf("plan=%+v, want a single Surf shore frontier", plan)
+	}
+}
+
 func TestSurfPortBypassWithoutCapabilityStaysBlocked(t *testing.T) {
 	shore := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirSouth, BandStart: 0, BandEnd: 3, BandScoped: true}
 
