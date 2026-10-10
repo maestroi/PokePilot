@@ -174,12 +174,33 @@ func counterPreparationObjective(obs Observation, offered []Objective, known *Kn
 }
 
 // counterCampaignActionable reports whether the open campaign can act from
-// here: a reachable counter catch is known, or a counter only needs levels.
+// here: a reachable counter catch is known, or a counter only needs levels
+// that can actually be gained from here. A train-counter campaign is not
+// actionable in a sealed room (no grass, no routable habitat); treating it as
+// always actionable locked the fight and emptied the menu into "nothing is
+// possible from here" (run-2g0fgqbf: Lance loss in Agatha's room, regression
+// of #2514).
 func counterCampaignActionable(obs Observation, need CounterNeed) bool {
 	if need.Action == ChallengeTrainCounter {
-		return true
+		return trainingPossibleHere(obs)
 	}
 	return len(obs.CounterCandidates) > 0
+}
+
+// trainingPossibleHere reports whether the party can make training progress
+// from the current location: local grass yields XP, or a learned habitat is
+// currently routable and viable. It is the honest answer to "can we train a
+// counter from here", which a sealed room must answer no.
+func trainingPossibleHere(obs Observation) bool {
+	if trainingYieldsXP(obs) {
+		return true
+	}
+	for _, area := range obs.TrainingAreaChoices {
+		if area.Selected {
+			return true
+		}
+	}
+	return false
 }
 
 // challengeCounterReady reports that the party already holds a counter at
