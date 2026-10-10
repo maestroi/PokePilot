@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -131,7 +132,7 @@ func executeGSJasmineCured(m *emu.Emu, romData []byte) error {
 
 func gsTalkToLighthouseJasmine(
 	m *emu.Emu, romData []byte, profile *gsprofile.Profile,
-	goal string, encounter string,
+	goal game.ProgressID, encounter string,
 ) error {
 	lighthouse, err := gsOpeningMapID("OLIVINE_LIGHTHOUSE_6F")
 	if err != nil {
@@ -146,7 +147,7 @@ func gsTalkToLighthouseJasmine(
 	if err := driveGSSecondBadgeInterruption(m, profile, encounter); err != nil {
 		return fmt.Errorf("gen2 Lighthouse: Jasmine script: %w", err)
 	}
-	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressID(goal)) {
+	if !gsFirstBadgeProgressComplete(profile, m, goal) {
 		return fmt.Errorf("%w: Lighthouse script finished without %s event", errGSSecondBadgeUnexpectedState, goal)
 	}
 	if !profile.DecodeOverworld(m).Controllable {
