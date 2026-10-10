@@ -61,13 +61,13 @@ func bagHas(obs Observation, name string) bool {
 	return false
 }
 
+// hasBalls reports any ordinary capture ball the Catch skill can throw
+// (Ultra, Great, Poke). Ultra Balls used to be ignored, which hid every
+// grass/fishing/Surf dex catch from a late-game bag holding only Ultra
+// Balls (run-d6dokr184ky81 sat at dex 52 cycling paid Safari hunts).
+// The Master Ball stays reserved for statics.
 func hasBalls(obs Observation) bool {
-	for _, it := range obs.Bag {
-		if it.Name == "pokeball" || it.Name == "great ball" {
-			return true
-		}
-	}
-	return false
+	return normalBallStock(obs) > 0
 }
 
 func isCenter(mapName string) bool {
