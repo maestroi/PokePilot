@@ -55,3 +55,32 @@ func TestRetiredBagItemsOnlyDeadItems(t *testing.T) {
 		t.Fatalf("retired = %#v, want %#v (Silph Scope must stay)", got, want)
 	}
 }
+
+func TestLearnedHMRetiresLastAndStaysOwnedInPC(t *testing.T) {
+	var mem state.Mem
+	mem[sym.ObtainedBadges] = 1 << state.BadgeCascade
+	mem[sym.PartyCount] = 1
+	mem[sym.PartyMon1+sym.MonSpecies] = 44 // Oddish: Cut-compatible
+	copy(mem.Slice(sym.PartyMon1+sym.MonMoves, 4), []byte{cutMove, 0, 0, 0})
+	putBag(&mem,
+		state.BagItem{ID: hm01Item, Quantity: 1},
+		state.BagItem{ID: fieldHM03Item, Quantity: 1}, // Surf not learned: stays
+		state.BagItem{ID: itemfinderItem, Quantity: 1},
+	)
+	if got := RetiredBagItems(nil, &mem); !reflect.DeepEqual(got, []uint8{itemfinderItem, hm01Item}) {
+		t.Fatalf("retired = %#v, want Itemfinder then learned HM01", got)
+	}
+
+	// HM01 now only in the PC, Cut forgotten: still owned, not teachable in place.
+	putBag(&mem, state.BagItem{ID: fieldHM03Item, Quantity: 1})
+	mem[sym.PCItemCount] = 1
+	mem[sym.PCItems], mem[sym.PCItems+1], mem[sym.PCItems+2] = hm01Item, 1, 0xff
+	mem[sym.PartyMon1+sym.MonMoves] = 0
+	cut := FieldCapabilityFor(&mem, FieldCut)
+	if !cut.HMOwned || cut.Usable {
+		t.Fatalf("cut = %+v, want HM owned via PC and not usable", cut)
+	}
+	if CanPrepareFieldMove(nil, &mem, FieldCut) {
+		t.Fatal("CanPrepareFieldMove true with HM01 only in the PC")
+	}
+}
