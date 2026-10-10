@@ -184,6 +184,11 @@ runLoop:
 			if budget.Log != nil {
 				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
 			}
+		} else if free, ok := freeCollectionObjective(last, now); ok {
+			obj = free
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "round %d: free collection -> %s\n", round, obj)
+			}
 		} else {
 			obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
 		}

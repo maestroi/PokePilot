@@ -184,3 +184,19 @@ func TestPickupCanStoreCountsReclaimableSlots(t *testing.T) {
 		t.Fatal("reclaimable slot ignored")
 	}
 }
+
+func TestFreeCollectionTakesNearestNearbyItemOrGift(t *testing.T) {
+	obs := Observation{X: 10, Y: 10}
+	offered := []Objective{
+		{Kind: KindGoTo, Place: "route 1"},
+		{Kind: KindPickup, X: 10, Y: 17, Item: "potion"},
+		{Kind: KindTalk, X: 11, Y: 11, Intent: freeGiftIntent},
+		{Kind: KindTalk, X: 10, Y: 11}, // ordinary talk is the planner's call
+	}
+	if got, ok := freeCollectionObjective(obs, offered); !ok || got.Kind != KindTalk || got.Intent != freeGiftIntent {
+		t.Fatalf("free collection = %+v, %v; want the adjacent gift", got, ok)
+	}
+	if _, ok := freeCollectionObjective(obs, []Objective{{Kind: KindPickup, X: 30, Y: 30}}); ok {
+		t.Fatal("far pickup taken without the planner")
+	}
+}

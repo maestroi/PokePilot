@@ -79,6 +79,10 @@ type TableLayout struct {
 	// canonical Gen-I RAM coordinates that shared decoders read. Nil means
 	// the cartridge's native RAM layout is canonical.
 	EventFlag func(nativeByte uint16, bit uint8) (canonByte uint16, mask uint8, ok bool)
+
+	// GiveItem is the home-bank GiveItem routine; NPC gift scripts reach it
+	// with `lb bc, ITEM, qty; call GiveItem`.
+	GiveItem uint16
 }
 
 type tableBinding struct {

@@ -224,6 +224,19 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 	}
 
 	objects := MapObjects(romData, obs.Map)
+	pendingGifts := map[[2]uint8]string{}
+	if gifts, err := rom.ItemGiftActors(romData, obs.Map); err == nil {
+		for _, gift := range gifts {
+			if mem.U8(gift.EventByte)&gift.EventMask != 0 {
+				continue // already received
+			}
+			if name, ok := ItemName(gift.Item); ok {
+				pendingGifts[[2]uint8{gift.X, gift.Y}] = name
+			} else if machine, err := rom.LookupTMHM(romData, gift.Item); err == nil {
+				pendingGifts[[2]uint8{gift.X, gift.Y}] = string(machineItemID(machine))
+			}
+		}
+	}
 	hidden := state.HiddenObjectIDs(&mem)
 	objectGrid := mapObjectReachabilityGridLive(romData, obs.Map, &mem)
 	stationary := liveStationaryTiles(romData, obs.Map, &mem)
@@ -247,6 +260,9 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 		}
 		if object.Kind == "person" && objectGrid != nil && !personReachableOnGrid(objectGrid, obs.X, obs.Y, object.X, object.Y, stationary) {
 			continue
+		}
+		if object.Kind == "person" {
+			object.GiftItem = pendingGifts[[2]uint8{object.X, object.Y}]
 		}
 		obs.MapObjects = append(obs.MapObjects, object)
 	}

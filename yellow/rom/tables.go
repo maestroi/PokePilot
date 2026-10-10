@@ -41,6 +41,8 @@ var Tables = gen1rom.TableLayout{
 	// Yellow's trainer headers point at native wEventFlags bits; shared
 	// decoders read the canonical view, so renumber through it.
 	EventFlag: sym.Canonical.CanonicalFlag,
+
+	GiveItem: 0x3E3F, // pokeyellow.sym
 }
 
 func init() {

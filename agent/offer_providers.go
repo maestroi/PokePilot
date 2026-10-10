@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -466,7 +467,12 @@ func (explorationObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiv
 		switch object.Kind {
 		case CatalogInteractablePerson:
 			if !known.Talked[ctx.currentLocation][[2]uint8{object.X, object.Y}] {
-				out = append(out, Objective{Kind: KindTalk, Location: identityLocation, X: object.X, Y: object.Y})
+				talk := Objective{Kind: KindTalk, Location: identityLocation, X: object.X, Y: object.Y}
+				if object.GiftItem != "" {
+					talk.Intent = freeGiftIntent
+					talk.Note = fmt.Sprintf("(free gift: %s)", strings.ToUpper(string(object.GiftItem)))
+				}
+				out = append(out, talk)
 			}
 		case CatalogInteractableTrainer:
 			challenge := Objective{Kind: KindTrainer, Location: identityLocation, X: object.X, Y: object.Y}

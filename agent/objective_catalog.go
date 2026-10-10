@@ -104,6 +104,7 @@ type CatalogInteractable struct {
 	Challengeable bool
 	Defeated      bool
 	PrizeMoney    uint32
+	GiftItem      ItemID
 }
 
 func objectiveCatalogEmpty(c ObjectiveCatalog) bool {
@@ -147,7 +148,7 @@ func objectiveCatalogForObservation(obs Observation) ObjectiveCatalog {
 		for _, object := range obs.MapObjects {
 			entry := CatalogInteractable{
 				X: object.X, Y: object.Y, Kind: CatalogInteractableKind(object.Kind),
-				Challengeable: object.Challengeable, Defeated: object.Defeated, PrizeMoney: object.PrizeMoney,
+				Challengeable: object.Challengeable, Defeated: object.Defeated, PrizeMoney: object.PrizeMoney, GiftItem: ItemID(object.GiftItem),
 			}
 			if object.Kind == string(CatalogInteractableItem) {
 				name := strings.ToLower(strings.TrimSpace(object.Item))
