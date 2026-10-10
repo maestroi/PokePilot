@@ -178,15 +178,11 @@ runLoop:
 					round, readiness.Action, readiness.CurrentReadiness, readiness.TargetReadiness,
 					readiness.Losses, readiness.Objective.Objective(), obj)
 			}
-		} else if recoveryAdapter, ok := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p)).(ProgressionPrerequisiteRecoveryProvider); ok {
-			if recovery, prerequisites, found := engine.failures.prerequisiteRecovery(last, now, recoveryAdapter); found {
-				obj = recovery
-				engine.planning.request("prerequisite_recovery")
-				if budget.Log != nil {
-					fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
-				}
-			} else {
-				obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
+		} else if recovery, prerequisites, found := engine.failures.adapterPrerequisiteRecovery(objectiveAdapterFactory(m, romData, routePriorityForPlanner(p)), last, now); found {
+			obj = recovery
+			engine.planning.request("prerequisite_recovery")
+			if budget.Log != nil {
+				fmt.Fprintf(budget.Log, "round %d: deterministic prerequisite recovery for %v -> %s\n", round, prerequisites, obj)
 			}
 		} else {
 			obj, fromPlan, err, retries = engine.planning.chooseWithTransportRecovery(budget.Log, round, p, last, now)
