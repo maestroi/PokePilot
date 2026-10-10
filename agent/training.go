@@ -16,6 +16,29 @@ import (
 // skill will actually receive.
 const trainSessionBattleBudget = 20
 
+// trainSessionBattleCeiling bounds how far one session may stretch past
+// trainSessionBattleBudget so it still delivers the next level. Weak early
+// grass (a lone L16 Shellder on L5 Route 2: ~36 encounters per level,
+// run-1asbzwfi9ce9t2mdviheibccoa) is slow but real progress; refusing it as a
+// "zero-level" session left every learned habitat outside budget and the
+// planner commuting between towns. Bands that need more than this per level
+// (an L89 lead on L5 grass) still refuse, keeping the dead-end escape.
+const trainSessionBattleCeiling = 3 * trainSessionBattleBudget
+
+// trainSessionBattles is the battle allowance for one session in the measured
+// habitat: the ordinary budget, stretched (with slack for wild variance) to
+// reach the next level, never past trainSessionBattleCeiling.
+func trainSessionBattles(e TrainingEstimate) int {
+	n := e.NextLevelEncounters + e.NextLevelEncounters/4
+	if n < trainSessionBattleBudget {
+		return trainSessionBattleBudget
+	}
+	if n > trainSessionBattleCeiling {
+		return trainSessionBattleCeiling
+	}
+	return n
+}
+
 // preparationSessionCeiling is how many bounded Train sessions one
 // combat-preparation campaign may spend on a single habitat before it concludes
 // that the assessed environments cannot deliver the escalated readiness target.
@@ -60,9 +83,9 @@ func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowl
 		return e
 	}
 	budgeted := *e
-	budgeted.SessionBudget = preparationTrainingBudget()
+	budgeted.SessionBudget = trainSessionBattles(*e) * preparationSessionCeiling
 	classifyTrainingEstimate(&budgeted)
-	if budgeted.NextLevelEncounters > trainSessionBattleBudget {
+	if budgeted.NextLevelEncounters > trainSessionBattleCeiling {
 		budgeted.Viability = TrainingOutsideBudget
 	}
 	return &budgeted

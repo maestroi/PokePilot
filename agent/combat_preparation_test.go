@@ -467,27 +467,39 @@ func TestBudgetedTrainingEstimateKeepsSingleSessionContract(t *testing.T) {
 	challenge := Objective{Kind: KindGym, Place: PlaceID("cerulean gym")}
 	obs := campaignTestObservation(t, known, challenge)
 
-	// The full target (10000 XP) fits the 160-battle campaign allowance
-	// (~99 encounters), so a naive re-pricing would call it viable. But the
-	// next level alone needs 2500 XP (~25 encounters), more than one 20-battle
-	// session can deliver, so no session here makes progress.
+	// The next level alone needs 7000 XP (~69 encounters), more than even a
+	// stretched session (trainSessionBattleCeiling) can deliver, so no session
+	// here makes progress.
 	const xpPerEncounter = 102
 	stalled := TrainingEstimate{
 		CurrentLevel: 49, TargetLevel: 51, XPRemaining: 10000,
 		XPPerEncounter:      xpPerEncounter,
 		EstimatedEncounters: int((10000 + xpPerEncounter - 1) / xpPerEncounter),
-		NextLevelXP:         2500,
-		NextLevelEncounters: int((2500 + xpPerEncounter - 1) / xpPerEncounter),
+		NextLevelXP:         7000,
+		NextLevelEncounters: int((7000 + xpPerEncounter - 1) / xpPerEncounter),
 		SessionBudget:       trainSessionBattleBudget,
 		Viability:           TrainingOutsideBudget,
 		Method:              TrainingDirect,
 	}
-	if stalled.NextLevelEncounters <= trainSessionBattleBudget {
-		t.Fatalf("test setup: next level needs %d encounters, want > %d", stalled.NextLevelEncounters, trainSessionBattleBudget)
+	if stalled.NextLevelEncounters <= trainSessionBattleCeiling {
+		t.Fatalf("test setup: next level needs %d encounters, want > %d", stalled.NextLevelEncounters, trainSessionBattleCeiling)
 	}
 	budgeted := budgetedTrainingEstimate(&stalled, obs, known)
 	if budgeted.Viability != TrainingOutsideBudget {
 		t.Fatalf("stalled habitat re-priced to %q, want outside_budget (next level out of one session)", budgeted.Viability)
+	}
+
+	// Slow but progressing grass (~25 encounters per level) stretches one
+	// session instead of being refused (run-1asbzwfi9ce9t2mdviheibccoa: a
+	// lone Shellder found every early route outside budget and wandered).
+	slow := stalled
+	slow.NextLevelXP = 2500
+	slow.NextLevelEncounters = int((2500 + xpPerEncounter - 1) / xpPerEncounter)
+	if got := budgetedTrainingEstimate(&slow, obs, known); got.Viability == TrainingOutsideBudget {
+		t.Fatalf("slow habitat (%d encounters/level) re-priced to outside_budget", slow.NextLevelEncounters)
+	}
+	if !trainingSessionExecutable(slow, nil) || trainSessionBattles(slow) < slow.NextLevelEncounters {
+		t.Fatalf("slow session not executable: battles=%d next=%d", trainSessionBattles(slow), slow.NextLevelEncounters)
 	}
 
 	// A habitat that CAN deliver one level per session keeps the campaign
@@ -528,5 +540,26 @@ func TestTrainingSessionExecutableOnlyBlocksBandsWithoutXP(t *testing.T) {
 				t.Fatalf("trainingSessionExecutable = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// In a town (no local estimate) the escape fires only when learned areas
+// exist and none was selected; run-1asbzwfi9ce9t2mdviheibccoa otherwise
+// commuted between Viridian and Pewter under an unactionable note.
+func TestCombatPreparationTrainingExhaustedInTown(t *testing.T) {
+	unselected := []TrainingAreaAssessment{{Place: "route 2", Routable: true}}
+	selected := []TrainingAreaAssessment{{Place: "route 2", Routable: true, Selected: true}}
+	for _, tc := range []struct {
+		name    string
+		choices []TrainingAreaAssessment
+		want    bool
+	}{
+		{"no learned habitat", nil, false},
+		{"none selected", unselected, true},
+		{"one selected", selected, false},
+	} {
+		if got := combatPreparationTrainingExhausted(Observation{TrainingAreaChoices: tc.choices}); got != tc.want {
+			t.Errorf("%s: exhausted = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
