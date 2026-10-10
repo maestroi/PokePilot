@@ -258,3 +258,23 @@ func TestPrerequisiteRecoveryChainsDeclaredFieldCapabilities(t *testing.T) {
 		t.Fatalf("completed field requirement chain retained recovery %+v via %+v", got, repaired)
 	}
 }
+
+// Yellow does not map progression prerequisites, but the generic field-move
+// repair must still fire (run-j1lgrfvixz7j1bgxlgsfptofu looped 250+ rounds
+// with HM04 + Rainbow Badge and nobody taught Strength).
+func TestPrerequisiteRecoveryRunsWithoutProgressionProvider(t *testing.T) {
+	policy := newRunFailurePolicy(3)
+	policy.pendingPrerequisites = []Prerequisite{{FieldCapability: "strength"}}
+	obs := Observation{FieldCapabilities: []FieldCapability{{
+		Name: "strength", BadgeOwned: true, HMOwned: true, Preparable: true,
+	}}}
+	var adapter ObjectiveGameAdapter = &yellowObjectiveAdapter{}
+	if _, ok := adapter.(ProgressionPrerequisiteRecoveryProvider); ok {
+		t.Fatal("test premise: Yellow adapter now provides progression recovery; pick another adapter")
+	}
+	got, _, ok := policy.adapterPrerequisiteRecovery(adapter, obs, nil)
+	want := Objective{Kind: KindRepairFieldCapability, FieldCapability: "strength"}
+	if !ok || got.Key() != want.Key() {
+		t.Fatalf("recovery = %+v ok=%v, want %+v", got, ok, want)
+	}
+}

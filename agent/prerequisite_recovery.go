@@ -132,6 +132,20 @@ func (f *runFailurePolicy) prerequisiteRecovery(
 	return Objective{}, nil, false
 }
 
+// adapterPrerequisiteRecovery runs prerequisite recovery for any adapter. The
+// progression provider is optional: field-capability and route-capability
+// repairs are generic and must not depend on an adapter mapping progression
+// facts, otherwise e.g. a Yellow party holding HM04 + badge never teaches
+// Strength and the planner wanders forever.
+func (f *runFailurePolicy) adapterPrerequisiteRecovery(
+	adapter ObjectiveGameAdapter,
+	obs Observation,
+	offered []Objective,
+) (Objective, []Prerequisite, bool) {
+	provider, _ := adapter.(ProgressionPrerequisiteRecoveryProvider)
+	return f.prerequisiteRecovery(obs, offered, provider)
+}
+
 // fieldCapabilityRecovery synthesizes a repair only while that exact repair is
 // still meaningful in the current roster state. Repair objectives are not part
 // of the ordinary offered menu, so prerequisiteRecovery must explicitly honor
