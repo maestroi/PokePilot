@@ -292,8 +292,28 @@ func TestExperimentalFrontierTracksCurrentExecutableBoundary(t *testing.T) {
 	}
 	setGSEvent(mem, eventJasmineReturnedToGym)
 	story = projectEarlyStory(mem)
-	if !story.Has(ProgressJasmineReturnedToGym) || !story.Has(ProgressSupportedFrontier) {
-		t.Fatalf("Jasmine cure must complete the supported frontier: %+v", story)
+	if !story.Has(ProgressJasmineReturnedToGym) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Jasmine cure must not complete the six-badge frontier: %+v", story)
+	}
+	setGSEvent(mem, eventGotHM04Strength)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHM04StrengthAcquired) || story.Has(ProgressStormBadgeEarned) {
+		t.Fatalf("HM04 pickup must not fake Chuck's badge: %+v", story)
+	}
+	mem[sym.JohtoBadges] |= johtoBadgeStormMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressStormBadgeEarned) || story.Has(ProgressHM02FlyAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Storm Badge must not grant Fly or finish the frontier: %+v", story)
+	}
+	setGSEvent(mem, eventGotHM02Fly)
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressHM02FlyAcquired) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Fly pickup must not award Mineral Badge: %+v", story)
+	}
+	mem[sym.JohtoBadges] |= johtoBadgeMineralMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressMineralBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Mineral Badge must finish the supported frontier: %+v", story)
 	}
 }
 
@@ -352,5 +372,34 @@ func TestMedicineEventDoesNotRequireItemStillInBag(t *testing.T) {
 	setGSEvent(mem, eventJasmineReturnedToGym)
 	if !projectEarlyStory(mem).Has(ProgressSupportedFrontier) {
 		t.Fatal("Jasmine's gym return should complete the new supported frontier")
+	}
+}
+
+func TestPinnedCoastalHMAndBadgeFacts(t *testing.T) {
+	// pokegold/constants/event_flags.asm has HM02 Fly at 17 and HM04 Strength
+	// at 19; constants/engine_flags.asm puts Mineral before Storm in wJohtoBadges.
+	if eventGotHM02Fly != 17 || eventGotHM04Strength != 19 {
+		t.Fatalf("HM02/HM04 event indices = (%d,%d), want (17,19)", eventGotHM02Fly, eventGotHM04Strength)
+	}
+	if johtoBadgeMineralMask != 1<<4 || johtoBadgeStormMask != 1<<5 {
+		t.Fatalf("Mineral/Storm mask = (%#x,%#x), want (0x10,0x20)", johtoBadgeMineralMask, johtoBadgeStormMask)
+	}
+}
+
+func TestCoastalMilestonesNeverInferBadgeFromWinEventAlone(t *testing.T) {
+	mem := fakeGSReader{}
+	// Both trainer scripts set EVENT_BEAT_* separately from the engine badge
+	// bits; a script interrupted before setflag cannot manufacture a badge.
+	setGSEvent(mem, 663) // EVENT_BEAT_JASMINE
+	setGSEvent(mem, 664) // EVENT_BEAT_CHUCK
+	story := projectEarlyStory(mem)
+	if story.Has(ProgressMineralBadgeEarned) || story.Has(ProgressStormBadgeEarned) ||
+		story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("battle events alone must not report badge victory: %+v", story)
+	}
+	mem[sym.JohtoBadges] |= johtoBadgeMineralMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressMineralBadgeEarned) || !story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("engine badge must report completed Mineral Badge: %+v", story)
 	}
 }
