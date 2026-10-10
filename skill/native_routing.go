@@ -442,13 +442,15 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			}
 			return err
 		}
-		if err := walkNativePath(m, profile, path); err != nil {
+		if climbed, walkErr := walkNativePathWithWaterfall(m, profile, grid, romData, path); climbed {
+			continue // Scripted ascent moved the player; use fresh live geometry.
+		} else if walkErr != nil {
 			var blockedStep *ErrBlocked
-			if errors.As(err, &blockedStep) {
+			if errors.As(walkErr, &blockedStep) {
 				m.StepFrames(npcWaitFrames)
 				continue
 			}
-			return err
+			return walkErr
 		}
 	}
 	return fmt.Errorf("skill: native routing: could not settle on map %#04x tile (%d,%d): %w", dest.Map, dest.X, dest.Y, ErrNavigationStalled)
@@ -837,13 +839,15 @@ func traverseNativeEdge(
 			return fmt.Errorf("skill: native routing: approach edge %#04x -> %#04x: %w", edge.From, edge.To, err)
 		}
 		spriteApproachBlocked = false
-		if err := walkNativePath(m, profile, path); err != nil {
+		if climbed, walkErr := walkNativePathWithWaterfall(m, profile, grid, romData, path); climbed {
+			continue // Replan the edge from the top of the Waterfall.
+		} else if walkErr != nil {
 			var blockedStep *ErrBlocked
-			if errors.As(err, &blockedStep) {
+			if errors.As(walkErr, &blockedStep) {
 				m.StepFrames(npcWaitFrames)
 				continue
 			}
-			return err
+			return walkErr
 		}
 		if err := pushAcrossNativeEdge(m, profile, edge, push); err != nil {
 			if errors.Is(err, ErrLegUnwalkable) {
