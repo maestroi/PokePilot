@@ -488,6 +488,13 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 			switch collision {
 			case 0x12, 0x1a: // COLL_CUT_TREE, COLL_CUT_TREE_1A
 				out.Obstacles[i] = worldmodel.ObstacleCutTree
+			case 0x33, 0x3b: // COLL_WATERFALL, COLL_CURRENT_DOWN
+				// A downhill step is ordinary water movement. Ascending
+				// these tiles requires the scripted Waterfall field move.
+				// Keep the cells walkable and annotate them for execution.
+				if mode == worldmodel.TraversalWater {
+					out.Obstacles[i] = worldmodel.ObstacleWaterfall
+				}
 			case 0x24, 0x2c: // COLL_WHIRLPOOL, COLL_WHIRLPOOL_2C
 				// A whirlpool is water to the permission table but the
 				// ROM refuses to enter it until Whirlpool clears it. Only a

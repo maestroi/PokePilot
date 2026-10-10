@@ -160,9 +160,13 @@ type FieldActionResult struct {
 // important case). Page those text boxes with A, but never select an open menu
 // blindly; the active profile distinguishes result text from choice surfaces.
 func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActionDecoder) error {
+	return settleFieldActionFrom(m, spec, decoder, game.FieldActionState{})
+}
+
+func settleFieldActionFrom(m menuMachine, spec FieldMoveSpec, decoder game.FieldActionDecoder, initial game.FieldActionState) error {
 	for spent := 0; spent < fieldActionBudget; spent += 10 {
 		runtime := decoder.DecodeFieldAction(m)
-		if fieldActionCompleteState(runtime, spec) {
+		if fieldActionCompleteFromState(initial, runtime, spec) {
 			return nil
 		}
 		if runtime.InBattle {
@@ -178,7 +182,7 @@ func settleFieldAction(m menuMachine, spec FieldMoveSpec, decoder game.FieldActi
 		}
 		// A failed field action returns to the overworld without the positive
 		// effect. Once that has happened there is nothing useful to wait for.
-		if spent >= 50 && runtime.Controllable && !fieldActionEffectObservedState(runtime, spec) {
+		if spent >= 50 && runtime.Controllable && !fieldActionEffectObservedFromState(initial, runtime, spec) {
 			return fmt.Errorf("field move returned to the overworld without its expected effect")
 		}
 		m.StepFrames(10)
@@ -244,6 +248,7 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		spec = FieldMoveSpec{Move: move, Name: move.String()}
 	}
 	runtime := decoder.DecodeFieldAction(m)
+	initial := runtime
 	if !runtime.Controllable {
 		return FieldActionResult{}, fmt.Errorf("skill: %s: player is not controllable", spec.Name)
 	}
@@ -272,7 +277,7 @@ func useFieldMoveWithDecoder(m *emu.Emu, move FieldMove, decoder game.FieldActio
 		return FieldActionResult{}, fmt.Errorf("skill: %s: party slot %d: %w", spec.Name, slot, err)
 	}
 	m.StepFrames(30)
-	if err := settleFieldAction(m, spec, decoder); err != nil {
+	if err := settleFieldActionFrom(m, spec, decoder, initial); err != nil {
 		if errors.Is(err, ErrBattle) {
 			return FieldActionResult{}, err
 		}

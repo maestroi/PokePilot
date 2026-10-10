@@ -42,6 +42,10 @@ func validateFieldActionRuntime(state game.FieldActionState, spec FieldMoveSpec)
 		if state.Lit {
 			return fmt.Errorf("current area is already lit")
 		}
+	case FieldWaterfall:
+		if !state.Surfing {
+			return fmt.Errorf("Waterfall requires surfing")
+		}
 	case FieldFly:
 		return fmt.Errorf("Fly requires a destination selection; use a destination-aware transition")
 	}
@@ -61,6 +65,23 @@ func fieldActionEffectObservedState(state game.FieldActionState, spec FieldMoveS
 	default:
 		return false
 	}
+}
+
+// Waterfall queues a forced movement script. The queued-success byte alone
+// is not a completed climb: prove the player actually ascended on the same
+// native map and returned control. Other field moves retain their existing
+// effect contract (Cut/Whirlpool clear a target; Strength/Flash set modes).
+func fieldActionEffectObservedFromState(start, state game.FieldActionState, spec FieldMoveSpec) bool {
+	if spec.Move == FieldWaterfall {
+		return start.PositionKnown && state.PositionKnown &&
+			start.NativeMapID == state.NativeMapID && start.X == state.X &&
+			state.Y < start.Y && state.ActionSucceeded
+	}
+	return fieldActionEffectObservedState(state, spec)
+}
+
+func fieldActionCompleteFromState(start, state game.FieldActionState, spec FieldMoveSpec) bool {
+	return state.Controllable && fieldActionEffectObservedFromState(start, state, spec)
 }
 
 func fieldActionCompleteState(state game.FieldActionState, spec FieldMoveSpec) bool {

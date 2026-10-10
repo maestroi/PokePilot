@@ -108,3 +108,26 @@ func TestDecodeFieldActionReportsBattle(t *testing.T) {
 		t.Fatal("a Rock Smash wild battle must be visible to the field-action settle loop")
 	}
 }
+
+func TestGSFieldActionProjectsPositiveNativeLocation(t *testing.T) {
+	for _, profile := range []*Profile{NewGold(), NewSilver()} {
+		var mem fakeMemory
+		gsFieldActionControllable(&mem)
+		mem[sym.MapGroup], mem[sym.MapNumber] = 24, 7
+		mem[sym.XCoord], mem[sym.YCoord] = 6, 12
+		mem[sym.PlayerState] = gen2PlayerSurf
+
+		state := profile.DecodeFieldAction(&mem)
+		if !state.PositionKnown || state.NativeMapID != 0x1807 ||
+			state.X != 6 || state.Y != 12 {
+			t.Fatalf("%s live field-action location = %+v", profile.ID(), state)
+		}
+
+		// Do not trust in-flight map coordinates while a script owns the
+		// player: those bytes can lead the new map shell during a warp.
+		mem[sym.ScriptRunning] = 1
+		if got := profile.DecodeFieldAction(&mem); got.PositionKnown {
+			t.Fatalf("%s script-owned location was marked settled: %+v", profile.ID(), got)
+		}
+	}
+}

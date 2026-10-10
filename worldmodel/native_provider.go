@@ -67,6 +67,8 @@ const (
 	ObstacleCutTree   NativeObstacle = "cut"
 	ObstacleSmashRock NativeObstacle = "rock_smash"
 	ObstacleWhirlpool NativeObstacle = "whirlpool"
+	// Waterfall stays walkable downhill; ascending requires a scripted move.
+	ObstacleWaterfall NativeObstacle = "waterfall"
 )
 
 // NativeGridSpec is the wide-id counterpart to GridSpec. Collision decoding is
