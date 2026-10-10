@@ -18,7 +18,7 @@ const (
 	gsChuckY               uint8 = 1
 	gsChuckStandX          uint8 = 4
 	gsChuckStandY          uint8 = 2
-	gsChucksWifeSlot       int = 10
+	gsChucksWifeSlot       int   = 10
 	gsChucksWifeStandX     uint8 = 10
 	gsChucksWifeStandY     uint8 = 45
 	gsJasmineGymX          uint8 = 5
