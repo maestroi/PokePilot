@@ -7,7 +7,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/world"
-	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // planNativeStrengthBridge asks the portable push solver whether the
@@ -71,6 +70,10 @@ func nativeStrengthBridge(
 	if !ok {
 		return false, nil
 	}
+	action, ok := any(profile).(game.FieldActionDecoder)
+	if !ok {
+		return false, nil
+	}
 	capability, err := fieldMoveCapabilityWithProfile(decoder, m, romData, FieldStrength)
 	if errors.Is(err, ErrFieldMovePrerequisite) {
 		return false, nil
@@ -94,12 +97,12 @@ func nativeStrengthBridge(
 		int(before.X) != push.Stand.X || int(before.Y) != push.Stand.Y {
 		return false, fmt.Errorf("skill: native Strength: approach to slot %d was not verified: %w", push.MovableID, ErrNavigationStalled)
 	}
-	fieldState := profile.(game.FieldActionDecoder).DecodeFieldAction(m)
+	fieldState := action.DecodeFieldAction(m)
 	if !fieldState.StrengthActive {
 		if _, err := UseFieldMove(m, FieldStrength); err != nil {
 			return false, fmt.Errorf("skill: native Strength: activate: %w", err)
 		}
-		if !profile.(game.FieldActionDecoder).DecodeFieldAction(m).StrengthActive {
+		if !action.DecodeFieldAction(m).StrengthActive {
 			return false, fmt.Errorf("skill: native Strength: activation did not persist: %w", ErrNavigationStalled)
 		}
 	}
@@ -128,5 +131,3 @@ func nativeStrengthBridge(
 		push.MovableID, ErrNavigationStalled)
 }
 
-// Ensure this bridge consumes no game-specific ROM collision values.
-var _ worldmodel.NativeObstacle
