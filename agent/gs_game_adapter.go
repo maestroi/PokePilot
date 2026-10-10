@@ -58,7 +58,10 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressTM08RockSmashAcquired,
 		gsprofile.ProgressBurnedTowerCleared,
 		gsprofile.ProgressFogBadgeEarned,
-		gsprofile.ProgressHM03SurfAcquired:
+		gsprofile.ProgressHM03SurfAcquired,
+		gsprofile.ProgressLighthouseSicknessExplained,
+		gsprofile.ProgressSecretPotionAcquired,
+		gsprofile.ProgressJasmineReturnedToGym:
 		return true
 	default:
 		return false
@@ -164,6 +167,12 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSMorty(a.m, a.romData)
 		case gsprofile.ProgressHM03SurfAcquired:
 			err = executeGSHM03Surf(a.m, a.romData)
+		case gsprofile.ProgressLighthouseSicknessExplained:
+			err = executeGSLighthouseSickness(a.m, a.romData)
+		case gsprofile.ProgressSecretPotionAcquired:
+			err = executeGSSecretPotion(a.m, a.romData)
+		case gsprofile.ProgressJasmineReturnedToGym:
+			err = executeGSJasmineCured(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -189,7 +198,10 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressTM02HeadbuttAcquired, gsprofile.ProgressPlainBadgeEarned,
 			gsprofile.ProgressSudowoodoCleared, gsprofile.ProgressTM08RockSmashAcquired,
 			gsprofile.ProgressBurnedTowerCleared, gsprofile.ProgressFogBadgeEarned,
-			gsprofile.ProgressHM03SurfAcquired:
+			gsprofile.ProgressHM03SurfAcquired,
+			gsprofile.ProgressLighthouseSicknessExplained,
+			gsprofile.ProgressSecretPotionAcquired,
+			gsprofile.ProgressJasmineReturnedToGym:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -436,6 +448,24 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressHM03SurfAcquired,
 			Note:     "(defeat all five Ecruteak Dance Theater Kimono Girls and receive HM03 Surf from the gentleman)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLighthouseSicknessExplained):
+		return []Objective{{
+			Kind: KindProgress,
+			Progress: gsprofile.ProgressLighthouseSicknessExplained,
+			Note: "(travel Route 38/39 to Olivine, climb the Lighthouse, and hear Jasmine's request to cure Ampharos)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressSecretPotionAcquired):
+		return []Objective{{
+			Kind: KindProgress,
+			Progress: gsprofile.ProgressSecretPotionAcquired,
+			Note: "(surf Route 40/41 to Cianwood, reach the pharmacy, and receive SecretPotion for Ampharos)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressJasmineReturnedToGym):
+		return []Objective{{
+			Kind: KindProgress,
+			Progress: gsprofile.ProgressJasmineReturnedToGym,
+			Note: "(return to Lighthouse 6F, give SecretPotion to Jasmine, and see her return to Olivine Gym)",
 		}}
 	default:
 		return nil
