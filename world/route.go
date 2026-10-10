@@ -357,10 +357,11 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// and water shores have empty land exitComps by construction. Those
 			// edges are allowed as executable semantic frontiers, but routing
 			// stops there until live water topology is rebuilt.
-			if g.componentAware && len(g.exitComps[e]) == 0 && !(skipCanExit[e] && relaxLanding[e]) {
+			skip := skipCanExit[e] && !g.pivotDenied(e, entry)
+			if g.componentAware && len(g.exitComps[e]) == 0 && !(skip && relaxLanding[e]) {
 				continue
 			}
-			if !skipCanExit[e] && !canExit(g, e, entry) {
+			if !skip && !canExit(g, e, entry) {
 				continue
 			}
 
@@ -374,7 +375,7 @@ func findRoute(g *Graph, from, to uint8, blockedHere map[Edge]bool, first, targe
 			// (run-jc853qns2lmc109wx2hs96btk). GoTo executes the shore prefix
 			// and replans on live water topology instead.
 			boundary := g.componentAware && relaxLanding[e] &&
-				(!occupied[e.To] || skipCanExit[e])
+				(!occupied[e.To] || skip)
 			key := routeStateIdentity(g, e.To, nextEntry, e)
 			if seen[key] {
 				continue

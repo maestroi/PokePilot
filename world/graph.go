@@ -111,6 +111,7 @@ type Graph struct {
 	comps          map[uint8][][]int
 	exitComps      map[Edge][]int
 	entryComps     map[Edge][]int
+	noPivotComps   map[Edge][]int
 	warps          map[uint8][]worldmodel.Warp
 	tiles          map[uint8]dim
 	connections    map[Edge]worldmodel.Connection

@@ -13,6 +13,35 @@ import (
 type RoutePrerequisites struct {
 	Transitions  map[Edge]gameruntime.Transition
 	Capabilities gameruntime.CapabilitySet
+
+	// NoPivotFrom names, per semantic edge, source-map tiles whose walking
+	// component the action cannot execute from. A search state entering
+	// e.From in such a component loses the FROM-side pivot (skipCanExit) and
+	// must reach the port by ordinary walking. This is how an action scoped
+	// to part of a map stays scoped wherever the route enters that map, not
+	// only when the player already stands there.
+	NoPivotFrom map[Edge][][2]int
+}
+
+// withNoPivotFrom returns g carrying the component form of noPivot.
+func withNoPivotFrom(g *Graph, noPivot map[Edge][][2]int) *Graph {
+	if g == nil || len(noPivot) == 0 || !g.componentAware {
+		return g
+	}
+	copyGraph := *g
+	copyGraph.noPivotComps = make(map[Edge][]int, len(noPivot))
+	for edge, tiles := range noPivot {
+		for _, tile := range tiles {
+			copyGraph.noPivotComps[edge] = append(copyGraph.noPivotComps[edge], componentSetAt(g, edge.From, tile[0], tile[1])...)
+		}
+	}
+	return &copyGraph
+}
+
+// pivotDenied reports whether entry is a source component e's action cannot
+// pivot from (see RoutePrerequisites.NoPivotFrom).
+func (g *Graph) pivotDenied(e Edge, entry []int) bool {
+	return g != nil && shareComp(entry, g.noPivotComps[e])
 }
 
 // RouteStep preserves the semantic transition identity selected for an edge.
@@ -222,6 +251,7 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	if len(hardDenied) > 0 {
 		usable = graphWithoutSemanticEdges(g, hardDenied)
 	}
+	usable = withNoPivotFrom(usable, prereqs.NoPivotFrom)
 	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, skipCanExit, relaxLanding)
 	if err == nil {
 		return routeSteps(route, executable), nil
