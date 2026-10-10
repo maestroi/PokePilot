@@ -192,11 +192,13 @@ watch(() => form.game, (game, previous) => {
 })
 
 const gen2Goals = [
-  ['Play through the current supported Gen 2 frontier.', 'Current frontier · Fog Badge / Morty'],
+  ['Play through the current supported Gen 2 frontier.', 'Current frontier · Mineral Badge / Jasmine'],
   ['Earn 1 badge.', '1 badge · Zephyr · Falkner'],
   ['Earn 2 badges.', '2 badges · Hive · Bugsy'],
   ['Earn 3 badges.', '3 badges · Plain · Whitney'],
   ['Earn 4 badges.', '4 badges · Fog · Morty'],
+  ['Earn 5 badges.', '5 badges · Storm · Chuck'],
+  ['Earn 6 badges.', '6 badges · Mineral · Jasmine'],
   ['', 'Free play · no automatic stop']
 ] as const
 
@@ -369,7 +371,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose a specific supported badge milestone or the moving frontier. This build currently supports fresh Gold/Silver runs through Morty and the Fog Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose a specific supported badge milestone or the moving frontier. This build currently supports the experimental Gold/Silver progression through Jasmine and the Mineral Badge; ROM journey qualification is still pending.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
