@@ -171,3 +171,16 @@ func TestEnhancePickupObjectivesPreservesExistingHistoryNote(t *testing.T) {
 		t.Fatalf("existing pickup note not preserved/enhanced: %+v", out)
 	}
 }
+
+// A full bag with a retired entry still accepts a new-kind pickup: execution
+// stores the retired item first (run-d6dokr184ky81 bag 20/20).
+func TestPickupCanStoreCountsReclaimableSlots(t *testing.T) {
+	obs := Observation{Bag: make([]Item, bagItemCapacity)}
+	if pickupCanStore(obs, "nugget") {
+		t.Fatal("full bag without reclaimable slots accepted a new item kind")
+	}
+	obs.ReclaimableBagSlots = 1
+	if !pickupCanStore(obs, "nugget") {
+		t.Fatal("reclaimable slot ignored")
+	}
+}

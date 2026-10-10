@@ -114,6 +114,7 @@ func TestEventIndicesMatchDecomp(t *testing.T) {
 		{"EVENT_1ST_LOCK_OPENED", EventVermilionGymFirstLockOpened},
 		{"EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE", EventBeatRoute22Rival1stBattle},
 		{"EVENT_BEAT_CHAMPION_RIVAL", EventBeatChampionRival},
+		{"EVENT_SS_ANNE_LEFT", EventSSAnneLeft},
 	}
 	for _, p := range pairs {
 		want, ok := events[p.label]

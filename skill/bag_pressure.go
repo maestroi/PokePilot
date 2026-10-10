@@ -237,8 +237,9 @@ func teachTMForBagSpace(m *emu.Emu, romData []byte) (bool, error) {
 
 // ensureBagFreeSlotsManaged resolves bag pressure with productive actions before
 // discarding anything. NUGGET is converted to money, a single safe RARE CANDY
-// is converted to a level, a finite TM can be preserved in Player PC storage,
-// and — when that Center detour cannot complete — a TM can be taught in place.
+// is converted to a level, retired items (RetiredBagItems) and then a finite
+// TM are preserved in Player PC storage, and —
+// when that Center detour cannot complete — a TM can be taught in place.
 // Only when none of those can create the required capacity does the legacy
 // explicit toss whitelist run.
 func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
@@ -281,6 +282,15 @@ func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 		}
 	}
 
+	state.Snapshot(m, &mem)
+	if bagFreeSlots(&mem) >= minFree {
+		return nil
+	}
+
+	// Items with no remaining use go to the Player PC before anything useful.
+	if _, err := storeRetiredItemForBagSpace(m, romData, policy); errors.Is(err, ErrInventoryDetourStranded) {
+		return err
+	}
 	state.Snapshot(m, &mem)
 	if bagFreeSlots(&mem) >= minFree {
 		return nil

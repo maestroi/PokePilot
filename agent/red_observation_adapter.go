@@ -160,6 +160,7 @@ func observeGen1(m *emu.Emu, romData []byte, profile game.GameProfile, facts gen
 		}
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: int(it.Quantity)})
 	}
+	obs.ReclaimableBagSlots = len(skill.RetiredBagItems(romData, &mem))
 
 	for _, cap := range skill.FieldCapabilities(&mem) {
 		obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{

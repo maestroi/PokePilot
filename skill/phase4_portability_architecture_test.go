@@ -130,6 +130,7 @@ var gen1AdapterExceptions = fileSet(
 // Gen II gets its own story/progression implementation rather than sharing it.
 var redOwnedStoryPolicyExceptions = fileSet(
 	"bag_pressure.go",
+	"bag_retire.go",
 	"bill.go",
 	"boulder_progression.go",
 	"boulder_puzzle.go",
