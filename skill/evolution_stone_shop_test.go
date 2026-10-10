@@ -121,7 +121,7 @@ func TestBuyEvolutionStoneRealROM(t *testing.T) {
 	state.Snapshot(m, &before)
 	start := state.DecodeInventory(&before)
 
-	travel, err := BuyEvolutionStone(m, romData, waterStoneItem, StatAwareMove(romData))
+	travel, err := BuyEvolutionStone(m, romData, waterStoneItem, 1, StatAwareMove(romData))
 	if err != nil {
 		t.Fatalf("BuyEvolutionStone(water stone): %v (travel=%+v)", err, travel)
 	}

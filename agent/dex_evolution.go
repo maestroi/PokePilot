@@ -83,18 +83,9 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 					continue
 				}
 				if bagItemQuantity(obs.Bag, src.Item) == 0 {
-					if !dexEvolutionStonePurchaseAvailable(obs, known, src.Item) {
-						continue
-					}
-					o = Objective{
-						Kind:   KindBuy,
-						Item:   src.Item,
-						Qty:    1,
-						Intent: dexEvolutionSupplyIntent,
-						Note: fmt.Sprintf("(dex evolution supply: buy one %s for %s -> %s at Celadon Mart 4F)",
-							strings.ToUpper(string(src.Item)), strings.ToUpper(string(src.From)), strings.ToUpper(string(entry.Species))),
-					}
-					break
+					// appendDexStoneStockObjectives buys every stone the Dex
+					// still needs in one trip.
+					continue
 				}
 				o = Objective{
 					Kind:   KindUseItem,
@@ -119,7 +110,53 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 			break
 		}
 	}
-	return appendDexVirtualTradeObjectives(obs, known, out)
+	return appendDexVirtualTradeObjectives(obs, known, appendDexStoneStockObjectives(obs, known, out))
+}
+
+// appendDexStoneStockObjectives offers one bulk purchase per stone kind: the
+// number of unowned Dex targets that evolve with it, minus stones held,
+// bounded by spendable money. Stone need is fixed by the ROM evolution data,
+// not by where the base Pokémon currently is, so a run can stock every stone
+// in its first Celadon trip instead of returning once per evolution.
+func appendDexStoneStockObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
+	owned := pokedexOwnedSet(obs)
+	need := map[ItemID]int{}
+	var order []ItemID
+	for _, entry := range obs.Dex.Targets {
+		if owned[entry.Species] {
+			continue
+		}
+		for _, src := range entry.Sources {
+			if src.Kind != AcquireItemEvo || !purchasableDexEvolutionStone(src.Item) {
+				continue
+			}
+			if need[src.Item] == 0 {
+				order = append(order, src.Item)
+			}
+			need[src.Item]++
+			break
+		}
+	}
+	for _, item := range order {
+		want := need[item] - bagItemQuantity(obs.Bag, item)
+		if want <= 0 || !dexEvolutionStonePurchaseAvailable(obs, known, item) {
+			continue
+		}
+		spec, _ := ItemEconomy(string(item))
+		qty := boundedAffordableQty(want, EconomyContext(obs).SpendableMoney, spec.UnitPrice)
+		if qty <= 0 {
+			continue
+		}
+		out = append(out, Objective{
+			Kind:   KindBuy,
+			Item:   item,
+			Qty:    qty,
+			Intent: dexEvolutionSupplyIntent,
+			Note: fmt.Sprintf("(dex evolution supply: stock %d %s for %d unowned evolution(s) at Celadon Mart 4F)",
+				qty, strings.ToUpper(string(item)), need[item]),
+		})
+	}
+	return out
 }
 
 func dexEvolutionCandidateEntries(obs Observation) []DexEntry {
@@ -152,7 +189,9 @@ func dexEvolutionCandidateEntries(obs Observation) []DexEntry {
 }
 
 func dexEvolutionStonePurchaseAvailable(obs Observation, known *Knowledge, item ItemID) bool {
-	if !purchasableDexEvolutionStone(item) || len(obs.Bag) >= bagItemCapacity {
+	// BuyEvolutionStone frees a retired slot itself (EnsureBagSpaceFor).
+	if !purchasableDexEvolutionStone(item) ||
+		(bagItemQuantity(obs.Bag, item) == 0 && len(obs.Bag)-obs.ReclaimableBagSlots >= bagItemCapacity) {
 		return false
 	}
 	spec, ok := ItemEconomy(string(item))

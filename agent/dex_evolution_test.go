@@ -150,3 +150,33 @@ func TestAppendDexEvolutionObjectivesRequiresImmediatePrerequisiteAndSuppressesO
 		t.Fatalf("unavailable/already-owned evolution objectives = %+v, want none", got)
 	}
 }
+
+// Stone need comes from the Dex targets, not the party: one Celadon trip
+// stocks every Fire Stone the run will use, even before the bases are caught.
+func TestAppendDexEvolutionObjectivesStocksStonesForAllTargets(t *testing.T) {
+	dest, ok := skill.Place("celadon mart 4f stones")
+	if !ok {
+		t.Fatal("Celadon Mart 4F evolution stone destination missing")
+	}
+	fire := func(species, from SpeciesID) DexEntry {
+		return DexEntry{Species: species, Sources: []DexSource{{Kind: AcquireItemEvo, From: from, Item: "fire stone"}}}
+	}
+	obs := Observation{
+		Map:   dest.Map,
+		Money: 10000,
+		Bag:   []Item{{Name: "fire stone", Quantity: 1}},
+		Party: []PartyMon{{Species: "venusaur", Level: 60, HP: 200, MaxHP: 200}},
+		Dex: DexCatalog{Targets: []DexEntry{
+			fire("arcanine", "growlithe"), fire("ninetales", "vulpix"), fire("flareon", "eevee"),
+		}},
+	}
+	got := appendDexEvolutionObjectives(obs, NewKnowledge(nil), nil)
+	if len(got) != 1 || got[0].Kind != KindBuy || got[0].Item != "fire stone" || got[0].Qty != 2 {
+		t.Fatalf("stone stock = %+v, want one purchase of 2 Fire Stones (3 needed, 1 held)", got)
+	}
+
+	obs.Money = 2100 // one stone affordable
+	if got := appendDexEvolutionObjectives(obs, NewKnowledge(nil), nil); len(got) != 1 || got[0].Qty != 1 {
+		t.Fatalf("stone stock with ¥2100 = %+v, want 1", got)
+	}
+}
