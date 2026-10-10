@@ -120,3 +120,24 @@ func TestAppendDexCatchObjectivesRequiresBalls(t *testing.T) {
 		t.Fatalf("without balls got %+v", got)
 	}
 }
+
+// run-d6dokr184ky81: a bag with only Ultra Balls must still offer ordinary
+// dex hunts; otherwise only paid Safari sessions remain.
+func TestAppendDexCatchObjectivesCountsUltraBalls(t *testing.T) {
+	obs := Observation{
+		Map:   0xff,
+		Party: []PartyMon{{Species: "venusaur"}},
+		Bag:   []Item{{Name: "ultra ball", Quantity: 9}, {Name: "master ball", Quantity: 1}},
+		Dex: DexCatalog{Targets: []DexEntry{{
+			Species: "pidgey",
+			Sources: []DexSource{{Kind: AcquireWildGrass, Place: "route 1"}},
+		}}},
+	}
+	if got := appendDexCatchObjectives(obs, NewKnowledge(nil), nil); len(got) != 1 || got[0].Species != "pidgey" {
+		t.Fatalf("dex catches = %+v, want the Route 1 pidgey hunt", got)
+	}
+	obs.Bag = []Item{{Name: "master ball", Quantity: 1}}
+	if got := appendDexCatchObjectives(obs, NewKnowledge(nil), nil); len(got) != 0 {
+		t.Fatalf("Master Ball alone must not open ordinary hunts, got %+v", got)
+	}
+}
