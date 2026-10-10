@@ -42,6 +42,10 @@ func RepairUtilityFieldCapability(m *emu.Emu, romData []byte, policy MovePolicy,
 	if cap.Usable {
 		return nil
 	}
+	if err := withdrawStoredHM(m, romData, policy, target); err != nil {
+		return fmt.Errorf("skill: RepairUtilityFieldCapability: %w", err)
+	}
+	state.Snapshot(m, &mem)
 
 	party := state.DecodeParty(&mem)
 	canPrepareHere := CanPrepareFieldMove(romData, &mem, target)

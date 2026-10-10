@@ -107,6 +107,9 @@ func FieldCapabilityFor(mem *state.Mem, move FieldMove) FieldCapability {
 	}
 	slot := partyMoveSlot(mem, spec.MoveID)
 	_, qty := bagEntry(mem, spec.HMItem)
+	// An HM stored in the Player PC is still owned: repair withdraws it
+	// before teaching (withdrawStoredHM).
+	qty += pcItemQuantity(state.DecodePCItemStorage(mem).Items, spec.HMItem)
 	badge := state.DecodeProgress(mem).Has(spec.Badge)
 	learned := slot >= 0
 	return FieldCapability{
@@ -137,12 +140,12 @@ func CanPrepareFieldMove(romData []byte, mem *state.Mem, move FieldMove) bool {
 	if cap.Usable {
 		return true
 	}
-	if !cap.BadgeOwned || !cap.HMOwned {
+	spec, ok := FieldMoveSpecFor(move)
+	if !ok || !cap.BadgeOwned {
 		return false
 	}
-	spec, ok := FieldMoveSpecFor(move)
-	if !ok {
-		return false
+	if _, qty := bagEntry(mem, spec.HMItem); qty == 0 {
+		return false // teaching needs the HM in hand, not in the PC
 	}
 	decision, err := DecideTMHM(romData, state.DecodeParty(mem), spec.HMItem, true)
 	return err == nil && decision.PartySlot >= 0
