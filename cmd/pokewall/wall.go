@@ -133,6 +133,12 @@ type Tile struct {
 	// Stats is the llm planner's tally, last pushed by a heartbeat. Kept on
 	// finish (the final tally explains the outcome), nilled on retry.
 	Stats *farm.LLMStats
+	// PriorStats is the run-wide planner tally as of the last finished
+	// attempt. Each attempt's runner starts counting at zero, so heartbeats
+	// fold this in to keep Stats a whole-run tally. Persisted (it is small and
+	// cannot be rebuilt from the next heartbeat) and cleared only on a
+	// manual re-queue.
+	PriorStats *farm.LLMStats
 	// Player is the live party/money/badges snapshot. Kept on finish,
 	// nilled on retry, same rule as Stats.
 	Player       *farm.Player
@@ -354,6 +360,7 @@ type persistedTile struct {
 	Decision            string                   `json:"decision,omitempty"`
 	StopSoFar           string                   `json:"stop_so_far,omitempty"`
 	Stats               *farm.LLMStats           `json:"stats,omitempty"`
+	PriorStats          *farm.LLMStats           `json:"prior_stats,omitempty"`
 	Player              *farm.Player             `json:"player,omitempty"`
 	GameState           map[string]any           `json:"game_state,omitempty"`
 	GameDecision        map[string]any           `json:"game_decision,omitempty"`
@@ -444,6 +451,7 @@ func (w *Wall) persistedStateLocked() persistedState {
 			Decision:            t.Decision,
 			StopSoFar:           t.StopSoFar,
 			Stats:               t.Stats,
+			PriorStats:          t.PriorStats,
 			Player:              t.Player,
 			GameState:           cloneJSONMap(t.GameState),
 			GameDecision:        cloneJSONMap(t.GameDecision),
@@ -556,6 +564,7 @@ func (p persistedTile) tile(now time.Time) *Tile {
 		Decision:            p.Decision,
 		StopSoFar:           p.StopSoFar,
 		Stats:               p.Stats,
+		PriorStats:          p.PriorStats,
 		Player:              p.Player,
 		GameState:           cloneJSONMap(p.GameState),
 		GameDecision:        cloneJSONMap(p.GameDecision),
@@ -868,6 +877,7 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.Trail = nil
 	t.MapAsset = nil
 	t.Stats = nil
+	t.PriorStats = nil
 	t.Player = nil
 	t.GameState = nil
 	t.GameDecision = nil
@@ -1041,7 +1051,7 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.Trail = append(t.Trail[:0], hb.Trail...)
 	t.MapAsset = hb.MapAsset
 	t.MapsVisited = hb.MapsVisited
-	t.Stats = hb.Stats
+	t.Stats = hb.Stats.WithPrior(t.PriorStats)
 	t.Player = hb.Player
 	t.GameState = cloneJSONMap(hb.GameState)
 	t.GameDecision = cloneJSONMap(hb.GameDecision)
@@ -1836,6 +1846,11 @@ func noteRecoveryProgressLocked(t *Tile, p *farm.Progress) {
 func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureClasses ...farm.FinishFailureClass) int {
 	t.Attempts++
 	completed := t.Attempts
+	if t.Stats != nil {
+		// Stats is already cumulative (heartbeats fold PriorStats in). An
+		// attempt that ended before any heartbeat leaves the tally as it was.
+		t.PriorStats = t.Stats.Carried()
+	}
 	failureClass := farm.FinishFailureClass("")
 	if len(failureClasses) > 0 {
 		failureClass = failureClasses[0]

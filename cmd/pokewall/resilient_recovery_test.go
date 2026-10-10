@@ -371,3 +371,57 @@ func TestResilientResumeNeverBootsFreshWhenCheckpointRetained(t *testing.T) {
 		}
 	}
 }
+
+// Each runner attempt restarts its planner tally at zero; the run row must
+// still report the whole campaign, not just the final attempt.
+func TestRunStatsAccumulateAcrossAttempts(t *testing.T) {
+	w := NewWall(t.TempDir())
+	srv := httptest.NewServer(pauseHTTPHandler(w, w.Handler()))
+	defer srv.Close()
+	client := farm.NewClient(srv.URL)
+	ctx := context.Background()
+	queueRecoveryTestRun(t, srv.URL, farm.Spec{
+		RunID: "stats-campaign", Planner: "llm", Goal: farm.GoalFrom("beat the game"),
+		RecoveryProfile: farm.RecoveryProfileResilient,
+	})
+
+	for attempt, reason := range []string{"error", "error", "done"} {
+		spec, err := client.Lease(ctx)
+		if err != nil || spec == nil {
+			t.Fatalf("lease %d = %+v, %v", attempt+1, spec, err)
+		}
+		hb := farm.Heartbeat{RunID: "stats-campaign", Stats: &farm.LLMStats{StrategicCalls: 10, StrategicSeconds: 100}}
+		if _, err := client.Heartbeat(ctx, hb); err != nil {
+			t.Fatalf("heartbeat %d: %v", attempt+1, err)
+		}
+		if err := client.Finish(ctx, farm.FinishReport{RunID: "stats-campaign", Attempt: spec.Attempt, Reason: reason}); err != nil {
+			t.Fatalf("finish %d: %v", attempt+1, err)
+		}
+	}
+
+	w.mu.Lock()
+	stats := w.tiles["stats-campaign"].Stats
+	w.mu.Unlock()
+	if stats == nil || stats.StrategicCalls != 30 || stats.StrategicSeconds != 300 {
+		t.Fatalf("finished run stats = %+v, want 30 strategic calls / 300s across 3 attempts", stats)
+	}
+
+	// The carried tally survives a wall restart through both persisted
+	// shapes: the state file and the control-plane snapshot.
+	w.mu.Lock()
+	states := []persistedState{w.persistedStateLocked(), controlPlanePersistedStateLocked(w)}
+	w.mu.Unlock()
+	for i, ps := range states {
+		data, err := json.Marshal(ps)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back persistedState
+		if err := json.Unmarshal(data, &back); err != nil {
+			t.Fatal(err)
+		}
+		if prior := back.Tiles["stats-campaign"].tile(time.Now()).PriorStats; prior == nil || prior.StrategicCalls != 30 {
+			t.Fatalf("persisted shape %d lost prior stats: %+v", i, prior)
+		}
+	}
+}
