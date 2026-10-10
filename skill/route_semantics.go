@@ -428,6 +428,7 @@ func redRouteTransitionEffectComplete(mem *state.Mem, transition gameruntime.Tra
 // graph while keeping the routing algorithm generic.
 func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world.RoutePrerequisites {
 	transitions := make(map[world.Edge]gameruntime.Transition)
+	noPivot := make(map[world.Edge][][2]int)
 	for _, edges := range g.Edges {
 		for _, edge := range edges {
 			if transition, ok := redRouteTransitionForEdge(edge); ok {
@@ -475,13 +476,38 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 					continue
 				}
 				transitions[edge] = transition
+				// Wherever a route ENTERS Route 23 in the Indigo pocket (Victory
+				// Road 2F's exit door), the Surf-band actions cannot execute from
+				// there either. The position checks above only cover a player
+				// already standing in the pocket; from 3F's exit-side ladder the
+				// route walked out into it and pivoted to the Route 22 Gate
+				// (run-jc853qns2lmc109wx2hs96btk "buy 1 SUPER POTION" -> no_route).
+				if transition.ID == "red:route23_league_return" || transition.ID == "red:route23_league_approach" {
+					noPivot[edge] = route23IndigoPocketTiles(g)
+				}
 			}
 		}
 	}
 	return world.RoutePrerequisites{
 		Transitions:  transitions,
 		Capabilities: redRouteCapabilities(romData, mem),
+		NoPivotFrom:  noPivot,
 	}
+}
+
+// route23IndigoPocketTiles are the Route 23 landings of Victory Road 2F's exit
+// door: the sealed pocket north of the cave that walks only to Indigo.
+func route23IndigoPocketTiles(g *world.Graph) [][2]int {
+	var tiles [][2]int
+	for _, edge := range g.Edges[victoryRoad2FMap] {
+		if edge.Kind != world.EdgeWarp || edge.To != route23Map {
+			continue
+		}
+		if x, y, ok := g.DestWarpTile(edge); ok {
+			tiles = append(tiles, [2]int{x, y})
+		}
+	}
+	return tiles
 }
 
 func transitionCreatesSeam(t gameruntime.Transition) bool {

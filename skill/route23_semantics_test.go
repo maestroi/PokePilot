@@ -285,3 +285,55 @@ func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
 		})
 	}
 }
+
+// Victory Road 3F is one static walking component, so its exit-side ladder
+// (26,8) cannot be suppressed by position. Routing from there walked out of
+// 2F's exit door into the Indigo pocket and used red:route23_league_return as
+// a FROM-side pivot to the Route 22 Gate (run-jc853qns2lmc109wx2hs96btk:
+// "buy 1 SUPER POTION" -> no route from Indigo). Entering the pocket must
+// never grant that pivot, in either router.
+func TestRoute23PocketEntryNeverPivotsToRoute22Gate(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		t.Fatalf("route graph: %v", err)
+	}
+	var mem state.Mem
+	mem[sym.CurMap], mem[sym.XCoord], mem[sym.YCoord] = victoryRoad3FMap, 26, 8
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	prereqs.Capabilities = gameruntime.NewCapabilitySet(
+		capCanSurf, capCanMoveBoulders, capCanPassRoute23BadgeChecks, capCanCut)
+	vermilionMart := uint8(0x5B)
+	viaPocket := func(edges []world.Edge) bool {
+		for _, e := range edges {
+			if e.From == victoryRoad2FMap && e.To == route23Map {
+				return true
+			}
+		}
+		return false
+	}
+	plan, err := world.FindRoutePlanAtDestinationWithCapabilities(g, victoryRoad3FMap, vermilionMart, 26, 8, -1, -1, nil, prereqs)
+	var edges []world.Edge
+	for _, s := range plan {
+		edges = append(edges, s.Edge)
+	}
+	if viaPocket(edges) {
+		t.Fatalf("route left through the Indigo pocket: %v %+v", err, edges)
+	}
+	weighted, err := world.FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, victoryRoad3FMap, vermilionMart, 26, 8, -1, -1, nil, prereqs, world.DefaultRouteCostPolicy())
+	edges = edges[:0]
+	for _, s := range weighted.Steps {
+		edges = append(edges, s.Edge)
+	}
+	if viaPocket(edges) {
+		t.Fatalf("weighted route left through the Indigo pocket: %v %+v", err, edges)
+	}
+}

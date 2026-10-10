@@ -218,6 +218,7 @@ func buildWeightedSemanticView(g *Graph, prereqs RoutePrerequisites) weightedSem
 	if len(hardDenied) > 0 {
 		view.usable = graphWithoutSemanticEdges(g, hardDenied)
 	}
+	view.usable = withNoPivotFrom(view.usable, prereqs.NoPivotFrom)
 	return view
 }
 
@@ -400,11 +401,12 @@ func findExactWeightedRoute(
 			if gatedWarpDominatedByReachableSibling(view.usable, edge, cur.entry, view.skipCanExit) {
 				continue
 			}
+			skip := view.skipCanExit[edge] && !view.usable.pivotDenied(edge, cur.entry)
 			if g.componentAware && len(g.exitComps[edge]) == 0 &&
-				!(view.skipCanExit[edge] && view.relaxLanding[edge]) {
+				!(skip && view.relaxLanding[edge]) {
 				continue
 			}
-			if !view.skipCanExit[edge] && !canExit(g, edge, cur.entry) {
+			if !skip && !canExit(g, edge, cur.entry) {
 				continue
 			}
 			if !cur.known {
@@ -419,7 +421,7 @@ func findExactWeightedRoute(
 			nextEntry := g.entryComps[edge]
 			// Match findRoute: full PortBypass stays a frontier on every band.
 			boundary := g.componentAware && view.relaxLanding[edge] &&
-				(!cur.occupied.has(edge.To) || view.skipCanExit[edge])
+				(!cur.occupied.has(edge.To) || skip)
 
 			next := weightedRouteNode{
 				mapID:    edge.To,
