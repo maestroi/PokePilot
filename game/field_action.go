@@ -7,6 +7,13 @@ package game
 // the current facing target; generic execution may let the cartridge decide in
 // the latter case but must reject a known-invalid target before opening menus.
 type FieldActionState struct {
+	// PositionKnown is true when an adapter can positively report the
+	// cartridge's current map and coordinates. Scripted movement field
+	// actions (Waterfall) must verify displacement from their start tile,
+	// not only a success byte set when the script was queued.
+	PositionKnown       bool
+	NativeMapID         uint16
+	X, Y                uint8
 	Controllable       bool
 	CutTargetKnown     bool
 	CuttableAhead      bool
