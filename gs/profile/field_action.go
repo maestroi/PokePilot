@@ -2,6 +2,7 @@ package profile
 
 import (
 	"github.com/maestroi/pokepilot/game"
+	gsdata "github.com/maestroi/pokepilot/gs/data"
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
@@ -39,6 +40,10 @@ func (p *Profile) DecodeFieldAction(reader game.MemoryReader) game.FieldActionSt
 	flashActive := reader.Peek8(sym.StatusFlags)&gen2FlashActiveBit != 0
 
 	return game.FieldActionState{
+		PositionKnown:       gsControllable(reader),
+		NativeMapID:         gsdata.NativeMapID(reader.Peek8(sym.MapGroup), reader.Peek8(sym.MapNumber)),
+		X:                   reader.Peek8(sym.XCoord),
+		Y:                   reader.Peek8(sym.YCoord),
 		Controllable:       gsControllable(reader),
 		CutTargetKnown:     false,
 		BoulderTargetKnown: false,
