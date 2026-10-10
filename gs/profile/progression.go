@@ -31,10 +31,10 @@ const (
 	ProgressLighthouseSicknessExplained game.ProgressID = "gs_lighthouse_sickness_explained"
 	ProgressSecretPotionAcquired        game.ProgressID = "gs_secretpotion_acquired"
 	ProgressJasmineReturnedToGym        game.ProgressID = "gs_jasmine_returned_to_gym"
-	ProgressHM04StrengthAcquired       game.ProgressID = "gs_hm04_strength_acquired"
-	ProgressStormBadgeEarned           game.ProgressID = "gs_storm_badge_earned"
-	ProgressHM02FlyAcquired            game.ProgressID = "gs_hm02_fly_acquired"
-	ProgressMineralBadgeEarned         game.ProgressID = "gs_mineral_badge_earned"
+	ProgressHM04StrengthAcquired        game.ProgressID = "gs_hm04_strength_acquired"
+	ProgressStormBadgeEarned            game.ProgressID = "gs_storm_badge_earned"
+	ProgressHM02FlyAcquired             game.ProgressID = "gs_hm02_fly_acquired"
+	ProgressMineralBadgeEarned          game.ProgressID = "gs_mineral_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
