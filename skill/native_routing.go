@@ -432,6 +432,15 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			if surfed {
 				continue // Surf changed the live traversal mode; rebuild the grid.
 			}
+			pushed, pushErr := nativeStrengthBridge(m, profile, romData, grid, live,
+				world.Point{X: int(liveWorld.X), Y: int(liveWorld.Y)}, blocked,
+				[][2]int{{int(dest.X), int(dest.Y)}})
+			if pushErr != nil {
+				return pushErr
+			}
+			if pushed {
+				continue // One boulder moved; rebuild all live object positions.
+			}
 			staticBlocked := nativeStaticBlockers(header, nil)
 			delete(staticBlocked, [2]int{int(liveWorld.X), int(liveWorld.Y)})
 			delete(staticBlocked, [2]int{int(dest.X), int(dest.Y)})
@@ -779,6 +788,15 @@ func traverseNativeEdge(
 				if surfed {
 					continue
 				}
+				pushed, pushErr := nativeStrengthBridge(m, profile, romData, grid, live,
+					world.Point{X: int(state.X), Y: int(state.Y)}, blocked,
+					nativeWarpTargets(grid, int(edge.WarpX), int(edge.WarpY), blocked))
+				if pushErr != nil {
+					return pushErr
+				}
+				if pushed {
+					continue
+				}
 			}
 		case world.EdgeConnection:
 			// The connection approach works in the destination's block
@@ -807,6 +825,14 @@ func traverseNativeEdge(
 					return surfErr
 				}
 				if surfed {
+					continue
+				}
+				pushed, pushErr := nativeStrengthBridge(m, profile, romData, grid, live,
+					world.Point{X: int(state.X), Y: int(state.Y)}, blocked, targets)
+				if pushErr != nil {
+					return pushErr
+				}
+				if pushed {
 					continue
 				}
 			}
