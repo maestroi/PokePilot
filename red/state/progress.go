@@ -94,6 +94,9 @@ const (
 	EventBeatMtMoonSuperNerd Event = 1401
 	EventGotDomeFossil       Event = 1406
 	EventGotHelixFossil      Event = 1407
+	// Set when the S.S. Anne sails (pokered/scripts/VermilionDock.asm); the
+	// S.S. Ticket has no use afterwards.
+	EventSSAnneLeft Event = 1506
 )
 
 var eventNames = map[Event]string{

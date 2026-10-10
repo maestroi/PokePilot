@@ -66,7 +66,8 @@ func pickupCanStore(obs Observation, item ItemID) bool {
 	if bagQuantity(obs, string(item)) > 0 {
 		return true
 	}
-	return len(obs.Bag) < bagItemCapacity
+	// Pickup execution frees a retired slot itself (EnsureBagSpaceFor).
+	return len(obs.Bag)-obs.ReclaimableBagSlots < bagItemCapacity
 }
 
 func pickupUtility(obs Observation, item ItemID) (pickupPriority, string) {
