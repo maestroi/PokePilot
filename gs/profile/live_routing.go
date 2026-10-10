@@ -65,7 +65,12 @@ func gen2MapShellPhase(reader game.MemoryReader) game.MapShellPhase {
 }
 
 // gen2SpriteRock is SPRITE_ROCK in pokegold/constants/sprite_constants.asm.
-const gen2SpriteRock byte = 0x59
+const (
+	gen2SpriteRock               byte = 0x59
+	gen2SpriteBoulder            byte = 0x5a
+	gen2StrengthBoulderMovement  byte = 0x19
+	gen2ObjectMovementTypeOffset      = 0x03
+)
 
 func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[int]game.MapPoint) {
 	objects := make([]game.LiveMapObject, 0, sym.NumObjectStructs-1)
@@ -90,7 +95,11 @@ func decodeGen2LiveObjects(reader game.MemoryReader) ([]game.LiveMapObject, map[
 		if reader.Peek8(base) == gen2SpriteRock {
 			clearable = game.FieldMoveRockSmash
 		}
-		objects = append(objects, game.LiveMapObject{Slot: slot, X: x, Y: y, Clearable: clearable})
+		objects = append(objects, game.LiveMapObject{
+			Slot: slot, X: x, Y: y, Clearable: clearable,
+			Pushable: reader.Peek8(base) == gen2SpriteBoulder &&
+				reader.Peek8(base+gen2ObjectMovementTypeOffset) == gen2StrengthBoulderMovement,
+		})
 		positions[slot] = game.MapPoint{X: x, Y: y}
 	}
 	return objects, positions
