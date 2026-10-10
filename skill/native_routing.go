@@ -421,6 +421,17 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 			if cleared {
 				continue
 			}
+			surfed, surfErr := nativeSurfBridge(m, profile, provider, romData, dest.Map, grid, live,
+				int(liveWorld.X), int(liveWorld.Y), blocked,
+				func(*world.NativeGrid) ([][2]int, error) {
+					return [][2]int{{int(dest.X), int(dest.Y)}}, nil
+				})
+			if surfErr != nil {
+				return surfErr
+			}
+			if surfed {
+				continue // Surf changed the live traversal mode; rebuild the grid.
+			}
 			staticBlocked := nativeStaticBlockers(header, nil)
 			delete(staticBlocked, [2]int{int(liveWorld.X), int(liveWorld.Y)})
 			delete(staticBlocked, [2]int{int(dest.X), int(dest.Y)})
@@ -757,6 +768,17 @@ func traverseNativeEdge(
 				if cleared {
 					continue
 				}
+				surfed, surfErr := nativeSurfBridge(m, profile, provider, romData, edge.From, grid, live,
+					int(state.X), int(state.Y), blocked,
+					func(water *world.NativeGrid) ([][2]int, error) {
+						return nativeWarpTargets(water, int(edge.WarpX), int(edge.WarpY), blocked), nil
+					})
+				if surfErr != nil {
+					return surfErr
+				}
+				if surfed {
+					continue
+				}
 			}
 		case world.EdgeConnection:
 			// The connection approach works in the destination's block
@@ -774,6 +796,17 @@ func traverseNativeEdge(
 					return bridgeErr
 				}
 				if cleared {
+					continue
+				}
+				surfed, surfErr := nativeSurfBridge(m, profile, provider, romData, edge.From, grid, live,
+					int(state.X), int(state.Y), blocked,
+					func(water *world.NativeGrid) ([][2]int, error) {
+						return nativeConnectionTargets(provider, water, live, edge, blocked)
+					})
+				if surfErr != nil {
+					return surfErr
+				}
+				if surfed {
 					continue
 				}
 			}
