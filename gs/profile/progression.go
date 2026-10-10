@@ -31,6 +31,10 @@ const (
 	ProgressLighthouseSicknessExplained game.ProgressID = "gs_lighthouse_sickness_explained"
 	ProgressSecretPotionAcquired        game.ProgressID = "gs_secretpotion_acquired"
 	ProgressJasmineReturnedToGym        game.ProgressID = "gs_jasmine_returned_to_gym"
+	ProgressHM04StrengthAcquired       game.ProgressID = "gs_hm04_strength_acquired"
+	ProgressStormBadgeEarned           game.ProgressID = "gs_storm_badge_earned"
+	ProgressHM02FlyAcquired            game.ProgressID = "gs_hm02_fly_acquired"
+	ProgressMineralBadgeEarned         game.ProgressID = "gs_mineral_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -51,6 +55,8 @@ const (
 	eventJasmineExplainedAmphysSickness uint16 = 55
 	eventGotSecretPotionFromPharmacy    uint16 = 35
 	eventJasmineReturnedToGym           uint16 = 32
+	eventGotHM04Strength               uint16 = 19
+	eventGotHM02Fly                    uint16 = 17
 	eventGotHM05Flash                   uint16 = 20
 	eventGotHM01Cut                     uint16 = 16
 	eventGotTM02Headbutt                uint16 = 95
@@ -67,6 +73,8 @@ const (
 	johtoBadgeHiveMask                         = 1 << 1
 	johtoBadgePlainMask                        = 1 << 2
 	johtoBadgeFogMask                          = 1 << 3
+	johtoBadgeMineralMask                      = 1 << 4
+	johtoBadgeStormMask                        = 1 << 5
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -148,7 +156,11 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLighthouseSicknessExplained, Complete: hasGSEvent(reader, eventJasmineExplainedAmphysSickness)},
 		{ID: ProgressSecretPotionAcquired, Complete: hasGSEvent(reader, eventGotSecretPotionFromPharmacy)},
 		{ID: ProgressJasmineReturnedToGym, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
-		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
+		{ID: ProgressHM04StrengthAcquired, Complete: hasGSEvent(reader, eventGotHM04Strength)},
+		{ID: ProgressStormBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeStormMask != 0},
+		{ID: ProgressHM02FlyAcquired, Complete: hasGSEvent(reader, eventGotHM02Fly)},
+		{ID: ProgressMineralBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
+		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
 
