@@ -4,7 +4,7 @@ package game
 // The profile decodes the rendered selection; generic execution never
 // interprets RAM cursor offsets or assumes a game's Flypoint ordering.
 type FlyMenuState struct {
-	Visible bool
+	Visible       bool
 	SelectedLabel string
 }
 
