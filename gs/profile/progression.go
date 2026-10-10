@@ -35,7 +35,7 @@ const (
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
 	// semantic fact instead of changing every launch surface and saved preset.
-	ProgressSupportedFrontier           game.ProgressID = "gs_supported_frontier"
+	ProgressSupportedFrontier game.ProgressID = "gs_supported_frontier"
 )
 
 const (
@@ -62,11 +62,11 @@ const (
 	eventFoughtSudowoodo                uint16 = 42
 	eventGotTM08RockSmash               uint16 = 75
 	eventReleasedTheBeasts              uint16 = 123
-	statusFlagsPokedexMask              = 1 << 0
-	johtoBadgeZephyrMask                = 1 << 0
-	johtoBadgeHiveMask                  = 1 << 1
-	johtoBadgePlainMask                 = 1 << 2
-	johtoBadgeFogMask                   = 1 << 3
+	statusFlagsPokedexMask                        = 1 << 0
+	johtoBadgeZephyrMask                          = 1 << 0
+	johtoBadgeHiveMask                            = 1 << 1
+	johtoBadgePlainMask                           = 1 << 2
+	johtoBadgeFogMask                             = 1 << 3
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
