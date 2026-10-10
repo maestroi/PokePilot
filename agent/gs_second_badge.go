@@ -57,6 +57,8 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"ROUTE_39",
 		"OLIVINE_CITY",
 		"OLIVINE_POKECENTER_1F",
+		"OLIVINE_CAFE",
+		"OLIVINE_GYM",
 		"OLIVINE_LIGHTHOUSE_1F",
 		"OLIVINE_LIGHTHOUSE_2F",
 		"OLIVINE_LIGHTHOUSE_3F",
@@ -68,6 +70,7 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"CIANWOOD_CITY",
 		"CIANWOOD_POKECENTER_1F",
 		"CIANWOOD_PHARMACY",
+		"CIANWOOD_GYM",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {

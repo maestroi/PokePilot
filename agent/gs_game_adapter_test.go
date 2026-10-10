@@ -244,8 +244,22 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		t.Fatalf("after SecretPotion progression = %+v, want cure", got)
 	}
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressJasmineReturnedToGym, Complete: true})
+	for _, stage := range []struct {
+		finish game.ProgressID
+		next   game.ProgressID
+	}{
+		{gsprofile.ProgressJasmineReturnedToGym, gsprofile.ProgressHM04StrengthAcquired},
+		{gsprofile.ProgressHM04StrengthAcquired, gsprofile.ProgressStormBadgeEarned},
+		{gsprofile.ProgressStormBadgeEarned, gsprofile.ProgressHM02FlyAcquired},
+		{gsprofile.ProgressHM02FlyAcquired, gsprofile.ProgressMineralBadgeEarned},
+	} {
+		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != stage.next {
+			t.Fatalf("after %s progression = %+v, want %s", stage.finish, got, stage.next)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: stage.next, Complete: true})
+	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed Olivine/Cianwood frontier still offered: %+v", got)
+		t.Fatalf("completed six-badge frontier still offered: %+v", got)
 	}
 }
 
@@ -438,6 +452,26 @@ func TestGSOlivineCianwoodMilestonesSupportedForBothGames(t *testing.T) {
 			}
 			if budget := gsObjectiveFrameBudget(o); budget != gsFirstBadgeObjectiveFrameBudget {
 				t.Fatalf("%s milestone %s frame budget = %d", gameID, progress, budget)
+			}
+		}
+	}
+}
+
+func TestGSStormFlyMineralMilestonesAvailableInBothGames(t *testing.T) {
+	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, id)
+		for _, milestone := range []game.ProgressID{
+			gsprofile.ProgressHM04StrengthAcquired,
+			gsprofile.ProgressStormBadgeEarned,
+			gsprofile.ProgressHM02FlyAcquired,
+			gsprofile.ProgressMineralBadgeEarned,
+		} {
+			obj := Objective{Kind: KindProgress, Progress: milestone}
+			if err := adapter.Validate(obj, Observation{}); err != nil {
+				t.Fatalf("game %s goal %s rejected: %v", id, milestone, err)
+			}
+			if budget := gsObjectiveFrameBudget(obj); budget != gsFirstBadgeObjectiveFrameBudget {
+				t.Fatalf("game %s goal %s frame budget = %d", id, milestone, budget)
 			}
 		}
 	}

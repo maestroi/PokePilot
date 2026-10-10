@@ -61,7 +61,11 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressHM03SurfAcquired,
 		gsprofile.ProgressLighthouseSicknessExplained,
 		gsprofile.ProgressSecretPotionAcquired,
-		gsprofile.ProgressJasmineReturnedToGym:
+		gsprofile.ProgressJasmineReturnedToGym,
+		gsprofile.ProgressHM04StrengthAcquired,
+		gsprofile.ProgressStormBadgeEarned,
+		gsprofile.ProgressHM02FlyAcquired,
+		gsprofile.ProgressMineralBadgeEarned:
 		return true
 	default:
 		return false
@@ -173,6 +177,14 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSSecretPotion(a.m, a.romData)
 		case gsprofile.ProgressJasmineReturnedToGym:
 			err = executeGSJasmineCured(a.m, a.romData)
+		case gsprofile.ProgressHM04StrengthAcquired:
+			err = executeGSHM04Strength(a.m, a.romData)
+		case gsprofile.ProgressStormBadgeEarned:
+			err = executeGSChuck(a.m, a.romData)
+		case gsprofile.ProgressHM02FlyAcquired:
+			err = executeGSHM02Fly(a.m, a.romData)
+		case gsprofile.ProgressMineralBadgeEarned:
+			err = executeGSJasmineBadge(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -201,7 +213,11 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressHM03SurfAcquired,
 			gsprofile.ProgressLighthouseSicknessExplained,
 			gsprofile.ProgressSecretPotionAcquired,
-			gsprofile.ProgressJasmineReturnedToGym:
+			gsprofile.ProgressJasmineReturnedToGym,
+			gsprofile.ProgressHM04StrengthAcquired,
+			gsprofile.ProgressStormBadgeEarned,
+			gsprofile.ProgressHM02FlyAcquired,
+			gsprofile.ProgressMineralBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -466,6 +482,30 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective 
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressJasmineReturnedToGym,
 			Note:     "(return to Lighthouse 6F, give SecretPotion to Jasmine, and see her return to Olivine Gym)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressHM04StrengthAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressHM04StrengthAcquired,
+			Note:     "(visit the Olivine Café sailor and claim HM04 Strength for Cianwood Gym's boulder puzzle)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressStormBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressStormBadgeEarned,
+			Note:     "(surf to Cianwood, use Strength to clear the Gym boulders, defeat Chuck, and earn Storm Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressHM02FlyAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressHM02FlyAcquired,
+			Note:     "(speak to Chuck's wife outside Cianwood Gym after receiving Storm Badge and claim HM02 Fly)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressMineralBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressMineralBadgeEarned,
+			Note:     "(return to Olivine Gym, defeat Jasmine, and earn the Mineral Badge)",
 		}}
 	default:
 		return nil
