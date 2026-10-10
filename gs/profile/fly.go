@@ -30,12 +30,12 @@ var gen2FlyDisplayNames = map[string]string{
 	"CERULEAN_CITY":       "CERULEAN CITY",
 	"VERMILION_CITY":      "VERMILION CITY",
 	"ROUTE_10_NORTH":      "ROCK TUNNEL",
-	"LAVENDER_TOWN":      "LAVENDER TOWN",
-	"CELADON_CITY":       "CELADON CITY",
-	"SAFFRON_CITY":       "SAFFRON CITY",
-	"FUCHSIA_CITY":       "FUCHSIA CITY",
-	"CINNABAR_ISLAND":    "CINNABAR ISLAND",
-	"ROUTE_23":           "INDIGO PLATEAU",
+	"LAVENDER_TOWN":       "LAVENDER TOWN",
+	"CELADON_CITY":        "CELADON CITY",
+	"SAFFRON_CITY":        "SAFFRON CITY",
+	"FUCHSIA_CITY":        "FUCHSIA CITY",
+	"CINNABAR_ISLAND":     "CINNABAR ISLAND",
+	"ROUTE_23":            "INDIGO PLATEAU",
 }
 
 func (*Profile) FlyDestinationLabel(nativeMapID uint16) (string, bool) {
