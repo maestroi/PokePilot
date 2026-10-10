@@ -377,6 +377,16 @@ func TestCombatPreparationStillReleasesWhenNoHabitatClosesTheGap(t *testing.T) {
 	if !combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
 		t.Fatal("dead-end campaign did not release the fight to retry")
 	}
+
+	// Walking into the gym's city (no local grass, so "not exhausted") must
+	// not demote the escape back into the unmet campaign: that flip-flop
+	// commuted run-j1lgrfvixz7j1bgxlgsfptofu between Route 22 and Viridian.
+	city := obs
+	city.Training = nil
+	OfferWithEvidence(city, known)
+	if !combatRetryKeys(known)[combatRecoveryObjective(challenge).Key()] {
+		t.Fatal("city offer re-locked a dead-end retry")
+	}
 }
 
 // run-1qtjk6v1dzvfam's knowledge already held a retry marker that an older

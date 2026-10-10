@@ -428,8 +428,24 @@ func (k *Knowledge) promoteCombatLossesToRetryWhere(ready func(Failure) bool) {
 	}
 }
 
+// promoteCombatLossesToRetry is the unconditional escape (training exhausted,
+// sealed topology): the readiness target is judged unreachable, so it is
+// waived. Keeping it let the next offer's demoteUnreadyCombatRetries lock the
+// fight again, and the escape flipped with location: Route 22 (no viable grass)
+// offered the Giovanni retry, Viridian (a city, so "not exhausted") withdrew it
+// (run-j1lgrfvixz7j1bgxlgsfptofu commuted ~80 rounds). A fresh loss records a
+// new target.
 func (k *Knowledge) promoteCombatLossesToRetry() {
 	k.promoteCombatLossesToRetryWhere(func(Failure) bool { return true })
+	if k == nil {
+		return
+	}
+	for storage, f := range k.Failures {
+		if _, mode, ok := parseFailureStorageKey(storage); ok && mode == failureModeCombatRetry && f.ReadinessTarget > 0 {
+			f.ReadinessTarget = 0
+			k.Failures[storage] = f
+		}
+	}
 }
 
 // combatRetryKeys returns retry-ready objectives while honoring legacy
