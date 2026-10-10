@@ -131,7 +131,7 @@ func FindNativeStrengthPush(
 				seen[key] = true
 				push := NativePush{
 					MovableID: movable.ID,
-					Stand: stand, From: movable.Pos, To: to,
+					Stand:     stand, From: movable.Pos, To: to,
 					Walk: walk, Direction: direction,
 				}
 				nodes = append(nodes, nativePushState{
