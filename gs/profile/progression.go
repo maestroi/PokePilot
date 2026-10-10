@@ -28,6 +28,9 @@ const (
 	ProgressBurnedTowerCleared       game.ProgressID = "gs_burned_tower_cleared"
 	ProgressFogBadgeEarned           game.ProgressID = "gs_fog_badge_earned"
 	ProgressHM03SurfAcquired         game.ProgressID = "gs_hm03_surf_acquired"
+	ProgressLighthouseSicknessExplained game.ProgressID = "gs_lighthouse_sickness_explained"
+	ProgressSecretPotionAcquired        game.ProgressID = "gs_secretpotion_acquired"
+	ProgressJasmineReturnedToGym       game.ProgressID = "gs_jasmine_returned_to_gym"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -43,6 +46,11 @@ const (
 	// Keep these zero-based event indices pinned: event flags are addressed
 	// directly as EventFlags + event/8 below.
 	eventGotHM03Surf              uint16 = 18
+	// Event indices from pokegold/constants/event_flags.asm. Keep these
+	// cartridge-owned facts out of the generic objective executor.
+	eventJasmineExplainedAmphysSickness uint16 = 55
+	eventGotSecretPotionFromPharmacy   uint16 = 35
+	eventJasmineReturnedToGym          uint16 = 32
 	eventGotHM05Flash             uint16 = 20
 	eventGotHM01Cut               uint16 = 16
 	eventGotTM02Headbutt          uint16 = 95
@@ -137,7 +145,10 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressBurnedTowerCleared, Complete: hasGSEvent(reader, eventReleasedTheBeasts)},
 		{ID: ProgressFogBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeFogMask != 0},
 		{ID: ProgressHM03SurfAcquired, Complete: hasGSEvent(reader, eventGotHM03Surf)},
-		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventGotHM03Surf)},
+		{ID: ProgressLighthouseSicknessExplained, Complete: hasGSEvent(reader, eventJasmineExplainedAmphysSickness)},
+		{ID: ProgressSecretPotionAcquired, Complete: hasGSEvent(reader, eventGotSecretPotionFromPharmacy)},
+		{ID: ProgressJasmineReturnedToGym, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
+		{ID: ProgressSupportedFrontier, Complete: hasGSEvent(reader, eventJasmineReturnedToGym)},
 	}
 }
 
