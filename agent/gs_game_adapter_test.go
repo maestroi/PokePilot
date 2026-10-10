@@ -232,8 +232,20 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressHM03SurfAcquired, Complete: true})
+	if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != gsprofile.ProgressLighthouseSicknessExplained {
+		t.Fatalf("after HM03 Surf progression = %+v, want Lighthouse", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressLighthouseSicknessExplained, Complete: true})
+	if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != gsprofile.ProgressSecretPotionAcquired {
+		t.Fatalf("after Lighthouse progression = %+v, want SecretPotion", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSecretPotionAcquired, Complete: true})
+	if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != gsprofile.ProgressJasmineReturnedToGym {
+		t.Fatalf("after SecretPotion progression = %+v, want cure", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressJasmineReturnedToGym, Complete: true})
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed HM03 Surf slice still offered: %+v", got)
+		t.Fatalf("completed Olivine/Cianwood frontier still offered: %+v", got)
 	}
 }
 
@@ -408,6 +420,25 @@ func TestGSFirstBadgeStagesGetBattleSizedWatchdog(t *testing.T) {
 	} {
 		if got := gsObjectiveFrameBudget(Objective{Kind: KindProgress, Progress: progress}); got != objectiveFrameBudget {
 			t.Fatalf("%s budget = %d, want ordinary %d", progress, got, objectiveFrameBudget)
+		}
+	}
+}
+
+func TestGSOlivineCianwoodMilestonesSupportedForBothGames(t *testing.T) {
+	for _, gameID := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, gameID)
+		for _, progress := range []game.ProgressID{
+			gsprofile.ProgressLighthouseSicknessExplained,
+			gsprofile.ProgressSecretPotionAcquired,
+			gsprofile.ProgressJasmineReturnedToGym,
+		} {
+			o := Objective{Kind: KindProgress, Progress: progress}
+			if err := adapter.Validate(o, Observation{}); err != nil {
+				t.Fatalf("%s milestone %s: %v", gameID, progress, err)
+			}
+			if budget := gsObjectiveFrameBudget(o); budget != gsFirstBadgeObjectiveFrameBudget {
+				t.Fatalf("%s milestone %s frame budget = %d", gameID, progress, budget)
+			}
 		}
 	}
 }
