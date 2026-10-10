@@ -27,7 +27,6 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			{Starter: skill.StarterSquirtle, Species: "squirtle"},
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
-		ChallengeProfiles: redProgressionChallengeProfiles(),
 	})
 }
 
@@ -40,14 +39,13 @@ type gen1CatalogFacts struct {
 	Location func(game.GameID, uint16) LocationID
 	// Starters are the starter choices the game's opening offers.
 	Starters []CatalogStarter
-	// ChallengeProfiles are the story challenges the game's adapter can run.
-	ChallengeProfiles []CatalogChallengeProfile
 }
 
 func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCatalog {
 	catalog := ObjectiveCatalog{
-		Starters:          facts.Starters,
-		ChallengeProfiles: append(append([]CatalogChallengeProfile(nil), facts.ChallengeProfiles...), redGymChallengeProfiles()...),
+		Starters: facts.Starters,
+		// ROM-derived by the observation adapter (gen1ChallengeProfiles).
+		ChallengeProfiles: append([]CatalogChallengeProfile(nil), obs.ChallengeProfiles...),
 		CurrentCenter:     isCenter(obs.MapName),
 	}
 
@@ -76,7 +74,7 @@ func gen1ObjectiveCatalog(obs Observation, facts gen1CatalogFacts) ObjectiveCata
 			Place:     gym.Place,
 			Location:  facts.Location(obs.GameID, uint16(gym.Map)),
 			Complete:  hasBadge(obs, gym.Badge),
-			Readiness: redGymReadinessProfile(gym.Badge),
+			Readiness: challengeProfileIn(obs.ChallengeProfiles, Objective{Kind: KindGym, Place: PlaceID(gym.Place)}),
 		})
 	}
 

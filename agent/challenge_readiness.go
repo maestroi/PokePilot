@@ -3,6 +3,8 @@ package agent
 import (
 	"sort"
 	"strings"
+
+	"github.com/maestroi/pokepilot/game"
 )
 
 // ChallengeReadinessAction is the next preparation class for a concrete combat
@@ -17,6 +19,13 @@ const (
 	ChallengeTrain       ChallengeReadinessAction = "train"
 	ChallengeRestock     ChallengeReadinessAction = "restock"
 	ChallengeChangeParty ChallengeReadinessAction = "change_party"
+	// ChallengeAcquireCounter: no party member has a preferred-type attack
+	// and the current party cannot win on levels (a loss, or every attack is
+	// useless). Catch a species that becomes a counter.
+	ChallengeAcquireCounter ChallengeReadinessAction = "acquire_counter"
+	// ChallengeTrainCounter: a counter exists but sits under the team's top
+	// level; train CounterSlot rather than the lead.
+	ChallengeTrainCounter ChallengeReadinessAction = "train_counter"
 )
 
 // ChallengeReadinessProfile contains optional adapter-owned knowledge about one
@@ -26,6 +35,8 @@ type ChallengeReadinessProfile struct {
 	MinimumReadiness   int      `json:"minimum_readiness,omitempty"`
 	MinimumUsableMons  int      `json:"minimum_usable_mons,omitempty"`
 	PreferredMoveTypes []string `json:"preferred_move_types,omitempty"`
+	// Matchup is the adapter's ROM-derived assessment of the opposing team.
+	Matchup game.Matchup `json:"matchup,omitempty"`
 }
 
 // ChallengeReadiness is the structured planner-facing assessment for one
@@ -42,7 +53,14 @@ type ChallengeReadiness struct {
 	UsableParty       int                      `json:"usable_party,omitempty"`
 	RecoveryAvailable bool                     `json:"recovery_available,omitempty"`
 	EmergencyHeals    int                      `json:"emergency_heals,omitempty"`
-	Reasons           []string                 `json:"reasons,omitempty"`
+	// Counters is how many usable members carry a preferred-type attack;
+	// CounterSlot is the strongest one (-1 none) and CounterTarget the level
+	// it should reach for the matchup.
+	Counters      int      `json:"counters,omitempty"`
+	CounterSlot   int      `json:"counter_slot"`
+	CounterTarget int      `json:"counter_target,omitempty"`
+	Preferred     []string `json:"preferred_types,omitempty"`
+	Reasons       []string `json:"reasons,omitempty"`
 }
 
 func challengePreparationFor(k *Knowledge, obs Observation, challenge Objective) combatPreparationState {
@@ -94,7 +112,7 @@ func challengeProfileFor(obs Observation, challenge Objective) ChallengeReadines
 }
 
 func challengeProfileKnown(profile ChallengeReadinessProfile) bool {
-	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0
+	return profile.MinimumReadiness > 0 || profile.MinimumUsableMons > 0 || len(profile.PreferredMoveTypes) > 0 || profile.Matchup.Known()
 }
 
 func challengeUsableParty(obs Observation) int {
@@ -172,28 +190,6 @@ func challengeCanRestockRecovery(obs Observation) bool {
 	return false
 }
 
-func challengeLeadCoverageKnown(obs Observation) bool {
-	return len(obs.LeadMoves) > 0
-}
-
-func challengeLeadHasPreferredMove(obs Observation, preferred []string) bool {
-	if len(preferred) == 0 {
-		return true
-	}
-	want := make(map[string]bool, len(preferred))
-	for _, raw := range preferred {
-		if value := strings.ToLower(strings.TrimSpace(raw)); value != "" {
-			want[value] = true
-		}
-	}
-	for _, move := range obs.LeadMoves {
-		if move.Power > 0 && want[strings.ToLower(strings.TrimSpace(move.Type))] {
-			return true
-		}
-	}
-	return false
-}
-
 func maxReadinessTarget(values ...int) int {
 	best := 0
 	for _, value := range values {
@@ -228,6 +224,8 @@ func EvaluateChallengeReadiness(obs Observation, known *Knowledge, challenge Obj
 		UsableParty:       usable,
 		RecoveryAvailable: recoveryAvailable,
 		EmergencyHeals:    emergencyHealStock(obs),
+		CounterSlot:       -1,
+		Preferred:         append([]string(nil), profile.PreferredMoveTypes...),
 	}
 
 	if partyCount == 0 {
@@ -257,11 +255,26 @@ func EvaluateChallengeReadiness(obs Observation, known *Knowledge, challenge Obj
 		return result
 	}
 
-	if len(profile.PreferredMoveTypes) > 0 && challengeLeadCoverageKnown(obs) &&
-		!challengeLeadHasPreferredMove(obs, profile.PreferredMoveTypes) {
-		result.Action = ChallengeChangeParty
-		result.Reasons = []string{"observed lead moves do not cover any preferred challenge move type"}
-		return result
+	if m := profile.Matchup; m.Known() && len(m.Preferred) > 0 && partyMovesKnown(obs) {
+		counters := partyCounters(obs, m)
+		result.Counters = len(counters)
+		result.CounterTarget = counterLevelTarget(m)
+		if len(counters) > 0 {
+			result.CounterSlot = counters[0].Slot
+		}
+		// Levels alone are tried first; a counter is owed once that failed
+		// (a recorded loss) or cannot work (every attack is useless).
+		pressing := preparation.Losses > 0 || !partyHasUsefulDamage(obs, m)
+		switch {
+		case len(counters) == 0 && pressing:
+			result.Action = ChallengeAcquireCounter
+			result.Reasons = []string{"no usable party member has a preferred-type attack for this team"}
+			return result
+		case len(counters) > 0 && pressing && counters[0].Level < result.CounterTarget:
+			result.Action = ChallengeTrainCounter
+			result.Reasons = []string{"the strongest counter is below the opposing team's level"}
+			return result
+		}
 	}
 
 	// A loss with zero emergency healing stock is a useful logistics signal even

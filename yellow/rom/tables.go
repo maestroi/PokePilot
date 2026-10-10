@@ -30,6 +30,7 @@ var Tables = gen1rom.TableLayout{
 	BaseStats:             gen1rom.Symbol{Bank: 0x0E, Addr: 0x43DE},
 	TradeMons:             gen1rom.Symbol{Bank: 0x1C, Addr: 0x5C1D},
 	TypeEffects:           gen1rom.Symbol{Bank: 0x0F, Addr: 0x65FA},
+	TrainerDataPointers:   gen1rom.Symbol{Bank: yellowTrainerPointersBank, Addr: yellowTrainerPointersAddr},
 
 	ItemUseOldRod:  gen1rom.Symbol{Bank: 0x03, Addr: 0x60F9},
 	GoodRodMons:    gen1rom.Symbol{Bank: 0x03, Addr: 0x612C},

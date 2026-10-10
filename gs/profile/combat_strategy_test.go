@@ -1,30 +1,46 @@
 package profile
 
 import (
+	"os"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
 )
 
-func TestGoldTypeChartGhostImmunityAndGrassPoison(t *testing.T) {
-	if got := gsTypeEffectiveness(gsTypeNormal, gsTypeGhost, gsTypePoison); got != 0 {
-		t.Fatalf("Tackle vs Gastly effectiveness = %d, want 0", got)
+func goldROM(t *testing.T) []byte {
+	t.Helper()
+	path := os.Getenv("POKEMON_GOLD_ROM")
+	if path == "" {
+		t.Skip("POKEMON_GOLD_ROM not set")
 	}
-	if got := gsTypeEffectiveness(gsTypeGrass, gsTypeGhost, gsTypePoison); got != gsTypeNotVeryEffective {
-		t.Fatalf("Razor Leaf vs Gastly effectiveness = %d, want %d", got, gsTypeNotVeryEffective)
+	rom, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rom
+}
+
+func TestGoldTypeChartGhostImmunityAndGrassPoison(t *testing.T) {
+	rom := goldROM(t)
+	if got, err := gsTypeEffectiveness(rom, gsTypeNormal, gsTypeGhost, gsTypePoison); err != nil || got != 0 {
+		t.Fatalf("Tackle vs Gastly effectiveness = %d, %v; want 0", got, err)
+	}
+	if got, err := gsTypeEffectiveness(rom, gsTypeGrass, gsTypeGhost, gsTypePoison); err != nil || got != 5 {
+		t.Fatalf("Razor Leaf vs Gastly effectiveness = %d, %v; want 5", got, err)
 	}
 }
 
 func TestGoldCombatPrefersRazorLeafOverTackleVsGastly(t *testing.T) {
+	rom := goldROM(t)
 	p := NewGold()
 	attacker := game.BattleCombatant{Level: 26, Type1: uint16(gsTypeGrass), Type2: uint16(gsTypeGrass), Attack: 46, SpecialAttack: 48}
 	defender := game.BattleCombatant{Level: 12, Type1: uint16(gsTypeGhost), Type2: uint16(gsTypePoison), Defense: 30, SpecialDefense: 30}
 
-	tackle, tackleRole, err := p.EvaluateCombatMove(nil, attacker, defender, 33, 35)
+	tackle, tackleRole, err := p.EvaluateCombatMove(rom, attacker, defender, 33, 35)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf, leafRole, err := p.EvaluateCombatMove(nil, attacker, defender, 75, 25)
+	leaf, leafRole, err := p.EvaluateCombatMove(rom, attacker, defender, 75, 25)
 	if err != nil {
 		t.Fatal(err)
 	}

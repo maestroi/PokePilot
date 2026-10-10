@@ -103,7 +103,20 @@ func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observat
 	for _, candidate := range best {
 		candidates = append(candidates, candidate)
 	}
+	// An open counter campaign ranks catches that learn a preferred-type
+	// attack first, so the menu cap never cuts the counter.
+	counter := func(sp SpeciesID) (LearnableMove, bool) {
+		if obs.CounterNeed == nil || obs.CounterNeed.Action != ChallengeAcquireCounter {
+			return LearnableMove{}, false
+		}
+		return counterLearnLevel(obs.Learnsets, sp, obs.CounterNeed.Matchup, obs.CounterNeed.Target)
+	}
 	sort.Slice(candidates, func(i, j int) bool {
+		_, ci := counter(candidates[i].Species)
+		_, cj := counter(candidates[j].Species)
+		if ci != cj {
+			return ci
+		}
 		if candidates[i].Hops != candidates[j].Hops {
 			return candidates[i].Hops < candidates[j].Hops
 		}
@@ -125,6 +138,10 @@ func appendKnownCatchObjectivesWithWild(m *emu.Emu, romData []byte, obs Observat
 			Note: fmt.Sprintf("(known habitat: %s; travel included)",
 				strings.ToUpper(string(candidate.Place))),
 		})
+		if mv, ok := counter(candidate.Species); ok {
+			out[len(out)-1] = appendObjectiveNote(out[len(out)-1], fmt.Sprintf(
+				"(counter for %s: %s attack by L%d)", obs.CounterNeed.Challenge.Objective().String(), mv.Type, mv.Level))
+		}
 	}
 	return out
 }

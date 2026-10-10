@@ -217,14 +217,11 @@ func (a *yellowObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCata
 }
 
 // yellowObjectiveCatalog is the shared Gen-I catalog with Yellow's own facts:
-// its map vocabulary, the scripted Pikachu opening in place of Oak's
-// three-ball choice, and readiness metadata only for story challenges whose
-// Yellow progression path is deliberately executable.
+// its map vocabulary and the scripted Pikachu opening in place of Oak's
+// three-ball choice. Challenge readiness is read from Yellow's own ROM teams
+// by the shared observation (gen1ChallengeProfiles).
 func yellowObjectiveCatalog(obs Observation) ObjectiveCatalog {
-	facts := gen1CatalogFacts{
-		Location:          yellowLocationID,
-		ChallengeProfiles: yellowLeagueChallengeProfiles(),
-	}
+	facts := gen1CatalogFacts{Location: yellowLocationID}
 	if obs.PartyCount == 0 {
 		facts.Starters = []CatalogStarter{{Species: "pikachu"}}
 	}

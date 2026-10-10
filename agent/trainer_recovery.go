@@ -320,7 +320,8 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 	// loses the League with an empty bag — so it is not gated on training.
 	// Economy offers a bounded healing buy only while stock is below target.
 	restock := known.hasCombatLossEvidence() && emergencyHealStock(obs) == 0
-	if !preparing && !restock {
+	need, counterDue := counterNeedFor(obs, known)
+	if !preparing && !restock && !counterDue {
 		return Objective{}, false
 	}
 	if partyHurt(obs) || leadOutOfPP(obs) {
@@ -335,6 +336,12 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 			if _, ok := hpHealingItems[string(o.Item)]; ok && o.Kind == KindBuy {
 				return o, true
 			}
+		}
+	}
+	// A lost matchup is fixed by a counter, not by more lead levels.
+	if counterDue {
+		if o, ok := counterPreparationObjective(obs, offered, known, need); ok {
+			return o, true
 		}
 	}
 	if !preparing {
@@ -508,12 +515,29 @@ func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr err
 
 func (k *Knowledge) releaseSatisfiedCombatLossGates(after Observation, legacyProgress bool) {
 	readiness := partyCombatReadiness(after)
+	// A loss recorded without a level-ready counter is released once the
+	// counter campaign produced one: that is the relevant world change, and
+	// its readiness target is waived so the next offer cannot demote it.
+	var byCounter []ObjectiveKey
 	k.promoteCombatLossesToRetryWhere(func(f Failure) bool {
+		if f.CounterGap {
+			if key, ok := failureObjectiveKey(f); ok && challengeCounterReady(after, key.Objective()) {
+				byCounter = append(byCounter, combatRecoveryObjective(key.Objective()).Key())
+				return true
+			}
+		}
 		if f.ReadinessTarget > 0 {
 			return readiness >= f.ReadinessTarget
 		}
 		return legacyProgress
 	})
+	for _, key := range byCounter {
+		storage := failureStorageKey(key, failureModeCombatRetry)
+		if f, ok := k.Failures[storage]; ok {
+			f.ReadinessTarget, f.CounterGap = 0, false
+			k.Failures[storage] = f
+		}
+	}
 }
 
 func (k *Knowledge) releaseCombatLossGates() {
@@ -549,25 +573,14 @@ func trainingYieldsXP(obs Observation) bool {
 // lacks adapter-preferred damaging types. Fail-opening that fight because
 // local grass is a slow grind just retries an unwinnable matchup.
 func combatPreparationNeedsCoverage(obs Observation, known *Knowledge) bool {
-	if known == nil {
+	need, ok := counterNeedFor(obs, known)
+	if !ok {
 		return false
 	}
-	for storage := range known.Failures {
-		key, mode, ok := parseFailureStorageKey(storage)
-		if !ok {
-			continue
-		}
-		switch mode {
-		case failureModeCombatLoss, legacyFailureModeTrainerLoss, legacyFailureModeGymLoss:
-		default:
-			continue
-		}
-		obj := key.Objective()
-		if EvaluateChallengeReadiness(obs, known, obj, challengeProfileFor(obs, obj)).Action == ChallengeChangeParty {
-			return true
-		}
-	}
-	return false
+	// An open counter campaign keeps the fight locked while it can act, or
+	// while local grass still yields XP (levels can bring new moves). With
+	// neither, retrying is the only progress left and the escape stays open.
+	return counterCampaignActionable(obs, need) || trainingYieldsXP(obs)
 }
 
 // combatPreparationTrainingExhausted reports that the current area cannot

@@ -116,6 +116,11 @@ type Failure struct {
 	Build             string
 	ReadinessBaseline int
 	ReadinessTarget   int
+	// CounterGap: when the combat loss was recorded the party had no
+	// level-ready counter for the challenge's ROM matchup.
+	CounterGap bool `json:",omitempty"`
+	// Key is the structured objective identity of a combat loss.
+	Key *ObjectiveKey `json:",omitempty"`
 }
 
 type Completion struct {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
@@ -15,7 +16,7 @@ func TestProfiledProgressionChallengeIsEvaluatedBeforeFirstLoss(t *testing.T) {
 		}},
 		Catalog: ObjectiveCatalog{ChallengeProfiles: []CatalogChallengeProfile{{
 			Objective: challenge.Key(),
-			Readiness: ChallengeReadinessProfile{MinimumReadiness: redReadinessFloor(14)},
+			Readiness: ChallengeReadinessProfile{MinimumReadiness: readinessFloorForLevel(14)},
 		}}},
 	}
 	offer := ObjectiveOffer{Candidates: []Objective{challenge}}
@@ -141,15 +142,32 @@ func TestOrdinaryUnprofiledTrainerDoesNotForceProactivePreparation(t *testing.T)
 	}
 }
 
-func TestRedGymCatalogCarriesDocumentedReadinessFloor(t *testing.T) {
-	obs := Observation{Map: 0x36}
+func gen1TestROM(t *testing.T, env string) []byte {
+	t.Helper()
+	path := os.Getenv(env)
+	if path == "" {
+		t.Skip(env + " not set")
+	}
+	romData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return romData
+}
+
+// The gym floor comes from Brock's real party (Onix L14), not a table.
+func TestRedGymCatalogCarriesROMReadinessFloor(t *testing.T) {
+	obs := Observation{Map: 0x36, ChallengeProfiles: gen1ChallengeProfiles(gen1TestROM(t, "POKEMON_RED_ROM"))}
 	catalog := redObjectiveCatalog(obs)
 	if len(catalog.Challenges) != 1 {
 		t.Fatalf("challenges = %+v, want Pewter gym", catalog.Challenges)
 	}
 	got := catalog.Challenges[0]
-	if got.Readiness.MinimumReadiness != redReadinessFloor(14) {
+	if got.Readiness.MinimumReadiness != readinessFloorForLevel(14) {
 		t.Fatalf("Boulder readiness = %+v, want level-14 weighted floor", got.Readiness)
+	}
+	if !got.Readiness.Matchup.IsUseless("electric") {
+		t.Fatalf("Boulder matchup = %+v, want electric useless", got.Readiness.Matchup)
 	}
 	if got.Complete {
 		t.Fatal("fresh Boulder challenge unexpectedly complete")
@@ -163,11 +181,11 @@ func TestRedGymCatalogCarriesDocumentedReadinessFloor(t *testing.T) {
 }
 
 func TestRedLeagueProfileUsesChampionCeiling(t *testing.T) {
-	catalog := redObjectiveCatalog(Observation{})
+	catalog := redObjectiveCatalog(Observation{ChallengeProfiles: gen1ChallengeProfiles(gen1TestROM(t, "POKEMON_RED_ROM"))})
 	want := (Objective{Kind: KindProgress, Progress: ProgressLeagueChampionDefeated}).Key()
 	for _, profile := range catalog.ChallengeProfiles {
 		if profile.Objective == want {
-			if profile.Readiness.MinimumReadiness != redReadinessFloor(65) {
+			if profile.Readiness.MinimumReadiness != readinessFloorForLevel(65) {
 				t.Fatalf("Champion readiness = %+v, want level-65 weighted floor", profile.Readiness)
 			}
 			return

@@ -412,6 +412,13 @@ func TestGymRetryStaysLockedWithoutCoverage(t *testing.T) {
 			EstimatedEncounters: 27, XPRemaining: 1003, XPPerEncounter: 38,
 		},
 	}
+	// Brock's ROM-shaped matchup and the party's real moves (synthetic, so
+	// the test stays ROM-free).
+	brock := []CatalogChallengeProfile{{Objective: gym.Key(), Readiness: readinessTestMatchup()}}
+	grass.ChallengeProfiles = brock
+	for i := range grass.Party {
+		grass.Party[i].Moves = []PartyMove{{Move: Move{Power: 40, Type: "electric"}, PP: 30}}
+	}
 	OfferWithEvidence(grass, known)
 	if !hasKind(Offer(grass, known), KindTrain) {
 		t.Fatal("Train missing on grass that still yields XP")
@@ -421,6 +428,7 @@ func TestGymRetryStaysLockedWithoutCoverage(t *testing.T) {
 	inside.Party = grass.Party
 	inside.PartyCount = grass.PartyCount
 	inside.LeadMoves = grass.LeadMoves
+	inside.ChallengeProfiles = brock
 	if _, ok := offeredGym(inside, known); ok {
 		t.Fatal("Pewter Gym fail-opened for an Electric lead with no Rock/Ground coverage")
 	}
