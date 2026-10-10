@@ -370,8 +370,9 @@ func TestMedicineEventDoesNotRequireItemStillInBag(t *testing.T) {
 		t.Fatalf("SecretPotion provenance was coupled to current inventory: %+v", story)
 	}
 	setGSEvent(mem, eventJasmineReturnedToGym)
-	if !projectEarlyStory(mem).Has(ProgressSupportedFrontier) {
-		t.Fatal("Jasmine's gym return should complete the new supported frontier")
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressJasmineReturnedToGym) || story.Has(ProgressSupportedFrontier) {
+		t.Fatal("Jasmine's medicine treatment must remain durable without claiming a Mineral Badge")
 	}
 }
 
