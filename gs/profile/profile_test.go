@@ -177,3 +177,27 @@ func TestDecodeObservationDecodesBinaryMoney(t *testing.T) {
 		t.Fatalf("money=%d, want 3000", obs.Money)
 	}
 }
+
+func TestGSJohtoBadgeNamesMatchCartridgeBitOrder(t *testing.T) {
+	for _, profile := range []*Profile{NewGold(), NewSilver()} {
+		for _, tc := range []struct {
+			mask byte
+			want string
+		}{
+			{1 << 4, "mineral"},
+			{1 << 5, "storm"},
+		} {
+			var mem fakeMemory
+			mem[sym.MapGroup] = 24
+			mem[sym.MapNumber] = 4 // New Bark Town
+			mem[sym.JohtoBadges] = tc.mask
+			observation, err := profile.DecodeObservation(&mem, nil)
+			if err != nil {
+				t.Fatalf("%s decode badge %#x: %v", profile.ID(), tc.mask, err)
+			}
+			if len(observation.Badges) != 1 || observation.Badges[0] != tc.want {
+				t.Fatalf("%s badge mask %#x = %+v, want [%s]", profile.ID(), tc.mask, observation.Badges, tc.want)
+			}
+		}
+	}
+}
