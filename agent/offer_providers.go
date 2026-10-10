@@ -471,6 +471,9 @@ func (explorationObjectiveProvider) Provide(ctx *objectiveOfferContext) objectiv
 		case CatalogInteractableTrainer:
 			challenge := Objective{Kind: KindTrainer, Location: identityLocation, X: object.X, Y: object.Y}
 			if object.Challengeable && !object.Defeated && known.completionCount(challenge) == 0 {
+				if object.PrizeMoney > 0 {
+					challenge.Note = fmt.Sprintf("(prize ¥%d on win)", object.PrizeMoney)
+				}
 				out = append(out, challenge)
 			}
 		case CatalogInteractableItem:

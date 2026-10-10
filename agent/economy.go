@@ -21,6 +21,8 @@ const (
 const (
 	bagItemCapacity          = 20
 	targetCaptureStock       = 10
+	maxCaptureStock          = 99 // one bag stack
+	ballsPerDexCatch         = 3  // measured Poke Ball average in skill.Catch
 	minimumCaptureStock      = 5
 	targetEmergencyHeals     = 2
 	saffronGuardDrinkReserve = 200  // Cheapest valid guard drink is FRESH WATER.
@@ -214,7 +216,7 @@ func EconomyContext(o Observation) *EconomyDecisionContext {
 	switch {
 	case len(o.WildGrass) > 0 && balls < minimumCaptureStock:
 		ctx.ResupplyNeeded = true
-		ctx.ResupplyReason = fmt.Sprintf("capture stock is low (%d normal balls); target %d before more catch attempts", balls, targetCaptureStock)
+		ctx.ResupplyReason = fmt.Sprintf("capture stock is low (%d normal balls); target %d before more catch attempts", balls, captureStockTarget(o))
 	case partyHurt(o) && heals == 0:
 		ctx.ResupplyNeeded = true
 		ctx.ResupplyReason = "party is hurt with no HP-healing stock; prefer free Center healing, otherwise buy a bounded emergency stock"
@@ -289,7 +291,8 @@ func hasCombatLoss(o Observation) bool {
 func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice {
 	balls, heals := normalBallStock(o), emergencyHealStock(o)
 	repelCoverage := repelCoverageSteps(o)
-	preferredBall := preferredCapturePurchase(o.MartStock, ctx.SpendableMoney)
+	captureTarget := captureStockTarget(o)
+	preferredBall := preferredCapturePurchase(o.MartStock, ctx.SpendableMoney, captureTarget)
 	preferredHeal := preferredHealingPurchase(o, ctx.SpendableMoney)
 	preferredRepel := preferredRepelPurchase(o.MartStock, ctx.SpendableMoney)
 	out := make([]PurchaseAdvice, 0, len(o.MartStock))
@@ -314,11 +317,11 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 
 		switch spec.Category {
 		case InventoryCapture:
-			advice.CategoryStock, advice.TargetStock = balls, targetCaptureStock
-			need := maxInt(0, targetCaptureStock-balls)
+			advice.CategoryStock, advice.TargetStock = balls, captureTarget
+			need := maxInt(0, captureTarget-balls)
 			switch {
-			case balls >= targetCaptureStock:
-				advice.Reason = fmt.Sprintf("capture stock already meets the bounded target (%d/%d); do not overbuy", balls, targetCaptureStock)
+			case balls >= captureTarget:
+				advice.Reason = fmt.Sprintf("capture stock already meets the bounded target (%d/%d); do not overbuy", balls, captureTarget)
 			case preferredBall == "":
 				advice.Reason = "no stocked ball is affordable without consuming reserved money"
 			case preferredBall != name:
@@ -328,7 +331,7 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 			default:
 				advice.SuggestedQty = boundedAffordableQty(need, ctx.SpendableMoney, spec.UnitPrice)
 				advice.ShouldBuy = advice.SuggestedQty > 0
-				advice.Reason = fmt.Sprintf("bounded capture resupply toward %d while preserving ¥%d reserved money", targetCaptureStock, ctx.ReservedMoney)
+				advice.Reason = fmt.Sprintf("bounded capture resupply toward %d while preserving ¥%d reserved money", captureTarget, ctx.ReservedMoney)
 			}
 
 		case InventoryBattleConsumable:
@@ -413,8 +416,31 @@ func preferredRepelPurchase(stock []string, spendable uint32) string {
 	return ""
 }
 
-func preferredCapturePurchase(stock []string, spendable uint32) string {
-	for _, candidate := range []string{"ultra ball", "great ball", "pokeball"} {
+// captureStockTarget sizes ball stock to the remaining work. A Dex run needs
+// about ballsPerDexCatch per unowned target, so a flat 10 sent it back to a
+// Mart (or into paid Safari sessions) after every few catches. Other runs keep
+// the bounded team-building target.
+func captureStockTarget(o Observation) int {
+	owned := pokedexOwnedSet(o)
+	open := 0
+	for _, entry := range o.Dex.Targets {
+		if !owned[entry.Species] {
+			open++
+		}
+	}
+	return minInt(maxCaptureStock, maxInt(targetCaptureStock, open*ballsPerDexCatch))
+}
+
+// preferredCapturePurchase picks the strongest affordable stocked ball for a
+// small top-up. A bulk stock (want above targetCaptureStock) buys the
+// cheapest: a Poke Ball is ~1/6 the price of an Ultra Ball for ~60% of its
+// catch power, so yen go furthest there.
+func preferredCapturePurchase(stock []string, spendable uint32, want int) string {
+	order := []string{"ultra ball", "great ball", "pokeball"}
+	if want > targetCaptureStock {
+		order = []string{"pokeball", "great ball", "ultra ball"}
+	}
+	for _, candidate := range order {
 		spec, _ := ItemEconomy(candidate)
 		if spec.UnitPrice > spendable {
 			continue

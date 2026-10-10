@@ -63,6 +63,9 @@ type TableLayout struct {
 	// TrainerDataPointers is the per-class party list table; trainer map
 	// objects store OPP_ID = class + OppIDOffset.
 	TrainerDataPointers Symbol
+	// TrainerPicAndMoneyPointers is the per-class (pic pointer, bcd3 base
+	// money) table; prize money = base money × level of the last party mon.
+	TrainerPicAndMoneyPointers Symbol
 
 	// ItemUseOldRod is the Old Rod item handler; its `lb bc, level, species`
 	// immediate is the Old Rod's only encounter.

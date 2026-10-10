@@ -109,6 +109,7 @@ type MapObject struct {
 	Item          string
 	Challengeable bool
 	Defeated      bool
+	PrizeMoney    uint32
 }
 
 type Move struct {
