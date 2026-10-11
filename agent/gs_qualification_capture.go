@@ -182,7 +182,6 @@ func gsPublishQualificationStateOnce(target string, state []byte, provenance gsQ
 	return true, nil
 }
 
-
 // gsVerifyQualificationProvenance verifies the source manifest against the
 // *actual* checked state bytes and cartridge identity. The self-hosted
 // qualification runner never accepts a forged or stale metadata claim as
