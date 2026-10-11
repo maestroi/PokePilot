@@ -385,13 +385,25 @@ from replacing the replay baseline. Ensure the team is
 battle-ready and a Surf carrier is available; the replay owns navigation and
 field-move preparation but does **not** train an underleveled team for Chuck.
 
-The default workflow is **manual** because the initial private states cannot
-be generated in public CI and must never be silently skipped. The self-hosted
-`pokepilot-rom` runner needs retail Gold/Silver ROMs matching the pinned
+The workflow runs a **daily automatic full Gold qualification attempt**
+(`43 5 * * *` UTC), in addition to manual Gold/Silver/both runs. The
+scheduled job executes on the private `pokepilot-rom` runner and requires a
+genuine, automatically captured `post-cure/start.state` **and**
+`source.json`. It verifies metadata schema, game, cure objective, ROM SHA-1,
+and state SHA-256 against the actual ROM and save-state bytes before running
+any emulator objective. Missing ROM, missing capture or mismatched metadata is
+an explicit **failed/blocked workflow**, never a passing or skipped gameplay
+qualification. The pending state produces an actionable Actions job summary.
+
+The self-hosted runner needs retail Gold/Silver ROMs matching the pinned
 profile SHA-1 and paths configured with `POKEMON_GOLD_ROM_PATH` and
 `POKEMON_SILVER_ROM_PATH` repository variables (or files under
 `~/.config/pokepilot/pokemon_gold.gbc` and `pokemon_silver.gbc`).
 The corpus/result variables are shared with the Red qualification runner.
+Scheduled runs use Gold only; invoke the manual workflow with `silver` or
+`both` once those checkpoints are available. Manual replay still accepts
+older legitimate private checkpoints without `source.json`; if the manifest
+does exist it is always validated, even for manual runs.
 
 Run through GitHub Actions → **Gen2 Coastal ROM Qualification** → **Run workflow**
 and choose `gold`, `silver` or `both` with `post-cure`. After the farm produces `start.state`, this
@@ -435,7 +447,10 @@ only the **remaining** stages; a full `post-cure` pass is still required for
 the end-to-end coastal frontier. The workflow's uploaded safe artifact includes
 only logs and semantic JSON; actual checked states remain on the ROM runner.
 
-**Qualification status:** code and workflow availability are not proof that a
-retail Gold/Silver run has passed. Treat the frontier as experimentally
-implemented until this ROM-backed workflow completes successfully on real
-cartridges and preserved checkpoints.
+**Qualification status:** a merged harness, a scheduled job, and a captured
+checkpoint are **not** proof that a retail Gold/Silver coastal replay passed.
+Only a real passing `Gen2 Coastal ROM Qualification` job with checked
+checkpoint provenance counts. Monitor Actions for `qualification BLOCKED` or
+the first real puzzle/travel failure; preserve its runner-local checked state
+for focused repair. Deploy/farm storage and ROM runner access must use the
+same shared corpus host path.
