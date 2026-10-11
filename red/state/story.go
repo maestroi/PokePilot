@@ -130,9 +130,14 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
 	mainStoryComplete := MainStoryComplete(m)
 	facts := StoryFacts{
-		MtMoonFossilAcquired:   HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
-		PokedexAcquired:        HasEvent(m, EventGotPokedex),
-		SSTicketAcquired:       inventoryHasItem(inv, ssTicketItemID),
+		MtMoonFossilAcquired: HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
+		PokedexAcquired:      HasEvent(m, EventGotPokedex),
+		// The rescue's durable marker, not the bag, is authoritative: the ROM
+		// sets EVENT_GOT_SS_TICKET only after GiveItem succeeds and its own
+		// Route 25 progression keys off it, while the ticket is a key item the
+		// game never consumes and the player (or bag pressure) may have stored
+		// in the PC. Bag alone reports a completed rescue as missing.
+		SSTicketAcquired:       HasEvent(m, EventGotSSTicket) || inventoryHasItem(inv, ssTicketItemID),
 		HM01Acquired:           inventoryHasItem(inv, hm01ItemID),
 		HM03Acquired:           inventoryHasItem(inv, hm03ItemID),
 		HM04Acquired:           inventoryHasItem(inv, hm04ItemID),
