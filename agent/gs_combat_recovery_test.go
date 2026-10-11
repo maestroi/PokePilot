@@ -54,8 +54,8 @@ func TestGSCombatLossOffersExecutableTrainWithoutRetryingBlockedMorty(t *testing
 				train = &out[i]
 			}
 		}
-		if train == nil || train.Level != 39 {
-			t.Fatalf("%s: want executable lead training to L39 after loss: %+v", id, out)
+		if train == nil || train.Level != 36 {
+			t.Fatalf("%s: want executable lead training to L36 after loss: %+v", id, out)
 		}
 		if err := adapter.Validate(*train, obs); err != nil {
 			t.Fatalf("%s: recovery train rejected by adapter: %v", id, err)
@@ -65,11 +65,11 @@ func TestGSCombatLossOffersExecutableTrainWithoutRetryingBlockedMorty(t *testing
 
 func TestGSCombatRecoveryTargetAndProvenHabitat(t *testing.T) {
 	obs := gsMortyRecoveryObservation(gsprofile.GoldGameID)
-	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1, ReadinessTarget: 34*4 + 20}); target != 39 {
-		t.Fatalf("quantified solo recovery target=%d, want 39", target)
+	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1, ReadinessTarget: 34*4 + 20}); target != 36 {
+		t.Fatalf("quantified solo recovery target=%d, want 36", target)
 	}
-	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1}); target != 39 {
-		t.Fatalf("legacy recovery target=%d, want 39", target)
+	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1}); target != 36 {
+		t.Fatalf("legacy recovery target=%d, want 36", target)
 	}
 	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1, ReadinessTarget: 34 * 4}); target != 0 {
 		t.Fatalf("recovery target already satisfied = %d, want no extra grind", target)
@@ -94,8 +94,8 @@ func TestGSCombatRecoveryDoesNotCreateSpuriousTraining(t *testing.T) {
 		t.Fatalf("training without combat defeat: %+v", got)
 	}
 	obs.Failures = []Failure{{Objective: fight.String(), Times: 1, ReadinessBaseline: 136, ReadinessTarget: 156}}
-	if got := gsProgressionCombatRecovery(obs, fight); len(got) != 1 || got[0].Level != 39 {
-		t.Fatalf("expected L39 recovery after confirmed loss: %+v", got)
+	if got := gsProgressionCombatRecovery(obs, fight); len(got) != 1 || got[0].Level != 36 {
+		t.Fatalf("expected L36 recovery after confirmed loss: %+v", got)
 	}
 	if got := gsProgressionCombatRecovery(obs, Objective{Kind: KindProgress, Progress: gsprofile.ProgressSecretPotionAcquired}); len(got) > 0 {
 		t.Fatalf("unrelated quest inherited Morty training: %+v", got)
