@@ -37,6 +37,10 @@ const (
 	// engine. Super Fang and SPECIAL_DAMAGE_EFFECT are listed in
 	// SetDamageEffects and skip CalculateDamage entirely. OHKO moves also
 	// bypass the ordinary formula through their own effect handler.
+	// ExplodeEffect is SELFDESTRUCT/EXPLOSION: the ROM still runs the
+	// ordinary damage formula (with halved defense), but the user faints
+	// even on a miss — so table power must not outrank a survivable attack.
+	ExplodeEffect       uint8 = 0x07
 	OHKOEffect          uint8 = 0x26
 	SuperFangEffect     uint8 = 0x28
 	SpecialDamageEffect uint8 = 0x29

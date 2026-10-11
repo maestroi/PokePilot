@@ -82,3 +82,43 @@ func TestOHKOMoveIsNotFakedAsOnePowerDamage(t *testing.T) {
 		t.Fatalf("OHKO evaluation = %+v, want conservative special-rule score rather than fake formula damage", e)
 	}
 }
+
+// TestExplodeMoveDoesNotOutrankSurvivableAttack pins the Voltorb grind
+// invariant: SELFDESTRUCT's table power (130) must not beat TACKLE (35) when
+// both have PP. The explode path faints the user even on a miss.
+func TestExplodeMoveDoesNotOutrankSurvivableAttack(t *testing.T) {
+	selfdestruct := rom.Move{
+		ID: 120, Effect: rom.ExplodeEffect,
+		Power: 130, Type: testNormal, Accuracy: 255, PP: 5,
+	}
+	tackle := rom.Move{ID: 33, Power: 35, Type: testNormal, Accuracy: 255, PP: 35}
+	data := combatROM(t, nil, selfdestruct, tackle)
+	attacker := Combatant{
+		Level: 22, HP: 58, MaxHP: 58,
+		Attack: 30, Defense: 38, Special: 34,
+		Type1: testNormal, Type2: testNormal,
+	}
+	defender := Combatant{
+		Level: 3, HP: 15, MaxHP: 15,
+		Defense: 20, Special: 20,
+		Type1: testNormal, Type2: testNormal,
+	}
+
+	explode, err := EvaluateMove(data, attacker, defender, selfdestruct, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := EvaluateMove(data, attacker, defender, tackle, 35)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explode.DamageRule != "explode" || explode.ExpectedScore != 0 {
+		t.Fatalf("Selfdestruct evaluation = %+v, want explode rule with score 0", explode)
+	}
+	if ordinary.ExpectedScore <= 0 {
+		t.Fatalf("Tackle evaluation = %+v, want positive score", ordinary)
+	}
+	if BetterMove(explode, ordinary) {
+		t.Fatalf("Selfdestruct outranked Tackle: explode=%+v ordinary=%+v", explode, ordinary)
+	}
+}

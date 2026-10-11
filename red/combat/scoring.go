@@ -146,6 +146,15 @@ func EvaluateMove(romData []byte, attacker, defender Combatant, mv rom.Move, cur
 		// damaging move with a known positive score wins the comparison.
 		e.DamageRule = "ohko"
 		return e, nil
+	case rom.ExplodeEffect:
+		// Selfdestruct/Explosion halve defense and then faint the user even
+		// on a miss. Scoring them as ordinary high-power attacks makes a
+		// solo Voltorb suicide on the first Route-3 wild while Tackle still
+		// has PP (run-1db3o6gfh1oep20c9ucky4khvw / triage:4108663c2314b51a).
+		// Keep the role DirectDamage via Power>0 so a last-resort explode
+		// remains selectable when nothing safer has a positive score.
+		e.DamageRule = "explode"
+		return e, nil
 	}
 
 	if mv.Power == 0 {
