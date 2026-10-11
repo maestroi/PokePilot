@@ -60,3 +60,34 @@ func TestGSOwnedPokecenterIsNearestNotFirstInGroup(t *testing.T) {
 		t.Fatalf("Route 37 center = %+v, want ECRUTEAK_POKECENTER_1F", info)
 	}
 }
+
+func TestGSCoastalRecoveryPrefersReachableNearbyCenters(t *testing.T) {
+	for _, tc := range []struct {
+		from string
+		want string
+	}{
+		{"OLIVINE_LIGHTHOUSE_6F", "OLIVINE_POKECENTER_1F"},
+		{"OLIVINE_GYM", "OLIVINE_POKECENTER_1F"},
+		{"ROUTE_40", "OLIVINE_POKECENTER_1F"},
+		{"CIANWOOD_GYM", "CIANWOOD_POKECENTER_1F"},
+		{"CIANWOOD_PHARMACY", "CIANWOOD_POKECENTER_1F"},
+	} {
+		t.Run(tc.from, func(t *testing.T) {
+			from, err := gsOpeningMapID(tc.from)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := gsOpeningMapID(tc.want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := gsOwnedPokecenterID(from)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("center for %s = %#04x; want %s (%#04x)", tc.from, got, tc.want, want)
+			}
+		})
+	}
+}
