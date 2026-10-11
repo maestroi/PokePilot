@@ -335,6 +335,26 @@ The first passing post-cure checkpoint and six-badge ROM replay remain the
 qualification gates described below. Do not treat ROM-free regression success
 or the availability of recovery objectives as evidence of six badges.
 
+## Gen2 coastal native graph prerequisite
+
+Before the six-badge ROM qualification can pass, the **production** Gen2
+native router must be able to navigate Olivine and Cianwood. The full-ROM
+world parser alone does not do this: `gs/profile.NativeMapProvider` and
+`skill.GoToNative` use the bounded `NewFirstBadgeWorldProvider` grid.
+
+The coastal topology slice now enumerates Route 38 / Ecruteak Gate / Route
+39, Olivine and Lighthouse 1F–6F, Route 40 / Route 41 Surf seams, and
+Cianwood's Gym / Center / Pharmacy. Route/warp identities use native Gen2
+16-bit map IDs, sourced from the pinned decomp, not Red map aliases.
+
+The ROM-free tests `TestCoastalNativeTopology*` cover every static map grid,
+both Surf directions, lighthouse climbs/descents, and Gym/Pharmacy access.
+`TestGSCoastalRecoveryPrefersReachableNearbyCenters` verifies recovery
+routes to the geographically appropriate Center. These are **topology
+contracts**, not live collision, battle, Surf or Strength qualification; the
+private Gold/Silver `TestGSCoastalROMCheckpointReplay` remains the actual
+six-badge proof barrier.
+
 ## Gold/Silver coastal checkpoint qualification
 
 The Red `pokequal` catalog remains Red-specific. Gold/Silver's fifth/sixth badge
