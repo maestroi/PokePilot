@@ -33,11 +33,12 @@ func SSAnneHM01(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, hm01Item); count > 0 {
+	if _, count := bagEntry(&mem, hm01Item); count > 0 ||
+		pcItemQuantity(state.DecodePCItemStorage(&mem).Items, hm01Item) > 0 {
 		return nil
 	}
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
-		return fmt.Errorf("skill: SSAnneHM01: S.S. Ticket is required before boarding")
+	if err := ensureSSTicketInBag(m, romData, &mem, policy); err != nil {
+		return err
 	}
 
 	// Start the one-rival story leg with a fully recovered party whenever the
@@ -78,6 +79,36 @@ func SSAnneHM01(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, count := bagEntry(&mem, hm01Item); count == 0 {
 		return fmt.Errorf("skill: SSAnneHM01: Captain conversation completed without HM01 in the bag (map %#04x at %d,%d)",
 			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	return nil
+}
+
+// ensureSSTicketInBag makes the S.S. Ticket available in the bag before
+// boarding. The ticket is a key item the game never consumes, but bag pressure
+// (or the retire path after the ship sails) can leave it in the Player PC. The
+// dock check reads the bag, so a PC-only ticket cannot board. When the ticket
+// is in the PC it is withdrawn; when it is in neither, the boarding
+// precondition is genuinely unmet.
+func ensureSSTicketInBag(m *emu.Emu, romData []byte, mem *state.Mem, policy MovePolicy) error {
+	if _, count := bagEntry(mem, ssTicketItem); count > 0 {
+		return nil
+	}
+	if pcItemQuantity(state.DecodePCItemStorage(mem).Items, ssTicketItem) == 0 {
+		return fmt.Errorf("skill: SSAnneHM01: S.S. Ticket is required before boarding")
+	}
+	if err := EnsureBagSpaceFor(m, ssTicketItem); err != nil {
+		return fmt.Errorf("skill: SSAnneHM01: make room for S.S. Ticket: %w", err)
+	}
+	if err := runInventoryDetour(m, romData, policy, func() error {
+		return WithdrawPCItem(m, romData, policy, ssTicketItem, 1)
+	}); err != nil {
+		return fmt.Errorf("skill: SSAnneHM01: withdraw S.S. Ticket from Player PC: %w", err)
+	}
+	var after state.Mem
+	state.Snapshot(m, &after)
+	if _, count := bagEntry(&after, ssTicketItem); count == 0 {
+		return fmt.Errorf("skill: SSAnneHM01: S.S. Ticket still not in the bag after withdrawal (map %#04x at %d,%d)",
+			after.U8(sym.CurMap), after.U8(sym.XCoord), after.U8(sym.YCoord))
 	}
 	return nil
 }
