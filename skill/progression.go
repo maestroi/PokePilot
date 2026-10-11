@@ -34,6 +34,23 @@ func spriteSlotPresent(mem *state.Mem, slot int) bool {
 	return false
 }
 
+// billRescueTerminal reports the one state the scripted rescue cannot leave:
+// the game has already awarded the S.S. Ticket (EVENT_GOT_SS_TICKET set) yet
+// the key item is absent from the bag. The ROM will not re-award a key item —
+// the PC hidden event routes to the Eevee Pokedex menu and Bill's human form
+// only offers "Why don't you go instead of me?" — so driving the rescue
+// cutscene from here can only time out. Callers surface this as a structured
+// failure instead of spending the cutscene budget on an impossible sequence.
+func billRescueTerminal(mem *state.Mem) error {
+	if _, count := bagEntry(mem, ssTicketItem); count > 0 {
+		return nil
+	}
+	if state.HasEvent(mem, state.EventGotSSTicket) {
+		return fmt.Errorf("skill: Bill: rescue already complete (EVENT_GOT_SS_TICKET set) but S.S. Ticket is not in the bag; the ROM will not re-award a key item, so the scripted rescue cannot be re-run")
+	}
+	return nil
+}
+
 // helpBill starts the Pokemon-form conversation and deliberately uses the
 // cutscene driver instead of Talk. That conversation hands control to a
 // scripted walk that lasts longer than Talk's ordinary 40-frame settle
@@ -44,6 +61,9 @@ func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	state.Snapshot(m, &mem)
 	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
 		return nil
+	}
+	if err := billRescueTerminal(&mem); err != nil {
+		return err
 	}
 
 	m.Tap(emu.A, 3, 7)
@@ -77,6 +97,9 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	state.Snapshot(m, &mem)
 	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
 		return nil
+	}
+	if err := billRescueTerminal(&mem); err != nil {
+		return err
 	}
 
 	pcStand := Destination{Map: billsHouseMap, X: billsPCX, Y: billsPCStandY}
