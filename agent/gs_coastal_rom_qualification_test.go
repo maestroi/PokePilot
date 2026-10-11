@@ -83,8 +83,8 @@ func TestGSCoastalROMCheckpointReplay(t *testing.T) {
 	t.Logf("ROM=%s sha1=%s from=%s start_sha256=%x evidence=%s", gameName, expectedSHA, from, startHash, out)
 
 	stages := []struct {
-		name string
-		goal game.ProgressID
+		name    string
+		goal    game.ProgressID
 		mapName string
 	}{
 		{"strength", gsprofile.ProgressHM04StrengthAcquired, "OLIVINE_CAFE"},
