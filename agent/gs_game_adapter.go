@@ -92,6 +92,16 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 		}
 		return nil
+	case KindTrain:
+		if o.Slot != 0 || o.Species != "" || o.Level > gsCombatRecoveryMaxLevel {
+			return fmt.Errorf("agent: %s: %w (Gen2 supports bounded lead training only)", o, errGSControllerUnavailable)
+		}
+		return nil
+	case KindHeal:
+		if o.Place != "" {
+			return fmt.Errorf("agent: %s: %w (Gen2 resolves nearest native Center)", o, errGSControllerUnavailable)
+		}
+		return nil
 	default:
 		return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 	}
@@ -129,6 +139,16 @@ func (a *gsObjectiveAdapter) NormalizeBoundary() error {
 func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) {
 	result := ObjectiveResult{Objective: o}
 	switch o.Kind {
+	case KindHeal:
+		if err := executeGSCombatRecoveryHeal(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	case KindTrain:
+		if err := executeGSCombatRecoveryTrain(a.m, a.romData, o); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
 	case KindStarter:
 		if err := executeGSOpening(a.m, a.romData, o.Starter); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
@@ -202,6 +222,9 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 const gsFirstBadgeObjectiveFrameBudget uint64 = 1_500_000
 
 func gsObjectiveFrameBudget(o Objective) uint64 {
+	if o.Kind == KindTrain || o.Kind == KindHeal {
+		return gsFirstBadgeObjectiveFrameBudget
+	}
 	if o.Kind == KindProgress {
 		switch o.Progress {
 		case gsprofile.ProgressSproutTowerCleared, gsprofile.ProgressZephyrBadgeEarned,
@@ -244,7 +267,10 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
-	if o.Kind != KindStarter && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
+	if o.Kind == KindHeal {
+		return verifyGSCombatRecoveryHeal(final)
+	}
+	if o.Kind != KindStarter && o.Kind != KindTrain && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
 		return fmt.Errorf("%w: %s has no Gold/Silver verifier yet", ErrObjectivePostconditionUnavailable, o)
 	}
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
@@ -358,10 +384,18 @@ func (a *gsObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog 
 	}}
 }
 
-func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
+func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objective) {
 	if obs.PartyCount == 0 || !obs.Story.Has(gsprofile.ProgressStarterReceived) {
 		return nil
 	}
+	// A combat-lost story objective is withheld by the portable combat gate.
+	// Preserve that gate and append a separate executable training objective
+	// rather than retrying the same losing boss or returning an empty menu.
+	defer func() {
+		if len(out) > 0 {
+			out = append(out, gsProgressionCombatRecovery(obs, out[0])...)
+		}
+	}()
 	switch {
 	case !obs.Story.Has(gsprofile.ProgressMysteryEggReturned):
 		return []Objective{{
