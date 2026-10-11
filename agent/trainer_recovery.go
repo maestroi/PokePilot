@@ -30,8 +30,14 @@ func combatRetryReadyKey(o Objective) string {
 // combatLossFailureName recognizes only typed combat evidence. It deliberately
 // does not classify a plain ErrBlackedOut: wild losses and poison wipes are
 // logistics outcomes, not proof that the objective is blocked by combat.
+//
+// Preparation objectives (train/heal) also stay out of combat-loss mode: that
+// gate exists to withhold the lost fight until readiness improves. Stamping the
+// same marker on the recovery train itself filters the only preparation
+// candidate and empties the menu into "nothing is possible from here"
+// (run-36loaokprjdtw2j8om666lswgf / triage:e419e12a9a0bc13a).
 func combatLossFailureName(o Objective, err error) (string, bool) {
-	if err == nil {
+	if err == nil || !combatLossGatesObjective(o) {
 		return "", false
 	}
 	var required *skill.RequiredBattleError
@@ -42,6 +48,18 @@ func combatLossFailureName(o Objective, err error) (string, bool) {
 		return combatLossFailureKey(o), true
 	}
 	return "", false
+}
+
+// combatLossGatesObjective reports whether a combat defeat on o should enter
+// the fight-withholding combat-loss / combat-retry modes. Preparation work is
+// how those modes recover, so it must remain offerable after a grind wipe.
+func combatLossGatesObjective(o Objective) bool {
+	switch o.Kind {
+	case KindTrain, KindHeal:
+		return false
+	default:
+		return true
+	}
 }
 
 func combatLossRecorded(k *Knowledge, o Objective) bool {
@@ -670,7 +688,10 @@ func filterCombatRecoveryBlocked(out []Objective, known *Knowledge) []Objective 
 	ppDue := ppRecoveryDue(out)
 	filtered := make([]Objective, 0, len(out))
 	for _, o := range out {
-		if combatLossRecorded(known, o) {
+		// Ignore combat-loss markers on preparation objectives, including
+		// poisoned checkpoints written before train/heal stopped entering that
+		// mode. The fight stays gated; the recovery path must stay executable.
+		if combatLossGatesObjective(o) && combatLossRecorded(known, o) {
 			continue
 		}
 		if ppDue && (o.Kind == KindTrain || o.Kind == KindGym) {

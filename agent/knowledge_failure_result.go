@@ -15,9 +15,10 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	o := result.Objective
 	storage := objectiveStorageKey(o)
 	f := k.Failures[storage]
-	combatLoss := (result.Battle != nil && result.Battle.Result == "lost") ||
-		failureCauseIs(result, failureCauseCombatDefeat) ||
-		failureCauseIs(result, "trainer_blacked_out")
+	combatLoss := combatLossGatesObjective(o) &&
+		((result.Battle != nil && result.Battle.Result == "lost") ||
+			failureCauseIs(result, failureCauseCombatDefeat) ||
+			failureCauseIs(result, "trainer_blacked_out"))
 	if combatLoss {
 		// All new combat recovery state is generic. Carry the retry record
 		// forward before deleting it so repeated defeats escalate instead of
