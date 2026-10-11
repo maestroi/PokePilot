@@ -45,12 +45,15 @@ type FailureReproBundle struct {
 	Identity         FailureIdentity        `json:"identity"`
 	Diagnostic       string                 `json:"diagnostic,omitempty"`
 	SuggestedCommand string                 `json:"suggested_command"`
+	// PlayStyle selects the travel policy the run executed under. It is not
+	// part of the fingerprinted identity; empty means unknown (older runners).
+	PlayStyle string `json:"play_style,omitempty"`
 }
 
 // NewFailureReproArtifact builds a repro contract when a failure has both a
 // canonical identity and an exact pre-objective checkpoint in the finish
 // evidence. Legacy/prose-only failures deliberately return an empty artifact.
-func NewFailureReproArtifact(report FinishReport, f ObjectiveFailure) (Artifact, error) {
+func NewFailureReproArtifact(report FinishReport, f ObjectiveFailure, playStyle string) (Artifact, error) {
 	if f.Identity == nil || strings.TrimSpace(f.Checkpoint) == "" {
 		return Artifact{}, nil
 	}
@@ -84,6 +87,7 @@ func NewFailureReproArtifact(report FinishReport, f ObjectiveFailure) (Artifact,
 		},
 		Identity:   *f.Identity,
 		Diagnostic: strings.TrimSpace(f.Error),
+		PlayStyle:  strings.TrimSpace(playStyle),
 		SuggestedCommand: fmt.Sprintf(
 			"go run ./cmd/pokerepro -run %q -attempt %d -checkpoint %q",
 			report.RunID, attempt, checkpoint.Name,

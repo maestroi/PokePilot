@@ -53,7 +53,7 @@ func TestAppendFailureReproArtifacts(t *testing.T) {
 		Checkpoint:  checkpointName,
 	}
 
-	appendFailureReproArtifacts(&report, []farm.ObjectiveFailure{failure})
+	appendFailureReproArtifacts(&report, []farm.ObjectiveFailure{failure}, "")
 	if len(report.Artifacts) != 3 {
 		t.Fatalf("artifacts = %d, want checkpoint pair + repro", len(report.Artifacts))
 	}

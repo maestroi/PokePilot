@@ -50,7 +50,7 @@ func TestFailureReproArtifactRoundTrip(t *testing.T) {
 		}},
 	}
 
-	artifact, err := NewFailureReproArtifact(report, failure)
+	artifact, err := NewFailureReproArtifact(report, failure, "speedrun")
 	if err != nil {
 		t.Fatalf("NewFailureReproArtifact: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestFailureReproArtifactRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DecodeFailureRepro: %v", err)
 	}
-	if bundle.RunID != report.RunID || bundle.Attempt != 2 || bundle.ObservedRevision != "deadbeef" {
+	if bundle.RunID != report.RunID || bundle.Attempt != 2 || bundle.ObservedRevision != "deadbeef" || bundle.PlayStyle != "speedrun" {
 		t.Fatalf("bundle occurrence = %+v", bundle)
 	}
 	if bundle.Fingerprint != fp || bundle.Checkpoint.Name != failure.Checkpoint || bundle.Checkpoint.SHA256 != strings.Repeat("a", 64) {
@@ -78,7 +78,7 @@ func TestFailureReproRequiresStructuredCheckpoint(t *testing.T) {
 		{Checkpoint: "round-001.state"},
 		{Identity: &FailureIdentity{}},
 	} {
-		artifact, err := NewFailureReproArtifact(FinishReport{}, failure)
+		artifact, err := NewFailureReproArtifact(FinishReport{}, failure, "")
 		if err != nil {
 			t.Fatalf("NewFailureReproArtifact: %v", err)
 		}

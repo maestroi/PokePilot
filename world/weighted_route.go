@@ -345,6 +345,8 @@ func findExactWeightedRoute(
 	expanded := 0
 	bestBoundaryNode := -1
 	bestBoundaryCost := 0
+	bestBoundaryScore := 0
+	hopsToGoal := mapHopsTo(view.usable, to)
 
 	for open.Len() > 0 {
 		item := heap.Pop(open).(*weightedQueueItem)
@@ -378,9 +380,16 @@ func findExactWeightedRoute(
 			}, nil, true
 		}
 		if cur.boundary {
-			if bestBoundaryNode < 0 || cur.cost < bestBoundaryCost {
+			// A frontier is only a prefix: rank it by how far its map still is
+			// from the destination, not just by how cheap it is to reach. The
+			// cheapest Surf shore can lead away from the goal (Cinnabar's Route 20
+			// shore is closer than its Route 21 shore, but Route 20 is a Seafoam
+			// dead end for a Route 22 journey; run-383xos0r6mt4d1aaj7yld1v2bn).
+			score := cur.cost + hopsToGoal(cur.mapID)*policy.FallbackMapTransitionCost
+			if bestBoundaryNode < 0 || score < bestBoundaryScore {
 				bestBoundaryNode = item.node
 				bestBoundaryCost = cur.cost
+				bestBoundaryScore = score
 			}
 			continue
 		}
@@ -463,6 +472,37 @@ func findExactWeightedRoute(
 		}, ErrRouteReplanRequired, true
 	}
 	return RouteCostResult{}, nil, false
+}
+
+// mapHopsTo returns a function giving the fewest map transitions from a map
+// to `to`, ignoring components. It is a coarse lower bound used only to rank
+// semantic frontiers; maps that cannot reach `to` at all rank last.
+func mapHopsTo(g *Graph, to uint8) func(uint8) int {
+	reverse := map[uint8][]uint8{}
+	for from, edges := range g.Edges {
+		for _, e := range edges {
+			reverse[e.To] = append(reverse[e.To], from)
+		}
+	}
+	hops := map[uint8]int{to: 0}
+	queue := []uint8{to}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, prev := range reverse[cur] {
+			if _, ok := hops[prev]; !ok {
+				hops[prev] = hops[cur] + 1
+				queue = append(queue, prev)
+			}
+		}
+	}
+	unreachable := len(hops) + 1
+	return func(mapID uint8) int {
+		if h, ok := hops[mapID]; ok {
+			return h
+		}
+		return unreachable
+	}
 }
 
 func reconstructWeightedRoute(nodes []weightedRouteNode, at int) []RouteStep {

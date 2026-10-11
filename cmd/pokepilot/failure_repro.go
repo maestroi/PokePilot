@@ -10,12 +10,12 @@ import (
 // preserved pre-objective checkpoint into a tiny fixer handoff. The handoff is
 // intentionally ROM-free: cmd/pokerepro fetches the exact state/knowledge pair
 // from pokewall while the fixer uses its own local ROM.
-func appendFailureReproArtifacts(report *farm.FinishReport, failures []farm.ObjectiveFailure) {
+func appendFailureReproArtifacts(report *farm.FinishReport, failures []farm.ObjectiveFailure, playStyle string) {
 	if report == nil {
 		return
 	}
 	for _, failure := range failures {
-		repro, err := farm.NewFailureReproArtifact(*report, failure)
+		repro, err := farm.NewFailureReproArtifact(*report, failure, playStyle)
 		if err != nil {
 			log.Printf("farm: %s: failure repro for %s: %v", report.RunID, failure.Fingerprint, err)
 			continue

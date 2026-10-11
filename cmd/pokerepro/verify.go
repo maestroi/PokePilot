@@ -107,7 +107,7 @@ func verifyPortableBundle(mat portableMaterialized, resultPath string) (portable
 		return verdict, fmt.Errorf("load checkpoint: %w", err)
 	}
 
-	result, execErr := agent.Execute(m, m.ROM(), obj)
+	result, execErr := agent.ExecuteWithRoutePriority(m, m.ROM(), obj, replayRoutePriority(failure.PlayStyle))
 	verdict.Outcome = string(result.Outcome)
 	verdict.Cause = string(result.Cause)
 	if execErr == nil {
@@ -284,4 +284,15 @@ func failureObjectiveString(o farm.FailureObjective) string {
 		return obj.String()
 	}
 	return strings.TrimSpace(o.Kind)
+}
+
+// replayRoutePriority replays under the travel policy the live run used: a
+// speedrun's weighted router and the conservative BFS can pick different legs
+// from the same checkpoint. Unknown (older contracts) keeps the conservative
+// replay those contracts were always verified with.
+func replayRoutePriority(playStyle string) agent.RoutePriority {
+	if strings.TrimSpace(playStyle) == "" {
+		return agent.RoutePriorityConservative
+	}
+	return agent.RoutePriorityForPlayStyle(agent.PlayStyle(playStyle))
 }
