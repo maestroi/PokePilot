@@ -45,3 +45,18 @@ func TestGSOwnedPokecenterPrefersSameMapGroup(t *testing.T) {
 		t.Fatalf("Violet local center = %+v", info)
 	}
 }
+
+func TestGSOwnedPokecenterIsNearestNotFirstInGroup(t *testing.T) {
+	// Route 37 shares Violet's map group, but Ecruteak is the adjacent city.
+	route37, err := gsOpeningMapID("ROUTE_37")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := gsOwnedPokecenterID(route37)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, ok := gsdata.Map(got); !ok || info.Name != "ECRUTEAK_POKECENTER_1F" {
+		t.Fatalf("Route 37 center = %+v, want ECRUTEAK_POKECENTER_1F", info)
+	}
+}

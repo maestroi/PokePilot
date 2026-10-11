@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -15,7 +17,7 @@ import (
 // the FC curve and still KO with Tackle.
 const (
 	gsBugsyReadyLeadLevel = 24
-	gsBugsyGrindMaxSteps  = 8000
+	gsLeadGrindMaxSteps   = 8000
 )
 
 func gsLeadLevel(profile *gsprofile.Profile, m *emu.Emu, romData []byte) (int, error) {
@@ -47,51 +49,64 @@ func gsLeadHPFraction(profile *gsprofile.Profile, m *emu.Emu, romData []byte) (f
 }
 
 // gsEnsureLeadReadyForBugsy steps around Slowpoke Well B1F until the lead can
-// survive Scyther. Cave tiles roll wild encounters per step, so a short GoTo
-// loop under-samples; owned interruption handling covers each battle.
+// survive Scyther.
 func gsEnsureLeadReadyForBugsy(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	return gsEnsureLeadLevel(m, romData, profile, "Bugsy", gsBugsyReadyLeadLevel, "SLOWPOKE_WELL_B1F", 5, 3)
+}
+
+// gsEnsureLeadLevel steps around one encounter tile until the lead reaches
+// target. Grass/cave tiles roll wild encounters per step, so a short GoTo loop
+// under-samples; owned interruption handling covers each battle. The party is
+// recovered before and after, and whenever the lead drops below 40% HP.
+func gsEnsureLeadLevel(m *emu.Emu, romData []byte, profile *gsprofile.Profile, label string, target int, mapName string, x, y uint8) error {
 	level, err := gsLeadLevel(profile, m, romData)
 	if err != nil {
 		return err
 	}
-	if level >= gsBugsyReadyLeadLevel {
+	if level >= target {
 		return nil
 	}
-	well, err := gsOpeningMapID("SLOWPOKE_WELL_B1F")
+	grind, err := gsOpeningMapID(mapName)
 	if err != nil {
 		return err
 	}
+	tile := skill.ExactNativeDestination(grind, x, y)
 	if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
-		return fmt.Errorf("recover before Bugsy grind: %w", err)
+		return fmt.Errorf("recover before %s grind: %w", label, err)
 	}
-	if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(well, 5, 3)); err != nil {
-		return fmt.Errorf("reach Slowpoke Well grind tile: %w", err)
+	if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
+		return fmt.Errorf("reach %s grind tile: %w", label, err)
 	}
 
 	dirs := []emu.Button{emu.Down, emu.Up, emu.Right, emu.Left, emu.Down, emu.Up}
-	for steps := 0; level < gsBugsyReadyLeadLevel; steps++ {
-		if steps >= gsBugsyGrindMaxSteps {
-			return fmt.Errorf("%w: Bugsy grind reached %d steps with lead still level %d (want %d)",
-				errGSSecondBadgeStalled, steps, level, gsBugsyReadyLeadLevel)
+	for steps := 0; level < target; steps++ {
+		if steps >= gsLeadGrindMaxSteps {
+			return fmt.Errorf("%w: %s grind reached %d steps with lead still level %d (want %d)",
+				errGSSecondBadgeStalled, label, steps, level, target)
 		}
 		world := profile.DecodeOverworld(m)
-		if world.NativeMapID != well {
-			if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(well, 5, 3)); err != nil {
-				return fmt.Errorf("return to grind map: %w", err)
+		if world.NativeMapID != grind {
+			if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
+				return fmt.Errorf("return to %s grind map: %w", label, err)
 			}
 		}
 		if frac, err := gsLeadHPFraction(profile, m, romData); err == nil && frac < 0.4 {
 			if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
-				return fmt.Errorf("recover during Bugsy grind: %w", err)
+				return fmt.Errorf("recover during %s grind: %w", label, err)
 			}
-			if err := gsSecondBadgeGoTo(m, romData, profile, skill.ExactNativeDestination(well, 5, 3)); err != nil {
-				return fmt.Errorf("return to grind after heal: %w", err)
+			if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
+				return fmt.Errorf("return to %s grind after heal: %w", label, err)
 			}
 			continue
 		}
 		m.Tap(dirs[steps%len(dirs)], 3, 7)
-		if err := driveGSSecondBadgeInterruption(m, profile, "bugsy-grind"); err != nil {
-			return fmt.Errorf("Bugsy grind step: %w", err)
+		if err := driveGSSecondBadgeInterruption(m, profile, label+"-grind"); err != nil {
+			// A wild Roar/Whirlwind or flee ends the battle without a win;
+			// only a real loss stops the grind.
+			var required *skill.RequiredBattleError
+			if !errors.As(err, &required) || required.Outcome.Result == game.BattleLost {
+				return fmt.Errorf("%s grind step: %w", label, err)
+			}
 		}
 		level, err = gsLeadLevel(profile, m, romData)
 		if err != nil {

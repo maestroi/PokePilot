@@ -49,23 +49,61 @@ func nativeMachineProtectedMoves(field game.FieldMoveDecoder) map[uint16]bool {
 // generic controller conservatively preserves every move the active profile
 // exposes as a semantic field move; this is slightly stricter than HM-only
 // permanence but can never propose deleting a required traversal capability.
-func nativeMachineReplacementSlot(field game.FieldMoveDecoder, moves [4]uint16) int {
+//
+// Among the rest it forgets the least valuable move by the profile's own
+// combat evaluation: inert/status before setup before damage, then the weakest
+// damage. Blindly taking the last free slot deleted Bayleef's only STAB attack
+// (Razor Leaf) for Rock Smash and left a Tackle/Growl/Rock Smash/Cut set that
+// cannot touch a Ghost (Burned Tower rival, triage 3e1b46321302859d).
+// Profiles without combat semantics keep the last-slot rule.
+func nativeMachineReplacementSlot(field game.FieldMoveDecoder, rom []byte, moves [4]uint16) int {
 	for _, move := range moves {
 		if move == 0 {
 			return -1
 		}
 	}
 	protected := nativeMachineProtectedMoves(field)
+	strategy, _ := field.(game.BattleCombatStrategy)
+	best, bestRank, bestScore := -2, 0, int64(0)
 	for slot := len(moves) - 1; slot >= 0; slot-- {
-		if !protected[moves[slot]] {
-			return slot
+		if protected[moves[slot]] {
+			continue
+		}
+		rank, score := 0, int64(0)
+		if strategy != nil {
+			// ponytail: untyped combatants, so no STAB/type bonus; raw power
+			// order is enough to keep a real attack over a weaker one.
+			eval, role, err := strategy.EvaluateCombatMove(rom, game.BattleCombatant{}, game.BattleCombatant{}, moves[slot], 0)
+			rank, score = nativeMachineMoveRank(role), eval.ExpectedScore
+			if err != nil {
+				// Only a damaging move reads the type chart; never let an
+				// unreadable chart rank a real attack below Growl.
+				rank, score = nativeMachineMoveRank(game.BattleMoveRoleDirectDamage), 0
+			}
+		}
+		if best < 0 || rank < bestRank || (rank == bestRank && score < bestScore) {
+			best, bestRank, bestScore = slot, rank, score
 		}
 	}
-	return -2
+	return best
+}
+
+func nativeMachineMoveRank(role game.BattleMoveRole) int {
+	switch role {
+	case game.BattleMoveRoleDirectDamage:
+		return 3
+	case game.BattleMoveRoleResidualDamage:
+		return 2
+	case game.BattleMoveRoleSetup:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func nativeMachineCarrier(
 	field game.FieldMoveDecoder,
+	rom []byte,
 	capability game.FieldMoveCapability,
 	move FieldMove,
 	execution game.BattleExecutionState,
@@ -85,7 +123,7 @@ func nativeMachineCarrier(
 		if slot < 0 || slot >= len(execution.PartyMoves) {
 			continue
 		}
-		if nativeMachineReplacementSlot(field, execution.PartyMoves[slot]) == -1 {
+		if nativeMachineReplacementSlot(field, rom, execution.PartyMoves[slot]) == -1 {
 			return slot, -1, nil
 		}
 	}
@@ -93,7 +131,7 @@ func nativeMachineCarrier(
 		if slot < 0 || slot >= len(execution.PartyMoves) {
 			continue
 		}
-		if replace := nativeMachineReplacementSlot(field, execution.PartyMoves[slot]); replace >= 0 {
+		if replace := nativeMachineReplacementSlot(field, rom, execution.PartyMoves[slot]); replace >= 0 {
 			return slot, replace, nil
 		}
 	}
@@ -142,7 +180,7 @@ func teachFieldMoveWithMachineMenu(
 		return err
 	}
 	before := execution.DecodeBattleExecution(m)
-	partySlot, replaceSlot, err := nativeMachineCarrier(field, capability, move, before)
+	partySlot, replaceSlot, err := nativeMachineCarrier(field, m.ROM(), capability, move, before)
 	if err != nil {
 		return fmt.Errorf("skill: native machine teach: choose carrier: %w", err)
 	}
