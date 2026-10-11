@@ -71,6 +71,9 @@ func TestGSCombatRecoveryTargetAndProvenHabitat(t *testing.T) {
 	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1}); target != 39 {
 		t.Fatalf("legacy recovery target=%d, want 39", target)
 	}
+	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1, ReadinessTarget: 34 * 4}); target != 0 {
+		t.Fatalf("recovery target already satisfied = %d, want no extra grind", target)
+	}
 	if name, x, y, err := gsRecoveryGrindSite(obs); err != nil || name != "ROUTE_37" || x != 15 || y != 14 {
 		t.Fatalf("post-Sudowoodo grind site = %s (%d,%d), %v", name, x, y, err)
 	}
