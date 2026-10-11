@@ -101,11 +101,22 @@ func gsEnsureLeadLevel(m *emu.Emu, romData []byte, profile *gsprofile.Profile, l
 		}
 		m.Tap(dirs[steps%len(dirs)], 3, 7)
 		if err := driveGSSecondBadgeInterruption(m, profile, label+"-grind"); err != nil {
-			// A wild Roar/Whirlwind or flee ends the battle without a win;
-			// only a real loss stops the grind.
-			var required *skill.RequiredBattleError
-			if !errors.As(err, &required) || required.Outcome.Result == game.BattleLost {
+			resume, afterBlackout := gsResumeGrindAfterInterruption(err)
+			if !resume {
 				return fmt.Errorf("%s grind step: %w", label, err)
+			}
+			if afterBlackout {
+				// Wild blackouts are ordinary Gen2 grind outcomes (Confuse Ray
+				// self-hits on a lone lead), not required-win combat_defeat.
+				// Heal at the Center and resume so combat-recovery training can
+				// still reach its level postcondition
+				// (run-36loaokprjdtw2j8om666lswgf / triage:734725b12d2a0028).
+				if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
+					return fmt.Errorf("recover after %s grind blackout: %w", label, err)
+				}
+				if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
+					return fmt.Errorf("return to %s grind after blackout: %w", label, err)
+				}
 			}
 		}
 		level, err = gsLeadLevel(profile, m, romData)
@@ -114,4 +125,24 @@ func gsEnsureLeadLevel(m *emu.Emu, romData []byte, profile *gsprofile.Profile, l
 		}
 	}
 	return gsEnsurePartyRecovered(m, romData, profile)
+}
+
+// gsResumeGrindAfterInterruption classifies a grind-step interruption.
+// Wild blackouts resume after a Center heal (afterBlackout); draws/flees
+// resume in place; trainer losses and non-battle defects fail the session.
+func gsResumeGrindAfterInterruption(err error) (resume, afterBlackout bool) {
+	var required *skill.RequiredBattleError
+	if !errors.As(err, &required) {
+		return false, false
+	}
+	switch required.Outcome.Result {
+	case game.BattleLost:
+		if required.Outcome.Trainer {
+			return false, false
+		}
+		return true, true
+	default:
+		// Roar/Whirlwind/flee ends without a win; keep sampling encounters.
+		return true, false
+	}
 }
