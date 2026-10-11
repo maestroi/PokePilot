@@ -44,11 +44,8 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if billRescueComplete(&mem) {
 		return nil
-	}
-	if err := billRescueTerminal(&mem); err != nil {
-		return err
 	}
 
 	if m.Peek8(sym.CurMap) != billsHouseMap {
@@ -62,7 +59,7 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if billRescueComplete(&mem) {
 		return nil
 	}
 	// Bill's final human-form conversation awards a new distinct key item.
@@ -93,8 +90,8 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	}
 
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
-		return fmt.Errorf("skill: Bill: completed without S.S. Ticket in the bag")
+	if !billRescueComplete(&mem) {
+		return fmt.Errorf("skill: Bill: completed without the rescue's durable marker (no S.S. Ticket in the bag and EVENT_GOT_SS_TICKET not set)")
 	}
 	return nil
 }

@@ -34,21 +34,25 @@ func spriteSlotPresent(mem *state.Mem, slot int) bool {
 	return false
 }
 
-// billRescueTerminal reports the one state the scripted rescue cannot leave:
-// the game has already awarded the S.S. Ticket (EVENT_GOT_SS_TICKET set) yet
-// the key item is absent from the bag. The ROM will not re-award a key item —
-// the PC hidden event routes to the Eevee Pokedex menu and Bill's human form
-// only offers "Why don't you go instead of me?" — so driving the rescue
-// cutscene from here can only time out. Callers surface this as a structured
-// failure instead of spending the cutscene budget on an impossible sequence.
-func billRescueTerminal(mem *state.Mem) error {
+// billRescueComplete reports the positive postcondition for the Bill rescue:
+// the game has durably awarded the S.S. Ticket (EVENT_GOT_SS_TICKET set) or the
+// key item is already in the bag. Once either holds the scripted rescue is done
+// and must not be re-run: the ROM will not re-award a key item, and Bill's human
+// form only offers "Why don't you go instead of me?".
+//
+// The durable event flag — not the bag — is the authoritative marker. The ticket
+// is a key item that the game checks but never consumes when boarding the S.S.
+// Anne, and it is legitimately absent from the bag once the rescue is complete:
+// the player may have stored it in the PC, or (the common case) the S.S. Anne has
+// already sailed (EVENT_SS_ANNE_LEFT), after which the ticket is no longer needed
+// and is no longer carried. Treating "event set but ticket not in bag" as a
+// terminal failure was the bug: it turned a finished objective into an endless
+// run-killer.
+func billRescueComplete(mem *state.Mem) bool {
 	if _, count := bagEntry(mem, ssTicketItem); count > 0 {
-		return nil
+		return true
 	}
-	if state.HasEvent(mem, state.EventGotSSTicket) {
-		return fmt.Errorf("skill: Bill: rescue already complete (EVENT_GOT_SS_TICKET set) but S.S. Ticket is not in the bag; the ROM will not re-award a key item, so the scripted rescue cannot be re-run")
-	}
-	return nil
+	return state.HasEvent(mem, state.EventGotSSTicket)
 }
 
 // helpBill starts the Pokemon-form conversation and deliberately uses the
@@ -59,11 +63,8 @@ func billRescueTerminal(mem *state.Mem) error {
 func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if billRescueComplete(&mem) {
 		return nil
-	}
-	if err := billRescueTerminal(&mem); err != nil {
-		return err
 	}
 
 	m.Tap(emu.A, 3, 7)
@@ -86,7 +87,8 @@ func helpBill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 // finishBillRescue continues after Pokemon-form Bill has entered the Cell
 // Separator. The PC is a hidden event at (1,4), so it cannot be surfaced by
-// the ordinary map-object talk menu. The positive postcondition is the S.S.
+// the ordinary map-object talk menu. The positive postcondition is the rescue's
+// durable marker (billRescueComplete): EVENT_GOT_SS_TICKET set, or the S.S.
 // Ticket in the bag.
 func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if m.Peek8(sym.CurMap) != billsHouseMap {
@@ -95,11 +97,8 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
+	if billRescueComplete(&mem) {
 		return nil
-	}
-	if err := billRescueTerminal(&mem); err != nil {
-		return err
 	}
 
 	pcStand := Destination{Map: billsHouseMap, X: billsPCX, Y: billsPCStandY}
@@ -130,8 +129,8 @@ func finishBillRescue(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: Bill: collect S.S. Ticket: %w", err)
 	}
 	state.Snapshot(m, &mem)
-	if _, count := bagEntry(&mem, ssTicketItem); count == 0 {
-		return fmt.Errorf("skill: Bill: conversation finished but S.S. Ticket is not in the bag")
+	if !billRescueComplete(&mem) {
+		return fmt.Errorf("skill: Bill: conversation finished but the rescue is not complete (no S.S. Ticket in the bag and EVENT_GOT_SS_TICKET not set)")
 	}
 	return nil
 }
