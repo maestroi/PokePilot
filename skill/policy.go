@@ -24,8 +24,11 @@ func statAwareMoveWithStrategy(romData []byte, strategy game.BattleCombatStrateg
 		var bestEval game.BattleMoveEvaluation
 		haveEval := false
 		fallbackAttack := -1
-		setupMove := -1
-		var setupEval game.BattleMoveEvaluation
+		type setupCandidate struct {
+			slot int
+			eval game.BattleMoveEvaluation
+		}
+		var setups []setupCandidate
 		residualDamage := -1
 		residualQuality := -1
 		lowestPP := -1
@@ -64,17 +67,31 @@ func statAwareMoveWithStrategy(romData []byte, strategy game.BattleCombatStrateg
 					residualDamage, residualQuality = i, eval.PolicyPriority
 				}
 			case game.BattleMoveRoleSetup:
-				if setupMove < 0 || eval.PolicyPriority > setupEval.PolicyPriority {
-					setupMove, setupEval = i, eval
-				}
+				// Keep every setup candidate. PreferSetupMove is per-move: a
+				// higher-priority screen that is already up must not hide a
+				// lower-priority stage drop the generation still wants
+				// (Gen2 Bugsy: Reflect then Growl before Tackle).
+				setups = append(setups, setupCandidate{slot: i, eval: eval})
 			}
 		}
 
-		if bestAttack >= 0 && setupMove >= 0 && strategy.PreferSetupMove(b, setupEval, bestEval) {
-			if zbatDebug {
-				fmt.Printf("zbat policy=setup slot=%d reason=generation-strategy\n", setupMove)
+		if bestAttack >= 0 {
+			setupMove := -1
+			var setupEval game.BattleMoveEvaluation
+			for _, candidate := range setups {
+				if !strategy.PreferSetupMove(b, candidate.eval, bestEval) {
+					continue
+				}
+				if setupMove < 0 || candidate.eval.PolicyPriority > setupEval.PolicyPriority {
+					setupMove, setupEval = candidate.slot, candidate.eval
+				}
 			}
-			return setupMove
+			if setupMove >= 0 {
+				if zbatDebug {
+					fmt.Printf("zbat policy=setup slot=%d reason=generation-strategy\n", setupMove)
+				}
+				return setupMove
+			}
 		}
 		if bestAttack >= 0 {
 			if zbatDebug {

@@ -7,14 +7,15 @@ import (
 )
 
 type fakeGen2CombatStrategy struct {
-	scores       map[uint16]int64
-	roles        map[uint16]game.BattleMoveRole
-	priorities   map[uint16]int
-	preferSetup  bool
-	seenMoves    []uint16
-	lastAttacker game.BattleCombatant
-	lastDefender game.BattleCombatant
-	wideTypeSeen bool
+	scores            map[uint16]int64
+	roles             map[uint16]game.BattleMoveRole
+	priorities        map[uint16]int
+	preferSetup       bool
+	preferSetupByMove map[uint16]bool
+	seenMoves         []uint16
+	lastAttacker      game.BattleCombatant
+	lastDefender      game.BattleCombatant
+	wideTypeSeen      bool
 }
 
 func (s *fakeGen2CombatStrategy) EvaluateCombatMove(
@@ -51,8 +52,13 @@ func (s *fakeGen2CombatStrategy) IncomingTypeRisk(
 
 func (s *fakeGen2CombatStrategy) PreferSetupMove(
 	_ game.BattleState,
-	_, _ game.BattleMoveEvaluation,
+	setup, _ game.BattleMoveEvaluation,
 ) bool {
+	if s.preferSetupByMove != nil {
+		if prefer, ok := s.preferSetupByMove[setup.NativeMoveID]; ok {
+			return prefer
+		}
+	}
 	return s.preferSetup
 }
 
@@ -118,6 +124,45 @@ func TestStatAwareMoveDelegatesSetupChoiceToGenerationStrategy(t *testing.T) {
 	strategy.preferSetup = false
 	if got := statAwareMoveWithStrategy(nil, strategy)(b); got != 0 {
 		t.Fatalf("move slot = %d, want direct attack slot 0 when setup is declined", got)
+	}
+}
+
+// TestStatAwareMoveUsesSecondarySetupWhenPrimaryDeclined pins the shared move
+// policy invariant exposed by Gen2 Bugsy: once Reflect is up, PreferSetupMove
+// declines that higher-priority screen, but Growl must still be asked about
+// instead of falling straight through to Tackle.
+func TestStatAwareMoveUsesSecondarySetupWhenPrimaryDeclined(t *testing.T) {
+	const (
+		tackle  uint16 = 33
+		growl   uint16 = 45
+		reflect uint16 = 115
+	)
+	strategy := &fakeGen2CombatStrategy{
+		scores: map[uint16]int64{tackle: 350},
+		roles: map[uint16]game.BattleMoveRole{
+			tackle:  game.BattleMoveRoleDirectDamage,
+			growl:   game.BattleMoveRoleSetup,
+			reflect: game.BattleMoveRoleSetup,
+		},
+		priorities: map[uint16]int{
+			reflect: 40,
+			growl:   30,
+		},
+		preferSetupByMove: map[uint16]bool{
+			reflect: false,
+			growl:   true,
+		},
+	}
+	b := game.BattleState{
+		ActiveHP: 89, ActiveMaxHP: 89,
+		Moves: [4]game.BattleMove{
+			{ID: uint8(tackle), PP: 35},
+			{ID: uint8(growl), PP: 40},
+			{ID: uint8(reflect), PP: 20},
+		},
+	}
+	if got := statAwareMoveWithStrategy(nil, strategy)(b); got != 1 {
+		t.Fatalf("move slot = %d, want Growl slot 1 after Reflect is declined", got)
 	}
 }
 

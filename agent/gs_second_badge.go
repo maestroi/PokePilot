@@ -157,7 +157,19 @@ func gsSecondBadgeGoTo(
 			world := profile.DecodeOverworld(m)
 			label := fmt.Sprintf("gen2:second-badge-route:%04x", world.NativeMapID)
 			if settleErr := driveGSSecondBadgeInterruption(m, profile, label); settleErr != nil {
-				return settleErr
+				// Wild blackouts while routing to a grind/story tile are the same
+				// ordinary Gen2 outcome as grind-step wipes: heal and keep the
+				// route memory instead of terminal required-win combat_defeat
+				// (triage:8d410d0d86c31faa / gen2:second-badge-route:0320).
+				resume, afterBlackout := gsResumeGrindAfterInterruption(settleErr)
+				if !resume {
+					return settleErr
+				}
+				if afterBlackout {
+					if healErr := gsEnsurePartyRecovered(m, romData, profile); healErr != nil {
+						return fmt.Errorf("recover after wild blackout on %s: %w", label, healErr)
+					}
+				}
 			}
 		default:
 			return err
@@ -191,7 +203,15 @@ func gsSecondBadgeFaceFrom(
 			return fmt.Errorf("face (%d,%d): %w", tx, ty, err)
 		}
 		if settleErr := driveGSSecondBadgeInterruption(m, profile, encounter); settleErr != nil {
-			return settleErr
+			resume, afterBlackout := gsResumeGrindAfterInterruption(settleErr)
+			if !resume {
+				return settleErr
+			}
+			if afterBlackout {
+				if healErr := gsEnsurePartyRecovered(m, romData, profile); healErr != nil {
+					return fmt.Errorf("recover after wild blackout facing (%d,%d): %w", tx, ty, healErr)
+				}
+			}
 		}
 	}
 	return fmt.Errorf("%w: facing (%d,%d) did not settle after %d interruptions", errGSSecondBadgeStalled, tx, ty, gsSecondBadgeRouteAttempts)
