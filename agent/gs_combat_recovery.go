@@ -7,7 +7,10 @@ import (
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
-const gsCombatRecoveryMaxLevel = 60
+const (
+	gsCombatRecoveryMaxLevel         = 60
+	gsCombatRecoverySessionLevelGain = 2
+)
 
 // gsProgressionCombatRecovery offers a *real*, adapter-executable preparation
 // action when the generic combat-loss gate has withheld a story fight. Gold
@@ -77,6 +80,13 @@ func gsCombatRecoveryLeadTarget(obs Observation, failure Failure) int {
 	}
 	if target <= current {
 		return 0
+	}
+	// The same lead grind is proven over a short two-level Burned Tower
+	// preparation, not an unbounded five-to-ten-level atomic objective.
+	// Split a larger quantified campaign into verified rungs so the
+	// objective watchdog and restart checkpoints remain useful.
+	if target > current+gsCombatRecoverySessionLevelGain {
+		target = current + gsCombatRecoverySessionLevelGain
 	}
 	if target > gsCombatRecoveryMaxLevel {
 		target = gsCombatRecoveryMaxLevel
