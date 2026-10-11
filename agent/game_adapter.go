@@ -25,6 +25,14 @@ type ObjectiveGameAdapter interface {
 	CaptureFailure(Objective, error) error
 }
 
+// QualificationCheckpointCapturer is an optional game-owned extension invoked
+// only after the transaction has passed semantic verification. A capture is
+// diagnostic evidence, not a gameplay action; errors are reported without
+// invalidating a successfully completed objective.
+type QualificationCheckpointCapturer interface {
+	CaptureQualificationCheckpoint(Objective, Observation, Observation) (string, error)
+}
+
 // ExecuteWithAdapter is the game-agnostic objective transaction entrypoint.
 // Callers bind the active game's adapter outside the generic runtime; no
 // emulator, ROM, native map ids, or game-owned skills are needed here.

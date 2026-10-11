@@ -364,6 +364,20 @@ runLoop:
 		res.Outcomes = append(res.Outcomes, objectiveResult)
 		res.OutcomeTimings = append(res.OutcomeTimings, settledTiming)
 		res.Completed = append(res.Completed, obj)
+		if capture, ok := objectiveAdapter.(QualificationCheckpointCapturer); ok {
+			path, captureErr := capture.CaptureQualificationCheckpoint(obj, before, last)
+			if captureErr != nil {
+				// A broken private corpus mount must be visible but must not turn
+				// a successful, committed story objective into a gameplay failure.
+				logWriter := budget.Log
+				if logWriter == nil {
+					logWriter = os.Stderr
+				}
+				fmt.Fprintf(logWriter, "qualification checkpoint capture failed: %v\n", captureErr)
+			} else if path != "" && budget.Log != nil {
+				fmt.Fprintf(budget.Log, "qualification checkpoint captured: %s\n", path)
+			}
+		}
 		engine.failures.clear(obj)
 		legBoundary, droppedTail := engine.planning.success(fromPlan, obj)
 		if legBoundary && budget.Log != nil {

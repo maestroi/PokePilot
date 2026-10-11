@@ -340,8 +340,33 @@ one of his three puzzle boulders is sufficient.
 
 ### Private fixture
 
-For Gold, save a **real playable checkpoint** after Jasmine has returned to
-Olivine Gym but **before HM04 Strength** is collected:
+**Automatic capture is now the preferred source.** When a normal Gold/Silver
+runner successfully executes the Jasmine medicine objective, the game-owned
+qualification hook writes the first verified, settled `SaveStateChecked` into
+the private corpus **immediately after that objective**. It is never replaced
+by later runs. `source.json` records the run ID, verified progress objective,
+frame, SHA-1 of the ROM and SHA-256 of the checked state (never ROM bytes).
+
+Set `POKEPILOT_QUALIFICATION_CORPUS` on the runner to a private writable
+directory that the ROM-qualification runner can also read. The Swarm runner
+service now mounts the host directory from
+`${POKEPILOT_QUALIFICATION_CORPUS:-/var/lib/pokepilot/qualification}` at
+`/var/lib/pokepilot/qualification`; the self-hosted workflow defaults to the
+same host path. For multi-node Swarm **this must be shared storage or both
+processes must be pinned to the same host**. A container-local volume on one
+node cannot be read by a different qualification runner.
+
+The automatic capture is opt-in for standalone agents (unset env means no
+writes) and on for the configured Swarm runner. Only the exact first successful
+Jasmine cure milestone is eligible: completion event true, HM04 still missing,
+no battle or pending dialogue, and the cartridge on Lighthouse 6F. A snapshot
+merely resumed with those flags does not count as trusted new source evidence.
+On write/mount failure, the run logs a qualification error but does not undo
+successful story progress.
+
+For Gold, the automatically captured **real playable checkpoint** is produced
+after Jasmine has returned to Olivine Gym but **before HM04 Strength** is
+collected:
 
 ```text
 $POKEPILOT_QUALIFICATION_CORPUS/
@@ -354,7 +379,9 @@ $POKEPILOT_QUALIFICATION_CORPUS/
 
 These are ordinary GomeBoy `.state` or `SaveStateChecked` snapshots. Do not
 create them by modifying RAM to grant story flags: the point is to prove the
-actual game route from a trusted prior completion boundary. Ensure the team is
+actual game route from a trusted prior completion boundary. The write is
+atomic and first-writer-wins, preventing a later run or incomplete write
+from replacing the replay baseline. Ensure the team is
 battle-ready and a Surf carrier is available; the replay owns navigation and
 field-move preparation but does **not** train an underleveled team for Chuck.
 
@@ -367,7 +394,12 @@ profile SHA-1 and paths configured with `POKEMON_GOLD_ROM_PATH` and
 The corpus/result variables are shared with the Red qualification runner.
 
 Run through GitHub Actions → **Gen2 Coastal ROM Qualification** → **Run workflow**
-and choose `gold`, `silver` or `both` with `post-cure`. Or run locally:
+and choose `gold`, `silver` or `both` with `post-cure`. After the farm produces `start.state`, this
+manual workflow consumes it directly; no copying from the rotating
+`checkpoints/` ring is necessary. To prepare the very first corpus input,
+start a normal Gold/Silver run targeting the experimental Gen 2 frontier and
+let it complete the medicine objective. The workflow deliberately fails if no
+qualifying state has yet been produced. Or run locally:
 
 ```sh
 POKEPILOT_GS_COASTAL_QUAL=1 \

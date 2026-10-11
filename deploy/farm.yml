@@ -214,6 +214,10 @@ services:
       # play; POKEMON_RED_ROM names the one non-farm mode boots from.
       POKEPILOT_ROM_DIR: /rom
       POKEMON_RED_ROM: /rom/pokemon_red.gb
+      # Write the first verified post-cure Gold/Silver checkpoint into the
+      # private corpus. The ROM-qualification runner must see this same host
+      # path (or a shared filesystem), not a different Swarm node's local disk.
+      POKEPILOT_QUALIFICATION_CORPUS: /var/lib/pokepilot/qualification
       # Optional S3-compatible artifact storage. Set the tuple to point at
       # RustFS/MinIO/S3; with it configured, run.gbrun is uploaded directly
       # and FinishReport carries only bucket/key/size/hash metadata.
@@ -291,6 +295,9 @@ services:
       POKEPILOT_DECISION_TIMEOUT: ${POKEPILOT_DECISION_TIMEOUT:-}
     volumes:
       - ${POKEPILOT_ROM_DIR}:/rom:ro
+      # Only private qualification input: never mount this into public UIs,
+      # replay, or issue services; use shared storage for multi-node Swarm.
+      - ${POKEPILOT_QUALIFICATION_CORPUS:-/var/lib/pokepilot/qualification}:/var/lib/pokepilot/qualification
     deploy:
       replicas: 2
       # 1G is a fence, not the steady-state budget. A healthy runner is 10-50MB;
