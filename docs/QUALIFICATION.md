@@ -313,3 +313,97 @@ controllable overworld beside the live sprite occupying the destination.
 The short suite independently checks interruptions during NPC waits and
 rejects adjacent arrival without live occupancy, across maps, during battle,
 or while uncontrollable. No save-state or ROM bytes are committed.
+
+## Gold/Silver coastal checkpoint qualification
+
+The Red `pokequal` catalog remains Red-specific. Gold/Silver's fifth/sixth badge
+integration has a separate opt-in, **ROM-backed** regression:
+`TestGSCoastalROMCheckpointReplay` in `agent` and the manual self-hosted
+workflow `.github/workflows/gen2-coastal-qualification.yml`.
+
+The replay starts at a real **post-SecretPotion/Jasmine-cure** checkpoint and
+executes the same production objective adapter transactions the game runner uses:
+
+1. Claim HM04 Strength at Olivine Café (durable event required).
+2. Travel across Route 40/41 to Chuck, observe a real native **Strength boulder
+   move** in Cianwood Gym, win Storm Badge (badge bit 5).
+3. Claim HM02 Fly from Chuck's moving wife (durable event required).
+4. Return from Cianwood to Olivine and win Jasmine's Mineral Badge (badge bit 4).
+
+Each step starts with an incomplete goal and requires a settled, controllable
+overworld, a semantic postcondition, and the correct destination map. The
+emulator is closed/reopened and its **checked save state is reloaded after
+every milestone**, then the progress fact must still hold. The final observation
+must contain Storm, Mineral, and `gs_supported_frontier`. The gym test does
+not count Chuck's scripted boulder throw as a Strength push: only movement of
+one of his three puzzle boulders is sufficient.
+
+### Private fixture
+
+For Gold, save a **real playable checkpoint** after Jasmine has returned to
+Olivine Gym but **before HM04 Strength** is collected:
+
+```text
+$POKEPILOT_QUALIFICATION_CORPUS/
+  gs-coastal/
+    gold/
+      post-cure/start.state
+    silver/
+      post-cure/start.state
+```
+
+These are ordinary GomeBoy `.state` or `SaveStateChecked` snapshots. Do not
+create them by modifying RAM to grant story flags: the point is to prove the
+actual game route from a trusted prior completion boundary. Ensure the team is
+battle-ready and a Surf carrier is available; the replay owns navigation and
+field-move preparation but does **not** train an underleveled team for Chuck.
+
+The default workflow is **manual** because the initial private states cannot
+be generated in public CI and must never be silently skipped. The self-hosted
+`pokepilot-rom` runner needs retail Gold/Silver ROMs matching the pinned
+profile SHA-1 and paths configured with `POKEMON_GOLD_ROM_PATH` and
+`POKEMON_SILVER_ROM_PATH` repository variables (or files under
+`~/.config/pokepilot/pokemon_gold.gbc` and `pokemon_silver.gbc`).
+The corpus/result variables are shared with the Red qualification runner.
+
+Run through GitHub Actions → **Gen2 Coastal ROM Qualification** → **Run workflow**
+and choose `gold`, `silver` or `both` with `post-cure`. Or run locally:
+
+```sh
+POKEPILOT_GS_COASTAL_QUAL=1 \
+POKEPILOT_GS_COASTAL_GAME=gold \
+POKEPILOT_GS_COASTAL_ROM=/private/pokemon_gold.gbc \
+POKEPILOT_GS_COASTAL_START=/private/qualification/gs-coastal/gold/post-cure/start.state \
+POKEPILOT_GS_COASTAL_OUT=/private/results/gs-coastal-gold \
+go test -count=1 -timeout=90m ./agent -run '^TestGSCoastalROMCheckpointReplay$' -v
+```
+
+A failure is not a skip: once qualification is opted into, absent/invalid ROM
+bytes, missing/corrupt checkpoint, incorrect initial story state, unmoved gym
+boulders, incomplete flags, wrong map, unresolved battle and failed checkpoint
+reload all fail the job. No ROM or save-state bytes are committed or uploaded.
+
+### Fast failure reproduction
+
+The runner keeps `01-strength.state`, `02-storm.state` and
+`03-fly.state` (plus `failure.state` if an objective fails) on its local
+results disk. Copy an earlier successful state into a private corpus subfolder
+and select its matching `from` value to avoid replaying completed segments:
+
+| `from` | start state's required milestone | first objective replayed |
+| --- | --- | --- |
+| `post-cure` | Jasmine returned to Gym | HM04 Strength |
+| `post-strength` | HM04 Strength acquired | Chuck / Storm |
+| `post-storm` | Storm Badge earned | HM02 Fly |
+| `post-fly` | HM02 Fly acquired | Jasmine / Mineral |
+
+Use `gs-coastal/<game>/<from>/start.state` and select that `from` in the
+workflow (or set `POKEPILOT_GS_COASTAL_FROM` locally). Shortened replays prove
+only the **remaining** stages; a full `post-cure` pass is still required for
+the end-to-end coastal frontier. The workflow's uploaded safe artifact includes
+only logs and semantic JSON; actual checked states remain on the ROM runner.
+
+**Qualification status:** code and workflow availability are not proof that a
+retail Gold/Silver run has passed. Treat the frontier as experimentally
+implemented until this ROM-backed workflow completes successfully on real
+cartridges and preserved checkpoints.
