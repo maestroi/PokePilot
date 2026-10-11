@@ -99,3 +99,15 @@ func TestObjectiveFromFailurePreservesIntent(t *testing.T) {
 		t.Fatalf("objective=%+v, want kind=catch intent=dex-safari", got)
 	}
 }
+
+func TestReplayRoutePriorityFollowsRunPlayStyle(t *testing.T) {
+	if got := replayRoutePriority("speedrun"); got != agent.RoutePriorityFastest {
+		t.Fatalf("speedrun replay priority = %v, want fastest", got)
+	}
+	if got := replayRoutePriority("adventure"); got != agent.RoutePriorityConservative {
+		t.Fatalf("adventure replay priority = %v, want conservative", got)
+	}
+	if got := replayRoutePriority(""); got != agent.RoutePriorityConservative {
+		t.Fatalf("unknown replay priority = %v, want conservative", got)
+	}
+}

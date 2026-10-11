@@ -229,7 +229,7 @@ func finishRunWithRecording(m *emu.Emu, client *farm.Client, spec farm.Spec, rea
 			log.Printf("farm: %s: evicted lower-priority artifacts %v to preserve %s", report.RunID, evicted, failureArtifact.Name)
 		}
 	}
-	appendFailureReproArtifacts(&report, failures)
+	appendFailureReproArtifacts(&report, failures, spec.PlayStyle)
 
 	if m != nil {
 		if timelineArtifact, err := drainMediaTimelineArtifact(spec, reason, m.FrameCount(), report.Artifacts); err != nil {

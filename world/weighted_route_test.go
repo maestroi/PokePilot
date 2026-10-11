@@ -403,3 +403,74 @@ func TestWeightedRoutePrefersDirectWarpOverSurfDetour(t *testing.T) {
 		t.Fatalf("weighted plan = %+v, want direct warp 1->4", result.Steps)
 	}
 }
+
+func TestWeightedRoutePrefersFrontierThatLeadsTowardDestination(t *testing.T) {
+	// Two semantic frontiers leave map 1. The near one (map 2) is a dead end;
+	// the far one (map 4) continues to the destination. Reach cost alone would
+	// pick the dead end and strand the walker there (Cinnabar's Route 20 shore
+	// vs its Route 21 shore on a Route 22 journey).
+	nearDead := Edge{Kind: EdgeWarp, From: 1, To: 2, WarpX: 1, WarpY: 0}
+	farGood := Edge{Kind: EdgeWarp, From: 1, To: 4, WarpX: 18, WarpY: 0}
+	onward := Edge{Kind: EdgeWarp, From: 4, To: 3, WarpX: 1, WarpY: 0}
+	provider := weightedRouteTestProvider{width: 20, height: 4}
+	g := &Graph{
+		Edges: map[uint8][]Edge{
+			1: {nearDead, farGood},
+			2: nil,
+			4: {onward},
+			3: nil,
+		},
+		componentAware: true,
+		comps: map[uint8][][]int{
+			1: {{1, 1}},
+			2: {{1}},
+			3: {{1}},
+			4: {{1, 2}},
+		},
+		exitComps: map[Edge][]int{
+			nearDead: {1},
+			farGood:  {1},
+			onward:   {2},
+		},
+		entryComps: map[Edge][]int{
+			nearDead: {1},
+			farGood:  {1},
+			onward:   {1},
+		},
+		warps: map[uint8][]worldmodel.Warp{
+			1: {
+				{X: 1, Y: 0, DestWarpID: 0, DestMap: 2},
+				{X: 18, Y: 0, DestWarpID: 0, DestMap: 4},
+			},
+			2: {{X: 0, Y: 0, DestWarpID: 0, DestMap: 1}},
+			4: {
+				{X: 0, Y: 0, DestWarpID: 1, DestMap: 1},
+				{X: 1, Y: 0, DestWarpID: 0, DestMap: 3},
+			},
+			3: {{X: 0, Y: 0, DestWarpID: 1, DestMap: 4}},
+		},
+		tiles: map[uint8]dim{
+			1: {w: 20, h: 4},
+			2: {w: 20, h: 4},
+			3: {w: 20, h: 4},
+			4: {w: 20, h: 4},
+		},
+		provider: provider,
+	}
+	prereqs := RoutePrerequisites{
+		Transitions: map[Edge]gameruntime.Transition{
+			nearDead: {ID: "fake:near-dead-frontier", PivotOnly: true},
+			farGood:  {ID: "fake:far-good-frontier", PivotOnly: true},
+		},
+	}
+
+	result, err := FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, 1, 3, 0, 0, -1, -1, nil, prereqs, DefaultRouteCostPolicy(),
+	)
+	if !errors.Is(err, ErrRouteReplanRequired) {
+		t.Fatalf("weighted error = %v, want ErrRouteReplanRequired", err)
+	}
+	if !result.Exact || len(result.Steps) != 1 || result.Steps[0].Edge != farGood {
+		t.Fatalf("weighted plan = %+v, want the frontier toward map 3", result.Steps)
+	}
+}

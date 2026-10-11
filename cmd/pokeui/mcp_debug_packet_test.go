@@ -46,7 +46,7 @@ func TestPrepareDebugBuildsBoundedDeterministicPacket(t *testing.T) {
 		Count: 1, FirstRound: 7, LastRound: 7, Key: key, Fingerprint: fingerprint,
 		Identity: &identity, Build: "deadbeef", Outcome: identity.Outcome, Cause: identity.Cause,
 		Checkpoint: checkpoint,
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestPrepareDebugScopesEvidenceToFailingAttempt(t *testing.T) {
 		Count: 1, FirstRound: 66, LastRound: 66, Key: key, Fingerprint: fingerprint,
 		Identity: &identity, Build: "deadbeef", Outcome: identity.Outcome, Cause: identity.Cause,
 		Checkpoint: checkpoint,
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

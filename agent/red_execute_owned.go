@@ -46,7 +46,9 @@ func executeObjectiveResult(m *emu.Emu, romData []byte, o Objective) (ObjectiveR
 	return executeObjective(m, romData, o)
 }
 
-func executeObjectiveResultWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
+// ExecuteWithRoutePriority is Execute under the travel policy a live run
+// used, so a deterministic replay walks the same route the run did.
+func ExecuteWithRoutePriority(m *emu.Emu, romData []byte, o Objective, priority RoutePriority) (ObjectiveResult, error) {
 	adapter, err := objectiveAdapterForROM(m, romData, priority)
 	if err != nil {
 		return ObjectiveResult{Objective: o, Outcome: OutcomeBlocked}, err
