@@ -127,13 +127,13 @@ func TestGSVerifyQualificationProvenanceRejectsStaleAndMismatchedInputs(t *testi
 	state := []byte("checked-private-state")
 	digest := sha256.Sum256(state)
 	source := gsQualificationProvenance{
-		Schema: 1,
-		Game: "gold",
-		Objective: string(gsprofile.ProgressJasmineReturnedToGym),
-		ROM_SHA1: "d8b8a3600a465308c9953dfa04f0081c05bdcb94",
+		Schema:      1,
+		Game:        "gold",
+		Objective:   string(gsprofile.ProgressJasmineReturnedToGym),
+		ROM_SHA1:    "d8b8a3600a465308c9953dfa04f0081c05bdcb94",
 		StateSHA256: hex.EncodeToString(digest[:]),
-		Frame: 3728,
-		RunID: "run-qual",
+		Frame:       3728,
+		RunID:       "run-qual",
 	}
 	test := func(name string, mutate func(*gsQualificationProvenance), variant, sha1 string, data []byte, wantOK bool) {
 		t.Helper()
