@@ -314,6 +314,27 @@ The short suite independently checks interruptions during NPC waits and
 rejects adjacent arrival without live occupancy, across maps, during battle,
 or while uncontrollable. No save-state or ROM bytes are committed.
 
+## Gen2 combat-loss preparation on the way to the coastal frontier
+
+Gold/Silver's deterministic story is not just a chain of gym flags. Real Gold
+farm attempt 54 (`run-2co88t5c8hl0gokvsp7n8nvf`, issue #2550) failed Morty
+and the portable combat gate correctly refused to repeat the *same losing
+party*. Previously the Gen2 adapter could execute only starter and progress
+objectives, leaving no usable recovery action.
+
+Gold/Silver now also execute bounded **heal** and lead **train** actions.
+A typed combat failure on the currently unfinished story objective opens a
+training rung sized to the recorded party-readiness deficit, using the already
+owned Slowpoke Well B1F or Route 37 encounter route. Each rung heals before and
+after training; eggs are excluded from HP postconditions. The normal combat
+gate remains closed until the observed party actually reaches its readiness
+target. This is generic recovery capability for the known Gen2 frontier—not a
+guarantee that Morty, Chuck, or Jasmine is winnable with every party.
+
+The first passing post-cure checkpoint and six-badge ROM replay remain the
+qualification gates described below. Do not treat ROM-free regression success
+or the availability of recovery objectives as evidence of six badges.
+
 ## Gold/Silver coastal checkpoint qualification
 
 The Red `pokequal` catalog remains Red-specific. Gold/Silver's fifth/sixth badge
