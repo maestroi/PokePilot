@@ -2,10 +2,12 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	"github.com/maestroi/pokepilot/skill"
 )
 
 func gsMortyRecoveryObservation(id game.GameID) Observation {
@@ -199,5 +201,34 @@ func TestGSRecoveryHealPostconditionSkipsEggButNotInjuredMon(t *testing.T) {
 	obs.Controllable = false
 	if err := a.VerifyPostcondition(o, Observation{}, obs, ObjectiveResult{}); !errors.Is(err, ErrObjectivePostconditionUnavailable) {
 		t.Fatalf("unsettled heal passed: %v", err)
+	}
+}
+
+// TestGSResumeGrindAfterInterruption pins the Gen2 grind invariant exposed by
+// run-36loaokprjdtw2j8om666lswgf: a lone lead can black out to wild Confuse Ray
+// self-hits. That wipe must heal-and-resume inside the grind session instead of
+// surfacing as terminal required-win combat_defeat on the recovery train.
+func TestGSResumeGrindAfterInterruption(t *testing.T) {
+	wildLoss := skill.RequireBattleWin("combat recovery-grind", game.BattleLost)
+	resume, afterBlackout := gsResumeGrindAfterInterruption(wildLoss)
+	if !resume || !afterBlackout {
+		t.Fatalf("wild blackout resume=%v afterBlackout=%v, want true/true", resume, afterBlackout)
+	}
+
+	trainerLoss := skill.RequireTrainerBattleWin("gym:bugsy", game.BattleLost)
+	resume, afterBlackout = gsResumeGrindAfterInterruption(trainerLoss)
+	if resume || afterBlackout {
+		t.Fatalf("trainer loss resume=%v afterBlackout=%v, want false/false", resume, afterBlackout)
+	}
+
+	draw := skill.RequireBattleWin("combat recovery-grind", game.BattleDraw)
+	resume, afterBlackout = gsResumeGrindAfterInterruption(draw)
+	if !resume || afterBlackout {
+		t.Fatalf("wild draw resume=%v afterBlackout=%v, want true/false", resume, afterBlackout)
+	}
+
+	resume, afterBlackout = gsResumeGrindAfterInterruption(fmt.Errorf("script stall"))
+	if resume || afterBlackout {
+		t.Fatalf("non-battle defect resume=%v afterBlackout=%v, want false/false", resume, afterBlackout)
 	}
 }
