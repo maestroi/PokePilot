@@ -161,6 +161,15 @@ func TestGSCoastalROMCheckpointReplay(t *testing.T) {
 					t.Fatal("Storm checkpoint starts inside the Gym; it does not prove boulder approach")
 				}
 			}
+			if stage.name == "mineral" {
+				cianwood, err := gsOpeningMapID("CIANWOOD_CITY")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if profile.DecodeOverworld(m).NativeMapID != cianwood {
+					t.Fatal("Mineral checkpoint must begin in Cianwood City to qualify the return to Olivine")
+				}
+			}
 			var pushObserved bool
 			var firstBoulders = map[int]game.MapPoint{}
 			if stage.name == "storm" {
