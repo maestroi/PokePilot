@@ -257,3 +257,17 @@ func TestGSResumeGrindAfterInterruption(t *testing.T) {
 		t.Fatalf("non-battle defect resume=%v afterBlackout=%v, want false/false", resume, afterBlackout)
 	}
 }
+
+func TestGSOffersOnlyObjectivesItsControllerCanRun(t *testing.T) {
+	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, id)
+		obs := gsMortyRecoveryObservation(id)
+		obs.Party[0].HP = 20 // generic providers would offer a field POTION
+		obs.Bag = []Item{{Name: "potion", Quantity: 1}}
+		for _, o := range OfferWithProgressionEvidence(obs, NewKnowledge(nil), adapter).Candidates {
+			if err := adapter.Validate(o, obs); err != nil {
+				t.Fatalf("%s: offered unexecutable %s: %v", id, o, err)
+			}
+		}
+	}
+}
