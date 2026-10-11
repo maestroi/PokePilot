@@ -63,6 +63,53 @@ func TestGSCombatLossOffersExecutableTrainWithoutRetryingBlockedMorty(t *testing
 	}
 }
 
+// TestGSFirstBadgeLossPromotesToRetryWithoutCorridor guards the pre-Slowpoke-Well
+// boundary: a first-badge (Violet Gym) loss records a combat-loss gate on the
+// Zephyr objective, but Gen2 owns no proven wild-grind corridor there, so no
+// training can be offered. The generic gate must promote the loss to retry and
+// re-offer the fight after the game's own heal, instead of emptying the menu
+// and dying with "nothing is possible from here"
+// (run-36loaokprjdtw2j8om666lswgf).
+func TestGSFirstBadgeLossPromotesToRetryWithoutCorridor(t *testing.T) {
+	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, id)
+		obs := Observation{
+			GameID: id, PartyCount: 1, Controllable: true,
+			Party: []PartyMon{{Species: "chikorita", Level: 14, HP: 50, MaxHP: 50}},
+			Story: ProgressState{
+				{ID: gsprofile.ProgressStarterReceived, Complete: true},
+				{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
+				{ID: gsprofile.ProgressSproutTowerCleared, Complete: true},
+			},
+		}
+		fight := Objective{Kind: KindProgress, Progress: gsprofile.ProgressZephyrBadgeEarned}
+		known := NewKnowledge(nil)
+		known.Failures[combatLossFailureKey(fight)] = Failure{
+			Objective: fight.String(), Times: 1,
+			ReadinessBaseline: 14 * 4, ReadinessTarget: 76,
+		}
+		obs.Failures = known.FailureList()
+
+		if adapter.CombatRecoveryAvailable(obs) {
+			t.Fatalf("%s: first-badge boundary reported a recovery corridor", id)
+		}
+
+		out := OfferWithProgressionEvidence(obs, known, adapter).Candidates
+		reoffered := false
+		for i := range out {
+			if out[i].Kind == KindProgress && out[i].Progress == fight.Progress {
+				reoffered = true
+			}
+		}
+		if !reoffered {
+			t.Fatalf("%s: first-badge loss left an empty menu, want the fight re-offered: %+v", id, out)
+		}
+		if _, ok := known.Failures[combatLossFailureKey(fight)]; ok {
+			t.Fatalf("%s: combat-loss gate not promoted to retry: %+v", id, known.Failures)
+		}
+	}
+}
+
 func TestGSCombatRecoveryTargetAndProvenHabitat(t *testing.T) {
 	obs := gsMortyRecoveryObservation(gsprofile.GoldGameID)
 	if target := gsCombatRecoveryLeadTarget(obs, Failure{Times: 1, ReadinessTarget: 34*4 + 20}); target != 36 {

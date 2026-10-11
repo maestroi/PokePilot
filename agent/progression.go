@@ -7,6 +7,17 @@ type ProgressionPlanner interface {
 	ProgressionObjectives(Observation) []Objective
 }
 
+// CombatRecoveryProvider reports whether the game owns a proven preparation
+// corridor (an executable wild-grind site) at the current story boundary. A
+// game without one cannot offer training after a combat loss, so the generic
+// combat gate must promote the loss to retry instead of withholding the fight
+// forever (run-36loaokprjdtw2j8om666lswgf: first-badge loss before any corridor
+// is proven). Games that never offer combat recovery do not implement it; the
+// gate then falls back to the sealed-topology escape alone.
+type CombatRecoveryProvider interface {
+	CombatRecoveryAvailable(obs Observation) bool
+}
+
 type progressionObjectiveProvider struct {
 	planner ProgressionPlanner
 }
@@ -78,8 +89,18 @@ func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 		// empty synthetic menu must keep the fight locked — only a sealed
 		// topology (unroutable / route-blockage evidence) plus no remaining
 		// preparation candidate earns the retry promotion.
+		//
+		// A game that owns no proven preparation corridor at this story boundary
+		// is the same dead end from the other side: the fight is withheld, no
+		// training can be offered, and the base menu is empty. The game answers
+		// for its own corridor, so the gate only asks whether one exists
+		// (run-36loaokprjdtw2j8om666lswgf: first-badge loss before Slowpoke Well).
 		sealed := len(obs.Unroutable) > 0 || len(obs.RouteBlockages) > 0
-		if sealed && len(base.Candidates) == 0 &&
+		noRecoveryCorridor := false
+		if provider, ok := p.(CombatRecoveryProvider); ok && provider != nil {
+			noRecoveryCorridor = !provider.CombatRecoveryAvailable(obs)
+		}
+		if (sealed || noRecoveryCorridor) && len(base.Candidates) == 0 &&
 			owesCombatReadiness(known, obs) &&
 			!combatPreparationNeedsCoverage(obs, known) {
 			known.promoteCombatLossesToRetry()
