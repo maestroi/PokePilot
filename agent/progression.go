@@ -18,6 +18,14 @@ type CombatRecoveryProvider interface {
 	CombatRecoveryAvailable(obs Observation) bool
 }
 
+// ObjectiveSupportProvider lets a game whose controller covers only part of
+// the portable objective vocabulary withhold generic offers it cannot execute,
+// instead of the planner spending a decision on a guaranteed validation
+// failure (run-2hib8c1hui0mz2dj8xi6egl81b: Gold offered "use a POTION").
+type ObjectiveSupportProvider interface {
+	SupportsObjective(Objective) bool
+}
+
 type progressionObjectiveProvider struct {
 	planner ProgressionPlanner
 }
@@ -60,6 +68,20 @@ func withoutKnownUnroutableJourneys(out []Objective, unroutable []string) []Obje
 // objective catalogs are projected before generic providers run, so provider
 // policy never has to discover Red maps, gyms, starters, shops or encounters.
 func OfferWithProgressionEvidence(obs Observation, known *Knowledge, p ProgressionPlanner) ObjectiveOffer {
+	offer := offerWithProgressionEvidence(obs, known, p)
+	if support, ok := p.(ObjectiveSupportProvider); ok && support != nil {
+		kept := offer.Candidates[:0:0]
+		for _, o := range offer.Candidates {
+			if support.SupportsObjective(o) {
+				kept = append(kept, o)
+			}
+		}
+		offer.Candidates = kept
+	}
+	return offer
+}
+
+func offerWithProgressionEvidence(obs Observation, known *Knowledge, p ProgressionPlanner) ObjectiveOffer {
 	if requirements, ok := p.(RouteRequirementProvider); ok && requirements != nil {
 		obs = observationWithRouteRequirements(obs, requirements.RouteRequirements(obs))
 	}

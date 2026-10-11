@@ -72,6 +72,11 @@ func gsSupportedProgress(id ProgressID) bool {
 	}
 }
 
+// SupportsObjective withholds offers the Gen2 controller cannot run yet.
+func (a *gsObjectiveAdapter) SupportsObjective(o Objective) bool {
+	return !errors.Is(a.Validate(o, Observation{}), errGSControllerUnavailable)
+}
+
 func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
