@@ -16,9 +16,9 @@ func gsCureProgressObservation(id game.GameID, cure bool) Observation {
 		{ID: gsprofile.ProgressJasmineReturnedToGym, Complete: cure},
 	}
 	return Observation{
-		GameID: id,
+		GameID:       id,
 		Controllable: true,
-		Story: story,
+		Story:        story,
 	}
 }
 
@@ -43,7 +43,14 @@ func TestGSQualificationCaptureOnlyAtFreshVerifiedCureBoundary(t *testing.T) {
 			{"Storm already earned", before, withCureFact(after, gsprofile.ProgressStormBadgeEarned), obj},
 			{"Mineral already earned", before, withCureFact(after, gsprofile.ProgressMineralBadgeEarned), obj},
 			{"unsettled battle", before, func() Observation { v := after; v.InBattle = true; return v }(), obj},
-			{"wrong game", before, func() Observation { v := after; v.GameID = gsprofile.GoldGameID; if id == gsprofile.GoldGameID { v.GameID = gsprofile.SilverGameID }; return v }(), obj},
+			{"wrong game", before, func() Observation {
+				v := after
+				v.GameID = gsprofile.GoldGameID
+				if id == gsprofile.GoldGameID {
+					v.GameID = gsprofile.SilverGameID
+				}
+				return v
+			}(), obj},
 		}
 		for _, tc := range scenarios {
 			if gsPostCureCaptureEligible(tc.obj, tc.before, tc.after) {
