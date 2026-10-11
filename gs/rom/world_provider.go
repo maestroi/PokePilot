@@ -554,6 +554,208 @@ var firstBadgeTopology = []mapSpec{
 			{x: 7, y: 13, dest: "ECRUTEAK_GYM", destWarp: 3},
 		},
 	},
+	// Source: pret/pokegold map-event warps and map-attributes connections.
+	// Coastal routes need explicit entries in the live native grid provider;
+	// the separate full-ROM world catalog is not used by GoToNative.
+	{
+		name: "ROUTE_38_ECRUTEAK_GATE",
+		warps: []warpSpec{
+			{x: 0, y: 4, dest: "ROUTE_38", destWarp: 1},
+			{x: 0, y: 5, dest: "ROUTE_38", destWarp: 2},
+			{x: 9, y: 4, dest: "ECRUTEAK_CITY", destWarp: 14},
+			{x: 9, y: 5, dest: "ECRUTEAK_CITY", destWarp: 15},
+		},
+	},
+	{
+		name: "ROUTE_38",
+		warps: []warpSpec{
+			{x: 35, y: 8, dest: "ROUTE_38_ECRUTEAK_GATE", destWarp: 1},
+			{x: 35, y: 9, dest: "ROUTE_38_ECRUTEAK_GATE", destWarp: 2},
+		},
+		connections: []connectionSpec{
+			{dir: dirWest, dest: "ROUTE_39", offset: 0},
+			{dir: dirEast, dest: "ECRUTEAK_CITY", offset: -5},
+		},
+	},
+	{
+		name: "ROUTE_39",
+		warps: []warpSpec{
+			{x: 1, y: 3, dest: "ROUTE_39_BARN", destWarp: 1},
+			{x: 5, y: 3, dest: "ROUTE_39_FARMHOUSE", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirSouth, dest: "OLIVINE_CITY", offset: -5},
+			{dir: dirEast, dest: "ROUTE_38", offset: 0},
+		},
+	},
+	{
+		name: "OLIVINE_CITY",
+		warps: []warpSpec{
+			{x: 13, y: 21, dest: "OLIVINE_POKECENTER_1F", destWarp: 1},
+			{x: 10, y: 11, dest: "OLIVINE_GYM", destWarp: 1},
+			{x: 25, y: 11, dest: "OLIVINE_TIMS_HOUSE", destWarp: 1},
+			{x: 0, y: 0, dest: "OLIVINE_HOUSE_BETA", destWarp: 1, inert: true},
+			{x: 29, y: 11, dest: "OLIVINE_PUNISHMENT_SPEECH_HOUSE", destWarp: 1},
+			{x: 13, y: 15, dest: "OLIVINE_GOOD_ROD_HOUSE", destWarp: 1},
+			{x: 7, y: 21, dest: "OLIVINE_CAFE", destWarp: 1},
+			{x: 19, y: 17, dest: "OLIVINE_MART", destWarp: 2},
+			{x: 29, y: 27, dest: "OLIVINE_LIGHTHOUSE_1F", destWarp: 1},
+			{x: 19, y: 27, dest: "OLIVINE_PORT_PASSAGE", destWarp: 1},
+			{x: 20, y: 27, dest: "OLIVINE_PORT_PASSAGE", destWarp: 2},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_39", offset: 5},
+			{dir: dirWest, dest: "ROUTE_40", offset: 9},
+		},
+	},
+	{
+		name: "OLIVINE_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "OLIVINE_CITY", destWarp: 1},
+			{x: 4, y: 7, dest: "OLIVINE_CITY", destWarp: 1},
+			{x: 0, y: 7, dest: "POKECENTER_2F", destWarp: 1},
+		},
+	},
+	{
+		name: "OLIVINE_CAFE",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "OLIVINE_CITY", destWarp: 7},
+			{x: 3, y: 7, dest: "OLIVINE_CITY", destWarp: 7},
+		},
+	},
+	{
+		name: "OLIVINE_GYM",
+		warps: []warpSpec{
+			{x: 4, y: 15, dest: "OLIVINE_CITY", destWarp: 2},
+			{x: 5, y: 15, dest: "OLIVINE_CITY", destWarp: 2},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_1F",
+		warps: []warpSpec{
+			{x: 10, y: 17, dest: "OLIVINE_CITY", destWarp: 9},
+			{x: 11, y: 17, dest: "OLIVINE_CITY", destWarp: 9},
+			{x: 3, y: 11, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 1},
+			{x: 16, y: 13, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 3},
+			{x: 17, y: 13, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 4},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_2F",
+		warps: []warpSpec{
+			{x: 3, y: 11, dest: "OLIVINE_LIGHTHOUSE_1F", destWarp: 3},
+			{x: 5, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 2},
+			{x: 16, y: 13, dest: "OLIVINE_LIGHTHOUSE_1F", destWarp: 4},
+			{x: 17, y: 13, dest: "OLIVINE_LIGHTHOUSE_1F", destWarp: 5},
+			{x: 16, y: 11, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 4},
+			{x: 17, y: 11, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 5},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_3F",
+		warps: []warpSpec{
+			{x: 13, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 1},
+			{x: 5, y: 3, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 2},
+			{x: 9, y: 5, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 4},
+			{x: 16, y: 11, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 5},
+			{x: 17, y: 11, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 6},
+			{x: 16, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 5},
+			{x: 17, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 6},
+			{x: 8, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 7},
+			{x: 9, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 8},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_4F",
+		warps: []warpSpec{
+			{x: 13, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 1},
+			{x: 3, y: 5, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 2},
+			{x: 9, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 3},
+			{x: 9, y: 5, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 3},
+			{x: 16, y: 9, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 6},
+			{x: 17, y: 9, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 7},
+			{x: 8, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 8},
+			{x: 9, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 9},
+			{x: 16, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 4},
+			{x: 17, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 5},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_5F",
+		warps: []warpSpec{
+			{x: 9, y: 15, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 1},
+			{x: 3, y: 5, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 2},
+			{x: 9, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 3},
+			{x: 16, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 9},
+			{x: 17, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 10},
+			{x: 16, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 2},
+			{x: 17, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 3},
+		},
+	},
+	{
+		name: "OLIVINE_LIGHTHOUSE_6F",
+		warps: []warpSpec{
+			{x: 9, y: 15, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 1},
+			{x: 16, y: 5, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 6},
+			{x: 17, y: 5, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 7},
+		},
+	},
+	{
+		name: "ROUTE_40",
+		connections: []connectionSpec{
+			{dir: dirSouth, dest: "ROUTE_41", offset: -15},
+			{dir: dirEast, dest: "OLIVINE_CITY", offset: -9},
+		},
+	},
+	{
+		name: "ROUTE_41",
+		warps: []warpSpec{
+			{x: 12, y: 17, dest: "WHIRL_ISLAND_NW", destWarp: 1},
+			{x: 36, y: 19, dest: "WHIRL_ISLAND_NE", destWarp: 1},
+			{x: 12, y: 37, dest: "WHIRL_ISLAND_SW", destWarp: 1},
+			{x: 36, y: 45, dest: "WHIRL_ISLAND_SE", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_40", offset: 15},
+			{dir: dirWest, dest: "CIANWOOD_CITY", offset: 0},
+		},
+	},
+	{
+		name: "CIANWOOD_CITY",
+		warps: []warpSpec{
+			{x: 17, y: 41, dest: "MANIAS_HOUSE", destWarp: 1},
+			{x: 8, y: 43, dest: "CIANWOOD_GYM", destWarp: 1},
+			{x: 23, y: 43, dest: "CIANWOOD_POKECENTER_1F", destWarp: 1},
+			{x: 15, y: 47, dest: "CIANWOOD_PHARMACY", destWarp: 1},
+			{x: 9, y: 31, dest: "CIANWOOD_PHOTO_STUDIO", destWarp: 1},
+			{x: 15, y: 37, dest: "CIANWOOD_LUGIA_SPEECH_HOUSE", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirEast, dest: "ROUTE_41", offset: 0},
+		},
+	},
+	{
+		name: "CIANWOOD_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "CIANWOOD_CITY", destWarp: 3},
+			{x: 4, y: 7, dest: "CIANWOOD_CITY", destWarp: 3},
+			{x: 0, y: 7, dest: "POKECENTER_2F", destWarp: 1},
+		},
+	},
+	{
+		name: "CIANWOOD_PHARMACY",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "CIANWOOD_CITY", destWarp: 4},
+			{x: 3, y: 7, dest: "CIANWOOD_CITY", destWarp: 4},
+		},
+	},
+	{
+		name: "CIANWOOD_GYM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "CIANWOOD_CITY", destWarp: 2},
+			{x: 5, y: 17, dest: "CIANWOOD_CITY", destWarp: 2},
+		},
+	},
 }
 
 type firstBadgeWorldProvider struct {
