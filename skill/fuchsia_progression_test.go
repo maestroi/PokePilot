@@ -12,6 +12,8 @@ import (
 func TestFuchsiaProgressionAvailable(t *testing.T) {
 	for _, mapID := range []uint8{
 		mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
+		// Lavender approach corridor from the Cerulean side (post-Flute resume).
+		route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
@@ -91,6 +93,19 @@ func TestFuchsiaGymRegistration(t *testing.T) {
 	d, ok := Place(g.Place)
 	if !ok || d.Map != fuchsiaGymMap || d.X != 4 || d.Y != 11 {
 		t.Fatalf("Koga approach place = %+v,%v, want map %#02x at (4,11)", d, ok, fuchsiaGymMap)
+	}
+}
+
+func TestFuchsiaApproachNeedsStagingHeal(t *testing.T) {
+	for _, mapID := range []uint8{route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap} {
+		if !fuchsiaApproachNeedsStagingHeal(mapID) {
+			t.Fatalf("map %#02x must stage-heal before the Fuchsia approach", mapID)
+		}
+	}
+	for _, mapID := range []uint8{lavenderTownMap, vermilionCity, fuchsiaCityMap, 0x00} {
+		if fuchsiaApproachNeedsStagingHeal(mapID) {
+			t.Fatalf("map %#02x must not require Rock Tunnel staging heal", mapID)
+		}
 	}
 }
 
