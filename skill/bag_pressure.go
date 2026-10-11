@@ -142,7 +142,7 @@ func sellNuggetsForBagSpace(m *emu.Emu, romData []byte, policy MovePolicy) (bool
 		return false, err
 	}
 	err = runInventoryDetour(m, romData, policy, func() error {
-		dest := Destination{Map: mart.mapID, X: 2, Y: 5}
+		dest := Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}
 		if _, err := TravelFlee(m, romData, dest, policy, inventoryRecoveryBattles); err != nil {
 			return fmt.Errorf("skill: bag pressure: reach %s to sell NUGGET: %w", mart.name, err)
 		}
