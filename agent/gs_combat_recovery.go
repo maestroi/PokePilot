@@ -116,7 +116,7 @@ func executeGSCombatRecoveryTrain(m *emu.Emu, romData []byte, o Objective) error
 	if len(obs.Party) == 0 || obs.Party[0].IsEgg {
 		return fmt.Errorf("%w: Gen2 combat recovery requires a non-egg lead", errGSSecondBadgeUnexpectedState)
 	}
-	if int(obs.Party[0].Level) >= o.Level {
+	if obs.Party[0].Level >= o.Level {
 		return nil
 	}
 	mapName, x, y, err := gsRecoveryGrindSite(obs)
