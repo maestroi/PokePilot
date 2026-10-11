@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
-	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
@@ -53,7 +52,7 @@ func gsProgressionCombatRecovery(obs Observation, progress Objective) []Objectiv
 	return []Objective{{
 		Kind:  KindTrain,
 		Slot:  0,
-		Level: target,
+		Level: uint8(target),
 		Note:  fmt.Sprintf("(Gold/Silver recovery after %d loss(es) at %s: train the lead in a proven wild habitat before retrying)", loss.Times, progress),
 	}}
 }
@@ -123,7 +122,7 @@ func executeGSCombatRecoveryTrain(m *emu.Emu, romData []byte, o Objective) error
 	if err != nil {
 		return err
 	}
-	return gsEnsureLeadLevel(m, romData, profile, "combat recovery", o.Level, mapName, x, y)
+	return gsEnsureLeadLevel(m, romData, profile, "combat recovery", int(o.Level), mapName, x, y)
 }
 
 func executeGSCombatRecoveryHeal(m *emu.Emu, romData []byte) error {
@@ -161,6 +160,3 @@ func verifyGSCombatRecoveryHeal(obs Observation) error {
 	return nil
 }
 
-// Keep the compiler's game-owned semantic dependency visible: the portable
-// adapter may only receive game.ProgressID, never Gold-specific raw event ids.
-var _ game.ProgressID = gsprofile.ProgressFogBadgeEarned
