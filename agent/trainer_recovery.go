@@ -94,6 +94,13 @@ type combatPreparationState struct {
 func partyCombatReadiness(obs Observation) int {
 	var top [3]int
 	for _, mon := range obs.Party {
+		// Eggs are not combatants. Counting their stored hatch level (often 5)
+		// lets a lone lead look "ready" for a quantified combat retry while the
+		// actual battler is still under the campaign target
+		// (run-36loaokprjdtw2j8om666lswgf: L29 Bayleef + egg == readiness 126).
+		if mon.IsEgg || mon.Level == 0 {
+			continue
+		}
 		level := int(mon.Level)
 		switch {
 		case level > top[0]:
@@ -137,7 +144,13 @@ func stampCombatPreparation(f *Failure, obs Observation) {
 		f.ReadinessBaseline, f.ReadinessTarget = 0, 0
 		return
 	}
-	partyCount := len(obs.Party)
+	partyCount := 0
+	for _, mon := range obs.Party {
+		if mon.IsEgg || mon.Level == 0 {
+			continue
+		}
+		partyCount++
+	}
 	if partyCount == 0 {
 		partyCount = obs.PartyCount
 	}

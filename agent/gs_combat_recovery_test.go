@@ -136,6 +136,31 @@ func TestGSCombatRecoveryTargetAndProvenHabitat(t *testing.T) {
 	}
 }
 
+// TestPartyCombatReadinessIgnoresEggs pins the quantified combat-prep invariant
+// from run-36loaokprjdtw2j8om666lswgf: an egg's stored level must not pad a
+// lone lead up to a readiness target and release a Bugsy retry early.
+func TestPartyCombatReadinessIgnoresEggs(t *testing.T) {
+	obs := Observation{
+		Party: []PartyMon{
+			{Species: "bayleef", Level: 29, HP: 89, MaxHP: 89},
+			{Species: "egg", Level: 5, IsEgg: true},
+		},
+	}
+	if got := partyCombatReadiness(obs); got != 29*4 {
+		t.Fatalf("readiness=%d, want %d from the battler only", got, 29*4)
+	}
+	fight := Objective{Kind: KindProgress, Progress: gsprofile.ProgressHiveBadgeEarned}
+	failure := Failure{Objective: fight.String(), Times: 1}
+	stampCombatPreparation(&failure, obs)
+	if failure.ReadinessBaseline != 29*4 {
+		t.Fatalf("baseline=%d, want %d", failure.ReadinessBaseline, 29*4)
+	}
+	// Thin real party (one battler) asks for five levels: 3 + 2 thin-party margin.
+	if want := 29*4 + 5*4; failure.ReadinessTarget != want {
+		t.Fatalf("target=%d, want %d", failure.ReadinessTarget, want)
+	}
+}
+
 func TestGSCombatRecoveryDoesNotCreateSpuriousTraining(t *testing.T) {
 	obs := gsMortyRecoveryObservation(gsprofile.GoldGameID)
 	fight := Objective{Kind: KindProgress, Progress: gsprofile.ProgressFogBadgeEarned}
