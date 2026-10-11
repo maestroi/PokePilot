@@ -84,6 +84,20 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		// back to this Center; retry once from a fresh party before surfacing
 		// the typed trainer-blackout so the Lavender/Fuchsia slice is not
 		// terminal on one accuracy roll.
+		//
+		// Resuming from the Route 10 / Rock Tunnel corridor can still wipe on
+		// the approach itself. Heal at that corridor's Pokemon Center first so
+		// the gauntlet starts full, and if a trainer wipe still blackouts to an
+		// older hub (commonly Vermilion), retry the approach once from the
+		// healed respawn rather than treating the first corridor loss as
+		// terminal.
+		if err := healFuchsiaApproachStaging(m, romData, policy); err != nil {
+			// A staging wipe still respawns with a full party at the last
+			// Pokemon Center; the approach loop below retries from there.
+			if !errors.Is(err, ErrBlackedOut) {
+				return err
+			}
+		}
 		center, ok := Place("fuchsia pokemon center")
 		if !ok {
 			return fmt.Errorf("skill: FuchsiaProgression: fuchsia pokemon center place missing")
@@ -93,14 +107,25 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			return fmt.Errorf("skill: FuchsiaProgression: fuchsia gym place missing")
 		}
 		var outcome state.BattleResult
-		for attempt := 0; attempt < 2; attempt++ {
+		// Three attempts: one spare for an approach/gym-floor blackout, one spare
+		// for a Koga accuracy wipe, then a final try before surfacing combat_defeat.
+		for attempt := 0; attempt < 3; attempt++ {
 			if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
+				if attempt < 2 && errors.Is(err, ErrBlackedOut) {
+					continue
+				}
 				return fmt.Errorf("skill: FuchsiaProgression: reach Fuchsia Pokemon Center: %w", err)
 			}
 			if err := Heal(m); err != nil {
 				return fmt.Errorf("skill: FuchsiaProgression: heal in Fuchsia: %w", err)
 			}
 			if _, err := Travel(m, romData, gym, policy, 30); err != nil {
+				// Gym-floor trainers can wipe the approach party before Koga.
+				// Blackout returns to the Fuchsia Center we just registered;
+				// retry from that healed checkpoint.
+				if attempt < 2 && errors.Is(err, ErrBlackedOut) {
+					continue
+				}
 				return fmt.Errorf("skill: FuchsiaProgression: enter Fuchsia Gym: %w", err)
 			}
 			var err error
@@ -111,7 +136,7 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			if outcome == state.ResultWon {
 				break
 			}
-			if attempt == 1 {
+			if attempt == 2 {
 				return fuchsiaKogaOutcomeErr(outcome)
 			}
 		}
@@ -137,6 +162,42 @@ func FuchsiaProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 			state.DecodeProgress(&mem).Has(state.BadgeSoul), hasBagItem(&mem, hm03SurfItem), hasBagItem(&mem, hm04StrengthItem))
 	}
 	return settleFuchsiaCompleteBoundary(m)
+}
+
+// fuchsiaApproachNeedsStagingHeal reports whether the Soul-badge approach
+// should heal at the Route 10 / Rock Tunnel Pokemon Center before walking the
+// trainer-heavy eastern corridor. Resuming mid-tunnel with residual damage is
+// what turns that corridor into a combat_defeat blackout.
+func fuchsiaApproachNeedsStagingHeal(mapID uint8) bool {
+	switch mapID {
+	case route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap:
+		return true
+	default:
+		return false
+	}
+}
+
+// healFuchsiaApproachStaging heals at the Route 10 / Rock Tunnel Pokemon
+// Center when fuchsiaApproachNeedsStagingHeal is true.
+func healFuchsiaApproachStaging(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !fuchsiaApproachNeedsStagingHeal(mem.U8(sym.CurMap)) {
+		return nil
+	}
+	if mem.U8(sym.CurMap) != rockTunnelPokeCenterMap {
+		center, ok := Place("rock tunnel pokemon center")
+		if !ok {
+			return fmt.Errorf("skill: FuchsiaProgression: rock tunnel pokemon center place missing")
+		}
+		if _, err := TravelFlee(m, romData, center, policy, fuchsiaTravelEngagements); err != nil {
+			return fmt.Errorf("skill: FuchsiaProgression: reach Rock Tunnel Pokemon Center: %w", err)
+		}
+	}
+	if err := Heal(m); err != nil {
+		return fmt.Errorf("skill: FuchsiaProgression: heal before Fuchsia approach: %w", err)
+	}
+	return nil
 }
 
 // fuchsiaKogaOutcomeErr maps the Koga battle outcome to the skill's error. A

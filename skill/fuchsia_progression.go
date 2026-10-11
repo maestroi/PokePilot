@@ -12,6 +12,8 @@ const (
 	route13Map                   uint8 = 0x18
 	route14Map                   uint8 = 0x19
 	route15Map                   uint8 = 0x1A
+	rockTunnelPokeCenterMap      uint8 = 0x51
+	rockTunnel1FMap              uint8 = 0x52
 	route11Gate1FMap             uint8 = 0x54
 	route11Gate2FMap             uint8 = 0x56
 	route12Gate1FMap             uint8 = 0x57
@@ -34,6 +36,7 @@ const (
 	safariZoneWestRestHouseMap   uint8 = 0xDF
 	safariZoneEastRestHouseMap   uint8 = 0xE0
 	safariZoneNorthRestHouseMap  uint8 = 0xE1
+	rockTunnelB1FMap             uint8 = 0xE8
 
 	goldTeethItem        uint8 = 0x40
 	pokeFluteItemFuchsia uint8 = 0x49
@@ -60,6 +63,11 @@ const (
 // Flute handoff a run commonly blackouts, flies, or wanders back to Vermilion
 // (the SS Anne / Thunder Badge hub) and must still be able to enter the
 // eastern corridor rather than fail as an unknown out-of-slice error.
+//
+// Route 10 and Rock Tunnel are the Lavender approach corridor from the
+// Cerulean side. Yellow offers this progress verb without a map-slice gate, so
+// a post-Flute blackout or wander that lands in the tunnel (or its Pokemon
+// Center) must still Travel to Route 12 instead of failing as unknown.
 // Every Safari rest house is included because an interrupted run can be saved
 // there while EVENT_IN_SAFARI_ZONE and the finite step budget are still live.
 func FuchsiaProgressionAvailable(mapID uint8) bool {
@@ -68,6 +76,7 @@ func FuchsiaProgressionAvailable(mapID uint8) bool {
 	}
 	switch mapID {
 	case mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
+		route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
