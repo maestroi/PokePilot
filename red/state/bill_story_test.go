@@ -15,6 +15,19 @@ func TestDecodeStoryFactsProjectsSSTicket(t *testing.T) {
 	}
 }
 
+func TestDecodeStoryFactsProjectsSSTicketFromDurableMarker(t *testing.T) {
+	var mem Mem
+	// A completed Bill rescue: EVENT_GOT_SS_TICKET is set (the ROM sets it
+	// only after the ticket is given) but the ticket is not in the bag —
+	// stored in the PC after the S.S. Anne sailed. The fact must agree with
+	// the Bill skill's positive postcondition, not the bag alone.
+	setTestEvent(&mem, EventGotSSTicket)
+	facts := DecodeStoryFacts(&mem, InventoryState{})
+	if !facts.SSTicketAcquired {
+		t.Fatalf("EVENT_GOT_SS_TICKET set with an empty inventory did not project S.S. Ticket progression: %+v", facts)
+	}
+}
+
 func TestDecodeStoryFactsProjectsHM01(t *testing.T) {
 	var mem Mem
 	without := DecodeStoryFacts(&mem, InventoryState{})
