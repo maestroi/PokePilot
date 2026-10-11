@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maestroi/pokepilot/emu"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
