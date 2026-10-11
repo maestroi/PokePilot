@@ -28,6 +28,18 @@ type standardMartRecoveryTarget struct {
 	mapID uint8
 }
 
+// standardMartCounterTile is the open floor in front of the counter that every
+// standard recovery mart shares: the player stands here and faces the counter
+// at (1,5). Reachability must be measured to this exact tile, not to "any tile
+// in the map" — a mart whose map is reachable only through a component the
+// counter tile does not sit in would be offered by selection and then refused
+// by the travel that stands the player at the counter (run-1db3o6gfh1oep20c9ucky4khvw,
+// "buy 1 POTION" -> Pewter counter unreachable without Surf).
+const (
+	standardMartCounterX = 2
+	standardMartCounterY = 5
+)
+
 var standardMartRecoveryTargets = []standardMartRecoveryTarget{
 	{name: "viridian mart", mapID: 0x2A},
 	{name: "pewter mart", mapID: 0x38},
@@ -90,7 +102,11 @@ func reachableStockMarts(romData []byte, mem *state.Mem) (map[standardMartRecove
 			out[target] = 0
 			continue
 		}
-		route, err := world.FindRoutePlanAtDestinationWithCapabilities(g, from, target.mapID, x, y, -1, -1, nil, prereqs)
+		// Measure reachability to the exact counter tile EnsureItemStock will
+		// stand the player on, not to "any tile in the map". A map-level
+		// arrival can land in a component the counter does not sit in, which
+		// offers a mart the follow-up travel then refuses.
+		route, err := world.FindRoutePlanAtDestinationWithCapabilities(g, from, target.mapID, x, y, standardMartCounterX, standardMartCounterY, nil, prereqs)
 		if err != nil && !errors.Is(err, world.ErrRouteReplanRequired) {
 			continue
 		}
@@ -209,7 +225,9 @@ func EnsureItemStock(m *emu.Emu, romData []byte, policy MovePolicy, item uint8, 
 	// floor in front of the counter, then face the counter tile rather than
 	// the clerk: Face requires an adjacent tile, while the game deliberately
 	// lets A talk through the counter to the clerk one tile farther away.
-	dest := Destination{Map: mart.mapID, X: 2, Y: 5}
+	// standardMartCounterTile is the same tile reachableStockMarts measured,
+	// so a mart offered here is one the travel can actually stand on.
+	dest := Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}
 	if _, err := TravelFlee(m, romData, dest, policy, inventoryRecoveryBattles); err != nil {
 		return softFail(fmt.Errorf("skill: EnsureItemStock: reach %s: %w", mart.name, err))
 	}
@@ -289,8 +307,9 @@ func SellAtNearestMart(m *emu.Emu, romData []byte, policy MovePolicy, item uint8
 	if !ok {
 		return fmt.Errorf("%w: no mart reachable from map %#04x", ErrNoReachableStock, mem.U8(sym.CurMap))
 	}
-	// Same counter geometry as EnsureItemStock.
-	if _, err := TravelFlee(m, romData, Destination{Map: mart.mapID, X: 2, Y: 5}, policy, inventoryRecoveryBattles); err != nil {
+	// Same counter geometry as EnsureItemStock, and the same tile
+	// reachableStockMarts measured.
+	if _, err := TravelFlee(m, romData, Destination{Map: mart.mapID, X: standardMartCounterX, Y: standardMartCounterY}, policy, inventoryRecoveryBattles); err != nil {
 		return fmt.Errorf("skill: SellAtNearestMart: reach %s: %w", mart.name, err)
 	}
 	if err := Face(m, 1, 5); err != nil {
