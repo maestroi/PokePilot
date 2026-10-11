@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
+	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
 const (
@@ -154,12 +155,12 @@ func TestSemanticMachineMenuRejectsUnownedMachine(t *testing.T) {
 func TestNativeMachineReplacementPreservesSemanticFieldMoves(t *testing.T) {
 	field := fakeGen2FieldMoveDecoder{}
 	moves := [4]uint16{0x21, 0x150, 0x22, 0x23} // Whirlpool is protected
-	if got := nativeMachineReplacementSlot(field, moves); got != 3 {
+	if got := nativeMachineReplacementSlot(field, nil, moves); got != 3 {
 		t.Fatalf("replacement slot=%d, want last non-field slot 3", got)
 	}
 
 	moves = [4]uint16{0x21, 0, 0x150, 0x23}
-	if got := nativeMachineReplacementSlot(field, moves); got != -1 {
+	if got := nativeMachineReplacementSlot(field, nil, moves); got != -1 {
 		t.Fatalf("empty-slot replacement=%d, want -1", got)
 	}
 }
@@ -176,11 +177,21 @@ func TestNativeMachineCarrierPrefersEmptyBenchForUtilityMove(t *testing.T) {
 		},
 	}
 
-	slot, replace, err := nativeMachineCarrier(field, capability, FieldCut, execution)
+	slot, replace, err := nativeMachineCarrier(field, nil, capability, FieldCut, execution)
 	if err != nil {
 		t.Fatalf("choose native carrier: %v", err)
 	}
 	if slot != 1 || replace != -1 {
 		t.Fatalf("carrier=(slot=%d replace=%d), want bench slot 1 with empty placement", slot, replace)
+	}
+}
+
+func TestNativeMachineReplacementKeepsOnlyRealAttack(t *testing.T) {
+	// Burned Tower Bayleef: TACKLE, GROWL, RAZOR LEAF, CUT. Rock Smash used to
+	// replace the last free slot (Razor Leaf), leaving nothing that hits Ghosts.
+	field := gsprofile.New(gsprofile.GoldGameID)
+	moves := [4]uint16{33, 45, 75, 15}
+	if got := nativeMachineReplacementSlot(field, nil, moves); got != 1 {
+		t.Fatalf("replacement slot=%d, want GROWL slot 1", got)
 	}
 }

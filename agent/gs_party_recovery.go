@@ -33,6 +33,9 @@ var gsOwnedPokecenterNames = []string{
 }
 
 func gsOwnedPokecenterID(from uint16) (uint16, error) {
+	if id, ok := gsNearestOwnedPokecenter(from); ok {
+		return id, nil
+	}
 	fromInfo, fromOK := gsdata.Map(from)
 	var sameGroup, any []uint16
 	for _, name := range gsOwnedPokecenterNames {
@@ -53,6 +56,37 @@ func gsOwnedPokecenterID(from uint16) (uint16, error) {
 		return any[0], nil
 	}
 	return 0, fmt.Errorf("%w: no owned Pokemon Center is catalogued", errGSSecondBadgeUnexpectedState)
+}
+
+// gsNearestOwnedPokecenter walks the static Johto topology breadth-first, so
+// a route between two cities heals in the one it touches first. Map groups are
+// not distance: Route 37 shares Violet's group, and walking back through Route
+// 36 from there is not legal. Unknown maps fall back to the group heuristic.
+func gsNearestOwnedPokecenter(from uint16) (uint16, bool) {
+	adjacency, err := gsprofile.New(gsprofile.GoldGameID).MapAdjacency(nil)
+	if err != nil {
+		return 0, false
+	}
+	owned := map[uint16]bool{}
+	for _, name := range gsOwnedPokecenterNames {
+		if id, err := gsOpeningMapID(name); err == nil {
+			owned[id] = true
+		}
+	}
+	seen := map[uint16]bool{from: true}
+	for queue := []uint16{from}; len(queue) > 0; queue = queue[1:] {
+		at := queue[0]
+		if owned[at] {
+			return at, true
+		}
+		for _, next := range adjacency[at] {
+			if !seen[next] {
+				seen[next] = true
+				queue = append(queue, next)
+			}
+		}
+	}
+	return 0, false
 }
 
 func gsEnsurePartyRecovered(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {

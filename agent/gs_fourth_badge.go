@@ -24,8 +24,9 @@ const (
 	gsRockSmashGuyX uint8 = 44
 	gsRockSmashGuyY uint8 = 9
 
-	gsBurnedTowerBeastsX uint8 = 9
-	gsBurnedTowerBeastsY uint8 = 5
+	gsBurnedTowerReadyLeadLevel       = 34
+	gsBurnedTowerBeastsX        uint8 = 9
+	gsBurnedTowerBeastsY        uint8 = 5
 
 	gsMortyX      uint8 = 5
 	gsMortyY      uint8 = 1
@@ -170,6 +171,13 @@ func executeGSBurnedTower(m *emu.Emu, romData []byte) error {
 		if err := executeGSTM08RockSmash(m, romData); err != nil {
 			return fmt.Errorf("gen2 Burned Tower: acquire Rock Smash: %w", err)
 		}
+	}
+	// The rival fights four in a row (Haunter Curse + Zubat Supersonic stack
+	// residual damage) with no Center between them. A solo L32 Bayleef
+	// measured losing on the last Magnemite; grind the lead in Route 37 grass
+	// first, mirroring the Bugsy prep.
+	if err := gsEnsureLeadLevel(m, romData, profile, "Burned Tower rival", gsBurnedTowerReadyLeadLevel, "ROUTE_37", 15, 14); err != nil {
+		return fmt.Errorf("gen2 Burned Tower: %w", err)
 	}
 	if err := gsRecoverAtEcruteakCenter(m, romData, profile); err != nil {
 		return fmt.Errorf("gen2 Burned Tower: recover party: %w", err)
