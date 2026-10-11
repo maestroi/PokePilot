@@ -94,6 +94,13 @@ const (
 	EventBeatMtMoonSuperNerd Event = 1401
 	EventGotDomeFossil       Event = 1406
 	EventGotHelixFossil      Event = 1407
+	// Set by BillsHouseBillSSTicketText (pokered/scripts/BillsHouse.asm:173)
+	// the moment Bill hands over the S.S. Ticket. Once set, the game will not
+	// re-award the ticket: the PC hidden event routes to the Eevee Pokedex
+	// menu and Bill's human form only offers "Why don't you go instead of me?".
+	// It is the durable marker that the Bill rescue has reached its terminal
+	// state, distinct from EventSSAnneLeft (the Anne sailing).
+	EventGotSSTicket Event = 1372
 	// Set when the S.S. Anne sails (pokered/scripts/VermilionDock.asm); the
 	// S.S. Ticket has no use afterwards.
 	EventSSAnneLeft Event = 1506

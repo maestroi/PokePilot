@@ -47,6 +47,9 @@ func Bill(m *emu.Emu, romData []byte, policy MovePolicy) error {
 	if _, count := bagEntry(&mem, ssTicketItem); count > 0 {
 		return nil
 	}
+	if err := billRescueTerminal(&mem); err != nil {
+		return err
+	}
 
 	if m.Peek8(sym.CurMap) != billsHouseMap {
 		dest, ok := Place("bill's house")
