@@ -160,4 +160,3 @@ func verifyGSCombatRecoveryHeal(obs Observation) error {
 	}
 	return nil
 }
-
