@@ -330,7 +330,7 @@ func firstBadgeCollisionTable(tileset uint8) ([]uint8, bool) {
 			0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00,
 		}, true
 	default:
-		return nil, false
+		return coastalCollisionTable(tileset)
 	}
 }
 
@@ -356,19 +356,21 @@ var gen2CollisionPermission = [256]uint8{
 func firstBadgeTileset(mapName string) (uint8, bool) {
 	switch mapName {
 	case "NEW_BARK_TOWN", "ROUTE_29", "CHERRYGROVE_CITY", "ROUTE_30", "ROUTE_31", "VIOLET_CITY",
-		"ROUTE_32", "ROUTE_35", "ROUTE_36", "ROUTE_37", "ECRUTEAK_CITY":
+		"ROUTE_32", "ROUTE_35", "ROUTE_36", "ROUTE_37", "ECRUTEAK_CITY",
+		"ROUTE_38", "ROUTE_39", "OLIVINE_CITY", "ROUTE_40", "ROUTE_41", "CIANWOOD_CITY":
 		return 0x01, true
 	case "ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY":
 		return 0x02, true
-	case "ROUTE_30_BERRY_HOUSE", "GOLDENROD_FLOWER_SHOP":
+	case "ROUTE_30_BERRY_HOUSE", "GOLDENROD_FLOWER_SHOP", "CIANWOOD_PHARMACY":
 		return 0x04, true
 	case "PLAYERS_HOUSE_1F":
 		return 0x05, true
 	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F",
-		"GOLDENROD_POKECENTER_1F", "ECRUTEAK_POKECENTER_1F":
+		"GOLDENROD_POKECENTER_1F", "ECRUTEAK_POKECENTER_1F",
+		"OLIVINE_POKECENTER_1F", "CIANWOOD_POKECENTER_1F":
 		return 0x06, true
 	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE",
-		"ROUTE_35_GOLDENROD_GATE":
+		"ROUTE_35_GOLDENROD_GATE", "ROUTE_38_ECRUTEAK_GATE":
 		return 0x07, true
 	case "ELMS_LAB":
 		return 0x09, true
@@ -378,11 +380,19 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x0b, true
 	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM":
 		return 0x0e, true
+	case "OLIVINE_CAFE":
+		return 0x0d, true
+	case "OLIVINE_GYM":
+		return 0x11, true
+	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
+		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
+		return 0x12, true
 	case "KURTS_HOUSE":
 		return 0x0f, true
 	case "PLAYERS_HOUSE_2F":
 		return 0x13, true
-	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM", "BURNED_TOWER_1F":
+	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM", "BURNED_TOWER_1F",
+		"CIANWOOD_GYM":
 		return 0x14, true
 	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F":
 		return 0x15, true
