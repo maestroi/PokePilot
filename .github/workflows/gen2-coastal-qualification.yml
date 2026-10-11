@@ -1,0 +1,148 @@
+name: Gen2 Coastal ROM Qualification
+
+# A cartridge and private checkpoint are intentionally never uploaded to
+# public CI. This workflow runs only by manual dispatch on a ROM-equipped host.
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: Retail cartridge to replay
+        required: true
+        default: gold
+        type: choice
+        options:
+          - gold
+          - silver
+          - both
+      from:
+        description: Known checkpoint boundary
+        required: true
+        default: post-cure
+        type: choice
+        options:
+          - post-cure
+          - post-strength
+          - post-storm
+          - post-fly
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gen2-coastal-qualification
+  cancel-in-progress: false
+
+jobs:
+  coastal:
+    name: Gold/Silver coastal checkpoint replay
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 240
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify module graph
+        run: go mod download
+
+      - name: Resolve private corpus and result paths
+        shell: bash
+        env:
+          CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+        run: |
+          set -euo pipefail
+          corpus="${CONFIGURED_CORPUS:-$HOME/.config/pokepilot/qualification}"
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
+          out="$results/gen2-coastal/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out"
+          echo "POKEPILOT_GS_COASTAL_CORPUS=$corpus" >> "$GITHUB_ENV"
+          echo "POKEPILOT_GS_COASTAL_RESULTS=$out" >> "$GITHUB_ENV"
+
+      - name: Replay private Gold/Silver coastal checkpoint
+        shell: bash
+        env:
+          INPUT_GAME: ${{ inputs.game }}
+          INPUT_FROM: ${{ inputs.from }}
+          CONFIGURED_GOLD_ROM: ${{ vars.POKEMON_GOLD_ROM_PATH }}
+          CONFIGURED_SILVER_ROM: ${{ vars.POKEMON_SILVER_ROM_PATH }}
+        run: |
+          set -euo pipefail
+          games=("${INPUT_GAME:-gold}")
+          if [[ "${INPUT_GAME:-gold}" == "both" ]]; then
+            games=(gold silver)
+          fi
+          from="${INPUT_FROM:-post-cure}"
+          for game in "${games[@]}"; do
+            case "$game" in
+              gold)
+                rom="${CONFIGURED_GOLD_ROM:-$HOME/.config/pokepilot/pokemon_gold.gbc}"
+                ;;
+              silver)
+                rom="${CONFIGURED_SILVER_ROM:-$HOME/.config/pokepilot/pokemon_silver.gbc}"
+                ;;
+              *)
+                echo "Unexpected cartridge: $game" >&2
+                exit 2
+                ;;
+            esac
+            checkpoint="$POKEPILOT_GS_COASTAL_CORPUS/gs-coastal/$game/$from/start.state"
+            if [[ ! -f "$rom" || ! -s "$checkpoint" ]]; then
+              echo "Missing private $game ROM or $from checkpoint. Qualification cannot report success without real replay input." >&2
+              exit 1
+            fi
+            out="$POKEPILOT_GS_COASTAL_RESULTS/$game/$from"
+            mkdir -p "$out"
+            export POKEPILOT_GS_COASTAL_QUAL=1
+            export POKEPILOT_GS_COASTAL_GAME="$game"
+            export POKEPILOT_GS_COASTAL_ROM="$rom"
+            export POKEPILOT_GS_COASTAL_START="$checkpoint"
+            export POKEPILOT_GS_COASTAL_FROM="$from"
+            export POKEPILOT_GS_COASTAL_OUT="$out"
+
+            echo "=== $game from $from: real checkpoint qualification ==="
+            # -short is deliberately not used. A failure leaves a checked
+            # failure.state and per-stage save states on this private host.
+            go test -count=1 -timeout=90m ./agent \
+              -run '^TestGSCoastalROMCheckpointReplay$' -v \
+              2>&1 | tee "$out/run.log"
+            echo "PASS $game from $from" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Build ROM-free diagnostic artifact
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-gen2-coastal-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ -d "${POKEPILOT_GS_COASTAL_RESULTS:-}" ]]; then
+            cd "$POKEPILOT_GS_COASTAL_RESULTS"
+            while IFS= read -r -d '' file; do
+              mkdir -p "$safe/$(dirname "$file")"
+              cp "$file" "$safe/$file"
+            done < <(find . -type f \
+              ! -name '*.state' ! -name '*.sav' \
+              ! -name '*.gb' ! -name '*.gbc' -print0)
+          fi
+          echo "POKEPILOT_GS_COASTAL_SAFE=$safe" >> "$GITHUB_ENV"
+          {
+            echo "### Private checkpoint evidence"
+            echo "Runner-local files (including ROM checkpoints): ${POKEPILOT_GS_COASTAL_RESULTS:-not-created}"
+            echo "Public workflow artifact contains only logs, observations and hashes; no ROM or emulator state."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload safe replay diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gen2-coastal-qualification-diagnostics
+          path: ${{ env.POKEPILOT_GS_COASTAL_SAFE }}
+          retention-days: 14
+          if-no-files-found: warn
