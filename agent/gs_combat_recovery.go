@@ -70,9 +70,10 @@ func gsCombatRecoveryLeadTarget(obs Observation, failure Failure) int {
 	target := current + 5
 	if failure.ReadinessTarget > 0 {
 		deficit := failure.ReadinessTarget - partyCombatReadiness(obs)
-		if deficit > 0 {
-			target = current + (deficit+3)/4
+		if deficit <= 0 {
+			return 0 // quantified goal met: retry the fight, do not grind
 		}
+		target = current + (deficit+3)/4
 	}
 	if target <= current {
 		return 0
