@@ -72,6 +72,25 @@ func TestGSCoastalROMCheckpointReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read private checkpoint: %v", err)
 	}
+	// Older manually preserved checkpoints can lack provenance; whenever
+	// source.json exists it must match the ROM and actual state bytes. A
+	// scheduled automatic replay requires it, preventing a passing run on
+	// unrelated or stale manually fabricated fixtures.
+	sourcePath := filepath.Join(filepath.Dir(checkpointPath), "source.json")
+	rawSource, sourceErr := os.ReadFile(sourcePath)
+	if sourceErr != nil {
+		if !os.IsNotExist(sourceErr) || os.Getenv("POKEPILOT_GS_COASTAL_REQUIRE_SOURCE") == "1" {
+			t.Fatalf("read required checkpoint provenance %s: %v", sourcePath, sourceErr)
+		}
+	} else if from == "post-cure" {
+		source, err := gsVerifyQualificationProvenance(rawSource, gameName, expectedSHA, rawState)
+		if err != nil {
+			t.Fatalf("untrusted private checkpoint %s: %v", checkpointPath, err)
+		}
+		t.Logf("verified captured checkpoint run=%s frame=%d", source.RunID, source.Frame)
+	} else if os.Getenv("POKEPILOT_GS_COASTAL_REQUIRE_SOURCE") == "1" {
+		t.Fatal("automatic qualification must start from post-cure, not an intermediate checkpoint")
+	}
 	out := os.Getenv("POKEPILOT_GS_COASTAL_OUT")
 	if out == "" {
 		out = t.TempDir()

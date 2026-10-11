@@ -1,8 +1,12 @@
 name: Gen2 Coastal ROM Qualification
 
 # A cartridge and private checkpoint are intentionally never uploaded to
-# public CI. This workflow runs only by manual dispatch on a ROM-equipped host.
+# public CI. The nightly job automatically replays Gold once an authentic
+# post-cure farm checkpoint exists; manual dispatch also supports Silver.
+# Missing private input always fails closed (not a green "skipped" replay).
 on:
+  schedule:
+    - cron: "43 5 * * *"
   workflow_dispatch:
     inputs:
       game:
@@ -70,6 +74,7 @@ jobs:
         env:
           INPUT_GAME: ${{ inputs.game }}
           INPUT_FROM: ${{ inputs.from }}
+          TRIGGER: ${{ github.event_name }}
           CONFIGURED_GOLD_ROM: ${{ vars.POKEMON_GOLD_ROM_PATH }}
           CONFIGURED_SILVER_ROM: ${{ vars.POKEMON_SILVER_ROM_PATH }}
         run: |
@@ -79,6 +84,10 @@ jobs:
             games=(gold silver)
           fi
           from="${INPUT_FROM:-post-cure}"
+          if [[ "$TRIGGER" == "schedule" && ( "$from" != "post-cure" || "${games[*]}" != "gold" ) ]]; then
+            echo "Scheduled qualification requires a full Gold post-cure replay" >&2
+            exit 2
+          fi
           for game in "${games[@]}"; do
             case "$game" in
               gold)
@@ -93,12 +102,27 @@ jobs:
                 ;;
             esac
             checkpoint="$POKEPILOT_GS_COASTAL_CORPUS/gs-coastal/$game/$from/start.state"
-            if [[ -f "${checkpoint%/*}/source.json" ]]; then
-              echo "Auto-captured checkpoint provenance for $game:"
-              cat "${checkpoint%/*}/source.json"
-            fi
+            provenance="${checkpoint%/*}/source.json"
             if [[ ! -f "$rom" || ! -s "$checkpoint" ]]; then
-              echo "Missing private $game ROM or $from checkpoint. Qualification cannot report success without real replay input." >&2
+              {
+                echo "### $game: qualification BLOCKED"
+                echo "Private cartridge or checkpoint is missing from the self-hosted runner."
+                echo "Expected checkpoint: \`$checkpoint\`"
+                echo "This is **not** proof of Gen2 coastal gameplay completion."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Missing private $game ROM or $from checkpoint; check the Gold farm run and the shared POKEPILOT_QUALIFICATION_CORPUS mount."
+              exit 1
+            fi
+            if [[ -f "$provenance" ]]; then
+              echo "Auto-captured checkpoint provenance for $game:"
+              cat "$provenance"
+            elif [[ "$TRIGGER" == "schedule" ]]; then
+              {
+                echo "### $game: qualification BLOCKED"
+                echo "Missing source.json from a fresh post-cure farm capture."
+                echo "No ROM replay ran."
+              } >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::Scheduled replay needs a verified auto-captured source.json at $provenance"
               exit 1
             fi
             out="$POKEPILOT_GS_COASTAL_RESULTS/$game/$from"
@@ -109,6 +133,11 @@ jobs:
             export POKEPILOT_GS_COASTAL_START="$checkpoint"
             export POKEPILOT_GS_COASTAL_FROM="$from"
             export POKEPILOT_GS_COASTAL_OUT="$out"
+            if [[ "$TRIGGER" == "schedule" ]]; then
+              # The ROM test verifies schema, ROM identity and SHA-256 from
+              # source.json before loading the state or driving any gameplay.
+              export POKEPILOT_GS_COASTAL_REQUIRE_SOURCE=1
+            fi
 
             echo "=== $game from $from: real checkpoint qualification ==="
             # -short is deliberately not used. A failure leaves a checked
@@ -116,7 +145,7 @@ jobs:
             go test -count=1 -timeout=90m ./agent \
               -run '^TestGSCoastalROMCheckpointReplay$' -v \
               2>&1 | tee "$out/run.log"
-            echo "PASS $game from $from" >> "$GITHUB_STEP_SUMMARY"
+            echo "PASS $game from $from — verified retail ROM and checkpoint replay" >> "$GITHUB_STEP_SUMMARY"
           done
 
       - name: Build ROM-free diagnostic artifact
