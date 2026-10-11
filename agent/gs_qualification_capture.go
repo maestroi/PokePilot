@@ -181,3 +181,25 @@ func gsPublishQualificationStateOnce(target string, state []byte, provenance gsQ
 	}
 	return true, nil
 }
+
+
+// gsVerifyQualificationProvenance verifies the source manifest against the
+// *actual* checked state bytes and cartridge identity. The self-hosted
+// qualification runner never accepts a forged or stale metadata claim as
+// evidence that a trusted first-cure checkpoint was captured.
+func gsVerifyQualificationProvenance(raw []byte, variant, romSHA1 string, state []byte) (gsQualificationProvenance, error) {
+	var source gsQualificationProvenance
+	if err := json.Unmarshal(raw, &source); err != nil {
+		return source, fmt.Errorf("parse Gen2 checkpoint provenance: %w", err)
+	}
+	if source.Schema != 1 || source.Game != variant ||
+		source.Objective != string(gsprofile.ProgressJasmineReturnedToGym) ||
+		!strings.EqualFold(source.ROM_SHA1, romSHA1) {
+		return source, fmt.Errorf("Gen2 checkpoint provenance does not match the first %s cure transaction", variant)
+	}
+	hash := sha256.Sum256(state)
+	if !strings.EqualFold(source.StateSHA256, hex.EncodeToString(hash[:])) {
+		return source, fmt.Errorf("Gen2 checkpoint provenance SHA-256 does not match the checkpoint bytes")
+	}
+	return source, nil
+}
