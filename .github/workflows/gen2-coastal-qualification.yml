@@ -57,7 +57,8 @@ jobs:
           CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
         run: |
           set -euo pipefail
-          corpus="${CONFIGURED_CORPUS:-$HOME/.config/pokepilot/qualification}"
+          # Match the default private host bind mount used by deploy/farm.yml.
+          corpus="${CONFIGURED_CORPUS:-/var/lib/pokepilot/qualification}"
           results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
           out="$results/gen2-coastal/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
           mkdir -p "$out"
@@ -92,6 +93,10 @@ jobs:
                 ;;
             esac
             checkpoint="$POKEPILOT_GS_COASTAL_CORPUS/gs-coastal/$game/$from/start.state"
+            if [[ -f "${checkpoint%/*}/source.json" ]]; then
+              echo "Auto-captured checkpoint provenance for $game:"
+              cat "${checkpoint%/*}/source.json"
+            fi
             if [[ ! -f "$rom" || ! -s "$checkpoint" ]]; then
               echo "Missing private $game ROM or $from checkpoint. Qualification cannot report success without real replay input." >&2
               exit 1
