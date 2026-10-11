@@ -64,6 +64,14 @@ const (
 	PlayerMoney    uint16 = 0xD346 // wPlayerMoney, 3-byte BCD
 	ObtainedBadges uint16 = 0xD355 // wObtainedBadges
 
+	// Player PC item storage. The main-data block is shifted one byte earlier
+	// than Red's canonical 0xD53A/0xD53B, so the count/list sit at 0xD539/0xD53A
+	// (pokeyellow.sym wNumBoxItems/wBoxItems). The list is (item, quantity)
+	// pairs, up to 50 stacks, mirroring Red's PC_ITEM_CAPACITY.
+	PCItemCount    uint16 = 0xD539
+	PCItems        uint16 = 0xD53A
+	PCItemCapacity        = 50
+
 	// Persistent/story state. Yellow's main-data block is shifted one byte
 	// earlier than Red in this region.
 	StatusFlags1    uint16 = 0xD727 // wStatusFlags1

@@ -1,6 +1,10 @@
 package state
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
 func TestDecodeStoryFactsProjectsSSTicket(t *testing.T) {
 	var mem Mem
@@ -38,5 +42,22 @@ func TestDecodeStoryFactsProjectsHM01(t *testing.T) {
 	with := DecodeStoryFacts(&mem, InventoryState{Items: []BagItem{{ID: hm01ItemID, Quantity: 1}}})
 	if !with.HM01Acquired {
 		t.Fatalf("HM01 in inventory did not project story fact: %+v", with)
+	}
+}
+
+// TestDecodeStoryFactsProjectsHM01FromPC verifies that an HM01 stored in the
+// Player PC (bag pressure, or the retire path after the ship sails) still
+// projects the HM01Acquired fact. Without this, a finished HM01 objective is
+// re-offered and its executor hard-fails on a precondition the game has already
+// satisfied (run-106m9nyjl0t6zfczwmrlxm44e).
+func TestDecodeStoryFactsProjectsHM01FromPC(t *testing.T) {
+	var mem Mem
+	// Empty bag, HM01 in the Player PC.
+	mem[sym.PCItemCount] = 1
+	mem[sym.PCItems] = hm01ItemID
+	mem[sym.PCItems+1] = 1
+	facts := DecodeStoryFacts(&mem, InventoryState{})
+	if !facts.HM01Acquired {
+		t.Fatalf("HM01 in the Player PC did not project HM01Acquired: %+v", facts)
 	}
 }

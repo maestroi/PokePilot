@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/gen1"
 	redsym "github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/yellow/sym"
 )
@@ -237,6 +238,56 @@ func TestDecodeObservationProjectsYellowPartyMoneyAndBadges(t *testing.T) {
 	}
 	if obs.PokedexTotal != 151 {
 		t.Fatalf("Pokédex total = %d, want 151", obs.PokedexTotal)
+	}
+}
+
+// TestDecodeObservationProjectsItemFactsFromPC guards the shared invariant that
+// item-based story facts treat "owned in the Player PC" the same as "owned in
+// the bag". run-106m9nyjl0t6zfczwmrlxm44e died because HM01 and the S.S.
+// Ticket were deposited in the PC, so hm01_acquired read false and the S.S.
+// Anne objective was re-offered and hard-failed on a missing ticket.
+func TestDecodeObservationProjectsItemFactsFromPC(t *testing.T) {
+	storyComplete := func(t *testing.T, mem *fakeMemory, id game.ProgressID) bool {
+		t.Helper()
+		obs, err := New().DecodeObservation(mem, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fact, ok := obs.Story.Lookup(id)
+		return ok && fact.Complete
+	}
+
+	// Control: item in neither bag nor PC reports the fact incomplete.
+	var empty fakeMemory
+	empty[sym.CurMap] = 0x26
+	empty[sym.CurMapHeight], empty[sym.CurMapWidth] = 4, 4
+	if storyComplete(t, &empty, gen1.ProgressHM01Acquired) {
+		t.Fatal("hm01_acquired true with no HM01 owned")
+	}
+
+	// HM01 and the S.S. Ticket deposited in the Player PC (not the bag) must
+	// count as acquired.
+	var pc fakeMemory
+	pc[sym.CurMap] = 0x26
+	pc[sym.CurMapHeight], pc[sym.CurMapWidth] = 4, 4
+	pc[sym.PCItemCount] = 2
+	pc[sym.PCItems], pc[sym.PCItems+1] = 0xc4, 1   // HM01 x1
+	pc[sym.PCItems+2], pc[sym.PCItems+3] = 0x3f, 1 // S.S. Ticket x1
+	if !storyComplete(t, &pc, gen1.ProgressHM01Acquired) {
+		t.Fatal("hm01_acquired false while HM01 is stored in the Player PC")
+	}
+	if !storyComplete(t, &pc, gen1.ProgressSSTicketAcquired) {
+		t.Fatal("ss_ticket_acquired false while the S.S. Ticket is stored in the Player PC")
+	}
+
+	// The bag path still works: HM01 in the bag (empty PC) is acquired.
+	var bag fakeMemory
+	bag[sym.CurMap] = 0x26
+	bag[sym.CurMapHeight], bag[sym.CurMapWidth] = 4, 4
+	bag[sym.NumBagItems] = 1
+	bag[sym.BagItems], bag[sym.BagItems+1] = 0xc4, 1
+	if !storyComplete(t, &bag, gen1.ProgressHM01Acquired) {
+		t.Fatal("hm01_acquired false while HM01 is in the bag")
 	}
 }
 

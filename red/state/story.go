@@ -129,6 +129,17 @@ func MainStoryComplete(m *Mem) bool {
 func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 	progress := DecodeProgress(m)
 	mainStoryComplete := MainStoryComplete(m)
+	// Key items are carried in the bag, but bag pressure (and the retire path
+	// after the S.S. Anne sails) can store them in the Player PC. An item-based
+	// fact must treat "owned in the PC" the same as "owned in the bag", or a
+	// finished objective is re-offered and its executor hard-fails on a
+	// precondition the game has already satisfied (run-106m9nyjl0t6zfczwmrlxm44e:
+	// HM01 sat in the PC, so HM01Acquired was false and SSAnneHM01 re-ran,
+	// demanding the ticket from a bag that no longer held it).
+	pcInv := InventoryState{Items: DecodePCItemStorage(m).Items}
+	owned := func(id uint8) bool {
+		return inventoryHasItem(inv, id) || inventoryHasItem(pcInv, id)
+	}
 	facts := StoryFacts{
 		MtMoonFossilAcquired: HasEvent(m, EventBeatMtMoonSuperNerd) && (HasEvent(m, EventGotDomeFossil) || HasEvent(m, EventGotHelixFossil)) && m.U8(sym.MtMoonB2FCurScript) == 0,
 		PokedexAcquired:      HasEvent(m, EventGotPokedex),
@@ -137,20 +148,20 @@ func DecodeStoryFacts(m *Mem, inv InventoryState) StoryFacts {
 		// Route 25 progression keys off it, while the ticket is a key item the
 		// game never consumes and the player (or bag pressure) may have stored
 		// in the PC. Bag alone reports a completed rescue as missing.
-		SSTicketAcquired:       HasEvent(m, EventGotSSTicket) || inventoryHasItem(inv, ssTicketItemID),
-		HM01Acquired:           inventoryHasItem(inv, hm01ItemID),
-		HM03Acquired:           inventoryHasItem(inv, hm03ItemID),
-		HM04Acquired:           inventoryHasItem(inv, hm04ItemID),
-		BicycleAcquired:        inventoryHasItem(inv, bicycleItemID),
-		SilphScopeAcquired:     inventoryHasItem(inv, silphScopeItemID),
-		PokeFluteAcquired:      inventoryHasItem(inv, pokeFluteItemID),
+		SSTicketAcquired:       HasEvent(m, EventGotSSTicket) || owned(ssTicketItemID),
+		HM01Acquired:           owned(hm01ItemID),
+		HM03Acquired:           owned(hm03ItemID),
+		HM04Acquired:           owned(hm04ItemID),
+		BicycleAcquired:        owned(bicycleItemID),
+		SilphScopeAcquired:     owned(silphScopeItemID),
+		PokeFluteAcquired:      owned(pokeFluteItemID),
 		SaffronGateOpen:        m.U8(sym.StatusFlags1)&saffronGuardsDrinkMask != 0,
-		CardKeyOwned:           inventoryHasItem(inv, cardKeyItemID),
+		CardKeyOwned:           owned(cardKeyItemID),
 		SilphCoRivalDefeated:   HasEvent(m, eventBeatSilphCoRival),
 		SilphCoCleared:         HasEvent(m, eventBeatSilphCoGiovanni),
 		MasterBallAwarded:      HasEvent(m, eventGotMasterBall),
 		MansionSwitchOn:        HasEvent(m, eventMansionSwitchOn),
-		SecretKeyOwned:         inventoryHasItem(inv, secretKeyItemID),
+		SecretKeyOwned:         owned(secretKeyItemID),
 		ViridianGymOpen:        HasEvent(m, eventViridianGymOpen),
 		Route22RivalResolved:   HasEvent(m, eventBeatRoute22Rival2ndBattle),
 		LeagueChallengeStarted: HasEvent(m, eventAutowalkedIntoLoreleisRoom),

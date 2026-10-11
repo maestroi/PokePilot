@@ -167,9 +167,32 @@ func yellowEventNames(reader game.MemoryReader) []string {
 	return out
 }
 
+// yellowHasItem reports whether id is owned in the bag OR the Player PC. Key
+// items and HMs can be deposited in the PC, and a story fact keyed only on the
+// bag would report a finished objective as incomplete (run-106m9nyjl0t6zfczwmrlxm44e:
+// HM01 and the S.S. Ticket both sat in the PC, so hm01_acquired read false and
+// the S.S. Anne objective was re-offered and hard-failed).
 func yellowHasItem(reader game.MemoryReader, id uint8) bool {
 	for _, item := range gen1.DecodeBag(reader, yellowRAMLayout) {
 		if item.ID == id && item.Quantity > 0 {
+			return true
+		}
+	}
+	return yellowHasPCItem(reader, id)
+}
+
+// yellowHasPCItem reports whether id is stored in the Player PC's item box.
+func yellowHasPCItem(reader game.MemoryReader, id uint8) bool {
+	if reader == nil {
+		return false
+	}
+	count := int(reader.Peek8(sym.PCItemCount))
+	if count > sym.PCItemCapacity {
+		count = sym.PCItemCapacity
+	}
+	for i := 0; i < count; i++ {
+		at := sym.PCItems + uint16(i)*2
+		if reader.Peek8(at) == id && reader.Peek8(at+1) > 0 {
 			return true
 		}
 	}
