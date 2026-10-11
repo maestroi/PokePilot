@@ -34,24 +34,29 @@ const (
 	eventPassedEarthBadgeCheck   yellowEvent = 1334
 	eventGotCharmanderRoute24    yellowEvent = 0x54f
 	eventVictoryRoad2Switch2     yellowEvent = 1343
-	eventGotDomeFossil           yellowEvent = 1400
-	eventBeatMtMoonSuperNerd     yellowEvent = 1401
-	eventBeatMtMoonJessieJames   yellowEvent = 1402
-	eventGotHelixFossil          yellowEvent = 1407
-	eventBeatRocketJessieJames   yellowEvent = 1698
-	eventRocketHideoutDoorOpen   yellowEvent = 1701
-	eventBeatRocketGiovanni      yellowEvent = 1703
-	eventBeatSilphRival          yellowEvent = 1856
-	eventBeatSilphJessieJames    yellowEvent = 1924
-	eventGotMasterBall           yellowEvent = 1933
-	eventBeatSilphGiovanni       yellowEvent = 1935
-	eventBeatLorelei             yellowEvent = 2273
-	eventAutowalkedIntoLorelei   yellowEvent = 2278
-	eventBeatBruno               yellowEvent = 2281
-	eventBeatAgatha              yellowEvent = 2289
-	eventBeatLanceTrainer        yellowEvent = 2297
-	eventBeatLance               yellowEvent = 2302
-	eventBeatChampionRival       yellowEvent = 2305
+	// Native bit for EVENT_GOT_SS_TICKET. Yellow renumbers the event-flag
+	// array, so the durable Bill-rescue marker sits at native bit 1373 (canonical
+	// 1372 in Red). yellowHasEvent reads the native base, so this must be the
+	// native index, not the canonical one.
+	eventGotSSTicket           yellowEvent = 1373
+	eventGotDomeFossil         yellowEvent = 1400
+	eventBeatMtMoonSuperNerd   yellowEvent = 1401
+	eventBeatMtMoonJessieJames yellowEvent = 1402
+	eventGotHelixFossil        yellowEvent = 1407
+	eventBeatRocketJessieJames yellowEvent = 1698
+	eventRocketHideoutDoorOpen yellowEvent = 1701
+	eventBeatRocketGiovanni    yellowEvent = 1703
+	eventBeatSilphRival        yellowEvent = 1856
+	eventBeatSilphJessieJames  yellowEvent = 1924
+	eventGotMasterBall         yellowEvent = 1933
+	eventBeatSilphGiovanni     yellowEvent = 1935
+	eventBeatLorelei           yellowEvent = 2273
+	eventAutowalkedIntoLorelei yellowEvent = 2278
+	eventBeatBruno             yellowEvent = 2281
+	eventBeatAgatha            yellowEvent = 2289
+	eventBeatLanceTrainer      yellowEvent = 2297
+	eventBeatLance             yellowEvent = 2302
+	eventBeatChampionRival     yellowEvent = 2305
 )
 
 const (
@@ -307,7 +312,12 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 	return game.ProgressState{
 		{ID: gen1.ProgressMtMoonFossilAcquired, Complete: fossil},
 		{ID: gen1.ProgressPokedexAcquired, Complete: pokedex},
-		{ID: gen1.ProgressSSTicketAcquired, Complete: yellowHasItem(reader, itemSSTicket)},
+		// The durable EVENT_GOT_SS_TICKET marker — not the bag — is authoritative,
+		// matching billRescueComplete and Red's fact: the ticket is a key item the
+		// game never consumes and may be absent from the bag once the rescue is
+		// done (stored in the PC, or the Anne has sailed), so item-only reports a
+		// finished rescue as missing.
+		{ID: gen1.ProgressSSTicketAcquired, Complete: yellowHasItem(reader, itemSSTicket) || yellowHasEvent(reader, eventGotSSTicket)},
 		{ID: gen1.ProgressHM01Acquired, Complete: yellowHasItem(reader, itemHM01)},
 		{ID: gen1.ProgressBicycleAcquired, Complete: yellowHasItem(reader, itemBicycle)},
 		{ID: gen1.ProgressBoulderBadge, Complete: yellowHasBadge(reader, badgeBoulder)},

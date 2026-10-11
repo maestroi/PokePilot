@@ -187,6 +187,32 @@ func TestYellowSharedKantoProgressComesFromYellowState(t *testing.T) {
 	}
 }
 
+func TestYellowSSTicketIsDurableNotJustBag(t *testing.T) {
+	// The Bill rescue's durable marker is the event flag, not the bag item. A
+	// late-game state can have the flag set with the ticket absent from the bag
+	// (stored in the PC, or the Anne already sailed); that must project as
+	// acquired, matching billRescueComplete and Red's SSTicketAcquired fact.
+	var mem fakeMemory
+	setYellowEvent(&mem, eventGotSSTicket)
+	if !projectYellowStory(&mem, 0x06).Has(gen1.ProgressSSTicketAcquired) {
+		t.Fatal("S.S. Ticket not projected as acquired from the durable event with an empty bag")
+	}
+
+	// Neither the event nor the item means the rescue has not happened.
+	var empty fakeMemory
+	if projectYellowStory(&empty, 0x06).Has(gen1.ProgressSSTicketAcquired) {
+		t.Fatal("S.S. Ticket projected as acquired with no event and no bag item")
+	}
+
+	// The bag item alone still counts, so the predicate is genuinely event OR item.
+	var bagged fakeMemory
+	bagged[sym.NumBagItems] = 1
+	bagged[sym.BagItems], bagged[sym.BagItems+1] = itemSSTicket, 1
+	if !projectYellowStory(&bagged, 0x06).Has(gen1.ProgressSSTicketAcquired) {
+		t.Fatal("S.S. Ticket in the bag no longer projected as acquired")
+	}
+}
+
 func TestYellowLeagueMemberProgressUsesNativeEvents(t *testing.T) {
 	var mem fakeMemory
 	setYellowEvent(&mem, eventAutowalkedIntoLorelei)
