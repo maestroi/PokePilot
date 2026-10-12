@@ -468,6 +468,13 @@ var firstBadgeTopology = []mapSpec{
 		},
 	},
 	{
+		name: "DANCE_THEATER",
+		warps: []warpSpec{
+			{x: 5, y: 13, dest: "ECRUTEAK_CITY", destWarp: 8},
+			{x: 6, y: 13, dest: "ECRUTEAK_CITY", destWarp: 8},
+		},
+	},
+	{
 		name: "BURNED_TOWER_1F",
 		warps: []warpSpec{
 			{x: 9, y: 15, dest: "ECRUTEAK_CITY", destWarp: 13},

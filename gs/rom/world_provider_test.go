@@ -311,6 +311,41 @@ func TestEarlyJohtoWorldProviderGoldenrodAndEcruteakServices(t *testing.T) {
 	}
 }
 
+func TestEarlyJohtoWorldProviderRoutesEcruteakToDanceTheater(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatalf("BuildNativeGraph: %v", err)
+	}
+
+	// Farm failure run-1bt0xg6hiyxbo: standing in ECRUTEAK_POKECENTER_1F,
+	// native routing 0x0403 -> 0x0405 reported DANCE_THEATER as unavailable
+	// because the first-badge slice had no DANCE_THEATER entry.
+	pokecenter := nativeID(t, "ECRUTEAK_POKECENTER_1F")
+	city := nativeID(t, "ECRUTEAK_CITY")
+	theater := nativeID(t, "DANCE_THEATER")
+
+	route, err := world.FindNativeRoute(graph, pokecenter, theater)
+	if err != nil {
+		t.Fatalf("FindNativeRoute(ECRUTEAK_POKECENTER_1F -> DANCE_THEATER): %v", err)
+	}
+	if len(route) != 2 || route[0].From != pokecenter || route[0].To != city ||
+		route[1].From != city || route[1].To != theater {
+		t.Fatalf("route = %#v, want pokecenter -> city -> theater", route)
+	}
+
+	// Recovery direction: the theater's exit warps back onto the city's
+	// theater door (city warp 8), so leaving must get back to the city.
+	back, err := world.FindNativeRoute(graph, theater, pokecenter)
+	if err != nil {
+		t.Fatalf("FindNativeRoute(DANCE_THEATER -> ECRUTEAK_POKECENTER_1F): %v", err)
+	}
+	if len(back) != 2 || back[0].From != theater || back[0].To != city ||
+		back[1].From != city || back[1].To != pokecenter {
+		t.Fatalf("back route = %#v, want theater -> city -> pokecenter", back)
+	}
+}
+
 func TestEarlyJohtoWorldProviderKeepsRealRoute36VioletConnection(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	route36 := nativeID(t, "ROUTE_36")
@@ -341,6 +376,7 @@ func TestEarlyJohtoWorldProviderNewMapsHaveCollisionTilesets(t *testing.T) {
 		"ROUTE_37",
 		"ECRUTEAK_CITY",
 		"ECRUTEAK_GYM",
+		"DANCE_THEATER",
 		"BURNED_TOWER_1F",
 		"BURNED_TOWER_B1F",
 		"ECRUTEAK_POKECENTER_1F",

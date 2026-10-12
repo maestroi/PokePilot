@@ -321,3 +321,32 @@ func TestFirstBadgeSliceStillMatchesROM(t *testing.T) {
 		}
 	}
 }
+
+// TestDanceTheaterWarpsMatchROM pins the hand-written DANCE_THEATER spec to
+// the ROM: the first-badge slice gained the map for the gs_hm03_surf frontier
+// (run-1bt0xg6hiyxbo), and its warps must be what the ROM actually contains.
+func TestDanceTheaterWarpsMatchROM(t *testing.T) {
+	rom := loadGold(t)
+	hand := NewFirstBadgeWorldProvider(rom)
+	full, err := NewWorldProvider(rom)
+	if err != nil {
+		t.Fatalf("NewWorldProvider: %v", err)
+	}
+	theater := nativeID(t, "DANCE_THEATER")
+	want, err := hand.ParseMap(theater)
+	if err != nil {
+		t.Fatalf("first-badge ParseMap: %v", err)
+	}
+	got, err := full.ParseMap(theater)
+	if err != nil {
+		t.Fatalf("ROM ParseMap: %v", err)
+	}
+	if len(got.Warps) != len(want.Warps) {
+		t.Fatalf("warp count ROM %d vs first-badge %d", len(got.Warps), len(want.Warps))
+	}
+	for i := range want.Warps {
+		if got.Warps[i] != want.Warps[i] {
+			t.Fatalf("warp[%d] ROM %+v vs first-badge %+v", i, got.Warps[i], want.Warps[i])
+		}
+	}
+}

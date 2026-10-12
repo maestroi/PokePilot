@@ -387,7 +387,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
 		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
 		return 0x12, true
-	case "KURTS_HOUSE":
+	case "KURTS_HOUSE", "DANCE_THEATER":
 		return 0x0f, true
 	case "PLAYERS_HOUSE_2F":
 		return 0x13, true
