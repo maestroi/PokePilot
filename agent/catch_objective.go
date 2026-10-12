@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -140,6 +141,28 @@ func safariCatchIntentForPlace(place PlaceID) string {
 	return ""
 }
 
+// catchHabitatUnreachable returns the router's typed blockage when a plain
+// wild-grass catch cannot reach any encounter cell. Scripted hunts own their
+// own approach. An unknown place is left to the travel block's existing error.
+func catchHabitatUnreachable(m *emu.Emu, romData []byte, o Objective) error {
+	if o.Kind != KindCatch || !plainWildCatchIntent(o.Intent) || catchObjectiveOwnsTravel(o) {
+		return nil
+	}
+	var mapID uint8
+	if o.Place == "" {
+		var mem state.Mem
+		state.Snapshot(m, &mem)
+		mapID = mem.U8(sym.CurMap)
+	} else {
+		dest, ok := skill.Place(string(o.Place))
+		if !ok {
+			return nil
+		}
+		mapID = dest.Map
+	}
+	return skill.CatchHabitatBlock(m, romData, mapID)
+}
+
 func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result ObjectiveResult) (ObjectiveResult, error) {
 	species, ok := redSpeciesID(o.Species)
 	if !ok {
@@ -149,6 +172,16 @@ func executeCatchObjective(m *emu.Emu, romData []byte, o Objective, result Objec
 	// The place can determine the adapter path when the offer did not name it.
 	if o.Intent == "" {
 		o.Intent = safariCatchIntentForPlace(o.Place)
+	}
+
+	// A plain-grass habitat whose encounter cells are not routable with the
+	// capabilities usable now must fail before storage or travel. Map arrival
+	// can still succeed (Route 23's south gate is an ordinary walk) and then
+	// skill.Catch reports an untyped "no encounter cells" miss, which the
+	// failure budget treats as a broken recovery loop (#2480).
+	if err := catchHabitatUnreachable(m, romData, o); err != nil {
+		result.Outcome = OutcomeBlocked
+		return result, fmt.Errorf("agent: %s: %w", o, err)
 	}
 
 	// Acquisition storage follows the game mechanic instead of forcing every

@@ -671,19 +671,51 @@ func GrassHabitatReachable(m *emu.Emu, romData []byte) (func(mapID uint8) bool, 
 		if ok, seen := cache[mapID]; seen {
 			return ok
 		}
-		ok := grassRoutable(g, prereqs, cur, x, y, romData, mapID)
+		ok := grassRouteBlock(g, prereqs, cur, x, y, romData, mapID) == nil
 		cache[mapID] = ok
 		return ok
 	}, nil
 }
 
+// CatchHabitatBlock reports why a plain-grass catch cannot reach any encounter
+// cell on mapID with the capabilities usable now. A nil error means some cell
+// is routable, or the map has no encounter cells. When the grass sits behind a
+// semantic gate, the error is the router's RouteBlockedError (missing Surf,
+// badge checks, and so on) so the catch is a route prerequisite rather than an
+// untyped outcome:blocked that spends the failure-recovery budget.
+func CatchHabitatBlock(m *emu.Emu, romData []byte, mapID uint8) error {
+	if m == nil || len(romData) == 0 {
+		return nil
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		return nil
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
+		return nil
+	}
+	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+		return nil
+	}
+	prereqs := redRoutePrerequisites(g, romData, &mem)
+	return grassRouteBlock(g, prereqs, mem.U8(sym.CurMap), int(mem.U8(sym.XCoord)), int(mem.U8(sym.YCoord)), romData, mapID)
+}
+
 func grassRoutable(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, x, y int, romData []byte, mapID uint8) bool {
+	return grassRouteBlock(g, prereqs, cur, x, y, romData, mapID) == nil
+}
+
+func grassRouteBlock(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, x, y int, romData []byte, mapID uint8) error {
 	grass, grid, err := grassCells(romData, mapID)
 	if err != nil || grid == nil || len(grass) == 0 {
-		return true
+		return nil
 	}
 	comps := world.Components(grid)
 	tried := map[int]bool{}
+	var preferred *world.RouteBlockedError
+	var fallback error
 	for _, c := range grass {
 		comp := comps[c.y][c.x]
 		if tried[comp] {
@@ -692,7 +724,7 @@ func grassRoutable(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, 
 		tried[comp] = true
 		steps, err := world.FindRoutePlanAtDestinationWithCapabilities(g, cur, mapID, x, y, c.x, c.y, nil, prereqs)
 		if err == nil {
-			return true
+			return nil
 		}
 		if errors.Is(err, world.ErrRouteReplanRequired) {
 			// A replan frontier only makes this habitat's grass reachable when it
@@ -701,9 +733,27 @@ func grassRoutable(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, 
 			// to a Route 2 seam, run-d6dokr184ky81) whose post-action topology
 			// says nothing about a pocket that is sealed from every entry.
 			if len(steps) > 0 && steps[len(steps)-1].Edge.To == mapID {
-				return true
+				return nil
 			}
+			if fallback == nil {
+				fallback = world.ErrNoRoute
+			}
+			continue
+		}
+		var blocked *world.RouteBlockedError
+		if errors.As(err, &blocked) {
+			preferred = blocked
+			continue
+		}
+		if fallback == nil {
+			fallback = err
 		}
 	}
-	return false
+	if preferred != nil {
+		return preferred
+	}
+	if fallback != nil {
+		return fallback
+	}
+	return world.ErrNoRoute
 }
