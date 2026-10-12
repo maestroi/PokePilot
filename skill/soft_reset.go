@@ -66,18 +66,26 @@ func continueFromTitle(m *emu.Emu) error {
 // ensureNavigableOverworld normalizes start boundaries that look like a map
 // coordinate but are not routable overworld control:
 //
-//   - post-Init title/main-menu (sprites == $ff), including Hall of Fame's
-//     scripted jp Init exit;
+//   - post-Init title/main-menu (sprites == $ff and no battle in progress),
+//     including Hall of Fame's scripted jp Init exit;
 //   - Hall of Fame after the durable completion bit is set but before that
 //     soft-reset, where the world graph has no Kanto route (Lance's Champion
 //     entrance is a disconnected north pocket).
+//
+// sprites == $ff is NOT on its own proof of the title/main-menu boundary: a
+// live battle also disables overworld sprites, so a resumed attempt that
+// stopped inside a wild encounter reads $ff too. Soft-resetting there would
+// hunt for a main menu that is a battle screen and fail ("main menu did not
+// appear") with a non-ErrBattle error the Travel loop cannot resolve. Guard the
+// $ff signal with "no battle in progress" so a live battle falls through to
+// GoTo's abortIfBattle, which returns ErrBattle for the fight/flee loop.
 func ensureNavigableOverworld(m *emu.Emu) error {
 	if m == nil {
 		return nil
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	needsResume := mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled ||
+	needsResume := (mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled && state.DecodeBattle(&mem) == nil) ||
 		(mem.U8(sym.CurMap) == hallOfFameMap && state.MainStoryComplete(&mem))
 	if !needsResume {
 		return nil
