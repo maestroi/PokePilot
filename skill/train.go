@@ -630,20 +630,39 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}); err != nil {
 		return err
 	}
-	// B out of the start menu (overworld). The positive postcondition is that
-	// the start menu is no longer on screen, NOT Controllable: the start menu
-	// is drawn into the tilemap (not a text box), so FontLoaded and JoyIgnore
-	// stay clear while it is up and Controllable reads true with the menu still
-	// on screen. Returning on Controllable hands a dirty boundary to the next
-	// skill, whose first direction tap is swallowed by the menu loop (Cerulean
-	// Gym Face, run-2zpq42m3n7hlqaz1899ecvrtd). closeStartMenuWithDecoder
-	// retries B until the decoder no longer observes the menu.
+	// B out of the start menu (overworld). The close itself is gated on the
+	// decoder no longer observing the menu, NOT on Controllable: the start
+	// menu is drawn into the tilemap (not a text box), so FontLoaded and
+	// JoyIgnore stay clear while it is up and Controllable reads true with the
+	// menu still on screen. Gating the close on Controllable would hand a dirty
+	// boundary to the next skill, whose first direction tap is swallowed by the
+	// menu loop (Cerulean Gym Face, run-2zpq42m3n7hlqaz1899ecvrtd).
+	// closeStartMenuWithDecoder retries B until the decoder no longer observes
+	// the menu.
 	decoder, err := menuDecoderFor(m)
 	if err != nil {
 		return err
 	}
 	if err := closeStartMenuWithDecoder(m, decoder); err != nil {
 		return err
+	}
+	// The menu's tiles clear a few frames BEFORE its font unloads, so the
+	// decoder's Visible oracle goes false while FontLoaded is still set and the
+	// player is not yet controllable. closeStartMenuWithDecoder therefore
+	// returns inside that font-unload window, and a caller that asserts
+	// Controllable (Train, the restore swap) reads it as a dirty boundary. Now
+	// that the menu is confirmed closed, Controllable is safe to wait on: while
+	// the menu is up it reads true (the reverse of this window), so the wait can
+	// only be riding out the in-flight font unload, never a menu still on screen.
+	// StepUntil is free when the boundary is already clean.
+	if _, err := m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
+		var s state.Mem
+		state.Snapshot(e, &s)
+		return state.Controllable(&s)
+	}); err != nil {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		return fmt.Errorf("skill: PromoteToLead: player not controllable after closing the start menu on map %#04x: %w", m.Peek8(sym.CurMap), err)
 	}
 
 	state.Snapshot(m, &mem)
