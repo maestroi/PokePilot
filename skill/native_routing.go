@@ -999,6 +999,20 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 			mem.entry = e.Entry()
 		}
 		mem.last = nil
+		// A journey that begins already inside a split-floor map (or resumes
+		// after a battle on one) has no crossed edge to name the entry. Standing
+		// on a warp landing is that entry: unreachable proofs must key the same
+		// integer FindNativeRouteToEntry uses when a later leave/re-enter arrives
+		// through the same tile. Olivine Lighthouse 5F (3,5) vs (9,7) is the
+		// farm case — Unknown made the bad pocket's sealed stairs look fresh
+		// after every bounce (run-1bt0xg6hiyxbo / triage a063587282be1c3a).
+		if mem.entry == world.NativeEntryUnknown {
+			if header, parseErr := provider.ParseMap(state.NativeMapID); parseErr == nil {
+				if entry, ok := nativeEntryAtTile(header.Warps, state.X, state.Y); ok {
+					mem.entry = entry
+				}
+			}
+		}
 
 		if state.NativeMapID == dest.Map && (goodEntries == nil || goodEntries[mem.entry]) {
 			if dest.MapOnly {
@@ -1052,13 +1066,95 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 			// the other entry into the map connects to): remember that and
 			// re-route, which leaves the map and re-enters elsewhere.
 			if errors.Is(err, world.ErrNoPath) {
-				mem.unreachable[world.NativeUnreachable{Map: state.NativeMapID, Entry: mem.entry, Edge: route[0]}] = true
+				grid, _, header, gridErr := nativeLiveGrid(m, profile, provider, state.NativeMapID)
+				if gridErr != nil {
+					mem.unreachable[world.NativeUnreachable{Map: state.NativeMapID, Entry: mem.entry, Edge: route[0]}] = true
+				} else {
+					nativeMarkComponentUnreachable(mem, grid, header, state.NativeMapID, int(state.X), int(state.Y), route[0])
+				}
 				mem.last = nil
-				delete(seen, key)
+				// New sealed-edge knowledge can justify revisiting tiles walked
+				// while discovering it (leave this pocket, re-enter elsewhere).
+				seen = map[[3]uint16]bool{}
 				continue
 			}
 			return err
 		}
+		// A successful map change is progress: the next visit to a prior tile
+		// may be an intentional re-entry after learning on other floors
+		// (Olivine Lighthouse outer ring → pit drop → center climb).
+		seen = map[[3]uint16]bool{}
 	}
 	return fmt.Errorf("skill: native routing: exceeded %d map transitions toward %#04x: %w", maxNavigationTransitions, dest.Map, ErrNavigationStalled)
+}
+
+// nativeEntryAtTile reports the warp-table index of a tile the player is
+// standing on. DestWarp ids on inbound edges are that same index, so it is the
+// NativeEdge.Entry value used by route memory.
+func nativeEntryAtTile(warps []worldmodel.NativeWarp, x, y uint8) (int, bool) {
+	for i, warp := range warps {
+		if warp.X == x && warp.Y == y {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// nativeEntriesSharingComponent lists warp indices whose landing tiles share a
+// walkable component with (sx,sy). An ErrNoPath proof is a fact about that
+// component, not about the single entry id the journey happens to carry: Olivine
+// Lighthouse 4F landings (3,5)/(13,3)/(16,7) are one outer ring, and sealing
+// (9,7) for only one of them left the router bouncing through the others
+// (run-1bt0xg6hiyxbo).
+func nativeEntriesSharingComponent(grid *world.NativeGrid, header worldmodel.NativeMapHeader, sx, sy int) []int {
+	if grid == nil {
+		return nil
+	}
+	blocked := nativeStaticBlockers(header, nil)
+	delete(blocked, [2]int{sx, sy})
+	seen := map[int]bool{}
+	var out []int
+	add := func(i int) {
+		if seen[i] {
+			return
+		}
+		seen[i] = true
+		out = append(out, i)
+	}
+	if ent, ok := nativeEntryAtTile(header.Warps, uint8(sx), uint8(sy)); ok {
+		add(ent)
+	}
+	for i, warp := range header.Warps {
+		allow := [2]int{int(warp.X), int(warp.Y)}
+		here := nativeStaticBlockers(header, &allow)
+		delete(here, [2]int{sx, sy})
+		if _, err := world.FindNativePath(grid, sx, sy, int(warp.X), int(warp.Y), here); err == nil {
+			add(i)
+		}
+	}
+	return out
+}
+
+func nativeMarkComponentUnreachable(
+	mem *NativeRouteMemory,
+	grid *world.NativeGrid,
+	header worldmodel.NativeMapHeader,
+	mapID uint16,
+	sx, sy int,
+	edge world.NativeEdge,
+) {
+	if mem == nil {
+		return
+	}
+	if mem.unreachable == nil {
+		mem.unreachable = map[world.NativeUnreachable]bool{}
+	}
+	entries := nativeEntriesSharingComponent(grid, header, sx, sy)
+	if len(entries) == 0 {
+		mem.unreachable[world.NativeUnreachable{Map: mapID, Entry: mem.entry, Edge: edge}] = true
+		return
+	}
+	for _, entry := range entries {
+		mem.unreachable[world.NativeUnreachable{Map: mapID, Entry: entry, Edge: edge}] = true
+	}
 }

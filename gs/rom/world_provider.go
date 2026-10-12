@@ -666,10 +666,13 @@ var firstBadgeTopology = []mapSpec{
 			{x: 9, y: 5, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 4},
 			{x: 16, y: 11, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 5},
 			{x: 17, y: 11, dest: "OLIVINE_LIGHTHOUSE_2F", destWarp: 6},
-			{x: 16, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 5},
-			{x: 17, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 6},
-			{x: 8, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 7},
-			{x: 9, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 8},
+			// Pit landings from 4F: COLL_PIT on 4F, non-triggering on 3F. Keeping
+			// them as climb edges made GoToNative invent "up the hole" routes to
+			// Jasmine (run-1bt0xg6hiyxbo). The matching 4F→3F falls stay active.
+			{x: 16, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 5, inert: true},
+			{x: 17, y: 9, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 6, inert: true},
+			{x: 8, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 7, inert: true},
+			{x: 9, y: 3, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 8, inert: true},
 		},
 	},
 	{
@@ -679,12 +682,16 @@ var firstBadgeTopology = []mapSpec{
 			{x: 3, y: 5, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 2},
 			{x: 9, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 3},
 			{x: 9, y: 5, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 3},
+			// Fall-through pits toward the center tower (near Connie). These are
+			// the intentional one-way drops the climb uses after the outer 4F/5F
+			// ring; the reverse 3F landings are inert above.
 			{x: 16, y: 9, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 6},
 			{x: 17, y: 9, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 7},
 			{x: 8, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 8},
 			{x: 9, y: 3, dest: "OLIVINE_LIGHTHOUSE_3F", destWarp: 9},
-			{x: 16, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 4},
-			{x: 17, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 5},
+			// Pit landings from 5F — not climbable stairs.
+			{x: 16, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 4, inert: true},
+			{x: 17, y: 7, dest: "OLIVINE_LIGHTHOUSE_5F", destWarp: 5, inert: true},
 		},
 	},
 	{
@@ -695,8 +702,9 @@ var firstBadgeTopology = []mapSpec{
 			{x: 9, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 3},
 			{x: 16, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 9},
 			{x: 17, y: 7, dest: "OLIVINE_LIGHTHOUSE_4F", destWarp: 10},
-			{x: 16, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 2},
-			{x: 17, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 3},
+			// Pit landings from 6F — falling down is 6F→5F only.
+			{x: 16, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 2, inert: true},
+			{x: 17, y: 5, dest: "OLIVINE_LIGHTHOUSE_6F", destWarp: 3, inert: true},
 		},
 	},
 	{
