@@ -170,6 +170,52 @@ func TestNativeErrNoPathCausedBySprites(t *testing.T) {
 	}
 }
 
+// TestNativeEntryAtTile pins the split-floor entry identity used by route
+// memory: standing on warp index i is the same Entry() as an inbound edge with
+// DestWarp i (Olivine Lighthouse 5F pocket at (3,5) vs climb stairs at (9,7)).
+func TestNativeEntryAtTile(t *testing.T) {
+	warps := []worldmodel.NativeWarp{
+		{X: 9, Y: 15},
+		{X: 3, Y: 5},
+		{X: 9, Y: 7},
+	}
+	if got, ok := nativeEntryAtTile(warps, 3, 5); !ok || got != 1 {
+		t.Fatalf("standing (3,5) = (%d,%v), want (1,true)", got, ok)
+	}
+	if got, ok := nativeEntryAtTile(warps, 9, 7); !ok || got != 2 {
+		t.Fatalf("standing (9,7) = (%d,%v), want (2,true)", got, ok)
+	}
+	if _, ok := nativeEntryAtTile(warps, 4, 5); ok {
+		t.Fatal("off-warp tile must not invent an entry")
+	}
+}
+
+// TestNativeEntriesSharingComponent pins the component-wide unreachable proof:
+// two warp landings joined by floor share sealed edges; a third landing behind
+// a wall does not.
+func TestNativeEntriesSharingComponent(t *testing.T) {
+	// 3x3 open left column and bottom row; right-middle cell walled off.
+	walkable := make([]bool, 9)
+	for i := range walkable {
+		walkable[i] = true
+	}
+	walkable[1+1*3] = false // (1,1) wall splits (2,0) from (0,2)
+	grid := nativeTestGrid(t, 3, 3, walkable)
+	header := worldmodel.NativeMapHeader{Warps: []worldmodel.NativeWarp{
+		{X: 0, Y: 0}, // same component as (0,2)
+		{X: 0, Y: 2},
+		{X: 2, Y: 0}, // separated by wall at (1,1) depending on path
+	}}
+	shared := nativeEntriesSharingComponent(grid, header, 0, 2)
+	has := map[int]bool{}
+	for _, e := range shared {
+		has[e] = true
+	}
+	if !has[0] || !has[1] {
+		t.Fatalf("shared from (0,2) = %v, want entries 0 and 1", shared)
+	}
+}
+
 // TestNativeAvoidUnderfootLeave pins the Sprout Tower 2F contract: after the
 // center landing proves 3F unreachable, the graph ties between reversing
 // through those stairs and leaving via a side stair. Standing on the chosen
