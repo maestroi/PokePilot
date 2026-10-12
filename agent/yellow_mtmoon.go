@@ -19,7 +19,7 @@ func yellowMtMoonExitTrigger() scriptedProgressTrigger {
 		Name:        "yellow Mt. Moon Jessie/James",
 		Destination: skill.ExactDestination(yellowMtMoonB2FMap, yellowMtMoonJessieJamesX, yellowMtMoonJessieJamesY),
 		Progress:    yellowprofile.ProgressYellowMtMoonExitResolved,
-		MaxFrames:   30000,
+		MaxFrames:   60000,
 		IdleFrames:  90,
 		AdvanceA:    true,
 	}
