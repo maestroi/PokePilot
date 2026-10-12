@@ -34,6 +34,43 @@ func TestRoute23VictoryRoadEntranceIsSemanticPivot(t *testing.T) {
 	}
 }
 
+func TestRoute23VictoryRoadNorthDoorIsBadgeGate(t *testing.T) {
+	edge := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  route23Map,
+		To:    victoryRoad2FMap,
+		WarpX: route23VictoryRoad2FWarpX,
+		WarpY: route23VictoryRoad2FWarpY,
+	}
+	transition, ok := redRouteTransitionForEdge(edge)
+	if !ok {
+		t.Fatal("Route 23 -> Victory Road 2F north door is missing semantic gate")
+	}
+	if transition.ID != "red:route23_victory_road_north" {
+		t.Fatalf("transition id=%q", transition.ID)
+	}
+	if !transition.Gate || transition.PivotOnly || transition.PortBypass {
+		t.Fatalf("north door must be an ordinary-geometry Gate, got gate=%v pivot_only=%v port_bypass=%v",
+			transition.Gate, transition.PivotOnly, transition.PortBypass)
+	}
+	if len(transition.Requires) != 1 || transition.Requires[0] != capCanPassRoute23BadgeChecks {
+		t.Fatalf("requirements=%v, want Route 23 badge checks only", transition.Requires)
+	}
+
+	// Exiting Victory Road 2F onto Route 23 stays ordinary: the player is
+	// already inside the cave system and must not need a badge re-check to leave.
+	reverse := world.Edge{
+		Kind:  world.EdgeWarp,
+		From:  victoryRoad2FMap,
+		To:    route23Map,
+		WarpX: 29,
+		WarpY: 7,
+	}
+	if transition, ok := redRouteTransitionForEdge(reverse); ok && transition.ID == "red:route23_victory_road_north" {
+		t.Fatalf("Victory Road 2F -> Route 23 unexpectedly owns north-entry gate: %+v", transition)
+	}
+}
+
 func TestRoute23SouthReturnIsSemanticPivot(t *testing.T) {
 	for _, x := range []uint8{7, 8} {
 		edge := world.Edge{

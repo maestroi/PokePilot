@@ -75,8 +75,15 @@ const (
 	silphCo1FInaccessibleStairWarpX uint8 = 16
 	silphCo1FInaccessibleStairWarpY uint8 = 10
 
-	route23VictoryRoadWarpX     uint8 = 4
-	route23VictoryRoadWarpY     uint8 = 31
+	route23VictoryRoadWarpX uint8 = 4
+	route23VictoryRoadWarpY uint8 = 31
+	// North Route 23 door into Victory Road 2F (the cave's exit side). The ROM
+	// warp table is bidirectional, so without a semantic gate the map-level
+	// connectivity over-approximation treats this as an ungated entry into the
+	// Victory Road system and Reachability reports destinations like Moltres as
+	// routable while badge checks are still missing (run-d6dokr184ky81).
+	route23VictoryRoad2FWarpX   uint8 = 14
+	route23VictoryRoad2FWarpY   uint8 = 31
 	route23VictoryRoadApproachY uint8 = 32
 	route23Route22GateWarpY     uint8 = 139
 
@@ -169,6 +176,16 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// the same fact to semantic routing so the portable graph does not stop
 		// at the south Route 23 component even with all progression complete.
 		return semanticTransition("red:route23_league_approach", edge, capCanSurf, capCanPassRoute23BadgeChecks), true
+
+	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == victoryRoad2FMap &&
+		edge.WarpX == route23VictoryRoad2FWarpX && edge.WarpY == route23VictoryRoad2FWarpY:
+		// The cave's north door is ordinary walking once the player is already
+		// in the Indigo-side Route 23 pocket. It must still be gated on the
+		// Route 23 badge-check capability so map-level connectivity cannot
+		// pretend this ROM-bidirectional warp is an alternate entry that skips
+		// the south League approach. Leaving through Victory Road 2F -> Route 23
+		// stays ordinary geometry (no transition on the reverse edge).
+		return bikeGate("red:route23_victory_road_north", capCanPassRoute23BadgeChecks)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == route22GateMap &&
 		edge.WarpY == route23Route22GateWarpY && (edge.WarpX == 7 || edge.WarpX == 8):

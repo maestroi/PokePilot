@@ -82,3 +82,17 @@ func TestAppendDexStaticObjectivesHidesSiteUntilMissingFieldMoveIsReachable(t *t
 		t.Fatalf("Zapdos stayed hidden once Surf was repairable: %+v", got)
 	}
 }
+
+func TestAppendDexStaticObjectivesHidesSiteUntilRoute23BadgeChecksComplete(t *testing.T) {
+	obs := staticDexObservation("moltres", 0xC2, "")
+	known := NewKnowledge(nil)
+	key := appendDexStaticObjectives(obs, known, nil)[0].String()
+	known.Failures[key] = Failure{Objective: key, Times: 12, Last: `skill: static Moltres: reach encounter: skill: GoTo: no route from map 10 at (10,35) to map c2 at (11,6): world: no route: transition "red:route23_league_approach" from "route 23" to "victory road 1f" is missing capabilities [can_pass_route23_badge_checks]`}
+	if got := appendDexStaticObjectives(obs, known, nil); len(got) != 0 {
+		t.Fatalf("badge-gated Moltres re-offered without Route 23 checks: %+v", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: ProgressRoute23BadgeChecks, Complete: true, Value: 7})
+	if got := appendDexStaticObjectives(obs, known, nil); len(got) != 1 {
+		t.Fatalf("Moltres stayed hidden once Route 23 badge checks completed: %+v", got)
+	}
+}
