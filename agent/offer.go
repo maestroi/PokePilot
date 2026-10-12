@@ -121,6 +121,9 @@ type Failure struct {
 	CounterGap bool `json:",omitempty"`
 	// Key is the structured objective identity of a combat loss.
 	Key *ObjectiveKey `json:",omitempty"`
+	// RouteState is the badge/capability/story fingerprint at a graph-level
+	// no_route failure. Same fingerprint means the route is still closed.
+	RouteState string `json:",omitempty"`
 }
 
 type Completion struct {

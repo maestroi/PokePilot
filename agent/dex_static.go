@@ -75,6 +75,13 @@ func staticObjectiveQuarantined(known *Knowledge, objective Objective, obs Obser
 	if !ok {
 		return false
 	}
+	// A static has one fixed journey, so a graph-level no_route stays true
+	// until badges, capabilities or story change. The world planner's
+	// replan-required answer is optimistic past any semantic action, which
+	// kept Mewtwo/Articuno offered and failing for days (run-d6dokr184ky81).
+	if failure.RouteState != "" && failure.RouteState == routePrerequisiteStateKey(obs) {
+		return true
+	}
 	last := strings.ToLower(failure.Last)
 	return strings.Contains(last, "static capture attempts exhausted") || strings.Contains(last, "one-time static source unavailable") ||
 		staticRouteCapabilityMissing(obs, failure.Last)
