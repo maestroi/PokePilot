@@ -397,7 +397,11 @@ func catchDialogueResolution(rec DialogueRecoveryResult) (battleStarted bool, er
 // bug, which OutcomeTargetFainted exists to name.
 func catchWantedWithSemantics(m *emu.Emu, profile game.CaptureProfile, exec captureExecutionSemantics, want []uint8, wantNative, wantDex []uint16, policy MovePolicy, before game.CaptureState, res CatchResult, maxBalls int) (CatchResult, error) {
 	targetFainted := false
-	for res.BallsThrown < maxBalls && exec.runtime.DecodeBattleRuntime(m).InBattle {
+	// maxBalls is a per-wanted-encounter budget. Fish (and any caller that
+	// keeps hunting after a miss) accumulates BallsThrown across bites; the
+	// limit must not shrink later encounters to zero throws.
+	thrownAtStart := res.BallsThrown
+	for res.BallsThrown-thrownAtStart < maxBalls && exec.runtime.DecodeBattleRuntime(m).InBattle {
 		nativeBall, ok := ordinaryCaptureBall(profile.DecodeInventory(m), profile.OrdinaryCaptureBallOrder())
 		if !ok {
 			break // the bag is dry before maxBalls: same ending as running out
