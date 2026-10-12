@@ -17,6 +17,9 @@ type ListMenuState struct {
 	Visible  bool
 	Kind     ListMenuKind
 	Position int
+	// Pocket is the carried-item pocket an items list currently shows, empty
+	// for games with a single item list. Position is relative to that pocket.
+	Pocket MachinePocket
 }
 
 // ListMenuDecoder hides game-specific list ids, cursor bytes and scroll

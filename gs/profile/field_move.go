@@ -249,3 +249,13 @@ func (*Profile) NativeFieldMove(id game.FieldMoveID) (game.NativeFieldMove, bool
 }
 
 var _ game.FieldMoveDecoder = (*Profile)(nil)
+
+// SpeciesCanLearnFieldMove answers from the ROM's TM/HM compatibility table
+// whether a native species could carry id once caught.
+func (*Profile) SpeciesCanLearnFieldMove(romData []byte, species uint8, id game.FieldMoveID) (bool, error) {
+	spec, ok := gsFieldMoveByID(id)
+	if !ok {
+		return false, nil
+	}
+	return gsrom.CanLearnTMHM(romData, species, spec.machineNumber)
+}

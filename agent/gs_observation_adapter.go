@@ -72,5 +72,26 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 		}
 		obs.Bag = append(obs.Bag, Item{Name: name, Quantity: item.Quantity})
 	}
+	if field, ok := profile.(game.FieldMoveDecoder); ok {
+		for _, id := range game.ProgressionFieldMoves() {
+			capability, supported, err := field.DecodeFieldMoveCapability(m, romData, id)
+			if err != nil {
+				return Observation{}, fmt.Errorf("field capability %s: %w", id, err)
+			}
+			if !supported {
+				continue
+			}
+			obs.FieldCapabilities = append(obs.FieldCapabilities, FieldCapability{
+				Name:       CapabilityID(id),
+				Badge:      capability.BadgeRequired,
+				BadgeOwned: capability.BadgeOwned,
+				HMOwned:    capability.MachineOwned,
+				Learned:    capability.Learned,
+				PartySlot:  capability.PartySlot,
+				Usable:     capability.Usable,
+				Preparable: capability.Preparable,
+			})
+		}
+	}
 	return obs, nil
 }

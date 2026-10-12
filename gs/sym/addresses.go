@@ -195,4 +195,15 @@ const (
 	Balls         uint16 = 0xD5FD
 	MaxBalls             = 12
 	PokegearFlags uint16 = 0xD67C // wPokegearFlags
+
+	// Scrolling-menu and Poke Mart transaction state. Measured on retail Gold
+	// at the Olivine Mart counter against the ROM's own stock list; the order
+	// matches ram/wram.asm (wMartPointer is the word before the jumptable).
+	MenuScrollPosition uint16 = 0xCFD4 // wMenuScrollPosition (follows wSwitchMon)
+	MartJumptableIndex uint16 = 0xCF2D // wMartJumptableIndex (STANDARDMART_*)
+	CurMartCount       uint16 = 0xCFEC // wCurMartCount
+	CurMartItems       uint16 = 0xCFED // wCurMartItems, $ff-terminated
+	MaxMartItems              = 15
+	ItemQuantityChange uint16 = 0xD009 // wItemQuantityChange
+	MoneyTemp          uint16 = 0xFFC5 // hMoneyTemp, 3-byte big-endian total
 )

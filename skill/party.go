@@ -122,11 +122,21 @@ func switchActiveWithDecoders(
 		if execution.DecodeBattleExecution(m).Phase != game.BattleExecutionSwitchBox {
 			return fmt.Errorf("party selection left no switch confirmation")
 		}
-		m.Tap(emu.A, 3, 7)
-		if !waitMenuUntil(m, moveMenuBudget, func() bool {
-			live := resources.DecodeBattleResources(m)
-			return !live.InBattle || live.ActiveSlot == slot
-		}) {
+		// The confirmation can be drawn before its menu polls input (Gen-II
+		// SWITCH/STATS/CANCEL); press again only while it is still the
+		// confirmation, so a taken answer is never pressed through.
+		switched := false
+		for press := 0; press < 3 && !switched; press++ {
+			if press > 0 && execution.DecodeBattleExecution(m).Phase != game.BattleExecutionSwitchBox {
+				break
+			}
+			m.Tap(emu.A, menuPressHold(execution), 7)
+			switched = waitMenuUntil(m, moveMenuBudget, func() bool {
+				live := resources.DecodeBattleResources(m)
+				return !live.InBattle || live.ActiveSlot == slot
+			})
+		}
+		if !switched {
 			return fmt.Errorf("active slot did not become %d", slot)
 		}
 	}

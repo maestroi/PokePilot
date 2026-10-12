@@ -204,6 +204,9 @@ func useItemWithDecoders(
 			battleRuntimeContext(runtime.DecodeBattleRuntime(m)), err)
 	}
 
+	if err := selectItemPocketWithDecoder(m, listMenu, inventoryPocket(inventory.DecodeInventory(m), item)); err != nil {
+		return fmt.Errorf("skill: UseItem: %w", err)
+	}
 	if err := selectScrollingListEntryWithDecoder(m, listMenu, idx); err != nil {
 		return fmt.Errorf("skill: UseItem: select bag entry %d: %w", idx, err)
 	}
@@ -243,15 +246,55 @@ func useItemWithDecoders(
 		item, before, after, bagUseBudget)
 }
 
-// inventoryEntry reports the absolute list position and quantity of an item.
-// Item-list ordering is the profile-projected inventory ordering.
+// inventoryEntry reports the list position and quantity of an item. The
+// position is relative to the item's pocket, in the profile-projected
+// inventory ordering; single-list games have one unnamed pocket.
 func inventoryEntry(state game.InventoryState, item uint16) (int, int) {
-	for i, it := range state.Items {
-		if it.NativeItemID == item {
-			return i, it.Quantity
+	pocket := inventoryPocket(state, item)
+	pos := 0
+	for _, it := range state.Items {
+		if it.Pocket != pocket {
+			continue
 		}
+		if it.NativeItemID == item {
+			return pos, it.Quantity
+		}
+		pos++
 	}
 	return -1, 0
+}
+
+func inventoryPocket(state game.InventoryState, item uint16) game.MachinePocket {
+	for _, it := range state.Items {
+		if it.NativeItemID == item {
+			return it.Pocket
+		}
+	}
+	return game.MachinePocketUnknown
+}
+
+// selectItemPocketWithDecoder cycles a multi-pocket item list until it shows
+// pocket. Profiles report semantic pockets only; an unnamed pocket means the
+// game has one list and nothing needs to change.
+func selectItemPocketWithDecoder(m menuMachine, decoder game.ListMenuDecoder, pocket game.MachinePocket) error {
+	if pocket == game.MachinePocketUnknown {
+		return nil
+	}
+	const pocketCount = 4
+	for attempts := 0; attempts < 2*pocketCount; attempts++ {
+		live := decoder.DecodeListMenu(m)
+		if live.Visible && live.Pocket == pocket {
+			return nil
+		}
+		previous := live.Pocket
+		m.Tap(emu.Left, menuPressHold(decoder), 7)
+		waitMenuUntil(m, bagMenuBudget, func() bool {
+			next := decoder.DecodeListMenu(m)
+			return next.Visible && next.Pocket != previous
+		})
+		m.StepFrames(menuSettleFrames)
+	}
+	return fmt.Errorf("item list could not reach the %q pocket (showing %q)", pocket, decoder.DecodeListMenu(m).Pocket)
 }
 
 // selectBagEntry uses the shared profile-driven scrolling-list driver. The
