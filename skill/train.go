@@ -621,9 +621,8 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}); err != nil {
 		return err
 	}
-	// B out of the party screen (back to the start menu), B out of the
-	// start menu (overworld). Both are retry-gated: the first B is lost in
-	// the same joypad-init window as the A presses.
+	// B out of the party screen (back to the start menu). Retry-gated: the
+	// first B is lost in the same joypad-init window as the A presses.
 	if err := pressKeyUntil(emu.B, 600, "party screen exit", func(s *state.Mem) bool {
 		return onScreen(s, "Choose")
 	}, func(s *state.Mem) bool {
@@ -631,11 +630,19 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}); err != nil {
 		return err
 	}
-	if err := pressKeyUntil(emu.B, 600, "start menu exit", func(s *state.Mem) bool {
-		return onScreen(s, "SAVE") && onScreen(s, "EXIT")
-	}, func(s *state.Mem) bool {
-		return state.Controllable(s)
-	}); err != nil {
+	// B out of the start menu (overworld). The positive postcondition is that
+	// the start menu is no longer on screen, NOT Controllable: the start menu
+	// is drawn into the tilemap (not a text box), so FontLoaded and JoyIgnore
+	// stay clear while it is up and Controllable reads true with the menu still
+	// on screen. Returning on Controllable hands a dirty boundary to the next
+	// skill, whose first direction tap is swallowed by the menu loop (Cerulean
+	// Gym Face, run-2zpq42m3n7hlqaz1899ecvrtd). closeStartMenuWithDecoder
+	// retries B until the decoder no longer observes the menu.
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	if err := closeStartMenuWithDecoder(m, decoder); err != nil {
 		return err
 	}
 
