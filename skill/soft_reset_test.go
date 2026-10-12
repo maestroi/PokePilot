@@ -48,3 +48,40 @@ func TestHallOfFamePostCompletionNeedsSoftResetEgress(t *testing.T) {
 		t.Fatal("test setup missing main-story completion")
 	}
 }
+
+// TestControllableSpritesDisabledIsNotTitleResume pins the shared invariant
+// behind run-2f5bbo4uwzhnv5w20i59sq17l / triage:2d686ba194d84d8a: after
+// PromoteToLead closes the START menu, wUpdateSpritesEnabled can remain $ff
+// while Controllable still reads true. That is a leftover menu boundary, not
+// post-Init title/main-menu. ensureNavigableOverworld must not soft-reset it
+// into reachMainMenu's Start/A hunt (which opens the Pokémon status screen and
+// fails with "main menu did not appear").
+func TestControllableSpritesDisabledIsNotTitleResume(t *testing.T) {
+	mem := state.Mem{}
+	mem[sym.CurMap] = 0x85 // Celadon Pokemon Center
+	mem[sym.CurMapWidth] = 4
+	mem[sym.CurMapHeight] = 4
+	mem[sym.UpdateSpritesEnabled] = initSpritesDisabled
+	mem[sym.IsInBattle] = 0
+	mem[sym.FontLoaded] = 0
+	mem[sym.JoyIgnore] = 0
+	mem[sym.WalkCounter] = 0
+	mem[sym.CurOpponent] = 0
+	mem[sym.StatusFlags4] = 0
+	mem[sym.StatusFlags6] = 0
+	mem[sym.EnteringCableClub] = 0
+	if !state.Controllable(&mem) {
+		t.Fatal("test setup must be Controllable with sprites disabled")
+	}
+	if state.DecodeBattle(&mem) != nil {
+		t.Fatal("test setup must not decode as a live battle")
+	}
+	// Mirror ensureNavigableOverworld's generic $ff gate (HoF egress is a
+	// separate OR). Controllable + $ff must not request a title resume.
+	needsResume := mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled &&
+		state.DecodeBattle(&mem) == nil &&
+		!state.Controllable(&mem)
+	if needsResume {
+		t.Fatal("controllable sprites-$ff boundary unexpectedly requests soft-reset resume")
+	}
+}

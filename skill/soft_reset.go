@@ -66,26 +66,38 @@ func continueFromTitle(m *emu.Emu) error {
 // ensureNavigableOverworld normalizes start boundaries that look like a map
 // coordinate but are not routable overworld control:
 //
-//   - post-Init title/main-menu (sprites == $ff and no battle in progress),
+//   - post-Init title/main-menu (sprites == $ff, no battle, not controllable),
 //     including Hall of Fame's scripted jp Init exit;
 //   - Hall of Fame after the durable completion bit is set but before that
 //     soft-reset, where the world graph has no Kanto route (Lance's Champion
 //     entrance is a disconnected north pocket).
 //
-// sprites == $ff is NOT on its own proof of the title/main-menu boundary: a
-// live battle also disables overworld sprites, so a resumed attempt that
-// stopped inside a wild encounter reads $ff too. Soft-resetting there would
-// hunt for a main menu that is a battle screen and fail ("main menu did not
-// appear") with a non-ErrBattle error the Travel loop cannot resolve. Guard the
-// $ff signal with "no battle in progress" so a live battle falls through to
-// GoTo's abortIfBattle, which returns ErrBattle for the fight/flee loop.
+// sprites == $ff is NOT on its own proof of the title/main-menu boundary:
+//
+//   - a live battle also disables overworld sprites, so a resumed attempt that
+//     stopped inside a wild encounter reads $ff too. Soft-resetting there would
+//     hunt for a main menu that is a battle screen and fail ("main menu did not
+//     appear") with a non-ErrBattle error the Travel loop cannot resolve;
+//   - PromoteToLead / party-menu paths can leave sprites == $ff while
+//     Controllable still reads true (run-2f5bbo4uwzhnv5w20i59sq17l after
+//     prepareChallengeLead). Soft-resetting then Start/A-hunts into the START
+//     menu and Pokémon status screen ("EXP POINTS" / "LEVEL UP") instead of
+//     CONTINUE/NEW GAME.
+//
+// Guard the generic $ff signal with "no battle" and "not controllable" so a
+// live battle falls through to GoTo's abortIfBattle (ErrBattle) and a
+// controllable leftover menu boundary is left for ordinary navigation. The
+// Hall of Fame completion egress stays an explicit second case: Controllable
+// can read true there with a stale CurMap and no Kanto route.
 func ensureNavigableOverworld(m *emu.Emu) error {
 	if m == nil {
 		return nil
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	needsResume := (mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled && state.DecodeBattle(&mem) == nil) ||
+	needsResume := (mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled &&
+		state.DecodeBattle(&mem) == nil &&
+		!state.Controllable(&mem)) ||
 		(mem.U8(sym.CurMap) == hallOfFameMap && state.MainStoryComplete(&mem))
 	if !needsResume {
 		return nil
