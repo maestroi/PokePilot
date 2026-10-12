@@ -376,7 +376,8 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x09, true
 	case "MR_POKEMONS_HOUSE":
 		return 0x0a, true
-	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART":
+	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART",
+		"OLIVINE_MART":
 		return 0x0b, true
 	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM":
 		return 0x0e, true

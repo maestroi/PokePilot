@@ -624,6 +624,13 @@ var firstBadgeTopology = []mapSpec{
 		},
 	},
 	{
+		name: "OLIVINE_MART",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "OLIVINE_CITY", destWarp: 8},
+			{x: 3, y: 7, dest: "OLIVINE_CITY", destWarp: 8},
+		},
+	},
+	{
 		name: "OLIVINE_CAFE",
 		warps: []warpSpec{
 			{x: 2, y: 7, dest: "OLIVINE_CITY", destWarp: 7},

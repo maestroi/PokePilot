@@ -11,6 +11,10 @@ const (
 	ShopPhaseItemList
 	ShopPhaseQuantity
 	ShopPhaseConfirmation
+	// ShopPhaseBusy is a live shop screen that is redrawing or between
+	// boxes. Drivers wait without input; a press here lands on whatever
+	// appears next.
+	ShopPhaseBusy
 )
 
 // ShopState is the portable transaction view used by the reusable shop driver.

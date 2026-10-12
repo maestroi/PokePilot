@@ -59,7 +59,7 @@ func selectScrollingListEntryWithDecoder(m menuMachine, decoder game.ListMenuDec
 		if previous > index {
 			btn = emu.Up
 		}
-		m.Tap(btn, 3, 7)
+		m.Tap(btn, menuPressHold(decoder), 7)
 		if !waitMenuUntil(m, menuSettleFrames, func() bool {
 			next := decoder.DecodeListMenu(m)
 			return next.Visible && next.Position != previous
@@ -81,6 +81,6 @@ func selectScrollingListEntryWithDecoder(m menuMachine, decoder game.ListMenuDec
 		}
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(decoder), 7)
 	return nil
 }

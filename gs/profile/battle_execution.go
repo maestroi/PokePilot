@@ -114,6 +114,11 @@ func (p *Profile) DecodeBattleExecution(reader game.MemoryReader) game.BattleExe
 		out.Phase = game.BattleExecutionUseNextPrompt
 	case strings.Contains(text, "The move is") && strings.Contains(text, "DISABLED!"):
 		out.Phase = game.BattleExecutionMoveDisabled
+	// BattleMonMenu (engine/pokemon/mon_submenu.asm) follows a party pick in
+	// battle with SWITCH/STATS/CANCEL. Only the default SWITCH row is the
+	// confirmation; the generic switch transaction answers it with A.
+	case gsBattleMonMenuOnSwitch(reader, text):
+		out.Phase = game.BattleExecutionSwitchBox
 	case moveMenu:
 		out.Phase = game.BattleExecutionMoveMenu
 	case main.Visible:
@@ -175,4 +180,10 @@ func gsMovePanelShowsDisabled(reader game.MemoryReader) bool {
 	raw := make([]byte, len(gsMovePanelDisabledMarker))
 	reader.PeekInto(sym.TileMap+gsMovePanelDisabledOffset, raw)
 	return strings.EqualFold(gsDecodeTiles(raw), gsMovePanelDisabledMarker)
+}
+
+func gsBattleMonMenuOnSwitch(reader game.MemoryReader, text string) bool {
+	y, _, rows, cols, _ := gsMenuCursor(reader)
+	return rows == 3 && cols == 1 && y == 1 &&
+		strings.Contains(text, "SWITCH") && strings.Contains(text, "STATS") && strings.Contains(text, "CANCEL")
 }

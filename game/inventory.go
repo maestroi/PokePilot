@@ -4,6 +4,9 @@ package game
 type InventoryItem struct {
 	NativeItemID uint16
 	Quantity     int
+	// Pocket names the carried-item pocket that lists this item. Games with a
+	// single item list leave it empty; list positions are pocket-relative.
+	Pocket MachinePocket
 }
 
 // InventoryState is the portable runtime view of the player's carried items.

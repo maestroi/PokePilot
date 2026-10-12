@@ -447,8 +447,9 @@ func TestGSOlivineCianwoodMilestonesSupportedForBothGames(t *testing.T) {
 			gsprofile.ProgressJasmineReturnedToGym,
 		} {
 			o := Objective{Kind: KindProgress, Progress: progress}
-			if err := adapter.Validate(o, Observation{}); err != nil {
-				t.Fatalf("%s milestone %s: %v", gameID, progress, err)
+			// Coastal milestones may still report a missing Surf carrier.
+			if !adapter.SupportsObjective(o) {
+				t.Fatalf("%s milestone %s is not supported", gameID, progress)
 			}
 			if budget := gsObjectiveFrameBudget(o); budget != gsFirstBadgeObjectiveFrameBudget {
 				t.Fatalf("%s milestone %s frame budget = %d", gameID, progress, budget)
@@ -467,12 +468,58 @@ func TestGSStormFlyMineralMilestonesAvailableInBothGames(t *testing.T) {
 			gsprofile.ProgressMineralBadgeEarned,
 		} {
 			obj := Objective{Kind: KindProgress, Progress: milestone}
-			if err := adapter.Validate(obj, Observation{}); err != nil {
-				t.Fatalf("game %s goal %s rejected: %v", id, milestone, err)
+			if !adapter.SupportsObjective(obj) {
+				t.Fatalf("game %s goal %s is not supported", id, milestone)
 			}
 			if budget := gsObjectiveFrameBudget(obj); budget != gsFirstBadgeObjectiveFrameBudget {
 				t.Fatalf("game %s goal %s frame budget = %d", id, milestone, budget)
 			}
 		}
+	}
+}
+
+// run-1bt0xg6hiyxbo / triage:23672b41b6e21c98: a Typhlosion+Togepi party held
+// HM03 and the Fog Badge but nobody could learn Surf, so SecretPotion reported
+// world no_route forever. Coastal objectives must instead report the missing
+// field capability so generic recovery runs the Gen-II carrier repair.
+func TestGSCoastalProgressRequiresUsableSurfAndRecoversByRepair(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	potion := Objective{Kind: KindProgress, Progress: gsprofile.ProgressSecretPotionAcquired}
+	noCarrier := Observation{
+		Controllable: true,
+		FieldCapabilities: []FieldCapability{
+			{Name: "surf", Badge: "Fog", BadgeOwned: true, HMOwned: true, PartySlot: -1},
+		},
+	}
+
+	err := adapter.Validate(potion, noCarrier)
+	var missing *game.PrerequisiteMissingError
+	if !errors.As(err, &missing) || len(missing.Missing) != 1 || missing.Missing[0].FieldCapability != "surf" {
+		t.Fatalf("Validate without a Surf carrier = %v, want missing field capability surf", err)
+	}
+	failure := adapter.NormalizeFailure(game.FailurePhaseValidation, err, noCarrier)
+	if failure.Class != game.FailureClassBlocked || !failure.Recoverable || len(failure.Prerequisites) != 1 {
+		t.Fatalf("normalized failure = %+v, want recoverable blocked with the Surf prerequisite", failure)
+	}
+	if !adapter.SupportsObjective(Objective{Kind: KindRepairFieldCapability, FieldCapability: "surf"}) {
+		t.Fatal("Gen2 adapter must execute the Surf repair it asks recovery for")
+	}
+
+	policy := newRunFailurePolicy(3)
+	policy.pendingPrerequisites = failure.Prerequisites
+	repair, _, ok := policy.adapterPrerequisiteRecovery(adapter, noCarrier, nil)
+	if !ok || repair.Kind != KindRepairFieldCapability || repair.FieldCapability != "surf" {
+		t.Fatalf("recovery = %v ok=%v, want the Surf repair objective", repair, ok)
+	}
+
+	withCarrier := noCarrier
+	withCarrier.FieldCapabilities = []FieldCapability{
+		{Name: "surf", BadgeOwned: true, HMOwned: true, Learned: true, PartySlot: 2, Usable: true, Preparable: true},
+	}
+	if err := adapter.Validate(potion, withCarrier); err != nil {
+		t.Fatalf("Validate with usable Surf = %v", err)
+	}
+	if err := adapter.VerifyPostcondition(repair, noCarrier, withCarrier, ObjectiveResult{}); err != nil {
+		t.Fatalf("repair verifier = %v", err)
 	}
 }

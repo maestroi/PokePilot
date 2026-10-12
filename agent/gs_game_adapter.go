@@ -77,7 +77,7 @@ func (a *gsObjectiveAdapter) SupportsObjective(o Objective) bool {
 	return !errors.Is(a.Validate(o, Observation{}), errGSControllerUnavailable)
 }
 
-func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
+func (a *gsObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	if err := o.Validate(); err != nil {
 		return err
 	}
@@ -95,6 +95,11 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 	case KindProgress:
 		if !gsSupportedProgress(o.Progress) {
 			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
+		}
+		return fieldCapabilityPrerequisiteError(gsMissingFieldCapabilities(o, obs))
+	case KindRepairFieldCapability:
+		if _, ok := gsFieldMoveForCapability(o.FieldCapability); !ok {
+			return fmt.Errorf("agent: %s: %w (unknown field capability)", o, errGSControllerUnavailable)
 		}
 		return nil
 	case KindTrain:
@@ -146,6 +151,11 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 	switch o.Kind {
 	case KindHeal:
 		if err := executeGSCombatRecoveryHeal(a.m, a.romData); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+	case KindRepairFieldCapability:
+		if err := executeGSRepairFieldCapability(a.m, a.romData, o.FieldCapability); err != nil {
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
@@ -227,7 +237,7 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 const gsFirstBadgeObjectiveFrameBudget uint64 = 1_500_000
 
 func gsObjectiveFrameBudget(o Objective) uint64 {
-	if o.Kind == KindTrain || o.Kind == KindHeal {
+	if o.Kind == KindTrain || o.Kind == KindHeal || o.Kind == KindRepairFieldCapability {
 		return gsFirstBadgeObjectiveFrameBudget
 	}
 	if o.Kind == KindProgress {
@@ -275,7 +285,8 @@ func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Obs
 	if o.Kind == KindHeal {
 		return verifyGSCombatRecoveryHeal(final)
 	}
-	if o.Kind != KindStarter && o.Kind != KindTrain && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
+	if o.Kind != KindStarter && o.Kind != KindTrain && o.Kind != KindRepairFieldCapability &&
+		!(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
 		return fmt.Errorf("%w: %s has no Gold/Silver verifier yet", ErrObjectivePostconditionUnavailable, o)
 	}
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
@@ -297,7 +308,16 @@ func normalizeGSNavigationFailure(phase gameruntime.FailurePhase, cause string, 
 
 func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, err error, final Observation) gameruntime.Failure {
 	var required *skill.RequiredBattleError
+	var prerequisite *gameruntime.PrerequisiteMissingError
 	switch {
+	case errors.As(err, &prerequisite):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassBlocked,
+			Cause: "field_capability_prerequisite_missing", Recoverable: true,
+			Prerequisites: append([]gameruntime.Prerequisite(nil), prerequisite.Missing...),
+		}
+	case errors.Is(err, errGSFieldCarrierUnavailable):
+		return normalizeGSNavigationFailure(phase, "gen2_field_carrier_unavailable", final)
 	case errors.As(err, &required):
 		cause := failureCauseCombatNotWon
 		if required.Outcome.Result == gameruntime.BattleLost {

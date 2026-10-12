@@ -377,6 +377,32 @@ func Catch(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls
 		ErrCatchHuntExhausted, legsSpent, res.Encounters, overworld.DecodeOverworld(m).NativeMapID)
 }
 
+// CatchEngaged throws ordinary balls at the wild battle already in progress.
+// It is the throw/verify half of Catch for callers that own their own
+// encounter hunt, such as a game adapter's grass loop. The battle must be a
+// wild one against a wanted species; the same positive capture evidence and
+// bounded ball budget apply.
+func CatchEngaged(m *emu.Emu, romData []byte, want []uint8, policy MovePolicy, maxBalls int) (CatchResult, error) {
+	if policy == nil || len(want) == 0 || maxBalls <= 0 {
+		return CatchResult{}, fmt.Errorf("skill: CatchEngaged: need policy, wanted species and a positive ball budget")
+	}
+	captureProfile, err := captureProfileFor(m)
+	if err != nil {
+		return CatchResult{}, err
+	}
+	exec, err := captureExecutionFor(m)
+	if err != nil {
+		return CatchResult{}, fmt.Errorf("skill: CatchEngaged: %w", err)
+	}
+	bs, ok := exec.battle.DecodeBattleState(m)
+	if !ok || bs.Kind != game.BattleWild || !speciesIn(bs.EnemySpecies, want) {
+		return CatchResult{}, fmt.Errorf("skill: CatchEngaged: no wild battle against a wanted species")
+	}
+	res := CatchResult{Encounters: 1}
+	return catchWantedWithSemantics(m, captureProfile, exec, want, nativeSpeciesList(want),
+		wantedDexNumbersWithProfile(captureProfile, romData, want), policy, captureProfile.DecodeCapture(m), res, maxBalls)
+}
+
 func catchDialogueResolution(rec DialogueRecoveryResult) (battleStarted bool, err error) {
 	switch rec.Stop {
 	case DialogueRecovered:
