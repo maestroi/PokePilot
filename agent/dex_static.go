@@ -25,10 +25,13 @@ func hasStaticBalls(obs Observation) bool {
 }
 
 // staticRouteCapabilityMissing reports that the last journey to this static
-// site was blocked on field capabilities that are still neither usable nor
+// site was blocked on route capabilities that are still neither usable nor
 // repairable. Run-level quarantine reopens a compound catch on movement, so
 // without this the planner re-picked Surf-locked Zapdos/Moltres/Mewtwo 700+
-// times, walking halfway across Kanto each time (run-d6dokr184ky81).
+// times, walking halfway across Kanto each time (run-d6dokr184ky81). Badge-
+// gated Victory Road (can_pass_route23_badge_checks) is the same shape: a
+// missing progress-linked capability must hide the site until the story fact
+// becomes true, not only field moves.
 func staticRouteCapabilityMissing(obs Observation, last string) bool {
 	_, rest, ok := strings.Cut(last, "missing capabilities [")
 	if !ok {
@@ -38,13 +41,23 @@ func staticRouteCapabilityMissing(obs Observation, last string) bool {
 	missing := false
 	for _, raw := range strings.Fields(list) {
 		link, ok := redRoutePrerequisiteLink(CapabilityID(raw))
-		if !ok || link.FieldCapability == "" {
-			return false // not a field move we can observe; keep offering
+		if !ok {
+			return false // unknown capability; keep offering rather than guess
 		}
-		if fieldCapabilityUsable(obs, link.FieldCapability) || fieldCapabilityRepairReady(obs, link.FieldCapability) {
-			return false
+		switch {
+		case link.FieldCapability != "":
+			if fieldCapabilityUsable(obs, link.FieldCapability) || fieldCapabilityRepairReady(obs, link.FieldCapability) {
+				return false
+			}
+			missing = true
+		case link.Progress != "":
+			if obs.Story.Has(link.Progress) {
+				return false
+			}
+			missing = true
+		default:
+			return false // link names neither a field move nor progress we can observe
 		}
-		missing = true
 	}
 	return missing
 }
