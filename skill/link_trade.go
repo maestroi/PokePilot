@@ -474,63 +474,6 @@ func leaveTradeCenter(m *emu.Emu) error {
 	return nil
 }
 
-var softResetButtons = []emu.Button{emu.A, emu.B, emu.Start, emu.Select}
-
-// softResetToSave performs Red's A+B+START+SELECT reset and continues from
-// the last save. _Joypad counts hSoftReset down once per poll while all four
-// are held, and Init then clears WRAM, so wCurMap leaving the link room is
-// the proof the reset happened.
-func softResetToSave(m *emu.Emu) error {
-	for _, b := range softResetButtons {
-		m.Press(b)
-	}
-	_, err := m.StepUntil(linkTradeExitBudget, func(em *emu.Emu) bool { return em.Peek8(sym.CurMap) != tradeCenterMapID })
-	for _, b := range softResetButtons {
-		m.Release(b)
-	}
-	if err != nil {
-		return fmt.Errorf("soft reset: %w", err)
-	}
-
-	// Title and intro accept START; the main menu opens with CONTINUE on
-	// item 0 whenever a save exists.
-	if err := tapUntil(m, linkTradeExitBudget, mainMenuScreen, emu.Start, "main menu"); err != nil {
-		return err
-	}
-	m.Tap(emu.A, 3, 7)
-	// DisplayContinueGameInfo waits for A, then SpecialEnterMap idles 20
-	// frames with the saved map in wCurMap but not loaded, so Controllable
-	// alone reads true while input is still dropped. Init left
-	// wUpdateSpritesEnabled at $ff; LoadMapData setting it to 1 proves EnterMap
-	// has run.
-	return tapUntil(m, linkTradeExitBudget, func(mem *state.Mem) bool {
-		return mem.U8(sym.CurMap) != tradeCenterMapID && mem.U8(sym.UpdateSpritesEnabled) == 1 &&
-			state.Controllable(mem) && state.DecodeBattle(mem) == nil
-	}, emu.A, "continued overworld")
-}
-
-// tapUntil taps btn between checks until pred holds. Only for screens where
-// btn is the sole way forward (title, CONTINUE info); pred is checked first
-// so the tap never reaches the surface it was waiting for.
-func tapUntil(m *emu.Emu, budget int, pred func(*state.Mem) bool, btn emu.Button, what string) error {
-	var mem state.Mem
-	for spent := 0; spent < budget; spent += talkSettle {
-		state.Snapshot(m, &mem)
-		if pred(&mem) {
-			return nil
-		}
-		m.Tap(btn, 3, 7)
-		m.StepFrames(talkSettle)
-	}
-	return fmt.Errorf("skill: VirtualTrade: %s did not appear: screen=%q", what, state.ScreenText(&mem))
-}
-
-func mainMenuScreen(mem *state.Mem) bool {
-	text := strings.ToUpper(state.ScreenText(mem))
-	return strings.Contains(text, "CONTINUE") && strings.Contains(text, "NEW GAME") &&
-		mem.U8(sym.TopMenuItemX) == 1 && mem.U8(sym.TopMenuItemY) == 2 && mem.U8(sym.CurrentMenuItem) == 0
-}
-
 func linkAdvanceUntil(m *emu.Emu, budget int, pred func(*state.Mem) bool, pageDialogue bool, what string) error {
 	var mem state.Mem
 	for spent := 0; spent < budget; spent += talkSettle {
