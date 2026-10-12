@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -63,8 +64,16 @@ func executeScriptedProgressTrigger(m *emu.Emu, romData []byte, spec scriptedPro
 		}
 		if obs.InBattle {
 			idle = 0
-			if _, err := skill.Battle(m, policy); err != nil {
+			result, err := skill.Battle(m, policy)
+			if err != nil {
 				return fmt.Errorf("%s: scripted battle: %w", spec.Name, err)
+			}
+			// A lost battle blacks out to the last Center. Walking back into the
+			// same scripted fight with the same party just burns money and the
+			// frame budget; surface the typed combat defeat so the planner can
+			// heal/train before retrying.
+			if result == game.BattleLost {
+				return fmt.Errorf("%s: %w", spec.Name, skill.RequireTrainerBattleWin(spec.Name, result))
 			}
 			continue
 		}
