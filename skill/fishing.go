@@ -125,7 +125,18 @@ func Fish(m *emu.Emu, romData []byte, rod uint8, want []uint8, policy MovePolicy
 			continue
 		}
 
-		return catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
+		caught, catchErr := catchWanted(m, &mem, captureProfile, want, wantNative, wantDex, policy, captureBefore, res, maxBalls)
+		if catchErr != nil {
+			return caught, catchErr
+		}
+		res = caught
+		if caught.Outcome == OutcomeCaught {
+			return res, nil
+		}
+		// An ordinary miss (broken balls / flee after the throw budget) ends
+		// that bite, not the hunt. The cast budget still bounds retries, and
+		// each later wanted bite gets a fresh maxBalls allocation.
+		continue
 	}
 	return res, fmt.Errorf("%w: %d casts and %d encounters on map %#04x", ErrFishingHuntExhausted, fishingAttemptCap, res.Encounters, m.Peek8(sym.CurMap))
 }
@@ -232,18 +243,44 @@ func nearestFishingShore(m *emu.Emu, romData []byte) (fishingShore, error) {
 		return fishingShore{}, fmt.Errorf("skill: Fish: water grid: %w", err)
 	}
 	sx, sy := playerXY(m)
-	blocked := spriteBlockers(m)
-	dirs := [][2]int{{0, -1}, {-1, 0}, {1, 0}, {0, 1}}
+	candidates := fishingShoreCandidates(land, water)
+	if len(candidates) == 0 {
+		return fishingShore{}, ErrFishingNoShoreline
+	}
+	shore, ok := pickFishingShore(candidates, land, int(sx), int(sy), spriteBlockers(m), nil)
+	if ok {
+		return shore, nil
+	}
+	// A map can expose fishable water only in a walkable component that the
+	// land BFS cannot reach from the player's current component — typically
+	// a courtyard reached by warping through an interior and back onto the
+	// same map (Fuchsia City's Super Rod pond north of the Safari office).
+	// Fish already Travels to the chosen stand tile; rank those shores by the
+	// same component-aware route graph Travel uses instead of reporting
+	// "no shoreline" while a warp-mediated shore exists.
+	g, err := world.BuildGraph(romData)
+	if err != nil {
+		return fishingShore{}, fmt.Errorf("skill: Fish: build graph for shoreline: %w", err)
+	}
+	shore, ok = pickFishingShore(candidates, land, int(sx), int(sy), nil, fishingShoreRouteCosts(g, mapID, int(sx), int(sy), candidates))
+	if !ok {
+		return fishingShore{}, ErrFishingNoShoreline
+	}
+	return shore, nil
+}
 
-	best := fishingShore{distance: int(^uint(0) >> 1)}
-	found := false
+// fishingShoreCandidates lists every land tile that can face a water-mode
+// cast target. Reachability is the caller's concern: same-component walking,
+// warp-mediated same-map components, or Travel.
+func fishingShoreCandidates(land, water *world.Grid) []fishingShore {
+	if land == nil || water == nil {
+		return nil
+	}
+	dirs := [][2]int{{0, -1}, {-1, 0}, {1, 0}, {0, 1}}
+	out := make([]fishingShore, 0, 8)
 	for y := 0; y < land.Height; y++ {
 		for x := 0; x < land.Width; x++ {
 			if !land.Walkable(x, y) {
-				continue
-			}
-			steps, pathErr := world.FindPath(land, int(sx), int(sy), x, y, blocked)
-			if pathErr != nil {
 				continue
 			}
 			for _, d := range dirs {
@@ -251,17 +288,58 @@ func nearestFishingShore(m *emu.Emu, romData []byte) (fishingShore, error) {
 				if !water.InBounds(nx, ny) || land.Passable(x, y, nx, ny) || !water.Passable(x, y, nx, ny) {
 					continue
 				}
-				candidate := fishingShore{standX: x, standY: y, waterX: nx, waterY: ny, distance: len(steps)}
-				if !found || candidate.distance < best.distance ||
-					(candidate.distance == best.distance && (candidate.standY < best.standY ||
-						(candidate.standY == best.standY && candidate.standX < best.standX))) {
-					best, found = candidate, true
-				}
+				out = append(out, fishingShore{standX: x, standY: y, waterX: nx, waterY: ny})
+				break
 			}
 		}
 	}
-	if !found {
-		return fishingShore{}, ErrFishingNoShoreline
+	return out
+}
+
+// fishingShoreRouteCosts maps stand tiles to the length of a component-aware
+// route from (sx,sy) on the same map. Missing entries are unreachable by the
+// warp graph (for example decorative water pockets with no door).
+func fishingShoreRouteCosts(g *world.Graph, mapID uint8, sx, sy int, candidates []fishingShore) map[[2]int]int {
+	if g == nil {
+		return nil
 	}
-	return best, nil
+	costs := make(map[[2]int]int, len(candidates))
+	for _, shore := range candidates {
+		route, err := world.FindRouteAtDestination(g, mapID, mapID, sx, sy, shore.standX, shore.standY, nil)
+		if err != nil {
+			continue
+		}
+		costs[[2]int{shore.standX, shore.standY}] = len(route)
+	}
+	return costs
+}
+
+// pickFishingShore chooses the best fishing stand tile. When routeCosts is
+// nil, reachability is ordinary land FindPath with blockers. When routeCosts
+// is set, only tiles present in that map are considered and distance is the
+// recorded route length (warp hops for same-map component changes).
+func pickFishingShore(candidates []fishingShore, land *world.Grid, sx, sy int, blocked map[[2]int]bool, routeCosts map[[2]int]int) (fishingShore, bool) {
+	best := fishingShore{distance: int(^uint(0) >> 1)}
+	found := false
+	for _, candidate := range candidates {
+		if routeCosts != nil {
+			dist, ok := routeCosts[[2]int{candidate.standX, candidate.standY}]
+			if !ok {
+				continue
+			}
+			candidate.distance = dist
+		} else {
+			steps, pathErr := world.FindPath(land, sx, sy, candidate.standX, candidate.standY, blocked)
+			if pathErr != nil {
+				continue
+			}
+			candidate.distance = len(steps)
+		}
+		if !found || candidate.distance < best.distance ||
+			(candidate.distance == best.distance && (candidate.standY < best.standY ||
+				(candidate.standY == best.standY && candidate.standX < best.standX))) {
+			best, found = candidate, true
+		}
+	}
+	return best, found
 }
