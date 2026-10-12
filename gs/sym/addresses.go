@@ -206,4 +206,16 @@ const (
 	MaxMartItems              = 15
 	ItemQuantityChange uint16 = 0xD009 // wItemQuantityChange
 	MoneyTemp          uint16 = 0xFFC5 // hMoneyTemp, 3-byte big-endian total
+
+	// Bill's PC transfer screens (engine/pokemon/bills_pc.asm). The list
+	// lives in the "Overworld Map" WRAM union, so it is only meaningful while
+	// a PC screen is open. Each entry is species, box id (0 party, 15 active
+	// box), index; $ff ends it. Measured on retail Gold at the Olivine PC.
+	BillsPCList          uint16 = 0xC700 // wBillsPCPokemonList
+	BillsPCListEntrySize        = 3
+	BillsPCScroll        uint16 = 0xCA2A // wBillsPC_ScrollPosition
+	BillsPCCursor        uint16 = 0xCA2B // wBillsPC_CursorPosition
+	BillsPCLoadedBox     uint16 = 0xCA2E // wBillsPC_LoadedBox
+	BillsPCLoadedParty          = 0
+	BillsPCLoadedActive         = 15
 )

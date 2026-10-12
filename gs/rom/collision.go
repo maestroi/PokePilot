@@ -412,6 +412,18 @@ func gen2WarpCollision(collision uint8) bool {
 	return collision == 0x60 || collision == 0x68 || collision&0xf0 == 0x70
 }
 
+// gen2WarpPushes mirrors DoPlayerMovement.EdgeWarps
+// (engine/overworld/player_movement.asm): a COLL_WARP_CARPET_* tile warps
+// when the player standing on it walks toward its direction.
+func gen2WarpPushes() map[uint8]worldmodel.NativeDirectionMask {
+	return map[uint8]worldmodel.NativeDirectionMask{
+		0x70: worldmodel.NativeBlockDown,  // COLL_WARP_CARPET_DOWN
+		0x78: worldmodel.NativeBlockUp,    // COLL_WARP_CARPET_UP
+		0x76: worldmodel.NativeBlockLeft,  // COLL_WARP_CARPET_LEFT
+		0x7e: worldmodel.NativeBlockRight, // COLL_WARP_CARPET_RIGHT
+	}
+}
+
 func gen2BlockedDirections() map[uint8]worldmodel.NativeDirectionMask {
 	d, u := worldmodel.NativeBlockDown, worldmodel.NativeBlockUp
 	l, r := worldmodel.NativeBlockLeft, worldmodel.NativeBlockRight
@@ -478,6 +490,7 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	out.Obstacles = make([]worldmodel.NativeObstacle, width*height)
 	out.WarpTrigger = make([]bool, width*height)
 	out.Blocked = gen2BlockedDirections()
+	out.WarpPushes = gen2WarpPushes()
 	out.Jumps = gen2Jumps()
 
 	for y := 0; y < height; y++ {

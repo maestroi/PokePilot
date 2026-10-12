@@ -126,3 +126,16 @@ func TestDecodeGoldCaptureParty(t *testing.T) {
 		t.Fatalf("dex for Tauros = %d,%v", dex, ok)
 	}
 }
+
+// GivePoke and catches ask _CaughtAskNicknameText; by the time YES/NO is
+// drawn, "Give a nickname to" has scrolled off and only this line remains.
+func TestDecodeGoldScrolledNicknamePrompt(t *testing.T) {
+	var mem fakeMemory
+	putGSText(&mem, "YES NO the CHIKORITA you received?")
+	mem[sym.TwoDMenuNumRows], mem[sym.TwoDMenuNumCols] = 2, 1
+	mem[sym.MenuJoypadFilter] = gen2PadA | gen2PadB
+	mem[sym.MenuCursorY], mem[sym.MenuCursorX] = 1, 1
+	if got := NewGold().DecodePrompt(&mem); !got.Visible || got.Kind != game.PromptNickname {
+		t.Fatalf("prompt = %+v, want nickname", got)
+	}
+}

@@ -123,7 +123,7 @@ func buyNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error {
 		return primary
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(runtime), 7)
 	if err := shopAdvance(m, runtime, game.ShopPhaseConfirmation, "the purchase-confirmation prompt"); err != nil {
 		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
@@ -211,7 +211,7 @@ func sellNative(m shopMachine, runtime shopRuntime, item uint16, qty int) error 
 		return recoverShopFailureWithRuntime(m, runtime, fmt.Errorf("skill: Sell: item %#04x x%d produced non-positive sale total %d", item, qty, total))
 	}
 
-	m.Tap(emu.A, 3, 7)
+	m.Tap(emu.A, menuPressHold(runtime), 7)
 	if err := shopAdvance(m, runtime, game.ShopPhaseConfirmation, "the sale-confirmation prompt"); err != nil {
 		return recoverShopFailureWithRuntime(m, runtime, err)
 	}
@@ -276,10 +276,10 @@ func shopOpenActionMenu(m shopMachine, runtime shopRuntime) error {
 		case game.ShopPhaseActionMenu:
 			return nil
 		case game.ShopPhaseClosed, game.ShopPhaseGreeting:
-			m.Tap(emu.A, 3, 7)
+			m.Tap(emu.A, menuPressHold(runtime), 7)
 			m.StepFrames(talkSettle)
 		case game.ShopPhaseItemList, game.ShopPhaseQuantity, game.ShopPhaseConfirmation:
-			m.Tap(emu.B, 3, 7)
+			m.Tap(emu.B, menuPressHold(runtime), 7)
 			m.StepFrames(talkSettle)
 		default:
 			m.StepFrame()
@@ -295,7 +295,7 @@ func shopAdvance(m shopMachine, runtime shopRuntime, want game.ShopPhase, what s
 			return nil
 		}
 		if state.Phase == game.ShopPhaseGreeting {
-			m.Tap(emu.A, 3, 7)
+			m.Tap(emu.A, menuPressHold(runtime), 7)
 			m.StepFrames(talkSettle)
 		} else {
 			m.StepFrame()
@@ -377,7 +377,7 @@ func setShopQuantity(m shopMachine, runtime shopRuntime, qty int) error {
 		if cur > qty {
 			return fmt.Errorf("%w: quantity overshot %d (quantity=%d)", ErrShopControllerStalled, qty, cur)
 		}
-		m.Tap(emu.Up, 3, 7)
+		m.Tap(emu.Up, menuPressHold(runtime), 7)
 		m.StepFrames(talkSettle)
 	}
 	return fmt.Errorf("%w: quantity did not reach %d (quantity=%d)", ErrShopControllerStalled, qty, runtime.DecodeShop(m).Quantity)
@@ -391,7 +391,7 @@ func exitShopWithRuntime(m shopMachine, runtime shopRuntime) error {
 }
 
 func leaveFromItemListWithRuntime(m shopMachine, runtime shopRuntime) error {
-	m.Tap(emu.B, 3, 7)
+	m.Tap(emu.B, menuPressHold(runtime), 7)
 	// Gen I does not return directly from the item list to BUY/SELL/QUIT.
 	// The Mart script first prints "Anything else?" and waits for A, then
 	// redraws the action menu. shopWait only observes frames, so it can never
@@ -401,7 +401,7 @@ func leaveFromItemListWithRuntime(m shopMachine, runtime shopRuntime) error {
 	if err := shopAdvance(m, runtime, game.ShopPhaseActionMenu, "the BUY/SELL/QUIT menu after leaving the item list"); err != nil {
 		return err
 	}
-	m.Tap(emu.B, 3, 7)
+	m.Tap(emu.B, menuPressHold(runtime), 7)
 	return exitToOverworldWithRuntime(m, runtime)
 }
 
@@ -416,10 +416,10 @@ func exitToOverworldWithRuntime(m shopMachine, runtime shopRuntime) error {
 		}
 		switch runtime.DecodeShop(m).Phase {
 		case game.ShopPhaseActionMenu, game.ShopPhaseItemList, game.ShopPhaseQuantity, game.ShopPhaseConfirmation:
-			m.Tap(emu.B, 3, 7)
+			m.Tap(emu.B, menuPressHold(runtime), 7)
 			m.StepFrames(talkSettle)
 		case game.ShopPhaseGreeting:
-			m.Tap(emu.A, 3, 7)
+			m.Tap(emu.A, menuPressHold(runtime), 7)
 			m.StepFrames(talkSettle)
 		default:
 			m.StepFrames(talkSettle)

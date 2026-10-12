@@ -465,6 +465,24 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 	return fmt.Errorf("skill: native routing: could not settle on map %#04x tile (%d,%d): %w", dest.Map, dest.X, dest.Y, ErrNavigationStalled)
 }
 
+// nativeWarpApproach plans the walk and final push that fire a warp. Most
+// warps fire when stepped onto from a neighbour; an edge carpet fires only when
+// the player stands on it and walks toward its direction.
+func nativeWarpApproach(grid *world.NativeGrid, sx, sy, wx, wy int, blocked map[[2]int]bool) ([]world.NativeStep, world.NativeStep, error) {
+	if carpet, ok := grid.WarpPush(wx, wy); ok {
+		// Warp tiles are blockers so a path never fires one by accident; this
+		// one is the destination.
+		allowed := make(map[[2]int]bool, len(blocked))
+		for tile, b := range blocked {
+			allowed[tile] = b
+		}
+		delete(allowed, [2]int{wx, wy})
+		path, err := world.FindNativePath(grid, sx, sy, wx, wy, allowed)
+		return path, carpet, err
+	}
+	return nativeAdjacentApproach(grid, sx, sy, wx, wy, blocked)
+}
+
 func nativeAdjacentApproach(
 	grid *world.NativeGrid,
 	sx, sy, wx, wy int,
@@ -611,9 +629,15 @@ func nativeConnectionTargets(
 	return targets, nil
 }
 
-// nativeWarpTargets lists the walkable, unblocked tiles beside a warp from
-// which one push steps onto it.
+// nativeWarpTargets lists the walkable, unblocked tiles from which one push
+// fires a warp: its neighbours, or an edge carpet's own tile.
 func nativeWarpTargets(grid *world.NativeGrid, wx, wy int, blocked map[[2]int]bool) [][2]int {
+	if _, carpet := grid.WarpPush(wx, wy); carpet {
+		if grid.Walkable(wx, wy) {
+			return [][2]int{{wx, wy}}
+		}
+		return nil
+	}
 	var targets [][2]int
 	for _, at := range [][2]int{{wx, wy - 1}, {wx - 1, wy}, {wx + 1, wy}, {wx, wy + 1}} {
 		if !blocked[at] && grid.Walkable(at[0], at[1]) {
@@ -769,7 +793,7 @@ func traverseNativeEdge(
 				return fmt.Errorf("skill: native routing: warp (%d,%d) on %#04x does not trigger from its own tile: %w",
 					edge.WarpX, edge.WarpY, edge.From, world.ErrNoPath)
 			}
-			path, push, err = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked)
+			path, push, err = nativeWarpApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), blocked)
 			if errors.Is(err, world.ErrNoPath) {
 				cleared, bridgeErr := nativeObstacleBridge(m, profile, provider, romData, edge.From, grid, live,
 					int(state.X), int(state.Y), blocked, nativeWarpTargets(grid, int(edge.WarpX), int(edge.WarpY), blocked))
@@ -852,7 +876,7 @@ func traverseNativeEdge(
 				var staticErr error
 				switch edge.Kind {
 				case world.EdgeWarp:
-					_, _, staticErr = nativeAdjacentApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), staticBlocked)
+					_, _, staticErr = nativeWarpApproach(grid, int(state.X), int(state.Y), int(edge.WarpX), int(edge.WarpY), staticBlocked)
 				case world.EdgeConnection:
 					_, _, staticErr = nativeConnectionApproach(provider, grid, live, edge, int(state.X), int(state.Y), staticBlocked)
 				}
@@ -1149,12 +1173,13 @@ func nativeMarkComponentUnreachable(
 	if mem.unreachable == nil {
 		mem.unreachable = map[world.NativeUnreachable]bool{}
 	}
-	entries := nativeEntriesSharingComponent(grid, header, sx, sy)
-	if len(entries) == 0 {
-		mem.unreachable[world.NativeUnreachable{Map: mapID, Entry: mem.entry, Edge: edge}] = true
-		return
-	}
-	for _, entry := range entries {
+	// The proof always covers the entry this journey routes with. An arrival
+	// by map connection has no warp entry (NativeEntryUnknown); keying the
+	// proof only by the component's warp landings left that entry free to
+	// re-pick the same sealed edge forever (Route 38's east seam to Ecruteak,
+	// which is only crossable through the gate warp).
+	mem.unreachable[world.NativeUnreachable{Map: mapID, Entry: mem.entry, Edge: edge}] = true
+	for _, entry := range nativeEntriesSharingComponent(grid, header, sx, sy) {
 		mem.unreachable[world.NativeUnreachable{Map: mapID, Entry: entry, Edge: edge}] = true
 	}
 }
