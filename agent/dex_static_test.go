@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func staticDexObservation(species SpeciesID, mapID uint8, requirement string) Observation {
 	return Observation{
@@ -94,5 +97,25 @@ func TestAppendDexStaticObjectivesHidesSiteUntilRoute23BadgeChecksComplete(t *te
 	obs.Story = append(obs.Story, ProgressFact{ID: ProgressRoute23BadgeChecks, Complete: true, Value: 7})
 	if got := appendDexStaticObjectives(obs, known, nil); len(got) != 1 {
 		t.Fatalf("Moltres stayed hidden once Route 23 badge checks completed: %+v", got)
+	}
+}
+
+func TestAppendDexStaticObjectivesHidesNoRouteSiteUntilRouteStateChanges(t *testing.T) {
+	// run-d6dokr184ky81: the world planner called Mewtwo reachable past the
+	// Route 2 Cut frontier, GoTo then found no route, and the dex run re-picked
+	// the catch for days. A plain no_route must hold until progress changes.
+	obs := staticDexObservation("mewtwo", 0xE3, "")
+	known := NewKnowledge(nil)
+	objective := appendDexStaticObjectives(obs, known, nil)[0]
+	known.FailedResult(ObjectiveResult{Objective: objective, Cause: "no_route", Final: obs},
+		errors.New("skill: static Mewtwo: reach encounter: skill: GoTo: no route from map 0d at (12,10) to map e3 at (27,14): world: no route"))
+	moved := obs
+	moved.Map, moved.X, moved.Y = 0x0D, 12, 10
+	if got := appendDexStaticObjectives(moved, known, nil); len(got) != 0 {
+		t.Fatalf("no-route Mewtwo re-offered after moving: %+v", got)
+	}
+	moved.Story = append(moved.Story, ProgressFact{ID: ProgressMainStoryComplete, Complete: true})
+	if got := appendDexStaticObjectives(moved, known, nil); len(got) != 1 {
+		t.Fatalf("Mewtwo stayed hidden after story progress: %+v", got)
 	}
 }

@@ -29,6 +29,10 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 	}
 	k.bumpFailureTimes(&f)
 	f.Objective, f.Last = o.String(), conciseObjectiveError(o, nativeErr)
+	f.RouteState = ""
+	if failureCauseIs(result, "no_route") || failureCauseIs(result, "no_path") {
+		f.RouteState = routePrerequisiteStateKey(result.Final)
+	}
 	if combatLoss {
 		stampCombatPreparation(&f, result.Final)
 		key := combatRecoveryObjective(o).Key()
