@@ -13,6 +13,13 @@ const (
 	startMenuRetryWindow  = 25
 	startMenuSettleBudget = 100
 
+	// startMenuCloseConfirmFrames is how many consecutive frames the decoder
+	// must stop observing the START menu before a close is confirmed. The
+	// close animation tears the tilemap down mid-update, so one frame can
+	// decode a truncated menu that lacks the label the Visible oracle needs;
+	// a single such frame is the close in progress, not a close.
+	startMenuCloseConfirmFrames = 5
+
 	startMenuPokemon = game.StartMenuPokemon
 	startMenuItems   = game.StartMenuItems
 )
@@ -80,13 +87,11 @@ func closeStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error {
 
 	attempts := startMenuCloseBudget / startMenuRetryWindow
 	for i := 0; i < attempts; i++ {
-		if !decoder.DecodeStartMenu(m).Visible {
+		if confirmStartMenuClosed(m, decoder) {
 			return nil
 		}
 		m.Tap(emu.B, menuPressHold(decoder), 7)
-		if waitMenuUntil(m, startMenuRetryWindow, func() bool {
-			return !decoder.DecodeStartMenu(m).Visible
-		}) {
+		if confirmStartMenuClosed(m, decoder) {
 			return nil
 		}
 	}
@@ -96,6 +101,24 @@ func closeStartMenuWithDecoder(m menuMachine, decoder game.MenuDecoder) error {
 		"skill: start menu did not close after %d B presses: visible=%v ready=%v cursor=%d max=%d",
 		attempts, state.Visible, state.Ready, state.Cursor.Current, state.Cursor.Max,
 	)
+}
+
+// confirmStartMenuClosed reports whether the decoder has stopped observing the
+// START menu for startMenuCloseConfirmFrames consecutive frames. A single
+// !Visible frame is not enough: the close animation leaves the tilemap
+// mid-update for a frame, and that frame decodes to a truncated menu the
+// Visible oracle reads as absent even though the menu is still open. A
+// genuinely closed menu stays un-observed, so the consecutive window only ever
+// delays a real close by a few frames and can never confirm a menu that is
+// still animating.
+func confirmStartMenuClosed(m menuMachine, decoder game.MenuDecoder) bool {
+	for i := 0; i < startMenuCloseConfirmFrames; i++ {
+		if decoder.DecodeStartMenu(m).Visible {
+			return false
+		}
+		m.StepFrame()
+	}
+	return true
 }
 
 // openStartMenuEntry opens the active game's START menu and selects an entry
