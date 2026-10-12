@@ -85,9 +85,13 @@ type NativeGridSpec struct {
 	// warp is assumed to trigger. A warp table entry on a non-triggering tile
 	// is only a landing spot for warps from elsewhere.
 	WarpTrigger []bool
-	Blocked     map[uint8]NativeDirectionMask
-	Jumps       []NativeJump
-	Traversal   TraversalMode
+	// WarpPushes names collision bytes whose warp fires only when the player
+	// stands on the tile and walks toward one direction (an edge "carpet"),
+	// rather than by stepping onto it. Nil means every warp fires on entry.
+	WarpPushes map[uint8]NativeDirectionMask
+	Blocked    map[uint8]NativeDirectionMask
+	Jumps      []NativeJump
+	Traversal  TraversalMode
 }
 
 // NativeGridProvider is an optional extension of NativeMapTopologyProvider for

@@ -23,6 +23,7 @@ type NativeGrid struct {
 	obstacle      []worldmodel.NativeObstacle
 	byObject      map[[2]int]bool // obstacle cells that are live objects, not tiles
 	warpTrigger   []bool
+	warpPushes    map[uint8]worldmodel.NativeDirectionMask
 	blocked       map[uint8]worldmodel.NativeDirectionMask
 	jumps         map[uint8]worldmodel.NativeDirectionMask
 	Traversal     TraversalMode
@@ -47,6 +48,10 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 	for collision, mask := range spec.Blocked {
 		blocked[collision] = mask
 	}
+	warpPushes := make(map[uint8]worldmodel.NativeDirectionMask, len(spec.WarpPushes))
+	for collision, mask := range spec.WarpPushes {
+		warpPushes[collision] = mask
+	}
 	jumps := make(map[uint8]worldmodel.NativeDirectionMask, len(spec.Jumps))
 	for _, jump := range spec.Jumps {
 		jumps[jump.Collision] = jump.DirectionMask
@@ -57,6 +62,7 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 		collisionTile: append([]uint8(nil), spec.CollisionTile...),
 		obstacle:      append([]worldmodel.NativeObstacle(nil), spec.Obstacles...),
 		warpTrigger:   append([]bool(nil), spec.WarpTrigger...),
+		warpPushes:    warpPushes,
 		blocked:       blocked, jumps: jumps, Traversal: spec.Traversal,
 	}, nil
 }
@@ -83,6 +89,26 @@ func (g *NativeGrid) WarpTriggers(x, y int) bool {
 		return true
 	}
 	return g.warpTrigger[y*g.Width+x]
+}
+
+// WarpPush reports the step a player standing on warp tile (x,y) must walk to
+// fire it, for edge warps that do not fire on entry.
+func (g *NativeGrid) WarpPush(x, y int) (NativeStep, bool) {
+	tile, ok := g.Tile(x, y)
+	if !ok {
+		return NativeStep{}, false
+	}
+	switch g.warpPushes[tile] {
+	case worldmodel.NativeBlockDown:
+		return NativeStep{DY: 1}, true
+	case worldmodel.NativeBlockUp:
+		return NativeStep{DY: -1}, true
+	case worldmodel.NativeBlockLeft:
+		return NativeStep{DX: -1}, true
+	case worldmodel.NativeBlockRight:
+		return NativeStep{DX: 1}, true
+	}
+	return NativeStep{}, false
 }
 
 // Obstacle reports the field-move obstacle standing on (x,y), if any.

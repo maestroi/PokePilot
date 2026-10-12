@@ -316,7 +316,7 @@ func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, er
 			Cause: "field_capability_prerequisite_missing", Recoverable: true,
 			Prerequisites: append([]gameruntime.Prerequisite(nil), prerequisite.Missing...),
 		}
-	case errors.Is(err, errGSFieldCarrierUnavailable):
+	case errors.Is(err, errGSFieldCarrierUnavailable), errors.Is(err, errGSPCRefused):
 		return normalizeGSNavigationFailure(phase, "gen2_field_carrier_unavailable", final)
 	case errors.As(err, &required):
 		cause := failureCauseCombatNotWon

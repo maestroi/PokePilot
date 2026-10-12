@@ -58,14 +58,29 @@ func gsFirstBadgeProgressComplete(profile *gsprofile.Profile, m *emu.Emu, id gam
 // default; B cancels the YesNoBox, which InterpretTwoOptionMenu treats as NO.
 // If the keyboard is already open, START jumps to END and A keeps the species
 // name. It reports whether it consumed input.
+// menuSettleFramesGS lets the naming keyboard move its cursor to END before
+// the confirming A.
+const menuSettleFramesGS = 20
+
 func answerGSNicknameSurface(m *emu.Emu, profile *gsprofile.Profile) bool {
+	// Gen-II menus drop presses shorter than the profile's hold; a swallowed
+	// B left YES selected for the next script A, naming the starter "A".
+	hold := profile.MenuPressHoldFrames()
 	if profile.NamingKeyboardOpen(m) {
-		m.Tap(emu.Start, 3, 7)
-		m.Tap(emu.A, 3, 7)
+		// An early A can type a letter before the keyboard polls Start; delete
+		// it first so END always confirms an empty name, which keeps the
+		// species name.
+		if profile.NamingBufferLength(m) > 0 {
+			m.Tap(emu.B, hold, 7)
+			return true
+		}
+		m.Tap(emu.Start, hold, 7)
+		m.StepFrames(menuSettleFramesGS)
+		m.Tap(emu.A, hold, 7)
 		return true
 	}
 	if profile.DecodePrompt(m).Kind == game.PromptNickname {
-		m.Tap(emu.B, 3, 7)
+		m.Tap(emu.B, hold, 7)
 		return true
 	}
 	return false

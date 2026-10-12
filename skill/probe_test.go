@@ -425,7 +425,7 @@ func runNativeProbe(t *testing.T, romPath string, romData []byte, spec, statePat
 			var path []world.NativeStep
 			var push world.NativeStep
 			if edge.Kind == world.EdgeWarp {
-				path, push, err = nativeAdjacentApproach(grid, sx, sy, int(edge.WarpX), int(edge.WarpY), blocked)
+				path, push, err = nativeWarpApproach(grid, sx, sy, int(edge.WarpX), int(edge.WarpY), blocked)
 			} else {
 				path, push, err = nativeConnectionApproach(provider, grid, live, edge, sx, sy, blocked)
 			}

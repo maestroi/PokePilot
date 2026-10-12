@@ -225,10 +225,14 @@ func gsStockCarrierBalls(m *emu.Emu, romData []byte, profile *gsprofile.Profile,
 // wanted species is caught into the party. Unwanted and trainer battles are
 // fought by the owned interruption driver.
 func gsAcquireFieldCarrier(m *emu.Emu, romData []byte, profile *gsprofile.Profile, id game.FieldMoveID) error {
-	// ponytail: a full party would send the catch to the SRAM box, which this
-	// controller cannot withdraw yet; add box withdraw when that blocks a run.
-	if count := len(profile.DecodeCapture(m).PartySpecies); count >= 6 {
-		return fmt.Errorf("%w: party is full", errGSFieldCarrierUnavailable)
+	// Bill's PC first: a boxed species that can learn the move is cheaper and
+	// surer than a hunt, and a full party must make room for either.
+	withdrew, err := gsPrepareCarrierRoster(m, romData, profile, id)
+	if err != nil {
+		return fmt.Errorf("prepare roster: %w", err)
+	}
+	if withdrew {
+		return nil
 	}
 	site, want, err := gsCarrierSiteFor(m, romData, profile, id)
 	if err != nil {
