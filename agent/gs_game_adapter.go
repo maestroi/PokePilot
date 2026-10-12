@@ -85,6 +85,11 @@ func (a *gsObjectiveAdapter) Validate(o Objective, _ Observation) error {
 			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
 		}
 		return nil
+	case KindUseItem:
+		if _, ok := gsMachineNumberForItem(o.Item); !ok {
+			return fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
+		}
+		return nil
 	case KindTrain:
 		// Only "train the lead": the Gen-II grinder levels party slot 0.
 		if o.Species != "" || o.Slot != 0 || o.Intent != "" {
@@ -183,6 +188,13 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			return result, fmt.Errorf("agent: %s: %w", o, err)
 		}
 		return result, nil
+	case KindUseItem:
+		if err := executeGSTeachMachine(a.m, a.romData, o); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		// TeachNativeMachine returns only after the carrier knows the move.
+		result.ItemEffectVerified = true
+		return result, nil
 	default:
 		result.Outcome = OutcomeBlocked
 		return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -230,7 +242,7 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
-	if o.Kind != KindStarter && o.Kind != KindTrain && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
+	if o.Kind != KindStarter && o.Kind != KindTrain && o.Kind != KindUseItem && !(o.Kind == KindProgress && gsSupportedProgress(o.Progress)) {
 		return fmt.Errorf("%w: %s has no Gold/Silver verifier yet", ErrObjectivePostconditionUnavailable, o)
 	}
 	_, err := verifyObjectivePostcondition(o, initial, final, result)
@@ -345,7 +357,11 @@ func (a *gsObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog 
 }
 
 func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) []Objective {
-	return append(gsStoryObjectives(obs), gsTrainingObjectives(obs)...)
+	out := append(gsStoryObjectives(obs), gsTrainingObjectives(obs)...)
+	if obs.PartyCount > 0 && obs.Controllable && !obs.InBattle {
+		out = append(out, gsMachineObjectives(a.m, a.romData)...)
+	}
+	return out
 }
 
 func gsStoryObjectives(obs Observation) []Objective {

@@ -115,3 +115,39 @@ func (*Profile) MachineMenuEntryIndex(reader game.MemoryReader, native game.Nati
 }
 
 var _ game.MachineMenuDecoder = (*Profile)(nil)
+
+// OwnedMachineNumbers lists the TM/HM numbers (TM01..TM50 => 1..50,
+// HM01..HM07 => 51..57) the TM/HM pocket currently holds.
+func (*Profile) OwnedMachineNumbers(reader game.MemoryReader) []int {
+	var out []int
+	for i := 0; i < sym.TMsHMsCount; i++ {
+		if reader.Peek8(sym.TMsHMs+uint16(i)) != 0 {
+			out = append(out, i+1)
+		}
+	}
+	return out
+}
+
+// MachineItem returns the native item id of TM/HM number n (1..57).
+func (*Profile) MachineItem(n int) (uint8, bool) {
+	if n < 1 || n > len(gsdata.MachineItems) {
+		return 0, false
+	}
+	return gsdata.MachineItems[n-1], true
+}
+
+// PartyNativeSpecies returns each party member's native species byte, with
+// ok=false for an egg (which cannot learn a machine).
+func (*Profile) PartyNativeSpecies(reader game.MemoryReader) (species []uint8, ok []bool) {
+	count := int(reader.Peek8(sym.PartyCount))
+	if count > 6 {
+		count = 6
+	}
+	for i := 0; i < count; i++ {
+		list := reader.Peek8(sym.PartySpecies + uint16(i))
+		raw := reader.Peek8(sym.PartyMon1 + uint16(i)*sym.PartyMonSize)
+		species = append(species, raw)
+		ok = append(ok, !gsdata.IsEgg(list) && !gsdata.IsEgg(raw))
+	}
+	return species, ok
+}
