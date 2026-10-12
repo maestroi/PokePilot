@@ -186,10 +186,15 @@ func LeagueDefeatChampion(m *emu.Emu, romData []byte, policy MovePolicy) error {
 
 // LeagueFinishHallOfFame owns only the post-Champion ending scripts. The
 // durable wElite4Flags completion bit, not the transient Champion event, is the
-// positive boundary proving that the Hall of Fame was actually recorded.
+// positive boundary proving that the Hall of Fame was actually recorded. The
+// finish boundary also requires a navigable overworld: the ending soft-resets,
+// and staying on Hall of Fame after completion is not a successful exit.
 func LeagueFinishHallOfFame(m *emu.Emu) error {
 	facts := currentLeagueFacts(m)
 	if facts.MainStoryComplete {
+		if err := ensureNavigableOverworld(m); err != nil {
+			return fmt.Errorf("skill: LeagueFinishHallOfFame: %w", err)
+		}
 		return nil
 	}
 	if !facts.LeagueChampionDefeated {

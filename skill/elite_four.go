@@ -306,33 +306,44 @@ func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error 
 }
 
 // finishHallOfFame advances the Champion/Oak/Hall-of-Fame scripts until the
-// ending records its durable completion bit. The Champion event alone is not
-// enough: HallOfFameResetEventsAndSaveScript later clears the entire Indigo
-// event range. The durable wElite4Flags completion bit is therefore the only
-// positive fact that means the main game actually reached the Hall of Fame.
+// ending records its durable completion bit, then leaves the scripted ending
+// via the cartridge's soft-reset + CONTINUE into a navigable overworld. The
+// Champion event alone is not enough: HallOfFameResetEventsAndSaveScript later
+// clears the entire Indigo event range. The durable wElite4Flags completion
+// bit is the only positive fact that means the main game reached the Hall of
+// Fame, but that bit is set before jp Init — staying on map 0x76 after that
+// point leaves GoTo with world: no_route (Lance's Champion entrance is a
+// disconnected north pocket; Dig/Escape Rope are illegal on the HoF tileset).
 func finishHallOfFame(m *emu.Emu) error {
-	if leagueMainStoryComplete(m) {
-		return nil
-	}
-	// HoFDisplayPlayerStats ends in PrintText's button wait without
-	// wFontLoaded set, so advanceUntil's text-box A never fires there. The
-	// ending offers no choices or name prompts, so a periodic A is safe.
-	var mem state.Mem
-	for spent := 0; spent < leagueEndingBudget; spent += leagueEndingPressEvery {
-		state.Snapshot(m, &mem)
-		if leagueFacts(&mem).MainStoryComplete {
-			break
+	if !leagueMainStoryComplete(m) {
+		// HoFDisplayPlayerStats ends in PrintText's button wait without
+		// wFontLoaded set, so advanceUntil's text-box A never fires there. The
+		// ending offers no choices or name prompts, so a periodic A is safe.
+		var mem state.Mem
+		for spent := 0; spent < leagueEndingBudget; spent += leagueEndingPressEvery {
+			state.Snapshot(m, &mem)
+			if leagueFacts(&mem).MainStoryComplete {
+				break
+			}
+			m.Tap(emu.A, 3, 7)
+			m.StepFrames(leagueEndingPressEvery - 10)
 		}
-		m.Tap(emu.A, 3, 7)
-		m.StepFrames(leagueEndingPressEvery - 10)
+		state.Snapshot(m, &mem)
+		facts := leagueFacts(&mem)
+		if !facts.MainStoryComplete {
+			return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(sym.CurMap))
+		}
 	}
+	if err := ensureNavigableOverworld(m); err != nil {
+		return fmt.Errorf("skill: EliteFourProgression: leave Hall of Fame ending: %w", err)
+	}
+	var mem state.Mem
 	state.Snapshot(m, &mem)
-	facts := leagueFacts(&mem)
-	if !facts.MainStoryComplete {
-		return fmt.Errorf("skill: EliteFourProgression: Hall of Fame did not commit main-story completion within %d frames; map=%#02x", leagueEndingBudget, mem.U8(sym.CurMap))
+	if !leagueFacts(&mem).MainStoryComplete {
+		return fmt.Errorf("skill: EliteFourProgression: main-story completion lost while leaving Hall of Fame")
 	}
-	if mem.U8(sym.CurMap) != hallOfFameMap {
-		return fmt.Errorf("skill: EliteFourProgression: main-story completion appeared on map %#02x, want Hall of Fame %#02x", mem.U8(sym.CurMap), hallOfFameMap)
+	if mem.U8(sym.CurMap) == hallOfFameMap {
+		return fmt.Errorf("skill: EliteFourProgression: still on Hall of Fame after ending exit")
 	}
 	return nil
 }
@@ -347,13 +358,13 @@ func EliteFourProgression(m *emu.Emu, romData []byte, policy MovePolicy) error {
 		return fmt.Errorf("skill: EliteFourProgression: nil policy")
 	}
 	if leagueMainStoryComplete(m) {
-		return nil
+		return finishHallOfFame(m)
 	}
 
 	for phase := 0; phase < 16; phase++ {
 		facts := currentLeagueFacts(m)
 		if facts.MainStoryComplete {
-			return nil
+			return finishHallOfFame(m)
 		}
 		currentMap := m.Peek8(sym.CurMap)
 		switch currentMap {

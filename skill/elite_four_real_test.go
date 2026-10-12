@@ -124,7 +124,10 @@ func TestEliteFourProgressionQualification(t *testing.T) {
 	if !afterFacts.LeagueChampionDefeated {
 		t.Fatalf("Champion semantic did not remain true after Hall of Fame reset: %+v", afterFacts)
 	}
-	if got := after.U8(sym.CurMap); got != hallOfFameMap {
-		t.Fatalf("completion map = %#02x, want Hall of Fame %#02x", got, hallOfFameMap)
+	if got := after.U8(sym.CurMap); got == hallOfFameMap {
+		t.Fatalf("completion left the player on Hall of Fame; ending exit must CONTINUE into the overworld")
+	}
+	if got := after.U8(sym.UpdateSpritesEnabled); got != 1 {
+		t.Fatalf("completion sprites=%#02x, want loaded overworld (1)", got)
 	}
 }

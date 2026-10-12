@@ -488,6 +488,12 @@ func overlayObservedMapTopology(g *world.Graph, grid *world.Grid, h worldmodel.H
 // logical journey (see navigationMemory); nil gets a fresh one, matching a
 // single self-contained GoTo call.
 func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destination, executor world.TransitionExecutor, nav *navigationMemory) error {
+	// Post-Init title/main-menu and the Hall of Fame ending leave a CurMap that
+	// is not a navigable graph location. Normalize that start boundary before
+	// pathfinding, or GoTo reports world: no_route from a soft-reset pocket.
+	if err := ensureNavigableOverworld(m); err != nil {
+		return fmt.Errorf("skill: GoTo: %w", err)
+	}
 	g, err := world.BuildGraph(romData)
 	if err != nil {
 		return err

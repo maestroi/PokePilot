@@ -96,6 +96,7 @@ var gen1AdapterExceptions = fileSet(
 	"interaction.go",
 	"item_storage.go",
 	"link_trade.go",
+	"soft_reset.go",
 	"live_topology_gen1_compat.go",
 	"move_learning.go",
 	"party_gen1_compat.go",
