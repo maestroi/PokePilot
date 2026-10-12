@@ -690,9 +690,19 @@ func grassRoutable(g *world.Graph, prereqs world.RoutePrerequisites, cur uint8, 
 			continue
 		}
 		tried[comp] = true
-		_, err := world.FindRoutePlanAtDestinationWithCapabilities(g, cur, mapID, x, y, c.x, c.y, nil, prereqs)
-		if err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+		steps, err := world.FindRoutePlanAtDestinationWithCapabilities(g, cur, mapID, x, y, c.x, c.y, nil, prereqs)
+		if err == nil {
 			return true
+		}
+		if errors.Is(err, world.ErrRouteReplanRequired) {
+			// A replan frontier only makes this habitat's grass reachable when it
+			// lands on the habitat's own map: the search may detour through an
+			// unrelated Surf seam (Route 14's sealed grass detoured all the way
+			// to a Route 2 seam, run-d6dokr184ky81) whose post-action topology
+			// says nothing about a pocket that is sealed from every entry.
+			if len(steps) > 0 && steps[len(steps)-1].Edge.To == mapID {
+				return true
+			}
 		}
 	}
 	return false
