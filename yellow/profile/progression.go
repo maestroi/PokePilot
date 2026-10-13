@@ -12,16 +12,20 @@ import (
 type yellowEvent uint16
 
 const (
-	eventFollowedOakIntoLab      yellowEvent = 0
-	eventOakAskedToChooseMon     yellowEvent = 33
-	eventGotStarter              yellowEvent = 34
-	eventBattledRivalInOaksLab   yellowEvent = 35
-	eventGotPokedex              yellowEvent = 37
-	eventOakAppearedInPallet     yellowEvent = 39
-	eventViridianGymOpen         yellowEvent = 40
-	eventGotBulbasaurInCerulean  yellowEvent = 168
-	eventBeatTowerJessieJames    yellowEvent = 275
-	eventGotSquirtleFromJenny    yellowEvent = 329
+	eventFollowedOakIntoLab     yellowEvent = 0
+	eventOakAskedToChooseMon    yellowEvent = 33
+	eventGotStarter             yellowEvent = 34
+	eventBattledRivalInOaksLab  yellowEvent = 35
+	eventGotPokedex             yellowEvent = 37
+	eventOakAppearedInPallet    yellowEvent = 39
+	eventViridianGymOpen        yellowEvent = 40
+	eventGotBulbasaurInCerulean yellowEvent = 168
+	// Tower Jessie/James and Jenny's Squirtle sit in the Lavender const_next
+	// $F0-2 window. Those indices must match retail Yellow EN rev0 (and the
+	// expression-aware decomp parse), not a naive "$F0" truncation that
+	// drifts every bit in this range by +2 (triage:88c189fb88d189c5).
+	eventBeatTowerJessieJames    yellowEvent = 273
+	eventGotSquirtleFromJenny    yellowEvent = 327
 	eventMansionSwitchOn         yellowEvent = 632
 	eventRescuedMrFuji           yellowEvent = 1231
 	eventBeatRoute22Rival2       yellowEvent = 1318
