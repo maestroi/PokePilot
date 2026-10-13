@@ -35,6 +35,8 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 		Facing:       base.Facing,
 		Controllable: base.Controllable,
 		InBattle:     base.InBattle,
+		TimeOfDay:    string(base.TimeOfDay),
+		Region:       string(base.Region),
 		PartyCount:   len(base.Party),
 		Party:        make([]PartyMon, len(base.Party)),
 		Badges:       append([]string(nil), base.Badges...),
@@ -60,6 +62,10 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 			HP:         mon.HP,
 			MaxHP:      mon.MaxHP,
 			Status:     mon.Status,
+			Gender:     string(mon.Gender),
+			Shiny:      mon.Shiny,
+			Pokerus:    string(mon.Pokerus),
+			Friendship: mon.Friendship,
 		}
 	}
 	for _, item := range base.Bag {

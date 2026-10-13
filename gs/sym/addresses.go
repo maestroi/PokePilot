@@ -56,8 +56,11 @@ const (
 	StringBuffer2           uint16 = 0xCF7E // wStringBuffer2
 
 	// Bank-1 live map/script state.
-	MapHeight       uint16 = 0xD087 // wMapHeight
-	MapWidth        uint16 = 0xD088 // wMapWidth
+	MapHeight uint16 = 0xD087 // wMapHeight
+	MapWidth  uint16 = 0xD088 // wMapWidth
+	// TimeOfDay is wTimeOfDay. In ram/wram.asm it is the byte immediately
+	// before a one-byte pad and the verified wMapStatus.
+	TimeOfDay       uint16 = 0xD157 // wTimeOfDay
 	MapStatus       uint16 = 0xD159 // wMapStatus
 	MapEventStatus  uint16 = 0xD15A // wMapEventStatus
 	ScriptFlags     uint16 = 0xD15B // wScriptFlags
@@ -97,10 +100,15 @@ const (
 	GameTimerPaused uint16 = 0xD8B8 // wGameTimerPaused
 	BikeFlags       uint16 = 0xD93F // wBikeFlags
 
-	MapGroup  uint16 = 0xDA00
-	MapNumber uint16 = 0xDA01
-	YCoord    uint16 = 0xDA02
-	XCoord    uint16 = 0xDA03
+	// BackupMapGroup is wBackupMapGroup. Special maps (landmark 0) report the
+	// region of this return map. Counted back from the verified wMapGroup
+	// through the linear wCurMapData labels in ram/wram.asm.
+	BackupMapGroup  uint16 = 0xD9F6 // wBackupMapGroup
+	BackupMapNumber uint16 = 0xD9F7 // wBackupMapNumber
+	MapGroup        uint16 = 0xDA00
+	MapNumber       uint16 = 0xDA01
+	YCoord          uint16 = 0xDA02
+	XCoord          uint16 = 0xDA03
 
 	PartyCount   uint16 = 0xDA22
 	PartySpecies uint16 = 0xDA23

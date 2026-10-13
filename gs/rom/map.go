@@ -19,6 +19,7 @@ type MapHeader struct {
 	ID           uint16
 	Tileset      uint8
 	Environment  uint8
+	Landmark     uint8
 	BorderBlock  uint8
 	WidthBlocks  uint8
 	HeightBlocks uint8
@@ -71,6 +72,20 @@ func (h MapHeader) NativeHeader() worldmodel.NativeMapHeader {
 	return out
 }
 
+// MapLandmark reads MAP_LOCATION from the map header. RegionCheck in the
+// adapter turns that landmark into Johto or Kanto.
+func MapLandmark(rom []byte, mapID uint16) (uint8, error) {
+	off, err := locateMapGroupPointers(rom)
+	if err != nil {
+		return 0, err
+	}
+	headerOff, err := mapHeaderOffset(rom, Tables{MapGroupPointers: off}, mapID)
+	if err != nil {
+		return 0, err
+	}
+	return rom[headerOff+5], nil
+}
+
 // ParseMap reads one map from romData using located MapGroupPointers.
 func ParseMap(rom []byte, mapID uint16) (MapHeader, error) {
 	off, err := locateMapGroupPointers(rom)
@@ -80,31 +95,39 @@ func ParseMap(rom []byte, mapID uint16) (MapHeader, error) {
 	return parseMapAt(rom, Tables{MapGroupPointers: off}, mapID)
 }
 
-func parseMapAt(rom []byte, tables Tables, mapID uint16) (MapHeader, error) {
+func mapHeaderOffset(rom []byte, tables Tables, mapID uint16) (int, error) {
 	info, ok := gsdata.Map(mapID)
 	if !ok {
-		return MapHeader{ID: mapID}, fmt.Errorf("gs/rom: map %#04x is not in the generated catalog", mapID)
+		return 0, fmt.Errorf("gs/rom: map %#04x is not in the generated catalog", mapID)
 	}
 	bank, _, err := offsetBankAddr(tables.MapGroupPointers)
 	if err != nil {
-		return MapHeader{ID: mapID}, err
+		return 0, err
 	}
 	if info.Group == 0 || info.Group > numMapGroups {
-		return MapHeader{ID: mapID}, fmt.Errorf("gs/rom: map %#04x has invalid group %d", mapID, info.Group)
+		return 0, fmt.Errorf("gs/rom: map %#04x has invalid group %d", mapID, info.Group)
 	}
 	groupPtr, err := readU16(rom, tables.MapGroupPointers+int(info.Group-1)*2)
 	if err != nil {
-		return MapHeader{ID: mapID}, err
+		return 0, err
 	}
 	groupOff, err := bankedOffset(bank, groupPtr)
 	if err != nil {
-		return MapHeader{ID: mapID}, err
+		return 0, err
 	}
 	if info.Number == 0 {
-		return MapHeader{ID: mapID}, fmt.Errorf("gs/rom: map %#04x has zero map number", mapID)
+		return 0, fmt.Errorf("gs/rom: map %#04x has zero map number", mapID)
 	}
 	headerOff := groupOff + int(info.Number-1)*mapHeaderLen
 	if err := mustInROM(rom, headerOff, mapHeaderLen, "map header"); err != nil {
+		return 0, err
+	}
+	return headerOff, nil
+}
+
+func parseMapAt(rom []byte, tables Tables, mapID uint16) (MapHeader, error) {
+	headerOff, err := mapHeaderOffset(rom, tables, mapID)
+	if err != nil {
 		return MapHeader{ID: mapID}, err
 	}
 
@@ -112,6 +135,7 @@ func parseMapAt(rom []byte, tables Tables, mapID uint16) (MapHeader, error) {
 		ID:          mapID,
 		Tileset:     rom[headerOff+1],
 		Environment: rom[headerOff+2],
+		Landmark:    rom[headerOff+5], // MAP_LOCATION
 	}
 	attrBank := rom[headerOff]
 	attrAddr := uint16(rom[headerOff+3]) | uint16(rom[headerOff+4])<<8
@@ -125,6 +149,7 @@ func parseMapAt(rom []byte, tables Tables, mapID uint16) (MapHeader, error) {
 	h.BorderBlock = rom[attrOff]
 	h.HeightBlocks = rom[attrOff+1]
 	h.WidthBlocks = rom[attrOff+2]
+	info, _ := gsdata.Map(mapID)
 	if h.WidthBlocks != info.WidthBlocks || h.HeightBlocks != info.HeightBlocks {
 		return h, fmt.Errorf("gs/rom: map %#04x attributes %dx%d, catalog %dx%d",
 			mapID, h.WidthBlocks, h.HeightBlocks, info.WidthBlocks, info.HeightBlocks)
