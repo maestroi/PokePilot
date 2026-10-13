@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/boxxle"
+	"github.com/maestroi/pokepilot/boxxle/solver"
 )
 
 // buildState converts a compact ASCII grid into a boxxle.State for tests.
@@ -147,6 +148,62 @@ func TestCandidatesExcludesDeadlocks(t *testing.T) {
 		if board.PushDeadlock(c.Push) {
 			t.Errorf("candidate %v is a deadlock", c.Push)
 		}
+	}
+}
+
+// TestChooseRejectsSealingPush is level 1 after its first correct push.
+// Pushing the crate at (2,2) right is legal and not a corner, and it shortens
+// the walk to the goals, but it plugs the corridor: the player then has no
+// legal push and the puzzle is lost. That is the push the live run took.
+func TestChooseRejectsSealingPush(t *testing.T) {
+	state := buildState(t, []string{
+		"#########",
+		"#...#####",
+		"#.$@#####",
+		"#.$$###+#",
+		"###.###+#",
+		"###....+#",
+		"##...#..#",
+		"##...####",
+		"#########",
+	})
+	board, err := boxxle.NewBoard(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seal, ok := board.FindPush(boxxle.Pos{X: 2, Y: 2}, boxxle.DirRight)
+	if !ok || board.PushDeadlock(seal) {
+		t.Fatalf("sealing push legal=%v corner=%v; the corner guard is what missed it", ok, board.PushDeadlock(seal))
+	}
+
+	cands, err := Candidates(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cands {
+		if c.Push.Crate == seal.Crate && c.Push.Dir == seal.Dir {
+			t.Fatalf("candidates still offer the sealing push %v", c.Push)
+		}
+	}
+	d, err := Choose(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Candidate.Push.Crate == seal.Crate && d.Candidate.Push.Dir == seal.Dir {
+		t.Fatalf("Choose selected the sealing push %v", d.Candidate.Push)
+	}
+	next, err := solver.Apply(state, solver.Push{
+		CrateFrom: d.Candidate.Push.Crate, CrateTo: d.Candidate.Push.CrateTo,
+		Dir: d.Candidate.Push.Dir, PlayerFrom: d.Candidate.Push.PlayerFrom,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := solver.Solve(next); err != nil || !ok {
+		t.Fatalf("chosen push %v leaves an unsolvable board: %v", d.Candidate.Push, err)
+	}
+	if d.Rejected < 1 {
+		t.Fatalf("Rejected = %d, want the sealing push counted", d.Rejected)
 	}
 }
 

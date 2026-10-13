@@ -3,11 +3,12 @@
 //
 // The policy is the deterministic layer between the decoded board and the
 // executor. It enumerates legal pushes from the board geometry, rejects any
-// push that creates an obvious deadlock, scores the remainder with a stable
-// heuristic, and returns the best push. A higher-level planner (an LLM or a
-// scripted objective) may override the choice, but it may only select from the
-// candidates this package produces: legality and the deadlock guard remain
-// deterministic policy responsibilities.
+// push that deadlocks the puzzle (a corner, or any push that leaves a solvable
+// board unsolvable), scores the remainder with a stable heuristic, and returns
+// the best push. A higher-level planner (an LLM or a scripted objective) may
+// override the choice, but it may only select from the candidates this package
+// produces: legality and the deadlock guard remain deterministic policy
+// responsibilities.
 package policy
 
 import (
@@ -15,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/boxxle"
+	"github.com/maestroi/pokepilot/boxxle/solver"
 )
 
 // ErrNoPush is returned when the board has no legal, non-deadlocking push.
@@ -48,20 +50,14 @@ func Choose(state boxxle.State) (Decision, error) {
 	if state.Solved {
 		return Decision{}, fmt.Errorf("%w: board is already solved", ErrNoPush)
 	}
-	pushes := board.LegalPushes()
+	pushes, rejected := actionable(state, board)
 	if len(pushes) == 0 {
 		return Decision{}, fmt.Errorf("%w: no legal pushes", ErrNoPush)
 	}
 
 	best := Candidate{}
 	haveBest := false
-	rejected := 0
 	for _, p := range pushes {
-		// Deadlock guard: reject any push that moves a crate onto a dead square.
-		if board.PushDeadlock(p) {
-			rejected++
-			continue
-		}
 		c := score(board, p)
 		if !haveBest || c.Score > best.Score || (c.Score == best.Score && c.PlayerDist < best.PlayerDist) {
 			best = c
@@ -87,14 +83,69 @@ func Candidates(state boxxle.State) ([]Candidate, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []Candidate
-	for _, p := range board.LegalPushes() {
-		if board.PushDeadlock(p) {
-			continue
-		}
+	pushes, _ := actionable(state, board)
+	out := make([]Candidate, 0, len(pushes))
+	for _, p := range pushes {
 		out = append(out, score(board, p))
 	}
 	return out, nil
+}
+
+// actionable is the set of pushes a planner may select.
+//
+// A corner dead square is rejected outright. When the board still has a
+// solution, a push that leaves it unsolvable is rejected too: it is legal and
+// not a corner, but it seals the room. Level 1's second crate can be pushed
+// sideways into the corridor the first crate just left; nothing is in a
+// corner, and afterwards the player has no legal push at all. The model and
+// the greedy score both prefer that push because it shortens the walk to a
+// goal. Offering it is how a solvable puzzle gets ruined.
+//
+// A board the solver cannot solve keeps the corner-filtered set, so a puzzle
+// that is already lost still reports "no legal pushes" instead of inventing a
+// recovery the search does not have.
+func actionable(state boxxle.State, board boxxle.Board) ([]boxxle.LegalPush, int) {
+	var open []boxxle.LegalPush
+	rejected := 0
+	for _, p := range board.LegalPushes() {
+		if board.PushDeadlock(p) {
+			rejected++
+			continue
+		}
+		open = append(open, p)
+	}
+	if len(open) == 0 {
+		return nil, rejected
+	}
+	if _, ok, err := solver.Solve(state); err != nil || !ok {
+		return open, rejected
+	}
+	kept := make([]boxxle.LegalPush, 0, len(open))
+	for _, p := range open {
+		if pushPreservesSolution(state, p) {
+			kept = append(kept, p)
+		}
+	}
+	if len(kept) == 0 {
+		return open, rejected
+	}
+	return kept, rejected + len(open) - len(kept)
+}
+
+// pushPreservesSolution reports whether applying p leaves a board the
+// deterministic solver can still finish.
+func pushPreservesSolution(state boxxle.State, p boxxle.LegalPush) bool {
+	next, err := solver.Apply(state, solver.Push{
+		CrateFrom:  p.Crate,
+		CrateTo:    p.CrateTo,
+		Dir:        p.Dir,
+		PlayerFrom: p.PlayerFrom,
+	})
+	if err != nil {
+		return false
+	}
+	_, ok, err := solver.Solve(next)
+	return err == nil && ok
 }
 
 // score applies the deterministic Sokoban heuristic to a legal push.
