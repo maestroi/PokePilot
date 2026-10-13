@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/rom"
@@ -55,18 +56,26 @@ var pokemonTowerFujiStand = Destination{Map: pokemonTower7FMap, X: 10, Y: 4}
 // bag, and that skill currently finishes beside Giovanni's drop on B4F. The
 // next story verb must therefore own the deterministic escape from the
 // post-#31 boss room instead of requiring a manual input between slices.
+//
+// Lavender hub interiors are included by map-name prefix rather than an
+// explicit allowlist: a run that shops or talks in LAVENDER_MART /
+// LAVENDER_CUBONE_HOUSE before climbing must still resume the Tower verb.
+// Yellow offers poke_flute_acquired without a map-slice gate, so rejecting
+// those interiors turns an ordinary side trip into unknown_failure
+// (triage:88c189fb88d189c5). The skill itself already TravelFlee's to the
+// Lavender Pokemon Center whenever the current map is not a Tower floor.
 func PokemonTowerAvailable(mapID uint8) bool {
 	if RocketHideoutAvailable(mapID) {
 		return true
 	}
 	switch mapID {
-	case route7Map, undergroundRoute7Map, undergroundWestEastMap, undergroundRoute8Map, route8Map,
-		lavenderTownMap, lavenderPokemonCenterMap,
-		pokemonTower1FMap, pokemonTower2FMap, pokemonTower3FMap, pokemonTower4FMap,
-		pokemonTower5FMap, pokemonTower6FMap, pokemonTower7FMap, mrFujisHouseMap:
+	case route7Map, undergroundRoute7Map, undergroundWestEastMap, undergroundRoute8Map, route8Map:
 		return true
 	default:
-		return false
+		name := state.MapName(mapID)
+		return strings.HasPrefix(name, "LAVENDER_") ||
+			strings.HasPrefix(name, "POKEMON_TOWER_") ||
+			name == "MR_FUJIS_HOUSE"
 	}
 }
 
