@@ -6,6 +6,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
+	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
 
@@ -86,17 +87,21 @@ func routingProfileFor(m *emu.Emu) (routingProfile, error) {
 }
 
 func routingProviderForROM(romData []byte) (worldmodel.MapHeaderProvider, error) {
-	if profile, _, err := profiles.Detect(romData); err == nil {
-		if routing, ok := profile.(routingProfile); ok {
-			if provider := routing.MapProvider(romData); provider != nil {
-				return provider, nil
-			}
-		}
+	provider, err := profiles.MapProvider(romData)
+	if err != nil {
+		return nil, fmt.Errorf("skill: routing: %w", err)
 	}
-	if provider, ok := worldmodel.ProviderForROM(romData); ok && provider != nil {
-		return provider, nil
+	return provider, nil
+}
+
+// routeGraphForROM builds a fresh map graph through the ROM's game profile.
+// Callers that only read the graph should prefer cachedRouteGraph.
+func routeGraphForROM(romData []byte) (*world.Graph, error) {
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("skill: routing: no map provider for ROM")
+	return world.BuildGraph(provider)
 }
 
 func routingHeaderFor(m *emu.Emu, mapID uint8) (worldmodel.MapHeader, error) {

@@ -93,7 +93,7 @@ func TestSatisfiedRoute12SnorlaxCatchHabitatLeavesViaRoute14(t *testing.T) {
 	if !ok {
 		t.Fatal("missing route 13 place")
 	}
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

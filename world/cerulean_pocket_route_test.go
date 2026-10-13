@@ -1,6 +1,7 @@
 package world
 
 import (
+	"github.com/maestroi/pokepilot/red/rom"
 	"os"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := BuildGraphForROM(data)
+	g, err := BuildGraph(rom.NewWorldProvider(data))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

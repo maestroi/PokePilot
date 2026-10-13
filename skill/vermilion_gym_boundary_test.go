@@ -46,7 +46,7 @@ func TestVermilionGymNotOfferedAsBoundaryTowardCinnabar(t *testing.T) {
 	mem[sym.BagItems+3] = 1
 	mem[sym.BagItems+4] = 0xff
 
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

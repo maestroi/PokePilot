@@ -23,7 +23,7 @@ func TestRoute14SealedGrassReplanFrontier(t *testing.T) {
 	if err != nil {
 		t.Skipf("no ROM: %v", err)
 	}
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

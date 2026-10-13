@@ -56,7 +56,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	graph, err := world.BuildGraphForROM(romData)
+	provider, err := profiles.MapProvider(romData)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worldverify: map provider: %v\n", err)
+		os.Exit(1)
+	}
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v\n", err)
 		os.Exit(1)

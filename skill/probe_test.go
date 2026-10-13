@@ -124,7 +124,7 @@ func TestProbe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PROBE_ROUTE %q is not a map id: %v", spec, err)
 		}
-		graph, err := world.BuildGraphForROM(romData)
+		graph, err := routeGraphForROM(romData)
 		if err != nil {
 			t.Fatalf("build graph: %v", err)
 		}

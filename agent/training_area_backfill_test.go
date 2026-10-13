@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/maestroi/pokepilot/profiles"
 	"os"
 	"testing"
 
@@ -21,7 +22,11 @@ func TestBackfillVisitedTrainingAreasSeedsObservedHabitatsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	graph, err := world.BuildGraphForROM(romData)
+	provider, err := profiles.MapProvider(romData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := world.BuildGraph(provider)
 	if err != nil {
 		t.Fatal(err)
 	}

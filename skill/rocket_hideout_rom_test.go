@@ -108,7 +108,7 @@ func TestRocketBossDoorNeedsLiveOverride(t *testing.T) {
 
 func TestRocketHideoutB1FCanRouteToB4F(t *testing.T) {
 	romData := rocketHideoutROM(t)
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}
