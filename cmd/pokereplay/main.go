@@ -140,6 +140,11 @@ type replayServer struct {
 	rtmpSessions          map[string]*rtmpBroadcastSession
 	broadcastDestinations map[string]broadcastDestination
 
+	youtube       youtubeConfig
+	youtubeHTTP   *http.Client
+	youtubeMu     sync.Mutex
+	youtubeActive map[string]bool
+
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
 	// fetchROM supplies a cartridge the local library does not have. Tests set
@@ -174,6 +179,9 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		liveSessions:          make(map[string]*liveBroadcastSession),
 		rtmpSessions:          make(map[string]*rtmpBroadcastSession),
 		broadcastDestinations: broadcastDestinationsFromEnv(os.Getenv),
+		youtube:               youtubeConfigFromEnv(os.Getenv),
+		youtubeHTTP:           &http.Client{}, // uploads are bounded by youtubeUploadTimeout, not a client timeout
+		youtubeActive:         make(map[string]bool),
 	}
 }
 
@@ -217,6 +225,8 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/live/broadcast/status", s.handleRTMPBroadcastStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", s.handleRTMPBroadcastStart)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
+	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", s.handleYouTubePublish)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
 	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux

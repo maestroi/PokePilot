@@ -12,6 +12,8 @@ import type {
   MediaRenderJob,
   MediaRenderJobList,
   HighlightStatus,
+  YouTubePublication,
+  YouTubePublishStatus,
   ProgrammingEntry,
   ProgrammingSnapshot,
   ReplayStatus,
@@ -330,6 +332,17 @@ export function renderHighlights(runID: string, signal?: AbortSignal): Promise<H
     method: 'POST',
     body: '{}',
     signal
+  })
+}
+
+export function getYouTubePublishStatus(runID: string, signal?: AbortSignal): Promise<YouTubePublishStatus> {
+  return requestJSON<YouTubePublishStatus>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, { signal })
+}
+
+export function publishToYouTube(runID: string, privacy: 'private' | 'unlisted' | 'public'): Promise<YouTubePublication> {
+  return requestJSON<YouTubePublication>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, {
+    method: 'POST',
+    body: JSON.stringify({ privacy })
   })
 }
 

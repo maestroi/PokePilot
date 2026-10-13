@@ -581,3 +581,20 @@ export interface ProgrammingSnapshot {
   up_next?: ProgrammingEntry
   queue: ProgrammingEntry[]
 }
+
+export interface YouTubePublication {
+  run_id: string
+  state: 'none' | 'uploading' | 'interrupted' | 'published' | 'failed' | string
+  privacy?: string
+  title?: string
+  video_id?: string
+  video_url?: string
+  error?: string
+  updated_at?: number
+  published_at?: number
+}
+
+export interface YouTubePublishStatus {
+  configured: boolean
+  publication: YouTubePublication
+}
