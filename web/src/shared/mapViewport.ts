@@ -11,7 +11,7 @@ export interface MapFitInput {
   mapWidth: number
   mapHeight: number
   zoom: number
-  /** Grow until the map meets the longer side of the box; the other side scrolls. */
+  /** Fit the whole map inside the box. Zoom is what scales past that. */
   fillBox: boolean
   minTile?: number
   evenTiles?: boolean
@@ -45,9 +45,10 @@ export function fitMapTiles(input: MapFitInput): MapFit {
   const widthFit = Math.floor(viewW / tilesW)
   const heightFit = Math.floor(viewH / tilesH)
   const contain = Math.min(widthFit, heightFit)
-  const cover = Math.max(widthFit, heightFit)
   const minTile = Math.max(2, Math.floor(input.minTile ?? 2))
-  const fit = Math.max(minTile, input.fillBox ? cover : contain, 2)
+  // 100% shows the entire map. A readability floor must not magnify past the box.
+  let fit = Math.max(2, contain)
+  if (minTile > fit && minTile * tilesW <= viewW && minTile * tilesH <= viewH) fit = minTile
   const edgeCap = Math.max(1, Math.min(
     Math.floor(MAP_CANVAS_MAX_EDGE / tilesW),
     Math.floor(MAP_CANVAS_MAX_EDGE / tilesH)
