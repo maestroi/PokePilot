@@ -119,6 +119,37 @@ func TestRunWatchdogShortStuckReplansOnceThenStops(t *testing.T) {
 	}
 }
 
+// #2619: teaching several TMs in place before a boss is real party change,
+// not a stuck loop, even though position/events/party count are unchanged.
+func TestRunWatchdogShortStuckCountsMovesetChangeAsProgress(t *testing.T) {
+	mon := func(moves ...Move) Observation {
+		m := PartyMon{Level: 60}
+		for _, mv := range moves {
+			m.Moves = append(m.Moves, PartyMove{Move: mv, PP: 10})
+		}
+		return Observation{Map: 1, X: 1, Y: 1, PartyCount: 1, Party: []PartyMon{m}}
+	}
+	steps := []Observation{
+		mon(Move{Power: 40, Type: "normal"}),
+		mon(Move{Power: 40, Type: "normal"}, Move{Power: 120, Type: "normal"}),
+		mon(Move{Power: 40, Type: "normal"}, Move{Power: 120, Type: "normal"}, Move{Power: 95, Type: "ice"}),
+		mon(Move{Power: 40, Type: "normal"}, Move{Power: 120, Type: "normal"}, Move{Power: 95, Type: "ice"}, Move{Power: 0, Type: "poison"}),
+		mon(Move{Power: 90, Type: "electric"}, Move{Power: 120, Type: "normal"}, Move{Power: 95, Type: "ice"}, Move{Power: 0, Type: "poison"}),
+	}
+	policy := newRunWatchdogPolicy(Budget{StuckAfter: 2}, steps[0], NewKnowledge(nil))
+	for i := 1; i < len(steps); i++ {
+		if got := policy.successfulObjective(steps[i-1], steps[i], true); got.Stop != StopUnset || got.ReplanReason != "" {
+			t.Fatalf("teach %d = %+v; want continue", i, got)
+		}
+	}
+	// PP churn alone is not a moveset change.
+	spent := mon(Move{Power: 90, Type: "electric"}, Move{Power: 120, Type: "normal"}, Move{Power: 95, Type: "ice"}, Move{Power: 0, Type: "poison"})
+	spent.Party[0].Moves[0].PP = 1
+	if !sameProgress(steps[len(steps)-1], spent) {
+		t.Fatal("PP-only change counted as progress")
+	}
+}
+
 func TestRunFailurePolicyStrategicFailureReplansOncePerStructuredState(t *testing.T) {
 	policy := newRunFailurePolicy(3)
 	obj := Objective{Kind: KindGoTo, Place: "route 1"}

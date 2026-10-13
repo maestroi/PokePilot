@@ -496,5 +496,28 @@ func sameProgress(a, b Observation) bool {
 			return false
 		}
 	}
+	// A taught TM/HM changes the party in place without moving the player.
+	// Counting a run of distinct move-teaching objectives (pre-boss prep)
+	// as "no change" made the short stuck watchdog kill a healthy run (#2619).
+	return sameMovesets(a.Party, b.Party)
+}
+
+// sameMovesets compares known moves by observable identity (power, type).
+// ponytail: Move carries no move ID, so swapping one move for another with
+// identical power and type is invisible here; add an ID when that matters.
+func sameMovesets(a, b []PartyMon) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if len(a[i].Moves) != len(b[i].Moves) {
+			return false
+		}
+		for j := range a[i].Moves {
+			if a[i].Moves[j].Move != b[i].Moves[j].Move {
+				return false
+			}
+		}
+	}
 	return true
 }
