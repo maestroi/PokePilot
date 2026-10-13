@@ -23,6 +23,8 @@ func TestPokemonTowerAvailable(t *testing.T) {
 		route8Map,
 		lavenderTownMap,
 		lavenderPokemonCenterMap,
+		0x96, // LAVENDER_MART
+		0x97, // LAVENDER_CUBONE_HOUSE
 		pokemonTower1FMap,
 		pokemonTower2FMap,
 		pokemonTower3FMap,

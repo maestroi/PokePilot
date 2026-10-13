@@ -330,12 +330,28 @@ func yellowDecompEventIndices(t *testing.T) map[string]yellowEvent {
 		t.Fatalf("read vendored pokeyellow event constants: %v", err)
 	}
 	parseNum := func(s string) int {
-		s = strings.Replace(s, "$", "0x", 1)
+		s = strings.ReplaceAll(s, "$", "0x")
 		n, err := strconv.ParseInt(s, 0, 32)
 		if err != nil {
 			t.Fatalf("parse %q: %v", s, err)
 		}
 		return int(n)
+	}
+	// pret writes a few anchors as expressions (notably Lavender's
+	// `const_next $F0 - 2`). Evaluate only the additive form used there; a
+	// bare number still goes through parseNum.
+	parseExpr := func(fields []string) int {
+		if len(fields) == 1 {
+			return parseNum(fields[0])
+		}
+		if len(fields) == 3 && fields[1] == "-" {
+			return parseNum(fields[0]) - parseNum(fields[2])
+		}
+		if len(fields) == 3 && fields[1] == "+" {
+			return parseNum(fields[0]) + parseNum(fields[2])
+		}
+		t.Fatalf("unsupported event-constant expression %q", strings.Join(fields, " "))
+		return 0
 	}
 	out := map[string]yellowEvent{}
 	next := 0
@@ -351,19 +367,19 @@ func yellowDecompEventIndices(t *testing.T) map[string]yellowEvent {
 		case "const_def":
 			next = 0
 			if len(fields) > 1 {
-				next = parseNum(fields[1])
+				next = parseExpr(fields[1:])
 			}
 		case "const":
 			out[fields[1]] = yellowEvent(next)
 			next++
 		case "const_skip":
 			if len(fields) > 1 {
-				next += parseNum(fields[1])
+				next += parseExpr(fields[1:])
 			} else {
 				next++
 			}
 		case "const_next":
-			next = parseNum(fields[1])
+			next = parseExpr(fields[1:])
 		}
 	}
 	return out
