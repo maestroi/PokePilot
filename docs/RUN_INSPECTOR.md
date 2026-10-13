@@ -171,6 +171,37 @@ the retry budget the broadcast becomes `failed` while gameplay continues.
 Only a currently `running` run can be started. Missing/invalid server
 configuration is reported as a broadcast-only error.
 
+### Optional YouTube VOD publishing
+
+A run whose replay MP4 is ready can be uploaded to YouTube from the run
+inspector (or `POST /v1/runs/{id}/publish/youtube` with an optional
+`{"privacy":"private|unlisted|public"}`, default `unlisted`). The upload reads
+the cached replay MP4 from S3; it never re-renders or replays gameplay, and a
+run whose replay is not ready gets `409`. `GET /v1/runs/{id}/publish/youtube`
+reports `configured` plus the publication record.
+
+Publication state lives in its own S3 record,
+`publications/youtube/<run>.json`, never in run status: an upload failure
+cannot change a run's result or its replay artifact. The record holds the
+state (`uploading`, `published`, `failed`; `interrupted` when an upload died
+with its process), video id/URL, privacy, title, and the last error.
+
+Uploads use YouTube's resumable protocol. The session URI is persisted so a
+retry resumes from the byte YouTube already holds, and an upload that finished
+before its result was recorded resolves to that video instead of uploading
+again. Publishing a run that is already `published` returns the existing video
+without contacting YouTube.
+
+Title and description are generated deterministically from the pokewall run
+record (game, starter, final party, goal, result, badges, maps, duration,
+attempts, planner/profile, runner build, optional run-page backlink). Traces,
+decisions, and raw model output are never read.
+
+Credentials (`POKEPILOT_YOUTUBE_CLIENT_ID`, `_CLIENT_SECRET`,
+`_REFRESH_TOKEN`) live only in the replay host environment; see
+`deploy/replay.env.example`. They and the upload session URI never appear in
+API responses, logs, or the publication record's API view.
+
 Replay-sidecar restart behavior is intentionally explicit: active broadcast
 sessions are process-local and stop when the sidecar exits; destination
 configuration is reloaded from `replay.env` on startup, but streams do not

@@ -13,9 +13,11 @@ import {
   renderHighlights,
   replayVideoURL,
   highlightVideoURL,
-  highlightManifestURL
+  highlightManifestURL,
+  getYouTubePublishStatus,
+  publishToYouTube
 } from '../shared/api/client'
-import type { HighlightStatus, ReplayStatus, RunArtifact } from '../shared/api/types'
+import type { HighlightStatus, ReplayStatus, RunArtifact, YouTubePublishStatus } from '../shared/api/types'
 import Panel from '../shared/components/Panel.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import RunTimeline from './RunTimeline.vue'
@@ -44,6 +46,11 @@ let serial = 0
 let liveTimer = 0
 let replayTimer = 0
 let highlightTimer = 0
+const youtube = ref<YouTubePublishStatus | null>(null)
+const youtubeError = ref('')
+const youtubePrivacy = ref<'private' | 'unlisted' | 'public'>('unlisted')
+const publishing = ref(false)
+let youtubeTimer = 0
 
 function object(value: unknown): Row {
   return value && typeof value === 'object' ? value as Row : {}
@@ -181,6 +188,7 @@ async function load(): Promise<void> {
   scheduleLiveRefresh()
   scheduleReplayRefresh()
   scheduleHighlightRefresh()
+  void refreshYouTube()
 }
 
 async function requestReplay(): Promise<void> {
@@ -281,6 +289,41 @@ async function requestHighlights(): Promise<void> {
   }
 }
 
+function clearYouTubeTimer(): void {
+  if (youtubeTimer) window.clearTimeout(youtubeTimer)
+  youtubeTimer = 0
+}
+
+async function refreshYouTube(): Promise<void> {
+  const runID = props.runID
+  clearYouTubeTimer()
+  try {
+    const next = await getYouTubePublishStatus(runID)
+    if (runID !== props.runID) return
+    youtube.value = next
+    youtubeError.value = ''
+  } catch {
+    if (runID === props.runID) youtube.value = null // replay host without publishing: hide the control
+    return
+  }
+  if (youtube.value?.publication.state === 'uploading') youtubeTimer = window.setTimeout(() => { void refreshYouTube() }, 5000)
+}
+
+async function requestYouTubePublish(): Promise<void> {
+  if (!props.runID || publishing.value) return
+  if (!window.confirm(`Upload the replay of ${props.runID} to YouTube as ${youtubePrivacy.value}?`)) return
+  publishing.value = true
+  youtubeError.value = ''
+  try {
+    await publishToYouTube(props.runID, youtubePrivacy.value)
+    await refreshYouTube()
+  } catch (cause) {
+    youtubeError.value = cause instanceof Error ? cause.message : 'YouTube publish failed'
+  } finally {
+    publishing.value = false
+  }
+}
+
 function highlightDurationLabel(): string {
   const total = Math.max(0, Math.round(Number(highlights.value?.duration_ms || 0) / 1000))
   const minutes = Math.floor(total / 60)
@@ -324,10 +367,12 @@ watch(() => props.runID, () => {
   clearLiveTimer()
   clearReplayTimer()
   clearHighlightTimer()
+  clearYouTubeTimer()
+  youtube.value = null
   void load()
 }, { immediate: true })
 watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
-onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTimer() })
+onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTimer(); clearYouTubeTimer() })
 </script>
 
 <template>
@@ -384,6 +429,32 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTime
                 </select>
               </label>
             </div>
+            <div v-if="youtube?.configured" class="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-400">
+              <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">YouTube</span>
+              <a
+                v-if="youtube.publication.state === 'published' && youtube.publication.video_url"
+                :href="youtube.publication.video_url"
+                target="_blank"
+                rel="noopener"
+                class="font-semibold text-cyan-300 hover:text-cyan-200"
+              >Published ({{ youtube.publication.privacy }})</a>
+              <span v-else-if="youtube.publication.state === 'uploading'">Uploading…</span>
+              <template v-else>
+                <span v-if="youtube.publication.state === 'failed' || youtube.publication.state === 'interrupted'" class="text-amber-300/80" :title="youtube.publication.error">
+                  {{ youtube.publication.state }}
+                </span>
+                <select v-model="youtubePrivacy" class="rounded-md border-0 bg-white/6 px-2 py-1 text-[11px] text-slate-200 outline-1 -outline-offset-1 outline-white/10">
+                  <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
+                </select>
+                <button
+                  type="button"
+                  class="rounded-md bg-rose-500/80 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+                  :disabled="publishing"
+                  @click="requestYouTubePublish"
+                >{{ publishing ? 'Requesting…' : youtube.publication.state === 'none' ? 'Publish to YouTube' : 'Retry upload' }}</button>
+              </template>
+            </div>
+            <p v-if="youtubeError" class="mt-1 text-right text-xs text-amber-300/80">{{ youtubeError }}</p>
           </template>
           <div v-else class="mt-3 rounded-md border border-dashed border-white/10 px-4 py-6 text-center">
             <FilmIcon class="mx-auto size-6 text-slate-600" aria-hidden="true" />
