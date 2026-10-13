@@ -152,9 +152,10 @@ func TestCandidatesExcludesDeadlocks(t *testing.T) {
 }
 
 // TestChooseRejectsSealingPush is level 1 after its first correct push.
-// Pushing the crate at (2,2) right is legal and not a corner, and it shortens
-// the walk to the goals, but it plugs the corridor: the player then has no
-// legal push and the puzzle is lost. That is the push the live run took.
+// Pushing the crate at (2,2) right is legal and lands on no corner, but it
+// freezes three crates against each other and the walls (and seals the
+// corridor). That is the push the live run took; PushDeadlock's freeze test
+// rejects it locally, and Candidates/Choose must not offer it.
 func TestChooseRejectsSealingPush(t *testing.T) {
 	state := buildState(t, []string{
 		"#########",
@@ -172,8 +173,11 @@ func TestChooseRejectsSealingPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	seal, ok := board.FindPush(boxxle.Pos{X: 2, Y: 2}, boxxle.DirRight)
-	if !ok || board.PushDeadlock(seal) {
-		t.Fatalf("sealing push legal=%v corner=%v; the corner guard is what missed it", ok, board.PushDeadlock(seal))
+	if !ok {
+		t.Fatal("sealing push should be a legal geometry push")
+	}
+	if !board.PushDeadlock(seal) {
+		t.Fatal("sealing push should be a freeze deadlock; the corner-only guard missed it")
 	}
 
 	cands, err := Candidates(state)
