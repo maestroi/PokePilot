@@ -23,7 +23,6 @@ import (
 	"container/heap"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/maestroi/pokepilot/boxxle"
 )
@@ -70,6 +69,24 @@ func (s Solution) WalkCount() int {
 // exhausted (or the start position is already dead). An error is reserved
 // for a board that is not a usable puzzle.
 func Solve(state boxxle.State) (Solution, bool, error) {
+	return search(state, 1)
+}
+
+// Solvable reports whether the board can still be solved, without asking for
+// the fewest pushes. It searches greedily (heuristic weighted over pushes
+// made), which finds some solution of a solvable board far sooner than the
+// optimal A*; an unsolvable board is exhausted either way, so the answer is
+// the same as Solve's.
+func Solvable(state boxxle.State) (bool, error) {
+	_, ok, err := search(state, greedyWeight)
+	return ok, err
+}
+
+// greedyWeight is the heuristic weight Solvable searches with.
+const greedyWeight = 5
+
+// search is A* over push states with f = g + weight*h; weight 1 is optimal.
+func search(state boxxle.State, weight int) (Solution, bool, error) {
 	board, err := boxxle.NewBoard(state)
 	if err != nil {
 		return Solution{}, false, err
@@ -84,7 +101,8 @@ func Solve(state boxxle.State) (Solution, bool, error) {
 	dead := board.DeadSquares()
 	goalReach := crateGoalCells(board)
 
-	start := newPushState(state)
+	walls := wallGrid(state)
+	start := newPushState(state, walls)
 	if deadlocked(start.crates, dead, goalReach) {
 		return Solution{}, false, nil
 	}
@@ -92,20 +110,20 @@ func Solve(state boxxle.State) (Solution, bool, error) {
 	parent := map[string]*searchNode{startKey(start): {st: start}}
 	open := &openList{}
 	heap.Init(open)
-	heap.Push(open, &openNode{st: start, key: startKey(start), g: 0, f: heuristic(start.crates, state.Goals)})
+	heap.Push(open, &openNode{st: start, key: startKey(start), g: 0, f: weight * heuristic(start.crates, state.Goals)})
 
 	for open.Len() > 0 {
 		cur := heap.Pop(open).(*openNode)
 		if solved(cur.st.crates, state.Goals) {
 			return reconstruct(parent, cur.key, state), true, nil
 		}
-		for _, next := range successors(cur.st, board, dead, goalReach) {
+		for _, next := range successors(cur.st, board, walls, dead, goalReach) {
 			if _, seen := parent[nextKey(next.st)]; seen {
 				continue
 			}
 			parent[nextKey(next.st)] = &searchNode{st: next.st, parentKey: cur.key, push: next.push}
 			g := cur.g + 1
-			heap.Push(open, &openNode{st: next.st, key: nextKey(next.st), g: g, f: g + heuristic(next.st.crates, state.Goals)})
+			heap.Push(open, &openNode{st: next.st, key: nextKey(next.st), g: g, f: g + weight*heuristic(next.st.crates, state.Goals)})
 		}
 	}
 	return Solution{}, false, nil
@@ -161,10 +179,12 @@ func Replay(state boxxle.State, sol Solution) (boxxle.State, error) {
 }
 
 // pushState is one node of the search: crate positions (sorted, so the key is
-// canonical) and the player's reachable region (sorted cell indices).
+// canonical) and the player's reachable region. reach is indexed by
+// cellIndex; anchor, the region's smallest cell, names the region in the key.
 type pushState struct {
 	crates []boxxle.Pos
-	region []int
+	reach  []bool
+	anchor int
 }
 
 type searchNode struct {
@@ -203,7 +223,7 @@ func (l *openList) Pop() interface{} {
 	return x
 }
 
-func newPushState(state boxxle.State) pushState {
+func newPushState(state boxxle.State, walls []bool) pushState {
 	crates := append([]boxxle.Pos(nil), state.Crates...)
 	sort.Slice(crates, func(i, j int) bool {
 		if crates[i].Y != crates[j].Y {
@@ -211,24 +231,21 @@ func newPushState(state boxxle.State) pushState {
 		}
 		return crates[i].X < crates[j].X
 	})
-	region := playerRegion(state, crateSet(crates), *state.Player)
-	return pushState{crates: crates, region: region}
+	reach, anchor := playerRegion(state, walls, crates, *state.Player)
+	return pushState{crates: crates, reach: reach, anchor: anchor}
 }
 
-func startKey(st pushState) string { return stateKey(st.crates, st.region) }
-func nextKey(st pushState) string  { return stateKey(st.crates, st.region) }
+func startKey(st pushState) string { return stateKey(st) }
+func nextKey(st pushState) string  { return stateKey(st) }
 
-func stateKey(crates []boxxle.Pos, region []int) string {
-	var b strings.Builder
-	for _, c := range crates {
-		b.WriteByte('C')
-		fmt.Fprintf(&b, "%d,%d;", c.X, c.Y)
+// stateKey packs the sorted crates and the region anchor, two bytes each;
+// boards are at most 32x32, so every coordinate fits a byte.
+func stateKey(st pushState) string {
+	b := make([]byte, 0, 2*len(st.crates)+2)
+	for _, c := range st.crates {
+		b = append(b, byte(c.X), byte(c.Y))
 	}
-	for _, i := range region {
-		b.WriteByte('R')
-		fmt.Fprintf(&b, "%d;", i)
-	}
-	return b.String()
+	return string(append(b, byte(st.anchor), byte(st.anchor>>8)))
 }
 
 func crateSet(crates []boxxle.Pos) map[boxxle.Pos]bool {
@@ -243,47 +260,50 @@ func cellIndex(state boxxle.State, p boxxle.Pos) int {
 	return p.Y*state.Width + p.X
 }
 
-// playerRegion returns the sorted cell indices the player can stand on from
-// start, treating walls and the given crate set as solid.
-func playerRegion(state boxxle.State, crates map[boxxle.Pos]bool, start boxxle.Pos) []int {
-	solid := func(p boxxle.Pos) bool {
-		if p.X < 0 || p.X >= state.Width || p.Y < 0 || p.Y >= state.Height {
-			return true
+// wallGrid marks wall cells by cellIndex, computed once per search.
+func wallGrid(state boxxle.State) []bool {
+	walls := make([]bool, state.Width*state.Height)
+	for _, w := range state.Walls {
+		if inBounds(state, w) {
+			walls[cellIndex(state, w)] = true
 		}
-		return crates[p] || wallSet(state)[p]
 	}
-	seen := map[int]bool{cellIndex(state, start): true}
-	queue := []boxxle.Pos{start}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
+	return walls
+}
+
+// playerRegion flood-fills the cells the player can stand on from start,
+// treating walls and crates as solid. It returns the region by cellIndex and
+// its smallest cell.
+func playerRegion(state boxxle.State, walls []bool, crates []boxxle.Pos, start boxxle.Pos) ([]bool, int) {
+	solid := append([]bool(nil), walls...)
+	for _, c := range crates {
+		solid[cellIndex(state, c)] = true
+	}
+	reach := make([]bool, len(walls))
+	anchor := cellIndex(state, start)
+	reach[anchor] = true
+	stack := []boxxle.Pos{start}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
 		for d := boxxle.DirUp; d <= boxxle.DirRight; d++ {
 			delta := d.Offset()
 			nxt := boxxle.Pos{X: cur.X + delta.X, Y: cur.Y + delta.Y}
-			i := cellIndex(state, nxt)
-			if seen[i] || solid(nxt) {
+			if !inBounds(state, nxt) {
 				continue
 			}
-			seen[i] = true
-			queue = append(queue, nxt)
+			i := cellIndex(state, nxt)
+			if reach[i] || solid[i] {
+				continue
+			}
+			reach[i] = true
+			if i < anchor {
+				anchor = i
+			}
+			stack = append(stack, nxt)
 		}
 	}
-	out := make([]int, 0, len(seen))
-	for i := range seen {
-		out = append(out, i)
-	}
-	sort.Ints(out)
-	return out
-}
-
-// wallSet returns the wall set for a state. The fixture boards are small, so
-// rebuilding the set per region computation is cheap enough for this slice.
-func wallSet(state boxxle.State) map[boxxle.Pos]bool {
-	set := make(map[boxxle.Pos]bool, len(state.Walls))
-	for _, w := range state.Walls {
-		set[w] = true
-	}
-	return set
+	return reach, anchor
 }
 
 type successor struct {
@@ -293,14 +313,10 @@ type successor struct {
 
 // successors enumerates every pruned push from st, in deterministic order:
 // crates in sorted order, directions up/down/left/right.
-func successors(st pushState, board boxxle.Board, dead, goalReach map[boxxle.Pos]bool) []successor {
+func successors(st pushState, board boxxle.Board, walls []bool, dead, goalReach map[boxxle.Pos]bool) []successor {
 	state := board.State()
 	var out []successor
 	crates := crateSet(st.crates)
-	regionSet := make(map[int]bool, len(st.region))
-	for _, i := range st.region {
-		regionSet[i] = true
-	}
 
 	for _, crate := range st.crates {
 		for d := boxxle.DirUp; d <= boxxle.DirRight; d++ {
@@ -314,7 +330,7 @@ func successors(st pushState, board boxxle.Board, dead, goalReach map[boxxle.Pos
 			if !inBounds(state, playerFrom) || board.IsWall(playerFrom) || crates[playerFrom] {
 				continue
 			}
-			if !regionSet[cellIndex(state, playerFrom)] {
+			if !st.reach[cellIndex(state, playerFrom)] {
 				continue
 			}
 			// Deadlock pruning: never push a crate onto a corner dead
@@ -325,10 +341,13 @@ func successors(st pushState, board boxxle.Board, dead, goalReach map[boxxle.Pos
 
 			nextCrates := replaceCrate(st.crates, crate, crateTo)
 			nextCratesSet := crateSet(nextCrates)
-			next := pushState{
-				crates: nextCrates,
-				region: playerRegion(state, nextCratesSet, crate),
+			// Crates frozen against each other off a goal can never move
+			// again; the corner test above cannot see that.
+			if board.FreezeDeadlock(crateTo, nextCratesSet, dead) {
+				continue
 			}
+			reach, anchor := playerRegion(state, walls, nextCrates, crate)
+			next := pushState{crates: nextCrates, reach: reach, anchor: anchor}
 			out = append(out, successor{
 				st: next,
 				push: Push{

@@ -118,7 +118,7 @@ func actionable(state boxxle.State, board boxxle.Board) ([]boxxle.LegalPush, int
 	if len(open) == 0 {
 		return nil, rejected
 	}
-	if _, ok, err := solver.Solve(state); err != nil || !ok {
+	if ok, err := solver.Solvable(state); err != nil || !ok {
 		return open, rejected
 	}
 	kept := make([]boxxle.LegalPush, 0, len(open))
@@ -145,7 +145,7 @@ func pushPreservesSolution(state boxxle.State, p boxxle.LegalPush) bool {
 	if err != nil {
 		return false
 	}
-	_, ok, err := solver.Solve(next)
+	ok, err := solver.Solvable(next)
 	return err == nil && ok
 }
 
