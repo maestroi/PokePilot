@@ -107,7 +107,7 @@ func TestReplayRoutePriorityFollowsRunPlayStyle(t *testing.T) {
 	if got := replayRoutePriority("adventure"); got != agent.RoutePriorityConservative {
 		t.Fatalf("adventure replay priority = %v, want conservative", got)
 	}
-	if got := replayRoutePriority(""); got != agent.RoutePriorityConservative {
-		t.Fatalf("unknown replay priority = %v, want conservative", got)
+	if got := replayRoutePriority(""); got != agent.RoutePriorityFastest {
+		t.Fatalf("empty replay priority = %v, want fastest (runner default)", got)
 	}
 }
