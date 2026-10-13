@@ -24,7 +24,13 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/maestroi/pokepilot/metrics"
 )
+
+// version is this build's git SHA, stamped by the Dockerfile via
+// -ldflags "-X main.version=...". Local builds stay "dev".
+var version = "dev"
 
 const (
 	defaultHTTPAddr       = ":8080"
@@ -174,7 +180,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           (&issueServer{github: client}).handler(),
+		Handler:           metrics.Must(metrics.Options{Service: metrics.ServiceIssues, Revision: version}).Wrap((&issueServer{github: client}).handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}

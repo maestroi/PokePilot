@@ -69,6 +69,9 @@ services:
       - source: model_registry
         target: /etc/pokepilot/models.json
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8080"
       replicas: 1
       # 2G is a blast-radius cap (page cache + catalog), not the working set.
       # pokewall is ~256-340MB RSS; cgroup usage looks huge because dumps stay cached.
@@ -96,6 +99,9 @@ services:
       # The adapter never uploads save-state/frame/recording bytes to GitHub.
       POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://admin.rompilot.app}
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8080"
       replicas: 1
 
   ui:
@@ -113,6 +119,9 @@ services:
         protocol: tcp
         mode: host
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8080"
       replicas: 1
 
   spectator:
@@ -127,6 +136,9 @@ services:
         protocol: tcp
         mode: host
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8080"
       replicas: 1
 
   litellm:
@@ -174,6 +186,9 @@ services:
     volumes:
       - ${POKEPILOT_ROM_DIR}:/rom:ro
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8080"
       replicas: 1
       resources:
         reservations:
@@ -299,6 +314,9 @@ services:
       # replay, or issue services; use shared storage for multi-node Swarm.
       - ${POKEPILOT_QUALIFICATION_CORPUS:-/var/lib/pokepilot/qualification}:/var/lib/pokepilot/qualification
     deploy:
+      labels:
+        prometheus.scrape: "true"
+        prometheus.port: "8099"
       replicas: 2
       # 1G is a fence, not the steady-state budget. A healthy runner is 10-50MB;
       # Finish used to reload the whole checkpoint ring and spike to a few GB.

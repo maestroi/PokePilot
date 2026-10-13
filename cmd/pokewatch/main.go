@@ -15,6 +15,10 @@ import (
 	"github.com/maestroi/pokepilot/operatorapi"
 )
 
+// version is this build's git SHA, stamped by the Dockerfile via
+// -ldflags "-X main.version=...". Local builds stay "dev".
+var version = "dev"
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 	nodeMode := flag.Bool("node", false, "run the per-node reporter instead of the watcher")

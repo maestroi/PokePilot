@@ -35,8 +35,13 @@ import (
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/media/compositor"
 	mediasegment "github.com/maestroi/pokepilot/media/segment"
+	"github.com/maestroi/pokepilot/metrics"
 	redstarter "github.com/maestroi/pokepilot/red/starter"
 )
+
+// version is this build's git SHA, stamped by the Dockerfile via
+// -ldflags "-X main.version=...". Local builds stay "dev".
+var version = "dev"
 
 const (
 	serverReadHeaderTimeout = 5 * time.Second
@@ -1380,7 +1385,7 @@ func main() {
 	serverImpl.ffmpegVAAPI = defaultFFmpegVAAPI
 	server := &http.Server{
 		Addr:              *httpAddr,
-		Handler:           serverImpl.handler(),
+		Handler:           metrics.Must(metrics.Options{Service: metrics.ServiceReplay, Revision: version}).Wrap(serverImpl.handler()),
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 		IdleTimeout:       serverIdleTimeout,
 	}

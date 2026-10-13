@@ -18,9 +18,14 @@ import (
 
 	"github.com/maestroi/pokepilot/game"
 	gen1trade "github.com/maestroi/pokepilot/gen1/trade"
+	"github.com/maestroi/pokepilot/metrics"
 	"github.com/maestroi/pokepilot/red/data"
 	redtrade "github.com/maestroi/pokepilot/red/trade"
 )
+
+// version is this build's git SHA, stamped by the Dockerfile via
+// -ldflags "-X main.version=...". Local builds stay "dev".
+var version = "dev"
 
 func main() {
 	broker := flag.String("broker", "127.0.0.1:8765", "GomeBoy link broker address")
@@ -61,7 +66,11 @@ func main() {
 			Timeout: *timeout, TTL: *sessionTTL, Events: os.Stdout,
 		})
 		defer service.Close()
-		server := &http.Server{Addr: *httpAddr, Handler: service, ReadHeaderTimeout: 5 * time.Second}
+		server := &http.Server{
+			Addr:              *httpAddr,
+			Handler:           metrics.Must(metrics.Options{Service: metrics.ServiceTrader, Revision: version}).Wrap(service),
+			ReadHeaderTimeout: 5 * time.Second,
+		}
 		go func() {
 			<-ctx.Done()
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

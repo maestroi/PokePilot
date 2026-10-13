@@ -1,0 +1,63 @@
+# Prometheus scrape jobs for PokePilot services that expose GET /metrics.
+#
+# This file is a list of scrape_configs entries (each item starts with
+# `- job_name`), not a complete prometheus.yml. Paste the jobs into the
+# scrape_configs list of the existing Prometheus. Do not deploy a second
+# Grafana or Prometheus from this repository.
+#
+# Farm services are reached by Swarm DNS on the farm overlay (pokefarm_default
+# from deploy/farm.yml). Prometheus must join that network. It does not need
+# the Docker socket for these jobs. tasks.<service> resolves to every task.
+#
+# The Telegram bot joins the same farm network; its job lives in
+# prometheus-poketelegram.yml. pokewatch listens on the private ops overlay,
+# which is not attachable, so it is not included here.
+#
+# Replay is the dedicated renderer, not a Swarm service. Replace the target
+# with the address from deploy/REPLAY_HOST.md.
+- job_name: pokepilot-wall
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.wall]
+      type: A
+      port: 8080
+
+- job_name: pokepilot-ui
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.ui]
+      type: A
+      port: 8080
+
+- job_name: pokepilot-spectator
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.spectator]
+      type: A
+      port: 8080
+
+- job_name: pokepilot-runner
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.runner]
+      type: A
+      port: 8099
+
+- job_name: pokepilot-issues
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.issues]
+      type: A
+      port: 8080
+
+- job_name: pokepilot-virtualtrader
+  metrics_path: /metrics
+  dns_sd_configs:
+    - names: [tasks.virtualtrader]
+      type: A
+      port: 8080
+
+- job_name: pokepilot-replay
+  metrics_path: /metrics
+  static_configs:
+    - targets: ["192.168.50.203:8080"]

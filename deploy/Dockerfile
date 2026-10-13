@@ -40,11 +40,11 @@ ARG GIT_REPOSITORY=maestroi/PokePilot
 RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokepilot ./cmd/pokepilot && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewall ./cmd/pokewall && \
     CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA} -X main.buildPR=${GIT_PR_NUMBER} -X main.buildTitleB64=${GIT_PR_TITLE_B64} -X main.buildRepo=${GIT_REPOSITORY}" -o /out/pokeui ./cmd/pokeui && \
-    CGO_ENABLED=0 go build -o /out/pokereplay ./cmd/pokereplay && \
-    CGO_ENABLED=0 go build -o /out/pokeissues ./cmd/pokeissues && \
-    CGO_ENABLED=0 go build -o /out/poketelegram ./cmd/poketelegram && \
-    CGO_ENABLED=0 go build -o /out/pokewatch ./cmd/pokewatch && \
-    CGO_ENABLED=0 go build -o /out/gen1-trade-peer ./cmd/gen1-trade-peer
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokereplay ./cmd/pokereplay && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokeissues ./cmd/pokeissues && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/poketelegram ./cmd/poketelegram && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/pokewatch ./cmd/pokewatch && \
+    CGO_ENABLED=0 go build -ldflags "-X main.version=${GIT_SHA}" -o /out/gen1-trade-peer ./cmd/gen1-trade-peer
 
 # Both GomeBoy helpers MUST come from the release PokePilot itself compiles
 # against (go.mod). A .gbrun embeds a gob-encoded save state, and gob rejects a

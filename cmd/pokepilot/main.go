@@ -20,6 +20,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/metrics"
 	"github.com/maestroi/pokepilot/profiles"
 	redrenderstate "github.com/maestroi/pokepilot/red/renderstate"
 	"github.com/maestroi/pokepilot/red/state"
@@ -102,6 +103,9 @@ func main() {
 	renderFeed := newRenderStateFeed()
 	if err := m.HandleWatch("/render-state.json", renderFeed); err != nil {
 		log.Fatalf("serve semantic state: %v", err)
+	}
+	if err := m.HandleWatch("/metrics", metrics.Must(metrics.Options{Service: metrics.ServiceRunner, Revision: version}).Handler()); err != nil {
+		log.Fatalf("serve metrics: %v", err)
 	}
 	cartridgeProfile, _, err := profiles.DetectCartridge(m.ROM())
 	if err != nil {
