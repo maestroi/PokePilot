@@ -24,7 +24,7 @@ func TestCinnabarToFuchsiaDoesNotBridgeRoute20SeafoamSplit(t *testing.T) {
 		1<<state.BadgeThunder | 1<<state.BadgeRainbow | 1<<state.BadgeSoul |
 		1<<state.BadgeMarsh | 1<<state.BadgeVolcano | 1<<state.BadgeEarth
 
-	g, err := world.BuildGraph(romData)
+	g, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

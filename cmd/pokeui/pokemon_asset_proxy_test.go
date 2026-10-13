@@ -31,7 +31,7 @@ func TestVuePokemonAssetProxyServesWhitelistedArtwork(t *testing.T) {
 		pokemonAssetClient = oldClient
 	})
 
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/poke-assets/sprites/pokemon/versions/generation-i/red-blue/17.png", nil))
 

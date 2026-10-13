@@ -56,7 +56,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "worldverify: build graph: %v\n", err)
 		os.Exit(1)

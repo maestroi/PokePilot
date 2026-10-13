@@ -21,7 +21,7 @@ func TestBackfillVisitedTrainingAreasSeedsObservedHabitatsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		t.Fatal(err)
 	}

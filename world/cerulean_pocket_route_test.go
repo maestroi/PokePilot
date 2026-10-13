@@ -27,7 +27,7 @@ func TestCeruleanBadgeHousePocketDoesNotPlanUnreachableRoute9Exit(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := BuildGraph(data)
+	g, err := BuildGraphForROM(data)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

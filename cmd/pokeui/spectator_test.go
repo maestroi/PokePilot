@@ -6,8 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -47,51 +45,20 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	ui := httptest.NewServer(spectatorHandler(wall.URL))
 	t.Cleanup(ui.Close)
 
-	res, err := http.Get(ui.URL + "/")
-	if err != nil {
-		t.Fatalf("GET spectator index: %v", err)
-	}
-	body, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET / = %d, want 200", res.StatusCode)
-	}
-	for _, want := range []string{"RomPilot", "Read only", "/watch.js", `id="live-map"`, `[hidden]{display:none!important}`} {
-		if !bytes.Contains(body, []byte(want)) {
-			t.Errorf("spectator index missing %q", want)
+	// Vue owns "/" in production; the bare handler no longer carries a
+	// legacy page or /watch.js fallback.
+	for _, legacy := range []string{"/", "/watch.js"} {
+		res, err := http.Get(ui.URL + legacy)
+		if err != nil {
+			t.Fatalf("GET %s: %v", legacy, err)
 		}
-	}
-	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "form-action 'none'") {
-		t.Errorf("spectator CSP = %q, want form-action none", got)
-	}
-	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "img-src") || !strings.Contains(got, "blob:") {
-		t.Errorf("spectator CSP = %q, want img-src to allow blob: (20 fps pump paints object URLs)", got)
-	}
-
-	res, err = http.Get(ui.URL + "/watch.js")
-	if err != nil {
-		t.Fatalf("GET watch.js: %v", err)
-	}
-	js, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("GET /watch.js = %d, want 200", res.StatusCode)
-	}
-	if !bytes.Contains(js, []byte("/v1/watch")) {
-		t.Errorf("watch.js missing public snapshot route")
-	}
-	for _, want := range []string{`/maps/`, `getContext("2d")`, `run.sprites`, `run.trail`} {
-		if !bytes.Contains(js, []byte(want)) {
-			t.Errorf("watch.js missing map overlay %q", want)
-		}
-	}
-	for _, forbidden := range []string{"/v1/specs", "/cancel", "/mcp", "/v1/triage"} {
-		if bytes.Contains(js, []byte(forbidden)) {
-			t.Errorf("watch.js unexpectedly contains control route %q", forbidden)
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404 (legacy spectator page retired)", legacy, res.StatusCode)
 		}
 	}
 
-	res, err = http.Get(ui.URL + "/v1/watch")
+	res, err := http.Get(ui.URL + "/v1/watch")
 	if err != nil {
 		t.Fatalf("GET watch snapshot: %v", err)
 	}
@@ -99,6 +66,12 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /v1/watch = %d, want 200: %s", res.StatusCode, watchBody)
+	}
+	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "form-action 'none'") {
+		t.Errorf("spectator CSP = %q, want form-action none", got)
+	}
+	if got := res.Header.Get("Content-Security-Policy"); !strings.Contains(got, "img-src") || !strings.Contains(got, "blob:") {
+		t.Errorf("spectator CSP = %q, want img-src to allow blob: (20 fps pump paints object URLs)", got)
 	}
 	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
 		t.Errorf("watch Cache-Control = %q, want no-store", cc)
@@ -180,39 +153,6 @@ func TestSpectatorServesReadOnlySanitizedSurface(t *testing.T) {
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("GET /maps/28.json = %d, want 200", res.StatusCode)
-	}
-}
-
-// The public page used to assign <img src="/frame?...&t="> every 750ms.
-// That is ~1.3 fps — a slideshow next to the operator's 20 fps blob pump.
-// The PNG is ~2KB, so the spectator uses the same 50ms sequential fetch.
-func TestSpectatorFramePumpIsTwentyFPS(t *testing.T) {
-	src := string(watchJS)
-	if strings.Contains(src, "setInterval(refreshFrame") {
-		t.Fatal("watch.js still interval-polls the frame; that is a 750ms slideshow")
-	}
-	m := regexp.MustCompile(`const frameMs = (\d+)`).FindStringSubmatch(src)
-	if m == nil {
-		t.Fatal("watch.js frame pump has no frameMs; unbounded fetch+decode burns the tab")
-	}
-	n, err := strconv.Atoi(m[1])
-	if err != nil {
-		t.Fatalf("frameMs: %v", err)
-	}
-	if n != 50 {
-		t.Fatalf("frameMs = %d, want 50 (20 fps; 750 was a slideshow, 0 burns the tab)", n)
-	}
-	for _, want := range []string{
-		`fetch("/frame?run=`,
-		`cache: "no-store"`,
-		`createObjectURL`,
-		`revokeObjectURL`,
-		`run.status === "paused"`,
-		`fetchLast(run, "Paused", false)`,
-	} {
-		if !strings.Contains(src, want) {
-			t.Errorf("watch.js missing %q", want)
-		}
 	}
 }
 

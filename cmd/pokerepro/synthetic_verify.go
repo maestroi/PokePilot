@@ -55,7 +55,7 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		return verdict, fmt.Errorf("load checkpoint: %w", err)
 	}
 
-	graph, err := world.BuildGraph(m.ROM())
+	graph, err := world.BuildGraphForROM(m.ROM())
 	if err != nil {
 		verdict.Classification = verdictHarnessError
 		verdict.Diagnostic = err.Error()

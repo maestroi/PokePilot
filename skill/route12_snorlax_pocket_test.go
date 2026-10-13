@@ -27,7 +27,7 @@ func TestRoute12AsleepSnorlaxPocketsSelectSnorlaxAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

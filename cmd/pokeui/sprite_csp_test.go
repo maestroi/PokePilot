@@ -8,7 +8,7 @@ import (
 )
 
 func TestSpectatorVueCSPAllowsPokemonSpriteHost(t *testing.T) {
-	h := spectatorSecurityHeaders(withVuePreview(http.NotFoundHandler(), "spectator"))
+	h := spectatorSecurityHeaders(withVueFrontend(http.NotFoundHandler(), "spectator"))
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/build", nil))
 

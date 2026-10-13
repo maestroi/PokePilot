@@ -445,7 +445,7 @@ func buildNativeAdjacency(profile gameruntime.GameProfile, romData []byte) (map[
 	if provider, ok := profile.(gameruntime.MapTopologyProvider); ok {
 		return provider.MapAdjacency(romData)
 	}
-	graph, err := world.BuildGraph(romData)
+	graph, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		return nil, err
 	}
