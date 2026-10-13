@@ -56,6 +56,23 @@ func TestBootReachesFirstPuzzle(t *testing.T) {
 	}
 }
 
+// TestBootLeavesAttractDemo is the regression for run-nk5mcq1girzix: the
+// farm restores the post-Boot state and then idles a seed-dependent number of
+// frames, and the title gives way to the attract-mode demo at frame 303. A
+// Start the demo ignores left the boot pressing A, which only bounces between
+// the title and the demo, until the 3600-frame budget ran out (screen puzzle).
+func TestBootLeavesAttractDemo(t *testing.T) {
+	m := openBoxxleCartridge(t)
+	m.StepFrames(9) // a measured idle on which the first Start is missed
+	state, err := bootToPuzzle(profile.New(), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Crates) != 3 || len(state.Goals) != 3 {
+		t.Fatalf("boot decoded %d crates / %d goals, want level 1-1 (3 / 3)", len(state.Crates), len(state.Goals))
+	}
+}
+
 // TestRunSolvesAndAdvances is the first-milestone qualification: boot, decode,
 // solve autonomously, and move on to the next puzzle, twice over.
 func TestRunSolvesAndAdvances(t *testing.T) {

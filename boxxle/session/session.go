@@ -20,8 +20,9 @@ const bootFrameBudget = 3600
 
 // launchSettleFrames is the power-on settle Boot performs: the title is drawn
 // and accepting input by here (measured on the real ROM). It is deliberately
-// short. Left idle for long the cartridge drifts into its attract-mode demo,
-// where the input script the run path sends no longer means what it should.
+// short. Left idle the cartridge drifts into its attract-mode demo (MEASURED:
+// at frame 303), so callers that idle further, like the farm's seed burn,
+// start the run path on the demo; enterPuzzle recovers from it.
 const launchSettleFrames = 300
 
 // Machine is the emulator surface the session needs: the controller's input
