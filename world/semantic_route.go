@@ -253,6 +253,28 @@ func FindRoutePlanAtDestinationWithCapabilities(
 	}
 	usable = withNoPivotFrom(usable, prereqs.NoPivotFrom)
 	route, err := findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, skipCanExit, relaxLanding)
+	// findRoute offers the first frontier it meets, whether or not crossing it
+	// helps. Stepping back onto the frontier's own source can be the point (a
+	// pivot that re-enters another component), but a far side that reaches the
+	// target only by retracing the earlier prefix is a detour loop, not a
+	// deferred answer: prune it and search on. Without this, Lance's exit made
+	// every Kanto mart look reachable from the Indigo lobby, so a restock picked
+	// Cinnabar and GoTo then reported no route (run-3ftqlmhp1tmm3cpzdasspkv2o).
+	for errors.Is(err, ErrRouteReplanRequired) && len(route) > 0 {
+		frontier := route[len(route)-1]
+		retraced := []uint8{from}
+		for _, e := range route[:len(route)-1] {
+			retraced = append(retraced, e.From)
+		}
+		if frontier.From == from {
+			retraced = nil
+		}
+		if mapsConnectedAvoiding(usable, frontier.To, to, retraced...) {
+			break
+		}
+		usable = graphWithoutSemanticEdges(usable, map[Edge]gameruntime.TransitionBlockage{frontier: {}})
+		route, err = findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, skipCanExit, relaxLanding)
+	}
 	if err == nil {
 		return routeSteps(route, executable), nil
 	}
@@ -380,12 +402,14 @@ func mapsConnected(g *Graph, from, to uint8) bool {
 	return mapsConnectedAvoiding(g, from, to, from)
 }
 
-// mapsConnectedAvoiding is mapsConnected that never steps into avoid, unless
-// avoid is the target itself.
-func mapsConnectedAvoiding(g *Graph, from, to, avoid uint8) bool {
+// mapsConnectedAvoiding is mapsConnected that never steps into any avoid map,
+// unless that map is the target itself.
+func mapsConnectedAvoiding(g *Graph, from, to uint8, avoid ...uint8) bool {
 	seen := map[uint8]bool{from: true}
-	if avoid != to {
-		seen[avoid] = true
+	for _, a := range avoid {
+		if a != to {
+			seen[a] = true
+		}
 	}
 	queue := []uint8{from}
 	for len(queue) > 0 {

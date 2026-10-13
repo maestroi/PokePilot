@@ -375,3 +375,52 @@ func TestDeniedEdgeConnectivityFallback(t *testing.T) {
 		t.Fatalf("missing = %v, want %v", got, want)
 	}
 }
+
+// TestDeadEndFrontierPastRetracedPrefixIsNoRoute is the generic shape of the
+// Indigo lobby restock (run-3ftqlmhp1tmm3cpzdasspkv2o): the only frontier is
+// at the far end of a corridor whose far side leads back down the same
+// corridor. Map adjacency still reaches the target (via an exit the start
+// component cannot use), but the frontier cannot help, so the honest answer is
+// no route rather than a replan prefix that makes every target look reachable.
+func TestDeadEndFrontierPastRetracedPrefixIsNoRoute(t *testing.T) {
+	lobbyToHall := Edge{Kind: EdgeConnection, From: 1, To: 2, Dir: dirEast}
+	hallToLobby := Edge{Kind: EdgeConnection, From: 2, To: 1, Dir: dirWest}
+	hallToRoom := Edge{Kind: EdgeConnection, From: 2, To: 3, Dir: dirEast}
+	roomToHall := Edge{Kind: EdgeConnection, From: 3, To: 2, Dir: dirWest}
+	lobbyToOut := Edge{Kind: EdgeConnection, From: 1, To: 4, Dir: dirWest}
+	outToTarget := Edge{Kind: EdgeConnection, From: 4, To: 5, Dir: dirWest}
+	g := &Graph{
+		componentAware: true,
+		Edges: map[uint8][]Edge{
+			1: {lobbyToHall, lobbyToOut},
+			2: {hallToLobby, hallToRoom},
+			3: {roomToHall},
+			4: {outToTarget},
+			5: {},
+		},
+		comps: map[uint8][][]int{
+			1: {{1}}, 2: {{1}}, 3: {{1}}, 4: {{1}}, 5: {{1}},
+		},
+		tiles: map[uint8]dim{1: {w: 1, h: 1}, 2: {w: 1, h: 1}, 3: {w: 1, h: 1}, 4: {w: 1, h: 1}, 5: {w: 1, h: 1}},
+		exitComps: map[Edge][]int{
+			lobbyToHall: {1}, hallToLobby: {1}, hallToRoom: {1}, roomToHall: {1},
+			lobbyToOut:  {2}, // sealed from the start component
+			outToTarget: {1},
+		},
+		entryComps: map[Edge][]int{
+			lobbyToHall: {1}, hallToLobby: {1}, hallToRoom: {1}, roomToHall: {1},
+			lobbyToOut: {1}, outToTarget: {1},
+		},
+	}
+	prereqs := RoutePrerequisites{
+		Capabilities: gameruntime.NewCapabilitySet("can_pass"),
+		Transitions: map[Edge]gameruntime.Transition{
+			hallToRoom: {ID: "exit", Requires: []gameruntime.CapabilityID{"can_pass"}, PivotOnly: true},
+		},
+	}
+
+	plan, err := FindRoutePlanAtDestinationWithCapabilities(g, 1, 5, 0, 0, -1, -1, nil, prereqs)
+	if !errors.Is(err, ErrNoRoute) {
+		t.Fatalf("err=%v plan=%+v, want no route past a dead-end frontier", err, plan)
+	}
+}
