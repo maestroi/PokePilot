@@ -89,8 +89,9 @@ function returnToLive(): void {
       </div>
     </div>
 
-    <div class="grid min-h-[30rem] grid-rows-[minmax(0,1fr)_auto] lg:min-h-[36rem]">
+    <div class="grid h-[min(40rem,70vh)] min-h-[22rem] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <SemanticMap
+        class="h-full min-h-0"
         :game="run.game"
         :map="selectedMap"
         :inline-map="isLiveMap ? run.map_asset || null : null"

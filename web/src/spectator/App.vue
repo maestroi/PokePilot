@@ -1064,7 +1064,7 @@ function activityTimeAgo(item: ActivityItem): string {
                 </div>
               </div>
               <ol v-if="selectedActivity.length" class="log">
-                <li v-for="item in selectedActivity.slice(0, 9)" :key="item.id">
+                <li v-for="item in selectedActivity" :key="item.id">
                   <time>{{ activityTimeAgo(item) }}</time>
                   <span><strong>{{ item.label }}</strong> {{ item.detail }}</span>
                 </li>
@@ -2078,6 +2078,7 @@ select:focus-visible {
 }
 
 .game-pokemon .screen {
+  max-height: 72vh;
   border: 1px solid rgba(0, 0, 0, 0.8);
   border-radius: 0.55rem;
   box-shadow:
@@ -2448,9 +2449,9 @@ select:focus-visible {
 
 .game-pokemon .screen-col {
   width: 100%;
-  max-width: 48rem;
+  max-width: none;
   grid-template-columns: minmax(0, 1fr);
-  justify-self: center;
+  justify-self: stretch;
   gap: 1rem;
 }
 
@@ -2460,7 +2461,7 @@ select:focus-visible {
 }
 
 .game-pokemon .stage > .party .roster {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
 }
 
 .game-pokemon .stage > .party .roster li {
@@ -2624,40 +2625,50 @@ select:focus-visible {
 @media (min-width: 72rem) {
   .game-pokemon .stage-body {
     width: 100%;
-    grid-template-columns: minmax(15rem, 20rem) minmax(34rem, 52rem) minmax(21rem, 26rem);
-    justify-content: center;
+    grid-template-columns: minmax(16rem, 1fr) minmax(0, 2.4fr) minmax(20rem, 1.25fr);
+    justify-content: stretch;
     gap: 0.9rem;
   }
 
-  .game-pokemon .screen-col {
-    max-width: 52rem;
+  .game-pokemon .screen-col,
+  .game-pokemon .stat-rail,
+  .game-pokemon .side {
+    width: 100%;
+    max-width: none;
   }
 
   /*
-   * Keep the context rail tied to the gameplay viewport, but give Activity
-   * enough horizontal room to read like a feed rather than a narrow log.
+   * Activity gets the same room as Other live runs, and can grow taller
+   * so the shared history is readable instead of clipped under the decision.
    */
   .game-pokemon .side {
-    height: min(38rem, calc(100vh - 11rem));
-    min-height: 31rem;
-    grid-template-rows: max-content max-content max-content minmax(0, 1fr);
-    overflow: hidden;
+    height: auto;
+    min-height: 0;
+    align-content: start;
+    grid-template-rows: max-content max-content max-content auto;
+    overflow: visible;
   }
 
   .game-pokemon .side .activity {
     display: grid;
-    min-height: 0;
-    grid-template-rows: max-content minmax(0, 1fr);
+    min-height: 12rem;
+    grid-template-rows: max-content minmax(12rem, auto);
     overflow: hidden;
   }
 
   .game-pokemon .side .activity .log {
-    min-height: 0;
+    min-height: 12rem;
+    max-height: 20rem;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 0.3rem;
     scrollbar-width: thin;
     scrollbar-color: rgba(242, 202, 82, 0.28) transparent;
+  }
+
+  .game-pokemon .side .activity .log li span {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .game-pokemon .stat-rail {
@@ -2679,12 +2690,6 @@ select:focus-visible {
     padding-right: 0.2rem;
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
-  }
-}
-
-@media (max-width: 90rem) {
-  .game-pokemon .stage > .party .roster {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -2715,7 +2720,7 @@ select:focus-visible {
 
   .game-pokemon .screen-col {
     order: 1;
-    max-width: 52rem;
+    max-width: none;
   }
 
   .game-pokemon .stat-rail {
