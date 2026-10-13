@@ -310,34 +310,71 @@ func ChallengeTrainerWithOptions(
 	// fights trainer interruptions and preserves ErrTrainerBlackedOut on loss.
 	// After it returns, only the requested trainer's flag can prove that this
 	// approach already completed the objective.
-	if err := talkBesideWithBattleOptions(m, romData, homeX, homeY, policy, options); err != nil {
-		return fmt.Errorf("skill: ChallengeTrainer: approach trainer at (%d,%d): %w", homeX, homeY, err)
-	}
-	if target.flag.set(m) {
-		return nil
-	}
-
-	tx, ty, live := liveObjectPosition(m, target.objectID)
-	if !live {
-		return fmt.Errorf("skill: ChallengeTrainer: trainer sprite %d disappeared but fought flag %#04x/%#02x is clear", target.objectID, target.flag.addr, target.flag.mask)
-	}
-
-	// The trainer's own sight check runs on its schedule, not ours, and can
-	// fire at any point from here on: it opens the pre-battle text box and
-	// hands control to the encounter script, after which a direction tap no
-	// longer turns the player. Waiting on facing alone then times out for a
-	// turn the script has made impossible. Treat the box or battle opening
-	// as the trainer's own approach completing the same job Face was asked
-	// to do, whichever happens first.
+	//
+	// The approach does not guarantee the player ends orthogonally adjacent
+	// to the trainer's LIVE tile. talkBeside plans against the home
+	// coordinate, the trainer can walk during the approach, and a
+	// mid-approach battle or script can leave the player a tile off, so the
+	// tile Face is handed is sometimes diagonal to where the player stands.
+	// Face then refuses it and the challenge dies on geometry the next walk
+	// would fix. Re-approach and re-face, bounded, the same way TalkAt
+	// re-approaches a wandering NPC.
+	const approaches = 4
+	// The first approach plans against the home coordinate: the trainer's
+	// live sprite is not active until the player is near it, so its live
+	// tile cannot be read from across the map. Re-approaches use the live
+	// tile read after the previous approach, when the sprite is active.
+	tx, ty := homeX, homeY
 	var mem state.Mem
 	engaged := func() bool {
 		state.Snapshot(m, &mem)
 		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
 	}
-	if !engaged() {
-		if err := Face(m, tx, ty); err != nil && !engaged() {
-			return fmt.Errorf("skill: ChallengeTrainer: face trainer at (%d,%d): %w", tx, ty, err)
+	faced := false
+	for attempt := 1; attempt <= approaches && !faced; attempt++ {
+		if target.flag.set(m) {
+			return nil
 		}
+		if err := talkBesideWithBattleOptions(m, romData, tx, ty, policy, options); err != nil {
+			return fmt.Errorf("skill: ChallengeTrainer: approach trainer at (%d,%d): %w", tx, ty, err)
+		}
+		if target.flag.set(m) {
+			return nil
+		}
+		// The player is now beside the target, so its live sprite is active.
+		// Re-read the live tile before facing it: the trainer may have walked
+		// while the player approached, and a mid-approach battle or script can
+		// leave the player a tile off the tile the walk was planned for.
+		lx, ly, live := liveObjectPosition(m, target.objectID)
+		if !live {
+			return fmt.Errorf("skill: ChallengeTrainer: trainer sprite %d disappeared but fought flag %#04x/%#02x is clear", target.objectID, target.flag.addr, target.flag.mask)
+		}
+		tx, ty = lx, ly
+		// The trainer's own sight check runs on its schedule, not ours, and
+		// can fire at any point: it opens the pre-battle text box and hands
+		// control to the encounter script, after which a direction tap no
+		// longer turns the player. Treat the box or battle opening as the
+		// trainer's own approach completing the same job Face was asked to
+		// do, whichever happens first.
+		if engaged() {
+			faced = true
+			break
+		}
+		if err := Face(m, tx, ty); err != nil {
+			if engaged() {
+				faced = true
+				break
+			}
+			// Not adjacent (or the turn timed out): the target or the player
+			// moved. Wait a beat and re-approach instead of failing on a
+			// geometry the next walk can fix.
+			m.StepFrames(npcWaitFrames)
+			continue
+		}
+		faced = true
+	}
+	if !faced {
+		return fmt.Errorf("skill: ChallengeTrainer: trainer at (%d,%d) did not remain adjacent after %d approaches", tx, ty, approaches)
 	}
 
 	m.Tap(emu.A, 3, 7)
