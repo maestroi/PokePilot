@@ -288,11 +288,8 @@ func failureObjectiveString(o farm.FailureObjective) string {
 
 // replayRoutePriority replays under the travel policy the live run used: a
 // speedrun's weighted router and the conservative BFS can pick different legs
-// from the same checkpoint. Unknown (older contracts) keeps the conservative
-// replay those contracts were always verified with.
+// from the same checkpoint. An empty play style is the runner's legacy
+// speedrun default, so it must replay fastest too (#2509).
 func replayRoutePriority(playStyle string) agent.RoutePriority {
-	if strings.TrimSpace(playStyle) == "" {
-		return agent.RoutePriorityConservative
-	}
 	return agent.RoutePriorityForPlayStyle(agent.PlayStyle(playStyle))
 }
