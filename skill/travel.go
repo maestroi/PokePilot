@@ -627,6 +627,17 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 					label, maxDialogueRecoveries, err)
 			}
 			res.Dialogues++
+			// Snapshot the map before paging the box. RecoverDialogue's budget
+			// is large enough that HandleBlackOut can finish inside it: the
+			// in-progress blackout bit clears and the party is healed at
+			// LastBlackoutMap, so blackout() alone reports false and Travel
+			// used to resume GoTo from the respawn (MEASURED: League Lance
+			// approach after a wipe continued through Lorelei→Bruno and died
+			// on a closed scripted door as unknown_failure Traverse).
+			preMap, preMapOK := uint16(0), false
+			if r.dialogueMap != nil {
+				preMap, preMapOK = r.dialogueMap()
+			}
 			rec := r.recoverBox()
 			switch rec.Stop {
 			case DialogueChoiceRequired, DialogueMenuOpen:
@@ -692,6 +703,13 @@ func runInterruptions(m *emu.Emu, maxBattles int, action func() error, r interru
 					// the respawn warp, which has not happened yet. A party
 					// wiped out mid-walk must not look like a successful
 					// arrival: treat it exactly like a lost battle.
+					res.BlackedOut = true
+					return res, ErrBlackedOut
+				}
+				if preMapOK && r.settledBlackout != nil && r.settledBlackout(preMap) {
+					// HandleBlackOut finished during recovery: controllable on
+					// the saved respawn map with a healed party. That is still
+					// a wipe, even though blackout() is already false.
 					res.BlackedOut = true
 					return res, ErrBlackedOut
 				}
