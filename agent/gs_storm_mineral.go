@@ -18,9 +18,11 @@ const (
 	gsChuckY               uint8 = 1
 	gsChuckStandX          uint8 = 4
 	gsChuckStandY          uint8 = 2
-	gsChucksWifeSlot       int   = 10
-	gsChucksWifeStandX     uint8 = 10
-	gsChucksWifeStandY     uint8 = 45
+	// object_const_def uses const_def 2 (player owns index 1), so the tenth
+	// CianwoodCity object_event — Chuck's wife — is map-object 11, not 10.
+	gsChucksWifeSlot   int   = 11
+	gsChucksWifeStandX uint8 = 10
+	gsChucksWifeStandY uint8 = 45
 	gsJasmineGymX          uint8 = 5
 	gsJasmineGymY          uint8 = 3
 	gsJasmineGymStandX     uint8 = 5
@@ -157,9 +159,10 @@ func executeGSChuck(m *emu.Emu, romData []byte) error {
 }
 
 // executeGSHM02Fly speaks to Chuck's wife, a moving NPC outdoors. The
-// profile decodes her live location, rather than assuming she stays at the
-// object-event spawn coordinate. The encounter remains bounded to her known
-// (x=9..11, y=46) walking range, and completion requires EVENT_GOT_HM02_FLY.
+// profile decodes her live location via her map-object index (const_def 2),
+// rather than assuming she stays at the object-event spawn coordinate. The
+// encounter remains bounded to her known (x=9..11, y=46) WALK_LEFT_RIGHT
+// range, and completion requires EVENT_GOT_HM02_FLY.
 func executeGSHM02Fly(m *emu.Emu, romData []byte) error {
 	const encounter = "cianwood:hm02-fly"
 	profile, done, err := gsCoastalProfile(m, romData, gsprofile.ProgressHM02FlyAcquired,

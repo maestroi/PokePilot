@@ -19,7 +19,9 @@ func TestGSCoastalHMAndGymCoordinatesMatchDecomp(t *testing.T) {
 		t.Fatalf("Chuck = (%d,%d), staging = (%d,%d)",
 			gsChuckX, gsChuckY, gsChuckStandX, gsChuckStandY)
 	}
-	if gsChucksWifeSlot != 10 || gsChucksWifeStandX != 10 || gsChucksWifeStandY != 45 {
+	// pokegold/macros/scripts/maps.asm object_const_def starts at 2, and
+	// CianwoodCity.asm lists Chuck's wife as the tenth object_event → 11.
+	if gsChucksWifeSlot != 11 || gsChucksWifeStandX != 10 || gsChucksWifeStandY != 45 {
 		t.Fatalf("wife live object slot/stand = %d (%d,%d)",
 			gsChucksWifeSlot, gsChucksWifeStandX, gsChucksWifeStandY)
 	}
