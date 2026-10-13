@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
 )
 
@@ -70,6 +71,10 @@ func TestAppendFailureReproArtifacts(t *testing.T) {
 	}
 	if bundle.Checkpoint.Name != checkpointName || !strings.Contains(bundle.SuggestedCommand, "cmd/pokerepro") || !strings.Contains(bundle.SuggestedCommand, checkpointName) {
 		t.Fatalf("repro handoff = %+v", bundle)
+	}
+	// An empty spec runs as speedrun; the replay must use the same router.
+	if bundle.PlayStyle != agent.PlayStyleSpeedrun {
+		t.Fatalf("play style = %q, want %q", bundle.PlayStyle, agent.PlayStyleSpeedrun)
 	}
 }
 
