@@ -136,6 +136,13 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 		opts.OnProgress(state, 0, 0)
 	}
 
+	// A caller-supplied chooser is a one-step planner (the greedy policy or a
+	// model). It can shuttle one crate back and forth. The default solver
+	// already searches without repeating layouts, so only the supplied
+	// chooser is watched.
+	watchCycles := opts.Choose != nil
+	seen := map[string]bool{}
+	var stuck *SolverChooser
 	choose := opts.Choose
 	if choose == nil {
 		choose = NewSolverChooser().Choose
@@ -183,6 +190,8 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 				return result("error", state, err)
 			}
 			progress(next)
+			seen = map[string]bool{}
+			stuck = nil
 			if want > 0 && levels >= want {
 				return result("done", next, nil)
 			}
@@ -197,7 +206,12 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 			continue
 		}
 
-		selection, err := choose(state)
+		var selection decision.Selection
+		if watchCycles {
+			selection, stuck, err = chooseAvoidingCycle(state, choose, seen, stuck)
+		} else {
+			selection, err = choose(state)
+		}
 		if err != nil {
 			return result("error", state, err)
 		}
