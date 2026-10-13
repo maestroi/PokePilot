@@ -670,6 +670,16 @@ func leaveSafariZoneIfNeeded(m *emu.Emu, romData []byte, policy MovePolicy) erro
 		return fmt.Errorf("safari exit approach place missing")
 	}
 	if _, err := TravelFlee(m, romData, exit, policy, fuchsiaTravelEngagements); err != nil {
+		// The player can already be standing on the gate with the
+		// "Leaving early?" prompt open: a blackout mid-hunt leaves the
+		// session live on the gate map, and walking back to the exit
+		// approach re-meets that prompt as an unanswered choice. Settle it
+		// the same way the Fuchsia story does, which declines up to a safe
+		// row, answers YES to end the stale session, and declines the
+		// re-join prompt.
+		if handled, settleErr := settleSafariGateLeaveChoice(m, err); handled {
+			return settleErr
+		}
 		state.Snapshot(m, &mem)
 		if !state.HasEvent(&mem, eventInSafariZone) {
 			return declineSafariRejoinPrompt(m)
