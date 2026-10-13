@@ -21,21 +21,39 @@ const softResetBudget = 12_000
 // map 0x76 with no graph route out of Lance's north pocket).
 const initSpritesDisabled uint8 = 0xff
 
+// postInitTitleBoundary is positive proof that SoftReset/Init owns the screen.
+// sprites == $ff alone is not enough: PromoteToLead / party-menu leftovers and
+// Trade Center egress can leave $ff while Controllable still reads true, and a
+// START menu can sit on FontLoaded=1 with Controllable false. Skipping
+// A+B+START+SELECT there lets reachMainMenu's Start/A hunt open the in-game
+// START menu / Pokédex ("BULBASAUR SEED") instead of CONTINUE
+// (run-3ftqlmhp1tmm3cpzdasspkv2o leave Trade Center).
+func postInitTitleBoundary(mem *state.Mem) bool {
+	return mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled &&
+		state.DecodeBattle(mem) == nil &&
+		!state.Controllable(mem) &&
+		mem.U8(sym.FontLoaded) == 0 &&
+		state.DecodeInteraction(mem).Kind == state.InteractionNone
+}
+
 // softResetToSave performs Red's A+B+START+SELECT reset when needed and
 // CONTINUEs from the last save into a loaded overworld. Callers that are
-// already post-Init (sprites == $ff) skip the button hold and only resume.
+// already on a proven post-Init title boundary skip the button hold and only
+// resume; sprites == $ff alone never authorizes that skip.
 func softResetToSave(m *emu.Emu) error {
 	if m == nil {
 		return fmt.Errorf("skill: soft reset: nil emu")
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if mem.U8(sym.UpdateSpritesEnabled) != initSpritesDisabled {
+	if !postInitTitleBoundary(&mem) {
 		for _, b := range softResetButtons {
 			m.Press(b)
 		}
 		_, err := m.StepUntil(softResetBudget, func(em *emu.Emu) bool {
-			return em.Peek8(sym.UpdateSpritesEnabled) == initSpritesDisabled
+			var snap state.Mem
+			state.Snapshot(em, &snap)
+			return postInitTitleBoundary(&snap)
 		})
 		for _, b := range softResetButtons {
 			m.Release(b)
@@ -95,9 +113,7 @@ func ensureNavigableOverworld(m *emu.Emu) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	needsResume := (mem.U8(sym.UpdateSpritesEnabled) == initSpritesDisabled &&
-		state.DecodeBattle(&mem) == nil &&
-		!state.Controllable(&mem)) ||
+	needsResume := postInitTitleBoundary(&mem) ||
 		(mem.U8(sym.CurMap) == hallOfFameMap && state.MainStoryComplete(&mem))
 	if !needsResume {
 		return nil
