@@ -171,3 +171,38 @@ func TestChooseDeterministic(t *testing.T) {
 		t.Errorf("expected deterministic choice, got %v then %v", d1.Candidate.Push, d2.Candidate.Push)
 	}
 }
+
+// TestGuardRejectsCrateFreeze is the regression for run-nk5mcq1girzix: level
+// 1-1 after its first push. Pushing (2,2) right lands on no dead square but
+// freezes three crates against each other and the walls; it outscored the
+// only solvable push, (3,3) down, so the run ended with no legal push.
+func TestGuardRejectsCrateFreeze(t *testing.T) {
+	state := buildState(t, []string{
+		"#########",
+		"#   #####",
+		"# $@#####",
+		"# $$###+#",
+		"### ###+#",
+		"###    +#",
+		"##   #  #",
+		"##   ####",
+		"#########",
+	})
+	freeze := boxxle.Pos{X: 3, Y: 2}
+	cands, err := Candidates(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cands {
+		if c.Push.CrateTo == freeze {
+			t.Fatalf("candidates offer the freezing push %+v", c.Push)
+		}
+	}
+	d, err := Choose(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (boxxle.Pos{X: 3, Y: 4}); d.Candidate.Push.CrateTo != want {
+		t.Fatalf("chose %+v, want the crate pushed to %v", d.Candidate.Push, want)
+	}
+}
