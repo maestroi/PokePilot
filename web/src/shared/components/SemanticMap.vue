@@ -809,7 +809,7 @@ onUnmounted(() => {
       v-else
       ref="frame"
       :class="[
-        interactive || debugEnabled ? 'place-items-start overflow-auto' : 'place-items-center overflow-hidden',
+        zoomLevel > 1 ? 'place-items-start overflow-auto' : 'place-items-center overflow-auto',
         'relative grid min-h-0 flex-1 p-1.5'
       ]"
     >

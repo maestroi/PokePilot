@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { fitMapTiles, MAP_CANVAS_MAX_EDGE, MAP_ZOOM_MAX } from '../src/shared/mapViewport.ts'
 
-test('interactive maps grow to the wider side of the box', () => {
+test('100% shows the whole map inside the box', () => {
   const fit = fitMapTiles({
     viewportWidth: 1100,
     viewportHeight: 480,
@@ -13,9 +13,9 @@ test('interactive maps grow to the wider side of the box', () => {
     fillBox: true
   })
   assert.equal(fit.zoom, 1)
-  assert.equal(fit.tile, 110)
+  assert.equal(fit.tile, 53)
   assert.ok(fit.tile * 10 <= 1100)
-  assert.ok(fit.tile * 10 > 1100 - 10)
+  assert.ok(fit.tile * 9 <= 480)
 })
 
 test('embedded maps stay inside the box', () => {
@@ -72,7 +72,7 @@ test('a viewport that grows with the canvas cannot run away', () => {
   }
 })
 
-test('texture tiles stay even and at least 2 pixels', () => {
+test('a readability floor cannot magnify the default view past the box', () => {
   const fit = fitMapTiles({
     viewportWidth: 90,
     viewportHeight: 40,
@@ -83,7 +83,8 @@ test('texture tiles stay even and at least 2 pixels', () => {
     minTile: 18,
     evenTiles: true
   })
+  assert.equal(fit.zoom, 1)
   assert.equal(fit.tile % 2, 0)
-  assert.ok(fit.tile >= 2)
-  assert.ok(fit.tile * 8 <= MAP_CANVAS_MAX_EDGE)
+  assert.ok(fit.tile * 8 <= 90)
+  assert.ok(fit.tile * 6 <= 40)
 })

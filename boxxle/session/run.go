@@ -308,6 +308,13 @@ func enterPuzzle(m Machine, script []emu.Button, budget int) (boxxle.State, bool
 		if state, ok := stable(settleFrames); ok {
 			return state, true
 		}
+		// A board that would not hold still while booting is the attract-mode
+		// demo, not a level: A cannot leave it, so start the script over.
+		if len(script) > 0 {
+			if state, err := boxxle.DecodeState(m); err == nil && state.Screen == boxxle.ScreenPuzzle {
+				n = -1
+			}
+		}
 	}
 	state, _ := boxxle.DecodeState(m)
 	return state, false

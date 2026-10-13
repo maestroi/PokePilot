@@ -175,7 +175,7 @@ const tetrisLatestChoice = computed(() =>
 )
 const otherLiveRuns = computed(() => {
   const selectedID = selectedRun.value?.run_id || ''
-  return groupedRuns.value.live.filter((run) => run.run_id !== selectedID).slice(0, 3)
+  return groupedRuns.value.live.filter((run) => run.run_id !== selectedID)
 })
 const frameRunID = computed(() => {
   const run = selectedRun.value
@@ -2625,6 +2625,7 @@ select:focus-visible {
 @media (min-width: 72rem) {
   .game-pokemon .stage-body {
     width: 100%;
+    align-items: stretch;
     grid-template-columns: minmax(16rem, 1fr) minmax(0, 2.4fr) minmax(20rem, 1.25fr);
     justify-content: stretch;
     gap: 0.9rem;
@@ -2672,19 +2673,26 @@ select:focus-visible {
   }
 
   .game-pokemon .stat-rail {
-    display: grid;
-    align-content: start;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    min-height: 0;
     gap: 0.8rem;
   }
 
   .game-pokemon .rail-others {
-    min-height: 0;
-    max-height: 12rem;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 16rem;
+    max-height: none;
     overflow: hidden;
   }
 
   .game-pokemon .rail-others ul {
-    max-height: 8.5rem;
+    flex: 1 1 auto;
+    min-height: 12rem;
+    max-height: none;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 0.2rem;
