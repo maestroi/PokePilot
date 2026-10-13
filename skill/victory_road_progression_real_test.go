@@ -1,10 +1,12 @@
 package skill
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 // TestVictoryRoadProgressionRealROM is the focused private qualification for
@@ -86,5 +88,26 @@ func TestVictoryRoadClearCaveFromExitSidePocketRealROM(t *testing.T) {
 	facts := state.DecodeStoryFacts(&after, state.DecodeInventory(&after))
 	if !victoryRoadClearBoundaryReady(&after, facts) {
 		t.Fatal("final state is not a controllable cleared-cave boundary")
+	}
+}
+
+// TestRoutePlannerHonorsVictoryRoadBouldersRealROM requires a state in
+// Victory Road 2F's east exit pocket after Route 23 reset the boulders (e.g.
+// run-3ftqlmhp1tmm3cpzdasspkv2o attempt 19, round-001 "train the lead to level
+// 47" checkpoint). The (5,5) boulder seals 2F's 1F ladder, so GoTo refuses
+// "go to victory road 1f". The objective menu's RoutePlanner must reach the
+// same verdict, or the planner re-picks the refused journey every round.
+func TestRoutePlannerHonorsVictoryRoadBouldersRealROM(t *testing.T) {
+	m := loadPreparedFieldActionState(t, "POKEPILOT_VICTORY_ROAD_2F_EAST_POCKET_STATE")
+	dest := Destination{Map: victoryRoad1FMap}
+	planner, err := NewRoutePlanner(m, m.ROM())
+	if err != nil {
+		t.Fatalf("NewRoutePlanner: %v", err)
+	}
+	if err := planner.Reachability(dest); !errors.Is(err, world.ErrNoRoute) {
+		t.Fatalf("planner Reachability(VR 1F) = %v, want world.ErrNoRoute", err)
+	}
+	if err := GoTo(m, m.ROM(), dest); !errors.Is(err, world.ErrNoRoute) {
+		t.Fatalf("GoTo(VR 1F) = %v, want world.ErrNoRoute (planner and GoTo must agree)", err)
 	}
 }
