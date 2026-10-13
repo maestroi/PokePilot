@@ -60,6 +60,13 @@ func TestDecodeObservation(t *testing.T) {
 	if len(obs.Party) != 1 || obs.Party[0].Species != "charmander" || obs.Party[0].Level != 8 || obs.Party[0].HP != 21 || obs.Party[0].MaxHP != 24 {
 		t.Fatalf("party = %#v", obs.Party)
 	}
+	if obs.TimeOfDay != "" || obs.Region != "" {
+		t.Fatalf("gen-2 clock/region leaked into Red: time=%q region=%q", obs.TimeOfDay, obs.Region)
+	}
+	lead := obs.Party[0]
+	if lead.Gender != "" || lead.Shiny || lead.Pokerus != "" || lead.Friendship != 0 {
+		t.Fatalf("gen-2 party facts leaked into Red: %+v", lead)
+	}
 	if len(obs.Badges) != 1 || obs.Badges[0] != "Boulder" {
 		t.Fatalf("badges = %#v", obs.Badges)
 	}

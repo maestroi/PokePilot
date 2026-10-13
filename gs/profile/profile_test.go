@@ -74,6 +74,7 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	mem[sym.YCoord] = 8
 	mem[sym.PlayerDirection] = 0x04 // up
 	mem[sym.BattleMode] = 1
+	mem[sym.TimeOfDay] = 2 // NITE_F
 	mem[sym.PartyCount] = 2
 	mem[sym.PartySpecies+0] = 0x98 // Chikorita
 	mem[sym.PartySpecies+1] = 0xfd // Egg
@@ -124,6 +125,12 @@ func TestDecodeObservationSemanticFixture(t *testing.T) {
 	}
 	if obs.X != 7 || obs.Y != 8 || obs.Facing != "up" || !obs.InBattle {
 		t.Fatalf("player = (%d,%d) facing=%q battle=%v", obs.X, obs.Y, obs.Facing, obs.InBattle)
+	}
+	if obs.TimeOfDay != game.TimeNight {
+		t.Fatalf("time of day = %q, want night", obs.TimeOfDay)
+	}
+	if obs.Region != "" {
+		t.Fatalf("region = %q with no ROM, want empty", obs.Region)
 	}
 	if obs.Money != 12345 {
 		t.Fatalf("money=%d, want 12345", obs.Money)

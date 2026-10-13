@@ -152,6 +152,43 @@ type ProfileFeatures map[ProfileFeature]bool
 
 func (f ProfileFeatures) Has(feature ProfileFeature) bool { return f[feature] }
 
+// TimeOfDay is a portable clock period. Adapters that have no clock leave it empty.
+type TimeOfDay string
+
+const (
+	TimeMorning TimeOfDay = "morning"
+	TimeDay     TimeOfDay = "day"
+	TimeNight   TimeOfDay = "night"
+)
+
+// RegionID is which region the player is standing in. It is explicit so
+// progression does not infer it from a map name. Adapters without regions
+// leave it empty.
+type RegionID string
+
+const (
+	RegionJohto RegionID = "johto"
+	RegionKanto RegionID = "kanto"
+)
+
+// Gender is a party member's sex. Empty means the adapter did not decode one.
+type Gender string
+
+const (
+	GenderMale   Gender = "male"
+	GenderFemale Gender = "female"
+	Genderless   Gender = "genderless"
+)
+
+// Pokerus is the portable infection state. Empty means the member has never
+// had Pokérus, which is also how an adapter without the condition reports it.
+type Pokerus string
+
+const (
+	PokerusInfected Pokerus = "infected"
+	PokerusCured    Pokerus = "cured"
+)
+
 // ProfilePartyMon is the common party representation exposed by profiles.
 type ProfilePartyMon struct {
 	Species    SpeciesID `json:"species"`
@@ -162,6 +199,10 @@ type ProfilePartyMon struct {
 	HP         uint16    `json:"hp"`
 	MaxHP      uint16    `json:"max_hp"`
 	Status     string    `json:"status,omitempty"`
+	Gender     Gender    `json:"gender,omitempty"`
+	Shiny      bool      `json:"shiny,omitempty"`
+	Pokerus    Pokerus   `json:"pokerus,omitempty"`
+	Friendship uint8     `json:"friendship,omitempty"`
 }
 
 type ProfileItem struct {
@@ -182,6 +223,8 @@ type ProfileObservation struct {
 
 	Controllable bool
 	InBattle     bool
+	TimeOfDay    TimeOfDay `json:"time_of_day,omitempty"`
+	Region       RegionID  `json:"region,omitempty"`
 	Party        []ProfilePartyMon
 	Bag          []ProfileItem
 	BagCapacity  int

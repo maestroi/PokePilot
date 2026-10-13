@@ -102,7 +102,6 @@ var kantoBadgeNames = [...]string{
 }
 
 func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (game.ProfileObservation, error) {
-	_ = romData
 	if reader == nil {
 		return game.ProfileObservation{}, fmt.Errorf("gs profile: nil memory reader")
 	}
@@ -150,6 +149,8 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 		Facing:       decodeFacing(reader.Peek8(sym.PlayerDirection)),
 		Controllable: gsControllable(reader),
 		InBattle:     reader.Peek8(sym.BattleMode) != 0,
+		TimeOfDay:    timeOfDay(reader.Peek8(sym.TimeOfDay)),
+		Region:       regionOf(reader, romData),
 		Party:        make([]game.ProfilePartyMon, partyCount),
 		BagCapacity:  sym.MaxItems,
 		Badges:       []string{},
@@ -174,6 +175,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 			species = game.SpeciesID("unknown")
 		}
 		held, _ := gsdata.Item(raw[1])
+		dv0, dv1 := raw[partyDVOffset], raw[partyDVOffset+1]
 		obs.Party[i] = game.ProfilePartyMon{
 			Species:    species,
 			HeldItem:   held,
@@ -183,6 +185,10 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 			HP:         uint16(raw[0x22])<<8 | uint16(raw[0x23]),
 			MaxHP:      uint16(raw[0x24])<<8 | uint16(raw[0x25]),
 			Status:     decodeStatus(raw[0x20]),
+			Gender:     partyGender(romData, rawSpecies, isEgg, dv0, dv1),
+			Shiny:      shinyDV(dv0, dv1),
+			Pokerus:    pokerusStatus(raw[partyPokerusOffset]),
+			Friendship: raw[partyHappinessOffset],
 		}
 	}
 

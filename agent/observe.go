@@ -32,6 +32,8 @@ type Observation struct {
 
 	Controllable       bool
 	InBattle           bool
+	TimeOfDay          string `json:"time_of_day,omitempty"`
+	Region             string `json:"region,omitempty"`
 	PartyCount         int
 	Party              []PartyMon
 	Badges             []string
@@ -150,6 +152,10 @@ type PartyMon struct {
 	HP         uint16
 	MaxHP      uint16
 	Status     string
+	Gender     string `json:"gender,omitempty"`
+	Shiny      bool   `json:"shiny,omitempty"`
+	Pokerus    string `json:"pokerus,omitempty"`
+	Friendship uint8  `json:"friendship,omitempty"`
 	// Types and Moves are the member's species types and known moves (with
 	// remaining PP), for whole-party matchup readiness.
 	Types []string
