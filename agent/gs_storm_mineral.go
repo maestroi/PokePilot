@@ -23,10 +23,10 @@ const (
 	gsChucksWifeSlot   int   = 11
 	gsChucksWifeStandX uint8 = 10
 	gsChucksWifeStandY uint8 = 45
-	gsJasmineGymX          uint8 = 5
-	gsJasmineGymY          uint8 = 3
-	gsJasmineGymStandX     uint8 = 5
-	gsJasmineGymStandY     uint8 = 4
+	gsJasmineGymX      uint8 = 5
+	gsJasmineGymY      uint8 = 3
+	gsJasmineGymStandX uint8 = 5
+	gsJasmineGymStandY uint8 = 4
 )
 
 // gsCoastalProfile holds the cartridge-specific story state required by
