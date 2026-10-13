@@ -54,6 +54,14 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: build live map %02x: %w", cur, err)
 	}
+	// GoTo routes on the live grid WITH present stationary objects (boulders,
+	// stay NPCs; see overlayObservedMapTopology). Omitting them here offered
+	// "go to victory road 1f" from 2F's exit-side pocket, where a reset boulder
+	// seals the 1F ladder, and GoTo refused it every round until the
+	// stagnation watchdog fired (run-3ftqlmhp1tmm3cpzdasspkv2o).
+	for at := range presentStationaryObjectBlockers(m, h) {
+		liveGrid.Set(at[0], at[1], false)
+	}
 	routeGraph, prereqs, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
