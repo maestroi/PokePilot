@@ -378,15 +378,16 @@ func (b Board) PushDeadlock(push LegalPush) bool {
 	}
 	delete(crates, push.Crate)
 	crates[push.CrateTo] = true
-	return b.freezeDeadlock(push.CrateTo, crates, dead)
+	return b.FreezeDeadlock(push.CrateTo, crates, dead)
 }
 
-// freezeDeadlock is the standard Sokoban freeze test for the crate at p. An
-// axis is blocked by a wall on either side, by dead squares on both sides, or
-// by a neighbouring crate that is itself frozen; while a crate is being
-// tested it counts as a wall for its neighbours. Frozen crates all on goals
-// are a finished corner of the puzzle, not a deadlock.
-func (b Board) freezeDeadlock(p Pos, crates, dead map[Pos]bool) bool {
+// FreezeDeadlock is the standard Sokoban freeze test for the crate at p, given
+// the full crate set and the board's DeadSquares (passed in so a search can
+// compute them once). An axis is blocked by a wall on either side, by dead
+// squares on both sides, or by a neighbouring crate that is itself frozen;
+// while a crate is being tested it counts as a wall for its neighbours. Frozen
+// crates all on goals are a finished corner of the puzzle, not a deadlock.
+func (b Board) FreezeDeadlock(p Pos, crates, dead map[Pos]bool) bool {
 	solid := func(q Pos) bool { return !b.inBounds(q) || b.walls[q] }
 	onStack := map[Pos]bool{}
 	// frozen reports whether the crate at c is frozen and, if so, whether it
