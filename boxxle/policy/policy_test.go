@@ -152,9 +152,10 @@ func TestCandidatesExcludesDeadlocks(t *testing.T) {
 }
 
 // TestChooseRejectsSealingPush is level 1 after its first correct push.
-// Pushing the crate at (2,2) right is legal and not a corner, and it shortens
-// the walk to the goals, but it plugs the corridor: the player then has no
-// legal push and the puzzle is lost. That is the push the live run took.
+// Pushing the crate at (2,2) right is legal and lands on no corner, but it
+// freezes three crates against each other and the walls (and seals the
+// corridor). That is the push the live run took; PushDeadlock's freeze test
+// rejects it locally, and Candidates/Choose must not offer it.
 func TestChooseRejectsSealingPush(t *testing.T) {
 	state := buildState(t, []string{
 		"#########",
@@ -172,8 +173,11 @@ func TestChooseRejectsSealingPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	seal, ok := board.FindPush(boxxle.Pos{X: 2, Y: 2}, boxxle.DirRight)
-	if !ok || board.PushDeadlock(seal) {
-		t.Fatalf("sealing push legal=%v corner=%v; the corner guard is what missed it", ok, board.PushDeadlock(seal))
+	if !ok {
+		t.Fatal("sealing push should be a legal geometry push")
+	}
+	if !board.PushDeadlock(seal) {
+		t.Fatal("sealing push should be a freeze deadlock; the corner-only guard missed it")
 	}
 
 	cands, err := Candidates(state)
@@ -226,5 +230,40 @@ func TestChooseDeterministic(t *testing.T) {
 	}
 	if d1.Candidate.Push != d2.Candidate.Push {
 		t.Errorf("expected deterministic choice, got %v then %v", d1.Candidate.Push, d2.Candidate.Push)
+	}
+}
+
+// TestGuardRejectsCrateFreeze is the regression for run-nk5mcq1girzix: level
+// 1-1 after its first push. Pushing (2,2) right lands on no dead square but
+// freezes three crates against each other and the walls; it outscored the
+// only solvable push, (3,3) down, so the run ended with no legal push.
+func TestGuardRejectsCrateFreeze(t *testing.T) {
+	state := buildState(t, []string{
+		"#########",
+		"#   #####",
+		"# $@#####",
+		"# $$###+#",
+		"### ###+#",
+		"###    +#",
+		"##   #  #",
+		"##   ####",
+		"#########",
+	})
+	freeze := boxxle.Pos{X: 3, Y: 2}
+	cands, err := Candidates(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cands {
+		if c.Push.CrateTo == freeze {
+			t.Fatalf("candidates offer the freezing push %+v", c.Push)
+		}
+	}
+	d, err := Choose(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (boxxle.Pos{X: 3, Y: 4}); d.Candidate.Push.CrateTo != want {
+		t.Fatalf("chose %+v, want the crate pushed to %v", d.Candidate.Push, want)
 	}
 }

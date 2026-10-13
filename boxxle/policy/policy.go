@@ -3,12 +3,12 @@
 //
 // The policy is the deterministic layer between the decoded board and the
 // executor. It enumerates legal pushes from the board geometry, rejects any
-// push that deadlocks the puzzle (a corner, or any push that leaves a solvable
-// board unsolvable), scores the remainder with a stable heuristic, and returns
-// the best push. A higher-level planner (an LLM or a scripted objective) may
-// override the choice, but it may only select from the candidates this package
-// produces: legality and the deadlock guard remain deterministic policy
-// responsibilities.
+// push that deadlocks the puzzle (a corner, a freeze, or any push that leaves
+// a solvable board unsolvable), scores the remainder with a stable heuristic,
+// and returns the best push. A higher-level planner (an LLM or a scripted
+// objective) may override the choice, but it may only select from the
+// candidates this package produces: legality and the deadlock guard remain
+// deterministic policy responsibilities.
 package policy
 
 import (
@@ -93,15 +93,16 @@ func Candidates(state boxxle.State) ([]Candidate, error) {
 
 // actionable is the set of pushes a planner may select.
 //
-// A corner dead square is rejected outright. When the board still has a
-// solution, a push that leaves it unsolvable is rejected too: it is legal and
-// not a corner, but it seals the room. Level 1's second crate can be pushed
-// sideways into the corridor the first crate just left; nothing is in a
-// corner, and afterwards the player has no legal push at all. The model and
-// the greedy score both prefer that push because it shortens the walk to a
-// goal. Offering it is how a solvable puzzle gets ruined.
+// PushDeadlock (corners and freezes) is rejected outright. When the board
+// still has a solution, a push that leaves it unsolvable is rejected too:
+// legal and not a local deadlock, but it seals the room. Level 1's second
+// crate can be pushed sideways into the corridor the first crate just left;
+// the freeze test catches that case locally, and the solver filter is the
+// belt-and-suspenders for seals that are not freezes. The model and the
+// greedy score both prefer the sealing push because it shortens the walk to
+// a goal. Offering it is how a solvable puzzle gets ruined.
 //
-// A board the solver cannot solve keeps the corner-filtered set, so a puzzle
+// A board the solver cannot solve keeps the locally-filtered set, so a puzzle
 // that is already lost still reports "no legal pushes" instead of inventing a
 // recovery the search does not have.
 func actionable(state boxxle.State, board boxxle.Board) ([]boxxle.LegalPush, int) {

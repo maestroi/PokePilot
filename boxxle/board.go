@@ -358,11 +358,69 @@ func (b Board) Deadlocked() []Pos {
 	return dead
 }
 
-// PushDeadlock reports whether performing the push would move the crate onto
-// a dead square. The policy uses this to reject a push that creates an
-// obvious deadlock, keeping the deterministic guard in front of the executor.
+// PushDeadlock reports whether performing the push would create an obvious
+// deadlock: the crate lands on a dead square, or it ends frozen (immovable on
+// both axes) together with at least one frozen crate off a goal. The policy
+// uses this to reject such a push, keeping the deterministic guard in front of
+// the executor.
+//
+// Dead squares alone miss crates frozen against each other: on level 1-1
+// (run-nk5mcq1girzix) a push that froze three crates against the walls
+// outscored the only solvable push, and the run ended with no legal push.
 func (b Board) PushDeadlock(push LegalPush) bool {
-	return b.deadSquares()[push.CrateTo]
+	dead := b.deadSquares()
+	if dead[push.CrateTo] {
+		return true
+	}
+	crates := make(map[Pos]bool, len(b.crates))
+	for c := range b.crates {
+		crates[c] = true
+	}
+	delete(crates, push.Crate)
+	crates[push.CrateTo] = true
+	return b.freezeDeadlock(push.CrateTo, crates, dead)
+}
+
+// freezeDeadlock is the standard Sokoban freeze test for the crate at p. An
+// axis is blocked by a wall on either side, by dead squares on both sides, or
+// by a neighbouring crate that is itself frozen; while a crate is being
+// tested it counts as a wall for its neighbours. Frozen crates all on goals
+// are a finished corner of the puzzle, not a deadlock.
+func (b Board) freezeDeadlock(p Pos, crates, dead map[Pos]bool) bool {
+	solid := func(q Pos) bool { return !b.inBounds(q) || b.walls[q] }
+	onStack := map[Pos]bool{}
+	// frozen reports whether the crate at c is frozen and, if so, whether it
+	// or any crate it depends on sits off a goal.
+	var frozen func(Pos) (bool, bool)
+	frozen = func(c Pos) (bool, bool) {
+		onStack[c] = true
+		defer delete(onStack, c)
+		offGoal := !b.goals[c]
+		blocked := func(a, z Pos) bool {
+			if solid(a) || solid(z) || (dead[a] && dead[z]) {
+				return true
+			}
+			for _, n := range [2]Pos{a, z} {
+				if onStack[n] {
+					return true
+				}
+				if crates[n] {
+					if ok, off := frozen(n); ok {
+						offGoal = offGoal || off
+						return true
+					}
+				}
+			}
+			return false
+		}
+		if !blocked(Pos{X: c.X - 1, Y: c.Y}, Pos{X: c.X + 1, Y: c.Y}) ||
+			!blocked(Pos{X: c.X, Y: c.Y - 1}, Pos{X: c.X, Y: c.Y + 1}) {
+			return false, false
+		}
+		return true, offGoal
+	}
+	ok, offGoal := frozen(p)
+	return ok && offGoal
 }
 
 // RenderBoard draws the compact ASCII board used by planners, heartbeats and
