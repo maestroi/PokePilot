@@ -81,6 +81,14 @@ type interruptionResolvers struct {
 	// item list, the PC menu, an elevator) and reports whether the overworld is
 	// controllable again. It never answers a two-option prompt.
 	dismissMenu func() (bool, error)
+	// dialogueMap snapshots the live map before RecoverDialogue. A completed
+	// HandleBlackOut during recovery clears the in-progress bit and heals the
+	// party, so blackout() alone can miss it; comparing this map to the saved
+	// respawn map is the durable completed-wipe signal.
+	dialogueMap func() (uint16, bool)
+	// settledBlackout reports that RecoverDialogue finished a blackout
+	// respawn relative to the pre-recovery map from dialogueMap.
+	settledBlackout func(preMap uint16) bool
 	// observe reads the pre-battle world; settle waits for the post-battle
 	// world (including a blackout respawn) to stand still and returns it.
 	observe func() (Replan, error)
@@ -94,6 +102,37 @@ func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) (interruptionResolv
 	if r.dismissMenu == nil {
 		r.dismissMenu = func() (bool, error) { return dismissMenu(m) }
 	}
+	// ROM-free interruption-loop tests leave dialogueMap/settledBlackout nil
+	// so they keep driving only the explicit blackout() hook.
+	if m != nil {
+		decoder, err := overworldDecoderFor(m)
+		if err != nil {
+			return r, err
+		}
+		blackoutDecoder, err := overworldBlackoutDecoderFor(m)
+		if err != nil {
+			return r, err
+		}
+		if r.dialogueMap == nil {
+			r.dialogueMap = func() (uint16, bool) {
+				return decoder.DecodeOverworld(m).NativeMapID, true
+			}
+		}
+		if r.settledBlackout == nil {
+			r.settledBlackout = func(preMap uint16) bool {
+				return respawnedFromFaintWithDecoders(m, preMap, decoder, blackoutDecoder)
+			}
+		}
+		if r.observe == nil {
+			r.observe = func() (Replan, error) { return currentWorldWithDecoder(m, decoder) }
+		}
+		if r.settle == nil {
+			r.settle = func(pre Replan, lost bool) (Replan, error) {
+				return settleWorldWithDecoder(m, decoder, pre, lost)
+			}
+		}
+		return r, nil
+	}
 	if r.observe != nil && r.settle != nil {
 		return r, nil
 	}
@@ -101,27 +140,11 @@ func (r interruptionResolvers) withWorldDefaults(m *emu.Emu) (interruptionResolv
 	// never observe or settle the world. Preserve that lazy contract: install
 	// error-aware defaults, but do not require a profile unless they are
 	// actually invoked.
-	if m == nil {
-		if r.observe == nil {
-			r.observe = func() (Replan, error) { return currentWorld(m) }
-		}
-		if r.settle == nil {
-			r.settle = func(pre Replan, lost bool) (Replan, error) { return settleWorld(m, pre, lost) }
-		}
-		return r, nil
-	}
-
-	decoder, err := overworldDecoderFor(m)
-	if err != nil {
-		return r, err
-	}
 	if r.observe == nil {
-		r.observe = func() (Replan, error) { return currentWorldWithDecoder(m, decoder) }
+		r.observe = func() (Replan, error) { return currentWorld(m) }
 	}
 	if r.settle == nil {
-		r.settle = func(pre Replan, lost bool) (Replan, error) {
-			return settleWorldWithDecoder(m, decoder, pre, lost)
-		}
+		r.settle = func(pre Replan, lost bool) (Replan, error) { return settleWorld(m, pre, lost) }
 	}
 	return r, nil
 }

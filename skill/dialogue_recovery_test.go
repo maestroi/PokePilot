@@ -537,6 +537,64 @@ func TestTravelStopsOnBlackoutAfterRecoveredBox(t *testing.T) {
 	}
 }
 
+// TestTravelStopsOnSettledBlackoutRespawnAfterRecoveredBox is the completed
+// HandleBlackOut half of TestTravelStopsOnBlackoutAfterRecoveredBox.
+// RecoverDialogue's budget can outlast the in-progress blackout bit: the party
+// is already healed at LastBlackoutMap when the box closes, so blackout() is
+// false. Resuming GoTo from that respawn turned a League wipe into an
+// unknown_failure Traverse on the next scripted door
+// (run-1l1stue3yf3yxalfmpfnfdyhf / triage e9215c1192dd34db). The pre-recovery
+// map vs respawn comparison must still end the journey as ErrBlackedOut.
+func TestTravelStopsOnSettledBlackoutRespawnAfterRecoveredBox(t *testing.T) {
+	var gotos, blackouts, settled int
+	const startMap uint16 = 0x71
+	goTo := func() error {
+		gotos++
+		return ErrDialogueInterrupted
+	}
+	recoverBox := func() DialogueRecoveryResult {
+		return DialogueRecoveryResult{Stop: DialogueRecovered}
+	}
+	blackout := func() bool {
+		blackouts++
+		return false
+	}
+
+	res, err := runInterruptions(nil, 5, goTo, interruptionResolvers{
+		recoverBox: recoverBox,
+		blackout:   blackout,
+		dialogueMap: func() (uint16, bool) {
+			return startMap, true
+		},
+		settledBlackout: func(preMap uint16) bool {
+			settled++
+			return preMap == startMap
+		},
+		resolveBattle: noBattles,
+		observe:       func() (Replan, error) { return Replan{}, nil },
+		settle:        func(Replan, bool) (Replan, error) { return Replan{}, nil },
+	})
+
+	if !errors.Is(err, ErrBlackedOut) {
+		t.Fatalf("err = %v, want ErrBlackedOut", err)
+	}
+	if gotos != 1 {
+		t.Fatalf("GoTo called %d times, want 1 (no walk after a settled blackout)", gotos)
+	}
+	if blackouts != 1 {
+		t.Fatalf("blackout checked %d times, want 1", blackouts)
+	}
+	if settled != 1 {
+		t.Fatalf("settledBlackout checked %d times, want 1", settled)
+	}
+	if !res.BlackedOut {
+		t.Error("BlackedOut = false, want true in the returned result")
+	}
+	if res.Dialogues != 1 {
+		t.Errorf("Dialogues = %d, want 1", res.Dialogues)
+	}
+}
+
 // TestTravelIgnoresClearedBlackoutBit: the bit is a fact about the world at
 // the stop, not a standing condition — a recovered box with the bit clear
 // (the ordinary sign or NPC line) walks on exactly as before.
