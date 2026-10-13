@@ -82,7 +82,7 @@ func TestVictoryRoad2FPocketRouteDoesNotUseUnreachableOneFPad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read ROM: %v", err)
 	}
-	g, err := world.BuildGraph(romData)
+	g, err := world.BuildGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("build graph: %v", err)
 	}

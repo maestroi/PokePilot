@@ -17,16 +17,9 @@ import (
 )
 
 // The spectator surface is intentionally separate from the operator console.
-// A process started with -spectator mounts only these embedded assets plus
+// A process started with -spectator mounts only the Vue spectator assets plus
 // read-only data routes. It never mounts queue, cancel, delete, triage, MCP,
 // raw dashboard, artifact browsing, or replay render routes.
-//
-//go:embed ui/watch.html
-var watchHTML []byte
-
-//go:embed ui/watch.js
-var watchJS []byte
-
 const (
 	spectatorHistoryLimit            = 12
 	spectatorReplayCacheTTL          = 30 * time.Second
@@ -261,16 +254,6 @@ func spectatorHandler(wallBase string) http.Handler {
 func spectatorHandlerWithReplay(wallBase, replayBase string) http.Handler {
 	catalog := newSpectatorReplayCatalog(replayBase)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/html; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(watchHTML) //nolint:errcheck // best effort: the page polls itself
-	})
-	mux.HandleFunc("GET /watch.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(watchJS) //nolint:errcheck // best effort
-	})
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/watch", spectatorSnapshotWithReplay(wallBase, catalog))
 	mux.HandleFunc("GET /frame", spectatorFrame(wallBase))

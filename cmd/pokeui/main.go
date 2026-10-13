@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -29,49 +28,7 @@ import (
 // -ldflags "-X main.version=..."; "dev" for local builds.
 var version = "dev"
 
-//go:embed ui/index.html
-var indexHTML []byte
-
-//go:embed ui/ui.js
-var uiJS []byte
-
-//go:embed ui/dashboard_paging.js
-var dashboardPagingJS []byte
-
-//go:embed ui/frame_policy.js
-var framePolicyJS []byte
-
-//go:embed ui/behavior.js
-var behaviorJS []byte
-
-//go:embed ui/console.css
-var consoleCSS []byte
-
-//go:embed ui/stats.js
-var statsJS []byte
-
-//go:embed ui/llm_metrics.js
-var llmMetricsJS []byte
-
-//go:embed ui/llm_metrics.css
-var llmMetricsCSS []byte
-
-//go:embed ui/inspector.js
-var inspectorJS []byte
-
-//go:embed ui/model_experiments.js
-var modelExperimentsJS []byte
-
-// The operator used to expose Goal as an unrestricted text box even though
-// only structured syntax had a deterministic stop condition. Keep the prompt
-// human-readable, but constrain normal UI runs to the finite presets the agent
-// can prove complete. External/API callers can still send structured goals or
-// arbitrary prompt-only prose explicitly.
-var goalInputHTML = []byte(`<label class="llm-only goal-field">goal <input name="goal" value="Earn the Boulder Badge." autocomplete="off"></label>`)
-
-var goalPresetHTML = []byte(`<label class="llm-only goal-field">goal <select name="goal"><option value="Earn the Boulder Badge." selected>Earn the Boulder Badge</option><option value="Play through the current supported Gen 2 frontier.">Gen 2 experimental · current supported frontier</option><option value="Earn 2 badges.">Earn 2 badges</option><option value="Earn 3 badges.">Earn 3 badges</option><option value="Earn 4 badges.">Earn 4 badges</option><option value="Earn 5 badges.">Earn 5 badges</option><option value="Earn 6 badges.">Earn 6 badges</option><option value="Earn 7 badges.">Earn 7 badges</option><option value="Earn all 8 badges.">Earn all 8 badges</option><option value="badges:1">Brock / 1 badge</option><option value="badges:2">Misty / 2 badges</option><option value="progress:silph_scope_acquired">Rocket Hideout</option><option value="progress:poke_flute_acquired">Pokémon Tower</option><option value="capability:surf">Surf obtained</option><option value="capability:strength">Strength obtained</option><option value="progress:silph_co_cleared">Silph completed</option><option value="badges:6">Sabrina / 6 badges</option><option value="badges:7">Blaine / 7 badges</option><option value="badges:8">Giovanni / 8 badges</option><option value="progress:indigo_plateau_ready">Indigo Plateau</option><option value="elite-four">Hall of Fame</option><option value="Beat the Elite Four and Champion.">Beat the Elite Four + Champion</option><option value="">Free play (no automatic stop)</option></select></label>`)
-
-// mapFiles holds build-time semantic map JSON used by the operator console.
+// mapFiles holds build-time semantic map JSON used by the Vue map views.
 //
 //go:embed ui/maps
 var mapFiles embed.FS
@@ -90,21 +47,6 @@ func handler(wallBase string) http.Handler {
 	return handlerWithServices(wallBase, "", "")
 }
 
-func operatorIndexPage() []byte {
-	page := bytes.Replace(indexHTML, goalInputHTML, goalPresetHTML, 1)
-	page = bytes.Replace(page, []byte(`<script src="/ui.js"></script>`), []byte("<script src=\"/dashboard_paging.js\"></script>\n<script src=\"/ui.js\"></script>"), 1)
-	// Raw string literals do not need quote escapes. Keep a compatibility
-	// replacement for any source page where the legacy escaped needle above did
-	// not match, and guarantee the paging shim runs before ui.js.
-	if !bytes.Contains(page, []byte(`<script src="/dashboard_paging.js"></script>`)) {
-		page = bytes.Replace(page, []byte(`<script src="/ui.js"></script>`), []byte(`<script src="/dashboard_paging.js"></script>
-<script src="/ui.js"></script>`), 1)
-	}
-	page = bytes.Replace(page, []byte("</head>"), []byte("<link rel=\"stylesheet\" href=\"/llm_metrics.css\">\n</head>"), 1)
-	extra := []byte("<script src=\"/frame_policy.js\"></script>\n<script src=\"/stats.js\"></script>\n<script src=\"/llm_metrics.js\"></script>\n<script src=\"/inspector.js\"></script>\n<script src=\"/model_experiments.js\"></script>\n</body>")
-	return bytes.Replace(page, []byte("</body>"), extra, 1)
-}
-
 // handlerWithMCP preserves the test/local entrypoint used before replay was a
 // separate service. Production uses handlerWithServices below.
 func handlerWithMCP(wallBase, token string) http.Handler {
@@ -117,61 +59,6 @@ func handlerWithMCP(wallBase, token string) http.Handler {
 // run/debug/artifact catalog still works and replay endpoints answer 503.
 func handlerWithServices(wallBase, replayBase, token string) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/html; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(operatorIndexPage()) //nolint:errcheck // best effort: the page polls itself
-	})
-	mux.HandleFunc("GET /ui.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(uiJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /dashboard_paging.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(dashboardPagingJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /frame_policy.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(framePolicyJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /behavior.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(behaviorJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /console.css", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/css; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(consoleCSS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /llm_metrics.css", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/css; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(llmMetricsCSS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /stats.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(statsJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /llm_metrics.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(llmMetricsJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /inspector.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(inspectorJS) //nolint:errcheck // best effort
-	})
-	mux.HandleFunc("GET /model_experiments.js", func(res http.ResponseWriter, req *http.Request) {
-		res.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-		res.Header().Set("Cache-Control", "no-store")
-		res.Write(modelExperimentsJS) //nolint:errcheck // best effort
-	})
 	mountMaps(mux)
 	mux.HandleFunc("GET /v1/version", func(res http.ResponseWriter, req *http.Request) {
 		res.Header().Set("Content-Type", "application/json")
@@ -352,10 +239,10 @@ func main() {
 			log.Printf("pokeui: WARNING spectator mode without -replay: finished runs and their cached replays are omitted from the public archive; pass -replay with the replay sidecar's URL")
 		}
 		publicHandler := spectatorVisibilityHTTPHandler(wallBase, spectatorProgrammingHTTPHandler(wallBase, spectatorHandlerWithReplay(wallBase, replayBase)))
-		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVuePreview(publicHandler, "spectator"))))
+		httpHandler = withExternalHosts(publicCORS(spectatorSecurityHeaders(withVueFrontend(publicHandler, "spectator"))))
 		log.Printf("pokeui proxying %s on http://%s (public spectator mode; voting enabled; replay=%t)", *wall, *httpAddr, replayBase != "")
 	} else {
-		httpHandler = adminCORS(withVuePreview(handlerWithServices(wallBase, replayBase, mcpToken), "operator"))
+		httpHandler = adminCORS(withVueFrontend(handlerWithServices(wallBase, replayBase, mcpToken), "operator"))
 		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
 	}
 	server := &http.Server{

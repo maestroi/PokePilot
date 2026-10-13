@@ -26,10 +26,9 @@ const pokemonSpriteImageOrigin = "https://raw.githubusercontent.com"
 //go:embed all:ui/vue
 var vueWebAssets embed.FS
 
-// withVuePreview retains its historic name for compatibility with existing
-// callers, but the migration is complete: Vue owns root and the legacy console
-// is no longer exposed as a browser fallback.
-func withVuePreview(next http.Handler, target string) http.Handler {
+// withVueFrontend serves the built Vue pages in front of the API handler. Vue
+// owns every browser route; there is no legacy console fallback.
+func withVueFrontend(next http.Handler, target string) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		if target == "spectator" {
 			allowPokemonSpriteImages(res.Header())

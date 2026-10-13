@@ -16,8 +16,7 @@ See `docs/DOMAINS.md` for DNS, Cloudflare redirects, and CORS.
 
 Spectator mode mounts only:
 
-- `GET /` — the spectator page
-- `GET /watch.js` — its browser code
+- `GET /`, `/runs/...`, `/explore`, `/replays` and `/assets/...` — the built Vue spectator pages
 - `GET /v1/watch` — a sanitized run snapshot
 - `GET /frame?run=...` — a read-only classic game frame
 - `GET /render-state?run=...` — validated semantic RenderState for the modern live renderer

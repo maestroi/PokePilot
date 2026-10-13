@@ -250,43 +250,19 @@ func TestPokeuiWallUnreachable(t *testing.T) {
 	}
 }
 
-func TestPokeuiServesIndex(t *testing.T) {
+// Vue owns every operator page; the API handler must not keep the retired
+// vanilla console reachable as a fallback behind it.
+func TestPokeuiHasNoLegacyConsoleFallback(t *testing.T) {
 	ui := httptest.NewServer(handler("http://127.0.0.1:1"))
 	t.Cleanup(ui.Close)
-	res, err := http.Get(ui.URL + "/")
-	if err != nil {
-		t.Fatalf("GET /: %v", err)
-	}
-	body, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("GET / = %d, want 200", res.StatusCode)
-	}
-	if ct := res.Header.Get("Content-Type"); ct != "text/html; charset=utf-8" {
-		t.Errorf("Content-Type = %q", ct)
-	}
-	if cc := res.Header.Get("Cache-Control"); cc != "no-store" {
-		t.Errorf("Cache-Control = %q, want no-store", cc)
-	}
-	for _, want := range []string{"RomPilot", "Queue a run", "Play the game", `id="live"`, `id="workers"`, `id="history"`, `id="failures"`, "/ui.js"} {
-		if !bytes.Contains(body, []byte(want)) {
-			t.Errorf("index missing %q", want)
+	for _, path := range []string{"/", "/ui.js", "/console.css", "/inspector.js", "/stats.js", "/llm_metrics.js", "/model_experiments.js"} {
+		res, err := http.Get(ui.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
 		}
-	}
-
-	res, err = http.Get(ui.URL + "/ui.js")
-	if err != nil {
-		t.Fatalf("GET /ui.js: %v", err)
-	}
-	js, _ := io.ReadAll(res.Body)
-	res.Body.Close()
-	if res.StatusCode != 200 {
-		t.Fatalf("GET /ui.js = %d, want 200", res.StatusCode)
-	}
-	if !bytes.Contains(js, []byte("/v1/dashboard")) {
-		t.Errorf("ui.js missing /v1/dashboard")
-	}
-	if !bytes.Contains(js, []byte("/v1/triage")) {
-		t.Errorf("ui.js missing /v1/triage")
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", path, res.StatusCode)
+		}
 	}
 }

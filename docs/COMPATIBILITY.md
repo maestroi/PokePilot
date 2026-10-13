@@ -1,6 +1,6 @@
 # Compatibility baseline
 
-Last reviewed: 2026-09-27 for issue #1543.
+Last reviewed: 2026-10-13 for issue #1543.
 
 PokePilot keeps compatibility only where a persisted artifact, external contract, or
 rolling deployment still depends on it. A compatibility path needs both a reason
@@ -29,17 +29,26 @@ requires an explicit support-window decision rather than opportunistic deletion.
 | Path | Why it is retained | Removal gate |
 | --- | --- | --- |
 | `Knowledge.NativeLocations`, native observation translation, `SawMap` / `TalkedTo` native forms | v4/v5 checkpoint geography and some transient emulator samples still use native map ids. Durable knowledge itself is semantic. | Oldest supported checkpoint is v6 **and** every supported observation producer supplies semantic location identity. |
-| `world.BuildGraph([]byte)` / ROM provider-factory bridge | A material part of the runtime world call graph still starts with ROM bytes instead of an adapter-owned `MapHeaderProvider`. Removing it in isolation would move game detection back into generic callers. | Every production world consumer receives an explicit provider from the selected cartridge/game adapter, and raw-ROM construction remains only inside adapter packages. |
+| `world.BuildGraphForROM([]byte)` registry lookup | `world.BuildGraph` is typed on `MapHeaderProvider`; callers that only hold ROM bytes (mostly `skill`, `agent`, `cmd/worldverify`, `cmd/pokerepro`) resolve the provider through the registered adapters with this explicit, separately named entry point. Removing it in isolation would move game detection back into generic callers. | Every production world consumer receives an explicit provider from the selected cartridge/game adapter, and raw-ROM construction remains only inside adapter packages. |
 | Checkpoint files without persisted game/revision identity | Older supported checkpoint versions predate profile identity metadata. They are still read, while files that do carry identity are rejected on mismatch. | The support window excludes every checkpoint version that predates game/revision identity. |
 
-## Not protected as compatibility
+## Retired
 
-The retired vanilla operator bundle under `cmd/pokeui/ui` is **not** part of
-the persistence or external API baseline. Vue already owns production root
-routing; remaining directly served legacy assets are cleanup work in #1543, not
-a compatibility promise.
+- The vanilla operator console (`cmd/pokeui/ui/index.html`, `ui.js`, and its
+  injected scripts/styles) and the vanilla spectator page (`watch.html`,
+  `watch.js`) are deleted. Vue owns every operator and spectator browser
+  route; `/`, `/ui.js`, `/watch.js` and the other legacy asset paths now 404
+  behind the API handlers. `cmd/pokeui/ui/maps` stays: the Vue map views read
+  `/maps/{id}.json`.
+- `world.BuildGraph(source any)` no longer type-switches on its argument. It
+  takes a `MapHeaderProvider`; the raw-ROM path is the explicit
+  `BuildGraphForROM` listed above.
+- `agent.NewKnowledge` takes `*KnowledgeTopology`; the historical `any` and
+  byte-map topology forms are gone.
 
-Likewise, rollout aliases in `cmd/pokewall` should only survive when a current
+## Still open
+
+Rollout aliases in `cmd/pokewall` should only survive when a current
 mixed-version deployment or persisted wall record demonstrably needs them. Their
 removal is a separate #1543 slice and should document the specific deployment
 window before changing the wire/storage contract.

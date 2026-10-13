@@ -27,7 +27,7 @@ func TestVueRootRequiresFrontendAndLegacyIsGone(t *testing.T) {
 		}
 		http.NotFound(w, r)
 	})
-	h := withVuePreview(legacy, "operator")
+	h := withVueFrontend(legacy, "operator")
 
 	root := httptest.NewRecorder()
 	h.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "/", nil))
@@ -76,7 +76,7 @@ func TestVueTargetsStaySeparated(t *testing.T) {
 }
 
 func TestVueNextRedirectsToRoot(t *testing.T) {
-	h := withVuePreview(http.NotFoundHandler(), "operator")
+	h := withVueFrontend(http.NotFoundHandler(), "operator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/next/?debug=1", nil))
 	if res.Code != http.StatusPermanentRedirect {
@@ -88,7 +88,7 @@ func TestVueNextRedirectsToRoot(t *testing.T) {
 }
 
 func TestVueNextRunQueryRedirectsToRunPage(t *testing.T) {
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/next/?run=abc", nil))
 	if res.Code != http.StatusPermanentRedirect {
@@ -100,7 +100,7 @@ func TestVueNextRunQueryRedirectsToRunPage(t *testing.T) {
 }
 
 func TestVueSpectatorCanonicalizesRunQuery(t *testing.T) {
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/?run=run-9", nil))
 	if res.Code != http.StatusPermanentRedirect {
@@ -115,7 +115,7 @@ func TestVueSpectatorServesPublicPages(t *testing.T) {
 	if !vueFileExists("spectator", "spectator.html") {
 		t.Skip("spectator frontend bundle not built in this Go-only checkout")
 	}
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	pages := []string{"/"}
 	if vueFileExists("spectator", "world.html") {
 		pages = append(pages, "/world", "/explore")
@@ -143,7 +143,7 @@ func TestVueBuildProvenanceEndpoint(t *testing.T) {
 	buildPR = "270"
 	buildTitleB64 = ""
 
-	h := withVuePreview(http.NotFoundHandler(), "operator")
+	h := withVueFrontend(http.NotFoundHandler(), "operator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/build", nil))
 	if res.Code != http.StatusOK {
@@ -162,7 +162,7 @@ func TestVueSpectatorServesWorldExplorer(t *testing.T) {
 	if !vueFileExists("spectator", "world.html") {
 		t.Skip("spectator frontend bundle not built in this Go-only checkout")
 	}
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/world?map=ROUTE_13&x=49&y=8&debug=1", nil))
 	if res.Code != http.StatusOK {
@@ -185,7 +185,7 @@ func TestVueSpectatorHTMLAssetsAreEmbedded(t *testing.T) {
 		t.Skip("spectator frontend bundle not built in this Go-only checkout")
 	}
 
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	pages := []string{"/"}
 	if vueFileExists("spectator", "world.html") {
 		pages = append(pages, "/world")
@@ -242,7 +242,7 @@ func TestVueSpectatorServesGen1RenderAssets(t *testing.T) {
 	if !vueFileExists("spectator", "gen1/red/maps/PalletTown.blk") {
 		t.Skip("spectator Gen 1 render assets not built in this Go-only checkout")
 	}
-	h := withVuePreview(http.NotFoundHandler(), "spectator")
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
 	for _, asset := range []string{
 		"/gen1/red/maps/PalletTown.blk",
 		"/gen1/red/blocksets/overworld.bst",
