@@ -4,6 +4,7 @@ import type { MapSprite } from '../api/types'
 import { mapAssetURL, mapEntryForGame, mapHexForGame, normalizeWorldMapGame } from '../mapCatalog'
 import { drawGen1TextureMap, loadGen1TextureMap, type Gen1TextureMap } from '../gen1Texture'
 import { drawGen1Sprite, gen1SpriteURL, loadGen1Sprite } from '../gen1Sprite'
+import { clampMapZoom, fitMapTiles } from '../mapViewport'
 import { worldConnectionsForGame, worldPoisForGame, type WorldPoi } from '../worldManifest'
 import WorldAtlas, { type WorldAtlasMarker } from './WorldAtlas.vue'
 
@@ -73,6 +74,7 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const loading = ref(false)
 const error = ref('')
 const zoomLevel = ref(1)
+const zoomCeiling = ref(4)
 const payload = ref<MapPayload | null>(null)
 const authenticTexture = ref<Gen1TextureMap | null>(null)
 const textureLoading = ref(false)
@@ -378,17 +380,27 @@ function draw(): void {
   const width = Math.max(1, Number(data.width || 1))
   const height = Math.max(1, Number(data.height || 1))
   const style = getComputedStyle(box)
-  const availW = Math.max(1, box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
-  const availH = Math.max(1, box.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))
+  // Border box, not client size: a scrollbar must not change the measurement
+  // and feed the next draw a larger viewport.
+  const rect = box.getBoundingClientRect()
+  const availW = Math.max(1, rect.width - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight))
+  const availH = Math.max(1, rect.height - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom))
   if (availW < 8 || availH < 8) return
 
-  const fitPx = Math.floor(Math.min(availW / width, availH / height))
   const readableFloor = explorerAppearance.value && authenticTexture.value ? 18 : 6
-  const basePx = Math.max(debugEnabled.value ? 18 : readableFloor, fitPx)
-  const rawPx = Math.max(2, Math.floor(basePx * zoomLevel.value))
-  const px = explorerAppearance.value && authenticTexture.value
-    ? Math.max(2, Math.floor(rawPx / 2) * 2)
-    : rawPx
+  const fit = fitMapTiles({
+    viewportWidth: availW,
+    viewportHeight: availH,
+    mapWidth: width,
+    mapHeight: height,
+    zoom: zoomLevel.value,
+    fillBox: props.interactive,
+    minTile: debugEnabled.value ? 18 : readableFloor,
+    evenTiles: Boolean(explorerAppearance.value && authenticTexture.value)
+  })
+  zoomCeiling.value = fit.zoomCeiling
+  if (zoomLevel.value !== fit.zoom) zoomLevel.value = fit.zoom
+  const px = fit.tile
   tileSize = px
   node.width = width * px
   node.height = height * px
@@ -633,7 +645,9 @@ async function loadMap(): Promise<void> {
 }
 
 function zoomBy(delta: number): void {
-  zoomLevel.value = Math.max(0.5, Math.min(4, Math.round((zoomLevel.value + delta) * 4) / 4))
+  const next = clampMapZoom(zoomLevel.value + delta)
+  if (next === zoomLevel.value || next > zoomCeiling.value) return
+  zoomLevel.value = next
   requestAnimationFrame(draw)
 }
 
@@ -775,9 +789,9 @@ onUnmounted(() => {
           <button type="button" :class="[atlasMode ? 'bg-emerald-300/15 text-emerald-100' : 'text-slate-500 hover:text-white', 'rounded px-2 py-1 text-[10px] font-semibold']" @click="setAtlasMode(true)">Kanto</button>
         </div>
         <template v-if="!atlasMode">
-          <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/12" aria-label="Zoom out" @click="zoomBy(-0.25)">−</button>
-          <button type="button" class="min-w-14 rounded bg-white/7 px-2 py-1 font-mono text-[10px] text-slate-300 ring-1 ring-white/10 hover:bg-white/12" title="Reset zoom" @click="resetZoom">{{ Math.round(zoomLevel * 100) }}%</button>
-          <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/12" aria-label="Zoom in" @click="zoomBy(0.25)">+</button>
+          <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-200 ring-1 ring-white/10 hover:bg-white/12 disabled:opacity-40" aria-label="Zoom out" :disabled="zoomLevel <= 0.5" @click="zoomBy(-0.25)">−</button>
+          <button type="button" class="min-w-14 rounded bg-white/7 px-2 py-1 font-mono text-[10px] text-slate-200 ring-1 ring-white/10 hover:bg-white/12" title="Reset zoom" @click="resetZoom">{{ Math.round(zoomLevel * 100) }}%</button>
+          <button type="button" class="rounded bg-white/7 px-2 py-1 text-xs text-slate-200 ring-1 ring-white/10 hover:bg-white/12 disabled:opacity-40" aria-label="Zoom in" :disabled="zoomLevel >= zoomCeiling" @click="zoomBy(0.25)">+</button>
           <button v-if="showPlayer" type="button" class="rounded bg-white/7 px-2 py-1 text-[10px] font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/12" @click="centerOnPlayer">Locate</button>
         </template>
       </div>
