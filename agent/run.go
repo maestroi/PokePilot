@@ -9,7 +9,6 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/profiles"
-	"github.com/maestroi/pokepilot/world"
 )
 
 // Run drives observe -> plan -> execute until the run-owned deterministic
@@ -437,25 +436,15 @@ runLoop:
 }
 
 // buildNativeAdjacency asks the game profile for the static map adjacency in
-// the portable uint16 width. Profiles that implement game.MapTopologyProvider
-// own how to build it (Gen I widens its uint8 graph; Gen II builds the native
-// wide-id graph); any other profile falls back to the historical uint8 world
-// graph so an adapter without the hook still boots.
+// the portable uint16 width. Profiles own how to build it via
+// game.MapTopologyProvider (Gen I widens its uint8 graph; Gen II builds the
+// native wide-id graph); a runnable profile without it cannot route.
 func buildNativeAdjacency(profile gameruntime.GameProfile, romData []byte) (map[uint16][]uint16, error) {
-	if provider, ok := profile.(gameruntime.MapTopologyProvider); ok {
-		return provider.MapAdjacency(romData)
+	provider, ok := profile.(gameruntime.MapTopologyProvider)
+	if !ok {
+		return nil, fmt.Errorf("agent: profile %s@%s does not provide map topology", profile.ID(), profile.Revision())
 	}
-	graph, err := world.BuildGraphForROM(romData)
-	if err != nil {
-		return nil, err
-	}
-	adjacency := make(map[uint16][]uint16, len(graph.Edges))
-	for from, edges := range graph.Edges {
-		for _, e := range edges {
-			adjacency[uint16(from)] = append(adjacency[uint16(from)], uint16(e.To))
-		}
-	}
-	return adjacency, nil
+	return provider.MapAdjacency(romData)
 }
 
 func observeRunInitial(m *emu.Emu, romData []byte) (Observation, error) {

@@ -29,7 +29,7 @@ requires an explicit support-window decision rather than opportunistic deletion.
 | Path | Why it is retained | Removal gate |
 | --- | --- | --- |
 | `Knowledge.NativeLocations`, native observation translation, `SawMap` / `TalkedTo` native forms | v4/v5 checkpoint geography and some transient emulator samples still use native map ids. Durable knowledge itself is semantic. | Oldest supported checkpoint is v6 **and** every supported observation producer supplies semantic location identity. |
-| `world.BuildGraphForROM([]byte)` registry lookup | `world.BuildGraph` is typed on `MapHeaderProvider`; callers that only hold ROM bytes (mostly `skill`, `agent`, `cmd/worldverify`, `cmd/pokerepro`) resolve the provider through the registered adapters with this explicit, separately named entry point. Removing it in isolation would move game detection back into generic callers. | Every production world consumer receives an explicit provider from the selected cartridge/game adapter, and raw-ROM construction remains only inside adapter packages. |
+| `POKEPILOT_SPECTATOR_URL` / `POKEPILOT_RUN_BASE_URL` (`sites.EnvSpectatorURL`, `sites.EnvRunBaseURL`) | `deploy/postgres.yml` and `deploy/farm.yml` still set the old names, and `cmd/pokeissues` reads `POKEPILOT_RUN_BASE_URL` directly. Dropping them is a production stack env change, not a code cleanup. | The deploy stacks and `pokeissues` use `POKEPILOT_PUBLIC_BASE_URL` / `POKEPILOT_ADMIN_BASE_URL`, and the swarm env no longer sets the old names. |
 | Checkpoint files without persisted game/revision identity | Older supported checkpoint versions predate profile identity metadata. They are still read, while files that do carry identity are rejected on mismatch. | The support window excludes every checkpoint version that predates game/revision identity. |
 
 ## Retired
@@ -41,8 +41,14 @@ requires an explicit support-window decision rather than opportunistic deletion.
   behind the API handlers. `cmd/pokeui/ui/maps` stays: the Vue map views read
   `/maps/{id}.json`.
 - `world.BuildGraph(source any)` no longer type-switches on its argument. It
-  takes a `MapHeaderProvider`; the raw-ROM path is the explicit
-  `BuildGraphForROM` listed above.
+  takes a `MapHeaderProvider`.
+- The raw-ROM provider-factory registry (`worldmodel.RegisterROMProviderFactory`,
+  `worldmodel.ProviderForROM`, `world.BuildGraphForROM`) is deleted. Callers
+  that hold only ROM bytes resolve the provider through the detected game
+  profile with `profiles.MapProvider`, so profile detection is the one place a
+  ROM is matched to an adapter. `agent` no longer falls back to a raw-ROM graph
+  when a profile lacks `game.MapTopologyProvider`; every runnable profile
+  implements it.
 - `agent.NewKnowledge` takes `*KnowledgeTopology`; the historical `any` and
   byte-map topology forms are gone.
 

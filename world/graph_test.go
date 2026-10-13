@@ -1,6 +1,7 @@
 package world
 
 import (
+	"github.com/maestroi/pokepilot/red/rom"
 	"os"
 	"testing"
 )
@@ -15,7 +16,7 @@ func loadGraph(t *testing.T) *Graph {
 	if err != nil {
 		t.Fatalf("reading ROM: %v", err)
 	}
-	g, err := BuildGraphForROM(romData)
+	g, err := BuildGraph(rom.NewWorldProvider(romData))
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

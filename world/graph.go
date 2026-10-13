@@ -131,16 +131,6 @@ func BuildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	return buildGraph(provider)
 }
 
-// BuildGraphForROM resolves the map provider for rom through the registered
-// game adapters, for callers that only hold ROM bytes.
-func BuildGraphForROM(rom []byte) (*Graph, error) {
-	provider, ok := worldmodel.ProviderForROM(rom)
-	if !ok {
-		return nil, fmt.Errorf("no registered map provider for ROM of %d bytes", len(rom))
-	}
-	return buildGraph(provider)
-}
-
 func buildGraph(provider worldmodel.MapHeaderProvider) (*Graph, error) {
 	headers := make(map[uint8]worldmodel.MapHeader)
 	var parseFailures []MapParseFailure

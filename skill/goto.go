@@ -494,7 +494,7 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 	if err := ensureNavigableOverworld(m); err != nil {
 		return fmt.Errorf("skill: GoTo: %w", err)
 	}
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		return err
 	}

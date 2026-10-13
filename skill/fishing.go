@@ -258,7 +258,7 @@ func nearestFishingShore(m *emu.Emu, romData []byte) (fishingShore, error) {
 	// Fish already Travels to the chosen stand tile; rank those shores by the
 	// same component-aware route graph Travel uses instead of reporting
 	// "no shoreline" while a warp-mediated shore exists.
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		return fishingShore{}, fmt.Errorf("skill: Fish: build graph for shoreline: %w", err)
 	}

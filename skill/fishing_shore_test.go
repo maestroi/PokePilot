@@ -54,7 +54,7 @@ func TestFishingShoreWarpComponentReachable(t *testing.T) {
 		t.Fatal("expected no same-component land path from (39,16) to a Fuchsia fishing shore")
 	}
 
-	g, err := world.BuildGraphForROM(romData)
+	g, err := routeGraphForROM(romData)
 	if err != nil {
 		t.Fatalf("BuildGraph: %v", err)
 	}

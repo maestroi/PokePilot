@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/maestroi/pokepilot/profiles"
 	"os"
 	"strings"
 
@@ -55,7 +56,11 @@ func verifySyntheticFailureBudget(mat portableMaterialized, resultPath string, v
 		return verdict, fmt.Errorf("load checkpoint: %w", err)
 	}
 
-	graph, err := world.BuildGraphForROM(m.ROM())
+	provider, err := profiles.MapProvider(m.ROM())
+	var graph *world.Graph
+	if err == nil {
+		graph, err = world.BuildGraph(provider)
+	}
 	if err != nil {
 		verdict.Classification = verdictHarnessError
 		verdict.Diagnostic = err.Error()

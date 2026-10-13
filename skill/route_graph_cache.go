@@ -30,7 +30,7 @@ var routeGraphCache = struct {
 
 func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if len(romData) == 0 {
-		return world.BuildGraphForROM(romData)
+		return routeGraphForROM(romData)
 	}
 	key := routeGraphROMKey{first: &romData[0], length: len(romData)}
 	routeGraphCache.Lock()
@@ -38,7 +38,7 @@ func cachedRouteGraph(romData []byte) (*world.Graph, error) {
 	if cached, ok := routeGraphCache.entries[key]; ok {
 		return cached.graph, cached.err
 	}
-	graph, err := world.BuildGraphForROM(romData)
+	graph, err := routeGraphForROM(romData)
 	routeGraphCache.entries[key] = routeGraphCacheEntry{graph: graph, err: err}
 	return graph, err
 }
