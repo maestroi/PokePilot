@@ -27,6 +27,17 @@ const (
 	gsJasmineGymY      uint8 = 3
 	gsJasmineGymStandX uint8 = 5
 	gsJasmineGymStandY uint8 = 4
+
+	// A 3-frame A tap pressed immediately after Face's direction press is
+	// ignored by the Gen II input system: the overworld is controllable but the
+	// player is not yet ready for an interaction press. gsHM02FlySettleFrames
+	// is the settle that makes the press register, and gsHM02FlyPressAttempts
+	// bounds the retries before a press that opens no dialogue is a terminal
+	// miss. Measured on the captured failure checkpoint for
+	// triage:a7579146e17b7296: the un-settled tap never opened the wife's
+	// dialogue, while a 30-frame settle plus the same 3-frame tap did.
+	gsHM02FlySettleFrames  = 30
+	gsHM02FlyPressAttempts = 3
 )
 
 // gsCoastalProfile holds the cartridge-specific story state required by
@@ -199,15 +210,22 @@ func executeGSHM02Fly(m *emu.Emu, romData []byte) error {
 			if err := skill.Face(m, uint8(wife.X), uint8(wife.Y)); err != nil {
 				return fmt.Errorf("gen2 HM02 Fly: face wife: %w", err)
 			}
-			m.Tap(emu.A, 3, 7)
-			if err := driveGSSecondBadgeInterruption(m, profile, encounter); err != nil {
-				return fmt.Errorf("gen2 HM02 Fly: reward script: %w", err)
+			// Settle so the A press registers, and treat a press that opens no
+			// dialogue as a miss to retry rather than a terminal state: the
+			// interruption driver returns as soon as the player is controllable,
+			// so an un-settled tap used to read as "returned without HM02 Fly".
+			for attempt := 0; attempt < gsHM02FlyPressAttempts; attempt++ {
+				m.StepFrames(gsHM02FlySettleFrames)
+				m.Tap(emu.A, 3, 7)
+				if err := driveGSSecondBadgeInterruption(m, profile, encounter); err != nil {
+					return fmt.Errorf("gen2 HM02 Fly: reward script: %w", err)
+				}
+				if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHM02FlyAcquired) &&
+					profile.DecodeOverworld(m).Controllable {
+					return nil
+				}
 			}
-			if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHM02FlyAcquired) ||
-				!profile.DecodeOverworld(m).Controllable {
-				return fmt.Errorf("%w: Chuck's wife returned without HM02 Fly", errGSSecondBadgeUnexpectedState)
-			}
-			return nil
+			return fmt.Errorf("%w: Chuck's wife returned without HM02 Fly", errGSSecondBadgeUnexpectedState)
 		}
 		m.StepFrames(8)
 	}
