@@ -37,6 +37,8 @@ type BattleState struct {
 	ActiveHP      uint16
 	ActiveLevel   uint8
 	ActiveMaxHP   uint16
+	ActiveHeldItem uint16 // Native live battle item id; zero for games without held items.
+	EnemyHeldItem  uint16
 	Moves         [4]BattleMove
 
 	ActiveAttack  uint16

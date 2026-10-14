@@ -74,6 +74,8 @@ func TestStatAwareMoveUsesInjectedGenerationStrategy(t *testing.T) {
 	}
 	b := game.BattleState{
 		ActiveLevel:          30,
+		ActiveHeldItem:       0x75,
+		EnemyHeldItem:        0x92,
 		ActiveHP:             70,
 		ActiveMaxHP:          80,
 		ActiveAttack:         55,
@@ -97,6 +99,9 @@ func TestStatAwareMoveUsesInjectedGenerationStrategy(t *testing.T) {
 
 	if got := statAwareMoveWithStrategy(nil, strategy)(b); got != 1 {
 		t.Fatalf("move slot = %d, want 1 from injected generation scorer", got)
+	}
+	if strategy.lastAttacker.HeldItem != 0x75 || strategy.lastDefender.HeldItem != 0x92 {
+		t.Fatalf("held items not projected into strategy: attacker=%+v defender=%+v", strategy.lastAttacker, strategy.lastDefender)
 	}
 	if strategy.lastAttacker.SpecialAttack != 120 || strategy.lastDefender.SpecialDefense != 50 {
 		t.Fatalf("split special stats not projected: attacker=%+v defender=%+v",
@@ -222,5 +227,12 @@ func TestSwitchPolicyPreservesWiderNativePartyMechanics(t *testing.T) {
 	}
 	if !seenWide {
 		t.Fatalf("generation strategy never received wider native move %#x; saw %#v", wideMove, strategy.seenMoves)
+	}
+}
+
+func TestBattlePartyCombatantPreservesNativeHeldItem(t *testing.T) {
+	mon := game.BattlePartyMon{HeldItem: 0x92}
+	if got := battlePartyCombatant(mon).HeldItem; got != 0x92 {
+		t.Fatalf("party held item=%#x, want %#x", got, 0x92)
 	}
 }

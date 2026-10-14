@@ -17,6 +17,7 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	mem[sym.BattleMode] = 2
 
 	mem[sym.BattleMonSpecies] = 0x9b // Cyndaquil
+	mem[sym.BattleMon+1] = 0x75  // MIRACLE_SEED
 	mem[sym.BattleMonLevel] = 11
 	putBattleBE16(&mem, sym.BattleMonHP, 27)
 	putBattleBE16(&mem, sym.BattleMonMaxHP, 31)
@@ -33,6 +34,7 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	mem[sym.BattleMonPP+1] = 30
 
 	mem[sym.EnemyMonSpecies] = 16 // Pidgey
+	mem[sym.EnemyMon+1] = 0x92 // LEFTOVERS
 	mem[sym.EnemyMonLevel] = 9
 	putBattleBE16(&mem, sym.EnemyMonHP, 18)
 	putBattleBE16(&mem, sym.EnemyMonMaxHP, 22)
@@ -58,6 +60,9 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	}
 	if state.ActiveSpecies != 0x9b || state.ActiveLevel != 11 || state.ActiveHP != 27 || state.ActiveMaxHP != 31 {
 		t.Fatalf("active identity/hp=%+v", state)
+	}
+	if state.ActiveHeldItem != 0x75 || state.EnemyHeldItem != 0x92 {
+		t.Fatalf("held items not projected from live structs: %+v", state)
 	}
 	if state.EnemySpecies != 16 || state.EnemyLevel != 9 || state.EnemyHP != 18 || state.EnemyMaxHP != 22 {
 		t.Fatalf("enemy identity/hp=%+v", state)
@@ -137,5 +142,20 @@ func TestDecodeGoldBattleStateBoundaries(t *testing.T) {
 		if got := p.DecodeBattleResult(&mem); got != want {
 			t.Fatalf("result raw=%#02x got=%v want=%v", raw, got, want)
 		}
+	}
+}
+
+func TestGoldBattleResourcesPreserveHeldItems(t *testing.T) {
+	var mem fakeMemory
+	mem[sym.BattleMode] = 1
+	mem[sym.PartyCount] = 2
+	mem[sym.CurBattleMon] = 0
+	mem[sym.PartyMon1+gen2PartyItemOffset] = 0x75
+	mem[sym.PartyMon1+sym.PartyMonSize+gen2PartyItemOffset] = 0x92
+	resources := NewGold().DecodeBattleResources(&mem)
+	if len(resources.Party) != 2 ||
+		resources.Party[0].HeldItem != 0x75 ||
+		resources.Party[1].HeldItem != 0x92 {
+		t.Fatalf("party held items=%+v", resources.Party)
 	}
 }

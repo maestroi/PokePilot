@@ -20,7 +20,51 @@ func gsLookupMove(nativeMoveID uint16) (power, moveType, accuracy uint8, ok bool
 const (
 	gsMoveGrowl   uint16 = 45
 	gsMoveReflect uint16 = 115
+
+	// From pokegold/constants/item_data_constants.asm, not item ids.
+	gsHeldEffectLeftovers  uint8 = 3
+	gsHeldEffectBoostFirst uint8 = 50
 )
+
+// TypeBoostItems in pokegold/data/types/type_boost_items.asm maps consecutive
+// held-effect ids 50..66 onto these native type ids (including Dark/Steel).
+var gsHeldBoostTypes = [...]uint8{
+	gsTypeNormal, gsTypeFighting, gsTypeFlying, gsTypePoison,
+	gsTypeGround, gsTypeRock, gsTypeBug, gsTypeGhost,
+	gsTypeFire, gsTypeWater, gsTypeGrass, gsTypeElectric,
+	gsTypePsychic, gsTypeIce, gsTypeDragon, gsTypeDark, gsTypeSteel,
+}
+
+// gsHeldEffectModifier uses the cartridge's item attributes, not a second
+// hardcoded item-id list. Unsupported effects deliberately remain neutral.
+func gsHeldEffectModifier(attr gsrom.ItemAttribute, moveType uint8, maxHP uint16) game.BattleItemModifier {
+	if attr.HeldEffect == gsHeldEffectLeftovers && maxHP > 0 {
+		// Gen-II Leftovers restores max(1, floor(maxHP/16)) per turn.
+		heal := maxHP / 16
+		if heal == 0 {
+			heal = 1
+		}
+		return game.BattleItemModifier{RecoveryPerTurn: heal}
+	}
+	if attr.HeldEffect >= gsHeldEffectBoostFirst {
+		index := int(attr.HeldEffect - gsHeldEffectBoostFirst)
+		if index < len(gsHeldBoostTypes) && gsHeldBoostTypes[index] == moveType {
+			return game.BattleItemModifier{DamageBonusPercent: uint16(attr.Param)}
+		}
+	}
+	return game.BattleItemModifier{}
+}
+
+func gsHeldItemModifier(rom []byte, itemID uint16, moveType uint8, maxHP uint16) game.BattleItemModifier {
+	if itemID == 0 || itemID > 0xff {
+		return game.BattleItemModifier{}
+	}
+	attr, err := gsrom.LookupItem(rom, uint8(itemID))
+	if err != nil {
+		return game.BattleItemModifier{}
+	}
+	return gsHeldEffectModifier(attr, moveType, maxHP)
+}
 
 // gsTypeEffectiveness reads the cartridge's own TypeMatchups table.
 func gsTypeEffectiveness(rom []byte, moveType, def1, def2 uint8) (int, error) {
@@ -50,6 +94,10 @@ func (*Profile) EvaluateCombatMove(
 	if stab {
 		score = score * 3 / 2
 	}
+	modifier := gsHeldItemModifier(rom, attacker.HeldItem, moveType, attacker.MaxHP)
+	if power > 0 && modifier.DamageBonusPercent > 0 {
+		score += score * int64(modifier.DamageBonusPercent) / 100
+	}
 	eval := game.BattleMoveEvaluation{
 		MoveID:        uint8(nativeMoveID),
 		NativeMoveID:  nativeMoveID,
@@ -57,8 +105,9 @@ func (*Profile) EvaluateCombatMove(
 		STAB:          stab,
 		Accuracy:      accuracy,
 		CurrentPP:     currentPP,
+		ItemModifier:  modifier,
 		ExpectedScore: score,
-		DebugText:     fmt.Sprintf("move=%d power=%d type=%d eff=%d stab=%v score=%d", nativeMoveID, power, moveType, eff, stab, score),
+		DebugText:     fmt.Sprintf("move=%d power=%d type=%d eff=%d stab=%v score=%d item=%d boost=%d%% heal=%d", nativeMoveID, power, moveType, eff, stab, score, attacker.HeldItem, modifier.DamageBonusPercent, modifier.RecoveryPerTurn),
 	}
 	if power == 0 {
 		switch nativeMoveID {

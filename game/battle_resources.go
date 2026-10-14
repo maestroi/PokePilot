@@ -13,6 +13,7 @@ type BattlePartyMove struct {
 // does not need to reconstruct cartridge-specific party layouts.
 type BattlePartyMon struct {
 	NativeSpeciesID uint16
+	HeldItem        uint16 // Native party item id; zero means none.
 	Level           uint8
 	HP              uint16
 	MaxHP           uint16

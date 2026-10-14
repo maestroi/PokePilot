@@ -388,9 +388,15 @@ func evaluateSwitchCombatant(
 		// real move scores but better than treating every such mon identical.
 		offense = int64(attacker.Level) * 1000
 	}
+	// A known passive heal (e.g. Leftovers) extends longevity by the next
+	// turn's recovery. Never count healing past full HP.
+	effectiveHP := uint32(attacker.HP) + uint32(e.BestMove.ItemModifier.RecoveryPerTurn)
+	if attacker.MaxHP > 0 && effectiveHP > uint32(attacker.MaxHP) {
+		effectiveHP = uint32(attacker.MaxHP)
+	}
 	hpPermille := int64(1000)
 	if attacker.MaxHP > 0 {
-		hpPermille = int64(attacker.HP) * 1000 / int64(attacker.MaxHP)
+		hpPermille = int64(effectiveHP) * 1000 / int64(attacker.MaxHP)
 	}
 	statusPermille := int64(statusSwitchFactor(status))
 	defensePermille := int64(defensiveSwitchFactor(e.IncomingRisk))

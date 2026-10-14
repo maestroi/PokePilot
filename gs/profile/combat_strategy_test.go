@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 )
 
 func goldROM(t *testing.T) []byte {
@@ -105,5 +106,83 @@ func TestGoldPreferSetupMoveUsesReflectThenGrowl(t *testing.T) {
 	b.ActiveReflect = false
 	if p.PreferSetupMove(b, reflectEval, attack) {
 		t.Fatal("setup must not stall against sub-Scyther bugs")
+	}
+}
+
+func TestGoldHeldItemEffectFixtures(t *testing.T) {
+	miracleSeed := gsrom.ItemAttribute{HeldEffect: gsHeldEffectBoostFirst + 10, Param: 10}
+	boost := gsHeldEffectModifier(miracleSeed, gsTypeGrass, 80)
+	if boost.DamageBonusPercent != 10 || boost.RecoveryPerTurn != 0 {
+		t.Fatalf("grass boost=%+v, want 10%% and no recovery", boost)
+	}
+	if got := gsHeldEffectModifier(miracleSeed, gsTypeNormal, 80); got != (game.BattleItemModifier{}) {
+		t.Fatalf("mismatched move should not be boosted: %+v", got)
+	}
+	leftovers := gsrom.ItemAttribute{HeldEffect: gsHeldEffectLeftovers, Param: 10}
+	for _, tc := range []struct {
+		maxHP uint16
+		want  uint16
+	}{{160, 10}, {8, 1}, {0, 0}} {
+		got := gsHeldEffectModifier(leftovers, gsTypeGrass, tc.maxHP)
+		if got.RecoveryPerTurn != tc.want || got.DamageBonusPercent != 0 {
+			t.Fatalf("leftovers maxHP=%d => %+v, want heal %d", tc.maxHP, got, tc.want)
+		}
+	}
+	for _, effect := range []uint8{0, 1, 77, 255} {
+		if got := gsHeldEffectModifier(gsrom.ItemAttribute{HeldEffect: effect, Param: 40}, gsTypeGrass, 80); got != (game.BattleItemModifier{}) {
+			t.Fatalf("unknown effect %d should be neutral: %+v", effect, got)
+		}
+	}
+	if got := gsHeldItemModifier(nil, 0, gsTypeGrass, 80); got != (game.BattleItemModifier{}) {
+		t.Fatalf("no held item should be neutral: %+v", got)
+	}
+	if got := gsHeldItemModifier(nil, 0x100, gsTypeGrass, 80); got != (game.BattleItemModifier{}) {
+		t.Fatalf("out-of-range held item should be neutral: %+v", got)
+	}
+}
+
+func TestGoldHeldItemBonusComesFromROM(t *testing.T) {
+	rom := goldROM(t)
+	// MIRACLE_SEED and LEFTOVERS native ids in pokegold/constants/item_constants.asm.
+	const miracleSeedID uint16 = 0x75
+	const leftoversID uint16 = 0x92
+	miracleSeed, err := gsrom.LookupItem(rom, uint8(miracleSeedID))
+	if err != nil || miracleSeed.HeldEffect != gsHeldEffectBoostFirst+10 {
+		t.Fatalf("MIRACLE_SEED attribute=%+v err=%v", miracleSeed, err)
+	}
+	p := NewGold()
+	attacker := game.BattleCombatant{Type1: uint16(gsTypeGrass), Type2: uint16(gsTypeGrass), HP: 80, MaxHP: 100}
+	defender := game.BattleCombatant{Type1: uint16(gsTypeNormal), Type2: uint16(gsTypeNormal)}
+	base, _, err := p.EvaluateCombatMove(rom, attacker, defender, 75, 25) // RAZOR_LEAF
+	if err != nil {
+		t.Fatal(err)
+	}
+	attacker.HeldItem = miracleSeedID
+	boosted, _, err := p.EvaluateCombatMove(rom, attacker, defender, 75, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boosted.ExpectedScore != base.ExpectedScore*110/100 || boosted.ItemModifier.DamageBonusPercent != 10 {
+		t.Fatalf("MIRACLE_SEED base=%+v boosted=%+v", base, boosted)
+	}
+	normal, _, err := p.EvaluateCombatMove(rom, attacker, defender, 33, 25) // TACKLE
+	if err != nil {
+		t.Fatal(err)
+	}
+	attacker.HeldItem = 0
+	noItem, _, err := p.EvaluateCombatMove(rom, attacker, defender, 33, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normal.ExpectedScore != noItem.ExpectedScore {
+		t.Fatalf("grass boost changed Normal move: %d vs %d", normal.ExpectedScore, noItem.ExpectedScore)
+	}
+	attacker.HeldItem = leftoversID
+	withLeftovers, _, err := p.EvaluateCombatMove(rom, attacker, defender, 75, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withLeftovers.ItemModifier.RecoveryPerTurn != 6 || withLeftovers.ExpectedScore != base.ExpectedScore {
+		t.Fatalf("LEFTOVERS base=%+v leftover=%+v", base, withLeftovers)
 	}
 }
