@@ -66,6 +66,12 @@ func gsHeldItemModifier(rom []byte, itemID uint16, moveType uint8, maxHP uint16)
 	return gsHeldEffectModifier(attr, moveType, maxHP)
 }
 
+// gsScoreWithItem applies the adapter-projected damage percentage to its
+// existing battle score; a zero modifier leaves the score identical.
+func gsScoreWithItem(score int64, modifier game.BattleItemModifier) int64 {
+	return score + score*int64(modifier.DamageBonusPercent)/100
+}
+
 // gsTypeEffectiveness reads the cartridge's own TypeMatchups table.
 func gsTypeEffectiveness(rom []byte, moveType, def1, def2 uint8) (int, error) {
 	return gsrom.TypeEffectiveness(rom, moveType, def1, def2)
@@ -95,9 +101,7 @@ func (*Profile) EvaluateCombatMove(
 		score = score * 3 / 2
 	}
 	modifier := gsHeldItemModifier(rom, attacker.HeldItem, moveType, attacker.MaxHP)
-	if power > 0 && modifier.DamageBonusPercent > 0 {
-		score += score * int64(modifier.DamageBonusPercent) / 100
-	}
+	score = gsScoreWithItem(score, modifier)
 	eval := game.BattleMoveEvaluation{
 		MoveID:        uint8(nativeMoveID),
 		NativeMoveID:  nativeMoveID,
