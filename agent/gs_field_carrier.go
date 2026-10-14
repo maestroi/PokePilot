@@ -265,7 +265,14 @@ func gsAcquireFieldCarrier(m *emu.Emu, romData []byte, profile *gsprofile.Profil
 		}
 		balls := gsCarrierBallCount(profile, m)
 		if balls == 0 {
-			return fmt.Errorf("%w: out of balls on %s", errGSFieldCarrierUnavailable, site.grass)
+			// The initial stock was exhausted without a catch. Re-stock as long
+			// as the player can afford it; the loop's return-to-grass and
+			// recovery checks below handle the mart trip's side effects. Only a
+			// player with no balls AND no money is truly out of options.
+			if err := gsStockCarrierBalls(m, romData, profile, site); err != nil {
+				return fmt.Errorf("%w: out of balls on %s", errGSFieldCarrierUnavailable, site.grass)
+			}
+			continue
 		}
 		if world := profile.DecodeOverworld(m); world.NativeMapID != grass {
 			if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
