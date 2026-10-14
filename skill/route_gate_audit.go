@@ -39,6 +39,17 @@ const (
 	// intact for destination-warp indexing.
 	capCanUseInaccessibleWarp gameruntime.CapabilityID = "can_use_inaccessible_warp"
 
+	// Victory Road Strength pads receive skipCanExit so routing may offer a
+	// floor crossing the player's static component cannot reach yet. That
+	// privilege is only sound when the live boulder action can open the pad.
+	// When PlanPushPuzzle positively proves no solution from the standing
+	// tile (exit-side 3F after Route 23 resets the switches), convert the
+	// pivot into a Gate that requires this never-projected capability so
+	// graphWithoutSemanticEdges removes the warp entirely — dropping the
+	// annotation alone falls back to ordinary static geometry, which still
+	// prices the closed ladder (run-m0idltj3yzhe2na7t29vkznya).
+	capCanSolveVictoryRoadStrength gameruntime.CapabilityID = "can_solve_victory_road_strength"
+
 	// The Game Corner poster stair is a real warp_event, but the map script
 	// replaces its block with a wall until EVENT_FOUND_ROCKET_HIDEOUT.
 	capCanEnterRocketHideout gameruntime.CapabilityID = "can_enter_rocket_hideout"
