@@ -329,6 +329,12 @@ func TestIndigoSidePricesKantoAsUnreachable(t *testing.T) {
 // a FROM-side pivot to the Route 22 Gate (run-jc853qns2lmc109wx2hs96btk:
 // "buy 1 SUPER POTION" -> no route from Indigo). Entering the pocket must
 // never grant that pivot, in either router.
+//
+// After that NoPivotFrom fix, the only remaining priced southbound escape was
+// red:victory_road_strength at (2,0). When that pad is proven unsolvable from
+// the live tile, hard-denying it (Gate + never-projected capability) must
+// yield ErrNoRoute rather than fall back to ordinary static geometry for the
+// closed ladder — see TestVictoryRoadUnsolvableStrengthPadDoesNotRouteToKantoMart.
 func TestRoute23PocketEntryNeverPivotsToRoute22Gate(t *testing.T) {
 	romPath := os.Getenv("POKEMON_RED_ROM")
 	if romPath == "" {
@@ -372,5 +378,25 @@ func TestRoute23PocketEntryNeverPivotsToRoute22Gate(t *testing.T) {
 	}
 	if viaPocket(edges) {
 		t.Fatalf("weighted route left through the Indigo pocket: %v %+v", err, edges)
+	}
+
+	// Synthetic mem cannot prove boulder unsolvability, so inject the Gate the
+	// live proof attaches and confirm ordinary geometry does not reprice the
+	// closed Strength pad as a Kanto escape.
+	strength := world.Edge{Kind: world.EdgeWarp, From: victoryRoad3FMap, To: victoryRoad2FMap, WarpX: 2, WarpY: 0}
+	tr, ok := prereqs.Transitions[strength]
+	if !ok {
+		t.Fatal("expected red:victory_road_strength on the (2,0) pad from exit-side 3F")
+	}
+	tr.Gate = true
+	tr.Requires = []gameruntime.CapabilityID{capCanSolveVictoryRoadStrength}
+	prereqs.Transitions[strength] = tr
+	if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
+		g, victoryRoad3FMap, vermilionMart, 26, 8, -1, -1, nil, prereqs); !errors.Is(err, world.ErrNoRoute) {
+		t.Fatalf("after hard-denying unsolvable Strength pad: err=%v, want world.ErrNoRoute", err)
+	}
+	if weighted, err := world.FindWeightedRoutePlanAtDestinationWithCapabilities(
+		g, victoryRoad3FMap, vermilionMart, 26, 8, -1, -1, nil, prereqs, world.DefaultRouteCostPolicy()); err == nil || errors.Is(err, world.ErrRouteReplanRequired) {
+		t.Fatalf("weighted router still priced Vermilion after Strength hard-deny: %v %+v", err, weighted.Steps)
 	}
 }

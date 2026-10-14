@@ -475,6 +475,7 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				if !ok {
 					continue
 				}
+				transition = withObservedVictoryRoadStrength(transition, edge, romData, mem)
 				transitions[edge] = transition
 				// Wherever a route ENTERS Route 23 in the Indigo pocket (Victory
 				// Road 2F's exit door), the Surf-band actions cannot execute from

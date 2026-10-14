@@ -7,6 +7,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
@@ -439,4 +440,89 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 		return world.TransitionExecutionResult{}, fmt.Errorf("skill: %s solver returned without its completion event", section)
 	}
 	return world.TransitionExecutionResult{Changed: true}, nil
+}
+
+// withObservedVictoryRoadStrength hard-denies a Strength floor-crossing when
+// the live boulder search positively proves the pad cannot open from the
+// player's standing tile. skipCanExit on red:victory_road_strength is only
+// sound when that action can succeed; otherwise the router must not price the
+// warp at all. Dropping the annotation falls back to ordinary static geometry,
+// which still advertises the closed ladder (MEASURED on
+// run-m0idltj3yzhe2na7t29vkznya from Victory Road 3F (26,8)).
+//
+// Fail open when the player is on another map or the puzzle cannot be built
+// from the snapshot: those callers lack the live proof this Gate requires.
+func withObservedVictoryRoadStrength(transition gameruntime.Transition, edge world.Edge, romData []byte, mem *state.Mem) gameruntime.Transition {
+	if transition.ID != "red:victory_road_strength" || mem == nil || len(romData) == 0 {
+		return transition
+	}
+	if mem.U8(sym.CurMap) != edge.From {
+		return transition
+	}
+	section, ok := victoryRoadSectionForTransition(edge)
+	if !ok {
+		return transition
+	}
+	spec, ok := VictoryRoadBoulderSpec(section)
+	if !ok {
+		return transition
+	}
+	if boulderPuzzleEventComplete(mem, spec) {
+		return transition
+	}
+	puzzle, err := boulderPuzzleFromMem(romData, mem, spec)
+	if err != nil {
+		return transition
+	}
+	if _, err := world.PlanPushPuzzle(puzzle); !errors.Is(err, world.ErrPushPuzzleNoSolution) {
+		return transition
+	}
+	denied := transition
+	denied.Gate = true
+	denied.Requires = []gameruntime.CapabilityID{capCanSolveVictoryRoadStrength}
+	return denied
+}
+
+// boulderPuzzleFromMem builds the same push-puzzle observation currentBoulderPuzzle
+// would see, from a RAM snapshot alone. Route prerequisites use this so an
+// unsolvable Strength pad can be hard-denied before GoTo selects it.
+func boulderPuzzleFromMem(romData []byte, mem *state.Mem, spec BoulderPuzzleSpec) (world.PushPuzzle, error) {
+	if mem == nil {
+		return world.PushPuzzle{}, fmt.Errorf("skill: boulder puzzle: nil memory snapshot")
+	}
+	cur := mem.U8(sym.CurMap)
+	if cur != spec.Map {
+		return world.PushPuzzle{}, fmt.Errorf("skill: boulder puzzle is for map %#02x, current map is %#02x", spec.Map, cur)
+	}
+	if !state.Controllable(mem) {
+		return world.PushPuzzle{}, fmt.Errorf("skill: boulder puzzle player is not controllable on map %#02x", cur)
+	}
+	h, err := rom.ParseMap(romData, cur)
+	if err != nil {
+		return world.PushPuzzle{}, fmt.Errorf("skill: boulder puzzle parse map %#02x: %w", cur, err)
+	}
+	grid, err := liveMapGridFromMem(mem, romData, h)
+	if err != nil {
+		return world.PushPuzzle{}, fmt.Errorf("skill: boulder puzzle live grid for map %#02x: %w", cur, err)
+	}
+	player := state.DecodePlayer(mem)
+	fixed := liveNonBoulderBlockers(mem)
+	allMovables := liveBoulderMovables(mem)
+	movables := selectedBoulderMovables(allMovables, spec.MovableIDs)
+	for at := range unselectedBoulderBlockers(allMovables, spec.MovableIDs) {
+		fixed[at] = true
+	}
+	for at, blocked := range spec.Fixed {
+		if blocked {
+			fixed[at] = true
+		}
+	}
+	return world.PushPuzzle{
+		Grid:      grid,
+		Player:    world.Point{X: int(player.X), Y: int(player.Y)},
+		Movables:  movables,
+		Fixed:     fixed,
+		Goal:      world.PushGoal{Targets: spec.Targets, Reachable: spec.Reachable},
+		MaxStates: spec.MaxStates,
+	}, nil
 }
