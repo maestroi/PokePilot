@@ -17,9 +17,9 @@ func syntheticGen2ChartROM() []byte {
 	}
 	rows = append(rows,
 		27, 24, 20, // Dark beats Psychic
-		24, 27, 0,  // Psychic is immune on Dark
-		20, 9, 20,  // Fire beats Steel
-		1, 27, 20,  // Fighting beats Dark
+		24, 27, 0, // Psychic is immune on Dark
+		20, 9, 20, // Fire beats Steel
+		1, 27, 20, // Fighting beats Dark
 		0xff,
 	)
 	copy(rom[64:], rows)
