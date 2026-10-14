@@ -13,7 +13,7 @@ func syntheticGen2ChartROM() []byte {
 	// locator to distinguish a chart from an incidental byte sequence.
 	rows := []byte{0, 5, 5, 0, 9, 5}
 	for i := 0; i < 70; i++ {
-		rows = append(rows, 1, 5, 10)
+		rows = append(rows, 1, 5, 5)
 	}
 	rows = append(rows,
 		27, 24, 20, // Dark beats Psychic
