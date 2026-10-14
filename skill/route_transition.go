@@ -424,6 +424,13 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 		return world.TransitionExecutionResult{}, fmt.Errorf("%w: %s", ErrRouteTransitionNeedsBattlePolicy, section)
 	}
 	if _, err := SolveVictoryRoadBoulderSection(x.m, x.romData, x.policy, section); err != nil {
+		// A proven no-solution means the boulders are out of reach from the
+		// player's pocket (e.g. 2F re-entered from Route 23 at the exit side),
+		// not that the edge is dead: let GoTo ban it for this tile and replan
+		// through a ladder this pocket can walk to.
+		if errors.Is(err, world.ErrPushPuzzleNoSolution) {
+			return world.TransitionExecutionResult{}, fmt.Errorf("%w: %s: %w", ErrTransitionUnavailableHere, section, err)
+		}
 		return world.TransitionExecutionResult{}, err
 	}
 	var after state.Mem
