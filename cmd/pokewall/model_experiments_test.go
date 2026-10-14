@@ -64,6 +64,7 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	var created struct {
 		ID         string       `json:"id"`
 		TotalPairs int          `json:"total_pairs"`
+		RunIDs     []string     `json:"run_ids"`
 		Pairs      []pairResult `json:"pairs"`
 	}
 	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
@@ -75,6 +76,19 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 	if len(created.Pairs) != 2 || !created.Pairs[0].Comparable || !created.Pairs[1].Comparable {
 		t.Fatalf("pairs = %#v", created.Pairs)
 	}
+	if len(created.RunIDs) != 4 {
+		t.Fatalf("member run ids = %#v, want four", created.RunIDs)
+	}
+	recorded := make(map[string]bool, len(created.RunIDs))
+	for _, id := range created.RunIDs {
+		recorded[id] = true
+	}
+	for _, pair := range created.Pairs {
+		if !recorded[pair.RunIDA] || !recorded[pair.RunIDB] || pair.RunIDA == pair.RunIDB {
+			t.Fatalf("pair seed %d has unregistered arm run links: %#v", pair.Seed, pair)
+		}
+	}
+
 
 	w.mu.Lock()
 	queued := append([]string(nil), w.queue...)
