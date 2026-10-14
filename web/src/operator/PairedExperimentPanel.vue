@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { PlayIcon } from '@heroicons/vue/20/solid'
-import { createExperiment, getExperiments, getModels } from '../shared/api/client'
+import { ArrowPathIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { createExperiment, getExperiment, getExperiments, getModels } from '../shared/api/client'
 import type { ExperimentView, ModelDeployment } from '../shared/api/types'
 import { GOAL_OPTIONS } from '../shared/goals'
 import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultExperimentArms, deploymentOptionLabel, strategistDeployments } from './llmDeployments'
+import { parseExperimentSeeds, experimentProgress, experimentStage } from './experimentPresentation'
 import { operatorHref } from '../shared/urls'
 
 const props = defineProps<{ experimentID?: string }>()
@@ -15,7 +16,10 @@ const props = defineProps<{ experimentID?: string }>()
 const fieldClass = 'mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400'
 
 const {
-  data: modelsData
+  data: modelsData,
+  error: modelsError,
+  state: modelsState,
+  retry: retryModels
 } = usePollingResource(
   (signal) => getModels(signal),
   { intervalMs: 5000, isEmpty: (snapshot) => snapshot.deployments.length === 0 }
@@ -31,12 +35,40 @@ const {
   { intervalMs: 5000, isEmpty: (experiments) => experiments.length === 0 }
 )
 
+// A selected detail endpoint is available even when the list is empty or stale.
+const selectedResource = usePollingResource<ExperimentView | null>(
+  (signal) => props.experimentID ? getExperiment(props.experimentID, signal) : Promise.resolve(null),
+  { intervalMs: 5000 }
+)
+watch(() => props.experimentID, () => {
+  showAllPairs.value = false
+  void selectedResource.retry()
+})
+
 // Experiments compare strategists; decision-only deployments cannot be an arm.
 const deployments = computed<ModelDeployment[]>(() => strategistDeployments(modelsData.value?.deployments ?? []))
+const usableDeployments = computed(() => deployments.value.filter((deployment) =>
+  deployment.enabled !== false && !['unavailable', 'failed'].includes(String(deployment.state || '').toLowerCase())
+))
 const history = computed<ExperimentView[]>(() => experimentData.value ?? [])
 const latest = computed<ExperimentView | null>(() => props.experimentID
-  ? history.value.find((item) => item.id === props.experimentID) ?? (created.value?.id === props.experimentID ? created.value : null)
+  ? (selectedResource.data.value?.id === props.experimentID ? selectedResource.data.value : null)
+    ?? history.value.find((item) => item.id === props.experimentID)
+    ?? (created.value?.id === props.experimentID ? created.value : null)
   : created.value ?? history.value[0] ?? null)
+const showCreate = ref(false)
+const showAllPairs = ref(false)
+const pairRows = computed(() => latest.value?.pairs ?? [])
+const visiblePairs = computed(() => showAllPairs.value ? pairRows.value : pairRows.value.slice(0, 30))
+const progress = computed(() => experimentProgress(latest.value))
+const stage = computed(() => experimentStage(latest.value))
+const detailState = computed(() => {
+  if (latest.value) return (experimentState.value === 'stale' || selectedResource.state.value === 'stale') ? 'stale' : 'ready'
+  if (props.experimentID) return selectedResource.state.value === 'loading' || selectedResource.state.value === 'refreshing' ? 'loading' : selectedResource.state.value === 'error' ? 'error' : 'empty'
+  return experimentState.value
+})
+const detailError = computed(() => selectedResource.error.value || experimentError.value)
+
 
 const form = reactive({
   name: 'Brock · 27B vs 4B',
@@ -60,20 +92,15 @@ const form = reactive({
 })
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 
-watch(deployments, (next) => {
-  if (!next.length) return
+watch(usableDeployments, (next) => {
   const [armA, armB] = defaultExperimentArms(next)
-  if (!form.arm_a) form.arm_a = armA
-  if (!form.arm_b) form.arm_b = armB
+  if (!next.some((deployment) => deployment.id === form.arm_a)) form.arm_a = armA
+  if (!next.some((deployment) => deployment.id === form.arm_b) || form.arm_a === form.arm_b) form.arm_b = armB
 }, { immediate: true })
 
 const submitting = ref(false)
 const error = ref('')
 const created = ref<ExperimentView | null>(null)
-
-function parseSeeds(value: string): number[] {
-  return value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean).map((part) => Number(part)).filter((seed) => Number.isFinite(seed))
-}
 
 function pct(value: number | undefined): string {
   return `${Math.round((Number(value) || 0) * 100)}%`
@@ -104,7 +131,7 @@ function workerLimit(deploymentID: string): number {
 async function submit(): Promise<void> {
   if (submitting.value) return
   error.value = ''
-  if (!form.arm_a || !form.arm_b || form.arm_a === form.arm_b) {
+  if (!usableDeployments.value.some((deployment) => deployment.id === form.arm_a) || !usableDeployments.value.some((deployment) => deployment.id === form.arm_b) || form.arm_a === form.arm_b) {
     error.value = 'Choose two different deployments for Arm A and Arm B.'
     return
   }
@@ -114,9 +141,14 @@ async function submit(): Promise<void> {
     error.value = `Worker count exceeds deployment capacity (A max ${armALimit}, B max ${armBLimit}).`
     return
   }
+  const parsedSeeds = parseExperimentSeeds(form.seeds, form.seed_count)
+  if (parsedSeeds.error) {
+    error.value = parsedSeeds.error
+    return
+  }
   submitting.value = true
   try {
-    const seeds = parseSeeds(form.seeds)
+    const seeds = parsedSeeds.seeds
     created.value = await createExperiment({
       name: form.name.trim() || 'Brock · 27B vs 4B',
       arm_a: { name: 'A', deployment: form.arm_a, max_parallel_workers: Number(form.arm_a_workers || 1) },
@@ -135,7 +167,13 @@ async function submit(): Promise<void> {
       max_frames: Number(form.max_frames || 0),
       recovery_profile: form.recovery_profile
     })
-    void retryExperiments()
+    showCreate.value = false
+    showAllPairs.value = false
+    await retryExperiments()
+    if (created.value?.id) {
+      window.history.pushState(null, '', operatorHref('analytics', { section: 'experiments', experiment: created.value.id, run: '' }, window.location.search))
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Unable to create experiment'
   } finally {
@@ -175,8 +213,14 @@ function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
-  <Panel title="Paired LLM experiment" description="Matched A/B runs share seed and gameplay policy; only deployment differs." compact>
-    <form v-if="deployments.length" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" @submit.prevent="submit">
+  <div class="space-y-3">
+  <Panel title="Start paired experiment" description="The same seeds, game, policies and concurrency rules apply to both model arms." compact>
+    <template #actions>
+      <button type="button" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300" :aria-expanded="showCreate || (!history.length && !created)" @click="showCreate = !showCreate">
+        {{ showCreate ? 'Hide setup' : 'New comparison' }}
+      </button>
+    </template>
+    <form v-if="(showCreate || (!history.length && !created)) && usableDeployments.length >= 2" class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" @submit.prevent="submit">
       <label class="block sm:col-span-2 xl:col-span-1">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Name</span>
         <input v-model="form.name" :class="fieldClass" />
@@ -193,13 +237,13 @@ function operatorSearch(): string { return window.location.search }
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm A</span>
         <select v-model="form.arm_a" :class="fieldClass">
-          <option v-for="deployment in deployments" :key="`a-${deployment.id}`" :value="deployment.id" :disabled="deployment.enabled === false">{{ deploymentOptionLabel(deployment) }}</option>
+          <option v-for="deployment in usableDeployments" :key="`a-${deployment.id}`" :value="deployment.id"  >{{ deploymentOptionLabel(deployment) }}</option>
         </select>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm B</span>
         <select v-model="form.arm_b" :class="fieldClass">
-          <option v-for="deployment in deployments" :key="`b-${deployment.id}`" :value="deployment.id" :disabled="deployment.enabled === false">{{ deploymentOptionLabel(deployment) }}</option>
+          <option v-for="deployment in usableDeployments" :key="`b-${deployment.id}`" :value="deployment.id"  >{{ deploymentOptionLabel(deployment) }}</option>
         </select>
       </label>
       <label class="block">
@@ -306,9 +350,19 @@ function operatorSearch(): string { return window.location.search }
         </button>
       </div>
     </form>
-    <p v-else class="py-6 text-center text-sm text-slate-500">Configure a model registry to start paired experiments.</p>
+    <div v-else-if="showCreate || (!history.length && !created)" class="space-y-2 py-4 text-xs text-slate-400">
+      <p v-if="modelsState === 'loading'">Loading configured models…</p>
+      <p v-else-if="modelsError" role="alert">Model registry unavailable: {{ modelsError }}</p>
+      <p v-else>At least two enabled, available strategist deployments are required to start a comparison.</p>
+      <div class="flex flex-wrap gap-3">
+        <a href="#settings/models" class="font-semibold text-cyan-200 hover:underline">Configure models →</a>
+        <button type="button" class="font-semibold text-cyan-200 hover:underline" @click="retryModels()">Retry models</button>
+      </div>
+    </div>
+  </Panel>
 
-    <div class="mt-4 border-t border-white/8 pt-4">
+  <Panel title="Comparison history & results" description="Select a stored comparison to inspect its exact matched-seed progress and outcomes." compact>
+    <div class="space-y-3">
       <nav v-if="history.length" aria-label="Select experiment" class="mb-3 flex flex-wrap gap-2">
         <a
           v-for="experiment in history"
@@ -319,28 +373,68 @@ function operatorSearch(): string { return window.location.search }
         >{{ experiment.name || experiment.id }}</a>
       </nav>
       <ResourceState
-        :state="props.experimentID && !latest && experimentState === 'ready' ? 'empty' : (latest ? 'ready' : experimentState)"
+        :state="detailState"
         title="Selected experiment unavailable"
-        :message="experimentError || (props.experimentID ? 'This experiment ID was not returned by the server.' : 'Start a comparison to see matched A/B results here.')"
+        :message="detailError || (props.experimentID ? 'This experiment no longer exists or could not be retrieved. Select another comparison or retry.' : 'Start a comparison to see matched A/B results here.')"
         :rows="4"
       >
+        <template #actions>
+          <button type="button" class="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-1.5 text-xs text-white focus-visible:outline-2 focus-visible:outline-cyan-300" @click="retryExperiments(); selectedResource.retry()"><ArrowPathIcon class="size-3.5" aria-hidden="true" />Retry</button>
+        </template>
         <div v-if="latest" class="space-y-3">
-          <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ latest.id }}</span>
-              <h3 class="text-sm font-semibold text-white">{{ latest.name }}</h3>
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0">
+              <span class="break-all font-mono text-[10px] text-slate-500">{{ latest.id }}</span>
+              <h3 class="text-sm font-semibold text-white">{{ latest.name || latest.id }}</h3>
+              <p class="mt-1 text-[11px] text-slate-400">A: {{ latest.request?.arm_a?.deployment || 'unknown model' }} · B: {{ latest.request?.arm_b?.deployment || 'unknown model' }} · {{ latest.request?.goal || 'No goal reported' }}</p>
+              <p class="mt-1 text-[11px] text-slate-500">Matched policy: {{ latest.request?.play_style || '—' }} · {{ latest.request?.recovery_profile || '—' }} recovery · {{ latest.request?.arm_a?.max_parallel_workers || 1 }} / {{ latest.request?.arm_b?.max_parallel_workers || 1 }} workers</p>
             </div>
-            <span class="font-mono text-[11px] text-slate-500">{{ latest.total_pairs || 0 }} pairs</span>
+            <span class="rounded-sm border border-white/10 px-2 py-1 font-mono text-[11px] text-slate-300">{{ stage }}</span>
           </div>
-          <div v-if="latest.run_ids?.length" class="flex flex-wrap gap-2">
-            <a
-              v-for="runID in latest.run_ids"
-              :key="runID"
-              :href="operatorHref('live', { run: runID, experiment: latest.id }, operatorSearch())"
-              class="max-w-full truncate rounded-sm bg-cyan-400/8 px-2 py-1 font-mono text-[10px] text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-400/15"
-              :title="runID"
-            >Inspect {{ compactIdentity(runID) }}</a>
+          <div class="grid grid-cols-2 gap-px overflow-hidden rounded-sm bg-white/10 sm:grid-cols-4">
+            <div v-for="item in [
+              ['Pairs', progress.total],
+              ['Completed', progress.completed],
+              ['In progress', progress.inProgress],
+              ['Excluded', progress.excluded]
+            ]" :key="item[0]" class="bg-[#0b111a] px-3 py-2">
+              <span class="block text-[10px] text-slate-500">{{ item[0] }}</span>
+              <strong class="mt-1 block font-mono text-lg text-white">{{ item[1] }}</strong>
+            </div>
           </div>
+          <div class="h-1.5 overflow-hidden rounded-full bg-white/10" role="progressbar" :aria-valuenow="progress.completed" :aria-valuemin="0" :aria-valuemax="Math.max(1, progress.total)" :aria-label="'Completed matched pairs'">
+            <div class="h-full bg-cyan-300 transition-[width]" :style="{ width: progress.total ? (100 * progress.completed / progress.total) + '%' : '0%' }" />
+          </div>
+          <section v-if="pairRows.length" class="overflow-hidden rounded-sm border border-white/8">
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-white/[0.025] px-3 py-2">
+              <h4 class="text-xs font-semibold text-white">Matched seeds and member runs</h4>
+              <span class="text-[10px] text-slate-500">{{ pairRows.length }} seed pairs</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-white/8 text-left text-xs">
+                <thead><tr class="text-[10px] text-slate-500"><th class="px-3 py-2">Seed</th><th class="px-3 py-2">Arm A</th><th class="px-3 py-2">Arm B</th><th class="px-3 py-2">Comparison</th></tr></thead>
+                <tbody class="divide-y divide-white/8">
+                  <tr v-for="pair in visiblePairs" :key="pair.seed">
+                    <td class="px-3 py-2 font-mono text-slate-300">{{ pair.seed }}</td>
+                    <td class="px-3 py-2">
+                      <a v-if="pair.run_id_a" :href="operatorHref('live', { run: pair.run_id_a, experiment: latest.id }, operatorSearch())" class="font-mono text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="pair.run_id_a">A · {{ pair.status_a || 'queued' }} ↗</a>
+                      <span v-else class="text-slate-500">A · {{ pair.status_a || 'unavailable' }}</span>
+                    </td>
+                    <td class="px-3 py-2">
+                      <a v-if="pair.run_id_b" :href="operatorHref('live', { run: pair.run_id_b, experiment: latest.id }, operatorSearch())" class="font-mono text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="pair.run_id_b">B · {{ pair.status_b || 'queued' }} ↗</a>
+                      <span v-else class="text-slate-500">B · {{ pair.status_b || 'unavailable' }}</span>
+                    </td>
+                    <td class="px-3 py-2" :class="pair.comparable ? 'text-slate-300' : 'text-amber-200'">
+                      {{ !pair.comparable ? (pair.non_comparable_reason || 'Excluded') : pair.winner ? ('Winner: ' + (pair.winner === 'tie' ? 'Tie' : pair.winner.toUpperCase())) : 'In progress' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <button v-if="pairRows.length > 30" type="button" class="w-full border-t border-white/8 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="showAllPairs = !showAllPairs">
+              {{ showAllPairs ? 'Show first 30 pairs' : 'Show all ' + pairRows.length + ' pairs' }}
+            </button>
+          </section>
           <div class="grid gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-3 text-[11px] sm:grid-cols-2">
             <div>
               <div class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Benchmark identity</div>
@@ -398,4 +492,5 @@ function operatorSearch(): string { return window.location.search }
       </ResourceState>
     </div>
   </Panel>
+  </div>
 </template>
