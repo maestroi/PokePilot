@@ -88,8 +88,10 @@ func challengePreparationFor(k *Knowledge, obs Observation, challenge Objective)
 		}
 		if failure.ReadinessTarget > state.Target {
 			state.Target = failure.ReadinessTarget
+			state.Ceiling = failure.ReadinessCeiling
 		}
 	}
+	state.Current = partyCombatReadinessUnder(obs, state.Ceiling)
 	return state
 }
 

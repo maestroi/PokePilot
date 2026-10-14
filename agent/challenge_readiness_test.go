@@ -186,3 +186,41 @@ func TestObjectiveOfferCarriesStructuredChallengeReadiness(t *testing.T) {
 		t.Fatalf("offer readiness = %+v, want train toward 100", got)
 	}
 }
+
+// run-18kg33tqm1mn5c7umo1adri8m: an L75 carry kept "preparing" for a L58 team
+// by gaining its own levels while L31/L21 teammates stayed fodder.
+func TestCarryAboveLevelCeilingTrainsTheBench(t *testing.T) {
+	obs := Observation{PartyCount: 3, Party: []PartyMon{
+		{Species: "dodrio", Level: 75, HP: 1, MaxHP: 1},
+		{Species: "clefable", Level: 53, HP: 1, MaxHP: 1},
+		{Species: "lapras", Level: 21, HP: 1, MaxHP: 1},
+	}}
+	f := Failure{Times: 1, ReadinessCeiling: challengeLevelCeiling(ChallengeReadinessProfile{Matchup: game.Matchup{MaxLevel: 58}})}
+	stampCombatPreparation(&f, obs)
+	if f.ReadinessCeiling != 63 || f.ReadinessBaseline != 63*4+53*2+21 {
+		t.Fatalf("stamped %+v, want ceiling 63 and the carry clamped to it", f)
+	}
+	obs.Party[0].Level = 90
+	if got := failureReadiness(obs, f); got != f.ReadinessBaseline {
+		t.Fatalf("carry levels past the ceiling counted: %d != %d", got, f.ReadinessBaseline)
+	}
+
+	offered := []Objective{
+		{Kind: KindTrain, Level: 92},
+		{Kind: KindTrain, Level: 23, Species: "lapras", Slot: 2},
+		{Kind: KindTrain, Level: 55, Species: "clefable", Slot: 1},
+	}
+	got, ok := preparationTrainingObjective(obs, offered, f.ReadinessCeiling)
+	if !ok || got.Slot != 1 {
+		t.Fatalf("training choice = %+v, want the strongest member below the ceiling (slot 1)", got)
+	}
+}
+
+func TestSoloCarryAtCeilingKeepsUncappedTarget(t *testing.T) {
+	obs := readinessTestObservation(70)
+	f := Failure{Times: 1, ReadinessCeiling: 63}
+	stampCombatPreparation(&f, obs)
+	if f.ReadinessCeiling != 0 || f.ReadinessTarget <= f.ReadinessBaseline || f.ReadinessBaseline != 280 {
+		t.Fatalf("solo carry stamped %+v, want the historical uncapped campaign", f)
+	}
+}

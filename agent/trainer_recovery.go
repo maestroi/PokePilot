@@ -107,9 +107,43 @@ type combatPreparationState struct {
 	Target  int
 	Losses  int
 	Active  bool
+	// Ceiling is the level above which a member's levels do not count toward
+	// Target (0 = uncapped); training must go to a member below it.
+	Ceiling int
+}
+
+// carryLevelMargin is how far past a challenge's strongest opponent a member's
+// levels still count as readiness. Beyond it, more carry levels cannot cover a
+// bench the opponent sweeps: run-18kg33tqm1mn5c7umo1adri8m ground an L75
+// Dodrio four more levels between League losses while L21/L31 teammates stayed
+// fodder, blacking out five times.
+const carryLevelMargin = 5
+
+// challengeLevelCeiling is the readiness level ceiling for a challenge profile:
+// its strongest opponent plus carryLevelMargin, or 0 when the level is unknown.
+func challengeLevelCeiling(p ChallengeReadinessProfile) int {
+	top := p.Matchup.MaxLevel
+	if top == 0 {
+		top = p.MinimumReadiness / 4 // readinessFloorForLevel's inverse
+	}
+	if top <= 0 {
+		return 0
+	}
+	return top + carryLevelMargin
 }
 
 func partyCombatReadiness(obs Observation) int {
+	return partyCombatReadinessUnder(obs, 0)
+}
+
+// failureReadiness measures the party against one loss's own ceiling.
+func failureReadiness(obs Observation, f Failure) int {
+	return partyCombatReadinessUnder(obs, f.ReadinessCeiling)
+}
+
+// partyCombatReadinessUnder is partyCombatReadiness with each member's level
+// clamped to ceiling (0 = uncapped).
+func partyCombatReadinessUnder(obs Observation, ceiling int) int {
 	var top [3]int
 	for _, mon := range obs.Party {
 		// Eggs are not combatants. Counting their stored hatch level (often 5)
@@ -120,6 +154,9 @@ func partyCombatReadiness(obs Observation) int {
 			continue
 		}
 		level := int(mon.Level)
+		if ceiling > 0 && level > ceiling {
+			level = ceiling
+		}
 		switch {
 		case level > top[0]:
 			top[2], top[1], top[0] = top[1], top[0], level
@@ -153,11 +190,13 @@ func combatPreparationLevelGain(losses, partyCount int) int {
 	return levels
 }
 
+// stampCombatPreparation sets the loss's readiness target, measured under
+// f.ReadinessCeiling when the caller set one.
 func stampCombatPreparation(f *Failure, obs Observation) {
 	if f == nil {
 		return
 	}
-	baseline := partyCombatReadiness(obs)
+	baseline := failureReadiness(obs, *f)
 	if baseline <= 0 {
 		f.ReadinessBaseline, f.ReadinessTarget = 0, 0
 		return
@@ -173,10 +212,30 @@ func stampCombatPreparation(f *Failure, obs Observation) {
 		partyCount = obs.PartyCount
 	}
 	target := baseline + combatPreparationLevelGain(f.Times, partyCount)*4
+	if c := f.ReadinessCeiling; c > 0 && target > readinessUnderCeiling(c, partyCount) {
+		// The party cannot pay this target under the ceiling (a solo carry
+		// already at it): keep the historical uncapped campaign instead of an
+		// unreachable one.
+		f.ReadinessCeiling = 0
+		baseline = partyCombatReadiness(obs)
+		target = baseline + combatPreparationLevelGain(f.Times, partyCount)*4
+	}
 	if target > maxCombatReadiness {
 		target = maxCombatReadiness
 	}
 	f.ReadinessBaseline, f.ReadinessTarget = baseline, target
+}
+
+// readinessUnderCeiling is the most readiness partyCount members can reach
+// while every level is clamped to ceiling.
+func readinessUnderCeiling(ceiling, partyCount int) int {
+	weight := 0
+	for i, w := range [3]int{4, 2, 1} {
+		if i < partyCount {
+			weight += w
+		}
+	}
+	return ceiling * weight
 }
 
 func combatPreparationFor(k *Knowledge, obs Observation) combatPreparationState {
@@ -197,6 +256,8 @@ func combatPreparationFor(k *Knowledge, obs Observation) combatPreparationState 
 			}
 			if failure.ReadinessTarget > state.Target {
 				state.Target = failure.ReadinessTarget
+				state.Current = failureReadiness(obs, failure)
+				state.Ceiling = failure.ReadinessCeiling
 			}
 		}
 	}
@@ -223,7 +284,6 @@ func owesCombatReadiness(k *Knowledge, obs Observation) bool {
 	if k == nil {
 		return false
 	}
-	readiness := partyCombatReadiness(obs)
 	for storage, failure := range k.Failures {
 		_, mode, ok := parseFailureStorageKey(storage)
 		if !ok {
@@ -234,7 +294,7 @@ func owesCombatReadiness(k *Knowledge, obs Observation) bool {
 		default:
 			continue
 		}
-		if failure.ReadinessTarget == 0 || failure.ReadinessTarget > readiness {
+		if failure.ReadinessTarget == 0 || failure.ReadinessTarget > failureReadiness(obs, failure) {
 			return true
 		}
 	}
@@ -255,12 +315,12 @@ func (k *Knowledge) demoteUnreadyCombatRetries(obs Observation) {
 	if k == nil {
 		return
 	}
-	readiness := partyCombatReadiness(obs)
 	for storage, failure := range k.Failures {
 		key, mode, ok := parseFailureStorageKey(storage)
 		if !ok || (mode != failureModeCombatRetry && mode != legacyFailureModeGymRetry) {
 			continue
 		}
+		readiness := failureReadiness(obs, failure)
 		if failure.ReadinessTarget <= 0 || readiness >= failure.ReadinessTarget {
 			continue
 		}
@@ -297,10 +357,44 @@ func (k *Knowledge) hasCombatLossEvidence() bool {
 	return false
 }
 
+// preparationTrainingObjective picks the offered training that can still raise
+// readiness: the lead first, unless it is already at the loss's level ceiling,
+// in which case the strongest offered member still below it.
+func preparationTrainingObjective(obs Observation, offered []Objective, ceiling int) (Objective, bool) {
+	below := func(slot int) bool {
+		return ceiling == 0 || slot >= len(obs.Party) || int(obs.Party[slot].Level) < ceiling
+	}
+	if below(0) {
+		for _, o := range offered {
+			if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {
+				return o, true
+			}
+		}
+	}
+	best, bestLevel, found := Objective{}, -1, false
+	for _, o := range offered {
+		if o.Kind != KindTrain || !below(o.Slot) {
+			continue
+		}
+		level := 0
+		if o.Slot < len(obs.Party) {
+			level = int(obs.Party[o.Slot].Level)
+		}
+		if level > bestLevel {
+			best, bestLevel, found = o, level, true
+		}
+	}
+	return best, found
+}
+
 func combatPreparationNote(k *Knowledge, obs Observation) string {
 	state := combatPreparationFor(k, obs)
 	if !state.Active {
 		return ""
+	}
+	if state.Target > 0 && state.Ceiling > 0 {
+		return fmt.Sprintf("(combat preparation after %d loss(es): readiness %d/%d; levels above L%d do not count, train party members below it; retry remains locked until the target is reached)",
+			state.Losses, state.Current, state.Target, state.Ceiling)
 	}
 	if state.Target > 0 {
 		return fmt.Sprintf("(combat preparation after %d loss(es): readiness %d/%d; retry remains locked until the target is reached)",
@@ -378,15 +472,8 @@ func combatPreparationObjective(obs Observation, offered []Objective, known *Kno
 	if !preparing {
 		return Objective{}, false
 	}
-	for _, o := range offered {
-		if o.Kind == KindTrain && o.Species == "" && o.Slot == 0 {
-			return o, true
-		}
-	}
-	for _, o := range offered {
-		if o.Kind == KindTrain {
-			return o, true
-		}
+	if o, ok := preparationTrainingObjective(obs, offered, state.Ceiling); ok {
+		return o, true
 	}
 	if journey, _, ok := bestKnownTrainingJourney(obs, known, offered); ok {
 		return journey, true
@@ -545,7 +632,6 @@ func (k *Knowledge) notePartyCombatChange(before, after Observation, execErr err
 }
 
 func (k *Knowledge) releaseSatisfiedCombatLossGates(after Observation, legacyProgress bool) {
-	readiness := partyCombatReadiness(after)
 	// A loss recorded without a level-ready counter is released once the
 	// counter campaign produced one: that is the relevant world change, and
 	// its readiness target is waived so the next offer cannot demote it.
@@ -558,7 +644,7 @@ func (k *Knowledge) releaseSatisfiedCombatLossGates(after Observation, legacyPro
 			}
 		}
 		if f.ReadinessTarget > 0 {
-			return readiness >= f.ReadinessTarget
+			return failureReadiness(after, f) >= f.ReadinessTarget
 		}
 		return legacyProgress
 	})
