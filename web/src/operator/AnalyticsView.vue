@@ -8,6 +8,7 @@ import { usePollingResource } from '../shared/composables/usePollingResource'
 import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/hostedApiPricing'
 import { operatorHref } from '../shared/urls'
 import PairedExperimentPanel from './PairedExperimentPanel.vue'
+import LeaderboardPanel from './LeaderboardPanel.vue'
 
 const props = defineProps<{ section?: string; experimentID?: string }>()
 const activeSection = computed(() => props.section === 'experiments' ? 'experiments' : 'overview')
@@ -116,7 +117,30 @@ function operatorSearch(): string { return window.location.search }
         ]"
       >{{ tab.label }}</a>
     </nav>
-    <PairedExperimentPanel v-if="activeSection === 'experiments'" :experiment-id="experimentID" />
+    <div v-if="activeSection === 'experiments'" class="space-y-3">
+      <PairedExperimentPanel :experiment-id="experimentID" />
+      <ResourceState :state="resource.state.value" title="Endless-run aggregates unavailable" :message="resource.error.value || 'Aggregate statistics will recover automatically.'" :rows="4">
+        <template #actions><button type="button" class="text-xs font-semibold text-cyan-200 hover:underline" @click="retry">Retry aggregates</button></template>
+        <Panel title="Endless-run aggregates" description="Independent endless-successor run cohorts; not matched A/B experiments." compact>
+                <div v-if="experiments.length" class="-mx-3 overflow-x-auto sm:-mx-4">
+                  <table class="min-w-full divide-y divide-white/10 text-left text-xs">
+                    <thead><tr><th class="px-3 py-2 text-slate-600 sm:px-4">Experiment</th><th class="px-3 py-2 text-right text-slate-600">Attempts</th><th class="px-3 py-2 text-right text-slate-600">Best</th><th class="px-3 py-2 text-right text-slate-600">≥1 badge</th><th class="px-3 py-2 text-right text-slate-600">Wins</th><th class="px-3 py-2 text-right text-slate-600 sm:pr-4">Retry failures</th></tr></thead>
+                    <tbody class="divide-y divide-white/8">
+                      <tr v-for="experiment in experiments" :key="String(experiment.key)">
+                        <td class="max-w-lg px-3 py-3 sm:px-4"><strong class="block truncate text-slate-300">{{ experiment.goal || experiment.planner || 'endless run' }}</strong><span class="mt-0.5 block truncate font-mono text-[10px] text-slate-600">{{ experiment.key }}</span></td>
+                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.completed_attempts) }}</td>
+                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.best_badges) }}/8</td>
+                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.at_least_one_badge, experiment.usable_progress_runs) }}</td>
+                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.goal_wins, experiment.goal_tracked_runs) }}</td>
+                        <td class="px-3 py-3 text-right font-mono text-slate-500 sm:pr-4">{{ nfmt(experiment.retryable_failure_attempts) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p v-else class="py-6 text-center text-sm text-slate-500">No endless experiments recorded yet.</p>
+              </Panel>
+      </ResourceState>
+    </div>
     <ResourceState v-else :state="resource.state.value" title="Analytics unavailable" :message="resource.error.value || 'Farm statistics will recover automatically.'" :rows="7">
       <template #actions>
         <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="retry">
@@ -219,6 +243,8 @@ function operatorSearch(): string { return window.location.search }
         </div>
       </Panel>
 
+      <LeaderboardPanel />
+
       <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
         <Panel title="Badge distribution" description="Final badge counts among runs with usable progress snapshots." compact>
           <div v-if="badgeRows.length" class="space-y-3">
@@ -243,24 +269,7 @@ function operatorSearch(): string { return window.location.search }
         </Panel>
       </div>
 
-      <Panel title="Endless experiments" description="Successor runs with identical endless settings are grouped as one benchmark." compact>
-        <div v-if="experiments.length" class="-mx-3 overflow-x-auto sm:-mx-4">
-          <table class="min-w-full divide-y divide-white/10 text-left text-xs">
-            <thead><tr><th class="px-3 py-2 text-slate-600 sm:px-4">Experiment</th><th class="px-3 py-2 text-right text-slate-600">Attempts</th><th class="px-3 py-2 text-right text-slate-600">Best</th><th class="px-3 py-2 text-right text-slate-600">≥1 badge</th><th class="px-3 py-2 text-right text-slate-600">Wins</th><th class="px-3 py-2 text-right text-slate-600 sm:pr-4">Retry failures</th></tr></thead>
-            <tbody class="divide-y divide-white/8">
-              <tr v-for="experiment in experiments" :key="String(experiment.key)">
-                <td class="max-w-lg px-3 py-3 sm:px-4"><strong class="block truncate text-slate-300">{{ experiment.goal || experiment.planner || 'endless run' }}</strong><span class="mt-0.5 block truncate font-mono text-[10px] text-slate-600">{{ experiment.key }}</span></td>
-                <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.completed_attempts) }}</td>
-                <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.best_badges) }}/8</td>
-                <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.at_least_one_badge, experiment.usable_progress_runs) }}</td>
-                <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.goal_wins, experiment.goal_tracked_runs) }}</td>
-                <td class="px-3 py-3 text-right font-mono text-slate-500 sm:pr-4">{{ nfmt(experiment.retryable_failure_attempts) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p v-else class="py-6 text-center text-sm text-slate-500">No endless experiments recorded yet.</p>
-      </Panel>
+
     </ResourceState>
   </div>
 </template>

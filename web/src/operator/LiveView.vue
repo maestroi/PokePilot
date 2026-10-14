@@ -12,6 +12,7 @@ import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { operatorHref } from '../shared/urls'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import SemanticMap from './SemanticMap.vue'
@@ -572,6 +573,7 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
   if (key === 'rejected' || key === 'transport' || key === 'fallbacks') return statNumber(stats, key) > 0
   return false
 }
+function windowSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -942,6 +944,11 @@ function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
           <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
             <span class="poke-kicker">Run state</span>
             <strong class="mt-0.5 block truncate font-mono text-[11px]" :title="selectedRun.run_id">{{ selectedRun.run_id }}</strong>
+            <a v-if="selectedRun.experiment_id"
+              :href="operatorHref('analytics', { section: 'experiments', experiment: selectedRun.experiment_id }, windowSearch())"
+              class="mt-1 inline-block max-w-full truncate font-mono text-[10px] font-semibold text-violet-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300"
+              :title="'Open comparison ' + selectedRun.experiment_id"
+            >Experiment {{ selectedRun.experiment_arm ? selectedRun.experiment_arm.toUpperCase() + ' · ' : '' }}{{ selectedRun.experiment_id }} ↗</a>
             <div class="mt-1 flex flex-wrap items-center gap-1">
               <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
               <StatusBadge tone="neutral">{{ gameTitle(selectedRun.game) }}</StatusBadge>

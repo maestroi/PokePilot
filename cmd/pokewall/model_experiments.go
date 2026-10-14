@@ -1036,6 +1036,8 @@ type armAggregate struct {
 
 type pairResult struct {
 	Seed       int64  `json:"seed"`
+	RunIDA     string `json:"run_id_a,omitempty"`
+	RunIDB     string `json:"run_id_b,omitempty"`
 	Comparable bool   `json:"comparable"`
 	StatusA    string `json:"status_a"`
 	StatusB    string `json:"status_b"`
@@ -1065,6 +1067,10 @@ type experimentIdentityView struct {
 
 func (c *modelExperimentController) experimentView(record experimentRecord) map[string]any {
 	rows := make(map[string]tileRow, len(record.RunIDs))
+	runIDs := make(map[string]struct{}, len(record.RunIDs))
+	for _, id := range record.RunIDs {
+		runIDs[id] = struct{}{}
+	}
 	for _, id := range record.RunIDs {
 		if row, ok := c.wall.snapshotRun(id); ok {
 			rows[id] = row
@@ -1094,6 +1100,14 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 		pair := pairResult{
 			Seed: seed, StatusA: tA.Status, StatusB: tB.Status,
 			SuccessA: rowGoalSuccess(tA, record.Request.Goal), SuccessB: rowGoalSuccess(tB, record.Request.Goal),
+		}
+		// Return only real members recorded with this experiment; the browser
+		// must never have to guess a run ID from a seed or display a fake link.
+		if _, ok := runIDs[idA]; ok {
+			pair.RunIDA = idA
+		}
+		if _, ok := runIDs[idB]; ok {
+			pair.RunIDB = idB
 		}
 		pair.Comparable, pair.Reason = comparablePair(metaA, haveMetaA, metaB, haveMetaB)
 		if !pair.Comparable {
@@ -1128,7 +1142,7 @@ func (c *modelExperimentController) experimentView(record experimentRecord) map[
 	finalizeArm(&armB)
 	return map[string]any{
 		"id": record.ID, "name": record.Name, "created_at": record.CreatedAt, "request": record.Request,
-		"total_pairs": len(record.Request.Seeds), "arm_a": armA, "arm_b": armB,
+		"run_ids": record.RunIDs, "total_pairs": len(record.Request.Seeds), "arm_a": armA, "arm_b": armB,
 		"paired": paired, "identity": identity, "pairs": pairs,
 	}
 }

@@ -409,6 +409,8 @@ export interface ExperimentPairedSummary {
 
 export interface ExperimentPairResult {
   seed: number
+  run_id_a?: string
+  run_id_b?: string
   comparable: boolean
   status_a?: string
   status_b?: string
