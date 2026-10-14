@@ -75,19 +75,22 @@ const (
 )
 
 // waitLiveMapSettled drives the current map toward a decoded live topology that
-// the profile is willing to vouch for. It returns the settled state, and
-// errLiveMapNotSettled when the budget runs out with a script still owning the
-// overworld. A battle or a dialogue waiting on the player is not a map shell
-// that is still loading: neither hands the overworld back without input, so
-// waiting on them only burns the budget and hides the interruption the caller
-// can actually settle. They return ErrBattle / ErrDialogueInterrupted at once.
+// the profile is willing to vouch for, with the player standing on a tile that
+// exists on that map. It returns the settled state, and errLiveMapNotSettled
+// when the budget runs out with a script still owning the overworld (or the
+// position still not landed). A battle or a dialogue waiting on the player is
+// not a map shell that is still loading: neither hands the overworld back
+// without input, so waiting on them only burns the budget and hides the
+// interruption the caller can actually settle. They return ErrBattle /
+// ErrDialogueInterrupted at once.
 func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopologyState, error) {
 	var live game.LiveTopologyState
 	if m == nil || routing == nil {
 		return live, fmt.Errorf("skill: native routing: incomplete live-map runtime")
 	}
 	for waited := 0; waited <= liveMapSettleFrameBudget; waited += liveMapSettlePollFrames {
-		switch world := routing.DecodeOverworld(m); {
+		world := routing.DecodeOverworld(m)
+		switch {
 		case world.InBattle:
 			return game.LiveTopologyState{}, ErrBattle
 		case world.InDialogue:
@@ -97,13 +100,24 @@ func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopo
 		if err != nil {
 			return game.LiveTopologyState{}, err
 		}
-		if decoded.BlocksSettled {
+		if liveMapSettled(world, decoded) {
 			return decoded, nil
 		}
 		live = decoded
 		m.StepFrames(liveMapSettlePollFrames)
 	}
 	return live, fmt.Errorf("%w: map %#04x phase %d after %d frames", errLiveMapNotSettled, live.NativeMapID, live.MapShellPhase, liveMapSettleFrameBudget)
+}
+
+// liveMapSettled reports that the map is ready to route from: the profile
+// vouches for the block buffer AND the player position is a real tile on the
+// map it names. A mid-warp transient satisfies the first half while the
+// position register still points at a tile that does not exist on the new map
+// (the map identity and a controllable overworld arrive before the position
+// lands). Routing from that tile fails with a terminal no-route, so both halves
+// are required before the map counts as settled.
+func liveMapSettled(world game.OverworldState, decoded game.LiveTopologyState) bool {
+	return decoded.BlocksSettled && int(world.X) < decoded.WidthBlocks && int(world.Y) < decoded.HeightBlocks
 }
 
 func nativeLiveGrid(
@@ -401,6 +415,10 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 		if _, err := waitLiveMapSettled(m, profile); err != nil {
 			return err
 		}
+		// The position read above can predate the settle (mid-warp transient),
+		// so start the local walk from the settled position, which is a real
+		// tile on this map.
+		liveWorld = profile.DecodeOverworld(m)
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, dest.Map)
 		if err != nil {
 			return err
@@ -775,6 +793,12 @@ func traverseNativeEdge(
 		if _, err := waitLiveMapSettled(m, profile); err != nil {
 			return err
 		}
+		// The position read above can predate the settle: a mid-warp transient
+		// names the edge's map and a controllable overworld before the player
+		// position register lands, so it can point at a tile that does not exist
+		// on this map. waitLiveMapSettled has waited for the position to be a
+		// real tile, so start the approach from the settled position.
+		state = profile.DecodeOverworld(m)
 		grid, live, header, err := nativeLiveGrid(m, profile, provider, edge.From)
 		if err != nil {
 			return err
