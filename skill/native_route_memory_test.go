@@ -56,3 +56,33 @@ func TestNativeWarpApproachStandsOnEdgeCarpet(t *testing.T) {
 		t.Fatalf("carpet targets = %v, want the carpet tile itself", got)
 	}
 }
+
+// An edge carpet sealed behind a Cut tree must still be a bridge target: the
+// carpet is in the runtime blockers like every warp tile. Route 35's Goldenrod
+// gate carpets behind the (17,6) tree read as unreachable, stranding the run
+// north of it (run-whai2l6l8g1x36h0y0fucmsit / triage efe8f75648bc29a8).
+func TestNativeObstacleBridgeTargetsSealedEdgeCarpet(t *testing.T) {
+	grid, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID: 0x0a02, Width: 4, Height: 1,
+		Walkable:      []bool{true, false, true, true},
+		CollisionTile: []uint8{0x00, 0x12, 0x00, 0x70},
+		Obstacles:     []worldmodel.NativeObstacle{"", worldmodel.ObstacleCutTree, "", ""},
+		WarpPushes:    map[uint8]worldmodel.NativeDirectionMask{0x70: worldmodel.NativeBlockRight},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := map[[2]int]bool{{3, 0}: true}
+	targets := nativeWarpTargets(grid, 3, 0, blocked)
+	if len(targets) != 1 || targets[0] != [2]int{3, 0} {
+		t.Fatalf("carpet targets = %v, want the carpet tile itself", targets)
+	}
+	usable := func(kind worldmodel.NativeObstacle) bool { return kind == worldmodel.ObstacleCutTree }
+	plan, err := world.FindNativeObstacleApproach(grid, 0, 0, 3, 0, nativeAllowTarget(blocked, targets[0]), usable)
+	if err != nil || plan.X != 1 || plan.Kind != worldmodel.ObstacleCutTree {
+		t.Fatalf("bridge plan = %+v err=%v, want Cut at (1,0)", plan, err)
+	}
+	if !blocked[[2]int{3, 0}] {
+		t.Fatal("nativeAllowTarget mutated the caller's blockers")
+	}
+}

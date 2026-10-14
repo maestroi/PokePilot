@@ -349,10 +349,14 @@ func TestLiveMapSettledRequiresPositionInBounds(t *testing.T) {
 		want    bool
 	}{
 		{name: "in bounds settled", world: at(5, 3), decoded: settled(5, 3), want: true},
-		{name: "on the far edge settled", world: at(width-1, height-1), decoded: settled(width-1, height-1), want: true},
+		{name: "on the far edge settled", world: at(2*width-1, 2*height-1), decoded: settled(2*width-1, 2*height-1), want: true},
+		// Positions are step tiles (two per block): (17,0) is a real tile on
+		// 10x18-block ROUTE_35. Reading it as out of bounds wedged the gate
+		// for its whole budget (triage efe8f75648bc29a8).
+		{name: "tile past the block width still in bounds", world: at(17, 0), decoded: settled(17, 0), want: true},
 		// The transient: buffer settled, position not yet landed on this map.
-		{name: "x out of bounds not settled", world: at(17, 0), decoded: settled(17, 0), want: false},
-		{name: "y out of bounds not settled", world: at(0, 18), decoded: settled(0, 18), want: false},
+		{name: "x out of bounds not settled", world: at(2*width, 0), decoded: settled(2*width, 0), want: false},
+		{name: "y out of bounds not settled", world: at(0, 2*height), decoded: settled(0, 2*height), want: false},
 		// The pre-existing half: an unsettled buffer is never settled, even in
 		// bounds.
 		{name: "in bounds but buffer unsettled", world: at(5, 3), decoded: func() game.LiveTopologyState { s := settled(5, 3); s.BlocksSettled = false; return s }(), want: false},

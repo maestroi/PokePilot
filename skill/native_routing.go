@@ -115,9 +115,10 @@ func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopo
 // position register still points at a tile that does not exist on the new map
 // (the map identity and a controllable overworld arrive before the position
 // lands). Routing from that tile fails with a terminal no-route, so both halves
-// are required before the map counts as settled.
+// are required before the map counts as settled. Positions are step tiles, two
+// per block, so the bound is twice the block dimensions.
 func liveMapSettled(world game.OverworldState, decoded game.LiveTopologyState) bool {
-	return decoded.BlocksSettled && int(world.X) < decoded.WidthBlocks && int(world.Y) < decoded.HeightBlocks
+	return decoded.BlocksSettled && int(world.X) < decoded.WidthBlocks*2 && int(world.Y) < decoded.HeightBlocks*2
 }
 
 func nativeLiveGrid(
@@ -488,17 +489,25 @@ func nativeWalkTo(m *emu.Emu, profile nativeRoutingProfile, provider worldmodel.
 // the player stands on it and walks toward its direction.
 func nativeWarpApproach(grid *world.NativeGrid, sx, sy, wx, wy int, blocked map[[2]int]bool) ([]world.NativeStep, world.NativeStep, error) {
 	if carpet, ok := grid.WarpPush(wx, wy); ok {
-		// Warp tiles are blockers so a path never fires one by accident; this
-		// one is the destination.
-		allowed := make(map[[2]int]bool, len(blocked))
-		for tile, b := range blocked {
-			allowed[tile] = b
-		}
-		delete(allowed, [2]int{wx, wy})
-		path, err := world.FindNativePath(grid, sx, sy, wx, wy, allowed)
+		path, err := world.FindNativePath(grid, sx, sy, wx, wy, nativeAllowTarget(blocked, [2]int{wx, wy}))
 		return path, carpet, err
 	}
 	return nativeAdjacentApproach(grid, sx, sy, wx, wy, blocked)
+}
+
+// nativeAllowTarget returns blocked without at. Warp tiles are blockers so a
+// path never fires one by accident; an edge carpet is its own approach target,
+// so it must stay reachable when it is the destination.
+func nativeAllowTarget(blocked map[[2]int]bool, at [2]int) map[[2]int]bool {
+	if !blocked[at] {
+		return blocked
+	}
+	allowed := make(map[[2]int]bool, len(blocked))
+	for tile, b := range blocked {
+		allowed[tile] = b
+	}
+	delete(allowed, at)
+	return allowed
 }
 
 func nativeAdjacentApproach(
@@ -691,7 +700,7 @@ func nativeObstacleBridge(
 	var best world.NativeObstacleApproach
 	found := false
 	for _, at := range targets {
-		plan, planErr := world.FindNativeObstacleApproach(grid, sx, sy, at[0], at[1], blocked, usable)
+		plan, planErr := world.FindNativeObstacleApproach(grid, sx, sy, at[0], at[1], nativeAllowTarget(blocked, at), usable)
 		if planErr != nil {
 			continue
 		}
