@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { FilmIcon, PaintBrushIcon, QueueListIcon, SignalIcon } from '@heroicons/vue/20/solid'
 import Panel from '../shared/components/Panel.vue'
+import { operatorHref } from '../shared/urls'
 import { publicRenderThemeOptions, renderThemeOptions } from '../shared/renderTheme'
 import BroadcastPanel from './BroadcastPanel.vue'
 import RenderJobsPanel from './RenderJobsPanel.vue'
 import SpectatorView from './SpectatorView.vue'
 
-type MediaTab = 'replays' | 'broadcasts' | 'render-jobs' | 'themes'
-
-const activeTab = ref<MediaTab>('replays')
+type MediaTab = 'library' | 'broadcasts' | 'jobs' | 'themes'
+const props = defineProps<{ section?: string; runID?: string; jobID?: string }>()
+const activeTab = computed<MediaTab>(() => tabs.some((tab) => tab.id === props.section) ? props.section as MediaTab : 'library')
 const tabs: Array<{ id: MediaTab; label: string; description: string }> = [
-  { id: 'replays', label: 'Replays', description: 'Public publishing and replay visibility' },
+  { id: 'library', label: 'Library', description: 'Replay discovery and public visibility' },
   { id: 'broadcasts', label: 'Broadcasts', description: 'Twitch, YouTube Live and RTMP controls' },
-  { id: 'render-jobs', label: 'Render Jobs', description: 'Queue, progress, workers and failures' },
+  { id: 'jobs', label: 'Jobs', description: 'Render queue, progress and failures' },
   { id: 'themes', label: 'Assets / Themes', description: 'Renderer inventory and public-safe themes' }
 ]
 
@@ -21,9 +22,6 @@ const allThemes = renderThemeOptions()
 const publicThemes = publicRenderThemeOptions()
 const localOnlyThemes = computed(() => allThemes.filter((theme) => !publicThemes.some((candidate) => candidate.id === theme.id)))
 
-function selectTab(tab: MediaTab): void {
-  activeTab.value = tab
-}
 </script>
 
 <template>
@@ -32,10 +30,10 @@ function selectTab(tab: MediaTab): void {
       class="grid grid-cols-1 gap-1 rounded-lg border border-[var(--poke-border)] bg-[var(--poke-panel)] p-1 sm:grid-cols-2 xl:grid-cols-4"
       aria-label="Media management"
     >
-      <button
+      <a
         v-for="tab in tabs"
         :key="tab.id"
-        type="button"
+        :href="operatorHref('media', { section: tab.id }, window.location.search)"
         :aria-current="activeTab === tab.id ? 'page' : undefined"
         :class="[
           activeTab === tab.id
@@ -43,14 +41,13 @@ function selectTab(tab: MediaTab): void {
             : 'text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
           'rounded-md px-3 py-2 text-left transition'
         ]"
-        @click="selectTab(tab.id)"
       >
         <span class="block text-xs font-bold">{{ tab.label }}</span>
         <span class="mt-0.5 block text-[10px] leading-4 text-[var(--poke-muted)]">{{ tab.description }}</span>
-      </button>
+      </a>
     </nav>
 
-    <div v-if="activeTab === 'replays'" class="space-y-3">
+    <div v-if="activeTab === 'library'" class="space-y-3">
       <Panel
         title="Replay library & publishing"
         description="Public replay availability belongs to the run; this workspace controls which runs are exposed and featured."
@@ -65,7 +62,7 @@ function selectTab(tab: MediaTab): void {
           </div>
         </div>
       </Panel>
-      <SpectatorView />
+      <SpectatorView :run-id="runID" />
     </div>
 
     <div v-else-if="activeTab === 'broadcasts'" class="space-y-3">
@@ -82,7 +79,7 @@ function selectTab(tab: MediaTab): void {
       <BroadcastPanel />
     </div>
 
-    <div v-else-if="activeTab === 'render-jobs'" class="space-y-3">
+    <div v-else-if="activeTab === 'jobs'" class="space-y-3">
       <Panel
         title="Render pipeline"
         description="Replay rendering is media work, while worker and service health remain in Operations."
@@ -93,7 +90,7 @@ function selectTab(tab: MediaTab): void {
           <p>Durable jobs survive process restarts and report queue, worker, stage, progress and failure state here.</p>
         </div>
       </Panel>
-      <RenderJobsPanel />
+      <RenderJobsPanel :run-id="runID" :job-id="jobID" />
     </div>
 
     <div v-else class="space-y-3">

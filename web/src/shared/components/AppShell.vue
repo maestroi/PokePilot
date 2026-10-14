@@ -85,7 +85,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
           </div>
         </div>
 
-        <div v-if="effectiveNavigation.length" class="hidden min-w-0 flex-1 items-stretch self-stretch sm:flex">
+        <div v-if="effectiveNavigation.length" :class="['hidden min-w-0 flex-1 items-stretch self-stretch', mode === 'private' ? 'lg:flex' : 'sm:flex']">
           <a
             v-for="item in effectiveNavigation"
             :key="item.name"
@@ -95,7 +95,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
               item.current
                 ? (mode === 'public' ? 'border-amber-300 text-white' : 'border-[var(--poke-cyan)] text-white')
                 : (mode === 'public' ? 'border-transparent text-slate-400 hover:bg-white/5 hover:text-amber-100' : 'border-transparent text-[var(--poke-muted)] hover:bg-[var(--poke-panel)] hover:text-white'),
-              'inline-flex items-center border-b-2 px-3 text-[13px] font-semibold transition-colors'
+              'inline-flex items-center border-b-2 px-3 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--poke-cyan)]'
             ]"
           >
             {{ item.name }}
@@ -108,7 +108,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
           <h1 class="truncate text-sm font-semibold text-white">{{ title }}</h1>
         </div>
 
-        <div class="ml-auto hidden min-w-0 items-center gap-2.5 text-[11px] text-[var(--poke-muted)] lg:flex">
+        <div  :class="['ml-auto hidden min-w-0 items-center gap-2.5 text-[11px] text-[var(--poke-muted)]', mode === 'private' ? '2xl:flex' : 'lg:flex']">
           <slot name="summary" />
         </div>
 
@@ -116,7 +116,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
           <slot name="actions" />
           <DisclosureButton
             v-if="effectiveNavigation.length"
-            class="inline-flex items-center justify-center rounded-sm p-1.5 text-[var(--poke-muted)] hover:bg-white/5 hover:text-white sm:hidden"
+             :class="['inline-flex items-center justify-center rounded-sm p-1.5 text-[var(--poke-muted)] hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]', mode === 'private' ? 'lg:hidden' : 'sm:hidden']"
           >
             <span class="sr-only">Open navigation</span>
             <Bars3Icon v-if="!open" class="size-5" aria-hidden="true" />
@@ -125,7 +125,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
         </div>
       </div>
 
-      <DisclosurePanel v-if="effectiveNavigation.length" class="w-full max-w-full border-t border-[var(--poke-border)] sm:hidden">
+      <DisclosurePanel v-if="effectiveNavigation.length" :class="['w-full max-w-full border-t border-[var(--poke-border)]', mode === 'private' ? 'lg:hidden' : 'sm:hidden']">
         <a
           v-for="item in effectiveNavigation"
           :key="item.name"
@@ -135,7 +135,7 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
             item.current
               ? 'border-[var(--poke-cyan)] bg-[var(--poke-panel)] text-white'
               : 'border-transparent text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
-            'block border-l-2 px-3 py-3 text-sm font-semibold'
+            'block border-l-2 px-3 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]'
           ]"
         >
           {{ item.name }}

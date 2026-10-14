@@ -10,7 +10,6 @@ import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import LLMDeploymentsPanel from './LLMDeploymentsPanel.vue'
 import PairedExperimentPanel from './PairedExperimentPanel.vue'
 import {
   ageLabel,
@@ -289,7 +288,6 @@ async function confirmForceEnd(): Promise<void> {
     </ResourceState>
 
     <div class="space-y-3">
-      <LLMDeploymentsPanel />
       <PairedExperimentPanel />
     </div>
 

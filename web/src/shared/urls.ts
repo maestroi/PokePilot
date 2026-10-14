@@ -95,3 +95,51 @@ export function websocketURL(httpBase: string, path = ''): string {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
+
+
+// Private operator routing is independent from public /runs and /replays URLs.
+// Keep the hash for the workspace and query parameters for durable resource IDs.
+export const operatorPrimaryViews = ['live', 'runs', 'failures', 'analytics', 'media', 'operations'] as const
+export type OperatorView = typeof operatorPrimaryViews[number] | 'settings' | 'new-run'
+export type OperatorRoute = { view: OperatorView; section: string }
+export type OperatorLinkOptions = {
+  section?: string
+  run?: string
+  output?: string
+  job?: string
+  experiment?: string
+}
+
+const operatorSections: Partial<Record<OperatorView, readonly string[]>> = {
+  analytics: ['overview', 'experiments'],
+  media: ['library', 'studio', 'broadcasts', 'jobs', 'themes'],
+  settings: ['models']
+}
+
+export function operatorRoute(hash: string): OperatorRoute {
+  const [rawPage = '', rawSection = ''] = hash.replace(/^#\/?/, '').split('/')
+  const page = rawPage === 'tools' ? 'new-run' : rawPage
+  const view: OperatorView = [...operatorPrimaryViews, 'settings', 'new-run'].includes(page)
+    ? page as OperatorView
+    : 'live'
+  const alias = view === 'media' ? ({ replays: 'library', 'render-jobs': 'jobs' } as Record<string, string>)[rawSection] : undefined
+  const requested = alias || rawSection
+  const allowed = operatorSections[view]
+  return { view, section: allowed?.includes(requested) ? requested : (allowed?.[0] || '') }
+}
+
+// An empty string explicitly clears a context key; omitted keys remain intact.
+// Relative query/hash URLs preserve the current operator pathname.
+export function operatorHref(view: OperatorView, options: OperatorLinkOptions = {}, search = ''): string {
+  const params = new URLSearchParams(search)
+  for (const key of ['run', 'output', 'job', 'experiment'] as const) {
+    const value = options[key]
+    if (value === undefined) continue
+    if (value) params.set(key, value)
+    else params.delete(key)
+  }
+  const route = operatorRoute('#' + view + (options.section ? '/' + options.section : ''))
+  const section = options.section && route.section === options.section ? '/' + route.section : ''
+  const query = params.toString()
+  return (query ? '?' + query : '') + '#' + view + section
+}
