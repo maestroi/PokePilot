@@ -51,6 +51,9 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 		PokedexSeen:  append([]SpeciesID(nil), base.PokedexSeen...),
 		Dex:          base.Dex,
 	}
+	if transport, ok := profile.(game.RegionTransportProvider); ok {
+		obs.RegionTransports = transport.DecodeRegionTransports(m)
+	}
 	// Observation.Map is the legacy one-byte Gen-I migration handle. A GS map
 	// is a (group, number) pair and therefore must not be truncated into it.
 	for i, mon := range base.Party {
