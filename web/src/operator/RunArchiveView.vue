@@ -432,6 +432,7 @@ function experimentLabel(run: DashboardRun): string {
   if (!run.experiment_id) return ''
   return run.experiment_arm ? `${run.experiment_id} · ${run.experiment_arm}` : run.experiment_id
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -713,12 +714,12 @@ function experimentLabel(run: DashboardRun): string {
                       </a>
                       <a
                         v-if="replayReady(run)"
-                        :href="operatorHref('media', { section: 'library', run: run.run_id, job: '' }, window.location.search)"
+                        :href="operatorHref('media', { section: 'library', run: run.run_id, job: '' }, operatorSearch())"
                         class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-white/8 hover:bg-white/10"
                       >Open Media</a>
                       <a
                         v-else-if="replayActive(run)"
-                        :href="operatorHref('media', { section: 'jobs', run: run.run_id, job: replayJob(run)?.id }, window.location.search)"
+                        :href="operatorHref('media', { section: 'jobs', run: run.run_id, job: replayJob(run)?.id }, operatorSearch())"
                         class="inline-flex items-center gap-1 rounded-md bg-cyan-300/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-300/12"
                         title="Open Media to inspect or cancel this render job"
                       >

@@ -231,6 +231,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
     busyRunID.value = ''
   }
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -265,7 +266,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
 
       <div v-if="focusedError && props.runID" class="border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-xs text-amber-200" role="alert">
         Selected run {{ props.runID }} could not be loaded: {{ focusedError }}.
-        <a :href="operatorHref('live', { run: props.runID }, window.location.search)" class="underline">Inspect source run</a>
+        <a :href="operatorHref('live', { run: props.runID }, operatorSearch())" class="underline">Inspect source run</a>
       </div>
       <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
