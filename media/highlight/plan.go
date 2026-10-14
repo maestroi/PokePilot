@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -13,7 +14,7 @@ import (
 
 const (
 	PlanVersion   = 1
-	PolicyVersion = 1
+	PolicyVersion = 2
 )
 
 type Rule struct {
@@ -60,17 +61,17 @@ type Plan struct {
 
 func DefaultPolicy() Policy {
 	return Policy{
-		Version:          PolicyVersion,
-		TargetDurationMS: 8 * 60 * 1000,
+		Version: PolicyVersion,
+		// The reel keeps whole fights, so the cap is only a safety bound for
+		// pathological runs, not an edit target.
+		TargetDurationMS: 60 * 60 * 1000,
 		MergeGapMS:       3000,
 		Rules: []Rule{
 			{EventType: "run_finished", Priority: 110, PreRollMS: 20_000, PostRollMS: 5_000},
-			{EventType: "champion_battle", Priority: 108, PreRollMS: 30_000, PostRollMS: 20_000},
 			{EventType: "run_failed", Priority: 105, PreRollMS: 20_000, PostRollMS: 5_000},
-			{EventType: "elite_four", Priority: 102, PreRollMS: 30_000, PostRollMS: 20_000},
+			{EventType: "boss_battle", Priority: 104, PreRollMS: 10_000, PostRollMS: 10_000},
 			{EventType: "badge_acquired", Priority: 100, PreRollMS: 20_000, PostRollMS: 15_000},
 			{EventType: "gym_battle", Priority: 95, PreRollMS: 25_000, PostRollMS: 15_000},
-			{EventType: "rival_battle", Priority: 90, PreRollMS: 20_000, PostRollMS: 15_000},
 			{EventType: "rare_catch", Priority: 88, PreRollMS: 12_000, PostRollMS: 15_000},
 			{EventType: "evolution", Priority: 85, PreRollMS: 12_000, PostRollMS: 12_000},
 			{EventType: "important_catch", Priority: 82, PreRollMS: 12_000, PostRollMS: 15_000},
@@ -294,4 +295,83 @@ func hashPlan(plan Plan) string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// Chapter is one YouTube-style chapter marker in a rendered reel.
+type Chapter struct {
+	StartMS int64  `json:"start_ms"`
+	Title   string `json:"title"`
+}
+
+// ChapterTitle names a window after its most important event.
+func ChapterTitle(window Window) string {
+	var top EventRef
+	for i, event := range window.Events {
+		if i == 0 || event.Priority > top.Priority {
+			top = event
+		}
+	}
+	summary := strings.Join(strings.Fields(top.Summary), " ")
+	if top.Type == "badge_acquired" && summary != "" {
+		return clipTitle(strings.TrimPrefix(summary, "acquired "))
+	}
+	label := strings.ReplaceAll(strings.TrimSpace(top.Type), "_", " ")
+	if label == "" {
+		label = "highlight"
+	}
+	label = strings.ToUpper(label[:1]) + label[1:]
+	if summary != "" {
+		label += ": " + summary
+	}
+	return clipTitle(label)
+}
+
+// YouTubeChapters adapts chapters to YouTube's rules: the first starts at
+// 0:00 (absorbing an intro) and each lasts at least 10s (a short one folds
+// into its predecessor). Fewer than three chapters means YouTube shows none.
+func YouTubeChapters(chapters []Chapter, totalMS int64) []Chapter {
+	const minMS = 10_000
+	var out []Chapter
+	for i, chapter := range chapters {
+		end := totalMS
+		if i+1 < len(chapters) {
+			end = chapters[i+1].StartMS
+		}
+		if len(out) == 0 {
+			chapter.StartMS = 0
+		} else if end-chapter.StartMS < minMS {
+			continue
+		}
+		out = append(out, chapter)
+	}
+	// Folding can leave the previous chapter short only at the very end.
+	for len(out) > 1 && totalMS-out[len(out)-1].StartMS < minMS {
+		out = out[:len(out)-1]
+	}
+	if len(out) < 3 {
+		return nil
+	}
+	return out
+}
+
+// FormatChapters renders chapters as YouTube description lines ("1:02:03 Title").
+func FormatChapters(chapters []Chapter) string {
+	var out strings.Builder
+	for _, chapter := range chapters {
+		total := chapter.StartMS / 1000
+		h, m, s := total/3600, (total%3600)/60, total%60
+		if h > 0 {
+			fmt.Fprintf(&out, "%d:%02d:%02d %s\n", h, m, s, chapter.Title)
+		} else {
+			fmt.Fprintf(&out, "%d:%02d %s\n", m, s, chapter.Title)
+		}
+	}
+	return out.String()
+}
+
+func clipTitle(value string) string {
+	if runes := []rune(value); len(runes) > 60 {
+		return string(runes[:59]) + "…"
+	}
+	return value
 }

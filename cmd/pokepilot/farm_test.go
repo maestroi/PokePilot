@@ -204,7 +204,7 @@ func TestFarmLLMAppliesSpecGoal(t *testing.T) {
 	if !strings.Contains(text, "farm.RunPolicyFor(spec)") {
 		t.Fatal("runFarm never derives the llm run policy from spec")
 	}
-	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap}") {
+	if !strings.Contains(text, "reportingPlanner{inner: stats, snap: snap,") {
 		t.Fatal("runFarmLLM does not publish the latest plan onto the heartbeat snap")
 	}
 	if !strings.Contains(text, "spec.Goal.String()") {

@@ -9,7 +9,16 @@ import (
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 )
+
+// mediaBattleSpan is one trainer battle as the battle observer saw it: from
+// the first decided turn to the reported result.
+type mediaBattleSpan struct {
+	StartFrame uint64
+	EndFrame   uint64
+	Won        bool
+}
 
 var mediaTimelineTelemetry = struct {
 	sync.Mutex
@@ -17,7 +26,35 @@ var mediaTimelineTelemetry = struct {
 	recordingRunID    string
 	recordingStart    uint64
 	hasRecordingStart bool
+	battles           []mediaBattleSpan
+	openBattle        *mediaBattleSpan
 }{}
+
+// captureMediaBattleTurn opens a trainer-battle span on its first turn. Wild
+// battles are not footage worth keeping on their own.
+func captureMediaBattleTurn(frame uint64, context game.BattleContext) {
+	mediaTimelineTelemetry.Lock()
+	defer mediaTimelineTelemetry.Unlock()
+	if context != game.BattleContextTrainer {
+		mediaTimelineTelemetry.openBattle = nil
+		return
+	}
+	if mediaTimelineTelemetry.openBattle == nil {
+		mediaTimelineTelemetry.openBattle = &mediaBattleSpan{StartFrame: frame}
+	}
+}
+
+func captureMediaBattleResult(frame uint64, result game.BattleResult) {
+	mediaTimelineTelemetry.Lock()
+	defer mediaTimelineTelemetry.Unlock()
+	span := mediaTimelineTelemetry.openBattle
+	mediaTimelineTelemetry.openBattle = nil
+	if span == nil || frame < span.StartFrame {
+		return
+	}
+	span.EndFrame, span.Won = frame, result == game.BattleWon
+	mediaTimelineTelemetry.battles = append(mediaTimelineTelemetry.battles, *span)
+}
 
 func captureMediaTimelineResult(res agent.Result) {
 	copyRes := res
@@ -42,6 +79,8 @@ func resetMediaTimelineTelemetry() {
 	mediaTimelineTelemetry.recordingRunID = ""
 	mediaTimelineTelemetry.recordingStart = 0
 	mediaTimelineTelemetry.hasRecordingStart = false
+	mediaTimelineTelemetry.battles = nil
+	mediaTimelineTelemetry.openBattle = nil
 	mediaTimelineTelemetry.Unlock()
 }
 
@@ -50,6 +89,9 @@ func drainMediaTimelineArtifact(spec farm.Spec, reason string, endFrame uint64, 
 	res := mediaTimelineTelemetry.result
 	recordingStart := mediaTimelineTelemetry.recordingStart
 	hasRecordingStart := mediaTimelineTelemetry.hasRecordingStart && mediaTimelineTelemetry.recordingRunID == spec.RunID
+	battles := mediaTimelineTelemetry.battles
+	mediaTimelineTelemetry.battles = nil
+	mediaTimelineTelemetry.openBattle = nil
 	mediaTimelineTelemetry.result = nil
 	mediaTimelineTelemetry.recordingRunID = ""
 	mediaTimelineTelemetry.recordingStart = 0
@@ -159,6 +201,8 @@ func drainMediaTimelineArtifact(spec farm.Spec, reason string, endFrame uint64, 
 		}
 		previous = result.Final
 	}
+
+	appendBattleMediaEvents(&timeline, origin, res, battles)
 
 	finalObs := res.Final
 	if !hasMediaObservation(finalObs) && len(res.Outcomes) > 0 {
@@ -331,4 +375,40 @@ func checkpointRoundFromName(name string) (int, bool) {
 	}
 	round, err := strconv.Atoi(rest)
 	return round, err == nil
+}
+
+// appendBattleMediaEvents turns observed trainer-battle spans into media
+// events, classified only by the generic kind of the objective they ran in.
+// Gym objectives already carry a gym_battle span. Progress objectives are the
+// adapter's required story fights, so their battles are boss_battle; anything
+// else is an ordinary trainer_battle.
+func appendBattleMediaEvents(timeline *farm.MediaTimeline, origin uint64, res *agent.Result, battles []mediaBattleSpan) {
+	for bi, span := range battles {
+		eventType, objective, round := "trainer_battle", "", 0
+		for i, timing := range res.OutcomeTimings {
+			if i >= len(res.Outcomes) || span.EndFrame < timing.StartFrame || span.EndFrame > timing.Frame {
+				continue
+			}
+			objective, round = res.Outcomes[i].Objective.String(), timing.Round
+			switch res.Outcomes[i].Objective.Kind {
+			case agent.KindGym:
+				eventType = ""
+			case agent.KindProgress:
+				eventType = "boss_battle"
+			}
+			break
+		}
+		if eventType == "" {
+			continue
+		}
+		result := "lost"
+		if span.Won {
+			result = "won"
+		}
+		timeline.Events = append(timeline.Events, farm.MediaEvent{
+			Type: eventType, StartFrame: relativeMediaFrame(span.StartFrame, origin), Frame: relativeMediaFrame(span.EndFrame, origin),
+			Round: round, Objective: objective, Summary: result,
+			Evidence: fmt.Sprintf("battle:%d:%s", bi, result), Metadata: map[string]string{"result": result},
+		})
+	}
 }

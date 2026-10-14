@@ -174,7 +174,7 @@ become active automatically once that game's timeline starts producing them.
 
 Configuration lives in `deploy/replay.env.example`:
 
-- `POKEPILOT_HIGHLIGHT_TARGET_SECONDS` defaults to 480 seconds.
+- `POKEPILOT_HIGHLIGHT_TARGET_SECONDS` defaults to 3600 seconds (a safety bound; reels keep whole fights).
 - `POKEPILOT_HIGHLIGHT_MERGE_GAP_SECONDS` defaults to 3 seconds.
 - `POKEPILOT_HIGHLIGHT_POLICY_JSON` can replace the complete policy for
   experiments; production policy changes should increment the policy version.

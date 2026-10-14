@@ -128,3 +128,40 @@ func TestBuildOrdersSelectedWindowsChronologically(t *testing.T) {
 		t.Fatalf("indexes not stable: %+v", plan.Windows)
 	}
 }
+
+func TestChapterTitlesAndYouTubeFormat(t *testing.T) {
+	badge := Window{Events: []EventRef{
+		{Type: "gym_battle", Summary: "gym won", Priority: 95},
+		{Type: "badge_acquired", Summary: "acquired Boulder Badge", Priority: 100},
+	}}
+	boss := Window{Events: []EventRef{{Type: "boss_battle", Summary: "won", Priority: 104}}}
+	if got := ChapterTitle(badge); got != "Boulder Badge" {
+		t.Fatalf("badge title = %q", got)
+	}
+	if got := ChapterTitle(boss); got != "Boss battle: won" {
+		t.Fatalf("boss title = %q", got)
+	}
+	got := FormatChapters([]Chapter{{0, "Intro"}, {65_000, "Boulder Badge"}, {3_725_000, "Results"}})
+	want := "0:00 Intro\n1:05 Boulder Badge\n1:02:05 Results\n"
+	if got != want {
+		t.Fatalf("chapters =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestYouTubeChaptersFollowYouTubeRules(t *testing.T) {
+	got := YouTubeChapters([]Chapter{
+		{4_000, "Boulder Badge"}, {30_000, "Too short"}, {35_000, "Evolution"}, {60_000, "Cascade Badge"}, {120_000, "Too short at end"},
+	}, 126_000)
+	want := []Chapter{{0, "Boulder Badge"}, {35_000, "Evolution"}, {60_000, "Cascade Badge"}}
+	if len(got) != len(want) {
+		t.Fatalf("chapters = %+v want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("chapters = %+v want %+v", got, want)
+		}
+	}
+	if YouTubeChapters([]Chapter{{0, "a"}, {20_000, "b"}}, 40_000) != nil {
+		t.Fatal("fewer than three chapters must be dropped")
+	}
+}
