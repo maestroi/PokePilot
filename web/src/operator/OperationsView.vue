@@ -125,7 +125,7 @@ async function confirmForceEnd(): Promise<void> {
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact >
+        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact>
           <div v-if="workers.length" class="-mx-3 overflow-x-auto sm:-mx-4">
             <table class="min-w-full divide-y divide-white/10 text-left">
               <thead>
@@ -181,9 +181,8 @@ async function confirmForceEnd(): Promise<void> {
           <p v-else class="py-6 text-center text-sm text-slate-500">Queue is empty.</p>
         </Panel>
       </div>
-    </ResourceState>
 
-    <Panel title="Current operational signals" description="Derived from the live wall snapshot; completed outcomes belong to Runs." compact>
+      <Panel title="Current operational signals" description="Derived from the live wall snapshot; completed outcomes belong to Runs." compact>
       <ul v-if="signals.length" class="grid gap-2 lg:grid-cols-2">
         <li v-for="signal in signals" :key="signal.title" class="rounded-sm border border-white/8 bg-black/10 px-3 py-2">
           <StatusBadge :tone="signal.tone">{{ signal.title }}</StatusBadge>
@@ -191,7 +190,8 @@ async function confirmForceEnd(): Promise<void> {
         </li>
       </ul>
       <p v-else class="py-2 text-xs text-slate-500">No queue or lease signals. See <a href="#runs" class="text-cyan-200 underline">Runs</a> for finished outcomes.</p>
-    </Panel>
+      </Panel>
+    </ResourceState>
 
     <ConfirmDialog
       :open="forceEndTarget !== null"
