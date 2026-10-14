@@ -100,6 +100,9 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 			})
 		}
 	}
+	// Gym readiness uses this Gold/Silver cartridge's own base-stat types and
+	// TypeMatchups. If a ROM lacks either table, there is no guessed profile.
+	obs.ChallengeProfiles = gsChallengeProfiles(romData)
 	// A missing wild table leaves the clock empty. Red-shaped or not-yet-located
 	// images must not fail the rest of the observation, and they must not invent
 	// a wait. Gold and Silver fill the leg from the cartridge's own windows.
