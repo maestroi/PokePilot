@@ -49,6 +49,9 @@ func TestRegionTravelWireOnlyShowsCurrentRegionDepartures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Unmarshal does not zero absent optional fields on an existing struct.
+	// Decode into a fresh wire value before testing the omitted-field case.
+	wire.RegionTransports = nil
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatal(err)
 	}
