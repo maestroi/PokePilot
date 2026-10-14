@@ -17,7 +17,7 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	mem[sym.BattleMode] = 2
 
 	mem[sym.BattleMonSpecies] = 0x9b // Cyndaquil
-	mem[sym.BattleMon+1] = 0x75  // MIRACLE_SEED
+	mem[sym.BattleMon+1] = 0x75      // MIRACLE_SEED
 	mem[sym.BattleMonLevel] = 11
 	putBattleBE16(&mem, sym.BattleMonHP, 27)
 	putBattleBE16(&mem, sym.BattleMonMaxHP, 31)
@@ -34,7 +34,7 @@ func TestDecodeGoldBattleState(t *testing.T) {
 	mem[sym.BattleMonPP+1] = 30
 
 	mem[sym.EnemyMonSpecies] = 16 // Pidgey
-	mem[sym.EnemyMon+1] = 0x92 // LEFTOVERS
+	mem[sym.EnemyMon+1] = 0x92    // LEFTOVERS
 	mem[sym.EnemyMonLevel] = 9
 	putBattleBE16(&mem, sym.EnemyMonHP, 18)
 	putBattleBE16(&mem, sym.EnemyMonMaxHP, 22)
