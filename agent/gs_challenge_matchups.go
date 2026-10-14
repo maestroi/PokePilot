@@ -27,12 +27,18 @@ type gsChallengeSpec struct {
 
 func gsChallengeSpecs() []gsChallengeSpec {
 	return []gsChallengeSpec{
-		{gsprofile.ProgressZephyrBadgeEarned, []gsChallengeMon{{0x10, 7}, {0x11, 9}}},             // Falkner
-		{gsprofile.ProgressHiveBadgeEarned, []gsChallengeMon{{0x0b, 14}, {0x0e, 14}, {0x7b, 16}}}, // Bugsy
-		{gsprofile.ProgressPlainBadgeEarned, []gsChallengeMon{{0x23, 18}, {0xf1, 20}}},            // Whitney
-		{gsprofile.ProgressFogBadgeEarned, []gsChallengeMon{{0x5c, 21}, {0x5d, 21}, {0x5e, 25}, {0x5d, 23}}}, // Morty
-		{gsprofile.ProgressStormBadgeEarned, []gsChallengeMon{{0x39, 27}, {0x3e, 30}}},            // Chuck
-		{gsprofile.ProgressMineralBadgeEarned, []gsChallengeMon{{0x51, 30}, {0x51, 30}, {0xd0, 35}}}, // Jasmine
+		// Falkner
+		{gsprofile.ProgressZephyrBadgeEarned, []gsChallengeMon{{0x10, 7}, {0x11, 9}}},
+		// Bugsy
+		{gsprofile.ProgressHiveBadgeEarned, []gsChallengeMon{{0x0b, 14}, {0x0e, 14}, {0x7b, 16}}},
+		// Whitney
+		{gsprofile.ProgressPlainBadgeEarned, []gsChallengeMon{{0x23, 18}, {0xf1, 20}}},
+		// Morty
+		{gsprofile.ProgressFogBadgeEarned, []gsChallengeMon{{0x5c, 21}, {0x5d, 21}, {0x5e, 25}, {0x5d, 23}}},
+		// Chuck
+		{gsprofile.ProgressStormBadgeEarned, []gsChallengeMon{{0x39, 27}, {0x3e, 30}}},
+		// Jasmine
+		{gsprofile.ProgressMineralBadgeEarned, []gsChallengeMon{{0x51, 30}, {0x51, 30}, {0xd0, 35}}},
 	}
 }
 
