@@ -60,8 +60,8 @@ func TestGoldRegionTransportFirstVoyageAndSchedules(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		day             byte
-		east, west      bool
+		day        byte
+		east, west bool
 	}{
 		{0, false, true}, // Sunday: Vermilion only
 		{1, true, false}, // Monday: Olivine only
