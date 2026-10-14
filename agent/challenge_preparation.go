@@ -41,15 +41,9 @@ func proactiveChallengePreparationObjective(
 			}
 
 		case ChallengeTrain:
-			for _, objective := range offered {
-				if objective.Kind == KindTrain && objective.Species == "" && objective.Slot == 0 {
-					return objective, assessment, true
-				}
-			}
-			for _, objective := range offered {
-				if objective.Kind == KindTrain {
-					return objective, assessment, true
-				}
+			ceiling := challengePreparationFor(known, obs, assessment.Objective.Objective()).Ceiling
+			if objective, ok := preparationTrainingObjective(obs, offered, ceiling); ok {
+				return objective, assessment, true
 			}
 			if journey, _, ok := bestKnownTrainingJourney(obs, known, offered); ok {
 				return journey, assessment, true

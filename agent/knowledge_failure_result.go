@@ -34,6 +34,7 @@ func (k *Knowledge) FailedResult(result ObjectiveResult, nativeErr error) {
 		f.RouteState = routePrerequisiteStateKey(result.Final)
 	}
 	if combatLoss {
+		f.ReadinessCeiling = challengeLevelCeiling(challengeProfileFor(result.Final, o))
 		stampCombatPreparation(&f, result.Final)
 		key := combatRecoveryObjective(o).Key()
 		f.Key = &key

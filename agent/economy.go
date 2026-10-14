@@ -336,13 +336,14 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 
 		case InventoryBattleConsumable:
 			if _, isHeal := hpHealingItems[name]; isHeal {
-				advice.CategoryStock, advice.TargetStock = heals, targetEmergencyHeals
-				need := maxInt(0, targetEmergencyHeals-heals)
+				healTarget := healStockTarget(o, ctx, spec.UnitPrice)
+				advice.CategoryStock, advice.TargetStock = heals, healTarget
+				need := maxInt(0, healTarget-heals)
 				needNow := partyHurt(o) || hasCombatLoss(o)
 				switch {
 				case !needNow:
 					advice.Reason = "no immediate recovery pressure; prefer free Center healing and preserve money"
-				case heals >= targetEmergencyHeals:
+				case heals >= healTarget:
 					advice.Reason = "emergency healing stock already meets its bounded target; prefer free Center healing"
 				case preferredHeal == "":
 					advice.Reason = "no stocked medicine is affordable without consuming reserved money"
@@ -486,6 +487,22 @@ func preferredHealingPurchase(o Observation, spendable uint32) string {
 		best, bestPotency = name, potency
 	}
 	return best
+}
+
+// maxCombatLossHeals bounds the post-loss healing stock.
+const maxCombatLossHeals = 10
+
+// healStockTarget is the HP-healing stock worth holding. Normally a small
+// emergency reserve; after a combat loss the next blackout would halve the
+// cash anyway, so up to that blackout loss (never reserved money) is better
+// held as healing for the retry (run-18kg33tqm1mn5c7umo1adri8m blacked out
+// from ¥14224 to ¥2 across five League losses with an empty medicine pocket).
+func healStockTarget(o Observation, ctx *EconomyDecisionContext, unitPrice uint32) int {
+	if !hasCombatLoss(o) || unitPrice == 0 {
+		return targetEmergencyHeals
+	}
+	budget := minInt(int(ctx.BlackoutLoss), int(ctx.SpendableMoney))
+	return minInt(maxInt(budget/int(unitPrice), targetEmergencyHeals), maxCombatLossHeals)
 }
 
 func boundedAffordableQty(need int, spendable, unitPrice uint32) int {

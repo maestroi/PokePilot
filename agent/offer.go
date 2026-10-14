@@ -116,6 +116,9 @@ type Failure struct {
 	Build             string
 	ReadinessBaseline int
 	ReadinessTarget   int
+	// ReadinessCeiling clamps member levels when measuring readiness for
+	// this loss (opponent top level + carryLevelMargin); 0 = uncapped.
+	ReadinessCeiling int `json:",omitempty"`
 	// CounterGap: when the combat loss was recorded the party had no
 	// level-ready counter for the challenge's ROM matchup.
 	CounterGap bool `json:",omitempty"`

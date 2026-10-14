@@ -290,3 +290,21 @@ func TestDexCaptureStockSizedToRemainingTargets(t *testing.T) {
 		t.Fatalf("non-Dex target = %d, want %d", got, targetCaptureStock)
 	}
 }
+
+func TestHealStockTargetSpendsBlackoutExposedCashAfterALoss(t *testing.T) {
+	ctx := &EconomyDecisionContext{BlackoutLoss: 7112, SpendableMoney: 14224}
+	if got := healStockTarget(Observation{}, ctx, 1500); got != targetEmergencyHeals {
+		t.Fatalf("no loss: target %d, want the emergency reserve %d", got, targetEmergencyHeals)
+	}
+	lost := Observation{CombatLossRecorded: true}
+	if got := healStockTarget(lost, ctx, 1500); got != 4 {
+		t.Fatalf("after a loss: target %d, want 4 Hyper Potions from the ¥7112 a blackout would take", got)
+	}
+	if got := healStockTarget(lost, ctx, 300); got != maxCombatLossHeals {
+		t.Fatalf("cheap medicine: target %d, want the %d cap", got, maxCombatLossHeals)
+	}
+	ctx.SpendableMoney = 600 // the rest is reserved
+	if got := healStockTarget(lost, ctx, 1500); got != targetEmergencyHeals {
+		t.Fatalf("reserved cash: target %d, want the emergency reserve", got)
+	}
+}
