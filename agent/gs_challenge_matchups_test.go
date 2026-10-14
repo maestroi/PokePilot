@@ -24,7 +24,7 @@ func gsSyntheticChallengeROM() []byte {
 	rom[base+(0x51-1)*32+8] = 9
 	chart := []byte{0, 5, 5, 0, 9, 5}
 	for i := 0; i < 70; i++ {
-		chart = append(chart, 1, 5, 10)
+		chart = append(chart, 1, 5, 5)
 	}
 	chart = append(chart, 20, 9, 20, 27, 24, 20, 24, 27, 0, 1, 27, 20, 0xff)
 	copy(rom[0x100:], chart)
