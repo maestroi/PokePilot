@@ -29,6 +29,9 @@ type RoutePlanner struct {
 	cur     uint8
 	x, y    uint8
 	prereqs world.RoutePrerequisites
+	// prereqsAt re-projects prerequisites for a journey starting elsewhere
+	// (a Fly landing); nil means the snapshot's projection is position-free.
+	prereqsAt func(from Destination) world.RoutePrerequisites
 }
 
 // NewRoutePlanner captures the route geometry and semantic permissions as they
@@ -62,17 +65,29 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	for at := range presentStationaryObjectBlockers(m, h) {
 		liveGrid.Set(at[0], at[1], false)
 	}
-	routeGraph, prereqs, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
+	routeGraph, prereqs, prereqsAt, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
 	}
 	return &RoutePlanner{
-		graph:   routeGraph,
-		cur:     cur,
-		x:       x,
-		y:       y,
-		prereqs: prereqs,
+		graph:     routeGraph,
+		cur:       cur,
+		x:         x,
+		y:         y,
+		prereqs:   prereqs,
+		prereqsAt: prereqsAt,
 	}, nil
+}
+
+// prereqsFrom is the semantic prerequisite projection for a journey starting
+// at from. Adapter pivots may be scoped to the player's own position, so
+// pricing a Fly landing with the live position's projection can reject every
+// landing (run-18kg33tqm1mn5c7umo1adri8m).
+func (p *RoutePlanner) prereqsFrom(from Destination) world.RoutePrerequisites {
+	if p.prereqsAt == nil || (from.Map == p.cur && from.X == p.x && from.Y == p.y) {
+		return p.prereqs
+	}
+	return p.prereqsAt(from)
 }
 
 // Reachability reports the structured route result for dest without moving.

@@ -142,7 +142,7 @@ func nearestPokemonCenterAt(m *emu.Emu, romData []byte, cur uint8) (Destination,
 	for at := range blockers {
 		liveGrid.Set(at[0], at[1], false)
 	}
-	routeGraph, prereqs, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
+	routeGraph, prereqs, _, err := routePlannerGen1Compatibility(m, romData, g, cur, liveGrid)
 	if err != nil {
 		return Destination{}, "", fmt.Errorf("skill: PC selection: overlay live topology for map %02x: %w", cur, err)
 	}

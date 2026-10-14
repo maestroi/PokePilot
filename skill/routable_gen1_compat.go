@@ -5,6 +5,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
 )
 
@@ -19,9 +20,9 @@ func routePlannerGen1Compatibility(
 	base *world.Graph,
 	cur uint8,
 	liveGrid *world.Grid,
-) (*world.Graph, world.RoutePrerequisites, error) {
+) (*world.Graph, world.RoutePrerequisites, func(Destination) world.RoutePrerequisites, error) {
 	if m == nil || base == nil || liveGrid == nil {
-		return nil, world.RoutePrerequisites{}, fmt.Errorf("skill: RoutePlanner Gen-I compatibility: incomplete routing input")
+		return nil, world.RoutePrerequisites{}, nil, fmt.Errorf("skill: RoutePlanner Gen-I compatibility: incomplete routing input")
 	}
 
 	var mem state.Mem
@@ -35,16 +36,24 @@ func routePlannerGen1Compatibility(
 
 	routeGraph, err := base.WithMapGrid(cur, liveGrid)
 	if err != nil {
-		return nil, world.RoutePrerequisites{}, err
+		return nil, world.RoutePrerequisites{}, nil, err
 	}
 	if cur != route16Map {
 		routeGraph, err = withAsleepRoute16Snorlax(routeGraph, romData, &mem)
 		if err != nil {
-			return nil, world.RoutePrerequisites{}, err
+			return nil, world.RoutePrerequisites{}, nil, err
 		}
 	}
 	if routeGraph, err = withSurfSeaTopology(routeGraph, romData, &mem); err != nil {
-		return nil, world.RoutePrerequisites{}, err
+		return nil, world.RoutePrerequisites{}, nil, err
 	}
-	return routeGraph, redRoutePrerequisites(routeGraph, romData, &mem), nil
+	// Red's Route 23 Surf pivots are scoped to the player's position (the
+	// Indigo-side pocket withholds them), so a journey priced from elsewhere
+	// re-projects them from that origin.
+	prereqsAt := func(from Destination) world.RoutePrerequisites {
+		at := mem
+		at[sym.CurMap], at[sym.XCoord], at[sym.YCoord] = from.Map, from.X, from.Y
+		return redRoutePrerequisites(routeGraph, romData, &at)
+	}
+	return routeGraph, redRoutePrerequisites(routeGraph, romData, &mem), prereqsAt, nil
 }
