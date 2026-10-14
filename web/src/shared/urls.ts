@@ -112,7 +112,7 @@ export type OperatorLinkOptions = {
 
 const operatorSections: Partial<Record<OperatorView, readonly string[]>> = {
   analytics: ['overview', 'experiments'],
-  media: ['library', 'studio', 'broadcasts', 'jobs', 'themes'],
+  media: ['library', 'broadcasts', 'jobs', 'themes'],
   settings: ['models']
 }
 
