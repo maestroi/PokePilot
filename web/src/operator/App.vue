@@ -36,7 +36,7 @@ const descriptions: Record<OperatorView, string> = {
   analytics: 'Run outcomes, badge progress, LLM workload and comparisons.',
   media: 'Discover replay media, manage rendering jobs, and control broadcasting and publishing.',
   operations: 'Fleet health, workers, queues, leases, and operational status.',
-  settings: 'Configure model deployments for run planning and decisions.',
+  settings: 'Configure model deployments, per-browser launch defaults, broadcast destination status and renderer preferences.',
   'new-run': 'Choose a game, settings and goal, then queue a new run.'
 }
 
@@ -213,7 +213,7 @@ onUnmounted(() => {
     <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
     <MediaView v-else-if="activeView === 'media'" :section="activeSection" :run-id="linkedRunID" :job-id="linkedJobID" />
     <OperationsView v-else-if="activeView === 'operations'" />
-    <SettingsView v-else-if="activeView === 'settings'" />
+    <SettingsView v-else-if="activeView === 'settings'" :section="activeSection" />
     <ToolsView v-else-if="activeView === 'new-run'" />
   </AppShell>
 </template>

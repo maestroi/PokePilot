@@ -8,6 +8,9 @@ import { defaultGoalForPlayStyle } from '../shared/playstyle'
 import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
+import { readRunLaunchDefaults } from './runLaunchDefaults'
+
+const launchDefaults = readRunLaunchDefaults()
 
 type StarterMode =
   | 'default'
@@ -31,18 +34,18 @@ const form = reactive<RunSpec>({
   planner: 'llm',
   starter: '',
   dest: '',
-  goal: defaultGoalForPlayStyle('adventure'),
+  goal: defaultGoalForPlayStyle(launchDefaults.playStyle),
   llm_profile: 'auto',
   llm_deployment: '',
-  play_style: 'adventure',
+  play_style: launchDefaults.playStyle,
   purpose: 'normal',
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
   reasoning_effort: '',
-  fps: 60,
+  fps: launchDefaults.fps,
   max_rounds: 0,
   max_frames: 0,
-  recovery_profile: 'resilient',
+  recovery_profile: launchDefaults.recoveryProfile,
   endless: false,
   random_seed: false
 })

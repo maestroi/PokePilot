@@ -16,6 +16,9 @@ test('private section links survive reload and browser back/forward', () => {
   assert.deepEqual(operatorRoute('#media/broadcasts'), { view: 'media', section: 'broadcasts' })
   assert.deepEqual(operatorRoute('#analytics/experiments'), { view: 'analytics', section: 'experiments' })
   assert.deepEqual(operatorRoute('#settings/models'), { view: 'settings', section: 'models' })
+  assert.deepEqual(operatorRoute('#settings/destinations'), { view: 'settings', section: 'destinations' })
+  assert.deepEqual(operatorRoute('#settings/defaults'), { view: 'settings', section: 'defaults' })
+  assert.deepEqual(operatorRoute('#media/themes'), { view: 'settings', section: 'renderer' })
 })
 
 test('operator resource links preserve exact IDs and encode values', () => {

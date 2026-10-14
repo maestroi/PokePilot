@@ -33,7 +33,6 @@ const workers = computed(() => [...(activeData.value?.workers ?? [])]
   .sort((a, b) => a.addr.localeCompare(b.addr)))
 const runs = computed(() => partitionOperationRuns(activeData.value?.runs ?? []))
 const idleWorkers = computed(() => workers.value.filter((worker) => !worker.run_id).length)
-const connectionTone = computed(() => activeState.value === 'stale' || activeState.value === 'loading' ? 'warning' : activeState.value === 'error' ? 'danger' : 'success')
 const connectionLabel = computed(() => activeState.value === 'stale' ? 'Stale' : activeState.value === 'error' ? 'Offline' : activeState.value === 'loading' ? 'Connecting' : 'Connected')
 const activeUpdatedLabel = computed(() => activeUpdatedAt.value ? new Date(activeUpdatedAt.value).toLocaleTimeString() : '—')
 const nowSeconds = computed(() => activeData.value?.now || Date.now() / 1000)
@@ -100,6 +99,7 @@ async function confirmForceEnd(): Promise<void> {
 <template>
   <div class="space-y-3">
     <div class="flex flex-wrap justify-end gap-2">
+      <span class="self-center font-mono text-[11px] text-slate-500" :title="activeData?.wall_version || ''">Snapshot {{ activeUpdatedLabel }} · wall {{ shortRevision(activeData?.wall_version) }}</span>
       <a href="#settings/models" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300">Configure models</a>
       <button type="button" class="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="refreshActive"><ArrowPathIcon class="size-3.5" aria-hidden="true" />Refresh</button>
     </div>
@@ -125,28 +125,7 @@ async function confirmForceEnd(): Promise<void> {
       </div>
 
       <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <Panel title="System health" description="Current wall refresh and worker status." compact>
-          <dl class="divide-y divide-white/8">
-            <div class="flex items-center justify-between gap-4 py-2 first:pt-0">
-              <dt class="text-xs text-slate-500">Wall</dt>
-              <dd><StatusBadge :tone="connectionTone">{{ connectionLabel }}</StatusBadge></dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2">
-              <dt class="text-xs text-slate-500">Active refresh</dt>
-              <dd class="font-mono text-xs text-slate-300">2s</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2">
-              <dt class="text-xs text-slate-500">Last fresh snapshot</dt>
-              <dd class="font-mono text-xs text-slate-300">{{ activeUpdatedLabel }}</dd>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2 last:pb-0">
-              <dt class="text-xs text-slate-500">Reporting workers</dt>
-              <dd class="font-mono text-xs text-slate-300">{{ workers.length }}</dd>
-            </div>
-          </dl>
-        </Panel>
-
-        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact class="xl:col-span-2">
+        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact >
           <div v-if="workers.length" class="-mx-3 overflow-x-auto sm:-mx-4">
             <table class="min-w-full divide-y divide-white/10 text-left">
               <thead>
