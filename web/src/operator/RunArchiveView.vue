@@ -189,13 +189,6 @@ function clearFilters(): void {
   page.value = 0
 }
 
-function fastestSuccessful(): void {
-  successOnly.value = true
-  sortKey.value = 'frames'
-  sortDirection.value = 'asc'
-  page.value = 0
-}
-
 function previousPage(): void {
   if (page.value > 0) page.value--
 }
@@ -439,7 +432,7 @@ function operatorSearch(): string { return window.location.search }
   <div class="space-y-3">
     <RunCleanupPanel @changed="retry" />
 
-    <Panel title="Runs" description="Finished-run database and lightweight model leaderboard. Filters and sorting apply across the full server-side archive." compact>
+    <Panel title="Runs" description="Searchable finished-run history. Comparisons and leaderboards live in Analytics; filters and sorting apply across the server-side archive." compact>
       <template #actions>
         <div class="flex flex-wrap items-center justify-end gap-2">
           <span v-if="selectedCount" class="text-xs font-semibold text-slate-400">{{ selectedCount }} selected</span>
@@ -460,13 +453,7 @@ function operatorSearch(): string { return window.location.search }
             <TrashIcon class="size-3.5" aria-hidden="true" />
             Delete selected
           </button>
-          <button
-            type="button"
-            class="rounded-md bg-cyan-400/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-400/15"
-            @click="fastestSuccessful"
-          >
-            Fastest successful
-          </button>
+          <a :href="operatorHref('analytics', { section: 'overview' }, operatorSearch())" class="rounded-md bg-cyan-400/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-400/15 focus-visible:outline-2 focus-visible:outline-cyan-300">View leaderboards</a>
           <button
             v-if="hasFilters"
             type="button"
@@ -682,9 +669,9 @@ function operatorSearch(): string { return window.location.search }
                     <button v-if="computeName(run)" type="button" class="mt-1 text-[10px] text-slate-500 hover:text-slate-300" @click="setFilter('compute', computeName(run))">
                       {{ computeName(run) }}
                     </button>
-                    <button v-if="experimentLabel(run)" type="button" class="mt-1 block max-w-full truncate text-[10px] text-violet-300/80 hover:text-violet-200" :title="experimentLabel(run)" @click="setFilter('experiment', run.experiment_id || '')">
-                      {{ experimentLabel(run) }}
-                    </button>
+                    <a v-if="run.experiment_id" :href="operatorHref('analytics', { section: 'experiments', experiment: run.experiment_id }, operatorSearch())" class="mt-1 block max-w-full truncate text-[10px] text-violet-300/80 hover:text-violet-200 focus-visible:outline-2 focus-visible:outline-cyan-300" :title="'Open paired experiment ' + experimentLabel(run)">
+                      {{ experimentLabel(run) }} ↗
+                    </a>
                   </td>
                   <td class="px-3 py-3 text-[11px] text-slate-400">
                     <div><span class="text-slate-600">Rounds</span> {{ formatInteger(rounds(run)) }}</div>
@@ -773,7 +760,7 @@ function operatorSearch(): string { return window.location.search }
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Reasoning</dt><dd class="text-slate-300">{{ run.reasoning_effort || 'default' }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Decisions</dt><dd class="text-slate-300">{{ decisionEngineLabel(run) }}</dd></div>
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Seed</dt><dd class="font-mono text-slate-300">{{ run.seed ?? '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Experiment</dt><dd class="text-slate-300">{{ experimentLabel(run) || '—' }}</dd></div>
+                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Experiment</dt><dd class="min-w-0 text-slate-300"><a v-if="run.experiment_id" :href="operatorHref('analytics', { section: 'experiments', experiment: run.experiment_id }, operatorSearch())" class="break-all text-violet-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300">{{ experimentLabel(run) }} ↗</a><span v-else>—</span></dd></div>
                       </dl>
 
                       <dl class="space-y-1.5">
