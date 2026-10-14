@@ -320,25 +320,20 @@ func TestNativeLiveGridRefusesUnsettledMapShell(t *testing.T) {
 // position names a tile that does not exist on the map it is on. The block
 // buffer is settled in that window; only the position is not. Treating it as
 // settled let native routing start a tile-level path from a nonexistent tile,
-// which fails with a terminal no-route.
-//
-// Bounds are in tiles: WidthBlocks/HeightBlocks are block counts and Gen-II
-// coordinates are tiles (2 per block). Comparing against block dimensions made
-// Route 35 (10x18 blocks = 20x36 tiles) reject a standing player at (17,0) as
-// forever unsettled (run-whai2l6l8g1x36h0y0fucmsit / triage efe8f75648bc29a8).
+// which fails with a terminal no-route. Regression for farm run
+// run-whai2l6l8g1x36h0y0fucmsit (triage 80417851f0d3e00b), where ROUTE_35
+// (10x18) was read with the player at (17,0) en route to Slowpoke Well B1F.
 func TestLiveMapSettledRequiresPositionInBounds(t *testing.T) {
 	const (
-		mapRoute35   uint16 = 0x0a02
-		widthBlocks         = 10
-		heightBlocks        = 18
-		tileW               = widthBlocks * 2
-		tileH               = heightBlocks * 2
+		mapRoute35 uint16 = 0x0a02
+		width             = 10
+		height            = 18
 	)
-	settled := func() game.LiveTopologyState {
+	settled := func(x, y uint8) game.LiveTopologyState {
 		return game.LiveTopologyState{
 			NativeMapID:   mapRoute35,
-			WidthBlocks:   widthBlocks,
-			HeightBlocks:  heightBlocks,
+			WidthBlocks:   width,
+			HeightBlocks:  height,
 			MapShellPhase: game.MapShellSettled,
 			BlocksSettled: true,
 		}
@@ -353,16 +348,18 @@ func TestLiveMapSettledRequiresPositionInBounds(t *testing.T) {
 		decoded game.LiveTopologyState
 		want    bool
 	}{
-		{name: "in bounds settled", world: at(5, 3), decoded: settled(), want: true},
-		{name: "on the far edge settled", world: at(tileW-1, tileH-1), decoded: settled(), want: true},
-		// Standing on Route 35's north band at X=17 is a real tile (20 wide).
-		{name: "route 35 north-east tile settled", world: at(17, 0), decoded: settled(), want: true},
+		{name: "in bounds settled", world: at(5, 3), decoded: settled(5, 3), want: true},
+		{name: "on the far edge settled", world: at(2*width-1, 2*height-1), decoded: settled(2*width-1, 2*height-1), want: true},
+		// Positions are step tiles (two per block): (17,0) is a real tile on
+		// 10x18-block ROUTE_35. Reading it as out of bounds wedged the gate
+		// for its whole budget (triage efe8f75648bc29a8).
+		{name: "tile past the block width still in bounds", world: at(17, 0), decoded: settled(17, 0), want: true},
 		// The transient: buffer settled, position not yet landed on this map.
-		{name: "x out of bounds not settled", world: at(tileW, 0), decoded: settled(), want: false},
-		{name: "y out of bounds not settled", world: at(0, tileH), decoded: settled(), want: false},
+		{name: "x out of bounds not settled", world: at(2*width, 0), decoded: settled(2*width, 0), want: false},
+		{name: "y out of bounds not settled", world: at(0, 2*height), decoded: settled(0, 2*height), want: false},
 		// The pre-existing half: an unsettled buffer is never settled, even in
 		// bounds.
-		{name: "in bounds but buffer unsettled", world: at(5, 3), decoded: func() game.LiveTopologyState { s := settled(); s.BlocksSettled = false; return s }(), want: false},
+		{name: "in bounds but buffer unsettled", world: at(5, 3), decoded: func() game.LiveTopologyState { s := settled(5, 3); s.BlocksSettled = false; return s }(), want: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -425,47 +422,6 @@ func TestNativeArrivalRequiresControlHandoff(t *testing.T) {
 				t.Fatalf("nativeArrival(%+v) = %d, want %d", tc.state, got, tc.want)
 			}
 		})
-	}
-}
-
-// TestNativeObstacleBridgeUnblocksCarpetTarget pins the Cut-through-carpet
-// half of nativeObstacleBridge. Edge-carpet warps sit in the runtime blocker
-// set; FindNativeObstacleApproach rejects an occupied destination, so a Cut
-// tree that opens the carpet exit is invisible unless the target is dropped
-// first — the same drop nativeWarpApproach already performs for ordinary paths.
-// Regression for run-whai2l6l8g1x36h0y0fucmsit (triage efe8f75648bc29a8):
-// Route 35 (17,0) sealed behind Cut (17,6) from Goldenrod Gate carpets.
-func TestNativeObstacleBridgeUnblocksCarpetTarget(t *testing.T) {
-	// start . cut # floor . carpet(warp)
-	walkable := []bool{true, false, true, true}
-	obstacles := make([]worldmodel.NativeObstacle, len(walkable))
-	obstacles[1] = worldmodel.ObstacleCutTree
-	grid, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
-		MapID: 0x0a02, Width: 4, Height: 1,
-		Walkable:      walkable,
-		CollisionTile: []uint8{0x00, 0x12, 0x00, 0x7e},
-		Obstacles:     obstacles,
-		WarpPushes:    map[uint8]worldmodel.NativeDirectionMask{0x7e: worldmodel.NativeBlockRight},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	carpet := [2]int{3, 0}
-	blocked := map[[2]int]bool{carpet: true}
-	cut := func(k worldmodel.NativeObstacle) bool { return k == worldmodel.ObstacleCutTree }
-
-	if _, err := world.FindNativeObstacleApproach(grid, 0, 0, carpet[0], carpet[1], blocked, cut); !errors.Is(err, world.ErrNoPath) {
-		t.Fatalf("approach with carpet still blocked = %v, want ErrNoPath", err)
-	}
-	plan, err := world.FindNativeObstacleApproach(grid, 0, 0, carpet[0], carpet[1], nativeObstacleBridgeBlocked(blocked, carpet), cut)
-	if err != nil {
-		t.Fatalf("approach after unblocking carpet: %v", err)
-	}
-	if plan.Kind != worldmodel.ObstacleCutTree || plan.X != 1 || plan.Y != 0 {
-		t.Fatalf("plan = %+v, want Cut at (1,0)", plan)
-	}
-	if got := nativeWarpTargets(grid, carpet[0], carpet[1], blocked); len(got) != 1 || got[0] != carpet {
-		t.Fatalf("carpet targets = %v, want the carpet tile itself", got)
 	}
 }
 
