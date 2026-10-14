@@ -69,6 +69,12 @@ func main() {
 
 	wall := NewWall(localCacheDir)
 	wall.Version = version
+	reg := metrics.Must(metrics.Options{Service: metrics.ServiceWall, Revision: version})
+	runMetrics, err := metrics.NewRuns(reg)
+	if err != nil {
+		log.Fatalf("pokewall: run metrics: %v", err)
+	}
+	wall.SetRunMetrics(runMetrics)
 	client, err := parseIssueFlags(*issuesAPI, *issuesProject, *issuesUI)
 	if err != nil {
 		log.Fatalf("pokewall: %v", err)
@@ -165,7 +171,7 @@ func main() {
 	handler = challengeProgrammingHTTPHandler(wall, handler)
 	handler = challengeVotingHTTPHandler(wall, handler)
 	handler = mediaRenderJobHTTPHandler(wall, handler)
-	handler = metrics.Must(metrics.Options{Service: metrics.ServiceWall, Revision: version}).Wrap(handler)
+	handler = reg.Wrap(handler)
 	go RunChallengeProgramming(wall, time.Second)
 	go RunChallengeVoting(wall, time.Second)
 	server := &http.Server{

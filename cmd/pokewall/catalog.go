@@ -82,6 +82,36 @@ func catalogFor(w *Wall) *runCatalog {
 	return nil
 }
 
+// latestSuccessUnixByGame is the newest terminal success per game still in
+// the history catalog. Finished rows are evicted from RAM, so a restarted
+// wall cannot rebuild pokepilot_last_successful_run_timestamp_seconds from
+// tiles alone.
+func (c *runCatalog) latestSuccessUnixByGame() (map[string]float64, error) {
+	rows, err := c.db.Query(`SELECT row_json FROM runs WHERE outcome=? AND ended_at > 0`, "done")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]float64{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var row struct {
+			Game    string `json:"game"`
+			EndedAt int64  `json:"ended_at"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil || row.EndedAt <= 0 {
+			continue
+		}
+		if sec := float64(row.EndedAt); sec > out[row.Game] {
+			out[row.Game] = sec
+		}
+	}
+	return out, rows.Err()
+}
+
 // SetCatalogPath enables the durable history catalog. State must be loaded
 // first: every state tile is upserted idempotently before finished rows are
 // evicted from RAM, which makes the first rollout its own migration.
@@ -102,6 +132,7 @@ func (w *Wall) SetCatalogPath(path string) error {
 	}
 	w.evictCatalogFinished()
 	w.saveState()
+	w.seedSuccessFromCatalog()
 	return nil
 }
 

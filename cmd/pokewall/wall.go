@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/metrics"
 )
 
 // Run status values, in lifecycle order.
@@ -162,6 +163,14 @@ type Tile struct {
 	// (or grabbed on finish). Not persisted: a wall restart leaves
 	// history cards without a picture until a new run writes one.
 	lastFrame []byte
+	// runActive is true while this tile is in pokepilot_runs_active.
+	// It is process-local: a restart rebuilds the gauge from status.
+	runActive bool
+	// metricMilestones are funnel stages already counted for this campaign.
+	// A retry keeps them so the resumed party does not increment twice. A
+	// fresh queue clears them. They are process-local because Prometheus
+	// counters reset with the process.
+	metricMilestones map[string]struct{}
 	// ReplayAvailable is true when the latest finish dump names a
 	// run.gbrun recording. History uses it so the console can mark a
 	// row without opening the inspector.
@@ -280,6 +289,7 @@ type Wall struct {
 	issueLinks   map[string]IssueLink   // failure key → Agent Orchestrator issue
 	outbox       map[string]outboxEntry // external occurrence id → report outbox
 	issues       *issueClient
+	runs         *metrics.Runs // nil when the process is not publishing metrics
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
@@ -614,6 +624,7 @@ func (w *Wall) loadState() {
 	w.queue = append(w.queue, ps.Queue...)
 	w.issueLinks = copyIssueLink(ps.IssueLinks)
 	w.outbox = copyOutbox(ps.Outbox)
+	w.observeRestoredLocked()
 }
 
 func hasReplayableArtifact(artifacts []farm.Artifact) bool {
@@ -887,6 +898,8 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 	t.workerAddrs = nil
 	t.lastFrame = nil
 	t.Finished = false
+	t.metricMilestones = nil
+	w.clearRunActiveLocked(t)
 	t.OperatorFlag = ""
 	t.OperatorFlagAttempt = 0
 	t.OperatorFlaggedAt = 0
@@ -897,6 +910,9 @@ func (w *Wall) applySpec(runID string, spec farm.Spec) {
 		Summary: "Run queued",
 		Detail:  fmt.Sprintf("recovery profile: %s", t.RecoveryProfile),
 	})
+	if w.runs != nil {
+		w.runs.Started(t.Game, t.Planner)
+	}
 }
 
 func resilientCircuitBlocksLease(t *Tile, runnerVersion string) bool {
@@ -960,6 +976,7 @@ func (w *Wall) handleLease(res http.ResponseWriter, req *http.Request) {
 	}
 	t.Status = statusLeased
 	t.lastUpdate = time.Now()
+	w.markRunActiveLocked(t)
 	w.inheritRunPolicyLocked(t)
 	appendRunActivityLocked(t, runActivityEvent{
 		Source: "system", Kind: "leased", At: t.lastUpdate.Unix(), Attempt: t.Attempts + 1,
@@ -1053,6 +1070,8 @@ func (w *Wall) handleHeartbeat(res http.ResponseWriter, req *http.Request) {
 	t.MapsVisited = hb.MapsVisited
 	t.Stats = hb.Stats.WithPrior(t.PriorStats)
 	t.Player = hb.Player
+	w.markRunActiveLocked(t)
+	w.noteRunMilestonesLocked(t, hb.Player)
 	t.GameState = cloneJSONMap(hb.GameState)
 	t.GameDecision = cloneJSONMap(hb.GameDecision)
 	t.workerAddrs = hb.WorkerAddrs
@@ -1945,6 +1964,8 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 		if t.Endless && !cancelled {
 			w.enqueueNextLocked(t)
 		}
+		w.recordTerminalRunLocked(t, reason, cancelled, now)
+		w.clearRunActiveLocked(t)
 		return completed
 	}
 	// Retry: fresh luck, fresh progress, back of the queue. In resilient mode
@@ -1994,6 +2015,7 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 	t.workerAddrs = nil
 	t.Finished = false
 	w.queue = append(w.queue, t.RunID)
+	w.clearRunActiveLocked(t)
 	return completed
 }
 

@@ -61,7 +61,7 @@ var (
 	revision      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 	counterName   = regexp.MustCompile(`^pokepilot_[a-z0-9_]+_total$`)
 	gaugeName     = regexp.MustCompile(`^pokepilot_[a-z0-9_]+$`)
-	histogramName = regexp.MustCompile(`^pokepilot_[a-z0-9_]+_(seconds|bytes)$`)
+	histogramName = regexp.MustCompile(`^pokepilot_[a-z0-9_]+_(seconds|bytes|frames|rounds)$`)
 )
 
 func checkService(service string) error {
