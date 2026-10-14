@@ -28,18 +28,18 @@ type BattleMove struct {
 // compatibility. Gen-II profiles may also fill the split fields when strategy
 // support reaches that generation.
 type BattleState struct {
-	Kind          BattleKind
-	EnemySpecies  uint8
-	EnemyHP       uint16
-	EnemyMaxHP    uint16
-	EnemyLevel    uint8
-	ActiveSpecies uint8
-	ActiveHP      uint16
-	ActiveLevel   uint8
-	ActiveMaxHP   uint16
+	Kind           BattleKind
+	EnemySpecies   uint8
+	EnemyHP        uint16
+	EnemyMaxHP     uint16
+	EnemyLevel     uint8
+	ActiveSpecies  uint8
+	ActiveHP       uint16
+	ActiveLevel    uint8
+	ActiveMaxHP    uint16
 	ActiveHeldItem uint16 // Native live battle item id; zero for games without held items.
 	EnemyHeldItem  uint16
-	Moves         [4]BattleMove
+	Moves          [4]BattleMove
 
 	ActiveAttack  uint16
 	ActiveDefense uint16
