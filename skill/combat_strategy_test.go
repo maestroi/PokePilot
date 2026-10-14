@@ -236,3 +236,47 @@ func TestBattlePartyCombatantPreservesNativeHeldItem(t *testing.T) {
 		t.Fatalf("party held item=%#x, want %#x", got, 0x92)
 	}
 }
+
+type fixtureHealingCombatStrategy struct {
+	fakeGen2CombatStrategy
+}
+
+func (s *fixtureHealingCombatStrategy) EvaluateCombatMove(
+	rom []byte,
+	attacker, defender game.BattleCombatant,
+	nativeMoveID uint16,
+	currentPP uint8,
+) (game.BattleMoveEvaluation, game.BattleMoveRole, error) {
+	eval, role, err := s.fakeGen2CombatStrategy.EvaluateCombatMove(rom, attacker, defender, nativeMoveID, currentPP)
+	if attacker.HeldItem == 0x92 { // Fixture: native Gold LEFTOVERS id.
+		eval.ItemModifier.RecoveryPerTurn = 6
+	}
+	return eval, role, err
+}
+
+func TestSwitchEvaluationCountsKnownHeldItemRecovery(t *testing.T) {
+	strategy := &fixtureHealingCombatStrategy{
+		fakeGen2CombatStrategy: fakeGen2CombatStrategy{
+			scores: map[uint16]int64{33: 1000},
+			roles: map[uint16]game.BattleMoveRole{33: game.BattleMoveRoleDirectDamage},
+		},
+	}
+	attacker := game.BattleCombatant{Level: 20, HP: 40, MaxHP: 100}
+	defender := game.BattleCombatant{}
+	moves := [4]uint16{33}
+	pp := [4]uint8{35}
+	baseline := evaluateSwitchCombatant(strategy, nil, 0, 1, "", moves, pp, attacker, defender)
+	attacker.HeldItem = 0x92
+	recovering := evaluateSwitchCombatant(strategy, nil, 0, 1, "", moves, pp, attacker, defender)
+	if baseline.Score != 400 || recovering.Score != 460 {
+		t.Fatalf("Leftovers switch scores baseline=%d recovering=%d, want 400 and 460",
+			baseline.Score, recovering.Score)
+	}
+	attacker.HP = attacker.MaxHP
+	full := evaluateSwitchCombatant(strategy, nil, 0, 1, "", moves, pp, attacker, defender)
+	attacker.HeldItem = 0
+	fullWithoutItem := evaluateSwitchCombatant(strategy, nil, 0, 1, "", moves, pp, attacker, defender)
+	if full.Score != fullWithoutItem.Score {
+		t.Fatalf("Leftovers must not add HP past maximum: with=%d without=%d", full.Score, fullWithoutItem.Score)
+	}
+}
