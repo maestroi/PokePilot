@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ArrowTopRightOnSquareIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { ArrowTopRightOnSquareIcon, Cog6ToothIcon, PlayIcon } from '@heroicons/vue/20/solid'
 import { getBuildProvenance, getDashboard } from '../shared/api/client'
 import { getOperatorUIConfig } from '../shared/api/spectator-control'
-import { resolveSpectatorBase, spectatorURL } from '../shared/urls'
+import { operatorPrimaryViews, operatorRoute, resolveSpectatorBase, spectatorURL, type OperatorView } from '../shared/urls'
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
@@ -12,11 +12,11 @@ import FailuresView from './FailuresView.vue'
 import LiveView from './LiveView.vue'
 import MediaView from './MediaView.vue'
 import OperationsView from './OperationsView.vue'
+import SettingsView from './SettingsView.vue'
 import RunArchiveView from './RunArchiveView.vue'
 import ToolsView from './ToolsView.vue'
 
-const views = ['live', 'runs', 'failures', 'analytics', 'media', 'operations', 'tools'] as const
-type OperatorView = typeof views[number]
+const views = operatorPrimaryViews
 
 const labels: Record<OperatorView, string> = {
   live: 'Live',
@@ -25,17 +25,19 @@ const labels: Record<OperatorView, string> = {
   analytics: 'Analytics',
   media: 'Media',
   operations: 'Operations',
-  tools: 'Tools'
+  settings: 'Settings',
+  'new-run': 'New run'
 }
 
 const descriptions: Record<OperatorView, string> = {
   live: 'Watch a selected run, inspect game state and semantic position, and open its persisted evidence and deterministic replay.',
-  runs: 'Search completed runs, watch or render replay video directly, and clean up older history.',
-  failures: 'Group, inspect, investigate, and delete finished runs for a specific failure — including issues that are already solved.',
-  analytics: 'Farm outcomes, badge progress, LLM workload, and endless-run experiments.',
-  media: 'Manage public replays, durable render jobs, publishing controls, and renderer assets and themes.',
-  operations: 'Fleet health, workers, LLM deployments, paired experiments, queues, and recent outcomes.',
-  tools: 'Queue a new scripted or goal-driven run.'
+  runs: 'Search completed runs, inspect persisted evidence, and clean up older history.',
+  failures: 'Group, inspect, and investigate finished runs for a specific failure.',
+  analytics: 'Run outcomes, badge progress, LLM workload and comparisons.',
+  media: 'Discover replay media, manage rendering jobs, and control broadcasting and publishing.',
+  operations: 'Fleet health, workers, queues, leases, and operational status.',
+  settings: 'Configure model deployments for run planning and decisions.',
+  'new-run': 'Choose a game, settings and goal, then queue a new run.'
 }
 
 const eyebrows: Record<OperatorView, string> = {
@@ -45,15 +47,16 @@ const eyebrows: Record<OperatorView, string> = {
   analytics: 'Telemetry',
   media: 'Library',
   operations: 'System',
-  tools: 'Control'
+  settings: 'Configuration',
+  'new-run': 'Launch'
 }
 
-function hashView(): OperatorView {
-  const value = window.location.hash.replace(/^#/, '') as OperatorView
-  return views.includes(value) ? value : 'live'
-}
-
-const activeView = ref<OperatorView>(hashView())
+const initialRoute = operatorRoute(window.location.hash)
+const activeView = ref<OperatorView>(initialRoute.view)
+const activeSection = ref(initialRoute.section)
+const linkedRunID = ref(new URLSearchParams(window.location.search).get('run') || '')
+const linkedJobID = ref(new URLSearchParams(window.location.search).get('job') || '')
+const linkedExperimentID = ref(new URLSearchParams(window.location.search).get('experiment') || '')
 const configuredSpectatorURL = ref('')
 const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
   name: labels[view],
@@ -88,9 +91,14 @@ const buildTitle = computed(() => {
 })
 
 function syncHash(): void {
-  const next = hashView()
-  activeView.value = next
-  document.title = `RomPilot Admin · ${labels[next]}`
+  const next = operatorRoute(window.location.hash)
+  activeView.value = next.view
+  activeSection.value = next.section
+  const query = new URLSearchParams(window.location.search)
+  linkedRunID.value = query.get('run') || ''
+  linkedJobID.value = query.get('job') || ''
+  linkedExperimentID.value = query.get('experiment') || ''
+  document.title = `RomPilot Admin · ${labels[next.view]}`
 }
 
 async function loadSpectatorURL(): Promise<void> {
@@ -124,8 +132,12 @@ onMounted(() => {
   syncHash()
   void loadSpectatorURL()
   window.addEventListener('hashchange', syncHash)
+  window.addEventListener('popstate', syncHash)
 })
-onUnmounted(() => window.removeEventListener('hashchange', syncHash))
+onUnmounted(() => {
+  window.removeEventListener('hashchange', syncHash)
+  window.removeEventListener('popstate', syncHash)
+})
 </script>
 
 <template>
@@ -177,21 +189,31 @@ onUnmounted(() => window.removeEventListener('hashchange', syncHash))
         Open public
       </button>
       <a
-        v-if="activeView === 'live'"
-        href="#tools"
-        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110"
+        href="#new-run"
+        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
         New run
+      </a>
+      <a
+        href="#settings"
+        :aria-current="activeView === 'settings' ? 'page' : undefined"
+        class="inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] font-semibold text-[var(--poke-muted)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--poke-cyan)]"
+        title="Settings"
+        aria-label="Settings"
+      >
+        <Cog6ToothIcon class="size-4" aria-hidden="true" />
+        <span class="hidden xl:inline">Settings</span>
       </a>
     </template>
 
     <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
     <RunArchiveView v-else-if="activeView === 'runs'" />
     <FailuresView v-else-if="activeView === 'failures'" />
-    <AnalyticsView v-else-if="activeView === 'analytics'" />
-    <MediaView v-else-if="activeView === 'media'" />
+    <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
+    <MediaView v-else-if="activeView === 'media'" :section="activeSection" :run-id="linkedRunID" :job-id="linkedJobID" />
     <OperationsView v-else-if="activeView === 'operations'" />
-    <ToolsView v-else-if="activeView === 'tools'" />
+    <SettingsView v-else-if="activeView === 'settings'" />
+    <ToolsView v-else-if="activeView === 'new-run'" />
   </AppShell>
 </template>

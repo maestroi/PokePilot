@@ -1,18 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowPathIcon, ArrowTopRightOnSquareIcon, EyeIcon, EyeSlashIcon, StarIcon } from '@heroicons/vue/20/solid'
-import { getDashboard, getMediaRenderJobs } from '../shared/api/client'
+import { getDashboard, getMediaRenderJobs, getRun } from '../shared/api/client'
 import {
   getOperatorUIConfig,
   getSpectatorControl,
   patchSpectatorRunControl
 } from '../shared/api/spectator-control'
-import { replayURL, resolveSpectatorBase, spectatorURL } from '../shared/urls'
+import { operatorHref, replayURL, resolveSpectatorBase, spectatorURL } from '../shared/urls'
 import type { DashboardRun, MediaRenderJob } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { formatWhen, statusTone } from './operations'
+
+const props = defineProps<{ runID?: string }>()
+const focusedRun = ref<DashboardRun | null>(null)
+const focusedError = ref('')
+watch(() => props.runID, async (runID, _previous, onCleanup) => {
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  focusedRun.value = null
+  focusedError.value = ''
+  if (!runID) return
+  try {
+    const run = await getRun(runID)
+    if (!cancelled) focusedRun.value = run
+  } catch (cause) {
+    if (!cancelled) focusedError.value = cause instanceof Error ? cause.message : 'Run unavailable'
+  }
+}, { immediate: true })
 
 const activeResource = usePollingResource(
   (signal) => getDashboard({ active: true }, signal),
@@ -45,7 +62,7 @@ onMounted(async () => {
 
 const runs = computed<DashboardRun[]>(() => {
   const seen = new Set<string>()
-  return [...(activeResource.data.value?.runs || []), ...(recentResource.data.value?.runs || [])]
+  return [...(focusedRun.value ? [focusedRun.value] : []), ...(activeResource.data.value?.runs || []), ...(recentResource.data.value?.runs || [])]
     .filter((run) => {
       if (!run.run_id || seen.has(run.run_id)) return false
       seen.add(run.run_id)
@@ -214,6 +231,7 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
     busyRunID.value = ''
   }
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -246,6 +264,10 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
         </button>
       </section>
 
+      <div v-if="focusedError && props.runID" class="border border-amber-300/20 bg-amber-300/5 px-3 py-2 text-xs text-amber-200" role="alert">
+        Selected run {{ props.runID }} could not be loaded: {{ focusedError }}.
+        <a :href="operatorHref('live', { run: props.runID }, operatorSearch())" class="underline">Inspect source run</a>
+      </div>
       <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
 
       <section class="overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-panel)]">
@@ -260,7 +282,10 @@ async function setFeatured(run: DashboardRun, featured: boolean): Promise<void> 
         <div
           v-for="run in runs"
           :key="run.run_id"
-          class="grid grid-cols-1 gap-3 border-b border-[var(--poke-border)] px-3 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] lg:items-center lg:gap-2 lg:px-2.5 lg:py-2"
+          :class="[
+            'grid grid-cols-1 gap-3 border-b border-[var(--poke-border)] px-3 py-3 last:border-b-0 lg:grid-cols-[minmax(10rem,1.35fr)_7rem_8rem_minmax(12rem,1fr)_auto] lg:items-center lg:gap-2 lg:px-2.5 lg:py-2',
+            props.runID === run.run_id ? 'bg-cyan-300/5 ring-1 ring-inset ring-cyan-300/35' : ''
+          ]"
         >
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">

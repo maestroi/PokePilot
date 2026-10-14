@@ -8,6 +8,9 @@ import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { shortID } from './operations'
+import { operatorHref } from '../shared/urls'
+
+const props = defineProps<{ runID?: string; jobID?: string }>()
 
 const ACTIVE_STATES = new Set(['preparing', 'rendering', 'assembling', 'uploading'])
 
@@ -26,6 +29,9 @@ const {
 )
 
 const jobs = computed(() => data.value?.jobs ?? [])
+const visibleJobs = computed(() => jobs.value.filter((job) =>
+  props.jobID ? job.id === props.jobID : props.runID ? job.run_id === props.runID : true
+))
 const stateCounts = computed(() => data.value?.states ?? {})
 const activeCount = computed(() => [...ACTIVE_STATES].reduce((sum, name) => sum + Number(stateCounts.value[name] || 0), 0))
 const lastUpdatedLabel = computed(() => lastUpdatedAt.value ? new Date(lastUpdatedAt.value).toLocaleTimeString() : '—')
@@ -184,6 +190,7 @@ function refresh(): void {
   actionError.value = ''
   void refreshJobs()
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -221,9 +228,13 @@ function refresh(): void {
         {{ actionError }}
       </div>
 
+      <div v-if="(props.jobID || props.runID) && !visibleJobs.length" class="mb-3 rounded-sm border border-amber-300/20 px-3 py-2 text-xs text-amber-200">
+        No matching render job is in the recent job list for this selection.
+        <a :href="operatorHref('media', { section: 'jobs', run: '', job: '' }, operatorSearch())" class="ml-1 underline">Show all jobs</a>
+      </div>
       <div class="space-y-2 md:hidden">
         <article
-          v-for="job in jobs"
+          v-for="job in visibleJobs"
           :key="`mobile-${job.id}`"
           class="rounded-lg border border-white/8 bg-black/15 p-3"
         >
@@ -323,7 +334,7 @@ function refresh(): void {
             </tr>
           </thead>
           <tbody class="divide-y divide-white/8">
-            <tr v-for="job in jobs" :key="job.id">
+            <tr v-for="job in visibleJobs" :key="job.id">
               <td class="px-3 py-2.5 sm:px-4">
                 <a
                   :href="`/?run=${encodeURIComponent(job.run_id)}#live`"
