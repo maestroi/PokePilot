@@ -26,9 +26,10 @@ import (
 //
 // acceptBoundaryPrefix lets a bridge tile qualify when the policy route from
 // it is a non-empty safe prefix ending at a semantic boundary
-// (world.ErrRouteReplanRequired). Only GoTo's ErrNoRoute branch sets it: from
-// a pocket with no route at all, any executable prefix is progress, and every
-// destination behind a semantic gate only ever yields a prefix. Leaving
+// (world.ErrRouteReplanRequired). Only GoTo's ErrNoRoute and RouteBlockedError
+// branches set it: from a pocket with no executable route at all, any
+// executable prefix is progress, and every destination behind a semantic gate
+// only ever yields a prefix. Leaving
 // Route 2's Diglett pocket for the Indigo lobby looped on "no route" until
 // this was allowed (run-46xvnrqmqwcwvjnfqu5u03nj, issue #2006). The
 // replan-required branch keeps it false so the Cinnabar ping-pong below
