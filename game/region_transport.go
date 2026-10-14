@@ -5,13 +5,13 @@ package game
 type Weekday string
 
 const (
-	Sunday Weekday = "sunday"
-	Monday Weekday = "monday"
-	Tuesday Weekday = "tuesday"
+	Sunday    Weekday = "sunday"
+	Monday    Weekday = "monday"
+	Tuesday   Weekday = "tuesday"
 	Wednesday Weekday = "wednesday"
-	Thursday Weekday = "thursday"
-	Friday Weekday = "friday"
-	Saturday Weekday = "saturday"
+	Thursday  Weekday = "thursday"
+	Friday    Weekday = "friday"
+	Saturday  Weekday = "saturday"
 )
 
 // RegionTransport is a directed semantic connection between regions.
@@ -54,7 +54,7 @@ func AssessRegionTransports(routes []RegionTransport, caps CapabilitySet) []Regi
 			Service: route.Service, FromRegion: route.FromRegion, ToRegion: route.ToRegion,
 			From: route.Leg.From, To: route.Leg.To,
 			DepartureDays: append([]Weekday(nil), route.DepartureDays...),
-			AnyDay: route.AnyDay, OneWay: route.Leg.OneWay,
+			AnyDay:        route.AnyDay, OneWay: route.Leg.OneWay,
 			Available: len(missing) == 0, Missing: missing,
 		})
 	}
