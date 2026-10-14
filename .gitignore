@@ -33,3 +33,6 @@ repro-*
 
 # Local pret/pokered checkout used as a copy source. The vendored tree is pokered/.
 /pokered-master/
+
+# Local git worktrees. Each one is its own checkout.
+/.worktrees/
