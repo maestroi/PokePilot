@@ -21,7 +21,7 @@ func TestRegionTransportObservationCarriesStructuredPrerequisites(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"region_transports"`,`"service":"magnet_train"`,`"missing":["power_restored","rail_pass"]`} {
+	for _, want := range []string{`"region_transports"`, `"service":"magnet_train"`, `"missing":["power_restored","rail_pass"]`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("observation %s missing %s", data, want)
 		}
