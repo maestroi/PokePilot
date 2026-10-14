@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/maestroi/pokepilot/metrics"
 	"github.com/maestroi/pokepilot/operatorapi"
 )
 
@@ -65,7 +66,11 @@ func runWatch(ctx context.Context, token string) {
 		seen:        map[string]time.Time{},
 		mergedCount: -1, farmOpened: -1, farmClosed: -1,
 	}
-	srv := &http.Server{Addr: ":8080", Handler: w.handler(), ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{
+		Addr:              ":8080",
+		Handler:           metrics.Must(metrics.Options{Service: metrics.ServiceWatch, Revision: version}).Wrap(w.handler()),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	go func() { log.Printf("pokewatch: %v", srv.ListenAndServe()) }()
 	client := &http.Client{Timeout: 20 * time.Second}
 	tick := time.NewTicker(envDuration("POKEWATCH_INTERVAL", time.Minute))

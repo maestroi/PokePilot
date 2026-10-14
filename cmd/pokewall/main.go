@@ -17,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/maestroi/pokepilot/metrics"
 )
 
 const (
@@ -163,6 +165,7 @@ func main() {
 	handler = challengeProgrammingHTTPHandler(wall, handler)
 	handler = challengeVotingHTTPHandler(wall, handler)
 	handler = mediaRenderJobHTTPHandler(wall, handler)
+	handler = metrics.Must(metrics.Options{Service: metrics.ServiceWall, Revision: version}).Wrap(handler)
 	go RunChallengeProgramming(wall, time.Second)
 	go RunChallengeVoting(wall, time.Second)
 	server := &http.Server{

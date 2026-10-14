@@ -109,7 +109,9 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 	}
 
 	img := string(dockerfile)
-	for _, want := range []string{"go build -o /out/pokeissues ./cmd/pokeissues", "COPY --from=build /out/pokeissues /usr/local/bin/pokeissues"} {
+	// The issues binary embeds the revision for the Prometheus build_info series.
+	// Keep this test aligned with the stamped Docker build, not an unstamped one.
+	for _, want := range []string{"go build -ldflags \"-X main.version=${GIT_SHA}\" -o /out/pokeissues ./cmd/pokeissues", "COPY --from=build /out/pokeissues /usr/local/bin/pokeissues"} {
 		if !strings.Contains(img, want) {
 			t.Errorf("farm image missing %q", want)
 		}

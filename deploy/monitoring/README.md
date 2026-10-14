@@ -1,4 +1,49 @@
-# Telegram operator observability
+# Monitoring assets
+
+This directory holds scrape configuration for the Prometheus that already
+runs outside this repository. Nothing here deploys Prometheus, Grafana, or
+Alertmanager, and the application stack must not gain a second Grafana.
+
+Instrumentation conventions live in package `metrics` (`pokepilot_` prefix,
+histograms for latency, bounded labels, no `run_id` / `failure_id` /
+`family_id` / trace or goal identifiers). Each instrumented process exposes
+`GET /metrics` with `pokepilot_build_info{service,revision}`, `pokepilot_up`,
+Go runtime metrics, and process metrics. The revision label is the git SHA
+stamped at image build; local binaries report `dev`.
+
+## Application scrape targets
+
+Merge `prometheus-pokepilot.yml` into the existing Prometheus `scrape_configs`.
+Prometheus has to sit on the farm overlay. Ports are the in-network listeners,
+not the published host ports.
+
+| Service | Process | Port | Swarm DNS |
+| --- | --- | --- | --- |
+| wall | pokewall | 8080 | `tasks.wall` |
+| ui | pokeui | 8080 | `tasks.ui` |
+| spectator | pokeui `-spectator` | 8080 | `tasks.spectator` |
+| runner | pokepilot | 8099 | `tasks.runner` |
+| issues | pokeissues | 8080 | `tasks.issues` |
+| virtualtrader | gen1-trade-peer | 8080 | `tasks.virtualtrader` |
+| replay | pokereplay | 8080 | dedicated renderer; see `deploy/REPLAY_HOST.md` |
+| telegram | poketelegram | 8080 | `tasks.telegram` (job in `prometheus-poketelegram.yml`) |
+| watch | pokewatch | 8080 | ops overlay only; not reachable from the farm network |
+
+Services that expose `/metrics` carry `prometheus.scrape=true` and
+`prometheus.port` deploy labels for a Prometheus that already uses Docker
+Swarm service discovery. The DNS jobs above do not need the Docker socket.
+
+Confirm a target:
+
+```sh
+curl -s http://<task>:8080/metrics | head
+```
+
+Runners listen on 8099. A fresh scrape includes `pokepilot_up`,
+`pokepilot_build_info`, `go_goroutines`, and `process_start_time_seconds`.
+Later issues add run, failure, and subsystem series to the same endpoint.
+
+## Telegram operator
 
 Assets for scraping and dashboarding `cmd/poketelegram` (the Telegram remote
 operator bot):
@@ -55,7 +100,9 @@ the farm.
    curl -s http://<telegram-task>:8080/metrics | head
    ```
 
-Exposed metrics (all untyped counters/gauges):
+Exposed bot metrics (Prometheus counters and gauges; names are unchanged).
+The same `/metrics` response also includes `pokepilot_build_info`,
+`pokepilot_up`, Go runtime metrics, and process metrics:
 
 | Metric | Meaning |
 | --- | --- |

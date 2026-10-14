@@ -22,6 +22,7 @@ import (
 	"time"
 
 	gsdata "github.com/maestroi/pokepilot/gs/data"
+	"github.com/maestroi/pokepilot/metrics"
 )
 
 // version is this build's identity (git SHA), stamped by the Dockerfile via
@@ -245,6 +246,11 @@ func main() {
 		httpHandler = adminCORS(withVueFrontend(handlerWithServices(wallBase, replayBase, mcpToken), "operator"))
 		log.Printf("pokeui proxying %s on http://%s (MCP=%t, replay=%t)", *wall, *httpAddr, mcpToken != "", replayBase != "")
 	}
+	service := metrics.ServiceUI
+	if *spectator {
+		service = metrics.ServiceSpectator
+	}
+	httpHandler = metrics.Must(metrics.Options{Service: service, Revision: version}).Wrap(httpHandler)
 	server := &http.Server{
 		Addr:              *httpAddr,
 		Handler:           httpHandler,

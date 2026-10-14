@@ -1099,23 +1099,7 @@ func (b *bot) httpHandler() http.Handler {
 		})
 	})
 	mux.HandleFunc("POST /v1/ops", b.handleOps)
-	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		b.mu.Lock()
-		pending := len(b.confirmations)
-		b.mu.Unlock()
-		fmt.Fprintf(w, "poketelegram_updates_total %d\n", b.m.updates.Load())
-		fmt.Fprintf(w, "poketelegram_commands_total %d\n", b.m.commands.Load())
-		fmt.Fprintf(w, "poketelegram_unauthorized_total %d\n", b.m.unauthorized.Load())
-		fmt.Fprintf(w, "poketelegram_telegram_errors_total %d\n", b.m.telegramErrs.Load())
-		fmt.Fprintf(w, "poketelegram_operator_errors_total %d\n", b.m.operatorErrs.Load())
-		fmt.Fprintf(w, "poketelegram_notifications_total %d\n", b.m.notifications.Load())
-		fmt.Fprintf(w, "poketelegram_actions_total %d\n", b.m.actions.Load())
-		fmt.Fprintf(w, "poketelegram_action_errors_total %d\n", b.m.actionErrs.Load())
-		fmt.Fprintf(w, "poketelegram_pending_confirmations %d\n", pending)
-		fmt.Fprintf(w, "poketelegram_wall_healthy %d\n", b.m.wallHealthy.Load())
-		fmt.Fprintf(w, "poketelegram_last_operator_poll_timestamp_seconds %d\n", b.m.lastPollUnix.Load())
-	})
+	mux.Handle("GET /metrics", b.prometheusHandler())
 	return mux
 }
 

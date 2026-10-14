@@ -1,4 +1,6 @@
 roms/
+# Local git worktrees. Their contents are other checkouts, not this tree.
+.worktrees/
 *.gb
 *.gbc
 *.sav
