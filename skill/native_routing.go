@@ -116,8 +116,17 @@ func waitLiveMapSettled(m *emu.Emu, routing nativeRoutingProfile) (game.LiveTopo
 // (the map identity and a controllable overworld arrive before the position
 // lands). Routing from that tile fails with a terminal no-route, so both halves
 // are required before the map counts as settled.
+//
+// WidthBlocks/HeightBlocks are block counts; Gen-II wXCoord/wYCoord are tiles
+// (two tiles per block). Comparing the position to the block dimensions treated
+// every tile with X>=WidthBlocks as forever unsettled — Route 35 is 10x18
+// blocks (20x36 tiles), so a standing player at (17,0) burned the settle budget
+// while already controllable (run-whai2l6l8g1x36h0y0fucmsit / triage
+// efe8f75648bc29a8, regressing the block-unit gate from #2652).
 func liveMapSettled(world game.OverworldState, decoded game.LiveTopologyState) bool {
-	return decoded.BlocksSettled && int(world.X) < decoded.WidthBlocks && int(world.Y) < decoded.HeightBlocks
+	tileW := decoded.WidthBlocks * 2
+	tileH := decoded.HeightBlocks * 2
+	return decoded.BlocksSettled && int(world.X) < tileW && int(world.Y) < tileH
 }
 
 func nativeLiveGrid(
@@ -665,6 +674,26 @@ func nativeWarpTargets(grid *world.NativeGrid, wx, wy int, blocked map[[2]int]bo
 	return targets
 }
 
+// nativeObstacleBridgeBlocked is the occupied set FindNativeObstacleApproach
+// must see for one bridge target. Carpet warps and other leave tiles live in
+// the runtime blocker set so ordinary walks never step them by accident; the
+// bridge's target is exactly that tile. nativeWarpApproach already drops it
+// before FindNativePath, and the obstacle search must match or a Cut tree that
+// opens an edge-carpet exit is invisible (Route 35 east pocket at (17,0), Cut
+// at (17,6), Goldenrod Gate carpets at (9,33)/(10,33) —
+// run-whai2l6l8g1x36h0y0fucmsit / triage efe8f75648bc29a8).
+func nativeObstacleBridgeBlocked(blocked map[[2]int]bool, at [2]int) map[[2]int]bool {
+	if !blocked[at] {
+		return blocked
+	}
+	out := make(map[[2]int]bool, len(blocked))
+	for tile, b := range blocked {
+		out[tile] = b
+	}
+	delete(out, at)
+	return out
+}
+
 // nativeObstacleBridge finds the cheapest single field-move clear that opens a
 // sealed path to any of targets, runs it, and reports cleared=true so the
 // caller re-reads the live map. Same-map nativeWalkTo, connection edges (a Cut
@@ -691,7 +720,7 @@ func nativeObstacleBridge(
 	var best world.NativeObstacleApproach
 	found := false
 	for _, at := range targets {
-		plan, planErr := world.FindNativeObstacleApproach(grid, sx, sy, at[0], at[1], blocked, usable)
+		plan, planErr := world.FindNativeObstacleApproach(grid, sx, sy, at[0], at[1], nativeObstacleBridgeBlocked(blocked, at), usable)
 		if planErr != nil {
 			continue
 		}
