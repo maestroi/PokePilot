@@ -96,7 +96,7 @@ func PlanNativeRegionRoute(
 			if len(option.Missing) > 0 {
 				blocked = append(blocked, game.TransitionBlockage{
 					Transition: game.Transition{ID: option.Service, From: option.From, To: option.To},
-					Missing: append([]game.CapabilityID(nil), option.Missing...),
+					Missing:    append([]game.CapabilityID(nil), option.Missing...),
 				})
 			}
 			continue
