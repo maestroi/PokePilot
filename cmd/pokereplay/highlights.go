@@ -19,6 +19,7 @@ import (
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	mediaartifact "github.com/maestroi/pokepilot/media/artifact"
+	"github.com/maestroi/pokepilot/media/compositor"
 	mediahighlight "github.com/maestroi/pokepilot/media/highlight"
 )
 
@@ -54,6 +55,93 @@ type highlightManifest struct {
 	Plan      mediahighlight.Plan     `json:"plan"`
 	ObjectKey string                  `json:"object_key"`
 	Clips     []highlightManifestClip `json:"clips"`
+	// Chapters are reel offsets; ChaptersText is the same list ready to paste
+	// into a YouTube description.
+	Chapters     []mediahighlight.Chapter `json:"chapters,omitempty"`
+	ChaptersText string                   `json:"chapters_text,omitempty"`
+}
+
+const (
+	highlightIntroMS = int64(4000)
+	highlightOutroMS = int64(6000)
+)
+
+// highlightCardComposer is the optional compositor capability for intro and
+// outro cards; a compositor without it renders a reel without cards.
+type highlightCardComposer interface {
+	ComposeCard(context.Context, compositor.Card) error
+}
+
+// highlightCards describes the run for the reel's intro and outro from the
+// first and last attempt timelines. It reads only game-neutral fields.
+func highlightCards(timelines []farm.MediaTimeline) (intro, outro compositor.Card) {
+	intro = compositor.Card{Title: "Highlights", DurationMS: highlightIntroMS}
+	outro = compositor.Card{Title: "Run over", DurationMS: highlightOutroMS}
+	if len(timelines) == 0 {
+		return intro, outro
+	}
+	first, last := timelines[0].Normalized(), timelines[len(timelines)-1].Normalized()
+	if goal := strings.TrimSpace(first.Run.Goal); goal != "" {
+		intro.Lines = append(intro.Lines, "Goal: "+goal)
+	}
+	runLine := "Run " + first.Run.RunID
+	if planner := strings.TrimSpace(first.Run.Planner); planner != "" {
+		runLine += "  ·  planner " + planner
+	}
+	intro.Lines = append(intro.Lines, runLine)
+	if party := highlightPartyLine(first, true); party != "" {
+		intro.Lines = append(intro.Lines, "Starting party: "+party)
+	}
+	intro.Lines = append(intro.Lines, "An autonomous AI run, replayed from its deterministic recording.")
+
+	if last.Run.Status == "done" {
+		outro.Title = "Run complete"
+	}
+	if player := highlightPlayer(last, false); player != nil {
+		line := plural(len(player.Badges), "badge")
+		if len(player.Badges) > 0 {
+			line += " (" + strings.Join(player.Badges, ", ") + ")"
+		}
+		outro.Lines = append(outro.Lines, "Badges: "+line)
+	}
+	if party := highlightPartyLine(last, false); party != "" {
+		outro.Lines = append(outro.Lines, "Final party: "+party)
+	}
+	var gameMS int64
+	for _, timeline := range timelines {
+		timeline = timeline.Normalized()
+		gameMS += int64(float64(timeline.EndFrame) * 1000 / timeline.FramesPerSecond)
+	}
+	outro.Lines = append(outro.Lines, "Game time: "+(time.Duration(gameMS)*time.Millisecond).Round(time.Second).String())
+	if len(timelines) > 1 {
+		outro.Lines = append(outro.Lines, "Attempts: "+strconv.Itoa(len(timelines)))
+	}
+	return intro, outro
+}
+
+func highlightPlayer(timeline farm.MediaTimeline, first bool) *farm.Player {
+	for i := range timeline.Snapshots {
+		snapshot := timeline.Snapshots[i]
+		if !first {
+			snapshot = timeline.Snapshots[len(timeline.Snapshots)-1-i]
+		}
+		if snapshot.Player != nil {
+			return snapshot.Player
+		}
+	}
+	return nil
+}
+
+func highlightPartyLine(timeline farm.MediaTimeline, first bool) string {
+	player := highlightPlayer(timeline, first)
+	if player == nil {
+		return ""
+	}
+	party := make([]string, 0, len(player.Party))
+	for _, mon := range player.Party {
+		party = append(party, fmt.Sprintf("%s Lv%d", strings.ToUpper(mon.Name), mon.Level))
+	}
+	return strings.Join(party, ", ")
 }
 
 type highlightManifestClip struct {
@@ -131,7 +219,7 @@ func (s *replayServer) highlightPlan(ctx context.Context, runID string, recordin
 func (s *replayServer) highlightProfile(plan mediahighlight.Plan) mediaartifact.Profile {
 	profile := s.replayProfileForMode(replayModeBroadcast, replaySegmentFrames())
 	profile.Name = mediaartifact.ProfileHighlight
-	profile.EventPolicy = fmt.Sprintf("highlight-policy-v%d", plan.PolicyVersion)
+	profile.EventPolicy = fmt.Sprintf("highlight-policy-v%d-cards-v1", plan.PolicyVersion)
 	profile.SegmentPolicy = mediaartifact.Component{ID: "highlight-windows", Version: fmt.Sprintf("v%d", plan.Version)}
 	profile.EditPlan = &mediaartifact.Content{
 		Version: fmt.Sprintf("highlight-plan-v%d", plan.Version),
@@ -567,6 +655,41 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 		setError(err)
 		return
 	}
+	expected := replayAttemptsDuration(attempts)
+	windowByIndex := make(map[int]mediahighlight.Window, len(plan.Windows))
+	for _, window := range plan.Windows {
+		windowByIndex[window.Index] = window
+	}
+	var chapters []mediahighlight.Chapter
+	offsetMS := int64(0)
+	cards, withCards := s.compositor.(highlightCardComposer)
+	if withCards {
+		var timelines []farm.MediaTimeline
+		for _, attempt := range attempts {
+			if timeline, err := s.mediaTimelineOrEmpty(ctx, runID, attempt.Recording.Attempt); err == nil {
+				timelines = append(timelines, timeline)
+			}
+		}
+		intro, outro := highlightCards(timelines)
+		intro.Destination, outro.Destination = pathJoinOS(dir, "intro.mp4"), pathJoinOS(dir, "outro.mp4")
+		for _, card := range []*compositor.Card{&intro, &outro} {
+			card.VAAPI, card.VAAPIDevice = s.vaapi, vaapiDevice()
+			if err := cards.ComposeCard(ctx, *card); err != nil {
+				setError(err)
+				return
+			}
+		}
+		urls = append(append([]string{intro.Destination}, urls...), outro.Destination)
+		expected += time.Duration(intro.DurationMS+outro.DurationMS) * time.Millisecond
+		offsetMS = intro.DurationMS
+	}
+	for _, attempt := range attempts {
+		for _, segment := range attempt.Segments {
+			chapters = append(chapters, mediahighlight.Chapter{StartMS: offsetMS, Title: mediahighlight.ChapterTitle(windowByIndex[segment.Index])})
+			offsetMS += replaySegmentWindowDuration(segment).Milliseconds()
+		}
+	}
+	chapters = mediahighlight.YouTubeChapters(chapters, expected.Milliseconds())
 	reelPath := pathJoinOS(dir, "highlights.mp4")
 	s.encoderProcesses.Add(1)
 	concatErr := concatReplaySegmentURLs(ctx, dir, urls, reelPath)
@@ -575,7 +698,6 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 		setError(concatErr)
 		return
 	}
-	expected := replayAttemptsDuration(attempts)
 	if err := probeReplayVideo(ctx, reelPath, expected); err != nil {
 		setError(fmt.Errorf("validate highlight reel: %w", err))
 		return
@@ -595,10 +717,9 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 		return
 	}
 
-	manifest := highlightManifest{Version: 1, RunID: runID, Plan: plan, ObjectKey: videoKey}
-	windowByIndex := make(map[int]mediahighlight.Window, len(plan.Windows))
-	for _, window := range plan.Windows {
-		windowByIndex[window.Index] = window
+	manifest := highlightManifest{
+		Version: 2, RunID: runID, Plan: plan, ObjectKey: videoKey,
+		Chapters: chapters, ChaptersText: mediahighlight.FormatChapters(chapters),
 	}
 	for _, attempt := range attempts {
 		for _, segment := range attempt.Segments {

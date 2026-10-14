@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maestroi/pokepilot/farm"
 	mediahighlight "github.com/maestroi/pokepilot/media/highlight"
 )
 
@@ -96,5 +97,23 @@ func TestHighlightProfileUsesPlanAsEditIdentity(t *testing.T) {
 	}
 	if string(profile.Name) != "highlight" {
 		t.Fatalf("profile name=%q want highlight", profile.Name)
+	}
+}
+
+func TestHighlightCardsDescribeRunFromTimelines(t *testing.T) {
+	start := farm.MediaSnapshot{Player: &farm.Player{Party: []farm.PartyMon{{Name: "charmander", Level: 5}}}}
+	end := farm.MediaSnapshot{Frame: 600, Player: &farm.Player{
+		Badges: []string{"Boulder Badge"}, Party: []farm.PartyMon{{Name: "charmeleon", Level: 18}},
+	}}
+	timelines := []farm.MediaTimeline{
+		{Run: farm.MediaRunSummary{RunID: "run-1", Goal: "Earn the Boulder Badge.", Status: "failed"}, Attempt: 1, EndFrame: 3600, FramesPerSecond: 60, Snapshots: []farm.MediaSnapshot{start}},
+		{Run: farm.MediaRunSummary{RunID: "run-1", Status: "done"}, Attempt: 2, EndFrame: 3600, FramesPerSecond: 60, Snapshots: []farm.MediaSnapshot{end}},
+	}
+	intro, outro := highlightCards(timelines)
+	got := strings.Join(intro.Lines, "|") + " // " + outro.Title + ": " + strings.Join(outro.Lines, "|")
+	for _, want := range []string{"Goal: Earn the Boulder Badge.", "Starting party: CHARMANDER Lv5", "Run complete", "Badges: 1 badge (Boulder Badge)", "Final party: CHARMELEON Lv18", "Game time: 2m0s", "Attempts: 2"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("cards %q missing %q", got, want)
+		}
 	}
 }

@@ -74,6 +74,21 @@ func TestBuildMergesOverlappingAndNearbyEvents(t *testing.T) {
 	}
 }
 
+func TestBuildGymWindowCoversWholeFightBeforeBadge(t *testing.T) {
+	// The leader fight runs 120s..300s; the badge lands when it resolves.
+	plan := Build([]farm.MediaTimeline{testTimeline(
+		farm.MediaEvent{Type: "gym_battle", StartFrame: 60 * 120, Frame: 60 * 300},
+		farm.MediaEvent{Type: "badge_acquired", Frame: 60 * 300},
+	)}, DefaultPolicy())
+	if len(plan.Windows) != 1 {
+		t.Fatalf("windows=%d want 1: %+v", len(plan.Windows), plan.Windows)
+	}
+	w := plan.Windows[0]
+	if w.StartMS > 120_000 || w.EndMS < 300_000 {
+		t.Fatalf("window %d..%dms does not cover the fight 120000..300000ms", w.StartMS, w.EndMS)
+	}
+}
+
 func TestBuildDurationCapUsesDeterministicPriority(t *testing.T) {
 	policy := DefaultPolicy()
 	policy.TargetDurationMS = 36_000
@@ -111,5 +126,42 @@ func TestBuildOrdersSelectedWindowsChronologically(t *testing.T) {
 	}
 	if plan.Windows[0].Index != 0 || plan.Windows[1].Index != 1 {
 		t.Fatalf("indexes not stable: %+v", plan.Windows)
+	}
+}
+
+func TestChapterTitlesAndYouTubeFormat(t *testing.T) {
+	badge := Window{Events: []EventRef{
+		{Type: "gym_battle", Summary: "gym won", Priority: 95},
+		{Type: "badge_acquired", Summary: "acquired Boulder Badge", Priority: 100},
+	}}
+	boss := Window{Events: []EventRef{{Type: "boss_battle", Summary: "won", Priority: 104}}}
+	if got := ChapterTitle(badge); got != "Boulder Badge" {
+		t.Fatalf("badge title = %q", got)
+	}
+	if got := ChapterTitle(boss); got != "Boss battle: won" {
+		t.Fatalf("boss title = %q", got)
+	}
+	got := FormatChapters([]Chapter{{0, "Intro"}, {65_000, "Boulder Badge"}, {3_725_000, "Results"}})
+	want := "0:00 Intro\n1:05 Boulder Badge\n1:02:05 Results\n"
+	if got != want {
+		t.Fatalf("chapters =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestYouTubeChaptersFollowYouTubeRules(t *testing.T) {
+	got := YouTubeChapters([]Chapter{
+		{4_000, "Boulder Badge"}, {30_000, "Too short"}, {35_000, "Evolution"}, {60_000, "Cascade Badge"}, {120_000, "Too short at end"},
+	}, 126_000)
+	want := []Chapter{{0, "Boulder Badge"}, {35_000, "Evolution"}, {60_000, "Cascade Badge"}}
+	if len(got) != len(want) {
+		t.Fatalf("chapters = %+v want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("chapters = %+v want %+v", got, want)
+		}
+	}
+	if YouTubeChapters([]Chapter{{0, "a"}, {20_000, "b"}}, 40_000) != nil {
+		t.Fatal("fewer than three chapters must be dropped")
 	}
 }

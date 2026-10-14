@@ -1113,7 +1113,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	stats.decision = decision
 	stats.wirePlannerLogs(logw, snap)
 	benchmarkStarted := time.Now()
-	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap}, agent.Budget{
+	res := agent.Run(m, m.ROM(), reportingPlanner{inner: stats, snap: snap, frame: m.FrameCount}, agent.Budget{
 		MaxRounds:     maxRounds,
 		MaxFrames:     maxFrames,
 		Build:         version,
@@ -1208,6 +1208,7 @@ func farmProgress(p *agent.Progress) *farm.Progress {
 type reportingPlanner struct {
 	inner agent.Planner
 	snap  *heartbeatSnap
+	frame func() uint64 // emulator frame for media battle spans; nil skips them
 }
 
 func (p reportingPlanner) RoutePriority() agent.RoutePriority {
@@ -1268,12 +1269,18 @@ func (p reportingPlanner) DecideFailure(result agent.ObjectiveResult) (agent.Dec
 }
 
 func (p reportingPlanner) ObserveBattleTurn(turn game.BattleDecisionState, executed game.BattleAction) {
+	if p.frame != nil {
+		captureMediaBattleTurn(p.frame(), turn.Context)
+	}
 	if o, ok := p.inner.(agent.BattleTurnObserver); ok {
 		o.ObserveBattleTurn(turn, executed)
 	}
 }
 
 func (p reportingPlanner) ObserveBattleResult(result game.BattleResult) {
+	if p.frame != nil {
+		captureMediaBattleResult(p.frame(), result)
+	}
 	if o, ok := p.inner.(agent.BattleOutcomeObserver); ok {
 		o.ObserveBattleResult(result)
 	}

@@ -1,10 +1,13 @@
 package main
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/agent"
 	"github.com/maestroi/pokepilot/farm"
+	"github.com/maestroi/pokepilot/game"
 )
 
 func TestDrainMediaTimelineArtifactUsesReplayRelativeFramesAndSemanticEvents(t *testing.T) {
@@ -82,6 +85,47 @@ func TestDrainMediaTimelineArtifactUsesReplayRelativeFramesAndSemanticEvents(t *
 		if event.ID == "" {
 			t.Fatalf("event without stable ID: %#v", event)
 		}
+	}
+}
+
+func TestDrainMediaTimelineArtifactClassifiesObservedBattleSpans(t *testing.T) {
+	resetMediaTimelineTelemetry()
+	t.Cleanup(resetMediaTimelineTelemetry)
+	obs := agent.Observation{Location: agent.PlaceID("route-22")}
+	captureMediaTimelineResult(agent.Result{
+		Initial: obs, StartFrame: 100, Final: obs, FinalFrame: 1000,
+		Outcomes: []agent.ObjectiveResult{
+			{Objective: agent.Objective{Kind: agent.KindGoTo, Place: "route-22"}, Outcome: agent.OutcomeCompleted, Final: obs},
+			{Objective: agent.Objective{Kind: agent.KindProgress, Progress: "rival_resolved"}, Outcome: agent.OutcomeCompleted, Final: obs},
+		},
+		OutcomeTimings: []agent.ObjectiveTiming{{StartFrame: 100, Frame: 400, Round: 1}, {StartFrame: 400, Frame: 900, Round: 2}},
+	})
+	// A trainer met while travelling, a wild battle, then the story fight.
+	captureMediaBattleTurn(200, game.BattleContextTrainer)
+	captureMediaBattleResult(300, game.BattleWon)
+	captureMediaBattleTurn(320, game.BattleContextWild)
+	captureMediaBattleResult(350, game.BattleWon)
+	captureMediaBattleTurn(500, game.BattleContextTrainer)
+	captureMediaBattleTurn(560, game.BattleContextTrainer)
+	captureMediaBattleResult(800, game.BattleLost)
+
+	artifact, err := drainMediaTimelineArtifact(farm.Spec{RunID: "run-battles", Attempt: 1}, "done", 1000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeline, err := farm.DecodeMediaTimeline(artifact.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, event := range timeline.Events {
+		if strings.HasSuffix(event.Type, "_battle") {
+			got = append(got, fmt.Sprintf("%s %d-%d %s", event.Type, event.StartFrame, event.Frame, event.Summary))
+		}
+	}
+	want := []string{"trainer_battle 100-200 won", "boss_battle 400-700 lost"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("battle events = %q, want %q", got, want)
 	}
 }
 
