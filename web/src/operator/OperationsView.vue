@@ -1,23 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ArrowPathIcon } from '@heroicons/vue/20/solid'
+import { ArrowPathIcon, ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
 import { forceEndWorker, getDashboard } from '../shared/api/client'
-import type { DashboardRun, DashboardWorker } from '../shared/api/types'
-import BadgeIcon from '../shared/components/BadgeIcon.vue'
+import type { DashboardWorker } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
-import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { operatorHref } from '../shared/urls'
 import {
   ageLabel,
-  formatFrame,
   gameTitle,
-  goalLabel,
-  llmProfileLabel,
-  outcomeLabel,
-  outcomeTone,
   partitionOperationRuns,
   shortID,
   shortRevision,
@@ -35,26 +29,12 @@ const {
   { intervalMs: 2000 }
 )
 
-const {
-  data: recentData,
-  error: recentError,
-  state: recentState,
-  retry: retryRecent
-} = usePollingResource(
-  (signal) => getDashboard({ status: 'done', limit: 12 }, signal),
-  {
-    intervalMs: 10000,
-    isEmpty: (snapshot) => snapshot.runs.length === 0
-  }
-)
-
 const workers = computed(() => [...(activeData.value?.workers ?? [])]
   .sort((a, b) => a.addr.localeCompare(b.addr)))
 const runs = computed(() => partitionOperationRuns(activeData.value?.runs ?? []))
-const recentRuns = computed(() => partitionOperationRuns(recentData.value?.runs ?? [], 12).recent)
 const idleWorkers = computed(() => workers.value.filter((worker) => !worker.run_id).length)
-const connectionTone = computed(() => activeState.value === 'stale' ? 'warning' : activeState.value === 'error' ? 'danger' : 'success')
-const connectionLabel = computed(() => activeState.value === 'stale' ? 'Stale' : activeState.value === 'error' ? 'Offline' : 'Connected')
+const connectionTone = computed(() => activeState.value === 'stale' || activeState.value === 'loading' ? 'warning' : activeState.value === 'error' ? 'danger' : 'success')
+const connectionLabel = computed(() => activeState.value === 'stale' ? 'Stale' : activeState.value === 'error' ? 'Offline' : activeState.value === 'loading' ? 'Connecting' : 'Connected')
 const activeUpdatedLabel = computed(() => activeUpdatedAt.value ? new Date(activeUpdatedAt.value).toLocaleTimeString() : '—')
 const nowSeconds = computed(() => activeData.value?.now || Date.now() / 1000)
 
@@ -72,35 +52,24 @@ const forceEndMessage = computed(() => {
 })
 
 const metrics = computed(() => [
-  { label: 'Workers', value: workers.value.length, note: `${idleWorkers.value} available` },
-  { label: 'Active', value: runs.value.active.length, note: 'running attempts' },
-  { label: 'Waiting', value: runs.value.waiting.length, note: 'queued + leased' },
-  { label: 'Wall build', value: shortRevision(activeData.value?.wall_version), note: 'current revision', mono: true }
+  { label: 'Wall', value: connectionLabel.value, note: '2s refresh', mono: false },
+  { label: 'Workers', value: workers.value.length, note: `${idleWorkers.value} available`, mono: true },
+  { label: 'Running', value: runs.value.active.length, note: 'active attempts', mono: true },
+  { label: 'Waiting', value: runs.value.waiting.length, note: `${runs.value.waiting.filter((run) => run.status === 'leased').length} leased · ${runs.value.waiting.filter((run) => run.status === 'queued').length} queued`, mono: true }
 ])
-
-function leadMon(run: DashboardRun) {
-  return run.player?.party?.[0]
-}
-
-function runBadges(run: DashboardRun): string[] {
-  return run.player?.badges ?? []
-}
-
-function dexProgressLabel(run: DashboardRun): string {
-  const owned = Number(run.player?.dex_owned || 0)
-  const total = Number(run.player?.dex_total || 0)
-  if (total > 0) return `${owned}/${total}`
-  if (owned > 0) return String(owned)
-  return '—'
-}
-
-function refreshActive(): void {
-  void retryActive()
-}
-
-function refreshRecent(): void {
-  void retryRecent()
-}
+const signals = computed(() => {
+  const items: { title: string; detail: string; tone: 'warning' | 'info' | 'neutral' }[] = []
+  if (activeState.value === 'stale') items.push({ title: 'Snapshot stale', detail: 'Worker and lease information reflects the last successful refresh.', tone: 'warning' })
+  const waiting = runs.value.waiting.filter((run) => run.status === 'queued').length
+  const leased = runs.value.waiting.filter((run) => run.status === 'leased').length
+  if (waiting) items.push({ title: 'Queue backlog', detail: `${waiting} run(s) awaiting a worker.`, tone: 'warning' })
+  if (leased) items.push({ title: 'Leases starting', detail: `${leased} run(s) leased but not yet running.`, tone: 'info' })
+  const busy = workers.value.filter((worker) => worker.run_id).length
+  if (busy) items.push({ title: 'Workers occupied', detail: `${busy} of ${workers.value.length} workers have a run assigned.`, tone: 'neutral' })
+  return items
+})
+function operatorSearch(): string { return window.location.search }
+function refreshActive(): void { void retryActive() }
 
 function requestForceEnd(worker: DashboardWorker): void {
   workerActionError.value = ''
@@ -120,7 +89,6 @@ async function confirmForceEnd(): Promise<void> {
     await forceEndWorker(worker.addr)
     forceEndTarget.value = null
     void retryActive()
-    void retryRecent()
   } catch (error) {
     workerActionError.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -131,6 +99,10 @@ async function confirmForceEnd(): Promise<void> {
 
 <template>
   <div class="space-y-3">
+    <div class="flex flex-wrap justify-end gap-2">
+      <a href="#settings/models" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300">Configure models</a>
+      <button type="button" class="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="refreshActive"><ArrowPathIcon class="size-3.5" aria-hidden="true" />Refresh</button>
+    </div>
     <ResourceState
       :state="activeState"
       title="Operator data is unavailable"
@@ -152,8 +124,8 @@ async function confirmForceEnd(): Promise<void> {
         </div>
       </div>
 
-      <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <Panel title="System health" description="Wall connection and dashboard refresh state." compact>
+      <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+        <Panel title="System health" description="Current wall refresh and worker status." compact>
           <dl class="divide-y divide-white/8">
             <div class="flex items-center justify-between gap-4 py-2 first:pt-0">
               <dt class="text-xs text-slate-500">Wall</dt>
@@ -174,7 +146,7 @@ async function confirmForceEnd(): Promise<void> {
           </dl>
         </Panel>
 
-        <Panel title="Workers" description="Current farm capacity and worker leases." compact class="xl:col-span-2">
+        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact class="xl:col-span-2">
           <div v-if="workers.length" class="-mx-3 overflow-x-auto sm:-mx-4">
             <table class="min-w-full divide-y divide-white/10 text-left">
               <thead>
@@ -191,13 +163,13 @@ async function confirmForceEnd(): Promise<void> {
                 <tr v-for="worker in workers" :key="worker.addr">
                   <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-300 sm:px-4">{{ worker.addr }}</td>
                   <td class="px-3 py-2.5"><StatusBadge :tone="worker.run_id ? 'info' : 'success'">{{ worker.run_id ? 'Busy' : 'Available' }}</StatusBadge></td>
-                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-400" :title="worker.run_id || ''">{{ shortID(worker.run_id) }}</td>
-                  <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ worker.seen_ago || '—' }}</td>
+                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-400" :title="worker.run_id || ''"><a v-if="worker.run_id" :href="operatorHref('live', { run: worker.run_id }, operatorSearch())" class="inline-flex items-center gap-1 text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300"><span>{{ shortID(worker.run_id) }}</span><ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /></a><span v-else>—</span></td>
+                  <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ worker.seen_ago || 'Not reported' }}</td>
                   <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-500">{{ shortRevision(worker.version) }}</td>
                   <td class="px-3 py-2.5 text-right sm:pr-4">
                     <button
                       type="button"
-                      class="rounded-md bg-rose-400/8 px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-rose-300 ring-1 ring-rose-400/20 hover:bg-rose-400/15"
+                      class="rounded-md bg-rose-400/8 px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-rose-300 ring-1 ring-rose-400/20 hover:bg-rose-400/15 focus-visible:outline-2 focus-visible:outline-rose-300"
                       @click="requestForceEnd(worker)"
                     >
                       Force end
@@ -211,71 +183,17 @@ async function confirmForceEnd(): Promise<void> {
           <p v-if="workerActionError" class="mt-3 text-xs text-rose-300">Force end failed: {{ workerActionError }}</p>
         </Panel>
 
-        <Panel title="Active attempts" description="Runs currently executing on a worker." compact class="xl:col-span-2">
-          <div v-if="runs.active.length" class="-mx-3 overflow-x-auto sm:-mx-4">
-            <table class="min-w-full divide-y divide-white/10 text-left">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Run</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Pokémon</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Route</th>
-                  <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Round</th>
-                  <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Frame</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-white/8">
-                <tr v-for="run in runs.active" :key="run.run_id">
-                  <td class="px-3 py-2.5 sm:px-4">
-                    <div class="flex items-center gap-2">
-                      <span class="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.45)]" />
-                      <span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span>
-                      <span class="text-[9px] text-slate-500">{{ gameTitle(run.game) }}</span>
-                    </div>
-                  </td>
-                  <td class="px-3 py-2">
-                    <div v-if="leadMon(run)" class="flex min-w-[9rem] items-center gap-2">
-                      <PokemonSprite :name="leadMon(run)?.name || ''" :size="34" />
-                      <div class="min-w-0">
-                        <div class="truncate text-[11px] font-semibold text-slate-300">{{ leadMon(run)?.name }}</div>
-                        <div class="font-mono text-[9px] text-slate-600">Lv {{ leadMon(run)?.level }} · {{ run.player?.party?.length || 0 }}/6</div>
-                      </div>
-                    </div>
-                    <span v-else class="text-xs text-slate-600">—</span>
-                  </td>
-                  <td class="px-3 py-2">
-                    <div class="min-w-[8rem]">
-                      <div class="flex h-5 items-center gap-0.5">
-                        <BadgeIcon v-for="badge in runBadges(run).slice(0, 4)" :key="badge" :name="badge" :size="18" />
-                        <span v-if="runBadges(run).length > 4" class="ml-0.5 font-mono text-[9px] text-slate-600">+{{ runBadges(run).length - 4 }}</span>
-                        <span v-if="!runBadges(run).length" class="text-[10px] text-slate-700">no badges</span>
-                      </div>
-                      <div class="mt-0.5 font-mono text-[9px] text-slate-500">Dex {{ dexProgressLabel(run) }}</div>
-                    </div>
-                  </td>
-                  <td class="max-w-md truncate px-3 py-2.5 text-xs text-slate-300" :title="goalLabel(run)">{{ goalLabel(run) }}</td>
-                  <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ llmProfileLabel(run) }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-400">{{ run.stats?.round ?? '—' }}</td>
-                  <td class="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-400 sm:pr-4">{{ formatFrame(run.frame) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="py-6 text-center text-sm text-slate-500">No runs are executing right now.</p>
-        </Panel>
-
-        <Panel title="Queue and leases" description="Waiting work in oldest-first order." compact>
+        <Panel title="Queue and leases" description="Waiting work in oldest-first order; select a run to inspect." compact>
           <ul v-if="runs.waiting.length" class="divide-y divide-white/8">
             <li v-for="run in runs.waiting" :key="run.run_id" class="py-3 first:pt-0 last:pb-0">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <span class="font-mono text-xs text-slate-300" :title="run.run_id">{{ shortID(run.run_id) }}</span>
+                    <a :href="operatorHref('live', { run: run.run_id }, operatorSearch())" class="font-mono text-xs text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="run.run_id">{{ shortID(run.run_id) }}</a>
                     <StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge>
                     <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
                   </div>
-                  <p class="mt-1 truncate text-xs text-slate-500" :title="goalLabel(run)">{{ goalLabel(run) }}</p>
+                  <p class="mt-1 text-xs text-slate-500">{{ run.status === 'leased' ? 'Lease assigned' : 'Awaiting capacity' }}</p>
                 </div>
                 <span class="shrink-0 font-mono text-[11px] text-slate-600">{{ ageLabel(run.queued_at, nowSeconds) }}</span>
               </div>
@@ -286,60 +204,14 @@ async function confirmForceEnd(): Promise<void> {
       </div>
     </ResourceState>
 
-    <Panel title="Recent outcomes" description="The latest terminal runs refresh independently every 10 seconds." compact>
-      <ResourceState
-        :state="recentState"
-        title="No terminal runs yet"
-        :message="recentError || 'Recent outcomes will appear here without affecting the live Operations refresh.'"
-        :rows="4"
-      >
-        <template #actions>
-          <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="refreshRecent">
-            <ArrowPathIcon class="size-3.5" aria-hidden="true" />
-            Retry now
-          </button>
-        </template>
-
-        <div class="-mx-3 overflow-x-auto sm:-mx-4">
-          <table class="min-w-full divide-y divide-white/10 text-left">
-            <thead>
-              <tr>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Run</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</th>
-                <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Attempts</th>
-                <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Ended</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/8">
-              <tr v-for="run in recentRuns" :key="run.run_id">
-                <td class="px-3 py-2 sm:px-4" :title="run.run_id">
-                  <div class="flex min-w-[8rem] items-center gap-2">
-                    <PokemonSprite v-if="leadMon(run)" :name="leadMon(run)?.name || ''" :size="30" :fainted="Number(leadMon(run)?.hp || 0) <= 0" />
-                    <div class="min-w-0">
-                      <span class="block font-mono text-xs whitespace-nowrap text-slate-300">{{ shortID(run.run_id) }}</span>
-                      <span class="block text-[9px] text-slate-600">{{ gameTitle(run.game) }}</span>
-                    </div>
-                  </div>
-                </td>
-                <td class="px-3 py-2.5"><StatusBadge :tone="outcomeTone(run)">{{ outcomeLabel(run) }}</StatusBadge></td>
-                <td class="px-3 py-2">
-                  <div class="flex items-center gap-2 whitespace-nowrap">
-                    <div class="flex items-center gap-0.5">
-                      <BadgeIcon v-for="badge in runBadges(run).slice(0, 3)" :key="badge" :name="badge" :size="17" />
-                    </div>
-                    <span class="font-mono text-[9px] text-slate-500">Dex {{ dexProgressLabel(run) }}</span>
-                  </div>
-                </td>
-                <td class="max-w-lg truncate px-3 py-2.5 text-xs text-slate-400" :title="goalLabel(run)">{{ goalLabel(run) }}</td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs tabular-nums text-slate-500">{{ run.attempts || 1 }}</td>
-                <td class="px-3 py-2.5 text-right font-mono text-xs whitespace-nowrap text-slate-500 sm:pr-4">{{ ageLabel(run.ended_at, recentData?.now || nowSeconds) }} ago</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </ResourceState>
+    <Panel title="Current operational signals" description="Derived from the live wall snapshot; completed outcomes belong to Runs." compact>
+      <ul v-if="signals.length" class="grid gap-2 lg:grid-cols-2">
+        <li v-for="signal in signals" :key="signal.title" class="rounded-sm border border-white/8 bg-black/10 px-3 py-2">
+          <StatusBadge :tone="signal.tone">{{ signal.title }}</StatusBadge>
+          <p class="mt-1 text-xs text-slate-400">{{ signal.detail }}</p>
+        </li>
+      </ul>
+      <p v-else class="py-2 text-xs text-slate-500">No queue or lease signals. See <a href="#runs" class="text-cyan-200 underline">Runs</a> for finished outcomes.</p>
     </Panel>
 
     <ConfirmDialog
