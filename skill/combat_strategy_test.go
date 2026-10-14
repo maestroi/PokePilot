@@ -258,7 +258,7 @@ func TestSwitchEvaluationCountsKnownHeldItemRecovery(t *testing.T) {
 	strategy := &fixtureHealingCombatStrategy{
 		fakeGen2CombatStrategy: fakeGen2CombatStrategy{
 			scores: map[uint16]int64{33: 1000},
-			roles: map[uint16]game.BattleMoveRole{33: game.BattleMoveRoleDirectDamage},
+			roles:  map[uint16]game.BattleMoveRole{33: game.BattleMoveRoleDirectDamage},
 		},
 	}
 	attacker := game.BattleCombatant{Level: 20, HP: 40, MaxHP: 100}
