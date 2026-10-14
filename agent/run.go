@@ -230,8 +230,9 @@ runLoop:
 		before := last
 		objectiveAdapter := objectiveAdapterFactory(m, romData, routePriorityForPlanner(p))
 		bindBattleTurnObserver(objectiveAdapter, p)
+		objectiveStart := m.FrameCount()
 		objectiveResult, execErr := ExecuteWithAdapter(objectiveAdapter, obj)
-		settledTiming := ObjectiveTiming{Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
+		settledTiming := ObjectiveTiming{StartFrame: objectiveStart, Frame: m.FrameCount(), Round: round, WallElapsed: time.Since(runStarted)}
 		if budget.OnObjective != nil {
 			stage := "completed"
 			errText := ""

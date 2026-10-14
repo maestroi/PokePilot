@@ -136,7 +136,8 @@ func drainMediaTimelineArtifact(spec farm.Spec, reason string, endFrame uint64, 
 		}
 		if result.Objective.Kind == agent.KindGym {
 			timeline.Events = append(timeline.Events, farm.MediaEvent{
-				Type: "gym_battle", Frame: frame, Round: timing.Round, Objective: objective,
+				Type: "gym_battle", StartFrame: relativeMediaFrame(timing.StartFrame, origin), Frame: frame,
+				Round: timing.Round, Objective: objective,
 				Summary: result.Summary, Evidence: fmt.Sprintf("outcome:%d:gym", i),
 			})
 		}

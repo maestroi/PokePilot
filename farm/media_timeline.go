@@ -67,9 +67,12 @@ type MediaSnapshot struct {
 }
 
 type MediaEvent struct {
-	ID          string            `json:"id"`
-	Type        string            `json:"type"`
-	Frame       uint64            `json:"frame"`
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Frame uint64 `json:"frame"`
+	// StartFrame, when set, marks where a spanning event (a battle) began;
+	// Frame stays the moment it resolved.
+	StartFrame  uint64            `json:"start_frame,omitempty"`
 	TimestampMS int64             `json:"timestamp_ms"`
 	Round       int               `json:"round,omitempty"`
 	Objective   string            `json:"objective,omitempty"`

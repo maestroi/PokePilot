@@ -70,6 +70,7 @@ type Result struct {
 // recording start frame can translate it without making the agent aware of
 // recording or presentation concerns.
 type ObjectiveTiming struct {
+	StartFrame  uint64 // frame the objective began executing
 	Frame       uint64
 	Round       int
 	WallElapsed time.Duration

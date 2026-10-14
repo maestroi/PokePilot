@@ -74,6 +74,21 @@ func TestBuildMergesOverlappingAndNearbyEvents(t *testing.T) {
 	}
 }
 
+func TestBuildGymWindowCoversWholeFightBeforeBadge(t *testing.T) {
+	// The leader fight runs 120s..300s; the badge lands when it resolves.
+	plan := Build([]farm.MediaTimeline{testTimeline(
+		farm.MediaEvent{Type: "gym_battle", StartFrame: 60 * 120, Frame: 60 * 300},
+		farm.MediaEvent{Type: "badge_acquired", Frame: 60 * 300},
+	)}, DefaultPolicy())
+	if len(plan.Windows) != 1 {
+		t.Fatalf("windows=%d want 1: %+v", len(plan.Windows), plan.Windows)
+	}
+	w := plan.Windows[0]
+	if w.StartMS > 120_000 || w.EndMS < 300_000 {
+		t.Fatalf("window %d..%dms does not cover the fight 120000..300000ms", w.StartMS, w.EndMS)
+	}
+}
+
 func TestBuildDurationCapUsesDeterministicPriority(t *testing.T) {
 	policy := DefaultPolicy()
 	policy.TargetDurationMS = 36_000

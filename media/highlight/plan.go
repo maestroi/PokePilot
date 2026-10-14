@@ -103,9 +103,15 @@ func Build(timelines []farm.MediaTimeline, policy Policy) Plan {
 				continue
 			}
 			pre, post := msToFrames(rule.PreRollMS, fps), msToFrames(rule.PostRollMS, fps)
+			// Spanning events (a whole battle) roll back from where they began,
+			// not from the frame they resolved.
+			anchor := event.Frame
+			if event.StartFrame > 0 && event.StartFrame < anchor {
+				anchor = event.StartFrame
+			}
 			start := uint64(0)
-			if event.Frame > pre {
-				start = event.Frame - pre
+			if anchor > pre {
+				start = anchor - pre
 			}
 			end := event.Frame + post
 			if end > timeline.EndFrame {
