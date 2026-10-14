@@ -1,6 +1,10 @@
 package agent
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/maestroi/pokepilot/game"
+)
 
 // DecisionContext is additive planner-facing context derived from facts that
 // are already present in Observation plus the semantics of offered skills.
@@ -55,6 +59,19 @@ type CatchDecisionContext struct {
 func (o Observation) MarshalJSON() ([]byte, error) {
 	type plain Observation
 	wire := plain(o)
+	// A reverse-only sailing is not an option at the player's current
+	// location. Keep the complete directional catalog in the runtime, but
+	// show only departures from the observed region to the planner. Crystal
+	// can use the same contract without generic map-name special cases.
+	if len(wire.RegionTransports) > 0 {
+		departures := make([]game.RegionTransportOption, 0, len(wire.RegionTransports))
+		for _, option := range wire.RegionTransports {
+			if option.FromRegion == game.RegionID(o.Region) && option.ToRegion != game.RegionID(o.Region) {
+				departures = append(departures, option)
+			}
+		}
+		wire.RegionTransports = departures
+	}
 	if len(wire.RouteBlockages) > routeBlockageCap {
 		wire.RouteBlockages = append([]RouteBlockage(nil), wire.RouteBlockages[:routeBlockageCap]...)
 	}
