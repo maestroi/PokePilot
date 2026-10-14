@@ -10,7 +10,7 @@ import (
 func TestGoldRegionTransportNativePlaceResolver(t *testing.T) {
 	p := NewGold()
 	for _, tc := range []struct {
-		place game.PlaceID
+		place   game.PlaceID
 		mapName string
 	}{
 		{"olivine-port", "OLIVINE_PORT"},
