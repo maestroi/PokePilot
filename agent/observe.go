@@ -34,6 +34,9 @@ type Observation struct {
 	InBattle           bool
 	TimeOfDay          string `json:"time_of_day,omitempty"`
 	Region             string `json:"region,omitempty"`
+	// Adapter-owned directed region crossings, with typed missing prerequisites.
+	// Games without region transport omit this entirely.
+	RegionTransports   []game.RegionTransportOption `json:"region_transports,omitempty"`
 	PartyCount         int
 	Party              []PartyMon
 	Badges             []string
