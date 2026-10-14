@@ -393,7 +393,22 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 			}
 			choice, ok, egressErr := executeEmergencyEgress(m)
 			if !ok {
-				return err
+				flown, flyErr := flyOutOfSealedPocket(m, romData, dest)
+				if errors.Is(flyErr, ErrBattle) {
+					// The step outside met a wild/trainer; travel resolves it
+					// and re-enters this journey from wherever it settled.
+					return flyErr
+				}
+				if flyErr != nil {
+					return fmt.Errorf("%w; fly out of sealed pocket from map %#02x at (%d,%d) failed: %v",
+						err, from.Map, from.X, from.Y, flyErr)
+				}
+				if !flown {
+					return err
+				}
+				egresses++
+				goTo = journey()
+				continue
 			}
 			egresses++
 			if egressErr != nil {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
+	"github.com/maestroi/pokepilot/world"
 )
 
 const (
@@ -249,7 +251,7 @@ func routeCostFrom(m *emu.Emu, p *RoutePlanner, from, dest Destination) (int, bo
 		int(from.Y),
 		dest,
 		nil,
-		p.prereqs,
+		p.prereqsFrom(from),
 	)
 	if err != nil {
 		return 0, false
@@ -586,6 +588,59 @@ func executeEmergencyEgress(m *emu.Emu) (choice emergencyEgressChoice, ok bool, 
 		return choice, false, fmt.Errorf("unknown emergency egress method %d", choice.Method)
 	}
 	return choice, true, err
+}
+
+// flyOutOfSealedPocket is the egress for an indoor pocket with no walking
+// route to dest and no Dig/Escape Rope, while the party can Fly. Fly needs an
+// outdoor tileset, so first walk through a reachable warp that lands outdoors,
+// then let the ordinary cost chooser pick the landing. Victory Road 2F's exit
+// side is the measured case: Route 23 resets the switches, the cave cannot be
+// walked back, and the exit door is the only way out
+// (run-18kg33tqm1mn5c7umo1adri8m). ok=false means nothing was done.
+func flyOutOfSealedPocket(m *emu.Emu, romData []byte, dest Destination) (bool, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) || !townVisited(&mem, 0) || !FieldCapabilityFor(&mem, FieldFly).Usable {
+		return false, nil
+	}
+	stepped := false
+	if !outsideForFly(&mem) {
+		planner, err := NewRoutePlanner(m, romData)
+		if err != nil {
+			return false, nil
+		}
+		for _, e := range planner.graph.Edges[planner.cur] {
+			if e.Kind != world.EdgeWarp || !warpEdgeReachable(m, romData, e) {
+				continue
+			}
+			h, err := rom.ParseMap(romData, e.To)
+			if err != nil || (h.Tileset != overworldTileset && h.Tileset != plateauTileset) {
+				continue
+			}
+			if err := Traverse(m, romData, e); err != nil {
+				return true, err
+			}
+			stepped = true
+			break
+		}
+		if !stepped {
+			return false, nil
+		}
+	}
+	// GoTo already proved the pocket has no walking route; the exterior's
+	// static walk back through it is not evidence, so walking may not win.
+	state.Snapshot(m, &mem)
+	planner, err := NewRoutePlanner(m, romData)
+	if err != nil {
+		return stepped, nil
+	}
+	choice := chooseFastTravelByCost(0, false, legalFastTravelOptions(&mem), func(landing Destination) (int, bool) {
+		return routeCostFrom(m, planner, landing, dest)
+	})
+	if choice.Kind != fastTravelFly {
+		return stepped, nil
+	}
+	return true, useFlyTo(m, choice.Map)
 }
 
 // maybeUseFastTravel prices legal shortcuts against the ordinary semantic
