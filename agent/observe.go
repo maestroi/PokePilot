@@ -82,9 +82,14 @@ type Observation struct {
 	CounterCandidates []SpeciesID  `json:"-"`
 
 	WildGrass []WildSpecies
-	HasGrass  bool
-	Training  *TrainingEstimate `json:"training,omitempty"`
-	MartStock []string
+	// ClockEncounters lists clock-gated species on the current map. Open species
+	// can be met at TimeOfDay. Until is the wait leg when they cannot. Species
+	// that are not clock-gated are omitted. Adapters with no clock leave this
+	// empty, so Red does not grow a wait.
+	ClockEncounters []ClockEncounter `json:"clock_encounters,omitempty"`
+	HasGrass        bool
+	Training        *TrainingEstimate `json:"training,omitempty"`
+	MartStock       []string
 	// RestockStock lists items a shop reachable by travel sells. The adapter
 	// fills it when a remote travel-and-buy objective may be needed for combat
 	// recovery or Dex capture supply.

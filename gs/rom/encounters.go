@@ -2,7 +2,10 @@ package rom
 
 import (
 	"fmt"
+	"hash/fnv"
+	"sync"
 
+	"github.com/maestroi/pokepilot/game"
 	gsdata "github.com/maestroi/pokepilot/gs/data"
 )
 
@@ -89,4 +92,93 @@ func readWildTable(rom []byte, start, recLen int, grass bool) ([]WildEncounter, 
 		off += recLen
 	}
 	return out, nil
+}
+
+// ClockPeriod maps a wild-table time slot onto the portable clock. Water
+// records store an empty time and are not a period.
+func ClockPeriod(raw string) (game.TimeOfDay, bool) {
+	switch raw {
+	case TimeMorning:
+		return game.TimeMorning, true
+	case TimeDay:
+		return game.TimeDay, true
+	case TimeNight:
+		return game.TimeNight, true
+	default:
+		return "", false
+	}
+}
+
+// ClockSlots turns cartridge encounter rows into portable windows. An empty
+// Times list means the slot is not clock-gated. Unknown species are dropped.
+func ClockSlots(enc []WildEncounter) []game.TimedSlot {
+	out := make([]game.TimedSlot, 0, len(enc))
+	for _, row := range enc {
+		if gsdata.IsEgg(row.Species) {
+			continue
+		}
+		species, ok := gsdata.Species(row.Species)
+		if !ok || species == "" {
+			continue
+		}
+		slot := game.TimedSlot{Species: species, Level: row.Level}
+		if period, ok := ClockPeriod(row.Time); ok {
+			slot.Times = []game.TimeOfDay{period}
+		}
+		out = append(out, slot)
+	}
+	return out
+}
+
+// encounterCache remembers one ROM's wild rows. The key is a content hash, so
+// a stable cartridge pays for LocateTables once per process. The hash is
+// recomputed on every lookup; that is cheaper than scanning the tables again.
+var encounterCache struct {
+	mu  sync.Mutex
+	key uint64
+	ok  bool
+	by  map[uint16][]WildEncounter
+}
+
+// EncountersOnMap returns every grass and water slot on one map.
+func EncountersOnMap(rom []byte, mapID uint16) ([]WildEncounter, error) {
+	by, err := cachedEncountersByMap(rom)
+	if err != nil {
+		return nil, err
+	}
+	rows := by[mapID]
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return append([]WildEncounter(nil), rows...), nil
+}
+
+func cachedEncountersByMap(rom []byte) (map[uint16][]WildEncounter, error) {
+	sum := fnv.New64a()
+	_, _ = sum.Write(rom)
+	key := sum.Sum64()
+
+	encounterCache.mu.Lock()
+	if encounterCache.ok && encounterCache.key == key {
+		by := encounterCache.by
+		encounterCache.mu.Unlock()
+		return by, nil
+	}
+	encounterCache.mu.Unlock()
+
+	all, err := WildEncounters(rom)
+	if err != nil {
+		return nil, err
+	}
+	by := make(map[uint16][]WildEncounter)
+	for _, row := range all {
+		by[row.MapID] = append(by[row.MapID], row)
+	}
+
+	encounterCache.mu.Lock()
+	encounterCache.key = key
+	encounterCache.by = by
+	encounterCache.ok = true
+	encounterCache.mu.Unlock()
+	return by, nil
 }

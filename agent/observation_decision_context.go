@@ -11,6 +11,7 @@ type DecisionContext struct {
 	Catch    *CatchDecisionContext    `json:",omitempty"`
 	Economy  *EconomyDecisionContext  `json:",omitempty"`
 	Dex      *DexDecisionContext      `json:",omitempty"`
+	Clock    *ClockDecision           `json:",omitempty"`
 	Services *RuntimeServices         `json:",omitempty"`
 }
 
@@ -97,6 +98,9 @@ func decisionContextFor(o Observation) *DecisionContext {
 	}
 
 	ctx.Economy = plannerEconomyContext(o)
+	if waits := clockWaits(o.ClockEncounters); len(waits) > 0 {
+		ctx.Clock = &ClockDecision{Waits: waits}
+	}
 	if n := len(o.Dex.Owned) + len(o.Dex.Targets) + len(o.Dex.Unavailable); n > 0 {
 		ctx.Dex = &DexDecisionContext{
 			Owned:       len(o.Dex.Owned),
@@ -104,7 +108,7 @@ func decisionContextFor(o Observation) *DecisionContext {
 			Unavailable: len(o.Dex.Unavailable),
 		}
 	}
-	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil && ctx.Dex == nil && ctx.Services == nil {
+	if ctx.Training == nil && ctx.Catch == nil && ctx.Economy == nil && ctx.Dex == nil && ctx.Clock == nil && ctx.Services == nil {
 		return nil
 	}
 	return ctx
