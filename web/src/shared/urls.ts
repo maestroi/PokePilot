@@ -112,12 +112,14 @@ export type OperatorLinkOptions = {
 
 const operatorSections: Partial<Record<OperatorView, readonly string[]>> = {
   analytics: ['overview', 'experiments'],
-  media: ['library', 'broadcasts', 'jobs', 'themes'],
-  settings: ['models']
+  media: ['library', 'broadcasts', 'jobs'],
+  settings: ['models', 'defaults', 'destinations', 'renderer']
 }
 
 export function operatorRoute(hash: string): OperatorRoute {
   const [rawPage = '', rawSection = ''] = hash.replace(/^#\/?/, '').split('/')
+  // Backwards compatibility for old Media theme links after the Settings move.
+  if (rawPage === 'media' && rawSection === 'themes') return { view: 'settings', section: 'renderer' }
   const page = rawPage === 'tools' ? 'new-run' : rawPage
   const view: OperatorView = [...operatorPrimaryViews, 'settings', 'new-run'].includes(page)
     ? page as OperatorView

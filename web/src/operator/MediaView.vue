@@ -1,26 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { FilmIcon, PaintBrushIcon, QueueListIcon, SignalIcon } from '@heroicons/vue/20/solid'
+import { FilmIcon, QueueListIcon, SignalIcon } from '@heroicons/vue/20/solid'
 import Panel from '../shared/components/Panel.vue'
 import { operatorHref } from '../shared/urls'
-import { publicRenderThemeOptions, renderThemeOptions } from '../shared/renderTheme'
 import BroadcastPanel from './BroadcastPanel.vue'
 import RenderJobsPanel from './RenderJobsPanel.vue'
 import SpectatorView from './SpectatorView.vue'
 
-type MediaTab = 'library' | 'broadcasts' | 'jobs' | 'themes'
+type MediaTab = 'library' | 'broadcasts' | 'jobs'
 const props = defineProps<{ section?: string; runID?: string; jobID?: string }>()
 const activeTab = computed<MediaTab>(() => tabs.some((tab) => tab.id === props.section) ? props.section as MediaTab : 'library')
 const tabs: Array<{ id: MediaTab; label: string; description: string }> = [
   { id: 'library', label: 'Library', description: 'Replay discovery and public visibility' },
   { id: 'broadcasts', label: 'Broadcasts', description: 'Twitch, YouTube Live and RTMP controls' },
-  { id: 'jobs', label: 'Jobs', description: 'Render queue, progress and failures' },
-  { id: 'themes', label: 'Assets / Themes', description: 'Renderer inventory and public-safe themes' }
+  { id: 'jobs', label: 'Jobs', description: 'Render queue, progress and failures' }
 ]
-
-const allThemes = renderThemeOptions()
-const publicThemes = publicRenderThemeOptions()
-const localOnlyThemes = computed(() => allThemes.filter((theme) => !publicThemes.some((candidate) => candidate.id === theme.id)))
 
 function operatorSearch(): string { return window.location.search }
 </script>
@@ -28,7 +22,7 @@ function operatorSearch(): string { return window.location.search }
 <template>
   <div class="space-y-3">
     <nav
-      class="grid grid-cols-1 gap-1 rounded-lg border border-[var(--poke-border)] bg-[var(--poke-panel)] p-1 sm:grid-cols-2 xl:grid-cols-4"
+      class="grid grid-cols-1 gap-1 rounded-lg border border-[var(--poke-border)] bg-[var(--poke-panel)] p-1 sm:grid-cols-2 xl:grid-cols-3"
       aria-label="Media management"
     >
       <a
@@ -94,52 +88,5 @@ function operatorSearch(): string { return window.location.search }
       <RenderJobsPanel :run-id="runID" :job-id="jobID" />
     </div>
 
-    <div v-else class="space-y-3">
-      <Panel
-        title="Renderer assets & themes"
-        description="Installed renderer themes and which ones are safe to expose on the public spectator and replay surfaces."
-        compact
-      >
-        <div class="mb-3 flex items-start gap-2.5 text-xs leading-5 text-[var(--poke-muted)]">
-          <PaintBrushIcon class="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden="true" />
-          <p>Theme ingestion and provenance stay centralized; public surfaces only receive themes marked for public distribution.</p>
-        </div>
-
-        <div class="grid gap-3 lg:grid-cols-2">
-          <section class="rounded-lg border border-white/8 bg-black/15 p-3">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-xs font-bold text-white">Public-safe</h3>
-              <span class="font-mono text-[10px] text-emerald-300">{{ publicThemes.length }}</span>
-            </div>
-            <ul class="mt-2 divide-y divide-white/8">
-              <li v-for="theme in publicThemes" :key="theme.id" class="py-2 first:pt-0 last:pb-0">
-                <div class="flex items-center justify-between gap-3">
-                  <strong class="text-xs text-slate-200">{{ theme.name }}</strong>
-                  <span class="font-mono text-[9px] text-slate-600">v{{ theme.version }}</span>
-                </div>
-                <p class="mt-0.5 text-[10px] leading-4 text-slate-500">{{ theme.description || theme.id }}</p>
-              </li>
-            </ul>
-          </section>
-
-          <section class="rounded-lg border border-white/8 bg-black/15 p-3">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-xs font-bold text-white">Local / operator only</h3>
-              <span class="font-mono text-[10px] text-amber-300">{{ localOnlyThemes.length }}</span>
-            </div>
-            <ul v-if="localOnlyThemes.length" class="mt-2 divide-y divide-white/8">
-              <li v-for="theme in localOnlyThemes" :key="theme.id" class="py-2 first:pt-0 last:pb-0">
-                <div class="flex items-center justify-between gap-3">
-                  <strong class="text-xs text-slate-200">{{ theme.name }}</strong>
-                  <span class="font-mono text-[9px] text-slate-600">v{{ theme.version }}</span>
-                </div>
-                <p class="mt-0.5 text-[10px] leading-4 text-slate-500">{{ theme.description || theme.id }}</p>
-              </li>
-            </ul>
-            <p v-else class="mt-2 text-xs text-slate-500">Every installed theme is currently public-safe.</p>
-          </section>
-        </div>
-      </Panel>
-    </div>
   </div>
 </template>

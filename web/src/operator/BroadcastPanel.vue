@@ -174,7 +174,7 @@ async function stop(): Promise<void> {
         </p>
 
         <div v-if="!activeRuns.length" class="rounded-md border border-white/8 bg-black/15 px-3 py-4 text-xs text-slate-400">
-          No running run is available to broadcast.
+          No running run is available to broadcast. <a href="#settings/destinations" class="text-cyan-200 underline">View destination settings</a>.
         </div>
 
         <div v-else class="grid gap-3 lg:grid-cols-2">
@@ -218,6 +218,7 @@ async function stop(): Promise<void> {
               <p v-if="selectedDestination.reason" class="mt-1 text-amber-200">
                 {{ selectedDestination.reason }}
               </p>
+              <a href="#settings/destinations" class="mt-2 inline-block text-xs font-semibold text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300">Destination settings →</a>
             </div>
           </section>
 
