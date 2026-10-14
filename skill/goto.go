@@ -801,15 +801,37 @@ func goToWithTransitionExecutorMemory(m *emu.Emu, romData []byte, dest Destinati
 			route, err = retry, retryErr
 		}
 		if err != nil {
-			// A structured capability blockage is already the answer. Local
-			// Cut/Surf bridging and restaging cannot create can_leave_league
-			// (or any other missing route prerequisite); trying them just
-			// burns frames and can launder RouteBlockedError into a bare
-			// ErrNoRoute after an unrelated recovery path fails.
+			// A structured capability blockage describes the routes from the
+			// player's CURRENT static component only. When that component is
+			// a Cut/Surf-sealed pocket, the gated detour it reports can be
+			// unrelated to dest: MEASURED on run-1q3fqxduf06zc3jt9rsfjcqzjt,
+			// buy 1 POTION from Route 2's Diglett pocket (12,10) toward
+			// Viridian Mart died 199 times on can_clear_snorlax while can_cut
+			// was usable one tree away. So a usable local field action that
+			// restores a route outranks the blockage. Nothing else may
+			// replace it: restaging, or a failed bridge search, cannot create
+			// can_leave_league (or any other missing prerequisite) and would
+			// launder RouteBlockedError into a bare ErrNoRoute.
 			var routeBlocked *world.RouteBlockedError
 			if errors.As(err, &routeBlocked) {
 				if routeFailureIsSpuriousCapabilityGate(err, len(failed) > 0) {
 					return newReplanExhaustedError(replans, cur, x, y, dest, err)
+				}
+				if cur != dest.Map {
+					bridge, ok, bridgeErr := fieldPathBridgeOnCurrentMap(m, romData, h, routeGraph, dest, prereqs, blockedHere, true)
+					if bridgeErr == nil && ok {
+						walkErr := walkWithinMap(m, romData, bridge, nav.policy)
+						if errors.Is(walkErr, errLocalNavigationWorldChanged) {
+							continue
+						}
+						if walkErr != nil {
+							return walkErr
+						}
+						if replans++; replans > maxReplans {
+							return newReplanExhaustedError(maxReplans, cur, x, y, dest, err)
+						}
+						continue
+					}
 				}
 				return fmt.Errorf("skill: GoTo: no route from map %02x at (%d,%d) to map %02x at (%d,%d): %w",
 					cur, x, y, dest.Map, dest.X, dest.Y, err)
