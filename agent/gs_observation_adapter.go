@@ -6,6 +6,7 @@ import (
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/game"
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
+	gsrom "github.com/maestroi/pokepilot/gs/rom"
 )
 
 type gsSemanticObservationAdapter struct {
@@ -98,6 +99,12 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 				Preparable: capability.Preparable,
 			})
 		}
+	}
+	// A missing wild table leaves the clock empty. Red-shaped or not-yet-located
+	// images must not fail the rest of the observation, and they must not invent
+	// a wait. Gold and Silver fill the leg from the cartridge's own windows.
+	if enc, err := gsrom.EncountersOnMap(romData, base.NativeMapID); err == nil {
+		obs.ClockEncounters = projectClockEncounters(base.TimeOfDay, gsrom.ClockSlots(enc))
 	}
 	return obs, nil
 }
