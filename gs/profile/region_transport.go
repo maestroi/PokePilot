@@ -13,9 +13,9 @@ const (
 	gsSSTicket uint8 = 0x44
 	gsRailPass uint8 = 0x86
 
-	gsEventBeatEliteFour       uint16 = 68
-	gsEventFirstShipTrip       uint16 = 48
-	gsEventRestoredKantoPower  uint16 = 205
+	gsEventBeatEliteFour      uint16 = 68
+	gsEventFirstShipTrip      uint16 = 48
+	gsEventRestoredKantoPower uint16 = 205
 )
 
 const (
@@ -125,7 +125,7 @@ func (*Profile) DecodeRegionTransports(reader game.MemoryReader) []game.RegionTr
 			Service: "magnet_train", FromRegion: regionFrom, ToRegion: regionTo,
 			Leg: game.Transition{
 				ID: "magnet_train", From: from, To: to,
-				Requires: []game.CapabilityID{gsCapKantoPower, gsCapRailPass},
+				Requires:       []game.CapabilityID{gsCapKantoPower, gsCapRailPass},
 				ChoiceRequired: true,
 			},
 			AnyDay: true,
