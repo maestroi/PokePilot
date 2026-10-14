@@ -115,6 +115,15 @@ func TestGoldHeldItemEffectFixtures(t *testing.T) {
 	if boost.DamageBonusPercent != 10 || boost.RecoveryPerTurn != 0 {
 		t.Fatalf("grass boost=%+v, want 10%% and no recovery", boost)
 	}
+	if got := gsScoreWithItem(350, boost); got != 385 {
+		t.Fatalf("type-boosted expected score=%d, want 385", got)
+	}
+	if got := gsScoreWithItem(350, game.BattleItemModifier{}); got != 350 {
+		t.Fatalf("no-item expected score=%d, want unchanged 350", got)
+	}
+	if got := gsScoreWithItem(0, boost); got != 0 {
+		t.Fatalf("immunity should remain score 0, got %d", got)
+	}
 	if got := gsHeldEffectModifier(miracleSeed, gsTypeNormal, 80); got != (game.BattleItemModifier{}) {
 		t.Fatalf("mismatched move should not be boosted: %+v", got)
 	}
