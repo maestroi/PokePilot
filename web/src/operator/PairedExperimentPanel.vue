@@ -58,6 +58,8 @@ const latest = computed<ExperimentView | null>(() => props.experimentID
   : created.value ?? history.value[0] ?? null)
 const showCreate = ref(false)
 const showAllPairs = ref(false)
+const showAllHistory = ref(false)
+const visibleHistory = computed(() => showAllHistory.value ? history.value : history.value.slice(0, 12))
 const pairRows = computed(() => latest.value?.pairs ?? [])
 const visiblePairs = computed(() => showAllPairs.value ? pairRows.value : pairRows.value.slice(0, 30))
 const progress = computed(() => experimentProgress(latest.value))
@@ -137,7 +139,7 @@ async function submit(): Promise<void> {
   }
   const armALimit = workerLimit(form.arm_a)
   const armBLimit = workerLimit(form.arm_b)
-  if (Number(form.arm_a_workers) < 1 || Number(form.arm_a_workers) > armALimit || Number(form.arm_b_workers) < 1 || Number(form.arm_b_workers) > armBLimit) {
+  if (!Number.isSafeInteger(form.arm_a_workers) || !Number.isSafeInteger(form.arm_b_workers) || Number(form.arm_a_workers) < 1 || Number(form.arm_a_workers) > armALimit || Number(form.arm_b_workers) < 1 || Number(form.arm_b_workers) > armBLimit) {
     error.value = `Worker count exceeds deployment capacity (A max ${armALimit}, B max ${armBLimit}).`
     return
   }
@@ -169,11 +171,13 @@ async function submit(): Promise<void> {
     })
     showCreate.value = false
     showAllPairs.value = false
-    await retryExperiments()
     if (created.value?.id) {
       window.history.pushState(null, '', operatorHref('analytics', { section: 'experiments', experiment: created.value.id, run: '' }, window.location.search))
       window.dispatchEvent(new PopStateEvent('popstate'))
     }
+    // Refresh independently: a transient list failure must not turn a
+    // successfully queued comparison into a false "creation failed" error.
+    void retryExperiments()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Unable to create experiment'
   } finally {
@@ -216,7 +220,7 @@ function operatorSearch(): string { return window.location.search }
   <div class="space-y-3">
   <Panel title="Start paired experiment" description="The same seeds, game, policies and concurrency rules apply to both model arms." compact>
     <template #actions>
-      <button type="button" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300" :aria-expanded="showCreate || (!history.length && !created)" @click="showCreate = !showCreate">
+      <button v-if="history.length || created" type="button" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300" :aria-expanded="showCreate" @click="showCreate = !showCreate">
         {{ showCreate ? 'Hide setup' : 'New comparison' }}
       </button>
     </template>
@@ -237,13 +241,13 @@ function operatorSearch(): string { return window.location.search }
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm A</span>
         <select v-model="form.arm_a" :class="fieldClass">
-          <option v-for="deployment in usableDeployments" :key="`a-${deployment.id}`" :value="deployment.id"  >{{ deploymentOptionLabel(deployment) }}</option>
+          <option v-for="deployment in usableDeployments" :key="`a-${deployment.id}`" :value="deployment.id">{{ deploymentOptionLabel(deployment) }}</option>
         </select>
       </label>
       <label class="block">
         <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Arm B</span>
         <select v-model="form.arm_b" :class="fieldClass">
-          <option v-for="deployment in usableDeployments" :key="`b-${deployment.id}`" :value="deployment.id"  >{{ deploymentOptionLabel(deployment) }}</option>
+          <option v-for="deployment in usableDeployments" :key="`b-${deployment.id}`" :value="deployment.id">{{ deploymentOptionLabel(deployment) }}</option>
         </select>
       </label>
       <label class="block">
@@ -363,14 +367,35 @@ function operatorSearch(): string { return window.location.search }
 
   <Panel title="Comparison history & results" description="Select a stored comparison to inspect its exact matched-seed progress and outcomes." compact>
     <div class="space-y-3">
-      <nav v-if="history.length" aria-label="Select experiment" class="mb-3 flex flex-wrap gap-2">
-        <a
-          v-for="experiment in history"
-          :key="experiment.id"
-          :href="operatorHref('analytics', { section: 'experiments', experiment: experiment.id }, operatorSearch())"
-          :aria-current="latest?.id === experiment.id ? 'page' : undefined"
-          class="rounded-sm bg-white/6 px-2.5 py-1.5 text-[11px] text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]"
-        >{{ experiment.name || experiment.id }}</a>
+      <nav v-if="history.length" aria-label="Select experiment" class="overflow-hidden rounded-sm border border-white/8">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-white/8 bg-white/[0.025] px-3 py-2">
+          <strong class="text-xs font-semibold text-white">Paired experiment history</strong>
+          <span class="text-[11px] text-slate-500">{{ history.length }} comparisons · newest first</span>
+        </div>
+        <ul class="divide-y divide-white/8">
+          <li v-for="experiment in visibleHistory" :key="experiment.id">
+            <a
+              :href="operatorHref('analytics', { section: 'experiments', experiment: experiment.id }, operatorSearch())"
+              :aria-current="latest?.id === experiment.id ? 'page' : undefined"
+              :class="[
+                'flex flex-wrap items-center justify-between gap-2 px-3 py-2 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300',
+                latest?.id === experiment.id ? 'bg-cyan-400/5 ring-inset ring-1 ring-cyan-400/25' : ''
+              ]"
+            >
+              <span class="min-w-0">
+                <strong class="block truncate text-xs text-slate-200">{{ experiment.name || experiment.id }}</strong>
+                <span class="mt-0.5 block font-mono text-[10px] text-slate-500">{{ experiment.id }}</span>
+              </span>
+              <span class="flex shrink-0 items-center gap-3">
+                <span class="font-mono text-[11px] text-slate-400">{{ experiment.paired?.completed_pairs || 0 }}/{{ experiment.total_pairs || 0 }} done</span>
+                <span class="text-[11px]" :class="experimentStage(experiment).startsWith('Completed') ? 'text-emerald-200' : 'text-amber-200'">{{ experimentStage(experiment) }}</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+        <button v-if="history.length > 12" type="button" class="w-full border-t border-white/8 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="showAllHistory = !showAllHistory">
+          {{ showAllHistory ? 'Show recent 12' : 'Show all ' + history.length + ' experiments' }}
+        </button>
       </nav>
       <ResourceState
         :state="detailState"
