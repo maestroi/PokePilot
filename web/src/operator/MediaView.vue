@@ -22,6 +22,7 @@ const allThemes = renderThemeOptions()
 const publicThemes = publicRenderThemeOptions()
 const localOnlyThemes = computed(() => allThemes.filter((theme) => !publicThemes.some((candidate) => candidate.id === theme.id)))
 
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -33,7 +34,7 @@ const localOnlyThemes = computed(() => allThemes.filter((theme) => !publicThemes
       <a
         v-for="tab in tabs"
         :key="tab.id"
-        :href="operatorHref('media', { section: tab.id }, window.location.search)"
+        :href="operatorHref('media', { section: tab.id }, operatorSearch())"
         :aria-current="activeTab === tab.id ? 'page' : undefined"
         :class="[
           activeTab === tab.id

@@ -190,6 +190,7 @@ function refresh(): void {
   actionError.value = ''
   void refreshJobs()
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -229,7 +230,7 @@ function refresh(): void {
 
       <div v-if="(props.jobID || props.runID) && !visibleJobs.length" class="mb-3 rounded-sm border border-amber-300/20 px-3 py-2 text-xs text-amber-200">
         No matching render job is in the recent job list for this selection.
-        <a :href="operatorHref('media', { section: 'jobs', run: '', job: '' }, window.location.search)" class="ml-1 underline">Show all jobs</a>
+        <a :href="operatorHref('media', { section: 'jobs', run: '', job: '' }, operatorSearch())" class="ml-1 underline">Show all jobs</a>
       </div>
       <div class="space-y-2 md:hidden">
         <article

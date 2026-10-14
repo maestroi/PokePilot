@@ -171,6 +171,7 @@ const metrics = computed(() => {
   )
   return rows
 })
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -312,7 +313,7 @@ const metrics = computed(() => {
         <a
           v-for="experiment in history"
           :key="experiment.id"
-          :href="operatorHref('analytics', { section: 'experiments', experiment: experiment.id }, window.location.search)"
+          :href="operatorHref('analytics', { section: 'experiments', experiment: experiment.id }, operatorSearch())"
           :aria-current="latest?.id === experiment.id ? 'page' : undefined"
           class="rounded-sm bg-white/6 px-2.5 py-1.5 text-[11px] text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]"
         >{{ experiment.name || experiment.id }}</a>
@@ -335,7 +336,7 @@ const metrics = computed(() => {
             <a
               v-for="runID in latest.run_ids"
               :key="runID"
-              :href="operatorHref('live', { run: runID, experiment: latest.id }, window.location.search)"
+              :href="operatorHref('live', { run: runID, experiment: latest.id }, operatorSearch())"
               class="max-w-full truncate rounded-sm bg-cyan-400/8 px-2 py-1 font-mono text-[10px] text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-400/15"
               :title="runID"
             >Inspect {{ compactIdentity(runID) }}</a>

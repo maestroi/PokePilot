@@ -99,6 +99,7 @@ const experiments = computed(() => array(stats.value.endless_experiments))
 function retry(): void {
   void resource.retry()
 }
+function operatorSearch(): string { return window.location.search }
 </script>
 
 <template>
@@ -107,7 +108,7 @@ function retry(): void {
       <a
         v-for="tab in [{ id: 'overview', label: 'Overview' }, { id: 'experiments', label: 'Experiments' }]"
         :key="tab.id"
-        :href="operatorHref('analytics', { section: tab.id }, window.location.search)"
+        :href="operatorHref('analytics', { section: tab.id }, operatorSearch())"
         :aria-current="activeSection === tab.id ? 'page' : undefined"
         :class="[
           activeSection === tab.id ? 'bg-white/10 text-white ring-1 ring-white/10' : 'text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
