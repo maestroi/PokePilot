@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
 import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, resumeProgramming, resumeRun } from '../shared/api/client'
 import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
@@ -56,6 +56,14 @@ const props = defineProps<{
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
 const selectionPinned = ref(Boolean(selectedRunID.value))
+
+function restoreRunSelection(): void {
+  const id = new URLSearchParams(window.location.search).get('run') || ''
+  selectedRunID.value = id
+  selectionPinned.value = Boolean(id)
+}
+onMounted(() => window.addEventListener('popstate', restoreRunSelection))
+onUnmounted(() => window.removeEventListener('popstate', restoreRunSelection))
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.operator.renderer') === 'classic' ? 'classic' : 'modern')
 const themeOptions = renderThemeOptions()
 const storedThemeID = window.localStorage.getItem('pokepilot.operator.theme') || DEFAULT_RENDER_THEME_ID

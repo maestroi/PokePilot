@@ -21,6 +21,7 @@ import type { HighlightStatus, ReplayStatus, RunArtifact, YouTubePublishStatus }
 import Panel from '../shared/components/Panel.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import RunTimeline from './RunTimeline.vue'
+import { operatorHref } from '../shared/urls'
 
 const props = defineProps<{ runID: string }>()
 
@@ -421,7 +422,7 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTime
               @timeupdate="syncEventFromVideo"
             />
             <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
-              <a href="#media" class="text-[10px] font-semibold text-cyan-300 hover:text-cyan-200">Manage in Media</a>
+              <a :href="operatorHref('media', { section: 'library', run: runID }, window.location.search)" class="text-[10px] font-semibold text-cyan-300 hover:text-cyan-200">Manage in Media</a>
               <label class="flex items-center gap-2 text-[10px] text-slate-500">
                 Speed
                 <select v-model.number="playbackRate" class="rounded-md border-0 bg-white/6 px-2 py-1 text-[11px] text-slate-200 outline-1 -outline-offset-1 outline-white/10">
@@ -480,7 +481,7 @@ onBeforeUnmount(() => { clearLiveTimer(); clearReplayTimer(); clearHighlightTime
               </button>
               <a
                 v-if="replay?.job_id"
-                href="#media"
+                :href="operatorHref('media', { section: 'jobs', run: runID, job: replay?.job_id }, window.location.search)"
                 class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/10 hover:bg-white/10"
               >
                 Manage in Media

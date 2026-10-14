@@ -112,7 +112,7 @@ test('runs archive exposes replay video and render actions without opening inspe
   assert.match(runArchive, /Render replay/)
   assert.match(runArchive, /Retry replay/)
   assert.match(runArchive, /replayProgressLabel/)
-  assert.match(runArchive, /href="#media"/)
+  assert.match(runArchive, /operatorHref\('media', \{ section: 'jobs', run: run\.run_id, job: replayJob\(run\)\?\.id \}/)
 })
 
 test('public spectator shows an intentional loading scene before snapshot and first frame', () => {
