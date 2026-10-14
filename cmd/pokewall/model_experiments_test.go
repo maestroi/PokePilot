@@ -89,7 +89,6 @@ func TestExperimentGeneratesMatchedDeploymentRuns(t *testing.T) {
 		}
 	}
 
-
 	w.mu.Lock()
 	queued := append([]string(nil), w.queue...)
 	w.mu.Unlock()
