@@ -135,6 +135,14 @@ func OfferWithEvidence(obs Observation, known *Knowledge) ObjectiveOffer {
 	// and whether a training leg is offered here.
 	obs.Training = budgetedTrainingEstimate(obs.Training, obs, known)
 	switch {
+	case known.hasCombatLossEvidence() && !owesCombatReadiness(known, obs) && !combatPreparationNeedsCoverage(obs, known):
+		// A satisfied readiness target means the party earned the retry. Release
+		// the gate at offer time, not only after the satisfying training
+		// completes: a cancel mid-grind can leave the lead at the target level
+		// with the loss still in combat-loss mode, withholding the fight with no
+		// training rung left to offer (cancel-resume dead end,
+		// run-ldnbzicnkw7cyoz4h3mins9c / triage:e419e12a9a0bc13a).
+		known.releaseSatisfiedCombatLossGates(obs, false)
 	case combatPreparationTrainingExhausted(obs) && !combatPreparationNeedsCoverage(obs, known):
 		// No local training and no learned habitat can advance readiness: the
 		// target is unreachable, so a locked fight would strand the planner

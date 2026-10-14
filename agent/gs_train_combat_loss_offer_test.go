@@ -70,6 +70,65 @@ func TestOfferKeepsRecoveryTrainWhenTrainItselfRecordedCombatLoss(t *testing.T) 
 	}
 }
 
+// TestOfferReleasesSatisfiedCombatReadinessOnResume guards the cancel-resume
+// dead end from run-ldnbzicnkw7cyoz4h3mins9c (triage:e419e12a9a0bc13a): a
+// combat-preparation grind was cancelled after the lead already reached the
+// loss's readiness target, so the loss was never promoted to retry (that
+// promotion only runs after an objective completes). On resume the target is
+// met, so no training rung is offered, but the fight is still withheld and the
+// sealed-topology escape is gated on owesCombatReadiness (false when the target
+// is met). The menu empties into "nothing is possible from here". A satisfied
+// readiness target must release the gate at offer time.
+func TestOfferReleasesSatisfiedCombatReadinessOnResume(t *testing.T) {
+	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, id)
+		const leadLevel = 49
+		obs := Observation{
+			GameID: id, PartyCount: 1, Controllable: true,
+			Party: []PartyMon{
+				{Species: "meganium", Level: leadLevel, HP: 112, MaxHP: 112},
+			},
+			Story: ProgressState{
+				{ID: gsprofile.ProgressStarterReceived, Complete: true},
+				{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
+				{ID: gsprofile.ProgressSproutTowerCleared, Complete: true},
+				{ID: gsprofile.ProgressZephyrBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressTogepiEggReceived, Complete: true},
+				{ID: gsprofile.ProgressSlowpokeWellCleared, Complete: true},
+			},
+		}
+		hive := Objective{Kind: KindProgress, Progress: gsprofile.ProgressHiveBadgeEarned}
+		known := NewKnowledge(nil)
+		// A quantified loss whose target the L49 lead already meets: readiness
+		// 4*49 = 196. The satisfying grind was cancelled before it completed, so
+		// the loss is still in combat-loss mode (never promoted to retry).
+		known.Failures[combatLossFailureKey(hive)] = Failure{
+			Objective: hive.String(), Times: 1,
+			ReadinessBaseline: 100, ReadinessTarget: 196,
+		}
+		obs.Failures = known.FailureList()
+
+		// Test assumptions: the target is met and no training rung is offered.
+		if owesCombatReadiness(known, obs) {
+			t.Fatalf("%s: test assumption wrong: readiness target should be met", id)
+		}
+		if target := gsCombatRecoveryLeadTarget(obs, known.Failures[combatLossFailureKey(hive)]); target > 0 {
+			t.Fatalf("%s: test assumption wrong: want no training rung at a met target, got %d", id, target)
+		}
+
+		offer := OfferWithProgressionEvidence(obs, known, adapter)
+		var gotRetry *Objective
+		for i := range offer.Candidates {
+			if offer.Candidates[i].Kind == KindProgress && offer.Candidates[i].Progress == hive.Progress {
+				gotRetry = &offer.Candidates[i]
+			}
+		}
+		if gotRetry == nil {
+			t.Fatalf("%s: want the satisfied Hive fight re-offered as a retry (cancel-resume dead end); candidates=%v", id, offer.Candidates)
+		}
+	}
+}
+
 func TestTrainCombatDefeatDoesNotEnterCombatLossMode(t *testing.T) {
 	train := Objective{Kind: KindTrain, Slot: 0, Level: 33}
 	err := skill.RequireBattleWin("gen2:second-badge-route:0320", game.BattleLost)
