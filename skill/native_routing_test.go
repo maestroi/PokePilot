@@ -314,6 +314,58 @@ func TestNativeLiveGridRefusesUnsettledMapShell(t *testing.T) {
 	}
 }
 
+// TestLiveMapSettledRequiresPositionInBounds pins the settle gate's position
+// half. A mid-warp transient reports the destination map's identity and a
+// controllable overworld before the player position register has landed, so the
+// position names a tile that does not exist on the map it is on. The block
+// buffer is settled in that window; only the position is not. Treating it as
+// settled let native routing start a tile-level path from a nonexistent tile,
+// which fails with a terminal no-route. Regression for farm run
+// run-whai2l6l8g1x36h0y0fucmsit (triage 80417851f0d3e00b), where ROUTE_35
+// (10x18) was read with the player at (17,0) en route to Slowpoke Well B1F.
+func TestLiveMapSettledRequiresPositionInBounds(t *testing.T) {
+	const (
+		mapRoute35 uint16 = 0x0a02
+		width      = 10
+		height     = 18
+	)
+	settled := func(x, y uint8) game.LiveTopologyState {
+		return game.LiveTopologyState{
+			NativeMapID:   mapRoute35,
+			WidthBlocks:   width,
+			HeightBlocks:  height,
+			MapShellPhase: game.MapShellSettled,
+			BlocksSettled: true,
+		}
+	}
+	at := func(x, y uint8) game.OverworldState {
+		return game.OverworldState{NativeMapID: mapRoute35, X: x, Y: y, Controllable: true}
+	}
+
+	tests := []struct {
+		name    string
+		world   game.OverworldState
+		decoded game.LiveTopologyState
+		want    bool
+	}{
+		{name: "in bounds settled", world: at(5, 3), decoded: settled(5, 3), want: true},
+		{name: "on the far edge settled", world: at(width-1, height-1), decoded: settled(width-1, height-1), want: true},
+		// The transient: buffer settled, position not yet landed on this map.
+		{name: "x out of bounds not settled", world: at(17, 0), decoded: settled(17, 0), want: false},
+		{name: "y out of bounds not settled", world: at(0, 18), decoded: settled(0, 18), want: false},
+		// The pre-existing half: an unsettled buffer is never settled, even in
+		// bounds.
+		{name: "in bounds but buffer unsettled", world: at(5, 3), decoded: func() game.LiveTopologyState { s := settled(5, 3); s.BlocksSettled = false; return s }(), want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := liveMapSettled(tc.world, tc.decoded); got != tc.want {
+				t.Fatalf("liveMapSettled(%+v, %+v) = %v, want %v", tc.world, tc.decoded, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestNativeArrivalRequiresControlHandoff pins the arrival half of the native
 // route postcondition. Reaching the destination tile while a player event still
 // owns the overworld is not arrival: the step that got there can roll a wild
