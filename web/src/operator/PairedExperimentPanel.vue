@@ -8,6 +8,9 @@ import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultExperimentArms, deploymentOptionLabel, strategistDeployments } from './llmDeployments'
+import { operatorHref } from '../shared/urls'
+
+const props = defineProps<{ experimentID?: string }>()
 
 const fieldClass = 'mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400'
 
@@ -30,7 +33,10 @@ const {
 
 // Experiments compare strategists; decision-only deployments cannot be an arm.
 const deployments = computed<ModelDeployment[]>(() => strategistDeployments(modelsData.value?.deployments ?? []))
-const latest = computed<ExperimentView | null>(() => experimentData.value?.[0] ?? created.value)
+const history = computed<ExperimentView[]>(() => experimentData.value ?? [])
+const latest = computed<ExperimentView | null>(() => props.experimentID
+  ? history.value.find((item) => item.id === props.experimentID) ?? (created.value?.id === props.experimentID ? created.value : null)
+  : created.value ?? history.value[0] ?? null)
 
 const form = reactive({
   name: 'Brock · 27B vs 4B',
@@ -302,10 +308,19 @@ const metrics = computed(() => {
     <p v-else class="py-6 text-center text-sm text-slate-500">Configure a model registry to start paired experiments.</p>
 
     <div class="mt-4 border-t border-white/8 pt-4">
+      <nav v-if="history.length" aria-label="Select experiment" class="mb-3 flex flex-wrap gap-2">
+        <a
+          v-for="experiment in history"
+          :key="experiment.id"
+          :href="operatorHref('analytics', { section: 'experiments', experiment: experiment.id }, window.location.search)"
+          :aria-current="latest?.id === experiment.id ? 'page' : undefined"
+          class="rounded-sm bg-white/6 px-2.5 py-1.5 text-[11px] text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]"
+        >{{ experiment.name || experiment.id }}</a>
+      </nav>
       <ResourceState
-        :state="latest ? 'ready' : experimentState"
-        title="No paired experiment loaded yet"
-        :message="experimentError || 'Start a comparison to see Boulder success, latency, and A/B wins here.'"
+        :state="props.experimentID && !latest && experimentState === 'ready' ? 'empty' : (latest ? 'ready' : experimentState)"
+        title="Selected experiment unavailable"
+        :message="experimentError || (props.experimentID ? 'This experiment ID was not returned by the server.' : 'Start a comparison to see matched A/B results here.')"
         :rows="4"
       >
         <div v-if="latest" class="space-y-3">
@@ -315,6 +330,15 @@ const metrics = computed(() => {
               <h3 class="text-sm font-semibold text-white">{{ latest.name }}</h3>
             </div>
             <span class="font-mono text-[11px] text-slate-500">{{ latest.total_pairs || 0 }} pairs</span>
+          </div>
+          <div v-if="latest.run_ids?.length" class="flex flex-wrap gap-2">
+            <a
+              v-for="runID in latest.run_ids"
+              :key="runID"
+              :href="operatorHref('live', { run: runID, experiment: latest.id }, window.location.search)"
+              class="max-w-full truncate rounded-sm bg-cyan-400/8 px-2 py-1 font-mono text-[10px] text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-400/15"
+              :title="runID"
+            >Inspect {{ compactIdentity(runID) }}</a>
           </div>
           <div class="grid gap-2 rounded-md border border-white/8 bg-black/20 px-3 py-3 text-[11px] sm:grid-cols-2">
             <div>

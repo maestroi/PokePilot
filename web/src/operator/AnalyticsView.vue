@@ -6,6 +6,11 @@ import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/hostedApiPricing'
+import { operatorHref } from '../shared/urls'
+import PairedExperimentPanel from './PairedExperimentPanel.vue'
+
+const props = defineProps<{ section?: string; experimentID?: string }>()
+const activeSection = computed(() => props.section === 'experiments' ? 'experiments' : 'overview')
 
 type Row = Record<string, any>
 type StatsPayload = Record<string, any>
@@ -98,7 +103,20 @@ function retry(): void {
 
 <template>
   <div class="space-y-3">
-    <ResourceState :state="resource.state.value" title="Analytics unavailable" :message="resource.error.value || 'Farm statistics will recover automatically.'" :rows="7">
+    <nav class="flex flex-wrap gap-1 border-b border-[var(--poke-border)] pb-2" aria-label="Analytics sections">
+      <a
+        v-for="tab in [{ id: 'overview', label: 'Overview' }, { id: 'experiments', label: 'Experiments' }]"
+        :key="tab.id"
+        :href="operatorHref('analytics', { section: tab.id }, window.location.search)"
+        :aria-current="activeSection === tab.id ? 'page' : undefined"
+        :class="[
+          activeSection === tab.id ? 'bg-white/10 text-white ring-1 ring-white/10' : 'text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
+          'rounded-sm px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]'
+        ]"
+      >{{ tab.label }}</a>
+    </nav>
+    <PairedExperimentPanel v-if="activeSection === 'experiments'" :experiment-id="experimentID" />
+    <ResourceState v-else :state="resource.state.value" title="Analytics unavailable" :message="resource.error.value || 'Farm statistics will recover automatically.'" :rows="7">
       <template #actions>
         <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="retry">
           <ArrowPathIcon class="size-3.5" aria-hidden="true" /> Retry now

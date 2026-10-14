@@ -56,6 +56,7 @@ const activeView = ref<OperatorView>(initialRoute.view)
 const activeSection = ref(initialRoute.section)
 const linkedRunID = ref(new URLSearchParams(window.location.search).get('run') || '')
 const linkedJobID = ref(new URLSearchParams(window.location.search).get('job') || '')
+const linkedExperimentID = ref(new URLSearchParams(window.location.search).get('experiment') || '')
 const configuredSpectatorURL = ref('')
 const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
   name: labels[view],
@@ -96,6 +97,7 @@ function syncHash(): void {
   const query = new URLSearchParams(window.location.search)
   linkedRunID.value = query.get('run') || ''
   linkedJobID.value = query.get('job') || ''
+  linkedExperimentID.value = query.get('experiment') || ''
   document.title = `RomPilot Admin · ${labels[next.view]}`
 }
 
@@ -188,7 +190,7 @@ onUnmounted(() => {
       </button>
       <a
         href="#new-run"
-        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110"
+        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         <PlayIcon class="size-3.5" aria-hidden="true" />
         New run
@@ -208,7 +210,7 @@ onUnmounted(() => {
     <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
     <RunArchiveView v-else-if="activeView === 'runs'" />
     <FailuresView v-else-if="activeView === 'failures'" />
-    <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" />
+    <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
     <MediaView v-else-if="activeView === 'media'" :section="activeSection" :run-id="linkedRunID" :job-id="linkedJobID" />
     <OperationsView v-else-if="activeView === 'operations'" />
     <SettingsView v-else-if="activeView === 'settings'" />

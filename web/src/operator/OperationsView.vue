@@ -10,7 +10,6 @@ import PokemonSprite from '../shared/components/PokemonSprite.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import PairedExperimentPanel from './PairedExperimentPanel.vue'
 import {
   ageLabel,
   formatFrame,
@@ -286,10 +285,6 @@ async function confirmForceEnd(): Promise<void> {
         </Panel>
       </div>
     </ResourceState>
-
-    <div class="space-y-3">
-      <PairedExperimentPanel />
-    </div>
 
     <Panel title="Recent outcomes" description="The latest terminal runs refresh independently every 10 seconds." compact>
       <ResourceState
