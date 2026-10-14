@@ -326,8 +326,8 @@ func TestNativeLiveGridRefusesUnsettledMapShell(t *testing.T) {
 func TestLiveMapSettledRequiresPositionInBounds(t *testing.T) {
 	const (
 		mapRoute35 uint16 = 0x0a02
-		width      = 10
-		height     = 18
+		width             = 10
+		height            = 18
 	)
 	settled := func(x, y uint8) game.LiveTopologyState {
 		return game.LiveTopologyState{
