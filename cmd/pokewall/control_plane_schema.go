@@ -304,6 +304,7 @@ func (w *Wall) SetControlPlaneDatabase(dsn string) error {
 		return fmt.Errorf("sync active runs to control plane: %w", err)
 	}
 	w.evictCatalogFinished()
+	w.seedSuccessFromCatalog()
 	return nil
 }
 

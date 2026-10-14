@@ -57,6 +57,7 @@ func restorePersistedState(w *Wall, ps persistedState) {
 		w.tiles[id] = pt.tile(now)
 	}
 	w.queue = append(w.queue, ps.Queue...)
+	w.observeRestoredLocked()
 }
 
 func (cp *controlPlane) loadIssueLinks() (map[string]IssueLink, error) {

@@ -41,7 +41,73 @@ curl -s http://<task>:8080/metrics | head
 
 Runners listen on 8099. A fresh scrape includes `pokepilot_up`,
 `pokepilot_build_info`, `go_goroutines`, and `process_start_time_seconds`.
-Later issues add run, failure, and subsystem series to the same endpoint.
+Failure, LLM, replay, and alert series are later issues on the same endpoint.
+
+## Run lifecycle
+
+The wall publishes whether runs are succeeding. Counters move only when a
+campaign changes state. A process restart rebuilds `pokepilot_runs_active`
+and `pokepilot_last_successful_run_timestamp_seconds` from restored tiles
+and the history catalog, and does not replay started/completed/failed/aborted
+for campaigns that already ended. A duplicate finish of the same terminal
+state does not increment again. A retry that re-queues the same run is not a
+failure and does not count the funnel stages a second time.
+
+Labels are `game`, `mode` (`llm`, `scripted`, `policy`, `launch`, `other`),
+`result` (`completed`, `failed`, `aborted`), and `milestone`. There is no
+`run_id`. Build revision stays on `pokepilot_build_info` rather than on each
+run series. An empty or unsafe game is `unknown`. Milestone ids are `starter`,
+`badge_1` through `badge_16`, a fixed story list (`pokedex`, `surf`,
+`champion`, `hall_of_fame`, and the other beats the runner already reports),
+and `completed`. Anything else is dropped. `started` is only the stopping
+point of a run that ended before any stage.
+
+| Metric | Meaning |
+| --- | --- |
+| `pokepilot_runs_started_total` | Campaigns queued |
+| `pokepilot_runs_active` | Leased or running right now |
+| `pokepilot_runs_completed_total` | Terminal success (`done`) |
+| `pokepilot_runs_failed_total` | Terminal failure |
+| `pokepilot_runs_aborted_total` | Terminal cancel |
+| `pokepilot_run_duration_seconds` | Queue-to-terminal seconds, by game and result |
+| `pokepilot_run_rounds` | Planner rounds at a terminal result |
+| `pokepilot_run_frames` | Emulator frames at a terminal result |
+| `pokepilot_last_successful_run_timestamp_seconds` | Unix time of the newest success by game |
+| `pokepilot_run_milestones_total` | Campaigns that reached each funnel stage |
+| `pokepilot_run_stopping_milestone_total` | Terminal runs by the furthest stage reached |
+
+Completion rate over the last hour, by game:
+
+```promql
+sum by (game) (rate(pokepilot_runs_completed_total[1h]))
+/
+sum by (game) (
+  rate(pokepilot_runs_completed_total[1h])
+  + rate(pokepilot_runs_failed_total[1h])
+  + rate(pokepilot_runs_aborted_total[1h])
+)
+```
+
+p95 duration of successful runs, by game:
+
+```promql
+histogram_quantile(
+  0.95,
+  sum by (le, game) (
+    rate(pokepilot_run_duration_seconds_bucket{result="completed"}[1h])
+  )
+)
+```
+
+Where campaigns are being lost, over the last day:
+
+```promql
+sum by (milestone) (increase(pokepilot_run_milestones_total[1d]))
+```
+
+```promql
+sum by (milestone) (increase(pokepilot_run_stopping_milestone_total[1d]))
+```
 
 ## Telegram operator
 
