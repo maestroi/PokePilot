@@ -10,18 +10,18 @@ import (
 	"github.com/maestroi/pokepilot/boxxle/solver"
 )
 
-// chooseAvoidingCycle asks choose for the next push, unless that push would
-// restore a crate layout already visited on this puzzle. A restored layout is
-// a stall: the greedy score and a model that agrees with it will undo the
-// push forever (a nearer goal the solver cannot actually use). The rest of
-// the puzzle is then played by the deterministic solver, and every selection
-// taken on that path is marked Fallback.
+// chooseAvoidingCycle asks choose for the next push. seen is the crate
+// layouts this puzzle has already occupied, and choose receives it so a model
+// can solve the room from the pushes that do not undo one. A chooser that
+// ignores seen and restores a layout anyway is stuck: the nearer goal is a
+// dead end the score will undo forever. The rest of that puzzle is played by
+// the deterministic solver, and every selection on that path is marked Fallback.
 //
-// stuck is nil until the first stall. seen records crate layouts this puzzle
-// has already occupied; the caller clears both when the next puzzle starts.
+// stuck is nil until that happens. The caller clears seen and stuck when the
+// next puzzle starts.
 func chooseAvoidingCycle(
 	state boxxle.State,
-	choose func(boxxle.State) (decision.Selection, error),
+	choose func(boxxle.State, map[string]bool) (decision.Selection, error),
 	seen map[string]bool,
 	stuck *SolverChooser,
 ) (decision.Selection, *SolverChooser, error) {
@@ -33,11 +33,11 @@ func chooseAvoidingCycle(
 		sel.Fallback = true
 		return sel, stuck, nil
 	}
-	sel, err := choose(state)
+	sel, err := choose(state, seen)
 	if err != nil {
 		return decision.Selection{}, nil, err
 	}
-	if seen != nil && pushRestoresLayout(seen, state, sel.Plan.Push) {
+	if seen != nil && PushRestoresLayout(seen, state, sel.Plan.Push) {
 		next := NewSolverChooser()
 		alt, altErr := next.Choose(state)
 		if altErr != nil {
@@ -57,10 +57,10 @@ func chooseAvoidingCycle(
 	return sel, stuck, nil
 }
 
-// pushRestoresLayout reports whether push lands on a crate layout seen has
+// PushRestoresLayout reports whether push lands on a crate layout seen has
 // already recorded. A push that the board rejects is not a stall; the caller
 // still has to execute it and observe the failure.
-func pushRestoresLayout(seen map[string]bool, state boxxle.State, push boxxle.LegalPush) bool {
+func PushRestoresLayout(seen map[string]bool, state boxxle.State, push boxxle.LegalPush) bool {
 	next, err := solver.Apply(state, solver.Push{
 		CrateFrom:  push.Crate,
 		CrateTo:    push.CrateTo,

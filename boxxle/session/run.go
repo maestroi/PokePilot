@@ -33,11 +33,13 @@ type RunOptions struct {
 	MaxFrames int
 	// Cancel, when non-nil, stops the run when closed.
 	Cancel <-chan struct{}
-	// Choose may replace the deterministic policy selector with another bounded
-	// selector, such as a model planner. It returns a decision.Selection; the
-	// session executes selection.Plan.Push through the deterministic controller.
-	// Nil preserves historical deterministic play.
-	Choose func(boxxle.State) (decision.Selection, error)
+	// Choose may replace the deterministic solver with a one-step planner, such
+	// as a model. seen lists crate layouts already occupied on this puzzle;
+	// the planner should not offer a push that returns to one of them, so it
+	// can solve the room instead of undoing the last push. The session
+	// executes selection.Plan.Push through the deterministic controller. Nil
+	// preserves the solver, which already searches without repeating layouts.
+	Choose func(state boxxle.State, seen map[string]bool) (decision.Selection, error)
 	// OnDecision, when non-nil, is called after each selection so a caller can
 	// record telemetry.
 	OnDecision func(decision.Selection)
@@ -136,17 +138,14 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 		opts.OnProgress(state, 0, 0)
 	}
 
-	// A caller-supplied chooser is a one-step planner (the greedy policy or a
-	// model). It can shuttle one crate back and forth. The default solver
-	// already searches without repeating layouts, so only the supplied
-	// chooser is watched.
+	// A caller-supplied chooser is a one-step planner. seen is handed to it so
+	// a model can pick a push that changes the room. A chooser that ignores
+	// seen and restores a layout is handed to the solver for the rest of the
+	// puzzle. The default solver already searches without repeating layouts.
 	watchCycles := opts.Choose != nil
 	seen := map[string]bool{}
 	var stuck *SolverChooser
-	choose := opts.Choose
-	if choose == nil {
-		choose = NewSolverChooser().Choose
-	}
+	defaultChooser := NewSolverChooser()
 	goal := opts.Goal
 	if goal.Kind == "" && opts.Levels > 0 {
 		goal = Goal{Kind: GoalLevels, Levels: opts.Levels}
@@ -208,9 +207,9 @@ func Run(profile game.CartridgeProfile, m Machine, opts RunOptions) Result {
 
 		var selection decision.Selection
 		if watchCycles {
-			selection, stuck, err = chooseAvoidingCycle(state, choose, seen, stuck)
+			selection, stuck, err = chooseAvoidingCycle(state, opts.Choose, seen, stuck)
 		} else {
-			selection, err = choose(state)
+			selection, err = defaultChooser.Choose(state)
 		}
 		if err != nil {
 			return result("error", state, err)

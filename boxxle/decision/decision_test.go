@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -372,6 +373,111 @@ func TestTelemetryRecords(t *testing.T) {
 	}
 	if snap.Usage.PromptTokens != 7 {
 		t.Errorf("usage = %+v, want prompt tokens 7", snap.Usage)
+	}
+}
+
+func TestSelectorOmitsThePushThatUndoesTheRoom(t *testing.T) {
+	state := buildState(t, testGrid)
+	candidates, err := policy.Candidates(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) < 2 {
+		t.Fatalf("need two pushes, got %d", len(candidates))
+	}
+	stall := candidates[0].Push
+	engine := &fakeEngine{}
+	engine.decide = func(req agent.DecisionRequest) (agent.DecisionResponse, error) {
+		for _, choice := range req.Choices {
+			if choice.ID == pushID(stall) {
+				t.Fatalf("undo %s was offered to the model", choice.ID)
+			}
+			if strings.Contains(choice.Description, "deterministic score") {
+				t.Fatalf("choice description leaks the greedy score: %s", choice.Description)
+			}
+		}
+		if !strings.Contains(req.Question, "Sokoban") {
+			t.Fatalf("question = %q, want the model asked to solve the puzzle", req.Question)
+		}
+		return responseFor(req, req.Choices[0].ID, 0.8), nil
+	}
+	got, err := (Selector{
+		Engine: engine,
+		Omit: func(push boxxle.LegalPush) bool {
+			return push.Crate == stall.Crate && push.Dir == stall.Dir
+		},
+	}).Choose(context.Background(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Fallback {
+		t.Fatalf("fallback = %v, the model had other pushes", got.DecisionErr)
+	}
+	if pushID(got.Plan.Push) == pushID(stall) {
+		t.Fatal("played the omitted undo")
+	}
+}
+
+func TestSelectorAllStallsSkipsTheModel(t *testing.T) {
+	state := buildState(t, testGrid)
+	called := false
+	engine := &fakeEngine{decide: func(req agent.DecisionRequest) (agent.DecisionResponse, error) {
+		called = true
+		return responseFor(req, req.Choices[0].ID, 0.9), nil
+	}}
+	got, err := (Selector{
+		Engine: engine,
+		Omit:   func(boxxle.LegalPush) bool { return true },
+	}).Choose(context.Background(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("model was asked after every push was an undo")
+	}
+	if !got.Fallback || !errors.Is(got.DecisionErr, ErrNoForwardPush) {
+		t.Fatalf("fallback=%v err=%v", got.Fallback, got.DecisionErr)
+	}
+}
+
+func TestChoiceConfidentAcceptsAClearLeaderUnderTheFloor(t *testing.T) {
+	// The live room: sixteen legal pushes, the model put 0.51 on one of them
+	// and the 0.65 floor discarded it.
+	probs := make(map[string]float64, 16)
+	probs["push:5,2:down"] = 0.51
+	share := 0.49 / 15
+	for i := 0; i < 15; i++ {
+		probs[fmt.Sprintf("other-%d", i)] = share
+	}
+	resp := agent.DecisionResponse{Choice: "push:5,2:down", Confidence: 0.51, Probabilities: probs}
+	if !choiceConfident(resp, 0.65) {
+		t.Fatal("a 0.51 leader against fifteen alternatives is the model deciding")
+	}
+}
+
+func TestGoalTextDoesNotRankALongerGoalDistanceAsFailure(t *testing.T) {
+	farther := goalText(policy.Candidate{DeltaGoal: -1})
+	if strings.Contains(farther, "no goal progress") {
+		t.Fatalf("description %q tells the model to reject the push that solves the room", farther)
+	}
+	closer := goalText(policy.Candidate{DeltaGoal: 1})
+	if strings.Contains(closer, "reduces goal") {
+		t.Fatalf("description %q tells the model the trap is progress", closer)
+	}
+}
+
+func TestChoiceConfidentRejectsANearTie(t *testing.T) {
+	resp := agent.DecisionResponse{
+		Choice:     "a",
+		Confidence: 0.4,
+		Probabilities: map[string]float64{
+			"a": 0.4,
+			"b": 0.35,
+			"c": 0.25,
+		},
+	}
+	if choiceConfident(resp, 0.65) {
+		t.Fatal("a near tie under the floor should fall back")
 	}
 }
 

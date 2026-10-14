@@ -59,7 +59,7 @@ Replay recordings store the generic cartridge game/revision identity. The replay
 
 ## Typed push decisions
 
-A configurable typed-decision backend may choose only from already-legal, non-deadlocking pushes. The model never emits raw D-pad input. Low confidence, transport errors, or invalid answers fall back to the deterministic solver and are recorded as fallbacks.
+A configurable typed-decision backend solves the room from already-legal, non-deadlocking pushes. Pushes that would restore a crate layout already reached on this puzzle are left out, so the model picks a step that changes the board instead of undoing the last one. The model never emits raw D-pad input. A clear leader plays even when its probability is under the absolute confidence floor, because a puzzle step has many more choices than a battle turn. A near tie, a transport error, an invalid answer, or a board whose every legal push undoes a seen layout falls back to the deterministic solver and is recorded as a fallback.
 
 ```json
 {

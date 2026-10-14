@@ -48,7 +48,7 @@ func runFarmBoxxlePlay(
 	m.TraceNote("boxxle", fmt.Sprintf("goal=%s levels=%d", goal.String(), goal.WantedLevels()))
 
 	var (
-		choose        func(boxxle.State) (boxxledecision.Selection, error)
+		choose        func(boxxle.State, map[string]bool) (boxxledecision.Selection, error)
 		lastSelection *boxxledecision.Selection
 	)
 	if decisionSpec := spec.DecisionEngine; decisionSpec != nil && decisionSpec.Enabled() {
@@ -67,8 +67,12 @@ func runFarmBoxxlePlay(
 			Shadow: settings.Shadow, MaxChoices: decisionSpec.MaxChoices,
 		}
 		solver := boxxlsession.NewSolverChooser()
-		choose = func(state boxxle.State) (boxxledecision.Selection, error) {
-			selection, err := selector.Choose(context.Background(), state)
+		choose = func(state boxxle.State, seen map[string]bool) (boxxledecision.Selection, error) {
+			step := selector
+			step.Omit = func(push boxxle.LegalPush) bool {
+				return boxxlsession.PushRestoresLayout(seen, state, push)
+			}
+			selection, err := step.Choose(context.Background(), state)
 			if err != nil {
 				return boxxledecision.Selection{}, err
 			}

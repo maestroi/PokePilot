@@ -46,6 +46,11 @@ type Selection struct {
 	Agreed        *bool
 }
 
+// ErrNoForwardPush is returned as Selection.DecisionErr when every legal push
+// would restore a crate layout this puzzle has already occupied. The model is
+// not asked; the caller should hand the position to the solver.
+var ErrNoForwardPush = errors.New("boxxle decision: every legal push restores a seen layout")
+
 // Selector consults one typed backend after deterministic legality/scoring.
 // The backend is selected through the shared agent.DecisionEngine interface, so
 // the provider and model are configured by the runner, never hard-coded here.
@@ -53,9 +58,13 @@ type Selector struct {
 	Engine        agent.DecisionEngine
 	MinConfidence float64
 	Shadow        bool
-	// MaxChoices limits the request to the policy's best legal pushes.
-	// Zero keeps the complete candidate set for backends without a choice limit.
+	// MaxChoices limits how many legal pushes are declared. Zero keeps the
+	// complete candidate set for backends without a choice limit.
 	MaxChoices int
+	// Omit drops pushes the caller has measured as stalls, such as a push
+	// that returns the crates to a layout already reached on this puzzle.
+	// The model is asked to solve the room from the pushes that remain.
+	Omit func(boxxle.LegalPush) bool
 }
 
 // pushState is the compact symbolic board representation fed to the planner.
@@ -87,6 +96,16 @@ func (s Selector) Choose(ctx context.Context, state boxxle.State) (Selection, er
 	if err != nil {
 		return Selection{}, err
 	}
+	candidates = omitPushes(candidates, s.Omit)
+	if len(candidates) == 0 {
+		return Selection{
+			Plan:          deterministic,
+			Deterministic: deterministic,
+			Fallback:      true,
+			DecisionErr:   ErrNoForwardPush,
+			Shadow:        s.Shadow,
+		}, nil
+	}
 	req, byID, err := pushRequest(state, topCandidates(candidates, s.MaxChoices))
 	if err != nil {
 		return Selection{}, err
@@ -105,7 +124,7 @@ func (s Selector) Choose(ctx context.Context, state boxxle.State) (Selection, er
 
 	resp, decisionErr := agent.DecideChecked(ctx, s.Engine, req)
 	out.Response = resp
-	if decisionErr == nil && s.MinConfidence > 0 && resp.Confidence < s.MinConfidence {
+	if decisionErr == nil && !choiceConfident(resp, s.MinConfidence) {
 		decisionErr = fmt.Errorf("%w: %.3f < %.3f", agent.ErrDecisionLowConfidence, resp.Confidence, s.MinConfidence)
 	}
 	if decisionErr != nil {
@@ -152,9 +171,9 @@ func pushRequest(state boxxle.State, candidates []policy.Candidate) (agent.Decis
 			ID:    id,
 			Label: fmt.Sprintf("push crate at (%d,%d) %s", c.Push.Crate.X, c.Push.Crate.Y, c.Push.Dir),
 			Description: fmt.Sprintf(
-				"crate (%d,%d) -> (%d,%d); %s; deterministic score %d; player distance %d",
+				"crate (%d,%d) -> (%d,%d); %s; %d step(s) for the player to reach the crate",
 				c.Push.Crate.X, c.Push.Crate.Y, c.Push.CrateTo.X, c.Push.CrateTo.Y,
-				goalText(c), c.Score, c.PlayerDist,
+				goalText(c), c.PlayerDist,
 			),
 		})
 		byID[id] = c.Push
@@ -174,13 +193,54 @@ func pushRequest(state boxxle.State, candidates []policy.Candidate) (agent.Decis
 	}
 	return agent.DecisionRequest{
 		Kind:     KindPush,
-		Question: "Which already-legal crate push should execute next?",
+		Question: "Which push solves the next step of this Sokoban puzzle?",
 		State:    rawState,
 		Choices:  choices,
-		Instructions: "Choose exactly one declared push. The choices are pre-validated legal, non-deadlocking " +
-			"crate pushes; do not invent a crate, a direction, or a raw D-pad sequence. Prefer a push that moves " +
-			"a crate onto a goal and keeps crates away from corners.",
+		Instructions: "Solve the room: every crate must sit on a goal. You can push a crate one cell and you cannot pull. " +
+			"The board in state is the puzzle (# wall, . floor, @ player, $ crate, * crate on a goal, + empty goal). " +
+			"Each choice is a legal push that keeps the puzzle solvable and does not return the crates to a layout already reached. " +
+			"Choose exactly one. A crate moving closer to the nearest goal can still be a dead end; pick the push the remaining crates need.",
 	}, byID, nil
+}
+
+// choiceConfident reports whether the backend's answer should play.
+//
+// MinConfidence is an absolute floor, sized for a handful of choices. A
+// Sokoban step often has many legal pushes, so a model that has decided
+// still lands well under 0.65: on the live room it picked one push at 0.51
+// and the floor threw that away. A unique leader with at least twice the
+// probability of every alternative is that decision, and it plays. A near
+// tie under the floor still falls back.
+func choiceConfident(resp agent.DecisionResponse, min float64) bool {
+	if min <= 0 || resp.Confidence >= min {
+		return true
+	}
+	second := 0.0
+	for id, probability := range resp.Probabilities {
+		if id == resp.Choice {
+			continue
+		}
+		if probability > second {
+			second = probability
+		}
+	}
+	return second > 0 && resp.Confidence > 2*second
+}
+
+// omitPushes removes candidates the caller measured as stalls. A nil omit
+// keeps the complete set.
+func omitPushes(candidates []policy.Candidate, omit func(boxxle.LegalPush) bool) []policy.Candidate {
+	if omit == nil {
+		return candidates
+	}
+	kept := make([]policy.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		if omit(c.Push) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
 }
 
 // validatePush re-checks a model-chosen push against the board it was offered
@@ -223,15 +283,19 @@ func topCandidates(candidates []policy.Candidate, n int) []policy.Candidate {
 	return candidates[:n]
 }
 
-// goalText is a short human-readable note about a candidate's goal progress.
+// goalText reports how a push changes the crate's distance to the nearest
+// goal. It is a measurement, not a ranking: the push that solves the room
+// is often the one that moves farther away.
 func goalText(c policy.Candidate) string {
 	switch {
 	case c.OntoGoal:
-		return "moves crate onto a goal"
+		return "lands on a goal"
 	case c.DeltaGoal > 0:
-		return fmt.Sprintf("reduces goal distance by %d", c.DeltaGoal)
+		return fmt.Sprintf("nearest goal becomes %d closer", c.DeltaGoal)
+	case c.DeltaGoal < 0:
+		return fmt.Sprintf("nearest goal becomes %d farther", -c.DeltaGoal)
 	default:
-		return "no goal progress"
+		return "nearest goal stays the same distance"
 	}
 }
 

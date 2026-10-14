@@ -27,7 +27,7 @@ func TestGreedyPushCycleHandsThePuzzleToTheSolver(t *testing.T) {
 		"##########",
 	})
 	calls := 0
-	choose := func(s boxxle.State) (decision.Selection, error) {
+	choose := func(s boxxle.State, _ map[string]bool) (decision.Selection, error) {
 		calls++
 		d, err := policy.Choose(s)
 		if err != nil {
@@ -71,6 +71,86 @@ func TestGreedyPushCycleHandsThePuzzleToTheSolver(t *testing.T) {
 	}
 	if calls >= 40 {
 		t.Fatalf("model/policy was consulted %d times; the cycle should hand the puzzle to the solver", calls)
+	}
+}
+
+// The oscillating room has four legal pushes. The greedy score wants the crate
+// next to the goals; the solution starts by pushing a different crate away
+// from them. A model that picks that push is solving the room, and the session
+// has to keep executing its choices instead of taking the puzzle away.
+func TestModelKeepsTheSolvingPush(t *testing.T) {
+	state := renderState(t, []string{
+		"##########",
+		"#++@.....#",
+		"#*+.$.#..#",
+		"#..#.##.##",
+		"#.$.....##",
+		"#####.#.##",
+		"###.$...##",
+		"###.....##",
+		"##########",
+	})
+	sol, ok, err := solver.Solve(state)
+	if err != nil || !ok || len(sol.Pushes) == 0 {
+		t.Fatalf("board did not solve: ok=%v err=%v", ok, err)
+	}
+	step := 0
+	choose := func(s boxxle.State, seen map[string]bool) (decision.Selection, error) {
+		if step >= len(sol.Pushes) {
+			t.Fatalf("solver plan exhausted at step %d", step)
+		}
+		want := sol.Pushes[step]
+		cands, err := policy.Candidates(s)
+		if err != nil {
+			return decision.Selection{}, err
+		}
+		var push boxxle.LegalPush
+		found := false
+		for _, c := range cands {
+			if c.Push.Crate == want.CrateFrom && c.Push.Dir == want.Dir {
+				push = c.Push
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("step %d: solving push %v %s is not one of the %d choices", step, want.CrateFrom, want.Dir, len(cands))
+		}
+		if PushRestoresLayout(seen, s, push) {
+			t.Fatalf("step %d: solving push %v %s was treated as an undo", step, push.Crate, push.Dir)
+		}
+		step++
+		plan := decision.Plan{Push: push}
+		return decision.Selection{Plan: plan, Deterministic: plan}, nil
+	}
+
+	seen := map[string]bool{}
+	var stuck *SolverChooser
+	for step < len(sol.Pushes)+1 {
+		if state.Solved {
+			break
+		}
+		sel, next, err := chooseAvoidingCycle(state, choose, seen, stuck)
+		if err != nil {
+			t.Fatalf("step %d: %v", step, err)
+		}
+		if next != nil || sel.Fallback {
+			t.Fatalf("step %d handed the puzzle to the solver", step)
+		}
+		stuck = next
+		nextState, err := solver.Apply(state, solver.Push{
+			CrateFrom:  sel.Plan.Push.Crate,
+			CrateTo:    sel.Plan.Push.CrateTo,
+			Dir:        sel.Plan.Push.Dir,
+			PlayerFrom: sel.Plan.Push.PlayerFrom,
+		})
+		if err != nil {
+			t.Fatalf("step %d apply %v %s: %v\n%s", step, sel.Plan.Push.Crate, sel.Plan.Push.Dir, err, strings.Join(boxxle.RenderBoard(state), "\n"))
+		}
+		state = nextState
+	}
+	if !state.Solved {
+		t.Fatalf("model's pushes did not solve the room:\n%s", strings.Join(boxxle.RenderBoard(state), "\n"))
 	}
 }
 
