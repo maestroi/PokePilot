@@ -8,14 +8,14 @@
 //   POKEPILOT_MCP_TOKEN=… node scripts/dev-backend.mjs   # then: npm run dev
 //
 // ponytail: endpoints without a read-only source (checkpoints, replay, media,
-// models, triage, analytics) answer with empty data; add them when a page needs them.
+// models, analytics) answer with empty data; add them when a page needs them.
 import { createServer } from 'node:http'
 
 const PORT = Number(process.env.PORT || 18080)
 const MCP_URL = process.env.POKEPILOT_MCP_URL || 'https://admin.rompilot.app/mcp'
 const PUBLIC_API = process.env.POKEPILOT_PUBLIC_API || 'https://api.rompilot.app'
 const TOKEN = process.env.POKEPILOT_MCP_TOKEN || ''
-const READ_TOOLS = new Set(['pokepilot_list_runs', 'pokepilot_get_run', 'pokepilot_get_run_debug', 'pokepilot_get_run_artifacts'])
+const READ_TOOLS = new Set(['pokepilot_list_runs', 'pokepilot_get_run', 'pokepilot_get_run_debug', 'pokepilot_get_run_artifacts', 'pokepilot_get_triage'])
 
 if (!TOKEN) {
   console.error('POKEPILOT_MCP_TOKEN is required')
@@ -124,7 +124,11 @@ const routes = [
   [/^\/v1\/runs\/([^/]+)\/artifacts$/, (q, id) => tool('pokepilot_get_run_artifacts', { run_id: id })],
   [/^\/v1\/runs\/[^/]+\/checkpoints$/, () => []],
   [/^\/v1\/media\/render-jobs$/, () => ({ jobs: [] })],
-  [/^\/v1\/triage$/, () => []],
+  // The wall's /v1/triage includes resolved groups; the MCP hides them unless asked.
+  // If the full history ever trips the MCP's 2 MB response cap, fall back to open groups.
+  [/^\/v1\/triage$/, () => tool('pokepilot_get_triage', { include_resolved: true })
+    .catch(() => tool('pokepilot_get_triage', {}))
+    .then((value) => value?.groups ?? [])],
   [/^\/v1\/runs\/[^/]+\/replay\/status$/, () => ({ state: 'missing' })],
   [/^\/v1\/runs\/[^/]+\/highlights\/status$/, () => ({ state: 'missing' })],
   [/^\/v1\/programming$/, () => publicJSON('/v1/watch/programming')],

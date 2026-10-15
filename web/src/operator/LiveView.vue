@@ -68,6 +68,18 @@ const confirmCancel = ref(false)
 const forceEndTarget = ref<DashboardWorker | null>(null)
 const forceEndBusy = ref(false)
 const actionError = ref('')
+// Set when Failures opened this run; drives the "From failure group" strip.
+const failureKey = ref(new URLSearchParams(window.location.search).get('failure') || '')
+function closeFailureStrip(): void {
+  const url = new URL(window.location.href)
+  url.searchParams.delete('failure')
+  history.replaceState(null, '', url)
+  failureKey.value = ''
+}
+function backToFailure(): void {
+  history.pushState(null, '', operatorHref('failures', { run: '' }, window.location.search))
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
 const railOpen = ref(false)
 let detailSerial = 0
 
@@ -327,6 +339,8 @@ function selectRunID(runID: string): void {
   const url = new URL(window.location.href)
   url.searchParams.set('run', runID)
   url.searchParams.delete('tab')
+  url.searchParams.delete('failure')
+  failureKey.value = ''
   history.replaceState(null, '', url)
 }
 
@@ -625,6 +639,11 @@ const search = () => window.location.search
           </Menu>
         </header>
 
+        <div v-if="failureKey" class="flex flex-wrap items-center gap-x-3 gap-y-1 border border-rule-strong bg-surface px-3 py-1.5" role="region" aria-label="Failure group context">
+          <span>From failure group <span class="font-mono">{{ failureKey }}</span></span>
+          <a :href="operatorHref('failures', { run: '' }, search())" class="text-accent hover:underline" @click.prevent="backToFailure">← Back to failure group</a>
+          <button type="button" class="ui-btn ui-btn-sm ui-icon-btn ml-auto" aria-label="Close failure group context" @click="closeFailureStrip">✕</button>
+        </div>
         <p v-if="actionError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ actionError }}</p>
 
         <!-- Game · Semantic map · Game state -->

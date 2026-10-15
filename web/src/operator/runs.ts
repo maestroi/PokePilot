@@ -7,7 +7,10 @@ export function archiveWhen(run: DashboardRun): string {
 }
 
 export function archiveAgo(run: DashboardRun, nowMs = Date.now()): string {
-  const seconds = Number(run.ended_at || 0)
+  return timeAgo(Number(run.ended_at || 0), nowMs)
+}
+
+export function timeAgo(seconds: number, nowMs = Date.now()): string {
   if (!seconds) return '—'
   const minutes = Math.max(0, Math.round((nowMs / 1000 - seconds) / 60))
   if (minutes < 1) return 'just now'

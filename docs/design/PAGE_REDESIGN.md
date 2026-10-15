@@ -379,13 +379,7 @@ partial failures ("Deleted 9 of 10 runs; red-xyz failed: …").
 These pages apply the same patterns. Ownership and scope are fixed in the 10-14 spec
 and tracked in #2672–#2676.
 
-**Failures (List + detail).** FilterBar (state: open / resolved, game, has issue).
-Table: group key (summary), count, latest run, first/last seen, linked issue. DetailPane:
-pattern description, example runs as full `CopyValue` IDs (no 18-char truncation)
-with "Open in Live" (carries `?failure=<key>` so Live shows a "From failure
-group <key>" strip with a back link), and actions: "Investigate with AI"
-(primary when an issue exists; otherwise disabled with reason "Open an issue
-first" + "Open issue"), Dismiss…, Delete matching runs… (both confirm).
+**Failures**: fully specified in §4 (T-40).
 
 **Analytics (Overview + Experiments tabs).** The KPI tiles are replaced by a one-line
 health strip of readouts ("Completed 1,284 · Objective wins 412 (32%) · ≥1 badge 61%").
@@ -414,3 +408,152 @@ success receipt keeps the run ID `CopyValue` + "Open in Live".
 restyled. Destinations = broadcast destination config (secrets stay server-side).
 Renderer = theme assets (from Media › Assets/Themes). About = wall version, UI build
 link, connection details (moved from the top bar).
+
+---
+
+## 4. Failures — list + detail (T-40)
+
+### 4.1 Job
+
+Answer, in order: *Which failure groups are open and how bad are they? Is someone
+(an issue, a solver) already on it? Which runs show it?* Then act: investigate
+with AI, open the evidence in Live, dismiss noise, or clean up the matching run
+history. Failures owns triage groups; run facts stay in Runs and Live.
+
+Data: `getTriage()` returns every group (open and resolved) in one response with no
+server paging, filtering or sort. The page therefore filters, sorts and pages the
+loaded list client-side (50 per page, DESIGN §6). Polling stays at 5s.
+
+### 4.2 Desktop layout (≥ 1280px)
+
+```
+┌ Page header ──────────────────────────────────────────────────────────────────────┐
+│ Failures  1 open                              [Dismiss unlinked (3)…]  ⟳          │
+├ Views ────────────────────────────────────────────────────────────────────────────┤
+│ [Open 1] [Resolved 361] [All 362]                                                 │
+├ FilterBar ────────────────────────────────────────────────────────────────────────┤
+│ [Search pattern, key or run ID…]  [Issue ▾]        Sort by [Occurrences ▾]  1–1 of 1 │
+│ Search: run-m0id…7k ✕   Clear all                                                    │
+├ DataTable ───────────────────────────────────────────┬ DetailPane 440 ─────────────┤
+│ ☐ Status        Failure                  Count  Latest run        Updated   ⋯ │ f452eab3b3f98efe ⧉ ✕ Regressed ✕│
+│ ☐ ✕ Regressed   recover from terminal…      15  run-m0id…7k ⧉     3 h ago   ⋯ │ Failure  pattern (72ch)         │
+│   #2597 ↗       f452eab3b3f98efe ⧉               2 runs                         │ Issue    #2597 · open · verif…  │
+│                                                                               │ Solver   9 attempts, latest …   │
+│                                                                               │ Example runs (full IDs ⧉ Open in Live)│
+├───────────────────────────────────────────────────────────────────────────────┤ [Investigate with AI] [Open issue ↗]│
+│ 1–1 of 1                                     ‹ Previous  1 / 1  Next ›         │ Dismiss…  Delete matching runs… │
+└───────────────────────────────────────────────────────────────────────────────┴─────────────────────────────────┘
+```
+
+### 4.3 Regions
+
+**Page header.** "Failures" + the open-group count. Actions: "Dismiss unlinked (n)…"
+(`secondary`, only when n > 0; confirms; `dismissTriages`) and a Refresh `IconButton`.
+No description paragraph, no eyebrow.
+
+**Views row.** Segmented presets over `state`: *Open* (default), *Resolved*, *All*,
+each with its count. "Resolved" follows `isResolvedGroup()` (aligned with the wall's
+actionable rule). It replaces the "Show resolved" toggle and the second panel.
+
+**FilterBar.**
+- *Search* (240px, `/` focuses it): substring match on group key, pattern, detail,
+  fingerprint and example run IDs. It's client-side over the loaded list, so it is a
+  real search here (unlike Runs).
+- Facet: *Issue* (Any / Has issue / No issue).
+- *Game* facet: **[needs API]**. Triage groups carry no game field. Not shipped.
+- Live's "Open in Failures" (failure events) links to `#failures?state=all&q=<run id>`,
+  so the search finds that run's groups. `?run=` stays Live's selection and is not a
+  Failures key, so the nav link from Live never filters this page by accident.
+- Sort select: Occurrences (default, desc) or Last updated (issue `updated_at`, desc).
+- Result range right-aligned. Chips + "Clear all" beneath, as in Runs.
+- URL: `?state=resolved&issue=none&q=…&sort=updated&page=2&failure=<key>#failures`.
+  Defaults are omitted. Every change resets `page` to 1.
+
+**DataTable.**
+
+| Column | Content |
+|---|---|
+| ☐ | Row selection (bulk bar) |
+| Status | `StatusPill` from `presentFailureGroup()`: `✓ Resolved`, `✕ Regressed` (verification regressed), `▲ Quarantined` (circuit open), `▲ Needs issue` (no issue), `✕ Open`; secondary: issue `#n ↗` |
+| Failure | Pattern (truncate, full in `title`); secondary: group key mono + copy on hover/focus |
+| Count | Occurrences, mono right-aligned |
+| Latest run | Middle-truncated run ID (full in `title`) + copy; secondary: "n runs" |
+| Updated | Issue `updated_at`, relative, absolute in `title`; "—" without an issue |
+| ⋯ | ActionMenu: Open latest run in Live · Copy group key · ─ · Dismiss… (unlinked only) · Delete matching runs… |
+
+First seen / last seen: **[needs API]** (no per-group timestamps besides the issue's
+`updated_at`). Not shipped.
+
+**Row interaction.** Click / Enter opens the DetailPane and sets `?failure=<key>`.
+↑/↓ moves the selection while the pane is open; Esc closes it and returns focus to the row.
+
+**DetailPane (440px; overlay sheet < 1280; full screen < 768).**
+- Header: group key (mono) + "Copy group key", `StatusPill`, close.
+- *Failure*: pattern as a 72ch prose block; the raw example message in a "Details"
+  disclosure; occurrences; fingerprint as a copyable mono value.
+- *Issue* (`KeyValueList`): `#n ↗`, status / resolution, verification state (+ required
+  runs), quarantine count. *Solver*: latest attempt summary; every attempt (model, state,
+  note) behind a disclosure.
+- *Example runs*: **every** example ID in full (mono, wraps, never cut at 18 chars),
+  each with "Copy run ID" and "Open in Live". Open in Live navigates in-app to
+  `#live?run=<id>&failure=<key>`.
+- Footer: primary **Investigate with AI** (`investigateTriage`) when the group has an
+  issue and isn't resolved. Otherwise it's disabled with the reason as adjacent
+  `text-meta`: "Needs a linked issue first" or "Already resolved". Creating an issue
+  from here is **[needs API]**; "Open issue" only links an existing issue. Secondary:
+  "Open issue ↗". Then "Dismiss…" (unlinked dismissable groups only) and
+  "Delete matching runs…" (`danger`).
+
+**Live strip.** When Live's URL has `failure=<key>`, a one-line strip sits under the run
+header: "From failure group `<key>`" + "← Back to failure group" (in-app link to
+`#failures?failure=<key>`, keeping the Failures filters that travelled in the URL) +
+a close button that drops the param. Choosing another run in the rail drops it too.
+
+**Selection and bulk.** Checking rows swaps the FilterBar for the bulk bar:
+"n selected · Delete matching runs… · Dismiss… · Clear selection". Dismiss is disabled
+with "Only unlinked groups can be dismissed" when no selected group qualifies, and
+otherwise dismisses just the qualifying ones.
+
+**Confirmations.**
+- Delete matching runs: first counts the finished runs that still match
+  (`getDashboard({status:'done'})` + `matchingRunsForGroups`). Zero → toast, no dialog.
+  Dialog: "Delete n runs for issue #2597?" naming the pattern, S3 artifacts and replay
+  cache, "This can't be undone." Above 10 runs, `requireText` asks for the count.
+  Progress replaces the message while deleting.
+- Dismiss: "Dismiss n unlinked failure groups?" Run data stays; future occurrences
+  reappear. Groups that gained an issue meanwhile are reported as skipped.
+
+**Receipts and errors.** Copy, investigate, dismiss and cleanup results go to the
+page's polite live region (toast). Action errors render as an inline alert under the
+page header; investigate errors also appear in the pane footer.
+
+### 4.4 States
+
+| State | Treatment |
+|---|---|
+| Loading | Table frame + 8 skeleton rows |
+| No groups at all | `EmptyState` "No failure groups" + "New actionable failure groups appear here." |
+| Empty with filters / view | "No failure groups match" + "Clear filters"; chips stay |
+| API error | `ResourceState` error inside the table frame + Retry |
+| Stale | Stale alert above the table; rows stay |
+| `?failure=` unknown | Pane: "Failure group not found. It may have been resolved or removed." + Close |
+
+### 4.5 Responsive
+
+- **1024–1279**: pane becomes an overlay sheet; Updated column hides.
+- **768–1023**: Latest run hides (it's in the pane).
+- **< 768**: list rows: line 1 `StatusPill` · count · updated; line 2 pattern (opens the
+  pane); line 3 key · issue. A "Select" toggle in the page header enables checkboxes.
+  The pane is a full-screen sheet.
+
+### 4.6 Acceptance (page level)
+
+1. Example run IDs in the pane are full strings with copy; nothing is cut at 18 chars.
+2. Open in Live carries `failure=<key>`; Live shows the "From failure group" strip with
+   a working back link that restores the selected group.
+3. Investigate with AI is disabled with a visible reason when there's no issue (or it's resolved).
+4. View, filters, sort, page and the inspected group survive reload and back/forward.
+5. Dismiss and Delete matching runs always confirm; delete states the count.
+6. At 375px the page has no horizontal scroll and every action is reachable.
+7. No text under 12px; no Tailwind palette colours, `Panel` or `StatusBadge` in `FailuresView`.
+
