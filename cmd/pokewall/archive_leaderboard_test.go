@@ -227,3 +227,33 @@ func TestArchiveDashboardOmitsStrategicRecords(t *testing.T) {
 		t.Fatalf("other stats lost: %v", stats)
 	}
 }
+
+func TestArchiveSearchRunIDBeforePagination(t *testing.T) {
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"now": 1000, "total": 4,
+			"runs": []any{
+				map[string]any{"run_id": "first-match", "status": "done", "ended_at": 900},
+				map[string]any{"run_id": "unrelated", "status": "done", "ended_at": 800},
+				map[string]any{"run_id": "second-MATCH", "status": "done", "ended_at": 700},
+				map[string]any{"run_id": "third-match", "status": "done", "ended_at": 600},
+			},
+		})
+	})
+	handler := archiveHTTPHandler(NewWall(""), fallback)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&search=match&limit=1&offset=1&sort=finished&direction=desc", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("search status = %d: %s", res.Code, res.Body.String())
+	}
+	var got struct {
+		Total int `json:"total"`
+		Runs []map[string]any `json:"runs"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 3 || len(got.Runs) != 1 || got.Runs[0]["run_id"] != "second-MATCH" {
+		t.Fatalf("search before pagination = %#v", got)
+	}
+}
