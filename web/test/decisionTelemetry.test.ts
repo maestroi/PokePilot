@@ -62,7 +62,7 @@ test('live feed is newest first with a verdict per call', () => {
 
 test('live view streams the feed and the archive shows only the stored summary', () => {
   const live = readFileSync(new URL('../src/operator/LiveInspector.vue', import.meta.url), 'utf8')
-  const archive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
+  const archive = readFileSync(new URL('../src/operator/RunDetailPane.vue', import.meta.url), 'utf8')
   const panel = readFileSync(new URL('../src/operator/DecisionTelemetry.vue', import.meta.url), 'utf8')
   assert.match(live, /<DecisionTelemetry :stats="run\.stats" :engine="run\.decision_engine" \/>/)
   assert.match(archive, /<DecisionTelemetry :stats="run\.stats" :engine="run\.decision_engine" :show-feed="false" \/>/)
@@ -83,7 +83,7 @@ test('a run with a selected engine shows the panel before its first call', () =>
 })
 
 test('the live and archive views gate the panel on the run selection too', () => {
-  for (const view of ['LiveInspector.vue', 'RunArchiveView.vue']) {
+  for (const view of ['LiveInspector.vue', 'RunDetailPane.vue']) {
     const source = readFileSync(new URL(`../src/operator/${view}`, import.meta.url), 'utf8')
     assert.match(source, /showDecisionTelemetry\(\w+\.stats, \w+\.decision_engine\)/, view)
     assert.match(source, /:engine="\w+\.decision_engine"/, view)

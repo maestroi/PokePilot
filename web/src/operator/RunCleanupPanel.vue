@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from 'vue'
 import { deleteRun, getDashboard, getTriage } from '../shared/api/client'
 import type { DashboardSnapshot, TriageGroup } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
-import Panel from '../shared/components/Panel.vue'
 import {
   AGE_OPTIONS,
   DEFAULT_AGE_SECONDS,
@@ -133,89 +132,84 @@ async function confirmPending(): Promise<void> {
 </script>
 
 <template>
-  <Panel title="Bulk cleanup" description="Delete every finished run for one failure group, or every run older than a cutoff. Uses the same safe per-run delete path as a single-row delete." compact>
-    <p v-if="loadError" class="mb-3 text-sm text-rose-300" role="alert">{{ loadError }}</p>
+  <div class="space-y-6">
+    <p class="max-w-[72ch] text-fg-2">Each run is deleted through the same safe per-run path as a single delete. Runs a live endless successor can still resume from are kept.</p>
+    <p v-if="loadError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ loadError }}</p>
 
-    <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <div class="space-y-2">
-        <p class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Older than</p>
-        <div class="flex flex-wrap gap-1.5">
-          <button
-            v-for="option in AGE_OPTIONS"
-            :key="option.seconds"
-            type="button"
-            :aria-pressed="selectedAge === option.seconds"
-            :class="[
-              selectedAge === option.seconds ? 'bg-white/12 text-white' : 'bg-white/6 text-slate-300',
-              'rounded-md px-2.5 py-1.5 text-[11px] font-semibold ring-1 ring-white/8 hover:bg-white/10'
-            ]"
-            @click="selectedAge = option.seconds"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            :disabled="Boolean(busyKind) || !catalog || ageCandidates.length === 0"
-            class="inline-flex items-center rounded-md bg-rose-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-35"
-            @click="requestAgeDelete"
-          >
-            {{ busyKind === 'age' ? 'Deleting…' : (ageCandidates.length ? `Delete ${ageCandidates.length} older run${ageCandidates.length === 1 ? '' : 's'}` : 'Delete older runs') }}
-          </button>
-          <p class="text-xs text-slate-500" aria-live="polite">
-            {{ ageStatus || (catalog
-              ? (ageCandidates.length
-                ? `${ageCandidates.length} finished run${ageCandidates.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge)} can be deleted${ageBlocked.length ? `; ${ageBlocked.length} stay for live resume` : ''}.`
-                : (ageBlocked.length
-                  ? `All ${ageBlocked.length} runs older than ${ageDescription(selectedAge)} are still required by a live endless successor.`
-                  : `No finished runs are older than ${ageDescription(selectedAge)}.`))
-              : 'Loading finished history…') }}
-          </p>
-        </div>
+    <section class="space-y-2" aria-labelledby="cleanup-age">
+      <h3 id="cleanup-age" class="text-title font-semibold">Older than</h3>
+      <div class="inline-flex flex-wrap border border-rule-strong" role="group" aria-label="Age cutoff">
+        <button
+          v-for="option in AGE_OPTIONS"
+          :key="option.seconds"
+          type="button"
+          :aria-pressed="selectedAge === option.seconds"
+          :class="selectedAge === option.seconds ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised hover:text-fg'"
+          class="h-7 border-r border-rule-strong px-3 last:border-r-0"
+          @click="selectedAge = option.seconds"
+        >
+          {{ option.label }}
+        </button>
       </div>
+      <p class="text-fg-2" aria-live="polite">
+        {{ ageStatus || (catalog
+          ? (ageCandidates.length
+            ? `${ageCandidates.length} finished run${ageCandidates.length === 1 ? '' : 's'} older than ${ageDescription(selectedAge)} can be deleted${ageBlocked.length ? `; ${ageBlocked.length} stay for live resume` : ''}.`
+            : (ageBlocked.length
+              ? `All ${ageBlocked.length} runs older than ${ageDescription(selectedAge)} are still required by a live endless successor.`
+              : `No finished runs are older than ${ageDescription(selectedAge)}.`))
+          : 'Loading finished history…') }}
+      </p>
+      <button
+        type="button"
+        :disabled="Boolean(busyKind) || !catalog || ageCandidates.length === 0"
+        class="ui-btn ui-btn-danger"
+        @click="requestAgeDelete"
+      >
+        {{ busyKind === 'age' ? 'Deleting…' : (ageCandidates.length ? `Delete ${ageCandidates.length} older run${ageCandidates.length === 1 ? '' : 's'}…` : 'Delete older runs…') }}
+      </button>
+    </section>
 
-      <div class="space-y-2">
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Failure group</span>
-          <select
-            v-model="selectedBugKey"
-            :disabled="Boolean(busyKind) || !catalog || groups.length === 0"
-            class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400"
-          >
-            <option value="">{{ groups.length ? 'Choose failure group…' : 'No failure groups' }}</option>
-            <option v-for="group in groups" :key="group.key" :value="group.key">{{ groupOptionLabel(group) }}</option>
-          </select>
-        </label>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            :disabled="Boolean(busyKind) || !selectedBug || bugCandidates.length === 0"
-            class="inline-flex items-center rounded-md bg-rose-500 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-35"
-            @click="requestBugDelete"
-          >
-            {{ busyKind === 'bug' ? 'Deleting…' : (bugCandidates.length ? `Delete ${bugCandidates.length} matching run${bugCandidates.length === 1 ? '' : 's'}` : 'Delete matching runs') }}
-          </button>
-          <p class="text-xs text-slate-500" aria-live="polite">
-            {{ bugStatus || (!catalog
-              ? 'Loading failure groups…'
-              : !selectedBug
-                ? `${groups.length} failure group${groups.length === 1 ? '' : 's'} available.`
-                : `${bugCandidates.length} finished run${bugCandidates.length === 1 ? '' : 's'} match ${selectedBug.key}.`) }}
-          </p>
-        </div>
-      </div>
-    </div>
+    <section class="space-y-2 border-t border-rule pt-5" aria-labelledby="cleanup-group">
+      <h3 id="cleanup-group" class="text-title font-semibold">Failure group</h3>
+      <label class="block">
+        <span class="sr-only">Failure group</span>
+        <select
+          v-model="selectedBugKey"
+          :disabled="Boolean(busyKind) || !catalog || groups.length === 0"
+          class="block h-8 w-full rounded-[3px] border border-control bg-canvas px-2 text-fg disabled:text-fg-3"
+        >
+          <option value="">{{ groups.length ? 'Choose failure group…' : 'No failure groups' }}</option>
+          <option v-for="group in groups" :key="group.key" :value="group.key">{{ groupOptionLabel(group) }}</option>
+        </select>
+      </label>
+      <p class="text-fg-2" aria-live="polite">
+        {{ bugStatus || (!catalog
+          ? 'Loading failure groups…'
+          : !selectedBug
+            ? `${groups.length} failure group${groups.length === 1 ? '' : 's'} available.`
+            : `${bugCandidates.length} finished run${bugCandidates.length === 1 ? '' : 's'} match ${selectedBug.key}.`) }}
+      </p>
+      <button
+        type="button"
+        :disabled="Boolean(busyKind) || !selectedBug || bugCandidates.length === 0"
+        class="ui-btn ui-btn-danger"
+        @click="requestBugDelete"
+      >
+        {{ busyKind === 'bug' ? 'Deleting…' : (bugCandidates.length ? `Delete ${bugCandidates.length} matching run${bugCandidates.length === 1 ? '' : 's'}…` : 'Delete matching runs…') }}
+      </button>
+    </section>
 
     <ConfirmDialog
       :open="Boolean(pendingKind)"
       :title="confirmTitle"
       :message="confirmMessage"
       :confirm-label="confirmCount ? `Delete ${confirmCount} run${confirmCount === 1 ? '' : 's'}` : 'Delete runs'"
+      :require-text="confirmCount > 10 && !busyKind ? String(confirmCount) : ''"
       :busy="Boolean(busyKind)"
       danger
       @close="closePending"
       @confirm="confirmPending"
     />
-  </Panel>
+  </div>
 </template>

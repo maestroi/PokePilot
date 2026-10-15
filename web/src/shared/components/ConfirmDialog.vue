@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionChild, TransitionRoot } from '@headlessui/vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   open: boolean
   title: string
   message: string
@@ -9,12 +10,18 @@ withDefaults(defineProps<{
   cancelLabel?: string
   busy?: boolean
   danger?: boolean
+  /** When set, confirm stays disabled until the operator types this exact text. */
+  requireText?: string
 }>(), {
   confirmLabel: 'Confirm',
   cancelLabel: 'Cancel',
   busy: false,
-  danger: false
+  danger: false,
+  requireText: ''
 })
+
+const typed = ref('')
+watch(() => props.open, () => { typed.value = '' })
 
 const emit = defineEmits<{
   confirm: []
@@ -53,6 +60,10 @@ const emit = defineEmits<{
               {{ title }}
             </DialogTitle>
             <p class="mt-2 text-[13px] leading-5 break-words whitespace-pre-wrap text-fg-2">{{ message }}</p>
+            <label v-if="requireText" class="mt-4 block">
+              <span class="ui-label">Type {{ requireText }} to confirm</span>
+              <input v-model="typed" type="text" inputmode="numeric" autocomplete="off" class="mt-1 block h-8 w-full rounded-[3px] border border-control bg-surface px-2.5 font-mono text-fg">
+            </label>
 
             <div class="mt-5 flex justify-end gap-2">
               <button
@@ -69,7 +80,7 @@ const emit = defineEmits<{
                   danger ? 'border-danger-solid bg-danger-solid text-white hover:bg-[#c7535a]' : 'border-accent bg-accent text-on-accent hover:bg-[#a6c6e8]',
                   'h-8 rounded-[3px] border px-3 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60'
                 ]"
-                :disabled="busy"
+                :disabled="busy || (Boolean(requireText) && typed.trim() !== requireText)"
                 @click="emit('confirm')"
               >
                 {{ busy ? 'Working…' : confirmLabel }}

@@ -6,6 +6,7 @@ const toolsSource = readFileSync(new URL('../src/operator/ToolsView.vue', import
 const typesSource = readFileSync(new URL('../src/shared/api/types.ts', import.meta.url), 'utf8')
 const liveSource = readFileSync(new URL('../src/operator/LiveInspector.vue', import.meta.url), 'utf8')
 const archiveSource = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
+  + readFileSync(new URL('../src/operator/RunDetailPane.vue', import.meta.url), 'utf8')
 const panelSource = readFileSync(new URL('../src/operator/LLMDeploymentsPanel.vue', import.meta.url), 'utf8')
 const experimentSource = readFileSync(new URL('../src/operator/PairedExperimentPanel.vue', import.meta.url), 'utf8')
 

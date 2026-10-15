@@ -1,137 +1,101 @@
 <script setup lang="ts">
-import DecisionTelemetry from './DecisionTelemetry.vue'
-import { showDecisionTelemetry } from './decisionTelemetry'
-import { computed, onUnmounted, reactive, ref, watch } from 'vue'
-import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, PlayIcon, TrashIcon } from '@heroicons/vue/20/solid'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
+import { ArrowPathIcon, ClipboardDocumentIcon, XMarkIcon } from '@heroicons/vue/20/solid'
 import { deleteRun, getDashboard, getMediaRenderJobs, getRun, replayVideoURL } from '../shared/api/client'
-import type { DashboardQuery, DashboardRun, MediaRenderJob } from '../shared/api/types'
+import type { DashboardRun, MediaRenderJob } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
-import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
-import StatusBadge from '../shared/components/StatusBadge.vue'
+import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
+import { gameTitle } from './operations'
+import RunActionMenu from './RunActionMenu.vue'
 import RunCleanupPanel from './RunCleanupPanel.vue'
-import RunHistoricalEvidence from './RunHistoricalEvidence.vue'
-import { recordingSummary } from './runRecording'
-import { DELETE_CONCURRENCY, cleanupProgressText, cleanupResultText, deleteRuns } from './runCleanup'
+import RunDetailPane from './RunDetailPane.vue'
 import {
+  ARCHIVE_FACETS,
+  ARCHIVE_SORTS,
+  ARCHIVE_VIEWS,
+  activeView,
+  archiveDashboardQuery,
+  emptyFacets,
+  formatArchiveSearch,
+  parseArchiveState,
+  viewState,
+  type ArchiveFacet,
+  type ArchiveSort,
+  type ArchiveState
+} from './runArchiveQuery'
+import { DELETE_CONCURRENCY, cleanupProgressText, cleanupResultText, deleteRuns } from './runCleanup'
+import { recordingMediaHref, recordingSummary, type RecordingSummary } from './runRecording'
+import {
+  archiveAgo,
   archiveHow,
-  archiveOutcome,
-  archiveStarter,
   archiveWhen,
   archiveWhere,
+  deploymentName,
+  formatDuration,
+  formatInteger,
+  middleTruncate,
+  modelName,
+  plannerLabel,
+  progressLabel,
   safeIssueURL
 } from './runs'
-import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
-import { decisionEngineLabel, gameTitle } from './operations'
 
 const PAGE_SIZE = 25
 const props = defineProps<{ runId?: string }>()
 
-type StringFilterKey = 'game' | 'outcome' | 'how' | 'starter' | 'model' | 'deployment' | 'goal' | 'playStyle' | 'compute' | 'experiment'
+// ---- URL state (filters, sort, page, inspected run) -------------------------
+const search = ref(window.location.search)
+const state = computed(() => parseArchiveState(search.value))
+const archiveKey = computed(() => formatArchiveSearch(state.value))
+const inspectedID = computed(() => props.runId || '')
 
-interface ArchiveDashboardQuery extends DashboardQuery {
-  model?: string
-  deployment?: string
-  goal?: string
-  play_style?: string
-  compute?: string
-  experiment?: string
-  success?: boolean
-  sort?: string
-  direction?: string
-}
+function syncSearch(): void { search.value = window.location.search }
 
-interface ArchiveFacets {
-  games: string[]
-  outcomes: string[]
-  hows: string[]
-  starters: string[]
-  models: string[]
-  deployments: string[]
-  goals: string[]
-  play_styles: string[]
-  computes: string[]
-  experiments: string[]
-}
-
-const page = ref(0)
-const searchInput = ref('')
-const searchQuery = ref('')
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-watch(searchInput, (value) => {
-  if (searchTimer !== null) clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    const query = value.trim()
-    if (query !== searchQuery.value) {
-      searchQuery.value = query
-      page.value = 0
-    }
-  }, 300)
-})
-onUnmounted(() => { if (searchTimer !== null) clearTimeout(searchTimer) })
-
-const filters = reactive({
-  game: '',
-  outcome: '',
-  how: '',
-  starter: '',
-  model: '',
-  deployment: '',
-  goal: '',
-  playStyle: '',
-  compute: '',
-  experiment: ''
-})
-const successOnly = ref(false)
-const sortKey = ref('finished')
-const sortDirection = ref('desc')
-const expanded = ref<Set<string>>(new Set())
-const selectedRunIDs = ref<Set<string>>(new Set())
-const deleteTarget = ref<DashboardRun | null>(null)
-const deleting = ref(false)
-const deleteError = ref('')
-const deleteSelectedOpen = ref(false)
-const deletingSelected = ref(false)
-const deleteSelectedStatus = ref('')
-const cleanupExpanded = ref(false)
-
-const focusedResource = usePollingResource(
-  (signal) => props.runId ? getRun(props.runId, signal) : Promise.resolve(null),
-  { intervalMs: 30000 }
-)
-watch(() => props.runId, () => { void focusedResource.retry() })
-
-const resource = usePollingResource(
-  (signal) => {
-    const query: ArchiveDashboardQuery = {
-      status: 'done',
-      search: searchQuery.value,
-      limit: PAGE_SIZE,
-      offset: page.value * PAGE_SIZE,
-      facets: true,
-      game: filters.game,
-      outcome: filters.outcome,
-      how: filters.how,
-      starter: filters.starter,
-      model: filters.model,
-      deployment: filters.deployment,
-      goal: filters.goal,
-      play_style: filters.playStyle,
-      compute: filters.compute,
-      experiment: filters.experiment,
-      success: successOnly.value || undefined,
-      sort: sortKey.value,
-      direction: sortDirection.value
-    }
-    return getDashboard(query, signal)
-  },
-  {
-    intervalMs: 30000,
-    isEmpty: (snapshot) => snapshot.runs.length === 0
+function navigate(next: ArchiveState, options: { run?: string; replace?: boolean } = {}): void {
+  const params = new URLSearchParams(formatArchiveSearch(next, window.location.search))
+  if (options.run !== undefined) {
+    if (options.run) params.set('run', options.run)
+    else params.delete('run')
+    params.delete('job')
+    params.delete('output')
   }
+  const query = params.toString()
+  const url = (query ? '?' + query : window.location.pathname) + '#runs'
+  if (options.replace) window.history.replaceState(null, '', url)
+  else window.history.pushState(null, '', url)
+  // App reads ?run= on popstate; this view re-reads its own keys from the same event.
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function goTo(href: string): void {
+  window.history.pushState(null, '', href)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function patch(change: Partial<ArchiveState>, replace = false): void {
+  navigate({ ...state.value, page: 1, ...change }, { replace })
+}
+
+function setFacet(key: ArchiveFacet, value: string): void {
+  patch({ facets: { ...state.value.facets, [key]: value } })
+}
+
+function clearFilters(): void {
+  searchInput.value = ''
+  patch({ q: '', facets: emptyFacets(), success: false })
+}
+
+// ---- Data ---------------------------------------------------------------------
+const resource = usePollingResource(
+  (signal) => getDashboard(archiveDashboardQuery(state.value, PAGE_SIZE), signal),
+  { intervalMs: 30000, isEmpty: (snapshot) => snapshot.runs.length === 0 }
 )
+watch(archiveKey, () => { void resource.retry() })
 
 const mediaResource = usePollingResource(
   (signal) => getMediaRenderJobs(250, signal),
@@ -139,6 +103,157 @@ const mediaResource = usePollingResource(
 )
 
 const rows = computed(() => resource.data.value?.runs ?? [])
+const total = computed(() => Number(resource.data.value?.total || 0))
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
+const rangeStart = computed(() => total.value ? (state.value.page - 1) * PAGE_SIZE + 1 : 0)
+const rangeEnd = computed(() => Math.min(total.value, state.value.page * PAGE_SIZE))
+const currentView = computed(() => activeView(state.value))
+const showStateBody = computed(() => resource.state.value === 'error' || resource.state.value === 'empty')
+const hasFilters = computed(() => Boolean(state.value.q || state.value.success || ARCHIVE_FACETS.some((key) => state.value.facets[key])))
+
+watch(total, (value) => {
+  if (resource.state.value === 'loading') return
+  const last = Math.max(1, Math.ceil(value / PAGE_SIZE))
+  if (state.value.page > last) navigate({ ...state.value, page: last }, { replace: true })
+})
+
+const FACET_LABELS: Record<ArchiveFacet, string> = {
+  game: 'Game', outcome: 'Outcome', model: 'Model', goal: 'Goal', deployment: 'Deployment',
+  play_style: 'Play style', how: 'Mode', starter: 'Starter', compute: 'Compute', experiment: 'Experiment'
+}
+const FACET_SOURCES: Record<ArchiveFacet, string> = {
+  game: 'games', outcome: 'outcomes', model: 'models', goal: 'goals', deployment: 'deployments',
+  play_style: 'play_styles', how: 'hows', starter: 'starters', compute: 'computes', experiment: 'experiments'
+}
+const VISIBLE_FACETS: ArchiveFacet[] = ['game', 'outcome', 'model', 'goal']
+const MORE_FACETS = ARCHIVE_FACETS.filter((key) => !VISIBLE_FACETS.includes(key))
+const SORT_LABELS: Record<ArchiveSort, string> = {
+  finished: 'Finished', progress: 'Progress', runtime: 'Runtime', frames: 'Frames',
+  rounds: 'Rounds', planner_time: 'Planner time', strategic_calls: 'Strategic calls'
+}
+
+function facetOptions(key: ArchiveFacet): string[] {
+  const raw = resource.data.value?.history_facets as Record<string, string[] | undefined> | undefined
+  const values = raw?.[FACET_SOURCES[key]] ?? []
+  const current = state.value.facets[key]
+  return current && !values.includes(current) ? [current, ...values] : values
+}
+function facetValueLabel(key: ArchiveFacet, value: string): string {
+  return key === 'game' ? gameTitle(value) : value
+}
+const hiddenActive = computed(() => MORE_FACETS.filter((key) => state.value.facets[key]).length)
+const chips = computed(() => [
+  ...(state.value.q ? [{ key: 'q', label: `Run ID contains: ${state.value.q}` }] : []),
+  ...(state.value.success ? [{ key: 'success', label: 'Successful only' }] : []),
+  ...ARCHIVE_FACETS.filter((key) => state.value.facets[key])
+    .map((key) => ({ key, label: `${FACET_LABELS[key]}: ${facetValueLabel(key, state.value.facets[key])}` }))
+])
+function removeChip(key: string): void {
+  if (key === 'q') { searchInput.value = ''; patch({ q: '' }) }
+  else if (key === 'success') patch({ success: false })
+  else setFacet(key as ArchiveFacet, '')
+}
+
+// ---- Sorting ------------------------------------------------------------------
+function sortBy(key: ArchiveSort): void {
+  if (state.value.sort === key) patch({ dir: state.value.dir === 'asc' ? 'desc' : 'asc' })
+  else patch({ sort: key, dir: key === 'finished' || key === 'progress' ? 'desc' : 'asc' })
+}
+function ariaSort(key: ArchiveSort): 'ascending' | 'descending' | 'none' {
+  if (state.value.sort !== key) return 'none'
+  return state.value.dir === 'asc' ? 'ascending' : 'descending'
+}
+function sortGlyph(key: ArchiveSort): string {
+  if (state.value.sort !== key) return ''
+  return state.value.dir === 'asc' ? '▲' : '▼'
+}
+
+// ---- Search / go to run ID ----------------------------------------------------
+const searchInput = ref(state.value.q)
+const searchEl = ref<HTMLInputElement | null>(null)
+const gotoError = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(() => state.value.q, (value) => { if (value !== searchInput.value.trim()) searchInput.value = value })
+watch(searchInput, (value) => {
+  gotoError.value = ''
+  if (searchTimer !== null) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    const q = value.trim()
+    if (q !== state.value.q) patch({ q }, true)
+  }, 300)
+})
+
+async function goToRun(): Promise<void> {
+  const id = searchInput.value.trim()
+  if (!id) return
+  gotoError.value = ''
+  try {
+    const run = await getRun(id)
+    openRun(run.run_id)
+  } catch {
+    gotoError.value = 'No run with that ID'
+  }
+}
+
+// ---- Inspected run (detail pane) ----------------------------------------------
+const paneEl = ref<HTMLElement | null>(null)
+const inspectedRow = computed(() => rows.value.find((run) => run.run_id === inspectedID.value) || null)
+
+function openRun(runID: string, focusPane = true): void {
+  if (runID !== inspectedID.value) navigate(state.value, { run: runID, replace: Boolean(inspectedID.value) })
+  if (focusPane) void nextTick(() => paneEl.value?.focus())
+}
+
+function closeRun(): void {
+  const id = inspectedID.value
+  navigate(state.value, { run: '' })
+  void nextTick(() => rowEl(id)?.focus())
+}
+
+function rowEl(runID: string): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-run-row="${CSS.escape(runID)}"]`)
+}
+
+function moveSelection(step: number): void {
+  const index = rows.value.findIndex((run) => run.run_id === inspectedID.value)
+  const next = rows.value[index + step]
+  if (!next) return
+  openRun(next.run_id, false)
+  void nextTick(() => rowEl(next.run_id)?.focus())
+}
+
+const dialogOpen = computed(() => Boolean(deleteTarget.value) || bulkDeleteOpen.value || cleanupOpen.value)
+
+function onKeydown(event: KeyboardEvent): void {
+  if (dialogOpen.value || event.metaKey || event.ctrlKey || event.altKey) return
+  const target = event.target as HTMLElement | null
+  const typing = Boolean(target?.closest('input, select, textarea, [role="menu"]'))
+  if (event.key === '/' && !typing) {
+    event.preventDefault()
+    searchEl.value?.focus()
+    return
+  }
+  if (!inspectedID.value || typing) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeRun()
+  } else if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && !paneEl.value?.contains(target)) {
+    event.preventDefault()
+    moveSelection(event.key === 'ArrowDown' ? 1 : -1)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', syncSearch)
+  window.addEventListener('keydown', onKeydown)
+})
+onUnmounted(() => {
+  window.removeEventListener('popstate', syncSearch)
+  window.removeEventListener('keydown', onKeydown)
+  if (searchTimer !== null) clearTimeout(searchTimer)
+})
+
+// ---- Replay / media ---------------------------------------------------------------
 const mediaJobByRun = computed(() => {
   const result = new Map<string, MediaRenderJob>()
   for (const job of mediaResource.data.value?.jobs || []) {
@@ -149,121 +264,52 @@ const mediaJobByRun = computed(() => {
   }
   return result
 })
-const selectedCount = computed(() => selectedRunIDs.value.size)
-const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((run) => selectedRunIDs.value.has(run.run_id)))
-const total = computed(() => Number(resource.data.value?.total || 0))
-const facets = computed<ArchiveFacets>(() => {
-  const raw = resource.data.value?.history_facets as unknown as Partial<ArchiveFacets> | undefined
-  return {
-    games: raw?.games ?? [],
-    outcomes: raw?.outcomes ?? [],
-    hows: raw?.hows ?? [],
-    starters: raw?.starters ?? [],
-    models: raw?.models ?? [],
-    deployments: raw?.deployments ?? [],
-    goals: raw?.goals ?? [],
-    play_styles: raw?.play_styles ?? [],
-    computes: raw?.computes ?? [],
-    experiments: raw?.experiments ?? []
-  }
+const mediaState = computed(() => {
+  const value = mediaResource.state.value
+  return value === 'loading' || value === 'stale' || value === 'error' ? value : 'ready'
 })
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
-const rangeStart = computed(() => total.value ? page.value * PAGE_SIZE + 1 : 0)
-const rangeEnd = computed(() => Math.min(total.value, (page.value + 1) * PAGE_SIZE))
-const hasFilters = computed(() => Boolean(
-  filters.game || filters.outcome || filters.how || filters.starter || filters.model || filters.deployment ||
-  filters.goal || filters.playStyle || filters.compute || filters.experiment || successOnly.value || Boolean(searchQuery.value)
-))
-const emptyTitle = computed(() => hasFilters.value ? 'No runs match this search or filters' : 'Nothing finished yet')
-const focusedRun = computed(() => {
-  if (!props.runId) return null
-  return rows.value.find((run) => run.run_id === props.runId)
-    || (focusedResource.data.value?.run_id === props.runId ? focusedResource.data.value : null)
-})
-
-watch(
-  [
-    page,
-    () => filters.game,
-    () => filters.outcome,
-    () => filters.how,
-    () => filters.starter,
-    () => filters.model,
-    () => filters.deployment,
-    () => filters.goal,
-    () => filters.playStyle,
-    () => filters.compute,
-    () => filters.experiment,
-    searchQuery,
-    successOnly,
-    sortKey,
-    sortDirection
-  ],
-  () => { void resource.retry() }
-)
-
-watch(total, (value) => {
-  const lastPage = Math.max(0, Math.ceil(value / PAGE_SIZE) - 1)
-  if (page.value > lastPage) page.value = lastPage
-})
-
-function setFilter(key: StringFilterKey, value: string): void {
-  filters[key] = value
-  page.value = 0
-}
-
-function clearFilters(): void {
-  searchInput.value = ''
-  searchQuery.value = ''
-  for (const key of Object.keys(filters) as StringFilterKey[]) filters[key] = ''
-  successOnly.value = false
-  page.value = 0
-}
-
-function previousPage(): void {
-  if (page.value > 0) page.value--
-}
-
-function nextPage(): void {
-  if (page.value + 1 < pageCount.value) page.value++
-}
-
-function retry(): void {
-  void resource.retry()
-}
-
-function toggleExpanded(runID: string): void {
-  const next = new Set(expanded.value)
-  if (next.has(runID)) next.delete(runID)
-  else next.add(runID)
-  expanded.value = next
-}
-
-function replayJob(run: DashboardRun): MediaRenderJob | undefined {
-  return mediaJobByRun.value.get(run.run_id)
-}
-function recording(run: DashboardRun) {
-  const state = mediaResource.state.value
-  const availability = state === 'loading' || state === 'stale' || state === 'error' ? state : 'ready'
-  return recordingSummary(run, replayJob(run), availability)
+function recording(run: DashboardRun): RecordingSummary {
+  return recordingSummary(run, mediaJobByRun.value.get(run.run_id), mediaState.value)
 }
 function mediaHref(run: DashboardRun): string {
-  const summary = recording(run)
-  return operatorHref('media', {
-    section: summary.mediaSection, run: run.run_id,
-    job: summary.mediaSection === 'jobs' ? summary.jobID : '',
-    output: ''
-  }, operatorSearch())
+  return recordingMediaHref(run.run_id, recording(run), window.location.search)
 }
-function showRunDetail(runID: string): void {
-  window.history.pushState(null, '', operatorHref('runs', { run: runID, job: '', output: '' }, operatorSearch()))
-  window.dispatchEvent(new PopStateEvent('popstate'))
-  window.requestAnimationFrame(() => document.getElementById('run-focus')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+const RECORDING_TONE: Record<RecordingSummary['tone'], string> = {
+  success: 'text-ok', info: 'text-accent', warning: 'text-warn', danger: 'text-danger', neutral: 'text-fg-3'
 }
-function closeRunDetail(): void {
-  window.history.pushState(null, '', operatorHref('runs', { run: '', job: '', output: '' }, operatorSearch()))
-  window.dispatchEvent(new PopStateEvent('popstate'))
+// Table cells use short labels; the full label and detail stay in the title and the pane.
+const RECORDING_SHORT: Partial<Record<RecordingSummary['state'], string>> = {
+  queued: 'Queued', syncing: 'Syncing', failed: 'Render failed', cancelled: 'Cancelled', unavailable: 'No replay', unknown: 'Unknown'
 }
+const RECORDING_GLYPH: Record<RecordingSummary['tone'], string> = {
+  success: '✓', info: '◐', warning: '▲', danger: '✕', neutral: '○'
+}
+
+// ---- Receipts (one polite live region, mirrored as a toast) -----------------------
+const toast = ref('')
+let toastTimer = 0
+function announce(text: string): void {
+  toast.value = text
+  window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { toast.value = '' }, 4000)
+}
+async function copyRunID(runID: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(runID)
+    announce('Run ID copied')
+  } catch {
+    announce('Couldn’t copy the run ID')
+  }
+}
+function inspectInLive(runID: string): void {
+  goTo(operatorHref('live', { run: runID, job: '', output: '' }))
+}
+
+// ---- Selection and deletes -----------------------------------------------------------
+const selectedRunIDs = ref<Set<string>>(new Set())
+const selectMode = ref(false)
+const selectedCount = computed(() => selectedRunIDs.value.size)
+const allVisibleSelected = computed(() => rows.value.length > 0 && rows.value.every((run) => selectedRunIDs.value.has(run.run_id)))
 
 function toggleRunSelection(runID: string): void {
   const next = new Set(selectedRunIDs.value)
@@ -271,68 +317,27 @@ function toggleRunSelection(runID: string): void {
   else next.add(runID)
   selectedRunIDs.value = next
 }
-
 function toggleVisibleSelection(): void {
   const next = new Set(selectedRunIDs.value)
-  if (allVisibleSelected.value) {
-    for (const run of rows.value) next.delete(run.run_id)
-  } else {
-    for (const run of rows.value) next.add(run.run_id)
-  }
+  if (allVisibleSelected.value) for (const run of rows.value) next.delete(run.run_id)
+  else for (const run of rows.value) next.add(run.run_id)
   selectedRunIDs.value = next
 }
-
 function clearSelection(): void {
   selectedRunIDs.value = new Set()
-  deleteSelectedStatus.value = ''
+  selectMode.value = false
 }
 
-function requestDeleteSelected(): void {
-  if (!selectedCount.value || deletingSelected.value) return
-  deleteSelectedStatus.value = ''
-  deleteSelectedOpen.value = true
-}
-
-function closeDeleteSelected(): void {
-  if (!deletingSelected.value) deleteSelectedOpen.value = false
-}
-
-async function confirmDeleteSelected(): Promise<void> {
-  const ids = [...selectedRunIDs.value]
-  if (!ids.length || deletingSelected.value) return
-  deletingSelected.value = true
-  deleteSelectedStatus.value = 'Preparing selected runs…'
-  try {
-    const result = await deleteRuns(
-      ids,
-      (id) => deleteRun(id),
-      DELETE_CONCURRENCY,
-      (progress) => {
-        deleteSelectedStatus.value = cleanupProgressText(progress)
-      }
-    )
-    const next = new Set(selectedRunIDs.value)
-    for (const id of result.deletedIds) next.delete(id)
-    selectedRunIDs.value = next
-    deleteSelectedStatus.value = cleanupResultText(result)
-    deleteSelectedOpen.value = false
-    await resource.retry()
-  } catch (cause) {
-    deleteSelectedStatus.value = `Delete failed: ${cause instanceof Error ? cause.message : String(cause)}`
-  } finally {
-    deletingSelected.value = false
-  }
-}
-
+const deleteTarget = ref<DashboardRun | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 function requestDelete(run: DashboardRun): void {
   deleteError.value = ''
   deleteTarget.value = run
 }
-
 function closeDelete(): void {
   if (!deleting.value) deleteTarget.value = null
 }
-
 async function confirmDelete(): Promise<void> {
   const run = deleteTarget.value
   if (!run || deleting.value) return
@@ -344,496 +349,428 @@ async function confirmDelete(): Promise<void> {
     next.delete(run.run_id)
     selectedRunIDs.value = next
     deleteTarget.value = null
-    if (rows.value.length === 1 && page.value > 0) page.value--
-    else await resource.retry()
+    if (inspectedID.value === run.run_id) navigate(state.value, { run: '', replace: true })
+    announce(`Deleted ${run.run_id}`)
+    await resource.retry()
   } catch (cause) {
+    // The dialog stays open with the reason so the operator can retry or cancel.
     deleteError.value = cause instanceof Error ? cause.message : 'Delete failed'
   } finally {
     deleting.value = false
   }
 }
 
-function modelName(run: DashboardRun): string {
-  return run.inference?.label || run.inference?.model_id || String(run.stats?.model || run.llm_profile || '—')
+const bulkDeleteOpen = ref(false)
+const deletingSelected = ref(false)
+const bulkProgress = ref('')
+const bulkIDs = computed(() => [...selectedRunIDs.value])
+const bulkMessage = computed(() => {
+  const ids = bulkIDs.value
+  const listed = ids.slice(0, 5).join('\n')
+  const more = ids.length > 5 ? `\nand ${ids.length - 5} more` : ''
+  const body = `Their stored run data, recordings and replay videos are removed. This can't be undone.\n\n${listed}${more}`
+  return deletingSelected.value && bulkProgress.value ? `${bulkProgress.value}\n\n${body}` : body
+})
+function plural(count: number): string { return `${count} run${count === 1 ? '' : 's'}` }
+
+async function confirmDeleteSelected(): Promise<void> {
+  const ids = bulkIDs.value
+  if (!ids.length || deletingSelected.value) return
+  deletingSelected.value = true
+  bulkProgress.value = 'Preparing selected runs…'
+  try {
+    const result = await deleteRuns(
+      ids,
+      (id) => deleteRun(id),
+      DELETE_CONCURRENCY,
+      (progress) => { bulkProgress.value = cleanupProgressText(progress) }
+    )
+    const next = new Set(selectedRunIDs.value)
+    for (const id of result.deletedIds) next.delete(id)
+    selectedRunIDs.value = next
+    if (result.deletedIds.includes(inspectedID.value)) navigate(state.value, { run: '', replace: true })
+    announce(cleanupResultText(result))
+    bulkDeleteOpen.value = false
+    await resource.retry()
+  } catch (cause) {
+    announce(`Delete failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+  } finally {
+    deletingSelected.value = false
+    bulkProgress.value = ''
+  }
 }
 
-function modelID(run: DashboardRun): string {
-  return run.inference?.model_id || String(run.stats?.model || run.llm_profile || '')
-}
-
-function deploymentName(run: DashboardRun): string {
-  return run.llm_deployment || run.inference?.deployment_id || ''
-}
-
-function computeName(run: DashboardRun): string {
-  return run.inference?.compute || ''
-}
-
-function statNumber(run: DashboardRun, key: string): number {
-  return Number(run.stats?.[key] || 0)
-}
-
-function plannerSeconds(run: DashboardRun): number {
-  const strategic = statNumber(run, 'strategic_seconds')
-  if (strategic > 0) return strategic
-  const average = statNumber(run, 'avg_seconds')
-  const calls = statNumber(run, 'calls')
-  return average > 0 && calls > 0 ? average * calls : 0
-}
-
-function runtimeSeconds(run: DashboardRun): number {
-  return Number(run.runtime_seconds || 0)
-}
-
-function rounds(run: DashboardRun): number {
-  return statNumber(run, 'rounds') || statNumber(run, 'round')
-}
-
-function strategicCalls(run: DashboardRun): number {
-  return statNumber(run, 'strategic_calls') || statNumber(run, 'calls')
-}
-
-function formatInteger(value: number): string {
-  return Number.isFinite(value) ? Math.round(value).toLocaleString() : '—'
-}
-
-function formatSeconds(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '—'
-  if (value < 60) return `${value < 10 ? value.toFixed(2) : value.toFixed(1)}s`
-  const minutes = Math.floor(value / 60)
-  const seconds = Math.round(value % 60)
-  if (minutes < 60) return `${minutes}m ${seconds}s`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m`
-}
-
-function progressLabel(run: DashboardRun): string {
-  const current = statNumber(run, 'goal_current')
-  const target = statNumber(run, 'goal_target')
-  if (target > 0) return `${formatInteger(current)}/${formatInteger(target)}`
-  const badges = run.player?.badges?.length || 0
-  if (badges > 0) return `${badges} badge${badges === 1 ? '' : 's'}`
-  if (run.stats?.goal_complete) return 'Goal complete'
-  return 'No structured progress'
-}
-
-function partySummary(run: DashboardRun): string {
-  const party = run.player?.party || []
-  if (!party.length) return '—'
-  return party.map((mon) => `${mon.name} L${mon.level}`).join(' · ')
-}
-
-function experimentLabel(run: DashboardRun): string {
-  if (!run.experiment_id) return ''
-  return run.experiment_arm ? `${run.experiment_id} · ${run.experiment_arm}` : run.experiment_id
-}
-function operatorSearch(): string { return window.location.search }
+const cleanupOpen = ref(false)
 </script>
 
 <template>
   <div class="space-y-3">
-    <Panel title="Runs" description="Searchable finished-run history. Comparisons and leaderboards live in Analytics; filters and sorting apply across the server-side archive." compact>
-      <template #actions>
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <span v-if="selectedCount" class="text-xs font-semibold text-slate-400">{{ selectedCount }} selected</span>
-          <button
-            v-if="selectedCount"
-            type="button"
-            class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10"
-            @click="clearSelection"
-          >
-            Clear selection
-          </button>
-          <button
-            v-if="selectedCount"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md bg-rose-400/10 px-2.5 py-1.5 text-xs font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15"
-            @click="requestDeleteSelected"
-          >
-            <TrashIcon class="size-3.5" aria-hidden="true" />
-            Delete selected
-          </button>
-          <a :href="operatorHref('analytics', { section: 'overview' }, operatorSearch())" class="rounded-md bg-cyan-400/10 px-2.5 py-1.5 text-xs font-semibold text-cyan-100 ring-1 ring-cyan-300/20 hover:bg-cyan-400/15 focus-visible:outline-2 focus-visible:outline-cyan-300">View leaderboards</a>
-          <button
-            v-if="hasFilters"
-            type="button"
-            class="rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10"
-            @click="clearFilters"
-          >
-            Clear filters
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12"
-            @click="retry"
-          >
-            <ArrowPathIcon class="size-3.5" aria-hidden="true" />
-            Refresh
-          </button>
+    <!-- Page header -->
+    <header class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 class="text-page font-semibold">Runs</h1>
+      <span v-if="resource.data.value" class="text-fg-2">{{ formatInteger(total) }} {{ hasFilters ? 'matching' : 'finished' }}</span>
+      <span v-if="resource.state.value === 'refreshing'" class="inline-flex items-center gap-1.5 text-meta text-fg-2" role="status">
+        <span class="size-1.5 bg-accent motion-safe:animate-pulse" aria-hidden="true" /> Refreshing
+      </span>
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <a :href="operatorHref('analytics', { section: 'overview' }, '')" class="ui-btn ui-btn-quiet max-md:hidden">View leaderboards</a>
+        <button type="button" class="ui-btn md:hidden" :aria-pressed="selectMode" @click="selectMode ? clearSelection() : (selectMode = true)">{{ selectMode ? 'Done' : 'Select' }}</button>
+        <button type="button" class="ui-btn" @click="cleanupOpen = true">Bulk cleanup…</button>
+        <button type="button" class="ui-btn ui-icon-btn" aria-label="Refresh runs" title="Refresh" @click="resource.retry()">
+          <ArrowPathIcon class="size-4" aria-hidden="true" />
+        </button>
+      </div>
+    </header>
+
+    <!-- Views -->
+    <div class="-mx-3 overflow-x-auto px-3 md:mx-0 md:px-0">
+      <div class="inline-flex border border-rule-strong" role="group" aria-label="Saved views">
+        <button
+          v-for="view in ARCHIVE_VIEWS"
+          :key="view.id"
+          type="button"
+          :aria-pressed="currentView === view.id"
+          :class="currentView === view.id ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised hover:text-fg'"
+          class="h-7 border-r border-rule-strong px-3 whitespace-nowrap last:border-r-0 max-md:h-10"
+          @click="searchInput = ''; navigate(viewState(view))"
+        >
+          {{ view.label }}
+        </button>
+      </div>
+    </div>
+
+    <div :class="inspectedID ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-3 min-[1440px]:grid-cols-[minmax(0,1fr)_440px]' : ''">
+      <div class="min-w-0 border border-rule-strong bg-surface">
+        <!-- FilterBar, or the bulk bar in its place while rows are selected -->
+        <div v-if="selectedCount" class="flex min-h-12 flex-wrap items-center gap-3 border-b border-rule bg-raised px-3 py-2" role="region" aria-label="Bulk actions">
+          <span class="font-semibold">{{ selectedCount }} selected</span>
+          <button type="button" class="ui-btn ui-btn-sm ui-btn-danger max-md:h-10" aria-label="Delete selected runs" @click="bulkDeleteOpen = true">Delete…</button>
+          <button type="button" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10" @click="clearSelection">Clear selection</button>
         </div>
-      </template>
-
-      <div class="mb-3 flex flex-wrap items-end justify-between gap-3 border-b border-white/8 pb-3">
-        <label class="min-w-48 flex-1 sm:max-w-md">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Search run ID · all history</span>
-          <input v-model="searchInput" type="search" autocomplete="off" placeholder="Run ID contains…" class="mt-1 block w-full rounded-md border border-white/10 bg-[#0e1520] px-3 py-2 text-xs text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-300" />
-        </label>
-        <span class="pb-1 text-[11px] text-slate-500">Search, filters and sort run on the server before pagination.</span>
-      </div>
-
-      <div class="grid grid-cols-1 gap-2 border-b border-white/8 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
-          <select :value="filters.game" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('game', ($event.target as HTMLSelectElement).value)">
-            <option value="">All games</option>
-            <option v-for="value in facets.games" :key="value" :value="value">{{ gameTitle(value) }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</span>
-          <select :value="filters.outcome" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('outcome', ($event.target as HTMLSelectElement).value)">
-            <option value="">All outcomes</option>
-            <option v-for="value in facets.outcomes" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Model</span>
-          <select :value="filters.model" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('model', ($event.target as HTMLSelectElement).value)">
-            <option value="">All models</option>
-            <option v-for="value in facets.models" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Deployment</span>
-          <select :value="filters.deployment" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('deployment', ($event.target as HTMLSelectElement).value)">
-            <option value="">All deployments</option>
-            <option v-for="value in facets.deployments" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-          <select :value="filters.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('goal', ($event.target as HTMLSelectElement).value)">
-            <option value="">All goals</option>
-            <option v-for="value in facets.goals" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Play style</span>
-          <select :value="filters.playStyle" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('playStyle', ($event.target as HTMLSelectElement).value)">
-            <option value="">All styles</option>
-            <option v-for="value in facets.play_styles" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
-          <select :value="filters.how" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('how', ($event.target as HTMLSelectElement).value)">
-            <option value="">All modes</option>
-            <option v-for="value in facets.hows" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Starter</span>
-          <select :value="filters.starter" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('starter', ($event.target as HTMLSelectElement).value)">
-            <option value="">All starters</option>
-            <option v-for="value in facets.starters" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Compute</span>
-          <select :value="filters.compute" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('compute', ($event.target as HTMLSelectElement).value)">
-            <option value="">All compute</option>
-            <option v-for="value in facets.computes" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Experiment</span>
-          <select :value="filters.experiment" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="setFilter('experiment', ($event.target as HTMLSelectElement).value)">
-            <option value="">All experiments</option>
-            <option v-for="value in facets.experiments" :key="value" :value="value">{{ value }}</option>
-          </select>
-        </label>
-
-        <label class="flex items-end gap-2 rounded-md bg-white/[0.025] px-2.5 py-2 ring-1 ring-white/8">
-          <input v-model="successOnly" type="checkbox" class="size-4 rounded border-white/15 bg-white/8 text-cyan-400 focus:ring-cyan-400" @change="page = 0">
-          <span class="pb-0.5 text-xs font-semibold text-slate-300">Success only</span>
-        </label>
-      </div>
-
-      <div class="grid grid-cols-1 gap-2 border-b border-white/8 py-3 sm:grid-cols-2 lg:max-w-2xl">
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Sort</span>
-          <select v-model="sortKey" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="page = 0">
-            <option value="finished">Finished time</option>
-            <option value="frames">Emulated frames</option>
-            <option value="rounds">Rounds</option>
-            <option value="planner_time">Planner time</option>
-            <option value="runtime">Real runtime</option>
-            <option value="progress">Progress</option>
-            <option value="strategic_calls">Strategic calls</option>
-          </select>
-        </label>
-        <label class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Direction</span>
-          <select v-model="sortDirection" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-2.5 py-2 text-xs text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" @change="page = 0">
-            <option value="asc">Ascending ↑</option>
-            <option value="desc">Descending ↓</option>
-          </select>
-        </label>
-      </div>
-
-
-      <section v-if="props.runId" id="run-focus" tabindex="-1" class="my-3 scroll-mt-16 rounded-sm border border-cyan-300/20 bg-cyan-300/[0.03] px-3 py-3 focus-visible:outline-2 focus-visible:outline-cyan-300">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="min-w-0">
-            <h3 class="text-xs font-semibold text-white">Selected source run</h3>
-            <p class="mt-0.5 break-all font-mono text-[11px] text-cyan-200">{{ props.runId }}</p>
+        <div v-else class="border-b border-rule px-3 py-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="relative w-full md:w-60">
+              <label for="runs-search" class="sr-only">Search run ID</label>
+              <input
+                id="runs-search"
+                ref="searchEl"
+                v-model="searchInput"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Search run ID…  /"
+                :aria-invalid="Boolean(gotoError)"
+                aria-describedby="runs-search-hint"
+                class="block h-7 w-full rounded-[3px] border border-control bg-canvas px-2.5 font-mono text-fg placeholder:font-sans placeholder:text-fg-3 max-md:h-10"
+                @keydown.enter.prevent="goToRun"
+              >
+              <span id="runs-search-hint" class="sr-only">Filters as you type. Press Enter to open an exact run ID.</span>
+            </div>
+            <select
+              v-for="key in VISIBLE_FACETS"
+              :key="key"
+              :value="state.facets[key]"
+              :aria-label="FACET_LABELS[key]"
+              class="h-7 max-w-44 min-w-0 rounded-[3px] border border-control bg-canvas px-2 text-fg max-md:h-10 max-md:max-w-none max-md:flex-1 max-md:basis-[calc(50%-4px)]"
+              @change="setFacet(key, ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">{{ FACET_LABELS[key] }}: all</option>
+              <option v-for="value in facetOptions(key)" :key="value" :value="value">{{ facetValueLabel(key, value) }}</option>
+            </select>
+            <details class="group relative">
+              <summary class="ui-btn ui-btn-sm list-none max-md:h-10 [&::-webkit-details-marker]:hidden">
+                More filters<template v-if="hiddenActive"> ({{ hiddenActive }})</template>
+                <span class="text-fg-3 group-open:rotate-180" aria-hidden="true">▾</span>
+              </summary>
+              <div class="absolute left-0 z-30 mt-1 grid w-72 gap-2 rounded-md border border-rule-strong bg-raised p-3 shadow-[0_8px_24px_rgb(0_0_0/45%)]">
+                <label v-for="key in MORE_FACETS" :key="key" class="grid gap-1">
+                  <span class="ui-label">{{ FACET_LABELS[key] }}</span>
+                  <select
+                    :value="state.facets[key]"
+                    class="h-8 rounded-[3px] border border-control bg-canvas px-2 text-fg"
+                    @change="setFacet(key, ($event.target as HTMLSelectElement).value)"
+                  >
+                    <option value="">All</option>
+                    <option v-for="value in facetOptions(key)" :key="value" :value="value">{{ value }}</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+            <div class="ml-auto flex items-center gap-2">
+              <label class="flex items-center gap-1.5">
+                <span class="ui-label">Sort by</span>
+                <select
+                  :value="state.sort"
+                  class="h-7 rounded-[3px] border border-control bg-canvas px-2 text-fg max-md:h-10"
+                  @change="sortBy(($event.target as HTMLSelectElement).value as ArchiveSort)"
+                >
+                  <option v-for="key in ARCHIVE_SORTS" :key="key" :value="key">{{ SORT_LABELS[key] }}</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                class="ui-btn ui-btn-sm ui-icon-btn max-md:size-10"
+                :aria-label="state.dir === 'asc' ? 'Sorted ascending; switch to descending' : 'Sorted descending; switch to ascending'"
+                @click="patch({ dir: state.dir === 'asc' ? 'desc' : 'asc' })"
+              >{{ state.dir === 'asc' ? '▲' : '▼' }}</button>
+              <span class="text-meta whitespace-nowrap text-fg-2 tabular-nums" aria-live="polite">{{ rangeStart }}–{{ rangeEnd }} of {{ formatInteger(total) }}</span>
+            </div>
           </div>
-          <button type="button" class="rounded-sm px-2 py-1.5 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="closeRunDetail">Close detail</button>
-        </div>
-        <div v-if="focusedRun" class="mt-3 space-y-3">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <StatusBadge :tone="focusedRun.status === 'done' ? 'neutral' : 'info'">{{ focusedRun.status }}</StatusBadge>
-            <StatusBadge :tone="focusedRun.stats?.goal_complete ? 'success' : 'neutral'">{{ focusedRun.reason || 'No final outcome' }}</StatusBadge>
-            <span>{{ gameTitle(focusedRun.game) }}</span>
-            <span>{{ progressLabel(focusedRun) }}</span>
-            <span class="font-mono">{{ archiveWhen(focusedRun) }}</span>
+          <p v-if="gotoError" class="mt-1 text-meta text-danger" role="alert">✕ {{ gotoError }}</p>
+          <div v-if="chips.length" class="mt-2 flex flex-wrap items-center gap-1.5">
+            <button
+              v-for="chip in chips"
+              :key="chip.key"
+              type="button"
+              class="inline-flex h-6 items-center gap-1 rounded-[3px] border border-rule-strong px-2 text-meta text-fg hover:bg-raised max-md:h-8"
+              :aria-label="`Remove filter ${chip.label}`"
+              @click="removeChip(chip.key)"
+            >
+              {{ chip.label }} <XMarkIcon class="size-3.5 text-fg-2" aria-hidden="true" />
+            </button>
+            <button type="button" class="ui-btn ui-btn-sm ui-btn-quiet" @click="clearFilters">Clear all</button>
           </div>
-          <p v-if="focusedRun.detail" class="whitespace-pre-wrap break-words text-xs text-slate-300">{{ focusedRun.detail }}</p>
-          <p class="text-[11px] text-slate-400">{{ focusedRun.status === 'done' ? 'This is a persisted final run snapshot. Event and checkpoint records below exist only where they were explicitly captured.' : 'This run is active. Open Live for current state; the archive only contains finished-run history.' }}</p>
-          <RunHistoricalEvidence v-if="focusedRun.status === 'done'" :run-id="focusedRun.run_id" />
-          <a v-else :href="operatorHref('live', { run: focusedRun.run_id }, operatorSearch())" class="inline-block text-xs font-semibold text-cyan-200 hover:underline">Inspect active run in Live →</a>
         </div>
-        <ResourceState v-else :state="focusedResource.state.value === 'refreshing' ? 'loading' : focusedResource.state.value" title="Selected run unavailable" :message="focusedResource.error.value || 'This run was not found. It may have been deleted or no longer exists in history.'" :rows="3">
-          <template #actions><button type="button" class="text-xs text-cyan-200 hover:underline" @click="focusedResource.retry()">Retry run</button></template>
+
+        <ResourceState
+          v-if="resource.state.value === 'stale'"
+          state="stale"
+          class="p-3"
+          title="Showing the last loaded runs"
+          :message="`Refresh failed: ${resource.error.value}`"
+        >
+          <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="resource.retry()">Retry</button></template>
         </ResourceState>
-      </section>
 
-      <ResourceState
-        :state="resource.state.value"
-        :title="resource.state.value === 'empty' ? emptyTitle : 'Run archive unavailable'"
-        :message="resource.error.value || (hasFilters ? 'Try a different filter combination.' : 'Completed runs will appear here.')"
-        :rows="7"
-      >
-        <template #actions>
-          <button type="button" class="rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="retry">
-            Retry now
-          </button>
-        </template>
-
-        <p class="mt-3 text-[11px] text-slate-500 lg:hidden">Swipe or scroll sideways to view every history column.</p>
-        <div class="-mx-3 mt-2 overflow-x-auto sm:-mx-4" role="region" aria-label="Finished run history table" tabindex="0">
-          <table class="min-w-[1150px] divide-y divide-white/10 text-left">
+        <!-- Desktop / tablet table -->
+        <div class="hidden md:block" role="region" aria-label="Finished run history table">
+          <table class="w-full table-fixed border-collapse text-left">
             <thead>
-              <tr>
-                <th class="w-10 px-3 py-2 sm:pl-4">
+              <tr class="h-9 border-b border-rule-strong bg-raised text-meta font-medium text-fg-2">
+                <th class="w-10 pl-3">
                   <input
                     type="checkbox"
                     :checked="allVisibleSelected"
-                    :aria-label="allVisibleSelected ? 'Deselect visible runs' : 'Select visible runs'"
-                    class="size-4 rounded border-white/15 bg-white/8 text-cyan-400 focus:ring-cyan-400"
+                    :aria-label="allVisibleSelected ? 'Deselect all runs on this page' : 'Select all runs on this page'"
+                    class="size-4 accent-[var(--color-accent)]"
                     @change="toggleVisibleSelection"
                   >
                 </th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Finished</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run / setup</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Progress</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Model</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Performance</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</th>
-                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recording</th>
-                <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Actions</th>
+                <th class="w-36 px-3 font-medium">Outcome</th>
+                <th class="w-52 px-3 font-medium">Run</th>
+                <th class="px-3 font-medium" :aria-sort="ariaSort('progress')">
+                  <button type="button" class="inline-flex items-center gap-1 hover:text-fg" @click="sortBy('progress')">Goal / progress <span aria-hidden="true">{{ sortGlyph('progress') }}</span></button>
+                </th>
+                <th class="w-40 px-3 font-medium max-xl:hidden" :class="inspectedID ? 'hidden min-[1680px]:table-cell' : ''">Model</th>
+                <th class="w-28 px-3 font-medium" :aria-sort="ariaSort('finished')">
+                  <button type="button" class="inline-flex items-center gap-1 hover:text-fg" @click="sortBy('finished')">Finished <span aria-hidden="true">{{ sortGlyph('finished') }}</span></button>
+                </th>
+                <th class="w-28 px-3 text-right font-medium max-lg:hidden" :aria-sort="ariaSort('runtime')">
+                  <button type="button" class="inline-flex items-center gap-1 hover:text-fg" @click="sortBy('runtime')">Runtime <span aria-hidden="true">{{ sortGlyph('runtime') }}</span></button>
+                </th>
+                <th class="w-32 px-3 font-medium">Replay</th>
+                <th class="w-11 pr-2"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-white/8">
-              <template v-for="run in rows" :key="run.run_id">
-                <tr class="align-top hover:bg-white/[0.025]">
-                  <td class="w-10 px-3 py-3 sm:pl-4">
-                    <input
-                      type="checkbox"
-                      :checked="selectedRunIDs.has(run.run_id)"
-                      :aria-label="`Select ${run.run_id}`"
-                      class="size-4 rounded border-white/15 bg-white/8 text-cyan-400 focus:ring-cyan-400"
-                      @change="toggleRunSelection(run.run_id)"
+            <tbody v-if="resource.state.value === 'loading'" aria-busy="true">
+              <tr v-for="n in 8" :key="n" class="h-14 border-b border-rule">
+                <td colspan="9" class="px-3"><div class="h-4 bg-raised motion-safe:animate-pulse" :class="n % 2 ? 'w-3/4' : 'w-1/2'" /></td>
+              </tr>
+            </tbody>
+            <tbody v-else-if="!showStateBody">
+              <tr
+                v-for="run in rows"
+                :key="run.run_id"
+                :data-run-row="run.run_id"
+                tabindex="0"
+                :aria-selected="run.run_id === inspectedID"
+                :class="run.run_id === inspectedID ? 'bg-selected shadow-[inset_2px_0_0_var(--color-accent)]' : 'hover:bg-raised'"
+                class="group h-14 cursor-pointer border-b border-rule align-middle focus-visible:outline-offset-[-2px]"
+                @click="openRun(run.run_id)"
+                @keydown.enter.self="openRun(run.run_id)"
+              >
+                <td class="pl-3" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="selectedRunIDs.has(run.run_id)"
+                    :aria-label="`Select ${run.run_id}`"
+                    class="size-4 accent-[var(--color-accent)]"
+                    @change="toggleRunSelection(run.run_id)"
+                  >
+                </td>
+                <td class="px-3">
+                  <StatusPill :status="presentOutcome(run)" class="max-w-full overflow-hidden" />
+                  <a v-if="run.issue?.issue_number && safeIssueURL(run)" :href="safeIssueURL(run)" target="_blank" rel="noopener" class="mt-0.5 block text-meta text-accent hover:underline" @click.stop>#{{ run.issue.issue_number }} ↗</a>
+                </td>
+                <td class="px-3">
+                  <div class="flex min-w-0 items-center gap-1">
+                    <span class="truncate font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</span>
+                    <button
+                      type="button"
+                      class="ui-btn ui-btn-sm ui-icon-btn size-6 shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                      :aria-label="`Copy run ID ${run.run_id}`"
+                      @click.stop="copyRunID(run.run_id)"
                     >
-                  </td>
-                  <td class="px-3 py-3 text-xs whitespace-nowrap text-slate-500">
-                    <div>{{ archiveWhen(run) }}</div>
-                    <div class="mt-1 font-mono text-[10px] text-slate-600">{{ formatSeconds(runtimeSeconds(run)) }} runtime</div>
-                  </td>
-                  <td class="max-w-xs px-3 py-3">
-                    <a :href="operatorHref('runs', { run: run.run_id, job: '', output: '' }, operatorSearch())" class="block max-w-[14rem] truncate font-mono text-xs text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="run.run_id" @click.prevent="showRunDetail(run.run_id)">{{ run.run_id }}</a>
-                    <div class="mt-1.5 flex flex-wrap gap-1.5">
-                      <StatusBadge tone="neutral">{{ archiveHow(run) }}</StatusBadge>
-                      <button type="button" @click="setFilter('game', run.game || 'pokemon-red')">
-                        <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
-                      </button>
-                      <button v-if="isPlayStyleRun(run)" type="button" @click="setFilter('playStyle', run.play_style || '')">
-                        <StatusBadge tone="info">{{ playStyleLabel(run) }}</StatusBadge>
-                      </button>
-                      <StatusBadge v-if="run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
-                      <button type="button" @click="setFilter('starter', archiveStarter(run))">
-                        <StatusBadge tone="info">{{ archiveStarter(run) }}</StatusBadge>
-                      </button>
-                    </div>
-                    <button v-if="run.goal" type="button" class="mt-1.5 block max-w-full truncate text-left text-[11px] text-slate-500 hover:text-slate-300" :title="run.goal" @click="setFilter('goal', run.goal || '')">
-                      {{ run.goal }}
+                      <ClipboardDocumentIcon class="size-4" aria-hidden="true" />
                     </button>
-                    <div class="mt-1 font-mono text-[10px] text-slate-600">seed {{ run.seed ?? '—' }}</div>
-                  </td>
-                  <td class="max-w-xs px-3 py-3">
-                    <div class="text-xs font-semibold text-slate-200">{{ progressLabel(run) }}</div>
-                    <div v-if="run.player?.badges?.length" class="mt-1 text-[11px] text-emerald-200">{{ run.player.badges.join(' · ') }}</div>
-                    <div v-if="run.stats?.goal_summary" class="mt-1 line-clamp-2 text-[11px] text-slate-500" :title="run.stats.goal_summary">{{ run.stats.goal_summary }}</div>
-                    <div class="mt-1 text-[11px] text-slate-500">{{ archiveWhere(run) }}</div>
-                  </td>
-                  <td class="max-w-xs px-3 py-3">
-                    <button v-if="modelID(run)" type="button" class="block max-w-full truncate text-left text-xs font-semibold text-slate-200 hover:text-cyan-100" :title="modelID(run)" @click="setFilter('model', modelID(run))">
-                      {{ modelName(run) }}
-                    </button>
-                    <span v-else class="text-xs text-slate-500">—</span>
-                    <button v-if="deploymentName(run)" type="button" class="mt-1 block max-w-full truncate font-mono text-[10px] text-cyan-300/80 hover:text-cyan-200" :title="deploymentName(run)" @click="setFilter('deployment', deploymentName(run))">
-                      {{ deploymentName(run) }}
-                    </button>
-                    <button v-if="computeName(run)" type="button" class="mt-1 text-[10px] text-slate-500 hover:text-slate-300" @click="setFilter('compute', computeName(run))">
-                      {{ computeName(run) }}
-                    </button>
-                    <a v-if="run.experiment_id" :href="operatorHref('analytics', { section: 'experiments', experiment: run.experiment_id }, operatorSearch())" class="mt-1 block max-w-full truncate text-[10px] text-violet-300/80 hover:text-violet-200 focus-visible:outline-2 focus-visible:outline-cyan-300" :title="'Open paired experiment ' + experimentLabel(run)">
-                      {{ experimentLabel(run) }} ↗
-                    </a>
-                  </td>
-                  <td class="px-3 py-3 text-[11px] text-slate-400">
-                    <div><span class="text-slate-600">Rounds</span> {{ formatInteger(rounds(run)) }}</div>
-                    <div><span class="text-slate-600">Frames</span> {{ formatInteger(Number(run.frame || 0)) }}</div>
-                    <div><span class="text-slate-600">Strategic</span> {{ formatInteger(strategicCalls(run)) }} calls</div>
-                    <div><span class="text-slate-600">Planner</span> {{ formatSeconds(plannerSeconds(run)) }}</div>
-                  </td>
-                  <td class="max-w-sm px-3 py-3">
-                    <div class="flex items-center gap-2">
-                      <a v-if="run.issue?.issue_number && safeIssueURL(run)" :href="safeIssueURL(run)" target="_blank" rel="noopener" class="shrink-0 text-[11px] font-semibold text-amber-200 hover:text-amber-100">#{{ run.issue.issue_number }}</a>
-                      <StatusBadge :tone="run.reason === 'done' || run.stats?.goal_complete ? 'success' : 'neutral'">{{ run.reason || 'done' }}</StatusBadge>
-                    </div>
-                    <p v-if="run.detail" class="mt-1.5 line-clamp-2 text-xs text-slate-400" :title="archiveOutcome(run)">{{ run.detail }}</p>
-                  </td>
-                  <td class="min-w-[11rem] px-3 py-3">
-                    <StatusBadge :tone="recording(run).tone">{{ recording(run).label }}</StatusBadge>
-                    <p class="mt-1 max-w-48 text-[10px] leading-4 text-slate-500" :title="recording(run).detail">{{ recording(run).detail }}</p>
-                    <span class="mt-1 block text-[10px] text-slate-600">Visibility: see Media</span>
-                  </td>
-                  <td class="px-3 py-3 sm:pr-4">
-                    <div class="flex flex-wrap justify-end gap-1.5">
-                      <a v-if="recording(run).canWatch"
-                        :href="replayVideoURL(run.run_id)" target="_blank" rel="noopener"
-                        class="inline-flex items-center gap-1 rounded-md bg-violet-300/10 px-2 py-1.5 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-300/20 hover:bg-violet-300/15 focus-visible:outline-2 focus-visible:outline-cyan-300"
-                        title="Open the confirmed playable replay video">
-                        <PlayIcon class="size-3.5" aria-hidden="true" />Watch replay
-                      </a>
-                      <a :href="mediaHref(run)"
-                        class="inline-flex items-center gap-1 rounded-md bg-cyan-300/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-300/12 focus-visible:outline-2 focus-visible:outline-cyan-300"
-                        :title="'Open ' + (recording(run).mediaSection === 'jobs' ? 'the exact render job' : 'the source run library entry') + ' in Media'">
-                        {{ recording(run).mediaSection === 'jobs' ? 'Render job ↗' : 'Open Media ↗' }}
-                      </a>
-                      <button type="button" class="rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white" :aria-expanded="expanded.has(run.run_id)" @click="toggleExpanded(run.run_id)">
-                        {{ expanded.has(run.run_id) ? 'Less' : 'Details' }}
-                      </button>
-                      <button type="button" class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-300" @click="showRunDetail(run.run_id)">
-                        <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
-                        Evidence
-                      </button>
-                      <button type="button" class="inline-flex items-center gap-1 rounded-md bg-rose-400/8 px-2 py-1.5 text-[11px] font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15" @click="requestDelete(run)">
-                        <TrashIcon class="size-3.5" aria-hidden="true" />
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="expanded.has(run.run_id)" class="bg-white/[0.018]">
-                  <td colspan="9" class="px-3 py-4 sm:px-4">
-                    <div class="grid gap-x-8 gap-y-4 text-xs sm:grid-cols-2 xl:grid-cols-4">
-                      <dl class="space-y-1.5">
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Goal</dt><dd class="text-slate-300">{{ run.goal || '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Result</dt><dd class="text-slate-300">{{ run.reason || 'done' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Progress</dt><dd class="text-slate-300">{{ progressLabel(run) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Location</dt><dd class="text-slate-300">{{ archiveWhere(run) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Frames</dt><dd class="font-mono text-slate-300">{{ formatInteger(Number(run.frame || 0)) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Rounds</dt><dd class="font-mono text-slate-300">{{ formatInteger(rounds(run)) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Runtime</dt><dd class="font-mono text-slate-300">{{ formatSeconds(runtimeSeconds(run)) }}</dd></div>
-                      </dl>
-
-                      <dl class="space-y-1.5">
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Model</dt><dd class="text-slate-300">{{ modelName(run) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Deployment</dt><dd class="font-mono text-slate-300">{{ deploymentName(run) || '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Compute</dt><dd class="text-slate-300">{{ computeName(run) || '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Quantization</dt><dd class="text-slate-300">{{ run.inference?.quantization || '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Reasoning</dt><dd class="text-slate-300">{{ run.reasoning_effort || 'default' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Decisions</dt><dd class="text-slate-300">{{ decisionEngineLabel(run) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Seed</dt><dd class="font-mono text-slate-300">{{ run.seed ?? '—' }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Experiment</dt><dd class="min-w-0 text-slate-300"><a v-if="run.experiment_id" :href="operatorHref('analytics', { section: 'experiments', experiment: run.experiment_id }, operatorSearch())" class="break-all text-violet-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300">{{ experimentLabel(run) }} ↗</a><span v-else>—</span></dd></div>
-                      </dl>
-
-                      <dl class="space-y-1.5">
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Strategic calls</dt><dd class="font-mono text-slate-300">{{ formatInteger(strategicCalls(run)) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Plans executed</dt><dd class="font-mono text-slate-300">{{ formatInteger(statNumber(run, 'plan_executions')) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Steps skipped</dt><dd class="font-mono text-slate-300">{{ formatInteger(statNumber(run, 'steps_skipped')) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Rejected</dt><dd class="font-mono text-slate-300">{{ formatInteger(statNumber(run, 'rejected')) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Planner time</dt><dd class="font-mono text-slate-300">{{ formatSeconds(plannerSeconds(run)) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Prompt tokens</dt><dd class="font-mono text-slate-300">{{ formatInteger(statNumber(run, 'prompt_tokens')) }}</dd></div>
-                        <div class="flex gap-3"><dt class="w-28 shrink-0 text-slate-600">Completion tokens</dt><dd class="font-mono text-slate-300">{{ formatInteger(statNumber(run, 'completion_tokens')) }}</dd></div>
-                      </dl>
-
-                      <dl class="space-y-1.5">
-                        <div><dt class="text-slate-600">Party</dt><dd class="mt-1 text-slate-300">{{ partySummary(run) }}</dd></div>
-                        <div><dt class="text-slate-600">Milestones</dt><dd class="mt-1 text-slate-300">{{ run.player?.milestones?.join(' · ') || '—' }}</dd></div>
-                        <div><dt class="text-slate-600">Failure / stop detail</dt><dd class="mt-1 whitespace-pre-wrap text-slate-300">{{ run.detail || '—' }}</dd></div>
-                      </dl>
-                    </div>
-                    <div v-if="showDecisionTelemetry(run.stats, run.decision_engine)" class="mt-4 overflow-hidden rounded-sm border border-white/10">
-                      <DecisionTelemetry :stats="run.stats" :engine="run.decision_engine" :show-feed="false" />
-                    </div>
-                  </td>
-                </tr>
-              </template>
+                  </div>
+                  <div class="mt-0.5 flex min-w-0 gap-1" @click.stop>
+                    <button type="button" class="ui-tag hover:border-control hover:text-fg" :aria-label="`Filter by ${gameTitle(run.game)}`" @click="setFacet('game', run.game || 'pokemon-red')">{{ gameTitle(run.game) }}</button>
+                    <button type="button" class="ui-tag shrink-0 hover:border-control hover:text-fg" :aria-label="`Filter by ${plannerLabel(run)} runs`" @click="setFacet('how', archiveHow(run))">{{ plannerLabel(run) }}</button>
+                  </div>
+                </td>
+                <td class="px-3">
+                  <div class="truncate" :title="run.goal || ''">{{ run.goal || '—' }}</div>
+                  <div class="truncate text-meta text-fg-2" :title="`${progressLabel(run)} · ${archiveWhere(run)}`">{{ progressLabel(run) }} · {{ archiveWhere(run) }}</div>
+                </td>
+                <td class="px-3 max-xl:hidden" :class="inspectedID ? 'hidden min-[1680px]:table-cell' : ''">
+                  <div v-if="modelName(run)" class="truncate" :title="modelName(run)">{{ modelName(run) }}</div>
+                  <div v-else class="text-fg-3">{{ run.planner === 'scripted' ? 'Scripted' : '—' }}</div>
+                  <div v-if="deploymentName(run)" class="truncate font-mono text-meta text-fg-2" :title="deploymentName(run)">{{ deploymentName(run) }}</div>
+                </td>
+                <td class="px-3 whitespace-nowrap" :title="archiveWhen(run)">{{ archiveAgo(run) }}</td>
+                <td class="px-3 text-right font-mono whitespace-nowrap max-lg:hidden">
+                  <div>{{ formatDuration(Number(run.runtime_seconds || 0)) }}</div>
+                  <div class="text-meta text-fg-2" title="Emulated frames">{{ formatInteger(Number(run.frame || 0)) }}</div>
+                </td>
+                <td class="px-3" @click.stop>
+                  <a
+                    v-if="recording(run).canWatch"
+                    :href="replayVideoURL(run.run_id)"
+                    target="_blank"
+                    rel="noopener"
+                    class="ui-btn ui-btn-sm ui-btn-quiet -ml-2.5 text-accent"
+                    aria-label="Watch replay"
+                    :title="recording(run).detail"
+                  >▶ Watch</a>
+                  <a
+                    v-else
+                    :href="mediaHref(run)"
+                    :class="RECORDING_TONE[recording(run).tone]"
+                    class="block truncate text-meta hover:underline"
+                    :title="`${recording(run).label}. ${recording(run).detail}`"
+                  ><span aria-hidden="true">{{ RECORDING_GLYPH[recording(run).tone] }}</span> {{ RECORDING_SHORT[recording(run).state] || recording(run).label }}</a>
+                </td>
+                <td class="pr-2 text-right" @click.stop @keydown.stop>
+                  <RunActionMenu :run-id="run.run_id" :media-href="mediaHref(run)" @inspect="inspectInLive(run.run_id)" @copy="copyRunID(run.run_id)" @delete="requestDelete(run)" />
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-      </ResourceState>
 
-      <div class="mt-4 flex flex-col gap-3 border-t border-white/8 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-xs text-slate-500">{{ rangeStart }}–{{ rangeEnd }} of {{ total }}</p>
-        <div class="flex items-center gap-2">
-          <button type="button" class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" :disabled="page === 0" @click="previousPage">
-            <ArrowLeftIcon class="size-3.5" aria-hidden="true" />
-            Previous
-          </button>
-          <span class="min-w-16 text-center font-mono text-[11px] text-slate-500">{{ page + 1 }} / {{ pageCount }}</span>
-          <button type="button" class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2.5 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" :disabled="page + 1 >= pageCount" @click="nextPage">
-            Next
-            <ArrowRightIcon class="size-3.5" aria-hidden="true" />
+        <!-- Narrow list (< 768px): same facts, three lines, no cards -->
+        <div class="md:hidden">
+          <div v-if="resource.state.value === 'loading'" class="space-y-4 p-3" aria-busy="true">
+            <div v-for="n in 6" :key="n" class="h-12 bg-raised motion-safe:animate-pulse" />
+          </div>
+          <ul v-else-if="!showStateBody" role="list" aria-label="Finished runs">
+            <li
+              v-for="run in rows"
+              :key="run.run_id"
+              :class="run.run_id === inspectedID ? 'bg-selected shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
+              class="flex gap-3 border-b border-rule px-3 py-2.5"
+            >
+              <input
+                v-if="selectMode"
+                type="checkbox"
+                :checked="selectedRunIDs.has(run.run_id)"
+                :aria-label="`Select ${run.run_id}`"
+                class="mt-1 size-5 shrink-0 accent-[var(--color-accent)]"
+                @change="toggleRunSelection(run.run_id)"
+              >
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 items-center gap-2">
+                  <StatusPill :status="presentOutcome(run)" class="shrink-0" />
+                  <button type="button" class="min-w-0 truncate text-left font-mono text-accent" :title="run.run_id" @click="openRun(run.run_id)">
+                    {{ middleTruncate(run.run_id, 10, 4) }}
+                  </button>
+                  <span class="ml-auto shrink-0 text-meta text-fg-2" :title="archiveWhen(run)">{{ archiveAgo(run) }}</span>
+                </div>
+                <div class="mt-1 truncate">{{ run.goal || '—' }} <span class="text-fg-2">· {{ progressLabel(run) }}</span></div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-meta text-fg-2">
+                  <span class="truncate">{{ modelName(run) || plannerLabel(run) }}</span>
+                  <span class="shrink-0 font-mono">· {{ formatDuration(Number(run.runtime_seconds || 0)) }}</span>
+                  <a v-if="recording(run).canWatch" :href="replayVideoURL(run.run_id)" target="_blank" rel="noopener" class="ml-auto shrink-0 text-accent" aria-label="Watch replay">▶ Watch</a>
+                  <a v-else :href="mediaHref(run)" :class="RECORDING_TONE[recording(run).tone]" class="ml-auto shrink-0 truncate" :title="recording(run).detail">{{ RECORDING_SHORT[recording(run).state] || recording(run).label }}</a>
+                </div>
+              </div>
+              <RunActionMenu class="shrink-0" :run-id="run.run_id" :media-href="mediaHref(run)" @inspect="inspectInLive(run.run_id)" @copy="copyRunID(run.run_id)" @delete="requestDelete(run)" />
+            </li>
+          </ul>
+        </div>
+
+        <!-- Error / empty states sit inside the table frame, under the header -->
+        <ResourceState
+          v-if="resource.state.value === 'error'"
+          state="error"
+          class="m-3"
+          title="Couldn’t load runs"
+          :message="`${resource.error.value}. Filters still work; retry when the archive is reachable.`"
+        >
+          <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="resource.retry()">Retry</button></template>
+        </ResourceState>
+        <div v-else-if="resource.state.value === 'empty'" class="flex flex-col items-center gap-2 px-4 py-12 text-center">
+          <span class="text-[20px] leading-5 text-fg-3" aria-hidden="true">○</span>
+          <p class="text-title font-semibold">{{ hasFilters ? 'No runs match these filters' : 'No finished runs yet' }}</p>
+          <p class="text-fg-2">{{ hasFilters ? 'Remove a filter or clear them all.' : 'Finished runs appear here with their outcome and evidence.' }}</p>
+          <button v-if="hasFilters" type="button" class="ui-btn mt-1" @click="clearFilters">Clear filters</button>
+          <a v-else href="#new-run" class="ui-btn mt-1">New run</a>
+        </div>
+
+        <footer class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+          <span class="text-meta text-fg-2">{{ rangeStart }}–{{ rangeEnd }} of {{ formatInteger(total) }}</span>
+          <div class="flex items-center gap-2">
+            <button type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="state.page <= 1" @click="navigate({ ...state, page: state.page - 1 })">‹ Previous</button>
+            <span class="min-w-14 text-center font-mono text-meta text-fg-2">{{ state.page }} / {{ pageCount }}</span>
+            <button type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="state.page >= pageCount" @click="navigate({ ...state, page: state.page + 1 })">Next ›</button>
+          </div>
+        </footer>
+      </div>
+
+      <!-- Detail pane: docked ≥ 1280px, overlay sheet below, full screen < 768px -->
+      <template v-if="inspectedID">
+        <div class="fixed inset-0 z-40 bg-black/50 xl:hidden" aria-hidden="true" @click="closeRun" />
+        <aside
+          ref="paneEl"
+          tabindex="-1"
+          aria-label="Run details"
+          class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[440px] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
+        >
+          <RunDetailPane
+            :run-id="inspectedID"
+            :row="inspectedRow"
+            :media-job="mediaJobByRun.get(inspectedID)"
+            :media-state="mediaState"
+            @close="closeRun"
+            @inspect="inspectInLive"
+            @copy="copyRunID"
+            @delete="requestDelete"
+          />
+        </aside>
+      </template>
+    </div>
+
+    <!-- Bulk cleanup lives in a drawer so the irreversible tool isn't on the page by default -->
+    <Dialog :open="cleanupOpen" class="operator-root relative z-[60] !min-h-0 !bg-transparent" @close="cleanupOpen = false">
+      <div class="fixed inset-0 bg-black/60" aria-hidden="true" />
+      <DialogPanel class="fixed inset-y-0 right-0 flex w-full max-w-[560px] flex-col border-l border-rule-strong bg-surface shadow-[0_8px_24px_rgb(0_0_0/45%)]">
+        <div class="ui-bay-header min-h-12">
+          <DialogTitle as="h2">Bulk cleanup</DialogTitle>
+          <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" aria-label="Close bulk cleanup" @click="cleanupOpen = false">
+            <XMarkIcon class="size-4" aria-hidden="true" />
           </button>
         </div>
-      </div>
-    </Panel>
-
-    <details class="rounded-sm border border-white/10 bg-[#0e141d]" :open="cleanupExpanded" @toggle="cleanupExpanded = ($event.target as HTMLDetailsElement).open">
-      <summary class="cursor-pointer px-3 py-2.5 text-xs font-semibold text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-300">Bulk cleanup · irreversible administration</summary>
-      <div class="border-t border-white/8 p-2.5"><RunCleanupPanel @changed="retry" /></div>
-    </details>
-
-    <p v-if="deleteError" class="text-sm text-rose-300" role="alert">{{ deleteError }}</p>
-    <p v-if="deleteSelectedStatus" class="text-sm text-slate-400" aria-live="polite">{{ deleteSelectedStatus }}</p>
+        <div class="min-h-0 flex-1 overflow-y-auto p-3">
+          <RunCleanupPanel @changed="resource.retry()" />
+        </div>
+      </DialogPanel>
+    </Dialog>
 
     <ConfirmDialog
       :open="Boolean(deleteTarget)"
-      title="Delete this run?"
-      :message="deleteTarget ? `Delete ${deleteTarget.run_id} and its associated stored run data? This cannot be undone.` : ''"
+      :title="deleteTarget ? `Delete run ${middleTruncate(deleteTarget.run_id)}?` : 'Delete run?'"
+      :message="deleteTarget ? `${deleteTarget.run_id}\n\nIts stored run data, recordings and replay video are removed. This can't be undone.${deleteError ? `\n\n✕ Delete failed: ${deleteError}` : ''}` : ''"
       confirm-label="Delete run"
       :busy="deleting"
       danger
@@ -842,14 +779,19 @@ function operatorSearch(): string { return window.location.search }
     />
 
     <ConfirmDialog
-      :open="deleteSelectedOpen"
-      title="Delete selected runs?"
-      :message="`Delete ${selectedCount} selected run${selectedCount === 1 ? '' : 's'} and their associated stored run data? This cannot be undone.`"
-      :confirm-label="`Delete ${selectedCount} run${selectedCount === 1 ? '' : 's'}`"
+      :open="bulkDeleteOpen"
+      :title="`Delete ${plural(selectedCount)}?`"
+      :message="bulkMessage"
+      :confirm-label="`Delete ${plural(selectedCount)}`"
+      :require-text="selectedCount > 10 ? String(selectedCount) : ''"
       :busy="deletingSelected"
       danger
-      @close="closeDeleteSelected"
+      @close="deletingSelected ? undefined : (bulkDeleteOpen = false)"
       @confirm="confirmDeleteSelected"
     />
+
+    <div class="pointer-events-none fixed right-4 bottom-4 z-[80]" aria-live="polite" role="status">
+      <div v-if="toast" class="pointer-events-auto rounded-md border border-rule-strong bg-raised px-4 py-2.5 shadow-[0_8px_24px_rgb(0_0_0/45%)]">{{ toast }}</div>
+    </div>
   </div>
 </template>

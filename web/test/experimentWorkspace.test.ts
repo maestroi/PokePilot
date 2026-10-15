@@ -9,6 +9,7 @@ const paired = readFileSync(new URL('../src/operator/PairedExperimentPanel.vue',
 const analytics = readFileSync(new URL('../src/operator/AnalyticsView.vue', import.meta.url), 'utf8')
 const leaderboard = readFileSync(new URL('../src/operator/LeaderboardPanel.vue', import.meta.url), 'utf8')
 const archive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
+  + readFileSync(new URL('../src/operator/RunDetailPane.vue', import.meta.url), 'utf8')
 const live = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
 
 test('seed input is validated without silently dropping requested comparisons', () => {
