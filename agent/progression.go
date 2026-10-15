@@ -122,9 +122,14 @@ func offerWithProgressionEvidence(obs Observation, known *Knowledge, p Progressi
 		if provider, ok := p.(CombatRecoveryProvider); ok && provider != nil {
 			noRecoveryCorridor = !provider.CombatRecoveryAvailable(obs)
 		}
-		if (sealed || noRecoveryCorridor) && len(base.Candidates) == 0 &&
-			owesCombatReadiness(known, obs) &&
-			!combatPreparationNeedsCoverage(obs, known) {
+		// A sealed topology only fail-opens when the menu is otherwise empty:
+		// journeys may still be real preparation. A game-reported missing
+		// recovery corridor means preparation cannot advance this loss at all
+		// (no site yet, or Gen2 lead-only grind already at the readiness
+		// ceiling), so promote even when unrelated base candidates remain
+		// (run-3v7t9gqr8gnks2efu8haxz0j2c).
+		canPromote := owesCombatReadiness(known, obs) && !combatPreparationNeedsCoverage(obs, known)
+		if canPromote && (noRecoveryCorridor || (sealed && len(base.Candidates) == 0)) {
 			known.promoteCombatLossesToRetry()
 			progress = annotate(filterCombatRecoveryBlocked(provided.Candidates, known), known)
 		}

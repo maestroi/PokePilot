@@ -136,6 +136,103 @@ func TestGSCombatRecoveryTargetAndProvenHabitat(t *testing.T) {
 	}
 }
 
+// TestGSCombatRecoveryStopsLeadGrindAtReadinessCeiling guards
+// run-3v7t9gqr8gnks2efu8haxz0j2c: Jasmine's Steelix sets ceiling 40, so an
+// L48+ carry already saturates the lead's contribution to failureReadiness.
+// Gen2 recovery only trains the lead; more lead XP must not be offered, and
+// CombatRecoveryAvailable must go false so the portable gate promotes to retry
+// instead of grinding L53→L60 under a permanently unmet target.
+func TestGSCombatRecoveryStopsLeadGrindAtReadinessCeiling(t *testing.T) {
+	const ceiling = 40 // Jasmine max (35) + carryLevelMargin
+	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
+		adapter := newGSObjectiveAdapter(nil, nil, id)
+		obs := Observation{
+			GameID: id, PartyCount: 3, Controllable: true,
+			Party: []PartyMon{
+				{Species: "typhlosion", Level: 53, HP: 180, MaxHP: 180},
+				{Species: "togepi", Level: 8, HP: 24, MaxHP: 24},
+				{Species: "tauros", Level: 17, HP: 57, MaxHP: 57},
+			},
+			Story: ProgressState{
+				{ID: gsprofile.ProgressStarterReceived, Complete: true},
+				{ID: gsprofile.ProgressMysteryEggReturned, Complete: true},
+				{ID: gsprofile.ProgressSproutTowerCleared, Complete: true},
+				{ID: gsprofile.ProgressZephyrBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressTogepiEggReceived, Complete: true},
+				{ID: gsprofile.ProgressSlowpokeWellCleared, Complete: true},
+				{ID: gsprofile.ProgressHiveBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressAzaleaRivalResolved, Complete: true},
+				{ID: gsprofile.ProgressFarfetchdHerded, Complete: true},
+				{ID: gsprofile.ProgressHM01CutAcquired, Complete: true},
+				{ID: gsprofile.ProgressTM02HeadbuttAcquired, Complete: true},
+				{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressSquirtBottleAcquired, Complete: true},
+				{ID: gsprofile.ProgressSudowoodoCleared, Complete: true},
+				{ID: gsprofile.ProgressTM08RockSmashAcquired, Complete: true},
+				{ID: gsprofile.ProgressBurnedTowerCleared, Complete: true},
+				{ID: gsprofile.ProgressFogBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressHM03SurfAcquired, Complete: true},
+				{ID: gsprofile.ProgressLighthouseSicknessExplained, Complete: true},
+				{ID: gsprofile.ProgressSecretPotionAcquired, Complete: true},
+				{ID: gsprofile.ProgressJasmineReturnedToGym, Complete: true},
+				{ID: gsprofile.ProgressHM04StrengthAcquired, Complete: true},
+				{ID: gsprofile.ProgressStormBadgeEarned, Complete: true},
+				{ID: gsprofile.ProgressHM02FlyAcquired, Complete: true},
+			},
+		}
+		fight := Objective{Kind: KindProgress, Progress: gsprofile.ProgressMineralBadgeEarned}
+		failure := Failure{
+			Objective: fight.String(), Times: 1,
+			ReadinessBaseline: 195, ReadinessTarget: 207,
+			ReadinessCeiling: ceiling,
+		}
+		if got := failureReadiness(obs, failure); got >= failure.ReadinessTarget {
+			t.Fatalf("%s: test assumption wrong: readiness %d already meets target %d", id, got, failure.ReadinessTarget)
+		}
+		if target := gsCombatRecoveryLeadTarget(obs, failure); target != 0 {
+			t.Fatalf("%s: lead past ceiling still offered train to L%d", id, target)
+		}
+		known := NewKnowledge(nil)
+		known.Failures[combatLossFailureKey(fight)] = failure
+		obs.Failures = known.FailureList()
+		if adapter.CombatRecoveryAvailable(obs) {
+			t.Fatalf("%s: ceiling-blocked lead grind still reported a recovery corridor", id)
+		}
+		if got := gsProgressionCombatRecovery(obs, fight); len(got) != 0 {
+			t.Fatalf("%s: ceiling-blocked recovery still offered train: %+v", id, got)
+		}
+		out := OfferWithProgressionEvidence(obs, known, adapter).Candidates
+		reoffered := false
+		for i := range out {
+			if out[i].Kind == KindTrain && out[i].Slot == 0 {
+				t.Fatalf("%s: still grinding the lead past the ceiling: %+v", id, out)
+			}
+			if out[i].Kind == KindProgress && out[i].Progress == fight.Progress {
+				reoffered = true
+			}
+		}
+		if !reoffered {
+			t.Fatalf("%s: ceiling-blocked loss left an empty menu, want Jasmine re-offered: %+v", id, out)
+		}
+		if _, ok := known.Failures[combatLossFailureKey(fight)]; ok {
+			t.Fatalf("%s: combat-loss gate not promoted to retry: %+v", id, known.Failures)
+		}
+	}
+}
+
+func TestGSCombatRecoveryLeadTargetRespectsCeilingBelowCap(t *testing.T) {
+	obs := Observation{Party: []PartyMon{{Species: "typhlosion", Level: 38, HP: 1, MaxHP: 1}}}
+	// Deficit needs more than two levels, but the ceiling caps useful lead XP.
+	failure := Failure{Times: 1, ReadinessTarget: 40 * 4, ReadinessCeiling: 40}
+	if target := gsCombatRecoveryLeadTarget(obs, failure); target != 40 {
+		t.Fatalf("target=%d, want L40 (ceiling), not a grind past it", target)
+	}
+	obs.Party[0].Level = 40
+	if target := gsCombatRecoveryLeadTarget(obs, failure); target != 0 {
+		t.Fatalf("at-ceiling lead target=%d, want no further grind", target)
+	}
+}
+
 // TestPartyCombatReadinessIgnoresEggs pins the quantified combat-prep invariant
 // from run-36loaokprjdtw2j8om666lswgf: an egg's stored level must not pad a
 // lone lead up to a readiness target and release a Bugsy retry early.
