@@ -104,6 +104,16 @@ const (
 	// Set when the S.S. Anne sails (pokered/scripts/VermilionDock.asm); the
 	// S.S. Ticket has no use afterwards.
 	EventSSAnneLeft Event = 1506
+	// One-time reward grant markers, set by the ROM the moment each item is
+	// handed over (OaksAideScript / the rod-house scripts). They are the
+	// authoritative "already received" signal: bag pressure can store the
+	// granted item in the Player PC, where a bag check cannot see it, and the
+	// game will not re-grant it. Indices come from the const_next values in
+	// testdata/event_constants.asm (verified in TestEventIndicesMatchDecomp),
+	// never hand-counted.
+	EventGotHM05       Event = 0x3d8
+	EventGotItemFinder Event = 0x47f
+	EventGotExpAll     Event = 0x4b0
 )
 
 var eventNames = map[Event]string{
@@ -120,6 +130,9 @@ var eventNames = map[Event]string{
 	EventVermilionGymFirstLockOpened:  "VermilionGymFirstLockOpened",
 	EventBeatRoute22Rival1stBattle:    "BeatRoute22Rival1stBattle",
 	EventBeatChampionRival:            "BeatChampionRival",
+	EventGotHM05:                      "GotHM05",
+	EventGotItemFinder:                "GotItemFinder",
+	EventGotExpAll:                    "GotExpAll",
 }
 
 // String renders the event name; unnamed indices render as "unknown(N)".

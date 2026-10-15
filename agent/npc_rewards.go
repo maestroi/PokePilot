@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
 
@@ -46,7 +47,7 @@ var redCustomChoiceActors = []struct {
 // This makes the rods discoverable to Completionist/Dex play instead of
 // waiting for random generic conversation, and only offers Oak's aides once
 // their ROM Pokedex-owned thresholds are already satisfied.
-func appendRedNPCRewardObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
+func appendRedNPCRewardObjectives(mem *state.Mem, obs Observation, known *Knowledge, out []Objective) []Objective {
 	blocked := dexCatchBlockedPlaces(obs)
 	var (
 		hops      map[uint16]int
@@ -60,6 +61,13 @@ func appendRedNPCRewardObjectives(obs Observation, known *Knowledge, out []Objec
 	for _, reward := range skill.ChoiceRewards() {
 		item := ItemID(reward.ItemName)
 		if bagItemQuantity(obs.Bag, item) > 0 {
+			continue
+		}
+		// The ROM's one-time grant marker is the authoritative consumed check:
+		// bag pressure can store a granted rod/item in the Player PC, where the
+		// bag check above cannot see it, and re-offering it hard-fails on a
+		// postcondition the game has already satisfied (run-d6dokr184ky81).
+		if mem != nil && reward.AlreadyGranted(mem) {
 			continue
 		}
 		if reward.MinOwned > 0 && len(obs.PokedexOwned) < reward.MinOwned {

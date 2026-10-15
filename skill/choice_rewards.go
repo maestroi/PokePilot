@@ -6,6 +6,7 @@ import (
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
 )
 
 // ChoiceReward describes a Red NPC whose YES/NO interaction grants one
@@ -21,15 +22,23 @@ type ChoiceReward struct {
 	Item     uint8
 	ItemName string
 	MinOwned int
+	// Consumed signal: the ROM's one-time grant marker, set the moment the
+	// item is handed over. Exactly one of StatusFlagBit (a wStatusFlags1 bit)
+	// or GrantedEvent (a wEventFlags bit) is set per reward. It is the
+	// authoritative "already received" check: bag pressure can store a granted
+	// item in the Player PC, where the bag check cannot see it, and the game
+	// will not re-grant it, so the objective must not be re-offered.
+	StatusFlagBit uint8
+	GrantedEvent  state.Event
 }
 
 var choiceRewards = []ChoiceReward{
-	{Place: "vermilion old rod house", Map: 0xA3, X: 2, Y: 4, StandX: 2, StandY: 5, Item: 0x4C, ItemName: "old rod"},
-	{Place: "fuchsia good rod house", Map: 0xA4, X: 5, Y: 3, StandX: 6, StandY: 3, Item: 0x4D, ItemName: "good rod"},
-	{Place: "route 12 super rod house", Map: 0xBD, X: 2, Y: 4, StandX: 2, StandY: 5, Item: 0x4E, ItemName: "super rod"},
-	{Place: "route 2 oak aide", Map: 0x31, X: 1, Y: 4, StandX: 2, StandY: 4, Item: 0xC8, ItemName: "hm05", MinOwned: 10},
-	{Place: "route 11 oak aide", Map: 0x56, X: 2, Y: 6, StandX: 2, StandY: 5, Item: 0x47, ItemName: "itemfinder", MinOwned: 30},
-	{Place: "route 15 oak aide", Map: 0xB9, X: 4, Y: 2, StandX: 4, StandY: 3, Item: 0x4B, ItemName: "exp all", MinOwned: 50},
+	{Place: "vermilion old rod house", Map: 0xA3, X: 2, Y: 4, StandX: 2, StandY: 5, Item: 0x4C, ItemName: "old rod", StatusFlagBit: 3},
+	{Place: "fuchsia good rod house", Map: 0xA4, X: 5, Y: 3, StandX: 6, StandY: 3, Item: 0x4D, ItemName: "good rod", StatusFlagBit: 4},
+	{Place: "route 12 super rod house", Map: 0xBD, X: 2, Y: 4, StandX: 2, StandY: 5, Item: 0x4E, ItemName: "super rod", StatusFlagBit: 5},
+	{Place: "route 2 oak aide", Map: 0x31, X: 1, Y: 4, StandX: 2, StandY: 4, Item: 0xC8, ItemName: "hm05", MinOwned: 10, GrantedEvent: state.EventGotHM05},
+	{Place: "route 11 oak aide", Map: 0x56, X: 2, Y: 6, StandX: 2, StandY: 5, Item: 0x47, ItemName: "itemfinder", MinOwned: 30, GrantedEvent: state.EventGotItemFinder},
+	{Place: "route 15 oak aide", Map: 0xB9, X: 4, Y: 2, StandX: 4, StandY: 3, Item: 0x4B, ItemName: "exp all", MinOwned: 50, GrantedEvent: state.EventGotExpAll},
 }
 
 func init() {
@@ -71,6 +80,21 @@ func choiceRewardAt(mapID, x, y, item uint8) (ChoiceReward, bool) {
 		}
 	}
 	return ChoiceReward{}, false
+}
+
+// AlreadyGranted reports whether the ROM has already handed this reward over,
+// reading the reward's own one-time grant marker. It is the authoritative
+// consumed check: a rod or Oak-aide item that bag pressure has stored in the
+// Player PC is no longer in the bag, but the ROM will not re-grant it, so the
+// objective must not be re-offered (run-d6dokr184ky81).
+func (r ChoiceReward) AlreadyGranted(m *state.Mem) bool {
+	if r.StatusFlagBit > 0 {
+		return m.U8(sym.StatusFlags1)&(1<<r.StatusFlagBit) != 0
+	}
+	// No status-flag bit means this reward is gated by an event flag. The zero
+	// value of GrantedEvent means "no event gate"; every reward in the table
+	// sets exactly one of the two, and none uses event 0.
+	return r.GrantedEvent != 0 && state.HasEvent(m, r.GrantedEvent)
 }
 
 // TalkAtChoice performs one explicitly-owned two-option choice during a talk.
