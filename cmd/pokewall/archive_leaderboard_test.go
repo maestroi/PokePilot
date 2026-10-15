@@ -247,8 +247,8 @@ func TestArchiveSearchRunIDBeforePagination(t *testing.T) {
 		t.Fatalf("search status = %d: %s", res.Code, res.Body.String())
 	}
 	var got struct {
-		Total int `json:"total"`
-		Runs []map[string]any `json:"runs"`
+		Total int              `json:"total"`
+		Runs  []map[string]any `json:"runs"`
 	}
 	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
