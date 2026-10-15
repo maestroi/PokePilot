@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
-import { computed, reactive, ref, watch } from 'vue'
-import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, FilmIcon, PlayIcon, TrashIcon } from '@heroicons/vue/20/solid'
-import { deleteRun, getDashboard, getMediaRenderJobs, renderReplay, replayVideoURL, retryMediaRenderJob } from '../shared/api/client'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
+import { ArrowLeftIcon, ArrowPathIcon, ArrowRightIcon, ArrowTopRightOnSquareIcon, PlayIcon, TrashIcon } from '@heroicons/vue/20/solid'
+import { deleteRun, getDashboard, getMediaRenderJobs, getRun, replayVideoURL } from '../shared/api/client'
 import type { DashboardQuery, DashboardRun, MediaRenderJob } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import Panel from '../shared/components/Panel.vue'
@@ -12,6 +12,8 @@ import StatusBadge from '../shared/components/StatusBadge.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { operatorHref } from '../shared/urls'
 import RunCleanupPanel from './RunCleanupPanel.vue'
+import RunHistoricalEvidence from './RunHistoricalEvidence.vue'
+import { recordingSummary } from './runRecording'
 import { DELETE_CONCURRENCY, cleanupProgressText, cleanupResultText, deleteRuns } from './runCleanup'
 import {
   archiveHow,
@@ -19,13 +21,13 @@ import {
   archiveStarter,
   archiveWhen,
   archiveWhere,
-  legacyRunURL,
   safeIssueURL
 } from './runs'
 import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
 import { decisionEngineLabel, gameTitle } from './operations'
 
 const PAGE_SIZE = 25
+const props = defineProps<{ runID?: string }>()
 
 type StringFilterKey = 'game' | 'outcome' | 'how' | 'starter' | 'model' | 'deployment' | 'goal' | 'playStyle' | 'compute' | 'experiment'
 
@@ -55,6 +57,21 @@ interface ArchiveFacets {
 }
 
 const page = ref(0)
+const searchInput = ref('')
+const searchQuery = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchInput, (value) => {
+  if (searchTimer !== null) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    const query = value.trim()
+    if (query !== searchQuery.value) {
+      searchQuery.value = query
+      page.value = 0
+    }
+  }, 300)
+})
+onUnmounted(() => { if (searchTimer !== null) clearTimeout(searchTimer) })
+
 const filters = reactive({
   game: '',
   outcome: '',
@@ -78,13 +95,19 @@ const deleteError = ref('')
 const deleteSelectedOpen = ref(false)
 const deletingSelected = ref(false)
 const deleteSelectedStatus = ref('')
-const replayActionRunID = ref('')
-const replayActionError = ref<{ runID: string; message: string } | null>(null)
+const cleanupExpanded = ref(false)
+
+const focusedResource = usePollingResource(
+  (signal) => props.runID ? getRun(props.runID, signal) : Promise.resolve(null),
+  { intervalMs: 30000 }
+)
+watch(() => props.runID, () => { void focusedResource.retry() })
 
 const resource = usePollingResource(
   (signal) => {
     const query: ArchiveDashboardQuery = {
       status: 'done',
+      search: searchQuery.value,
       limit: PAGE_SIZE,
       offset: page.value * PAGE_SIZE,
       facets: true,
@@ -149,9 +172,14 @@ const rangeStart = computed(() => total.value ? page.value * PAGE_SIZE + 1 : 0)
 const rangeEnd = computed(() => Math.min(total.value, (page.value + 1) * PAGE_SIZE))
 const hasFilters = computed(() => Boolean(
   filters.game || filters.outcome || filters.how || filters.starter || filters.model || filters.deployment ||
-  filters.goal || filters.playStyle || filters.compute || filters.experiment || successOnly.value
+  filters.goal || filters.playStyle || filters.compute || filters.experiment || successOnly.value || Boolean(searchQuery.value)
 ))
-const emptyTitle = computed(() => hasFilters.value ? 'No runs match these filters' : 'Nothing finished yet')
+const emptyTitle = computed(() => hasFilters.value ? 'No runs match this search or filters' : 'Nothing finished yet')
+const focusedRun = computed(() => {
+  if (!props.runID) return null
+  return rows.value.find((run) => run.run_id === props.runID)
+    || (focusedResource.data.value?.run_id === props.runID ? focusedResource.data.value : null)
+})
 
 watch(
   [
@@ -184,6 +212,8 @@ function setFilter(key: StringFilterKey, value: string): void {
 }
 
 function clearFilters(): void {
+  searchInput.value = ''
+  searchQuery.value = ''
   for (const key of Object.keys(filters) as StringFilterKey[]) filters[key] = ''
   successOnly.value = false
   page.value = 0
@@ -211,56 +241,27 @@ function toggleExpanded(runID: string): void {
 function replayJob(run: DashboardRun): MediaRenderJob | undefined {
   return mediaJobByRun.value.get(run.run_id)
 }
-
-function replayReady(run: DashboardRun): boolean {
-  return Boolean(run.replay_available) || replayJob(run)?.state === 'ready'
+function recording(run: DashboardRun) {
+  const state = mediaResource.state.value
+  const availability = state === 'loading' || state === 'stale' || state === 'error' ? state : 'ready'
+  return recordingSummary(run, replayJob(run), availability)
 }
-
-function replayActive(run: DashboardRun): boolean {
-  const state = replayJob(run)?.state || ''
-  return state === 'queued' || state === 'preparing' || state === 'rendering' || state === 'assembling' || state === 'uploading'
+function mediaHref(run: DashboardRun): string {
+  const summary = recording(run)
+  return operatorHref('media', {
+    section: summary.mediaSection, run: run.run_id,
+    job: summary.mediaSection === 'jobs' ? summary.jobID : '',
+    output: ''
+  }, operatorSearch())
 }
-
-function replayRetryable(run: DashboardRun): boolean {
-  const state = replayJob(run)?.state || ''
-  return state === 'failed' || state === 'cancelled'
+function showRunDetail(runID: string): void {
+  window.history.pushState(null, '', operatorHref('runs', { run: runID, job: '', output: '' }, operatorSearch()))
+  window.dispatchEvent(new PopStateEvent('popstate'))
+  window.requestAnimationFrame(() => document.getElementById('run-focus')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
 }
-
-function replayProgressLabel(run: DashboardRun): string {
-  const job = replayJob(run)
-  if (!job) return 'Rendering'
-  if (job.state === 'queued') return 'Replay queued'
-  const total = Number(job.segments_total || 0)
-  const done = Number(job.segments_done || 0)
-  if (total > 0) {
-    const percent = Math.max(0, Math.min(100, Math.round(done * 100 / total)))
-    return `Rendering ${percent}%`
-  }
-  if (job.state === 'assembling') return 'Assembling replay'
-  if (job.state === 'uploading') return 'Uploading replay'
-  return 'Rendering replay'
-}
-
-async function requestReplayRender(run: DashboardRun): Promise<void> {
-  if (replayActionRunID.value) return
-  replayActionRunID.value = run.run_id
-  replayActionError.value = null
-  try {
-    const job = replayJob(run)
-    if (job && (job.state === 'failed' || job.state === 'cancelled')) {
-      await retryMediaRenderJob(job.id)
-    } else {
-      await renderReplay(run.run_id)
-    }
-    await Promise.allSettled([mediaResource.retry(), resource.retry()])
-  } catch (cause) {
-    replayActionError.value = {
-      runID: run.run_id,
-      message: cause instanceof Error ? cause.message : 'Replay render request failed'
-    }
-  } finally {
-    replayActionRunID.value = ''
-  }
+function closeRunDetail(): void {
+  window.history.pushState(null, '', operatorHref('runs', { run: '', job: '', output: '' }, operatorSearch()))
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
 function toggleRunSelection(runID: string): void {
@@ -430,8 +431,6 @@ function operatorSearch(): string { return window.location.search }
 
 <template>
   <div class="space-y-3">
-    <RunCleanupPanel @changed="retry" />
-
     <Panel title="Runs" description="Searchable finished-run history. Comparisons and leaderboards live in Analytics; filters and sorting apply across the server-side archive." compact>
       <template #actions>
         <div class="flex flex-wrap items-center justify-end gap-2">
@@ -472,6 +471,14 @@ function operatorSearch(): string { return window.location.search }
           </button>
         </div>
       </template>
+
+      <div class="mb-3 flex flex-wrap items-end justify-between gap-3 border-b border-white/8 pb-3">
+        <label class="min-w-48 flex-1 sm:max-w-md">
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Search run ID · all history</span>
+          <input v-model="searchInput" type="search" autocomplete="off" placeholder="Run ID contains…" class="mt-1 block w-full rounded-md border border-white/10 bg-[#0e1520] px-3 py-2 text-xs text-slate-200 focus-visible:outline-2 focus-visible:outline-cyan-300" />
+        </label>
+        <span class="pb-1 text-[11px] text-slate-500">Search, filters and sort run on the server before pagination.</span>
+      </div>
 
       <div class="grid grid-cols-1 gap-2 border-b border-white/8 pb-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <label class="block">
@@ -582,6 +589,33 @@ function operatorSearch(): string { return window.location.search }
         </label>
       </div>
 
+
+      <section v-if="props.runID" id="run-focus" tabindex="-1" class="my-3 scroll-mt-16 rounded-sm border border-cyan-300/20 bg-cyan-300/[0.03] px-3 py-3 focus-visible:outline-2 focus-visible:outline-cyan-300">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="min-w-0">
+            <h3 class="text-xs font-semibold text-white">Selected source run</h3>
+            <p class="mt-0.5 break-all font-mono text-[11px] text-cyan-200">{{ props.runID }}</p>
+          </div>
+          <button type="button" class="rounded-sm px-2 py-1.5 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="closeRunDetail">Close detail</button>
+        </div>
+        <div v-if="focusedRun" class="mt-3 space-y-3">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <StatusBadge :tone="focusedRun.status === 'done' ? 'neutral' : 'info'">{{ focusedRun.status }}</StatusBadge>
+            <StatusBadge :tone="focusedRun.stats?.goal_complete ? 'success' : 'neutral'">{{ focusedRun.reason || 'No final outcome' }}</StatusBadge>
+            <span>{{ gameTitle(focusedRun.game) }}</span>
+            <span>{{ progressLabel(focusedRun) }}</span>
+            <span class="font-mono">{{ archiveWhen(focusedRun) }}</span>
+          </div>
+          <p v-if="focusedRun.detail" class="whitespace-pre-wrap break-words text-xs text-slate-300">{{ focusedRun.detail }}</p>
+          <p class="text-[11px] text-slate-400">{{ focusedRun.status === 'done' ? 'This is a persisted final run snapshot. Event and checkpoint records below exist only where they were explicitly captured.' : 'This run is active. Open Live for current state; the archive only contains finished-run history.' }}</p>
+          <RunHistoricalEvidence v-if="focusedRun.status === 'done'" :run-id="focusedRun.run_id" />
+          <a v-else :href="operatorHref('live', { run: focusedRun.run_id }, operatorSearch())" class="inline-block text-xs font-semibold text-cyan-200 hover:underline">Inspect active run in Live →</a>
+        </div>
+        <ResourceState v-else :state="focusedResource.state.value === 'refreshing' ? 'loading' : focusedResource.state.value" title="Selected run unavailable" :message="focusedResource.error.value || 'This run was not found. It may have been deleted or no longer exists in history.'" :rows="3">
+          <template #actions><button type="button" class="text-xs text-cyan-200 hover:underline" @click="focusedResource.retry()">Retry run</button></template>
+        </ResourceState>
+      </section>
+
       <ResourceState
         :state="resource.state.value"
         :title="resource.state.value === 'empty' ? emptyTitle : 'Run archive unavailable'"
@@ -594,8 +628,9 @@ function operatorSearch(): string { return window.location.search }
           </button>
         </template>
 
-        <div class="-mx-3 mt-4 overflow-x-auto sm:-mx-4">
-          <table class="min-w-[1220px] divide-y divide-white/10 text-left">
+        <p class="mt-3 text-[11px] text-slate-500 lg:hidden">Swipe or scroll sideways to view every history column.</p>
+        <div class="-mx-3 mt-2 overflow-x-auto sm:-mx-4" role="region" aria-label="Finished run history table" tabindex="0">
+          <table class="min-w-[1150px] divide-y divide-white/10 text-left">
             <thead>
               <tr>
                 <th class="w-10 px-3 py-2 sm:pl-4">
@@ -613,6 +648,7 @@ function operatorSearch(): string { return window.location.search }
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Model</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Performance</th>
                 <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Outcome</th>
+                <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Recording</th>
                 <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Actions</th>
               </tr>
             </thead>
@@ -633,7 +669,7 @@ function operatorSearch(): string { return window.location.search }
                     <div class="mt-1 font-mono text-[10px] text-slate-600">{{ formatSeconds(runtimeSeconds(run)) }} runtime</div>
                   </td>
                   <td class="max-w-xs px-3 py-3">
-                    <a :href="legacyRunURL(run.run_id)" class="font-mono text-xs text-cyan-200 hover:text-cyan-100" :title="run.run_id">{{ run.run_id }}</a>
+                    <a :href="operatorHref('runs', { run: run.run_id, job: '', output: '' }, operatorSearch())" class="block max-w-[14rem] truncate font-mono text-xs text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="run.run_id" @click.prevent="showRunDetail(run.run_id)">{{ run.run_id }}</a>
                     <div class="mt-1.5 flex flex-wrap gap-1.5">
                       <StatusBadge tone="neutral">{{ archiveHow(run) }}</StatusBadge>
                       <button type="button" @click="setFilter('game', run.game || 'pokemon-red')">
@@ -686,52 +722,31 @@ function operatorSearch(): string { return window.location.search }
                     </div>
                     <p v-if="run.detail" class="mt-1.5 line-clamp-2 text-xs text-slate-400" :title="archiveOutcome(run)">{{ run.detail }}</p>
                   </td>
+                  <td class="min-w-[11rem] px-3 py-3">
+                    <StatusBadge :tone="recording(run).tone">{{ recording(run).label }}</StatusBadge>
+                    <p class="mt-1 max-w-48 text-[10px] leading-4 text-slate-500" :title="recording(run).detail">{{ recording(run).detail }}</p>
+                    <span class="mt-1 block text-[10px] text-slate-600">Visibility: see Media</span>
+                  </td>
                   <td class="px-3 py-3 sm:pr-4">
                     <div class="flex flex-wrap justify-end gap-1.5">
-                      <a
-                        v-if="replayReady(run)"
-                        :href="replayVideoURL(run.run_id)"
-                        target="_blank"
-                        rel="noopener"
-                        class="inline-flex items-center gap-1 rounded-md bg-violet-300/10 px-2 py-1.5 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-300/20 hover:bg-violet-300/15"
-                        title="Open the rendered replay video directly"
-                      >
-                        <PlayIcon class="size-3.5" aria-hidden="true" />
-                        Watch replay
+                      <a v-if="recording(run).canWatch"
+                        :href="replayVideoURL(run.run_id)" target="_blank" rel="noopener"
+                        class="inline-flex items-center gap-1 rounded-md bg-violet-300/10 px-2 py-1.5 text-[11px] font-semibold text-violet-100 ring-1 ring-violet-300/20 hover:bg-violet-300/15 focus-visible:outline-2 focus-visible:outline-cyan-300"
+                        title="Open the confirmed playable replay video">
+                        <PlayIcon class="size-3.5" aria-hidden="true" />Watch replay
                       </a>
-                      <a
-                        v-if="replayReady(run)"
-                        :href="operatorHref('media', { section: 'library', run: run.run_id, job: '' }, operatorSearch())"
-                        class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-white/8 hover:bg-white/10"
-                      >Open Media</a>
-                      <a
-                        v-else-if="replayActive(run)"
-                        :href="operatorHref('media', { section: 'jobs', run: run.run_id, job: replayJob(run)?.id }, operatorSearch())"
-                        class="inline-flex items-center gap-1 rounded-md bg-cyan-300/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-300/12"
-                        title="Open Media to inspect or cancel this render job"
-                      >
-                        <ArrowPathIcon class="size-3.5" aria-hidden="true" />
-                        {{ replayProgressLabel(run) }}
+                      <a :href="mediaHref(run)"
+                        class="inline-flex items-center gap-1 rounded-md bg-cyan-300/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-300/12 focus-visible:outline-2 focus-visible:outline-cyan-300"
+                        :title="'Open ' + (recording(run).mediaSection === 'jobs' ? 'the exact render job' : 'the source run library entry') + ' in Media'">
+                        {{ recording(run).mediaSection === 'jobs' ? 'Render job ↗' : 'Open Media ↗' }}
                       </a>
-                      <button
-                        v-else
-                        type="button"
-                        :disabled="Boolean(replayActionRunID)"
-                        class="inline-flex items-center gap-1 rounded-md bg-cyan-400/8 px-2 py-1.5 text-[11px] font-semibold text-cyan-200 ring-1 ring-cyan-300/15 hover:bg-cyan-400/12 disabled:opacity-50"
-                        :title="replayRetryable(run) ? 'Retry the failed replay render' : 'Queue a replay render for this finished run'"
-                        @click="requestReplayRender(run)"
-                      >
-                        <ArrowPathIcon v-if="replayRetryable(run)" class="size-3.5" aria-hidden="true" />
-                        <FilmIcon v-else class="size-3.5" aria-hidden="true" />
-                        {{ replayActionRunID === run.run_id ? (replayRetryable(run) ? 'Retrying…' : 'Queueing…') : (replayRetryable(run) ? 'Retry replay' : 'Render replay') }}
-                      </button>
-                      <button type="button" class="rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white" @click="toggleExpanded(run.run_id)">
+                      <button type="button" class="rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white" :aria-expanded="expanded.has(run.run_id)" @click="toggleExpanded(run.run_id)">
                         {{ expanded.has(run.run_id) ? 'Less' : 'Details' }}
                       </button>
-                      <a :href="legacyRunURL(run.run_id)" class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white" title="Open in the existing Live inspector">
+                      <button type="button" class="inline-flex items-center gap-1 rounded-md bg-white/6 px-2 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-white/8 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-300" @click="showRunDetail(run.run_id)">
                         <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
-                        Inspect
-                      </a>
+                        Evidence
+                      </button>
                       <button type="button" class="inline-flex items-center gap-1 rounded-md bg-rose-400/8 px-2 py-1.5 text-[11px] font-semibold text-rose-200 ring-1 ring-rose-300/15 hover:bg-rose-400/15" @click="requestDelete(run)">
                         <TrashIcon class="size-3.5" aria-hidden="true" />
                         Delete
@@ -740,7 +755,7 @@ function operatorSearch(): string { return window.location.search }
                   </td>
                 </tr>
                 <tr v-if="expanded.has(run.run_id)" class="bg-white/[0.018]">
-                  <td colspan="8" class="px-3 py-4 sm:px-4">
+                  <td colspan="9" class="px-3 py-4 sm:px-4">
                     <div class="grid gap-x-8 gap-y-4 text-xs sm:grid-cols-2 xl:grid-cols-4">
                       <dl class="space-y-1.5">
                         <div class="flex gap-3"><dt class="w-24 shrink-0 text-slate-600">Goal</dt><dd class="text-slate-300">{{ run.goal || '—' }}</dd></div>
@@ -790,14 +805,6 @@ function operatorSearch(): string { return window.location.search }
         </div>
       </ResourceState>
 
-      <p
-        v-if="replayActionError"
-        class="mt-3 rounded-md border border-amber-300/15 bg-amber-300/5 px-3 py-2 text-xs text-amber-200"
-        role="alert"
-      >
-        Replay {{ replayActionError.runID }}: {{ replayActionError.message }}
-      </p>
-
       <div class="mt-4 flex flex-col gap-3 border-t border-white/8 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-xs text-slate-500">{{ rangeStart }}–{{ rangeEnd }} of {{ total }}</p>
         <div class="flex items-center gap-2">
@@ -813,6 +820,11 @@ function operatorSearch(): string { return window.location.search }
         </div>
       </div>
     </Panel>
+
+    <details class="rounded-sm border border-white/10 bg-[#0e141d]" :open="cleanupExpanded" @toggle="cleanupExpanded = ($event.target as HTMLDetailsElement).open">
+      <summary class="cursor-pointer px-3 py-2.5 text-xs font-semibold text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-cyan-300">Bulk cleanup · irreversible administration</summary>
+      <div class="border-t border-white/8 p-2.5"><RunCleanupPanel @changed="retry" /></div>
+    </details>
 
     <p v-if="deleteError" class="text-sm text-rose-300" role="alert">{{ deleteError }}</p>
     <p v-if="deleteSelectedStatus" class="text-sm text-slate-400" aria-live="polite">{{ deleteSelectedStatus }}</p>
