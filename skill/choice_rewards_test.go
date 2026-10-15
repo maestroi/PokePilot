@@ -1,6 +1,11 @@
 package skill
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/red/state"
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
 func TestChoiceRewardsHaveInteractionOwnedDestinations(t *testing.T) {
 	rewards := ChoiceRewards()
@@ -79,5 +84,39 @@ func TestChoiceRewardThresholdsMatchRedAides(t *testing.T) {
 		if threshold, ok := want[reward.ItemName]; ok && reward.MinOwned != threshold {
 			t.Fatalf("%s MinOwned = %d, want %d", reward.ItemName, reward.MinOwned, threshold)
 		}
+	}
+}
+
+// TestChoiceRewardAlreadyGrantedReadsROMGrantMarker pins the consumed signal:
+// rods are gated by a wStatusFlags1 bit, Oak-aide rewards by an event flag, and
+// neither reports granted until its own marker is set.
+func TestChoiceRewardAlreadyGrantedReadsROMGrantMarker(t *testing.T) {
+	byName := map[string]ChoiceReward{}
+	for _, r := range ChoiceRewards() {
+		byName[r.ItemName] = r
+	}
+
+	// Rods: wStatusFlags1 bit.
+	var mem state.Mem
+	if byName["good rod"].AlreadyGranted(&mem) {
+		t.Fatal("good rod reported granted with no status flag set")
+	}
+	mem[sym.StatusFlags1] |= 1 << 4 // BIT_GOT_GOOD_ROD
+	if !byName["good rod"].AlreadyGranted(&mem) {
+		t.Fatal("good rod not reported granted with BIT_GOT_GOOD_ROD set")
+	}
+	if byName["old rod"].AlreadyGranted(&mem) {
+		t.Fatal("old rod reported granted when only the good-rod bit is set")
+	}
+
+	// Oak-aide reward: event flag.
+	var mem2 state.Mem
+	if byName["itemfinder"].AlreadyGranted(&mem2) {
+		t.Fatal("itemfinder reported granted with no event flag set")
+	}
+	ev := state.EventGotItemFinder
+	mem2[sym.EventFlags+uint16(ev)/8] |= 1 << (uint16(ev) % 8)
+	if !byName["itemfinder"].AlreadyGranted(&mem2) {
+		t.Fatal("itemfinder not reported granted with EVENT_GOT_ITEMFINDER set")
 	}
 }

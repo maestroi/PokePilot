@@ -52,7 +52,12 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = filterRedProgressionStageObjectives(obs, out)
 	out = filterRedScriptedTalkObjectives(obs, out)
 	out = filterRedServiceTalkObjectives(romData, obs, out)
-	out = appendRedNPCRewardObjectives(obs, known, out)
+	// Snapshot once for the reward gate and the party/inventory decodes below:
+	// the objective-append helpers in between are read-only (they plan, they do
+	// not step the emulator), so the grant markers they read stay current.
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	out = appendRedNPCRewardObjectives(&mem, obs, known, out)
 	out = appendKnownCatchObjectives(m, romData, obs, known, out)
 	out = appendDexCatchObjectives(obs, known, out)
 	out = filterUnreachableGrassCatches(m, romData, out)
@@ -62,8 +67,6 @@ func offerWithTMHMEvidence(m *emu.Emu, romData []byte, obs Observation, known *K
 	out = appendDexGameCornerObjectives(obs, known, out)
 	out = appendDexStaticObjectives(obs, known, out)
 	out = appendDexEvolutionObjectives(obs, known, out)
-	var mem state.Mem
-	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
 	out = enhancePickupObjectives(romData, party, obs, out)
 	estimate := func(slot, targetLevel int) (TrainingEstimate, error) {
