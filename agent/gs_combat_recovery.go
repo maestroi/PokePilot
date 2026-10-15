@@ -65,6 +65,13 @@ func gsProgressionCombatRecovery(obs Observation, progress Objective) []Objectiv
 // points per level, but never invents a new species or a distant training map.
 // The stored quantified target remains authoritative. Legacy losses without a
 // target use a conservative bounded five-level training session instead.
+//
+// Levels at or above failure.ReadinessCeiling do not raise failureReadiness
+// (see partyCombatReadinessUnder). Gen2 recovery only trains the lead, so once
+// the carry is at that ceiling any remaining deficit belongs to the bench —
+// the same invariant as preparationTrainingObjective. Offering more lead XP
+// would grind forever under a target that lead levels cannot pay
+// (run-3v7t9gqr8gnks2efu8haxz0j2c: Jasmine ceiling 40, lead L53→L60).
 func gsCombatRecoveryLeadTarget(obs Observation, failure Failure) int {
 	if len(obs.Party) == 0 {
 		return 0
@@ -76,7 +83,13 @@ func gsCombatRecoveryLeadTarget(obs Observation, failure Failure) int {
 		if deficit <= 0 {
 			return 0 // quantified goal met: retry the fight, do not grind
 		}
+		if c := failure.ReadinessCeiling; c > 0 && current >= c {
+			return 0 // lead grind cannot raise readiness past the ceiling
+		}
 		target = current + (deficit+3)/4
+		if c := failure.ReadinessCeiling; c > 0 && target > c {
+			target = c
+		}
 	}
 	if target <= current {
 		return 0
@@ -92,6 +105,34 @@ func gsCombatRecoveryLeadTarget(obs Observation, failure Failure) int {
 		target = gsCombatRecoveryMaxLevel
 	}
 	return target
+}
+
+// gsLeadOnlyRecoveryCanAdvance reports whether Gen2's lead-only wild grind can
+// still move an open quantified combat-prep campaign. When every unmet
+// readiness target already has the lead at its ceiling, more lead XP is a
+// no-op under failureReadiness and the portable no-corridor escape must
+// promote the loss to retry instead of locking the fight.
+func gsLeadOnlyRecoveryCanAdvance(obs Observation) bool {
+	if len(obs.Party) == 0 {
+		return false
+	}
+	lead := int(obs.Party[0].Level)
+	sawUnmet := false
+	for _, f := range obs.Failures {
+		if f.Times <= 0 || f.ReadinessTarget <= 0 {
+			continue
+		}
+		if failureReadiness(obs, f) >= f.ReadinessTarget {
+			continue
+		}
+		sawUnmet = true
+		if f.ReadinessCeiling <= 0 || lead < f.ReadinessCeiling {
+			return true
+		}
+	}
+	// No quantified unmet campaign: a legacy (target-less) loss can still use
+	// the lead grind, and a satisfied campaign needs no corridor.
+	return !sawUnmet
 }
 
 func gsRecoveryGrindSite(obs Observation) (string, uint8, uint8, error) {

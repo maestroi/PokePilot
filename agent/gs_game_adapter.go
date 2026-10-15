@@ -574,9 +574,13 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 // CombatRecoveryAvailable reports whether Gen2 can offer an executable
 // preparation action after a combat loss at this story boundary. The answer is
 // the same fact the recovery objective itself needs: a non-egg, below-cap lead
-// and a proven wild-grind site. Before Slowpoke Well / Route 37 no site is
-// proven, so a first-badge loss has no training to offer and the generic gate
-// must promote it to retry (run-36loaokprjdtw2j8om666lswgf).
+// and a proven wild-grind site that can still raise readiness. Before Slowpoke
+// Well / Route 37 no site is proven, so a first-badge loss has no training to
+// offer and the generic gate must promote it to retry
+// (run-36loaokprjdtw2j8om666lswgf). When the lead is already at every open
+// loss's readiness ceiling, lead XP cannot pay the remaining deficit either
+// (run-3v7t9gqr8gnks2efu8haxz0j2c), so the corridor is reported unavailable
+// and the same portable promote-to-retry escape fires.
 func (a *gsObjectiveAdapter) CombatRecoveryAvailable(obs Observation) bool {
 	if obs.PartyCount == 0 || len(obs.Party) == 0 {
 		return false
@@ -585,6 +589,8 @@ func (a *gsObjectiveAdapter) CombatRecoveryAvailable(obs Observation) bool {
 	if lead.IsEgg || lead.Level == 0 || lead.Level >= gsCombatRecoveryMaxLevel {
 		return false
 	}
-	_, _, _, err := gsRecoveryGrindSite(obs)
-	return err == nil
+	if _, _, _, err := gsRecoveryGrindSite(obs); err != nil {
+		return false
+	}
+	return gsLeadOnlyRecoveryCanAdvance(obs)
 }
