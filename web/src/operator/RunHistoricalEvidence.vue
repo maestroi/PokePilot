@@ -5,16 +5,16 @@ import type { RunArtifact } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 
-const props = defineProps<{ runID: string }>()
+const props = defineProps<{ runId: string }>()
 type EventRow = Record<string, unknown>
 type Evidence = { events: EventRow[]; checkpoints: unknown[]; artifacts: RunArtifact[]; errors: string[] }
 
 const evidence = usePollingResource<Evidence>(
   async (signal) => {
     const [debug, checkpoints, artifacts] = await Promise.allSettled([
-      getRunDebug(props.runID, signal),
-      getRunCheckpoints(props.runID, signal),
-      getRunArtifacts(props.runID, signal)
+      getRunDebug(props.runId, signal),
+      getRunCheckpoints(props.runId, signal),
+      getRunArtifacts(props.runId, signal)
     ])
     if (debug.status === 'rejected' && checkpoints.status === 'rejected' && artifacts.status === 'rejected') {
       throw debug.reason
@@ -35,7 +35,7 @@ const evidence = usePollingResource<Evidence>(
   },
   { intervalMs: 30000 }
 )
-watch(() => props.runID, () => { void evidence.retry() })
+watch(() => props.runId, () => { void evidence.retry() })
 const events = computed(() => evidence.data.value?.events || [])
 function description(event: EventRow): string {
   return String(event.summary || event.description || event.detail || event.type || event.kind || 'Recorded event')
