@@ -87,7 +87,7 @@ function retry(): void { void evidence.retry() }
           <h4 class="text-[11px] font-semibold text-slate-300">Stored artifacts</h4>
           <ul v-if="evidence.data.value?.artifacts?.length" class="mt-2 max-h-60 divide-y divide-white/8 overflow-y-auto">
             <li v-for="artifact in evidence.data.value.artifacts" :key="artifact.name" class="py-1.5">
-              <a :href="artifactContentURL(runID, artifact.name)" class="block break-all text-[11px] text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300">{{ artifact.name }}</a>
+              <a :href="artifactContentURL(props.runId, artifact.name)" class="block break-all text-[11px] text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300">{{ artifact.name }}</a>
               <span class="text-[10px] text-slate-500">{{ artifact.media_type || artifact.storage || 'recorded artifact' }}</span>
             </li>
           </ul>
