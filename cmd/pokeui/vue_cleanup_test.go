@@ -19,8 +19,10 @@ func TestVueOperatorBulkCleanupUsesSafeFinishedRunDeletePath(t *testing.T) {
 		"FailuresView.vue": {
 			`getDashboard({ status: 'done' })`,
 			`matchingRunsForGroups`,
-			`Delete selected`,
-			`Delete matching`,
+			// Bulk and per-group actions both say this (PAGE_REDESIGN §4).
+			// The bulk bar must still call the finished-run matcher.
+			`requestCleanup(selectedGroups)`,
+			`Delete matching runs…`,
 		},
 		"RunCleanupPanel.vue": {
 			`getDashboard({ status: 'done' })`,

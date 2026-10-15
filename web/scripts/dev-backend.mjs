@@ -8,14 +8,14 @@
 //   POKEPILOT_MCP_TOKEN=… node scripts/dev-backend.mjs   # then: npm run dev
 //
 // ponytail: endpoints without a read-only source (checkpoints, replay, media,
-// models, triage, analytics) answer with empty data; add them when a page needs them.
+// models, analytics) answer with empty data; add them when a page needs them.
 import { createServer } from 'node:http'
 
 const PORT = Number(process.env.PORT || 18080)
 const MCP_URL = process.env.POKEPILOT_MCP_URL || 'https://admin.rompilot.app/mcp'
 const PUBLIC_API = process.env.POKEPILOT_PUBLIC_API || 'https://api.rompilot.app'
 const TOKEN = process.env.POKEPILOT_MCP_TOKEN || ''
-const READ_TOOLS = new Set(['pokepilot_list_runs', 'pokepilot_get_run', 'pokepilot_get_run_debug', 'pokepilot_get_run_artifacts'])
+const READ_TOOLS = new Set(['pokepilot_list_runs', 'pokepilot_get_run', 'pokepilot_get_run_debug', 'pokepilot_get_run_artifacts', 'pokepilot_get_triage'])
 
 if (!TOKEN) {
   console.error('POKEPILOT_MCP_TOKEN is required')
@@ -48,19 +48,62 @@ async function publicJSON(path) {
 
 // The MCP run list omits trail/sprites; the public watch feed has them for public runs.
 async function dashboard(query) {
-  const done = query.get('status') === 'done'
+  if (query.get('status') === 'done') return archive(query)
   const [list, watch] = await Promise.all([
-    tool('pokepilot_list_runs', { limit: Number(query.get('limit') || 40), ...(done ? { status: 'done' } : {}) }),
-    done ? null : publicJSON('/v1/watch')
+    tool('pokepilot_list_runs', { limit: Number(query.get('limit') || 40) }),
+    publicJSON('/v1/watch')
   ])
   const publicRuns = new Map((watch?.runs ?? []).map((run) => [run.run_id, run]))
   const runs = (list.runs ?? [])
-    .filter((run) => done ? run.status === 'done' : run.status !== 'done')
+    .filter((run) => run.status !== 'done')
     .map((run) => {
       const extra = publicRuns.get(run.run_id)
       return extra ? { ...run, trail: extra.trail, sprites: extra.sprites, player: { ...extra.player, ...run.player } } : run
     })
   return { now: list.now, runs, workers: list.workers ?? [] }
+}
+
+// ponytail: the MCP tool has no archive filters, so the newest 40 finished runs (the MCP wall caps responses at 2 MB)
+// are filtered, sorted and paged here; enough to exercise the Runs page.
+const ARCHIVE_FACETS = {
+  game: ['games', (r) => r.game],
+  outcome: ['outcomes', (r) => r.reason],
+  how: ['hows', (r) => (r.planner === 'scripted' ? 'walk' : 'play')],
+  model: ['models', (r) => r.inference?.model_id || r.stats?.model || r.llm_profile],
+  deployment: ['deployments', (r) => r.llm_deployment || r.inference?.deployment_id],
+  goal: ['goals', (r) => r.goal],
+  starter: ['starters', (r) => r.starter],
+  play_style: ['play_styles', (r) => r.play_style],
+  compute: ['computes', (r) => r.inference?.compute],
+  experiment: ['experiments', (r) => r.experiment_id]
+}
+const ARCHIVE_SORT = {
+  finished: (r) => r.ended_at || 0,
+  frames: (r) => r.frame || 0,
+  rounds: (r) => r.stats?.rounds || r.stats?.round || 0,
+  runtime: (r) => r.runtime_seconds || 0,
+  planner_time: (r) => r.stats?.strategic_seconds || 0,
+  strategic_calls: (r) => r.stats?.strategic_calls || r.stats?.calls || 0,
+  progress: (r) => r.stats?.goal_current || r.player?.badges?.length || 0
+}
+async function archive(query) {
+  const list = await tool('pokepilot_list_runs', { limit: 40, status: 'done' })
+  let runs = (list.runs ?? []).filter((run) => run.status === 'done')
+  const history_facets = {}
+  for (const [param, [name, pick]] of Object.entries(ARCHIVE_FACETS)) {
+    history_facets[name] = [...new Set(runs.map(pick).filter(Boolean).map(String))].sort()
+    const wanted = query.get(param)
+    if (wanted) runs = runs.filter((run) => String(pick(run) ?? '') === wanted)
+  }
+  const search = (query.get('search') || '').toLowerCase()
+  if (search) runs = runs.filter((run) => run.run_id.toLowerCase().includes(search))
+  if (query.get('success') === 'true') runs = runs.filter((run) => run.stats?.goal_complete)
+  const key = ARCHIVE_SORT[query.get('sort')] || ARCHIVE_SORT.finished
+  const sign = query.get('direction') === 'asc' ? 1 : -1
+  runs.sort((a, b) => sign * (key(a) - key(b)))
+  const offset = Number(query.get('offset') || 0)
+  const limit = Number(query.get('limit') || 25)
+  return { now: list.now, runs: runs.slice(offset, offset + limit), total: runs.length, history_facets, workers: [] }
 }
 
 function send(res, status, value) {
@@ -80,6 +123,12 @@ const routes = [
   [/^\/v1\/runs\/([^/]+)\/debug$/, (q, id) => tool('pokepilot_get_run_debug', { run_id: id })],
   [/^\/v1\/runs\/([^/]+)\/artifacts$/, (q, id) => tool('pokepilot_get_run_artifacts', { run_id: id })],
   [/^\/v1\/runs\/[^/]+\/checkpoints$/, () => []],
+  [/^\/v1\/media\/render-jobs$/, () => ({ jobs: [] })],
+  // The wall's /v1/triage includes resolved groups; the MCP hides them unless asked.
+  // If the full history ever trips the MCP's 2 MB response cap, fall back to open groups.
+  [/^\/v1\/triage$/, () => tool('pokepilot_get_triage', { include_resolved: true })
+    .catch(() => tool('pokepilot_get_triage', {}))
+    .then((value) => value?.groups ?? [])],
   [/^\/v1\/runs\/[^/]+\/replay\/status$/, () => ({ state: 'missing' })],
   [/^\/v1\/runs\/[^/]+\/highlights\/status$/, () => ({ state: 'missing' })],
   [/^\/v1\/programming$/, () => publicJSON('/v1/watch/programming')],

@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { recordingSummary } from '../src/operator/runRecording.ts'
+import { recordingMediaHref, recordingSummary } from '../src/operator/runRecording.ts'
 import type { MediaRenderJob } from '../src/shared/api/types.ts'
 import { operatorHref } from '../src/shared/urls.ts'
 
 const history = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
+const pane = readFileSync(new URL('../src/operator/RunDetailPane.vue', import.meta.url), 'utf8')
+const archiveQuery = readFileSync(new URL('../src/operator/runArchiveQuery.ts', import.meta.url), 'utf8')
 const app = readFileSync(new URL('../src/operator/App.vue', import.meta.url), 'utf8')
 const evidence = readFileSync(new URL('../src/operator/RunHistoricalEvidence.vue', import.meta.url), 'utf8')
 const library = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
@@ -45,11 +47,12 @@ test('recording state separates queued, rendering, failed, cancelled, unavailabl
 })
 
 test('the archive searches server-side and keeps cleanup behind the history', () => {
-  assert.match(history, /search: searchQuery.value/)
-  assert.match(history, /Search run ID · all history/)
-  assert.match(history, /getDashboard\(query, signal\)/)
-  assert.ok(history.indexOf('title="Runs"') < history.indexOf('<RunCleanupPanel'))
-  assert.match(history, /<details class="rounded-sm/)
+  assert.match(archiveQuery, /search: state.q/)
+  assert.match(history, /Search run ID/)
+  assert.match(history, /getDashboard\(archiveDashboardQuery\(state.value, PAGE_SIZE\), signal\)/)
+  // Bulk cleanup is not rendered on load: it lives in a drawer opened from the page header.
+  assert.match(history, /<Dialog :open="cleanupOpen"[\s\S]*<RunCleanupPanel/)
+  assert.match(history, /@click="cleanupOpen = true">Bulk cleanup…/)
   assert.match(history, /toggleVisibleSelection/)
   assert.match(history, /confirmDeleteSelected/)
   assert.match(history, /selectedRunIDs/)
@@ -59,15 +62,17 @@ test('the archive searches server-side and keeps cleanup behind the history', ()
 
 test('focused history context loads persisted evidence, survives navigation and avoids fake frame telemetry', () => {
   assert.match(app, /<RunArchiveView v-else-if="activeView === 'runs'" :run-id="linkedRunID"/)
-  assert.match(history, /getRun\(props.runId, signal\)/)
-  assert.match(history, /<RunHistoricalEvidence v-if="focusedRun.status === 'done'"/)
+  assert.match(pane, /getRun\(props.runId, signal\)/)
+  assert.match(pane, /<RunHistoricalEvidence v-if="run.status === 'done'"/)
   assert.match(history, /window.history.pushState/)
   assert.match(history, /PopStateEvent\('popstate'\)/)
   assert.match(evidence, /getRunDebug\(props.runId/)
   assert.match(evidence, /getRunCheckpoints\(props.runId/)
   assert.match(evidence, /getRunArtifacts\(props.runId/)
   assert.match(evidence, /not live game telemetry or semantic annotations for every video frame/)
-  assert.match(history, /operatorHref\('live', \{ run: focusedRun.run_id \}/)
+  // Inspect in Live navigates in-app (pushState + popstate), never a document reload.
+  assert.match(pane, /operatorHref\('live', \{ run: id/)
+  assert.match(history, /goTo\(operatorHref\('live', \{ run: runID/)
 })
 
 test('recording/source links preserve exact run and job IDs across views', () => {
@@ -75,11 +80,13 @@ test('recording/source links preserve exact run and job IDs across views', () =>
   const jobID = 'job&x'
   const media = operatorHref('media', { section: 'jobs', run: runID, job: jobID, output: '' }, '?experiment=exp-1')
   assert.equal(media, '?experiment=exp-1&run=run%2F%23with+spaces&job=job%26x#media/jobs')
-  assert.match(history, /section: summary.mediaSection, run: run.run_id/)
-  assert.match(history, /job: summary.mediaSection === 'jobs' \? summary.jobID : ''/)
+  const syncing = recordingSummary({ replay_available: false }, job('ready', jobID))
+  assert.equal(recordingMediaHref(runID, syncing, '?experiment=exp-1'), media)
+  assert.equal(recordingMediaHref(runID, recordingSummary({ replay_available: true })), '?run=run%2F%23with+spaces#media/library')
+  assert.match(history, /recordingMediaHref\(run.run_id, recording\(run\)/)
   assert.match(history, /v-if="recording\(run\).canWatch"/)
   assert.match(library, /operatorHref\(run.status === 'done' \? 'runs' : 'live', \{ run: run.run_id, job: '' \}/)
   assert.match(jobs, /operatorHref\('runs', \{ run: job.run_id, job: '' \}/)
   assert.match(history, /safeIssueURL\(run\)/)
-  assert.match(history, /section: 'experiments', experiment: run.experiment_id/)
+  assert.match(pane, /section: 'experiments', experiment: run.experiment_id/)
 })

@@ -1,4 +1,5 @@
 import type { DashboardRun, MediaRenderJob } from '../shared/api/types'
+import { operatorHref } from '../shared/urls.ts' // .ts: node --test imports this file directly
 
 export type RecordingState = 'ready' | 'queued' | 'rendering' | 'syncing' | 'failed' | 'cancelled' | 'unavailable' | 'unknown'
 export type RecordingSummary = {
@@ -52,4 +53,14 @@ export function recordingSummary(
     return { ...base, state: 'unknown', label: status === 'loading' ? 'Checking recording…' : 'Recording status unknown', tone: 'warning', detail: 'Recent render job status is unavailable. Check Media for the current result.' }
   }
   return { ...base, state: 'unavailable', label: 'No replay reported', tone: 'neutral', detail: 'No playable video or recent render job was reported. See Media for more.' }
+}
+
+/** Media handoff for a run: the exact render job when one is in flight or
+ * failed, otherwise the run's library entry. */
+export function recordingMediaHref(runID: string, summary: RecordingSummary, search = ''): string {
+  return operatorHref('media', {
+    section: summary.mediaSection, run: runID,
+    job: summary.mediaSection === 'jobs' ? summary.jobID : '',
+    output: ''
+  }, search)
 }
