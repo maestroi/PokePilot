@@ -194,6 +194,7 @@ watch(
     () => filters.playStyle,
     () => filters.compute,
     () => filters.experiment,
+    searchQuery,
     successOnly,
     sortKey,
     sortDirection
