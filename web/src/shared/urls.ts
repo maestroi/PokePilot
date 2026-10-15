@@ -108,6 +108,7 @@ export type OperatorLinkOptions = {
   output?: string
   job?: string
   experiment?: string
+  failure?: string
 }
 
 const operatorSections: Partial<Record<OperatorView, readonly string[]>> = {
@@ -134,7 +135,7 @@ export function operatorRoute(hash: string): OperatorRoute {
 // Relative query/hash URLs preserve the current operator pathname.
 export function operatorHref(view: OperatorView, options: OperatorLinkOptions = {}, search = ''): string {
   const params = new URLSearchParams(search)
-  for (const key of ['run', 'output', 'job', 'experiment'] as const) {
+  for (const key of ['run', 'output', 'job', 'experiment', 'failure'] as const) {
     const value = options[key]
     if (value === undefined) continue
     if (value) params.set(key, value)

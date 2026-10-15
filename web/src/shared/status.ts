@@ -64,3 +64,17 @@ export function presentReplay(state: string | undefined, progress?: number): Sta
 export function toneClass(tone: StatusTone): string {
   return `ui-tone-${tone}`
 }
+
+type FailureGroupLike = {
+  issue?: { verification_state?: string; circuit_open?: boolean } | null
+}
+
+// A triage group's state. `resolved` comes from the caller's actionable rule
+// (isResolvedGroup) so this module stays free of triage policy.
+export function presentFailureGroup(group: FailureGroupLike, resolved: boolean): StatusPresentation {
+  if (resolved) return { label: 'Resolved', tone: 'ok', glyph: '✓' }
+  if (!group.issue) return { label: 'Needs issue', tone: 'warn', glyph: '▲' }
+  if ((group.issue.verification_state || '').toLowerCase() === 'regressed') return { label: 'Regressed', tone: 'danger', glyph: '✕' }
+  if (group.issue.circuit_open) return { label: 'Quarantined', tone: 'warn', glyph: '▲' }
+  return { label: 'Open', tone: 'danger', glyph: '✕' }
+}

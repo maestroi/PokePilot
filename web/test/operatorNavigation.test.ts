@@ -26,4 +26,7 @@ test('operator resource links preserve exact IDs and encode values', () => {
   assert.equal(href, '?experiment=pair%2F3&run=run+%2F+2&job=job+%231#media/jobs')
   assert.equal(operatorHref('media', { section: 'library', job: '' }, '?run=abc&job=older'), '?run=abc#media/library')
   assert.equal(operatorHref('settings', {}, '?run=a'), '?run=a#settings')
+  // Failures → Live carries the group so Live can link back; the back link clears the run.
+  assert.equal(operatorHref('live', { run: 'r1', failure: 'f452' }, '?state=all'), '?state=all&run=r1&failure=f452#live')
+  assert.equal(operatorHref('failures', { run: '' }, '?state=all&run=r1&failure=f452'), '?state=all&failure=f452#failures')
 })

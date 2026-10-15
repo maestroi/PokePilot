@@ -237,7 +237,7 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
           <p v-if="selectedKind === 'checkpoint'" class="mt-3 text-meta text-fg-2">Restarting from a checkpoint isn't available yet.</p>
           <a
             v-if="selectedKind === 'failure'"
-            :href="operatorHref('failures', { run: run.run_id }, search())"
+            :href="operatorHref('failures', {}, `?state=all&q=${encodeURIComponent(run.run_id)}`)"
             class="ui-btn ui-btn-sm mt-3"
           >Open in Failures</a>
         </template>
