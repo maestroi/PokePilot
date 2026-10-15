@@ -1,6 +1,6 @@
 roms/
 # Local git worktrees. Their contents are other checkouts, not this tree.
-.worktrees/
+/.worktrees/
 *.gb
 *.gbc
 *.sav
@@ -13,6 +13,9 @@ artifacts/
 # Traefik). Public docs for the local farm are deploy/README.md.
 /pokepilot
 /pokewall
+/pokereplay
+/bin/
+/.cache/
 deploy/farm.swarm.yml
 deploy/SWARM.md
 deploy/swarm.sh
@@ -33,6 +36,3 @@ repro-*
 
 # Local pret/pokered checkout used as a copy source. The vendored tree is pokered/.
 /pokered-master/
-
-# Local git worktrees. Each one is its own checkout.
-/.worktrees/
