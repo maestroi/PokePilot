@@ -391,11 +391,11 @@ async function runAgain(): Promise<void> {
   const run = selectedRun.value
   if (!run) return
   let newID = ''
-  const ok = await runAction(cloning, 'Run again', async () => {
+  const ok = await runAction(cloning, 'Clone', async () => {
     newID = (await cloneRun(run.run_id)).run_id
     await Promise.all([activeResource.retry(), spectatorResource.retry()])
   })
-  if (ok && newID) announce(`Queued ${newID} with the same settings`, newID)
+  if (ok && newID) announce(`Cloned as ${newID}`, newID)
 }
 
 async function toggleSpectatorSelected(): Promise<void> {
@@ -563,6 +563,17 @@ const search = () => window.location.search
             >{{ evidence.rendering.value ? 'Requesting…' : replayState === 'error' ? 'Retry replay' : 'Generate replay' }}</button>
           </template>
 
+          <button
+            type="button"
+            class="ui-btn"
+            :disabled="cloning"
+            title="Queue a new run with the same settings"
+            @click="runAgain"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1.5" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>
+            {{ cloning ? 'Cloning…' : 'Clone run' }}
+          </button>
+
           <Menu as="div" class="relative">
             <MenuButton class="ui-btn ui-icon-btn border-control" aria-label="More run actions">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" /></svg>
@@ -571,11 +582,6 @@ const search = () => window.location.search
               <MenuItem v-slot="{ active }">
                 <button type="button" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left" @click="copyRunID">
                   Copy run ID<span class="ml-auto font-mono text-meta text-fg-3">C</span>
-                </button>
-              </MenuItem>
-              <MenuItem v-slot="{ active, disabled }" :disabled="cloning">
-                <button type="button" :class="[active ? 'bg-selected' : '', disabled ? 'text-fg-3' : '']" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left" @click="runAgain">
-                  {{ cloning ? 'Queueing…' : 'Run again with same settings' }}
                 </button>
               </MenuItem>
               <MenuItem v-slot="{ active, disabled }" :disabled="!spectatorControlReady || spectatorUpdating">

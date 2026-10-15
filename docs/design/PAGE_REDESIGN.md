@@ -84,10 +84,10 @@ sticky with its own scroll.
 
 | Run state | Primary (filled) | Visible secondary | `⋯` menu |
 |---|---|---|---|
-| Running | Pause | — | Copy run ID · Run again with same settings · Visible on public site (checkbox) · Open public page · Open in Media · ─ · Cancel run… · Force quit worker… |
+| Running | Pause | — | Copy run ID · Visible on public site (checkbox) · Open public page · Open in Media · ─ · Cancel run… · Force quit worker… |
 | Paused | Resume | — | same as running |
 | Queued / leased | — | — | Copy run ID · Cancel run… |
-| Ended, replay ready | Watch replay (plays in Game) | Open in Media | Copy run ID · Run again… · Visible on public site · Open public page · ─ · Delete run… |
+| Ended, replay ready | Watch replay (plays in Game) | Open in Media | Copy run ID · Visible on public site · Open public page · ─ · Delete run… |
 | Ended, no replay | Generate replay | — | as above |
 | Ended, replay generating | — (inline `◐ Generating 42%` pill) | Open job in Media | as above |
 
@@ -95,8 +95,9 @@ sticky with its own scroll.
   and won't be retried. Recordings and checkpoints so far are kept." *(Confirm the
   last sentence against the backend before shipping; if it isn't guaranteed, drop it.)*
 - **Force quit worker…** keeps its existing dialog copy.
-- **Run again with same settings** (`cloneRun`): on success, a toast with the new
-  run ID and "Open" (selects it in the rail). It replaces the 1.8s label swap.
+- **Clone run** (`cloneRun`) is a visible secondary button in every state (operators
+  reach for it often): on success, a toast with the new run ID and "Open" (selects it
+  in the rail). It replaces the 1.8s label swap.
 - Public visibility is a `menuitemcheckbox` showing current state. When the control
   is unavailable, the item is disabled with the reason as its description.
 - Keyboard: `c` copies the run ID. `p` pauses/resumes, but only when a run is
@@ -155,9 +156,8 @@ existing `RunTimeline` data and `runTimelineFilters.ts`.
   pinned.
 
 **F. Run story (left, ~60%) + Inspector (right, ~40%, min 380px)**
-- *Story*: a chronological list of the filtered timeline events, newest at the bottom
-  for live runs with auto-scroll while Follow live is on, and oldest-first for ended
-  runs. Each entry: time (mono), glyph, one-line summary. The selected entry (synced
+- *Story*: the filtered timeline events, newest first (live and ended runs alike),
+  so the latest event sits at the top while Follow live is on. Each entry: time (mono), glyph, one-line summary. The selected entry (synced
   with the timeline marker) expands in place to show question → decision → outcome
   as a 3-row `KeyValueList`. Raw exchange and trace tail sit behind a "Raw" disclosure.
 - *Inspector* tabs (URL `?tab=`): Event, Planner, Media, Checkpoints, Artifacts, Details.

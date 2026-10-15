@@ -31,7 +31,8 @@ const kindColor: Record<EventKind, string> = {
 
 const entries = computed(() => props.events
   .map((event, index) => ({ event, index, kind: eventKind(event) }))
-  .filter(({ event }) => eventMatchesFilter(event, props.filter)))
+  .filter(({ event }) => eventMatchesFilter(event, props.filter))
+  .reverse())
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
@@ -57,7 +58,7 @@ watch(() => props.selectedIndex, scrollSelected)
   <section class="ui-bay flex min-h-0 flex-col" aria-label="Run story">
     <header class="ui-bay-header">
       <h2>Run story</h2>
-      <span class="text-meta font-normal text-fg-2">{{ entries.length }} events · oldest first{{ live && followLive ? ' · following live' : '' }}</span>
+      <span class="text-meta font-normal text-fg-2">{{ entries.length }} events · newest first{{ live && followLive ? ' · following live' : '' }}</span>
     </header>
     <ol ref="list" class="relative min-h-0 flex-1 overflow-y-auto">
       <li v-if="!entries.length" class="px-3 py-8 text-center text-meta text-fg-3">

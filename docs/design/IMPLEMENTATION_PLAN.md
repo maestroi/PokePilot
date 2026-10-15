@@ -198,6 +198,16 @@ exists in the DOM. Seeking the transport seeks the video. The "Final state" labe
 375. The page-level acceptance list in PAGE_REDESIGN §1.6 passes item by item (tick the
 list in the PR). Remove LiveView, RunTimeline and InspectorPanelInner from `LEGACY`.
 
+### T-27 Live: Investigate with AI
+- The investigation API works on failure groups (`POST /v1/triage/{key}/investigate`,
+  used today by Failures). Show "Investigate with AI" on Live wherever the selected
+  run, or the selected failure event, belongs to a triage group: run header ⋯ menu and
+  Inspector › Event. When the run has no group yet, keep the control disabled with
+  the reason ("This failure hasn't been grouped yet"). **[needs API]** if the run →
+  triage-key link isn't exposed on the dashboard/debug payload; check first.
+**Accept:** `V`; the action posts the same request Failures does, shows a receipt
+with the result, and never appears enabled without a triage key.
+
 ## Phase 3 — Runs (reference data-heavy screen, #2675)
 
 ### T-30 Runs: URL state + FilterBar + views
