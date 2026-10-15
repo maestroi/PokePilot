@@ -208,7 +208,7 @@ onUnmounted(() => {
     </template>
 
     <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
-    <RunArchiveView v-else-if="activeView === 'runs'" />
+    <RunArchiveView v-else-if="activeView === 'runs'" :run-id="linkedRunID" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
     <MediaView v-else-if="activeView === 'media'" :section="activeSection" :run-id="linkedRunID" :job-id="linkedJobID" />
