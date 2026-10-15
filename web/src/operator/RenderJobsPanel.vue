@@ -241,7 +241,7 @@ function operatorSearch(): string { return window.location.search }
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <a
-                :href="`/?run=${encodeURIComponent(job.run_id)}#live`"
+                :href="operatorHref('runs', { run: job.run_id, job: '' }, operatorSearch())"
                 class="block truncate font-mono text-xs text-cyan-300 hover:underline"
                 :title="job.run_id"
               >{{ shortID(job.run_id) }}</a>
@@ -337,7 +337,7 @@ function operatorSearch(): string { return window.location.search }
             <tr v-for="job in visibleJobs" :key="job.id">
               <td class="px-3 py-2.5 sm:px-4">
                 <a
-                  :href="`/?run=${encodeURIComponent(job.run_id)}#live`"
+                  :href="operatorHref('runs', { run: job.run_id, job: '' }, operatorSearch())"
                   class="font-mono text-xs text-cyan-300 hover:underline"
                   :title="job.run_id"
                 >{{ shortID(job.run_id) }}</a>

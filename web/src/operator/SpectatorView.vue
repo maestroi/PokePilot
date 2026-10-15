@@ -289,7 +289,9 @@ function operatorSearch(): string { return window.location.search }
         >
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
-              <strong class="truncate font-mono text-[11px] text-white" :title="run.run_id">{{ run.run_id }}</strong>
+              <a :href="operatorHref(run.status === 'done' ? 'runs' : 'live', { run: run.run_id, job: '' }, operatorSearch())"
+                class="block min-w-0 truncate font-mono text-[11px] text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300"
+                :title="'Open source run ' + run.run_id">{{ run.run_id }}</a>
               <StatusBadge v-if="featuredRunID === run.run_id" tone="success">featured</StatusBadge>
             </div>
             <span class="mt-0.5 block truncate text-[10px] text-[var(--poke-muted)]">{{ run.starter || 'Pokémon Red' }}</span>
