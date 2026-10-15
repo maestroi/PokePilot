@@ -33,6 +33,9 @@ export interface DashboardIssueLink {
   circuit_count?: number
   circuit_run_id?: string
   circuit_opened_at?: number
+  quarantined_count?: number
+  updated_at?: number
+  verification_required_runs?: number
 }
 
 export interface PartyMon {
