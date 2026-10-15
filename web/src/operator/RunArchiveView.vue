@@ -27,7 +27,7 @@ import { isPlayStyleRun, playStyleLabel } from '../shared/playstyle'
 import { decisionEngineLabel, gameTitle } from './operations'
 
 const PAGE_SIZE = 25
-const props = defineProps<{ runID?: string }>()
+const props = defineProps<{ runId?: string }>()
 
 type StringFilterKey = 'game' | 'outcome' | 'how' | 'starter' | 'model' | 'deployment' | 'goal' | 'playStyle' | 'compute' | 'experiment'
 
@@ -98,10 +98,10 @@ const deleteSelectedStatus = ref('')
 const cleanupExpanded = ref(false)
 
 const focusedResource = usePollingResource(
-  (signal) => props.runID ? getRun(props.runID, signal) : Promise.resolve(null),
+  (signal) => props.runId ? getRun(props.runId, signal) : Promise.resolve(null),
   { intervalMs: 30000 }
 )
-watch(() => props.runID, () => { void focusedResource.retry() })
+watch(() => props.runId, () => { void focusedResource.retry() })
 
 const resource = usePollingResource(
   (signal) => {
@@ -176,9 +176,9 @@ const hasFilters = computed(() => Boolean(
 ))
 const emptyTitle = computed(() => hasFilters.value ? 'No runs match this search or filters' : 'Nothing finished yet')
 const focusedRun = computed(() => {
-  if (!props.runID) return null
-  return rows.value.find((run) => run.run_id === props.runID)
-    || (focusedResource.data.value?.run_id === props.runID ? focusedResource.data.value : null)
+  if (!props.runId) return null
+  return rows.value.find((run) => run.run_id === props.runId)
+    || (focusedResource.data.value?.run_id === props.runId ? focusedResource.data.value : null)
 })
 
 watch(
@@ -590,11 +590,11 @@ function operatorSearch(): string { return window.location.search }
       </div>
 
 
-      <section v-if="props.runID" id="run-focus" tabindex="-1" class="my-3 scroll-mt-16 rounded-sm border border-cyan-300/20 bg-cyan-300/[0.03] px-3 py-3 focus-visible:outline-2 focus-visible:outline-cyan-300">
+      <section v-if="props.runId" id="run-focus" tabindex="-1" class="my-3 scroll-mt-16 rounded-sm border border-cyan-300/20 bg-cyan-300/[0.03] px-3 py-3 focus-visible:outline-2 focus-visible:outline-cyan-300">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="min-w-0">
             <h3 class="text-xs font-semibold text-white">Selected source run</h3>
-            <p class="mt-0.5 break-all font-mono text-[11px] text-cyan-200">{{ props.runID }}</p>
+            <p class="mt-0.5 break-all font-mono text-[11px] text-cyan-200">{{ props.runId }}</p>
           </div>
           <button type="button" class="rounded-sm px-2 py-1.5 text-xs text-slate-300 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="closeRunDetail">Close detail</button>
         </div>
