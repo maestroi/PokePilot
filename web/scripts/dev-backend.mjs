@@ -87,7 +87,13 @@ const routes = [
   [/^\/v1\/(build|ui-config)$/, () => ({})]
 ]
 
+// DNS-rebinding guard: a hostile page can resolve its own domain to 127.0.0.1,
+// but its requests still carry that domain in Host. Only loopback names pass
+// (the Vite proxy forwards the browser's localhost Host unchanged).
+const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
+
 createServer(async (req, res) => {
+  if (!LOOPBACK_HOST.test(req.headers.host || '')) return send(res, 403, { error: 'Forbidden host' })
   const url = new URL(req.url, 'http://localhost')
   try {
     if (req.method !== 'GET') return send(res, 403, { error: 'The dev backend is read-only; this action is disabled.' })
