@@ -264,6 +264,7 @@ export interface DashboardSnapshot {
 }
 
 export interface DashboardQuery {
+  search?: string
   active?: boolean
   status?: string
   limit?: number
