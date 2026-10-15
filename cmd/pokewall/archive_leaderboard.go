@@ -218,6 +218,12 @@ func (c *archiveController) enrichRuntime(run map[string]any) {
 }
 
 func archiveRunMatches(run map[string]any, query mapQuery) bool {
+	// Match the durable run ID against the complete archive before pagination.
+	// No page-local substring filtering: it would hide older matching runs.
+	if term := strings.ToLower(strings.TrimSpace(query.Get("search"))); term != "" &&
+		!strings.Contains(strings.ToLower(archiveString(run["run_id"])), term) {
+		return false
+	}
 	if value := strings.TrimSpace(query.Get("game")); value != "" && !archiveEqual(value, archiveGameID(run)) {
 		return false
 	}
