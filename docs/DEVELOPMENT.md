@@ -50,3 +50,27 @@ Keep ROM-derived facts out of ROM-free fixtures. If a test needs actual game tru
 ## Formatting
 
 The repository currently contains pre-existing files that `gofmt -l` reports. Avoid mixing a repo-wide formatting sweep with behavioral changes. New or edited Go code should still be formatted normally; a dedicated formatting-only cleanup can remove the historical debt without obscuring functional diffs.
+
+## Local files and build output
+
+Put compiled commands in the ignored root `bin/` directory instead of adding more
+executables beside the source packages:
+
+```sh
+mkdir -p bin
+go build -o bin/pokepilot ./cmd/pokepilot
+go build -o bin/pokereplay ./cmd/pokereplay
+```
+
+Local binaries, caches, worktrees, and artifacts are also excluded from the
+Docker build context.
+
+`roms/` holds private ROMs, `artifacts/` holds local run output, `.cache/` holds
+checkout-local caches, and `.worktrees/` holds isolated checkouts. These paths
+are ignored, but may contain active work or evidence; an ignore rule does not
+make their contents safe to delete.
+
+Keep shared contributor/tool configuration tracked when it belongs to the
+project. Machine-specific editor and agent preferences belong in your global
+Git excludes or `.git/info/exclude`; do not blanket-ignore the repository's
+agent configuration directories.

@@ -38,29 +38,30 @@ the bit.
 
 ## Layout
 
-| Path | What it is |
-|---|---|
-| `game/` | Game-agnostic objective transaction runtime and adapter contract; forbidden from importing Red/emulator/skill/world implementations |
-| `emu/` | The only package that talks to GomeBoy: open, step, input, save states, watch |
-| `red/rom/` | Static game data parsed out of the ROM image: maps, warps, connections, collision |
-| `gs/rom/` | Gold/Silver static ROM tables (map headers, objects, species, encounters, mechanics); live routing stays the first-badge slice |
-| `red/state/` | A RAM snapshot decoded into typed game state: party, inventory, badges, player, menus, text |
-| `red/sym/` | Generated RAM/HRAM addresses, verified against a committed `pokered.sym` snapshot |
-| `world/` | The map graph, collision grids, and BFS pathfinding |
-| `skill/` | Deterministic executors (boot, starter, goto, travel, battle, gym, shop, …) plus the fixture cache and the probe test |
-| `agent/` | The intent layer above `skill`: objectives, observation, and the LLM planner loop |
-| `farm/` | Lease/spec types shared by farm runners and the wall |
-| `cmd/pokepilot` | The main binary: boots the ROM, serves the screen over HTTP, runs a scripted or llm planner |
-| `cmd/badgerun` | Scoreboard harness: llm planner to the Boulder Badge, N times per starter and seed, prints a table |
-| `cmd/pokewall` | Farm orchestrator: leases, checkpoints, flight recorder, issue handoff |
-| `cmd/pokeui` | Operator console; the browser talks only to this |
-| `pokered/` | The vendored Red decompilation — see `pokered/UPSTREAM.md` |
-| `pokeyellow/` | The vendored Yellow decompilation — see `pokeyellow/UPSTREAM.md` |
-| `pokegold/` | The vendored Gold/Silver decompilation — see `pokegold/UPSTREAM.md` |
-| `pokesilver/` | Silver provenance only; Silver is the `_SILVER` half of `pokegold/` |
-| `deploy/` | Docker image and Swarm stack for the local farm (`deploy/README.md`) |
-| `docs/` | Design, agent-loop notes, decomp map, slice plans |
-| `roms/` | Gitignored; your ROM lives here |
+The root groups several parts of one Go module. Start with the area you are
+changing; the [architecture](docs/ARCHITECTURE.md) defines the intended dependency
+boundaries, including the shared Gen I code that still lives under `red/`.
+
+| Area | Paths | Responsibility |
+|---|---|---|
+| Runtime and planning | `game/`, `agent/`, `skill/`, `emu/` | Objective contracts, planner loop, deterministic executors, emulator integration |
+| World model | `world/`, `worldmodel/`, `worldverify/` | Navigation, topology contracts, graph validation |
+| Pokémon adapters | `red/`, `blue/`, `yellow/`, `gs/` | Game profiles, RAM/ROM decoding, game-specific facts and mechanics |
+| Shared engine support | `gen1/`, `gen1rom/`, `profiles/`, `romtool/` | Shared Gen I memory/table support, profile registration, ROM utilities |
+| Other game adapters | `boxxle/`, `tetris/` | Non-Pokémon game support |
+| Farm and operator services | `farm/`, `operatorapi/`, `artifactstore/`, `sites/` | Runs, operator API contracts, artifact storage, service URLs |
+| Media and telemetry | `media/`, `renderstate/`, `metrics/` | Media processing, render-state contracts, metrics |
+| Executables and frontend | `cmd/`, `web/` | Go command entry points and the Vue browser UI |
+| Verification | `benchmark/`, `qualification/`, `testdata/` | Benchmark results, qualification catalog, test assets; package tests also live beside their code |
+| Deployment and utilities | `deploy/`, `scripts/`, `examples/` | Containers, Swarm configuration, helper scripts, examples |
+| Vendored game sources | `pokered/`, `pokeyellow/`, `pokegold/` | pret decomps used as game references and build inputs; provenance lives in each `UPSTREAM.md` |
+| Silver provenance | `pokesilver/` | Silver uses the `_SILVER` half of `pokegold/`; this directory records provenance |
+| Documentation | `docs/` | [Documentation index](docs/README.md), current contracts, debugging guides, historical plans |
+| Local data (ignored) | `roms/`, `artifacts/`, `.cache/`, `.worktrees/`, `bin/` | Private ROMs, run output, caches, isolated checkouts, local binaries |
+
+Keep local builds in `bin/` (see [development](docs/DEVELOPMENT.md)). The
+vendored trees and Go package paths are intentional; moving them requires
+updating imports, generation tools, tests, deployment, and decomp references.
 
 ## Getting started
 
@@ -175,28 +176,7 @@ Details in `deploy/README.md`.
 
 ## Documentation
 
-| Doc | What it answers |
-|---|---|
-| `AGENTS.md` | Binding working rules for coding agents, probes, decomp/RNG/fixture discipline |
-| `docs/ARCHITECTURE.md` | Binding multi-game architecture principles and the design gate for every runtime fix |
-| `docs/DESIGN.md` | The technical design and the GomeBoy investigation |
-| `docs/AGENT.md` | The agent loop, ROM facts, badgerun, farm evidence |
-| `docs/POKERED.md` | Question → file map for the vendored Red decomp |
-| `docs/POKEYELLOW.md` | Question → file map for the vendored Yellow decomp |
-| `docs/DEVELOPMENT.md` | ROM-free vs ROM-backed workflow |
-| `docs/QUALIFICATION.md` | ROM-backed qualification catalog and private corpus |
-| `docs/MCP.md` | Remote MCP control plane |
-| `docs/SPECTATOR.md` | Public read-only spectator mode |
-| `docs/DOMAINS.md` | Public/admin/API hosts, DNS, and CORS |
-| `docs/RAM_FORENSICS.md` | Failure RAM capture |
-| `docs/S3_ARTIFACT_STORAGE.md` | Farm artifact object storage |
-| `docs/RUN_INSPECTOR.md` | Run inspector, artifacts, and deterministic replay |
-| `docs/MEDIA_ENGINE.md` | Replay/media package boundaries and dependency direction |
-| `docs/ROAD-TO-ELITE-FOUR.md` | Everything between Cerulean City and the Pokémon League |
-| `docs/RUNNOTES.md` | Permanent per-task measurements |
-| `RUNNOTES.md` | Short handoff for the next task |
-| `docs/plans/` | In-flight implementation plans only |
-| `docs/archive/` | Implemented plans, designs, slice notes, and issue writeups |
+See the [documentation index](docs/README.md) for guidance grouped by task.
 
 ## House rules
 

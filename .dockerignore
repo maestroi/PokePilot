@@ -8,6 +8,12 @@ skill/failure/
 # Root build binaries, if any were left behind by a local `go build`.
 /pokepilot
 /pokewall
+/pokereplay
+/bin/
+# Checkout-local output and nested checkouts are not build inputs.
+/.cache/
+/.worktrees/
+/artifacts/
 # Frontend dependencies/output are rebuilt deterministically inside the image.
 web/node_modules/
 web/dist/
