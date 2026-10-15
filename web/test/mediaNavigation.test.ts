@@ -106,13 +106,14 @@ test('run inspector exposes render cancellation and Media handoff', () => {
   assert.match(inspector, /replay\.job_id/)
 })
 
-test('runs archive exposes replay video and render actions without opening inspector', () => {
+test('runs archive only plays confirmed recordings and hands job lifecycle to Media', () => {
   assert.match(runArchive, /replayVideoURL/)
+  assert.match(runArchive, /v-if="recording\(run\)\.canWatch"/)
   assert.match(runArchive, /Watch replay/)
-  assert.match(runArchive, /Render replay/)
-  assert.match(runArchive, /Retry replay/)
-  assert.match(runArchive, /replayProgressLabel/)
-  assert.match(runArchive, /operatorHref\('media', \{ section: 'jobs', run: run\.run_id, job: replayJob\(run\)\?\.id \}/)
+  assert.match(runArchive, /section: summary\.mediaSection, run: run\.run_id/)
+  assert.match(runArchive, /job: summary\.mediaSection === 'jobs' \? summary\.jobID : ''/)
+  assert.doesNotMatch(runArchive, /retryMediaRenderJob|renderReplay\(run\.run_id\)/)
+  assert.match(renderJobs, /retryMediaRenderJob/)
 })
 
 test('public spectator shows an intentional loading scene before snapshot and first frame', () => {
