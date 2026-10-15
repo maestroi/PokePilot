@@ -130,7 +130,7 @@ onUnmounted(() => {
     :subtitle="descriptions[activeView]"
     mode="private"
     :navigation="navigation"
-    :show-intro="activeView !== 'live'"
+    :show-intro="activeView !== 'live' && activeView !== 'runs'"
   >
     <template #summary>
       <a :href="'#operations'" class="inline-flex items-center gap-1.5 text-meta text-fg-2 hover:text-fg" title="Open Operations">
