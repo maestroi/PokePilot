@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const toolsSource = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
 const typesSource = readFileSync(new URL('../src/shared/api/types.ts', import.meta.url), 'utf8')
-const liveSource = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
+const liveSource = readFileSync(new URL('../src/operator/LiveInspector.vue', import.meta.url), 'utf8')
 const archiveSource = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const panelSource = readFileSync(new URL('../src/operator/LLMDeploymentsPanel.vue', import.meta.url), 'utf8')
 const experimentSource = readFileSync(new URL('../src/operator/PairedExperimentPanel.vue', import.meta.url), 'utf8')
@@ -67,6 +67,6 @@ test('tools run form selects decision mode and supports shadow or active battles
 })
 
 test('live and archive views show the run decision engine', () => {
-  assert.match(liveSource, /\['decision engine', decisionEngineLabel\(run\)\]/)
+  assert.match(liveSource, /\['Decision engine', decisionEngineLabel\(run\)\]/)
   assert.match(archiveSource, /decisionEngineLabel\(run\)/)
 })

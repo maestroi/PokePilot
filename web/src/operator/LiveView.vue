@@ -1,52 +1,37 @@
 <script setup lang="ts">
-import DecisionTelemetry from './DecisionTelemetry.vue'
-import { showDecisionTelemetry } from './decisionTelemetry'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowPathIcon, EyeIcon, EyeSlashIcon, NoSymbolIcon, PauseIcon, PlayIcon, Square2StackIcon } from '@heroicons/vue/20/solid'
-import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, resumeProgramming, resumeRun } from '../shared/api/client'
-import type { DashboardRun, DashboardStats, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Dialog, DialogPanel, DialogTitle, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
+import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, replayVideoURL, resumeProgramming, resumeRun } from '../shared/api/client'
+import type { DashboardRun, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
 import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import ResourceState from '../shared/components/ResourceState.vue'
-import StatusBadge from '../shared/components/StatusBadge.vue'
+import StatusPill from '../shared/components/StatusPill.vue'
 import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
+import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { operatorHref } from '../shared/urls'
-import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
-import InspectorPanel from './InspectorPanel.vue'
+import { presentReplay, presentRunStatus } from '../shared/status'
+import { operatorHref, replayURL, spectatorURL } from '../shared/urls'
 import SemanticMap from './SemanticMap.vue'
+import LiveRail from './LiveRail.vue'
+import RunTimeline from './RunTimeline.vue'
+import RunStory from './RunStory.vue'
+import LiveInspector from './LiveInspector.vue'
+import { useRunEvidence, eventFrame } from './useRunEvidence'
+import type { TimelineFilter } from './runTimelineFilters'
 import {
-  fpsLabel,
   formatFrame,
-  formatWhen,
-  gameMediaLabel,
   gameTitle,
   goalLabel,
-  howText,
   isLiveStatus,
-  llmProfileLabel,
-  railFacts,
-  railStatusLabel,
-  reasoningEffortLabel,
-  decisionEngineLabel,
-  starterLabel,
-  statNumber,
-  statsLine,
-  statusTone,
+  placeName,
   tileLabel
 } from './operations'
-import {
-  isPlayStyleRun,
-  playSpeedLabel,
-  playStyleLabel,
-  playStyleTagline,
-  policyLabel
-} from '../shared/playstyle'
-import { bagItemsLabel, bagMeter, dexDetail, dexMeter, milestonesLabel } from '../shared/playerProgress'
+import { isPlayStyleRun, playSpeedLabel, playStyleLabel } from '../shared/playstyle'
+import { bagMeter, dexMeter, milestonesLabel } from '../shared/playerProgress'
 import { canRenderModernScene } from '../shared/semanticRenderer'
 import { DEFAULT_RENDER_THEME_ID, renderThemeOptions, resolveRenderTheme } from '../shared/renderTheme'
-import { replayURL } from '../shared/urls'
 
 type RendererMode = 'modern' | 'classic'
 
@@ -54,6 +39,7 @@ const props = defineProps<{
   publicBase?: string
 }>()
 
+// ── Selection ──────────────────────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search)
 const selectedRunID = ref(params.get('run') || '')
 const selectionPinned = ref(Boolean(selectedRunID.value))
@@ -63,8 +49,7 @@ function restoreRunSelection(): void {
   selectedRunID.value = id
   selectionPinned.value = Boolean(id)
 }
-onMounted(() => window.addEventListener('popstate', restoreRunSelection))
-onUnmounted(() => window.removeEventListener('popstate', restoreRunSelection))
+
 const rendererMode = ref<RendererMode>(window.localStorage.getItem('pokepilot.operator.renderer') === 'classic' ? 'classic' : 'modern')
 const themeOptions = renderThemeOptions()
 const storedThemeID = window.localStorage.getItem('pokepilot.operator.theme') || DEFAULT_RENDER_THEME_ID
@@ -79,32 +64,17 @@ const resuming = ref(false)
 const canceling = ref(false)
 const cloning = ref(false)
 const spectatorUpdating = ref(false)
+const confirmCancel = ref(false)
 const forceEndTarget = ref<DashboardWorker | null>(null)
 const forceEndBusy = ref(false)
 const actionError = ref('')
-const copyState = ref('')
-const cloneState = ref('')
+const railOpen = ref(false)
 let detailSerial = 0
 
-const activeResource = usePollingResource(
-  (signal) => getDashboard({ active: true }, signal),
-  { intervalMs: 2000 }
-)
-
-const recentResource = usePollingResource(
-  (signal) => getDashboard({ status: 'done', limit: 8 }, signal),
-  { intervalMs: 10000 }
-)
-
-const spectatorResource = usePollingResource(
-  (signal) => getSpectatorControl(signal),
-  { intervalMs: 5000 }
-)
-
-const programmingResource = usePollingResource(
-  (signal) => getProgramming(signal),
-  { intervalMs: 2000 }
-)
+const activeResource = usePollingResource((signal) => getDashboard({ active: true }, signal), { intervalMs: 2000 })
+const recentResource = usePollingResource((signal) => getDashboard({ status: 'done', limit: 12 }, signal), { intervalMs: 10000 })
+const spectatorResource = usePollingResource((signal) => getSpectatorControl(signal), { intervalMs: 5000 })
+const programmingResource = usePollingResource((signal) => getProgramming(signal), { intervalMs: 2000 })
 const programmingBusy = ref('')
 const programmingError = ref('')
 
@@ -126,8 +96,10 @@ const selectedRun = computed<DashboardRun | null>(() => {
   return activeRuns.value[0] || recentRuns.value[0] || null
 })
 
-watch(selectedRun, (run) => {
-  if (run && !selectionPinned.value) selectedRunID.value = run.run_id
+// Adopt a default only once the active list has answered, so a faster
+// recent-runs response can't lock the page onto an ended run.
+watch([selectedRun, () => activeResource.state.value], ([run, state]) => {
+  if (run && !selectionPinned.value && !selectedRunID.value && state !== 'loading') selectedRunID.value = run.run_id
 }, { immediate: true })
 
 watch(selectedRunID, async (runID) => {
@@ -143,15 +115,62 @@ watch(selectedRunID, async (runID) => {
   }
 }, { immediate: true })
 
-const publicReplayHref = computed(() => {
-  const run = selectedRun.value
-  if (!run?.replay_available || !props.publicBase) return ''
-  return replayURL(props.publicBase, run.run_id)
+// ── Evidence, timeline and replay ─────────────────────────────────────────
+const evidenceRunID = computed(() => selectedRun.value?.run_id || '')
+const evidence = useRunEvidence(evidenceRunID)
+const timelineFilter = ref<TimelineFilter>('all')
+const timeline = ref<InstanceType<typeof RunTimeline> | null>(null)
+const replayMode = ref(false)
+const replayVideo = ref<HTMLVideoElement | null>(null)
+const playbackRate = ref(Number(window.localStorage.getItem('pokepilot.replayPlaybackRate') || 1))
+watch(evidenceRunID, () => {
+  replayMode.value = false
+  timelineFilter.value = 'all'
 })
 
+function seekReplayToSelection(): void {
+  const node = replayVideo.value
+  const event = evidence.timeline.value[evidence.selectedEvent.value]
+  if (!node || !event || !(node.duration > 0)) return
+  node.currentTime = node.duration * eventFrame(event) / evidence.totalFrames.value
+}
+
+function selectEvent(index: number): void {
+  evidence.select(index)
+  if (replayMode.value) seekReplayToSelection()
+}
+
+function syncEventFromVideo(): void {
+  const node = replayVideo.value
+  const rows = evidence.timeline.value
+  if (!node || !(node.duration > 0) || !rows.length || node.paused) return
+  const frame = evidence.totalFrames.value * node.currentTime / node.duration
+  let nearest = 0
+  for (let index = 1; index < rows.length; index++) {
+    if (Math.abs(eventFrame(rows[index]) - frame) < Math.abs(eventFrame(rows[nearest]) - frame)) nearest = index
+  }
+  evidence.selectedEvent.value = nearest
+  evidence.followLive.value = false
+}
+
+function applyPlaybackRate(): void {
+  const allowed = [1, 2, 4, 8, 16]
+  const value = allowed.includes(Number(playbackRate.value)) ? Number(playbackRate.value) : 1
+  playbackRate.value = value
+  window.localStorage.setItem('pokepilot.replayPlaybackRate', String(value))
+  if (replayVideo.value) replayVideo.value.playbackRate = value
+}
+watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
+
+function watchReplay(): void {
+  replayMode.value = true
+  window.scrollTo({ top: 0 })
+}
+
+// ── Frames ────────────────────────────────────────────────────────────────
 const selectedFrameID = computed(() => selectedRun.value?.run_id || '')
 const isLiveFrame = computed(() => isLiveStatus(selectedRun.value?.status))
-const frameEnabled = computed(() => Boolean(selectedFrameID.value) && selectedRun.value?.status !== 'queued')
+const frameEnabled = computed(() => Boolean(selectedFrameID.value) && selectedRun.value?.status !== 'queued' && !replayMode.value)
 const renderEnabled = computed(() => frameEnabled.value && isLiveFrame.value)
 const {
   renderState,
@@ -169,16 +188,12 @@ const classicFrameEnabled = computed(() => frameEnabled.value && !showModern.val
 const { frameURL, state: frameState, error: frameError } = useFramePump(selectedFrameID, classicFrameEnabled, 50, isLiveFrame)
 const modernFallbackLabel = computed(() => {
   if (!isLiveFrame.value || rendererMode.value !== 'modern' || showModern.value) return ''
-  if (renderStateStatus.value === 'error') return 'Gold / Silver unavailable · classic fallback'
-  if (renderState.value?.scene) return `Gold / Silver unsupported for ${renderState.value.scene} · classic fallback`
-  return renderStateStatus.value === 'loading' ? 'Loading semantic renderer · classic fallback' : ''
-})
-const gameLabel = computed(() => {
-  const base = gameMediaLabel(selectedRun.value?.status)
-  if (!isLiveFrame.value) return base
-  return `${base} · ${showModern.value ? activeTheme.value.name : 'Classic'}`
+  if (renderStateStatus.value === 'error') return 'Themed renderer unavailable · showing emulator'
+  if (renderState.value?.scene) return `Themed renderer doesn't support ${renderState.value.scene} · showing emulator`
+  return renderStateStatus.value === 'loading' ? 'Loading themed renderer · showing emulator' : ''
 })
 
+// ── Game state ────────────────────────────────────────────────────────────
 const partySlots = computed<(PartyMon | null)[]>(() => {
   const members = selectedRun.value?.player?.party ?? []
   return Array.from({ length: 6 }, (_, index) => members[index] || null)
@@ -202,24 +217,15 @@ const boxxleBoardWidth = computed(() => {
   const width = Number(boxxleState.value.width || 0)
   return width > 0 ? width : (boxxleBoard.value[0]?.length || 1)
 })
-const tetrisActive = computed<Record<string, unknown> | null>(() => {
-  const active = tetrisState.value.active
-  return active && typeof active === 'object' && !Array.isArray(active) ? active as Record<string, unknown> : null
-})
-const tetrisNext = computed<Record<string, unknown> | null>(() => {
-  const next = tetrisState.value.next
-  return next && typeof next === 'object' && !Array.isArray(next) ? next as Record<string, unknown> : null
-})
-const tetrisMetrics = computed<Record<string, unknown> | null>(() => {
-  const metrics = tetrisDecision.value.metrics
-  return metrics && typeof metrics === 'object' && !Array.isArray(metrics) ? metrics as Record<string, unknown> : null
-})
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+const tetrisActive = computed(() => record(tetrisState.value.active))
+const tetrisNext = computed(() => record(tetrisState.value.next))
+const tetrisMetrics = computed(() => record(tetrisDecision.value.metrics))
 const bagLabel = computed(() => bagMeter(selectedRun.value?.player))
 const dexLabel = computed(() => dexMeter(selectedRun.value?.player))
-const dexInfo = computed(() => dexDetail(selectedRun.value?.player))
-const bagList = computed(() => bagItemsLabel(selectedRun.value?.player))
 const milestoneList = computed(() => milestonesLabel(selectedRun.value?.player))
-const showProgressLists = computed(() => Boolean(bagLabel.value || dexLabel.value))
 const goalProgress = computed(() => {
   const stats = selectedRun.value?.stats
   if (stats?.goal_complete) return 100
@@ -227,14 +233,32 @@ const goalProgress = computed(() => {
   const target = Number(stats?.goal_target || 0)
   return target > 0 ? Math.max(0, Math.min(100, 100 * current / target)) : 0
 })
-const isPausable = computed(() => {
-  const status = selectedRun.value?.status
-  return status === 'queued' || status === 'leased' || status === 'running'
-})
+const place = computed(() => selectedRun.value ? (placeName(selectedRun.value) || tileLabel(selectedRun.value)) : '')
+
+function hpPercent(mon: PartyMon): number {
+  if (!mon.max_hp) return 0
+  return Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp))
+}
+
+function hpTone(mon: PartyMon): string {
+  const percent = hpPercent(mon)
+  if (!mon.max_hp || mon.hp === 0 || percent < 20) return 'bg-danger'
+  if (percent < 50) return 'bg-warn'
+  return 'bg-ok'
+}
+
+// ── Run actions ───────────────────────────────────────────────────────────
+const status = computed(() => selectedRun.value ? presentRunStatus(selectedRun.value) : null)
+const isRunning = computed(() => selectedRun.value?.status === 'running')
+const isPausable = computed(() => ['queued', 'leased', 'running'].includes(String(selectedRun.value?.status || '')))
 const isPaused = computed(() => selectedRun.value?.status === 'paused')
-const isCancelable = computed(() => {
-  const status = selectedRun.value?.status
-  return status === 'queued' || status === 'leased' || status === 'running' || status === 'paused'
+const isCancelable = computed(() => ['queued', 'leased', 'running', 'paused'].includes(String(selectedRun.value?.status || '')))
+const isEnded = computed(() => selectedRun.value?.status === 'done')
+const replayState = computed(() => evidence.replay.value?.state || '')
+const replayProgress = computed(() => {
+  const replay = evidence.replay.value
+  const total = Number(replay?.segments || 0)
+  return total ? 100 * Number(replay?.segments_done || 0) / total : undefined
 })
 const selectedWorker = computed<DashboardWorker | null>(() => {
   const runID = selectedRun.value?.run_id
@@ -247,12 +271,22 @@ const spectatorVisible = computed(() => {
   return spectatorResource.data.value?.runs?.[runID]?.visible ?? true
 })
 const spectatorControlReady = computed(() => Boolean(spectatorResource.data.value))
+const publicPageHref = computed(() => props.publicBase && selectedRun.value ? spectatorURL(props.publicBase, selectedRun.value.run_id) : '')
+const publicReplayHref = computed(() => {
+  const run = selectedRun.value
+  if (!run?.replay_available || !props.publicBase) return ''
+  return replayURL(props.publicBase, run.run_id)
+})
 const forceEndTitle = computed(() => forceEndTarget.value ? `Force quit worker ${forceEndTarget.value.addr}?` : 'Force quit worker?')
 const forceEndMessage = computed(() => {
   const worker = forceEndTarget.value
   if (!worker) return ''
   const runID = worker.run_id || selectedRun.value?.run_id || ''
   return `This immediately terminates worker ${worker.addr} and force-ends run ${runID}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nUse this only when pause/cancel cannot recover the run.`
+})
+const cancelMessage = computed(() => {
+  const goal = selectedRun.value ? goalLabel(selectedRun.value) : ''
+  return `The run stops and won't be retried.${goal ? ` The current goal, “${goal}”, ends unfinished.` : ''}`
 })
 const resourceState = computed(() => {
   if (activeResource.state.value === 'error' && recentResource.state.value === 'error') return 'error'
@@ -263,117 +297,37 @@ const resourceState = computed(() => {
 })
 const latestDecision = computed(() => {
   const run = selectedRun.value
-  if (!run) return '—'
+  if (!run) return ''
   if (run.decision) return run.decision
-  if (run.question) return 'Waiting for planner response'
-  return 'Waiting for first decision'
+  if (run.question) return 'Waiting for the planner reply'
+  return 'Waiting for the first plan'
 })
-const settingsRows = computed(() => {
+const elapsed = computed(() => {
   const run = selectedRun.value
-  if (!run) return []
-  const rows: [string, string][] = [
-    ['how', howText(run)],
-    ['starter', starterLabel(run)],
-    ['goal', goalLabel(run)]
-  ]
-  if (isPlayStyleRun(run)) {
-    rows.push(
-      ['play style', playStyleLabel(run)],
-      ['purpose', run.purpose === 'debug_coverage' ? 'debug coverage' : 'normal'],
-      ['speed', playSpeedLabel(run)],
-      ['risk', policyLabel(run.risk_tolerance, 'balanced')],
-      ['wild encounters', policyLabel(run.wild_encounters, 'planner')]
-    )
-    rows.push(
-      ['model', llmProfileLabel(run)],
-      ['reasoning', reasoningEffortLabel(run)],
-      ['decision engine', decisionEngineLabel(run)],
-      ['recovery mode', run.recovery_profile || 'strict']
-    )
-  } else {
-    rows.push(['speed', playSpeedLabel(run)], ['walk to', run.dest || '—'])
-  }
-  if (selectedWorker.value) rows.push(['worker', selectedWorker.value.addr])
-  rows.push(
-    ['seed', String(run.seed ?? 0)],
-    ['keep going', run.endless ? (run.random_seed ? 'yes, random seed' : 'yes, same seed') : ''],
-    ['queued', formatWhen(run.queued_at)],
-    ['ended', formatWhen(run.ended_at)],
-    ['round cap', run.planner === 'llm' ? (run.max_rounds ? String(run.max_rounds) : 'none (goal-driven)') : '']
-  )
-  return rows.filter(([, value]) => value)
+  if (!run?.queued_at) return ''
+  const end = run.ended_at || Date.now() / 1000
+  const minutes = Math.max(0, Math.round((end - run.queued_at) / 60))
+  const text = minutes >= 60 ? `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m` : `${minutes}m`
+  return run.ended_at ? `Ran ${text}` : `${text} elapsed`
 })
-const stateRows = computed(() => {
-  const run = selectedRun.value
-  if (!run) return []
-  if (run.status === 'done') {
-    return [
-      ['ended', run.reason || 'done'],
-      ['detail', run.detail || ''],
-      ['last map', tileLabel(run)],
-      ['frame', String(run.frame ?? 0)],
-      ['fps', fpsLabel(run)],
-      ['attempts', String(run.attempts ?? 0)],
-      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
-    ].filter(([, value]) => value)
-  }
-  if (run.status === 'paused') {
-    return [
-      ['status', 'paused'],
-      ['why', run.stop_so_far || 'paused by operator'],
-      ['detail', run.detail || ''],
-      ['map', tileLabel(run)],
-      ['frame', String(run.frame ?? 0)],
-      ['attempts', String(run.attempts ?? 0)],
-      ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : '']
-    ].filter(([, value]) => value)
-  }
-  return [
-    ['status', run.status],
-    ['map', tileLabel(run)],
-    ['frame', String(run.frame ?? 0)],
-    ['fps', fpsLabel(run)],
-    ['attempt', String((run.attempts ?? 0) + 1)],
-    ['recoveries', run.recovery_attempts ? String(run.recovery_attempts) : ''],
-    ['so far', run.stop_so_far || '']
-  ].filter(([, value]) => value)
-})
-const playRows = computed(() => {
-  const run = selectedRun.value
-  const stats = run?.stats
-  if (!run || !stats || run.planner === 'scripted') return []
-  const seconds = (value: unknown) => `${Number(value || 0).toFixed(1)}s`
-  const average = (value: unknown) => Number(value || 0) > 0 ? seconds(value) : '—'
-  const model = [stats.model || '—', stats.backend].filter(Boolean).join(' · ')
-  return [
-    ['round', `${stats.round ?? '—'}${stats.rounds_left ? ` (${stats.rounds_left} left)` : ''}`],
-    ['model', model],
-    ['repeat picks', `${statNumber(stats, 'repeats')} of ${stats.rounds ?? 0}`],
-    ['call latency', `${seconds(stats.last_seconds)} last / ${seconds(stats.avg_seconds)} all avg`],
-    ['latency avg', `${average(stats.successful_avg_seconds)} ok / ${average(stats.rejected_avg_seconds)} rejected / ${average(stats.strategic_avg_seconds)} strategist`],
-    ['offered', `${statNumber(stats, 'avg_offered').toFixed(1)} avg`],
-    ['tokens', `${stats.prompt_tokens ?? 0} / ${stats.completion_tokens ?? 0}`],
-    ['rejected', String(stats.rejected ?? 0)],
-    ['transport', String(statNumber(stats, 'transport'))],
-    ['fallbacks', String(statNumber(stats, 'fallbacks'))]
-  ]
-})
-const playChoices = computed(() => {
-  const choices = selectedRun.value?.stats?.choices
-  return Array.isArray(choices) ? choices as { objective?: string; count?: number }[] : []
-})
-const playTop = computed(() => playChoices.value[0]?.count || 1)
+
+// Receipts: one polite live region, mirrored visually as a toast.
+const toast = ref<{ text: string; runID?: string } | null>(null)
+let toastTimer = 0
+function announce(text: string, runID?: string): void {
+  toast.value = { text, runID }
+  window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { toast.value = null }, 4000)
+}
 
 function selectRunID(runID: string): void {
   selectedRunID.value = runID
   selectionPinned.value = true
+  railOpen.value = false
   const url = new URL(window.location.href)
   url.searchParams.set('run', runID)
+  url.searchParams.delete('tab')
   history.replaceState(null, '', url)
-}
-
-function selectRun(run: DashboardRun): void {
-  selectRunID(run.run_id)
 }
 
 function setRendererMode(mode: RendererMode): void {
@@ -381,40 +335,14 @@ function setRendererMode(mode: RendererMode): void {
   window.localStorage.setItem('pokepilot.operator.renderer', mode)
 }
 
-function setTheme(themeID: string): void {
-  const resolved = resolveRenderTheme(themeID)
-  selectedThemeID.value = resolved.theme.id
-  themeNotice.value = resolved.diagnostics.join(' ')
-  rendererMode.value = 'modern'
-  window.localStorage.setItem('pokepilot.operator.renderer', 'modern')
-  window.localStorage.setItem('pokepilot.operator.theme', resolved.theme.id)
-}
-
 function onThemeSelect(event: Event): void {
   const target = event.target as HTMLSelectElement | null
-  if (target) setTheme(target.value)
-}
-
-function hpPercent(mon: PartyMon): number {
-  if (!mon.max_hp) return 0
-  return Math.max(0, Math.min(100, 100 * mon.hp / mon.max_hp))
-}
-
-function hpTone(mon: PartyMon): string {
-  const percent = hpPercent(mon)
-  if (!mon.max_hp || mon.hp === 0 || percent < 20) return 'bg-[var(--poke-red)]'
-  if (percent < 50) return 'bg-[var(--poke-amber)]'
-  return 'bg-[var(--poke-green)]'
-}
-
-function showActiveHeading(index: number): boolean {
-  return index === 0 && knownRuns.value[0]?.status !== 'done'
-}
-
-function showEndedHeading(index: number): boolean {
-  const run = knownRuns.value[index]
-  const previous = knownRuns.value[index - 1]
-  return run?.status === 'done' && previous?.status !== 'done'
+  if (!target) return
+  const resolved = resolveRenderTheme(target.value)
+  selectedThemeID.value = resolved.theme.id
+  themeNotice.value = resolved.diagnostics.join(' ')
+  setRendererMode('modern')
+  window.localStorage.setItem('pokepilot.operator.theme', resolved.theme.id)
 }
 
 function refresh(): void {
@@ -424,107 +352,71 @@ function refresh(): void {
   void programmingResource.retry()
 }
 
-async function pauseSelected(): Promise<void> {
-  const run = selectedRun.value
-  if (!run || !isPausable.value || pausing.value) return
-  pausing.value = true
+async function runAction(busy: { value: boolean }, label: string, task: () => Promise<unknown>): Promise<boolean> {
+  if (busy.value) return false
+  busy.value = true
   actionError.value = ''
   try {
-    await pauseRun(run.run_id)
-    await activeResource.retry()
+    await task()
+    return true
   } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Pause failed'
+    actionError.value = `${label} failed: ${cause instanceof Error ? cause.message : 'unknown error'}`
+    return false
   } finally {
-    pausing.value = false
+    busy.value = false
   }
+}
+
+async function pauseSelected(): Promise<void> {
+  const run = selectedRun.value
+  if (!run || !isPausable.value) return
+  await runAction(pausing, 'Pause', async () => { await pauseRun(run.run_id); await activeResource.retry() })
 }
 
 async function resumeSelected(): Promise<void> {
   const run = selectedRun.value
-  if (!run || !isPaused.value || resuming.value) return
-  resuming.value = true
-  actionError.value = ''
-  try {
-    await resumeRun(run.run_id)
-    await activeResource.retry()
-  } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Resume failed'
-  } finally {
-    resuming.value = false
-  }
+  if (!run || !isPaused.value) return
+  await runAction(resuming, 'Resume', async () => { await resumeRun(run.run_id); await activeResource.retry() })
 }
 
-async function cancelSelected(): Promise<void> {
+async function confirmCancelSelected(): Promise<void> {
   const run = selectedRun.value
-  if (!run || !isCancelable.value || canceling.value) return
-  canceling.value = true
-  actionError.value = ''
-  try {
-    await cancelRun(run.run_id)
-    await activeResource.retry()
-  } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Cancel failed'
-  } finally {
-    canceling.value = false
-  }
+  if (!run || !isCancelable.value) return
+  const ok = await runAction(canceling, 'Cancel', async () => { await cancelRun(run.run_id); await activeResource.retry() })
+  confirmCancel.value = false
+  if (ok) announce(`Run ${run.run_id} cancelled`)
 }
 
-async function cloneSelected(): Promise<void> {
+async function runAgain(): Promise<void> {
   const run = selectedRun.value
-  if (!run || cloning.value) return
-  cloning.value = true
-  cloneState.value = ''
-  actionError.value = ''
-  try {
-    const result = await cloneRun(run.run_id)
+  if (!run) return
+  let newID = ''
+  const ok = await runAction(cloning, 'Clone', async () => {
+    newID = (await cloneRun(run.run_id)).run_id
     await Promise.all([activeResource.retry(), spectatorResource.retry()])
-    cloneState.value = 'Cloned'
-    selectRunID(result.run_id)
-    window.setTimeout(() => { cloneState.value = '' }, 1800)
-  } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Clone failed'
-  } finally {
-    cloning.value = false
-  }
+  })
+  if (ok && newID) announce(`Cloned as ${newID}`, newID)
 }
 
 async function toggleSpectatorSelected(): Promise<void> {
   const run = selectedRun.value
-  if (!run || spectatorUpdating.value || !spectatorControlReady.value) return
-  spectatorUpdating.value = true
-  actionError.value = ''
-  try {
-    await patchSpectatorRunControl(run.run_id, { visible: !spectatorVisible.value })
+  if (!run || !spectatorControlReady.value) return
+  const next = !spectatorVisible.value
+  const ok = await runAction(spectatorUpdating, 'Public visibility update', async () => {
+    await patchSpectatorRunControl(run.run_id, { visible: next })
     await spectatorResource.retry()
-  } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Public visibility update failed'
-  } finally {
-    spectatorUpdating.value = false
-  }
-}
-
-function requestForceEndSelected(): void {
-  if (selectedWorker.value) forceEndTarget.value = selectedWorker.value
-}
-
-function closeForceEnd(): void {
-  if (!forceEndBusy.value) forceEndTarget.value = null
+  })
+  if (ok) announce(next ? 'Run is visible on the public site' : 'Run is hidden from the public site')
 }
 
 async function confirmForceEnd(): Promise<void> {
   const worker = forceEndTarget.value
-  if (!worker || forceEndBusy.value) return
-  forceEndBusy.value = true
-  actionError.value = ''
-  try {
+  if (!worker) return
+  const ok = await runAction(forceEndBusy, 'Force quit', async () => {
     await forceEndWorker(worker.addr)
-    forceEndTarget.value = null
     await Promise.all([activeResource.retry(), recentResource.retry()])
-  } catch (cause) {
-    actionError.value = cause instanceof Error ? cause.message : 'Force quit failed'
-  } finally {
-    forceEndBusy.value = false
-  }
+  })
+  if (ok) forceEndTarget.value = null
 }
 
 async function copyRunID(): Promise<void> {
@@ -532,11 +424,10 @@ async function copyRunID(): Promise<void> {
   if (!run) return
   try {
     await navigator.clipboard.writeText(run.run_id)
-    copyState.value = 'Copied'
+    announce('Run ID copied')
   } catch {
-    copyState.value = 'Copy failed'
+    announce('Couldn’t copy the run ID')
   }
-  window.setTimeout(() => { copyState.value = '' }, 1500)
 }
 
 async function toggleProgrammingPause(): Promise<void> {
@@ -554,7 +445,7 @@ async function toggleProgrammingPause(): Promise<void> {
   }
 }
 
-async function actOnProgramming(entry: ProgrammingEntry, action: 'skip' | 'cancel' | 'retry'): Promise<void> {
+async function actOnProgramming(entry: ProgrammingEntry, action: 'skip' | 'retry'): Promise<void> {
   if (programmingBusy.value) return
   programmingBusy.value = entry.id + action
   programmingError.value = ''
@@ -568,12 +459,38 @@ async function actOnProgramming(entry: ProgrammingEntry, action: 'skip' | 'cance
   }
 }
 
-function warnPlay(stats: DashboardStats | undefined, key: string): boolean {
-  if (key === 'repeat picks') return Number(stats?.rounds || 0) > 3 && statNumber(stats, 'repeats') * 2 >= Number(stats?.rounds || 0)
-  if (key === 'rejected' || key === 'transport' || key === 'fallbacks') return statNumber(stats, key) > 0
-  return false
+// Keyboard: j/k runs, [ ] events, c copy, p pause/resume. Never destructive.
+function onKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, select, textarea, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
+  const runs = knownRuns.value
+  const index = runs.findIndex((run) => run.run_id === selectedRun.value?.run_id)
+  switch (event.key) {
+    case 'j': if (runs[index + 1]) selectRunID(runs[index + 1].run_id); break
+    case 'k': if (index > 0) selectRunID(runs[index - 1].run_id); break
+    case '[': timeline.value?.step(-1); break
+    case ']': timeline.value?.step(1); break
+    case 'c': void copyRunID(); break
+    case 'p':
+      if (isRunning.value) void pauseSelected()
+      else if (isPaused.value) void resumeSelected()
+      break
+    default: return
+  }
+  event.preventDefault()
 }
-function windowSearch(): string { return window.location.search }
+
+onMounted(() => {
+  window.addEventListener('popstate', restoreRunSelection)
+  window.addEventListener('keydown', onKeydown)
+})
+onUnmounted(() => {
+  window.removeEventListener('popstate', restoreRunSelection)
+  window.removeEventListener('keydown', onKeydown)
+  window.clearTimeout(toastTimer)
+})
+const search = () => window.location.search
 </script>
 
 <template>
@@ -584,531 +501,374 @@ function windowSearch(): string { return window.location.search }
     :rows="8"
   >
     <template #actions>
-      <button type="button" class="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="refresh">
-        <ArrowPathIcon class="size-3.5" aria-hidden="true" /> Retry now
-      </button>
+      <button type="button" class="ui-btn ui-btn-sm" @click="refresh">Retry now</button>
     </template>
 
-    <section v-if="programmingResource.data.value" class="mb-2 grid gap-2 border border-[var(--poke-border)] bg-[#101620] p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-      <div>
-        <div class="poke-kicker">Live now</div>
-        <div class="mt-1 text-[13px] font-semibold text-white">
-          {{ programmingResource.data.value.live_now?.challenge_name || 'No programmed challenge live' }}
-        </div>
-        <div v-if="programmingResource.data.value.live_now" class="mt-0.5 text-[10px] text-[var(--poke-muted)]">
-          {{ programmingResource.data.value.live_now.challenge_id }} · v{{ programmingResource.data.value.live_now.challenge_version }}
-        </div>
-      </div>
-      <div>
-        <div class="poke-kicker">Up next</div>
-        <div class="mt-1 text-[13px] font-semibold text-white">
-          {{ programmingResource.data.value.up_next?.challenge_name || 'Queue empty' }}
-        </div>
-        <div v-if="programmingResource.data.value.up_next" class="mt-0.5 flex items-center gap-2 text-[10px] text-[var(--poke-muted)]">
-          <span>{{ programmingResource.data.value.up_next.challenge_id }} · v{{ programmingResource.data.value.up_next.challenge_version }}</span>
-          <button
-            v-if="programmingResource.data.value.up_next.state === 'blocked' || programmingResource.data.value.up_next.state === 'failed'"
-            type="button"
-            class="text-[var(--poke-cyan)] hover:text-white"
-            @click="actOnProgramming(programmingResource.data.value.up_next, 'retry')"
-          >Retry</button>
-          <button
-            v-else
-            type="button"
-            class="text-[var(--poke-muted)] hover:text-white"
-            @click="actOnProgramming(programmingResource.data.value.up_next, 'skip')"
-          >Skip</button>
-        </div>
-      </div>
-      <div class="flex items-center justify-end">
-        <button type="button" class="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="toggleProgrammingPause">
-          <PlayIcon v-if="programmingResource.data.value.paused" class="size-3.5" aria-hidden="true" />
-          <PauseIcon v-else class="size-3.5" aria-hidden="true" />
-          {{ programmingResource.data.value.paused ? 'Resume queue' : 'Pause queue' }}
-        </button>
-      </div>
-      <p v-if="programmingError" class="text-[11px] text-red-300 sm:col-span-3">{{ programmingError }}</p>
-    </section>
-
-    <div v-if="selectedRun" class="grid grid-cols-1 gap-2 xl:grid-cols-[13.125rem_minmax(0,1fr)]">
-      <aside class="overflow-hidden border border-[var(--poke-border)] bg-[#101620] xl:sticky xl:top-12 xl:h-[calc(100vh-3.5rem)]">
-        <div class="flex h-12 items-center justify-between border-b border-[var(--poke-border)] px-2.5">
-          <div>
-            <h2 class="text-[13px] font-semibold text-white">Runs</h2>
-            <p class="text-[10px] text-[var(--poke-muted)]">Active first, then recent</p>
-          </div>
-        </div>
-        <div class="max-h-56 overflow-y-auto xl:max-h-none xl:h-[calc(100%-3rem)]">
-          <p v-if="!knownRuns.length" class="px-2.5 py-3 text-[12px] text-[var(--poke-muted)]">No runs yet.</p>
-          <template v-for="(run, index) in knownRuns" :key="run.run_id">
-            <p v-if="showActiveHeading(index)" class="poke-kicker px-2.5 pt-2 pb-1">Active</p>
-            <p v-else-if="showEndedHeading(index)" class="poke-kicker px-2.5 pt-2 pb-1">Ended</p>
-            <button
-              type="button"
-              :class="[
-                selectedRun.run_id === run.run_id
-                  ? 'border-l-[var(--poke-cyan)] bg-[#242f40]'
-                  : 'border-l-transparent hover:bg-[var(--poke-panel)]',
-                'grid min-h-14 w-full grid-cols-[3.75rem_minmax(0,1fr)] gap-2 border-b border-[var(--poke-border)] border-l-2 px-1.5 py-1.5 text-left'
-              ]"
-              @click="selectRun(run)"
-            >
-              <span class="relative grid h-14 place-items-center overflow-hidden bg-[#0c1118]">
-                <img
-                  v-if="run.status !== 'queued'"
-                  :src="`/frame?run=${encodeURIComponent(run.run_id)}`"
-                  alt=""
-                  :class="[
-                    'h-full w-full object-contain [image-rendering:pixelated]',
-                    run.status === 'done' ? 'opacity-55 grayscale' : ''
-                  ]"
-                />
-                <span v-else class="font-mono text-[9px] text-[var(--poke-dim)]">{{ run.status }}</span>
-                <span
-                  v-if="run.status === 'running'"
-                  class="absolute top-1 left-1 size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
-                  aria-hidden="true"
-                />
-              </span>
-              <span class="min-w-0">
-                <span class="flex flex-wrap items-center gap-1">
-                  <StatusBadge :tone="statusTone(run.status)">{{ railStatusLabel(run) }}</StatusBadge>
-                  <StatusBadge v-if="isPlayStyleRun(run)" tone="info">{{ playStyleLabel(run) }}</StatusBadge>
-                  <StatusBadge v-if="run.planner === 'llm' && run.purpose === 'debug_coverage'" tone="warning">debug coverage</StatusBadge>
-                  <StatusBadge v-if="run.planner === 'llm' && run.recovery_profile" :tone="run.recovery_profile === 'resilient' ? 'warning' : 'neutral'">{{ run.recovery_profile }}</StatusBadge>
-                </span>
-                <span class="mt-0.5 block truncate font-mono text-[10px] font-bold text-white" :title="run.run_id">{{ run.run_id }}</span>
-                <span class="block truncate text-[10px] text-[var(--poke-muted)]">{{ tileLabel(run) }}</span>
-                <span
-                  :class="[
-                    run.status === 'running' ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
-                    'block truncate text-[10px]'
-                  ]"
-                >{{ railFacts(run) }}</span>
-                <span v-if="statsLine(run)" class="block truncate text-[10px] text-[var(--poke-dim)]">{{ statsLine(run) }}</span>
-              </span>
-            </button>
-          </template>
-        </div>
+    <div v-if="selectedRun" class="grid grid-cols-1 gap-3 xl:grid-cols-[248px_minmax(0,1fr)]">
+      <aside class="hidden overflow-hidden border border-rule-strong xl:sticky xl:top-[52px] xl:block xl:h-[calc(100vh-64px)]">
+        <LiveRail
+          :active="activeRuns"
+          :recent="recentRuns"
+          :selected-id="selectedRun.run_id"
+          :programming="programmingResource.data.value"
+          :programming-error="programmingError"
+          @select="selectRunID"
+          @toggle-programming="toggleProgrammingPause"
+          @programming-action="actOnProgramming"
+        />
       </aside>
 
-      <div class="min-w-0 space-y-2">
-        <div class="grid h-auto grid-cols-1 gap-px overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-border)] xl:h-[clamp(300px,36vh,330px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(13rem,0.55fr)]">
-          <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
-            <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
-              <h3 class="text-xs font-semibold text-white">Game</h3>
-              <span class="inline-flex items-center gap-1.5 font-mono text-[10px]">
-                <span
-                  v-if="isLiveFrame"
-                  class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
-                  aria-hidden="true"
-                />
-                <span :class="isLiveFrame ? 'font-semibold text-[var(--poke-green)]' : 'text-[var(--poke-muted)]'">{{ gameLabel }}</span>
-              </span>
+      <div class="min-w-0 space-y-3">
+        <!-- Run header -->
+        <header class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 px-1">
+          <button type="button" class="ui-btn ui-btn-sm xl:hidden" @click="railOpen = true">
+            ☰ Runs <span class="text-fg-2">({{ activeRuns.length }} active)</span>
+          </button>
+          <span class="flex min-w-0 items-center gap-1">
+            <h1 class="truncate font-mono text-[16px] leading-6 font-medium" :title="selectedRun.run_id">{{ selectedRun.run_id }}</h1>
+            <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" aria-label="Copy run ID (c)" title="Copy run ID (c)" @click="copyRunID">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1.5" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>
+            </button>
+          </span>
+          <StatusPill v-if="status" :status="status" />
+          <span class="ui-tag">{{ gameTitle(selectedRun.game) }}</span>
+          <span class="ui-tag">{{ selectedRun.planner === 'llm' ? 'LLM' : 'Scripted' }}</span>
+          <span v-if="isPlayStyleRun(selectedRun)" class="ui-tag">{{ playStyleLabel(selectedRun) }}</span>
+          <span class="font-mono text-meta text-fg-2">{{ playSpeedLabel(selectedRun) }}</span>
+          <a
+            v-if="selectedRun.experiment_id"
+            :href="operatorHref('analytics', { section: 'experiments', experiment: selectedRun.experiment_id }, search())"
+            class="text-meta text-accent hover:underline"
+          >Experiment {{ selectedRun.experiment_arm ? selectedRun.experiment_arm.toUpperCase() + ' · ' : '' }}{{ selectedRun.experiment_id }}</a>
+          <span v-if="isPaused" class="text-meta text-warn">Safe to deploy and resume</span>
+
+          <span class="ml-auto text-meta text-fg-2">{{ elapsed }}</span>
+          <button v-if="isRunning" type="button" class="ui-btn ui-btn-primary" :disabled="pausing" title="Pause (p)" @click="pauseSelected">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" /><rect x="9.5" y="3" width="3" height="10" /></svg>
+            {{ pausing ? 'Pausing…' : 'Pause' }}
+          </button>
+          <button v-else-if="isPaused" type="button" class="ui-btn ui-btn-primary" :disabled="resuming" title="Resume (p)" @click="resumeSelected">
+            ▶ {{ resuming ? 'Resuming…' : 'Resume' }}
+          </button>
+          <template v-else-if="isEnded">
+            <button v-if="replayState === 'ready' && !replayMode" type="button" class="ui-btn ui-btn-primary" @click="watchReplay">▶ Watch replay</button>
+            <button v-else-if="replayState === 'ready' && replayMode" type="button" class="ui-btn" @click="replayMode = false">Show final frame</button>
+            <StatusPill v-else-if="replayState === 'generating'" :status="presentReplay('generating', replayProgress)" />
+            <button
+              v-else-if="replayState && replayState !== 'disabled'"
+              type="button"
+              class="ui-btn ui-btn-primary"
+              :disabled="evidence.rendering.value"
+              @click="evidence.requestReplay()"
+            >{{ evidence.rendering.value ? 'Requesting…' : replayState === 'error' ? 'Retry replay' : 'Generate replay' }}</button>
+          </template>
+
+          <button
+            type="button"
+            class="ui-btn"
+            :disabled="cloning"
+            title="Queue a new run with the same settings"
+            @click="runAgain"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="1.5" /><path d="M5 15V5a1 1 0 0 1 1-1h10" /></svg>
+            {{ cloning ? 'Cloning…' : 'Clone run' }}
+          </button>
+
+          <Menu as="div" class="relative">
+            <MenuButton class="ui-btn ui-icon-btn border-control" aria-label="More run actions">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" /></svg>
+            </MenuButton>
+            <MenuItems class="absolute right-0 z-30 mt-1 w-72 rounded-md border border-rule-strong bg-raised p-1 shadow-[0_8px_24px_rgb(0_0_0/45%)] focus:outline-none">
+              <MenuItem v-slot="{ active }">
+                <button type="button" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left" @click="copyRunID">
+                  Copy run ID<span class="ml-auto font-mono text-meta text-fg-3">C</span>
+                </button>
+              </MenuItem>
+              <MenuItem v-slot="{ active, disabled }" :disabled="!spectatorControlReady || spectatorUpdating">
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  :aria-checked="spectatorVisible"
+                  :class="[active ? 'bg-selected' : '', disabled ? 'text-fg-3' : '']"
+                  class="flex min-h-8 w-full items-center rounded-[3px] px-2.5 py-1 text-left"
+                  @click="toggleSpectatorSelected"
+                >
+                  <span>
+                    Visible on public site
+                    <span v-if="!spectatorControlReady" class="block text-meta text-fg-3">Public visibility controls unavailable</span>
+                  </span>
+                  <span class="ml-auto" :class="spectatorVisible ? 'text-ok' : 'text-fg-3'">{{ spectatorVisible ? '✓ On' : 'Off' }}</span>
+                </button>
+              </MenuItem>
+              <MenuItem v-if="publicPageHref" v-slot="{ active }">
+                <a :href="publicPageHref" target="_blank" rel="noopener" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5">Open public page ↗</a>
+              </MenuItem>
+              <MenuItem v-if="publicReplayHref" v-slot="{ active }">
+                <a :href="publicReplayHref" target="_blank" rel="noopener" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5">Open public replay ↗</a>
+              </MenuItem>
+              <MenuItem v-slot="{ active }">
+                <a :href="operatorHref('media', { section: 'library', run: selectedRun.run_id }, search())" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5">Open in Media</a>
+              </MenuItem>
+              <MenuItem v-if="isPausable && !isRunning" v-slot="{ active }">
+                <button type="button" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left" @click="pauseSelected">Pause before it starts</button>
+              </MenuItem>
+              <template v-if="isCancelable || selectedWorker">
+                <div class="my-1 h-px bg-rule" role="separator" />
+                <MenuItem v-if="isCancelable" v-slot="{ active }">
+                  <button type="button" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left text-danger" @click="confirmCancel = true">Cancel run…</button>
+                </MenuItem>
+                <MenuItem v-if="selectedWorker" v-slot="{ active }">
+                  <button type="button" :class="active ? 'bg-selected' : ''" class="flex h-8 w-full items-center rounded-[3px] px-2.5 text-left text-danger" @click="forceEndTarget = selectedWorker">Force quit worker…</button>
+                </MenuItem>
+              </template>
+            </MenuItems>
+          </Menu>
+        </header>
+
+        <p v-if="actionError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ actionError }}</p>
+
+        <!-- Game · Semantic map · Game state -->
+        <!-- Row height scales with the viewport; the Game column follows it at the
+             frame's 160:144 ratio (minus the 36px header) so the frame grows
+             instead of letterboxing, and the map takes the remaining width. -->
+        <div class="grid grid-cols-1 gap-px overflow-hidden border border-rule-strong bg-rule [--trio-h:clamp(340px,46vh,760px)] md:grid-cols-2 xl:h-[var(--trio-h)] xl:grid-cols-[calc((var(--trio-h)_-_36px)*160/144)_minmax(0,1fr)_300px] 2xl:grid-cols-[calc((var(--trio-h)_-_36px)*160/144)_minmax(0,1fr)_340px]">
+          <section class="flex min-w-0 flex-col bg-surface xl:min-h-0" aria-label="Game">
+            <header class="ui-bay-header">
+              <h2>Game</h2>
+              <span v-if="replayMode" class="ui-pill ui-tone-accent">▶ Replay</span>
+              <StatusPill v-else-if="isLiveFrame" :status="{ label: 'Live', tone: 'ok', glyph: '●', live: true }" />
+              <span v-else-if="isPaused" class="ui-pill ui-tone-warn">‖ Paused</span>
+              <span v-else class="ui-pill ui-tone-neutral">■ Last frame</span>
             </header>
-            <div class="relative aspect-[160/144] min-h-52 w-full max-h-[min(52vh,26.875rem)] overflow-hidden bg-[#0c1118] xl:aspect-auto xl:h-auto xl:max-h-none xl:min-h-0 xl:flex-1">
-              <ModernSceneRenderer
-                v-if="showModern && renderState"
-                :state="renderState"
-                :theme="activeTheme"
+            <div class="group relative aspect-[160/144] min-h-52 w-full overflow-hidden bg-well xl:aspect-auto xl:min-h-0 xl:flex-1">
+              <video
+                v-if="replayMode"
+                ref="replayVideo"
+                :key="selectedRun.run_id"
+                class="absolute inset-0 h-full w-full object-contain [image-rendering:pixelated]"
+                :src="replayVideoURL(selectedRun.run_id)"
+                controls
+                autoplay
+                preload="metadata"
+                playsinline
+                @loadedmetadata="applyPlaybackRate(); seekReplayToSelection()"
+                @timeupdate="syncEventFromVideo"
               />
+              <ModernSceneRenderer v-else-if="showModern && renderState" :state="renderState" :theme="activeTheme" />
               <img
                 v-else-if="frameURL"
                 :src="frameURL"
-                :alt="`Game frame for ${selectedRun.run_id}`"
+                :alt="`Game frame for ${selectedRun.run_id} at ${place}`"
                 class="absolute inset-0 h-full w-full object-contain object-center [image-rendering:pixelated]"
               />
               <div v-else class="absolute inset-0 grid place-items-center px-4 text-center">
                 <div>
-                  <span :class="['mx-auto block size-1.5 rounded-full', isLiveFrame ? 'bg-[var(--poke-green)] motion-safe:animate-pulse' : 'bg-[var(--poke-dim)]']" />
-                  <p class="mt-2 text-[12px] text-[var(--poke-muted)]">{{ isLiveFrame ? 'Waiting for live game state' : 'Last recorded frame unavailable.' }}</p>
-                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ renderStateError }}</p>
-                  <p v-else-if="frameError" class="mt-1 text-[11px] text-[var(--poke-amber)]">{{ frameError }}</p>
+                  <p class="text-fg-2">{{ selectedRun.status === 'queued' ? '○ Queued — starts when a worker picks it up' : isLiveFrame ? 'Waiting for live game state' : 'Last recorded frame unavailable' }}</p>
+                  <p v-if="rendererMode === 'modern' && renderStateStatus === 'error' && renderStateError" class="mt-1 text-meta text-warn">▲ {{ renderStateError }}</p>
+                  <p v-else-if="frameError" class="mt-1 text-meta text-warn">▲ {{ frameError }}</p>
                 </div>
               </div>
 
               <div
-                v-if="showModern || frameURL"
-                :class="[
-                  isLiveFrame ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]',
-                  'absolute top-2 left-2 inline-flex items-center gap-1 bg-black/75 px-1.5 py-0.5 text-[10px] font-bold'
-                ]"
+                v-if="isLiveFrame && !replayMode"
+                class="absolute bottom-2 left-2 flex flex-wrap items-end gap-1.5 opacity-100 transition-opacity xl:opacity-0 xl:group-focus-within:opacity-100 xl:group-hover:opacity-100"
               >
-                <span
-                  v-if="isLiveFrame"
-                  class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse"
-                  aria-hidden="true"
-                />
-                {{ isLiveFrame ? (showModern ? `Live · ${activeTheme.name}` : 'Live · Classic') : 'Ended' }}
-              </div>
-
-              <div v-if="isLiveFrame" class="absolute top-2 right-2 z-10 flex flex-col items-end gap-1.5">
-                <div class="flex overflow-hidden border border-white/10 bg-black/75 text-[9px] font-bold uppercase tracking-[0.06em]">
-                  <button
-                    type="button"
-                    :class="[rendererMode === 'modern' ? 'bg-cyan-300/20 text-cyan-100' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
-                    title="Use the shared semantic renderer"
-                    @click="setRendererMode('modern')"
-                  >Gold / Silver</button>
-                  <button
-                    type="button"
-                    :class="[rendererMode === 'classic' ? 'bg-white/15 text-white' : 'text-[var(--poke-muted)] hover:text-white', 'px-2 py-1']"
-                    title="Show the authoritative emulator framebuffer"
-                    @click="setRendererMode('classic')"
-                  >Classic</button>
+                <div class="flex overflow-hidden rounded-[3px] border border-control bg-well/90" role="group" aria-label="Renderer">
+                  <button type="button" :aria-pressed="rendererMode === 'classic'" :class="rendererMode === 'classic' ? 'bg-selected text-fg' : 'text-fg-2 hover:text-fg'" class="h-7 px-2.5 text-meta font-medium" title="The authoritative emulator framebuffer" @click="setRendererMode('classic')">Emulator</button>
+                  <button type="button" :aria-pressed="rendererMode === 'modern'" :class="rendererMode === 'modern' ? 'bg-selected text-fg' : 'text-fg-2 hover:text-fg'" class="h-7 px-2.5 text-meta font-medium" title="Shared semantic renderer with a theme" @click="setRendererMode('modern')">Themed</button>
                 </div>
-                <label v-if="rendererMode === 'modern'" class="flex items-center gap-1.5 border border-white/10 bg-black/75 px-2 py-1 text-[9px] text-[var(--poke-muted)]">
-                  <span class="font-bold uppercase tracking-[0.06em]">Theme</span>
-                  <select
-                    :value="selectedThemeID"
-                    class="max-w-28 bg-transparent text-[9px] font-semibold text-white outline-none"
-                    title="Choose the operator renderer theme"
-                    @change="onThemeSelect"
-                  >
-                    <option
-                      v-for="theme in themeOptions"
-                      :key="theme.id"
-                      :value="theme.id"
-                      class="bg-slate-950 text-white"
-                    >{{ theme.name }}</option>
+                <label v-if="rendererMode === 'modern'" class="flex h-7 items-center gap-1.5 rounded-[3px] border border-control bg-well/90 px-2">
+                  <span class="text-meta text-fg-2">Theme</span>
+                  <select :value="selectedThemeID" class="max-w-32 bg-transparent text-meta text-fg" @change="onThemeSelect">
+                    <option v-for="theme in themeOptions" :key="theme.id" :value="theme.id" class="bg-raised">{{ theme.name }}</option>
                   </select>
                 </label>
-                <div v-if="themeNotice" class="max-w-48 bg-amber-950/90 px-2 py-1 text-right text-[9px] text-amber-200">{{ themeNotice }}</div>
               </div>
-
-              <div v-if="modernFallbackLabel" class="absolute right-2 bottom-2 bg-black/75 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">{{ modernFallbackLabel }}</div>
-              <div v-else-if="frameURL && frameState === 'error'" class="absolute right-2 bottom-2 bg-black/70 px-1.5 py-0.5 text-[10px] text-[var(--poke-amber)]">Last frame · reconnecting</div>
+              <label v-if="replayMode" class="absolute top-2 right-2 flex h-7 items-center gap-1.5 rounded-[3px] border border-control bg-well/90 px-2">
+                <span class="text-meta text-fg-2">Speed</span>
+                <select v-model.number="playbackRate" class="bg-transparent text-meta text-fg">
+                  <option v-for="rate in [1, 2, 4, 8, 16]" :key="rate" :value="rate" class="bg-raised">{{ rate }}×</option>
+                </select>
+              </label>
+              <p v-if="themeNotice && rendererMode === 'modern'" class="absolute top-2 right-2 max-w-56 rounded-[3px] bg-well/90 px-2 py-1 text-right text-meta text-warn">▲ {{ themeNotice }}</p>
+              <p v-if="modernFallbackLabel && !replayMode" class="absolute top-2 left-2 rounded-[3px] bg-well/90 px-2 py-0.5 text-meta text-warn">{{ modernFallbackLabel }}</p>
+              <p v-else-if="frameURL && frameState === 'error' && !replayMode" class="absolute right-2 bottom-2 rounded-[3px] bg-well/90 px-2 py-0.5 text-meta text-warn">▲ Last frame · reconnecting</p>
             </div>
           </section>
 
-          <section class="flex min-w-0 flex-col bg-[var(--poke-panel)] xl:min-h-0">
-            <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
-              <h3 class="text-xs font-semibold text-white">{{ isTetrisRun ? 'Tetris board' : isBoxxleRun ? 'Puzzle board' : 'Semantic map' }}</h3>
-              <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ tileLabel(selectedRun) }}</span>
+          <section class="flex min-w-0 flex-col bg-surface xl:min-h-0" :aria-label="isTetrisRun ? 'Tetris board' : isBoxxleRun ? 'Puzzle board' : 'Semantic map'">
+            <header class="ui-bay-header">
+              <h2>{{ isTetrisRun ? 'Tetris board' : isBoxxleRun ? 'Puzzle board' : 'Semantic map' }}</h2>
+              <span class="truncate font-mono text-meta font-normal text-fg-2">{{ replayMode ? 'Final state' : tileLabel(selectedRun) }}</span>
             </header>
-            <div v-if="isTetrisRun" class="flex h-64 min-h-52 items-center justify-center bg-[#0c1118] p-2 xl:h-auto xl:min-h-0 xl:flex-1">
-              <div v-if="tetrisBoard.length" class="grid aspect-[10/18] h-full max-h-full grid-cols-10 grid-rows-[repeat(18,minmax(0,1fr))] gap-px border border-white/10 bg-black/60 p-px">
+            <div v-if="isTetrisRun" class="flex h-64 min-h-52 items-center justify-center bg-well p-2 xl:h-auto xl:min-h-0 xl:flex-1">
+              <div v-if="tetrisBoard.length" class="grid aspect-[10/18] h-full max-h-full grid-cols-10 grid-rows-[repeat(18,minmax(0,1fr))] gap-px border border-rule bg-black/60 p-px">
                 <template v-for="(row, y) in tetrisBoard" :key="y">
-                  <span
-                    v-for="(cell, x) in row.split('')"
-                    :key="`${y}-${x}`"
-                    :class="[cell === '#' ? 'bg-cyan-300/80' : 'bg-white/[0.035]', 'min-h-0 min-w-0']"
-                  />
+                  <span v-for="(cell, x) in row.split('')" :key="`${y}-${x}`" :class="[cell === '#' ? 'bg-accent/80' : 'bg-white/[0.035]', 'min-h-0 min-w-0']" />
                 </template>
               </div>
-              <p v-else class="text-[11px] text-[var(--poke-muted)]">Waiting for Tetris semantic state…</p>
+              <p v-else class="text-meta text-fg-3">Waiting for Tetris semantic state…</p>
             </div>
-            <div v-else-if="isBoxxleRun" class="flex h-64 min-h-52 items-center justify-center bg-[#0c1118] p-2 xl:h-auto xl:min-h-0 xl:flex-1">
-              <div
-                v-if="boxxleBoard.length"
-                class="grid h-full max-h-full gap-px border border-white/10 bg-black/60 p-px"
-                :style="{ gridTemplateColumns: `repeat(${boxxleBoardWidth}, minmax(0, 1fr))` }"
-              >
+            <div v-else-if="isBoxxleRun" class="flex h-64 min-h-52 items-center justify-center bg-well p-2 xl:h-auto xl:min-h-0 xl:flex-1">
+              <div v-if="boxxleBoard.length" class="grid h-full max-h-full gap-px border border-rule bg-black/60 p-px" :style="{ gridTemplateColumns: `repeat(${boxxleBoardWidth}, minmax(0, 1fr))` }">
                 <template v-for="(row, y) in boxxleBoard" :key="y">
                   <span
                     v-for="(cell, x) in row.split('')"
                     :key="`${y}-${x}`"
                     :class="[
-                      'flex min-h-0 min-w-0 items-center justify-center font-mono text-[10px] leading-none',
-                      cell === '#' ? 'bg-slate-600/90 text-slate-300' : '',
-                      cell === '$' ? 'bg-amber-400/80 text-amber-950' : '',
-                      cell === '*' ? 'bg-emerald-400/80 text-emerald-950' : '',
-                      cell === '+' ? 'bg-emerald-900/80 text-emerald-200' : '',
-                      cell === '@' ? 'bg-cyan-300/90 text-cyan-950' : '',
+                      'flex min-h-0 min-w-0 items-center justify-center font-mono text-meta leading-none',
+                      cell === '#' ? 'bg-rule-strong text-fg-2' : '',
+                      cell === '$' ? 'bg-warn/80 text-canvas' : '',
+                      cell === '*' ? 'bg-ok/80 text-canvas' : '',
+                      cell === '+' ? 'bg-ok/25 text-ok' : '',
+                      cell === '@' ? 'bg-accent/90 text-canvas' : '',
                       cell === '.' ? 'bg-white/[0.035] text-transparent' : ''
                     ]"
                   >{{ cell === '.' || cell === '#' ? '' : cell }}</span>
                 </template>
               </div>
-              <p v-else class="text-[11px] text-[var(--poke-muted)]">Waiting for Boxxle semantic state…</p>
+              <p v-else class="text-meta text-fg-3">Waiting for Boxxle semantic state…</p>
             </div>
-            <div v-else class="h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
+            <div v-else class="relative h-64 min-h-52 xl:h-auto xl:min-h-0 xl:flex-1">
               <SemanticMap :map="selectedRun.map" :x="selectedRun.x" :y="selectedRun.y" :trail="selectedRun.trail" :sprites="selectedRun.sprites" />
             </div>
-            <div v-if="isTetrisRun" class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
-              <span><b class="text-cyan-200">■</b> locked cell</span>
+            <p v-if="replayMode" class="border-t border-rule px-3 py-1.5 text-meta text-fg-2">Final state — semantic history isn't available for replay moments.</p>
+            <div v-else-if="isTetrisRun" class="flex flex-wrap gap-x-3 border-t border-rule px-3 py-1 text-meta text-fg-2">
+              <span><b class="text-accent">■</b> locked cell</span>
               <span>active {{ tetrisActive?.piece || '—' }} r{{ tetrisActive?.rotation ?? '—' }}</span>
               <span>next {{ tetrisNext?.piece || '—' }}</span>
             </div>
-            <div v-else-if="isBoxxleRun" class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
-              <span><b class="text-cyan-200">@</b> player</span>
-              <span><b class="text-amber-300">$</b> crate</span>
-              <span><b class="text-emerald-300">*</b> on goal</span>
-              <span><b class="text-emerald-200">+</b> goal</span>
+            <div v-else-if="isBoxxleRun" class="flex flex-wrap gap-x-3 border-t border-rule px-3 py-1 text-meta text-fg-2">
+              <span><b class="text-accent">@</b> player</span><span><b class="text-warn">$</b> crate</span><span><b class="text-ok">*</b> on goal</span><span><b class="text-ok">+</b> goal</span>
             </div>
-            <div v-else class="flex flex-wrap gap-x-3 gap-y-0.5 border-t border-[var(--poke-border)] px-2.5 py-1 text-[10px] text-[var(--poke-muted)]">
-              <span><b class="text-[var(--poke-text)]">@</b> player</span>
-              <span><b class="text-[var(--poke-text)]">■</b> sprite</span>
-              <span><b class="text-[var(--poke-text)]">·</b> trail</span>
-              <span><b class="text-[var(--poke-text)]">W</b> warp</span>
-              <span><b class="text-[var(--poke-text)]">#</b> blocked</span>
+            <div v-else class="flex flex-wrap gap-x-3 border-t border-rule px-3 py-1 text-meta text-fg-2">
+              <span><b class="text-fg">@</b> player</span><span><b class="text-[var(--map-sprite)]">■</b> sprite</span><span><b class="text-[var(--map-trail)]">·</b> trail</span><span><b class="text-[var(--map-warp)]">W</b> warp</span><span><b class="text-fg">#</b> blocked</span>
             </div>
           </section>
 
-          <section class="flex min-h-0 min-w-0 flex-col bg-[var(--poke-panel)]">
-            <header class="flex h-8 shrink-0 items-center justify-between border-b border-[var(--poke-border)] bg-[#0f141c] px-2.5">
-              <h3 class="text-xs font-semibold text-white">Game state</h3>
-              <span v-if="isTetrisRun" class="flex max-w-[75%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
-                <span>score {{ Number(tetrisState.score || 0).toLocaleString() }}</span>
-                <span>lines {{ Number(tetrisState.lines_cleared || 0) }}</span>
-                <span>level {{ Number(tetrisState.level || 0) }}</span>
-              </span>
-              <span v-else-if="isBoxxleRun" class="flex max-w-[75%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
-                <span>{{ Number(boxxleState.crates_on_goal || 0) }}/{{ Number(boxxleState.crates || 0) }} on goal</span>
-                <span>{{ Number(boxxleState.levels || 0) }} solved</span>
-                <span>{{ Number(boxxleState.pushes || 0) }} pushes</span>
-              </span>
-              <span v-else class="flex max-w-[70%] flex-wrap justify-end gap-x-1.5 font-mono text-[10px] text-[var(--poke-amber)]">
-                <span>₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }}</span>
-                <span v-if="bagLabel">bag {{ bagLabel }}</span>
-                <span v-if="dexLabel">dex {{ dexLabel }}</span>
-                <span>{{ badges.length ? badges.join(', ') : 'no badges' }}</span>
-              </span>
+          <section class="flex min-h-0 min-w-0 flex-col bg-surface md:col-span-2 xl:col-span-1" aria-label="Game state">
+            <header class="ui-bay-header">
+              <h2>Game state</h2>
+              <span v-if="isTetrisRun" class="font-mono text-meta font-normal text-fg-2">score {{ Number(tetrisState.score || 0).toLocaleString() }}</span>
+              <span v-else-if="isBoxxleRun" class="font-mono text-meta font-normal text-fg-2">{{ Number(boxxleState.levels || 0) }} solved</span>
+              <span v-else class="font-mono text-meta font-normal text-fg-2">₽{{ Number(selectedRun.player?.money || 0).toLocaleString() }}</span>
             </header>
-            <div v-if="isTetrisRun" class="grid min-h-52 flex-1 content-start gap-px overflow-auto bg-[var(--poke-border)] xl:min-h-0">
-              <div class="grid grid-cols-2 gap-px bg-[var(--poke-border)]">
-                <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px]">
-                  <span class="text-[var(--poke-muted)]">Active</span>
-                  <strong class="mt-0.5 block font-mono text-sm text-white">{{ tetrisActive?.piece || '—' }}</strong>
-                  <span class="font-mono text-[var(--poke-muted)]">r{{ tetrisActive?.rotation ?? '—' }} · x{{ tetrisActive?.x ?? '—' }} y{{ tetrisActive?.y ?? '—' }}</span>
-                </div>
-                <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px]">
-                  <span class="text-[var(--poke-muted)]">Next</span>
-                  <strong class="mt-0.5 block font-mono text-sm text-white">{{ tetrisNext?.piece || '—' }}</strong>
-                  <span class="font-mono text-[var(--poke-muted)]">r{{ tetrisNext?.rotation ?? '—' }}</span>
-                </div>
+            <dl v-if="isTetrisRun" class="ui-kv min-h-0 flex-1 overflow-auto px-3">
+              <dt>Lines</dt><dd class="font-mono">{{ Number(tetrisState.lines_cleared || 0) }}</dd>
+              <dt>Level</dt><dd class="font-mono">{{ Number(tetrisState.level || 0) }}</dd>
+              <dt>Active</dt><dd class="font-mono">{{ tetrisActive?.piece || '—' }} r{{ tetrisActive?.rotation ?? '—' }} · x{{ tetrisActive?.x ?? '—' }} y{{ tetrisActive?.y ?? '—' }}</dd>
+              <dt>Next</dt><dd class="font-mono">{{ tetrisNext?.piece || '—' }} r{{ tetrisNext?.rotation ?? '—' }}</dd>
+              <dt>Screen</dt><dd>{{ tetrisState.screen || '—' }}</dd>
+              <dt>Mode</dt><dd>{{ tetrisState.mode || '—' }}</dd>
+              <dt>Input</dt><dd>{{ tetrisState.ready_for_piece_input ? 'ready' : (tetrisState.clearing ? 'clearing' : (tetrisState.locking ? 'locking' : 'waiting')) }}</dd>
+              <dt>Placement</dt><dd class="font-mono">r{{ tetrisDecision.rotation ?? '—' }} c{{ tetrisDecision.column ?? '—' }}</dd>
+              <dt>Policy</dt><dd>{{ tetrisDecision.objective || '—' }}</dd>
+              <dt>Evaluated</dt><dd class="font-mono">{{ tetrisDecision.considered ?? '—' }}</dd>
+              <template v-if="tetrisMetrics"><dt>Board</dt><dd class="font-mono">holes {{ tetrisMetrics.holes ?? 0 }} · height {{ tetrisMetrics.max_height ?? 0 }} · bump {{ tetrisMetrics.bumpiness ?? 0 }}</dd></template>
+            </dl>
+            <dl v-else-if="isBoxxleRun" class="ui-kv min-h-0 flex-1 overflow-auto px-3">
+              <dt>Screen</dt><dd>{{ boxxleState.screen || '—' }}</dd>
+              <dt>Solved</dt><dd>{{ boxxleState.solved ? 'Yes' : 'No' }}</dd>
+              <dt>Crates on goal</dt><dd class="font-mono">{{ boxxleState.crates_on_goal ?? 0 }}/{{ boxxleState.crates ?? 0 }}</dd>
+              <dt>Pushes</dt><dd class="font-mono">{{ boxxleState.pushes ?? 0 }}</dd>
+              <dt>Push</dt><dd class="font-mono">{{ boxxleDecision.dir || '—' }} ({{ (boxxleDecision.crate as { x?: number } | undefined)?.x ?? '—' }},{{ (boxxleDecision.crate as { y?: number } | undefined)?.y ?? '—' }})</dd>
+              <dt>Fallback</dt><dd>{{ boxxleDecision.fallback || boxxleDecision.decision_fallback ? 'solver/policy' : 'none' }}</dd>
+            </dl>
+            <div v-else class="flex min-h-0 flex-1 flex-col overflow-auto">
+              <div class="grid grid-cols-3 border-b border-rule">
+                <div class="border-r border-rule px-3 py-1.5" :title="badges.join(', ')"><p class="ui-label">Badges</p><p class="font-mono font-medium">{{ badges.length }} / 8</p></div>
+                <div class="border-r border-rule px-3 py-1.5"><p class="ui-label">Bag</p><p class="font-mono font-medium">{{ bagLabel || '—' }}</p></div>
+                <div class="px-3 py-1.5"><p class="ui-label">Dex</p><p class="font-mono font-medium">{{ dexLabel || '—' }}</p></div>
               </div>
-              <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px] leading-5">
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Screen</span><strong>{{ tetrisState.screen || '—' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Mode</span><strong>{{ tetrisState.mode || '—' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Input</span><strong>{{ tetrisState.ready_for_piece_input ? 'ready' : (tetrisState.clearing ? 'clearing' : (tetrisState.locking ? 'locking' : 'waiting')) }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Placement</span><strong class="font-mono">r{{ tetrisDecision.rotation ?? '—' }} c{{ tetrisDecision.column ?? '—' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Policy</span><strong>{{ tetrisDecision.objective || '—' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Evaluated</span><strong>{{ tetrisDecision.considered ?? '—' }}</strong></div>
-                <div v-if="tetrisMetrics" class="mt-1 border-t border-[var(--poke-border)] pt-1 text-[var(--poke-muted)]">
-                  holes {{ tetrisMetrics.holes ?? 0 }} · height {{ tetrisMetrics.max_height ?? 0 }} · bump {{ tetrisMetrics.bumpiness ?? 0 }}
-                </div>
-              </div>
-            </div>
-            <div v-else-if="isBoxxleRun" class="grid min-h-52 flex-1 content-start gap-px overflow-auto bg-[var(--poke-border)] xl:min-h-0">
-              <div class="bg-[var(--poke-panel)] px-2 py-2 text-[10px] leading-5">
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Screen</span><strong>{{ boxxleState.screen || '—' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Solved</span><strong>{{ boxxleState.solved ? 'yes' : 'no' }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Crates</span><strong>{{ boxxleState.crates_on_goal ?? 0 }}/{{ boxxleState.crates ?? 0 }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Pushes</span><strong>{{ boxxleState.pushes ?? 0 }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Puzzles solved</span><strong>{{ boxxleState.levels ?? 0 }}</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Push</span><strong class="font-mono">{{ boxxleDecision.dir || '—' }} ({{ (boxxleDecision.crate as { x?: number } | undefined)?.x ?? '—' }},{{ (boxxleDecision.crate as { y?: number } | undefined)?.y ?? '—' }})</strong></div>
-                <div class="flex justify-between gap-2"><span class="text-[var(--poke-muted)]">Fallback</span><strong>{{ boxxleDecision.fallback || boxxleDecision.decision_fallback ? 'solver/policy' : 'none' }}</strong></div>
-              </div>
-            </div>
-            <div v-else class="flex min-h-52 flex-1 flex-col overflow-auto xl:min-h-0">
-              <div class="grid flex-1 grid-cols-2 gap-px bg-[var(--poke-border)]">
-                <div
-                  v-for="(mon, index) in partySlots"
-                  :key="index"
-                  :class="[mon ? 'bg-[var(--poke-panel)]' : 'bg-[var(--poke-panel)] text-[var(--poke-dim)]', 'grid min-h-[38px] grid-cols-[minmax(0,1fr)_auto] content-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-[10px]']"
-                >
+              <ul class="flex-1">
+                <li v-for="(mon, index) in partySlots" :key="index" class="border-b border-rule px-3 py-1.5">
                   <template v-if="mon">
-                    <strong class="truncate text-[var(--poke-text)]">{{ mon.name }}</strong>
-                    <span>Lv.{{ mon.level }}</span>
-                    <span>{{ mon.hp }}/{{ mon.max_hp }}</span>
-                    <span v-if="mon.status" class="text-[var(--poke-red)]">{{ mon.status }}</span>
-                    <span v-else />
-                    <div class="col-span-2 h-0.5 bg-[#263240]"><div :class="['h-full', hpTone(mon)]" :style="{ width: `${hpPercent(mon)}%` }" /></div>
+                    <div class="flex items-baseline gap-2">
+                      <span class="min-w-0 flex-1 truncate font-semibold capitalize">{{ mon.name }}</span>
+                      <span v-if="mon.status" class="text-meta text-danger">{{ mon.status }}</span>
+                      <span class="text-meta text-fg-2">Lv {{ mon.level }}</span>
+                      <span class="w-16 text-right font-mono text-meta text-fg">{{ mon.hp }}/{{ mon.max_hp }}</span>
+                    </div>
+                    <div class="ui-meter mt-1" role="meter" :aria-valuenow="mon.hp" aria-valuemin="0" :aria-valuemax="mon.max_hp" :aria-label="`${mon.name} HP`"><span :class="hpTone(mon)" :style="{ width: `${hpPercent(mon)}%` }" /></div>
                   </template>
-                  <template v-else>
-                    <span>Empty slot</span>
-                    <span class="font-mono">{{ index + 1 }}/6</span>
-                  </template>
-                </div>
-              </div>
-              <div v-if="showProgressLists" class="space-y-0.5 border-t border-[var(--poke-border)] bg-[#0f141c] px-1.5 py-1 text-[10px] leading-4">
-                <p v-if="bagLabel" class="min-w-0 truncate" :title="bagList">
-                  <span class="text-[var(--poke-muted)]">Bag {{ bagLabel }}</span>
-                  <span class="text-[var(--poke-text)]"> {{ bagList }}</span>
-                </p>
-                <p v-if="dexInfo" class="min-w-0 truncate">
-                  <span class="text-[var(--poke-muted)]">Dex {{ dexLabel }}</span>
-                  <span class="text-[var(--poke-text)]"> {{ dexInfo }}</span>
-                </p>
-                <p class="min-w-0 truncate" :title="milestoneList">
-                  <span class="text-[var(--poke-muted)]">Milestones</span>
-                  <span class="text-[var(--poke-text)]"> {{ milestoneList }}</span>
-                </p>
-              </div>
+                  <p v-else class="text-meta text-fg-3">Slot {{ index + 1 }} empty</p>
+                </li>
+              </ul>
+              <p v-if="milestoneList" class="truncate px-3 py-1.5 text-meta text-fg-2" :title="milestoneList">Milestones: <span class="text-fg">{{ milestoneList }}</span></p>
             </div>
           </section>
         </div>
 
-        <div class="grid overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-panel)] xl:grid-cols-[minmax(10rem,1.1fr)_minmax(7rem,0.65fr)_minmax(9rem,0.9fr)_minmax(13rem,1.45fr)_5rem_4.25rem_auto]">
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="poke-kicker">Run state</span>
-            <strong class="mt-0.5 block truncate font-mono text-[11px]" :title="selectedRun.run_id">{{ selectedRun.run_id }}</strong>
-            <a v-if="selectedRun.experiment_id"
-              :href="operatorHref('analytics', { section: 'experiments', experiment: selectedRun.experiment_id }, windowSearch())"
-              class="mt-1 inline-block max-w-full truncate font-mono text-[10px] font-semibold text-violet-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300"
-              :title="'Open comparison ' + selectedRun.experiment_id"
-            >Experiment {{ selectedRun.experiment_arm ? selectedRun.experiment_arm.toUpperCase() + ' · ' : '' }}{{ selectedRun.experiment_id }} ↗</a>
-            <div class="mt-1 flex flex-wrap items-center gap-1">
-              <StatusBadge :tone="statusTone(selectedRun.status)">{{ selectedRun.status }}</StatusBadge>
-              <StatusBadge tone="neutral">{{ gameTitle(selectedRun.game) }}</StatusBadge>
-              <StatusBadge v-if="isPlayStyleRun(selectedRun)" tone="info">{{ playStyleLabel(selectedRun) }}</StatusBadge>
-              <span class="font-mono text-[10px] text-[var(--poke-muted)]">{{ playSpeedLabel(selectedRun) }}</span>
-              <span
-                v-if="isLiveFrame"
-                class="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--poke-green)]"
-              >
-                <span class="size-1.5 rounded-full bg-[var(--poke-green)] motion-safe:animate-pulse" aria-hidden="true" />
-                Live
-              </span>
-              <span v-else-if="selectedRun.status === 'paused'" class="text-[10px] font-semibold text-[var(--poke-amber)]">Paused · safe to deploy and resume</span>
-              <span v-else-if="selectedRun.status === 'done'" class="text-[10px] text-[var(--poke-muted)]">Ended</span>
-              <StatusBadge v-if="selectedRun.replay_available" tone="success">replay</StatusBadge>
-            </div>
-            <p v-if="isPlayStyleRun(selectedRun)" class="mt-0.5 truncate text-[10px] text-[var(--poke-muted)]">{{ playStyleTagline(selectedRun) }}</p>
+        <!-- Now band -->
+        <section class="ui-bay grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_minmax(0,1fr)_auto]" aria-label="Now">
+          <div class="flex flex-col gap-1 border-b border-rule px-4 py-2.5 xl:border-r xl:border-b-0">
+            <span class="ui-label">Objective</span>
+            <span class="truncate font-semibold" :title="goalLabel(selectedRun)">{{ goalLabel(selectedRun) }}</span>
+            <span v-if="selectedRun.stats?.goal_summary" class="truncate text-meta text-fg-2" :title="selectedRun.stats.goal_summary">{{ selectedRun.stats.goal_summary }}</span>
+            <span v-if="selectedRun.stats?.goal_target" class="flex items-center gap-2">
+              <span class="ui-meter"><span class="bg-ok" :style="{ width: `${goalProgress}%` }" /></span>
+              <span class="font-mono text-meta">{{ selectedRun.stats.goal_current || 0 }} / {{ selectedRun.stats.goal_target }}</span>
+            </span>
           </div>
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Location</span>
-            <strong class="mt-0.5 block truncate font-mono text-[11px]">{{ tileLabel(selectedRun) }}</strong>
+          <div class="flex min-w-0 flex-col gap-1 border-b border-rule px-4 py-2.5 xl:border-r xl:border-b-0">
+            <span class="ui-label">Latest decision</span>
+            <span :class="selectedRun.decision ? '' : 'text-fg-3'" class="line-clamp-2 max-w-[72ch]" :title="latestDecision">{{ latestDecision }}</span>
           </div>
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Objective</span>
-            <strong class="mt-0.5 block truncate text-[11px] text-[var(--poke-amber)]">{{ goalLabel(selectedRun) }}</strong>
-            <div v-if="selectedRun.stats?.goal_summary" class="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-x-1.5">
-              <span class="truncate text-[9px] text-[var(--poke-muted)]">{{ selectedRun.stats.goal_summary }}</span>
-              <span class="font-mono text-[9px] text-[var(--poke-green)]">{{ selectedRun.stats.goal_target ? `${selectedRun.stats.goal_current || 0} / ${selectedRun.stats.goal_target}` : 'in progress' }}</span>
-              <div class="col-span-2 mt-0.5 h-0.5 bg-[#0f141c]"><div class="h-full bg-[var(--poke-green)]" :style="{ width: `${goalProgress}%` }" /></div>
-            </div>
+          <div class="flex flex-col gap-1 border-b border-rule px-4 py-2.5 md:border-b-0 xl:border-r">
+            <span class="ui-label">Position</span>
+            <span class="truncate font-semibold">{{ place }}</span>
+            <span class="font-mono text-meta text-fg-2">({{ Number(selectedRun.x || 0) }}, {{ Number(selectedRun.y || 0) }})</span>
           </div>
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Latest decision</span>
-            <strong class="mt-0.5 block line-clamp-2 text-[11px] leading-4">{{ latestDecision }}</strong>
+          <div class="flex items-center gap-7 px-4 py-2.5">
+            <div><p class="ui-label">Frame</p><p class="font-mono text-readout font-medium">{{ formatFrame(selectedRun.frame) }}</p></div>
+            <div><p class="ui-label">Round</p><p class="font-mono text-readout font-medium">{{ selectedRun.stats?.round ?? selectedRun.stats?.rounds ?? '—' }}</p></div>
           </div>
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Frame</span>
-            <strong class="mt-0.5 block font-mono text-[11px]">{{ formatFrame(selectedRun.frame) }}</strong>
-          </div>
-          <div class="min-w-0 border-b border-[var(--poke-border)] px-2.5 py-1.5 xl:border-r xl:border-b-0">
-            <span class="text-[9px] tracking-[0.04em] text-[var(--poke-muted)] uppercase">Round</span>
-            <strong class="mt-0.5 block font-mono text-[11px]">{{ selectedRun.stats?.round ?? selectedRun.stats?.rounds ?? '—' }}</strong>
-          </div>
-          <div class="flex flex-wrap items-center justify-end gap-1 px-2 py-1.5">
-            <a
-              v-if="publicReplayHref"
-              :href="publicReplayHref"
-              target="_blank"
-              rel="noopener"
-              class="inline-flex items-center gap-1 rounded-sm bg-violet-300/12 px-1.5 py-1 text-[10px] font-bold text-violet-100 ring-1 ring-violet-300/25 hover:bg-violet-300/18"
-              title="Open this run's public replay"
-            >
-              <PlayIcon class="size-3" aria-hidden="true" />
-              Watch replay
-            </a>
-            <button type="button" class="rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5" @click="copyRunID">{{ copyState || 'Copy' }}</button>
-            <button type="button" :disabled="cloning" class="inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 disabled:opacity-50" @click="cloneSelected">
-              <Square2StackIcon class="size-3" aria-hidden="true" /> {{ cloning ? 'Cloning…' : (cloneState || 'Clone') }}
-            </button>
-            <button
-              type="button"
-              :disabled="spectatorUpdating || !spectatorControlReady"
-              :title="spectatorControlReady ? (spectatorVisible ? 'Visible on the public site. Click to hide.' : 'Hidden from the public site. Click to show.') : 'Public visibility controls unavailable.'"
-              :class="[
-                spectatorVisible ? 'bg-[#18362f] text-[var(--poke-green)] ring-[#315f52]' : 'bg-[#2b3038] text-[var(--poke-muted)] ring-[var(--poke-border-strong)]',
-                'inline-flex items-center gap-1 rounded-sm px-1.5 py-1 text-[10px] font-bold ring-1 hover:brightness-110 disabled:opacity-50'
-              ]"
-              @click="toggleSpectatorSelected"
-            >
-              <EyeIcon v-if="spectatorVisible" class="size-3" aria-hidden="true" />
-              <EyeSlashIcon v-else class="size-3" aria-hidden="true" />
-              {{ spectatorUpdating ? 'Updating…' : (spectatorVisible ? 'Public visible' : 'Public hidden') }}
-            </button>
-            <button v-if="isPausable" type="button" :disabled="pausing" class="inline-flex items-center gap-1 rounded-sm bg-[#3b3222] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-amber)] ring-1 ring-[#6b5632] hover:brightness-110 disabled:opacity-50" @click="pauseSelected">
-              <PauseIcon class="size-3" aria-hidden="true" /> {{ pausing ? 'Pausing…' : 'Pause' }}
-            </button>
-            <button v-if="isPaused" type="button" :disabled="resuming" class="inline-flex items-center gap-1 rounded-sm bg-[#18362f] px-1.5 py-1 text-[10px] font-bold text-[var(--poke-green)] ring-1 ring-[#315f52] hover:brightness-110 disabled:opacity-50" @click="resumeSelected">
-              <PlayIcon class="size-3" aria-hidden="true" /> {{ resuming ? 'Resuming…' : 'Resume' }}
-            </button>
-            <button v-if="isCancelable" type="button" :disabled="canceling" class="inline-flex items-center gap-1 rounded-sm bg-[#352529] px-1.5 py-1 text-[10px] font-bold text-[#e4b5b7] ring-1 ring-[#654047] hover:brightness-110 disabled:opacity-50" @click="cancelSelected">
-              <NoSymbolIcon class="size-3" aria-hidden="true" /> {{ canceling ? 'Canceling…' : 'Cancel' }}
-            </button>
-            <button
-              v-if="selectedWorker"
-              type="button"
-              :disabled="forceEndBusy"
-              :title="`Force quit worker ${selectedWorker.addr} for this run`"
-              class="inline-flex items-center gap-1 rounded-sm bg-[#4a2026] px-1.5 py-1 text-[10px] font-bold text-[#ffd4d6] ring-1 ring-[#8b3f4a] hover:brightness-110 disabled:opacity-50"
-              @click="requestForceEndSelected"
-            >
-              <NoSymbolIcon class="size-3" aria-hidden="true" /> Force quit
-            </button>
-          </div>
+        </section>
+
+        <!-- Timeline transport -->
+        <RunTimeline
+          ref="timeline"
+          v-model:filter="timelineFilter"
+          :events="evidence.timeline.value"
+          :total-frames="evidence.totalFrames.value"
+          :selected-index="evidence.selectedEvent.value"
+          :follow-live="evidence.followLive.value"
+          :live="evidence.isLive.value"
+          @select="selectEvent"
+          @follow="evidence.setFollowLive"
+        />
+
+        <!-- Story + inspector -->
+        <div class="grid grid-cols-1 gap-3 xl:h-[clamp(440px,60vh,1000px)] xl:grid-cols-[minmax(0,1fr)_minmax(400px,0.75fr)]">
+          <RunStory
+            class="max-h-[560px] xl:max-h-none"
+            :events="evidence.timeline.value"
+            :selected-index="evidence.selectedEvent.value"
+            :filter="timelineFilter"
+            :follow-live="evidence.followLive.value"
+            :live="evidence.isLive.value"
+            @select="selectEvent"
+          />
+          <LiveInspector
+            class="max-h-[720px] xl:max-h-none"
+            :run="selectedRun"
+            :worker="selectedWorker"
+            :evidence="evidence"
+            @watch-replay="watchReplay"
+          />
         </div>
 
-        <div class="overflow-hidden border border-[var(--poke-border)] bg-[var(--poke-border)]">
-          <div class="grid gap-px xl:grid-cols-4 xl:min-h-[260px]">
-            <section class="min-w-0 bg-[var(--poke-panel)] p-2">
-              <h3 class="mb-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Settings</h3>
-              <dl class="grid grid-cols-[minmax(4.25rem,0.42fr)_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px]">
-                <template v-for="[label, value] in settingsRows" :key="label">
-                  <dt class="text-[var(--poke-muted)]">{{ label }}</dt>
-                  <dd class="min-w-0 overflow-hidden break-words text-[var(--poke-text)]">{{ value }}</dd>
-                </template>
-              </dl>
-            </section>
-
-            <section class="min-w-0 bg-[var(--poke-panel)] p-2">
-              <h3 class="mb-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">{{ selectedRun.status === 'done' ? 'Outcome' : 'Current state' }}</h3>
-              <dl class="grid grid-cols-[minmax(4.25rem,0.42fr)_minmax(0,1fr)] gap-x-2 gap-y-1 text-[11px]">
-                <template v-for="[label, value] in stateRows" :key="label">
-                  <dt class="text-[var(--poke-muted)]">{{ label }}</dt>
-                  <dd class="min-w-0 overflow-hidden break-words text-[var(--poke-text)]">{{ value }}</dd>
-                </template>
-              </dl>
-            </section>
-            <section class="min-h-[260px] overflow-auto bg-[var(--poke-panel)] p-2">
-              <h3 class="mb-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Plan</h3>
-              <div class="text-[9px] text-[var(--poke-muted)]">question</div>
-              <pre class="mt-0.5 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-4 text-[var(--poke-text)]">{{ selectedRun.question || 'waiting for the first plan' }}</pre>
-              <div class="mt-2 text-[9px] text-[var(--poke-muted)]">decision</div>
-              <p :class="[selectedRun.decision ? 'text-[var(--poke-green)]' : 'text-[var(--poke-muted)]', 'mt-0.5 text-[11px] font-semibold']">{{ selectedRun.decision || (selectedRun.question ? 'waiting for reply' : 'waiting for the first plan') }}</p>
-              <details v-if="selectedRun.raw" class="mt-2">
-                <summary class="cursor-pointer text-[11px] text-[var(--poke-cyan)]">raw exchange</summary>
-                <pre class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap bg-[#121720] p-2 font-mono text-[10px] leading-4 text-[var(--poke-muted)]">{{ selectedRun.raw }}</pre>
-              </details>
-            </section>
-
-            <section class="min-h-[260px] overflow-auto bg-[var(--poke-panel)] p-2">
-              <h3 class="mb-1.5 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Play</h3>
-              <template v-if="playRows.length">
-                <div v-for="[label, value] in playRows" :key="label" class="flex justify-between gap-2 text-[11px]">
-                  <span class="text-[var(--poke-muted)]">{{ label }}</span>
-                  <span :class="warnPlay(selectedRun.stats, label) ? 'text-[var(--poke-amber)]' : ''">{{ value }}</span>
-                </div>
-                <p v-if="selectedRun.stats?.intent" class="mt-2 text-[11px] text-[var(--poke-cyan)]">"{{ selectedRun.stats.intent }}" ({{ selectedRun.stats.intent_age }} rounds)</p>
-                <div v-if="playChoices.length" class="mt-2 space-y-0.5">
-                  <div v-for="choice in playChoices" :key="String(choice.objective)" class="relative flex justify-between overflow-hidden text-[11px]">
-                    <span class="absolute inset-y-0 left-0 bg-[#233744]" :style="{ width: `${100 * Number(choice.count || 0) / playTop}%` }" />
-                    <span class="relative">{{ choice.objective }}</span>
-                    <span class="relative">{{ choice.count }}</span>
-                  </div>
-                </div>
-              </template>
-              <p v-else class="text-[11px] text-[var(--poke-muted)]">Play telemetry appears for LLM runs.</p>
-            </section>
-          </div>
-          <div v-if="showDecisionTelemetry(selectedRun.stats, selectedRun.decision_engine)" class="border-t border-[var(--poke-border)]">
-            <DecisionTelemetry :stats="selectedRun.stats" :engine="selectedRun.decision_engine" />
-          </div>
-          <div v-if="selectedRun.trace" class="flex items-baseline gap-2.5 border-t border-[var(--poke-border)] bg-[var(--poke-panel)] px-2.5 py-1">
-            <h3 class="shrink-0 text-[9px] tracking-[0.07em] text-[var(--poke-muted)] uppercase">Last event</h3>
-            <pre class="min-w-0 flex-1 overflow-hidden font-mono text-[11px] leading-4 text-[var(--poke-text)] line-clamp-2">{{ selectedRun.trace }}</pre>
-          </div>
-        </div>
-
-        <div v-if="actionError" class="border border-[#654047] bg-[#352529] px-2.5 py-2 text-[12px] text-[#e4b5b7]" role="alert">{{ actionError }}</div>
-
-        <InspectorPanel :run-id="selectedRun.run_id" />
-
+        <ConfirmDialog
+          :open="confirmCancel"
+          :title="`Cancel run ${selectedRun.run_id}?`"
+          :message="cancelMessage"
+          confirm-label="Cancel run"
+          cancel-label="Keep running"
+          :busy="canceling"
+          danger
+          @close="confirmCancel = false"
+          @confirm="confirmCancelSelected"
+        />
         <ConfirmDialog
           :open="forceEndTarget !== null"
           :title="forceEndTitle"
@@ -1116,16 +876,45 @@ function windowSearch(): string { return window.location.search }
           confirm-label="Force quit worker"
           :busy="forceEndBusy"
           danger
-          @close="closeForceEnd"
+          @close="forceEndBusy ? undefined : (forceEndTarget = null)"
           @confirm="confirmForceEnd"
         />
       </div>
     </div>
 
-    <div v-else class="border border-dashed border-[var(--poke-border)] px-6 py-12 text-center">
-      <p class="text-sm font-medium text-white">No run selected</p>
-      <p class="mt-1 text-[12px] text-[var(--poke-muted)]">Queue a run from Tools or choose one from the Runs archive.</p>
-      <a href="#tools" class="mt-3 inline-flex rounded-sm bg-[var(--poke-cyan)] px-2.5 py-1.5 text-[11px] font-bold text-[#101820] hover:brightness-110">Start a run</a>
+    <div v-else class="mx-auto max-w-md py-16 text-center">
+      <p class="text-title font-semibold">No runs yet</p>
+      <p class="mt-1 text-fg-2">Queue a run to watch it here.</p>
+      <a :href="operatorHref('new-run', {}, search())" class="ui-btn ui-btn-primary mt-4">New run</a>
+    </div>
+
+    <!-- Runs drawer below xl -->
+    <Dialog :open="railOpen" class="operator-root relative z-[60] xl:hidden" @close="railOpen = false">
+      <div class="fixed inset-0 bg-black/60" aria-hidden="true" />
+      <DialogPanel class="fixed inset-y-0 left-0 flex w-[min(320px,88vw)] flex-col border-r border-rule-strong bg-surface">
+        <div class="flex h-11 items-center justify-between border-b border-rule px-3">
+          <DialogTitle class="text-title font-semibold">Runs</DialogTitle>
+          <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" aria-label="Close runs" @click="railOpen = false">✕</button>
+        </div>
+        <LiveRail
+          class="min-h-0 flex-1"
+          :active="activeRuns"
+          :recent="recentRuns"
+          :selected-id="selectedRun?.run_id || ''"
+          :programming="programmingResource.data.value"
+          :programming-error="programmingError"
+          @select="selectRunID"
+          @toggle-programming="toggleProgrammingPause"
+          @programming-action="actOnProgramming"
+        />
+      </DialogPanel>
+    </Dialog>
+
+    <div class="pointer-events-none fixed right-4 bottom-4 z-50" aria-live="polite" role="status">
+      <div v-if="toast" class="pointer-events-auto flex items-center gap-3 rounded-md border border-rule-strong bg-raised px-4 py-2.5 shadow-[0_8px_24px_rgb(0_0_0/45%)]">
+        <span>{{ toast.text }}</span>
+        <button v-if="toast.runID" type="button" class="ui-btn ui-btn-sm" @click="selectRunID(toast.runID!); toast = null">Open</button>
+      </div>
     </div>
   </ResourceState>
 </template>

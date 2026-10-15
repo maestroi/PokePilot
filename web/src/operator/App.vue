@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ArrowTopRightOnSquareIcon, Cog6ToothIcon, PlayIcon } from '@heroicons/vue/20/solid'
+import { Cog6ToothIcon } from '@heroicons/vue/20/solid'
 import { getBuildProvenance, getDashboard } from '../shared/api/client'
 import { getOperatorUIConfig } from '../shared/api/spectator-control'
-import { operatorPrimaryViews, operatorRoute, resolveSpectatorBase, spectatorURL, type OperatorView } from '../shared/urls'
+import { operatorPrimaryViews, operatorRoute, resolveSpectatorBase, type OperatorView } from '../shared/urls'
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
@@ -110,24 +110,6 @@ async function loadSpectatorURL(): Promise<void> {
   }
 }
 
-function spectatorBaseURL(): string {
-  return configuredSpectatorURL.value
-}
-
-function selectedRunID(): string {
-  const explicit = new URLSearchParams(window.location.search).get('run')?.trim()
-  if (explicit) return explicit
-  return [...(fleet.data.value?.runs ?? [])]
-    .filter((run) => run.status !== 'done')
-    .sort((a, b) => Number(b.queued_at || 0) - Number(a.queued_at || 0))[0]?.run_id || ''
-}
-
-function openSelectedSpectator(): void {
-  const base = spectatorBaseURL()
-  if (!base) return
-  window.open(spectatorURL(base, selectedRunID()), '_blank', 'noopener,noreferrer')
-}
-
 onMounted(() => {
   syncHash()
   void loadSpectatorURL()
@@ -142,6 +124,7 @@ onUnmounted(() => {
 
 <template>
   <AppShell
+    class="operator-root"
     :eyebrow="eyebrows[activeView]"
     :title="labels[activeView]"
     :subtitle="descriptions[activeView]"
@@ -150,60 +133,29 @@ onUnmounted(() => {
     :show-intro="activeView !== 'live'"
   >
     <template #summary>
-      <span class="inline-flex items-center gap-1.5">
-        <span
-          :class="[
-            connected && fleet.state.value !== 'stale' ? 'border-[var(--poke-green)] bg-[var(--poke-green)]' : 'border-[var(--poke-amber)] bg-transparent',
-            'size-1.5 rounded-full border'
-          ]"
-          aria-hidden="true"
-        />
-        <b class="font-semibold text-[var(--poke-text)]">{{ connected ? (fleet.state.value === 'stale' ? 'Stale' : 'Connected') : 'Connecting' }}</b>
-      </span>
-      <span><b class="font-semibold text-[var(--poke-text)]">{{ liveCount }}</b> live</span>
-      <span><b class="font-semibold text-[var(--poke-text)]">{{ queuedCount }}</b> queued</span>
-      <span><b class="font-semibold text-[var(--poke-text)]">{{ idleCount }}</b> idle</span>
-      <span v-if="fleet.data.value?.wall_version" class="font-mono text-[10px] text-[var(--poke-dim)]" :title="`Wall ${fleet.data.value.wall_version}`">wall {{ fleet.data.value.wall_version.slice(0, 7) }}</span>
-      <a
-        v-if="buildHref && buildLabel"
-        :href="buildHref"
-        target="_blank"
-        rel="noopener"
-        class="font-mono text-[10px] text-[var(--poke-cyan)] hover:underline"
-        :title="buildTitle"
-      >
-        ui {{ buildLabel }}
+      <a :href="'#operations'" class="inline-flex items-center gap-1.5 text-meta text-fg-2 hover:text-fg" title="Open Operations">
+        <span :class="connected && fleet.state.value !== 'stale' ? 'text-ok' : 'text-warn'" aria-hidden="true">{{ connected && fleet.state.value !== 'stale' ? '●' : '▲' }}</span>
+        <span class="text-fg">{{ connected ? (fleet.state.value === 'stale' ? 'Stale' : 'Connected') : 'Connecting' }}</span>
+        · {{ liveCount }} live · {{ queuedCount }} queued · {{ idleCount }} idle
       </a>
-      <span v-else-if="buildLabel" class="font-mono text-[10px] text-[var(--poke-dim)]" :title="buildTitle">ui {{ buildLabel }}</span>
+      <span v-if="fleet.data.value?.wall_version" class="font-mono text-meta text-fg-3" :title="`Wall ${fleet.data.value.wall_version}`">wall {{ fleet.data.value.wall_version.slice(0, 7) }}</span>
+      <a v-if="buildHref && buildLabel" :href="buildHref" target="_blank" rel="noopener" class="font-mono text-meta text-fg-3 hover:text-accent" :title="buildTitle">ui {{ buildLabel }}</a>
+      <span v-else-if="buildLabel" class="font-mono text-meta text-fg-3" :title="buildTitle">ui {{ buildLabel }}</span>
     </template>
 
     <template #actions>
-      <button
-        v-if="activeView === 'live'"
-        type="button"
-        class="inline-flex items-center gap-1 rounded-sm bg-white/10 px-2 py-1 text-[11px] font-bold text-white ring-1 ring-white/10 hover:bg-white/15"
-        title="Open the selected run on the public RomPilot site"
-        @click="openSelectedSpectator"
-      >
-        <ArrowTopRightOnSquareIcon class="size-3.5" aria-hidden="true" />
-        Open public
-      </button>
-      <a
-        href="#new-run"
-        class="inline-flex items-center gap-1 rounded-sm bg-[var(--poke-cyan)] px-2 py-1 text-[11px] font-bold text-[#101820] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-      >
-        <PlayIcon class="size-3.5" aria-hidden="true" />
-        New run
+      <a href="#new-run" class="ui-btn ui-btn-sm">
+        <span aria-hidden="true">+</span> New run
       </a>
       <a
         href="#settings"
         :aria-current="activeView === 'settings' ? 'page' : undefined"
-        class="inline-flex items-center gap-1 rounded-sm px-2 py-1 text-[11px] font-semibold text-[var(--poke-muted)] ring-1 ring-[var(--poke-border-strong)] hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--poke-cyan)]"
+        :class="activeView === 'settings' ? 'text-fg bg-selected' : ''"
+        class="ui-btn ui-btn-sm ui-icon-btn"
         title="Settings"
         aria-label="Settings"
       >
         <Cog6ToothIcon class="size-4" aria-hidden="true" />
-        <span class="hidden xl:inline">Settings</span>
       </a>
     </template>
 

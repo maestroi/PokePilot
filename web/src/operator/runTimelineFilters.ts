@@ -48,6 +48,85 @@ export function eventMatchesFilter(event: TimelineRow, filter: TimelineFilter): 
   return kind === filter
 }
 
+export const timelineFilterLabels: Record<TimelineFilter, string> = {
+  all: 'All events',
+  attention: 'Needs attention',
+  recovery: 'Recovery',
+  failure: 'Failures',
+  decision: 'LLM decisions',
+  skill: 'Skills',
+  progress: 'Milestones',
+  checkpoint: 'Checkpoints',
+  system: 'System'
+}
+
+// Stable marker shapes shared by the transport, story and inspector.
+export const eventGlyphs: Record<EventKind, string> = {
+  decision: '●',
+  checkpoint: '⚑',
+  progress: '★',
+  failure: '✕',
+  recovery: '▲',
+  skill: '◆',
+  system: '·',
+  event: '·'
+}
+
+export const eventKindLabels: Record<EventKind, string> = {
+  decision: 'Decision',
+  checkpoint: 'Checkpoint',
+  progress: 'Milestone',
+  failure: 'Failure',
+  recovery: 'Recovery',
+  skill: 'Skill',
+  system: 'System',
+  event: 'Event'
+}
+
+export function eventTitle(event: TimelineRow): string {
+  const kind = eventKind(event)
+  const message = text(event.message)
+  const checkpoint = text(event.checkpoint) || text(event.name)
+  if (kind === 'checkpoint' && checkpoint) return checkpoint
+  if (message) return message
+  if (kind === 'decision') return 'LLM decision'
+  if (kind === 'failure') return 'Attempt failed'
+  if (kind === 'recovery') return 'Recovery action'
+  if (kind === 'skill') return 'Skill execution'
+  if (kind === 'system') return 'System event'
+  if (kind === 'progress') return text(event.type).toLowerCase().includes('finish') ? 'Run finished' : 'Progress recorded'
+  const raw = text(event.type) || text(event.kind) || 'recorded event'
+  return raw.replaceAll('_', ' ').replace(/^\w/, (letter) => letter.toUpperCase())
+}
+
+export function eventDetail(event: TimelineRow): string {
+  const question = text(event.question)
+  const decision = text(event.decision)
+  const message = text(event.message)
+  const detail = text(event.detail)
+  const progress = text(event.progress)
+  const kind = eventKind(event)
+  if (kind === 'decision') return decision || detail || question || message || 'The planner state changed.'
+  if (kind === 'failure') return detail || message || question || 'The current attempt stopped with a failure.'
+  if (kind === 'recovery') return detail || message || 'The recovery supervisor changed how the campaign will continue.'
+  if (kind === 'skill') return detail || message || 'Deterministic gameplay execution.'
+  if (kind === 'system') return detail || message || 'Run lifecycle event.'
+  if (kind === 'progress') return progress || detail || message || 'Run progress was persisted.'
+  if (detail && detail !== eventTitle(event)) return detail
+  if (message && message !== eventTitle(event)) return message
+  if (question) return question
+  if (kind === 'checkpoint') return event.replayable ? 'Checkpoint with paired agent state.' : 'Persisted checkpoint evidence.'
+  return 'No additional semantic detail was persisted.'
+}
+
+export function eventTime(event: TimelineRow): string {
+  const at = Number(event.at || 0)
+  if (at > 0) return new Date(at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  const frame = Number(event.frame || 0)
+  if (frame > 0) return `f ${frame.toLocaleString()}`
+  return '—'
+}
+
 export type TimelineFilterCounts = Record<TimelineFilter, number>
 
 export function timelineFilterCounts(events: TimelineRow[]): TimelineFilterCounts {
