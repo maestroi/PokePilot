@@ -1,17 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import {
+  eventGlyphs,
   eventKind,
+  eventKindLabels,
   eventMatchesFilter,
+  eventTime,
+  eventTitle,
   timelineFilterCounts,
+  timelineFilterLabels,
+  type EventKind,
   type TimelineFilter,
   type TimelineRow
 } from './runTimelineFilters'
 
+// Transport strip: owns chronological navigation for the selected run.
+// The story list and the inspector render the selected event.
 const props = withDefaults(defineProps<{
   events: TimelineRow[]
   totalFrames?: number
   selectedIndex?: number
+  filter: TimelineFilter
+  followLive: boolean
+  live: boolean
 }>(), {
   totalFrames: 0,
   selectedIndex: -1
@@ -19,473 +30,211 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   select: [index: number]
+  'update:filter': [filter: TimelineFilter]
+  follow: [value: boolean]
 }>()
 
 const MIN_ZOOM = 1
 const MAX_ZOOM = 32
 const zoom = ref(MIN_ZOOM)
-const activeFilter = ref<TimelineFilter>('all')
-const timelineScroll = ref<HTMLElement | null>(null)
+const viewport = ref<HTMLElement | null>(null)
 
-function number(value: unknown): number {
-  const parsed = Number(value || 0)
-  return Number.isFinite(parsed) ? parsed : 0
+const kindColor: Record<EventKind, string> = {
+  decision: 'text-fg-2',
+  checkpoint: 'text-warn',
+  progress: 'text-ok',
+  failure: 'text-danger',
+  recovery: 'text-warn',
+  skill: 'text-accent',
+  system: 'text-fg-3',
+  event: 'text-fg-3'
 }
 
-function text(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
+const kindPriority: Record<EventKind, number> = {
+  failure: 7, checkpoint: 6, recovery: 5, progress: 4, decision: 3, skill: 2, system: 1, event: 0
 }
 
-function eventFrame(event: TimelineRow): number {
-  return number(event.frame)
+function frameOf(event: TimelineRow): number {
+  const value = Number(event.frame || 0)
+  return Number.isFinite(value) ? value : 0
 }
 
-function eventRound(event: TimelineRow): number {
-  return number(event.round)
-}
+const counts = computed(() => timelineFilterCounts(props.events))
+const filterOptions = computed(() => (Object.keys(timelineFilterLabels) as TimelineFilter[])
+  .filter((value) => value === 'all' || counts.value[value] > 0)
+  .map((value) => ({ value, label: `${timelineFilterLabels[value]} (${counts.value[value]})` })))
 
-function humanize(value: string): string {
-  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-}
-
-function eventTitle(event: TimelineRow): string {
-  const kind = eventKind(event)
-  const message = text(event.message)
-  const checkpoint = text(event.checkpoint) || text(event.name)
-  if (kind === 'checkpoint' && checkpoint) return checkpoint
-  if (message) return message
-  if (kind === 'decision') return 'LLM decision'
-  if (kind === 'failure') return 'Attempt failed'
-  if (kind === 'recovery') return 'Recovery action'
-  if (kind === 'skill') return 'Skill execution'
-  if (kind === 'system') return 'System event'
-  if (kind === 'progress') return text(event.type).toLowerCase().includes('finish') ? 'Run finished' : 'Progress recorded'
-  return humanize(text(event.type) || text(event.kind) || 'Recorded event')
-}
-
-function eventDetail(event: TimelineRow): string {
-  const question = text(event.question)
-  const decision = text(event.decision)
-  const message = text(event.message)
-  const detail = text(event.detail)
-  const progress = text(event.progress)
-  const kind = eventKind(event)
-  if (kind === 'decision') return decision || detail || question || message || 'The planner state changed.'
-  if (kind === 'failure') return detail || message || question || 'The current attempt stopped with a failure.'
-  if (kind === 'recovery') return detail || message || 'The recovery supervisor changed how the campaign will continue.'
-  if (kind === 'skill') return detail || message || 'Deterministic gameplay execution.'
-  if (kind === 'system') return detail || message || 'Run lifecycle event.'
-  if (kind === 'progress') return progress || detail || message || 'Run progress was persisted.'
-  if (detail && detail !== eventTitle(event)) return detail
-  if (message && message !== eventTitle(event)) return message
-  if (question) return question
-  if (kind === 'checkpoint') {
-    return event.replayable ? 'Restartable checkpoint with paired agent state.' : 'Persisted checkpoint evidence.'
-  }
-  return 'No additional semantic detail was persisted.'
-}
-
-function markerSymbol(event: TimelineRow): string {
-  switch (eventKind(event)) {
-    case 'checkpoint': return '■'
-    case 'failure': return '◆'
-    case 'progress': return '●'
-    case 'decision': return '○'
-    case 'recovery': return '↻'
-    case 'skill': return '⚙'
-    case 'system': return '·'
-    default: return '·'
-  }
-}
-
-function markerClasses(event: TimelineRow): string {
-  switch (eventKind(event)) {
-    case 'checkpoint': return 'border-amber-300/50 bg-amber-300/15 text-amber-200 hover:bg-amber-300/25'
-    case 'failure': return 'border-rose-300/60 bg-rose-400/15 text-rose-200 hover:bg-rose-400/25'
-    case 'progress': return 'border-emerald-300/50 bg-emerald-300/15 text-emerald-200 hover:bg-emerald-300/25'
-    case 'decision': return 'border-cyan-300/50 bg-cyan-300/15 text-cyan-100 hover:bg-cyan-300/25'
-    case 'recovery': return 'border-amber-300/60 bg-amber-300/15 text-amber-100 hover:bg-amber-300/25'
-    case 'skill': return 'border-violet-300/50 bg-violet-300/10 text-violet-200 hover:bg-violet-300/20'
-    case 'system': return 'border-slate-500/50 bg-slate-500/15 text-slate-300 hover:bg-slate-500/25'
-    default: return 'border-slate-500/50 bg-slate-500/15 text-slate-300 hover:bg-slate-500/25'
-  }
-}
-
-function compactFrame(value: number): string {
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}k`
-  return String(Math.round(value))
-}
-
-type TimelineMark = {
-  position: number
-  eventIndices: number[]
-  representativeIndex: number
-  firstFrame: number
-  lastFrame: number
-}
-
-type FilterOption = {
-  value: TimelineFilter
-  label: string
-  count: number
-  title?: string
-}
-
-const filterCounts = computed(() => timelineFilterCounts(props.events))
-const filterOptions = computed<FilterOption[]>(() => {
-  const counts = filterCounts.value
-  const options: FilterOption[] = [
-    { value: 'all', label: 'All', count: counts.all },
-    { value: 'attention', label: 'Needs attention', count: counts.attention, title: 'Failures and attempts that stopped; routine deploy recoveries are under Recovery' },
-    { value: 'recovery', label: 'Recovery', count: counts.recovery },
-    { value: 'failure', label: 'Failures', count: counts.failure },
-    { value: 'decision', label: 'LLM', count: counts.decision },
-    { value: 'skill', label: 'Skills', count: counts.skill },
-    { value: 'progress', label: 'Milestones', count: counts.progress },
-    { value: 'checkpoint', label: 'Checkpoints', count: counts.checkpoint },
-    { value: 'system', label: 'System', count: counts.system }
-  ]
-  return options.filter((option) => option.value === 'all' || option.count > 0)
-})
-
-const visibleEntries = computed(() => props.events
+const visible = computed(() => props.events
   .map((event, index) => ({ event, index }))
-  .filter(({ event }) => eventMatchesFilter(event, activeFilter.value)))
+  .filter(({ event }) => eventMatchesFilter(event, props.filter)))
 
-function eventPriority(event: TimelineRow): number {
-  switch (eventKind(event)) {
-    case 'failure': return 7
-    case 'checkpoint': return 6
-    case 'recovery': return 5
-    case 'progress': return 4
-    case 'decision': return 3
-    case 'skill': return 2
-    case 'system': return 1
-    default: return 0
-  }
-}
+type Mark = { position: number; indices: number[]; representative: number }
 
-const layout = computed(() => {
-  const maximum = Math.max(1, number(props.totalFrames), ...props.events.map(eventFrame))
-  const positions = new Map<number, number>()
-  const sorted = visibleEntries.value
-    .map(({ event, index }) => {
-      const position = Math.max(0, Math.min(100, 100 * eventFrame(event) / maximum))
-      positions.set(index, position)
-      return { position, index }
-    })
+const maximum = computed(() => Math.max(1, Number(props.totalFrames) || 0, ...props.events.map(frameOf)))
+
+const marks = computed<Mark[]>(() => {
+  const sorted = visible.value
+    .map(({ event, index }) => ({ index, position: Math.max(0, Math.min(100, 100 * frameOf(event) / maximum.value)) }))
     .sort((a, b) => a.position - b.position || a.index - b.index)
-  const collisionDistance = 2.2 / zoom.value
-
-  const marks: TimelineMark[] = []
-  let lastPosition = -Infinity
-
+  const distance = 1.6 / zoom.value
+  const result: Mark[] = []
+  let last = -Infinity
   for (const item of sorted) {
-    const previous = marks[marks.length - 1]
-    if (previous && item.position - lastPosition < collisionDistance) {
-      previous.eventIndices.push(item.index)
-      previous.position = previous.eventIndices.reduce((sum, index) => sum + (positions.get(index) || 0), 0) / previous.eventIndices.length
-      previous.firstFrame = Math.min(previous.firstFrame, eventFrame(props.events[item.index]))
-      previous.lastFrame = Math.max(previous.lastFrame, eventFrame(props.events[item.index]))
-      const currentRepresentative = props.events[previous.representativeIndex]
-      const candidate = props.events[item.index]
-      if (
-        eventPriority(candidate) > eventPriority(currentRepresentative) ||
-        (eventPriority(candidate) === eventPriority(currentRepresentative) && item.index > previous.representativeIndex)
-      ) {
-        previous.representativeIndex = item.index
-      }
+    const previous = result[result.length - 1]
+    if (previous && item.position - last < distance) {
+      previous.indices.push(item.index)
+      const current = eventKind(props.events[previous.representative])
+      const candidate = eventKind(props.events[item.index])
+      if (kindPriority[candidate] >= kindPriority[current]) previous.representative = item.index
     } else {
-      marks.push({
-        position: item.position,
-        eventIndices: [item.index],
-        representativeIndex: item.index,
-        firstFrame: eventFrame(props.events[item.index]),
-        lastFrame: eventFrame(props.events[item.index])
-      })
+      result.push({ position: item.position, indices: [item.index], representative: item.index })
     }
-    lastPosition = item.position
+    last = item.position
   }
-
-  return { marks, totalFrames: maximum }
+  return result
 })
 
-const ticks = computed(() => {
-  const divisions = Math.min(80, Math.max(4, Math.round(4 * zoom.value)))
-  return Array.from({ length: divisions + 1 }, (_, index) => {
-    const percent = 100 * index / divisions
-    return {
-      percent,
-      label: compactFrame(layout.value.totalFrames * percent / 100)
-    }
-  })
-})
-
-const selected = computed(() => {
+const playhead = computed(() => {
   const event = props.events[props.selectedIndex]
-  return event && eventMatchesFilter(event, activeFilter.value) ? event : null
+  if (!event || props.followLive) return 100
+  return Math.max(0, Math.min(100, 100 * frameOf(event) / maximum.value))
 })
-const canZoomIn = computed(() => zoom.value < MAX_ZOOM)
-const canZoomOut = computed(() => zoom.value > MIN_ZOOM)
 
-function focusRatio(): number {
-  const event = selected.value || visibleEntries.value[visibleEntries.value.length - 1]?.event
-  if (!event) return 0.5
-  return Math.max(0, Math.min(1, eventFrame(event) / layout.value.totalFrames))
+const ticks = computed(() => [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+  const frame = maximum.value * ratio
+  const label = frame >= 1_000_000 ? `${(frame / 1_000_000).toFixed(1)}m` : frame >= 1000 ? `${Math.round(frame / 1000)}k` : String(Math.round(frame))
+  return { percent: ratio * 100, label: ratio === 1 && props.live ? 'now' : label }
+}))
+
+function markLabel(mark: Mark): string {
+  if (mark.indices.length > 1) return `${mark.indices.length} events around ${eventTime(props.events[mark.representative])}. Activate to zoom in.`
+  const event = props.events[mark.representative]
+  return `${eventTime(event)}, ${eventKindLabels[eventKind(event)].toLowerCase()}: ${eventTitle(event)}`
 }
 
-function setFilter(filter: TimelineFilter): void {
-  activeFilter.value = filter
-  const current = props.events[props.selectedIndex]
-  if (current && eventMatchesFilter(current, filter)) return
-  const first = visibleEntries.value[0]
-  if (first) emit('select', first.index)
-}
-
-function scrollToRatio(ratio: number): void {
+function scrollTo(ratio: number): void {
   void nextTick(() => {
-    const viewport = timelineScroll.value
-    if (!viewport) return
-    const clamped = Math.max(0, Math.min(1, ratio))
-    const maximum = Math.max(0, viewport.scrollWidth - viewport.clientWidth)
-    viewport.scrollLeft = Math.max(0, Math.min(maximum, clamped * viewport.scrollWidth - viewport.clientWidth / 2))
+    const node = viewport.value
+    if (!node) return
+    const max = Math.max(0, node.scrollWidth - node.clientWidth)
+    node.scrollLeft = Math.max(0, Math.min(max, ratio * node.scrollWidth - node.clientWidth / 2))
   })
 }
 
-function setZoom(nextZoom: number, anchorOverride?: number): void {
-  const viewport = timelineScroll.value
-  const anchor = anchorOverride ?? (viewport && viewport.scrollWidth > viewport.clientWidth
-    ? (viewport.scrollLeft + viewport.clientWidth / 2) / viewport.scrollWidth
-    : focusRatio())
-  zoom.value = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, nextZoom))
-  scrollToRatio(anchor)
+function setZoom(next: number, anchor?: number): void {
+  zoom.value = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next))
+  scrollTo(anchor ?? playhead.value / 100)
 }
 
-function activateMark(mark: TimelineMark): void {
-  if (mark.eventIndices.length === 1) {
-    emit('select', mark.eventIndices[0])
-    return
-  }
-  if (canZoomIn.value) {
+function activate(mark: Mark): void {
+  if (mark.indices.length > 1 && zoom.value < MAX_ZOOM) {
     setZoom(zoom.value * 2, mark.position / 100)
     return
   }
-  emit('select', mark.representativeIndex)
+  emit('select', mark.representative)
 }
 
-function markTitle(mark: TimelineMark): string {
-  if (mark.eventIndices.length === 1) {
-    const event = props.events[mark.eventIndices[0]]
-    return `${when(event)} · ${eventTitle(event)}`
-  }
-  const frameRange = mark.firstFrame === mark.lastFrame
-    ? `frame ${mark.firstFrame.toLocaleString()}`
-    : `frames ${mark.firstFrame.toLocaleString()}–${mark.lastFrame.toLocaleString()}`
-  return `${mark.eventIndices.length} events · ${frameRange} · click to zoom`
+function step(direction: -1 | 1): void {
+  const list = visible.value.map(({ index }) => index)
+  if (!list.length) return
+  const position = list.indexOf(props.selectedIndex)
+  const next = position < 0 ? (direction > 0 ? list[0] : list[list.length - 1]) : list[Math.max(0, Math.min(list.length - 1, position + direction))]
+  emit('select', next)
 }
 
-function zoomIn(): void {
-  setZoom(zoom.value * 2)
+function onFilter(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value as TimelineFilter
+  emit('update:filter', value)
+  const current = props.events[props.selectedIndex]
+  if (current && eventMatchesFilter(current, value)) return
+  const last = props.events.map((row, index) => ({ row, index })).filter(({ row }) => eventMatchesFilter(row, value)).pop()
+  if (last) emit('select', last.index)
 }
 
-function zoomOut(): void {
-  setZoom(zoom.value / 2)
-}
-
-function fitTimeline(): void {
-  setZoom(MIN_ZOOM)
-}
-
-watch(() => props.selectedIndex, (index) => {
-  if (index < 0 || zoom.value <= MIN_ZOOM) return
-  const event = props.events[index]
-  if (event && eventMatchesFilter(event, activeFilter.value)) scrollToRatio(eventFrame(event) / layout.value.totalFrames)
+watch(() => props.selectedIndex, () => {
+  if (zoom.value > MIN_ZOOM) scrollTo(playhead.value / 100)
 })
 
-watch(filterCounts, (counts) => {
-  if (activeFilter.value !== 'all' && counts[activeFilter.value] === 0) {
-    activeFilter.value = 'all'
-  }
-})
-
-function sourceLabel(event: TimelineRow): string {
-  const source = text(event.source).toLowerCase()
-  if (source === 'llm') return 'LLM'
-  if (source === 'skill') return 'Skill'
-  if (source === 'recovery') return 'Recovery'
-  if (source === 'milestone') return 'Milestone'
-  if (source === 'system') return 'System'
-  return ''
-}
-
-function when(event: TimelineRow): string {
-  const frame = eventFrame(event)
-  if (frame) return `frame ${frame.toLocaleString()}`
-  const round = eventRound(event)
-  if (round) return `round ${round}`
-  const at = number(event.at)
-  if (at) return new Date(at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  return 'recorded'
-}
+defineExpose({ step })
 </script>
 
 <template>
-  <section class="rounded-md border border-white/8 bg-black/10 p-3">
-    <div class="flex flex-wrap items-start justify-between gap-2">
-      <div>
-        <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Live + recorded</span>
-        <h3 class="mt-0.5 text-sm font-semibold text-slate-200">Run activity</h3>
-      </div>
-      <div class="flex max-w-full flex-wrap items-center justify-end gap-2">
-        <span class="max-w-full truncate font-mono text-[10px] text-slate-500 xl:max-w-xl">
-          {{ selected ? `${when(selected)} · ${eventTitle(selected)}` : `${layout.totalFrames.toLocaleString()} frames` }}
-        </span>
-        <div v-if="events.length" class="flex items-center overflow-hidden rounded-md border border-white/8 bg-black/20" role="group" aria-label="Timeline zoom">
-          <button
-            type="button"
-            class="grid h-6 min-w-6 place-items-center border-r border-white/8 px-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30"
-            :disabled="!canZoomOut"
-            aria-label="Zoom out timeline"
-            title="Zoom out"
-            @click="zoomOut"
-          >−</button>
-          <span class="min-w-9 px-1.5 text-center font-mono text-[9px] text-slate-500">{{ zoom }}×</span>
-          <button
-            type="button"
-            class="grid h-6 min-w-6 place-items-center border-l border-white/8 px-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-30"
-            :disabled="!canZoomIn"
-            aria-label="Zoom in timeline"
-            title="Zoom in"
-            @click="zoomIn"
-          >+</button>
-          <button
-            v-if="zoom > 1"
-            type="button"
-            class="h-6 border-l border-white/8 px-2 text-[9px] font-semibold text-slate-500 hover:bg-white/5 hover:text-slate-200"
-            title="Fit the full run"
-            @click="fitTimeline"
-          >Fit</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="events.length" class="mt-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter run events">
-      <span class="mr-1 text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">Focus</span>
-      <button
-        v-for="option in filterOptions"
-        :key="option.value"
-        type="button"
-        :title="option.title"
-        :aria-pressed="activeFilter === option.value"
-        :class="[
-          activeFilter === option.value
-            ? option.value === 'attention'
-              ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
-              : 'border-cyan-300/40 bg-cyan-300/10 text-cyan-100'
-            : 'border-white/8 bg-white/[0.025] text-slate-500 hover:bg-white/[0.05] hover:text-slate-300',
-          'inline-flex h-6 items-center gap-1.5 rounded-md border px-2 text-[9px] font-semibold transition'
-        ]"
-        @click="setFilter(option.value)"
+  <section class="ui-bay flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2" aria-label="Run timeline">
+    <label class="flex items-center gap-2">
+      <span class="ui-label">Events</span>
+      <select
+        :value="filter"
+        class="h-7 rounded-[3px] border border-control bg-surface px-2 text-body text-fg"
+        @change="onFilter"
       >
-        <span>{{ option.label }}</span>
-        <span class="font-mono text-[8px] opacity-70">{{ option.count }}</span>
-      </button>
-      <span v-if="activeFilter !== 'all'" class="ml-auto text-[9px] text-slate-600">
-        {{ visibleEntries.length }} of {{ events.length }} events
-      </span>
-    </div>
+        <option v-for="option in filterOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+      </select>
+    </label>
 
-    <div v-if="events.length" class="mt-3">
-      <div
-        ref="timelineScroll"
-        class="overflow-x-auto overscroll-x-contain rounded-md border border-white/8 bg-black/20 focus:outline-none focus:ring-1 focus:ring-cyan-300/30"
-        tabindex="0"
-        aria-label="Run activity timeline. Scroll horizontally when zoomed."
-      >
+    <div
+      v-if="events.length"
+      ref="viewport"
+      class="order-last min-w-0 basis-full overflow-x-auto overscroll-x-contain md:order-none md:basis-0 md:flex-1"
+      tabindex="0"
+      aria-label="Timeline track. Scroll horizontally when zoomed."
+    >
+      <div class="relative h-11 min-w-full" :style="{ width: `${zoom * 100}%` }">
+        <div class="absolute inset-x-2 top-[14px] h-0.5 bg-rule-strong" />
+        <div class="absolute left-2 top-[14px] h-0.5 bg-accent/45" :style="{ width: `calc(${playhead}% - 16px * ${playhead / 100})` }" />
+        <button
+          v-for="(mark, i) in marks"
+          :key="`${mark.representative}-${i}`"
+          type="button"
+          :aria-label="markLabel(mark)"
+          :title="markLabel(mark)"
+          :aria-current="mark.indices.includes(selectedIndex) ? 'true' : undefined"
+          :class="[
+            mark.indices.length > 1 ? '' : kindColor[eventKind(events[mark.representative])],
+            mark.indices.includes(selectedIndex) ? 'bg-selected outline-2 outline-accent' : 'hover:bg-raised',
+            mark.indices.length > 1 ? 'min-w-6 border border-rule-strong bg-raised px-1 text-meta font-semibold text-fg-2' : 'w-[22px]',
+            'absolute top-[4px] grid h-[22px] -translate-x-1/2 place-items-center rounded-[3px] text-[12px] leading-none'
+          ]"
+          :style="{ left: `calc(8px + (100% - 16px) * ${mark.position / 100})` }"
+          @click="activate(mark)"
+        >
+          <span v-if="mark.indices.length > 1">{{ mark.indices.length }}</span>
+          <span v-else aria-hidden="true">{{ eventGlyphs[eventKind(events[mark.representative])] }}</span>
+        </button>
         <div
-          class="relative h-[76px] px-3 pt-5 pb-3"
-          :style="{
-            width: `${zoom * 100}%`,
-            minWidth: '100%'
-          }"
-        >
-        <div class="absolute inset-x-3 bottom-7 h-px bg-white/15" />
-        <div v-for="tick in ticks" :key="tick.percent" class="absolute bottom-2 -translate-x-1/2 font-mono text-[9px] text-slate-700" :style="{ left: `${tick.percent}%` }">
-          <span class="mb-1 block h-1.5 w-px bg-white/15" />{{ tick.label }}
-        </div>
-        <button
-          v-for="(mark, markIndex) in layout.marks"
-          :key="`${mark.firstFrame}-${mark.lastFrame}-${markIndex}`"
-          type="button"
-          :title="markTitle(mark)"
-          :aria-current="mark.eventIndices.includes(selectedIndex) ? 'true' : undefined"
-          :class="[
-            markerClasses(events[mark.representativeIndex]),
-            mark.eventIndices.includes(selectedIndex) ? 'scale-110 ring-2 ring-white/35' : '',
-            mark.eventIndices.length > 1 ? 'min-w-6 px-1.5' : 'size-5',
-            'absolute z-10 grid h-5 -translate-x-1/2 place-items-center rounded-full border text-[9px] font-bold shadow-sm transition'
-          ]"
-          :style="{ left: `${mark.position}%`, bottom: '21px' }"
-          @click="activateMark(mark)"
-        >
-          <span v-if="mark.eventIndices.length > 1">{{ mark.eventIndices.length }}</span>
-          <span v-else>{{ markerSymbol(events[mark.representativeIndex]) }}</span>
-        </button>
-        </div>
-      </div>
-      <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-medium text-slate-600">
-        <span>○ LLM</span><span>⚙ Skill</span><span>↻ Recovery</span><span>● Milestone</span><span>■ Checkpoint</span><span>◆ Failure</span>
-        <span class="text-slate-700">number = clustered events</span>
-        <span v-if="zoom > 1" class="ml-auto text-slate-700">Scroll horizontally to pan</span>
+          class="pointer-events-none absolute top-0 bottom-3 w-0.5 bg-accent"
+          :style="{ left: `calc(8px + (100% - 16px) * ${playhead / 100})` }"
+          aria-hidden="true"
+        />
+        <span
+          v-for="tick in ticks"
+          :key="tick.percent"
+          class="absolute bottom-0 font-mono text-meta text-fg-3"
+          :class="tick.percent === 0 ? '' : tick.percent === 100 ? '-translate-x-full' : '-translate-x-1/2'"
+          :style="{ left: `calc(8px + (100% - 16px) * ${tick.percent / 100})` }"
+        >{{ tick.label }}</span>
       </div>
     </div>
-    <p v-else class="mt-3 py-5 text-center text-xs text-slate-600">No persisted semantic events for this run.</p>
+    <p v-else class="flex-1 text-meta text-fg-3">No persisted events for this run yet.</p>
 
-    <div v-if="events.length" class="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
-      <div class="max-h-56 overflow-y-auto rounded-md border border-white/8 bg-black/10">
-        <p v-if="visibleEntries.length === 0" class="px-3 py-8 text-center text-xs text-slate-600">No events match this focus.</p>
-        <button
-          v-for="{ event, index } in visibleEntries"
-          :key="`story-${index}`"
-          type="button"
-          :aria-current="index === selectedIndex ? 'true' : undefined"
-          :class="[
-            index === selectedIndex ? 'bg-cyan-300/8' : 'hover:bg-white/[0.025]',
-            'grid w-full grid-cols-[5rem_1rem_minmax(0,1fr)] gap-2 border-b border-white/8 px-3 py-2 text-left last:border-b-0'
-          ]"
-          @click="emit('select', index)"
-        >
-          <span class="font-mono text-[9px] text-slate-600">{{ when(event) }}</span>
-          <span class="text-[10px] text-cyan-200/80">{{ markerSymbol(event) }}</span>
-          <span class="min-w-0">
-            <span class="flex min-w-0 items-center gap-1.5">
-              <span v-if="sourceLabel(event)" class="shrink-0 rounded-sm border border-white/8 bg-white/[0.035] px-1 py-0.5 text-[8px] font-semibold tracking-[0.05em] text-slate-500 uppercase">{{ sourceLabel(event) }}</span>
-              <strong class="block min-w-0 truncate text-[11px] font-semibold text-slate-300">{{ eventTitle(event) }}</strong>
-            </span>
-            <span class="mt-0.5 block truncate text-[10px] text-slate-600">{{ eventDetail(event) }}</span>
-          </span>
-        </button>
+    <div class="flex items-center gap-1">
+      <div v-if="events.length" class="flex items-center" role="group" aria-label="Timeline zoom">
+        <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" :disabled="zoom <= MIN_ZOOM" aria-label="Zoom out" @click="setZoom(zoom / 2)">−</button>
+        <span class="w-8 text-center font-mono text-meta text-fg-2">{{ zoom }}×</span>
+        <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" :disabled="zoom >= MAX_ZOOM" aria-label="Zoom in" @click="setZoom(zoom * 2)">+</button>
       </div>
-
-      <div class="rounded-md border border-white/8 bg-black/15 p-3">
-        <template v-if="selected">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[10px] font-semibold tracking-[0.08em] text-cyan-300/70 uppercase">Selected event</span>
-            <span class="font-mono text-[9px] text-slate-600">{{ when(selected) }}</span>
-          </div>
-          <div class="mt-2 flex items-center gap-2">
-            <span v-if="sourceLabel(selected)" class="rounded-sm border border-white/8 bg-white/[0.035] px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.05em] text-slate-500 uppercase">{{ sourceLabel(selected) }}</span>
-            <strong class="block text-xs text-slate-200">{{ eventTitle(selected) }}</strong>
-          </div>
-          <p class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[11px] leading-5 text-slate-400">{{ eventDetail(selected) }}</p>
-          <p v-if="number(selected.attempt) || number(selected.recovery_attempt)" class="mt-2 font-mono text-[9px] text-slate-600">
-            <span v-if="number(selected.attempt)">attempt {{ number(selected.attempt) }}</span>
-            <span v-if="number(selected.recovery_attempt)"> · recovery {{ number(selected.recovery_attempt) }}</span>
-          </p>
-        </template>
-        <p v-else class="py-5 text-center text-xs text-slate-600">Choose a marker to inspect that point in the run.</p>
-      </div>
+      <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" aria-label="Previous event ([)" title="Previous event ([)" :disabled="!events.length" @click="step(-1)">◀</button>
+      <button type="button" class="ui-btn ui-btn-sm ui-icon-btn" aria-label="Next event (])" title="Next event (])" :disabled="!events.length" @click="step(1)">▶</button>
+      <button
+        v-if="live"
+        type="button"
+        class="ui-btn ui-btn-sm"
+        :class="followLive ? 'bg-selected' : ''"
+        :aria-pressed="followLive"
+        @click="emit('follow', !followLive)"
+      >
+        <span :class="followLive ? 'text-ok' : 'text-fg-3'" aria-hidden="true">●</span>
+        Follow live
+      </button>
     </div>
   </section>
 </template>

@@ -158,7 +158,9 @@ existing `RunTimeline` data and `runTimelineFilters.ts`.
   runs. Each entry: time (mono), glyph, one-line summary. The selected entry (synced
   with the timeline marker) expands in place to show question → decision → outcome
   as a 3-row `KeyValueList`. Raw exchange and trace tail sit behind a "Raw" disclosure.
-- *Inspector* tabs (URL `?tab=`):
+- *Inspector* tabs (URL `?tab=`): Event, Planner, Media, Checkpoints, Artifacts, Details.
+  **Media** holds replay generation/cancel, highlights and YouTube publishing, so
+  every capability of the old inspector keeps a home.
   - **Event** (default): the selected event's evidence. A structured outcome uses
     `KeyValueList`. Related checkpoint → "Go to checkpoint". A failure event →
     "Investigate with AI" (`investigateTriage`, only when the event has a triage key)

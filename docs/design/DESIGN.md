@@ -216,7 +216,15 @@ Fitted region: `--surface` body, `--rule-strong` outer edge, 36px header row on
 `description` prop, because explanatory text isn't a bay feature. Adjacent bays
 in a grid share one-pixel rules (`gap-px` on a `--rule` background), as the Live triad already does.
 
-### 4.2 `Button` / `IconButton`
+### 4.2 Buttons (`.ui-btn` classes)
+
+Implemented as component classes in `base.css` (`.ui-btn`, `.ui-btn-sm`,
+`.ui-btn-primary`, `.ui-btn-quiet`, `.ui-btn-danger`, `.ui-btn-danger-solid`,
+`.ui-icon-btn`) on native `<button>`/`<a>` elements. A Vue wrapper would add
+nothing. Pills, tags, bays and key/value lists follow the same rule (`.ui-pill`,
+`.ui-tag`, `.ui-bay`, `.ui-kv`); only `StatusPill` is a component, because it
+maps status values.
+
 | Variant | Look | Use |
 |---|---|---|
 | `primary` | `--accent` fill, `--on-accent` text | The one main action of a task area |

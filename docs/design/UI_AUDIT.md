@@ -6,6 +6,12 @@ Status: audit for the 2026-10 redesign. Companion documents:
 
 ## Evidence and method
 
+> **Note (2026-10-15):** written against the code before #2672–#2675 merged the
+> same day (addressable navigation, Settings, Operations focus, Analytics
+> experiments, Runs search). Findings about the shell's Tools tab, Operations
+> tiles and configuration placement are partly resolved by those PRs; the
+> visual-system, type, focus and Live findings still stand.
+
 - **Screenshots.** The brief points to `docs/ui-before/`; that directory does not
   exist in this branch, and `admin.rompilot.app` is behind Cloudflare Access, so no
   fresh captures were taken. Visual evidence comes from the committed concepts in

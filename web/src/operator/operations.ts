@@ -1,6 +1,7 @@
 import type { DashboardRun, DashboardStats } from '../shared/api/types'
 import { playSpeedLabel } from '../shared/playstyle'
 import { GAME_BOY_FPS, formatRunSpeed, runTimingSummary } from '../shared/runTiming'
+import { mapEntryForGame, spectatorNativeMap } from '../shared/mapCatalog'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -186,6 +187,11 @@ export function tileLabel(run: Pick<DashboardRun, 'map' | 'x' | 'y'> & Partial<P
   }
   const map = `0x${Number(run.map || 0).toString(16).padStart(2, '0')}`
   return `${map} (${Number(run.x || 0)},${Number(run.y || 0)})`
+}
+
+// Human map name when the game has a catalog; empty otherwise (callers fall back to tileLabel).
+export function placeName(run: Pick<DashboardRun, 'game' | 'map'> & { native_map?: number }): string {
+  return mapEntryForGame(run.game, spectatorNativeMap(run))?.label || ''
 }
 
 export function formatWhen(unixSeconds: number | undefined, nowSeconds = Date.now() / 1000): string {

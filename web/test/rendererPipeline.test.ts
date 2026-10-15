@@ -21,7 +21,7 @@ test('operator live view retains explicit classic fallback and viewer-local them
   assert.match(operator, /setRendererMode\('classic'\)/)
   assert.match(operator, /setRendererMode\('modern'\)/)
   assert.match(operator, /pokepilot\.operator\.theme/)
-  assert.match(operator, /classic fallback/)
+  assert.match(operator, /showing emulator/)
 })
 
 

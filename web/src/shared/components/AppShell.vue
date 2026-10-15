@@ -76,11 +76,11 @@ const effectiveNavigation = computed(() => props.navigation.length ? props.navig
             aria-hidden="true"
           />
           <div class="min-w-0 leading-tight">
-            <strong :class="['block truncate text-white', mode === 'public' ? 'text-base font-black tracking-tight' : 'text-[15px]']">
-              {{ mode === 'private' ? 'RomPilot Admin' : 'RomPilot' }}
+            <strong :class="['block truncate text-white', mode === 'public' ? 'text-base font-black tracking-tight' : 'text-[14px] font-semibold']">
+              RomPilot
             </strong>
-            <span :class="['hidden text-[9px] tracking-[0.04em] uppercase sm:block', mode === 'public' ? 'text-cyan-200/55' : 'text-[var(--poke-muted)]']">
-              {{ mode === 'private' ? 'Control plane' : 'Autonomous game runs' }}
+            <span v-if="mode === 'public'" class="hidden text-[9px] tracking-[0.04em] text-cyan-200/55 uppercase sm:block">
+              Autonomous game runs
             </span>
           </div>
         </div>

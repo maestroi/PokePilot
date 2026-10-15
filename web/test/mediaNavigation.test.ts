@@ -14,7 +14,8 @@ const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue',
 const broadcasts = readFileSync(new URL('../src/operator/BroadcastPanel.vue', import.meta.url), 'utf8')
 const mediaView = readFileSync(new URL('../src/operator/MediaView.vue', import.meta.url), 'utf8')
 const broadcastAPI = readFileSync(new URL('../src/shared/api/broadcast.ts', import.meta.url), 'utf8')
-const inspector = readFileSync(new URL('../src/operator/InspectorPanelInner.vue', import.meta.url), 'utf8')
+const inspector = readFileSync(new URL('../src/operator/LiveInspector.vue', import.meta.url), 'utf8')
+const runEvidence = readFileSync(new URL('../src/operator/useRunEvidence.ts', import.meta.url), 'utf8')
 const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
 const loadingScene = readFileSync(new URL('../src/spectator/BroadcastLoadingScene.vue', import.meta.url), 'utf8')
@@ -100,10 +101,10 @@ test('public completed runs resolve from the archive and surface replay state', 
 })
 
 test('run inspector exposes render cancellation and Media handoff', () => {
-  assert.match(inspector, /cancelMediaRenderJob/)
-  assert.match(inspector, /Cancel render/)
-  assert.match(inspector, /Manage in Media/)
-  assert.match(inspector, /replay\.job_id/)
+  assert.match(runEvidence, /cancelMediaRenderJob/)
+  assert.match(inspector, /Cancel generation/)
+  assert.match(inspector, /Open in Media/)
+  assert.match(inspector, /replay\.value\?\.job_id/)
 })
 
 test('runs archive only plays confirmed recordings and hands job lifecycle to Media', () => {
