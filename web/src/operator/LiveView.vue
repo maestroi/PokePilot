@@ -622,7 +622,10 @@ const search = () => window.location.search
         <p v-if="actionError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ actionError }}</p>
 
         <!-- Game · Semantic map · Game state -->
-        <div class="grid grid-cols-1 gap-px overflow-hidden border border-rule-strong bg-rule md:grid-cols-2 xl:h-[clamp(340px,42vh,430px)] xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_300px]">
+        <!-- Row height scales with the viewport; the Game column follows it at the
+             frame's 160:144 ratio (minus the 36px header) so the frame grows
+             instead of letterboxing, and the map takes the remaining width. -->
+        <div class="grid grid-cols-1 gap-px overflow-hidden border border-rule-strong bg-rule [--trio-h:clamp(340px,46vh,760px)] md:grid-cols-2 xl:h-[var(--trio-h)] xl:grid-cols-[calc((var(--trio-h)_-_36px)*160/144)_minmax(0,1fr)_300px] 2xl:grid-cols-[calc((var(--trio-h)_-_36px)*160/144)_minmax(0,1fr)_340px]">
           <section class="flex min-w-0 flex-col bg-surface xl:min-h-0" aria-label="Game">
             <header class="ui-bay-header">
               <h2>Game</h2>
@@ -830,7 +833,7 @@ const search = () => window.location.search
         />
 
         <!-- Story + inspector -->
-        <div class="grid grid-cols-1 gap-3 xl:h-[clamp(440px,60vh,680px)] xl:grid-cols-[minmax(0,1fr)_minmax(400px,0.75fr)]">
+        <div class="grid grid-cols-1 gap-3 xl:h-[clamp(440px,60vh,1000px)] xl:grid-cols-[minmax(0,1fr)_minmax(400px,0.75fr)]">
           <RunStory
             class="max-h-[560px] xl:max-h-none"
             :events="evidence.timeline.value"

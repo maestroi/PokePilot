@@ -103,8 +103,10 @@ sticky with its own scroll.
   running/paused and focus isn't in an input. No shortcut ever triggers a
   destructive action.
 
-**C. Triad (height `clamp(320px, 40vh, 420px)`)**
-Structure and proportions stay as they are (1 : 1.2 : 0.55). Changes:
+**C. Triad (height `clamp(340px, 46vh, 760px)`)**
+The row grows with the viewport. The Game column's width follows the row height at the
+frame's 160:144 ratio, so the frame scales up instead of letterboxing; the map takes the
+remaining width and Game state stays a fixed 300–340px column. Changes:
 - Bay headers use `Bay` (36px, `text-title`). The Game header right side shows the state
   as a pill: `● Live`, `‖ Paused`, `■ Ended — last frame`, `▶ Replay 18:42 / 42:18`.
 - The renderer control becomes a `SegmentedControl` (Emulator | Themed) on the
