@@ -72,7 +72,7 @@ function retry(): void { void evidence.retry() }
           <dd class="mt-1 font-mono text-lg text-white">{{ item[1] }}</dd>
         </div>
       </dl>
-      <div class="mt-3 grid gap-4 lg:grid-cols-2">
+      <div class="mt-3 grid gap-4 @min-[32rem]:grid-cols-2">
         <section>
           <h4 class="text-[11px] font-semibold text-slate-300">Last recorded events</h4>
           <ol v-if="events.length" class="mt-2 max-h-60 space-y-2 overflow-y-auto">

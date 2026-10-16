@@ -90,3 +90,12 @@ test('recording/source links preserve exact run and job IDs across views', () =>
   assert.match(history, /safeIssueURL\(run\)/)
   assert.match(pane, /section: 'experiments', experiment: run.experiment_id/)
 })
+
+test('the run pane names the Pokémon starter and can be resized', () => {
+  assert.match(pane, /starterPresentation/)
+  assert.match(pane, /<dt>Starter<\/dt>/)
+  assert.match(pane, /partyMonIsStarter/)
+  assert.match(history, /aria-label="Resize run details"/)
+  assert.match(history, /--run-pane/)
+  assert.match(history, /onPaneResizeDown/)
+})

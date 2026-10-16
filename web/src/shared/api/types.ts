@@ -181,6 +181,9 @@ export interface DashboardRun {
   game?: string
   planner?: string
   starter?: string
+  // Species Oak actually handed over. Random and fixed experiments resolve
+  // here; starter stays the original request ("random", "mewtwo", …).
+  starter_species?: string
   dest?: string
   goal?: string
   llm_profile?: string

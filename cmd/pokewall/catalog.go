@@ -232,7 +232,7 @@ func (c *runCatalog) get(runID string) (tileRow, bool, error) {
 	if err := json.Unmarshal(data, &row); err != nil {
 		return tileRow{}, false, fmt.Errorf("decode catalog run %s: %w", runID, err)
 	}
-	return row, true, nil
+	return row.withStarterSpecies(), true, nil
 }
 
 func (c *runCatalog) delete(runID string) error {
@@ -571,7 +571,7 @@ func (w *Wall) catalogHistorySnapshot(query runtimeDashboardQuery) (runtimeDashb
 			// llm_exchanges and experiment metrics.
 			row.Stats.StrategicRecords = nil
 		}
-		history = append(history, row)
+		history = append(history, row.withStarterSpecies())
 	}
 	if err := rows.Err(); err != nil {
 		return runtimeDashboardView{}, err

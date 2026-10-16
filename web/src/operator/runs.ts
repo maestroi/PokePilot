@@ -29,7 +29,51 @@ export function plannerLabel(run: DashboardRun): string {
 }
 
 export function archiveStarter(run: DashboardRun): string {
-  return run.starter || (run.game === 'pokemon-yellow' ? 'pikachu' : (run.planner === 'scripted' ? 'squirtle' : 'LLM picks'))
+  const shown = starterPresentation(run)
+  if (!shown) return ''
+  return shown.detail ? `${shown.species} · ${shown.detail}` : shown.species
+}
+
+export function isPokemonRun(run: Pick<DashboardRun, 'game'>): boolean {
+  const game = (run.game || '').toLowerCase()
+  return !game || game.startsWith('pokemon')
+}
+
+// starterPresentation is the Pokémon Oak gave this run. Random experiments
+// prefer the resolved species; the request ("random", "random:any") stays as
+// a quieter detail. Non-Pokémon games have no starter.
+export function starterPresentation(run: DashboardRun): { species: string; detail: string } | null {
+  if (!isPokemonRun(run)) return null
+  const request = (run.starter || '').trim()
+  const resolved = (run.starter_species || '').trim().toLowerCase()
+  const game = (run.game || 'pokemon-red').toLowerCase()
+  if (resolved) return { species: resolved, detail: starterRequestDetail(request, resolved) }
+  if (game === 'pokemon-yellow') return { species: 'pikachu', detail: '' }
+  const concrete = concreteStarterRequest(request)
+  if (concrete) return { species: concrete, detail: starterRequestDetail(request, concrete) }
+  if (run.planner === 'scripted') return { species: 'squirtle', detail: '' }
+  if (!request) return { species: 'LLM picks', detail: '' }
+  return { species: request, detail: '' }
+}
+
+export function partyMonIsStarter(name: string, species: string): boolean {
+  const starter = species.trim().toLowerCase()
+  if (!starter || starter === 'llm picks' || starter === 'random' || starter.startsWith('random:')) return false
+  return name.trim().toLowerCase() === starter
+}
+
+function concreteStarterRequest(request: string): string {
+  const raw = request.trim().toLowerCase()
+  if (!raw || raw === 'random' || raw.startsWith('random:')) return ''
+  if (raw.startsWith('fixed:')) return raw.slice('fixed:'.length).trim()
+  return raw
+}
+
+function starterRequestDetail(request: string, species: string): string {
+  const raw = request.trim().toLowerCase()
+  if (!raw || raw === species) return ''
+  if (raw === 'random' || raw.startsWith('random:') || raw.startsWith('fixed:')) return raw
+  return ''
 }
 
 export function archiveWhere(run: DashboardRun): string {
