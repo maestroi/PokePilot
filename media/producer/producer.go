@@ -29,10 +29,10 @@ const (
 type PublicationClass string
 
 const (
-	FullEpisode   PublicationClass = "full_episode"
-	ShortOnly     PublicationClass = "short_only"
-	ArchiveOnly   PublicationClass = "archive_only"
-	DoNotPublish  PublicationClass = "do_not_publish"
+	FullEpisode  PublicationClass = "full_episode"
+	ShortOnly    PublicationClass = "short_only"
+	ArchiveOnly  PublicationClass = "archive_only"
+	DoNotPublish PublicationClass = "do_not_publish"
 )
 
 type EvidenceRef struct {
@@ -49,8 +49,8 @@ type Beat struct {
 }
 
 type Score struct {
-	Value   int    `json:"value"`
-	Reason  string `json:"reason"`
+	Value  int    `json:"value"`
+	Reason string `json:"reason"`
 }
 
 type Scores struct {
@@ -204,19 +204,25 @@ func evidence(in Input) (EvidencePack, string, error) {
 		for _, event := range t.Events {
 			pack.Events = append(pack.Events, EventFact{
 				EvidenceRef: EvidenceRef{Attempt: t.Attempt, EventID: event.ID, Frame: event.Frame, TimestampMS: event.TimestampMS},
-				Type: strings.TrimSpace(event.Type), Summary: compact(event.Summary, 280), Objective: compact(event.Objective, 160),
+				Type:        strings.TrimSpace(event.Type), Summary: compact(event.Summary, 280), Objective: compact(event.Objective, 160),
 			})
 		}
 	}
 	sort.SliceStable(pack.Events, func(i, j int) bool {
-		if pack.Events[i].Attempt != pack.Events[j].Attempt { return pack.Events[i].Attempt < pack.Events[j].Attempt }
-		if pack.Events[i].Frame != pack.Events[j].Frame { return pack.Events[i].Frame < pack.Events[j].Frame }
+		if pack.Events[i].Attempt != pack.Events[j].Attempt {
+			return pack.Events[i].Attempt < pack.Events[j].Attempt
+		}
+		if pack.Events[i].Frame != pack.Events[j].Frame {
+			return pack.Events[i].Frame < pack.Events[j].Frame
+		}
 		return pack.Events[i].EventID < pack.Events[j].EventID
 	})
 	// A historical comparison without a durable source is never accepted.
 	history := append([]HistoricalRun(nil), in.History...)
 	sort.Slice(history, func(i, j int) bool {
-		if history[i].RunID != history[j].RunID { return history[i].RunID < history[j].RunID }
+		if history[i].RunID != history[j].RunID {
+			return history[i].RunID < history[j].RunID
+		}
 		return history[i].Source < history[j].Source
 	})
 	seen := make(map[string]bool)
@@ -264,19 +270,29 @@ func comparisons(pack EvidencePack, history []HistoricalRun) []Comparison {
 	// Only published runs, and only explicit sets of observed event types,
 	// are meaningful for an editorial-repetition comparison.
 	current := make(map[string]bool)
-	for _, e := range pack.Events { current[e.Type] = true }
+	for _, e := range pack.Events {
+		current[e.Type] = true
+	}
 	var maxSimilarity int64 = -1
 	var closest HistoricalRun
 	for _, peer := range history {
-		if !peer.Published || len(peer.EventTypes) == 0 || len(current) == 0 { continue }
+		if !peer.Published || len(peer.EventTypes) == 0 || len(current) == 0 {
+			continue
+		}
 		union := make(map[string]bool)
 		peerTypes := make(map[string]bool)
 		intersection := 0
-		for kind := range current { union[kind] = true }
-		for _, kind := range peer.EventTypes { peerTypes[kind] = true }
+		for kind := range current {
+			union[kind] = true
+		}
+		for _, kind := range peer.EventTypes {
+			peerTypes[kind] = true
+		}
 		for kind := range peerTypes {
 			union[kind] = true
-			if current[kind] { intersection++ }
+			if current[kind] {
+				intersection++
+			}
 		}
 		percent := int64(100 * intersection / len(union))
 		if percent > maxSimilarity {
@@ -285,7 +301,7 @@ func comparisons(pack EvidencePack, history []HistoricalRun) []Comparison {
 	}
 	if maxSimilarity >= 0 {
 		out = append(out, Comparison{
-			Metric: "recent_published_event_type_similarity_percent",
+			Metric:  "recent_published_event_type_similarity_percent",
 			Current: maxSimilarity, Reference: 100, SampleSize: 1,
 			BaselineRuns: []string{closest.RunID}, Sources: []string{closest.Source},
 			Detail: "Jaccard similarity of observed semantic event types (not a claim about visual similarity)",
@@ -296,17 +312,25 @@ func comparisons(pack EvidencePack, history []HistoricalRun) []Comparison {
 
 func compact(v string, max int) string {
 	v = strings.TrimSpace(v)
-	if len(v) > max { return v[:max] }
+	if len(v) > max {
+		return v[:max]
+	}
 	return v
 }
 
 func decodeCandidate(data []byte) (Candidate, error) {
 	var c Candidate
-	if len(data) == 0 || len(data) > maxModelBytes { return c, errors.New("producer: invalid model response size") }
+	if len(data) == 0 || len(data) > maxModelBytes {
+		return c, errors.New("producer: invalid model response size")
+	}
 	d := json.NewDecoder(strings.NewReader(string(data)))
 	d.DisallowUnknownFields()
-	if err := d.Decode(&c); err != nil { return c, fmt.Errorf("producer: malformed model JSON: %w", err) }
-	if d.Decode(new(any)) != io.EOF { return c, errors.New("producer: model returned trailing JSON") }
+	if err := d.Decode(&c); err != nil {
+		return c, fmt.Errorf("producer: malformed model JSON: %w", err)
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return c, errors.New("producer: model returned trailing JSON")
+	}
 	return c, nil
 }
 
@@ -315,9 +339,13 @@ func ValidateCandidate(c Candidate, pack EvidencePack) error {
 		return errors.New("producer: oversized narrative")
 	}
 	for _, s := range c.SecondaryStories {
-		if strings.TrimSpace(s) == "" || len(s) > 400 { return errors.New("producer: invalid secondary story") }
+		if strings.TrimSpace(s) == "" || len(s) > 400 {
+			return errors.New("producer: invalid secondary story")
+		}
 	}
-	if !validClass(c.Publication) { return errors.New("producer: unknown publication class") }
+	if !validClass(c.Publication) {
+		return errors.New("producer: unknown publication class")
+	}
 	available := make(map[string]EventFact, len(pack.Events))
 	for _, e := range pack.Events {
 		available[fmt.Sprintf("%d/%s", e.Attempt, e.EventID)] = e
@@ -353,7 +381,10 @@ func ValidateCandidate(c Candidate, pack EvidencePack) error {
 }
 
 func validClass(c PublicationClass) bool {
-	switch c { case FullEpisode, ShortOnly, ArchiveOnly, DoNotPublish: return true }
+	switch c {
+	case FullEpisode, ShortOnly, ArchiveOnly, DoNotPublish:
+		return true
+	}
 	return false
 }
 
@@ -361,25 +392,33 @@ func scores(pack EvidencePack) Scores {
 	var badge, battle, catch, failure, recovery, milestone int
 	for _, e := range pack.Events {
 		switch e.Type {
-		case "badge_acquired": badge++
-		case "gym_battle", "boss_battle": battle++
-		case "rare_catch", "important_catch", "evolution": catch++
-		case "blackout", "failure_terminal", "planner_stall", "objective_failed": failure++
-		case "planner_recovery", "failure_recovered": recovery++
-		case "milestone", "run_finished": milestone++
+		case "badge_acquired":
+			badge++
+		case "gym_battle", "boss_battle":
+			battle++
+		case "rare_catch", "important_catch", "evolution":
+			catch++
+		case "blackout", "failure_terminal", "planner_stall", "objective_failed":
+			failure++
+		case "planner_recovery", "failure_recovered":
+			recovery++
+		case "milestone", "run_finished":
+			milestone++
 		}
 	}
 	out := Scores{
-		Novelty: Score{Value: clamp(18*catch + 8*badge), Reason: "Observed rare catches, evolutions, and badges; does not imply a record"},
-		Drama: Score{Value: clamp(20*failure + 13*recovery + 10*battle), Reason: "Observed failures, recoveries, and major battles"},
+		Novelty:             Score{Value: clamp(18*catch + 8*badge), Reason: "Observed rare catches, evolutions, and badges; does not imply a record"},
+		Drama:               Score{Value: clamp(20*failure + 13*recovery + 10*battle), Reason: "Observed failures, recoveries, and major battles"},
 		ChallengeDifficulty: Score{Value: clamp(12*battle + 10*failure + 4*badge), Reason: "Observed battles and failures; no unsupported difficulty claim"},
-		FailureAndRecovery: Score{Value: clamp(22*failure + 20*recovery), Reason: "Observed failure/recovery events"},
+		FailureAndRecovery:  Score{Value: clamp(22*failure + 20*recovery), Reason: "Observed failure/recovery events"},
 	}
 	for _, c := range pack.History {
 		switch c.Metric {
 		case "duration_ms":
 			value := 35
-			if c.Current < c.Reference { value = 70 }
+			if c.Current < c.Reference {
+				value = 70
+			}
 			out.HistoricalImportance = &Score{Value: value, Reason: "Sourced same-goal duration comparison; not a record"}
 		case "recent_published_event_type_similarity_percent":
 			out.RecentSimilarity = &Score{Value: int(c.Current), Reason: "Sourced published-run event-type Jaccard similarity"}
@@ -418,7 +457,9 @@ func publicationCap(pack EvidencePack, score Scores, policy Policy) (Publication
 			types[e.Type] = true
 		}
 	}
-	if significant == 0 { return ArchiveOnly, "No distinct editorially significant evidence" }
+	if significant == 0 {
+		return ArchiveOnly, "No distinct editorially significant evidence"
+	}
 	if score.RecentSimilarity != nil && score.RecentSimilarity.Value >= policy.SimilarityCeiling {
 		return ArchiveOnly, "Highly repetitive of a sourced published run"
 	}
@@ -430,7 +471,9 @@ func publicationCap(pack EvidencePack, score Scores, policy Policy) (Publication
 
 func rulesCandidate(pack EvidencePack, cap PublicationClass) Candidate {
 	c := Candidate{Publication: cap}
-	if cap == DoNotPublish || len(pack.Events) == 0 { return c }
+	if cap == DoNotPublish || len(pack.Events) == 0 {
+		return c
+	}
 	var selected []EventFact
 	seen := make(map[string]bool)
 	for _, e := range pack.Events {
@@ -438,20 +481,27 @@ func rulesCandidate(pack EvidencePack, cap PublicationClass) Candidate {
 		case "run_finished", "run_failed", "badge_acquired", "gym_battle", "boss_battle",
 			"blackout", "rare_catch", "important_catch", "evolution", "planner_recovery",
 			"failure_recovered", "failure_terminal", "milestone":
-		default: continue
+		default:
+			continue
 		}
 		if !seen[e.Type] {
 			selected = append(selected, e)
 			seen[e.Type] = true
 		}
-		if len(selected) == 8 { break }
+		if len(selected) == 8 {
+			break
+		}
 	}
 	for _, e := range selected {
 		summary := e.Summary
-		if summary == "" { summary = strings.ReplaceAll(e.Type, "_", " ") }
+		if summary == "" {
+			summary = strings.ReplaceAll(e.Type, "_", " ")
+		}
 		c.Beats = append(c.Beats, Beat{Kind: e.Type, Summary: summary, Evidence: []EvidenceRef{e.EvidenceRef}})
 	}
-	if len(c.Beats) == 0 { return c }
+	if len(c.Beats) == 0 {
+		return c
+	}
 	if pack.Goal != "" {
 		c.PrimaryStory = "Run goal: " + compact(pack.Goal, 240) + "; observed: " + compact(c.Beats[0].Summary, 240)
 	} else {
@@ -466,9 +516,13 @@ func rulesCandidate(pack EvidencePack, cap PublicationClass) Candidate {
 // producer so local/offline re-evaluation still works.
 func Assess(ctx context.Context, in Input, model Model, policy Policy) (Assessment, error) {
 	policy, err := normalizedPolicy(policy)
-	if err != nil { return Assessment{}, err }
+	if err != nil {
+		return Assessment{}, err
+	}
 	pack, inputHash, err := evidence(in)
-	if err != nil { return Assessment{}, err }
+	if err != nil {
+		return Assessment{}, err
+	}
 	s := scores(pack)
 	cap, reason := publicationCap(pack, s, policy)
 	identity := "rules-v1"
@@ -476,16 +530,24 @@ func Assess(ctx context.Context, in Input, model Model, policy Policy) (Assessme
 	var candidate Candidate
 	if model != nil && len(pack.Events) > 0 {
 		identity = strings.TrimSpace(model.Identity())
-		if identity == "" { return Assessment{}, errors.New("producer: model identity is required") }
+		if identity == "" {
+			return Assessment{}, errors.New("producer: model identity is required")
+		}
 		promptVersion = PromptVersion
 		raw, err := model.Generate(ctx, pack)
-		if err != nil { return Assessment{}, fmt.Errorf("producer: model: %w", err) }
+		if err != nil {
+			return Assessment{}, fmt.Errorf("producer: model: %w", err)
+		}
 		candidate, err = decodeCandidate(raw)
-		if err != nil { return Assessment{}, err }
+		if err != nil {
+			return Assessment{}, err
+		}
 	} else {
 		candidate = rulesCandidate(pack, cap)
 	}
-	if err := ValidateCandidate(candidate, pack); err != nil { return Assessment{}, err }
+	if err := ValidateCandidate(candidate, pack); err != nil {
+		return Assessment{}, err
+	}
 	publication := candidate.Publication
 	if rank(publication) > rank(cap) {
 		publication = cap
@@ -503,7 +565,9 @@ func Assess(ctx context.Context, in Input, model Model, policy Policy) (Assessme
 		Publication: publication, Reason: reason,
 	}
 	b, err := json.Marshal(out)
-	if err != nil { return Assessment{}, err }
+	if err != nil {
+		return Assessment{}, err
+	}
 	hash := sha256.Sum256(b)
 	out.Hash = hex.EncodeToString(hash[:])
 	return out, nil
