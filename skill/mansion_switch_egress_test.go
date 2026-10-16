@@ -31,10 +31,11 @@ func TestTravelRecoversMansionSwitchSeal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"openMansionBasementExit(",
+		"openMansionB1FTile(",
 		"openMansion1FExit(",
 		"pokemonMansionB1FMap",
 		"pokemonMansion1FMap",
+		"dest.Map == pokemonMansionB1FMap",
 	} {
 		if !strings.Contains(string(compat), want) {
 			t.Fatalf("switch-seal recovery missing %q", want)

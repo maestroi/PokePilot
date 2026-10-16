@@ -338,12 +338,22 @@ func walkAround(interrupted func() error, readBlocked func() map[[2]int]bool, pl
 // enough to the corridor that unconditionally marking it occupied removes
 // the only path the live game actually allows.
 func walkAroundAvoidingObjects(interrupted func() error, m *emu.Emu, h worldmodel.HeaderView, plan func(blocked map[[2]int]bool) ([]world.Step, error), walk func([]world.Step) error, wait func()) error {
-	err := walkAround(interrupted, func() map[[2]int]bool { return liveBlockers(m, h) }, plan, walk, wait)
+	// Prefer live sprites plus Gen-I scripted floor tiles (Cinnabar Gym gate,
+	// Route 16 Snorlax overlay). Scripted tiles stay on the fallback snapshot
+	// too: unlike a wandering NPC they never move, and dropping them would
+	// walk straight back into the same text-box loop the preference avoided.
+	readPreferred := func() map[[2]int]bool {
+		return mergeBlockers(liveBlockers(m, h), gen1ScriptedTileBlockersFor(m))
+	}
+	readFallback := func() map[[2]int]bool {
+		return mergeBlockers(spriteBlockers(m), gen1ScriptedTileBlockersFor(m))
+	}
+	err := walkAround(interrupted, readPreferred, plan, walk, wait)
 	if err == nil {
 		return nil
 	}
 	if !errors.Is(err, world.ErrNoPath) && !errors.Is(err, ErrLegUnwalkable) {
 		return err
 	}
-	return walkAround(interrupted, func() map[[2]int]bool { return spriteBlockers(m) }, plan, walk, wait)
+	return walkAround(interrupted, readFallback, plan, walk, wait)
 }

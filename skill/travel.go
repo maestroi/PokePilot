@@ -372,7 +372,7 @@ func recoveringGoTo(m *emu.Emu, romData []byte, dest Destination, policy MovePol
 			}
 			var routeBlocked *world.RouteBlockedError
 			if errors.Is(err, world.ErrNoRoute) && !errors.As(err, &routeBlocked) && sealRecoveries < maxSealRecoveries {
-				changed, sealErr := recoverGoToCompatibilitySwitchSeal(m, romData, policy)
+				changed, sealErr := recoverGoToCompatibilitySwitchSeal(m, romData, policy, dest)
 				if sealErr != nil {
 					return sealErr
 				}

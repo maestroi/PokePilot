@@ -157,10 +157,18 @@ const mansion1FExitX, mansion1FExitY uint8 = 5, 27
 // staircase but not which statue state currently exposes its corridor, so try
 // each reachable live switch state until the 1F warp is pathable.
 func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) error {
+	return openMansionB1FTile(m, romData, policy, mansionB1FExitX, mansionB1FExitY)
+}
+
+// openMansionB1FTile toggles reachable B1F statues until (tx,ty) is pathable.
+// Inventory detours that leave the Secret Key tile and re-enter at the stairs
+// (23,21) need the same search to walk back across the sealed floor
+// (run-30sb0q7xjdkqc1psaltd1lywws / #2718).
+func openMansionB1FTile(m *emu.Emu, romData []byte, policy MovePolicy, tx, ty uint8) error {
 	if m.Peek8(sym.CurMap) != pokemonMansionB1FMap {
 		return nil
 	}
-	if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+	if mansionTileReachable(m, romData, tx, ty) {
 		return nil
 	}
 
@@ -170,7 +178,7 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 	}
 	attempted := map[attemptKey]bool{}
 	for step := 0; step < 6; step++ {
-		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+		if mansionTileReachable(m, romData, tx, ty) {
 			return nil
 		}
 		before := currentMansionSwitchOn(m)
@@ -191,8 +199,8 @@ func openMansionBasementExit(m *emu.Emu, romData []byte, policy MovePolicy) erro
 			break
 		}
 	}
-	if !mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
-		return fmt.Errorf("Mansion B1F exit warp (%d,%d) is unreachable in every reachable switch state", mansionB1FExitX, mansionB1FExitY)
+	if !mansionTileReachable(m, romData, tx, ty) {
+		return fmt.Errorf("Mansion B1F tile (%d,%d) is unreachable in every reachable switch state", tx, ty)
 	}
 	return nil
 }
