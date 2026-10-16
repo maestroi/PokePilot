@@ -18,7 +18,7 @@ func TestGSMahoganyRouteOwnershipStopsAtScriptedStoryBoundaries(t *testing.T) {
 			t.Fatalf("%s has no owned ordinary-interruption route", name)
 		}
 	}
-	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F", "ROCKET_HIDEOUT_B1F"} {
+	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F", "TEAM_ROCKET_BASE_B1F"} {
 		id, err := gsOpeningMapID(name)
 		if err != nil {
 			t.Fatal(err)
