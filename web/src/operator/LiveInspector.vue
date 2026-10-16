@@ -347,7 +347,8 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
         <p v-if="e.highlightError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ e.highlightError.value }}</p>
 
         <template v-if="e.youtube.value?.configured && e.replay.value?.state === 'ready'">
-          <h3 class="mt-6 text-title font-semibold">YouTube</h3>
+          <h3 class="mt-6 text-title font-semibold">YouTube · legacy replay upload</h3>
+          <p class="mt-1 text-meta text-warn">Direct replay uploads bypass Studio editorial gates. Prefer the Media Studio publication queue for edited episodes or Shorts.</p>
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <a
               v-if="e.youtube.value.publication.state === 'published' && e.youtube.value.publication.video_url"
