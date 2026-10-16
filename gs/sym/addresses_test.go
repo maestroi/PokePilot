@@ -60,6 +60,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wStatusFlags", StatusFlags, 0xD571},
 		{"wStatusFlags2", StatusFlags2, 0xD572},
 		{"wPokegearFlags", PokegearFlags, 0xD67C},
+		{"wPhoneList", PhoneList, 0xD9C6},
 		{"wElmsLabSceneID", ElmsLabSceneID, 0xD6CC},
 		{"wRoute29SceneID", Route29SceneID, 0xD6CE},
 		{"wCherrygroveCitySceneID", CherrygroveCitySceneID, 0xD6CF},
