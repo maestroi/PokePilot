@@ -345,8 +345,7 @@ func description(s source,in Request,link string)string{
 	}
 	if link!=""{lines=append(lines,"","Run page: "+link)}
 	lines=append(lines,"","Edited from PokePilot's recorded run and semantic event timeline.")
-	return strings.Join(lines,"
-")
+	return strings.Join(lines,"\n")
 }
 func runLink(base,runID string)(string,error){
 	if base=="" {return "",nil}
