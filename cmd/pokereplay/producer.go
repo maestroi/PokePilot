@@ -55,14 +55,18 @@ func configuredProducerModel() (producer.Model, error) {
 	endpoint := strings.TrimSpace(os.Getenv("POKEPILOT_PRODUCER_CHAT_URL"))
 	model := strings.TrimSpace(os.Getenv("POKEPILOT_PRODUCER_MODEL"))
 	if endpoint == "" {
-		if model != "" { return nil, errors.New("producer model configured without chat URL") }
+		if model != "" {
+			return nil, errors.New("producer model configured without chat URL")
+		}
 		return nil, nil // explicit rules-v1 offline producer
 	}
-	if model == "" { return nil, errors.New("producer chat URL configured without model ID") }
+	if model == "" {
+		return nil, errors.New("producer chat URL configured without model ID")
+	}
 	return producer.ChatModel{
 		Endpoint: endpoint, ModelID: model,
 		Deployment: strings.TrimSpace(os.Getenv("POKEPILOT_PRODUCER_DEPLOYMENT")),
-		APIKey: os.Getenv("POKEPILOT_PRODUCER_API_KEY"),
+		APIKey:     os.Getenv("POKEPILOT_PRODUCER_API_KEY"),
 	}, nil
 }
 
@@ -72,55 +76,61 @@ func configuredProducerModel() (producer.Model, error) {
 func (s *replayServer) handleProducerAssess(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
 	if strings.TrimSpace(runID) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error":"missing run id"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing run id"})
 		return
 	}
 	if s.store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error":"S3 storage is required for durable studio assessments"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "S3 storage is required for durable studio assessments"})
 		return
 	}
 	var body producerRequest
 	if r.ContentLength > maxProducerRequestBytes {
-		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error":"producer request too large"})
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "producer request too large"})
 		return
 	}
 	decoder := json.NewDecoder(io.LimitReader(r.Body, maxProducerRequestBytes+1))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid producer request"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid producer request"})
 		return
 	}
 	if decoder.Decode(new(any)) != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error":"trailing or oversized producer request"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trailing or oversized producer request"})
 		return
 	}
 	in, err := s.producerInput(r, runID, body.History)
-	if err != nil { writeReplayError(w, err); return }
+	if err != nil {
+		writeReplayError(w, err)
+		return
+	}
 	model, err := configuredProducerModel()
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error":err.Error()})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 		return
 	}
 	assessment, err := producer.Assess(r.Context(), in, model, producer.DefaultPolicy())
 	if err != nil {
 		// Malformed model output never becomes a publishable artifact.
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error":err.Error()})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
 	if err := producer.Validate(assessment, in); err != nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error":err.Error()})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
 	data, err := json.MarshalIndent(assessment, "", "  ")
-	if err != nil { writeJSON(w, http.StatusInternalServerError, map[string]string{"error":"encode producer assessment"}); return }
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "encode producer assessment"})
+		return
+	}
 	key := producerObjectKey(runID, assessment.Hash)
 	if _, err := s.store.PutObject(r.Context(), key, "application/json", data); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error":fmt.Sprintf("persist producer assessment: %v", err)})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("persist producer assessment: %v", err)})
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Assessment producer.Assessment `json:"assessment"`
-		ObjectKey string `json:"object_key"`
+		ObjectKey  string              `json:"object_key"`
 	}{assessment, key})
 }
 
