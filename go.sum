@@ -39,6 +39,7 @@ github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
 github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/maestroi/gomeboy v1.4.1-0.20260930232126-2bc74e4f103d h1:v5dPonQ9Iw20WycbEZDEbHnqdmjEWWDGtg4jArPyuGg=
 github.com/maestroi/gomeboy v1.4.1-0.20260930232126-2bc74e4f103d/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
+github.com/maestroi/gomeboy v1.4.1-0.20261016012545-2b1abb4a2fa2/go.mod h1:Fox3g+WM2HCpA3U4xnS66NedCORZ0n9+5BO84e9Z9VU=
 github.com/mattn/go-isatty v0.0.24 h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=
 github.com/mattn/go-isatty v0.0.24/go.mod h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=
 github.com/modelcontextprotocol/go-sdk v1.7.0 h1:yqjY2dsbKAC0LSuWZVBMrHgiG8ukXv6NRo0JiALay44=
