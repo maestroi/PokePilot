@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowPathIcon, ClipboardDocumentIcon, XMarkIcon } from '@heroicons/vue/20/solid'
-import { getDashboard, getMediaRenderJobs, getRun } from '../shared/api/client'
+import { getDashboard, getMediaRenderJobs, getRun, renderReplay } from '../shared/api/client'
 import { getSpectatorControl, patchSpectatorRunControl } from '../shared/api/spectator-control'
 import type { DashboardRun } from '../shared/api/types'
 import ActionMenu, { type ActionMenuItem } from '../shared/components/ActionMenu.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { presentRecording, presentRunStatus } from '../shared/status'
+import { useResizablePane } from '../shared/composables/useResizablePane'
+import { presentOutcome, presentRecording, presentRunStatus } from '../shared/status'
 import { operatorHref, replayURL, spectatorURL } from '../shared/urls'
 import MediaOutputPane from './MediaOutputPane.vue'
 import {
@@ -28,7 +29,7 @@ import {
 } from './mediaQuery'
 import { gameTitle } from './operations'
 import { recordingSummary } from './runRecording'
-import { formatInteger, middleTruncate, timeAgo } from './runs'
+import { formatInteger, middleTruncate, progressLabel, timeAgo } from './runs'
 
 const props = defineProps<{ state: MediaState; publicBase: string }>()
 const emit = defineEmits<{ navigate: [next: MediaState, replace?: boolean]; announce: [text: string] }>()
@@ -81,6 +82,30 @@ function isPublic(run: DashboardRun): boolean {
 function recording(run: DashboardRun) {
   return recordingSummary(run, jobByRun.value.get(run.run_id), jobsState.value)
 }
+// Rendering straight from the row: the recording is there, only the video isn't.
+const renderingRunID = ref('')
+function canRender(run: DashboardRun): boolean {
+  return !isLiveRun(run) && ['recorded', 'failed', 'cancelled'].includes(recording(run).state)
+}
+async function render(run: DashboardRun): Promise<void> {
+  if (renderingRunID.value) return
+  renderingRunID.value = run.run_id
+  actionError.value = ''
+  try {
+    await renderReplay(run.run_id)
+    await jobs.retry()
+  } catch (cause) {
+    actionError.value = `Couldn’t start the replay render for ${run.run_id}: ${cause instanceof Error ? cause.message : 'replay service unavailable'}`
+  } finally {
+    renderingRunID.value = ''
+  }
+}
+function progress(run: DashboardRun): string {
+  const label = progressLabel(run)
+  return label === 'No structured progress' || label === 'Goal complete' ? '' : label
+}
+const pane = useResizablePane('pokepilot.operator.mediaPaneWidth', { max: 1200 })
+
 function status(run: DashboardRun) {
   return isLiveRun(run) ? presentRunStatus(run) : presentRecording(recording(run))
 }
@@ -256,7 +281,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
       <a :href="operatorHref('live', { run: state.run, job: '' }, search())" class="underline">Inspect source run</a>
     </p>
 
-    <div :class="state.run ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-3 min-[1440px]:grid-cols-[minmax(0,1fr)_440px]' : ''">
+    <div :class="state.run ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_var(--media-pane)] xl:gap-3' : ''" :style="state.run ? { '--media-pane': `${pane.width.value}px` } : undefined">
       <div class="min-w-0 border border-rule-strong bg-surface">
         <div class="border-b border-rule px-3 py-2">
           <div class="flex flex-wrap items-center gap-2">
@@ -319,6 +344,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
               <tr class="h-9 border-b border-rule-strong bg-raised text-meta font-medium text-fg-2">
                 <th class="w-52 px-3 font-medium">Replay video</th>
                 <th class="px-3 font-medium">Source run</th>
+                <th class="w-40 px-3 font-medium">Outcome</th>
                 <th class="w-32 px-3 font-medium max-lg:hidden">Public site</th>
                 <th class="w-28 px-3 font-medium" :class="state.run ? 'hidden min-[1680px]:table-cell' : 'max-xl:hidden'">When</th>
                 <th class="w-11 pr-2"><span class="sr-only">Actions</span></th>
@@ -326,7 +352,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
             </thead>
             <tbody v-if="resourceState === 'loading'" aria-busy="true">
               <tr v-for="n in 8" :key="n" class="h-14 border-b border-rule">
-                <td colspan="5" class="px-3"><div class="h-4 bg-raised motion-safe:animate-pulse" :class="n % 2 ? 'w-3/4' : 'w-1/2'" /></td>
+                <td colspan="6" class="px-3"><div class="h-4 bg-raised motion-safe:animate-pulse" :class="n % 2 ? 'w-3/4' : 'w-1/2'" /></td>
               </tr>
             </tbody>
             <tbody v-else-if="loaded">
@@ -342,7 +368,17 @@ function menu(run: DashboardRun): ActionMenuItem[] {
                 @keydown.enter.self="openRun(run.run_id)"
               >
                 <td class="px-3">
-                  <StatusPill :status="status(run)" class="max-w-full overflow-hidden" />
+                  <div class="flex min-w-0 items-center gap-1.5">
+                    <StatusPill :status="status(run)" class="min-w-0 overflow-hidden" />
+                    <button
+                      v-if="canRender(run)"
+                      type="button"
+                      class="ui-btn ui-btn-sm h-6 shrink-0 px-2"
+                      :disabled="Boolean(renderingRunID)"
+                      :aria-label="`Render replay video for ${run.run_id}`"
+                      @click.stop="render(run)"
+                    >{{ renderingRunID === run.run_id ? '…' : recording(run).state === 'recorded' ? 'Render' : 'Retry' }}</button>
+                  </div>
                   <div class="mt-0.5 truncate text-meta text-fg-2" :title="isLiveRun(run) ? '' : recording(run).detail">{{ isLiveRun(run) ? 'Live run · replay after it ends' : run.replay_available ? 'Replay data stored' : 'No replay data' }}</div>
                 </td>
                 <td class="px-3">
@@ -358,6 +394,10 @@ function menu(run: DashboardRun): ActionMenuItem[] {
                     </button>
                   </div>
                   <div class="truncate text-meta text-fg-2" :title="run.goal || ''">{{ run.game ? gameTitle(run.game) : 'Game' }} · {{ run.goal || 'Free play' }}</div>
+                </td>
+                <td class="px-3">
+                  <StatusPill v-if="!isLiveRun(run)" :status="presentOutcome(run)" class="max-w-full overflow-hidden" />
+                  <div v-if="progress(run)" class="mt-0.5 truncate text-meta text-fg-2">{{ progress(run) }}</div>
                 </td>
                 <td class="px-3 max-lg:hidden">
                   <span class="ui-tag">{{ isPublic(run) ? 'Public' : 'Private' }}</span>
@@ -387,6 +427,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
               <div class="min-w-0 flex-1">
                 <div class="flex min-w-0 items-center gap-2">
                   <StatusPill :status="status(run)" class="min-w-0 shrink overflow-hidden" />
+                  <StatusPill v-if="!isLiveRun(run)" :status="presentOutcome(run)" class="min-w-0 shrink overflow-hidden" />
                   <span class="ml-auto shrink-0 text-meta text-fg-2">{{ isPublic(run) ? 'Public' : 'Private' }}</span>
                 </div>
                 <button type="button" class="mt-1 block w-full truncate text-left font-mono text-accent" :title="run.run_id" @click="openRun(run.run_id)">{{ middleTruncate(run.run_id) }}</button>
@@ -426,8 +467,13 @@ function menu(run: DashboardRun): ActionMenuItem[] {
           ref="paneEl"
           tabindex="-1"
           aria-label="Media details"
-          class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[440px] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
+          class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[var(--media-pane)] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
         >
+          <div
+            v-bind="pane.handle.value"
+            aria-label="Resize media details"
+            class="absolute inset-y-0 left-0 z-10 hidden w-2 -translate-x-1/2 cursor-col-resize touch-none xl:block focus-visible:bg-accent/30 hover:bg-accent/40"
+          />
           <MediaOutputPane
             :run-id="state.run"
             :run="selected"

@@ -7,6 +7,7 @@ import type { DashboardRun } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
+import { useResizablePane } from '../shared/composables/useResizablePane'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
@@ -200,61 +201,8 @@ async function goToRun(): Promise<void> {
 const paneEl = ref<HTMLElement | null>(null)
 const inspectedRow = computed(() => rows.value.find((run) => run.run_id === inspectedID.value) || null)
 
-const PANE_DEFAULT = 560
-const PANE_MIN = 400
-const PANE_MAX = 840
-const PANE_KEY = 'pokepilot.operator.runPaneWidth'
-
-function clampPane(value: number): number {
-  const room = typeof window === 'undefined' ? PANE_MAX : Math.max(PANE_MIN, window.innerWidth - 560)
-  return Math.round(Math.min(PANE_MAX, room, Math.max(PANE_MIN, value)))
-}
-function readPaneWidth(): number {
-  const stored = Number(window.localStorage.getItem(PANE_KEY))
-  return Number.isFinite(stored) && stored > 0 ? clampPane(stored) : PANE_DEFAULT
-}
-const paneWidth = ref(readPaneWidth())
-const paneStyle = computed(() => inspectedID.value ? { '--run-pane': `${paneWidth.value}px` } : undefined)
-
-function rememberPaneWidth(): void {
-  window.localStorage.setItem(PANE_KEY, String(paneWidth.value))
-}
-function resetPaneWidth(): void {
-  paneWidth.value = PANE_DEFAULT
-  rememberPaneWidth()
-}
-
-let paneDrag: { pointerId: number; startX: number; startWidth: number } | null = null
-function onPaneResizeDown(event: PointerEvent): void {
-  if (event.button !== 0) return
-  event.preventDefault()
-  paneDrag = { pointerId: event.pointerId, startX: event.clientX, startWidth: paneWidth.value }
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  const handle = event.currentTarget as HTMLElement
-  try { handle.setPointerCapture(event.pointerId) } catch { /* pointer may already be gone */ }
-}
-function onPaneResizeMove(event: PointerEvent): void {
-  if (!paneDrag || event.pointerId !== paneDrag.pointerId) return
-  paneWidth.value = clampPane(paneDrag.startWidth + (paneDrag.startX - event.clientX))
-}
-function onPaneResizeUp(event: PointerEvent): void {
-  if (!paneDrag || event.pointerId !== paneDrag.pointerId) return
-  paneDrag = null
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  rememberPaneWidth()
-}
-function onPaneResizeKey(event: KeyboardEvent): void {
-  const step = event.shiftKey ? 80 : 24
-  if (event.key === 'ArrowLeft') paneWidth.value = clampPane(paneWidth.value + step)
-  else if (event.key === 'ArrowRight') paneWidth.value = clampPane(paneWidth.value - step)
-  else if (event.key === 'Home') paneWidth.value = PANE_DEFAULT
-  else return
-  event.preventDefault()
-  event.stopPropagation()
-  rememberPaneWidth()
-}
+const pane = useResizablePane('pokepilot.operator.runPaneWidth')
+const paneStyle = computed(() => inspectedID.value ? { '--run-pane': `${pane.width.value}px` } : undefined)
 
 function openRun(runID: string, focusPane = true): void {
   if (runID !== inspectedID.value) navigate(state.value, { run: runID, replace: Boolean(inspectedID.value) })
@@ -788,21 +736,9 @@ const cleanupOpen = ref(false)
           class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[var(--run-pane)] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
         >
           <div
-            role="separator"
-            aria-orientation="vertical"
+            v-bind="pane.handle.value"
             aria-label="Resize run details"
-            title="Drag to resize. Double-click to reset."
-            tabindex="0"
-            :aria-valuenow="paneWidth"
-            :aria-valuemin="PANE_MIN"
-            :aria-valuemax="PANE_MAX"
             class="absolute inset-y-0 left-0 z-10 hidden w-2 -translate-x-1/2 cursor-col-resize touch-none xl:block focus-visible:bg-accent/30 hover:bg-accent/40"
-            @pointerdown="onPaneResizeDown"
-            @pointermove="onPaneResizeMove"
-            @pointerup="onPaneResizeUp"
-            @pointercancel="onPaneResizeUp"
-            @dblclick="resetPaneWidth"
-            @keydown="onPaneResizeKey"
           />
           <RunDetailPane
             :run-id="inspectedID"

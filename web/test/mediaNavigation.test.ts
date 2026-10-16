@@ -178,3 +178,11 @@ test('new Media files follow the design system (no legacy primitives or palette)
     assert.doesNotMatch(source, /Pokémon Red|pokemon-red/, name)
   }
 })
+
+test('library pane resizes like the run pane and rows show the run outcome', () => {
+  const library = readFileSync(new URL('../src/operator/MediaLibrary.vue', import.meta.url), 'utf8')
+  assert.match(library, /useResizablePane\('pokepilot\.operator\.mediaPaneWidth'/)
+  assert.match(library, /aria-label="Resize media details"/)
+  assert.match(library, />Outcome</)
+  assert.match(library, /presentOutcome\(run\)/)
+})

@@ -103,8 +103,7 @@ const search = () => window.location.search
               <template v-if="!run.replay_available"> · no recording</template>
             </div>
           </div>
-          <!-- Goal complete is the norm here; only other outcomes earn a pill. -->
-          <StatusPill v-if="presentOutcome(run).tone !== 'ok'" :status="presentOutcome(run)" class="shrink-0" />
+          <StatusPill :status="presentOutcome(run)" class="shrink-0" />
         </li>
       </ul>
     </section>

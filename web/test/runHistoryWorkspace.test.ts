@@ -20,7 +20,7 @@ function job(state: string, id = 'job-1'): MediaRenderJob {
 test('replay data is never presented as a replay video', () => {
   const dataOnly = recordingSummary({ replay_available: true })
   assert.equal(dataOnly.state, 'recorded')
-  assert.equal(dataOnly.label, 'Replay data · no video')
+  assert.equal(dataOnly.label, 'Not rendered')
   assert.equal(dataOnly.canWatch, false)
 
   const video = recordingSummary({ replay_available: true }, job('ready'))
@@ -102,5 +102,5 @@ test('the run pane names the Pokémon starter and can be resized', () => {
   assert.match(pane, /partyMonIsStarter/)
   assert.match(history, /aria-label="Resize run details"/)
   assert.match(history, /--run-pane/)
-  assert.match(history, /onPaneResizeDown/)
+  assert.match(history, /useResizablePane\(/)
 })
