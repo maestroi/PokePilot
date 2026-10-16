@@ -445,14 +445,13 @@ export function runOutputs(input: OutputInput): RunOutputs {
 
 // ---- Studio pipeline: the publishing steps of one finished run -----------------------
 
-export type StudioStepID = 'video' | 'highlights' | 'verdict' | 'package' | 'thumbnail' | 'publish'
+export type StudioStepID = 'video' | 'verdict' | 'package' | 'thumbnail' | 'publish'
 export type StudioStep = { id: StudioStepID; label: string; status: StatusPresentation; detail: string; done: boolean; optional?: boolean }
 export type StudioPipeline = { steps: StudioStep[]; current: StudioStepID | ''; unavailable: string[] }
 
 type StudioInput = {
   replayData: boolean
   replay?: Pick<ReplayStatus, 'state' | 'segments' | 'segments_done'> | null
-  highlights?: Pick<HighlightStatus, 'state' | 'windows' | 'windows_done' | 'duration_ms'> | null
   packagesError?: string
   assessment?: Pick<StudioAssessment, 'publication_class' | 'publication_reason'> | null
   pkg?: Pick<StudioPackage, 'plan_hash' | 'titles' | 'shorts'> | null
@@ -500,18 +499,7 @@ export function studioSteps(input: StudioInput): StudioPipeline {
     steps.push({ id: 'video', label: 'Replay video', status, done: replay.state === 'ready', detail: replay.state === 'ready' ? '' : 'Every edit is cut from the full replay video.' })
   }
 
-  const h = input.highlights
-  if (h?.state === 'disabled') unavailable.push('Highlight rendering isn’t enabled on the replay host.')
-  else if (h?.state === 'empty') unavailable.push('No highlight-worthy moments were found in this run.')
-  else if (h) {
-    const windows = Number(h.windows || 0)
-    const status = h.state === 'ready' ? OK('Rendered')
-      : h.state === 'generating' ? WORKING(windows ? `Rendering ${Number(h.windows_done || 0)}/${windows}` : 'Rendering')
-      : h.state === 'error' || h.state === 'failed' ? FAILED('Render failed')
-      : NONE('Not rendered')
-    steps.push({ id: 'highlights', label: 'Highlight reel', status, optional: true, done: h.state === 'ready', detail: h.state === 'ready' ? `${plural(windows, 'moment')} · ${seconds(h.duration_ms)}` : 'Optional side output.' })
-  }
-
+  // The highlight reel is a side output: nothing below is cut from it, so it isn't a step.
   if (input.packagesError) {
     unavailable.push(`Packaging and publishing aren’t available: ${input.packagesError}.`)
     return pipeline()

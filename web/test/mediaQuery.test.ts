@@ -164,11 +164,11 @@ test('run outputs say what exists and collapse what cannot be made into reasons'
 
 test('studio pipeline orders the publishing steps and points at the first one not done', () => {
   const ids = (p: ReturnType<typeof studioSteps>) => p.steps.map((step) => `${step.id}:${step.status.label}`)
-  const base = { replayData: true, replay: { state: 'ready' }, highlights: { state: 'missing' } } as const
+  const base = { replayData: true, replay: { state: 'ready' } } as const
 
   const fresh = studioSteps(base)
-  assert.deepEqual(ids(fresh), ['video:Rendered', 'highlights:Not rendered', 'verdict:Not assessed', 'package:None', 'thumbnail:Not rendered', 'publish:Not queued'])
-  assert.equal(fresh.current, 'verdict', 'the optional highlight reel never blocks')
+  assert.deepEqual(ids(fresh), ['video:Rendered', 'verdict:Not assessed', 'package:None', 'thumbnail:Not rendered', 'publish:Not queued'])
+  assert.equal(fresh.current, 'verdict')
 
   assert.equal(studioSteps({ ...base, replay: { state: 'missing' } }).current, 'video')
 
@@ -197,7 +197,7 @@ test('studio pipeline orders the publishing steps and points at the first one no
   assert.match(noData.unavailable[0], /No recording/)
 
   const noStorage = studioSteps({ ...base, packagesError: 'studio artifact storage disabled' })
-  assert.deepEqual(noStorage.steps.map((s) => s.id), ['video', 'highlights'])
+  assert.deepEqual(noStorage.steps.map((s) => s.id), ['video'])
   assert.equal(noStorage.current, '')
 })
 

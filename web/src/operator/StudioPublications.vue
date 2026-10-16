@@ -34,8 +34,9 @@ function queue(): void {
   const unix = notBefore.value ? Math.floor(new Date(notBefore.value).getTime() / 1000) : 0
   void props.studio.queue({ titleID: titleID.value, privacy: privacy.value, notBeforeUnix: Number.isFinite(unix) ? unix : 0 })
 }
+// A rendering candidate always fails the gate, so approval waits for the edit.
 function canApprove(c: StudioPublicationCandidate): boolean {
-  return !c.approved && ['queued', 'blocked', 'rendering', 'failed'].includes(c.state)
+  return !c.approved && ['queued', 'blocked', 'failed'].includes(c.state)
 }
 function canPublish(c: StudioPublicationCandidate): boolean {
   return c.approved && (c.state === 'approved' || c.state === 'failed')
