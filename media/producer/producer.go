@@ -99,6 +99,7 @@ type Input struct {
 	RunID     string               `json:"run_id,omitempty"`
 	Timelines []farm.MediaTimeline `json:"timelines"`
 	History   []HistoricalRun      `json:"history,omitempty"`
+	Incomplete bool             `json:"incomplete,omitempty"`
 }
 
 // EventFact is the only event vocabulary sent to an editorial model. It does
@@ -118,6 +119,7 @@ type EvidencePack struct {
 	DurationMS int64        `json:"duration_ms"`
 	Events     []EventFact  `json:"events"`
 	History    []Comparison `json:"verified_history,omitempty"`
+	Incomplete bool         `json:"incomplete,omitempty"`
 }
 
 // Candidate is the model-owned creative part. Scores, provenance, and the
@@ -164,7 +166,7 @@ func normalizedPolicy(p Policy) (Policy, error) {
 }
 
 func evidence(in Input) (EvidencePack, string, error) {
-	pack := EvidencePack{RunID: strings.TrimSpace(in.RunID)}
+	pack := EvidencePack{RunID: strings.TrimSpace(in.RunID), Incomplete: in.Incomplete}
 	timelines := make([]farm.MediaTimeline, len(in.Timelines))
 	seenAttempts := make(map[int]bool)
 	for i, raw := range in.Timelines {
@@ -232,7 +234,8 @@ func evidence(in Input) (EvidencePack, string, error) {
 		RunID string `json:"run_id"`
 		Timelines []farm.MediaTimeline `json:"timelines"`
 		History []HistoricalRun `json:"history"`
-	}{pack.RunID, timelines, history})
+		Incomplete bool `json:"incomplete"`
+	}{pack.RunID, timelines, history, in.Incomplete})
 	if err != nil { return pack, "", err }
 	sum := sha256.Sum256(bytes)
 	return pack, hex.EncodeToString(sum[:]), nil
@@ -335,8 +338,11 @@ func ValidateCandidate(c Candidate, pack EvidencePack) error {
 	if len(pack.Events) == 0 && (len(c.Beats) > 0 || c.PrimaryStory != "") {
 		return errors.New("producer: story without event telemetry")
 	}
-	if len(c.Beats) > 0 && strings.TrimSpace(c.PrimaryStory) == "" {
-		return errors.New("producer: selected beats without primary story")
+	if (len(c.Beats) > 0) != (strings.TrimSpace(c.PrimaryStory) != "") {
+		return errors.New("producer: story and selected beats must appear together")
+	}
+	if c.Publication == FullEpisode && len(c.Beats) < 2 {
+		return errors.New("producer: full episode requires at least two cited beats")
 	}
 	if c.Publication == FullEpisode || c.Publication == ShortOnly {
 		if len(c.Beats) == 0 || strings.TrimSpace(c.PrimaryStory) == "" {
@@ -395,6 +401,7 @@ func rank(c PublicationClass) int {
 
 func publicationCap(pack EvidencePack, score Scores, policy Policy) (PublicationClass, string) {
 	if len(pack.Events) == 0 { return DoNotPublish, "No durable event evidence; nothing can be supported editorially" }
+	if pack.Incomplete { return ArchiveOnly, "One or more run attempts are missing durable semantic timelines" }
 	switch pack.Status {
 	case "done", "failed", "error", "stuck", "budget", "cancelled", "canceled", "timeout":
 	default:
@@ -524,11 +531,18 @@ func Validate(out Assessment, in Input) error {
 	if rank(out.Publication) > rank(cap) { return errors.New("producer: unsafe publication class") }
 	if out.Model == "rules-v1" && out.PromptVersion != "none" { return errors.New("producer: rules identity mismatch") }
 	if out.Model != "rules-v1" && out.PromptVersion != PromptVersion { return errors.New("producer: prompt identity mismatch") }
+	return VerifyChecksum(out)
+}
+
+// VerifyChecksum is usable by immutable artifact readers that do not have
+// the original timeline available. Full Validate should still be used when
+// the source artifacts can be loaded.
+func VerifyChecksum(out Assessment) error {
 	hash := out.Hash
 	out.Hash = ""
 	b, err := json.Marshal(out)
 	if err != nil { return err }
-	check := sha256.Sum256(b)
-	if hash != hex.EncodeToString(check[:]) { return errors.New("producer: assessment content hash mismatch") }
+	sum := sha256.Sum256(b)
+	if hash != hex.EncodeToString(sum[:]) { return errors.New("producer: assessment content hash mismatch") }
 	return nil
 }
