@@ -37,8 +37,8 @@ const (
 	ProgressMineralBadgeEarned          game.ProgressID = "gs_mineral_badge_earned"
 	// The final two Johto badge flags are observable before their route and
 	// story executors are available. Do not move the supported frontier yet.
-	ProgressGlacierBadgeEarned          game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned           game.ProgressID = "gs_rising_badge_earned"
+	ProgressGlacierBadgeEarned game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned  game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
