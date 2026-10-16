@@ -20,6 +20,8 @@ import type {
   StudioPublicationFormat,
   StudioEditReply,
   StudioEditStatus,
+  StudioEditPlan,
+  StudioAssessment,
   YouTubePublication,
   YouTubePublishStatus,
   ProgrammingEntry,
@@ -398,17 +400,10 @@ export function selectStudioThumbnail(runID: string, packageHash: string, candid
   })
 }
 
-export function assessStudioRun(runID: string): Promise<{ assessment: { hash: string; publication: string } }> {
-  return requestJSON<{ assessment: { hash: string; publication: string } }>(`/v1/runs/${encodeURIComponent(runID)}/producer/assess`, {
+export function assessStudioRun(runID: string): Promise<{ assessment: StudioAssessment }> {
+  return requestJSON<{ assessment: StudioAssessment }>(`/v1/runs/${encodeURIComponent(runID)}/producer/assess`, {
     method: 'POST',
     body: '{}'
-  })
-}
-
-export function createStudioPackage(runID: string, assessmentHash: string): Promise<{ package: StudioPackage }> {
-  return requestJSON<{ package: StudioPackage }>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages`, {
-    method: 'POST',
-    body: JSON.stringify({ assessment_hash: assessmentHash, style: 'documentary' })
   })
 }
 
@@ -443,6 +438,15 @@ export function renderStudioEdit(runID: string, planHash: string): Promise<Studi
   return requestJSON<StudioEditStatus>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}/render`,{
     method:'POST',body:'{}'
   })
+}
+export function getStudioAssessment(runID: string, hash: string): Promise<StudioAssessment> {
+  return requestJSON<StudioAssessment>(`/v1/runs/${encodeURIComponent(runID)}/producer/assessments/${encodeURIComponent(hash)}`)
+}
+export function getStudioEditPlan(runID: string, planHash: string): Promise<StudioEditPlan> {
+  return requestJSON<StudioEditPlan>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}`)
+}
+export function studioEditVideoURL(runID: string, planHash: string): string {
+  return `/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}/video`
 }
 export function getStudioEditStatus(runID: string, planHash: string): Promise<StudioEditStatus> {
   return requestJSON<StudioEditStatus>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}/status`)

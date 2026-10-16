@@ -642,16 +642,20 @@ game or public visibility never show the strip. External channel links are
   *YouTube* (when configured and the replay is ready; upload confirm), *Source run*
   (`KeyValueList`). Footer: primary "Open replay ↗" when public, "Open source run".
 
-**Studio.** Source recording list (finished runs, `?run=`; each row reads game · goal,
-then run ID · ended · progress, with the outcome pill) + an "Outputs" bay for the
-selected run (`runOutputs`: Replay data, Replay video, Highlight reel, Episode package,
-Thumbnails). Outputs the host can't make for that run (feature disabled, no
-highlight-worthy moments, no replay data) are not rows or buttons; they collapse into
-one "Not available: …" line. "Highlight reel" bay: state, moments and length,
-Generate/Retry, in-bay player, Manifest, Open render job. "Episode package &
-thumbnails" lists the run's stored packages (`GET /v1/runs/{id}/studio/packages`) with
-their thumbnail state. Shorts, edit plans and publication review are **[needs API]**
-and are not shown, not even as disabled buttons.
+**Studio.** Source recording list (finished runs, `?run=`, filtered to runs with a stored
+recording by default; each row reads game · goal, then run ID · ended · progress; only
+non-"Goal complete" outcomes get a pill) + a "Pipeline" bay for the selected run
+(`studioSteps`): Replay video → Highlight reel (optional) → Producer verdict → Edited
+package → Thumbnail (optional for Shorts) → Publication, each with its status, and the
+first required step not done highlighted with its one action inline (Render replay video,
+Assess run, Prepare package with the format the verdict allows, Render edited video).
+Steps the run or host can't reach collapse into one reason line; an archive-only or
+do-not-publish verdict ends the pipeline there. Below it: "Highlight reel" bay, the open
+package (titles, edited video, thumbnail pick, package switcher) and "Publication" (YouTube
+card preview, title/privacy/schedule, queue, then the run's candidates with Approve /
+Publish / Skip). All sections share one package state (`useStudio`); the newest stored
+package opens on its own. Assessing is always explicit because it may call a model.
+A cross-run approval inbox is **[needs API]**.
 
 **Precise labels.** `replay_available` means *replay data* (the recording) is stored,
 never that a video exists. The list says "Video ready" only for a finished replay-video

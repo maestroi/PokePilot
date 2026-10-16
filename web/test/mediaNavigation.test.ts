@@ -168,7 +168,7 @@ test('media workspace has the four sections and only shows on-air for live broad
 })
 
 test('new Media files follow the design system (no legacy primitives or palette)', () => {
-  const files = ['MediaView.vue', 'MediaLibrary.vue', 'MediaOutputPane.vue', 'MediaStudio.vue', 'MediaBroadcasts.vue', 'MediaJobs.vue']
+  const files = ['MediaView.vue', 'MediaLibrary.vue', 'MediaOutputPane.vue', 'MediaStudio.vue', 'MediaBroadcasts.vue', 'MediaJobs.vue', 'StudioThumbnails.vue', 'StudioPublications.vue']
   for (const name of files) {
     const source = readFileSync(new URL(`../src/operator/${name}`, import.meta.url), 'utf8')
     assert.doesNotMatch(source, /text-\[(7|8|9|10|11)px\]/, name)

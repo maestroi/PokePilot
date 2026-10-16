@@ -12,6 +12,7 @@ import {
   latestJobByRun,
   parseMediaState,
   runOutputs,
+  studioSteps,
   sortJobs,
   removable,
   retryable,
@@ -157,4 +158,43 @@ test('run outputs say what exists and collapse what cannot be made into reasons'
   const live = runOutputs({ replayData: false, live: true, replay: { state: 'missing' } })
   assert.deepEqual(labels(live), ['Replay data: Recording'])
   assert.match(live.unavailable[0], /after the run ends/)
+})
+
+test('studio pipeline orders the publishing steps and points at the first one not done', () => {
+  const ids = (p: ReturnType<typeof studioSteps>) => p.steps.map((step) => `${step.id}:${step.status.label}`)
+  const base = { replayData: true, replay: { state: 'ready' }, highlights: { state: 'missing' } } as const
+
+  const fresh = studioSteps(base)
+  assert.deepEqual(ids(fresh), ['video:Rendered', 'highlights:Not rendered', 'verdict:Not assessed', 'package:None', 'thumbnail:Not rendered', 'publish:Not queued'])
+  assert.equal(fresh.current, 'verdict', 'the optional highlight reel never blocks')
+
+  assert.equal(studioSteps({ ...base, replay: { state: 'missing' } }).current, 'video')
+
+  const archived = studioSteps({ ...base, assessment: { publication_class: 'archive_only', publication_reason: 'Too similar to a published run.' } })
+  assert.deepEqual(ids(archived).slice(-1), ['verdict:Archive only'])
+  assert.equal(archived.steps.at(-1)?.detail, 'Too similar to a published run.')
+  assert.equal(archived.current, '')
+  assert.match(archived.unavailable[0], /off YouTube/)
+
+  const pkg = { plan_hash: 'p', titles: [{ id: 't', title: 'Episode title', angle: '' }], shorts: [{ id: 's', title: 'Short title', hook: '' }] }
+  const short = studioSteps({ ...base, assessment: { publication_class: 'short_only', publication_reason: '' }, pkg, profile: 'short', edit: { state: 'ready' } })
+  assert.equal(short.steps.find((s) => s.id === 'package')?.status.label, 'Short · edit ready')
+  assert.equal(short.steps.find((s) => s.id === 'package')?.detail, 'Short title')
+  assert.equal(short.current, 'publish', 'a Short needs no thumbnail')
+
+  const episode = studioSteps({ ...base, assessment: { publication_class: 'full_episode', publication_reason: '' }, pkg, profile: 'episode', edit: { state: 'ready' }, thumbnails: { rendered: 4, selected: false } })
+  assert.equal(episode.current, 'thumbnail')
+  const done = studioSteps({ ...base, assessment: { publication_class: 'full_episode', publication_reason: '' }, pkg, profile: 'episode', edit: { state: 'ready' }, thumbnails: { rendered: 4, selected: true }, publication: { state: 'published' } })
+  assert.equal(done.current, '')
+
+  const unplanned = studioSteps({ ...base, assessment: { publication_class: 'full_episode', publication_reason: '' }, pkg: { ...pkg, plan_hash: undefined } })
+  assert.equal(unplanned.current, 'package')
+
+  const noData = studioSteps({ replayData: false, replay: { state: 'missing' } })
+  assert.deepEqual(noData.steps, [])
+  assert.match(noData.unavailable[0], /No recording/)
+
+  const noStorage = studioSteps({ ...base, packagesError: 'studio artifact storage disabled' })
+  assert.deepEqual(noStorage.steps.map((s) => s.id), ['video', 'highlights'])
+  assert.equal(noStorage.current, '')
 })
