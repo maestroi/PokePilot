@@ -358,6 +358,7 @@ func (s *replayServer) handleEditVideo(w http.ResponseWriter, r *http.Request) {
 	defer obj.Body.Close()
 	copyObjectResponse(w, obj, "video/mp4", "episode.mp4")
 }
+
 // The edit manifest includes source provenance, the complete validated
 // plan, chapters and narration cues for deterministic downstream consumers.
 func (s *replayServer) handleEditManifest(w http.ResponseWriter, r *http.Request) {
