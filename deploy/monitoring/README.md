@@ -76,9 +76,16 @@ host is not on the farm overlay, so it scrapes the wall through
 `prometheus-pokepilot-ingress.yml` (Swarm ingress `192.168.50.100:18080`)
 rather than `tasks.wall`.
 
+Panels read the counters the wall is exporting now. A rate over the
+dashboard range stays empty when that count was already present at the
+first scrape, or when the wall has not finished a run since it started, so
+the panels show the counter itself and use 0 when a series has not been
+exported yet. The last-success age is restored across restarts; started,
+completed, and failed counts are not.
+
 The overview answers whether the wall is up, whether runs are completing,
 whether successful runs are getting slower, and which failure types are
-terminal. A blue annotation marks a wall process start so a revision can be
+showing up. A blue annotation marks a wall process start so a revision can be
 lined up with the metric change; the build panel shows the git SHA. The
 terminal-failure bars open the same Loki query as the failure dashboard.
 Tempo is not configured on this Grafana, so these dashboards do not pretend
