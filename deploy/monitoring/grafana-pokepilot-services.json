@@ -11,7 +11,7 @@
   "timepicker": {},
   "uid": "pokepilot-services",
   "title": "PokePilot / Infrastructure",
-  "description": "Scrape health, deployed revision, and process CPU, memory, and files. HTTP request health is not exported (#2335). Set Host dashboard UID and Container dashboard UID to the node and container dashboards already in this Grafana.",
+  "description": "Scrape health, deployed revision, and process CPU, memory, and files. HTTP request health is not exported (#2335). Host dashboard UID and Container dashboard UID open the node and container boards on this Grafana. On https://grafana.labstack.cc those are Node Exporter Full (rYdddlPWk) and Docker-cAdvisor (htoVWdxGt).",
   "tags": [
     "pokepilot",
     "observability",
@@ -264,18 +264,18 @@
         "name": "host_dashboard",
         "label": "Host dashboard UID",
         "type": "textbox",
-        "query": "",
+        "query": "rYdddlPWk",
         "current": {
-          "selected": false,
-          "text": "",
-          "value": ""
+          "selected": true,
+          "text": "rYdddlPWk",
+          "value": "rYdddlPWk"
         },
         "hide": 0,
         "options": [
           {
             "selected": true,
-            "text": "",
-            "value": ""
+            "text": "rYdddlPWk",
+            "value": "rYdddlPWk"
           }
         ]
       },
@@ -283,18 +283,18 @@
         "name": "container_dashboard",
         "label": "Container dashboard UID",
         "type": "textbox",
-        "query": "",
+        "query": "htoVWdxGt",
         "current": {
-          "selected": false,
-          "text": "",
-          "value": ""
+          "selected": true,
+          "text": "htoVWdxGt",
+          "value": "htoVWdxGt"
         },
         "hide": 0,
         "options": [
           {
             "selected": true,
-            "text": "",
-            "value": ""
+            "text": "htoVWdxGt",
+            "value": "htoVWdxGt"
           }
         ]
       }
