@@ -23,6 +23,8 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}/repro-source", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/workers/{addr}/force-end", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/media/render-jobs", proxy(wallBase, true))
+	// Studio review remains operator-only: no matching spectator mount exists.
+	// Dedicated thumbnail routes are attached below when replay is configured.
 	mux.HandleFunc("POST /v1/media/render-jobs/{id}/retry", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/media/render-jobs/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/media/render-jobs/{id}", proxy(wallBase, false))
