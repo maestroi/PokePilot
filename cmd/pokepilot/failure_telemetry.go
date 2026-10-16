@@ -59,7 +59,10 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 	lastFailureFingerprint := ""
 
 	for i, result := range res.Outcomes {
-		if result.Outcome == agent.OutcomeCompleted || expectedStructuredGameOutcome(result) {
+		// Expected game outcomes (blackout, training retreat) are play, not
+		// defects, while the run recovers from them. One that ends the run is
+		// a defect: recovery could not get past it, so it must reach triage.
+		if result.Outcome == agent.OutcomeCompleted || (expectedStructuredGameOutcome(result) && !result.Terminal) {
 			continue
 		}
 		identity := farmIdentityFromAgent(result)

@@ -121,6 +121,24 @@ func TestObjectiveFailureTelemetryExcludesExpectedGameOutcome(t *testing.T) {
 	}
 }
 
+func TestObjectiveFailureTelemetryFilesTerminalExpectedGameOutcome(t *testing.T) {
+	resetObjectiveFailureTelemetry()
+	t.Cleanup(resetObjectiveFailureTelemetry)
+
+	recovered := structuredFailureResult("train_retreat", 10)
+	recovered.Recovered = true
+	final := structuredFailureResult("train_retreat", 10)
+	final.Terminal = true
+	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{recovered, final}})
+	got, terminal := drainObjectiveFailureTelemetry("stuck", "build-a", "")
+	if len(got) != 1 || got[0].TerminalCount != 1 || got[0].Count != 1 {
+		t.Fatalf("failures = %+v, want only the terminal retreat filed", got)
+	}
+	if terminal == nil || terminal.Fingerprint != got[0].Fingerprint {
+		t.Fatalf("terminal = %+v, want the run-ending retreat", terminal)
+	}
+}
+
 func TestAgentLogProseIsNotFailureIdentityInput(t *testing.T) {
 	resetObjectiveFailureTelemetry()
 	t.Cleanup(resetObjectiveFailureTelemetry)
