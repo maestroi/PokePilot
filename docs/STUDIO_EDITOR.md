@@ -29,6 +29,7 @@ composited replay video as input to a deterministic FFmpeg encoder/concatenator.
    `POST /v1/runs/{run-id}/studio/edits/{hash}/render`
    `GET /v1/runs/{run-id}/studio/edits/{hash}/status`
    `GET /v1/runs/{run-id}/studio/edits/{hash}/video`
+   `GET /v1/runs/{run-id}/studio/edits/{hash}/manifest`
 
 Render is asynchronous, uses the replay worker's resource admission/lease
 machinery, and stores the derived MP4 + manifest in S3 under a key including
@@ -55,8 +56,9 @@ and reproducible. Segments are ordered, and all source timestamps are
 
 A kept segment can also contain validated `event_ids`, `overlay`,
 `caption`, `narration_cue`, `chapter`, and `transition` (`cut` or
-`fade`). Selected producer beats must each appear at least once in
-real-time kept source footage. Source ordering and non-overlap are enforced
+`fade`). Full episodes preserve every selected producer beat at least once in
+real-time kept footage. Shorts select the two highest-priority story windows
+and must still preserve at least one producer-cited event in real time. Source ordering and non-overlap are enforced
 across attempts. Invalid durations, event IDs, speed values, source
 fingerprints, and hash mismatches reject the plan **before encoding**.
 
