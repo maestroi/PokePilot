@@ -67,7 +67,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressHM02FlyAcquired,
 		gsprofile.ProgressMineralBadgeEarned,
 		gsprofile.ProgressRedGyaradosDefeated,
-		gsprofile.ProgressLanceHelpAccepted:
+		gsprofile.ProgressLanceHelpAccepted,
+		gsprofile.ProgressMahoganyStairsOpened:
 		return true
 	default:
 		return false
@@ -226,6 +227,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRedGyarados(a.m, a.romData)
 		case gsprofile.ProgressLanceHelpAccepted:
 			err = executeGSLakeOfRageLance(a.m, a.romData)
+		case gsprofile.ProgressMahoganyStairsOpened:
+			err = executeGSMahoganyStairs(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -263,7 +266,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressHM02FlyAcquired,
 			gsprofile.ProgressMineralBadgeEarned,
 			gsprofile.ProgressRedGyaradosDefeated,
-			gsprofile.ProgressLanceHelpAccepted:
+			gsprofile.ProgressLanceHelpAccepted,
+			gsprofile.ProgressMahoganyStairsOpened:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -585,6 +589,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressLanceHelpAccepted,
 			Note:     "(speak with Lance at Lake of Rage and agree to investigate the Team Rocket radio signal)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressMahoganyStairsOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressMahoganyStairsOpened,
+			Note:     "(meet Lance at Mahogany Mart, follow his Dragonite scene, and reveal the real Rocket Base staircase)",
 		}}
 	default:
 		return nil
