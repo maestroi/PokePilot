@@ -33,7 +33,7 @@ const descriptions: Record<OperatorView, string> = {
   live: 'Watch a selected run, inspect game state and semantic position, and open its persisted evidence and deterministic replay.',
   runs: 'Search completed runs, inspect persisted evidence, and clean up older history.',
   failures: '',
-  analytics: 'Run outcomes, badge progress, LLM workload and comparisons.',
+  analytics: '',
   media: '',
   operations: 'Fleet health, workers, queues, leases, and operational status.',
   settings: 'Configure model deployments, per-browser launch defaults, broadcast destination status and renderer preferences.',
@@ -128,7 +128,7 @@ onUnmounted(() => {
     :subtitle="descriptions[activeView]"
     mode="private"
     :navigation="navigation"
-    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures' && activeView !== 'media'"
+    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures' && activeView !== 'analytics' && activeView !== 'media'"
   >
     <template #summary>
       <a :href="'#operations'" class="inline-flex items-center gap-1.5 text-meta text-fg-2 hover:text-fg" title="Open Operations">

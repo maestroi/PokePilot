@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { experimentProgress, experimentStage, parseExperimentSeeds } from '../src/operator/experimentPresentation.ts'
+import { experimentProgress, experimentStage, parseExperimentSeeds, presentExperimentStage } from '../src/operator/experimentPresentation.ts'
 import type { ExperimentView } from '../src/shared/api/types.ts'
 import { operatorHref, operatorRoute } from '../src/shared/urls.ts'
 
@@ -43,10 +43,12 @@ test('progress distinguishes active, complete and excluded matched pairs', () =>
     { seed: 1, comparable: false }
   ] }), 'Excluded · no comparable pairs')
   assert.equal(experimentStage(null), 'Unavailable')
+  assert.deepEqual(presentExperimentStage(active), { label: 'In progress', tone: 'accent', glyph: '◐' })
+  assert.equal(presentExperimentStage({ id: 'all-excluded', name: 'x', total_pairs: 1, pairs: [{ seed: 1, comparable: false }] }).tone, 'danger')
 })
 
 test('experiment history, exact member links and reverse links use durable IDs', () => {
-  assert.match(paired, /getExperiment\(props.experimentID/)
+  assert.match(paired, /getExperiment\(props.experimentId/)
   assert.match(paired, /operatorHref\('analytics', \{ section: 'experiments', experiment: experiment.id \}/)
   assert.match(paired, /operatorHref\('live', \{ run: pair.run_id_a, experiment: latest.id \}/)
   assert.match(paired, /operatorHref\('live', \{ run: pair.run_id_b, experiment: latest.id \}/)
@@ -61,7 +63,13 @@ test('experiment history, exact member links and reverse links use durable IDs',
 
 test('Analytics owns comparison and leaderboard; Operations/Runs do not duplicate it', () => {
   assert.match(analytics, /PairedExperimentPanel/)
-  assert.match(analytics, /Endless-run aggregates/)
+  assert.match(analytics, /Endless-run cohorts/)
+  assert.match(analytics, /Endless · not matched/)
+  assert.match(paired, /Paired · matched seeds/)
+  // T-42: health strip of readouts, no KPI tile grid; one primary action owns creation.
+  assert.doesNotMatch(analytics, /kpis|grid-cols-6|components\/Panel\.vue/)
+  assert.match(analytics, /ui-btn-primary[^>]*>[\s\S]*?Start paired experiment/)
+  assert.doesNotMatch(paired + analytics + leaderboard, /components\/Panel\.vue|slate-|cyan-|text-\[1[01]px\]/)
   assert.match(analytics, /LeaderboardPanel/)
   assert.match(leaderboard, /success: true, sort: 'frames', direction: 'asc'/)
   assert.doesNotMatch(archive, /fastestSuccessful\(/)

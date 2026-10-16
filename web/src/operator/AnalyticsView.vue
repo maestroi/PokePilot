@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ArrowPathIcon } from '@heroicons/vue/20/solid'
+import { computed, ref, watch } from 'vue'
+import { ArrowPathIcon, PlusIcon } from '@heroicons/vue/20/solid'
 import { getStats } from '../shared/api/client'
-import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
+import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/hostedApiPricing'
+import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 import PairedExperimentPanel from './PairedExperimentPanel.vue'
 import LeaderboardPanel from './LeaderboardPanel.vue'
 
-const props = defineProps<{ section?: string; experimentID?: string }>()
+const props = defineProps<{ section?: string; experimentId?: string }>()
 const activeSection = computed(() => props.section === 'experiments' ? 'experiments' : 'overview')
+const TABS = [{ id: 'overview', label: 'Overview' }, { id: 'experiments', label: 'Experiments' }]
+
+// The setup form lives in the Experiments detail pane; the page header owns its entry point.
+const creating = ref(false)
+watch(() => props.experimentId, (id) => { if (id) creating.value = false })
 
 type Row = Record<string, any>
 type StatsPayload = Record<string, any>
@@ -23,6 +29,7 @@ const resource = usePollingResource(
 
 const stats = computed<StatsPayload>(() => resource.data.value || {})
 const llm = computed<StatsPayload>(() => stats.value.llm || {})
+const loaded = computed(() => resource.state.value !== 'loading' && resource.state.value !== 'error' && resource.state.value !== 'empty')
 
 function num(value: unknown): number {
   const parsed = Number(value || 0)
@@ -30,7 +37,7 @@ function num(value: unknown): number {
 }
 
 function nfmt(value: unknown): string {
-  return num(value).toLocaleString()
+  return num(value).toLocaleString('en-US')
 }
 
 function pct(value: unknown, total: unknown): string {
@@ -45,12 +52,7 @@ function seconds(value: unknown): string {
 }
 
 function usd(value: unknown): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(num(value))
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num(value))
 }
 
 function array(value: unknown): Row[] {
@@ -67,35 +69,58 @@ function profileLabel(value: unknown): string {
   }
 }
 
-const kpis = computed(() => {
+// One-line health strip of readouts (no KPI tiles, DESIGN §5).
+const health = computed(() => {
   const s = stats.value
   const missing = Math.max(0, num(s.settled_runs) - num(s.usable_progress_runs))
   return [
-    { label: 'Completed attempts', value: nfmt(s.completed_attempts), note: `${nfmt(s.settled_runs)} settled run records` },
-    { label: 'Objective wins', value: `${nfmt(s.goal_wins)} / ${nfmt(s.goal_tracked_runs)}`, note: pct(s.goal_wins, s.goal_tracked_runs) },
-    { label: 'Reached ≥1 badge', value: `${nfmt(s.at_least_one_badge)} / ${nfmt(s.usable_progress_runs)}`, note: pct(s.at_least_one_badge, s.usable_progress_runs) },
-    { label: 'Best badge count', value: `${nfmt(s.best_badges)} / 8`, note: 'highest observed' },
-    { label: 'Retry failures', value: nfmt(s.retryable_failure_attempts), note: 'including failures hidden by retries' },
-    { label: 'No progress data', value: nfmt(missing), note: 'settled without final player snapshot' }
+    { label: 'Completed attempts', value: nfmt(s.completed_attempts), title: `${nfmt(s.settled_runs)} settled run records` },
+    { label: 'Objective wins', value: `${nfmt(s.goal_wins)} / ${nfmt(s.goal_tracked_runs)} · ${pct(s.goal_wins, s.goal_tracked_runs)}`, title: 'Among runs that tracked a goal' },
+    { label: '≥1 badge', value: `${nfmt(s.at_least_one_badge)} / ${nfmt(s.usable_progress_runs)} · ${pct(s.at_least_one_badge, s.usable_progress_runs)}`, title: 'Among runs with a final progress snapshot' },
+    { label: 'Best badges', value: nfmt(s.best_badges), title: 'Highest badge count observed' },
+    { label: 'Retry failures', value: nfmt(s.retryable_failure_attempts), title: 'Including failures hidden by retries' },
+    { label: 'No progress data', value: nfmt(missing), title: 'Settled without a final player snapshot' }
   ]
 })
 
-const llmKpis = computed(() => [
-  { label: 'Calls', value: nfmt(llm.value.calls), note: `${nfmt(llm.value.tracked_runs)} run snapshots` },
-  { label: 'Average call', value: seconds(llm.value.avg_seconds), note: 'weighted endpoint latency' },
-  { label: 'Rejected', value: `${nfmt(llm.value.rejected)} · ${pct(llm.value.rejected, llm.value.calls)}`, note: 'validation / transport / reply errors' },
-  { label: 'Token spend', value: `${nfmt(llm.value.prompt_tokens)} / ${nfmt(llm.value.completion_tokens)}`, note: 'prompt / completion' }
-])
+// Terminal reasons as one stacked bar + table. Tone comes from the shared status
+// model, so colour only appears where it means goal complete or failure.
+const outcomeRows = computed(() => {
+  const total = num(stats.value.settled_runs) || array(stats.value.terminal_reasons).reduce((sum, row) => sum + num(row.count), 0)
+  return array(stats.value.terminal_reasons)
+    .filter((row) => num(row.count) > 0)
+    .sort((a, b) => num(b.count) - num(a.count))
+    .map((row) => ({
+      name: String(row.name || ''),
+      count: num(row.count),
+      share: total ? 100 * num(row.count) / total : 0,
+      status: presentOutcome({ reason: String(row.name || '') })
+    }))
+})
+const SEGMENT_FILL: Record<string, string> = { ok: 'bg-ok', danger: 'bg-danger', warn: 'bg-warn', accent: 'bg-accent', neutral: 'bg-fg-3' }
 
+const badgeRows = computed(() => array(stats.value.badge_distribution).filter((row) => num(row.count) > 0))
+const maxBadgeCount = computed(() => Math.max(1, ...badgeRows.value.map((row) => num(row.count))))
+
+const workload = computed(() => {
+  const l = llm.value
+  return [
+    ['Calls', `${nfmt(l.calls)} · ${nfmt(l.tracked_runs)} run snapshots`],
+    ['Average call', `${seconds(l.avg_seconds)} weighted endpoint latency`],
+    ['Successful / rejected avg', `${seconds(l.successful_avg_seconds)} / ${seconds(l.rejected_avg_seconds)}`],
+    ['Strategist avg', seconds(l.strategic_avg_seconds)],
+    ['Rejected', `${nfmt(l.rejected)} · ${pct(l.rejected, l.calls)}`],
+    ['Planner mix', `${nfmt(l.fast_calls)} fast · ${nfmt(l.strategic_calls)} strategist`],
+    ['Repeat picks', `${nfmt(l.repeats)} / ${nfmt(l.rounds)} · ${pct(l.repeats, l.rounds)}`],
+    ['Reliability', `${nfmt(l.transport)} transport · ${nfmt(l.fallbacks)} fallback · ${nfmt(l.failovers)} failover`],
+    ['Prompt / completion tokens', `${nfmt(l.prompt_tokens)} / ${nfmt(l.completion_tokens)}`]
+  ]
+})
 const hasTokenSpend = computed(() => num(llm.value.prompt_tokens) > 0 || num(llm.value.completion_tokens) > 0)
 const hostedApiEstimates = computed(() => hostedApiEquivalentCosts(llm.value.prompt_tokens, llm.value.completion_tokens))
-const badgeRows = computed(() => array(stats.value.badge_distribution).filter((row) => num(row.count) > 0))
-const reasonRows = computed(() => array(stats.value.terminal_reasons))
-const maxBadgeCount = computed(() => Math.max(1, ...badgeRows.value.map((row) => num(row.count))))
-const maxReasonCount = computed(() => Math.max(1, ...reasonRows.value.map((row) => num(row.count))))
 const profiles = computed(() => array(llm.value.profiles))
 const models = computed(() => array(llm.value.latest_models))
-const experiments = computed(() => array(stats.value.endless_experiments))
+const endless = computed(() => array(stats.value.endless_experiments))
 
 function retry(): void {
   void resource.retry()
@@ -105,171 +130,239 @@ function operatorSearch(): string { return window.location.search }
 
 <template>
   <div class="space-y-3">
-    <nav class="flex flex-wrap gap-1 border-b border-[var(--poke-border)] pb-2" aria-label="Analytics sections">
+    <header class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 class="text-page font-semibold">Analytics</h1>
+      <span v-if="loaded" class="text-fg-2">{{ nfmt(stats.completed_attempts) }} completed attempts</span>
+      <span v-if="resource.state.value === 'refreshing'" class="inline-flex items-center gap-1.5 text-meta text-fg-2" role="status">
+        <span class="size-1.5 bg-accent motion-safe:animate-pulse" aria-hidden="true" /> Refreshing
+      </span>
+      <div class="ml-auto flex items-center gap-2">
+        <button type="button" class="ui-btn ui-icon-btn max-md:size-10" aria-label="Refresh analytics" title="Refresh" @click="retry">
+          <ArrowPathIcon class="size-4" aria-hidden="true" />
+        </button>
+        <button
+          v-if="activeSection === 'experiments' && !creating"
+          type="button"
+          class="ui-btn ui-btn-primary max-md:h-10"
+          @click="creating = true"
+        >
+          <PlusIcon class="size-4" aria-hidden="true" /> Start paired experiment
+        </button>
+      </div>
+    </header>
+
+    <nav class="flex gap-1 overflow-x-auto border-b border-rule" aria-label="Analytics sections">
       <a
-        v-for="tab in [{ id: 'overview', label: 'Overview' }, { id: 'experiments', label: 'Experiments' }]"
+        v-for="tab in TABS"
         :key="tab.id"
         :href="operatorHref('analytics', { section: tab.id }, operatorSearch())"
         :aria-current="activeSection === tab.id ? 'page' : undefined"
-        :class="[
-          activeSection === tab.id ? 'bg-white/10 text-white ring-1 ring-white/10' : 'text-[var(--poke-muted)] hover:bg-white/5 hover:text-white',
-          'rounded-sm px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-[var(--poke-cyan)]'
-        ]"
+        :class="activeSection === tab.id ? 'text-fg shadow-[inset_0_-2px_0_var(--color-accent)]' : 'text-fg-2 hover:text-fg'"
+        class="flex h-9 shrink-0 items-center px-3 font-medium focus-visible:outline-offset-[-2px] max-md:h-10"
       >{{ tab.label }}</a>
     </nav>
-    <div v-if="activeSection === 'experiments'" class="space-y-3">
-      <PairedExperimentPanel :experiment-id="experimentID" />
-      <ResourceState :state="resource.state.value" title="Endless-run aggregates unavailable" :message="resource.error.value || 'Aggregate statistics will recover automatically.'" :rows="4">
-        <template #actions><button type="button" class="text-xs font-semibold text-cyan-200 hover:underline" @click="retry">Retry aggregates</button></template>
-        <Panel title="Endless-run aggregates" description="Independent endless-successor run cohorts; not matched A/B experiments." compact>
-                <div v-if="experiments.length" class="-mx-3 overflow-x-auto sm:-mx-4">
-                  <table class="min-w-full divide-y divide-white/10 text-left text-xs">
-                    <thead><tr><th class="px-3 py-2 text-slate-600 sm:px-4">Experiment</th><th class="px-3 py-2 text-right text-slate-600">Attempts</th><th class="px-3 py-2 text-right text-slate-600">Best</th><th class="px-3 py-2 text-right text-slate-600">≥1 badge</th><th class="px-3 py-2 text-right text-slate-600">Wins</th><th class="px-3 py-2 text-right text-slate-600 sm:pr-4">Retry failures</th></tr></thead>
-                    <tbody class="divide-y divide-white/8">
-                      <tr v-for="experiment in experiments" :key="String(experiment.key)">
-                        <td class="max-w-lg px-3 py-3 sm:px-4"><strong class="block truncate text-slate-300">{{ experiment.goal || experiment.planner || 'endless run' }}</strong><span class="mt-0.5 block truncate font-mono text-[10px] text-slate-600">{{ experiment.key }}</span></td>
-                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.completed_attempts) }}</td>
-                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ nfmt(experiment.best_badges) }}/8</td>
-                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.at_least_one_badge, experiment.usable_progress_runs) }}</td>
-                        <td class="px-3 py-3 text-right font-mono text-slate-500">{{ pct(experiment.goal_wins, experiment.goal_tracked_runs) }}</td>
-                        <td class="px-3 py-3 text-right font-mono text-slate-500 sm:pr-4">{{ nfmt(experiment.retryable_failure_attempts) }}</td>
+
+    <template v-if="activeSection === 'experiments'">
+      <PairedExperimentPanel v-model:creating="creating" :experiment-id="experimentId" />
+
+      <section class="ui-bay" aria-labelledby="endless-title">
+        <div class="ui-bay-header">
+          <h2 id="endless-title" class="flex items-center gap-2">Endless-run cohorts <span class="ui-tag font-normal">Endless · not matched</span></h2>
+          <span class="text-meta font-normal text-fg-2">{{ endless.length ? `${endless.length} cohorts` : '' }}</span>
+        </div>
+        <p class="border-b border-rule px-3 py-2 text-meta text-fg-2">Independent endless-successor runs grouped by setup. Unlike paired experiments, seeds are not matched, so compare them with care.</p>
+        <ResourceState v-if="!loaded && resource.state.value !== 'empty'" class="p-3" :state="resource.state.value" title="Endless-run cohorts unavailable" :message="`${resource.error.value || 'Aggregate statistics'} will recover automatically.`" :rows="3">
+          <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="retry">Retry</button></template>
+        </ResourceState>
+        <div v-else-if="endless.length" class="overflow-x-auto">
+          <table class="w-full min-w-[640px] border-collapse text-left">
+            <thead>
+              <tr class="h-9 border-b border-rule-strong bg-raised text-meta text-fg-2">
+                <th class="px-3 font-medium">Cohort</th>
+                <th class="w-24 px-3 text-right font-medium">Attempts</th>
+                <th class="w-24 px-3 text-right font-medium">Best badges</th>
+                <th class="w-24 px-3 text-right font-medium">≥1 badge</th>
+                <th class="w-24 px-3 text-right font-medium">Wins</th>
+                <th class="w-28 px-3 text-right font-medium">Retry failures</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="cohort in endless" :key="String(cohort.key)" class="h-14 border-b border-rule last:border-b-0">
+                <td class="max-w-0 px-3">
+                  <div class="truncate font-semibold" :title="String(cohort.goal || cohort.planner || '')">{{ cohort.goal || cohort.planner || 'Endless run' }}</div>
+                  <div class="truncate font-mono text-meta text-fg-2" :title="String(cohort.key)">{{ cohort.key }}</div>
+                </td>
+                <td class="px-3 text-right font-mono">{{ nfmt(cohort.completed_attempts) }}</td>
+                <td class="px-3 text-right font-mono">{{ nfmt(cohort.best_badges) }}</td>
+                <td class="px-3 text-right font-mono">{{ pct(cohort.at_least_one_badge, cohort.usable_progress_runs) }}</td>
+                <td class="px-3 text-right font-mono">{{ pct(cohort.goal_wins, cohort.goal_tracked_runs) }}</td>
+                <td class="px-3 text-right font-mono">{{ nfmt(cohort.retryable_failure_attempts) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="px-3 py-8 text-center text-fg-2">No endless-run cohorts recorded yet.</p>
+      </section>
+    </template>
+
+    <template v-else>
+      <ResourceState v-if="resource.state.value === 'stale'" state="stale" title="Showing the last loaded statistics" :message="`Refresh failed: ${resource.error.value}`">
+        <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="retry">Retry</button></template>
+      </ResourceState>
+      <ResourceState v-if="!loaded" :state="resource.state.value" title="Couldn’t load analytics" :message="`${resource.error.value || 'Farm statistics are unavailable'}. Runs and Live keep working; this page retries automatically.`" :rows="6">
+        <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="retry">Retry</button></template>
+      </ResourceState>
+
+      <template v-else>
+        <!-- Health strip -->
+        <dl class="flex flex-wrap gap-x-6 gap-y-2 border border-rule-strong bg-surface px-3 py-2" aria-label="Farm health">
+          <div v-for="item in health" :key="item.label" class="flex items-baseline gap-2" :title="item.title">
+            <dt class="ui-label">{{ item.label }}</dt>
+            <dd class="m-0 font-mono font-medium">{{ item.value }}</dd>
+          </div>
+        </dl>
+
+        <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <section class="ui-bay" aria-labelledby="outcomes-title">
+            <div class="ui-bay-header">
+              <h2 id="outcomes-title">Run outcomes</h2>
+              <span class="text-meta font-normal text-fg-2">{{ nfmt(stats.settled_runs) }} settled runs</span>
+            </div>
+            <template v-if="outcomeRows.length">
+              <div class="px-3 pt-3 pb-2">
+                <div class="flex h-3 gap-0.5" role="img" :aria-label="`Run outcomes: ${outcomeRows.map((row) => `${row.status.label} ${row.count}`).join(', ')}`">
+                  <span
+                    v-for="row in outcomeRows"
+                    :key="row.name"
+                    :class="SEGMENT_FILL[row.status.tone]"
+                    class="min-w-0.5 first:rounded-l-[3px] last:rounded-r-[3px]"
+                    :style="{ flexGrow: row.count }"
+                    :title="`${row.status.label}: ${nfmt(row.count)} · ${row.share.toFixed(1)}%`"
+                  />
+                </div>
+              </div>
+              <table class="w-full border-collapse text-left">
+                <thead>
+                  <tr class="h-9 border-y border-b-rule-strong border-t-rule bg-raised text-meta text-fg-2">
+                    <th class="px-3 font-medium">Outcome</th>
+                    <th class="w-24 px-3 text-right font-medium">Runs</th>
+                    <th class="w-24 px-3 text-right font-medium">Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in outcomeRows" :key="row.name" class="h-10 border-b border-rule last:border-b-0">
+                    <td class="px-3"><StatusPill :status="row.status" /></td>
+                    <td class="px-3 text-right font-mono">{{ nfmt(row.count) }}</td>
+                    <td class="px-3 text-right font-mono text-fg-2">{{ row.share.toFixed(1) }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+            <p v-else class="px-3 py-8 text-center text-fg-2">No settled run outcomes yet.</p>
+          </section>
+
+          <section class="ui-bay" aria-labelledby="badges-title">
+            <div class="ui-bay-header">
+              <h2 id="badges-title">Badge distribution</h2>
+              <span class="text-meta font-normal text-fg-2">{{ nfmt(stats.usable_progress_runs) }} runs with progress</span>
+            </div>
+            <ul v-if="badgeRows.length" class="space-y-2 p-3" aria-label="Final badge counts">
+              <li v-for="row in badgeRows" :key="String(row.badges)" class="grid grid-cols-[6rem_minmax(0,1fr)_7.5rem] items-center gap-3" :title="`${nfmt(row.count)} runs ended with ${row.badges} badge${num(row.badges) === 1 ? '' : 's'}`">
+                <span class="text-fg-2">{{ row.badges }} badge{{ num(row.badges) === 1 ? '' : 's' }}</span>
+                <span class="h-3"><span class="block h-full rounded-r-[3px] bg-fg-3" :style="{ width: `${Math.max(1, 100 * num(row.count) / maxBadgeCount)}%` }" /></span>
+                <span class="text-right font-mono text-meta">{{ nfmt(row.count) }} <span class="text-fg-2">· {{ pct(row.count, stats.usable_progress_runs) }}</span></span>
+              </li>
+            </ul>
+            <p v-else class="px-3 py-8 text-center text-fg-2">No badge data yet.</p>
+          </section>
+
+          <section class="ui-bay xl:col-span-2" aria-labelledby="llm-title">
+            <div class="ui-bay-header">
+              <h2 id="llm-title">LLM workload</h2>
+              <span class="text-meta font-normal text-fg-2">{{ nfmt(llm.calls) }} calls</span>
+            </div>
+            <div class="grid grid-cols-1 gap-px bg-rule lg:grid-cols-2">
+              <div class="bg-surface px-3 pb-3">
+                <h3 class="mt-3 mb-1 text-title font-semibold">Calls and reliability</h3>
+                <dl class="ui-kv">
+                  <template v-for="item in workload" :key="item[0]">
+                    <dt>{{ item[0] }}</dt><dd class="font-mono">{{ item[1] }}</dd>
+                  </template>
+                </dl>
+              </div>
+              <div class="bg-surface px-3 pb-3">
+                <h3 class="mt-3 mb-1 flex flex-wrap items-baseline justify-between gap-2 text-title font-semibold">
+                  If this ran on hosted APIs
+                  <span class="text-meta font-normal text-fg-2">Pricing {{ HOSTED_API_PRICING_UPDATED }}</span>
+                </h3>
+                <template v-if="hasTokenSpend">
+                  <table class="w-full border-collapse text-left">
+                    <thead><tr class="h-8 border-b border-rule-strong text-meta text-fg-2"><th class="font-medium">Model</th><th class="text-right font-medium">List price</th><th class="text-right font-medium">Equivalent</th></tr></thead>
+                    <tbody>
+                      <tr v-for="estimate in hostedApiEstimates" :key="estimate.model" class="h-12 border-b border-rule">
+                        <td><div>{{ estimate.model }}</div><div class="text-meta text-fg-2">{{ estimate.provider }}</div></td>
+                        <td class="text-right font-mono text-meta text-fg-2">${{ estimate.inputPerMillion }}/M in · ${{ estimate.outputPerMillion }}/M out</td>
+                        <td class="text-right font-mono font-semibold">{{ usd(estimate.costUsd) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="mt-2 text-meta text-fg-2">Standard uncached text-token list pricing for the token volume above. Local inference has $0 hosted API spend; hardware and electricity aren’t included.</p>
+                </template>
+                <p v-else class="py-6 text-fg-2">No token spend recorded yet.</p>
+              </div>
+              <div class="bg-surface">
+                <h3 class="px-3 pt-3 pb-1 text-title font-semibold">Routing profiles</h3>
+                <div v-if="profiles.length" class="overflow-x-auto">
+                  <table class="w-full border-collapse text-left">
+                    <thead>
+                      <tr class="h-9 border-b border-rule-strong bg-raised text-meta text-fg-2">
+                        <th class="px-3 font-medium">Profile</th>
+                        <th class="px-3 text-right font-medium">Runs</th>
+                        <th class="px-3 text-right font-medium">Calls</th>
+                        <th class="px-3 text-right font-medium">Avg</th>
+                        <th class="px-3 text-right font-medium">Rejected</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="profile in profiles" :key="String(profile.profile)" class="h-10 border-b border-rule last:border-b-0">
+                        <td class="px-3">{{ profileLabel(profile.profile) }}</td>
+                        <td class="px-3 text-right font-mono">{{ nfmt(profile.runs) }}</td>
+                        <td class="px-3 text-right font-mono">{{ nfmt(profile.calls) }}</td>
+                        <td class="px-3 text-right font-mono">{{ seconds(profile.avg_seconds) }}</td>
+                        <td class="px-3 text-right font-mono">{{ nfmt(profile.rejected) }}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-                <p v-else class="py-6 text-center text-sm text-slate-500">No endless experiments recorded yet.</p>
-              </Panel>
-      </ResourceState>
-    </div>
-    <ResourceState v-else :state="resource.state.value" title="Analytics unavailable" :message="resource.error.value || 'Farm statistics will recover automatically.'" :rows="7">
-      <template #actions>
-        <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="retry">
-          <ArrowPathIcon class="size-3.5" aria-hidden="true" /> Retry now
-        </button>
-      </template>
-
-      <Panel title="Run outcomes" :description="`${nfmt(stats.completed_attempts)} completed attempts · ${nfmt(stats.settled_runs)} settled runs`" compact>
-        <template #actions>
-          <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/12" @click="retry">
-            <ArrowPathIcon class="size-3.5" aria-hidden="true" /> Refresh
-          </button>
-        </template>
-        <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 xl:grid-cols-3 2xl:grid-cols-6">
-          <div v-for="item in kpis" :key="item.label" class="bg-[#0b111a] px-4 py-4">
-            <dt class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ item.label }}</dt>
-            <dd class="mt-1 font-mono text-lg font-semibold tabular-nums text-white">{{ item.value }}</dd>
-            <p class="mt-1 text-[11px] leading-4 text-slate-600">{{ item.note }}</p>
-          </div>
-        </div>
-      </Panel>
-
-      <Panel title="LLM workload" description="Latency, token spend, rejection rate, routing profiles, and latest serving models." compact>
-        <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 xl:grid-cols-4">
-          <div v-for="item in llmKpis" :key="item.label" class="bg-[#0b111a] px-4 py-4">
-            <dt class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ item.label }}</dt>
-            <dd class="mt-1 font-mono text-lg font-semibold tabular-nums text-white">{{ item.value }}</dd>
-            <p class="mt-1 text-[11px] leading-4 text-slate-600">{{ item.note }}</p>
-          </div>
-        </div>
-
-        <div v-if="hasTokenSpend" class="mt-3 overflow-hidden rounded-lg border border-white/10 bg-black/15">
-          <div class="flex flex-wrap items-start justify-between gap-2 border-b border-white/8 px-3 py-2.5">
-            <div>
-              <strong class="block text-xs font-semibold text-slate-200">If this ran on hosted APIs…</strong>
-              <span class="mt-0.5 block text-[10px] leading-4 text-slate-600">Equivalent cost for the token volume above using standard uncached text-token list pricing.</span>
-            </div>
-            <span class="rounded bg-white/5 px-2 py-1 text-[9px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Pricing {{ HOSTED_API_PRICING_UPDATED }}</span>
-          </div>
-          <div class="grid grid-cols-1 gap-px bg-white/8 sm:grid-cols-3">
-            <div v-for="estimate in hostedApiEstimates" :key="estimate.model" class="bg-[#0b111a] px-3 py-3">
-              <span class="block text-[9px] font-semibold tracking-[0.08em] text-slate-600 uppercase">{{ estimate.provider }}</span>
-              <strong class="mt-0.5 block text-xs text-slate-300">{{ estimate.model }}</strong>
-              <span class="mt-2 block font-mono text-xl font-semibold tabular-nums text-white">{{ usd(estimate.costUsd) }}</span>
-              <span class="mt-1 block font-mono text-[9px] text-slate-600">${{ estimate.inputPerMillion }}/M in · ${{ estimate.outputPerMillion }}/M out</span>
-            </div>
-          </div>
-          <div class="border-t border-white/8 px-3 py-2 text-[10px] text-slate-600">
-            Local inference: <strong class="font-mono font-medium text-slate-400">$0 hosted API spend</strong> · hardware and electricity are not included in this comparison.
-          </div>
-        </div>
-
-        <div class="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3 2xl:grid-cols-6">
-          <div v-for="item in [
-            ['Successful avg', seconds(llm.successful_avg_seconds)],
-            ['Rejected avg', seconds(llm.rejected_avg_seconds)],
-            ['Strategist avg', seconds(llm.strategic_avg_seconds)],
-            ['Planner mix', `${nfmt(llm.fast_calls)} fast · ${nfmt(llm.strategic_calls)} strategist`],
-            ['Repeat picks', `${nfmt(llm.repeats)} / ${nfmt(llm.rounds)} · ${pct(llm.repeats, llm.rounds)}`],
-            ['Reliability', `${nfmt(llm.transport)} transport · ${nfmt(llm.fallbacks)} fallback · ${nfmt(llm.failovers)} failover`]
-          ]" :key="item[0]" class="rounded-md border border-white/8 bg-black/15 px-3 py-2.5">
-            <span class="block text-[10px] font-semibold tracking-[0.08em] text-slate-600 uppercase">{{ item[0] }}</span>
-            <strong class="mt-1 block font-mono text-xs font-medium text-slate-300">{{ item[1] }}</strong>
-          </div>
-        </div>
-
-        <div class="mt-4 grid grid-cols-1 gap-3 2xl:grid-cols-2">
-          <div class="overflow-hidden rounded-md border border-white/8">
-            <div class="border-b border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Routing profiles</div>
-            <div v-if="profiles.length" class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-white/8 text-left text-xs">
-                <thead><tr><th class="px-3 py-2 text-slate-600">Profile</th><th class="px-3 py-2 text-right text-slate-600">Runs</th><th class="px-3 py-2 text-right text-slate-600">Calls</th><th class="px-3 py-2 text-right text-slate-600">Avg</th><th class="px-3 py-2 text-right text-slate-600">Rejected</th></tr></thead>
-                <tbody class="divide-y divide-white/8">
-                  <tr v-for="profile in profiles" :key="String(profile.profile)">
-                    <td class="px-3 py-2.5 text-slate-300">{{ profileLabel(profile.profile) }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono text-slate-500">{{ nfmt(profile.runs) }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono text-slate-500">{{ nfmt(profile.calls) }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono text-slate-500">{{ seconds(profile.avg_seconds) }}</td>
-                    <td class="px-3 py-2.5 text-right font-mono text-slate-500">{{ nfmt(profile.rejected) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="px-3 py-6 text-center text-xs text-slate-600">No routing-profile telemetry yet.</p>
-          </div>
-
-          <div class="overflow-hidden rounded-md border border-white/8">
-            <div class="border-b border-white/8 bg-white/[0.025] px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Latest serving models</div>
-            <div v-if="models.length" class="divide-y divide-white/8">
-              <div v-for="model in models" :key="String(model.name)" class="flex items-center justify-between gap-4 px-3 py-2.5">
-                <div class="min-w-0">
-                  <strong class="block truncate text-xs text-slate-300" :title="String(model.name || '')">{{ model.name }}</strong>
-                  <span class="text-[11px] text-slate-600">{{ model.backend || 'backend not reported' }}</span>
-                </div>
-                <span class="font-mono text-[11px] text-slate-500">{{ nfmt(model.runs) }} runs</span>
+                <p v-else class="px-3 pb-6 text-fg-2">No routing-profile telemetry yet.</p>
+              </div>
+              <div class="bg-surface">
+                <h3 class="px-3 pt-3 pb-1 text-title font-semibold">Latest serving models</h3>
+                <table v-if="models.length" class="w-full table-fixed border-collapse text-left">
+                  <thead>
+                    <tr class="h-9 border-b border-rule-strong bg-raised text-meta text-fg-2">
+                      <th class="px-3 font-medium">Model</th>
+                      <th class="w-24 px-3 text-right font-medium">Runs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="model in models" :key="String(model.name)" class="h-14 border-b border-rule last:border-b-0">
+                      <td class="px-3">
+                        <div class="truncate" :title="String(model.name || '')">{{ model.name }}</div>
+                        <div class="truncate text-meta text-fg-2">{{ model.backend || 'Backend not reported' }}</div>
+                      </td>
+                      <td class="px-3 text-right font-mono">{{ nfmt(model.runs) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-else class="px-3 pb-6 text-fg-2">No serving-model snapshots yet.</p>
               </div>
             </div>
-            <p v-else class="px-3 py-6 text-center text-xs text-slate-600">No serving-model snapshots yet.</p>
-          </div>
+          </section>
+
+          <LeaderboardPanel class="xl:col-span-2" />
         </div>
-      </Panel>
-
-      <LeaderboardPanel />
-
-      <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <Panel title="Badge distribution" description="Final badge counts among runs with usable progress snapshots." compact>
-          <div v-if="badgeRows.length" class="space-y-3">
-            <div v-for="row in badgeRows" :key="String(row.badges)" class="grid grid-cols-[7rem_minmax(0,1fr)_4.5rem] items-center gap-3">
-              <span class="text-xs text-slate-400">{{ row.badges }} badge{{ num(row.badges) === 1 ? '' : 's' }}</span>
-              <div class="h-2 overflow-hidden rounded-full bg-white/8"><div class="h-full rounded-full bg-cyan-300" :style="{ width: `${Math.max(2, 100 * num(row.count) / maxBadgeCount)}%` }" /></div>
-              <span class="text-right font-mono text-[11px] text-slate-500">{{ nfmt(row.count) }} · {{ pct(row.count, stats.usable_progress_runs) }}</span>
-            </div>
-          </div>
-          <p v-else class="py-6 text-center text-sm text-slate-500">No badge data yet.</p>
-        </Panel>
-
-        <Panel title="Terminal outcomes" description="How settled runs ended." compact>
-          <div v-if="reasonRows.length" class="space-y-3">
-            <div v-for="row in reasonRows" :key="String(row.name)" class="grid grid-cols-[7rem_minmax(0,1fr)_4.5rem] items-center gap-3">
-              <span class="truncate text-xs text-slate-400" :title="String(row.name || '')">{{ row.name }}</span>
-              <div class="h-2 overflow-hidden rounded-full bg-white/8"><div class="h-full rounded-full bg-amber-300" :style="{ width: `${Math.max(2, 100 * num(row.count) / maxReasonCount)}%` }" /></div>
-              <span class="text-right font-mono text-[11px] text-slate-500">{{ nfmt(row.count) }} · {{ pct(row.count, stats.settled_runs) }}</span>
-            </div>
-          </div>
-          <p v-else class="py-6 text-center text-sm text-slate-500">No terminal outcomes yet.</p>
-        </Panel>
-      </div>
-
-
-    </ResourceState>
+      </template>
+    </template>
   </div>
 </template>

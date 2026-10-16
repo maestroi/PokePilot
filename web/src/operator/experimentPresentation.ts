@@ -1,4 +1,5 @@
 import type { ExperimentPairResult, ExperimentView } from '../shared/api/types'
+import type { StatusPresentation } from '../shared/status'
 
 export type ParsedExperimentSeeds = { seeds: number[]; error: string }
 
@@ -62,4 +63,14 @@ export function experimentStage(value: ExperimentView | null): string {
   if (progress.inProgress > 0) return 'In progress'
   if (progress.excluded) return 'Completed · some pairs excluded'
   return 'Completed'
+}
+
+// Stage as a status pill (DESIGN §4.3): glyph + word, never colour alone.
+export function presentExperimentStage(value: ExperimentView | null): StatusPresentation {
+  const label = experimentStage(value)
+  if (label === 'In progress') return { label, tone: 'accent', glyph: '◐' }
+  if (label === 'Completed') return { label, tone: 'ok', glyph: '✓' }
+  if (label.startsWith('Completed')) return { label, tone: 'warn', glyph: '▲' }
+  if (label.startsWith('Excluded')) return { label, tone: 'danger', glyph: '✕' }
+  return { label, tone: 'neutral', glyph: '■' }
 }
