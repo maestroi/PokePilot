@@ -69,7 +69,11 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRedGyaradosDefeated,
 		gsprofile.ProgressLanceHelpAccepted,
 		gsprofile.ProgressMahoganyStairsOpened,
-		gsprofile.ProgressRocketLanceHealing:
+		gsprofile.ProgressRocketLanceHealing,
+		gsprofile.ProgressRocketPasswordsLearned,
+		gsprofile.ProgressRocketOfficeOpened,
+		gsprofile.ProgressRocketExecutiveBeaten,
+		gsprofile.ProgressRocketMurkrowPassword:
 		return true
 	default:
 		return false
@@ -232,6 +236,14 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSMahoganyStairs(a.m, a.romData)
 		case gsprofile.ProgressRocketLanceHealing:
 			err = executeGSRocketBaseLanceHeal(a.m, a.romData)
+		case gsprofile.ProgressRocketPasswordsLearned:
+			err = executeGSRocketPasswords(a.m, a.romData)
+		case gsprofile.ProgressRocketOfficeOpened:
+			err = executeGSRocketOfficeDoor(a.m, a.romData)
+		case gsprofile.ProgressRocketExecutiveBeaten:
+			err = executeGSRocketExecutiveM4(a.m, a.romData)
+		case gsprofile.ProgressRocketMurkrowPassword:
+			err = executeGSRocketMurkrow(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -271,7 +283,11 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRedGyaradosDefeated,
 			gsprofile.ProgressLanceHelpAccepted,
 			gsprofile.ProgressMahoganyStairsOpened,
-			gsprofile.ProgressRocketLanceHealing:
+			gsprofile.ProgressRocketLanceHealing,
+			gsprofile.ProgressRocketPasswordsLearned,
+			gsprofile.ProgressRocketOfficeOpened,
+			gsprofile.ProgressRocketExecutiveBeaten,
+			gsprofile.ProgressRocketMurkrowPassword:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -605,6 +621,30 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketLanceHealing,
 			Note:     "(descend Rocket Base B1F, survive the security cameras, and receive Lance's scripted party heal on B2F)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketPasswordsLearned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketPasswordsLearned,
+			Note:     "(fight the two Rocket password grunts on B3F and learn SlowpokeTail and RaticateTail)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketOfficeOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketOfficeOpened,
+			Note:     "(use the two learned passwords to open Giovanni's B3F office door)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketExecutiveBeaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketExecutiveBeaten,
+			Note:     "(defeat the Rocket executive inside Giovanni's B3F office)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketMurkrowPassword):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketMurkrowPassword,
+			Note:     "(learn the transmitter password from Giovanni's Murkrow)",
 		}}
 	default:
 		return nil
