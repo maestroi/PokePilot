@@ -238,8 +238,10 @@ func Validate(p Plan, assessment producer.Assessment, timelines []farm.MediaTime
 	if played == 0 || outputMS > 90*60*1000 || p.DurationMS != outputMS {
 		return errors.New("editplan: invalid or excessive output duration")
 	}
-	// Every story beat needs at least one cited event preserved at 1x in the
-	// corresponding timeline. Manual editors cannot silently drop the climax.
+	// Episodes preserve every selected story beat at 1x. A short is an
+	// intentionally narrower excerpt and must still cite at least one
+	// producer-selected beat; it may not invent a new narrative.
+	evidenced := 0
 	for _, beat := range assessment.Beats {
 		ok := false
 		for _, ref := range beat.Evidence {
@@ -248,9 +250,17 @@ func Validate(p Plan, assessment producer.Assessment, timelines []farm.MediaTime
 				break
 			}
 		}
-		if !ok {
+		if ok {
+			evidenced++
+		} else if p.Profile == Episode {
 			return fmt.Errorf("editplan: missing real-time evidence for beat %q", beat.Kind)
 		}
+	}
+	if evidenced == 0 {
+		return errors.New("editplan: no producer-selected event preserved at real time")
+	}
+	if p.Profile == Short && outputMS > 180000 {
+		return errors.New("editplan: short exceeds three minutes")
 	}
 	hash := p.Hash
 	p.Hash = ""
@@ -381,9 +391,36 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 		}
 	}
 	if profile == Short && len(merged) > 2 {
-		// Short intentionally only uses at most two windows, but all selected
-		// beats must remain. Reject rather than silently dropping evidence.
-		return Plan{}, errors.New("editplan: too many distinct story windows for a single short; use episode profile or revise the assessment")
+		// A Short chooses the two strongest available story windows, but
+		// keeps their source order and complete real-time evidence.
+		// This never upgrades a producer archive/do-not-publish decision.
+		score := func(w window) int {
+			rank := map[string]int{
+				"run_finished": 110, "boss_battle": 105, "gym_battle": 100,
+				"badge_acquired": 95, "run_failed": 90, "blackout": 85,
+				"planner_recovery": 80, "failure_recovered": 75,
+				"rare_catch": 70, "evolution": 65, "milestone": 60,
+			}
+			best := 0
+			for _, e := range by[w.attempt].Events {
+				for _, id := range w.eventIDs {
+					if id == e.ID && rank[e.Type] > best {
+						best = rank[e.Type]
+					}
+				}
+			}
+			return best
+		}
+		sort.SliceStable(merged, func(i, j int) bool {
+			return score(merged[i]) > score(merged[j])
+		})
+		merged = merged[:2]
+		sort.Slice(merged, func(i, j int) bool {
+			if merged[i].attempt != merged[j].attempt {
+				return merged[i].attempt < merged[j].attempt
+			}
+			return merged[i].start < merged[j].start
+		})
 	}
 	if len(merged) == 0 {
 		return Plan{}, errors.New("editplan: no evidence-backed story windows")
