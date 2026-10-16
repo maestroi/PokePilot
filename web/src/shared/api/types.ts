@@ -607,3 +607,40 @@ export interface YouTubePublishStatus {
   configured: boolean
   publication: YouTubePublication
 }
+
+export interface StudioThumbnailConcept {
+  id: string
+  title_id: string
+  subject: string
+  composition: string
+  emphasis: string
+  text: string
+  evidence: { attempt: number; event_id: string; frame: number; timestamp_ms: number }
+}
+export interface StudioPackage {
+  hash: string
+  run_id: string
+  assessment_hash: string
+  thumbnail_concepts: StudioThumbnailConcept[]
+}
+export interface StudioThumbnailCandidate {
+  id: string
+  concept_id: string
+  variant: number
+  bytes: number
+  sha256: string
+  artwork_status: 'not_requested' | 'unconfigured' | 'generated' | 'fallback' | string
+  spec: { hash: string; template: string; renderer: string; provider: string; asset_sha256?: string }
+}
+export interface StudioThumbnailManifest {
+  version: number
+  run_id: string
+  package_hash: string
+  hash: string
+  template: string
+  candidates: StudioThumbnailCandidate[]
+}
+export interface StudioThumbnailList {
+  manifest: StudioThumbnailManifest
+  selected_id?: string
+}
