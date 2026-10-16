@@ -41,9 +41,11 @@ curl -s http://<task>:8080/metrics | head
 
 Runners listen on 8099. A fresh scrape includes `pokepilot_up`,
 `pokepilot_build_info`, `go_goroutines`, and `process_start_time_seconds`.
-LLM and replay series are tracked by later issues on the same endpoint. Failure
-series are exported by the wall. Alert rules for the series that already
-exist are in `prometheus-pokepilot-rules.yml`; they are Prometheus rules,
+LLM request, token, and replay-queue series are not exported yet (#2335).
+The agent, replay, and infrastructure dashboards chart the run-mode, process,
+and scrape series that exist today. Failure series are exported by the wall.
+Alert rules for the series that already exist are in
+`prometheus-pokepilot-rules.yml`; they are Prometheus rules,
 not extra `/metrics` series.
 
 ## Grafana dashboards
@@ -56,6 +58,9 @@ there is no Grafana/Prometheus/Loki service added to the PokePilot stacks.
 | `grafana-pokepilot-overview.json` | Alive, completing, runtime, last success, recovery, terminal causes, build revision |
 | `grafana-pokepilot-runs.json` | Completion, runtime, milestone funnel, frames and planner rounds |
 | `grafana-pokepilot-failures.json` | Wall objective failures and recovery |
+| `grafana-pokepilot-agent.json` | LLM-mode outcomes, planner-mode mix, planner rounds |
+| `grafana-pokepilot-replay.json` | Replay process up, CPU, memory, and file descriptors |
+| `grafana-pokepilot-services.json` | Scrape health, build revision, process resources, links to existing host and container dashboards |
 | `grafana-poketelegram.json` | Remote Telegram operator health |
 
 Import each `grafana-pokepilot-*.json` with **Grafana → Dashboards → New →
@@ -90,6 +95,33 @@ lined up with the metric change; the build panel shows the git SHA. The
 terminal-failure bars open the same Loki query as the failure dashboard.
 Tempo is not configured on this Grafana, so these dashboards do not pretend
 to pivot into traces.
+
+Each PokePilot dashboard links to the others and keeps the time range. The
+infrastructure dashboard also has **Host dashboard UID** and **Container
+dashboard UID** text boxes. Set those to the UIDs of the node and container
+dashboards already in this Grafana; the header links open `/d/<uid>`. Leave
+them blank until the UIDs are known. These boards do not query node_exporter
+or cAdvisor.
+
+The agent dashboard shows runs whose `mode` label is `llm`, the mix of
+`llm` / `scripted` / `policy` / `launch` / `other`, and planner-round
+percentiles. Planner rounds are not split by mode. Request rate, latency,
+errors, retries, tokens, and JEV or System-1 aggregates are not exported
+(#2335), so those panels are absent.
+
+The replay dashboard shows whether job `pokepilot-replay` is up and how much
+CPU, memory, and files that process uses. Queue depth, worker count, render
+duration, and render success are not exported (#2335). Panels stay empty
+when that scrape target is absent. The homelab Prometheus scrapes the wall
+only, so replay and the other service jobs stay empty there until
+`prometheus-pokepilot.yml` is loaded on a Prometheus that can reach them.
+
+The infrastructure dashboard counts scrape targets that are up or down for
+the jobs in `prometheus-pokepilot.yml` and `prometheus-poketelegram.yml`,
+and charts CPU, memory, goroutines, and file descriptors for the selection.
+`pokepilot_up` is 1 only while a process is serving `/metrics`. A service
+that was never scraped is absent, not a zero. HTTP request rate, errors,
+and duration are not exported (#2335).
 
 The failure dashboard shows:
 
