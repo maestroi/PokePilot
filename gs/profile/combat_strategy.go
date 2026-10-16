@@ -56,7 +56,9 @@ func gsHeldEffectModifier(attr gsrom.ItemAttribute, moveType uint8, maxHP uint16
 }
 
 func gsHeldItemModifier(rom []byte, itemID uint16, moveType uint8, maxHP uint16) game.BattleItemModifier {
-	if itemID == 0 || itemID > 0xff {
+	// Gold's item_constants.asm ends at ITEM_FA. Higher ids (notably
+	// ITEM_FROM_MEM = 0xff) are not valid ItemAttributes records.
+	if itemID == 0 || itemID > 0xfa {
 		return game.BattleItemModifier{}
 	}
 	attr, err := gsrom.LookupItem(rom, uint8(itemID))
