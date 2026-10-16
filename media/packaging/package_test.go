@@ -130,6 +130,9 @@ func TestSecretsAndMissingOptionalRunMetadata(t *testing.T) {
 	in := testInput(t)
 	in.Timelines[0].Run.Goal = "password=private-secret"
 	in.Timelines[0].Run.Planner = "Bearer super-secret"
+	// This intentionally tests package generation without an edit plan: a
+	// changed durable source must reject a previously sealed edit plan.
+	in.Plan = nil
 	// Trust the producer's selected event IDs, not unsafe free-form labels.
 	pkg, err := Generate(context.Background(), in)
 	if err != nil {
