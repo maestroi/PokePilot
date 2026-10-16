@@ -55,23 +55,7 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 		obs.RegionTransports = transport.DecodeRegionTransports(m)
 	}
 	if decoder, ok := profile.(game.WorldOpportunityDecoder); ok {
-		world := decoder.DecodeWorldOpportunities(m)
-		obs.Capabilities = world.Capabilities
-		obs.PhoneContacts = world.PhoneContacts
-		obs.BattleSources = world.BattleSources
-		obs.RouteGates = world.RouteGates
-		// Reuse the existing generic route-prerequisite contract; the GS
-		// adapter owns the Snorlax mapping, not planner policy.
-		for _, gate := range world.RouteGates {
-			if gate.Available || len(gate.Missing) == 0 {
-				continue
-			}
-			obs.RouteBlockages = append(obs.RouteBlockages, RouteBlockage{
-				Destination: gate.Transition.To,
-				Transitions: []string{gate.Transition.ID},
-				Missing: append([]game.CapabilityID(nil), gate.Missing...),
-			})
-		}
+		applyWorldOpportunities(&obs, decoder.DecodeWorldOpportunities(m))
 	}
 	// Observation.Map is the legacy one-byte Gen-I migration handle. A GS map
 	// is a (group, number) pair and therefore must not be truncated into it.
@@ -132,4 +116,28 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 		obs.ClockEncounters = projectClockEncounters(base.TimeOfDay, gsrom.ClockSlots(enc))
 	}
 	return obs, nil
+}
+
+
+// applyWorldOpportunities consumes only portable state: game-specific gates
+// and phone events remain wholly inside the GS profile. It adds the blocked
+// routes to the planner's existing semantic prerequisite view.
+func applyWorldOpportunities(obs *Observation, world game.WorldOpportunities) {
+	if obs == nil {
+		return
+	}
+	obs.Capabilities = world.Capabilities
+	obs.PhoneContacts = world.PhoneContacts
+	obs.BattleSources = world.BattleSources
+	obs.RouteGates = world.RouteGates
+	for _, gate := range world.RouteGates {
+		if gate.Available || len(gate.Missing) == 0 {
+			continue
+		}
+		obs.RouteBlockages = append(obs.RouteBlockages, RouteBlockage{
+			Destination: gate.Transition.To,
+			Transitions: []string{gate.Transition.ID},
+			Missing: append([]game.CapabilityID(nil), gate.Missing...),
+		})
+	}
 }
