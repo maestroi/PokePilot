@@ -258,7 +258,9 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: stage.next, Complete: true})
 	}
-	for _, next := range []game.ProgressID{gsprofile.ProgressRedGyaradosDefeated, gsprofile.ProgressLanceHelpAccepted, gsprofile.ProgressMahoganyStairsOpened, gsprofile.ProgressRocketLanceHealing} {
+	for _, next := range []game.ProgressID{gsprofile.ProgressRedGyaradosDefeated, gsprofile.ProgressLanceHelpAccepted, gsprofile.ProgressMahoganyStairsOpened, gsprofile.ProgressRocketLanceHealing,
+		gsprofile.ProgressRocketPasswordsLearned, gsprofile.ProgressRocketOfficeOpened,
+		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
 			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
 		}
