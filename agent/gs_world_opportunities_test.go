@@ -40,7 +40,7 @@ func TestGSWorldOpportunitiesAppearAsPlannerPrerequisitesAndRematches(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"phone_contacts"`, `"battle_sources"`, `"kind":"phone_rematch"`, `"ready":true`, `"route_gates"`, `"route_blockages"`, `"pokegear_radio_card"`} {
+	for _, want := range []string{`"phone_contacts"`, `"battle_sources"`, `"kind":"phone_rematch"`, `"ready":true`, `"route_gates"`, `"RouteBlockages"`, `"pokegear_radio_card"`} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("planner view %s missing %s", data, want)
 		}
