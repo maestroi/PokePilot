@@ -62,9 +62,9 @@ func TestMahoganyNativeTopologyHasCollisionForApproachAndHealing(t *testing.T) {
 func TestMahoganyNativeWarpsRetainRealDecompDestinationIDs(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
 	for _, tc := range []struct {
-		from string
-		x, y uint8
-		to string
+		from          string
+		x, y          uint8
+		to            string
 		zeroBasedWarp uint8
 	}{
 		{"ROUTE_42_ECRUTEAK_GATE", 9, 4, "ROUTE_42", 0},
