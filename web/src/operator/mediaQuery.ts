@@ -215,6 +215,32 @@ export function isReplayJob(job: Pick<MediaRenderJob, 'mode'>): boolean {
   return job.mode !== 'highlight' && job.mode !== 'studio-edit'
 }
 
+// The newest render job of each kind per run, for a row's at-a-glance marks.
+export type RenderKind = 'video' | 'highlight' | 'edit'
+export function renderKind(job: Pick<MediaRenderJob, 'mode'>): RenderKind {
+  return job.mode === 'highlight' ? 'highlight' : job.mode === 'studio-edit' ? 'edit' : 'video'
+}
+export function latestJobsByKind(jobs: MediaRenderJob[]): Map<string, Partial<Record<RenderKind, MediaRenderJob>>> {
+  const out = new Map<string, Partial<Record<RenderKind, MediaRenderJob>>>()
+  for (const job of jobs) {
+    const kinds = out.get(job.run_id) || {}
+    const kind = renderKind(job)
+    const current = kinds[kind]
+    if (!current || Number(job.updated_at_unix_ms || 0) > Number(current.updated_at_unix_ms || 0)) kinds[kind] = job
+    out.set(job.run_id, kinds)
+  }
+  return out
+}
+// No job on record is "—", not "not rendered": job records can be pruned.
+export function presentRenderMark(job?: Pick<MediaRenderJob, 'state' | 'segments_done' | 'segments_total'>): StatusPresentation {
+  if (!job) return { label: 'None on record', tone: 'neutral', glyph: '—' }
+  if (job.state === 'ready') return OK('Done')
+  if (job.state === 'failed') return FAILED('Failed')
+  if (job.state === 'cancelled') return NONE('Cancelled')
+  const total = Number(job.segments_total || 0)
+  return WORKING(job.state === 'queued' ? 'Queued' : total ? `${Number(job.segments_done || 0)}/${total}` : 'Rendering')
+}
+
 // Where a finished job's output can be watched: replay video in Library,
 // highlight reel in Studio. Episode edits have no UI yet.
 export function jobOutputHref(job: Pick<MediaRenderJob, 'mode' | 'run_id' | 'state'>, state: MediaState, search = ''): string {
