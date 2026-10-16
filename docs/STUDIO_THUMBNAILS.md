@@ -4,8 +4,8 @@ Thumbnails are a **derived, review-only artifact** of a verified #801 content pa
 
 ## Operator workflow
 
-1. Generate a publishable producer assessment (#797), edit plan (#799) where desired, and a verified content package (#801).
-2. In the private operator UI, open **Media → Studio**, choose the recorded run and paste its 64-character **packaging hash** into **Thumbnail studio**.
+1. In the private operator UI, open **Media → Studio**, choose a completed source run, and select **Prepare package from this run**. This uses the existing producer (#797) and packaging (#801) routes, and will decline to render runs classified archive-only or do-not-publish.
+2. Alternatively, paste the 64-character **packaging hash** from an existing content package to revisit/regenerate an earlier result. Packages may optionally reference an edit plan (#799).
 3. Load the package, select 1–3 variants per thumbnail concept, and choose whether to request optional image-provider artwork.
 4. Generate previews. Each candidate is a real **1280 × 720 JPEG**, with deterministic Go-font typography, safe-area positioning, PokePilot branding, and a palette/layout variant.
 5. Compare candidate images and click **Select candidate**. The selection is durable, tied to the current immutable manifest, and does **not** upload or publish anything.
