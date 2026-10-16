@@ -188,7 +188,8 @@ const confirmPublish = ref(false)
 
           <!-- YouTube -->
           <template v-if="media.youtube.value?.configured && replayReady">
-            <h3 class="mt-5 text-title font-semibold">YouTube</h3>
+            <h3 class="mt-5 text-title font-semibold">YouTube · legacy replay upload</h3>
+            <p class="mt-1 text-meta text-warn">Direct replay uploads bypass the Studio quality and approval queue. Use <a :href="studioHref" class="underline">Media Studio</a> for reviewed episodes and Shorts.</p>
             <div class="mt-2 flex flex-wrap items-center gap-2">
               <a
                 v-if="media.youtube.value.publication.state === 'published' && media.youtube.value.publication.video_url"
