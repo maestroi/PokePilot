@@ -68,18 +68,19 @@ Import**, and select the existing Prometheus instance for `DS_PROMETHEUS`.
 When Loki is configured, select it for `DS_LOKI` to enable metric → log data
 links. The game filter includes `All`. Grafana's time picker controls the
 displayed range. Panel queries use `${DS_PROMETHEUS}` and never a baked-in
-datasource UID. The saved variable selection is the homelab Grafana
+datasource UID. The saved variable selection is
+[grafana.labstack.cc](https://grafana.labstack.cc)
 (`Prometheus` `PBFA97CFB590B2093`, `Loki` `P8E80F9AEF21F6940`) so file
 provisioning opens against that stack; on another Grafana, pick the
 datasources again. The `DS_LOKI` variable is only used by data links; **all
 panels query Prometheus** and do not require Loki to return metric data.
 
-The homelab Grafana file-provisions dashboards from
-`/opt/monitoring/dashboards` on `vm-acestaking-monitor-01`. Copying these
-JSON files there loads them on the existing instance. Prometheus on that
-host is not on the farm overlay, so it scrapes the wall through
-`prometheus-pokepilot-ingress.yml` (Swarm ingress `192.168.50.100:18080`)
-rather than `tasks.wall`.
+That Grafana file-provisions dashboards from `/opt/monitoring/dashboards` on
+`vm-acestaking-monitor-01` and is served at `https://grafana.labstack.cc`.
+Copying these JSON files into that directory loads them on the existing
+instance. Prometheus on that host is not on the farm overlay, so it scrapes
+the wall through `prometheus-pokepilot-ingress.yml` (Swarm ingress
+`192.168.50.100:18080`) rather than `tasks.wall`.
 
 Panels read the counters the wall is exporting now. A rate over the
 dashboard range stays empty when that count was already present at the
@@ -98,10 +99,11 @@ to pivot into traces.
 
 Each PokePilot dashboard links to the others and keeps the time range. The
 infrastructure dashboard also has **Host dashboard UID** and **Container
-dashboard UID** text boxes. Set those to the UIDs of the node and container
-dashboards already in this Grafana; the header links open `/d/<uid>`. Leave
-them blank until the UIDs are known. These boards do not query node_exporter
-or cAdvisor.
+dashboard UID** text boxes. The header links open `/d/<uid>`. The saved
+defaults are the boards on `https://grafana.labstack.cc`: Node Exporter Full
+(`rYdddlPWk`) and Docker-cAdvisor (`htoVWdxGt`). Change the variables if this
+Grafana uses different host and container dashboards. These boards do not
+query node_exporter or cAdvisor themselves.
 
 The agent dashboard shows runs whose `mode` label is `llm`, the mix of
 `llm` / `scripted` / `policy` / `launch` / `other`, and planner-round
