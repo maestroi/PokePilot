@@ -8,6 +8,68 @@
     "failures",
     "recovery"
   ],
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Overview",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/pokepilot-overview"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Runs",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/pokepilot-runs"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Agent / LLM",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/pokepilot-agent"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Replay / Media",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/pokepilot-replay"
+    },
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Infrastructure",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/pokepilot-services"
+    }
+  ],
   "editable": true,
   "timezone": "browser",
   "schemaVersion": 39,
