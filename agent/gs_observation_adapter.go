@@ -118,7 +118,6 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 	return obs, nil
 }
 
-
 // applyWorldOpportunities consumes only portable state: game-specific gates
 // and phone events remain wholly inside the GS profile. It adds the blocked
 // routes to the planner's existing semantic prerequisite view.
@@ -137,7 +136,7 @@ func applyWorldOpportunities(obs *Observation, world game.WorldOpportunities) {
 		obs.RouteBlockages = append(obs.RouteBlockages, RouteBlockage{
 			Destination: gate.Transition.To,
 			Transitions: []string{gate.Transition.ID},
-			Missing: append([]game.CapabilityID(nil), gate.Missing...),
+			Missing:     append([]game.CapabilityID(nil), gate.Missing...),
 		})
 	}
 }
