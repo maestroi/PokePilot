@@ -37,6 +37,13 @@ type Observation struct {
 	// Adapter-owned directed region crossings, with typed missing prerequisites.
 	// Games without region transport omit this entirely.
 	RegionTransports   []game.RegionTransportOption `json:"region_transports,omitempty"`
+	// Optional world capabilities/gates and battle opportunities decoded by the
+	// cartridge. Red's observation leaves these absent rather than inventing
+	// Pokegear facts.
+	Capabilities []game.CapabilityID `json:"capabilities,omitempty"`
+	PhoneContacts []game.PhoneContact `json:"phone_contacts,omitempty"`
+	BattleSources []game.BattleSource `json:"battle_sources,omitempty"`
+	RouteGates []game.RouteGate `json:"route_gates,omitempty"`
 	PartyCount         int
 	Party              []PartyMon
 	Badges             []string
