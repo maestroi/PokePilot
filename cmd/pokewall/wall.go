@@ -289,7 +289,8 @@ type Wall struct {
 	issueLinks   map[string]IssueLink   // failure key → Agent Orchestrator issue
 	outbox       map[string]outboxEntry // external occurrence id → report outbox
 	issues       *issueClient
-	runs         *metrics.Runs // nil when the process is not publishing metrics
+	runs         *metrics.Runs     // nil when the process is not publishing metrics
+	failures     *metrics.Failures // nil when failure instrumentation is disabled
 }
 
 // NewWall builds a Wall. If dumpsDir is non-empty, finish reports are also
@@ -1265,7 +1266,12 @@ func (w *Wall) handleFinish(res http.ResponseWriter, req *http.Request) {
 		return
 	} else {
 		addrs = append([]string(nil), t.workerAddrs...)
+		previousRecoveries := t.RecoveryAttempts
 		noteRecoveryProgressLocked(t, report.ProgressFinal)
+		if previousRecoveries > 0 && t.RecoveryAttempts == 0 && w.failures != nil {
+			w.failures.SupervisorRecovered(t.Game)
+		}
+		w.recordObjectiveFailuresLocked(t.Game, report)
 		completedAttempt = w.settleRun(t, report.Reason, report.Detail, time.Now(), report.FailureClass)
 		terminal = t.Finished
 	}
@@ -1965,8 +1971,14 @@ func (w *Wall) settleRun(t *Tile, reason, detail string, now time.Time, failureC
 			w.enqueueNextLocked(t)
 		}
 		w.recordTerminalRunLocked(t, reason, cancelled, now)
+		if w.failures != nil && reason != "done" && reason != "cancelled" && !cancelled {
+			w.failures.TerminalFailure(t.Game, reason, t.QueuedAt, now)
+		}
 		w.clearRunActiveLocked(t)
 		return completed
+	}
+	if w.failures != nil && reason != "drained" {
+		w.failures.Retry(t.Game, reason)
 	}
 	// Retry: fresh luck, fresh progress, back of the queue. In resilient mode
 	// the retry is the outer goal supervisor: local agent/watchdog budgets stay
