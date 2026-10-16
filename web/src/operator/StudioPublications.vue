@@ -131,12 +131,13 @@ async function queue():Promise<void> {
   }catch(cause){error.value=friendly(cause)}
   finally{busy.value=false}
 }
-async function act(candidate:StudioPublicationCandidate,action:'approve'|'reject'|'publish'):Promise<void> {
+async function act(candidate:StudioPublicationCandidate,action:'approve'|'reject'|'publish'|'retry-thumbnail'):Promise<void> {
   if(!props.runID||busy.value)return
   busy.value=true;error.value='';message.value=''
   try {
     const result=await actStudioPublication(props.runID,candidate.id,action)
-    message.value=action==='publish'?'Upload started. This uses the existing resumable YouTube publisher.':
+    message.value=action==='retry-thumbnail'?'Thumbnail attached without uploading the video again.':
+      action==='publish'?'Upload started. This uses the existing resumable YouTube publisher.':
       action==='approve'?'Candidate approved. Publishing still requires a separate action.':
         'Candidate skipped. This does not alter the original run.'
     if(result.reason)message.value+=` ${result.reason}`
@@ -244,12 +245,13 @@ function stateLabel(state:StudioPublicationState):string{
               </span>
             </div>
             <p v-if="candidate.reason" class="text-meta text-fg-2" role="status">{{ candidate.reason }}</p>
-            <p v-if="candidate.thumbnail_status==='failed'" class="text-meta text-warn">Video uploaded; thumbnail transfer failed. Review it on YouTube.</p>
+            <p v-if="candidate.thumbnail_status==='failed'" class="text-meta text-warn">Video uploaded; thumbnail transfer failed. You can retry the thumbnail without reuploading the video.</p>
             <div class="flex flex-wrap gap-2">
               <button v-if="canApprove(candidate)" type="button" class="ui-btn ui-btn-sm" :disabled="busy" @click="act(candidate,'approve')">Approve after gates</button>
               <button v-if="canPublish(candidate)" type="button" class="ui-btn ui-btn-sm ui-btn-primary" :disabled="busy" @click="act(candidate,'publish')">
                 {{ candidate.state==='failed'?'Retry resumable upload':'Publish to YouTube' }}
               </button>
+              <button v-if="candidate.state==='published' && candidate.thumbnail_status==='failed'" type="button" class="ui-btn ui-btn-sm" :disabled="busy" @click="act(candidate,'retry-thumbnail')">Retry thumbnail only</button>
               <button v-if="canReject(candidate)" type="button" class="ui-btn ui-btn-sm" :disabled="busy" @click="act(candidate,'reject')">Skip</button>
               <a v-if="candidate.provider_url" :href="candidate.provider_url" target="_blank" rel="noopener noreferrer"
                 class="ui-btn ui-btn-sm">Open published video</a>
