@@ -48,7 +48,7 @@ export function recordingSummary(
     return { ...base, state: 'cancelled', label: 'Render cancelled', tone: 'warning', detail: 'Open the render job in Media to retry.' }
   }
   if (run.replay_available && status === 'ready') {
-    return { ...base, state: 'recorded', label: 'Replay data · no video', tone: 'neutral', detail: 'The recording is stored, but no replay video render is on record. Generate one in Media.' }
+    return { ...base, state: 'recorded', label: 'Not rendered', tone: 'neutral', detail: 'The recording is stored; render it to get a replay video.' }
   }
   if (status !== 'ready') {
     return { ...base, state: 'unknown', label: status === 'loading' ? 'Checking recording…' : 'Recording status unknown', tone: 'warning', detail: 'Recent render job status is unavailable. Check Media for the current result.' }

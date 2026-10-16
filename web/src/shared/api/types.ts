@@ -712,4 +712,15 @@ export interface StudioPublicationList {
   candidates: StudioPublicationCandidate[]
 }
 export interface StudioEditReply { plan: { hash: string; profile: 'episode' | 'short' } }
-export interface StudioEditStatus { state: string; plan_hash: string; error?: string }
+export interface StudioEditStatus { state: string; plan_hash: string; error?: string; job_id?: string }
+export interface StudioEditPlan { hash: string; profile: 'episode' | 'short'; duration_ms: number }
+// The producer's editorial verdict (GET /v1/runs/{id}/producer/assessments/{hash}).
+export type StudioPublicationClass = 'full_episode' | 'short_only' | 'archive_only' | 'do_not_publish'
+export interface StudioAssessment {
+  hash: string
+  run_id: string
+  primary_story?: string
+  beats: { kind: string; summary: string }[]
+  publication_class: StudioPublicationClass
+  publication_reason: string
+}

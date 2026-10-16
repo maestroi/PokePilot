@@ -168,7 +168,7 @@ test('media workspace has the four sections and only shows on-air for live broad
 })
 
 test('new Media files follow the design system (no legacy primitives or palette)', () => {
-  const files = ['MediaView.vue', 'MediaLibrary.vue', 'MediaOutputPane.vue', 'MediaStudio.vue', 'MediaBroadcasts.vue', 'MediaJobs.vue']
+  const files = ['MediaView.vue', 'MediaLibrary.vue', 'MediaOutputPane.vue', 'MediaStudio.vue', 'MediaBroadcasts.vue', 'MediaJobs.vue', 'StudioThumbnails.vue', 'StudioPublications.vue']
   for (const name of files) {
     const source = readFileSync(new URL(`../src/operator/${name}`, import.meta.url), 'utf8')
     assert.doesNotMatch(source, /text-\[(7|8|9|10|11)px\]/, name)
@@ -177,4 +177,12 @@ test('new Media files follow the design system (no legacy primitives or palette)
     assert.doesNotMatch(source, /StatusBadge|<Panel|--poke-/, name)
     assert.doesNotMatch(source, /Pokémon Red|pokemon-red/, name)
   }
+})
+
+test('library pane resizes like the run pane and rows show the run outcome', () => {
+  const library = readFileSync(new URL('../src/operator/MediaLibrary.vue', import.meta.url), 'utf8')
+  assert.match(library, /useResizablePane\('pokepilot\.operator\.mediaPaneWidth'/)
+  assert.match(library, /aria-label="Resize media details"/)
+  assert.match(library, />Outcome</)
+  assert.match(library, /presentOutcome\(run\)/)
 })

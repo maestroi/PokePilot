@@ -1,5 +1,8 @@
 import type { BroadcastStatus } from '../shared/api/broadcast'
-import type { DashboardRun, HighlightStatus, MediaRenderJob, ReplayStatus, StudioPackageSummary } from '../shared/api/types'
+import type {
+  DashboardRun, HighlightStatus, MediaRenderJob, ReplayStatus, StudioAssessment, StudioEditStatus,
+  StudioPackage, StudioPackageSummary, StudioPublicationCandidate, StudioPublicationState
+} from '../shared/api/types'
 import type { StatusPresentation } from '../shared/status.ts'
 import { operatorRoute } from '../shared/urls.ts' // .ts: node --test imports this file directly
 
@@ -412,4 +415,118 @@ export function runOutputs(input: OutputInput): RunOutputs {
     }
   }
   return { rows, unavailable }
+}
+
+// ---- Studio pipeline: the publishing steps of one finished run -----------------------
+
+export type StudioStepID = 'video' | 'highlights' | 'verdict' | 'package' | 'thumbnail' | 'publish'
+export type StudioStep = { id: StudioStepID; label: string; status: StatusPresentation; detail: string; done: boolean; optional?: boolean }
+export type StudioPipeline = { steps: StudioStep[]; current: StudioStepID | ''; unavailable: string[] }
+
+type StudioInput = {
+  replayData: boolean
+  replay?: Pick<ReplayStatus, 'state' | 'segments' | 'segments_done'> | null
+  highlights?: Pick<HighlightStatus, 'state' | 'windows' | 'windows_done' | 'duration_ms'> | null
+  packagesError?: string
+  assessment?: Pick<StudioAssessment, 'publication_class' | 'publication_reason'> | null
+  pkg?: Pick<StudioPackage, 'plan_hash' | 'titles' | 'shorts'> | null
+  profile?: 'episode' | 'short' | ''
+  edit?: Pick<StudioEditStatus, 'state' | 'error'> | null
+  thumbnails?: { rendered: number; selected: boolean }
+  publication?: Pick<StudioPublicationCandidate, 'state' | 'reason'> | null // newest candidate of the open package
+}
+
+const PUBLICATION: Record<StudioPublicationState, StatusPresentation> = {
+  queued: NONE('Awaiting approval'),
+  blocked: { label: 'Blocked by quality gate', tone: 'warn', glyph: '▲' },
+  rendering: WORKING('Awaiting edited video'),
+  approved: OK('Approved · not uploaded'),
+  publishing: WORKING('Uploading'),
+  published: OK('Published'),
+  failed: FAILED('Upload failed'),
+  skipped: NONE('Skipped')
+}
+export function presentPublication(state: StudioPublicationState): StatusPresentation {
+  return PUBLICATION[state] || NONE(state)
+}
+
+// Studio turns a recording into a published video in a fixed order: replay
+// video → producer verdict → edited package → thumbnail → publication. The
+// highlight reel is a side output. `current` is the first required step not
+// yet done; steps the run or host can't reach collapse into `unavailable`.
+export function studioSteps(input: StudioInput): StudioPipeline {
+  const steps: StudioStep[] = []
+  const unavailable: string[] = []
+  const pipeline = (): StudioPipeline => ({ steps, unavailable, current: steps.find((step) => !step.done && !step.optional)?.id || '' })
+  const replay = input.replay
+  if (!input.replayData && replay?.state !== 'ready' && replay?.state !== 'generating') {
+    unavailable.push('No recording was stored for this run, so Studio has nothing to cut.')
+    return pipeline()
+  }
+
+  if (replay?.state === 'disabled') unavailable.push('Replay video rendering isn’t enabled on the replay host, so edits can’t render.')
+  else if (replay) {
+    const total = Number(replay.segments || 0)
+    const status = replay.state === 'ready' ? OK('Rendered')
+      : replay.state === 'generating' ? WORKING(total ? `Rendering ${Number(replay.segments_done || 0)}/${total}` : 'Rendering')
+      : replay.state === 'error' || replay.state === 'failed' ? FAILED('Render failed')
+      : NONE('Not rendered')
+    steps.push({ id: 'video', label: 'Replay video', status, done: replay.state === 'ready', detail: replay.state === 'ready' ? '' : 'Every edit is cut from the full replay video.' })
+  }
+
+  const h = input.highlights
+  if (h?.state === 'disabled') unavailable.push('Highlight rendering isn’t enabled on the replay host.')
+  else if (h?.state === 'empty') unavailable.push('No highlight-worthy moments were found in this run.')
+  else if (h) {
+    const windows = Number(h.windows || 0)
+    const status = h.state === 'ready' ? OK('Rendered')
+      : h.state === 'generating' ? WORKING(windows ? `Rendering ${Number(h.windows_done || 0)}/${windows}` : 'Rendering')
+      : h.state === 'error' || h.state === 'failed' ? FAILED('Render failed')
+      : NONE('Not rendered')
+    steps.push({ id: 'highlights', label: 'Highlight reel', status, optional: true, done: h.state === 'ready', detail: h.state === 'ready' ? `${plural(windows, 'moment')} · ${seconds(h.duration_ms)}` : 'Optional side output.' })
+  }
+
+  if (input.packagesError) {
+    unavailable.push(`Packaging and publishing aren’t available: ${input.packagesError}.`)
+    return pipeline()
+  }
+
+  const verdict = input.assessment?.publication_class
+  steps.push({
+    id: 'verdict', label: 'Producer verdict', done: Boolean(verdict),
+    status: verdict === 'full_episode' ? OK('Full episode') : verdict === 'short_only' ? OK('Short only')
+      : verdict === 'archive_only' ? NONE('Archive only') : verdict === 'do_not_publish' ? NONE('Do not publish') : NONE('Not assessed'),
+    detail: input.assessment?.publication_reason || 'Decides whether the run is worth an episode, a Short, or only the archive.'
+  })
+  if (verdict === 'archive_only' || verdict === 'do_not_publish') {
+    unavailable.push('The producer kept this run off YouTube, so there is nothing to package or publish.')
+    return pipeline()
+  }
+
+  const pkg = input.pkg
+  const edit = input.edit?.state
+  const format = input.profile === 'short' ? 'Short' : 'Episode'
+  const title = (input.profile === 'short' ? pkg?.shorts : pkg?.titles)?.[0]?.title || ''
+  steps.push({
+    id: 'package', label: 'Edited package', done: Boolean(pkg?.plan_hash) && edit === 'ready',
+    status: !pkg ? NONE('None') : !pkg.plan_hash ? NONE('No edit plan')
+      : edit === 'ready' ? OK(`${format} · edit ready`) : edit === 'generating' ? WORKING('Rendering edit')
+      : edit === 'error' || edit === 'failed' ? FAILED('Edit failed') : NONE('Edit not rendered'),
+    detail: pkg && !pkg.plan_hash ? 'Made without an edit plan. Prepare a new package to publish.' : input.edit?.error || title || 'Titles, description, thumbnail concepts and the edited video.'
+  })
+
+  const thumbs = input.thumbnails || { rendered: 0, selected: false }
+  steps.push({
+    id: 'thumbnail', label: 'Thumbnail', done: thumbs.selected, optional: input.profile === 'short',
+    status: thumbs.selected ? OK('Selected') : thumbs.rendered ? NONE('Pick one') : NONE('Not rendered'),
+    detail: input.profile === 'short' ? 'Optional for Shorts.' : ''
+  })
+
+  const publication = input.publication
+  steps.push({
+    id: 'publish', label: 'Publication', done: publication?.state === 'published',
+    status: publication ? presentPublication(publication.state) : NONE('Not queued'),
+    detail: publication?.reason || 'Nothing uploads until you approve and then publish.'
+  })
+  return pipeline()
 }
