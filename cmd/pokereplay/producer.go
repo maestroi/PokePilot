@@ -12,7 +12,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/media/producer"
 )
 
@@ -152,6 +151,3 @@ func (s *replayServer) handleProducerAssessment(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, assessment)
 }
 
-// Keep the farm dependency visible at the integration boundary: the producer
-// consumes canonical farm.MediaTimeline, never emulated or private model state.
-var _ = farm.MediaTimelineVersion
