@@ -86,19 +86,29 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 // context, and supports long image-provider calls without proxyTimeout.
 func studioThumbnailProxy(base string) http.HandlerFunc {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	return func(w http.ResponseWriter,r *http.Request) {
-		up,err:=http.NewRequestWithContext(r.Context(),r.Method,strings.TrimRight(base,"/")+r.URL.RequestURI(),r.Body)
-		if err!=nil{writeUnreachable(w);return}
-		if ct:=r.Header.Get("Content-Type");ct!=""{up.Header.Set("Content-Type",ct)}
-		res,err:=client.Do(up)
-		if err!=nil{writeUnreachable(w);return}
+	return func(w http.ResponseWriter, r *http.Request) {
+		up, err := http.NewRequestWithContext(r.Context(), r.Method, strings.TrimRight(base, "/")+r.URL.RequestURI(), r.Body)
+		if err != nil {
+			writeUnreachable(w)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			up.Header.Set("Content-Type", ct)
+		}
+		res, err := client.Do(up)
+		if err != nil {
+			writeUnreachable(w)
+			return
+		}
 		defer res.Body.Close()
-		w.Header().Set("Cache-Control","no-store")
-		for _,h:=range []string{"Content-Type","Content-Length","X-Content-Type-Options"}{
-			if v:=res.Header.Get(h);v!=""{w.Header().Set(h,v)}
+		w.Header().Set("Cache-Control", "no-store")
+		for _, h := range []string{"Content-Type", "Content-Length", "X-Content-Type-Options"} {
+			if v := res.Header.Get(h); v != "" {
+				w.Header().Set(h, v)
+			}
 		}
 		w.WriteHeader(res.StatusCode)
-		_,_=io.Copy(w,res.Body)
+		_, _ = io.Copy(w, res.Body)
 	}
 }
 
