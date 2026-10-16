@@ -72,8 +72,8 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 		if !foundRed || !foundLance {
 			t.Fatalf("%s milestones not offered: red=%v lance=%v", gameID, foundRed, foundLance)
 		}
-		if !obs.Story.Has(gsprofile.ProgressMahoganyStairsOpened) {
-			t.Fatalf("%s never offered Mahogany Mart staircase reveal", gameID)
+		if !obs.Story.Has(gsprofile.ProgressMahoganyStairsOpened) || !obs.Story.Has(gsprofile.ProgressRocketLanceHealing) {
+			t.Fatalf("%s never offered Mahogany staircase and B2F Lance heal", gameID)
 		}
 		if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
 			t.Fatalf("%s must stop safely before the unfinished Rocket Hideout battles: %+v", gameID, got)
