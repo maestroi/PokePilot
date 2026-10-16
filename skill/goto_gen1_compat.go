@@ -43,7 +43,7 @@ func applyGoToCompatibilityInitialTopology(m *emu.Emu, g *world.Graph, romData [
 }
 
 // applyGoToCompatibilityLocalTopology applies the remaining live Kanto
-// Route-16 corridor facts only for Gen-I profiles.
+// scripted-tile facts only for Gen-I profiles.
 func applyGoToCompatibilityLocalTopology(
 	m *emu.Emu,
 	cur uint8,
@@ -51,19 +51,58 @@ func applyGoToCompatibilityLocalTopology(
 	grid *world.Grid,
 	romData []byte,
 ) map[[2]int]bool {
-	if !gen1GoToCompatibilityEnabled(m) || cur != route16Map {
+	if !gen1GoToCompatibilityEnabled(m) {
 		return blockers
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if !state.HasEvent(&mem, eventBeatRoute16Snorlax) {
-		if blockers == nil {
-			blockers = map[[2]int]bool{}
-		}
-		blockers[[2]int{route16SnorlaxX, route16SnorlaxY}] = true
+	blockers = mergeBlockers(blockers, gen1ScriptedTileBlockers(cur, &mem))
+	if cur == route16Map {
+		openRoute16CutPassage(grid, romData, &mem)
 	}
-	openRoute16CutPassage(grid, romData, &mem)
 	return blockers
+}
+
+// gen1ScriptedTileBlockers returns walkable collision tiles whose map scripts
+// still intercept the player. The ROM collision grid cannot represent them, so
+// every Gen-I same-map walk and graph overlay must treat them as occupied until
+// the matching bag/event precondition holds.
+//
+// Cinnabar Island (18,4) is the measured case: without SECRET_KEY in the bag the
+// island script prints "The door is locked..." and pushes the player south.
+// That tile sits on ordinary shortest paths to the Pokemon Mansion door, so a
+// generic inventory-detour Travel back onto the island loops the text box
+// (run-30sb0q7xjdkqc1psaltd1lywws / #2718). Match IsItemInBag: ownership in the
+// Player PC alone does not silence the script.
+func gen1ScriptedTileBlockers(cur uint8, mem *state.Mem) map[[2]int]bool {
+	if mem == nil {
+		return nil
+	}
+	switch cur {
+	case route16Map:
+		if state.HasEvent(mem, eventBeatRoute16Snorlax) {
+			return nil
+		}
+		return map[[2]int]bool{{route16SnorlaxX, route16SnorlaxY}: true}
+	case cinnabarIslandMap:
+		if _, qty := bagEntry(mem, mansionSecretKeyItem); qty > 0 {
+			return nil
+		}
+		return map[[2]int]bool{{int(cinnabarGymGateX), int(cinnabarGymGateY)}: true}
+	default:
+		return nil
+	}
+}
+
+// gen1ScriptedTileBlockersFor snapshots the current map for walkAroundAvoidingObjects,
+// which lives in the portable move driver and must not import red packages.
+func gen1ScriptedTileBlockersFor(m *emu.Emu) map[[2]int]bool {
+	if m == nil || !gen1GoToCompatibilityEnabled(m) {
+		return nil
+	}
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	return gen1ScriptedTileBlockers(m.Peek8(sym.CurMap), &mem)
 }
 
 // goToRoutePrerequisites returns Kanto's semantic route gates for Gen-I
@@ -82,20 +121,26 @@ func goToRoutePrerequisites(m *emu.Emu, g *world.Graph, romData []byte) world.Ro
 // pocket when Travel's recoveringGoTo sees world.ErrNoRoute. The static graph
 // still knows the stairs/door warps, but statue state can leave the player in
 // a component with no walkable path to those pads — measured after Secret Key
-// ownership on Mansion B1F (run-3dxv0agt5di8x1ddvib3x0enk5). This stays out of
+// ownership on Mansion B1F (run-3dxv0agt5di8x1ddvib3x0enk5). Same-map Travel
+// back to a sealed B1F pickup tile (inventory detour return to the Secret Key
+// stand) must open that destination, not only the stairs. This stays out of
 // plain GoTo so story helpers that intentionally handle ErrNoRoute
 // (returnToCinnabarIsland) keep that signal.
-func recoverGoToCompatibilitySwitchSeal(m *emu.Emu, romData []byte, policy MovePolicy) (bool, error) {
+func recoverGoToCompatibilitySwitchSeal(m *emu.Emu, romData []byte, policy MovePolicy, dest Destination) (bool, error) {
 	if !gen1GoToCompatibilityEnabled(m) || policy == nil || m == nil {
 		return false, nil
 	}
 	switch m.Peek8(sym.CurMap) {
 	case pokemonMansionB1FMap:
-		if mansionTileReachable(m, romData, mansionB1FExitX, mansionB1FExitY) {
+		tx, ty := mansionB1FExitX, mansionB1FExitY
+		if dest.Map == pokemonMansionB1FMap {
+			tx, ty = dest.X, dest.Y
+		}
+		if mansionTileReachable(m, romData, tx, ty) {
 			return false, nil
 		}
-		if err := openMansionBasementExit(m, romData, policy); err != nil {
-			return false, fmt.Errorf("skill: Travel: open Mansion B1F switch exit: %w", err)
+		if err := openMansionB1FTile(m, romData, policy, tx, ty); err != nil {
+			return false, fmt.Errorf("skill: Travel: open Mansion B1F switch path to (%d,%d): %w", tx, ty, err)
 		}
 		return true, nil
 	case pokemonMansion1FMap:
