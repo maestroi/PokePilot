@@ -423,7 +423,7 @@ export function createStudioPublication(runID: string, proposal: {
     method:'POST',body:JSON.stringify(proposal)
   })
 }
-export function actStudioPublication(runID: string, candidateID: string, action: 'approve'|'reject'|'publish'): Promise<StudioPublicationCandidate> {
+export function actStudioPublication(runID: string, candidateID: string, action: 'approve'|'reject'|'publish'|'retry-thumbnail'): Promise<StudioPublicationCandidate> {
   return requestJSON<StudioPublicationCandidate>(
     `/v1/runs/${encodeURIComponent(runID)}/studio/publications/${encodeURIComponent(candidateID)}/${action}`,{
       method:'POST',body:'{}'
