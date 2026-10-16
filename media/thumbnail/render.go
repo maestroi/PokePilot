@@ -12,7 +12,7 @@ import (
 	"image/color"
 	"image/draw"
 	"image/jpeg"
-	"image/png"
+	_ "image/png"
 	"golang.org/x/image/math/fixed"
 	"math"
 	"strings"
@@ -184,10 +184,11 @@ func textFace(ttf []byte,size float64)(font.Face,error){
 	return opentype.NewFace(ft,&opentype.FaceOptions{Size:size,DPI:72,Hinting:font.HintingFull})
 }
 func text(img draw.Image,x,y int,value string,face font.Face,col color.Color){
-	font.Drawer{Dst:img,Src:image.NewUniform(col),Face:face,Dot:fixed.P(x,y)}.DrawString(value)
+	d := &font.Drawer{Dst:img,Src:image.NewUniform(col),Face:face,Dot:fixed.P(x,y)}
+	d.DrawString(value)
 }
 func fits(value string,face font.Face,maxWidth int)bool{
-	return font.Drawer{Face:face}.MeasureString(value).Ceil()<=maxWidth
+	return (&font.Drawer{Face:face}).MeasureString(value).Ceil()<=maxWidth
 }
 func wrap(value string,face font.Face,maxWidth,maxLines int) []string {
 	words:=strings.Fields(value)
