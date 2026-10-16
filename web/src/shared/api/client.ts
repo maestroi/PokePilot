@@ -15,6 +15,11 @@ import type {
   StudioPackage,
   StudioPackageList,
   StudioThumbnailList,
+  StudioPublicationList,
+  StudioPublicationCandidate,
+  StudioPublicationFormat,
+  StudioEditReply,
+  StudioEditStatus,
   YouTubePublication,
   YouTubePublishStatus,
   ProgrammingEntry,
@@ -400,4 +405,45 @@ export function createStudioPackage(runID: string, assessmentHash: string): Prom
     method: 'POST',
     body: JSON.stringify({ assessment_hash: assessmentHash, style: 'documentary' })
   })
+}
+
+export function getStudioPublications(runID: string): Promise<StudioPublicationList> {
+  return requestJSON<StudioPublicationList>(`/v1/runs/${encodeURIComponent(runID)}/studio/publications`)
+}
+export function createStudioPublication(runID: string, proposal: {
+  assessment_hash: string
+  package_hash?: string
+  format: StudioPublicationFormat
+  title_id?: string
+  thumbnail_id?: string
+  privacy?: string
+  not_before_unix?: number
+}): Promise<StudioPublicationCandidate> {
+  return requestJSON<StudioPublicationCandidate>(`/v1/runs/${encodeURIComponent(runID)}/studio/publications`,{
+    method:'POST',body:JSON.stringify(proposal)
+  })
+}
+export function actStudioPublication(runID: string, candidateID: string, action: 'approve'|'reject'|'publish'): Promise<StudioPublicationCandidate> {
+  return requestJSON<StudioPublicationCandidate>(
+    `/v1/runs/${encodeURIComponent(runID)}/studio/publications/${encodeURIComponent(candidateID)}/${action}`,{
+      method:'POST',body:'{}'
+    })
+}
+export function createStudioEditPlan(runID: string, assessmentHash: string, profile: 'episode'|'short'): Promise<StudioEditReply> {
+  return requestJSON<StudioEditReply>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits`,{
+    method:'POST',body:JSON.stringify({assessment_hash:assessmentHash,profile})
+  })
+}
+export function renderStudioEdit(runID: string, planHash: string): Promise<StudioEditStatus> {
+  return requestJSON<StudioEditStatus>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}/render`,{
+    method:'POST',body:'{}'
+  })
+}
+export function getStudioEditStatus(runID: string, planHash: string): Promise<StudioEditStatus> {
+  return requestJSON<StudioEditStatus>(`/v1/runs/${encodeURIComponent(runID)}/studio/edits/${encodeURIComponent(planHash)}/status`)
+}
+export function createEditedStudioPackage(runID:string,assessmentHash:string,editPlanHash:string):Promise<{package:StudioPackage}>{
+ return requestJSON<{package:StudioPackage}>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages`,{
+   method:'POST',body:JSON.stringify({assessment_hash:assessmentHash,edit_plan_hash:editPlanHash,style:'documentary'})
+ })
 }
