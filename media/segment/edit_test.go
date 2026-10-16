@@ -51,10 +51,10 @@ func TestRenderEditFromExistingVideo(t *testing.T) {
 	if len(result.Chapters) != 1 || result.Chapters[0].StartMS != 4750 {
 		t.Fatalf("chapters=%+v", result.Chapters)
 	}
-	if !strings.Contains(strings.Join(runner.Calls[2], " "), "/8") {
+	if !strings.Contains(strings.Join(runner.Calls[1], " "), "/8") {
 		t.Fatal("missing speed filter")
 	}
-	if !strings.Contains(strings.Join(runner.Calls[3], " "), "drawtext=textfile=") {
+	if !strings.Contains(strings.Join(runner.Calls[2], " "), "drawtext=textfile=") {
 		t.Fatal("missing overlay filter")
 	}
 }
