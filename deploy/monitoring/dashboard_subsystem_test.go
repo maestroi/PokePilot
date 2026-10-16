@@ -117,6 +117,15 @@ func TestSubsystemDashboardsUseExportedSeries(t *testing.T) {
 					t.Errorf("missing %q", need)
 				}
 			}
+			if tc.service {
+				got := map[string]string{}
+				for _, v := range d.Templating.List {
+					got[v.Name] = v.Current.Value
+				}
+				if got["host_dashboard"] != "rYdddlPWk" || got["container_dashboard"] != "htoVWdxGt" {
+					t.Errorf("labstack host/container defaults = %q %q", got["host_dashboard"], got["container_dashboard"])
+				}
+			}
 			assertPanels(t, d, tc.game, tc.replay, tc.service)
 		})
 	}
@@ -189,7 +198,10 @@ type subsystemDashboard struct {
 	} `json:"panels"`
 	Templating struct {
 		List []struct {
-			Name string `json:"name"`
+			Name    string `json:"name"`
+			Current struct {
+				Value string `json:"value"`
+			} `json:"current"`
 		} `json:"list"`
 	} `json:"templating"`
 	Annotations struct {
