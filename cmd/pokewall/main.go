@@ -152,7 +152,7 @@ func main() {
 		log.Printf("pokewall listening on http://%s (local cache %s)", *httpAddr, localCacheDir)
 	}
 
-	// In PostgreSQL mode use the compatibility operator wrapper directly. The
+	// In PostgreSQL mode use the direct operator handler. The
 	// old runtime wrapper's finish-dump event queue performs a startup directory
 	// scan; production objective failure delivery now comes from the DB outbox.
 	operator := http.Handler(runtimeOperatorHTTPHandler(wall))
@@ -163,7 +163,7 @@ func main() {
 	// persistence layers observe the final paused transition, not the temporary
 	// cancelled/queued state used to cooperate with existing runners.
 	operator = pauseHTTPHandler(wall, operator)
-	baseHandler := wall.outcomesCompatibility(wall.catalogOperatorCompatibility(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, operator))))
+	baseHandler := wall.catalogOperatorHTTPHandler(wall.catalogHTTPHandler(workerControlHTTPHandler(wall, operator)))
 	modelHandler := controlPlaneModelExperimentHTTPHandler(wall, baseHandler)
 	handler := archiveHTTPHandler(wall, modelHandler)
 	if postgresMode {
