@@ -3,7 +3,6 @@ package editplan
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/maestroi/pokepilot/farm"
@@ -161,9 +160,15 @@ func TestUnsafePlansRejected(t *testing.T) {
 
 func TestShortProfileAndSourceFingerprint(t *testing.T) {
 	a, tl := fixture(t)
-	_, err := Build(a, tl, Short)
-	if err == nil || !strings.Contains(err.Error(), "too many") {
-		t.Fatalf("expected short planning limit, got %v", err)
+	short, err := Build(a, tl, Short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short.DurationMS > 180000 {
+		t.Fatalf("unbounded vertical clip: %d", short.DurationMS)
+	}
+	if err := Validate(short, a, tl); err != nil {
+		t.Fatal(err)
 	}
 	p, err := Build(a, tl, Episode)
 	if err != nil {
