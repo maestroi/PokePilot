@@ -28,6 +28,7 @@ The optional POST JSON body is:
       "source": "durable-farm-statistics/older-run-id/v1",
       "goal": "Beat the second gym",
       "duration_ms": 200000,
+      "status": "done",
       "event_types": ["gym_battle", "badge_acquired", "run_finished"],
       "published": true
     }
