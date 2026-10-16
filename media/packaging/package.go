@@ -23,143 +23,168 @@ import (
 )
 
 const (
-	SchemaVersion = 1
+	SchemaVersion   = 1
 	TemplateVersion = "grounded-templates-v1"
-	PromptVersion = "angle-selection-v1"
-	MaxModelBytes = 32 << 10
+	PromptVersion   = "angle-selection-v1"
+	MaxModelBytes   = 32 << 10
 )
 
 type Style string
 
 const (
-	Neutral Style = "neutral"
+	Neutral     Style = "neutral"
 	Documentary Style = "documentary"
-	Energetic Style = "energetic"
+	Energetic   Style = "energetic"
 )
+
 type Angle string
 
 const (
-	Moment Angle = "moment"
+	Moment    Angle = "moment"
 	Challenge Angle = "challenge"
-	Recap Angle = "recap"
+	Recap     Angle = "recap"
 )
 
 // Selection is the only creative instruction accepted from a model. It cites
 // one EXACT semantic event and an allowlisted narrative angle.
 type Selection struct {
-	Attempt int `json:"attempt"`
+	Attempt int    `json:"attempt"`
 	EventID string `json:"event_id"`
-	Angle Angle `json:"angle"`
+	Angle   Angle  `json:"angle"`
 }
 type Fact struct {
-	Attempt int `json:"attempt"`
-	EventID string `json:"event_id"`
-	Kind string `json:"kind"`
-	Label string `json:"label"`
-	TimestampMS int64 `json:"timestamp_ms"`
+	Attempt     int    `json:"attempt"`
+	EventID     string `json:"event_id"`
+	Kind        string `json:"kind"`
+	Label       string `json:"label"`
+	TimestampMS int64  `json:"timestamp_ms"`
 }
 type ModelContext struct {
-	Goal string `json:"goal"`
+	Goal   string `json:"goal"`
 	Result string `json:"result"`
-	Style Style `json:"style"`
+	Style  Style  `json:"style"`
 	Events []Fact `json:"events"`
 }
 type Model interface {
 	Identity() string
-	Select(context.Context, ModelContext) ([]byte,error)
+	Select(context.Context, ModelContext) ([]byte, error)
 }
 type Request struct {
 	Assessment producer.Assessment
-	Timelines []farm.MediaTimeline
-	Plan *editplan.Plan
-	Style Style
+	Timelines  []farm.MediaTimeline
+	Plan       *editplan.Plan
+	Style      Style
 	RunBaseURL string
-	Model Model
+	Model      Model
 }
 type TitleCandidate struct {
-	ID string `json:"id"`
-	Title string `json:"title"`
-	Angle Angle `json:"angle"`
+	ID       string               `json:"id"`
+	Title    string               `json:"title"`
+	Angle    Angle                `json:"angle"`
 	Evidence producer.EvidenceRef `json:"evidence"`
 }
 type Chapter struct {
-	StartMS int64 `json:"start_ms"`
-	Title string `json:"title"`
+	StartMS  int64                `json:"start_ms"`
+	Title    string               `json:"title"`
 	Evidence producer.EvidenceRef `json:"evidence"`
 }
 type ShortCandidate struct {
-	ID string `json:"id"`
-	Title string `json:"title"`
-	Hook string `json:"hook"`
-	Caption string `json:"caption"`
+	ID       string               `json:"id"`
+	Title    string               `json:"title"`
+	Hook     string               `json:"hook"`
+	Caption  string               `json:"caption"`
 	Evidence producer.EvidenceRef `json:"evidence"`
 }
 type ThumbnailConcept struct {
-	ID string `json:"id"`
-	TitleID string `json:"title_id"`
-	Subject string `json:"subject"`
-	Composition string `json:"composition"`
-	Emphasis string `json:"emphasis"`
-	Text string `json:"text"`
-	Evidence producer.EvidenceRef `json:"evidence"`
+	ID          string               `json:"id"`
+	TitleID     string               `json:"title_id"`
+	Subject     string               `json:"subject"`
+	Composition string               `json:"composition"`
+	Emphasis    string               `json:"emphasis"`
+	Text        string               `json:"text"`
+	Evidence    producer.EvidenceRef `json:"evidence"`
 }
 type Package struct {
-	Version int `json:"version"`
-	RunID string `json:"run_id"`
-	AssessmentHash string `json:"assessment_hash"`
-	PlanHash string `json:"plan_hash,omitempty"`
-	TimelineSHA256 string `json:"timeline_sha256"`
-	Model string `json:"model"`
-	PromptVersion string `json:"prompt_version"`
-	TemplateVersion string `json:"template_version"`
-	Style Style `json:"style"`
-	Selections []Selection `json:"selections"`
-	Titles []TitleCandidate `json:"titles"`
-	Description string `json:"description"`
-	Chapters []Chapter `json:"chapters,omitempty"`
-	Shorts []ShortCandidate `json:"shorts"`
-	Thumbnails []ThumbnailConcept `json:"thumbnail_concepts"`
-	Hash string `json:"hash"`
+	Version         int                `json:"version"`
+	RunID           string             `json:"run_id"`
+	AssessmentHash  string             `json:"assessment_hash"`
+	PlanHash        string             `json:"plan_hash,omitempty"`
+	TimelineSHA256  string             `json:"timeline_sha256"`
+	Model           string             `json:"model"`
+	PromptVersion   string             `json:"prompt_version"`
+	TemplateVersion string             `json:"template_version"`
+	Style           Style              `json:"style"`
+	Selections      []Selection        `json:"selections"`
+	Titles          []TitleCandidate   `json:"titles"`
+	Description     string             `json:"description"`
+	Chapters        []Chapter          `json:"chapters,omitempty"`
+	Shorts          []ShortCandidate   `json:"shorts"`
+	Thumbnails      []ThumbnailConcept `json:"thumbnail_concepts"`
+	Hash            string             `json:"hash"`
 }
 
-func normalizeStyle(style Style) (Style,error) {
-	if style=="" {style=Documentary}
-	if style!=Neutral && style!=Documentary && style!=Energetic {return "",errors.New("packaging: unsupported channel style")}
-	return style,nil
+func normalizeStyle(style Style) (Style, error) {
+	if style == "" {
+		style = Documentary
+	}
+	if style != Neutral && style != Documentary && style != Energetic {
+		return "", errors.New("packaging: unsupported channel style")
+	}
+	return style, nil
 }
 
 // cleanFacts accepts ordinary public run labels but drops text that resembles
 // credentials or connection strings. It never passes private model prompts.
 func cleanFacts(value string, limit int) string {
-	value=strings.TrimSpace(value)
-	lower:=strings.ToLower(value)
-	for _,bad:=range []string{"api_key","apikey","password","secret","bearer ","sk-","token=","authorization:","://","-----begin"} {
-		if strings.Contains(lower,bad) {return ""}
+	value = strings.TrimSpace(value)
+	lower := strings.ToLower(value)
+	for _, bad := range []string{"api_key", "apikey", "password", "secret", "bearer ", "sk-", "token=", "authorization:", "://", "-----begin"} {
+		if strings.Contains(lower, bad) {
+			return ""
+		}
 	}
 	var out []rune
-	for _,r:=range value {
-		if unicode.IsControl(r) {r=' '}
-		if unicode.IsPrint(r) {out=append(out,r)}
-		if len(out)>=limit {break}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			r = ' '
+		}
+		if unicode.IsPrint(r) {
+			out = append(out, r)
+		}
+		if len(out) >= limit {
+			break
+		}
 	}
-	return strings.Join(strings.Fields(string(out))," ")
+	return strings.Join(strings.Fields(string(out)), " ")
 }
 func label(kind string) string {
 	switch kind {
-	case "badge_acquired":return "Badge earned"
-	case "gym_battle":return "Gym battle"
-	case "boss_battle":return "Boss battle"
-	case "run_finished":return "Run completed"
-	case "run_failed","failure_terminal":return "Run ended"
-	case "blackout":return "Blackout"
-	case "planner_recovery","failure_recovered":return "Recovery"
-	case "rare_catch":return "Rare catch"
-	case "important_catch":return "Important catch"
-	case "evolution":return "Evolution"
-	case "milestone":return "Milestone reached"
-	case "objective_failed":return "Objective setback"
-	case "planner_stall":return "Planner stall"
-	default:return ""
+	case "badge_acquired":
+		return "Badge earned"
+	case "gym_battle":
+		return "Gym battle"
+	case "boss_battle":
+		return "Boss battle"
+	case "run_finished":
+		return "Run completed"
+	case "run_failed", "failure_terminal":
+		return "Run ended"
+	case "blackout":
+		return "Blackout"
+	case "planner_recovery", "failure_recovered":
+		return "Recovery"
+	case "rare_catch":
+		return "Rare catch"
+	case "important_catch":
+		return "Important catch"
+	case "evolution":
+		return "Evolution"
+	case "milestone":
+		return "Milestone reached"
+	case "objective_failed":
+		return "Objective setback"
+	case "planner_stall":
+		return "Planner stall"
 	}
 }
 func significance(kind string) int {
