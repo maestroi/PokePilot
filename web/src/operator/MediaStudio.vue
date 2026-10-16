@@ -4,9 +4,10 @@ import { getDashboard, getMediaRenderJobs } from '../shared/api/client'
 import type { DashboardRun } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
+import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { presentOutcome, presentReplay } from '../shared/status'
-import { highlightManifestURL, highlightVideoURL } from '../shared/api/client'
+import { highlightManifestURL, highlightVideoURL, replayVideoURL } from '../shared/api/client'
 import { formatMediaHref, latestJobsByKind, presentRenderMark, studioSteps, type MediaState, type RenderKind } from './mediaQuery'
 import { gameTitle } from './operations'
 import { archiveWhen, middleTruncate, progressLabel, timeAgo } from './runs'
@@ -195,14 +196,32 @@ const search = () => window.location.search
         </div>
       </section>
 
+      <section v-if="runID && media.replay.value?.state === 'ready'" class="ui-bay min-w-0" aria-labelledby="studio-replay-title">
+        <div class="ui-bay-header">
+          <h2 id="studio-replay-title" class="min-w-0 truncate">Replay video</h2>
+        </div>
+        <div class="p-3">
+          <div class="relative max-w-3xl">
+            <VideoPlayer
+              :key="runID"
+              :src="replayVideoURL(runID)"
+              controls
+              preload="metadata"
+              class="aspect-video max-h-[45vh] w-full bg-well"
+              :aria-label="`Replay video of ${runID}`"
+            />
+          </div>
+        </div>
+      </section>
+
       <section v-if="runID && hasStep('highlights')" class="ui-bay min-w-0" aria-labelledby="studio-create-title">
         <div class="ui-bay-header">
           <h2 id="studio-create-title" class="min-w-0 truncate">Highlight reel</h2>
           <StatusPill v-if="highlights" :status="presentReplay(highlights.state, undefined, 'Highlights')" />
         </div>
         <div class="space-y-3 p-3">
-          <video
-            v-if="highlights?.state === 'ready'"
+          <div v-if="highlights?.state === 'ready'" class="relative max-w-3xl">
+          <VideoPlayer
             :key="runID"
             :src="highlightVideoURL(runID)"
             controls
@@ -210,6 +229,7 @@ const search = () => window.location.search
             class="aspect-video max-h-[45vh] w-full max-w-3xl bg-well"
             :aria-label="`Highlight reel of ${runID}`"
           />
+          </div>
           <p class="max-w-[72ch] text-fg-2">
             <template v-if="highlights?.state === 'missing'">No reel yet. Generating one cuts the run’s recorded milestones into a short video.</template>
             <template v-else-if="highlights">

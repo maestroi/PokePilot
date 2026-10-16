@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { studioEditVideoURL, studioThumbnailURL } from '../shared/api/client'
+import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import type { StudioPackageSummary } from '../shared/api/types'
 import { timeAgo } from './runs'
 import type { Studio, StudioFormat } from './useStudio'
@@ -55,8 +56,8 @@ function packageLabel(item: StudioPackageSummary): string {
         </div>
         <div v-if="pkg.plan_hash" class="min-w-0">
           <h3 class="mb-1 text-meta font-semibold text-fg-2">Edited video</h3>
-          <video
-            v-if="studio.edit.value?.state === 'ready'"
+          <div v-if="studio.edit.value?.state === 'ready'" class="relative" :class="isShort ? 'max-w-60' : ''">
+          <VideoPlayer
             :key="pkg.plan_hash"
             :src="studioEditVideoURL(runID, pkg.plan_hash)"
             controls
@@ -65,6 +66,7 @@ function packageLabel(item: StudioPackageSummary): string {
             :class="isShort ? 'aspect-[9/16] max-w-60' : 'aspect-video'"
             :aria-label="`Edited ${isShort ? 'Short' : 'episode'} of ${runID}`"
           />
+          </div>
           <p v-else class="text-meta text-fg-2">
             {{ studio.edit.value?.state === 'generating' ? 'Rendering…' : studio.edit.value?.error || 'Not rendered yet.' }}
           </p>
