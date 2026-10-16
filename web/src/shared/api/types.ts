@@ -617,6 +617,17 @@ export interface StudioThumbnailConcept {
   text: string
   evidence: { attempt: number; event_id: string; frame: number; timestamp_ms: number }
 }
+// Stored packages of one run (GET /v1/runs/{id}/studio/packages), newest first.
+export interface StudioPackageSummary {
+  hash: string
+  created_at_unix_ms?: number
+  thumbnails: boolean
+  thumbnail_selected: boolean
+}
+export interface StudioPackageList {
+  packages: StudioPackageSummary[]
+}
+
 export interface StudioPackage {
   hash: string
   run_id: string

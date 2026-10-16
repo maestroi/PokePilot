@@ -18,7 +18,10 @@ import {
   filterJobs,
   formatBytes,
   jobInView,
+  jobOutputHref,
+  jobOutputLabel,
   jobProgress,
+  jobTiming,
   msISO,
   removable,
   rendererLabel,
@@ -52,6 +55,24 @@ function progressText(job: MediaRenderJob): string {
   const total = Number(job.segments_total || 0)
   if (total > 0) return `${Number(job.segments_done || 0)}/${total} · ${jobProgress(job)}%`
   return job.state === 'ready' ? 'Complete' : (job.stage || job.state)
+}
+// One honest time line: elapsed (+ estimate only when progress allows) while
+// active, otherwise when it was queued or finished.
+function timeText(job: MediaRenderJob): string {
+  if (job.state === 'queued') return `queued ${timeAgo(Number(job.created_at_unix_ms || 0) / 1000)}`
+  if (job.state === 'ready' || job.state === 'failed' || job.state === 'cancelled') {
+    const verb = job.state === 'ready' ? 'finished' : job.state
+    return `${verb} ${timeAgo(Number(job.finished_at_unix_ms || job.updated_at_unix_ms || 0) / 1000)}`
+  }
+  const { elapsed, eta } = jobTiming(job)
+  if (!elapsed) return job.stage || job.state
+  return eta ? `${elapsed} · ${eta}` : `${elapsed} elapsed`
+}
+function failureReason(job: MediaRenderJob): string {
+  return (job.last_error || '').split('\n')[0]
+}
+function outputHref(job: MediaRenderJob): string {
+  return jobOutputHref(job, props.state, window.location.search)
 }
 function runHref(runID: string): string {
   return operatorHref('runs', { run: runID, job: '' }, window.location.search)
@@ -132,14 +153,14 @@ function busyLabel(job: MediaRenderJob, action: JobAction, idle: string): string
 const confirmTitle = computed(() => {
   const target = pending.value
   if (!target) return ''
-  return target.action === 'cancel' ? `Cancel replay rendering for ${target.job.run_id}?` : `Remove render job for ${target.job.run_id}?`
+  return target.action === 'cancel' ? `Cancel ${jobOutputLabel(target.job).toLowerCase()} rendering for ${target.job.run_id}?` : `Remove render job for ${target.job.run_id}?`
 })
 const confirmMessage = computed(() => {
   const target = pending.value
   if (!target) return ''
   if (target.action === 'cancel') return 'The current render attempt will stop and can be retried later.'
   return target.job.state === 'ready'
-    ? 'The rendered replay file and run stay intact; only this durable job record is removed.'
+    ? `The rendered ${jobOutputLabel(target.job).toLowerCase()} and run stay intact; only this durable job record is removed.`
     : 'This removes the terminal job record. The run itself is not deleted.'
 })
 
@@ -196,7 +217,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
           >
             <span class="truncate">Run: <span class="font-mono">{{ middleTruncate(state.run) }}</span></span> <XMarkIcon class="size-3.5 shrink-0 text-fg-2" aria-hidden="true" />
           </button>
-          <span v-else class="text-meta text-fg-2">Durable replay jobs tracked by the wall and executed on the render VM</span>
+          <span v-else class="text-meta text-fg-2">Newest first · order stays put while jobs render</span>
           <span class="ml-auto text-meta whitespace-nowrap text-fg-2 tabular-nums" aria-live="polite">{{ formatInteger(rows.length) }} shown · {{ formatInteger(Number(resource.data.value?.total || 0)) }} total</span>
         </div>
 
@@ -213,7 +234,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                 <th class="px-3 font-medium">Source run</th>
                 <th class="w-48 px-3 font-medium max-lg:hidden">Progress</th>
                 <th class="w-28 px-3 font-medium" :class="state.job ? 'hidden min-[1680px]:table-cell' : 'max-xl:hidden'">Renderer</th>
-                <th class="w-28 px-3 font-medium max-xl:hidden">Updated</th>
+                <th class="w-40 px-3 font-medium max-xl:hidden">Time</th>
                 <th class="w-11 pr-2"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -236,9 +257,9 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
               >
                 <td class="px-3">
                   <StatusPill :status="status(job)" class="max-w-full overflow-hidden" />
-                  <div v-if="job.retry_count || job.failure_class" class="mt-0.5 truncate text-meta text-warn">
-                    {{ job.failure_class || '' }}{{ job.failure_class && job.retry_count ? ' · ' : '' }}{{ job.retry_count ? `${job.retry_count} ${job.retry_count === 1 ? 'retry' : 'retries'}` : '' }}
-                  </div>
+                  <div v-if="job.state === 'failed'" class="mt-0.5 truncate text-meta text-danger" :title="job.last_error">{{ job.failure_class || 'error' }}<template v-if="failureReason(job)">: {{ failureReason(job) }}</template></div>
+                  <a v-else-if="outputHref(job)" :href="outputHref(job)" class="mt-0.5 block truncate text-meta text-accent hover:underline" @click.stop>Open {{ jobOutputLabel(job).toLowerCase() }}</a>
+                  <div v-else-if="job.retry_count" class="mt-0.5 truncate text-meta text-warn">{{ job.retry_count }} {{ job.retry_count === 1 ? 'retry' : 'retries' }}</div>
                 </td>
                 <td class="px-3">
                   <div class="flex min-w-0 items-center gap-1">
@@ -252,7 +273,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                       <ClipboardDocumentIcon class="size-4" aria-hidden="true" />
                     </button>
                   </div>
-                  <div class="truncate font-mono text-meta text-fg-2" :title="job.id">{{ job.id }}</div>
+                  <div class="truncate text-meta text-fg-2"><span class="text-fg">{{ jobOutputLabel(job) }}</span> · <span class="font-mono" :title="job.id">{{ job.id }}</span></div>
                 </td>
                 <td class="px-3 max-lg:hidden">
                   <div class="flex items-center justify-between gap-2 font-mono text-meta text-fg-2">
@@ -262,7 +283,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                   <div class="ui-meter mt-1.5"><span class="bg-accent" :style="{ width: `${jobProgress(job) || 0}%` }" /></div>
                 </td>
                 <td class="px-3" :class="state.job ? 'hidden min-[1680px]:table-cell' : 'max-xl:hidden'" :title="rendererTitle(job)">{{ rendererLabel(job) }}</td>
-                <td class="px-3 whitespace-nowrap max-xl:hidden" :title="msISO(job.updated_at_unix_ms)">{{ timeAgo(Number(job.updated_at_unix_ms || 0) / 1000) }}</td>
+                <td class="px-3 whitespace-nowrap max-xl:hidden font-mono text-meta" :title="`Created ${msISO(job.created_at_unix_ms)}`">{{ timeText(job) }}</td>
                 <td class="pr-2 text-right" @click.stop @keydown.stop>
                   <ActionMenu :label="`More actions for render job ${job.id}`" :items="menu(job)" />
                 </td>
@@ -286,13 +307,15 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
               <div class="min-w-0 flex-1">
                 <div class="flex min-w-0 items-center gap-2">
                   <StatusPill :status="status(job)" class="shrink-0" />
-                  <span class="ml-auto shrink-0 text-meta text-fg-2" :title="msISO(job.updated_at_unix_ms)">{{ timeAgo(Number(job.updated_at_unix_ms || 0) / 1000) }}</span>
+                  <span class="ml-auto shrink-0 text-meta text-fg-2">{{ timeText(job) }}</span>
                 </div>
                 <button type="button" class="mt-1 block w-full truncate text-left font-mono text-accent" :title="job.run_id" @click="openJob(job.id)">{{ middleTruncate(job.run_id) }}</button>
                 <div class="mt-1 flex min-w-0 items-center gap-2 text-meta text-fg-2">
                   <span class="truncate">{{ progressText(job) }}</span>
-                  <span class="ml-auto shrink-0">{{ rendererLabel(job) }}</span>
+                  <span class="ml-auto shrink-0">{{ jobOutputLabel(job) }}</span>
                 </div>
+                <div v-if="job.state === 'failed'" class="mt-1 truncate text-meta text-danger" :title="job.last_error">{{ job.failure_class || 'error' }}<template v-if="failureReason(job)">: {{ failureReason(job) }}</template></div>
+                <a v-else-if="outputHref(job)" :href="outputHref(job)" class="mt-1 block text-meta text-accent hover:underline">Open {{ jobOutputLabel(job).toLowerCase() }}</a>
               </div>
               <ActionMenu class="shrink-0" :label="`More actions for render job ${job.id}`" :items="menu(job)" />
             </li>
@@ -358,6 +381,11 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                   <div class="ui-meter"><span class="bg-accent" :style="{ width: `${jobProgress(selected) || 0}%` }" /></div>
                   <span class="font-mono text-meta text-fg-2">{{ progressText(selected) }}</span>
                 </div>
+                <p class="mt-1 font-mono text-meta text-fg-2">{{ timeText(selected) }}</p>
+                <p v-if="selected.state === 'ready'" class="mt-3 border border-ok/40 bg-ok/10 px-3 py-2 text-ok" role="status">
+                  ✓ Done. The {{ jobOutputLabel(selected).toLowerCase() }} is rendered<template v-if="selected.result_size"> ({{ formatBytes(selected.result_size) }})</template>.
+                </p>
+                <p v-else-if="selected.state === 'cancelled'" class="mt-3 border border-rule-strong px-3 py-2 text-fg-2" role="status">■ Cancelled. Nothing was produced; retry to render it again.</p>
                 <p v-if="selected.last_error" class="mt-3 border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="status">
                   ✕ Render failed<template v-if="selected.failure_class"> ({{ selected.failure_class }})</template>. The run and its recording are unaffected; retry the job when the cause is fixed.
                 </p>
@@ -375,6 +403,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                       <ClipboardDocumentIcon class="size-4" aria-hidden="true" />
                     </button>
                   </dd>
+                  <dt>Output</dt><dd>{{ jobOutputLabel(selected) }}</dd>
                   <dt>Stage</dt><dd>{{ selected.stage || selected.state }}</dd>
                   <dt>Renderer</dt><dd :title="rendererTitle(selected)">{{ rendererLabel(selected) }} <span class="block text-meta text-fg-2">{{ rendererTitle(selected) }}</span></dd>
                   <dt>Worker</dt><dd class="font-mono text-meta">{{ workerLabel(selected) }}</dd>
@@ -389,6 +418,7 @@ function menu(job: MediaRenderJob): ActionMenuItem[] {
                 </dl>
               </div>
               <footer class="flex shrink-0 flex-wrap items-center gap-2 border-t border-rule px-3 py-2">
+                <a v-if="outputHref(selected)" :href="outputHref(selected)" class="ui-btn ui-btn-primary max-md:h-10">Open {{ jobOutputLabel(selected).toLowerCase() }}</a>
                 <button v-if="retryable(selected)" type="button" class="ui-btn ui-btn-primary max-md:h-10" :disabled="Boolean(busy)" @click="request(selected, 'retry')">{{ busyLabel(selected, 'retry', 'Retry') }}</button>
                 <a :href="runHref(selected.run_id)" class="ui-btn max-md:h-10">Open source run</a>
                 <button v-if="cancellable(selected)" type="button" class="ui-btn ui-btn-danger max-md:h-10" :disabled="Boolean(busy)" @click="request(selected, 'cancel')">{{ busyLabel(selected, 'cancel', 'Cancel render…') }}</button>

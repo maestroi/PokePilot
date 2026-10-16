@@ -40,7 +40,7 @@ const search = () => window.location.search
 const active = usePollingResource((signal) => getDashboard({ active: true }, signal), { intervalMs: 5000 })
 const recent = usePollingResource((signal) => getDashboard({ status: 'done', limit: RECENT_LIMIT }, signal), { intervalMs: 15000 })
 const control = usePollingResource((signal) => getSpectatorControl(signal), { intervalMs: 5000 })
-const jobs = usePollingResource((signal) => getMediaRenderJobs(100, signal), { intervalMs: 5000 })
+const jobs = usePollingResource((signal) => getMediaRenderJobs(200, signal), { intervalMs: 5000 })
 
 // A linked run (from Runs or Live) may be older than the recent page; load it directly.
 const focused = ref<DashboardRun | null>(null)
@@ -109,11 +109,11 @@ function clearFilters(): void {
   searchInput.value = ''
   patch({ q: '', recording: '', visibility: '' })
 }
-const RECORDING_LABELS: Record<Exclude<RecordingFilter, ''>, string> = { ready: 'Ready', rendering: 'Generating', failed: 'Failed', none: 'No replay' }
+const RECORDING_LABELS: Record<Exclude<RecordingFilter, ''>, string> = { ready: 'Video ready', rendering: 'Rendering', failed: 'Failed', none: 'No video' }
 const VISIBILITY_LABELS: Record<Exclude<VisibilityFilter, ''>, string> = { public: 'Public', private: 'Private' }
 const chips = computed(() => [
   ...(props.state.q ? [{ key: 'q', label: `Search: ${props.state.q}` }] : []),
-  ...(props.state.recording ? [{ key: 'recording', label: `Replay: ${RECORDING_LABELS[props.state.recording]}` }] : []),
+  ...(props.state.recording ? [{ key: 'recording', label: `Video: ${RECORDING_LABELS[props.state.recording]}` }] : []),
   ...(props.state.visibility ? [{ key: 'visibility', label: `Public site: ${VISIBILITY_LABELS[props.state.visibility]}` }] : [])
 ])
 function removeChip(key: string): void {
@@ -275,11 +275,11 @@ function menu(run: DashboardRun): ActionMenuItem[] {
             </div>
             <select
               :value="state.recording"
-              aria-label="Replay state"
+              aria-label="Replay video state"
               class="h-7 rounded-[3px] border border-control bg-canvas px-2 text-fg max-md:h-10 max-md:flex-1"
               @change="patch({ recording: ($event.target as HTMLSelectElement).value as RecordingFilter })"
             >
-              <option value="">Replay: any</option>
+              <option value="">Video: any</option>
               <option v-for="(label, key) in RECORDING_LABELS" :key="key" :value="key">{{ label }}</option>
             </select>
             <select
@@ -317,7 +317,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
           <table class="w-full table-fixed border-collapse text-left">
             <thead>
               <tr class="h-9 border-b border-rule-strong bg-raised text-meta font-medium text-fg-2">
-                <th class="w-52 px-3 font-medium">Replay</th>
+                <th class="w-52 px-3 font-medium">Replay video</th>
                 <th class="px-3 font-medium">Source run</th>
                 <th class="w-32 px-3 font-medium max-lg:hidden">Public site</th>
                 <th class="w-28 px-3 font-medium" :class="state.run ? 'hidden min-[1680px]:table-cell' : 'max-xl:hidden'">When</th>
@@ -343,7 +343,7 @@ function menu(run: DashboardRun): ActionMenuItem[] {
               >
                 <td class="px-3">
                   <StatusPill :status="status(run)" class="max-w-full overflow-hidden" />
-                  <div class="mt-0.5 truncate text-meta text-fg-2">{{ isLiveRun(run) ? 'Live run · replay after it ends' : 'Full replay' }}</div>
+                  <div class="mt-0.5 truncate text-meta text-fg-2" :title="isLiveRun(run) ? '' : recording(run).detail">{{ isLiveRun(run) ? 'Live run · replay after it ends' : run.replay_available ? 'Replay data stored' : 'No replay data' }}</div>
                 </td>
                 <td class="px-3">
                   <div class="flex min-w-0 items-center gap-1">

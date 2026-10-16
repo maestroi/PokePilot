@@ -121,11 +121,15 @@ func (c *mediaRenderJobController) list(runID, state string, limit int) mediaRen
 		jobs = append(jobs, job)
 		counts[job.State]++
 	}
+	// Newest created first. Never UpdatedAt: every progress heartbeat bumps it,
+	// so concurrently rendering jobs would swap places on each operator poll.
+	// ponytail: a retried job keeps its CreatedAt, so a very old retry can fall
+	// outside the limit; list active jobs separately if that starts to matter.
 	sort.Slice(jobs, func(i, j int) bool {
-		if jobs[i].UpdatedAt == jobs[j].UpdatedAt {
+		if jobs[i].CreatedAt == jobs[j].CreatedAt {
 			return jobs[i].ID < jobs[j].ID
 		}
-		return jobs[i].UpdatedAt > jobs[j].UpdatedAt
+		return jobs[i].CreatedAt > jobs[j].CreatedAt
 	})
 	total := len(jobs)
 	if limit > 0 && len(jobs) > limit {

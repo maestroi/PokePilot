@@ -2,13 +2,14 @@ import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import {
   cancelMediaRenderJob,
   getHighlightStatus,
+  getStudioPackages,
   getReplayStatus,
   getYouTubePublishStatus,
   publishToYouTube,
   renderHighlights,
   renderReplay
 } from '../shared/api/client'
-import type { HighlightStatus, ReplayStatus, YouTubePublishStatus } from '../shared/api/types'
+import type { HighlightStatus, ReplayStatus, StudioPackageSummary, YouTubePublishStatus } from '../shared/api/types'
 
 // Media outputs of one run: replay, highlight reel and YouTube publication.
 // Shared by Live's inspector (via useRunEvidence) and Media's Library/Studio.
@@ -19,6 +20,8 @@ export function useRunMedia(runID: Ref<string>) {
   const highlights = ref<HighlightStatus | null>(null)
   const highlightError = ref('')
   const youtube = ref<YouTubePublishStatus | null>(null)
+  const packages = ref<StudioPackageSummary[] | null>(null)
+  const packagesError = ref('')
   const youtubeError = ref('')
   const rendering = ref(false)
   const renderingHighlights = ref(false)
@@ -85,6 +88,23 @@ export function useRunMedia(runID: Ref<string>) {
     if (youtube.value?.publication.state === 'uploading') schedule('youtube', 5000, refreshYouTube)
   }
 
+  // Stored episode packages (and their thumbnails). Null with an error when
+  // the replay host has no studio storage, so callers can say why once.
+  async function refreshPackages(): Promise<void> {
+    const id = runID.value
+    if (!id) return
+    try {
+      const next = await getStudioPackages(id)
+      if (id !== runID.value) return
+      packages.value = next.packages || []
+      packagesError.value = ''
+    } catch (cause) {
+      if (id !== runID.value) return
+      packages.value = null
+      packagesError.value = cause instanceof Error ? cause.message : 'Studio storage unavailable'
+    }
+  }
+
   async function load(): Promise<void> {
     const id = runID.value
     if (!id) return
@@ -105,6 +125,7 @@ export function useRunMedia(runID: Ref<string>) {
     if (replay.value?.state === 'generating') schedule('replay', 5000, refreshReplay)
     if (highlights.value?.state === 'generating') schedule('highlight', 5000, refreshHighlights)
     void refreshYouTube()
+    void refreshPackages()
   }
 
   async function requestReplay(): Promise<void> {
@@ -173,6 +194,8 @@ export function useRunMedia(runID: Ref<string>) {
     replay.value = null
     highlights.value = null
     youtube.value = null
+    packages.value = null
+    packagesError.value = ''
     void load()
   }, { immediate: true })
   onBeforeUnmount(stopAll)
@@ -181,6 +204,7 @@ export function useRunMedia(runID: Ref<string>) {
     replay, replayError, rendering, cancellingReplay, requestReplay, cancelReplay,
     highlights, highlightError, renderingHighlights, requestHighlights,
     youtube, youtubeError, publishing, publishYouTube,
+    packages, packagesError, refreshPackages,
     loadMedia: load
   }
 }

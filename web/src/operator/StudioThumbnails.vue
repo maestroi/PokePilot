@@ -9,9 +9,11 @@ import {
   selectStudioThumbnail,
   studioThumbnailURL
 } from '../shared/api/client'
-import type { StudioPackage, StudioThumbnailList } from '../shared/api/types'
+import type { StudioPackage, StudioPackageSummary, StudioThumbnailList } from '../shared/api/types'
+import { middleTruncate, timeAgo } from './runs'
 
-const props = defineProps<{ runID: string }>()
+const props = defineProps<{ runID: string; packages: StudioPackageSummary[] }>()
+const emit = defineEmits<{ changed: [] }>()
 const packageHash = ref('')
 const pkg = ref<StudioPackage | null>(null)
 const thumbnails = ref<StudioThumbnailList | null>(null)
@@ -62,11 +64,17 @@ async function prepare(): Promise<void> {
       thumbnails.value = null
     }
     message.value = 'Verified package created from the completed run. Generate thumbnails to review its concepts.'
+    emit('changed')
   } catch (cause) {
     if (id === generation) error.value = friendly(cause)
   } finally {
     if (id === generation) busy.value = false
   }
+}
+
+async function open(hash: string): Promise<void> {
+  packageHash.value = hash
+  await load()
 }
 
 async function load(): Promise<void> {
@@ -109,6 +117,7 @@ async function render(): Promise<void> {
     message.value = fallbacks.length
       ? 'Branded images are ready. Optional generated artwork was unavailable for some concepts; those used the built-in illustration.'
       : `${result.manifest.candidates.length} thumbnails generated and ready for review.`
+    emit('changed')
   } catch (cause) {
     if (id === generation) error.value = friendly(cause)
   } finally {
@@ -127,6 +136,7 @@ async function pick(candidateID: string): Promise<void> {
     if (id !== generation) return
     thumbnails.value = await getStudioThumbnails(props.runID, pkg.value.hash)
     message.value = 'Thumbnail selected for review. This does not publish the video.'
+    emit('changed')
   } catch (cause) {
     if (id === generation) error.value = friendly(cause)
   } finally {
@@ -138,23 +148,33 @@ async function pick(candidateID: string): Promise<void> {
 <template>
   <section class="ui-bay min-w-0 xl:col-span-2" aria-labelledby="thumbnail-review-title">
     <div class="ui-bay-header">
-      <h2 id="thumbnail-review-title">Thumbnail studio</h2>
+      <h2 id="thumbnail-review-title">Episode package &amp; thumbnails</h2>
       <span class="text-meta text-fg-2">Review-only · 1280 × 720 JPEG</span>
     </div>
     <div class="space-y-4 p-3">
       <p class="max-w-[72ch] text-fg-2">
-        Prepare a versioned content package from this completed run (or paste an existing package hash), then generate and compare its artwork concepts.
-        Titles and PokePilot branding are rendered deterministically; publishing stays disabled until approved separately.
+        A package holds titles, description and thumbnail concepts grounded in the run. Titles and branding render deterministically; nothing is published from here.
       </p>
-      <div v-if="!runID" class="text-fg-2">Select a finished source run above.</div>
-      <template v-else>
+      <template v-if="runID">
+        <ul v-if="packages.length" class="border border-rule" aria-label="Stored packages">
+          <li v-for="item in packages" :key="item.hash" class="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule px-3 py-2 last:border-b-0" :class="pkg?.hash === item.hash ? 'bg-selected' : ''">
+            <span class="font-mono" :title="item.hash">{{ middleTruncate(item.hash, 10, 6) }}</span>
+            <span class="text-meta text-fg-2">{{ timeAgo(Number(item.created_at_unix_ms || 0) / 1000) }}</span>
+            <span class="ui-pill" :class="item.thumbnails ? 'ui-tone-ok' : 'ui-tone-neutral'">
+              <span aria-hidden="true">{{ item.thumbnails ? '✓' : '○' }}</span> {{ item.thumbnails ? (item.thumbnail_selected ? 'Thumbnails · one selected' : 'Thumbnails rendered') : 'No thumbnails' }}
+            </span>
+            <button type="button" class="ui-btn ui-btn-sm ml-auto max-md:h-10" :disabled="busy || pkg?.hash === item.hash" @click="open(item.hash)">{{ pkg?.hash === item.hash ? 'Open' : 'Review' }}</button>
+          </li>
+        </ul>
         <div class="flex flex-wrap items-center gap-2">
-          <button type="button" class="ui-btn ui-btn-primary h-10" :disabled="busy" @click="prepare">
-            {{ busy && !pkg ? 'Preparing…' : 'Prepare package from this run' }}
+          <button type="button" class="ui-btn h-10" :class="packages.length ? '' : 'ui-btn-primary'" :disabled="busy" @click="prepare">
+            {{ busy && !pkg ? 'Preparing…' : packages.length ? 'Prepare another package' : 'Prepare package from this run' }}
           </button>
-          <span class="text-meta text-fg-2">Uses the existing producer and factual packaging stages. Runs marked archive-only or do-not-publish are not rendered.</span>
+          <span class="text-meta text-fg-2">Runs marked archive-only or do-not-publish are not packaged.</span>
         </div>
-        <div class="flex flex-wrap items-end gap-2">
+        <details>
+          <summary class="cursor-pointer text-meta text-accent">Load a package by hash</summary>
+        <div class="mt-2 flex flex-wrap items-end gap-2">
           <label class="flex min-w-[min(100%,360px)] flex-1 flex-col gap-1 text-meta font-medium" for="thumbnail-package-hash">
             Content package SHA-256
             <input
@@ -174,6 +194,7 @@ async function pick(candidateID: string): Promise<void> {
             {{ busy && !pkg ? 'Loading…' : 'Load package' }}
           </button>
         </div>
+        </details>
         <p v-if="error" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">{{ error }}</p>
         <p v-if="message" class="text-fg-2" role="status">{{ message }}</p>
         <template v-if="pkg">

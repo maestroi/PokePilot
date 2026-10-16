@@ -7,7 +7,12 @@ import {
   filterJobs,
   filterLibrary,
   formatMediaHref,
+  jobOutputHref,
+  jobTiming,
+  latestJobByRun,
   parseMediaState,
+  runOutputs,
+  sortJobs,
   removable,
   retryable,
   tabHref
@@ -85,5 +90,71 @@ test('broadcast and job states carry glyph + word; only live counts as on air', 
   assert.equal(isBroadcastOnAir('live'), true)
   assert.equal(presentJob('rendering', 42).label, 'Rendering 42%')
   assert.equal(presentJob('queued').glyph, '○')
-  assert.equal(presentJob('ready').glyph, '✓')
+  assert.deepEqual(presentJob('ready'), { label: 'Done', tone: 'ok', glyph: '✓' })
+})
+
+test('job order is stable across progress polls (created time, then ID)', () => {
+  const poll1 = [
+    { id: 'b', run_id: 'r2', state: 'rendering', created_at_unix_ms: 200, updated_at_unix_ms: 900 },
+    { id: 'a', run_id: 'r1', state: 'rendering', created_at_unix_ms: 100, updated_at_unix_ms: 950 },
+    { id: 'c', run_id: 'r3', state: 'queued', created_at_unix_ms: 200, updated_at_unix_ms: 200 }
+  ] as MediaRenderJob[]
+  // Next poll: the older job heartbeated last, and the server returned it first.
+  const poll2 = [{ ...poll1[1], updated_at_unix_ms: 990 }, poll1[0], poll1[2]]
+  assert.deepEqual(sortJobs(poll1).map((job) => job.id), ['b', 'c', 'a'])
+  assert.deepEqual(sortJobs(poll2).map((job) => job.id), ['b', 'c', 'a'])
+})
+
+test('job timing shows an estimate only when segment progress allows', () => {
+  const start = 1_000_000
+  const job = { state: 'rendering', started_at_unix_ms: start, segments_done: 1, segments_total: 4 } as MediaRenderJob
+  assert.deepEqual(jobTiming(job, start + 60_000), { elapsed: '1m 00s', eta: '~3m 00s left' })
+  assert.deepEqual(jobTiming({ ...job, segments_done: 0 }, start + 60_000), { elapsed: '1m 00s', eta: '' })
+  assert.deepEqual(jobTiming({ ...job, segments_total: 0 }, start + 5_000), { elapsed: '5s', eta: '' })
+  assert.deepEqual(jobTiming({ ...job, state: 'ready', finished_at_unix_ms: start + 90_000 }, start + 999_999), { elapsed: '1m 30s', eta: '' })
+  assert.deepEqual(jobTiming({ state: 'queued' } as MediaRenderJob), { elapsed: '', eta: '' })
+})
+
+test('a done job links to its output; other outputs never stand in for the replay video', () => {
+  const state = parseMediaState('#media/jobs', '?job=j1')
+  assert.equal(jobOutputHref({ mode: 'semantic', run_id: 'r1', state: 'ready' }, state), '?run=r1#media/library')
+  assert.equal(jobOutputHref({ mode: 'highlight', run_id: 'r1', state: 'ready' }, state), '?run=r1#media/studio')
+  assert.equal(jobOutputHref({ mode: 'semantic', run_id: 'r1', state: 'failed' }, state), '')
+  const latest = latestJobByRun([
+    { id: 'replay', run_id: 'r1', mode: 'semantic', state: 'failed', updated_at_unix_ms: 1 },
+    { id: 'reel', run_id: 'r1', mode: 'highlight', state: 'ready', updated_at_unix_ms: 9 }
+  ] as MediaRenderJob[])
+  assert.equal(latest.get('r1')?.id, 'replay')
+})
+
+test('run outputs say what exists and collapse what cannot be made into reasons', () => {
+  const labels = (out: ReturnType<typeof runOutputs>) => out.rows.map((row) => `${row.label}: ${row.status.label}`)
+  const done = runOutputs({
+    replayData: true, live: false,
+    replay: { state: 'ready' },
+    highlights: { state: 'ready', windows: 3, duration_ms: 75_000 },
+    packages: [{ hash: 'h', thumbnails: true, thumbnail_selected: true }]
+  })
+  assert.deepEqual(labels(done), ['Replay data: Stored', 'Replay video: Rendered', 'Highlight reel: Rendered', 'Episode package: 1 package', 'Thumbnails: Rendered · one selected'])
+  assert.equal(done.rows[2].detail, '3 moments · 1m 15s')
+  assert.deepEqual(done.unavailable, [])
+
+  const dataOnly = runOutputs({ replayData: true, live: false, replay: { state: 'missing' }, highlights: { state: 'empty' }, packages: null, packagesError: 'studio artifact storage disabled' })
+  assert.deepEqual(labels(dataOnly), ['Replay data: Stored', 'Replay video: Not rendered'])
+  assert.equal(dataOnly.unavailable.length, 2)
+  assert.match(dataOnly.unavailable[0], /No highlight-worthy moments/)
+
+  const disabled = runOutputs({ replayData: true, live: false, replay: { state: 'disabled' }, highlights: { state: 'disabled' }, packages: [] })
+  assert.deepEqual(labels(disabled), ['Replay data: Stored', 'Episode package: None'])
+  assert.equal(disabled.unavailable.length, 2)
+
+  const noData = runOutputs({ replayData: false, live: false, replay: { state: 'missing' } })
+  assert.deepEqual(labels(noData), ['Replay data: None'])
+  assert.match(noData.unavailable[0], /without replay data/)
+
+  assert.equal(runOutputs({ replayData: false, live: false, replay: { state: 'ready' } }).rows[0].status.label, 'Stored', 'a video implies its data')
+
+  const live = runOutputs({ replayData: false, live: true, replay: { state: 'missing' } })
+  assert.deepEqual(labels(live), ['Replay data: Recording'])
+  assert.match(live.unavailable[0], /after the run ends/)
 })

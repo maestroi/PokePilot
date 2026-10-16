@@ -13,6 +13,7 @@ import type {
   MediaRenderJobList,
   HighlightStatus,
   StudioPackage,
+  StudioPackageList,
   StudioThumbnailList,
   YouTubePublication,
   YouTubePublishStatus,
@@ -356,6 +357,10 @@ export function highlightManifestURL(runID: string): string {
   return `/v1/runs/${encodeURIComponent(runID)}/highlights/manifest`
 }
 
+
+export function getStudioPackages(runID: string, signal?: AbortSignal): Promise<StudioPackageList> {
+  return requestJSON<StudioPackageList>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages`, { signal })
+}
 
 export function getStudioPackage(runID: string, packageHash: string): Promise<StudioPackage> {
   return requestJSON<StudioPackage>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}`)

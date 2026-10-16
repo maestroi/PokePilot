@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed } from 'vue'
 import { getDashboard } from '../shared/api/client'
+import type { DashboardRun } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { presentOutcome, presentReplay } from '../shared/status'
 import { highlightManifestURL, highlightVideoURL } from '../shared/api/client'
-import { formatMediaHref, type MediaState } from './mediaQuery'
+import { formatMediaHref, runOutputs, type MediaState } from './mediaQuery'
+import MediaOutputsList from './MediaOutputsList.vue'
 import { gameTitle } from './operations'
-import { middleTruncate, timeAgo } from './runs'
+import { archiveWhen, middleTruncate, progressLabel, timeAgo } from './runs'
 import { useRunMedia } from './useRunMedia'
 import StudioThumbnails from './StudioThumbnails.vue'
 
-// Studio: derived outputs made from a finished run's recording. Only the
-// highlight reel exists as a backend capability today, so that is all it offers.
+// Studio: derived outputs made from a finished run's recording: the highlight
+// reel, episode packages and their thumbnails. Outputs the host can't make for
+// the selected run are not offered; they collapse into one reason line.
 const props = defineProps<{ state: MediaState }>()
 const emit = defineEmits<{ navigate: [next: MediaState, replace?: boolean] }>()
 
@@ -26,6 +29,20 @@ const runID = computed(() => props.state.run)
 const source = computed(() => sources.value.find((run) => run.run_id === runID.value) || null)
 const media = useRunMedia(runID)
 const highlights = computed(() => media.highlights.value)
+const outputs = computed(() => runOutputs({
+  replayData: Boolean(source.value?.replay_available),
+  live: false,
+  replay: media.replay.value,
+  highlights: highlights.value,
+  packages: media.packages.value,
+  packagesError: media.packagesError.value
+}))
+const showHighlights = computed(() => outputs.value.rows.some((row) => row.id === 'highlights'))
+const showPackages = computed(() => outputs.value.rows.some((row) => row.id === 'package'))
+function progress(run: DashboardRun): string {
+  const label = progressLabel(run)
+  return label === 'No structured progress' ? '' : label
+}
 const canGenerate = computed(() => Boolean(highlights.value && !['ready', 'generating', 'empty', 'disabled'].includes(highlights.value.state)))
 
 function select(id: string): void {
@@ -60,25 +77,44 @@ const search = () => window.location.search
           @keydown.space.prevent="select(run.run_id)"
         >
           <div class="min-w-0 flex-1">
-            <div class="truncate font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</div>
-            <div class="truncate text-meta text-fg-2">{{ run.game ? gameTitle(run.game) : 'Game' }} · {{ timeAgo(Number(run.ended_at || 0)) }}</div>
+            <div class="truncate font-medium">{{ run.game ? gameTitle(run.game) : 'Unknown game' }} · {{ run.goal || 'Free play' }}</div>
+            <div class="truncate text-meta text-fg-2">
+              <span class="font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</span>
+              · <span :title="archiveWhen(run)">ended {{ timeAgo(Number(run.ended_at || 0)) }}</span>
+              <template v-if="progress(run)"> · {{ progress(run) }}</template>
+            </div>
           </div>
           <StatusPill :status="presentOutcome(run)" class="shrink-0" />
         </li>
       </ul>
     </section>
 
-    <section class="ui-bay min-w-0" aria-labelledby="studio-create-title">
+    <div class="min-w-0 space-y-3">
+    <section class="ui-bay min-w-0" aria-labelledby="studio-outputs-title">
       <div class="ui-bay-header">
-        <h2 id="studio-create-title" class="min-w-0 truncate">Highlight reel<template v-if="runID"> · <span class="font-mono font-medium" :title="runID">{{ middleTruncate(runID) }}</span></template></h2>
-        <StatusPill v-if="runID && highlights" :status="presentReplay(highlights.state, undefined, 'Highlights')" />
+        <h2 id="studio-outputs-title" class="min-w-0 truncate">Outputs<template v-if="runID"> · <span class="font-mono font-medium" :title="runID">{{ middleTruncate(runID) }}</span></template></h2>
+        <StatusPill v-if="source" :status="presentOutcome(source)" />
       </div>
       <div v-if="!runID" class="flex flex-col items-center gap-2 px-4 py-12 text-center">
         <span class="text-[20px] leading-5 text-fg-3" aria-hidden="true">○</span>
         <p class="text-title font-semibold">Choose a source recording</p>
-        <p class="text-fg-2">A highlight reel is cut from the run’s recorded milestones and kept linked to its source run.</p>
+        <p class="text-fg-2">You’ll see what already exists for that run and what can still be made from it.</p>
       </div>
       <div v-else class="space-y-3 p-3">
+        <p v-if="source" class="text-fg-2">
+          {{ source.game ? gameTitle(source.game) : 'Unknown game' }} · {{ source.goal || 'Free play' }} · <span :title="archiveWhen(source)">ended {{ timeAgo(Number(source.ended_at || 0)) }}</span>
+        </p>
+        <MediaOutputsList :outputs="outputs" />
+        <a :href="formatMediaHref({ ...state, tab: 'library' }, search())" class="ui-btn ui-btn-quiet max-md:h-10">Open in Library</a>
+      </div>
+    </section>
+
+    <section v-if="runID && (showHighlights || !highlights)" class="ui-bay min-w-0" aria-labelledby="studio-create-title">
+      <div class="ui-bay-header">
+        <h2 id="studio-create-title" class="min-w-0 truncate">Highlight reel</h2>
+        <StatusPill v-if="highlights" :status="presentReplay(highlights.state, undefined, 'Highlights')" />
+      </div>
+      <div class="space-y-3 p-3">
         <video
           v-if="highlights?.state === 'ready'"
           :key="runID"
@@ -90,8 +126,6 @@ const search = () => window.location.search
         />
         <p class="max-w-[72ch] text-fg-2">
           <template v-if="!highlights">Checking highlight status…</template>
-          <template v-else-if="highlights.state === 'empty'">No highlight-worthy events were found in this run.</template>
-          <template v-else-if="highlights.state === 'disabled'">Highlight rendering isn’t enabled on the replay host.</template>
           <template v-else-if="highlights.state === 'missing'">No reel yet. Generating one cuts the run’s recorded milestones into a short video.</template>
           <template v-else>
             {{ highlights.windows || 0 }} moment{{ Number(highlights.windows || 0) === 1 ? '' : 's' }} · {{ duration() }}
@@ -106,11 +140,15 @@ const search = () => window.location.search
           </button>
           <a v-if="highlights?.state === 'ready'" :href="highlightManifestURL(runID)" class="ui-btn max-md:h-10">Manifest</a>
           <a v-if="highlights?.job_id" :href="formatMediaHref({ ...state, tab: 'jobs', job: highlights.job_id }, search())" class="ui-btn ui-btn-quiet max-md:h-10">Open render job</a>
-          <a :href="formatMediaHref({ ...state, tab: 'library' }, search())" class="ui-btn ui-btn-quiet max-md:h-10">Open in Library</a>
         </div>
-        <p v-if="source" class="text-meta text-fg-2">Source: {{ source.game ? gameTitle(source.game) : 'Game' }} · {{ source.goal || 'Free play' }}</p>
       </div>
     </section>
-    <StudioThumbnails :run-i-d="runID" />
+    </div>
+    <StudioThumbnails
+      v-if="runID && showPackages"
+      :run-i-d="runID"
+      :packages="media.packages.value || []"
+      @changed="media.refreshPackages()"
+    />
   </div>
 </template>

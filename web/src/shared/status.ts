@@ -93,7 +93,7 @@ export function presentJob(state: string | undefined, progress?: number): Status
   }
   switch (value) {
     case 'queued': return { label: 'Queued', tone: 'neutral', glyph: '○' }
-    case 'ready': return { label: 'Ready', tone: 'ok', glyph: '✓' }
+    case 'ready': return { label: 'Done', tone: 'ok', glyph: '✓' }
     case 'failed': return { label: 'Failed', tone: 'danger', glyph: '✕' }
     case 'cancelled': return { label: 'Cancelled', tone: 'neutral', glyph: '■' }
     default: return { label: humanize(value || 'unknown'), tone: 'neutral', glyph: '■' }
