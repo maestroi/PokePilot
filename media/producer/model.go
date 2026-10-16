@@ -17,15 +17,17 @@ import (
 // receives ONLY the explicit EvidencePack, never private planner messages,
 // chain-of-thought, screenshots, or emulator state.
 type ChatModel struct {
-	Endpoint string
-	ModelID string
+	Endpoint   string
+	ModelID    string
 	Deployment string
-	APIKey string
-	Client *http.Client
+	APIKey     string
+	Client     *http.Client
 }
 
 func (m ChatModel) Identity() string {
-	if m.Deployment != "" { return "chat:" + m.ModelID + ":" + m.Deployment }
+	if m.Deployment != "" {
+		return "chat:" + m.ModelID + ":" + m.Deployment
+	}
 	return "chat:" + m.ModelID
 }
 
@@ -58,28 +60,44 @@ func (m ChatModel) Generate(ctx context.Context, pack EvidencePack) ([]byte, err
 		pack.Events = reduced
 	}
 	safe, err := json.Marshal(pack)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	requestBody, err := json.Marshal(map[string]any{
-		"model": m.ModelID,
+		"model":       m.ModelID,
 		"temperature": 0,
 		"messages": []map[string]string{
 			{"role": "system", "content": storySystemPrompt},
 			{"role": "user", "content": string(safe)},
 		},
 	})
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(requestBody))
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	request.Header.Set("Content-Type", "application/json")
-	if m.APIKey != "" { request.Header.Set("Authorization", "Bearer "+m.APIKey) }
+	if m.APIKey != "" {
+		request.Header.Set("Authorization", "Bearer "+m.APIKey)
+	}
 	client := m.Client
-	if client == nil { client = &http.Client{Timeout: 90*time.Second} }
+	if client == nil {
+		client = &http.Client{Timeout: 90 * time.Second}
+	}
 	response, err := client.Do(request)
-	if err != nil { return nil, fmt.Errorf("producer: chat request: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("producer: chat request: %w", err)
+	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxModelBytes+1))
-	if err != nil { return nil, err }
-	if len(data) > maxModelBytes { return nil, errors.New("producer: chat response too large") }
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxModelBytes {
+		return nil, errors.New("producer: chat response too large")
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		// Never leak a provider response that might contain a credential,
 		// model context, or untrusted diagnostic data.
@@ -92,7 +110,11 @@ func (m ChatModel) Generate(ctx context.Context, pack EvidencePack) ([]byte, err
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.Unmarshal(data, &envelope); err != nil { return nil, fmt.Errorf("producer: chat envelope: %w", err) }
-	if len(envelope.Choices) == 0 { return nil, errors.New("producer: chat returned no choices") }
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil, fmt.Errorf("producer: chat envelope: %w", err)
+	}
+	if len(envelope.Choices) == 0 {
+		return nil, errors.New("producer: chat returned no choices")
+	}
 	return []byte(envelope.Choices[0].Message.Content), nil
 }
