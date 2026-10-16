@@ -23,6 +23,10 @@ type Card struct {
 	Destination string
 	VAAPI       bool
 	VAAPIDevice string
+	// Timescale is the MP4 video track timescale of the segments the card is
+	// stream-copied next to. Concat keeps the first file's timebase, so a
+	// mismatch rescales every later segment. Zero leaves ffmpeg's default.
+	Timescale int
 }
 
 // ComposeCard encodes a card with the same frame size, rate, pixel format and
@@ -65,6 +69,9 @@ func (c *FFmpeg) ComposeCard(ctx context.Context, card Card) error {
 		args = append(args, "-c:v", "h264_vaapi")
 	} else {
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20")
+	}
+	if card.Timescale > 0 {
+		args = append(args, "-video_track_timescale", strconv.Itoa(card.Timescale))
 	}
 	args = append(args, "-movflags", "+faststart", card.Destination)
 

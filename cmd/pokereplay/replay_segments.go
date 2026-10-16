@@ -204,6 +204,24 @@ func probeReplayVideo(ctx context.Context, source string, expected time.Duration
 	return nil
 }
 
+// probeVideoTimescale returns the denominator of the first video stream's
+// time_base, i.e. its MP4 track timescale.
+func probeVideoTimescale(ctx context.Context, source string) (int, error) {
+	output, err := exec.CommandContext(ctx,
+		"ffprobe", "-v", "error", "-select_streams", "v:0",
+		"-show_entries", "stream=time_base", "-of", "csv=p=0", source,
+	).Output()
+	if err != nil {
+		return 0, fmt.Errorf("ffprobe rejected segment: %w", err)
+	}
+	_, den, ok := strings.Cut(strings.TrimSpace(string(output)), "/")
+	timescale, err := strconv.Atoi(den)
+	if !ok || err != nil || timescale <= 0 {
+		return 0, fmt.Errorf("segment has invalid time_base %q", strings.TrimSpace(string(output)))
+	}
+	return timescale, nil
+}
+
 type replayRGBEncoder struct {
 	cmd     *exec.Cmd
 	stdin   io.WriteCloser

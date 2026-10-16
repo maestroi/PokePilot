@@ -13,7 +13,8 @@ import (
 )
 
 // A reel stream-copies cards next to broadcast segments, so both must carry
-// identical video stream parameters.
+// identical video stream parameters, timebase included: gomeboy's encoder
+// writes a 1/594647 track timescale, unlike ffmpeg's image2 default.
 func TestCardConcatsWithBroadcastSegment(t *testing.T) {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("ffmpeg not installed")
@@ -23,7 +24,7 @@ func TestCardConcatsWithBroadcastSegment(t *testing.T) {
 	raw := filepath.Join(dir, "raw.mp4")
 	if out, err := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
 		"-f", "lavfi", "-i", "color=c=green:size=160x144:rate=59.7275", "-t", "1",
-		"-c:v", "libx264", "-pix_fmt", "yuv420p", raw).CombinedOutput(); err != nil {
+		"-c:v", "libx264", "-pix_fmt", "yuv420p", "-video_track_timescale", "594647", raw).CombinedOutput(); err != nil {
 		t.Fatalf("raw: %v %s", err, out)
 	}
 	c := NewFFmpeg("ffmpeg", nil)
@@ -33,7 +34,7 @@ func TestCardConcatsWithBroadcastSegment(t *testing.T) {
 		t.Fatal(err)
 	}
 	card := filepath.Join(dir, "card.mp4")
-	if err := c.ComposeCard(ctx, Card{Title: "Run complete", Lines: []string{"Badges: 8"}, DurationMS: 2000, Destination: card}); err != nil {
+	if err := c.ComposeCard(ctx, Card{Title: "Run complete", Lines: []string{"Badges: 8"}, DurationMS: 2000, Destination: card, Timescale: 594647}); err != nil {
 		t.Fatal(err)
 	}
 	if a, b := streamParams(t, seg), streamParams(t, card); a != b {
@@ -55,7 +56,7 @@ func TestCardConcatsWithBroadcastSegment(t *testing.T) {
 func streamParams(t *testing.T, file string) string {
 	t.Helper()
 	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0",
-		"-show_entries", "stream=codec_name,profile,width,height,pix_fmt,r_frame_rate", "-of", "csv=p=0", file).Output()
+		"-show_entries", "stream=codec_name,profile,width,height,pix_fmt,r_frame_rate,time_base", "-of", "csv=p=0", file).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

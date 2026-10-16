@@ -670,10 +670,15 @@ func (s *replayServer) renderHighlights(jobID, runID string, recordings []replay
 				timelines = append(timelines, timeline)
 			}
 		}
+		timescale, err := probeVideoTimescale(ctx, urls[0])
+		if err != nil {
+			setError(fmt.Errorf("probe highlight segment timescale: %w", err))
+			return
+		}
 		intro, outro := highlightCards(timelines)
 		intro.Destination, outro.Destination = pathJoinOS(dir, "intro.mp4"), pathJoinOS(dir, "outro.mp4")
 		for _, card := range []*compositor.Card{&intro, &outro} {
-			card.VAAPI, card.VAAPIDevice = s.vaapi, vaapiDevice()
+			card.VAAPI, card.VAAPIDevice, card.Timescale = s.vaapi, vaapiDevice(), timescale
 			if err := cards.ComposeCard(ctx, *card); err != nil {
 				setError(err)
 				return
