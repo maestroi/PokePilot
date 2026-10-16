@@ -29,6 +29,7 @@ func battleCombatants(b game.BattleState) (game.BattleCombatant, game.BattleComb
 		Special:       b.ActiveSpecial,
 		SpecialAttack: b.ActiveSpecialAttack, SpecialDefense: b.ActiveSpecialDefense,
 		Type1: uint16(b.ActiveType1), Type2: uint16(b.ActiveType2),
+		HeldItem: b.ActiveHeldItem,
 	}
 	defender := game.BattleCombatant{
 		Level: b.EnemyLevel, HP: b.EnemyHP, MaxHP: b.EnemyMaxHP,
@@ -36,6 +37,7 @@ func battleCombatants(b game.BattleState) (game.BattleCombatant, game.BattleComb
 		Special:       b.EnemySpecial,
 		SpecialAttack: b.EnemySpecialAttack, SpecialDefense: b.EnemySpecialDefense,
 		Type1: uint16(b.EnemyType1), Type2: uint16(b.EnemyType2),
+		HeldItem: b.EnemyHeldItem,
 	}
 	return attacker, defender
 }
@@ -47,5 +49,6 @@ func battlePartyCombatant(mon game.BattlePartyMon) game.BattleCombatant {
 		Special:       mon.Special,
 		SpecialAttack: mon.SpecialAttack, SpecialDefense: mon.SpecialDefense,
 		Type1: mon.Type1, Type2: mon.Type2,
+		HeldItem: mon.HeldItem,
 	}
 }

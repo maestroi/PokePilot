@@ -35,6 +35,17 @@ type BattleCombatant struct {
 
 	Type1 uint16
 	Type2 uint16
+
+	// HeldItem is an opaque, native item id. Only the profile interprets it.
+	// Zero means the combatant has no held item (including Gen-I parties).
+	HeldItem uint16
+}
+
+// BattleItemModifier is a portable projection of a known held-item effect.
+// Unknown effects remain zero-valued rather than guessing game mechanics.
+type BattleItemModifier struct {
+	DamageBonusPercent uint16
+	RecoveryPerTurn    uint16
 }
 
 // BattleMoveEvaluation is a comparable, generation-neutral projection of one
@@ -59,6 +70,7 @@ type BattleMoveEvaluation struct {
 	CurrentPP     uint8
 	MaxPP         uint8
 	DamageRule    string
+	ItemModifier  BattleItemModifier
 
 	ExpectedScore  int64
 	PolicyPriority int

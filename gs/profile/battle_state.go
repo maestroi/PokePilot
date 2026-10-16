@@ -84,10 +84,12 @@ func (*Profile) DecodeBattleState(reader game.MemoryReader) (game.BattleState, b
 	return game.BattleState{
 		Kind:                 kind,
 		EnemySpecies:         enemySpecies,
+		EnemyHeldItem:        uint16(reader.Peek8(sym.EnemyMon + 1)),
 		EnemyHP:              enemyHP,
 		EnemyMaxHP:           enemyMaxHP,
 		EnemyLevel:           enemyLevel,
 		ActiveSpecies:        activeSpecies,
+		ActiveHeldItem:       uint16(reader.Peek8(sym.BattleMon + 1)),
 		ActiveHP:             activeHP,
 		ActiveLevel:          activeLevel,
 		ActiveMaxHP:          activeMaxHP,

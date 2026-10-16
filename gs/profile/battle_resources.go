@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	gen2PartyItemOffset    uint16 = 0x01
 	gen2PartyMovesOffset   uint16 = 0x02
 	gen2PartyPPOffset      uint16 = 0x17
 	gen2PartyLevelOffset   uint16 = 0x1f
@@ -56,6 +57,7 @@ func (*Profile) DecodeBattleResources(reader game.MemoryReader) game.BattleResou
 		base := sym.PartyMon1 + uint16(i)*sym.PartyMonSize
 		mon := game.BattlePartyMon{
 			NativeSpeciesID: uint16(reader.Peek8(base)),
+			HeldItem:        uint16(reader.Peek8(base + gen2PartyItemOffset)),
 			Level:           reader.Peek8(base + gen2PartyLevelOffset),
 			HP:              battleBE16(reader, base+gen2PartyHPOffset),
 			MaxHP:           battleBE16(reader, base+gen2PartyMaxHPOffset),
