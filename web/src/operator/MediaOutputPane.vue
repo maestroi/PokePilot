@@ -5,6 +5,7 @@ import { highlightManifestURL, highlightVideoURL, replayVideoURL } from '../shar
 import type { DashboardRun } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
+import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { presentRecording, presentRunStatus } from '../shared/status'
 import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle } from './mediaQuery'
 import MediaOutputsList from './MediaOutputsList.vue'
@@ -107,8 +108,8 @@ const confirmPublish = ref(false)
     <template v-else>
       <div class="min-h-0 flex-1 overflow-y-auto pb-4">
         <!-- Player -->
-        <div class="border-b border-rule bg-well">
-          <video
+        <div class="relative border-b border-rule bg-well">
+          <VideoPlayer
             v-if="playerSource"
             :key="playerSource"
             :src="playerSource"

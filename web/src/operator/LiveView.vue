@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/vue'
 import { cancelRun, cloneRun, forceEndWorker, getDashboard, getProgramming, getRun, pauseProgramming, pauseRun, programmingEntryAction, replayVideoURL, resumeProgramming, resumeRun } from '../shared/api/client'
 import type { DashboardRun, DashboardWorker, PartyMon, ProgrammingEntry } from '../shared/api/types'
@@ -8,6 +8,7 @@ import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import ModernSceneRenderer from '../shared/components/ModernSceneRenderer.vue'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
+import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { useFramePump } from '../shared/composables/useFramePump'
 import { useRenderStatePump } from '../shared/composables/useRenderStatePump'
 import { usePollingResource } from '../shared/composables/usePollingResource'
@@ -133,8 +134,8 @@ const evidence = useRunEvidence(evidenceRunID)
 const timelineFilter = ref<TimelineFilter>('all')
 const timeline = ref<InstanceType<typeof RunTimeline> | null>(null)
 const replayMode = ref(false)
-const replayVideo = ref<HTMLVideoElement | null>(null)
-const playbackRate = ref(Number(window.localStorage.getItem('pokepilot.replayPlaybackRate') || 1))
+const replayPlayer = ref<InstanceType<typeof VideoPlayer> | null>(null)
+const replayVideo = computed(() => replayPlayer.value?.video || null)
 watch(evidenceRunID, () => {
   replayMode.value = false
   timelineFilter.value = 'all'
@@ -164,15 +165,6 @@ function syncEventFromVideo(): void {
   evidence.selectedEvent.value = nearest
   evidence.followLive.value = false
 }
-
-function applyPlaybackRate(): void {
-  const allowed = [1, 2, 4, 8, 16]
-  const value = allowed.includes(Number(playbackRate.value)) ? Number(playbackRate.value) : 1
-  playbackRate.value = value
-  window.localStorage.setItem('pokepilot.replayPlaybackRate', String(value))
-  if (replayVideo.value) replayVideo.value.playbackRate = value
-}
-watch(playbackRate, () => { void nextTick(applyPlaybackRate) })
 
 function watchReplay(): void {
   replayMode.value = true
@@ -660,9 +652,9 @@ const search = () => window.location.search
               <span v-else class="ui-pill ui-tone-neutral">■ Last frame</span>
             </header>
             <div class="group relative aspect-[160/144] min-h-52 w-full overflow-hidden bg-well xl:aspect-auto xl:min-h-0 xl:flex-1">
-              <video
+              <VideoPlayer
                 v-if="replayMode"
-                ref="replayVideo"
+                ref="replayPlayer"
                 :key="selectedRun.run_id"
                 class="absolute inset-0 h-full w-full object-contain [image-rendering:pixelated]"
                 :src="replayVideoURL(selectedRun.run_id)"
@@ -670,7 +662,7 @@ const search = () => window.location.search
                 autoplay
                 preload="metadata"
                 playsinline
-                @loadedmetadata="applyPlaybackRate(); seekReplayToSelection()"
+                @loadedmetadata="seekReplayToSelection()"
                 @timeupdate="syncEventFromVideo"
               />
               <ModernSceneRenderer v-else-if="showModern && renderState" :state="renderState" :theme="activeTheme" />
@@ -703,12 +695,6 @@ const search = () => window.location.search
                   </select>
                 </label>
               </div>
-              <label v-if="replayMode" class="absolute top-2 right-2 flex h-7 items-center gap-1.5 rounded-[3px] border border-control bg-well/90 px-2">
-                <span class="text-meta text-fg-2">Speed</span>
-                <select v-model.number="playbackRate" class="bg-transparent text-meta text-fg">
-                  <option v-for="rate in [1, 2, 4, 8, 16]" :key="rate" :value="rate" class="bg-raised">{{ rate }}×</option>
-                </select>
-              </label>
               <p v-if="themeNotice && rendererMode === 'modern'" class="absolute top-2 right-2 max-w-56 rounded-[3px] bg-well/90 px-2 py-1 text-right text-meta text-warn">▲ {{ themeNotice }}</p>
               <p v-if="modernFallbackLabel && !replayMode" class="absolute top-2 left-2 rounded-[3px] bg-well/90 px-2 py-0.5 text-meta text-warn">{{ modernFallbackLabel }}</p>
               <p v-else-if="frameURL && frameState === 'error' && !replayMode" class="absolute right-2 bottom-2 rounded-[3px] bg-well/90 px-2 py-0.5 text-meta text-warn">▲ Last frame · reconnecting</p>
