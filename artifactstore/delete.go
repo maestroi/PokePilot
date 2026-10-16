@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // DeleteObject removes key from the configured bucket. Deleting an already
@@ -81,7 +82,40 @@ type listBucketResult struct {
 }
 
 type listBucketContent struct {
-	Key string `xml:"Key"`
+	Key          string    `xml:"Key"`
+	LastModified time.Time `xml:"LastModified"`
+}
+
+// ListedObject is one key below a listed prefix.
+type ListedObject struct {
+	Key          string
+	LastModified time.Time
+}
+
+// List returns every object below prefix (paginated ListObjectsV2).
+func (s *S3) List(ctx context.Context, prefix string) ([]ListedObject, error) {
+	if s == nil {
+		return nil, fmt.Errorf("artifactstore: nil S3 client")
+	}
+	prefix, err := cleanObjectKey(prefix)
+	if err != nil {
+		return nil, err
+	}
+	var out []ListedObject
+	continuation := ""
+	for {
+		page, err := s.listPrefix(ctx, prefix, continuation)
+		if err != nil {
+			return out, err
+		}
+		for _, item := range page.Contents {
+			out = append(out, ListedObject{Key: item.Key, LastModified: item.LastModified})
+		}
+		if !page.IsTruncated || strings.TrimSpace(page.NextContinuationToken) == "" {
+			return out, nil
+		}
+		continuation = page.NextContinuationToken
+	}
 }
 
 func (s *S3) listPrefix(ctx context.Context, prefix, continuation string) (listBucketResult, error) {

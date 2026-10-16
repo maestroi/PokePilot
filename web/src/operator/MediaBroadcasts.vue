@@ -9,7 +9,8 @@ import { presentBroadcast } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 import { elapsedLabel, msISO, type BroadcastRow, type MediaState } from './mediaQuery'
 import { gameTitle } from './operations'
-import { middleTruncate } from './runs'
+import type { DashboardRun } from '../shared/api/types'
+import { formatInteger, middleTruncate, modelName, progressLabel, rounds } from './runs'
 
 const props = defineProps<{
   state: MediaState
@@ -50,6 +51,19 @@ const startBlocker = computed(() => {
 })
 const canStart = computed(() => Boolean(selected.value && !startBlocker.value && !active.value && !busy.value))
 const canStop = computed(() => Boolean(selected.value && active.value && !busy.value))
+
+// How the source run is doing, from fields every game reports, so the operator
+// can judge it before putting it on air. Nothing is shown that isn't reported.
+function quality(run: DashboardRun): string {
+  const parts: string[] = []
+  const progress = progressLabel(run)
+  if (progress !== 'No structured progress') parts.push(`Progress ${progress}`)
+  const round = rounds(run)
+  if (round) parts.push(`round ${formatInteger(round)}`)
+  if (Number(run.attempts || 0) > 1) parts.push(`attempt ${run.attempts}`)
+  if (run.error_attempts) parts.push(`${run.error_attempts} failed attempt${run.error_attempts === 1 ? '' : 's'}`)
+  return parts.join(' · ') || 'No progress reported yet'
+}
 
 function select(runID: string): void {
   emit('navigate', { ...props.state, run: runID }, true)
@@ -136,7 +150,8 @@ const fieldClass = 'block h-8 w-full rounded-[3px] border border-control bg-canv
         >
           <div class="min-w-0 flex-1">
             <div class="truncate font-mono" :title="row.run.run_id">{{ middleTruncate(row.run.run_id) }}</div>
-            <div class="truncate text-meta text-fg-2">{{ row.run.game ? gameTitle(row.run.game) : 'Game' }}<template v-if="row.run.goal"> · {{ row.run.goal }}</template></div>
+            <div class="truncate text-meta text-fg-2">{{ row.run.game ? gameTitle(row.run.game) : 'Unknown game' }} · {{ row.run.goal || 'Free play' }}</div>
+            <div class="truncate text-meta text-fg-2">{{ quality(row.run) }}</div>
           </div>
           <div class="flex items-center gap-2">
             <StatusPill v-if="row.status" :status="presentBroadcast(row.status.state)" />
@@ -155,6 +170,11 @@ const fieldClass = 'block h-8 w-full rounded-[3px] border border-control bg-canv
         <StatusPill :status="presentBroadcast(status.state)" />
       </div>
       <div class="space-y-3 p-3">
+        <dl class="ui-kv">
+          <dt>Source</dt><dd>{{ selected.run.game ? gameTitle(selected.run.game) : 'Unknown game' }} · {{ selected.run.goal || 'Free play' }}</dd>
+          <dt>Quality</dt><dd>{{ quality(selected.run) }}</dd>
+          <template v-if="modelName(selected.run)"><dt>Model</dt><dd>{{ modelName(selected.run) }}</dd></template>
+        </dl>
         <p class="text-meta text-fg-2">Credentials stay on the replay host and are never sent to this browser.</p>
         <p v-if="actionError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ actionError }}</p>
         <p v-if="selected.error" class="border border-warn/40 bg-warn/10 px-3 py-2 text-warn" role="status">▲ Broadcast status unavailable: {{ selected.error }}</p>

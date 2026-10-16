@@ -218,10 +218,10 @@ func TestMediaRenderJobsListSummarizesAndOrdersRecentJobs(t *testing.T) {
 
 	c.mu.Lock()
 	oldJob := c.state.Jobs[older.ID]
-	oldJob.UpdatedAt = 100
+	oldJob.CreatedAt, oldJob.UpdatedAt = 100, 900 // a progress heartbeat must not reorder the list
 	c.state.Jobs[older.ID] = oldJob
 	newJob := c.state.Jobs[newer.ID]
-	newJob.UpdatedAt = 200
+	newJob.CreatedAt, newJob.UpdatedAt = 200, 200
 	c.state.Jobs[newer.ID] = newJob
 	c.mu.Unlock()
 

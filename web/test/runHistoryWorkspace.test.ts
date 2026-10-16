@@ -17,22 +17,27 @@ function job(state: string, id = 'job-1'): MediaRenderJob {
   return { id, state, run_id: 'run-1', version: 1, identity: '', artifact_key: '', mode: 'semantic', created_at_unix_ms: 1, updated_at_unix_ms: 2 }
 }
 
-test('recording readiness never equates a completed render job with playable video', () => {
-  const ready = recordingSummary({ replay_available: true })
-  assert.equal(ready.state, 'ready')
-  assert.equal(ready.canWatch, true)
-  assert.equal(ready.mediaSection, 'library')
+test('replay data is never presented as a replay video', () => {
+  const dataOnly = recordingSummary({ replay_available: true })
+  assert.equal(dataOnly.state, 'recorded')
+  assert.equal(dataOnly.label, 'Replay data · no video')
+  assert.equal(dataOnly.canWatch, false)
+
+  const video = recordingSummary({ replay_available: true }, job('ready'))
+  assert.equal(video.state, 'ready')
+  assert.equal(video.canWatch, true)
+  assert.equal(video.mediaSection, 'library')
 
   const syncing = recordingSummary({ replay_available: false }, job('ready'))
   assert.equal(syncing.state, 'syncing')
   assert.equal(syncing.canWatch, false)
   assert.equal(syncing.mediaSection, 'jobs')
   assert.equal(syncing.jobID, 'job-1')
-  assert.match(syncing.detail, /not yet confirmed playable/)
 
-  const existingWithFailure = recordingSummary({ replay_available: true }, job('failed'))
-  assert.equal(existingWithFailure.canWatch, true)
-  assert.match(existingWithFailure.detail, /latest render job failed/)
+  const failed = recordingSummary({ replay_available: true }, job('failed'))
+  assert.equal(failed.state, 'failed')
+  assert.equal(failed.canWatch, false)
+  assert.equal(recordingSummary({}).label, 'No replay data')
 })
 
 test('recording state separates queued, rendering, failed, cancelled, unavailable and loading', () => {
@@ -82,7 +87,7 @@ test('recording/source links preserve exact run and job IDs across views', () =>
   assert.equal(media, '?experiment=exp-1&run=run%2F%23with+spaces&job=job%26x#media/jobs')
   const syncing = recordingSummary({ replay_available: false }, job('ready', jobID))
   assert.equal(recordingMediaHref(runID, syncing, '?experiment=exp-1'), media)
-  assert.equal(recordingMediaHref(runID, recordingSummary({ replay_available: true })), '?run=run%2F%23with+spaces#media/library')
+  assert.equal(recordingMediaHref(runID, recordingSummary({ replay_available: true }, job('ready'))), '?run=run%2F%23with+spaces#media/library')
   assert.match(history, /recordingMediaHref\(run.run_id, recording\(run\)/)
   assert.match(history, /v-if="recording\(run\).canWatch"/)
   assert.match(library, /operatorHref\(isLiveRun\(run\) \? 'live' : 'runs', \{ run: run.run_id, job: '' \}/)

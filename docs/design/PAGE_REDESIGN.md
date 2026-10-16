@@ -642,11 +642,21 @@ game or public visibility never show the strip. External channel links are
   *YouTube* (when configured and the replay is ready; upload confirm), *Source run*
   (`KeyValueList`). Footer: primary "Open replay ↗" when public, "Open source run".
 
-**Studio.** Source recording list (finished runs, `?run=`) + "Highlight reel" bay:
-state, moments and length, Generate/Retry highlights, in-bay player when ready,
-Manifest, Open render job, Open in Library. Shorts, episodes, edit plans and
-publication review are **[needs API]** (#796, #797–#803) and are not shown, not even
-as disabled buttons.
+**Studio.** Source recording list (finished runs, `?run=`; each row reads game · goal,
+then run ID · ended · progress, with the outcome pill) + an "Outputs" bay for the
+selected run (`runOutputs`: Replay data, Replay video, Highlight reel, Episode package,
+Thumbnails). Outputs the host can't make for that run (feature disabled, no
+highlight-worthy moments, no replay data) are not rows or buttons; they collapse into
+one "Not available: …" line. "Highlight reel" bay: state, moments and length,
+Generate/Retry, in-bay player, Manifest, Open render job. "Episode package &
+thumbnails" lists the run's stored packages (`GET /v1/runs/{id}/studio/packages`) with
+their thumbnail state. Shorts, edit plans and publication review are **[needs API]**
+and are not shown, not even as disabled buttons.
+
+**Precise labels.** `replay_available` means *replay data* (the recording) is stored,
+never that a video exists. The list says "Video ready" only for a finished replay-video
+job; otherwise "Replay data · no video" / "No replay data". Highlight and episode-edit
+jobs never stand in for the replay video.
 
 **Broadcasts.** "Running runs" listbox: each running run with its actual broadcast
 `StatusPill` (`presentBroadcast`: Offline ○, Starting ◐, Live ●, Reconnecting ◐,
@@ -658,7 +668,12 @@ configured), **Stop broadcast** (`danger`), restart note, and status `KeyValueLi
 (destination, output, elapsed, reconnects, source run) + last error. Credentials stay
 on the replay host.
 
-**Jobs.** Views: All / Active / Queued / Failed / Ready / Cancelled with counts over the
+**Jobs.** Ordered newest *created* first (never by `updated_at`, which progress
+heartbeats bump), so rows don't swap while rendering. Each row names its output
+(Replay video / Highlight reel / Episode edit) and one time line: elapsed plus a
+linear estimate only when segment progress allows, else "elapsed" alone; terminal
+rows say finished/failed/cancelled + when, Done rows link to the output, Failed rows
+show the reason. Views: All / Active / Queued / Failed / Done / Cancelled with counts over the
 loaded jobs. A `?run=` filter shows as a removable chip. DataTable: Status
 (`presentJob`, failure class + retries as secondary), Source run (middle-truncated +
 copy; job ID secondary), Progress (`Meter` + segments, size), Renderer, Updated, ⋯

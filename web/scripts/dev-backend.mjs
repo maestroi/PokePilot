@@ -109,7 +109,7 @@ async function archive(query) {
   runs.sort((a, b) => sign * (key(a) - key(b)))
   const offset = Number(query.get('offset') || 0)
   const limit = Number(query.get('limit') || 25)
-  if (MEDIA_FIXTURES) runs = runs.map((run) => (fixtureReplayReady(run.run_id) ? { ...run, replay_available: true } : run))
+  if (MEDIA_FIXTURES) runs = runs.map((run) => (fixtureReplayData(run.run_id) ? { ...run, replay_available: true } : run))
   return { now: list.now, runs: runs.slice(offset, offset + limit), total: runs.length, history_facets, workers: [] }
 }
 
@@ -124,6 +124,8 @@ async function loadFixtureRuns() {
   fixtureRuns.running = (active.runs ?? []).filter((run) => run.status === 'running').map((run) => run.run_id)
 }
 const fixtureReplayReady = (runID) => fixtureRuns.done.slice(0, 3).includes(runID)
+// Replay data (the recording) without a rendered video for most of the rest.
+const fixtureReplayData = (runID) => fixtureRuns.done.slice(0, 10).includes(runID)
 function fixtureJobs() {
   const now = Date.now()
   const states = [
@@ -133,7 +135,8 @@ function fixtureJobs() {
     ['rendering', { stage: 'rendering', segments_total: 40, segments_done: 17, worker_id: 'render-vm-1', lease_expires_at_unix_ms: now + 60_000 }],
     ['failed', { failure_class: 'renderer_crash', retry_count: 2, last_error: 'ffmpeg exited with status 1: segment 12 frame decode failed' }],
     ['queued', {}],
-    ['cancelled', {}]
+    ['cancelled', {}],
+    ['rendering', { mode: 'highlight', stage: 'rendering', segments_total: 6, segments_done: 2, worker_id: 'render-vm-2', lease_expires_at_unix_ms: now + 60_000 }]
   ]
   const jobs = fixtureRuns.done.slice(0, states.length).map((runID, index) => {
     const [state, extra] = states[index]
@@ -192,7 +195,18 @@ const routes = [
     .catch(() => tool('pokepilot_get_triage', {}))
     .then((value) => value?.groups ?? [])],
   [/^\/v1\/runs\/([^/]+)\/replay\/status$/, (q, id) => replayStatus(id)],
-  [/^\/v1\/runs\/[^/]+\/highlights\/status$/, () => ({ state: 'missing' })],
+  [/^\/v1\/runs\/([^/]+)\/highlights\/status$/, (q, id) => {
+    if (!MEDIA_FIXTURES) return { state: 'missing' }
+    const index = fixtureRuns.done.indexOf(id)
+    if (index === 0) return { run_id: id, state: 'ready', windows: 4, duration_ms: 96_000 }
+    if (index === 1) return { run_id: id, state: 'empty' }
+    return { run_id: id, state: 'missing' }
+  }],
+  [/^\/v1\/runs\/([^/]+)\/studio\/packages$/, (q, id) => ({
+    packages: MEDIA_FIXTURES && id === fixtureRuns.done[0]
+      ? [{ hash: 'a'.repeat(64), created_at_unix_ms: Date.now() - 5_400_000, thumbnails: true, thumbnail_selected: true }]
+      : []
+  })],
   [/^\/v1\/programming$/, () => publicJSON('/v1/watch/programming')],
   [/^\/v1\/spectator\/control$/, () => (MEDIA_FIXTURES
     ? { featured_run_id: fixtureRuns.running[0], runs: Object.fromEntries(fixtureRuns.done.slice(3, 6).map((id) => [id, { visible: false }])) }

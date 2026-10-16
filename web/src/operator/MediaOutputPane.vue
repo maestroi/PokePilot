@@ -5,8 +5,9 @@ import { highlightManifestURL, highlightVideoURL, replayVideoURL } from '../shar
 import type { DashboardRun } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
-import { presentRecording, presentReplay, presentRunStatus } from '../shared/status'
-import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, visibilityLabel, visibilityTitle } from './mediaQuery'
+import { presentRecording, presentRunStatus } from '../shared/status'
+import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle } from './mediaQuery'
+import MediaOutputsList from './MediaOutputsList.vue'
 import { gameTitle } from './operations'
 import type { RecordingSummary } from './runRecording'
 import { timeAgo } from './runs'
@@ -36,7 +37,8 @@ const emit = defineEmits<{
 }>()
 
 const media = useRunMedia(toRef(props, 'runId'))
-const replayReady = computed(() => Boolean(props.recording?.canWatch) || media.replay.value?.state === 'ready')
+// The replay host's status wins; the list summary only bridges until it loads.
+const replayReady = computed(() => media.replay.value ? media.replay.value.state === 'ready' : Boolean(props.recording?.canWatch))
 const highlightsReady = computed(() => media.highlights.value?.state === 'ready')
 const mode = ref<'full' | 'highlights'>('full')
 watch(() => props.runId, () => { mode.value = 'full'; confirmCancel.value = false; confirmPublish.value = false })
@@ -49,23 +51,29 @@ const headerStatus = computed(() => {
   if (!props.run) return null
   return isLiveRun(props.run) ? presentRunStatus(props.run) : props.recording ? presentRecording(props.recording) : null
 })
-const replayStatus = computed(() => {
-  const replay = media.replay.value
-  const total = Number(replay?.segments || 0)
-  return presentReplay(replay?.state, total ? 100 * Number(replay?.segments_done || 0) / total : undefined)
+const outputs = computed(() => runOutputs({
+  replayData: Boolean(props.run?.replay_available),
+  live: Boolean(props.run && isLiveRun(props.run)),
+  replay: media.replay.value,
+  highlights: media.highlights.value,
+  packages: media.packages.value,
+  packagesError: media.packagesError.value
+}))
+const hasOutput = (id: string) => outputs.value.rows.some((row) => row.id === id)
+// Why the player has nothing to play, from the replay host's own status.
+const well = computed(() => {
+  const run = props.run
+  if (run && isLiveRun(run)) return { title: 'This run is still live', detail: 'Its replay video can be rendered after it ends. Watch it now in Live.' }
+  const state = media.replay.value?.state
+  if (state === 'generating') return { title: 'Rendering the replay video', detail: 'It plays here when the render job is done.' }
+  if (state === 'missing' && run?.replay_available) return { title: 'No replay video yet', detail: 'The replay data is stored. Render the video below.' }
+  if (!run?.replay_available) return { title: 'No replay data', detail: 'No recording was stored for this run, so there is nothing to play.' }
+  return { title: props.recording?.label || 'No replay video yet', detail: props.recording?.detail || '' }
 })
 const canGenerate = computed(() => {
   const state = media.replay.value?.state
   return Boolean(props.run && !isLiveRun(props.run) && state && state !== 'disabled' && state !== 'generating' && state !== 'ready')
 })
-function highlightSummary(): string {
-  const h = media.highlights.value
-  if (!h || h.state === 'missing') return 'Not generated'
-  if (h.state === 'empty') return 'No highlight-worthy events were found.'
-  const total = Math.max(0, Math.round(Number(h.duration_ms || 0) / 1000))
-  const length = total >= 60 ? `${Math.floor(total / 60)}m ${total % 60}s` : `${total}s`
-  return `${h.windows || 0} moment${Number(h.windows || 0) === 1 ? '' : 's'} · ${length}`
-}
 
 const youtubePrivacy = ref<'private' | 'unlisted' | 'public'>('unlisted')
 const confirmCancel = ref(false)
@@ -107,31 +115,31 @@ const confirmPublish = ref(false)
             controls
             preload="metadata"
             class="aspect-video w-full bg-well"
-            :aria-label="`${mode === 'highlights' ? 'Highlight reel' : 'Full replay'} of ${runId}`"
+            :aria-label="`${mode === 'highlights' ? 'Highlight reel' : 'Replay video'} of ${runId}`"
           />
           <div v-else class="flex aspect-video flex-col items-center justify-center gap-1 px-6 text-center">
             <span class="text-[20px] leading-5 text-fg-3" aria-hidden="true">▶</span>
-            <p class="text-fg">{{ isLiveRun(run) ? 'This run is still live' : recording?.label || 'No replay yet' }}</p>
-            <p class="max-w-[48ch] text-meta text-fg-2">{{ isLiveRun(run) ? 'Its replay can be generated after it ends. Watch it now in Live.' : recording?.detail }}</p>
+            <p class="text-fg">{{ well.title }}</p>
+            <p class="max-w-[48ch] text-meta text-fg-2">{{ well.detail }}</p>
           </div>
         </div>
         <div v-if="highlightsReady && replayReady" class="flex items-center gap-2 px-3 pt-3">
           <div class="inline-flex border border-rule-strong" role="group" aria-label="Output">
-            <button type="button" :aria-pressed="mode === 'full'" :class="mode === 'full' ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised'" class="h-7 border-r border-rule-strong px-3" @click="mode = 'full'">Full replay</button>
-            <button type="button" :aria-pressed="mode === 'highlights'" :class="mode === 'highlights' ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised'" class="h-7 px-3" @click="mode = 'highlights'">Highlights</button>
+            <button type="button" :aria-pressed="mode === 'full'" :class="mode === 'full' ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised'" class="h-7 border-r border-rule-strong px-3" @click="mode = 'full'">Replay video</button>
+            <button type="button" :aria-pressed="mode === 'highlights'" :class="mode === 'highlights' ? 'bg-selected text-fg' : 'text-fg-2 hover:bg-raised'" class="h-7 px-3" @click="mode = 'highlights'">Highlight reel</button>
           </div>
         </div>
 
         <div class="px-3">
-          <!-- Full replay -->
-          <div class="mt-4 flex items-center gap-2">
-            <h3 class="text-title font-semibold">Full replay</h3>
-            <StatusPill v-if="media.replay.value" :status="replayStatus" />
-          </div>
-          <p class="mt-1 max-w-[72ch] text-meta text-fg-2">Generated from the run’s canonical recording.</p>
+          <!-- What exists for this run, then actions per output -->
+          <h3 class="mt-4 mb-1 text-title font-semibold">Outputs</h3>
+          <MediaOutputsList :outputs="outputs" />
+
+          <template v-if="hasOutput('video')">
+          <h3 class="mt-5 text-title font-semibold">Replay video</h3>
           <div class="mt-2 flex flex-wrap gap-2">
             <button v-if="canGenerate" type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="media.rendering.value" @click="media.requestReplay()">
-              {{ media.rendering.value ? 'Requesting…' : media.replay.value?.state === 'error' ? 'Retry replay' : 'Generate replay' }}
+              {{ media.rendering.value ? 'Requesting…' : media.replay.value?.state === 'error' ? 'Retry replay video' : 'Render replay video' }}
             </button>
             <button
               v-if="media.replay.value?.state === 'generating' && media.replay.value.job_id"
@@ -143,18 +151,17 @@ const confirmPublish = ref(false)
             <a v-if="replayReady" :href="replayVideoURL(runId)" target="_blank" rel="noopener" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10">Open video file ↗</a>
             <a v-if="jobsHref" :href="jobsHref" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10">Open render job</a>
           </div>
+          </template>
           <p v-if="media.replayError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ media.replayError.value }}</p>
 
-          <!-- Highlights (generated in Studio) -->
-          <div class="mt-5 flex items-center gap-2">
-            <h3 class="text-title font-semibold">Highlights</h3>
-            <StatusPill v-if="media.highlights.value" :status="presentReplay(media.highlights.value.state, undefined, 'Highlights')" />
-          </div>
-          <p class="mt-1 text-meta text-fg-2">{{ highlightSummary() }}</p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <a :href="studioHref" class="ui-btn ui-btn-sm max-md:h-10">{{ highlightsReady ? 'Open in Studio' : 'Create in Studio' }}</a>
-            <a v-if="highlightsReady" :href="highlightManifestURL(runId)" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10">Manifest</a>
-          </div>
+          <!-- Highlight reel and packages are made in Studio -->
+          <template v-if="hasOutput('highlights') || hasOutput('package')">
+            <h3 class="mt-5 text-title font-semibold">Studio outputs</h3>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <a :href="studioHref" class="ui-btn ui-btn-sm max-md:h-10">Open in Studio</a>
+              <a v-if="highlightsReady" :href="highlightManifestURL(runId)" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10">Highlight manifest</a>
+            </div>
+          </template>
 
           <!-- Public site: spectator visibility, not an outbound broadcast -->
           <h3 class="mt-5 text-title font-semibold">Public site</h3>

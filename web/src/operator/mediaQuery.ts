@@ -1,5 +1,6 @@
 import type { BroadcastStatus } from '../shared/api/broadcast'
-import type { DashboardRun, MediaRenderJob } from '../shared/api/types'
+import type { DashboardRun, HighlightStatus, MediaRenderJob, ReplayStatus, StudioPackageSummary } from '../shared/api/types'
+import type { StatusPresentation } from '../shared/status.ts'
 import { operatorRoute } from '../shared/urls.ts' // .ts: node --test imports this file directly
 
 // Media page state: the tab lives in the hash (#media/<tab>), everything else in
@@ -29,7 +30,7 @@ export const JOB_VIEWS = [
   { id: 'active', label: 'Active' },
   { id: 'queued', label: 'Queued' },
   { id: 'failed', label: 'Failed' },
-  { id: 'ready', label: 'Ready' },
+  { id: 'ready', label: 'Done' },
   { id: 'cancelled', label: 'Cancelled' }
 ] as const
 export type JobView = typeof JOB_VIEWS[number]['id']
@@ -113,7 +114,7 @@ export function recordingMatches(state: string, filter: RecordingFilter): boolea
   if (filter === 'ready') return state === 'ready'
   if (filter === 'rendering') return state === 'queued' || state === 'rendering' || state === 'syncing'
   if (filter === 'failed') return state === 'failed' || state === 'cancelled'
-  return state === 'unavailable' || state === 'unknown'
+  return state === 'recorded' || state === 'unavailable' || state === 'unknown'
 }
 
 export function filterLibrary(runs: DashboardRun[], state: MediaState, ctx: LibraryContext): DashboardRun[] {
@@ -190,8 +191,46 @@ export function jobInView(job: Pick<MediaRenderJob, 'state'>, view: JobView): bo
   return job.state === view
 }
 
+// Newest created first, then ID. Never updated_at: progress heartbeats bump it,
+// so concurrently rendering jobs would swap rows on every poll.
+export function sortJobs(jobs: MediaRenderJob[]): MediaRenderJob[] {
+  return [...jobs].sort((a, b) => (Number(b.created_at_unix_ms || 0) - Number(a.created_at_unix_ms || 0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
 export function filterJobs(jobs: MediaRenderJob[], state: MediaState): MediaRenderJob[] {
-  return jobs.filter((job) => jobInView(job, state.jobView) && (!state.run || job.run_id === state.run))
+  return sortJobs(jobs.filter((job) => jobInView(job, state.jobView) && (!state.run || job.run_id === state.run)))
+}
+
+// What a job produces. Replay modes (raw/semantic/broadcast) make the replay video.
+export function jobOutputLabel(job: Pick<MediaRenderJob, 'mode'>): string {
+  if (job.mode === 'highlight') return 'Highlight reel'
+  if (job.mode === 'studio-edit') return 'Episode edit'
+  return 'Replay video'
+}
+
+export function isReplayJob(job: Pick<MediaRenderJob, 'mode'>): boolean {
+  return job.mode !== 'highlight' && job.mode !== 'studio-edit'
+}
+
+// Where a finished job's output can be watched: replay video in Library,
+// highlight reel in Studio. Episode edits have no UI yet.
+export function jobOutputHref(job: Pick<MediaRenderJob, 'mode' | 'run_id' | 'state'>, state: MediaState, search = ''): string {
+  if (job.state !== 'ready' || job.mode === 'studio-edit') return ''
+  return formatMediaHref({ ...state, tab: job.mode === 'highlight' ? 'studio' : 'library', run: job.run_id, job: '' }, search)
+}
+
+// Elapsed since the job started and, when segment progress allows it, a
+// linear time-left estimate. No estimate is invented without progress.
+export function jobTiming(job: Pick<MediaRenderJob, 'state' | 'started_at_unix_ms' | 'finished_at_unix_ms' | 'segments_done' | 'segments_total'>, nowMs = Date.now()): { elapsed: string; eta: string } {
+  const start = Number(job.started_at_unix_ms || 0)
+  if (!start) return { elapsed: '', eta: '' }
+  const end = Number(job.finished_at_unix_ms || 0) || nowMs
+  const elapsed = elapsedLabel(start, end)
+  const done = Number(job.segments_done || 0)
+  const total = Number(job.segments_total || 0)
+  if (!ACTIVE_JOB_STATES.has(job.state) || done <= 0 || total <= done) return { elapsed, eta: '' }
+  const leftMs = (end - start) * (total - done) / done
+  return { elapsed, eta: `~${elapsedLabel(end - leftMs, end)} left` }
 }
 
 export function retryable(job: Pick<MediaRenderJob, 'state' | 'failure_class'>): boolean {
@@ -270,12 +309,107 @@ export async function copyReceipt(value: string, noun: string): Promise<string> 
   }
 }
 
-// Newest job per run, for recording summaries.
+// Newest replay-video job per run, for recording summaries. Highlight and
+// episode-edit jobs are other outputs and never stand in for the replay video.
 export function latestJobByRun(jobs: MediaRenderJob[]): Map<string, MediaRenderJob> {
   const out = new Map<string, MediaRenderJob>()
   for (const job of jobs) {
+    if (!isReplayJob(job)) continue
     const current = out.get(job.run_id)
     if (!current || Number(job.updated_at_unix_ms || 0) > Number(current.updated_at_unix_ms || 0)) out.set(job.run_id, job)
   }
   return out
+}
+
+// ---- Run outputs: what exists for one run, said precisely ----------------------------
+
+export type OutputRow = { id: 'data' | 'video' | 'highlights' | 'package' | 'thumbnails'; label: string; status: StatusPresentation; detail: string }
+export type RunOutputs = { rows: OutputRow[]; unavailable: string[] }
+
+type OutputInput = {
+  replayData: boolean // run.replay_available: the recording is stored, not a video
+  live: boolean
+  replay?: Pick<ReplayStatus, 'state' | 'segments' | 'segments_done'> | null
+  highlights?: Pick<HighlightStatus, 'state' | 'windows' | 'windows_done' | 'duration_ms'> | null
+  packages?: StudioPackageSummary[] | null // null: not loaded or unavailable
+  packagesError?: string
+}
+
+const OK = (label: string): StatusPresentation => ({ label, tone: 'ok', glyph: '✓' })
+const NONE = (label: string): StatusPresentation => ({ label, tone: 'neutral', glyph: '○' })
+const WORKING = (label: string): StatusPresentation => ({ label, tone: 'accent', glyph: '◐' })
+const FAILED = (label: string): StatusPresentation => ({ label, tone: 'danger', glyph: '✕' })
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
+}
+
+function seconds(ms?: number): string {
+  const total = Math.max(0, Math.round(Number(ms || 0) / 1000))
+  return total >= 60 ? `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, '0')}s` : `${total}s`
+}
+
+// Rows only for outputs this run can have. Anything the host can't render for
+// it (feature off, nothing worth cutting, no source data, still live) is not a
+// row: it becomes one honest reason in `unavailable`.
+export function runOutputs(input: OutputInput): RunOutputs {
+  const rows: OutputRow[] = []
+  const unavailable: string[] = []
+  // A rendered (or rendering) replay video proves its source data exists, even
+  // when the run summary isn't loaded yet.
+  input = { ...input, replayData: input.replayData || input.replay?.state === 'ready' || input.replay?.state === 'generating' }
+  rows.push({
+    id: 'data', label: 'Replay data',
+    status: input.replayData ? OK('Stored') : NONE(input.live ? 'Recording' : 'None'),
+    detail: input.replayData ? 'The run’s recording. Videos are rendered from it.' : input.live ? 'Stored when the run ends.' : 'No recording was stored for this run.'
+  })
+  if (input.live) {
+    unavailable.push('Videos, highlights and packages can be made after the run ends.')
+    return { rows, unavailable }
+  }
+
+  const replay = input.replay
+  if (replay?.state === 'disabled') unavailable.push('Replay video rendering isn’t enabled on the replay host.')
+  else if (!input.replayData && (!replay || replay.state === 'missing')) unavailable.push('No replay video can be rendered without replay data.')
+  else if (replay) {
+    const total = Number(replay.segments || 0)
+    const done = Number(replay.segments_done || 0)
+    const status = replay.state === 'ready' ? OK('Rendered')
+      : replay.state === 'generating' ? WORKING(total ? `Rendering ${done}/${total}` : 'Rendering')
+      : replay.state === 'error' || replay.state === 'failed' ? FAILED('Render failed')
+      : replay.state === 'missing' ? NONE('Not rendered') : NONE(replay.state)
+    rows.push({ id: 'video', label: 'Replay video', status, detail: replay.state === 'ready' ? 'Full-length video, playable here.' : '' })
+  }
+
+  const h = input.highlights
+  if (h?.state === 'disabled') unavailable.push('Highlight rendering isn’t enabled on the replay host.')
+  else if (h?.state === 'empty') unavailable.push('No highlight-worthy moments were found in this run.')
+  else if (h) {
+    const windows = Number(h.windows || 0)
+    const status = h.state === 'ready' ? OK('Rendered')
+      : h.state === 'generating' ? WORKING(windows ? `Rendering ${Number(h.windows_done || 0)}/${windows}` : 'Rendering')
+      : h.state === 'error' || h.state === 'failed' ? FAILED('Render failed')
+      : h.state === 'missing' ? NONE('Not rendered') : NONE(h.state)
+    rows.push({ id: 'highlights', label: 'Highlight reel', status, detail: h.state === 'ready' ? `${plural(windows, 'moment')} · ${seconds(h.duration_ms)}` : '' })
+  }
+
+  const packages = input.packages
+  if (!packages) {
+    if (input.packagesError) unavailable.push(`Episode packages and thumbnails aren’t available: ${input.packagesError}.`)
+  } else {
+    rows.push({
+      id: 'package', label: 'Episode package',
+      status: packages.length ? OK(plural(packages.length, 'package')) : NONE('None'),
+      detail: packages.length ? 'Titles, description and thumbnail concepts grounded in the run.' : ''
+    })
+    const withThumbs = packages.filter((item) => item.thumbnails)
+    if (packages.length) {
+      rows.push({
+        id: 'thumbnails', label: 'Thumbnails',
+        status: withThumbs.some((item) => item.thumbnail_selected) ? OK('Rendered · one selected') : withThumbs.length ? OK('Rendered') : NONE('Not rendered'),
+        detail: ''
+      })
+    }
+  }
+  return { rows, unavailable }
 }

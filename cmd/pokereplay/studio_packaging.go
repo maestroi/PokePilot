@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sort"
 	"strings"
 
+	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/media/editplan"
 	"github.com/maestroi/pokepilot/media/packaging"
@@ -192,4 +194,71 @@ func (s *replayServer) handlePackagingGet(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, pkg)
+}
+
+// studioPackageSummary says which stored packages exist for a run and whether
+// thumbnails were rendered (and one selected) for each, so the operator UI can
+// show what already exists without asking for a hash.
+type studioPackageSummary struct {
+	Hash              string `json:"hash"`
+	CreatedAtUnixMS   int64  `json:"created_at_unix_ms,omitempty"`
+	Thumbnails        bool   `json:"thumbnails"`
+	ThumbnailSelected bool   `json:"thumbnail_selected"`
+}
+
+// studioPackagesFromKeys reads the layout below packagingObjectKey's directory:
+// <hash>.json is a package; thumbnails/<hash>/{manifest,selection}.json are its
+// thumbnail review state. Newest package first.
+func studioPackagesFromKeys(prefix string, objects []artifactstore.ListedObject) []studioPackageSummary {
+	byHash := map[string]*studioPackageSummary{}
+	get := func(hash string) *studioPackageSummary {
+		if byHash[hash] == nil {
+			byHash[hash] = &studioPackageSummary{Hash: hash}
+		}
+		return byHash[hash]
+	}
+	for _, obj := range objects {
+		rest := strings.TrimPrefix(obj.Key, prefix)
+		parts := strings.Split(rest, "/")
+		switch {
+		case len(parts) == 1 && strings.HasSuffix(rest, ".json") && validEditHash(strings.TrimSuffix(rest, ".json")):
+			get(strings.TrimSuffix(rest, ".json")).CreatedAtUnixMS = obj.LastModified.UnixMilli()
+		case len(parts) == 3 && parts[0] == "thumbnails" && validEditHash(parts[1]) && parts[2] == "manifest.json":
+			get(parts[1]).Thumbnails = true
+		case len(parts) == 3 && parts[0] == "thumbnails" && validEditHash(parts[1]) && parts[2] == "selection.json":
+			get(parts[1]).ThumbnailSelected = true
+		}
+	}
+	out := make([]studioPackageSummary, 0, len(byHash))
+	for _, item := range byHash {
+		if item.CreatedAtUnixMS != 0 { // thumbnails without their package are orphans
+			out = append(out, *item)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAtUnixMS == out[j].CreatedAtUnixMS {
+			return out[i].Hash < out[j].Hash
+		}
+		return out[i].CreatedAtUnixMS > out[j].CreatedAtUnixMS
+	})
+	return out
+}
+
+func (s *replayServer) handlePackagingList(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	if strings.TrimSpace(runID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid run id"})
+		return
+	}
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "studio artifact storage disabled"})
+		return
+	}
+	prefix := path.Dir(packagingObjectKey(runID, "x")) + "/"
+	objects, err := s.store.List(r.Context(), prefix)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "studio packages unavailable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"packages": studioPackagesFromKeys(prefix, objects)})
 }

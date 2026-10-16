@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import { ArrowPathIcon, ClipboardDocumentIcon, XMarkIcon } from '@heroicons/vue/20/solid'
 import { deleteRun, getDashboard, getMediaRenderJobs, getRun, replayVideoURL } from '../shared/api/client'
-import type { DashboardRun, MediaRenderJob } from '../shared/api/types'
+import type { DashboardRun } from '../shared/api/types'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
@@ -29,6 +29,7 @@ import {
   type ArchiveState
 } from './runArchiveQuery'
 import { DELETE_CONCURRENCY, cleanupProgressText, cleanupResultText, deleteRuns } from './runCleanup'
+import { latestJobByRun } from './mediaQuery'
 import { recordingMediaHref, recordingSummary, type RecordingSummary } from './runRecording'
 import {
   archiveAgo,
@@ -98,7 +99,7 @@ const resource = usePollingResource(
 watch(archiveKey, () => { void resource.retry() })
 
 const mediaResource = usePollingResource(
-  (signal) => getMediaRenderJobs(250, signal),
+  (signal) => getMediaRenderJobs(200, signal), // the wall rejects limits above 200
   { intervalMs: 5000 }
 )
 
@@ -312,16 +313,7 @@ onUnmounted(() => {
 })
 
 // ---- Replay / media ---------------------------------------------------------------
-const mediaJobByRun = computed(() => {
-  const result = new Map<string, MediaRenderJob>()
-  for (const job of mediaResource.data.value?.jobs || []) {
-    const current = result.get(job.run_id)
-    if (!current || Number(job.updated_at_unix_ms || 0) > Number(current.updated_at_unix_ms || 0)) {
-      result.set(job.run_id, job)
-    }
-  }
-  return result
-})
+const mediaJobByRun = computed(() => latestJobByRun(mediaResource.data.value?.jobs || []))
 const mediaState = computed(() => {
   const value = mediaResource.state.value
   return value === 'loading' || value === 'stale' || value === 'error' ? value : 'ready'
@@ -337,7 +329,7 @@ const RECORDING_TONE: Record<RecordingSummary['tone'], string> = {
 }
 // Table cells use short labels; the full label and detail stay in the title and the pane.
 const RECORDING_SHORT: Partial<Record<RecordingSummary['state'], string>> = {
-  queued: 'Queued', syncing: 'Syncing', failed: 'Render failed', cancelled: 'Cancelled', unavailable: 'No replay', unknown: 'Unknown'
+  queued: 'Queued', syncing: 'Syncing', failed: 'Render failed', cancelled: 'Cancelled', recorded: 'Replay data', unavailable: 'No replay data', unknown: 'Unknown'
 }
 const RECORDING_GLYPH: Record<RecordingSummary['tone'], string> = {
   success: '✓', info: '◐', warning: '▲', danger: '✕', neutral: '○'
