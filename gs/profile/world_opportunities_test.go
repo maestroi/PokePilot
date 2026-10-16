@@ -50,7 +50,7 @@ func TestPokegearRadioGateRequiresBothCards(t *testing.T) {
 func TestPokegearRegisteredNumbersYieldStructuredRematchSources(t *testing.T) {
 	var mem fakeMemory
 	mem[sym.PokegearFlags] = gsPokegearPhoneCardMask
-	mem[sym.PhoneList] = 15 // PHONE_YOUNGSTER_JOEY
+	mem[sym.PhoneList] = 15   // PHONE_YOUNGSTER_JOEY
 	mem[sym.PhoneList+1] = 16 // PHONE_BUG_CATCHER_WADE
 	// A ready event without the number must never make an offered battle.
 	mem[sym.EventFlags+gsRematchContacts[0].ReadyEvent/8] |= 1 << uint(gsRematchContacts[0].ReadyEvent%8)
