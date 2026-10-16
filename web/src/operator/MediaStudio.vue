@@ -13,6 +13,7 @@ import { gameTitle } from './operations'
 import { archiveWhen, middleTruncate, progressLabel, timeAgo } from './runs'
 import { useRunMedia } from './useRunMedia'
 import StudioThumbnails from './StudioThumbnails.vue'
+import StudioPublications from './StudioPublications.vue'
 
 // Studio: derived outputs made from a finished run's recording: the highlight
 // reel, episode packages and their thumbnails. Outputs the host can't make for
@@ -146,6 +147,12 @@ const search = () => window.location.search
     </div>
     <StudioThumbnails
       v-if="runID && showPackages"
+      :run-i-d="runID"
+      :packages="media.packages.value || []"
+      @changed="media.refreshPackages()"
+    />
+    <StudioPublications
+      v-if="runID"
       :run-i-d="runID"
       :packages="media.packages.value || []"
       @changed="media.refreshPackages()"

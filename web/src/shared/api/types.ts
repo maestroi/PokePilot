@@ -632,6 +632,9 @@ export interface StudioPackage {
   hash: string
   run_id: string
   assessment_hash: string
+  plan_hash?: string
+  titles: { id: string; title: string; angle: string }[]
+  shorts: { id: string; title: string; hook: string }[]
   thumbnail_concepts: StudioThumbnailConcept[]
 }
 export interface StudioThumbnailCandidate {
@@ -655,3 +658,35 @@ export interface StudioThumbnailList {
   manifest: StudioThumbnailManifest
   selected_id?: string
 }
+
+export type StudioPublicationFormat = 'episode' | 'short' | 'archive'
+export type StudioPublicationState = 'queued' | 'blocked' | 'rendering' | 'approved' | 'publishing' | 'published' | 'failed' | 'skipped'
+export interface StudioPublicationCandidate {
+  version: number
+  id: string
+  state: StudioPublicationState
+  approved: boolean
+  reason?: string
+  provider_id?: string
+  provider_url?: string
+  thumbnail_status?: string
+  source_key?: string
+  updated_at_unix?: number
+  attempts: number
+  proposal: {
+    run_id: string
+    assessment_hash: string
+    package_hash?: string
+    plan_hash?: string
+    format: StudioPublicationFormat
+    title_id?: string
+    thumbnail_id?: string
+    privacy: string
+    not_before_unix?: number
+  }
+}
+export interface StudioPublicationList {
+  candidates: StudioPublicationCandidate[]
+}
+export interface StudioEditReply { plan: { hash: string; profile: 'episode' | 'short' } }
+export interface StudioEditStatus { state: string; plan_hash: string; error?: string }

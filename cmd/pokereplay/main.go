@@ -145,10 +145,11 @@ type replayServer struct {
 	rtmpSessions          map[string]*rtmpBroadcastSession
 	broadcastDestinations map[string]broadcastDestination
 
-	youtube       youtubeConfig
-	youtubeHTTP   *http.Client
-	youtubeMu     sync.Mutex
-	youtubeActive map[string]bool
+	youtube         youtubeConfig
+	youtubeHTTP     *http.Client
+	studioPublishMu sync.Mutex
+	youtubeMu       sync.Mutex
+	youtubeActive   map[string]bool
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
@@ -247,6 +248,9 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", s.handleYouTubePublish)
+	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", s.handleStudioPublicationList)
+	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", s.handleStudioPublicationCreate)
+	mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", s.handleStudioPublicationAction)
 	mux.HandleFunc("GET /v1/runs/{id}/artifacts/{name}/content", s.handleArtifactContent)
 	mux.HandleFunc("DELETE /v1/runs/{id}/artifacts", s.handleArtifactDelete)
 	return mux
