@@ -65,7 +65,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressHM04StrengthAcquired,
 		gsprofile.ProgressStormBadgeEarned,
 		gsprofile.ProgressHM02FlyAcquired,
-		gsprofile.ProgressMineralBadgeEarned:
+		gsprofile.ProgressMineralBadgeEarned,
+		gsprofile.ProgressRedGyaradosDefeated,
+		gsprofile.ProgressLanceHelpAccepted:
 		return true
 	default:
 		return false
@@ -220,6 +222,10 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSHM02Fly(a.m, a.romData)
 		case gsprofile.ProgressMineralBadgeEarned:
 			err = executeGSJasmineBadge(a.m, a.romData)
+		case gsprofile.ProgressRedGyaradosDefeated:
+			err = executeGSRedGyarados(a.m, a.romData)
+		case gsprofile.ProgressLanceHelpAccepted:
+			err = executeGSLakeOfRageLance(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -255,7 +261,9 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressHM04StrengthAcquired,
 			gsprofile.ProgressStormBadgeEarned,
 			gsprofile.ProgressHM02FlyAcquired,
-			gsprofile.ProgressMineralBadgeEarned:
+			gsprofile.ProgressMineralBadgeEarned,
+			gsprofile.ProgressRedGyaradosDefeated,
+			gsprofile.ProgressLanceHelpAccepted:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -565,6 +573,18 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressMineralBadgeEarned,
 			Note:     "(return to Olivine Gym, defeat Jasmine, and earn the Mineral Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRedGyaradosDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRedGyaradosDefeated,
+			Note:     "(reach Mahogany and Lake of Rage via Route 42/43, Surf to Red Gyarados, win the battle and complete its Red Scale script)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLanceHelpAccepted):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLanceHelpAccepted,
+			Note:     "(speak with Lance at Lake of Rage and agree to investigate the Team Rocket radio signal)",
 		}}
 	default:
 		return nil
