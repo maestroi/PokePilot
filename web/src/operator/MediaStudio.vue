@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getDashboard } from '../shared/api/client'
+import { getDashboard, getMediaRenderJobs } from '../shared/api/client'
 import type { DashboardRun } from '../shared/api/types'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { presentOutcome, presentReplay } from '../shared/status'
 import { highlightManifestURL, highlightVideoURL } from '../shared/api/client'
-import { formatMediaHref, studioSteps, type MediaState } from './mediaQuery'
+import { formatMediaHref, latestJobsByKind, presentRenderMark, studioSteps, type MediaState, type RenderKind } from './mediaQuery'
 import { gameTitle } from './operations'
 import { archiveWhen, middleTruncate, progressLabel, timeAgo } from './runs'
 import { useRunMedia } from './useRunMedia'
@@ -25,6 +25,19 @@ const recent = usePollingResource((signal) => getDashboard({ status: 'done', lim
   intervalMs: 30000,
   isEmpty: (snapshot) => !snapshot.runs?.length
 })
+// What has been rendered per run, from the render job list (newest job of each kind).
+const jobs = usePollingResource((signal) => getMediaRenderJobs(200, signal), { intervalMs: 10000 })
+const jobsByRun = computed(() => latestJobsByKind(jobs.data.value?.jobs || []))
+const MARKS: { kind: RenderKind; label: string }[] = [{ kind: 'video', label: 'Video' }, { kind: 'highlight', label: 'Reel' }, { kind: 'edit', label: 'Edit' }]
+const TONE_TEXT: Record<string, string> = { ok: 'text-ok', danger: 'text-danger', accent: 'text-accent', warn: 'text-warn', neutral: 'text-fg-3' }
+function mark(run: DashboardRun, kind: RenderKind) {
+  return presentRenderMark(jobsByRun.value.get(run.run_id)?.[kind])
+}
+// The outcome as a short note: a finished goal shows its progress, anything else its reason.
+function outcome(run: DashboardRun): { text: string; tone: string } {
+  const status = presentOutcome(run)
+  return { text: status.tone === 'ok' ? `✓ ${progress(run) || 'Goal complete'}` : `${status.glyph} ${status.label}`, tone: TONE_TEXT[status.tone] || 'text-fg-2' }
+}
 // Runs without a stored recording can't make anything; hide them by default.
 const sourceFilter = ref<'recorded' | 'all'>('recorded')
 const allSources = computed(() => [...(recent.data.value?.runs || [])].sort((a, b) => Number(b.ended_at || 0) - Number(a.ended_at || 0)))
@@ -99,11 +112,18 @@ const search = () => window.location.search
             <div class="truncate text-meta text-fg-2">
               <span class="font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</span>
               · <span :title="archiveWhen(run)">ended {{ timeAgo(Number(run.ended_at || 0)) }}</span>
-              <template v-if="progress(run)"> · {{ progress(run) }}</template>
+              · <span :class="outcome(run).tone" :title="presentOutcome(run).label">{{ outcome(run).text }}</span>
               <template v-if="!run.replay_available"> · no recording</template>
             </div>
           </div>
-          <StatusPill :status="presentOutcome(run)" class="shrink-0" />
+          <dl class="grid w-28 shrink-0 grid-cols-[auto_1fr] gap-x-1.5 text-meta leading-4" :aria-label="`Renders of ${run.run_id}`">
+            <template v-for="item in MARKS" :key="item.kind">
+              <dt class="text-fg-3">{{ item.label }}</dt>
+              <dd class="font-mono tabular-nums" :class="TONE_TEXT[mark(run, item.kind).tone]" :title="`${item.label}: ${mark(run, item.kind).label}`">
+                {{ mark(run, item.kind).tone === 'accent' ? `${mark(run, item.kind).glyph} ${mark(run, item.kind).label}` : mark(run, item.kind).glyph }}
+              </dd>
+            </template>
+          </dl>
         </li>
       </ul>
     </section>

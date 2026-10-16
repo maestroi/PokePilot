@@ -13,6 +13,8 @@ import {
   parseMediaState,
   runOutputs,
   studioSteps,
+  latestJobsByKind,
+  presentRenderMark,
   sortJobs,
   removable,
   retryable,
@@ -197,4 +199,16 @@ test('studio pipeline orders the publishing steps and points at the first one no
   const noStorage = studioSteps({ ...base, packagesError: 'studio artifact storage disabled' })
   assert.deepEqual(noStorage.steps.map((s) => s.id), ['video', 'highlights'])
   assert.equal(noStorage.current, '')
+})
+
+
+test('render marks keep the newest job of each kind per run', () => {
+  const job = (id: string, mode: string, state: string, at: number) => ({ id, mode, state, run_id: 'r1', updated_at_unix_ms: at } as MediaRenderJob)
+  const kinds = latestJobsByKind([job('v1', 'broadcast', 'failed', 1), job('v2', 'broadcast', 'ready', 2), job('h1', 'highlight', 'rendering', 3)]).get('r1')!
+  assert.equal(kinds.video?.id, 'v2')
+  assert.equal(kinds.highlight?.id, 'h1')
+  assert.equal(kinds.edit, undefined)
+  assert.equal(presentRenderMark(kinds.video).label, 'Done')
+  assert.equal(presentRenderMark({ state: 'rendering', segments_done: 34, segments_total: 51 }).label, '34/51')
+  assert.equal(presentRenderMark(undefined).glyph, '—')
 })
