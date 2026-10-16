@@ -14,9 +14,9 @@ func TestLakeOfRageFactsHaveIndependentRetailEventBoundaries(t *testing.T) {
 			eventLakeOfRageRedGyarados, eventDecidedToHelpLance)
 	}
 	for _, tc := range []struct {
-		name string
+		name     string
 		gyarados bool
-		lance bool
+		lance    bool
 	}{
 		{"fresh", false, false},
 		{"gyarados defeated", true, false},
