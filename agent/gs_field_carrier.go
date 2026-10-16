@@ -25,7 +25,9 @@ func gsProgressFieldCapabilities(id ProgressID) []CapabilityID {
 	case gsprofile.ProgressSecretPotionAcquired,
 		gsprofile.ProgressJasmineReturnedToGym,
 		gsprofile.ProgressStormBadgeEarned,
-		gsprofile.ProgressHM02FlyAcquired:
+		gsprofile.ProgressHM02FlyAcquired,
+		gsprofile.ProgressRedGyaradosDefeated,
+		gsprofile.ProgressLanceHelpAccepted:
 		return []CapabilityID{CapabilityID(game.FieldMoveSurf)}
 	default:
 		return nil
