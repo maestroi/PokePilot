@@ -27,6 +27,9 @@ func TestGSRocketB3FProgressionNeverSkipsPasswordsOrExecutive(t *testing.T) {
 			gsprofile.ProgressRocketOfficeOpened,
 			gsprofile.ProgressRocketExecutiveBeaten,
 			gsprofile.ProgressRocketMurkrowPassword,
+			gsprofile.ProgressRocketTransmitterDoor,
+			gsprofile.ProgressRocketExecutiveF,
+			gsprofile.ProgressRocketHideoutCleared,
 		} {
 			goals := adapter.ProgressionObjectives(obs)
 			if len(goals) != 1 || goals[0].Progress != next {
