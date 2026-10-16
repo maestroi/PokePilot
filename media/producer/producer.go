@@ -96,10 +96,10 @@ func DefaultPolicy() Policy {
 }
 
 type Input struct {
-	RunID     string               `json:"run_id,omitempty"`
-	Timelines []farm.MediaTimeline `json:"timelines"`
-	History   []HistoricalRun      `json:"history,omitempty"`
-	Incomplete bool             `json:"incomplete,omitempty"`
+	RunID      string               `json:"run_id,omitempty"`
+	Timelines  []farm.MediaTimeline `json:"timelines"`
+	History    []HistoricalRun      `json:"history,omitempty"`
+	Incomplete bool                 `json:"incomplete,omitempty"`
 }
 
 // EventFact is the only event vocabulary sent to an editorial model. It does
@@ -237,12 +237,14 @@ func evidence(in Input) (EvidencePack, string, error) {
 	// The hash includes raw normalized timelines (not just selected beats)
 	// and the provenance of every historical row. Reassessment is immutable.
 	bytes, err := json.Marshal(struct {
-		RunID string `json:"run_id"`
-		Timelines []farm.MediaTimeline `json:"timelines"`
-		History []HistoricalRun `json:"history"`
-		Incomplete bool `json:"incomplete"`
+		RunID      string               `json:"run_id"`
+		Timelines  []farm.MediaTimeline `json:"timelines"`
+		History    []HistoricalRun      `json:"history"`
+		Incomplete bool                 `json:"incomplete"`
 	}{pack.RunID, timelines, history, in.Incomplete})
-	if err != nil { return pack, "", err }
+	if err != nil {
+		return pack, "", err
+	}
 	sum := sha256.Sum256(bytes)
 	return pack, hex.EncodeToString(sum[:]), nil
 }
@@ -428,19 +430,34 @@ func scores(pack EvidencePack) Scores {
 }
 
 func clamp(value int) int {
-	if value < 0 { return 0 }
-	if value > 100 { return 100 }
+	if value < 0 {
+		return 0
+	}
+	if value > 100 {
+		return 100
+	}
 	return value
 }
 
 func rank(c PublicationClass) int {
-	switch c { case FullEpisode: return 3; case ShortOnly: return 2; case ArchiveOnly: return 1 }
+	switch c {
+	case FullEpisode:
+		return 3
+	case ShortOnly:
+		return 2
+	case ArchiveOnly:
+		return 1
+	}
 	return 0
 }
 
 func publicationCap(pack EvidencePack, score Scores, policy Policy) (PublicationClass, string) {
-	if len(pack.Events) == 0 { return DoNotPublish, "No durable event evidence; nothing can be supported editorially" }
-	if pack.Incomplete { return ArchiveOnly, "One or more run attempts are missing durable semantic timelines" }
+	if len(pack.Events) == 0 {
+		return DoNotPublish, "No durable event evidence; nothing can be supported editorially"
+	}
+	if pack.Incomplete {
+		return ArchiveOnly, "One or more run attempts are missing durable semantic timelines"
+	}
 	switch pack.Status {
 	case "done", "failed", "error", "stuck", "budget", "cancelled", "canceled", "timeout":
 	default:
@@ -577,24 +594,42 @@ func Assess(ctx context.Context, in Input, model Model, policy Policy) (Assessme
 // different timeline, model/prompt/policy, or changed evidence must be assessed
 // anew rather than silently treating stale stories as current.
 func Validate(out Assessment, in Input) error {
-	if out.Version != SchemaVersion { return errors.New("producer: unsupported assessment version") }
+	if out.Version != SchemaVersion {
+		return errors.New("producer: unsupported assessment version")
+	}
 	policy, err := normalizedPolicy(out.Policy)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	pack, fingerprint, err := evidence(in)
-	if err != nil { return err }
-	if pack.RunID != out.RunID || fingerprint != out.InputSHA256 { return errors.New("producer: source timeline/history changed") }
+	if err != nil {
+		return err
+	}
+	if pack.RunID != out.RunID || fingerprint != out.InputSHA256 {
+		return errors.New("producer: source timeline/history changed")
+	}
 	if err := ValidateCandidate(Candidate{
 		PrimaryStory: out.PrimaryStory, SecondaryStories: out.Secondary,
 		Beats: out.Beats, Publication: out.Publication,
-	}, pack); err != nil { return err }
-	if !validClass(out.Publication) || out.Model == "" { return errors.New("producer: invalid assessment identity") }
+	}, pack); err != nil {
+		return err
+	}
+	if !validClass(out.Publication) || out.Model == "" {
+		return errors.New("producer: invalid assessment identity")
+	}
 	if !reflect.DeepEqual(out.Scores, scores(pack)) || !reflect.DeepEqual(out.Comparisons, pack.History) {
 		return errors.New("producer: deterministic scores or history were changed")
 	}
 	cap, _ := publicationCap(pack, scores(pack), policy)
-	if rank(out.Publication) > rank(cap) { return errors.New("producer: unsafe publication class") }
-	if out.Model == "rules-v1" && out.PromptVersion != "none" { return errors.New("producer: rules identity mismatch") }
-	if out.Model != "rules-v1" && out.PromptVersion != PromptVersion { return errors.New("producer: prompt identity mismatch") }
+	if rank(out.Publication) > rank(cap) {
+		return errors.New("producer: unsafe publication class")
+	}
+	if out.Model == "rules-v1" && out.PromptVersion != "none" {
+		return errors.New("producer: rules identity mismatch")
+	}
+	if out.Model != "rules-v1" && out.PromptVersion != PromptVersion {
+		return errors.New("producer: prompt identity mismatch")
+	}
 	return VerifyChecksum(out)
 }
 
@@ -605,8 +640,12 @@ func VerifyChecksum(out Assessment) error {
 	hash := out.Hash
 	out.Hash = ""
 	b, err := json.Marshal(out)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	sum := sha256.Sum256(b)
-	if hash != hex.EncodeToString(sum[:]) { return errors.New("producer: assessment content hash mismatch") }
+	if hash != hex.EncodeToString(sum[:]) {
+		return errors.New("producer: assessment content hash mismatch")
+	}
 	return nil
 }
