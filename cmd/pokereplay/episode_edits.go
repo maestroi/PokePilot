@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -64,7 +62,7 @@ func validEditHash(hash string) bool {
 
 func editPlanKey(runID,hash string) string {
 	// Reuse the producer's content-addressed per-run namespace.
-	return path.Join(path.Dir(path.Dir(producerObjectKey(runID,hash))),"edits","v1",hash+".json")
+	return path.Join(path.Dir(path.Dir(path.Dir(producerObjectKey(runID,hash)))),"edits","v1",hash+".json")
 }
 
 func (s *replayServer) editTimelines(ctx context.Context,runID string,recordings []replayRecording)([]farm.MediaTimeline,error){
@@ -145,8 +143,8 @@ func (s *replayServer) currentEditStatus(ctx context.Context,runID string,record
 	}else if !artifactstore.IsNotFound(err){st.State="error";st.Error=err.Error();return st}
 	if job,ok,err:=s.getRenderJob(ctx,st.JobID);err==nil&&ok{
 		st.State=job.State
-		if job.State==farm.MediaRenderJobRunning||job.Active(){st.State="generating"}
-		st.Error=job.Error
+		if job.Active()||job.State==farm.MediaRenderJobQueued{st.State="generating"}
+		st.Error=job.LastError
 		return st
 	}
 	s.mu.Lock()
@@ -352,5 +350,3 @@ func (s *replayServer) recoverEditRenderJob(ctx context.Context,job farm.MediaRe
 	go func(){defer release();s.renderEdit(claimed.ID,job.RunID,recordings,p,key)}()
 }
 
-var _ = strconv.IntSize
-var _ = bytes.MinRead
