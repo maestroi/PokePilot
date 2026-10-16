@@ -20,11 +20,6 @@ export function partitionOperationRuns(runs: DashboardRun[], recentLimit = 12) {
   return { waiting, active, recent }
 }
 
-export function shortID(value: string | undefined, length = 10): string {
-  const text = String(value || '')
-  return text.length > length ? `${text.slice(0, length)}…` : text || '—'
-}
-
 export function shortRevision(value: string | undefined): string {
   return String(value || '').slice(0, 7) || '—'
 }
@@ -62,19 +57,6 @@ export function llmProfileLabel(run: DashboardRun): string {
 
 export function outcomeLabel(run: DashboardRun): string {
   return (run.reason || run.status || 'done').trim().replaceAll('_', ' ')
-}
-
-export function statusTone(status: string | undefined): StatusTone {
-  switch ((status || '').toLowerCase()) {
-    case 'running': return 'success'
-    case 'leased': return 'info'
-    case 'queued': return 'warning'
-    case 'done': return 'neutral'
-    case 'error':
-    case 'failed':
-    case 'lost': return 'danger'
-    default: return 'neutral'
-  }
 }
 
 export function isLiveStatus(status: string | undefined): boolean {

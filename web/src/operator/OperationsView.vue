@@ -1,27 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ArrowPathIcon, ArrowTopRightOnSquareIcon } from '@heroicons/vue/20/solid'
+import { ArrowPathIcon } from '@heroicons/vue/20/solid'
 import { forceEndWorker, getDashboard } from '../shared/api/client'
 import type { DashboardWorker } from '../shared/api/types'
+import ActionMenu, { type ActionMenuItem } from '../shared/components/ActionMenu.vue'
 import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
-import Panel from '../shared/components/Panel.vue'
 import ResourceState from '../shared/components/ResourceState.vue'
-import StatusBadge from '../shared/components/StatusBadge.vue'
+import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
+import { presentRunStatus, presentWorker } from '../shared/status'
 import { operatorHref } from '../shared/urls'
-import {
-  ageLabel,
-  gameTitle,
-  partitionOperationRuns,
-  shortID,
-  shortRevision,
-  statusTone
-} from './operations'
+import { ageLabel, gameTitle, partitionOperationRuns, shortRevision } from './operations'
+import { middleTruncate } from './runs'
 
 const {
   data: activeData,
   error: activeError,
-  lastUpdatedAt: activeUpdatedAt,
   state: activeState,
   retry: retryActive
 } = usePollingResource(
@@ -29,14 +23,61 @@ const {
   { intervalMs: 2000 }
 )
 
+const loaded = computed(() => activeState.value !== 'loading' && activeState.value !== 'error')
 const workers = computed(() => [...(activeData.value?.workers ?? [])]
   .sort((a, b) => a.addr.localeCompare(b.addr)))
 const runs = computed(() => partitionOperationRuns(activeData.value?.runs ?? []))
-const idleWorkers = computed(() => workers.value.filter((worker) => !worker.run_id).length)
-const connectionLabel = computed(() => activeState.value === 'stale' ? 'Stale' : activeState.value === 'error' ? 'Offline' : activeState.value === 'loading' ? 'Connecting' : 'Connected')
-const activeUpdatedLabel = computed(() => activeUpdatedAt.value ? new Date(activeUpdatedAt.value).toLocaleTimeString() : '—')
+const busyWorkers = computed(() => workers.value.filter((worker) => worker.run_id).length)
+const idleWorkers = computed(() => workers.value.length - busyWorkers.value)
+const queued = computed(() => runs.value.waiting.filter((run) => run.status === 'queued'))
+const leased = computed(() => runs.value.waiting.filter((run) => run.status === 'leased').length)
 const nowSeconds = computed(() => activeData.value?.now || Date.now() / 1000)
+// Queued work with no idle worker is the one state here that needs the operator.
+const backlog = computed(() => queued.value.length > 0 && idleWorkers.value === 0)
 
+const health = computed(() => [
+  { label: 'Workers', value: workers.value.length, title: 'Workers reporting to the wall' },
+  { label: 'Busy', value: busyWorkers.value, title: 'Workers holding a run' },
+  { label: 'Idle', value: idleWorkers.value, title: 'Workers free for the next queued run' },
+  { label: 'Running', value: runs.value.active.length, title: 'Attempts currently playing' },
+  { label: 'Starting', value: leased.value, title: 'Runs leased to a worker but not yet running' },
+  { label: 'Queued', value: queued.value.length, title: 'Runs waiting for a free worker' },
+  { label: 'Oldest wait', value: queued.value.length ? ageLabel(queued.value[0].queued_at, nowSeconds.value) : '—', title: 'How long the oldest queued run has waited' }
+])
+
+function operatorSearch(): string { return window.location.search }
+function liveHref(runID: string): string { return operatorHref('live', { run: runID }, operatorSearch()) }
+function refresh(): void { void retryActive() }
+
+// ---- Receipts (one polite live region, mirrored as a toast) ----------------------
+const toast = ref('')
+let toastTimer = 0
+function announce(text: string): void {
+  toast.value = text
+  window.clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => { toast.value = '' }, 4000)
+}
+async function copy(value: string, noun: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(value)
+    announce(`${noun} copied`)
+  } catch {
+    announce(`Couldn’t copy the ${noun.toLowerCase()}`)
+  }
+}
+
+function workerMenu(worker: DashboardWorker): ActionMenuItem[] {
+  const items: ActionMenuItem[] = [{ label: 'Copy worker address', select: () => void copy(worker.addr, 'Worker address') }]
+  if (worker.run_id) {
+    const runID = worker.run_id
+    items.unshift({ label: 'Open run in Live', href: liveHref(runID) })
+    items.push({ label: 'Copy run ID', select: () => void copy(runID, 'Run ID') })
+  }
+  items.push({ label: 'Force end worker…', danger: true, separator: true, select: () => requestForceEnd(worker) })
+  return items
+}
+
+// ---- Force end ------------------------------------------------------------------
 const forceEndTarget = ref<DashboardWorker | null>(null)
 const forceEndBusy = ref(false)
 const workerActionError = ref('')
@@ -45,30 +86,10 @@ const forceEndMessage = computed(() => {
   const worker = forceEndTarget.value
   if (!worker) return ''
   if (worker.run_id) {
-    return `This immediately terminates the worker and cancels active run ${shortID(worker.run_id)}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nAny in-process work on this worker is abandoned. Runs still waiting in the shared farm queue stay queued for healthy workers.`
+    return `This immediately terminates the worker and cancels active run ${worker.run_id}. The run becomes terminal: it will not be retried and an endless successor will not be created.\n\nAny in-process work on this worker is abandoned. Runs still waiting in the shared farm queue stay queued for healthy workers.`
   }
   return 'This immediately terminates the idle worker. Any in-process background work on that worker is abandoned. Runs waiting in the shared farm queue stay queued for healthy workers.'
 })
-
-const metrics = computed(() => [
-  { label: 'Wall', value: connectionLabel.value, note: '2s refresh', mono: false },
-  { label: 'Workers', value: workers.value.length, note: `${idleWorkers.value} available`, mono: true },
-  { label: 'Running', value: runs.value.active.length, note: 'active attempts', mono: true },
-  { label: 'Waiting', value: runs.value.waiting.length, note: `${runs.value.waiting.filter((run) => run.status === 'leased').length} leased · ${runs.value.waiting.filter((run) => run.status === 'queued').length} queued`, mono: true }
-])
-const signals = computed(() => {
-  const items: { title: string; detail: string; tone: 'warning' | 'info' | 'neutral' }[] = []
-  if (activeState.value === 'stale') items.push({ title: 'Snapshot stale', detail: 'Worker and lease information reflects the last successful refresh.', tone: 'warning' })
-  const waiting = runs.value.waiting.filter((run) => run.status === 'queued').length
-  const leased = runs.value.waiting.filter((run) => run.status === 'leased').length
-  if (waiting) items.push({ title: 'Queue backlog', detail: `${waiting} run(s) awaiting a worker.`, tone: 'warning' })
-  if (leased) items.push({ title: 'Leases starting', detail: `${leased} run(s) leased but not yet running.`, tone: 'info' })
-  const busy = workers.value.filter((worker) => worker.run_id).length
-  if (busy) items.push({ title: 'Workers occupied', detail: `${busy} of ${workers.value.length} workers have a run assigned.`, tone: 'neutral' })
-  return items
-})
-function operatorSearch(): string { return window.location.search }
-function refreshActive(): void { void retryActive() }
 
 function requestForceEnd(worker: DashboardWorker): void {
   workerActionError.value = ''
@@ -86,10 +107,11 @@ async function confirmForceEnd(): Promise<void> {
   workerActionError.value = ''
   try {
     await forceEndWorker(worker.addr)
+    announce(`Force end sent to ${worker.addr}`)
     forceEndTarget.value = null
     void retryActive()
   } catch (error) {
-    workerActionError.value = error instanceof Error ? error.message : String(error)
+    workerActionError.value = `Force end ${worker.addr} failed: ${error instanceof Error ? error.message : String(error)}. Other workers are unaffected.`
   } finally {
     forceEndBusy.value = false
   }
@@ -98,100 +120,101 @@ async function confirmForceEnd(): Promise<void> {
 
 <template>
   <div class="space-y-3">
-    <div class="flex flex-wrap justify-end gap-2">
-      <span class="self-center font-mono text-[11px] text-slate-500" :title="activeData?.wall_version || ''">Snapshot {{ activeUpdatedLabel }} · wall {{ shortRevision(activeData?.wall_version) }}</span>
-      <a href="#settings/models" class="rounded-sm px-2.5 py-1.5 text-xs font-semibold text-cyan-200 ring-1 ring-cyan-300/20 hover:bg-cyan-300/10 focus-visible:outline-2 focus-visible:outline-cyan-300">Configure models</a>
-      <button type="button" class="inline-flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-xs font-semibold text-slate-200 ring-1 ring-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-cyan-300" @click="refreshActive"><ArrowPathIcon class="size-3.5" aria-hidden="true" />Refresh</button>
-    </div>
-    <ResourceState
-      :state="activeState"
-      title="Operator data is unavailable"
-      :message="activeError || 'Workers and active runs will recover automatically when the wall is reachable again.'"
-      :rows="5"
-    >
-      <template #actions>
-        <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-white ring-1 ring-white/10 hover:bg-white/15" @click="refreshActive">
-          <ArrowPathIcon class="size-3.5" aria-hidden="true" />
-          Retry now
+    <header class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2">
+      <h1 class="text-page font-semibold">Operations</h1>
+      <span v-if="loaded" class="text-fg-2">{{ workers.length }} workers · {{ runs.waiting.length }} waiting</span>
+      <div class="ml-auto flex items-center gap-2">
+        <button type="button" class="ui-btn ui-icon-btn max-md:size-10" aria-label="Refresh operations" title="Refresh" @click="refresh">
+          <ArrowPathIcon class="size-4" aria-hidden="true" />
         </button>
-      </template>
-
-      <div class="grid grid-cols-2 gap-px overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/10 lg:grid-cols-4">
-        <div v-for="metric in metrics" :key="metric.label" class="bg-[#0b111a] px-4 py-4 sm:px-5">
-          <dt class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">{{ metric.label }}</dt>
-          <dd :class="['mt-1 text-xl font-semibold text-white', metric.mono ? 'font-mono' : 'font-mono tabular-nums']">{{ metric.value }}</dd>
-          <p class="mt-0.5 text-xs text-slate-500">{{ metric.note }}</p>
-        </div>
       </div>
+    </header>
 
-      <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-        <Panel title="Workers" description="Capacity, heartbeat and worker leases. Select a run for Live inspection." compact>
-          <div v-if="workers.length" class="-mx-3 overflow-x-auto sm:-mx-4">
-            <table class="min-w-full divide-y divide-white/10 text-left">
-              <thead>
-                <tr>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:px-4">Worker</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">State</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Seen</th>
-                  <th class="px-3 py-2 text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Build</th>
-                  <th class="px-3 py-2 text-right text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase sm:pr-4">Action</th>
+    <ResourceState v-if="activeState === 'stale'" state="stale" title="Showing the last loaded worker snapshot" :message="`Refresh failed: ${activeError}`">
+      <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="refresh">Retry</button></template>
+    </ResourceState>
+    <ResourceState v-if="!loaded" :state="activeState" title="Couldn’t load workers and queue" :message="`${activeError || 'The wall is unreachable'}. Running workers keep playing; this page retries automatically.`" :rows="6">
+      <template #actions><button type="button" class="ui-btn ui-btn-sm" @click="refresh">Retry</button></template>
+    </ResourceState>
+
+    <template v-else>
+      <!-- Health strip -->
+      <dl class="flex flex-wrap gap-x-6 gap-y-2 border border-rule-strong bg-surface px-3 py-2" aria-label="Farm capacity">
+        <div v-for="item in health" :key="item.label" class="flex items-baseline gap-2" :title="item.title">
+          <dt class="ui-label">{{ item.label }}</dt>
+          <dd class="m-0 font-mono font-medium">{{ item.value }}</dd>
+        </div>
+      </dl>
+
+      <p v-if="workerActionError" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger" role="alert">✕ {{ workerActionError }}</p>
+
+      <div class="grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <section class="ui-bay" aria-labelledby="workers-title">
+          <div class="ui-bay-header">
+            <h2 id="workers-title">Workers</h2>
+            <span class="text-meta font-normal text-fg-2">{{ busyWorkers }} busy · {{ idleWorkers }} idle</span>
+          </div>
+          <div v-if="workers.length" class="overflow-x-auto">
+            <table class="w-full border-collapse text-left max-md:block">
+              <thead class="max-md:hidden">
+                <tr class="h-9 border-b border-rule-strong bg-raised text-meta text-fg-2">
+                  <th class="px-3 font-medium">Worker</th>
+                  <th class="w-24 px-3 font-medium">State</th>
+                  <th class="px-3 font-medium">Run</th>
+                  <th class="w-24 px-3 text-right font-medium">Seen</th>
+                  <th class="w-20 px-3 font-medium">Build</th>
+                  <th class="w-12 px-3"><span class="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-white/8">
-                <tr v-for="worker in workers" :key="worker.addr">
-                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-300 sm:px-4">{{ worker.addr }}</td>
-                  <td class="px-3 py-2.5"><StatusBadge :tone="worker.run_id ? 'info' : 'success'">{{ worker.run_id ? 'Busy' : 'Available' }}</StatusBadge></td>
-                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-400" :title="worker.run_id || ''"><a v-if="worker.run_id" :href="operatorHref('live', { run: worker.run_id }, operatorSearch())" class="inline-flex items-center gap-1 text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300"><span>{{ shortID(worker.run_id) }}</span><ArrowTopRightOnSquareIcon class="size-3" aria-hidden="true" /></a><span v-else>—</span></td>
-                  <td class="px-3 py-2.5 text-xs whitespace-nowrap text-slate-500">{{ worker.seen_ago || 'Not reported' }}</td>
-                  <td class="px-3 py-2.5 font-mono text-xs whitespace-nowrap text-slate-500">{{ shortRevision(worker.version) }}</td>
-                  <td class="px-3 py-2.5 text-right sm:pr-4">
-                    <button
-                      type="button"
-                      class="rounded-md bg-rose-400/8 px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap text-rose-300 ring-1 ring-rose-400/20 hover:bg-rose-400/15 focus-visible:outline-2 focus-visible:outline-rose-300"
-                      @click="requestForceEnd(worker)"
-                    >
-                      Force end
-                    </button>
+              <tbody class="max-md:block">
+                <tr v-for="worker in workers" :key="worker.addr" class="h-10 border-b border-rule last:border-b-0 hover:bg-raised max-md:flex max-md:h-auto max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-3 max-md:py-2">
+                  <td class="px-3 font-mono whitespace-nowrap max-md:order-1 max-md:px-0">{{ worker.addr }}</td>
+                  <td class="px-3 max-md:order-2 max-md:px-0"><StatusPill :status="presentWorker(worker)" /></td>
+                  <td :class="worker.run_id ? '' : 'max-md:hidden'" class="px-3 font-mono whitespace-nowrap max-md:order-4 max-md:basis-full max-md:px-0">
+                    <a v-if="worker.run_id" :href="liveHref(worker.run_id)" class="text-accent hover:underline" :title="`Open ${worker.run_id} in Live`">{{ middleTruncate(worker.run_id) }}</a>
+                    <span v-else class="text-fg-3">—</span>
+                  </td>
+                  <td class="px-3 text-right whitespace-nowrap text-fg-2 max-md:order-5 max-md:px-0 max-md:text-meta">{{ worker.seen_ago || 'Not reported' }}</td>
+                  <td class="px-3 font-mono text-fg-2 max-md:order-6 max-md:px-0 max-md:text-meta" :title="worker.version || ''">{{ shortRevision(worker.version) }}</td>
+                  <td class="px-3 text-right max-md:order-3 max-md:ml-auto max-md:px-0">
+                    <ActionMenu :label="`Actions for worker ${worker.addr}`" :items="workerMenu(worker)" />
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p v-else class="py-6 text-center text-sm text-slate-500">No workers are reporting.</p>
-          <p v-if="workerActionError" class="mt-3 text-xs text-rose-300">Force end failed: {{ workerActionError }}</p>
-        </Panel>
+          <p v-else class="px-3 py-8 text-center text-fg-2">No workers are reporting. Queued runs wait until one connects.</p>
+        </section>
 
-        <Panel title="Queue and leases" description="Waiting work in oldest-first order; select a run to inspect." compact>
-          <ul v-if="runs.waiting.length" class="divide-y divide-white/8">
-            <li v-for="run in runs.waiting" :key="run.run_id" class="py-3 first:pt-0 last:pb-0">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <a :href="operatorHref('live', { run: run.run_id }, operatorSearch())" class="font-mono text-xs text-cyan-200 hover:underline focus-visible:outline-2 focus-visible:outline-cyan-300" :title="run.run_id">{{ shortID(run.run_id) }}</a>
-                    <StatusBadge :tone="statusTone(run.status)">{{ run.status }}</StatusBadge>
-                    <StatusBadge tone="neutral">{{ gameTitle(run.game) }}</StatusBadge>
-                  </div>
-                  <p class="mt-1 text-xs text-slate-500">{{ run.status === 'leased' ? 'Lease assigned' : 'Awaiting capacity' }}</p>
-                </div>
-                <span class="shrink-0 font-mono text-[11px] text-slate-600">{{ ageLabel(run.queued_at, nowSeconds) }}</span>
-              </div>
-            </li>
-          </ul>
-          <p v-else class="py-6 text-center text-sm text-slate-500">Queue is empty.</p>
-        </Panel>
+        <section class="ui-bay" aria-labelledby="queue-title">
+          <div class="ui-bay-header">
+            <h2 id="queue-title">Queue and leases</h2>
+            <span v-if="backlog" class="ui-pill ui-tone-warn font-normal"><span aria-hidden="true">▲</span> No idle worker</span>
+            <span v-else class="text-meta font-normal text-fg-2">Oldest first</span>
+          </div>
+          <table v-if="runs.waiting.length" class="w-full border-collapse text-left">
+            <thead>
+              <tr class="h-9 border-b border-rule-strong bg-raised text-meta text-fg-2">
+                <th class="px-3 font-medium">Run</th>
+                <th class="w-28 px-3 font-medium">State</th>
+                <th class="w-20 px-3 text-right font-medium">Waiting</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="run in runs.waiting" :key="run.run_id" class="h-14 border-b border-rule last:border-b-0 hover:bg-raised">
+                <td class="max-w-0 px-3">
+                  <a :href="liveHref(run.run_id)" class="block truncate font-mono text-accent hover:underline" :title="`Open ${run.run_id} in Live`">{{ middleTruncate(run.run_id) }}</a>
+                  <div class="truncate text-meta text-fg-2">{{ gameTitle(run.game) }}</div>
+                </td>
+                <td class="px-3"><StatusPill :status="presentRunStatus(run)" /></td>
+                <td class="px-3 text-right font-mono text-fg-2" :title="run.queued_at ? new Date(run.queued_at * 1000).toISOString() : ''">{{ ageLabel(run.queued_at, nowSeconds) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="px-3 py-8 text-center text-fg-2">Queue is empty. Finished outcomes are in <a href="#runs" class="text-accent underline">Runs</a>.</p>
+        </section>
       </div>
-
-      <Panel title="Current operational signals" description="Derived from the live wall snapshot; completed outcomes belong to Runs." compact>
-      <ul v-if="signals.length" class="grid gap-2 lg:grid-cols-2">
-        <li v-for="signal in signals" :key="signal.title" class="rounded-sm border border-white/8 bg-black/10 px-3 py-2">
-          <StatusBadge :tone="signal.tone">{{ signal.title }}</StatusBadge>
-          <p class="mt-1 text-xs text-slate-400">{{ signal.detail }}</p>
-        </li>
-      </ul>
-      <p v-else class="py-2 text-xs text-slate-500">No queue or lease signals. See <a href="#runs" class="text-cyan-200 underline">Runs</a> for finished outcomes.</p>
-      </Panel>
-    </ResourceState>
+    </template>
 
     <ConfirmDialog
       :open="forceEndTarget !== null"
@@ -203,5 +226,9 @@ async function confirmForceEnd(): Promise<void> {
       @close="closeForceEnd"
       @confirm="confirmForceEnd"
     />
+
+    <div class="pointer-events-none fixed right-4 bottom-4 z-[80]" aria-live="polite" role="status">
+      <div v-if="toast" class="pointer-events-auto rounded-md border border-rule-strong bg-raised px-4 py-2.5 shadow-[0_8px_24px_rgb(0_0_0/45%)]">{{ toast }}</div>
+    </div>
   </div>
 </template>

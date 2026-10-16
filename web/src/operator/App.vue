@@ -35,7 +35,7 @@ const descriptions: Record<OperatorView, string> = {
   failures: '',
   analytics: '',
   media: '',
-  operations: 'Fleet health, workers, queues, leases, and operational status.',
+  operations: '',
   settings: 'Configure model deployments, per-browser launch defaults, broadcast destination status and renderer preferences.',
   'new-run': 'Choose a game, settings and goal, then queue a new run.'
 }
@@ -128,7 +128,7 @@ onUnmounted(() => {
     :subtitle="descriptions[activeView]"
     mode="private"
     :navigation="navigation"
-    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures' && activeView !== 'analytics' && activeView !== 'media'"
+    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures' && activeView !== 'analytics' && activeView !== 'media' && activeView !== 'operations'"
   >
     <template #summary>
       <a :href="'#operations'" class="inline-flex items-center gap-1.5 text-meta text-fg-2 hover:text-fg" title="Open Operations">
