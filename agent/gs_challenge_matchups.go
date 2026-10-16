@@ -39,6 +39,11 @@ func gsChallengeSpecs() []gsChallengeSpec {
 		{gsprofile.ProgressStormBadgeEarned, []gsChallengeMon{{0x39, 27}, {0x3e, 30}}},
 		// Jasmine
 		{gsprofile.ProgressMineralBadgeEarned, []gsChallengeMon{{0x51, 30}, {0x51, 30}, {0xd0, 35}}},
+		// Pryce and Clair use the pinned retail Gen-II leader rosters. Keeping
+		// readiness data separate from executable progression does not expose
+		// unsupported run targets.
+		{gsprofile.ProgressGlacierBadgeEarned, []gsChallengeMon{{0x56, 27}, {0x57, 29}, {0xdd, 31}}},
+		{gsprofile.ProgressRisingBadgeEarned, []gsChallengeMon{{0x94, 37}, {0x94, 37}, {0x94, 37}, {0xe6, 40}}},
 	}
 }
 

@@ -35,6 +35,10 @@ const (
 	ProgressStormBadgeEarned            game.ProgressID = "gs_storm_badge_earned"
 	ProgressHM02FlyAcquired             game.ProgressID = "gs_hm02_fly_acquired"
 	ProgressMineralBadgeEarned          game.ProgressID = "gs_mineral_badge_earned"
+	// The final two Johto badge flags are observable before their route and
+	// story executors are available. Do not move the supported frontier yet.
+	ProgressGlacierBadgeEarned game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned  game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -75,6 +79,8 @@ const (
 	johtoBadgeFogMask                          = 1 << 3
 	johtoBadgeMineralMask                      = 1 << 4
 	johtoBadgeStormMask                        = 1 << 5
+	johtoBadgeGlacierMask                      = 1 << 6
+	johtoBadgeRisingMask                       = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -160,6 +166,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressStormBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeStormMask != 0},
 		{ID: ProgressHM02FlyAcquired, Complete: hasGSEvent(reader, eventGotHM02Fly)},
 		{ID: ProgressMineralBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
+		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
+		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
