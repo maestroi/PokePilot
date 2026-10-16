@@ -43,6 +43,8 @@ const (
 	ProgressLanceHelpAccepted    game.ProgressID = "gs_lance_help_accepted"
 	ProgressMahoganyStairsOpened game.ProgressID = "gs_mahogany_stairs_opened"
 	ProgressRocketLanceHealing   game.ProgressID = "gs_rocket_lance_healing"
+	ProgressRocketRaticatePassword game.ProgressID = "gs_rocket_raticate_password"
+	ProgressRocketSlowpokePassword game.ProgressID = "gs_rocket_slowpoke_password"
 	ProgressRocketPasswordsLearned game.ProgressID = "gs_rocket_passwords_learned"
 	ProgressRocketOfficeOpened game.ProgressID = "gs_rocket_office_opened"
 	ProgressRocketExecutiveBeaten game.ProgressID = "gs_rocket_executive_beaten"
@@ -192,6 +194,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLanceHelpAccepted, Complete: hasGSEvent(reader, eventDecidedToHelpLance)},
 		{ID: ProgressMahoganyStairsOpened, Complete: hasGSEvent(reader, eventUncoveredMahoganyMartStaircase)},
 		{ID: ProgressRocketLanceHealing, Complete: hasGSEvent(reader, eventLanceHealedRocketBase)},
+		{ID: ProgressRocketRaticatePassword, Complete: hasGSEvent(reader, eventLearnedRaticateTailPassword)},
+		{ID: ProgressRocketSlowpokePassword, Complete: hasGSEvent(reader, eventLearnedSlowpokeTailPassword)},
 		{ID: ProgressRocketPasswordsLearned, Complete: hasGSEvent(reader, eventLearnedSlowpokeTailPassword) && hasGSEvent(reader, eventLearnedRaticateTailPassword)},
 		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
 		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
