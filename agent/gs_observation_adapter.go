@@ -54,6 +54,25 @@ func (gsSemanticObservationAdapter) Observe(m *emu.Emu, romData []byte, profile 
 	if transport, ok := profile.(game.RegionTransportProvider); ok {
 		obs.RegionTransports = transport.DecodeRegionTransports(m)
 	}
+	if decoder, ok := profile.(game.WorldOpportunityDecoder); ok {
+		world := decoder.DecodeWorldOpportunities(m)
+		obs.Capabilities = world.Capabilities
+		obs.PhoneContacts = world.PhoneContacts
+		obs.BattleSources = world.BattleSources
+		obs.RouteGates = world.RouteGates
+		// Reuse the existing generic route-prerequisite contract; the GS
+		// adapter owns the Snorlax mapping, not planner policy.
+		for _, gate := range world.RouteGates {
+			if gate.Available || len(gate.Missing) == 0 {
+				continue
+			}
+			obs.RouteBlockages = append(obs.RouteBlockages, RouteBlockage{
+				Destination: gate.Transition.To,
+				Transitions: []string{gate.Transition.ID},
+				Missing: append([]game.CapabilityID(nil), gate.Missing...),
+			})
+		}
+	}
 	// Observation.Map is the legacy one-byte Gen-I migration handle. A GS map
 	// is a (group, number) pair and therefore must not be truncated into it.
 	for i, mon := range base.Party {
