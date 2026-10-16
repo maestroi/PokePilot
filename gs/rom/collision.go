@@ -330,7 +330,10 @@ func firstBadgeCollisionTable(tileset uint8) ([]uint8, bool) {
 			0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00,
 		}, true
 	default:
-		return coastalCollisionTable(tileset)
+		if table, ok := coastalCollisionTable(tileset); ok {
+			return table, true
+		}
+		return rocketBaseCollisionTable(tileset)
 	}
 }
 
@@ -376,12 +379,12 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x07, true
 	case "ELMS_LAB":
 		return 0x09, true
-	case "MR_POKEMONS_HOUSE":
+	case "MR_POKEMONS_HOUSE", "TEAM_ROCKET_BASE_B2F", "TEAM_ROCKET_BASE_B3F":
 		return 0x0a, true
 	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART",
 		"OLIVINE_MART":
 		return 0x0b, true
-	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM":
+	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
@@ -390,7 +393,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
 		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
 		return 0x12, true
-	case "KURTS_HOUSE", "DANCE_THEATER":
+	case "KURTS_HOUSE", "DANCE_THEATER", "MAHOGANY_MART_1F":
 		return 0x0f, true
 	case "PLAYERS_HOUSE_2F":
 		return 0x13, true
@@ -401,6 +404,8 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x15, true
 	case "ILEX_FOREST":
 		return 0x1c, true
+	case "TEAM_ROCKET_BASE_B1F":
+		return 0x19, true
 	default:
 		return 0, false
 	}

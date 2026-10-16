@@ -90,11 +90,16 @@ func TestMahoganyNativeWarpsRetainRealDecompDestinationIDs(t *testing.T) {
 	}
 }
 
-func TestMahoganyGymAndRocketInteriorsRemainOutsideLiveTopology(t *testing.T) {
+func TestMahoganyGymAndRocketInteriorsExposeOnlyPhysicalTopology(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
-	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F", "TEAM_ROCKET_BASE_B1F"} {
-		if _, err := provider.ParseMap(nativeID(t, name)); err == nil {
-			t.Fatalf("%s is not ready for executable seventh-badge progression", name)
+	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F",
+		"TEAM_ROCKET_BASE_B1F", "TEAM_ROCKET_BASE_B2F", "TEAM_ROCKET_BASE_B3F"} {
+		h, err := provider.ParseMap(nativeID(t, name))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := provider.Grid(h.ID, make([]byte, int(h.WidthBlocks)*int(h.HeightBlocks)), 0); err != nil {
+			t.Fatalf("%s collision: %v", name, err)
 		}
 	}
 }
