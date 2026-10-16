@@ -159,6 +159,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 	forcedChoiceVisits := 0
 	itemUses := 0
 	voluntarySwitches := 0
+	var freezeSac freezeSacrificeWatch
 	openingTrainingSwitch := options.OpeningTrainingSwitch
 	// pendingTryLearn remembers that the "<NAME> is trying to learn <MOVE>"
 	// text was seen. That message is long enough to scroll off the 4-line
@@ -343,11 +344,41 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
+			// An incurable frozen member cannot act, and Gen I never spends enemy
+			// PP, so a foe that only uses non-damaging moves will never faint it
+			// once it is the last conscious Pokémon. Send it out while a fighter
+			// remains so the battle can still end in a win or a real blackout.
+			holdFreezeSacrifice := false
+			if !openingTrainingSwitch && inBattle {
+				action, slot := freezeSac.decide(resources, bs.EnemySpecies, bs.ActiveHP)
+				switch action {
+				case freezeSacrificeSend:
+					if zbatDebug {
+						fmt.Printf("zbat resource=SWITCH action=freeze-sacrifice slot=%d enemy=%d\n", slot, bs.EnemySpecies)
+					}
+					if err := SwitchActive(m, slot); err != nil {
+						freezeSac.pending = false
+						return menuError(m, "send incurable frozen mon", err)
+					}
+					continue
+				case freezeSacrificeRecall:
+					if zbatDebug {
+						fmt.Printf("zbat resource=SWITCH action=freeze-recall slot=%d enemy=%d\n", slot, bs.EnemySpecies)
+					}
+					if err := SwitchActive(m, slot); err != nil {
+						return menuError(m, "recall undamaged frozen mon", err)
+					}
+					continue
+				case freezeSacrificeHold:
+					holdFreezeSacrifice = true
+				}
+			}
+
 			// A deliberate switch-training battle already chose the best carry
 			// for this exact opponent. Do not tactically rotate through additional
 			// party members afterward: every extra participant further splits the
 			// trainee's XP and defeats the estimator's two-participant contract.
-			if !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
+			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
 				if inBattle && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitchStateWithContext(m.ROM(), resources, bs, options.Sequence)
 					if decision.Switch {
@@ -368,7 +399,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 				}
 			}
 
-			if itemUses < battleItemUseCap && inBattle {
+			if !holdFreezeSacrifice && itemUses < battleItemUseCap && inBattle {
 				if choice, ok := chooseSacrificialBenchHealStateWithContext(m.ROM(), resources, bs, options.Sequence); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=ITEM action=sacrifice-heal item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
@@ -380,7 +411,7 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					continue
 				}
 			}
-			if itemUses < battleItemUseCap {
+			if !holdFreezeSacrifice && itemUses < battleItemUseCap {
 				if choice, ok := chooseBattleMedicineState(resources); ok {
 					if zbatDebug {
 						fmt.Printf("zbat resource=ITEM item=%#02x slot=%d reason=%s\n", choice.Item, choice.Slot, choice.Reason)
