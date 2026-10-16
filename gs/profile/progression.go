@@ -39,10 +39,11 @@ const (
 	// story executors are available. Do not move the supported frontier yet.
 	// The Lake of Rage encounters are independently durable, resumable story
 	// boundaries after Jasmine and before the Rocket Hideout.
-	ProgressRedGyaradosDefeated game.ProgressID = "gs_red_gyarados_defeated"
-	ProgressLanceHelpAccepted   game.ProgressID = "gs_lance_help_accepted"
-	ProgressGlacierBadgeEarned  game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned   game.ProgressID = "gs_rising_badge_earned"
+	ProgressRedGyaradosDefeated   game.ProgressID = "gs_red_gyarados_defeated"
+	ProgressLanceHelpAccepted     game.ProgressID = "gs_lance_help_accepted"
+	ProgressMahoganyStairsOpened game.ProgressID = "gs_mahogany_stairs_opened"
+	ProgressGlacierBadgeEarned    game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned     game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -80,7 +81,8 @@ const (
 	// included). Disappearance is set only after defeating Red Gyarados;
 	// answering YES to Lance is a separate permanent event.
 	eventLakeOfRageRedGyarados uint16 = 1873
-	eventDecidedToHelpLance    uint16 = 96
+	eventDecidedToHelpLance               uint16 = 96
+	eventUncoveredMahoganyMartStaircase uint16 = 738
 	statusFlagsPokedexMask            = 1 << 0
 	johtoBadgeZephyrMask              = 1 << 0
 	johtoBadgeHiveMask                = 1 << 1
@@ -177,6 +179,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressMineralBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 		{ID: ProgressRedGyaradosDefeated, Complete: hasGSEvent(reader, eventLakeOfRageRedGyarados)},
 		{ID: ProgressLanceHelpAccepted, Complete: hasGSEvent(reader, eventDecidedToHelpLance)},
+		{ID: ProgressMahoganyStairsOpened, Complete: hasGSEvent(reader, eventUncoveredMahoganyMartStaircase)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
