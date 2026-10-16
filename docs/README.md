@@ -11,7 +11,9 @@ The links below separate current guidance from project history.
 - [Game profiles](GAME_PROFILES.md) and [Gen I boundaries](GEN1_BOUNDARIES.md): adapter contracts and shared engine ownership.
 - [Qualification](QUALIFICATION.md): regression layers and the private replay corpus.
 - [Technical design entry point](DESIGN.md): links to current technical contracts.
-- [Product direction](../PRODUCT.md) and [operator visual system](../DESIGN.md): root documents for the product and UI.
+- [Operator product contract](../PRODUCT.md) and [operator visual system](../DESIGN.md): root documents for the private UI.
+- [PokePilot/RomPilot product strategy](PRODUCT_STRATEGY.md): audiences, product loops, differentiation, and commercial decision gates.
+- [Product delivery roadmap](PRODUCT_ROADMAP.md): cross-epic priorities, implementation slices, and evidence-based release milestones.
 
 ## Gameplay and diagnosis
 
