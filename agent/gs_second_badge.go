@@ -87,6 +87,10 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		// scripts and Pryce Gym are intentionally outside this driver.
 		"TEAM_ROCKET_BASE_B1F",
 		"TEAM_ROCKET_BASE_B2F",
+		// B3F owns the two grunt-password fights, office-door interaction,
+		// executive battle and Murkrow secret; B2F transmitter/Electrodes
+		// remain withheld until their separate controller is implemented.
+		"TEAM_ROCKET_BASE_B3F",
 		"ROUTE_43_MAHOGANY_GATE",
 		"ROUTE_43",
 		"LAKE_OF_RAGE",
