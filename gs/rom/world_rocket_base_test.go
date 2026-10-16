@@ -40,7 +40,7 @@ func TestRocketBaseWarpsUseZeroBasedRetailDestinationIDs(t *testing.T) {
 	for _, tc := range []struct {
 		from string
 		x, y uint8
-		to string
+		to   string
 		warp uint8
 	}{
 		{"MAHOGANY_MART_1F", 7, 3, "TEAM_ROCKET_BASE_B1F", 0},
@@ -73,9 +73,9 @@ func TestRocketUndergroundCollisionSourcePreservesWallsAndWarpCarpets(t *testing
 		t.Fatalf("TILESET_UNDERGROUND = %d collision bytes (ok=%v), want 256", len(table), ok)
 	}
 	for _, tc := range []struct {
-		block uint8
+		block    uint8
 		quadrant int
-		want uint8
+		want     uint8
 	}{
 		{0x00, 0, 0x07}, // wall
 		{0x02, 1, 0x72}, // ladder
