@@ -1,0 +1,16 @@
+# Scrape job for a Prometheus that is not attached to the farm overlay.
+#
+# The homelab Prometheus (vm-acestaking-monitor-01) cannot resolve tasks.wall.
+# The wall publishes /metrics on the Swarm ingress, port 18080, and every
+# swarm node answers that port. 192.168.50.100 is vm-swarm-worker-01.
+# Runners, the operator UI, and the Telegram bot do not publish a metrics
+# port, so this file scrapes the wall only.
+#
+# Use this job OR the pokepilot-wall job in prometheus-pokepilot.yml, not
+# both: Prometheus rejects a repeated job_name. Overlay Prometheus should
+# keep the DNS job and ignore this file.
+- job_name: pokepilot-wall
+  metrics_path: /metrics
+  static_configs:
+    - targets:
+        - 192.168.50.100:18080
