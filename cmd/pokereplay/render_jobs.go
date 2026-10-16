@@ -274,6 +274,10 @@ func (s *replayServer) recoverRenderJob(ctx context.Context, job farm.MediaRende
 		s.recoverHighlightRenderJob(ctx, job)
 		return
 	}
+	if job.Mode == editRenderMode {
+		s.recoverEditRenderJob(ctx, job)
+		return
+	}
 	mode, err := parseReplayMode(job.Mode)
 	if err != nil {
 		claimed, ok, claimErr := s.claimRenderJob(ctx, job.ID)
