@@ -10,6 +10,7 @@ import { formatMediaHref, type MediaState } from './mediaQuery'
 import { gameTitle } from './operations'
 import { middleTruncate, timeAgo } from './runs'
 import { useRunMedia } from './useRunMedia'
+import StudioThumbnails from './StudioThumbnails.vue'
 
 // Studio: derived outputs made from a finished run's recording. Only the
 // highlight reel exists as a backend capability today, so that is all it offers.
@@ -110,5 +111,6 @@ const search = () => window.location.search
         <p v-if="source" class="text-meta text-fg-2">Source: {{ source.game ? gameTitle(source.game) : 'Game' }} · {{ source.goal || 'Free play' }}</p>
       </div>
     </section>
+    <StudioThumbnails :run-i-d="runID" />
   </div>
 </template>
