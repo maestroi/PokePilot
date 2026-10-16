@@ -10,8 +10,8 @@ const pane = readFileSync(new URL('../src/operator/RunDetailPane.vue', import.me
 const archiveQuery = readFileSync(new URL('../src/operator/runArchiveQuery.ts', import.meta.url), 'utf8')
 const app = readFileSync(new URL('../src/operator/App.vue', import.meta.url), 'utf8')
 const evidence = readFileSync(new URL('../src/operator/RunHistoricalEvidence.vue', import.meta.url), 'utf8')
-const library = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
-const jobs = readFileSync(new URL('../src/operator/RenderJobsPanel.vue', import.meta.url), 'utf8')
+const library = readFileSync(new URL('../src/operator/MediaLibrary.vue', import.meta.url), 'utf8')
+const jobs = readFileSync(new URL('../src/operator/MediaJobs.vue', import.meta.url), 'utf8')
 
 function job(state: string, id = 'job-1'): MediaRenderJob {
   return { id, state, run_id: 'run-1', version: 1, identity: '', artifact_key: '', mode: 'semantic', created_at_unix_ms: 1, updated_at_unix_ms: 2 }
@@ -85,8 +85,8 @@ test('recording/source links preserve exact run and job IDs across views', () =>
   assert.equal(recordingMediaHref(runID, recordingSummary({ replay_available: true })), '?run=run%2F%23with+spaces#media/library')
   assert.match(history, /recordingMediaHref\(run.run_id, recording\(run\)/)
   assert.match(history, /v-if="recording\(run\).canWatch"/)
-  assert.match(library, /operatorHref\(run.status === 'done' \? 'runs' : 'live', \{ run: run.run_id, job: '' \}/)
-  assert.match(jobs, /operatorHref\('runs', \{ run: job.run_id, job: '' \}/)
+  assert.match(library, /operatorHref\(isLiveRun\(run\) \? 'live' : 'runs', \{ run: run.run_id, job: '' \}/)
+  assert.match(jobs, /operatorHref\('runs', \{ run: runID, job: '' \}/)
   assert.match(history, /safeIssueURL\(run\)/)
   assert.match(pane, /section: 'experiments', experiment: run.experiment_id/)
 })

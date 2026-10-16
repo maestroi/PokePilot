@@ -321,7 +321,7 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
 
         <div class="mt-6 flex items-center gap-2">
           <h3 class="text-title font-semibold">Highlights</h3>
-          <StatusPill v-if="e.highlights.value" :status="presentReplay(e.highlights.value.state)" />
+          <StatusPill v-if="e.highlights.value" :status="presentReplay(e.highlights.value.state, undefined, 'Highlights')" />
         </div>
         <p class="mt-1 max-w-[72ch] text-meta text-fg-2">
           <template v-if="e.highlights.value?.state === 'empty'">No highlight-worthy events were found.</template>

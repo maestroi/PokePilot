@@ -389,10 +389,7 @@ paired experiment" is the primary action. Endless and paired experiments are
 labelled as distinct types. Charts follow the dataviz guidance: direct labels, and
 colours from the semantic tokens only when they carry meaning.
 
-**Media (Library, Studio, Broadcasts, Jobs).** Follow the media-workspace concept
-image, restyled to this system: Library is list + detail with an in-pane player;
-an on-air strip appears only when a broadcast is actually live (glyph states per DESIGN §4.3).
-Remove the per-tab intro cards. Studio shows only capabilities that exist.
+**Media (Library, Studio, Broadcasts, Jobs)**: fully specified in §5 (T-43).
 
 **Operations (Overview).** Follow the operations concept: health strip, Workers table
 (worker → current run link to Live), Queue & leases, Recent operational activity.
@@ -556,4 +553,161 @@ page header; investigate errors also appear in the pane footer.
 5. Dismiss and Delete matching runs always confirm; delete states the count.
 6. At 375px the page has no horizontal scroll and every action is reachable.
 7. No text under 12px; no Tailwind palette colours, `Panel` or `StatusBadge` in `FailuresView`.
+
+---
+
+## 5. Media — Library, Studio, Broadcasts, Jobs (T-43)
+
+### 5.1 Job
+
+Answer, in order: *What media exists for which run, and can I watch it? Is any of it
+public, and is anything on air right now? What is being generated, and did it fail?*
+Then act: play, publish or hide, generate a derived output, start or stop a broadcast,
+retry or cancel a render job. Media owns outputs and their publication; run facts stay
+in Runs and Live, destinations and renderer themes in Settings.
+
+Data (existing calls only):
+- Library: `getDashboard({active})` + `getDashboard({status:'done', limit:48})` (+ `getRun`
+  for a linked run outside that page), `getSpectatorControl`, `getMediaRenderJobs(100)`
+  for recording state; per selected run `getReplayStatus`, `getHighlightStatus`,
+  `getYouTubePublishStatus` (shared `useRunMedia`, also used by Live's inspector).
+- Studio: finished runs + `getHighlightStatus` / `renderHighlights`.
+- Broadcasts and the on-air strip: running runs from `getDashboard({active})` and
+  `getBroadcastStatus` per running run (3s), `getBroadcastControl` (30s).
+- Jobs: `getMediaRenderJobs(50)` (2s), `retry/cancel/deleteMediaRenderJob`.
+
+Library rows are **source runs**, one per run: its full replay and highlights are outputs
+of that run, not separate items (10-14 spec). A per-output list (format filter, Shorts,
+episodes) is **[needs API]**: there is no output index, only per-run status calls.
+
+### 5.2 Desktop layout (≥ 1280px, Library with a selection)
+
+```
+┌ Page header ───────────────────────────────────────────────────────────────────────┐
+│ Media                                                          [↗ Open public site] │
+├ Tabs ──────────────────────────────────────────────────────────────────────────────┤
+│ Library   Studio   Broadcasts   Jobs                                                │
+├ On-air strip (only while a broadcast is live) ─────────────────────────────────────┤
+│ On air  ● Live  Twitch  Source run-1nrt…rms4 · Game  32m 18s  [Open source run] [Manage broadcast] │
+├ Views ─────────────────────────────────────────────────────────────────────────────┤
+│ [All 46] [Finished 40] [Live 6]                                                  ⟳ │
+├ FilterBar ─────────────────────────────────────────┬ DetailPane 440 ───────────────┤
+│ [Search run ID, game or goal…] [Replay ▾] [Public ▾]  46 of 46 │ run-10c9…ko0h ⧉  ✓ Replay available ✕ │
+├ DataTable ─────────────────────────────────────────┤ ▶ in-pane player (video)      │
+│ Replay              Source run          Public  When  ⋯ │ [Full replay|Highlights]      │
+│ ● Running           run-1nrt…rms4 ⧉     Public  37m   ⋯ │ Full replay ✓  Generate/Cancel │
+│ ✓ Replay available  run-10c9…ko0h ⧉     Public  37m   ⋯ │ Highlights  ○  Create in Studio│
+│ ◐ Rendering · 43%   run-3oy7…24do ⧉     Private 4 h   ⋯ │ Public site [Replay public] │
+│ …                                                       │ YouTube (when configured)      │
+├─────────────────────────────────────────────────────┤ Source run (KeyValueList)     │
+│ Live runs and the 48 most recent finished runs   Browse all source runs in Runs │ [Open replay ↗] [Open source run] │
+└─────────────────────────────────────────────────────┴───────────────────────────────┘
+```
+
+### 5.3 Regions
+
+**Page header.** "Media" + "Open public site" (`secondary`). No description, no eyebrow,
+no per-tab intro cards.
+
+**Tabs.** Underline tabs Library · Studio · Broadcasts · Jobs as links (`aria-current`).
+Switching tabs keeps the source run (`run`) and drops the job (`job` only means Jobs).
+
+**On-air strip.** Rendered across every tab only while the replay host reports a
+broadcast as `live`/`healthy` (`isBroadcastOnAir`). One line per live broadcast:
+`● Live` pill, destination label, source run (middle-truncated, full in `title`) + game,
+elapsed from `started_at_unix_ms`. Actions: "Open source run" (Live) and "Manage
+broadcast" (Broadcasts with that run selected). `starting`, `reconnecting`, a running
+game or public visibility never show the strip. External channel links are
+**[needs API]** (destinations carry no channel URL).
+
+**Library.**
+- Views: All / Finished / Live with counts.
+- FilterBar: search (client-side over run ID, game, goal; `/` focuses it), *Replay*
+  facet (Ready / Generating / Failed / No replay, from `recordingSummary`), *Public site*
+  facet (Public / Private). Chips + "Clear all". Format facet: **[needs API]**.
+- DataTable: Replay (`StatusPill`: run status for live runs, recording state for finished
+  runs via `presentRecording`; secondary "Full replay" / "Live run · replay after it ends"),
+  Source run (middle-truncated + copy; secondary game · goal), Public site (`Tag` +
+  "★ Featured"), When (relative, absolute in `title`), ⋯ `ActionMenu`: Open source run ·
+  Copy run ID · Open render job · ─ Open replay/live ↗ · Visible on public site
+  (`menuitemcheckbox`) · Feature live / Clear feature.
+- Footer: scope note + "Browse all source runs in Runs".
+- DetailPane (`?run=`): header run ID + copy + recording pill + close. In-pane `<video>`
+  player for the replay, with a Full replay / Highlights segmented control when the reel
+  is ready; when there is no video, the well states why (`recordingSummary.detail`, or
+  "This run is still live"). Sections: *Full replay* (state, Generate/Retry replay,
+  Cancel generation… confirm, Open video file, Open render job), *Highlights* (state,
+  Create/Open in Studio, Manifest), *Public site* (visibility toggle with the existing
+  "Publish on start / Public live / Replay public / Publish replay" labels, Feature live),
+  *YouTube* (when configured and the replay is ready; upload confirm), *Source run*
+  (`KeyValueList`). Footer: primary "Open replay ↗" when public, "Open source run".
+
+**Studio.** Source recording list (finished runs, `?run=`) + "Highlight reel" bay:
+state, moments and length, Generate/Retry highlights, in-bay player when ready,
+Manifest, Open render job, Open in Library. Shorts, episodes, edit plans and
+publication review are **[needs API]** (#796, #797–#803) and are not shown, not even
+as disabled buttons.
+
+**Broadcasts.** "Running runs" listbox: each running run with its actual broadcast
+`StatusPill` (`presentBroadcast`: Offline ○, Starting ◐, Live ●, Reconnecting ◐,
+Stopping ◐, Failed ✕), destination and elapsed. Selecting sets `?run=`. "Output" bay
+for the selected run: destination select (configured state, host, "Destination settings →"
+to Settings › Destinations), Encoding disclosure (size, fps, bitrate, preset), primary
+**Start broadcast** (disabled with the reason as `text-meta` when no destination is
+configured), **Stop broadcast** (`danger`), restart note, and status `KeyValueList`
+(destination, output, elapsed, reconnects, source run) + last error. Credentials stay
+on the replay host.
+
+**Jobs.** Views: All / Active / Queued / Failed / Ready / Cancelled with counts over the
+loaded jobs. A `?run=` filter shows as a removable chip. DataTable: Status
+(`presentJob`, failure class + retries as secondary), Source run (middle-truncated +
+copy; job ID secondary), Progress (`Meter` + segments, size), Renderer, Updated, ⋯
+(Open source run · Copy job ID · Copy run ID · ─ Retry · Cancel render… · Remove job
+record…). DetailPane (`?job=`): progress, failure alert with the raw error in a
+"Details" disclosure, job `KeyValueList` (source run, stage, renderer + explanation,
+worker/lease, retries, output size, runtime, created, updated, artifact key). Footer:
+Retry (primary, when retryable) · Open source run · Cancel render… · Remove job record….
+
+**Confirmations (existing copy).** Cancel render: "Cancel replay rendering for <run>? The
+current render attempt will stop and can be retried later." Remove: "Remove render job
+for <run>?" + the ready/terminal detail. Cancel generation and YouTube upload keep Live's
+copy. Retry and broadcast start/stop act immediately, as before.
+
+**Routing.** `#media/<tab>?run=…&job=…&media_q=…&media_view=…&recording=…&visibility=…&job_state=…`.
+Defaults are omitted; Media-only keys are prefixed so Failures' `q`/`state` never filter
+Media. Legacy links resolve and are rewritten in place: `#media/replays` → Library,
+`#media/render-jobs` → Jobs, `#media/themes` and `#media/assets` → Settings › Renderer,
+and any Library link carrying `job=` (`#media?job=…`) → Jobs with that job selected.
+
+### 5.4 States
+
+| State | Treatment |
+|---|---|
+| Loading | Table frame + skeleton rows; pane skeleton with a 16:9 well |
+| Empty library / jobs | `EmptyState` "No media yet" / "No replay render jobs yet" |
+| Empty with filters | "No media matches" / "No render jobs match" + Clear filters / Show all jobs |
+| API error | `ResourceState` error inside the frame + Retry |
+| Stale | Stale alert above the table; rows stay |
+| `?run=` unknown | Warning with "Inspect source run"; pane "Run not found" |
+| `?job=` not in the recent list | Pane: "No matching render job is in the recent job list for this selection." + Show all jobs |
+| Broadcast status unavailable | Neutral "■ Status unavailable" pill per run; warning in the Output bay |
+| No running run | Broadcasts empty state with a link to Settings › Destinations |
+
+### 5.5 Responsive
+
+- **1024–1279**: panes become overlay sheets; Renderer and When hide while a pane is open.
+- **768–1023**: Progress and Public site columns hide (they're in the pane).
+- **< 768**: three-line lists (pill · meta / run ID / game · goal), `lg` controls, full-screen panes,
+  Broadcasts bays stack.
+
+### 5.6 Acceptance (page level)
+
+1. Tab and selected item (`run` / `job`) survive reload and back/forward (`test/mediaQuery.test.ts`).
+2. The on-air strip renders only for a backend-reported live broadcast.
+3. Legacy media links (old sub-tabs, `?job=`) resolve to Jobs with the job selected (`test/mediaNavigation.test.ts`).
+4. No per-tab intro cards; Studio shows only implemented capabilities.
+5. Replay generate/cancel, highlights, YouTube publishing, public visibility/feature, broadcasts
+   and render job retry/cancel/remove all remain, with their confirms.
+6. At 375px no horizontal scroll; every action is reachable.
+7. No text under 12px, palette colours, `Panel`, `StatusBadge` or game-specific strings in Media files.
 

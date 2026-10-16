@@ -9,8 +9,14 @@
 //
 // ponytail: endpoints without a read-only source (checkpoints, replay, media,
 // models, analytics) answer with empty data; add them when a page needs them.
+//
+// Media has no read-only source at all (no MCP tool, nothing on the public API
+// for private runs). POKEPILOT_DEV_MEDIA_FIXTURES=1 fills render jobs, replay
+// availability and broadcast state with local fixtures keyed to real run IDs so
+// the Media page can be checked visually; mutations stay refused either way.
 import { createServer } from 'node:http'
 
+const MEDIA_FIXTURES = process.env.POKEPILOT_DEV_MEDIA_FIXTURES === '1'
 const PORT = Number(process.env.PORT || 18080)
 const MCP_URL = process.env.POKEPILOT_MCP_URL || 'https://admin.rompilot.app/mcp'
 const PUBLIC_API = process.env.POKEPILOT_PUBLIC_API || 'https://api.rompilot.app'
@@ -103,7 +109,56 @@ async function archive(query) {
   runs.sort((a, b) => sign * (key(a) - key(b)))
   const offset = Number(query.get('offset') || 0)
   const limit = Number(query.get('limit') || 25)
+  if (MEDIA_FIXTURES) runs = runs.map((run) => (fixtureReplayReady(run.run_id) ? { ...run, replay_available: true } : run))
   return { now: list.now, runs: runs.slice(offset, offset + limit), total: runs.length, history_facets, workers: [] }
+}
+
+// ---- Media fixtures (POKEPILOT_DEV_MEDIA_FIXTURES=1) -------------------------------
+const fixtureRuns = { done: [], running: [] }
+async function loadFixtureRuns() {
+  const [done, active] = await Promise.all([
+    tool('pokepilot_list_runs', { limit: 12, status: 'done' }),
+    tool('pokepilot_list_runs', { limit: 40 })
+  ])
+  fixtureRuns.done = (done.runs ?? []).filter((run) => run.status === 'done').map((run) => run.run_id)
+  fixtureRuns.running = (active.runs ?? []).filter((run) => run.status === 'running').map((run) => run.run_id)
+}
+const fixtureReplayReady = (runID) => fixtureRuns.done.slice(0, 3).includes(runID)
+function fixtureJobs() {
+  const now = Date.now()
+  const states = [
+    ['ready', { segments_total: 24, segments_done: 24, result_size: 182_000_000, finished_at_unix_ms: now - 3_600_000 }],
+    ['ready', { segments_total: 18, segments_done: 18, result_size: 96_500_000, finished_at_unix_ms: now - 7_200_000 }],
+    ['ready', { segments_total: 30, segments_done: 30, result_size: 240_000_000, finished_at_unix_ms: now - 9_000_000 }],
+    ['rendering', { stage: 'rendering', segments_total: 40, segments_done: 17, worker_id: 'render-vm-1', lease_expires_at_unix_ms: now + 60_000 }],
+    ['failed', { failure_class: 'renderer_crash', retry_count: 2, last_error: 'ffmpeg exited with status 1: segment 12 frame decode failed' }],
+    ['queued', {}],
+    ['cancelled', {}]
+  ]
+  const jobs = fixtureRuns.done.slice(0, states.length).map((runID, index) => {
+    const [state, extra] = states[index]
+    return {
+      version: 1, id: `job-${runID.slice(4, 16)}`, identity: runID, run_id: runID, mode: index % 2 ? 'semantic' : 'broadcast',
+      artifact_key: `replays/${runID}/replay.mp4`, state, created_at_unix_ms: now - (index + 2) * 1_800_000,
+      updated_at_unix_ms: now - index * 240_000, started_at_unix_ms: state === 'queued' ? undefined : now - (index + 1) * 1_500_000, ...extra
+    }
+  })
+  const states_ = {}
+  for (const job of jobs) states_[job.state] = (states_[job.state] || 0) + 1
+  return { jobs, total: jobs.length, states: states_ }
+}
+function fixtureBroadcastStatus(runID) {
+  if (runID !== fixtureRuns.running[0]) return { run_id: runID, state: 'stopped' }
+  return {
+    run_id: runID, state: 'live', provider: 'twitch', host: 'live.twitch.tv', width: 1280, height: 720, fps: 30,
+    video_bitrate_kbps: 4500, reconnects: 1, started_at_unix_ms: Date.now() - 1_938_000
+  }
+}
+function replayStatus(runID) {
+  const job = MEDIA_FIXTURES ? fixtureJobs().jobs.find((item) => item.run_id === runID) : null
+  if (fixtureReplayReady(runID)) return { run_id: runID, state: 'ready', job_id: job?.id }
+  if (job && ['rendering', 'queued'].includes(job.state)) return { run_id: runID, state: 'generating', job_id: job.id, segments: job.segments_total, segments_done: job.segments_done }
+  return { run_id: runID, state: job?.state === 'failed' ? 'error' : 'missing' }
 }
 
 function send(res, status, value) {
@@ -123,16 +178,25 @@ const routes = [
   [/^\/v1\/runs\/([^/]+)\/debug$/, (q, id) => tool('pokepilot_get_run_debug', { run_id: id })],
   [/^\/v1\/runs\/([^/]+)\/artifacts$/, (q, id) => tool('pokepilot_get_run_artifacts', { run_id: id })],
   [/^\/v1\/runs\/[^/]+\/checkpoints$/, () => []],
-  [/^\/v1\/media\/render-jobs$/, () => ({ jobs: [] })],
+  [/^\/v1\/media\/render-jobs$/, () => (MEDIA_FIXTURES ? fixtureJobs() : { jobs: [], total: 0, states: {} })],
+  [/^\/v1\/live\/broadcast\/config$/, () => ({
+    destinations: MEDIA_FIXTURES
+      ? [{ provider: 'twitch', label: 'Twitch', configured: true, host: 'live.twitch.tv' }, { provider: 'youtube', label: 'YouTube Live', configured: false, reason: 'No stream key configured on the replay host' }]
+      : [],
+    restart_behavior: 'manual_restart_required'
+  })],
+  [/^\/v1\/runs\/([^/]+)\/live\/broadcast\/status$/, (q, id) => (MEDIA_FIXTURES ? fixtureBroadcastStatus(id) : { run_id: id, state: 'stopped' })],
   // The wall's /v1/triage includes resolved groups; the MCP hides them unless asked.
   // If the full history ever trips the MCP's 2 MB response cap, fall back to open groups.
   [/^\/v1\/triage$/, () => tool('pokepilot_get_triage', { include_resolved: true })
     .catch(() => tool('pokepilot_get_triage', {}))
     .then((value) => value?.groups ?? [])],
-  [/^\/v1\/runs\/[^/]+\/replay\/status$/, () => ({ state: 'missing' })],
+  [/^\/v1\/runs\/([^/]+)\/replay\/status$/, (q, id) => replayStatus(id)],
   [/^\/v1\/runs\/[^/]+\/highlights\/status$/, () => ({ state: 'missing' })],
   [/^\/v1\/programming$/, () => publicJSON('/v1/watch/programming')],
-  [/^\/v1\/spectator\/control$/, () => ({ runs: {} })],
+  [/^\/v1\/spectator\/control$/, () => (MEDIA_FIXTURES
+    ? { featured_run_id: fixtureRuns.running[0], runs: Object.fromEntries(fixtureRuns.done.slice(3, 6).map((id) => [id, { visible: false }])) }
+    : { runs: {} })],
   [/^\/v1\/(build|ui-config)$/, () => ({})]
 ]
 
@@ -155,4 +219,7 @@ createServer(async (req, res) => {
   } catch (cause) {
     send(res, cause.status || 502, { error: cause.message })
   }
-}).listen(PORT, '127.0.0.1', () => console.log(`dev backend on http://127.0.0.1:${PORT}`))
+}).listen(PORT, '127.0.0.1', () => {
+  console.log(`dev backend on http://127.0.0.1:${PORT}${MEDIA_FIXTURES ? ' (media fixtures)' : ''}`)
+  if (MEDIA_FIXTURES) loadFixtureRuns().catch((cause) => console.error('media fixtures:', cause.message))
+})

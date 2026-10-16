@@ -34,7 +34,7 @@ const descriptions: Record<OperatorView, string> = {
   runs: 'Search completed runs, inspect persisted evidence, and clean up older history.',
   failures: '',
   analytics: 'Run outcomes, badge progress, LLM workload and comparisons.',
-  media: 'Discover replay media, manage rendering jobs, and control broadcasting and publishing.',
+  media: '',
   operations: 'Fleet health, workers, queues, leases, and operational status.',
   settings: 'Configure model deployments, per-browser launch defaults, broadcast destination status and renderer preferences.',
   'new-run': 'Choose a game, settings and goal, then queue a new run.'
@@ -55,7 +55,6 @@ const initialRoute = operatorRoute(window.location.hash)
 const activeView = ref<OperatorView>(initialRoute.view)
 const activeSection = ref(initialRoute.section)
 const linkedRunID = ref(new URLSearchParams(window.location.search).get('run') || '')
-const linkedJobID = ref(new URLSearchParams(window.location.search).get('job') || '')
 const linkedExperimentID = ref(new URLSearchParams(window.location.search).get('experiment') || '')
 const configuredSpectatorURL = ref('')
 const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
@@ -96,7 +95,6 @@ function syncHash(): void {
   activeSection.value = next.section
   const query = new URLSearchParams(window.location.search)
   linkedRunID.value = query.get('run') || ''
-  linkedJobID.value = query.get('job') || ''
   linkedExperimentID.value = query.get('experiment') || ''
   document.title = `RomPilot Admin · ${labels[next.view]}`
 }
@@ -130,7 +128,7 @@ onUnmounted(() => {
     :subtitle="descriptions[activeView]"
     mode="private"
     :navigation="navigation"
-    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures'"
+    :show-intro="activeView !== 'live' && activeView !== 'runs' && activeView !== 'failures' && activeView !== 'media'"
   >
     <template #summary>
       <a :href="'#operations'" class="inline-flex items-center gap-1.5 text-meta text-fg-2 hover:text-fg" title="Open Operations">
@@ -163,7 +161,7 @@ onUnmounted(() => {
     <RunArchiveView v-else-if="activeView === 'runs'" :run-id="linkedRunID" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
-    <MediaView v-else-if="activeView === 'media'" :section="activeSection" :run-id="linkedRunID" :job-id="linkedJobID" />
+    <MediaView v-else-if="activeView === 'media'" :public-base="configuredSpectatorURL" />
     <OperationsView v-else-if="activeView === 'operations'" />
     <SettingsView v-else-if="activeView === 'settings'" :section="activeSection" />
     <ToolsView v-else-if="activeView === 'new-run'" />

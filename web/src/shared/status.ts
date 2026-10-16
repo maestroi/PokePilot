@@ -44,19 +44,21 @@ export function presentRunStatus(run: RunLike): StatusPresentation {
   }
 }
 
-export function presentReplay(state: string | undefined, progress?: number): StatusPresentation {
+// `noun` names the output ("Replay", "Highlights"); both use the same backend states.
+export function presentReplay(state: string | undefined, progress?: number, noun = 'Replay'): StatusPresentation {
   switch ((state || '').toLowerCase()) {
-    case 'ready': return { label: 'Replay ready', tone: 'ok', glyph: '✓' }
+    case 'ready': return { label: `${noun} ready`, tone: 'ok', glyph: '✓' }
     case 'generating': return {
       label: progress !== undefined && Number.isFinite(progress) ? `Generating ${Math.round(progress)}%` : 'Generating',
       tone: 'accent',
       glyph: '◐'
     }
     case 'error':
-    case 'failed': return { label: 'Replay failed', tone: 'danger', glyph: '✕' }
-    case 'disabled': return { label: 'Replay unavailable', tone: 'neutral', glyph: '■' }
+    case 'failed': return { label: `${noun} failed`, tone: 'danger', glyph: '✕' }
+    case 'disabled': return { label: `${noun} unavailable`, tone: 'neutral', glyph: '■' }
+    case 'empty': return { label: 'Nothing to show', tone: 'neutral', glyph: '■' }
     case 'missing':
-    case '': return { label: 'No replay yet', tone: 'neutral', glyph: '○' }
+    case '': return { label: `No ${noun.toLowerCase()} yet`, tone: 'neutral', glyph: '○' }
     default: return { label: humanize(state || ''), tone: 'neutral', glyph: '■' }
   }
 }
@@ -77,4 +79,59 @@ export function presentFailureGroup(group: FailureGroupLike, resolved: boolean):
   if ((group.issue.verification_state || '').toLowerCase() === 'regressed') return { label: 'Regressed', tone: 'danger', glyph: '✕' }
   if (group.issue.circuit_open) return { label: 'Quarantined', tone: 'warn', glyph: '▲' }
   return { label: 'Open', tone: 'danger', glyph: '✕' }
+}
+
+const JOB_ACTIVE = new Set(['preparing', 'rendering', 'assembling', 'uploading'])
+
+// A durable media render job. Active stages share one glyph; the stage name
+// stays visible as the label so the operator sees where the job is.
+export function presentJob(state: string | undefined, progress?: number): StatusPresentation {
+  const value = (state || '').toLowerCase()
+  if (JOB_ACTIVE.has(value)) {
+    const pct = progress !== undefined && Number.isFinite(progress) ? ` ${Math.round(progress)}%` : ''
+    return { label: `${humanize(value)}${pct}`, tone: 'accent', glyph: '◐' }
+  }
+  switch (value) {
+    case 'queued': return { label: 'Queued', tone: 'neutral', glyph: '○' }
+    case 'ready': return { label: 'Ready', tone: 'ok', glyph: '✓' }
+    case 'failed': return { label: 'Failed', tone: 'danger', glyph: '✕' }
+    case 'cancelled': return { label: 'Cancelled', tone: 'neutral', glyph: '■' }
+    default: return { label: humanize(value || 'unknown'), tone: 'neutral', glyph: '■' }
+  }
+}
+
+// Outbound broadcast state exactly as the replay host reports it. A running
+// game or an accepted start request is never "Live" (10-14 spec, Broadcasts).
+export function presentBroadcast(state: string | undefined): StatusPresentation {
+  switch ((state || '').toLowerCase()) {
+    case 'live':
+    case 'healthy': return { label: 'Live', tone: 'ok', glyph: '●', live: true }
+    case 'starting': return { label: 'Starting', tone: 'accent', glyph: '◐' }
+    case 'reconnecting': return { label: 'Reconnecting', tone: 'warn', glyph: '◐' }
+    case 'stopping': return { label: 'Stopping', tone: 'accent', glyph: '◐' }
+    case 'failed': return { label: 'Failed', tone: 'danger', glyph: '✕' }
+    case 'stopped':
+    case 'offline':
+    case '': return { label: 'Offline', tone: 'neutral', glyph: '○' }
+    default: return { label: humanize(state || ''), tone: 'neutral', glyph: '■' }
+  }
+}
+
+export function isBroadcastOnAir(state: string | undefined): boolean {
+  const value = (state || '').toLowerCase()
+  return value === 'live' || value === 'healthy'
+}
+
+type RecordingLike = { state: string; label: string; tone: 'success' | 'info' | 'warning' | 'danger' | 'neutral' }
+const RECORDING_PILL: Record<RecordingLike['tone'], Pick<StatusPresentation, 'tone' | 'glyph'>> = {
+  success: { tone: 'ok', glyph: '✓' },
+  info: { tone: 'accent', glyph: '◐' },
+  warning: { tone: 'warn', glyph: '▲' },
+  danger: { tone: 'danger', glyph: '✕' },
+  neutral: { tone: 'neutral', glyph: '○' }
+}
+
+// A run's recording summary (runRecording.ts) as a pill.
+export function presentRecording(summary: RecordingLike): StatusPresentation {
+  return { label: summary.label, ...RECORDING_PILL[summary.tone] }
 }

@@ -8,7 +8,7 @@ const operations = readFileSync(new URL('../src/operator/OperationsView.vue', im
 const settings = readFileSync(new URL('../src/operator/SettingsView.vue', import.meta.url), 'utf8')
 const launch = readFileSync(new URL('../src/operator/ToolsView.vue', import.meta.url), 'utf8')
 const media = readFileSync(new URL('../src/operator/MediaView.vue', import.meta.url), 'utf8')
-const broadcast = readFileSync(new URL('../src/operator/BroadcastPanel.vue', import.meta.url), 'utf8')
+const broadcast = readFileSync(new URL('../src/operator/MediaBroadcasts.vue', import.meta.url), 'utf8')
 const operator = readFileSync(new URL('../src/operator/App.vue', import.meta.url), 'utf8')
 
 test('Operations is a worker/queue control plane, not a results browser', () => {
