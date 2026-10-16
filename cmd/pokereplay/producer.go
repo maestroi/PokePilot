@@ -35,10 +35,12 @@ func (s *replayServer) producerInput(r *http.Request, runID string, history []pr
 	for attempt := 1; attempt <= attempts; attempt++ {
 		timeline, err := s.mediaTimelineAttempt(r.Context(), runID, attempt)
 		if errors.Is(err, errMediaTimelineNotFound) || errors.Is(err, errRunNotFound) {
+			in.Incomplete = true
 			continue // historical runs may lack the optional semantic artifact
 		}
 		if err != nil { return in, err }
 		if timeline.Attempt == 0 { timeline.Attempt = attempt }
+		if timeline.Attempt != attempt { return in, fmt.Errorf("producer: timeline attempt %d does not match artifact generation %d", timeline.Attempt, attempt) }
 		in.Timelines = append(in.Timelines, timeline)
 	}
 	return in, nil
@@ -144,7 +146,7 @@ func (s *replayServer) handleProducerAssessment(w http.ResponseWriter, r *http.R
 		return
 	}
 	var assessment producer.Assessment
-	if err := json.Unmarshal(data, &assessment); err != nil || assessment.Hash != hash || assessment.RunID != runID {
+	if err := json.Unmarshal(data, &assessment); err != nil || assessment.Hash != hash || assessment.RunID != runID || producer.VerifyChecksum(assessment) != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error":"stored assessment identity mismatch"})
 		return
 	}
