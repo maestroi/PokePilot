@@ -332,7 +332,12 @@ func (s *replayServer) handleStudioPublicationCreate(w http.ResponseWriter, r *h
 			return
 		}
 		found := false
-		for _, recorded := range idx.IDs { if recorded == existing.ID { found = true; break } }
+		for _, recorded := range idx.IDs {
+			if recorded == existing.ID {
+				found = true
+				break
+			}
+		}
 		if !found {
 			if len(idx.IDs) >= 1000 {
 				writeJSON(w, http.StatusConflict, map[string]string{"error": "publication queue limit reached"})
