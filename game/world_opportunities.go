@@ -43,10 +43,10 @@ func AssessRouteGate(t Transition, caps CapabilitySet) RouteGate {
 // WorldOpportunities contains optional capabilities and structured sources.
 // Games without radio/phone mechanics need not implement this surface.
 type WorldOpportunities struct {
-	Capabilities []CapabilityID `json:"capabilities,omitempty"`
+	Capabilities  []CapabilityID `json:"capabilities,omitempty"`
 	PhoneContacts []PhoneContact `json:"phone_contacts,omitempty"`
 	BattleSources []BattleSource `json:"battle_sources,omitempty"`
-	RouteGates []RouteGate `json:"route_gates,omitempty"`
+	RouteGates    []RouteGate    `json:"route_gates,omitempty"`
 }
 
 // WorldOpportunityDecoder is optional and owned by the cartridge profile.
