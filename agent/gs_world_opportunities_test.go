@@ -22,7 +22,7 @@ func (m pokegearFixtureMemory) PeekInto(addr uint16, dst []byte) {
 func TestGSWorldOpportunitiesAppearAsPlannerPrerequisitesAndRematches(t *testing.T) {
 	mem := pokegearFixtureMemory{
 		sym.PokegearFlags: 0x04, // phone, but no radio or expansion card
-		sym.PhoneList: 15, // Joey is registered
+		sym.PhoneList:     15,   // Joey is registered
 	}
 	mem[sym.EventFlags+628/8] |= 1 << uint(628%8) // Joey ready to rematch
 	var obs Observation
