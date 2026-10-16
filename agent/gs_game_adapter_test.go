@@ -258,8 +258,14 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: stage.next, Complete: true})
 	}
+	for _, next := range []game.ProgressID{gsprofile.ProgressRedGyaradosDefeated, gsprofile.ProgressLanceHelpAccepted} {
+		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
+			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
+	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("completed six-badge frontier still offered: %+v", got)
+		t.Fatalf("unfinished Rocket Hideout still offered: %+v", got)
 	}
 }
 
