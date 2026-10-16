@@ -54,10 +54,10 @@
           "uid": "${DS_PROMETHEUS}"
         },
         "query": {
-          "query": "label_values({__name__=~\"pokepilot_runs_active|pokepilot_run_milestones_total|pokepilot_last_successful_run_timestamp_seconds\"}, game)",
+          "query": "label_values(pokepilot_last_successful_run_timestamp_seconds, game)",
           "refId": "StandardVariableQuery"
         },
-        "definition": "label_values({__name__=~\"pokepilot_runs_active|pokepilot_run_milestones_total|pokepilot_last_successful_run_timestamp_seconds\"}, game)",
+        "definition": "label_values(pokepilot_last_successful_run_timestamp_seconds, game)",
         "refresh": 1,
         "includeAll": true,
         "allValue": ".*",
@@ -105,8 +105,8 @@
   "panels": [
     {
       "id": 1,
-      "title": "Completions by game",
-      "description": "Terminal successes per second.",
+      "title": "Milestones over time",
+      "description": "Stages reached since this wall process started. Drawn from the counter, so the line remains when the stage is not currently increasing.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -149,8 +149,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (game) (rate(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{game}}",
+          "expr": "sum by (milestone) (pokepilot_run_milestones_total{game=~\"${game:regex}\"})",
+          "legendFormat": "{{milestone}}",
           "refId": "A",
           "instant": false,
           "range": true
@@ -160,7 +160,7 @@
     {
       "id": 2,
       "title": "Runtime by result",
-      "description": "p50 and p95 queue-to-terminal time for completed and failed runs.",
+      "description": "p95 time to a completed or failed result for runs this process has finished. Flat 0 until that histogram is exported.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -203,8 +203,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, game) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"}[$__rate_interval])))",
-          "legendFormat": "{{game}} completed p50",
+          "expr": "(histogram_quantile(0.95, sum by (le, game) (pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"})) or on() vector(0))",
+          "legendFormat": "{{game}} completed p95",
           "refId": "A",
           "instant": false,
           "range": true
@@ -214,20 +214,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, game) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"}[$__rate_interval])))",
-          "legendFormat": "{{game}} completed p95",
-          "refId": "B",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le, game) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"failed\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.95, sum by (le, game) (pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"failed\"})) or on() vector(0))",
           "legendFormat": "{{game}} failed p95",
-          "refId": "C",
+          "refId": "B",
           "instant": false,
           "range": true
         }
@@ -236,7 +225,7 @@
     {
       "id": 3,
       "title": "Milestones reached",
-      "description": "Campaigns that newly reached each funnel stage in the selected range. Badge ids are zero-padded so badge_01 sorts before badge_10. Story stages keep their vocabulary order only approximately.",
+      "description": "How many campaigns reached each stage since this wall process started. Badge numbers are zero-padded so badge_01 sorts before badge_10.",
       "type": "bargauge",
       "datasource": {
         "type": "prometheus",
@@ -276,7 +265,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(sum by (milestone) (increase(pokepilot_run_milestones_total{game=~\"${game:regex}\"}[$__range])), \"milestone\", \"badge_0$1\", \"milestone\", \"badge_([1-9])$\")",
+          "expr": "label_replace(sum by (milestone) (pokepilot_run_milestones_total{game=~\"${game:regex}\"}), \"milestone\", \"badge_0$1\", \"milestone\", \"badge_([1-9])$\")",
           "legendFormat": "{{milestone}}",
           "refId": "A",
           "instant": true,
@@ -287,7 +276,7 @@
     {
       "id": 4,
       "title": "Where runs stopped",
-      "description": "Furthest funnel stage of runs that reached a terminal result in the selected range.",
+      "description": "Furthest stage of runs that reached a terminal result on this wall process. 0 at a reached stage means no run has finished there yet.",
       "type": "bargauge",
       "datasource": {
         "type": "prometheus",
@@ -327,7 +316,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(sum by (milestone) (increase(pokepilot_run_stopping_milestone_total{game=~\"${game:regex}\"}[$__range])), \"milestone\", \"badge_0$1\", \"milestone\", \"badge_([1-9])$\")",
+          "expr": "(sum by (milestone) (pokepilot_run_stopping_milestone_total{game=~\"${game:regex}\"}) or (sum by (milestone) (pokepilot_run_milestones_total{game=~\"${game:regex}\"}) * 0))",
           "legendFormat": "{{milestone}}",
           "refId": "A",
           "instant": true,
@@ -338,7 +327,7 @@
     {
       "id": 5,
       "title": "Frames on finished runs",
-      "description": "p50 and p95 emulator frames at a terminal result.",
+      "description": "p95 emulator frames at a terminal result. Flat 0 until a finished run exports the histogram.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -381,20 +370,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, game) (rate(pokepilot_run_frames_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
-          "legendFormat": "{{game}} p50",
-          "refId": "A",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le, game) (rate(pokepilot_run_frames_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.95, sum by (le, game) (pokepilot_run_frames_bucket{game=~\"${game:regex}\"})) or on() vector(0))",
           "legendFormat": "{{game}} p95",
-          "refId": "B",
+          "refId": "A",
           "instant": false,
           "range": true
         }
@@ -403,7 +381,7 @@
     {
       "id": 6,
       "title": "Planner rounds on finished runs",
-      "description": "p50 and p95 planner rounds at a terminal result.",
+      "description": "p95 planner rounds at a terminal result. Flat 0 until a finished run exports the histogram.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -446,20 +424,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, game) (rate(pokepilot_run_rounds_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
-          "legendFormat": "{{game}} p50",
-          "refId": "A",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le, game) (rate(pokepilot_run_rounds_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.95, sum by (le, game) (pokepilot_run_rounds_bucket{game=~\"${game:regex}\"})) or on() vector(0))",
           "legendFormat": "{{game}} p95",
-          "refId": "B",
+          "refId": "A",
           "instant": false,
           "range": true
         }

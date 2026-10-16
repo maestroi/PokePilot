@@ -41,7 +41,7 @@ func TestOverviewAndRunsDashboards(t *testing.T) {
 		min    int
 		lokiOn string
 	}{
-		{"grafana-pokepilot-overview.json", "pokepilot-overview", 12, "Terminal failures by type"},
+		{"grafana-pokepilot-overview.json", "pokepilot-overview", 12, "Objective failures by type"},
 		{"grafana-pokepilot-runs.json", "pokepilot-runs", 6, ""},
 	}
 	for _, tc := range cases {

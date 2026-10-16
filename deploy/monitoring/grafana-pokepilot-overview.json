@@ -54,10 +54,10 @@
           "uid": "${DS_PROMETHEUS}"
         },
         "query": {
-          "query": "label_values({__name__=~\"pokepilot_runs_active|pokepilot_last_successful_run_timestamp_seconds|pokepilot_runs_started_total\"}, game)",
+          "query": "label_values(pokepilot_last_successful_run_timestamp_seconds, game)",
           "refId": "StandardVariableQuery"
         },
-        "definition": "label_values({__name__=~\"pokepilot_runs_active|pokepilot_last_successful_run_timestamp_seconds|pokepilot_runs_started_total\"}, game)",
+        "definition": "label_values(pokepilot_last_successful_run_timestamp_seconds, game)",
         "refresh": 1,
         "includeAll": true,
         "allValue": ".*",
@@ -169,7 +169,7 @@
     {
       "id": 2,
       "title": "Started",
-      "description": "Campaigns queued during the selected range. A restart does not replay campaigns that already started.",
+      "description": "Campaigns queued since this wall process started. Shown as 0 until the first one is exported. A restart does not replay older campaigns.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -221,7 +221,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_runs_started_total{game=~\"${game:regex}\"}[$__range]))",
+          "expr": "(sum(pokepilot_runs_started_total{game=~\"${game:regex}\"}) or vector(0))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -232,7 +232,7 @@
     {
       "id": 3,
       "title": "Completed",
-      "description": "Terminal successes during the selected range.",
+      "description": "Terminal successes since this wall process started. 0 means none have finished since the process started. The last-success panel still shows the restored timestamp of the previous success.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -284,7 +284,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__range]))",
+          "expr": "(sum(pokepilot_runs_completed_total{game=~\"${game:regex}\"}) or vector(0))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -295,7 +295,7 @@
     {
       "id": 4,
       "title": "Failed",
-      "description": "Terminal failures during the selected range.",
+      "description": "Terminal failures since this wall process started. Shown as 0 until the first one is exported.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -351,7 +351,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_runs_failed_total{game=~\"${game:regex}\"}[$__range]))",
+          "expr": "(sum(pokepilot_runs_failed_total{game=~\"${game:regex}\"}) or vector(0))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -362,7 +362,7 @@
     {
       "id": 5,
       "title": "Aborted",
-      "description": "Terminal cancellations during the selected range.",
+      "description": "Terminal cancellations since this wall process started. Shown as 0 until the first one is exported.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -414,7 +414,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_runs_aborted_total{game=~\"${game:regex}\"}[$__range]))",
+          "expr": "(sum(pokepilot_runs_aborted_total{game=~\"${game:regex}\"}) or vector(0))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -492,7 +492,7 @@
     {
       "id": 7,
       "title": "Completion rate",
-      "description": "Completed / (completed + failed + aborted) over the selected range. Empty when nothing finished.",
+      "description": "Completed / finished since this wall process started. 0% when nothing has finished yet.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -552,7 +552,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__range])) / clamp_min(sum(increase(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__range])) + sum(increase(pokepilot_runs_failed_total{game=~\"${game:regex}\"}[$__range])) + sum(increase(pokepilot_runs_aborted_total{game=~\"${game:regex}\"}[$__range])), 1e-9)",
+          "expr": "((sum(pokepilot_runs_completed_total{game=~\"${game:regex}\"}) or vector(0)) / clamp_min((sum(pokepilot_runs_completed_total{game=~\"${game:regex}\"}) or vector(0)) + (sum(pokepilot_runs_failed_total{game=~\"${game:regex}\"}) or vector(0)) + (sum(pokepilot_runs_aborted_total{game=~\"${game:regex}\"}) or vector(0)), 1))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -563,7 +563,7 @@
     {
       "id": 8,
       "title": "Successful runtime p95",
-      "description": "p95 queue-to-terminal time of runs that completed in the selected range.",
+      "description": "p95 of completed runs observed by this wall process. 0 until the first completion is exported. Uses the cumulative histogram so the value remains when no new run finishes during the dashboard range.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -615,7 +615,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"}[$__range])))",
+          "expr": "(histogram_quantile(0.95, sum by (le) (pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"})) or vector(0))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -697,7 +697,7 @@
     {
       "id": 10,
       "title": "Recovery rate",
-      "description": "Recovered objective occurrences / resolved (recovered + terminal). Unresolved is not success.",
+      "description": "Recovered objective occurrences / resolved ones since this wall process started. Unresolved is excluded. 0 when none have been exported.",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -757,7 +757,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"recovered\"}[$__range])) / clamp_min(sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=~\"recovered|terminal\"}[$__range])), 1e-9)",
+          "expr": "((sum(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"recovered\"}) or vector(0)) / clamp_min((sum(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=~\"recovered|terminal\"}) or vector(0)), 1))",
           "legendFormat": "value",
           "refId": "A",
           "instant": true,
@@ -767,8 +767,8 @@
     },
     {
       "id": 11,
-      "title": "Finished runs",
-      "description": "Terminal outcomes over time.",
+      "title": "Milestones reached",
+      "description": "Funnel stages counted since this wall process started. The line is the counter, so a stage that is not increasing still stays on the chart.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -811,31 +811,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (game) (rate(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{game}} completed",
+          "expr": "sum by (milestone) (pokepilot_run_milestones_total{game=~\"${game:regex}\"})",
+          "legendFormat": "{{milestone}}",
           "refId": "A",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum by (game) (rate(pokepilot_runs_failed_total{game=~\"${game:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{game}} failed",
-          "refId": "B",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum by (game) (rate(pokepilot_runs_aborted_total{game=~\"${game:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{game}} aborted",
-          "refId": "C",
           "instant": false,
           "range": true
         }
@@ -897,8 +875,8 @@
     },
     {
       "id": 13,
-      "title": "Terminal failures by type",
-      "description": "Objective occurrences that ended the attempt, by bounded failure type. Open a bar to see the matching wall logs.",
+      "title": "Objective failures by type",
+      "description": "Objective failure occurrences since this wall process started, including recovered ones. A terminal outcome is absent until a run ends that way. Open a bar for the matching wall logs.",
       "type": "bargauge",
       "datasource": {
         "type": "prometheus",
@@ -944,8 +922,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (game, failure_type) (increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"terminal\"}[$__range]))",
-          "legendFormat": "{{game}} {{failure_type}}",
+          "expr": "sum by (game, failure_type, outcome) (pokepilot_run_failures_total{game=~\"${game:regex}\"})",
+          "legendFormat": "{{game}} {{failure_type}} {{outcome}}",
           "refId": "A",
           "instant": true,
           "range": false
@@ -955,7 +933,7 @@
     {
       "id": 14,
       "title": "Successful runtime",
-      "description": "p50 and p95 queue-to-completion time.",
+      "description": "p95 queue-to-completion time for runs this wall process has finished. A flat 0 means the histogram has not been exported yet.",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -998,20 +976,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.50, sum by (le, game) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"}[$__rate_interval])))",
-          "legendFormat": "{{game}} p50",
-          "refId": "A",
-          "instant": false,
-          "range": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le, game) (rate(pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.95, sum by (le, game) (pokepilot_run_duration_seconds_bucket{game=~\"${game:regex}\",result=\"completed\"})) or on() vector(0))",
           "legendFormat": "{{game}} p95",
-          "refId": "B",
+          "refId": "A",
           "instant": false,
           "range": true
         }
@@ -1055,7 +1022,8 @@
           "legendFormat": "{{service}} {{revision}}",
           "refId": "A",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         }
       ]
     },
@@ -1097,7 +1065,8 @@
           "legendFormat": "{{game}}",
           "refId": "A",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         }
       ]
     }
