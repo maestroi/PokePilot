@@ -11,9 +11,9 @@ import (
 )
 
 type failureDashboard struct {
-	UID       string `json:"uid"`
-	Title     string `json:"title"`
-	Panels    []struct {
+	UID    string `json:"uid"`
+	Title  string `json:"title"`
+	Panels []struct {
 		ID      int    `json:"id"`
 		Title   string `json:"title"`
 		Type    string `json:"type"`
@@ -48,8 +48,8 @@ type failureDashboard struct {
 // These series are exported by the wall today. The dashboard must not
 // silently depend on imagined subsystem counters.
 var supportedFailureSeries = map[string]bool{
-	"pokepilot_run_failures_total":                    true,
-	"pokepilot_failure_recovery_attempts_total":       true,
+	"pokepilot_run_failures_total":                     true,
+	"pokepilot_failure_recovery_attempts_total":        true,
 	"pokepilot_failure_supervisor_recoveries_total":    true,
 	"pokepilot_failure_time_to_failure_seconds_bucket": true,
 	"pokepilot_runs_failed_total":                      true,
@@ -132,12 +132,12 @@ func TestFailureDashboardDatasourceAndQueries(t *testing.T) {
 			}
 			var panes map[string]struct {
 				Datasource string `json:"datasource"`
-				Queries []struct {
+				Queries    []struct {
 					Expr string `json:"expr"`
 				} `json:"queries"`
 				Range struct {
 					From string `json:"from"`
-					To string `json:"to"`
+					To   string `json:"to"`
 				} `json:"range"`
 			}
 			if err := json.Unmarshal([]byte(parsed.Query().Get("panes")), &panes); err != nil {
