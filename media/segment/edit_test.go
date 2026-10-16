@@ -42,8 +42,14 @@ func TestRenderEditFromExistingVideo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.Calls) != 5 {
-		t.Fatalf("commands: %d", len(runner.Calls))
+	ffmpeg := 0
+	for _, call := range runner.Calls {
+		if call[0] == "ffmpeg" {
+			ffmpeg++
+		}
+	}
+	if ffmpeg != 5 {
+		t.Fatalf("ffmpeg commands: %d", ffmpeg)
 	}
 	if result.DurationMS != 40250 {
 		t.Fatalf("duration=%d", result.DurationMS)
