@@ -25,6 +25,12 @@ const (
 	leagueEndingBudget       = 120000
 	leagueEndingPressEvery   = 60
 
+	// leagueFreezeCureReserve is how many freeze cures the party carries into
+	// the no-exit gauntlet. Gen I freeze never thaws on its own, and a foe
+	// whose non-damaging moves never spend PP can stall a frozen last mon
+	// forever. The lobby mart is the last place a cure can be bought.
+	leagueFreezeCureReserve = 2
+
 	// curMapLoadedScriptPending is BIT_CUR_MAP_LOADED_1 in
 	// wCurrentMapScriptFlags: set by EnterMap, cleared by each Elite Four room
 	// script on its first run after the load.
@@ -279,6 +285,15 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 			return fmt.Errorf("skill: EliteFourProgression: Indigo heal did not fully restore HP/status/PP")
 		}
 	}
+	state.Snapshot(m, &mem)
+	if need := leagueFreezeCureShortfall(state.DecodeInventory(&mem)); need > 0 {
+		// Running short of money degrades the reserve instead of blocking
+		// the challenge. One cure is enough to thaw; two covers a second hit.
+		have := itemCount(&mem, itemFullHeal)
+		if _, err := EnsureItemStock(m, romData, policy, itemFullHeal, have+need, have+1); err != nil && !errors.Is(err, ErrCantAfford) {
+			return fmt.Errorf("skill: EliteFourProgression: stock League freeze cures: %w", err)
+		}
+	}
 	if err := enterLeagueRoom(m, romData, policy, leagueLobbyExitStand, loreleiRoomMap, false); err != nil {
 		return err
 	}
@@ -286,6 +301,13 @@ func prepareLeagueChallenge(m *emu.Emu, romData []byte, policy MovePolicy) error
 		return fmt.Errorf("skill: EliteFourProgression: Lorelei room entry did not set the League-started fact")
 	}
 	return nil
+}
+
+// leagueFreezeCureShortfall is how many FULL HEALs to buy before committing
+// to the League so the bag holds leagueFreezeCureReserve freeze cures.
+func leagueFreezeCureShortfall(inv state.InventoryState) int {
+	counts := leagueItemCounts(inv)
+	return max(0, leagueFreezeCureReserve-totalCount(counts, itemIceHeal, itemFullHeal, itemFullRestore))
 }
 
 func recoverLeagueBlackout(m *emu.Emu, romData []byte, policy MovePolicy) error {
