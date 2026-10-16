@@ -92,7 +92,7 @@ func TestMahoganyNativeWarpsRetainRealDecompDestinationIDs(t *testing.T) {
 
 func TestMahoganyGymAndRocketInteriorsRemainOutsideLiveTopology(t *testing.T) {
 	provider := NewFirstBadgeWorldProvider(nil)
-	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F", "ROCKET_HIDEOUT_B1F"} {
+	for _, name := range []string{"MAHOGANY_GYM", "MAHOGANY_MART_1F", "TEAM_ROCKET_BASE_B1F"} {
 		if _, err := provider.ParseMap(nativeID(t, name)); err == nil {
 			t.Fatalf("%s is not ready for executable seventh-badge progression", name)
 		}
