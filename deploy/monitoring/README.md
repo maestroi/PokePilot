@@ -109,6 +109,87 @@ sum by (milestone) (increase(pokepilot_run_milestones_total[1d]))
 sum by (milestone) (increase(pokepilot_run_stopping_milestone_total[1d]))
 ```
 
+## Failures and recovery (wall)
+
+The wall exports failure-occurrence impact counts from the runner's
+`objective-failures.json` finish artifact (including the existing
+`recovered_count` and `terminal_count`), plus a synthetic run-level failure
+when a watchdog stop has no terminal objective telemetry. These series count
+**newly accepted finish generations**, never issue-outbox re-deliveries or
+identical duplicate terminal finishes. Histories are *not* replayed into
+counters after restart; Prometheus persists counter history across restarts.
+
+| Metric | Meaning |
+| --- | --- |
+| `pokepilot_run_failures_total{game,failure_type,outcome}` | Objective failure occurrences; outcome is `recovered`, `terminal`, or `unresolved` |
+| `pokepilot_failure_recoveries_total{game,failure_type}` | Recovered objective occurrences (the recovered subset above) |
+| `pokepilot_failure_recovery_attempts_total{game,reason}` | Wall attempts re-queued after failure; deploy drains and cancellations excluded |
+| `pokepilot_failure_supervisor_recoveries_total{game}` | Resilient supervisor recovered after retries **and confirmed new progress** |
+| `pokepilot_failure_time_to_failure_seconds{game,reason}` | Queue-to-terminal-failure distribution (not the timestamp of the first objective error) |
+
+`failure_type` is a deliberately bounded family mapping, such as
+`prerequisite`, `navigation`, `field_move`, `combat`, `encounter`,
+`training`, `stagnation`, and `other`; unknown raw causes collapse into
+`other`. Stop `reason` is also normalized. Raw causes, errors, `run_id`,
+`failure_id`, `family_id`, and trace identifiers are **never** metric labels.
+The occurrence outcomes are mutually exclusive: within one group,
+`recovered + terminal + unresolved = count`. Supervisor retries and
+objective-level recoveries have different denominators and must not be
+summed together.
+
+Top terminal failure categories in the last hour:
+
+```promql
+sum by (game, failure_type) (
+  increase(pokepilot_run_failures_total{outcome="terminal"}[1h])
+)
+```
+
+Recovered share among **resolved** objective occurrences (unresolved excluded):
+
+```promql
+sum by (game, failure_type) (
+  rate(pokepilot_run_failures_total{outcome="recovered"}[6h])
+)
+/
+clamp_min(
+  sum by (game, failure_type) (
+    rate(pokepilot_run_failures_total{outcome=~"recovered|terminal"}[6h])
+  ),
+  1e-9
+)
+```
+
+p95 elapsed time to a terminal failure:
+
+```promql
+histogram_quantile(0.95,
+  sum by (le, game) (
+    rate(pokepilot_failure_time_to_failure_seconds_bucket[24h])
+  )
+)
+```
+
+### Loki investigation
+
+Each accepted failure group also emits one `slog` structured log event
+(`event=objective_failure`) with `service`, `game`, `failure_type`,
+`stage`, `run_id`, `attempt`, `failure_id` and `family_id`, plus
+recovered/terminal counts. The IDs remain in logs only, retaining existing
+exact-occurrence versus family grouping. Query the same time window and game
+as the Prometheus spike, then open a particular run/family without guessing
+an ID:
+
+```logql
+{service="wall"} | logfmt | event="objective_failure" | game="pokemon-gold" | failure_type="prerequisite"
+```
+
+The `{service="wall"}` selector assumes your existing Loki pipeline attaches
+a `service` stream label; adjust the selector for your Promtail/Alloy Swarm
+labels if necessary. `| logfmt` parses the structured application log fields.
+Dashboard data links and Tempo pivots belong to #2336/#2338 and can use this
+query directly. Nothing here deploys Grafana, Loki, or Prometheus.
+
 ## Telegram operator
 
 Assets for scraping and dashboarding `cmd/poketelegram` (the Telegram remote
