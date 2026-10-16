@@ -26,21 +26,33 @@ type producerRequest struct {
 func (s *replayServer) producerInput(r *http.Request, runID string, history []producer.HistoricalRun) (producer.Input, error) {
 	in := producer.Input{RunID: runID, History: history}
 	latest, err := s.artifacts(r.Context(), runID)
-	if err != nil { return in, err }
+	if err != nil {
+		return in, err
+	}
 	attempts := latest.Attempt
-	if attempts < 1 { attempts = 1 }
+	if attempts < 1 {
+		attempts = 1
+	}
 	// This reads the same verified artifact generations as replay, but does
 	// not require the full .gbrun media file to exist.
-	if attempts > 64 { return in, errors.New("producer: too many attempts to assess in one request") }
+	if attempts > 64 {
+		return in, errors.New("producer: too many attempts to assess in one request")
+	}
 	for attempt := 1; attempt <= attempts; attempt++ {
 		timeline, err := s.mediaTimelineAttempt(r.Context(), runID, attempt)
 		if errors.Is(err, errMediaTimelineNotFound) || errors.Is(err, errRunNotFound) {
 			in.Incomplete = true
 			continue // historical runs may lack the optional semantic artifact
 		}
-		if err != nil { return in, err }
-		if timeline.Attempt == 0 { timeline.Attempt = attempt }
-		if timeline.Attempt != attempt { return in, fmt.Errorf("producer: timeline attempt %d does not match artifact generation %d", timeline.Attempt, attempt) }
+		if err != nil {
+			return in, err
+		}
+		if timeline.Attempt == 0 {
+			timeline.Attempt = attempt
+		}
+		if timeline.Attempt != attempt {
+			return in, fmt.Errorf("producer: timeline attempt %d does not match artifact generation %d", timeline.Attempt, attempt)
+		}
 		in.Timelines = append(in.Timelines, timeline)
 	}
 	return in, nil
@@ -137,29 +149,28 @@ func (s *replayServer) handleProducerAssess(w http.ResponseWriter, r *http.Reque
 func (s *replayServer) handleProducerAssessment(w http.ResponseWriter, r *http.Request) {
 	runID, hash := r.PathValue("id"), r.PathValue("hash")
 	if len(hash) != 64 || strings.Trim(hash, "0123456789abcdef") != "" || strings.TrimSpace(runID) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error":"invalid assessment identity"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid assessment identity"})
 		return
 	}
 	if s.store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error":"studio artifact storage disabled"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "studio artifact storage disabled"})
 		return
 	}
 	obj, err := s.store.GetObject(r.Context(), producerObjectKey(runID, hash), "")
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error":"assessment not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "assessment not found"})
 		return
 	}
 	defer obj.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(obj.Body, maxProducerRequestBytes+1))
 	if err != nil || len(data) > maxProducerRequestBytes {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error":"stored assessment unreadable"})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "stored assessment unreadable"})
 		return
 	}
 	var assessment producer.Assessment
 	if err := json.Unmarshal(data, &assessment); err != nil || assessment.Hash != hash || assessment.RunID != runID || producer.VerifyChecksum(assessment) != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error":"stored assessment identity mismatch"})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "stored assessment identity mismatch"})
 		return
 	}
 	writeJSON(w, http.StatusOK, assessment)
 }
-
