@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -69,6 +70,7 @@ type HistoricalRun struct {
 	Source     string   `json:"source"`
 	Goal       string   `json:"goal"`
 	DurationMS int64    `json:"duration_ms"`
+	Status     string   `json:"status"`
 	EventTypes []string `json:"event_types,omitempty"`
 	Published  bool     `json:"published"`
 }
@@ -239,7 +241,7 @@ func evidence(in Input) (EvidencePack, string, error) {
 func comparisons(pack EvidencePack, history []HistoricalRun) []Comparison {
 	var peers []HistoricalRun
 	for _, run := range history {
-		if strings.EqualFold(strings.TrimSpace(run.Goal), strings.TrimSpace(pack.Goal)) && pack.Goal != "" && run.DurationMS > 0 {
+		if strings.EqualFold(strings.TrimSpace(run.Goal), strings.TrimSpace(pack.Goal)) && pack.Goal != "" && run.Status == "done" && run.DurationMS > 0 {
 			peers = append(peers, run)
 		}
 	}
@@ -265,10 +267,13 @@ func comparisons(pack EvidencePack, history []HistoricalRun) []Comparison {
 	for _, peer := range history {
 		if !peer.Published || len(peer.EventTypes) == 0 || len(current) == 0 { continue }
 		union := make(map[string]bool)
+		peerTypes := make(map[string]bool)
 		intersection := 0
 		for kind := range current { union[kind] = true }
-		for _, kind := range peer.EventTypes {
-			if !union[kind] { union[kind] = true } else if current[kind] { intersection++ }
+		for _, kind := range peer.EventTypes { peerTypes[kind] = true }
+		for kind := range peerTypes {
+			union[kind] = true
+			if current[kind] { intersection++ }
 		}
 		percent := int64(100 * intersection / len(union))
 		if percent > maxSimilarity {
@@ -512,6 +517,9 @@ func Validate(out Assessment, in Input) error {
 		Beats: out.Beats, Publication: out.Publication,
 	}, pack); err != nil { return err }
 	if !validClass(out.Publication) || out.Model == "" { return errors.New("producer: invalid assessment identity") }
+	if !reflect.DeepEqual(out.Scores, scores(pack)) || !reflect.DeepEqual(out.Comparisons, pack.History) {
+		return errors.New("producer: deterministic scores or history were changed")
+	}
 	cap, _ := publicationCap(pack, scores(pack), policy)
 	if rank(out.Publication) > rank(cap) { return errors.New("producer: unsafe publication class") }
 	if out.Model == "rules-v1" && out.PromptVersion != "none" { return errors.New("producer: rules identity mismatch") }
