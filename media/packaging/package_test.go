@@ -1,4 +1,3 @@
-++ media/packaging/package_test.go
 package packaging
 
 import (
