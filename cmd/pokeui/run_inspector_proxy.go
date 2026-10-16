@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // mountRunInspectorRoutes keeps the browser on one origin while preserving
@@ -23,6 +24,8 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("GET /v1/runs/{id}/repro-source", proxy(wallBase, true))
 	mux.HandleFunc("POST /v1/workers/{addr}/force-end", proxy(wallBase, false))
 	mux.HandleFunc("GET /v1/media/render-jobs", proxy(wallBase, true))
+	// Studio review remains operator-only: no matching spectator mount exists.
+	// Dedicated thumbnail routes are attached below when replay is configured.
 	mux.HandleFunc("POST /v1/media/render-jobs/{id}/retry", proxy(wallBase, false))
 	mux.HandleFunc("POST /v1/media/render-jobs/{id}/cancel", proxy(wallBase, false))
 	mux.HandleFunc("DELETE /v1/media/render-jobs/{id}", proxy(wallBase, false))
@@ -46,6 +49,13 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 		mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/producer/assess", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/studio/packages", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/image", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/select", replayUnavailable)
 		return
 	}
 	mux.HandleFunc("GET /v1/live/broadcast/config", proxy(replayBase, true))
@@ -65,6 +75,45 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", proxy(replayBase, false))
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", proxy(replayBase, true))
 	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", proxy(replayBase, false))
+	// The image generation request may take longer than the five-second wall
+	// proxy. All of these routes exist on the private operator surface only.
+	mux.HandleFunc("POST /v1/runs/{id}/producer/assess", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("POST /v1/runs/{id}/studio/packages", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/image", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/select", studioThumbnailProxy(replayBase))
+}
+
+// studioThumbnailProxy is operator-only, uses the incoming cancellation
+// context, and supports long image-provider calls without proxyTimeout.
+func studioThumbnailProxy(base string) http.HandlerFunc {
+	client := &http.Client{Timeout: 5 * time.Minute}
+	return func(w http.ResponseWriter, r *http.Request) {
+		up, err := http.NewRequestWithContext(r.Context(), r.Method, strings.TrimRight(base, "/")+r.URL.RequestURI(), r.Body)
+		if err != nil {
+			writeUnreachable(w)
+			return
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			up.Header.Set("Content-Type", ct)
+		}
+		res, err := client.Do(up)
+		if err != nil {
+			writeUnreachable(w)
+			return
+		}
+		defer res.Body.Close()
+		w.Header().Set("Cache-Control", "no-store")
+		for _, h := range []string{"Content-Type", "Content-Length", "X-Content-Type-Options"} {
+			if v := res.Header.Get(h); v != "" {
+				w.Header().Set(h, v)
+			}
+		}
+		w.WriteHeader(res.StatusCode)
+		_, _ = io.Copy(w, res.Body)
+	}
 }
 
 func replayUnavailable(w http.ResponseWriter, _ *http.Request) {

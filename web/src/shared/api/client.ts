@@ -12,6 +12,8 @@ import type {
   MediaRenderJob,
   MediaRenderJobList,
   HighlightStatus,
+  StudioPackage,
+  StudioThumbnailList,
   YouTubePublication,
   YouTubePublishStatus,
   ProgrammingEntry,
@@ -354,3 +356,43 @@ export function highlightManifestURL(runID: string): string {
   return `/v1/runs/${encodeURIComponent(runID)}/highlights/manifest`
 }
 
+
+export function getStudioPackage(runID: string, packageHash: string): Promise<StudioPackage> {
+  return requestJSON<StudioPackage>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}`)
+}
+
+export function getStudioThumbnails(runID: string, packageHash: string): Promise<StudioThumbnailList> {
+  return requestJSON<StudioThumbnailList>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}/thumbnails`)
+}
+
+export function renderStudioThumbnails(runID: string, packageHash: string, variants: number, generatedArt: boolean): Promise<StudioThumbnailList> {
+  return requestJSON<StudioThumbnailList>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}/thumbnails`, {
+    method: 'POST',
+    body: JSON.stringify({ variants, generated_art: generatedArt })
+  })
+}
+
+export function studioThumbnailURL(runID: string, packageHash: string, candidateID: string): string {
+  return `/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}/thumbnails/${encodeURIComponent(candidateID)}/image`
+}
+
+export function selectStudioThumbnail(runID: string, packageHash: string, candidateID: string): Promise<{ candidate_id: string }> {
+  return requestJSON<{ candidate_id: string }>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages/${encodeURIComponent(packageHash)}/thumbnails/${encodeURIComponent(candidateID)}/select`, {
+    method: 'POST',
+    body: '{}'
+  })
+}
+
+export function assessStudioRun(runID: string): Promise<{ assessment: { hash: string; publication: string } }> {
+  return requestJSON<{ assessment: { hash: string; publication: string } }>(`/v1/runs/${encodeURIComponent(runID)}/producer/assess`, {
+    method: 'POST',
+    body: '{}'
+  })
+}
+
+export function createStudioPackage(runID: string, assessmentHash: string): Promise<{ package: StudioPackage }> {
+  return requestJSON<{ package: StudioPackage }>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages`, {
+    method: 'POST',
+    body: JSON.stringify({ assessment_hash: assessmentHash, style: 'documentary' })
+  })
+}
