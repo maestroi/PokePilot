@@ -778,6 +778,91 @@ var firstBadgeTopology = []mapSpec{
 			{x: 5, y: 17, dest: "CIANWOOD_CITY", destWarp: 2},
 		},
 	},
+	// Badge 7 navigation foundation. These are pinned to the map-event warp
+	// tables and map-attribute connections in pret/pokegold. The Lake of Rage
+	// encounter, Rocket Hideout, and Pryce are deliberately NOT executable
+	// progression goals yet; the topology only makes their approach observable.
+	{
+		name: "ROUTE_42_ECRUTEAK_GATE",
+		warps: []warpSpec{
+			{x: 0, y: 4, dest: "ECRUTEAK_CITY", destWarp: 1},
+			{x: 0, y: 5, dest: "ECRUTEAK_CITY", destWarp: 2},
+			{x: 9, y: 4, dest: "ROUTE_42", destWarp: 1},
+			{x: 9, y: 5, dest: "ROUTE_42", destWarp: 2},
+		},
+	},
+	{
+		name: "ROUTE_42",
+		warps: []warpSpec{
+			{x: 0, y: 8, dest: "ROUTE_42_ECRUTEAK_GATE", destWarp: 3},
+			{x: 0, y: 9, dest: "ROUTE_42_ECRUTEAK_GATE", destWarp: 4},
+			{x: 10, y: 5, dest: "MOUNT_MORTAR_1F_OUTSIDE", destWarp: 1},
+			{x: 28, y: 9, dest: "MOUNT_MORTAR_1F_OUTSIDE", destWarp: 2},
+			{x: 46, y: 7, dest: "MOUNT_MORTAR_1F_OUTSIDE", destWarp: 3},
+		},
+		connections: []connectionSpec{
+			{dir: dirWest, dest: "ECRUTEAK_CITY", offset: -9},
+			{dir: dirEast, dest: "MAHOGANY_TOWN", offset: 0},
+		},
+	},
+	{
+		name: "MAHOGANY_TOWN",
+		warps: []warpSpec{
+			{x: 11, y: 7, dest: "MAHOGANY_MART_1F", destWarp: 1},
+			{x: 17, y: 7, dest: "MAHOGANY_RED_GYARADOS_SPEECH_HOUSE", destWarp: 1},
+			{x: 6, y: 13, dest: "MAHOGANY_GYM", destWarp: 1},
+			{x: 15, y: 13, dest: "MAHOGANY_POKECENTER_1F", destWarp: 1},
+			{x: 9, y: 1, dest: "ROUTE_43_MAHOGANY_GATE", destWarp: 3},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "ROUTE_43", offset: 0},
+			{dir: dirWest, dest: "ROUTE_42", offset: 0},
+			// Route 44 remains outside the verified live routing slice.
+			{dir: dirEast, dest: "ROUTE_44", offset: 0},
+		},
+	},
+	{
+		name: "MAHOGANY_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "MAHOGANY_TOWN", destWarp: 4},
+			{x: 4, y: 7, dest: "MAHOGANY_TOWN", destWarp: 4},
+			{x: 0, y: 7, dest: "POKECENTER_2F", destWarp: 1},
+		},
+	},
+	{
+		name: "ROUTE_43_MAHOGANY_GATE",
+		warps: []warpSpec{
+			{x: 4, y: 0, dest: "ROUTE_43", destWarp: 1},
+			{x: 5, y: 0, dest: "ROUTE_43", destWarp: 2},
+			{x: 4, y: 7, dest: "MAHOGANY_TOWN", destWarp: 5},
+			{x: 5, y: 7, dest: "MAHOGANY_TOWN", destWarp: 5},
+		},
+	},
+	{
+		name: "ROUTE_43",
+		warps: []warpSpec{
+			{x: 9, y: 51, dest: "ROUTE_43_MAHOGANY_GATE", destWarp: 1},
+			{x: 10, y: 51, dest: "ROUTE_43_MAHOGANY_GATE", destWarp: 2},
+			// Do not expose the Rocket toll-gate interior as a live route yet.
+			{x: 17, y: 35, dest: "ROUTE_43_GATE", destWarp: 3},
+			{x: 17, y: 31, dest: "ROUTE_43_GATE", destWarp: 1},
+			{x: 18, y: 31, dest: "ROUTE_43_GATE", destWarp: 2},
+		},
+		connections: []connectionSpec{
+			{dir: dirNorth, dest: "LAKE_OF_RAGE", offset: -5},
+			{dir: dirSouth, dest: "MAHOGANY_TOWN", offset: 0},
+		},
+	},
+	{
+		name: "LAKE_OF_RAGE",
+		warps: []warpSpec{
+			{x: 7, y: 3, dest: "LAKE_OF_RAGE_HIDDEN_POWER_HOUSE", destWarp: 1},
+			{x: 27, y: 31, dest: "LAKE_OF_RAGE_MAGIKARP_HOUSE", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirSouth, dest: "ROUTE_43", offset: 5},
+		},
+	},
 }
 
 type firstBadgeWorldProvider struct {

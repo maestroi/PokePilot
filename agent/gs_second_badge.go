@@ -72,6 +72,16 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"CIANWOOD_POKECENTER_1F",
 		"CIANWOOD_PHARMACY",
 		"CIANWOOD_GYM",
+		// Ordinary wild/trainer route interruptions on the approach to the
+		// seventh badge. Rocket plot interiors and Mahogany Gym are intentionally
+		// excluded until their scripts are owned by an executable controller.
+		"ROUTE_42_ECRUTEAK_GATE",
+		"ROUTE_42",
+		"MAHOGANY_TOWN",
+		"MAHOGANY_POKECENTER_1F",
+		"ROUTE_43_MAHOGANY_GATE",
+		"ROUTE_43",
+		"LAKE_OF_RAGE",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
