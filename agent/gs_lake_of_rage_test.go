@@ -73,7 +73,8 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 			t.Fatalf("%s milestones not offered: red=%v lance=%v", gameID, foundRed, foundLance)
 		}
 		if !obs.Story.Has(gsprofile.ProgressMahoganyStairsOpened) || !obs.Story.Has(gsprofile.ProgressRocketLanceHealing) ||
-			!obs.Story.Has(gsprofile.ProgressRocketMurkrowPassword) {
+			!obs.Story.Has(gsprofile.ProgressRocketMurkrowPassword) ||
+			!obs.Story.Has(gsprofile.ProgressRocketHideoutCleared) {
 			t.Fatalf("%s never offered B3F passwords, executive and Murkrow", gameID)
 		}
 		if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
