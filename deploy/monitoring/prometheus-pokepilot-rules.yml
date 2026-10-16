@@ -1,0 +1,125 @@
+# Recording rules and alerts for the Prometheus that already scrapes PokePilot.
+#
+# Drop this file into that Prometheus's rule_files directory
+# (on the homelab monitoring host, /etc/prometheus/rules/ inside the
+# prometheus container, which is /opt/monitoring/rules on the host).
+# Do not deploy a second Prometheus or Alertmanager from this repository.
+#
+# Defaults below are the ones the homelab loads. Raise the "for" duration or
+# the sample floors if a game finishes too rarely for them.
+groups:
+  - name: pokepilot.recording
+    interval: 1m
+    rules:
+      - record: pokepilot:run_completion_ratio:1h
+        expr: |
+          sum by (game) (rate(pokepilot_runs_completed_total[1h]))
+          /
+          clamp_min(
+            sum by (game) (
+              rate(pokepilot_runs_completed_total[1h])
+              + rate(pokepilot_runs_failed_total[1h])
+              + rate(pokepilot_runs_aborted_total[1h])
+            ),
+            1e-9
+          )
+      - record: pokepilot:run_terminal_rate:1h
+        expr: |
+          sum by (game) (
+            rate(pokepilot_runs_completed_total[1h])
+            + rate(pokepilot_runs_failed_total[1h])
+            + rate(pokepilot_runs_aborted_total[1h])
+          )
+      - record: pokepilot:run_duration_p95_seconds:1h
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, game) (
+              rate(pokepilot_run_duration_seconds_bucket{result="completed"}[1h])
+            )
+          )
+      - record: pokepilot:failure_recovery_ratio:6h
+        expr: |
+          sum by (game, failure_type) (rate(pokepilot_run_failures_total{outcome="recovered"}[6h]))
+          /
+          clamp_min(
+            sum by (game, failure_type) (
+              rate(pokepilot_run_failures_total{outcome=~"recovered|terminal"}[6h])
+            ),
+            1e-9
+          )
+
+  - name: pokepilot.alerts
+    rules:
+      # Service health: the metrics endpoint itself is down.
+      - alert: PokePilotWallDown
+        expr: up{job="pokepilot-wall"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: PokePilot wall metrics are down
+          description: Prometheus has not scraped job pokepilot-wall for 5 minutes, so completion and failure series are stale. Runners may still be executing.
+          dashboard: /d/pokepilot-overview
+
+      # Application health: the process is up and the HTTP scrape is green,
+      # but a supported game has not completed a run recently.
+      - alert: PokePilotNoSuccessfulRun
+        expr: |
+          (
+            time() - pokepilot_last_successful_run_timestamp_seconds{game=~"pokemon-red|pokemon-blue|pokemon-yellow"}
+          ) > 6 * 3600
+          and on() (max(pokepilot_up{service="wall"}) == 1)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: No successful {{ $labels.game }} run for 6h while the wall is up
+          description: The wall is serving metrics, but {{ $labels.game }} has not completed a run in more than 6 hours. This is an application regression, not a process outage. Dashboard /d/pokepilot-overview. Logs {service="wall"} | logfmt | event="objective_failure".
+          dashboard: /d/pokepilot-overview
+
+      # Needs at least four terminal runs in 6h so a single failure cannot page.
+      - alert: PokePilotCompletionRateLow
+        expr: |
+          (
+            sum by (game) (increase(pokepilot_runs_completed_total[6h]))
+            /
+            clamp_min(
+              sum by (game) (
+                increase(pokepilot_runs_completed_total[6h])
+                + increase(pokepilot_runs_failed_total[6h])
+                + increase(pokepilot_runs_aborted_total[6h])
+              ),
+              1e-9
+            )
+          ) < 0.25
+          and
+          sum by (game) (
+            increase(pokepilot_runs_completed_total[6h])
+            + increase(pokepilot_runs_failed_total[6h])
+            + increase(pokepilot_runs_aborted_total[6h])
+          ) >= 4
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.game }} completion rate is below 25%"
+          description: At least four {{ $labels.game }} runs finished in 6h and fewer than a quarter completed. Dashboard /d/pokepilot-runs.
+          dashboard: /d/pokepilot-runs
+
+      # Compares this hour with the same hour yesterday. Absent baseline means no alert.
+      - alert: PokePilotTerminalFailureSpike
+        expr: |
+          sum by (game) (increase(pokepilot_run_failures_total{outcome="terminal"}[1h])) >= 20
+          and
+          sum by (game) (increase(pokepilot_run_failures_total{outcome="terminal"}[1h]))
+          > 3 * sum by (game) (
+            increase(pokepilot_run_failures_total{outcome="terminal"}[1h] offset 24h)
+          )
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.game }} terminal failures are three times yesterday's hour"
+          description: At least 20 terminal objective failures in the last hour, and more than three times the same window yesterday. Dashboard /d/pokepilot-failures.
+          dashboard: /d/pokepilot-failures

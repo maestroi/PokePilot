@@ -41,7 +41,10 @@ curl -s http://<task>:8080/metrics | head
 
 Runners listen on 8099. A fresh scrape includes `pokepilot_up`,
 `pokepilot_build_info`, `go_goroutines`, and `process_start_time_seconds`.
-LLM, replay, and alert series are tracked by subsequent issues on the same endpoint; failure series are exported by the wall.
+LLM and replay series are tracked by later issues on the same endpoint. Failure
+series are exported by the wall. Alert rules for the series that already
+exist are in `prometheus-pokepilot-rules.yml`; they are Prometheus rules,
+not extra `/metrics` series.
 
 ## Grafana dashboards
 
@@ -50,17 +53,36 @@ there is no Grafana/Prometheus/Loki service added to the PokePilot stacks.
 
 | Dashboard JSON | Coverage |
 | --- | --- |
-| `grafana-pokepilot-failures.json` | Wall objective failures and recovery (this slice of #2336) |
+| `grafana-pokepilot-overview.json` | Alive, completing, runtime, last success, recovery, terminal causes, build revision |
+| `grafana-pokepilot-runs.json` | Completion, runtime, milestone funnel, frames and planner rounds |
+| `grafana-pokepilot-failures.json` | Wall objective failures and recovery |
 | `grafana-poketelegram.json` | Remote Telegram operator health |
 
-To import the failure dashboard, open **Grafana → Dashboards → New → Import**,
-select `grafana-pokepilot-failures.json`, and select the existing Prometheus
-instance for `DS_PROMETHEUS`. When Loki is configured, select it for
-`DS_LOKI` to enable metric → log data links. The dashboard's game filter
-uses existing failure series, including the `All` selection, while Grafana's
-time picker controls the displayed range. No datasource UID is hard-coded.
-The `DS_LOKI` variable is only used by data links; **all panels query
-Prometheus** and do not require Loki to return metric data.
+Import each `grafana-pokepilot-*.json` with **Grafana → Dashboards → New →
+Import**, and select the existing Prometheus instance for `DS_PROMETHEUS`.
+When Loki is configured, select it for `DS_LOKI` to enable metric → log data
+links. The game filter includes `All`. Grafana's time picker controls the
+displayed range. Panel queries use `${DS_PROMETHEUS}` and never a baked-in
+datasource UID. The saved variable selection is the homelab Grafana
+(`Prometheus` `PBFA97CFB590B2093`, `Loki` `P8E80F9AEF21F6940`) so file
+provisioning opens against that stack; on another Grafana, pick the
+datasources again. The `DS_LOKI` variable is only used by data links; **all
+panels query Prometheus** and do not require Loki to return metric data.
+
+The homelab Grafana file-provisions dashboards from
+`/opt/monitoring/dashboards` on `vm-acestaking-monitor-01`. Copying these
+JSON files there loads them on the existing instance. Prometheus on that
+host is not on the farm overlay, so it scrapes the wall through
+`prometheus-pokepilot-ingress.yml` (Swarm ingress `192.168.50.100:18080`)
+rather than `tasks.wall`.
+
+The overview answers whether the wall is up, whether runs are completing,
+whether successful runs are getting slower, and which failure types are
+terminal. A blue annotation marks a wall process start so a revision can be
+lined up with the metric change; the build panel shows the git SHA. The
+terminal-failure bars open the same Loki query as the failure dashboard.
+Tempo is not configured on this Grafana, so these dashboards do not pretend
+to pivot into traces.
 
 The failure dashboard shows:
 
@@ -94,6 +116,31 @@ Loki → Tempo pivot needs propagated `trace_id` values and a configured Loki
 emitted. See Grafana's Loki datasource derived fields documentation when
 configuring the existing Tempo instance. No Tempo datasource is required to
 import this dashboard.
+
+## Recording rules and alerts
+
+`prometheus-pokepilot-rules.yml` is a Prometheus rule file for the same
+process that scrapes the wall. It records completion ratio, terminal rate,
+successful-runtime p95, and recovery ratio, and it alerts on:
+
+| Alert | What it means |
+| --- | --- |
+| `PokePilotWallDown` | The scrape target is down |
+| `PokePilotNoSuccessfulRun` | The wall is up, and Red, Blue, or Yellow has not completed a run in 6 hours |
+| `PokePilotCompletionRateLow` | Completion ratio under 25% over 6 hours, and at least 4 runs finished |
+| `PokePilotTerminalFailureSpike` | At least 20 terminal objective failures in an hour, and more than three times the same hour yesterday |
+
+`PokePilotNoSuccessfulRun` is the "service up, application not succeeding"
+signal: `pokepilot_up` stays 1 while `pokepilot_last_successful_run_timestamp_seconds`
+ages past 6 hours. Annotations point at `/d/pokepilot-overview` and the wall
+`objective_failure` Loki stream. Thresholds are the homelab defaults; edit
+the rule file to change them. Nothing here deploys Alertmanager.
+
+Load the file with the existing Prometheus and check it:
+
+```sh
+promtool check rules deploy/monitoring/prometheus-pokepilot-rules.yml
+```
 
 A quick configuration/URL/data-source/metric-name test can be run with:
 

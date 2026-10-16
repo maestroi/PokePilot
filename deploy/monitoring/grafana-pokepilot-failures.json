@@ -34,7 +34,11 @@
         "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus",
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "Prometheus",
+          "value": "PBFA97CFB590B2093"
+        },
         "hide": 0,
         "refresh": 1
       },
@@ -43,7 +47,11 @@
         "label": "Loki (optional for drill-down)",
         "type": "datasource",
         "query": "loki",
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "Loki",
+          "value": "P8E80F9AEF21F6940"
+        },
         "hide": 0,
         "refresh": 1
       },
