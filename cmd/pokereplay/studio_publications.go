@@ -14,7 +14,6 @@ import (
 
 	"github.com/maestroi/pokepilot/artifactstore"
 	"github.com/maestroi/pokepilot/media/packaging"
-	"github.com/maestroi/pokepilot/media/producer"
 	"github.com/maestroi/pokepilot/media/publication"
 )
 
