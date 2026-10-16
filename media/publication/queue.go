@@ -145,7 +145,11 @@ func Evaluate(c Candidate,in Inputs,p Policy)(State,string){
   return Blocked,"packaging and edited source do not share an assessment"
  }
  titleFound:=false
- for _,t:=range in.Package.Titles{if t.ID==c.Proposal.TitleID&&t.Evidence.EventID!=""{titleFound=true;break}}
+ if c.Proposal.Format==Short {
+  for _,t:=range in.Package.Shorts{if t.ID==c.Proposal.TitleID&&t.Evidence.EventID!=""{titleFound=true;break}}
+ }else{
+  for _,t:=range in.Package.Titles{if t.ID==c.Proposal.TitleID&&t.Evidence.EventID!=""{titleFound=true;break}}
+ }
  if !titleFound {return Blocked,"title is not backed by recorded evidence"}
  if in.Plan==nil||in.Plan.Hash!=c.Proposal.PlanHash {
   return Blocked,"missing declarative edit plan"
@@ -153,7 +157,7 @@ func Evaluate(c Candidate,in Inputs,p Policy)(State,string){
  if c.Proposal.Format==Episode&&in.Plan.Profile!=editplan.Episode || c.Proposal.Format==Short&&in.Plan.Profile!=editplan.Short{
   return Blocked,"video profile does not match publication format"
  }
- if c.Proposal.Format==Episode&&p.RequireThumbnail&&in.ThumbnailID!=c.Proposal.ThumbnailID {
+ if c.Proposal.Format==Episode&&p.RequireThumbnail&&(c.Proposal.ThumbnailID==""||in.ThumbnailID!=c.Proposal.ThumbnailID||in.ThumbnailKey=="") {
   return Blocked,"select a current rendered thumbnail"
  }
  if c.Proposal.ThumbnailID!=""&&in.ThumbnailID!=c.Proposal.ThumbnailID{return Blocked,"thumbnail selection changed"}
