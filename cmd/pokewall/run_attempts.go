@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/maestroi/pokepilot/farm"
 )
 
 // attemptProblem is one failure group an attempt hit; the triage key is the
@@ -18,6 +20,20 @@ type attemptProblem struct {
 	// fixed revision), never set by hand.
 	Fixed         bool   `json:"fixed,omitempty"`
 	FixedRevision string `json:"fixed_revision,omitempty"`
+
+	// Objective and the round range tie the problem back to run-story rows.
+	Objective  string `json:"objective,omitempty"`
+	FirstRound int    `json:"first_round,omitempty"`
+	LastRound  int    `json:"last_round,omitempty"`
+	Recovered  bool   `json:"recovered,omitempty"`
+	Terminal   bool   `json:"terminal,omitempty"`
+	// Queued: the triage key is in the fixer's queue right now. Dismissed:
+	// an operator dismissed it. Neither: recorded but below the queue rule.
+	Queued      bool           `json:"queued,omitempty"`
+	Dismissed   bool           `json:"dismissed,omitempty"`
+	IssueNumber int64          `json:"issue_number,omitempty"`
+	IssueURL    string         `json:"issue_url,omitempty"`
+	Solver      *SolverAttempt `json:"solver,omitempty"`
 }
 
 type runAttemptView struct {
@@ -52,7 +68,8 @@ func (cp *controlPlane) runAttempts(runID string) ([]runAttemptView, error) {
 
 	prob, err := cp.db.Query(`
 SELECT f.attempt, COALESCE(NULLIF(f.family_key,''), f.failure_key), COALESCE(NULLIF(f.family_fingerprint,''), f.fingerprint),
-       f.blocking, COALESCE(l.issue_id,''), COALESCE(l.status,''), COALESCE(l.payload_json,'{}')
+       f.blocking, COALESCE(l.issue_id,''), COALESCE(l.status,''), COALESCE(l.payload_json,'{}'),
+       f.failure_json, f.terminal_count>0, f.delivery_status='dismissed'
 FROM objective_failures f
 LEFT JOIN issue_links l ON l.failure_key=COALESCE(NULLIF(f.family_key,''), f.failure_key)
 WHERE f.run_id=? ORDER BY f.attempt, f.updated_at`, runID)
@@ -60,20 +77,30 @@ WHERE f.run_id=? ORDER BY f.attempt, f.updated_at`, runID)
 		return nil, err
 	}
 	defer prob.Close()
-	seen := map[[2]string]bool{}
+	seen := map[[3]string]bool{}
 	for prob.Next() {
 		var attempt int
 		var p attemptProblem
-		var payload []byte
-		if err := prob.Scan(&attempt, &p.TriageKey, &p.Fingerprint, &p.Blocking, &p.IssueID, &p.IssueStatus, &payload); err != nil {
+		var payload, failureJSON []byte
+		if err := prob.Scan(&attempt, &p.TriageKey, &p.Fingerprint, &p.Blocking, &p.IssueID, &p.IssueStatus, &payload,
+			&failureJSON, &p.Terminal, &p.Dismissed); err != nil {
 			return nil, err
 		}
 		var link IssueLink
 		if json.Unmarshal(payload, &link) == nil {
 			p.Fixed, p.FixedRevision = issueFixedForVerification(link), link.FixedRevision
+			p.IssueNumber, p.IssueURL = link.IssueNumber, link.IssueURL
+			if n := len(link.SolverAttempts); n > 0 {
+				latest := link.SolverAttempts[n-1]
+				p.Solver = &latest
+			}
+		}
+		var failure farm.ObjectiveFailure
+		if json.Unmarshal(failureJSON, &failure) == nil {
+			p.Objective, p.FirstRound, p.LastRound, p.Recovered = failure.Objective, failure.FirstRound, failure.LastRound, failure.Recovered
 		}
 		i, ok := byAttempt[attempt]
-		id := [2]string{string(rune(attempt)), p.TriageKey}
+		id := [3]string{string(rune(attempt)), p.TriageKey, p.Objective}
 		if !ok || seen[id] {
 			continue
 		}
@@ -95,7 +122,27 @@ func (w *Wall) handleRunAttempts(res http.ResponseWriter, req *http.Request) {
 		writeJSON(res, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	// Same queue the fixer reads (/v1/triage), so "queued" here means the
+	// fixer can actually pick it.
+	groups, err := cp.objectiveFailureTriage(w)
+	if err != nil {
+		writeJSON(res, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	markQueuedProblems(attempts, groups)
 	writeJSON(res, http.StatusOK, attempts)
+}
+
+func markQueuedProblems(attempts []runAttemptView, groups []triageGroup) {
+	queued := make(map[string]bool, len(groups))
+	for _, g := range groups {
+		queued[g.Key] = true
+	}
+	for i := range attempts {
+		for j := range attempts[i].Problems {
+			attempts[i].Problems[j].Queued = queued[attempts[i].Problems[j].TriageKey]
+		}
+	}
 }
 
 type runRecoveryView struct {

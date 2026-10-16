@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import { getRunArtifacts, getRunCheckpoints, getRunDebug } from '../shared/api/client'
-import type { RunArtifact } from '../shared/api/types'
+import { getRunArtifacts, getRunAttempts, getRunCheckpoints, getRunDebug } from '../shared/api/client'
+import type { RunArtifact, RunAttempt } from '../shared/api/types'
 import { useRunMedia } from './useRunMedia'
 
 export type EvidenceRow = Record<string, any>
@@ -28,6 +28,8 @@ export function useRunEvidence(runID: Ref<string>) {
   const debug = ref<EvidenceRow | null>(null)
   const artifacts = ref<RunArtifact[]>([])
   const checkpoints = ref<unknown[]>([])
+  // Finished attempts with their triage problems; null when unavailable.
+  const attempts = ref<RunAttempt[] | null>(null)
   const selectedEvent = ref(-1)
   const followLive = ref(true)
   let serial = 0
@@ -104,10 +106,11 @@ export function useRunEvidence(runID: Ref<string>) {
     const current = ++serial
     loading.value = true
     error.value = ''
-    const [debugResult, artifactsResult, checkpointsResult] = await Promise.allSettled([
+    const [debugResult, artifactsResult, checkpointsResult, attemptsResult] = await Promise.allSettled([
       getRunDebug(id),
       getRunArtifacts(id),
-      getRunCheckpoints(id)
+      getRunCheckpoints(id),
+      getRunAttempts(id)
     ])
     if (current !== serial) return
     if (debugResult.status === 'fulfilled') debug.value = debugResult.value
@@ -117,22 +120,32 @@ export function useRunEvidence(runID: Ref<string>) {
     }
     artifacts.value = artifactsResult.status === 'fulfilled' ? artifactsResult.value : []
     checkpoints.value = checkpointsResult.status === 'fulfilled' ? checkpointsResult.value : []
+    attempts.value = attemptsResult.status === 'fulfilled' ? attemptsResult.value : null
     followLive.value = true
     selectLatest()
     loading.value = false
     if (isLive.value) scheduleLive()
   }
 
+  // A live run files an attempt's failures when that attempt ends; refetch
+  // then instead of polling the triage join every 2s.
+  watch(() => finite(run.value.attempts), (next, prev) => {
+    const id = runID.value
+    if (!id || !prev || next === prev) return
+    getRunAttempts(id).then((value) => { if (id === runID.value) attempts.value = value }, () => {})
+  })
+
   watch(runID, () => {
     stopLive()
     debug.value = null
+    attempts.value = null
     selectedEvent.value = -1
     void load()
   }, { immediate: true })
   onBeforeUnmount(stopLive)
 
   return {
-    loading, error, debug, run, isLive, artifacts, checkpoints, timeline, totalFrames,
+    loading, error, debug, run, isLive, artifacts, checkpoints, attempts, timeline, totalFrames,
     selectedEvent, followLive, select, setFollowLive,
     ...media,
     load

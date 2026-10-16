@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import type { RunAttempt } from '../shared/api/types'
+import { operatorHref } from '../shared/urls'
+import { failureFixState, type FixTone } from './failureFixState'
 import {
   eventDetail,
   eventGlyphs,
@@ -19,6 +22,7 @@ const props = defineProps<{
   filter: TimelineFilter
   followLive: boolean
   live: boolean
+  attempts?: RunAttempt[] | null
 }>()
 
 const emit = defineEmits<{ select: [index: number] }>()
@@ -29,8 +33,12 @@ const kindColor: Record<EventKind, string> = {
   recovery: 'text-warn', skill: 'text-accent', system: 'text-fg-3', event: 'text-fg-3'
 }
 
+const fixColor: Record<FixTone, string> = {
+  ok: 'text-ok border-ok/40', accent: 'text-accent border-accent/40', warn: 'text-warn border-warn/40', muted: 'text-fg-3 border-rule-strong'
+}
+
 const entries = computed(() => props.events
-  .map((event, index) => ({ event, index, kind: eventKind(event) }))
+  .map((event, index) => ({ event, index, kind: eventKind(event), fix: failureFixState(event, props.attempts ?? null) }))
   .filter(({ event }) => eventMatchesFilter(event, props.filter))
   .reverse())
 
@@ -65,7 +73,7 @@ watch(() => props.selectedIndex, scrollSelected)
         {{ events.length ? 'No events match this filter.' : 'No persisted semantic events for this run yet.' }}
       </li>
       <li
-        v-for="{ event, index, kind } in entries"
+        v-for="{ event, index, kind, fix } in entries"
         :key="index"
         :aria-current="index === selectedIndex ? 'true' : undefined"
         :class="index === selectedIndex ? 'bg-selected shadow-[inset_2px_0_0_var(--color-accent)]' : ''"
@@ -73,7 +81,7 @@ watch(() => props.selectedIndex, scrollSelected)
       >
         <button
           type="button"
-          class="grid w-full grid-cols-[4.5rem_1rem_minmax(0,1fr)] items-baseline gap-2 px-3 py-2 text-left hover:bg-raised"
+          class="grid w-full grid-cols-[4.5rem_1rem_minmax(0,1fr)_auto] items-baseline gap-2 px-3 py-2 text-left hover:bg-raised"
           :aria-expanded="index === selectedIndex"
           @click="emit('select', index)"
         >
@@ -82,6 +90,8 @@ watch(() => props.selectedIndex, scrollSelected)
           <span class="min-w-0 truncate">
             <span class="mr-1.5 text-meta text-fg-2">{{ eventKindLabels[kind] }}</span>{{ eventTitle(event) }}
           </span>
+          <span v-if="fix" :class="fixColor[fix.tone]" class="rounded border px-1.5 text-meta whitespace-nowrap" :title="fix.detail">{{ fix.label }}</span>
+          <span v-else />
         </button>
         <div v-if="index === selectedIndex" class="pr-3 pb-3 pl-3 sm:pl-[6.75rem]">
           <dl class="ui-kv max-w-[72ch]">
@@ -90,6 +100,17 @@ watch(() => props.selectedIndex, scrollSelected)
             </template>
             <dt>Detail</dt>
             <dd class="whitespace-pre-wrap">{{ eventDetail(event) }}</dd>
+            <template v-if="fix">
+              <dt>AI fixer</dt>
+              <dd>
+                <span :class="fixColor[fix.tone]">{{ fix.label }}</span> · {{ fix.detail }}
+                <span v-if="fix.key || fix.issueURL || fix.prURL" class="mt-1 flex flex-wrap gap-x-3">
+                  <a v-if="fix.key" :href="operatorHref('failures', { run: '', failure: fix.key }, '?state=all')" class="text-accent hover:underline">Triage group</a>
+                  <a v-if="fix.issueURL" :href="fix.issueURL" target="_blank" rel="noopener" class="text-accent hover:underline">Issue</a>
+                  <a v-if="fix.prURL" :href="fix.prURL" target="_blank" rel="noopener" class="text-accent hover:underline">Pull request</a>
+                </span>
+              </dd>
+            </template>
             <template v-if="Number(event.frame)">
               <dt>Frame</dt><dd class="font-mono">{{ Number(event.frame).toLocaleString() }}</dd>
             </template>

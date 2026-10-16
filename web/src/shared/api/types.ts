@@ -556,6 +556,29 @@ export interface ReplayStatus {
   [key: string]: unknown
 }
 
+// GET /v1/runs/{id}/attempts: one row per finished attempt, with the
+// objective failures (triage problems) it recorded.
+export interface RunAttemptProblem {
+  triage_key: string
+  objective?: string
+  first_round?: number
+  last_round?: number
+  recovered?: boolean
+  terminal?: boolean
+  queued?: boolean
+  dismissed?: boolean
+  fixed?: boolean
+  fixed_revision?: string
+  issue_number?: number
+  issue_url?: string
+  solver?: { backend?: string; model?: string; state?: string; pr_number?: number; pr_url?: string }
+}
+
+export interface RunAttempt {
+  attempt: number
+  problems: RunAttemptProblem[]
+}
+
 export interface RunArtifact {
   name: string
   media_type?: string
