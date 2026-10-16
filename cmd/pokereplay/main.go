@@ -145,11 +145,11 @@ type replayServer struct {
 	rtmpSessions          map[string]*rtmpBroadcastSession
 	broadcastDestinations map[string]broadcastDestination
 
-	youtube       youtubeConfig
-	youtubeHTTP   *http.Client
+	youtube         youtubeConfig
+	youtubeHTTP     *http.Client
 	studioPublishMu sync.Mutex
-	youtubeMu     sync.Mutex
-	youtubeActive map[string]bool
+	youtubeMu       sync.Mutex
+	youtubeActive   map[string]bool
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
