@@ -33,8 +33,8 @@ func gsSyntheticChallengeROM() []byte {
 
 func TestGSChallengeProfilesReachGenericReadiness(t *testing.T) {
 	profiles := gsChallengeProfiles(gsSyntheticChallengeROM())
-	if len(profiles) != 6 {
-		t.Fatalf("Gold/Silver gym profiles = %d, want six supported leaders", len(profiles))
+	if len(profiles) != 8 {
+		t.Fatalf("Gold/Silver gym profiles = %d, want eight Johto leaders", len(profiles))
 	}
 	obs := Observation{
 		GameID: gsprofile.GoldGameID, PartyCount: 1,
@@ -56,6 +56,30 @@ func TestGSChallengeProfilesReachGenericReadiness(t *testing.T) {
 		len(steelix.Types) != 2 || steelix.Types[0] != game.TypeID("steel") ||
 		steelix.Types[1] != game.TypeID("ground") {
 		t.Fatalf("Steelix uses wrong ROM types: %+v", steelix)
+	}
+}
+
+func TestGSFutureGymReadinessUsesPinnedRetailRosters(t *testing.T) {
+	obs := Observation{
+		GameID: gsprofile.GoldGameID, PartyCount: 1,
+		ChallengeProfiles: gsChallengeProfiles(gsSyntheticChallengeROM()),
+	}
+	for _, tc := range []struct {
+		progress game.ProgressID
+		level int
+		party int
+		lastSpecies string
+	}{
+		{gsprofile.ProgressGlacierBadgeEarned, 31, 3, "piloswine"},
+		{gsprofile.ProgressRisingBadgeEarned, 40, 4, "kingdra"},
+	} {
+		matchup := challengeProfileFor(obs, Objective{Kind: KindProgress, Progress: tc.progress})
+		if matchup.MinimumReadiness != readinessFloorForLevel(tc.level) {
+			t.Fatalf("%s readiness floor = %d, want level %d", tc.progress, matchup.MinimumReadiness, tc.level)
+		}
+		if len(matchup.Matchup.Opponents) != tc.party || matchup.Matchup.Opponents[tc.party-1].Species != game.SpeciesID(tc.lastSpecies) {
+			t.Fatalf("%s opponents = %+v, want %d ending in %s", tc.progress, matchup.Matchup.Opponents, tc.party, tc.lastSpecies)
+		}
 	}
 }
 
