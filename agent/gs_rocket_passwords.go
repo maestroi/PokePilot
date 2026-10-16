@@ -55,9 +55,9 @@ func executeGSRocketPasswords(m *emu.Emu, romData []byte) error {
 	// Winning alone does not prove learning either password: their post-win
 	// conversations set two separate permanent events.
 	for _, script := range []struct {
-		label                    string
-		standX, standY, x, y     uint8
-		fact                     game.ProgressID
+		label                string
+		standX, standY, x, y uint8
+		fact                 game.ProgressID
 	}{
 		{"raticate-tail", 5, 14, 5, 15, gsprofile.ProgressRocketRaticatePassword},
 		{"slowpoke-tail", 21, 8, 21, 7, gsprofile.ProgressRocketSlowpokePassword},
