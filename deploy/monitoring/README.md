@@ -41,7 +41,65 @@ curl -s http://<task>:8080/metrics | head
 
 Runners listen on 8099. A fresh scrape includes `pokepilot_up`,
 `pokepilot_build_info`, `go_goroutines`, and `process_start_time_seconds`.
-Failure, LLM, replay, and alert series are later issues on the same endpoint.
+LLM, replay, and alert series are tracked by subsequent issues on the same endpoint; failure series are exported by the wall.
+
+## Grafana dashboards
+
+The monitoring assets integrate into the **existing** Grafana installation;
+there is no Grafana/Prometheus/Loki service added to the PokePilot stacks.
+
+| Dashboard JSON | Coverage |
+| --- | --- |
+| `grafana-pokepilot-failures.json` | Wall objective failures and recovery (this slice of #2336) |
+| `grafana-poketelegram.json` | Remote Telegram operator health |
+
+To import the failure dashboard, open **Grafana → Dashboards → New → Import**,
+select `grafana-pokepilot-failures.json`, and select the existing Prometheus
+instance for `DS_PROMETHEUS`. When Loki is configured, select it for
+`DS_LOKI` to enable metric → log data links. The dashboard's game filter
+uses existing failure series, including the `All` selection, while Grafana's
+time picker controls the displayed range. No datasource UID is hard-coded.
+The `DS_LOKI` variable is only used by data links; **all panels query
+Prometheus** and do not require Loki to return metric data.
+
+The failure dashboard shows:
+
+- Total, terminal and recovered objective occurrences plus recovery percentage
+  (recovered / resolved; unresolved is not treated as success).
+- Failure rates by result and cause; category-specific recovery percentage.
+- Wall retry attempts versus resilient-supervisor recoveries confirmed by new
+  progress (these are different units of work).
+- p50/p95 of elapsed queue-to-terminal-failure time and actual failed versus
+  completed runs, for context.
+- Top terminal causes over the selected range.
+
+The `Terminal failures by cause` panel and other linked series open Grafana
+Explore on the selected `DS_LOKI` datasource and preserve the dashboard time
+window. The link uses the clicked Prometheus `game`/`failure_type` labels
+as **parsed Loki log fields** (not Loki stream labels), and selects the
+`{service="wall"}` log stream. This assumes your Alloy/Promtail pipeline
+adds `service=wall` as a Loki **stream label**, and the wall's structured
+`slog` text reaches Loki intact so `| logfmt` can parse
+`event=objective_failure`, `game` and `failure_type`. If the collector
+uses a different service stream label or JSON formatting, adjust the link
+selector or parser to match that deployment. Do **not** promote
+`run_id`, `failure_id`, `family_id`, or `trace_id` to Loki or Prometheus
+**stream/index labels**: retain identifiers inside structured log content
+for investigation.
+
+This first dashboard performs a genuine **metric → Loki log** pivot. An exact
+Loki → Tempo pivot needs propagated `trace_id` values and a configured Loki
+**derived field** pointing to the Tempo datasource; that remains part of
+#2338 and should not be advertised as working until traces are actually
+emitted. See Grafana's Loki datasource derived fields documentation when
+configuring the existing Tempo instance. No Tempo datasource is required to
+import this dashboard.
+
+A quick configuration/URL/data-source/metric-name test can be run with:
+
+```sh
+go test ./deploy/monitoring
+```
 
 ## Run lifecycle
 

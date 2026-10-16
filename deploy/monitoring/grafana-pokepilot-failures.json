@@ -1,0 +1,841 @@
+{
+  "uid": "pokepilot-failures",
+  "title": "PokePilot / Failures & Recovery",
+  "description": "Failure outcomes, wall retries, recoveries, time to failure, and metric-to-Loki drill-down; imports into existing Grafana.",
+  "tags": [
+    "pokepilot",
+    "observability",
+    "failures",
+    "recovery"
+  ],
+  "editable": true,
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "DS_LOKI",
+        "label": "Loki (optional for drill-down)",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "game",
+        "label": "Game",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": {
+          "query": "label_values(pokepilot_run_failures_total,game)",
+          "refId": "StandardVariableQuery"
+        },
+        "definition": "label_values(pokepilot_run_failures_total,game)",
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Alerts",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Failure occurrences",
+      "description": "All objective failure occurrences accepted in the selected period, including recovered, terminal and unresolved.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\"}[$__range]))",
+          "legendFormat": "occurrences",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Terminal objective failures",
+      "description": "Objective failure occurrences classed as terminal, not the number of failed runs.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"terminal\"}[$__range]))",
+          "legendFormat": "terminal",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Recovered objective failures",
+      "description": "Objective failure occurrences recovered by the runner.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"recovered\"}[$__range]))",
+          "legendFormat": "recovered",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Resolved recovery rate",
+      "description": "Recovered as percent of recovered + terminal failure occurrences. Does not include unresolved.",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "links": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "100 * sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"recovered\"}[$__range])) / clamp_min(sum(increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=~\"recovered|terminal\"}[$__range])),1)",
+          "legendFormat": "% recovered",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Failures by outcome",
+      "description": "Occurrence rate per second, grouped by game and outcome.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game,outcome) (rate(pokepilot_run_failures_total{game=~\"${game:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} / {{outcome}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Terminal failures by cause",
+      "description": "Select a cause series for matching Loki logs scoped to the same game and time range.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%20%7C%20failure_type%3D%5C%22${__field.labels.failure_type}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game,failure_type) (rate(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"terminal\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} / {{failure_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Recovery rate by cause",
+      "description": "Resolved occurrence recovery rate by bounded category. Sparse series can be noisy.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%20%7C%20failure_type%3D%5C%22${__field.labels.failure_type}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "100 * sum by (game,failure_type) (rate(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"recovered\"}[$__rate_interval])) / clamp_min(sum by (game,failure_type) (rate(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=~\"recovered|terminal\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "{{game}} / {{failure_type}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Supervisor retries and confirmed recoveries",
+      "description": "Retries are requeued wall generations, whereas confirmed recoveries require subsequent progress.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game) (rate(pokepilot_failure_recovery_attempts_total{game=~\"${game:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} retry/s",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game) (rate(pokepilot_failure_supervisor_recoveries_total{game=~\"${game:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} recovered/s",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Time to terminal failure (p50/p95)",
+      "description": "Queue-to-terminal-unsuccessful wall-clock time, not timestamp of the first objective failure.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.50, sum by (le,game) (rate(pokepilot_failure_time_to_failure_seconds_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
+          "legendFormat": "{{game}} p50",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le,game) (rate(pokepilot_failure_time_to_failure_seconds_bucket{game=~\"${game:regex}\"}[$__rate_interval])))",
+          "legendFormat": "{{game}} p95",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Terminal runs vs completions",
+      "description": "Terminal run counts, not objective occurrences. Compare actual failed vs completed campaigns.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20game%3D%5C%22${__field.labels.game}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game) (rate(pokepilot_runs_failed_total{game=~\"${game:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} failed/s",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (game) (rate(pokepilot_runs_completed_total{game=~\"${game:regex}\"}[$__rate_interval]))",
+          "legendFormat": "{{game}} completed/s",
+          "refId": "B",
+          "range": true,
+          "instant": false
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Top terminal failure categories",
+      "description": "Terminal objective occurrences over the selected range by bounded cause; Loki drill-down filters on cause.",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "Open matching wall failures in Loki",
+              "url": "/explore?schemaVersion=1&panes=%7B%22F%22%3A%7B%22datasource%22%3A%22${DS_LOKI}%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22loki%22%2C%22uid%22%3A%22${DS_LOKI}%22%7D%2C%22expr%22%3A%22%7Bservice%3D%5C%22wall%5C%22%7D%20%7C%20logfmt%20%7C%20event%3D%5C%22objective_failure%5C%22%20%7C%20failure_type%3D%5C%22${__field.labels.failure_type}%5C%22%22%2C%22queryType%22%3A%22range%22%2C%22maxLines%22%3A1000%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22${__from}%22%2C%22to%22%3A%22${__to}%22%7D%7D%7D",
+              "targetBlank": true
+            }
+          ],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sort_desc(sum by (failure_type) (increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"terminal\"}[$__range])))",
+          "legendFormat": "{{failure_type}}",
+          "refId": "A",
+          "range": false,
+          "instant": true
+        }
+      ]
+    }
+  ]
+}
