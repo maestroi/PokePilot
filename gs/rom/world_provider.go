@@ -863,6 +863,52 @@ var firstBadgeTopology = []mapSpec{
 			{dir: dirSouth, dest: "ROUTE_43", offset: 5},
 		},
 	},
+	// Rocket Hideout native map geometry. Completing any story requirement is
+	// NOT implied by these edges: the map scene still controls opening the
+	// disguised staircase, passwords, Giovanni's door and the transmitter.
+	{
+		name: "MAHOGANY_MART_1F",
+		warps: []warpSpec{
+			{x: 3, y: 7, dest: "MAHOGANY_TOWN", destWarp: 1},
+			{x: 4, y: 7, dest: "MAHOGANY_TOWN", destWarp: 1},
+			{x: 7, y: 3, dest: "TEAM_ROCKET_BASE_B1F", destWarp: 1},
+		},
+	},
+	{
+		name: "TEAM_ROCKET_BASE_B1F",
+		warps: []warpSpec{
+			{x: 27, y: 2, dest: "MAHOGANY_MART_1F", destWarp: 3},
+			{x: 3, y: 14, dest: "TEAM_ROCKET_BASE_B2F", destWarp: 1},
+			{x: 5, y: 15, dest: "TEAM_ROCKET_BASE_B1F", destWarp: 4},
+			{x: 25, y: 2, dest: "TEAM_ROCKET_BASE_B1F", destWarp: 3},
+		},
+	},
+	{
+		name: "TEAM_ROCKET_BASE_B2F",
+		warps: []warpSpec{
+			{x: 3, y: 14, dest: "TEAM_ROCKET_BASE_B1F", destWarp: 2},
+			{x: 3, y: 2, dest: "TEAM_ROCKET_BASE_B3F", destWarp: 1},
+			{x: 27, y: 2, dest: "TEAM_ROCKET_BASE_B3F", destWarp: 2},
+			{x: 3, y: 6, dest: "TEAM_ROCKET_BASE_B3F", destWarp: 3},
+			{x: 27, y: 14, dest: "TEAM_ROCKET_BASE_B3F", destWarp: 4},
+		},
+	},
+	{
+		name: "TEAM_ROCKET_BASE_B3F",
+		warps: []warpSpec{
+			{x: 3, y: 2, dest: "TEAM_ROCKET_BASE_B2F", destWarp: 2},
+			{x: 27, y: 2, dest: "TEAM_ROCKET_BASE_B2F", destWarp: 3},
+			{x: 3, y: 6, dest: "TEAM_ROCKET_BASE_B2F", destWarp: 4},
+			{x: 27, y: 14, dest: "TEAM_ROCKET_BASE_B2F", destWarp: 5},
+		},
+	},
+	{
+		name: "MAHOGANY_GYM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "MAHOGANY_TOWN", destWarp: 3},
+			{x: 5, y: 17, dest: "MAHOGANY_TOWN", destWarp: 3},
+		},
+	},
 }
 
 type firstBadgeWorldProvider struct {
