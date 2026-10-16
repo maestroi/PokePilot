@@ -49,6 +49,12 @@ const (
 	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
 	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
 	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressRocketTransmitterDoor game.ProgressID = "gs_rocket_transmitter_door_opened"
+	ProgressRocketExecutiveF     game.ProgressID = "gs_rocket_executive_f_beaten"
+	ProgressRocketElectrode1     game.ProgressID = "gs_rocket_electrode_1_cleared"
+	ProgressRocketElectrode2     game.ProgressID = "gs_rocket_electrode_2_cleared"
+	ProgressRocketElectrode3     game.ProgressID = "gs_rocket_electrode_3_cleared"
+	ProgressRocketHideoutCleared game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
 	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -96,6 +102,14 @@ const (
 	eventOpenedRocketOfficeDoor         uint16 = 771
 	eventBeatRocketExecutiveM4          uint16 = 1396
 	eventLearnedMurkrowPassword         uint16 = 767
+	// Retail TeamRocketBaseB2F.asm event indices (const_next gaps included).
+	eventOpenedTransmitterDoor          uint16 = 765
+	eventBeatRocketExecutiveF2          uint16 = 1390
+	eventRocketElectrode1               uint16 = 1760
+	eventRocketElectrode2               uint16 = 1761
+	eventRocketElectrode3               uint16 = 1762
+	eventClearedRocketHideout           uint16 = 33
+	eventGotHM06Whirlpool               uint16 = 21
 	statusFlagsPokedexMask                     = 1 << 0
 	johtoBadgeZephyrMask                       = 1 << 0
 	johtoBadgeHiveMask                         = 1 << 1
@@ -200,6 +214,16 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
 		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
 		{ID: ProgressRocketMurkrowPassword, Complete: hasGSEvent(reader, eventLearnedMurkrowPassword)},
+		{ID: ProgressRocketTransmitterDoor, Complete: hasGSEvent(reader, eventOpenedTransmitterDoor)},
+		{ID: ProgressRocketExecutiveF, Complete: hasGSEvent(reader, eventBeatRocketExecutiveF2)},
+		{ID: ProgressRocketElectrode1, Complete: hasGSEvent(reader, eventRocketElectrode1)},
+		{ID: ProgressRocketElectrode2, Complete: hasGSEvent(reader, eventRocketElectrode2)},
+		{ID: ProgressRocketElectrode3, Complete: hasGSEvent(reader, eventRocketElectrode3)},
+		{ID: ProgressRocketHideoutCleared, Complete: hasGSEvent(reader, eventClearedRocketHideout) &&
+			hasGSEvent(reader, eventGotHM06Whirlpool) &&
+			hasGSEvent(reader, eventRocketElectrode1) &&
+			hasGSEvent(reader, eventRocketElectrode2) &&
+			hasGSEvent(reader, eventRocketElectrode3)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
