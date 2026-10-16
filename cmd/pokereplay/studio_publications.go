@@ -373,18 +373,21 @@ func (s *replayServer) handleStudioPublicationAction(w http.ResponseWriter, r *h
 	now := time.Now()
 	if action == "retry-thumbnail" {
 		if c.State != publication.Published || c.ProviderID == "" || c.ThumbnailKey == "" || c.ThumbnailStatus != "failed" {
-			writeJSON(w, http.StatusConflict, map[string]string{"error":"only a published video with a failed thumbnail can retry thumbnail-only"})
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "only a published video with a failed thumbnail can retry thumbnail-only"})
 			return
 		}
-		if err:=s.uploadStudioThumbnail(r.Context(),c.ProviderID,c.ThumbnailKey);err!=nil{
-			writeJSON(w,http.StatusBadGateway,map[string]string{"error":"thumbnail transfer failed: "+clipError(err)})
+		if err := s.uploadStudioThumbnail(r.Context(), c.ProviderID, c.ThumbnailKey); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "thumbnail transfer failed: " + clipError(err)})
 			return
 		}
-		c.ThumbnailStatus="ready"
-		c.Reason=""
-		c.UpdatedAt=now.Unix()
-		if err:=s.savePublication(r.Context(),c);err!=nil{writeJSON(w,http.StatusBadGateway,map[string]string{"error":"cannot store thumbnail retry result"});return}
-		writeJSON(w,http.StatusOK,c)
+		c.ThumbnailStatus = "ready"
+		c.Reason = ""
+		c.UpdatedAt = now.Unix()
+		if err := s.savePublication(r.Context(), c); err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot store thumbnail retry result"})
+			return
+		}
+		writeJSON(w, http.StatusOK, c)
 		return
 	}
 	if action == "reject" {
