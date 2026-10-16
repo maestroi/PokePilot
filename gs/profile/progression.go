@@ -41,8 +41,8 @@ const (
 	// boundaries after Jasmine and before the Rocket Hideout.
 	ProgressRedGyaradosDefeated game.ProgressID = "gs_red_gyarados_defeated"
 	ProgressLanceHelpAccepted   game.ProgressID = "gs_lance_help_accepted"
-	ProgressGlacierBadgeEarned game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned  game.ProgressID = "gs_rising_badge_earned"
+	ProgressGlacierBadgeEarned  game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned   game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -79,17 +79,17 @@ const (
 	// Vendored pokegold constants/event_flags.asm (const_next sections
 	// included). Disappearance is set only after defeating Red Gyarados;
 	// answering YES to Lance is a separate permanent event.
-	eventLakeOfRageRedGyarados          uint16 = 1873
-	eventDecidedToHelpLance             uint16 = 96
-	statusFlagsPokedexMask                     = 1 << 0
-	johtoBadgeZephyrMask                       = 1 << 0
-	johtoBadgeHiveMask                         = 1 << 1
-	johtoBadgePlainMask                        = 1 << 2
-	johtoBadgeFogMask                          = 1 << 3
-	johtoBadgeMineralMask                      = 1 << 4
-	johtoBadgeStormMask                        = 1 << 5
-	johtoBadgeGlacierMask                      = 1 << 6
-	johtoBadgeRisingMask                       = 1 << 7
+	eventLakeOfRageRedGyarados        uint16 = 1873
+	eventDecidedToHelpLance           uint16 = 96
+	statusFlagsPokedexMask            = 1 << 0
+	johtoBadgeZephyrMask              = 1 << 0
+	johtoBadgeHiveMask                = 1 << 1
+	johtoBadgePlainMask               = 1 << 2
+	johtoBadgeFogMask                 = 1 << 3
+	johtoBadgeMineralMask             = 1 << 4
+	johtoBadgeStormMask               = 1 << 5
+	johtoBadgeGlacierMask             = 1 << 6
+	johtoBadgeRisingMask              = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
