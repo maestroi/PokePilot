@@ -8,12 +8,12 @@ import (
 
 func TestFailureTypesAreBounded(t *testing.T) {
 	tests := map[string]string{
-		"route_prerequisite_missing": "prerequisite",
-		"combat_defeat":              "combat",
-		"field_roster_catch_failed":  "field_move",
-		"stagnation":                 "stagnation",
+		"route_prerequisite_missing":  "prerequisite",
+		"combat_defeat":               "combat",
+		"field_roster_catch_failed":   "field_move",
+		"stagnation":                  "stagnation",
 		"the entire prompt / run=abc": "other",
-		"truly_new_cause_982374":    "other",
+		"truly_new_cause_982374":      "other",
 	}
 	for in, want := range tests {
 		if got := NormalizeFailureType(in); got != want {
