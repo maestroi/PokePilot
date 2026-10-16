@@ -45,11 +45,14 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 		"command: [\"pokeissues\", \"-http\", \":8080\"]",
 		"POKEPILOT_GITHUB_REPO: ${POKEPILOT_GITHUB_REPO:-maestroi/PokePilot}",
 		"POKEPILOT_GITHUB_TOKEN: ${POKEPILOT_GITHUB_TOKEN:-}",
-		"POKEPILOT_RUN_BASE_URL: ${POKEPILOT_RUN_BASE_URL:-https://admin.rompilot.app}",
+		"POKEPILOT_ADMIN_BASE_URL: ${POKEPILOT_ADMIN_BASE_URL:-${POKEPILOT_RUN_BASE_URL:-https://admin.rompilot.app}}",
 	} {
 		if !strings.Contains(issues, want) {
 			t.Errorf("issues service missing %q", want)
 		}
+	}
+	if strings.Contains(issues, "POKEPILOT_RUN_BASE_URL:") {
+		t.Error("issues service must export the canonical admin URL, not the legacy alias")
 	}
 	if strings.Contains(wall, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(ui, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(runner, "POKEPILOT_GITHUB_TOKEN") {
 		t.Error("GitHub credential must reach only the issues adapter")
