@@ -13,20 +13,20 @@ const (
 	gsPokegearExpansionCardMask byte = 1 << 3
 	gsPokegearPhoneCardMask     byte = 1 << 2
 
-	gsCapRadioCard     game.CapabilityID = "pokegear_radio_card"
-	gsCapExpansionCard game.CapabilityID = "pokegear_expansion_card"
-	gsSnorlaxGateID    string = "gs:vermilion_snorlax"
-	gsEventFoughtSnorlax uint16 = 1872
+	gsCapRadioCard       game.CapabilityID = "pokegear_radio_card"
+	gsCapExpansionCard   game.CapabilityID = "pokegear_expansion_card"
+	gsSnorlaxGateID      string            = "gs:vermilion_snorlax"
+	gsEventFoughtSnorlax uint16            = 1872
 )
 
 // Phone list indexes from pokegold/constants/phone_constants.asm and
 // ready-for-rematch flags from constants/event_flags.asm at SourceRevision.
 // These are cartridge-owned facts, not generic planner script names.
 type gsRematchContact struct {
-	Index byte
-	ID string
-	Name string
-	MapName string
+	Index      byte
+	ID         string
+	Name       string
+	MapName    string
 	ReadyEvent uint16
 }
 
@@ -103,10 +103,10 @@ func (*Profile) DecodeWorldOpportunities(reader game.MemoryReader) game.WorldOpp
 		from, to := gsLocation("VERMILION_CITY"), gsLocation("DIGLETTS_CAVE")
 		if from != "" && to != "" {
 			out.RouteGates = append(out.RouteGates, game.AssessRouteGate(game.Transition{
-				ID: gsSnorlaxGateID,
+				ID:   gsSnorlaxGateID,
 				From: from, To: to,
 				Requires: []game.CapabilityID{gsCapRadioCard, gsCapExpansionCard},
-				Gate: true, ChoiceRequired: true,
+				Gate:     true, ChoiceRequired: true,
 			}, caps))
 		}
 	}
@@ -122,11 +122,11 @@ func (*Profile) DecodeWorldOpportunities(reader game.MemoryReader) game.WorldOpp
 			ID: contact.ID, Name: contact.Name, Location: location,
 		})
 		out.BattleSources = append(out.BattleSources, game.BattleSource{
-			ID: "phone_rematch:" + contact.ID,
-			Kind: game.BattleSourcePhoneRematch,
-			Trainer: contact.Name,
+			ID:       "phone_rematch:" + contact.ID,
+			Kind:     game.BattleSourcePhoneRematch,
+			Trainer:  contact.Name,
 			Location: location,
-			Ready: hasGSEvent(reader, contact.ReadyEvent),
+			Ready:    hasGSEvent(reader, contact.ReadyEvent),
 		})
 	}
 	return out
