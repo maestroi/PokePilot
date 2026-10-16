@@ -44,6 +44,17 @@ function canPublish(c: StudioPublicationCandidate): boolean {
 function canSkip(c: StudioPublicationCandidate): boolean {
   return c.state !== 'publishing' && c.state !== 'published' && c.state !== 'skipped'
 }
+// What pressing the next button does, in words, per candidate state.
+function nextStep(c: StudioPublicationCandidate): string {
+  const what = `${c.proposal.format === 'short' ? 'this Short' : 'this episode'} to YouTube as ${c.proposal.privacy}`
+  if (c.state === 'rendering') return `Waiting for the edited video to finish rendering. Then you can approve uploading ${what}.`
+  if (canApprove(c)) return `Approve allows uploading ${what}. Nothing uploads until you press Publish.`
+  if (canPublish(c)) return `Approved. Publish uploads ${what} now.`
+  return ''
+}
+function candidateThumbnail(c: StudioPublicationCandidate): string {
+  return c.proposal.package_hash && c.proposal.thumbnail_id ? studioThumbnailURL(props.runID, c.proposal.package_hash, c.proposal.thumbnail_id) : ''
+}
 function candidateTitle(c: StudioPublicationCandidate): string {
   if (c.proposal.format === 'archive') return 'Archive only · no upload'
   const options = c.proposal.format === 'short' ? pkg.value?.shorts : pkg.value?.titles
@@ -96,14 +107,18 @@ function candidateTitle(c: StudioPublicationCandidate): string {
       <div class="space-y-2" :class="pkg ? 'border-t border-rule pt-3' : ''">
         <h3 class="font-semibold">Candidates</h3>
         <p v-if="!candidates.length" class="text-meta text-fg-2">Nothing queued for this run yet.</p>
-        <article v-for="candidate in candidates" :key="candidate.id" class="space-y-2 border border-rule bg-surface p-3">
+        <article v-for="candidate in candidates" :key="candidate.id" class="flex gap-3 border border-rule bg-surface p-3">
+          <img v-if="candidateThumbnail(candidate)" :src="candidateThumbnail(candidate)" alt="" class="aspect-video w-32 shrink-0 self-start bg-well object-cover max-sm:hidden" />
+          <div class="min-w-0 flex-1 space-y-2">
           <div class="flex flex-wrap items-center gap-2">
             <span class="min-w-0 flex-1 truncate font-medium" :title="candidate.id">{{ candidateTitle(candidate) }}</span>
             <span v-if="candidate.proposal.format !== 'archive'" class="text-meta text-fg-2">{{ candidate.proposal.privacy }}</span>
             <span v-if="candidate.proposal.not_before_unix" class="text-meta text-fg-2">after {{ new Date(candidate.proposal.not_before_unix * 1000).toLocaleString() }}</span>
             <StatusPill :status="presentPublication(candidate.state)" />
           </div>
-          <p v-if="candidate.reason" class="text-meta text-fg-2">{{ candidate.reason }}</p>
+          <p v-if="candidate.proposal.format !== 'archive'" class="text-meta text-fg-2">{{ candidate.proposal.format === 'short' ? 'YouTube Short' : 'YouTube episode' }} · {{ candidate.proposal.privacy }}</p>
+          <p v-if="candidate.reason && candidate.state !== 'rendering'" class="text-meta text-warn">▲ {{ candidate.reason }}</p>
+          <p v-if="nextStep(candidate)" class="text-meta">{{ nextStep(candidate) }}</p>
           <p v-if="candidate.thumbnail_status === 'failed'" class="text-meta text-warn">▲ Video uploaded; the thumbnail didn’t. Retry it without uploading the video again.</p>
           <div class="flex flex-wrap gap-2">
             <button v-if="canApprove(candidate)" type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="busy" @click="studio.act(candidate, 'approve')">Approve</button>
@@ -113,6 +128,7 @@ function candidateTitle(c: StudioPublicationCandidate): string {
             <button v-if="candidate.state === 'published' && candidate.thumbnail_status === 'failed'" type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="busy" @click="studio.act(candidate, 'retry-thumbnail')">Retry thumbnail</button>
             <button v-if="canSkip(candidate) && candidate.proposal.format !== 'archive'" type="button" class="ui-btn ui-btn-sm ui-btn-quiet max-md:h-10" :disabled="busy" @click="studio.act(candidate, 'reject')">Skip</button>
             <a v-if="candidate.provider_url" :href="candidate.provider_url" target="_blank" rel="noopener noreferrer" class="ui-btn ui-btn-sm max-md:h-10">Open on YouTube ↗</a>
+          </div>
           </div>
         </article>
       </div>
