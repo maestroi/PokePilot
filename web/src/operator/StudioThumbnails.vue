@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  assessStudioRun,
+  createStudioPackage,
   getStudioPackage,
   getStudioThumbnails,
   renderStudioThumbnails,
@@ -36,6 +38,35 @@ watch(() => props.runID, () => {
 
 function friendly(errorValue: unknown): string {
   return errorValue instanceof Error ? errorValue.message : 'Thumbnail service unavailable'
+}
+
+async function prepare(): Promise<void> {
+  if (!props.runID || busy.value) return
+  const run = props.runID
+  const id = ++generation
+  busy.value = true
+  error.value = ''
+  message.value = ''
+  pkg.value = null
+  thumbnails.value = null
+  try {
+    const result = await assessStudioRun(run)
+    if (id !== generation) return
+    const created = await createStudioPackage(run, result.assessment.hash)
+    if (id !== generation) return
+    pkg.value = created.package
+    packageHash.value = created.package.hash
+    try {
+      thumbnails.value = await getStudioThumbnails(run, created.package.hash)
+    } catch {
+      thumbnails.value = null
+    }
+    message.value = 'Verified package created from the completed run. Generate thumbnails to review its concepts.'
+  } catch (cause) {
+    if (id === generation) error.value = friendly(cause)
+  } finally {
+    if (id === generation) busy.value = false
+  }
 }
 
 async function load(): Promise<void> {
@@ -112,11 +143,17 @@ async function pick(candidateID: string): Promise<void> {
     </div>
     <div class="space-y-4 p-3">
       <p class="max-w-[72ch] text-fg-2">
-        Choose a versioned content package from the producer workflow, then generate and compare its artwork concepts.
+        Prepare a versioned content package from this completed run (or paste an existing package hash), then generate and compare its artwork concepts.
         Titles and PokePilot branding are rendered deterministically; publishing stays disabled until approved separately.
       </p>
       <div v-if="!runID" class="text-fg-2">Select a finished source run above.</div>
       <template v-else>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="ui-btn ui-btn-primary h-10" :disabled="busy" @click="prepare">
+            {{ busy && !pkg ? 'Preparing…' : 'Prepare package from this run' }}
+          </button>
+          <span class="text-meta text-fg-2">Uses the existing producer and factual packaging stages. Runs marked archive-only or do-not-publish are not rendered.</span>
+        </div>
         <div class="flex flex-wrap items-end gap-2">
           <label class="flex min-w-[min(100%,360px)] flex-1 flex-col gap-1 text-meta font-medium" for="thumbnail-package-hash">
             Content package SHA-256
