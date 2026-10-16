@@ -86,7 +86,7 @@ func (w *Wall) tileRowLocked(t *Tile) tileRow {
 		CircuitEvents:       t.CircuitEvents,
 		CircuitMaps:         t.CircuitMaps,
 		CircuitRevision:     t.CircuitRevision,
-	}
+	}.withStarterSpecies()
 }
 
 func (w *Wall) tileRowWithActivityLocked(t *Tile) tileRow {

@@ -2,6 +2,7 @@ import type { DashboardRun, DashboardStats } from '../shared/api/types'
 import { playSpeedLabel } from '../shared/playstyle'
 import { GAME_BOY_FPS, formatRunSpeed, runTimingSummary } from '../shared/runTiming'
 import { mapEntryForGame, spectatorNativeMap } from '../shared/mapCatalog'
+import { starterPresentation } from './runs'
 
 export type StatusTone = 'neutral' | 'info' | 'success' | 'warning' | 'danger'
 
@@ -138,8 +139,9 @@ export function howText(run: DashboardRun): string {
 }
 
 export function starterLabel(run: DashboardRun): string {
-  if (run.game === 'tetris' || run.game === 'boxxle') return '—'
-  return run.starter || (run.game === 'pokemon-yellow' ? 'pikachu' : (run.planner === 'scripted' ? 'squirtle' : 'LLM picks'))
+  const shown = starterPresentation(run)
+  if (!shown) return '—'
+  return shown.detail ? `${shown.species} · ${shown.detail}` : shown.species
 }
 
 export function reasoningEffortLabel(run: DashboardRun): string {

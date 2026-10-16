@@ -23,11 +23,13 @@ import {
   formatInteger,
   middleTruncate,
   modelName,
+  partyMonIsStarter,
   plannerLabel,
   plannerSeconds,
   progressLabel,
   rounds,
   safeIssueURL,
+  starterPresentation,
   statNumber,
   strategicCalls
 } from './runs'
@@ -54,6 +56,7 @@ const status = computed(() => run.value ? (run.value.status === 'done' ? present
 const recording = computed(() => run.value ? recordingSummary(run.value, props.mediaJob, props.mediaState) : null)
 const mediaHref = computed(() => recording.value ? recordingMediaHref(props.runId, recording.value, window.location.search) : '')
 const notFound = computed(() => !run.value && focusedResource.state.value === 'error')
+const starter = computed(() => run.value ? starterPresentation(run.value) : null)
 
 function liveHref(id: string): string {
   return operatorHref('live', { run: id, job: '', output: '' })
@@ -89,9 +92,9 @@ function liveHref(id: string): string {
     </div>
 
     <template v-else>
-      <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-4 @container">
         <p class="pt-3 text-fg-2">
-          {{ gameTitle(run.game) }} · {{ plannerLabel(run) }}<template v-if="run.starter"> · {{ run.starter }}</template>
+          {{ gameTitle(run.game) }} · {{ plannerLabel(run) }}<template v-if="starter"> · {{ starter.species }}</template>
         </p>
         <p v-if="run.status !== 'done'" class="mt-3 border border-warn/40 bg-warn/10 px-3 py-2 text-warn" role="status">
           ▲ This run is still active. Inspect it in Live for current state; Runs only keeps finished history.
@@ -151,9 +154,19 @@ function liveHref(id: string): string {
         </dl>
 
         <h3 class="mt-5 mb-1 text-title font-semibold">Party</h3>
+        <dl v-if="starter" class="ui-kv">
+          <dt>Starter</dt>
+          <dd>
+            {{ starter.species }}<span v-if="starter.detail" class="text-fg-3"> · {{ starter.detail }}</span>
+          </dd>
+        </dl>
         <ul v-if="run.player?.party?.length" class="divide-y divide-rule border-b border-rule">
-          <li v-for="(mon, index) in run.player.party" :key="index" class="flex justify-between py-1.5">
-            <span>{{ mon.name }}</span><span class="font-mono text-fg-2">L{{ mon.level }}</span>
+          <li v-for="(mon, index) in run.player.party" :key="index" class="flex justify-between gap-3 py-1.5">
+            <span class="min-w-0">
+              {{ mon.name }}
+              <span v-if="partyMonIsStarter(mon.name, starter?.species || '')" class="text-meta text-fg-3"> · starter</span>
+            </span>
+            <span class="shrink-0 font-mono text-fg-2">L{{ mon.level }}</span>
           </li>
         </ul>
         <p v-else class="text-fg-3">No party recorded.</p>

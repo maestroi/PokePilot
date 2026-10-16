@@ -199,6 +199,62 @@ async function goToRun(): Promise<void> {
 const paneEl = ref<HTMLElement | null>(null)
 const inspectedRow = computed(() => rows.value.find((run) => run.run_id === inspectedID.value) || null)
 
+const PANE_DEFAULT = 560
+const PANE_MIN = 400
+const PANE_MAX = 840
+const PANE_KEY = 'pokepilot.operator.runPaneWidth'
+
+function clampPane(value: number): number {
+  const room = typeof window === 'undefined' ? PANE_MAX : Math.max(PANE_MIN, window.innerWidth - 560)
+  return Math.round(Math.min(PANE_MAX, room, Math.max(PANE_MIN, value)))
+}
+function readPaneWidth(): number {
+  const stored = Number(window.localStorage.getItem(PANE_KEY))
+  return Number.isFinite(stored) && stored > 0 ? clampPane(stored) : PANE_DEFAULT
+}
+const paneWidth = ref(readPaneWidth())
+const paneStyle = computed(() => inspectedID.value ? { '--run-pane': `${paneWidth.value}px` } : undefined)
+
+function rememberPaneWidth(): void {
+  window.localStorage.setItem(PANE_KEY, String(paneWidth.value))
+}
+function resetPaneWidth(): void {
+  paneWidth.value = PANE_DEFAULT
+  rememberPaneWidth()
+}
+
+let paneDrag: { pointerId: number; startX: number; startWidth: number } | null = null
+function onPaneResizeDown(event: PointerEvent): void {
+  if (event.button !== 0) return
+  event.preventDefault()
+  paneDrag = { pointerId: event.pointerId, startX: event.clientX, startWidth: paneWidth.value }
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  const handle = event.currentTarget as HTMLElement
+  try { handle.setPointerCapture(event.pointerId) } catch { /* pointer may already be gone */ }
+}
+function onPaneResizeMove(event: PointerEvent): void {
+  if (!paneDrag || event.pointerId !== paneDrag.pointerId) return
+  paneWidth.value = clampPane(paneDrag.startWidth + (paneDrag.startX - event.clientX))
+}
+function onPaneResizeUp(event: PointerEvent): void {
+  if (!paneDrag || event.pointerId !== paneDrag.pointerId) return
+  paneDrag = null
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  rememberPaneWidth()
+}
+function onPaneResizeKey(event: KeyboardEvent): void {
+  const step = event.shiftKey ? 80 : 24
+  if (event.key === 'ArrowLeft') paneWidth.value = clampPane(paneWidth.value + step)
+  else if (event.key === 'ArrowRight') paneWidth.value = clampPane(paneWidth.value - step)
+  else if (event.key === 'Home') paneWidth.value = PANE_DEFAULT
+  else return
+  event.preventDefault()
+  event.stopPropagation()
+  rememberPaneWidth()
+}
+
 function openRun(runID: string, focusPane = true): void {
   if (runID !== inspectedID.value) navigate(state.value, { run: runID, replace: Boolean(inspectedID.value) })
   if (focusPane) void nextTick(() => paneEl.value?.focus())
@@ -251,6 +307,8 @@ onUnmounted(() => {
   window.removeEventListener('popstate', syncSearch)
   window.removeEventListener('keydown', onKeydown)
   if (searchTimer !== null) clearTimeout(searchTimer)
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
 })
 
 // ---- Replay / media ---------------------------------------------------------------
@@ -439,7 +497,7 @@ const cleanupOpen = ref(false)
       </div>
     </div>
 
-    <div :class="inspectedID ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-3 min-[1440px]:grid-cols-[minmax(0,1fr)_440px]' : ''">
+    <div :class="inspectedID ? 'xl:grid xl:grid-cols-[minmax(0,1fr)_var(--run-pane)] xl:gap-3' : ''" :style="paneStyle">
       <div class="min-w-0 border border-rule-strong bg-surface">
         <!-- FilterBar, or the bulk bar in its place while rows are selected -->
         <div v-if="selectedCount" class="flex min-h-12 flex-wrap items-center gap-3 border-b border-rule bg-raised px-3 py-2" role="region" aria-label="Bulk actions">
@@ -735,8 +793,25 @@ const cleanupOpen = ref(false)
           ref="paneEl"
           tabindex="-1"
           aria-label="Run details"
-          class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[440px] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
+          class="fixed inset-0 z-50 border-rule-strong shadow-[0_8px_24px_rgb(0_0_0/45%)] outline-none md:left-auto md:w-[var(--run-pane)] md:border-l xl:sticky xl:top-14 xl:z-auto xl:h-[calc(100vh-168px)] xl:self-start xl:w-auto xl:border xl:shadow-none"
         >
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize run details"
+            title="Drag to resize. Double-click to reset."
+            tabindex="0"
+            :aria-valuenow="paneWidth"
+            :aria-valuemin="PANE_MIN"
+            :aria-valuemax="PANE_MAX"
+            class="absolute inset-y-0 left-0 z-10 hidden w-2 -translate-x-1/2 cursor-col-resize touch-none xl:block focus-visible:bg-accent/30 hover:bg-accent/40"
+            @pointerdown="onPaneResizeDown"
+            @pointermove="onPaneResizeMove"
+            @pointerup="onPaneResizeUp"
+            @pointercancel="onPaneResizeUp"
+            @dblclick="resetPaneWidth"
+            @keydown="onPaneResizeKey"
+          />
           <RunDetailPane
             :run-id="inspectedID"
             :row="inspectedRow"

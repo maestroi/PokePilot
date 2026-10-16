@@ -197,11 +197,15 @@ type Tile struct {
 // grid template never reads live tiles after unlock. Rendering []*Tile
 // after unlock is what raced with heartbeat/cancel/finish.
 type tileRow struct {
-	RunID               string                   `json:"run_id"`
-	Status              string                   `json:"status"`
-	Game                string                   `json:"game,omitempty"`
-	Planner             string                   `json:"planner"`
-	Starter             string                   `json:"starter"`
+	RunID   string `json:"run_id"`
+	Status  string `json:"status"`
+	Game    string `json:"game,omitempty"`
+	Planner string `json:"planner"`
+	Starter string `json:"starter"`
+	// StarterSpecies is the Pokémon Oak handed over. It is derived for the
+	// dashboard from the starter request and seed; it is not a second stored
+	// fact, and non-Pokémon games leave it empty.
+	StarterSpecies      string                   `json:"starter_species,omitempty"`
 	Dest                string                   `json:"dest"`
 	Goal                string                   `json:"goal,omitempty"`
 	GoalProvided        bool                     `json:"goal_provided,omitempty"`
