@@ -26,6 +26,7 @@ import type {
   ProgrammingSnapshot,
   ReplayStatus,
   RunArtifact,
+  RunAttempt,
   RunSpec,
   TriageGroup
 } from './types'
@@ -299,6 +300,10 @@ export async function getRun(runID: string, signal?: AbortSignal): Promise<Dashb
 
 export function getRunDebug(runID: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   return requestJSON<Record<string, unknown>>(`/v1/runs/${encodeURIComponent(runID)}/debug`, { signal })
+}
+
+export function getRunAttempts(runID: string, signal?: AbortSignal): Promise<RunAttempt[]> {
+  return requestJSON<RunAttempt[]>(`/v1/runs/${encodeURIComponent(runID)}/attempts`, { signal })
 }
 
 export async function getRunArtifacts(runID: string, signal?: AbortSignal): Promise<RunArtifact[]> {

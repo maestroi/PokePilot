@@ -16,11 +16,12 @@ func TestRunAttemptsAttachProblems(t *testing.T) {
 	if _, err := db.Exec(`
 CREATE TABLE run_attempts (run_id TEXT, attempt INTEGER, reason TEXT, detail TEXT, runner_version TEXT);
 CREATE TABLE objective_failures (run_id TEXT, attempt INTEGER, failure_key TEXT, fingerprint TEXT,
- family_key TEXT, family_fingerprint TEXT, blocking BOOLEAN, updated_at TEXT);
+ family_key TEXT, family_fingerprint TEXT, blocking BOOLEAN, updated_at TEXT,
+ failure_json TEXT, terminal_count INTEGER, delivery_status TEXT);
 CREATE TABLE issue_links (failure_key TEXT, issue_id TEXT, status TEXT, payload_json TEXT);
 INSERT INTO run_attempts VALUES ('r',1,'lost','',''),('r',2,'failed','boom','v1');
-INSERT INTO objective_failures VALUES ('r',2,'k','fp','fam','famfp',1,'');
-INSERT INTO issue_links VALUES ('fam','42','resolved','{"status":"resolved","fixed_revision":"v2"}');`); err != nil {
+INSERT INTO objective_failures VALUES ('r',2,'k','fp','fam','famfp',1,'','{"objective":"go to x","first_round":3,"last_round":5}',1,'dismissed');
+INSERT INTO issue_links VALUES ('fam','42','resolved','{"status":"resolved","fixed_revision":"v2","issue_number":7,"solver_attempts":[{"backend":"cursor","pr_number":9}]}');`); err != nil {
 		t.Fatal(err)
 	}
 	got, err := (&controlPlane{db: db}).runAttempts("r")
@@ -30,8 +31,14 @@ INSERT INTO issue_links VALUES ('fam','42','resolved','{"status":"resolved","fix
 	if len(got) != 2 || len(got[0].Problems) != 0 || len(got[1].Problems) != 1 {
 		t.Fatalf("attempts = %+v", got)
 	}
-	if p := got[1].Problems[0]; p.TriageKey != "fam" || p.IssueID != "42" || !p.Blocking || !p.Fixed {
+	if p := got[1].Problems[0]; p.TriageKey != "fam" || p.IssueID != "42" || !p.Blocking || !p.Fixed ||
+		p.Objective != "go to x" || p.FirstRound != 3 || p.LastRound != 5 || !p.Terminal || !p.Dismissed ||
+		p.IssueNumber != 7 || p.Solver == nil || p.Solver.PRNumber != 9 {
 		t.Fatalf("problem = %+v", p)
+	}
+	markQueuedProblems(got, []triageGroup{{Key: "fam"}})
+	if !got[1].Problems[0].Queued {
+		t.Fatal("problem in the triage queue not marked queued")
 	}
 }
 

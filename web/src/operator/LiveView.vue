@@ -866,6 +866,7 @@ const search = () => window.location.search
             :filter="timelineFilter"
             :follow-live="evidence.followLive.value"
             :live="evidence.isLive.value"
+            :attempts="evidence.attempts.value"
             @select="selectEvent"
           />
           <LiveInspector
