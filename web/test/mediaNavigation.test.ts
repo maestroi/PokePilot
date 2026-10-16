@@ -8,14 +8,15 @@ const shell = readFileSync(new URL('../src/shared/components/AppShell.vue', impo
 const home = readFileSync(new URL('../src/spectator/PublicHome.vue', import.meta.url), 'utf8')
 const spectatorHTML = readFileSync(new URL('../spectator.html', import.meta.url), 'utf8')
 const liveView = readFileSync(new URL('../src/operator/LiveView.vue', import.meta.url), 'utf8')
-const renderJobs = readFileSync(new URL('../src/operator/RenderJobsPanel.vue', import.meta.url), 'utf8')
+const mediaQuery = readFileSync(new URL('../src/operator/mediaQuery.ts', import.meta.url), 'utf8')
+const renderJobs = readFileSync(new URL('../src/operator/MediaJobs.vue', import.meta.url), 'utf8') + mediaQuery
 const spectator = readFileSync(new URL('../src/spectator/App.vue', import.meta.url), 'utf8')
-const publicControls = readFileSync(new URL('../src/operator/SpectatorView.vue', import.meta.url), 'utf8')
-const broadcasts = readFileSync(new URL('../src/operator/BroadcastPanel.vue', import.meta.url), 'utf8')
+const publicControls = readFileSync(new URL('../src/operator/MediaOutputPane.vue', import.meta.url), 'utf8') + readFileSync(new URL('../src/operator/MediaLibrary.vue', import.meta.url), 'utf8') + mediaQuery
+const broadcasts = readFileSync(new URL('../src/operator/MediaBroadcasts.vue', import.meta.url), 'utf8')
 const mediaView = readFileSync(new URL('../src/operator/MediaView.vue', import.meta.url), 'utf8')
 const broadcastAPI = readFileSync(new URL('../src/shared/api/broadcast.ts', import.meta.url), 'utf8')
 const inspector = readFileSync(new URL('../src/operator/LiveInspector.vue', import.meta.url), 'utf8')
-const runEvidence = readFileSync(new URL('../src/operator/useRunEvidence.ts', import.meta.url), 'utf8')
+const runEvidence = readFileSync(new URL('../src/operator/useRunEvidence.ts', import.meta.url), 'utf8') + readFileSync(new URL('../src/operator/useRunMedia.ts', import.meta.url), 'utf8')
 const runArchive = readFileSync(new URL('../src/operator/RunArchiveView.vue', import.meta.url), 'utf8')
 const runRecording = readFileSync(new URL('../src/operator/runRecording.ts', import.meta.url), 'utf8')
 const runInspectorProxy = readFileSync(new URL('../../cmd/pokeui/run_inspector_proxy.go', import.meta.url), 'utf8')
@@ -71,7 +72,7 @@ test('operator proxy allowlists media render mutations', () => {
 
 test('media workspace exposes safe live broadcast controls', () => {
   assert.match(mediaView, /Broadcasts/)
-  assert.match(mediaView, /<BroadcastPanel/)
+  assert.match(mediaView, /<MediaBroadcasts/)
   assert.match(broadcasts, /Start broadcast/)
   assert.match(broadcasts, /Stop broadcast/)
   assert.match(broadcasts, /Credentials stay on the replay host/)
@@ -144,4 +145,36 @@ test('mobile spectator contains wide content instead of widening the page', () =
   assert.match(routeLine, /max-width: 100%/)
   assert.match(routeLine, /overflow-x: auto/)
   assert.match(routeLine, /overscroll-behavior-inline: contain/)
+})
+
+test('legacy media links resolve to Jobs with the job selected', async () => {
+  const { parseMediaState, formatMediaHref } = await import('../src/operator/mediaQuery.ts')
+  for (const hash of ['#media', '#media/library', '#media/replays', '#media/render-jobs', '#media/jobs']) {
+    const state = parseMediaState(hash, '?run=r1&job=j1')
+    assert.equal(state.tab, 'jobs', hash)
+    assert.equal(state.job, 'j1', hash)
+    assert.equal(formatMediaHref(state, '?run=r1&job=j1'), '?run=r1&job=j1#media/jobs', hash)
+  }
+  // A job never pulls an explicit Studio or Broadcasts link away from its tab.
+  assert.equal(parseMediaState('#media/broadcasts', '?job=j1').tab, 'broadcasts')
+  assert.equal(parseMediaState('#media/replays', '?run=r1').tab, 'library')
+})
+
+test('media workspace has the four sections and only shows on-air for live broadcasts', () => {
+  assert.match(mediaQuery, /'library'[\s\S]+'studio'[\s\S]+'broadcasts'[\s\S]+'jobs'/)
+  assert.match(mediaView, /v-if="onAir\.length"/)
+  assert.match(mediaView, /isBroadcastOnAir\(row\.status\?\.state\)/)
+  assert.doesNotMatch(mediaView, /<Panel|description=/)
+})
+
+test('new Media files follow the design system (no legacy primitives or palette)', () => {
+  const files = ['MediaView.vue', 'MediaLibrary.vue', 'MediaOutputPane.vue', 'MediaStudio.vue', 'MediaBroadcasts.vue', 'MediaJobs.vue']
+  for (const name of files) {
+    const source = readFileSync(new URL(`../src/operator/${name}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(source, /text-\[(7|8|9|10|11)px\]/, name)
+    assert.doesNotMatch(source, /\b(slate|rose|violet|emerald|cyan|amber|fuchsia)-\d{2,3}\b/, name)
+    assert.doesNotMatch(source, /\b(bg|ring)-white\//, name)
+    assert.doesNotMatch(source, /StatusBadge|<Panel|--poke-/, name)
+    assert.doesNotMatch(source, /Pokémon Red|pokemon-red/, name)
+  }
 })
