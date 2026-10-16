@@ -832,7 +832,7 @@
           "expr": "sort_desc(sum by (failure_type) (increase(pokepilot_run_failures_total{game=~\"${game:regex}\",outcome=\"terminal\"}[$__range])))",
           "legendFormat": "{{failure_type}}",
           "refId": "A",
-          "range": true,
+          "range": false,
           "instant": true
         }
       ]
