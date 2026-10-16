@@ -387,6 +387,47 @@ func TestPinnedCoastalHMAndBadgeFacts(t *testing.T) {
 	}
 }
 
+// These facts deliberately precede executable Mahogany/Blackthorn controllers.
+// Only the retail badge flags prove completion; the frontier remains Jasmine.
+func TestFinalJohtoBadgeFactsDoNotAdvanceUnsupportedFrontier(t *testing.T) {
+	mem := fakeGSReader{}
+	story := projectEarlyStory(mem)
+	if story.Has(ProgressGlacierBadgeEarned) || story.Has(ProgressRisingBadgeEarned) {
+		t.Fatal("a fresh save must not have Glacier or Rising Badge")
+	}
+
+	mem[sym.JohtoBadges] = johtoBadgeGlacierMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressGlacierBadgeEarned) || story.Has(ProgressRisingBadgeEarned) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Glacier-only badge flags = %+v", story)
+	}
+
+	mem[sym.JohtoBadges] = johtoBadgeRisingMask
+	story = projectEarlyStory(mem)
+	if story.Has(ProgressGlacierBadgeEarned) || !story.Has(ProgressRisingBadgeEarned) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("Rising-only badge flags = %+v", story)
+	}
+
+	mem[sym.JohtoBadges] = johtoBadgeGlacierMask | johtoBadgeRisingMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressGlacierBadgeEarned) || !story.Has(ProgressRisingBadgeEarned) || story.Has(ProgressSupportedFrontier) {
+		t.Fatalf("both future badges without Mineral must not finish frontier: %+v", story)
+	}
+
+	mem[sym.JohtoBadges] |= johtoBadgeMineralMask
+	story = projectEarlyStory(mem)
+	if !story.Has(ProgressSupportedFrontier) {
+		t.Fatal("existing six-badge frontier must remain Mineral Badge")
+	}
+}
+
+func TestFinalJohtoBadgeMasksMatchPinnedPokegoldFlags(t *testing.T) {
+	// constants/engine_flags.asm: GLACIER and RISING are bits 6 and 7.
+	if johtoBadgeGlacierMask != 1<<6 || johtoBadgeRisingMask != 1<<7 {
+		t.Fatalf("Glacier/Rising masks = (%#x,%#x), want (0x40,0x80)", johtoBadgeGlacierMask, johtoBadgeRisingMask)
+	}
+}
+
 func TestCoastalMilestonesNeverInferBadgeFromWinEventAlone(t *testing.T) {
 	mem := fakeGSReader{}
 	// Both trainer scripts set EVENT_BEAT_* separately from the engine badge
