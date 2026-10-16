@@ -325,6 +325,25 @@ func (s *replayServer) handleStudioPublicationCreate(w http.ResponseWriter, r *h
 	defer s.studioPublishMu.Unlock()
 	existing, err := s.loadPublication(r.Context(), runID, candidate.ID)
 	if err == nil {
+		// Repair a candidate written just before an interrupted index write.
+		idx, indexErr := s.loadPublicationIndex(r.Context(), runID)
+		if indexErr != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot verify candidate index"})
+			return
+		}
+		found := false
+		for _, recorded := range idx.IDs { if recorded == existing.ID { found = true; break } }
+		if !found {
+			if len(idx.IDs) >= 1000 {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "publication queue limit reached"})
+				return
+			}
+			idx.IDs = append(idx.IDs, existing.ID)
+			if err := s.savePublicationIndex(r.Context(), idx); err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot repair candidate index"})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, s.publicationStatus(r.Context(), existing))
 		return
 	}
