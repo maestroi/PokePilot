@@ -205,8 +205,8 @@ const (
 	PokegearFlags uint16 = 0xD67C // wPokegearFlags
 	// wPhoneList lives 40 bytes before wCurMapData (0xD9EE): 10 contact
 	// slots plus an extra terminator, followed by the fixed player-data tail.
-	PhoneList uint16 = 0xD9C6 // wPhoneList
-	PhoneListSize = 10 // CONTACT_LIST_SIZE; excludes the spare terminator
+	PhoneList     uint16 = 0xD9C6 // wPhoneList
+	PhoneListSize        = 10     // CONTACT_LIST_SIZE; excludes the spare terminator
 
 	// Scrolling-menu and Poke Mart transaction state. Measured on retail Gold
 	// at the Olivine Mart counter against the ROM's own stock list; the order
