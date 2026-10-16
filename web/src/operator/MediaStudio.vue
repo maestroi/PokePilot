@@ -189,8 +189,8 @@ const search = () => window.location.search
           <p v-if="pipeline.unavailable.length" class="mt-2 max-w-[72ch] text-meta text-fg-2">
             <span aria-hidden="true">■</span> {{ pipeline.unavailable.join(' ') }}
           </p>
-          <p v-if="studio.error.value" class="mt-2 border border-danger/40 bg-danger/10 px-3 py-2 text-danger [overflow-wrap:anywhere]" role="alert">✕ {{ studio.error.value }}</p>
-          <p v-else-if="studio.message.value" class="mt-2 text-meta text-fg-2" role="status">{{ studio.message.value }}</p>
+          <p v-if="studio.feedbackAt.value === 'pipeline' && studio.error.value" class="mt-2 border border-danger/40 bg-danger/10 px-3 py-2 text-danger [overflow-wrap:anywhere]" role="alert">✕ {{ studio.error.value }}</p>
+          <p v-else-if="studio.feedbackAt.value === 'pipeline' && studio.message.value" class="mt-2 text-meta text-fg-2" role="status">{{ studio.message.value }}</p>
           <p v-if="media.replayError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ media.replayError.value }}</p>
         </div>
       </section>

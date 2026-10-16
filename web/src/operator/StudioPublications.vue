@@ -20,9 +20,21 @@ const busy = computed(() => props.studio.busy.value)
 const titleOptions = computed(() => isShort.value ? (pkg.value?.shorts || []) : (pkg.value?.titles || []))
 const title = computed(() => titleOptions.value.find((option) => option.id === titleID.value)?.title || '')
 const thumbnail = computed(() => pkg.value && props.studio.selectedThumbnail.value ? studioThumbnailURL(props.runID, pkg.value.hash, props.studio.selectedThumbnail.value) : '')
-const queued = computed(() => props.studio.publication.value && props.studio.publication.value.state !== 'skipped')
+const notBeforeUnix = computed(() => {
+  const unix = notBefore.value ? Math.floor(new Date(notBefore.value).getTime() / 1000) : 0
+  return Number.isFinite(unix) ? unix : 0
+})
+const current = computed(() => props.studio.publication.value?.state === 'skipped' ? null : props.studio.publication.value)
+// The queued candidate differs from the form: it can be replaced until approved.
+const changed = computed(() => Boolean(current.value && (
+  (current.value.proposal.title_id || '') !== titleID.value ||
+  (current.value.proposal.thumbnail_id || '') !== props.studio.selectedThumbnail.value ||
+  current.value.proposal.privacy !== privacy.value ||
+  Number(current.value.proposal.not_before_unix || 0) !== notBeforeUnix.value)))
+const replaceable = computed(() => Boolean(current.value && changed.value && !current.value.approved && ['queued', 'blocked', 'rendering', 'failed'].includes(current.value.state)))
 const blocker = computed(() => !pkg.value?.plan_hash ? 'This package has no edit plan.'
-  : queued.value ? 'This package is already queued; see Candidates.'
+  : current.value && !changed.value ? 'Queued with these choices; see Candidates below.'
+  : current.value && !replaceable.value ? 'Already approved or uploading. Skip it below to queue different choices.'
   : !isShort.value && !thumbnail.value ? 'Pick a thumbnail first: an episode can’t pass the quality gate without one.'
   : !titleID.value ? 'Choose a title.' : '')
 const candidates = computed(() => [...props.studio.candidates.value].sort((a, b) => Number(b.updated_at_unix || 0) - Number(a.updated_at_unix || 0)))
@@ -31,8 +43,7 @@ watch(titleOptions, (options) => {
 }, { immediate: true })
 
 function queue(): void {
-  const unix = notBefore.value ? Math.floor(new Date(notBefore.value).getTime() / 1000) : 0
-  void props.studio.queue({ titleID: titleID.value, privacy: privacy.value, notBeforeUnix: Number.isFinite(unix) ? unix : 0 })
+  void props.studio.queue({ titleID: titleID.value, privacy: privacy.value, notBeforeUnix: notBeforeUnix.value }, replaceable.value ? current.value! : undefined)
 }
 // A rendering candidate always fails the gate, so approval waits for the edit.
 function canApprove(c: StudioPublicationCandidate): boolean {
@@ -98,8 +109,13 @@ function candidateTitle(c: StudioPublicationCandidate): string {
             </label>
           </div>
           <div class="flex flex-wrap items-center gap-2">
-            <button class="ui-btn ui-btn-primary h-10" type="button" :disabled="busy || Boolean(blocker)" @click="queue">Queue for approval</button>
+            <button class="ui-btn ui-btn-primary h-10" type="button" :disabled="busy || Boolean(blocker)" @click="queue">{{ replaceable ? 'Replace queued' : 'Queue for approval' }}</button>
             <span v-if="blocker" class="text-meta text-fg-2">{{ blocker }}</span>
+            <span v-else-if="replaceable" class="text-meta text-fg-2">Your choices differ from the queued one; it will be skipped and replaced.</span>
+          </div>
+          <div v-if="studio.feedbackAt.value === 'publication'">
+            <p v-if="studio.error.value" class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger [overflow-wrap:anywhere]" role="alert">✕ {{ studio.error.value }}</p>
+            <p v-else-if="studio.message.value" class="text-meta text-fg-2" role="status">{{ studio.message.value }}</p>
           </div>
         </div>
       </div>
