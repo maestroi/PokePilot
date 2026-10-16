@@ -165,3 +165,22 @@ func TestYouTubeChaptersFollowYouTubeRules(t *testing.T) {
 		t.Fatal("fewer than three chapters must be dropped")
 	}
 }
+
+// Attempts resumed from one checkpoint replay the same footage; the reel shows
+// it once (run-m0idltj3 rendered one identical failure window per attempt).
+func TestBuildDropsWindowsRepeatedAcrossAttempts(t *testing.T) {
+	attempt := func(n int, id string) farm.MediaTimeline {
+		timeline := testTimeline(farm.MediaEvent{ID: id, Type: "run_failed", Frame: 60 * 120, Summary: "error"})
+		timeline.Attempt = n
+		return timeline
+	}
+	differs := attempt(4, "evt-d")
+	differs.Events[0].Frame = 60 * 200
+	plan := Build([]farm.MediaTimeline{attempt(2, "evt-b"), attempt(1, "evt-a"), attempt(3, "evt-c"), differs}, DefaultPolicy())
+	if len(plan.Windows) != 2 {
+		t.Fatalf("windows=%d, want 2: %+v", len(plan.Windows), plan.Windows)
+	}
+	if plan.Windows[0].Attempt != 1 || plan.Windows[1].Attempt != 4 {
+		t.Fatalf("kept attempts %d,%d; want 1,4", plan.Windows[0].Attempt, plan.Windows[1].Attempt)
+	}
+}
