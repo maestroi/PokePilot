@@ -19,6 +19,7 @@ import (
 )
 
 const studioPublicationMaxJSON = 64 << 10
+const studioChannelThrottleKey = "publications/studio/channel-throttle.json"
 
 type studioPublicationIndex struct {
  Version int `json:"version"`
@@ -33,6 +34,10 @@ type studioPublicationRequest struct {
  ThumbnailID string `json:"thumbnail_id,omitempty"`
  Privacy string `json:"privacy,omitempty"`
  NotBefore int64 `json:"not_before_unix,omitempty"`
+}
+type studioChannelThrottle struct {
+ LastStarted int64 `json:"last_started_unix"`
+ CandidateID string `json:"candidate_id"`
 }
 type studioPublicationList struct{
  Candidates []publication.Candidate `json:"candidates"`
@@ -150,6 +155,34 @@ func (s *replayServer) publicationStatus(ctx context.Context,c publication.Candi
  }
  return c
 }
+// The shared S3 checkpoint provides an across-restart channel pacing hook.
+// Deploy only one active replay publisher: S3 object writes are not CAS leases.
+func studioMinimumInterval()time.Duration {
+ raw:=strings.TrimSpace(os.Getenv("POKEPILOT_STUDIO_MIN_UPLOAD_INTERVAL"))
+ if raw=="" {return 15*time.Minute}
+ gap,err:=time.ParseDuration(raw)
+ if err!=nil||gap<0{return 15*time.Minute}
+ return gap
+}
+func (s *replayServer) studioThrottle(ctx context.Context,now time.Time,id string)error{
+ obj,err:=s.store.GetObject(ctx,studioChannelThrottleKey,"")
+ if artifactstore.IsNotFound(err){return nil}
+ if err!=nil{return err}
+ defer obj.Body.Close()
+ var last studioChannelThrottle
+ if err:=json.NewDecoder(io.LimitReader(obj.Body,2048)).Decode(&last);err!=nil{return err}
+ if last.CandidateID==id{return nil}
+ gap:=studioMinimumInterval()
+ if last.LastStarted>0 && now.Sub(time.Unix(last.LastStarted,0))<gap{
+  return fmt.Errorf("publication: channel minimum upload interval not elapsed (%s)",gap)
+ }
+ return nil
+}
+func (s *replayServer) saveStudioThrottle(ctx context.Context,now time.Time,id string)error{
+ data,_:=json.Marshal(studioChannelThrottle{LastStarted:now.Unix(),CandidateID:id})
+ _,err:=s.store.PutObject(ctx,studioChannelThrottleKey,"application/json",data)
+ return err
+}
 func (s *replayServer) handleStudioPublicationList(w http.ResponseWriter,r *http.Request){
  runID:=r.PathValue("id")
  if runID==""||s.store==nil{writeJSON(w,http.StatusServiceUnavailable,map[string]string{"error":"studio publication storage unavailable"});return}
@@ -247,6 +280,13 @@ func (s *replayServer) handleStudioPublicationAction(w http.ResponseWriter,r *ht
   writeJSON(w,http.StatusConflict,map[string]string{"error":err.Error()});return
  }
  if !s.youtube.configured(){writeJSON(w,http.StatusServiceUnavailable,map[string]string{"error":"YouTube uploader is not configured"});return}
+ if err:=s.studioThrottle(r.Context(),now,c.ID);err!=nil{
+  writeJSON(w,http.StatusConflict,map[string]string{"error":clipError(err)});return
+ }
+ s.youtubeMu.Lock()
+ activeYouTube:=len(s.youtubeActive)
+ s.youtubeMu.Unlock()
+ if activeYouTube>0 {writeJSON(w,http.StatusConflict,map[string]string{"error":"channel upload already active; retry after completion"});return}
  if c.SourceKey!=in.VideoKey||c.SourceSize!=in.VideoSize||c.ThumbnailKey!=in.ThumbnailKey{
   writeJSON(w,http.StatusConflict,map[string]string{"error":"approved artifacts changed; create a new candidate"});return
  }
@@ -286,14 +326,23 @@ func (s *replayServer) handleStudioPublicationAction(w http.ResponseWriter,r *ht
  if err:=s.saveYouTubePublication(r.Context(),rec);err!=nil{writeJSON(w,http.StatusBadGateway,map[string]string{"error":"cannot checkpoint YouTube upload"});return}
  c.State=publication.Publishing;c.Attempts++;c.UpdatedAt=now.Unix();c.Reason=""
  if err:=s.savePublication(r.Context(),c);err!=nil{writeJSON(w,http.StatusBadGateway,map[string]string{"error":"cannot mark publication as uploading"});return}
+ if err:=s.saveStudioThrottle(r.Context(),now,c.ID);err!=nil {
+  writeJSON(w,http.StatusBadGateway,map[string]string{"error":"cannot persist channel rate limit"});return
+ }
  active=true
  go s.publishStudioCandidate(c,rec,meta)
  writeJSON(w,http.StatusAccepted,c)
 }
 func publicationMeta(c publication.Candidate,pkg packaging.Package)youtubeVideoMeta{
  title:=""
- for _,candidate:=range pkg.Titles{
-  if candidate.ID==c.Proposal.TitleID {title=candidate.Title;break}
+ if c.Proposal.Format==publication.Short {
+  for _,candidate:=range pkg.Shorts{
+   if candidate.ID==c.Proposal.TitleID {title=candidate.Title;break}
+  }
+ } else {
+  for _,candidate:=range pkg.Titles{
+   if candidate.ID==c.Proposal.TitleID {title=candidate.Title;break}
+  }
  }
  desc:=pkg.Description
  if len(pkg.Chapters)>0 {
