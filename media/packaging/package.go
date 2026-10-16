@@ -186,6 +186,7 @@ func label(kind string) string {
 	case "planner_stall":
 		return "Planner stall"
 	}
+	return ""
 }
 func significance(kind string) int {
 	switch kind {
