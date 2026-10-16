@@ -51,6 +51,9 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 		mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", replayUnavailable)
 		mux.HandleFunc("GET /v1/runs/{id}/studio/publications", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/studio/publications", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/studio/edits", replayUnavailable)
+		mux.HandleFunc("POST /v1/runs/{id}/studio/edits/{hash}/render", replayUnavailable)
+		mux.HandleFunc("GET /v1/runs/{id}/studio/edits/{hash}/status", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/producer/assess", replayUnavailable)
 		mux.HandleFunc("POST /v1/runs/{id}/studio/packages", replayUnavailable)
@@ -81,6 +84,9 @@ func mountRunInspectorRoutes(mux *http.ServeMux, wallBase, replayBase string) {
 	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", proxy(replayBase, false))
 	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", studioThumbnailProxy(replayBase))
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("POST /v1/runs/{id}/studio/edits", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("POST /v1/runs/{id}/studio/edits/{hash}/render", studioThumbnailProxy(replayBase))
+	mux.HandleFunc("GET /v1/runs/{id}/studio/edits/{hash}/status", studioThumbnailProxy(replayBase))
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", studioThumbnailProxy(replayBase))
 	// The image generation request may take longer than the five-second wall
 	// proxy. All of these routes exist on the private operator surface only.
