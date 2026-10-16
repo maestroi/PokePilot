@@ -260,7 +260,9 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 	for _, next := range []game.ProgressID{gsprofile.ProgressRedGyaradosDefeated, gsprofile.ProgressLanceHelpAccepted, gsprofile.ProgressMahoganyStairsOpened, gsprofile.ProgressRocketLanceHealing,
 		gsprofile.ProgressRocketPasswordsLearned, gsprofile.ProgressRocketOfficeOpened,
-		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword} {
+		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword,
+		gsprofile.ProgressRocketTransmitterDoor, gsprofile.ProgressRocketExecutiveF,
+		gsprofile.ProgressRocketHideoutCleared} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
 			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
 		}
