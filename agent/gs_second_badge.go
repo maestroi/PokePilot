@@ -79,6 +79,9 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"ROUTE_42",
 		"MAHOGANY_TOWN",
 		"MAHOGANY_POKECENTER_1F",
+		// Only the Mart reveal scene is owned here; Rocket Base battles,
+		// passwords, security cameras and Pryce Gym remain gated.
+		"MAHOGANY_MART_1F",
 		"ROUTE_43_MAHOGANY_GATE",
 		"ROUTE_43",
 		"LAKE_OF_RAGE",
