@@ -9,6 +9,7 @@ import (
 )
 
 type captureRunner struct {
+	probes map[string]string // ffprobe output by input; missing → output
 	binary string
 	args   []string
 	output string
@@ -16,6 +17,9 @@ type captureRunner struct {
 }
 
 func (r *captureRunner) Run(_ context.Context, binary string, args ...string) (string, error) {
+	if binary == "ffprobe" && r.probes != nil {
+		return r.probes[args[len(args)-1]], nil
+	}
 	r.binary = binary
 	r.args = append([]string(nil), args...)
 	return r.output, r.err
@@ -49,5 +53,19 @@ func TestConcatURLsRedactsSignedInputsFromErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "secret=abc") || !strings.Contains(err.Error(), "[segment-url]") {
 		t.Fatalf("error was not redacted: %v", err)
+	}
+}
+
+func TestConcatRejectsMismatchedStreamsBeforeCopying(t *testing.T) {
+	runner := &captureRunner{probes: map[string]string{
+		"/tmp/card.mp4": "h264,High,1280,720,yuv420p,1/23891",
+		"/tmp/seg.mp4":  "h264,High,1280,720,yuv420p,1/594647",
+	}}
+	err := ConcatFiles(context.Background(), t.TempDir(), []string{"/tmp/card.mp4", "/tmp/seg.mp4"}, "/tmp/out.mp4", runner)
+	if err == nil || !strings.Contains(err.Error(), "1/594647") {
+		t.Fatalf("err = %v, want time_base mismatch", err)
+	}
+	if runner.binary == "ffmpeg" {
+		t.Fatal("ffmpeg ran despite mismatched inputs")
 	}
 }
