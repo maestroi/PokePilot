@@ -358,6 +358,32 @@ func (s *replayServer) handleEditVideo(w http.ResponseWriter, r *http.Request) {
 	defer obj.Body.Close()
 	copyObjectResponse(w, obj, "video/mp4", "episode.mp4")
 }
+// The edit manifest includes source provenance, the complete validated
+// plan, chapters and narration cues for deterministic downstream consumers.
+func (s *replayServer) handleEditManifest(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "studio disabled"})
+		return
+	}
+	p, _, recs, err := s.loadEditInputs(r.Context(), r.PathValue("id"), r.PathValue("hash"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	st := s.currentEditStatus(r.Context(), p.RunID, recs, p)
+	if st.State != "ready" {
+		writeJSON(w, http.StatusConflict, st)
+		return
+	}
+	obj, err := s.store.GetObject(r.Context(), st.ManifestKey, "")
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "edit manifest unavailable"})
+		return
+	}
+	defer obj.Body.Close()
+	copyObjectResponse(w, obj, "application/json", "episode-manifest.json")
+}
+
 func (s *replayServer) handleEditRender(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "studio disabled"})
