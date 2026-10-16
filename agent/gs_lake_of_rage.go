@@ -12,19 +12,19 @@ const (
 	// pokegold/maps/LakeOfRage.asm: Gyarados (18,22), Lance (21,28).
 	// The shoreline-facing Gyarados approach requires Surf; route semantics
 	// must not pretend the lake is a land corridor.
-	gsRedGyaradosX uint8 = 18
-	gsRedGyaradosY uint8 = 22
+	gsRedGyaradosX      uint8 = 18
+	gsRedGyaradosY      uint8 = 22
 	gsRedGyaradosStandX uint8 = 18
 	gsRedGyaradosStandY uint8 = 23
-	gsLakeLanceX uint8 = 21
-	gsLakeLanceY uint8 = 28
-	gsLakeLanceStandX uint8 = 21
-	gsLakeLanceStandY uint8 = 29
+	gsLakeLanceX        uint8 = 21
+	gsLakeLanceY        uint8 = 28
+	gsLakeLanceStandX   uint8 = 21
+	gsLakeLanceStandY   uint8 = 29
 
 	// Gen-II A input directly after an overworld turn can be ignored even
 	// though the player is technically controllable. Retry only the same
 	// owned interaction and require the cartridge's event postcondition.
-	gsLakeScriptSettleFrames = 30
+	gsLakeScriptSettleFrames  = 30
 	gsLakeScriptPressAttempts = 3
 )
 
