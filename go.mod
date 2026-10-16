@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/lib/pq v1.10.9
-	github.com/maestroi/gomeboy v1.4.1-0.20260930232126-2bc74e4f103d
+	github.com/maestroi/gomeboy v1.4.1-0.20261016012545-2b1abb4a2fa2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/image v0.45.0
