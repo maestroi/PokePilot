@@ -107,7 +107,7 @@ func TestRepetitivePublishedRunIsArchived(t *testing.T) {
 	in := sampleInput()
 	in.History = []HistoricalRun{{
 		RunID: "older-run", Source: "farm-run-summary:older-run@v1", Goal:"Beat the second gym",
-		DurationMS: 200000, Published:true,
+		DurationMS: 200000, Status:"done", Published:true,
 		EventTypes: []string{"gym_battle","badge_acquired","blackout","planner_recovery","run_finished"},
 	}}
 	out, err := Assess(context.Background(), in, modelFor(t,in,FullEpisode), DefaultPolicy())
