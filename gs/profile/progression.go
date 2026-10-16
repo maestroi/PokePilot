@@ -39,12 +39,18 @@ const (
 	// story executors are available. Do not move the supported frontier yet.
 	// The Lake of Rage encounters are independently durable, resumable story
 	// boundaries after Jasmine and before the Rocket Hideout.
-	ProgressRedGyaradosDefeated  game.ProgressID = "gs_red_gyarados_defeated"
-	ProgressLanceHelpAccepted    game.ProgressID = "gs_lance_help_accepted"
-	ProgressMahoganyStairsOpened game.ProgressID = "gs_mahogany_stairs_opened"
-	ProgressRocketLanceHealing   game.ProgressID = "gs_rocket_lance_healing"
-	ProgressGlacierBadgeEarned   game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned    game.ProgressID = "gs_rising_badge_earned"
+	ProgressRedGyaradosDefeated    game.ProgressID = "gs_red_gyarados_defeated"
+	ProgressLanceHelpAccepted      game.ProgressID = "gs_lance_help_accepted"
+	ProgressMahoganyStairsOpened   game.ProgressID = "gs_mahogany_stairs_opened"
+	ProgressRocketLanceHealing     game.ProgressID = "gs_rocket_lance_healing"
+	ProgressRocketRaticatePassword game.ProgressID = "gs_rocket_raticate_password"
+	ProgressRocketSlowpokePassword game.ProgressID = "gs_rocket_slowpoke_password"
+	ProgressRocketPasswordsLearned game.ProgressID = "gs_rocket_passwords_learned"
+	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
+	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
+	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -85,6 +91,11 @@ const (
 	eventDecidedToHelpLance             uint16 = 96
 	eventUncoveredMahoganyMartStaircase uint16 = 738
 	eventLanceHealedRocketBase          uint16 = 76
+	eventLearnedSlowpokeTailPassword    uint16 = 769
+	eventLearnedRaticateTailPassword    uint16 = 770
+	eventOpenedRocketOfficeDoor         uint16 = 771
+	eventBeatRocketExecutiveM4          uint16 = 1396
+	eventLearnedMurkrowPassword         uint16 = 767
 	statusFlagsPokedexMask                     = 1 << 0
 	johtoBadgeZephyrMask                       = 1 << 0
 	johtoBadgeHiveMask                         = 1 << 1
@@ -183,6 +194,12 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLanceHelpAccepted, Complete: hasGSEvent(reader, eventDecidedToHelpLance)},
 		{ID: ProgressMahoganyStairsOpened, Complete: hasGSEvent(reader, eventUncoveredMahoganyMartStaircase)},
 		{ID: ProgressRocketLanceHealing, Complete: hasGSEvent(reader, eventLanceHealedRocketBase)},
+		{ID: ProgressRocketRaticatePassword, Complete: hasGSEvent(reader, eventLearnedRaticateTailPassword)},
+		{ID: ProgressRocketSlowpokePassword, Complete: hasGSEvent(reader, eventLearnedSlowpokeTailPassword)},
+		{ID: ProgressRocketPasswordsLearned, Complete: hasGSEvent(reader, eventLearnedSlowpokeTailPassword) && hasGSEvent(reader, eventLearnedRaticateTailPassword)},
+		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
+		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
+		{ID: ProgressRocketMurkrowPassword, Complete: hasGSEvent(reader, eventLearnedMurkrowPassword)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
