@@ -12,11 +12,11 @@ const broadcast = readFileSync(new URL('../src/operator/MediaBroadcasts.vue', im
 const operator = readFileSync(new URL('../src/operator/App.vue', import.meta.url), 'utf8')
 
 test('Operations is a worker/queue control plane, not a results browser', () => {
-  assert.match(operations, /title="Workers"/)
+  assert.match(operations, /id="workers-title">Workers</)
   assert.match(operations, /Queue and leases/)
-  assert.match(operations, /Current operational signals/)
-  assert.match(operations, /operatorHref\('live', \{ run: worker\.run_id \}/)
-  assert.match(operations, /operatorHref\('live', \{ run: run\.run_id \}/)
+  assert.match(operations, /operatorHref\('live', \{ run: runID \}/)
+  assert.match(operations, /liveHref\(worker\.run_id\)/)
+  assert.match(operations, /liveHref\(run\.run_id\)/)
   assert.match(operations, /forceEndWorker/)
   assert.doesNotMatch(operations, /Recent outcomes|Active attempts|LLMDeploymentsPanel|PairedExperimentPanel/)
   assert.doesNotMatch(operations, /getDashboard\(\{ status: 'done'/)

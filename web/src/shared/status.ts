@@ -44,6 +44,11 @@ export function presentRunStatus(run: RunLike): StatusPresentation {
   }
 }
 
+// A farm worker is busy when it holds a run; otherwise it is idle capacity.
+export function presentWorker(worker: { run_id?: string }): StatusPresentation {
+  return worker.run_id ? { label: 'Busy', tone: 'ok', glyph: '●' } : { label: 'Idle', tone: 'neutral', glyph: '○' }
+}
+
 // `noun` names the output ("Replay", "Highlights"); both use the same backend states.
 export function presentReplay(state: string | undefined, progress?: number, noun = 'Replay'): StatusPresentation {
   switch ((state || '').toLowerCase()) {
