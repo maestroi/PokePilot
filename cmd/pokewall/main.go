@@ -75,6 +75,11 @@ func main() {
 		log.Fatalf("pokewall: run metrics: %v", err)
 	}
 	wall.SetRunMetrics(runMetrics)
+	failureMetrics, err := metrics.NewFailures(reg)
+	if err != nil {
+		log.Fatalf("pokewall: failure metrics: %v", err)
+	}
+	wall.SetFailureMetrics(failureMetrics)
 	client, err := parseIssueFlags(*issuesAPI, *issuesProject, *issuesUI)
 	if err != nil {
 		log.Fatalf("pokewall: %v", err)
