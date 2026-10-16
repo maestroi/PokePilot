@@ -381,7 +381,7 @@ and tracked in #2672–#2676.
 
 **Failures**: fully specified in §4 (T-40).
 
-**Analytics (Overview + Experiments tabs).** The KPI tiles are replaced by a one-line
+**Analytics (Overview + Experiments tabs)**: fully specified in §6 (T-42). Original direction: the KPI tiles are replaced by a one-line
 health strip of readouts ("Completed 1,284 · Objective wins 412 (32%) · ≥1 badge 61%").
 Bays: Run outcomes (stacked bar, existing data), Badge distribution (bar), LLM
 workload (table), Terminal outcomes (table). Experiments tab: list + detail. "Start
@@ -725,4 +725,89 @@ and any Library link carrying `job=` (`#media?job=…`) → Jobs with that job s
    and render job retry/cancel/remove all remain, with their confirms.
 6. At 375px no horizontal scroll; every action is reachable.
 7. No text under 12px, palette colours, `Panel`, `StatusBadge` or game-specific strings in Media files.
+
+---
+
+## 6. Analytics — Overview + Experiments (T-42)
+
+### 6.1 Job
+
+Answer, in order: *How is the farm doing overall (outcomes, badges, LLM cost and
+reliability)? Which model wins when the seeds are matched?* Then act: start a paired
+experiment, open a member run in Live, or open an experiment's runs in Runs. Analytics
+owns aggregates, leaderboards and experiments; individual run facts stay in Runs and Live.
+
+Data (existing calls only): `getStats()` (5s), the leaderboard's
+`getDashboard({status:'done', success:true, sort:'frames', direction:'asc', limit:10})` (30s),
+`getExperiments()` / `getExperiment(id)` / `getModels()` (5s), `createExperiment(...)`
+with the same request body as before.
+
+### 6.2 Layout
+
+```
+┌ Analytics  1,284 completed attempts                         ⟳  [+ Start paired experiment]* ┐
+├ Overview  Experiments ──────────────────────────────────────────────────────────────────────┤
+│ Overview:                                                                                     │
+│ Completed attempts 1,284 · Objective wins 412 / 980 · 42% · ≥1 badge … · Best badges 5 · …   │  health strip
+│ ┌ Run outcomes ── 1,210 settled ┐ ┌ Badge distribution ── 1,154 with progress ┐               │
+│ │ ▇▇▇▇▇▇▇▇▇▇▇ stacked bar       │ │ 0 badges ▇▇▇▇▇▇▇▇▇  450 · 39%              │               │
+│ │ Outcome pill  Runs  Share     │ │ …                                          │               │
+│ ┌ LLM workload (calls and reliability KV · hosted-API equivalent · routing profiles · models) ┐│
+│ ┌ Fastest successful runs (rank, run → Live, goal, model, frames, rounds) ─────────────────────┐│
+│ Experiments:                                                                                  │
+│ ┌ Paired experiments [Paired · matched seeds] ───────────┐ ┌ DetailPane 440 ─────────────────┐ │
+│ │ Status pill  Experiment / A vs B  Pairs meter  Result ⋯│ │ name, ID ⧉, stage pill, ✕       │ │
+│ └────────────────────────────────────────────────────────┘ │ Progress · Result · Arm comparison│ │
+│ ┌ Endless-run cohorts [Endless · not matched] ───────────┐ │ Setup · Benchmark identity      │ │
+│ │ Cohort / key  Attempts  Best  ≥1 badge  Wins  Retries  │ │ Matched seeds (A/B → Live)      │ │
+│ └────────────────────────────────────────────────────────┘ │ [Open member runs in Runs]      │ │
+* Experiments tab only; hidden while the setup form is open.
+```
+
+### 6.3 Regions
+
+- **Health strip**: one bordered line of label + mono value readouts (DESIGN §5 Overview);
+  explanations live in each readout's `title`. No tiles, no "/ 8" badge denominator
+  (the badge ceiling is game-specific).
+- **Run outcomes**: terminal reasons as one stacked bar (2px gaps, `title` per segment,
+  `role="img"` with a full text label) above the table that carries the numbers.
+  Tone comes from `presentOutcome`: goal complete `--ok`, failure reasons `--danger`,
+  everything else neutral `--fg-3`. Merges the direction's separate "Terminal outcomes"
+  table, which showed the same rows.
+- **Badge distribution**: single-series horizontal bars in neutral `--fg-3` (colour would
+  carry no meaning) with direct `count · share` labels.
+- **LLM workload**: `KeyValueList` of calls/latency/reliability/tokens, the hosted-API
+  equivalent table (with its pricing date and the local-inference caveat), routing
+  profiles table, latest serving models table.
+- **Fastest successful runs**: `DataTable`; run IDs middle-truncated with full ID in
+  `title`, linking to Live.
+- **Paired experiments**: list + detail as in §4/§5. `?experiment=` selects; Esc closes
+  and restores focus to the row. Row ⋯: Open member runs in Runs (`?experiment=…#runs`
+  facet), Copy experiment ID. Stage pill via `presentExperimentStage`.
+- **Setup form**: "Start paired experiment" (page header, primary) opens the form in the
+  DetailPane slot, grouped into Arms / Benchmark / Policy / Limits. Validation and the
+  request body are unchanged. With fewer than two usable strategist deployments the pane
+  says why and links to Settings › Models. On success the new experiment is selected.
+- **Endless-run cohorts**: separate bay, tagged "Endless · not matched", with a one-line
+  caveat that seeds aren't matched.
+
+### 6.4 States
+
+| State | Treatment |
+|---|---|
+| Loading | Skeleton rows (stats, list, pane) |
+| Stats error | `ResourceState` error + Retry; Runs/Live unaffected |
+| Stale | Stale alert above content; values stay |
+| No experiments | `EmptyState` "No paired experiments yet" + Start paired experiment |
+| `?experiment=` unknown | Pane "Selected experiment unavailable" + Retry / Close |
+| Fewer than two models | Pane explains and links to Settings › Models |
+
+### 6.5 Acceptance (page level)
+
+1. No KPI tile grid; one health strip (`test/experimentWorkspace.test.ts`).
+2. Paired experiment creation posts the same `createExperiment` body (unchanged `submit`).
+3. `?experiment=` opens the pane on load, survives reload and back/forward, and Esc clears it.
+4. Paired and endless experiments carry distinct type tags.
+5. At 375px no horizontal scroll; the pane is full screen.
+6. No `Panel`, palette colours or sub-12px text in Analytics files.
 

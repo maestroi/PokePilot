@@ -17,6 +17,9 @@
 import { createServer } from 'node:http'
 
 const MEDIA_FIXTURES = process.env.POKEPILOT_DEV_MEDIA_FIXTURES === '1'
+// POKEPILOT_DEV_ANALYTICS_FIXTURES=1 serves /v1/stats, /v1/experiments and /v1/models
+// from local fixtures (the MCP has no read tool for them) so Analytics can be checked visually.
+const ANALYTICS_FIXTURES = process.env.POKEPILOT_DEV_ANALYTICS_FIXTURES === '1'
 const PORT = Number(process.env.PORT || 18080)
 const MCP_URL = process.env.POKEPILOT_MCP_URL || 'https://admin.rompilot.app/mcp'
 const PUBLIC_API = process.env.POKEPILOT_PUBLIC_API || 'https://api.rompilot.app'
@@ -175,7 +178,48 @@ async function proxyPublic(req, res) {
   res.end(Buffer.from(await upstream.arrayBuffer()))
 }
 
+// ---- Analytics fixtures (POKEPILOT_DEV_ANALYTICS_FIXTURES=1) ---------------------------
+const fixtureStats = {
+  completed_attempts: 1284, settled_runs: 1210, usable_progress_runs: 1154, goal_tracked_runs: 980, goal_wins: 412,
+  at_least_one_badge: 704, best_badges: 5, retryable_failure_attempts: 23,
+  terminal_reasons: [{ name: 'goal_complete', count: 412 }, { name: 'max_rounds', count: 388 }, { name: 'stuck', count: 214 }, { name: 'blackout', count: 96 }, { name: 'cancelled', count: 62 }, { name: 'error', count: 38 }],
+  badge_distribution: [0, 1, 2, 3, 4, 5].map((badges, i) => ({ badges, count: [450, 402, 188, 74, 31, 9][i] })),
+  endless_experiments: [
+    { key: 'llm:endless:gpu:r0:f0', planner: 'llm', goal: 'Endless high score', completed_attempts: 86, usable_progress_runs: 80, at_least_one_badge: 61, goal_tracked_runs: 0, goal_wins: 0, best_badges: 5, retryable_failure_attempts: 2 },
+    { key: 'llm:endless:auto:r0:f0', planner: 'llm', goal: 'Endless high score', completed_attempts: 41, usable_progress_runs: 38, at_least_one_badge: 22, goal_tracked_runs: 0, goal_wins: 0, best_badges: 3, retryable_failure_attempts: 5 }
+  ],
+  llm: {
+    tracked_runs: 1102, calls: 184_220, rounds: 92_110, rejected: 1_904, repeats: 3_120, avg_seconds: 2.4, successful_avg_seconds: 2.3,
+    rejected_avg_seconds: 4.1, strategic_avg_seconds: 11.8, prompt_tokens: 412_000_000, completion_tokens: 38_500_000, transport: 41,
+    fallbacks: 118, failovers: 7, strategic_calls: 21_400, fast_calls: 162_820,
+    profiles: [{ profile: 'gpu', runs: 702, calls: 121_400, avg_seconds: 1.9, rejected: 980 }, { profile: 'auto', runs: 400, calls: 62_820, avg_seconds: 3.4, rejected: 924 }],
+    latest_models: [{ name: 'qwen3-27b-instruct-q5_k_m', backend: 'llama.cpp', runs: 702 }, { name: 'qwen3-4b-instruct', backend: 'vllm', runs: 400 }]
+  }
+}
+const fixtureArm = (done, wins) => ({ runs: 20, done, goal_successes: wins, boulder_successes: wins, success_rate: done ? wins / done : 0, median_rounds_to_goal: 412, median_frames_to_goal: 1_204_330, avg_run_seconds: 2410, strategic_calls: 640, strategic_rejected: 12, plan_steps_produced: 3100, plan_executions: 2800, steps_skipped: 140, plan_execution_fraction: 0.9, avg_strategic_call_seconds: 9.2, p50_strategic_call_seconds: 8.1, p95_strategic_call_seconds: 21.4, strategic_seconds: 5890, avg_prefill_tps: 2210, avg_decode_tps: 41.3, prompt_tokens: 9_100_000, completion_tokens: 810_000, rejected: 14, transport_errors: 1, fallbacks: 3, blackouts: 4, objective_failures: 2 })
+const fixtureExperiments = [
+  { id: 'exp-20261016-brock-27b-4b', name: 'Brock · 27B vs 4B', created_at: '2026-10-16T09:12:00Z', total_pairs: 20,
+    request: { name: 'Brock · 27B vs 4B', game: 'pokemon-red', goal: 'Earn the Boulder Badge.', play_style: 'adventure', risk_tolerance: 'balanced', wild_encounters: 'planner', recovery_profile: 'resilient', reasoning_effort: 'medium', arm_a: { name: 'A', deployment: 'qwen3-27b', max_parallel_workers: 1 }, arm_b: { name: 'B', deployment: 'qwen3-4b', max_parallel_workers: 1 } },
+    arm_a: fixtureArm(14, 11), arm_b: fixtureArm(13, 6), paired: { a_wins: 7, ties: 4, b_wins: 1, comparable_pairs: 12, completed_pairs: 12, excluded_pairs: 1 },
+    identity: { game: 'pokemon-red', git_revision: '5cac25f9a1b2c3d4e5f6', rom_identity: 'sha1:ea9bcae617fdf159b045185467ae58b2e4a48b9a', prompt_identity: 'sha256:9f2c1a7d', arm_a: { model_id: 'qwen3-27b', revision: 'q5_k_m', compute: 'gpu' }, arm_b: { model_id: 'qwen3-4b', revision: 'bf16', compute: 'auto' } },
+    pairs: Array.from({ length: 20 }, (_, i) => ({ seed: 100 + i, run_id_a: `run-exp-a-${i}`, run_id_b: `run-exp-b-${i}`, comparable: i !== 7, non_comparable_reason: i === 7 ? 'ROM identity differs' : undefined, status_a: i < 13 ? 'done' : 'running', status_b: i < 13 ? 'done' : 'queued', winner: i < 13 && i !== 7 ? ['a', 'a', 'tie', 'b'][i % 4] : undefined })) },
+  { id: 'exp-20261012-route3-27b-12b', name: 'Route 3 · 27B vs 12B', created_at: '2026-10-12T18:40:00Z', total_pairs: 10,
+    request: { name: 'Route 3 · 27B vs 12B', game: 'pokemon-red', goal: 'Earn 2 badges.', play_style: 'speedrun', recovery_profile: 'strict', arm_a: { name: 'A', deployment: 'qwen3-27b' }, arm_b: { name: 'B', deployment: 'gemma3-12b' } },
+    arm_a: fixtureArm(10, 6), arm_b: fixtureArm(10, 5), paired: { a_wins: 4, ties: 3, b_wins: 3, comparable_pairs: 10, completed_pairs: 10, excluded_pairs: 0 },
+    pairs: Array.from({ length: 10 }, (_, i) => ({ seed: i + 1, comparable: true, status_a: 'done', status_b: 'done', winner: ['a', 'tie', 'b'][i % 3] })) }
+]
+const fixtureModels = { deployments: [
+  { id: 'qwen3-27b', label: 'Qwen3 27B', role: 'strategist', enabled: true, state: 'ready', max_parallel_workers: 2 },
+  { id: 'qwen3-4b', label: 'Qwen3 4B', role: 'strategist', enabled: true, state: 'ready', max_parallel_workers: 4 }
+] }
+
 const routes = [
+  ...(ANALYTICS_FIXTURES ? [
+    [/^\/v1\/stats$/, () => fixtureStats],
+    [/^\/v1\/experiments$/, () => ({ experiments: fixtureExperiments })],
+    [/^\/v1\/experiments\/([^/]+)$/, (q, id) => fixtureExperiments.find((item) => item.id === id) ?? Promise.reject(Object.assign(new Error('experiment not found'), { status: 404 }))],
+    [/^\/v1\/models$/, () => fixtureModels]
+  ] : []),
   [/^\/v1\/dashboard$/, (q) => dashboard(q)],
   [/^\/v1\/runs\/([^/]+)$/, (q, id) => tool('pokepilot_get_run', { run_id: id })],
   [/^\/v1\/runs\/([^/]+)\/debug$/, (q, id) => tool('pokepilot_get_run_debug', { run_id: id })],
