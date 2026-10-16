@@ -138,7 +138,7 @@ func normalizeStyle(style Style) (Style, error) {
 func cleanFacts(value string, limit int) string {
 	value = strings.TrimSpace(value)
 	lower := strings.ToLower(value)
-	for _, bad := range []string{"api_key", "apikey", "password", "secret", "bearer ", "sk-", "token=", "authorization:", "://", "-----begin"} {
+	for _, bad := range []string{"api_key", "apikey", "password", "secret", "bearer ", "sk-", "token=", "authorization:", "://", "-----begin", "world record", "record-breaking", "fastest", "best ever", "first ever", "unbeaten", "undefeated"} {
 		if strings.Contains(lower, bad) {
 			return ""
 		}
