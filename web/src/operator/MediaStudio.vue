@@ -51,7 +51,6 @@ const highlights = computed(() => media.highlights.value)
 const pipeline = computed(() => studioSteps({
   replayData: Boolean(source.value?.replay_available),
   replay: media.replay.value,
-  highlights: highlights.value,
   packagesError: media.packagesError.value,
   assessment: studio.assessment.value,
   pkg: studio.pkg.value,
@@ -190,8 +189,8 @@ const search = () => window.location.search
           <p v-if="pipeline.unavailable.length" class="mt-2 max-w-[72ch] text-meta text-fg-2">
             <span aria-hidden="true">■</span> {{ pipeline.unavailable.join(' ') }}
           </p>
-          <p v-if="studio.error.value" class="mt-2 border border-danger/40 bg-danger/10 px-3 py-2 text-danger [overflow-wrap:anywhere]" role="alert">✕ {{ studio.error.value }}</p>
-          <p v-else-if="studio.message.value" class="mt-2 text-meta text-fg-2" role="status">{{ studio.message.value }}</p>
+          <p v-if="studio.feedbackAt.value === 'pipeline' && studio.error.value" class="mt-2 border border-danger/40 bg-danger/10 px-3 py-2 text-danger [overflow-wrap:anywhere]" role="alert">✕ {{ studio.error.value }}</p>
+          <p v-else-if="studio.feedbackAt.value === 'pipeline' && studio.message.value" class="mt-2 text-meta text-fg-2" role="status">{{ studio.message.value }}</p>
           <p v-if="media.replayError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ media.replayError.value }}</p>
         </div>
       </section>
@@ -214,9 +213,12 @@ const search = () => window.location.search
         </div>
       </section>
 
-      <section v-if="runID && hasStep('highlights')" class="ui-bay min-w-0" aria-labelledby="studio-create-title">
+      <StudioThumbnails v-if="runID && studio.pkg.value && hasStep('package')" :run-i-d="runID" :studio="studio" :packages="media.packages.value || []" />
+      <StudioPublications v-if="runID && (studio.pkg.value || studio.candidates.value.length)" :run-i-d="runID" :studio="studio" />
+
+      <section v-if="runID && highlights && highlights.state !== 'disabled'" class="ui-bay min-w-0" aria-labelledby="studio-create-title">
         <div class="ui-bay-header">
-          <h2 id="studio-create-title" class="min-w-0 truncate">Highlight reel</h2>
+          <h2 id="studio-create-title" class="min-w-0 truncate">Highlight reel <span class="ml-1 text-meta font-normal text-fg-3">side output · not needed to publish</span></h2>
           <StatusPill v-if="highlights" :status="presentReplay(highlights.state, undefined, 'Highlights')" />
         </div>
         <div class="space-y-3 p-3">
@@ -231,7 +233,8 @@ const search = () => window.location.search
           />
           </div>
           <p class="max-w-[72ch] text-fg-2">
-            <template v-if="highlights?.state === 'missing'">No reel yet. Generating one cuts the run’s recorded milestones into a short video.</template>
+            <template v-if="highlights.state === 'empty'">No highlight-worthy moments were found in this run.</template>
+            <template v-else-if="highlights?.state === 'missing'">No reel yet. Generating one cuts the run’s recorded milestones into a short video.</template>
             <template v-else-if="highlights">
               {{ highlights.windows || 0 }} moment{{ Number(highlights.windows || 0) === 1 ? '' : 's' }} · {{ duration() }}
               <template v-if="highlights.state === 'generating'"> · {{ highlights.windows_done || 0 }}/{{ highlights.windows || 0 }} rendered</template>
@@ -248,9 +251,6 @@ const search = () => window.location.search
           </div>
         </div>
       </section>
-
-      <StudioThumbnails v-if="runID && studio.pkg.value && hasStep('package')" :run-i-d="runID" :studio="studio" :packages="media.packages.value || []" />
-      <StudioPublications v-if="runID && (studio.pkg.value || studio.candidates.value.length)" :run-i-d="runID" :studio="studio" />
     </div>
   </div>
 </template>

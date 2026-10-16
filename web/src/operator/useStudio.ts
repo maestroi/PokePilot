@@ -27,6 +27,8 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
   const busy = ref(false)
   const error = ref('')
   const message = ref('')
+  // Which section's action the error/message belongs to, so it shows beside the button pressed.
+  const feedbackAt = ref<'pipeline' | 'publication'>('pipeline')
   let generation = 0
 
   const verdict = computed(() => assessment.value?.publication_class || '')
@@ -42,11 +44,12 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
 
   // Runs one action at a time. A run switch bumps `generation`, so a late
   // reply never lands on the next run.
-  async function guarded(task: (stale: () => boolean) => Promise<void>): Promise<void> {
+  async function guarded(task: (stale: () => boolean) => Promise<void>, at: 'pipeline' | 'publication' = 'pipeline'): Promise<void> {
     if (!runID.value || busy.value) return
     const id = ++generation
     const stale = () => id !== generation
     busy.value = true
+    feedbackAt.value = at
     error.value = ''
     message.value = ''
     try {
@@ -186,9 +189,12 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
     })
   }
 
-  function queue(proposal: { titleID: string; privacy: 'private' | 'unlisted' | 'public'; notBeforeUnix: number }): Promise<void> {
+  // A queued candidate's choices are fixed (its id is derived from them), so
+  // changing them means skipping the unapproved one and queueing anew.
+  function queue(proposal: { titleID: string; privacy: 'private' | 'unlisted' | 'public'; notBeforeUnix: number }, replace?: StudioPublicationCandidate): Promise<void> {
     return guarded(async () => {
       if (!pkg.value) return
+      if (replace) await actStudioPublication(runID.value, replace.id, 'reject')
       const queued = await createStudioPublication(runID.value, {
         assessment_hash: pkg.value.assessment_hash,
         package_hash: pkg.value.hash,
@@ -200,7 +206,7 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
       })
       message.value = queued.state === 'queued' ? 'Queued. It waits for your approval.' : `Queued as “${queued.state}”. ${queued.reason || ''}`.trim()
       await refreshCandidates()
-    })
+    }, 'publication')
   }
 
   function act(candidate: StudioPublicationCandidate, action: PublicationAction): Promise<void> {
@@ -213,7 +219,7 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
         'retry-thumbnail': 'Thumbnail attached without uploading the video again.'
       } as Record<PublicationAction, string>)[action] + (result.reason ? ` ${result.reason}` : '')
       await refreshCandidates()
-    })
+    }, 'publication')
   }
 
   watch(runID, () => {
@@ -242,7 +248,7 @@ export function useStudio(runID: Ref<string>, packages: Ref<StudioPackageSummary
 
   return {
     assessment, verdict, pkg, profile, edit, thumbnails, selectedThumbnail, candidates, publication,
-    busy, error, message,
+    busy, error, message, feedbackAt,
     assess, prepare, open, retryEdit, renderThumbnails, pickThumbnail, queue, act, refreshCandidates
   }
 }
