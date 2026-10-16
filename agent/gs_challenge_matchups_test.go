@@ -65,9 +65,9 @@ func TestGSFutureGymReadinessUsesPinnedRetailRosters(t *testing.T) {
 		ChallengeProfiles: gsChallengeProfiles(gsSyntheticChallengeROM()),
 	}
 	for _, tc := range []struct {
-		progress game.ProgressID
-		level int
-		party int
+		progress    game.ProgressID
+		level       int
+		party       int
 		lastSpecies string
 	}{
 		{gsprofile.ProgressGlacierBadgeEarned, 31, 3, "piloswine"},
