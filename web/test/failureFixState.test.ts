@@ -22,6 +22,16 @@ test('failure rows report the fixer state of their triage group', () => {
   assert.equal(failureFixState(failed('go to x', 2), attempts)?.label, 'Pending')
 })
 
+test('agent-written links must be web URLs', () => {
+  const attempts = [{ attempt: 1, problems: [{
+    triage_key: 'k', objective: 'go to x', issue_url: 'javascript:alert(1)',
+    solver: { pr_number: 3, pr_url: 'https://github.com/o/r/pull/3' }
+  }] }]
+  const state = failureFixState(failed('go to x'), attempts)
+  assert.equal(state?.issueURL, undefined)
+  assert.equal(state?.prURL, 'https://github.com/o/r/pull/3')
+})
+
 test('non-objective events and an unavailable endpoint show no fixer state', () => {
   assert.equal(failureFixState({ source: 'system', kind: 'failure', message: 'x' }, []), null)
   assert.equal(failureFixState(failed('go to x'), null), null)

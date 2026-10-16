@@ -23,6 +23,17 @@ export function isObjectiveFailure(event: Record<string, unknown>): boolean {
   return text(event.source) === 'skill' && text(event.kind) === 'failed'
 }
 
+// Issue/PR URLs are written by fixer agents; never bind a javascript: or
+// other non-web URL into an href.
+export function safeWebURL(value: unknown): string | undefined {
+  try {
+    const url = new URL(text(value))
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function matchProblem(event: Record<string, unknown>, problems: RunAttemptProblem[]): RunAttemptProblem | undefined {
   const objective = text(event.message)
   const candidates = problems.filter((p) => text(p.objective) === objective)
@@ -31,7 +42,7 @@ function matchProblem(event: Record<string, unknown>, problems: RunAttemptProble
 }
 
 function fromProblem(p: RunAttemptProblem): FixState {
-  const base = { key: p.triage_key, issueURL: p.issue_url || undefined }
+  const base = { key: p.triage_key, issueURL: safeWebURL(p.issue_url) }
   if (p.dismissed) return { ...base, tone: 'muted', label: 'Dismissed', detail: 'An operator dismissed this triage group; the fixer skips it.' }
   if (p.fixed) {
     return { ...base, tone: 'ok', label: 'Fixed', detail: `Fixed${p.fixed_revision ? ` in ${p.fixed_revision}` : ''}; later runs verify it stays fixed.` }
@@ -39,7 +50,7 @@ function fromProblem(p: RunAttemptProblem): FixState {
   const solver = p.solver
   if (solver?.pr_number) {
     return {
-      ...base, tone: 'accent', label: `Fixer PR #${solver.pr_number}`, prURL: solver.pr_url || undefined,
+      ...base, tone: 'accent', label: `Fixer PR #${solver.pr_number}`, prURL: safeWebURL(solver.pr_url),
       detail: `${solver.backend || 'Fixer'} opened PR #${solver.pr_number}${solver.state ? ` (${solver.state})` : ''}.`
     }
   }
