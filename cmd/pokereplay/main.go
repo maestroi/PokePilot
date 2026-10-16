@@ -232,6 +232,8 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/studio/edits/{hash}/render", s.handleEditRender)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/edits/{hash}/video", s.handleEditVideo)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/edits/{hash}/manifest", s.handleEditManifest)
+	mux.HandleFunc("POST /v1/runs/{id}/studio/packages", s.handlePackagingCreate)
+	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}", s.handlePackagingGet)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
 	mux.HandleFunc("GET /v1/live/broadcast/config", s.handleRTMPBroadcastConfig)
