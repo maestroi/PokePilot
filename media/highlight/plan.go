@@ -14,7 +14,7 @@ import (
 
 const (
 	PlanVersion   = 1
-	PolicyVersion = 2
+	PolicyVersion = 3
 )
 
 type Rule struct {
@@ -140,7 +140,7 @@ func Build(timelines []farm.MediaTimeline, policy Policy) Plan {
 		}
 		return firstEventID(candidates[i]) < firstEventID(candidates[j])
 	})
-	merged := mergeWindows(candidates, policy.MergeGapMS)
+	merged := dropRepeatedWindows(mergeWindows(candidates, policy.MergeGapMS))
 	selected := capWindows(merged, policy.TargetDurationMS)
 	sort.SliceStable(selected, func(i, j int) bool {
 		if selected[i].Attempt != selected[j].Attempt {
@@ -225,6 +225,27 @@ func mergeWindows(in []Window, gapMS int64) []Window {
 			last.Priority = next.Priority
 		}
 		last.Events = append(last.Events, next.Events...)
+	}
+	return out
+}
+
+// dropRepeatedWindows keeps the first of windows that show the same footage.
+// Attempts resumed from one checkpoint replay identical frames, so a window
+// with the same frame range and the same events (ignoring per-attempt IDs) is
+// a rerun; the input is sorted by attempt, so the earliest attempt wins.
+func dropRepeatedWindows(in []Window) []Window {
+	seen := make(map[string]bool, len(in))
+	out := in[:0:0]
+	for _, window := range in {
+		key := fmt.Sprintf("%d-%d", window.StartFrame, window.EndFrame)
+		for _, event := range window.Events {
+			key += fmt.Sprintf("|%s|%d|%s", event.Type, event.Frame, event.Summary)
+		}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, window)
 	}
 	return out
 }
