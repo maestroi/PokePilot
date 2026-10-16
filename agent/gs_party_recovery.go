@@ -30,6 +30,7 @@ var gsOwnedPokecenterNames = []string{
 	"ECRUTEAK_POKECENTER_1F",
 	"OLIVINE_POKECENTER_1F",
 	"CIANWOOD_POKECENTER_1F",
+	"MAHOGANY_POKECENTER_1F",
 }
 
 func gsOwnedPokecenterID(from uint16) (uint16, error) {
