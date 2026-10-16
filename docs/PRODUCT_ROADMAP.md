@@ -92,8 +92,8 @@ Do not build a parallel recorder or uploader.
 | **M1.1** Evidence-backed producer | [#797](https://github.com/maestroi/PokePilot/issues/797) | Versioned story + event-referenced beats + scores + episode/short/archive/skip decision |
 | **M1.2** Declarative episode editor | [#799](https://github.com/maestroi/PokePilot/issues/799) | Validated edit plan with segment timestamps, trim/speed, captions/overlays and narration cues compiled to deterministic media pipeline |
 | **M1.3** Packaging | [#801](https://github.com/maestroi/PokePilot/issues/801), [#802](https://github.com/maestroi/PokePilot/issues/802) | Verified event-aware titles, chapters, descriptions and versioned thumbnail variants |
-| **M1.4** Quality and review | [#803](https://github.com/maestroi/PokePilot/issues/803) | Review/approve/reject/skip candidate, idempotent job status, no duplicate publication |
-| **M1.5** Optional publication | [#178](https://github.com/maestroi/PokePilot/issues/178) | Approved MP4 publication with provider metadata; not a prerequisite for a locally reviewable first episode |
+| **M3.1** Publication transport | [#178](https://github.com/maestroi/PokePilot/issues/178) | Approved MP4 upload with provider metadata; not needed for a locally reviewable first episode |
+| **M3.2** Quality and review queue | [#803](https://github.com/maestroi/PokePilot/issues/803) | Depends on #178 and packaging; review/approve/reject/skip candidate, idempotent status, no duplicate publication |
 | Later: live commentary | [#800](https://github.com/maestroi/PokePilot/issues/800) | Sparse context-driven narration, isolated from gameplay; only if it improves watchability |
 
 **Scope the first pilot tightly:** pick one real finished run that already
@@ -103,8 +103,8 @@ automatic uploading for initial success.
 
 **M1 gate:** the operator can select that historical run; get a truthful
 producer assessment with evidence refs; preview an episode with repetitive
-sections cut/speed-adjusted and milestones retained; preview a short; inspect
-and edit metadata; approve or reject. Both outputs retain source run,
+sections cut/speed-adjusted and milestones retained; preview a short; inspect candidate packaging and manually accept or reject
+that preview without requiring a publishing queue. Both outputs retain source run,
 timeline, prompt/policy, edit-plan and renderer versions. A rejected or failed
 render does not mutate the run or its canonical artifacts. A boring run can
 legitimately yield `do-not-publish`.
@@ -201,11 +201,13 @@ Do not mark a milestone complete from a merged PR alone: attach gate evidence.
 3. **Implement [#799](https://github.com/maestroi/PokePilot/issues/799):**
    turn that output into a restricted, deterministic edit plan + first
    long-form preview; add short format once the shared compiler is stable.
-4. **Then [#801](https://github.com/maestroi/PokePilot/issues/801),
-   [#802](https://github.com/maestroi/PokePilot/issues/802) and
-   [#803](https://github.com/maestroi/PokePilot/issues/803):**
-   package, review and queue it, reusing existing media components.
-5. **Finally:** wire actual review/publishing and public navigation; measure
+4. **Then [#801](https://github.com/maestroi/PokePilot/issues/801) and
+   [#802](https://github.com/maestroi/PokePilot/issues/802):**
+   package candidate edits, reusing existing media components.
+5. **For publishing, implement [#178](https://github.com/maestroi/PokePilot/issues/178),
+   then [#803](https://github.com/maestroi/PokePilot/issues/803):**
+   wire approved uploads and the durable review queue in dependency order.
+6. **Finally:** wire public navigation and measure
    the first audience experiment before selecting a monetization path.
 
 GitHub issues own task implementation and changing status. This page owns
