@@ -10,7 +10,7 @@ import (
 // a neutral TypeMatchups chart and ItemAttributes. This exercises the public
 // profile scorer and the ROM attribute lookup without requiring a private ROM.
 func fixtureGoldHeldItemROM() []byte {
-	rom := make([]byte, 0x800)
+	rom := make([]byte, 0x1000)
 
 	// TypeMatchups' real leading fingerprint, followed by enough valid rows
 	// for the cartridge table locator and its terminating marker.
@@ -36,6 +36,7 @@ func fixtureGoldHeldItemROM() []byte {
 	setHeldEffect(0x75, gsHeldEffectBoostFirst+10, 10) // MIRACLE_SEED, Grass +10%
 	setHeldEffect(0x92, gsHeldEffectLeftovers, 0)      // LEFTOVERS
 	setHeldEffect(0x90, 77, 99)                        // Unknown effect: neutral
+	setHeldEffect(0xfb, gsHeldEffectBoostFirst+10, 99) // Invalid item id: must never boost
 	return rom
 }
 
@@ -91,7 +92,7 @@ func TestGoldHeldItemModifiersAffectCombatEvaluationWithoutROMFile(t *testing.T)
 		t.Fatalf("Leftovers must report recovery without altering damage: %+v", leftovers)
 	}
 
-	for _, item := range []uint16{0x90, 0x100, 0xff} {
+	for _, item := range []uint16{0x90, 0xfb, 0x100, 0xff} {
 		unknown := evaluate(item, razorLeaf)
 		if unknown.ExpectedScore != baseline.ExpectedScore ||
 			unknown.ItemModifier != (game.BattleItemModifier{}) {
