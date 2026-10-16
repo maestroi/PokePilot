@@ -11,11 +11,11 @@ import (
 
 func TestClockUntilSecondsMatchesGoldBoundaries(t *testing.T) {
 	tests := []struct {
-		name string
-		rtc  emu.RTCState
+		name    string
+		rtc     emu.RTCState
 		h, m, s byte
-		until game.TimeOfDay
-		want uint32
+		until   game.TimeOfDay
+		want    uint32
 	}{
 		{"night 03:59:59 to morning", emu.RTCState{Hours: 3, Minutes: 59, Seconds: 59}, 0, 0, 0, game.TimeMorning, 1},
 		{"day 17:59:59 to night", emu.RTCState{Hours: 17, Minutes: 59, Seconds: 59}, 0, 0, 0, game.TimeNight, 1},
