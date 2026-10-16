@@ -104,9 +104,12 @@ func TestModelEvidenceValidationAndCorruptJSON(t *testing.T) {
 
 	pack, _, _ := evidence(in)
 	c := Candidate{PrimaryStory: "Claim", Publication: FullEpisode,
-		Beats: []Beat{{Kind: "climax", Summary: "Made up", Evidence: []EvidenceRef{
-			{Attempt: 1, EventID: pack.Events[0].EventID, Frame: 99999, TimestampMS: pack.Events[0].TimestampMS},
-		}}},
+		Beats: []Beat{
+			{Kind: "climax", Summary: "Made up", Evidence: []EvidenceRef{
+				{Attempt: 1, EventID: pack.Events[0].EventID, Frame: 99999, TimestampMS: pack.Events[0].TimestampMS},
+			}},
+			{Kind: "result", Summary: "Known event", Evidence: []EvidenceRef{pack.Events[1].EvidenceRef}},
+		},
 	}
 	data, _ := json.Marshal(c)
 	if _, err := Assess(context.Background(), in, fakeModel{body: data}, DefaultPolicy()); err == nil || !strings.Contains(err.Error(), "mismatched") {
