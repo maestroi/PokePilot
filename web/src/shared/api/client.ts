@@ -382,3 +382,17 @@ export function selectStudioThumbnail(runID: string, packageHash: string, candid
     body: '{}'
   })
 }
+
+export function assessStudioRun(runID: string): Promise<{ assessment: { hash: string; publication: string } }> {
+  return requestJSON<{ assessment: { hash: string; publication: string } }>(`/v1/runs/${encodeURIComponent(runID)}/producer/assess`, {
+    method: 'POST',
+    body: '{}'
+  })
+}
+
+export function createStudioPackage(runID: string, assessmentHash: string): Promise<{ package: StudioPackage }> {
+  return requestJSON<{ package: StudioPackage }>(`/v1/runs/${encodeURIComponent(runID)}/studio/packages`, {
+    method: 'POST',
+    body: JSON.stringify({ assessment_hash: assessmentHash, style: 'documentary' })
+  })
+}
