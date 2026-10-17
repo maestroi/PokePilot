@@ -262,14 +262,22 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		gsprofile.ProgressRocketPasswordsLearned, gsprofile.ProgressRocketOfficeOpened,
 		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword,
 		gsprofile.ProgressRocketTransmitterDoorOpened, gsprofile.ProgressRocketExecutiveFBeaten,
-		gsprofile.ProgressRocketHideoutCleared} {
+		gsprofile.ProgressRocketHideoutCleared,
+		gsprofile.ProgressGlacierBadgeEarned,
+		gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+		gsprofile.ProgressRadioTowerBasementUnlocked,
+		gsprofile.ProgressRadioTowerCardKeyReceived,
+		gsprofile.ProgressRadioTowerShutterOpened,
+		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+		gsprofile.ProgressRadioTowerTakeoverSettled} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
 			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("unfinished Glacier Badge still offered: %+v", got)
+		t.Fatalf("unimplemented Ice Path or Clair milestone was offered: %+v", got)
 	}
 }
 
