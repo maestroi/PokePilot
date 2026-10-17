@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -57,6 +58,15 @@ func gsSolveRetailSinkPuzzle(m *emu.Emu, romData []byte, profile *gsprofile.Prof
 			return fmt.Errorf("%w: %s left owned boulder map", errGSSecondBadgeUnexpectedState, label)
 		}
 		moved, err := skill.PushNativeStrengthTowardSink(m, romData, sinks)
+		if errors.Is(err, skill.ErrBattle) || errors.Is(err, skill.ErrDialogueInterrupted) {
+			// Gym trainers and the pit-fall script may interrupt a planned
+			// push. Resolve them with the owned battle/dialogue controller,
+			// then re-observe before committing any later action.
+			if settleErr := driveGSSecondBadgeInterruption(m, profile, label); settleErr != nil {
+				return fmt.Errorf("gen2 %s: settle interruption after push %d: %w", label, push+1, settleErr)
+			}
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("gen2 %s: verified Strength push %d: %w", label, push+1, err)
 		}
