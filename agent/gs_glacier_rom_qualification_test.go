@@ -177,12 +177,8 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 		ok := t.Run(stage.name, func(t *testing.T) {
 			adapter := newGSObjectiveAdapter(m, m.ROM(), gameID)
 			o := Objective{Kind: KindProgress, Progress: stage.progress}
-			if stage.progress != gsprofile.ProgressGlacierBadgeEarned {
-				if err := adapter.Validate(o, Observation{}); err != nil {
-					t.Fatal(err)
-				}
-			} else if gsSupportedProgress(stage.progress) {
-				t.Fatal("Glacier unexpectedly enabled before verified full qualification")
+			if err := adapter.Validate(o, Observation{}); err != nil {
+				t.Fatal(err)
 			}
 			if err := adapter.NormalizeBoundary(); err != nil {
 				t.Fatal(err)
@@ -202,28 +198,11 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 			}
 			startFrame := m.FrameCount()
 			var result ObjectiveResult
-			executeStage := func() error {
-				if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
-					// The retail leader controller exists, but production must
-					// stay fail-closed until replay evidence qualifies it.
-					if err := executeGSPryce(m, m.ROM()); err != nil {
-						return err
-					}
-					result = ObjectiveResult{Objective: o}
-					return nil
-				}
-				var e error
-				result, e = adapter.ExecuteOwned(o)
-				return e
-			}
-			if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
-				// This is deliberately a private-only objective: use a full
-				// battle-sized deadline even though production does not
-				// advertise or budget the unqualified seventh badge.
-				err = m.WithFrameDeadline(m.FrameCount()+gsFirstBadgeObjectiveFrameBudget, executeStage)
-			} else {
-				err = adapter.WithinObjectiveBudget(o, executeStage)
-			}
+			err = adapter.WithinObjectiveBudget(o, func() error {
+				var executeErr error
+				result, executeErr = adapter.ExecuteOwned(o)
+				return executeErr
+			})
 			if err != nil {
 				t.Fatalf("stage %s failed after %d frames: %v", stage.name, m.FrameCount()-startFrame, err)
 			}
@@ -234,11 +213,7 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
-				_, err = verifyObjectivePostcondition(o, before, after, result)
-			} else {
-				err = adapter.VerifyPostcondition(o, before, after, result)
-			}
+			err = adapter.VerifyPostcondition(o, before, after, result)
 			if err != nil {
 				t.Fatalf("%s did not satisfy semantic postcondition: %v", stage.name, err)
 			}
