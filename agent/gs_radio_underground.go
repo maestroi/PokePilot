@@ -100,11 +100,13 @@ func gsRadioResetSwitchRoom(m *emu.Emu, romData []byte, profile *gsprofile.Profi
 		return err
 	}
 	if err := gsSecondBadgeGoTo(m, romData, profile,
-		skill.ExactNativeDestination(tunnel, 22, 27)); err != nil {
+		skill.ExactNativeDestination(tunnel, 22, 28)); err != nil {
 		return fmt.Errorf("gen2 Radio Tower: reset maze through Underground: %w", err)
 	}
 	// A re-entry into the tunnel is mandatory if the player was already
-	// inside the switch room. If already here, only a fresh all-off puzzle
+	// inside the switch room. The tunnel warp at (22,27) itself must not
+	// be used as a staging destination, since stepping there re-enters the
+	// switch room. If already here, only a fresh all-off puzzle
 	// qualifies as a clean start.
 	switches := profile.DecodeRadioTowerSwitches(m)
 	if switches.Switch1 || switches.Switch2 || switches.Switch3 ||
