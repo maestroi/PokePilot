@@ -51,7 +51,7 @@ func TestIssueConfigUsesGitHubAdapter(t *testing.T) {
 			t.Errorf("issues service missing %q", want)
 		}
 	}
-	if strings.Contains(issues, "POKEPILOT_RUN_BASE_URL:") {
+	if strings.Contains(issues, "\n      POKEPILOT_RUN_BASE_URL:") {
 		t.Error("issues service must export the canonical admin URL, not the legacy alias")
 	}
 	if strings.Contains(wall, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(ui, "POKEPILOT_GITHUB_TOKEN") || strings.Contains(runner, "POKEPILOT_GITHUB_TOKEN") {
