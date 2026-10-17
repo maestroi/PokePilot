@@ -50,11 +50,12 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 		if !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared) {
 			t.Fatal("did not clear Rocket Hideout")
 		}
-		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s must stop before unqualified Glacier Badge: %+v", gameID, goals)
+		if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+			goals[0].Progress != gsprofile.ProgressGlacierBadgeEarned {
+			t.Fatalf("%s experimental run must continue to Pryce after Rocket: %+v", gameID, goals)
 		}
-		if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
-			t.Fatal("Glacier target must remain disabled until ROM qualification")
+		if !gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
+			t.Fatal("opt-in Glacier stage must be executable")
 		}
 	}
 }
