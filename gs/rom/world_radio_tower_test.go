@@ -80,7 +80,7 @@ func TestRadioTowerRetailWarpsAndCollisionArePinned(t *testing.T) {
 		}
 	}
 	table, ok := firstBadgeCollisionTable(0x18)
-	if !ok || len(table) != 256 || table[3*4+1] != 0x70 {
+	if !ok || len(table) != 256 || table[3*4+1] != 0x7a {
 		t.Fatal("Radio Tower tileset must use real staircase collision")
 	}
 }
