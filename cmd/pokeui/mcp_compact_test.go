@@ -21,13 +21,13 @@ func TestMCPListRunsSummaryCutsContextWithoutLosingProgress(t *testing.T) {
 			t.Errorf("dashboard limit = %q, want 20", req.URL.Query().Get("limit"))
 		}
 		_ = json.NewEncoder(res).Encode(map[string]any{
-			"now": 123,
+			"now":     123,
 			"workers": []map[string]any{{"addr": "private-worker:1234", "version": "secret"}},
 			"runs": []map[string]any{{
 				"run_id": "run-compact", "status": "running", "game": "pokemon-gold",
 				"planner": "llm", "goal": "Earn badge 8", "frame": 321,
 				"trace": bulk, "question": bulk, "decision": bulk,
-				"game_state": map[string]any{"verbose": bulk},
+				"game_state":    map[string]any{"verbose": bulk},
 				"game_decision": map[string]any{"verbose": bulk},
 				"stats": map[string]any{
 					"rounds": 7, "goal_current": 3, "goal_target": 8,
@@ -158,7 +158,7 @@ func TestMCPTriageSummaryPaginationAndFullHistory(t *testing.T) {
 			"key": fmt.Sprintf("failure-%02d", i), "fingerprint": "stable",
 			"example": strings.Repeat("irrelevant stack trace ", 80),
 			"run_ids": []string{"a", "b", "c", "d", "e"},
-			"issue": map[string]any{"issue_number": i + 1, "status": "open"},
+			"issue":   map[string]any{"issue_number": i + 1, "status": "open"},
 		}
 		if i >= 25 {
 			group["issue"] = map[string]any{"issue_number": i + 1, "status": "closed", "resolution": "fixed"}
