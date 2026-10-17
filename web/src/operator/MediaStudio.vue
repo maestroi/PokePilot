@@ -10,7 +10,8 @@ import { presentOutcome, presentReplay } from '../shared/status'
 import { highlightManifestURL, highlightVideoURL, replayVideoURL } from '../shared/api/client'
 import { formatMediaHref, latestJobsByKind, presentRenderMark, studioSteps, type MediaState, type RenderKind } from './mediaQuery'
 import { gameTitle } from './operations'
-import { archiveWhen, middleTruncate, progressLabel, timeAgo } from './runs'
+import { archiveWhen, formatInteger, middleTruncate, progressLabel, starterPresentation, timeAgo } from './runs'
+import { elapsedRunSeconds, formatDuration, gameTimeSeconds } from '../shared/runTiming'
 import { useRunMedia } from './useRunMedia'
 import { useStudio, type StudioFormat } from './useStudio'
 import StudioThumbnails from './StudioThumbnails.vue'
@@ -59,6 +60,34 @@ const pipeline = computed(() => studioSteps({
   thumbnails: { rendered: studio.thumbnails.value?.manifest.candidates.length || 0, selected: Boolean(studio.selectedThumbnail.value) },
   publication: studio.publication.value
 }))
+// What a producer needs to know about the run before cutting it: what was
+// played, with which starter, how long it took and how rough it was.
+const facts = computed(() => {
+  const run = source.value
+  if (!run) return []
+  const starter = starterPresentation(run)
+  const elapsed = elapsedRunSeconds(run)
+  const game = gameTimeSeconds(run)
+  const failed = Number(run.error_attempts || 0)
+  const blackouts = Number(run.loss_recoveries || 0)
+  const rounds = Number(run.stats?.round || run.stats?.calls || 0)
+  const problems = [
+    failed ? `${failed} failed attempt${failed === 1 ? '' : 's'}` : '',
+    blackouts ? `${blackouts} blackout${blackouts === 1 ? '' : 's'}` : '',
+    Number(run.stats?.rejected || 0) ? `${formatInteger(Number(run.stats?.rejected))} rejected moves` : ''
+  ].filter(Boolean)
+  return [
+    { label: 'Game', value: run.game ? gameTitle(run.game) : 'Unknown game' },
+    { label: 'Goal', value: run.goal || 'Free play' },
+    { label: 'Result', value: `${presentOutcome(run).label}${progress(run) ? ` · ${progress(run)}` : ''}` },
+    ...(starter ? [{ label: 'Starter', value: starter.species + (starter.detail ? ` (${starter.detail})` : '') }] : []),
+    { label: 'Duration', value: [elapsed ? `${formatDuration(elapsed)} wall` : '', game ? `${formatDuration(game)} in-game` : ''].filter(Boolean).join(' · ') || '—' },
+    { label: 'Attempts', value: `${Number(run.attempts || 1)}${rounds ? ` · ${formatInteger(rounds)} rounds` : ''}` },
+    { label: 'Problems', value: problems.join(' · ') || 'None reported' },
+    { label: 'Badges', value: run.player?.badges?.length ? `${run.player.badges.length} · ${run.player.badges.join(', ')}` : '—' },
+    { label: 'Ended', value: `${timeAgo(Number(run.ended_at || 0))} · ${archiveWhen(run)}` }
+  ]
+})
 const hasStep = (id: string) => pipeline.value.steps.some((step) => step.id === id)
 const format = ref<StudioFormat>('episode')
 
@@ -140,9 +169,12 @@ const search = () => window.location.search
           <p class="text-fg-2">You’ll see how far it is from a published video and what to do next.</p>
         </div>
         <div v-else class="p-3">
-          <p v-if="source" class="mb-2 text-fg-2">
-            {{ source.game ? gameTitle(source.game) : 'Unknown game' }} · {{ source.goal || 'Free play' }} · <span :title="archiveWhen(source)">ended {{ timeAgo(Number(source.ended_at || 0)) }}</span>
-          </p>
+          <dl v-if="facts.length" class="mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr_auto_1fr]" aria-label="About this run">
+            <template v-for="fact in facts" :key="fact.label">
+              <dt class="text-meta text-fg-3">{{ fact.label }}</dt>
+              <dd class="min-w-0 truncate" :class="fact.label === 'Problems' && fact.value !== 'None reported' ? 'text-warn' : ''" :title="fact.value">{{ fact.value }}</dd>
+            </template>
+          </dl>
           <ol class="border border-rule" aria-label="Publishing steps">
             <li
               v-for="(step, index) in pipeline.steps"
