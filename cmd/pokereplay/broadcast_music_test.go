@@ -16,7 +16,7 @@ import (
 )
 
 type fakeBroadcastMusicS3 struct {
-	mu sync.Mutex
+	mu      sync.Mutex
 	objects map[string][]byte
 }
 
@@ -130,11 +130,11 @@ func TestBroadcastMusicRejectsUnauthorizedOrMalformedUploads(t *testing.T) {
 	server := &replayServer{store: store}
 	valid := []byte("OggS\x00\x00licensed")
 	cases := []struct {
-		name string
+		name     string
 		filename string
 		licensed bool
-		data []byte
-		want int
+		data     []byte
+		want     int
 	}{
 		{"unlicensed", "music.ogg", false, valid, http.StatusBadRequest},
 		{"wrong extension", "music.exe", true, valid, http.StatusBadRequest},
