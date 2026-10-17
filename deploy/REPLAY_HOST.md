@@ -71,6 +71,25 @@ replaced immediately. From an operator UI container, request
 reboot, verify the sidecar container state and timer; the timer recreates an
 exited container.
 
+### Optional live broadcast music
+
+To replace the silent RTMP audio track with looping background music, place an
+**audio file you have rights to livestream** on the replay host (for example,
+`/opt/pokefarm/stream-music.ogg`) and set the following in
+`/etc/default/pokefarm-replay`:
+
+```sh
+FARM_REPLAY_MUSIC_FILE=/opt/pokefarm/stream-music.ogg
+```
+
+The sidecar launcher binds a readable, regular file read-only at
+`/run/pokepilot/broadcast-music` and configures the replay process with
+`POKEPILOT_BROADCAST_MUSIC_FILE`. The browser cannot choose a server path.
+On the next idle reconciliation, the sidecar gets the new mount; replacing or
+removing the file also changes the sidecar spec. When missing or unreadable,
+FFmpeg falls back to the same silent audio input as before. Broadcasts with
+audio disabled remain silent with no audio stream. Only use royalty-cleared
+music: commercial game soundtracks are likely to trigger platform claims.
 
 ## Long replay scratch and segment cache
 
