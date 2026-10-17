@@ -120,7 +120,7 @@ type rtmpBroadcastSession struct {
 	source *liveBroadcastSession
 
 	processFactory rtmpProcessFactory
-	musicCleanup   func() // release staged, private S3 audio when session ends
+	musicCleanup   func()        // release staged, private S3 audio when session ends
 	commentary     <-chan []byte // optional best-effort speech; bounded by its producer
 	maxReconnects  int
 	backoffBase    time.Duration

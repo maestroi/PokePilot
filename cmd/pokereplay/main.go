@@ -141,7 +141,7 @@ type replayServer struct {
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
-	musicMu               sync.Mutex // Serializes library catalog updates on this replay host.
+	musicMu            sync.Mutex // Serializes library catalog updates on this replay host.
 	commentaryMu       sync.Mutex
 	commentarySessions map[string]*liveCommentarySession
 
