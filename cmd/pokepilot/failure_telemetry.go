@@ -59,10 +59,9 @@ func drainObjectiveFailureTelemetry(reason, build, checkpointDir string) ([]farm
 	lastFailureFingerprint := ""
 
 	for i, result := range res.Outcomes {
-		// Expected game outcomes (blackout, training retreat) are play, not
-		// defects, while the run recovers from them. One that ends the run is
-		// a defect: recovery could not get past it, so it must reach triage.
-		if result.Outcome == agent.OutcomeCompleted || (expectedStructuredGameOutcome(result) && !result.Terminal) {
+		// Blackouts and training retreats are filed too, recovered or not: each
+		// means the planner chose a fight it could not win.
+		if result.Outcome == agent.OutcomeCompleted {
 			continue
 		}
 		identity := farmIdentityFromAgent(result)
@@ -232,15 +231,6 @@ func farmStateFromAgent(s agent.FailureState) farm.FailureState {
 		out.Progress = append(out.Progress, farm.FailureProgressFact{ID: string(fact.ID), Complete: fact.Complete, Value: fact.Value})
 	}
 	return out
-}
-
-func expectedStructuredGameOutcome(result agent.ObjectiveResult) bool {
-	switch result.Cause {
-	case "blacked_out", "catch_blackout", "train_retreat":
-		return true
-	default:
-		return false
-	}
 }
 
 // majorProgressAfter approximates Run's monotonic watchdog from the semantic

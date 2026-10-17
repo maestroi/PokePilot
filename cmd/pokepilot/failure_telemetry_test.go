@@ -109,19 +109,7 @@ func TestObjectiveFailureTelemetryMarksLaterProgressRecovered(t *testing.T) {
 	}
 }
 
-func TestObjectiveFailureTelemetryExcludesExpectedGameOutcome(t *testing.T) {
-	resetObjectiveFailureTelemetry()
-	t.Cleanup(resetObjectiveFailureTelemetry)
-
-	failure := structuredFailureResult("blacked_out", 10)
-	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{failure}})
-	got, terminal := drainObjectiveFailureTelemetry("budget", "build-a", "")
-	if len(got) != 0 || terminal != nil {
-		t.Fatalf("blackout produced engineering failure telemetry: %+v terminal=%+v", got, terminal)
-	}
-}
-
-func TestObjectiveFailureTelemetryFilesTerminalExpectedGameOutcome(t *testing.T) {
+func TestObjectiveFailureTelemetryFilesGameOutcomes(t *testing.T) {
 	resetObjectiveFailureTelemetry()
 	t.Cleanup(resetObjectiveFailureTelemetry)
 
@@ -131,8 +119,8 @@ func TestObjectiveFailureTelemetryFilesTerminalExpectedGameOutcome(t *testing.T)
 	final.Terminal = true
 	captureObjectiveFailureTelemetry(agent.Result{Outcomes: []agent.ObjectiveResult{recovered, final}})
 	got, terminal := drainObjectiveFailureTelemetry("stuck", "build-a", "")
-	if len(got) != 1 || got[0].TerminalCount != 1 || got[0].Count != 1 {
-		t.Fatalf("failures = %+v, want only the terminal retreat filed", got)
+	if len(got) != 1 || got[0].Count != 2 || got[0].RecoveredCount != 1 || got[0].TerminalCount != 1 {
+		t.Fatalf("failures = %+v, want both retreats filed in one group", got)
 	}
 	if terminal == nil || terminal.Fingerprint != got[0].Fingerprint {
 		t.Fatalf("terminal = %+v, want the run-ending retreat", terminal)
