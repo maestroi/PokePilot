@@ -190,7 +190,7 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 			}
 			startFrame := m.FrameCount()
 			var result ObjectiveResult
-			err = adapter.WithinObjectiveBudget(o, func() error {
+			executeStage := func() error {
 				if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
 					// The retail leader controller exists, but production must
 					// stay fail-closed until replay evidence qualifies it.
@@ -201,7 +201,15 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 				var e error
 				result, e = adapter.ExecuteOwned(o)
 				return e
-			})
+			}
+			if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
+				// This is deliberately a private-only objective: use a full
+				// battle-sized deadline even though production does not
+				// advertise or budget the unqualified seventh badge.
+				err = m.WithFrameDeadline(m.FrameCount()+gsFirstBadgeObjectiveFrameBudget, executeStage)
+			} else {
+				err = adapter.WithinObjectiveBudget(o, executeStage)
+			}
 			if err != nil {
 				t.Fatalf("stage %s failed after %d frames: %v", stage.name, m.FrameCount()-startFrame, err)
 			}
