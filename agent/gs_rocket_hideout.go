@@ -12,11 +12,11 @@ import (
 // Gold/Silver Rocket Base B3F and B2F map scripts. The objective advances only
 // on persisted event bits, never on reaching a coordinate or ending a battle.
 type gsRocketInteraction struct {
-	name            string
-	mapName         string
-	standX, standY  uint8
+	name             string
+	mapName          string
+	standX, standY   uint8
 	targetX, targetY uint8
-	complete        func(gsprofile.RocketBaseStory) bool
+	complete         func(gsprofile.RocketBaseStory) bool
 }
 
 func gsRocketSpeak(m *emu.Emu, romData []byte, profile *gsprofile.Profile, step gsRocketInteraction) error {
