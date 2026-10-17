@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -173,7 +175,7 @@ func TestCommentaryAudioPipeAndSilencePadding(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := strings.Join(rtmpFFmpegArgsCommentary(cfg), " ")
-	if !strings.Contains(args, "pipe:3") || !strings.Contains(args, "-ar 24000") || strings.Contains(args, "anullsrc") {
+	if !strings.Contains(args, "pipe:3") || !strings.Contains(args, "-ar 24000") || !strings.Contains(args, "anullsrc") || !strings.Contains(args, "amix=inputs=2") {
 		t.Fatalf("commentary FFmpeg missing PCM input: %s", args)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -233,5 +235,38 @@ func TestLiveCommentaryObjectKeyAvoidsPlainRunID(t *testing.T) {
 	item.EventID = "different"
 	if liveCommentaryObjectKey("private-run-id", item) == a {
 		t.Fatal("distinct events wrote same artifact")
+	}
+}
+
+// Verify the selected music is retained under TTS, without altering
+// existing broadcasts that only use music or the silent fallback.
+func TestCommentaryAudioMixesMusicWithSpeech(t *testing.T) {
+	cfg, err := normalizeRTMPBroadcastRequest(rtmpBroadcastRequest{
+		Provider: "generic", Endpoint: "rtmp://relay.example.test/live", Audio: boolPtr(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	music := filepath.Join(t.TempDir(), "licensed-audio.ogg")
+	if err := os.WriteFile(music, []byte("placeholder for FFmpeg argument test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.MusicFile = music
+	args := rtmpFFmpegArgsCommentary(cfg)
+	if !hasRTMPArgSequence(args, "-stream_loop", "-1", "-i", music) {
+		t.Fatalf("music input was dropped: %v", args)
+	}
+	if !hasRTMPArgSequence(args, "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:3") {
+		t.Fatalf("commentary PCM missing: %v", args)
+	}
+	if !hasRTMPArgSequence(args, "-map", "[aout]") || !strings.Contains(strings.Join(args, " "), "amix=inputs=2") {
+		t.Fatalf("music and commentary were not mixed: %v", args)
+	}
+	if hasRTMPArgSequence(args, "-map", "1:a:0") {
+		t.Fatalf("mixed audio must replace unmixed music mapping: %v", args)
+	}
+	baseline := rtmpFFmpegArgs(cfg)
+	if !hasRTMPArgSequence(baseline, "-map", "1:a:0") || hasRTMPArgSequence(baseline, "-map", "[aout]") {
+		t.Fatalf("music-only broadcast path changed: %v", baseline)
 	}
 }

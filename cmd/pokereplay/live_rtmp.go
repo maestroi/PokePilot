@@ -59,6 +59,8 @@ type rtmpBroadcastConfig struct {
 	Audio                   bool
 	AudioBitrateKbps        int
 	AudioSampleRate         int
+	MusicFile               string // Server-side path only; never included in status or browser requests.
+	MusicTrackID            string // Public, content-addressed library ID (never an object key).
 }
 
 type rtmpBroadcastStatus struct {
@@ -76,6 +78,7 @@ type rtmpBroadcastStatus struct {
 	Audio                   bool   `json:"audio"`
 	AudioBitrateKbps        int    `json:"audio_bitrate_kbps,omitempty"`
 	AudioSampleRate         int    `json:"audio_sample_rate,omitempty"`
+	MusicTrackID            string `json:"music_track_id,omitempty"`
 	Reconnects              int    `json:"reconnects,omitempty"`
 	LastError               string `json:"last_error,omitempty"`
 	StartedAtMS             int64  `json:"started_at_unix_ms,omitempty"`
@@ -117,6 +120,7 @@ type rtmpBroadcastSession struct {
 	source *liveBroadcastSession
 
 	processFactory rtmpProcessFactory
+	musicCleanup   func() // release staged, private S3 audio when session ends
 	commentary     <-chan []byte // optional best-effort speech; bounded by its producer
 	maxReconnects  int
 	backoffBase    time.Duration
@@ -281,6 +285,22 @@ func validFFmpegAtom(value string) bool {
 	return true
 }
 
+// rtmpAudioInputArgs uses only an operator-configured local audio file. If it
+// disappears or cannot be opened, preserve the previous silent audio track.
+// Keep the music source as the second input so -map 1:a:0 works in both cases.
+func rtmpAudioInputArgs(musicFile string, sampleRate int) []string {
+	musicFile = strings.TrimSpace(musicFile)
+	if musicFile != "" {
+		if info, err := os.Stat(musicFile); err == nil && info.Mode().IsRegular() {
+			if file, err := os.Open(musicFile); err == nil {
+				_ = file.Close()
+				return []string{"-stream_loop", "-1", "-i", musicFile}
+			}
+		}
+	}
+	return []string{"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=" + strconv.Itoa(sampleRate)}
+}
+
 func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 	gop := cfg.FPS * cfg.KeyframeIntervalSeconds
 	args := []string{
@@ -288,9 +308,7 @@ func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 		"-f", "image2pipe", "-vcodec", "mjpeg", "-framerate", strconv.Itoa(liveBroadcastFPS), "-i", "pipe:0",
 	}
 	if cfg.Audio {
-		args = append(args,
-			"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate="+strconv.Itoa(cfg.AudioSampleRate),
-		)
+		args = append(args, rtmpAudioInputArgs(cfg.MusicFile, cfg.AudioSampleRate)...)
 	}
 	args = append(args,
 		"-map", "0:v:0",
@@ -326,29 +344,35 @@ func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 	return args
 }
 
-// rtmpFFmpegArgsCommentary replaces the default silence audio input with
-// 24kHz mono PCM from an isolated producer on fd 3. The encoder still sends
-// continuous AAC even when the commentator is silent or unreachable.
+// rtmpFFmpegArgsCommentary mixes live speech into the existing audio bed.
+// The selected music (or silence fallback) stays on input 1. Continuous
+// 24 kHz PCM from the isolated commentator is input 2, supplied on fd 3.
 func rtmpFFmpegArgsCommentary(cfg rtmpBroadcastConfig) []string {
 	args := rtmpFFmpegArgs(cfg)
 	if !cfg.Audio {
 		return args
 	}
-	needle := []string{"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=" + strconv.Itoa(cfg.AudioSampleRate)}
-	replacement := []string{"-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:3"}
-	for i := 0; i+len(needle) <= len(args); i++ {
-		matches := true
-		for j := range needle {
-			if args[i+j] != needle[j] {
-				matches = false
-				break
-			}
+	inputAt, audioMapAt := -1, -1
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-map" && args[i+1] == "0:v:0" {
+			inputAt = i
 		}
-		if matches {
-			return append(append(append([]string{}, args[:i]...), replacement...), args[i+len(needle):]...)
+		if args[i] == "-map" && args[i+1] == "1:a:0" {
+			audioMapAt = i
 		}
 	}
-	return args
+	if inputAt < 0 || audioMapAt < 0 {
+		return args
+	}
+	pcm := []string{"-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:3"}
+	args = append(append(append([]string{}, args[:inputAt]...), pcm...), args[inputAt:]...)
+	audioMapAt += len(pcm)
+	mix := []string{
+		"-filter_complex",
+		"[1:a:0]volume=0.28[bed];[bed][2:a:0]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
+		"-map", "[aout]",
+	}
+	return append(append(append([]string{}, args[:audioMapAt]...), mix...), args[audioMapAt+2:]...)
 }
 
 const commentaryPCMTickBytes = 24000 * 2 / 10 // 100 ms
@@ -407,6 +431,7 @@ func newRTMPBroadcastSession(runID string, cfg rtmpBroadcastConfig, source *live
 			Audio:                   cfg.Audio,
 			AudioBitrateKbps:        cfg.AudioBitrateKbps,
 			AudioSampleRate:         cfg.AudioSampleRate,
+			MusicTrackID:            cfg.MusicTrackID,
 			StartedAtMS:             now,
 			UpdatedAtMS:             now,
 		},
@@ -465,6 +490,9 @@ func (s *rtmpBroadcastSession) start(parent context.Context) {
 
 func (s *rtmpBroadcastSession) run(ctx context.Context) {
 	defer close(s.done)
+	if s.musicCleanup != nil {
+		defer s.musicCleanup()
+	}
 	frames, unsubscribe := s.source.subscribe()
 	defer unsubscribe()
 
@@ -601,7 +629,7 @@ func sanitizeRTMPError(err error, cfg rtmpBroadcastConfig) string {
 	return text
 }
 
-func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig) (*rtmpBroadcastSession, error) {
+func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig, musicCleanup func()) (*rtmpBroadcastSession, error) {
 	runID = strings.TrimSpace(runID)
 	if runID == "" {
 		return nil, errors.New("run id is required")
@@ -617,6 +645,7 @@ func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig)
 	}
 	source := s.liveSession(runID)
 	session := newRTMPBroadcastSession(runID, cfg, source)
+	session.musicCleanup = musicCleanup
 	// Speech can only be attached when starting a broadcast; enabling it later
 	// requires an operator-controlled restart. Without TTS, existing silent
 	// audio behavior is unchanged.
@@ -713,8 +742,34 @@ func (s *replayServer) handleRTMPBroadcastStart(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	session, err := s.startRTMPBroadcast(runID, cfg)
+	// A host-configured track remains the default for existing API callers.
+	// A library ID selects S3 audio; "silent" deliberately overrides both.
+	var musicCleanup func()
+	switch req.MusicTrackID {
+	case "":
+	case "silent":
+		cfg.MusicFile = ""
+		cfg.MusicTrackID = "silent"
+	default:
+		if !cfg.Audio && req.Audio != nil && !*req.Audio {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot select music with audio disabled"})
+			return
+		}
+		musicFile, cleanup, stageErr := s.stageBroadcastMusic(r.Context(), req.MusicTrackID)
+		if stageErr != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": stageErr.Error()})
+			return
+		}
+		cfg.MusicFile = musicFile
+		cfg.MusicTrackID = req.MusicTrackID
+		cfg.Audio = true
+		musicCleanup = cleanup
+	}
+	session, err := s.startRTMPBroadcast(runID, cfg, musicCleanup)
 	if err != nil {
+		if musicCleanup != nil {
+			musicCleanup()
+		}
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}

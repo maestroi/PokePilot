@@ -91,7 +91,11 @@ type NativeGridSpec struct {
 	WarpPushes map[uint8]NativeDirectionMask
 	Blocked    map[uint8]NativeDirectionMask
 	Jumps      []NativeJump
-	Traversal  TraversalMode
+	// SlideCollisions are adapter-specified floor bytes that automatically
+	// continue movement in the entry direction until blocked or leaving ice.
+	// Nil keeps other native cartridges' movement unchanged.
+	SlideCollisions map[uint8]bool
+	Traversal       TraversalMode
 }
 
 // NativeGridProvider is an optional extension of NativeMapTopologyProvider for

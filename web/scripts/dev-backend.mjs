@@ -59,7 +59,7 @@ async function publicJSON(path) {
 async function dashboard(query) {
   if (query.get('status') === 'done') return archive(query)
   const [list, watch] = await Promise.all([
-    tool('pokepilot_list_runs', { limit: Number(query.get('limit') || 40) }),
+    tool('pokepilot_list_runs', { limit: Number(query.get('limit') || 40), view: 'full' }),
     publicJSON('/v1/watch')
   ])
   const publicRuns = new Map((watch?.runs ?? []).map((run) => [run.run_id, run]))
@@ -96,7 +96,7 @@ const ARCHIVE_SORT = {
   progress: (r) => r.stats?.goal_current || r.player?.badges?.length || 0
 }
 async function archive(query) {
-  const list = await tool('pokepilot_list_runs', { limit: 40, status: 'done' })
+  const list = await tool('pokepilot_list_runs', { limit: 40, status: 'done', view: 'full' })
   let runs = (list.runs ?? []).filter((run) => run.status === 'done')
   const history_facets = {}
   for (const [param, [name, pick]] of Object.entries(ARCHIVE_FACETS)) {
@@ -221,7 +221,7 @@ const routes = [
     [/^\/v1\/models$/, () => fixtureModels]
   ] : []),
   [/^\/v1\/dashboard$/, (q) => dashboard(q)],
-  [/^\/v1\/runs\/([^/]+)$/, (q, id) => tool('pokepilot_get_run', { run_id: id })],
+  [/^\/v1\/runs\/([^/]+)$/, (q, id) => tool('pokepilot_get_run', { run_id: id, view: 'full' })],
   [/^\/v1\/runs\/([^/]+)\/debug$/, (q, id) => tool('pokepilot_get_run_debug', { run_id: id })],
   [/^\/v1\/runs\/([^/]+)\/artifacts$/, (q, id) => tool('pokepilot_get_run_artifacts', { run_id: id })],
   [/^\/v1\/runs\/[^/]+\/checkpoints$/, () => []],
@@ -235,8 +235,8 @@ const routes = [
   [/^\/v1\/runs\/([^/]+)\/live\/broadcast\/status$/, (q, id) => (MEDIA_FIXTURES ? fixtureBroadcastStatus(id) : { run_id: id, state: 'stopped' })],
   // The wall's /v1/triage includes resolved groups; the MCP hides them unless asked.
   // If the full history ever trips the MCP's 2 MB response cap, fall back to open groups.
-  [/^\/v1\/triage$/, () => tool('pokepilot_get_triage', { include_resolved: true })
-    .catch(() => tool('pokepilot_get_triage', {}))
+  [/^\/v1\/triage$/, () => tool('pokepilot_get_triage', { include_resolved: true, view: 'full' })
+    .catch(() => tool('pokepilot_get_triage', { view: 'full' }))
     .then((value) => value?.groups ?? [])],
   [/^\/v1\/runs\/([^/]+)\/replay\/status$/, (q, id) => replayStatus(id)],
   [/^\/v1\/runs\/([^/]+)\/highlights\/status$/, (q, id) => {

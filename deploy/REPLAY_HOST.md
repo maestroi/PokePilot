@@ -71,6 +71,50 @@ replaced immediately. From an operator UI container, request
 reboot, verify the sidecar container state and timer; the timer recreates an
 exited container.
 
+### Uploading live broadcast music to S3
+
+The private operator interface, **Media → Broadcasts → Music library**, supports
+licensed MP3, OGG, WAV, FLAC and M4A files up to 20 MiB. You must confirm
+broadcast rights before upload. Tracks are stored in the existing replay S3
+bucket under a content-addressed `media/broadcast/music/tracks/` prefix. A
+small `media/broadcast/music/library-v1.json` catalog survives replay restarts.
+A single replay host serializes catalog edits; the initial library is limited
+to 32 tracks. This feature requires the replay S3 credentials already described
+above—**no separate S3 bucket, database table, or browser credentials**.
+
+The operator selects an audio source when starting a broadcast: *Replay host
+default* (compatible with older broadcasts), *Silent audio*, or an uploaded
+S3 track. The selected track is downloaded to a temporary 0600 file, checked
+against its SHA-256 content identity and expected byte count, and passed to
+FFmpeg as looping audio. The temporary file is removed when that broadcast
+ends, including encoder failure or stop. It is never published as an S3 URL,
+readable by the spectator site, or exposed as an arbitrary host file path.
+
+Only the operator-side pokeui proxy exposes
+`GET /v1/live/broadcast/music` and `POST /v1/live/broadcast/music`.
+The upload takes a raw audio request body, URL-encoded `name`, and
+`licensed=true`; it is bounded server-side independently of Content-Length.
+Do not expose the replay host's HTTP port to untrusted networks.
+
+### Optional live broadcast music
+
+To replace the silent RTMP audio track with looping background music, place an
+**audio file you have rights to livestream** on the replay host (for example,
+`/opt/pokefarm/stream-music.ogg`) and set the following in
+`/etc/default/pokefarm-replay`:
+
+```sh
+FARM_REPLAY_MUSIC_FILE=/opt/pokefarm/stream-music.ogg
+```
+
+The sidecar launcher binds a readable, regular file read-only at
+`/run/pokepilot/broadcast-music` and configures the replay process with
+`POKEPILOT_BROADCAST_MUSIC_FILE`. The browser cannot choose a server path.
+On the next idle reconciliation, the sidecar gets the new mount; replacing or
+removing the file also changes the sidecar spec. When missing or unreadable,
+FFmpeg falls back to the same silent audio input as before. Broadcasts with
+audio disabled remain silent with no audio stream. Only use royalty-cleared
+music: commercial game soundtracks are likely to trigger platform claims.
 
 ## Long replay scratch and segment cache
 

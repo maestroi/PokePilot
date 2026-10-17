@@ -330,6 +330,9 @@ func firstBadgeCollisionTable(tileset uint8) ([]uint8, bool) {
 			0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00,
 		}, true
 	default:
+		if table, ok := lateJohtoCollisionTable(tileset); ok {
+			return table, true
+		}
 		if table, ok := coastalCollisionTable(tileset); ok {
 			return table, true
 		}
@@ -361,7 +364,8 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "NEW_BARK_TOWN", "ROUTE_29", "CHERRYGROVE_CITY", "ROUTE_30", "ROUTE_31", "VIOLET_CITY",
 		"ROUTE_32", "ROUTE_35", "ROUTE_36", "ROUTE_37", "ECRUTEAK_CITY",
 		"ROUTE_38", "ROUTE_39", "OLIVINE_CITY", "ROUTE_40", "ROUTE_41", "CIANWOOD_CITY",
-		"ROUTE_42", "MAHOGANY_TOWN", "ROUTE_43", "LAKE_OF_RAGE":
+		"ROUTE_42", "MAHOGANY_TOWN", "ROUTE_43", "LAKE_OF_RAGE",
+		"ROUTE_44", "BLACKTHORN_CITY", "DRAGONS_DEN_B1F":
 		return 0x01, true
 	case "ROUTE_33", "AZALEA_TOWN", "ROUTE_34", "GOLDENROD_CITY":
 		return 0x02, true
@@ -371,7 +375,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x05, true
 	case "CHERRYGROVE_POKECENTER_1F", "VIOLET_POKECENTER_1F", "AZALEA_POKECENTER_1F",
 		"GOLDENROD_POKECENTER_1F", "ECRUTEAK_POKECENTER_1F",
-		"OLIVINE_POKECENTER_1F", "CIANWOOD_POKECENTER_1F", "MAHOGANY_POKECENTER_1F":
+		"OLIVINE_POKECENTER_1F", "CIANWOOD_POKECENTER_1F", "MAHOGANY_POKECENTER_1F", "BLACKTHORN_POKECENTER_1F":
 		return 0x06, true
 	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE",
 		"ROUTE_35_GOLDENROD_GATE", "ROUTE_38_ECRUTEAK_GATE",
@@ -382,9 +386,10 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "MR_POKEMONS_HOUSE", "TEAM_ROCKET_BASE_B2F", "TEAM_ROCKET_BASE_B3F":
 		return 0x0a, true
 	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART",
-		"OLIVINE_MART":
+		"OLIVINE_MART", "BLACKTHORN_MART":
 		return 0x0b, true
-	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM":
+	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM",
+		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
@@ -400,11 +405,17 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "SPROUT_TOWER_1F", "SPROUT_TOWER_2F", "SPROUT_TOWER_3F", "ECRUTEAK_GYM", "BURNED_TOWER_1F",
 		"CIANWOOD_GYM":
 		return 0x14, true
-	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F":
+	case "UNION_CAVE_1F", "SLOWPOKE_WELL_B1F", "BURNED_TOWER_B1F", "DRAGONS_DEN_1F":
 		return 0x15, true
+	case "ICE_PATH_1F", "ICE_PATH_B1F", "ICE_PATH_B2F_MAHOGANY_SIDE",
+		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F":
+		return 0x1a, true
 	case "ILEX_FOREST":
 		return 0x1c, true
-	case "TEAM_ROCKET_BASE_B1F":
+	case "RADIO_TOWER_1F", "RADIO_TOWER_2F", "RADIO_TOWER_3F", "RADIO_TOWER_4F", "RADIO_TOWER_5F":
+		return 0x18, true
+	case "GOLDENROD_UNDERGROUND", "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"GOLDENROD_UNDERGROUND_WAREHOUSE", "TEAM_ROCKET_BASE_B1F":
 		return 0x19, true
 	default:
 		return 0, false
@@ -499,6 +510,9 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	out.Blocked = gen2BlockedDirections()
 	out.WarpPushes = gen2WarpPushes()
 	out.Jumps = gen2Jumps()
+	if tileset == 0x1a { // pret/pokegold COLL_ICE = $23
+		out.SlideCollisions = map[uint8]bool{0x23: true}
+	}
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {

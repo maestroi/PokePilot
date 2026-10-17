@@ -12,10 +12,21 @@ Use this only for deleting historical run data after the user says a bug/failure
 Start with:
 
 ```
-pokepilot_get_triage(include_resolved=true)
+pokepilot_get_triage(include_resolved=true, limit=20)
 ```
 
-Choose either the stable triage `key` or the linked issue number that matches the bug the user named. Prefer a group whose linked issue is already resolved/fixed when the request says the problem is solved. If more than one group plausibly matches, report the candidates instead of guessing.
+MCP returns compact failure groups (stable `key`, `pattern`, issue number/status,
+and up to three representative run IDs) with a `total` count and optional
+`next_offset`. **Do not treat the first page as the whole history.** If the
+named key or issue is not present, call
+`pokepilot_get_triage(include_resolved=true, limit=20, offset=<next_offset>)`
+until the match is found or there are no more pages. If several groups can
+match the requested issue, check the remaining pages rather than guessing.
+
+Choose either the stable triage `key` or linked issue number matching the
+named bug. Prefer a group whose linked issue is resolved/fixed when the request
+says the problem is solved. The compact result is sufficient to choose an exact
+key; do not request `view="full"` or all `run_ids` just for selection.
 
 ## 2. Dry-run the cleanup
 
@@ -26,7 +37,7 @@ go run ./cmd/pokecleanup -issue 232
 go run ./cmd/pokecleanup -key <triage-key>
 ```
 
-The command fetches the full finished-run catalog, applies the same normalized failure pattern as pokewall, and prints every matching run id. The five sample `run_ids` on `/v1/triage` are deliberately not used as the deletion set.
+The command fetches the full finished-run catalog, applies the same normalized failure pattern as pokewall, and prints every matching run id. The sampled `run_ids` returned by MCP are deliberately not used as the deletion set.
 
 Check that the printed issue/key, pattern, and count match the intended bug. The dry run never deletes anything.
 

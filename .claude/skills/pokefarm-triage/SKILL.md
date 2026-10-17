@@ -14,11 +14,18 @@ calling multiple MCP tools or constructing scratch tests.
 Interactive queue work starts with:
 
 ```text
-pokepilot_get_triage()
+pokepilot_get_triage(limit=20)
 ```
 
-Use the stable triage group and representative `run_id`. Resolved groups are
-history, not new work.
+This returns a compact **page** of actionable groups with `total` and optional
+`next_offset`. Use the stable `key` and a representative run from
+`run_ids[0]` (or `latest_run_id` where present). Do not mistake an empty
+page after a nonzero offset for an empty work queue. When selecting among all
+failures, follow `next_offset` with
+`pokepilot_get_triage(limit=20, offset=<next_offset>)` as needed to find an
+appropriate unclaimed group. Prefer a targeted page over fetching the full
+failure list into context; `view="full"` is rarely needed for work selection.
+Resolved groups are history, not new work.
 
 For unattended qwagent work, the shell has already selected the group. **Do not
 pick another one.** Its attached packet contains `key`, `run_id`, issue

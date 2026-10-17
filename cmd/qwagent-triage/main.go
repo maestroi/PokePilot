@@ -193,6 +193,7 @@ func fetchTriageCmd(args []string, stdout io.Writer) error {
 	}
 	raw, err := deploy.CallMCPTool(nil, endpoint, token, "pokepilot_get_triage", map[string]any{
 		"include_resolved": true,
+		"view":             "full",
 	})
 	if err != nil {
 		return err

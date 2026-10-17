@@ -196,6 +196,54 @@ func TestReplaySidecarReconcilesTheIgpuContainer(t *testing.T) {
 	}
 }
 
+func TestReplaySidecarOptionalMusicIsMountedAndTracksAvailability(t *testing.T) {
+	h := newSidecarHarness(t)
+	music := filepath.Join(h.dir, "licensed stream music.ogg")
+	selection := "FARM_REPLAY_MUSIC_FILE=" + music
+
+	// An unavailable optional file must never stop the replay sidecar.
+	if out, err := h.run(t, selection); err != nil {
+		t.Fatalf("missing optional music should fall back to silence: %v\n%s", err, out)
+	}
+	if run := h.runs(t)[0]; strings.Contains(run, "broadcast-music") {
+		t.Fatalf("unavailable file was mounted anyway: %s", run)
+	}
+
+	writeTestFile(t, music, "licensed music", 0o644)
+	if out, err := h.run(t, selection); err != nil || !strings.Contains(out, "recreating") {
+		t.Fatalf("available music did not update sidecar: %v\n%s", err, out)
+	}
+	runs := h.runs(t)
+	if len(runs) != 2 {
+		t.Fatalf("want 2 docker runs after adding music, got %d", len(runs))
+	}
+	for _, want := range []string{
+		"--volume " + music + ":/run/pokepilot/broadcast-music:ro",
+		"--env POKEPILOT_BROADCAST_MUSIC_FILE=/run/pokepilot/broadcast-music",
+	} {
+		if !strings.Contains(runs[1], want) {
+			t.Errorf("music configuration missing %q: %s", want, runs[1])
+		}
+	}
+	if out, err := h.run(t, selection); err != nil || !strings.Contains(out, "already current") {
+		t.Fatalf("unchanged music should not churn container: %v\n%s", err, out)
+	}
+	writeTestFile(t, music, "replaced with another licensed track", 0o644)
+	if out, err := h.run(t, selection); err != nil || !strings.Contains(out, "recreating") {
+		t.Fatalf("updated music did not trigger sidecar reconciliation: %v\n%s", err, out)
+	}
+	if err := os.Remove(music); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := h.run(t, selection); err != nil || !strings.Contains(out, "recreating") {
+		t.Fatalf("removing music did not restore silent configuration: %v\n%s", err, out)
+	}
+	runs = h.runs(t)
+	if strings.Contains(runs[len(runs)-1], "broadcast-music") {
+		t.Fatalf("missing music still mounted: %s", runs[len(runs)-1])
+	}
+}
+
 func TestReplaySidecarIsIdempotentAndRecreatesOnChange(t *testing.T) {
 	h := newSidecarHarness(t)
 	if out, err := h.run(t); err != nil {

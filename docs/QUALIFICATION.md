@@ -495,3 +495,135 @@ checkpoint provenance counts. Monitor Actions for `qualification BLOCKED` or
 the first real puzzle/travel failure; preserve its runner-local checked state
 for focused repair. Deploy/farm storage and ROM runner access must use the
 same shared corpus host path.
+
+## Gen2 seventh badge (Glacier) qualification
+
+The **Gold/Silver badge-6-to-7** path is selectable as an experimental
+live goal before full ROM qualification. Cartridge replays are still
+necessary to certify the Rocket Base and Pryce transactions and advance
+the separately named conservative supported frontier.
+
+When the farm is configured with `POKEPILOT_QUALIFICATION_CORPUS`, its first
+successful Mineral Badge transaction now atomically captures
+`gs-glacier/<gold|silver>/post-mineral/start.state` with `source.json` beside
+it. The snapshot must be taken in Olivine Gym after all six retail badge bits
+are observed, before Red Gyarados/Rocket Hideout, and with overworld control.
+The first successful capture is immutable. As for the coastal qualification,
+no ROM, `.sav`, or `.state` is ever committed or uploaded as an artifact.
+
+Use **Actions → Gen2 Glacier ROM Qualification → Run workflow**, select
+`gold`, `silver`, or `both`. The private `pokepilot-rom` runner resolves
+the same `POKEPILOT_QUALIFICATION_CORPUS` and cartridge paths used by
+`gen2-coastal-qualification.yml`. Missing state, provenance, or ROM fails
+the job; it never reports a green skipped replay.
+
+The opt-in `TestGSGlacierROMCheckpointReplay` validates cartridge identity
+and SHA-256 of the recorded state, then executes every retail story milestone
+from Red Gyarados through Lance, both Rocket Base executives, the transmitter
+door, three Electrodes, Lance's final HM06/clear script and Pryce. Each
+completed stage must have a positive semantic postcondition, an idle
+overworld, and a save/load/reopen recovery that retains all preceding facts.
+The final proof is `ENGINE_GLACIERBADGE` (not merely beating Pryce).
+Failure checkpoints and stage evidence remain private on the runner;
+only JSON observations, safe logs and hashes may be uploaded.
+
+The private qualification test invokes Pryce directly to isolate the
+retail replay; experimental seven/eight-badge launches now invoke the
+same controller through the production planner. Opt-in does not replace
+the mandatory Gold and Silver qualification runs.
+
+## Gen2 badge 8: Goldenrod Underground Card Key slices
+
+The eighth-badge story has separate, positive retail objectives after the
+Radio Tower fake Director: Basement Key use at the Goldenrod Underground
+locked door, the real Director's Card Key in the warehouse, and the
+Radio Tower 3F Card Key shutter. Each stage has its own guarded controller
+and independent cartridge event; none can be faked by arriving on a map.
+
+The warehouse is accessible only after the three Goldenrod Underground
+switches are enabled in **3 → 2 → 1** order from a reset. The controller
+routes back through the Underground first to trigger the retail reset
+callback, resolves the mandatory rival and Rocket/Burglar fights, and checks
+the actual final-door event before proceeding to the real Director. Volatile
+switch events are *not* durable story milestones.
+
+These controllers are offered only along an explicitly experimental
+seven/eight-badge progression. Gold/Silver ROM checkpoint qualification
+and the Ice Path, Clair and Dragon's Den implementations are still outstanding.
+
+## Gen2 badge 8: 4F/5F Radio Tower final takeover
+
+The experimental Radio Tower controller chain now
+handles Executive M2 on 4F, Executive F1 on 5F, and the 5F coordinate-triggered
+Rocket boss plus the Director's reward scene. Each trainer is checked using
+its retail defeated-event bit; arriving on a floor does not count.
+
+The boss's EXECUTIVEM_1 and CLEARED_RADIO_TOWER bits are set **before**
+the reward conversation ends. For a complete replay, require both executive
+bits, the boss bit, CLEARED_RADIO_TOWER and the **correct version-specific**
+Director gift: EVENT_GOT_RAINBOW_WING in Gold or EVENT_GOT_SILVER_WING
+in Silver, followed by regained overworld control. The composite
+`gs_radio_tower_takeover_settled` fact is deliberately stronger than
+`gs_radio_tower_cleared` to avoid false positives at an interrupted reward
+script. If the player has control after clearing the tower but the correct
+wing event is missing, the controller fails closed rather than replaying a
+one-time boss or inventing a gift.
+
+Seven/eight-badge goals are now selectable for unqualified live testing.
+Both retail ROMs still require an end-to-end qualification replay through
+Radio Tower, Ice Path, Clair and Dragon's Den before certification.
+
+## Operator opt-in: attempt seven/eight badges before ROM qualification
+
+The New Run form exposes **Earn 7 badges.** and **Earn 8 badges.** for Gold
+and Silver as explicitly experimental stop targets. An operator can now run
+the existing seventh badge controller and the Radio Tower gameplay sequence
+without waiting for complete Gold/Silver checkpoint qualification. These
+are best-effort live runs, **not a claim of end-to-end playability**.
+
+The objective planner is wired through Pryce's real Glacier Badge bit,
+the fake Radio Tower Director, Basement Key, Underground Card Key,
+3F shutter, 4F/5F executives, and the final Rocket boss plus the
+version-specific Director wing reward. All retain their cartridge-owned
+postconditions; game progression cannot be certified by reaching a map or
+finishing a generic battle.
+
+**Ice Path, Clair, and Dragon's Den are still missing executable
+controllers.** If an eight-badge attempt reaches this unfinished frontier,
+it must remain incomplete and produce usable failure/checkpoint evidence,
+rather than mark itself successful. Real ROM runs provide the failures and
+checkpoints to iterate on. The conservative "current supported Gen 2
+frontier" goal still stops at Mineral Badge and is unchanged.
+
+## Gen2: experimental Ice Path → Clair → Dragon Fang/Rising Badge
+
+The eight-badge objective chain now extends beyond the Rocket Tower:
+Ice Path HM07 Waterfall on 1F, the real Clair battle in Blackthorn Gym,
+then Dragon's Den B1F's unique Dragon Fang scene. The native grid
+plans Ice Path COLL_ICE ($23) as a single unsteerable slide and a Strength
+push into COLL_PIT ($60) can remove its boulder before routing replans.
+Blackthorn Gym uses the same real pit/Strength mechanic.
+
+The Gold/Silver controller specifically requires EVENT_BEAT_CLAIR to finish
+the Gym objective but **does not** interpret that event as an eighth badge.
+The later Dragon Fang interaction awards ENGINE_RISINGBADGE and only the
+observed wJohtoBadges Rising bit proves eight-badge completion. The event
+that hides the Fang ball is not sufficient. A full Items pocket blocks
+the retail Dragon Fang and gives a typed diagnostic; no item or badge is
+forged. The gap remains a candidate for inventory-space repair.
+
+These are opt-in **experimental**, still ROM-unqualified controllers.
+Real Gold and Silver gameplay replays (particularly the Ice Path forced
+movement and Gym boulder layouts) must be used to fix unexpected
+navigation or script differences before certifying this route.
+
+### Assigned Strength pit puzzles
+
+The added Ice Path B1F puzzle explicitly pushes four native boulder slots
+(2–5) into their stonetable-matched holes (11,2), (4,7), (5,12),
+and (12,13); Blackthorn Gym 2F matches slots (4–6) to (8,3),
+(2,5), and (8,7). A bounded native push-state solver plans only the
+next physically reachable action. The controller settles scripted falling
+boulders before replanning and requires every *real* disappearance event
+and, for Ice Path, the B2F floor-boulder flag transitions. This is
+distinct from merely navigating to Clair or ending a Strength animation.

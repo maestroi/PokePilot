@@ -246,7 +246,9 @@ func saffronGateFundingReady(o Observation) bool {
 }
 
 func pendingFuchsiaSpend(o Observation) bool {
-	return bagHas(o, "poke flute") && (!hasBadge(o, state.BadgeSoul) || !bagHas(o, "hm03") || !bagHas(o, "hm04"))
+	// The story fact counts HMs stored in the PC; the bag check alone keeps
+	// the reserve forever once bag pressure moves them there.
+	return bagHas(o, "poke flute") && !o.Story.Has(redProgressFuchsiaProgressionComplete) && (!hasBadge(o, state.BadgeSoul) || !bagHas(o, "hm03") || !bagHas(o, "hm04"))
 }
 
 func subtractFloor(have, reserve uint32) uint32 {

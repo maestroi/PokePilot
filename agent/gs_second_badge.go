@@ -41,6 +41,19 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"GOLDENROD_GYM",
 		"GOLDENROD_FLOWER_SHOP",
 		"GOLDENROD_POKECENTER_1F",
+		// The guarded 5F fake-director scene owns the Radio Tower trainer
+		// approach; basement switches and warehouse remain unowned until
+		// their separate scripts are implemented and qualified.
+		"RADIO_TOWER_1F",
+		"RADIO_TOWER_2F",
+		"RADIO_TOWER_3F",
+		"RADIO_TOWER_4F",
+		"RADIO_TOWER_5F",
+		// Basement Key, rival, switch puzzle, real Director and Card Key slot
+		// are now driven as individual, event-verified story transactions.
+		"GOLDENROD_UNDERGROUND",
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"GOLDENROD_UNDERGROUND_WAREHOUSE",
 		"ROUTE_35_GOLDENROD_GATE",
 		"ROUTE_35",
 		"ROUTE_36",
@@ -84,16 +97,31 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"MAHOGANY_MART_1F",
 		// Rocket B1F camera fights and the B2F Lance-heal scene are now
 		// owned by the next bounded story milestone. B3F boss/password
-		// scripts and Pryce Gym are intentionally outside this driver.
+		// scripts remain separate; Pryce Gym is guarded by Rocket-clear proof.
 		"TEAM_ROCKET_BASE_B1F",
 		"TEAM_ROCKET_BASE_B2F",
 		// B3F owns the two grunt-password fights, office-door interaction,
 		// executive battle and Murkrow secret; B2F transmitter/Electrodes
 		// remain withheld until their separate controller is implemented.
 		"TEAM_ROCKET_BASE_B3F",
+		"MAHOGANY_GYM",
 		"ROUTE_43_MAHOGANY_GATE",
 		"ROUTE_43",
 		"LAKE_OF_RAGE",
+		// Late Johto is explicitly experimental; routing must still use
+		// live native collision and cartridge ownership, never a fake warp.
+		"ROUTE_44",
+		"ICE_PATH_1F",
+		"ICE_PATH_B1F",
+		"ICE_PATH_B2F_MAHOGANY_SIDE",
+		"ICE_PATH_B3F",
+		"ICE_PATH_B2F_BLACKTHORN_SIDE",
+		"BLACKTHORN_CITY",
+		"BLACKTHORN_POKECENTER_1F",
+		"BLACKTHORN_GYM_1F",
+		"BLACKTHORN_GYM_2F",
+		"DRAGONS_DEN_1F",
+		"DRAGONS_DEN_B1F",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {

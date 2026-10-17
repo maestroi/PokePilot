@@ -38,10 +38,10 @@ Treat that token as a compute-control credential: holders can start and cancel r
 | Tool | Effect |
 |---|---|
 | `pokepilot_start_run` | Queue one finite run. Defaults to `llm`, Squirtle, and `Earn the Boulder Badge.` |
-| `pokepilot_list_runs` | List recent runs, optionally filtered by `queued`, `leased`, `running`, or `done`. Finished failures carry their linked issue status/resolution when known. |
-| `pokepilot_get_run` | Read one run's live/finished state, including planner state, party and LLM stats when available |
+| `pokepilot_list_runs` | List recent runs as compact progress summaries by default; filter by status/limit, or opt into `view: "full"` for legacy telemetry and worker data. |
+| `pokepilot_get_run` | Read a concise live/finished run snapshot by default; `view: "full"` returns legacy planner, party and game-specific telemetry |
 | `pokepilot_cancel_run` | Request cooperative cancellation |
-| `pokepilot_get_triage` | Read the actionable grouped failures. Resolved issue groups are hidden by default; pass `include_resolved: true` to audit history. |
+| `pokepilot_get_triage` | Read up to 20 actionable failure summaries by default; page with `offset`/`limit`, or request `view: "full"` for complete legacy groups. Use `include_resolved: true` to audit history. |
 | `pokepilot_investigate_failure` | Trigger the existing failure-investigation handoff |
 | `pokepilot_get_run_debug` | Read the compact finish/trace/progress/artifact-reference bundle for one run |
 | `pokepilot_prepare_debug` | Build a bounded coding-agent packet from one run id: stable failure/triage identity, exact repro references, targeted source-search terms, and only the most relevant timeline evidence |
@@ -51,6 +51,30 @@ Treat that token as a compute-control credential: holders can start and cancel r
 | `pokepilot_record_solver_attempt` | Upsert one coding agent's attempt at a failure group: `id`, `backend`, and `state` are required, and the key must already have a linked issue. Records who tried and what PR came out; issue resolution and PokePilot verification still decide whether the repair worked. |
 
 MCP intentionally does **not** expose runner leases, heartbeats, finish/checkpoint uploads, worker registration, run deletion, endless runs, arbitrary HTTP, Docker, or Swarm controls.
+
+### Context-efficient tool use
+
+MCP read tools use **progressive disclosure** instead of sending model context every
+planner trace, decision list, or historical failure at once:
+
+- `pokepilot_list_runs` defaults to summaries with identity, lifecycle,
+  location, selected progress counters and linked issue status. No raw `trace`,
+  `question`, `game_state`, `game_decision`, or worker addresses are returned.
+  Use `{ "status": "running", "limit": 10 }` to narrow the wall query itself.
+- `pokepilot_get_run` returns essential progress, badges and compact statistics.
+  Call `{ "run_id": "...", "view": "full" }` only when deeper game or planner
+  state is actually needed. For failures, prefer `pokepilot_prepare_debug`.
+- `pokepilot_get_triage` returns the first 20 actionable groups by default,
+  clipped examples and at most three representative run ids each. The response
+  includes `total` and `next_offset` for pagination. Use
+  `{ "offset": 20, "limit": 20 }` for the next page.
+- All three read tools accept `view: "full"` for compatibility. Full triage
+  without an explicit `limit` returns the entire filtered set (the old shape).
+  The local dev UI proxy and automated triage client explicitly request full
+  responses because their non-LLM workflows depend on the detailed fields.
+
+These settings reduce **MCP response context**, not the upstream wall's
+internal JSON production. Upstream endpoints still enforce the 2 MiB safety cap.
 
 ### Diagnosing one run
 
@@ -97,11 +121,11 @@ This tool does not decide that a recovery is a bug and does not create work. Age
 
 `pokewall` already stores the stable failure fingerprint and its linked Agent Orchestrator issue. The issue status, resolution, occurrence count, and fixed revision are synchronized back into that link. MCP now treats those values as the durable resolution signal instead of treating every old failed run as fresh work.
 
-`pokepilot_get_triage` is therefore the work queue: groups whose linked issue is resolved (for example `resolution: fixed`) are annotated `actionable: false` and omitted from the default response. `resolved_hidden` reports how many historical groups were suppressed. `include_resolved: true` returns everything for audits and debugging while preserving the `actionable` annotation and `resolution_state` / `fixed_revision` metadata.
+`pokepilot_get_triage` is therefore the work queue: groups whose linked issue is resolved (for example `resolution: fixed`) are annotated `actionable: false` and omitted from the default response. `resolved_hidden` reports how many historical groups were suppressed. `include_resolved: true` includes them in the filtered set; use `view: "full"` to retrieve complete, unpaginated historical groups for audits while preserving `actionable` and `resolution_state` / `fixed_revision` metadata.
 
 A later occurrence can reopen the linked issue. Active states such as `open`, `reopened`, or `investigating` take precedence over an old resolution value, so the same fingerprint becomes actionable again as a regression rather than silently staying hidden.
 
-`pokepilot_list_runs` remains raw run history. It now preserves each run's linked issue metadata, so an LLM inspecting old runs can see that a matching failure was already fixed. Do not build a new work queue by grouping historical `detail` strings; use `pokepilot_get_triage` for that.
+`pokepilot_list_runs` remains run history, summarized by default. The compact view keeps linked issue status/resolution, so an LLM inspecting old runs can see that a matching failure was already fixed. Do not build a new work queue by grouping historical `detail` strings; use `pokepilot_get_triage` for that.
 
 ## Example prompt
 

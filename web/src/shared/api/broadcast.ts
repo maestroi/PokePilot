@@ -26,6 +26,7 @@ export interface BroadcastStatus {
   audio?: boolean
   audio_bitrate_kbps?: number
   audio_sample_rate?: number
+  music_track_id?: string
   reconnects?: number
   last_error?: string
   started_at_unix_ms?: number
@@ -44,6 +45,19 @@ export interface BroadcastStartInput {
   audio?: boolean
   audio_bitrate_kbps?: number
   audio_sample_rate?: number
+  music_track_id?: string
+}
+
+export interface BroadcastMusicTrack {
+  id: string
+  name: string
+  format: string
+  size: number
+  uploaded_at_unix_ms: number
+}
+
+export interface BroadcastMusicLibrary {
+  tracks: BroadcastMusicTrack[]
 }
 
 async function errorDetail(response: Response): Promise<string> {
@@ -93,6 +107,24 @@ export function stopBroadcast(runID: string, signal?: AbortSignal): Promise<Broa
     body: '{}',
     signal
   })
+}
+
+export function getBroadcastMusic(signal?: AbortSignal): Promise<BroadcastMusicLibrary> {
+  return requestJSON<BroadcastMusicLibrary>('/v1/live/broadcast/music', { signal })
+}
+
+export async function uploadBroadcastMusic(file: File, licensed: boolean): Promise<BroadcastMusicTrack> {
+  if (!licensed) throw new Error('Confirm you have permission to broadcast this music')
+  if (file.size === 0 || file.size > 20 * 1024 * 1024) throw new Error('Music must be between 1 byte and 20 MiB')
+  const path = `/v1/live/broadcast/music?name=${encodeURIComponent(file.name)}&licensed=true`
+  const response = await fetch(path, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: { Accept: 'application/json', 'Content-Type': file.type || 'application/octet-stream' },
+    body: file
+  })
+  if (!response.ok) throw new Error(await errorDetail(response))
+  return response.json() as Promise<BroadcastMusicTrack>
 }
 
 export interface LiveCommentarySettings {

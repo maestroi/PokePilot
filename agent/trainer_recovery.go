@@ -635,12 +635,23 @@ func (k *Knowledge) releaseSatisfiedCombatLossGates(after Observation, legacyPro
 	// A loss recorded without a level-ready counter is released once the
 	// counter campaign produced one: that is the relevant world change, and
 	// its readiness target is waived so the next offer cannot demote it.
+	// Levels do not close a coverage gap: while the counter campaign can still
+	// act (or local grass can still teach a move), readiness alone must not
+	// release it. Every other release path asks the same question; this one
+	// skipped it, so a lead that out-levelled the target re-fought a matchup
+	// its attacks could not touch (Pikachu into Brock: two blackouts, money
+	// halved twice, run-9wlq1vjgzisf2zwhp4s5k2334). Read before the promotion
+	// below mutates the failure set.
+	holdCoverage := combatPreparationNeedsCoverage(after, k)
 	var byCounter []ObjectiveKey
 	k.promoteCombatLossesToRetryWhere(func(f Failure) bool {
 		if f.CounterGap {
 			if key, ok := failureObjectiveKey(f); ok && challengeCounterReady(after, key.Objective()) {
 				byCounter = append(byCounter, combatRecoveryObjective(key.Objective()).Key())
 				return true
+			}
+			if holdCoverage {
+				return false
 			}
 		}
 		if f.ReadinessTarget > 0 {

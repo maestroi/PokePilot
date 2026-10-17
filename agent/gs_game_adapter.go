@@ -73,7 +73,25 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRocketPasswordsLearned,
 		gsprofile.ProgressRocketOfficeOpened,
 		gsprofile.ProgressRocketExecutiveBeaten,
-		gsprofile.ProgressRocketMurkrowPassword:
+		gsprofile.ProgressRocketMurkrowPassword,
+		gsprofile.ProgressRocketTransmitterDoorOpened,
+		gsprofile.ProgressRocketExecutiveFBeaten,
+		gsprofile.ProgressRocketHideoutCleared,
+		// Experimental 7/8-badge attempts may run these not-yet-ROM-qualified
+		// controllers; missing Ice Path and Clair remain unsupported.
+		gsprofile.ProgressGlacierBadgeEarned,
+		gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+		gsprofile.ProgressRadioTowerBasementUnlocked,
+		gsprofile.ProgressRadioTowerCardKeyReceived,
+		gsprofile.ProgressRadioTowerShutterOpened,
+		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+		gsprofile.ProgressRadioTowerTakeoverSettled,
+		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressIcePathBouldersDropped,
+		gsprofile.ProgressBlackthornGymBouldersDropped,
+		gsprofile.ProgressClairDefeated,
+		gsprofile.ProgressRisingBadgeEarned:
 		return true
 	default:
 		return false
@@ -244,6 +262,38 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRocketExecutiveM4(a.m, a.romData)
 		case gsprofile.ProgressRocketMurkrowPassword:
 			err = executeGSRocketMurkrow(a.m, a.romData)
+		case gsprofile.ProgressRocketTransmitterDoorOpened:
+			err = executeGSRocketTransmitterDoor(a.m, a.romData)
+		case gsprofile.ProgressRocketExecutiveFBeaten:
+			err = executeGSRocketExecutiveF(a.m, a.romData)
+		case gsprofile.ProgressRocketHideoutCleared:
+			err = executeGSRocketElectrodes(a.m, a.romData)
+		case gsprofile.ProgressGlacierBadgeEarned:
+			err = executeGSPryce(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerFakeDirectorBeaten:
+			err = executeGSRadioTowerFakeDirector(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerBasementUnlocked:
+			err = executeGSRadioTowerBasementDoor(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerCardKeyReceived:
+			err = executeGSRadioTowerCardKey(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerShutterOpened:
+			err = executeGSRadioTowerShutter(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerExecutiveM2Beaten:
+			err = executeGSRadioTowerExecutiveM2(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerExecutiveF1Beaten:
+			err = executeGSRadioTowerExecutiveF1(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerTakeoverSettled:
+			err = executeGSRadioTowerFinalBoss(a.m, a.romData)
+		case gsprofile.ProgressIcePathWaterfallAcquired:
+			err = executeGSIcePathWaterfall(a.m, a.romData)
+		case gsprofile.ProgressIcePathBouldersDropped:
+			err = executeGSIcePathBoulders(a.m, a.romData)
+		case gsprofile.ProgressBlackthornGymBouldersDropped:
+			err = executeGSBlackthornGymBoulders(a.m, a.romData)
+		case gsprofile.ProgressClairDefeated:
+			err = executeGSClair(a.m, a.romData)
+		case gsprofile.ProgressRisingBadgeEarned:
+			err = executeGSDragonFangRising(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -287,7 +337,23 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRocketPasswordsLearned,
 			gsprofile.ProgressRocketOfficeOpened,
 			gsprofile.ProgressRocketExecutiveBeaten,
-			gsprofile.ProgressRocketMurkrowPassword:
+			gsprofile.ProgressRocketMurkrowPassword,
+			gsprofile.ProgressRocketTransmitterDoorOpened,
+			gsprofile.ProgressRocketExecutiveFBeaten,
+			gsprofile.ProgressRocketHideoutCleared,
+			gsprofile.ProgressGlacierBadgeEarned,
+			gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+			gsprofile.ProgressRadioTowerBasementUnlocked,
+			gsprofile.ProgressRadioTowerCardKeyReceived,
+			gsprofile.ProgressRadioTowerShutterOpened,
+			gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+			gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+			gsprofile.ProgressRadioTowerTakeoverSettled,
+			gsprofile.ProgressIcePathWaterfallAcquired,
+			gsprofile.ProgressIcePathBouldersDropped,
+			gsprofile.ProgressBlackthornGymBouldersDropped,
+			gsprofile.ProgressClairDefeated,
+			gsprofile.ProgressRisingBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -645,6 +711,96 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketMurkrowPassword,
 			Note:     "(learn the transmitter password from Giovanni's Murkrow)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketTransmitterDoorOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketTransmitterDoorOpened,
+			Note:     "(use Murkrow's password to open the B2F radio transmitter door)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketExecutiveFBeaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketExecutiveFBeaten,
+			Note:     "(defeat the B2F Rocket executive with Lance and settle the retail post-battle script)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketHideoutCleared,
+			Note:     "(defeat all three B2F Electrodes and finish Lance's HM06 Whirlpool reward scene)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressGlacierBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressGlacierBadgeEarned,
+			Note:     "(experimental: defeat Pryce at Mahogany Gym and earn Glacier Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerFakeDirectorBeaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+			Note:     "(experimental: defeat the fake Director at Radio Tower 5F and claim Basement Key)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerBasementUnlocked):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerBasementUnlocked,
+			Note:     "(experimental: use Basement Key to open Goldenrod Underground)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerCardKeyReceived):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerCardKeyReceived,
+			Note:     "(experimental: rescue the real Director through the switch puzzle and receive Card Key)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerShutterOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerShutterOpened,
+			Note:     "(experimental: open the 3F Card Key shutter)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerExecutiveM2Beaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+			Note:     "(experimental: defeat the Radio Tower 4F male Rocket executive)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerExecutiveF1Beaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+			Note:     "(experimental: defeat the Radio Tower 5F female Rocket executive)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerTakeoverSettled):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerTakeoverSettled,
+			Note:     "(experimental: defeat the final Rocket boss and finish the Director's Gold/Silver wing gift)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressIcePathBouldersDropped):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressIcePathBouldersDropped,
+			Note: "(experimental: cross Ice Path to B1F and push four boulders into assigned holes)"}}
+	case !obs.Story.Has(gsprofile.ProgressIcePathWaterfallAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressIcePathWaterfallAcquired,
+			Note:     "(experimental: traverse Ice Path's forced ice to receive HM07 Waterfall near Blackthorn)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressBlackthornGymBouldersDropped):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressBlackthornGymBouldersDropped,
+			Note: "(experimental: cross Ice Path and drop the three Blackthorn Gym 2F boulders)"}}
+	case !obs.Story.Has(gsprofile.ProgressClairDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressClairDefeated,
+			Note:     "(experimental: cross Ice Path, solve Blackthorn Gym Strength holes, defeat Clair; badge is withheld)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRisingBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRisingBadgeEarned,
+			Note:     "(experimental: Surf/Whirlpool into Dragon's Den, claim Dragon Fang and settle Clair's Rising Badge)",
 		}}
 	default:
 		return nil

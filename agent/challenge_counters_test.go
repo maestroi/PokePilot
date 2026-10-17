@@ -84,6 +84,35 @@ func TestCounterCampaignReleasesTheFightOnceACounterIsReady(t *testing.T) {
 	}
 }
 
+// run-9wlq1vjgzisf2zwhp4s5k2334: Pikachu lost to Brock, ground out its
+// readiness target on Route 1, and the post-training hook released the fight
+// on levels alone — a second loss to the same immunity. While the coverage
+// gap is still actionable (here: local grass yields XP), only a counter may
+// release it; with nothing left to act on, the readiness escape still opens.
+func TestCounterGapLossIsNotReleasedByLevelsAlone(t *testing.T) {
+	challenge := Objective{Kind: KindGym, Place: "test gym"}
+	obs := counterTestObservation(challenge)
+	known := lostTo(challenge, obs)
+	storage := combatLossFailureKey(challenge)
+	f := known.Failures[storage]
+	f.ReadinessTarget = 1 // any party satisfies it: readiness is not the question
+	known.Failures[storage] = f
+	key := combatRecoveryObjective(challenge).Key()
+
+	after := obs
+	after.Training = &TrainingEstimate{Viability: TrainingViable, XPPerEncounter: 13}
+	known.notePartyCombatResult(obs, after, ObjectiveResult{Objective: Objective{Kind: KindTrain}})
+	if combatRetryKeys(known)[key] {
+		t.Fatalf("levels released a coverage-gap loss while the gap was actionable: %+v", known.Failures)
+	}
+
+	after.Training = nil
+	known.notePartyCombatResult(obs, after, ObjectiveResult{Objective: Objective{Kind: KindTrain}})
+	if !combatRetryKeys(known)[key] {
+		t.Fatalf("readiness escape stayed shut with nothing left to act on: %+v", known.Failures)
+	}
+}
+
 func TestCounterCampaignWithNoCandidateDoesNotLockTheEscape(t *testing.T) {
 	challenge := Objective{Kind: KindGym, Place: "test gym"}
 	obs := counterTestObservation(challenge)

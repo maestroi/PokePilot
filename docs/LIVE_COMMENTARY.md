@@ -108,3 +108,12 @@ real live presentation time, distinct from the source frame's replay-relative
 `timestamp_ms`. No raw model response or hidden reasoning is persisted.
 
 Tests: `go test ./media/commentator ./cmd/pokereplay ./cmd/pokeui`.
+
+## Compatibility with broadcast music
+
+When enabled before starting a broadcast, TTS is mixed into the existing
+FFmpeg audio bed. The selected S3 or host music track continues looping at a
+lower level under spoken commentary; with no music configured, the same path
+mixes speech over silence. Disabling TTS keeps the normal music/silence
+input without adding an encoder pipe. Audio selection remains under the
+broadcast controls and commentary never alters the selected library track.

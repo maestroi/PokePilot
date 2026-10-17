@@ -39,18 +39,38 @@ const (
 	// story executors are available. Do not move the supported frontier yet.
 	// The Lake of Rage encounters are independently durable, resumable story
 	// boundaries after Jasmine and before the Rocket Hideout.
-	ProgressRedGyaradosDefeated    game.ProgressID = "gs_red_gyarados_defeated"
-	ProgressLanceHelpAccepted      game.ProgressID = "gs_lance_help_accepted"
-	ProgressMahoganyStairsOpened   game.ProgressID = "gs_mahogany_stairs_opened"
-	ProgressRocketLanceHealing     game.ProgressID = "gs_rocket_lance_healing"
-	ProgressRocketRaticatePassword game.ProgressID = "gs_rocket_raticate_password"
-	ProgressRocketSlowpokePassword game.ProgressID = "gs_rocket_slowpoke_password"
-	ProgressRocketPasswordsLearned game.ProgressID = "gs_rocket_passwords_learned"
-	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
-	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
-	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
-	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
+	ProgressRedGyaradosDefeated         game.ProgressID = "gs_red_gyarados_defeated"
+	ProgressLanceHelpAccepted           game.ProgressID = "gs_lance_help_accepted"
+	ProgressMahoganyStairsOpened        game.ProgressID = "gs_mahogany_stairs_opened"
+	ProgressRocketLanceHealing          game.ProgressID = "gs_rocket_lance_healing"
+	ProgressRocketRaticatePassword      game.ProgressID = "gs_rocket_raticate_password"
+	ProgressRocketSlowpokePassword      game.ProgressID = "gs_rocket_slowpoke_password"
+	ProgressRocketPasswordsLearned      game.ProgressID = "gs_rocket_passwords_learned"
+	ProgressRocketOfficeOpened          game.ProgressID = "gs_rocket_office_opened"
+	ProgressRocketExecutiveBeaten       game.ProgressID = "gs_rocket_executive_beaten"
+	ProgressRocketMurkrowPassword       game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressRocketTransmitterDoorOpened game.ProgressID = "gs_rocket_transmitter_door_opened"
+	ProgressRocketExecutiveFBeaten      game.ProgressID = "gs_rocket_executive_f_beaten"
+	ProgressRocketHideoutCleared        game.ProgressID = "gs_rocket_hideout_cleared"
+	ProgressGlacierBadgeEarned          game.ProgressID = "gs_glacier_badge_earned"
+	// Radio Tower event facts are cartridge-observable and can now be
+	// attempted experimentally. Rising Badge remains a real cartridge-only
+	// goal until Ice Path, Clair and Dragon's Den have executable controllers.
+	ProgressRadioTowerFakeDirectorBeaten game.ProgressID = "gs_radio_tower_fake_director_beaten"
+	ProgressRadioTowerBasementUnlocked   game.ProgressID = "gs_radio_tower_basement_unlocked"
+	ProgressRadioTowerCardKeyReceived    game.ProgressID = "gs_radio_tower_card_key_received"
+	ProgressRadioTowerShutterOpened      game.ProgressID = "gs_radio_tower_shutter_opened"
+	ProgressRadioTowerExecutiveM2Beaten  game.ProgressID = "gs_radio_tower_executive_m2_beaten"
+	ProgressRadioTowerExecutiveF1Beaten  game.ProgressID = "gs_radio_tower_executive_f1_beaten"
+	// The boss sets CLEARED before the Director finishes his gift script.
+	// This composite postcondition must remain separate from raw CLEARED.
+	ProgressRadioTowerTakeoverSettled    game.ProgressID = "gs_radio_tower_takeover_settled"
+	ProgressRadioTowerCleared            game.ProgressID = "gs_radio_tower_cleared"
+	ProgressIcePathWaterfallAcquired     game.ProgressID = "gs_ice_path_waterfall_acquired"
+	ProgressIcePathBouldersDropped       game.ProgressID = "gs_ice_path_boulders_dropped"
+	ProgressBlackthornGymBouldersDropped game.ProgressID = "gs_blackthorn_gym_boulders_dropped"
+	ProgressClairDefeated                game.ProgressID = "gs_clair_defeated"
+	ProgressRisingBadgeEarned            game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -91,20 +111,41 @@ const (
 	eventDecidedToHelpLance             uint16 = 96
 	eventUncoveredMahoganyMartStaircase uint16 = 738
 	eventLanceHealedRocketBase          uint16 = 76
+	eventClearedRocketHideout           uint16 = 34
 	eventLearnedSlowpokeTailPassword    uint16 = 769
 	eventLearnedRaticateTailPassword    uint16 = 770
 	eventOpenedRocketOfficeDoor         uint16 = 771
 	eventBeatRocketExecutiveM4          uint16 = 1396
 	eventLearnedMurkrowPassword         uint16 = 767
-	statusFlagsPokedexMask                     = 1 << 0
-	johtoBadgeZephyrMask                       = 1 << 0
-	johtoBadgeHiveMask                         = 1 << 1
-	johtoBadgePlainMask                        = 1 << 2
-	johtoBadgeFogMask                          = 1 << 3
-	johtoBadgeMineralMask                      = 1 << 4
-	johtoBadgeStormMask                        = 1 << 5
-	johtoBadgeGlacierMask                      = 1 << 6
-	johtoBadgeRisingMask                       = 1 << 7
+	// pret/pokegold constants/event_flags.asm: event bit indices are
+	// not source line numbers (the table has const_next ranges).
+	eventBeatRadioTowerFakeDirector   uint16 = 1395 // EXECUTIVEM_3 post-Basement Key gift
+	eventRadioTowerBasementUnlocked   uint16 = 73
+	eventRadioTowerCardKeyReceived    uint16 = 74
+	eventRadioTowerShutterOpened      uint16 = 37
+	eventRadioTowerCleared            uint16 = 33
+	eventRadioTowerExecutiveM2Beaten  uint16 = 1394
+	eventRadioTowerExecutiveF1Beaten  uint16 = 1391
+	eventRadioTowerBossBeaten         uint16 = 1393
+	eventRadioTowerGoldWingReceived   uint16 = 120
+	eventRadioTowerSilverWingReceived uint16 = 121
+	// pret/pokegold event_flags.asm: Clair is defeated before the Fang
+	// scene, while the eighth badge is an independent engine flag.
+	eventBeatClair             uint16 = 1220
+	eventIcePathWaterfall      uint16 = 1672
+	eventDragonsDenDragonFang  uint16 = 1704
+	eventBlackthornGymBoulder1 uint16 = 1798
+	eventIcePathBoulder1       uint16 = 1801
+	eventIcePathFloorBoulder1  uint16 = 1805
+	statusFlagsPokedexMask            = 1 << 0
+	johtoBadgeZephyrMask              = 1 << 0
+	johtoBadgeHiveMask                = 1 << 1
+	johtoBadgePlainMask               = 1 << 2
+	johtoBadgeFogMask                 = 1 << 3
+	johtoBadgeMineralMask             = 1 << 4
+	johtoBadgeStormMask               = 1 << 5
+	johtoBadgeGlacierMask             = 1 << 6
+	johtoBadgeRisingMask              = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -200,7 +241,21 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
 		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
 		{ID: ProgressRocketMurkrowPassword, Complete: hasGSEvent(reader, eventLearnedMurkrowPassword)},
+		{ID: ProgressRocketTransmitterDoorOpened, Complete: hasGSEvent(reader, eventRocketTransmitterDoorOpened)},
+		{ID: ProgressRocketExecutiveFBeaten, Complete: hasGSEvent(reader, eventRocketExecutiveFBeaten)},
+		{ID: ProgressRocketHideoutCleared, Complete: hasGSEvent(reader, eventClearedRocketHideout)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
+		{ID: ProgressRadioTowerFakeDirectorBeaten, Complete: hasGSEvent(reader, eventBeatRadioTowerFakeDirector)},
+		{ID: ProgressRadioTowerBasementUnlocked, Complete: hasGSEvent(reader, eventRadioTowerBasementUnlocked)},
+		{ID: ProgressRadioTowerCardKeyReceived, Complete: hasGSEvent(reader, eventRadioTowerCardKeyReceived)},
+		{ID: ProgressRadioTowerShutterOpened, Complete: hasGSEvent(reader, eventRadioTowerShutterOpened)},
+		{ID: ProgressRadioTowerExecutiveM2Beaten, Complete: hasGSEvent(reader, eventRadioTowerExecutiveM2Beaten)},
+		{ID: ProgressRadioTowerExecutiveF1Beaten, Complete: hasGSEvent(reader, eventRadioTowerExecutiveF1Beaten)},
+		{ID: ProgressRadioTowerCleared, Complete: hasGSEvent(reader, eventRadioTowerCleared)},
+		{ID: ProgressIcePathWaterfallAcquired, Complete: hasGSEvent(reader, eventIcePathWaterfall)},
+		{ID: ProgressIcePathBouldersDropped, Complete: gsIcePathBouldersPlaced(reader)},
+		{ID: ProgressBlackthornGymBouldersDropped, Complete: gsBlackthornGymBouldersPlaced(reader)},
+		{ID: ProgressClairDefeated, Complete: hasGSEvent(reader, eventBeatClair)},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
@@ -209,6 +264,29 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 // DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
 // needed by the early-Johto executors without
 // leaking event numbers or badge bit positions into agent policy.
-func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
-	return projectEarlyStory(reader)
+func (p *Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
+	return append(projectEarlyStory(reader), game.ProgressFact{
+		ID: ProgressRadioTowerTakeoverSettled, Complete: p.DecodeRadioTowerVictory(reader).Complete(),
+	})
+}
+
+// Ice Path's retail stonetable sets each source event and clears its matching
+// lower-floor hidden boulder event. Require both halves of all four falls.
+func gsIcePathBouldersPlaced(reader game.MemoryReader) bool {
+	for n := uint16(0); n < 4; n++ {
+		if !hasGSEvent(reader, eventIcePathBoulder1+n) ||
+			hasGSEvent(reader, eventIcePathFloorBoulder1+n) {
+			return false
+		}
+	}
+	return true
+}
+
+func gsBlackthornGymBouldersPlaced(reader game.MemoryReader) bool {
+	for n := uint16(0); n < 3; n++ {
+		if !hasGSEvent(reader, eventBlackthornGymBoulder1+n) {
+			return false
+		}
+	}
+	return true
 }

@@ -55,19 +55,28 @@ func gsPostCureCaptureEligible(o Objective, before, after Observation) bool {
 // the game action; the caller reports it to the run log.
 func (a *gsObjectiveAdapter) CaptureQualificationCheckpoint(o Objective, before, after Observation) (string, error) {
 	root := strings.TrimSpace(os.Getenv(gsQualificationCorpusEnv))
-	if root == "" || !gsPostCureCaptureEligible(o, before, after) {
+	if root == "" {
+		return "", nil
+	}
+	family, boundary, mapName := "", "", ""
+	switch {
+	case gsPostCureCaptureEligible(o, before, after):
+		family, boundary, mapName = "gs-coastal", "post-cure", "OLIVINE_LIGHTHOUSE_6F"
+	case gsPostMineralCaptureEligible(o, before, after):
+		family, boundary, mapName = "gs-glacier", "post-mineral", "OLIVINE_GYM"
+	default:
 		return "", nil
 	}
 	if a.m == nil {
 		return "", fmt.Errorf("gen2 qualification capture: nil emulator")
 	}
 	overworld := gsprofile.New(a.gameID).DecodeOverworld(a.m)
-	lighthouse, err := gsOpeningMapID("OLIVINE_LIGHTHOUSE_6F")
+	expectedMap, err := gsOpeningMapID(mapName)
 	if err != nil {
 		return "", err
 	}
-	if overworld.NativeMapID != lighthouse || !overworld.Controllable {
-		return "", fmt.Errorf("gen2 qualification capture: cure milestone is not settled in Lighthouse 6F")
+	if overworld.NativeMapID != expectedMap || !overworld.Controllable {
+		return "", fmt.Errorf("gen2 qualification capture: %s milestone is not settled in %s", boundary, mapName)
 	}
 	var variant string
 	switch after.GameID {
@@ -78,7 +87,7 @@ func (a *gsObjectiveAdapter) CaptureQualificationCheckpoint(o Objective, before,
 	default:
 		return "", fmt.Errorf("gen2 qualification capture: unsupported game %s", after.GameID)
 	}
-	target := filepath.Join(root, "gs-coastal", variant, "post-cure", "start.state")
+	target := filepath.Join(root, family, variant, boundary, "start.state")
 	// The first complete, tested save in this private corpus becomes the fixed
 	// regression input. Another concurrent runner cannot overwrite it.
 	if _, err := os.Stat(target); err == nil {
@@ -187,14 +196,21 @@ func gsPublishQualificationStateOnce(target string, state []byte, provenance gsQ
 // qualification runner never accepts a forged or stale metadata claim as
 // evidence that a trusted first-cure checkpoint was captured.
 func gsVerifyQualificationProvenance(raw []byte, variant, romSHA1 string, state []byte) (gsQualificationProvenance, error) {
+	return gsVerifyQualificationProvenanceForObjective(raw, variant, romSHA1, state, string(gsprofile.ProgressJasmineReturnedToGym))
+}
+
+// gsVerifyQualificationProvenanceForObjective pins the original farm milestone
+// as well as the cartridge/state hashes. The glacier replay must not accept a
+// copied post-cure state or an unrelated manually assembled checkpoint.
+func gsVerifyQualificationProvenanceForObjective(raw []byte, variant, romSHA1 string, state []byte, objective string) (gsQualificationProvenance, error) {
 	var source gsQualificationProvenance
 	if err := json.Unmarshal(raw, &source); err != nil {
 		return source, fmt.Errorf("parse Gen2 checkpoint provenance: %w", err)
 	}
 	if source.Schema != 1 || source.Game != variant ||
-		source.Objective != string(gsprofile.ProgressJasmineReturnedToGym) ||
+		source.Objective != objective ||
 		!strings.EqualFold(source.ROM_SHA1, romSHA1) {
-		return source, fmt.Errorf("Gen2 checkpoint provenance does not match the first %s cure transaction", variant)
+		return source, fmt.Errorf("Gen2 checkpoint provenance does not match the %s %s transaction", variant, objective)
 	}
 	hash := sha256.Sum256(state)
 	if !strings.EqualFold(source.StateSHA256, hex.EncodeToString(hash[:])) {
