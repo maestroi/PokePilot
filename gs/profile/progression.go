@@ -49,6 +49,8 @@ const (
 	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
 	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
 	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressRocketTransmitterDoorOpened game.ProgressID = "gs_rocket_transmitter_door_opened"
+	ProgressRocketExecutiveFBeaten game.ProgressID = "gs_rocket_executive_f_beaten"
 	ProgressRocketHideoutCleared   game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
 	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
@@ -202,6 +204,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
 		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
 		{ID: ProgressRocketMurkrowPassword, Complete: hasGSEvent(reader, eventLearnedMurkrowPassword)},
+		{ID: ProgressRocketTransmitterDoorOpened, Complete: hasGSEvent(reader, eventRocketTransmitterDoorOpened)},
+		{ID: ProgressRocketExecutiveFBeaten, Complete: hasGSEvent(reader, eventRocketExecutiveFBeaten)},
 		{ID: ProgressRocketHideoutCleared, Complete: hasGSEvent(reader, eventClearedRocketHideout)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},

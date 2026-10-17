@@ -260,14 +260,16 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 	}
 	for _, next := range []game.ProgressID{gsprofile.ProgressRedGyaradosDefeated, gsprofile.ProgressLanceHelpAccepted, gsprofile.ProgressMahoganyStairsOpened, gsprofile.ProgressRocketLanceHealing,
 		gsprofile.ProgressRocketPasswordsLearned, gsprofile.ProgressRocketOfficeOpened,
-		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword} {
+		gsprofile.ProgressRocketExecutiveBeaten, gsprofile.ProgressRocketMurkrowPassword,
+		gsprofile.ProgressRocketTransmitterDoorOpened, gsprofile.ProgressRocketExecutiveFBeaten,
+		gsprofile.ProgressRocketHideoutCleared} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
 			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("unfinished Rocket Hideout still offered: %+v", got)
+		t.Fatalf("unfinished Glacier Badge still offered: %+v", got)
 	}
 }
 

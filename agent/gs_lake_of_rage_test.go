@@ -49,7 +49,7 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 			Story: ProgressState{{ID: gsprofile.ProgressStarterReceived, Complete: true}}}
 		foundRed := false
 		foundLance := false
-		for stage := 0; stage < 40; stage++ {
+		for stage := 0; stage < 60; stage++ {
 			goals := adapter.ProgressionObjectives(obs)
 			if len(goals) == 0 {
 				break
@@ -73,11 +73,12 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 			t.Fatalf("%s milestones not offered: red=%v lance=%v", gameID, foundRed, foundLance)
 		}
 		if !obs.Story.Has(gsprofile.ProgressMahoganyStairsOpened) || !obs.Story.Has(gsprofile.ProgressRocketLanceHealing) ||
-			!obs.Story.Has(gsprofile.ProgressRocketMurkrowPassword) {
+			!obs.Story.Has(gsprofile.ProgressRocketMurkrowPassword) ||
+			!obs.Story.Has(gsprofile.ProgressRocketHideoutCleared) {
 			t.Fatalf("%s never offered B3F passwords, executive and Murkrow", gameID)
 		}
 		if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-			t.Fatalf("%s must stop safely before the unfinished Rocket Hideout battles: %+v", gameID, got)
+			t.Fatalf("%s must stop safely before unqualified Glacier Badge: %+v", gameID, got)
 		}
 	}
 }
