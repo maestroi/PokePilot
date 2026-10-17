@@ -38,6 +38,17 @@ CARD_DEVICE=${FARM_REPLAY_CARD_DEVICE:-/dev/dri/card1}
 GROUP_ADD=${FARM_REPLAY_GROUP_ADD:-44 993}
 LISTEN=${FARM_REPLAY_LISTEN:-:8080}
 WALL=${FARM_REPLAY_WALL:-}
+# An operator-owned host file; the launcher mounts it only when readable.
+MUSIC_FILE=${FARM_REPLAY_MUSIC_FILE:-}
+MUSIC_SIGNATURE=disabled
+if [ -n "$MUSIC_FILE" ]; then
+	MUSIC_SIGNATURE=unavailable
+	if [[ "$MUSIC_FILE" = /* ]] && [ -f "$MUSIC_FILE" ] && [ -r "$MUSIC_FILE" ]; then
+		MUSIC_SIGNATURE=$(stat -c '%y:%s:%i' "$MUSIC_FILE")
+	else
+		printf 'pokefarm-replay: broadcast music unavailable, using silent audio\n' >&2
+	fi
+fi
 HEALTH_TIMEOUT=${FARM_REPLAY_HEALTH_TIMEOUT:-30}
 SPEC_LABEL=pokefarm.replay.spec
 
@@ -65,6 +76,8 @@ card=$CARD_DEVICE
 group_add=$GROUP_ADD
 listen=$LISTEN
 wall=$WALL
+music_file=$MUSIC_FILE
+music_signature=$MUSIC_SIGNATURE
 SPEC
 )
 fingerprint=$(printf '%s' "$spec" | sha256sum | awk '{print substr($1, 1, 16)}')
@@ -108,6 +121,10 @@ args=(
 	--device "$RENDER_DEVICE"
 	--volume "$ROM:/rom/pokemon_red.gb:ro"
 )
+if [ "$MUSIC_SIGNATURE" != disabled ] && [ "$MUSIC_SIGNATURE" != unavailable ]; then
+	args+=(--volume "$MUSIC_FILE:/run/pokepilot/broadcast-music:ro")
+	args+=(--env "POKEPILOT_BROADCAST_MUSIC_FILE=/run/pokepilot/broadcast-music")
+fi
 # card1 is the display node paired with renderD128 on this host. VAAPI encodes
 # through the render node, so a host that names the pair differently only needs
 # the render node to be present.
