@@ -264,9 +264,9 @@ func mcpSummaryRun(run map[string]any) map[string]any {
 
 func mcpSummaryListRun(run mcpRunView) map[string]any {
 	out := map[string]any{
-		"run_id": run.RunID,
-		"status": run.Status,
-		"frame": run.Frame,
+		"run_id":   run.RunID,
+		"status":   run.Status,
+		"frame":    run.Frame,
 		"attempts": run.Attempts,
 	}
 	for key, value := range map[string]string{
