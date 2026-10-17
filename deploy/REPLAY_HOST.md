@@ -71,6 +71,31 @@ replaced immediately. From an operator UI container, request
 reboot, verify the sidecar container state and timer; the timer recreates an
 exited container.
 
+### Uploading live broadcast music to S3
+
+The private operator interface, **Media → Broadcasts → Music library**, supports
+licensed MP3, OGG, WAV, FLAC and M4A files up to 20 MiB. You must confirm
+broadcast rights before upload. Tracks are stored in the existing replay S3
+bucket under a content-addressed `media/broadcast/music/tracks/` prefix. A
+small `media/broadcast/music/library-v1.json` catalog survives replay restarts.
+A single replay host serializes catalog edits; the initial library is limited
+to 32 tracks. This feature requires the replay S3 credentials already described
+above—**no separate S3 bucket, database table, or browser credentials**.
+
+The operator selects an audio source when starting a broadcast: *Replay host
+default* (compatible with older broadcasts), *Silent audio*, or an uploaded
+S3 track. The selected track is downloaded to a temporary 0600 file, checked
+against its SHA-256 content identity and expected byte count, and passed to
+FFmpeg as looping audio. The temporary file is removed when that broadcast
+ends, including encoder failure or stop. It is never published as an S3 URL,
+readable by the spectator site, or exposed as an arbitrary host file path.
+
+Only the operator-side pokeui proxy exposes
+`GET /v1/live/broadcast/music` and `POST /v1/live/broadcast/music`.
+The upload takes a raw audio request body, URL-encoded `name`, and
+`licensed=true`; it is bounded server-side independently of Content-Length.
+Do not expose the replay host's HTTP port to untrusted networks.
+
 ### Optional live broadcast music
 
 To replace the silent RTMP audio track with looping background music, place an

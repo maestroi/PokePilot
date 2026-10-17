@@ -60,6 +60,7 @@ type rtmpBroadcastConfig struct {
 	AudioBitrateKbps        int
 	AudioSampleRate         int
 	MusicFile               string // Server-side path only; never included in status or browser requests.
+	MusicTrackID            string // Public, content-addressed library ID (never an object key).
 }
 
 type rtmpBroadcastStatus struct {
@@ -77,6 +78,7 @@ type rtmpBroadcastStatus struct {
 	Audio                   bool   `json:"audio"`
 	AudioBitrateKbps        int    `json:"audio_bitrate_kbps,omitempty"`
 	AudioSampleRate         int    `json:"audio_sample_rate,omitempty"`
+	MusicTrackID            string `json:"music_track_id,omitempty"`
 	Reconnects              int    `json:"reconnects,omitempty"`
 	LastError               string `json:"last_error,omitempty"`
 	StartedAtMS             int64  `json:"started_at_unix_ms,omitempty"`
@@ -112,6 +114,7 @@ type rtmpBroadcastSession struct {
 	source *liveBroadcastSession
 
 	processFactory rtmpProcessFactory
+	musicCleanup   func() // release staged, private S3 audio when session ends
 	maxReconnects  int
 	backoffBase    time.Duration
 	backoffMax     time.Duration
@@ -359,6 +362,7 @@ func newRTMPBroadcastSession(runID string, cfg rtmpBroadcastConfig, source *live
 			Audio:                   cfg.Audio,
 			AudioBitrateKbps:        cfg.AudioBitrateKbps,
 			AudioSampleRate:         cfg.AudioSampleRate,
+			MusicTrackID:            cfg.MusicTrackID,
 			StartedAtMS:             now,
 			UpdatedAtMS:             now,
 		},
@@ -417,6 +421,9 @@ func (s *rtmpBroadcastSession) start(parent context.Context) {
 
 func (s *rtmpBroadcastSession) run(ctx context.Context) {
 	defer close(s.done)
+	if s.musicCleanup != nil {
+		defer s.musicCleanup()
+	}
 	frames, unsubscribe := s.source.subscribe()
 	defer unsubscribe()
 
@@ -532,7 +539,7 @@ func sanitizeRTMPError(err error, cfg rtmpBroadcastConfig) string {
 	return text
 }
 
-func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig) (*rtmpBroadcastSession, error) {
+func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig, musicCleanup func()) (*rtmpBroadcastSession, error) {
 	runID = strings.TrimSpace(runID)
 	if runID == "" {
 		return nil, errors.New("run id is required")
@@ -548,6 +555,7 @@ func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig)
 	}
 	source := s.liveSession(runID)
 	session := newRTMPBroadcastSession(runID, cfg, source)
+	session.musicCleanup = musicCleanup
 	s.rtmpSessions[runID] = session
 	s.rtmpMu.Unlock()
 
@@ -638,8 +646,34 @@ func (s *replayServer) handleRTMPBroadcastStart(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	session, err := s.startRTMPBroadcast(runID, cfg)
+	// A host-configured track remains the default for existing API callers.
+	// A library ID selects S3 audio; "silent" deliberately overrides both.
+	var musicCleanup func()
+	switch req.MusicTrackID {
+	case "":
+	case "silent":
+		cfg.MusicFile = ""
+		cfg.MusicTrackID = "silent"
+	default:
+		if !cfg.Audio && req.Audio != nil && !*req.Audio {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cannot select music with audio disabled"})
+			return
+		}
+		musicFile, cleanup, stageErr := s.stageBroadcastMusic(r.Context(), req.MusicTrackID)
+		if stageErr != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": stageErr.Error()})
+			return
+		}
+		cfg.MusicFile = musicFile
+		cfg.MusicTrackID = req.MusicTrackID
+		cfg.Audio = true
+		musicCleanup = cleanup
+	}
+	session, err := s.startRTMPBroadcast(runID, cfg, musicCleanup)
 	if err != nil {
+		if musicCleanup != nil {
+			musicCleanup()
+		}
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
