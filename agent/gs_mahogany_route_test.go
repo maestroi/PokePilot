@@ -28,13 +28,8 @@ func TestGSMahoganyRouteOwnershipStopsAtScriptedStoryBoundaries(t *testing.T) {
 			t.Fatalf("%s has no owned ordinary-interruption route", name)
 		}
 	}
-	for _, name := range []string{"MAHOGANY_GYM"} {
-		id, err := gsOpeningMapID(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if gsSecondBadgeOwnedMap(id) {
-			t.Fatalf("%s must stay unowned until its story controller exists", name)
-		}
+	id, err := gsOpeningMapID("MAHOGANY_GYM")
+	if err != nil || !gsSecondBadgeOwnedMap(id) {
+		t.Fatalf("Pryce Gym must be owned by guarded leader controller: %#04x %v", id, err)
 	}
 }
