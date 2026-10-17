@@ -36,6 +36,23 @@ func TestGSRocketB2FGoldAndSilverSequenceStopsBeforeUnqualifiedPryce(t *testing.
 			{ID: gsprofile.ProgressRocketExecutiveBeaten, Complete: true},
 			{ID: gsprofile.ProgressRocketMurkrowPassword, Complete: true},
 		}}
+		// Reach B2F from the same prerequisite chain the live planner uses;
+		// a fixture with only late event flags still needs earlier stages.
+		reached := false
+		for step := 0; step < 40; step++ {
+			goals := adapter.ProgressionObjectives(obs)
+			if len(goals) != 1 {
+				t.Fatalf("%s no prerequisite at step %d: %+v", gameID, step, goals)
+			}
+			if goals[0].Progress == gsprofile.ProgressRocketTransmitterDoor {
+				reached = true
+				break
+			}
+			obs.Story = append(obs.Story, ProgressFact{ID: goals[0].Progress, Complete: true})
+		}
+		if !reached {
+			t.Fatalf("%s did not reach transmitter door through Johto prerequisites", gameID)
+		}
 		for _, next := range []ProgressID{
 			gsprofile.ProgressRocketTransmitterDoor,
 			gsprofile.ProgressRocketExecutiveF,
