@@ -1,6 +1,10 @@
 package profile
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/maestroi/pokepilot/game"
+)
 
 func TestGSRadioTowerRetailEventFactsAreIndependent(t *testing.T) {
 	if eventBeatRadioTowerFakeDirector != 1395 ||
@@ -14,13 +18,13 @@ func TestGSRadioTowerRetailEventFactsAreIndependent(t *testing.T) {
 		mem := fakeGSReader{}
 		steps := []struct {
 			event uint16
-			progress string
+			progress game.ProgressID
 		}{
-			{eventBeatRadioTowerFakeDirector, string(ProgressRadioTowerFakeDirectorBeaten)},
-			{eventRadioTowerBasementUnlocked, string(ProgressRadioTowerBasementUnlocked)},
-			{eventRadioTowerCardKeyReceived, string(ProgressRadioTowerCardKeyReceived)},
-			{eventRadioTowerShutterOpened, string(ProgressRadioTowerShutterOpened)},
-			{eventRadioTowerCleared, string(ProgressRadioTowerCleared)},
+			{eventBeatRadioTowerFakeDirector, ProgressRadioTowerFakeDirectorBeaten},
+			{eventRadioTowerBasementUnlocked, ProgressRadioTowerBasementUnlocked},
+			{eventRadioTowerCardKeyReceived, ProgressRadioTowerCardKeyReceived},
+			{eventRadioTowerShutterOpened, ProgressRadioTowerShutterOpened},
+			{eventRadioTowerCleared, ProgressRadioTowerCleared},
 		}
 		for i, stage := range steps {
 			setGSEvent(mem, stage.event)
