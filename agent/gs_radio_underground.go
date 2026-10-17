@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	gsRadioUndergroundAttempts = 3
-	gsRadioBasementDoorX uint8 = 18
-	gsRadioBasementDoorY uint8 = 6
-	gsRadioCardShutterX uint8 = 14
-	gsRadioCardShutterY uint8 = 2
+	gsRadioUndergroundAttempts       = 3
+	gsRadioBasementDoorX       uint8 = 18
+	gsRadioBasementDoorY       uint8 = 6
+	gsRadioCardShutterX        uint8 = 14
+	gsRadioCardShutterY        uint8 = 2
 )
 
 // gsRadioScriptInteraction drives a named background or object event at a
@@ -68,7 +68,9 @@ func executeGSRadioTowerBasementDoor(m *emu.Emu, romData []byte) error {
 	}
 	return gsRadioScriptInteraction(m, romData, profile, "GOLDENROD_UNDERGROUND",
 		18, 7, gsRadioBasementDoorX, gsRadioBasementDoorY, encounter,
-		func() bool { return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerBasementUnlocked) })
+		func() bool {
+			return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerBasementUnlocked)
+		})
 }
 
 // gsRadioWarehouseSwitchOrder is the RETAIL puzzle solution, not a generic
@@ -76,11 +78,12 @@ func executeGSRadioTowerBasementDoor(m *emu.Emu, romData []byte) error {
 // numbered right-to-left (x=16,10,2), and the final door 11 opens only when
 // the order 3,2,1 yields sum 6. The emergency switch is not used.
 type gsRadioSwitch struct {
-	name string
-	x, y uint8
+	name           string
+	x, y           uint8
 	standX, standY uint8
-	enabled func(gsprofile.RadioTowerSwitches) bool
+	enabled        func(gsprofile.RadioTowerSwitches) bool
 }
+
 var gsRadioWarehouseSwitchOrder = []gsRadioSwitch{
 	{"3", 2, 1, 2, 2, func(s gsprofile.RadioTowerSwitches) bool { return s.Switch3 }},
 	{"2", 10, 1, 10, 2, func(s gsprofile.RadioTowerSwitches) bool { return s.Switch2 }},
@@ -161,7 +164,9 @@ func executeGSRadioTowerCardKey(m *emu.Emu, romData []byte) error {
 	return gsRadioScriptInteraction(m, romData, profile,
 		"GOLDENROD_UNDERGROUND_WAREHOUSE",
 		12, 9, 12, 8, encounter,
-		func() bool { return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerCardKeyReceived) })
+		func() bool {
+			return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerCardKeyReceived)
+		})
 }
 
 // executeGSRadioTowerShutter uses the Card Key at RadioTower3F.asm's
@@ -177,5 +182,7 @@ func executeGSRadioTowerShutter(m *emu.Emu, romData []byte) error {
 	}
 	return gsRadioScriptInteraction(m, romData, profile, "RADIO_TOWER_3F",
 		14, 3, gsRadioCardShutterX, gsRadioCardShutterY, encounter,
-		func() bool { return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerShutterOpened) })
+		func() bool {
+			return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRadioTowerShutterOpened)
+		})
 }

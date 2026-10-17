@@ -8,7 +8,7 @@ import (
 
 func TestGSRadioWarehouseRetailOrderAndBoundaries(t *testing.T) {
 	want := []struct {
-		name string
+		name      string
 		x, standY uint8
 	}{
 		{"3", 2, 2}, {"2", 10, 2}, {"1", 16, 2},
@@ -26,9 +26,12 @@ func TestGSRadioWarehouseRetailOrderAndBoundaries(t *testing.T) {
 			t.Fatalf("step %s was on before its turn", step.name)
 		}
 		switch i {
-		case 0: s.Switch3 = true
-		case 1: s.Switch2 = true
-		case 2: s.Switch1 = true
+		case 0:
+			s.Switch3 = true
+		case 1:
+			s.Switch2 = true
+		case 2:
+			s.Switch1 = true
 		}
 		if !step.enabled(s) {
 			t.Fatalf("step %s did not reflect observed switch state", step.name)
