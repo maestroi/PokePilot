@@ -9,8 +9,8 @@ import (
 func TestGSPryceObjectiveIsGatedUntilRocketHideoutIsExecutable(t *testing.T) {
 	// The controller is implemented but must not be offered as an unsupported
 	// mainline objective before the real Rocket Hideout clear is owned.
-	if gsSupportedProgress(gsprofile.ProgressRocketHideoutCleared) {
-		t.Fatal("Rocket Hideout must stay unsupported until its controller lands")
+	if !gsSupportedProgress(gsprofile.ProgressRocketHideoutCleared) {
+		t.Fatal("Rocket Hideout now has an executable controller")
 	}
 	if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
 		t.Fatal("Glacier Badge cannot become selectable before Rocket Hideout")
