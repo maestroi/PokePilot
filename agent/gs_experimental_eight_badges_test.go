@@ -3,6 +3,7 @@ package agent
 import (
     "testing"
 
+    "github.com/maestroi/pokepilot/game"
     gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
@@ -28,7 +29,7 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
         gsprofile.ProgressRadioTowerExecutiveF1Beaten,
         gsprofile.ProgressRadioTowerTakeoverSettled,
     }
-    for _, id := range []struct{ name string; gameID GameID }{
+    for _, id := range []struct{ name string; gameID game.GameID }{
         {"gold", gsprofile.GoldGameID},
         {"silver", gsprofile.SilverGameID},
     } {
