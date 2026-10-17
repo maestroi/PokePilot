@@ -68,8 +68,8 @@ func TestNativeStrengthSinkCanClearOtherBoulderBeforeCorrectOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	movable := []Movable{
-		{ID: 4, Pos: Point{X: 2, Y: 0}},
-		{ID: 5, Pos: Point{X: 2, Y: 1}},
+		{ID: 4, Pos: Point{X: 2, Y: 1}},
+		{ID: 5, Pos: Point{X: 2, Y: 0}},
 	}
 	push, err := FindNativeStrengthSinkPush(g, Point{X: 1, Y: 0}, movable,
 		map[[2]int]bool{{2, 2}: true}, map[int]Point{4: {X: 2, Y: 2}}, 5000)
