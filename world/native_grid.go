@@ -26,6 +26,7 @@ type NativeGrid struct {
 	warpPushes    map[uint8]worldmodel.NativeDirectionMask
 	blocked       map[uint8]worldmodel.NativeDirectionMask
 	jumps         map[uint8]worldmodel.NativeDirectionMask
+	slideCollisions map[uint8]bool
 	Traversal     TraversalMode
 }
 
@@ -56,6 +57,12 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 	for _, jump := range spec.Jumps {
 		jumps[jump.Collision] = jump.DirectionMask
 	}
+	slides := make(map[uint8]bool, len(spec.SlideCollisions))
+	for tile, enabled := range spec.SlideCollisions {
+		if enabled {
+			slides[tile] = true
+		}
+	}
 	return &NativeGrid{
 		MapID: spec.MapID, Width: spec.Width, Height: spec.Height,
 		walkable:      append([]bool(nil), spec.Walkable...),
@@ -63,7 +70,7 @@ func NativeGridFromSpec(spec worldmodel.NativeGridSpec) (*NativeGrid, error) {
 		obstacle:      append([]worldmodel.NativeObstacle(nil), spec.Obstacles...),
 		warpTrigger:   append([]bool(nil), spec.WarpTrigger...),
 		warpPushes:    warpPushes,
-		blocked:       blocked, jumps: jumps, Traversal: spec.Traversal,
+		blocked:       blocked, jumps: jumps, slideCollisions: slides, Traversal: spec.Traversal,
 	}, nil
 }
 
@@ -183,6 +190,24 @@ func (g *NativeGrid) Movement(x, y int, input NativeStep, occupied map[[2]int]bo
 	}
 	nx, ny := x+input.DX, y+input.DY
 	if !occupied[[2]int{nx, ny}] && g.Passable(x, y, nx, ny) {
+		// Gen II ICE collision is a forced motion, not a sequence of
+		// independently steerable tiles. Model the complete landing as ONE
+		// edge so BFS cannot turn halfway across the frozen corridor.
+		if tile, ok := g.Tile(nx, ny); ok && g.slideCollisions[tile] {
+			sx, sy := nx, ny
+			for step := 0; step < g.Width*g.Height; step++ {
+				tx, ty := sx+input.DX, sy+input.DY
+				if occupied[[2]int{tx, ty}] || !g.Passable(sx, sy, tx, ty) {
+					break
+				}
+				sx, sy = tx, ty
+				collision, ok := g.Tile(sx, sy)
+				if !ok || !g.slideCollisions[collision] {
+					break
+				}
+			}
+			return NativeStep{DX: sx - x, DY: sy - y}, true
+		}
 		return input, true
 	}
 

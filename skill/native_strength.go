@@ -127,6 +127,13 @@ func nativeStrengthBridge(
 			return true, nil
 		}
 	}
-	return false, fmt.Errorf("skill: native Strength: boulder slot %d disappeared after push (terminal hole needs an event postcondition): %w",
-		push.MovableID, ErrNavigationStalled)
+	// Ice Path B1F and Blackthorn Gym 2F have retail pit warps: a push
+	// into COLL_PIT ($60) removes the boulder and changes the live floor.
+	// Only accept disappearing boulders on that exact collision (never a
+	// missing sprite on ordinary ground), then replan from live geometry.
+	if tile, ok := grid.Tile(push.To.X, push.To.Y); ok && tile == 0x60 {
+		return true, nil
+	}
+	return false, fmt.Errorf("skill: native Strength: boulder slot %d disappeared on non-pit tile (%d,%d): %w",
+		push.MovableID, push.To.X, push.To.Y, ErrNavigationStalled)
 }

@@ -510,6 +510,9 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	out.Blocked = gen2BlockedDirections()
 	out.WarpPushes = gen2WarpPushes()
 	out.Jumps = gen2Jumps()
+	if tileset == 0x1a { // pret/pokegold COLL_ICE = $23
+		out.SlideCollisions = map[uint8]bool{0x23: true}
+	}
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
