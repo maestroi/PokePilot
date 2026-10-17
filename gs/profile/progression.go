@@ -50,11 +50,11 @@ const (
 	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
 	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
 	ProgressRocketTransmitterDoor  game.ProgressID = "gs_rocket_transmitter_door_opened"
-	ProgressRocketExecutiveF           game.ProgressID = "gs_rocket_executive_f_beaten"
-	ProgressRocketElectrode1           game.ProgressID = "gs_rocket_electrode_1_cleared"
-	ProgressRocketElectrode2           game.ProgressID = "gs_rocket_electrode_2_cleared"
-	ProgressRocketElectrode3           game.ProgressID = "gs_rocket_electrode_3_cleared"
-	ProgressRocketHideoutCleared    game.ProgressID = "gs_rocket_hideout_cleared"
+	ProgressRocketExecutiveF       game.ProgressID = "gs_rocket_executive_f_beaten"
+	ProgressRocketElectrode1       game.ProgressID = "gs_rocket_electrode_1_cleared"
+	ProgressRocketElectrode2       game.ProgressID = "gs_rocket_electrode_2_cleared"
+	ProgressRocketElectrode3       game.ProgressID = "gs_rocket_electrode_3_cleared"
+	ProgressRocketHideoutCleared   game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
 	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -103,22 +103,22 @@ const (
 	eventBeatRocketExecutiveM4          uint16 = 1396
 	eventLearnedMurkrowPassword         uint16 = 767
 	// Retail TeamRocketBaseB2F.asm event indices (const_next gaps included).
-	eventOpenedTransmitterDoor     uint16 = 765
-	eventBeatRocketExecutiveF2     uint16 = 1390
-	eventRocketElectrode1          uint16 = 1760
-	eventRocketElectrode2          uint16 = 1761
-	eventRocketElectrode3          uint16 = 1762
-	eventClearedRocketHideout      uint16 = 33
-	eventGotHM06Whirlpool          uint16 = 21
-	statusFlagsPokedexMask         = 1 << 0
-	johtoBadgeZephyrMask           = 1 << 0
-	johtoBadgeHiveMask             = 1 << 1
-	johtoBadgePlainMask            = 1 << 2
-	johtoBadgeFogMask              = 1 << 3
-	johtoBadgeMineralMask          = 1 << 4
-	johtoBadgeStormMask            = 1 << 5
-	johtoBadgeGlacierMask          = 1 << 6
-	johtoBadgeRisingMask           = 1 << 7
+	eventOpenedTransmitterDoor uint16 = 765
+	eventBeatRocketExecutiveF2 uint16 = 1390
+	eventRocketElectrode1      uint16 = 1760
+	eventRocketElectrode2      uint16 = 1761
+	eventRocketElectrode3      uint16 = 1762
+	eventClearedRocketHideout  uint16 = 33
+	eventGotHM06Whirlpool      uint16 = 21
+	statusFlagsPokedexMask            = 1 << 0
+	johtoBadgeZephyrMask              = 1 << 0
+	johtoBadgeHiveMask                = 1 << 1
+	johtoBadgePlainMask               = 1 << 2
+	johtoBadgeFogMask                 = 1 << 3
+	johtoBadgeMineralMask             = 1 << 4
+	johtoBadgeStormMask               = 1 << 5
+	johtoBadgeGlacierMask             = 1 << 6
+	johtoBadgeRisingMask              = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
