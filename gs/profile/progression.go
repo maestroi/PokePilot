@@ -39,21 +39,21 @@ const (
 	// story executors are available. Do not move the supported frontier yet.
 	// The Lake of Rage encounters are independently durable, resumable story
 	// boundaries after Jasmine and before the Rocket Hideout.
-	ProgressRedGyaradosDefeated    game.ProgressID = "gs_red_gyarados_defeated"
-	ProgressLanceHelpAccepted      game.ProgressID = "gs_lance_help_accepted"
-	ProgressMahoganyStairsOpened   game.ProgressID = "gs_mahogany_stairs_opened"
-	ProgressRocketLanceHealing     game.ProgressID = "gs_rocket_lance_healing"
-	ProgressRocketRaticatePassword game.ProgressID = "gs_rocket_raticate_password"
-	ProgressRocketSlowpokePassword game.ProgressID = "gs_rocket_slowpoke_password"
-	ProgressRocketPasswordsLearned game.ProgressID = "gs_rocket_passwords_learned"
-	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
-	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
-	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressRedGyaradosDefeated         game.ProgressID = "gs_red_gyarados_defeated"
+	ProgressLanceHelpAccepted           game.ProgressID = "gs_lance_help_accepted"
+	ProgressMahoganyStairsOpened        game.ProgressID = "gs_mahogany_stairs_opened"
+	ProgressRocketLanceHealing          game.ProgressID = "gs_rocket_lance_healing"
+	ProgressRocketRaticatePassword      game.ProgressID = "gs_rocket_raticate_password"
+	ProgressRocketSlowpokePassword      game.ProgressID = "gs_rocket_slowpoke_password"
+	ProgressRocketPasswordsLearned      game.ProgressID = "gs_rocket_passwords_learned"
+	ProgressRocketOfficeOpened          game.ProgressID = "gs_rocket_office_opened"
+	ProgressRocketExecutiveBeaten       game.ProgressID = "gs_rocket_executive_beaten"
+	ProgressRocketMurkrowPassword       game.ProgressID = "gs_rocket_murkrow_password"
 	ProgressRocketTransmitterDoorOpened game.ProgressID = "gs_rocket_transmitter_door_opened"
-	ProgressRocketExecutiveFBeaten game.ProgressID = "gs_rocket_executive_f_beaten"
-	ProgressRocketHideoutCleared   game.ProgressID = "gs_rocket_hideout_cleared"
-	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
+	ProgressRocketExecutiveFBeaten      game.ProgressID = "gs_rocket_executive_f_beaten"
+	ProgressRocketHideoutCleared        game.ProgressID = "gs_rocket_hideout_cleared"
+	ProgressGlacierBadgeEarned          game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned           game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one

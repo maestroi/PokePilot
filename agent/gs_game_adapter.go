@@ -662,21 +662,21 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		}}
 	case !obs.Story.Has(gsprofile.ProgressRocketTransmitterDoorOpened):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketTransmitterDoorOpened,
-			Note: "(use Murkrow's password to open the B2F radio transmitter door)",
+			Note:     "(use Murkrow's password to open the B2F radio transmitter door)",
 		}}
 	case !obs.Story.Has(gsprofile.ProgressRocketExecutiveFBeaten):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketExecutiveFBeaten,
-			Note: "(defeat the B2F Rocket executive with Lance and settle the retail post-battle script)",
+			Note:     "(defeat the B2F Rocket executive with Lance and settle the retail post-battle script)",
 		}}
 	case !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketHideoutCleared,
-			Note: "(defeat all three B2F Electrodes and finish Lance's HM06 Whirlpool reward scene)",
+			Note:     "(defeat all three B2F Electrodes and finish Lance's HM06 Whirlpool reward scene)",
 		}}
 	default:
 		return nil
