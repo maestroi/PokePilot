@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestOutcomesCompatibilityServesRAMWhenCatalogDisabled(t *testing.T) {
+func TestLocalOutcomesServesRAMWhenCatalogDisabled(t *testing.T) {
 	w := NewWall(t.TempDir())
 	w.mu.Lock()
 	w.order = []string{"done-1", "live-1"}
@@ -25,7 +25,7 @@ func TestOutcomesCompatibilityServesRAMWhenCatalogDisabled(t *testing.T) {
 	next := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		http.NotFound(res, req)
 	})
-	handler := w.outcomesCompatibility(w.catalogHTTPHandler(next))
+	handler := w.catalogHTTPHandler(next)
 
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/outcomes", nil))
@@ -46,5 +46,23 @@ func TestOutcomesCompatibilityServesRAMWhenCatalogDisabled(t *testing.T) {
 	}
 	if got.Runs[1].RunID != "live-1" || got.Runs[1].Status != statusRunning {
 		t.Fatalf("live run=%#v", got.Runs[1])
+	}
+}
+
+func TestLocalOutcomesOnlyInterceptsGetAtExactPath(t *testing.T) {
+	w := NewWall(t.TempDir())
+	handler := w.catalogHTTPHandler(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		res.WriteHeader(http.StatusAccepted)
+	}))
+	for _, test := range []struct{ method, path string }{
+		{http.MethodPost, "/v1/outcomes"},
+		{http.MethodGet, "/v1/outcomes/extra"},
+		{http.MethodGet, "/v1/dashboard"},
+	} {
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, httptest.NewRequest(test.method, test.path, nil))
+		if res.Code != http.StatusAccepted {
+			t.Errorf("%s %s returned %d, want next handler's %d", test.method, test.path, res.Code, http.StatusAccepted)
+		}
 	}
 }

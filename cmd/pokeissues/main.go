@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/maestroi/pokepilot/metrics"
+	"github.com/maestroi/pokepilot/sites"
 )
 
 // version is this build's git SHA, stamped by the Dockerfile via
@@ -166,7 +167,7 @@ func main() {
 	repo := flag.String("repo", envOr("POKEPILOT_GITHUB_REPO", "maestroi/PokePilot"), "GitHub repository in owner/name form")
 	apiBase := flag.String("github-api", envOr("POKEPILOT_GITHUB_API", defaultGitHubAPI), "GitHub API base")
 	webBase := flag.String("github-web", envOr("POKEPILOT_GITHUB_WEB", defaultGitHubWeb), "GitHub web base")
-	runBase := flag.String("run-base", os.Getenv("POKEPILOT_RUN_BASE_URL"), "optional operator URL used for run/debug links in issues")
+	runBase := flag.String("run-base", issueRunBaseFromEnv(), "optional operator URL used for run/debug links in issues")
 	flag.Parse()
 
 	token := strings.TrimSpace(os.Getenv("POKEPILOT_GITHUB_TOKEN"))
@@ -188,6 +189,12 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
+}
+
+// issueRunBaseFromEnv prefers the canonical admin URL, while sites.FromEnv
+// preserves the older run-base environment variable for deployed services.
+func issueRunBaseFromEnv() string {
+	return sites.FromEnv().AdminBase()
 }
 
 func envOr(name, fallback string) string {

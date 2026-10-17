@@ -28,10 +28,12 @@ func TestComposeCanonicalHosts(t *testing.T) {
 		"POKEPILOT_PUBLIC_BASE_URL: ${POKEPILOT_PUBLIC_BASE_URL:-https://rompilot.app}",
 		"POKEPILOT_ADMIN_BASE_URL: ${POKEPILOT_ADMIN_BASE_URL:-https://admin.rompilot.app}",
 		"POKEPILOT_API_BASE_URL: ${POKEPILOT_API_BASE_URL:-https://api.rompilot.app}",
-		"POKEPILOT_SPECTATOR_URL: ${POKEPILOT_SPECTATOR_URL:-https://rompilot.app}",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("postgres.yml missing %q", want)
 		}
+	}
+	if strings.Contains(s, "\n      POKEPILOT_SPECTATOR_URL:") {
+		t.Error("postgres.yml must not export the retired spectator URL variable")
 	}
 }

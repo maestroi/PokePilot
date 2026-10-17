@@ -98,7 +98,6 @@ services:
       POKEPILOT_PUBLIC_BASE_URL: ${POKEPILOT_PUBLIC_BASE_URL:-https://rompilot.app}
       POKEPILOT_ADMIN_BASE_URL: ${POKEPILOT_ADMIN_BASE_URL:-https://admin.rompilot.app}
       POKEPILOT_API_BASE_URL: ${POKEPILOT_API_BASE_URL:-https://api.rompilot.app}
-      POKEPILOT_SPECTATOR_URL: ${POKEPILOT_SPECTATOR_URL:-https://rompilot.app}
 
   spectator:
     environment:

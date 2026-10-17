@@ -7,12 +7,11 @@ import (
 	"strings"
 )
 
-// catalogOperatorCompatibility keeps the operator/debug behavior that used to
-// be derived from finished tiles in RAM. The catalog remains the history
-// source; issue links and outbox state stay live in the wall state store
+// catalogOperatorHTTPHandler serves historical operator/debug reads from the
+// SQLite catalog in local mode. Issue links and outbox state stay live in the wall state store
 // (PostgreSQL in production, state.json only in legacy/local mode) and are
 // overlaid at read time so a later GitHub status change never leaves stale JSON.
-func (w *Wall) catalogOperatorCompatibility(next http.Handler) http.Handler {
+func (w *Wall) catalogOperatorHTTPHandler(next http.Handler) http.Handler {
 	if catalogFor(w) == nil {
 		return next
 	}

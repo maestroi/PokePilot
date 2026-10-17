@@ -394,11 +394,19 @@ func isCatalogLifecycleRequest(req *http.Request) bool {
 	return strings.HasPrefix(req.URL.Path, "/v1/runs/") && strings.HasSuffix(req.URL.Path, "/finish")
 }
 
-// catalogHTTPHandler is production-only. Compatibility/unit handlers remain
-// RAM-only when -catalog is empty.
+// catalogHTTPHandler owns SQLite-backed history endpoints in local mode.
+// Without a catalog, GET /v1/outcomes reads local in-memory tiles directly;
+// unrelated requests still reach the ordinary local wall handler. PostgreSQL
+// mode uses the separate durable control-plane handler.
 func (w *Wall) catalogHTTPHandler(next http.Handler) http.Handler {
 	if catalogFor(w) == nil {
-		return next
+		return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+			if req.Method == http.MethodGet && req.URL.Path == "/v1/outcomes" {
+				w.handleLocalOutcomes(res)
+				return
+			}
+			next.ServeHTTP(res, req)
+		})
 	}
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		switch {

@@ -142,7 +142,7 @@ is required.
 POKEPILOT_GITHUB_TOKEN=<token with Issues + Contents read/write on maestroi/PokePilot>
 # Optional; these are the stack defaults:
 POKEPILOT_GITHUB_REPO=maestroi/PokePilot
-POKEPILOT_RUN_BASE_URL=https://admin.rompilot.app
+POKEPILOT_ADMIN_BASE_URL=https://admin.rompilot.app
 ```
 
 Only the `issues` service receives `POKEPILOT_GITHUB_TOKEN`. The wall, runners,

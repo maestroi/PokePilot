@@ -505,3 +505,19 @@ func TestInvestigateAddsSingleComment(t *testing.T) {
 		t.Fatalf("commented=%d comments=%+v", fake.commented, fake.comments[22])
 	}
 }
+
+func TestIssueRunBaseEnvironmentMigration(t *testing.T) {
+	t.Setenv("POKEPILOT_ADMIN_BASE_URL", "https://admin.example.test/")
+	t.Setenv("POKEPILOT_RUN_BASE_URL", "https://old.example.test")
+	if got := issueRunBaseFromEnv(); got != "https://admin.example.test" {
+		t.Fatalf("canonical admin URL must take priority, got %q", got)
+	}
+	t.Setenv("POKEPILOT_ADMIN_BASE_URL", "")
+	if got := issueRunBaseFromEnv(); got != "https://old.example.test" {
+		t.Fatalf("deployed legacy run URL must still work, got %q", got)
+	}
+	t.Setenv("POKEPILOT_RUN_BASE_URL", "")
+	if got := issueRunBaseFromEnv(); got != "" {
+		t.Fatalf("no run URL should remain unset for local development, got %q", got)
+	}
+}
