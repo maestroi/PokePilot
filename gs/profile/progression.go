@@ -39,13 +39,13 @@ const (
 	// story executors are available. Do not move the supported frontier yet.
 	// The Lake of Rage encounters are independently durable, resumable story
 	// boundaries after Jasmine and before the Rocket Hideout.
-	ProgressRedGyaradosDefeated    game.ProgressID = "gs_red_gyarados_defeated"
-	ProgressLanceHelpAccepted      game.ProgressID = "gs_lance_help_accepted"
-	ProgressMahoganyStairsOpened   game.ProgressID = "gs_mahogany_stairs_opened"
-	ProgressRocketLanceHealing     game.ProgressID = "gs_rocket_lance_healing"
-	ProgressRocketHideoutCleared   game.ProgressID = "gs_rocket_hideout_cleared"
-	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
-	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
+	ProgressRedGyaradosDefeated      game.ProgressID = "gs_red_gyarados_defeated"
+	ProgressLanceHelpAccepted        game.ProgressID = "gs_lance_help_accepted"
+	ProgressMahoganyStairsOpened     game.ProgressID = "gs_mahogany_stairs_opened"
+	ProgressRocketLanceHealing       game.ProgressID = "gs_rocket_lance_healing"
+	ProgressRocketHideoutCleared     game.ProgressID = "gs_rocket_hideout_cleared"
+	ProgressGlacierBadgeEarned       game.ProgressID = "gs_glacier_badge_earned"
+	ProgressRisingBadgeEarned        game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -86,7 +86,7 @@ const (
 	eventDecidedToHelpLance             uint16 = 96
 	eventUncoveredMahoganyMartStaircase uint16 = 738
 	eventLanceHealedRocketBase          uint16 = 76
-	eventClearedRocketHideout            uint16 = 34
+	eventClearedRocketHideout           uint16 = 34
 	statusFlagsPokedexMask                     = 1 << 0
 	johtoBadgeZephyrMask                       = 1 << 0
 	johtoBadgeHiveMask                         = 1 << 1
