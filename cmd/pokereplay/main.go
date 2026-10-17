@@ -141,7 +141,7 @@ type replayServer struct {
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
-	commentaryMu sync.Mutex
+	commentaryMu       sync.Mutex
 	commentarySessions map[string]*liveCommentarySession
 
 	rtmpMu                sync.Mutex
