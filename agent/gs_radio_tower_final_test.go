@@ -6,16 +6,22 @@ import (
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
-func TestGSRadioTowerFinaleMilestonesRemainPrivate(t *testing.T) {
+func TestGSRadioTowerFinaleMilestonesAreExperimental(t *testing.T) {
 	for _, id := range []ProgressID{
 		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
-		gsprofile.ProgressRadioTowerCleared,
 		gsprofile.ProgressRadioTowerTakeoverSettled,
+	} {
+		if !gsSupportedProgress(id) {
+			t.Fatalf("experimental Radio Tower stage is not executable: %s", id)
+		}
+	}
+	for _, id := range []ProgressID{
+		gsprofile.ProgressRadioTowerCleared,
 		gsprofile.ProgressRisingBadgeEarned,
 	} {
 		if gsSupportedProgress(id) {
-			t.Fatalf("unqualified Gold/Silver Radio Tower or eighth badge goal offered: %s", id)
+			t.Fatalf("unimplemented goal incorrectly offered: %s", id)
 		}
 	}
 	if gsRadioTowerExecutiveM2X != 14 || gsRadioTowerExecutiveM2Y != 1 ||
