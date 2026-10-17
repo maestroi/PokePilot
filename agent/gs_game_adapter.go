@@ -69,7 +69,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRedGyaradosDefeated,
 		gsprofile.ProgressLanceHelpAccepted,
 		gsprofile.ProgressMahoganyStairsOpened,
-		gsprofile.ProgressRocketLanceHealing:
+		gsprofile.ProgressRocketLanceHealing,
+		gsprofile.ProgressRocketHideoutCleared:
 		return true
 	default:
 		return false
@@ -232,6 +233,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSMahoganyStairs(a.m, a.romData)
 		case gsprofile.ProgressRocketLanceHealing:
 			err = executeGSRocketBaseLanceHeal(a.m, a.romData)
+		case gsprofile.ProgressRocketHideoutCleared:
+			err = executeGSRocketHideout(a.m, a.romData)
 		case gsprofile.ProgressGlacierBadgeEarned:
 			err = executeGSPryce(a.m, a.romData)
 		default:
@@ -273,7 +276,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRedGyaradosDefeated,
 			gsprofile.ProgressLanceHelpAccepted,
 			gsprofile.ProgressMahoganyStairsOpened,
-			gsprofile.ProgressRocketLanceHealing:
+			gsprofile.ProgressRocketLanceHealing,
+			gsprofile.ProgressRocketHideoutCleared:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
