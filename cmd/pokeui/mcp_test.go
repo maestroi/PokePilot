@@ -547,7 +547,7 @@ func TestMCPListRunsPreservesGameSpecificTelemetry(t *testing.T) {
 	t.Cleanup(wall.Close)
 
 	control := &mcpControl{wallBase: wall.URL, artifactBase: wall.URL, http: wall.Client()}
-	_, out, err := control.listRuns(context.Background(), nil, mcpListRunsInput{Limit: 5})
+	_, out, err := control.listRuns(context.Background(), nil, mcpListRunsInput{Limit: 5, View: "full"})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
 	}
