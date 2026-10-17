@@ -141,6 +141,7 @@ type replayServer struct {
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
+	musicMu               sync.Mutex // Serializes library catalog updates on this replay host.
 	rtmpMu                sync.Mutex
 	rtmpSessions          map[string]*rtmpBroadcastSession
 	broadcastDestinations map[string]broadcastDestination
@@ -243,6 +244,8 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
 	mux.HandleFunc("GET /v1/live/broadcast/config", s.handleRTMPBroadcastConfig)
+	mux.HandleFunc("GET /v1/live/broadcast/music", s.handleBroadcastMusicList)
+	mux.HandleFunc("POST /v1/live/broadcast/music", s.handleBroadcastMusicUpload)
 	mux.HandleFunc("GET /v1/runs/{id}/live/broadcast/status", s.handleRTMPBroadcastStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/start", s.handleRTMPBroadcastStart)
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
