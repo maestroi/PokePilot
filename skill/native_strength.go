@@ -66,6 +66,62 @@ func nativeStrengthBridge(
 	if err != nil {
 		return false, err
 	}
+	return executeNativeStrengthPush(m, profile, romData, grid, push)
+}
+
+// PushNativeStrengthTowardSink performs one live-verified move from a bounded
+// solution that puts assigned puzzle boulders into real collision pits. It is
+// used by map-specific story scripts, NOT as a general teleport or global
+// Strength solver. The caller must re-observe each vanished boulder and its
+// persistent event flag before calling again.
+func PushNativeStrengthTowardSink(m *emu.Emu, romData []byte, sinks map[int]world.Point) (bool, error) {
+	profile, err := nativeRoutingProfileForROM(romData)
+	if err != nil {
+		return false, err
+	}
+	if m == nil {
+		return false, fmt.Errorf("skill: native sink puzzle: nil emulator")
+	}
+	if _, err := waitLiveMapSettled(m, profile); err != nil {
+		return false, err
+	}
+	worldState := profile.DecodeOverworld(m)
+	provider := profile.NativeMapProvider(romData)
+	grid, live, header, err := nativeLiveGrid(m, profile, provider, worldState.NativeMapID)
+	if err != nil {
+		return false, err
+	}
+	if live.Traversal != game.TraversalLand {
+		return false, nil
+	}
+	blocked := nativeRuntimeBlockers(live, header, nil)
+	delete(blocked, [2]int{int(worldState.X), int(worldState.Y)})
+	movables := make([]world.Movable, 0, len(live.LiveObjects))
+	for _, obj := range live.LiveObjects {
+		if !obj.Pushable {
+			continue
+		}
+		movables = append(movables, world.Movable{ID: obj.Slot, Pos: world.Point{X: obj.X, Y: obj.Y}})
+		delete(blocked, [2]int{obj.X, obj.Y})
+	}
+	push, err := world.FindNativeStrengthSinkPush(grid,
+		world.Point{X: int(worldState.X), Y: int(worldState.Y)}, movables, blocked, sinks, 25000)
+	if errors.Is(err, world.ErrNoPath) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("skill: native Strength pit puzzle: %w", err)
+	}
+	return executeNativeStrengthPush(m, profile, romData, grid, push)
+}
+
+// executeNativeStrengthPush is the single shared execution gate for ordinary
+// Strength routing and boulder-to-hole puzzles. Success is a moved object or
+// a disappear-on-real-COLL_PIT event; no synthetic object state is written.
+func executeNativeStrengthPush(
+	m *emu.Emu, profile nativeRoutingProfile, romData []byte,
+	grid *world.NativeGrid, push world.NativePush,
+) (bool, error) {
 	decoder, ok := any(profile).(game.FieldMoveDecoder)
 	if !ok {
 		return false, nil
@@ -107,6 +163,14 @@ func nativeStrengthBridge(
 		}
 	}
 	if err := walkNativePath(m, profile, []world.NativeStep{push.Direction}); err != nil {
+		if errors.Is(err, ErrDialogueInterrupted) {
+			// An actual pit-warp landing queues its native boulder-fall text.
+			// The owning story controller settles it then checks cartridge
+			// events. A disappearing boulder anywhere else is never accepted.
+			if tile, ok := grid.Tile(push.To.X, push.To.Y); ok && tile == 0x60 {
+				return true, nil
+			}
+		}
 		return false, fmt.Errorf("skill: native Strength: push slot %d: %w", push.MovableID, err)
 	}
 	after := profile.DecodeOverworld(m)
@@ -127,6 +191,13 @@ func nativeStrengthBridge(
 			return true, nil
 		}
 	}
-	return false, fmt.Errorf("skill: native Strength: boulder slot %d disappeared after push (terminal hole needs an event postcondition): %w",
-		push.MovableID, ErrNavigationStalled)
+	// Ice Path B1F and Blackthorn Gym 2F have retail pit warps: a push
+	// into COLL_PIT ($60) removes the boulder and changes the live floor.
+	// Only accept disappearing boulders on that exact collision (never a
+	// missing sprite on ordinary ground), then replan from live geometry.
+	if tile, ok := grid.Tile(push.To.X, push.To.Y); ok && tile == 0x60 {
+		return true, nil
+	}
+	return false, fmt.Errorf("skill: native Strength: boulder slot %d disappeared on non-pit tile (%d,%d): %w",
+		push.MovableID, push.To.X, push.To.Y, ErrNavigationStalled)
 }

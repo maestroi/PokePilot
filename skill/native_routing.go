@@ -239,7 +239,17 @@ func nativeStepToWorld(step world.NativeStep) world.Step {
 func walkNativePath(m *emu.Emu, decoder game.OverworldDecoder, path []world.NativeStep) error {
 	for _, step := range path {
 		worldStep := nativeStepToWorld(step)
-		if err := stepOnceWithOverworldDecoder(m, worldStep, decoder); err != nil {
+		var err error
+		if absNativeStep(step) > 2 {
+			// An adapter-declared ice slide is one forced transition with a
+			// multi-tile displacement. The ROM moves the player after the
+			// initial direction input; the generic single-step controller
+			// cannot verify that longer landing.
+			err = stepOnceNativeSlide(m, decoder, step)
+		} else {
+			err = stepOnceWithOverworldDecoder(m, worldStep, decoder)
+		}
+		if err != nil {
 			return err
 		}
 		if err := movementInterruptionWithDecoder(m, decoder); err != nil {
@@ -250,6 +260,74 @@ func walkNativePath(m *emu.Emu, decoder game.OverworldDecoder, path []world.Nati
 		}
 	}
 	return nil
+}
+
+// stepOnceNativeSlide executes the FIRST directional input, then lets the
+// cartridge's ice movement run until the predicted landing is observable.
+// The next route edge is never fired if an event interrupts this movement.
+func stepOnceNativeSlide(m *emu.Emu, decoder game.OverworldDecoder, step world.NativeStep) error {
+	const slideBudget = 3000
+	dx, dy := step.DX, step.DY
+	input := world.Step{}
+	switch {
+	case dy == 0 && dx > 2:
+		input.DX = 1
+	case dy == 0 && dx < -2:
+		input.DX = -1
+	case dx == 0 && dy > 2:
+		input.DY = 1
+	case dx == 0 && dy < -2:
+		input.DY = -1
+	default:
+		return fmt.Errorf("skill: invalid native ice slide (%d,%d): %w", dx, dy, ErrNavigationStalled)
+	}
+	btn, ok := buttonFor(input)
+	if !ok {
+		return fmt.Errorf("skill: native ice slide has no directional button")
+	}
+	before := decoder.DecodeOverworld(m)
+	m.Press(btn)
+	started := false
+	for n := 0; n < stepMoveBudget; n++ {
+		cur := decoder.DecodeOverworld(m)
+		if cur.InBattle || cur.InDialogue {
+			m.Release(btn)
+			return ErrDialogueInterrupted
+		}
+		if cur.X != before.X || cur.Y != before.Y {
+			started = true
+			break
+		}
+		m.StepFrame()
+	}
+	m.Release(btn)
+	if !started {
+		return &ErrBlocked{Step: input, At: struct{ X, Y uint8 }{before.X, before.Y}}
+	}
+	wantX, wantY := int(before.X)+dx, int(before.Y)+dy
+	for n := 0; n < slideBudget; n++ {
+		cur := decoder.DecodeOverworld(m)
+		if cur.InBattle {
+			return ErrBattle
+		}
+		if cur.InDialogue {
+			return ErrDialogueInterrupted
+		}
+		if cur.NativeMapID != before.NativeMapID {
+			return fmt.Errorf("skill: native ice slide changed map before landing: %w", ErrNavigationStalled)
+		}
+		if cur.Controllable && cur.MovementIdle {
+			if int(cur.X) == wantX && int(cur.Y) == wantY {
+				return nil
+			}
+			// A moving actor can briefly report idle between slide phases;
+			// do not infer the slide has stopped until the bounded budget.
+		}
+		m.StepFrame()
+	}
+	cur := decoder.DecodeOverworld(m)
+	return fmt.Errorf("skill: native ice slide from (%d,%d) expected (%d,%d), got (%d,%d): %w",
+		before.X, before.Y, wantX, wantY, cur.X, cur.Y, ErrNavigationStalled)
 }
 
 // nativeArrivalState classifies a live overworld observation against a native

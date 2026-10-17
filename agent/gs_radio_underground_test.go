@@ -62,8 +62,8 @@ func TestGSRadioUndergroundOwnedWithoutUnlockingBadgeEight(t *testing.T) {
 		}
 	}
 	if gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
-		gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
-		t.Fatal("do not offer raw Tower clear or unfinished eighth badge")
+		!gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
+		t.Fatal("raw Tower clear must remain unsupported but Rising Badge is now executable")
 	}
 }
 

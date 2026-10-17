@@ -594,3 +594,36 @@ it must remain incomplete and produce usable failure/checkpoint evidence,
 rather than mark itself successful. Real ROM runs provide the failures and
 checkpoints to iterate on. The conservative "current supported Gen 2
 frontier" goal still stops at Mineral Badge and is unchanged.
+
+## Gen2: experimental Ice Path → Clair → Dragon Fang/Rising Badge
+
+The eight-badge objective chain now extends beyond the Rocket Tower:
+Ice Path HM07 Waterfall on 1F, the real Clair battle in Blackthorn Gym,
+then Dragon's Den B1F's unique Dragon Fang scene. The native grid
+plans Ice Path COLL_ICE ($23) as a single unsteerable slide and a Strength
+push into COLL_PIT ($60) can remove its boulder before routing replans.
+Blackthorn Gym uses the same real pit/Strength mechanic.
+
+The Gold/Silver controller specifically requires EVENT_BEAT_CLAIR to finish
+the Gym objective but **does not** interpret that event as an eighth badge.
+The later Dragon Fang interaction awards ENGINE_RISINGBADGE and only the
+observed wJohtoBadges Rising bit proves eight-badge completion. The event
+that hides the Fang ball is not sufficient. A full Items pocket blocks
+the retail Dragon Fang and gives a typed diagnostic; no item or badge is
+forged. The gap remains a candidate for inventory-space repair.
+
+These are opt-in **experimental**, still ROM-unqualified controllers.
+Real Gold and Silver gameplay replays (particularly the Ice Path forced
+movement and Gym boulder layouts) must be used to fix unexpected
+navigation or script differences before certifying this route.
+
+### Assigned Strength pit puzzles
+
+The added Ice Path B1F puzzle explicitly pushes four native boulder slots
+(2–5) into their stonetable-matched holes (11,2), (4,7), (5,12),
+and (12,13); Blackthorn Gym 2F matches slots (4–6) to (8,3),
+(2,5), and (8,7). A bounded native push-state solver plans only the
+next physically reachable action. The controller settles scripted falling
+boulders before replanning and requires every *real* disappearance event
+and, for Ice Path, the B2F floor-boulder flag transitions. This is
+distinct from merely navigating to Clair or ending a Strength animation.
