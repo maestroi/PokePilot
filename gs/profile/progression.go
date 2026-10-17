@@ -59,8 +59,13 @@ const (
 	ProgressRadioTowerBasementUnlocked   game.ProgressID = "gs_radio_tower_basement_unlocked"
 	ProgressRadioTowerCardKeyReceived    game.ProgressID = "gs_radio_tower_card_key_received"
 	ProgressRadioTowerShutterOpened      game.ProgressID = "gs_radio_tower_shutter_opened"
-	ProgressRadioTowerCleared            game.ProgressID = "gs_radio_tower_cleared"
-	ProgressRisingBadgeEarned            game.ProgressID = "gs_rising_badge_earned"
+	ProgressRadioTowerExecutiveM2Beaten  game.ProgressID = "gs_radio_tower_executive_m2_beaten"
+	ProgressRadioTowerExecutiveF1Beaten  game.ProgressID = "gs_radio_tower_executive_f1_beaten"
+	// The boss sets CLEARED before the Director finishes his gift script.
+	// This composite postcondition must remain separate from raw CLEARED.
+	ProgressRadioTowerTakeoverSettled game.ProgressID = "gs_radio_tower_takeover_settled"
+	ProgressRadioTowerCleared         game.ProgressID = "gs_radio_tower_cleared"
+	ProgressRisingBadgeEarned         game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -109,20 +114,25 @@ const (
 	eventLearnedMurkrowPassword         uint16 = 767
 	// pret/pokegold constants/event_flags.asm: event bit indices are
 	// not source line numbers (the table has const_next ranges).
-	eventBeatRadioTowerFakeDirector uint16 = 1395 // EXECUTIVEM_3 post-Basement Key gift
-	eventRadioTowerBasementUnlocked uint16 = 73
-	eventRadioTowerCardKeyReceived  uint16 = 74
-	eventRadioTowerShutterOpened    uint16 = 37
-	eventRadioTowerCleared          uint16 = 33
-	statusFlagsPokedexMask                 = 1 << 0
-	johtoBadgeZephyrMask                   = 1 << 0
-	johtoBadgeHiveMask                     = 1 << 1
-	johtoBadgePlainMask                    = 1 << 2
-	johtoBadgeFogMask                      = 1 << 3
-	johtoBadgeMineralMask                  = 1 << 4
-	johtoBadgeStormMask                    = 1 << 5
-	johtoBadgeGlacierMask                  = 1 << 6
-	johtoBadgeRisingMask                   = 1 << 7
+	eventBeatRadioTowerFakeDirector   uint16 = 1395 // EXECUTIVEM_3 post-Basement Key gift
+	eventRadioTowerBasementUnlocked   uint16 = 73
+	eventRadioTowerCardKeyReceived    uint16 = 74
+	eventRadioTowerShutterOpened      uint16 = 37
+	eventRadioTowerCleared            uint16 = 33
+	eventRadioTowerExecutiveM2Beaten  uint16 = 1394
+	eventRadioTowerExecutiveF1Beaten  uint16 = 1391
+	eventRadioTowerBossBeaten         uint16 = 1393
+	eventRadioTowerGoldWingReceived   uint16 = 120
+	eventRadioTowerSilverWingReceived uint16 = 121
+	statusFlagsPokedexMask                   = 1 << 0
+	johtoBadgeZephyrMask                     = 1 << 0
+	johtoBadgeHiveMask                       = 1 << 1
+	johtoBadgePlainMask                      = 1 << 2
+	johtoBadgeFogMask                        = 1 << 3
+	johtoBadgeMineralMask                    = 1 << 4
+	johtoBadgeStormMask                      = 1 << 5
+	johtoBadgeGlacierMask                    = 1 << 6
+	johtoBadgeRisingMask                     = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -226,6 +236,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRadioTowerBasementUnlocked, Complete: hasGSEvent(reader, eventRadioTowerBasementUnlocked)},
 		{ID: ProgressRadioTowerCardKeyReceived, Complete: hasGSEvent(reader, eventRadioTowerCardKeyReceived)},
 		{ID: ProgressRadioTowerShutterOpened, Complete: hasGSEvent(reader, eventRadioTowerShutterOpened)},
+		{ID: ProgressRadioTowerExecutiveM2Beaten, Complete: hasGSEvent(reader, eventRadioTowerExecutiveM2Beaten)},
+		{ID: ProgressRadioTowerExecutiveF1Beaten, Complete: hasGSEvent(reader, eventRadioTowerExecutiveF1Beaten)},
 		{ID: ProgressRadioTowerCleared, Complete: hasGSEvent(reader, eventRadioTowerCleared)},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
@@ -235,6 +247,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 // DecodeFirstBadgeProgress exposes the durable early-Johto story boundaries
 // needed by the early-Johto executors without
 // leaking event numbers or badge bit positions into agent policy.
-func (*Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
-	return projectEarlyStory(reader)
+func (p *Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.ProgressState {
+	return append(projectEarlyStory(reader), game.ProgressFact{
+		ID: ProgressRadioTowerTakeoverSettled, Complete: p.DecodeRadioTowerVictory(reader).Complete(),
+	})
 }

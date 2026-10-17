@@ -24,6 +24,8 @@ func TestGSRadioTowerRetailEventFactsAreIndependent(t *testing.T) {
 			{eventRadioTowerBasementUnlocked, ProgressRadioTowerBasementUnlocked},
 			{eventRadioTowerCardKeyReceived, ProgressRadioTowerCardKeyReceived},
 			{eventRadioTowerShutterOpened, ProgressRadioTowerShutterOpened},
+			{eventRadioTowerExecutiveM2Beaten, ProgressRadioTowerExecutiveM2Beaten},
+			{eventRadioTowerExecutiveF1Beaten, ProgressRadioTowerExecutiveF1Beaten},
 			{eventRadioTowerCleared, ProgressRadioTowerCleared},
 		}
 		for i, stage := range steps {
