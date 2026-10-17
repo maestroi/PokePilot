@@ -778,15 +778,15 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressRadioTowerTakeoverSettled,
 			Note:     "(experimental: defeat the final Rocket boss and finish the Director's Gold/Silver wing gift)",
 		}}
+	case !obs.Story.Has(gsprofile.ProgressIcePathBouldersDropped):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressIcePathBouldersDropped,
+			Note: "(experimental: cross Ice Path to B1F and push four boulders into assigned holes)"}}
 	case !obs.Story.Has(gsprofile.ProgressIcePathWaterfallAcquired):
 		return []Objective{{
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressIcePathWaterfallAcquired,
-			Note:     "(experimental: traverse Route 44/Ice Path's forced ice and receive HM07 Waterfall)",
+			Note:     "(experimental: traverse Ice Path's forced ice to receive HM07 Waterfall near Blackthorn)",
 		}}
-	case !obs.Story.Has(gsprofile.ProgressIcePathBouldersDropped):
-		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressIcePathBouldersDropped,
-			Note: "(experimental: push Ice Path B1F Strength boulders into assigned holes)"}}
 	case !obs.Story.Has(gsprofile.ProgressBlackthornGymBouldersDropped):
 		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressBlackthornGymBouldersDropped,
 			Note: "(experimental: cross Ice Path and drop the three Blackthorn Gym 2F boulders)"}}

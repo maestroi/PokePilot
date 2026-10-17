@@ -72,7 +72,7 @@ func executeGSIcePathBoulders(m *emu.Emu, romData []byte) error {
 	const label = "ice-path:b1f-four-pits"
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressIcePathBouldersDropped,
-		gsprofile.ProgressIcePathWaterfallAcquired, label)
+		gsprofile.ProgressRadioTowerTakeoverSettled, label)
 	if err != nil || done {
 		return err
 	}

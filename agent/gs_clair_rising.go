@@ -32,7 +32,7 @@ func executeGSIcePathWaterfall(m *emu.Emu, romData []byte) error {
 	const label = "ice-path:hm07-waterfall"
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressIcePathWaterfallAcquired,
-		gsprofile.ProgressRadioTowerTakeoverSettled, label)
+		gsprofile.ProgressIcePathBouldersDropped, label)
 	if err != nil || done {
 		return err
 	}
