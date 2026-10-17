@@ -70,8 +70,20 @@ const (
 // Center) must still Travel to Route 12 instead of failing as unknown.
 // Every Safari rest house is included because an interrupted run can be saved
 // there while EVENT_IN_SAFARI_ZONE and the finite step budget are still live.
+//
+// Every registered Pokemon Center is a legal resume point on its own: the
+// game's own movement places the player at Centers — Fly targets any visited
+// Center and a blackout respawns at the last one — so a run can lawfully be
+// saved at a Center the explicit corridor list never named (run-
+// 1jqtdw7yj5gbq247lgogyl2gp9 respawned at Viridian's Center). From any Center
+// the first owned action is Travel back into the eastern corridor, so Centers
+// are admitted by the place registry rather than grown one hub per farm
+// failure.
 func FuchsiaProgressionAvailable(mapID uint8) bool {
 	if PokemonTowerAvailable(mapID) {
+		return true
+	}
+	if knownPokemonCenterMap(mapID) {
 		return true
 	}
 	switch mapID {
