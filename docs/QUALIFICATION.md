@@ -495,3 +495,40 @@ checkpoint provenance counts. Monitor Actions for `qualification BLOCKED` or
 the first real puzzle/travel failure; preserve its runner-local checked state
 for focused repair. Deploy/farm storage and ROM runner access must use the
 same shared corpus host path.
+
+## Gen2 seventh badge (Glacier) qualification
+
+The **Gold/Silver badge-6-to-7** path remains withheld from the launcher until
+actual cartridge replays prove the entire Rocket Base story and Pryce badge
+transaction. ROM-free tests are not sufficient evidence to advance the
+supported frontier.
+
+When the farm is configured with `POKEPILOT_QUALIFICATION_CORPUS`, its first
+successful Mineral Badge transaction now atomically captures
+`gs-glacier/<gold|silver>/post-mineral/start.state` with `source.json` beside
+it. The snapshot must be taken in Olivine Gym after all six retail badge bits
+are observed, before Red Gyarados/Rocket Hideout, and with overworld control.
+The first successful capture is immutable. As for the coastal qualification,
+no ROM, `.sav`, or `.state` is ever committed or uploaded as an artifact.
+
+Use **Actions → Gen2 Glacier ROM Qualification → Run workflow**, select
+`gold`, `silver`, or `both`. The private `pokepilot-rom` runner resolves
+the same `POKEPILOT_QUALIFICATION_CORPUS` and cartridge paths used by
+`gen2-coastal-qualification.yml`. Missing state, provenance, or ROM fails
+the job; it never reports a green skipped replay.
+
+The opt-in `TestGSGlacierROMCheckpointReplay` validates cartridge identity
+and SHA-256 of the recorded state, then executes every retail story milestone
+from Red Gyarados through Lance, both Rocket Base executives, the transmitter
+door, three Electrodes, Lance's final HM06/clear script and Pryce. Each
+completed stage must have a positive semantic postcondition, an idle
+overworld, and a save/load/reopen recovery that retains all preceding facts.
+The final proof is `ENGINE_GLACIERBADGE` (not merely beating Pryce).
+Failure checkpoints and stage evidence remain private on the runner;
+only JSON observations, safe logs and hashes may be uploaded.
+
+The last Pryce transaction is invoked directly by the private test because
+the production Gen2 planner intentionally does **not** advertise the seventh
+badge yet. Do not enable seven-badge or eight-badge launch targets until both
+Gold and Silver real-ROM journeys are green and their recovery paths have
+been reviewed.
