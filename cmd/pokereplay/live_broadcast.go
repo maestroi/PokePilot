@@ -372,6 +372,10 @@ func liveActivityEventType(activity liveRunActivity) string {
 	switch {
 	case source == "milestone" && kind == "badge":
 		return "badge_acquired"
+	case source == "system" && kind == "finished":
+		return "run_finished"
+	case source == "system" && kind == "failed":
+		return "run_failed"
 	case source == "recovery":
 		return "recovery_" + firstNonEmpty(kind, "event")
 	case kind != "":
