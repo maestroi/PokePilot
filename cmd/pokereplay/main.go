@@ -245,6 +245,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/image", s.handleThumbnailImage)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/select", s.handleThumbnailSelect)
 	mux.HandleFunc("GET /v1/runs/{id}/live/commentary/status", s.handleLiveCommentaryStatus)
+	mux.HandleFunc("GET /v1/runs/{id}/live/commentary/events", s.handleLiveCommentaryEvents)
 	mux.HandleFunc("POST /v1/runs/{id}/live/commentary/start", s.handleLiveCommentaryStart)
 	mux.HandleFunc("POST /v1/runs/{id}/live/commentary/stop", s.handleLiveCommentaryStop)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
