@@ -84,13 +84,14 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"MAHOGANY_MART_1F",
 		// Rocket B1F camera fights and the B2F Lance-heal scene are now
 		// owned by the next bounded story milestone. B3F boss/password
-		// scripts and Pryce Gym are intentionally outside this driver.
+		// scripts remain separate; Pryce Gym is guarded by Rocket-clear proof.
 		"TEAM_ROCKET_BASE_B1F",
 		"TEAM_ROCKET_BASE_B2F",
 		// B3F owns the two grunt-password fights, office-door interaction,
 		// executive battle and Murkrow secret; B2F transmitter/Electrodes
 		// remain withheld until their separate controller is implemented.
 		"TEAM_ROCKET_BASE_B3F",
+		"MAHOGANY_GYM",
 		"ROUTE_43_MAHOGANY_GATE",
 		"ROUTE_43",
 		"LAKE_OF_RAGE",
