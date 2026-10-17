@@ -49,6 +49,11 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"RADIO_TOWER_3F",
 		"RADIO_TOWER_4F",
 		"RADIO_TOWER_5F",
+		// Basement Key, rival, switch puzzle, real Director and Card Key slot
+		// are now driven as individual, event-verified story transactions.
+		"GOLDENROD_UNDERGROUND",
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"GOLDENROD_UNDERGROUND_WAREHOUSE",
 		"ROUTE_35_GOLDENROD_GATE",
 		"ROUTE_35",
 		"ROUTE_36",

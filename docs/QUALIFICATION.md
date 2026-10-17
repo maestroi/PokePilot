@@ -532,3 +532,22 @@ the production Gen2 planner intentionally does **not** advertise the seventh
 badge yet. Do not enable seven-badge or eight-badge launch targets until both
 Gold and Silver real-ROM journeys are green and their recovery paths have
 been reviewed.
+
+## Gen2 badge 8: Goldenrod Underground Card Key slices
+
+The eighth-badge story has separate, positive retail objectives after the
+Radio Tower fake Director: Basement Key use at the Goldenrod Underground
+locked door, the real Director's Card Key in the warehouse, and the
+Radio Tower 3F Card Key shutter. Each stage has its own guarded controller
+and independent cartridge event; none can be faked by arriving on a map.
+
+The warehouse is accessible only after the three Goldenrod Underground
+switches are enabled in **3 → 2 → 1** order from a reset. The controller
+routes back through the Underground first to trigger the retail reset
+callback, resolves the mandatory rival and Rocket/Burglar fights, and checks
+the actual final-door event before proceeding to the real Director. Volatile
+switch events are *not* durable story milestones.
+
+These controllers are intentionally private/unoffered, pending actual Gold
+and Silver ROM checkpoint qualification of the complete Tower, Ice Path,
+Clair and Dragon's Den path. The 8-badge launch target remains disabled.
