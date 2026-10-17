@@ -52,8 +52,8 @@ func FindNativeStrengthSinkPush(grid *NativeGrid, player Point, movables []Movab
 		for j, movable := range n.movables {
 			target, hasTarget := sinks[movable.ID]
 			for _, direction := range nativeDirections {
-				stand := Point{X: movable.Pos.X-direction.DX, Y: movable.Pos.Y-direction.DY}
-				to := Point{X: movable.Pos.X+direction.DX, Y: movable.Pos.Y+direction.DY}
+				stand := Point{X: movable.Pos.X - direction.DX, Y: movable.Pos.Y - direction.DY}
+				to := Point{X: movable.Pos.X + direction.DX, Y: movable.Pos.Y + direction.DY}
 				if !grid.InBounds(stand.X, stand.Y) || !grid.InBounds(to.X, to.Y) ||
 					blocked[[2]int{stand.X, stand.Y}] ||
 					!grid.Passable(stand.X, stand.Y, movable.Pos.X, movable.Pos.Y) {

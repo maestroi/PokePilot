@@ -76,26 +76,42 @@ func nativeStrengthBridge(
 // persistent event flag before calling again.
 func PushNativeStrengthTowardSink(m *emu.Emu, romData []byte, sinks map[int]world.Point) (bool, error) {
 	profile, err := nativeRoutingProfileForROM(romData)
-	if err != nil { return false, err }
-	if m == nil { return false, fmt.Errorf("skill: native sink puzzle: nil emulator") }
-	if _, err := waitLiveMapSettled(m, profile); err != nil { return false, err }
+	if err != nil {
+		return false, err
+	}
+	if m == nil {
+		return false, fmt.Errorf("skill: native sink puzzle: nil emulator")
+	}
+	if _, err := waitLiveMapSettled(m, profile); err != nil {
+		return false, err
+	}
 	worldState := profile.DecodeOverworld(m)
 	provider := profile.NativeMapProvider(romData)
 	grid, live, header, err := nativeLiveGrid(m, profile, provider, worldState.NativeMapID)
-	if err != nil { return false, err }
-	if live.Traversal != game.TraversalLand { return false, nil }
+	if err != nil {
+		return false, err
+	}
+	if live.Traversal != game.TraversalLand {
+		return false, nil
+	}
 	blocked := nativeRuntimeBlockers(live, header, nil)
 	delete(blocked, [2]int{int(worldState.X), int(worldState.Y)})
 	movables := make([]world.Movable, 0, len(live.LiveObjects))
 	for _, obj := range live.LiveObjects {
-		if !obj.Pushable { continue }
-		movables = append(movables, world.Movable{ID: obj.Slot, Pos: world.Point{X: obj.X,Y: obj.Y}})
+		if !obj.Pushable {
+			continue
+		}
+		movables = append(movables, world.Movable{ID: obj.Slot, Pos: world.Point{X: obj.X, Y: obj.Y}})
 		delete(blocked, [2]int{obj.X, obj.Y})
 	}
 	push, err := world.FindNativeStrengthSinkPush(grid,
-		world.Point{X:int(worldState.X), Y:int(worldState.Y)}, movables, blocked, sinks, 25000)
-	if errors.Is(err, world.ErrNoPath) { return false, nil }
-	if err != nil { return false, fmt.Errorf("skill: native Strength pit puzzle: %w", err) }
+		world.Point{X: int(worldState.X), Y: int(worldState.Y)}, movables, blocked, sinks, 25000)
+	if errors.Is(err, world.ErrNoPath) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("skill: native Strength pit puzzle: %w", err)
+	}
 	return executeNativeStrengthPush(m, profile, romData, grid, push)
 }
 

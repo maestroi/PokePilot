@@ -64,13 +64,13 @@ const (
 	ProgressRadioTowerExecutiveF1Beaten  game.ProgressID = "gs_radio_tower_executive_f1_beaten"
 	// The boss sets CLEARED before the Director finishes his gift script.
 	// This composite postcondition must remain separate from raw CLEARED.
-	ProgressRadioTowerTakeoverSettled game.ProgressID = "gs_radio_tower_takeover_settled"
-	ProgressRadioTowerCleared         game.ProgressID = "gs_radio_tower_cleared"
-	ProgressIcePathWaterfallAcquired  game.ProgressID = "gs_ice_path_waterfall_acquired"
-	ProgressIcePathBouldersDropped game.ProgressID = "gs_ice_path_boulders_dropped"
+	ProgressRadioTowerTakeoverSettled    game.ProgressID = "gs_radio_tower_takeover_settled"
+	ProgressRadioTowerCleared            game.ProgressID = "gs_radio_tower_cleared"
+	ProgressIcePathWaterfallAcquired     game.ProgressID = "gs_ice_path_waterfall_acquired"
+	ProgressIcePathBouldersDropped       game.ProgressID = "gs_ice_path_boulders_dropped"
 	ProgressBlackthornGymBouldersDropped game.ProgressID = "gs_blackthorn_gym_boulders_dropped"
-	ProgressClairDefeated             game.ProgressID = "gs_clair_defeated"
-	ProgressRisingBadgeEarned         game.ProgressID = "gs_rising_badge_earned"
+	ProgressClairDefeated                game.ProgressID = "gs_clair_defeated"
+	ProgressRisingBadgeEarned            game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -131,21 +131,21 @@ const (
 	eventRadioTowerSilverWingReceived uint16 = 121
 	// pret/pokegold event_flags.asm: Clair is defeated before the Fang
 	// scene, while the eighth badge is an independent engine flag.
-	eventBeatClair            uint16 = 1220
-	eventIcePathWaterfall     uint16 = 1672
-	eventDragonsDenDragonFang uint16 = 1704
+	eventBeatClair             uint16 = 1220
+	eventIcePathWaterfall      uint16 = 1672
+	eventDragonsDenDragonFang  uint16 = 1704
 	eventBlackthornGymBoulder1 uint16 = 1798
-	eventIcePathBoulder1 uint16 = 1801
-	eventIcePathFloorBoulder1 uint16 = 1805
-	statusFlagsPokedexMask           = 1 << 0
-	johtoBadgeZephyrMask             = 1 << 0
-	johtoBadgeHiveMask               = 1 << 1
-	johtoBadgePlainMask              = 1 << 2
-	johtoBadgeFogMask                = 1 << 3
-	johtoBadgeMineralMask            = 1 << 4
-	johtoBadgeStormMask              = 1 << 5
-	johtoBadgeGlacierMask            = 1 << 6
-	johtoBadgeRisingMask             = 1 << 7
+	eventIcePathBoulder1       uint16 = 1801
+	eventIcePathFloorBoulder1  uint16 = 1805
+	statusFlagsPokedexMask            = 1 << 0
+	johtoBadgeZephyrMask              = 1 << 0
+	johtoBadgeHiveMask                = 1 << 1
+	johtoBadgePlainMask               = 1 << 2
+	johtoBadgeFogMask                 = 1 << 3
+	johtoBadgeMineralMask             = 1 << 4
+	johtoBadgeStormMask               = 1 << 5
+	johtoBadgeGlacierMask             = 1 << 6
+	johtoBadgeRisingMask              = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0

@@ -96,5 +96,7 @@ func executeGSBlackthornGymBoulders(m *emu.Emu, romData []byte) error {
 	// (1,7) warps back to 1F; (1,6) is stable staging on 2F.
 	return gsSolveRetailSinkPuzzle(m, romData, profile, "BLACKTHORN_GYM_2F", 1, 6,
 		gsBlackthornPitTargets, label,
-		func() bool { return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressBlackthornGymBouldersDropped) })
+		func() bool {
+			return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressBlackthornGymBouldersDropped)
+		})
 }
