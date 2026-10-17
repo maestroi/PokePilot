@@ -12,8 +12,8 @@ import (
 // Pinned to pret/pokegold/maps/TeamRocketBaseB2F.asm. The transmitter
 // door is a background event; the executive is a coordinate-triggered scene.
 const (
-	gsRocketTransmitterDoorX   uint8 = 14
-	gsRocketTransmitterDoorY   uint8 = 12
+	gsRocketTransmitterDoorX  uint8 = 14
+	gsRocketTransmitterDoorY  uint8 = 12
 	gsRocketExecutiveTriggerX uint8 = 14
 	gsRocketExecutiveTriggerY uint8 = 11
 )
