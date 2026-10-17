@@ -8,11 +8,9 @@ import (
 
 func TestNativeIceSlidePlansWholeForcedLanding(t *testing.T) {
 	spec := worldmodel.NativeGridSpec{
-		MapID: 0x0101, Width: 7, Height: 2,
-		Walkable: []bool{true, true, true, true, true, true, true,
-			true, true, true, true, true, true, true},
-		CollisionTile: []uint8{0, 0x23, 0x23, 0x23, 0, 0, 0,
-			0, 0, 0, 0, 0, 0, 0},
+		MapID: 0x0101, Width: 7, Height: 1,
+		Walkable: []bool{true, true, true, true, true, true, true},
+		CollisionTile: []uint8{0, 0x23, 0x23, 0x23, 0, 0, 0},
 		SlideCollisions: map[uint8]bool{0x23: true},
 	}
 	grid, err := NativeGridFromSpec(spec)

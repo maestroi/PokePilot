@@ -108,6 +108,20 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"ROUTE_43_MAHOGANY_GATE",
 		"ROUTE_43",
 		"LAKE_OF_RAGE",
+		// Late Johto is explicitly experimental; routing must still use
+		// live native collision and cartridge ownership, never a fake warp.
+		"ROUTE_44",
+		"ICE_PATH_1F",
+		"ICE_PATH_B1F",
+		"ICE_PATH_B2F_MAHOGANY_SIDE",
+		"ICE_PATH_B3F",
+		"ICE_PATH_B2F_BLACKTHORN_SIDE",
+		"BLACKTHORN_CITY",
+		"BLACKTHORN_POKECENTER_1F",
+		"BLACKTHORN_GYM_1F",
+		"BLACKTHORN_GYM_2F",
+		"DRAGONS_DEN_1F",
+		"DRAGONS_DEN_B1F",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {

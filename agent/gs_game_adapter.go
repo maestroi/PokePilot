@@ -86,7 +86,10 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRadioTowerShutterOpened,
 		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
-		gsprofile.ProgressRadioTowerTakeoverSettled:
+		gsprofile.ProgressRadioTowerTakeoverSettled,
+		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressClairDefeated,
+		gsprofile.ProgressRisingBadgeEarned:
 		return true
 	default:
 		return false
@@ -279,6 +282,12 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRadioTowerExecutiveF1(a.m, a.romData)
 		case gsprofile.ProgressRadioTowerTakeoverSettled:
 			err = executeGSRadioTowerFinalBoss(a.m, a.romData)
+		case gsprofile.ProgressIcePathWaterfallAcquired:
+			err = executeGSIcePathWaterfall(a.m, a.romData)
+		case gsprofile.ProgressClairDefeated:
+			err = executeGSClair(a.m, a.romData)
+		case gsprofile.ProgressRisingBadgeEarned:
+			err = executeGSDragonFangRising(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -333,7 +342,10 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRadioTowerShutterOpened,
 			gsprofile.ProgressRadioTowerExecutiveM2Beaten,
 			gsprofile.ProgressRadioTowerExecutiveF1Beaten,
-			gsprofile.ProgressRadioTowerTakeoverSettled:
+			gsprofile.ProgressRadioTowerTakeoverSettled,
+			gsprofile.ProgressIcePathWaterfallAcquired,
+			gsprofile.ProgressClairDefeated,
+			gsprofile.ProgressRisingBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -757,6 +769,24 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRadioTowerTakeoverSettled,
 			Note:     "(experimental: defeat the final Rocket boss and finish the Director's Gold/Silver wing gift)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressIcePathWaterfallAcquired):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressIcePathWaterfallAcquired,
+			Note:     "(experimental: traverse Route 44/Ice Path's forced ice and receive HM07 Waterfall)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressClairDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressClairDefeated,
+			Note:     "(experimental: cross Ice Path, solve Blackthorn Gym Strength holes, defeat Clair; badge is withheld)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRisingBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRisingBadgeEarned,
+			Note:     "(experimental: Surf/Whirlpool into Dragon's Den, claim Dragon Fang and settle Clair's Rising Badge)",
 		}}
 	default:
 		return nil

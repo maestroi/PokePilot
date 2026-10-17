@@ -37,7 +37,7 @@ func TestGSRadioTowerFirstGuardedControllerStaysOutOfPlanner(t *testing.T) {
 		t.Fatal("opt-in badge 7/8 runs should attempt available retail controllers")
 	}
 	if gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
-		gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
-		t.Fatal("do not offer raw cleared or unfinished Rising Badge as objectives")
+		!gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
+		t.Fatal("raw clear is unsafe; Rising now has an owned badge executor")
 	}
 }

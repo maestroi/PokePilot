@@ -28,6 +28,9 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
 		gsprofile.ProgressRadioTowerTakeoverSettled,
+		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressClairDefeated,
+		gsprofile.ProgressRisingBadgeEarned,
 	}
 	for _, id := range []struct {
 		name   string
@@ -79,10 +82,10 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 			}
 			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-				t.Fatalf("unimplemented Ice Path/Clair must not be offered: %+v", goals)
+				t.Fatalf("completed Rising Badge must terminate progression: %+v", goals)
 			}
-			if gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
-				t.Fatal("Rising Badge does not have an executor yet")
+			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
+				t.Fatal("Rising Badge should now have an owned executor")
 			}
 			// Seven badges must not satisfy an opted-in 8-badge campaign.
 			obs.Badges = []string{"zephyr", "hive", "plain", "fog", "mineral", "storm", "glacier"}
