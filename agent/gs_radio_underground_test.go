@@ -56,12 +56,14 @@ func TestGSRadioUndergroundOwnedWithoutUnlockingBadgeEight(t *testing.T) {
 		gsprofile.ProgressRadioTowerBasementUnlocked,
 		gsprofile.ProgressRadioTowerCardKeyReceived,
 		gsprofile.ProgressRadioTowerShutterOpened,
-		gsprofile.ProgressRadioTowerCleared,
-		gsprofile.ProgressRisingBadgeEarned,
 	} {
-		if gsSupportedProgress(progress) {
-			t.Fatalf("unqualified Gen2 milestone offered to production: %s", progress)
+		if !gsSupportedProgress(progress) {
+			t.Fatalf("experimental Underground stage missing: %s", progress)
 		}
+	}
+	if gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
+		gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
+		t.Fatal("do not offer raw Tower clear or unfinished eighth badge")
 	}
 }
 
