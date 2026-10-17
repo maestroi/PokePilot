@@ -31,6 +31,22 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 			t.Fatalf("expected map %#02x to be resumable", mapID)
 		}
 	}
+	// The game's own mechanics (Fly destinations, blackout respawns) can place
+	// the player at any registered Pokemon Center, so every one of them is a
+	// legal resume point even when the corridor list never named it
+	// (run-1jqtdw7yj5gbq247lgogyl2gp9 at Viridian's Center, map 0x29).
+	for _, name := range PlaceNames() {
+		if !strings.HasSuffix(name, "pokemon center") {
+			continue
+		}
+		d, ok := Place(name)
+		if !ok {
+			t.Fatalf("place %q did not resolve", name)
+		}
+		if !FuchsiaProgressionAvailable(d.Map) {
+			t.Fatalf("registered Center %q (map %#02x) must be a legal Fuchsia resume point", name, d.Map)
+		}
+	}
 	if FuchsiaProgressionAvailable(0x00) {
 		t.Fatal("Pallet Town must not be part of the Fuchsia progression slice")
 	}
