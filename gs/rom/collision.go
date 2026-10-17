@@ -412,7 +412,10 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x1a, true
 	case "ILEX_FOREST":
 		return 0x1c, true
-	case "TEAM_ROCKET_BASE_B1F":
+	case "RADIO_TOWER_1F", "RADIO_TOWER_2F", "RADIO_TOWER_3F", "RADIO_TOWER_4F", "RADIO_TOWER_5F":
+		return 0x18, true
+	case "GOLDENROD_UNDERGROUND", "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"GOLDENROD_UNDERGROUND_WAREHOUSE", "TEAM_ROCKET_BASE_B1F":
 		return 0x19, true
 	default:
 		return 0, false
