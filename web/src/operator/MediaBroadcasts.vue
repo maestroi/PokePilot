@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowPathIcon, PlayIcon, StopIcon } from '@heroicons/vue/20/solid'
-import { startBroadcast, stopBroadcast, type BroadcastDestination } from '../shared/api/broadcast'
+import { startBroadcast, stopBroadcast, getLiveCommentaryStatus, startLiveCommentary, stopLiveCommentary, type BroadcastDestination, type LiveCommentarySettings, type LiveCommentaryStatus } from '../shared/api/broadcast'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import type { ResourceState as ResourceStateValue } from '../shared/resource'
@@ -34,6 +34,68 @@ const videoBitrateKbps = ref(4500)
 const preset = ref('veryfast')
 const busy = ref(false)
 const actionError = ref('')
+const commentary = ref<LiveCommentaryStatus | null>(null)
+const commentaryError = ref('')
+const commentaryBusy = ref(false)
+const commentaryConfig = ref<LiveCommentarySettings>({
+  enabled: true, style: 'documentary', verbosity: 'sparse',
+  cadence_seconds: 120, voice: '', tts: false
+})
+const commentaryActive = computed(() => ['live', 'starting', 'stopping'].includes(commentary.value?.state || ''))
+let commentaryTimer: ReturnType<typeof setInterval> | undefined
+
+async function refreshCommentary(reset = false): Promise<void> {
+  const runID = selected.value?.run.run_id
+  if (!runID) { commentary.value = null; return }
+  try {
+    const snapshot = await getLiveCommentaryStatus(runID)
+    if (selected.value?.run.run_id !== runID) return
+    commentary.value = snapshot
+    commentaryError.value = ''
+    if (reset && snapshot.state === 'live') {
+      commentaryConfig.value = { ...snapshot.settings }
+    }
+  } catch (cause) {
+    if (selected.value?.run.run_id !== runID) return
+    commentaryError.value = cause instanceof Error ? cause.message : 'Commentary unavailable'
+  }
+}
+watch(() => selected.value?.run.run_id, () => {
+  commentary.value = null
+  commentaryError.value = ''
+  void refreshCommentary(true)
+}, { immediate: true })
+onMounted(() => { commentaryTimer = setInterval(() => { if (selected.value) void refreshCommentary() }, 12000) })
+onUnmounted(() => { if (commentaryTimer) clearInterval(commentaryTimer) })
+
+async function enableCommentary(): Promise<void> {
+  const runID = selected.value?.run.run_id
+  if (!runID || commentaryBusy.value) return
+  commentaryBusy.value = true
+  commentaryError.value = ''
+  try {
+    commentary.value = await startLiveCommentary(runID, { ...commentaryConfig.value, enabled: true })
+  } catch (cause) {
+    commentaryError.value = cause instanceof Error ? cause.message : 'Could not start commentary'
+  } finally {
+    commentaryBusy.value = false
+  }
+}
+
+async function disableCommentary(): Promise<void> {
+  const runID = selected.value?.run.run_id
+  if (!runID || commentaryBusy.value) return
+  commentaryBusy.value = true
+  commentaryError.value = ''
+  try {
+    await stopLiveCommentary(runID)
+    await refreshCommentary()
+  } catch (cause) {
+    commentaryError.value = cause instanceof Error ? cause.message : 'Could not stop commentary'
+  } finally {
+    commentaryBusy.value = false
+  }
+}
 
 const destination = computed(() => props.destinations.find((item) => item.provider === provider.value))
 watch(() => props.destinations, (items) => {
@@ -87,7 +149,8 @@ async function start(): Promise<void> {
       height: height.value,
       fps: fps.value,
       video_bitrate_kbps: videoBitrateKbps.value,
-      preset: preset.value
+      preset: preset.value,
+      audio: commentaryActive.value && commentary.value?.settings.tts ? true : undefined
     })
     emit('refresh')
   } catch (cause) {
@@ -204,6 +267,55 @@ const fieldClass = 'block h-8 w-full rounded-[3px] border border-control bg-canv
                 <option v-for="name in ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']" :key="name" :value="name">{{ name }}</option>
               </select>
             </label>
+          </div>
+        </details>
+
+
+        <details class="border-t border-rule pt-2">
+          <summary class="cursor-pointer text-meta font-medium text-accent">
+            Live commentary · {{ commentaryActive ? 'On' : 'Off' }} · {{ commentary?.emitted || 0 }} spoken moments
+          </summary>
+          <div class="mt-3 space-y-3">
+            <p class="text-meta text-fg-2">Opt-in, event-driven narration. Navigation and grinding stay silent; the commentary model never controls gameplay. Start this before starting a broadcast to include TTS audio.</p>
+            <p v-if="commentaryError" class="text-meta text-danger" role="alert">{{ commentaryError }}</p>
+            <p v-if="commentary?.last_error" class="text-meta text-warn" role="status">{{ commentary.last_error }}</p>
+            <div class="grid grid-cols-2 gap-2">
+              <label><span class="ui-label mb-1 block">Style</span>
+                <select v-model="commentaryConfig.style" :class="fieldClass" :disabled="commentaryActive || commentaryBusy">
+                  <option value="documentary">Documentary</option><option value="sports">Sports</option><option value="calm">Calm</option>
+                </select>
+              </label>
+              <label><span class="ui-label mb-1 block">Cadence</span>
+                <select v-model.number="commentaryConfig.cadence_seconds" :class="fieldClass" :disabled="commentaryActive || commentaryBusy">
+                  <option :value="60">1 minute</option><option :value="120">2 minutes</option><option :value="300">5 minutes</option><option :value="600">10 minutes</option>
+                </select>
+              </label>
+              <label><span class="ui-label mb-1 block">Verbosity</span>
+                <select v-model="commentaryConfig.verbosity" :class="fieldClass" :disabled="commentaryActive || commentaryBusy">
+                  <option value="sparse">Sparse (recommended)</option><option value="normal">Normal</option>
+                </select>
+              </label>
+              <label class="flex items-center gap-2 pt-5">
+                <input v-model="commentaryConfig.tts" type="checkbox" :disabled="commentaryActive || commentaryBusy || !commentary?.tts_configured">
+                <span class="text-meta">TTS audio</span>
+              </label>
+              <label class="col-span-2"><span class="ui-label mb-1 block">Voice ID (optional)</span>
+                <input v-model.trim="commentaryConfig.voice" :class="fieldClass" :disabled="commentaryActive || commentaryBusy" maxlength="64" placeholder="Default provider voice">
+              </label>
+            </div>
+            <p v-if="!commentary?.tts_configured" class="text-meta text-fg-2">TTS is unavailable until the replay host has a speech endpoint and model configured. Text commentary still works.</p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="ui-btn ui-btn-primary ui-btn-sm max-md:h-10" :disabled="commentaryActive || commentaryBusy" @click="enableCommentary">Enable commentary</button>
+              <button type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="!commentaryActive || commentaryBusy" @click="disableCommentary">Disable</button>
+              <button type="button" class="ui-btn ui-btn-sm" :disabled="commentaryBusy" @click="refreshCommentary()">Refresh</button>
+            </div>
+            <p class="text-meta text-fg-2">Producer: {{ commentary?.model || 'rules:live-v1' }}. TTS requires broadcast audio to be enabled when the broadcast starts.</p>
+            <ul v-if="commentary?.recent?.length" class="max-h-40 space-y-2 overflow-auto text-meta" aria-label="Recent live commentary">
+              <li v-for="item in [...(commentary?.recent || [])].reverse()" :key="item.event_id + item.emitted_at" class="border-t border-rule pt-1">
+                <span class="font-mono text-fg-3">{{ item.event_type }} · {{ item.action }} · {{ item.tts_state }}</span>
+                <p class="text-fg-2">{{ item.text }}</p>
+              </li>
+            </ul>
           </div>
         </details>
 
