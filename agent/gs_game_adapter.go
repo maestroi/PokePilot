@@ -73,7 +73,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRocketPasswordsLearned,
 		gsprofile.ProgressRocketOfficeOpened,
 		gsprofile.ProgressRocketExecutiveBeaten,
-		gsprofile.ProgressRocketMurkrowPassword:
+		gsprofile.ProgressRocketMurkrowPassword,
+		gsprofile.ProgressRocketHideoutCleared:
 		return true
 	default:
 		return false
@@ -244,6 +245,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRocketExecutiveM4(a.m, a.romData)
 		case gsprofile.ProgressRocketMurkrowPassword:
 			err = executeGSRocketMurkrow(a.m, a.romData)
+		case gsprofile.ProgressRocketHideoutCleared:
+			err = executeGSRocketTransmitter(a.m, a.romData)
 		case gsprofile.ProgressGlacierBadgeEarned:
 			err = executeGSPryce(a.m, a.romData)
 		default:
@@ -289,7 +292,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRocketPasswordsLearned,
 			gsprofile.ProgressRocketOfficeOpened,
 			gsprofile.ProgressRocketExecutiveBeaten,
-			gsprofile.ProgressRocketMurkrowPassword:
+			gsprofile.ProgressRocketMurkrowPassword,
+			gsprofile.ProgressRocketHideoutCleared:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -647,6 +651,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketMurkrowPassword,
 			Note:     "(learn the transmitter password from Giovanni's Murkrow)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketHideoutCleared,
+			Note:     "(open the Rocket transmitter, defeat the B2F executive and three Electrodes, then finish Lance's HM06 Whirlpool reward)",
 		}}
 	default:
 		return nil
