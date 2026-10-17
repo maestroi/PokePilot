@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ArrowPathIcon, PlayIcon, StopIcon } from '@heroicons/vue/20/solid'
-import { startBroadcast, stopBroadcast, type BroadcastDestination } from '../shared/api/broadcast'
+import { getBroadcastMusic, startBroadcast, stopBroadcast, uploadBroadcastMusic, type BroadcastDestination, type BroadcastMusicTrack } from '../shared/api/broadcast'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import type { ResourceState as ResourceStateValue } from '../shared/resource'
@@ -34,6 +34,47 @@ const videoBitrateKbps = ref(4500)
 const preset = ref('veryfast')
 const busy = ref(false)
 const actionError = ref('')
+const musicTracks = ref<BroadcastMusicTrack[]>([])
+const musicChoice = ref('host')
+const musicFile = ref<File | null>(null)
+const musicLicensed = ref(false)
+const musicBusy = ref(false)
+const musicError = ref('')
+const musicReceipt = ref('')
+
+async function reloadMusic(): Promise<void> {
+  try {
+    musicTracks.value = (await getBroadcastMusic()).tracks || []
+    musicError.value = ''
+  } catch (cause) {
+    musicError.value = cause instanceof Error ? cause.message : 'Music library is unavailable'
+  }
+}
+onMounted(() => { void reloadMusic() })
+
+function onMusicFileChange(event: Event): void {
+  const input = event.target as HTMLInputElement
+  musicFile.value = input.files?.[0] || null
+}
+
+async function uploadMusic(): Promise<void> {
+  if (!musicFile.value || !musicLicensed.value || musicBusy.value) return
+  musicBusy.value = true
+  musicError.value = ''
+  musicReceipt.value = ''
+  try {
+    const track = await uploadBroadcastMusic(musicFile.value, musicLicensed.value)
+    await reloadMusic()
+    musicChoice.value = track.id
+    musicReceipt.value = `${track.name} is stored in the music library`
+    musicFile.value = null
+    musicLicensed.value = false
+  } catch (cause) {
+    musicError.value = cause instanceof Error ? cause.message : 'Music upload failed'
+  } finally {
+    musicBusy.value = false
+  }
+}
 
 const destination = computed(() => props.destinations.find((item) => item.provider === provider.value))
 watch(() => props.destinations, (items) => {
@@ -87,7 +128,9 @@ async function start(): Promise<void> {
       height: height.value,
       fps: fps.value,
       video_bitrate_kbps: videoBitrateKbps.value,
-      preset: preset.value
+      preset: preset.value,
+      audio: musicChoice.value === 'host' ? undefined : true,
+      music_track_id: musicChoice.value === 'host' ? undefined : musicChoice.value
     })
     emit('refresh')
   } catch (cause) {
@@ -191,6 +234,16 @@ const fieldClass = 'block h-8 w-full rounded-[3px] border border-control bg-canv
           <a href="#settings/destinations" class="ml-auto text-accent hover:underline">Destination settings →</a>
         </div>
 
+        <label class="block">
+          <span class="ui-label mb-1 block">Audio source</span>
+          <select v-model="musicChoice" :class="fieldClass" :disabled="active || busy">
+            <option value="host">Replay host default{{ musicTracks.length ? '' : ' (or silence)' }}</option>
+            <option value="silent">Silent audio</option>
+            <option v-for="track in musicTracks" :key="track.id" :value="track.id">{{ track.name }} · {{ track.format.toUpperCase() }}</option>
+          </select>
+          <span class="mt-1 block text-meta text-fg-2">S3 library tracks are downloaded privately when the broadcast starts. Upload tracks below.</span>
+        </label>
+
         <details class="border-t border-rule pt-2">
           <summary class="cursor-pointer text-meta font-medium text-accent">Encoding · {{ width }}×{{ height }} · {{ fps }} fps · {{ videoBitrateKbps }} kbps · {{ preset }}</summary>
           <div class="mt-2 grid grid-cols-2 gap-2">
@@ -222,10 +275,45 @@ const fieldClass = 'block h-8 w-full rounded-[3px] border border-control bg-canv
           <dt>Destination</dt><dd>{{ status.provider ? destinationLabel(status.provider) : 'Off' }}<span v-if="status.host" class="block font-mono text-meta text-fg-2">{{ status.host }}</span></dd>
           <dt>Output</dt><dd class="font-mono">{{ status.width && status.height ? `${status.width}×${status.height}` : '—' }}<template v-if="status.fps"> · {{ status.fps }} fps</template></dd>
           <dt>Elapsed</dt><dd class="font-mono" :title="msISO(status.started_at_unix_ms)">{{ active ? elapsedLabel(status.started_at_unix_ms) : '—' }}</dd>
+          <dt>Audio</dt><dd>{{ status.music_track_id === 'silent' ? 'Silence' : status.music_track_id ? (musicTracks.find(track => track.id === status.music_track_id)?.name || 'S3 music track') : (status.audio ? 'Replay host default' : 'Disabled') }}</dd>
           <dt>Reconnects</dt><dd class="font-mono">{{ status.reconnects || 0 }}</dd>
           <dt>Source run</dt><dd><a :href="liveHref(selected.run.run_id)" class="font-mono break-all text-accent hover:underline">{{ selected.run.run_id }}</a></dd>
         </dl>
         <p v-if="status.last_error" class="border border-warn/40 bg-warn/10 px-3 py-2 text-warn" role="status">▲ {{ status.last_error }}</p>
+      </div>
+    </section>
+
+    <section class="ui-bay min-w-0 xl:col-span-2" aria-labelledby="broadcast-music-library-title">
+      <div class="ui-bay-header">
+        <h2 id="broadcast-music-library-title">Music library · S3</h2>
+        <button type="button" class="ui-btn ui-btn-sm" :disabled="musicBusy" @click="reloadMusic">Refresh</button>
+      </div>
+      <div class="grid gap-3 p-3 lg:grid-cols-2">
+        <div>
+          <p class="text-fg-2">Upload a reusable music track, then choose it under Audio source when starting a broadcast. MP3, OGG, WAV, FLAC or M4A · up to 20 MiB · maximum 32 tracks.</p>
+          <p class="mt-2 text-meta text-fg-2">{{ musicTracks.length }} track{{ musicTracks.length === 1 ? '' : 's' }} available</p>
+          <ul v-if="musicTracks.length" class="mt-2 max-h-32 space-y-1 overflow-y-auto text-meta" aria-label="Uploaded tracks">
+            <li v-for="track in musicTracks" :key="track.id" class="flex min-w-0 gap-2">
+              <span class="min-w-0 flex-1 truncate">{{ track.name }}</span>
+              <span class="shrink-0 text-fg-3">{{ track.format.toUpperCase() }} · {{ (track.size / 1024 / 1024).toFixed(1) }} MiB</span>
+            </li>
+          </ul>
+        </div>
+        <div class="space-y-2">
+          <label class="block">
+            <span class="ui-label mb-1 block">Upload audio</span>
+            <input type="file" accept=".mp3,.ogg,.wav,.flac,.m4a,audio/*" :class="fieldClass" :disabled="musicBusy" @change="onMusicFileChange">
+          </label>
+          <label class="flex items-start gap-2 text-meta">
+            <input v-model="musicLicensed" type="checkbox" class="mt-0.5" :disabled="musicBusy">
+            I have permission to broadcast this audio on the selected streaming platforms.
+          </label>
+          <button type="button" class="ui-btn ui-btn-sm ui-btn-primary" :disabled="musicBusy || !musicFile || !musicLicensed" @click="uploadMusic">
+            {{ musicBusy ? 'Uploading…' : 'Upload to S3' }}
+          </button>
+          <p v-if="musicError" role="alert" class="text-danger">{{ musicError }}</p>
+          <p v-if="musicReceipt" role="status" class="text-fg-2">{{ musicReceipt }}</p>
+        </div>
       </div>
     </section>
   </div>
