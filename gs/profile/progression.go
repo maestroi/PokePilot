@@ -67,6 +67,8 @@ const (
 	ProgressRadioTowerTakeoverSettled game.ProgressID = "gs_radio_tower_takeover_settled"
 	ProgressRadioTowerCleared         game.ProgressID = "gs_radio_tower_cleared"
 	ProgressIcePathWaterfallAcquired  game.ProgressID = "gs_ice_path_waterfall_acquired"
+	ProgressIcePathBouldersDropped game.ProgressID = "gs_ice_path_boulders_dropped"
+	ProgressBlackthornGymBouldersDropped game.ProgressID = "gs_blackthorn_gym_boulders_dropped"
 	ProgressClairDefeated             game.ProgressID = "gs_clair_defeated"
 	ProgressRisingBadgeEarned         game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -132,6 +134,9 @@ const (
 	eventBeatClair            uint16 = 1220
 	eventIcePathWaterfall     uint16 = 1672
 	eventDragonsDenDragonFang uint16 = 1704
+	eventBlackthornGymBoulder1 uint16 = 1798
+	eventIcePathBoulder1 uint16 = 1801
+	eventIcePathFloorBoulder1 uint16 = 1805
 	statusFlagsPokedexMask           = 1 << 0
 	johtoBadgeZephyrMask             = 1 << 0
 	johtoBadgeHiveMask               = 1 << 1
@@ -248,6 +253,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRadioTowerExecutiveF1Beaten, Complete: hasGSEvent(reader, eventRadioTowerExecutiveF1Beaten)},
 		{ID: ProgressRadioTowerCleared, Complete: hasGSEvent(reader, eventRadioTowerCleared)},
 		{ID: ProgressIcePathWaterfallAcquired, Complete: hasGSEvent(reader, eventIcePathWaterfall)},
+		{ID: ProgressIcePathBouldersDropped, Complete: gsIcePathBouldersPlaced(reader)},
+		{ID: ProgressBlackthornGymBouldersDropped, Complete: gsBlackthornGymBouldersPlaced(reader)},
 		{ID: ProgressClairDefeated, Complete: hasGSEvent(reader, eventBeatClair)},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
@@ -261,4 +268,25 @@ func (p *Profile) DecodeFirstBadgeProgress(reader game.MemoryReader) game.Progre
 	return append(projectEarlyStory(reader), game.ProgressFact{
 		ID: ProgressRadioTowerTakeoverSettled, Complete: p.DecodeRadioTowerVictory(reader).Complete(),
 	})
+}
+
+// Ice Path's retail stonetable sets each source event and clears its matching
+// lower-floor hidden boulder event. Require both halves of all four falls.
+func gsIcePathBouldersPlaced(reader game.MemoryReader) bool {
+	for n := uint16(0); n < 4; n++ {
+		if !hasGSEvent(reader, eventIcePathBoulder1+n) ||
+			hasGSEvent(reader, eventIcePathFloorBoulder1+n) {
+			return false
+		}
+	}
+	return true
+}
+
+func gsBlackthornGymBouldersPlaced(reader game.MemoryReader) bool {
+	for n := uint16(0); n < 3; n++ {
+		if !hasGSEvent(reader, eventBlackthornGymBoulder1+n) {
+			return false
+		}
+	}
+	return true
 }
