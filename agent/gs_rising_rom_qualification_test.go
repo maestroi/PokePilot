@@ -140,7 +140,9 @@ func TestGSRisingROMCheckpointReplay(t *testing.T) {
 	// Keep the last reachable actual ROM state even if the next controller
 	// errors, panics or a postcondition fails. No checkpoint goes to artifacts.
 	defer func() {
-		if !t.Failed() { return }
+		if !t.Failed() {
+			return
+		}
 		if saved, e := m.SaveStateChecked(); e == nil {
 			_ = os.WriteFile(filepath.Join(out, "failure.state"), saved, 0o600)
 		}
