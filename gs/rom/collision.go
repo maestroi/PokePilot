@@ -330,6 +330,9 @@ func firstBadgeCollisionTable(tileset uint8) ([]uint8, bool) {
 			0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00, 0x07, 0x00,
 		}, true
 	default:
+		if table, ok := lateJohtoCollisionTable(tileset); ok {
+			return table, true
+		}
 		if table, ok := coastalCollisionTable(tileset); ok {
 			return table, true
 		}
@@ -385,7 +388,8 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART",
 		"OLIVINE_MART", "BLACKTHORN_MART":
 		return 0x0b, true
-	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM":
+	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM",
+		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
