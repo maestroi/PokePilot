@@ -1,0 +1,116 @@
+name: Gen2 Rising ROM Qualification
+
+# Manual private Gold/Silver six-to-eight-badge replay. Fail closed on an
+# absent cartridge/checkpoint. Keep all ROM and emulator states on the
+# self-hosted runner; public artifacts contain only safe semantic diagnostics.
+on:
+  workflow_dispatch:
+    inputs:
+      game:
+        description: Retail cartridge to qualify
+        required: true
+        default: both
+        type: choice
+        options:
+          - gold
+          - silver
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gen2-rising-qualification
+  cancel-in-progress: false
+
+jobs:
+  rising:
+    name: Gold/Silver Rising eight-badge replay
+    runs-on: [self-hosted, linux, pokepilot-rom]
+    timeout-minutes: 300
+    steps:
+      - name: Checkout PokePilot
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Resolve private corpus and results
+        shell: bash
+        env:
+          CONFIGURED_CORPUS: ${{ vars.POKEPILOT_QUALIFICATION_CORPUS }}
+          CONFIGURED_RESULTS: ${{ vars.POKEPILOT_QUALIFICATION_RESULTS }}
+        run: |
+          set -euo pipefail
+          echo "POKEPILOT_RISING_CORPUS=${CONFIGURED_CORPUS:-/var/lib/pokepilot/qualification}" >> "$GITHUB_ENV"
+          results="${CONFIGURED_RESULTS:-$HOME/.local/state/pokepilot/qualification}"
+          out="$results/gen2-rising/${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$out"
+          echo "POKEPILOT_RISING_RESULTS=$out" >> "$GITHUB_ENV"
+
+      - name: Replay six through eight badges
+        shell: bash
+        env:
+          INPUT_GAME: ${{ inputs.game }}
+          CONFIGURED_GOLD_ROM: ${{ vars.POKEMON_GOLD_ROM_PATH }}
+          CONFIGURED_SILVER_ROM: ${{ vars.POKEMON_SILVER_ROM_PATH }}
+        run: |
+          set -euo pipefail
+          games=("${INPUT_GAME:-both}")
+          if [[ "${INPUT_GAME:-both}" == "both" ]]; then
+            games=(gold silver)
+          fi
+          for game in "${games[@]}"; do
+            case "$game" in
+              gold) rom="${CONFIGURED_GOLD_ROM:-$HOME/.config/pokepilot/pokemon_gold.gbc}" ;;
+              silver) rom="${CONFIGURED_SILVER_ROM:-$HOME/.config/pokepilot/pokemon_silver.gbc}" ;;
+              *) echo "::error::unknown game $game"; exit 2 ;;
+            esac
+            checkpoint="$POKEPILOT_RISING_CORPUS/gs-glacier/$game/post-mineral/start.state"
+            source="${checkpoint%/*}/source.json"
+            if [[ ! -f "$rom" || ! -s "$checkpoint" || ! -s "$source" ]]; then
+              echo "::error::Missing authentic $game ROM or verified post-Mineral checkpoint/source.json"
+              echo "### $game BLOCKED: no verified private six-badge fixture" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            out="$POKEPILOT_RISING_RESULTS/$game"
+            mkdir -p "$out"
+            export POKEPILOT_GS_RISING_QUAL=1
+            export POKEPILOT_GS_RISING_GAME="$game"
+            export POKEPILOT_GS_RISING_ROM="$rom"
+            export POKEPILOT_GS_RISING_START="$checkpoint"
+            export POKEPILOT_GS_RISING_OUT="$out"
+            go test -count=1 -timeout=180m ./agent \
+              -run '^TestGSRisingROMCheckpointReplay$' -v \
+              2>&1 | tee "$out/run.log"
+            echo "PASS $game: verified full six-to-eight badge ROM journey" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Copy safe diagnostics only
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          safe="$RUNNER_TEMP/pokepilot-gen2-rising-safe"
+          rm -rf "$safe"
+          mkdir -p "$safe"
+          if [[ -d "${POKEPILOT_RISING_RESULTS:-}" ]]; then
+            cd "$POKEPILOT_RISING_RESULTS"
+            while IFS= read -r -d '' file; do
+              mkdir -p "$safe/$(dirname "$file")"
+              cp "$file" "$safe/$file"
+            done < <(find . -type f ! -name '*.state' ! -name '*.sav' \
+              ! -name '*.gb' ! -name '*.gbc' -print0)
+          fi
+          echo "POKEPILOT_RISING_SAFE=$safe" >> "$GITHUB_ENV"
+          echo "ROMs and checkpoints stay private on the self-hosted runner." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload safe replay diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gen2-rising-qualification-diagnostics
+          path: ${{ env.POKEPILOT_RISING_SAFE }}
+          retention-days: 14
+          if-no-files-found: warn
