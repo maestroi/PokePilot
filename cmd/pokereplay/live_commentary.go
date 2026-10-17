@@ -148,6 +148,9 @@ func (c *liveCommentarySession) run(ctx context.Context) {
 		} else if liveRunBetweenAttempts(run.Status) {
 			// Never turn a handoff into a false terminal event.
 		} else if !strings.EqualFold(strings.TrimSpace(run.Status), "running") {
+			// The final safe activity batch may contain a finish/failure
+			// event; announce it once before the commentator exits.
+			c.process(ctx, run)
 			return
 		} else {
 			c.process(ctx, run)
