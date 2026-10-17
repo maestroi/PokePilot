@@ -224,6 +224,20 @@ func generateLivePCM(ctx context.Context,text,voice string) ([]byte,error) {
  return pcm,nil
 }
 
+// Full bounded in-memory transcript for live operator debugging. Durable
+// per-event JSON objects remain independently available in S3.
+func (s *replayServer) handleLiveCommentaryEvents(w http.ResponseWriter,r *http.Request) {
+ runID:=strings.TrimSpace(r.PathValue("id"))
+ if runID=="" {writeJSON(w,http.StatusBadRequest,map[string]string{"error":"missing run id"});return}
+ session:=s.commentarySessionForRun(runID)
+ if session==nil {writeJSON(w,http.StatusOK,[]commentator.Emission{});return}
+ session.mu.Lock()
+ events:=append([]commentator.Emission(nil),session.history...)
+ session.mu.Unlock()
+ if events==nil {events=[]commentator.Emission{}}
+ writeJSON(w,http.StatusOK,events)
+}
+
 func (s *replayServer) handleLiveCommentaryStatus(w http.ResponseWriter,r *http.Request) {
  runID:=strings.TrimSpace(r.PathValue("id"))
  if runID=="" {writeJSON(w,http.StatusBadRequest,map[string]string{"error":"missing run id"});return}
