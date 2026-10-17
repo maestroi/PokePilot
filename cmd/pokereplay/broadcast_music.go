@@ -19,18 +19,18 @@ import (
 )
 
 const (
-	broadcastMusicMaxBytes = 20 << 20
-	broadcastMusicMaxTracks = 32
+	broadcastMusicMaxBytes        = 20 << 20
+	broadcastMusicMaxTracks       = 32
 	broadcastMusicMaxCatalogBytes = 48 << 10
-	broadcastMusicCatalogKey = "media/broadcast/music/library-v1.json"
+	broadcastMusicCatalogKey      = "media/broadcast/music/library-v1.json"
 )
 
 type broadcastMusicTrack struct {
-	ID string `json:"id"`
-	Name string `json:"name"`
-	Format string `json:"format"`
-	Size int64 `json:"size"`
-	UploadedAtMS int64 `json:"uploaded_at_unix_ms"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Format       string `json:"format"`
+	Size         int64  `json:"size"`
+	UploadedAtMS int64  `json:"uploaded_at_unix_ms"`
 }
 
 type broadcastMusicLibrary struct {
