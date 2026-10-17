@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	gsRadioTowerFakeDirectorSceneX uint8 = 0
-	gsRadioTowerFakeDirectorSceneY uint8 = 3
-	gsRadioTowerFakeDirectorAttempts = 3
+	gsRadioTowerFakeDirectorSceneX   uint8 = 0
+	gsRadioTowerFakeDirectorSceneY   uint8 = 3
+	gsRadioTowerFakeDirectorAttempts       = 3
 )
 
 // executeGSRadioTowerFakeDirector handles only the first retail Radio Tower

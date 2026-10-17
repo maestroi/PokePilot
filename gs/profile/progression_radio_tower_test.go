@@ -17,7 +17,7 @@ func TestGSRadioTowerRetailEventFactsAreIndependent(t *testing.T) {
 	for _, profile := range []*Profile{NewGold(), NewSilver()} {
 		mem := fakeGSReader{}
 		steps := []struct {
-			event uint16
+			event    uint16
 			progress game.ProgressID
 		}{
 			{eventBeatRadioTowerFakeDirector, ProgressRadioTowerFakeDirectorBeaten},

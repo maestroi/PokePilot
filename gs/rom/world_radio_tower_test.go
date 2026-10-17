@@ -53,7 +53,7 @@ func TestRadioTowerRetailWarpsAndCollisionArePinned(t *testing.T) {
 	for _, tc := range []struct {
 		from string
 		x, y uint8
-		to string
+		to   string
 		warp uint8
 	}{
 		{"GOLDENROD_CITY", 5, 15, "RADIO_TOWER_1F", 0},

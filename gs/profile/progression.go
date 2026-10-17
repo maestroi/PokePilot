@@ -56,11 +56,11 @@ const (
 	// Radio Tower events are cartridge-observable, but the eighth-badge
 	// progression planner remains locked until real-ROM qualification.
 	ProgressRadioTowerFakeDirectorBeaten game.ProgressID = "gs_radio_tower_fake_director_beaten"
-	ProgressRadioTowerBasementUnlocked game.ProgressID = "gs_radio_tower_basement_unlocked"
-	ProgressRadioTowerCardKeyReceived game.ProgressID = "gs_radio_tower_card_key_received"
-	ProgressRadioTowerShutterOpened game.ProgressID = "gs_radio_tower_shutter_opened"
-	ProgressRadioTowerCleared game.ProgressID = "gs_radio_tower_cleared"
-	ProgressRisingBadgeEarned           game.ProgressID = "gs_rising_badge_earned"
+	ProgressRadioTowerBasementUnlocked   game.ProgressID = "gs_radio_tower_basement_unlocked"
+	ProgressRadioTowerCardKeyReceived    game.ProgressID = "gs_radio_tower_card_key_received"
+	ProgressRadioTowerShutterOpened      game.ProgressID = "gs_radio_tower_shutter_opened"
+	ProgressRadioTowerCleared            game.ProgressID = "gs_radio_tower_cleared"
+	ProgressRisingBadgeEarned            game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -111,18 +111,18 @@ const (
 	// not source line numbers (the table has const_next ranges).
 	eventBeatRadioTowerFakeDirector uint16 = 1395 // EXECUTIVEM_3 post-Basement Key gift
 	eventRadioTowerBasementUnlocked uint16 = 73
-	eventRadioTowerCardKeyReceived uint16 = 74
-	eventRadioTowerShutterOpened uint16 = 37
-	eventRadioTowerCleared uint16 = 33
-	statusFlagsPokedexMask                     = 1 << 0
-	johtoBadgeZephyrMask                       = 1 << 0
-	johtoBadgeHiveMask                         = 1 << 1
-	johtoBadgePlainMask                        = 1 << 2
-	johtoBadgeFogMask                          = 1 << 3
-	johtoBadgeMineralMask                      = 1 << 4
-	johtoBadgeStormMask                        = 1 << 5
-	johtoBadgeGlacierMask                      = 1 << 6
-	johtoBadgeRisingMask                       = 1 << 7
+	eventRadioTowerCardKeyReceived  uint16 = 74
+	eventRadioTowerShutterOpened    uint16 = 37
+	eventRadioTowerCleared          uint16 = 33
+	statusFlagsPokedexMask                 = 1 << 0
+	johtoBadgeZephyrMask                   = 1 << 0
+	johtoBadgeHiveMask                     = 1 << 1
+	johtoBadgePlainMask                    = 1 << 2
+	johtoBadgeFogMask                      = 1 << 3
+	johtoBadgeMineralMask                  = 1 << 4
+	johtoBadgeStormMask                    = 1 << 5
+	johtoBadgeGlacierMask                  = 1 << 6
+	johtoBadgeRisingMask                   = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
