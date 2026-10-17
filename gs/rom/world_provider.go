@@ -924,9 +924,12 @@ type firstBadgeWorldProvider struct {
 // catalog identities plus decomp-verified topology facts.
 func NewFirstBadgeWorldProvider(romData []byte) worldmodel.NativeGridProvider {
 	_ = romData
-	specs := make(map[uint16]mapSpec, len(firstBadgeTopology))
-	ids := make([]uint16, 0, len(firstBadgeTopology))
-	for _, spec := range firstBadgeTopology {
+	all := make([]mapSpec, 0, len(firstBadgeTopology)+len(lateJohtoTopology))
+	all = append(all, firstBadgeTopology...)
+	all = append(all, lateJohtoTopology...)
+	specs := make(map[uint16]mapSpec, len(all))
+	ids := make([]uint16, 0, len(all))
+	for _, spec := range all {
 		info, ok := gsdata.MapByName(spec.name)
 		if !ok {
 			continue
