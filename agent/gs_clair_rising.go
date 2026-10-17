@@ -63,7 +63,7 @@ func executeGSClair(m *emu.Emu, romData []byte) error {
 	const label = "gym:clair"
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressClairDefeated,
-		gsprofile.ProgressIcePathWaterfallAcquired, label)
+		gsprofile.ProgressBlackthornGymBouldersDropped, label)
 	if err != nil || done {
 		return err
 	}

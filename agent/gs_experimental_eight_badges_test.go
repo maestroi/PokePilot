@@ -29,6 +29,8 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
 		gsprofile.ProgressRadioTowerTakeoverSettled,
 		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressIcePathBouldersDropped,
+		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressRisingBadgeEarned,
 	}

@@ -272,6 +272,8 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
 		gsprofile.ProgressRadioTowerTakeoverSettled,
 		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressIcePathBouldersDropped,
+		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressRisingBadgeEarned} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {

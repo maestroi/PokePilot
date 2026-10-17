@@ -30,6 +30,8 @@ func gsRisingStages() []gsGlacierStage {
 		gsGlacierStage{"radio-5f-executive", gsprofile.ProgressRadioTowerExecutiveF1Beaten},
 		gsGlacierStage{"radio-boss-director", gsprofile.ProgressRadioTowerTakeoverSettled},
 		gsGlacierStage{"ice-path-hm07", gsprofile.ProgressIcePathWaterfallAcquired},
+		gsGlacierStage{"ice-path-boulders", gsprofile.ProgressIcePathBouldersDropped},
+		gsGlacierStage{"blackthorn-boulders", gsprofile.ProgressBlackthornGymBouldersDropped},
 		gsGlacierStage{"blackthorn-clair", gsprofile.ProgressClairDefeated},
 		gsGlacierStage{"dragons-den-rising", gsprofile.ProgressRisingBadgeEarned},
 	)
@@ -37,7 +39,7 @@ func gsRisingStages() []gsGlacierStage {
 
 func TestGSRisingStageCoverage(t *testing.T) {
 	stages := gsRisingStages()
-	if len(stages) != 22 || stages[0].progress != gsprofile.ProgressRedGyaradosDefeated ||
+	if len(stages) != 24 || stages[0].progress != gsprofile.ProgressRedGyaradosDefeated ||
 		stages[len(stages)-1].progress != gsprofile.ProgressRisingBadgeEarned {
 		t.Fatalf("badge-6-to-8 proof does not include every step: %+v", stages)
 	}

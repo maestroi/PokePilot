@@ -616,3 +616,14 @@ These are opt-in **experimental**, still ROM-unqualified controllers.
 Real Gold and Silver gameplay replays (particularly the Ice Path forced
 movement and Gym boulder layouts) must be used to fix unexpected
 navigation or script differences before certifying this route.
+
+### Assigned Strength pit puzzles
+
+The added Ice Path B1F puzzle explicitly pushes four native boulder slots
+(2–5) into their stonetable-matched holes (11,2), (4,7), (5,12),
+and (12,13); Blackthorn Gym 2F matches slots (4–6) to (8,3),
+(2,5), and (8,7). A bounded native push-state solver plans only the
+next physically reachable action. The controller settles scripted falling
+boulders before replanning and requires every *real* disappearance event
+and, for Ice Path, the B2F floor-boulder flag transitions. This is
+distinct from merely navigating to Clair or ending a Strength animation.

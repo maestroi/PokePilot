@@ -88,6 +88,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
 		gsprofile.ProgressRadioTowerTakeoverSettled,
 		gsprofile.ProgressIcePathWaterfallAcquired,
+		gsprofile.ProgressIcePathBouldersDropped,
+		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressRisingBadgeEarned:
 		return true
@@ -284,6 +286,10 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRadioTowerFinalBoss(a.m, a.romData)
 		case gsprofile.ProgressIcePathWaterfallAcquired:
 			err = executeGSIcePathWaterfall(a.m, a.romData)
+		case gsprofile.ProgressIcePathBouldersDropped:
+			err = executeGSIcePathBoulders(a.m, a.romData)
+		case gsprofile.ProgressBlackthornGymBouldersDropped:
+			err = executeGSBlackthornGymBoulders(a.m, a.romData)
 		case gsprofile.ProgressClairDefeated:
 			err = executeGSClair(a.m, a.romData)
 		case gsprofile.ProgressRisingBadgeEarned:
@@ -344,6 +350,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRadioTowerExecutiveF1Beaten,
 			gsprofile.ProgressRadioTowerTakeoverSettled,
 			gsprofile.ProgressIcePathWaterfallAcquired,
+			gsprofile.ProgressIcePathBouldersDropped,
+			gsprofile.ProgressBlackthornGymBouldersDropped,
 			gsprofile.ProgressClairDefeated,
 			gsprofile.ProgressRisingBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
@@ -776,6 +784,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressIcePathWaterfallAcquired,
 			Note:     "(experimental: traverse Route 44/Ice Path's forced ice and receive HM07 Waterfall)",
 		}}
+	case !obs.Story.Has(gsprofile.ProgressIcePathBouldersDropped):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressIcePathBouldersDropped,
+			Note: "(experimental: push Ice Path B1F Strength boulders into assigned holes)"}}
+	case !obs.Story.Has(gsprofile.ProgressBlackthornGymBouldersDropped):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressBlackthornGymBouldersDropped,
+			Note: "(experimental: cross Ice Path and drop the three Blackthorn Gym 2F boulders)"}}
 	case !obs.Story.Has(gsprofile.ProgressClairDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
