@@ -67,9 +67,13 @@ func TestGSRadioUndergroundOwnedWithoutUnlockingBadgeEight(t *testing.T) {
 
 func TestGSRadioResetStandTileIsNotAnImmediateWarp(t *testing.T) {
 	tunnel, err := gsOpeningMapID("GOLDENROD_UNDERGROUND")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	header, err := gsrom.NewFirstBadgeWorldProvider(nil).ParseMap(tunnel)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if 22 >= int(header.WidthBlocks)*2 || 28 >= int(header.HeightBlocks)*2 {
 		t.Fatal("reset stand is outside native tunnel bounds")
 	}
