@@ -3,7 +3,7 @@ package agent
 import "testing"
 
 // Route interruptions may use the shared Gen-II wild/trainer battler and
-// recovery without granting ownership of the Rocket and Pryce scripts.
+// recovery without granting ownership of unfinished Rocket B3F scripts.
 func TestGSMahoganyRouteOwnershipStopsAtScriptedStoryBoundaries(t *testing.T) {
 	mart, err := gsOpeningMapID("MAHOGANY_MART_1F")
 	if err != nil || !gsSecondBadgeOwnedMap(mart) {
@@ -28,7 +28,7 @@ func TestGSMahoganyRouteOwnershipStopsAtScriptedStoryBoundaries(t *testing.T) {
 			t.Fatalf("%s has no owned ordinary-interruption route", name)
 		}
 	}
-	for _, name := range []string{"MAHOGANY_GYM", "TEAM_ROCKET_BASE_B3F"} {
+	for _, name := range []string{"TEAM_ROCKET_BASE_B3F"} {
 		id, err := gsOpeningMapID(name)
 		if err != nil {
 			t.Fatal(err)
