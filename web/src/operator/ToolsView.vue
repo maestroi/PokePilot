@@ -202,6 +202,8 @@ const gen2Goals = [
   ['Earn 4 badges.', '4 badges · Fog · Morty'],
   ['Earn 5 badges.', '5 badges · Storm · Chuck'],
   ['Earn 6 badges.', '6 badges · Mineral · Jasmine'],
+  ['Earn 7 badges.', '7 badges · Glacier · Pryce · experimental'],
+  ['Earn 8 badges.', '8 badges · Rising · Clair · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 
@@ -369,14 +371,12 @@ async function submit(): Promise<void> {
             </template>
             <template v-else-if="isGen2">
               <option v-for="[value, label] in gen2Goals" :key="value || 'free'" :value="value">{{ label }}</option>
-              <option value="Earn 7 badges." disabled>7 badges · Glacier · Pryce · not yet playable</option>
-              <option value="Earn 8 badges." disabled>8 badges · Rising · Clair · not yet playable</option>
             </template>
             <template v-else>
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose a specific supported badge milestone or the moving frontier. This build currently supports the experimental Gold/Silver progression through Jasmine and the Mineral Badge. Badges 7 and 8 remain unavailable until Mahogany and Blackthorn story controllers are implemented and ROM-qualified.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges to attempt the experimental Gold/Silver campaign now. The agent can attempt Pryce and Radio Tower, but Ice Path, Clair and Dragon's Den are unfinished: a run may fail before reaching 8. Only cartridge-observed badge flags count as success. The current supported frontier preset still stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
