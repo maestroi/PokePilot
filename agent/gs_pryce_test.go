@@ -6,11 +6,11 @@ import (
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
-func TestGSPryceObjectiveIsGatedUntilRocketHideoutIsExecutable(t *testing.T) {
-	// The controller is implemented but must not be offered as an unsupported
-	// mainline objective before the real Rocket Hideout clear is owned.
-	if gsSupportedProgress(gsprofile.ProgressRocketHideoutCleared) {
-		t.Fatal("Rocket Hideout must stay unsupported until its controller lands")
+func TestGSPryceObjectiveIsGatedUntilROMQualification(t *testing.T) {
+	// B2F is now executable, but badge seven must not be advertised until
+	// ROM-backed Gold/Silver checkpoints prove Rocket clearance and Pryce.
+	if !gsSupportedProgress(gsprofile.ProgressRocketHideoutCleared) {
+		t.Fatal("Rocket Hideout must have an executable B2F controller")
 	}
 	if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
 		t.Fatal("Glacier Badge cannot become selectable before Rocket Hideout")

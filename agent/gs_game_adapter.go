@@ -73,7 +73,10 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRocketPasswordsLearned,
 		gsprofile.ProgressRocketOfficeOpened,
 		gsprofile.ProgressRocketExecutiveBeaten,
-		gsprofile.ProgressRocketMurkrowPassword:
+		gsprofile.ProgressRocketMurkrowPassword,
+		gsprofile.ProgressRocketTransmitterDoorOpened,
+		gsprofile.ProgressRocketExecutiveFBeaten,
+		gsprofile.ProgressRocketHideoutCleared:
 		return true
 	default:
 		return false
@@ -244,6 +247,12 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRocketExecutiveM4(a.m, a.romData)
 		case gsprofile.ProgressRocketMurkrowPassword:
 			err = executeGSRocketMurkrow(a.m, a.romData)
+		case gsprofile.ProgressRocketTransmitterDoorOpened:
+			err = executeGSRocketTransmitterDoor(a.m, a.romData)
+		case gsprofile.ProgressRocketExecutiveFBeaten:
+			err = executeGSRocketExecutiveF(a.m, a.romData)
+		case gsprofile.ProgressRocketHideoutCleared:
+			err = executeGSRocketElectrodes(a.m, a.romData)
 		case gsprofile.ProgressGlacierBadgeEarned:
 			err = executeGSPryce(a.m, a.romData)
 		default:
@@ -289,7 +298,10 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRocketPasswordsLearned,
 			gsprofile.ProgressRocketOfficeOpened,
 			gsprofile.ProgressRocketExecutiveBeaten,
-			gsprofile.ProgressRocketMurkrowPassword:
+			gsprofile.ProgressRocketMurkrowPassword,
+			gsprofile.ProgressRocketTransmitterDoorOpened,
+			gsprofile.ProgressRocketExecutiveFBeaten,
+			gsprofile.ProgressRocketHideoutCleared:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -647,6 +659,24 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketMurkrowPassword,
 			Note:     "(learn the transmitter password from Giovanni's Murkrow)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketTransmitterDoorOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketTransmitterDoorOpened,
+			Note:     "(use Murkrow's password to open the B2F radio transmitter door)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketExecutiveFBeaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketExecutiveFBeaten,
+			Note:     "(defeat the B2F Rocket executive with Lance and settle the retail post-battle script)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketHideoutCleared,
+			Note:     "(defeat all three B2F Electrodes and finish Lance's HM06 Whirlpool reward scene)",
 		}}
 	default:
 		return nil

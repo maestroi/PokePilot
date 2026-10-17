@@ -45,6 +45,9 @@ func TestGSRocketB3FProgressionNeverSkipsPasswordsOrExecutive(t *testing.T) {
 			gsprofile.ProgressRocketOfficeOpened,
 			gsprofile.ProgressRocketExecutiveBeaten,
 			gsprofile.ProgressRocketMurkrowPassword,
+			gsprofile.ProgressRocketTransmitterDoorOpened,
+			gsprofile.ProgressRocketExecutiveFBeaten,
+			gsprofile.ProgressRocketHideoutCleared,
 		} {
 			goals := adapter.ProgressionObjectives(obs)
 			if len(goals) != 1 || goals[0].Progress != next {
@@ -56,7 +59,7 @@ func TestGSRocketB3FProgressionNeverSkipsPasswordsOrExecutive(t *testing.T) {
 			obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 		}
 		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s may not proceed into unfinished B2F transmitter: %+v", id, goals)
+			t.Fatalf("%s may not proceed into unqualified Glacier Badge: %+v", id, goals)
 		}
 	}
 }
