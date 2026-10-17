@@ -20,6 +20,7 @@ type rtmpBroadcastStartRequest struct {
 	Audio                   *bool  `json:"audio,omitempty"`
 	AudioBitrateKbps        int    `json:"audio_bitrate_kbps,omitempty"`
 	AudioSampleRate         int    `json:"audio_sample_rate,omitempty"`
+	MusicTrackID            string `json:"music_track_id,omitempty"`
 }
 
 type broadcastDestination struct {
