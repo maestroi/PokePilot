@@ -35,4 +35,3 @@ func gsPostMineralCaptureEligible(o Objective, before, after Observation) bool {
 	}
 	return true
 }
-

@@ -17,7 +17,7 @@ import (
 )
 
 type gsGlacierStage struct {
-	name string
+	name     string
 	progress game.ProgressID
 }
 
@@ -122,7 +122,11 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open ROM: %v", err)
 	}
-	defer func() { if m != nil { _ = m.Close() } }()
+	defer func() {
+		if m != nil {
+			_ = m.Close()
+		}
+	}()
 	if err := m.LoadState(rawState); err != nil {
 		t.Fatalf("load sixth-badge checkpoint: %v", err)
 	}
@@ -157,7 +161,9 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 	startDigest := sha256.Sum256(rawState)
 	t.Logf("checked start state sha256=%x", startDigest)
 	defer func() {
-		if !t.Failed() { return }
+		if !t.Failed() {
+			return
+		}
 		if state, e := m.SaveStateChecked(); e == nil {
 			_ = os.WriteFile(filepath.Join(out, "failure.state"), state, 0o600)
 		}
@@ -172,13 +178,19 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 			adapter := newGSObjectiveAdapter(m, m.ROM(), gameID)
 			o := Objective{Kind: KindProgress, Progress: stage.progress}
 			if stage.progress != gsprofile.ProgressGlacierBadgeEarned {
-				if err := adapter.Validate(o, Observation{}); err != nil { t.Fatal(err) }
+				if err := adapter.Validate(o, Observation{}); err != nil {
+					t.Fatal(err)
+				}
 			} else if gsSupportedProgress(stage.progress) {
 				t.Fatal("Glacier unexpectedly enabled before verified full qualification")
 			}
-			if err := adapter.NormalizeBoundary(); err != nil { t.Fatal(err) }
+			if err := adapter.NormalizeBoundary(); err != nil {
+				t.Fatal(err)
+			}
 			before, err := adapter.Observe()
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if before.GameID != gameID || !before.Controllable || before.InBattle ||
 				before.Story.Has(stage.progress) {
 				t.Fatalf("unstable or pre-completed stage %s", stage.name)
@@ -194,7 +206,9 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 				if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
 					// The retail leader controller exists, but production must
 					// stay fail-closed until replay evidence qualifies it.
-					if err := executeGSPryce(m, m.ROM()); err != nil { return err }
+					if err := executeGSPryce(m, m.ROM()); err != nil {
+						return err
+					}
 					result = ObjectiveResult{Objective: o}
 					return nil
 				}
@@ -213,44 +227,70 @@ func TestGSGlacierROMCheckpointReplay(t *testing.T) {
 			if err != nil {
 				t.Fatalf("stage %s failed after %d frames: %v", stage.name, m.FrameCount()-startFrame, err)
 			}
-			if err := adapter.NormalizeBoundary(); err != nil { t.Fatal(err) }
+			if err := adapter.NormalizeBoundary(); err != nil {
+				t.Fatal(err)
+			}
 			after, err := adapter.Observe()
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if stage.progress == gsprofile.ProgressGlacierBadgeEarned {
 				_, err = verifyObjectivePostcondition(o, before, after, result)
 			} else {
 				err = adapter.VerifyPostcondition(o, before, after, result)
 			}
-			if err != nil { t.Fatalf("%s did not satisfy semantic postcondition: %v", stage.name, err) }
+			if err != nil {
+				t.Fatalf("%s did not satisfy semantic postcondition: %v", stage.name, err)
+			}
 			if !after.Story.Has(stage.progress) || !after.Controllable || after.InBattle {
 				t.Fatalf("stage %s did not settle into committed cartridge state", stage.name)
 			}
 			state, err := m.SaveStateChecked()
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			file := fmt.Sprintf("%02d-%s", i+1, stage.name)
-			if err := os.WriteFile(filepath.Join(out, file+".state"), state, 0o600); err != nil { t.Fatal(err) }
-			if err := gsCoastalWriteJSON(filepath.Join(out, file+".json"), after); err != nil { t.Fatal(err) }
+			if err := os.WriteFile(filepath.Join(out, file+".state"), state, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := gsCoastalWriteJSON(filepath.Join(out, file+".json"), after); err != nil {
+				t.Fatal(err)
+			}
 			hash := sha256.Sum256(state)
 			t.Logf("PASS %s frames=%d checkpoint_sha256=%x", stage.name, m.FrameCount()-startFrame, hash)
-			if err := m.Close(); err != nil { t.Fatal(err) }
+			if err := m.Close(); err != nil {
+				t.Fatal(err)
+			}
 			m, err = emu.Open(romPath)
-			if err != nil { t.Fatal(err) }
-			if err := m.LoadState(state); err != nil { t.Fatalf("reload saved stage %s: %v", stage.name, err) }
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := m.LoadState(state); err != nil {
+				t.Fatalf("reload saved stage %s: %v", stage.name, err)
+			}
 			restarted, err := ObserveChecked(m, m.ROM())
-			if err != nil { t.Fatal(err) }
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !restarted.Controllable || restarted.InBattle || restarted.GameID != gameID ||
 				!restarted.Story.Has(stage.progress) {
 				t.Fatalf("lost stage %s on emulator reopen", stage.name)
 			}
 			for _, prior := range completed {
-				if !restarted.Story.Has(prior) { t.Fatalf("lost %s on stage restart", prior) }
+				if !restarted.Story.Has(prior) {
+					t.Fatalf("lost %s on stage restart", prior)
+				}
 			}
 		})
-		if !ok { return }
+		if !ok {
+			return
+		}
 		completed = append(completed, stage.progress)
 	}
 	final, err := ObserveChecked(m, m.ROM())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !final.Story.Has(gsprofile.ProgressGlacierBadgeEarned) ||
 		!final.Story.Has(gsprofile.ProgressRocketHideoutCleared) ||
 		final.Story.Has(gsprofile.ProgressRisingBadgeEarned) {
