@@ -21,8 +21,8 @@ const (
 // proof for this transaction. Reaching 5F or winning a generic trainer battle
 // must never substitute for that event.
 //
-// The objective is intentionally not offered by the Gen2 planner until the
-// Glacier/Radio Tower end-to-end path is ROM-qualified.
+// Available for explicitly opted-in seven/eight-badge campaigns; still
+// subject to retail ROM qualification and genuine postcondition checks.
 func executeGSRadioTowerFakeDirector(m *emu.Emu, romData []byte) error {
 	const encounter = "radio-tower:fake-director"
 	profile, done, err := gsCoastalProfile(m, romData,
