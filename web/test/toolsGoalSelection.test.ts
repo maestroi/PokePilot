@@ -13,3 +13,10 @@ test('tools run goal stays independent from play style and purpose', () => {
   assert.match(source, /v-model="form\.purpose"/)
   assert.match(source, /Debug coverage · exercise new interactions/)
 })
+
+test('Gen2 launcher allows unqualified 7/8-badge runs with visible warning', () => {
+  assert.match(source, /\['Earn 7 badges\.', '7 badges · Glacier · Pryce · experimental'\]/)
+  assert.match(source, /\['Earn 8 badges\.', '8 badges · Rising · Clair · experimental'\]/)
+  assert.doesNotMatch(source, /<option value="Earn (7|8) badges\." disabled/)
+  assert.match(source, /Only cartridge-observed badge flags count as success/)
+})

@@ -90,7 +90,8 @@ func executeGSRadioTowerExecutiveF1(m *emu.Emu, romData []byte) error {
 // temporary state with CLEARED_RADIO_TOWER=true but wing=false is deliberately
 // NOT complete; a recoverable in-flight script is settled first.
 //
-// This is an unadvertised controller until both games pass real-ROM replay.
+// This controller is available to explicitly experimental eight-badge
+// campaigns before real-ROM qualification. A missing wing event never counts.
 func executeGSRadioTowerFinalBoss(m *emu.Emu, romData []byte) error {
 	const encounter = "radio-tower:5f-rocket-boss-and-director"
 	profile, done, err := gsCoastalProfile(m, romData,

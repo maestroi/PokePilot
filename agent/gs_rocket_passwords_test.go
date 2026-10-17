@@ -58,8 +58,9 @@ func TestGSRocketB3FProgressionNeverSkipsPasswordsOrExecutive(t *testing.T) {
 			}
 			obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 		}
-		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s may not proceed into unqualified Glacier Badge: %+v", id, goals)
+		if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+			goals[0].Progress != gsprofile.ProgressGlacierBadgeEarned {
+			t.Fatalf("%s must offer experimental Pryce only after Rocket clear: %+v", id, goals)
 		}
 	}
 }

@@ -76,7 +76,17 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRocketMurkrowPassword,
 		gsprofile.ProgressRocketTransmitterDoorOpened,
 		gsprofile.ProgressRocketExecutiveFBeaten,
-		gsprofile.ProgressRocketHideoutCleared:
+		gsprofile.ProgressRocketHideoutCleared,
+		// Experimental 7/8-badge attempts may run these not-yet-ROM-qualified
+		// controllers; missing Ice Path and Clair remain unsupported.
+		gsprofile.ProgressGlacierBadgeEarned,
+		gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+		gsprofile.ProgressRadioTowerBasementUnlocked,
+		gsprofile.ProgressRadioTowerCardKeyReceived,
+		gsprofile.ProgressRadioTowerShutterOpened,
+		gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+		gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+		gsprofile.ProgressRadioTowerTakeoverSettled:
 		return true
 	default:
 		return false
@@ -255,6 +265,20 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRocketElectrodes(a.m, a.romData)
 		case gsprofile.ProgressGlacierBadgeEarned:
 			err = executeGSPryce(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerFakeDirectorBeaten:
+			err = executeGSRadioTowerFakeDirector(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerBasementUnlocked:
+			err = executeGSRadioTowerBasementDoor(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerCardKeyReceived:
+			err = executeGSRadioTowerCardKey(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerShutterOpened:
+			err = executeGSRadioTowerShutter(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerExecutiveM2Beaten:
+			err = executeGSRadioTowerExecutiveM2(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerExecutiveF1Beaten:
+			err = executeGSRadioTowerExecutiveF1(a.m, a.romData)
+		case gsprofile.ProgressRadioTowerTakeoverSettled:
+			err = executeGSRadioTowerFinalBoss(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -301,7 +325,15 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressRocketMurkrowPassword,
 			gsprofile.ProgressRocketTransmitterDoorOpened,
 			gsprofile.ProgressRocketExecutiveFBeaten,
-			gsprofile.ProgressRocketHideoutCleared:
+			gsprofile.ProgressRocketHideoutCleared,
+			gsprofile.ProgressGlacierBadgeEarned,
+			gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+			gsprofile.ProgressRadioTowerBasementUnlocked,
+			gsprofile.ProgressRadioTowerCardKeyReceived,
+			gsprofile.ProgressRadioTowerShutterOpened,
+			gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+			gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+			gsprofile.ProgressRadioTowerTakeoverSettled:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -677,6 +709,54 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRocketHideoutCleared,
 			Note:     "(defeat all three B2F Electrodes and finish Lance's HM06 Whirlpool reward scene)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressGlacierBadgeEarned):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressGlacierBadgeEarned,
+			Note:     "(experimental: defeat Pryce at Mahogany Gym and earn Glacier Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerFakeDirectorBeaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerFakeDirectorBeaten,
+			Note:     "(experimental: defeat the fake Director at Radio Tower 5F and claim Basement Key)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerBasementUnlocked):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerBasementUnlocked,
+			Note:     "(experimental: use Basement Key to open Goldenrod Underground)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerCardKeyReceived):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerCardKeyReceived,
+			Note:     "(experimental: rescue the real Director through the switch puzzle and receive Card Key)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerShutterOpened):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerShutterOpened,
+			Note:     "(experimental: open the 3F Card Key shutter)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerExecutiveM2Beaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerExecutiveM2Beaten,
+			Note:     "(experimental: defeat the Radio Tower 4F male Rocket executive)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerExecutiveF1Beaten):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerExecutiveF1Beaten,
+			Note:     "(experimental: defeat the Radio Tower 5F female Rocket executive)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioTowerTakeoverSettled):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRadioTowerTakeoverSettled,
+			Note:     "(experimental: defeat the final Rocket boss and finish the Director's Gold/Silver wing gift)",
 		}}
 	default:
 		return nil

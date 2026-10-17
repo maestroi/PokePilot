@@ -29,13 +29,15 @@ func TestGSRadioTowerFirstGuardedControllerStaysOutOfPlanner(t *testing.T) {
 			t.Fatalf("Radio Tower basement story map %s should be owned: %v", name, err)
 		}
 	}
-	if gsSupportedProgress(gsprofile.ProgressRadioTowerTakeoverSettled) ||
-		gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveM2Beaten) ||
-		gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveF1Beaten) ||
-		gsSupportedProgress(gsprofile.ProgressRadioTowerFakeDirectorBeaten) ||
-		gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
-		gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) ||
+	if !gsSupportedProgress(gsprofile.ProgressRadioTowerTakeoverSettled) ||
+		!gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveM2Beaten) ||
+		!gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveF1Beaten) ||
+		!gsSupportedProgress(gsprofile.ProgressRadioTowerFakeDirectorBeaten) ||
+		!gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
+		t.Fatal("opt-in badge 7/8 runs should attempt available retail controllers")
+	}
+	if gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
 		gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
-		t.Fatal("unqualified badge 7/8 story goals must stay outside production planner")
+		t.Fatal("do not offer raw cleared or unfinished Rising Badge as objectives")
 	}
 }

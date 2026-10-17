@@ -6,14 +6,14 @@ import (
 	gsprofile "github.com/maestroi/pokepilot/gs/profile"
 )
 
-func TestGSPryceObjectiveIsGatedUntilROMQualification(t *testing.T) {
-	// B2F is now executable, but badge seven must not be advertised until
-	// ROM-backed Gold/Silver checkpoints prove Rocket clearance and Pryce.
+func TestGSPryceObjectiveCanBeAttemptedExperimentally(t *testing.T) {
+	// Opt-in runs can try Pryce; the controller still requires the
+	// cartridge's actual Rocket Hideout clear and Glacier Badge bits.
 	if !gsSupportedProgress(gsprofile.ProgressRocketHideoutCleared) {
 		t.Fatal("Rocket Hideout must have an executable B2F controller")
 	}
-	if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
-		t.Fatal("Glacier Badge cannot become selectable before Rocket Hideout")
+	if !gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
+		t.Fatal("opt-in Glacier Badge controller must be executable")
 	}
 }
 

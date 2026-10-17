@@ -20,6 +20,7 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 			gsprofile.ProgressRocketHideoutCleared,
 		}
 		got := []ProgressID{}
+		seenGlacier := false
 		for attempt := 0; attempt < 60; attempt++ {
 			goals := adapter.ProgressionObjectives(obs)
 			if len(goals) == 0 {
@@ -29,6 +30,9 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 				t.Fatalf("%s unexpected progression %+v", gameID, goals)
 			}
 			goal := goals[0]
+			if goal.Progress == gsprofile.ProgressGlacierBadgeEarned {
+				seenGlacier = true
+			}
 			if !adapter.SupportsObjective(goal) {
 				t.Fatalf("%s unsupported objective %s was offered", gameID, goal.Progress)
 			}
@@ -50,11 +54,14 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 		if !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared) {
 			t.Fatal("did not clear Rocket Hideout")
 		}
-		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s must stop before unqualified Glacier Badge: %+v", gameID, goals)
+		if !seenGlacier {
+			t.Fatalf("%s experimental B2F run never offered Pryce", gameID)
 		}
-		if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
-			t.Fatal("Glacier target must remain disabled until ROM qualification")
+		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
+			t.Fatalf("%s planner invented unimplemented objective beyond Radio Tower: %+v", gameID, goals)
+		}
+		if !gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
+			t.Fatal("opt-in Glacier stage must be executable")
 		}
 	}
 }

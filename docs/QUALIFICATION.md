@@ -498,10 +498,10 @@ same shared corpus host path.
 
 ## Gen2 seventh badge (Glacier) qualification
 
-The **Gold/Silver badge-6-to-7** path remains withheld from the launcher until
-actual cartridge replays prove the entire Rocket Base story and Pryce badge
-transaction. ROM-free tests are not sufficient evidence to advance the
-supported frontier.
+The **Gold/Silver badge-6-to-7** path is selectable as an experimental
+live goal before full ROM qualification. Cartridge replays are still
+necessary to certify the Rocket Base and Pryce transactions and advance
+the separately named conservative supported frontier.
 
 When the farm is configured with `POKEPILOT_QUALIFICATION_CORPUS`, its first
 successful Mineral Badge transaction now atomically captures
@@ -527,11 +527,10 @@ The final proof is `ENGINE_GLACIERBADGE` (not merely beating Pryce).
 Failure checkpoints and stage evidence remain private on the runner;
 only JSON observations, safe logs and hashes may be uploaded.
 
-The last Pryce transaction is invoked directly by the private test because
-the production Gen2 planner intentionally does **not** advertise the seventh
-badge yet. Do not enable seven-badge or eight-badge launch targets until both
-Gold and Silver real-ROM journeys are green and their recovery paths have
-been reviewed.
+The private qualification test invokes Pryce directly to isolate the
+retail replay; experimental seven/eight-badge launches now invoke the
+same controller through the production planner. Opt-in does not replace
+the mandatory Gold and Silver qualification runs.
 
 ## Gen2 badge 8: Goldenrod Underground Card Key slices
 
@@ -548,13 +547,13 @@ callback, resolves the mandatory rival and Rocket/Burglar fights, and checks
 the actual final-door event before proceeding to the real Director. Volatile
 switch events are *not* durable story milestones.
 
-These controllers are intentionally private/unoffered, pending actual Gold
-and Silver ROM checkpoint qualification of the complete Tower, Ice Path,
-Clair and Dragon's Den path. The 8-badge launch target remains disabled.
+These controllers are offered only along an explicitly experimental
+seven/eight-badge progression. Gold/Silver ROM checkpoint qualification
+and the Ice Path, Clair and Dragon's Den implementations are still outstanding.
 
 ## Gen2 badge 8: 4F/5F Radio Tower final takeover
 
-The private (not planner-advertised) Radio Tower controller chain now
+The experimental Radio Tower controller chain now
 handles Executive M2 on 4F, Executive F1 on 5F, and the 5F coordinate-triggered
 Rocket boss plus the Director's reward scene. Each trainer is checked using
 its retail defeated-event bit; arriving on a floor does not count.
@@ -570,6 +569,28 @@ script. If the player has control after clearing the tower but the correct
 wing event is missing, the controller fails closed rather than replaying a
 one-time boss or inventing a gift.
 
-Neither seventh nor eighth badge launch target is promoted by these
-ROM-free changes. Both retail ROMs still require an end-to-end qualification
-replay through Radio Tower, Ice Path, Clair and Dragon's Den.
+Seven/eight-badge goals are now selectable for unqualified live testing.
+Both retail ROMs still require an end-to-end qualification replay through
+Radio Tower, Ice Path, Clair and Dragon's Den before certification.
+
+## Operator opt-in: attempt seven/eight badges before ROM qualification
+
+The New Run form exposes **Earn 7 badges.** and **Earn 8 badges.** for Gold
+and Silver as explicitly experimental stop targets. An operator can now run
+the existing seventh badge controller and the Radio Tower gameplay sequence
+without waiting for complete Gold/Silver checkpoint qualification. These
+are best-effort live runs, **not a claim of end-to-end playability**.
+
+The objective planner is wired through Pryce's real Glacier Badge bit,
+the fake Radio Tower Director, Basement Key, Underground Card Key,
+3F shutter, 4F/5F executives, and the final Rocket boss plus the
+version-specific Director wing reward. All retain their cartridge-owned
+postconditions; game progression cannot be certified by reaching a map or
+finishing a generic battle.
+
+**Ice Path, Clair, and Dragon's Den are still missing executable
+controllers.** If an eight-badge attempt reaches this unfinished frontier,
+it must remain incomplete and produce usable failure/checkpoint evidence,
+rather than mark itself successful. Real ROM runs provide the failures and
+checkpoints to iterate on. The conservative "current supported Gen 2
+frontier" goal still stops at Mineral Badge and is unchanged.
