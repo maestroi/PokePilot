@@ -80,6 +80,35 @@ func TestResolveBroadcastStartUsesConfiguredSecretAndAllowsSafeOverrides(t *test
 	}
 }
 
+func TestBroadcastMusicIsServerSideAndNotExposedToBrowser(t *testing.T) {
+	const musicPath = "/opt/private/operator-only-music.ogg"
+	t.Setenv("POKEPILOT_BROADCAST_MUSIC_FILE", musicPath)
+	server := &replayServer{
+		broadcastDestinations: broadcastDestinationsFromEnv(testBroadcastEnv(map[string]string{
+			"POKEPILOT_BROADCAST_TWITCH_STREAM_KEY": "test-twitch-key",
+		})),
+	}
+	cfg, err := server.resolveRTMPBroadcastStart(rtmpBroadcastStartRequest{Provider: "twitch"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MusicFile != musicPath {
+		t.Fatalf("server music path=%q", cfg.MusicFile)
+	}
+	status, err := json.Marshal(newRTMPBroadcastSession("run", cfg, newTestLiveSource("run")).snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(status), musicPath) {
+		t.Fatalf("public broadcast status exposed server music path: %s", status)
+	}
+	rec := httptest.NewRecorder()
+	server.handleRTMPBroadcastConfig(rec, httptest.NewRequest(http.MethodGet, "/v1/live/broadcast/config", nil))
+	if strings.Contains(rec.Body.String(), musicPath) {
+		t.Fatalf("public broadcast settings exposed server music path: %s", rec.Body.String())
+	}
+}
+
 func TestResolveBroadcastStartReportsMissingAndInvalidServerConfiguration(t *testing.T) {
 	server := &replayServer{
 		broadcastDestinations: broadcastDestinationsFromEnv(testBroadcastEnv(nil)),

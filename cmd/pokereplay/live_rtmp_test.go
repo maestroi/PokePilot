@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -138,6 +140,71 @@ func TestRTMPFFmpegArgsApplyConfiguredOutput(t *testing.T) {
 	}
 	if got := args[len(args)-1]; got != cfg.Target {
 		t.Fatalf("last arg=%q want target", got)
+	}
+}
+
+func hasRTMPArgSequence(args []string, sequence ...string) bool {
+	for i := 0; i+len(sequence) <= len(args); i++ {
+		matches := true
+		for j, value := range sequence {
+			if args[i+j] != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRTMPFFmpegArgsUsesOptionalMusicOrSilentFallback(t *testing.T) {
+	cfg, err := normalizeRTMPBroadcastRequest(rtmpBroadcastRequest{
+		Provider: "twitch", StreamKey: "test-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	music := filepath.Join(t.TempDir(), "royalty cleared audio.ogg")
+	if err := os.WriteFile(music, []byte("sample audio path for argument test"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.MusicFile = music
+
+	args := rtmpFFmpegArgs(cfg)
+	if !hasRTMPArgSequence(args, "-stream_loop", "-1", "-i", music) {
+		t.Fatalf("configured music not looped: %v", args)
+	}
+	if !hasRTMPArgSequence(args, "-map", "1:a:0") {
+		t.Fatalf("music did not retain second audio input mapping: %v", args)
+	}
+	if strings.Contains(strings.Join(args, " "), "anullsrc") {
+		t.Fatalf("music should replace silent audio: %v", args)
+	}
+
+	for name, path := range map[string]string{
+		"unset":    "",
+		"missing":  filepath.Join(t.TempDir(), "removed.ogg"),
+		"not file": t.TempDir(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg.MusicFile = path
+			args := rtmpFFmpegArgs(cfg)
+			if !hasRTMPArgSequence(args, "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000") {
+				t.Fatalf("unavailable music must use silent fallback: %v", args)
+			}
+			if hasRTMPArgSequence(args, "-stream_loop", "-1") {
+				t.Fatalf("unavailable music should not loop: %v", args)
+			}
+		})
+	}
+
+	cfg.MusicFile = music
+	cfg.Audio = false
+	args = rtmpFFmpegArgs(cfg)
+	if !hasRTMPArgSequence(args, "-an") || strings.Contains(strings.Join(args, " "), music) {
+		t.Fatalf("explicitly disabled audio should not load music: %v", args)
 	}
 }
 
