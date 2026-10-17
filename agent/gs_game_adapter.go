@@ -244,6 +244,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSRocketExecutiveM4(a.m, a.romData)
 		case gsprofile.ProgressRocketMurkrowPassword:
 			err = executeGSRocketMurkrow(a.m, a.romData)
+		case gsprofile.ProgressGlacierBadgeEarned:
+			err = executeGSPryce(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
