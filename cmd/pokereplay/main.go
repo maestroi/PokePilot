@@ -141,6 +141,9 @@ type replayServer struct {
 	liveMu       sync.Mutex
 	liveSessions map[string]*liveBroadcastSession
 
+	commentaryMu sync.Mutex
+	commentarySessions map[string]*liveCommentarySession
+
 	rtmpMu                sync.Mutex
 	rtmpSessions          map[string]*rtmpBroadcastSession
 	broadcastDestinations map[string]broadcastDestination
@@ -183,6 +186,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		activeJobs:            make(map[string]time.Time),
 		activeCancels:         make(map[string]context.CancelFunc),
 		liveSessions:          make(map[string]*liveBroadcastSession),
+		commentarySessions:    make(map[string]*liveCommentarySession),
 		rtmpSessions:          make(map[string]*rtmpBroadcastSession),
 		broadcastDestinations: broadcastDestinationsFromEnv(os.Getenv),
 		youtube:               youtubeConfigFromEnv(os.Getenv),
@@ -240,6 +244,9 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails", s.handleThumbnailList)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/image", s.handleThumbnailImage)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/packages/{hash}/thumbnails/{candidate}/select", s.handleThumbnailSelect)
+	mux.HandleFunc("GET /v1/runs/{id}/live/commentary/status", s.handleLiveCommentaryStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/live/commentary/start", s.handleLiveCommentaryStart)
+	mux.HandleFunc("POST /v1/runs/{id}/live/commentary/stop", s.handleLiveCommentaryStop)
 	mux.HandleFunc("GET /v1/runs/{id}/live/status", s.handleLiveStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/live/stream.mjpeg", s.handleLiveStream)
 	mux.HandleFunc("GET /v1/live/broadcast/config", s.handleRTMPBroadcastConfig)
@@ -1422,6 +1429,7 @@ func main() {
 		}
 	case <-ctx.Done():
 		serverImpl.stopRTMPBroadcasts()
+		serverImpl.stopLiveCommentaries()
 		serverImpl.stopLiveSessions()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 		defer cancel()
