@@ -6,8 +6,10 @@ alwaysApply: false
 
 Follow @.claude/skills/pokefarm-triage/SKILL.md.
 
-For interactive queue work, select one group with `pokepilot_get_triage()`,
-then run `make -s debug RUN=<representative-run-id>`. For unattended work the
+For interactive queue work, select one group with `pokepilot_get_triage(limit=20)`;
+follow `next_offset` if needed because the tool now returns paged summaries.
+Use the chosen group's `run_ids[0]` as the representative run, then run
+`make -s debug RUN=<representative-run-id>`. For unattended work the
 shell already selected the group and normally attaches a **Prepared debug
 packet**; consume it directly and do not pick another failure.
 
