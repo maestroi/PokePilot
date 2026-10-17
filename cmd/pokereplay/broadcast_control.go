@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -168,7 +169,13 @@ func (s *replayServer) resolveRTMPBroadcastStart(req rtmpBroadcastStartRequest) 
 	base.Audio = req.Audio
 	base.AudioBitrateKbps = req.AudioBitrateKbps
 	base.AudioSampleRate = req.AudioSampleRate
-	return normalizeRTMPBroadcastRequest(base)
+	cfg, err := normalizeRTMPBroadcastRequest(base)
+	if err != nil {
+		return rtmpBroadcastConfig{}, err
+	}
+	// Music is selected by the server operator, never by browser input.
+	cfg.MusicFile = strings.TrimSpace(os.Getenv("POKEPILOT_BROADCAST_MUSIC_FILE"))
+	return cfg, nil
 }
 
 func (s *replayServer) handleRTMPBroadcastConfig(w http.ResponseWriter, _ *http.Request) {
