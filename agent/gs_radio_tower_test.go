@@ -20,15 +20,13 @@ func TestGSRadioTowerFirstGuardedControllerStaysOutOfPlanner(t *testing.T) {
 		}
 	}
 	for _, name := range []string{
+		"GOLDENROD_UNDERGROUND",
 		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
 		"GOLDENROD_UNDERGROUND_WAREHOUSE",
 	} {
 		id, err := gsOpeningMapID(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if gsSecondBadgeOwnedMap(id) {
-			t.Fatalf("unimplemented Radio Tower basement puzzle should not be owned: %s", name)
+		if err != nil || !gsSecondBadgeOwnedMap(id) {
+			t.Fatalf("Radio Tower basement story map %s should be owned: %v", name, err)
 		}
 	}
 	if gsSupportedProgress(gsprofile.ProgressRadioTowerFakeDirectorBeaten) ||
