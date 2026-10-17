@@ -55,8 +55,12 @@ func TestGSRocketB3FProgressionNeverSkipsPasswordsOrExecutive(t *testing.T) {
 			}
 			obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 		}
+		if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 || goals[0].Progress != gsprofile.ProgressRocketHideoutCleared || !adapter.SupportsObjective(goals[0]) {
+			t.Fatalf("%s must proceed to executable B2F transmitter: %+v", id, goals)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressRocketHideoutCleared, Complete: true})
 		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s may not proceed into unfinished B2F transmitter: %+v", id, goals)
+			t.Fatalf("%s may not offer unqualified Glacier Badge: %+v", id, goals)
 		}
 	}
 }
