@@ -4,6 +4,81 @@ package rom
 // and map-attribute connections. These edges are geometry facts, NOT proof
 // of Ice Path puzzle, Radio Tower, or Clair story-script execution.
 var lateJohtoTopology = []mapSpec{
+	// Radio Tower takeover geometry. Reaching any floor or warehouse room is
+	// NOT evidence of opening the Card Key shutter, solving basement switches
+	// or clearing Rocket. Those must be owned by separate story executors.
+	{
+		name: "RADIO_TOWER_1F",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "GOLDENROD_CITY", destWarp: 12},
+			{x: 3, y: 7, dest: "GOLDENROD_CITY", destWarp: 12},
+			{x: 15, y: 0, dest: "RADIO_TOWER_2F", destWarp: 2},
+		},
+	},
+	{
+		name: "RADIO_TOWER_2F",
+		warps: []warpSpec{
+			{x: 0, y: 0, dest: "RADIO_TOWER_3F", destWarp: 1},
+			{x: 15, y: 0, dest: "RADIO_TOWER_1F", destWarp: 3},
+		},
+	},
+	{
+		name: "RADIO_TOWER_3F",
+		warps: []warpSpec{
+			{x: 0, y: 0, dest: "RADIO_TOWER_2F", destWarp: 1},
+			{x: 7, y: 0, dest: "RADIO_TOWER_4F", destWarp: 2},
+			{x: 17, y: 0, dest: "RADIO_TOWER_4F", destWarp: 4},
+		},
+	},
+	{
+		name: "RADIO_TOWER_4F",
+		warps: []warpSpec{
+			{x: 0, y: 0, dest: "RADIO_TOWER_5F", destWarp: 1},
+			{x: 9, y: 0, dest: "RADIO_TOWER_3F", destWarp: 2},
+			{x: 12, y: 0, dest: "RADIO_TOWER_5F", destWarp: 2},
+			{x: 17, y: 0, dest: "RADIO_TOWER_3F", destWarp: 3},
+		},
+	},
+	{
+		name: "RADIO_TOWER_5F",
+		warps: []warpSpec{
+			{x: 0, y: 0, dest: "RADIO_TOWER_4F", destWarp: 1},
+			{x: 12, y: 0, dest: "RADIO_TOWER_4F", destWarp: 3},
+		},
+	},
+	{
+		name: "GOLDENROD_UNDERGROUND",
+		warps: []warpSpec{
+			{x: 3, y: 2, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 7},
+			{x: 3, y: 34, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 4},
+			{x: 18, y: 6, dest: "GOLDENROD_UNDERGROUND", destWarp: 4},
+			{x: 21, y: 31, dest: "GOLDENROD_UNDERGROUND", destWarp: 3},
+			{x: 22, y: 31, dest: "GOLDENROD_UNDERGROUND", destWarp: 3},
+			{x: 22, y: 27, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 1},
+		},
+	},
+	{
+		name: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		warps: []warpSpec{
+			{x: 23, y: 3, dest: "GOLDENROD_UNDERGROUND", destWarp: 6},
+			{x: 22, y: 10, dest: "GOLDENROD_UNDERGROUND_WAREHOUSE", destWarp: 1},
+			{x: 23, y: 10, dest: "GOLDENROD_UNDERGROUND_WAREHOUSE", destWarp: 2},
+			{x: 5, y: 25, dest: "GOLDENROD_UNDERGROUND", destWarp: 2},
+			{x: 4, y: 29, dest: "GOLDENROD_CITY", destWarp: 15},
+			{x: 5, y: 29, dest: "GOLDENROD_CITY", destWarp: 15},
+			{x: 21, y: 25, dest: "GOLDENROD_UNDERGROUND", destWarp: 1},
+			{x: 20, y: 29, dest: "GOLDENROD_CITY", destWarp: 14},
+			{x: 21, y: 29, dest: "GOLDENROD_CITY", destWarp: 14},
+		},
+	},
+	{
+		name: "GOLDENROD_UNDERGROUND_WAREHOUSE",
+		warps: []warpSpec{
+			{x: 2, y: 12, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 2},
+			{x: 3, y: 12, dest: "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", destWarp: 3},
+			{x: 17, y: 2, dest: "GOLDENROD_DEPT_STORE_B1F", destWarp: 1},
+		},
+	},
 	{
 		name: "ROUTE_44",
 		warps: []warpSpec{

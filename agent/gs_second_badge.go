@@ -41,6 +41,14 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"GOLDENROD_GYM",
 		"GOLDENROD_FLOWER_SHOP",
 		"GOLDENROD_POKECENTER_1F",
+		// The guarded 5F fake-director scene owns the Radio Tower trainer
+		// approach; basement switches and warehouse remain unowned until
+		// their separate scripts are implemented and qualified.
+		"RADIO_TOWER_1F",
+		"RADIO_TOWER_2F",
+		"RADIO_TOWER_3F",
+		"RADIO_TOWER_4F",
+		"RADIO_TOWER_5F",
 		"ROUTE_35_GOLDENROD_GATE",
 		"ROUTE_35",
 		"ROUTE_36",
