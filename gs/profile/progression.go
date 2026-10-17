@@ -49,6 +49,7 @@ const (
 	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
 	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
 	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
+	ProgressRocketHideoutCleared  game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
 	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -91,6 +92,7 @@ const (
 	eventDecidedToHelpLance             uint16 = 96
 	eventUncoveredMahoganyMartStaircase uint16 = 738
 	eventLanceHealedRocketBase          uint16 = 76
+	eventClearedRocketHideout            uint16 = 34
 	eventLearnedSlowpokeTailPassword    uint16 = 769
 	eventLearnedRaticateTailPassword    uint16 = 770
 	eventOpenedRocketOfficeDoor         uint16 = 771
@@ -200,6 +202,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRocketOfficeOpened, Complete: hasGSEvent(reader, eventOpenedRocketOfficeDoor)},
 		{ID: ProgressRocketExecutiveBeaten, Complete: hasGSEvent(reader, eventBeatRocketExecutiveM4)},
 		{ID: ProgressRocketMurkrowPassword, Complete: hasGSEvent(reader, eventLearnedMurkrowPassword)},
+		{ID: ProgressRocketHideoutCleared, Complete: hasGSEvent(reader, eventClearedRocketHideout)},
 		{ID: ProgressGlacierBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeGlacierMask != 0},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
