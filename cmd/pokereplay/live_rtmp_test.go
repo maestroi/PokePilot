@@ -184,8 +184,8 @@ func TestRTMPFFmpegArgsUsesOptionalMusicOrSilentFallback(t *testing.T) {
 	}
 
 	for name, path := range map[string]string{
-		"unset":   "",
-		"missing": filepath.Join(t.TempDir(), "removed.ogg"),
+		"unset":    "",
+		"missing":  filepath.Join(t.TempDir(), "removed.ogg"),
 		"not file": t.TempDir(),
 	} {
 		t.Run(name, func(t *testing.T) {
