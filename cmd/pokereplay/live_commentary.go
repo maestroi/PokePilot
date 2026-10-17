@@ -17,7 +17,6 @@ import (
  "sync"
  "time"
 
- "github.com/maestroi/pokepilot/farm"
  "github.com/maestroi/pokepilot/media/commentator"
 )
 
