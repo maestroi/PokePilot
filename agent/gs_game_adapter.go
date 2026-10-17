@@ -612,6 +612,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressRocketLanceHealing,
 			Note:     "(descend Rocket Base B1F, survive the security cameras, and receive Lance's scripted party heal on B2F)",
 		}}
+	case !obs.Story.Has(gsprofile.ProgressRocketHideoutCleared):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressRocketHideoutCleared,
+			Note:     "(defeat the Rocket Base B3F password grunts and executives, open Giovanni's and the transmitter doors, defeat the three Electrodes, and complete Lance's Whirlpool reward script)",
+		}}
 	default:
 		return nil
 	}
