@@ -49,7 +49,7 @@ const (
 	ProgressRocketOfficeOpened     game.ProgressID = "gs_rocket_office_opened"
 	ProgressRocketExecutiveBeaten  game.ProgressID = "gs_rocket_executive_beaten"
 	ProgressRocketMurkrowPassword  game.ProgressID = "gs_rocket_murkrow_password"
-	ProgressRocketHideoutCleared  game.ProgressID = "gs_rocket_hideout_cleared"
+	ProgressRocketHideoutCleared   game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned     game.ProgressID = "gs_glacier_badge_earned"
 	ProgressRisingBadgeEarned      game.ProgressID = "gs_rising_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
@@ -92,7 +92,7 @@ const (
 	eventDecidedToHelpLance             uint16 = 96
 	eventUncoveredMahoganyMartStaircase uint16 = 738
 	eventLanceHealedRocketBase          uint16 = 76
-	eventClearedRocketHideout            uint16 = 34
+	eventClearedRocketHideout           uint16 = 34
 	eventLearnedSlowpokeTailPassword    uint16 = 769
 	eventLearnedRaticateTailPassword    uint16 = 770
 	eventOpenedRocketOfficeDoor         uint16 = 771
