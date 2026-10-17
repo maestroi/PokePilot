@@ -376,7 +376,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges to attempt the experimental Gold/Silver campaign now. The agent can attempt Pryce and Radio Tower, but Ice Path, Clair and Dragon's Den are unfinished: a run may fail before reaching 8. Only cartridge-observed badge flags count as success. The current supported frontier preset still stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges to attempt the experimental Gold/Silver campaign now. The agent can attempt Pryce and Radio Tower, but Ice Path, Clair and Dragon’s Den are unfinished: a run may fail before reaching 8. Only cartridge-observed badge flags count as success. The current supported frontier preset still stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
