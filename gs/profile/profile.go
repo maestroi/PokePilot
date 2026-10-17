@@ -203,7 +203,7 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 	}
 	appendBadges(johto, johtoBadgeNames[:])
 	appendBadges(kanto, kantoBadgeNames[:])
-	obs.Story = append(projectEarlyStory(reader),
+	obs.Story = append(p.DecodeFirstBadgeProgress(reader),
 		game.ProgressFact{ID: ProgressJohtoBadges, Complete: johto == 0xff, Value: bits.OnesCount8(johto)},
 		game.ProgressFact{ID: ProgressKantoBadges, Complete: kanto == 0xff, Value: bits.OnesCount8(kanto)},
 	)

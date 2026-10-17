@@ -29,7 +29,10 @@ func TestGSRadioTowerFirstGuardedControllerStaysOutOfPlanner(t *testing.T) {
 			t.Fatalf("Radio Tower basement story map %s should be owned: %v", name, err)
 		}
 	}
-	if gsSupportedProgress(gsprofile.ProgressRadioTowerFakeDirectorBeaten) ||
+	if gsSupportedProgress(gsprofile.ProgressRadioTowerTakeoverSettled) ||
+		gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveM2Beaten) ||
+		gsSupportedProgress(gsprofile.ProgressRadioTowerExecutiveF1Beaten) ||
+		gsSupportedProgress(gsprofile.ProgressRadioTowerFakeDirectorBeaten) ||
 		gsSupportedProgress(gsprofile.ProgressRadioTowerCleared) ||
 		gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) ||
 		gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {

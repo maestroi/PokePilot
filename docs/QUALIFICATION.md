@@ -551,3 +551,25 @@ switch events are *not* durable story milestones.
 These controllers are intentionally private/unoffered, pending actual Gold
 and Silver ROM checkpoint qualification of the complete Tower, Ice Path,
 Clair and Dragon's Den path. The 8-badge launch target remains disabled.
+
+## Gen2 badge 8: 4F/5F Radio Tower final takeover
+
+The private (not planner-advertised) Radio Tower controller chain now
+handles Executive M2 on 4F, Executive F1 on 5F, and the 5F coordinate-triggered
+Rocket boss plus the Director's reward scene. Each trainer is checked using
+its retail defeated-event bit; arriving on a floor does not count.
+
+The boss's EXECUTIVEM_1 and CLEARED_RADIO_TOWER bits are set **before**
+the reward conversation ends. For a complete replay, require both executive
+bits, the boss bit, CLEARED_RADIO_TOWER and the **correct version-specific**
+Director gift: EVENT_GOT_RAINBOW_WING in Gold or EVENT_GOT_SILVER_WING
+in Silver, followed by regained overworld control. The composite
+`gs_radio_tower_takeover_settled` fact is deliberately stronger than
+`gs_radio_tower_cleared` to avoid false positives at an interrupted reward
+script. If the player has control after clearing the tower but the correct
+wing event is missing, the controller fails closed rather than replaying a
+one-time boss or inventing a gift.
+
+Neither seventh nor eighth badge launch target is promoted by these
+ROM-free changes. Both retail ROMs still require an end-to-end qualification
+replay through Radio Tower, Ice Path, Clair and Dragon's Den.
