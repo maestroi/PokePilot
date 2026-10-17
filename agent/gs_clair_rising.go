@@ -10,17 +10,17 @@ import (
 )
 
 const (
-	gsIcePathWaterfallX uint8 = 31
-	gsIcePathWaterfallY uint8 = 7
-	gsClairX uint8 = 5
-	gsClairY uint8 = 3
-	gsClairStandX uint8 = 5
-	gsClairStandY uint8 = 4
-	gsDragonFangX uint8 = 35
-	gsDragonFangY uint8 = 16
-	gsDragonFangStandX uint8 = 35
-	gsDragonFangStandY uint8 = 17
-	gsClairStoryAttempts = 4
+	gsIcePathWaterfallX  uint8 = 31
+	gsIcePathWaterfallY  uint8 = 7
+	gsClairX             uint8 = 5
+	gsClairY             uint8 = 3
+	gsClairStandX        uint8 = 5
+	gsClairStandY        uint8 = 4
+	gsDragonFangX        uint8 = 35
+	gsDragonFangY        uint8 = 16
+	gsDragonFangStandX   uint8 = 35
+	gsDragonFangStandY   uint8 = 17
+	gsClairStoryAttempts       = 4
 )
 
 // executeGSIcePathWaterfall approaches the retail item ball on 1F through
@@ -33,7 +33,9 @@ func executeGSIcePathWaterfall(m *emu.Emu, romData []byte) error {
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressIcePathWaterfallAcquired,
 		gsprofile.ProgressRadioTowerTakeoverSettled, label)
-	if err != nil || done { return err }
+	if err != nil || done {
+		return err
+	}
 	if _, err := skill.EnsureFieldMove(m, skill.FieldStrength); err != nil {
 		return fmt.Errorf("gen2 Ice Path: prepare HM04 Strength: %w", err)
 	}
@@ -46,7 +48,9 @@ func executeGSIcePathWaterfall(m *emu.Emu, romData []byte) error {
 			return fmt.Errorf("gen2 Ice Path: acquire HM07: %w", err)
 		}
 		if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressIcePathWaterfallAcquired) &&
-			profile.DecodeOverworld(m).Controllable { return nil }
+			profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
 	}
 	return fmt.Errorf("%w: Ice Path HM07 item ball event missing", errGSSecondBadgeUnexpectedState)
 }
@@ -60,7 +64,9 @@ func executeGSClair(m *emu.Emu, romData []byte) error {
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressIcePathWaterfallAcquired, label)
-	if err != nil || done { return err }
+	if err != nil || done {
+		return err
+	}
 	if _, err := skill.EnsureFieldMove(m, skill.FieldStrength); err != nil {
 		return fmt.Errorf("gen2 Clair: prepare Strength for Ice Path and Gym: %w", err)
 	}
@@ -71,7 +77,9 @@ func executeGSClair(m *emu.Emu, romData []byte) error {
 		return fmt.Errorf("gen2 Clair: prepare Strength for Gym 2F: %w", err)
 	}
 	gym, err := gsOpeningMapID("BLACKTHORN_GYM_1F")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	for attempt := 0; attempt < gsClairStoryAttempts; attempt++ {
 		if err := gsSecondBadgeFaceFrom(m, romData, profile,
 			skill.ExactNativeDestination(gym, gsClairStandX, gsClairStandY),
@@ -84,7 +92,9 @@ func executeGSClair(m *emu.Emu, romData []byte) error {
 			return fmt.Errorf("gen2 Clair: battle / Dragon's Den instruction: %w", err)
 		}
 		if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressClairDefeated) &&
-			profile.DecodeOverworld(m).Controllable { return nil }
+			profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
 	}
 	return fmt.Errorf("%w: Clair battle never set EVENT_BEAT_CLAIR", errGSSecondBadgeUnexpectedState)
 }
@@ -104,7 +114,9 @@ func executeGSDragonFangRising(m *emu.Emu, romData []byte) error {
 	profile, done, err := gsCoastalProfile(m, romData,
 		gsprofile.ProgressRisingBadgeEarned,
 		gsprofile.ProgressClairDefeated, label)
-	if err != nil || done { return err }
+	if err != nil || done {
+		return err
+	}
 	if !profile.DecodeOverworld(m).Controllable {
 		if err := driveGSSecondBadgeInterruption(m, profile, label); err != nil {
 			return fmt.Errorf("gen2 Dragon's Den: resume badge dialogue: %w", err)
@@ -136,7 +148,9 @@ func executeGSDragonFangRising(m *emu.Emu, romData []byte) error {
 			return fmt.Errorf("gen2 Dragon's Den: claim Dragon Fang and finish Clair: %w", err)
 		}
 		if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRisingBadgeEarned) &&
-			profile.DecodeOverworld(m).Controllable { return nil }
+			profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
 	}
 	return fmt.Errorf("%w: Dragon's Den returned without the retail Rising Badge bit", errGSSecondBadgeUnexpectedState)
 }

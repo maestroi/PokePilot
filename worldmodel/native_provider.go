@@ -95,7 +95,7 @@ type NativeGridSpec struct {
 	// continue movement in the entry direction until blocked or leaving ice.
 	// Nil keeps other native cartridges' movement unchanged.
 	SlideCollisions map[uint8]bool
-	Traversal TraversalMode
+	Traversal       TraversalMode
 }
 
 // NativeGridProvider is an optional extension of NativeMapTopologyProvider for

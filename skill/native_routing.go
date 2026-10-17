@@ -262,7 +262,6 @@ func walkNativePath(m *emu.Emu, decoder game.OverworldDecoder, path []world.Nati
 	return nil
 }
 
-
 // stepOnceNativeSlide executes the FIRST directional input, then lets the
 // cartridge's ice movement run until the predicted landing is observable.
 // The next route edge is never fired if an event interrupts this movement.

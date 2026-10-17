@@ -16,18 +16,18 @@ type NativeStep struct {
 // NativeGrid is the tile-level counterpart to NativeGraph. It intentionally
 // mirrors the mature Grid API without narrowing the cartridge's map identity.
 type NativeGrid struct {
-	MapID         uint16
-	Width, Height int
-	walkable      []bool
-	collisionTile []uint8
-	obstacle      []worldmodel.NativeObstacle
-	byObject      map[[2]int]bool // obstacle cells that are live objects, not tiles
-	warpTrigger   []bool
-	warpPushes    map[uint8]worldmodel.NativeDirectionMask
-	blocked       map[uint8]worldmodel.NativeDirectionMask
-	jumps         map[uint8]worldmodel.NativeDirectionMask
+	MapID           uint16
+	Width, Height   int
+	walkable        []bool
+	collisionTile   []uint8
+	obstacle        []worldmodel.NativeObstacle
+	byObject        map[[2]int]bool // obstacle cells that are live objects, not tiles
+	warpTrigger     []bool
+	warpPushes      map[uint8]worldmodel.NativeDirectionMask
+	blocked         map[uint8]worldmodel.NativeDirectionMask
+	jumps           map[uint8]worldmodel.NativeDirectionMask
 	slideCollisions map[uint8]bool
-	Traversal     TraversalMode
+	Traversal       TraversalMode
 }
 
 // NativeGridFromSpec validates and owns an adapter-decoded native grid.
