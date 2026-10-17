@@ -9,8 +9,8 @@ func TestGSRadioTowerFinaleRetailEventsRemainIndependent(t *testing.T) {
 		t.Fatal("Radio Tower final story event indices drifted from pret/pokegold retail")
 	}
 	for _, tc := range []struct {
-		name string
-		profile *Profile
+		name            string
+		profile         *Profile
 		wing, wrongWing uint16
 	}{
 		{"gold", NewGold(), eventRadioTowerGoldWingReceived, eventRadioTowerSilverWingReceived},

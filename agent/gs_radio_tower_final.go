@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	gsRadioTowerTrainerAttempts = 3
-	gsRadioTowerExecutiveM2X uint8 = 14
-	gsRadioTowerExecutiveM2Y uint8 = 1
-	gsRadioTowerExecutiveF1X uint8 = 17
-	gsRadioTowerExecutiveF1Y uint8 = 2
-	gsRadioTowerBossSceneX uint8 = 16
-	gsRadioTowerBossSceneY uint8 = 5
+	gsRadioTowerTrainerAttempts       = 3
+	gsRadioTowerExecutiveM2X    uint8 = 14
+	gsRadioTowerExecutiveM2Y    uint8 = 1
+	gsRadioTowerExecutiveF1X    uint8 = 17
+	gsRadioTowerExecutiveF1Y    uint8 = 2
+	gsRadioTowerBossSceneX      uint8 = 16
+	gsRadioTowerBossSceneY      uint8 = 5
 )
 
 // gsRadioTowerTrainer owns a trainer's normal line-of-sight or manual
