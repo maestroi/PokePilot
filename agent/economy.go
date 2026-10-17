@@ -554,7 +554,7 @@ func maxInt(a, b int) int {
 }
 
 // progressionFundingShortfall is how much money the next pending scripted
-// payment still lacks. Reservations above protect money a run already has;
+// payment, or the capture stock a Dex run cannot work without, still lacks. Reservations above protect money a run already has;
 // this covers a checkpoint that is already below the floor (run-d6dokr184ky81
 // sat at ¥229 below the ¥500 Safari entry for 73 attempts with sellable stock
 // in the bag and no objective that could raise money).
@@ -565,6 +565,12 @@ func progressionFundingShortfall(o Observation) uint32 {
 	}
 	if pendingFuchsiaSpend(o) {
 		need += safariEntryFee
+	}
+	// A dry Dex run is the same dead end: run-d6dokr184ky81 sat post-Champion
+	// at 79/139 with ¥87 and no normal balls, wandering between towns because
+	// restockCaptureObjectives could not afford a single ball.
+	if len(o.Dex.Targets) > 0 && normalBallStock(o) < minimumCaptureStock {
+		need += uint32(minimumCaptureStock-normalBallStock(o)) * itemEconomy["pokeball"].UnitPrice
 	}
 	return subtractFloor(need, o.Money)
 }
@@ -597,7 +603,7 @@ func fundingSaleObjectives(o Observation) []Objective {
 		}
 		out = append(out, Objective{
 			Kind: KindSell, Item: item, Qty: qty,
-			Note: fmt.Sprintf("(raise ¥%d for a required story payment the run cannot afford; sells for ¥%d at the nearest reachable mart)", shortfall, uint32(qty)*sale),
+			Note: fmt.Sprintf("(raise ¥%d for a required payment or capture stock the run cannot afford; sells for ¥%d at the nearest reachable mart)", shortfall, uint32(qty)*sale),
 		})
 	}
 	return out

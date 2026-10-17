@@ -118,3 +118,31 @@ func TestFundingSaleObjectivesCoverUnaffordableStoryPayment(t *testing.T) {
 		t.Fatalf("sales offered with no reachable mart: %+v", got)
 	}
 }
+
+// run-d6dokr184ky81 (later): post-Champion Dex run at 79/139, ¥87, only a
+// MASTER BALL, and nothing offered but town-to-town travel.
+func TestFundingSaleObjectivesCoverDryDexCaptureStock(t *testing.T) {
+	obs := Observation{
+		Money:        87,
+		RestockStock: []string{"pokeball"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+		Bag: []Item{
+			{Name: "master ball", Quantity: 1},
+			{Name: "max revive", Quantity: 1},
+			{Name: "guard spec", Quantity: 1},
+		},
+	}
+	got := map[string]int{}
+	for _, o := range fundingSaleObjectives(obs) {
+		got[string(o.Item)] = o.Qty
+	}
+	// ¥913 short of five POKE BALLs: the MAX REVIVE (¥2000) covers it; one
+	// GUARD SPEC (¥350) does not.
+	if len(got) != 1 || got["max revive"] != 1 {
+		t.Fatalf("funding sales = %v, want 1 MAX REVIVE", got)
+	}
+	obs.Bag = append(obs.Bag, Item{Name: "pokeball", Quantity: minimumCaptureStock})
+	if got := fundingSaleObjectives(obs); len(got) != 0 {
+		t.Fatalf("stocked Dex run still offered sales: %+v", got)
+	}
+}
