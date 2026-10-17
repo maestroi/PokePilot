@@ -11,8 +11,8 @@ import (
 // The Mahogany gym is blocked by an NPC until the Rocket Hideout is cleared.
 // Never start a leader battle by assuming entering Mahogany is sufficient.
 const (
-	gsPryceX uint8 = 5
-	gsPryceY uint8 = 3
+	gsPryceX      uint8 = 5
+	gsPryceY      uint8 = 3
 	gsPryceStandX uint8 = 5
 	gsPryceStandY uint8 = 4
 )
