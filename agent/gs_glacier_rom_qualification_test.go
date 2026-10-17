@@ -22,8 +22,8 @@ type gsGlacierStage struct {
 }
 
 // Every actual cartridge story transaction is separately checked and restored;
-// the final badge goal is run ONLY by this private barrier while it is still
-// withheld from the production objective catalog.
+// the real-ROM replay remains the evidence barrier for *qualification*,
+// while operators may separately opt into unqualified live attempts.
 func gsGlacierStages() []gsGlacierStage {
 	return []gsGlacierStage{
 		{"red-gyarados", gsprofile.ProgressRedGyaradosDefeated},
@@ -41,7 +41,7 @@ func gsGlacierStages() []gsGlacierStage {
 	}
 }
 
-func TestGSGlacierQualificationStagesKeepBadgeLocked(t *testing.T) {
+func TestGSGlacierQualificationStagesRemainRequiredForCertification(t *testing.T) {
 	stages := gsGlacierStages()
 	if len(stages) != 12 || stages[len(stages)-1].progress != gsprofile.ProgressGlacierBadgeEarned {
 		t.Fatalf("Glacier qualification does not cover all retail milestones: %+v", stages)
@@ -56,8 +56,8 @@ func TestGSGlacierQualificationStagesKeepBadgeLocked(t *testing.T) {
 			t.Fatalf("unexecutable interim stage %s", stage.progress)
 		}
 	}
-	if gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
-		t.Fatal("badge 7 cannot be offered until Gold AND Silver real-ROM qualification")
+	if !gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
+		t.Fatal("experimental Glacier objective must be executable before certification")
 	}
 }
 
