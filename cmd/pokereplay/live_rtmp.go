@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -58,6 +59,7 @@ type rtmpBroadcastConfig struct {
 	Audio                   bool
 	AudioBitrateKbps        int
 	AudioSampleRate         int
+	MusicFile               string // Server-side path only; never included in status or browser requests.
 }
 
 type rtmpBroadcastStatus struct {
@@ -273,6 +275,22 @@ func validFFmpegAtom(value string) bool {
 	return true
 }
 
+// rtmpAudioInputArgs uses only an operator-configured local audio file. If it
+// disappears or cannot be opened, preserve the previous silent audio track.
+// Keep the music source as the second input so -map 1:a:0 works in both cases.
+func rtmpAudioInputArgs(musicFile string, sampleRate int) []string {
+	musicFile = strings.TrimSpace(musicFile)
+	if musicFile != "" {
+		if info, err := os.Stat(musicFile); err == nil && info.Mode().IsRegular() {
+			if file, err := os.Open(musicFile); err == nil {
+				_ = file.Close()
+				return []string{"-stream_loop", "-1", "-i", musicFile}
+			}
+		}
+	}
+	return []string{"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=" + strconv.Itoa(sampleRate)}
+}
+
 func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 	gop := cfg.FPS * cfg.KeyframeIntervalSeconds
 	args := []string{
@@ -280,9 +298,7 @@ func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 		"-f", "image2pipe", "-vcodec", "mjpeg", "-framerate", strconv.Itoa(liveBroadcastFPS), "-i", "pipe:0",
 	}
 	if cfg.Audio {
-		args = append(args,
-			"-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate="+strconv.Itoa(cfg.AudioSampleRate),
-		)
+		args = append(args, rtmpAudioInputArgs(cfg.MusicFile, cfg.AudioSampleRate)...)
 	}
 	args = append(args,
 		"-map", "0:v:0",
