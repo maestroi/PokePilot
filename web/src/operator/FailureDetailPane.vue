@@ -5,7 +5,7 @@ import type { TriageGroup } from '../shared/api/types'
 import StatusPill from '../shared/components/StatusPill.vue'
 import { presentFailureGroup } from '../shared/status'
 import { operatorHref } from '../shared/urls'
-import { canDismiss, exampleRuns, groupTitle, investigateBlocker, issueURL, solverSummary } from './failuresQuery'
+import { canDismiss, exampleRuns, groupTitle, investigateBlocker, issueURL, resolvedBy, solverSummary } from './failuresQuery'
 import { isResolvedGroup } from './runCleanup'
 import { formatInteger, timeAgo } from './runs'
 
@@ -102,6 +102,9 @@ function when(seconds?: number): string {
           </template>
           <template v-if="issue.updated_at">
             <dt>Updated</dt><dd :title="when(issue.updated_at)">{{ timeAgo(issue.updated_at) }}</dd>
+          </template>
+          <template v-if="resolvedBy(group)">
+            <dt>Resolved by</dt><dd>{{ resolvedBy(group) }}</dd>
           </template>
           <template v-if="solverSummary(group)">
             <dt>Solver</dt><dd>{{ solverSummary(group) }}</dd>
