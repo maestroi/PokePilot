@@ -340,12 +340,14 @@ func liveTimelineFromRun(run liveRunView) farm.MediaTimeline {
 			frame = run.Frame
 		}
 		timeline.Events = append(timeline.Events, farm.MediaEvent{
-			Type:      liveActivityEventType(activity),
-			Frame:     frame,
-			Round:     activity.Round,
-			Summary:   firstNonEmpty(activity.Summary, activity.Detail),
-			Evidence:  fmt.Sprintf("live:%s:%s:%d:%d", activity.Source, activity.Kind, activity.Attempt, activity.Frame),
-			Objective: run.Decision,
+			Type:     liveActivityEventType(activity),
+			Frame:    frame,
+			Round:    activity.Round,
+			Summary:  firstNonEmpty(activity.Summary, activity.Detail),
+			Evidence: fmt.Sprintf("live:%s:%s:%d:%d", activity.Source, activity.Kind, activity.Attempt, activity.Frame),
+			// Objective lives in the snapshot. Copying the *current* decision
+			// onto an old event would change its normalized stable ID on every
+			// replan and cause duplicate live commentary after restarts.
 		})
 	}
 	return timeline.Normalized()
@@ -370,6 +372,10 @@ func liveActivityEventType(activity liveRunActivity) string {
 	switch {
 	case source == "milestone" && kind == "badge":
 		return "badge_acquired"
+	case source == "system" && kind == "finished":
+		return "run_finished"
+	case source == "system" && kind == "failed":
+		return "run_failed"
 	case source == "recovery":
 		return "recovery_" + firstNonEmpty(kind, "event")
 	case kind != "":

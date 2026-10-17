@@ -101,6 +101,12 @@ func (p *execRTMPProcess) StdinPipe() (io.WriteCloser, error) { return p.cmd.Std
 func (p *execRTMPProcess) Start() error                       { return p.cmd.Start() }
 func (p *execRTMPProcess) Wait() error                        { return p.cmd.Wait() }
 
+// Only the encoder child receives fd 3. Gameplay and planners never see
+// or wait for speech data.
+func (p *execRTMPProcess) SetCommentaryAudio(reader *os.File) {
+	p.cmd.ExtraFiles = []*os.File{reader}
+}
+
 func defaultRTMPProcessFactory(ctx context.Context, binary string, args []string) rtmpProcess {
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdout = io.Discard
@@ -114,7 +120,8 @@ type rtmpBroadcastSession struct {
 	source *liveBroadcastSession
 
 	processFactory rtmpProcessFactory
-	musicCleanup   func() // release staged, private S3 audio when session ends
+	musicCleanup   func()        // release staged, private S3 audio when session ends
+	commentary     <-chan []byte // optional best-effort speech; bounded by its producer
 	maxReconnects  int
 	backoffBase    time.Duration
 	backoffMax     time.Duration
@@ -337,6 +344,68 @@ func rtmpFFmpegArgs(cfg rtmpBroadcastConfig) []string {
 	return args
 }
 
+// rtmpFFmpegArgsCommentary mixes live speech into the existing audio bed.
+// The selected music (or silence fallback) stays on input 1. Continuous
+// 24 kHz PCM from the isolated commentator is input 2, supplied on fd 3.
+func rtmpFFmpegArgsCommentary(cfg rtmpBroadcastConfig) []string {
+	args := rtmpFFmpegArgs(cfg)
+	if !cfg.Audio {
+		return args
+	}
+	inputAt, audioMapAt := -1, -1
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-map" && args[i+1] == "0:v:0" {
+			inputAt = i
+		}
+		if args[i] == "-map" && args[i+1] == "1:a:0" {
+			audioMapAt = i
+		}
+	}
+	if inputAt < 0 || audioMapAt < 0 {
+		return args
+	}
+	pcm := []string{"-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:3"}
+	args = append(append(append([]string{}, args[:inputAt]...), pcm...), args[inputAt:]...)
+	audioMapAt += len(pcm)
+	mix := []string{
+		"-filter_complex",
+		"[1:a:0]volume=0.28[bed];[bed][2:a:0]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
+		"-map", "[aout]",
+	}
+	return append(append(append([]string{}, args[:audioMapAt]...), mix...), args[audioMapAt+2:]...)
+}
+
+const commentaryPCMTickBytes = 24000 * 2 / 10 // 100 ms
+func feedCommentaryPCM(ctx context.Context, writer io.WriteCloser, queue <-chan []byte) {
+	defer writer.Close()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	var playing []byte
+	silence := make([]byte, commentaryPCMTickBytes)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if len(playing) == 0 {
+			select {
+			case playing = <-queue:
+			default:
+			}
+		}
+		pcm := silence
+		if len(playing) > 0 {
+			pcm = make([]byte, commentaryPCMTickBytes)
+			n := copy(pcm, playing)
+			playing = playing[n:]
+		}
+		if _, err := writer.Write(pcm); err != nil {
+			return
+		}
+	}
+}
+
 func newRTMPBroadcastSession(runID string, cfg rtmpBroadcastConfig, source *liveBroadcastSession) *rtmpBroadcastSession {
 	now := time.Now().UnixMilli()
 	return &rtmpBroadcastSession{
@@ -461,7 +530,24 @@ func (s *rtmpBroadcastSession) runEncoderAttempt(ctx context.Context, frames <-c
 	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	process := s.processFactory(attemptCtx, "ffmpeg", rtmpFFmpegArgs(s.config))
+	args := rtmpFFmpegArgs(s.config)
+	if s.commentary != nil && s.config.Audio {
+		args = rtmpFFmpegArgsCommentary(s.config)
+	}
+	process := s.processFactory(attemptCtx, "ffmpeg", args)
+	var audioReader, audioWriter *os.File
+	if s.commentary != nil && s.config.Audio {
+		if attached, ok := process.(interface{ SetCommentaryAudio(*os.File) }); ok {
+			var pipeErr error
+			audioReader, audioWriter, pipeErr = os.Pipe()
+			if pipeErr != nil {
+				return fmt.Errorf("create commentary audio pipe: %w", pipeErr)
+			}
+			attached.SetCommentaryAudio(audioReader)
+			defer audioReader.Close()
+			defer audioWriter.Close()
+		}
+	}
 	stdin, err := process.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("open encoder input: %w", err)
@@ -469,6 +555,10 @@ func (s *rtmpBroadcastSession) runEncoderAttempt(ctx context.Context, frames <-c
 	if err := process.Start(); err != nil {
 		_ = stdin.Close()
 		return fmt.Errorf("start encoder: %w", err)
+	}
+	if audioReader != nil {
+		_ = audioReader.Close()
+		go feedCommentaryPCM(attemptCtx, audioWriter, s.commentary)
 	}
 	waitCh := make(chan error, 1)
 	go func() {
@@ -556,6 +646,12 @@ func (s *replayServer) startRTMPBroadcast(runID string, cfg rtmpBroadcastConfig,
 	source := s.liveSession(runID)
 	session := newRTMPBroadcastSession(runID, cfg, source)
 	session.musicCleanup = musicCleanup
+	// Speech can only be attached when starting a broadcast; enabling it later
+	// requires an operator-controlled restart. Without TTS, existing silent
+	// audio behavior is unchanged.
+	if commentary := s.commentarySessionForRun(runID); commentary != nil && commentary.settings.TTS && liveTTSConfigured() && cfg.Audio {
+		session.commentary = commentary.audio
+	}
 	s.rtmpSessions[runID] = session
 	s.rtmpMu.Unlock()
 

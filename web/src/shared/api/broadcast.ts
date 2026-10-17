@@ -126,3 +126,55 @@ export async function uploadBroadcastMusic(file: File, licensed: boolean): Promi
   if (!response.ok) throw new Error(await errorDetail(response))
   return response.json() as Promise<BroadcastMusicTrack>
 }
+
+export interface LiveCommentarySettings {
+  enabled: boolean
+  voice: string
+  tts: boolean
+  style: 'documentary' | 'sports' | 'calm'
+  cadence_seconds: number
+  verbosity: 'sparse' | 'normal'
+}
+
+export interface LiveCommentaryEmission {
+  policy: string
+  run_id: string
+  attempt: number
+  event_id: string
+  event_type: string
+  frame: number
+  timestamp_ms: number
+  emitted_at: string
+  action: 'comment' | 'recap' | 'milestone' | 'comparison'
+  text: string
+  model: string
+  style: string
+  tts_state?: string
+}
+
+export interface LiveCommentaryStatus {
+  run_id: string
+  state: string
+  settings: LiveCommentarySettings
+  model: string
+  tts_configured: boolean
+  emitted: number
+  recent?: LiveCommentaryEmission[]
+  last_error?: string
+}
+
+export function getLiveCommentaryStatus(runID: string, signal?: AbortSignal): Promise<LiveCommentaryStatus> {
+  return requestJSON<LiveCommentaryStatus>(`/v1/runs/${encodeURIComponent(runID)}/live/commentary/status`, { signal })
+}
+
+export function startLiveCommentary(runID: string, settings: LiveCommentarySettings): Promise<LiveCommentaryStatus> {
+  return requestJSON<LiveCommentaryStatus>(`/v1/runs/${encodeURIComponent(runID)}/live/commentary/start`, {
+    method: 'POST', body: JSON.stringify(settings)
+  })
+}
+
+export function stopLiveCommentary(runID: string): Promise<LiveCommentaryStatus> {
+  return requestJSON<LiveCommentaryStatus>(`/v1/runs/${encodeURIComponent(runID)}/live/commentary/stop`, {
+    method: 'POST', body: '{}'
+  })
+}
