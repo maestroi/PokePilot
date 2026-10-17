@@ -109,6 +109,14 @@ export function solverSummary(group: TriageGroup): string {
   return `${attempts.length} attempt${attempts.length === 1 ? '' : 's'} · latest ${model}${state ? `, ${state}` : ''}`
 }
 
+// Solver attempts are never marked merged, so a resolved group credits the
+// latest attempt that produced a PR. '' when nothing recorded one (a human fix).
+export function resolvedBy(group: TriageGroup): string {
+  if (!isResolvedGroup(group)) return ''
+  const attempt = [...(group.issue?.solver_attempts || [])].reverse().find((a) => a.pr_number)
+  return attempt ? attempt.model || attempt.backend || '' : ''
+}
+
 export function issueURL(group: TriageGroup): string {
   const raw = group.issue?.issue_url || ''
   try {

@@ -23,6 +23,7 @@ import {
   issueURL,
   latestRun,
   parseFailuresState,
+  resolvedBy,
   type FailureSort,
   type FailuresState,
   type IssueFilter
@@ -507,6 +508,7 @@ async function confirmDismiss(): Promise<void> {
                 <td class="px-3">
                   <StatusPill :status="status(group)" class="max-w-full overflow-hidden" />
                   <a v-if="group.issue?.issue_number && issueURL(group)" :href="issueURL(group)" target="_blank" rel="noopener" class="mt-0.5 block text-meta text-accent hover:underline" @click.stop>#{{ group.issue.issue_number }} ↗</a>
+                  <div v-if="resolvedBy(group)" class="truncate text-meta text-fg-2" :title="`Resolved by ${resolvedBy(group)}`">by {{ resolvedBy(group) }}</div>
                 </td>
                 <td class="px-3">
                   <div class="truncate" :title="groupTitle(group)">{{ groupTitle(group) }}</div>
