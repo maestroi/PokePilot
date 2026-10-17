@@ -646,7 +646,6 @@ func (s *replayServer) handleRTMPBroadcastStart(w http.ResponseWriter, r *http.R
 		return
 	}
 
-
 	// A host-configured track remains the default for existing API callers.
 	// A library ID selects S3 audio; "silent" deliberately overrides both.
 	var musicCleanup func()
