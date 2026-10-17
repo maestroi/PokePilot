@@ -21,6 +21,7 @@ API routes (proxied only on the authenticated/private operator service):
 - `GET /v1/runs/{id}/live/commentary/status`: current mode, producer identity,
   safe recent emitted text, speech state and error summary. No secrets or
   private model traces.
+- `GET /v1/runs/{id}/live/commentary/events`: bounded in-memory transcript (newest 128) with event references and timestamps.
 - `POST /v1/runs/{id}/live/commentary/start`: enable for a **running** run.
 - `POST /v1/runs/{id}/live/commentary/stop`: disable without affecting video
   or gameplay.
@@ -42,6 +43,13 @@ Style must be `documentary`, `sports`, or `calm`. Cadence is 30–3600
 seconds; sparse mode doubles the cooldown. There is a five-second minimum
 between high-priority milestones. Routine navigation, unknown activity, and
 checkpoint spam are always silent. No commentary at all is also valid.
+
+For historical comparisons, a trusted operator may include at most four
+`history` rows in the start JSON, with `run_id`, `source`, `goal`,
+`duration_ms` and `status: "done"`. Rows must be distinct completed runs
+with exactly the current goal and an explicit durable-statistics source; this
+sidecar does not independently query the historical farm catalog. Without
+such history, the commentator cannot make comparisons.
 
 ## Providers
 
