@@ -204,17 +204,23 @@ func TestCommentaryAudioPipeAndSilencePadding(t *testing.T) {
 	}
 }
 func TestTerminalEventClassificationAndCommentary(t *testing.T) {
- event:=liveRunActivity{Source:"system",Kind:"finished",Summary:"Run completed",Frame:600,Attempt:1}
- if typ:=liveActivityEventType(event);typ!="run_finished" {t.Fatalf("terminal event type=%q",typ)}
- engine,err:=commentator.New(commentator.Settings{Enabled:true,Style:"calm",Verbosity:"normal",CadenceSeconds:60},nil)
- if err!=nil {t.Fatal(err)}
- replay:=newReplayServer("http://unused.example","","",nil)
- session:=&liveCommentarySession{server:replay,runID:"done",engine:engine,settings:engine.Settings,audio:make(chan []byte,1)}
- session.process(context.Background(),liveRunView{
-  RunID:"done",Status:"done",Frame:600,Activity:[]liveRunActivity{event},
- })
- got:=session.snapshot()
- if got.Emitted!=1 || got.Recent[0].EventType!="run_finished" {t.Fatalf("terminal emission=%+v",got)}
+	event := liveRunActivity{Source: "system", Kind: "finished", Summary: "Run completed", Frame: 600, Attempt: 1}
+	if typ := liveActivityEventType(event); typ != "run_finished" {
+		t.Fatalf("terminal event type=%q", typ)
+	}
+	engine, err := commentator.New(commentator.Settings{Enabled: true, Style: "calm", Verbosity: "normal", CadenceSeconds: 60}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay := newReplayServer("http://unused.example", "", "", nil)
+	session := &liveCommentarySession{server: replay, runID: "done", engine: engine, settings: engine.Settings, audio: make(chan []byte, 1)}
+	session.process(context.Background(), liveRunView{
+		RunID: "done", Status: "done", Frame: 600, Activity: []liveRunActivity{event},
+	})
+	got := session.snapshot()
+	if got.Emitted != 1 || got.Recent[0].EventType != "run_finished" {
+		t.Fatalf("terminal emission=%+v", got)
+	}
 }
 
 func TestLiveCommentaryObjectKeyAvoidsPlainRunID(t *testing.T) {
