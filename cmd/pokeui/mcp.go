@@ -94,6 +94,12 @@ type mcpStartRunOutput struct {
 type mcpListRunsInput struct {
 	Status string `json:"status,omitempty" jsonschema:"optional status filter: queued, leased, running, or done"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"maximum runs to return; defaults to 20 and is capped at 100"`
+	View   string `json:"view,omitempty" jsonschema:"summary (default) returns concise progress, or full returns the legacy run records and worker details"`
+}
+
+type mcpRunDetailInput struct {
+	RunID string `json:"run_id" jsonschema:"PokePilot run id"`
+	View  string `json:"view,omitempty" jsonschema:"summary (default) returns progress without planner dumps, or full returns the legacy run record"`
 }
 
 type mcpRunInput struct {
@@ -101,7 +107,10 @@ type mcpRunInput struct {
 }
 
 type mcpTriageInput struct {
-	IncludeResolved bool `json:"include_resolved,omitempty" jsonschema:"include historical failure groups whose linked issue is already resolved; defaults to false"`
+	IncludeResolved bool   `json:"include_resolved,omitempty" jsonschema:"include historical failure groups whose linked issue is already resolved; defaults to false"`
+	View            string `json:"view,omitempty" jsonschema:"summary (default) returns concise failure groups, or full returns legacy evidence and issue metadata"`
+	Limit           int    `json:"limit,omitempty" jsonschema:"page size; defaults to 20 for summary, unlimited for full; maximum 100 when provided"`
+	Offset          int    `json:"offset,omitempty" jsonschema:"number of filtered failure groups to skip; defaults to zero"`
 }
 
 type mcpInvestigateInput struct {
@@ -186,6 +195,136 @@ type mcpDashboard struct {
 	Workers []mcpWorkerView `json:"workers"`
 }
 
+// MCP defaults to the information an LLM needs for selecting the next action.
+// Full fidelity remains opt-in for debugging and non-LLM consumers.
+func mcpResponseView(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "summary":
+		return "summary", nil
+	case "full":
+		return "full", nil
+	default:
+		return "", fmt.Errorf("view must be summary or full")
+	}
+}
+
+func mcpSelectedFields(record map[string]any, keys ...string) map[string]any {
+	out := make(map[string]any, len(keys))
+	for _, key := range keys {
+		if value, ok := record[key]; ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func mcpClipString(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return strings.ToValidUTF8(value[:limit], "") + "…"
+}
+
+func mcpSummaryIssue(issue map[string]any) map[string]any {
+	if issue == nil {
+		return nil
+	}
+	return mcpSelectedFields(issue, "issue_number", "status", "resolution", "fixed_revision",
+		"last_observed_revision", "occurrence_count", "circuit_open", "circuit_kind", "circuit_count")
+}
+
+func mcpSummaryRun(run map[string]any) map[string]any {
+	out := mcpSelectedFields(run, "run_id", "status", "game", "planner", "starter", "goal",
+		"seed", "frame", "map", "x", "y", "attempts", "error_attempts", "queued_at",
+		"ended_at", "reason", "llm_profile", "reasoning_effort")
+	for _, key := range []string{"goal", "reason"} {
+		if value, ok := out[key].(string); ok {
+			out[key] = mcpClipString(value, 180)
+		}
+	}
+	if detail, ok := run["detail"].(string); ok && detail != "" {
+		out["detail"] = mcpClipString(detail, 240)
+	}
+	if stats, ok := run["stats"].(map[string]any); ok {
+		out["stats"] = mcpSelectedFields(stats, "round", "rounds", "calls", "goal_current",
+			"goal_target", "goal_complete", "prompt_tokens", "completion_tokens",
+			"strategic_calls", "model")
+	}
+	if player, ok := run["player"].(map[string]any); ok {
+		out["player"] = mcpSelectedFields(player, "badges", "money")
+		if party, ok := player["party"].([]any); ok {
+			out["party_size"] = len(party)
+		}
+	}
+	if issue, ok := run["issue"].(map[string]any); ok {
+		out["issue"] = mcpSummaryIssue(issue)
+	}
+	return out
+}
+
+func mcpSummaryListRun(run mcpRunView) map[string]any {
+	out := map[string]any{
+		"run_id": run.RunID,
+		"status": run.Status,
+		"frame": run.Frame,
+		"attempts": run.Attempts,
+	}
+	for key, value := range map[string]string{
+		"game": run.Game, "planner": run.Planner, "starter": run.Starter,
+		"goal": mcpClipString(run.Goal, 180), "reason": mcpClipString(run.Reason, 180),
+		"detail": mcpClipString(run.Detail, 240),
+	} {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	if run.Map != 0 || run.X != 0 || run.Y != 0 {
+		out["map"], out["x"], out["y"] = run.Map, run.X, run.Y
+	}
+	if run.QueuedAt != 0 {
+		out["queued_at"] = run.QueuedAt
+	}
+	if run.EndedAt != 0 {
+		out["ended_at"] = run.EndedAt
+	}
+	if run.Stats != nil {
+		out["stats"] = map[string]any{
+			"round": run.Stats.Round, "rounds": run.Stats.Rounds,
+			"calls": run.Stats.Calls, "goal_current": run.Stats.GoalCurrent,
+			"goal_target": run.Stats.GoalTarget, "goal_complete": run.Stats.GoalComplete,
+		}
+	}
+	if run.Player != nil {
+		out["player"] = map[string]any{"badges": run.Player.Badges}
+		out["party_size"] = len(run.Player.Party)
+	}
+	if run.Issue != nil {
+		out["issue"] = mcpSummaryIssue(run.Issue)
+	}
+	return out
+}
+
+func mcpSummaryTriageGroup(group map[string]any) map[string]any {
+	out := mcpSelectedFields(group, "key", "fingerprint", "pattern", "count",
+		"actionable", "resolution_state", "fixed_revision", "latest_run_id")
+	if example, ok := group["example"].(string); ok {
+		out["example"] = mcpClipString(example, 240)
+	}
+	if ids, ok := group["run_ids"].([]any); ok {
+		const maxIDs = 3
+		if len(ids) > maxIDs {
+			out["run_ids"] = ids[:maxIDs]
+			out["run_ids_omitted"] = len(ids) - maxIDs
+		} else {
+			out["run_ids"] = ids
+		}
+	}
+	if issue, ok := group["issue"].(map[string]any); ok {
+		out["issue"] = mcpSummaryIssue(issue)
+	}
+	return out
+}
+
 func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 	artifactBase := strings.TrimRight(strings.TrimSpace(replayBase), "/")
 	if artifactBase == "" {
@@ -207,11 +346,11 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
-		Description: "List recent PokePilot runs, optionally filtered by lifecycle status. Finished failures include their linked issue status/resolution when known; this is historical evidence, not an actionable work queue.",
+		Description: "List recent PokePilot runs. Defaults to brief progress summaries (no raw planner traces, strategy history, sprite/party payloads, or worker addresses); set view=full for legacy records. Filter by status and bound with limit. Historical failures are not an actionable queue.",
 	}, control.listRuns)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run",
-		Description: "Get the live or finished state of one PokePilot run, including game-specific semantic state/decisions and Pokemon planner/player fields when available.",
+		Description: "Get one run's concise state and progress by default. Set view=full when you specifically need raw planner/player fields, full game-specific state or activity; prefer pokepilot_prepare_debug for failures.",
 	}, control.getRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_debug",
@@ -239,7 +378,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 	}, control.cancelRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_triage",
-		Description: "Get the authoritative actionable failure groups. Linked issues that are already resolved are hidden by default so historical fixes are not investigated again; pass include_resolved=true only when auditing history.",
+		Description: "Get actionable failures in compact, paged groups by default (20 per page; use offset for the next page). Use view=full to retrieve legacy evidence, and include_resolved=true only for historical audits.",
 	}, control.getTriage)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_investigate_failure",
@@ -414,6 +553,10 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 }
 
 func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mcpListRunsInput) (*mcp.CallToolResult, map[string]any, error) {
+	view, err := mcpResponseView(in.View)
+	if err != nil {
+		return nil, nil, err
+	}
 	status := strings.ToLower(strings.TrimSpace(in.Status))
 	if status != "" && status != "queued" && status != "leased" && status != "running" && status != "done" {
 		return nil, nil, fmt.Errorf("status must be queued, leased, running, or done")
@@ -438,6 +581,13 @@ func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	if len(runs) > limit {
 		runs = runs[:limit]
 	}
+	if view == "summary" {
+		brief := make([]map[string]any, 0, len(runs))
+		for _, run := range runs {
+			brief = append(brief, mcpSummaryListRun(run))
+		}
+		return nil, map[string]any{"now": dashboard.Now, "runs": brief, "view": view}, nil
+	}
 	return nil, map[string]any{
 		"now":     dashboard.Now,
 		"runs":    runs,
@@ -445,7 +595,11 @@ func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mc
 	}, nil
 }
 
-func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunInput) (*mcp.CallToolResult, map[string]any, error) {
+func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpRunDetailInput) (*mcp.CallToolResult, map[string]any, error) {
+	view, err := mcpResponseView(in.View)
+	if err != nil {
+		return nil, nil, err
+	}
 	id := strings.TrimSpace(in.RunID)
 	if id == "" {
 		return nil, nil, fmt.Errorf("run_id is required")
@@ -464,6 +618,9 @@ func (c *mcpControl) getRun(ctx context.Context, _ *mcp.CallToolRequest, in mcpR
 		return nil, nil, fmt.Errorf("run %q not found", id)
 	}
 	if run, ok := out["run"].(map[string]any); ok {
+		if view == "summary" {
+			return nil, map[string]any{"run": mcpSummaryRun(run), "view": view}, nil
+		}
 		compactEvents(run, "activity")
 	}
 	return nil, out, nil
@@ -808,6 +965,13 @@ func triageGroupActionable(group map[string]any) bool {
 }
 
 func (c *mcpControl) getTriage(ctx context.Context, _ *mcp.CallToolRequest, in mcpTriageInput) (*mcp.CallToolResult, map[string]any, error) {
+	view, err := mcpResponseView(in.View)
+	if err != nil {
+		return nil, nil, err
+	}
+	if in.Offset < 0 || in.Limit < 0 || in.Limit > mcpMaxRuns {
+		return nil, nil, fmt.Errorf("offset must be non-negative and limit must be between 0 and %d", mcpMaxRuns)
+	}
 	var groups []map[string]any
 	if err := c.requestJSON(ctx, http.MethodGet, "/v1/triage", nil, &groups); err != nil {
 		return nil, nil, err
@@ -822,11 +986,38 @@ func (c *mcpControl) getTriage(ctx context.Context, _ *mcp.CallToolRequest, in m
 			resolvedHidden++
 		}
 	}
-	return nil, map[string]any{
+	total := len(actionable)
+	limit := in.Limit
+	if view == "summary" && limit == 0 {
+		limit = 20
+	}
+	offset := in.Offset
+	if offset > total {
+		offset = total
+	}
+	actionable = actionable[offset:]
+	if limit > 0 && len(actionable) > limit {
+		actionable = actionable[:limit]
+	}
+	nextOffset := offset + len(actionable)
+	if view == "summary" {
+		brief := make([]map[string]any, 0, len(actionable))
+		for _, group := range actionable {
+			brief = append(brief, mcpSummaryTriageGroup(group))
+		}
+		actionable = brief
+	}
+	out := map[string]any{
 		"groups":           actionable,
 		"resolved_hidden":  resolvedHidden,
 		"include_resolved": in.IncludeResolved,
-	}, nil
+		"total":            total,
+		"view":             view,
+	}
+	if nextOffset < total {
+		out["next_offset"] = nextOffset
+	}
+	return nil, out, nil
 }
 
 func (c *mcpControl) investigateFailure(ctx context.Context, _ *mcp.CallToolRequest, in mcpInvestigateInput) (*mcp.CallToolResult, map[string]any, error) {
