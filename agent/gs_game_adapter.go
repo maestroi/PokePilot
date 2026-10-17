@@ -232,6 +232,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSMahoganyStairs(a.m, a.romData)
 		case gsprofile.ProgressRocketLanceHealing:
 			err = executeGSRocketBaseLanceHeal(a.m, a.romData)
+		case gsprofile.ProgressGlacierBadgeEarned:
+			err = executeGSPryce(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
