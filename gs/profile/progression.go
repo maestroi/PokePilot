@@ -53,8 +53,9 @@ const (
 	ProgressRocketExecutiveFBeaten      game.ProgressID = "gs_rocket_executive_f_beaten"
 	ProgressRocketHideoutCleared        game.ProgressID = "gs_rocket_hideout_cleared"
 	ProgressGlacierBadgeEarned          game.ProgressID = "gs_glacier_badge_earned"
-	// Radio Tower events are cartridge-observable, but the eighth-badge
-	// progression planner remains locked until real-ROM qualification.
+	// Radio Tower event facts are cartridge-observable and can now be
+	// attempted experimentally. Rising Badge remains a real cartridge-only
+	// goal until Ice Path, Clair and Dragon's Den have executable controllers.
 	ProgressRadioTowerFakeDirectorBeaten game.ProgressID = "gs_radio_tower_fake_director_beaten"
 	ProgressRadioTowerBasementUnlocked   game.ProgressID = "gs_radio_tower_basement_unlocked"
 	ProgressRadioTowerCardKeyReceived    game.ProgressID = "gs_radio_tower_card_key_received"
