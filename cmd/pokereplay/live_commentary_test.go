@@ -3,7 +3,6 @@ package main
 import (
  "context"
  "encoding/json"
- "errors"
  "io"
  "net/http"
  "net/http/httptest"
@@ -152,5 +151,4 @@ func TestLiveCommentaryObjectKeyAvoidsPlainRunID(t *testing.T) {
  if a!=b||strings.Contains(a,"private-run-id") {t.Fatalf("invalid durable key: %s",a)}
  item.EventID="different"
  if liveCommentaryObjectKey("private-run-id",item)==a {t.Fatal("distinct events wrote same artifact")}
- _=errors.Is
 }
