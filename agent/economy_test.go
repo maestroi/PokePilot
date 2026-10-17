@@ -37,6 +37,26 @@ func TestEconomyContextReservesKnownSafariSpend(t *testing.T) {
 	}
 }
 
+// run-d6dokr184ky81: bag pressure moved HM03/HM04 to the PC after the League.
+// A bag-only check kept the ¥1500 Safari reserve forever, so ¥1587 bought no
+// balls and every Dex catch objective vanished (dex stuck at 79).
+func TestEconomyFuchsiaReserveClearsWhenHMsStoredInPC(t *testing.T) {
+	obs := Observation{
+		Money:     1587,
+		Badges:    []string{"Soul"},
+		Bag:       []Item{{Name: "poke flute", Quantity: 1}},
+		MartStock: []string{"pokeball"},
+		Story:     ProgressState{{ID: redProgressFuchsiaProgressionComplete, Complete: true}},
+	}
+	ctx := EconomyContext(obs)
+	if ctx == nil || ctx.ReservedMoney != 0 {
+		t.Fatalf("EconomyContext = %+v, want no Fuchsia reserve once the story fact is complete", ctx)
+	}
+	if progressionFundingShortfall(obs) != 0 {
+		t.Fatal("funding shortfall for a completed Fuchsia progression")
+	}
+}
+
 func TestEconomyContextReservesSaffronGuardDrinkSpend(t *testing.T) {
 	obs := Observation{
 		Money: 500,
