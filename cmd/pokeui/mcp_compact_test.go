@@ -31,7 +31,7 @@ func TestMCPListRunsSummaryCutsContextWithoutLosingProgress(t *testing.T) {
 				"game_decision": map[string]any{"verbose": bulk},
 				"stats": map[string]any{
 					"rounds": 7, "goal_current": 3, "goal_target": 8,
-					"strategic_records": []any{bulk},
+					"strategic_records": []map[string]any{{"reason": bulk}},
 				},
 				"player": map[string]any{"money": 100, "badges": []string{"Zephyr"}, "party": []any{
 					map[string]any{"species": "Totodile", "moves": []string{"Scratch"}},
