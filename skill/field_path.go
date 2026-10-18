@@ -303,31 +303,77 @@ func currentFieldPathPlanWithRulesAndCostWithDecoder(m *emu.Emu, decoder game.Ov
 }
 
 func currentFieldPathPlanWithRulesAndCostWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h worldmodel.HeaderView, dest Destination, blocked map[[2]int]bool, rules fieldPathRules) ([]fieldPathStep, fieldPathCost, error) {
-	land, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
+	snapshot, err := captureFieldPathWithDecoders(m, decoder, fieldActions, romData, h, rules)
 	if err != nil {
 		return nil, fieldPathCost{}, err
 	}
+	return snapshot.plan(dest, blocked)
+}
+
+// fieldPathSnapshot holds every live input of one local field-path search, so
+// several targets can be planned from the same instant without re-reading the
+// emulator.
+type fieldPathSnapshot struct {
+	land, water                 *world.Grid
+	tileset                     uint8
+	x, y                        int
+	canCut, canSurf, startWater bool
+	cost                        fieldPathCostPolicy
+	rules                       fieldPathRules
+}
+
+func captureFieldPath(m *emu.Emu, romData []byte, h worldmodel.HeaderView) (fieldPathSnapshot, error) {
+	overworld, err := overworldDecoderFor(m)
+	if err != nil {
+		return fieldPathSnapshot{}, err
+	}
+	fieldActions, err := fieldActionDecoderFor(m)
+	if err != nil {
+		return fieldPathSnapshot{}, err
+	}
+	return captureFieldPathWithDecoders(m, overworld, fieldActions, romData, h, currentFieldPathRules(m, h))
+}
+
+func captureFieldPathWithDecoders(m *emu.Emu, decoder game.OverworldDecoder, fieldActions game.FieldActionDecoder, romData []byte, h worldmodel.HeaderView, rules fieldPathRules) (fieldPathSnapshot, error) {
+	land, err := liveMapGridForTraversal(m, romData, h, world.TraversalLand)
+	if err != nil {
+		return fieldPathSnapshot{}, err
+	}
 	water, err := liveMapGridForTraversal(m, romData, h, world.TraversalWater)
 	if err != nil {
-		return nil, fieldPathCost{}, err
+		return fieldPathSnapshot{}, err
 	}
 
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	caps := redRouteCapabilities(romData, &mem)
-	startWater := fieldActions.DecodeFieldAction(m).Surfing
 	live, err := fieldPathRuntimeStateWithDecoder(m, decoder)
 	if err != nil {
-		return nil, fieldPathCost{}, err
+		return fieldPathSnapshot{}, err
 	}
 	header := h.WorldMapHeader()
+	return fieldPathSnapshot{
+		land:       land,
+		water:      water,
+		tileset:    uint8(header.NativeTileset),
+		x:          int(live.X),
+		y:          int(live.Y),
+		canCut:     caps.Has(capCanCut),
+		canSurf:    caps.Has(capCanSurf),
+		startWater: fieldActions.DecodeFieldAction(m).Surfing,
+		cost:       fieldPathCostPolicyFor(m),
+		rules:      rules,
+	}, nil
+}
+
+func (s fieldPathSnapshot) plan(dest Destination, blocked map[[2]int]bool) ([]fieldPathStep, fieldPathCost, error) {
 	return planFieldPathWithCost(
-		land, water, uint8(header.NativeTileset),
-		int(live.X), int(live.Y), int(dest.X), int(dest.Y),
+		s.land, s.water, s.tileset,
+		s.x, s.y, int(dest.X), int(dest.Y),
 		blocked,
-		caps.Has(capCanCut), caps.Has(capCanSurf), startWater,
-		fieldPathCostPolicyFor(m),
-		rules,
+		s.canCut, s.canSurf, s.startWater,
+		s.cost,
+		s.rules,
 	)
 }
 
