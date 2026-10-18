@@ -22,6 +22,9 @@ type warpSpec struct {
 	dest     string
 	destWarp uint8 // decomp warp ids are 1-based
 	inert    bool  // landing-only record whose collision tile cannot trigger a warp
+	// dynamic is the decomp's -1 destination warp: the door uses the
+	// wBackup* warp, which an elevator floor choice rewrites.
+	dynamic bool
 }
 
 type connectionSpec struct {
@@ -973,6 +976,18 @@ func (p *firstBadgeWorldProvider) ParseMap(mapID uint16) (worldmodel.NativeMapHe
 		dest, ok := gsdata.MapByName(warp.dest)
 		if !ok {
 			return worldmodel.NativeMapHeader{}, fmt.Errorf("gs/rom: %s warp destination %q missing from generated catalog", spec.name, warp.dest)
+		}
+		if warp.dynamic {
+			if _, ok := NativeElevator(mapID); !ok {
+				return worldmodel.NativeMapHeader{}, fmt.Errorf("gs/rom: %s dynamic warp at (%d,%d) has no elevator floor list", spec.name, warp.x, warp.y)
+			}
+			header.Warps = append(header.Warps, worldmodel.NativeWarp{
+				X:       warp.x,
+				Y:       warp.y,
+				DestMap: gsdata.NativeMapID(dest.Group, dest.Number),
+				Dynamic: true,
+			})
+			continue
 		}
 		if warp.destWarp == 0 {
 			return worldmodel.NativeMapHeader{}, fmt.Errorf("gs/rom: %s warp at (%d,%d) has zero decomp destination warp", spec.name, warp.x, warp.y)

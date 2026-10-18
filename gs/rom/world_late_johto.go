@@ -79,6 +79,23 @@ var lateJohtoTopology = []mapSpec{
 			{x: 17, y: 2, dest: "GOLDENROD_DEPT_STORE_B1F", destWarp: 1},
 		},
 	},
+	// Once the switch puzzle opens door 11 the switch-room city carpets are
+	// sealed, so the warehouse leaves through Dept Store B1F and its elevator.
+	{
+		name: "GOLDENROD_DEPT_STORE_B1F",
+		warps: []warpSpec{
+			{x: 17, y: 2, dest: "GOLDENROD_UNDERGROUND_WAREHOUSE", destWarp: 3},
+			{x: 9, y: 4, dest: "GOLDENROD_DEPT_STORE_ELEVATOR", destWarp: 1},
+			{x: 10, y: 4, dest: "GOLDENROD_DEPT_STORE_ELEVATOR", destWarp: 2},
+		},
+	},
+	{
+		name: "GOLDENROD_DEPT_STORE_ELEVATOR",
+		warps: []warpSpec{
+			{x: 1, y: 3, dest: "GOLDENROD_DEPT_STORE_1F", dynamic: true},
+			{x: 2, y: 3, dest: "GOLDENROD_DEPT_STORE_1F", dynamic: true},
+		},
+	},
 	{
 		name: "ROUTE_44",
 		warps: []warpSpec{

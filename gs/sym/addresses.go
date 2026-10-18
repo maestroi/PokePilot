@@ -19,6 +19,10 @@ const (
 	MenuJoypad              uint16 = 0xCEAA // wMenuJoypad
 	MenuSelection           uint16 = 0xCEAB // wMenuSelection
 	WhichIndexSet           uint16 = 0xCEAD // wWhichIndexSet
+	MenuBorderTopCoord      uint16 = 0xCEB9 // wMenuBorderTopCoord
+	MenuBorderLeftCoord     uint16 = 0xCEBA // wMenuBorderLeftCoord
+	MenuBorderBottomCoord   uint16 = 0xCEBB // wMenuBorderBottomCoord
+	MenuBorderRightCoord    uint16 = 0xCEBC // wMenuBorderRightCoord
 	TwoDMenuCursorInitY     uint16 = 0xCED8 // w2DMenuCursorInitY
 	TwoDMenuCursorInitX     uint16 = 0xCED9 // w2DMenuCursorInitX
 	TwoDMenuNumRows         uint16 = 0xCEDA // w2DMenuNumRows
@@ -214,6 +218,7 @@ const (
 	MenuScrollPosition uint16 = 0xCFD4 // wMenuScrollPosition (follows wSwitchMon)
 	MartJumptableIndex uint16 = 0xCF2D // wMartJumptableIndex (STANDARDMART_*)
 	CurMartCount       uint16 = 0xCFEC // wCurMartCount
+	CurElevatorCount   uint16 = 0xCFEC // wCurElevatorCount (UNION with wCurMartCount)
 	CurMartItems       uint16 = 0xCFED // wCurMartItems, $ff-terminated
 	MaxMartItems              = 15
 	ItemQuantityChange uint16 = 0xD009 // wItemQuantityChange

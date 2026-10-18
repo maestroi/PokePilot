@@ -9,6 +9,51 @@ type NativeWarp struct {
 	DestWarpID uint8
 	DestMap    uint16
 	Inert      bool
+	// Dynamic marks a door whose destination is chosen at runtime (an
+	// elevator floor). DestMap/DestWarpID are then not a usable edge; the
+	// reachable destinations come from NativeElevatorProvider.
+	Dynamic bool
+}
+
+// NativeElevatorFloor is one selectable floor of a native elevator menu.
+// DestWarpID is zero-based, like NativeWarp.DestWarpID.
+type NativeElevatorFloor struct {
+	MapID      uint16
+	DestWarpID uint8
+}
+
+// NativeElevatorSpec is the topology-relevant part of an elevator: the panel
+// that opens its floor menu and the floors in menu order.
+type NativeElevatorSpec struct {
+	PanelX uint8
+	PanelY uint8
+	Floors []NativeElevatorFloor
+}
+
+// NativeElevatorProvider is an optional extension for native providers whose
+// maps include elevators. A map's Dynamic warps lead to every listed floor, but
+// only after the floor is chosen at the panel.
+type NativeElevatorProvider interface {
+	LookupNativeElevator(mapID uint16) (NativeElevatorSpec, bool)
+}
+
+// NativeElevatorFloorFor returns the menu index of the floor that lands on
+// destinationMap from elevatorMap.
+func NativeElevatorFloorFor(provider NativeMapTopologyProvider, elevatorMap, destinationMap uint16) (NativeElevatorSpec, int, bool) {
+	elevators, ok := provider.(NativeElevatorProvider)
+	if !ok {
+		return NativeElevatorSpec{}, 0, false
+	}
+	spec, ok := elevators.LookupNativeElevator(elevatorMap)
+	if !ok {
+		return NativeElevatorSpec{}, 0, false
+	}
+	for i, floor := range spec.Floors {
+		if floor.MapID == destinationMap {
+			return spec, i, true
+		}
+	}
+	return NativeElevatorSpec{}, 0, false
 }
 
 // NativeConnection is an adjacent-map seam keyed by the cartridge's native

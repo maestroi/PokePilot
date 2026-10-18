@@ -880,6 +880,9 @@ func traverseNativeEdge(
 		if _, err := waitLiveMapSettled(m, profile); err != nil {
 			return err
 		}
+		if err := prepareNativeElevatorEdge(m, profile, provider, edge); err != nil {
+			return err
+		}
 		// The position read above can predate the settle: a mid-warp transient
 		// names the edge's map and a controllable overworld before the player
 		// position register lands, so it can point at a tile that does not exist

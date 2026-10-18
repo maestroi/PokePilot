@@ -388,7 +388,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 	case "MR_POKEMONS_HOUSE", "TEAM_ROCKET_BASE_B2F", "TEAM_ROCKET_BASE_B3F":
 		return 0x0a, true
 	case "CHERRYGROVE_MART", "VIOLET_MART", "GOLDENROD_DEPT_STORE_1F", "ECRUTEAK_MART",
-		"OLIVINE_MART", "BLACKTHORN_MART":
+		"OLIVINE_MART", "BLACKTHORN_MART", "GOLDENROD_DEPT_STORE_ELEVATOR":
 		return 0x0b, true
 	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM",
 		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F",
@@ -419,7 +419,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x1c, true
 	case "RADIO_TOWER_1F", "RADIO_TOWER_2F", "RADIO_TOWER_3F", "RADIO_TOWER_4F", "RADIO_TOWER_5F":
 		return 0x18, true
-	case "GOLDENROD_UNDERGROUND_WAREHOUSE", "TEAM_ROCKET_BASE_B1F":
+	case "GOLDENROD_UNDERGROUND_WAREHOUSE", "GOLDENROD_DEPT_STORE_B1F", "TEAM_ROCKET_BASE_B1F":
 		return 0x19, true
 	default:
 		return 0, false
