@@ -9,6 +9,9 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
+import { beginFullE2E, fullE2E } from './fullE2EManager'
+import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
+import { operatorHref } from '../shared/urls'
 
 const launchDefaults = readRunLaunchDefaults()
 
@@ -132,6 +135,10 @@ watch(deployments, (next) => {
   }
 }, { immediate: true })
 
+const runMode = ref<RunMode>('standard')
+const uploadPrivate = ref(false)
+const confirmPrivateUpload = ref(false)
+const fullE2ESelected = computed(() => runMode.value === 'full-e2e')
 const submitting = ref(false)
 const error = ref('')
 const createdRunID = ref('')
@@ -145,6 +152,25 @@ const isBoxxle = computed(() => form.game === 'boxxle')
 const isYellow = computed(() => form.game === 'pokemon-yellow')
 const isGen2 = computed(() => form.game === 'pokemon-gold' || form.game === 'pokemon-silver')
 const isSpecificStarter = computed(() => starterMode.value === 'specific')
+
+watch(runMode, mode => {
+  if (mode === 'full-e2e') {
+    if (!supportsFullE2E(form)) {
+      runMode.value = 'standard'
+      return
+    }
+    form.goal = FULL_E2E_GOAL
+    form.recovery_profile = 'resilient'
+    form.endless = false
+    form.random_seed = false
+  } else {
+    uploadPrivate.value = false
+    confirmPrivateUpload.value = false
+  }
+})
+watch(() => [form.game, form.planner], () => {
+  if (fullE2ESelected.value && !supportsFullE2E(form)) runMode.value = 'standard'
+})
 
 watch(() => form.game, (game, previous) => {
   starterMode.value = 'default'
@@ -254,10 +280,23 @@ async function submit(): Promise<void> {
     return
   }
 
+  if (fullE2ESelected.value && fullE2E.working) {
+    error.value = 'A full production test is already active in this browser. Finish or stop it before starting another.'
+    return
+  }
+  if (fullE2ESelected.value && !supportsFullE2E(form)) {
+    error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
+    return
+  }
+  if (fullE2ESelected.value && uploadPrivate.value && !confirmPrivateUpload.value) {
+    error.value = 'Confirm the two real private YouTube uploads before starting.'
+    return
+  }
+
   submitting.value = true
   createdRunID.value = ''
   try {
-    const spec: RunSpec = {
+    let spec: RunSpec = {
       ...form,
       run_id: form.run_id.trim(),
       game: form.game,
@@ -274,11 +313,29 @@ async function submit(): Promise<void> {
       decision_engine: decisionRequest(),
       recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
+    if (fullE2ESelected.value) spec = productionRunSpec(spec)
     const response = await createRun(spec)
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
     createdRunID.value = returnedID || spec.run_id
     if (!createdRunID.value) {
       error.value = 'Run was queued, but the wall did not return a run id.'
+    } else if (fullE2ESelected.value) {
+      // The wall has accepted this one run. Start the production pipeline
+      // against that run ID (fresh=false), never queue a duplicate.
+      // This shared coordinator survives operator route changes.
+      void beginFullE2E({
+        runID: createdRunID.value,
+        fresh: false,
+        starter: spec.starter,
+        seed: spec.seed,
+        deployment: spec.llm_deployment || '',
+        uploadPrivate: uploadPrivate.value,
+        pollMS: 10000
+      })
+      window.history.pushState(null, '', operatorHref('media', {
+        section: 'e2e', run: createdRunID.value, job: ''
+      }, window.location.search))
+      window.dispatchEvent(new PopStateEvent('popstate'))
     }
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : 'Unable to create run'
@@ -290,7 +347,7 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="grid grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
-    <Panel title="New run" description="Choose a game, then queue a run with only the controls that apply to it." compact>
+    <Panel title="New run" description="Launch a standard run or an automatic full-game production test." compact>
       <form class="grid grid-cols-1 gap-4 sm:grid-cols-2" @submit.prevent="submit">
         <label class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Game</span>
@@ -306,13 +363,38 @@ async function submit(): Promise<void> {
           <span class="mt-1 block text-[11px] text-slate-600">Choose the cartridge first; the launch options below adapt to the selected game.</span>
         </label>
 
+        <div class="sm:col-span-2 rounded-md border border-white/10 bg-black/10 p-3">
+          <label class="block">
+            <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run workflow</span>
+            <select v-model="runMode" class="mt-1 w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+              <option value="standard">Standard · play only</option>
+              <option value="full-e2e" :disabled="!supportsFullE2E(form)">Full E2E · complete game → episode + Short</option>
+            </select>
+          </label>
+          <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E currently requires Pokémon Red and the LLM planner.</p>
+          <template v-if="fullE2ESelected">
+            <p class="mt-2 text-xs text-slate-300">
+              The goal is locked to the Champion. After this run is queued, automatically verify the Hall of Fame, render a broadcast replay and both edited formats, and queue private publication candidates.
+            </p>
+            <label class="mt-3 flex items-start gap-2 text-sm text-slate-200">
+              <input v-model="uploadPrivate" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" @change="confirmPrivateUpload = false" />
+              <span>Also upload episode and Short privately to YouTube <span class="block text-xs text-slate-400">Off by default. Uploads require existing server-side credentials and Studio quality gates.</span></span>
+            </label>
+            <label v-if="uploadPrivate" class="mt-3 flex items-start gap-2 rounded-md border border-white/15 p-2 text-sm text-slate-200">
+              <input v-model="confirmPrivateUpload" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" />
+              <span>I confirm two real private uploads to the configured YouTube account.</span>
+            </label>
+            <p class="mt-2 text-xs text-slate-500">The pipeline continues while the operator browser is open, even if you switch screens. Closing or reloading the browser stops further coordination; already queued server jobs continue. Server-side resumability is tracked in #2794.</p>
+          </template>
+        </div>
+
         <label class="block">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Run id</span>
           <input v-model="form.run_id" placeholder="Leave blank to generate one" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400" />
         </label>
 
         <label v-if="!isTetris && !isGen2 && !isBoxxle" class="block">
-          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Mode</span>
+          <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Planner</span>
           <select v-model="form.planner" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <option value="llm">Play the game</option>
             <option value="scripted">Walk to a place</option>
@@ -362,7 +444,7 @@ async function submit(): Promise<void> {
 
         <label v-if="isLLM || isTetris || isBoxxle" class="block sm:col-span-2">
           <span class="text-[10px] font-semibold tracking-[0.08em] text-slate-500 uppercase">Goal</span>
-          <select v-model="form.goal" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
+          <select v-model="form.goal" :disabled="fullE2ESelected" class="mt-1 block w-full rounded-md border-0 bg-white/6 px-3 py-2 text-sm text-slate-200 outline-1 -outline-offset-1 outline-white/10 focus:outline-2 focus:-outline-offset-2 focus:outline-cyan-400">
             <template v-if="isTetris">
               <option v-for="[value, label] in tetrisGoals" :key="value" :value="value">{{ label }}</option>
             </template>
@@ -564,11 +646,11 @@ async function submit(): Promise<void> {
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">
           <label class="flex items-center gap-2 text-sm text-slate-300">
-            <input v-model="form.endless" type="checkbox" class="size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
+            <input v-model="form.endless" type="checkbox" :disabled="fullE2ESelected" class="size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
             Endless successor runs
           </label>
           <label class="flex items-center gap-2 text-sm text-slate-300">
-            <input v-model="form.random_seed" type="checkbox" :disabled="!form.endless" class="size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400 disabled:opacity-40" />
+            <input v-model="form.random_seed" type="checkbox" :disabled="fullE2ESelected || !form.endless" class="size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400 disabled:opacity-40" />
             Fresh seed per successor
           </label>
         </div>
@@ -578,7 +660,7 @@ async function submit(): Promise<void> {
           <p v-else class="text-xs text-slate-500">The wall validates the spec and keeps the runner contract authoritative.</p>
           <button type="submit" :disabled="submitting" class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-cyan-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-cyan-400 disabled:cursor-wait disabled:opacity-60">
             <PlayIcon class="size-4" aria-hidden="true" />
-            {{ submitting ? 'Queueing…' : 'Queue run' }}
+            {{ submitting ? 'Queueing…' : fullE2ESelected ? 'Start Full E2E' : 'Queue run' }}
           </button>
         </div>
       </form>

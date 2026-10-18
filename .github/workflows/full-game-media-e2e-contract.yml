@@ -1,0 +1,25 @@
+name: Full-game media E2E contract
+on:
+  pull_request:
+    paths:
+      - 'tools/full_game_media_e2e.py'
+      - 'tests/test_full_game_media_e2e.py'
+      - '.github/workflows/full-game-media-e2e-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rom-free-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python syntax
+        run: python3 -m py_compile tools/full_game_media_e2e.py tests/test_full_game_media_e2e.py
+      - name: Mock E2E contract tests (no ROMs or provider credentials)
+        run: python3 -m unittest discover -s tests -p 'test_full_game_media_e2e.py' -v

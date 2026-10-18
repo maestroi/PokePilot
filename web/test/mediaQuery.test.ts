@@ -212,3 +212,11 @@ test('render marks keep the newest job of each kind per run', () => {
   assert.equal(presentRenderMark({ state: 'rendering', segments_done: 34, segments_total: 51 }).label, '34/51')
   assert.equal(presentRenderMark(undefined).glyph, '—')
 })
+
+test('Full E2E is a first-class Media route and keeps a selected source', () => {
+  const state = parseMediaState('#media/e2e', '?run=e2e-test&experiment=keep')
+  assert.equal(state.tab, 'e2e')
+  assert.equal(state.run, 'e2e-test')
+  assert.equal(tabHref(state, 'studio'), '?run=e2e-test#media/studio')
+  assert.equal(tabHref(state, 'e2e'), '?run=e2e-test#media/e2e')
+})

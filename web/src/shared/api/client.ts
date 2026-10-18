@@ -318,6 +318,17 @@ export async function getRunCheckpoints(runID: string, signal?: AbortSignal): Pr
   return Array.isArray(value) ? value : value.checkpoints || []
 }
 
+// The full-production panel renders the composited broadcast source, not a raw capture.
+export function getBroadcastReplayStatus(runID: string, signal?: AbortSignal): Promise<ReplayStatus> {
+  return requestJSON<ReplayStatus>(`/v1/runs/${encodeURIComponent(runID)}/replay/status?mode=broadcast`, { signal })
+}
+
+export function renderBroadcastReplay(runID: string, signal?: AbortSignal): Promise<ReplayStatus> {
+  return requestJSON<ReplayStatus>(`/v1/runs/${encodeURIComponent(runID)}/replay/render?mode=broadcast`, {
+    method: 'POST', body: '{}', signal
+  })
+}
+
 export function getReplayStatus(runID: string, signal?: AbortSignal): Promise<ReplayStatus> {
   return requestJSON<ReplayStatus>(`/v1/runs/${encodeURIComponent(runID)}/replay/status`, { signal })
 }
