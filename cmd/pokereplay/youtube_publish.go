@@ -58,10 +58,29 @@ func youtubeConfigFromEnv(getenv func(string) string) youtubeConfig {
 		ClientID:       strings.TrimSpace(getenv("POKEPILOT_YOUTUBE_CLIENT_ID")),
 		ClientSecret:   strings.TrimSpace(getenv("POKEPILOT_YOUTUBE_CLIENT_SECRET")),
 		RefreshToken:   strings.TrimSpace(getenv("POKEPILOT_YOUTUBE_REFRESH_TOKEN")),
-		RunURLTemplate: strings.TrimSpace(getenv("POKEPILOT_YOUTUBE_RUN_URL_TEMPLATE")),
+		RunURLTemplate: youtubeRunURLTemplate(getenv("POKEPILOT_YOUTUBE_RUN_URL_TEMPLATE")),
 		TokenURL:       youtubeDefaultTokenURL,
 		UploadURL:      youtubeDefaultUploadURL,
 	}
+}
+
+// youtubeRunURLTemplate defaults the description backlink to the public run
+// page so every video can be traced to its run; "-" disables it.
+func youtubeRunURLTemplate(value string) string {
+	switch value = strings.TrimSpace(value); value {
+	case "":
+		return "https://rompilot.app/runs/{run_id}"
+	case "-":
+		return ""
+	}
+	return value
+}
+
+func (c youtubeConfig) runURL(runID string) string {
+	if c.RunURLTemplate == "" {
+		return ""
+	}
+	return strings.ReplaceAll(c.RunURLTemplate, "{run_id}", url.PathEscape(runID))
 }
 
 func (c youtubeConfig) configured() bool {
