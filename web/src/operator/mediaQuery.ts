@@ -14,6 +14,7 @@ import { operatorRoute } from '../shared/urls.ts' // .ts: node --test imports th
 export const MEDIA_TABS = [
   { id: 'library', label: 'Library' },
   { id: 'studio', label: 'Studio' },
+  { id: 'e2e', label: 'Full E2E' },
   { id: 'broadcasts', label: 'Broadcasts' },
   { id: 'jobs', label: 'Jobs' }
 ] as const
