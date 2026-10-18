@@ -199,7 +199,11 @@ func fleeOneAttempt(m *emu.Emu, controllers fleeControllers) (fleeOutcome, error
 
 		case party.Visible && party.Kind == game.PartyMenuVoluntaryBattle:
 			if forcedChoiceRounds == 0 {
-				slot := controllers.resources.DecodeBattleResources(m).FirstLivePartySlot()
+				liveResources := controllers.resources.DecodeBattleResources(m)
+				slot, _ := firstLiveReplacement(liveResources)
+				if slot < 0 {
+					slot = liveResources.FirstLivePartySlot()
+				}
 				if slot < 0 {
 					m.StepFrame()
 					continue
@@ -227,7 +231,11 @@ func fleeOneAttempt(m *emu.Emu, controllers fleeControllers) (fleeOutcome, error
 			}
 
 		case party.Visible && party.Kind == game.PartyMenuForcedBattle:
-			slot := controllers.resources.DecodeBattleResources(m).FirstLivePartySlot()
+			liveResources := controllers.resources.DecodeBattleResources(m)
+			slot, _ := firstLiveReplacement(liveResources)
+			if slot < 0 {
+				slot = liveResources.FirstLivePartySlot()
+			}
 			if slot < 0 {
 				m.StepFrame()
 				continue

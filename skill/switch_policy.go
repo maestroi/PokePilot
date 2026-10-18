@@ -164,6 +164,13 @@ func chooseTacticalSwitchWithStrategyContext(
 		decision.Candidate.BestMove.ExpectedScore > 0 &&
 		sequenceSwitchScore(decision.Candidate)*escapeScoreDenominator >
 			sequenceSwitchScore(decision.Active)*escapeScoreNumerator {
+		// A healthy active can absorb a 2x hit. Escaping into a weak bench
+		// burns the voluntary switch budget and leaves no answer for a later
+		// Ghost (triage:1f4f23fde23a0c8e: Typhlosion↔Miltank vs Feraligatr).
+		if decision.Active.MaxHP > 0 && decision.Active.HP*2 >= decision.Active.MaxHP {
+			decision.Reason = "active-can-absorb-dangerous-matchup"
+			return decision
+		}
 		decision.Switch = true
 		decision.Reason = "escape-dangerous-matchup"
 		return decision
@@ -295,15 +302,57 @@ func bestReplacementSlotWithStrategyContext(
 	bestSlot := -1
 	var best switchEvaluation
 	for slot, mon := range party {
-		if mon.Fainted() {
+		// A replacement must leave the field. Gen II ForcePickSwitchMonInBattle
+		// (Baton Pass) rejects the already-out battler with "already out"; the
+		// faint path already excludes the active mon via Fainted().
+		if slot == resources.ActiveSlot || mon.Fainted() {
 			continue
 		}
 		eval := addFutureValue(evaluatePartyMonForSwitch(strategy, romData, slot, mon, defender), futureValues)
-		if bestSlot < 0 || betterSequenceSwitchEvaluation(eval, best) {
+		if bestSlot < 0 || betterForcedReplacement(eval, best) {
 			bestSlot, best = slot, eval
 		}
 	}
 	return bestSlot, best
+}
+
+// betterForcedReplacement prefers a battler that can deal known damage over a
+// status-only bench warm body. Without that, a full-HP Togepi whose only moves
+// are Growl/Charm/Metronome outranked a damaged Miltank with Surf and then
+// Metronome-rolled Baton Pass into a stuck party menu
+// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr).
+func betterForcedReplacement(candidate, incumbent switchEvaluation) bool {
+	candidateHits := candidate.BestMoveSlot >= 0 && candidate.BestMove.ExpectedScore > 0
+	incumbentHits := incumbent.BestMoveSlot >= 0 && incumbent.BestMove.ExpectedScore > 0
+	if candidateHits != incumbentHits {
+		return candidateHits
+	}
+	return betterSequenceSwitchEvaluation(candidate, incumbent)
+}
+
+// forcedBattleSwitchSlot chooses a party slot for an unbidden/forced battle
+// party menu. Prefer the best live mon that is not already active. When only
+// the active mon remains alive, return that slot so Gen I RUN-refusal dismiss
+// can still select it and B out of SWITCH/STATS.
+func forcedBattleSwitchSlot(
+	romData []byte,
+	resources game.BattleResourcesState,
+	b game.BattleState,
+	context BattleSequenceContext,
+) (int, switchEvaluation) {
+	if slot, eval := bestReplacementSlotStateWithContext(romData, resources, b, context); slot >= 0 {
+		return slot, eval
+	}
+	slot := resources.FirstLivePartySlot()
+	if slot < 0 {
+		return -1, switchEvaluation{Slot: -1, BestMoveSlot: -1}
+	}
+	mon := resources.Party[slot]
+	return slot, switchEvaluation{
+		Slot: slot, Species: mon.NativeSpeciesID, Level: mon.Level,
+		HP: mon.HP, MaxHP: mon.MaxHP, Status: mon.Status, BestMoveSlot: -1,
+		Score: int64(mon.Level) * 1000,
+	}
 }
 
 func evaluateActiveForSwitch(
@@ -384,9 +433,10 @@ func evaluateSwitchCombatant(
 	offense := e.BestMove.ExpectedScore
 	if offense <= 0 {
 		// Forced replacement still needs a stable ordering when a member has
-		// no ordinary damaging move. Level is a bounded fallback, far below
-		// real move scores but better than treating every such mon identical.
-		offense = int64(attacker.Level) * 1000
+		// no ordinary damaging move. Keep this far below real move scores so a
+		// full-HP status-only mon cannot outrank a damaged attacker
+		// (level*1000 previously let L24 Togepi beat Miltank+Surf).
+		offense = int64(attacker.Level) * 10
 	}
 	// A known passive heal (e.g. Leftovers) extends longevity by the next
 	// turn's recovery. Never count healing past full HP.
@@ -429,7 +479,7 @@ func switchDecisionWithoutStrategy(resources game.BattleResourcesState, reason s
 
 func firstLiveReplacement(resources game.BattleResourcesState) (int, switchEvaluation) {
 	for slot, mon := range resources.Party {
-		if mon.Fainted() {
+		if slot == resources.ActiveSlot || mon.Fainted() {
 			continue
 		}
 		eval := switchEvaluation{
