@@ -379,7 +379,9 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x06, true
 	case "ROUTE_31_VIOLET_GATE", "ILEX_FOREST_AZALEA_GATE", "ROUTE_34_ILEX_FOREST_GATE",
 		"ROUTE_35_GOLDENROD_GATE", "ROUTE_38_ECRUTEAK_GATE",
-		"ROUTE_42_ECRUTEAK_GATE", "ROUTE_43_MAHOGANY_GATE":
+		"ROUTE_42_ECRUTEAK_GATE", "ROUTE_43_MAHOGANY_GATE",
+		// pret maps.asm: GoldenrodUnderground uses TILESET_GATE, not UNDERGROUND.
+		"GOLDENROD_UNDERGROUND":
 		return 0x07, true
 	case "ELMS_LAB":
 		return 0x09, true
@@ -389,7 +391,10 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"OLIVINE_MART", "BLACKTHORN_MART":
 		return 0x0b, true
 	case "VIOLET_GYM", "AZALEA_GYM", "GOLDENROD_GYM", "MAHOGANY_GYM",
-		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F":
+		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F",
+		// pret maps.asm: switch-room entrances use TILESET_ELITE_FOUR_ROOM so
+		// city-exit block $1c decodes as COLL_WARP_CARPET_DOWN, not floor.
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
@@ -414,8 +419,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		return 0x1c, true
 	case "RADIO_TOWER_1F", "RADIO_TOWER_2F", "RADIO_TOWER_3F", "RADIO_TOWER_4F", "RADIO_TOWER_5F":
 		return 0x18, true
-	case "GOLDENROD_UNDERGROUND", "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
-		"GOLDENROD_UNDERGROUND_WAREHOUSE", "TEAM_ROCKET_BASE_B1F":
+	case "GOLDENROD_UNDERGROUND_WAREHOUSE", "TEAM_ROCKET_BASE_B1F":
 		return 0x19, true
 	default:
 		return 0, false

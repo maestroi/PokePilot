@@ -19,6 +19,13 @@ func TestRadioTowerNativeGraphReachesFakeDirectorAndWarehouse(t *testing.T) {
 			"RADIO_TOWER_2F", "RADIO_TOWER_1F", "GOLDENROD_CITY"},
 		{"GOLDENROD_CITY", "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
 			"GOLDENROD_UNDERGROUND_WAREHOUSE"},
+		// Farm triage 8ef4690e9488f69d: wrong tileset on the switch-room
+		// entrances made every leave edge look unreachable, so native
+		// routing from the city-exit carpet to the tunnel failed with
+		// no_route. Pin the tunnel leg itself.
+		{"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", "GOLDENROD_UNDERGROUND"},
+		{"GOLDENROD_CITY", "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+			"GOLDENROD_UNDERGROUND"},
 	} {
 		route, err := world.FindNativeRoute(graph, nativeID(t, names[0]), nativeID(t, names[len(names)-1]))
 		if err != nil {
@@ -32,6 +39,34 @@ func TestRadioTowerNativeGraphReachesFakeDirectorAndWarehouse(t *testing.T) {
 				t.Fatalf("%v leg %d = %+v", names, i, leg)
 			}
 		}
+	}
+}
+
+func TestGoldenrodUndergroundRetailTilesets(t *testing.T) {
+	// pokegold/data/maps/maps.asm: gate / elite-four-room / underground.
+	for _, tc := range []struct {
+		name    string
+		tileset uint8
+	}{
+		{"GOLDENROD_UNDERGROUND", 0x07},
+		{"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES", 0x0e},
+		{"GOLDENROD_UNDERGROUND_WAREHOUSE", 0x19},
+	} {
+		got, ok := firstBadgeTileset(tc.name)
+		if !ok || got != tc.tileset {
+			t.Fatalf("%s tileset = %#02x ok=%v, want %#02x", tc.name, got, ok, tc.tileset)
+		}
+	}
+	// City-exit carpet block on the switch-room map: under the wrong
+	// UNDERGROUND table this was floor, so gen2WarpCollision never fired.
+	table, ok := firstBadgeCollisionTable(0x0e)
+	if !ok || len(table) < 0x1c*4+4 {
+		t.Fatal("TILESET_ELITE_FOUR_ROOM collision table missing")
+	}
+	i := 0x1c * 4
+	if table[i+2] != 0x70 || table[i+3] != 0x70 {
+		t.Fatalf("elite-four block $1c = {%#02x,%#02x,%#02x,%#02x}, want carpet-down 70/70",
+			table[i], table[i+1], table[i+2], table[i+3])
 	}
 }
 
