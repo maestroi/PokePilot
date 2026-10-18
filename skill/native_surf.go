@@ -27,6 +27,12 @@ type nativeSurfPlan struct {
 // FindNativePath honors Gen-II one-way walls, ledges, warps, and live sprite
 // occupancy, so the first water tile is reachable from a verified land path
 // and is directly adjacent to the final shore position.
+//
+// Destination tiles are allowed even when blocked: nativeRuntimeBlockers marks
+// every non-inert warp occupied so land routes cannot step on them by accident,
+// but a Surf goal is often itself a warp carpet (Route 42's west gate). Matching
+// nativeWarpApproach, the target must stay reachable while other warps remain
+// sealed so water can still detour around cave doors on the land corridor.
 func planNativeSurfApproach(land, water *world.NativeGrid, sx, sy int, targets [][2]int, blocked map[[2]int]bool) (nativeSurfPlan, bool) {
 	if land == nil || water == nil || land.MapID != water.MapID ||
 		land.Width != water.Width || land.Height != water.Height ||
@@ -38,7 +44,10 @@ func planNativeSurfApproach(land, water *world.NativeGrid, sx, sy int, targets [
 	var best nativeSurfPlan
 	found := false
 	for _, target := range targets {
-		waterPath, err := world.FindNativePath(water, sx, sy, target[0], target[1], blocked)
+		// Allow the Surf goal itself; keep every other blocker (sibling warps,
+		// sprites) so the water route cannot cheat through a cave door.
+		waterBlocked := nativeAllowTarget(blocked, target)
+		waterPath, err := world.FindNativePath(water, sx, sy, target[0], target[1], waterBlocked)
 		if err != nil {
 			continue
 		}
