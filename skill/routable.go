@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/world"
@@ -32,6 +33,13 @@ type RoutePlanner struct {
 	// prereqsAt re-projects prerequisites for a journey starting elsewhere
 	// (a Fly landing); nil means the snapshot's projection is position-free.
 	prereqsAt func(from Destination) world.RoutePrerequisites
+	// fieldBridges is GoTo's Cut/Surf field-path bridge search captured at
+	// the same instant. Component routing cannot see a same-map Surf or Cut
+	// crossing; without it Reachability withheld every journey out of Route
+	// 10's Power Plant pocket while Travel walked out (run-d6dokr184ky81).
+	fieldBridges    *fieldPathBridgeSearch
+	fieldBridgeOnce sync.Once
+	fieldBridgeAt   []Destination
 }
 
 // NewRoutePlanner captures the route geometry and semantic permissions as they
@@ -69,13 +77,18 @@ func NewRoutePlanner(m *emu.Emu, romData []byte) (*RoutePlanner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("skill: RoutePlanner: overlay live topology for map %02x: %w", cur, err)
 	}
+	bridges, err := newFieldPathBridgeSearch(m, romData, h, routeGraph)
+	if err != nil {
+		bridges = nil
+	}
 	return &RoutePlanner{
-		graph:     routeGraph,
-		cur:       cur,
-		x:         x,
-		y:         y,
-		prereqs:   prereqs,
-		prereqsAt: prereqsAt,
+		graph:        routeGraph,
+		cur:          cur,
+		x:            x,
+		y:            y,
+		prereqs:      prereqs,
+		prereqsAt:    prereqsAt,
+		fieldBridges: bridges,
 	}, nil
 }
 
@@ -108,7 +121,47 @@ func (p *RoutePlanner) Reachability(dest Destination) error {
 		// post-action component in the world planner itself.
 		return nil
 	}
+	if dest.Map == p.cur {
+		return err
+	}
+	return reachabilityAfterFieldBridge(err, p.fieldPathBridges, func(bridge Destination) error {
+		route, err := findRoutePlanForDestination(
+			p.graph, bridge.Map, int(bridge.X), int(bridge.Y), dest, nil, p.prereqsFrom(bridge),
+		)
+		if errors.Is(err, world.ErrRouteReplanRequired) && len(route) > 0 {
+			return nil
+		}
+		return err
+	})
+}
+
+// reachabilityAfterFieldBridge mirrors GoTo's ErrNoRoute branch: when the
+// component router finds nothing from the live tile, a same-map tile that
+// local Cut/Surf pathing reaches may still start the journey. A structured
+// RouteBlockedError from the live tile is kept as-is; a bridge that only
+// reaches a semantic gate reports that gate instead of a bare no-route.
+func reachabilityAfterFieldBridge(err error, bridges func() []Destination, from func(Destination) error) error {
+	var blocked *world.RouteBlockedError
+	if !errors.Is(err, world.ErrNoRoute) || errors.As(err, &blocked) {
+		return err
+	}
+	for _, bridge := range bridges() {
+		bridgeErr := from(bridge)
+		if bridgeErr == nil {
+			return nil
+		}
+		if blocked == nil && errors.As(bridgeErr, &blocked) {
+			err = bridgeErr
+		}
+	}
 	return err
+}
+
+func (p *RoutePlanner) fieldPathBridges() []Destination {
+	p.fieldBridgeOnce.Do(func() {
+		p.fieldBridgeAt = p.fieldBridges.bridges()
+	})
+	return p.fieldBridgeAt
 }
 
 // CanReach reports whether GoTo could plan a route to dest from the position
