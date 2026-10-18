@@ -49,6 +49,48 @@ func TestNativeStrengthSinkRequiresExactObjectAndRetailPit(t *testing.T) {
 	}
 }
 
+// TestNativeStrengthSinkPrefersShortApproachWalk is the regression for
+// run-a018a6cmhnkr (triage f658a1d845ef36a5): when two one-push sinks are
+// equally deep, a long approach must lose to a zero-walk stand underfoot.
+func TestNativeStrengthSinkPrefersShortApproachWalk(t *testing.T) {
+	spec := worldmodel.NativeGridSpec{
+		MapID: 0x1803, Width: 7, Height: 3,
+		Walkable: []bool{
+			true, true, true, true, true, true, true,
+			true, true, true, true, true, true, true,
+			true, true, true, true, true, true, true,
+		},
+		CollisionTile: []uint8{
+			0, 0, 0x60, 0, 0, 0, 0x60,
+			0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0,
+		},
+	}
+	g, err := NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Lower-ID boulder needs a long walk; higher-ID boulder is underfoot.
+	// Both sink in one push. Without walk ordering, ID order returns the long
+	// approach first and softlocks the cartridge mid-walk.
+	movables := []Movable{
+		{ID: 2, Pos: Point{X: 5, Y: 1}},
+		{ID: 4, Pos: Point{X: 2, Y: 1}},
+	}
+	sinks := map[int]Point{
+		2: {X: 6, Y: 0},
+		4: {X: 2, Y: 0},
+	}
+	fixed := map[[2]int]bool{{2, 0}: true, {6, 0}: true}
+	push, err := FindNativeStrengthSinkPush(g, Point{X: 2, Y: 2}, movables, fixed, sinks, 5000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if push.MovableID != 4 || len(push.Walk) != 0 || push.To != (Point{X: 2, Y: 0}) {
+		t.Fatalf("expected zero-walk sink of slot 4, got %+v (walk=%d)", push, len(push.Walk))
+	}
+}
+
 func TestNativeStrengthSinkCanClearOtherBoulderBeforeCorrectOne(t *testing.T) {
 	spec := worldmodel.NativeGridSpec{
 		MapID: 0x1802, Width: 5, Height: 3,

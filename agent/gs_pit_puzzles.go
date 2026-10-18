@@ -86,6 +86,12 @@ func executeGSIcePathBoulders(m *emu.Emu, romData []byte) error {
 	if err != nil || done {
 		return err
 	}
+	// Ice Path approaches burn poison steps on every Strength replan. Heal in
+	// Mahogany first so a still-legal push sequence cannot black out mid-chamber
+	// the way run-a018a6cmhnkr did after the approach softlock was cleared.
+	if err := gsCoastalHeal(m, romData, profile, "MAHOGANY_POKECENTER_1F"); err != nil {
+		return fmt.Errorf("gen2 Ice Path: reach Mahogany and heal: %w", err)
+	}
 	// (3,15) is a warp back to 1F; (3,14) is the adjacent staging tile.
 	return gsSolveRetailSinkPuzzle(m, romData, profile, "ICE_PATH_B1F", 3, 14,
 		gsIcePathPitTargets, label,
