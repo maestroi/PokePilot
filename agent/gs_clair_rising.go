@@ -10,17 +10,19 @@ import (
 )
 
 const (
-	gsIcePathWaterfallX  uint8 = 31
-	gsIcePathWaterfallY  uint8 = 7
-	gsClairX             uint8 = 5
-	gsClairY             uint8 = 3
-	gsClairStandX        uint8 = 5
-	gsClairStandY        uint8 = 4
-	gsDragonFangX        uint8 = 35
-	gsDragonFangY        uint8 = 16
-	gsDragonFangStandX   uint8 = 35
-	gsDragonFangStandY   uint8 = 17
-	gsClairStoryAttempts       = 4
+	gsIcePathWaterfallX      uint8 = 31
+	gsIcePathWaterfallY      uint8 = 7
+	gsIcePathWaterfallStandX uint8 = 30
+	gsIcePathWaterfallStandY uint8 = 7
+	gsClairX                 uint8 = 5
+	gsClairY                 uint8 = 3
+	gsClairStandX            uint8 = 5
+	gsClairStandY            uint8 = 4
+	gsDragonFangX            uint8 = 35
+	gsDragonFangY            uint8 = 16
+	gsDragonFangStandX       uint8 = 35
+	gsDragonFangStandY       uint8 = 17
+	gsClairStoryAttempts           = 4
 )
 
 // executeGSIcePathWaterfall approaches the retail item ball on 1F through
@@ -28,6 +30,10 @@ const (
 // native router, not skipped by a map-level arrival or synthetic teleport.
 // HM07 is optional in the game, but its native event is a useful durable
 // checkpoint before entering the Blackthorn Gym.
+//
+// The ball sits at (31,7); the only adjacent walkable stand is west at
+// (30,7). South (31,8) is a wall (COLL 0x07), so staging there reports
+// world.ErrNoPath from the Blackthorn-side ladder at (37,5).
 func executeGSIcePathWaterfall(m *emu.Emu, romData []byte) error {
 	const label = "ice-path:hm07-waterfall"
 	profile, done, err := gsCoastalProfile(m, romData,
@@ -41,7 +47,8 @@ func executeGSIcePathWaterfall(m *emu.Emu, romData []byte) error {
 	}
 	for attempt := 0; attempt < gsClairStoryAttempts; attempt++ {
 		if err := gsRadioScriptInteraction(m, romData, profile,
-			"ICE_PATH_1F", 31, 8, gsIcePathWaterfallX, gsIcePathWaterfallY,
+			"ICE_PATH_1F", gsIcePathWaterfallStandX, gsIcePathWaterfallStandY,
+			gsIcePathWaterfallX, gsIcePathWaterfallY,
 			label, func() bool {
 				return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressIcePathWaterfallAcquired)
 			}); err != nil {

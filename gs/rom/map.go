@@ -95,6 +95,43 @@ func ParseMap(rom []byte, mapID uint16) (MapHeader, error) {
 	return parseMapAt(rom, Tables{MapGroupPointers: off}, mapID)
 }
 
+// mapBlockData reads the ROM's static overworld block buffer for mapID. Live
+// RAM blocks can differ after scripts; this is the cartridge baseline used by
+// geometry regressions that do not need a save state.
+func mapBlockData(rom []byte, mapID uint16) ([]byte, error) {
+	off, err := locateMapGroupPointers(rom)
+	if err != nil {
+		return nil, err
+	}
+	headerOff, err := mapHeaderOffset(rom, Tables{MapGroupPointers: off}, mapID)
+	if err != nil {
+		return nil, err
+	}
+	attrBank := rom[headerOff]
+	attrAddr := uint16(rom[headerOff+3]) | uint16(rom[headerOff+4])<<8
+	attrOff, err := bankedOffset(attrBank, attrAddr)
+	if err != nil {
+		return nil, err
+	}
+	if err := mustInROM(rom, attrOff, mapAttrLen, "map attributes"); err != nil {
+		return nil, err
+	}
+	height, width := int(rom[attrOff+1]), int(rom[attrOff+2])
+	blockBank := rom[attrOff+3]
+	blockAddr := uint16(rom[attrOff+4]) | uint16(rom[attrOff+5])<<8
+	blockOff, err := bankedOffset(blockBank, blockAddr)
+	if err != nil {
+		return nil, err
+	}
+	n := height * width
+	if err := mustInROM(rom, blockOff, n, "map blocks"); err != nil {
+		return nil, err
+	}
+	out := make([]byte, n)
+	copy(out, rom[blockOff:blockOff+n])
+	return out, nil
+}
+
 func mapHeaderOffset(rom []byte, tables Tables, mapID uint16) (int, error) {
 	info, ok := gsdata.Map(mapID)
 	if !ok {

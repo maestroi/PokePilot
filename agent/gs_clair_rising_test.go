@@ -8,6 +8,7 @@ import (
 
 func TestGSBadgeEightCoordinatesAndOwnedMaps(t *testing.T) {
 	if gsIcePathWaterfallX != 31 || gsIcePathWaterfallY != 7 ||
+		gsIcePathWaterfallStandX != 30 || gsIcePathWaterfallStandY != 7 ||
 		gsClairX != 5 || gsClairY != 3 ||
 		gsClairStandX != 5 || gsClairStandY != 4 ||
 		gsDragonFangX != 35 || gsDragonFangY != 16 ||
