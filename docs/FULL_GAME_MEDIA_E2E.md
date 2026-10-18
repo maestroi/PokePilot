@@ -1,8 +1,16 @@
 # Full-game media E2E smoke test
 
-## Operator UI: Media → Full E2E
+## Operator UI: New run → Full E2E (recommended)
 
-The private operator UI exposes **Media → Full E2E** (`#media/e2e`). The panel is the primary interface for starting this test; the CLI below remains useful in unattended environments.
+Open the **private operator UI → New run**, choose **Pokémon Red** and **Play the game** as the LLM planner, then select **Run workflow → Full E2E · complete game → episode + Short**. The workflow locks the goal to *Beat the Elite Four and Champion*, makes the campaign finite, and uses resilient recovery while retaining the selected model, starter, seed, play style and FPS.
+
+Press **Start Full E2E** **once**. The New run screen creates exactly one farm run and automatically starts production coordination for that accepted run ID. It navigates to **Media → Full E2E**, where you can watch the game, replay rendering, episode and portrait Short editing, quality-gated private candidates and (if opted in) upload receipts. No second Start click or second game run is required. You may navigate to other operator screens while the same page stays open; the active coordinator is shared at application scope rather than owned by the Media tab.
+
+Uploads are **off by default**. To publish actual media, select **Also upload episode and Short privately to YouTube** and separately acknowledge the two real uploads **before** clicking Start Full E2E. The pipeline never offers public or unlisted uploads in this mode, and the existing producer and Studio upload gates remain authoritative.
+
+## Operator UI: Media → Full E2E (attach or replay)
+
+The private operator UI exposes **Media → Full E2E** (`#media/e2e`). This screen also starts a fresh test or attaches to an existing run. The CLI below remains useful in unattended environments.
 
 1. Select **Fresh full game** (Red, starter, seed, registered strategist deployment) or **Existing run** to attach to an already completed Champion run.
 2. Keep **Upload to YouTube privately** unchecked for the first test. Start the test and follow the stage-level progress.
@@ -10,7 +18,7 @@ The private operator UI exposes **Media → Full E2E** (`#media/e2e`). The panel
 4. Review the two generated formats in Studio. To make **real private uploads** on a later run, tick the upload option **and** its explicit acknowledgment before pressing Start.
 5. Use **Export report** to record run ID, stage results, content hashes, publication candidate IDs and provider video IDs. Links open the source run, Media Library, Studio or produced videos.
 
-**Coordination lifetime:** This first UI slice drives existing backend APIs from an open browser tab. Background game / renderer / already-dispatched upload jobs are server-owned, but *progression to the next step requires this tab to remain open*. Leaving Media → Full E2E, reloading, closing the browser or clicking **Stop coordinating** halts the coordinator and does not cancel the existing game, render or upload. Use **Existing run** to reattach and repeat idempotent preparation against durable run artifacts. A persisted server-side E2E orchestration queue is the next enhancement tracked in #2794.
+**Coordination lifetime:** This first UI slice drives existing backend APIs from an open operator browser page. Background game / renderer / already-dispatched upload jobs are server-owned. **Switching operator tabs does not stop coordination**, but reloading, closing the browser or clicking **Stop coordinating** halts the coordinator; it does not cancel the existing game, render or upload. Use **Existing run** to reattach and repeat idempotent preparation against durable run artifacts. A persisted server-side E2E orchestration queue is the next enhancement tracked in #2794.
 
 The UI does not allow public or unlisted upload from this mode. It follows Studio's producer verdict and quality rules and never overrides `archive_only` / `do_not_publish`. A successful private-upload receipt means a provider ID was recorded for a candidate submitted as private; it is *not yet independent provider-side visibility or MP4 playback verification*.
 
@@ -18,7 +26,7 @@ The UI does not allow public or unlisted upload from this mode. It follows Studi
 
 Tracking issue: [#2794](https://github.com/maestroi/PokePilot/issues/2794).
 
-This operator smoke test connects the **existing** farm, verified replay, Studio producer/editor, episode/Short packaging, quality-gated publication queue, and resumable YouTube uploader. It creates **no second gameplay runner, renderer, or uploader**. It is a CLI proof slice, not a durable on-server pipeline or UI mode. The CLI process must remain running through the test.
+This operator smoke test connects the **existing** farm, verified replay, Studio producer/editor, episode/Short packaging, quality-gated publication queue, and resumable YouTube uploader. It creates **no second gameplay runner, renderer, or uploader**. The CLI is a separate non-UI option; unlike the app-level UI coordinator, the CLI process itself must remain running. Neither coordinator is yet a durable server-owned pipeline.
 
 ## Safe first test (no upload)
 
