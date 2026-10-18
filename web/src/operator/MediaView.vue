@@ -11,6 +11,7 @@ import MediaBroadcasts from './MediaBroadcasts.vue'
 import MediaJobs from './MediaJobs.vue'
 import MediaLibrary from './MediaLibrary.vue'
 import MediaStudio from './MediaStudio.vue'
+import MediaFullE2E from './MediaFullE2E.vue'
 import { MEDIA_TABS, elapsedLabel, formatMediaHref, parseMediaState, tabHref, type BroadcastRow, type MediaState } from './mediaQuery'
 import { middleTruncate } from './runs'
 import { gameTitle } from './operations'
@@ -141,6 +142,7 @@ function openPublicSite(): void {
       @announce="announce"
     />
     <MediaStudio v-else-if="state.tab === 'studio'" :state="state" @navigate="navigate" />
+    <MediaFullE2E v-else-if="state.tab === 'e2e'" :state="state" />
     <MediaBroadcasts
       v-else-if="state.tab === 'broadcasts'"
       :state="state"
