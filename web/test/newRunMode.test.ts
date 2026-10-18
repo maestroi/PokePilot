@@ -36,3 +36,9 @@ test('Full E2E cannot be submitted with an unsupported planner or game', () => {
   assert.throws(() => productionRunSpec({ ...source, game: 'pokemon-yellow' }), /Pokémon Red/)
   assert.throws(() => productionRunSpec({ ...source, planner: 'scripted' }), /LLM planner/)
 })
+
+test('reject invalid custom production run IDs before submitting any game', () => {
+  assert.throws(() => productionRunSpec({ ...source, run_id: 'red.1' }), /run ID/)
+  assert.throws(() => productionRunSpec({ ...source, run_id: 'a' }), /run ID/)
+  assert.doesNotThrow(() => productionRunSpec({ ...source, run_id: '' }), 'API can generate a safe ID')
+})
