@@ -32,10 +32,20 @@ func settleAfterBattle(m *emu.Emu, decoder game.BattleRuntimeDecoder) error {
 
 	startFrame := m.FrameCount()
 	stable := 0
-	for int(m.FrameCount()-startFrame) < settleBudget {
+	// Ordinary battles return control quickly. Scripted trainer aftermaths
+	// (Gen2 Rocket B2F executive + Lance follow, etc.) keep TextActive for
+	// far longer than settleBudget; extend the deadline while a script still
+	// owns the machine, and never report "not controllable" when control has
+	// already returned but the stable window still needs a few frames.
+	deadline := settleBudget
+	for {
+		elapsed := int(m.FrameCount() - startFrame)
 		live := decoder.DecodeBattleRuntime(m)
 		if live.InBattle {
 			return errBattleRestarted
+		}
+		if live.TextActive && deadline < settleScriptBudget {
+			deadline = settleScriptBudget
 		}
 		if live.Controllable {
 			stable++
@@ -44,6 +54,9 @@ func settleAfterBattle(m *emu.Emu, decoder game.BattleRuntimeDecoder) error {
 			}
 		} else {
 			stable = 0
+		}
+		if elapsed >= deadline {
+			break
 		}
 		if live.TextActive {
 			m.Tap(emu.A, 3, 7)
@@ -62,8 +75,23 @@ func settleAfterBattle(m *emu.Emu, decoder game.BattleRuntimeDecoder) error {
 		}
 		return ErrCampaignComplete
 	}
+	if live.Controllable {
+		for stable = 1; stable < settleStableFrames; stable++ {
+			m.StepFrame()
+			live = decoder.DecodeBattleRuntime(m)
+			if live.InBattle {
+				return errBattleRestarted
+			}
+			if !live.Controllable {
+				break
+			}
+		}
+		if live.Controllable && stable >= settleStableFrames {
+			return nil
+		}
+	}
 	return fmt.Errorf("skill: Battle: not controllable %d frames after the battle ended: %s",
-		settleBudget, battleRuntimeContext(live))
+		deadline, battleRuntimeContext(live))
 }
 
 func stuckError(

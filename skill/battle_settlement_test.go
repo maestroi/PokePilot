@@ -86,3 +86,49 @@ func TestSettleAfterBattleReturnsOnStableControl(t *testing.T) {
 		t.Fatalf("settled after %d decodes, want at least %d stable passes", decoder.decodes, settleStableFrames)
 	}
 }
+
+// Long post-battle map scripts keep TextActive past the idle settle budget
+// (Rocket B2F executive + Lance follow). Each TextActive pass taps A (~10
+// frames), so a few dozen scripted passes already outlast settleBudget;
+// settlement must keep driving instead of timing out (run-a018a6cmhnkr /
+// triage:b815bee7497dfea5).
+func TestSettleAfterBattleExtendsBudgetWhileScriptOwnsMachine(t *testing.T) {
+	m := settleTestEmu(t)
+	// Tap(A,3,7) advances 10 frames; exceed settleBudget with script ownership.
+	scriptPasses := settleBudget/10 + 3
+	states := make([]game.BattleRuntimeState, 0, scriptPasses+settleStableFrames)
+	for i := 0; i < scriptPasses; i++ {
+		states = append(states, game.BattleRuntimeState{InBattle: false, Controllable: false, TextActive: true})
+	}
+	for i := 0; i < settleStableFrames; i++ {
+		states = append(states, game.BattleRuntimeState{InBattle: false, Controllable: true, TextActive: false})
+	}
+	decoder := &settleRuntimeDecoder{states: states}
+	start := m.FrameCount()
+
+	if err := settleAfterBattle(m, decoder); err != nil {
+		t.Fatalf("settleAfterBattle = %v, want nil after a long scripted aftermath", err)
+	}
+	if elapsed := int(m.FrameCount() - start); elapsed <= settleBudget {
+		t.Fatalf("settled in %d frames; expected the scripted aftermath to outlast settleBudget=%d", elapsed, settleBudget)
+	}
+}
+
+// Control can return on the last frames of the idle budget without enough
+// remaining iterations for settleStableFrames. Settlement must finish proving
+// stability instead of claiming the overworld is not controllable.
+func TestSettleAfterBattleGraceWhenControlReturnsAtDeadline(t *testing.T) {
+	m := settleTestEmu(t)
+	states := make([]game.BattleRuntimeState, 0, settleBudget+settleStableFrames)
+	for i := 0; i < settleBudget; i++ {
+		states = append(states, game.BattleRuntimeState{InBattle: false, Controllable: false, TextActive: false})
+	}
+	for i := 0; i < settleStableFrames; i++ {
+		states = append(states, game.BattleRuntimeState{InBattle: false, Controllable: true, TextActive: false})
+	}
+	decoder := &settleRuntimeDecoder{states: states}
+
+	if err := settleAfterBattle(m, decoder); err != nil {
+		t.Fatalf("settleAfterBattle = %v, want nil when control returns at the idle deadline", err)
+	}
+}
