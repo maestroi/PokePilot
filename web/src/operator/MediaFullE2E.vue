@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import {
-  actStudioPublication, assessStudioRun, createEditedStudioPackage, createRun,
-  createStudioEditPlan, createStudioPublication, getDashboard, getModels, getRun,
-  getStudioEditStatus, getStudioPublications, getYouTubePublishStatus,
-  renderBroadcastReplay, getBroadcastReplayStatus, renderStudioEdit,
-  renderStudioThumbnails, selectStudioThumbnail, studioEditVideoURL
-} from '../shared/api/client'
+import { computed, ref, watch } from 'vue'
+import { getDashboard, getModels, studioEditVideoURL } from '../shared/api/client'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { deploymentOptionLabel, deploymentSelectable, servesStrategist } from './llmDeployments'
-import { runFullE2E, type FullE2EAPI, type FullE2EOutput, type FullE2EStage } from './fullProduction'
+import { beginFullE2E, fullE2E, stopFullE2E } from './fullE2EManager'
 import { formatMediaHref, type MediaState } from './mediaQuery'
 
 const props = defineProps<{ state: MediaState }>()
@@ -20,13 +14,12 @@ const deployment = ref('')
 const seed = ref(1)
 const uploadPrivate = ref(false)
 const uploadAcknowledged = ref(false)
-const working = ref(false)
-const complete = ref(false)
-const failure = ref('')
-const currentID = ref('')
-const stages = ref<FullE2EStage[]>([])
-const outputs = ref<FullE2EOutput[]>([])
-let controller: AbortController | null = null
+const working = computed(() => fullE2E.working)
+const complete = computed(() => fullE2E.complete)
+const failure = computed(() => fullE2E.failure)
+const currentID = computed(() => fullE2E.runID)
+const stages = computed(() => fullE2E.stages)
+const outputs = computed(() => fullE2E.outputs)
 
 const models = usePollingResource(getModels, { intervalMs: 30000 })
 const recent = usePollingResource(signal => getDashboard({ status: 'done', limit: 60 }, signal), { intervalMs: 30000 })
@@ -53,37 +46,10 @@ const outcome = computed(() => complete.value ? 'passed' : failure.value ? 'fail
 const stageCount = computed(() => stages.value.filter(s => s.state === 'ready').length)
 const report = computed(() => ({
   version: 1, run_id: currentID.value, status: outcome.value,
-  upload_private: uploadPrivate.value, stages: stages.value, outputs: outputs.value,
+  upload_private: fullE2E.uploadPrivate, stages: stages.value, outputs: outputs.value,
   error: failure.value || undefined
 }))
 
-const adapter: FullE2EAPI = {
-  createRun,
-  getRun,
-  renderBroadcast: renderBroadcastReplay,
-  broadcastStatus: getBroadcastReplayStatus,
-  assess: assessStudioRun,
-  createPlan: createStudioEditPlan,
-  renderEdit: renderStudioEdit,
-  editStatus: getStudioEditStatus,
-  createPackage: createEditedStudioPackage,
-  renderThumbnails: (id, hash) => renderStudioThumbnails(id, hash, 1, false),
-  selectThumbnail: selectStudioThumbnail,
-  createCandidate: createStudioPublication,
-  publicationAction: actStudioPublication,
-  publications: getStudioPublications,
-  youtubeStatus: getYouTubePublishStatus
-}
-function onStage(stage: FullE2EStage): void {
-  const index = stages.value.findIndex(entry => entry.id === stage.id)
-  if (index < 0) stages.value.push(stage)
-  else stages.value.splice(index, 1, stage)
-}
-function onOutput(output: FullE2EOutput): void {
-  const index = outputs.value.findIndex(entry => entry.format === output.format)
-  if (index < 0) outputs.value.push(output)
-  else outputs.value.splice(index, 1, output)
-}
 function newID(): string {
   const bytes = new Uint32Array(2)
   crypto.getRandomValues(bytes)
@@ -91,40 +57,22 @@ function newID(): string {
 }
 async function start(): Promise<void> {
   if (!canStart.value) return
-  working.value = true
-  complete.value = false
-  failure.value = ''
-  stages.value = []
-  outputs.value = []
-  currentID.value = mode.value === 'new' ? newID() : existingID.value.trim()
-  controller = new AbortController()
-  try {
-    const result = await runFullE2E(adapter, {
-      runID: currentID.value,
-      fresh: mode.value === 'new',
-      starter: starter.value,
-      seed: seed.value,
-      deployment: deployment.value,
-      uploadPrivate: uploadPrivate.value,
-      signal: controller.signal,
-      onStage,
-      onOutput,
-      pollMS: 10000
-    })
-    complete.value = result.length === 2 && (!uploadPrivate.value || result.every(o => o.state === 'published'))
-  } catch (cause) {
-    failure.value = cause instanceof Error ? cause.message : 'Production pipeline failed'
-  } finally {
-    working.value = false
-    controller = null
-    // A subsequent upload attempt requires fresh explicit opt-in.
-    uploadAcknowledged.value = false
-  }
+  const id = mode.value === 'new' ? newID() : existingID.value.trim()
+  await beginFullE2E({
+    runID: id,
+    fresh: mode.value === 'new',
+    starter: starter.value,
+    seed: seed.value,
+    deployment: deployment.value,
+    uploadPrivate: uploadPrivate.value,
+    pollMS: 10000
+  })
+  // Explicit upload consent is never retained for a subsequent attempt.
+  uploadAcknowledged.value = false
 }
 function stop(): void {
-  controller?.abort()
+  stopFullE2E()
 }
-onBeforeUnmount(stop)
 function downloadReport(): void {
   const payload = new Blob([JSON.stringify(report.value, null, 2) + '\n'], { type: 'application/json' })
   const href = URL.createObjectURL(payload)
@@ -207,7 +155,7 @@ function downloadReport(): void {
           <button v-if="currentID" type="button" class="ui-btn h-10" @click="downloadReport">Export report</button>
         </div>
         <p class="text-meta text-fg-2">
-          Keep this tab open to advance the pipeline. Closing it stops only browser coordination; game, render and already-dispatched upload jobs continue on the server. Reattach using the run ID to continue.
+          You can switch between PokePilot screens while the coordinator runs. Keep this browser page open: closing or reloading it stops further coordination (not already-dispatched server jobs). Reattach using the run ID to resume.
         </p>
       </div>
     </section>
@@ -239,7 +187,7 @@ function downloadReport(): void {
             </li>
           </ol>
           <p v-if="failure" class="border border-danger/40 p-3 text-danger break-words" role="alert">{{ failure }}</p>
-          <p v-else-if="complete" class="border border-rule p-3 text-ok" role="status">Both edited formats passed {{ uploadPrivate ? 'private upload receipt checks' : 'the no-upload production test' }}.</p>
+          <p v-else-if="complete" class="border border-rule p-3 text-ok" role="status">Both edited formats passed {{ fullE2E.uploadPrivate ? 'private upload receipt checks' : 'the no-upload production test' }}.</p>
         </div>
       </section>
 
