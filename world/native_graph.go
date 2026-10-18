@@ -53,11 +53,33 @@ func BuildNativeGraph(provider worldmodel.NativeMapTopologyProvider) (*NativeGra
 		return nil, fmt.Errorf("world: native map provider returned no maps")
 	}
 
+	elevators, _ := provider.(worldmodel.NativeElevatorProvider)
 	graph := &NativeGraph{Edges: make(map[uint16][]NativeEdge, len(headers))}
 	for id, header := range headers {
 		graph.Edges[id] = nil
+		var elevator worldmodel.NativeElevatorSpec
+		hasElevator := false
+		if elevators != nil {
+			elevator, hasElevator = elevators.LookupNativeElevator(id)
+		}
 		for _, warp := range header.Warps {
 			if warp.Inert {
+				continue
+			}
+			if warp.Dynamic {
+				// A dynamic door leads wherever its elevator floor was set;
+				// without the adapter's floor list it is not an edge at all.
+				if !hasElevator {
+					continue
+				}
+				for _, floor := range elevator.Floors {
+					if _, supported := headers[floor.MapID]; !supported || floor.MapID == id {
+						continue
+					}
+					graph.Edges[id] = append(graph.Edges[id], NativeEdge{
+						Kind: EdgeWarp, From: id, To: floor.MapID, WarpX: warp.X, WarpY: warp.Y, DestWarp: floor.DestWarpID,
+					})
+				}
 				continue
 			}
 			if _, supported := headers[warp.DestMap]; !supported {

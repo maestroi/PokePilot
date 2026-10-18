@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 func TestRadioTowerNativeGraphReachesFakeDirectorAndWarehouse(t *testing.T) {
@@ -38,6 +39,75 @@ func TestRadioTowerNativeGraphReachesFakeDirectorAndWarehouse(t *testing.T) {
 			if leg.From != nativeID(t, names[i]) || leg.To != nativeID(t, names[i+1]) {
 				t.Fatalf("%v leg %d = %+v", names, i, leg)
 			}
+		}
+	}
+}
+
+// Farm triage 781cdee33ef70f00 (run-a018a6cmhnkr): after the 3-2-1 switch
+// solve, door 11 seals the switch room's city carpets, so the Card Key holder
+// must leave the warehouse through Dept Store B1F and the elevator. Without
+// those maps the Radio Tower 3F shutter was "no route" from (22,11).
+func TestRadioTowerWarehouseLeavesThroughDeptStoreElevator(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	graph, err := world.BuildNativeGraph(provider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	switchRoom := nativeID(t, "GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES")
+	warehouse := nativeID(t, "GOLDENROD_UNDERGROUND_WAREHOUSE")
+	elevator := nativeID(t, "GOLDENROD_DEPT_STORE_ELEVATOR")
+	// The sealed pocket: only the warehouse door leaves it, and the
+	// warehouse's return warps land back inside it.
+	var sealed []world.NativeEdge
+	for _, e := range graph.Edges[switchRoom] {
+		if e.To == warehouse {
+			sealed = append(sealed, e)
+		}
+	}
+	graph.Edges[switchRoom] = sealed
+	var onward []world.NativeEdge
+	for _, e := range graph.Edges[warehouse] {
+		if e.To != switchRoom {
+			onward = append(onward, e)
+		}
+	}
+	graph.Edges[warehouse] = onward
+	route, err := world.FindNativeRoute(graph, switchRoom, nativeID(t, "RADIO_TOWER_3F"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"GOLDENROD_UNDERGROUND_WAREHOUSE", "GOLDENROD_DEPT_STORE_B1F",
+		"GOLDENROD_DEPT_STORE_ELEVATOR", "GOLDENROD_DEPT_STORE_1F", "GOLDENROD_CITY",
+		"RADIO_TOWER_1F", "RADIO_TOWER_2F", "RADIO_TOWER_3F"}
+	if len(route) != len(want) {
+		t.Fatalf("route = %+v, want via %v", route, want)
+	}
+	for i, leg := range route {
+		if leg.To != nativeID(t, want[i]) {
+			t.Fatalf("leg %d = %+v, want -> %s", i, leg, want[i])
+		}
+	}
+
+	spec, index, ok := worldmodel.NativeElevatorFloorFor(provider, elevator, nativeID(t, "GOLDENROD_DEPT_STORE_1F"))
+	if !ok || index != 1 || spec.PanelX != 3 || spec.PanelY != 0 || len(spec.Floors) != 7 ||
+		spec.Floors[1].DestWarpID != 3 || spec.Floors[0].MapID != nativeID(t, "GOLDENROD_DEPT_STORE_B1F") {
+		t.Fatalf("Goldenrod elevator 1F floor = %+v index=%d ok=%v", spec, index, ok)
+	}
+	h, err := provider.ParseMap(elevator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range h.Warps {
+		if !w.Dynamic {
+			t.Fatalf("elevator door %+v must be dynamic (decomp destination -1)", w)
+		}
+	}
+	for _, tc := range []struct {
+		name    string
+		tileset uint8
+	}{{"GOLDENROD_DEPT_STORE_B1F", 0x19}, {"GOLDENROD_DEPT_STORE_ELEVATOR", 0x0b}} {
+		if got, ok := firstBadgeTileset(tc.name); !ok || got != tc.tileset {
+			t.Fatalf("%s tileset = %#02x ok=%v, want %#02x", tc.name, got, ok, tc.tileset)
 		}
 	}
 }

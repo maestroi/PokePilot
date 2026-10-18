@@ -65,6 +65,9 @@ func (*Profile) DecodeListMenu(reader game.MemoryReader) game.ListMenuState {
 	if reader == nil {
 		return game.ListMenuState{Position: -1}
 	}
+	if gsElevatorMenuLive(reader) {
+		return game.ListMenuState{Visible: true, Kind: game.ListMenuElevator, Position: gsScrollingMenuPosition(reader)}
+	}
 	if gsMartItemListLive(reader) {
 		return game.ListMenuState{Visible: true, Kind: game.ListMenuItems, Position: gsScrollingMenuPosition(reader)}
 	}
