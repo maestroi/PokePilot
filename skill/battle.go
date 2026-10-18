@@ -50,11 +50,12 @@ const voluntarySwitchCap = 4
 // off turns an ordinary blackout into a dirty objective boundary.
 // battleFrameCap is only an absolute backstop.
 const (
-	battleStallCap  = 60000  // frames without any HP/species change
-	battleFrameCap  = 600000 // total frames for the whole battle
-	moveMenuBudget  = 500    // wait for the move/main menu transition
-	moveCloseBudget = 500    // wait for the move menu to close after a move
-	settleBudget    = 3000   // wait for controllable after the battle ends
+	battleStallCap     = 60000   // frames without any HP/species change
+	battleFrameCap     = 600000  // total frames for the whole battle
+	moveMenuBudget     = 500     // wait for the move/main menu transition
+	moveCloseBudget    = 500     // wait for the move menu to close after a move
+	settleBudget       = 3000    // idle/non-script wait for controllable after battle
+	settleScriptBudget = 120_000 // post-battle map scripts may own the machine longer
 )
 
 // mainMenuMax is the wMaxMenuItem of the FIGHT/ITEM/PKMN/RUN menu. The move

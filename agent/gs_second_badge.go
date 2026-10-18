@@ -195,10 +195,31 @@ func gsSecondBadgeGoTo(
 	profile *gsprofile.Profile,
 	dest skill.NativeDestination,
 ) error {
+	return gsSecondBadgeGoToUntil(m, romData, profile, dest, nil)
+}
+
+// gsSecondBadgeGoToUntil routes to dest, but treats done() as a successful
+// postcondition after an interruption settles. Coord-triggered story battles
+// often complete their durable event during the interruption; retrying the
+// trigger tile afterward can loop on the next scene's push scripts
+// (Rocket B2F executive → Electrode "can't leave" / Lance-side events).
+func gsSecondBadgeGoToUntil(
+	m *emu.Emu,
+	romData []byte,
+	profile *gsprofile.Profile,
+	dest skill.NativeDestination,
+	done func() bool,
+) error {
 	// One route memory per journey: a battle interruption must not make the
 	// retry forget which edges and entries it already proved dead.
 	mem := skill.NewNativeRouteMemory()
+	routeDone := func() bool {
+		return done != nil && done() && profile.DecodeOverworld(m).Controllable
+	}
 	for attempt := 0; attempt < gsSecondBadgeRouteAttempts; attempt++ {
+		if routeDone() {
+			return nil
+		}
 		err := skill.GoToNativeRemembering(m, romData, dest, mem)
 		if err == nil {
 			return nil
@@ -222,9 +243,15 @@ func gsSecondBadgeGoTo(
 					}
 				}
 			}
+			if routeDone() {
+				return nil
+			}
 		default:
 			return err
 		}
+	}
+	if routeDone() {
+		return nil
 	}
 	return fmt.Errorf("%w: route did not settle after %d interruptions", errGSSecondBadgeStalled, gsSecondBadgeRouteAttempts)
 }

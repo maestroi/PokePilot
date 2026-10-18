@@ -85,8 +85,14 @@ func executeGSRocketExecutiveF(m *emu.Emu, romData []byte) error {
 			profile.DecodeOverworld(m).Controllable {
 			return nil
 		}
-		if err := gsSecondBadgeGoTo(m, romData, profile,
-			skill.ExactNativeDestination(b2f, 14, 11)); err != nil {
+		// The retail scene is a one-shot coord trigger: once EVENT_BEAT_ROCKET_EXECUTIVEF_2
+		// is set, the map advances to the Electrode scene. Keep routing only until that
+		// durable postcondition holds — do not insist on re-standing on (14,11).
+		if err := gsSecondBadgeGoToUntil(m, romData, profile,
+			skill.ExactNativeDestination(b2f, 14, 11),
+			func() bool {
+				return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressRocketExecutiveFBeaten)
+			}); err != nil {
 			return fmt.Errorf("gen2 Rocket B2F executive: approach scene: %w", err)
 		}
 		if !profile.DecodeOverworld(m).Controllable {
