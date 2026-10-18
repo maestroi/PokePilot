@@ -269,6 +269,35 @@ func FindRoutePlanAtDestinationWithCapabilities(
 		if frontier.From == from {
 			retraced = nil
 		}
+		// Requirement-free relaxLanding warps (Seafoam-style puzzle caves) are
+		// live-topology frontiers, not outdoor bridges. Weighted ranking already
+		// refuses to cross them when scoring Surf shores; unweighted search must
+		// match that invariant. Keeping such a one-hop frontier whenever the far
+		// side is map-adjacent made every far mart look nearer than the real
+		// mainland shop (run-d6dokr184ky81: Route 20 west -> indigo via Seafoam
+		// over Cinnabar's completed two-hop route).
+		//
+		// Drop every sibling puzzle-cave mouth when asking whether a mainland
+		// path exists: Route 20 has two Seafoam doors, and removing only the
+		// first frontier still left the second door as a false "mainland"
+		// connection to Articuno's floor.
+		if transition, ok := executable[frontier]; ok &&
+			frontier.Kind == EdgeWarp &&
+			len(transition.Requires) == 0 &&
+			relaxLanding[frontier] {
+			puzzleDenied := map[Edge]gameruntime.TransitionBlockage{}
+			for edge, tr := range executable {
+				if edge.Kind == EdgeWarp && len(tr.Requires) == 0 && relaxLanding[edge] {
+					puzzleDenied[edge] = gameruntime.TransitionBlockage{}
+				}
+			}
+			withoutPuzzle := graphWithoutSemanticEdges(usable, puzzleDenied)
+			if mapsConnected(withoutPuzzle, from, to) {
+				usable = graphWithoutSemanticEdges(usable, map[Edge]gameruntime.TransitionBlockage{frontier: {}})
+				route, err = findRouteAtDestinationAllowingSemantic(usable, from, to, x, y, tx, ty, blockedHere, skipCanExit, relaxLanding)
+				continue
+			}
+		}
 		if mapsConnectedAvoiding(usable, frontier.To, to, retraced...) {
 			break
 		}

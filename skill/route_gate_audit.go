@@ -533,6 +533,16 @@ func (x *redRouteTransitionExecutor) executeAuditedRouteTransition(edge world.Ed
 		result, err := x.executeSurf(edge)
 		return result, true, err
 
+	case "red:seafoam_islands":
+		// PivotOnly frontier marking Route 20's cave mouths as live-topology
+		// boundaries so search does not treat the multi-floor Strength/current
+		// puzzle as an outdoor Surf bridge. There is no field action to own
+		// here: once routing has selected this warp (destination inside the
+		// cave, or no mainland alternative), ordinary Traverse steps through
+		// the door. Currents and boulder drops stay owned by GoTo/Travel on
+		// the interior floors.
+		return world.TransitionExecutionResult{}, true, nil
+
 	case "red:celadon_gym_cut":
 		var mem state.Mem
 		state.Snapshot(x.m, &mem)
