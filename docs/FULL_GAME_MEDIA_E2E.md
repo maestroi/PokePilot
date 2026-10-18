@@ -1,5 +1,21 @@
 # Full-game media E2E smoke test
 
+## Operator UI: Media → Full E2E
+
+The private operator UI exposes **Media → Full E2E** (`#media/e2e`). The panel is the primary interface for starting this test; the CLI below remains useful in unattended environments.
+
+1. Select **Fresh full game** (Red, starter, seed, registered strategist deployment) or **Existing run** to attach to an already completed Champion run.
+2. Keep **Upload to YouTube privately** unchecked for the first test. Start the test and follow the stage-level progress.
+3. The interface checks the semantic Hall of Fame completion, requests the broadcast replay, producer assessment, edited episode and Short, selected thumbnail and both private publication candidates using the existing servers.
+4. Review the two generated formats in Studio. To make **real private uploads** on a later run, tick the upload option **and** its explicit acknowledgment before pressing Start.
+5. Use **Export report** to record run ID, stage results, content hashes, publication candidate IDs and provider video IDs. Links open the source run, Media Library, Studio or produced videos.
+
+**Coordination lifetime:** This first UI slice drives existing backend APIs from an open browser tab. Background game / renderer / already-dispatched upload jobs are server-owned, but *progression to the next step requires this tab to remain open*. Leaving Media → Full E2E, reloading, closing the browser or clicking **Stop coordinating** halts the coordinator and does not cancel the existing game, render or upload. Use **Existing run** to reattach and repeat idempotent preparation against durable run artifacts. A persisted server-side E2E orchestration queue is the next enhancement tracked in #2794.
+
+The UI does not allow public or unlisted upload from this mode. It follows Studio's producer verdict and quality rules and never overrides `archive_only` / `do_not_publish`. A successful private-upload receipt means a provider ID was recorded for a candidate submitted as private; it is *not yet independent provider-side visibility or MP4 playback verification*.
+
+
+
 Tracking issue: [#2794](https://github.com/maestroi/PokePilot/issues/2794).
 
 This operator smoke test connects the **existing** farm, verified replay, Studio producer/editor, episode/Short packaging, quality-gated publication queue, and resumable YouTube uploader. It creates **no second gameplay runner, renderer, or uploader**. It is a CLI proof slice, not a durable on-server pipeline or UI mode. The CLI process must remain running through the test.
