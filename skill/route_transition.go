@@ -450,6 +450,15 @@ func (x *redRouteTransitionExecutor) executeVictoryRoadStrength(edge world.Edge)
 // which still advertises the closed ladder (MEASURED on
 // run-m0idltj3yzhe2na7t29vkznya from Victory Road 3F (26,8)).
 //
+// When the warp tile is already walkable from the standing tile, the executor
+// treats the crossing as a no-op (warpEdgeReachable) even if the switch puzzle
+// is unsolvable from this pocket. Hard-denying that case disagrees with
+// executeVictoryRoadStrength and strands routes that can already climb the
+// ladder (MEASURED on run-2jt54fzwd1aey2c0vzq5vpkr1k triage 1871e17bb0a1de74:
+// Victory Road 1F (3,8) reaches warp (1,1) while PlanPushPuzzle reports no
+// solution for the east switch, so VirtualTrade/nearest Center selected Indigo
+// via an unreachable one-hop neighbour and GoTo died on can_solve_victory_road_strength).
+//
 // Fail open when the player is on another map or the puzzle cannot be built
 // from the snapshot: those callers lack the live proof this Gate requires.
 func withObservedVictoryRoadStrength(transition gameruntime.Transition, edge world.Edge, romData []byte, mem *state.Mem) gameruntime.Transition {
@@ -474,6 +483,11 @@ func withObservedVictoryRoadStrength(transition gameruntime.Transition, edge wor
 	if err != nil {
 		return transition
 	}
+	// Match executeVictoryRoadStrength's warpEdgeReachable short-circuit: a
+	// pad the player can already walk onto needs no boulder solution.
+	if strengthWarpPadReachable(puzzle, edge) {
+		return transition
+	}
 	if _, err := world.PlanPushPuzzle(puzzle); !errors.Is(err, world.ErrPushPuzzleNoSolution) {
 		return transition
 	}
@@ -481,6 +495,26 @@ func withObservedVictoryRoadStrength(transition gameruntime.Transition, edge wor
 	denied.Gate = true
 	denied.Requires = []gameruntime.CapabilityID{capCanSolveVictoryRoadStrength}
 	return denied
+}
+
+// strengthWarpPadReachable reports that the Strength floor-crossing's warp
+// tile is already in the player's walkable component given the observed
+// boulder/fixed blockers. This is the snapshot equivalent of warpEdgeReachable.
+func strengthWarpPadReachable(puzzle world.PushPuzzle, edge world.Edge) bool {
+	if puzzle.Grid == nil {
+		return false
+	}
+	blocked := map[[2]int]bool{}
+	for at, on := range puzzle.Fixed {
+		if on {
+			blocked[at] = true
+		}
+	}
+	for _, mov := range puzzle.Movables {
+		blocked[[2]int{mov.Pos.X, mov.Pos.Y}] = true
+	}
+	_, err := world.FindPath(puzzle.Grid, puzzle.Player.X, puzzle.Player.Y, int(edge.WarpX), int(edge.WarpY), blocked)
+	return err == nil
 }
 
 // boulderPuzzleFromMem builds the same push-puzzle observation currentBoulderPuzzle
