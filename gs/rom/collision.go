@@ -510,9 +510,13 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	out.Blocked = gen2BlockedDirections()
 	out.WarpPushes = gen2WarpPushes()
 	out.Jumps = gen2Jumps()
-	if tileset == 0x1a { // pret/pokegold COLL_ICE = $23
-		out.SlideCollisions = map[uint8]bool{0x23: true}
-	}
+	// pret/pokegold CheckIceTile (home/map_objects.asm) is collision-byte
+	// driven, not tileset-driven: COLL_ICE / COLL_ICE_2B slide on Ice Path,
+	// Mahogany Gym (TILESET_ELITE_FOUR_ROOM), Blackthorn Gym, and any other
+	// map that embeds those bytes. Restricting slides to tileset 0x1a made
+	// Pryce's ice floor plan as ordinary steps and left heal-routing with
+	// leg_unwalkable from mid-gym (run-a018a6cmhnkr / triage:bf70988d3d2b79b6).
+	out.SlideCollisions = map[uint8]bool{0x23: true, 0x2b: true}
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
