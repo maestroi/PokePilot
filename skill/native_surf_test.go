@@ -90,3 +90,27 @@ func TestNativeSurfApproachRequiresMatchingLiveMap(t *testing.T) {
 		t.Fatal("mismatched map identities were treated as the same shore")
 	}
 }
+
+// Route 42's west gate is a warp carpet. nativeRuntimeBlockers marks every warp
+// occupied so land pathing cannot walk the Mt. Mortar doors, which also sealed
+// the gate destination itself inside planNativeSurfApproach — water could reach
+// the gate, but Surf never boarded (triage:1df1c2deb4ae4791).
+func TestNativeSurfApproachAllowsBlockedWarpDestination(t *testing.T) {
+	// land: pad -- shore -- water gap -- gate(warp). water fills shore..gate.
+	land := nativeSurfTestGrid(t, []bool{true, true, false, false, true}, worldmodel.TraversalLand)
+	water := nativeSurfTestGrid(t, []bool{true, true, true, true, true}, worldmodel.TraversalWater)
+	// Gate is blocked as a warp; water must still be allowed to aim at it.
+	blocked := map[[2]int]bool{{4, 0}: true}
+	plan, ok := planNativeSurfApproach(land, water, 0, 0, [][2]int{{4, 0}}, blocked)
+	if !ok {
+		t.Fatal("Surf refused a water-reachable warp destination that was marked blocked")
+	}
+	if plan.shore.X != 1 || plan.water.X != 2 {
+		t.Fatalf("shore=%+v water=%+v, want board from (1,0) into (2,0)", plan.shore, plan.water)
+	}
+	// A sprite on the boarding shore must still refuse; only the destination warp is privileged.
+	blockedShore := map[[2]int]bool{{1, 0}: true, {4, 0}: true}
+	if _, ok := planNativeSurfApproach(land, water, 0, 0, [][2]int{{4, 0}}, blockedShore); ok {
+		t.Fatal("Surf ignored a blocked shoreline")
+	}
+}
