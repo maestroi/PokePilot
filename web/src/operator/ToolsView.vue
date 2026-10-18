@@ -9,7 +9,7 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
-import { beginFullE2E } from './fullE2EManager'
+import { beginFullE2E, fullE2E } from './fullE2EManager'
 import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
 import { operatorHref } from '../shared/urls'
 
@@ -280,6 +280,10 @@ async function submit(): Promise<void> {
     return
   }
 
+  if (fullE2ESelected.value && fullE2E.working) {
+    error.value = 'A full production test is already active in this browser. Finish or stop it before starting another.'
+    return
+  }
   if (fullE2ESelected.value && !supportsFullE2E(form)) {
     error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
     return
