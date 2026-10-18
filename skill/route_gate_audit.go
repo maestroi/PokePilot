@@ -50,6 +50,15 @@ const (
 	// prices the closed ladder (run-m0idltj3yzhe2na7t29vkznya).
 	capCanSolveVictoryRoadStrength gameruntime.CapabilityID = "can_solve_victory_road_strength"
 
+	// Route 23's north cave door lands on Victory Road 2F's exit-side pocket.
+	// The ROM warp is bidirectional, but entering from Route 23 is never a
+	// real way into the cave interior: Route 23 resets the Strength switches,
+	// and skipCanExit on red:victory_road_strength then phantoms a path to
+	// destinations like Moltres (run-3ftuzix3j947jnylviwaxyu4a). Keep a
+	// never-projected capability so semantic routing cannot use this door as
+	// an entry while leaving VR2F -> Route 23 as ordinary exit geometry.
+	capCanEnterVictoryRoadNorthExit gameruntime.CapabilityID = "can_enter_victory_road_north_exit"
+
 	// The Game Corner poster stair is a real warp_event, but the map script
 	// replaces its block with a wall until EVENT_FOUND_ROCKET_HIDEOUT.
 	capCanEnterRocketHideout gameruntime.CapabilityID = "can_enter_rocket_hideout"
@@ -92,7 +101,9 @@ const (
 	// warp table is bidirectional, so without a semantic gate the map-level
 	// connectivity over-approximation treats this as an ungated entry into the
 	// Victory Road system and Reachability reports destinations like Moltres as
-	// routable while badge checks are still missing (run-d6dokr184ky81).
+	// routable (run-d6dokr184ky81 early; run-3ftuzix3j947jnylviwaxyu4a with
+	// badges via Strength skipCanExit phantoms). Entry is never-projected;
+	// exit VR2F -> Route 23 stays ordinary.
 	route23VictoryRoad2FWarpX   uint8 = 14
 	route23VictoryRoad2FWarpY   uint8 = 31
 	route23VictoryRoadApproachY uint8 = 32
@@ -190,13 +201,15 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 
 	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == victoryRoad2FMap &&
 		edge.WarpX == route23VictoryRoad2FWarpX && edge.WarpY == route23VictoryRoad2FWarpY:
-		// The cave's north door is ordinary walking once the player is already
-		// in the Indigo-side Route 23 pocket. It must still be gated on the
-		// Route 23 badge-check capability so map-level connectivity cannot
-		// pretend this ROM-bidirectional warp is an alternate entry that skips
-		// the south League approach. Leaving through Victory Road 2F -> Route 23
-		// stays ordinary geometry (no transition on the reverse edge).
-		return bikeGate("red:route23_victory_road_north", capCanPassRoute23BadgeChecks)
+		// The cave's north door is an EXIT onto the Indigo-side Route 23 pocket.
+		// Entering through it lands in the Strength-reset exit component; with
+		// badges alone the old badge Gate still opened and skipCanExit priced
+		// Moltres (and other interior tiles) through unsolvable pads. A
+		// never-projected Gate removes only this source edge. Leaving through
+		// Victory Road 2F -> Route 23 stays ordinary geometry (no transition on
+		// the reverse edge). The real entry remains the south League approach
+		// into Victory Road 1F.
+		return bikeGate("red:route23_victory_road_north", capCanEnterVictoryRoadNorthExit)
 
 	case edge.Kind == world.EdgeWarp && edge.From == route23Map && edge.To == route22GateMap &&
 		edge.WarpY == route23Route22GateWarpY && (edge.WarpX == 7 || edge.WarpX == 8):
