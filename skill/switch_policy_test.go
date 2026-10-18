@@ -3,6 +3,7 @@ package skill
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -98,7 +99,7 @@ func TestChooseTacticalSwitchPrefersMaterialMatchup(t *testing.T) {
 	}
 }
 
-func TestChooseTacticalSwitchEscapesDangerousMatchupWithoutMaterialScoreGain(t *testing.T) {
+func TestChooseTacticalSwitchHealthyActiveAbsorbsDangerousMatchup(t *testing.T) {
 	const flyingType uint8 = 0x02
 	strong := rom.Move{ID: 52, Power: 120, Type: typeFire, Accuracy: 255, PP: 15}
 	weak := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
@@ -115,6 +116,35 @@ func TestChooseTacticalSwitchEscapesDangerousMatchupWithoutMaterialScoreGain(t *
 	putSwitchMon(&mem, 1, bench)
 	mem[sym.PlayerMonNumber] = 0
 	b := switchBattle(active, [2]uint8{typeRock, typeRock}, strong.ID)
+
+	decision := chooseTacticalSwitch(romData, &mem, b)
+	if decision.Switch {
+		t.Fatalf("decision = %+v, want healthy active to absorb 2x instead of escaping", decision)
+	}
+	if decision.Reason != "active-can-absorb-dangerous-matchup" {
+		t.Fatalf("reason = %q, want active-can-absorb-dangerous-matchup", decision.Reason)
+	}
+}
+
+func TestChooseTacticalSwitchEscapesDangerousMatchupWithoutMaterialScoreGain(t *testing.T) {
+	const flyingType uint8 = 0x02
+	strong := rom.Move{ID: 52, Power: 120, Type: typeFire, Accuracy: 255, PP: 15}
+	weak := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
+	chart := []typePair{
+		{typeRock, typeFire, 20},
+		{typeRock, flyingType, 20},
+		{typeRock, typeWater, 5},
+	}
+	romData := fakeROMChart(t, chart, strong, weak)
+	active := healthySwitchMon(6, 50, typeFire, flyingType, strong.ID)
+	active.HP = active.MaxHP / 3 // wounded: healthy actives absorb 2x instead of escaping
+	bench := healthySwitchMon(7, 35, typeWater, typeWater, weak.ID)
+	var mem state.Mem
+	putSwitchMon(&mem, 0, active)
+	putSwitchMon(&mem, 1, bench)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(active, [2]uint8{typeRock, typeRock}, strong.ID)
+	b.ActiveHP = active.HP
 
 	decision := chooseTacticalSwitch(romData, &mem, b)
 	if !decision.Switch || decision.Slot != 1 {
@@ -287,6 +317,78 @@ func TestBestReplacementSlotUsesMatchupInsteadOfPartyOrder(t *testing.T) {
 	slot, eval := bestReplacementSlot(romData, &mem, b)
 	if slot != 2 {
 		t.Fatalf("replacement slot = %d (%+v), want WATER slot 2 instead of first live slot", slot, eval)
+	}
+}
+
+// Baton Pass / ForcePickSwitchMonInBattle keeps the active mon alive and
+// rejects selecting it again ("already out"). Replacement must skip ActiveSlot
+// even when that mon is the first live party member (triage:1f4f23fde23a0c8e).
+func TestBestReplacementSkipsAlreadyOutActiveMon(t *testing.T) {
+	tackle := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
+	romData := fakeROM(t, tackle)
+	fainted := healthySwitchMon(1, 60, typeNormal, typeNormal, tackle.ID)
+	fainted.HP = 0
+	active := healthySwitchMon(2, 24, typeNormal, typeNormal, tackle.ID)
+	bench := healthySwitchMon(3, 22, typeNormal, typeNormal, tackle.ID)
+	var mem state.Mem
+	putSwitchMon(&mem, 0, fainted)
+	putSwitchMon(&mem, 1, active)
+	putSwitchMon(&mem, 2, bench)
+	mem[sym.PlayerMonNumber] = 1
+	b := switchBattle(active, [2]uint8{typeNormal, typeNormal}, tackle.ID)
+
+	slot, eval := bestReplacementSlot(romData, &mem, b)
+	if slot != 2 {
+		t.Fatalf("replacement slot = %d (%+v), want bench slot 2, not already-out active slot 1", slot, eval)
+	}
+	resources := gen1BattleResourcesFromMem(&mem)
+	slot, eval = forcedBattleSwitchSlot(romData, resources, game.BattleState(b), BattleSequenceContext{})
+	if slot != 2 {
+		t.Fatalf("forced switch slot = %d (%+v), want bench slot 2", slot, eval)
+	}
+}
+
+func TestBestReplacementPrefersDamagingBenchOverStatusOnly(t *testing.T) {
+	tackle := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
+	bubble := rom.Move{ID: 145, Power: 20, Type: typeWater, Accuracy: 255, PP: 30}
+	romData := fakeROM(t, tackle, bubble)
+	fainted := healthySwitchMon(1, 60, typeNormal, typeNormal, tackle.ID)
+	fainted.HP = 0
+	statusOnly := healthySwitchMon(2, 24, typeNormal, typeNormal) // no damaging moves
+	statusOnly.Moves = [4]uint8{45, 204, 118, 186}                // Growl/Charm/Metronome/Sweet Kiss ids
+	statusOnly.PP = [4]uint8{40, 20, 10, 10}
+	attacker := healthySwitchMon(3, 22, typeWater, typeWater, bubble.ID)
+	attacker.HP = 52
+	attacker.MaxHP = 78
+	var mem state.Mem
+	putSwitchMon(&mem, 0, fainted)
+	putSwitchMon(&mem, 1, statusOnly)
+	putSwitchMon(&mem, 2, attacker)
+	mem[sym.PlayerMonNumber] = 0
+	b := switchBattle(fainted, [2]uint8{typeRock, typeGround}, tackle.ID)
+
+	slot, eval := bestReplacementSlot(romData, &mem, b)
+	if slot != 2 {
+		t.Fatalf("replacement slot = %d (%+v), want damaging WATER slot 2 over status-only slot 1", slot, eval)
+	}
+}
+
+func TestForcedBattleSwitchFallsBackToSoleSurvivor(t *testing.T) {
+	tackle := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
+	romData := fakeROM(t, tackle)
+	fainted := healthySwitchMon(1, 20, typeNormal, typeNormal, tackle.ID)
+	fainted.HP = 0
+	active := healthySwitchMon(2, 20, typeNormal, typeNormal, tackle.ID)
+	var mem state.Mem
+	putSwitchMon(&mem, 0, fainted)
+	putSwitchMon(&mem, 1, active)
+	mem[sym.PlayerMonNumber] = 1
+	b := switchBattle(active, [2]uint8{typeNormal, typeNormal}, tackle.ID)
+
+	resources := gen1BattleResourcesFromMem(&mem)
+	slot, _ := forcedBattleSwitchSlot(romData, resources, game.BattleState(b), BattleSequenceContext{})
+	if slot != 1 {
+		t.Fatalf("forced switch slot = %d, want sole survivor active slot 1 for RUN-refusal dismiss", slot)
 	}
 }
 

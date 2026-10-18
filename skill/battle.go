@@ -379,19 +379,29 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// for this exact opponent. Do not tactically rotate through additional
 			// party members afterward: every extra participant further splits the
 			// trainee's XP and defeats the estimator's two-participant contract.
-			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch && voluntarySwitches < voluntarySwitchCap {
+			//
+			// Survival switches (active has no effective offense) are not capped:
+			// burning the voluntary budget on Feraligatr matchup ping-pong must
+			// not force Typhlosion to Tackle a Ghost until Curse KO's it
+			// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr).
+			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch {
 				if inBattle && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitchStateWithContext(m.ROM(), resources, bs, options.Sequence)
 					if decision.Switch {
-						if zbatDebug {
-							fmt.Printf("zbat resource=SWITCH action=voluntary reason=%s active={%s} candidate={%s}\n",
-								decision.Reason, decision.Active.String(), decision.Candidate.String())
+						survival := decision.Reason == "active-has-no-effective-offense"
+						if survival || voluntarySwitches < voluntarySwitchCap {
+							if zbatDebug {
+								fmt.Printf("zbat resource=SWITCH action=voluntary reason=%s active={%s} candidate={%s}\n",
+									decision.Reason, decision.Active.String(), decision.Candidate.String())
+							}
+							if err := SwitchActive(m, decision.Slot); err != nil {
+								return menuError(m, "tactical party switch", err)
+							}
+							if !survival {
+								voluntarySwitches++
+							}
+							continue
 						}
-						if err := SwitchActive(m, decision.Slot); err != nil {
-							return menuError(m, "tactical party switch", err)
-						}
-						voluntarySwitches++
-						continue
 					}
 					if zbatDebug && decision.Legal && decision.Slot >= 0 {
 						fmt.Printf("zbat resource=SWITCH action=stay reason=%s active={%s} candidate={%s}\n",
@@ -571,12 +581,12 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			}
 
 		case partyMenu.Visible && partyMenu.Kind == game.PartyMenuForcedBattle:
-			slot := resources.FirstLivePartySlot()
+			slot := -1
 			var replacement switchEvaluation
 			if current, ok := battleDecoder.DecodeBattleState(m); ok {
-				if bestSlot, best := bestReplacementSlotStateWithContext(m.ROM(), resources, current, options.Sequence); bestSlot >= 0 {
-					slot, replacement = bestSlot, best
-				}
+				slot, replacement = forcedBattleSwitchSlot(m.ROM(), resources, current, options.Sequence)
+			} else {
+				slot = resources.FirstLivePartySlot()
 			}
 			if slot < 0 {
 				m.StepFrame()
@@ -593,6 +603,10 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			m.Tap(emu.B, 3, 7)
 
 		case partyMenu.Visible && partyMenu.Kind == game.PartyMenuVoluntaryBattle:
+			// Unbidden voluntary party menus are either Gen I RUN-refusal
+			// dismiss or Gen II ForcePickSwitchMonInBattle (Baton Pass). Both
+			// need a selectable slot; Baton Pass additionally rejects the
+			// already-out battler, so prefer a non-active live replacement.
 			forcedChoiceVisits++
 			if forcedChoiceVisits > forcedChoiceCap {
 				live := runtimeDecoder.DecodeBattleRuntime(m)
@@ -603,7 +617,13 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 					m.Tap(emu.B, 3, 7)
 					continue
 				}
-				slot := resourcesDecoder.DecodeBattleResources(m).FirstLivePartySlot()
+				liveResources := resourcesDecoder.DecodeBattleResources(m)
+				slot := -1
+				if current, ok := battleDecoder.DecodeBattleState(m); ok {
+					slot, _ = forcedBattleSwitchSlot(m.ROM(), liveResources, current, options.Sequence)
+				} else {
+					slot = liveResources.FirstLivePartySlot()
+				}
 				if slot < 0 {
 					m.StepFrame()
 					continue
