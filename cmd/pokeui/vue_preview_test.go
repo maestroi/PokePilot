@@ -136,6 +136,18 @@ func TestVueSpectatorServesPublicPages(t *testing.T) {
 	}
 }
 
+func TestVueSpectatorServesPrivacyPolicy(t *testing.T) {
+	if !vueFileExists("spectator", "privacy.html") {
+		t.Skip("spectator frontend bundle not built in this Go-only checkout")
+	}
+	h := withVueFrontend(http.NotFoundHandler(), "spectator")
+	res := httptest.NewRecorder()
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/privacy", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "youtube.upload") {
+		t.Fatalf("/privacy = %d: %q", res.Code, res.Body.String())
+	}
+}
+
 func TestVueBuildProvenanceEndpoint(t *testing.T) {
 	oldVersion, oldPR, oldTitle := version, buildPR, buildTitleB64
 	defer func() { version, buildPR, buildTitleB64 = oldVersion, oldPR, oldTitle }()

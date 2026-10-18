@@ -73,6 +73,12 @@ func withVueFrontend(next http.Handler, target string) http.Handler {
 			res.Header().Set("Cache-Control", "no-store")
 			http.Error(res, "replay library assets unavailable; run the spectator web build before starting pokeui", http.StatusServiceUnavailable)
 			return
+		case req.Method == http.MethodGet && target == "spectator" && (req.URL.Path == "/privacy" || req.URL.Path == "/privacy/"):
+			// Static page (web/public/privacy.html); Google OAuth branding links here.
+			if !serveVueFile(res, req, target, "privacy.html") {
+				http.NotFound(res, req)
+			}
+			return
 		case req.Method == http.MethodGet && (req.URL.Path == "/next" || req.URL.Path == "/next/"):
 			destination := "/"
 			if runPage, ok := sites.CanonicalRunRedirect("/", req.URL.Query()); ok {
