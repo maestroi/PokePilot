@@ -172,6 +172,18 @@ func TestCyclingRoadAutoDownMatchesROMInputRule(t *testing.T) {
 	}
 }
 
+func TestRoute20SeafoamWarpsArePuzzleFrontiers(t *testing.T) {
+	for _, edge := range []world.Edge{
+		{Kind: world.EdgeWarp, From: route20Map, To: seafoam1FMap},
+		{Kind: world.EdgeWarp, From: seafoam1FMap, To: route20Map},
+	} {
+		transition := requireTransition(t, edge, "red:seafoam_islands")
+		if !transition.PivotOnly || transition.PortBypass || transition.Gate {
+			t.Fatalf("Seafoam warp annotation = %+v, want PivotOnly frontier", transition)
+		}
+	}
+}
+
 func TestSouthernSeaRouteRequiresSurf(t *testing.T) {
 	for _, edge := range []world.Edge{
 		{Kind: world.EdgeConnection, From: route19Map, To: route20Map},
