@@ -12,7 +12,8 @@ const existingID = ref(props.state.run)
 const starter = ref('squirtle')
 const deployment = ref('')
 const seed = ref(1)
-const uploadPrivate = ref(false)
+const uploadPrivate = ref(fullE2E.uploadPrivate)
+watch(() => fullE2E.uploadPrivate, value => { uploadPrivate.value = value })
 const uploadAcknowledged = ref(false)
 const working = computed(() => fullE2E.working)
 const complete = computed(() => fullE2E.complete)
@@ -147,6 +148,7 @@ function downloadReport(): void {
           <p class="text-meta text-fg-3">The test cannot independently confirm YouTube visibility yet. Check the uploaded videos on your channel before considering that gate complete.</p>
         </div>
 
+        <p v-if="working && fullE2E.uploadPrivate" class="text-meta text-warn">Private uploads were explicitly authorized when this workflow started. They cannot be turned off by changing the form; use Stop coordinating to prevent further dispatches.</p>
         <div class="flex flex-wrap gap-2">
           <button v-if="!working" type="button" class="ui-btn ui-btn-primary h-10" :disabled="!canStart" @click="start">
             {{ uploadPrivate ? 'Start full E2E + private upload' : 'Start full E2E (no upload)' }}
