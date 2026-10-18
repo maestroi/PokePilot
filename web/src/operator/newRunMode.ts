@@ -12,6 +12,10 @@ export function supportsFullE2E(spec: Pick<RunSpec, 'game' | 'planner'>): boolea
 // Preserve the user's starter, seed, model, FPS and other agent settings.
 export function productionRunSpec(spec: RunSpec): RunSpec {
   if (!supportsFullE2E(spec)) throw new Error('Full E2E currently requires Pokémon Red with the LLM planner.')
+  // Validate before queueing a run: the coordinator uses this exact ID.
+  if (spec.run_id && !/^[-_a-zA-Z0-9]{3,100}$/.test(spec.run_id)) {
+    throw new Error('Full E2E run ID must be 3–100 letters, numbers, hyphens or underscores.')
+  }
   return {
     ...spec,
     goal: FULL_E2E_GOAL,
