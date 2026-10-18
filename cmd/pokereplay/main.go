@@ -153,7 +153,7 @@ type replayServer struct {
 	youtubeHTTP     *http.Client
 	studioPublishMu sync.Mutex
 	youtubeMu       sync.Mutex
-	youtubeActive   map[string]bool
+	youtubeActive   map[string]*atomic.Int64 // run -> bytes YouTube has received
 
 	parseRecording func([]byte) (replayIdentity, error)
 	deriveROM      func([]byte, map[string]string, string) ([]byte, error)
@@ -192,7 +192,7 @@ func newReplayServer(wallBase, romPath, streamBinary string, store *artifactstor
 		broadcastDestinations: broadcastDestinationsFromEnv(os.Getenv),
 		youtube:               youtubeConfigFromEnv(os.Getenv),
 		youtubeHTTP:           &http.Client{}, // uploads are bounded by youtubeUploadTimeout, not a client timeout
-		youtubeActive:         make(map[string]bool),
+		youtubeActive:         make(map[string]*atomic.Int64),
 	}
 }
 

@@ -254,6 +254,47 @@ func TestYouTubePublishResumesInterruptedUpload(t *testing.T) {
 	}
 }
 
+func TestYouTubeStatusReportsLiveUploadProgress(t *testing.T) {
+	mem, store := newMemS3(t)
+	youtubeRetryDelay = time.Millisecond
+	t.Cleanup(func() { youtubeRetryDelay = 2 * time.Second })
+	fake := &fakeYouTube{failFirstUpload: true}
+	yt := fake.server(t)
+	s := youtubeTestServer(t, "http://wall.invalid", store, yt)
+	mem.put("replays/run-5.mp4", []byte("0123456789"))
+	if !s.claimYouTubeUpload("run-5") {
+		t.Fatal("claim failed")
+	}
+	rec := youtubePublication{RunID: "run-5", State: youtubeStateUploading, SourceKey: "replays/run-5.mp4", SourceSize: 10}
+	// The resumed attempt starts the counter at YouTube's offset (4) and
+	// counts the remaining 6 bytes as they stream.
+	s.publishYouTube(context.Background(), rec, youtubeVideoMeta{Title: "t"})
+	if err := s.saveYouTubePublication(context.Background(), rec); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(s.handler())
+	defer srv.Close()
+	get := func() string {
+		res, err := http.Get(srv.URL + "/v1/runs/run-5/publish/youtube")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		data, _ := io.ReadAll(res.Body)
+		return string(data)
+	}
+	if got := get(); !strings.Contains(got, `"uploaded_bytes":10`) || !strings.Contains(got, `"source_size":10`) {
+		t.Fatalf("status = %s, want live uploaded_bytes", got)
+	}
+	s.releaseYouTubeUpload("run-5")
+	if got := get(); strings.Contains(got, "uploaded_bytes") || !strings.Contains(got, `"state":"interrupted"`) {
+		t.Fatalf("status after release = %s, want interrupted without progress", got)
+	}
+	if strings.Contains(string(mem.objects[youtubePublicationKey("run-5")]), "uploaded_bytes") {
+		t.Fatal("live progress must not be persisted")
+	}
+}
+
 func TestYouTubePublishFinishesUnrecordedUploadWithoutReuploading(t *testing.T) {
 	mem, store := newMemS3(t)
 	fake := &fakeYouTube{completed: true}
