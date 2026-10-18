@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 // The retail map graph has a Route 44/Blackthorn overworld connection, but
@@ -82,5 +83,40 @@ func TestLateJohtoIcePathPitWarpRetainsDestinationID(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Ice Path B1F hole warp (11,2) does not lead to Mahogany-side B2F warp 3")
+	}
+}
+
+// HM07 Waterfall on Ice Path 1F is at (31,7). South of the ball is a wall, so
+// the interaction stand must be west at (30,7). Staging on (31,8) made the
+// Blackthorn-side ladder arrival (37,5) report world.ErrNoPath
+// (run-a018a6cmhnkr / triage:3ef7c2a0a59e13a1).
+func TestLateJohtoIcePathHM07StandIsReachableFromBlackthornLadder(t *testing.T) {
+	rom := loadGold(t)
+	mapID := nativeID(t, "ICE_PATH_1F")
+	blocks, err := mapBlockData(rom, mapID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := NewFirstBadgeWorldProvider(nil).Grid(mapID, blocks, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grid, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grid.Walkable(31, 8) {
+		t.Fatal("south of HM07 (31,8) must remain a wall; south staging is invalid")
+	}
+	if !grid.Walkable(30, 7) || !grid.Walkable(31, 7) {
+		t.Fatalf("HM07 west stand / item tiles not walkable: stand=%v item=%v",
+			grid.Walkable(30, 7), grid.Walkable(31, 7))
+	}
+	path, err := world.FindNativePath(grid, 37, 5, 30, 7, nil)
+	if err != nil || len(path) == 0 {
+		t.Fatalf("Blackthorn ladder (37,5) -> HM07 stand (30,7): path=%d err=%v", len(path), err)
+	}
+	if _, err := world.FindNativePath(grid, 37, 5, 31, 8, nil); err == nil {
+		t.Fatal("unexpected path onto wall staging tile (31,8)")
 	}
 }
