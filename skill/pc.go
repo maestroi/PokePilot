@@ -104,6 +104,17 @@ func nearestPokemonCenterInGraph(g *world.Graph, fromMap uint8, x, y int, prereq
 			if seen[e.To] {
 				continue
 			}
+			// Only escape through a hop the live capabilities can take.
+			// A gated Strength warp that the standing tile cannot use must
+			// not advertise its destination as a Center-selection via
+			// (run-2jt54fzwd1aey2c0vzq5vpkr1k: Indigo via VR2F while
+			// can_solve_victory_road_strength hard-denied the climb).
+			if x >= 0 && y >= 0 {
+				if _, err := world.FindRoutePlanAtDestinationWithCapabilities(
+					g, fromMap, e.To, x, y, -1, -1, nil, prereqs); err != nil {
+					continue
+				}
+			}
 			seen[e.To] = true
 			consider(e.To, -1, -1, 1)
 		}
