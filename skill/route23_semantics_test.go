@@ -34,7 +34,7 @@ func TestRoute23VictoryRoadEntranceIsSemanticPivot(t *testing.T) {
 	}
 }
 
-func TestRoute23VictoryRoadNorthDoorIsBadgeGate(t *testing.T) {
+func TestRoute23VictoryRoadNorthDoorIsNeverProjectedEntryGate(t *testing.T) {
 	edge := world.Edge{
 		Kind:  world.EdgeWarp,
 		From:  route23Map,
@@ -53,12 +53,15 @@ func TestRoute23VictoryRoadNorthDoorIsBadgeGate(t *testing.T) {
 		t.Fatalf("north door must be an ordinary-geometry Gate, got gate=%v pivot_only=%v port_bypass=%v",
 			transition.Gate, transition.PivotOnly, transition.PortBypass)
 	}
-	if len(transition.Requires) != 1 || transition.Requires[0] != capCanPassRoute23BadgeChecks {
-		t.Fatalf("requirements=%v, want Route 23 badge checks only", transition.Requires)
+	if len(transition.Requires) != 1 || transition.Requires[0] != capCanEnterVictoryRoadNorthExit {
+		t.Fatalf("requirements=%v, want never-projected %s", transition.Requires, capCanEnterVictoryRoadNorthExit)
+	}
+	if caps := redRouteCapabilities(nil, new(state.Mem)); caps.Has(capCanEnterVictoryRoadNorthExit) {
+		t.Fatal("can_enter_victory_road_north_exit must never be projected")
 	}
 
 	// Exiting Victory Road 2F onto Route 23 stays ordinary: the player is
-	// already inside the cave system and must not need a badge re-check to leave.
+	// already inside the cave system and must not need a capability to leave.
 	reverse := world.Edge{
 		Kind:  world.EdgeWarp,
 		From:  victoryRoad2FMap,
@@ -69,6 +72,91 @@ func TestRoute23VictoryRoadNorthDoorIsBadgeGate(t *testing.T) {
 	if transition, ok := redRouteTransitionForEdge(reverse); ok && transition.ID == "red:route23_victory_road_north" {
 		t.Fatalf("Victory Road 2F -> Route 23 unexpectedly owns north-entry gate: %+v", transition)
 	}
+}
+
+// TestMoltresNotPricedThroughVictoryRoadNorthExit is the routing regression for
+// run-3ftuzix3j947jnylviwaxyu4a / triage ac73d5dd74cf2f38: with eight badges the
+// north Route 23 door still opened, and skipCanExit Strength pads priced Moltres
+// from Indigo / the exit pocket. Catch then stalled bouncing Indigo <-> VR2F
+// exit. Honest behavior is ErrNoRoute from the Indigo side and the south 1F
+// entrance from Route 23 tiles that can walk to it.
+func TestMoltresNotPricedThroughVictoryRoadNorthExit(t *testing.T) {
+	romPath := os.Getenv("POKEMON_RED_ROM")
+	if romPath == "" {
+		t.Skip("POKEMON_RED_ROM not set")
+	}
+	romData, err := os.ReadFile(romPath)
+	if err != nil {
+		t.Fatalf("read ROM: %v", err)
+	}
+	g, err := cachedRouteGraph(romData)
+	if err != nil {
+		t.Fatalf("route graph: %v", err)
+	}
+	moltresMap, mx, my := uint8(0xC2), 11, 6
+	viaNorth := func(plan []world.RouteStep) bool {
+		for _, s := range plan {
+			if s.Edge.From == route23Map && s.Edge.To == victoryRoad2FMap &&
+				s.Edge.WarpX == route23VictoryRoad2FWarpX && s.Edge.WarpY == route23VictoryRoad2FWarpY {
+				return true
+			}
+		}
+		return false
+	}
+	viaSouth := func(plan []world.RouteStep) bool {
+		for _, s := range plan {
+			if s.Edge.From == route23Map && s.Edge.To == victoryRoad1FMap {
+				return true
+			}
+		}
+		return false
+	}
+	lateGame := func(mapID, x, y uint8) world.RoutePrerequisites {
+		var mem state.Mem
+		mem[sym.CurMap], mem[sym.XCoord], mem[sym.YCoord] = mapID, x, y
+		mem[sym.ObtainedBadges] = 0xFF
+		prereqs := redRoutePrerequisites(g, romData, &mem)
+		for _, id := range []gameruntime.CapabilityID{
+			capCanSurf, capCanMoveBoulders, capCanPassRoute23BadgeChecks, capCanCut,
+		} {
+			prereqs.Capabilities[id] = true
+		}
+		return prereqs
+	}
+
+	t.Run("indigo exterior", func(t *testing.T) {
+		prereqs := lateGame(indigoPlateauMap, 9, 6)
+		plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			g, indigoPlateauMap, moltresMap, 9, 6, mx, my, nil, prereqs)
+		if viaNorth(plan) {
+			t.Fatalf("Moltres priced through north exit door: %+v", plan)
+		}
+		if !errors.Is(err, world.ErrNoRoute) {
+			t.Fatalf("err=%v plan=%+v, want world.ErrNoRoute from Indigo", err, plan)
+		}
+		weighted, werr := world.FindWeightedRoutePlanAtDestinationWithCapabilities(
+			g, indigoPlateauMap, moltresMap, 9, 6, mx, my, nil, prereqs, world.DefaultRouteCostPolicy())
+		if viaNorth(weighted.Steps) || werr == nil || errors.Is(werr, world.ErrRouteReplanRequired) {
+			t.Fatalf("weighted Moltres from Indigo: err=%v steps=%+v", werr, weighted.Steps)
+		}
+	})
+
+	t.Run("route 23 south of cave prefers 1f entrance", func(t *testing.T) {
+		prereqs := lateGame(route23Map, 8, 35)
+		plan, err := world.FindRoutePlanAtDestinationWithCapabilities(
+			g, route23Map, moltresMap, 8, 35, mx, my, nil, prereqs)
+		if viaNorth(plan) {
+			t.Fatalf("Moltres still priced through north exit door: err=%v %+v", err, plan)
+		}
+		if !viaSouth(plan) && !errors.Is(err, world.ErrRouteReplanRequired) {
+			t.Fatalf("want south 1F entrance or live replan, got err=%v %+v", err, plan)
+		}
+		weighted, werr := world.FindWeightedRoutePlanAtDestinationWithCapabilities(
+			g, route23Map, moltresMap, 8, 35, mx, my, nil, prereqs, world.DefaultRouteCostPolicy())
+		if viaNorth(weighted.Steps) {
+			t.Fatalf("weighted Moltres still via north exit: err=%v %+v", werr, weighted.Steps)
+		}
+	})
 }
 
 func TestRoute23SouthReturnIsSemanticPivot(t *testing.T) {
