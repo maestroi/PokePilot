@@ -347,6 +347,7 @@ func findExactWeightedRoute(
 	bestBoundaryCost := 0
 	bestBoundaryScore := 0
 	hopsToGoal := mapHopsTo(view.usable, to)
+	landingHops := landingHopsTo(view.usable, to, view.skipCanExit, view.relaxLanding, view.executable)
 
 	for open.Len() > 0 {
 		item := heap.Pop(open).(*weightedQueueItem)
@@ -380,12 +381,19 @@ func findExactWeightedRoute(
 			}, nil, true
 		}
 		if cur.boundary {
-			// A frontier is only a prefix: rank it by how far its map still is
-			// from the destination, not just by how cheap it is to reach. The
-			// cheapest Surf shore can lead away from the goal (Cinnabar's Route 20
-			// shore is closer than its Route 21 shore, but Route 20 is a Seafoam
-			// dead end for a Route 22 journey; run-383xos0r6mt4d1aaj7yld1v2bn).
-			score := cur.cost + hopsToGoal(cur.mapID)*policy.FallbackMapTransitionCost
+			// A frontier is only a prefix: rank it by how far the landing can
+			// still progress toward the destination, not just by how cheap it
+			// is to reach. The cheapest Surf shore can lead away from the goal
+			// (Cinnabar's Route 20 shore is closer than its Route 21 shore, but
+			// Route 20 is a Seafoam dead end; run-383xos0r6mt4d1aaj7yld1v2bn,
+			// run-186f94od127ou3it5xlpp1lz4g). Map-level hop counts are not
+			// enough: Route 20 still has a Route 19 seam two hops from Fuchsia
+			// even when the west landing component cannot use it.
+			hops := hopsToGoal(cur.mapID)
+			if cur.known {
+				hops = landingHops(cur.mapID, cur.x, cur.y, cur.entry)
+			}
+			score := cur.cost + hops*policy.FallbackMapTransitionCost
 			if bestBoundaryNode < 0 || score < bestBoundaryScore {
 				bestBoundaryNode = item.node
 				bestBoundaryCost = cur.cost
@@ -503,6 +511,180 @@ func mapHopsTo(g *Graph, to uint8) func(uint8) int {
 		}
 		return unreachable
 	}
+}
+
+// landingHopsTo returns fewest map transitions from a concrete landing tile
+// (and its walkable component) to `to`. Unlike mapHopsTo, an exit the landing
+// component cannot use does not count as progress: Route 20's west Seafoam
+// water cannot take the Route 19 seam even though that seam exists on the map.
+//
+// Used only to rank semantic frontiers. skipCanExit edges stay selectable so a
+// dead-end Surf landing can still price the bounce back to a productive shore.
+// Requirement-free relaxLanding warps (Seafoam) are not crossed: they are
+// unsupported puzzle caves, not outdoor hops. Cut/Snorlax/Surf actions that
+// carry Requires remain expandable so mainland corridors stay visible.
+func landingHopsTo(
+	g *Graph,
+	to uint8,
+	skipCanExit, relaxLanding map[Edge]bool,
+	executable map[Edge]gameruntime.Transition,
+) func(mapID uint8, x, y int, entry []int) int {
+	if g == nil {
+		return func(mapID uint8, x, y int, entry []int) int {
+			if mapID == to {
+				return 0
+			}
+			return 1
+		}
+	}
+	type hopState struct {
+		mapID uint8
+		comps string
+	}
+	type hopNode struct {
+		mapID uint8
+		entry []int
+		hops  int
+	}
+	// Upper bound: every map once, plus one so "unreachable" sorts last.
+	unreachable := len(g.Edges) + 1
+	if unreachable < 2 {
+		unreachable = 2
+	}
+
+	return func(mapID uint8, x, y int, entry []int) int {
+		if mapID == to {
+			return 0
+		}
+		start := entry
+		if len(start) == 0 {
+			start = componentSetAt(g, mapID, x, y)
+		}
+		if len(start) == 0 {
+			start = adjacentComponents(g, mapID, x, y)
+		}
+		seen := map[hopState]bool{}
+		startKey := hopState{mapID: mapID, comps: componentSetKey(start)}
+		seen[startKey] = true
+		queue := []hopNode{{mapID: mapID, entry: start, hops: 0}}
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			if cur.mapID == to {
+				return cur.hops
+			}
+			if cur.hops+1 >= unreachable {
+				continue
+			}
+			for _, edge := range g.Edges[cur.mapID] {
+				if relaxLanding[edge] {
+					if tr, ok := executable[edge]; ok && edge.Kind == EdgeWarp && len(tr.Requires) == 0 {
+						// Seafoam-style puzzle cave: a live-topology frontier
+						// with no portable prerequisite. Do not treat it as an
+						// outdoor bridge when ranking Surf shores.
+						continue
+					}
+				}
+				skip := skipCanExit[edge] && !g.pivotDenied(edge, cur.entry)
+				if g.componentAware && len(g.exitComps[edge]) == 0 && !skip {
+					continue
+				}
+				if !skip && !canExit(g, edge, cur.entry) {
+					continue
+				}
+				nextEntry := g.entryComps[edge]
+				if len(nextEntry) == 0 {
+					nextEntry = connectionLandingComponents(g, edge)
+				}
+				// Empty non-nil entry denies ordinary canExit on the next map
+				// (shareComp with nothing) while still allowing later skip hops.
+				if nextEntry == nil {
+					nextEntry = []int{}
+				}
+				nextKey := hopState{mapID: edge.To, comps: componentSetKey(nextEntry)}
+				if seen[nextKey] {
+					continue
+				}
+				seen[nextKey] = true
+				queue = append(queue, hopNode{
+					mapID: edge.To,
+					entry: nextEntry,
+					hops:  cur.hops + 1,
+				})
+			}
+		}
+		return unreachable
+	}
+}
+
+// adjacentComponents returns walkable components neighboring (x,y). Connection
+// landings can stand on solid padding beside the water/shore the player just
+// crossed; borrowing a neighbor keeps frontier ranking component-scoped
+// instead of falling back to map-level hop counts.
+func adjacentComponents(g *Graph, mapID uint8, x, y int) []int {
+	if g == nil || !g.componentAware {
+		return nil
+	}
+	c := g.comps[mapID]
+	if c == nil || y < 0 || y >= len(c) || x < 0 || x >= len(c[y]) {
+		return nil
+	}
+	var out []int
+	seen := map[int]bool{}
+	for _, d := range [][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}} {
+		nx, ny := x+d[0], y+d[1]
+		if ny < 0 || ny >= len(c) || nx < 0 || nx >= len(c[ny]) {
+			continue
+		}
+		if v := c[ny][nx]; v != 0 && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// connectionLandingComponents unions walkable components on the destination
+// side of a connection band. Used when entryComps was empty (Surf land/water
+// seam mismatch) so hop ranking still knows which water body the band enters.
+func connectionLandingComponents(g *Graph, e Edge) []int {
+	if g == nil || e.Kind != EdgeConnection || !g.componentAware {
+		return nil
+	}
+	c, ok := g.connections[e]
+	if !ok {
+		return nil
+	}
+	dst := g.comps[e.To]
+	dim, ok := g.tiles[e.To]
+	if !ok || dst == nil {
+		return nil
+	}
+	srcDim, ok := g.tiles[e.From]
+	if !ok {
+		return nil
+	}
+	n := srcDim.w
+	if e.Dir >= dirWest {
+		n = srcDim.h
+	}
+	start, end := connectionBandRange(e, n)
+	if end < start {
+		return nil
+	}
+	var out []int
+	seen := map[int]bool{}
+	for i := start; i <= end; i++ {
+		_, _, tx, ty := g.connectionSeamTile(e, c, i)
+		if ty < 0 || ty >= len(dst) || tx < 0 || tx >= len(dst[ty]) || tx >= dim.w || ty >= dim.h {
+			continue
+		}
+		if v := dst[ty][tx]; v != 0 && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func reconstructWeightedRoute(nodes []weightedRouteNode, at int) []RouteStep {

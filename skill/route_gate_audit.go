@@ -315,6 +315,19 @@ func redAuditedRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, 
 		// seam and remains required through the Cinnabar connection.
 		return semanticTransition("red:southern_sea_surf", edge, capCanSurf), true
 
+	case edge.Kind == world.EdgeWarp && pair(route20Map, seafoam1FMap):
+		// Route 20's two outdoor Surf components meet only through Seafoam
+		// Islands. The cave is its own multi-floor Strength/current puzzle, not
+		// an outdoor hop: treating the warps as ordinary geometry lets weighted
+		// frontier ranking prefer Cinnabar's Route 20 shore toward Fuchsia and
+		// strand the walker on the west water with an unwalkable return band
+		// (run-186f94od127ou3it5xlpp1lz4g). PivotOnly keeps the warp walkable
+		// when the player is already at the door, but relaxLanding stops
+		// multi-hop plans and landing-hop heuristics from bridging the split.
+		t := semanticTransition("red:seafoam_islands", edge)
+		t.PivotOnly = true
+		return t, true
+
 	case edge.Kind == world.EdgeWarp && edge.From == gameCornerMap && edge.To == rocketHideoutB1FMap &&
 		edge.WarpX == gameCornerWarpX && edge.WarpY == gameCornerWarpY:
 		// pokered/scripts/GameCorner.asm GameCornerSetRocketHideoutDoorTile

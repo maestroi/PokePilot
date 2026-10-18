@@ -430,7 +430,10 @@ func TestWeightedRoutePrefersFrontierThatLeadsTowardDestination(t *testing.T) {
 		exitComps: map[Edge][]int{
 			nearDead: {1},
 			farGood:  {1},
-			onward:   {2},
+			// Landing from farGood and the onward exit share a component so
+			// component-aware frontier ranking can see that map 4 continues
+			// to the destination while map 2 is a dead end.
+			onward: {1},
 		},
 		entryComps: map[Edge][]int{
 			nearDead: {1},
