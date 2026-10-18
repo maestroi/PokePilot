@@ -119,11 +119,23 @@ func TestStudioChannelPacingAndShortMetadata(t *testing.T) {
 	if err := s.studioThrottle(context.Background(), now.Add(21*time.Minute), "another"); err != nil {
 		t.Fatal(err)
 	}
-	c := publication.Candidate{Proposal: publication.Proposal{Format: publication.Short, TitleID: "short-1"}}
+	c := publication.Candidate{Proposal: publication.Proposal{RunID: "run-9", Format: publication.Short, TitleID: "short-1"}}
 	pkg := packaging.Package{Description: "Evidenced run", Shorts: []packaging.ShortCandidate{{ID: "short-1", Title: "Verified short"}}}
-	meta := publicationMeta(c, pkg)
+	runURL := youtubeConfigFromEnv(func(string) string { return "" }).runURL
+	meta := publicationMeta(c, pkg, runURL)
 	if meta.Title != "Verified short" {
 		t.Fatalf("short used episode title: %q", meta.Title)
+	}
+	const backlink = "\n\nRun: run-9\nRun page: https://rompilot.app/runs/run-9"
+	if meta.Description != "Evidenced run"+backlink {
+		t.Fatalf("description = %q, want run backlink", meta.Description)
+	}
+	pkg.Description = strings.Repeat("x", youtubeDescMaxBytes)
+	if meta := publicationMeta(c, pkg, runURL); len(meta.Description) > youtubeDescMaxBytes || !strings.HasSuffix(meta.Description, backlink) {
+		t.Fatalf("long description lost its backlink or exceeded the limit (%d bytes)", len(meta.Description))
+	}
+	if got := youtubeRunURLTemplate("-"); got != "" {
+		t.Fatalf("\"-\" must disable the backlink, got %q", got)
 	}
 }
 func TestStudioThumbnailSetDoesNotRequireVideoReupload(t *testing.T) {

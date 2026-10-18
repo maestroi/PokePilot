@@ -529,7 +529,7 @@ func (s *replayServer) handleStudioPublicationAction(w http.ResponseWriter, r *h
 	}
 	rec.State = youtubeStateUploading
 	rec.Privacy = c.Proposal.Privacy
-	meta := publicationMeta(c, *in.Package)
+	meta := publicationMeta(c, *in.Package, s.youtube.runURL)
 	rec.Title = meta.Title
 	rec.Error = ""
 	if err := s.saveYouTubePublication(r.Context(), rec); err != nil {
@@ -552,7 +552,7 @@ func (s *replayServer) handleStudioPublicationAction(w http.ResponseWriter, r *h
 	go s.publishStudioCandidate(c, rec, meta)
 	writeJSON(w, http.StatusAccepted, c)
 }
-func publicationMeta(c publication.Candidate, pkg packaging.Package) youtubeVideoMeta {
+func publicationMeta(c publication.Candidate, pkg packaging.Package, runURL func(string) string) youtubeVideoMeta {
 	title := ""
 	if c.Proposal.Format == publication.Short {
 		for _, candidate := range pkg.Shorts {
@@ -577,10 +577,15 @@ func publicationMeta(c publication.Candidate, pkg packaging.Package) youtubeVide
 			desc += fmt.Sprintf("%d:%02d %s\n", seconds/60, seconds%60, chapter.Title)
 		}
 	}
-	if len(desc) > youtubeDescMaxBytes {
-		desc = desc[:youtubeDescMaxBytes]
+	// The run backlink goes last but must survive truncation.
+	footer := "\n\nRun: " + c.Proposal.RunID
+	if link := runURL(c.Proposal.RunID); link != "" {
+		footer += "\nRun page: " + link
 	}
-	return youtubeVideoMeta{Title: title, Description: desc}
+	if max := youtubeDescMaxBytes - len(footer); len(desc) > max {
+		desc = strings.ToValidUTF8(desc[:max], "")
+	}
+	return youtubeVideoMeta{Title: title, Description: strings.TrimLeft(desc+footer, "\n")}
 }
 func (s *replayServer) publishStudioCandidate(c publication.Candidate, rec youtubePublication, meta youtubeVideoMeta) {
 	synthetic := studioYouTubeID(c.ID)
