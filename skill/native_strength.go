@@ -149,8 +149,24 @@ func executeNativeStrengthPush(
 		return false, err
 	}
 	before := profile.DecodeOverworld(m)
+	// Strength may already be active from a prior push. Arriving on the stand
+	// tile can open the boulder stdscript ("The boulders move!") before the
+	// push step runs; Controllable goes false while the walk still reports
+	// success. Page that box and re-check the stand instead of stalling the
+	// whole pit puzzle (run-a018a6cmhnkr / triage f658a1d845ef36a5).
+	if (!before.Controllable || before.InDialogue) &&
+		before.NativeMapID == grid.MapID &&
+		int(before.X) == push.Stand.X && int(before.Y) == push.Stand.Y {
+		if rec := RecoverDialogue(m, dialogueRecoveryBudget); rec.Stop == DialogueChoiceRequired {
+			return false, ErrDialogueInterrupted
+		}
+		before = profile.DecodeOverworld(m)
+	}
 	if !before.Controllable || before.NativeMapID != grid.MapID ||
 		int(before.X) != push.Stand.X || int(before.Y) != push.Stand.Y {
+		if !before.Controllable || before.InDialogue {
+			return false, ErrDialogueInterrupted
+		}
 		return false, fmt.Errorf("skill: native Strength: approach to slot %d was not verified: %w", push.MovableID, ErrNavigationStalled)
 	}
 	fieldState := action.DecodeFieldAction(m)
@@ -163,6 +179,14 @@ func executeNativeStrengthPush(
 		}
 	}
 	if err := walkNativePath(m, profile, []world.NativeStep{push.Direction}); err != nil {
+		var blockedStep *ErrBlocked
+		if errors.As(err, &blockedStep) {
+			// Live collision or an ice stop disagreed with the plan; wait and
+			// replan from a fresh object snapshot instead of failing the
+			// whole pit puzzle on one rejected step.
+			m.StepFrames(npcWaitFrames)
+			return true, nil
+		}
 		if errors.Is(err, ErrDialogueInterrupted) {
 			// An actual pit-warp landing queues its native boulder-fall text.
 			// The owning story controller settles it then checks cartridge
