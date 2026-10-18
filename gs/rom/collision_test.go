@@ -126,6 +126,39 @@ func TestGen2NativeGridJumpsLedgeOnlyInAllowedDirection(t *testing.T) {
 	}
 }
 
+// Mahogany Gym (and other TILESET_ELITE_FOUR_ROOM maps) embed COLL_ICE outside
+// TILESET_ICE_PATH. CheckIceTile is global, so routing must slide on those
+// bytes or mid-gym heal legs plan one-tile steps the cartridge cannot take.
+func TestGen2EliteFourRoomIceSlidesLikeIcePath(t *testing.T) {
+	provider := NewFirstBadgeWorldProvider(nil)
+	mapID := collisionMapID(t, "MAHOGANY_GYM")
+	// elite_four_room_collision.asm: $2d = FLOOR×4, $39 = ICE×4.
+	blocks := blocksFor(t, mapID, 0x2d)
+	blocks[1] = 0x39
+	blocks[2] = 0x39
+
+	spec, err := provider.Grid(mapID, blocks, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatalf("Grid: %v", err)
+	}
+	if !spec.SlideCollisions[0x23] {
+		t.Fatal("MAHOGANY_GYM must declare COLL_ICE as a slide collision")
+	}
+	if spec.CollisionTile[2] != 0x23 || spec.CollisionTile[3] != 0x23 {
+		t.Fatalf("ice corridor tiles = %#02x %#02x, want COLL_ICE", spec.CollisionTile[2], spec.CollisionTile[3])
+	}
+	grid, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatalf("NativeGridFromSpec: %v", err)
+	}
+	// Floor at (1,0) stepping right onto ice must slide across the ice corridor
+	// onto the floor beyond, not stop on the first ice tile.
+	move, ok := grid.Movement(1, 0, world.NativeStep{DX: 1}, nil)
+	if !ok || move.DX < 2 {
+		t.Fatalf("Mahogany Gym ice slide = %+v ok=%v, want at least +2", move, ok)
+	}
+}
+
 func TestGen2NativeGridRespectsDirectionalWallBothWays(t *testing.T) {
 	spec := worldmodel.NativeGridSpec{
 		MapID: 1, Width: 2, Height: 1,
