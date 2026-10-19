@@ -189,6 +189,9 @@ func TestGoldBattleResourcesProjectPartyWithoutGen1BagIDs(t *testing.T) {
 	if !got.InBattle || got.ActiveSlot != 0 || len(got.Party) != 2 {
 		t.Fatalf("resources = %+v", got)
 	}
+	if got.ActiveTrapped {
+		t.Fatalf("ActiveTrapped = true, want false without wrap/CANT_RUN")
+	}
 	if got.Party[0].NativeSpeciesID != 0x9b || got.Party[0].Moves[0].PP != 20 ||
 		got.Party[0].Type1 != 0x16 || got.Party[0].Type2 != 0x16 {
 		t.Fatalf("active party projection = %+v", got.Party[0])
@@ -198,6 +201,16 @@ func TestGoldBattleResourcesProjectPartyWithoutGen1BagIDs(t *testing.T) {
 	}
 	if slot, ok := got.PPRecoverySlot(); !ok || slot != 1 {
 		t.Fatalf("PPRecoverySlot = %d,%v, want 1,true", slot, ok)
+	}
+
+	mem[sym.EnemySubStatus5] = 1 << 7 // SUBSTATUS_CANT_RUN
+	if !NewGold().DecodeBattleResources(&mem).ActiveTrapped {
+		t.Fatal("ActiveTrapped = false with enemy CANT_RUN, want true")
+	}
+	mem[sym.EnemySubStatus5] = 0
+	mem[sym.PlayerWrapCount] = 3
+	if !NewGold().DecodeBattleResources(&mem).ActiveTrapped {
+		t.Fatal("ActiveTrapped = false with PlayerWrapCount, want true")
 	}
 }
 

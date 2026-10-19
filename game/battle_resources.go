@@ -45,8 +45,13 @@ func (m BattlePartyMon) HasCurrentPP() bool {
 type BattleResourcesState struct {
 	InBattle   bool
 	ActiveSlot int
-	Party      []BattlePartyMon
-	Bag        []InventoryItem
+	// ActiveTrapped is true when the active battler cannot currently be
+	// recalled (Gen II Mean Look / Spider Web / Block / Arena Trap, or a
+	// binding Wrap count). Adapters project cartridge-specific trap flags;
+	// generic Battle must not attempt a voluntary SwitchActive while set.
+	ActiveTrapped bool
+	Party         []BattlePartyMon
+	Bag           []InventoryItem
 }
 
 func (s BattleResourcesState) ItemQuantity(nativeItemID uint16) int {
