@@ -94,10 +94,14 @@ const evidence = usePollingResource<SelectedEvidence>(async signal => {
   }
 }, { intervalMs: 10000 })
 watch(inspectedID, () => { void evidence.retry() })
-const observed = computed(() => evidence.data.value?.run
-  ? observeE2E(evidence.data.value.run, evidence.data.value.replay, evidence.data.value.publications)
+// Never render stale evidence from a previously selected run as the outcome
+// of a different one while its fetch is in progress.
+const selectedEvidence = computed(() => evidence.data.value?.run?.run_id === inspectedID.value ? evidence.data.value : null)
+const observed = computed(() => selectedEvidence.value?.run
+  ? observeE2E(selectedEvidence.value.run, selectedEvidence.value.replay, selectedEvidence.value.publications)
   : null)
 function inspectRun(id: string): void {
+  if (!/^[-_a-zA-Z0-9]{3,100}$/.test(id)) return
   inspectedID.value = id
   existingID.value = id
   mode.value = 'existing'
@@ -208,6 +212,7 @@ function downloadReport(): void {
           <label v-else class="block space-y-1 text-meta" for="e2e-run">
             <span>Existing Red full-campaign run</span>
             <input id="e2e-run" v-model="existingID" class="ui-input h-10 w-full font-mono" list="e2e-recent-runs" placeholder="run-..." autocomplete="off" />
+            <button type="button" class="ui-btn ui-btn-sm mt-2" :disabled="!/^[-_a-zA-Z0-9]{3,100}$/.test(existingID.trim())" @click="inspectRun(existingID.trim())">Inspect this run · no production actions</button>
             <datalist id="e2e-recent-runs">
               <option v-for="run in (recent.data.value?.runs || []).filter(r => r.game === 'pokemon-red')" :key="run.run_id" :value="run.run_id">{{ run.goal || 'No goal' }}</option>
             </datalist>
@@ -277,7 +282,7 @@ function downloadReport(): void {
         </div>
         <div class="space-y-3 p-3">
           <div v-if="evidence.error.value" class="text-sm text-warn" role="alert">Cannot load run: {{ evidence.error.value }}. Try Refresh or open Live.</div>
-          <p v-else-if="!evidence.data.value?.run" class="text-meta text-fg-2">Loading farm and media records…</p>
+          <p v-else-if="!selectedEvidence?.run" class="text-meta text-fg-2">Loading farm and media records…</p>
           <template v-else>
             <p class="font-semibold" :class="observed?.tone === 'failed' ? 'text-danger' : observed?.tone === 'ready' ? 'text-ok' : 'text-fg'">
               {{ observed?.label }}
@@ -285,16 +290,16 @@ function downloadReport(): void {
             <p class="text-meta text-fg-2">{{ observed?.detail }}</p>
             <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-meta">
               <dt class="text-fg-3">Farm</dt>
-              <dd>{{ evidence.data.value.run.status }} · {{ evidence.data.value.run.reason || 'no finish reason' }}</dd>
+              <dd>{{ selectedEvidence.run.status }} · {{ selectedEvidence.run.reason || 'no finish reason' }}</dd>
               <dt class="text-fg-3">Champion</dt>
-              <dd>{{ evidence.data.value.run.stats?.goal_complete ? 'Goal flag recorded' : (evidence.data.value.run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m)) ? 'Hall of Fame milestone' : 'Not verified' }}</dd>
+              <dd>{{ selectedEvidence.run.stats?.goal_complete ? 'Goal flag recorded' : (selectedEvidence.run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m)) ? 'Hall of Fame milestone' : 'Not verified' }}</dd>
               <dt class="text-fg-3">Replay</dt>
-              <dd>{{ evidence.data.value.replay?.state || 'No status' }}<span v-if="evidence.data.value.replayError" class="text-warn"> · unavailable</span></dd>
+              <dd>{{ selectedEvidence.replay?.state || 'No status' }}<span v-if="selectedEvidence.replayError" class="text-warn"> · unavailable</span></dd>
               <dt class="text-fg-3">Publication</dt>
-              <dd>{{ evidence.data.value.publications?.length ?? 'Unavailable' }} candidates<span v-if="evidence.data.value.publicationsError" class="text-warn"> · API error</span></dd>
+              <dd>{{ selectedEvidence.publications?.length ?? 'Unavailable' }} candidates<span v-if="selectedEvidence.publicationsError" class="text-warn"> · API error</span></dd>
             </dl>
-            <div v-if="evidence.data.value.publications?.length" class="space-y-1 border-t border-rule pt-2">
-              <p v-for="candidate in evidence.data.value.publications" :key="candidate.id" class="text-meta">
+            <div v-if="selectedEvidence.publications?.length" class="space-y-1 border-t border-rule pt-2">
+              <p v-for="candidate in selectedEvidence.publications" :key="candidate.id" class="text-meta">
                 {{ candidateLabel(candidate) }} · {{ candidate.proposal.privacy }}
                 <a v-if="candidate.provider_url" :href="candidate.provider_url" target="_blank" rel="noopener noreferrer" class="text-accent underline">Open upload</a>
               </p>
