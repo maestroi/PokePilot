@@ -163,9 +163,17 @@ func nativeDirection(step NativeStep) (worldmodel.NativeDirectionMask, worldmode
 // Passable applies ordinary one-tile movement, including directional walls on
 // both sides of the boundary between source and destination.
 func (g *NativeGrid) Passable(fx, fy, tx, ty int) bool {
+	return g.Walkable(tx, ty) && g.BoundaryOpen(fx, fy, tx, ty)
+}
+
+// BoundaryOpen reports whether directional walls on either side allow one
+// step from (fx,fy) to the adjacent (tx,ty). Unlike Passable it does not ask
+// whether the destination is walkable: the final press into a warp tile
+// still has to cross that boundary.
+func (g *NativeGrid) BoundaryOpen(fx, fy, tx, ty int) bool {
 	step := NativeStep{DX: tx - fx, DY: ty - fy}
 	dir, opposite, ok := nativeDirection(step)
-	if !ok || !g.Walkable(tx, ty) {
+	if !ok {
 		return false
 	}
 	from, okFrom := g.Tile(fx, fy)

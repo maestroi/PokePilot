@@ -208,6 +208,25 @@ func TestGenericFaceWithoutControlKeepsFacingPromise(t *testing.T) {
 	}
 }
 
+// Dragon's Den B1F: the surf approach ends facing the whirlpool, and a Down
+// press into it made the ROM bounce the player to face up, so Whirlpool was
+// refused (run-a018a6cmhnkr). Facing an already-faced target presses nothing.
+func TestGenericFaceAlreadyFacingDoesNotPress(t *testing.T) {
+	m := &fakeOverworldMachine{move: true}
+	m.mem[fakeOverworldMap] = 7
+	m.mem[fakeOverworldX] = 10
+	m.mem[fakeOverworldY] = 19
+	m.mem[fakeOverworldFacing] = 2
+	m.mem[fakeOverworldFlags] = fakeOverworldIdle | fakeOverworldControllable
+
+	if err := faceWithOverworldDecoder(m, fakeGen2OverworldDecoder{}, 10, 20); err != nil {
+		t.Fatalf("face down while facing down: %v", err)
+	}
+	if m.stepCount != 0 || m.mem[fakeOverworldY] != 19 {
+		t.Fatalf("face pressed toward an already-faced tile: steps=%d y=%d", m.stepCount, m.mem[fakeOverworldY])
+	}
+}
+
 func TestGenericFaceUsesSemanticProfileFacing(t *testing.T) {
 	m := &fakeOverworldMachine{}
 	m.mem[fakeOverworldMap] = 7

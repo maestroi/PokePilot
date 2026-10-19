@@ -64,6 +64,44 @@ func TestNativeSurfApproachRequiresRealWaterRoute(t *testing.T) {
 	}
 }
 
+// Dragon's Den B1F: water reaches the Dragon Fang island only past one
+// whirlpool. A plain water route does not exist, but Surf toward the
+// whirlpool's clearing tile is the step that makes progress; refusing it
+// reported no_path with both Surf and Whirlpool usable (run-a018a6cmhnkr).
+func TestNativeSurfApproachTargetsUsableWaterObstacleStand(t *testing.T) {
+	land := nativeSurfTestGrid(t, []bool{true, true, false, false, false, true}, worldmodel.TraversalLand)
+	water, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID:         0x1804,
+		Width:         6,
+		Height:        1,
+		Walkable:      []bool{true, true, true, true, false, true},
+		CollisionTile: make([]byte, 6),
+		Obstacles:     []worldmodel.NativeObstacle{"", "", "", "", worldmodel.ObstacleWhirlpool, ""},
+		Traversal:     worldmodel.TraversalWater,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	goal := [][2]int{{5, 0}}
+	if plan, ok := planNativeSurfApproach(land, water, 0, 0, goal, nil); ok {
+		t.Fatalf("test premise: plain water route exists: %+v", plan)
+	}
+
+	none := func(worldmodel.NativeObstacle) bool { return false }
+	if stands := nativeWaterObstacleStands(water, 0, 0, goal, nil, none); len(stands) != 0 {
+		t.Fatalf("stands without Whirlpool = %v, want none", stands)
+	}
+	whirlpool := func(kind worldmodel.NativeObstacle) bool { return kind == worldmodel.ObstacleWhirlpool }
+	stands := nativeWaterObstacleStands(water, 0, 0, goal, nil, whirlpool)
+	if len(stands) != 1 || stands[0] != [2]int{3, 0} {
+		t.Fatalf("stands = %v, want the water tile (3,0) beside the whirlpool", stands)
+	}
+	plan, ok := planNativeSurfApproach(land, water, 0, 0, stands, nil)
+	if !ok || plan.shore.X != 1 || plan.water.X != 2 {
+		t.Fatalf("surf toward whirlpool = %+v ok=%v, want board from (1,0) onto (2,0)", plan, ok)
+	}
+}
+
 func TestNativeSurfApproachDoesNotWalkThroughSpriteOnShore(t *testing.T) {
 	land := nativeSurfTestGrid(t, []bool{true, true, false, false, true}, worldmodel.TraversalLand)
 	water := nativeSurfTestGrid(t, []bool{true, true, true, true, true}, worldmodel.TraversalWater)

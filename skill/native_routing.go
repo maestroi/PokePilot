@@ -605,7 +605,7 @@ func nativeAdjacentApproach(
 		{x: wx + 1, y: wy, push: world.NativeStep{DX: -1}},
 		{x: wx, y: wy + 1, push: world.NativeStep{DY: -1}},
 	} {
-		if blocked[[2]int{c.x, c.y}] || !grid.Walkable(c.x, c.y) {
+		if blocked[[2]int{c.x, c.y}] || !grid.Walkable(c.x, c.y) || !grid.BoundaryOpen(c.x, c.y, wx, wy) {
 			continue
 		}
 		path, err := world.FindNativePath(grid, sx, sy, c.x, c.y, blocked)
@@ -801,7 +801,25 @@ func nativeObstacleBridge(
 	return true, nil
 }
 
-func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.NativeEdge, push world.NativeStep) error {
+// nativeSameMapLanding is where a warp back into its own map lands. Map
+// identity never changes across such a warp (Dragon's Den 1F's ladder pair),
+// so arriving on this tile is the only evidence that it fired.
+func nativeSameMapLanding(provider worldmodel.NativeMapTopologyProvider, edge world.NativeEdge) (*[2]int, error) {
+	if edge.Kind != world.EdgeWarp || edge.To != edge.From {
+		return nil, nil
+	}
+	header, err := provider.ParseMap(edge.To)
+	if err != nil {
+		return nil, err
+	}
+	if int(edge.DestWarp) >= len(header.Warps) {
+		return nil, fmt.Errorf("skill: native routing: same-map warp %+v names missing landing %d", edge, edge.DestWarp)
+	}
+	warp := header.Warps[edge.DestWarp]
+	return &[2]int{int(warp.X), int(warp.Y)}, nil
+}
+
+func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.NativeEdge, push world.NativeStep, landing *[2]int) error {
 	btn, ok := buttonFor(nativeStepToWorld(push))
 	if !ok {
 		return fmt.Errorf("skill: native routing: invalid edge push %+v", push)
@@ -810,7 +828,8 @@ func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.
 	crossed := false
 	for i := 0; i < crossBudget; i++ {
 		state := decoder.DecodeOverworld(m)
-		if state.NativeMapID != edge.From {
+		if state.NativeMapID != edge.From ||
+			(landing != nil && int(state.X) == landing[0] && int(state.Y) == landing[1]) {
 			crossed = true
 			break
 		}
@@ -842,6 +861,10 @@ func pushAcrossNativeEdge(m *emu.Emu, decoder game.OverworldDecoder, edge world.
 			final := decoder.DecodeOverworld(m)
 			if final.NativeMapID != edge.To {
 				return fmt.Errorf("skill: native routing: settled on map %#04x after crossing to %#04x: %w", final.NativeMapID, edge.To, ErrLegUnwalkable)
+			}
+			if landing != nil && (int(final.X) != landing[0] || int(final.Y) != landing[1]) {
+				return fmt.Errorf("skill: native routing: same-map warp on %#04x settled at (%d,%d), not landing (%d,%d): %w",
+					edge.To, final.X, final.Y, landing[0], landing[1], ErrLegUnwalkable)
 			}
 			return nil
 		}
@@ -1013,7 +1036,11 @@ func traverseNativeEdge(
 			}
 			return walkErr
 		}
-		if err := pushAcrossNativeEdge(m, profile, edge, push); err != nil {
+		landing, err := nativeSameMapLanding(provider, edge)
+		if err != nil {
+			return err
+		}
+		if err := pushAcrossNativeEdge(m, profile, edge, push, landing); err != nil {
 			if errors.Is(err, ErrLegUnwalkable) {
 				m.StepFrames(npcWaitFrames)
 				continue
@@ -1131,12 +1158,7 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		if !state.Controllable {
 			return ErrDialogueInterrupted
 		}
-		// An interruption can land after the edge was crossed, so the entry is
-		// settled from where the player actually is, not from what finished.
-		if e := mem.last; e != nil && e.To != e.From && state.NativeMapID == e.To {
-			mem.entry = e.Entry()
-		}
-		mem.last = nil
+		mem.settleCrossedEntry(provider, state)
 		// A journey that begins already inside a split-floor map (or resumes
 		// after a battle on one) has no crossed edge to name the entry. Standing
 		// on a warp landing is that entry: unreachable proofs must key the same
@@ -1224,6 +1246,30 @@ func GoToNativeRemembering(m *emu.Emu, romData []byte, dest NativeDestination, m
 		seen = map[[3]uint16]bool{}
 	}
 	return fmt.Errorf("skill: native routing: exceeded %d map transitions toward %#04x: %w", maxNavigationTransitions, dest.Map, ErrNavigationStalled)
+}
+
+// settleCrossedEntry records the entry produced by the edge last attempted.
+// An interruption can land after the edge was crossed, so the entry is settled
+// from where the player actually is, not from what finished. Map identity
+// proves a cross-map edge; a warp back into the same map (Dragon's Den 1F's
+// ladder pair) proves itself only by the player standing on its landing tile.
+func (mem *NativeRouteMemory) settleCrossedEntry(provider worldmodel.NativeMapTopologyProvider, state game.OverworldState) {
+	e := mem.last
+	mem.last = nil
+	if e == nil || state.NativeMapID != e.To {
+		return
+	}
+	if e.To != e.From {
+		mem.entry = e.Entry()
+		return
+	}
+	header, err := provider.ParseMap(e.To)
+	if err != nil {
+		return
+	}
+	if entry, ok := nativeEntryAtTile(header.Warps, state.X, state.Y); ok && entry == e.Entry() {
+		mem.entry = entry
+	}
 }
 
 // nativeEntryAtTile reports the warp-table index of a tile the player is
