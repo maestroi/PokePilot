@@ -270,6 +270,7 @@ export interface DashboardSnapshot {
 }
 
 export interface DashboardQuery {
+  purpose?: 'full_e2e' | 'normal' | 'debug_coverage' | string
   search?: string
   active?: boolean
   status?: string
