@@ -132,6 +132,10 @@ const playRows = computed<[string, string, boolean][]>(() => {
   const seconds = (value: unknown) => `${Number(value || 0).toFixed(1)}s`
   const average = (value: unknown) => Number(value || 0) > 0 ? seconds(value) : '—'
   const warn = (key: string) => statNumber(stats as DashboardStats, key) > 0
+  const lastIn = statNumber(stats, 'last_prompt_tokens')
+  const calls = statNumber(stats, 'calls')
+  const avgIn = calls > 0 ? statNumber(stats, 'prompt_tokens') / calls : 0
+  // ponytail: relative 2× threshold, no absolute limit; add a run-spec cap if a model's context window matters
   return [
     ['Round', `${stats.round ?? '—'}${stats.rounds_left ? ` (${stats.rounds_left} left)` : ''}`, false],
     ['Model', [stats.model || '—', stats.backend].filter(Boolean).join(' · '), false],
@@ -140,6 +144,7 @@ const playRows = computed<[string, string, boolean][]>(() => {
     ['Latency by outcome', `${average(stats.successful_avg_seconds)} ok · ${average(stats.rejected_avg_seconds)} rejected · ${average(stats.strategic_avg_seconds)} strategist`, false],
     ['Offered', `${statNumber(stats, 'avg_offered').toFixed(1)} avg`, false],
     ['Tokens', `${Number(stats.prompt_tokens ?? 0).toLocaleString()} in · ${Number(stats.completion_tokens ?? 0).toLocaleString()} out`, false],
+    ['Last prompt', `${lastIn.toLocaleString()} in (${statNumber(stats, 'last_cached_prompt_tokens').toLocaleString()} cached) · ${statNumber(stats, 'last_completion_tokens').toLocaleString()} out · ${avgIn > 0 ? Math.round(avgIn).toLocaleString() : '—'} avg in`, avgIn > 0 && lastIn > 2 * avgIn],
     ['Rejected', String(stats.rejected ?? 0), warn('rejected')],
     ['Transport errors', String(statNumber(stats, 'transport')), warn('transport')],
     ['Fallbacks', String(statNumber(stats, 'fallbacks')), warn('fallbacks')]
