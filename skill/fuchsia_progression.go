@@ -12,6 +12,8 @@ const (
 	route13Map                   uint8 = 0x18
 	route14Map                   uint8 = 0x19
 	route15Map                   uint8 = 0x1A
+	undergroundPathRoute6Map     uint8 = 0x4A
+	undergroundPathRoute6CopyMap uint8 = 0x4B
 	rockTunnelPokeCenterMap      uint8 = 0x51
 	rockTunnel1FMap              uint8 = 0x52
 	route11Gate1FMap             uint8 = 0x54
@@ -58,16 +60,19 @@ const (
 // Route 12, so those maps must enter this verb instead of failing as an
 // unknown out-of-slice error.
 //
-// Vermilion City and the Route 11/12 gate corridor are included because the
-// first owned action is Travel to the Route 12 Snorlax stand: after the Poké
-// Flute handoff a run commonly blackouts, flies, or wanders back to Vermilion
-// (the SS Anne / Thunder Badge hub) and must still be able to enter the
-// eastern corridor rather than fail as an unknown out-of-slice error.
+// Vermilion City, Route 6 (its northern exit toward Saffron), the Route 6
+// gate/underground stub, and the Route 11/12 gate corridor are included
+// because the first owned action is Travel to the Route 12 Snorlax stand:
+// after the Poké Flute handoff a run commonly blackouts, flies, or wanders
+// back to the Vermilion hub (the SS Anne / Thunder Badge region) and must
+// still be able to enter the eastern corridor rather than fail as an unknown
+// out-of-slice error. Yellow offers this progress verb without a map-slice
+// gate, so a resume on Route 6 must enter the skill instead of terminaling.
 //
 // Route 10 and Rock Tunnel are the Lavender approach corridor from the
-// Cerulean side. Yellow offers this progress verb without a map-slice gate, so
-// a post-Flute blackout or wander that lands in the tunnel (or its Pokemon
-// Center) must still Travel to Route 12 instead of failing as unknown.
+// Cerulean side. The same Yellow offer policy means a post-Flute blackout or
+// wander that lands in the tunnel (or its Pokemon Center) must still Travel
+// to Route 12 instead of failing as unknown.
 // Every Safari rest house is included because an interrupted run can be saved
 // there while EVENT_IN_SAFARI_ZONE and the finite step budget are still live.
 //
@@ -90,6 +95,7 @@ func FuchsiaProgressionAvailable(mapID uint8) bool {
 	case mrFujisHouseMap, lavenderTownMap, lavenderPokemonCenterMap,
 		route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
+		semanticRoute6Map, route6GateMap, undergroundPathRoute6Map, undergroundPathRoute6CopyMap,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
 		route13Map, route14Map, route15Map, route15Gate1FMap,

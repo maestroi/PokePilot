@@ -15,6 +15,8 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 		// Lavender approach corridor from the Cerulean side (post-Flute resume).
 		route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
+		// Vermilion's northern corridor toward Saffron (post-Flute resume).
+		semanticRoute6Map, route6GateMap, undergroundPathRoute6Map, undergroundPathRoute6CopyMap,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
 		route13Map, route14Map, route15Map, route15Gate1FMap,
