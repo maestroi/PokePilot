@@ -1,5 +1,5 @@
 import type { DashboardRun, ReplayStatus, StudioPublicationCandidate } from '../shared/api/types'
-import { isVerifiedChampion } from './fullProduction'
+import { isVerifiedChampion } from './fullProduction.ts'
 import type { E2EHistoryEntry } from './e2eHistory'
 
 export type E2EObservedTone = 'working' | 'ready' | 'failed' | 'unknown'
