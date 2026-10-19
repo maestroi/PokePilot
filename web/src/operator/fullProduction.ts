@@ -128,7 +128,7 @@ export async function runFullE2E(api: FullE2EAPI, options: FullE2EOptions): Prom
         run_id: id, seed: options.seed, game: 'pokemon-red', planner: 'llm',
         starter: options.starter, dest: '', goal: 'elite-four', llm_profile: '',
         llm_deployment: options.deployment || undefined, play_style: 'adventure',
-        purpose: 'normal', risk_tolerance: 'balanced', wild_encounters: 'planner',
+        purpose: 'full_e2e', risk_tolerance: 'balanced', wild_encounters: 'planner',
         reasoning_effort: '', fps: 0, max_rounds: 0, max_frames: 0,
         recovery_profile: 'resilient', endless: false, random_seed: false
       }))
