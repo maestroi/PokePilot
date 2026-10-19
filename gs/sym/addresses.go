@@ -154,6 +154,11 @@ const (
 	// BattleMon (0xCB0C) through the trainer/substatus scratch to 0xCB53.
 	PlayerDisableCount uint16 = 0xCB53
 
+	// EnemySubStatus5 is wEnemySubStatus5. TryPlayerSwitch / flee checks read
+	// SUBSTATUS_CANT_RUN (bit 7) here when the enemy has Mean Look / Spider
+	// Web / Block / Arena Trap'd the player (pret/pokegold engine/battle/core.asm).
+	EnemySubStatus5 uint16 = 0xCB4F
+
 	// PlayerCharging is wPlayerCharging: non-zero while the active mon is
 	// locked in a multi-turn "charging" move (Bide, Fly, Dive, Solar Beam,
 	// Skull Bash, Sky Attack, …). The ROM auto-executes the next phase and
@@ -165,6 +170,11 @@ const (
 	// Hyper Beam, Overheat, Thrash, or Spin Out. The move-selection menu is
 	// skipped for the duration of the recharge turn.
 	PlayerTrappingMove uint16 = 0xCC0C
+
+	// PlayerWrapCount is wPlayerWrapCount: remaining turns of an enemy
+	// binding move (Wrap, Bind, Fire Spin, …). Non-zero blocks voluntary
+	// recall the same way SUBSTATUS_CANT_RUN does.
+	PlayerWrapCount uint16 = 0xCC0E
 
 	PlayerStatLevels uint16 = 0xCBAA // wPlayerStatLevels
 

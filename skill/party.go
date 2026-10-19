@@ -87,6 +87,9 @@ func switchActiveWithDecoders(
 	if before.ActiveSlot == slot {
 		return nil
 	}
+	if before.ActiveTrapped {
+		return fmt.Errorf("active battler is trapped and cannot be recalled")
+	}
 
 	if !waitMenuUntil(m, bagMainMenuBudget, func() bool {
 		return battleMenu.DecodeBattleMainMenu(m).Visible

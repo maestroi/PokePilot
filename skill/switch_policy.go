@@ -119,6 +119,13 @@ func chooseTacticalSwitchWithStrategyContext(
 	if strategy == nil || len(party) < 2 || activeSlot < 0 || activeSlot >= len(party) {
 		return decision
 	}
+	// Gen II Mean Look / Wrap reject SWITCH with "can't be recalled!". A
+	// voluntary SwitchActive then fails after the confirmation menu closes
+	// without changing ActiveSlot (triage:1f4f23fde23a0c8e / Haunter).
+	if resources.ActiveTrapped {
+		decision.Reason = "active-trapped"
+		return decision
+	}
 
 	futureValues := futurePreservationValues(strategy, romData, party, context)
 	decision.Active = addFutureValue(evaluateActiveForSwitch(strategy, romData, party, activeSlot, b), futureValues)

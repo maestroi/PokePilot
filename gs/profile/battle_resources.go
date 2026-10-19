@@ -48,10 +48,16 @@ func (*Profile) DecodeBattleResources(reader game.MemoryReader) game.BattleResou
 	if count > 6 {
 		count = 6
 	}
+	const gen2SubstatusCantRun = 1 << 7 // pret SUBSTATUS_CANT_RUN in SubStatus5
 	out := game.BattleResourcesState{
 		InBattle:   reader.Peek8(sym.BattleMode) != 0,
 		ActiveSlot: int(reader.Peek8(sym.CurBattleMon)),
-		Party:      make([]game.BattlePartyMon, 0, count),
+		// Mirror TryPlayerSwitch's trap checks: binding wrap count or the
+		// enemy-side CANT_RUN flag (Mean Look family) rejects SWITCH with
+		// "can't be recalled!" (triage:1f4f23fde23a0c8e).
+		ActiveTrapped: reader.Peek8(sym.PlayerWrapCount) != 0 ||
+			reader.Peek8(sym.EnemySubStatus5)&gen2SubstatusCantRun != 0,
+		Party: make([]game.BattlePartyMon, 0, count),
 	}
 	for i := 0; i < count; i++ {
 		base := sym.PartyMon1 + uint16(i)*sym.PartyMonSize

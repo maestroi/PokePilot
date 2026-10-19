@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
+	redprofile "github.com/maestroi/pokepilot/red/profile"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -96,6 +97,50 @@ func TestChooseTacticalSwitchPrefersMaterialMatchup(t *testing.T) {
 	}
 	if decision.Reason != "material-matchup-improvement" {
 		t.Fatalf("reason = %q, want material-matchup-improvement", decision.Reason)
+	}
+}
+
+func TestChooseTacticalSwitchStaysWhenActiveTrapped(t *testing.T) {
+	// Mean Look / Wrap reject SWITCH; tactical policy must stay and fight
+	// rather than call SwitchActive into "can't be recalled!"
+	// (triage:1f4f23fde23a0c8e).
+	tackle := rom.Move{ID: 33, Power: 35, Type: typeNormal, Accuracy: 255, PP: 35}
+	bubble := rom.Move{ID: 145, Power: 20, Type: typeWater, Accuracy: 255, PP: 30}
+	chart := []typePair{
+		{typeNormal, typeRock, 5},
+		{typeWater, typeRock, 20},
+		{typeWater, typeGround, 20},
+	}
+	romData := fakeROMChart(t, chart, tackle, bubble)
+	active := healthySwitchMon(1, 14, typeNormal, typeNormal, tackle.ID)
+	active.HP = 3
+	bench := healthySwitchMon(7, 52, typeWater, typeWater, bubble.ID)
+	resources := game.BattleResourcesState{
+		InBattle:      true,
+		ActiveSlot:    0,
+		ActiveTrapped: true,
+		Party: []game.BattlePartyMon{
+			{
+				NativeSpeciesID: uint16(active.Species), Level: active.Level,
+				HP: active.HP, MaxHP: active.MaxHP,
+				Moves: [4]game.BattlePartyMove{{NativeMoveID: uint16(tackle.ID), PP: 20}},
+			},
+			{
+				NativeSpeciesID: uint16(bench.Species), Level: bench.Level,
+				HP: bench.HP, MaxHP: bench.MaxHP,
+				Moves: [4]game.BattlePartyMove{{NativeMoveID: uint16(bubble.ID), PP: 20}},
+			},
+		},
+	}
+	b := game.BattleState(switchBattle(active, [2]uint8{typeRock, typeGround}, tackle.ID))
+	b.ActiveHP = active.HP
+
+	decision := chooseTacticalSwitchWithStrategy(redprofile.New(), romData, resources, b)
+	if decision.Switch {
+		t.Fatalf("decision = %+v, want stay while ActiveTrapped", decision)
+	}
+	if decision.Reason != "active-trapped" {
+		t.Fatalf("reason = %q, want active-trapped", decision.Reason)
 	}
 }
 
