@@ -47,6 +47,44 @@ func TestNativeAdjacentApproachStopsBesideWarp(t *testing.T) {
 	}
 }
 
+// run-a018a6cmhnkr: Ice Path B2F (Blackthorn side) has COLL_UP_WALL directly
+// below its B3F ladder. Walking back west, the approach chose that tile as the
+// nearest neighbour and pressed Up into a wall until the edge was exhausted.
+// The final press into a warp must cross an open boundary like any step.
+func TestNativeAdjacentApproachSkipsDirectionalWallBesideWarp(t *testing.T) {
+	const upWall = 0xb2
+	collision := make([]uint8, 3*3)
+	collision[2*3+1] = upWall // (1,2), directly below the warp at (1,1)
+	grid, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID:         0x0338,
+		Width:         3,
+		Height:        3,
+		Walkable:      []bool{true, true, true, true, true, true, true, true, true},
+		CollisionTile: collision,
+		Blocked:       map[uint8]worldmodel.NativeDirectionMask{upWall: worldmodel.NativeBlockUp},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grid.BoundaryOpen(1, 2, 1, 1) || !grid.BoundaryOpen(0, 1, 1, 1) {
+		t.Fatal("test premise: only the up-wall side of the warp is closed")
+	}
+	path, push, err := nativeAdjacentApproach(grid, 1, 2, 1, 1, map[[2]int]bool{{1, 1}: true})
+	if err != nil {
+		t.Fatalf("nativeAdjacentApproach: %v", err)
+	}
+	if push == (world.NativeStep{DY: -1}) {
+		t.Fatalf("approach pressed Up off COLL_UP_WALL (path %+v)", path)
+	}
+	x, y := 1, 2
+	for _, step := range path {
+		x, y = x+step.DX, y+step.DY
+	}
+	if !grid.BoundaryOpen(x, y, 1, 1) || x+push.DX != 1 || y+push.DY != 1 {
+		t.Fatalf("approach ends at (%d,%d) pushing %+v, want an open boundary into (1,1)", x, y, push)
+	}
+}
+
 type nativeConnectionTestProvider map[uint16]worldmodel.NativeMapHeader
 
 func (p nativeConnectionTestProvider) MapIDs() []uint16 {

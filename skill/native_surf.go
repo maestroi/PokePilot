@@ -74,6 +74,32 @@ func planNativeSurfApproach(land, water *world.NativeGrid, sx, sy int, targets [
 	return best, found
 }
 
+// nativeWaterObstacleStands lists, per goal that water reaches only past one
+// usable obstacle (a whirlpool), the tile from which that obstacle is cleared.
+// Surfing there is progress: once afloat, the ordinary obstacle bridge clears
+// it on the water grid and the walk replans.
+func nativeWaterObstacleStands(
+	water *world.NativeGrid,
+	sx, sy int,
+	goals [][2]int,
+	blocked map[[2]int]bool,
+	usable func(worldmodel.NativeObstacle) bool,
+) [][2]int {
+	var stands [][2]int
+	for _, goal := range goals {
+		plan, err := world.FindNativeObstacleApproach(water, sx, sy, goal[0], goal[1], nativeAllowTarget(blocked, goal), usable)
+		if err != nil {
+			continue
+		}
+		x, y := sx, sy
+		for _, step := range plan.Approach {
+			x, y = x+step.DX, y+step.DY
+		}
+		stands = append(stands, [2]int{x, y})
+	}
+	return stands
+}
+
 func absNativeStep(s world.NativeStep) int {
 	dx, dy := s.DX, s.DY
 	if dx < 0 {
@@ -117,6 +143,14 @@ func nativeSurfBridge(
 		return false, err
 	}
 	plan, ok := planNativeSurfApproach(land, water, sx, sy, goals, blocked)
+	if !ok {
+		usable, usableErr := nativeObstacleUsable(profile, m, romData)
+		if usableErr != nil {
+			return false, fmt.Errorf("skill: native surf: decode field-move capability: %w", usableErr)
+		}
+		plan, ok = planNativeSurfApproach(land, water, sx, sy,
+			nativeWaterObstacleStands(water, sx, sy, goals, blocked, usable), blocked)
+	}
 	if !ok {
 		return false, nil
 	}

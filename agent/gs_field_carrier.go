@@ -19,7 +19,9 @@ var errGSFieldCarrierUnavailable = errors.New("Gold/Silver field-move carrier is
 
 // gsProgressFieldCapabilities names the field capabilities a Gold/Silver story
 // objective's executor needs to reach its destination. Cianwood is only
-// reachable across Route 40/41 water.
+// reachable across Route 40/41 water; the Dragon Fang sits past Dragon's Den
+// B1F water and whirlpools. Surf is listed first: a Whirlpool carrier hunt
+// may itself need to surf.
 func gsProgressFieldCapabilities(id ProgressID) []CapabilityID {
 	switch id {
 	case gsprofile.ProgressSecretPotionAcquired,
@@ -29,6 +31,8 @@ func gsProgressFieldCapabilities(id ProgressID) []CapabilityID {
 		gsprofile.ProgressRedGyaradosDefeated,
 		gsprofile.ProgressLanceHelpAccepted:
 		return []CapabilityID{CapabilityID(game.FieldMoveSurf)}
+	case gsprofile.ProgressRisingBadgeEarned:
+		return []CapabilityID{CapabilityID(game.FieldMoveSurf), CapabilityID(game.FieldMoveWhirlpool)}
 	default:
 		return nil
 	}
@@ -51,9 +55,13 @@ func gsMissingFieldCapabilities(o Objective, obs Observation) []CapabilityID {
 // a measured encounter tile plus the nearest mart that stocks an ordinary
 // ball. The wanted species are not listed here; they come from the ROM's
 // encounter and TM/HM compatibility tables for the requested move.
+//
+// habitat selects which encounter table the hunt tile rolls: a grass tile
+// or, for gsrom.HabitatWater, a water tile reached and walked while surfing.
 type gsFieldCarrierSite struct {
 	after              ProgressID
-	grass              string
+	area               string
+	habitat            string
 	x, y               uint8
 	mart               string
 	standX, standY     uint8
@@ -69,8 +77,22 @@ var gsFieldCarrierSites = []gsFieldCarrierSite{
 	// GREAT_BALL; its clerk is talked to across the counter at (2,3).
 	{
 		after: gsprofile.ProgressHM03SurfAcquired,
-		grass: "ROUTE_38", x: 8, y: 10,
+		area:  "ROUTE_38", habitat: gsrom.HabitatGrass, x: 8, y: 10,
 		mart: "OLIVINE_MART", standX: 3, standY: 3, counterX: 2, counterY: 3,
+		ball: 0x04,
+	},
+	// Reachable grass carriers of Whirlpool are time-of-day bound (Route 32
+	// Wooper) or a 1% slot (Mt. Mortar Marill), and the Whirl Islands are
+	// themselves ringed by whirlpools. Route 44's
+	// pond rolls 2% of surfed steps at every time of day and its whole water
+	// table (Poliwag/Poliwhirl) can learn Whirlpool. (38,7) is COLL_WATER with
+	// two more water tiles above and below it. Clair's defeat proves both
+	// Route 44 and Blackthorn were crossed; Blackthorn Mart (MART_BLACKTHORN)
+	// stocks GREAT_BALL with Olivine's counter layout (clerk at (1,3)).
+	{
+		after: gsprofile.ProgressClairDefeated,
+		area:  "ROUTE_44", habitat: gsrom.HabitatWater, x: 38, y: 7,
+		mart: "BLACKTHORN_MART", standX: 3, standY: 3, counterX: 2, counterY: 3,
 		ball: 0x04,
 	},
 }
@@ -133,10 +155,15 @@ func executeGSRepairFieldCapability(m *emu.Emu, romData []byte, capability Capab
 	return driveGSSecondBadgeInterruption(m, profile, "gen2:field-repair")
 }
 
-// gsCarrierSiteFor picks the first qualified site whose grass table holds a
-// species that can learn id.
+// gsCarrierSiteFor picks the first qualified site whose hunted encounter table
+// holds a species that can learn id. A water site qualifies only while the
+// party can already surf.
 func gsCarrierSiteFor(m *emu.Emu, romData []byte, profile *gsprofile.Profile, id game.FieldMoveID) (gsFieldCarrierSite, []uint8, error) {
 	encounters, err := gsrom.WildEncounters(romData)
+	if err != nil {
+		return gsFieldCarrierSite{}, nil, err
+	}
+	surf, _, err := profile.DecodeFieldMoveCapability(m, romData, game.FieldMoveSurf)
 	if err != nil {
 		return gsFieldCarrierSite{}, nil, err
 	}
@@ -144,13 +171,16 @@ func gsCarrierSiteFor(m *emu.Emu, romData []byte, profile *gsprofile.Profile, id
 		if !gsFirstBadgeProgressComplete(profile, m, site.after) {
 			continue
 		}
-		grass, err := gsOpeningMapID(site.grass)
+		if site.habitat == gsrom.HabitatWater && !surf.Usable {
+			continue
+		}
+		area, err := gsOpeningMapID(site.area)
 		if err != nil {
 			return gsFieldCarrierSite{}, nil, err
 		}
 		var want []uint8
 		for _, e := range encounters {
-			if e.MapID != grass || e.Habitat != gsrom.HabitatGrass || speciesIn(e.Species, want) {
+			if e.MapID != area || e.Habitat != site.habitat || speciesIn(e.Species, want) {
 				continue
 			}
 			ok, err := profile.SpeciesCanLearnFieldMove(romData, e.Species, id)
@@ -223,7 +253,7 @@ func gsStockCarrierBalls(m *emu.Emu, romData []byte, profile *gsprofile.Profile,
 	return nil
 }
 
-// gsAcquireFieldCarrier stocks balls, then hunts the site's grass until one
+// gsAcquireFieldCarrier stocks balls, then hunts the site's tile until one
 // wanted species is caught into the party. Unwanted and trainer battles are
 // fought by the owned interruption driver.
 func gsAcquireFieldCarrier(m *emu.Emu, romData []byte, profile *gsprofile.Profile, id game.FieldMoveID) error {
@@ -243,42 +273,42 @@ func gsAcquireFieldCarrier(m *emu.Emu, romData []byte, profile *gsprofile.Profil
 	if err := gsStockCarrierBalls(m, romData, profile, site); err != nil {
 		return err
 	}
-	grass, err := gsOpeningMapID(site.grass)
+	area, err := gsOpeningMapID(site.area)
 	if err != nil {
 		return err
 	}
-	tile := skill.ExactNativeDestination(grass, site.x, site.y)
+	tile := skill.ExactNativeDestination(area, site.x, site.y)
 	if err := gsEnsurePartyRecovered(m, romData, profile); err != nil {
 		return fmt.Errorf("recover before carrier hunt: %w", err)
 	}
 	if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
-		return fmt.Errorf("reach carrier grass: %w", err)
+		return fmt.Errorf("reach carrier %s tile: %w", site.habitat, err)
 	}
 
 	policy := skill.StatAwareMove(romData)
 	partyBefore := len(profile.DecodeCapture(m).PartySpecies)
 	// A short Gen-II tap toward a new direction only turns the player, so each
 	// direction is pressed twice: turn, then step. From the hunt tile this
-	// stays inside the grass strip.
+	// stays inside the measured grass strip or water body.
 	dirs := []emu.Button{emu.Up, emu.Up, emu.Down, emu.Down}
 	for steps := 0; ; steps++ {
 		if steps >= gsCarrierHuntMaxSteps {
-			return fmt.Errorf("%w: %d hunt steps on %s without a catch", errGSFieldCarrierUnavailable, steps, site.grass)
+			return fmt.Errorf("%w: %d hunt steps on %s without a catch", errGSFieldCarrierUnavailable, steps, site.area)
 		}
 		balls := gsCarrierBallCount(profile, m)
 		if balls == 0 {
 			// The initial stock was exhausted without a catch. Re-stock as long
-			// as the player can afford it; the loop's return-to-grass and
+			// as the player can afford it; the loop's return-to-site and
 			// recovery checks below handle the mart trip's side effects. Only a
 			// player with no balls AND no money is truly out of options.
 			if err := gsStockCarrierBalls(m, romData, profile, site); err != nil {
-				return fmt.Errorf("%w: out of balls on %s", errGSFieldCarrierUnavailable, site.grass)
+				return fmt.Errorf("%w: out of balls on %s", errGSFieldCarrierUnavailable, site.area)
 			}
 			continue
 		}
-		if world := profile.DecodeOverworld(m); world.NativeMapID != grass {
+		if world := profile.DecodeOverworld(m); world.NativeMapID != area {
 			if err := gsSecondBadgeGoTo(m, romData, profile, tile); err != nil {
-				return fmt.Errorf("return to carrier grass: %w", err)
+				return fmt.Errorf("return to carrier %s tile: %w", site.habitat, err)
 			}
 		}
 		if frac, err := gsLeadHPFraction(profile, m, romData); err == nil && frac < 0.4 {

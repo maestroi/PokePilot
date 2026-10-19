@@ -156,6 +156,11 @@ func faceWithOverworldDecoder(m faceMachine, decoder game.OverworldDecoder, tx, 
 		return fmt.Errorf("skill: Face: invalid step %s", step)
 	}
 	want := semanticFacingFor(step)
+	if live.Facing == want && live.Controllable && !live.InBattle {
+		// A press toward a tile already faced is a step attempt, not a turn.
+		// Gen II bounces a surfer off a whirlpool and leaves them facing away.
+		return nil
+	}
 
 	m.Press(btn)
 	for i := 0; i < 3; i++ {

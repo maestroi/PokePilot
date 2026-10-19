@@ -3,6 +3,7 @@ package skill
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/world"
 	"github.com/maestroi/pokepilot/worldmodel"
 )
@@ -30,6 +31,37 @@ func TestNativeUnreachableProofCoversConnectionEntry(t *testing.T) {
 		if !mem.unreachable[world.NativeUnreachable{Map: 0x010c, Entry: entry, Edge: edge}] {
 			t.Fatalf("sealed edge not recorded for entry %d: %v", entry, mem.unreachable)
 		}
+	}
+}
+
+// Dragon's Den 1F joins its two pockets by a ladder pair inside the same map:
+// (3,3) lands on warp 4 at (5,13), beside the B1F ladder. Map identity cannot
+// prove that crossing, so the entry kept naming the Blackthorn door, whose
+// pocket had already sealed the B1F edge, and the router reported no route
+// from the very tile next to it (run-a018a6cmhnkr).
+func TestNativeRouteMemorySettlesSameMapWarpByLandingTile(t *testing.T) {
+	const den1F, b1F uint16 = 0x0348, 0x0349
+	provider := nativeConnectionTestProvider{den1F: {
+		ID: den1F,
+		Warps: []worldmodel.NativeWarp{
+			{X: 3, Y: 5}, {X: 3, Y: 3, DestMap: den1F, DestWarpID: 3},
+			{X: 5, Y: 15, DestMap: b1F}, {X: 5, Y: 13, DestMap: den1F, DestWarpID: 1},
+		},
+	}}
+	ladder := world.NativeEdge{Kind: world.EdgeWarp, From: den1F, To: den1F, WarpX: 3, WarpY: 3, DestWarp: 3}
+
+	mem := NewNativeRouteMemory()
+	mem.entry = 0
+	mem.last = &ladder
+	mem.settleCrossedEntry(provider, game.OverworldState{NativeMapID: den1F, X: 3, Y: 4})
+	if mem.entry != 0 || mem.last != nil {
+		t.Fatalf("uncrossed ladder settled entry=%d last=%v, want the door entry kept", mem.entry, mem.last)
+	}
+
+	mem.last = &ladder
+	mem.settleCrossedEntry(provider, game.OverworldState{NativeMapID: den1F, X: 5, Y: 13})
+	if mem.entry != 3 {
+		t.Fatalf("entry after landing on (5,13) = %d, want warp 3", mem.entry)
 	}
 }
 
