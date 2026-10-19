@@ -1,5 +1,13 @@
 # Full-game media E2E smoke test
 
+## Durable E2E badge and database filtering
+
+**New Full E2E launches are explicitly tagged `purpose: "full_e2e"`** at farm run creation, independently of the goal, play style and model. This is saved with the run's authoritative record and materialized as an indexed `runs.purpose` column by PostgreSQL schema migration 007 (local SQLite catalogs receive the same column). It is returned from both `GET /v1/runs/{id}` and `GET /v1/dashboard`.
+
+Operators can filter all completed E2E runs through **Runs → E2E only** or query `GET /v1/dashboard?status=done&purpose=full_e2e&limit=25&offset=0`. Active tagged runs are available at `GET /v1/dashboard?active=1&purpose=full_e2e`. Runs and Media Library show an **E2E** badge only for the explicit database tag. Media → Full E2E loads tagged active/finished runs using this database filter, rather than depending on the last few generic runs.
+
+The badge means **launched as E2E**, not **E2E passed**. Outcome and media upload completion come from separate authoritative game/replay/publication records. Launches created before this change remain untagged (even if a previous UI workflow started them), because goal text or ID prefixes are not trustworthy evidence of E2E intent. The compatibility section can still surface them as possible Champion source runs.
+
 ## Finding a previous E2E run and checking whether it worked
 
 Go to **Media → Full E2E**. The **E2E runs and Champion candidates** section now restores the last 100 browser E2E receipts across reloads (on the same browser/origin) and discovers recent Pokémon Red Champion-goal runs directly from the farm API, including still-running games. Farm-discovered runs are marked **Champion candidate**, not automatically claimed as E2E runs: old run specs did not record the E2E intent durably. If an older run has fallen out of the recent dashboard window, enter its ID in **Existing run**.
