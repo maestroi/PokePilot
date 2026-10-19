@@ -18,6 +18,7 @@ export function productionRunSpec(spec: RunSpec): RunSpec {
   }
   return {
     ...spec,
+    purpose: 'full_e2e',
     goal: FULL_E2E_GOAL,
     endless: false,
     random_seed: false,
