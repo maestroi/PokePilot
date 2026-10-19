@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS runs (
 	outcome TEXT NOT NULL DEFAULT '',
 	how TEXT NOT NULL DEFAULT '',
 	starter_facet TEXT NOT NULL DEFAULT '',
+	purpose TEXT NOT NULL DEFAULT '',
 	row_json BLOB NOT NULL
 );
 CREATE INDEX IF NOT EXISTS runs_status_ended_idx ON runs(status, ended_at DESC, queued_at DESC);
@@ -66,6 +67,40 @@ func openRunCatalog(path string) (*runCatalog, bool, error) {
 	if _, err := db.Exec(catalogSchema); err != nil {
 		db.Close()
 		return nil, false, fmt.Errorf("create catalog schema: %w", err)
+	}
+	// SQLite compatibility: old local catalogs predate purpose.
+	var purposeCount int
+	rows, err := db.Query("PRAGMA table_info(runs)")
+	if err != nil {
+		db.Close()
+		return nil, false, err
+	}
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			db.Close()
+			return nil, false, err
+		}
+		if name == "purpose" { purposeCount++ }
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		db.Close()
+		return nil, false, err
+	}
+	rows.Close()
+	if purposeCount == 0 {
+		if _, err := db.Exec("ALTER TABLE runs ADD COLUMN purpose TEXT NOT NULL DEFAULT ''"); err != nil {
+			db.Close()
+			return nil, false, fmt.Errorf("migrate local catalog purpose: %w", err)
+		}
+	}
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS runs_purpose_ended_idx ON runs(purpose, ended_at DESC, queued_at DESC)"); err != nil {
+		db.Close()
+		return nil, false, err
 	}
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM runs`).Scan(&count); err != nil {
@@ -197,8 +232,8 @@ func (c *runCatalog) upsert(row tileRow) error {
 		return err
 	}
 	_, err = c.db.Exec(`
-INSERT INTO runs(run_id,status,planner,starter,goal,llm_profile,queued_at,ended_at,outcome,how,starter_facet,row_json)
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+INSERT INTO runs(run_id,status,planner,starter,goal,llm_profile,queued_at,ended_at,outcome,how,starter_facet,purpose,row_json)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(run_id) DO UPDATE SET
  status=excluded.status,
  planner=excluded.planner,
@@ -210,9 +245,10 @@ ON CONFLICT(run_id) DO UPDATE SET
  outcome=excluded.outcome,
  how=excluded.how,
  starter_facet=excluded.starter_facet,
+ purpose=excluded.purpose,
  row_json=excluded.row_json`,
 		row.RunID, row.Status, row.Planner, row.Starter, row.Goal, row.LLMProfile,
-		row.QueuedAt, row.EndedAt, catalogOutcome(row), catalogHow(row), catalogStarter(row), data)
+		row.QueuedAt, row.EndedAt, catalogOutcome(row), catalogHow(row), catalogStarter(row), row.Purpose, data)
 	if err != nil {
 		return fmt.Errorf("upsert run %s: %w", row.RunID, err)
 	}
@@ -476,6 +512,7 @@ func parseCatalogDashboardQuery(req *http.Request) (runtimeDashboardQuery, error
 		outcome: strings.ToLower(strings.TrimSpace(q.Get("outcome"))),
 		how:     strings.ToLower(strings.TrimSpace(q.Get("how"))),
 		starter: strings.TrimSpace(q.Get("starter")),
+		purpose: strings.TrimSpace(q.Get("purpose")),
 	}
 	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -503,7 +540,7 @@ func (w *Wall) handleCatalogDashboard(res http.ResponseWriter, req *http.Request
 
 	// The default dashboard is now the live control plane. Historical reads are
 	// explicit and therefore paginatable/queryable from SQLite.
-	history := query.status == statusDone || query.outcome != "" || query.how != "" || query.starter != "" || query.facets
+	history := query.status == statusDone || query.outcome != "" || query.how != "" || query.starter != "" || query.purpose != "" || query.facets
 	if query.active || !history {
 		query.active = true
 		writeJSON(res, http.StatusOK, w.runtimeDashboardSnapshot(query))
@@ -535,6 +572,10 @@ func (w *Wall) catalogHistorySnapshot(query runtimeDashboardQuery) (runtimeDashb
 	if query.starter != "" {
 		where = append(where, "starter_facet = ?")
 		args = append(args, query.starter)
+	}
+	if query.purpose != "" {
+		where = append(where, "purpose = ?")
+		args = append(args, query.purpose)
 	}
 	whereSQL := strings.Join(where, " AND ")
 	var total int
