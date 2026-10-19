@@ -17,6 +17,7 @@ const (
 	rockTunnelPokeCenterMap      uint8 = 0x51
 	rockTunnel1FMap              uint8 = 0x52
 	route11Gate1FMap             uint8 = 0x54
+	diglettsCaveRoute11Map       uint8 = 0x55
 	route11Gate2FMap             uint8 = 0x56
 	route12Gate1FMap             uint8 = 0x57
 	vermilionPokemonCenterMap    uint8 = 0x59
@@ -24,6 +25,7 @@ const (
 	route15Gate1FMap             uint8 = 0xB8
 	route12SuperRodHouseMap      uint8 = 0xBD
 	route12Gate2FMap             uint8 = 0xC3
+	diglettsCaveMap              uint8 = 0xC5
 	fuchsiaMartMap               uint8 = 0x98
 	fuchsiaPokemonCenterMap      uint8 = 0x9A
 	wardensHouseMap              uint8 = 0x9B
@@ -61,13 +63,15 @@ const (
 // unknown out-of-slice error.
 //
 // Vermilion City, Route 6 (its northern exit toward Saffron), the Route 6
-// gate/underground stub, and the Route 11/12 gate corridor are included
-// because the first owned action is Travel to the Route 12 Snorlax stand:
-// after the Poké Flute handoff a run commonly blackouts, flies, or wanders
-// back to the Vermilion hub (the SS Anne / Thunder Badge region) and must
-// still be able to enter the eastern corridor rather than fail as an unknown
-// out-of-slice error. Yellow offers this progress verb without a map-slice
-// gate, so a resume on Route 6 must enter the skill instead of terminaling.
+// gate/underground stub, Diglett's Cave (the west tunnel out of Vermilion via
+// the Route 11 entrance house, plus its Route 2 twin), and the Route 11/12
+// gate corridor are included because the first owned action is Travel to the
+// Route 12 Snorlax stand: after the Poké Flute handoff a run commonly
+// blackouts, flies, or wanders back to the Vermilion hub (the SS Anne /
+// Thunder Badge region) and must still be able to enter the eastern corridor
+// rather than fail as an unknown out-of-slice error. Yellow offers this
+// progress verb without a map-slice gate, so a resume on Route 6 or inside
+// Diglett's Cave must enter the skill instead of terminaling.
 //
 // Route 10 and Rock Tunnel are the Lavender approach corridor from the
 // Cerulean side. The same Yellow offer policy means a post-Flute blackout or
@@ -96,6 +100,7 @@ func FuchsiaProgressionAvailable(mapID uint8) bool {
 		route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap,
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
 		semanticRoute6Map, route6GateMap, undergroundPathRoute6Map, undergroundPathRoute6CopyMap,
+		diglettsCaveMap, diglettsCaveRoute11Map, diglettsCaveRoute2Map,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
 		route13Map, route14Map, route15Map, route15Gate1FMap,
