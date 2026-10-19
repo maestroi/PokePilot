@@ -75,7 +75,14 @@ const foundSources = computed(() => {
   }
   if (fullE2E.runID && !map.has(fullE2E.runID)) map.set(fullE2E.runID, { run: null, saved: true, updatedAt: Date.now() })
   if (props.state.run && !map.has(props.state.run)) map.set(props.state.run, { run: null, saved: false, updatedAt: 0 })
-  return [...map.entries()].sort((a, b) => b[1].updatedAt - a[1].updatedAt).map(([id, meta]) => ({ id, ...meta }))
+  return [...map.entries()]
+    // Durable E2E identity should stay visible above legacy Champion guesses,
+    // even when the user has thousands of ordinary recent campaigns.
+    .sort((a, b) =>
+      Number(b[1].run?.purpose === 'full_e2e') - Number(a[1].run?.purpose === 'full_e2e') ||
+      b[1].updatedAt - a[1].updatedAt
+    )
+    .map(([id, meta]) => ({ id, ...meta }))
 })
 type SelectedEvidence = {
   run: DashboardRun | null
