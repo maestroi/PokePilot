@@ -270,6 +270,7 @@ export interface DashboardSnapshot {
 }
 
 export interface DashboardQuery {
+  purpose?: 'full_e2e' | 'normal' | 'debug_coverage' | string
   search?: string
   active?: boolean
   status?: string
@@ -465,7 +466,8 @@ export interface RunSpec {
   llm_profile: string
   llm_deployment?: string
   play_style: string
-  purpose?: string
+  // Durable operator intent, not a browser-local run badge.
+  purpose?: 'normal' | 'debug_coverage' | 'full_e2e' | ''
   risk_tolerance: string
   wild_encounters: string
   reasoning_effort: string

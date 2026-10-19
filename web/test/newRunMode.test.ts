@@ -21,6 +21,7 @@ test('Full E2E can only be selected for supported full-campaign games', () => {
 test('Full E2E locks a finite Champion campaign, retaining player settings', () => {
   const spec = productionRunSpec(source)
   assert.equal(spec.goal, FULL_E2E_GOAL)
+  assert.equal(spec.purpose, 'full_e2e')
   assert.equal(spec.endless, false)
   assert.equal(spec.random_seed, false)
   assert.equal(spec.recovery_profile, 'resilient')

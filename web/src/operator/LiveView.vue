@@ -537,6 +537,11 @@ const search = () => window.location.search
             </button>
           </span>
           <StatusPill v-if="status" :status="status" />
+          <a v-if="selectedRun.purpose === 'full_e2e'"
+            :href="operatorHref('media', { section: 'e2e', run: selectedRun.run_id }, search())"
+            class="ui-tag border-accent text-accent hover:bg-selected"
+            title="This run is tagged E2E in the database. Open its production status."
+          >E2E</a>
           <span class="ui-tag">{{ gameTitle(selectedRun.game) }}</span>
           <span class="ui-tag">{{ selectedRun.planner === 'llm' ? 'LLM' : 'Scripted' }}</span>
           <span v-if="isPlayStyleRun(selectedRun)" class="ui-tag">{{ playStyleLabel(selectedRun) }}</span>

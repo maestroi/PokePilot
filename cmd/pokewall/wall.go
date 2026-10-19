@@ -760,7 +760,7 @@ func (w *Wall) handleSpecs(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !spec.Purpose.Valid() {
-		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal or debug_coverage"})
+		writeJSON(res, http.StatusBadRequest, map[string]string{"error": "purpose must be normal, debug_coverage or full_e2e"})
 		return
 	}
 	decisionEngine, err := spec.DecisionEngine.Normalized()
