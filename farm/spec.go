@@ -43,7 +43,7 @@ type RunPurpose string
 const (
 	RunPurposeNormal        RunPurpose = "normal"
 	RunPurposeDebugCoverage RunPurpose = "debug_coverage"
-	RunPurposeFullE2E     RunPurpose = "full_e2e"
+	RunPurposeFullE2E      RunPurpose = "full_e2e"
 )
 
 func (p RunPurpose) Valid() bool {
