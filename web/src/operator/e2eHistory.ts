@@ -76,5 +76,6 @@ export function writeE2EHistory(entries: E2EHistoryEntry[]): void {
 
 export function isFullCampaignSource(run: Pick<DashboardRun, 'run_id' | 'game' | 'goal'>): boolean {
   return run.game === 'pokemon-red' &&
-    (run.run_id.startsWith('e2e-') || ['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion'].includes((run.goal || '').trim().toLowerCase()))
+    (('purpose' in run && run.purpose === 'full_e2e') ||
+    run.run_id.startsWith('e2e-') || ['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion'].includes((run.goal || '').trim().toLowerCase()))
 }
