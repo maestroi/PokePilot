@@ -31,12 +31,16 @@ const models = usePollingResource(getModels, { intervalMs: 30000 })
 // and finished records are queried independently so active runs do not hide
 // the run the operator launched before a browser reload.
 const recent = usePollingResource(async signal => {
-  const [active, done] = await Promise.all([
-    getDashboard({ active: true, limit: 200 }, signal),
-    getDashboard({ status: 'done', limit: 200 }, signal)
+  const [e2eActive, e2eDone, legacyActive, legacyDone] = await Promise.all([
+    getDashboard({ active: true, purpose: 'full_e2e', limit: 200 }, signal),
+    getDashboard({ status: 'done', purpose: 'full_e2e', limit: 200 }, signal),
+    getDashboard({ active: true, limit: 100 }, signal),
+    getDashboard({ status: 'done', limit: 100 }, signal)
   ])
   const unique = new Map<string, DashboardRun>()
-  for (const run of [...done.runs, ...active.runs]) unique.set(run.run_id, run)
+  // Only short compatibility discovery uses Champion goals; all explicitly
+  // tagged E2E runs are fetched with indexed database queries first.
+  for (const run of [...legacyDone.runs, ...legacyActive.runs, ...e2eDone.runs, ...e2eActive.runs]) unique.set(run.run_id, run)
   return { runs: [...unique.values()] }
 }, { intervalMs: 30000 })
 const selections = computed(() => (models.data.value?.deployments || []).filter(d => servesStrategist(d) && deploymentSelectable(d)))
@@ -255,7 +259,7 @@ function downloadReport(): void {
         </div>
         <div class="space-y-3 p-3">
           <p class="text-meta text-fg-2">
-            Saved browser receipts are marked <strong>Started here</strong>. Other Pokémon Red Champion runs come from the farm but might not have been started in E2E mode. You can inspect either without launching a new game.
+            Server-tagged runs show <strong>E2E · database</strong> and remain discoverable across browsers or redeployments. Old untagged Champion runs are listed as candidates, never automatically marked E2E. Browser-local receipts are supplementary.
           </p>
           <p v-if="recent.error.value" class="text-meta text-warn" role="alert">Farm history unavailable: {{ recent.error.value }}. Saved browser receipts remain accessible.</p>
           <p v-if="!foundSources.length" class="text-meta text-fg-2">No local E2E receipts or recent Champion runs found. Enter a run ID under Existing run to inspect an older run.</p>
@@ -265,7 +269,7 @@ function downloadReport(): void {
                 :class="inspectedID === row.id ? 'bg-selected' : ''" :aria-pressed="inspectedID === row.id" @click="inspectRun(row.id)">
                 <span class="min-w-0 flex-1 truncate font-mono text-meta" :title="row.id">{{ row.id }}</span>
                 <span class="text-meta text-fg-2">{{ row.run?.status || 'Not in recent farm list' }}</span>
-                <span class="text-meta" :class="row.saved ? 'text-accent' : 'text-fg-3'">{{ row.saved ? 'Started here' : 'Champion candidate' }}</span>
+                <span class="text-meta" :class="row.run?.purpose === 'full_e2e' ? 'text-ok font-semibold' : row.saved ? 'text-accent' : 'text-fg-3'">{{ row.run?.purpose === 'full_e2e' ? 'E2E · database' : row.saved ? 'Started here' : 'Champion candidate' }}</span>
                 <span v-if="row.saved" class="text-meta text-fg-2">
                   {{ historyLabel(fullE2E.history.find(e => e.runID === row.id)) }}
                 </span>
