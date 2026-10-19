@@ -1,5 +1,13 @@
 # Full-game media E2E smoke test
 
+## Finding a previous E2E run and checking whether it worked
+
+Go to **Media → Full E2E**. The **E2E runs and Champion candidates** section now restores the last 100 browser E2E receipts across reloads (on the same browser/origin) and discovers recent Pokémon Red Champion-goal runs directly from the farm API, including still-running games. Farm-discovered runs are marked **Champion candidate**, not automatically claimed as E2E runs: old run specs did not record the E2E intent durably. If an older run has fallen out of the recent dashboard window, enter its ID in **Existing run**.
+
+Select a run to see **Server evidence**, refreshed approximately every 10 seconds: the current game state, authoritative Champion goal flag, broadcast render state and episode/Short publication queue. A previous browser receipt is shown separately from independently fetched server state. **Two private upload receipts recorded** requires durable `published` candidates with private intent and provider video IDs; it does **not** independently prove YouTube-side visibility. **Episode + Short in publication queue** only proves both private candidates exist, not a finished upload.
+
+An earlier `working` browser receipt is explicitly presented as **interrupted** after reload, never falsely shown as still executing or successful. **Resume production · no upload** attaches to the same run without creating a second game and completes remaining production stages if the game qualifies. It never silently restores consent to upload: real uploads must be explicitly enabled and confirmed again. This history is a **browser-local troubleshooting aid**, not yet the desired server-owned E2E job ledger, which remains tracked by #2794. Jobs started on another device or browser are discoverable through the farm's Champion-run history, but their original E2E intent may not be provable.
+
 ## Operator UI: New run → Full E2E (recommended)
 
 Open the **private operator UI → New run**, choose **Pokémon Red** and **Play the game** as the LLM planner, then select **Run workflow → Full E2E · complete game → episode + Short**. The workflow locks the goal to *Beat the Elite Four and Champion*, makes the campaign finite, and uses resilient recovery while retaining the selected model, starter, seed, play style and FPS.
