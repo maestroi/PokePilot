@@ -120,10 +120,12 @@ watch(total, (value) => {
 })
 
 const FACET_LABELS: Record<ArchiveFacet, string> = {
+  purpose: 'Run purpose',
   game: 'Game', outcome: 'Outcome', model: 'Model', goal: 'Goal', deployment: 'Deployment',
   play_style: 'Play style', how: 'Mode', starter: 'Starter', compute: 'Compute', experiment: 'Experiment'
 }
 const FACET_SOURCES: Record<ArchiveFacet, string> = {
+  purpose: 'purposes',
   game: 'games', outcome: 'outcomes', model: 'models', goal: 'goals', deployment: 'deployments',
   play_style: 'play_styles', how: 'hows', starter: 'starters', compute: 'computes', experiment: 'experiments'
 }
