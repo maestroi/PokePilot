@@ -7,7 +7,7 @@ import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { presentRecording, presentRunStatus } from '../shared/status'
-import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle } from './mediaQuery'
+import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle, youtubeUploadLabel } from './mediaQuery'
 import MediaOutputsList from './MediaOutputsList.vue'
 import { gameTitle } from './operations'
 import type { RecordingSummary } from './runRecording'
@@ -199,7 +199,7 @@ const confirmPublish = ref(false)
                 rel="noopener"
                 class="ui-btn ui-btn-sm"
               >Published ({{ media.youtube.value.publication.privacy }}) ↗</a>
-              <span v-else-if="media.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent"><span aria-hidden="true">◐</span> Uploading</span>
+              <span v-else-if="media.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent"><span aria-hidden="true">◐</span> {{ youtubeUploadLabel(media.youtube.value.publication) }}</span>
               <template v-else>
                 <span v-if="['failed', 'interrupted'].includes(media.youtube.value.publication.state)" class="ui-pill ui-tone-danger" :title="media.youtube.value.publication.error"><span aria-hidden="true">✕</span> {{ media.youtube.value.publication.state }}</span>
                 <label class="flex items-center gap-2">

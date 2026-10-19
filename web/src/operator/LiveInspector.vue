@@ -9,6 +9,7 @@ import { operatorHref } from '../shared/urls'
 import { isPlayStyleRun, playSpeedLabel, playStyleLabel, policyLabel } from '../shared/playstyle'
 import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
+import { youtubeUploadLabel } from './mediaQuery'
 import {
   decisionEngineLabel,
   fpsLabel,
@@ -362,7 +363,7 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
               rel="noopener"
               class="ui-btn ui-btn-sm"
             >Published ({{ e.youtube.value.publication.privacy }}) ↗</a>
-            <span v-else-if="e.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent">◐ Uploading</span>
+            <span v-else-if="e.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent">◐ {{ youtubeUploadLabel(e.youtube.value.publication) }}</span>
             <template v-else>
               <span v-if="['failed', 'interrupted'].includes(e.youtube.value.publication.state)" class="ui-pill ui-tone-danger" :title="e.youtube.value.publication.error">✕ {{ e.youtube.value.publication.state }}</span>
               <label class="flex items-center gap-2">

@@ -626,6 +626,8 @@ export interface YouTubePublication {
   error?: string
   updated_at?: number
   published_at?: number
+  source_size?: number
+  uploaded_bytes?: number // live, only while uploading
 }
 
 export interface YouTubePublishStatus {

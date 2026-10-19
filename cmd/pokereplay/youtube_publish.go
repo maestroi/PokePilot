@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/maestroi/pokepilot/artifactstore"
@@ -103,6 +104,8 @@ type youtubePublication struct {
 	UpdatedAt   int64  `json:"updated_at,omitempty"`
 	PublishedAt int64  `json:"published_at,omitempty"`
 	SessionURI  string `json:"session_uri,omitempty"`
+	// UploadedBytes is live progress, filled only in status responses.
+	UploadedBytes int64 `json:"uploaded_bytes,omitempty"`
 }
 
 func (p youtubePublication) view() youtubePublication {
@@ -151,11 +154,30 @@ func (s *replayServer) saveYouTubePublication(ctx context.Context, rec youtubePu
 func (s *replayServer) claimYouTubeUpload(runID string) bool {
 	s.youtubeMu.Lock()
 	defer s.youtubeMu.Unlock()
-	if s.youtubeActive[runID] {
+	if s.youtubeActive[runID] != nil {
 		return false
 	}
-	s.youtubeActive[runID] = true
+	s.youtubeActive[runID] = new(atomic.Int64)
 	return true
+}
+
+// youtubeUploadProgress is the in-flight upload's byte counter, nil when idle.
+func (s *replayServer) youtubeUploadProgress(runID string) *atomic.Int64 {
+	s.youtubeMu.Lock()
+	defer s.youtubeMu.Unlock()
+	return s.youtubeActive[runID]
+}
+
+// countingReader publishes how far the upload body has been read.
+type countingReader struct {
+	io.Reader
+	n *atomic.Int64
+}
+
+func (r countingReader) Read(p []byte) (int, error) {
+	n, err := r.Reader.Read(p)
+	r.n.Add(int64(n))
+	return n, err
 }
 
 func (s *replayServer) releaseYouTubeUpload(runID string) {
@@ -167,7 +189,7 @@ func (s *replayServer) releaseYouTubeUpload(runID string) {
 func (s *replayServer) youtubeUploadActive(runID string) bool {
 	s.youtubeMu.Lock()
 	defer s.youtubeMu.Unlock()
-	return s.youtubeActive[runID]
+	return s.youtubeActive[runID] != nil
 }
 
 func (s *replayServer) handleYouTubeStatus(w http.ResponseWriter, r *http.Request) {
@@ -181,8 +203,12 @@ func (s *replayServer) handleYouTubeStatus(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": clipError(err)})
 		return
 	}
-	if rec.State == youtubeStateUploading && !s.youtubeUploadActive(runID) {
-		rec.State = youtubeStateInterrupted
+	if rec.State == youtubeStateUploading {
+		if progress := s.youtubeUploadProgress(runID); progress != nil {
+			rec.UploadedBytes = progress.Load()
+		} else {
+			rec.State = youtubeStateInterrupted
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"configured": s.youtube.configured(), "publication": rec.view()})
 }
@@ -466,7 +492,12 @@ func (s *replayServer) youtubeUploadFrom(ctx context.Context, token string, rec 
 		return "", fmt.Errorf("read replay MP4: %w", err)
 	}
 	defer obj.Body.Close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rec.SessionURI, obj.Body)
+	var body io.Reader = obj.Body
+	if progress := s.youtubeUploadProgress(rec.RunID); progress != nil {
+		progress.Store(offset)
+		body = countingReader{obj.Body, progress}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, rec.SessionURI, body)
 	if err != nil {
 		return "", err
 	}
