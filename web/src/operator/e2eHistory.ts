@@ -31,7 +31,8 @@ export function parseE2EHistory(value: string | null, now = Date.now()): E2EHist
       if (!item || typeof item !== 'object') continue
       const raw = item as Partial<E2EHistoryEntry>
       if (typeof raw.runID !== 'string' || !validID(raw.runID) || seen.has(raw.runID)) continue
-      if (!validStates.includes(raw.state as E2EHistoryState)) continue
+      const state = raw.state
+      if (!state || !validStates.includes(state)) continue
       if (!Number.isFinite(raw.startedAt) || !Number.isFinite(raw.updatedAt)) continue
       const startedAt = Number(raw.startedAt)
       const updatedAt = Number(raw.updatedAt)
@@ -39,7 +40,7 @@ export function parseE2EHistory(value: string | null, now = Date.now()): E2EHist
       seen.add(raw.runID)
       entries.push({
         runID: raw.runID,
-        state: raw.state === 'working' ? 'interrupted' : raw.state,
+        state: state === 'working' ? 'interrupted' : state,
         startedAt, updatedAt,
         uploadRequested: raw.uploadRequested === true,
         stages: Array.isArray(raw.stages) ? raw.stages.filter(s => s && typeof s.id === 'string' && typeof s.label === 'string').slice(-30) : [],
