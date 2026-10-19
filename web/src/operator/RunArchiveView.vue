@@ -137,13 +137,14 @@ const SORT_LABELS: Record<ArchiveSort, string> = {
 }
 
 function facetOptions(key: ArchiveFacet): string[] {
+  if (key === 'purpose') return ['full_e2e', 'normal', 'debug_coverage']
   const raw = resource.data.value?.history_facets as Record<string, string[] | undefined> | undefined
   const values = raw?.[FACET_SOURCES[key]] ?? []
   const current = state.value.facets[key]
   return current && !values.includes(current) ? [current, ...values] : values
 }
 function facetValueLabel(key: ArchiveFacet, value: string): string {
-  return key === 'game' ? gameTitle(value) : value
+  return key === 'game' ? gameTitle(value) : key === 'purpose' && value === 'full_e2e' ? 'E2E' : value
 }
 const hiddenActive = computed(() => MORE_FACETS.filter((key) => state.value.facets[key]).length)
 const chips = computed(() => [
@@ -408,6 +409,9 @@ const cleanupOpen = ref(false)
     <!-- Page header -->
     <header class="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2">
       <h1 class="text-page font-semibold">Runs</h1>
+      <button type="button" class="ui-btn ui-btn-sm" :aria-pressed="state.facets.purpose === 'full_e2e'"
+        :class="state.facets.purpose === 'full_e2e' ? 'ui-btn-primary' : ''"
+        @click="setFacet('purpose', state.facets.purpose === 'full_e2e' ? '' : 'full_e2e')">E2E only</button>
       <span v-if="resource.data.value" class="text-fg-2">{{ formatInteger(total) }} {{ hasFilters ? 'matching' : 'finished' }}</span>
       <span v-if="resource.state.value === 'refreshing'" class="inline-flex items-center gap-1.5 text-meta text-fg-2" role="status">
         <span class="size-1.5 bg-accent motion-safe:animate-pulse" aria-hidden="true" /> Refreshing
@@ -605,6 +609,7 @@ const cleanupOpen = ref(false)
                 <td class="px-3">
                   <div class="flex min-w-0 items-center gap-1">
                     <span class="truncate font-mono" :title="run.run_id">{{ middleTruncate(run.run_id) }}</span>
+                    <span v-if="run.purpose === 'full_e2e'" class="ui-tag shrink-0 border-accent text-accent" title="Database-backed E2E run purpose">E2E</span>
                     <button
                       type="button"
                       class="ui-btn ui-btn-sm ui-icon-btn size-6 shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
@@ -685,6 +690,7 @@ const cleanupOpen = ref(false)
                   <button type="button" class="min-w-0 truncate text-left font-mono text-accent" :title="run.run_id" @click="openRun(run.run_id)">
                     {{ middleTruncate(run.run_id, 10, 4) }}
                   </button>
+                  <span v-if="run.purpose === 'full_e2e'" class="ui-tag shrink-0 border-accent text-accent" title="Database-backed E2E run purpose">E2E</span>
                   <span class="ml-auto shrink-0 text-meta text-fg-2" :title="archiveWhen(run)">{{ archiveAgo(run) }}</span>
                 </div>
                 <div class="mt-1 truncate">{{ run.goal || '—' }} <span class="text-fg-2">· {{ progressLabel(run) }}</span></div>
