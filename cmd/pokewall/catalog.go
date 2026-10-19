@@ -84,7 +84,9 @@ func openRunCatalog(path string) (*runCatalog, bool, error) {
 			db.Close()
 			return nil, false, err
 		}
-		if name == "purpose" { purposeCount++ }
+		if name == "purpose" {
+			purposeCount++
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
