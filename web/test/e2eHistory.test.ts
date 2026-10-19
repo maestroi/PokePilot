@@ -72,3 +72,8 @@ test('server status is not overwritten by a stale browser receipt', () => {
   assert.equal(observeE2E(champion(), null, [publication('episode', 'published'), publication('short', 'published', false)]).label.includes('upload receipts'), false)
   assert.equal(observeE2E(champion(), null, [publication('episode', 'blocked')]).tone, 'failed')
 })
+
+test('explicit database purpose identifies E2E independent of the goal or ID', () => {
+  assert.equal(isFullCampaignSource(champion({ purpose: 'full_e2e', goal: 'other' })), true)
+  assert.equal(isFullCampaignSource(champion({ purpose: 'normal', goal: 'Earn 1 badge.' })), false)
+})
