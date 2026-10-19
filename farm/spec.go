@@ -43,10 +43,11 @@ type RunPurpose string
 const (
 	RunPurposeNormal        RunPurpose = "normal"
 	RunPurposeDebugCoverage RunPurpose = "debug_coverage"
+	RunPurposeFullE2E     RunPurpose = "full_e2e"
 )
 
 func (p RunPurpose) Valid() bool {
-	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage
+	return p == "" || p == RunPurposeNormal || p == RunPurposeDebugCoverage || p == RunPurposeFullE2E
 }
 
 // Spec is one run's configuration, filled either by CLI flags (today) or
