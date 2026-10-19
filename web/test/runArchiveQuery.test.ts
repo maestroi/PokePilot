@@ -42,3 +42,12 @@ test('views are active only on an exact preset match', () => {
   assert.equal(activeView(filtered), '')
   assert.equal(activeView({ ...viewState(ARCHIVE_VIEWS[0]), sort: 'rounds' }), '')
 })
+
+test('E2E archive filter survives route changes and is sent to the database', () => {
+  const state = parseArchiveState('?purpose=full_e2e&sort=finished')
+  const request = archiveDashboardQuery(state, 25)
+  assert.equal(request.purpose, 'full_e2e')
+  assert.equal(request.status, 'done')
+  assert.equal(activeView(state), '')
+  assert.equal(formatArchiveSearch(state), '?purpose=full_e2e')
+})
