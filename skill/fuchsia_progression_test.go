@@ -17,6 +17,8 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 		vermilionCity, vermilionPokemonCenterMap, vermilionMartMap,
 		// Vermilion's northern corridor toward Saffron (post-Flute resume).
 		semanticRoute6Map, route6GateMap, undergroundPathRoute6Map, undergroundPathRoute6CopyMap,
+		// Diglett's Cave is Vermilion's west tunnel (Route 11 entrance + Route 2 twin).
+		diglettsCaveMap, diglettsCaveRoute11Map, diglettsCaveRoute2Map,
 		route11Map, route11Gate1FMap, route11Gate2FMap,
 		route12Map, route12Gate1FMap, route12Gate2FMap, route12SuperRodHouseMap,
 		route13Map, route14Map, route15Map, route15Gate1FMap,
