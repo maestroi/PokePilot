@@ -171,31 +171,13 @@ the retry budget the broadcast becomes `failed` while gameplay continues.
 Only a currently `running` run can be started. Missing/invalid server
 configuration is reported as a broadcast-only error.
 
-### Optional YouTube VOD publishing
+### YouTube publishing
 
-A run whose replay MP4 is ready can be uploaded to YouTube from the run
-inspector (or `POST /v1/runs/{id}/publish/youtube` with an optional
-`{"privacy":"private|unlisted|public"}`, default `unlisted`). The upload reads
-the cached replay MP4 from S3; it never re-renders or replays gameplay, and a
-run whose replay is not ready gets `409`. `GET /v1/runs/{id}/publish/youtube`
-reports `configured` plus the publication record.
-
-Publication state lives in its own S3 record,
-`publications/youtube/<run>.json`, never in run status: an upload failure
-cannot change a run's result or its replay artifact. The record holds the
-state (`uploading`, `published`, `failed`; `interrupted` when an upload died
-with its process), video id/URL, privacy, title, and the last error.
-
-Uploads use YouTube's resumable protocol. The session URI is persisted so a
-retry resumes from the byte YouTube already holds, and an upload that finished
-before its result was recorded resolves to that video instead of uploading
-again. Publishing a run that is already `published` returns the existing video
-without contacting YouTube.
-
-Title and description are generated deterministically from the pokewall run
-record (game, starter, final party, goal, result, badges, maps, duration,
-attempts, planner/profile, runner build, optional run-page backlink). Traces,
-decisions, and raw model output are never read.
+YouTube uploads go only through the Studio publication queue
+(`docs/STUDIO_PUBLICATION_QUEUE.md`), which runs the producer, quality and
+approval gates. The old direct replay upload was removed.
+`GET /v1/runs/{id}/publish/youtube` still reports whether the uploader is
+`configured` (Full E2E checks it before opting into uploads).
 
 Credentials (`POKEPILOT_YOUTUBE_CLIENT_ID`, `_CLIENT_SECRET`,
 `_REFRESH_TOKEN`) live only in the replay host environment; see

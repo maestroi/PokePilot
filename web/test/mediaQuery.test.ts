@@ -3,7 +3,6 @@ import test from 'node:test'
 import type { DashboardRun, MediaRenderJob } from '../src/shared/api/types'
 import { presentBroadcast, presentJob, isBroadcastOnAir } from '../src/shared/status.ts'
 import {
-  youtubeUploadLabel,
   cancellable,
   filterJobs,
   filterLibrary,
@@ -222,9 +221,3 @@ test('Full E2E is a first-class Media route and keeps a selected source', () => 
   assert.equal(tabHref(state, 'e2e'), '?run=e2e-test#media/e2e')
 })
 
-test('youtube upload label shows percent and bytes once data flows', () => {
-  assert.equal(youtubeUploadLabel({}), 'Uploading')
-  assert.equal(youtubeUploadLabel({ source_size: 1000 }), 'Uploading')
-  assert.equal(youtubeUploadLabel({ source_size: 4 * 1024 ** 3, uploaded_bytes: 1024 ** 3 }), 'Uploading 25% · 1.0 GB / 4.0 GB')
-  assert.equal(youtubeUploadLabel({ source_size: 10, uploaded_bytes: 10 }), 'Uploading 99% · 10 B / 10 B')
-})

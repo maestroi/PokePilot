@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/maestroi/pokepilot/artifactstore"
-	"github.com/maestroi/pokepilot/farm"
 )
 
 // YouTube VOD publishing uploads the already-cached replay MP4; it never
@@ -27,7 +26,6 @@ import (
 const (
 	youtubeUploadTimeout   = 6 * time.Hour
 	youtubeUploadAttempts  = 5
-	youtubeTitleMaxRunes   = 100
 	youtubeDescMaxBytes    = 4500
 	youtubeDefaultTokenURL = "https://oauth2.googleapis.com/token"
 	// part=snippet,status is the minimum needed to set title + privacy.
@@ -211,106 +209,6 @@ func (s *replayServer) handleYouTubeStatus(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"configured": s.youtube.configured(), "publication": rec.view()})
-}
-
-type youtubePublishRequest struct {
-	Privacy string `json:"privacy,omitempty"`
-}
-
-// handleYouTubePublish starts (or resumes) the upload of a run's ready replay
-// MP4. A run that is already published returns its existing video instead of
-// uploading again.
-func (s *replayServer) handleYouTubePublish(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("id")
-	mode, err := parseReplayMode(r.URL.Query().Get("mode"))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	var req youtubePublishRequest
-	if r.ContentLength != 0 {
-		dec := json.NewDecoder(io.LimitReader(r.Body, 4096))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid publish request: " + err.Error()})
-			return
-		}
-	}
-	privacy := strings.ToLower(strings.TrimSpace(req.Privacy))
-	switch privacy {
-	case "":
-		privacy = "unlisted"
-	case "private", "unlisted", "public":
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "privacy must be private, unlisted, or public"})
-		return
-	}
-	if !s.youtube.configured() {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "YouTube publishing is not configured on the replay host"})
-		return
-	}
-	if s.store == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "S3 artifact storage is not configured for the replay service"})
-		return
-	}
-	if !s.claimYouTubeUpload(runID) {
-		rec, _, _ := s.loadYouTubePublication(r.Context(), runID)
-		writeJSON(w, http.StatusAccepted, rec.view())
-		return
-	}
-	started := false
-	defer func() {
-		if !started {
-			s.releaseYouTubeUpload(runID)
-		}
-	}()
-
-	rec, _, err := s.loadYouTubePublication(r.Context(), runID)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": clipError(err)})
-		return
-	}
-	if rec.State == youtubeStatePublished && rec.VideoID != "" {
-		writeJSON(w, http.StatusOK, rec.view())
-		return
-	}
-	recordings, err := s.recordings(r.Context(), runID)
-	if err != nil {
-		writeReplayError(w, err)
-		return
-	}
-	replay := s.replayStatus(r.Context(), runID, recordings, mode)
-	if replay.State != "ready" {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "replay MP4 is not ready; render the replay first", "replay": replay})
-		return
-	}
-	meta, err := s.youtubeMetaForRun(r.Context(), runID)
-	if err != nil {
-		writeReplayError(w, err)
-		return
-	}
-	if rec.SourceKey != replay.ObjectKey || rec.SourceSize != replay.Size {
-		rec.SessionURI = "" // a different MP4 is a different upload
-	}
-	rec.RunID = runID
-	rec.State = youtubeStateUploading
-	rec.Privacy = privacy
-	rec.Title = meta.Title
-	rec.SourceKey = replay.ObjectKey
-	rec.SourceSize = replay.Size
-	rec.Error = ""
-	if err := s.saveYouTubePublication(r.Context(), rec); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": clipError(err)})
-		return
-	}
-	started = true
-	go func() {
-		defer s.releaseYouTubeUpload(runID)
-		ctx, cancel := context.WithTimeout(context.Background(), youtubeUploadTimeout)
-		defer cancel()
-		s.publishYouTube(ctx, rec, meta)
-	}()
-	writeJSON(w, http.StatusAccepted, rec.view())
 }
 
 // publishYouTube runs one upload to completion and records the outcome. A
@@ -556,146 +454,6 @@ func stripURLError(err error) error {
 		return urlErr.Err
 	}
 	return err
-}
-
-// wallRunForPublish is the subset of pokewall's GET /v1/runs/{id} the
-// metadata needs. Traces, decisions, and raw model output are deliberately
-// not decoded, so they cannot leak into a public description.
-type wallRunForPublish struct {
-	Run struct {
-		RunID      string       `json:"run_id"`
-		Status     string       `json:"status"`
-		Game       string       `json:"game"`
-		Starter    string       `json:"starter"`
-		Goal       string       `json:"goal"`
-		Planner    string       `json:"planner"`
-		LLMProfile string       `json:"llm_profile"`
-		QueuedAt   int64        `json:"queued_at"`
-		EndedAt    int64        `json:"ended_at"`
-		Attempts   int          `json:"attempts"`
-		Reason     string       `json:"reason"`
-		Player     *farm.Player `json:"player"`
-	} `json:"run"`
-	Finish *struct {
-		Reason        string         `json:"reason"`
-		RunnerVersion string         `json:"runner_version"`
-		ProgressFinal *farm.Progress `json:"progress_final"`
-	} `json:"finish"`
-}
-
-func (s *replayServer) youtubeMetaForRun(ctx context.Context, runID string) (youtubeVideoMeta, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.wallBase+"/v1/runs/"+url.PathEscape(runID), nil)
-	if err != nil {
-		return youtubeVideoMeta{}, err
-	}
-	res, err := s.wallHTTP.Do(req)
-	if err != nil {
-		return youtubeVideoMeta{}, fmt.Errorf("pokewall unavailable: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusNotFound {
-		return youtubeVideoMeta{}, errRunNotFound
-	}
-	if res.StatusCode != http.StatusOK {
-		return youtubeVideoMeta{}, fmt.Errorf("pokewall returned %s", res.Status)
-	}
-	var run wallRunForPublish
-	if err := json.NewDecoder(io.LimitReader(res.Body, maxWallResponseBytes)).Decode(&run); err != nil {
-		return youtubeVideoMeta{}, fmt.Errorf("decode pokewall run: %w", err)
-	}
-	if run.Run.RunID == "" {
-		run.Run.RunID = runID
-	}
-	return buildYouTubeMeta(run, s.youtube.RunURLTemplate), nil
-}
-
-// buildYouTubeMeta is deterministic: the same run record always produces the
-// same title and description. It reads only game-neutral run fields.
-func buildYouTubeMeta(run wallRunForPublish, runURLTemplate string) youtubeVideoMeta {
-	r := run.Run
-	game := r.Game
-	if game == "" {
-		game = "Game Boy"
-	}
-	badges := -1
-	if run.Finish != nil && run.Finish.ProgressFinal != nil {
-		badges = run.Finish.ProgressFinal.Badges
-	} else if r.Player != nil && r.Player.Badges != nil {
-		badges = len(r.Player.Badges)
-	}
-	result := r.Reason
-	if run.Finish != nil && run.Finish.Reason != "" {
-		result = run.Finish.Reason
-	}
-	if result == "" {
-		result = r.Status
-	}
-
-	titleParts := []string{"PokePilot AI plays " + game}
-	if r.Starter != "" {
-		titleParts = append(titleParts, r.Starter)
-	}
-	if badges >= 0 {
-		titleParts = append(titleParts, plural(badges, "badge"))
-	}
-	if result != "" {
-		titleParts = append(titleParts, result)
-	}
-	title := youtubeSafeText(strings.Join(titleParts, " · "))
-	if runes := []rune(title); len(runes) > youtubeTitleMaxRunes {
-		title = string(runes[:youtubeTitleMaxRunes-1]) + "…"
-	}
-
-	var d strings.Builder
-	fmt.Fprintf(&d, "An autonomous PokePilot run of %s, replayed from its deterministic recording.\n\n", game)
-	line := func(label, value string) {
-		if strings.TrimSpace(value) != "" {
-			fmt.Fprintf(&d, "%s: %s\n", label, value)
-		}
-	}
-	line("Run", r.RunID)
-	line("Game", r.Game)
-	line("Starter", r.Starter)
-	if r.Player != nil && len(r.Player.Party) > 0 {
-		party := make([]string, 0, len(r.Player.Party))
-		for _, mon := range r.Player.Party {
-			party = append(party, fmt.Sprintf("%s Lv%d", mon.Name, mon.Level))
-		}
-		line("Final party", strings.Join(party, ", "))
-	}
-	line("Goal", r.Goal)
-	line("Result", result)
-	if badges >= 0 {
-		line("Badges", strconv.Itoa(badges))
-	}
-	if run.Finish != nil && run.Finish.ProgressFinal != nil && run.Finish.ProgressFinal.Maps > 0 {
-		line("Maps visited", strconv.Itoa(run.Finish.ProgressFinal.Maps))
-	}
-	if r.QueuedAt > 0 && r.EndedAt > r.QueuedAt {
-		line("Duration", (time.Duration(r.EndedAt-r.QueuedAt) * time.Second).String())
-	}
-	if r.Attempts > 1 {
-		line("Attempts", strconv.Itoa(r.Attempts))
-	}
-	line("Planner", r.Planner)
-	line("Model profile", r.LLMProfile)
-	if run.Finish != nil {
-		line("PokePilot build", run.Finish.RunnerVersion)
-	}
-	if runURLTemplate != "" {
-		line("Run page", strings.ReplaceAll(runURLTemplate, "{run_id}", url.PathEscape(r.RunID)))
-	}
-	desc := youtubeSafeText(d.String())
-	if len(desc) > youtubeDescMaxBytes {
-		desc = strings.ToValidUTF8(desc[:youtubeDescMaxBytes], "")
-	}
-	return youtubeVideoMeta{Title: title, Description: desc}
-}
-
-// youtubeSafeText removes angle brackets, which the YouTube API rejects in
-// titles and descriptions.
-func youtubeSafeText(s string) string {
-	return strings.NewReplacer("<", "", ">", "").Replace(s)
 }
 
 func plural(n int, noun string) string {

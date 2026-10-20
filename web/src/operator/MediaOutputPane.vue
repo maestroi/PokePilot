@@ -7,7 +7,7 @@ import ConfirmDialog from '../shared/components/ConfirmDialog.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import VideoPlayer from '../shared/components/VideoPlayer.vue'
 import { presentRecording, presentRunStatus } from '../shared/status'
-import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle, youtubeUploadLabel } from './mediaQuery'
+import { canFeature, canOpenPublic, isLiveRun, publicActionLabel, runOutputs, visibilityLabel, visibilityTitle } from './mediaQuery'
 import MediaOutputsList from './MediaOutputsList.vue'
 import { gameTitle } from './operations'
 import type { RecordingSummary } from './runRecording'
@@ -42,7 +42,7 @@ const media = useRunMedia(toRef(props, 'runId'))
 const replayReady = computed(() => media.replay.value ? media.replay.value.state === 'ready' : Boolean(props.recording?.canWatch))
 const highlightsReady = computed(() => media.highlights.value?.state === 'ready')
 const mode = ref<'full' | 'highlights'>('full')
-watch(() => props.runId, () => { mode.value = 'full'; confirmCancel.value = false; confirmPublish.value = false })
+watch(() => props.runId, () => { mode.value = 'full'; confirmCancel.value = false })
 const playerSource = computed(() => {
   if (mode.value === 'highlights' && highlightsReady.value) return highlightVideoURL(props.runId)
   return replayReady.value ? replayVideoURL(props.runId) : ''
@@ -76,9 +76,7 @@ const canGenerate = computed(() => {
   return Boolean(props.run && !isLiveRun(props.run) && state && state !== 'disabled' && state !== 'generating' && state !== 'ready')
 })
 
-const youtubePrivacy = ref<'private' | 'unlisted' | 'public'>('unlisted')
 const confirmCancel = ref(false)
-const confirmPublish = ref(false)
 </script>
 
 <template>
@@ -187,35 +185,6 @@ const confirmPublish = ref(false)
             <span v-if="!canOpenPublic(run, visible)" class="text-meta text-fg-2">{{ publicActionLabel(run, visible) }}</span>
           </div>
 
-          <!-- YouTube -->
-          <template v-if="media.youtube.value?.configured && replayReady">
-            <h3 class="mt-5 text-title font-semibold">YouTube · legacy replay upload</h3>
-            <p class="mt-1 text-meta text-warn">Direct replay uploads bypass the Studio quality and approval queue. Use <a :href="studioHref" class="underline">Media Studio</a> for reviewed episodes and Shorts.</p>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <a
-                v-if="media.youtube.value.publication.state === 'published' && media.youtube.value.publication.video_url"
-                :href="media.youtube.value.publication.video_url"
-                target="_blank"
-                rel="noopener"
-                class="ui-btn ui-btn-sm"
-              >Published ({{ media.youtube.value.publication.privacy }}) ↗</a>
-              <span v-else-if="media.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent"><span aria-hidden="true">◐</span> {{ youtubeUploadLabel(media.youtube.value.publication) }}</span>
-              <template v-else>
-                <span v-if="['failed', 'interrupted'].includes(media.youtube.value.publication.state)" class="ui-pill ui-tone-danger" :title="media.youtube.value.publication.error"><span aria-hidden="true">✕</span> {{ media.youtube.value.publication.state }}</span>
-                <label class="flex items-center gap-2">
-                  <span class="ui-label">Visibility</span>
-                  <select v-model="youtubePrivacy" class="h-7 rounded-[3px] border border-control bg-canvas px-2 text-fg max-md:h-10">
-                    <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
-                  </select>
-                </label>
-                <button type="button" class="ui-btn ui-btn-sm max-md:h-10" :disabled="media.publishing.value" @click="confirmPublish = true">
-                  {{ media.youtube.value.publication.state === 'none' ? 'Publish to YouTube…' : 'Retry upload…' }}
-                </button>
-              </template>
-            </div>
-            <p v-if="media.youtubeError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ media.youtubeError.value }}</p>
-          </template>
-
           <!-- Source -->
           <h3 class="mt-5 mb-1 text-title font-semibold">Source run</h3>
           <dl class="ui-kv">
@@ -243,15 +212,6 @@ const confirmPublish = ref(false)
       danger
       @close="confirmCancel = false"
       @confirm="media.cancelReplay().finally(() => { confirmCancel = false })"
-    />
-    <ConfirmDialog
-      :open="confirmPublish"
-      :title="`Upload the replay of ${runId} to YouTube?`"
-      :message="`The video is uploaded as ${youtubePrivacy}.`"
-      confirm-label="Upload"
-      :busy="media.publishing.value"
-      @close="confirmPublish = false"
-      @confirm="media.publishYouTube(youtubePrivacy).finally(() => { confirmPublish = false })"
     />
   </section>
 </template>

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -149,85 +148,6 @@ func youtubeTestServer(t *testing.T, wallURL string, store *artifactstore.S3, yt
 	return s
 }
 
-func TestYouTubePublishUploadsReadyReplayOnce(t *testing.T) {
-	mem, store := newMemS3(t)
-	fake := &fakeYouTube{}
-	yt := fake.server(t)
-	recording := artifactRef{
-		Name: "run.gbrun", SHA256: strings.Repeat("a", 64), Store: "s3",
-		ObjectKey: "runs/run-1/attempt-1/run.gbrun", Replayable: true,
-	}
-	wall := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/runs/run-1/artifacts":
-			_ = json.NewEncoder(w).Encode(artifactList{RunID: "run-1", Attempt: 1, Artifacts: []artifactRef{recording}})
-		case "/v1/runs/run-1":
-			_, _ = w.Write([]byte(`{"run":{"run_id":"run-1","status":"done","game":"red","starter":"Squirtle","trace":"SECRET-TRACE"},"finish":{"reason":"done","progress_final":{"badges":2,"maps":30}}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer wall.Close()
-
-	s := youtubeTestServer(t, wall.URL, store, yt)
-	mp4 := []byte("fake-mp4-bytes")
-	mem.put(s.replayCacheKeyForMode("run-1", []replayRecording{{Attempt: 1, Artifact: recording}}, replayModeBroadcast), mp4)
-	srv := httptest.NewServer(s.handler())
-	defer srv.Close()
-
-	post := func() (int, string) {
-		res, err := http.Post(srv.URL+"/v1/runs/run-1/publish/youtube", "application/json", strings.NewReader(`{"privacy":"private"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		body, _ := io.ReadAll(res.Body)
-		return res.StatusCode, string(body)
-	}
-	if code, body := post(); code != http.StatusAccepted {
-		t.Fatalf("first publish = %d %s", code, body)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	var status string
-	for time.Now().Before(deadline) {
-		res, err := http.Get(srv.URL + "/v1/runs/run-1/publish/youtube")
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, _ := io.ReadAll(res.Body)
-		res.Body.Close()
-		status = string(data)
-		if strings.Contains(status, `"state":"published"`) {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if !strings.Contains(status, `"video_id":"vid-123"`) {
-		t.Fatalf("publication never completed: %s", status)
-	}
-	code, body := post()
-	if code != http.StatusOK || !strings.Contains(body, "vid-123") {
-		t.Fatalf("retry after publish = %d %s, want 200 with existing video", code, body)
-	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.sessions != 1 || fake.uploads != 1 || !bytes.Equal(fake.received, mp4) {
-		t.Fatalf("sessions=%d uploads=%d received=%q, want one upload of the cached MP4", fake.sessions, fake.uploads, fake.received)
-	}
-	for _, out := range []string{status, body, string(mem.objects[youtubePublicationKey("run-1")])} {
-		for _, secret := range []string{"refresh-secret", "client-secret", "access-secret"} {
-			if strings.Contains(out, secret) {
-				t.Fatalf("credential %q leaked: %s", secret, out)
-			}
-		}
-	}
-	for _, out := range []string{status, body} {
-		if strings.Contains(out, "session-secret") {
-			t.Fatalf("upload session URI leaked to API: %s", out)
-		}
-	}
-}
-
 func TestYouTubePublishResumesInterruptedUpload(t *testing.T) {
 	mem, store := newMemS3(t)
 	youtubeRetryDelay = time.Millisecond
@@ -335,42 +255,5 @@ func TestYouTubePublishFailureRecordsRedactedError(t *testing.T) {
 	stored := string(mem.objects[youtubePublicationKey("run-4")])
 	if !strings.Contains(stored, `"state":"failed"`) || strings.Contains(stored, "secret") {
 		t.Fatalf("stored record = %s, want failed without credentials", stored)
-	}
-}
-
-func TestBuildYouTubeMetaIsDeterministicAndOmitsTraces(t *testing.T) {
-	var run wallRunForPublish
-	if err := json.Unmarshal([]byte(`{"run":{"run_id":"r 1","status":"done","game":"red","starter":"Bulbasaur",
-		"planner":"llm","llm_profile":"fast","queued_at":100,"ended_at":3700,"attempts":2,
-		"trace":"SECRET-TRACE","raw":"SECRET-RAW","decision":"SECRET-DECISION",
-		"player":{"money":1,"party":[{"name":"IVYSAUR","level":18}]}},
-		"finish":{"reason":"done","runner_version":"abc123","progress_final":{"badges":1,"maps":12}}}`), &run); err != nil {
-		t.Fatal(err)
-	}
-	a := buildYouTubeMeta(run, "https://rompilot.app/runs/{run_id}")
-	b := buildYouTubeMeta(run, "https://rompilot.app/runs/{run_id}")
-	if a != b {
-		t.Fatalf("metadata is not deterministic:\n%+v\n%+v", a, b)
-	}
-	if a.Title != "PokePilot AI plays red · Bulbasaur · 1 badge · done" {
-		t.Fatalf("title = %q", a.Title)
-	}
-	for _, want := range []string{"Run: r 1", "Final party: IVYSAUR Lv18", "Badges: 1", "Maps visited: 12",
-		"Duration: 1h0m0s", "Attempts: 2", "PokePilot build: abc123", "Run page: https://rompilot.app/runs/r%201"} {
-		if !strings.Contains(a.Description, want) {
-			t.Fatalf("description missing %q:\n%s", want, a.Description)
-		}
-	}
-	if strings.Contains(a.Description, "SECRET") {
-		t.Fatalf("description leaked model trace:\n%s", a.Description)
-	}
-	if noLink := buildYouTubeMeta(run, ""); strings.Contains(noLink.Description, "Run page") {
-		t.Fatalf("backlink present without a configured template")
-	}
-
-	long := run
-	long.Run.Starter = strings.Repeat("<x>", 80)
-	if got := buildYouTubeMeta(long, ""); len([]rune(got.Title)) > youtubeTitleMaxRunes || strings.ContainsAny(got.Title, "<>") {
-		t.Fatalf("title not clamped/sanitized: %q", got.Title)
 	}
 }

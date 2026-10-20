@@ -546,10 +546,3 @@ export function studioSteps(input: StudioInput): StudioPipeline {
   return pipeline()
 }
 
-// "Uploading 42% · 4.7 / 11 GB"; plain "Uploading" until bytes start flowing.
-export function youtubeUploadLabel(publication: { source_size?: number, uploaded_bytes?: number }): string {
-  const total = Number(publication.source_size || 0)
-  const done = Number(publication.uploaded_bytes || 0)
-  if (!total || !done) return 'Uploading'
-  return `Uploading ${Math.min(99, Math.floor(done * 100 / total))}% · ${formatBytes(done)} / ${formatBytes(total)}`
-}
