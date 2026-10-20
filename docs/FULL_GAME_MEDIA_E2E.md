@@ -4,7 +4,7 @@
 
 `pokereplay` runs production for every finished run tagged `purpose: "full_e2e"`. Once a minute it lists those runs from wall. For each run that ends `reason=done` with the adapter's `stats.goal_complete=true`, it moves through: broadcast render → producer assessment → episode and Short edits → packages and thumbnail → **private** publication candidates. It calls its own Studio handlers in-process, so the quality gates and validation are the same as the operator path. Renders remain wall-leased jobs. Progress is stored in S3 at `studio/<sha256(run)>/production/v1.json`, which pins the LLM-backed producer assessment so it is never repeated, and survives replay restarts. Read it with `GET /v1/runs/{id}/production`; Media → Full E2E shows it as **Production**. A stage that fails five passes in a row stops as `failed_<stage>` with its error.
 
-Production never approves or uploads. Candidates wait in Studio for review and private upload. The browser coordinator and CLI described below still work for manual or upload testing, but nothing needs to stay open for media to be produced.
+Without the private-upload opt-in, production stops at `ready_for_review` and candidates wait in Studio. With it, production also approves and uploads both candidates as private videos (see below).
 
 ## Durable E2E badge and database filtering
 
@@ -16,11 +16,9 @@ The badge means **launched as E2E**, not **E2E passed**. Outcome and media uploa
 
 ## Finding a previous E2E run and checking whether it worked
 
-Go to **Media → Full E2E**. The **E2E runs and Champion candidates** section now restores the last 100 browser E2E receipts across reloads (on the same browser/origin) and discovers recent Pokémon Red Champion-goal runs directly from the farm API, including still-running games. Farm-discovered runs are marked **Champion candidate**, not automatically claimed as E2E runs: old run specs did not record the E2E intent durably. If an older run has fallen out of the recent dashboard window, enter its ID in **Existing run**.
+Go to **Media → Full E2E**. It lists tagged E2E runs from the farm database and recent Pokémon Red Champion-goal runs, which are marked **Champion candidate**, not claimed as E2E. Enter an older run's ID under **Inspect a run**.
 
-Select a run to see **Server evidence**, refreshed approximately every 10 seconds: the current game state, authoritative Champion goal flag, broadcast render state and episode/Short publication queue. A previous browser receipt is shown separately from independently fetched server state. **Two private upload receipts recorded** requires durable `published` candidates with private intent and provider video IDs; it does **not** independently prove YouTube-side visibility. **Episode + Short in publication queue** only proves both private candidates exist, not a finished upload.
-
-An earlier `working` browser receipt is explicitly presented as **interrupted** after reload, never falsely shown as still executing or successful. **Resume production · no upload** attaches to the same run without creating a second game and completes remaining production stages if the game qualifies. It never silently restores consent to upload: real uploads must be explicitly enabled and confirmed again. This history is a **browser-local troubleshooting aid**, not yet the desired server-owned E2E job ledger, which remains tracked by #2794. Jobs started on another device or browser are discoverable through the farm's Champion-run history, but their original E2E intent may not be provable.
+Select a run to see the server's record, refreshed about every 10 seconds. **Both private upload receipts recorded** requires durable `published` candidates with private intent and provider video IDs; it does **not** independently prove YouTube-side visibility. **Episode + Short in publication queue** only proves both private candidates exist.
 
 ## Operator UI: New run → Full E2E (recommended)
 
@@ -30,25 +28,13 @@ Press **Start Full E2E** **once**. The New run screen queues exactly one farm ru
 
 Uploads are **off by default**. Tick **Also upload … as private videos** and its acknowledgment before **Start Full E2E** to record `POST /v1/runs/{id}/production {"upload_private":true}` (refused when the replay server has no uploader, before any gameplay is queued). The loop then approves and publishes each private candidate through the normal Studio publish action, one at a time, waiting on channel pacing, and records the video links. A candidate blocked by the quality gate ends production as `failed_<format>_upload`; public or unlisted is never used. The same request on a run sitting in `ready_for_review` uploads it after the fact.
 
-## Operator UI: Media → Full E2E (attach or replay)
+## Operator UI: Media → Full E2E (inspect)
 
-The private operator UI exposes **Media → Full E2E** (`#media/e2e`). This screen also starts a fresh test or attaches to an existing run. The CLI below remains useful in unattended environments.
-
-1. Select **Fresh full game** (Red, starter, seed, registered strategist deployment) or **Existing run** to attach to an already completed Champion run.
-2. Keep **Upload to YouTube privately** unchecked for the first test. Start the test and follow the stage-level progress.
-3. The interface checks the semantic Hall of Fame completion, requests the broadcast replay, producer assessment, edited episode and Short, selected thumbnail and both private publication candidates using the existing servers.
-4. Review the two generated formats in Studio. To make **real private uploads** on a later run, tick the upload option **and** its explicit acknowledgment before pressing Start.
-5. Use **Export report** to record run ID, stage results, content hashes, publication candidate IDs and provider video IDs. Links open the source run, Media Library, Studio or produced videos.
-
-**Coordination lifetime:** This first UI slice drives existing backend APIs from an open operator browser page. Background game / renderer / already-dispatched upload jobs are server-owned. **Switching operator tabs does not stop coordination**, but reloading, closing the browser or clicking **Stop coordinating** halts the coordinator; it does not cancel the existing game, render or upload. Use **Existing run** to reattach and repeat idempotent preparation against durable run artifacts. A persisted server-side E2E orchestration queue is the next enhancement tracked in #2794.
-
-The UI does not allow public or unlisted upload from this mode. It follows Studio's producer verdict and quality rules and never overrides `archive_only` / `do_not_publish`. A successful private-upload receipt means a provider ID was recorded for a candidate submitted as private; it is *not yet independent provider-side visibility or MP4 playback verification*.
-
-
+**Media → Full E2E** (`#media/e2e`) lists tagged E2E runs (and older untagged Champion runs) and shows the server's record for one: farm outcome, Champion proof, production stage, replay, publication candidates, edit previews and uploaded video links. It coordinates nothing itself. From there an operator can **Retry production** after a `failed_*` stage, or **Upload privately…** (with an explicit acknowledgment) on a `full_e2e` run that was launched without the upload opt-in.
 
 Tracking issue: [#2794](https://github.com/maestroi/PokePilot/issues/2794).
 
-This operator smoke test connects the **existing** farm, verified replay, Studio producer/editor, episode/Short packaging, quality-gated publication queue, and resumable YouTube uploader. It creates **no second gameplay runner, renderer, or uploader**. The CLI is a separate non-UI option; unlike the app-level UI coordinator, the CLI process itself must remain running. Neither coordinator is yet a durable server-owned pipeline.
+This smoke test connects the **existing** farm, verified replay, Studio producer/editor, episode/Short packaging, quality-gated publication queue, and resumable YouTube uploader. It creates **no second gameplay runner, renderer, or uploader**. The CLI below is a separate non-UI option whose process must remain running.
 
 ## Safe first test (no upload)
 

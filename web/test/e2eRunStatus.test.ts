@@ -1,20 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { E2E_HISTORY_KEY, isFullCampaignSource, parseE2EHistory, storeE2EEntry, type E2EHistoryEntry } from '../src/operator/e2eHistory.ts'
-import { historyLabel, observeE2E } from '../src/operator/e2eRunStatus.ts'
+import { isFullCampaignSource, isVerifiedChampion, observeE2E } from '../src/operator/e2eRunStatus.ts'
 import type { DashboardRun, StudioPublicationCandidate } from '../src/shared/api/types'
 
-const now = 123_456_000
-const receipt: E2EHistoryEntry = {
-  runID: 'run-red-123',
-  state: 'working',
-  startedAt: now - 9000,
-  updatedAt: now - 1000,
-  uploadRequested: true,
-  stages: [{ id: 'game', label: 'Play game', state: 'ready' }],
-  outputs: [],
-  failure: ''
-}
 const champion = (extra: Partial<DashboardRun> = {}): DashboardRun => ({
   run_id: 'run-red-123', game: 'pokemon-red', goal: 'Beat the Elite Four and Champion.',
   status: 'done', reason: 'done', stats: { goal_complete: true }, ...extra
@@ -26,33 +14,7 @@ const publication = (format: 'episode' | 'short', state: StudioPublicationCandid
     privacy: privateIntent ? 'private' : 'public' }
 })
 
-test('saved browser E2E receipts survive reload but cannot impersonate a live coordinator', () => {
-  assert.ok(E2E_HISTORY_KEY.includes('full-e2e'))
-  const restored = parseE2EHistory(JSON.stringify([receipt]), now)
-  assert.equal(restored.length, 1)
-  assert.equal(restored[0].runID, receipt.runID)
-  assert.equal(restored[0].state, 'interrupted')
-  assert.equal(restored[0].uploadRequested, true, 'requested privacy is receipt-only, not authorization')
-  assert.match(historyLabel(restored[0]), /interrupted/i)
-})
 
-test('invalid and duplicate history records are ignored, newest wins and storage is bounded', () => {
-  const corrupted = parseE2EHistory('}{', now)
-  assert.deepEqual(corrupted, [])
-  const incoming = [
-    { ...receipt, runID: '../path' },
-    { ...receipt, state: 'not_a_status' },
-    receipt,
-    { ...receipt, updatedAt: now - 4000 },
-    { ...receipt, runID: 'run-red-124', state: 'passed' }
-  ]
-  const parsed = parseE2EHistory(JSON.stringify(incoming), now)
-  assert.deepEqual(parsed.map(i => i.runID), ['run-red-123', 'run-red-124'])
-  assert.equal(parsed[1].state, 'passed')
-  const updated = storeE2EEntry(parsed, { ...receipt, state: 'failed', updatedAt: now })
-  assert.equal(updated.length, 2)
-  assert.equal(updated[0].state, 'failed')
-})
 
 test('cross-browser source discovery does not falsely classify regular games as E2E', () => {
   assert.equal(isFullCampaignSource(champion()), true)
@@ -61,7 +23,7 @@ test('cross-browser source discovery does not falsely classify regular games as 
   assert.equal(isFullCampaignSource(champion({ run_id: 'e2e-old-123', goal: '' })), true)
 })
 
-test('server status is not overwritten by a stale browser receipt', () => {
+test('observed status comes only from server records', () => {
   assert.equal(observeE2E(champion({ status: 'running' }), null, null).tone, 'working')
   assert.equal(observeE2E(champion({ reason: 'timeout', stats: {} }), null, null).tone, 'failed')
   assert.match(observeE2E(champion(), { state: 'ready', size: 123 }, []).label, /production incomplete/)
@@ -76,4 +38,15 @@ test('server status is not overwritten by a stale browser receipt', () => {
 test('explicit database purpose identifies E2E independent of the goal or ID', () => {
   assert.equal(isFullCampaignSource(champion({ purpose: 'full_e2e', goal: 'other' })), true)
   assert.equal(isFullCampaignSource(champion({ purpose: 'normal', goal: 'Earn 1 badge.' })), false)
+})
+
+test('eight badges are not enough: Red Champion needs semantic completion', () => {
+  assert.equal(isVerifiedChampion(champion()), true)
+  assert.equal(isVerifiedChampion(champion({ stats: { goal_complete: false },
+    player: { badges: Array(8).fill('Badge'), party: [] } })), false)
+  assert.equal(isVerifiedChampion(champion({ reason: 'budget' })), false)
+  assert.equal(isVerifiedChampion(champion({ game: 'pokemon-gold' })), false)
+  assert.equal(isVerifiedChampion(champion({ stats: {}, player: {
+    milestones: ['hall_of_fame'], party: []
+  } })), true)
 })

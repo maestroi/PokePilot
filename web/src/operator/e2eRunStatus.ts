@@ -1,6 +1,20 @@
 import type { DashboardRun, ReplayStatus, StudioPublicationCandidate } from '../shared/api/types'
-import { isVerifiedChampion } from './fullProduction.ts'
-import type { E2EHistoryEntry } from './e2eHistory'
+
+const CHAMPION_GOALS = ['elite-four', 'beat the elite four and champion.', 'beat the elite four and champion']
+
+export function isVerifiedChampion(run: DashboardRun | null | undefined): boolean {
+  if (!run || run.game !== 'pokemon-red' || run.status !== 'done' || run.reason !== 'done') return false
+  if (!CHAMPION_GOALS.includes((run.goal || '').toLowerCase().trim())) return false
+  const hall = (run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m))
+  return run.stats?.goal_complete === true || hall
+}
+
+// Tagged full_e2e runs, plus older untagged Red Champion campaigns.
+export function isFullCampaignSource(run: Pick<DashboardRun, 'run_id' | 'game' | 'goal'>): boolean {
+  return run.game === 'pokemon-red' &&
+    (('purpose' in run && run.purpose === 'full_e2e') ||
+    run.run_id.startsWith('e2e-') || CHAMPION_GOALS.includes((run.goal || '').trim().toLowerCase()))
+}
 
 export type E2EObservedTone = 'working' | 'ready' | 'failed' | 'unknown'
 export interface E2EObservedStatus {
@@ -10,7 +24,6 @@ export interface E2EObservedStatus {
 }
 
 // Only farm and replay server records count for this live verdict.
-// Browser history is intentionally not used to claim success.
 export function observeE2E(
   run: DashboardRun,
   replay: ReplayStatus | null,
@@ -46,14 +59,4 @@ export function observeE2E(
     return { tone: 'failed', label: 'Replay render failed', detail: replay.error || replay.state }
   }
   return { tone: 'working', label: 'Champion complete; media pending', detail: 'Game goal is verified, but no completed E2E media output has been observed.' }
-}
-
-export function historyLabel(entry: E2EHistoryEntry | undefined): string {
-  if (!entry) return 'Possible E2E source · origin unverified'
-  switch (entry.state) {
-    case 'passed': return 'Previous browser test passed'
-    case 'failed': return 'Previous browser test failed'
-    case 'interrupted': return 'Browser coordination interrupted'
-    default: return 'Started in this browser · last status unknown'
-  }
 }

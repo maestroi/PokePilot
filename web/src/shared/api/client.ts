@@ -419,6 +419,7 @@ export interface ProductionStatus {
   error?: string
   failures?: number
   upload_private?: boolean
+  plans?: Record<string, string>
   videos?: Record<string, string>
   updated_at: number
 }
