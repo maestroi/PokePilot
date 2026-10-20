@@ -260,6 +260,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", s.handleYouTubePublish)
 	mux.HandleFunc("GET /v1/runs/{id}/production", s.handleProductionStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/production/retry", s.handleProductionRetry)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", s.handleStudioPublicationList)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", s.handleStudioPublicationCreate)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", s.handleStudioPublicationAction)

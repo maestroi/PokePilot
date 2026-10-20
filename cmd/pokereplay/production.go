@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/maestroi/pokepilot/artifactstore"
@@ -88,6 +89,32 @@ func (s *replayServer) handleProductionStatus(w http.ResponseWriter, r *http.Req
 	}
 	st, err := s.loadProduction(r.Context(), r.PathValue("id"))
 	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+// handleProductionRetry re-arms a run whose production exhausted its retries
+// (a failed_* stage), keeping the pinned assessment and plans so the loop
+// resumes where it stopped instead of re-asking the producer.
+func (s *replayServer) handleProductionRetry(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "studio storage disabled"})
+		return
+	}
+	st, err := s.loadProduction(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	stage, failed := strings.CutPrefix(st.Stage, "failed_")
+	if !st.Done || !failed {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "production is not in a failed stage"})
+		return
+	}
+	st.Stage, st.Done, st.Failures, st.Error = stage, false, 0, ""
+	if err := s.saveProduction(r.Context(), st); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}

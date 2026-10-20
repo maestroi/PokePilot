@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getBroadcastReplayStatus, getDashboard, getModels, getProductionStatus, getRun, getStudioPublications, type ProductionStatus, studioEditVideoURL } from '../shared/api/client'
+import { getBroadcastReplayStatus, getDashboard, getModels, getProductionStatus, getRun, retryProduction, getStudioPublications, type ProductionStatus, studioEditVideoURL } from '../shared/api/client'
 import type { DashboardRun, ReplayStatus, StudioPublicationCandidate } from '../shared/api/types'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { deploymentOptionLabel, deploymentSelectable, servesStrategist } from './llmDeployments'
@@ -122,6 +122,20 @@ function inspectRun(id: string): void {
   const url = formatMediaHref({ ...props.state, tab: 'e2e', run: id, job: '' }, window.location.search)
   window.history.replaceState(null, '', url)
   window.dispatchEvent(new PopStateEvent('popstate'))
+}
+const retryingProduction = ref(false)
+const productionRetryError = ref('')
+async function retryFailedProduction(): Promise<void> {
+  retryingProduction.value = true
+  productionRetryError.value = ''
+  try {
+    await retryProduction(inspectedID.value)
+    await evidence.retry()
+  } catch (cause) {
+    productionRetryError.value = cause instanceof Error ? cause.message : 'Retry failed'
+  } finally {
+    retryingProduction.value = false
+  }
 }
 function selectedRunLink(section: 'live' | 'studio' | 'library'): string {
   if (section === 'live') return '?run=' + encodeURIComponent(inspectedID.value) + '#live'
@@ -307,7 +321,9 @@ function downloadReport(): void {
               <dt class="text-fg-3">Champion</dt>
               <dd>{{ selectedEvidence.run.stats?.goal_complete ? 'Goal flag recorded' : (selectedEvidence.run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m)) ? 'Hall of Fame milestone' : 'Not verified' }}</dd>
               <dt class="text-fg-3">Production</dt>
-              <dd>{{ selectedEvidence.production ? selectedEvidence.production.stage.replace(/_/g, ' ') : 'No status' }}<span v-if="selectedEvidence.production?.verdict"> · {{ selectedEvidence.production.verdict }}</span><span v-if="selectedEvidence.production?.error" class="text-warn"> · {{ selectedEvidence.production.error }}</span></dd>
+              <dd>{{ selectedEvidence.production ? selectedEvidence.production.stage.replace(/_/g, ' ') : 'No status' }}<span v-if="selectedEvidence.production?.verdict"> · {{ selectedEvidence.production.verdict }}</span><span v-if="selectedEvidence.production?.error" class="text-warn"> · {{ selectedEvidence.production.error }}</span>
+                <button v-if="selectedEvidence.production?.done && selectedEvidence.production.stage.startsWith('failed_')" type="button" class="ui-btn ui-btn-sm ml-2" :disabled="retryingProduction" @click="retryFailedProduction">Retry production</button>
+                <span v-if="productionRetryError" class="text-warn"> · {{ productionRetryError }}</span></dd>
               <dt class="text-fg-3">Replay</dt>
               <dd>{{ selectedEvidence.replay?.state || 'No status' }}<span v-if="selectedEvidence.replayError" class="text-warn"> · unavailable</span></dd>
               <dt class="text-fg-3">Publication</dt>
