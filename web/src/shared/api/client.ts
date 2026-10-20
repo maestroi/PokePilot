@@ -418,10 +418,19 @@ export interface ProductionStatus {
   verdict?: string
   error?: string
   failures?: number
+  upload_private?: boolean
+  videos?: Record<string, string>
   updated_at: number
 }
 export function getProductionStatus(runID: string, signal?: AbortSignal): Promise<ProductionStatus> {
   return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, { signal })
+}
+// Records a full_e2e run's private-upload opt-in; 503 when the replay server
+// has no uploader, so callers can refuse before queueing gameplay.
+export function requestProduction(runID: string, uploadPrivate: boolean): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, {
+    method: 'POST', body: JSON.stringify({ upload_private: uploadPrivate })
+  })
 }
 export function retryProduction(runID: string): Promise<ProductionStatus> {
   return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production/retry`, { method: 'POST', body: '{}' })

@@ -324,6 +324,13 @@ function downloadReport(): void {
               <dd>{{ selectedEvidence.production ? selectedEvidence.production.stage.replace(/_/g, ' ') : 'No status' }}<span v-if="selectedEvidence.production?.verdict"> · {{ selectedEvidence.production.verdict }}</span><span v-if="selectedEvidence.production?.error" class="text-warn"> · {{ selectedEvidence.production.error }}</span>
                 <button v-if="selectedEvidence.production?.done && selectedEvidence.production.stage.startsWith('failed_')" type="button" class="ui-btn ui-btn-sm ml-2" :disabled="retryingProduction" @click="retryFailedProduction">Retry production</button>
                 <span v-if="productionRetryError" class="text-warn"> · {{ productionRetryError }}</span></dd>
+              <template v-if="selectedEvidence.production?.upload_private || Object.keys(selectedEvidence.production?.videos || {}).length">
+                <dt class="text-fg-3">Private upload</dt>
+                <dd>
+                  <span v-if="!Object.keys(selectedEvidence.production?.videos || {}).length">Opted in · waiting for candidates</span>
+                  <a v-for="(href, format) in selectedEvidence.production?.videos" :key="format" :href="href.startsWith('http') ? href : 'https://youtu.be/' + href" target="_blank" rel="noopener" class="mr-3 text-accent hover:underline">{{ format }} ↗</a>
+                </dd>
+              </template>
               <dt class="text-fg-3">Replay</dt>
               <dd>{{ selectedEvidence.replay?.state || 'No status' }}<span v-if="selectedEvidence.replayError" class="text-warn"> · unavailable</span></dd>
               <dt class="text-fg-3">Publication</dt>

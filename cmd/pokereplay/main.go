@@ -152,6 +152,7 @@ type replayServer struct {
 	youtube         youtubeConfig
 	youtubeHTTP     *http.Client
 	studioPublishMu sync.Mutex
+	productionMu    sync.Mutex // serializes production state read-modify-write
 	youtubeMu       sync.Mutex
 	youtubeActive   map[string]*atomic.Int64 // run -> bytes YouTube has received
 
@@ -259,6 +260,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/production", s.handleProductionStatus)
+	mux.HandleFunc("POST /v1/runs/{id}/production", s.handleProductionRequest)
 	mux.HandleFunc("POST /v1/runs/{id}/production/retry", s.handleProductionRetry)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", s.handleStudioPublicationList)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", s.handleStudioPublicationCreate)
