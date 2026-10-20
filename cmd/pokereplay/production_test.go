@@ -96,3 +96,29 @@ func TestProductionStepAdvancesWithoutRepeatingAssessment(t *testing.T) {
 		t.Fatalf("run without the goal flag must stop, got %+v", st)
 	}
 }
+
+func TestProductionRetryRearmsFailedStageKeepingAssessment(t *testing.T) {
+	_, store := newMemS3(t)
+	s := newReplayServer("http://wall.invalid", "", "", store)
+	ctx := context.Background()
+	h := s.handler()
+	assessment := strings.Repeat("a", 64)
+
+	if code, _ := selfJSON(ctx, h, http.MethodPost, "/v1/runs/run-e2e/production/retry", nil, nil); code != http.StatusConflict {
+		t.Fatalf("retry of pending production = %d, want 409", code)
+	}
+	if err := s.saveProduction(ctx, productionState{Version: 1, RunID: "run-e2e", Stage: "failed_episode_render", Done: true,
+		AssessmentHash: assessment, Verdict: "full_episode", Error: "422", Failures: productionMaxFailures}); err != nil {
+		t.Fatal(err)
+	}
+	var st productionState
+	if _, err := selfJSON(ctx, h, http.MethodPost, "/v1/runs/run-e2e/production/retry", nil, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Stage != "episode_render" || st.Done || st.Failures != 0 || st.Error != "" || st.AssessmentHash != assessment {
+		t.Fatalf("retry state = %+v", st)
+	}
+	if saved, err := s.loadProduction(ctx, "run-e2e"); err != nil || saved.Done || saved.Stage != "episode_render" {
+		t.Fatalf("retry not persisted: %+v %v", saved, err)
+	}
+}

@@ -423,6 +423,9 @@ export interface ProductionStatus {
 export function getProductionStatus(runID: string, signal?: AbortSignal): Promise<ProductionStatus> {
   return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, { signal })
 }
+export function retryProduction(runID: string): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production/retry`, { method: 'POST', body: '{}' })
+}
 export function getStudioPublications(runID: string): Promise<StudioPublicationList> {
   return requestJSON<StudioPublicationList>(`/v1/runs/${encodeURIComponent(runID)}/studio/publications`)
 }

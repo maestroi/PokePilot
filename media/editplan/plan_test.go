@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/maestroi/pokepilot/farm"
 	"github.com/maestroi/pokepilot/media/producer"
@@ -187,5 +188,35 @@ func TestAttemptOffset(t *testing.T) {
 	}
 	if _, err := OffsetMS([]Source{{1, 1}}, 2, 0); err == nil {
 		t.Fatal("unknown attempt accepted")
+	}
+}
+
+// Producer beat summaries are free text of any length; Build must fit each
+// field's own limit (Chapter is 100 bytes) on a rune boundary, not reject
+// its own plan.
+func TestBuildClipsLongBeatSummaryPerField(t *testing.T) {
+	_, tl := fixture(t)
+	long := ""
+	for len(long) < 300 {
+		long += "Pokémon league run reaches the champion room. "
+	}
+	tl[0].Events[0].Summary = long
+	a, err := producer.Assess(context.Background(), producer.Input{RunID: "edit-run", Timelines: tl}, nil, producer.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Build(a, tl, Episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range p.Segments {
+		for _, text := range []string{s.Overlay, s.Caption, s.NarrationCue, s.Chapter} {
+			if !utf8.ValidString(text) {
+				t.Fatalf("split rune in %q", text)
+			}
+		}
+		if len(s.Chapter) > 100 || len(s.Caption) > 240 {
+			t.Fatalf("oversized text: %+v", s)
+		}
 	}
 }

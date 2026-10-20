@@ -122,6 +122,16 @@ func speedOK(speed int) bool {
 }
 func textOK(s string, max int) bool { return len(s) <= max && !strings.ContainsAny(s, "\x00\r") }
 
+// clipText fits free producer text into a textOK field of max bytes: it drops
+// the bytes textOK rejects and cuts on a rune boundary.
+func clipText(s string, max int) string {
+	s = strings.TrimSpace(strings.NewReplacer("\x00", "", "\r", "").Replace(s))
+	if len(s) <= max {
+		return s
+	}
+	return strings.TrimSpace(strings.ToValidUTF8(s[:max], ""))
+}
+
 func duration(segments []Segment) int64 {
 	var n int64
 	for _, seg := range segments {
@@ -442,12 +452,9 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 					p.Segments = append(p.Segments, Segment{Action: Keep, Attempt: source.Attempt, StartMS: cursor, EndMS: w.start, Speed: pol.RoutineSpeed})
 				}
 			}
-			caption := strings.TrimSpace(w.caption)
-			if len(caption) > 220 {
-				caption = caption[:220]
-			}
+			caption := clipText(w.caption, 220)
 			p.Segments = append(p.Segments, Segment{Action: Keep, Attempt: source.Attempt, StartMS: w.start, EndMS: w.end, Speed: 1,
-				EventIDs: w.eventIDs, Caption: caption, NarrationCue: caption, Chapter: caption, Transition: "fade"})
+				EventIDs: w.eventIDs, Caption: caption, NarrationCue: caption, Chapter: clipText(w.caption, 100), Transition: "fade"})
 			cursor = w.end
 		}
 		if cursor < source.DurationMS {
