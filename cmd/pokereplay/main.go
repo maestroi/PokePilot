@@ -259,6 +259,7 @@ func (s *replayServer) handler() http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/live/broadcast/stop", s.handleRTMPBroadcastStop)
 	mux.HandleFunc("GET /v1/runs/{id}/publish/youtube", s.handleYouTubeStatus)
 	mux.HandleFunc("POST /v1/runs/{id}/publish/youtube", s.handleYouTubePublish)
+	mux.HandleFunc("GET /v1/runs/{id}/production", s.handleProductionStatus)
 	mux.HandleFunc("GET /v1/runs/{id}/studio/publications", s.handleStudioPublicationList)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications", s.handleStudioPublicationCreate)
 	mux.HandleFunc("POST /v1/runs/{id}/studio/publications/{candidate}/{action}", s.handleStudioPublicationAction)
@@ -1422,6 +1423,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go serverImpl.runRenderJobRecovery(ctx, 10*time.Second)
+	go serverImpl.runFullE2EProduction(ctx, productionInterval)
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- server.ListenAndServe() }()

@@ -418,6 +418,17 @@ export function assessStudioRun(runID: string): Promise<{ assessment: StudioAsse
   })
 }
 
+export interface ProductionStatus {
+  stage: string
+  done: boolean
+  verdict?: string
+  error?: string
+  failures?: number
+  updated_at: number
+}
+export function getProductionStatus(runID: string, signal?: AbortSignal): Promise<ProductionStatus> {
+  return requestJSON<ProductionStatus>(`/v1/runs/${encodeURIComponent(runID)}/production`, { signal })
+}
 export function getStudioPublications(runID: string): Promise<StudioPublicationList> {
   return requestJSON<StudioPublicationList>(`/v1/runs/${encodeURIComponent(runID)}/studio/publications`)
 }

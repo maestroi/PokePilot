@@ -1,5 +1,11 @@
 # Full-game media E2E smoke test
 
+## Server-owned production (no browser required)
+
+`pokereplay` runs production for every finished run tagged `purpose: "full_e2e"`. Once a minute it lists those runs from wall. For each run that ends `reason=done` with the adapter's `stats.goal_complete=true`, it moves through: broadcast render → producer assessment → episode and Short edits → packages and thumbnail → **private** publication candidates. It calls its own Studio handlers in-process, so the quality gates and validation are the same as the operator path. Renders remain wall-leased jobs. Progress is stored in S3 at `studio/<sha256(run)>/production/v1.json`, which pins the LLM-backed producer assessment so it is never repeated, and survives replay restarts. Read it with `GET /v1/runs/{id}/production`; Media → Full E2E shows it as **Production**. A stage that fails five passes in a row stops as `failed_<stage>` with its error.
+
+Production never approves or uploads. Candidates wait in Studio for review and private upload. The browser coordinator and CLI described below still work for manual or upload testing, but nothing needs to stay open for media to be produced.
+
 ## Durable E2E badge and database filtering
 
 **New Full E2E launches are explicitly tagged `purpose: "full_e2e"`** at farm run creation, independently of the goal, play style and model. This is saved with the run's authoritative record and materialized as an indexed `runs.purpose` column by PostgreSQL schema migration 007 (local SQLite catalogs receive the same column). It is returned from both `GET /v1/runs/{id}` and `GET /v1/dashboard`.

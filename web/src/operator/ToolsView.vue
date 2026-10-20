@@ -9,7 +9,6 @@ import Panel from '../shared/components/Panel.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { defaultFarmDeployment, deploymentOptionLabel, deploymentSelectable, preferredDeployment, servesStrategist } from './llmDeployments'
 import { readRunLaunchDefaults } from './runLaunchDefaults'
-import { beginFullE2E, fullE2E } from './fullE2EManager'
 import { FULL_E2E_GOAL, productionRunSpec, supportsFullE2E, type RunMode } from './newRunMode'
 import { operatorHref } from '../shared/urls'
 
@@ -136,8 +135,6 @@ watch(deployments, (next) => {
 }, { immediate: true })
 
 const runMode = ref<RunMode>('standard')
-const uploadPrivate = ref(false)
-const confirmPrivateUpload = ref(false)
 const fullE2ESelected = computed(() => runMode.value === 'full-e2e')
 const submitting = ref(false)
 const error = ref('')
@@ -163,9 +160,6 @@ watch(runMode, mode => {
     form.recovery_profile = 'resilient'
     form.endless = false
     form.random_seed = false
-  } else {
-    uploadPrivate.value = false
-    confirmPrivateUpload.value = false
   }
 })
 watch(() => [form.game, form.planner], () => {
@@ -280,16 +274,8 @@ async function submit(): Promise<void> {
     return
   }
 
-  if (fullE2ESelected.value && fullE2E.working) {
-    error.value = 'A full production test is already active in this browser. Finish or stop it before starting another.'
-    return
-  }
   if (fullE2ESelected.value && !supportsFullE2E(form)) {
     error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
-    return
-  }
-  if (fullE2ESelected.value && uploadPrivate.value && !confirmPrivateUpload.value) {
-    error.value = 'Confirm the two real private YouTube uploads before starting.'
     return
   }
 
@@ -320,18 +306,7 @@ async function submit(): Promise<void> {
     if (!createdRunID.value) {
       error.value = 'Run was queued, but the wall did not return a run id.'
     } else if (fullE2ESelected.value) {
-      // The wall has accepted this one run. Start the production pipeline
-      // against that run ID (fresh=false), never queue a duplicate.
-      // This shared coordinator survives operator route changes.
-      void beginFullE2E({
-        runID: createdRunID.value,
-        fresh: false,
-        starter: spec.starter,
-        seed: spec.seed,
-        deployment: spec.llm_deployment || '',
-        uploadPrivate: uploadPrivate.value,
-        pollMS: 10000
-      })
+      // pokereplay produces media for finished full_e2e runs on its own.
       window.history.pushState(null, '', operatorHref('media', {
         section: 'e2e', run: createdRunID.value, job: ''
       }, window.location.search))
@@ -374,17 +349,9 @@ async function submit(): Promise<void> {
           <p v-if="!supportsFullE2E(form)" class="mt-1 text-xs text-slate-500">Full E2E currently requires Pokémon Red and the LLM planner.</p>
           <template v-if="fullE2ESelected">
             <p class="mt-2 text-xs text-slate-300">
-              The goal is locked to the Champion. After this run is queued, automatically verify the Hall of Fame, render a broadcast replay and both edited formats, and queue private publication candidates.
+              The goal is locked to the Champion. When the run finishes, the server automatically verifies the Hall of Fame, renders a broadcast replay and both edited formats, and queues private publication candidates.
             </p>
-            <label class="mt-3 flex items-start gap-2 text-sm text-slate-200">
-              <input v-model="uploadPrivate" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" @change="confirmPrivateUpload = false" />
-              <span>Also upload episode and Short privately to YouTube <span class="block text-xs text-slate-400">Off by default. Uploads require existing server-side credentials and Studio quality gates.</span></span>
-            </label>
-            <label v-if="uploadPrivate" class="mt-3 flex items-start gap-2 rounded-md border border-white/15 p-2 text-sm text-slate-200">
-              <input v-model="confirmPrivateUpload" type="checkbox" class="mt-0.5 size-4 shrink-0 rounded border-white/20 bg-white/5 text-cyan-400" />
-              <span>I confirm two real private uploads to the configured YouTube account.</span>
-            </label>
-            <p class="mt-2 text-xs text-slate-500">The pipeline continues while the operator browser is open, even if you switch screens. Closing or reloading the browser stops further coordination; already queued server jobs continue. Server-side resumability is tracked in #2794.</p>
+            <p class="mt-2 text-xs text-slate-500">The replay server runs production by itself once the game finishes; no browser needs to stay open. Candidates wait in Studio for review and private upload.</p>
           </template>
         </div>
 
