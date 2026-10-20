@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getBroadcastReplayStatus, getDashboard, getModels, getRun, getStudioPublications, studioEditVideoURL } from '../shared/api/client'
+import { getBroadcastReplayStatus, getDashboard, getModels, getProductionStatus, getRun, getStudioPublications, type ProductionStatus, studioEditVideoURL } from '../shared/api/client'
 import type { DashboardRun, ReplayStatus, StudioPublicationCandidate } from '../shared/api/types'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import { deploymentOptionLabel, deploymentSelectable, servesStrategist } from './llmDeployments'
@@ -88,18 +88,20 @@ type SelectedEvidence = {
   run: DashboardRun | null
   replay: ReplayStatus | null
   publications: StudioPublicationCandidate[] | null
+  production: ProductionStatus | null
   replayError: string
   publicationsError: string
 }
 const evidence = usePollingResource<SelectedEvidence>(async signal => {
   const id = inspectedID.value
-  if (!id) return { run: null, replay: null, publications: null, replayError: '', publicationsError: '' }
+  if (!id) return { run: null, replay: null, publications: null, production: null, replayError: '', publicationsError: '' }
   const run = await getRun(id, signal)
-  const [replay, pubs] = await Promise.allSettled([getBroadcastReplayStatus(id, signal), getStudioPublications(id)])
+  const [replay, pubs, production] = await Promise.allSettled([getBroadcastReplayStatus(id, signal), getStudioPublications(id), getProductionStatus(id, signal)])
   return {
     run,
     replay: replay.status === 'fulfilled' ? replay.value : null,
     publications: pubs.status === 'fulfilled' ? pubs.value.candidates : null,
+    production: production.status === 'fulfilled' ? production.value : null,
     replayError: replay.status === 'rejected' ? String(replay.reason) : '',
     publicationsError: pubs.status === 'rejected' ? String(pubs.reason) : ''
   }
@@ -304,6 +306,8 @@ function downloadReport(): void {
               <dd>{{ selectedEvidence.run.status }} · {{ selectedEvidence.run.reason || 'no finish reason' }}</dd>
               <dt class="text-fg-3">Champion</dt>
               <dd>{{ selectedEvidence.run.stats?.goal_complete ? 'Goal flag recorded' : (selectedEvidence.run.player?.milestones || []).some(m => /hall[ _]of[ _]fame/i.test(m)) ? 'Hall of Fame milestone' : 'Not verified' }}</dd>
+              <dt class="text-fg-3">Production</dt>
+              <dd>{{ selectedEvidence.production ? selectedEvidence.production.stage.replace(/_/g, ' ') : 'No status' }}<span v-if="selectedEvidence.production?.verdict"> · {{ selectedEvidence.production.verdict }}</span><span v-if="selectedEvidence.production?.error" class="text-warn"> · {{ selectedEvidence.production.error }}</span></dd>
               <dt class="text-fg-3">Replay</dt>
               <dd>{{ selectedEvidence.replay?.state || 'No status' }}<span v-if="selectedEvidence.replayError" class="text-warn"> · unavailable</span></dd>
               <dt class="text-fg-3">Publication</dt>
@@ -320,11 +324,8 @@ function downloadReport(): void {
             <a :href="selectedRunLink('live')" class="ui-btn ui-btn-sm">Inspect game</a>
             <a :href="selectedRunLink('studio')" class="ui-btn ui-btn-sm">Open Studio</a>
             <a :href="selectedRunLink('library')" class="ui-btn ui-btn-sm">Open Library</a>
-            <button v-if="!working" class="ui-btn ui-btn-sm ui-btn-primary" type="button" @click="mode = 'existing'; existingID = inspectedID; uploadPrivate = false; uploadAcknowledged = false; start()">
-              Resume production · no upload
-            </button>
           </div>
-          <p class="text-meta text-fg-3">Resume reuses the same run, never launches a new game. It can create missing edits or queue candidates; real YouTube uploads still require the separate opt-in above.</p>
+          <p class="text-meta text-fg-3">The replay server produces media for finished E2E runs automatically and resumes after restarts; nothing here needs to stay open.</p>
         </div>
       </section>
 
