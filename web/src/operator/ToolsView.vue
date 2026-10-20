@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ArrowPathIcon, ArrowRightIcon, PlayIcon } from '@heroicons/vue/20/solid'
-import { createRun, getModels } from '../shared/api/client'
+import { createRun, getModels, requestProduction } from '../shared/api/client'
 import type { DecisionEngineSpec, ModelDeployment, RunSpec } from '../shared/api/types'
 import { GOAL_OPTIONS } from '../shared/goals'
 import { defaultGoalForPlayStyle } from '../shared/playstyle'
@@ -136,6 +136,10 @@ watch(deployments, (next) => {
 
 const runMode = ref<RunMode>('standard')
 const fullE2ESelected = computed(() => runMode.value === 'full-e2e')
+// Real channel uploads need two explicit ticks, and never carry over to the next launch.
+const uploadPrivate = ref(false)
+const uploadAcknowledged = ref(false)
+watch(uploadPrivate, () => { uploadAcknowledged.value = false })
 const submitting = ref(false)
 const error = ref('')
 const createdRunID = ref('')
@@ -278,6 +282,10 @@ async function submit(): Promise<void> {
     error.value = 'Full E2E currently supports Pokémon Red with the LLM planner.'
     return
   }
+  if (fullE2ESelected.value && uploadPrivate.value && !uploadAcknowledged.value) {
+    error.value = 'Acknowledge the two real private YouTube uploads, or untick private upload.'
+    return
+  }
 
   submitting.value = true
   createdRunID.value = ''
@@ -300,7 +308,14 @@ async function submit(): Promise<void> {
       recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     if (fullE2ESelected.value) spec = productionRunSpec(spec)
+    if (fullE2ESelected.value && uploadPrivate.value) {
+      // Record the opt-in first: an unconfigured uploader fails here, not
+      // after hours of gameplay.
+      if (!spec.run_id) spec.run_id = 'e2e-' + crypto.randomUUID().slice(0, 13)
+      await requestProduction(spec.run_id, true)
+    }
     const response = await createRun(spec)
+    uploadPrivate.value = false
     const returnedID = typeof response.run_id === 'string' ? response.run_id : ''
     createdRunID.value = returnedID || spec.run_id
     if (!createdRunID.value) {
@@ -351,7 +366,15 @@ async function submit(): Promise<void> {
             <p class="mt-2 text-xs text-slate-300">
               The goal is locked to the Champion. When the run finishes, the server automatically verifies the Hall of Fame, renders a broadcast replay and both edited formats, and queues private publication candidates.
             </p>
-            <p class="mt-2 text-xs text-slate-500">The replay server runs production by itself once the game finishes; no browser needs to stay open. Candidates wait in Studio for review and private upload.</p>
+            <p class="mt-2 text-xs text-slate-500">The replay server runs production by itself once the game finishes; no browser needs to stay open. Without upload, candidates wait in Studio for review.</p>
+            <label class="mt-3 flex items-start gap-2 text-xs text-slate-300">
+              <input v-model="uploadPrivate" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
+              <span>Also upload the episode and Short to YouTube as <strong>private</strong> videos once they pass the quality gate</span>
+            </label>
+            <label v-if="uploadPrivate" class="mt-2 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 p-2 text-xs text-amber-200">
+              <input v-model="uploadAcknowledged" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-amber-400 focus:ring-amber-400" />
+              <span>I understand this makes two real uploads to the configured channel, consuming quota. They are always private; public or unlisted is never used.</span>
+            </label>
           </template>
         </div>
 
