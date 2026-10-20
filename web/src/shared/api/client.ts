@@ -365,12 +365,6 @@ export function getYouTubePublishStatus(runID: string, signal?: AbortSignal): Pr
   return requestJSON<YouTubePublishStatus>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, { signal })
 }
 
-export function publishToYouTube(runID: string, privacy: 'private' | 'unlisted' | 'public'): Promise<YouTubePublication> {
-  return requestJSON<YouTubePublication>(`/v1/runs/${encodeURIComponent(runID)}/publish/youtube`, {
-    method: 'POST',
-    body: JSON.stringify({ privacy })
-  })
-}
 
 export function highlightVideoURL(runID: string): string {
   return `/v1/runs/${encodeURIComponent(runID)}/highlights/video`

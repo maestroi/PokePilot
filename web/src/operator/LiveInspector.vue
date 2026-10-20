@@ -9,7 +9,6 @@ import { operatorHref } from '../shared/urls'
 import { isPlayStyleRun, playSpeedLabel, playStyleLabel, policyLabel } from '../shared/playstyle'
 import DecisionTelemetry from './DecisionTelemetry.vue'
 import { showDecisionTelemetry } from './decisionTelemetry'
-import { youtubeUploadLabel } from './mediaQuery'
 import {
   decisionEngineLabel,
   fpsLabel,
@@ -165,9 +164,7 @@ const replayStatus = computed(() => {
   const progress = total ? 100 * Number(replay?.segments_done || 0) / total : undefined
   return presentReplay(replay?.state, progress)
 })
-const youtubePrivacy = ref<'private' | 'unlisted' | 'public'>('unlisted')
 const confirmCancelReplay = ref(false)
-const confirmPublish = ref(false)
 
 function highlightDuration(): string {
   const total = Math.max(0, Math.round(Number(e.highlights.value?.duration_ms || 0) / 1000))
@@ -189,7 +186,7 @@ function artifactMeta(artifact: { media_type?: string; size?: number; storage?: 
 
 const search = () => window.location.search
 
-watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirmPublish.value = false })
+watch(() => props.run.run_id, () => { confirmCancelReplay.value = false })
 </script>
 
 <template>
@@ -352,33 +349,6 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
         </div>
         <p v-if="e.highlightError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ e.highlightError.value }}</p>
 
-        <template v-if="e.youtube.value?.configured && e.replay.value?.state === 'ready'">
-          <h3 class="mt-6 text-title font-semibold">YouTube · legacy replay upload</h3>
-          <p class="mt-1 text-meta text-warn">Direct replay uploads bypass Studio editorial gates. Prefer the Media Studio publication queue for edited episodes or Shorts.</p>
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            <a
-              v-if="e.youtube.value.publication.state === 'published' && e.youtube.value.publication.video_url"
-              :href="e.youtube.value.publication.video_url"
-              target="_blank"
-              rel="noopener"
-              class="ui-btn ui-btn-sm"
-            >Published ({{ e.youtube.value.publication.privacy }}) ↗</a>
-            <span v-else-if="e.youtube.value.publication.state === 'uploading'" class="ui-pill ui-tone-accent">◐ {{ youtubeUploadLabel(e.youtube.value.publication) }}</span>
-            <template v-else>
-              <span v-if="['failed', 'interrupted'].includes(e.youtube.value.publication.state)" class="ui-pill ui-tone-danger" :title="e.youtube.value.publication.error">✕ {{ e.youtube.value.publication.state }}</span>
-              <label class="flex items-center gap-2">
-                <span class="ui-label">Visibility</span>
-                <select v-model="youtubePrivacy" class="h-7 rounded-[3px] border border-control bg-surface px-2 text-body">
-                  <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
-                </select>
-              </label>
-              <button type="button" class="ui-btn ui-btn-sm" :disabled="e.publishing.value" @click="confirmPublish = true">
-                {{ e.youtube.value.publication.state === 'none' ? 'Publish to YouTube…' : 'Retry upload…' }}
-              </button>
-            </template>
-          </div>
-          <p v-if="e.youtubeError.value" class="mt-2 text-meta text-warn" role="status">▲ {{ e.youtubeError.value }}</p>
-        </template>
       </template>
 
       <!-- Checkpoints -->
@@ -458,15 +428,6 @@ watch(() => props.run.run_id, () => { confirmCancelReplay.value = false; confirm
       danger
       @close="confirmCancelReplay = false"
       @confirm="e.cancelReplay().finally(() => { confirmCancelReplay = false })"
-    />
-    <ConfirmDialog
-      :open="confirmPublish"
-      :title="`Upload the replay of ${run.run_id} to YouTube?`"
-      :message="`The video is uploaded as ${youtubePrivacy}.`"
-      confirm-label="Upload"
-      :busy="e.publishing.value"
-      @close="confirmPublish = false"
-      @confirm="e.publishYouTube(youtubePrivacy).finally(() => { confirmPublish = false })"
     />
   </section>
 </template>

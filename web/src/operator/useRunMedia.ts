@@ -4,14 +4,12 @@ import {
   getHighlightStatus,
   getStudioPackages,
   getReplayStatus,
-  getYouTubePublishStatus,
-  publishToYouTube,
   renderHighlights,
   renderReplay
 } from '../shared/api/client'
-import type { HighlightStatus, ReplayStatus, StudioPackageSummary, YouTubePublishStatus } from '../shared/api/types'
+import type { HighlightStatus, ReplayStatus, StudioPackageSummary } from '../shared/api/types'
 
-// Media outputs of one run: replay, highlight reel and YouTube publication.
+// Media outputs of one run: replay and highlight reel.
 // Shared by Live's inspector (via useRunEvidence) and Media's Library/Studio.
 // Generating outputs poll their own status until they settle.
 export function useRunMedia(runID: Ref<string>) {
@@ -19,16 +17,13 @@ export function useRunMedia(runID: Ref<string>) {
   const replayError = ref('')
   const highlights = ref<HighlightStatus | null>(null)
   const highlightError = ref('')
-  const youtube = ref<YouTubePublishStatus | null>(null)
   const packages = ref<StudioPackageSummary[] | null>(null)
   const packagesError = ref('')
-  const youtubeError = ref('')
   const rendering = ref(false)
   const renderingHighlights = ref(false)
   const cancellingReplay = ref(false)
-  const publishing = ref(false)
   let serial = 0
-  const timers: Record<'replay' | 'highlight' | 'youtube', number> = { replay: 0, highlight: 0, youtube: 0 }
+  const timers: Record<'replay' | 'highlight', number> = { replay: 0, highlight: 0 }
 
   function clear(name: keyof typeof timers): void {
     if (timers[name]) window.clearTimeout(timers[name])
@@ -73,20 +68,6 @@ export function useRunMedia(runID: Ref<string>) {
     if (highlights.value?.state === 'generating') schedule('highlight', 5000, refreshHighlights)
   }
 
-  async function refreshYouTube(): Promise<void> {
-    const id = runID.value
-    clear('youtube')
-    try {
-      const next = await getYouTubePublishStatus(id)
-      if (id !== runID.value) return
-      youtube.value = next
-      youtubeError.value = ''
-    } catch {
-      if (id === runID.value) youtube.value = null // replay host without publishing: hide the control
-      return
-    }
-    if (youtube.value?.publication.state === 'uploading') schedule('youtube', 5000, refreshYouTube)
-  }
 
   // Stored episode packages (and their thumbnails). Null with an error when
   // the replay host has no studio storage, so callers can say why once.
@@ -110,6 +91,7 @@ export function useRunMedia(runID: Ref<string>) {
     if (!id) return
     const current = ++serial
     replayError.value = ''
+    highlightError.value = ''
     const [replayResult, highlightResult] = await Promise.allSettled([getReplayStatus(id), getHighlightStatus(id)])
     if (current !== serial) return
     if (replayResult.status === 'fulfilled') replay.value = replayResult.value
@@ -124,7 +106,6 @@ export function useRunMedia(runID: Ref<string>) {
     }
     if (replay.value?.state === 'generating') schedule('replay', 5000, refreshReplay)
     if (highlights.value?.state === 'generating') schedule('highlight', 5000, refreshHighlights)
-    void refreshYouTube()
     void refreshPackages()
   }
 
@@ -171,19 +152,6 @@ export function useRunMedia(runID: Ref<string>) {
     }
   }
 
-  async function publishYouTube(privacy: 'private' | 'unlisted' | 'public'): Promise<void> {
-    if (!runID.value || publishing.value) return
-    publishing.value = true
-    youtubeError.value = ''
-    try {
-      await publishToYouTube(runID.value, privacy)
-      await refreshYouTube()
-    } catch (cause) {
-      youtubeError.value = cause instanceof Error ? cause.message : 'YouTube publish failed'
-    } finally {
-      publishing.value = false
-    }
-  }
 
   function stopAll(): void {
     for (const name of Object.keys(timers) as (keyof typeof timers)[]) clear(name)
@@ -193,7 +161,6 @@ export function useRunMedia(runID: Ref<string>) {
     stopAll()
     replay.value = null
     highlights.value = null
-    youtube.value = null
     packages.value = null
     packagesError.value = ''
     void load()
@@ -203,7 +170,6 @@ export function useRunMedia(runID: Ref<string>) {
   return {
     replay, replayError, rendering, cancellingReplay, requestReplay, cancelReplay,
     highlights, highlightError, renderingHighlights, requestHighlights,
-    youtube, youtubeError, publishing, publishYouTube,
     packages, packagesError, refreshPackages,
     loadMedia: load
   }
