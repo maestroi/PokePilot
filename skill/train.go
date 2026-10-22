@@ -365,16 +365,22 @@ func trainingRetreatDue(m *emu.Emu, options TrainOptions) bool {
 	return !trainingCarryReady(&mem, options.MinCarryLevel)
 }
 
-// resolveTrainingBattle preserves ordinary Battle for trainer interruptions,
-// but on wild encounters it verifies a real carry against the actual opponent,
-// then forces the opening switch. If the encounter-specific matchup has no
-// eligible carry, flee to a stable overworld boundary and let Train retreat.
+// resolveTrainingBattle preserves ordinary Battle for trainer interruptions.
+// Wild encounters stay inside the training XP contract: direct mode holds the
+// trainee as sole participant so full wild XP lands; switch mode verifies a
+// real carry against the actual opponent, then forces the opening switch. If
+// the encounter-specific matchup has no eligible carry, flee to a stable
+// overworld boundary and let Train retreat.
 func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) resolveBattle {
 	return func() (battleResolution, error) {
 		trainer := state.BattleKind(m.Peek8(sym.IsInBattle)) == state.BattleTrainer
-		if trainer || options.Mode != TrainSwitch {
+		if trainer {
 			outcome, err := Battle(m, policy)
 			return battleResolution{outcome: outcome, trainer: trainer}, err
+		}
+		if options.Mode != TrainSwitch {
+			outcome, err := BattleWithOptions(m, policy, BattleOptions{HoldTrainingLead: true})
+			return battleResolution{outcome: outcome}, err
 		}
 
 		var mem state.Mem

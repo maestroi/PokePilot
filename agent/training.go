@@ -25,11 +25,32 @@ const trainSessionBattleBudget = 20
 // (an L89 lead on L5 grass) still refuse, keeping the dead-end escape.
 const trainSessionBattleCeiling = 3 * trainSessionBattleBudget
 
-// trainSessionBattles is the battle allowance for one session in the measured
-// habitat: the ordinary budget, stretched (with slack for wild variance) to
-// reach the next level, never past trainSessionBattleCeiling.
-func trainSessionBattles(e TrainingEstimate) int {
+// trainNextLevelSessionBattles is the battle allowance one session may spend to
+// deliver the next level: ordinary budget, stretched with slack for wild
+// variance, never past trainSessionBattleCeiling. Campaign re-pricing uses this
+// (times preparationSessionCeiling) so a multi-level readiness gap is not
+// mistaken for a single-session target that would inflate the campaign budget.
+func trainNextLevelSessionBattles(e TrainingEstimate) int {
 	n := e.NextLevelEncounters + e.NextLevelEncounters/4
+	if n < trainSessionBattleBudget {
+		return trainSessionBattleBudget
+	}
+	if n > trainSessionBattleCeiling {
+		return trainSessionBattleCeiling
+	}
+	return n
+}
+
+// trainSessionBattles is the battle allowance for one Train executor session:
+// stretch toward the full objective target when that still fits the ceiling so
+// a short multi-level rung (Oddish L17→19 on Route 22) can finish in one
+// objective instead of stopping after the next level.
+func trainSessionBattles(e TrainingEstimate) int {
+	need := e.NextLevelEncounters
+	if e.EstimatedEncounters > need {
+		need = e.EstimatedEncounters
+	}
+	n := need + need/4
 	if n < trainSessionBattleBudget {
 		return trainSessionBattleBudget
 	}
@@ -83,7 +104,7 @@ func budgetedTrainingEstimate(e *TrainingEstimate, obs Observation, known *Knowl
 		return e
 	}
 	budgeted := *e
-	budgeted.SessionBudget = trainSessionBattles(*e) * preparationSessionCeiling
+	budgeted.SessionBudget = trainNextLevelSessionBattles(*e) * preparationSessionCeiling
 	classifyTrainingEstimate(&budgeted)
 	if budgeted.NextLevelEncounters > trainSessionBattleCeiling {
 		budgeted.Viability = TrainingOutsideBudget
