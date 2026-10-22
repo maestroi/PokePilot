@@ -146,3 +146,43 @@ func TestFundingSaleObjectivesCoverDryDexCaptureStock(t *testing.T) {
 		t.Fatalf("stocked Dex run still offered sales: %+v", got)
 	}
 }
+
+// run-d6dokr184ky81 (88/139): ¥192, only a MASTER BALL, and a bag whose
+// sellable stock was two TMs plus one GUARD SPEC. TMs had no price, and the
+// GUARD SPEC alone could not cover the shortfall, so nothing was offered.
+func TestFundingSaleObjectivesSellTMsAndFallBackToPartialSales(t *testing.T) {
+	obs := Observation{
+		Money:        192,
+		RestockStock: []string{"pokeball"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+		Bag: []Item{
+			{Name: "master ball", Quantity: 1},
+			{Name: "guard spec", Quantity: 1},
+			{Name: "moon stone", Quantity: 1},
+			{Name: "tm46", Quantity: 1},
+			{Name: "tm47", Quantity: 1},
+		},
+	}
+	sales := func() map[string]int {
+		got := map[string]int{}
+		for _, o := range fundingSaleObjectives(obs) {
+			if o.Kind != KindSell || o.Validate() != nil {
+				t.Fatalf("funding offer %+v is not a valid sale", o)
+			}
+			if _, ok := redItemID(o.Item); !ok {
+				t.Fatalf("funding offer %+v does not resolve to a Red item", o)
+			}
+			got[string(o.Item)] = o.Qty
+		}
+		return got
+	}
+	// ¥808 short: TM46 (¥2000) and TM47 (¥1500) each cover it.
+	if got := sales(); len(got) != 2 || got["tm46"] != 1 || got["tm47"] != 1 {
+		t.Fatalf("funding sales = %v, want TM46 and TM47", got)
+	}
+	// Without the TMs nothing covers it; the GUARD SPEC still raises ¥350.
+	obs.Bag = obs.Bag[:3]
+	if got := sales(); len(got) != 1 || got["guard spec"] != 1 {
+		t.Fatalf("funding sales = %v, want the partial GUARD SPEC sale", got)
+	}
+}
