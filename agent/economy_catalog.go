@@ -1,5 +1,11 @@
 package agent
 
+import (
+	"fmt"
+
+	"github.com/maestroi/pokepilot/red/rom"
+)
+
 // economyCatalog fills the observation vocabulary that pre-dates later
 // progression slices. Observe uses ItemName while decoding both the bag and
 // mart shelves; without these names, strategically important inventory simply
@@ -59,6 +65,18 @@ func init() {
 		itemEconomy[spec.Name] = spec
 		if _, exists := itemByID[spec.ID]; !exists {
 			itemByID[spec.ID] = spec.Name
+		}
+	}
+	// TM prices live apart from prices.asm, as thousands per TM in
+	// pokered/data/items/tm_prices.asm. Without them a funding sale skipped
+	// every TM (run-d6dokr184ky81 held TM46/TM47 at ¥192 with no balls).
+	// The names and IDs are already registered in tmhm_items.go.
+	const tmPriceThousands = "32213424342145553232555254524121124225242252243442"
+	for i, digit := range tmPriceThousands {
+		name := fmt.Sprintf("tm%02d", i+1)
+		itemEconomy[name] = ItemEconomySpec{
+			Name: name, ID: rom.TM01Item + uint8(i),
+			Category: InventoryOptionalUtility, UnitPrice: uint32(digit-'0') * 1000,
 		}
 	}
 }

@@ -576,15 +576,18 @@ func progressionFundingShortfall(o Observation) uint32 {
 }
 
 // fundingSaleObjectives offers the smallest sale of each sellable,
-// non-progression bag item that covers the shortfall. Gen-I clerks pay half
-// the list price. A reachable mart is required (RestockStock is only filled
-// from live-reachable marts), so the offer stays executable.
+// non-progression bag item that covers the shortfall. When no single item
+// covers it, each item's whole stack is offered instead: run-d6dokr184ky81
+// was ¥808 short of five balls holding one ¥350 GUARD SPEC, and selling
+// nothing left it with no ball at all. Gen-I clerks pay half the list price.
+// A reachable mart is required (RestockStock is only filled from
+// live-reachable marts), so the offer stays executable.
 func fundingSaleObjectives(o Observation) []Objective {
 	shortfall := progressionFundingShortfall(o)
 	if shortfall == 0 || len(o.RestockStock) == 0 {
 		return nil
 	}
-	var out []Objective
+	var covering, partial []Objective
 	for _, bagged := range o.Bag {
 		spec, ok := ItemEconomy(bagged.Name)
 		if !ok || spec.UnitPrice < 2 || spec.Category == InventoryProgressionCritical || bagged.Quantity < 1 {
@@ -592,19 +595,26 @@ func fundingSaleObjectives(o Observation) []Objective {
 		}
 		sale := spec.UnitPrice / 2
 		qty := int((shortfall + sale - 1) / sale)
-		if qty > bagged.Quantity {
-			continue
-		}
 		item, ok := ItemByName(spec.Name)
 		if !ok {
 			if item = semanticItemFromRed(spec.ID); item == "unknown" {
 				continue
 			}
 		}
-		out = append(out, Objective{
+		if qty > bagged.Quantity {
+			partial = append(partial, Objective{
+				Kind: KindSell, Item: item, Qty: bagged.Quantity,
+				Note: fmt.Sprintf("(raise part of ¥%d for a required payment or capture stock the run cannot afford; the whole stack sells for ¥%d at the nearest reachable mart)", shortfall, uint32(bagged.Quantity)*sale),
+			})
+			continue
+		}
+		covering = append(covering, Objective{
 			Kind: KindSell, Item: item, Qty: qty,
 			Note: fmt.Sprintf("(raise ¥%d for a required payment or capture stock the run cannot afford; sells for ¥%d at the nearest reachable mart)", shortfall, uint32(qty)*sale),
 		})
 	}
-	return out
+	if len(covering) > 0 {
+		return covering
+	}
+	return partial
 }
