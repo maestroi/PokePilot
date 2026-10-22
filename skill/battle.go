@@ -99,10 +99,17 @@ const mainMenuMax = 1
 var zbatDebug = os.Getenv("ZBAT") != ""
 
 // BattleOptions adds narrowly-scoped battle behavior for callers that need a
-// deliberate opening switch or major-trainer sequence awareness. Ordinary
-// Battle uses the zero value and retains the normal tactical policy.
+// deliberate opening switch, a held training lead, or major-trainer sequence
+// awareness. Ordinary Battle uses the zero value and retains the normal
+// tactical policy.
 type BattleOptions struct {
 	OpeningTrainingSwitch bool
+	// HoldTrainingLead suppresses voluntary tactical party switches so the
+	// active trainee keeps sole wild-XP credit. Direct Train estimates assume
+	// full per-encounter XP; letting the battle layer rotate in a stronger
+	// bench member splits that reward and can turn an executable session into
+	// a zero-level grind (Route 22 Oddish L17→19: triage 0bba5e027eaeb5c0).
+	HoldTrainingLead      bool
 	MinTrainingCarryLevel uint8
 	Sequence              BattleSequenceContext
 }
@@ -379,12 +386,17 @@ func BattleWithOptions(m *emu.Emu, policy MovePolicy, options BattleOptions) (ga
 			// for this exact opponent. Do not tactically rotate through additional
 			// party members afterward: every extra participant further splits the
 			// trainee's XP and defeats the estimator's two-participant contract.
+			// Direct training holds the same invariant without an opening switch:
+			// the estimator prices full wild XP for the lead, so a tactical
+			// rotation under-delivers the session.
 			//
 			// Survival switches (active has no effective offense) are not capped:
 			// burning the voluntary budget on Feraligatr matchup ping-pong must
 			// not force Typhlosion to Tackle a Ghost until Curse KO's it
-			// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr).
-			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch {
+			// (triage:1f4f23fde23a0c8e / run-a018a6cmhnkr). HoldTrainingLead still
+			// refuses them — a zero-XP "survival" rotate is worse than ending the
+			// grind session via retreat/blackout and healing.
+			if !holdFreezeSacrifice && !options.OpeningTrainingSwitch && !options.HoldTrainingLead {
 				if inBattle && len(bs.Usable()) > 0 {
 					decision := chooseTacticalSwitchStateWithContext(m.ROM(), resources, bs, options.Sequence)
 					if decision.Switch {

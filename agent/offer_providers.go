@@ -346,7 +346,11 @@ func (trainingObjectiveProvider) Provide(ctx *objectiveOfferContext) objectivePr
 		switch {
 		case skill.BelowRetreatLine(lead.HP, lead.MaxHP):
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "party_needs_recovery", nil, "", "healing"))
-		case trainingUnviableHere(obs) && !(trainingYieldsXP(obs) && owesCombatReadiness(ctx.known, obs)):
+		case !leadTrainingSessionOfferable(obs, ctx.known):
+			// Outside-budget grass that cannot deliver even one level in a
+			// stretched session is not a combat-readiness grind — offering it
+			// only loops Train → TrainingInefficient → stagnation (Route 22
+			// Dugtrio L56→58 at ~26 XP/encounter; triage 0bba5e027eaeb5c0).
 			blocked = append(blocked, blockEvidence(ObjectiveFamilyTraining, "outside_training_budget", nil, "", "better_training_area"))
 		default:
 			if target := int(lead.Level) + trainStep; target <= 100 {
