@@ -618,3 +618,29 @@ func fundingSaleObjectives(o Observation) []Objective {
 	}
 	return partial
 }
+
+// incomeObjectives offers the adapter's repeatable income sources when a
+// required spend is unfunded and no bag sale covers it: run-d6dokr184ky81 sat
+// post-Champion with every trainer beaten, ¥192 and no balls, so a sale could
+// only delay the same dead end. A source the party already lost to stays
+// withheld until readiness changes, like any lost challenge.
+func incomeObjectives(o Observation, known *Knowledge, sources []CatalogIncomeSource) ([]Objective, []ObjectiveBlockEvidence) {
+	shortfall := progressionFundingShortfall(o)
+	if len(sources) == 0 || shortfall == 0 || len(fundingSaleObjectives(o)) > 0 {
+		return nil, nil
+	}
+	var out []Objective
+	var blocked []ObjectiveBlockEvidence
+	for _, source := range sources {
+		earn := Objective{
+			Kind: KindEarnMoney, Intent: source.ID,
+			Note: fmt.Sprintf("(raise ¥%d for a required payment or capture stock; %s)", shortfall, source.Note),
+		}
+		if combatLossRecorded(known, earn) {
+			blocked = append(blocked, blockEvidence(ObjectiveFamilyEconomy, "combat_readiness", &earn, "", "material_party_progress"))
+			continue
+		}
+		out = append(out, earn)
+	}
+	return out, blocked
+}

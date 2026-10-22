@@ -20,7 +20,7 @@ func (a *redObjectiveAdapter) ObjectiveCatalog(obs Observation) ObjectiveCatalog
 }
 
 func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
-	return gen1ObjectiveCatalog(obs, gen1CatalogFacts{
+	catalog := gen1ObjectiveCatalog(obs, gen1CatalogFacts{
 		Location: redLocationID,
 		Starters: []CatalogStarter{
 			{Starter: skill.StarterCharmander, Species: "charmander"},
@@ -28,7 +28,18 @@ func redObjectiveCatalog(obs Observation) ObjectiveCatalog {
 			{Starter: skill.StarterBulbasaur, Species: "bulbasaur"},
 		},
 	})
+	if obs.Story.Has(ProgressMainStoryComplete) {
+		// After the Hall of Fame the League stays open and pays every member's
+		// prize money again; it is Red's only repeatable income.
+		catalog.IncomeSources = append(catalog.IncomeSources, CatalogIncomeSource{
+			ID:   redIncomeLeagueRematch,
+			Note: "rematch the Elite Four and Champion from the Indigo Plateau lobby; a loss blacks out and halves money",
+		})
+	}
+	return catalog
 }
+
+const redIncomeLeagueRematch = "league_rematch"
 
 // gen1CatalogFacts are the game-owned parts of a Gen-I objective catalog.
 // Everything else (destinations by map, gyms, encounters, shop stock,
