@@ -243,6 +243,12 @@ progress and turns the project into save-scumming rather than a controller that
 can finish the game it actually played. Save states are for reproducibility,
 fixtures, and diagnostics.
 
+The cartridge's own save is different: it is a player mechanic. Saving in
+front of a one-time encounter and soft-resetting to that save after a failed
+attempt is what a human does, and it is the only rollback the runtime may use
+(`skill.SaveGame`, `skill.CaptureStatic`). The owning skill must make the
+save itself and positively verify the resumed position after the reset.
+
 ## 9. Endless runs discover; deterministic replays prevent regressions
 
 Endless farm runs are the exploration layer. They are not the regression test

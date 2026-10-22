@@ -182,6 +182,14 @@ func (*Profile) EvaluateCombatMove(
 	return engine.EvaluateCombatMove(romData, attacker, defender, nativeMoveID, currentPP)
 }
 
+func (*Profile) MaxCombatDamage(romData []byte, attacker, defender game.BattleCombatant, nativeMoveID uint16) (uint16, bool) {
+	return engine.MaxCombatDamage(romData, attacker, defender, nativeMoveID)
+}
+
+func (*Profile) CaptureStatusMove(romData []byte, defender game.BattleCombatant, nativeMoveID uint16) bool {
+	return engine.CaptureStatusMove(romData, defender, nativeMoveID)
+}
+
 func (*Profile) IncomingTypeRisk(romData []byte, enemy, candidate game.BattleCombatant) int {
 	return engine.IncomingTypeRisk(romData, enemy, candidate)
 }

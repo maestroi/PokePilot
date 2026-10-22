@@ -31,6 +31,7 @@ type StartMenuEntry string
 const (
 	StartMenuPokemon StartMenuEntry = "pokemon"
 	StartMenuItems   StartMenuEntry = "items"
+	StartMenuSave    StartMenuEntry = "save"
 )
 
 // MenuDecoder is the optional semantic capability used by generic menu

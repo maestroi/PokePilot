@@ -30,6 +30,7 @@ func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 		"Gym":                            "Gym is a battle primitive that returns BattleResult; its objective/story caller owns the required-win contract.",
 		"Catch":                          "Catch owns catch-session outcomes, including non-target battle losses.",
 		"catchWantedWithSemantics":       "Catch settles an uncaught target battle before returning a catch-session outcome.",
+		"catchStaticBattle":              "Static capture weakens its own target and returns a catch outcome; a failed attempt is undone by resetting to the in-game save.",
 		"resolveTrainingBattle":          "Train owns incidental wild/trainer battle results as training-session progress, retreat, or blackout outcomes.",
 		"CatchWater":                     "Water catching owns catch-session outcomes for incidental encounters.",
 		"Fish":                           "Fishing owns catch-session outcomes for incidental encounters.",
