@@ -129,6 +129,42 @@ func TestDrainMediaTimelineArtifactClassifiesObservedBattleSpans(t *testing.T) {
 	}
 }
 
+func TestDrainMediaTimelineArtifactAnchorsGymBattleOnDecidingFight(t *testing.T) {
+	resetMediaTimelineTelemetry()
+	t.Cleanup(resetMediaTimelineTelemetry)
+	obs := agent.Observation{Location: agent.PlaceID("pewter-gym")}
+	captureMediaTimelineResult(agent.Result{
+		Initial: obs, StartFrame: 100, Final: obs, FinalFrame: 1000,
+		Outcomes: []agent.ObjectiveResult{
+			{Objective: agent.Objective{Kind: agent.KindGym, Place: "pewter-gym"}, Outcome: agent.OutcomeCompleted, Final: obs},
+		},
+		OutcomeTimings: []agent.ObjectiveTiming{{StartFrame: 100, Frame: 900, Round: 1}},
+	})
+	// A gym trainer on the way in, then the leader.
+	captureMediaBattleTurn(200, game.BattleContextTrainer)
+	captureMediaBattleResult(300, game.BattleWon)
+	captureMediaBattleTurn(600, game.BattleContextTrainer)
+	captureMediaBattleResult(850, game.BattleWon)
+
+	artifact, err := drainMediaTimelineArtifact(farm.Spec{RunID: "run-gym", Attempt: 1}, "done", 1000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeline, err := farm.DecodeMediaTimeline(artifact.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range timeline.Events {
+		if event.Type == "gym_battle" {
+			if event.StartFrame != 500 || event.Frame != 800 {
+				t.Fatalf("gym_battle span = %d-%d, want 500-800", event.StartFrame, event.Frame)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing gym_battle in %#v", timeline.Events)
+}
+
 func TestDrainMediaTimelineArtifactWithoutResultIsOptional(t *testing.T) {
 	resetMediaTimelineTelemetry()
 	artifact, err := drainMediaTimelineArtifact(farm.Spec{RunID: "old-run"}, "done", 10, nil)
