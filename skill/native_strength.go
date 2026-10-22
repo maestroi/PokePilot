@@ -198,8 +198,28 @@ func executeNativeStrengthPush(
 		return false, fmt.Errorf("skill: native Strength: push slot %d: %w", push.MovableID, err)
 	}
 	after := profile.DecodeOverworld(m)
-	if !after.Controllable || after.NativeMapID != grid.MapID ||
-		int(after.X) != push.From.X || int(after.Y) != push.From.Y {
+	onFrom := after.NativeMapID == grid.MapID &&
+		int(after.X) == push.From.X && int(after.Y) == push.From.Y
+	// The pit-fall / boulder stdscript often opens only after step settle
+	// completes, so walkNativePath returns nil while Controllable is already
+	// false on From (run-19bsr1iwtwfdk378ewymcvdz2u / triage f658a1d845ef36a5
+	// regression after the approach-dialogue recovery in #2796). Mirror the
+	// during-push pit handoff, and page non-pit text before verifying.
+	if (!after.Controllable || after.InDialogue) && onFrom {
+		if tile, ok := grid.Tile(push.To.X, push.To.Y); ok && tile == 0x60 {
+			return true, nil
+		}
+		if rec := RecoverDialogue(m, dialogueRecoveryBudget); rec.Stop == DialogueChoiceRequired {
+			return false, ErrDialogueInterrupted
+		}
+		after = profile.DecodeOverworld(m)
+		onFrom = after.NativeMapID == grid.MapID &&
+			int(after.X) == push.From.X && int(after.Y) == push.From.Y
+	}
+	if !after.Controllable || !onFrom {
+		if !after.Controllable || after.InDialogue {
+			return false, ErrDialogueInterrupted
+		}
 		return false, fmt.Errorf("skill: native Strength: player did not enter boulder's old tile: %w", ErrNavigationStalled)
 	}
 	next, err := profile.DecodeLiveTopology(m)
