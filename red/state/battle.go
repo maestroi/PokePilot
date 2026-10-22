@@ -58,6 +58,7 @@ func DecodeBattle(m *Mem) *BattleState {
 		EnemyDefenseMod:  m.U8(sym.EnemyMonDefenseMod),
 		EnemyType1:       m.U8(sym.EnemyMonType1),
 		EnemyType2:       m.U8(sym.EnemyMonType2),
+		EnemyStatus:      StatusName(m.U8(sym.EnemyMonStatus)),
 		ActiveType1:      m.U8(sym.BattleMonType1),
 		ActiveType2:      m.U8(sym.BattleMonType2),
 	}

@@ -13,6 +13,14 @@ func (p *Profile) EvaluateCombatMove(
 	return p.engine.EvaluateCombatMove(romData, attacker, defender, nativeMoveID, currentPP)
 }
 
+func (p *Profile) MaxCombatDamage(romData []byte, attacker, defender game.BattleCombatant, nativeMoveID uint16) (uint16, bool) {
+	return p.engine.MaxCombatDamage(romData, attacker, defender, nativeMoveID)
+}
+
+func (p *Profile) CaptureStatusMove(romData []byte, defender game.BattleCombatant, nativeMoveID uint16) bool {
+	return p.engine.CaptureStatusMove(romData, defender, nativeMoveID)
+}
+
 func (p *Profile) IncomingTypeRisk(romData []byte, enemy, candidate game.BattleCombatant) int {
 	return p.engine.IncomingTypeRisk(romData, enemy, candidate)
 }

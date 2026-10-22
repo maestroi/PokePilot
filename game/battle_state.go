@@ -61,8 +61,11 @@ type BattleState struct {
 	EnemyAttackMod   uint8
 	EnemyDefenseMod  uint8
 
-	EnemyType1  uint8
-	EnemyType2  uint8
+	EnemyType1 uint8
+	EnemyType2 uint8
+	// EnemyStatus is the enemy's major status in the party-status vocabulary
+	// ("asleep", "paralyzed", ...); empty when healthy or not projected.
+	EnemyStatus string
 	ActiveType1 uint8
 	ActiveType2 uint8
 
