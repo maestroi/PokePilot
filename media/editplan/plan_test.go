@@ -220,3 +220,41 @@ func TestBuildClipsLongBeatSummaryPerField(t *testing.T) {
 		}
 	}
 }
+
+// A twenty-minute battle keeps its opening and its decisive last stretch in
+// real time and cuts the middle, instead of playing all of it at 1x.
+func TestBuildSplitsLongBattle(t *testing.T) {
+	tl := farm.MediaTimeline{
+		Run:     farm.MediaRunSummary{RunID: "long", Status: "done", Goal: "Win"},
+		Attempt: 1, EndFrame: 200000, FramesPerSecond: 60,
+		Events: []farm.MediaEvent{
+			{Type: "boss_battle", StartFrame: 60000, Frame: 132000, Objective: "boss", Summary: "lost", Metadata: map[string]string{"result": "lost"}},
+			{Type: "boss_battle", StartFrame: 140000, Frame: 150000, Objective: "boss", Summary: "won", Metadata: map[string]string{"result": "won"}},
+			{Type: "badge_acquired", Frame: 170000, Summary: "acquired Final", Metadata: map[string]string{"badge": "Final"}},
+			{Type: "run_finished", Frame: 190000, Summary: "done"},
+		},
+	}.Normalized()
+	a, err := producer.Assess(context.Background(), producer.Input{RunID: "long", Timelines: []farm.MediaTimeline{tl}}, nil, producer.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Build(a, []farm.MediaTimeline{tl}, Episode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := DefaultPolicy()
+	for _, s := range p.Segments {
+		if s.Action == Keep && s.Speed == 1 && s.EndMS-s.StartMS > pol.MaxLeadMS+pol.PostRollMS+1000 {
+			t.Fatalf("real-time segment %d-%dms is longer than the lead cap", s.StartMS, s.EndMS)
+		}
+	}
+	var chapters int
+	for _, s := range p.Segments {
+		if s.Chapter != "" {
+			chapters++
+		}
+	}
+	if chapters != len(a.Beats) {
+		t.Fatalf("want one chapter per beat, got %d: %+v", chapters, p.Segments)
+	}
+}
