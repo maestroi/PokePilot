@@ -19,6 +19,15 @@ type ObjectiveCatalog struct {
 	Shop              *CatalogShop
 	Interactables     []CatalogInteractable
 	CurrentCenter     bool
+	// IncomeSources are the repeatable money sources the game offers from
+	// the current state. The adapter owns what they are and how to run them;
+	// the economy offers them only when a required spend is unfunded.
+	IncomeSources []CatalogIncomeSource
+}
+
+type CatalogIncomeSource struct {
+	ID   string
+	Note string
 }
 
 type CatalogStarter struct {
@@ -170,6 +179,7 @@ func normalizeObjectiveCatalog(c ObjectiveCatalog) ObjectiveCatalog {
 	c.ChallengeProfiles = append([]CatalogChallengeProfile(nil), c.ChallengeProfiles...)
 	c.LocalEncounters = append([]CatalogEncounter(nil), c.LocalEncounters...)
 	c.Interactables = append([]CatalogInteractable(nil), c.Interactables...)
+	c.IncomeSources = append([]CatalogIncomeSource(nil), c.IncomeSources...)
 	if c.Shop != nil {
 		shop := &CatalogShop{Items: append([]CatalogShopItem(nil), c.Shop.Items...)}
 		c.Shop = shop
