@@ -64,12 +64,19 @@ var pokemonTowerFujiStand = Destination{Map: pokemonTower7FMap, X: 10, Y: 4}
 // those interiors turns an ordinary side trip into unknown_failure
 // (triage:88c189fb88d189c5). The skill itself already TravelFlee's to the
 // Lavender Pokemon Center whenever the current map is not a Tower floor.
+//
+// Route 9 / Route 10 / Rock Tunnel are the Cerulean-side approach to Lavender
+// (the same corridor FuchsiaProgressionAvailable documents for post-Flute
+// resumes). Yellow's note for this verb is "return to Lavender", so a resume
+// mid-corridor must Travel into the Tower slice instead of unknown_failure
+// (triage:2dca5266e6901230 on ROUTE_9).
 func PokemonTowerAvailable(mapID uint8) bool {
 	if RocketHideoutAvailable(mapID) {
 		return true
 	}
 	switch mapID {
-	case route7Map, undergroundRoute7Map, undergroundWestEastMap, undergroundRoute8Map, route8Map:
+	case route7Map, undergroundRoute7Map, undergroundWestEastMap, undergroundRoute8Map, route8Map,
+		semanticRoute9Map, route10Map, rockTunnelPokeCenterMap, rockTunnel1FMap, rockTunnelB1FMap:
 		return true
 	default:
 		name := state.MapName(mapID)
