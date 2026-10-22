@@ -310,10 +310,12 @@ type Policy struct {
 	PostRollMS   int64
 	SkipAfterMS  int64
 	RoutineSpeed int
+	MaxLeadMS    int64 // real-time lead into a cited event before its window is split
+	IntroMS      int64 // real-time opening kept from a split long battle
 }
 
 func DefaultPolicy() Policy {
-	return Policy{PreRollMS: 5000, PostRollMS: 8000, SkipAfterMS: 30000, RoutineSpeed: 8}
+	return Policy{PreRollMS: 5000, PostRollMS: 8000, SkipAfterMS: 30000, RoutineSpeed: 8, MaxLeadMS: 25000, IntroMS: 6000}
 }
 
 type window struct {
@@ -345,42 +347,45 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 	}
 	var windows []window
 	for _, beat := range a.Beats {
-		if len(beat.Evidence) == 0 {
-			continue
-		}
-		ref := beat.Evidence[0]
-		t, ok := by[ref.Attempt]
-		if !ok {
-			return Plan{}, errors.New("editplan: missing beat attempt")
-		}
-		var event farm.MediaEvent
-		found := false
-		for _, e := range t.Events {
-			if e.ID == ref.EventID {
-				event, found = e, true
-				break
+		for n, ref := range beat.Evidence {
+			t, ok := by[ref.Attempt]
+			if !ok {
+				return Plan{}, errors.New("editplan: missing beat attempt")
 			}
+			var event farm.MediaEvent
+			found := false
+			for _, e := range t.Events {
+				if e.ID == ref.EventID {
+					event, found = e, true
+					break
+				}
+			}
+			if !found || event.Frame != ref.Frame || event.TimestampMS != ref.TimestampMS {
+				return Plan{}, errors.New("editplan: producer referenced missing timeline evidence")
+			}
+			caption := ""
+			if n == 0 {
+				caption = beat.Summary
+			}
+			start := event.TimestampMS
+			if event.StartFrame > 0 && event.StartFrame < event.Frame {
+				start = int64(math.Round(float64(event.StartFrame) * 1000 / t.FramesPerSecond))
+			}
+			// A long battle plays its opening and its decisive last stretch in
+			// real time; the middle falls to the routine gap rules below.
+			if event.TimestampMS-start > pol.MaxLeadMS {
+				windows = append(windows, window{ref.Attempt, max(start-pol.PreRollMS, 0), start + pol.IntroMS, nil, caption})
+				start = event.TimestampMS - pol.MaxLeadMS
+			} else {
+				start = max(start-pol.PreRollMS, 0)
+			}
+			maxMS := int64(math.Ceil(float64(t.EndFrame+1) * 1000 / t.FramesPerSecond))
+			end := min(event.TimestampMS+pol.PostRollMS, maxMS)
+			if end <= start {
+				continue
+			}
+			windows = append(windows, window{ref.Attempt, start, end, []string{event.ID}, caption})
 		}
-		if !found || event.Frame != ref.Frame || event.TimestampMS != ref.TimestampMS {
-			return Plan{}, errors.New("editplan: producer referenced missing timeline evidence")
-		}
-		start := event.TimestampMS
-		if event.StartFrame > 0 && event.StartFrame < event.Frame {
-			start = int64(math.Round(float64(event.StartFrame) * 1000 / t.FramesPerSecond))
-		}
-		start -= pol.PreRollMS
-		if start < 0 {
-			start = 0
-		}
-		maxMS := int64(math.Ceil(float64(t.EndFrame+1) * 1000 / t.FramesPerSecond))
-		end := event.TimestampMS + pol.PostRollMS
-		if end > maxMS {
-			end = maxMS
-		}
-		if end <= start {
-			continue
-		}
-		windows = append(windows, window{ref.Attempt, start, end, []string{event.ID}, beat.Summary})
 	}
 	sort.Slice(windows, func(i, j int) bool {
 		if windows[i].attempt != windows[j].attempt {
@@ -391,11 +396,16 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 	merged := make([]window, 0, len(windows))
 	for _, w := range windows {
 		n := len(merged)
-		if n > 0 && merged[n-1].attempt == w.attempt && merged[n-1].end >= w.start {
+		// Gaps under a second join their neighbours instead of becoming
+		// near-empty fast-forward clips.
+		if n > 0 && merged[n-1].attempt == w.attempt && merged[n-1].end+1000 >= w.start {
 			if w.end > merged[n-1].end {
 				merged[n-1].end = w.end
 			}
 			merged[n-1].eventIDs = append(merged[n-1].eventIDs, w.eventIDs...)
+			if merged[n-1].caption == "" {
+				merged[n-1].caption = w.caption
+			}
 		} else {
 			merged = append(merged, w)
 		}
@@ -421,8 +431,16 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 			}
 			return best
 		}
+		// Ties go to the later window: a run's climax comes at its end.
 		sort.SliceStable(merged, func(i, j int) bool {
-			return score(merged[i]) > score(merged[j])
+			si, sj := score(merged[i]), score(merged[j])
+			if si != sj {
+				return si > sj
+			}
+			if merged[i].attempt != merged[j].attempt {
+				return merged[i].attempt > merged[j].attempt
+			}
+			return merged[i].start > merged[j].start
 		})
 		merged = merged[:2]
 		sort.Slice(merged, func(i, j int) bool {
@@ -436,6 +454,7 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 		return Plan{}, errors.New("editplan: no evidence-backed story windows")
 	}
 	p.Segments = append(p.Segments, Segment{Action: Card, DurationMS: 2000, Overlay: "POKEPILOT", Caption: "Run highlights", Transition: "cut"})
+	lastChapter := ""
 	for _, source := range p.Sources {
 		attemptWindows := []window{}
 		for _, w := range merged {
@@ -452,9 +471,14 @@ func Build(a producer.Assessment, timelines []farm.MediaTimeline, profile Profil
 					p.Segments = append(p.Segments, Segment{Action: Keep, Attempt: source.Attempt, StartMS: cursor, EndMS: w.start, Speed: pol.RoutineSpeed})
 				}
 			}
-			caption := clipText(w.caption, 220)
+			caption, chapter := clipText(w.caption, 220), clipText(w.caption, 100)
+			if chapter == lastChapter {
+				chapter = "" // a split battle repeats its caption, not its chapter
+			} else if chapter != "" {
+				lastChapter = chapter
+			}
 			p.Segments = append(p.Segments, Segment{Action: Keep, Attempt: source.Attempt, StartMS: w.start, EndMS: w.end, Speed: 1,
-				EventIDs: w.eventIDs, Caption: caption, NarrationCue: caption, Chapter: clipText(w.caption, 100), Transition: "fade"})
+				EventIDs: w.eventIDs, Caption: caption, NarrationCue: caption, Chapter: chapter, Transition: "fade"})
 			cursor = w.end
 		}
 		if cursor < source.DurationMS {
