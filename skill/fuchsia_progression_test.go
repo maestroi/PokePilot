@@ -51,6 +51,14 @@ func TestFuchsiaProgressionAvailable(t *testing.T) {
 			t.Fatalf("registered Center %q (map %#02x) must be a legal Fuchsia resume point", name, d.Map)
 		}
 	}
+	// Inventory recovery leaves the player at a Gen-I mart counter. Those
+	// shops must resume Fuchsia the same way Centers do (Viridian Mart 0x2a
+	// in run-2i346bo3t06eg3kgpd6btbrmvk) without growing the corridor list.
+	for _, mart := range standardMartRecoveryTargets {
+		if !FuchsiaProgressionAvailable(mart.mapID) {
+			t.Fatalf("standard mart %q (map %#02x) must be a legal Fuchsia resume point", mart.name, mart.mapID)
+		}
+	}
 	if FuchsiaProgressionAvailable(0x00) {
 		t.Fatal("Pallet Town must not be part of the Fuchsia progression slice")
 	}

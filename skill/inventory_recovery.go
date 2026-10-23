@@ -55,6 +55,18 @@ var standardMartRecoveryTargets = []standardMartRecoveryTarget{
 	{name: "indigo plateau mart", mapID: 0xAE},
 }
 
+// knownMartMap reports whether mapID is one of the Gen-I marts inventory
+// recovery can lawfully leave the player in. FuchsiaProgressionAvailable uses
+// this so a post-Flute restock does not terminal as an out-of-slice error.
+func knownMartMap(mapID uint8) bool {
+	for _, target := range standardMartRecoveryTargets {
+		if target.mapID == mapID {
+			return true
+		}
+	}
+	return false
+}
+
 func itemCount(mem *state.Mem, item uint8) int {
 	_, qty := bagEntry(mem, item)
 	return qty
