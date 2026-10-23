@@ -377,12 +377,64 @@ func ChallengeTrainerWithOptions(
 		return fmt.Errorf("skill: ChallengeTrainer: trainer at (%d,%d) did not remain adjacent after %d approaches", tx, ty, approaches)
 	}
 
-	m.Tap(emu.A, 3, 7)
-	if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
-		state.Snapshot(m, &mem)
-		return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
-	}); err != nil {
-		return fmt.Errorf("skill: ChallengeTrainer: interaction at (%d,%d) opened neither dialogue nor battle", tx, ty)
+	// FontLoaded alone cannot tell a sighted trainer's pre-battle text from an
+	// incidental overworld notice that opened on the same schedule — notably
+	// "REPEL's effect wore off." during the final Face settle (measured on
+	// Lorelei, run-3hkfo57pz4vld2h3osnlw0jers). A single A then dismisses the
+	// notice and the challenge reports "opened neither dialogue nor battle"
+	// while still facing the trainer. Page whatever is already open: a real
+	// engagement becomes a battle (or the fought flag); an incidental notice
+	// returns controllable so the explicit A below can start the talk.
+	if engaged() && state.DecodeBattle(&mem) == nil && !target.flag.set(m) {
+		rec := RecoverDialogue(m, dialogueRecoveryBudget)
+		switch rec.Stop {
+		case DialogueUnexpectedMode:
+			// Sight engagement paged into battle; fall through.
+		case DialogueRecovered:
+			if target.flag.set(m) {
+				return nil
+			}
+			// Re-face after an incidental box: engaged() may have skipped Face
+			// entirely, or Face may have settled under the box without a usable
+			// controllable boundary for the interaction A.
+			lx, ly, live := liveObjectPosition(m, target.objectID)
+			if !live {
+				return fmt.Errorf("skill: ChallengeTrainer: trainer sprite %d disappeared but fought flag %#04x/%#02x is clear", target.objectID, target.flag.addr, target.flag.mask)
+			}
+			tx, ty = lx, ly
+			if err := Face(m, tx, ty); err != nil && !engaged() {
+				return fmt.Errorf("skill: ChallengeTrainer: face trainer at (%d,%d) after clearing incidental dialogue: %w", tx, ty, err)
+			}
+			if engaged() && state.DecodeBattle(&mem) == nil && !target.flag.set(m) {
+				rec = RecoverDialogue(m, dialogueRecoveryBudget)
+				if rec.Stop == DialogueUnexpectedMode {
+					break
+				}
+				if rec.Stop != DialogueRecovered {
+					return fmt.Errorf("skill: ChallengeTrainer: could not clear dialogue after re-face at (%d,%d)", tx, ty)
+				}
+				if target.flag.set(m) {
+					return nil
+				}
+			}
+		case DialogueChoiceRequired:
+			return fmt.Errorf("skill: ChallengeTrainer: choice required before trainer interaction at (%d,%d)", tx, ty)
+		case DialogueMenuOpen:
+			return fmt.Errorf("skill: ChallengeTrainer: menu open before trainer interaction at (%d,%d)", tx, ty)
+		default:
+			return fmt.Errorf("skill: ChallengeTrainer: could not clear pre-interaction dialogue at (%d,%d)", tx, ty)
+		}
+	}
+
+	state.Snapshot(m, &mem)
+	if state.DecodeBattle(&mem) == nil && !target.flag.setMem(&mem) {
+		m.Tap(emu.A, 3, 7)
+		if _, err := m.StepUntil(talkOpenBudget, func(m *emu.Emu) bool {
+			state.Snapshot(m, &mem)
+			return mem.U8(sym.FontLoaded) != 0 || state.DecodeBattle(&mem) != nil
+		}); err != nil {
+			return fmt.Errorf("skill: ChallengeTrainer: interaction at (%d,%d) opened neither dialogue nor battle", tx, ty)
+		}
 	}
 
 	mem = advanceUntil(m, gymBattleWaitBudget, func(mm *state.Mem) bool {
