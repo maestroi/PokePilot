@@ -28,16 +28,17 @@ const (
 	gsJasmineGymStandX uint8 = 5
 	gsJasmineGymStandY uint8 = 4
 
-	// A 3-frame A tap pressed immediately after Face's direction press is
-	// ignored by the Gen II input system: the overworld is controllable but the
-	// player is not yet ready for an interaction press. gsHM02FlySettleFrames
-	// is the settle that makes the press register, and gsHM02FlyPressAttempts
-	// bounds the retries before a press that opens no dialogue is a terminal
-	// miss. Measured on the captured failure checkpoint for
-	// triage:a7579146e17b7296: the un-settled tap never opened the wife's
-	// dialogue, while a 30-frame settle plus the same 3-frame tap did.
-	gsHM02FlySettleFrames  = 30
-	gsHM02FlyPressAttempts = 3
+	// Chuck's wife WALK_LEFT_RIGHT on y=46. A long post-Face settle (the earlier
+	// 30-frame Gen II input delay) lets her leave the interaction tile, so the
+	// A press lands on empty air and driveGSSecondBadgeInterruption returns on a
+	// still-controllable overworld — which used to read as a terminal "returned
+	// without HM02 Fly". gsHM02FlySettleFrames is a short readiness settle that
+	// fits inside one NPC step; each press attempt re-checks live adjacency and
+	// re-faces before tapping. gsHM02FlyPressAttempts bounds adjacent taps that
+	// open no gift, not settle-into-empty-air misses.
+	// Measured on run-3om7ptfumukt9aaxwusxdq9sj / triage:a7579146e17b7296.
+	gsHM02FlySettleFrames  = 4
+	gsHM02FlyPressAttempts = 8
 )
 
 // gsCoastalProfile holds the cartridge-specific story state required by
@@ -189,6 +190,7 @@ func executeGSHM02Fly(m *emu.Emu, romData []byte) error {
 		skill.ExactNativeDestination(city, gsChucksWifeStandX, gsChucksWifeStandY)); err != nil {
 		return fmt.Errorf("gen2 HM02 Fly: approach Chuck's wife: %w", err)
 	}
+	presses := 0
 	for i := 0; i < 240; i++ {
 		overworld := profile.DecodeOverworld(m)
 		if !overworld.Controllable || overworld.NativeMapID != city {
@@ -202,34 +204,64 @@ func executeGSHM02Fly(m *emu.Emu, romData []byte) error {
 		if !ok || wife.Y != 46 || wife.X < 9 || wife.X > 11 {
 			return fmt.Errorf("%w: Chuck's wife is missing from known roaming range", errGSSecondBadgeUnexpectedState)
 		}
-		delta := int(overworld.X) - wife.X
-		if delta < 0 {
-			delta = -delta
+		if !gsChucksWifeAdjacent(int(overworld.X), int(overworld.Y), wife.X, wife.Y) {
+			m.StepFrames(8)
+			continue
 		}
-		if delta+int(wife.Y)-int(overworld.Y) == 1 {
-			if err := skill.Face(m, uint8(wife.X), uint8(wife.Y)); err != nil {
-				return fmt.Errorf("gen2 HM02 Fly: face wife: %w", err)
-			}
-			// Settle so the A press registers, and treat a press that opens no
-			// dialogue as a miss to retry rather than a terminal state: the
-			// interruption driver returns as soon as the player is controllable,
-			// so an un-settled tap used to read as "returned without HM02 Fly".
-			for attempt := 0; attempt < gsHM02FlyPressAttempts; attempt++ {
-				m.StepFrames(gsHM02FlySettleFrames)
-				m.Tap(emu.A, 3, 7)
-				if err := driveGSSecondBadgeInterruption(m, profile, encounter); err != nil {
-					return fmt.Errorf("gen2 HM02 Fly: reward script: %w", err)
-				}
-				if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHM02FlyAcquired) &&
-					profile.DecodeOverworld(m).Controllable {
-					return nil
-				}
-			}
+		if err := skill.Face(m, uint8(wife.X), uint8(wife.Y)); err != nil {
+			return fmt.Errorf("gen2 HM02 Fly: face wife: %w", err)
+		}
+		// Face's turn frames and the short Gen II settle can both let her step
+		// off the interaction tile. Only burn a press while still adjacent to
+		// the LIVE sprite; otherwise wait for the next window.
+		overworld = profile.DecodeOverworld(m)
+		live, err = profile.DecodeLiveTopology(m)
+		if err != nil {
+			return err
+		}
+		wife, ok = live.ObjectPositions[gsChucksWifeSlot]
+		if !ok || wife.Y != 46 || wife.X < 9 || wife.X > 11 ||
+			!gsChucksWifeAdjacent(int(overworld.X), int(overworld.Y), wife.X, wife.Y) {
+			m.StepFrames(8)
+			continue
+		}
+		m.StepFrames(gsHM02FlySettleFrames)
+		overworld = profile.DecodeOverworld(m)
+		live, err = profile.DecodeLiveTopology(m)
+		if err != nil {
+			return err
+		}
+		wife, ok = live.ObjectPositions[gsChucksWifeSlot]
+		if !ok || wife.Y != 46 || wife.X < 9 || wife.X > 11 ||
+			!gsChucksWifeAdjacent(int(overworld.X), int(overworld.Y), wife.X, wife.Y) {
+			continue
+		}
+		m.Tap(emu.A, 3, 7)
+		presses++
+		if err := driveGSSecondBadgeInterruption(m, profile, encounter); err != nil {
+			return fmt.Errorf("gen2 HM02 Fly: reward script: %w", err)
+		}
+		if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressHM02FlyAcquired) &&
+			profile.DecodeOverworld(m).Controllable {
+			return nil
+		}
+		if presses >= gsHM02FlyPressAttempts {
 			return fmt.Errorf("%w: Chuck's wife returned without HM02 Fly", errGSSecondBadgeUnexpectedState)
 		}
-		m.StepFrames(8)
 	}
 	return fmt.Errorf("%w: Chuck's wife never approached the owned interaction tile", errGSSecondBadgeStalled)
+}
+
+func gsChucksWifeAdjacent(px, py, wx, wy int) bool {
+	dx := px - wx
+	if dx < 0 {
+		dx = -dx
+	}
+	dy := py - wy
+	if dy < 0 {
+		dy = -dy
+	}
+	return dx+dy == 1
 }
 
 // executeGSJasmineBadge ends the coastal slice at Olivine Gym. The
