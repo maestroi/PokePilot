@@ -74,11 +74,12 @@ func TestGSCoastalGymsAreOwnedWithLocalHealing(t *testing.T) {
 
 // TestGSHM02FlyReplay replays the captured failure checkpoint for
 // triage:a7579146e17b7296 (issue #2615) through the HM02 Fly objective and
-// asserts it completes. The regression: an un-settled 3-frame A tap pressed
-// immediately after Face never opened Chuck's wife's dialogue, so the
-// interruption driver returned on a controllable player and the executor
-// declared a terminal "returned without HM02 Fly". The fix settles before the
-// press and retries a press that opens no dialogue.
+// asserts it completes. The regression: Chuck's wife WALK_LEFT_RIGHT leaves the
+// interaction tile during a long post-Face settle, so A lands on empty air and
+// the interruption driver returns controllable without EVENT_GOT_HM02_FLY —
+// previously treated as a terminal "returned without HM02 Fly". The fix keeps
+// a short settle, re-checks live adjacency before each press, and retries
+// across adjacency windows.
 //
 // It is gated on the Gold ROM and a checkpoint path (GS_HM02_FLY_CHECKPOINT)
 // so it runs where the capture is available and skips in the ROM-free CI gate;
