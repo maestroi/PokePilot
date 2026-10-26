@@ -71,6 +71,10 @@ const (
 	ProgressBlackthornGymBouldersDropped game.ProgressID = "gs_blackthorn_gym_boulders_dropped"
 	ProgressClairDefeated                game.ProgressID = "gs_clair_defeated"
 	ProgressRisingBadgeEarned            game.ProgressID = "gs_rising_badge_earned"
+	// Route 23's MAPCALLBACK_NEWMAP sets ENGINE_FLYPOINT_INDIGO_PLATEAU, so
+	// the flypoint is the cartridge's own proof that the badge gate and
+	// Victory Road were crossed on foot. It is not Elite Four progress.
+	ProgressIndigoPlateauReached game.ProgressID = "gs_indigo_plateau_reached"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -137,15 +141,17 @@ const (
 	eventBlackthornGymBoulder1 uint16 = 1798
 	eventIcePathBoulder1       uint16 = 1801
 	eventIcePathFloorBoulder1  uint16 = 1805
-	statusFlagsPokedexMask            = 1 << 0
-	johtoBadgeZephyrMask              = 1 << 0
-	johtoBadgeHiveMask                = 1 << 1
-	johtoBadgePlainMask               = 1 << 2
-	johtoBadgeFogMask                 = 1 << 3
-	johtoBadgeMineralMask             = 1 << 4
-	johtoBadgeStormMask               = 1 << 5
-	johtoBadgeGlacierMask             = 1 << 6
-	johtoBadgeRisingMask              = 1 << 7
+	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
+	spawnIndigo            = 13
+	statusFlagsPokedexMask = 1 << 0
+	johtoBadgeZephyrMask   = 1 << 0
+	johtoBadgeHiveMask     = 1 << 1
+	johtoBadgePlainMask    = 1 << 2
+	johtoBadgeFogMask      = 1 << 3
+	johtoBadgeMineralMask  = 1 << 4
+	johtoBadgeStormMask    = 1 << 5
+	johtoBadgeGlacierMask  = 1 << 6
+	johtoBadgeRisingMask   = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -257,6 +263,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressBlackthornGymBouldersDropped, Complete: gsBlackthornGymBouldersPlaced(reader)},
 		{ID: ProgressClairDefeated, Complete: hasGSEvent(reader, eventBeatClair)},
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
+		{ID: ProgressIndigoPlateauReached, Complete: reader.Peek8(sym.VisitedSpawns+spawnIndigo/8)&(1<<(spawnIndigo%8)) != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

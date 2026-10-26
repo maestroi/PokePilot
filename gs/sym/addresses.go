@@ -104,6 +104,12 @@ const (
 	GameTimerPaused uint16 = 0xD8B8 // wGameTimerPaused
 	BikeFlags       uint16 = 0xD93F // wBikeFlags
 
+	// VisitedSpawns is wVisitedSpawns, the first wCurMapData label: one bit
+	// per SPAWN_* in constants/map_data_constants.asm (the ENGINE_FLYPOINT_*
+	// flags). Measured on a retail Gold post-Rising save, where the visited
+	// Johto towns read 00 c0 fd 03.
+	VisitedSpawns uint16 = 0xD9EE // wVisitedSpawns
+
 	// BackupMapGroup is wBackupMapGroup. Special maps (landmark 0) report the
 	// region of this return map. Counted back from the verified wMapGroup
 	// through the linear wCurMapData labels in ram/wram.asm.
