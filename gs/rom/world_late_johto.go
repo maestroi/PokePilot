@@ -222,4 +222,83 @@ var lateJohtoTopology = []mapSpec{
 			{x: 20, y: 3, dest: "DRAGONS_DEN_1F", destWarp: 3},
 		},
 	},
+	// Johto League approach: New Bark's east Surf route through Tohjo Falls,
+	// the badge-check gate and Victory Road to the Route 23 plateau. These
+	// edges are geometry only; the Victory Road rival and the Indigo flypoint
+	// are proven by the owning story executor, never by arrival here.
+	{
+		name: "ROUTE_27",
+		warps: []warpSpec{
+			{x: 26, y: 5, dest: "TOHJO_FALLS", destWarp: 1},
+			{x: 36, y: 5, dest: "TOHJO_FALLS", destWarp: 2},
+		},
+		connections: []connectionSpec{
+			{dir: dirWest, dest: "NEW_BARK_TOWN", offset: 0},
+			{dir: dirEast, dest: "ROUTE_26", offset: -45},
+		},
+	},
+	{
+		name: "TOHJO_FALLS",
+		warps: []warpSpec{
+			{x: 13, y: 15, dest: "ROUTE_27", destWarp: 2},
+			{x: 25, y: 15, dest: "ROUTE_27", destWarp: 3},
+		},
+	},
+	{
+		name: "ROUTE_26",
+		warps: []warpSpec{
+			{x: 7, y: 5, dest: "VICTORY_ROAD_GATE", destWarp: 3},
+			{x: 15, y: 57, dest: "ROUTE_26_HEAL_HOUSE", destWarp: 1},
+		},
+		connections: []connectionSpec{
+			{dir: dirWest, dest: "ROUTE_27", offset: 45},
+		},
+	},
+	{
+		name: "ROUTE_26_HEAL_HOUSE",
+		warps: []warpSpec{
+			{x: 2, y: 7, dest: "ROUTE_26", destWarp: 2},
+			{x: 3, y: 7, dest: "ROUTE_26", destWarp: 2},
+		},
+	},
+	{
+		name: "VICTORY_ROAD_GATE",
+		warps: []warpSpec{
+			{x: 9, y: 17, dest: "ROUTE_26", destWarp: 1},
+			{x: 10, y: 17, dest: "ROUTE_26", destWarp: 1},
+			{x: 9, y: 0, dest: "VICTORY_ROAD", destWarp: 1},
+			{x: 10, y: 0, dest: "VICTORY_ROAD", destWarp: 1},
+		},
+	},
+	{
+		name: "VICTORY_ROAD",
+		warps: []warpSpec{
+			{x: 9, y: 67, dest: "VICTORY_ROAD_GATE", destWarp: 5},
+			{x: 1, y: 49, dest: "VICTORY_ROAD", destWarp: 3},
+			{x: 1, y: 35, dest: "VICTORY_ROAD", destWarp: 2},
+			{x: 13, y: 31, dest: "VICTORY_ROAD", destWarp: 5},
+			{x: 13, y: 17, dest: "VICTORY_ROAD", destWarp: 4},
+			{x: 17, y: 33, dest: "VICTORY_ROAD", destWarp: 7},
+			{x: 17, y: 19, dest: "VICTORY_ROAD", destWarp: 6},
+			{x: 0, y: 11, dest: "VICTORY_ROAD", destWarp: 9},
+			{x: 0, y: 27, dest: "VICTORY_ROAD", destWarp: 8},
+			{x: 13, y: 5, dest: "ROUTE_23", destWarp: 3},
+		},
+	},
+	{
+		name: "ROUTE_23",
+		warps: []warpSpec{
+			{x: 9, y: 5, dest: "INDIGO_PLATEAU_POKECENTER_1F", destWarp: 1},
+			{x: 10, y: 5, dest: "INDIGO_PLATEAU_POKECENTER_1F", destWarp: 2},
+			{x: 9, y: 13, dest: "VICTORY_ROAD", destWarp: 10},
+			{x: 10, y: 13, dest: "VICTORY_ROAD", destWarp: 10},
+		},
+	},
+	{
+		name: "INDIGO_PLATEAU_POKECENTER_1F",
+		warps: []warpSpec{
+			{x: 5, y: 13, dest: "ROUTE_23", destWarp: 1},
+			{x: 6, y: 13, dest: "ROUTE_23", destWarp: 2},
+		},
+	},
 }

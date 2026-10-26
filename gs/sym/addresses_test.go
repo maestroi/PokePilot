@@ -22,6 +22,7 @@ func TestRetailGoldSilverLiveWRAMLayout(t *testing.T) {
 		{"wScriptRunning", ScriptRunning, 0xD15F},
 		{"wObjectStructs", ObjectStructs, 0xD1FD},
 		{"wPlayerState", PlayerState, 0xD682},
+		{"wVisitedSpawns", VisitedSpawns, 0xD9EE},
 		{"wMapGroup", MapGroup, 0xDA00},
 		{"wPartyCount", PartyCount, 0xDA22},
 		{"wBattleMode", BattleMode, 0xD116},

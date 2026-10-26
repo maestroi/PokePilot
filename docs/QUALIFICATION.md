@@ -627,3 +627,21 @@ next physically reachable action. The controller settles scripted falling
 boulders before replanning and requires every *real* disappearance event
 and, for Ice Path, the B2F floor-boulder flag transitions. This is
 distinct from merely navigating to Clair or ending a Strength animation.
+
+## Gen2: experimental League approach to Indigo Plateau
+
+After the Rising Badge the only new offer is `gs_indigo_plateau_reached`
+(launcher: *Indigo Plateau · Victory Road · experimental*). The executor heals
+in Blackthorn, flies to New Bark when the party has a Fly carrier (otherwise it
+walks the owned Johto route), Surfs Route 27 through Tohjo Falls, rests at the
+Route 26 Heal House, passes the Victory Road Gate badge check and fights the
+Victory Road rival as an ordinary owned interruption. Completion is only the
+cartridge's `ENGINE_FLYPOINT_INDIGO_PLATEAU` (wVisitedSpawns bit
+`SPAWN_INDIGO`), set by Route 23's map callback. The Elite Four is not
+executable yet and nothing past the plateau is offered.
+
+Evidence (retail Gold, `final.state` of run-3om7ptfumukt9aaxwusxdq9sj,
+post-Rising): the first walk lost to Route 26 Cooltrainer Joyce after the
+Route 27 trainers drained a Tackle/Strength/Cut/Ember Typhlosion, which is a
+typed `combat_defeat`; the retry from the blackout checkpoint (Route 27
+trainers now beaten) reached Route 23 with the flypoint set in ~125k frames.

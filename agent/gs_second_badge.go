@@ -126,6 +126,16 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"BLACKTHORN_GYM_2F",
 		"DRAGONS_DEN_1F",
 		"DRAGONS_DEN_B1F",
+		// The League approach after Rising Badge: the gate badge check and
+		// Victory Road rival are interruptions owned by the Indigo walk.
+		"ROUTE_27",
+		"TOHJO_FALLS",
+		"ROUTE_26",
+		"ROUTE_26_HEAL_HOUSE",
+		"VICTORY_ROAD_GATE",
+		"VICTORY_ROAD",
+		"ROUTE_23",
+		"INDIGO_PLATEAU_POKECENTER_1F",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
@@ -154,7 +164,10 @@ func driveGSSecondBadgeInterruption(
 			continue
 		}
 		world := profile.DecodeOverworld(m)
-		if !gsSecondBadgeOwnedMap(world.NativeMapID) {
+		// Later objectives legitimately walk back through early Johto, which
+		// NormalizeBoundary already owns; an interruption there is the same
+		// ordinary route battle/dialogue.
+		if !gsFirstBadgeOwnedMap(world.NativeMapID) && !gsSecondBadgeOwnedMap(world.NativeMapID) {
 			return fmt.Errorf("%w: map=%#04x at (%d,%d)", errGSSecondBadgeUnexpectedState, world.NativeMapID, world.X, world.Y)
 		}
 		if world.InBattle {

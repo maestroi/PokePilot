@@ -91,7 +91,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressIcePathBouldersDropped,
 		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
-		gsprofile.ProgressRisingBadgeEarned:
+		gsprofile.ProgressRisingBadgeEarned,
+		// Experimental League approach; the Elite Four stays unsupported.
+		gsprofile.ProgressIndigoPlateauReached:
 		return true
 	default:
 		return false
@@ -294,6 +296,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSClair(a.m, a.romData)
 		case gsprofile.ProgressRisingBadgeEarned:
 			err = executeGSDragonFangRising(a.m, a.romData)
+		case gsprofile.ProgressIndigoPlateauReached:
+			err = executeGSIndigoPlateau(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -353,7 +357,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressIcePathBouldersDropped,
 			gsprofile.ProgressBlackthornGymBouldersDropped,
 			gsprofile.ProgressClairDefeated,
-			gsprofile.ProgressRisingBadgeEarned:
+			gsprofile.ProgressRisingBadgeEarned,
+			gsprofile.ProgressIndigoPlateauReached:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -801,6 +806,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressRisingBadgeEarned,
 			Note:     "(experimental: Surf/Whirlpool into Dragon's Den, claim Dragon Fang and settle Clair's Rising Badge)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressIndigoPlateauReached):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressIndigoPlateauReached,
+			Note:     "(experimental: fly to New Bark, Surf Route 27 through Tohjo Falls, pass the badge gate, beat the rival in Victory Road and reach Indigo Plateau)",
 		}}
 	default:
 		return nil

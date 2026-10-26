@@ -83,8 +83,11 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				}
 				obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 			}
-			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-				t.Fatalf("completed Rising Badge must terminate progression: %+v", goals)
+			// Past eight badges the only offer is the League approach; the
+			// Elite Four itself stays unsupported.
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+				goals[0].Progress != gsprofile.ProgressIndigoPlateauReached || !adapter.SupportsObjective(goals[0]) {
+				t.Fatalf("completed Rising Badge must offer only the Indigo Plateau approach: %+v", goals)
 			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
 				t.Fatal("Rising Badge should now have an owned executor")
