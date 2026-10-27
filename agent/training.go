@@ -323,11 +323,12 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 }
 
 const (
-	// A target more than three levels below the strongest local wild is treated
-	// as unsafe for direct grinding. The actual battle layer still evaluates
-	// type/move matchups turn by turn; this is only the coarse pre-battle gate
-	// that decides whether the weak mon should be protected by switch training.
-	directTrainingWildGap = 3
+	// Direct grinding is only treated as safe when every local wild is strictly
+	// below the trainee. Equal-level bands used to keep direct mode under a "+3"
+	// cushion, but HoldTrainingLead against Rock Tunnel L21 wilds faints a L21
+	// Zubat in one battle (triage a5a7c1cdb8301e71): heal-resume then burns the
+	// train_retreat budget with zero XP. When a healthy carry exists, switch
+	// training is the safe method even for equal-level grass.
 	// A carry may trail the strongest local wild slightly because the battle
 	// switch policy also considers moves, HP and typing. Requiring it to be at
 	// least within two levels keeps "L12 target + L15 backup in Victory Road"
@@ -425,7 +426,7 @@ func applyPartyTrainingMethod(party state.PartyState, targetSlot int, slots []sk
 	}
 
 	target := party.Mons[targetSlot]
-	if int(wildMax) <= int(target.Level)+directTrainingWildGap {
+	if int(wildMax) < int(target.Level) {
 		return estimate
 	}
 

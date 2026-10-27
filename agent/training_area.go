@@ -242,7 +242,7 @@ func trainingMethodForObservedParty(party []PartyMon, wildMax uint8) (TrainingMe
 	if target.HP == 0 {
 		return TrainingDirect, 0, false
 	}
-	if int(wildMax) <= int(target.Level)+directTrainingWildGap {
+	if int(wildMax) < int(target.Level) {
 		return TrainingDirect, 0, true
 	}
 
