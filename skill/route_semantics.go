@@ -440,7 +440,14 @@ func redRoutePrerequisites(g *world.Graph, romData []byte, mem *state.Mem) world
 				// PortBypass alone is not seam creation: Route 9's Cut bridge and
 				// the Snorlax clears skip source canExit but still cross the one
 				// real band.
-				if edge.Kind == world.EdgeConnection && !transitionCreatesSeam(transition) && !g.ConnectionExitWalkable(edge) {
+				//
+				// Gates are different: they constrain whether the edge may be
+				// used at all. Skipping them on proven-unwalkable padding leaves
+				// those bands as free map-adjacency for mapsConnected, so a
+				// Diglett's Cave Hyper Potion restock treated Saffron Mart as a
+				// two-hop ErrRouteReplanRequired lure past a completed Fuchsia
+				// route (run-aqbnxwh5p4i4hqy3h80mcvc / triage bfda8e7f35489e76).
+				if edge.Kind == world.EdgeConnection && !transitionCreatesSeam(transition) && !g.ConnectionExitWalkable(edge) && !transition.Gate {
 					continue
 				}
 				// The Route 23 actions own the three Surf bands only. Neither may
