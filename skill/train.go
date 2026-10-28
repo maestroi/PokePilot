@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
@@ -53,11 +54,16 @@ type TrainResult struct {
 	StartLevel int       // the lead/target's level when the session began
 	EndLevel   int       // the lead/target's level when it ended
 	Battles    int       // wild battles fought
+	Fled       int       // wild encounters fled because the held lead could not damage them
 	BlackedOut bool      // a battle ended in ResultLost
 	Reached    bool      // EndLevel >= targetLevel
 	Retreated  bool      // stopped while the party was alive: continuing would have lost it
 	Mode       TrainMode // direct or deliberate switch training
 }
+
+// engagements is what maxBattles bounds. LegBudget sizes the walk for that
+// many encounters, so a fled one must spend the budget like a fought one.
+func (r TrainResult) engagements() int { return r.Battles + r.Fled }
 
 // ErrTrainRetreat marks a Train session that ended while the party was still
 // able to walk: the lead's HP fell below the retreat line, so the next battle
@@ -73,6 +79,16 @@ var ErrTrainRetreat = errors.New("skill: Train: stopped while the party was aliv
 // that wild battle and ends the session as a retreat rather than leaving the
 // weak target to fight an encounter it was explicitly judged unsafe to face.
 var ErrTrainCarryUnavailable = errors.New("skill: Train: no safe switch-training carry available")
+
+// ErrTrainLeadSpent is direct training's counterpart: the held lead has no
+// damaging move with PP left, so every further wild fight can only burn
+// status PP toward STRUGGLE without HP progress. Train flees the encounter
+// and ends the session as a retreat; healing restores the PP.
+var ErrTrainLeadSpent = errors.New("skill: Train: held training lead has no damaging move with PP left")
+
+func trainSessionEndedByEncounter(err error) bool {
+	return errors.Is(err, ErrTrainCarryUnavailable) || errors.Is(err, ErrTrainLeadSpent)
+}
 
 // ErrTrainProgress marks a Train session that exhausted its battle budget
 // short of targetLevel but still raised the lead's level at least once. The
@@ -237,12 +253,13 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 	next := b
 	legs := 0
 	for {
-		tr, err := travelTrainingLeg(m, romData, Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}, policy, maxBattles-res.Battles, options)
+		tr, err := travelTrainingLeg(m, romData, Destination{Map: now.Map, X: uint8(next.x), Y: uint8(next.y)}, policy, maxBattles-res.engagements(), options)
 		res.Battles += tr.Battles
+		res.Fled += tr.Flees
 		if tr.BlackedOut {
 			res.BlackedOut = true
 		}
-		if errors.Is(err, ErrTrainCarryUnavailable) {
+		if trainSessionEndedByEncounter(err) {
 			res.EndLevel = leadLevel(m)
 			res.Reached = res.EndLevel >= targetLevel
 			res.Retreated = !res.Reached
@@ -278,7 +295,7 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 			// Finish it under the same training method so switch training never
 			// silently degrades to direct combat on the final battle.
 			r, berr := resolveTrainingBattle(m, policy, options)()
-			if errors.Is(berr, ErrTrainCarryUnavailable) {
+			if trainSessionEndedByEncounter(berr) {
 				res.EndLevel = leadLevel(m)
 				res.Reached = res.EndLevel >= targetLevel
 				res.Retreated = !res.Reached
@@ -287,7 +304,9 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 			if berr != nil {
 				return res, fmt.Errorf("skill: Train: battle %d: %w", res.Battles+1, berr)
 			}
-			if !r.fled {
+			if r.fled {
+				res.Fled++
+			} else {
 				res.Battles++
 			}
 			if r.outcome == state.ResultLost {
@@ -296,7 +315,7 @@ func TrainWithOptions(m *emu.Emu, romData []byte, targetLevel int, policy MovePo
 		}
 		res.EndLevel = leadLevel(m)
 		res.Reached = res.EndLevel >= targetLevel
-		if res.BlackedOut || res.Reached || res.Battles >= maxBattles {
+		if res.BlackedOut || res.Reached || res.engagements() >= maxBattles {
 			return res, nil
 		}
 		// The fourth exit: the party is alive but continuing would have lost
@@ -379,8 +398,7 @@ func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) 
 			return battleResolution{outcome: outcome, trainer: trainer}, err
 		}
 		if options.Mode != TrainSwitch {
-			outcome, err := BattleWithOptions(m, policy, BattleOptions{HoldTrainingLead: true})
-			return battleResolution{outcome: outcome}, err
+			return resolveDirectTrainingBattle(m, policy)
 		}
 
 		var mem state.Mem
@@ -402,6 +420,77 @@ func resolveTrainingBattle(m *emu.Emu, policy MovePolicy, options TrainOptions) 
 		})
 		return battleResolution{outcome: outcome}, err
 	}
+}
+
+// resolveDirectTrainingBattle holds the trainee in a wild fight only while it
+// has a usable move that can make HP progress against the live opponent.
+// HoldTrainingLead refuses rotation, so without that move the policy can only
+// burn status PP toward STRUGGLE: a Ground-only Marowak against a Flying
+// Pidgey, or a lead whose damaging PP is gone against a foe that keeps it
+// asleep, ran the stall cap out with nothing changing
+// (run-1n4yivkvkl9hk272sbitqvmre2). Battle yields at its main menu instead and
+// the encounter is fled. The session continues while the lead still has
+// damaging PP for other opponents, and retreats to heal when it has none.
+func resolveDirectTrainingBattle(m *emu.Emu, policy MovePolicy) (battleResolution, error) {
+	options := BattleOptions{HoldTrainingLead: true}
+	var offense trainingLeadOffense
+	if strategy, err := combatStrategyForROM(m.ROM()); err == nil {
+		romData := m.ROM()
+		options.YieldWhen = func(b game.BattleState) bool {
+			offense = evaluateTrainingLeadOffense(strategy, romData, b)
+			return !offense.effective
+		}
+	}
+	outcome, err := BattleWithOptions(m, policy, options)
+	if !errors.Is(err, ErrBattleYielded) {
+		return battleResolution{outcome: outcome}, err
+	}
+	if ferr := Flee(m, guaranteedWildFleeAttempts); ferr != nil {
+		if errors.Is(ferr, ErrFleeExhausted) || errors.Is(ferr, ErrMenuStuck) {
+			// Never return with the encounter live: finish it as before.
+			outcome, berr := BattleWithOptions(m, policy, BattleOptions{HoldTrainingLead: true})
+			return battleResolution{outcome: outcome}, berr
+		}
+		return battleResolution{}, fmt.Errorf("skill: Train: flee encounter the held lead cannot damage: %w", ferr)
+	}
+	if !offense.damaging {
+		return battleResolution{fled: true}, ErrTrainLeadSpent
+	}
+	return battleResolution{fled: true}, nil
+}
+
+// trainingLeadOffense classifies the active lead's moves against the live
+// opponent with the move policy's own roles. effective: some usable move makes
+// HP progress (positive direct-damage score, residual damage, or a move the
+// strategy cannot evaluate, which the policy attacks with anyway). damaging:
+// some damaging move still has PP, whatever this opponent's typing.
+type trainingLeadOffense struct {
+	effective bool
+	damaging  bool
+}
+
+func evaluateTrainingLeadOffense(strategy game.BattleCombatStrategy, romData []byte, b game.BattleState) trainingLeadOffense {
+	attacker, defender := battleCombatants(b)
+	var out trainingLeadOffense
+	for _, mv := range b.Moves {
+		if mv.ID == 0 || mv.PP == 0 {
+			continue
+		}
+		eval, role, err := strategy.EvaluateCombatMove(romData, attacker, defender, uint16(mv.ID), mv.PP)
+		progress := false
+		switch {
+		case err != nil:
+			out.damaging, progress = true, true
+		case role == game.BattleMoveRoleDirectDamage:
+			out.damaging, progress = true, eval.ExpectedScore > 0
+		case role == game.BattleMoveRoleResidualDamage:
+			out.damaging, progress = true, true
+		}
+		if progress && !mv.Disabled {
+			out.effective = true
+		}
+	}
+	return out
 }
 
 func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy MovePolicy, maxBattles int, options TrainOptions) (TravelResult, error) {

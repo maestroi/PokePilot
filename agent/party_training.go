@@ -299,13 +299,14 @@ func executeTrainingObjective(m *emu.Emu, romData []byte, o Objective, result Ob
 			train = seg
 		} else {
 			train.Battles += seg.Battles
+			train.Fled += seg.Fled
 			train.EndLevel = seg.EndLevel
 			train.Reached = seg.Reached
 			train.Retreated = seg.Retreated
 			train.BlackedOut = train.BlackedOut || seg.BlackedOut
 			train.Mode = seg.Mode
 		}
-		spent += seg.Battles
+		spent += seg.Battles + seg.Fled
 		trainErr = segErr
 		if segErr != nil || seg.Reached || seg.BlackedOut || !seg.Retreated {
 			break
