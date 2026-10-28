@@ -23,6 +23,7 @@ const (
 	capCanBoardSSAnne             gameruntime.CapabilityID = "can_board_ss_anne"
 	capCanLeaveViridianNorth      gameruntime.CapabilityID = "can_leave_viridian_north"
 	capCanLeavePewterEast         gameruntime.CapabilityID = "can_leave_pewter_east"
+	capCanPassRoute22Gate         gameruntime.CapabilityID = "can_pass_route22_gate"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 	capCanEnterViridianGym        gameruntime.CapabilityID = "can_enter_viridian_gym"
 )
@@ -89,6 +90,15 @@ const (
 	vermilionDockWarpX1      uint8 = 18
 	vermilionDockWarpX2      uint8 = 19
 
+	// Route 22 Gate's north exits onto Route 23. The Boulder Badge guard
+	// fires on the approach tiles at y=2 (pokered/scripts/Route22Gate.asm)
+	// and pushes the player south when the badge is absent; the reverse
+	// Route 23 -> gate edge stays ordinary so a party already on Route 23
+	// can always leave.
+	route22GateNorthWarpY  uint8 = 0
+	route22GateNorthWarpX1 uint8 = 4
+	route22GateNorthWarpX2 uint8 = 5
+
 	// The ladder out of Mt. Moon B2F's fossil corridor
 	// (pokered/data/maps/objects/MtMoonB2F.asm: warp_event 5, 7).
 	mtMoonB2FMap       uint8 = 0x3D
@@ -124,6 +134,10 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 	}
 	if state.DecodeProgress(mem).Has(state.BadgeBoulder) {
 		caps[capCanLeavePewterEast] = true
+		// Same durable badge opens Route 22 Gate's north exit onto Route 23
+		// (pokered/scripts/Route22Gate.asm). Keep a dedicated capability so
+		// reachability names the missing gate rather than Pewter's east road.
+		caps[capCanPassRoute22Gate] = true
 	}
 	if facts.MtMoonFossilAcquired {
 		caps[capCanExitMtMoon] = true
@@ -270,6 +284,17 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// guard as a gate on the forward warp so reachability can explain why
 		// the ship is inaccessible instead of repeatedly walking into text.
 		t := semanticTransition("red:ss_anne_ticket", edge, capCanBoardSSAnne)
+		t.Gate = true
+		return t, true
+	case edge.From == route22GateMap && edge.To == route23Map &&
+		edge.Kind == world.EdgeWarp && edge.WarpY == route22GateNorthWarpY &&
+		(edge.WarpX == route22GateNorthWarpX1 || edge.WarpX == route22GateNorthWarpX2):
+		// Route 22 Gate's north warps are present in the ROM graph before Brock
+		// is beaten. The guard at y=2 prints "I can't let you pass" and pushes
+		// the player south (run-21a180fnt0cmdmv37zchvhxg). Gate the forward
+		// edge so "go to route 23" reports the Boulder Badge prerequisite
+		// instead of looping on that text box until stagnation.
+		t := semanticTransition("red:route22_gate_boulder", edge, capCanPassRoute22Gate)
 		t.Gate = true
 		return t, true
 	case pair(semanticCeruleanCityMap, semanticRoute9Map):
