@@ -32,6 +32,7 @@ func TestDirectBattleCallersDeclareStructuredOwnership(t *testing.T) {
 		"catchWantedWithSemantics":       "Catch settles an uncaught target battle before returning a catch-session outcome.",
 		"catchStaticBattle":              "Static capture weakens its own target and returns a catch outcome; a failed attempt is undone by resetting to the in-game save.",
 		"resolveTrainingBattle":          "Train owns incidental wild/trainer battle results as training-session progress, retreat, or blackout outcomes.",
+		"resolveDirectTrainingBattle":    "Direct Train owns held-lead wild battles as training-session progress, a no-offense flee/retreat, or blackout outcomes.",
 		"CatchWater":                     "Water catching owns catch-session outcomes for incidental encounters.",
 		"Fish":                           "Fishing owns catch-session outcomes for incidental encounters.",
 	}
