@@ -468,27 +468,38 @@ func TestTravelDetectsSameBoxLoop(t *testing.T) {
 // whole recovery budget re-reading the identical notice (run
 // run-27upfk3ik8i8f1o0c895fgojf7, round 18, ROUTE_5_GATE); it must instead
 // stop after the first recovery with the typed outcome.
+//
+// Route 22 Gate's Boulder Badge refusal is the same shape: paging
+// "I can't let you pass" never opens the north exit
+// (run-21a180fnt0cmdmv37zchvhxg).
 func TestTravelStopsOnKnownClosedRouteGate(t *testing.T) {
-	var gotos int
-	goTo := func() error {
-		gotos++
-		return ErrDialogueInterrupted
-	}
-	recoverBox := func() DialogueRecoveryResult {
-		return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: "Oh wait there, the road's closed."}
-	}
+	for _, text := range []string{
+		"Oh wait there, the road's closed.",
+		"The rules are rules. I can't let you pass.",
+	} {
+		t.Run(text, func(t *testing.T) {
+			var gotos int
+			goTo := func() error {
+				gotos++
+				return ErrDialogueInterrupted
+			}
+			recoverBox := func() DialogueRecoveryResult {
+				return DialogueRecoveryResult{Stop: DialogueRecovered, LastText: text}
+			}
 
-	res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
+			res, err := travel(nil, nil, 5, goTo, recoverBox, func() bool { return false }, noBattles)
 
-	var gate *ErrRouteGateClosed
-	if !errors.As(err, &gate) {
-		t.Fatalf("err = %v, want *ErrRouteGateClosed", err)
-	}
-	if gotos != 1 {
-		t.Fatalf("GoTo called %d times, want 1 (no retry against a known-closed gate)", gotos)
-	}
-	if res.Dialogues != 1 {
-		t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+			var gate *ErrRouteGateClosed
+			if !errors.As(err, &gate) {
+				t.Fatalf("err = %v, want *ErrRouteGateClosed", err)
+			}
+			if gotos != 1 {
+				t.Fatalf("GoTo called %d times, want 1 (no retry against a known-closed gate)", gotos)
+			}
+			if res.Dialogues != 1 {
+				t.Fatalf("Dialogues = %d, want 1", res.Dialogues)
+			}
+		})
 	}
 }
 
