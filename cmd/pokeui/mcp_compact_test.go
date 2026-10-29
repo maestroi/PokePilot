@@ -17,8 +17,8 @@ func TestMCPListRunsSummaryCutsContextWithoutLosingProgress(t *testing.T) {
 			http.NotFound(res, req)
 			return
 		}
-		if req.URL.Query().Get("limit") != "20" {
-			t.Errorf("dashboard limit = %q, want 20", req.URL.Query().Get("limit"))
+		if req.URL.Query().Get("limit") != fmt.Sprint(mcpListPageSize) {
+			t.Errorf("dashboard limit = %q, want %d", req.URL.Query().Get("limit"), mcpListPageSize)
 		}
 		_ = json.NewEncoder(res).Encode(map[string]any{
 			"now":     123,

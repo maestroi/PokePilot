@@ -29,18 +29,28 @@ func TestMCPToolsSurviveAnOversizedDashboard(t *testing.T) {
 		switch {
 		case req.Method == http.MethodGet && req.URL.Path == "/v1/dashboard":
 			limit, err := strconv.Atoi(req.URL.Query().Get("limit"))
-			if err != nil || limit < 1 {
+			if err != nil || limit < 1 || limit > mcpListPageSize {
 				http.Error(res, "unnarrowed dashboard requested", http.StatusInsufficientStorage)
 				return
 			}
+			offset, _ := strconv.Atoi(req.URL.Query().Get("offset"))
 			status := req.URL.Query().Get("status")
+			if req.URL.Query().Get("sort") != "" && (status != "done" || req.URL.Query().Get("success") != "1") {
+				http.Error(res, "archive filters lost", http.StatusBadRequest)
+				return
+			}
 			runs := []map[string]any{}
+			skipped := 0
 			for i := 0; i < totalRuns && len(runs) < limit; i++ {
 				s := "done"
 				if i%2 == 0 {
 					s = "running"
 				}
 				if status != "" && s != status {
+					continue
+				}
+				if skipped < offset {
+					skipped++
 					continue
 				}
 				runs = append(runs, map[string]any{
@@ -89,6 +99,27 @@ func TestMCPToolsSurviveAnOversizedDashboard(t *testing.T) {
 	call("pokepilot_list_runs", map[string]any{})
 	call("pokepilot_list_runs", map[string]any{"limit": 1})
 	call("pokepilot_list_runs", map[string]any{"limit": 5, "status": "done"})
+	// The cap's own maximum must page rather than overflow (100 done runs are
+	// > 2 MB in one read on the live farm).
+	full := call("pokepilot_list_runs", map[string]any{"limit": mcpMaxRuns, "status": "done"})
+	var listed struct {
+		Runs []struct {
+			RunID string `json:"run_id"`
+		} `json:"runs"`
+	}
+	data, _ := json.Marshal(full.StructuredContent)
+	if err := json.Unmarshal(data, &listed); err != nil || len(listed.Runs) != mcpMaxRuns {
+		t.Fatalf("limit %d listed %d runs (err %v)", mcpMaxRuns, len(listed.Runs), err)
+	}
+	if listed.Runs[0].RunID != "run-1" || listed.Runs[mcpMaxRuns-1].RunID != "run-199" {
+		t.Fatalf("pages not contiguous: first %s last %s", listed.Runs[0].RunID, listed.Runs[mcpMaxRuns-1].RunID)
+	}
+	call("pokepilot_list_runs", map[string]any{"status": "done", "success": true, "sort": "frames", "goal": "Earn the Boulder Badge.", "offset": 3})
+	if out, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "pokepilot_list_runs", Arguments: map[string]any{"sort": "frames"},
+	}); err == nil && !out.IsError {
+		t.Fatal("archive sort without status=done should be rejected")
+	}
 	// One run must not cost a whole-farm read.
 	call("pokepilot_get_run", map[string]any{"run_id": "run-7"})
 }
