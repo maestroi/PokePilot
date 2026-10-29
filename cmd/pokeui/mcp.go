@@ -24,6 +24,9 @@ const (
 	mcpWallTimeout      = 5 * time.Second
 	mcpMaxResponseBytes = 2 << 20
 	mcpMaxRuns          = 100
+	// Finished dashboard rows average >20 KB, so 100 of them overflow
+	// mcpMaxResponseBytes in one wall read; listRuns reads this many at a time.
+	mcpListPageSize = 10
 	// A looping endless run accumulates hundreds of activity events, each
 	// planning event carrying a multi-KB STRATEGY dump (MEASURED 2026-09-23 on
 	// run-22ahrk9pflcilu3jxq9xt37x6: 76 KB of activity, repeated as an 87 KB
@@ -95,6 +98,14 @@ type mcpListRunsInput struct {
 	Status string `json:"status,omitempty" jsonschema:"optional status filter: queued, leased, running, or done"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"maximum runs to return; defaults to 20 and is capped at 100"`
 	View   string `json:"view,omitempty" jsonschema:"summary (default) returns concise progress, or full returns the legacy run records and worker details"`
+	Offset int    `json:"offset,omitempty" jsonschema:"skip this many matching runs, for paging"`
+	// Archive filters; the wall only applies these to finished runs.
+	Success   bool   `json:"success,omitempty" jsonschema:"finished runs (status done) only: keep runs that reached their goal"`
+	Sort      string `json:"sort,omitempty" jsonschema:"finished runs (status done) only: finished (default), frames, rounds, planner_time, runtime, progress or strategic_calls"`
+	Direction string `json:"direction,omitempty" jsonschema:"finished runs (status done) only: asc or desc"`
+	Goal      string `json:"goal,omitempty" jsonschema:"finished runs (status done) only: exact goal text"`
+	Game      string `json:"game,omitempty" jsonschema:"finished runs (status done) only: game id such as pokemon-red"`
+	Search    string `json:"search,omitempty" jsonschema:"finished runs (status done) only: run id substring"`
 }
 
 type mcpRunDetailInput struct {
@@ -193,6 +204,7 @@ type mcpDashboard struct {
 	Now     int64           `json:"now"`
 	Runs    []mcpRunView    `json:"runs"`
 	Workers []mcpWorkerView `json:"workers"`
+	Total   int             `json:"total,omitempty"`
 }
 
 // MCP defaults to the information an LLM needs for selecting the next action.
@@ -346,7 +358,7 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 	}, control.startRun)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_list_runs",
-		Description: "List recent PokePilot runs. Defaults to brief progress summaries (no raw planner traces, strategy history, sprite/party payloads, or worker addresses); set view=full for legacy records. Filter by status and bound with limit. Historical failures are not an actionable queue.",
+		Description: "List recent PokePilot runs. Defaults to brief progress summaries (no raw planner traces, strategy history, sprite/party payloads, or worker addresses); set view=full for legacy records. Filter by status and bound with limit/offset; with status=done, filter by success/goal/game/search and sort (e.g. sort=frames for the fastest wins). Historical failures are not an actionable queue.",
 	}, control.listRuns)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run",
@@ -569,14 +581,44 @@ func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		return nil, nil, fmt.Errorf("limit must be between 1 and %d", mcpMaxRuns)
 	}
 
-	// Narrow at the wall, not here. The whole dashboard is megabytes once a
-	// farm has a few hundred runs — more than mcpMaxResponseBytes — so a
-	// client-side limit is applied to a response that already failed to read.
-	dashboard, err := c.dashboardNarrowed(ctx, status, limit)
-	if err != nil {
-		return nil, nil, err
+	if in.Offset < 0 {
+		return nil, nil, fmt.Errorf("offset must be non-negative")
+	}
+	q := url.Values{}
+	for key, value := range map[string]string{
+		"sort": in.Sort, "direction": in.Direction, "goal": in.Goal, "game": in.Game, "search": in.Search,
+	} {
+		if value = strings.TrimSpace(value); value != "" {
+			q.Set(key, value)
+		}
+	}
+	if in.Success {
+		q.Set("success", "1")
+	}
+	if len(q) > 0 && status != "done" {
+		return nil, nil, fmt.Errorf("success, sort, direction, goal, game and search require status=done")
+	}
+	if status != "" {
+		q.Set("status", status)
 	}
 
+	// Narrow and page at the wall, not here. The whole dashboard is megabytes
+	// once a farm has a few hundred runs — more than mcpMaxResponseBytes — so
+	// each read asks for at most mcpListPageSize runs.
+	var dashboard mcpDashboard
+	for offset := in.Offset; len(dashboard.Runs) < limit; {
+		size := min(mcpListPageSize, limit-len(dashboard.Runs))
+		page, err := c.dashboardPage(ctx, q, offset, size)
+		if err != nil {
+			return nil, nil, err
+		}
+		dashboard.Now, dashboard.Workers, dashboard.Total = page.Now, page.Workers, page.Total
+		dashboard.Runs = append(dashboard.Runs, page.Runs...)
+		if len(page.Runs) < size {
+			break
+		}
+		offset += len(page.Runs)
+	}
 	runs := dashboard.Runs
 	if len(runs) > limit {
 		runs = runs[:limit]
@@ -586,11 +628,12 @@ func (c *mcpControl) listRuns(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		for _, run := range runs {
 			brief = append(brief, mcpSummaryListRun(run))
 		}
-		return nil, map[string]any{"now": dashboard.Now, "runs": brief, "view": view}, nil
+		return nil, map[string]any{"now": dashboard.Now, "runs": brief, "total": dashboard.Total, "view": view}, nil
 	}
 	return nil, map[string]any{
 		"now":     dashboard.Now,
 		"runs":    runs,
+		"total":   dashboard.Total,
 		"workers": dashboard.Workers,
 	}, nil
 }
@@ -1061,27 +1104,19 @@ func (c *mcpControl) recordSolverAttempt(ctx context.Context, _ *mcp.CallToolReq
 	return nil, out, nil
 }
 
-func (c *mcpControl) dashboard(ctx context.Context) (mcpDashboard, error) {
-	return c.dashboardNarrowed(ctx, "", 0)
-}
-
-// dashboardNarrowed fetches the dashboard with the wall doing the filtering.
-// An empty status and a limit of 0 mean unnarrowed, which is what the
-// whole-farm callers (getRun, the stats views) still ask for.
-func (c *mcpControl) dashboardNarrowed(ctx context.Context, status string, limit int) (mcpDashboard, error) {
-	path := "/v1/dashboard"
+// dashboardPage fetches one page of the dashboard with the wall doing the
+// filtering, sorting and slicing.
+func (c *mcpControl) dashboardPage(ctx context.Context, filters url.Values, offset, limit int) (mcpDashboard, error) {
 	q := url.Values{}
-	if status != "" {
-		q.Set("status", status)
+	for key, values := range filters {
+		q[key] = values
 	}
-	if limit > 0 {
-		q.Set("limit", strconv.Itoa(limit))
-	}
-	if len(q) > 0 {
-		path += "?" + q.Encode()
+	q.Set("limit", strconv.Itoa(limit))
+	if offset > 0 {
+		q.Set("offset", strconv.Itoa(offset))
 	}
 	var dashboard mcpDashboard
-	err := c.requestJSON(ctx, http.MethodGet, path, nil, &dashboard)
+	err := c.requestJSON(ctx, http.MethodGet, "/v1/dashboard?"+q.Encode(), nil, &dashboard)
 	return dashboard, err
 }
 
