@@ -5,7 +5,7 @@ import { getStats } from '../shared/api/client'
 import ResourceState from '../shared/components/ResourceState.vue'
 import StatusPill from '../shared/components/StatusPill.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
-import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/hostedApiPricing'
+import { hostedApiEquivalentCosts, loadHostedApiPrices, type HostedApiPrice } from '../shared/hostedApiPricing'
 import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 import PairedExperimentPanel from './PairedExperimentPanel.vue'
@@ -117,7 +117,66 @@ const workload = computed(() => {
   ]
 })
 const hasTokenSpend = computed(() => num(llm.value.prompt_tokens) > 0 || num(llm.value.completion_tokens) > 0)
-const hostedApiEstimates = computed(() => hostedApiEquivalentCosts(llm.value.prompt_tokens, llm.value.completion_tokens))
+const catalogPrices = ref<HostedApiPrice[]>([])
+const catalogLoading = ref(false)
+const catalogError = ref('')
+const catalogStale = ref(false)
+const catalogFetchedAt = ref<number | null>(null)
+const modelSearch = ref('')
+const modelSort = ref('popular')
+const visibleModelCount = ref(10)
+// Blank fields use live farm totals; override them to compare a different token budget.
+const comparisonPromptTokens = ref('')
+const comparisonCompletionTokens = ref('')
+const estimatePromptTokens = computed(() => comparisonPromptTokens.value === '' ? num(llm.value.prompt_tokens) : num(comparisonPromptTokens.value))
+const estimateCompletionTokens = computed(() => comparisonCompletionTokens.value === '' ? num(llm.value.completion_tokens) : num(comparisonCompletionTokens.value))
+const hostedApiEstimates = computed(() => hostedApiEquivalentCosts(estimatePromptTokens.value, estimateCompletionTokens.value, catalogPrices.value))
+const filteredHostedEstimates = computed(() => {
+  const query = modelSearch.value.trim().toLowerCase()
+  const rows = hostedApiEstimates.value.filter(row =>
+    !query || [row.id, row.model, row.provider].some(part => part.toLowerCase().includes(query)))
+  if (modelSort.value === 'newest') rows.sort((a, b) => (b.created || 0) - (a.created || 0))
+  if (modelSort.value === 'cheapest') rows.sort((a, b) =>
+    (estimatePromptTokens.value + estimateCompletionTokens.value > 0
+      ? a.costUsd - b.costUsd
+      : (a.inputPerMillion + a.outputPerMillion) - (b.inputPerMillion + b.outputPerMillion)))
+  if (modelSort.value === 'context') rows.sort((a, b) => (b.contextLength || 0) - (a.contextLength || 0))
+  return rows
+})
+const visibleHostedEstimates = computed(() => filteredHostedEstimates.value.slice(0, visibleModelCount.value))
+watch([modelSearch, modelSort], () => { visibleModelCount.value = 10 })
+
+async function refreshHostedApiPrices(force = false): Promise<void> {
+  if (catalogLoading.value) return
+  catalogLoading.value = true
+  catalogError.value = ''
+  try {
+    const catalog = await loadHostedApiPrices(force)
+    catalogPrices.value = catalog.models
+    catalogFetchedAt.value = catalog.fetchedAt
+    catalogStale.value = catalog.stale
+    if (catalog.stale) catalogError.value = 'Refresh failed; showing previously fetched rates.'
+  } catch (error) {
+    catalogError.value = error instanceof Error ? error.message : 'Could not load OpenRouter prices'
+  } finally {
+    catalogLoading.value = false
+  }
+}
+// Only the overview fetches the external catalog; stats polling and other tabs never wait on it.
+watch(activeSection, section => {
+  if (section === 'overview' && !catalogPrices.value.length) void refreshHostedApiPrices()
+}, { immediate: true })
+
+function usdEstimate(value: number): string {
+  return value > 0 && value < 0.01 ? `${value.toFixed(6)}` : usd(value)
+}
+function pricePerMillion(value: number): string {
+  return `${value.toLocaleString('en-US', { maximumFractionDigits: 4 })}`
+}
+function contextLabel(value: number | null): string {
+  if (!value) return 'Context unknown'
+  return `${nfmt(value)} ctx`
+}
 const profiles = computed(() => array(llm.value.profiles))
 const models = computed(() => array(llm.value.latest_models))
 const endless = computed(() => array(stats.value.endless_experiments))
@@ -290,25 +349,64 @@ function operatorSearch(): string { return window.location.search }
                   </template>
                 </dl>
               </div>
-              <div class="bg-surface px-3 pb-3">
+              <div class="bg-surface min-w-0 px-3 pb-3">
                 <h3 class="mt-3 mb-1 flex flex-wrap items-baseline justify-between gap-2 text-title font-semibold">
                   If this ran on hosted APIs
-                  <span class="text-meta font-normal text-fg-2">Pricing {{ HOSTED_API_PRICING_UPDATED }}</span>
+                  <span class="text-meta font-normal text-fg-2">Live OpenRouter list rates</span>
                 </h3>
-                <template v-if="hasTokenSpend">
-                  <table class="w-full border-collapse text-left">
+                <p class="mb-2 text-meta text-fg-2">Estimated cost for the recorded token volume, or enter your own input/output budget.</p>
+                <div class="mb-2 grid grid-cols-2 gap-2">
+                  <label class="min-w-0 text-meta text-fg-2">Input tokens
+                    <input v-model="comparisonPromptTokens" type="number" min="0" step="1" inputmode="numeric" class="ui-input mt-1 h-9 w-full min-w-0 font-mono text-fg" :placeholder="String(num(llm.prompt_tokens))" />
+                  </label>
+                  <label class="min-w-0 text-meta text-fg-2">Output tokens
+                    <input v-model="comparisonCompletionTokens" type="number" min="0" step="1" inputmode="numeric" class="ui-input mt-1 h-9 w-full min-w-0 font-mono text-fg" :placeholder="String(num(llm.completion_tokens))" />
+                  </label>
+                </div>
+                <div class="mb-2 flex flex-wrap items-end gap-2">
+                  <label class="min-w-28 flex-1 text-meta text-fg-2">Find model
+                    <input v-model="modelSearch" type="search" placeholder="Search all models" class="ui-input mt-1 h-9 w-full min-w-0 text-fg" />
+                  </label>
+                  <label class="text-meta text-fg-2">Sort by
+                    <select v-model="modelSort" class="ui-input mt-1 h-9 w-full text-fg">
+                      <option value="popular">Popular</option>
+                      <option value="newest">Newest</option>
+                      <option value="cheapest">Lowest estimated cost</option>
+                      <option value="context">Largest context</option>
+                    </select>
+                  </label>
+                  <button type="button" class="ui-btn ui-btn-sm h-9" :disabled="catalogLoading" @click="refreshHostedApiPrices(true)">
+                    <ArrowPathIcon class="size-4" :class="{ 'motion-safe:animate-spin': catalogLoading }" aria-hidden="true" /> Refresh
+                  </button>
+                </div>
+                <p v-if="catalogError" class="mb-2 text-meta text-warn" role="status">{{ catalogError }} <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer" class="underline">Browse on OpenRouter</a></p>
+                <p v-if="catalogLoading && !catalogPrices.length" class="py-4 text-meta text-fg-2" role="status">Loading the live model catalog…</p>
+                <div v-if="visibleHostedEstimates.length" class="overflow-x-auto">
+                  <table class="w-full min-w-[460px] border-collapse text-left">
                     <thead><tr class="h-8 border-b border-rule-strong text-meta text-fg-2"><th class="font-medium">Model</th><th class="text-right font-medium">List price</th><th class="text-right font-medium">Equivalent</th></tr></thead>
                     <tbody>
-                      <tr v-for="estimate in hostedApiEstimates" :key="estimate.model" class="h-12 border-b border-rule">
-                        <td><div>{{ estimate.model }}</div><div class="text-meta text-fg-2">{{ estimate.provider }}</div></td>
-                        <td class="text-right font-mono text-meta text-fg-2">${{ estimate.inputPerMillion }}/M in · ${{ estimate.outputPerMillion }}/M out</td>
-                        <td class="text-right font-mono font-semibold">{{ usd(estimate.costUsd) }}</td>
+                      <tr v-for="estimate in visibleHostedEstimates" :key="estimate.id" class="h-12 border-b border-rule">
+                        <td class="max-w-0 pr-2">
+                          <div class="truncate" :title="estimate.id">{{ estimate.model }}</div>
+                          <div class="truncate text-meta text-fg-2">{{ estimate.provider }} · {{ contextLabel(estimate.contextLength) }}</div>
+                        </td>
+                        <td class="whitespace-nowrap text-right font-mono text-meta text-fg-2">{{ pricePerMillion(estimate.inputPerMillion) }}/M in · {{ pricePerMillion(estimate.outputPerMillion) }}/M out</td>
+                        <td class="whitespace-nowrap text-right font-mono font-semibold">{{ usdEstimate(estimate.costUsd) }}</td>
                       </tr>
                     </tbody>
                   </table>
-                  <p class="mt-2 text-meta text-fg-2">Standard uncached text-token list pricing for the token volume above. Local inference has $0 hosted API spend; hardware and electricity aren’t included.</p>
-                </template>
-                <p v-else class="py-6 text-fg-2">No token spend recorded yet.</p>
+                </div>
+                <p v-else-if="!catalogLoading && !catalogError" class="py-4 text-meta text-fg-2">No matching priced text models.</p>
+                <div v-if="filteredHostedEstimates.length" class="mt-2 flex flex-wrap items-center justify-between gap-2 text-meta text-fg-2">
+                  <span>Showing {{ visibleHostedEstimates.length }} of {{ filteredHostedEstimates.length }} models</span>
+                  <button v-if="visibleModelCount < filteredHostedEstimates.length" type="button" class="ui-btn ui-btn-sm" @click="visibleModelCount += 10">Show more</button>
+                </div>
+                <p class="mt-2 text-meta text-fg-2">
+                  <template v-if="catalogFetchedAt">Fetched {{ new Date(catalogFetchedAt).toLocaleString() }}{{ catalogStale ? ' · stale' : '' }}. </template>
+                  Prices are OpenRouter standard uncached text-token rates, not guaranteed direct-provider prices or exact bills; routing, cache discounts and extra charges can differ.
+                  <template v-if="!hasTokenSpend">No farm token usage recorded yet; use the inputs above to estimate a workload. </template>
+                  Local inference incurs no hosted API fees, but hardware and electricity are excluded.
+                </p>
               </div>
               <div class="bg-surface">
                 <h3 class="px-3 pt-3 pb-1 text-title font-semibold">Routing profiles</h3>
