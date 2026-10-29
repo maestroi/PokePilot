@@ -24,6 +24,7 @@ const (
 	capCanLeaveViridianNorth      gameruntime.CapabilityID = "can_leave_viridian_north"
 	capCanLeavePewterEast         gameruntime.CapabilityID = "can_leave_pewter_east"
 	capCanPassRoute22Gate         gameruntime.CapabilityID = "can_pass_route22_gate"
+	capCanEnterCeruleanCave       gameruntime.CapabilityID = "can_enter_cerulean_cave"
 	capCanEnterSaffron            gameruntime.CapabilityID = "can_enter_saffron"
 	capCanEnterViridianGym        gameruntime.CapabilityID = "can_enter_viridian_gym"
 )
@@ -138,6 +139,11 @@ func redRouteCapabilities(romData []byte, mem *state.Mem) gameruntime.Capability
 		// (pokered/scripts/Route22Gate.asm). Keep a dedicated capability so
 		// reachability names the missing gate rather than Pewter's east road.
 		caps[capCanPassRoute22Gate] = true
+	}
+	if state.MainStoryComplete(mem) {
+		// The Hall of Fame script hides the Cerulean Cave guard
+		// (pokered/scripts/HallOfFame.asm, TOGGLE_CERULEAN_CAVE_GUY).
+		caps[capCanEnterCeruleanCave] = true
 	}
 	if facts.MtMoonFossilAcquired {
 		caps[capCanExitMtMoon] = true
@@ -284,6 +290,12 @@ func redRouteTransitionForEdge(edge world.Edge) (gameruntime.Transition, bool) {
 		// guard as a gate on the forward warp so reachability can explain why
 		// the ship is inaccessible instead of repeatedly walking into text.
 		t := semanticTransition("red:ss_anne_ticket", edge, capCanBoardSSAnne)
+		t.Gate = true
+		return t, true
+	case edge.From == semanticCeruleanCityMap && edge.To == ceruleanCave1FMap && edge.Kind == world.EdgeWarp:
+		// The cave guard blocks the entrance until the Hall of Fame; the
+		// reverse edge stays ordinary so a save inside can always leave.
+		t := semanticTransition("red:cerulean_cave_guard", edge, capCanEnterCeruleanCave)
 		t.Gate = true
 		return t, true
 	case edge.From == route22GateMap && edge.To == route23Map &&

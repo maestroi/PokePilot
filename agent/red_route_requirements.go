@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/maestroi/pokepilot/emu"
 	gameruntime "github.com/maestroi/pokepilot/game"
+	reddata "github.com/maestroi/pokepilot/red/data"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/skill"
 )
@@ -44,6 +45,9 @@ const (
 	safariZoneWestRestHouseMap   uint8 = 0xdf
 	safariZoneEastRestHouseMap   uint8 = 0xe0
 	safariZoneNorthRestHouseMap  uint8 = 0xe1
+	ceruleanCave2FMap            uint8 = 0xe2
+	ceruleanCaveB1FMap           uint8 = 0xe3
+	ceruleanCave1FMap            uint8 = 0xe4
 )
 
 // routeAvailabilityFor is Red's live topology projection. Generic blockage
@@ -80,6 +84,13 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 			}
 			out = append(out, redStoryRouteBlockage(PlaceID(name), transition, prerequisite))
 		}
+		// One-time static encounters are interaction places, not PlaceNames;
+		// a gated map gates its static capture too.
+		for _, site := range reddata.StaticCaptureSites() {
+			if site.Map == mapID {
+				out = append(out, redStoryRouteBlockage(PlaceID(site.Place), transition, prerequisite))
+			}
+		}
 	}
 
 	if !redHasBadge(obs, state.BadgeBoulder) {
@@ -91,6 +102,16 @@ func redRouteRequirements(obs Observation) []RouteBlockage {
 	}
 	if !observedEvent(obs, state.EventGotPokedex.String()) {
 		blockMap(route2Map, "red:story:route2_pokedex", RoutePrerequisiteLink{Progress: redProgressPokedexAcquired})
+	}
+	if !obs.Story.Has(ProgressMainStoryComplete) {
+		// The Cerulean Cave guard stands on the entrance until the Hall of
+		// Fame script hides him (pokered/scripts/HallOfFame.asm,
+		// TOGGLE_CERULEAN_CAVE_GUY). run-d6dokr184ky81 retried Mewtwo for
+		// days on "no route" instead of reading the postgame gate.
+		prerequisite := RoutePrerequisiteLink{Capability: "can_enter_cerulean_cave", Progress: ProgressMainStoryComplete}
+		for _, mapID := range []uint8{ceruleanCave1FMap, ceruleanCave2FMap, ceruleanCaveB1FMap} {
+			blockMap(mapID, "red:story:cerulean_cave_guard", prerequisite)
+		}
 	}
 	if !obs.Story.Has(redProgressSSTicketAcquired) {
 		blockMap(route25Map, "red:story:route25_bill", RoutePrerequisiteLink{Progress: redProgressSSTicketAcquired})
@@ -259,6 +280,8 @@ func redRoutePrerequisiteLink(id CapabilityID) (RoutePrerequisiteLink, bool) {
 		return RoutePrerequisiteLink{Capability: id, Progress: ProgressViridianGymOpen}, true
 	case "can_pass_route23_badge_checks":
 		return RoutePrerequisiteLink{Capability: id, Progress: ProgressRoute23BadgeChecks}, true
+	case "can_enter_cerulean_cave":
+		return RoutePrerequisiteLink{Capability: id, Progress: ProgressMainStoryComplete}, true
 	case "can_enter_rocket_hideout":
 		// The poster stair is closed until the Rocket Hideout switch. The
 		// objective that presses it is the same one that collects the Scope.
