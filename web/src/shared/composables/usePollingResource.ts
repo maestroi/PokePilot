@@ -21,6 +21,7 @@ export function usePollingResource<T>(
   const isEmpty = options.isEmpty ?? (() => false)
 
   let timer: ReturnType<typeof setInterval> | null = null
+  let enabled = false
   let requestID = 0
   let controller: AbortController | null = null
 
@@ -60,13 +61,10 @@ export function usePollingResource<T>(
     return refresh(true)
   }
 
-  function start(): void {
-    if (timer !== null) return
-    if (immediate && data.value === null) void refresh()
-    timer = setInterval(() => void refresh(), intervalMs)
-  }
-
-  function stop(): void {
+  // Suspending a background tab also aborts its in-flight poll, so hidden
+  // dashboards do not compete with the active operator view for wall/API work.
+  // Data is intentionally retained and refreshed when the tab becomes visible.
+  function suspend(): void {
     if (timer !== null) clearInterval(timer)
     timer = null
     requestID++
@@ -75,8 +73,38 @@ export function usePollingResource<T>(
     refreshing.value = false
   }
 
-  onMounted(start)
-  onScopeDispose(stop)
+  function start(): void {
+    enabled = true
+    if (timer !== null || document.hidden) return
+    if (immediate && data.value === null) void refresh()
+    timer = setInterval(() => void refresh(), intervalMs)
+  }
+
+  function stop(): void {
+    enabled = false
+    suspend()
+  }
+
+  function onVisibilityChange(): void {
+    if (!enabled) return
+    if (document.hidden) {
+      suspend()
+      return
+    }
+    start()
+    // Restore live state promptly after returning, rather than waiting for
+    // the next interval. start() already fetched an empty immediate resource.
+    if (data.value !== null || !immediate) void refresh()
+  }
+
+  onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    start()
+  })
+  onScopeDispose(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    stop()
+  })
 
   return {
     data,
