@@ -214,3 +214,30 @@ func TestMCPTriageSummaryPaginationAndFullHistory(t *testing.T) {
 		t.Fatal("unknown view accepted")
 	}
 }
+
+// Leaderboard questions ("fastest Red wins") need to know what kind of run
+// each row was and who played it, without the full-view payload.
+func TestMCPSummaryListRunCarriesComparisonIdentity(t *testing.T) {
+	var run mcpRunView
+	if err := json.Unmarshal([]byte(`{
+		"run_id": "run-1", "status": "done", "reason": "max frames", "frame": 9000,
+		"play_style": "speedrun", "purpose": "benchmark", "llm_deployment": "gpu-a",
+		"experiment_id": "exp-1", "started_at": 100, "runtime_seconds": 42.5,
+		"inference": {"label": "Qwen 32B", "model_id": "qwen-32b", "compute": "gpu"},
+		"stats": {"goal_complete": true}
+	}`), &run); err != nil {
+		t.Fatal(err)
+	}
+	got := mcpSummaryListRun(run)
+	for key, want := range map[string]any{
+		"play_style": "speedrun", "purpose": "benchmark", "llm_deployment": "gpu-a",
+		"experiment_id": "exp-1", "started_at": int64(100), "runtime_seconds": 42.5, "success": true,
+	} {
+		if got[key] != want {
+			t.Errorf("%s = %#v, want %#v", key, got[key], want)
+		}
+	}
+	if model, _ := got["model"].(map[string]any); model["label"] != "Qwen 32B" {
+		t.Errorf("model = %#v", got["model"])
+	}
+}
