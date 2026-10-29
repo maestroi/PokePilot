@@ -191,6 +191,14 @@ type mcpRunView struct {
 	Reason          string         `json:"reason,omitempty"`
 	Detail          string         `json:"detail,omitempty"`
 	Issue           map[string]any `json:"issue,omitempty"`
+	// Comparison identity: what kind of run this was and who played it.
+	PlayStyle      string                  `json:"play_style,omitempty"`
+	Purpose        string                  `json:"purpose,omitempty"`
+	LLMDeployment  string                  `json:"llm_deployment,omitempty"`
+	Inference      *farm.InferenceIdentity `json:"inference,omitempty"`
+	ExperimentID   string                  `json:"experiment_id,omitempty"`
+	StartedAt      int64                   `json:"started_at,omitempty"`
+	RuntimeSeconds float64                 `json:"runtime_seconds,omitempty"`
 }
 
 type mcpWorkerView struct {
@@ -248,7 +256,11 @@ func mcpSummaryIssue(issue map[string]any) map[string]any {
 func mcpSummaryRun(run map[string]any) map[string]any {
 	out := mcpSelectedFields(run, "run_id", "status", "game", "planner", "starter", "goal",
 		"seed", "frame", "map", "x", "y", "attempts", "error_attempts", "queued_at",
-		"ended_at", "reason", "llm_profile", "reasoning_effort")
+		"ended_at", "reason", "llm_profile", "reasoning_effort", "play_style", "purpose",
+		"llm_deployment", "experiment_id", "started_at", "runtime_seconds")
+	if inference, ok := run["inference"].(map[string]any); ok {
+		out["model"] = mcpSelectedFields(inference, "label", "model_id", "compute")
+	}
 	for _, key := range []string{"goal", "reason"} {
 		if value, ok := out[key].(string); ok {
 			out[key] = mcpClipString(value, 180)
@@ -284,7 +296,8 @@ func mcpSummaryListRun(run mcpRunView) map[string]any {
 	for key, value := range map[string]string{
 		"game": run.Game, "planner": run.Planner, "starter": run.Starter,
 		"goal": mcpClipString(run.Goal, 180), "reason": mcpClipString(run.Reason, 180),
-		"detail": mcpClipString(run.Detail, 240),
+		"detail": mcpClipString(run.Detail, 240), "play_style": run.PlayStyle,
+		"purpose": run.Purpose, "llm_deployment": run.LLMDeployment, "experiment_id": run.ExperimentID,
 	} {
 		if value != "" {
 			out[key] = value
@@ -298,6 +311,19 @@ func mcpSummaryListRun(run mcpRunView) map[string]any {
 	}
 	if run.EndedAt != 0 {
 		out["ended_at"] = run.EndedAt
+	}
+	if run.StartedAt != 0 {
+		out["started_at"] = run.StartedAt
+	}
+	if run.RuntimeSeconds > 0 {
+		out["runtime_seconds"] = run.RuntimeSeconds
+	}
+	if run.Inference != nil {
+		out["model"] = map[string]any{"label": run.Inference.Label, "model_id": run.Inference.ModelID, "compute": run.Inference.Compute}
+	}
+	if run.Status == "done" {
+		// Same rule as the wall's archive success filter.
+		out["success"] = run.Reason == "done" || (run.Stats != nil && run.Stats.GoalComplete)
 	}
 	if run.Stats != nil {
 		out["stats"] = map[string]any{
