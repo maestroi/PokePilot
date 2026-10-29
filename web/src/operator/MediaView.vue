@@ -8,15 +8,11 @@ import { usePollingResource } from '../shared/composables/usePollingResource'
 import { isBroadcastOnAir, presentBroadcast } from '../shared/status'
 import { operatorHref, spectatorURL } from '../shared/urls'
 
-
-
-
-
 import { MEDIA_TABS, elapsedLabel, formatMediaHref, parseMediaState, tabHref, type BroadcastRow, type MediaState } from './mediaQuery'
 import { middleTruncate } from './runs'
 import { gameTitle } from './operations'
 
-// Only download and initialize feature panes when their tab is opened.
+// Load each media tab only when it is opened.
 const MediaBroadcasts = defineAsyncComponent(() => import('./MediaBroadcasts.vue'))
 const MediaJobs = defineAsyncComponent(() => import('./MediaJobs.vue'))
 const MediaLibrary = defineAsyncComponent(() => import('./MediaLibrary.vue'))
