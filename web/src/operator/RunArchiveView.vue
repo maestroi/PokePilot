@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import { ArrowPathIcon, ClipboardDocumentIcon, XMarkIcon } from '@heroicons/vue/20/solid'
 import { deleteRun, getDashboard, getMediaRenderJobs, getRun, replayVideoURL } from '../shared/api/client'
@@ -13,7 +13,7 @@ import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 import { gameTitle } from './operations'
 import RunActionMenu from './RunActionMenu.vue'
-import RunCleanupPanel from './RunCleanupPanel.vue'
+
 import RunDetailPane from './RunDetailPane.vue'
 import {
   ARCHIVE_FACETS,
@@ -48,6 +48,9 @@ import {
 } from './runs'
 
 const PAGE_SIZE = 25
+// Only download and initialize feature panes when their tab is opened.
+const RunCleanupPanel = defineAsyncComponent(() => import('./RunCleanupPanel.vue'))
+
 const props = defineProps<{ runId?: string }>()
 
 // ---- URL state (filters, sort, page, inspected run) -------------------------
@@ -101,7 +104,7 @@ watch(archiveKey, () => { void resource.retry() })
 
 const mediaResource = usePollingResource(
   (signal) => getMediaRenderJobs(200, signal), // the wall rejects limits above 200
-  { intervalMs: 5000 }
+  { intervalMs: 30000 }
 )
 
 const rows = computed(() => resource.data.value?.runs ?? [])
