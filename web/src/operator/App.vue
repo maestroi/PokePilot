@@ -68,7 +68,7 @@ const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
 
 const fleet = usePollingResource(
   (signal) => getDashboard({ active: true }, signal),
-  { intervalMs: 4000 }
+  { intervalMs: () => activeView.value === 'live' || activeView.value === 'operations' ? 2000 : 4000 }
 )
 const build = usePollingResource(
   (signal) => getBuildProvenance(signal),
@@ -160,12 +160,12 @@ onUnmounted(() => {
       </a>
     </template>
 
-    <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
+    <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" :active-resource="fleet" />
     <RunArchiveView v-else-if="activeView === 'runs'" :run-id="linkedRunID" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
     <MediaView v-else-if="activeView === 'media'" :public-base="configuredSpectatorURL" />
-    <OperationsView v-else-if="activeView === 'operations'" />
+    <OperationsView v-else-if="activeView === 'operations'" :active-resource="fleet" />
     <SettingsView v-else-if="activeView === 'settings'" :section="activeSection" />
     <ToolsView v-else-if="activeView === 'new-run'" />
   </AppShell>
