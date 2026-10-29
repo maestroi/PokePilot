@@ -381,6 +381,14 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "List one run's artifacts and durable storage references without downloading artifact bytes. Use this to discover run.gbrun recordings and diagnostic evidence.",
 	}, control.getRunArtifacts)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_run_attempts",
+		Description: "List one run's finished attempts with each attempt's finish reason, runner version and the triage problems it hit (fixed/queued/dismissed). Use it to pick the attempt to debug on a multi-attempt run, then pass that attempt to pokepilot_prepare_debug or pokepilot_list_checkpoints.",
+	}, control.getRunAttempts)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_list_checkpoints",
+		Description: "List one attempt's saved checkpoints (name, kind, frame, round, map position, whether it is replayable) without downloading state bytes. Defaults to the run's latest attempt.",
+	}, control.listCheckpoints)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_run_artifact_content",
 		Description: "Fetch one small artifact's bytes (a .state checkpoint, .ram snapshot, or knowledge/failure JSON) as base64, for local reproduction, whether pokewall still holds it inline or it has since been durabilized to S3. Bounded by the MCP response cap, so a large recording such as run.gbrun still will not fit; use the operator UI/replay service for that.",
 	}, control.getRunArtifactContent)
