@@ -63,7 +63,7 @@ function clearFilters(): void {
 // ---- Data ------------------------------------------------------------------------
 const resource = usePollingResource(
   (signal) => getTriage(signal),
-  { intervalMs: 5000, isEmpty: (groups) => groups.length === 0 }
+  { intervalMs: 15000, isEmpty: (groups) => groups.length === 0 }
 )
 const groups = computed(() => resource.data.value ?? [])
 const filtered = computed(() => filterGroups(groups.value, state.value))
