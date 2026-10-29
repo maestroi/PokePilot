@@ -388,6 +388,22 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_record_solver_attempt",
 		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
 	}, control.recordSolverAttempt)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_list_media_jobs",
+		Description: "List media render jobs (episode/replay video renders), newest first, with state, stage, segment progress, retry count and last error. Filter by run_id or state.",
+	}, control.listMediaJobs)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_media_job",
+		Description: "Get one media render job's state, stage, segment progress, worker lease and last error.",
+	}, control.getMediaJob)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_retry_media_job",
+		Description: "Requeue a failed or cancelled media render job. The wall refuses jobs that are not retryable.",
+	}, control.retryMediaJob)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_cancel_media_job",
+		Description: "Cancel a queued or running media render job.",
+	}, control.cancelMediaJob)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server

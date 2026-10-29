@@ -207,7 +207,9 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 	}
 	sort.Strings(names)
 	want := []string{
+		"pokepilot_cancel_media_job",
 		"pokepilot_cancel_run",
+		"pokepilot_get_media_job",
 		"pokepilot_get_run",
 		"pokepilot_get_run_artifact_content",
 		"pokepilot_get_run_artifacts",
@@ -215,9 +217,11 @@ func TestMCPToolsDriveOnlyOperatorAPI(t *testing.T) {
 		"pokepilot_get_run_recovery_audit",
 		"pokepilot_get_triage",
 		"pokepilot_investigate_failure",
+		"pokepilot_list_media_jobs",
 		"pokepilot_list_runs",
 		"pokepilot_prepare_debug",
 		"pokepilot_record_solver_attempt",
+		"pokepilot_retry_media_job",
 		"pokepilot_start_run",
 	}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
