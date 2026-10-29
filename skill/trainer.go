@@ -250,6 +250,29 @@ func TrainerStatusAt(romData []byte, mem *state.Mem, mapID, homeX, homeY uint8) 
 	}, nil
 }
 
+// UnbeatenTrainerPrize sums the prize money of every ordinary, still-unbeaten
+// standard trainer on mapID. Trainer flags are global event bits, so it reads
+// any map, not only the loaded one. Like PrizeMoney it is advisory planner
+// evidence: undecodable trainers count as 0.
+func UnbeatenTrainerPrize(romData []byte, mem *state.Mem, mapID uint8) uint32 {
+	h, err := rom.ParseMap(romData, mapID)
+	if err != nil {
+		return 0
+	}
+	var total uint32
+	for _, object := range h.Objects {
+		if object.TextID&0x40 == 0 || !ordinaryTrainerClass(object.TrainerClass) {
+			continue
+		}
+		target, err := trainerTargetAt(romData, h, object.X, object.Y)
+		if err != nil || target.flag.setMem(mem) {
+			continue
+		}
+		total += trainerPrizeMoney(romData, object.TrainerClass, object.TrainerSet)
+	}
+	return total
+}
+
 // trainerBattleTransitionSettleBudget covers the screen-flash transition
 // between the pre-battle text closing and wIsInBattle actually setting.
 // Measured on Route 25 (run-3ugvnzgq3q8171rzws1srj3be1 round 8): ~195
