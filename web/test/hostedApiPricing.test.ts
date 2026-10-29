@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { hostedApiEquivalentCosts, parseOpenRouterModels } from '../src/shared/hostedApiPricing.ts'
+import { hostedApiEquivalentCosts, loadHostedApiPrices, parseOpenRouterModels } from '../src/shared/hostedApiPricing.ts'
 
 function model(id: string, prompt: string, completion: string, options: Record<string, unknown> = {}) {
   return {
@@ -46,4 +46,31 @@ test('prices prompt and completion separately using live catalog rates', () => {
 test('invalid and negative token budgets are zero, but prices remain visible', () => {
   const prices = parseOpenRouterModels({ data: [model('anthropic/test', '0.000002', '0.000010')] })
   assert.deepEqual(hostedApiEquivalentCosts(-100, Number.NaN, prices).map(e => e.costUsd), [0])
+})
+
+test('loads only once per cache lifetime, refreshes explicitly, and keeps stale rates on failure', async () => {
+  const originalFetch = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = (async () => {
+    calls++
+    if (calls === 3) throw new Error('offline')
+    return new Response(JSON.stringify({ data: [model('anthropic/test', '0.000002', '0.000010')] }), {
+      headers: { 'Content-Type': 'application/json' }
+    })
+  }) as typeof fetch
+  try {
+    const first = await loadHostedApiPrices(true)
+    assert.equal(first.stale, false)
+    const cached = await loadHostedApiPrices()
+    assert.equal(cached.fetchedAt, first.fetchedAt)
+    assert.equal(calls, 1)
+    await loadHostedApiPrices(true)
+    assert.equal(calls, 2)
+    const stale = await loadHostedApiPrices(true)
+    assert.equal(stale.stale, true)
+    assert.deepEqual(stale.models.map(m => m.id), ['anthropic/test'])
+    assert.equal(calls, 3)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
