@@ -42,6 +42,11 @@ type CatalogDestination struct {
 	TravelCost        int
 	FastTravel        bool
 	FastTravelMethod  string
+
+	// TrainerPrize is the money still-unbeaten ordinary trainers at this
+	// destination pay. Adapters fill it only while the run is short of a
+	// required payment or capture stock (progressionFundingShortfall).
+	TrainerPrize uint32
 }
 
 func (d CatalogDestination) reached(location LocationID, x, y uint8) bool {

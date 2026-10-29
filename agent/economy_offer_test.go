@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func offeredBuy(objs []Objective, item ItemID) (Objective, bool) {
 	for _, o := range objs {
@@ -184,5 +187,47 @@ func TestFundingSaleObjectivesSellTMsAndFallBackToPartialSales(t *testing.T) {
 	obs.Bag = obs.Bag[:3]
 	if got := sales(); len(got) != 1 || got["guard spec"] != 1 {
 		t.Fatalf("funding sales = %v, want the partial GUARD SPEC sale", got)
+	}
+}
+
+// run-d6dokr184ky81 (93/139): ¥42, only a MASTER BALL, nothing sellable, and
+// a party grown to level 100 shuttling between towns, because trainers were
+// only ever offered on the map the player already stood on. A known route
+// with unbeaten trainers must surface as a funding destination.
+func TestTravelOffersUnbeatenTrainerRouteWhenDexRunIsBroke(t *testing.T) {
+	obs := Observation{
+		GameID:     testGameID,
+		Map:        1,
+		Location:   "town",
+		PartyCount: 1,
+		Party:      []PartyMon{{Species: "testmon", Level: 100, HP: 300, MaxHP: 300}},
+		Money:      42,
+		Dex:        DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+		Bag:        []Item{{Name: "master ball", Quantity: 1}},
+		Catalog: ObjectiveCatalog{Destinations: []CatalogDestination{
+			{Place: "quiet town", Location: "quiet"},
+			{Place: "trainer route", Location: "route", TrainerPrize: 1200},
+		}},
+	}
+	known := NewKnowledge(&KnowledgeTopology{Adjacency: map[LocationID][]LocationID{
+		"town": {"quiet", "route"}, "quiet": {"town"}, "route": {"town"},
+	}})
+	for _, location := range []LocationID{"town", "quiet", "route"} {
+		known.SawLocation(location)
+	}
+	funded := func() (Objective, bool) {
+		for _, o := range OfferWithEvidence(obs, known).Candidates {
+			if o.Kind == KindGoTo && o.Place == "trainer route" && strings.Contains(o.Note, "funding") {
+				return o, true
+			}
+		}
+		return Objective{}, false
+	}
+	if o, ok := funded(); !ok || !strings.Contains(o.Note, "¥1200") {
+		t.Fatalf("broke Dex run offered no funding trainer route: %+v", OfferWithEvidence(obs, known).Candidates)
+	}
+	obs.Bag = append(obs.Bag, Item{Name: "pokeball", Quantity: minimumCaptureStock})
+	if o, ok := funded(); ok {
+		t.Fatalf("stocked Dex run still tagged a funding route: %s %s", o, o.Note)
 	}
 }
