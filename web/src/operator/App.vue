@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import { Cog6ToothIcon } from '@heroicons/vue/20/solid'
 import { getBuildProvenance, getDashboard } from '../shared/api/client'
 import { getOperatorUIConfig } from '../shared/api/spectator-control'
@@ -7,14 +7,17 @@ import { operatorPrimaryViews, operatorRoute, resolveSpectatorBase, type Operato
 import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
-import AnalyticsView from './AnalyticsView.vue'
-import FailuresView from './FailuresView.vue'
-import LiveView from './LiveView.vue'
-import MediaView from './MediaView.vue'
-import OperationsView from './OperationsView.vue'
-import SettingsView from './SettingsView.vue'
-import RunArchiveView from './RunArchiveView.vue'
-import ToolsView from './ToolsView.vue'
+
+// Load only the selected workspace; heavy live/rendering/media components should
+// not be part of the initial admin bundle.
+const AnalyticsView = defineAsyncComponent(() => import('./AnalyticsView.vue'))
+const FailuresView = defineAsyncComponent(() => import('./FailuresView.vue'))
+const LiveView = defineAsyncComponent(() => import('./LiveView.vue'))
+const MediaView = defineAsyncComponent(() => import('./MediaView.vue'))
+const OperationsView = defineAsyncComponent(() => import('./OperationsView.vue'))
+const SettingsView = defineAsyncComponent(() => import('./SettingsView.vue'))
+const RunArchiveView = defineAsyncComponent(() => import('./RunArchiveView.vue'))
+const ToolsView = defineAsyncComponent(() => import('./ToolsView.vue'))
 
 const views = operatorPrimaryViews
 
@@ -65,7 +68,7 @@ const navigation = computed<AppNavItem[]>(() => views.map((view) => ({
 
 const fleet = usePollingResource(
   (signal) => getDashboard({ active: true }, signal),
-  { intervalMs: 4000 }
+  { intervalMs: () => activeView.value === 'live' || activeView.value === 'operations' ? 2000 : 4000 }
 )
 const build = usePollingResource(
   (signal) => getBuildProvenance(signal),
@@ -157,12 +160,12 @@ onUnmounted(() => {
       </a>
     </template>
 
-    <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" />
+    <LiveView v-if="activeView === 'live'" :public-base="configuredSpectatorURL" :active-resource="fleet" />
     <RunArchiveView v-else-if="activeView === 'runs'" :run-id="linkedRunID" />
     <FailuresView v-else-if="activeView === 'failures'" />
     <AnalyticsView v-else-if="activeView === 'analytics'" :section="activeSection" :experiment-id="linkedExperimentID" />
     <MediaView v-else-if="activeView === 'media'" :public-base="configuredSpectatorURL" />
-    <OperationsView v-else-if="activeView === 'operations'" />
+    <OperationsView v-else-if="activeView === 'operations'" :active-resource="fleet" />
     <SettingsView v-else-if="activeView === 'settings'" :section="activeSection" />
     <ToolsView v-else-if="activeView === 'new-run'" />
   </AppShell>

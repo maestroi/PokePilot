@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { ArrowPathIcon, PlusIcon } from '@heroicons/vue/20/solid'
 import { getStats } from '../shared/api/client'
 import ResourceState from '../shared/components/ResourceState.vue'
@@ -8,8 +8,10 @@ import { usePollingResource } from '../shared/composables/usePollingResource'
 import { hostedApiEquivalentCosts, loadHostedApiPrices, type HostedApiPrice } from '../shared/hostedApiPricing'
 import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
-import PairedExperimentPanel from './PairedExperimentPanel.vue'
-import LeaderboardPanel from './LeaderboardPanel.vue'
+
+// Load experiment-specific modules only when their section is opened.
+const PairedExperimentPanel = defineAsyncComponent(() => import('./PairedExperimentPanel.vue'))
+const LeaderboardPanel = defineAsyncComponent(() => import('./LeaderboardPanel.vue'))
 
 const props = defineProps<{ section?: string; experimentId?: string }>()
 const activeSection = computed(() => props.section === 'experiments' ? 'experiments' : 'overview')
@@ -24,7 +26,7 @@ type StatsPayload = Record<string, any>
 
 const resource = usePollingResource(
   (signal) => getStats(signal) as Promise<StatsPayload>,
-  { intervalMs: 5000 }
+  { intervalMs: 30000 }
 )
 
 const stats = computed<StatsPayload>(() => resource.data.value || {})
