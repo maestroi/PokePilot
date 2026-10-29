@@ -9,9 +9,7 @@ import { HOSTED_API_PRICING_UPDATED, hostedApiEquivalentCosts } from '../shared/
 import { presentOutcome } from '../shared/status'
 import { operatorHref } from '../shared/urls'
 
-
-
-// Only download and initialize feature panes when their tab is opened.
+// Load experiment-specific modules only when their section is opened.
 const PairedExperimentPanel = defineAsyncComponent(() => import('./PairedExperimentPanel.vue'))
 const LeaderboardPanel = defineAsyncComponent(() => import('./LeaderboardPanel.vue'))
 
