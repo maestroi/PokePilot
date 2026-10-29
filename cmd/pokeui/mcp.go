@@ -388,6 +388,22 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Name:        "pokepilot_record_solver_attempt",
 		Description: "Record or update which coding agent/model attempted a triage failure and whether it produced a PR. Issue resolution and PokePilot verification determine whether that repair ultimately succeeded.",
 	}, control.recordSolverAttempt)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_list_experiments",
+		Description: "List paired model A/B experiments, newest first, with each arm's runs, successes, success rate, median frames/rounds to goal and paired win counts.",
+	}, control.listExperiments)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_get_experiment",
+		Description: "Get one experiment's full result: per-arm aggregates, paired summary, comparability identity and every seed pair with its run ids and winner.",
+	}, control.getExperiment)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_start_experiment",
+		Description: "Queue a paired A/B experiment: one run per seed per arm with identical gameplay settings, differing only in model deployment (ids from pokepilot_list_models). Queues 2 x seed count runs on the farm.",
+	}, control.startExperiment)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_list_models",
+		Description: "List the farm's model deployments with their live state (ready, loading, busy, disabled), active leases and queued runs.",
+	}, control.listModels)
 
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
