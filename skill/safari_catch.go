@@ -3,6 +3,7 @@ package skill
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/maestroi/pokepilot/emu"
 	"github.com/maestroi/pokepilot/red/state"
@@ -19,11 +20,15 @@ const (
 
 var ErrSafariCatchExhausted = errors.New("skill: SafariCatch: bounded Safari sessions exhausted without the wanted species")
 
-// SafariCatch hunts one or more wanted species in a Safari grass habitat.
-// The paid gate/session lifecycle is owned here, not by the planner. Unwanted
-// encounters use Flee's already-verified Safari RUN path; wanted encounters
-// select Safari BALL directly and prove acquisition through the same
-// party/box/Pokedex postcondition as ordinary Catch.
+// SafariCatch hunts want[0] in a Safari grass habitat; want[1:] are bonus
+// species also worth a ball. The paid gate/session lifecycle is owned here,
+// not by the planner. Unwanted encounters use Flee's already-verified Safari
+// RUN path; wanted encounters select Safari BALL directly and prove
+// acquisition through the same party/box/Pokedex postcondition as ordinary
+// Catch. A bonus catch drops that species and keeps hunting inside the same
+// bounded sessions: restarting the hunt per bonus catch gave every catch a
+// fresh session budget, which outran the objective frame watchdog mid-gate
+// (triage 1f68fe646adda02d).
 func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, policy MovePolicy, maxBallsPerEncounter int) (CatchResult, error) {
 	if policy == nil {
 		return CatchResult{}, fmt.Errorf("skill: SafariCatch: nil policy")
@@ -43,9 +48,8 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 	if !state.Controllable(&mem) {
 		return CatchResult{}, fmt.Errorf("skill: SafariCatch: player not controllable on map %#04x", m.Peek8(sym.CurMap))
 	}
-	partyBefore := int(state.DecodeParty(&mem).Count)
-	boxBefore := int(state.DecodeBox(&mem).Count)
-	ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
+	target := want[0]
+	want = slices.Clone(want)
 	wantDex := wantedDexNumbers(romData, want)
 	res := CatchResult{}
 
@@ -81,14 +85,20 @@ func SafariCatch(m *emu.Emu, romData []byte, targetMap uint8, want []uint8, poli
 		}
 
 		caught, sessionEnded, err := huntSafariGrassSession(
-			m, romData, targetMap, want, wantDex, policy,
-			partyBefore, boxBefore, ownedBefore, &res, maxBallsPerEncounter,
+			m, romData, targetMap, want, wantDex, policy, &res, maxBallsPerEncounter,
 		)
 		if err != nil {
 			return res, fmt.Errorf("skill: SafariCatch: session %d: %w", session, err)
 		}
 		if caught {
-			return res, nil
+			if res.Species == target {
+				return res, nil
+			}
+			// Bonus catch: the session is still live, so it is not consumed.
+			want = slices.DeleteFunc(want, func(id uint8) bool { return id == res.Species })
+			wantDex = wantedDexNumbers(romData, want)
+			session--
+			continue
 		}
 		if !sessionEnded {
 			// The local leg/encounter bound can fire before the ROM's Safari
@@ -189,7 +199,7 @@ func travelToSafariGrass(m *emu.Emu, romData []byte, targetMap uint8, policy Mov
 	return lastErr
 }
 
-func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, wantDex []uint8, policy MovePolicy, partyBefore, boxBefore int, ownedBefore []uint8, res *CatchResult, maxBallsPerEncounter int) (caught, sessionEnded bool, err error) {
+func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, wantDex []uint8, policy MovePolicy, res *CatchResult, maxBallsPerEncounter int) (caught, sessionEnded bool, err error) {
 	if m.Peek8(sym.CurMap) != targetMap {
 		return false, false, fmt.Errorf("expected habitat map %#04x, on %#04x", targetMap, m.Peek8(sym.CurMap))
 	}
@@ -305,6 +315,10 @@ func huntSafariGrassSession(m *emu.Emu, romData []byte, targetMap uint8, want, w
 			continue
 		}
 
+		// Baselines are per encounter so an earlier bonus catch cannot hide this one.
+		partyBefore := int(state.DecodeParty(&mem).Count)
+		boxBefore := int(state.DecodeBox(&mem).Count)
+		ownedBefore := append([]uint8(nil), state.DecodePokedex(&mem).Owned...)
 		acquired, err := safariCatchWanted(m, want, wantDex, partyBefore, boxBefore, ownedBefore, res, maxBallsPerEncounter)
 		if err != nil {
 			return false, false, err
