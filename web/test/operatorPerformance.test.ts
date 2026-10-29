@@ -12,6 +12,8 @@ const analytics = source('../src/operator/AnalyticsView.vue')
 const archive = source('../src/operator/RunArchiveView.vue')
 const failures = source('../src/operator/FailuresView.vue')
 const polling = source('../src/shared/composables/usePollingResource.ts')
+const live = source('../src/operator/LiveView.vue')
+const operations = source('../src/operator/OperationsView.vue')
 
 test('operator only downloads the active workspace module', () => {
   for (const name of [
@@ -45,4 +47,20 @@ test('expensive summary polling follows its backend data freshness', () => {
   assert.match(analytics, /intervalMs: 30000/)
   assert.match(archive, /getMediaRenderJobs\(200, signal\)[\s\S]*?intervalMs: 30000/)
   assert.match(failures, /getTriage\(signal\)[\s\S]*?intervalMs: 15000/)
+})
+
+test('the shell, Live, and Operations share one active dashboard request', () => {
+  assert.match(app, /intervalMs: \(\) => activeView\.value === 'live'/)
+  assert.match(app, /<LiveView[^>]+:active-resource="fleet"/)
+  assert.match(app, /<OperationsView[^>]+:active-resource="fleet"/)
+  assert.match(live, /const activeResource = props\.activeResource/)
+  assert.match(operations, /= props\.activeResource/)
+  assert.doesNotMatch(live, /getDashboard\(\{ active: true \}/)
+  assert.doesNotMatch(operations, /getDashboard\(\{ active: true \}/)
+})
+
+test('polls do not overlap when a wall endpoint responds slowly', () => {
+  assert.match(polling, /setTimeout\(\(\) => \{/)
+  assert.match(polling, /void refresh\(\)\.then\(schedule\)/)
+  assert.match(polling, /if \(!enabled \|\| document\.hidden \|\| timer !== null\) return/)
 })
