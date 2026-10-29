@@ -389,6 +389,18 @@ func newMCPHandler(wallBase, replayBase, token string) http.Handler {
 		Description: "Request cooperative cancellation of one queued or active PokePilot run.",
 	}, control.cancelRun)
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_clone_run",
+		Description: "Queue a fresh run with another run's exact spec (game, seed, goal, play style, risk, deployment, budgets). Use it to rerun a failure from the start after a fix ships. Endless runs cannot be cloned through MCP.",
+	}, control.cloneRun)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_queue_repro",
+		Description: "Queue a finite verification run that resumes an llm run from one of its checkpoints (default: the latest attempt's latest replayable checkpoint). Use it to check a fix against the exact failing state.",
+	}, control.queueRepro)
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pokepilot_flag_stuck",
+		Description: "Stop an active run as stuck with an operator note. The run settles with the ordinary stuck outcome, so the failure reaches triage like a stagnation-watchdog stop. Use pokepilot_cancel_run instead when the run is not actually stuck.",
+	}, control.flagStuck)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "pokepilot_get_triage",
 		Description: "Get actionable failures in compact, paged groups by default (20 per page; use offset for the next page). Use view=full to retrieve legacy evidence, and include_resolved=true only for historical audits.",
 	}, control.getTriage)
