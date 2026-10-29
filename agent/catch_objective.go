@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -82,8 +81,8 @@ func redFishingRodID(id ItemID) (uint8, bool) {
 // every other unowned Dex target the same Safari habitat yields. A paid
 // session has finite balls and steps, so fleeing a missing species only to pay
 // for another session for it later wastes both. A bonus catch never satisfies
-// the objective: the hunt continues on the remaining set until the target is
-// caught or SafariCatch reports its own bounded exhaustion.
+// the objective: SafariCatch keeps hunting the remaining set inside its own
+// bounded sessions until the target is caught or the hunt is exhausted.
 func safariCatchOpportunistic(m *emu.Emu, romData []byte, mapID uint8, o Objective, target uint8) (skill.CatchResult, error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
@@ -94,17 +93,7 @@ func safariCatchOpportunistic(m *emu.Emu, romData []byte, mapID uint8, o Objecti
 	}
 	want := append([]uint8{target}, dexHabitatBonusSpecies(catalog, o.Place, o.Species)...)
 
-	var total skill.CatchResult
-	for {
-		caught, err := skill.SafariCatch(m, romData, mapID, want, skill.StatAwareMove(romData), 10)
-		total.Outcome, total.Species = caught.Outcome, caught.Species
-		total.BallsThrown += caught.BallsThrown
-		total.Encounters += caught.Encounters
-		if err != nil || caught.Outcome != skill.OutcomeCaught || caught.Species == target {
-			return total, err
-		}
-		want = slices.DeleteFunc(want, func(id uint8) bool { return id == caught.Species })
-	}
+	return skill.SafariCatch(m, romData, mapID, want, skill.StatAwareMove(romData), 10)
 }
 
 // dexHabitatBonusSpecies lists the unowned Dex targets, other than target,
