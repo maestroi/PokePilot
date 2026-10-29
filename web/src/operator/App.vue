@@ -8,7 +8,6 @@ import AppShell from '../shared/components/AppShell.vue'
 import { usePollingResource } from '../shared/composables/usePollingResource'
 import type { AppNavItem } from '../shared/types'
 
-
 // Load only the selected workspace; heavy live/rendering/media components should
 // not be part of the initial admin bundle.
 const AnalyticsView = defineAsyncComponent(() => import('./AnalyticsView.vue'))
