@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -87,6 +88,14 @@ type mcpStartRunInput struct {
 	// server's llama.cpp build (see agent.LLMPlanner.ReasoningEffort) —
 	// this option lets an operator dial it without redeploying.
 	ReasoningEffort string `json:"reasoning_effort,omitempty" jsonschema:"strategist reasoning effort: low, medium, high, off (thinking disabled outright), or auto (endpoint default)"`
+	// Run policy knobs, mirroring the farm launch form. Empty keeps the
+	// runner's compatibility default for each.
+	PlayStyle       string `json:"play_style,omitempty" jsonschema:"speedrun, adventure, completionist or team_builder; empty is speedrun"`
+	Purpose         string `json:"purpose,omitempty" jsonschema:"normal, debug_coverage or full_e2e; empty is normal"`
+	RiskTolerance   string `json:"risk_tolerance,omitempty" jsonschema:"aggressive, balanced or cautious; empty is aggressive"`
+	WildEncounters  string `json:"wild_encounters,omitempty" jsonschema:"planner (may flee) or fight (never flee); empty is planner"`
+	LLMDeployment   string `json:"llm_deployment,omitempty" jsonschema:"model deployment id to play the run; takes precedence over llm_profile"`
+	RecoveryProfile string `json:"recovery_profile,omitempty" jsonschema:"strict (historic terminal budgets) or resilient (keep the campaign alive with checkpoint rollback)"`
 }
 
 type mcpStartRunOutput struct {
@@ -538,6 +547,26 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		}
 	}
 
+	// The runner maps unknown policy names to the compatibility default, so a
+	// typo would silently launch a different run; reject it here instead.
+	policy := map[string]string{}
+	for _, field := range []struct {
+		name, value string
+		allowed     []string
+	}{
+		{"play_style", in.PlayStyle, []string{"speedrun", "adventure", "completionist", "team_builder"}},
+		{"purpose", in.Purpose, []string{"normal", "debug_coverage", "full_e2e"}},
+		{"risk_tolerance", in.RiskTolerance, []string{"aggressive", "balanced", "cautious"}},
+		{"wild_encounters", in.WildEncounters, []string{"planner", "fight"}},
+		{"recovery_profile", in.RecoveryProfile, []string{"strict", "resilient"}},
+	} {
+		value := strings.ToLower(strings.TrimSpace(field.value))
+		if value != "" && !slices.Contains(field.allowed, value) {
+			return nil, mcpStartRunOutput{}, fmt.Errorf("%s must be %s", field.name, strings.Join(field.allowed, ", "))
+		}
+		policy[field.name] = value
+	}
+
 	runID := fmt.Sprintf("mcp-%s-%04x", time.Now().UTC().Format("20060102-150405"), mcpRunSequence.Add(1)&0xffff)
 	spec := farm.Spec{
 		RunID:           runID,
@@ -552,6 +581,12 @@ func (c *mcpControl) startRun(ctx context.Context, _ *mcp.CallToolRequest, in mc
 		FPS:             in.FPS,
 		MaxRounds:       in.MaxRounds,
 		MaxFrames:       in.MaxFrames,
+		PlayStyle:       policy["play_style"],
+		Purpose:         farm.RunPurpose(policy["purpose"]),
+		RiskTolerance:   policy["risk_tolerance"],
+		WildEncounters:  policy["wild_encounters"],
+		LLMDeployment:   strings.TrimSpace(in.LLMDeployment),
+		RecoveryProfile: farm.RecoveryProfile(policy["recovery_profile"]),
 	}
 	var upstream map[string]any
 	if err := c.requestJSON(ctx, http.MethodPost, "/v1/specs", spec, &upstream); err != nil {
