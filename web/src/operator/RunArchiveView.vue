@@ -48,7 +48,7 @@ import {
 } from './runs'
 
 const PAGE_SIZE = 25
-// Only download and initialize feature panes when their tab is opened.
+// The bulk-cleanup dialog loads only when opened.
 const RunCleanupPanel = defineAsyncComponent(() => import('./RunCleanupPanel.vue'))
 
 const props = defineProps<{ runId?: string }>()
