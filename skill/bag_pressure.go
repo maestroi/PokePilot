@@ -195,6 +195,40 @@ func storeTMForBagSpace(m *emu.Emu, romData []byte, policy MovePolicy) (bool, er
 	return true, nil
 }
 
+// tossUnteachableTMForBagSpace discards one bag TM that DecideTMHM(required)
+// cannot place on the current party. PC storage is preferred; this is the
+// in-place counterpart when that detour is blocked (Safari Zone) or already
+// failed. Gen I permits tossing TMs, and an unlearnable machine cannot create
+// capacity any other local way — teaching skips it, and the consumable
+// whitelist never includes TMs.
+func tossUnteachableTMForBagSpace(m *emu.Emu, romData []byte) (bool, error) {
+	var mem state.Mem
+	state.Snapshot(m, &mem)
+	if !state.Controllable(&mem) {
+		return false, fmt.Errorf("skill: bag pressure: player not controllable on map %#04x at (%d,%d)",
+			mem.U8(sym.CurMap), mem.U8(sym.XCoord), mem.U8(sym.YCoord))
+	}
+	party := state.DecodeParty(&mem)
+	for i, it := range state.DecodeInventory(&mem).Items {
+		if it.ID < rom.TM01Item || it.ID > rom.TM50Item || it.Quantity == 0 {
+			continue
+		}
+		decision, err := DecideTMHM(romData, party, it.ID, true)
+		// A still-teachable TM is left for teachTMForBagSpace. Existing means
+		// some party member already knows the move, so teaching would be a
+		// no-op that frees nothing — under bag pressure that copy is discardable.
+		if err == nil && !decision.Existing {
+			continue
+		}
+		if err := executeBagToss(m, i, it); err != nil {
+			return false, fmt.Errorf("skill: bag pressure: toss unteachable TM %#02x x%d: %w",
+				it.ID, it.Quantity, err)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
 // teachTMForBagSpace is the in-place counterpart to storeTMForBagSpace. Storing
 // a TM in the Player PC preserves it but requires reaching a Pokemon Center;
 // teaching it consumes it into a learned move and frees the bag slot where the
@@ -238,10 +272,10 @@ func teachTMForBagSpace(m *emu.Emu, romData []byte) (bool, error) {
 // ensureBagFreeSlotsManaged resolves bag pressure with productive actions before
 // discarding anything. NUGGET is converted to money, a single safe RARE CANDY
 // is converted to a level, retired items (RetiredBagItems) and then a finite
-// TM are preserved in Player PC storage, and —
-// when that Center detour cannot complete — a TM can be taught in place.
-// Only when none of those can create the required capacity does the legacy
-// explicit toss whitelist run.
+// TM are preserved in Player PC storage, and when that Center detour cannot
+// complete an unteachable TM can be discarded in place or a teachable TM taught
+// in place. Only when none of those can create the required capacity does the
+// legacy explicit toss whitelist run.
 func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 	if minFree < 0 || minFree > gen1BagCapacity {
 		return fmt.Errorf("skill: ensureBagFreeSlotsManaged: requested %d free slots, want 0..%d", minFree, gen1BagCapacity)
@@ -313,12 +347,24 @@ func ensureBagFreeSlotsManaged(m *emu.Emu, minFree int) error {
 		return nil
 	}
 
+	// When the PC detour is unavailable (Safari Zone, unreachable Center), a
+	// TM no party member can currently learn is dead weight for capacity. Gen I
+	// allows tossing TMs (unlike key items/HMs). Discard one before teaching a
+	// compatible TM into a mediocre moveset or burning replenishable stock.
+	if _, err := tossUnteachableTMForBagSpace(m, romData); err != nil {
+		return err
+	}
+	state.Snapshot(m, &mem)
+	if bagFreeSlots(&mem) >= minFree {
+		return nil
+	}
+
 	// PC storage preserves a TM but needs a Pokemon Center, which a dungeon
 	// deep in the late game may not be able to reach. Teaching is the reliable
-	// in-place fallback: it consumes a finite TM into a learned move and frees
-	// the slot where the player stands, so the caller's coordinates stay valid.
-	// Like storage it is a productive optimization, not a hard requirement: a
-	// teach that cannot complete cleanly falls through to the toss whitelist.
+	// in-place fallback for a still-compatible TM: it consumes the machine into
+	// a learned move and frees the slot where the player stands. Like storage
+	// it is a productive optimization, not a hard requirement: a teach that
+	// cannot complete cleanly falls through to the toss whitelist.
 	if _, err := teachTMForBagSpace(m, romData); err != nil {
 		state.Snapshot(m, &mem)
 		if !state.Controllable(&mem) {
