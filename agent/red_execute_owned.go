@@ -369,6 +369,12 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 		}
 		return result, nil
 
+	case KindEarnMoney:
+		if err := skill.LeagueRematch(m, romData, skill.StatAwareMove(romData)); err != nil {
+			return result, fmt.Errorf("agent: %s: %w", o, err)
+		}
+		return result, nil
+
 	case KindSell:
 		item, ok := adapter.resolveItemID(o.Item)
 		if !ok {
