@@ -228,6 +228,15 @@ func tossBagStack(m *emu.Emu, idx int, item state.BagItem) error {
 	if _, safe := safeBagSacrificeUnitCost[item.ID]; !safe {
 		return fmt.Errorf("refusing to toss protected item %#02x", item.ID)
 	}
+	return executeBagToss(m, idx, item)
+}
+
+// executeBagToss drives the real START -> ITEM -> TOSS flow for one whole
+// stack. Callers must have already decided the item is safe to discard: either
+// via the replenishable whitelist or via RetiredBagItems. The Escape Rope
+// reservation still applies here so a caller cannot accidentally burn the last
+// dungeon exit.
+func executeBagToss(m *emu.Emu, idx int, item state.BagItem) error {
 	if item.Quantity == 0 {
 		return fmt.Errorf("refusing to toss zero-quantity item %#02x", item.ID)
 	}
