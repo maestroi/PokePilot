@@ -645,3 +645,27 @@ post-Rising): the first walk lost to Route 26 Cooltrainer Joyce after the
 Route 27 trainers drained a Tackle/Strength/Cut/Ember Typhlosion, which is a
 typed `combat_defeat`; the retry from the blackout checkpoint (Route 27
 trainers now beaten) reached Route 23 with the flypoint set in ~125k frames.
+
+
+## Gen2: experimental Elite Four Will milestone
+
+Once `gs_indigo_plateau_reached` is observed, the next offered milestone is
+`gs_league_will_defeated`. It heals at the Indigo Pokecenter before the
+first room, follows the retail warp to Will and owns the entrance-lock scene,
+trainer battle and dialogue through the existing interruption driver. A resume
+already inside Will's room must not return to the Pokecenter: entering it
+reinitializes the current League challenge and clears all per-member events.
+
+Success is **only** the retail `EVENT_BEAT_ELITE_4_WILL` (1464), which the
+Will script sets after the post-battle dialogue. Merely visiting the room,
+having eight badges or reaching Indigo is not proof. The native topology
+includes the later rooms only as verified geometry; **Koga, Bruno, Karen,
+Champion Lance and Hall of Fame are not yet offered as objectives**.
+Do not enable the generic Champion goal on Gold/Silver on this basis.
+
+ROM-free coverage: `TestGSWillLeagueProgressRequiresCartridgeBattleEvent`,
+`TestGen2LeagueNativeRoomsFollowRetailOrder`,
+`TestGen2LeagueWillWarpIDsAndCoordinates` and the Gold/Silver experimental
+progression-chain test. Real retail Gold/Silver checkpoint qualification from
+post-Rising through Will is still required before this slice is considered
+qualified; battle loss must remain a typed ordinary combat outcome.
