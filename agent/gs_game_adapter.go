@@ -819,9 +819,9 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		}}
 	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
 		return []Objective{{
-			Kind: KindProgress,
+			Kind:     KindProgress,
 			Progress: gsprofile.ProgressLeagueWillDefeated,
-			Note: "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will; later rounds remain unsupported)",
+			Note:     "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will; later rounds remain unsupported)",
 		}}
 	default:
 		return nil
