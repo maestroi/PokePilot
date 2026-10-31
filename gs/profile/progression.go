@@ -137,9 +137,9 @@ const (
 	eventRadioTowerSilverWingReceived uint16 = 121
 	// pret/pokegold event_flags.asm: Clair is defeated before the Fang
 	// scene, while the eighth badge is an independent engine flag.
-	eventBeatClair             uint16 = 1220
+	eventBeatClair uint16 = 1220
 	// EVENT_BEAT_ELITE_4_WILL in the vendored retail event table.
-	eventBeatEliteFourWill uint16 = 1464
+	eventBeatEliteFourWill     uint16 = 1464
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
 	eventBlackthornGymBoulder1 uint16 = 1798
