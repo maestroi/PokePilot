@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	gsWillX      uint8 = 5
-	gsWillY      uint8 = 7
-	gsWillStandX uint8 = 5
-	gsWillStandY uint8 = 8
-	gsWillAttempts      = 4
+	gsWillX        uint8 = 5
+	gsWillY        uint8 = 7
+	gsWillStandX   uint8 = 5
+	gsWillStandY   uint8 = 8
+	gsWillAttempts       = 4
 )
 
 // executeGSLeagueWill begins the retail Elite Four challenge without faking
