@@ -299,6 +299,61 @@ var lateJohtoTopology = []mapSpec{
 		warps: []warpSpec{
 			{x: 5, y: 13, dest: "ROUTE_23", destWarp: 1},
 			{x: 6, y: 13, dest: "ROUTE_23", destWarp: 2},
+			{x: 14, y: 3, dest: "WILLS_ROOM", destWarp: 1},
+		},
+	},
+	// Retail League warps from pokegold/maps/{Wills,Kogas,Brunos,Karens,
+	// Lances}Room.asm and HallOfFame.asm. Door-opening scenes remain
+	// cartridge-controlled; these geometric edges confer no story progress.
+	{
+		name: "WILLS_ROOM",
+		warps: []warpSpec{
+			{x: 5, y: 17, dest: "INDIGO_PLATEAU_POKECENTER_1F", destWarp: 4},
+			{x: 4, y: 2, dest: "KOGAS_ROOM", destWarp: 1},
+			{x: 5, y: 2, dest: "KOGAS_ROOM", destWarp: 2},
+		},
+	},
+	{
+		name: "KOGAS_ROOM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "WILLS_ROOM", destWarp: 2},
+			{x: 5, y: 17, dest: "WILLS_ROOM", destWarp: 3},
+			{x: 4, y: 2, dest: "BRUNOS_ROOM", destWarp: 1},
+			{x: 5, y: 2, dest: "BRUNOS_ROOM", destWarp: 2},
+		},
+	},
+	{
+		name: "BRUNOS_ROOM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "KOGAS_ROOM", destWarp: 3},
+			{x: 5, y: 17, dest: "KOGAS_ROOM", destWarp: 4},
+			{x: 4, y: 2, dest: "KARENS_ROOM", destWarp: 1},
+			{x: 5, y: 2, dest: "KARENS_ROOM", destWarp: 2},
+		},
+	},
+	{
+		name: "KARENS_ROOM",
+		warps: []warpSpec{
+			{x: 4, y: 17, dest: "BRUNOS_ROOM", destWarp: 3},
+			{x: 5, y: 17, dest: "BRUNOS_ROOM", destWarp: 4},
+			{x: 4, y: 2, dest: "LANCES_ROOM", destWarp: 1},
+			{x: 5, y: 2, dest: "LANCES_ROOM", destWarp: 2},
+		},
+	},
+	{
+		name: "LANCES_ROOM",
+		warps: []warpSpec{
+			{x: 4, y: 23, dest: "KARENS_ROOM", destWarp: 3},
+			{x: 5, y: 23, dest: "KARENS_ROOM", destWarp: 4},
+			{x: 4, y: 0, dest: "HALL_OF_FAME", destWarp: 1},
+			{x: 5, y: 0, dest: "HALL_OF_FAME", destWarp: 2},
+		},
+	},
+	{
+		name: "HALL_OF_FAME",
+		warps: []warpSpec{
+			{x: 4, y: 13, dest: "LANCES_ROOM", destWarp: 3},
+			{x: 5, y: 13, dest: "LANCES_ROOM", destWarp: 4},
 		},
 	},
 }

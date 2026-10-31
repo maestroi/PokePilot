@@ -136,6 +136,9 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"VICTORY_ROAD",
 		"ROUTE_23",
 		"INDIGO_PLATEAU_POKECENTER_1F",
+		// League dialogue/battle scripts use the same typed interruption driver.
+		"WILLS_ROOM", "KOGAS_ROOM", "BRUNOS_ROOM", "KARENS_ROOM",
+		"LANCES_ROOM", "HALL_OF_FAME",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
