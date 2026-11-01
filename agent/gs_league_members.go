@@ -67,9 +67,9 @@ func gsLeagueMemberForProgress(progress game.ProgressID) (gsLeagueMemberSpec, bo
 // without visiting Indigo Plateau: that Pokecenter's MAPCALLBACK_NEWMAP would
 // clear the entire current League attempt, including all victory flags.
 //
-// There is no free Center between League battles. Resource preparation is a
-// separate future slice: this controller must not manufacture HP/PP or use
-// the Gen-I-only League item flow on a Gen-II cartridge.
+// There is no free Center between League battles. Before entering the next
+// trainer room, use the Gen2 native field-item menu for bounded recovery;
+// never use the Red/Blue item IDs or a synthetic recovery state.
 func executeGSLeagueMember(m *emu.Emu, romData []byte, progress game.ProgressID) error {
 	spec, ok := gsLeagueMemberForProgress(progress)
 	if !ok {
@@ -95,6 +95,7 @@ func executeGSLeagueMember(m *emu.Emu, romData []byte, progress game.ProgressID)
 	complete := func() bool {
 		return gsFirstBadgeProgressComplete(profile, m, spec.progress)
 	}
+	prepared := false
 	for attempt := 0; attempt < gsLeagueMemberAttempts; attempt++ {
 		if !profile.DecodeOverworld(m).Controllable {
 			if err := driveGSSecondBadgeInterruption(m, profile, spec.encounter); err != nil {
@@ -103,6 +104,12 @@ func executeGSLeagueMember(m *emu.Emu, romData []byte, progress game.ProgressID)
 		}
 		if complete() && profile.DecodeOverworld(m).Controllable {
 			return nil
+		}
+		if !prepared && profile.DecodeOverworld(m).Controllable {
+			if err := gsLeaguePrepare(m, profile, spec.encounter); err != nil {
+				return fmt.Errorf("gen2 %s: prepare finite medicine before battle: %w", spec.encounter, err)
+			}
+			prepared = true
 		}
 		if profile.DecodeOverworld(m).NativeMapID == prevID {
 			if err := gsSecondBadgeGoTo(m, romData, profile, skill.NativeMapDestination(roomID)); err != nil {
