@@ -37,6 +37,9 @@ func executeGSLeagueWill(m *emu.Emu, romData []byte) error {
 		if err := gsCoastalHeal(m, romData, profile, "INDIGO_PLATEAU_POKECENTER_1F"); err != nil {
 			return fmt.Errorf("gen2 Will: recover at Indigo Plateau before entering the League: %w", err)
 		}
+		if err := gsLeagueStockAtIndigo(m, romData, profile); err != nil {
+			return fmt.Errorf("gen2 Will: stock finite League medicine before the room lock: %w", err)
+		}
 	}
 	reached := func() bool {
 		return gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressLeagueWillDefeated)
