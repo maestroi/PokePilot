@@ -19,44 +19,44 @@ func gsLeagueItem(id uint8, qty int) game.InventoryItem {
 
 func TestGSLeagueMedicineUsesNativeGen2ItemsAndChoosesRecovery(t *testing.T) {
 	cases := []struct {
-		name string
+		name  string
 		party []game.BattlePartyMon
 		items []game.InventoryItem
-		item uint8
-		slot int
-		ok bool
+		item  uint8
+		slot  int
+		ok    bool
 	}{
 		{
-			name: "revive when only one party member remains",
+			name:  "revive when only one party member remains",
 			party: []game.BattlePartyMon{{HP: 70, MaxHP: 100}, {HP: 0, MaxHP: 120}},
 			items: []game.InventoryItem{gsLeagueItem(gsItemRevive, 1)},
-			item: gsItemRevive, slot: 1, ok: true,
+			item:  gsItemRevive, slot: 1, ok: true,
 		},
 		{
-			name: "prefer specific Gen2 poison cure",
+			name:  "prefer specific Gen2 poison cure",
 			party: []game.BattlePartyMon{{HP: 90, MaxHP: 100, Status: "poisoned"}},
 			items: []game.InventoryItem{gsLeagueItem(gsItemAntidote, 1), gsLeagueItem(gsItemFullRestore, 1)},
-			item: gsItemAntidote, slot: 0, ok: true,
+			item:  gsItemAntidote, slot: 0, ok: true,
 		},
 		{
-			name: "choose smallest sufficient heal for weakest member",
+			name:  "choose smallest sufficient heal for weakest member",
 			party: []game.BattlePartyMon{{HP: 40, MaxHP: 100}, {HP: 3, MaxHP: 80}},
 			items: []game.InventoryItem{gsLeagueItem(gsItemPotion, 3), gsLeagueItem(gsItemSuperPotion, 2)},
-			item: gsItemSuperPotion, slot: 1, ok: true,
+			item:  gsItemSuperPotion, slot: 1, ok: true,
 		},
 		{
-			name: "recover exhausted PP without Red item numbers",
+			name:  "recover exhausted PP without Red item numbers",
 			party: []game.BattlePartyMon{{HP: 90, MaxHP: 100, Moves: [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 0}}}},
 			items: []game.InventoryItem{gsLeagueItem(gsItemEther, 1)},
-			item: gsItemEther, slot: 0, ok: true,
+			item:  gsItemEther, slot: 0, ok: true,
 		},
 		{
-			name: "no recovery needed",
+			name:  "no recovery needed",
 			party: []game.BattlePartyMon{{HP: 80, MaxHP: 100, Moves: [4]game.BattlePartyMove{{NativeMoveID: 1, PP: 17}}}},
 			items: []game.InventoryItem{gsLeagueItem(gsItemPotion, 3)},
 		},
 		{
-			name: "do not use balls as medicine",
+			name:  "do not use balls as medicine",
 			party: []game.BattlePartyMon{{HP: 1, MaxHP: 100}},
 			items: []game.InventoryItem{},
 		},
