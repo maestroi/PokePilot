@@ -12,7 +12,7 @@ import (
 func TestGSLeagueMiddleMemberEventsAreIndependent(t *testing.T) {
 	members := []struct {
 		progress game.ProgressID
-		event uint16
+		event    uint16
 	}{
 		{ProgressLeagueWillDefeated, eventBeatEliteFourWill},
 		{ProgressLeagueKogaDefeated, eventBeatEliteFourKoga},
