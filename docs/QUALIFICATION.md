@@ -822,3 +822,49 @@ ROM-equipped, checkpoint-scoped replays; their existence is **not** proof
 that the next milestone or Hall of Fame passes. Do not commit/upload
 cartridges, `.state` files or personal save data to public PRs.
 
+
+## Gen2 League: replay one stage instead of restarting the campaign
+
+After a Gold or Silver worker has captured authentic League checkpoints
+under `POKEPILOT_QUALIFICATION_CORPUS`, open
+**Actions → Gen2 League ROM Stage Replay → Run workflow**. Choose
+`gold`, `silver`, or `both`, then select exactly one next stage.
+The workflow executes on the private `pokepilot-rom` runner and refuses to
+green-skip a missing retail ROM, `start.state`, or `source.json`.
+
+| Replay stage | Required immutable input | What is verified |
+| --- | --- | --- |
+| `indigo` | `gs-league/<game>/post-rising/start.state` | Indigo flypoint on Route 23 |
+| `will` | `gs-league/<game>/post-indigo/start.state` | Will retail victory |
+| `koga` | `gs-league/<game>/post-will/start.state` | Koga retail victory |
+| `bruno` | `gs-league/<game>/post-koga/start.state` | Bruno retail victory |
+| `karen` | `gs-league/<game>/post-bruno/start.state` | Karen retail victory |
+| `hall-of-fame` | `gs-league/<game>/post-karen/start.state` | Lance victory, **then** durable Hall of Fame event |
+
+The private ROM test checks retail cartridge size/SHA-1, the checkpoint's
+source objective and SHA-256, the initial native map, prior story event and
+control state, then uses the same Gen2 objective transaction as production.
+A pre-completed target cannot qualify. A failure leaves a private
+`failure.state` and JSON observations for focused debugging. Actions uploads
+only safe logs/JSON, not ROMs, savestates or `source.json`.
+
+To replay locally against a private mount (substitute the relevant
+`game` and `stage`):
+
+```sh
+export POKEPILOT_GS_LEAGUE_REPLAY=1
+export POKEPILOT_GS_LEAGUE_GAME=gold
+export POKEPILOT_GS_LEAGUE_STAGE=hall-of-fame
+export POKEPILOT_GS_LEAGUE_ROM="$HOME/.config/pokepilot/pokemon_gold.gbc"
+export POKEPILOT_GS_LEAGUE_START="$POKEPILOT_QUALIFICATION_CORPUS/gs-league/gold/post-karen/start.state"
+export POKEPILOT_GS_LEAGUE_OUT="$HOME/.local/state/pokepilot/league-debug"
+go test -count=1 -timeout=100m ./agent -run '^TestGSLeagueROMCheckpointReplay$' -v
+```
+
+**League ending boundary:** unlike ordinary room victories, Lance's real
+victory and the Hall of Fame event occur during non-interactive Oak/Mary and
+ceremony scripts. The Gold/Silver postcondition verifier accepts these
+precise transitions when cartridge-observed, without insisting on overworld
+control or pressing through the credits. This is narrowly scoped to those
+two events; all other progress goals still require a stable game boundary.
+A green public ROM-free CI run is not proof this replay succeeded on retail ROMs.

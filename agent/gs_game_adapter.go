@@ -403,6 +403,16 @@ func (a *gsObjectiveAdapter) SettlePostcondition(Objective) error {
 }
 
 func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Observation, result ObjectiveResult) error {
+	// Lance and the Hall of Fame are one-way retail scripts. Their real event
+	// flags may be set while Oak/Mary/credits still own the screen, so the
+	// generic stable-overworld verifier would reject the exact moment the
+	// controller deliberately stops. Only these two verified events get
+	// this exception; every other progress objective keeps the stable gate.
+	if o.Kind == KindProgress &&
+		(o.Progress == gsprofile.ProgressLeagueLanceDefeated ||
+			o.Progress == gsprofile.ProgressLeagueHallOfFameEntered) {
+		return gsVerifyLeagueEndingEvent(o.Progress, initial, final)
+	}
 	if o.Kind == KindHeal {
 		return verifyGSCombatRecoveryHeal(final)
 	}
