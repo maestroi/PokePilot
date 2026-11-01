@@ -361,6 +361,9 @@ func executeRedOwned(m *emu.Emu, romData []byte, o Objective, routePriority Rout
 			}
 			return result, nil
 		}
+		if err := skill.EnsureBagSpaceFor(m, item); err != nil {
+			return result, fmt.Errorf("agent: %s: make bag room: %w", o, err)
+		}
 		if err := prepareRedMartPurchase(m, romData); err != nil {
 			return result, fmt.Errorf("agent: %s: prepare mart purchase: %w", o, err)
 		}

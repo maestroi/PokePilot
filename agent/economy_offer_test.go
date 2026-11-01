@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,28 @@ func TestRestockCaptureObjectivesOffersReachableDexBallSupply(t *testing.T) {
 	obs.Dex.Targets = nil
 	if got := restockCaptureObjectives(obs); len(got) != 0 {
 		t.Fatalf("completed Dex still offered remote restock: %+v", got)
+	}
+}
+
+// run-ib9smf1mzpcih: post-Champion at 50/124 with 0 balls, ¥1137 and a 20/20
+// bag holding TMs; no ball restock was offered and the planner wandered towns.
+func TestRestockCaptureObjectivesFullBagUsesReclaimableSlot(t *testing.T) {
+	bag := make([]Item, bagItemCapacity)
+	for i := range bag {
+		bag[i] = Item{Name: fmt.Sprintf("tm%02d", i+1), Quantity: 1}
+	}
+	obs := Observation{
+		Money:        1137,
+		Bag:          bag,
+		RestockStock: []string{"pokeball"},
+		Dex:          DexCatalog{Targets: []DexEntry{{Species: "rattata"}}},
+	}
+	if got := restockCaptureObjectives(obs); len(got) != 0 {
+		t.Fatalf("full bag with nothing reclaimable offered restock: %+v", got)
+	}
+	obs.ReclaimableBagSlots = 2
+	if got := restockCaptureObjectives(obs); len(got) != 1 || got[0].Kind != KindBuy {
+		t.Fatalf("capture restock = %+v, want one remote buy that makes its own room", got)
 	}
 }
 

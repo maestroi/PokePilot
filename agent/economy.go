@@ -306,7 +306,8 @@ func purchaseAdvice(o Observation, ctx *EconomyDecisionContext) []PurchaseAdvice
 			continue
 		}
 		owned := bagQuantity(o, name)
-		canStore := owned > 0 || ctx.BagSlotsFree > 0
+		// Buy execution frees a reclaimable slot itself (EnsureBagSpaceFor).
+		canStore := owned > 0 || ctx.BagSlotsFree > 0 || o.ReclaimableBagSlots > 0
 		advice := PurchaseAdvice{
 			Item:                  name,
 			Category:              spec.Category,
