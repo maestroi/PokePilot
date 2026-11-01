@@ -649,11 +649,8 @@ func ReachableMaps(m *emu.Emu, romData []byte) (map[uint8]bool, error) {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	g, err = withAsleepRoute16Snorlax(g, romData, &mem)
+	g, err = withGen1StaticRouteTopology(g, romData, &mem)
 	if err != nil {
-		return nil, err
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
@@ -703,10 +700,7 @@ func GrassHabitatReachable(m *emu.Emu, romData []byte) (func(mapID uint8) bool, 
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
-		return nil, err
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+	if g, err = withGen1StaticRouteTopology(g, romData, &mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)
@@ -738,10 +732,7 @@ func CatchHabitatBlock(m *emu.Emu, romData []byte, mapID uint8) error {
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	if g, err = withAsleepRoute16Snorlax(g, romData, &mem); err != nil {
-		return nil
-	}
-	if g, err = withSurfSeaTopology(g, romData, &mem); err != nil {
+	if g, err = withGen1StaticRouteTopology(g, romData, &mem); err != nil {
 		return nil
 	}
 	prereqs := redRoutePrerequisites(g, romData, &mem)

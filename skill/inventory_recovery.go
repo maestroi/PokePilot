@@ -94,10 +94,7 @@ func reachableStockMarts(romData []byte, mem *state.Mem) (map[standardMartRecove
 	if err != nil {
 		return nil, err
 	}
-	if g, err = withAsleepRoute16Snorlax(g, romData, mem); err != nil {
-		return nil, err
-	}
-	if g, err = withSurfSeaTopology(g, romData, mem); err != nil {
+	if g, err = withGen1StaticRouteTopology(g, romData, mem); err != nil {
 		return nil, err
 	}
 	prereqs := redRoutePrerequisites(g, romData, mem)

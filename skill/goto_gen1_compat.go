@@ -35,11 +35,7 @@ func applyGoToCompatibilityInitialTopology(m *emu.Emu, g *world.Graph, romData [
 	}
 	var mem state.Mem
 	state.Snapshot(m, &mem)
-	g, err := withAsleepRoute16Snorlax(g, romData, &mem)
-	if err != nil {
-		return nil, err
-	}
-	return withSurfSeaTopology(g, romData, &mem)
+	return withGen1StaticRouteTopology(g, romData, &mem)
 }
 
 // applyGoToCompatibilityLocalTopology applies the remaining live Kanto

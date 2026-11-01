@@ -579,11 +579,20 @@ var (
 )
 
 // leaveVictoryRoadExitSide walks the exit-side ladder chain while each next
-// pad is live-reachable. Anywhere else it stops and leaves routing to GoTo.
+// pad is live-reachable. From 1F it first climbs into 2F so map scripts can
+// reopen switch doors from already-set events — a cleared-cave checkpoint on
+// the 1F ladder otherwise hands a closed static 2F to GoTo (run-11wa4vv6piic82mkqrmqxtwere).
+// Anywhere else without a reachable next pad it stops and leaves routing to GoTo.
 func leaveVictoryRoadExitSide(m *emu.Emu, romData []byte, policy MovePolicy) error {
-	for phase := 0; phase < 4; phase++ {
+	for phase := 0; phase < 6; phase++ {
 		var next world.Edge
 		switch m.Peek8(sym.CurMap) {
+		case victoryRoad1FMap:
+			ladder, err := victoryRoadLadderEdge(romData, victoryRoad1FMap, victoryRoad2FMap)
+			if err != nil {
+				return err
+			}
+			next = ladder
 		case victoryRoad2FMap:
 			exit, err := victoryRoadExitEdge(romData, victoryRoad2FMap)
 			if err != nil {
