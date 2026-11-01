@@ -41,19 +41,23 @@ type plannerTrainingExecution struct {
 // NOT a positive reward label. Offline filtering must reject failures,
 // duplicates, and outcomes that do not actually demonstrate useful progress.
 type plannerTrainingExample struct {
-	Version      int                       `json:"version"`
-	Task         string                    `json:"task"`
-	RunID        string                    `json:"run_id"`
-	Attempt      int                       `json:"attempt"`
-	Game         string                    `json:"game"`
-	Seed         int64                     `json:"seed"`
-	ROMSHA256    string                    `json:"rom_sha256"`
-	Build        string                    `json:"build"`
-	Goal         string                    `json:"goal,omitempty"`
-	Round        int                       `json:"round"`
-	Model        string                    `json:"model,omitempty"`
-	Backend      string                    `json:"backend,omitempty"`
-	PromptHash   string                    `json:"prompt_hash,omitempty"`
+	Version    int    `json:"version"`
+	Task       string `json:"task"`
+	RunID      string `json:"run_id"`
+	Attempt    int    `json:"attempt"`
+	Game       string `json:"game"`
+	Seed       int64  `json:"seed"`
+	ROMSHA256  string `json:"rom_sha256"`
+	Build      string `json:"build"`
+	Goal       string `json:"goal,omitempty"`
+	Round      int    `json:"round"`
+	Model      string `json:"model,omitempty"`
+	Backend    string `json:"backend,omitempty"`
+	PromptHash string `json:"prompt_hash,omitempty"`
+	// These are the exact wire messages as requested from the live model,
+	// including run-specific goal, policy notes, and retry feedback.
+	SystemPrompt string                    `json:"system_prompt,omitempty"`
+	UserPrompt   string                    `json:"user_prompt,omitempty"`
 	Observation  agent.Observation         `json:"observation"`
 	Offered      []string                  `json:"offered"`
 	ReplanReason string                    `json:"replan_reason,omitempty"`
@@ -61,6 +65,7 @@ type plannerTrainingExample struct {
 	PlanSteps    []string                  `json:"plan_steps,omitempty"`
 	PlanBoundary bool                      `json:"plan_boundary,omitempty"`
 	Choice       string                    `json:"choice,omitempty"`
+	ChoiceIntent string                    `json:"choice_intent,omitempty"`
 	Rejected     bool                      `json:"rejected,omitempty"`
 	Error        string                    `json:"error,omitempty"`
 	Execution    *plannerTrainingExecution `json:"execution,omitempty"`
@@ -106,6 +111,7 @@ func writeFarmTrainingCorpus(spec farm.Spec, res agent.Result, calls []agent.LLM
 			Seed: spec.Seed, ROMSHA256: romSHA256, Build: version,
 			Goal: spec.Goal.String(), Round: call.Observation.Round,
 			Model: call.Model, Backend: call.Backend, PromptHash: call.PromptHash,
+			SystemPrompt: call.TrainingSystem, UserPrompt: call.TrainingUser,
 			Observation: call.Observation, Offered: call.OfferedObjectives,
 			Rejected: call.Err != nil,
 		}
@@ -123,6 +129,7 @@ func writeFarmTrainingCorpus(spec farm.Spec, res agent.Result, calls []agent.LLM
 			}
 		} else if call.Err == nil {
 			ex.Choice = call.Objective.String()
+			ex.ChoiceIntent = call.Objective.Purpose
 			selected = ex.Choice
 		}
 		if settled, ok := outcomes[ex.Round]; ok && selected != "" && settled.Objective.String() == selected {

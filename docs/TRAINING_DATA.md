@@ -87,3 +87,115 @@ answers with a different input format.
 - Next: add dataset export/validation CLI, held-out evaluations on matched
   seeds, then train a small model and register it as an ordinary strategist
   deployment. Do not promote it based only on imitating the current model.
+
+## Prepare a Gen 1 fine-tuning dataset (this slice)
+
+The training toolchain lives in `scripts/planner_training/` and **does not
+change PokePilot's single-LLM runtime**. Runs created before the exact-prompt
+capture changes will not have `system_prompt` and `user_prompt` in their
+corpus; the exporter rejects those rows instead of reconstructing an
+inaccurate prompt. Launch new opted-in Red runs after this change is merged.
+
+1. In **New Run**, choose Pokémon Red and enable **Collect planner training
+   data**. Complete multiple diverse runs (different seeds and goals).
+2. Download each run's `planner-training-v1.jsonl.gz` from its artifacts.
+   Keep files under separate directories (for example
+   `artifacts/planner-training/run-<id>/planner-training-v1.jsonl.gz`).
+   These archives may contain full private gameplay observations and must
+   **not** be committed to git.
+3. Generate train/validation/test splits (Python 3.11+, no ML packages needed):
+
+```sh
+python3 scripts/planner_training/prepare.py \
+  artifacts/planner-training \
+  --out artifacts/planner-dataset \
+  --task all
+
+python3 -m unittest discover -s scripts/planner_training -p 'test_*.py' -v
+```
+
+The exporter strictly filters to matching successful, unrecovered,
+nonterminal objective execution and requires actual prompt text, a verified
+decision/plan, provenance, and a legal offer. For now, multi-step plans are
+excluded: their full tail has not been independently verified. It deduplicates
+identical model inputs globally, drops conflicting responses, and assigns
+each **game + ROM + seed** to a stable split across runs and attempts.
+The output is `train.jsonl`, `validation.jsonl`, `test.jsonl`, and a
+`manifest.json` explaining filtering and sample counts. The split is
+deterministic, not balanced. A few seed values can leave validation or test
+empty; collect more runs rather than using training rows for evaluation.
+
+Train and test examples use TRL's conversational prompt/completion format:
+`system` and `user` are the *actual* requests sent to the planner, and the
+assistant completion is the existing JSON contract, not an invented free-text
+strategy. The "choice" output is the 1-based index into that exact menu.
+
+## Train a small text-only LLM (LoRA / QLoRA)
+
+The first tested-target design is an ordinary **causal text model** such as
+`Qwen/Qwen3-1.7B`. Qwen3.5-2B uses a *multimodal* Transformers architecture,
+so it is not assumed to work with this `AutoModelForCausalLM` entry point;
+supporting that architecture is a separate training-path validation task.
+
+Use a private training host and isolated Python environment:
+
+```sh
+python3 -m venv .venv-training
+. .venv-training/bin/activate
+pip install -r scripts/planner_training/requirements.txt
+# Install a CUDA-compatible bitsandbytes build separately for --quantize-4bit.
+
+python3 scripts/planner_training/train_lora.py \
+  --dataset artifacts/planner-dataset \
+  --model Qwen/Qwen3-1.7B \
+  --out artifacts/planner-lora-v1 \
+  --quantize-4bit
+```
+
+The trainer refuses a missing manifest, fewer than 50 training records, an
+empty validation split, and a manifest count mismatch. It uses completion-only
+loss, LoRA on linear layers, and **no silent prompt truncation** by default.
+A local adapter and `pokepilot-training.json` are saved; nothing is uploaded
+or registered automatically. An explicit model revision can be pinned with
+`--revision`. Quantized QLoRA requires CUDA (CPU use is opt-in, non-quantized,
+and suitable only for small tests). Review VRAM capacity and long-prompt sizes
+before a production training run.
+
+Before using traces from a third-party model, confirm that its license and
+provider terms permit model training/distillation. Collected data is not
+automatically proof that the teacher's strategy was optimal.
+
+## Evaluate without modifying production
+
+After serving the **base model** and the **candidate adapter** independently
+through OpenAI-compatible endpoints (or sequentially on one inference GPU),
+compare both on the same withheld set:
+
+```sh
+python3 scripts/planner_training/evaluate.py \
+  --dataset artifacts/planner-dataset \
+  --endpoint http://127.0.0.1:8000/v1 \
+  --model pokepilot-candidate \
+  --out artifacts/candidate-evaluation.json
+```
+
+`POKEPILOT_TRAIN_EVAL_TOKEN` is an optional API key supplied through the
+environment, never the command line. Do not point this command at a
+third-party server unless its use of full game observations is intended.
+
+This reports valid schema responses, choices/steps within the offered menu,
+latency and exact teacher agreement. **Teacher agreement does not measure
+game success.** For promotion, register the adapter as a *candidate deployment*
+and use the existing matched-seed PokePilot farm experiments /
+`pokebench compare` to measure completed milestones, stalls, recovery loops,
+time and cost. Keep the existing model default until those checks pass.
+
+### Still to implement
+
+- Crash-resilient streaming of training segments during endless attempts,
+  rather than holding model calls in memory until Finish.
+- Long-horizon credit assignment and a more sophisticated failure/quality
+  labeler. A completed objective may still be an unproductive detour.
+- A dedicated validated multimodal Qwen3.5 training path, if preferred, and
+  automated offline-adapter serving/registration.
+- GPU-backed training and a real paired qualification result on collected data.
