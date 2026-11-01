@@ -59,6 +59,22 @@ func RetiredBagItems(romData []byte, mem *state.Mem) []uint8 {
 	return append(out, hms...)
 }
 
+// ReclaimableBagSlots counts bag stacks EnsureBagSpaceFor can clear without
+// destroying anything useful: retired items, TMs (PC storage, or teaching
+// where no Center is reachable) and Nuggets (sold). The expendable-consumable
+// toss whitelist is deliberately excluded. run-ib9smf1mzpcih sat at 20/20
+// holding two TMs with zero balls, and counting retired items alone hid the
+// Dex capture restock that would have made room for them.
+func ReclaimableBagSlots(romData []byte, mem *state.Mem) int {
+	n := len(RetiredBagItems(romData, mem))
+	for _, it := range state.DecodeInventory(mem).Items {
+		if it.Quantity > 0 && (it.ID == nuggetItem || (it.ID >= rom.TM01Item && it.ID <= rom.TM50Item)) {
+			n++
+		}
+	}
+	return n
+}
+
 func rodYieldOwned(romData []byte, rod string, owned map[uint8]bool) bool {
 	encounters, err := rom.FishingEncounters(romData)
 	if err != nil {

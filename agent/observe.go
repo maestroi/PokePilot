@@ -58,8 +58,8 @@ type Observation struct {
 	LeadPP     []uint8
 	RepelSteps int
 	Bag        []Item
-	// ReclaimableBagSlots counts bag entries the adapter can move to storage
-	// on demand because they have no remaining use (see skill.RetiredBagItems).
+	// ReclaimableBagSlots counts bag entries execution can clear on demand
+	// without destroying anything useful (see skill.ReclaimableBagSlots).
 	ReclaimableBagSlots int
 	FieldCapabilities   []FieldCapability
 	RecentDialogue      []string
