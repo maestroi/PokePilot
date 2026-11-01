@@ -51,7 +51,9 @@ func gsPostCureCaptureEligible(o Objective, before, after Observation) bool {
 
 // CaptureQualificationCheckpoint is an opt-in capability of the Gen2 adapter.
 // The generic run loop invokes it only AFTER the objective transaction has
-// passed its own postcondition. A failed diagnostic write does not invalidate
+// passed its own postcondition. The League branch captures the first settled
+// Rising/Indigo/Elite Four milestones for replay without repeating an hours-long
+// first-to-eighth-badge campaign. A failed diagnostic write does not invalidate
 // the game action; the caller reports it to the run log.
 func (a *gsObjectiveAdapter) CaptureQualificationCheckpoint(o Objective, before, after Observation) (string, error) {
 	root := strings.TrimSpace(os.Getenv(gsQualificationCorpusEnv))
@@ -65,7 +67,11 @@ func (a *gsObjectiveAdapter) CaptureQualificationCheckpoint(o Objective, before,
 	case gsPostMineralCaptureEligible(o, before, after):
 		family, boundary, mapName = "gs-glacier", "post-mineral", "OLIVINE_GYM"
 	default:
-		return "", nil
+		stage, ok := gsLeagueCaptureEligible(o, before, after)
+		if !ok {
+			return "", nil
+		}
+		family, boundary, mapName = "gs-league", stage.directory, stage.mapName
 	}
 	if a.m == nil {
 		return "", fmt.Errorf("gen2 qualification capture: nil emulator")
