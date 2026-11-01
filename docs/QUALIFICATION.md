@@ -779,3 +779,46 @@ pack submenus, per-member post-battle healing, PP recovery prompts, the
 Indigo lobby's resource stock, and typed recovery from a failed medicine
 sequence. Additional retail checkpoint replay failures should be addressed
 with their smallest deterministic regression.
+
+## Gen2 League: first-run replay checkpoint corpus
+
+An hours-long fresh Gold/Silver Hall of Fame campaign must not have to be
+repeated from New Bark Town to investigate each League failure. With
+`POKEPILOT_QUALIFICATION_CORPUS` configured on the **game worker** to a
+private writable directory, the existing successful-objective capture hook
+now retains these immutable, source-verified state snapshots:
+
+```text
+$POKEPILOT_QUALIFICATION_CORPUS/gs-league/
+  gold/                             # or silver/
+    post-rising/start.state          # Dragon's Den B1F
+    post-indigo/start.state          # Route 23 flypoint, NOT the Center
+    post-will/start.state            # Will's defeated room
+    post-koga/start.state            # Koga's defeated room
+    post-bruno/start.state           # Bruno's defeated room
+    post-karen/start.state           # Karen's defeated room
+```
+
+Each captured directory also contains `source.json` with game, **exact**
+objective, run ID, ROM SHA-1, state SHA-256, frame and capture time. A
+checkpoint is eligible only for the **first verified transaction** of that
+progress objective, after the prerequisite event and on a settled,
+controllable map. Completed Hall of Fame saves and repeat Elite Four
+challenges are ineligible. The existing atomic first-writer-wins publisher
+prevents a later run from replacing a known replay baseline.
+
+The saved state after Karen is an authentic **pre-Lance** fixture. Lance's
+victory and the Hall-of-Fame ceremony do not require a controllable
+overworld boundary, so they are deliberately *not* captured using this
+between-objective hook. The regular run's failure checkpoint and
+reproducer remain available for those in-flight cutscenes.
+
+**Operations:** The corpus is opt-in, off by default. Set
+`POKEPILOT_QUALIFICATION_CORPUS` on the runner *before* the milestone is
+reached and keep the mount private/persistent. The normal run checkpoint
+ring still works without this setting. Already completed milestones are not
+backfilled. Captures and their provenance are input material for future
+ROM-equipped, checkpoint-scoped replays; their existence is **not** proof
+that the next milestone or Hall of Fame passes. Do not commit/upload
+cartridges, `.state` files or personal save data to public PRs.
+
