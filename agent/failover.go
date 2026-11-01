@@ -16,6 +16,11 @@ type LLMCall struct {
 	Objective         Objective
 	Plan              Plan
 	Strategic         bool
+	// Model/Backend/PromptHash identify the actual endpoint and prompt contract
+	// for this call, including transport failover (not just the run default).
+	Model             string
+	Backend           string
+	PromptHash        string
 	Err               error
 	Duration          time.Duration
 }
@@ -114,6 +119,9 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 			ReplanReason:      reason,
 			Plan:              plan,
 			Strategic:         true,
+			Model:             active.Model,
+			Backend:           p.lastBackend,
+			PromptHash:        active.StrategicPromptHash(),
 			Err:               err,
 			Duration:          time.Since(start),
 		})
@@ -159,7 +167,11 @@ func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Ob
 		p.OnCall(LLMCall{
 			Observation: obs,
 			Offered:     len(offered),
+			OfferedObjectives: objectiveStrings(offered),
 			Objective:   o,
+			Model:       active.Model,
+			Backend:     p.lastBackend,
+			PromptHash:  active.PromptHash(),
 			Err:         err,
 			Duration:    time.Since(start),
 		})
