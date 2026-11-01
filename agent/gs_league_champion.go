@@ -135,6 +135,14 @@ func executeGSLeagueChampion(m *emu.Emu, romData []byte, goal game.ProgressID) e
 	if here != karen && here != lance {
 		return fmt.Errorf("%w: Champion must start in Karen or Lance room, map %#04x", errGSSecondBadgeUnexpectedState, here)
 	}
+	// Prepare using only real finite Gen2 field items, never a free Center.
+	// If the scripted approach already owns the emulator, resume it without
+	// opening PACK over a trainer battle or the Oak/Mary ending cutscene.
+	if profile.DecodeOverworld(m).Controllable {
+		if err := gsLeaguePrepare(m, profile, "league:champion-lance"); err != nil {
+			return fmt.Errorf("gen2 Champion: prepare for Lance: %w", err)
+		}
+	}
 	if here == karen {
 		if err := gsSecondBadgeGoTo(m, romData, profile, skill.NativeMapDestination(lance)); err != nil {
 			return fmt.Errorf("gen2 Champion: cross Karen's opened north exit: %w", err)
