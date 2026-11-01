@@ -637,8 +637,7 @@ walks the owned Johto route), Surfs Route 27 through Tohjo Falls, rests at the
 Route 26 Heal House, passes the Victory Road Gate badge check and fights the
 Victory Road rival as an ordinary owned interruption. Completion is only the
 cartridge's `ENGINE_FLYPOINT_INDIGO_PLATEAU` (wVisitedSpawns bit
-`SPAWN_INDIGO`), set by Route 23's map callback. The Elite Four is not
-executable yet and nothing past the plateau is offered.
+`SPAWN_INDIGO`), set by Route 23's map callback. leads into separate experimental Elite Four goals, each requiring cartridge proof.
 
 Evidence (retail Gold, `final.state` of run-3om7ptfumukt9aaxwusxdq9sj,
 post-Rising): the first walk lost to Route 26 Cooltrainer Joyce after the
@@ -659,8 +658,7 @@ reinitializes the current League challenge and clears all per-member events.
 Success is **only** the retail `EVENT_BEAT_ELITE_4_WILL` (1464), which the
 Will script sets after the post-battle dialogue. Merely visiting the room,
 having eight badges or reaching Indigo is not proof. The native topology
-includes the later rooms only as verified geometry; **Koga, Bruno, Karen,
-Champion Lance and Hall of Fame are not yet offered as objectives**.
+contains later League rooms as geometry; the following experimental objectives own their battles and proof separately.
 Do not enable the generic Champion goal on Gold/Silver on this basis.
 
 ROM-free coverage: `TestGSWillLeagueProgressRequiresCartridgeBattleEvent`,
@@ -698,4 +696,42 @@ ROM-free regression: `TestGSLeagueMiddleMemberEventsAreIndependent`,
 progression-chain tests and the New Run goal-selection checks. Qualification
 requires separate Gold and Silver saved-state replays at the Will→Koga,
 Koga→Bruno, and Bruno→Karen boundaries. Champion Lance and Hall of Fame
-remain withheld as executable objectives.
+are handled by the next independent experimental milestone, not by these rooms.
+
+
+## Gen2: experimental Champion Lance and Hall of Fame
+
+After `gs_league_karen_defeated`, the adapter offers two sequential
+objectives: `gs_league_lance_defeated` followed by
+`gs_league_hall_of_fame`. These deliberately measure different real
+cartridge facts:
+
+- `EVENT_BEAT_CHAMPION_LANCE` (1468) is set by `LancesRoom.asm` after
+  winning the mandatory Champion trainer battle, and is cleared when
+  the Indigo Center resets the next League challenge.
+- `EVENT_BEAT_ELITE_FOUR` (68) is set by `HallOfFame.asm` only *after*
+  Lance's escort, Oak/Mary dialogue and the Hall-of-Fame machine animation.
+  It survives later League attempts and is the permanent Johto story proof.
+
+The controller starts only from Karen's room or Lance's room, crosses
+Karen's scripted-open north exit, then triggers Lance via the real
+(4,5) coord-event (not an invented ordinary talk interaction). The
+Champion battle uses the typed Gen2 trainer-battle driver. Its result
+alone **never** satisfies the Hall objective. The Hall phase resumes the
+in-flight retail script in Lance's or the Hall room, advancing dialogue
+and movement only until the durable Hall event is visible. Waiting for
+overworld control at that point can hang on the credits/title sequence,
+so the event is the postcondition instead.
+
+These are opt-in and **unqualified** until repeatable Gold and Silver
+post-Karen checkpoints prove Lance's coord trigger, the long scripted
+ending, losses and the real Hall event. Nothing edits SRAM, grants items
+or teleports into Hall of Fame. General Gen1 league consumable planning
+is not yet ported to Gen2; resource/PP conservation and battle resilience
+still need cartridge qualification before advertising a fully unattended
+Gold/Silver League campaign. Default `gs_supported_frontier` remains at
+its separately qualified milestone.
+
+ROM-free tests cover independent battle and permanent ceremony event
+flags for Gold and Silver, new goal ownership, strict ordered progression,
+the existing full League native map corridor and New Run goal selection.
