@@ -14,16 +14,16 @@ test('tools run goal stays independent from play style and purpose', () => {
   assert.match(source, /Debug coverage · exercise new interactions/)
 })
 
-test('Gen2 launcher allows unqualified 7/8-badge runs with visible warning', () => {
-  assert.match(source, /\['Earn 7 badges\.', '7 badges · Glacier · Pryce · experimental'\]/)
-  assert.match(source, /\['Earn 8 badges\.', '8 badges · Rising · Clair · experimental'\]/)
+test('Gen2 launcher keeps badge goals and one Hall of Fame target', () => {
+  assert.match(source, /\['Earn 7 badges\.', '7 badges · Glacier · Pryce'\]/)
+  assert.match(source, /\['Earn 8 badges\.', '8 badges · Rising · Clair'\]/)
   assert.match(source, /\['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'\]/)
-  assert.match(source, /\['progress:gs_league_will_defeated', 'Elite Four · Will · experimental'\]/)
-  assert.match(source, /\['progress:gs_league_koga_defeated', 'Elite Four · Koga · experimental'\]/)
-  assert.match(source, /\['progress:gs_league_bruno_defeated', 'Elite Four · Bruno · experimental'\]/)
-  assert.match(source, /\['progress:gs_league_karen_defeated', 'Elite Four · Karen · experimental'\]/)
-  assert.match(source, /\['progress:gs_league_lance_defeated', 'Champion · Lance · experimental'\]/)
+  // Internal Elite Four and Champion milestones must not appear as separate
+  // stop targets; the single Hall of Fame run progresses through them all.
+  assert.doesNotMatch(source, /\['progress:gs_league_(?:will|koga|bruno|karen|lance)_defeated',/)
+  assert.match(source, /Will, Koga, Bruno, Karen, and Lance are automatic internal stages/)
+  assert.doesNotMatch(source, /Ice Path, Clair and Dragon’s Den are unfinished/)
   assert.match(source, /\['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'\]/)
   assert.doesNotMatch(source, /<option value="Earn (7|8) badges\." disabled/)
-  assert.match(source, /Only cartridge-observed badge flags count as success/)
+  assert.match(source, /Only cartridge-observed badge and Hall of Fame events count as success/)
 })
