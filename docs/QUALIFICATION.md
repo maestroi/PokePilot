@@ -573,29 +573,30 @@ Seven/eight-badge goals are now selectable for unqualified live testing.
 Both retail ROMs still require an end-to-end qualification replay through
 Radio Tower, Ice Path, Clair and Dragon's Den before certification.
 
-## Operator opt-in: attempt seven/eight badges before ROM qualification
+## Gold/Silver operator goals: badges and Hall of Fame
 
-The New Run form exposes **Earn 7 badges.** and **Earn 8 badges.** for Gold
-and Silver as explicitly experimental stop targets. An operator can now run
-the existing seventh badge controller and the Radio Tower gameplay sequence
-without waiting for complete Gold/Silver checkpoint qualification. These
-are best-effort live runs, **not a claim of end-to-end playability**.
+The Gold/Silver launcher exposes direct one- through eight-badge stop targets.
+The operator has confirmed successful eight-badge runs, so badges 7 (Glacier)
+and 8 (Rising) are no longer labeled experimental in the New Run selector.
+Each goal still requires its real cartridge badge bit, including the
+post-Clair Dragon's Den Rising Badge award.
 
-The objective planner is wired through Pryce's real Glacier Badge bit,
-the fake Radio Tower Director, Basement Key, Underground Card Key,
-3F shutter, 4F/5F executives, and the final Rocket boss plus the
-version-specific Director wing reward. All retain their cartridge-owned
-postconditions; game progression cannot be certified by reaching a map or
-finishing a generic battle.
+The League launcher has **one** complete-challenge stop target:
+`progress:gs_league_hall_of_fame`. Will, Koga, Bruno, Karen and Champion
+Lance remain ordered **internal** progression objectives, with independent
+retail event verification, but are no longer separately selectable run goals.
+This makes a new Hall of Fame run progress through the entire League rather
+than stopping after a single Elite Four battle. The Indigo Plateau / Victory
+Road intermediate goal remains available for targeted debugging.
 
-**Ice Path, Clair, and Dragon's Den are still missing executable
-controllers.** If an eight-badge attempt reaches this unfinished frontier,
-it must remain incomplete and produce usable failure/checkpoint evidence,
-rather than mark itself successful. Real ROM runs provide the failures and
-checkpoints to iterate on. The conservative "current supported Gen 2
-frontier" goal still stops at Mineral Badge and is unchanged.
+The Hall of Fame path remains experimental until a real Gold/Silver run
+reaches the permanent Hall of Fame event. The legacy `gs_supported_frontier`
+preset currently still stops at Mineral Badge; this UI consolidation does
+not silently retarget already running or saved preset campaigns.
+This is an operator UI cleanup, not a change to the internal League objective
+execution or existing run records.
 
-## Gen2: experimental Ice Path → Clair → Dragon Fang/Rising Badge
+## Gen2: Ice Path → Clair → Dragon Fang/Rising Badge
 
 The eight-badge objective chain now extends beyond the Rocket Tower:
 Ice Path HM07 Waterfall on 1F, the real Clair battle in Blackthorn Gym,
@@ -612,10 +613,11 @@ that hides the Fang ball is not sufficient. A full Items pocket blocks
 the retail Dragon Fang and gives a typed diagnostic; no item or badge is
 forged. The gap remains a candidate for inventory-space repair.
 
-These are opt-in **experimental**, still ROM-unqualified controllers.
-Real Gold and Silver gameplay replays (particularly the Ice Path forced
-movement and Gym boulder layouts) must be used to fix unexpected
-navigation or script differences before certifying this route.
+The operator has confirmed successful eight-badge runs, so the seventh
+and eighth badge launcher targets are no longer labeled experimental.
+Repeatable Gold and Silver checkpoint replays remain useful to catch
+version-specific Ice Path and Gym boulder navigation regressions; this
+does not qualify the subsequent League and Hall of Fame route.
 
 ### Assigned Strength pit puzzles
 

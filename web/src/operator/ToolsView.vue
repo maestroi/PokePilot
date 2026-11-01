@@ -226,14 +226,11 @@ const gen2Goals = [
   ['Earn 4 badges.', '4 badges · Fog · Morty'],
   ['Earn 5 badges.', '5 badges · Storm · Chuck'],
   ['Earn 6 badges.', '6 badges · Mineral · Jasmine'],
-  ['Earn 7 badges.', '7 badges · Glacier · Pryce · experimental'],
-  ['Earn 8 badges.', '8 badges · Rising · Clair · experimental'],
+  ['Earn 7 badges.', '7 badges · Glacier · Pryce'],
+  ['Earn 8 badges.', '8 badges · Rising · Clair'],
   ['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'],
-  ['progress:gs_league_will_defeated', 'Elite Four · Will · experimental'],
-  ['progress:gs_league_koga_defeated', 'Elite Four · Koga · experimental'],
-  ['progress:gs_league_bruno_defeated', 'Elite Four · Bruno · experimental'],
-  ['progress:gs_league_karen_defeated', 'Elite Four · Karen · experimental'],
-  ['progress:gs_league_lance_defeated', 'Champion · Lance · experimental'],
+  // The League's five trainer victories remain internal milestones of the
+  // Hall of Fame objective, not separate New Run stopping targets.
   ['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
@@ -455,7 +452,7 @@ async function submit(): Promise<void> {
               <option v-for="goal in GOAL_OPTIONS" :key="goal || 'free'" :value="goal">{{ goal || 'Free play (no automatic stop)' }}</option>
             </template>
           </select>
-          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges to attempt the experimental Gold/Silver campaign now. The agent can attempt Pryce and Radio Tower, but Ice Path, Clair and Dragon’s Den are unfinished: a run may fail before reaching 8. Only cartridge-observed badge flags count as success. The current supported frontier preset still stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
+          <span class="mt-1 block text-[11px] text-slate-600">{{ isTetris ? 'Score and survival goals run Type A; lines and complete run Type B.' : isBoxxle ? 'First is the one-puzzle milestone. Early solves the first five rooms. The deterministic solver plays unless a decision engine is selected.' : (isGen2 ? 'Choose 7 or 8 badges, or Hall of Fame for the full Johto League challenge. Will, Koga, Bruno, Karen, and Lance are automatic internal stages, not separate run goals. Only cartridge-observed badge and Hall of Fame events count as success. The Hall of Fame path is still experimental; the legacy supported-frontier preset stops at Mineral Badge.' : 'What ends the run. Goal is independent from play style and run purpose.') }}</span>
         </label>
 
         <label v-if="isLLM" class="block">
