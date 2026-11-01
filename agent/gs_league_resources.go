@@ -146,12 +146,15 @@ func gsLeagueChooseMedicine(party []game.BattlePartyMon, inv game.InventoryState
 			continue
 		}
 		total := 0
+		known := 0
 		for _, move := range mon.Moves {
 			if move.NativeMoveID != 0 {
+				known++
 				total += int(move.PP)
 			}
 		}
-		if total >= 4 {
+		// Eggs or malformed/empty movesets cannot receive Ether.
+		if known == 0 || total >= 4 {
 			continue
 		}
 		for _, id := range []uint8{gsItemEther, gsItemMaxEther, gsItemElixer, gsItemMaxElixer} {
