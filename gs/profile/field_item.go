@@ -81,9 +81,14 @@ func (p *Profile) DecodeFieldItem(reader game.MemoryReader) game.FieldItemState 
 	y, x, rows, cols, _ := gsMenuCursor(reader)
 	pack := gsPackVisible(reader)
 	start := p.DecodeStartMenu(reader).Visible
-	out.UsePromptVisible = pack && strings.Contains(text, "USE") &&
-		strings.Contains(text, "QUIT") &&
-		cols == 1 && rows >= 2 && rows <= 5 && x == 1 && y >= 1 && y <= rows
+	// The native 4-row USE/GIVE/TOSS/QUIT box overwrites the left-hand
+	// PACK graphic, so unlike the scrolling pocket it cannot depend on
+	// gsPackVisible. Require the whole rendered menu instead of stale RAM.
+	out.UsePromptVisible = !out.InBattle &&
+		strings.Contains(text, "USE") && strings.Contains(text, "GIVE") &&
+		strings.Contains(text, "TOSS") && strings.Contains(text, "QUIT") &&
+		reader.Peek8(sym.CurPocket) == gen2PocketItems &&
+		cols == 1 && rows == 4 && x == 1 && y >= 1 && y <= rows
 	out.UseSelected = out.UsePromptVisible && y == 1
 	out.MoveMenuVisible = !out.InBattle &&
 		strings.Contains(strings.ToLower(text), "which move?") &&
