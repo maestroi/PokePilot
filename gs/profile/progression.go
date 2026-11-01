@@ -77,6 +77,9 @@ const (
 	ProgressIndigoPlateauReached game.ProgressID = "gs_indigo_plateau_reached"
 	// Will is proven only by the retail post-battle event, not by reaching his room.
 	ProgressLeagueWillDefeated game.ProgressID = "gs_league_will_defeated"
+	ProgressLeagueKogaDefeated game.ProgressID = "gs_league_koga_defeated"
+	ProgressLeagueBrunoDefeated game.ProgressID = "gs_league_bruno_defeated"
+	ProgressLeagueKarenDefeated game.ProgressID = "gs_league_karen_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -140,6 +143,9 @@ const (
 	eventBeatClair uint16 = 1220
 	// EVENT_BEAT_ELITE_4_WILL in the vendored retail event table.
 	eventBeatEliteFourWill     uint16 = 1464
+	eventBeatEliteFourKoga     uint16 = 1465
+	eventBeatEliteFourBruno    uint16 = 1466
+	eventBeatEliteFourKaren    uint16 = 1467
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
 	eventBlackthornGymBoulder1 uint16 = 1798
@@ -269,6 +275,9 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressRisingBadgeEarned, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeRisingMask != 0},
 		{ID: ProgressIndigoPlateauReached, Complete: reader.Peek8(sym.VisitedSpawns+spawnIndigo/8)&(1<<(spawnIndigo%8)) != 0},
 		{ID: ProgressLeagueWillDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourWill)},
+		{ID: ProgressLeagueKogaDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKoga)},
+		{ID: ProgressLeagueBrunoDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourBruno)},
+		{ID: ProgressLeagueKarenDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKaren)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
