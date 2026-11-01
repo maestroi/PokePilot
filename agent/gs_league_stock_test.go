@@ -33,7 +33,7 @@ func TestGSLeagueIndigoStockUsesActualMartItems(t *testing.T) {
 	// Only items stocked by MartIndigoPlateau in the vendored retail
 	// tables may be selected by the pre-Will shop controller.
 	want := []struct {
-		id uint8
+		id     uint8
 		target int
 	}{
 		{gsItemRevive, 3},
