@@ -30,4 +30,3 @@ func TestGSLeagueChampionGoalsAreOwnedAndFailClosed(t *testing.T) {
 		t.Fatalf("unknown League goal should fail closed, got %v", err)
 	}
 }
-
