@@ -175,22 +175,10 @@ func TestGSLeagueROMCheckpointReplay(t *testing.T) {
 				t.Fatal(err)
 			}
 			startFrame := m.FrameCount()
-			var result ObjectiveResult
-			if target == gsprofile.ProgressLeagueHallOfFameEntered {
-				// Lance stops as soon as his battle event appears. His automatic
-				// ending sequence can still be running, so the ordinary generic
-				// start/finish boundary is not the right interface here.
-				if !before.Story.Has(gsprofile.ProgressLeagueLanceDefeated) {
-					t.Fatal("Hall of Fame continuation requires a proven Lance victory")
-				}
-				err = adapter.WithinObjectiveBudget(o, func() error {
-					var executeErr error
-					result, executeErr = adapter.ExecuteOwned(o)
-					return executeErr
-				})
-			} else {
-				result, err = ExecuteWithAdapter(adapter, o)
-			}
+			// Use the same transaction boundary as the live worker. The GS
+			// adapter's ending-event verifier accepts a cartridge-proven
+			// Lance/Hall transition while its scripted cutscene still runs.
+			result, err := ExecuteWithAdapter(adapter, o)
 			if err != nil {
 				t.Fatalf("%s execution failed after %d frames: %v",
 					target, m.FrameCount()-startFrame, err)
