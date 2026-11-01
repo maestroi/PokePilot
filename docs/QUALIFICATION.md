@@ -613,10 +613,11 @@ that hides the Fang ball is not sufficient. A full Items pocket blocks
 the retail Dragon Fang and gives a typed diagnostic; no item or badge is
 forged. The gap remains a candidate for inventory-space repair.
 
-These are opt-in **experimental**, still ROM-unqualified controllers.
-Real Gold and Silver gameplay replays (particularly the Ice Path forced
-movement and Gym boulder layouts) must be used to fix unexpected
-navigation or script differences before certifying this route.
+The operator has confirmed successful eight-badge runs, so the seventh
+and eighth badge launcher targets are no longer labeled experimental.
+Repeatable Gold and Silver checkpoint replays remain useful to catch
+version-specific Ice Path and Gym boulder navigation regressions; this
+does not qualify the subsequent League and Hall of Fame route.
 
 ### Assigned Strength pit puzzles
 
