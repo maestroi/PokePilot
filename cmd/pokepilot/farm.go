@@ -1111,6 +1111,10 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
 	stats.router.RecordChoiceMenus = spec.TrainingCapture
+	stats.inner.CaptureTrainingPrompts = spec.TrainingCapture
+	if stats.router.Fallback != nil {
+		stats.router.Fallback.CaptureTrainingPrompts = spec.TrainingCapture
+	}
 	stats.decision = decision
 	stats.wirePlannerLogs(logw, snap)
 	benchmarkStarted := time.Now()
