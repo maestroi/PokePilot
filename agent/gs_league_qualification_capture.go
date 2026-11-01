@@ -19,7 +19,7 @@ type gsLeagueCheckpointBoundary struct {
 
 var gsLeagueCheckpointBoundaries = [...]gsLeagueCheckpointBoundary{
 	{gsprofile.ProgressRisingBadgeEarned, gsprofile.ProgressClairDefeated, "post-rising", "DRAGONS_DEN_B1F"},
-	{gsprofile.ProgressIndigoPlateauReached, gsprofile.ProgressRisingBadgeEarned, "post-indigo", "INDIGO_PLATEAU_POKECENTER_1F"},
+	{gsprofile.ProgressIndigoPlateauReached, gsprofile.ProgressRisingBadgeEarned, "post-indigo", "ROUTE_23"},
 	{gsprofile.ProgressLeagueWillDefeated, gsprofile.ProgressIndigoPlateauReached, "post-will", "WILLS_ROOM"},
 	{gsprofile.ProgressLeagueKogaDefeated, gsprofile.ProgressLeagueWillDefeated, "post-koga", "KOGAS_ROOM"},
 	{gsprofile.ProgressLeagueBrunoDefeated, gsprofile.ProgressLeagueKogaDefeated, "post-bruno", "BRUNOS_ROOM"},
