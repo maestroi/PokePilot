@@ -79,11 +79,16 @@ func gsLeagueChooseMedicine(party []game.BattlePartyMon, inv game.InventoryState
 		}
 		item := uint8(0)
 		switch mon.Status {
-		case "poisoned": item = gsItemAntidote
-		case "burned": item = gsItemBurnHeal
-		case "frozen": item = gsItemIceHeal
-		case "asleep": item = gsItemAwakening
-		case "paralyzed": item = gsItemParlyzHeal
+		case "poisoned":
+			item = gsItemAntidote
+		case "burned":
+			item = gsItemBurnHeal
+		case "frozen":
+			item = gsItemIceHeal
+		case "asleep":
+			item = gsItemAwakening
+		case "paralyzed":
+			item = gsItemParlyzHeal
 		}
 		if item != 0 && qty(item) {
 			return gsLeagueMedicine{item: item, slot: i, kind: "status"}, true
@@ -110,7 +115,10 @@ func gsLeagueChooseMedicine(party []game.BattlePartyMon, inv game.InventoryState
 		mon := party[worst]
 		missing := (int(mon.MaxHP)*gsLeagueResourceHPFloor+99)/100 - int(mon.HP)
 		// Use the smallest available heal sufficient to reach the floor.
-		heals := [...]struct{ item uint8; amount int }{
+		heals := [...]struct {
+			item   uint8
+			amount int
+		}{
 			{gsItemPotion, 20}, {gsItemSuperPotion, 50},
 			{gsItemFreshWater, 50}, {gsItemSodaPop, 60},
 			{gsItemLemonade, 80}, {gsItemHyperPotion, 200},
