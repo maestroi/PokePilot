@@ -76,8 +76,8 @@ const (
 	// Victory Road were crossed on foot. It is not Elite Four progress.
 	ProgressIndigoPlateauReached game.ProgressID = "gs_indigo_plateau_reached"
 	// Will is proven only by the retail post-battle event, not by reaching his room.
-	ProgressLeagueWillDefeated game.ProgressID = "gs_league_will_defeated"
-	ProgressLeagueKogaDefeated game.ProgressID = "gs_league_koga_defeated"
+	ProgressLeagueWillDefeated  game.ProgressID = "gs_league_will_defeated"
+	ProgressLeagueKogaDefeated  game.ProgressID = "gs_league_koga_defeated"
 	ProgressLeagueBrunoDefeated game.ProgressID = "gs_league_bruno_defeated"
 	ProgressLeagueKarenDefeated game.ProgressID = "gs_league_karen_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
