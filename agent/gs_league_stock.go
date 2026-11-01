@@ -15,7 +15,7 @@ import (
 // each of these. Target stock is intentionally bounded; remaining money is
 // reserved for campaign repairs rather than spent on every available potion.
 var gsLeagueIndigoStock = [...]struct {
-	item uint8
+	item   uint8
 	target int
 }{
 	{gsItemRevive, 3},
