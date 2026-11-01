@@ -62,7 +62,7 @@ import json
 with gzip.open("planner-training-v1.jsonl.gz", "rt", encoding="utf-8") as f:
     for line in f:
         example = json.loads(line)
-        if example["rejected"] if "rejected" in example else False:
+        if example.get("rejected", False):
             continue
         print(example["task"], example["round"], example.get("execution"))
 ```
