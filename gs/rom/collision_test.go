@@ -280,3 +280,24 @@ func TestGen2WarpCollisionMatchesCheckWarpCollision(t *testing.T) {
 		}
 	}
 }
+
+func TestStaticGridNilBlocksLoadsROMBlockdata(t *testing.T) {
+	rom := loadGold(t)
+	provider := NewFirstBadgeWorldProvider(rom)
+	route36 := collisionMapID(t, "ROUTE_36")
+	spec, err := provider.Grid(route36, nil, worldmodel.TraversalLand)
+	if err != nil {
+		t.Fatalf("Grid(nil): %v", err)
+	}
+	grid, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		t.Fatalf("NativeGridFromSpec: %v", err)
+	}
+	// Route 37 x=15 lands at Route 36 x=35 on the north seam; that tile is a wall.
+	if grid.Walkable(35, 0) {
+		t.Fatal("Route 36 (35,0) must stay unwalkable so connection approach rejects Route 37 (15,17)")
+	}
+	if !grid.Walkable(32, 0) {
+		t.Fatal("Route 36 (32,0) should remain a legal Route 37 landing")
+	}
+}

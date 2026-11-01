@@ -665,6 +665,44 @@ func nativeConnectionEdgeTile(edge world.NativeEdge, i, sourceWidth, sourceHeigh
 	return tx, ty
 }
 
+// nativeConnectionLandingTile is the neighbour tile a source-band index lands
+// on after crossing edge. Dir is the exit direction from the source map.
+func nativeConnectionLandingTile(edge world.NativeEdge, j, destWidth, destHeight int) (tx, ty int) {
+	switch edge.Dir {
+	case 1: // south -> enter neighbour on its north edge
+		return j, 0
+	case 2: // west -> enter neighbour on its east edge
+		return destWidth - 1, j
+	case 3: // east -> enter neighbour on its west edge
+		return 0, j
+	default: // north -> enter neighbour on its south edge
+		return j, destHeight - 1
+	}
+}
+
+// nativeConnectionDestGrid loads the neighbour's static collision when the
+// provider can supply it (ROM blockdata with no live buffer). Unit-test
+// topology stubs without Grid keep the historical source-only band filter.
+func nativeConnectionDestGrid(
+	provider worldmodel.NativeMapTopologyProvider,
+	mapID uint16,
+	live game.LiveTopologyState,
+) (*world.NativeGrid, bool) {
+	gp, ok := provider.(worldmodel.NativeGridProvider)
+	if !ok {
+		return nil, false
+	}
+	spec, err := gp.Grid(mapID, nil, worldmodel.TraversalMode(live.Traversal))
+	if err != nil {
+		return nil, false
+	}
+	dest, err := world.NativeGridFromSpec(spec)
+	if err != nil {
+		return nil, false
+	}
+	return dest, true
+}
+
 func nativeConnectionApproach(
 	provider worldmodel.NativeMapTopologyProvider,
 	grid *world.NativeGrid,
@@ -677,6 +715,7 @@ func nativeConnectionApproach(
 	if err != nil {
 		return nil, world.NativeStep{}, err
 	}
+	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, live)
 
 	var best []world.NativeStep
 	found := false
@@ -685,12 +724,23 @@ func nativeConnectionApproach(
 		// neighbour's origin lies further along the shared edge than ours. A
 		// source tile i therefore lands on neighbour tile i - 2*Offset. (Gen-I
 		// graphs carry the ROM's pre-negated tile alignment, hence i + Offset.)
-		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
+		j := i - 2*int(edge.Offset)
+		if j < 0 || j >= destLimit {
 			continue
 		}
 		tx, ty := nativeConnectionEdgeTile(edge, i, sourceWidth, sourceHeight)
 		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
 			continue
+		}
+		// A source-edge tile whose neighbour landing is a wall/tree cannot
+		// cross (Route 37 (15,17) -> Route 36 (35,0) wall). Gen-I already
+		// scopes connection bands by destination walkability; require the
+		// same positive landing postcondition when a dest grid is available.
+		if haveDest {
+			lx, ly := nativeConnectionLandingTile(edge, j, destGrid.Width, destGrid.Height)
+			if !destGrid.Walkable(lx, ly) {
+				continue
+			}
 		}
 		path, pathErr := world.FindNativePath(grid, sx, sy, tx, ty, blocked)
 		if pathErr != nil {
@@ -708,7 +758,7 @@ func nativeConnectionApproach(
 }
 
 // nativeConnectionTargets lists the walkable, unblocked tiles of a connection
-// band: any one of them leaves the map.
+// band whose neighbour landing is also enterable: any one of them leaves the map.
 func nativeConnectionTargets(
 	provider worldmodel.NativeMapTopologyProvider,
 	grid *world.NativeGrid,
@@ -720,14 +770,22 @@ func nativeConnectionTargets(
 	if err != nil {
 		return nil, err
 	}
+	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, live)
 	var targets [][2]int
 	for i := 0; i < limit; i++ {
-		if j := i - 2*int(edge.Offset); j < 0 || j >= destLimit {
+		j := i - 2*int(edge.Offset)
+		if j < 0 || j >= destLimit {
 			continue
 		}
 		tx, ty := nativeConnectionEdgeTile(edge, i, sourceWidth, sourceHeight)
 		if blocked[[2]int{tx, ty}] || !grid.Walkable(tx, ty) {
 			continue
+		}
+		if haveDest {
+			lx, ly := nativeConnectionLandingTile(edge, j, destGrid.Width, destGrid.Height)
+			if !destGrid.Walkable(lx, ly) {
+				continue
+			}
 		}
 		targets = append(targets, [2]int{tx, ty})
 	}
