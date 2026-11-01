@@ -62,8 +62,8 @@ type LLMPlanner struct {
 	// FailoverPlanner copies the messages into the completed call before
 	// another request can overwrite them.
 	CaptureTrainingPrompts bool
-	LastTrainingSystem    string
-	LastTrainingUser      string
+	LastTrainingSystem     string
+	LastTrainingUser       string
 
 	// ReplyLog is PromptLog's other half: it receives the reply content
 	// verbatim, as the server sent it, once per call — including replies
