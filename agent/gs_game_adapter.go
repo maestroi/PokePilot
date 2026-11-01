@@ -92,8 +92,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressBlackthornGymBouldersDropped,
 		gsprofile.ProgressClairDefeated,
 		gsprofile.ProgressRisingBadgeEarned,
-		// Experimental League approach; the Elite Four stays unsupported.
-		gsprofile.ProgressIndigoPlateauReached:
+		// Experimental League approach and the first event-verified Elite Four challenge.
+		gsprofile.ProgressIndigoPlateauReached,
+		gsprofile.ProgressLeagueWillDefeated:
 		return true
 	default:
 		return false
@@ -298,6 +299,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSDragonFangRising(a.m, a.romData)
 		case gsprofile.ProgressIndigoPlateauReached:
 			err = executeGSIndigoPlateau(a.m, a.romData)
+		case gsprofile.ProgressLeagueWillDefeated:
+			err = executeGSLeagueWill(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -358,7 +361,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressBlackthornGymBouldersDropped,
 			gsprofile.ProgressClairDefeated,
 			gsprofile.ProgressRisingBadgeEarned,
-			gsprofile.ProgressIndigoPlateauReached:
+			gsprofile.ProgressIndigoPlateauReached,
+			gsprofile.ProgressLeagueWillDefeated:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -812,6 +816,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressIndigoPlateauReached,
 			Note:     "(experimental: fly to New Bark, Surf Route 27 through Tohjo Falls, pass the badge gate, beat the rival in Victory Road and reach Indigo Plateau)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueWillDefeated,
+			Note:     "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will; later rounds remain unsupported)",
 		}}
 	default:
 		return nil

@@ -398,11 +398,12 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"BLACKTHORN_GYM_1F", "BLACKTHORN_GYM_2F",
 		// pret maps.asm: switch-room entrances use TILESET_ELITE_FOUR_ROOM so
 		// city-exit block $1c decodes as COLL_WARP_CARPET_DOWN, not floor.
-		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES":
+		"GOLDENROD_UNDERGROUND_SWITCH_ROOM_ENTRANCES",
+		"WILLS_ROOM", "KOGAS_ROOM", "BRUNOS_ROOM", "KARENS_ROOM":
 		return 0x0e, true
 	case "OLIVINE_CAFE":
 		return 0x0d, true
-	case "OLIVINE_GYM":
+	case "OLIVINE_GYM", "LANCES_ROOM":
 		return 0x11, true
 	case "OLIVINE_LIGHTHOUSE_1F", "OLIVINE_LIGHTHOUSE_2F", "OLIVINE_LIGHTHOUSE_3F",
 		"OLIVINE_LIGHTHOUSE_4F", "OLIVINE_LIGHTHOUSE_5F", "OLIVINE_LIGHTHOUSE_6F":
@@ -418,7 +419,7 @@ func firstBadgeTileset(mapName string) (uint8, bool) {
 		"TOHJO_FALLS", "VICTORY_ROAD":
 		return 0x15, true
 	case "ICE_PATH_1F", "ICE_PATH_B1F", "ICE_PATH_B2F_MAHOGANY_SIDE",
-		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F":
+		"ICE_PATH_B2F_BLACKTHORN_SIDE", "ICE_PATH_B3F", "HALL_OF_FAME":
 		return 0x1a, true
 	case "ILEX_FOREST":
 		return 0x1c, true

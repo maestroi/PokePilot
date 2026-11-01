@@ -89,6 +89,15 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				goals[0].Progress != gsprofile.ProgressIndigoPlateauReached || !adapter.SupportsObjective(goals[0]) {
 				t.Fatalf("completed Rising Badge must offer only the Indigo Plateau approach: %+v", goals)
 			}
+			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressIndigoPlateauReached, Complete: true})
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+				goals[0].Progress != gsprofile.ProgressLeagueWillDefeated || !adapter.SupportsObjective(goals[0]) {
+				t.Fatalf("Indigo Plateau should offer only the Will challenge: %+v", goals)
+			}
+			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressLeagueWillDefeated, Complete: true})
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
+				t.Fatalf("Will defeat must not offer unimplemented Koga or Champion: %+v", goals)
+			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
 				t.Fatal("Rising Badge should now have an owned executor")
 			}
