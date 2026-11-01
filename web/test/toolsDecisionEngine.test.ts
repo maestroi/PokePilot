@@ -71,3 +71,10 @@ test('live and archive views show the run decision engine', () => {
   assert.match(liveSource, /\['Decision engine', decisionEngineLabel\(run\)\]/)
   assert.match(archiveSource, /decisionEngineLabel\(run\)/)
 })
+
+test('new runs can opt into single-strategist training capture', () => {
+  assert.match(typesSource, /export interface RunSpec[\s\S]*training_capture\?: boolean/)
+  assert.match(toolsSource, /training_capture: false/)
+  assert.match(toolsSource, /v-model="form\.training_capture"/)
+  assert.match(toolsSource, /training_capture: isLLM\.value && !!form\.training_capture/)
+})
