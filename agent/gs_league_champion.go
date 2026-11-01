@@ -13,10 +13,10 @@ import (
 const (
 	// LancesRoom.asm: (4,5) is the left scripted approach tile. Lance is
 	// at (5,2); he is not an ordinary face-and-talk object battle.
-	gsChampionApproachX uint8 = 4
-	gsChampionApproachY uint8 = 5
-	gsChampionAttempts        = 4
-	gsChampionIdleFrames      = 75
+	gsChampionApproachX  uint8 = 4
+	gsChampionApproachY  uint8 = 5
+	gsChampionAttempts         = 4
+	gsChampionIdleFrames       = 75
 )
 
 var errGSChampionSceneIdle = errors.New("gen2 League Champion script did not start")
