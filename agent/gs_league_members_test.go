@@ -12,11 +12,11 @@ import (
 // or a predecessor; each member's retail victory is separately observable.
 func TestGSLeagueMiddleMembersFormSequentialOwnedMilestones(t *testing.T) {
 	want := []struct {
-		progress game.ProgressID
-		previous game.ProgressID
-		room string
+		progress     game.ProgressID
+		previous     game.ProgressID
+		room         string
 		previousRoom string
-		encounter string
+		encounter    string
 	}{
 		{gsprofile.ProgressLeagueKogaDefeated, gsprofile.ProgressLeagueWillDefeated, "KOGAS_ROOM", "WILLS_ROOM", "league:koga"},
 		{gsprofile.ProgressLeagueBrunoDefeated, gsprofile.ProgressLeagueKogaDefeated, "BRUNOS_ROOM", "KOGAS_ROOM", "league:bruno"},
