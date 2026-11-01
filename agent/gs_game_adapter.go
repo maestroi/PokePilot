@@ -831,6 +831,8 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressIndigoPlateauReached,
 			Note:     "(experimental: fly to New Bark, Surf Route 27 through Tohjo Falls, pass the badge gate, beat the rival in Victory Road and reach Indigo Plateau)",
 		}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
+		return nil // durable Hall of Fame proof survives Indigo rematch flag reset
 	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
@@ -855,8 +857,6 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressLeagueKarenDefeated,
 			Note:     "(experimental: continue through Bruno's opened exit and defeat Elite Four Karen)",
 		}}
-	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
-		return nil // permanent Hall of Fame event supersedes resettable room victories
 	case !obs.Story.Has(gsprofile.ProgressLeagueLanceDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
