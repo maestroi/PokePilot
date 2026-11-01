@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	gameruntime "github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/profiles"
 	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/world"
+	"github.com/maestroi/pokepilot/worldmodel"
 )
 
 const (
@@ -152,6 +154,11 @@ func withAsleepRoute16Snorlax(g *world.Graph, romData []byte, mem *state.Mem) (*
 	if g == nil || mem == nil || state.HasEvent(mem, eventBeatRoute16Snorlax) {
 		return g, nil
 	}
+	if _, overlaid := g.MapTraversal(route16Map); overlaid {
+		// A live/current-map overlay already owns Route 16 (including the
+		// Snorlax punch from applyGoToCompatibilityLocalTopology).
+		return g, nil
+	}
 	h, err := rom.ParseMap(romData, route16Map)
 	if err != nil {
 		return nil, err
@@ -163,6 +170,134 @@ func withAsleepRoute16Snorlax(g *world.Graph, romData []byte, mem *state.Mem) (*
 	grid.Set(route16SnorlaxX, route16SnorlaxY, false)
 	openRoute16CutPassage(grid, romData, mem)
 	return g.WithMapGrid(route16Map, grid)
+}
+
+// withROMBoulderHomeTopology splits Strength-boulder maps on each boulder
+// sprite's ROM home tile and, when Victory Road switch events are set, opens
+// the matching ReplaceTileBlock doors. Static collision treats boulder tiles
+// as floor and switch doors as closed, so component routing through an
+// unvisited floor can invent a walk live sprites will refuse — or miss the
+// only honest exit once that false walk is removed.
+//
+// MEASURED on run-11wa4vv6piic82mkqrmqxtwere (triage 0ab406fc7ad49f58): from a
+// cleared-cave Victory Road 1F checkpoint, GoTo planned 2F (23,7) -> 3F
+// (23,7) -> 3F (26,8) -> 2F exit because static 3F walks across BOULDER3's
+// home at (24,10). Live sprites block that tile, so the journey warped onto
+// the west ladder, found no path to the exit-side pad, and died with
+// world: no route back at 2F (23,7). Seeding boulder homes removes that
+// phantom; seeding the already-set switch doors restores the real west-to-
+// exit-side walk map scripts would open on 2F entry.
+//
+// Live overlays already punch the current map's present boulders; this seeds
+// the same split for maps the journey has not entered yet. A later live
+// overlay replaces the home-tile guess once the floor is loaded.
+//
+// The returned graph is a snapshot. The cached ROM graph is not mutated.
+func withROMBoulderHomeTopology(g *world.Graph, romData []byte, mem *state.Mem) (*world.Graph, error) {
+	if g == nil || len(romData) == 0 {
+		return g, nil
+	}
+	provider, err := routingProviderForROM(romData)
+	if err != nil {
+		return nil, err
+	}
+	boulderSprite := gen1BoulderSpriteID(romData)
+	doorsByMap := map[uint8][]victoryRoadSwitchDoor{}
+	if mem != nil {
+		for _, door := range victoryRoadSwitchDoors() {
+			if state.HasEvent(mem, door.event) {
+				doorsByMap[door.mapID] = append(doorsByMap[door.mapID], door)
+			}
+		}
+	}
+	out := g
+	for _, mapID := range provider.MapIDs() {
+		if _, overlaid := out.MapTraversal(mapID); overlaid {
+			// Keep a live/current-map overlay (pushed boulder positions beat
+			// ROM homes) and any earlier static story overlay.
+			continue
+		}
+		h, err := provider.ParseMap(mapID)
+		if err != nil {
+			continue
+		}
+		var homes [][2]int
+		for _, o := range h.Objects {
+			if o.Movement != worldmodel.ObjectMovementStay || o.NativeSpriteID != uint16(boulderSprite) {
+				continue
+			}
+			homes = append(homes, [2]int{int(o.X), int(o.Y)})
+		}
+		doors := doorsByMap[mapID]
+		if len(homes) == 0 && len(doors) == 0 {
+			continue
+		}
+		spec, err := provider.Grid(mapID, nil, world.TraversalLand)
+		if err != nil {
+			return nil, fmt.Errorf("skill: boulder-home topology for map %#02x: %w", mapID, err)
+		}
+		grid, err := world.GridFromSpec(spec)
+		if err != nil {
+			return nil, fmt.Errorf("skill: boulder-home topology for map %#02x: %w", mapID, err)
+		}
+		for _, door := range doors {
+			applyLiveOpenBlock(grid, door.blockY, door.blockX)
+		}
+		for _, at := range homes {
+			grid.Set(at[0], at[1], false)
+		}
+		out, err = out.WithMapGrid(mapID, grid)
+		if err != nil {
+			return nil, fmt.Errorf("skill: boulder-home topology for map %#02x: %w", mapID, err)
+		}
+	}
+	return out, nil
+}
+
+// gen1BoulderSpriteID is the cartridge-native SPRITE_BOULDER picture id.
+// Yellow inserted sprites ahead of the boulder, so its ROM object tables use
+// $49 while Red/Blue (and the shared RAM decoder's canonical view) use $3f.
+func gen1BoulderSpriteID(romData []byte) uint8 {
+	profile, _, err := profiles.Detect(romData)
+	if err == nil && string(profile.ID()) == "pokemon-yellow" {
+		return 0x49
+	}
+	return state.BoulderPictureID
+}
+
+// withGen1StaticRouteTopology applies the Gen-I static overlays every
+// capability-aware GoTo/RoutePlanner snapshot needs before pricing a journey:
+// asleep Route 16 Snorlax, Victory Road boulder homes plus event-backed switch
+// doors, and Surf sea topology.
+func withGen1StaticRouteTopology(g *world.Graph, romData []byte, mem *state.Mem) (*world.Graph, error) {
+	g, err := withAsleepRoute16Snorlax(g, romData, mem)
+	if err != nil {
+		return nil, err
+	}
+	g, err = withROMBoulderHomeTopology(g, romData, mem)
+	if err != nil {
+		return nil, err
+	}
+	return withSurfSeaTopology(g, romData, mem)
+}
+
+// victoryRoadSwitchDoor is one ReplaceTileBlock the cave scripts apply when
+// a Strength switch event is already set. Coordinates match the decomp's
+// lb bc, blockY, blockX loads (see pokered/pokeyellow scripts/VictoryRoad*F.asm).
+type victoryRoadSwitchDoor struct {
+	mapID  uint8
+	event  state.Event
+	blockY int
+	blockX int
+}
+
+func victoryRoadSwitchDoors() []victoryRoadSwitchDoor {
+	return []victoryRoadSwitchDoor{
+		{victoryRoad1FMap, eventVictoryRoad1BoulderOnSwitch, 6, 4},
+		{victoryRoad2FMap, eventVictoryRoad2BoulderOnSwitch1, 4, 3},
+		{victoryRoad2FMap, eventVictoryRoad2BoulderOnSwitch2, 7, 11},
+		{victoryRoad3FMap, eventVictoryRoad3BoulderOnSwitch1, 5, 3},
+	}
 }
 
 // openRoute16CutPassage opens the Cut tree at (34,9) in a Route 16 grid while

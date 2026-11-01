@@ -38,13 +38,9 @@ func routePlannerGen1Compatibility(
 	if err != nil {
 		return nil, world.RoutePrerequisites{}, nil, err
 	}
-	if cur != route16Map {
-		routeGraph, err = withAsleepRoute16Snorlax(routeGraph, romData, &mem)
-		if err != nil {
-			return nil, world.RoutePrerequisites{}, nil, err
-		}
-	}
-	if routeGraph, err = withSurfSeaTopology(routeGraph, romData, &mem); err != nil {
+	// Live current-map overlay is already applied, so boulder-home seeding
+	// skips map `cur` and only splits unvisited Strength floors.
+	if routeGraph, err = withGen1StaticRouteTopology(routeGraph, romData, &mem); err != nil {
 		return nil, world.RoutePrerequisites{}, nil, err
 	}
 	// Red's Route 23 Surf pivots are scoped to the player's position (the
