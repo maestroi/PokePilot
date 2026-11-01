@@ -21,6 +21,9 @@ type LLMCall struct {
 	Model      string
 	Backend    string
 	PromptHash string
+	// Exact prompt that this call sent; populated only on training opt-in.
+	TrainingSystem string
+	TrainingUser   string
 	Err        error
 	Duration   time.Duration
 }
@@ -104,6 +107,9 @@ func (p *FailoverPlanner) askPlan(obs Observation, offered []Objective, reason s
 
 func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered []Objective, reason string, retry *Retry) (Plan, error, bool) {
 	beforeTransport := active.Health.Transport
+	if active.CaptureTrainingPrompts {
+		active.LastTrainingSystem, active.LastTrainingUser = "", ""
+	}
 	start := time.Now()
 	var (
 		plan Plan
@@ -129,6 +135,8 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 			Model:             active.Model,
 			Backend:           p.lastBackend,
 			PromptHash:        active.StrategicPromptHash(),
+			TrainingSystem:    active.LastTrainingSystem,
+			TrainingUser:      active.LastTrainingUser,
 			Err:               err,
 			Duration:          time.Since(start),
 		})
@@ -160,6 +168,9 @@ func (p *FailoverPlanner) ask(obs Observation, offered []Objective, retry *Retry
 
 func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Objective, retry *Retry) (Objective, error, bool) {
 	beforeTransport := active.Health.Transport
+	if active.CaptureTrainingPrompts {
+		active.LastTrainingSystem, active.LastTrainingUser = "", ""
+	}
 	start := time.Now()
 	var (
 		o   Objective
@@ -179,6 +190,8 @@ func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Ob
 			Model:             active.Model,
 			Backend:           p.lastBackend,
 			PromptHash:        active.PromptHash(),
+			TrainingSystem:    active.LastTrainingSystem,
+			TrainingUser:      active.LastTrainingUser,
 			Err:               err,
 			Duration:          time.Since(start),
 		})
