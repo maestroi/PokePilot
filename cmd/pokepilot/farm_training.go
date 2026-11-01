@@ -41,33 +41,33 @@ type plannerTrainingExecution struct {
 // NOT a positive reward label. Offline filtering must reject failures,
 // duplicates, and outcomes that do not actually demonstrate useful progress.
 type plannerTrainingExample struct {
-	Version      int                       `json:"version"`
-	Task         string                    `json:"task"`
-	RunID        string                    `json:"run_id"`
-	Attempt      int                       `json:"attempt"`
-	Game         string                    `json:"game"`
-	Seed         int64                     `json:"seed"`
-	ROMSHA256    string                    `json:"rom_sha256"`
-	Build        string                    `json:"build"`
-	Goal         string                    `json:"goal,omitempty"`
-	Round        int                       `json:"round"`
-	Model        string                    `json:"model,omitempty"`
-	Backend      string                    `json:"backend,omitempty"`
-	PromptHash   string                    `json:"prompt_hash,omitempty"`
+	Version     int     `json:"version"`
+	Task        string  `json:"task"`
+	RunID       string  `json:"run_id"`
+	Attempt     int     `json:"attempt"`
+	Game        string  `json:"game"`
+	Seed        int64   `json:"seed"`
+	ROMSHA256   string  `json:"rom_sha256"`
+	Build       string  `json:"build"`
+	Goal        string  `json:"goal,omitempty"`
+	Round       int     `json:"round"`
+	Model       string  `json:"model,omitempty"`
+	Backend     string  `json:"backend,omitempty"`
+	PromptHash  string  `json:"prompt_hash,omitempty"`
 	// These are the exact wire messages as requested from the live model,
 	// including run-specific goal, policy notes, and retry feedback.
-	SystemPrompt string                    `json:"system_prompt,omitempty"`
-	UserPrompt   string                    `json:"user_prompt,omitempty"`
-	Observation  agent.Observation         `json:"observation"`
-	Offered      []string                  `json:"offered"`
-	ReplanReason string                    `json:"replan_reason,omitempty"`
-	PlanGoal     string                    `json:"plan_goal,omitempty"`
-	PlanSteps    []string                  `json:"plan_steps,omitempty"`
-	PlanBoundary bool                      `json:"plan_boundary,omitempty"`
-	Choice       string                    `json:"choice,omitempty"`
-	Rejected     bool                      `json:"rejected,omitempty"`
-	Error        string                    `json:"error,omitempty"`
-	Execution    *plannerTrainingExecution `json:"execution,omitempty"`
+	SystemPrompt  string                     `json:"system_prompt,omitempty"`
+	UserPrompt    string                     `json:"user_prompt,omitempty"`
+	Observation   agent.Observation          `json:"observation"`
+	Offered       []string                   `json:"offered"`
+	ReplanReason  string                     `json:"replan_reason,omitempty"`
+	PlanGoal      string                     `json:"plan_goal,omitempty"`
+	PlanSteps     []string                   `json:"plan_steps,omitempty"`
+	PlanBoundary  bool                       `json:"plan_boundary,omitempty"`
+	Choice        string                     `json:"choice,omitempty"`
+	Rejected      bool                       `json:"rejected,omitempty"`
+	Error         string                     `json:"error,omitempty"`
+	Execution     *plannerTrainingExecution  `json:"execution,omitempty"`
 }
 
 // writeFarmTrainingCorpus exports ALL model calls for an opted-in run, rather
