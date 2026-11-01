@@ -18,11 +18,11 @@ type LLMCall struct {
 	Strategic         bool
 	// Model/Backend/PromptHash identify the actual endpoint and prompt contract
 	// for this call, including transport failover (not just the run default).
-	Model             string
-	Backend           string
-	PromptHash        string
-	Err               error
-	Duration          time.Duration
+	Model      string
+	Backend    string
+	PromptHash string
+	Err        error
+	Duration   time.Duration
 }
 
 // LLMRoute is the endpoint used for the most recent ask and the number of
@@ -165,15 +165,15 @@ func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Ob
 	}
 	if p.OnCall != nil {
 		p.OnCall(LLMCall{
-			Observation: obs,
-			Offered:     len(offered),
+			Observation:       obs,
+			Offered:           len(offered),
 			OfferedObjectives: objectiveStrings(offered),
-			Objective:   o,
-			Model:       active.Model,
-			Backend:     p.lastBackend,
-			PromptHash:  active.PromptHash(),
-			Err:         err,
-			Duration:    time.Since(start),
+			Objective:         o,
+			Model:             active.Model,
+			Backend:           p.lastBackend,
+			PromptHash:        active.PromptHash(),
+			Err:               err,
+			Duration:          time.Since(start),
 		})
 	}
 	return o, err, active.Health.Transport > beforeTransport
