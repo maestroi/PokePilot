@@ -230,6 +230,9 @@ const gen2Goals = [
   ['Earn 8 badges.', '8 badges · Rising · Clair · experimental'],
   ['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'],
   ['progress:gs_league_will_defeated', 'Elite Four · Will · experimental'],
+  ['progress:gs_league_koga_defeated', 'Elite Four · Koga · experimental'],
+  ['progress:gs_league_bruno_defeated', 'Elite Four · Bruno · experimental'],
+  ['progress:gs_league_karen_defeated', 'Elite Four · Karen · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 
