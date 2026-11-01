@@ -82,7 +82,7 @@ const (
 	ProgressLeagueKarenDefeated game.ProgressID = "gs_league_karen_defeated"
 	// Lance's battle flag resets on a new Indigo challenge. The Hall of
 	// Fame event is a separate durable story fact set by its own ceremony.
-	ProgressLeagueLanceDefeated      game.ProgressID = "gs_league_lance_defeated"
+	ProgressLeagueLanceDefeated     game.ProgressID = "gs_league_lance_defeated"
 	ProgressLeagueHallOfFameEntered game.ProgressID = "gs_league_hall_of_fame"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
@@ -146,14 +146,14 @@ const (
 	// scene, while the eighth badge is an independent engine flag.
 	eventBeatClair uint16 = 1220
 	// EVENT_BEAT_ELITE_4_WILL in the vendored retail event table.
-	eventBeatEliteFourWill     uint16 = 1464
-	eventBeatEliteFourKoga     uint16 = 1465
-	eventBeatEliteFourBruno    uint16 = 1466
-	eventBeatEliteFourKaren    uint16 = 1467
-	eventBeatChampionLance uint16 = 1468
+	eventBeatEliteFourWill  uint16 = 1464
+	eventBeatEliteFourKoga  uint16 = 1465
+	eventBeatEliteFourBruno uint16 = 1466
+	eventBeatEliteFourKaren uint16 = 1467
+	eventBeatChampionLance  uint16 = 1468
 	// EVENT_BEAT_ELITE_FOUR is set by the Hall of Fame scene, never by
 	// Lance's trainer-battle script.
-	eventBeatEliteFour uint16 = 68
+	eventBeatEliteFour         uint16 = 68
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
 	eventBlackthornGymBoulder1 uint16 = 1798
