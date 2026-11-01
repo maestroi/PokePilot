@@ -57,6 +57,14 @@ type LLMPlanner struct {
 	// it so a scored run can show exactly what the model was told.
 	PromptLog io.Writer
 
+	// CaptureTrainingPrompts retains the exact request messages for offline
+	// supervision. Off by default; these may be large and are run-private.
+	// FailoverPlanner copies the messages into the completed call before
+	// another request can overwrite them.
+	CaptureTrainingPrompts bool
+	LastTrainingSystem    string
+	LastTrainingUser      string
+
 	// ReplyLog is PromptLog's other half: it receives the reply content
 	// verbatim, as the server sent it, once per call — including replies
 	// that are about to be rejected for shape, which are the ones worth
@@ -969,6 +977,9 @@ func (p *LLMPlanner) askRequest(system, user, schemaName string, schema map[stri
 			timeout = 60 * time.Second
 		}
 		client = &http.Client{Timeout: timeout}
+	}
+	if p.CaptureTrainingPrompts {
+		p.LastTrainingSystem, p.LastTrainingUser = system, user
 	}
 	if p.PromptLog != nil {
 		fmt.Fprintf(p.PromptLog, "=== prompt (model %s, prompt %s) ===\n[system]\n%s\n[user]\n%s\n",
