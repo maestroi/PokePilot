@@ -46,7 +46,11 @@ func TestGSLeagueQualificationCapturesVerifiedFirstTransitions(t *testing.T) {
 					{"rematch after Hall", goal, before, gsLeagueCaptureObs(id, stage.previous, stage.progress, gsprofile.ProgressLeagueHallOfFameEntered)},
 					{"cross-version replay", goal, before, func() Observation {
 						v := after
-						if id == gsprofile.GoldGameID { v.GameID = gsprofile.SilverGameID } else { v.GameID = gsprofile.GoldGameID }
+						if id == gsprofile.GoldGameID {
+							v.GameID = gsprofile.SilverGameID
+						} else {
+							v.GameID = gsprofile.GoldGameID
+						}
 						return v
 					}()},
 				}
