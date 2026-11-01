@@ -128,6 +128,7 @@ func writeFarmTrainingCorpus(spec farm.Spec, res agent.Result, calls []agent.LLM
 			}
 		} else if call.Err == nil {
 			ex.Choice = call.Objective.String()
+			ex.ChoiceIntent = call.Objective.Purpose
 			selected = ex.Choice
 		}
 		if settled, ok := outcomes[ex.Round]; ok && selected != "" && settled.Objective.String() == selected {
