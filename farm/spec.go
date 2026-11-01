@@ -103,7 +103,7 @@ type Spec struct {
 	// TrainingCapture opts this run into a complete, compressed strategist/chooser
 	// dataset artifact. Disabled by default; it does not alter gameplay policy.
 	TrainingCapture bool `json:"training_capture,omitempty"`
-	FPS            int                 `json:"fps"`
+	FPS             int  `json:"fps"`
 	// MaxRounds is an OPTIONAL emergency/experiment cap for an LLM run.
 	// Zero is the normal goal-driven mode: there is no hard round limit and
 	// the run ends on goal completion, a real failure, cancellation, or the
