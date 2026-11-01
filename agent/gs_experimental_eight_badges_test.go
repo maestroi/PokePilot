@@ -94,9 +94,30 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				goals[0].Progress != gsprofile.ProgressLeagueWillDefeated || !adapter.SupportsObjective(goals[0]) {
 				t.Fatalf("Indigo Plateau should offer only the Will challenge: %+v", goals)
 			}
-			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressLeagueWillDefeated, Complete: true})
-			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-				t.Fatalf("Will defeat must not offer unimplemented Koga or Champion: %+v", goals)
+			for _, next := range []ProgressID{
+				gsprofile.ProgressLeagueWillDefeated,
+				gsprofile.ProgressLeagueKogaDefeated,
+				gsprofile.ProgressLeagueBrunoDefeated,
+				gsprofile.ProgressLeagueKarenDefeated,
+			} {
+				obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
+				goals := adapter.ProgressionObjectives(obs)
+				if next == gsprofile.ProgressLeagueKarenDefeated {
+					if len(goals) != 0 {
+						t.Fatalf("Karen must not offer unimplemented Champion Lance: %+v", goals)
+					}
+					continue
+				}
+				want := gsprofile.ProgressLeagueKogaDefeated
+				switch next {
+				case gsprofile.ProgressLeagueKogaDefeated:
+					want = gsprofile.ProgressLeagueBrunoDefeated
+				case gsprofile.ProgressLeagueBrunoDefeated:
+					want = gsprofile.ProgressLeagueKarenDefeated
+				}
+				if len(goals) != 1 || goals[0].Progress != want || !adapter.SupportsObjective(goals[0]) {
+					t.Fatalf("after %s expect only %s: %+v", next, want, goals)
+				}
 			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
 				t.Fatal("Rising Badge should now have an owned executor")
