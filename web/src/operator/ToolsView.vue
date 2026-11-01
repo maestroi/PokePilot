@@ -44,6 +44,7 @@ const form = reactive<RunSpec>({
   risk_tolerance: 'balanced',
   wild_encounters: 'planner',
   reasoning_effort: '',
+  training_capture: false,
   fps: launchDefaults.fps,
   max_rounds: 0,
   max_frames: 0,
@@ -312,6 +313,7 @@ async function submit(): Promise<void> {
       wild_encounters: isLLM.value ? form.wild_encounters : '',
       reasoning_effort: isLLM.value ? form.reasoning_effort : '',
       decision_engine: decisionRequest(),
+      training_capture: isLLM.value && !!form.training_capture,
       recovery_profile: isLLM.value ? form.recovery_profile : 'strict'
     }
     if (fullE2ESelected.value) spec = productionRunSpec(spec)
@@ -639,6 +641,14 @@ async function submit(): Promise<void> {
             <option value="strict">Strict · stop after bounded recovery</option>
           </select>
           <span class="mt-1 block text-[11px] text-slate-600">Resilient escalates from local resume to progressively older milestone checkpoints instead of ending the campaign on a stuck/failed attempt.</span>
+        </label>
+
+        <label v-if="isLLM" class="sm:col-span-2 flex items-start gap-3 rounded-md border border-white/8 bg-black/10 px-3 py-3 text-sm text-slate-300">
+          <input v-model="form.training_capture" type="checkbox" class="mt-0.5 size-4 rounded border-white/20 bg-white/5 text-cyan-400 focus:ring-cyan-400" />
+          <span>
+            <span class="block font-medium">Collect planner training data</span>
+            <span class="mt-1 block text-xs text-slate-500">Save the current LLM's decisions and matched gameplay outcomes as a compressed run artifact. No extra model is used. Off by default.</span>
+          </span>
         </label>
 
         <div class="sm:col-span-2 flex flex-wrap gap-4 rounded-md border border-white/8 bg-black/10 px-3 py-3">
