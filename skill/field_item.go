@@ -101,6 +101,12 @@ func useFieldItemWithDecoders(
 		return fmt.Errorf("skill: UseFieldItem: item list did not open after ITEM")
 	}
 
+	// Gold/Silver remember the previously open PACK pocket across uses.
+	// Select the native Items pocket before interpreting its zero-based index.
+	// Single-pocket profiles report Unknown and keep their old behavior.
+	if err := selectItemPocketWithDecoder(m, list, inventoryPocket(inventory.DecodeInventory(m), item)); err != nil {
+		return fmt.Errorf("skill: UseFieldItem: select item pocket: %w", err)
+	}
 	for attempt := 0; ; attempt++ {
 		if err := selectScrollingListEntryWithDecoder(m, list, idx); err != nil {
 			return fmt.Errorf("skill: UseFieldItem: select bag entry: %w", err)
