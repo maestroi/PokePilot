@@ -80,6 +80,10 @@ const (
 	ProgressLeagueKogaDefeated  game.ProgressID = "gs_league_koga_defeated"
 	ProgressLeagueBrunoDefeated game.ProgressID = "gs_league_bruno_defeated"
 	ProgressLeagueKarenDefeated game.ProgressID = "gs_league_karen_defeated"
+	// Lance's battle flag resets on a new Indigo challenge. The Hall of
+	// Fame event is a separate durable story fact set by its own ceremony.
+	ProgressLeagueLanceDefeated     game.ProgressID = "gs_league_lance_defeated"
+	ProgressLeagueHallOfFameEntered game.ProgressID = "gs_league_hall_of_fame"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -142,10 +146,14 @@ const (
 	// scene, while the eighth badge is an independent engine flag.
 	eventBeatClair uint16 = 1220
 	// EVENT_BEAT_ELITE_4_WILL in the vendored retail event table.
-	eventBeatEliteFourWill     uint16 = 1464
-	eventBeatEliteFourKoga     uint16 = 1465
-	eventBeatEliteFourBruno    uint16 = 1466
-	eventBeatEliteFourKaren    uint16 = 1467
+	eventBeatEliteFourWill  uint16 = 1464
+	eventBeatEliteFourKoga  uint16 = 1465
+	eventBeatEliteFourBruno uint16 = 1466
+	eventBeatEliteFourKaren uint16 = 1467
+	eventBeatChampionLance  uint16 = 1468
+	// EVENT_BEAT_ELITE_FOUR is set by the Hall of Fame scene, never by
+	// Lance's trainer-battle script.
+	eventBeatEliteFour         uint16 = 68
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
 	eventBlackthornGymBoulder1 uint16 = 1798
@@ -278,6 +286,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLeagueKogaDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKoga)},
 		{ID: ProgressLeagueBrunoDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourBruno)},
 		{ID: ProgressLeagueKarenDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKaren)},
+		{ID: ProgressLeagueLanceDefeated, Complete: hasGSEvent(reader, eventBeatChampionLance)},
+		{ID: ProgressLeagueHallOfFameEntered, Complete: hasGSEvent(reader, eventBeatEliteFour)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

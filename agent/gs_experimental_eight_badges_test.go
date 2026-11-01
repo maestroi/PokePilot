@@ -83,8 +83,8 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				}
 				obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 			}
-			// Past eight badges the only offer is the League approach; the
-			// Elite Four itself stays unsupported.
+			// Past eight badges the League approach precedes the experimental
+			// Elite Four and the event-verified Hall of Fame.
 			if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
 				goals[0].Progress != gsprofile.ProgressIndigoPlateauReached || !adapter.SupportsObjective(goals[0]) {
 				t.Fatalf("completed Rising Badge must offer only the Indigo Plateau approach: %+v", goals)
@@ -94,29 +94,26 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				goals[0].Progress != gsprofile.ProgressLeagueWillDefeated || !adapter.SupportsObjective(goals[0]) {
 				t.Fatalf("Indigo Plateau should offer only the Will challenge: %+v", goals)
 			}
-			for _, next := range []ProgressID{
+			league := []ProgressID{
 				gsprofile.ProgressLeagueWillDefeated,
 				gsprofile.ProgressLeagueKogaDefeated,
 				gsprofile.ProgressLeagueBrunoDefeated,
 				gsprofile.ProgressLeagueKarenDefeated,
-			} {
-				obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
+				gsprofile.ProgressLeagueLanceDefeated,
+				gsprofile.ProgressLeagueHallOfFameEntered,
+			}
+			for i, completed := range league {
+				obs.Story = append(obs.Story, ProgressFact{ID: completed, Complete: true})
 				goals := adapter.ProgressionObjectives(obs)
-				if next == gsprofile.ProgressLeagueKarenDefeated {
+				if i == len(league)-1 {
 					if len(goals) != 0 {
-						t.Fatalf("Karen must not offer unimplemented Champion Lance: %+v", goals)
+						t.Fatalf("Hall of Fame must end the experimental Johto story: %+v", goals)
 					}
 					continue
 				}
-				want := gsprofile.ProgressLeagueKogaDefeated
-				switch next {
-				case gsprofile.ProgressLeagueKogaDefeated:
-					want = gsprofile.ProgressLeagueBrunoDefeated
-				case gsprofile.ProgressLeagueBrunoDefeated:
-					want = gsprofile.ProgressLeagueKarenDefeated
-				}
+				want := league[i+1]
 				if len(goals) != 1 || goals[0].Progress != want || !adapter.SupportsObjective(goals[0]) {
-					t.Fatalf("after %s expect only %s: %+v", next, want, goals)
+					t.Fatalf("after %s expect only %s: %+v", completed, want, goals)
 				}
 			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {

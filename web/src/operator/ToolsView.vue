@@ -233,6 +233,8 @@ const gen2Goals = [
   ['progress:gs_league_koga_defeated', 'Elite Four · Koga · experimental'],
   ['progress:gs_league_bruno_defeated', 'Elite Four · Bruno · experimental'],
   ['progress:gs_league_karen_defeated', 'Elite Four · Karen · experimental'],
+  ['progress:gs_league_lance_defeated', 'Champion · Lance · experimental'],
+  ['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 

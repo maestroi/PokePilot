@@ -280,14 +280,32 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		gsprofile.ProgressLeagueWillDefeated,
 		gsprofile.ProgressLeagueKogaDefeated,
 		gsprofile.ProgressLeagueBrunoDefeated,
-		gsprofile.ProgressLeagueKarenDefeated} {
+		gsprofile.ProgressLeagueKarenDefeated,
+		gsprofile.ProgressLeagueLanceDefeated,
+		gsprofile.ProgressLeagueHallOfFameEntered} {
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != next {
 			t.Fatalf("after Mineral progression = %+v, want %s", got, next)
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 	}
 	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("unexpected objective after the currently supported Karen milestone: %+v", got)
+		t.Fatalf("unexpected objective after Hall of Fame: %+v", got)
+	}
+	// The Indigo callback clears all five battle flags on a fresh rematch,
+	// but it does not erase the durable Hall of Fame ceremony. The historical
+	// Johto campaign must not fall back to another Will objective.
+	for i := range obs.Story {
+		switch obs.Story[i].ID {
+		case gsprofile.ProgressLeagueWillDefeated,
+			gsprofile.ProgressLeagueKogaDefeated,
+			gsprofile.ProgressLeagueBrunoDefeated,
+			gsprofile.ProgressLeagueKarenDefeated,
+			gsprofile.ProgressLeagueLanceDefeated:
+			obs.Story[i].Complete = false
+		}
+	}
+	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
+		t.Fatalf("Indigo rematch reset reopened completed campaign: %+v", got)
 	}
 }
 
