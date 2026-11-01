@@ -669,3 +669,33 @@ ROM-free coverage: `TestGSWillLeagueProgressRequiresCartridgeBattleEvent`,
 progression-chain test. Real retail Gold/Silver checkpoint qualification from
 post-Rising through Will is still required before this slice is considered
 qualified; battle loss must remain a typed ordinary combat outcome.
+
+
+## Gen2: experimental middle Elite Four — Koga, Bruno, Karen
+
+Following the owned Will milestone, the sequential targets are
+`gs_league_koga_defeated`, `gs_league_bruno_defeated` and
+`gs_league_karen_defeated`. Each requires the preceding member's genuine
+cartridge victory event (1464 → 1465 → 1466 → 1467), traverses its north
+door on the verified native map and uses the Gen2 battle/scene driver.
+Successful execution requires the **specific post-battle event flag** and
+returned overworld control. Arrival in a chamber, a dialogue completion or
+another member's event never substitutes for the current member's victory.
+
+The controllers accept checkpoint resumption only in the previous member's
+room or the current room. A blackout/return to Indigo cannot continue on
+stale in-room progress, because the Pokecenter callback resets all League
+per-member events. Each step avoids an Indigo heal after the Will fight.
+
+This slice does **not** provide Gen2 between-battle item healing or PP
+restoration; the generic Gen1 resource executor is not safe to use with
+Gold/Silver item layouts. The portable combat recovery gate still owns typed
+battle defeat outcomes. Do not claim an unattended multi-battle qualification
+until real-ROM checkpoint replays prove it, including the resource constraint.
+
+ROM-free regression: `TestGSLeagueMiddleMemberEventsAreIndependent`,
+`TestGSLeagueMiddleMembersFormSequentialOwnedMilestones`, both Gold/Silver
+progression-chain tests and the New Run goal-selection checks. Qualification
+requires separate Gold and Silver saved-state replays at the Will→Koga,
+Koga→Bruno, and Bruno→Karen boundaries. Champion Lance and Hall of Fame
+remain withheld as executable objectives.

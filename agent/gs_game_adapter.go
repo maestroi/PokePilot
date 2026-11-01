@@ -94,7 +94,10 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressRisingBadgeEarned,
 		// Experimental League approach and the first event-verified Elite Four challenge.
 		gsprofile.ProgressIndigoPlateauReached,
-		gsprofile.ProgressLeagueWillDefeated:
+		gsprofile.ProgressLeagueWillDefeated,
+		gsprofile.ProgressLeagueKogaDefeated,
+		gsprofile.ProgressLeagueBrunoDefeated,
+		gsprofile.ProgressLeagueKarenDefeated:
 		return true
 	default:
 		return false
@@ -301,6 +304,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSIndigoPlateau(a.m, a.romData)
 		case gsprofile.ProgressLeagueWillDefeated:
 			err = executeGSLeagueWill(a.m, a.romData)
+		case gsprofile.ProgressLeagueKogaDefeated, gsprofile.ProgressLeagueBrunoDefeated, gsprofile.ProgressLeagueKarenDefeated:
+			err = executeGSLeagueMember(a.m, a.romData, o.Progress)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -362,7 +367,10 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressClairDefeated,
 			gsprofile.ProgressRisingBadgeEarned,
 			gsprofile.ProgressIndigoPlateauReached,
-			gsprofile.ProgressLeagueWillDefeated:
+			gsprofile.ProgressLeagueWillDefeated,
+			gsprofile.ProgressLeagueKogaDefeated,
+			gsprofile.ProgressLeagueBrunoDefeated,
+			gsprofile.ProgressLeagueKarenDefeated:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -821,7 +829,25 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		return []Objective{{
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressLeagueWillDefeated,
-			Note:     "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will; later rounds remain unsupported)",
+			Note:     "(experimental: heal at Indigo Plateau, enter the first Elite Four chamber and defeat Will)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueKogaDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueKogaDefeated,
+			Note:     "(experimental: continue through Will's opened exit and defeat Elite Four Koga)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueBrunoDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueBrunoDefeated,
+			Note:     "(experimental: continue through Koga's opened exit and defeat Elite Four Bruno)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueKarenDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueKarenDefeated,
+			Note:     "(experimental: continue through Bruno's opened exit and defeat Elite Four Karen; Champion Lance is not yet executable)",
 		}}
 	default:
 		return nil
