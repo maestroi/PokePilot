@@ -44,6 +44,9 @@ type FailoverPlanner struct {
 	Primary  *LLMPlanner
 	Fallback *LLMPlanner
 	OnCall   func(LLMCall)
+	// RecordChoiceMenus retains full menus for offline training only when
+	// the run explicitly opted in; normal runs keep their prior memory cost.
+	RecordChoiceMenus bool
 
 	// lastBackend/lastModel describe only the most recent ask, for Route()
 	// reporting; they do not steer where the next ask starts.
@@ -112,10 +115,14 @@ func (p *FailoverPlanner) callPlan(active *LLMPlanner, obs Observation, offered 
 		plan, err = active.StrategizeRetry(obs, offered, reason, *retry)
 	}
 	if p.OnCall != nil {
+		var menu []string
+		if p.RecordChoiceMenus {
+			menu = objectiveStrings(offered)
+		}
 		p.OnCall(LLMCall{
 			Observation:       obs,
 			Offered:           len(offered),
-			OfferedObjectives: objectiveStrings(offered),
+			OfferedObjectives: menu,
 			ReplanReason:      reason,
 			Plan:              plan,
 			Strategic:         true,
