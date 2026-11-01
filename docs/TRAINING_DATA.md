@@ -6,7 +6,8 @@ to objective legality. Capturing is **off by default**.
 
 ## Enable capture
 
-Opt into capture for a farm run by setting the per-run spec field:
+Enable **Collect planner training data** in the operator's New Run form, or
+opt in programmatically by setting the per-run spec field:
 
 ```json
 {
@@ -16,8 +17,7 @@ Opt into capture for a farm run by setting the per-run spec field:
 }
 ```
 
-The operator API accepts the field as part of the run spec. The launch UI does
-not yet expose a toggle. Existing runs without `training_capture` behave as
+The operator API and launch UI both support the setting. Existing runs without `training_capture` behave as
 before. This is a diagnostic/data-collection feature, **not** a training
 invocation.
 
