@@ -97,7 +97,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressLeagueWillDefeated,
 		gsprofile.ProgressLeagueKogaDefeated,
 		gsprofile.ProgressLeagueBrunoDefeated,
-		gsprofile.ProgressLeagueKarenDefeated:
+		gsprofile.ProgressLeagueKarenDefeated,
+		gsprofile.ProgressLeagueLanceDefeated,
+		gsprofile.ProgressLeagueHallOfFameEntered:
 		return true
 	default:
 		return false
@@ -306,6 +308,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSLeagueWill(a.m, a.romData)
 		case gsprofile.ProgressLeagueKogaDefeated, gsprofile.ProgressLeagueBrunoDefeated, gsprofile.ProgressLeagueKarenDefeated:
 			err = executeGSLeagueMember(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressLeagueLanceDefeated, gsprofile.ProgressLeagueHallOfFameEntered:
+			err = executeGSLeagueChampion(a.m, a.romData, o.Progress)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -370,7 +374,9 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressLeagueWillDefeated,
 			gsprofile.ProgressLeagueKogaDefeated,
 			gsprofile.ProgressLeagueBrunoDefeated,
-			gsprofile.ProgressLeagueKarenDefeated:
+			gsprofile.ProgressLeagueKarenDefeated,
+			gsprofile.ProgressLeagueLanceDefeated,
+			gsprofile.ProgressLeagueHallOfFameEntered:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -847,7 +853,21 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		return []Objective{{
 			Kind:     KindProgress,
 			Progress: gsprofile.ProgressLeagueKarenDefeated,
-			Note:     "(experimental: continue through Bruno's opened exit and defeat Elite Four Karen; Champion Lance is not yet executable)",
+			Note:     "(experimental: continue through Bruno's opened exit and defeat Elite Four Karen)",
+		}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
+		return nil // permanent Hall of Fame event supersedes resettable room victories
+	case !obs.Story.Has(gsprofile.ProgressLeagueLanceDefeated):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueLanceDefeated,
+			Note:     "(experimental: cross Karen's opened north exit, defeat Champion Lance and verify his battle flag)",
+		}}
+	case !obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
+		return []Objective{{
+			Kind:     KindProgress,
+			Progress: gsprofile.ProgressLeagueHallOfFameEntered,
+			Note:     "(experimental: finish Lance's Oak/Mary scene and register the party in the Hall of Fame)",
 		}}
 	default:
 		return nil
