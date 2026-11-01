@@ -10,45 +10,45 @@ import (
 )
 
 const (
-	gsLeagueTrainerX      uint8 = 5
-	gsLeagueTrainerY      uint8 = 7
-	gsLeagueTrainerStandX uint8 = 5
-	gsLeagueTrainerStandY uint8 = 8
-	gsLeagueMemberAttempts      = 4
+	gsLeagueTrainerX       uint8 = 5
+	gsLeagueTrainerY       uint8 = 7
+	gsLeagueTrainerStandX  uint8 = 5
+	gsLeagueTrainerStandY  uint8 = 8
+	gsLeagueMemberAttempts       = 4
 )
 
 // Each member's post-battle event is a separate durable objective. An open
 // exit is not inferred from reaching a map; the retail battle script sets
 // the event and opens the door only after the dialogue has settled.
 type gsLeagueMemberSpec struct {
-	progress      game.ProgressID
-	previous      game.ProgressID
-	previousRoom  string
-	room          string
-	encounter     string
+	progress     game.ProgressID
+	previous     game.ProgressID
+	previousRoom string
+	room         string
+	encounter    string
 }
 
 var gsLeagueMembers = [...]gsLeagueMemberSpec{
 	{
-		progress: gsprofile.ProgressLeagueKogaDefeated,
-		previous: gsprofile.ProgressLeagueWillDefeated,
+		progress:     gsprofile.ProgressLeagueKogaDefeated,
+		previous:     gsprofile.ProgressLeagueWillDefeated,
 		previousRoom: "WILLS_ROOM",
-		room: "KOGAS_ROOM",
-		encounter: "league:koga",
+		room:         "KOGAS_ROOM",
+		encounter:    "league:koga",
 	},
 	{
-		progress: gsprofile.ProgressLeagueBrunoDefeated,
-		previous: gsprofile.ProgressLeagueKogaDefeated,
+		progress:     gsprofile.ProgressLeagueBrunoDefeated,
+		previous:     gsprofile.ProgressLeagueKogaDefeated,
 		previousRoom: "KOGAS_ROOM",
-		room: "BRUNOS_ROOM",
-		encounter: "league:bruno",
+		room:         "BRUNOS_ROOM",
+		encounter:    "league:bruno",
 	},
 	{
-		progress: gsprofile.ProgressLeagueKarenDefeated,
-		previous: gsprofile.ProgressLeagueBrunoDefeated,
+		progress:     gsprofile.ProgressLeagueKarenDefeated,
+		previous:     gsprofile.ProgressLeagueBrunoDefeated,
 		previousRoom: "BRUNOS_ROOM",
-		room: "KARENS_ROOM",
-		encounter: "league:karen",
+		room:         "KARENS_ROOM",
+		encounter:    "league:karen",
 	},
 }
 
