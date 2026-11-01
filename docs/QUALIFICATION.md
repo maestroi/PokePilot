@@ -748,6 +748,16 @@ At most six items may be spent per preparation boundary. This is not the
 Gen-I League planner or Gen-I item ID list; the native GS constants are
 defined in `agent/gs_league_resources.go` against the vendored item table.
 
+
+Before Will, the Indigo lobby's retail Mart can sell up to three Revives,
+five Hyper Potions, three Full Restores, and two Full Heals (existing stock
+counts toward each target). The purchase controller respects the actual
+MartIndigoPlateau inventory, verified item prices, cash on hand, a 1,000
+Pokédollar reserve, and the 20-slot ordinary-item bag limit. It never visits
+the Mart after the League's one-way room lock. A poor or full-inventory run
+proceeds with existing supplies, while any attempted purchase must prove a
+real bag/money change before the executor returns.
+
 The new `gs/profile/field_item.go` implements the semantic item decoder:
 the current party's HP/status/PP and the *rendered* USE submenu, party-use
 selector and PP move selector must match before generic item execution
