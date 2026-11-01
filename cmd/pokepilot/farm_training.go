@@ -54,6 +54,10 @@ type plannerTrainingExample struct {
 	Model        string                    `json:"model,omitempty"`
 	Backend      string                    `json:"backend,omitempty"`
 	PromptHash   string                    `json:"prompt_hash,omitempty"`
+	// These are the exact wire messages as requested from the live model,
+	// including run-specific goal, policy notes, and retry feedback.
+	SystemPrompt string                    `json:"system_prompt,omitempty"`
+	UserPrompt   string                    `json:"user_prompt,omitempty"`
 	Observation  agent.Observation         `json:"observation"`
 	Offered      []string                  `json:"offered"`
 	ReplanReason string                    `json:"replan_reason,omitempty"`
@@ -106,6 +110,7 @@ func writeFarmTrainingCorpus(spec farm.Spec, res agent.Result, calls []agent.LLM
 			Seed: spec.Seed, ROMSHA256: romSHA256, Build: version,
 			Goal: spec.Goal.String(), Round: call.Observation.Round,
 			Model: call.Model, Backend: call.Backend, PromptHash: call.PromptHash,
+			SystemPrompt: call.TrainingSystem, UserPrompt: call.TrainingUser,
 			Observation: call.Observation, Offered: call.OfferedObjectives,
 			Rejected: call.Err != nil,
 		}
