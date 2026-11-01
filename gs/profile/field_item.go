@@ -59,21 +59,21 @@ func (p *Profile) DecodeFieldItem(reader game.MemoryReader) game.FieldItemState 
 	text := gsScreenText(reader)
 	count := min(int(reader.Peek8(sym.PartyCount)), 6)
 	out := game.FieldItemState{
-		Party: make([]game.FieldItemPartyMon, 0, count),
-		InBattle: reader.Peek8(sym.BattleMode) != 0,
+		Party:     make([]game.FieldItemPartyMon, 0, count),
+		InBattle:  reader.Peek8(sym.BattleMode) != 0,
 		DebugText: text,
 	}
 	for i := 0; i < count; i++ {
 		base := sym.PartyMon1 + uint16(i)*sym.PartyMonSize
 		mon := game.FieldItemPartyMon{
 			NativeSpeciesID: uint16(reader.Peek8(base)),
-			Level: reader.Peek8(base + gen2PartyLevelOffset),
-			HP: battleBE16(reader, base+gen2PartyHPOffset),
-			MaxHP: battleBE16(reader, base+gen2PartyMaxHPOffset),
-			Status: gen2Status(reader.Peek8(base+gen2PartyStatusOffset)),
+			Level:           reader.Peek8(base + gen2PartyLevelOffset),
+			HP:              battleBE16(reader, base+gen2PartyHPOffset),
+			MaxHP:           battleBE16(reader, base+gen2PartyMaxHPOffset),
+			Status:          gen2Status(reader.Peek8(base + gen2PartyStatusOffset)),
 		}
 		for move := 0; move < 4; move++ {
-			mon.Moves[move] = uint16(reader.Peek8(base+gen2PartyMovesOffset+uint16(move)))
+			mon.Moves[move] = uint16(reader.Peek8(base + gen2PartyMovesOffset + uint16(move)))
 			mon.PP[move] = reader.Peek8(base+gen2PartyPPOffset+uint16(move)) & gen2PPMask
 		}
 		out.Party = append(out.Party, mon)
