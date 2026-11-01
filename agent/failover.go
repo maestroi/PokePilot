@@ -24,8 +24,8 @@ type LLMCall struct {
 	// Exact prompt that this call sent; populated only on training opt-in.
 	TrainingSystem string
 	TrainingUser   string
-	Err        error
-	Duration   time.Duration
+	Err            error
+	Duration       time.Duration
 }
 
 // LLMRoute is the endpoint used for the most recent ask and the number of
