@@ -10,6 +10,7 @@ The links below separate current guidance from project history.
 - [Architecture](ARCHITECTURE.md): binding runtime and game-adapter boundaries.
 - [Game profiles](GAME_PROFILES.md) and [Gen I boundaries](GEN1_BOUNDARIES.md): adapter contracts and shared engine ownership.
 - [Qualification](QUALIFICATION.md): regression layers and the private replay corpus.
+- [Planner training data](TRAINING_DATA.md): opt-in single-model planner corpus, outcome linkage, and future fine-tuning.
 - [Technical design entry point](DESIGN.md): links to current technical contracts.
 - [Operator product contract](../PRODUCT.md) and [operator visual system](../DESIGN.md): root documents for the private UI.
 - [PokePilot/RomPilot product strategy](PRODUCT_STRATEGY.md): audiences, product loops, differentiation, and commercial decision gates.
