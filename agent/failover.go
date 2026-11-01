@@ -182,10 +182,14 @@ func (p *FailoverPlanner) call(active *LLMPlanner, obs Observation, offered []Ob
 		o, err = active.NextRetry(obs, offered, *retry)
 	}
 	if p.OnCall != nil {
+		var menu []string
+		if p.RecordChoiceMenus {
+			menu = objectiveStrings(offered)
+		}
 		p.OnCall(LLMCall{
 			Observation:       obs,
 			Offered:           len(offered),
-			OfferedObjectives: objectiveStrings(offered),
+			OfferedObjectives: menu,
 			Objective:         o,
 			Model:             active.Model,
 			Backend:           p.lastBackend,
