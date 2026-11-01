@@ -72,10 +72,10 @@ func TestGSLeagueQualificationBoundariesMatchRetailExitRooms(t *testing.T) {
 	want := map[string]string{
 		"post-rising": "DRAGONS_DEN_B1F",
 		"post-indigo": "ROUTE_23",
-		"post-will": "WILLS_ROOM",
-		"post-koga": "KOGAS_ROOM",
-		"post-bruno": "BRUNOS_ROOM",
-		"post-karen": "KARENS_ROOM",
+		"post-will":   "WILLS_ROOM",
+		"post-koga":   "KOGAS_ROOM",
+		"post-bruno":  "BRUNOS_ROOM",
+		"post-karen":  "KARENS_ROOM",
 	}
 	if len(gsLeagueCheckpointBoundaries) != len(want) {
 		t.Fatalf("checkpoint entries=%d want %d", len(gsLeagueCheckpointBoundaries), len(want))
