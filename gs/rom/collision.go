@@ -504,6 +504,18 @@ func (p *firstBadgeWorldProvider) Grid(mapID uint16, blocks []byte, mode worldmo
 	}
 
 	widthBlocks, heightBlocks := int(info.WidthBlocks), int(info.HeightBlocks)
+	if len(blocks) == 0 {
+		// Nil/empty blocks mean "use the cartridge's static map": connection
+		// approach needs the neighbour's landing seam without standing there.
+		if len(p.rom) == 0 {
+			return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s needs live blocks or a ROM for static blockdata", spec.name)
+		}
+		static, err := mapBlockData(p.rom, mapID)
+		if err != nil {
+			return worldmodel.NativeGridSpec{}, err
+		}
+		blocks = static
+	}
 	if len(blocks) != widthBlocks*heightBlocks {
 		return worldmodel.NativeGridSpec{}, fmt.Errorf("gs/rom: %s live blocks length %d, want %d", spec.name, len(blocks), widthBlocks*heightBlocks)
 	}

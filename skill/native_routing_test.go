@@ -133,6 +133,103 @@ func TestNativeConnectionApproachHonorsOffsetBounds(t *testing.T) {
 	}
 }
 
+// Route 37 (15,17) is walkable tall grass on the south seam, but its Route 36
+// landing (35,0) is a wall. Connection approach must skip that exit and walk
+// west to a seam tile whose neighbour landing is enterable (triage:86945c007e2c2fbb).
+func TestNativeConnectionApproachSkipsUnwalkableLandings(t *testing.T) {
+	// Source 4x2 tiles (2x1 blocks). South edge y=1 is fully walkable.
+	source := nativeTestGrid(t, 4, 2, []bool{
+		true, true, true, true,
+		true, true, true, true,
+	})
+	// Dest 8x2 tiles. North edge walkable only for x=0..1; x=2..7 are walls.
+	// Offset 0 => landing x equals source x, so source x=2,3 must be rejected.
+	destWalk := make([]bool, 8*2)
+	for x := 0; x < 8; x++ {
+		destWalk[x] = x < 2 // north row
+		destWalk[8+x] = true
+	}
+	dest, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID:         0x0a03,
+		Width:         8,
+		Height:        2,
+		Walkable:      destWalk,
+		CollisionTile: make([]uint8, 8*2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := nativeConnectionGridProvider{
+		headers: nativeConnectionTestProvider{
+			0x0a04: {ID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1},
+			0x0a03: {ID: 0x0a03, WidthBlocks: 4, HeightBlocks: 1},
+		},
+		grids: map[uint16]*world.NativeGrid{0x0a03: dest},
+	}
+	edge := world.NativeEdge{
+		Kind: world.EdgeConnection, From: 0x0a04, To: 0x0a03, Dir: 1, Offset: 0,
+	}
+	live := game.LiveTopologyState{NativeMapID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1}
+	// Stand on the wall-landing seam tile (3,1); approach must relocate to x<=1.
+	path, push, err := nativeConnectionApproach(provider, source, live, edge, 3, 1, nil)
+	if err != nil {
+		t.Fatalf("nativeConnectionApproach: %v", err)
+	}
+	if push != (world.NativeStep{DY: 1}) {
+		t.Fatalf("push = %+v, want south", push)
+	}
+	x, y := 3, 1
+	for _, step := range path {
+		x, y = x+step.DX, y+step.DY
+	}
+	if y != 1 || x > 1 {
+		t.Fatalf("approach ended at (%d,%d), want south-edge x in 0..1", x, y)
+	}
+	targets, err := nativeConnectionTargets(provider, source, live, edge, nil)
+	if err != nil {
+		t.Fatalf("nativeConnectionTargets: %v", err)
+	}
+	for _, at := range targets {
+		if at[0] > 1 {
+			t.Fatalf("targets include wall-landing seam %+v: %v", at, targets)
+		}
+	}
+	if len(targets) != 2 {
+		t.Fatalf("targets = %v, want exactly x=0 and x=1", targets)
+	}
+}
+
+type nativeConnectionGridProvider struct {
+	headers nativeConnectionTestProvider
+	grids   map[uint16]*world.NativeGrid
+}
+
+func (p nativeConnectionGridProvider) MapIDs() []uint16 { return p.headers.MapIDs() }
+
+func (p nativeConnectionGridProvider) ParseMap(id uint16) (worldmodel.NativeMapHeader, error) {
+	return p.headers.ParseMap(id)
+}
+
+func (p nativeConnectionGridProvider) Grid(mapID uint16, _ []byte, _ worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
+	g, ok := p.grids[mapID]
+	if !ok {
+		return worldmodel.NativeGridSpec{}, errors.New("missing test grid")
+	}
+	walkable := make([]bool, g.Width*g.Height)
+	for y := 0; y < g.Height; y++ {
+		for x := 0; x < g.Width; x++ {
+			walkable[y*g.Width+x] = g.Walkable(x, y)
+		}
+	}
+	return worldmodel.NativeGridSpec{
+		MapID:         mapID,
+		Width:         g.Width,
+		Height:        g.Height,
+		Walkable:      walkable,
+		CollisionTile: make([]uint8, g.Width*g.Height),
+	}, nil
+}
+
 func TestNativeRuntimeBlockersAvoidWarpsAndObjects(t *testing.T) {
 	live := game.LiveTopologyState{
 		LiveObjects: []game.LiveMapObject{{Slot: 1, X: 3, Y: 4}},
