@@ -119,24 +119,7 @@ func appendDexEvolutionObjectives(obs Observation, known *Knowledge, out []Objec
 // not by where the base Pokémon currently is, so a run can stock every stone
 // in its first Celadon trip instead of returning once per evolution.
 func appendDexStoneStockObjectives(obs Observation, known *Knowledge, out []Objective) []Objective {
-	owned := pokedexOwnedSet(obs)
-	need := map[ItemID]int{}
-	var order []ItemID
-	for _, entry := range obs.Dex.Targets {
-		if owned[entry.Species] {
-			continue
-		}
-		for _, src := range entry.Sources {
-			if src.Kind != AcquireItemEvo || !purchasableDexEvolutionStone(src.Item) {
-				continue
-			}
-			if need[src.Item] == 0 {
-				order = append(order, src.Item)
-			}
-			need[src.Item]++
-			break
-		}
-	}
+	need, order := dexStoneDemand(obs, purchasableDexEvolutionStone)
 	for _, item := range order {
 		want := need[item] - bagItemQuantity(obs.Bag, item)
 		if want <= 0 || !dexEvolutionStonePurchaseAvailable(obs, known, item) {
@@ -157,6 +140,36 @@ func appendDexStoneStockObjectives(obs Observation, known *Knowledge, out []Obje
 		})
 	}
 	return out
+}
+
+// dexStoneNeed is how many of each evolution item (finite Moon Stones
+// included) unowned Dex targets still evolve with; funding sales never sell
+// below it.
+func dexStoneNeed(obs Observation) map[ItemID]int {
+	need, _ := dexStoneDemand(obs, func(ItemID) bool { return true })
+	return need
+}
+
+func dexStoneDemand(obs Observation, counted func(ItemID) bool) (map[ItemID]int, []ItemID) {
+	owned := pokedexOwnedSet(obs)
+	need := map[ItemID]int{}
+	var order []ItemID
+	for _, entry := range obs.Dex.Targets {
+		if owned[entry.Species] {
+			continue
+		}
+		for _, src := range entry.Sources {
+			if src.Kind != AcquireItemEvo || !counted(src.Item) {
+				continue
+			}
+			if need[src.Item] == 0 {
+				order = append(order, src.Item)
+			}
+			need[src.Item]++
+			break
+		}
+	}
+	return need, order
 }
 
 func dexEvolutionCandidateEntries(obs Observation) []DexEntry {

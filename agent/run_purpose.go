@@ -41,41 +41,33 @@ func RunPurposeSystemNote(name string) string {
 // the zero-call "single progression" continuation can race through story gates
 // even while catches/NPCs/trainers/pickups are waiting in the same menu.
 //
-// A Dex terminal goal gets one additional rule: capture infrastructure and
-// executable acquisition work come before unrelated coverage. This prevents a
+// A Dex terminal goal gets one rule for every purpose: while out of balls the
+// menu is only the capture-supply leg (dexCaptureSupplyLeg). Debug Coverage
+// additionally puts executable acquisition work before unrelated coverage. This prevents a
 // completion run from reaching several gyms with only its starter because the
 // model kept choosing story progress over the deterministic Dex objectives.
 func ApplyRunPurpose(obs Observation, offered []Objective, purpose, goal string) []Objective {
 	annotated := AnnotateRunPurpose(obs, offered, purpose)
-	if NormalizeRunPurpose(purpose) != RunPurposeDebugCoverage || len(annotated) == 0 {
+	if len(annotated) == 0 {
 		return annotated
 	}
 
 	// Recovery must remain authoritative. Do not hide a legal heal/retreat path
-	// just because new coverage is also present.
+	// just because new coverage or capture supply is also present.
 	if partyHurt(obs) || leadOutOfPP(obs) {
 		return annotated
 	}
 
-	if debugPurposeDexGoal(goal) {
-		supply := filterPurposeObjectives(annotated, func(o Objective) bool {
-			return debugDexCaptureSupply(obs, o)
-		})
-		if len(supply) == 0 && normalBallStock(obs) < minimumCaptureStock {
-			// A direct buy exists only while standing in a Mart. For a Debug+Dex
-			// run, add the same deterministic travel-and-buy recovery objective
-			// used by the Red runtime when a reachable Mart is known. Keep this
-			// scoped here so Champion/speedrun menus are not polluted by Dex-only
-			// capture infrastructure.
-			remote := restockCaptureObjectives(obs)
-			annotated = append(annotated, AnnotateRunPurpose(obs, remote, purpose)...)
-			supply = filterPurposeObjectives(annotated, func(o Objective) bool {
-				return debugDexCaptureSupply(obs, o)
-			})
-		}
-		if len(supply) > 0 {
+	dexGoal := purposeDexGoal(goal)
+	if dexGoal {
+		if supply := dexCaptureSupplyLeg(obs, annotated, purpose); len(supply) > 0 {
 			return supply
 		}
+	}
+	if NormalizeRunPurpose(purpose) != RunPurposeDebugCoverage {
+		return annotated
+	}
+	if dexGoal {
 		if acquisition := filterPurposeObjectives(annotated, func(o Objective) bool {
 			return debugDexAcquisition(obs, o)
 		}); len(acquisition) > 0 {
@@ -97,12 +89,32 @@ func ApplyRunPurpose(obs Observation, offered []Objective, purpose, goal string)
 	return annotated
 }
 
-func debugPurposeDexGoal(raw string) bool {
+func purposeDexGoal(raw string) bool {
 	goal, structured, err := PlannerGoal(raw)
 	return err == nil && structured && goal.Kind == GoalDex
 }
 
-func debugDexCaptureSupply(obs Observation, o Objective) bool {
+// dexCaptureSupplyLeg is the only menu a Dex run gets while it is out of
+// balls: funding sales first, then a ball purchase (in this Mart, or the
+// travel-and-buy restock built from live-reachable Mart stock). Without it
+// run-ib9smf1mzpcih (normal purpose) sat post-Champion at 50/124 with zero
+// balls and was only ever offered town-to-town travel. Nil when nothing can
+// improve capture stock, so the ordinary menu (funding trainers) returns.
+func dexCaptureSupplyLeg(obs Observation, offered []Objective, purpose string) []Objective {
+	if len(obs.Dex.Targets) == 0 || normalBallStock(obs) >= minimumCaptureStock {
+		return nil
+	}
+	if sales := filterPurposeObjectives(offered, func(o Objective) bool { return o.Kind == KindSell }); len(sales) > 0 {
+		return sales
+	}
+	buy := func(o Objective) bool { return dexCaptureSupply(obs, o) }
+	if supply := filterPurposeObjectives(offered, buy); len(supply) > 0 {
+		return supply
+	}
+	return filterPurposeObjectives(AnnotateRunPurpose(obs, restockCaptureObjectives(obs), purpose), buy)
+}
+
+func dexCaptureSupply(obs Observation, o Objective) bool {
 	if len(obs.Dex.Targets) == 0 || normalBallStock(obs) >= minimumCaptureStock || o.Kind != KindBuy {
 		return false
 	}
