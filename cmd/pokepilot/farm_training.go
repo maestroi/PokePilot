@@ -65,6 +65,7 @@ type plannerTrainingExample struct {
 	PlanSteps    []string                  `json:"plan_steps,omitempty"`
 	PlanBoundary bool                      `json:"plan_boundary,omitempty"`
 	Choice       string                    `json:"choice,omitempty"`
+	ChoiceIntent string                    `json:"choice_intent,omitempty"`
 	Rejected     bool                      `json:"rejected,omitempty"`
 	Error        string                    `json:"error,omitempty"`
 	Execution    *plannerTrainingExecution `json:"execution,omitempty"`
