@@ -13,10 +13,10 @@ func TestGSLeagueReplaySelectionsHaveExactAuthenticPredecessors(t *testing.T) {
 		goals  []game.ProgressID
 	}{
 		"indigo": {"post-rising", []game.ProgressID{gsprofile.ProgressIndigoPlateauReached}},
-		"will": {"post-indigo", []game.ProgressID{gsprofile.ProgressLeagueWillDefeated}},
-		"koga": {"post-will", []game.ProgressID{gsprofile.ProgressLeagueKogaDefeated}},
-		"bruno": {"post-koga", []game.ProgressID{gsprofile.ProgressLeagueBrunoDefeated}},
-		"karen": {"post-bruno", []game.ProgressID{gsprofile.ProgressLeagueKarenDefeated}},
+		"will":   {"post-indigo", []game.ProgressID{gsprofile.ProgressLeagueWillDefeated}},
+		"koga":   {"post-will", []game.ProgressID{gsprofile.ProgressLeagueKogaDefeated}},
+		"bruno":  {"post-koga", []game.ProgressID{gsprofile.ProgressLeagueBrunoDefeated}},
+		"karen":  {"post-bruno", []game.ProgressID{gsprofile.ProgressLeagueKarenDefeated}},
 		"hall-of-fame": {"post-karen", []game.ProgressID{
 			gsprofile.ProgressLeagueLanceDefeated, gsprofile.ProgressLeagueHallOfFameEntered,
 		}},
@@ -49,9 +49,9 @@ func TestGSLeagueEndingEventsVerifyWithoutOverworldControl(t *testing.T) {
 	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
 		adapter := newGSObjectiveAdapter(nil, nil, id)
 		for _, tc := range []struct {
-			name string
+			name  string
 			prior game.ProgressID
-			goal game.ProgressID
+			goal  game.ProgressID
 		}{
 			{"lance", gsprofile.ProgressLeagueKarenDefeated, gsprofile.ProgressLeagueLanceDefeated},
 			{"hall-of-fame", gsprofile.ProgressLeagueLanceDefeated, gsprofile.ProgressLeagueHallOfFameEntered},
@@ -66,9 +66,9 @@ func TestGSLeagueEndingEventsVerifyWithoutOverworldControl(t *testing.T) {
 					t.Fatalf("real ending event rejected while scripted: %v", err)
 				}
 				scenarios := []struct {
-					name string
+					name   string
 					before Observation
-					after Observation
+					after  Observation
 				}{
 					{"missing prior event", gsLeagueCaptureObs(id), after},
 					{"no victory flag", before, gsLeagueCaptureObs(id, tc.prior)},
@@ -86,9 +86,9 @@ func TestGSLeagueEndingEventsVerifyWithoutOverworldControl(t *testing.T) {
 				}
 				if tc.goal == gsprofile.ProgressLeagueLanceDefeated {
 					scenarios = append(scenarios, struct {
-						name string
+						name   string
 						before Observation
-						after Observation
+						after  Observation
 					}{"Karen flag reset", before, gsLeagueCaptureObs(id, tc.goal)})
 				}
 				for _, scenario := range scenarios {
