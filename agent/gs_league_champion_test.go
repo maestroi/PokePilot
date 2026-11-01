@@ -31,35 +31,3 @@ func TestGSLeagueChampionGoalsAreOwnedAndFailClosed(t *testing.T) {
 	}
 }
 
-func TestGSHallOfFameMakesRoomRematchFlagsNonBlocking(t *testing.T) {
-	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
-	obs := Observation{
-		GameID: gsprofile.GoldGameID,
-		PartyCount: 1,
-		Story: ProgressState{
-			{ID: gsprofile.ProgressLeagueHallOfFameEntered, Complete: true},
-		},
-	}
-	// The Indigo callback resets the four member flags and Lance's flag
-	// during a rematch, but never erases the Hall of Fame historical event.
-	// A completed Johto campaign must not re-offer the Will battle.
-	for _, id := range []ProgressID{
-		gsprofile.ProgressLeagueWillDefeated,
-		gsprofile.ProgressLeagueKogaDefeated,
-		gsprofile.ProgressLeagueBrunoDefeated,
-		gsprofile.ProgressLeagueKarenDefeated,
-		gsprofile.ProgressLeagueLanceDefeated,
-	} {
-		obs.Story = append(obs.Story, ProgressFact{ID: id, Complete: false})
-	}
-	// Populate all prior story facts to isolate the League boundary.
-	// A direct caller may have a sparse story snapshot; this specifically
-	// checks the final League boundary, not the earlier Johto requirements.
-	for _, id := range []ProgressID{
-		gsprofile.ProgressIndigoPlateauReached,
-	} {
-		obs.Story = append(obs.Story, ProgressFact{ID: id, Complete: true})
-	}
-	_ = adapter
-	_ = obs
-}
