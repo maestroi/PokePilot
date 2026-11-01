@@ -1110,6 +1110,7 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	}
 	logw := &agentTraceLog{w: os.Stdout, note: m.TraceNote}
 	stats := newStatsPlannerWithRunPolicy(policy, llmProfile, reasoningEffort, spec.Inference, m, m.TraceStats, snap)
+	stats.router.RecordChoiceMenus = spec.TrainingCapture
 	stats.decision = decision
 	stats.wirePlannerLogs(logw, snap)
 	benchmarkStarted := time.Now()
@@ -1146,6 +1147,11 @@ func runFarmLLM(m *emu.Emu, spec farm.Spec, policy farm.RunPolicy, starter, llmP
 	captureObjectiveFailureTelemetry(res)
 	if err := writeFarmBenchmarkResult(spec, res, stats, benchmarkStarted, benchmarkFinished, resumeFrom, checkpointDir, romSHA256, maxFrames); err != nil {
 		log.Printf("farm: %s: benchmark result: %v", spec.RunID, err)
+	}
+	if err := writeFarmTrainingCorpus(spec, res, stats.benchmarkCalls, checkpointDir, romSHA256); err != nil {
+		// Training is evidence, not gameplay. Missing artifact must never
+		// affect the campaign result or objective completion.
+		log.Printf("farm: %s: planner training corpus: %v", spec.RunID, err)
 	}
 
 	fmt.Printf("\nrun stopped: %s after %d round(s)\n", stopName(res.Stop), res.Rounds)

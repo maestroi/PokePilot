@@ -198,6 +198,7 @@ export interface DashboardRun {
   wild_encounters?: string
   reasoning_effort?: string
   decision_engine?: DecisionEngineSpec
+  training_capture?: boolean
   seed?: number
   fps?: number
   max_rounds?: number
@@ -472,6 +473,7 @@ export interface RunSpec {
   wild_encounters: string
   reasoning_effort: string
   decision_engine?: DecisionEngineSpec
+  training_capture?: boolean
   fps: number
   max_rounds: number
   max_frames: number
