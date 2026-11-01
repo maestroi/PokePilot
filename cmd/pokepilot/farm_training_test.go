@@ -27,13 +27,13 @@ func TestWriteFarmTrainingCorpusOptInAndDirectOutcome(t *testing.T) {
 		{
 			Observation: obs, OfferedObjectives: []string{label},
 			Strategic: true, ReplanReason: "initial",
-			Plan: agent.Plan{Goal: "beat Brock", Steps: []string{label}},
+			Plan:  agent.Plan{Goal: "beat Brock", Steps: []string{label}},
 			Model: "teacher", Backend: "primary", PromptHash: "hash-one",
 		},
 		{
 			Observation: obs, OfferedObjectives: []string{label},
 			Strategic: true, Err: errors.New("bad JSON"),
-			Model: "teacher",
+			Model:     "teacher",
 		},
 		{
 			Observation: agent.Observation{Round: 4}, OfferedObjectives: []string{"heal"},
