@@ -17,6 +17,11 @@ const (
 )
 
 func objectiveFrameBudgetFor(o Objective) uint64 {
+	if o.Kind == KindEarnMoney {
+		// A League rematch is five trainer battles, the travel to Indigo and
+		// the Hall of Fame ending (up to 120k frames) in one transaction.
+		return catchObjectiveFrameBudget
+	}
 	if o.Kind == KindCatch {
 		// Catch cooperatively ends its stochastic search at 500k frames while
 		// back on a safe overworld boundary. Reserve another 700k here for one
@@ -154,6 +159,13 @@ func (a *redObjectiveAdapter) Validate(o Objective, obs Observation) error {
 	case KindUseItem, KindBuy, KindSell:
 		if _, ok := a.resolveItemID(o.Item); !ok {
 			return fmt.Errorf("agent: %s: unknown Red item %q", o, o.Item)
+		}
+	case KindEarnMoney:
+		if o.Intent != redIncomeLeagueRematch {
+			return fmt.Errorf("agent: %s: unknown Red income source %q", o, o.Intent)
+		}
+		if !obs.Story.Has(ProgressMainStoryComplete) {
+			return progressionPrerequisiteError([]ProgressID{ProgressMainStoryComplete})
 		}
 	}
 	if missing := redMissingProgressionPrerequisites(o, obs); len(missing) != 0 {

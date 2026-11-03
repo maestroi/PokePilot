@@ -215,6 +215,8 @@ func objectiveFromFailure(in farm.FailureObjective) (agent.Objective, error) {
 		o.Kind = agent.KindBuy
 	case "sell":
 		o.Kind = agent.KindSell
+	case "earn_money":
+		o.Kind = agent.KindEarnMoney
 	case "pickup":
 		o.Kind = agent.KindPickup
 	case "use_item":

@@ -148,11 +148,11 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy, options BattleOptions) er
 	state.Snapshot(m, &mem)
 	if state.DecodeBattle(&mem) == nil {
 		mem = advanceUntil(m, leagueRoomSettleBudget, func(mm *state.Mem) bool {
-			facts := leagueFacts(mm)
+			facts := leagueFacts(m, mm)
 			return state.DecodeBattle(mm) != nil || facts.LeagueChampionDefeated || facts.MainStoryComplete
 		})
 	}
-	facts = leagueFacts(&mem)
+	facts = leagueFacts(m, &mem)
 	if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
 		if state.DecodeBattle(&mem) == nil {
 			return fmt.Errorf("Champion room did not enter battle")
@@ -170,10 +170,10 @@ func fightChampionStage(m *emu.Emu, policy MovePolicy, options BattleOptions) er
 		}
 	}
 	mem = advanceUntil(m, leagueBattleSettleBudget, func(mm *state.Mem) bool {
-		facts := leagueFacts(mm)
+		facts := leagueFacts(m, mm)
 		return facts.LeagueChampionDefeated || facts.MainStoryComplete
 	})
-	facts = leagueFacts(&mem)
+	facts = leagueFacts(m, &mem)
 	if !facts.LeagueChampionDefeated && !facts.MainStoryComplete {
 		return fmt.Errorf("Champion win did not commit its victory event")
 	}

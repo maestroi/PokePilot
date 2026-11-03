@@ -117,6 +117,8 @@ func failureKindName(k Kind) string {
 		return "buy"
 	case KindSell:
 		return "sell"
+	case KindEarnMoney:
+		return "earn_money"
 	case KindPickup:
 		return "pickup"
 	case KindUseItem:
