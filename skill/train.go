@@ -1327,3 +1327,15 @@ func sign(v int) int {
 	}
 	return 1
 }
+
+// TrainingLeadCanDamage reports whether a held training lead could make HP
+// progress against b's opponent, by the same classification direct training
+// uses to fight or flee each wild encounter. A ROM without a combat strategy
+// reports true, matching the battle path, which then never yields.
+func TrainingLeadCanDamage(romData []byte, b game.BattleState) bool {
+	strategy, err := combatStrategyForROM(romData)
+	if err != nil {
+		return true
+	}
+	return evaluateTrainingLeadOffense(strategy, romData, b).effective
+}
