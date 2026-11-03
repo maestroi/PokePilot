@@ -683,16 +683,19 @@ func nativeConnectionLandingTile(edge world.NativeEdge, j, destWidth, destHeight
 // nativeConnectionDestGrid loads the neighbour's static collision when the
 // provider can supply it (ROM blockdata with no live buffer). Unit-test
 // topology stubs without Grid keep the historical source-only band filter.
+// The landing is judged in the source grid's traversal mode, not the player's
+// live one: a Surf bridge plans on the water grid while still on land, and a
+// land-mode check rejected every water landing (Route 40 -> Route 41).
 func nativeConnectionDestGrid(
 	provider worldmodel.NativeMapTopologyProvider,
 	mapID uint16,
-	live game.LiveTopologyState,
+	source *world.NativeGrid,
 ) (*world.NativeGrid, bool) {
 	gp, ok := provider.(worldmodel.NativeGridProvider)
-	if !ok {
+	if !ok || source == nil {
 		return nil, false
 	}
-	spec, err := gp.Grid(mapID, nil, worldmodel.TraversalMode(live.Traversal))
+	spec, err := gp.Grid(mapID, nil, source.Traversal)
 	if err != nil {
 		return nil, false
 	}
@@ -715,7 +718,7 @@ func nativeConnectionApproach(
 	if err != nil {
 		return nil, world.NativeStep{}, err
 	}
-	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, live)
+	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, grid)
 
 	var best []world.NativeStep
 	found := false
@@ -770,7 +773,7 @@ func nativeConnectionTargets(
 	if err != nil {
 		return nil, err
 	}
-	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, live)
+	destGrid, haveDest := nativeConnectionDestGrid(provider, edge.To, grid)
 	var targets [][2]int
 	for i := 0; i < limit; i++ {
 		j := i - 2*int(edge.Offset)

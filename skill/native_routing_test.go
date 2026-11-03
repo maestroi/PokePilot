@@ -597,3 +597,49 @@ func TestNativeObstacleFieldMoveCoversEveryKind(t *testing.T) {
 		t.Fatal("an unmodelled obstacle kind must not map to a field move")
 	}
 }
+
+// modeGridProvider serves a different neighbour grid per traversal mode.
+type modeGridProvider struct {
+	nativeConnectionGridProvider
+	water map[uint16]*world.NativeGrid
+}
+
+func (p modeGridProvider) Grid(mapID uint16, blocks []byte, mode worldmodel.TraversalMode) (worldmodel.NativeGridSpec, error) {
+	if mode == worldmodel.TraversalWater {
+		return nativeConnectionGridProvider{headers: p.headers, grids: p.water}.Grid(mapID, blocks, mode)
+	}
+	return p.nativeConnectionGridProvider.Grid(mapID, blocks, mode)
+}
+
+// A Surf bridge plans connection targets on the WATER grid while the player
+// is still on land. Route 41's landings below Route 40 are water, so judging
+// them in the live land mode rejected every target and Route 40 -> Cianwood
+// became "no route" (run-q2npbhk1bwjy11avz6nokkojv).
+func TestNativeConnectionTargetsJudgeLandingInSourceTraversal(t *testing.T) {
+	walls := make([]bool, 4*2)
+	sea := []bool{true, true, true, true, true, true, true, true}
+	destLand, _ := world.NativeGridFromSpec(worldmodel.NativeGridSpec{MapID: 0x0a03, Width: 4, Height: 2, Walkable: walls, CollisionTile: make([]uint8, 8)})
+	destWater, _ := world.NativeGridFromSpec(worldmodel.NativeGridSpec{MapID: 0x0a03, Width: 4, Height: 2, Walkable: sea, CollisionTile: make([]uint8, 8)})
+	provider := modeGridProvider{
+		nativeConnectionGridProvider: nativeConnectionGridProvider{
+			headers: nativeConnectionTestProvider{
+				0x0a04: {ID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1},
+				0x0a03: {ID: 0x0a03, WidthBlocks: 2, HeightBlocks: 1},
+			},
+			grids: map[uint16]*world.NativeGrid{0x0a03: destLand},
+		},
+		water: map[uint16]*world.NativeGrid{0x0a03: destWater},
+	}
+	sourceWater, err := world.NativeGridFromSpec(worldmodel.NativeGridSpec{
+		MapID: 0x0a04, Width: 4, Height: 2, Walkable: sea, CollisionTile: make([]uint8, 8), Traversal: worldmodel.TraversalWater,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge := world.NativeEdge{Kind: world.EdgeConnection, From: 0x0a04, To: 0x0a03, Dir: 1}
+	live := game.LiveTopologyState{NativeMapID: 0x0a04, WidthBlocks: 2, HeightBlocks: 1, Traversal: game.TraversalLand}
+	targets, err := nativeConnectionTargets(provider, sourceWater, live, edge, nil)
+	if err != nil || len(targets) != 4 {
+		t.Fatalf("water targets = %v err=%v, want all 4 south-seam tiles", targets, err)
+	}
+}
