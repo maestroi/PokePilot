@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -221,5 +222,35 @@ func TestExpireLocalArtifactsKeepsPendingFailureDump(t *testing.T) {
 	}
 	if _, err := os.Stat(dump); err != nil {
 		t.Fatalf("pending failure dump was removed: %v", err)
+	}
+}
+
+// An endless chain keeps only its nearest ancestors that ran as resume
+// fallback. A healthy Gold run at the end of a 4,512-run SecretPotion loop
+// pinned every dead ancestor, so none of them could be deleted.
+func TestLiveLineageProtectsOnlyNearestRanAncestors(t *testing.T) {
+	w := NewWall("")
+	w.mu.Lock()
+	parent := ""
+	for i := 0; i < 6; i++ {
+		id := fmt.Sprintf("a%d", i)
+		w.tiles[id] = &Tile{RunID: id, Status: statusDone, Finished: true, Attempts: 1, Endless: true, ResumeFromRunID: parent}
+		parent = id
+	}
+	// A never-leased link in the chain does not count toward the depth.
+	w.tiles["unran"] = &Tile{RunID: "unran", Status: statusDone, Finished: true, Endless: true, ResumeFromRunID: parent}
+	w.tiles["live"] = &Tile{RunID: "live", Status: statusRunning, Endless: true, ResumeFromRunID: "unran"}
+	keep := w.liveCheckpointLineageLocked()
+	w.mu.Unlock()
+
+	for _, id := range []string{"live", "unran", "a5", "a4", "a3"} {
+		if _, ok := keep[id]; !ok {
+			t.Fatalf("%s not protected; lineage=%v", id, keep)
+		}
+	}
+	for _, id := range []string{"a2", "a1", "a0"} {
+		if _, ok := keep[id]; ok {
+			t.Fatalf("%s protected beyond fallback depth; lineage=%v", id, keep)
+		}
 	}
 }

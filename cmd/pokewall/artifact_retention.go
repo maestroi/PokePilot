@@ -14,10 +14,19 @@ const (
 	defaultArtifactSweepEvery = 15 * time.Minute
 )
 
+// resumeLineageFallbackDepth bounds how many ResumeFromRunID ancestors that
+// actually ran stay protected behind an active run. Resume takes the newest
+// checkpoint in the lineage, and every child starts from that checkpoint, so
+// deeper ancestors only hold older states. Unbounded, one healthy endless Gold
+// run pinned 4,512 dead loop runs (and their S3 trees) in RAM and history.
+// ponytail: fixed depth; compare checkpoint frames if a chain ever needs a
+// deeper fallback.
+const resumeLineageFallbackDepth = 3
+
 // liveCheckpointLineageLocked returns every run whose checkpoint tree
 // is still part of recovery for an active run: the active run itself and
-// every ResumeFromRunID ancestor it can still fall back to. Paused runs are
-// intentionally included even though their current runner generation has
+// its nearest ResumeFromRunID ancestors it can still fall back to. Paused runs
+// are intentionally included even though their current runner generation has
 // settled: their checkpoint tree is exactly what Resume needs. Caller holds
 // w.mu.
 func (w *Wall) liveCheckpointLineageLocked() map[string]struct{} {
@@ -30,7 +39,8 @@ func (w *Wall) liveCheckpointLineageLocked() map[string]struct{} {
 			keep[t.RunID] = struct{}{}
 		}
 		seen := make(map[string]struct{})
-		for id := t.ResumeFromRunID; id != ""; {
+		ran := 0
+		for id := t.ResumeFromRunID; id != "" && ran < resumeLineageFallbackDepth; {
 			if _, dup := seen[id]; dup {
 				break
 			}
@@ -39,6 +49,9 @@ func (w *Wall) liveCheckpointLineageLocked() map[string]struct{} {
 			parent := w.tiles[id]
 			if parent == nil {
 				break
+			}
+			if parent.Attempts > 0 {
+				ran++
 			}
 			id = parent.ResumeFromRunID
 		}
