@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/maestroi/pokepilot/farm"
 )
@@ -255,5 +257,57 @@ func TestArchiveSearchRunIDBeforePagination(t *testing.T) {
 	}
 	if got.Total != 3 || len(got.Runs) != 1 || got.Runs[0]["run_id"] != "second-MATCH" {
 		t.Fatalf("search before pagination = %#v", got)
+	}
+}
+
+// The archive sorts the whole finished history, so it must index lean rows
+// and serialize full rows only for the page it returns; full rows for every
+// run pushed the Live "Recent" request past the operator proxy timeout.
+func TestArchiveDashboardIndexesLeanRowsAndLoadsFullPage(t *testing.T) {
+	w := &Wall{tiles: map[string]*Tile{}}
+	for i, id := range []string{"old", "mid", "new"} {
+		w.tiles[id] = &Tile{
+			RunID: id, Status: statusDone, Finished: true, EndedAt: time.Unix(int64(100+i), 0),
+			Question: "big prompt " + id, Trail: [][2]uint8{{1, 2}},
+		}
+		w.order = append(w.order, id)
+	}
+	var indexQuestions, pageIDs []string
+	fallback := http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		rec := httptest.NewRecorder()
+		w.handleDashboard(rec, req)
+		var view dashboardView
+		if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
+			t.Fatal(err)
+		}
+		for _, run := range view.Runs {
+			if req.Header.Get(archiveIndexHeader) != "" {
+				indexQuestions = append(indexQuestions, run.Question)
+			} else {
+				pageIDs = append(pageIDs, run.RunID)
+			}
+		}
+		_, _ = res.Write(rec.Body.Bytes())
+	})
+	res := httptest.NewRecorder()
+	archiveHTTPHandler(w, fallback).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&limit=1", nil))
+	var got struct {
+		Total int       `json:"total"`
+		Runs  []tileRow `json:"runs"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Total != 3 || len(got.Runs) != 1 || got.Runs[0].RunID != "new" {
+		t.Fatalf("page = total %d runs %+v, want newest of 3", got.Total, got.Runs)
+	}
+	if got.Runs[0].Question != "big prompt new" || len(got.Runs[0].Trail) != 1 {
+		t.Fatalf("page row = %+v, want full row", got.Runs[0])
+	}
+	if strings.Join(indexQuestions, "") != "" || len(indexQuestions) != 3 {
+		t.Fatalf("index questions = %q, want 3 lean rows", indexQuestions)
+	}
+	if strings.Join(pageIDs, ",") != "new" {
+		t.Fatalf("full rows loaded for %v, want only the page", pageIDs)
 	}
 }

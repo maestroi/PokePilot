@@ -162,6 +162,40 @@ func dashboardListRow(row tileRow) tileRow {
 	return row
 }
 
+const (
+	// archiveIndexHeader asks GET /v1/dashboard for lean rows: the archive
+	// filters, sorts and pages the whole finished history, and serializing
+	// every run's map, sprites, trail and prompts made that exceed the
+	// operator proxy timeout once history reached a few thousand runs.
+	archiveIndexHeader = "X-Pokewall-Archive-Index"
+	// archiveRunsHeader asks GET /v1/dashboard for the full rows of these
+	// comma-separated run ids only, in that order.
+	archiveRunsHeader = "X-Pokewall-Archive-Runs"
+)
+
+// archiveIndexRow keeps what archive filters, sorts and facets read and
+// drops the per-run payloads only a page of full rows needs.
+func archiveIndexRow(row tileRow) tileRow {
+	row.Trace, row.Question, row.Decision, row.Raw, row.StopSoFar = "", "", "", "", ""
+	row.Sprites, row.Trail, row.MapAsset = nil, nil, nil
+	row.GameState, row.GameDecision, row.Activity = nil, nil, nil
+	return row
+}
+
+// snapshotRuns returns list rows for the given run ids, skipping unknown ids.
+func (w *Wall) snapshotRuns(ids []string) dashboardView {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	lineage := w.liveCheckpointLineageLocked()
+	rows := make([]tileRow, 0, len(ids))
+	for _, id := range ids {
+		if t := w.tiles[strings.TrimSpace(id)]; t != nil {
+			rows = append(rows, dashboardListRow(w.tileRowWithLineageLocked(t, lineage)))
+		}
+	}
+	return dashboardView{Now: time.Now().Unix(), WallVersion: w.Version, Runs: rows}
+}
+
 func (w *Wall) snapshotRun(runID string) (tileRow, bool) {
 	runID = strings.TrimSpace(runID)
 	if runID == "" {
