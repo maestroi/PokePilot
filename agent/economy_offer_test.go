@@ -128,10 +128,10 @@ func TestFundingSaleObjectivesCoverUnaffordableStoryPayment(t *testing.T) {
 		}
 		got[string(o.Item)] = o.Qty
 	}
-	// ¥271 short: one ULTRA BALL (¥600) or the NUGGET (¥5000) covers it.
-	// Key items and the zero-price MOON STONE are never offered.
-	if len(got) != 2 || got["ultra ball"] != 1 || got["nugget"] != 1 {
-		t.Fatalf("funding sales = %v, want 1 ULTRA BALL and 1 NUGGET", got)
+	// ¥271 short: the NUGGET (¥5000) covers it. Key items, balls and the
+	// zero-price MOON STONE are never offered.
+	if len(got) != 1 || got["nugget"] != 1 {
+		t.Fatalf("funding sales = %v, want 1 NUGGET", got)
 	}
 
 	obs.Money = 500
@@ -162,8 +162,8 @@ func TestFundingSaleObjectivesCoverDryDexCaptureStock(t *testing.T) {
 	for _, o := range fundingSaleObjectives(obs) {
 		got[string(o.Item)] = o.Qty
 	}
-	// ¥913 short of five POKE BALLs: the MAX REVIVE (¥2000) covers it; one
-	// GUARD SPEC (¥350) does not.
+	// ¥1913 short of the ten-ball target: the MAX REVIVE (¥2000) covers it;
+	// one GUARD SPEC (¥350) does not.
 	if len(got) != 1 || got["max revive"] != 1 {
 		t.Fatalf("funding sales = %v, want 1 MAX REVIVE", got)
 	}
@@ -202,9 +202,10 @@ func TestFundingSaleObjectivesSellTMsAndFallBackToPartialSales(t *testing.T) {
 		}
 		return got
 	}
-	// ¥808 short: TM46 (¥2000) and TM47 (¥1500) each cover it.
-	if got := sales(); len(got) != 2 || got["tm46"] != 1 || got["tm47"] != 1 {
-		t.Fatalf("funding sales = %v, want TM46 and TM47", got)
+	// ¥1808 short of the ten-ball target: TM46 (¥2000) covers it; TM47
+	// (¥1500) alone does not.
+	if got := sales(); len(got) != 1 || got["tm46"] != 1 {
+		t.Fatalf("funding sales = %v, want TM46", got)
 	}
 	// Without the TMs nothing covers it; the GUARD SPEC still raises ¥350.
 	obs.Bag = obs.Bag[:3]
@@ -252,5 +253,30 @@ func TestTravelOffersUnbeatenTrainerRouteWhenDexRunIsBroke(t *testing.T) {
 	obs.Bag = append(obs.Bag, Item{Name: "pokeball", Quantity: minimumCaptureStock})
 	if o, ok := funded(); ok {
 		t.Fatalf("stocked Dex run still tagged a funding route: %s %s", o, o.Note)
+	}
+}
+
+// A dry Dex run funds balls from surplus only: stones beyond the evolutions
+// still owed, never the stones those evolutions need, and never HP healing.
+func TestFundingSaleObjectivesKeepDexStonesAndHealing(t *testing.T) {
+	obs := Observation{
+		RestockStock: []string{"pokeball"},
+		Dex: DexCatalog{Targets: []DexEntry{
+			{Species: "rattata"},
+			{Species: "flareon", Sources: []DexSource{{Kind: AcquireItemEvo, From: "eevee", Item: "fire stone"}}},
+			{Species: "vaporeon", Sources: []DexSource{{Kind: AcquireItemEvo, From: "eevee", Item: "water stone"}}},
+		}},
+		Bag: []Item{
+			{Name: "fire stone", Quantity: 1},
+			{Name: "water stone", Quantity: 3},
+			{Name: "hyper potion", Quantity: 4},
+		},
+	}
+	got := map[string]int{}
+	for _, o := range fundingSaleObjectives(obs) {
+		got[string(o.Item)] = o.Qty
+	}
+	if len(got) != 1 || got["water stone"] != 2 {
+		t.Fatalf("funding sales = %v, want only the 2 surplus WATER STONEs", got)
 	}
 }
