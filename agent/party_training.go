@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
+	"github.com/maestroi/pokepilot/game"
+	"github.com/maestroi/pokepilot/red/rom"
 	"github.com/maestroi/pokepilot/red/state"
 	"github.com/maestroi/pokepilot/red/sym"
 	"github.com/maestroi/pokepilot/skill"
@@ -129,7 +131,53 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 	if err != nil {
 		return TrainingEstimate{}, err
 	}
-	return applyPartyTrainingMethod(party, slot, slots, estimate), nil
+	estimate = applyPartyTrainingMethod(party, slot, slots, estimate)
+	// Direct training holds the trainee in every wild fight and flees what it
+	// cannot damage, so a band of immune wilds awards no XP at all: a Lick-only
+	// lead against Route 3's Normal types fled 37 encounters and stagnated
+	// (run-2qrxgybx4ic51xfxtib9eon64, triage:48e41d4e4c318585).
+	// ponytail: only the all-immune band is rejected; a partly immune band
+	// keeps its full-band XP rate, weight the rate by damageable slots if that
+	// overstates a real habitat.
+	if estimate.Method == TrainingDirect && estimate.Viability != TrainingSatisfied &&
+		!trainingWildsDamageable(romData, mon, slots) {
+		estimate.XPPerEncounter = 0
+		estimate.EstimatedEncounters = 0
+		estimate.Viability = TrainingOutsideBudget
+	}
+	return estimate, nil
+}
+
+// trainingWildsDamageable reports whether mon, held as the training lead, can
+// make HP progress against at least one local wild slot. Wild stats use the
+// Gen 1 formula without DVs/stat experience; only the move/type verdict is
+// read, so the approximation cannot flip an immunity.
+func trainingWildsDamageable(romData []byte, mon state.Mon, slots []skill.WildEncounterSlot) bool {
+	b := game.BattleState{
+		ActiveLevel: mon.Level, ActiveHP: mon.HP, ActiveMaxHP: mon.MaxHP,
+		ActiveAttack: mon.Attack, ActiveDefense: mon.Defense, ActiveSpeed: mon.Speed,
+		ActiveSpecial: mon.Special, ActiveSpecialAttack: mon.Special, ActiveSpecialDefense: mon.Special,
+		ActiveType1: mon.Type1, ActiveType2: mon.Type2,
+	}
+	for i, id := range mon.Moves {
+		b.Moves[i] = game.BattleMove{ID: id, PP: mon.PP[i]}
+	}
+	for _, slot := range slots {
+		wild, err := rom.LookupSpeciesBaseStats(romData, slot.ID)
+		if err != nil {
+			return true // unknown habitat data: keep the XP estimate
+		}
+		stat := func(base uint8) uint16 { return uint16(int(base)*2*int(slot.Level)/100 + 5) }
+		hp := uint16(int(wild.HP)*2*int(slot.Level)/100 + int(slot.Level) + 10)
+		b.EnemyLevel, b.EnemyHP, b.EnemyMaxHP = slot.Level, hp, hp
+		b.EnemyAttack, b.EnemyDefense, b.EnemySpeed = stat(wild.Attack), stat(wild.Defense), stat(wild.Speed)
+		b.EnemySpecial, b.EnemySpecialAttack, b.EnemySpecialDefense = stat(wild.Special), stat(wild.Special), stat(wild.Special)
+		b.EnemyType1, b.EnemyType2 = wild.Type1, wild.Type2
+		if skill.TrainingLeadCanDamage(romData, b) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a
