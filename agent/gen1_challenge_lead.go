@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -58,7 +59,11 @@ func prepareChallengeLead(m *emu.Emu, romData []byte, o Objective) error {
 			return nil // the lead already carries a preferred attack
 		}
 	}
-	if err := skill.SetLead(m, counters[0].Slot); err != nil {
+	if err := skill.SetLead(m, counters[0].Slot); errors.Is(err, skill.ErrPartySelectionRefused) {
+		// Best effort: the order is unchanged and the overworld is clean, so
+		// the fight's own switch policy still applies.
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("agent: %s: lead counter slot %d: %w", o, counters[0].Slot, err)
 	}
 	return nil

@@ -520,7 +520,17 @@ func travelTrainingLeg(m *emu.Emu, romData []byte, dest Destination, policy Move
 // (wPartyGainExpFlags is set for wPlayerMonNumber alone, see
 // engine/battle/experience.asm). Training a caught Caterpie to Butterfree
 // therefore starts here.
-func PromoteToLead(m *emu.Emu, index int) error {
+// ErrPartySelectionRefused reports that the game declined to select a party
+// member for the swap (Yellow's starter Pikachu after Pewter Center's
+// Jigglypuff puts it to sleep: "There isn't any response..."). PromoteToLead
+// has already backed out to the overworld, so the party order is unchanged and
+// the boundary is clean.
+var ErrPartySelectionRefused = errors.New("skill: PromoteToLead: the game refused the party selection")
+
+// errLeftPromoteScreen marks a press that left the expected swap screen.
+var errLeftPromoteScreen = errors.New("left the expected screen before the press took")
+
+func PromoteToLead(m *emu.Emu, index int) (err error) {
 	var mem state.Mem
 	state.Snapshot(m, &mem)
 	party := state.DecodeParty(&mem)
@@ -532,6 +542,18 @@ func PromoteToLead(m *emu.Emu, index int) error {
 	}
 	want := party.Mons[index].Species
 	partyMax := int(party.Count) - 1
+	// A failed swap must not hand the caller an open START menu, party screen
+	// or refusal text: back out to the overworld before reporting it.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if backErr := backOutOfPartyMenus(m); backErr != nil {
+			err = fmt.Errorf("%w (back out: %v)", err, backErr)
+		} else if errors.Is(err, errLeftPromoteScreen) {
+			err = fmt.Errorf("%w: %w", ErrPartySelectionRefused, err)
+		}
+	}()
 
 	onScreen := func(s *state.Mem, marker string) bool {
 		return strings.Contains(state.ScreenText(s), marker)
@@ -595,7 +617,7 @@ func PromoteToLead(m *emu.Emu, index int) error {
 			}
 			state.Snapshot(m, &s)
 			if !stillHere(&s) {
-				return fmt.Errorf("skill: PromoteToLead: %s: left the expected screen before the press took", what)
+				return fmt.Errorf("skill: PromoteToLead: %s: %w", what, errLeftPromoteScreen)
 			}
 		}
 		return fmt.Errorf("skill: PromoteToLead: %s did not appear after repeated presses", what)
@@ -765,6 +787,38 @@ func PromoteToLead(m *emu.Emu, index int) error {
 		return fmt.Errorf("skill: PromoteToLead: lead is species %#02x, want %#02x", got, want)
 	}
 	return nil
+}
+
+// backOutOfPartyMenus returns to the overworld from wherever a failed swap
+// stopped: a refusal text, the party screen, or the START menu. B advances
+// text and backs each layer out; the START menu close is decoder-gated because
+// Controllable reads true while it is still drawn.
+func backOutOfPartyMenus(m *emu.Emu) error {
+	decoder, err := menuDecoderFor(m)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < 8 && !decoder.DecodeStartMenu(m).Visible; i++ {
+		var s state.Mem
+		state.Snapshot(m, &s)
+		if state.DecodeBattle(&s) != nil {
+			return fmt.Errorf("skill: PromoteToLead: battle owns the screen")
+		}
+		if state.Controllable(&s) && state.DecodeInteraction(&s).Kind == state.InteractionNone {
+			return nil
+		}
+		m.Tap(emu.B, 3, 7)
+		m.StepFrames(20)
+	}
+	if err := closeStartMenuWithDecoder(m, decoder); err != nil {
+		return err
+	}
+	_, err = m.StepUntil(interactionTransitionFrames, func(e *emu.Emu) bool {
+		var s state.Mem
+		state.Snapshot(e, &s)
+		return state.Controllable(&s)
+	})
+	return err
 }
 
 // cell is a game-tile position on a map.
