@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -87,6 +88,11 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 	limit, offset, errMessage := archivePage(r)
 	if errMessage != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": errMessage})
+		return
+	}
+
+	if archiveDefaultPage(r.URL.Query()) {
+		c.serveDefaultPage(w, r)
 		return
 	}
 
@@ -184,6 +190,46 @@ func (c *archiveController) handleDashboard(w http.ResponseWriter, r *http.Reque
 	}
 	document["runs"] = runs
 	document["total"] = total
+	writeJSON(w, http.StatusOK, document)
+}
+
+// archiveDefaultPage reports a newest-first page with no archive-only filter,
+// sort or facets: exactly the order the history store already pages by
+// (ended_at DESC), so it needs no full-history pass. Live and Media poll this
+// shape; scanning every finished row for it exceeded the operator proxy
+// timeout once history lived in PostgreSQL.
+func archiveDefaultPage(q url.Values) bool {
+	for _, key := range []string{"search", "game", "model", "deployment", "goal", "play_style", "compute", "experiment"} {
+		if strings.TrimSpace(q.Get(key)) != "" {
+			return false
+		}
+	}
+	sortKey := strings.ToLower(strings.TrimSpace(q.Get("sort")))
+	direction := strings.ToLower(strings.TrimSpace(q.Get("direction")))
+	return !queryBool(q.Get("success")) && !queryBool(q.Get("facets")) &&
+		(sortKey == "" || sortKey == "finished") && (direction == "" || direction == "desc")
+}
+
+func (c *archiveController) serveDefaultPage(w http.ResponseWriter, r *http.Request) {
+	recorder := httptest.NewRecorder()
+	c.fallback.ServeHTTP(recorder, r)
+	var document map[string]any
+	if recorder.Code < 200 || recorder.Code >= 300 || json.Unmarshal(recorder.Body.Bytes(), &document) != nil {
+		copyRecorder(w, recorder)
+		return
+	}
+	rawRuns, _ := document["runs"].([]any)
+	for _, raw := range rawRuns {
+		if run, ok := raw.(map[string]any); ok {
+			c.enrichRuntime(run)
+			if stats, ok := run["stats"].(map[string]any); ok {
+				delete(stats, "strategic_records")
+			}
+		}
+	}
+	if _, ok := document["total"]; !ok {
+		document["total"] = len(rawRuns)
+	}
 	writeJSON(w, http.StatusOK, document)
 }
 

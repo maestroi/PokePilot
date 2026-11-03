@@ -290,7 +290,7 @@ func TestArchiveDashboardIndexesLeanRowsAndLoadsFullPage(t *testing.T) {
 		_, _ = res.Write(rec.Body.Bytes())
 	})
 	res := httptest.NewRecorder()
-	archiveHTTPHandler(w, fallback).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&limit=1", nil))
+	archiveHTTPHandler(w, fallback).ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v1/dashboard?status=done&limit=1&facets=1", nil))
 	var got struct {
 		Total int       `json:"total"`
 		Runs  []tileRow `json:"runs"`
