@@ -540,6 +540,20 @@ func (w *Wall) handleCatalogDashboard(res http.ResponseWriter, req *http.Request
 		return
 	}
 
+	// The archive's page pass names the runs it will return; read just those
+	// instead of rescanning the whole history (see archiveRunsHeader).
+	if ids := strings.TrimSpace(req.Header.Get(archiveRunsHeader)); ids != "" {
+		view := runtimeDashboardView{Now: time.Now().Unix(), WallVersion: w.Version, Runs: []tileRow{}}
+		for _, id := range strings.Split(ids, ",") {
+			if row, ok := w.snapshotRun(id); ok {
+				row.Activity = nil
+				view.Runs = append(view.Runs, dashboardListRow(row))
+			}
+		}
+		writeJSON(res, http.StatusOK, view)
+		return
+	}
+
 	// The default dashboard is now the live control plane. Historical reads are
 	// explicit and therefore paginatable/queryable from SQLite.
 	history := query.status == statusDone || query.outcome != "" || query.how != "" || query.starter != "" || query.purpose != "" || query.facets
