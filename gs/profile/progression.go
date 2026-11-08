@@ -104,8 +104,8 @@ const (
 	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
 	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
 	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
-	ProgressMtSilverOpened        game.ProgressID = "gs_mt_silver_opened"
-	ProgressMtSilverRedDefeated    game.ProgressID = "gs_mt_silver_red_defeated"
+	ProgressMtSilverOpened          game.ProgressID = "gs_mt_silver_opened"
+	ProgressMtSilverRedDefeated     game.ProgressID = "gs_mt_silver_red_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -190,14 +190,14 @@ const (
 	eventKantoBlueAtViridian      uint16 = 1910
 	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
 	// after a retail battle win; it is cleared by the next Hall ceremony.
-	eventMtSilverOpened          uint16 = 1871
-	eventMtSilverRedDisappeared  uint16 = 1890
-	eventBeatEliteFour            uint16 = 68
-	eventIcePathWaterfall         uint16 = 1672
-	eventDragonsDenDragonFang     uint16 = 1704
-	eventBlackthornGymBoulder1    uint16 = 1798
-	eventIcePathBoulder1          uint16 = 1801
-	eventIcePathFloorBoulder1     uint16 = 1805
+	eventMtSilverOpened         uint16 = 1871
+	eventMtSilverRedDisappeared uint16 = 1890
+	eventBeatEliteFour          uint16 = 68
+	eventIcePathWaterfall       uint16 = 1672
+	eventDragonsDenDragonFang   uint16 = 1704
+	eventBlackthornGymBoulder1  uint16 = 1798
+	eventIcePathBoulder1        uint16 = 1801
+	eventIcePathFloorBoulder1   uint16 = 1805
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
