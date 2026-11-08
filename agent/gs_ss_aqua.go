@@ -223,8 +223,12 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 	}
 	// The first-trip flag is still false until the player has left the
 	// ship through the sailor's retail disembarkation script.
+	ship, err := gsOpeningMapID("FAST_SHIP_1F")
+	if err != nil {
+		return err
+	}
 	if err := gsSecondBadgeFaceFrom(m, romData, profile,
-		skill.ExactNativeDestination(mustGSMapID("FAST_SHIP_1F"), 25, 3),
+		skill.ExactNativeDestination(ship, 25, 3),
 		25, 2, label); err != nil {
 		return fmt.Errorf("gen2 S.S. Aqua: return to boarding sailor: %w", err)
 	}
@@ -256,7 +260,3 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 	return fmt.Errorf("%w: Vermilion Port did not set the first-voyage event", errGSSecondBadgeUnexpectedState)
 }
 
-func mustGSMapID(name string) uint16 {
-	id, _ := gsOpeningMapID(name)
-	return id
-}
