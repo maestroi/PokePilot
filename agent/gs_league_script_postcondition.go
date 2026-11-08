@@ -47,3 +47,24 @@ func gsVerifyLeagueEndingEvent(goal game.ProgressID, initial, final Observation)
 	}
 	return nil
 }
+
+// gsVerifyRedEndingEvent is the Red equivalent of the cartridge-observed
+// Hall-of-Fame exception. The scripted disappearance flag is set after Red's
+// real trainer fight and before the credits reset overworld state; requiring
+// controllable movement at that point would incorrectly reject victory.
+func gsVerifyRedEndingEvent(initial, final Observation) error {
+	if initial.GameID != final.GameID ||
+		(initial.GameID != gsprofile.GoldGameID && initial.GameID != gsprofile.SilverGameID) {
+		return fmt.Errorf("%w: Red ending changed cartridge identity", ErrObjectivePostconditionUnavailable)
+	}
+	if !initial.Story.Has(gsprofile.ProgressMtSilverOpened) {
+		return fmt.Errorf("%w: Red encounter began before Oak unlocked Mt. Silver", ErrObjectivePostconditionFailed)
+	}
+	if initial.Story.Has(gsprofile.ProgressMtSilverRedDefeated) {
+		return fmt.Errorf("%w: Red disappearance event was already set before battle", ErrObjectivePostconditionFailed)
+	}
+	if final.InBattle || !final.Story.Has(gsprofile.ProgressMtSilverRedDefeated) {
+		return fmt.Errorf("%w: Red ending lacked settled retail disappearance event", ErrObjectivePostconditionFailed)
+	}
+	return nil
+}
