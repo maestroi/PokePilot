@@ -279,7 +279,9 @@ const goalPercent = computed(() => {
 const leagueGoal = computed(() => {
   const run = selectedRun.value
   if (!run || isTetrisRun(run) || isBoxxleRun(run)) return false
-  const text = [run.goal, run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
+  const selectedGoal = (run.goal || '').trim().toLowerCase()
+  if (selectedGoal) return /elite[- ]four|champion|hall[- ]of[- ]fame/.test(selectedGoal)
+  const text = [run.stats?.goal_summary, objectiveLabel(run)].filter(Boolean).join(' ').toLowerCase()
   return normalizePlayStyle(run) === 'speedrun' || /elite four|champion|hall of fame/.test(text)
 })
 
