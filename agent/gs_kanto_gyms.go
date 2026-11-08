@@ -104,8 +104,12 @@ func gsKantoGymObjectives(obs Observation) []Objective {
 			}
 		case gsprofile.ProgressKantoBoulderBadgeEarned:
 			// The Diglett's Cave path from Vermilion to Pewter is blocked
-			// by the sleeping Snorlax. Restore Kanto power, obtain the
-			// Lavender EXPN card, then tune channel 20 beside Snorlax.
+			// by the sleeping Snorlax. Restore Kanto power, obtain both
+			// radio cards, then tune channel 20 beside Snorlax.
+			if !obs.Story.Has(gsprofile.ProgressRadioCardReceived) {
+				return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressRadioCardReceived,
+					Note: "(experimental Kanto: basic Pokégear Radio Card missing; obtain it from the Goldenrod Radio Tower quiz)"}}
+			}
 			if !obs.Story.Has(gsprofile.ProgressKantoExpansionCard) {
 				return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoExpansionCard,
 					Note: "(experimental Kanto: claim the Pokégear EXPN card at Lavender Radio Tower after restoring power)"}}
