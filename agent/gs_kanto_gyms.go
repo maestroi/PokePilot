@@ -113,6 +113,14 @@ func gsKantoGymObjectives(obs Observation) []Objective {
 				Note: fmt.Sprintf("(experimental Kanto: navigate the native %s gym route, fight %s and verify the badge engine flag)", spec.leader, spec.leader)}}
 		}
 	}
+	if !obs.Story.Has(gsprofile.ProgressMtSilverOpened) {
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressMtSilverOpened,
+			Note: "(experimental Kanto: visit Oak after all sixteen badges and unlock Mt. Silver)"}}
+	}
+	if !obs.Story.Has(gsprofile.ProgressMtSilverRedDefeated) {
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressMtSilverRedDefeated,
+			Note: "(experimental final boss: travel through Mt. Silver and defeat Red)"}}
+	}
 	return nil
 }
 
