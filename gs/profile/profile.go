@@ -204,6 +204,9 @@ func (p *Profile) DecodeObservation(reader game.MemoryReader, romData []byte) (g
 	appendBadges(johto, johtoBadgeNames[:])
 	appendBadges(kanto, kantoBadgeNames[:])
 	obs.Story = append(p.DecodeFirstBadgeProgress(reader),
+		// The shared League goal tracks only Johto badges; Kanto badges are
+		// separate postgame progress and must never inflate the first 8/9 steps.
+		game.ProgressFact{ID: game.ProgressCampaignBadges, Complete: johto == 0xff, Value: bits.OnesCount8(johto)},
 		game.ProgressFact{ID: ProgressJohtoBadges, Complete: johto == 0xff, Value: bits.OnesCount8(johto)},
 		game.ProgressFact{ID: ProgressKantoBadges, Complete: kanto == 0xff, Value: bits.OnesCount8(kanto)},
 	)

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SpectatorRun } from '../src/shared/api/spectator.ts'
-import { goalProgress, goalProgressMeta } from '../src/spectator/goalProgress.ts'
+import { goalProgress, goalProgressMeta, isGoalComplete } from '../src/spectator/goalProgress.ts'
 
 function run(overrides: Partial<SpectatorRun> = {}): SpectatorRun {
   return {
@@ -99,4 +99,46 @@ test('non-league goals keep using structured goal current and target', () => {
 
   assert.equal(goalProgress(value), 50)
   assert.equal(goalProgressMeta(value).label, '75/150')
+})
+
+test('Gold and Silver Hall of Fame goal tracks Johto badges through 8/9', () => {
+  for (const game of ['pokemon-gold', 'pokemon-silver']) {
+    const badges = ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising']
+    const before = run({
+      game,
+      goal: 'elite-four',
+      play_style: 'adventure',
+      player: { money: 0, badges, party: [] },
+      stats: { ...run().stats!, goal_current: 8, goal_target: 9, goal_complete: false }
+    })
+    assert.equal(isGoalComplete(before), false)
+    assert.equal(goalProgress(before), 88)
+    assert.match(goalProgressMeta(before).detail, /Hall of Fame/)
+    const completed = run({
+      ...before,
+      stats: { ...before.stats!, goal_current: 9, goal_target: 9, goal_complete: true }
+    })
+    assert.equal(goalProgress(completed), 100)
+    assert.equal(goalProgressMeta(completed).complete, true)
+  }
+})
+
+test('Gen2 badge and frontier goals are not treated as League goals', () => {
+  const badges = ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising']
+  const badgeGoal = run({
+    game: 'pokemon-gold',
+    goal: 'Earn 8 badges.',
+    player: { money: 0, badges, party: [], milestones: ['Hall of Fame'] },
+    stats: { ...run().stats!, goal_current: 7, goal_target: 8, goal_complete: false }
+  })
+  assert.equal(isGoalComplete(badgeGoal), false)
+  assert.equal(goalProgress(badgeGoal), 87.5)
+
+  const frontier = run({
+    game: 'pokemon-silver',
+    goal: 'Play through the current supported Gen 2 frontier.',
+    stats: { ...run().stats!, goal_current: 0, goal_target: 1, goal_complete: false }
+  })
+  assert.equal(goalProgress(frontier), 0)
+  assert.equal(goalProgressMeta(frontier).label, '0/1')
 })

@@ -38,6 +38,8 @@ test('tools run form exposes Gold and Silver with native Gen2 starters', () => {
   assert.ok(toolsSource.includes("['Earn 6 badges.', '6 badges · Mineral · Jasmine']"))
   assert.ok(toolsSource.includes("['Earn 7 badges.', '7 badges · Glacier · Pryce']"))
   assert.ok(toolsSource.includes("['Earn 8 badges.', '8 badges · Rising · Clair']"))
+  assert.ok(toolsSource.includes("['elite-four', 'Hall of Fame · 8 Johto badges + Elite Four & Champion · experimental']"))
+  assert.ok(!toolsSource.includes("['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental']"))
   assert.ok(toolsSource.includes('Only cartridge-observed badge and Hall of Fame events count as success.'))
   assert.ok(!toolsSource.includes('<option value="Earn 8 badges." disabled>'))
   assert.ok(toolsSource.includes("isGen2.value) return starterMode.value === 'default' ? '' : starterMode.value"))

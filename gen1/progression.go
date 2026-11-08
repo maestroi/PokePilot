@@ -35,7 +35,7 @@ const (
 	ProgressLeagueAgathaDefeated       game.ProgressID = "league_agatha_defeated"
 	ProgressLeagueLanceDefeated        game.ProgressID = "league_lance_defeated"
 	ProgressLeagueChampionDefeated     game.ProgressID = "league_champion_defeated"
-	ProgressMainStoryComplete          game.ProgressID = "main_story_complete"
+	ProgressMainStoryComplete          game.ProgressID = game.ProgressMainStoryComplete
 	ProgressVolcanoBadge               game.ProgressID = "volcano_badge"
 	ProgressEarthBadge                 game.ProgressID = "earth_badge"
 	ProgressIndigoPlateauReady         game.ProgressID = "indigo_plateau_ready"

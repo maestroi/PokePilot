@@ -3,6 +3,7 @@ package profile
 import (
 	"testing"
 
+	"github.com/maestroi/pokepilot/game"
 	"github.com/maestroi/pokepilot/gs/sym"
 )
 
@@ -24,26 +25,30 @@ func TestGSChampionAndHallOfFameRequireIndependentRetailEvents(t *testing.T) {
 				mem[sym.EventFlags+event/8] |= byte(1 << (event % 8))
 			}
 			if p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueLanceDefeated) ||
-				p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) {
+				p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) ||
+				p.DecodeFirstBadgeProgress(mem).Has(game.ProgressMainStoryComplete) {
 				t.Fatal("four Elite Four wins cannot manufacture Champion or Hall of Fame")
 			}
 			mem[sym.EventFlags+eventBeatChampionLance/8] |= byte(1 << (eventBeatChampionLance % 8))
 			if !p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueLanceDefeated) {
 				t.Fatal("Lance's retail victory flag did not project")
 			}
-			if p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) {
+			if p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) ||
+				p.DecodeFirstBadgeProgress(mem).Has(game.ProgressMainStoryComplete) {
 				t.Fatal("Lance's trainer flag cannot count as Hall of Fame")
 			}
 			mem[sym.EventFlags+eventBeatEliteFour/8] |= byte(1 << (eventBeatEliteFour % 8))
-			if !p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) {
-				t.Fatal("Hall ceremony event did not project")
+			if !p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) ||
+				!p.DecodeFirstBadgeProgress(mem).Has(game.ProgressMainStoryComplete) {
+				t.Fatal("Hall ceremony event did not project both cartridge and portable completion facts")
 			}
 			mem[sym.EventFlags+eventBeatChampionLance/8] &^= byte(1 << (eventBeatChampionLance % 8))
 			if p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueLanceDefeated) {
 				t.Fatal("fresh Indigo League attempt must clear Lance's battle victory")
 			}
-			if !p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) {
-				t.Fatal("historical Hall of Fame flag must persist after Lance flag resets")
+			if !p.DecodeFirstBadgeProgress(mem).Has(ProgressLeagueHallOfFameEntered) ||
+				!p.DecodeFirstBadgeProgress(mem).Has(game.ProgressMainStoryComplete) {
+				t.Fatal("durable Hall of Fame facts must persist after Lance flag resets")
 			}
 		})
 	}
