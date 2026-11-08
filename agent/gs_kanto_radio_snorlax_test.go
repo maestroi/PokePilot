@@ -75,3 +75,29 @@ func TestGSKantoSnorlaxAndExpansionUseRealMapsAndExecutableStages(t *testing.T) 
 		t.Fatal("Snorlax objective must not proceed without ROM")
 	}
 }
+
+func TestGSKantoBoulderOfferChecksBothRadioCardsAndSnorlaxFirst(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	obs := Observation{GameID: gsprofile.GoldGameID, Story: ProgressState{
+		{ID: gsprofile.ProgressKantoThunderBadgeEarned, Complete: true},
+		{ID: gsprofile.ProgressKantoMarshBadgeEarned, Complete: true},
+		{ID: gsprofile.ProgressKantoRainbowBadgeEarned, Complete: true},
+		{ID: gsprofile.ProgressKantoSoulBadgeEarned, Complete: true},
+		{ID: gsprofile.ProgressKantoCascadeBadgeEarned, Complete: true},
+	}}
+	for _, want := range []game.ProgressID{
+		gsprofile.ProgressRadioCardReceived,
+		gsprofile.ProgressKantoExpansionCard,
+		gsprofile.ProgressKantoSnorlaxCleared,
+		gsprofile.ProgressKantoBoulderBadgeEarned,
+	} {
+		offered := adapter.ProgressionObjectives(obs)
+		if len(offered) != 1 || offered[0].Progress != want {
+			t.Fatalf("Brock approach offered %+v, want %s", offered, want)
+		}
+		if !adapter.SupportsObjective(offered[0]) {
+			t.Fatalf("Brock approach offered unowned controller %s", offered[0].Progress)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: want, Complete: true})
+	}
+}
