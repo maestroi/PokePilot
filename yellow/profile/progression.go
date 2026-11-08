@@ -323,6 +323,11 @@ func projectYellowStory(reader game.MemoryReader, mapID uint8) game.ProgressStat
 	leagueAgatha := yellowHasEvent(reader, eventBeatAgatha) || mainComplete
 	leagueLance := yellowHasEvent(reader, eventBeatLance) || mainComplete
 	champion := yellowHasEvent(reader, eventBeatChampionRival) || mainComplete
+	if !champion && !mainComplete && gen1.LeagueRunAbandoned(reader.Peek8(sym.Elite4Flags), mapID) {
+		// Same lobby reset as Red: a lost gauntlet restarts from Lorelei
+		// (triage:f005b74b7b732029).
+		leagueStarted, leagueLorelei, leagueBruno, leagueAgatha, leagueLance = false, false, false, false, false
+	}
 	if leagueLorelei || leagueBruno || leagueAgatha || leagueLance || champion || mainComplete {
 		leagueStarted = true
 	}
