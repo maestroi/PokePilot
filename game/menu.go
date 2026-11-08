@@ -29,9 +29,9 @@ type StartMenuState struct {
 type StartMenuEntry string
 
 const (
-	StartMenuPokemon StartMenuEntry = "pokemon"
-	StartMenuItems   StartMenuEntry = "items"
-	StartMenuSave    StartMenuEntry = "save"
+	StartMenuPokemon  StartMenuEntry = "pokemon"
+	StartMenuItems    StartMenuEntry = "items"
+	StartMenuSave     StartMenuEntry = "save"
 	StartMenuPokegear StartMenuEntry = "pokegear"
 )
 
