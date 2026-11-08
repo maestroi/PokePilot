@@ -87,7 +87,7 @@ const (
 	// The ticket must actually be usable in the key-item pocket. Entering the
 	// ship does not prove arrival: only VermilionPortLeaveShipScript sets the
 	// first-landing event after a complete scripted voyage.
-	ProgressSSTicketReceived game.ProgressID = "gs_ss_ticket_received"
+	ProgressSSTicketReceived  game.ProgressID = "gs_ss_ticket_received"
 	ProgressKantoFirstLanding game.ProgressID = "gs_kanto_first_landing"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
