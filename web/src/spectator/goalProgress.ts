@@ -28,8 +28,11 @@ function isSpeedrun(run: SpectatorRun): boolean {
 }
 
 function isLeagueCompletionGoal(run: SpectatorRun): boolean {
-  return isSpeedrun(run)
-    || /elite four|champion|hall of fame/.test(goalSearchText(run))
+  const goal = (run.goal || '').trim().toLowerCase()
+  // A selected structured goal wins over play-style heuristics. Gen2's
+  // supported frontier or 8-badge preset is not a League completion goal.
+  if (goal) return /elite[- ]four|champion|hall[- ]of[- ]fame/.test(goal)
+  return isSpeedrun(run) || /elite four|champion|hall of fame/.test(goalSearchText(run))
 }
 
 function hasMilestone(run: SpectatorRun, phrase: string): boolean {
@@ -38,7 +41,12 @@ function hasMilestone(run: SpectatorRun, phrase: string): boolean {
 }
 
 export function isGoalComplete(run: SpectatorRun): boolean {
-  return Boolean(run.stats?.goal_complete || hasMilestone(run, 'hall of fame'))
+  if (run.stats?.goal_complete) return true
+  // Milestones provide a fallback for a delayed stats snapshot, but may not
+  // override another goal such as badges:8 or the Gen2 supported frontier.
+  return isLeagueCompletionGoal(run) &&
+    (run.player?.badges?.length || 0) >= 8 &&
+    hasMilestone(run, 'hall of fame')
 }
 
 export function goalProgressMeta(run: SpectatorRun): GoalProgressMeta {
