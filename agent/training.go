@@ -311,15 +311,19 @@ func estimateTraining(romData []byte, leadSpecies uint8, currentXP uint32, curre
 	}
 	estimate.EstimatedEncounters = int((uint64(estimate.XPRemaining) + uint64(estimate.XPPerEncounter) - 1) / uint64(estimate.XPPerEncounter))
 
-	switch {
-	case estimate.EstimatedEncounters > budget:
-		estimate.Viability = TrainingOutsideBudget
-	case estimate.EstimatedEncounters*4 > budget*3:
-		estimate.Viability = TrainingExpensive
-	default:
-		estimate.Viability = TrainingViable
-	}
+	estimate.Viability = trainingViability(estimate.EstimatedEncounters, budget)
 	return estimate, nil
+}
+
+func trainingViability(encounters, budget int) TrainingViability {
+	switch {
+	case encounters > budget:
+		return TrainingOutsideBudget
+	case encounters*4 > budget*3:
+		return TrainingExpensive
+	default:
+		return TrainingViable
+	}
 }
 
 const (
