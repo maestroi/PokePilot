@@ -90,6 +90,14 @@ const (
 	ProgressSSTicketReceived        game.ProgressID = "gs_ss_ticket_received"
 	ProgressKantoFirstLanding       game.ProgressID = "gs_kanto_first_landing"
 	ProgressKantoThunderBadgeEarned game.ProgressID = "gs_kanto_thunder_badge_earned"
+	ProgressKantoMarshBadgeEarned   game.ProgressID = "gs_kanto_marsh_badge_earned"
+	ProgressKantoRainbowBadgeEarned game.ProgressID = "gs_kanto_rainbow_badge_earned"
+	ProgressKantoSoulBadgeEarned    game.ProgressID = "gs_kanto_soul_badge_earned"
+	ProgressKantoCascadeBadgeEarned game.ProgressID = "gs_kanto_cascade_badge_earned"
+	ProgressKantoBoulderBadgeEarned game.ProgressID = "gs_kanto_boulder_badge_earned"
+	ProgressKantoVolcanoBadgeEarned game.ProgressID = "gs_kanto_volcano_badge_earned"
+	ProgressKantoEarthBadgeEarned   game.ProgressID = "gs_kanto_earth_badge_earned"
+	ProgressKantoAllBadgesEarned    game.ProgressID = "gs_kanto_all_badges_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -179,7 +187,14 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
-	kantoBadgeThunderMask  = 1 << 2
+	kantoBadgeBoulderMask = 1 << 0
+	kantoBadgeCascadeMask = 1 << 1
+	kantoBadgeThunderMask = 1 << 2
+	kantoBadgeRainbowMask = 1 << 3
+	kantoBadgeSoulMask    = 1 << 4
+	kantoBadgeMarshMask   = 1 << 5
+	kantoBadgeVolcanoMask = 1 << 6
+	kantoBadgeEarthMask   = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -305,6 +320,16 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressSSTicketReceived, Complete: gsOwnsKeyItem(reader, gsSSTicket)},
 		{ID: ProgressKantoFirstLanding, Complete: hasGSEvent(reader, gsEventFirstShipTrip)},
 		{ID: ProgressKantoThunderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeThunderMask != 0},
+		{ID: ProgressKantoMarshBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeMarshMask != 0},
+		{ID: ProgressKantoRainbowBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeRainbowMask != 0},
+		{ID: ProgressKantoSoulBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeSoulMask != 0},
+		{ID: ProgressKantoCascadeBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeCascadeMask != 0},
+		{ID: ProgressKantoBoulderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeBoulderMask != 0},
+		{ID: ProgressKantoVolcanoBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeVolcanoMask != 0},
+		{ID: ProgressKantoEarthBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeEarthMask != 0},
+		// All eight Kanto badges are a separate stopping goal, not a claim
+		// that one particular Gym Leader was fought in a fixed order.
+		{ID: ProgressKantoAllBadgesEarned, Complete: reader.Peek8(sym.KantoBadges) == 0xff},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
