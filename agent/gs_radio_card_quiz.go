@@ -15,8 +15,8 @@ import (
 var gsRadioQuizAnswers = [...]int{0, 0, 0, 1, 0, 1}
 
 const (
-	gsRadioQuizFrameBudget uint64 = 30_000
-	gsRadioQuizMaxTextPresses = 320
+	gsRadioQuizFrameBudget    uint64 = 30_000
+	gsRadioQuizMaxTextPresses        = 320
 )
 
 // gsRadioQuizAdvance handles one bounded live Radio Card quiz transaction.
