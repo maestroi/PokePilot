@@ -88,7 +88,8 @@ const (
 	// ship does not prove arrival: only VermilionPortLeaveShipScript sets the
 	// first-landing event after a complete scripted voyage.
 	ProgressSSTicketReceived  game.ProgressID = "gs_ss_ticket_received"
-	ProgressKantoFirstLanding game.ProgressID = "gs_kanto_first_landing"
+	ProgressKantoFirstLanding      game.ProgressID = "gs_kanto_first_landing"
+	ProgressKantoThunderBadgeEarned game.ProgressID = "gs_kanto_thunder_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -158,6 +159,9 @@ const (
 	eventBeatChampionLance  uint16 = 1468
 	// EVENT_BEAT_ELITE_FOUR is set by the Hall of Fame scene, never by
 	// Lance's trainer-battle script.
+	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
+	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
+	eventBeatLtSurge          uint16 = 1223
 	eventBeatEliteFour         uint16 = 68
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
@@ -175,6 +179,7 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
+	kantoBadgeThunderMask  = 1 << 2
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -295,6 +300,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLeagueHallOfFameEntered, Complete: hasGSEvent(reader, eventBeatEliteFour)},
 		{ID: ProgressSSTicketReceived, Complete: gsOwnsKeyItem(reader, gsSSTicket)},
 		{ID: ProgressKantoFirstLanding, Complete: hasGSEvent(reader, gsEventFirstShipTrip)},
+		{ID: ProgressKantoThunderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeThunderMask != 0},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
