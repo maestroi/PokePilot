@@ -133,26 +133,36 @@ func currentPartyTrainingEstimate(mem *state.Mem, romData []byte, mapID uint8, s
 	}
 	estimate = applyPartyTrainingMethod(party, slot, slots, estimate)
 	// Direct training holds the trainee in every wild fight and flees what it
-	// cannot damage, so a band of immune wilds awards no XP at all: a Lick-only
-	// lead against Route 3's Normal types fled 37 encounters and stagnated
-	// (run-2qrxgybx4ic51xfxtib9eon64, triage:48e41d4e4c318585).
-	// ponytail: only the all-immune band is rejected; a partly immune band
-	// keeps its full-band XP rate, weight the rate by damageable slots if that
-	// overstates a real habitat.
-	if estimate.Method == TrainingDirect && estimate.Viability != TrainingSatisfied &&
-		!trainingWildsDamageable(romData, mon, slots) {
-		estimate.XPPerEncounter = 0
-		estimate.EstimatedEncounters = 0
-		estimate.Viability = TrainingOutsideBudget
+	// cannot damage, so immune wilds cost an encounter but award no XP. A
+	// Lick-only Gastly fled Route 3's all-Normal band (triage:48e41d4e4c318585)
+	// and then Route 2's mostly-Normal band, where the full-band rate promised
+	// a level the session could not deliver (triage:53211caf400f4793).
+	if estimate.Method == TrainingDirect && estimate.Viability != TrainingSatisfied {
+		if xpPerEncounter, ok := trainingDamageableXPPerEncounter(romData, mon, slots); ok && xpPerEncounter < estimate.XPPerEncounter {
+			estimate.XPPerEncounter = xpPerEncounter
+			if xpPerEncounter == 0 {
+				estimate.EstimatedEncounters = 0
+				estimate.NextLevelEncounters = 0
+				estimate.Viability = TrainingOutsideBudget
+			} else {
+				ceil := func(xp uint32) int { return int((xp + xpPerEncounter - 1) / xpPerEncounter) }
+				estimate.EstimatedEncounters = ceil(estimate.XPRemaining)
+				if estimate.NextLevelXP > 0 {
+					estimate.NextLevelEncounters = ceil(estimate.NextLevelXP)
+				}
+				estimate.Viability = trainingViability(estimate.EstimatedEncounters, estimate.SessionBudget)
+			}
+		}
 	}
 	return estimate, nil
 }
 
-// trainingWildsDamageable reports whether mon, held as the training lead, can
-// make HP progress against at least one local wild slot. Wild stats use the
-// Gen 1 formula without DVs/stat experience; only the move/type verdict is
-// read, so the approximation cannot flip an immunity.
-func trainingWildsDamageable(romData []byte, mon state.Mon, slots []skill.WildEncounterSlot) bool {
+// trainingDamageableXPPerEncounter is the expected XP per wild encounter
+// when mon, held as the training lead, earns nothing from slots it cannot
+// damage. Wild stats use the Gen 1 formula without DVs/stat experience; only
+// the move/type verdict is read, so the approximation cannot flip an
+// immunity. ok is false when habitat data is unknown: keep the full estimate.
+func trainingDamageableXPPerEncounter(romData []byte, mon state.Mon, slots []skill.WildEncounterSlot) (uint32, bool) {
 	b := game.BattleState{
 		ActiveLevel: mon.Level, ActiveHP: mon.HP, ActiveMaxHP: mon.MaxHP,
 		ActiveAttack: mon.Attack, ActiveDefense: mon.Defense, ActiveSpeed: mon.Speed,
@@ -162,10 +172,25 @@ func trainingWildsDamageable(romData []byte, mon state.Mon, slots []skill.WildEn
 	for i, id := range mon.Moves {
 		b.Moves[i] = game.BattleMove{ID: id, PP: mon.PP[i]}
 	}
+	// Same slot weighting as estimateTraining: ROM probabilities when every
+	// slot carries one, equal slots otherwise.
+	equal := false
 	for _, slot := range slots {
+		equal = equal || slot.Chance == 0
+	}
+	var xpMass, weightTotal uint64
+	for _, slot := range slots {
+		if slot.ID == 0 || slot.Level == 0 {
+			continue
+		}
+		weight := uint64(slot.Chance)
+		if equal {
+			weight = 1
+		}
+		weightTotal += weight
 		wild, err := rom.LookupSpeciesBaseStats(romData, slot.ID)
 		if err != nil {
-			return true // unknown habitat data: keep the XP estimate
+			return 0, false
 		}
 		stat := func(base uint8) uint16 { return uint16(int(base)*2*int(slot.Level)/100 + 5) }
 		hp := uint16(int(wild.HP)*2*int(slot.Level)/100 + int(slot.Level) + 10)
@@ -173,11 +198,19 @@ func trainingWildsDamageable(romData []byte, mon state.Mon, slots []skill.WildEn
 		b.EnemyAttack, b.EnemyDefense, b.EnemySpeed = stat(wild.Attack), stat(wild.Defense), stat(wild.Speed)
 		b.EnemySpecial, b.EnemySpecialAttack, b.EnemySpecialDefense = stat(wild.Special), stat(wild.Special), stat(wild.Special)
 		b.EnemyType1, b.EnemyType2 = wild.Type1, wild.Type2
-		if skill.TrainingLeadCanDamage(romData, b) {
-			return true
+		if !skill.TrainingLeadCanDamage(romData, b) {
+			continue
 		}
+		wildXP, err := rom.LookupSpeciesExperience(romData, slot.ID)
+		if err != nil {
+			return 0, false
+		}
+		xpMass += uint64(rom.WildBattleExperience(wildXP.BaseYield, slot.Level)) * weight
 	}
-	return false
+	if weightTotal == 0 {
+		return 0, false
+	}
+	return uint32(xpMass / weightTotal), true
 }
 
 // resolveTrainingPartySlot makes a species-targeted objective resilient to a

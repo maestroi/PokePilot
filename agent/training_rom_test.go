@@ -80,11 +80,26 @@ func TestROMTrainingRejectsHabitatTheTraineeCannotDamage(t *testing.T) {
 	const ghost, poison, lick, tackle = 0x08, 0x03, 122, 33
 	gastly := state.Mon{Level: 21, HP: 50, MaxHP: 50, Type1: ghost, Type2: poison, Attack: 25, Defense: 22, Speed: 40, Special: 50}
 	gastly.Moves[0], gastly.PP[0] = lick, 30
-	if trainingWildsDamageable(romData, gastly, route3) {
-		t.Fatal("Lick-only Ghost reported able to damage Route 3's Normal-type wilds")
+	if xp, ok := trainingDamageableXPPerEncounter(romData, gastly, route3); !ok || xp != 0 {
+		t.Fatalf("Lick-only Ghost earns %d XP/encounter on Route 3's Normal-type wilds, want 0", xp)
 	}
+
+	// Route 2 mixes Normal (immune) with Bug/Poison slots, so the Lick-only
+	// rate is real but lower than the full band (triage:53211caf400f4793).
+	route2, err := skill.WildGrassSlots(romData, 0x0d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lickOnly, ok := trainingDamageableXPPerEncounter(romData, gastly, route2)
+	if !ok || lickOnly == 0 {
+		t.Fatalf("Lick-only Route 2 rate = %d (ok=%v), want the Bug/Poison slots' XP", lickOnly, ok)
+	}
+
 	gastly.Moves[1], gastly.PP[1] = tackle, 35
-	if !trainingWildsDamageable(romData, gastly, route3) {
+	if xp, ok := trainingDamageableXPPerEncounter(romData, gastly, route3); !ok || xp == 0 {
 		t.Fatal("Tackle should damage Route 3's wilds")
+	}
+	if full, _ := trainingDamageableXPPerEncounter(romData, gastly, route2); full <= lickOnly {
+		t.Fatalf("Route 2 full-band rate %d not above Lick-only rate %d", full, lickOnly)
 	}
 }
