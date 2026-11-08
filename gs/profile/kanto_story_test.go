@@ -86,3 +86,29 @@ func TestGoldSilverKantoPowerAndLeaderAvailabilityRequireActualEvents(t *testing
 		}
 	}
 }
+
+func TestGSMtSilverAndRedRequireDifferentRetailEvents(t *testing.T) {
+	if eventMtSilverOpened != 1871 || eventMtSilverRedDisappeared != 1890 {
+		t.Fatalf("Mt. Silver/Red event index drift: got (%d,%d)", eventMtSilverOpened, eventMtSilverRedDisappeared)
+	}
+	for _, p := range []*Profile{NewGold(), NewSilver()} {
+		mem := fakeGSReader{sym.KantoBadges: 0xff, sym.JohtoBadges: 0xff}
+		if p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverOpened) ||
+			p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverRedDefeated) {
+			t.Fatalf("%s: all badges alone must not open Mt. Silver or beat Red", p.ID())
+		}
+		setGSEvent(mem, eventMtSilverOpened)
+		if !p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverOpened) ||
+			p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverRedDefeated) {
+			t.Fatalf("%s: Oak's permit must not grant Red victory", p.ID())
+		}
+		setGSEvent(mem, eventMtSilverRedDisappeared)
+		if !p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverRedDefeated) {
+			t.Fatalf("%s: retail Red disappearance should prove the ending", p.ID())
+		}
+		mem[sym.EventFlags+eventMtSilverRedDisappeared/8] &^= 1 << (eventMtSilverRedDisappeared % 8)
+		if p.DecodeFirstBadgeProgress(mem).Has(ProgressMtSilverRedDefeated) {
+			t.Fatalf("%s: Red rematch reset did not clear the transient victory fact", p.ID())
+		}
+	}
+}
