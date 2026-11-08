@@ -78,6 +78,30 @@ func gsKantoGymForProgress(id game.ProgressID) (gsKantoGymSpec, bool) {
 // an earned badge or infers an unobserved Gym win from earlier milestones.
 func gsKantoGymObjectives(obs Observation) []Objective {
 	for _, spec := range gsKantoGymStages {
+		switch spec.progress {
+		case gsprofile.ProgressKantoCascadeBadgeEarned:
+			// The Power Plant Manager opens the Rocket encounter and
+			// Machine Part, and the Route 25 date reopens Misty's Gym.
+			for _, prereq := range []struct {
+				id game.ProgressID
+				note string
+			}{
+				{gsprofile.ProgressKantoManagerMet, "(experimental Kanto: speak to the Power Plant Manager about the stolen Machine Part)"},
+				{gsprofile.ProgressKantoRocketAtGym, "(experimental Kanto: enter Cerulean Gym and trigger the Rocket thief scene)"},
+				{gsprofile.ProgressKantoMachinePartFound, "(experimental Kanto: recover the hidden Machine Part in Cerulean Gym)"},
+				{gsprofile.ProgressKantoPowerRestored, "(experimental Kanto: return the Machine Part and restore power to the region)"},
+				{gsprofile.ProgressKantoMistyReturned, "(experimental Kanto: interrupt Misty's date on Route 25 so she returns to Cerulean Gym)"},
+			} {
+				if !obs.Story.Has(prereq.id) {
+					return []Objective{{Kind: KindProgress, Progress: prereq.id, Note: prereq.note}}
+				}
+			}
+		case gsprofile.ProgressKantoEarthBadgeEarned:
+			if !obs.Story.Has(gsprofile.ProgressKantoBlueInvited) {
+				return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoBlueInvited,
+					Note: "(experimental Kanto: meet Blue on Cinnabar Island to open Viridian Gym)"}}
+			}
+		}
 		if !obs.Story.Has(spec.progress) {
 			return []Objective{{Kind: KindProgress, Progress: spec.progress,
 				Note: fmt.Sprintf("(experimental Kanto: navigate the native %s gym route, fight %s and verify the badge engine flag)", spec.leader, spec.leader)}}
