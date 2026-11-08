@@ -12,8 +12,8 @@ import (
 // reused by ordinary gameplay; neither row count nor cursor alone is proof.
 type PostCreditsMenu struct {
 	ContinueVisible bool
-	SaveInfoVisible bool
-	Cursor int // 1-based main-menu cursor when ContinueVisible
+	SaveInfoVisible  bool
+	Cursor           int // 1-based main-menu cursor when ContinueVisible
 }
 
 // DecodePostCreditsMenu uses the *rendered* tilemap as proof of the main menu
