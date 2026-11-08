@@ -116,6 +116,7 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressKantoPowerRestored,
 		gsprofile.ProgressKantoMistyReturned,
 		gsprofile.ProgressKantoBlueInvited,
+		gsprofile.ProgressRadioCardReceived,
 		gsprofile.ProgressKantoExpansionCard,
 		gsprofile.ProgressKantoSnorlaxCleared,
 		gsprofile.ProgressMtSilverOpened,
@@ -356,6 +357,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSKantoMistyDate(a.m, a.romData)
 		case gsprofile.ProgressKantoBlueInvited:
 			err = executeGSKantoInviteBlue(a.m, a.romData)
+		case gsprofile.ProgressRadioCardReceived:
+			err = executeGSRadioCardQuiz(a.m, a.romData)
 		case gsprofile.ProgressKantoExpansionCard:
 			err = executeGSKantoExpansionCard(a.m, a.romData)
 		case gsprofile.ProgressKantoSnorlaxCleared:
@@ -447,6 +450,7 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressKantoPowerRestored,
 			gsprofile.ProgressKantoMistyReturned,
 			gsprofile.ProgressKantoBlueInvited,
+			gsprofile.ProgressRadioCardReceived,
 			gsprofile.ProgressKantoExpansionCard,
 			gsprofile.ProgressKantoSnorlaxCleared,
 			gsprofile.ProgressMtSilverOpened,
@@ -696,6 +700,9 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressPlainBadgeEarned,
 			Note:     "(continue through Route 34 to Goldenrod, defeat Whitney, settle her crying scene, and receive the Plain Badge)",
 		}}
+	case !obs.Story.Has(gsprofile.ProgressRadioCardReceived):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressRadioCardReceived,
+			Note: "(experimental: answer Goldenrod Radio Tower 1F's five-question quiz to receive the basic Pokégear Radio Card)"}}
 	case !obs.Story.Has(gsprofile.ProgressSquirtBottleAcquired):
 		return []Objective{{
 			Kind:     KindProgress,
