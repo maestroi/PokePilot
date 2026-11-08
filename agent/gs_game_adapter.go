@@ -99,7 +99,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressLeagueBrunoDefeated,
 		gsprofile.ProgressLeagueKarenDefeated,
 		gsprofile.ProgressLeagueLanceDefeated,
-		gsprofile.ProgressLeagueHallOfFameEntered:
+		gsprofile.ProgressLeagueHallOfFameEntered,
+		gsprofile.ProgressSSTicketReceived,
+		gsprofile.ProgressKantoFirstLanding:
 		return true
 	default:
 		return false
@@ -310,6 +312,10 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSLeagueMember(a.m, a.romData, o.Progress)
 		case gsprofile.ProgressLeagueLanceDefeated, gsprofile.ProgressLeagueHallOfFameEntered:
 			err = executeGSLeagueChampion(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressSSTicketReceived:
+			err = executeGSSSTicket(a.m, a.romData)
+		case gsprofile.ProgressKantoFirstLanding:
+			err = executeGSFirstKantoLanding(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -376,7 +382,9 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressLeagueBrunoDefeated,
 			gsprofile.ProgressLeagueKarenDefeated,
 			gsprofile.ProgressLeagueLanceDefeated,
-			gsprofile.ProgressLeagueHallOfFameEntered:
+			gsprofile.ProgressLeagueHallOfFameEntered,
+			gsprofile.ProgressSSTicketReceived,
+			gsprofile.ProgressKantoFirstLanding:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -841,8 +849,18 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 			Progress: gsprofile.ProgressIndigoPlateauReached,
 			Note:     "(experimental: fly to New Bark, Surf Route 27 through Tohjo Falls, pass the badge gate, beat the rival in Victory Road and reach Indigo Plateau)",
 		}}
+	// Hall of Fame persists after the individual Elite Four victory flags
+	// reset. Offer Kanto progression instead of restarting Will's room.
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressSSTicketReceived):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressSSTicketReceived,
+			Note: "(post-League: continue after credits, visit Elm in New Bark and claim the S.S. Ticket)"}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressKantoFirstLanding):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoFirstLanding,
+			Note: "(post-League: board S.S. Aqua in Olivine, find the missing granddaughter and disembark in Vermilion)"}}
 	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
-		return nil // durable Hall of Fame proof survives Indigo rematch flag reset
+		return nil // first Kanto landing is this milestone's verified frontier
 	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
