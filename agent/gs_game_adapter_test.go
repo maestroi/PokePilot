@@ -197,8 +197,13 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressPlainBadgeEarned, Complete: true})
 	got = adapter.ProgressionObjectives(obs)
+	if len(got) != 1 || got[0].Progress != gsprofile.ProgressRadioCardReceived {
+		t.Fatalf("after Plain Badge progression = %+v, want Radio Card quiz", got)
+	}
+	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressRadioCardReceived, Complete: true})
+	got = adapter.ProgressionObjectives(obs)
 	if len(got) != 1 || got[0].Progress != gsprofile.ProgressSquirtBottleAcquired {
-		t.Fatalf("after Plain Badge progression = %+v, want SquirtBottle", got)
+		t.Fatalf("after Radio Card quiz progression = %+v, want SquirtBottle", got)
 	}
 
 	obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSquirtBottleAcquired, Complete: true})
