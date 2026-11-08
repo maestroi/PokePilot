@@ -208,21 +208,21 @@ const (
 	PlayerScreens           uint16 = 0xCBDD
 	PlayerScreensReflectBit        = 4
 
-	Money         uint16 = 0xD573
-	JohtoBadges   uint16 = 0xD57C
-	KantoBadges   uint16 = 0xD57D
-	TMsHMs        uint16 = 0xD57E
-	TMsHMsCount          = 57
-	NumItems      uint16 = 0xD5B7
-	Items         uint16 = 0xD5B8
-	MaxItems             = 20
-	NumKeyItems   uint16 = 0xD5E1
-	KeyItems      uint16 = 0xD5E2
-	MaxKeyItems          = 25
-	NumBalls      uint16 = 0xD5FC
-	Balls         uint16 = 0xD5FD
-	MaxBalls             = 12
-	PokegearFlags uint16 = 0xD67C // wPokegearFlags
+	Money           uint16 = 0xD573
+	JohtoBadges     uint16 = 0xD57C
+	KantoBadges     uint16 = 0xD57D
+	TMsHMs          uint16 = 0xD57E
+	TMsHMsCount            = 57
+	NumItems        uint16 = 0xD5B7
+	Items           uint16 = 0xD5B8
+	MaxItems               = 20
+	NumKeyItems     uint16 = 0xD5E1
+	KeyItems        uint16 = 0xD5E2
+	MaxKeyItems            = 25
+	NumBalls        uint16 = 0xD5FC
+	Balls           uint16 = 0xD5FD
+	MaxBalls               = 12
+	PokegearFlags   uint16 = 0xD67C // wPokegearFlags
 	RadioTuningKnob uint16 = 0xD67D // wRadioTuningKnob, immediately after wPokegearFlags
 	// wPhoneList lives 40 bytes before wCurMapData (0xD9EE): 10 contact
 	// slots plus an extra terminator, followed by the fixed player-data tail.
