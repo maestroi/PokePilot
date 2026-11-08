@@ -106,8 +106,9 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				obs.Story = append(obs.Story, ProgressFact{ID: completed, Complete: true})
 				goals := adapter.ProgressionObjectives(obs)
 				if i == len(league)-1 {
-					if len(goals) != 0 {
-						t.Fatalf("Hall of Fame must end the experimental Johto story: %+v", goals)
+					if len(goals) != 1 || goals[0].Progress != gsprofile.ProgressSSTicketReceived ||
+						!adapter.SupportsObjective(goals[0]) {
+						t.Fatalf("Hall of Fame must offer the post-League S.S. Ticket: %+v", goals)
 					}
 					continue
 				}
@@ -115,6 +116,15 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				if len(goals) != 1 || goals[0].Progress != want || !adapter.SupportsObjective(goals[0]) {
 					t.Fatalf("after %s expect only %s: %+v", completed, want, goals)
 				}
+			}
+			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressSSTicketReceived, Complete: true})
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+				goals[0].Progress != gsprofile.ProgressKantoFirstLanding || !adapter.SupportsObjective(goals[0]) {
+				t.Fatalf("ticket should offer the real first Kanto landing: %+v", goals)
+			}
+			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoFirstLanding, Complete: true})
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
+				t.Fatalf("Vermilion landing ends the implemented post-League frontier: %+v", goals)
 			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
 				t.Fatal("Rising Badge should now have an owned executor")
