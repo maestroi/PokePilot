@@ -176,6 +176,28 @@ func gsAquaTalk(m *emu.Emu, romData []byte, profile *gsprofile.Profile,
 	return fmt.Errorf("%w: %s ended without its retail event", errGSSecondBadgeUnexpectedState, label)
 }
 
+// The retail B1F sailor may occupy (30,6) or (31,6) depending on which
+// side's coord event positioned him. Try the east approach first (the ship's
+// east staircase), then the west. Only absence of the retail informed event
+// permits the alternate approach; navigation and combat failures propagate.
+func gsAquaInformDutySailor(m *emu.Emu, romData []byte, profile *gsprofile.Profile) error {
+	if profile.DecodeFirstShipVoyage(m).InformedSailor {
+		return nil
+	}
+	for _, x := range []uint8{31, 30} {
+		err := gsAquaTalk(m, romData, profile, "FAST_SHIP_B1F",
+			x, 7, x, 6, "ss-aqua:inform-duty-sailor",
+			func(s gsprofile.FirstShipVoyageState) bool { return s.InformedSailor })
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, errGSSecondBadgeUnexpectedState) {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: neither B1F sailor position set the informed event", errGSSecondBadgeUnexpectedState)
+}
+
 // executeGSFirstKantoLanding owns only the first Olivine->Vermilion voyage.
 // Unlike later trips, it must find the off-duty sailor, win his battle, help
 // the granddaughter, and speak to the entrance sailor to disembark. The
@@ -210,16 +232,17 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 			return err
 		}
 	}
+	// B1F's duty sailor must first reveal the off-duty sailor in the NNW
+	// cabin. After the trainer battle, the captain-side corridor opens.
+	if err := gsAquaInformDutySailor(m, romData, profile); err != nil {
+		return err
+	}
 	stages := []struct {
 		name           string
 		mapName        string
 		sx, sy, tx, ty uint8
 		complete       func(gsprofile.FirstShipVoyageState) bool
 	}{
-		// B1F's on-duty sailor must first reveal the off-duty sailor in the
-		// NNW cabin. The sailor's victory opens the B1F captain-side corridor.
-		{"inform-duty-sailor", "FAST_SHIP_B1F", 30, 7, 30, 6,
-			func(s gsprofile.FirstShipVoyageState) bool { return s.InformedSailor }},
 		{"recover-lazy-sailor", "FAST_SHIP_CABINS_NNW_NNE_NE", 4, 25, 4, 26,
 			func(s gsprofile.FirstShipVoyageState) bool { return s.RecoveredSailor }},
 		{"find-granddaughter", "FAST_SHIP_CABINS_SE_SSE_CAPTAINS_CABIN", 2, 24, 2, 25,
