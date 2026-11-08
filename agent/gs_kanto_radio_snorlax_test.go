@@ -10,11 +10,11 @@ import (
 
 func TestGSKantoPokeFluteRadioActionsAreBoundedAndDoNotAnswerChoices(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name       string
 		page, knob byte
-		want emu.Button
-		press bool
-		err bool
+		want       emu.Button
+		press      bool
+		err        bool
 	}{
 		{"clock", 1, 0, emu.Right, true, false},
 		{"map-init", 3, 0, 0, false, false},
