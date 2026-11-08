@@ -38,6 +38,32 @@ var gsKantoGymStages = []gsKantoGymSpec{
 		"blue", "VIRIDIAN_GYM", "VIRIDIAN_POKECENTER_1F", 5, 3, 5, 4},
 }
 
+// Kanto native corridors used by the experimental post-League gym stages.
+// Outside these known retail map names the interruption driver fails closed;
+// the autofixer can then report an unsupported crossing with a checkpoint.
+var gsKantoGymOwnedMaps = []string{
+	"ROUTE_6", "ROUTE_6_SAFFRON_GATE", "ROUTE_6_UNDERGROUND_PATH_ENTRANCE",
+	"SAFFRON_CITY", "SAFFRON_GYM", "SAFFRON_POKECENTER_1F",
+	"ROUTE_7", "ROUTE_7_SAFFRON_GATE",
+	"CELADON_CITY", "CELADON_GYM", "CELADON_POKECENTER_1F",
+	"ROUTE_16", "ROUTE_16_GATE", "ROUTE_17", "ROUTE_17_ROUTE_18_GATE",
+	"ROUTE_18", "FUCHSIA_CITY", "FUCHSIA_GYM", "FUCHSIA_POKECENTER_1F",
+	"ROUTE_15", "ROUTE_15_FUCHSIA_GATE", "ROUTE_14", "ROUTE_13",
+	"ROUTE_12", "ROUTE_12_SUPER_ROD_HOUSE",
+	"ROUTE_8", "ROUTE_8_SAFFRON_GATE",
+	"LAVENDER_TOWN", "LAVENDER_POKECENTER_1F",
+	"ROUTE_5", "ROUTE_5_SAFFRON_GATE", "ROUTE_5_UNDERGROUND_PATH_ENTRANCE",
+	"CERULEAN_CITY", "CERULEAN_GYM", "CERULEAN_POKECENTER_1F",
+	"ROUTE_24", "ROUTE_25", "ROUTE_4",
+	"ROUTE_9", "ROUTE_10_NORTH", "ROUTE_10_POKECENTER_1F", "POWER_PLANT",
+	"ROUTE_11", "DIGLETTS_CAVE", "ROUTE_2", "ROUTE_2_GATE",
+	"PEWTER_CITY", "PEWTER_GYM", "PEWTER_POKECENTER_1F",
+	"ROUTE_3", "ROUTE_1",
+	"VIRIDIAN_CITY", "VIRIDIAN_GYM", "VIRIDIAN_POKECENTER_1F",
+	"ROUTE_19", "ROUTE_19_FUCHSIA_GATE", "ROUTE_20", "SEAFOAM_GYM",
+	"ROUTE_21", "CINNABAR_ISLAND", "CINNABAR_POKECENTER_1F",
+}
+
 func gsKantoGymForProgress(id game.ProgressID) (gsKantoGymSpec, bool) {
 	for _, spec := range gsKantoGymStages {
 		if spec.progress == id {
