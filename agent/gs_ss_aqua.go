@@ -187,10 +187,21 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 	if err != nil || done {
 		return err
 	}
-	if !profile.DecodeOverworld(m).Controllable {
-		return fmt.Errorf("%w: first voyage must resume at a stable overworld boundary", errGSSecondBadgeUnexpectedState)
-	}
 	world := profile.DecodeOverworld(m)
+	aboard := gsMapIn(world.NativeMapID, gsAquaShipMaps)
+	if !world.Controllable {
+		if !aboard {
+			// Boarding choices and title screens are not ordinary scripted
+			// dialogue: without a known prompt owner, guessing A is unsafe.
+			return fmt.Errorf("%w: first voyage requires an owned, stable port boundary", errGSSecondBadgeUnexpectedState)
+		}
+		// A ship script (including the lazy-sailor battle or the
+		// granddaughter scene) is safe to settle and re-observe on resume.
+		if err := driveGSSecondBadgeInterruption(m, profile, label); err != nil {
+			return fmt.Errorf("gen2 S.S. Aqua: resume ship scene: %w", err)
+		}
+	}
+	world = profile.DecodeOverworld(m)
 	if !gsMapIn(world.NativeMapID, gsAquaShipMaps) {
 		if err := gsAquaMissingPrerequisites(profile.DecodeRegionTransports(m)); err != nil {
 			return err
