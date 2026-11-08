@@ -187,6 +187,18 @@ func evaluateGoal(g Goal, obs Observation) GoalStatus {
 		return GoalStatus{Summary: "no deterministic goal"}
 	case GoalEliteFour:
 		n := len(obs.Badges)
+		if count, projected := obs.Story.Lookup(ProgressCampaignBadges); projected {
+			// Prefer the profile's eight-badge campaign tally over a combined
+			// Johto + Kanto badge list. Gen-I profiles can keep the legacy
+			// badge-list fallback until they project this optional fact.
+			n = count.Value
+		}
+		if n < 0 {
+			n = 0
+		}
+		if n > 8 {
+			n = 8
+		}
 		// Full-campaign progress deliberately includes the ending itself as a
 		// ninth step. Eight badges therefore means 8/9 rather than 100%; the
 		// final step is only credited once the portable Hall of Fame fact is set.
