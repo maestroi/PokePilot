@@ -84,6 +84,11 @@ const (
 	// Fame event is a separate durable story fact set by its own ceremony.
 	ProgressLeagueLanceDefeated     game.ProgressID = "gs_league_lance_defeated"
 	ProgressLeagueHallOfFameEntered game.ProgressID = "gs_league_hall_of_fame"
+	// The ticket must actually be usable in the key-item pocket. Entering the
+	// ship does not prove arrival: only VermilionPortLeaveShipScript sets the
+	// first-landing event after a complete scripted voyage.
+	ProgressSSTicketReceived game.ProgressID = "gs_ss_ticket_received"
+	ProgressKantoFirstLanding game.ProgressID = "gs_kanto_first_landing"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -288,6 +293,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLeagueKarenDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKaren)},
 		{ID: ProgressLeagueLanceDefeated, Complete: hasGSEvent(reader, eventBeatChampionLance)},
 		{ID: ProgressLeagueHallOfFameEntered, Complete: hasGSEvent(reader, eventBeatEliteFour)},
+		{ID: ProgressSSTicketReceived, Complete: gsOwnsKeyItem(reader, gsSSTicket)},
+		{ID: ProgressKantoFirstLanding, Complete: hasGSEvent(reader, gsEventFirstShipTrip)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
