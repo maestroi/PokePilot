@@ -46,7 +46,6 @@ func TestGSKantoPokeFluteRadioActionsAreBoundedAndDoNotAnswerChoices(t *testing.
 }
 
 func TestGSKantoSnorlaxAndExpansionUseRealMapsAndExecutableStages(t *testing.T) {
-	const snorlaxEvent = 1872 // pret/pokegold EVENT_FOUGHT_SNORLAX
 	if gsKantoSnorlaxStandX != 34 || gsKantoSnorlaxStandY != 10 ||
 		gsKantoSnorlaxX != 34 || gsKantoSnorlaxY != 8 {
 		t.Fatal("Snorlax proximity does not match VermilionCity.asm / SnorlaxAwake special")
@@ -75,5 +74,4 @@ func TestGSKantoSnorlaxAndExpansionUseRealMapsAndExecutableStages(t *testing.T) 
 	if err := executeGSKantoSnorlax(nil, nil); err == nil {
 		t.Fatal("Snorlax objective must not proceed without ROM")
 	}
-	_ = snorlaxEvent
 }
