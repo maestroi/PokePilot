@@ -233,6 +233,9 @@ const gen2Goals = [
   // The League's five trainer victories remain internal milestones of the
   // Hall of Fame objective, not separate New Run stopping targets.
   ['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'],
+  ['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'],
+  ['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'],
+  ['progress:gs_kanto_thunder_badge_earned', 'Thunder Badge · Lt. Surge · Kanto · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 
