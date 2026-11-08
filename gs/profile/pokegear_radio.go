@@ -11,16 +11,16 @@ import (
 // The caller must have opened Pokégear through the verified START menu: the
 // jumptable is reused by other unrelated menus outside this owned action.
 type PokegearRadioState struct {
-	Page byte
-	Tuning byte
-	HasRadio bool
+	Page         byte
+	Tuning       byte
+	HasRadio     bool
 	HasExpansion bool
 }
 
 const (
 	gsPokegearClockJoypad byte = 1
 	gsPokegearRadioJoypad byte = 12
-	gsPokeFluteFrequency byte = 78 // channel 20: 4*20 - 2
+	gsPokeFluteFrequency  byte = 78 // channel 20: 4*20 - 2
 )
 
 func (*Profile) DecodePokegearRadio(reader game.MemoryReader) PokegearRadioState {
@@ -29,9 +29,9 @@ func (*Profile) DecodePokegearRadio(reader game.MemoryReader) PokegearRadioState
 	}
 	flags := reader.Peek8(sym.PokegearFlags)
 	return PokegearRadioState{
-		Page: reader.Peek8(sym.JumptableIndex),
-		Tuning: reader.Peek8(sym.RadioTuningKnob),
-		HasRadio: flags&gsPokegearRadioCardMask != 0,
+		Page:         reader.Peek8(sym.JumptableIndex),
+		Tuning:       reader.Peek8(sym.RadioTuningKnob),
+		HasRadio:     flags&gsPokegearRadioCardMask != 0,
 		HasExpansion: flags&gsPokegearExpansionCardMask != 0,
 	}
 }
