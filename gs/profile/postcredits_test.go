@@ -23,9 +23,9 @@ func TestGoldSilverPostCreditsMenuRequiresRenderedContinue(t *testing.T) {
 	for _, profile := range []*Profile{NewGold(), NewSilver()} {
 		t.Run(string(profile.ID()), func(t *testing.T) {
 			mem := fakeGSReader{
-				sym.SaveFileExists: 1,
+				sym.SaveFileExists:  1,
 				sym.TwoDMenuNumRows: 3,
-				sym.MenuCursorY: 2,
+				sym.MenuCursorY:     2,
 			}
 			if got := profile.DecodePostCreditsMenu(mem); got.ContinueVisible || got.SaveInfoVisible {
 				t.Fatalf("stale menu RAM falsely recognized CONTINUE: %+v", got)
