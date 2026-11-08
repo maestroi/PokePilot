@@ -78,6 +78,9 @@ func gsKantoGymForProgress(id game.ProgressID) (gsKantoGymSpec, bool) {
 // an earned badge or infers an unobserved Gym win from earlier milestones.
 func gsKantoGymObjectives(obs Observation) []Objective {
 	for _, spec := range gsKantoGymStages {
+		if obs.Story.Has(spec.progress) {
+			continue // Earned out of order or carried over from a saved Kanto run.
+		}
 		switch spec.progress {
 		case gsprofile.ProgressKantoCascadeBadgeEarned:
 			// The Power Plant Manager opens the Rocket encounter and
