@@ -1,6 +1,9 @@
 package state
 
-import "github.com/maestroi/pokepilot/red/sym"
+import (
+	"github.com/maestroi/pokepilot/gen1"
+	"github.com/maestroi/pokepilot/red/sym"
+)
 
 const (
 	// wStatusFlags1 bit 6 is BIT_GAVE_SAFFRON_GUARDS_DRINK.
@@ -12,19 +15,6 @@ const (
 	// durable RAM fact that survives the ending's event reset.
 	elite4FlagsAddr     uint16 = 0xd734
 	elite4CompletedMask uint8  = 1 << 0
-	// BIT_STARTED_ELITE_4: set by each Elite Four room's first script run,
-	// cleared by the Indigo lobby script, which then resets the whole
-	// Indigo event range (autowalk through Lance, not the Champion).
-	elite4StartedMask uint8 = 1 << 1
-
-	// Elite Four gauntlet map ids from pokered/constants/map_constants.asm.
-	lancesRoomMap    uint8 = 0x71
-	hallOfFameMap    uint8 = 0x76
-	championsRoomMap uint8 = 0x78
-	loreleisRoomMap  uint8 = 0xF5
-	brunosRoomMap    uint8 = 0xF6
-	agathasRoomMap   uint8 = 0xF7
-
 	// Item ids from pokered/constants/item_constants.asm.
 	bicycleItemID    uint8 = 0x06
 	secretKeyItemID  uint8 = 0x2b
@@ -213,12 +203,5 @@ func leagueRunAbandoned(m *Mem, facts StoryFacts) bool {
 	if facts.MainStoryComplete || facts.LeagueChampionDefeated {
 		return false
 	}
-	if m.U8(elite4FlagsAddr)&elite4StartedMask == 0 {
-		return false
-	}
-	switch m.U8(sym.CurMap) {
-	case loreleisRoomMap, brunosRoomMap, agathasRoomMap, lancesRoomMap, championsRoomMap, hallOfFameMap:
-		return false
-	}
-	return true
+	return gen1.LeagueRunAbandoned(m.U8(elite4FlagsAddr), m.U8(sym.CurMap))
 }

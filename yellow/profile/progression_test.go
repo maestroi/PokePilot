@@ -213,6 +213,27 @@ func TestYellowSSTicketIsDurableNotJustBag(t *testing.T) {
 	}
 }
 
+// triage:f005b74b7b732029: after a League blackout to Fuchsia the room
+// events stay set until the lobby resets them. Projecting them as progress
+// offered Lorelei while the executor (Red's decoder) saw the run abandoned.
+func TestYellowLeftLeagueVoidsRoomProgress(t *testing.T) {
+	var mem fakeMemory
+	setYellowEvent(&mem, eventAutowalkedIntoLorelei)
+	setYellowEvent(&mem, eventBeatLorelei)
+	mem[sym.Elite4Flags] |= 1 << 1 // BIT_STARTED_ELITE_4
+
+	if story := projectYellowStory(&mem, 0xF6); !story.Has(gen1.ProgressLeagueLoreleiDefeated) { // BRUNOS_ROOM
+		t.Fatalf("progress inside the gauntlet must hold: %+v", story)
+	}
+	story := projectYellowStory(&mem, 0x07) // FUCHSIA_CITY
+	if story.Has(gen1.ProgressLeagueChallengeStarted) || story.Has(gen1.ProgressLeagueLoreleiDefeated) {
+		t.Fatalf("lobby will reset this progress, facts must not offer it: %+v", story)
+	}
+	if story.Has(gen1.ProgressIndigoPlateauReady) {
+		t.Fatalf("an abandoned run must walk back to the healed lobby first: %+v", story)
+	}
+}
+
 func TestYellowLeagueMemberProgressUsesNativeEvents(t *testing.T) {
 	var mem fakeMemory
 	setYellowEvent(&mem, eventAutowalkedIntoLorelei)
