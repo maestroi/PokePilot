@@ -20,6 +20,8 @@ func TestGSKantoGymAndStoryCatalogRunsThroughAllEightBadges(t *testing.T) {
 		gsprofile.ProgressKantoPowerRestored,
 		gsprofile.ProgressKantoMistyReturned,
 		gsprofile.ProgressKantoCascadeBadgeEarned,
+		gsprofile.ProgressKantoExpansionCard,
+		gsprofile.ProgressKantoSnorlaxCleared,
 		gsprofile.ProgressKantoBoulderBadgeEarned,
 		gsprofile.ProgressKantoVolcanoBadgeEarned,
 		gsprofile.ProgressKantoBlueInvited,
