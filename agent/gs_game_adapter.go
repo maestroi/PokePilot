@@ -102,7 +102,14 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressLeagueHallOfFameEntered,
 		gsprofile.ProgressSSTicketReceived,
 		gsprofile.ProgressKantoFirstLanding,
-		gsprofile.ProgressKantoThunderBadgeEarned:
+		gsprofile.ProgressKantoThunderBadgeEarned,
+		gsprofile.ProgressKantoMarshBadgeEarned,
+		gsprofile.ProgressKantoRainbowBadgeEarned,
+		gsprofile.ProgressKantoSoulBadgeEarned,
+		gsprofile.ProgressKantoCascadeBadgeEarned,
+		gsprofile.ProgressKantoBoulderBadgeEarned,
+		gsprofile.ProgressKantoVolcanoBadgeEarned,
+		gsprofile.ProgressKantoEarthBadgeEarned:
 		return true
 	default:
 		return false
@@ -319,6 +326,14 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSFirstKantoLanding(a.m, a.romData)
 		case gsprofile.ProgressKantoThunderBadgeEarned:
 			err = executeGSKantoSurge(a.m, a.romData)
+		case gsprofile.ProgressKantoMarshBadgeEarned,
+			gsprofile.ProgressKantoRainbowBadgeEarned,
+			gsprofile.ProgressKantoSoulBadgeEarned,
+			gsprofile.ProgressKantoCascadeBadgeEarned,
+			gsprofile.ProgressKantoBoulderBadgeEarned,
+			gsprofile.ProgressKantoVolcanoBadgeEarned,
+			gsprofile.ProgressKantoEarthBadgeEarned:
+			err = executeGSKantoGym(a.m, a.romData, o.Progress)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -388,7 +403,14 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressLeagueHallOfFameEntered,
 			gsprofile.ProgressSSTicketReceived,
 			gsprofile.ProgressKantoFirstLanding,
-			gsprofile.ProgressKantoThunderBadgeEarned:
+			gsprofile.ProgressKantoThunderBadgeEarned,
+			gsprofile.ProgressKantoMarshBadgeEarned,
+			gsprofile.ProgressKantoRainbowBadgeEarned,
+			gsprofile.ProgressKantoSoulBadgeEarned,
+			gsprofile.ProgressKantoCascadeBadgeEarned,
+			gsprofile.ProgressKantoBoulderBadgeEarned,
+			gsprofile.ProgressKantoVolcanoBadgeEarned,
+			gsprofile.ProgressKantoEarthBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -868,7 +890,7 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoThunderBadgeEarned,
 			Note: "(experimental Kanto: reach Vermilion Gym after the first S.S. Aqua landing, defeat Lt. Surge, and receive the Thunder Badge)"}}
 	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
-		return nil // Lt. Surge is the currently implemented post-League frontier
+		return gsKantoGymObjectives(obs)
 	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
