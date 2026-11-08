@@ -16,9 +16,9 @@ import (
 // never claims a milestone. These stages are opt-in experimental until a
 // full ROM-backed journey qualifies each route and its prerequisite story.
 type gsKantoGymSpec struct {
-	progress, previous game.ProgressID
+	progress, previous  game.ProgressID
 	leader, gym, center string
-	x, y, sx, sy uint8
+	x, y, sx, sy        uint8
 }
 
 var gsKantoGymStages = []gsKantoGymSpec{
@@ -86,7 +86,7 @@ func gsKantoGymObjectives(obs Observation) []Objective {
 			// The Power Plant Manager opens the Rocket encounter and
 			// Machine Part, and the Route 25 date reopens Misty's Gym.
 			for _, prereq := range []struct {
-				id game.ProgressID
+				id   game.ProgressID
 				note string
 			}{
 				{gsprofile.ProgressKantoManagerMet, "(experimental Kanto: speak to the Power Plant Manager about the stolen Machine Part)"},
