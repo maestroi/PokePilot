@@ -22,6 +22,18 @@ const (
 	gsPokecenterStandY   uint8 = 3
 )
 
+// gsPokecenterCounter is the nurse counter tile for a 1F center. Indigo
+// Plateau's lobby is the shared layout six rows south: pret/pokegold
+// maps/IndigoPlateauPokecenter1F.asm puts the nurse at (3,7), and the live
+// grid's counter row is y=8 (triage:2bb48288867cac27). The stand tile is
+// always the one south of the counter.
+func gsPokecenterCounter(center uint16) (x, y uint8) {
+	if info, ok := gsdata.Map(center); ok && info.Name == "INDIGO_PLATEAU_POKECENTER_1F" {
+		return gsPokecenterCounterX, gsPokecenterCounterY + 6
+	}
+	return gsPokecenterCounterX, gsPokecenterCounterY
+}
+
 var gsOwnedPokecenterNames = []string{
 	"AZALEA_POKECENTER_1F",
 	"VIOLET_POKECENTER_1F",

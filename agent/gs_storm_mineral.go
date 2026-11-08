@@ -72,12 +72,13 @@ func gsCoastalHeal(m *emu.Emu, romData []byte, profile *gsprofile.Profile, cente
 	if err != nil {
 		return err
 	}
+	counterX, counterY := gsPokecenterCounter(center)
 	if err := gsSecondBadgeGoTo(m, romData, profile,
-		skill.ExactNativeDestination(center, gsPokecenterStandX, gsPokecenterStandY)); err != nil {
+		skill.ExactNativeDestination(center, counterX, counterY+1)); err != nil {
 		return fmt.Errorf("reach %s: %w", centerName, err)
 	}
 	if !profile.DecodeCenter(m).Recovered {
-		if err := skill.Face(m, gsPokecenterCounterX, gsPokecenterCounterY); err != nil {
+		if err := skill.Face(m, counterX, counterY); err != nil {
 			return fmt.Errorf("face %s nurse: %w", centerName, err)
 		}
 		if err := skill.Heal(m); err != nil {
