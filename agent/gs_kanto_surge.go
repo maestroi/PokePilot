@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	gsSurgeX                uint8 = 5
-	gsSurgeY                uint8 = 2
-	gsSurgeStandX           uint8 = 5
-	gsSurgeStandY           uint8 = 3
-	gsSurgeAttempts               = 3
+	gsSurgeX        uint8 = 5
+	gsSurgeY        uint8 = 2
+	gsSurgeStandX   uint8 = 5
+	gsSurgeStandY   uint8 = 3
+	gsSurgeAttempts       = 3
 )
 
 // gsSurgeApproachMap confines the first Kanto badge objective to Vermilion.
