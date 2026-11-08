@@ -10,7 +10,7 @@ import (
 func TestGoldSilverKantoProgressIsCartridgeVerified(t *testing.T) {
 	badges := []struct {
 		progress game.ProgressID
-		mask byte
+		mask     byte
 	}{
 		{ProgressKantoBoulderBadgeEarned, kantoBadgeBoulderMask},
 		{ProgressKantoCascadeBadgeEarned, kantoBadgeCascadeMask},
