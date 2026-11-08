@@ -27,6 +27,10 @@ type ProgressFact struct {
 	Value    int        `json:"value,omitempty"`
 }
 
+// ProgressMainStoryComplete is the portable, durable Hall of Fame fact.
+// Each cartridge profile must independently verify its own ending event.
+const ProgressMainStoryComplete ProgressID = "main_story_complete"
+
 type ProgressState []ProgressFact
 
 func (s ProgressState) Has(id ProgressID) bool {
