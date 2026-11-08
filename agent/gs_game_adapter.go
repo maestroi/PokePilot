@@ -116,6 +116,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressKantoPowerRestored,
 		gsprofile.ProgressKantoMistyReturned,
 		gsprofile.ProgressKantoBlueInvited,
+		gsprofile.ProgressKantoExpansionCard,
+		gsprofile.ProgressKantoSnorlaxCleared,
 		gsprofile.ProgressMtSilverOpened,
 		gsprofile.ProgressMtSilverRedDefeated:
 		return true
@@ -354,6 +356,10 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSKantoMistyDate(a.m, a.romData)
 		case gsprofile.ProgressKantoBlueInvited:
 			err = executeGSKantoInviteBlue(a.m, a.romData)
+		case gsprofile.ProgressKantoExpansionCard:
+			err = executeGSKantoExpansionCard(a.m, a.romData)
+		case gsprofile.ProgressKantoSnorlaxCleared:
+			err = executeGSKantoSnorlax(a.m, a.romData)
 		case gsprofile.ProgressMtSilverOpened:
 			err = executeGSMtSilverPermit(a.m, a.romData)
 		case gsprofile.ProgressMtSilverRedDefeated:
@@ -441,6 +447,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressKantoPowerRestored,
 			gsprofile.ProgressKantoMistyReturned,
 			gsprofile.ProgressKantoBlueInvited,
+			gsprofile.ProgressKantoExpansionCard,
+			gsprofile.ProgressKantoSnorlaxCleared,
 			gsprofile.ProgressMtSilverOpened,
 			gsprofile.ProgressMtSilverRedDefeated:
 			return gsFirstBadgeObjectiveFrameBudget
