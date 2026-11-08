@@ -51,7 +51,7 @@ var gsKantoGymOwnedMaps = []string{
 	"ROUTE_15", "ROUTE_15_FUCHSIA_GATE", "ROUTE_14", "ROUTE_13",
 	"ROUTE_12", "ROUTE_12_SUPER_ROD_HOUSE",
 	"ROUTE_8", "ROUTE_8_SAFFRON_GATE",
-	"LAVENDER_TOWN", "LAVENDER_POKECENTER_1F",
+	"LAVENDER_TOWN", "LAVENDER_POKECENTER_1F", "LAV_RADIO_TOWER_1F",
 	"ROUTE_5", "ROUTE_5_SAFFRON_GATE", "ROUTE_5_UNDERGROUND_PATH_ENTRANCE",
 	"CERULEAN_CITY", "CERULEAN_GYM", "CERULEAN_POKECENTER_1F",
 	"ROUTE_24", "ROUTE_25", "ROUTE_4",
@@ -101,6 +101,18 @@ func gsKantoGymObjectives(obs Observation) []Objective {
 				if !obs.Story.Has(prereq.id) {
 					return []Objective{{Kind: KindProgress, Progress: prereq.id, Note: prereq.note}}
 				}
+			}
+		case gsprofile.ProgressKantoBoulderBadgeEarned:
+			// The Diglett's Cave path from Vermilion to Pewter is blocked
+			// by the sleeping Snorlax. Restore Kanto power, obtain the
+			// Lavender EXPN card, then tune channel 20 beside Snorlax.
+			if !obs.Story.Has(gsprofile.ProgressKantoExpansionCard) {
+				return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoExpansionCard,
+					Note: "(experimental Kanto: claim the Pokégear EXPN card at Lavender Radio Tower after restoring power)"}}
+			}
+			if !obs.Story.Has(gsprofile.ProgressKantoSnorlaxCleared) {
+				return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoSnorlaxCleared,
+					Note: "(experimental Kanto: tune Poké Flute channel 20 by Vermilion Snorlax and clear the Diglett's Cave gate)"}}
 			}
 		case gsprofile.ProgressKantoEarthBadgeEarned:
 			if !obs.Story.Has(gsprofile.ProgressKantoBlueInvited) {
