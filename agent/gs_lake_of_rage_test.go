@@ -55,6 +55,11 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 				break
 			}
 			next := goals[0]
+			// This test owns the Lake/Rocket-to-Glacier handoff, not the full
+			// later Johto, League and Kanto campaign.
+			if next.Progress == gsprofile.ProgressGlacierBadgeEarned {
+				break
+			}
 			if next.Progress == gsprofile.ProgressRedGyaradosDefeated {
 				foundRed = true
 				if !obs.Story.Has(gsprofile.ProgressMineralBadgeEarned) {
@@ -77,8 +82,10 @@ func TestGSLakeOfRageProgressionOffersExecutableStagesAfterJasmine(t *testing.T)
 			!obs.Story.Has(gsprofile.ProgressRocketHideoutCleared) {
 			t.Fatalf("%s never offered B3F passwords, executive and Murkrow", gameID)
 		}
-		if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-			t.Fatalf("%s must stop safely before unqualified Glacier Badge: %+v", gameID, got)
+		if got := adapter.ProgressionObjectives(obs); len(got) != 1 ||
+			got[0].Progress != gsprofile.ProgressGlacierBadgeEarned ||
+			!adapter.SupportsObjective(got[0]) {
+			t.Fatalf("%s must hand off to the experimental Glacier Badge: %+v", gameID, got)
 		}
 	}
 }
