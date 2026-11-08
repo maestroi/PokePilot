@@ -109,7 +109,13 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressKantoCascadeBadgeEarned,
 		gsprofile.ProgressKantoBoulderBadgeEarned,
 		gsprofile.ProgressKantoVolcanoBadgeEarned,
-		gsprofile.ProgressKantoEarthBadgeEarned:
+		gsprofile.ProgressKantoEarthBadgeEarned,
+		gsprofile.ProgressKantoManagerMet,
+		gsprofile.ProgressKantoRocketAtGym,
+		gsprofile.ProgressKantoMachinePartFound,
+		gsprofile.ProgressKantoPowerRestored,
+		gsprofile.ProgressKantoMistyReturned,
+		gsprofile.ProgressKantoBlueInvited:
 		return true
 	default:
 		return false
@@ -332,8 +338,26 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			gsprofile.ProgressKantoCascadeBadgeEarned,
 			gsprofile.ProgressKantoBoulderBadgeEarned,
 			gsprofile.ProgressKantoVolcanoBadgeEarned,
-			gsprofile.ProgressKantoEarthBadgeEarned:
+			gsprofile.ProgressKantoEarthBadgeEarned,
+			gsprofile.ProgressKantoManagerMet,
+			gsprofile.ProgressKantoRocketAtGym,
+			gsprofile.ProgressKantoMachinePartFound,
+			gsprofile.ProgressKantoPowerRestored,
+			gsprofile.ProgressKantoMistyReturned,
+			gsprofile.ProgressKantoBlueInvited:
 			err = executeGSKantoGym(a.m, a.romData, o.Progress)
+		case gsprofile.ProgressKantoManagerMet:
+			err = executeGSKantoPowerManager(a.m, a.romData)
+		case gsprofile.ProgressKantoRocketAtGym:
+			err = executeGSKantoRocketAtGym(a.m, a.romData)
+		case gsprofile.ProgressKantoMachinePartFound:
+			err = executeGSKantoMachinePart(a.m, a.romData)
+		case gsprofile.ProgressKantoPowerRestored:
+			err = executeGSKantoRestorePower(a.m, a.romData)
+		case gsprofile.ProgressKantoMistyReturned:
+			err = executeGSKantoMistyDate(a.m, a.romData)
+		case gsprofile.ProgressKantoBlueInvited:
+			err = executeGSKantoInviteBlue(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
