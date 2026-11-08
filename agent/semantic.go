@@ -32,7 +32,7 @@ const (
 	ProgressLeagueChallengeStarted ProgressID = "league_challenge_started"
 	ProgressLeagueChampionDefeated ProgressID = "league_champion_defeated"
 	ProgressMainStoryComplete      ProgressID = gameruntime.ProgressMainStoryComplete
-	ProgressCampaignBadges        ProgressID = gameruntime.ProgressCampaignBadges
+	ProgressCampaignBadges         ProgressID = gameruntime.ProgressCampaignBadges
 )
 
 const (
