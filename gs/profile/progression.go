@@ -90,6 +90,22 @@ const (
 	ProgressSSTicketReceived        game.ProgressID = "gs_ss_ticket_received"
 	ProgressKantoFirstLanding       game.ProgressID = "gs_kanto_first_landing"
 	ProgressKantoThunderBadgeEarned game.ProgressID = "gs_kanto_thunder_badge_earned"
+	ProgressKantoMarshBadgeEarned   game.ProgressID = "gs_kanto_marsh_badge_earned"
+	ProgressKantoRainbowBadgeEarned game.ProgressID = "gs_kanto_rainbow_badge_earned"
+	ProgressKantoSoulBadgeEarned    game.ProgressID = "gs_kanto_soul_badge_earned"
+	ProgressKantoCascadeBadgeEarned game.ProgressID = "gs_kanto_cascade_badge_earned"
+	ProgressKantoBoulderBadgeEarned game.ProgressID = "gs_kanto_boulder_badge_earned"
+	ProgressKantoVolcanoBadgeEarned game.ProgressID = "gs_kanto_volcano_badge_earned"
+	ProgressKantoEarthBadgeEarned   game.ProgressID = "gs_kanto_earth_badge_earned"
+	ProgressKantoAllBadgesEarned    game.ProgressID = "gs_kanto_all_badges_earned"
+	ProgressKantoManagerMet         game.ProgressID = "gs_kanto_power_plant_manager_met"
+	ProgressKantoRocketAtGym        game.ProgressID = "gs_kanto_cerulean_rocket_encountered"
+	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
+	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
+	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
+	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
+	ProgressMtSilverOpened          game.ProgressID = "gs_mt_silver_opened"
+	ProgressMtSilverRedDefeated     game.ProgressID = "gs_mt_silver_red_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -161,13 +177,27 @@ const (
 	// Lance's trainer-battle script.
 	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
 	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
-	eventBeatLtSurge           uint16 = 1223
-	eventBeatEliteFour         uint16 = 68
-	eventIcePathWaterfall      uint16 = 1672
-	eventDragonsDenDragonFang  uint16 = 1704
-	eventBlackthornGymBoulder1 uint16 = 1798
-	eventIcePathBoulder1       uint16 = 1801
-	eventIcePathFloorBoulder1  uint16 = 1805
+	eventBeatLtSurge uint16 = 1223
+	// Kanto power, Cerulean date and Blue recruitment are distinct from
+	// defeating the Gym Leaders (pokegold/constants/event_flags.asm).
+	eventKantoReturnedMachinePart uint16 = 201
+	eventKantoMetPowerManager     uint16 = 202
+	eventKantoMetRocketAtGym      uint16 = 203
+	eventKantoPowerRestored       uint16 = 205
+	eventKantoFoundMachinePart    uint16 = 251
+	eventKantoTrainersAtGym       uint16 = 1903
+	eventKantoBlueAtCinnabar      uint16 = 1909
+	eventKantoBlueAtViridian      uint16 = 1910
+	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
+	// after a retail battle win; it is cleared by the next Hall ceremony.
+	eventMtSilverOpened         uint16 = 1871
+	eventMtSilverRedDisappeared uint16 = 1890
+	eventBeatEliteFour          uint16 = 68
+	eventIcePathWaterfall       uint16 = 1672
+	eventDragonsDenDragonFang   uint16 = 1704
+	eventBlackthornGymBoulder1  uint16 = 1798
+	eventIcePathBoulder1        uint16 = 1801
+	eventIcePathFloorBoulder1   uint16 = 1805
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
@@ -179,7 +209,14 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
+	kantoBadgeBoulderMask  = 1 << 0
+	kantoBadgeCascadeMask  = 1 << 1
 	kantoBadgeThunderMask  = 1 << 2
+	kantoBadgeRainbowMask  = 1 << 3
+	kantoBadgeSoulMask     = 1 << 4
+	kantoBadgeMarshMask    = 1 << 5
+	kantoBadgeVolcanoMask  = 1 << 6
+	kantoBadgeEarthMask    = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
@@ -305,6 +342,29 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressSSTicketReceived, Complete: gsOwnsKeyItem(reader, gsSSTicket)},
 		{ID: ProgressKantoFirstLanding, Complete: hasGSEvent(reader, gsEventFirstShipTrip)},
 		{ID: ProgressKantoThunderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeThunderMask != 0},
+		{ID: ProgressKantoMarshBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeMarshMask != 0},
+		{ID: ProgressKantoRainbowBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeRainbowMask != 0},
+		{ID: ProgressKantoSoulBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeSoulMask != 0},
+		{ID: ProgressKantoCascadeBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeCascadeMask != 0},
+		{ID: ProgressKantoBoulderBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeBoulderMask != 0},
+		{ID: ProgressKantoVolcanoBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeVolcanoMask != 0},
+		{ID: ProgressKantoEarthBadgeEarned, Complete: reader.Peek8(sym.KantoBadges)&kantoBadgeEarthMask != 0},
+		// All eight Kanto badges are a separate stopping goal, not a claim
+		// that one particular Gym Leader was fought in a fixed order.
+		{ID: ProgressKantoAllBadgesEarned, Complete: reader.Peek8(sym.KantoBadges) == 0xff},
+		{ID: ProgressKantoManagerMet, Complete: hasGSEvent(reader, eventKantoMetPowerManager)},
+		{ID: ProgressKantoRocketAtGym, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym)},
+		{ID: ProgressKantoMachinePartFound, Complete: hasGSEvent(reader, eventKantoFoundMachinePart)},
+		{ID: ProgressKantoPowerRestored, Complete: hasGSEvent(reader, eventKantoReturnedMachinePart) && hasGSEvent(reader, eventKantoPowerRestored)},
+		// The Route 25 script removes Misty from her date and clears the
+		// Cerulean Gym sprite visibility event; power restoration alone
+		// must not manufacture her return.
+		{ID: ProgressKantoMistyReturned, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym) && !hasGSEvent(reader, eventKantoTrainersAtGym)},
+		// Blue must have vanished from Cinnabar and become visible at
+		// Viridian, not merely be absent from an unrelated map.
+		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
+		{ID: ProgressMtSilverOpened, Complete: hasGSEvent(reader, eventMtSilverOpened)},
+		{ID: ProgressMtSilverRedDefeated, Complete: hasGSEvent(reader, eventMtSilverRedDisappeared)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

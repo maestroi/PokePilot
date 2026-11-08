@@ -100,6 +100,17 @@ func executeGSLeagueChampion(m *emu.Emu, romData []byte, goal game.ProgressID) e
 		return gsFirstBadgeProgressComplete(profile, m, progress)
 	}
 	if complete(goal) {
+		// A resumed run may already have the Hall event but still be in the
+		// closing ceremony. Finish credits before exposing any further story.
+		if goal == gsprofile.ProgressLeagueHallOfFameEntered {
+			hall, err := gsOpeningMapID("HALL_OF_FAME")
+			if err != nil {
+				return err
+			}
+			if profile.DecodeOverworld(m).NativeMapID == hall {
+				return gsContinueAfterHall(m, profile)
+			}
+		}
 		return nil
 	}
 	lance, err := gsOpeningMapID("LANCES_ROOM")
@@ -125,7 +136,7 @@ func executeGSLeagueChampion(m *emu.Emu, romData []byte, goal game.ProgressID) e
 		if err := gsLeagueChampionAdvance(m, profile, goal, lance, hall); err != nil {
 			return fmt.Errorf("gen2 Hall of Fame ceremony: %w", err)
 		}
-		return nil
+		return gsContinueAfterHall(m, profile)
 	}
 
 	if !complete(gsprofile.ProgressLeagueKarenDefeated) {

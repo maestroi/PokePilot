@@ -32,6 +32,7 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 			goal := goals[0]
 			if goal.Progress == gsprofile.ProgressGlacierBadgeEarned {
 				seenGlacier = true
+				break // later Rocket Tower/League/Kanto objectives have their own tests
 			}
 			if !adapter.SupportsObjective(goal) {
 				t.Fatalf("%s unsupported objective %s was offered", gameID, goal.Progress)
@@ -57,8 +58,10 @@ func TestGSRocketB2FStagesAreSelectableBeforeGlacier(t *testing.T) {
 		if !seenGlacier {
 			t.Fatalf("%s experimental B2F run never offered Pryce", gameID)
 		}
-		if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-			t.Fatalf("%s planner invented unimplemented objective beyond Radio Tower: %+v", gameID, goals)
+		if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+			goals[0].Progress != gsprofile.ProgressGlacierBadgeEarned ||
+			!adapter.SupportsObjective(goals[0]) {
+			t.Fatalf("%s B2F milestones must hand off to the executable Glacier objective: %+v", gameID, goals)
 		}
 		if !gsSupportedProgress(gsprofile.ProgressGlacierBadgeEarned) {
 			t.Fatal("opt-in Glacier stage must be executable")

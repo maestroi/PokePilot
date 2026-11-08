@@ -32,10 +32,17 @@ func executeGSSSTicket(m *emu.Emu, romData []byte) error {
 	if err != nil || done {
 		return err
 	}
-	if !profile.DecodeOverworld(m).Controllable {
-		// Hall of Fame is an in-flight credits/reset scene; it must be
-		// completed by a post-credits CONTINUE transaction before navigating.
-		return fmt.Errorf("%w: S.S. Ticket requires a controllable post-credits save", errGSSecondBadgeUnexpectedState)
+	world := profile.DecodeOverworld(m)
+	hall, hallErr := gsOpeningMapID("HALL_OF_FAME")
+	if hallErr != nil {
+		return hallErr
+	}
+	if !world.Controllable || world.NativeMapID == hall {
+		// Recover a Hall checkpoint taken before the ending controller learned
+		// to finish credits; never route on stale Hall map coordinates.
+		if err := gsContinueAfterHall(m, profile); err != nil {
+			return fmt.Errorf("gen2 S.S. Ticket: resume saved post-League game: %w", err)
+		}
 	}
 	lab, err := gsOpeningMapID("ELMS_LAB")
 	if err != nil {

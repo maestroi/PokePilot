@@ -78,8 +78,9 @@ func TestGSKantoSurgeProgressionRequiresRealLanding(t *testing.T) {
 			t.Fatalf("%s: Kanto landing did not offer Lt. Surge: %+v", id, got)
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoThunderBadgeEarned, Complete: true})
-		if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-			t.Fatalf("%s: completed Thunder Badge offered unowned Kanto milestone: %+v", id, got)
+		if got := adapter.ProgressionObjectives(obs); len(got) != 1 ||
+			got[0].Progress != gsprofile.ProgressKantoMarshBadgeEarned {
+			t.Fatalf("%s: Thunder Badge should offer Sabrina: %+v", id, got)
 		}
 	}
 }

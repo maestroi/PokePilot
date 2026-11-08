@@ -236,6 +236,8 @@ const gen2Goals = [
   ['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'],
   ['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'],
   ['progress:gs_kanto_thunder_badge_earned', 'Thunder Badge · Lt. Surge · Kanto · experimental'],
+  ['progress:gs_kanto_all_badges_earned', 'All 8 Kanto badges · through Blue · experimental'],
+  ['progress:gs_mt_silver_red_defeated', 'Defeat Red · Mt. Silver · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 
