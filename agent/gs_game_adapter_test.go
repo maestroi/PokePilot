@@ -288,8 +288,8 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: next, Complete: true})
 	}
-	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("unexpected objective after Hall of Fame: %+v", got)
+	if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != gsprofile.ProgressSSTicketReceived {
+		t.Fatalf("Hall of Fame must offer Elm's post-League ticket: %+v", got)
 	}
 	// The Indigo callback clears all five battle flags on a fresh rematch,
 	// but it does not erase the durable Hall of Fame ceremony. The historical
@@ -304,8 +304,8 @@ func TestGSProgressionOffersEarlyJohtoStagesInOrder(t *testing.T) {
 			obs.Story[i].Complete = false
 		}
 	}
-	if got := adapter.ProgressionObjectives(obs); len(got) != 0 {
-		t.Fatalf("Indigo rematch reset reopened completed campaign: %+v", got)
+	if got := adapter.ProgressionObjectives(obs); len(got) != 1 || got[0].Progress != gsprofile.ProgressSSTicketReceived {
+		t.Fatalf("Indigo rematch flags must not restart Will instead of the post-League ticket: %+v", got)
 	}
 }
 
