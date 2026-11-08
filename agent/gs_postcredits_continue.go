@@ -31,6 +31,10 @@ func gsContinueAfterHall(m *emu.Emu, profile *gsprofile.Profile) error {
 	if err != nil {
 		return err
 	}
+	newBark, err := gsOpeningMapID("NEW_BARK_TOWN")
+	if err != nil {
+		return err
+	}
 	// Enter only with positive cartridge evidence. A title menu alone is
 	// never enough: that could be a fresh game with an unrelated save.
 	if !gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressLeagueHallOfFameEntered) {
@@ -44,7 +48,7 @@ func gsContinueAfterHall(m *emu.Emu, profile *gsprofile.Profile) error {
 		// After the natural reset, the saved game's flag must still be set.
 		// Hall itself can misleadingly look controllable while credits own
 		// the display, so do not treat its stale map bytes as a return.
-		if world.Controllable && world.NativeMapID != hall &&
+		if world.Controllable && world.NativeMapID == newBark &&
 			gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressLeagueHallOfFameEntered) {
 			return nil
 		}
