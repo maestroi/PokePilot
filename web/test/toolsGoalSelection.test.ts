@@ -23,7 +23,7 @@ test('Gen2 launcher keeps badge goals and one Hall of Fame target', () => {
   assert.doesNotMatch(source, /\['progress:gs_league_(?:will|koga|bruno|karen|lance)_defeated',/)
   assert.match(source, /Will, Koga, Bruno, Karen, and Lance are automatic internal stages/)
   assert.doesNotMatch(source, /Ice Path, Clair and Dragon’s Den are unfinished/)
-  assert.match(source, /\['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'\]/)
+  assert.match(source, /\['elite-four', 'Hall of Fame · 8 Johto badges \+ Elite Four & Champion · experimental'\]/)
   assert.doesNotMatch(source, /<option value="Earn (7|8) badges\." disabled/)
   assert.match(source, /\['progress:gs_ss_ticket_received', 'S.S. Ticket · Professor Elm · experimental'\]/)
   assert.match(source, /\['progress:gs_kanto_first_landing', 'First Kanto landing · S.S. Aqua · experimental'\]/)
