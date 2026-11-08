@@ -22,6 +22,9 @@ const (
 )
 
 func gsSecondBadgeOwnedMap(mapID uint16) bool {
+	if gsMapIn(mapID, gsKantoGymOwnedMaps) {
+		return true
+	}
 	for _, name := range []string{
 		"VIOLET_CITY",
 		"VIOLET_POKECENTER_1F",
