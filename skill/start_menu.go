@@ -123,6 +123,12 @@ func confirmStartMenuClosed(m menuMachine, decoder game.MenuDecoder) bool {
 
 // openStartMenuEntry opens the active game's START menu and selects an entry
 // by semantic identity. The profile owns the current cursor index.
+// OpenStartMenuEntry selects a verified semantic START-menu entry for a
+// game-owned scripted action (e.g. Gen-II Pokégear).
+func OpenStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
+	return openStartMenuEntry(m, entry)
+}
+
 func openStartMenuEntry(m *emu.Emu, entry game.StartMenuEntry) error {
 	decoder, err := menuDecoderFor(m)
 	if err != nil {
