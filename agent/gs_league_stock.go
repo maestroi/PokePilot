@@ -62,11 +62,13 @@ func gsLeagueStockAtIndigo(m *emu.Emu, romData []byte, profile *gsprofile.Profil
 	if !world.Controllable || world.NativeMapID != center {
 		return fmt.Errorf("%w: Indigo Mart purchases require the controllable Pokecenter lobby", errGSSecondBadgeUnexpectedState)
 	}
+	// Clerk object (11,7) per IndigoPlateauPokecenter1F.asm; y=8 is the
+	// counter row, so the player talks across it from (11,9).
 	const (
-		standX uint8 = 11
-		standY uint8 = 8
-		clerkX uint8 = 11
-		clerkY uint8 = 7
+		standX   uint8 = 11
+		standY   uint8 = 9
+		counterX uint8 = 11
+		counterY uint8 = 8
 	)
 	for _, stock := range gsLeagueIndigoStock {
 		inv := profile.DecodeInventory(m)
@@ -85,7 +87,7 @@ func gsLeagueStockAtIndigo(m *emu.Emu, romData []byte, profile *gsprofile.Profil
 		qty := min(short, affordable)
 		if err := gsSecondBadgeFaceFrom(m, romData, profile,
 			skill.ExactNativeDestination(center, standX, standY),
-			clerkX, clerkY, "league:indigo-stock"); err != nil {
+			counterX, counterY, "league:indigo-stock"); err != nil {
 			return fmt.Errorf("gen2 Indigo Mart: reach clerk for item %#02x: %w", stock.item, err)
 		}
 		if err := skill.Buy(m, stock.item, qty); err != nil {
