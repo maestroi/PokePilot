@@ -31,6 +31,7 @@ func TestGSKantoGymAndStoryCatalogRunsThroughAllEightBadges(t *testing.T) {
 		adapter := newGSObjectiveAdapter(nil, nil, id)
 		obs := Observation{GameID: id, Story: ProgressState{
 			{ID: gsprofile.ProgressKantoThunderBadgeEarned, Complete: true},
+			{ID: gsprofile.ProgressRadioCardReceived, Complete: true},
 		}}
 		for _, want := range chain {
 			goals := gsKantoGymObjectives(obs)
