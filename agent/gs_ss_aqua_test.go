@@ -58,7 +58,8 @@ func TestGSAquaPreflightIsTypedAndDirectional(t *testing.T) {
 }
 
 func TestGSAquaOwnsOnlyTheKnownScriptCorridor(t *testing.T) {
-	for _, name := range append([]string{"OLIVINE_PORT", "OLIVINE_PORT_PASSAGE", "VERMILION_PORT"}, gsAquaShipMaps...) {
+	for _, name := range append([]string{"OLIVINE_PORT", "OLIVINE_PORT_PASSAGE", "VERMILION_PORT",
+		"VERMILION_PORT_PASSAGE", "VERMILION_CITY", "VERMILION_POKECENTER_1F", "VERMILION_GYM"}, gsAquaShipMaps...) {
 		id, err := gsOpeningMapID(name)
 		if err != nil || !gsSecondBadgeOwnedMap(id) {
 			t.Fatalf("ship script map %q not owned: id=%#04x err=%v", name, id, err)
