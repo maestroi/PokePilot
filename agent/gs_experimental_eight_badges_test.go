@@ -128,8 +128,9 @@ func TestGSExperimentalEightBadgeCampaignContinuesFromSixThroughTower(t *testing
 				t.Fatalf("Vermilion landing must offer Lt. Surge's Kanto Thunder Badge: %+v", goals)
 			}
 			obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoThunderBadgeEarned, Complete: true})
-			if goals := adapter.ProgressionObjectives(obs); len(goals) != 0 {
-				t.Fatalf("Thunder Badge ends the current post-League frontier: %+v", goals)
+			if goals := adapter.ProgressionObjectives(obs); len(goals) != 1 ||
+				goals[0].Progress != gsprofile.ProgressKantoMarshBadgeEarned || !adapter.SupportsObjective(goals[0]) {
+				t.Fatalf("Thunder Badge must offer Sabrina's Marsh Badge: %+v", goals)
 			}
 			if !gsSupportedProgress(gsprofile.ProgressRisingBadgeEarned) {
 				t.Fatal("Rising Badge should now have an owned executor")
