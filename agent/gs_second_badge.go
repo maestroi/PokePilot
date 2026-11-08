@@ -139,6 +139,16 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		// League dialogue/battle scripts use the same typed interruption driver.
 		"WILLS_ROOM", "KOGAS_ROOM", "BRUNOS_ROOM", "KARENS_ROOM",
 		"LANCES_ROOM", "HALL_OF_FAME",
+		// The first S.S. Aqua journey owns these retail port/ship scripts.
+		// The gangway YES/NO choice itself is handled by its objective, not
+		// the generic A-only interruption driver.
+		"OLIVINE_PORT_PASSAGE", "OLIVINE_PORT",
+		"FAST_SHIP_1F", "FAST_SHIP_B1F",
+		"FAST_SHIP_CABINS_NNW_NNE_NE",
+		"FAST_SHIP_CABINS_SW_SSW_NW",
+		"FAST_SHIP_CABINS_SE_SSE_CAPTAINS_CABIN",
+		"VERMILION_PORT", "VERMILION_PORT_PASSAGE",
+		"VERMILION_CITY", "VERMILION_POKECENTER_1F", "VERMILION_GYM",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
