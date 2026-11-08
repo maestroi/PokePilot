@@ -50,15 +50,27 @@ func TestGSKantoSurgeOnlyOwnsVermilionApproach(t *testing.T) {
 func TestGSKantoSurgeProgressionRequiresRealLanding(t *testing.T) {
 	for _, id := range []game.GameID{gsprofile.GoldGameID, gsprofile.SilverGameID} {
 		adapter := newGSObjectiveAdapter(nil, nil, id)
-		obs := Observation{GameID: id, PartyCount: 1, Story: ProgressState{
-			{ID: gsprofile.ProgressStarterReceived, Complete: true},
-			{ID: gsprofile.ProgressIndigoPlateauReached, Complete: true},
-			{ID: gsprofile.ProgressLeagueHallOfFameEntered, Complete: true},
-			{ID: gsprofile.ProgressSSTicketReceived, Complete: true},
-		}}
-		if got := adapter.ProgressionObjectives(obs); len(got) != 1 ||
-			got[0].Progress != gsprofile.ProgressKantoFirstLanding {
-			t.Fatalf("%s: ticket with no landing must require S.S. Aqua: %+v", id, got)
+		obs := Observation{
+			GameID: id, PartyCount: 1,
+			Story: ProgressState{{ID: gsprofile.ProgressStarterReceived, Complete: true}},
+		}
+		// Walk the same catalog chain as a full Johto campaign instead of
+		// manufacturing a partial late-game observation that still lacks the
+		// early Johto events the normal planner correctly requires.
+		reachedLanding := false
+		for i := 0; i < 100; i++ {
+			got := adapter.ProgressionObjectives(obs)
+			if len(got) != 1 || got[0].Kind != KindProgress {
+				t.Fatalf("%s: unsupported stage %d while reaching Kanto: %+v", id, i, got)
+			}
+			if got[0].Progress == gsprofile.ProgressKantoFirstLanding {
+				reachedLanding = true
+				break
+			}
+			obs.Story = append(obs.Story, ProgressFact{ID: got[0].Progress, Complete: true})
+		}
+		if !reachedLanding {
+			t.Fatalf("%s: campaign catalog did not reach the first Kanto landing", id)
 		}
 		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoFirstLanding, Complete: true})
 		if got := adapter.ProgressionObjectives(obs); len(got) != 1 ||
