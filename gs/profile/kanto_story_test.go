@@ -112,3 +112,23 @@ func TestGSMtSilverAndRedRequireDifferentRetailEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestGSKantoExpansionAndSnorlaxNeedCartridgeEvidence(t *testing.T) {
+	for _, p := range []*Profile{NewGold(), NewSilver()} {
+		mem := fakeGSReader{}
+		mem[sym.PokegearFlags] = gsPokegearRadioCardMask
+		if p.DecodeFirstBadgeProgress(mem).Has(ProgressKantoExpansionCard) ||
+			p.DecodeFirstBadgeProgress(mem).Has(ProgressKantoSnorlaxCleared) {
+			t.Fatalf("%s: radio card alone claimed EXPN or Snorlax", p.ID())
+		}
+		mem[sym.PokegearFlags] |= gsPokegearExpansionCardMask
+		if !p.DecodeFirstBadgeProgress(mem).Has(ProgressKantoExpansionCard) ||
+			p.DecodeFirstBadgeProgress(mem).Has(ProgressKantoSnorlaxCleared) {
+			t.Fatalf("%s: EXPN without real battle claimed Snorlax", p.ID())
+		}
+		setGSEvent(mem, gsEventFoughtSnorlax)
+		if !p.DecodeFirstBadgeProgress(mem).Has(ProgressKantoSnorlaxCleared) {
+			t.Fatalf("%s: EVENT_FOUGHT_SNORLAX did not mark route clear", p.ID())
+		}
+	}
+}
