@@ -27,10 +27,6 @@ func gsContinueAfterHall(m *emu.Emu, profile *gsprofile.Profile) error {
 		return fmt.Errorf("%w: missing Gold/Silver emulator or profile for post-credits CONTINUE",
 			errGSSecondBadgeUnexpectedState)
 	}
-	hall, err := gsOpeningMapID("HALL_OF_FAME")
-	if err != nil {
-		return err
-	}
 	newBark, err := gsOpeningMapID("NEW_BARK_TOWN")
 	if err != nil {
 		return err
