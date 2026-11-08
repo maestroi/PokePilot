@@ -99,6 +99,7 @@ const (
 	ProgressKantoEarthBadgeEarned   game.ProgressID = "gs_kanto_earth_badge_earned"
 	ProgressKantoAllBadgesEarned    game.ProgressID = "gs_kanto_all_badges_earned"
 	ProgressKantoManagerMet         game.ProgressID = "gs_kanto_power_plant_manager_met"
+	ProgressKantoRocketAtGym        game.ProgressID = "gs_kanto_cerulean_rocket_encountered"
 	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
 	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
 	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
@@ -346,6 +347,7 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		// that one particular Gym Leader was fought in a fixed order.
 		{ID: ProgressKantoAllBadgesEarned, Complete: reader.Peek8(sym.KantoBadges) == 0xff},
 		{ID: ProgressKantoManagerMet, Complete: hasGSEvent(reader, eventKantoMetPowerManager)},
+		{ID: ProgressKantoRocketAtGym, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym)},
 		{ID: ProgressKantoMachinePartFound, Complete: hasGSEvent(reader, eventKantoFoundMachinePart)},
 		{ID: ProgressKantoPowerRestored, Complete: hasGSEvent(reader, eventKantoReturnedMachinePart) && hasGSEvent(reader, eventKantoPowerRestored)},
 		// The Route 25 script removes Misty from her date and clears the
