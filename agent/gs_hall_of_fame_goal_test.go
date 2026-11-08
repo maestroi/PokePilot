@@ -20,7 +20,7 @@ func TestGSFullCampaignGoalTracksJohtoBadgesThenHallOfFame(t *testing.T) {
 			obs := Observation{
 				GameID: gameID,
 				Badges: []string{"zephyr", "hive", "plain", "fog", "storm", "mineral", "glacier", "boulder", "cascade"},
-				Story: ProgressState{{ID: ProgressCampaignBadges, Value: 7}},
+				Story:  ProgressState{{ID: ProgressCampaignBadges, Value: 7}},
 			}
 			if got := EvaluateGoal(goal, obs); got.Complete || got.Current != 7 || got.Target != 9 {
 				t.Fatalf("Kanto badges must not raise Johto campaign progress: %+v", got)
