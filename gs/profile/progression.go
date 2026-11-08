@@ -288,6 +288,10 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		{ID: ProgressLeagueKarenDefeated, Complete: hasGSEvent(reader, eventBeatEliteFourKaren)},
 		{ID: ProgressLeagueLanceDefeated, Complete: hasGSEvent(reader, eventBeatChampionLance)},
 		{ID: ProgressLeagueHallOfFameEntered, Complete: hasGSEvent(reader, eventBeatEliteFour)},
+		// EVENT_BEAT_ELITE_FOUR is set during the Hall of Fame ceremony,
+		// not when Lance is beaten. Publish the portable full-campaign fact
+		// alongside the Gen2-specific milestone for the shared elite-four goal.
+		{ID: game.ProgressMainStoryComplete, Complete: hasGSEvent(reader, eventBeatEliteFour)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }

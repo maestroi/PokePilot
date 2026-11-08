@@ -81,14 +81,19 @@ function profileForGame(game: string | undefined): RouteProfile {
   return isGen2Game(game) ? JOHTO_PROFILE : KANTO_PROFILE
 }
 
-function leagueComplete(run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined): boolean {
-  if (run?.stats?.goal_complete) return true
-  return (run?.player?.milestones || [])
-    .some((milestone) => String(milestone).toLowerCase().includes('hall of fame'))
+function leagueComplete(run: Pick<SpectatorRun, 'goal' | 'player' | 'stats'> | null | undefined): boolean {
+  // An eight-badge or supported-frontier goal can complete without beating
+  // the League. Do not turn generic goal_complete into Hall of Fame proof.
+  if ((run?.player?.milestones || []).some((m) => String(m).toLowerCase().includes('hall of fame'))) return true
+  const goal = String(run?.goal || '').trim().toLowerCase()
+  const leagueGoal = goal === 'elite-four' || goal === 'hall-of-fame'
+    || goal === 'progress:gs_league_hall_of_fame'
+    || /elite four|champion|hall of fame/.test(goal)
+  return Boolean(leagueGoal && run?.stats?.goal_complete)
 }
 
 function buildRouteLine(
-  run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined,
+  run: Pick<SpectatorRun, 'goal' | 'player' | 'stats'> | null | undefined,
   profile: RouteProfile
 ): RouteLine {
   const owned = (run?.player?.badges || []).map((name) => String(name).toLowerCase())
@@ -129,12 +134,12 @@ function buildRouteLine(
   }
 }
 
-export function kantoRouteLine(run: Pick<SpectatorRun, 'player' | 'stats'> | null | undefined): RouteLine {
+export function kantoRouteLine(run: Pick<SpectatorRun, 'goal' | 'player' | 'stats'> | null | undefined): RouteLine {
   return buildRouteLine(run, KANTO_PROFILE)
 }
 
 export function gameRouteLine(
-  run: Pick<SpectatorRun, 'game' | 'player' | 'stats'> | null | undefined
+  run: Pick<SpectatorRun, 'game' | 'goal' | 'player' | 'stats'> | null | undefined
 ): RouteLine {
   return buildRouteLine(run, profileForGame(run?.game))
 }

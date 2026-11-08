@@ -232,7 +232,7 @@ const gen2Goals = [
   ['progress:gs_indigo_plateau_reached', 'Indigo Plateau · Victory Road · experimental'],
   // The League's five trainer victories remain internal milestones of the
   // Hall of Fame objective, not separate New Run stopping targets.
-  ['progress:gs_league_hall_of_fame', 'Hall of Fame · Johto League · experimental'],
+  ['elite-four', 'Hall of Fame · 8 Johto badges + Elite Four & Champion · experimental'],
   ['', 'Free play · no automatic stop']
 ] as const
 

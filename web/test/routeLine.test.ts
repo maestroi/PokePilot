@@ -70,3 +70,41 @@ test('Gen2 route line sends eight Johto badges to Indigo Plateau', () => {
   assert.equal(line.leagueNext, true)
   assert.equal(line.nextGoal, 'Indigo Plateau · Hall of Fame')
 })
+
+test('Gold badge-only completion never paints the League as cleared', () => {
+  const earned = ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising']
+  const line = gameRouteLine({
+    game: 'pokemon-gold',
+    goal: 'Earn 8 badges.',
+    player: { badges: earned },
+    stats: { goal_complete: true }
+  } as never)
+  assert.equal(line.earnedCount, 8)
+  assert.equal(line.completedGoals, 8)
+  assert.equal(line.goalCount, 9)
+  assert.equal(line.leagueEarned, false)
+  assert.equal(line.leagueNext, true)
+  assert.equal(line.fill, 8 / 9)
+})
+
+test('Silver full League goal reaches the ninth step only on Hall completion', () => {
+  const earned = ['Zephyr', 'Hive', 'Plain', 'Fog', 'Storm', 'Mineral', 'Glacier', 'Rising']
+  const pending = gameRouteLine({
+    game: 'pokemon-silver',
+    goal: 'elite-four',
+    player: { badges: earned },
+    stats: { goal_complete: false }
+  } as never)
+  assert.equal(pending.completedGoals, 8)
+  assert.equal(pending.leagueNext, true)
+
+  const finished = gameRouteLine({
+    game: 'pokemon-silver',
+    goal: 'elite-four',
+    player: { badges: earned },
+    stats: { goal_complete: true }
+  } as never)
+  assert.equal(finished.completedGoals, 9)
+  assert.equal(finished.leagueEarned, true)
+  assert.equal(finished.fill, 1)
+})
