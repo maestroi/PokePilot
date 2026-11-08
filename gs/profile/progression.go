@@ -87,8 +87,8 @@ const (
 	// The ticket must actually be usable in the key-item pocket. Entering the
 	// ship does not prove arrival: only VermilionPortLeaveShipScript sets the
 	// first-landing event after a complete scripted voyage.
-	ProgressSSTicketReceived  game.ProgressID = "gs_ss_ticket_received"
-	ProgressKantoFirstLanding      game.ProgressID = "gs_kanto_first_landing"
+	ProgressSSTicketReceived        game.ProgressID = "gs_ss_ticket_received"
+	ProgressKantoFirstLanding       game.ProgressID = "gs_kanto_first_landing"
 	ProgressKantoThunderBadgeEarned game.ProgressID = "gs_kanto_thunder_badge_earned"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
@@ -171,15 +171,15 @@ const (
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
-	johtoBadgeZephyrMask   = 1 << 0
-	johtoBadgeHiveMask     = 1 << 1
-	johtoBadgePlainMask    = 1 << 2
-	johtoBadgeFogMask      = 1 << 3
-	johtoBadgeMineralMask  = 1 << 4
-	johtoBadgeStormMask    = 1 << 5
-	johtoBadgeGlacierMask  = 1 << 6
-	johtoBadgeRisingMask   = 1 << 7
-	kantoBadgeThunderMask  = 1 << 2
+	johtoBadgeZephyrMask  = 1 << 0
+	johtoBadgeHiveMask    = 1 << 1
+	johtoBadgePlainMask   = 1 << 2
+	johtoBadgeFogMask     = 1 << 3
+	johtoBadgeMineralMask = 1 << 4
+	johtoBadgeStormMask   = 1 << 5
+	johtoBadgeGlacierMask = 1 << 6
+	johtoBadgeRisingMask  = 1 << 7
+	kantoBadgeThunderMask = 1 << 2
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
