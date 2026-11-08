@@ -98,6 +98,11 @@ const (
 	ProgressKantoVolcanoBadgeEarned game.ProgressID = "gs_kanto_volcano_badge_earned"
 	ProgressKantoEarthBadgeEarned   game.ProgressID = "gs_kanto_earth_badge_earned"
 	ProgressKantoAllBadgesEarned    game.ProgressID = "gs_kanto_all_badges_earned"
+	ProgressKantoManagerMet         game.ProgressID = "gs_kanto_power_plant_manager_met"
+	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
+	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
+	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
+	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -170,6 +175,16 @@ const (
 	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
 	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
 	eventBeatLtSurge           uint16 = 1223
+	// Kanto power, Cerulean date and Blue recruitment are distinct from
+	// defeating the Gym Leaders (pokegold/constants/event_flags.asm).
+	eventKantoReturnedMachinePart uint16 = 201
+	eventKantoMetPowerManager     uint16 = 202
+	eventKantoMetRocketAtGym      uint16 = 203
+	eventKantoPowerRestored       uint16 = 205
+	eventKantoFoundMachinePart    uint16 = 251
+	eventKantoTrainersAtGym       uint16 = 1903
+	eventKantoBlueAtCinnabar      uint16 = 1909
+	eventKantoBlueAtViridian      uint16 = 1910
 	eventBeatEliteFour         uint16 = 68
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
@@ -330,6 +345,16 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		// All eight Kanto badges are a separate stopping goal, not a claim
 		// that one particular Gym Leader was fought in a fixed order.
 		{ID: ProgressKantoAllBadgesEarned, Complete: reader.Peek8(sym.KantoBadges) == 0xff},
+		{ID: ProgressKantoManagerMet, Complete: hasGSEvent(reader, eventKantoMetPowerManager)},
+		{ID: ProgressKantoMachinePartFound, Complete: hasGSEvent(reader, eventKantoFoundMachinePart)},
+		{ID: ProgressKantoPowerRestored, Complete: hasGSEvent(reader, eventKantoReturnedMachinePart) && hasGSEvent(reader, eventKantoPowerRestored)},
+		// The Route 25 script removes Misty from her date and clears the
+		// Cerulean Gym sprite visibility event; power restoration alone
+		// must not manufacture her return.
+		{ID: ProgressKantoMistyReturned, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym) && !hasGSEvent(reader, eventKantoTrainersAtGym)},
+		// Blue must have vanished from Cinnabar and become visible at
+		// Viridian, not merely be absent from an unrelated map.
+		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
