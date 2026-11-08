@@ -161,7 +161,7 @@ const (
 	// Lance's trainer-battle script.
 	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
 	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
-	eventBeatLtSurge          uint16 = 1223
+	eventBeatLtSurge           uint16 = 1223
 	eventBeatEliteFour         uint16 = 68
 	eventIcePathWaterfall      uint16 = 1672
 	eventDragonsDenDragonFang  uint16 = 1704
@@ -171,15 +171,15 @@ const (
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
-	johtoBadgeZephyrMask  = 1 << 0
-	johtoBadgeHiveMask    = 1 << 1
-	johtoBadgePlainMask   = 1 << 2
-	johtoBadgeFogMask     = 1 << 3
-	johtoBadgeMineralMask = 1 << 4
-	johtoBadgeStormMask   = 1 << 5
-	johtoBadgeGlacierMask = 1 << 6
-	johtoBadgeRisingMask  = 1 << 7
-	kantoBadgeThunderMask = 1 << 2
+	johtoBadgeZephyrMask   = 1 << 0
+	johtoBadgeHiveMask     = 1 << 1
+	johtoBadgePlainMask    = 1 << 2
+	johtoBadgeFogMask      = 1 << 3
+	johtoBadgeMineralMask  = 1 << 4
+	johtoBadgeStormMask    = 1 << 5
+	johtoBadgeGlacierMask  = 1 << 6
+	johtoBadgeRisingMask   = 1 << 7
+	kantoBadgeThunderMask  = 1 << 2
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
