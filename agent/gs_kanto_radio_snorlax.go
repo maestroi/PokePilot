@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	gsKantoPokeFluteKnob byte = 78 // pret/pokegold: RadioChannels (channel 20.0)
-	gsKantoRadioPage          = 12 // POKEGEARSTATE_RADIOJOYPAD
-	gsKantoRadioClockPage     = 1  // POKEGEARSTATE_CLOCKJOYPAD
-	gsKantoRadioStepBudget    = 120
-	gsKantoRadioExitBudget    = 180
-	gsKantoSnorlaxX uint8     = 34
-	gsKantoSnorlaxY uint8     = 8
-	gsKantoSnorlaxStandX uint8 = 34
-	gsKantoSnorlaxStandY uint8 = 10
+	gsKantoPokeFluteKnob   byte  = 78 // pret/pokegold: RadioChannels (channel 20.0)
+	gsKantoRadioPage             = 12 // POKEGEARSTATE_RADIOJOYPAD
+	gsKantoRadioClockPage        = 1  // POKEGEARSTATE_CLOCKJOYPAD
+	gsKantoRadioStepBudget       = 120
+	gsKantoRadioExitBudget       = 180
+	gsKantoSnorlaxX        uint8 = 34
+	gsKantoSnorlaxY        uint8 = 8
+	gsKantoSnorlaxStandX   uint8 = 34
+	gsKantoSnorlaxStandY   uint8 = 10
 )
 
 // executeGSKantoExpansionCard talks to the Lavender Radio Tower gentleman.
