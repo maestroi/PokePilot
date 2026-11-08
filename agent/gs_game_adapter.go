@@ -115,7 +115,9 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressKantoMachinePartFound,
 		gsprofile.ProgressKantoPowerRestored,
 		gsprofile.ProgressKantoMistyReturned,
-		gsprofile.ProgressKantoBlueInvited:
+		gsprofile.ProgressKantoBlueInvited,
+		gsprofile.ProgressMtSilverOpened,
+		gsprofile.ProgressMtSilverRedDefeated:
 		return true
 	default:
 		return false
@@ -352,6 +354,10 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSKantoMistyDate(a.m, a.romData)
 		case gsprofile.ProgressKantoBlueInvited:
 			err = executeGSKantoInviteBlue(a.m, a.romData)
+		case gsprofile.ProgressMtSilverOpened:
+			err = executeGSMtSilverPermit(a.m, a.romData)
+		case gsprofile.ProgressMtSilverRedDefeated:
+			err = executeGSMtSilverRed(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -428,7 +434,15 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressKantoCascadeBadgeEarned,
 			gsprofile.ProgressKantoBoulderBadgeEarned,
 			gsprofile.ProgressKantoVolcanoBadgeEarned,
-			gsprofile.ProgressKantoEarthBadgeEarned:
+			gsprofile.ProgressKantoEarthBadgeEarned,
+			gsprofile.ProgressKantoManagerMet,
+			gsprofile.ProgressKantoRocketAtGym,
+			gsprofile.ProgressKantoMachinePartFound,
+			gsprofile.ProgressKantoPowerRestored,
+			gsprofile.ProgressKantoMistyReturned,
+			gsprofile.ProgressKantoBlueInvited,
+			gsprofile.ProgressMtSilverOpened,
+			gsprofile.ProgressMtSilverRedDefeated:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -464,6 +478,9 @@ func (a *gsObjectiveAdapter) VerifyPostcondition(o Objective, initial, final Obs
 		(o.Progress == gsprofile.ProgressLeagueLanceDefeated ||
 			o.Progress == gsprofile.ProgressLeagueHallOfFameEntered) {
 		return gsVerifyLeagueEndingEvent(o.Progress, initial, final)
+	}
+	if o.Kind == KindProgress && o.Progress == gsprofile.ProgressMtSilverRedDefeated {
+		return gsVerifyRedEndingEvent(initial, final)
 	}
 	if o.Kind == KindHeal {
 		return verifyGSCombatRecoveryHeal(final)
