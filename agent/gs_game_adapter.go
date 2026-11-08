@@ -101,7 +101,8 @@ func gsSupportedProgress(id ProgressID) bool {
 		gsprofile.ProgressLeagueLanceDefeated,
 		gsprofile.ProgressLeagueHallOfFameEntered,
 		gsprofile.ProgressSSTicketReceived,
-		gsprofile.ProgressKantoFirstLanding:
+		gsprofile.ProgressKantoFirstLanding,
+		gsprofile.ProgressKantoThunderBadgeEarned:
 		return true
 	default:
 		return false
@@ -316,6 +317,8 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			err = executeGSSSTicket(a.m, a.romData)
 		case gsprofile.ProgressKantoFirstLanding:
 			err = executeGSFirstKantoLanding(a.m, a.romData)
+		case gsprofile.ProgressKantoThunderBadgeEarned:
+			err = executeGSKantoSurge(a.m, a.romData)
 		default:
 			result.Outcome = OutcomeBlocked
 			return result, fmt.Errorf("agent: %s: %w", o, errGSControllerUnavailable)
@@ -384,7 +387,8 @@ func gsObjectiveFrameBudget(o Objective) uint64 {
 			gsprofile.ProgressLeagueLanceDefeated,
 			gsprofile.ProgressLeagueHallOfFameEntered,
 			gsprofile.ProgressSSTicketReceived,
-			gsprofile.ProgressKantoFirstLanding:
+			gsprofile.ProgressKantoFirstLanding,
+			gsprofile.ProgressKantoThunderBadgeEarned:
 			return gsFirstBadgeObjectiveFrameBudget
 		}
 	}
@@ -859,8 +863,12 @@ func (a *gsObjectiveAdapter) ProgressionObjectives(obs Observation) (out []Objec
 		!obs.Story.Has(gsprofile.ProgressKantoFirstLanding):
 		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoFirstLanding,
 			Note: "(post-League: board S.S. Aqua in Olivine, find the missing granddaughter and disembark in Vermilion)"}}
+	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered) &&
+		!obs.Story.Has(gsprofile.ProgressKantoThunderBadgeEarned):
+		return []Objective{{Kind: KindProgress, Progress: gsprofile.ProgressKantoThunderBadgeEarned,
+			Note: "(experimental Kanto: reach Vermilion Gym after the first S.S. Aqua landing, defeat Lt. Surge, and receive the Thunder Badge)"}}
 	case obs.Story.Has(gsprofile.ProgressLeagueHallOfFameEntered):
-		return nil // first Kanto landing is this milestone's verified frontier
+		return nil // Lt. Surge is the currently implemented post-League frontier
 	case !obs.Story.Has(gsprofile.ProgressLeagueWillDefeated):
 		return []Objective{{
 			Kind:     KindProgress,
