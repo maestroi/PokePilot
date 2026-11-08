@@ -103,6 +103,8 @@ const (
 	ProgressKantoMachinePartFound   game.ProgressID = "gs_kanto_machine_part_found"
 	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
 	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
+	ProgressKantoExpansionCard       game.ProgressID = "gs_kanto_expansion_card"
+	ProgressKantoSnorlaxCleared      game.ProgressID = "gs_kanto_snorlax_cleared"
 	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
 	ProgressMtSilverOpened          game.ProgressID = "gs_mt_silver_opened"
 	ProgressMtSilverRedDefeated     game.ProgressID = "gs_mt_silver_red_defeated"
@@ -360,6 +362,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		// Cerulean Gym sprite visibility event; power restoration alone
 		// must not manufacture her return.
 		{ID: ProgressKantoMistyReturned, Complete: hasGSEvent(reader, eventKantoMetRocketAtGym) && !hasGSEvent(reader, eventKantoTrainersAtGym)},
+		{ID: ProgressKantoExpansionCard, Complete: reader.Peek8(sym.PokegearFlags)&gsPokegearExpansionCardMask != 0},
+		{ID: ProgressKantoSnorlaxCleared, Complete: hasGSEvent(reader, gsEventFoughtSnorlax)},
 		// Blue must have vanished from Cinnabar and become visible at
 		// Viridian, not merely be absent from an unrelated map.
 		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
