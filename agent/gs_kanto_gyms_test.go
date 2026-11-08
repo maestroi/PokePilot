@@ -43,17 +43,31 @@ func TestGSKantoGymAndStoryCatalogRunsThroughAllEightBadges(t *testing.T) {
 			}
 			obs.Story = append(obs.Story, ProgressFact{ID: want, Complete: true})
 		}
+		if got := gsKantoGymObjectives(obs); len(got) != 1 ||
+			got[0].Progress != gsprofile.ProgressMtSilverOpened {
+			t.Fatalf("%s: eight Kanto badges must offer Oak's Mt. Silver permit: %+v", id, got)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoAllBadgesEarned, Complete: true})
+		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressMtSilverOpened, Complete: true})
+		if got := gsKantoGymObjectives(obs); len(got) != 1 ||
+			got[0].Progress != gsprofile.ProgressMtSilverRedDefeated {
+			t.Fatalf("%s: Oak permit must offer Red at Mt. Silver: %+v", id, got)
+		}
+		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressMtSilverRedDefeated, Complete: true})
 		if got := gsKantoGymObjectives(obs); len(got) != 0 {
-			t.Fatalf("%s: finished Kanto still offered a Gym: %+v", id, got)
+			t.Fatalf("%s: Red victory should end the offered main story: %+v", id, got)
 		}
 		goal, recognized, err := PlannerGoalStatus("progress:gs_kanto_all_badges_earned", obs)
 		if err != nil || !recognized || goal.Complete {
 			t.Fatalf("%s: full Kanto goal completed without all-eight fact: %+v, %v", id, goal, err)
 		}
-		obs.Story = append(obs.Story, ProgressFact{ID: gsprofile.ProgressKantoAllBadgesEarned, Complete: true})
 		goal, recognized, err = PlannerGoalStatus("progress:gs_kanto_all_badges_earned", obs)
 		if err != nil || !recognized || !goal.Complete {
 			t.Fatalf("%s: all eight badge fact did not finish goal: %+v, %v", id, goal, err)
+		}
+		redGoal, recognized, err := PlannerGoalStatus("progress:gs_mt_silver_red_defeated", obs)
+		if err != nil || !recognized || !redGoal.Complete {
+			t.Fatalf("%s: Red event did not finish final goal: %+v, %v", id, redGoal, err)
 		}
 	}
 }
