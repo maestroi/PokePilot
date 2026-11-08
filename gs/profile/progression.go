@@ -203,14 +203,14 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
-	kantoBadgeBoulderMask    = 1 << 0
-	kantoBadgeCascadeMask    = 1 << 1
-	kantoBadgeThunderMask    = 1 << 2
-	kantoBadgeRainbowMask    = 1 << 3
-	kantoBadgeSoulMask       = 1 << 4
-	kantoBadgeMarshMask      = 1 << 5
-	kantoBadgeVolcanoMask    = 1 << 6
-	kantoBadgeEarthMask      = 1 << 7
+	kantoBadgeBoulderMask  = 1 << 0
+	kantoBadgeCascadeMask  = 1 << 1
+	kantoBadgeThunderMask  = 1 << 2
+	kantoBadgeRainbowMask  = 1 << 3
+	kantoBadgeSoulMask     = 1 << 4
+	kantoBadgeMarshMask    = 1 << 5
+	kantoBadgeVolcanoMask  = 1 << 6
+	kantoBadgeEarthMask    = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
