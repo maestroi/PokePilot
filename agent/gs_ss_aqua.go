@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	gsAquaBoardFrameBudget uint64 = 30_000
-	gsAquaBoardMaxPresses         = 90
-	gsAquaInteractionAttempts     = 3
+	gsAquaBoardFrameBudget    uint64 = 30_000
+	gsAquaBoardMaxPresses            = 90
+	gsAquaInteractionAttempts        = 3
 )
 
 var gsAquaShipMaps = []string{
@@ -259,4 +259,3 @@ func executeGSFirstKantoLanding(m *emu.Emu, romData []byte) error {
 	}
 	return fmt.Errorf("%w: Vermilion Port did not set the first-voyage event", errGSSecondBadgeUnexpectedState)
 }
-
