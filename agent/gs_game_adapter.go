@@ -338,13 +338,7 @@ func (a *gsObjectiveAdapter) ExecuteOwned(o Objective) (ObjectiveResult, error) 
 			gsprofile.ProgressKantoCascadeBadgeEarned,
 			gsprofile.ProgressKantoBoulderBadgeEarned,
 			gsprofile.ProgressKantoVolcanoBadgeEarned,
-			gsprofile.ProgressKantoEarthBadgeEarned,
-			gsprofile.ProgressKantoManagerMet,
-			gsprofile.ProgressKantoRocketAtGym,
-			gsprofile.ProgressKantoMachinePartFound,
-			gsprofile.ProgressKantoPowerRestored,
-			gsprofile.ProgressKantoMistyReturned,
-			gsprofile.ProgressKantoBlueInvited:
+			gsprofile.ProgressKantoEarthBadgeEarned:
 			err = executeGSKantoGym(a.m, a.romData, o.Progress)
 		case gsprofile.ProgressKantoManagerMet:
 			err = executeGSKantoPowerManager(a.m, a.romData)
