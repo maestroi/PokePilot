@@ -104,6 +104,8 @@ const (
 	ProgressKantoPowerRestored      game.ProgressID = "gs_kanto_power_restored"
 	ProgressKantoMistyReturned      game.ProgressID = "gs_kanto_misty_returned"
 	ProgressKantoBlueInvited        game.ProgressID = "gs_kanto_blue_invited"
+	ProgressMtSilverOpened        game.ProgressID = "gs_mt_silver_opened"
+	ProgressMtSilverRedDefeated    game.ProgressID = "gs_mt_silver_red_defeated"
 	// ProgressSupportedFrontier is the moving completion marker for experimental
 	// Gen-II runs. Keep it tied to the furthest progression boundary the GS
 	// objective adapter can execute end-to-end; advancing Gen II moves this one
@@ -186,6 +188,10 @@ const (
 	eventKantoTrainersAtGym       uint16 = 1903
 	eventKantoBlueAtCinnabar      uint16 = 1909
 	eventKantoBlueAtViridian      uint16 = 1910
+	// EVENT_RED_IN_MT_SILVER is the visibility flag set by Red.disappear
+	// after a retail battle win; it is cleared by the next Hall ceremony.
+	eventMtSilverOpened          uint16 = 1871
+	eventMtSilverRedDisappeared  uint16 = 1890
 	eventBeatEliteFour            uint16 = 68
 	eventIcePathWaterfall         uint16 = 1672
 	eventDragonsDenDragonFang     uint16 = 1704
@@ -357,6 +363,8 @@ func projectEarlyStory(reader game.MemoryReader) game.ProgressState {
 		// Blue must have vanished from Cinnabar and become visible at
 		// Viridian, not merely be absent from an unrelated map.
 		{ID: ProgressKantoBlueInvited, Complete: hasGSEvent(reader, eventKantoBlueAtCinnabar) && !hasGSEvent(reader, eventKantoBlueAtViridian)},
+		{ID: ProgressMtSilverOpened, Complete: hasGSEvent(reader, eventMtSilverOpened)},
+		{ID: ProgressMtSilverRedDefeated, Complete: hasGSEvent(reader, eventMtSilverRedDisappeared)},
 		{ID: ProgressSupportedFrontier, Complete: reader.Peek8(sym.JohtoBadges)&johtoBadgeMineralMask != 0},
 	}
 }
