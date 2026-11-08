@@ -175,7 +175,7 @@ const (
 	// Lance's trainer-battle script.
 	// Retail VermilionGymSurgeScript sets EVENT_BEAT_LTSURGE before
 	// awarding ENGINE_THUNDERBADGE; the battle event is not badge proof.
-	eventBeatLtSurge           uint16 = 1223
+	eventBeatLtSurge uint16 = 1223
 	// Kanto power, Cerulean date and Blue recruitment are distinct from
 	// defeating the Gym Leaders (pokegold/constants/event_flags.asm).
 	eventKantoReturnedMachinePart uint16 = 201
@@ -186,12 +186,12 @@ const (
 	eventKantoTrainersAtGym       uint16 = 1903
 	eventKantoBlueAtCinnabar      uint16 = 1909
 	eventKantoBlueAtViridian      uint16 = 1910
-	eventBeatEliteFour         uint16 = 68
-	eventIcePathWaterfall      uint16 = 1672
-	eventDragonsDenDragonFang  uint16 = 1704
-	eventBlackthornGymBoulder1 uint16 = 1798
-	eventIcePathBoulder1       uint16 = 1801
-	eventIcePathFloorBoulder1  uint16 = 1805
+	eventBeatEliteFour            uint16 = 68
+	eventIcePathWaterfall         uint16 = 1672
+	eventDragonsDenDragonFang     uint16 = 1704
+	eventBlackthornGymBoulder1    uint16 = 1798
+	eventIcePathBoulder1          uint16 = 1801
+	eventIcePathFloorBoulder1     uint16 = 1805
 	// SPAWN_INDIGO in constants/map_data_constants.asm (wVisitedSpawns bit).
 	spawnIndigo            = 13
 	statusFlagsPokedexMask = 1 << 0
@@ -203,14 +203,14 @@ const (
 	johtoBadgeStormMask    = 1 << 5
 	johtoBadgeGlacierMask  = 1 << 6
 	johtoBadgeRisingMask   = 1 << 7
-	kantoBadgeBoulderMask = 1 << 0
-	kantoBadgeCascadeMask = 1 << 1
-	kantoBadgeThunderMask = 1 << 2
-	kantoBadgeRainbowMask = 1 << 3
-	kantoBadgeSoulMask    = 1 << 4
-	kantoBadgeMarshMask   = 1 << 5
-	kantoBadgeVolcanoMask = 1 << 6
-	kantoBadgeEarthMask   = 1 << 7
+	kantoBadgeBoulderMask    = 1 << 0
+	kantoBadgeCascadeMask    = 1 << 1
+	kantoBadgeThunderMask    = 1 << 2
+	kantoBadgeRainbowMask    = 1 << 3
+	kantoBadgeSoulMask       = 1 << 4
+	kantoBadgeMarshMask      = 1 << 5
+	kantoBadgeVolcanoMask    = 1 << 6
+	kantoBadgeEarthMask      = 1 << 7
 
 	sceneCherrygroveNoop     = 0
 	sceneAzaleaTownNoop      = 0
