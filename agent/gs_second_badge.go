@@ -147,7 +147,8 @@ func gsSecondBadgeOwnedMap(mapID uint16) bool {
 		"FAST_SHIP_CABINS_NNW_NNE_NE",
 		"FAST_SHIP_CABINS_SW_SSW_NW",
 		"FAST_SHIP_CABINS_SE_SSE_CAPTAINS_CABIN",
-		"VERMILION_PORT",
+		"VERMILION_PORT", "VERMILION_PORT_PASSAGE",
+		"VERMILION_CITY", "VERMILION_POKECENTER_1F", "VERMILION_GYM",
 	} {
 		id, err := gsOpeningMapID(name)
 		if err == nil && mapID == id {
