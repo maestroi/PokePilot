@@ -531,6 +531,11 @@ func (a *gsObjectiveAdapter) NormalizeFailure(phase gameruntime.FailurePhase, er
 			Phase: phase, Class: gameruntime.FailureClassBlocked,
 			Cause: cause, Context: context, Recoverable: true,
 		}
+	case errors.Is(err, errGSLeagueAttemptReset):
+		return gameruntime.Failure{
+			Phase: phase, Class: gameruntime.FailureClassBlocked,
+			Cause: "gen2_league_attempt_reset", Recoverable: true,
+		}
 	case errors.Is(err, errGSControllerUnavailable):
 		return gameruntime.Failure{
 			Phase: phase, Class: gameruntime.FailureClassBlocked,

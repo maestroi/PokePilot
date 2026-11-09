@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/maestroi/pokepilot/game"
@@ -46,4 +47,19 @@ func TestGSLeagueMiddleMembersFormSequentialOwnedMilestones(t *testing.T) {
 func leagueMemberUnavailable(t *testing.T) error {
 	t.Helper()
 	return executeGSLeagueMember(nil, nil, "gs_league_lance_defeated")
+}
+
+// A League whiteout is a lost attempt, not an unowned state: the reset must
+// stay recoverable so the planner restarts from Will (run-zzrclw1r60a8g).
+func TestGSLeagueAttemptResetIsRecoverableBlock(t *testing.T) {
+	adapter := newGSObjectiveAdapter(nil, nil, gsprofile.GoldGameID)
+	err := fmt.Errorf("agent: progress: %w: league:karen", errGSLeagueAttemptReset)
+	failure := adapter.NormalizeFailure(game.FailurePhaseExecution, err, Observation{})
+	if failure.Class != game.FailureClassBlocked || !failure.Recoverable || failure.Cause != "gen2_league_attempt_reset" {
+		t.Fatalf("failure = %+v, want recoverable League reset block", failure)
+	}
+	route23, err := gsOpeningMapID("ROUTE_23")
+	if err != nil || !gsLeagueApproachMap(route23) {
+		t.Fatalf("Route 23 whiteout spawn must be an owned League approach map: %v", err)
+	}
 }
