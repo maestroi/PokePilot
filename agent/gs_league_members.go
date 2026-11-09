@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/maestroi/pokepilot/emu"
@@ -52,6 +53,26 @@ var gsLeagueMembers = [...]gsLeagueMemberSpec{
 	},
 }
 
+// errGSLeagueAttemptReset is a recoverable boundary: the current Elite Four
+// attempt no longer exists, so the planner must start again from Will.
+var errGSLeagueAttemptReset = errors.New("gen2 League attempt was reset")
+
+// gsLeagueResetAttempt owns a lost League attempt. A whiteout inside the
+// League respawns on Route 23 (spawn_points.asm SPAWN_INDIGO) with the earlier
+// EVENT_BEAT_ELITE_4_* flags still set, but the only way back in is the Indigo
+// Center, whose MAPCALLBACK_NEWMAP clears all of them. Heal there, prove the
+// reset happened, and hand the replan a typed outcome instead of resuming a
+// room that cannot be reached.
+func gsLeagueResetAttempt(m *emu.Emu, romData []byte, profile *gsprofile.Profile, label string) error {
+	if err := gsCoastalHeal(m, romData, profile, "INDIGO_PLATEAU_POKECENTER_1F"); err != nil {
+		return fmt.Errorf("gen2 %s: return to Indigo Plateau after a League whiteout: %w", label, err)
+	}
+	if gsFirstBadgeProgressComplete(profile, m, gsprofile.ProgressLeagueWillDefeated) {
+		return fmt.Errorf("%w: %s: Indigo Center kept Will's victory event", errGSSecondBadgeUnexpectedState, label)
+	}
+	return fmt.Errorf("%w: %s resumed outside the League; Indigo Center cleared the attempt", errGSLeagueAttemptReset, label)
+}
+
 func gsLeagueMemberForProgress(progress game.ProgressID) (gsLeagueMemberSpec, bool) {
 	for _, member := range gsLeagueMembers {
 		if member.progress == progress {
@@ -88,6 +109,9 @@ func executeGSLeagueMember(m *emu.Emu, romData []byte, progress game.ProgressID)
 		return err
 	}
 	start := profile.DecodeOverworld(m)
+	if gsLeagueApproachMap(start.NativeMapID) {
+		return gsLeagueResetAttempt(m, romData, profile, spec.encounter)
+	}
 	if start.NativeMapID != prevID && start.NativeMapID != roomID {
 		return fmt.Errorf("%w: %s must resume in %s or %s, observed map %#04x",
 			errGSSecondBadgeUnexpectedState, spec.encounter, spec.previousRoom, spec.room, start.NativeMapID)
