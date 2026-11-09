@@ -678,3 +678,25 @@ func TestRecoverDialogueRefusesAMenu(t *testing.T) {
 		}
 	}
 }
+
+// TestDismissMenuIntoQueuedBattle is run-txqow0d2vz1p: Yellow opened START by
+// itself after the Route 4 -> Mt Moon 1F warp, and the wild encounter queued
+// behind it started the frame B closed the menu. The menu is gone and the
+// battle belongs to Travel's battle path, so the dismissal must succeed
+// instead of failing closed and reporting the stale menu as a choice.
+func TestDismissMenuIntoQueuedBattle(t *testing.T) {
+	mem := newFakeRAM()
+	openMenu(mem, 2, 1, "POKEDEX")
+	f := &fakeClock{mem: mem, closesOnTap: true, onClose: func(m *state.Mem) {
+		m[sym.IsInBattle] = 1
+		m[sym.CurOpponent] = 7
+	}}
+
+	ok, err := dismissMenuOn(f)
+	if err != nil || !ok {
+		t.Fatalf("dismissMenuOn = %v, %v; want true, nil", ok, err)
+	}
+	if f.taps != 1 {
+		t.Fatalf("taps = %d, want exactly one B", f.taps)
+	}
+}

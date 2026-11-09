@@ -159,6 +159,12 @@ func dismissMenu(m *emu.Emu) (bool, error) {
 	if m == nil {
 		return false, nil
 	}
+	return dismissMenuOn(m)
+}
+
+// dismissMenuOn is the loop over the frameClock seam so tests can drive it
+// without an emulator; dismissMenu is its *emu.Emu front.
+func dismissMenuOn(m frameClock) (bool, error) {
 	for i := 0; i < menuDismissBudget; i++ {
 		var mem state.Mem
 		state.Snapshot(m, &mem)
@@ -173,6 +179,14 @@ func dismissMenu(m *emu.Emu) (bool, error) {
 		case state.DecodeDialogue(&mem) != nil:
 			m.Tap(emu.A, 3, 7)
 		case state.Controllable(&mem):
+			return true, nil
+		case state.DecodeBattle(&mem) != nil:
+			// The menu closed and the overworld loop went straight into a
+			// battle it had queued behind it (Yellow opens START on its own
+			// after the Route 4 -> Mt Moon 1F warp; the wild encounter rolled
+			// for that step starts the frame B closes it, run-txqow0d2vz1p).
+			// The menu is gone and a battle is an ordinary walk interruption
+			// the caller already owns, not an unanswered menu.
 			return true, nil
 		default:
 			// Neither a menu, a box, nor a controllable overworld. Do not
