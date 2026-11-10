@@ -14,6 +14,15 @@ import (
 // NormalizeBoundary or the generic A-to-advance interruption controller.
 var gsRadioQuizAnswers = [...]int{0, 0, 0, 1, 0, 1}
 
+// RadioTower1F.asm puts the card woman at (12,6) behind the reception
+// counter (row 5). The retail interaction is across the counter from the
+// open floor at (12,4); (12,7) is inside the enclosed staff area and has no
+// path (triage:4effb96e547d00fd).
+const (
+	gsRadioQuizStandX, gsRadioQuizStandY     uint8 = 12, 4
+	gsRadioQuizCounterX, gsRadioQuizCounterY uint8 = 12, 5
+)
+
 const (
 	gsRadioQuizFrameBudget    uint64 = 30_000
 	gsRadioQuizMaxTextPresses        = 320
@@ -104,7 +113,8 @@ func executeGSRadioCardQuiz(m *emu.Emu, romData []byte) error {
 			errGSSecondBadgeUnexpectedState)
 	}
 	if err := gsSecondBadgeFaceFrom(m, romData, profile,
-		skill.ExactNativeDestination(tower, 12, 7), 12, 6, label); err != nil {
+		skill.ExactNativeDestination(tower, gsRadioQuizStandX, gsRadioQuizStandY),
+		gsRadioQuizCounterX, gsRadioQuizCounterY, label); err != nil {
 		return fmt.Errorf("gen2 Radio Card: reach Goldenrod quiz woman: %w", err)
 	}
 	m.StepFrames(gsLakeScriptSettleFrames)
