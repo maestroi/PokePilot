@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	gsTrainBoardBudget   uint64 = 30_000
+	gsTrainBoardBudget    uint64 = 30_000
 	gsTrainMaxPresses           = 120
 	gsTrainTalkAttempts         = 3
 )
@@ -20,8 +20,8 @@ const (
 // the officer refuses travel. Only his scripted YES/PASS/power interaction
 // may cross regions; pathing onto that warp is never a substitute.
 type gsTrainStation struct {
-	from, to game.RegionID
-	depart, arrive string
+	from, to                           game.RegionID
+	depart, arrive                     string
 	standX, standY, officerX, officerY uint8
 }
 
